@@ -1,0 +1,17 @@
+{
+  "name": "@cfp/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "exports": {
+    ".": "./index.mjs"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.39.2",
+    "typescript-eslint": "^8.54.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "@cfp/tailwind-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "exports": {
+    ".": "./index.ts"
+  }
+}

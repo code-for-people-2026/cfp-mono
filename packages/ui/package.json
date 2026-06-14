@@ -1,0 +1,37 @@
+{
+  "name": "@cfp/ui",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./button": "./src/button.tsx",
+    "./utils": "./src/utils.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc --noEmit"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.4.0"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@cfp/typescript-config": "workspace:*",
+    "@types/react": "^19.2.10",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "react": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0"
+  }
+}

@@ -1,0 +1,93 @@
+name: Deploy Production
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+      ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
+      IMAGE_TAG: ${{ github.sha }}
+      SITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-site:${{ github.sha }}
+      MINIAPP_H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-miniapp-h5:${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+      - name: Login to Alibaba Cloud ACR
+        uses: aliyun/acr-login@v1
+        with:
+          login-server: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+
+      - name: Build and push images
+        run: |
+          docker build -f apps/site/Dockerfile -t "$SITE_IMAGE" .
+          docker build -f apps/miniapp-fe/Dockerfile -t "$MINIAPP_H5_IMAGE" .
+          docker push "$SITE_IMAGE"
+          docker push "$MINIAPP_H5_IMAGE"
+
+      - name: Write SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s' "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/cfp-ecs
+          chmod 600 ~/.ssh/cfp-ecs
+
+      - name: Deploy on ECS
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
+        run: |
+          cat > .env.production.remote <<EOF
+          DATABASE_URL=$DATABASE_URL
+          PAYLOAD_DATABASE_URL=$DATABASE_URL
+          PAYLOAD_SECRET=$PAYLOAD_SECRET
+          PAYLOAD_DB_PUSH=false
+          ALLOW_ADMIN_BOOTSTRAP=false
+          NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+          NEXT_PUBLIC_MINIAPP_H5_URL=$NEXT_PUBLIC_MINIAPP_H5_URL
+          MINIAPP_H5_ORIGIN=$NEXT_PUBLIC_MINIAPP_H5_URL
+          EOF
+
+          cat > .env.images.remote <<EOF
+          SITE_IMAGE=$SITE_IMAGE
+          MINIAPP_H5_IMAGE=$MINIAPP_H5_IMAGE
+          EOF
+
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker compose pull && docker compose up -d"
+
+      - name: Smoke test
+        env:
+          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
+        run: bash deploy/smoke-test.sh

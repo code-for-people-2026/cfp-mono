@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
+      PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
+      PAYLOAD_SECRET: ci-secret
+      PAYLOAD_DB_PUSH: "true"
+      ALLOW_ADMIN_BOOTSTRAP: "true"
+      MINIAPP_H5_ORIGIN: http://127.0.0.1:3301
+    services:
+      postgres:
+        image: postgres:16-alpine
+        ports:
+          - 54324:5432
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cfp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d cfp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+      - run: pnpm --filter @cfp/site exec playwright install --with-deps chromium
+
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: reports
+          path: |
+            apps/*/coverage
+            apps/*/playwright-report
+            apps/*/test-results
+

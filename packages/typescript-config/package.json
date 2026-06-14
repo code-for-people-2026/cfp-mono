@@ -1,0 +1,12 @@
+{
+  "name": "@cfp/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "files": [
+    "base.json",
+    "nextjs.json",
+    "react-library.json"
+  ]
+}
+

@@ -1,0 +1,30 @@
+name: Deploy Preview
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+jobs:
+  preview-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm verify
+
+      - name: Build deployable images
+        run: |
+          docker build -f apps/site/Dockerfile -t cfp-site:preview .
+          docker build -f apps/miniapp-fe/Dockerfile -t cfp-miniapp-h5:preview .

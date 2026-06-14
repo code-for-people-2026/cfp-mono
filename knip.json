@@ -1,0 +1,56 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "workspaces": {
+    "apps/site": {
+      "entry": [
+        "next.config.ts",
+        "payload.config.ts",
+        "playwright.config.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts",
+        "src/app/**/*.{ts,tsx}",
+        "tests/**/*.ts"
+      ]
+    },
+    "apps/miniapp-fe": {
+      "entry": [
+        "config/**/*.ts",
+        "src/**/*.{ts,tsx}",
+        "playwright.config.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts",
+        "tests/**/*.ts"
+      ]
+    },
+    "packages/ui": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/typescript-config": {
+      "entry": ["*.json"]
+    },
+    "packages/eslint-config": {
+      "entry": ["index.mjs"]
+    },
+    "packages/tailwind-config": {
+      "entry": ["index.ts"]
+    }
+  },
+  "ignoreDependencies": [
+    "@babel/plugin-proposal-decorators",
+    "@tarojs/plugin-framework-react",
+    "@tarojs/plugin-platform-h5",
+    "@tarojs/plugin-platform-weapp",
+    "@tarojs/react",
+    "@tarojs/runtime",
+    "@tarojs/vite-runner",
+    "@types/react-dom",
+    "@vitejs/plugin-react",
+    "pg",
+    "react-dom",
+    "serve",
+    "vite"
+  ],
+  "ignoreUnresolved": [
+    "next"
+  ]
+}

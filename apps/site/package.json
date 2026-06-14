@@ -1,0 +1,43 @@
+{
+  "name": "@cfp/site",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "scripts": {
+    "dev": "next dev -p 3300",
+    "build": "next build",
+    "start": "next start -p 3300",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "payload": "payload"
+  },
+  "dependencies": {
+    "@cfp/ui": "workspace:*",
+    "@payloadcms/db-postgres": "3.80.0",
+    "@payloadcms/next": "3.80.0",
+    "graphql": "^16.12.0",
+    "next": "16.2.1",
+    "payload": "3.80.0",
+    "pg": "^8.16.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@cfp/typescript-config": "workspace:*",
+    "@playwright/test": "^1.58.0",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^20.19.30",
+    "@types/react": "^19.2.10",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}
