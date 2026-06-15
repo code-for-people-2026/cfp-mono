@@ -51,6 +51,7 @@
   },
   "ignoreDependencies": [
     "@babel/plugin-proposal-decorators",
+    "@babel/plugin-transform-class-properties",
     "@tarojs/plugin-framework-react",
     "@tarojs/plugin-platform-h5",
     "@tarojs/plugin-platform-weapp",

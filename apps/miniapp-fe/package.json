@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.7",
+    "@babel/plugin-transform-class-properties": "^7.29.7",
     "@cfp/eslint-config": "workspace:*",
     "@cfp/typescript-config": "workspace:*",
     "@playwright/test": "^1.58.0",
