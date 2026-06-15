@@ -1,0 +1,122 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+  --bg: #f7f9fc;
+  --paper: #fffefa;
+  --soft: #eef3f7;
+  --ink: #101417;
+  --carbon: #0b0f14;
+  --carbon-2: #15191f;
+  --on-carbon: #f8f7f1;
+  --muted: #5f6874;
+  --dim: #7a8490;
+  --accent: #b92e3c;
+  --accent-strong: #8f1d2c;
+  --gold: #a7822d;
+  --gold-bright: #c2a45a;
+  --green: #2d6a56;
+  --blue: #2f6e9d;
+  --cyan: #43aeca;
+  --violet: #7569b7;
+  --border: rgba(16, 20, 23, 0.13);
+  --ring: rgba(185, 46, 60, 0.34);
+  --ring-soft: rgba(185, 46, 60, 0.12);
+  --chip: rgba(255, 255, 255, 0.72);
+  --composer: rgba(255, 255, 255, 0.82);
+  --composer-footer: rgba(235, 240, 245, 0.82);
+  --tag-bg: rgba(67, 174, 202, 0.09);
+  --tag-border: rgba(67, 174, 202, 0.32);
+  --glow-cyan: rgba(67, 174, 202, 0.2);
+  --glow-red: rgba(185, 46, 60, 0.16);
+  --glow-gold: rgba(194, 164, 90, 0.13);
+  --grid-line: rgba(16, 20, 23, 0.035);
+  --shadow-soft: 0 18px 50px rgba(16, 20, 23, 0.07);
+  --shadow-large: 0 36px 96px rgba(30, 42, 58, 0.13);
+  --font-system: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #07090d;
+    --paper: #101722;
+    --soft: #0d131b;
+    --ink: #f6f7f2;
+    --carbon: #050608;
+    --carbon-2: #10141b;
+    --on-carbon: #f6f7f2;
+    --muted: #aeb8c5;
+    --dim: #7e8996;
+    --accent: #e34a55;
+    --accent-strong: #ff6570;
+    --gold: #b89242;
+    --gold-bright: #d6b267;
+    --green: #66b689;
+    --blue: #5f9ed1;
+    --cyan: #5dc7e8;
+    --violet: #9b91e4;
+    --border: rgba(218, 228, 240, 0.15);
+    --ring: rgba(227, 74, 85, 0.42);
+    --ring-soft: rgba(227, 74, 85, 0.15);
+    --chip: rgba(255, 255, 255, 0.06);
+    --composer: rgba(17, 23, 32, 0.86);
+    --composer-footer: rgba(255, 255, 255, 0.045);
+    --tag-bg: rgba(93, 199, 232, 0.1);
+    --tag-border: rgba(93, 199, 232, 0.34);
+    --glow-cyan: rgba(85, 170, 220, 0.2);
+    --glow-red: rgba(227, 74, 85, 0.18);
+    --glow-gold: rgba(214, 178, 103, 0.11);
+    --grid-line: rgba(246, 247, 242, 0.046);
+    --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.28);
+    --shadow-large: 0 36px 96px rgba(0, 0, 0, 0.48);
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-system);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    var(--bg);
+  background-size: 36px 36px;
+  color: var(--ink);
+  font-family: var(--font-system);
+}
+
+a:not([class]) {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(139, 30, 45, 0.16);
+}
+
+.footer-social-popover {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px);
+  visibility: hidden;
+}
+
+.footer-social-entry:hover .footer-social-popover,
+.footer-social-entry:focus-within .footer-social-popover,
+.footer-social-entry[open] .footer-social-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+}

@@ -12,6 +12,20 @@
         "tests/**/*.ts"
       ]
     },
+    "apps/website": {
+      "entry": [
+        "next.config.ts",
+        "payload.config.ts",
+        "playwright.config.ts",
+        "eslint.config.mjs",
+        "src/app/**/*.{ts,tsx}",
+        "src/content/**/*.ts",
+        "src/components/**/*.tsx",
+        "src/lib/**/*.ts",
+        "src/payload/**/*.ts",
+        "tests/**/*.ts"
+      ]
+    },
     "apps/miniapp-fe": {
       "entry": [
         "config/**/*.ts",

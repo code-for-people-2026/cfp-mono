@@ -7,6 +7,7 @@
 ## 应用
 
 - `apps/site`：Next.js + Payload CMS 站点，包含公开主页、Payload 管理后台和共享 API。
+- `apps/website`：Next.js + Payload CMS 官方网站，面向外部访问者介绍宣言、协议和 7×7 方向地图。
 - `apps/miniapp-fe`：Taro 前端应用，面向微信小程序，同时产出 H5 网页版。
 
 ## 共享包
@@ -22,6 +23,7 @@
 pnpm install
 pnpm db:up
 pnpm dev:site
+pnpm dev:website
 pnpm dev:miniapp:h5
 ```
 
