@@ -101,6 +101,15 @@ a:not([class]) {
   color: inherit;
 }
 
+/* Tailwind v4 preflight leaves interactive elements at the default cursor; restore the
+   pointer so buttons/role-buttons (composer send, suggestion chips, footer chips) read
+   as clickable on hover. */
+button:not(:disabled),
+[role="button"]:not(:disabled),
+summary {
+  cursor: pointer;
+}
+
 ::selection {
   background: rgba(139, 30, 45, 0.16);
 }

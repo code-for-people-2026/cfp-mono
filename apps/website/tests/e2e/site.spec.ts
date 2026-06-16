@@ -143,7 +143,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.locator("main").getByAltText("抖音二维码")).toHaveCount(0);
   await expect(page.locator("main").getByAltText("快手二维码")).toHaveCount(0);
   await expect(page.locator("main").locator('[aria-label="B站二维码待补充"]')).toHaveCount(0);
-  await expect(page.locator('img[src*="bilibili"]')).toHaveCount(0);
+  await expect(page.locator("main").locator('img[src*="bilibili"]')).toHaveCount(0);
   await expect(page.getByText("微信群")).toHaveCount(0);
   await expect(page.locator('img[src*="wechat"]')).toHaveCount(0);
 
@@ -194,7 +194,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer.getByAltText("快手二维码")).toHaveAttribute("src", /kuaishou-qr\.jpg/);
   await footer.getByTestId("footer-social-trigger-B站").hover();
   await expect(footer.getByTestId("footer-social-popover-B站")).toBeVisible();
-  await expect(footer.locator('[aria-label="B站二维码待补充"]')).toBeVisible();
+  await expect(footer.getByAltText("B站二维码")).toHaveAttribute("src", /bilibili-qr/);
   await expect(footer.getByRole("link", { name: "GitHub", exact: true })).toHaveAttribute(
     "href",
     "https://github.com/code-for-people-2026",
@@ -259,9 +259,9 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
         width: Math.round(rect.width),
       };
     });
-    const bilibiliPlaceholder = document.querySelector('[aria-label="B站二维码待补充"]');
+    const bilibiliPlaceholder = document.querySelector('img[alt="B站二维码"]');
     if (!bilibiliPlaceholder) {
-      throw new Error("Missing B站 placeholder");
+      throw new Error("Missing B站 QR");
     }
     const bilibiliRect = bilibiliPlaceholder.getBoundingClientRect();
 
