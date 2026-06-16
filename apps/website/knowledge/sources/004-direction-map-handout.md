@@ -4,9 +4,9 @@ title: 7x7 牛马能力剥夺图表格原材料
 visibility: public
 status: approved
 kind: source
-source_path: ideal/小金毛辩论赛摆摊/传单1-7x7矩阵.html
+source_path: ideal/初期头脑风暴/code-for-people-direction-matrix.html
 sources:
-  - ideal/小金毛辩论赛摆摊/传单1-7x7矩阵.html
+  - ideal/初期头脑风暴/code-for-people-direction-matrix.html
 tags:
   - 7x7
   - 7×7

@@ -1,5 +1,10 @@
 export const formFallbackHref = "#tencent-form-pending";
 
+// 7×7 方向地图目前是独立部署的 webapp（仓库里另一个 app，线上地址 https://wam.codeforpeople.cn/），
+// 它提供交互式 7×7 地图并引导用户填写真实需求。官网里与 7×7 地图有关的入口暂时外链到它；
+// 之后也许会把它迁移进官网项目，届时再改回站内路由。站内仍保留 /map 文档页作为纯文本版方向地图。
+export const directionMapHref = "https://wam.codeforpeople.cn/";
+
 export const siteMetadata = {
   title: "码成工｜为“工友”敲键盘",
   description:
@@ -159,7 +164,7 @@ export const continueReads = [
   },
   {
     label: "看 7×7 方向地图",
-    href: "/map",
+    href: directionMapHref,
     description: "看我们如何用人群处境和能力缺口检查方向，而不是凭感觉列产品清单。",
   },
   {
@@ -218,7 +223,7 @@ export const deepReads = [
   },
   {
     code: "ATLAS 03 / 7×7",
-    href: "/map",
+    href: directionMapHref,
     testId: "deep-read-map",
     title: "7×7 方向地图",
     summary: "用矩阵检查哪些人、哪些日常问题，还没有被软件和 AI 认真服务。",

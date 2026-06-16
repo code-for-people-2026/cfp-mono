@@ -17,6 +17,7 @@ import {
   brandAssets,
   continueReads,
   directionApproach,
+  directionMapHref,
   formFallbackHref,
   hero,
   heroFlow,
@@ -38,12 +39,16 @@ function resolveHref(href: string, formHref: string) {
   return href === formFallbackHref ? formHref : href;
 }
 
+function isExternalHref(href: string) {
+  return href.startsWith("http");
+}
+
 const sceneIcons = [Route, Factory, Store, HeartHandshake];
 const readIcons = [FileText, Map, ShieldCheck, HeartHandshake];
 const footerLinks = [
   { label: "首页", href: "/" },
   { label: "宣言", href: "/manifesto" },
-  { label: "方向地图", href: "/map" },
+  { label: "方向地图", href: directionMapHref },
   { label: "协议", href: "/license" },
 ];
 const organizationGithubHref = "https://github.com/code-for-people-2026";
@@ -136,9 +141,9 @@ function SiteHeader() {
         <Link href="/manifesto" className="no-underline">
           宣言
         </Link>
-        <Link href="/map" className="no-underline">
+        <a href={directionMapHref} target="_blank" rel="noreferrer" className="no-underline">
           方向地图
-        </Link>
+        </a>
         <Link href="/license" className="no-underline">
           协议
         </Link>
@@ -179,15 +184,27 @@ function SiteFooter() {
           <nav aria-label="页脚导航">
             <h2 className="text-sm font-black text-[var(--ink)]">网站链接</h2>
             <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted)]">
-              {footerLinks.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className="no-underline transition-colors hover:text-[var(--accent)]"
-                >
-                  {link.label}
-                </Link>
-              ))}
+              {footerLinks.map((link) =>
+                isExternalHref(link.href) ? (
+                  <a
+                    key={link.href}
+                    href={link.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="no-underline transition-colors hover:text-[var(--accent)]"
+                  >
+                    {link.label}
+                  </a>
+                ) : (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="no-underline transition-colors hover:text-[var(--accent)]"
+                  >
+                    {link.label}
+                  </Link>
+                ),
+              )}
             </div>
           </nav>
 
@@ -463,11 +480,15 @@ export default function HomePage() {
           <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {continueReads.map((item, index) => {
               const Icon = readIcons[index];
+              const href = resolveHref(item.href, formHref);
+              const external = isExternalHref(href);
               return (
                 <Link
                   key={item.label}
-                  href={resolveHref(item.href, formHref)}
+                  href={href}
                   aria-label={item.label}
+                  target={external ? "_blank" : undefined}
+                  rel={external ? "noreferrer" : undefined}
                   className="group border border-[var(--border)] bg-[var(--paper)] p-5 text-[var(--ink)] no-underline shadow-[var(--shadow-soft)] transition-colors hover:border-[var(--accent)] xl:min-h-64"
                 >
                   <div className="flex items-start justify-between gap-4">

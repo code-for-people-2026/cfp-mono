@@ -7,7 +7,6 @@ kind: source
 source_path: ideal/初期头脑风暴/code-for-people-direction-matrix.html
 sources:
   - ideal/初期头脑风暴/code-for-people-direction-matrix.html
-  - ideal/小金毛辩论赛摆摊/传单1-7x7矩阵.html
   - https://www.iqds.whu.edu.cn/info/1268/14705.htm
   - https://fddi.fudan.edu.cn/_t2515/45/c4/c18965a411076/page.htm
   - https://epaper.gmw.cn/zhdsb/html/2021-06/16/nw.D110000zhdsb_20210616_1-13.htm

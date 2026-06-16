@@ -4,9 +4,8 @@ title: 生产 vs 消费原材料
 visibility: public
 status: approved
 kind: source
-source_path: ideal/小金毛辩论赛摆摊/传单3-生产vs消费.svg
 sources:
-  - ideal/小金毛辩论赛摆摊/传单3-生产vs消费.svg
+  - source-data-equality-manifesto
 tags:
   - 生产
   - 消费
