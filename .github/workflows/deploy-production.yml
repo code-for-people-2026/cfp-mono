@@ -10,7 +10,56 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        name: Check production deployment configuration
+        env:
+          ALIYUN_ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          ALIYUN_ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
+          ALIYUN_ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          ALIYUN_ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
+        run: |
+          missing=()
+          for name in \
+            ALIYUN_ACR_REGISTRY \
+            ALIYUN_ACR_NAMESPACE \
+            ALIYUN_ACR_USERNAME \
+            ALIYUN_ACR_PASSWORD \
+            ECS_SSH_KEY \
+            ECS_HOST \
+            ECS_USER \
+            DATABASE_URL \
+            PAYLOAD_SECRET \
+            NEXT_PUBLIC_SITE_URL \
+            NEXT_PUBLIC_MINIAPP_H5_URL
+          do
+            if [ -z "${!name}" ]; then
+              missing+=("$name")
+            fi
+          done
+
+          if [ "${#missing[@]}" -eq 0 ]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+            echo "Production deployment is configured."
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Production deployment skipped because required secrets are missing: ${missing[*]}"
+          fi
+
   deploy:
+    needs: prepare
+    if: needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
