@@ -19,7 +19,7 @@ jobs:
       MINIAPP_H5_ORIGIN: http://127.0.0.1:3301
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:17-alpine
         ports:
           - 54324:5432
         env:
