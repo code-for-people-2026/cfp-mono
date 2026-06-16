@@ -36,6 +36,20 @@
         "tests/**/*.ts"
       ]
     },
+    "apps/2026-duanwu-booth-assistant": {
+      "entry": [
+        "next.config.ts",
+        "next.config.test.ts",
+        "vitest.config.ts",
+        "vitest.setup.ts",
+        "eslint.config.mjs",
+        "app/**/*.{ts,tsx}",
+        "components/**/*.{ts,tsx}",
+        "lib/**/*.{ts,tsx}",
+        "knowledge/**/*.ts",
+        "test/**/*.ts"
+      ]
+    },
     "packages/ui": {
       "entry": ["src/index.ts"]
     },
