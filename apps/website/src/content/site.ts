@@ -53,7 +53,7 @@ export const dialogueEntry = {
   placeholder: "比如：码成工是什么？为什么说软件也是一种服务？工友价代表什么？",
   submitLabel: "开始了解",
   note:
-    "知识库即将接入。上线后会基于公开文本回答；当前仍是预览入口。",
+    "回答基于已经公开的文本。项目仍在早期，内容由 AI 生成，请仔细甄别。",
 };
 
 export const identityIntro = {
