@@ -8,10 +8,29 @@ const modeLabels: Record<EntryMode, string> = {
   free: "直接输入",
 };
 
+// The full texts live on the official 码成工 website (and the standalone wam app for the
+// 7×7 map). When a visitor wants to read an original/full text, point them there instead
+// of pasting the whole document into chat.
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://code-for-people-website.vercel.app";
+
+const docLinks = {
+  manifesto: `${siteUrl}/manifesto`,
+  license: `${siteUrl}/license`,
+  map: "https://wam.codeforpeople.cn/",
+};
+
+const sourceIdToLink: Record<string, string> = {
+  "source-data-equality-manifesto": docLinks.manifesto,
+  "source-cattle-license": docLinks.license,
+  "source-direction-map-handout": docLinks.map,
+  "source-7x7-capability-theory": docLinks.map,
+};
+
 export function buildChatPrompt(input: {
   mode: EntryMode;
   conversationSummary?: string;
   retrievedChunks: RetrievedChunk[];
+  linkOutSourceIds?: string[];
 }) {
   const materials = input.retrievedChunks.length
     ? input.retrievedChunks
@@ -25,6 +44,10 @@ export function buildChatPrompt(input: {
         .join("\n\n")
     : "没有检索到足够相关的摊位材料。";
 
+  const linkOutLinks = Array.from(
+    new Set((input.linkOutSourceIds ?? []).map((id) => sourceIdToLink[id]).filter(Boolean)),
+  );
+
   return [
     "你是“数据平权，AI 下乡”摊位的 AI 助手，也是“为工友敲键盘”的第二个摊主。",
     "你的任务是帮助扫码用户理解摊位材料，接住疑问，并在合适时引导用户回摊位继续聊。",
@@ -36,11 +59,19 @@ export function buildChatPrompt(input: {
     "只选择最相关的一份核心内容，不要在每次回答里同时硬塞三份。引导必须像顺着用户问题往下走，不要像营销话术。",
     "核心内容路由参考：理念、为什么做、数据归谁、AI 红利，优先引向《数据平权宣言》；组织约束、工友价、1/3 价、怎么防止变质，优先引向《牛马互助协议》；具体做什么、服务谁、哪些人和哪些能力，优先引向 7x7 矩阵。",
     "如果材料不足，先说明不足，再选择最接近的一份核心内容作为继续理解的入口，不要泛泛结束。",
+    // Link-out rule: never reproduce a long original text in chat; point to the page instead.
+    "这些文本的原文已经公开在官网上。当用户想读全文或原文时，不要在对话里整段复制原文（太啰嗦），用一两句话说明它讲什么，再给出对应链接引导他去官网阅读。",
+    `原文链接：《数据平权宣言》${docLinks.manifesto}；《牛马互助协议》${docLinks.license}；7×7 方向地图 ${docLinks.map}。`,
+    linkOutLinks.length
+      ? `用户当前正在要原文，请直接给出对应链接（${linkOutLinks.join("、")}）并简要说明，不要在对话里复制全文。`
+      : "",
     `当前入口模式：${modeLabels[input.mode]}`,
     input.conversationSummary ? `较早对话摘要：${input.conversationSummary}` : "较早对话摘要：无",
     "可用摊位材料：",
     materials,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildSummaryPrompt(messages: ChatMessage[]) {
