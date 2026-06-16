@@ -1,21 +1,30 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { Send } from "lucide-react";
-import { type FormEvent, useState } from "react";
+import { Loader2, Send } from "lucide-react";
+import { type FormEvent, useEffect, useState, useTransition } from "react";
 import { dialogueEntry, dialogueSuggestions } from "@/content/site";
 
 export function DialogueEntry() {
   const router = useRouter();
   const [value, setValue] = useState("");
+  const [isPending, startTransition] = useTransition();
   const trimmed = value.trim();
+
+  // Prefetch the chat route so the first navigation doesn't pay for the route
+  // chunk + RSC round-trip on click.
+  useEffect(() => {
+    router.prefetch("/chat");
+  }, [router]);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!trimmed) return;
 
     const params = new URLSearchParams({ question: trimmed });
-    router.push(`/dialogue?${params.toString()}`);
+    startTransition(() => {
+      router.push(`/chat?${params.toString()}`);
+    });
   }
 
   return (
@@ -43,10 +52,15 @@ export function DialogueEntry() {
           <button
             type="submit"
             aria-label={dialogueEntry.submitLabel}
+            aria-busy={isPending}
             className="mt-auto grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-[var(--bg)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"
-            disabled={!trimmed}
+            disabled={!trimmed || isPending}
           >
-            <Send aria-hidden="true" className="h-4 w-4" />
+            {isPending ? (
+              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
+            ) : (
+              <Send aria-hidden="true" className="h-4 w-4" />
+            )}
           </button>
         </div>
 
