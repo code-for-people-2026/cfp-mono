@@ -41,8 +41,8 @@ describe("handleChat", () => {
     );
   });
 
-  it("allows longer source-grounded answers when the user asks for a full original document", async () => {
-    const callModel = vi.fn().mockResolvedValue("《数据平权宣言》全文。");
+  it("links out to the original page instead of dumping full text when an original is requested", async () => {
+    const callModel = vi.fn().mockResolvedValue("《数据平权宣言》讲的是……原文在这里。");
     await handleChat({
       body: {
         mode: "free",
@@ -53,36 +53,21 @@ describe("handleChat", () => {
       ip: "1.2.3.9",
       now: 0,
       callModel,
-      loadChunks: vi.fn().mockResolvedValue(
-        Array.from({ length: 12 }, (_, index) => ({
-          id: `source-data-equality-manifesto#${index}`,
-          sourceId: "source-data-equality-manifesto",
-          title: "数据平权宣言全文",
-          kind: "source",
-          sources: ["ideal/第一个产品/宣言-数据平权.md"],
-          sourcePath: "ideal/第一个产品/宣言-数据平权.md",
-          tags: ["数据平权", "宣言", "全文", "原文"],
-          text: `宣言第 ${index + 1} 段。`,
-          filePath: "/knowledge/sources/source-data-equality-manifesto.md",
-        })),
-      ),
     });
 
-    expect(callModel).toHaveBeenCalledWith(
-      expect.objectContaining({
-        maxTokens: 2400,
-        messages: expect.arrayContaining([
-          expect.objectContaining({
-            role: "system",
-            content: expect.stringContaining("宣言第 12 段。"),
-          }),
-        ]),
-      }),
-    );
+    const systemPrompt = callModel.mock.calls[0]?.[0].messages.find(
+      (message: { role: string; content: string }) => message.role === "system",
+    )?.content;
+
+    // No more 2400-token full-text dump; keep the normal answer budget.
+    expect(callModel).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 700 }));
+    expect(systemPrompt).toContain("不要在对话里整段复制原文");
+    expect(systemPrompt).toContain("/manifesto");
+    expect(systemPrompt).toContain("用户当前正在要原文");
   });
 
-  it("keeps all explicitly requested source documents in the prompt for combined full-text requests", async () => {
-    const callModel = vi.fn().mockResolvedValue("可以，我先分别说明这两份材料。");
+  it("offers both canonical links for a combined original-text request", async () => {
+    const callModel = vi.fn().mockResolvedValue("可以，这两份的原文链接如下。");
     await handleChat({
       body: {
         mode: "free",
@@ -99,11 +84,10 @@ describe("handleChat", () => {
       (message: { role: string; content: string }) => message.role === "system",
     )?.content;
 
-    expect(systemPrompt).toContain("来源ID：source-data-equality-manifesto");
-    expect(systemPrompt).toContain("来源ID：source-cattle-license");
-    expect(systemPrompt).toContain("数据平权宣言全文");
-    expect(systemPrompt).toContain("牛马互助协议全文");
-    expect(callModel).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 2400 }));
+    expect(callModel).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 700 }));
+    expect(systemPrompt).toContain("/manifesto");
+    expect(systemPrompt).toContain("/license");
+    expect(systemPrompt).toContain("用户当前正在要原文");
   });
 
   it("rejects overlong user input", async () => {

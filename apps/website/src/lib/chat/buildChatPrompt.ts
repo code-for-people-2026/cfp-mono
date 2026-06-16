@@ -8,10 +8,27 @@ const modeLabels: Record<EntryMode, string> = {
   free: "直接输入",
 };
 
+// Canonical pages that already host the full texts. When a visitor wants to read
+// the original/full text, the assistant links here instead of pasting it in chat.
+// 宣言/协议 are on this site; the 7×7 方向地图 is the standalone wam app.
+const docLinks = {
+  manifesto: "/manifesto",
+  license: "/license",
+  map: "https://wam.codeforpeople.cn/",
+};
+
+const sourceIdToLink: Record<string, string> = {
+  "source-data-equality-manifesto": docLinks.manifesto,
+  "source-cattle-license": docLinks.license,
+  "source-direction-map-handout": docLinks.map,
+  "source-7x7-capability-theory": docLinks.map,
+};
+
 export function buildChatPrompt(input: {
   mode: EntryMode;
   conversationSummary?: string;
   retrievedChunks: RetrievedChunk[];
+  linkOutSourceIds?: string[];
 }) {
   const materials = input.retrievedChunks.length
     ? input.retrievedChunks
@@ -21,6 +38,10 @@ export function buildChatPrompt(input: {
         )
         .join("\n\n")
     : "没有检索到足够相关的材料。";
+
+  const linkOutLinks = Array.from(
+    new Set((input.linkOutSourceIds ?? []).map((id) => sourceIdToLink[id]).filter(Boolean)),
+  );
 
   return [
     "你是码成工官网的问答助手。码成工是一个想在 AI 时代为“工友”敲键盘的组织构想。",
@@ -33,11 +54,19 @@ export function buildChatPrompt(input: {
     "核心内容路由参考：理念、为什么做、数据归谁、AI 红利，优先引向《数据平权宣言》；组织约束、工友价、1/3 价、怎么防止变质，优先引向《牛马互助协议》；具体做什么、服务谁、哪些人和哪些能力，优先引向 7×7 方向地图。",
     "如果材料不足，先说明不足，再选择最接近的一份核心内容作为继续理解的入口，不要泛泛结束。",
     "不要编造联系方式、二维码、产品上线时间、融资情况或法律效力；项目仍在早期，不要声称已经成熟或已经代表工友。",
+    // Link-out rule: never reproduce a long original text in chat; point to the page instead.
+    "官网已经公开了这些文本的原文。当用户想读全文或原文时，不要在对话里整段复制原文（太啰嗦），用一两句话说明它讲什么，再给出对应链接引导他到官网阅读。",
+    `原文链接：《数据平权宣言》${docLinks.manifesto}；《牛马互助协议》${docLinks.license}；7×7 方向地图 ${docLinks.map}。`,
+    linkOutLinks.length
+      ? `用户当前正在要原文，请直接给出对应链接（${linkOutLinks.join("、")}）并简要说明，不要在对话里复制全文。`
+      : "",
     `当前入口模式：${modeLabels[input.mode]}`,
     input.conversationSummary ? `较早对话摘要：${input.conversationSummary}` : "较早对话摘要：无",
     "可用材料：",
     materials,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function buildSummaryPrompt(messages: ChatMessage[]) {

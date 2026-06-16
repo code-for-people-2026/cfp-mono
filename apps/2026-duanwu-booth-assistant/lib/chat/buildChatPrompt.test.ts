@@ -69,6 +69,18 @@ describe("buildChatPrompt", () => {
     expect(prompt).toContain("材料类型：source");
     expect(prompt).toContain("原始来源：ideal/第一个产品/宣言-数据平权.md");
   });
+
+  it("points to the original page instead of reproducing full texts in chat", () => {
+    const prompt = buildChatPrompt({
+      mode: "free",
+      retrievedChunks: [],
+      linkOutSourceIds: ["source-data-equality-manifesto"],
+    });
+
+    expect(prompt).toContain("不要在对话里整段复制原文");
+    expect(prompt).toContain("/manifesto");
+    expect(prompt).toContain("用户当前正在要原文");
+  });
 });
 
 describe("buildSummaryPrompt", () => {
