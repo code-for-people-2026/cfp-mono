@@ -20,7 +20,7 @@ import {
   loadStoredConversation,
   saveStoredConversation,
 } from "@/lib/chat/localConversation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const openingMessages: Record<EntryMode, string> = {
   intro:
@@ -55,6 +55,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [notice, setNotice] = useState("");
   const [storageReady, setStorageReady] = useState(false);
+  const conversationEndRef = useRef<HTMLDivElement>(null);
 
   const started = messages.length > 0;
 
@@ -102,6 +103,14 @@ export default function Home() {
       conversationSummary,
     });
   }, [conversationSummary, messages, mode, storageReady]);
+
+  useEffect(() => {
+    if (!started) {
+      return;
+    }
+
+    conversationEndRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
+  }, [loading, notice, messages.length, started]);
 
   function startWithMode(nextMode: EntryMode) {
     setMode(nextMode);
@@ -220,6 +229,7 @@ export default function Home() {
             ))}
             {loading ? <StatusNotice>正在组织回答...</StatusNotice> : null}
             {notice ? <StatusNotice>{notice}</StatusNotice> : null}
+            <div ref={conversationEndRef} aria-hidden="true" style={{ minHeight: "var(--composer-safe-area)" }} />
           </div>
         </section>
       ) : null}

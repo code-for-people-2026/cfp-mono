@@ -5,6 +5,7 @@ import Home from "./page";
 
 const conversationStorageKey = "2026-duanwu-booth-assistant:conversation:v1";
 const threeDaysMs = 72 * 60 * 60 * 1000;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
 
 function blockLocalStorage() {
   const descriptor = Object.getOwnPropertyDescriptor(window, "localStorage");
@@ -24,6 +25,11 @@ function blockLocalStorage() {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  if (originalScrollIntoView) {
+    Element.prototype.scrollIntoView = originalScrollIntoView;
+  } else {
+    Reflect.deleteProperty(Element.prototype, "scrollIntoView");
+  }
   window.localStorage.clear();
 });
 
@@ -92,6 +98,26 @@ describe("Home", () => {
         method: "POST",
       }),
     );
+  });
+
+  it("scrolls to the newest content when the assistant response arrives", async () => {
+    const user = userEvent.setup();
+    const scrollIntoView = vi.fn();
+    Element.prototype.scrollIntoView = scrollIntoView;
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ answer: "这是自动滚动后能看到的新回答。" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<Home />);
+    await user.type(screen.getByLabelText("输入问题"), "回答出来以后应该滚到底部");
+    await user.click(screen.getByRole("button", { name: "发送" }));
+
+    expect(await screen.findByText("这是自动滚动后能看到的新回答。")).toBeInTheDocument();
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "end" });
   });
 
   it("sends the composer message with Enter", async () => {
