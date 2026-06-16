@@ -191,9 +191,9 @@ export const socialChannels = [
   },
   {
     label: "B站",
-    qrSrc: null,
-    status: "账号待补充",
-    description: "长一点的解释、讨论和复盘会放在这里；账号确认后再补二维码。",
+    qrSrc: "/assets/social/bilibili-qr.png",
+    status: "扫码关注",
+    description: "长一点的解释、讨论和复盘会放在这里。",
   },
 ];
 
