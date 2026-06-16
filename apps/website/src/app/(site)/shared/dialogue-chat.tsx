@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Send } from "lucide-react";
 import {
   type FormEvent,
@@ -64,7 +63,6 @@ async function readJson(
 }
 
 export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) {
-  const router = useRouter();
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [conversationSummary, setConversationSummary] = useState("");
   const [loading, setLoading] = useState(false);
@@ -162,17 +160,21 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
     if (didInitRef.current) return;
     didInitRef.current = true;
 
-    let cancelled = false;
+    // Defer state updates out of the effect body (avoids set-state-in-effect). The
+    // didInitRef guard already makes this run exactly once, including under React
+    // StrictMode's dev double-invoke, so no cancellation flag is needed (cancelling
+    // here would otherwise kill the auto-send before the microtask runs).
     queueMicrotask(() => {
-      if (cancelled) return;
-
       const storage = getBrowserStorage();
       const question = initialQuestion?.trim();
 
       if (question) {
         if (storage) clearStoredConversation(storage);
         setStorageReady(true);
-        router.replace("/dialogue");
+        // Strip the ?question= param without a router navigation (which would remount
+        // this component and drop the optimistic first message). A manual refresh then
+        // lands on a clean /dialogue and won't re-send.
+        window.history.replaceState(null, "", "/dialogue");
         void sendMessage(question);
         return;
       }
@@ -184,11 +186,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
       }
       setStorageReady(true);
     });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [initialQuestion, router, sendMessage]);
+  }, [initialQuestion, sendMessage]);
 
   useEffect(() => {
     if (!storageReady) return;

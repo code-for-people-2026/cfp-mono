@@ -66,8 +66,8 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByPlaceholder(/为什么说软件也是一种服务/)).toBeVisible();
   await expect(page.getByPlaceholder(/工友价代表什么/)).toBeVisible();
   await expect(page.getByRole("button", { name: "开始了解" })).toBeVisible();
-  await expect(page.getByText("知识库即将接入")).toBeVisible();
-  await expect(page.getByText("上线后会基于公开文本回答；当前仍是预览入口")).toBeVisible();
+  await expect(page.getByText("回答基于已经公开的文本")).toBeVisible();
+  await expect(page.getByText("知识库即将接入")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "你们是谁" })).toBeVisible();
   await expect(page.getByRole("button", { name: "为什么还给人民" })).toBeVisible();
   await expect(page.getByRole("button", { name: "协议怎么约束" })).toBeVisible();
@@ -81,7 +81,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   if (viewportWidth >= 768) {
     await expect(
       page.getByRole("main").getByRole("link", { name: "方向地图", exact: true }),
-    ).toHaveAttribute("href", "/map");
+    ).toHaveAttribute("href", "https://wam.codeforpeople.cn/");
   }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "读数据平权宣言", exact: true })).toBeVisible();
@@ -151,7 +151,10 @@ test("homepage presents the public-facing idea and paths to continue", async ({
     "href",
     "/manifesto",
   );
-  await expect(page.getByRole("link", { name: "看 7×7 方向地图" })).toHaveAttribute("href", "/map");
+  await expect(page.getByRole("link", { name: "看 7×7 方向地图" })).toHaveAttribute(
+    "href",
+    "https://wam.codeforpeople.cn/",
+  );
   await expect(page.getByRole("link", { name: "看牛马互助协议" })).toHaveAttribute("href", "/license");
 
   const footer = page.getByRole("contentinfo");
@@ -165,7 +168,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
   await expect(footer.getByRole("link", { name: "方向地图", exact: true })).toHaveAttribute(
     "href",
-    "/map",
+    "https://wam.codeforpeople.cn/",
   );
   await expect(footer.getByRole("link", { name: "协议", exact: true })).toHaveAttribute(
     "href",
@@ -409,15 +412,18 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await expect(page.getByText("劳动议价、时间主权、健康医疗")).toBeVisible();
 });
 
-test("dialogue route stays reachable from the homepage question entry", async ({ page }) => {
+test("dialogue route opens the chat and carries the homepage question over", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("textbox", { name: "想了解的问题" }).fill("想了解方向地图");
   await page.getByRole("button", { name: "开始了解" }).click();
 
-  await expect(page).toHaveURL(/\/dialogue\?question=/);
-  await expect(page.getByRole("heading", { name: "对话入口正在接入" })).toBeVisible();
-  await expect(page.getByText("之后会接入基于项目知识库的问答")).toBeVisible();
-  await expect(page.getByText("回答会以已经公开的文本为依据")).toBeVisible();
+  // Lands on the dialogue chat (the client strips the ?question= param after auto-sending).
+  await expect(page).toHaveURL(/\/dialogue/);
+  // The typed question is carried over and shown as the first user message.
+  await expect(page.getByText("想了解方向地图")).toBeVisible();
+  // The chat composer is available to keep asking, and the old placeholder is gone.
+  await expect(page.getByRole("textbox", { name: "想了解的问题" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "对话入口正在接入" })).toHaveCount(0);
 });
 
 test("payload baseline routes are reachable", async ({ page, request }) => {
