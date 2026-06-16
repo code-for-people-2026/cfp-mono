@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -26,7 +27,7 @@ import {
   loadStoredConversation,
   saveStoredConversation,
 } from "@/lib/chat/localConversation";
-import { dialogueEntry, dialogueSuggestions } from "@/content/site";
+import { brandAssets, dialogueEntry, dialogueSuggestions } from "@/content/site";
 
 const MODE = "free" as const;
 
@@ -237,13 +238,20 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
 
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-5 py-6 sm:px-8 lg:px-10">
-      <div className="flex items-center justify-between">
-        <Link
-          href="/"
-          className="inline-flex items-center gap-2 text-sm font-bold text-[var(--muted)] no-underline transition-colors hover:text-[var(--accent)]"
-        >
-          <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-          回到首页
+      <header className="flex h-12 items-center justify-between gap-4">
+        <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
+          <Image
+            src={brandAssets.logoSrc}
+            alt="码成工 logo"
+            width={38}
+            height={38}
+            priority
+            className="h-9 w-9 object-contain"
+          />
+          <span className="flex flex-col">
+            <span className="text-lg font-black leading-none">码成工</span>
+            <span className="mt-1 text-xs font-semibold text-[var(--muted)]">为“工友”敲键盘</span>
+          </span>
         </Link>
         {started ? (
           <button
@@ -255,7 +263,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
             重新开始
           </button>
         ) : null}
-      </div>
+      </header>
 
       <section className="mt-6 flex flex-1 flex-col" aria-label="对话">
         {!started && !loading ? (
@@ -286,7 +294,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
                 key={message.id}
                 className={
                   message.role === "user"
-                    ? "ml-auto max-w-[85%] rounded-2xl rounded-br-md border border-[var(--border)] bg-[var(--accent)] px-4 py-3 text-[var(--paper)] shadow-[var(--shadow-soft)]"
+                    ? "ml-auto max-w-[85%] rounded-2xl rounded-br-md bg-[var(--ink)] px-4 py-3 text-[var(--bg)] shadow-[var(--shadow-soft)]"
                     : "mr-auto max-w-[90%] rounded-2xl rounded-bl-md border border-[var(--border)] bg-[var(--paper)] px-4 py-3 text-[var(--ink)] shadow-[var(--shadow-soft)]"
                 }
               >

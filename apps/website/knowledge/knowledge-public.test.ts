@@ -1,6 +1,21 @@
+import { readFile, readdir } from "node:fs/promises";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { loadKnowledgeBase, loadKnowledgeChunks } from "@/lib/knowledge/loader";
 import { retrieve } from "@/lib/knowledge/retriever";
+
+async function readAllMarkdown(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = await Promise.all(
+    entries.map(async (entry) => {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) return readAllMarkdown(full);
+      if (entry.name.endsWith(".md")) return [await readFile(full, "utf8")];
+      return [];
+    }),
+  );
+  return files.flat();
+}
 
 describe("website knowledge base", () => {
   it("exposes the public topics without any booth/event-only material", async () => {
@@ -59,6 +74,14 @@ describe("website knowledge base", () => {
       expect(text, `unexpected booth/event term: ${banned}`).not.toContain(banned);
     }
     expect(text).not.toContain("source-booth-conversation-notes");
+  });
+
+  it("has no 小金毛辩论赛 references anywhere in the markdown files (frontmatter included)", async () => {
+    const markdown = (await readAllMarkdown(path.join(process.cwd(), "knowledge"))).join("\n");
+
+    for (const banned of ["小金毛", "辩论", "摆摊"]) {
+      expect(markdown, `unexpected event reference in KB markdown: ${banned}`).not.toContain(banned);
+    }
   });
 
   it("keeps a complete 7x7 core framework source for theory questions", async () => {
