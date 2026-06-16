@@ -1,11 +1,10 @@
 import Image from "next/image";
 import Link from "next/link";
-import { siBilibili, siKuaishou, siTiktok } from "simple-icons";
+import { siBilibili, siGithub, siKuaishou, siTiktok } from "simple-icons";
 import {
   ArrowRight,
   Factory,
   FileText,
-  Github,
   HeartHandshake,
   Map,
   MonitorPlay,
@@ -18,7 +17,6 @@ import {
   continueReads,
   directionApproach,
   directionMapHref,
-  formFallbackHref,
   hero,
   heroFlow,
   identityCards,
@@ -30,14 +28,6 @@ import {
   whyNowPoints,
 } from "@/content/site";
 import { DialogueEntry } from "./shared/dialogue-entry";
-
-function getTencentFormHref() {
-  return process.env.NEXT_PUBLIC_TENCENT_FORM_URL || formFallbackHref;
-}
-
-function resolveHref(href: string, formHref: string) {
-  return href === formFallbackHref ? formHref : href;
-}
 
 function isExternalHref(href: string) {
   return href.startsWith("http");
@@ -66,30 +56,40 @@ function getSocialIcon(label: string) {
   return null;
 }
 
+// Uniform brand icon: all channels use a filled simple-icons glyph in one accent color,
+// so the chips look consistent regardless of which brand it is.
+function BrandIcon({ path, testId }: { path: string; testId?: string }) {
+  return (
+    <span className="grid h-6 w-6 place-items-center border border-[var(--tag-border)] bg-[var(--tag-bg)] text-[var(--accent)]">
+      <svg
+        aria-hidden="true"
+        data-testid={testId}
+        viewBox="0 0 24 24"
+        className="h-3.5 w-3.5 fill-current"
+      >
+        <path d={path} />
+      </svg>
+    </span>
+  );
+}
+
+const socialChipClass =
+  "flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]";
+
 function SocialChannelEntry({ channel }: { channel: (typeof socialChannels)[number] }) {
   const icon = getSocialIcon(channel.label);
 
   return (
-    <details className="footer-social-entry relative">
-      <summary
+    <div className="footer-social-entry group relative">
+      <button
+        type="button"
         aria-label={`${channel.label}二维码`}
         data-testid={`footer-social-trigger-${channel.label}`}
-        className="flex cursor-pointer list-none items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] [&::-webkit-details-marker]:hidden"
+        className={socialChipClass}
       >
-        <span className="grid h-6 w-6 place-items-center border border-[var(--tag-border)] bg-[var(--tag-bg)] text-[var(--accent)]">
-          {icon ? (
-            <svg
-              aria-hidden="true"
-              data-testid={`footer-social-icon-${channel.label}`}
-              viewBox="0 0 24 24"
-              className="h-3.5 w-3.5 fill-current"
-            >
-              <path d={icon.path} />
-            </svg>
-          ) : null}
-        </span>
+        {icon ? <BrandIcon path={icon.path} testId={`footer-social-icon-${channel.label}`} /> : null}
         <span>{channel.label}</span>
-      </summary>
+      </button>
       <div
         data-testid={`footer-social-popover-${channel.label}`}
         className="footer-social-popover absolute bottom-full left-0 z-30 mb-3 w-44 border border-[var(--border)] bg-[var(--paper)] p-3 shadow-[var(--shadow-soft)] transition"
@@ -116,7 +116,7 @@ function SocialChannelEntry({ channel }: { channel: (typeof socialChannels)[numb
         <p className="mt-3 text-xs font-bold text-[var(--accent)]">{channel.status}</p>
         <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{channel.description}</p>
       </div>
-    </details>
+    </div>
   );
 }
 
@@ -159,7 +159,7 @@ function SiteFooter() {
       className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]"
     >
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
-        <div className="grid gap-10 lg:grid-cols-[1.1fr_0.7fr_1fr_0.7fr]">
+        <div className="grid gap-10 lg:grid-cols-[1.2fr_0.7fr_1fr]">
           <div>
             <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
               <Image
@@ -219,30 +219,24 @@ function SiteFooter() {
                 href={organizationGithubHref}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
+                className={socialChipClass}
               >
-                <Github aria-hidden="true" className="h-4 w-4 shrink-0" />
+                <BrandIcon path={siGithub.path} />
                 <span>GitHub</span>
               </a>
             </div>
           </div>
-
-          <div>
-            <h2 className="text-sm font-black text-[var(--ink)]">合规信息</h2>
-            <div className="mt-4 space-y-3 text-sm font-semibold text-[var(--muted)]">
-              <p>备案信息待补充</p>
-              <p>© 2026 码成工</p>
-            </div>
-          </div>
         </div>
+
+        <p className="mt-10 border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted)]">
+          © 2026 码成工
+        </p>
       </div>
     </footer>
   );
 }
 
 export default function HomePage() {
-  const formHref = getTencentFormHref();
-
   return (
     <>
       <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
@@ -462,25 +456,15 @@ export default function HomePage() {
             <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
               继续阅读
             </h2>
-            <div>
-              <p className="text-base leading-8 text-[var(--muted)]">
-                如果你想继续了解，可以按这三条线读下去；想加入或提出批评，放在最后，不打断第一次访问者。
-              </p>
-              {formHref === formFallbackHref ? (
-                <p
-                  id="tencent-form-pending"
-                  className="mt-4 border border-[var(--border)] bg-[var(--paper)] px-4 py-3 text-sm leading-6 text-[var(--muted)]"
-                >
-                  腾讯表单入口还在准备中。这一版先把入口目的说清楚，不伪装成已经上线的通道。
-                </p>
-              ) : null}
-            </div>
+            <p className="text-base leading-8 text-[var(--muted)]">
+              想更深入了解，可以顺着这三份已经公开的文本读下去：宣言讲为什么，方向地图讲做什么，协议讲怎么约束自己。
+            </p>
           </div>
 
-          <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-14 grid gap-5 md:grid-cols-3">
             {continueReads.map((item, index) => {
               const Icon = readIcons[index];
-              const href = resolveHref(item.href, formHref);
+              const href = item.href;
               const external = isExternalHref(href);
               return (
                 <Link

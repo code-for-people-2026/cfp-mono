@@ -113,8 +113,7 @@ a:not([class]) {
 }
 
 .footer-social-entry:hover .footer-social-popover,
-.footer-social-entry:focus-within .footer-social-popover,
-.footer-social-entry[open] .footer-social-popover {
+.footer-social-entry:focus-within .footer-social-popover {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
