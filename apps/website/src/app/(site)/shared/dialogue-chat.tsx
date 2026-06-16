@@ -69,7 +69,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
   const [notice, setNotice] = useState("");
   const [storageReady, setStorageReady] = useState(false);
   const [composerValue, setComposerValue] = useState("");
-  const conversationEndRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const didInitRef = useRef(false);
 
   const started = messages.length > 0;
@@ -173,8 +173,8 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
         setStorageReady(true);
         // Strip the ?question= param without a router navigation (which would remount
         // this component and drop the optimistic first message). A manual refresh then
-        // lands on a clean /dialogue and won't re-send.
-        window.history.replaceState(null, "", "/dialogue");
+        // lands on a clean /chat and won't re-send.
+        window.history.replaceState(null, "", "/chat");
         void sendMessage(question);
         return;
       }
@@ -202,10 +202,14 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
     saveStoredConversation(storage, { mode: MODE, messages, conversationSummary });
   }, [conversationSummary, messages, storageReady]);
 
+  // Keep the newest message (and the "正在组织回答…" indicator) in view by scrolling the
+  // message area — not the window — to the bottom. The composer lives outside this area,
+  // so nothing is ever hidden behind it.
   useEffect(() => {
     if (!started) return;
-    conversationEndRef.current?.scrollIntoView?.({ behavior: "smooth", block: "end" });
-  }, [loading, notice, messages.length, started]);
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [loading, notice, messages, started]);
 
   function resetConversation() {
     const hasUserMessages = messages.some((message) => message.role === "user");
@@ -235,8 +239,8 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-3xl flex-col px-5 py-6 sm:px-8 lg:px-10">
-      <header className="flex h-12 items-center justify-between gap-4">
+    <div className="mx-auto flex h-[100dvh] w-full max-w-3xl flex-col px-5 sm:px-8 lg:px-10">
+      <header className="flex h-16 shrink-0 items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
           <Image
             src={brandAssets.logoSrc}
@@ -263,9 +267,9 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
         ) : null}
       </header>
 
-      <section className="mt-6 flex flex-1 flex-col" aria-label="对话">
+      <div ref={scrollRef} className="mt-2 flex-1 overflow-y-auto" aria-label="对话">
         {!started && !loading ? (
-          <div className="flex flex-1 flex-col justify-center py-10 text-center">
+          <div className="flex h-full flex-col justify-center py-10 text-center">
             <h1 className="text-3xl font-black leading-tight tracking-normal sm:text-4xl">
               从一个问题开始了解码成工
             </h1>
@@ -286,7 +290,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
             </div>
           </div>
         ) : (
-          <div className="flex flex-1 flex-col gap-5">
+          <div className="flex flex-col gap-5 py-2 pb-4">
             {messages.map((message) => (
               <article
                 key={message.id}
@@ -330,12 +334,11 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
                 {notice}
               </p>
             ) : null}
-            <div ref={conversationEndRef} aria-hidden="true" />
           </div>
         )}
-      </section>
+      </div>
 
-      <div className="sticky bottom-0 z-10 mt-6 pb-4 pt-2">
+      <div className="shrink-0 pb-4 pt-3">
         <form
           onSubmit={submitComposer}
           className="overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--composer)] shadow-[var(--shadow-large)] backdrop-blur-xl transition-colors focus-within:border-[var(--ring)] focus-within:ring-4 focus-within:ring-[var(--ring-soft)]"

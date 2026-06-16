@@ -412,13 +412,13 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await expect(page.getByText("劳动议价、时间主权、健康医疗")).toBeVisible();
 });
 
-test("dialogue route opens the chat and carries the homepage question over", async ({ page }) => {
+test("chat route opens from the homepage question entry and carries it over", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("textbox", { name: "想了解的问题" }).fill("想了解方向地图");
   await page.getByRole("button", { name: "开始了解" }).click();
 
-  // Lands on the dialogue chat (the client strips the ?question= param after auto-sending).
-  await expect(page).toHaveURL(/\/dialogue/);
+  // Lands on the chat (the client strips the ?question= param after auto-sending).
+  await expect(page).toHaveURL(/\/chat/);
   // The typed question is carried over and shown as the first user message.
   await expect(page.getByText("想了解方向地图")).toBeVisible();
   // The chat composer is available to keep asking, and the old placeholder is gone.
