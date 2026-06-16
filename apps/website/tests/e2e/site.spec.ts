@@ -133,7 +133,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByRole("heading", { name: "继续阅读" })).toBeVisible();
   await expect(page.getByText("看 7×7 方向地图")).toBeVisible();
   await expect(page.getByText("看牛马互助协议")).toBeVisible();
-  await expect(page.getByText("一起做或提出批评")).toBeVisible();
+  await expect(page.getByText("一起做或提出批评")).toHaveCount(0);
 
   await expect(page.getByRole("main").getByRole("heading", { name: "关注后续" })).toHaveCount(0);
   await expect(page.getByAltText("码成工 logo")).toHaveAttribute(
@@ -186,15 +186,13 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer.getByTestId("footer-social-icon-B站")).toBeVisible();
   await expect(footer.getByTestId("footer-social-popover-抖音")).toBeHidden();
   await footer.getByTestId("footer-social-trigger-抖音").scrollIntoViewIfNeeded();
-  await footer.getByTestId("footer-social-trigger-抖音").click();
+  await footer.getByTestId("footer-social-trigger-抖音").hover();
   await expect(footer.getByTestId("footer-social-popover-抖音")).toBeVisible();
   await expect(footer.getByAltText("抖音二维码")).toHaveAttribute("src", /douyin-qr\.jpg/);
-  await footer.getByTestId("footer-social-trigger-快手").scrollIntoViewIfNeeded();
-  await footer.getByTestId("footer-social-trigger-快手").click();
+  await footer.getByTestId("footer-social-trigger-快手").hover();
   await expect(footer.getByTestId("footer-social-popover-快手")).toBeVisible();
   await expect(footer.getByAltText("快手二维码")).toHaveAttribute("src", /kuaishou-qr\.jpg/);
-  await footer.getByTestId("footer-social-trigger-B站").scrollIntoViewIfNeeded();
-  await footer.getByTestId("footer-social-trigger-B站").click();
+  await footer.getByTestId("footer-social-trigger-B站").hover();
   await expect(footer.getByTestId("footer-social-popover-B站")).toBeVisible();
   await expect(footer.locator('[aria-label="B站二维码待补充"]')).toBeVisible();
   await expect(footer.getByRole("link", { name: "GitHub", exact: true })).toHaveAttribute(
@@ -209,7 +207,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
     "rel",
     /noreferrer/,
   );
-  await expect(footer.getByText("备案信息待补充")).toBeVisible();
+  await expect(footer.getByText("备案信息待补充")).toHaveCount(0);
   await expect(footer.getByText("© 2026 码成工")).toBeVisible();
   await expect(footer.locator('a[href*="beian"]')).toHaveCount(0);
 });

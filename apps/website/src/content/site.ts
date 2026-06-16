@@ -1,5 +1,3 @@
-export const formFallbackHref = "#tencent-form-pending";
-
 // 7×7 方向地图目前是独立部署的 webapp（仓库里另一个 app，线上地址 https://wam.codeforpeople.cn/），
 // 它提供交互式 7×7 地图并引导用户填写真实需求。官网里与 7×7 地图有关的入口暂时外链到它；
 // 之后也许会把它迁移进官网项目，届时再改回站内路由。站内仍保留 /map 文档页作为纯文本版方向地图。
@@ -171,11 +169,6 @@ export const continueReads = [
     label: "看牛马互助协议",
     href: "/license",
     description: "看工友价、无 exit、收入差距和公开修正，理解我们如何约束自己。",
-  },
-  {
-    label: "一起做或提出批评",
-    href: formFallbackHref,
-    description: "如果你想加入、介绍场景，或者认真挑刺，可以留下线索；入口接好前先不伪装成已上线。",
   },
 ];
 
