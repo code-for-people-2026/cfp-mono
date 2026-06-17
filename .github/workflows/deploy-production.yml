@@ -28,7 +28,6 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-          NEXT_PUBLIC_MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
         run: |
           missing=()
           for name in \
@@ -41,8 +40,7 @@ jobs:
             ECS_USER \
             DATABASE_URL \
             PAYLOAD_SECRET \
-            NEXT_PUBLIC_SITE_URL \
-            NEXT_PUBLIC_MINIAPP_H5_URL
+            NEXT_PUBLIC_SITE_URL
           do
             if [ -z "${!name}" ]; then
               missing+=("$name")
@@ -67,7 +65,6 @@ jobs:
       ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
       IMAGE_TAG: ${{ github.sha }}
       SITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-site:${{ github.sha }}
-      MINIAPP_H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-miniapp-h5:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -94,9 +91,7 @@ jobs:
       - name: Build and push images
         run: |
           docker build -f apps/site/Dockerfile -t "$SITE_IMAGE" .
-          docker build -f apps/miniapp-fe/Dockerfile -t "$MINIAPP_H5_IMAGE" .
           docker push "$SITE_IMAGE"
-          docker push "$MINIAPP_H5_IMAGE"
 
       - name: Write SSH key
         run: |
@@ -111,7 +106,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-          NEXT_PUBLIC_MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
+          ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
         run: |
           cat > .env.production.remote <<EOF
           DATABASE_URL=$DATABASE_URL
@@ -120,23 +117,21 @@ jobs:
           PAYLOAD_DB_PUSH=false
           ALLOW_ADMIN_BOOTSTRAP=false
           NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
-          NEXT_PUBLIC_MINIAPP_H5_URL=$NEXT_PUBLIC_MINIAPP_H5_URL
-          MINIAPP_H5_ORIGIN=$NEXT_PUBLIC_MINIAPP_H5_URL
           EOF
 
           cat > .env.images.remote <<EOF
           SITE_IMAGE=$SITE_IMAGE
-          MINIAPP_H5_IMAGE=$MINIAPP_H5_IMAGE
           EOF
 
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+            "printf '%s' '$ACR_PASSWORD' | docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker compose pull && docker compose up -d"
 
       - name: Smoke test
         env:
           SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-          MINIAPP_H5_URL: ${{ secrets.NEXT_PUBLIC_MINIAPP_H5_URL }}
         run: bash deploy/smoke-test.sh
