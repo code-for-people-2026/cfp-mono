@@ -353,7 +353,7 @@ export function DialogueChat({
           <div className="grid grid-cols-[minmax(0,1fr)_48px] items-end gap-3 p-4">
             <textarea
               aria-label="想了解的问题"
-              className="max-h-[160px] min-h-[44px] w-full resize-none border-0 bg-transparent p-1 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75"
+              className="max-h-[160px] min-h-[68px] w-full resize-none border-0 bg-transparent p-1 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75 sm:min-h-[44px]"
               maxLength={1000}
               rows={1}
               placeholder={ui.chatPlaceholder}
