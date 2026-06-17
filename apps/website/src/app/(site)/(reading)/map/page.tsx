@@ -1,4 +1,4 @@
-import { DocumentPage } from "../shared/document-page";
+import { DocumentPage } from "../../shared/document-page";
 import { map } from "@/content/site";
 
 // 纯文本版 7×7 方向地图。当前站内没有任何入口指向它：导航、页脚和「继续阅读」里的

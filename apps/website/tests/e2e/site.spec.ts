@@ -432,3 +432,13 @@ test("payload baseline routes are reachable", async ({ page, request }) => {
   expect(adminResponse?.status()).toBeLessThan(500);
   await expect(page.locator("body")).not.toContainText("Application error");
 });
+
+test("footer renders on reading pages but not on the chat page", async ({ page }) => {
+  for (const path of ["/", "/manifesto", "/license", "/map"]) {
+    await page.goto(path);
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+  }
+
+  await page.goto("/chat");
+  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+});
