@@ -2,44 +2,23 @@ import Image from "next/image";
 import Link from "next/link";
 import { siBilibili, siGithub, siKuaishou, siTiktok } from "simple-icons";
 import { MonitorPlay } from "lucide-react";
-import { brandAssets, directionMapHref, socialChannels } from "@/content/site";
+import { getFooter, getSiteSettings } from "@/lib/content";
+import type { FooterContent, SocialChannelIcon } from "@/lib/content/types";
 
-const footerLinks = [
-  { label: "首页", href: "/" },
-  { label: "数据平权宣言", href: "/manifesto" },
-  { label: "牛马能力剥夺矩阵", href: directionMapHref },
-  { label: "牛马互助协议", href: "/license" },
-];
-const organizationGithubHref = "https://github.com/code-for-people-2026";
+const iconByKey: Record<SocialChannelIcon, { path: string }> = {
+  douyin: siTiktok,
+  kuaishou: siKuaishou,
+  bilibili: siBilibili,
+};
 
 function isExternalHref(href: string) {
   return href.startsWith("http");
 }
 
-function getSocialIcon(label: string) {
-  if (label === "抖音") {
-    return siTiktok;
-  }
-  if (label === "快手") {
-    return siKuaishou;
-  }
-  if (label === "B站") {
-    return siBilibili;
-  }
-  return null;
-}
-
-// Uniform brand icon: all channels use a filled simple-icons glyph in one accent color,
-// so the chips look consistent regardless of which brand it is.
 function BrandIcon({ path, testId }: { path: string; testId?: string }) {
   return (
     <span className="grid h-6 w-6 place-items-center border border-[var(--tag-border)] bg-[var(--tag-bg)] text-[var(--accent)]">
-      <svg
-        aria-hidden="true"
-        data-testid={testId}
-        viewBox="0 0 24 24"
-        className="h-3.5 w-3.5 fill-current"
-      >
+      <svg aria-hidden="true" data-testid={testId} viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">
         <path d={path} />
       </svg>
     </span>
@@ -49,8 +28,8 @@ function BrandIcon({ path, testId }: { path: string; testId?: string }) {
 const socialChipClass =
   "flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]";
 
-function SocialChannelEntry({ channel }: { channel: (typeof socialChannels)[number] }) {
-  const icon = getSocialIcon(channel.label);
+function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][number] }) {
+  const icon = iconByKey[channel.iconKey];
 
   return (
     <div className="footer-social-entry group relative">
@@ -68,10 +47,10 @@ function SocialChannelEntry({ channel }: { channel: (typeof socialChannels)[numb
         className="footer-social-popover absolute bottom-full left-0 z-30 mb-3 w-44 border border-[var(--border)] bg-[var(--paper)] p-3 shadow-[var(--shadow-soft)] transition"
       >
         <div className="mx-auto grid h-24 w-24 place-items-center bg-white p-2">
-          {channel.qrSrc ? (
+          {channel.qrPath ? (
             <Image
-              src={channel.qrSrc}
-              alt={`${channel.label}二维码`}
+              src={channel.qrPath}
+              alt={channel.qrAlt ?? `${channel.label}二维码`}
               width={160}
               height={160}
               className="h-full w-full object-contain"
@@ -93,39 +72,35 @@ function SocialChannelEntry({ channel }: { channel: (typeof socialChannels)[numb
   );
 }
 
-export function SiteFooter() {
+export async function SiteFooter() {
+  const [footer, settings] = await Promise.all([getFooter(), getSiteSettings()]);
+  const { brand } = settings;
+
   return (
-    <footer
-      id="follow"
-      className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]"
-    >
+    <footer id="follow" className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.7fr_1fr]">
           <div>
             <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
               <Image
-                src={brandAssets.logoSrc}
+                src={brand.logoPath}
                 alt="码成工页脚标识"
                 width={44}
                 height={44}
                 className="h-10 w-10 object-contain"
               />
               <span className="flex flex-col">
-                <span className="text-lg font-black leading-none">码成工</span>
-                <span className="mt-1 text-xs font-semibold text-[var(--muted)]">
-                  为“工友”敲键盘
-                </span>
+                <span className="text-lg font-black leading-none">{brand.wordmark}</span>
+                <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
               </span>
             </Link>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted)]">
-              软件也是一种服务。我们把理念、协议和方向公开出来，继续学习如何把技术能力还给真实生活。
-            </p>
+            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted)]">{footer.description}</p>
           </div>
 
           <nav aria-label="页脚导航">
-            <h2 className="text-sm font-black text-[var(--ink)]">网站链接</h2>
+            <h2 className="text-sm font-black text-[var(--ink)]">{footer.linksHeading}</h2>
             <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted)]">
-              {footerLinks.map((link) =>
+              {footer.footerLinks.map((link) =>
                 isExternalHref(link.href) ? (
                   <a
                     key={link.href}
@@ -150,27 +125,28 @@ export function SiteFooter() {
           </nav>
 
           <div>
-            <h2 className="text-sm font-black text-[var(--ink)]">公开渠道</h2>
+            <h2 className="text-sm font-black text-[var(--ink)]">{footer.channelsHeading}</h2>
             <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--muted)]">
-              {socialChannels.map((channel) => (
+              {footer.channels.map((channel) => (
                 <SocialChannelEntry key={channel.label} channel={channel} />
               ))}
               <a
                 aria-label="GitHub"
-                href={organizationGithubHref}
+                href={settings.githubUrl}
                 target="_blank"
                 rel="noreferrer"
                 className={socialChipClass}
               >
                 <BrandIcon path={siGithub.path} />
-                <span>GitHub</span>
+                <span>{footer.githubLabel}</span>
               </a>
             </div>
           </div>
         </div>
 
         <p className="mt-10 border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted)]">
-          © 2026 码成工
+          {footer.beian ? `${footer.beian} · ` : ""}
+          {footer.copyright}
         </p>
       </div>
     </footer>

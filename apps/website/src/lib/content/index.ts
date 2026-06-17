@@ -1,5 +1,5 @@
 import "server-only";
-import { cacheLife, cacheTag } from "next/cache";
+import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
 import type {
@@ -55,28 +55,20 @@ function block(value: unknown, key: string) {
   return { heading: String(g.heading ?? ""), intro: String(g.intro ?? ""), items: cards(g[key]) };
 }
 
-export async function getHomepage(): Promise<HomepageContent> {
-  "use cache";
-  cacheTag("payload:homepage");
-  cacheLife("max");
-
+async function fetchHomepage(): Promise<HomepageContent> {
   const payload = await client();
   const data = (await payload.findGlobal({ slug: "homepage" })) as Raw;
-  const settings = await getSiteSettings();
-
   const lifeScenesGroup = (data.lifeScenes ?? {}) as Raw;
   const continueGroup = (data.continueReads ?? {}) as Raw;
+
   const continueItems: ContinueRead[] = (Array.isArray(continueGroup.items) ? continueGroup.items : []).map(
     (item) => {
       const it = item as Raw;
       const target = String(it.target ?? "manifesto");
-      const href =
-        target === "map" ? settings.directionMapUrl : target === "license" ? "/license" : "/manifesto";
       return {
         label: String(it.label ?? ""),
         description: String(it.description ?? ""),
-        href,
-        external: href.startsWith("http"),
+        target: (target === "map" || target === "license" ? target : "manifesto") as ContinueRead["target"],
       };
     },
   );
@@ -112,46 +104,11 @@ export async function getHomepage(): Promise<HomepageContent> {
   };
 }
 
-export async function getChatPage(): Promise<ChatPageContent> {
-  "use cache";
-  cacheTag("payload:chat-page");
-  cacheLife("max");
-  const payload = await client();
-  const data = (await payload.findGlobal({ slug: "chat-page" })) as Raw;
-  return { heading: String(data.heading ?? ""), intro: String(data.intro ?? "") };
-}
-
-export async function getUiStrings(): Promise<UiStrings> {
-  "use cache";
-  cacheTag("payload:ui-strings");
-  cacheLife("max");
-  const payload = await client();
-  return (await payload.findGlobal({ slug: "ui-strings" })) as unknown as UiStrings;
-}
-
-export async function getSiteSettings(): Promise<SiteSettings> {
-  "use cache";
-  cacheTag("payload:site-settings");
-  cacheLife("max");
-  const payload = await client();
-  return (await payload.findGlobal({ slug: "site-settings" })) as unknown as SiteSettings;
-}
-
-export async function getFooter(): Promise<FooterContent> {
-  "use cache";
-  cacheTag("payload:footer");
-  cacheLife("max");
-  const payload = await client();
-  return (await payload.findGlobal({ slug: "footer" })) as unknown as FooterContent;
-}
-
-export async function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
-  "use cache";
-  cacheTag(`payload:doc:${slug}`);
-  cacheLife("max");
+async function fetchDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
   const payload = await client();
   const result = await payload.find({ collection: "site-documents", where: { slug: { equals: slug } }, limit: 1 });
   const doc = (result.docs[0] ?? {}) as Raw;
+  const full = sections(doc.fullSections);
   return {
     slug,
     eyebrow: String(doc.eyebrow ?? ""),
@@ -163,6 +120,43 @@ export async function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocum
     sections: sections(doc.sections),
     closing: (doc.closing as string) || undefined,
     fullTitle: (doc.fullTitle as string) || undefined,
-    fullSections: sections(doc.fullSections).length ? sections(doc.fullSections) : undefined,
+    fullSections: full.length ? full : undefined,
   };
+}
+
+async function fetchGlobal<T>(slug: string): Promise<T> {
+  const payload = await client();
+  return (await payload.findGlobal({ slug })) as unknown as T;
+}
+
+export const getHomepage = unstable_cache(fetchHomepage, ["homepage"], {
+  tags: ["payload:homepage"],
+  revalidate: false,
+});
+
+export const getChatPage = unstable_cache(() => fetchGlobal<ChatPageContent>("chat-page"), ["chat-page"], {
+  tags: ["payload:chat-page"],
+  revalidate: false,
+});
+
+export const getUiStrings = unstable_cache(() => fetchGlobal<UiStrings>("ui-strings"), ["ui-strings"], {
+  tags: ["payload:ui-strings"],
+  revalidate: false,
+});
+
+export const getSiteSettings = unstable_cache(() => fetchGlobal<SiteSettings>("site-settings"), ["site-settings"], {
+  tags: ["payload:site-settings"],
+  revalidate: false,
+});
+
+export const getFooter = unstable_cache(() => fetchGlobal<FooterContent>("footer"), ["footer"], {
+  tags: ["payload:footer"],
+  revalidate: false,
+});
+
+export function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
+  return unstable_cache(() => fetchDocument(slug), ["site-document", slug], {
+    tags: [`payload:doc:${slug}`],
+    revalidate: false,
+  })();
 }

@@ -3,9 +3,15 @@
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { type FormEvent, useEffect, useState, useTransition } from "react";
-import { dialogueEntry, dialogueSuggestions } from "@/content/site";
+import type { DialogueEntry as DialogueEntryContent, DialogueSuggestion } from "@/lib/content/types";
 
-export function DialogueEntry() {
+export function DialogueEntry({
+  entry,
+  suggestions,
+}: {
+  entry: DialogueEntryContent;
+  suggestions: DialogueSuggestion[];
+}) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -36,14 +42,14 @@ export function DialogueEntry() {
         <div className="grid min-h-[148px] grid-cols-[minmax(0,1fr)_48px] gap-4 p-5 sm:p-6">
           <div>
             <p className="mb-3 text-sm font-semibold text-[var(--muted)]">
-              {dialogueEntry.prompt}
+              {entry.prompt}
             </p>
             <textarea
               aria-label="想了解的问题"
               className="min-h-[72px] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75"
               maxLength={400}
               onChange={(event) => setValue(event.target.value)}
-              placeholder={dialogueEntry.placeholder}
+              placeholder={entry.placeholder}
               rows={3}
               suppressHydrationWarning
               value={value}
@@ -51,7 +57,7 @@ export function DialogueEntry() {
           </div>
           <button
             type="submit"
-            aria-label={dialogueEntry.submitLabel}
+            aria-label={entry.submitLabel}
             aria-busy={isPending}
             className="mt-auto grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-[var(--bg)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"
             disabled={!trimmed || isPending}
@@ -66,7 +72,7 @@ export function DialogueEntry() {
 
         <div className="border-t border-[var(--border)] bg-[var(--composer-footer)] px-4 py-4">
           <div className="flex flex-wrap justify-center gap-2">
-            {dialogueSuggestions.map((suggestion) => (
+            {suggestions.map((suggestion) => (
               <button
                 key={suggestion.label}
                 type="button"
@@ -78,7 +84,7 @@ export function DialogueEntry() {
             ))}
           </div>
           <p className="mx-auto mt-3 max-w-xl text-center text-xs leading-5 text-[var(--muted)]">
-            {dialogueEntry.note}
+            {entry.note}
           </p>
         </div>
       </form>

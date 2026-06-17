@@ -1,23 +1,26 @@
 import type { Metadata, Viewport } from "next";
-import { siteMetadata } from "@/content/site";
+import { getSiteSettings } from "@/lib/content";
 import "../globals.css";
 
-export const metadata: Metadata = {
-  title: siteMetadata.title,
-  description: siteMetadata.description,
-  openGraph: {
-    title: siteMetadata.title,
-    description: siteMetadata.description,
-    siteName: "工友敲键盘",
-    locale: "zh_CN",
-    type: "website",
-  },
-  twitter: {
-    card: "summary",
-    title: siteMetadata.title,
-    description: siteMetadata.description,
-  },
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const { shareTitle, shareDescription } = await getSiteSettings();
+  return {
+    title: shareTitle,
+    description: shareDescription,
+    openGraph: {
+      title: shareTitle,
+      description: shareDescription,
+      siteName: "工友敲键盘",
+      locale: "zh_CN",
+      type: "website",
+    },
+    twitter: {
+      card: "summary",
+      title: shareTitle,
+      description: shareDescription,
+    },
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",

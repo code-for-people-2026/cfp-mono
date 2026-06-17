@@ -46,8 +46,11 @@ export const Footer: GlobalConfig = {
       ],
     },
     { name: "githubLabel", label: "GitHub 文字", type: "text", required: true },
-    { name: "complianceHeading", label: "「合规信息」标题", type: "text", required: true },
-    { name: "beian", label: "备案信息", type: "text", required: true },
+    {
+      name: "beian",
+      label: "备案信息（留空则不显示，备案后填）",
+      type: "text",
+    },
     { name: "copyright", label: "版权", type: "text", required: true },
   ],
 };
