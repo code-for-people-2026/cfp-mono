@@ -4,6 +4,11 @@ import { buildConfig } from "payload";
 import { CMSAdmins } from "./src/payload/collections/CMSAdmins";
 import { FormLinks } from "./src/payload/collections/FormLinks";
 import { SiteDocuments } from "./src/payload/collections/SiteDocuments";
+import { ChatPage } from "./src/payload/globals/ChatPage";
+import { Footer } from "./src/payload/globals/Footer";
+import { Homepage } from "./src/payload/globals/Homepage";
+import { SiteSettings } from "./src/payload/globals/SiteSettings";
+import { UiStrings } from "./src/payload/globals/UiStrings";
 
 const requiresProductionEnv =
   process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -50,4 +55,5 @@ export default buildConfig({
     },
   },
   collections: [CMSAdmins, SiteDocuments, FormLinks],
+  globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
 });
