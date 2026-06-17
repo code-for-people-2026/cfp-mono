@@ -9,6 +9,7 @@ import { Footer } from "./src/payload/globals/Footer";
 import { Homepage } from "./src/payload/globals/Homepage";
 import { SiteSettings } from "./src/payload/globals/SiteSettings";
 import { UiStrings } from "./src/payload/globals/UiStrings";
+import { seedSiteContent } from "./src/payload/seed";
 
 const requiresProductionEnv =
   process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -56,4 +57,9 @@ export default buildConfig({
   },
   collections: [CMSAdmins, SiteDocuments, FormLinks],
   globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
+  onInit: async (payload) => {
+    if (process.env.PAYLOAD_SEED === "true") {
+      await seedSiteContent(payload);
+    }
+  },
 });
