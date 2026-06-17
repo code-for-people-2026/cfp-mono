@@ -1,6 +1,6 @@
 ---
 id: source-direction-map-handout
-title: 7x7 牛马能力剥夺图表格原材料
+title: 牛马能力剥夺矩阵表格原材料
 visibility: public
 status: approved
 kind: source
@@ -18,7 +18,7 @@ tags:
   - 原材料
 ---
 
-# 牛马能力剥夺图
+# 牛马能力剥夺矩阵
 
 7 类工友乘以 7 样能力，得到 49 个方向。它不是“做哪个最好”，而是提醒大家：哪些人、哪些被剥夺的能力，还没人认真看过。
 

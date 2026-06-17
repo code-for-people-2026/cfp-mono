@@ -70,8 +70,8 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("知识库即将接入")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "你们是谁" })).toBeVisible();
   await expect(page.getByRole("button", { name: "为什么还给人民" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "协议怎么约束" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "7×7 怎么回事" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "牛马互助协议怎么约束" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "牛马能力剥夺矩阵怎么回事" })).toBeVisible();
   await expect(page.getByRole("button", { name: "我有具体麻烦" })).toHaveCount(0);
   await expect(page.getByText("今天有什么具体麻烦，想让软件帮帮忙？")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "服务谁" })).toHaveCount(0);
@@ -80,7 +80,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   const viewportWidth = page.viewportSize()?.width ?? 0;
   if (viewportWidth >= 768) {
     await expect(
-      page.getByRole("main").getByRole("link", { name: "方向地图", exact: true }),
+      page.getByRole("main").getByRole("link", { name: "牛马能力剥夺矩阵", exact: true }),
     ).toHaveAttribute("href", "https://wam.codeforpeople.cn/");
   }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
@@ -94,7 +94,9 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("首页先把基本身份讲清楚")).toHaveCount(0);
   await expect(page.getByText("码成工，一个为“工友”敲键盘的组织")).toBeVisible();
   await expect(page.getByText("工友不是一个行业")).toBeVisible();
-  await expect(page.getByText("项目还在筹备中：宣言、协议和方向地图已经公开")).toBeVisible();
+  await expect(
+    page.getByText("项目还在筹备中：数据平权宣言、牛马互助协议和牛马能力剥夺矩阵已经公开"),
+  ).toBeVisible();
   await expect(page.getByText("对话入口之后接入知识库问答")).toHaveCount(0);
 
   await expect(page.getByRole("heading", { name: "规则背后，是红利怎么分" })).toBeVisible();
@@ -112,8 +114,8 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("家庭再生产", { exact: true })).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "我们怎么判断方向" })).toBeVisible();
-  await expect(page.getByText("7×7 是地图，不是承诺")).toBeVisible();
-  await expect(page.getByText("7×7 是一张方向地图")).toBeVisible();
+  await expect(page.getByText("牛马能力剥夺矩阵是检查表，不是承诺")).toBeVisible();
+  await expect(page.getByText("牛马能力剥夺矩阵按 7 类处境")).toBeVisible();
   await expect(page.getByText("先理解问题，再判断什么值得做")).toBeVisible();
   await expect(page.getByText("真正的需求入口以后会在矩阵页展开")).toHaveCount(0);
   await expect(page.getByText("提需求会放到 7×7 矩阵里继续展开")).toHaveCount(0);
@@ -131,7 +133,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("承认还在路上")).toBeVisible();
 
   await expect(page.getByRole("heading", { name: "继续阅读" })).toBeVisible();
-  await expect(page.getByText("看 7×7 方向地图")).toBeVisible();
+  await expect(page.getByText("看牛马能力剥夺矩阵")).toBeVisible();
   await expect(page.getByText("看牛马互助协议")).toBeVisible();
   await expect(page.getByText("一起做或提出批评")).toHaveCount(0);
 
@@ -151,7 +153,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
     "href",
     "/manifesto",
   );
-  await expect(page.getByRole("link", { name: "看 7×7 方向地图" })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: "看牛马能力剥夺矩阵" })).toHaveAttribute(
     "href",
     "https://wam.codeforpeople.cn/",
   );
@@ -162,15 +164,15 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer.getByText("为“工友”敲键盘", { exact: true })).toBeVisible();
   await expect(footer).toHaveAttribute("id", "follow");
   await expect(footer.getByRole("link", { name: "首页", exact: true })).toHaveAttribute("href", "/");
-  await expect(footer.getByRole("link", { name: "宣言", exact: true })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "数据平权宣言", exact: true })).toHaveAttribute(
     "href",
     "/manifesto",
   );
-  await expect(footer.getByRole("link", { name: "方向地图", exact: true })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "牛马能力剥夺矩阵", exact: true })).toHaveAttribute(
     "href",
     "https://wam.codeforpeople.cn/",
   );
-  await expect(footer.getByRole("link", { name: "协议", exact: true })).toHaveAttribute(
+  await expect(footer.getByRole("link", { name: "牛马互助协议", exact: true })).toHaveAttribute(
     "href",
     "/license",
   );
@@ -404,7 +406,7 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await expect(page.getByText("ideal/第一个产品/牛马互助协议.md")).toHaveCount(0);
 
   await page.goto("/map");
-  await expect(page.getByRole("heading", { name: "7×7 方向地图" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "牛马能力剥夺矩阵" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "把“剥夺”作为产品起点。" })).toBeVisible();
   await expect(page.getByText("一产、二产、服务业新蓝领")).toBeVisible();
   await expect(page.getByText("劳动议价、时间主权、健康医疗")).toBeVisible();

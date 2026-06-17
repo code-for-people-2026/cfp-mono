@@ -52,13 +52,13 @@ function SiteHeader() {
       </Link>
       <nav className="hidden items-center gap-7 font-semibold md:flex">
         <Link href="/manifesto" className="no-underline">
-          宣言
+          数据平权宣言
         </Link>
         <a href={directionMapHref} target="_blank" rel="noreferrer" className="no-underline">
-          方向地图
+          牛马能力剥夺矩阵
         </a>
         <Link href="/license" className="no-underline">
-          协议
+          牛马互助协议
         </Link>
       </nav>
     </header>
@@ -231,7 +231,7 @@ export default function HomePage() {
               我们怎么判断方向
             </h2>
             <p className="text-base leading-8 text-[var(--muted)]">
-              7×7 是一张方向地图：横轴看人的处境，纵轴看能力缺口。它提醒我们先理解问题，再判断什么值得做。
+              牛马能力剥夺矩阵按 7 类处境 × 7 种能力展开：横轴看人的处境，纵轴看能力缺口。它提醒我们先理解问题，再判断什么值得做。
             </p>
           </div>
 
@@ -285,7 +285,7 @@ export default function HomePage() {
               继续阅读
             </h2>
             <p className="text-base leading-8 text-[var(--muted)]">
-              想更深入了解，可以顺着这三份已经公开的文本读下去：宣言讲为什么，方向地图讲做什么，协议讲怎么约束自己。
+              想更深入了解，可以顺着这三份已经公开的文本读下去：数据平权宣言讲为什么，牛马能力剥夺矩阵讲做什么，牛马互助协议讲怎么约束自己。
             </p>
           </div>
 

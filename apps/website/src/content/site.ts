@@ -1,6 +1,6 @@
-// 7×7 方向地图目前是独立部署的 webapp（仓库里另一个 app，线上地址 https://wam.codeforpeople.cn/），
-// 它提供交互式 7×7 地图并引导用户填写真实需求。官网里与 7×7 地图有关的入口暂时外链到它；
-// 之后也许会把它迁移进官网项目，届时再改回站内路由。站内仍保留 /map 文档页作为纯文本版方向地图。
+// 牛马能力剥夺矩阵目前是独立部署的 webapp（仓库里另一个 app，线上地址 https://wam.codeforpeople.cn/），
+// 它提供交互式矩阵并引导用户填写真实需求。官网里与这张矩阵有关的入口暂时外链到它；
+// 之后也许会把它迁移进官网项目，届时再改回站内路由。站内仍保留 /map 文档页作为纯文本版。
 export const directionMapHref = "https://wam.codeforpeople.cn/";
 
 export const siteMetadata = {
@@ -42,12 +42,12 @@ export const dialogueSuggestions = [
     value: "“软件也是一种服务，为何不还给人民”这句话怎么理解？",
   },
   {
-    label: "协议怎么约束",
+    label: "牛马互助协议怎么约束",
     value: "牛马互助协议约束了什么？它怎么防止服务变成新的收租？",
   },
   {
-    label: "7×7 怎么回事",
-    value: "7×7 矩阵是怎么回事？它怎么帮助判断接下来做什么？",
+    label: "牛马能力剥夺矩阵怎么回事",
+    value: "牛马能力剥夺矩阵是怎么回事？它怎么帮助判断接下来做什么？",
   },
 ];
 
@@ -76,7 +76,7 @@ export const identityCards = [
   },
   {
     title: "现在到哪一步",
-    body: "项目还在筹备中：宣言、协议和方向地图已经公开，知识库问答正在接入。",
+    body: "项目还在筹备中：数据平权宣言、牛马互助协议和牛马能力剥夺矩阵已经公开，知识库问答正在接入。",
   },
 ];
 
@@ -111,7 +111,7 @@ export const lifeScenesIntro = {
 
 export const directionApproach = [
   {
-    title: "7×7 是地图，不是承诺",
+    title: "牛马能力剥夺矩阵是检查表，不是承诺",
     body: "它帮助我们检查哪些人、哪些能力缺口还没有被软件认真服务，不代表 49 个方向都已经要做。",
   },
   {
@@ -161,7 +161,7 @@ export const continueReads = [
     description: "先理解我们为什么说软件是一种服务，为什么数据红利应该更多回到使用它的人那里。",
   },
   {
-    label: "看 7×7 方向地图",
+    label: "看牛马能力剥夺矩阵",
     href: directionMapHref,
     description: "看我们如何用人群处境和能力缺口检查方向，而不是凭感觉列产品清单。",
   },
@@ -218,7 +218,7 @@ export const deepReads = [
     code: "ATLAS 03 / 7×7",
     href: directionMapHref,
     testId: "deep-read-map",
-    title: "7×7 方向地图",
+    title: "牛马能力剥夺矩阵",
     summary: "用矩阵检查哪些人、哪些日常问题，还没有被软件和 AI 认真服务。",
     foot: "map.json",
   },
@@ -492,17 +492,17 @@ export const license: DocumentContent = {
 };
 
 export const map: DocumentContent = {
-  title: "7×7 方向地图",
+  title: "牛马能力剥夺矩阵",
   eyebrow: "ATLAS 03 / 7×7",
   summary:
-    "方向地图不是产品清单，而是一种检查方法：哪些人、哪些被剥夺的能力，还没有被认真看见。",
+    "牛马能力剥夺矩阵不是产品清单，而是一种检查方法：哪些人、哪些被剥夺的能力，还没有被认真看见。",
   source: "整理自 ideal/初期头脑风暴/code-for-people-direction-matrix.html",
   sections: [
     {
       label: "01",
       heading: "横轴：人在生产关系里的位置。",
       paragraphs: [
-        "这张地图不按行业划分人，而按人在生产关系中的位置划分。",
+        "这张矩阵不按行业划分人，而按人在生产关系中的位置划分。",
         "一产、二产、服务业新蓝领、个体经营、过渡/失业/待业、无偿再生产劳动者、被去技能化的低级白领，构成当前版本的七类服务对象。",
       ],
     },
@@ -524,9 +524,9 @@ export const map: DocumentContent = {
     },
     {
       label: "04",
-      heading: "用 90 天试点校验地图。",
+      heading: "用 90 天试点校验这张矩阵。",
       paragraphs: [
-        "地图不是为了证明哪个产品一定最好，而是提醒我们不要只服务最容易触达的人。",
+        "这张矩阵不是为了证明哪个产品一定最好，而是提醒我们不要只服务最容易触达的人。",
         "90 天试点的目标，是用田野调查、可用原型、50 个种子用户和 continue / pivot / kill 决策，逼迫项目面对真实反馈。",
       ],
     },

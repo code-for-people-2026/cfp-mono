@@ -6,9 +6,9 @@ import { brandAssets, directionMapHref, socialChannels } from "@/content/site";
 
 const footerLinks = [
   { label: "首页", href: "/" },
-  { label: "宣言", href: "/manifesto" },
-  { label: "方向地图", href: directionMapHref },
-  { label: "协议", href: "/license" },
+  { label: "数据平权宣言", href: "/manifesto" },
+  { label: "牛马能力剥夺矩阵", href: directionMapHref },
+  { label: "牛马互助协议", href: "/license" },
 ];
 const organizationGithubHref = "https://github.com/code-for-people-2026";
 
