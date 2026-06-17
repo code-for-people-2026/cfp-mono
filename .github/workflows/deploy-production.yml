@@ -61,9 +61,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-      ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
-      IMAGE_TAG: ${{ github.sha }}
       SITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-site:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -94,9 +91,11 @@ jobs:
           docker push "$SITE_IMAGE"
 
       - name: Write SSH key
+        env:
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/cfp-ecs
+          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
           chmod 600 ~/.ssh/cfp-ecs
 
       - name: Deploy on ECS
@@ -127,8 +126,8 @@ jobs:
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env"
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
-            "printf '%s' '$ACR_PASSWORD' | docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
+          printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+            "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker compose pull && docker compose up -d"
 
       - name: Smoke test

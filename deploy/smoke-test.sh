@@ -14,7 +14,7 @@ check() {
   local attempt=1
   until curl -fsS -m 10 "$url" >/dev/null 2>&1; do
     if [ "$attempt" -ge "$RETRIES" ]; then
-      echo "Smoke test failed: $url did not respond after $((RETRIES * SLEEP))s" >&2
+      echo "Smoke test failed: $url did not respond after $(((RETRIES - 1) * SLEEP))s" >&2
       return 1
     fi
     attempt=$((attempt + 1))
