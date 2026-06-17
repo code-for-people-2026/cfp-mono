@@ -105,7 +105,7 @@ describe("website knowledge base", () => {
       "cattle-license",
     );
     expect(retrieve("7x7 矩阵到底是产品吗", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe(
-      "source-7x7-capability-theory",
+      "direction-map",
     );
     expect(retrieve("给我完整版数据平权宣言", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe(
       "source-data-equality-manifesto",

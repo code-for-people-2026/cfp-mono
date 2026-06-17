@@ -37,7 +37,7 @@ describe("buildChatPrompt", () => {
     });
 
     expect(prompt).toContain("先直接回答用户当前问题");
-    expect(prompt).toContain("自然引向《数据平权宣言》《牛马互助协议》或 7x7 矩阵之一");
+    expect(prompt).toContain("自然引向《数据平权宣言》《牛马互助协议》或 牛马能力剥夺矩阵之一");
     expect(prompt).toContain("只选择最相关的一份核心内容");
     expect(prompt).toContain("不要在每次回答里同时硬塞三份");
     expect(prompt).toContain("理念、为什么做、数据归谁、AI 红利");

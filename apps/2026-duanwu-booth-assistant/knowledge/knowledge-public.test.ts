@@ -51,7 +51,7 @@ describe("public knowledge base", () => {
       .map((chunk) => `${chunk.title}\n${chunk.tags.join(" ")}\n${chunk.text}`)
       .join("\n");
 
-    expect(text).toContain("7x7 矩阵是什么");
+    expect(text).toContain("牛马能力剥夺矩阵是什么");
     expect(text).toContain("横轴为什么是这七类人");
     expect(text).toContain("纵轴为什么是这七种能力");
     expect(text).toContain("马克思");
@@ -68,7 +68,7 @@ describe("public knowledge base", () => {
 
     expect(retrieve("牛马互助协议是不是 1/3 价", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe("cattle-license");
     expect(retrieve("7x7 矩阵到底是产品吗", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe(
-      "source-7x7-capability-theory",
+      "direction-map",
     );
     expect(retrieve("这次摆摊到底图啥", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe("event-positioning");
   });
