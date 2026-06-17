@@ -1,4 +1,4 @@
-import { DocumentPage } from "../shared/document-page";
+import { DocumentPage } from "../../shared/document-page";
 import { manifesto } from "@/content/site";
 
 export default function ManifestoPage() {
