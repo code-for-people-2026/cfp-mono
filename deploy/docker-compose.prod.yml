@@ -7,9 +7,3 @@ services:
     ports:
       - "3300:3300"
 
-  miniapp-h5:
-    image: ${MINIAPP_H5_IMAGE}
-    restart: unless-stopped
-    ports:
-      - "3301:80"
-
