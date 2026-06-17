@@ -96,7 +96,7 @@ jobs:
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
-          printf '%s' "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/cfp-ecs
+          printf '%s\n' "${{ secrets.ECS_SSH_KEY }}" > ~/.ssh/cfp-ecs
           chmod 600 ~/.ssh/cfp-ecs
 
       - name: Deploy on ECS
