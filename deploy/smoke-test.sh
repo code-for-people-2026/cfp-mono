@@ -3,9 +3,27 @@ set -euo pipefail
 
 SITE_URL="${SITE_URL:-http://127.0.0.1:3300}"
 
-curl -fsS "$SITE_URL/" >/dev/null
-curl -fsS "$SITE_URL/api/health" >/dev/null
-curl -fsS "$SITE_URL/api/miniapp/demo" >/dev/null
+# Containers need a few seconds after `up -d` before the app accepts
+# connections, so poll each endpoint with a bounded retry instead of
+# failing on the first refused connection.
+RETRIES="${SMOKE_RETRIES:-30}"
+SLEEP="${SMOKE_SLEEP:-2}"
+
+check() {
+  local url="$1"
+  local attempt=1
+  until curl -fsS -m 10 "$url" >/dev/null 2>&1; do
+    if [ "$attempt" -ge "$RETRIES" ]; then
+      echo "Smoke test failed: $url did not respond after $((RETRIES * SLEEP))s" >&2
+      return 1
+    fi
+    attempt=$((attempt + 1))
+    sleep "$SLEEP"
+  done
+}
+
+check "$SITE_URL/"
+check "$SITE_URL/api/health"
+check "$SITE_URL/api/miniapp/demo"
 
 echo "Smoke tests passed"
-
