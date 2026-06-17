@@ -33,7 +33,7 @@ export type SectionBlock<Item> = { heading: string; intro: string; items: Item[]
 export type LifeScene = Card & { tags: string[] };
 
 export type ContinueReadTarget = "manifesto" | "map" | "license";
-export type ContinueRead = { label: string; description: string; href: string; external: boolean };
+export type ContinueRead = { label: string; description: string; target: ContinueReadTarget };
 
 export type HomepageContent = {
   hero: Hero;
@@ -49,6 +49,15 @@ export type HomepageContent = {
 };
 
 export type ChatPageContent = { heading: string; intro: string };
+
+// Everything the client-side chat component needs (it can't fetch server data itself).
+export type DialogueChatContent = {
+  heading: string;
+  intro: string;
+  suggestions: DialogueSuggestion[];
+  brand: Brand;
+  ui: UiStrings;
+};
 
 export type UiStrings = {
   backToHome: string;
@@ -89,8 +98,7 @@ export type FooterContent = {
     qrAlt?: string;
   }[];
   githubLabel: string;
-  complianceHeading: string;
-  beian: string;
+  beian?: string;
   copyright: string;
 };
 

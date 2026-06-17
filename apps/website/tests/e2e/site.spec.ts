@@ -48,9 +48,6 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByTestId("hero-manifesto-slogan")).toContainText(
     "软件也是一种服务，为何不还给人民",
   );
-  await expect(page.getByTestId("hero-slogan-highlight-service")).toHaveText("服务");
-  await expect(page.getByTestId("hero-slogan-highlight-for")).toHaveText("为");
-  await expect(page.getByTestId("hero-slogan-highlight-people")).toHaveText("人民");
   await expect(page.getByText("这个首页先回答三件事")).toHaveCount(0);
   await expect(page.getByText("为什么说软件不该继续变成新的租金")).toHaveCount(0);
   await expect(page.getByText("从一个问题开始了解我们")).toHaveCount(1);

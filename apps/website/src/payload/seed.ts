@@ -172,8 +172,7 @@ export async function seedSiteContent(payload: Payload) {
         qrAlt: c.qrSrc ? `${c.label}二维码` : undefined,
       })),
       githubLabel: "GitHub",
-      complianceHeading: "合规信息",
-      beian: "备案信息待补充",
+      beian: "", // 备案后在 Payload 填写；留空则页脚不显示
       copyright: "© 2026 码成工",
       _status: "published",
     },

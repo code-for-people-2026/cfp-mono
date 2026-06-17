@@ -1,7 +1,9 @@
 import { DocumentPage } from "../../shared/document-page";
-import { license } from "@/content/site";
+import { getDocument, getUiStrings } from "@/lib/content";
 
-export default function LicensePage() {
-  return <DocumentPage document={license} />;
+export const dynamic = "force-dynamic";
+
+export default async function LicensePage() {
+  const [document, ui] = await Promise.all([getDocument("license"), getUiStrings()]);
+  return <DocumentPage document={document} backToHome={ui.backToHome} />;
 }
-

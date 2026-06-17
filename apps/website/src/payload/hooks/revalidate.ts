@@ -8,10 +8,21 @@ function isPublished(doc: unknown): boolean {
   return Boolean(doc) && (doc as { _status?: string })._status === "published";
 }
 
+// revalidateTag throws when called outside a request/render scope (e.g. during onInit
+// seeding). Swallow that — the seed reads fresh anyway, and real publishes happen in the
+// admin request scope where this works.
+function safeRevalidate(tag: string) {
+  try {
+    revalidateTag(tag, "max");
+  } catch {
+    // not in a revalidation-capable context (seeding / startup)
+  }
+}
+
 export const revalidateGlobal =
   (tag: string): GlobalAfterChangeHook =>
   ({ doc }) => {
-    if (isPublished(doc)) revalidateTag(tag, "max");
+    if (isPublished(doc)) safeRevalidate(tag);
     return doc;
   };
 
@@ -19,7 +30,7 @@ export const revalidateGlobal =
 export const revalidateDocument: CollectionAfterChangeHook = ({ doc }) => {
   if (isPublished(doc)) {
     const slug = (doc as { slug?: string }).slug;
-    if (slug) revalidateTag(`payload:doc:${slug}`, "max");
+    if (slug) safeRevalidate(`payload:doc:${slug}`);
   }
   return doc;
 };

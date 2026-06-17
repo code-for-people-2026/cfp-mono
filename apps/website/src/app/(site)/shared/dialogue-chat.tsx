@@ -26,7 +26,7 @@ import {
   loadStoredConversation,
   saveStoredConversation,
 } from "@/lib/chat/localConversation";
-import { brandAssets, dialogueEntry, dialogueSuggestions } from "@/content/site";
+import type { DialogueChatContent } from "@/lib/content/types";
 
 const MODE = "free" as const;
 
@@ -62,7 +62,14 @@ async function readJson(
   }
 }
 
-export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) {
+export function DialogueChat({
+  initialQuestion,
+  content,
+}: {
+  initialQuestion?: string;
+  content: DialogueChatContent;
+}) {
+  const { brand, ui } = content;
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [conversationSummary, setConversationSummary] = useState("");
   const [loading, setLoading] = useState(false);
@@ -213,7 +220,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
 
   function resetConversation() {
     const hasUserMessages = messages.some((message) => message.role === "user");
-    if (hasUserMessages && !window.confirm("清空这次对话？内容只保存在本机浏览器。")) {
+    if (hasUserMessages && !window.confirm(ui.chatResetConfirm)) {
       return;
     }
 
@@ -243,16 +250,16 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
       <header className="flex h-16 shrink-0 items-center justify-between gap-4">
         <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
           <Image
-            src={brandAssets.logoSrc}
-            alt="码成工 logo"
+            src={brand.logoPath}
+            alt={brand.logoAlt}
             width={38}
             height={38}
             priority
             className="h-9 w-9 object-contain"
           />
           <span className="flex flex-col">
-            <span className="text-lg font-black leading-none">码成工</span>
-            <span className="mt-1 text-xs font-semibold text-[var(--muted)]">为“工友”敲键盘</span>
+            <span className="text-lg font-black leading-none">{brand.wordmark}</span>
+            <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
           </span>
         </Link>
         {started ? (
@@ -262,7 +269,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
             disabled={loading}
             className="rounded-full border border-[var(--border)] bg-[var(--chip)] px-3 py-1.5 text-xs font-bold text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            重新开始
+            {ui.chatRestart}
           </button>
         ) : null}
       </header>
@@ -271,13 +278,13 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
         {!started && !loading ? (
           <div className="flex h-full flex-col justify-center py-10 text-center">
             <h1 className="text-3xl font-black leading-tight tracking-normal sm:text-4xl">
-              从一个问题开始了解码成工
+              {content.heading}
             </h1>
             <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[var(--muted)]">
-              这里基于已经公开的文本回答。可以直接提问，也可以先从下面几个问题开始。
+              {content.intro}
             </p>
             <div className="mx-auto mt-8 flex max-w-xl flex-wrap justify-center gap-2">
-              {dialogueSuggestions.map((suggestion) => (
+              {content.suggestions.map((suggestion) => (
                 <button
                   key={suggestion.label}
                   type="button"
@@ -301,7 +308,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
                 }
               >
                 <div className="mb-1.5 text-xs font-bold opacity-70">
-                  {message.role === "user" ? "你" : "码成工助手"}
+                  {message.role === "user" ? ui.chatUserName : ui.chatAssistantName}
                 </div>
                 <div className="dialogue-prose text-base leading-7">
                   {message.role === "assistant" ? (
@@ -327,7 +334,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
               </article>
             ))}
             {loading ? (
-              <p className="mr-auto text-sm font-semibold text-[var(--muted)]">正在组织回答…</p>
+              <p className="mr-auto text-sm font-semibold text-[var(--muted)]">{ui.chatLoading}</p>
             ) : null}
             {notice ? (
               <p className="mr-auto max-w-[90%] rounded-2xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3 text-sm leading-6 text-[var(--muted)]">
@@ -349,7 +356,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
               className="max-h-[160px] min-h-[44px] w-full resize-none border-0 bg-transparent p-1 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75"
               maxLength={1000}
               rows={1}
-              placeholder={dialogueEntry.placeholder}
+              placeholder={ui.chatPlaceholder}
               value={composerValue}
               disabled={loading}
               onChange={(event) => setComposerValue(event.target.value)}
@@ -357,7 +364,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
             />
             <button
               type="submit"
-              aria-label={dialogueEntry.submitLabel}
+              aria-label={ui.sendLabel}
               disabled={loading || trimmedComposer.length === 0}
               className="grid h-12 w-12 place-items-center rounded-full bg-[var(--ink)] text-[var(--bg)] transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-40"
             >
@@ -365,7 +372,7 @@ export function DialogueChat({ initialQuestion }: { initialQuestion?: string }) 
             </button>
           </div>
           <p className="px-4 pb-3 text-center text-xs leading-5 text-[var(--muted)]">
-            内容由 AI 基于公开文本生成，请仔细甄别。
+            {ui.chatDisclaimer}
           </p>
         </form>
       </div>

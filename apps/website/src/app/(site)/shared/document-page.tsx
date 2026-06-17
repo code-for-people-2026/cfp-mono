@@ -1,9 +1,15 @@
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { DocumentContent } from "@/content/site";
+import type { SiteDocument } from "@/lib/content/types";
 
-export function DocumentPage({ document }: { document: DocumentContent }) {
+export function DocumentPage({
+  document,
+  backToHome,
+}: {
+  document: SiteDocument;
+  backToHome: string;
+}) {
   return (
     <main className="min-h-screen bg-[var(--bg)]">
       <article>
@@ -17,7 +23,7 @@ export function DocumentPage({ document }: { document: DocumentContent }) {
             >
               <Link href="/">
                 <ArrowLeft className="h-4 w-4" />
-                回到首页
+                {backToHome}
               </Link>
             </Button>
 
