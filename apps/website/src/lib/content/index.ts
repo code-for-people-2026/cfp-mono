@@ -12,6 +12,14 @@ import type {
   SiteSettings,
   UiStrings,
 } from "./types";
+import {
+  chatFallback,
+  documentFallback,
+  footerFallback,
+  homepageFallback,
+  settingsFallback,
+  uiFallback,
+} from "./fallback";
 
 type Raw = Record<string, unknown>;
 
@@ -129,34 +137,60 @@ async function fetchGlobal<T>(slug: string): Promise<T> {
   return (await payload.findGlobal({ slug })) as unknown as T;
 }
 
-export const getHomepage = unstable_cache(fetchHomepage, ["homepage"], {
-  tags: ["payload:homepage"],
-  revalidate: false,
-});
+// Until prod is seeded, a global/doc may be empty — fall back to static content so the
+// site never renders blank/500. Publishing (revalidateTag) flips the cache to real data.
+export const getHomepage = unstable_cache(
+  async () => {
+    const data = await fetchHomepage();
+    return data.hero?.title ? data : homepageFallback;
+  },
+  ["homepage"],
+  { tags: ["payload:homepage"], revalidate: false },
+);
 
-export const getChatPage = unstable_cache(() => fetchGlobal<ChatPageContent>("chat-page"), ["chat-page"], {
-  tags: ["payload:chat-page"],
-  revalidate: false,
-});
+export const getChatPage = unstable_cache(
+  async () => {
+    const data = await fetchGlobal<ChatPageContent>("chat-page");
+    return data?.heading ? data : chatFallback;
+  },
+  ["chat-page"],
+  { tags: ["payload:chat-page"], revalidate: false },
+);
 
-export const getUiStrings = unstable_cache(() => fetchGlobal<UiStrings>("ui-strings"), ["ui-strings"], {
-  tags: ["payload:ui-strings"],
-  revalidate: false,
-});
+export const getUiStrings = unstable_cache(
+  async () => {
+    const data = await fetchGlobal<UiStrings>("ui-strings");
+    return data?.sendLabel ? data : uiFallback;
+  },
+  ["ui-strings"],
+  { tags: ["payload:ui-strings"], revalidate: false },
+);
 
-export const getSiteSettings = unstable_cache(() => fetchGlobal<SiteSettings>("site-settings"), ["site-settings"], {
-  tags: ["payload:site-settings"],
-  revalidate: false,
-});
+export const getSiteSettings = unstable_cache(
+  async () => {
+    const data = await fetchGlobal<SiteSettings>("site-settings");
+    return data?.shareTitle && data?.brand?.logoPath ? data : settingsFallback;
+  },
+  ["site-settings"],
+  { tags: ["payload:site-settings"], revalidate: false },
+);
 
-export const getFooter = unstable_cache(() => fetchGlobal<FooterContent>("footer"), ["footer"], {
-  tags: ["payload:footer"],
-  revalidate: false,
-});
+export const getFooter = unstable_cache(
+  async () => {
+    const data = await fetchGlobal<FooterContent>("footer");
+    return data?.copyright ? data : footerFallback;
+  },
+  ["footer"],
+  { tags: ["payload:footer"], revalidate: false },
+);
 
 export function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
-  return unstable_cache(() => fetchDocument(slug), ["site-document", slug], {
-    tags: [`payload:doc:${slug}`],
-    revalidate: false,
-  })();
+  return unstable_cache(
+    async () => {
+      const data = await fetchDocument(slug);
+      return data.title ? data : documentFallback(slug);
+    },
+    ["site-document", slug],
+    { tags: [`payload:doc:${slug}`], revalidate: false },
+  )();
 }
