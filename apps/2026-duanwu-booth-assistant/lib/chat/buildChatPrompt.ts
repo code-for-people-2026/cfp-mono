@@ -11,7 +11,7 @@ const modeLabels: Record<EntryMode, string> = {
 // The full texts live on the official 码成工 website (and the standalone wam app for the
 // 7×7 map). When a visitor wants to read an original/full text, point them there instead
 // of pasting the whole document into chat.
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://code-for-people-website.vercel.app";
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.codeforpeople.cn";
 
 const docLinks = {
   manifesto: `${siteUrl}/manifesto`,
