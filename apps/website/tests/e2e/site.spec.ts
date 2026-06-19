@@ -292,6 +292,33 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
   );
 });
 
+test("homepage hero shows a scannable site QR on wide screens, hidden on narrow ones", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  const heroQr = page.getByTestId("hero-site-qr");
+  await expect(heroQr).toBeVisible();
+  const qrImage = heroQr.getByAltText("码成工官网二维码");
+  await expect(qrImage).toHaveAttribute("src", /site-qr\.png/);
+
+  // It sits above the dialogue box and clear of the centered hero copy (does not overlap content).
+  const dialogue = page.getByTestId("hero-manifesto-slogan");
+  const [qrBox, sloganBox, headingBox] = await Promise.all([
+    heroQr.boundingBox(),
+    dialogue.boundingBox(),
+    page.getByRole("heading", { level: 1 }).boundingBox(),
+  ]);
+  if (!qrBox || !sloganBox || !headingBox) {
+    throw new Error("Missing hero geometry");
+  }
+  expect(qrBox.y).toBeLessThan(sloganBox.y); // above the slogan / dialogue area
+  expect(qrBox.x).toBeGreaterThan(headingBox.x + headingBox.width); // to the right of the centered copy
+
+  // Pointless on phones (the visitor is already on the site) — hidden below the xl breakpoint.
+  await page.setViewportSize({ width: 800, height: 900 });
+  await expect(heroQr).toBeHidden();
+});
+
 test("life scene tags align at the bottom of cards in each row", async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1000 });
   await page.goto("/");
