@@ -9,7 +9,18 @@ export function ContinuePanel() {
       </summary>
       <div className="px-3 pb-3 text-sm leading-[1.65] text-muted-foreground">
         <p className="mt-2 mb-0">如果你想继续聊，可以等摊主空下来直接问。</p>
-        <p className="mt-2 mb-0">这里会放摊位现场提供的官网、文档或联系方式入口；也可以先让 AI 帮你把问题整理清楚。</p>
+        <p className="mt-2 mb-0">
+          想看完整理念和文档，可以访问官网{" "}
+          <a
+            href="https://www.codeforpeople.cn"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[var(--gold)] underline underline-offset-2"
+          >
+            www.codeforpeople.cn
+          </a>
+          ；也可以先让 AI 帮你把问题整理清楚。
+        </p>
       </div>
     </details>
   );
