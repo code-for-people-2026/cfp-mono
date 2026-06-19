@@ -20,6 +20,7 @@ import {
   shouldSummarize,
   type ChatMessage as ChatMessageType,
 } from "@/lib/chat/conversation";
+import { linkifyAssistantMarkdown } from "@/lib/chat/linkify";
 import {
   clearStoredConversation,
   getBrowserStorage,
@@ -325,7 +326,7 @@ export function DialogueChat({
                         ),
                       }}
                     >
-                      {message.content}
+                      {linkifyAssistantMarkdown(message.content)}
                     </ReactMarkdown>
                   ) : (
                     <p className="whitespace-pre-wrap">{message.content}</p>

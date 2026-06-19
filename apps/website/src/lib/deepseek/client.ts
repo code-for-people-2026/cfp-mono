@@ -14,7 +14,7 @@ export async function callDeepSeek(input: {
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
 
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-chat";
+  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",

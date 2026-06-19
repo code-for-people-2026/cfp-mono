@@ -11,6 +11,14 @@ describe("buildChatPrompt (website)", () => {
     expect(prompt).toContain("https://wam.codeforpeople.cn/");
   });
 
+  it("hands the model clickable markdown links, not bare paths", () => {
+    const prompt = buildChatPrompt({ mode: "free", retrievedChunks: [] });
+
+    expect(prompt).toContain("[《数据平权宣言》全文](/manifesto)");
+    expect(prompt).toContain("[《牛马互助协议》全文](/license)");
+    expect(prompt).toContain("markdown 链接格式");
+  });
+
   it("emphasizes linking out when the user is asking for an original text", () => {
     const prompt = buildChatPrompt({
       mode: "free",

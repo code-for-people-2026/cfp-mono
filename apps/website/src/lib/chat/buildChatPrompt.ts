@@ -10,11 +10,13 @@ const modeLabels: Record<EntryMode, string> = {
 
 // Canonical pages that already host the full texts. When a visitor wants to read
 // the original/full text, the assistant links here instead of pasting it in chat.
-// 宣言/协议 are on this site; the 牛马能力剥夺矩阵 is the standalone wam app.
+// 宣言/协议 are on this site; the 牛马能力剥夺矩阵 is the standalone wam app. We hand the
+// model ready-made markdown links (not bare paths): a bare relative path like "/license"
+// is not auto-linked by the markdown renderer, so the visitor cannot click it.
 const docLinks = {
-  manifesto: "/manifesto",
-  license: "/license",
-  map: "https://wam.codeforpeople.cn/",
+  manifesto: "[《数据平权宣言》全文](/manifesto)",
+  license: "[《牛马互助协议》全文](/license)",
+  map: "[牛马能力剥夺矩阵](https://wam.codeforpeople.cn/)",
 };
 
 const sourceIdToLink: Record<string, string> = {
@@ -56,7 +58,8 @@ export function buildChatPrompt(input: {
     "不要编造联系方式、二维码、产品上线时间、融资情况或法律效力；项目仍在早期，不要声称已经成熟或已经代表工友。",
     // Link-out rule: never reproduce a long original text in chat; point to the page instead.
     "官网已经公开了这些文本的原文。当用户想读全文或原文时，不要在对话里整段复制原文（太啰嗦），用一两句话说明它讲什么，再给出对应链接引导他到官网阅读。",
-    `原文链接：《数据平权宣言》${docLinks.manifesto}；《牛马互助协议》${docLinks.license}；牛马能力剥夺矩阵 ${docLinks.map}。`,
+    "给链接时必须原样使用下面这种 markdown 链接格式 [文字](地址)，不要改写成纯文本路径或裸地址，否则用户点不开。",
+    `原文链接：${docLinks.manifesto}；${docLinks.license}；${docLinks.map}。`,
     linkOutLinks.length
       ? `用户当前正在要原文，请直接给出对应链接（${linkOutLinks.join("、")}）并简要说明，不要在对话里复制全文。`
       : "",
