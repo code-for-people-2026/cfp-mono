@@ -16,7 +16,7 @@ export async function callDeepSeek(input: {
   // Use `||` not `??`: an env var present but set to "" (a real case in production) must
   // still fall back to the default, otherwise the empty value breaks the request.
   const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-pro";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
