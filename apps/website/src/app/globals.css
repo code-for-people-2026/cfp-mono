@@ -101,6 +101,20 @@ a:not([class]) {
   color: inherit;
 }
 
+/* Links the assistant emits inside chat replies render without a class, so the rule above
+   would leave them the same color as body text. Give chat links the accent color + an
+   underline so they read as clickable. */
+.dialogue-prose a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.dialogue-prose a:hover {
+  color: var(--accent-strong);
+}
+
 /* Tailwind v4 preflight leaves interactive elements at the default cursor; restore the
    pointer so buttons/role-buttons (composer send, suggestion chips, footer chips) read
    as clickable on hover. */
