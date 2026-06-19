@@ -1,4 +1,5 @@
 import type { ChatMessage as ChatMessageType } from "@/lib/chat/conversation";
+import { linkifyAssistantMarkdown } from "@/lib/chat/linkify";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -26,7 +27,7 @@ export function ChatMessage({ message }: { message: ChatMessageType }) {
               ),
             }}
           >
-            {message.content}
+            {linkifyAssistantMarkdown(message.content)}
           </ReactMarkdown>
         ) : (
           message.content
