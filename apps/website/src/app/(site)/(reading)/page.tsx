@@ -20,7 +20,7 @@ export default async function HomePage() {
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       <section className="relative isolate overflow-hidden">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_22%,var(--glow-cyan),transparent_30%),radial-gradient(circle_at_18%_74%,var(--glow-red),transparent_24%),radial-gradient(circle_at_84%_76%,var(--glow-gold),transparent_25%)]" />
-        <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-6 sm:px-8 lg:px-10">
+        <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-6 sm:px-8 lg:px-10">
           <header className="flex h-12 items-center justify-between gap-4 text-sm text-[var(--muted)]">
             <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
               <Image
@@ -87,6 +87,22 @@ export default async function HomePage() {
               ))}
             </div>
           </div>
+
+          <aside
+            data-testid="hero-site-qr"
+            className="absolute top-20 right-5 z-20 hidden flex-col items-center gap-2 sm:right-8 lg:right-10 xl:flex"
+          >
+            <div className="border border-[var(--border)] bg-white p-2 shadow-[var(--shadow-soft)]">
+              <Image
+                src="/assets/brand/site-qr.png"
+                alt="码成工官网二维码"
+                width={160}
+                height={160}
+                className="h-24 w-24 object-contain"
+              />
+            </div>
+            <span className="text-xs font-black text-[var(--muted)]">扫码分享本站</span>
+          </aside>
         </div>
       </section>
 
