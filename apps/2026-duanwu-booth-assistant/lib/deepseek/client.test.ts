@@ -60,6 +60,6 @@ describe("callDeepSeek", () => {
     const body = JSON.parse((fetchMock.mock.calls[0][1] as RequestInit).body as string) as {
       model: string;
     };
-    expect(body.model).toBe("deepseek-v4-pro");
+    expect(body.model).toBe("deepseek-v4-flash");
   });
 });

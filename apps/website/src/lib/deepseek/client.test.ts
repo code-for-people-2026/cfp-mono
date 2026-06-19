@@ -33,17 +33,17 @@ describe("callDeepSeek (website)", () => {
     await callDeepSeek({ messages: [{ role: "user", content: "hello" }], maxTokens: 300 });
 
     expect(fetchMock.mock.calls[0][0]).toBe("https://api.deepseek.com/chat/completions");
-    expect(requestBody(fetchMock).model).toBe("deepseek-v4-pro");
+    expect(requestBody(fetchMock).model).toBe("deepseek-v4-flash");
   });
 
   it("uses an explicitly configured model", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
     vi.stubEnv("DEEPSEEK_BASE_URL", "https://api.deepseek.com");
-    vi.stubEnv("DEEPSEEK_MODEL", "deepseek-v4-flash");
+    vi.stubEnv("DEEPSEEK_MODEL", "deepseek-v4-pro");
     const fetchMock = mockFetchOk();
 
     await callDeepSeek({ messages: [{ role: "user", content: "hi" }], maxTokens: 100 });
 
-    expect(requestBody(fetchMock).model).toBe("deepseek-v4-flash");
+    expect(requestBody(fetchMock).model).toBe("deepseek-v4-pro");
   });
 });
