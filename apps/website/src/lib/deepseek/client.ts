@@ -13,8 +13,10 @@ export async function callDeepSeek(input: {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
 
-  const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL ?? "deepseek-v4-pro";
+  // Use `||` not `??`: an env var present but set to "" (a real case in production) must
+  // still fall back to the default, otherwise the empty value breaks the request.
+  const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-pro";
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
