@@ -11,3 +11,4 @@ payload-*.db-*
 .env.local
 .vercel/
 next-env.d.ts
+payload-types.ts
