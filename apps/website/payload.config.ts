@@ -10,6 +10,7 @@ import { Footer } from "./src/payload/globals/Footer";
 import { Homepage } from "./src/payload/globals/Homepage";
 import { SiteSettings } from "./src/payload/globals/SiteSettings";
 import { UiStrings } from "./src/payload/globals/UiStrings";
+import { migrations } from "./src/payload/migrations";
 
 const requiresProductionEnv =
   process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -32,12 +33,23 @@ if (requiresProductionEnv && !postgresDatabaseURL) {
   throw new Error("A Postgres database URL is required for Vercel Payload deployments.");
 }
 
+// website 与 apps/site 共用同一个 Postgres 库（cfp）。两个 Payload 应用都在管理各自的
+// schema，若同处 public 会互相覆盖建表，因此把 website 隔离到独立 schema。可用
+// PAYLOAD_DATABASE_SCHEMA 覆盖；默认 "website"。apps/site 仍用默认的 public。
+const schemaName = process.env.PAYLOAD_DATABASE_SCHEMA || "website";
+
 const db = postgresDatabaseURL
   ? postgresAdapter({
       pool: {
         connectionString: postgresDatabaseURL,
       },
+      schemaName,
       migrationDir: "src/payload/migrations",
+      // In production the adapter never runs `push`; instead it auto-applies these
+      // migrations on connect (creates the website schema + tables on first boot, then
+      // no-ops once recorded in payload_migrations). So a deploy needs no separate
+      // `payload migrate` step. In dev, `push` (PAYLOAD_DB_PUSH=true) still applies.
+      prodMigrations: migrations,
       push: process.env.PAYLOAD_DB_PUSH === "true",
     })
   : sqliteAdapter({
@@ -57,4 +69,11 @@ export default buildConfig({
   },
   collections: [CMSAdmins, SiteDocuments, FormLinks, MatrixSubmissions],
   globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
+  // We hand-write the content shapes in src/lib/content/types.ts and intentionally do not
+  // ship a generated payload-types.ts. Disable auto-generation so the Payload CLI (e.g.
+  // migrate:create) doesn't emit one whose `declare module 'payload'` augmentation would
+  // make getPayload() strict and break the `as Raw` mapping in the content layer.
+  typescript: {
+    autoGenerate: false,
+  },
 });

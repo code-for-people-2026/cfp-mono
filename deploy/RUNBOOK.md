@@ -104,7 +104,7 @@ gh run watch --repo code-for-people-2026/cfp-mono
 
 ## 8. 已知缺口 / 第二阶段（website）
 
-- **Payload 生产建表**：仓库无 migrations，靠 dev 的 `push`（仅 `NODE_ENV!=production` 生效）。生产镜像里 `NODE_ENV=production` 被编译进 `.next`，push 不会执行，故 `/admin` 报 `relation does not exist`。**解法**：引入正式 migrations 并在部署时 `payload migrate`。接入 website 时一并解决。
-- **website 与 site 共用 `cfp` 库**：两个 Payload 应用对同一库做 schema 管理会冲突。建议给 website 用**独立数据库**或 Payload 的 `schemaName` 隔离。
+- **Payload 生产建表**：✅ 已解决。`apps/website` 已引入正式 migrations（`src/payload/migrations/`），并在 `payload.config.ts` 里把它们作为 `prodMigrations` 传给 postgres adapter。生产（`NODE_ENV=production`）首次连接 DB 时 adapter 会**自动 apply** 这些 migration 建表，已落库的则按 `payload_migrations` 跳过——**部署无需单独的 `payload migrate` 步骤**。需要新增 migration 时（改了 collection/global 字段）跑 `pnpm --filter @cfp/website payload:migrate:create <name>`（连本地库，`PAYLOAD_DB_PUSH` 留空）后提交生成的文件。
+- **website 与 site 共用 `cfp` 库**：✅ 已解决。`apps/website` 的 postgres adapter 设了 `schemaName`（默认 `website`，可用 `PAYLOAD_DATABASE_SCHEMA` 覆盖），与 `apps/site` 的 `public` schema 隔离，两个 Payload 应用各管各的表（含各自的 `cms_admins`，即两套独立后台登录），不再争抢同一 schema。
 - **证书自动续期未对接服务器**：当前证书在本机签发、手动传到 ECS。备案后改为服务器侧自动续期 + reload。
 - **临时放行的 3300**：备案后关闭。
