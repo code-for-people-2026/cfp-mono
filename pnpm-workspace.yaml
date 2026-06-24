@@ -1,4 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+  # Archived apps: code kept for reference, excluded from the workspace so
+  # install / turbo / CI no longer build or test them. Re-enable by removing
+  # the matching exclusion.
+  - "!apps/miniapp-fe"
+  - "!apps/2026-duanwu-booth-assistant"
 

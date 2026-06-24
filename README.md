@@ -6,9 +6,13 @@
 
 ## 应用
 
-- `apps/site`：Next.js + Payload CMS 站点，包含公开主页、Payload 管理后台和共享 API。
-- `apps/website`：Next.js + Payload CMS 官方网站，面向外部访问者介绍宣言、协议和 7×7 方向地图。
-- `apps/miniapp-fe`：Taro 前端应用，面向微信小程序，同时产出 H5 网页版。
+- `apps/website`：Next.js + Payload CMS 官方网站，面向外部访问者介绍宣言、协议和 7×7 方向地图（含 `/map` 互动矩阵）。**当前唯一在维护、且为阿里云部署目标的应用。**
+
+### 已退役 / 已归档
+
+- `apps/site`：早期的 Next.js + Payload 试验站，**已退役并从仓库删除**，其阿里云流水线由 website 接管。
+- `apps/miniapp-fe`：Taro 微信小程序 + H5 前端，**已归档**（代码保留，已移出 workspace）。
+- `apps/2026-duanwu-booth-assistant`：一次性线下活动 H5 app，**已归档**（活动结束，已移出 workspace、已下线 Vercel）。
 
 ## 共享包
 
@@ -22,9 +26,7 @@
 ```bash
 pnpm install
 pnpm db:up
-pnpm dev:site
 pnpm dev:website
-pnpm dev:miniapp:h5
 ```
 
 ## 验证
