@@ -1,6 +1,7 @@
 import { getPayload } from "payload";
 import config from "@payload-config";
 import { seedSiteContent } from "@/payload/seed";
+import { seedRecipes } from "@/payload/recipes.seed";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function GET() {
   try {
     const payload = await getPayload({ config });
     await seedSiteContent(payload);
+    await seedRecipes(payload);
     return Response.json({ ok: true });
   } catch (error) {
     return Response.json(

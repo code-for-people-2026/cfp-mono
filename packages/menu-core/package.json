@@ -1,0 +1,26 @@
+{
+  "name": "@cfp/menu-core",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./generator": "./src/generator.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@cfp/typescript-config": "workspace:*",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

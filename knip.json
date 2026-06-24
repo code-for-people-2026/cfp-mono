@@ -15,7 +15,21 @@
         "tests/**/*.ts"
       ]
     },
+    "apps/community-cooking": {
+      "entry": [
+        "config/**/*.ts",
+        "src/**/*.{ts,tsx}",
+        "playwright.config.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts",
+        "tests/**/*.ts"
+      ],
+      "ignoreDependencies": ["react"]
+    },
     "packages/ui": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/menu-core": {
       "entry": ["src/index.ts"]
     },
     "packages/typescript-config": {

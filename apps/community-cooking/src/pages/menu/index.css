@@ -1,0 +1,25 @@
+.menu-title {
+  display: block;
+  color: #171717;
+  font-size: 44px;
+  font-weight: 800;
+}
+
+.menu-hint {
+  display: block;
+  margin-top: 12px;
+  color: #a0937d;
+  font-size: 24px;
+}
+
+.menu-day {
+  margin-top: 32px;
+}
+
+.menu-day-label {
+  display: block;
+  margin-bottom: 8px;
+  color: #525252;
+  font-size: 28px;
+  font-weight: 700;
+}
