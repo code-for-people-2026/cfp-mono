@@ -1,12 +1,13 @@
 import { Text, View } from "@tarojs/components";
+import type { RecipeCategory } from "@cfp/menu-core";
 import ScreenContainer from "@/components/ScreenContainer";
-import DishCard, { type DishCategory } from "@/components/DishCard";
+import DishCard from "@/components/DishCard";
 import "./index.css";
 
 // 骨架占位数据，仅用于展示页面结构。
 // TODO: 接 CMS —— 从 createRecipesUrl() 拉菜谱库，再交给菜单生成逻辑。
 //       生成逻辑放哪、在哪端跑（小程序 or 后端）的决策定了之后再补。
-const PLACEHOLDER_MEALS: { name: string; category: DishCategory }[] = [
+const PLACEHOLDER_MEALS: { name: string; category: RecipeCategory }[] = [
   { name: "红烧肉", category: "big-meat" },
   { name: "青椒土豆丝", category: "small-meat" },
   { name: "蒜蓉西兰花", category: "vegetable" }

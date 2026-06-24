@@ -39,12 +39,25 @@ const next = replaceDishInPlan(plan, dayIndex, mealIndex, "bigMeat", pools); // 
 
 - 菜品池 `pools` **由你传进去** —— 这是故意解耦的：逻辑不关心菜品从哪来。
 - 你要做的是：从 CMS 拉菜品 → 整理成 `DishPools` → 交给 `generateWeeklyMenu`。
+- ⚠️ CMS 的 `category` 是 kebab（`big-meat`），`DishPools` 的键是 camel（`bigMeat`），
+  **别直接 groupBy**。用 menu-core 导出的契约映射：
+
+```ts
+import { RECIPE_CATEGORY_TO_SLOT, type DishPools } from "@cfp/menu-core";
+
+function toDishPools(recipes: { name: string; category: keyof typeof RECIPE_CATEGORY_TO_SLOT }[]) {
+  const pools: DishPools = { bigMeat: [], smallMeat: [], vegetable: [] } as DishPools;
+  for (const r of recipes) (pools[RECIPE_CATEGORY_TO_SLOT[r.category]] as string[]).push(r.name);
+  return pools;
+}
+```
 
 ### `apps/website` 菜谱库集合 —— 菜品数据
 
 - 集合 slug：`recipes`，字段：`name`、`category`（big-meat / small-meat / vegetable）、`active`。
 - 运营在 `/admin` 后台维护菜品，**前端不写死菜名**。
-- 读取接口（Payload 自动生成）：`GET {website}/api/recipes?where[active][equals]=true`
+- 读取接口（Payload 自动生成）：`GET {website}/api/recipes?where[active][equals]=true&limit=0`
+  —— `lib/api.ts` 的 `createRecipesUrl()` 已封装好（`limit=0` 关分页拿全量，`active` 过滤停用项）。
 - 初始菜名种子在 `apps/website/src/payload/recipes.seed.ts`，由 `GET /api/seed`（需 `PAYLOAD_SEED=true`）幂等导入。
 
 ---

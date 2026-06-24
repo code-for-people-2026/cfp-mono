@@ -9,6 +9,8 @@ export function resolveApiBaseUrl(value?: string) {
 }
 
 // Payload 会按集合 slug 自动生成 REST 接口；菜谱库集合（slug: recipes，在 apps/website）在此读取。
+// limit=0 关闭分页（Payload 默认每页仅 10 条）；where[active] 过滤掉运营停用的菜品，
+// 这样拿到的是「完整的启用菜品池」，交给生成逻辑才正确。
 export function createRecipesUrl(baseUrl?: string) {
-  return `${resolveApiBaseUrl(baseUrl)}/api/recipes`;
+  return `${resolveApiBaseUrl(baseUrl)}/api/recipes?where[active][equals]=true&limit=0`;
 }

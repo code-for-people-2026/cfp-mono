@@ -28,6 +28,18 @@ export type WeeklyPlan = PlannedDay[];
 // ★ 口子：每个分类的菜品池，由外部数据源（CMS / 缓存 / 测试桩）提供。
 export type DishPools = Record<DishSlot, readonly string[]>;
 
+// CMS 菜谱的分类取值（kebab-case）。注意它和 DishSlot（camelCase）是两套命名，
+// 不能直接拿 category 当 DishPools 的键 —— 必须经 RECIPE_CATEGORY_TO_SLOT 映射。
+export type RecipeCategory = "big-meat" | "small-meat" | "vegetable";
+
+// CMS 分类 → DishPools 槽位的显式契约。两端（前端分组、后端分组）共用这一份，
+// 避免按 category 直接 groupBy 拿到错键导致生成时「分类为空」。
+export const RECIPE_CATEGORY_TO_SLOT: Record<RecipeCategory, DishSlot> = {
+  "big-meat": "bigMeat",
+  "small-meat": "smallMeat",
+  vegetable: "vegetable"
+};
+
 export type RandomFn = () => number;
 
 const SLOTS: readonly DishSlot[] = ["bigMeat", "smallMeat", "vegetable"];

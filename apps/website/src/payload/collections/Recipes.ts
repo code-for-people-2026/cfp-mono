@@ -1,7 +1,9 @@
 import type { CollectionConfig } from "payload";
 import { isAdmin } from "../access/isAdmin";
 
-// 与 @cfp/menu-core 的 DishSlot 对齐：category 决定一道菜进哪个槽位。
+// category 用 kebab-case（big-meat / small-meat / vegetable），与 @cfp/menu-core 的
+// DishSlot（camelCase: bigMeat / smallMeat / vegetable）是两套命名，
+// 取数据时经 menu-core 的 RECIPE_CATEGORY_TO_SLOT 映射到槽位，别直接当键用。
 export const Recipes: CollectionConfig = {
   slug: "recipes",
   labels: {
