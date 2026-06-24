@@ -17,7 +17,6 @@ import {
   lifeScenes,
   lifeScenesIntro,
   manifesto,
-  map,
   selfRestraints,
   siteMetadata,
   socialChannels,
@@ -134,7 +133,7 @@ export const footerFallback: FooterContent = {
 };
 
 export function documentFallback(slug: SiteDocument["slug"]): SiteDocument {
-  const doc: DocumentContent = slug === "manifesto" ? manifesto : slug === "license" ? license : map;
+  const doc: DocumentContent = slug === "manifesto" ? manifesto : license;
   return {
     slug,
     eyebrow: doc.eyebrow,

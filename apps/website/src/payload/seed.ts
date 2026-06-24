@@ -14,7 +14,6 @@ import {
   lifeScenes,
   lifeScenesIntro,
   manifesto,
-  map,
   selfRestraints,
   siteMetadata,
   socialChannels,
@@ -181,7 +180,6 @@ export async function seedSiteContent(payload: Payload) {
   for (const [doc, slug] of [
     [manifesto, "manifesto"],
     [license, "license"],
-    [map, "map"],
   ] as const) {
     const existing = await payload.find({
       collection: "site-documents",

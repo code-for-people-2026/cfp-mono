@@ -31,7 +31,6 @@ export const SiteDocuments: CollectionConfig = {
       options: [
         { label: "数据平权宣言 (/manifesto)", value: "manifesto" },
         { label: "牛马互助协议 (/license)", value: "license" },
-        { label: "牛马能力剥夺矩阵 (/map)", value: "map" },
       ],
     },
     { name: "eyebrow", label: "眉标", type: "text", required: true },
