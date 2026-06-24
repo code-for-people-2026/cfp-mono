@@ -91,8 +91,17 @@ function normalizeMatrixChoice(value: string): string {
 
 function matchesChoice(value: string, choices: string[]): boolean {
   const normalizedValue = normalizeMatrixChoice(value)
+  // An empty value would make `normalizedChoice.includes(normalizedValue)` (substring of "")
+  // true for every choice, so a payload missing this dimension would silently match the
+  // first column/row (A1). Treat a blank value as "no match" so it gets rejected instead.
+  if (!normalizedValue) {
+    return false
+  }
   return choices.some((choice) => {
     const normalizedChoice = normalizeMatrixChoice(choice)
+    if (!normalizedChoice) {
+      return false
+    }
     return (
       normalizedValue === normalizedChoice ||
       normalizedValue.includes(normalizedChoice) ||
