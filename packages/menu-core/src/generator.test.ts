@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   generateWeeklyMenu,
   MEAL_LABELS,
+  RECIPE_CATEGORY_TO_SLOT,
   replaceDishInPlan,
   WEEK_DAYS,
   type DishPools,
@@ -47,6 +48,16 @@ function makePlan(sequences: Record<DishSlot, string[]>): WeeklyPlan {
 function flatten(plan: PlannedDay[], slot: DishSlot): string[] {
   return plan.flatMap((day) => day.meals.map((meal) => meal[slot]));
 }
+
+describe("RECIPE_CATEGORY_TO_SLOT", () => {
+  it("把每个 CMS 分类映射到合法的 DishPools 槽位", () => {
+    expect(RECIPE_CATEGORY_TO_SLOT).toEqual({
+      "big-meat": "bigMeat",
+      "small-meat": "smallMeat",
+      vegetable: "vegetable"
+    });
+  });
+});
 
 describe("generateWeeklyMenu", () => {
   it("生成 7 天 × 2 餐，每个槽位都填了池中的菜", () => {

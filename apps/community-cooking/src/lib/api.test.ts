@@ -18,13 +18,21 @@ describe("resolveApiBaseUrl", () => {
 });
 
 describe("createRecipesUrl", () => {
+  const query = "?where[active][equals]=true&limit=0";
+
   it("builds the recipes endpoint from the default base url", () => {
-    expect(createRecipesUrl()).toBe(`${defaultApiBaseUrl}/api/recipes`);
+    expect(createRecipesUrl()).toBe(`${defaultApiBaseUrl}/api/recipes${query}`);
   });
 
   it("builds the recipes endpoint from a custom base url", () => {
     expect(createRecipesUrl("https://api.example.com/")).toBe(
-      "https://api.example.com/api/recipes"
+      `https://api.example.com/api/recipes${query}`
     );
+  });
+
+  it("requests the full active pool (no default pagination, no disabled dishes)", () => {
+    const url = createRecipesUrl();
+    expect(url).toContain("where[active][equals]=true");
+    expect(url).toContain("limit=0");
   });
 });

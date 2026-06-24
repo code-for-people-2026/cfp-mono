@@ -1,10 +1,9 @@
 import { Text, View } from "@tarojs/components";
+import type { RecipeCategory } from "@cfp/menu-core";
 import "./index.css";
 
-// 与 CMS 菜谱库的 category 取值对齐（apps/site 的 recipes 集合）。
-export type DishCategory = "big-meat" | "small-meat" | "vegetable";
-
-const CATEGORY_LABELS: Record<DishCategory, string> = {
+// 分类取值直接复用 menu-core 的契约（与 CMS recipes 集合的 category 一致）。
+const CATEGORY_LABELS: Record<RecipeCategory, string> = {
   "big-meat": "大荤",
   "small-meat": "小荤",
   vegetable: "素菜"
@@ -12,7 +11,7 @@ const CATEGORY_LABELS: Record<DishCategory, string> = {
 
 type DishCardProps = {
   name: string;
-  category: DishCategory;
+  category: RecipeCategory;
   // 旋转换菜的回调；不传则只展示，不显示换菜按钮。
   onRotate?: () => void;
 };
