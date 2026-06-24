@@ -4,6 +4,7 @@ import { buildConfig } from "payload";
 import { CMSAdmins } from "./src/payload/collections/CMSAdmins";
 import { FormLinks } from "./src/payload/collections/FormLinks";
 import { MatrixSubmissions } from "./src/payload/collections/MatrixSubmissions";
+import { Recipes } from "./src/payload/collections/Recipes";
 import { SiteDocuments } from "./src/payload/collections/SiteDocuments";
 import { ChatPage } from "./src/payload/globals/ChatPage";
 import { Footer } from "./src/payload/globals/Footer";
@@ -69,7 +70,7 @@ export default buildConfig({
       autoGenerate: false,
     },
   },
-  collections: [CMSAdmins, SiteDocuments, FormLinks, MatrixSubmissions],
+  collections: [CMSAdmins, SiteDocuments, FormLinks, MatrixSubmissions, Recipes],
   globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
   // We hand-write the content shapes in src/lib/content/types.ts and intentionally do not
   // ship a generated payload-types.ts. Disable auto-generation so the Payload CLI (e.g.

@@ -1,0 +1,42 @@
+.dish-card {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 24px;
+  margin-top: 16px;
+  border: 1px solid #dfd7c8;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.dish-tag {
+  flex-shrink: 0;
+  padding: 6px 16px;
+  border-radius: 999px;
+  font-size: 24px;
+  color: #ffffff;
+}
+
+.dish-tag--big-meat {
+  background: #c0392b;
+}
+
+.dish-tag--small-meat {
+  background: #d68910;
+}
+
+.dish-tag--vegetable {
+  background: #2f855a;
+}
+
+.dish-name {
+  flex: 1;
+  font-size: 30px;
+  color: #171717;
+}
+
+.dish-rotate {
+  flex-shrink: 0;
+  font-size: 26px;
+  color: #2f855a;
+}
