@@ -24,7 +24,6 @@ jobs:
 
       - run: pnpm verify
 
-      - name: Build deployable images
+      - name: Build deployable image
         run: |
-          docker build -f apps/site/Dockerfile -t cfp-site:preview .
-          docker build -f apps/miniapp-fe/Dockerfile -t cfp-miniapp-h5:preview .
+          docker build -f apps/website/Dockerfile -t cfp-website:preview .

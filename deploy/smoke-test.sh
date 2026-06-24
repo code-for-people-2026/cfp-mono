@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SITE_URL="${SITE_URL:-http://127.0.0.1:3300}"
+SITE_URL="${SITE_URL:-http://127.0.0.1:3302}"
 
 # Containers need a few seconds after `up -d` before the app accepts
 # connections, so poll each endpoint with a bounded retry instead of
@@ -24,6 +24,5 @@ check() {
 
 check "$SITE_URL/"
 check "$SITE_URL/api/health"
-check "$SITE_URL/api/miniapp/demo"
 
 echo "Smoke tests passed"
