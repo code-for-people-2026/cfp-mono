@@ -104,4 +104,31 @@ describe('parseFeishuSubmissionWebhook', () => {
       message: 'Missing submission content.',
     })
   })
+
+  it('rejects a payload missing a matrix dimension instead of defaulting to the first cell', () => {
+    // Missing 生产关系中的位置 (column). A blank value used to be a substring of every
+    // choice, silently filing the submission under column A; it must be rejected now.
+    expect(
+      parseFeishuSubmissionWebhook({
+        '被剥削的能力': '劳动议价',
+        '软件需求': '有效内容但缺少人群维度',
+      })
+    ).toEqual({
+      ok: false,
+      status: 400,
+      message: 'Invalid matrix cell.',
+    })
+
+    // Missing 被剥削的能力 (row).
+    expect(
+      parseFeishuSubmissionWebhook({
+        '生产关系中的位置': '二产',
+        '软件需求': '有效内容但缺少能力维度',
+      })
+    ).toEqual({
+      ok: false,
+      status: 400,
+      message: 'Invalid matrix cell.',
+    })
+  })
 })

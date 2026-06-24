@@ -34,9 +34,11 @@ if (requiresProductionEnv && !postgresDatabaseURL) {
 }
 
 // website 与 apps/site 共用同一个 Postgres 库（cfp）。两个 Payload 应用都在管理各自的
-// schema，若同处 public 会互相覆盖建表，因此把 website 隔离到独立 schema。可用
-// PAYLOAD_DATABASE_SCHEMA 覆盖；默认 "website"。apps/site 仍用默认的 public。
-const schemaName = process.env.PAYLOAD_DATABASE_SCHEMA || "website";
+// schema，若同处 public 会互相覆盖建表，因此把 website 隔离到独立 schema。
+// 固定为 "website"：生成的 migration 把 schema 名字面量地写死进了建表 SQL，做成 env 可覆盖
+// 只会让“配置的 schema”和“migration 实际建表的 schema”不一致（换个值就 /admin 缺表）。
+// apps/site 仍用默认的 public。
+const schemaName = "website";
 
 const db = postgresDatabaseURL
   ? postgresAdapter({
