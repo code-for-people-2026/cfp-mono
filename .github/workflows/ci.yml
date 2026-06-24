@@ -16,7 +16,6 @@ jobs:
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
-      MINIAPP_H5_ORIGIN: http://127.0.0.1:3301
     services:
       postgres:
         image: postgres:17-alpine
@@ -47,7 +46,7 @@ jobs:
 
       - run: pnpm verify
 
-      - run: pnpm --filter @cfp/site exec playwright install --with-deps chromium
+      - run: pnpm --filter @cfp/website exec playwright install --with-deps chromium
 
       - run: pnpm test:e2e
 

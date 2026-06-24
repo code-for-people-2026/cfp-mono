@@ -28,6 +28,7 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: |
           missing=()
           for name in \
@@ -40,7 +41,8 @@ jobs:
             ECS_USER \
             DATABASE_URL \
             PAYLOAD_SECRET \
-            NEXT_PUBLIC_SITE_URL
+            NEXT_PUBLIC_SITE_URL \
+            DEEPSEEK_API_KEY
           do
             if [ -z "${!name}" ]; then
               missing+=("$name")
@@ -61,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
-      SITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-site:${{ github.sha }}
+      WEBSITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,10 +87,10 @@ jobs:
           username: ${{ secrets.ALIYUN_ACR_USERNAME }}
           password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
-      - name: Build and push images
+      - name: Build and push image
         run: |
-          docker build -f apps/site/Dockerfile -t "$SITE_IMAGE" .
-          docker push "$SITE_IMAGE"
+          docker build -f apps/website/Dockerfile -t "$WEBSITE_IMAGE" .
+          docker push "$WEBSITE_IMAGE"
 
       - name: Write SSH key
         env:
@@ -105,6 +107,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
+          DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
           ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
@@ -116,10 +121,13 @@ jobs:
           PAYLOAD_DB_PUSH=false
           ALLOW_ADMIN_BOOTSTRAP=false
           NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+          DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY
+          DEEPSEEK_BASE_URL=$DEEPSEEK_BASE_URL
+          DEEPSEEK_MODEL=$DEEPSEEK_MODEL
           EOF
 
           cat > .env.images.remote <<EOF
-          SITE_IMAGE=$SITE_IMAGE
+          WEBSITE_IMAGE=$WEBSITE_IMAGE
           EOF
 
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono"

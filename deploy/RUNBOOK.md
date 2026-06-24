@@ -2,7 +2,7 @@
 
 > ⚠️ 本仓库为**公开仓库**。此文档**不得**写入真实的服务器 IP、数据库地址、实例 ID、密钥等敏感信息。具体数值请保存在私密笔记中，这里只用占位符。
 
-第一阶段把 `apps/site` 部署到阿里云 ECS（地域：华南/深圳），通过 GitHub Actions 实现 push → 自动构建 → 部署。`apps/website` 留待第二阶段。
+把 `apps/website` 部署到阿里云 ECS（地域：华南/深圳），通过 GitHub Actions 实现 push → 自动构建 → 部署。早期的 `apps/site` 试验站已退役，website 复用其 ECS / ACR / RDS 流水线。
 
 ## 1. 架构分层（先理解这个就不会乱）
 
@@ -27,19 +27,19 @@
 | ECS | `<ECS_PUBLIC_IP>`，Alibaba Cloud Linux 3，已装 Docker + Compose |
 | RDS | PostgreSQL 17，内网 `<RDS_ENDPOINT>:5432`，与 ECS **同 VPC**（走内网）；库 `cfp`，账号 `cfpadmin` |
 | ACR | 个人版实例 `<ACR_REGISTRY>`，命名空间 `<ACR_NAMESPACE>`，开启「仓库自动创建/私有」|
-| 域名 | `demo.codeforpeople.cn`（A 记录指向 ECS）；根域名/其它子域在 Vercel |
-| 端口 | ECS 内部：site 容器 `3300`；nginx `80`/`443` |
+| 域名 | website 临时子域（A 记录指向 ECS）；正式域名验证通过后再从 Vercel 切来 |
+| 端口 | ECS 内部：website 容器 `3302`；nginx `80`/`443` |
 
 ## 3. 部署流程（GitHub Actions）
 
 工作流：`.github/workflows/deploy-production.yml`，触发：push 到 `main` 或手动 `workflow_dispatch`。
 
-步骤：`pnpm verify`（lint/类型/测试/构建）→ 登录 ACR → 构建并推送 `cfp-site` 镜像 → SSH 到 ECS（`docker login` + `docker compose pull && up -d`）→ 冒烟测试。
+步骤：`pnpm verify`（lint/类型/测试/构建）→ 登录 ACR → 构建并推送 `cfp-website` 镜像 → SSH 到 ECS（`docker login` + `docker compose pull && up -d`）→ 冒烟测试。容器只跑 `next start`；建/升级表由 Payload 适配器在首次连库时自动应用迁移（`prodMigrations`），部署流程里没有单独的 `payload migrate` 步骤。
 
 `prepare` 任务会先检查所需 Secret 是否齐全，缺则跳过部署。
 
 ### 所需 GitHub Secrets（仅名称，值不入库）
-`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`、`ECS_HOST`、`ECS_USER`、`ECS_SSH_KEY`、`DATABASE_URL`、`PAYLOAD_SECRET`、`NEXT_PUBLIC_SITE_URL`
+`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`、`ECS_HOST`、`ECS_USER`、`ECS_SSH_KEY`、`DATABASE_URL`、`PAYLOAD_SECRET`、`NEXT_PUBLIC_SITE_URL`、`DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`）
 
 > 注意：这些 Secret 里**没有**阿里云主 AccessKey。AccessKey 只用于人工跑 CLI/签证书，见第 7 节。
 
@@ -55,8 +55,8 @@ gh run watch --repo code-for-people-2026/cfp-mono
 2. **部署 SSH key**：CI 用独立 ed25519 key 登录 ECS（公钥在 `~/.ssh/authorized_keys`，私钥存 `ECS_SSH_KEY`）。
    - ⚠️ 写私钥时必须保留结尾换行（`printf '%s\n'`，不能用 `printf '%s'`，否则 `error in libcrypto`）。
 3. **nginx**：`dnf install -y nginx`，反代配置在 `/etc/nginx/conf.d/`：
-   - `demo.codeforpeople.cn.conf`：80 → `127.0.0.1:3300`
-   - `demo-ssl.conf`：443（SSL）→ `127.0.0.1:3300`
+   - `demo.codeforpeople.cn.conf`：80 → `127.0.0.1:3302`
+   - `demo-ssl.conf`：443（SSL）→ `127.0.0.1:3302`
    - nginx 1.24 用 `listen 443 ssl http2;`（**不支持** `http2 on;` 新语法）。
    - 反代 502 排查：先确认后端容器已就绪；若系统启用了 SELinux，需 `setsebool -P httpd_can_network_connect 1`。
 4. **HTTPS 证书**：用 acme.sh + **DNS-01** 验证签发 Let's Encrypt 证书（不需要 80 端口）。
@@ -68,12 +68,12 @@ gh run watch --repo code-for-people-2026/cfp-mono
 
 ## 5. ICP 备案：现状与通过后的切换
 
-**关键认知**：阿里云在大陆 ECS 上对**明文 HTTP** 流量按 `Host` 头拦截未备案域名（**与端口无关**，3300 也拦）；**HTTPS 加密了 Host，拦不到**，故 HTTPS 可暂时访问。但这只是技术现象——
+**关键认知**：阿里云在大陆 ECS 上对**明文 HTTP** 流量按 `Host` 头拦截未备案域名（**与端口无关**，3302 也拦）；**HTTPS 加密了 Host，拦不到**，故 HTTPS 可暂时访问。但这只是技术现象——
 
 > **未备案不得对公众提供网站服务。** 当前 `https://demo.codeforpeople.cn` 仅供内部/团队测试，**不可公开推广**。阿里云仍可能人工巡检/整改。
 
 **备案通过后**应做：
-1. 关掉对外暴露的 `3300`（安全组删除该入方向规则），只留 80/443。
+1. 关掉对外暴露的 `3302`（安全组删除该入方向规则），只留 80/443。
 2. 配置 80 → 443 跳转。
 3. 证书续期改用宝塔一键 SSL 或服务器侧 acme.sh 定时任务（见第 8 节）。
 4. 如需对外，可接入已购的 CDN。
@@ -82,11 +82,11 @@ gh run watch --repo code-for-people-2026/cfp-mono
 
 **查看部署状态**（任选）：
 - 宝塔面板 → Docker → 容器：看状态/端口/日志/资源。
-- SSH：`docker ps`、`docker compose -f ~/cfp-mono/docker-compose.yml logs --tail=50 site`。
+- SSH：`docker ps`、`docker compose -f ~/cfp-mono/docker-compose.yml logs --tail=50 website`。
 
-**健康检查**：`curl http://127.0.0.1:3300/api/health`（ECS 本地）。
+**健康检查**：`curl http://127.0.0.1:3302/api/health`（ECS 本地）。
 
-**回滚**：镜像按 commit SHA 打标签。回滚时在 ECS 的 `~/cfp-mono/.env` 把 `SITE_IMAGE` 改回上一个 SHA，然后 `docker compose pull && docker compose up -d`。
+**回滚**：镜像按 commit SHA 打标签。回滚时在 ECS 的 `~/cfp-mono/.env` 把 `WEBSITE_IMAGE` 改回上一个 SHA，然后 `docker compose pull && docker compose up -d`。
 
 ## 7. 凭据与安全
 
@@ -102,9 +102,11 @@ gh run watch --repo code-for-people-2026/cfp-mono
 3. 如用 acme.sh 续期，重新 `--renew --force` 一次以保存新值。
 4. RAM 里**禁用并删除旧 key**（这一步才是轮换的意义）。
 
-## 8. 已知缺口 / 第二阶段（website）
+## 8. 已知缺口
 
-- **Payload 生产建表**：✅ 已解决。`apps/website` 已引入正式 migrations（`src/payload/migrations/`），并在 `payload.config.ts` 里把它们作为 `prodMigrations` 传给 postgres adapter。生产（`NODE_ENV=production`）首次连接 DB 时 adapter 会**自动 apply** 这些 migration 建表，已落库的则按 `payload_migrations` 跳过——**部署无需单独的 `payload migrate` 步骤**。需要新增 migration 时（改了 collection/global 字段）跑 `pnpm --filter @cfp/website payload:migrate:create <name>`（连本地库，`PAYLOAD_DB_PUSH` 留空）后提交生成的文件。
-- **website 与 site 共用 `cfp` 库**：✅ 已解决。`apps/website` 的 postgres adapter 固定用 `schemaName: "website"`（schema 名写死在 migration 的建表 SQL 里，故不做成 env 可覆盖，避免“配置的 schema”与“migration 建表的 schema”不一致），与 `apps/site` 的 `public` schema 隔离，两个 Payload 应用各管各的表（含各自的 `cms_admins`，即两套独立后台登录），不再争抢同一 schema。
+- **Payload 生产建表 — 已解决**：website 使用正式的、提交进仓库的 migrations（`apps/website/src/payload/migrations/`），作为 `prodMigrations` 传给 Postgres 适配器，**生产首次连库时自动幂等应用**（不依赖 push，push 在 `NODE_ENV=production` 下本就被禁用），容器只跑 `next start`、无单独 migrate 步骤。构建用普通 `next build`（Turbopack），import 不带 `.js` 扩展名。
+- **website / site 共用库 — 已解决**：`apps/site` 已退役。website 的表固定落在独立的 `website` schema（`schemaName: "website"`，写死在 migration 里），与 site 时代的 `public` schema 隔离，**互不冲突**——所以首次上线无需为了避免冲突而清库。
+- **首次上线清旧表（可选）**：`cfp` 库 `public` schema 里可能残留 site 时代的 Payload 表。它们和 website 的 `website` schema 不冲突，可在确认 website 正常后再清理，不是上线前置条件。
+- **Payload 生成类型未提交（类型安全 follow-up）**：`payload-types.ts` 是生成物、未提交，CI 在其缺席下按宽松类型通过。若要完整 schema 类型安全，需提交它并修 `seed.ts` / `lib/content` 里 6 处严格类型不匹配（slug/target 联合类型、`as Raw` 改 `as unknown as`）。属独立改进。
 - **证书自动续期未对接服务器**：当前证书在本机签发、手动传到 ECS。备案后改为服务器侧自动续期 + reload。
-- **临时放行的 3300**：备案后关闭。
+- **临时放行的 3302**：备案后关闭。
