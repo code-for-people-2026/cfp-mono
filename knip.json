@@ -1,17 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
-    "apps/site": {
-      "entry": [
-        "next.config.ts",
-        "payload.config.ts",
-        "playwright.config.ts",
-        "eslint.config.mjs",
-        "vitest.config.ts",
-        "src/app/**/*.{ts,tsx}",
-        "tests/**/*.ts"
-      ]
-    },
     "apps/website": {
       "entry": [
         "next.config.ts",
@@ -24,30 +13,6 @@
         "src/lib/**/*.ts",
         "src/payload/**/*.ts",
         "tests/**/*.ts"
-      ]
-    },
-    "apps/miniapp-fe": {
-      "entry": [
-        "config/**/*.ts",
-        "src/**/*.{ts,tsx}",
-        "playwright.config.ts",
-        "eslint.config.mjs",
-        "vitest.config.ts",
-        "tests/**/*.ts"
-      ]
-    },
-    "apps/2026-duanwu-booth-assistant": {
-      "entry": [
-        "next.config.ts",
-        "next.config.test.ts",
-        "vitest.config.ts",
-        "vitest.setup.ts",
-        "eslint.config.mjs",
-        "app/**/*.{ts,tsx}",
-        "components/**/*.{ts,tsx}",
-        "lib/**/*.{ts,tsx}",
-        "knowledge/**/*.ts",
-        "test/**/*.ts"
       ]
     },
     "packages/ui": {
