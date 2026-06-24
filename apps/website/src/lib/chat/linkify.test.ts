@@ -13,6 +13,13 @@ describe("linkifyAssistantMarkdown (website)", () => {
     expect(linkifyAssistantMarkdown("/manifesto 是宣言全文。")).toContain("[/manifesto](/manifesto)");
   });
 
+  it("turns the bare /map matrix path into a clickable markdown link", () => {
+    const output = linkifyAssistantMarkdown("看牛马能力剥夺矩阵：/map。");
+
+    expect(output).toContain("[/map](/map)");
+    expect(output).toContain(")。");
+  });
+
   it("does not mistake a fraction like 1/3 for a link", () => {
     const input = "工友价是市场价的 1/3。";
 
@@ -32,9 +39,9 @@ describe("linkifyAssistantMarkdown (website)", () => {
   });
 
   it("wraps a bare URL so it does not absorb the following CJK sentence", () => {
-    const output = linkifyAssistantMarkdown("矩阵在 https://wam.codeforpeople.cn/。上面有全文。");
+    const output = linkifyAssistantMarkdown("详情在 https://www.codeforpeople.cn/。上面有全文。");
 
-    expect(output).toContain("[https://wam.codeforpeople.cn/](https://wam.codeforpeople.cn/)");
+    expect(output).toContain("[https://www.codeforpeople.cn/](https://www.codeforpeople.cn/)");
     expect(output).toContain(")。上面有全文");
   });
 

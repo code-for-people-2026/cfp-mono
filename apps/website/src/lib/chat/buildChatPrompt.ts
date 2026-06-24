@@ -10,13 +10,13 @@ const modeLabels: Record<EntryMode, string> = {
 
 // Canonical pages that already host the full texts. When a visitor wants to read
 // the original/full text, the assistant links here instead of pasting it in chat.
-// 宣言/协议 are on this site; the 牛马能力剥夺矩阵 is the standalone wam app. We hand the
-// model ready-made markdown links (not bare paths): a bare relative path like "/license"
+// 宣言/协议/矩阵 are all on this site now (the 牛马能力剥夺矩阵 互动版 lives at /map). We hand
+// the model ready-made markdown links (not bare paths): a bare relative path like "/license"
 // is not auto-linked by the markdown renderer, so the visitor cannot click it.
 const docLinks = {
   manifesto: "[《数据平权宣言》全文](/manifesto)",
   license: "[《牛马互助协议》全文](/license)",
-  map: "[牛马能力剥夺矩阵](https://wam.codeforpeople.cn/)",
+  map: "[牛马能力剥夺矩阵](/map)",
 };
 
 const sourceIdToLink: Record<string, string> = {

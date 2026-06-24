@@ -3,6 +3,7 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { CMSAdmins } from "./src/payload/collections/CMSAdmins";
 import { FormLinks } from "./src/payload/collections/FormLinks";
+import { MatrixSubmissions } from "./src/payload/collections/MatrixSubmissions";
 import { SiteDocuments } from "./src/payload/collections/SiteDocuments";
 import { ChatPage } from "./src/payload/globals/ChatPage";
 import { Footer } from "./src/payload/globals/Footer";
@@ -54,6 +55,6 @@ export default buildConfig({
       autoGenerate: false,
     },
   },
-  collections: [CMSAdmins, SiteDocuments, FormLinks],
+  collections: [CMSAdmins, SiteDocuments, FormLinks, MatrixSubmissions],
   globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
 });

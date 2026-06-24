@@ -78,7 +78,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   if (viewportWidth >= 768) {
     await expect(
       page.getByRole("main").getByRole("link", { name: "牛马能力剥夺矩阵", exact: true }),
-    ).toHaveAttribute("href", "https://wam.codeforpeople.cn/");
+    ).toHaveAttribute("href", "/map");
   }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "读数据平权宣言", exact: true })).toBeVisible();
@@ -152,7 +152,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
   await expect(page.getByRole("link", { name: "看牛马能力剥夺矩阵" })).toHaveAttribute(
     "href",
-    "https://wam.codeforpeople.cn/",
+    "/map",
   );
   await expect(page.getByRole("link", { name: "看牛马互助协议" })).toHaveAttribute("href", "/license");
 
@@ -167,7 +167,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
   await expect(footer.getByRole("link", { name: "牛马能力剥夺矩阵", exact: true })).toHaveAttribute(
     "href",
-    "https://wam.codeforpeople.cn/",
+    "/map",
   );
   await expect(footer.getByRole("link", { name: "牛马互助协议", exact: true })).toHaveAttribute(
     "href",
@@ -429,11 +429,13 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await expect(page.getByText("SOURCE")).toHaveCount(0);
   await expect(page.getByText("ideal/第一个产品/牛马互助协议.md")).toHaveCount(0);
 
+  // /map 现在是互动版牛马能力剥夺矩阵（WAM），不再是纯文本文档页。
   await page.goto("/map");
   await expect(page.getByRole("heading", { name: "牛马能力剥夺矩阵" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "把“剥夺”作为产品起点。" })).toBeVisible();
-  await expect(page.getByText("一产、二产、服务业新蓝领")).toBeVisible();
-  await expect(page.getByText("劳动议价、时间主权、健康医疗")).toBeVisible();
+  await expect(page.getByText("7 类工友 × 7 样能力")).toBeVisible();
+  // 矩阵左上角的「矩阵说明」入口与表头行列。
+  await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
 });
 
 test("chat route opens from the homepage question entry and carries it over", async ({ page }) => {
@@ -459,12 +461,16 @@ test("payload baseline routes are reachable", async ({ page, request }) => {
   await expect(page.locator("body")).not.toContainText("Application error");
 });
 
-test("footer renders on reading pages but not on the chat page", async ({ page }) => {
-  for (const path of ["/", "/manifesto", "/license", "/map"]) {
+test("footer renders on reading pages but not on the chat or matrix page", async ({ page }) => {
+  for (const path of ["/", "/manifesto", "/license"]) {
     await page.goto(path);
     await expect(page.getByRole("contentinfo")).toBeVisible();
   }
 
-  await page.goto("/chat");
-  await expect(page.getByRole("contentinfo")).toHaveCount(0);
+  // The chat and the interactive matrix (/map) are standalone full-screen experiences
+  // outside the reading layout, so they intentionally have no site footer.
+  for (const path of ["/chat", "/map"]) {
+    await page.goto(path);
+    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+  }
 });
