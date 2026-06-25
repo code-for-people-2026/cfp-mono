@@ -2,7 +2,8 @@
 
 > **命名（已定）**：中文名 **「街坊味」**（接地气，且比"街坊菜"更广，覆盖做饭 / 甜品 / 寿司等多类生产者）；英文代号 **`kith-inn`**（kith=街坊邻里 + inn=小馆/客栈，连读谐音 "kitchen"，含 neighborhood 意味）。
 > 定位描述沿用"社区私房菜助手"。
-> 状态：草稿 v1.0 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> 状态：草稿 v1.1 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> v1.1 变更：§7 重写为**可组合模块平台数据模型**（主干 spine 9 表 + 模块表 + 组合机制 + 四生意映射 + 治理铁律）——经多智能体设计 + 对抗性证伪定稿；关键决定：dish 收进 `offerings`(kind=component)、order 退"日"粒度+餐次落 item、收款内联 orders、delivery/purchasing 零自有表、模块只连 spine。隔离硬机制/索引/迁移见 Tech Spec §3。§8 修正"MVP 零 agent"旧表述。
 > v1.0 变更：新增 §5.5「交互架构」——**一个 agent（今天）+ 三个确定性详情 tab + 同一套后端操作**，主 agent 抬为 MVP 核心（"MVP 零 agent"作废）；定义主对话能力、范围外话术、三层记忆 + 滚动 2 天会话窗口 / 1000 条硬上限。§6.1 改为对话式记单（真实字段 名字+份数+餐次、整天/半天/单餐由 LLM 智能分、地址从顾客历史补全、确认订单语义、去防漏）；§6.4 顾客以接龙名字为识别、默认地址学来的。
 > v0.9 变更：Tech Spec 议程定稿（前端 Taro+NutUI、后端 Node 独立、方案 C 抽 `apps/cms` 共享 Payload、租户隔离、部署、100% 覆盖策略，详见 [Tech Spec](./TECH-SPEC.md) v0.2）；§8 / M0 同步 C（cms）；里程碑估算改为复杂度/风险口径（基准 1 人 + AI）。
 > v0.8 变更：明确 **§6.0 非 MVP**（多商家自助开通才需要；MVP 仅在 M0 手动 seed 桃子的基础配置）；同步修正 M1 里 §6.3/§6.5 的旧描述。
@@ -345,23 +346,63 @@
 
 ---
 
-## 7. 信息架构与数据模型（多商家）
+## 7. 信息架构与数据模型（多商家 · 可组合模块）
 
-以 Payload 集合实现，全部以 `seller` 作租户隔离键。
+> 落到 Payload 集合。**主干（spine）实体不随模块开关增删；模块按 `seller.enabledModules` 组合。** 每个业务集合都带 `seller`（relationship→sellers, required, index）= 租户键（下表不再重复列）。命名沿用仓库 `Recipes.ts` 约定：slug 复数小写、`select` 值 kebab-case、金额用整数分、软停用用 `active`。**租户隔离的硬机制 + 索引 + 迁移注意见 [Tech Spec §3](./TECH-SPEC.md)。**
 
-| 集合 | 关键字段 | 备注 |
+### 7.1 主干 spine
+
+**平台级**
+
+- `sellers` — 商家/租户根：`name`、`serviceArea`、`defaultPriceCents`、`status`(active/paused/archived)、**`enabledModules`**(hasMany: menu-planning/delivery/purchasing/booking = 组合事实源)、`moduleSettings`(json，按模块命名空间)、`profileFreeText`。→ 经营画像 = enabledModules + moduleSettings + profileFreeText（§6.0 非 MVP，M0 直接 seed 桃子一条）。
+- `operators`(auth) — 登录主体：`seller`、`wechatOpenid`(unique,index)、`role`(owner/helper，预留帮手)、`active`。
+
+**核心实体**
+
+| 集合 | 关键字段 | 说明 |
 |---|---|---|
-| `sellers` | 名称、服务小区/范围、群名、默认价格、状态；**＋经营画像字段（出餐结构 / 周期 / 服务日 / 配送方式 / 经营备注）待 §6.0 讨论后定** | 一个老板一条；MVP 仅桃子 |
-| `operators`（auth） | 关联 seller、登录凭证 | 复用 Payload Auth；MVP 单用户 |
-| `customers` | seller、称呼、楼栋房号、分组(固定/散客/**自家**)、默认份数、备注/忌口、默认送达时段、自带饭盒 | 不存真实姓名/电话；"自家"为特殊顾客(§6.4) |
-| `dishes` | seller、名称、分类(荤/素/汤/主食)、**主料**、标签(清淡/费工)、上次使用日期、使用频次、食材 + 每份大致用量(均可选) | 一次性语音/快捷录入 + 增量；主料维度用于去重；每份用量供 §6.9 采购估算 |
-| `menus` | seller、日期、餐次(午/晚)、dishes[]、发布文案、状态(草稿/已发) | 支持整周批量 |
-| `orders` | seller、customer、日期、餐次、份数、特殊要求、价格、来源(接龙/私聊/手动)、送达时段、配送状态、收款状态、收款方式 | 核心表 |
-| `subscriptions`【V1】 | customer、周期(周/月)、模板、暂停/恢复 | 固定周期预订 |
-| `payments`【V1】 | order、金额、渠道(微信支付)、抽成 | 下单即付 + 抽成对账 |
+| `customers` | `displayName`(识别键，不唯一)、`kind`(regular/walk-in/self)、`defaultAddress`(→customer_addresses 单值外键)、`defaultServings?`、`defaultMealWindow?`、`note?` | 接龙名字为识别；自家=kind:self；不存电话 |
+| `customer_addresses` | `customer`、`building`、`unit`、`lastUsedAt?` | 1:N；楼栋=送餐分组键来源；地址学来的(§6.4) |
+| **`offerings`** | `name`、**`kind`(combo-meal/single-item/service-session/component)**、`parentOfferings?`(自关联：combo←component 集)、`unitLabel`、`priceCents?`、`category?`、**`mainIngredient?`(index)**、`tags?`、`lastUsedAt?`、`useCount?`、`recipe?`(json，按 kind 互斥：single-item/component 才填)、`active` | **菜单↔订单↔采购的共享枢纽**；一道菜 = kind:component（不单建 dish 表）；套餐内容物经 parentOfferings |
+| `service_slots` | `date`、`granularity`(occasion/time-slot)、`occasion?`(午/晚)、`startAt/endAt?`(时段)、`status`(draft/open/archived)、`capacity?` | 营业餐次/排期/归档锚点；MVP 唯一约束 (seller,date,occasion) |
+| `orders` | `customer`、**`date`(日级)**、`source`(审计，不控流)、`placedAt`、`note?`、**`totalCents`(汇总列，hook 回写)**、`paymentStatus`(unpaid/paid/confirmed,index)、`paymentMethod?`、`paidAt?`、`idempotencyKey?`(幂等)、`createdBy?` | 一次下单意图 = 一个人这一天；不存餐次/份数/价格/配送 |
+| `order_items` | `order`、`offering`、**`mealOccasion?`(午/晚 落这里)**、`quantity`、`unitPriceCents?`(空=派生默认价)、`note?` | 跨午晚 = 同 order 多 item；桃子常 2 item |
+| `fulfillments` | **`orderItem`(挂餐次粒度)**、`mode`(delivery/pickup/onsite)、`status`(pending/handed-off/done)、`addrBuilding`(index)、`addrUnit`、`assignee?`(受控值)、`sequence?`、`timeWindow?` | 履约薄表；地址履约时定格快照 |
 
-- **送餐清单**在 MVP 阶段是 `orders` 的派生视图（按楼栋分组），不单建表。
-- 历史菜单导入产出 `dishes` 与 `menus` 的初始数据（M0）。
+> **收款 MVP 内联进 `orders`**（paymentStatus/paymentMethod/paidAt），不建 payments 表；V1 抽出是已知破坏性迁移（同名字段，搬家不改语义）。语义钉死：unpaid=没收到 / paid=钱到了 / confirmed=她已核对入账；"谁没付"默认 = unpaid。
+
+### 7.2 模块表（按需）
+
+- **menu-planning → `menu_plans`**：`slot`、`offerings[]`、`publishText?`、`status`(draft/published)。published ≠ 已发微信群（线下动作 App 感知不到）。**不持有 dishes**（内容物在 `offerings.parentOfferings`）。
+- **delivery → 无自有表**：纯行为——`fulfillments` 上的 assignee/status/sequence/addrBuilding + 派生视图（分拣/缺口对账）+ tab/工具。"奶奶分片" = `assignee` 取值（来自 `moduleSettings.delivery.deliverers`），是**数据不是 schema**；单干商家不用 assignee。
+- **purchasing → 无自有表（M2，纯派生）**：订单 × `offering.recipe` 确定性聚合（combo 走 parentOfferings 两跳、single-item 一跳），输出市斤/把/块。
+- **booking → `subscriptions`（V1）**：`customer`、`offering`、`cadence`(weekly/monthly/adhoc)、`pattern`(json)、`status`(active/paused,index)、`pausedRanges?`。订阅是 order 生成器（按租户物化、带 seller token、bypassPublicClose；禁用 admin key）。
+
+> **MVP 唯一的模块表是 `menu_plans`**；delivery / purchasing 都是"主干之上的行为，零自有表"。
+
+### 7.3 组合机制（manifest + 开关）
+
+`enabledModules` 确定性驱动三件事（纯函数可单测）：① **access 放行**（未启用模块的集合对该租户拒绝——物理表全租户共享，靠 access 控可达性，不是"有没有表"）；② **tab 可见性**；③ **agent 工具 + 话术注册**（只注册已启用模块的工具/话术，范围外能力 agent 拿不到 → 自然挡回）。manifest（kith-inn-be 静态常量）每模块声明：`requiresSpine`、`requiresModule`(暂空)、`ownsCollections`、`tabs`、`agentTools`、`agentPromptFragment`、`settingsSchema`。
+
+### 7.4 四种生意映射
+
+| | 桃子私房菜 | 奶茶宝妈 | 烘焙 | 家教(非食品·未来) |
+|---|---|---|---|---|
+| enabledModules | menu-planning, delivery, purchasing | delivery / 仅 spine 自取 | menu-planning, booking, purchasing | booking |
+| Offering | 1 combo-meal + N component | N single-item(逐杯 SKU) | N single-item(周更上下架) | 1 service-session |
+| Order 记法 | 1 order/客/日，2 item(午/晚, offering=combo) | 1 order，多 item 逐杯 | 1 order，多 item | 1 order，1 item(qty=课时) |
+| slot.granularity | occasion(午/晚) | occasion/全天 | time-slot(取货) | time-slot |
+| Fulfillment | delivery，挂每 item，按楼栋，奶奶分片 | delivery/pickup | pickup | onsite(可省) |
+
+> dish 收进 offerings 后，四类生意 menu→order→采购全经 `offerings` + `service_slots` 两个枢纽；非食品(家教)靠 granularity=time-slot + booking 复用同一主干。
+
+### 7.5 治理铁律
+
+1. **模块表外键只指向 spine**（grep 可审计：模块→模块的 relationship 应为零）。
+2. 跨域影响**写主干字段**（delivery 写 `fulfillments.status`；booking 写 `orders`）。
+3. 关系**经共享实体中转**（菜单↔订单经 `offerings`+`service_slots`；采购←菜单经 `offerings.parentOfferings.recipe`）。
+4. **新增模块零改主干**（唯一软扩展 = 枚举加值；db-postgres 加 enum 值要一次 migration，预计会长的枚举一次列全）。
+- **派生不落表**：送餐分组、采购聚合、"最近一餐"聚焦、未付汇总、"今天还差什么"——都是 kith-inn-be 确定性纯函数（Tech Spec §4 阶梯0、§6 单测 100%）。
 
 ---
 
@@ -370,7 +411,7 @@
 > **技术架构不在本 PRD 内定稿，需单独讨论，以 [Tech Spec](./TECH-SPEC.md) 为准。** 本节仅给产品读者一个一句话概览。
 
 - **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node 独立）；数据走 `apps/cms`（**唯一 Payload**，从 website 抽出、各 app 共享、同一个 RDS）。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
-- **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**MVP 全部是"确定性代码 / 普通 LLM 调用"，零 agent、零多轮、零自建 ASR**；全产品唯一值得升到 agent 的是「买菜助手」（§6.9 进阶，M2+）。形态阶梯与全触点映射详见 Tech Spec §4。
+- **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**有一个核心 agent（「今天」主对话，§5.5），它只编排确定性工具；其余触点都是确定性代码 / 普通 LLM 调用，零自建 ASR**。形态阶梯与全触点映射详见 Tech Spec §4。
 
 ---
 
