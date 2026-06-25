@@ -1,38 +1,56 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.1 ｜ 最近更新：2026-06-24
+> 状态：草稿 v0.2 ｜ 最近更新：2026-06-24
 > **本文是技术架构的唯一权威来源（source of truth）**；PRD 只做产品层面的简述并指回本文。
-> ⚠️ 技术架构需**单独讨论**后定稿——以下为从 PRD 迁出的初始内容，尚未逐条评审。
 > 配套 PRD：[PRD](./PRD.md)
+> **估算口径**：按复杂度 / 风险分级（S / M / L）+ 关键风险，墙钟只作松提示，基准"1 人主导 + AI 编码"。
 
 ---
 
-## 1. 架构总览
-
-**原则：最大化复用现有骨架；MVP 无新依赖（语音走系统输入法），ASR 仅可选增强。AI 形态遵循 §3 的使用纪律。**
+## 1. 架构总览（应用拆分 = 方案 C）
 
 ```
-apps/kith-inn-fe  ──►  kith-inn 后端              ──►  apps/website 的 Payload  ──►  Postgres
-(Taro weapp/H5)        (独立文件夹·技术栈自由·待定)        （复用其 Payload / CMS）        （同一 RDS）
-老板侧"大脑"            ├─ 业务逻辑 + 确定性选菜/分组/聚合
-                       ├─ DeepSeek（结构化 / 润色 / 文案）
-                       └─ (可选/非MVP) 应用内 ASR
-
-集合 sellers / orders / dishes … 定义在共享 Payload 上，按 seller 多租户隔离。
+apps/kith-inn-fe      ──HTTPS──►  apps/kith-inn-be          ──REST/GraphQL──►  apps/cms          ──►  Postgres
+(Taro+React, NutUI)               (Node/TS, 独立)                               (唯一 Payload          (一个共享 RDS)
+weapp + H5                        ├─ 微信登录 / 业务 API                         + admin 后台)
+                                  ├─ DeepSeek 代理 + 确定性逻辑                   └─ 集合 sellers/orders/
+                                  └─ (可选/非MVP) 应用内 ASR                         dishes…(可来自共享包)
+                                                                                       ▲
+apps/website (官网前端) ───────────────────────────────────────────────────────────────┘ 也消费同一 cms
 ```
 
-- **前端（老板侧应用）**：`apps/kith-inn-fe`（Taro + React，weapp + H5 双端）。H5 跑自动化与预览，小程序端手测——沿用 [PLAN.md](../../PLAN.md) 既定 H5/weapp 策略。
-- **后端**：kith-inn 后端**尽量独立成单独文件夹、技术栈自由（待定）**，不与 website 代码耦合；但**复用 `apps/website` 里的同一个 Payload**——即同一套 CMS、同一个 Postgres/RDS，**不再另开第二个 RDS 实例**。`apps/website` 本身是官网项目，我们复用的只是其中的 **Payload**（不是它的网站代码）。
-- **数据**：kith-inn 的集合（sellers / orders / dishes…）落在这个共享 Payload 上，按 `seller` 多租户隔离。
-- **AI（DeepSeek）**：复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到共享包供 kith-inn 后端调用；用于订单结构化、菜单润色/文案、沟通文案。注意**"选哪道菜"是 kith-inn 后端里的确定性逻辑，不走 LLM**。
-- **语音输入：MVP 不自建 ASR**。补充录入只需一个普通文本框，口述交给用户手机输入法的语音键（免费），架构上只要"文本输入 + DeepSeek 结构化"，无需录音上传/云 ASR。
-  - 可选增强（非 MVP）：微信「同声传译」插件做应用内语音识别（免费、有配额）；或 weapp 录音 + 云 ASR / Whisper。H5 端可用 Web Speech API。
+**各 app 职责：**
 
-## 2. 数据模型
+| App | 栈 | 职责 |
+|---|---|---|
+| **`apps/cms`** | Next + Payload | **唯一 Payload 宿主**：数据模型、CRUD/GraphQL/REST API、admin 后台、鉴权、租户 access control、迁移。连**唯一的 RDS**。由方案 C 从 website 抽出（见 §7）。 |
+| **`apps/kith-inn-be`** | **Node / TS（独立）** | 业务/领域逻辑：确定性选菜/分组/聚合、订单结构化、DeepSeek 代理、微信登录。经 cms 的 HTTP API 读写。除非 Node 覆盖不了需求才考虑换栈。 |
+| **`apps/kith-inn-fe`** | **Taro + React**，UI=**NutUI React** | 老板侧小程序（weapp + H5）。经 HTTPS 调 kith-inn-be。**不复用 `packages/ui`（shadcn 仅 Web、小程序跑不了）**。 |
+| **`apps/website`** | Next（前端） | 官网。方案 C 后改为**消费 `apps/cms`**，不再自带 Payload。 |
+| `packages/*`（可选） | TS | kith-inn 的 Payload 集合可抽成共享包，被 `apps/cms` 引入（模块化，非必须）。 |
 
-见 PRD §7「信息架构与数据模型」的集合定义；本文后续补充字段级类型、索引、租户隔离实现细节（待定）。
+**为什么这么拆**：① 复用同一个 Payload / 同一个 RDS（不另开实例）；② kith-inn 代码与 website 解耦，前端用小程序最佳实践（Taro + NutUI），不被官网 Web 栈拖累；③ CMS 单一事实源，未来加 app 也干净。
 
-## 3. AI 形态与使用纪律（遵循 Anthropic《Building Effective Agents》）
+## 2. 后端 ↔ Payload
+
+- **Payload 的定位**：它不只是内容 CMS，而是"schema 驱动的数据 + API + admin + 鉴权 + access control"层。我们用它当 **数据 / CRUD / 鉴权 / 后台** 层——这是正当且常见的用法，且租户隔离正是它的强项。
+- **边界（重要）**：**业务/领域逻辑放 `kith-inn-be`，不塞进 Payload**。确定性选菜、聚合、AI 编排都在后端。
+- **访问方式**：kith-inn-be 经 cms 的 **REST / GraphQL HTTP API** 读写（跨进程，标准做法），**不**为了用 Payload Local API 而与 cms 同进程耦合。
+- **不绕过 Payload**：写数据一律走 Payload API（让校验 / hooks / 租户 access control 生效），**禁止 kith-inn-be 直连同一个库写裸 SQL**（否则隔离/校验全失效）。
+- **LLM host**：DeepSeek 调用一律走 kith-inn-be（**API key 只在服务端**）。复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到共享包供后端调用。
+
+## 3. 数据模型与租户隔离
+
+- **集合定义**：见 PRD §7。字段级类型 / 索引后续在本文补充（待定）。
+- **多租户隔离**（multi-tenant，**第一天就建对，MVP 单租户也照建**）：
+  - 每个业务集合带 **`seller` 租户键**；
+  - 在 **Payload access control 数据层强制**隔离——access 函数据当前登录商家所属 `seller` 返回查询约束，不靠 UI 过滤；
+  - **优先评估 Payload 官方 `@payloadcms/plugin-multi-tenant`**，覆盖得了就用（少自定义代码、好测）；不够再手写 access control。
+- **红线**：kith-inn-be 调 cms 时必须 **以登录商家身份透传**（带商家 token），让 Payload 强制隔离；**严禁用 admin / 万能 key 直连**（漏写 `seller` 过滤就串户）。
+- **消费者不是租户**（V1）：是挂在某 seller 下的顾客；下单只看该商家菜单。跨商家下单是后话。
+- **登录**：商家走微信 `wx.login → code → kith-inn-be 换 openid`；openid → operator → seller。
+
+## 4. AI 形态与使用纪律（遵循 Anthropic《Building Effective Agents》）
 
 > 核心原则：**用最简单够用的方案，只在确有必要时才加复杂度**——能不用 agent 就不用。工作流（写死路径）适合可预测任务；agent 只在"路径无法预先确定、需模型在循环中自主决策"时才用，并要权衡其成本/延迟/不确定性。
 
@@ -57,7 +75,7 @@ apps/kith-inn-fe  ──►  kith-inn 后端              ──►  apps/websit
 | 订单结构化 | **1 普通 LLM 调用** | MVP | 文本→结构化 + 顾客匹配；候选名单我们注入 prompt |
 | 菜单润色 / 节令 / 群文案 | **1 普通 LLM 调用** | MVP | 在确定性菜单之后润色 |
 | 沟通文案模板 | **1 普通 LLM 调用** | M2 | 场景→一段她口气的话 |
-| 经营画像·配置初始化（onboarding） | **1 普通 LLM 调用 / 轻 workflow** | 待定 | 引导式问答出结构化配置，详见 PRD §6.0（待讨论） |
+| 经营画像·配置初始化（onboarding） | **1 普通 LLM 调用 / 轻 workflow** | 非 MVP | 引导式问答出结构化配置，详见 PRD §6.0（留白、待讨论） |
 | 买菜助手·口语入口 | **4 Agent** | M2+ | 全产品唯一需 agent：动态定范围(今/明/周) + 跨轮调"查菜单/份数/算清单" + 对话记忆；浅工具环 + 确定性兜底 |
 
 **结论：MVP 全部落在「确定性 / 普通 LLM 调用」两档——零 agent、零多轮、零自建 ASR。** 整个产品目前只有「买菜助手」一个触点值得升到 agent，且排在 M2+。
@@ -69,13 +87,36 @@ apps/kith-inn-fe  ──►  kith-inn 后端              ──►  apps/websit
 - 数据量级允许就把上下文塞进 prompt，不让模型自调检索；
 - 真要上 agent：浅工具环、确定性兜底、可测（呼应仓库 100% 覆盖门禁）。
 
-## 4. 待单独讨论的技术议题
+## 5. 部署（套现有阿里云模型，见 [DEPLOYMENT.md](../../DEPLOYMENT.md)）
 
-- **应用拆分（已定方向）**：前端 `apps/kith-inn-fe`；kith-inn 后端独立成单独文件夹、技术栈自由；**复用 `apps/website` 的同一个 Payload（同一 CMS / 同一 RDS）**。仍待议：是否要 MCP server 这种形态（取决于 §3 的 AI 形态——MVP 多为普通 LLM 调用，未必需要）。
-- **如何共享 website 的 Payload（关键）**：是把 kith-inn 的集合直接加进 website 的 Payload config，还是 kith-inn 后端作为独立服务、经 Payload 的 REST / Local API / 同一 DB 连接来读写？要在"代码解耦"和"共用同一 Payload/RDS"之间找平衡。
-- **LLM host 在哪一层**：前端直连模型？还是 kith-inn 后端代理（密钥、配额、审计都更可控，倾向后端，但留待讨论）？
-- **项目代码归属 / 文件夹**：kith-inn 前后端代码放 `kith-inn/` 下，还是 cfp-mono 的共享 `apps/*`（如 `apps/kith-inn-fe`、`apps/kith-inn-be`）？（现仅 `kith-inn/docs/`，代码结构未定。）
-- DeepSeek v4 的 function-calling / tool-use 稳定性（买菜助手 agent 的前提）。
-- ASR 选型（若做应用内语音）：微信同传插件 vs 云 ASR vs 自托管。
-- 租户隔离的具体实现（Payload access control / row-level）。
-- 部署与 100% 覆盖率门禁下的测试策略。
+第一阶段路线：**阿里云 ECS + Docker Compose + 一个 RDS Postgres + ACR 镜像 + GitHub Actions + Nginx/SSL**，不上 K8s。
+
+| 组件 | 部署 |
+|---|---|
+| `apps/cms` | ECS 容器（仿 `cfp-website` 镜像），Nginx/SSL，连**那一个共享 RDS**；Payload + admin 的家 |
+| `apps/kith-inn-be` | ECS 容器，HTTPS + **合法域名**（微信硬性要求），调 cms |
+| `apps/kith-inn-fe`·weapp | `taro build --type weapp` → **`miniprogram-ci`** 推到微信平台 → 体验版/审核/发布 |
+| `apps/kith-inn-fe`·H5 | `taro build --type h5` → Nginx 静态托管（子域），跑自动化 + 预览 |
+| DB | **一个共享 RDS Postgres**（C 让 cms 接管） |
+
+- **MVP 试用**：H5 子域 + weapp **体验版**——临时子域不需 ICP 备案；正式上线再备案（PRD §10）。
+- **`miniprogram-ci`**：微信官方 Node 包，CI 里自动上传/预览小程序（替代手动开开发者工具）。需后台「代码上传密钥」+ AppID + CI 机 IP 白名单。
+
+## 6. 测试与 100% 覆盖策略
+
+仓库门禁：CI（[ci.yml](../../.github/workflows/ci.yml)）每个 PR 跑 `pnpm verify`（含 **100% 覆盖**：statements/branches/functions/lines）+ `pnpm test:e2e`（playwright），并起临时 postgres 给 Payload 测。三个新 app 都要过。
+
+- **`kith-inn-be`**：业务逻辑写成**纯函数 + 依赖注入**（确定性选菜/聚合/订单结构化）→ 单测轻松 100%；**边界全 mock**（DeepSeek、微信 openid、cms 的 HTTP API）。这正是"确定性内核 + 薄 LLM"的回报——确定性=可测，LLM 只在边界 mock。
+- **`apps/cms`（Payload 集合）**：重点测 **access control（租户隔离，安全攸关，必测）**、hooks、校验，对着 CI 的临时 postgres 跑。
+- **`kith-inn-fe`（Taro）**：**逻辑（hooks/状态/调接口）与展示分离**；逻辑 vitest 测到 100%，集成靠 H5 的 playwright e2e，**weapp 第一阶段手动测**（PLAN.md 既定）。FE 的 100% 最难，靠"组件小 + 逻辑抽离"扛。
+- **覆盖排除**：生成的类型、配置、Payload 生成物、纯展示（交 e2e）排除在外，让 100% 落在真逻辑上（PLAN.md：代码刻意小而清楚，让 100% 有意义）。
+- **代价自觉**：100% 是真税，从第一天约束代码风格（小、纯、可 mock）——前述架构选择（确定性内核、数据/逻辑分离）部分就是为交得起这个税。
+
+## 7. 仍待议 / 后续任务
+
+- **cms 抽取调研（复杂度 M / 风险中）**：把 website 的 Payload 迁到 `apps/cms` 的具体步骤；风险点——website 已有 **100% 覆盖测试**要一起改不能破、Payload/DB 归属与迁移。
+- **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，C 后改为 cms 承载、website 消费。
+- 是否需要 MCP server 形态（取决于 §4 的 AI 形态；MVP 多为普通 LLM 调用，未必需要）。
+- **ASR 选型（M2）**：微信同传插件 vs 云 ASR vs 自托管（MVP 不做，走系统输入法）。
+- **DeepSeek v4 的 function-calling / tool-use 稳定性**（买菜助手 agent 的前提，M2+）。
+- 数据模型字段级类型 / 索引（补 §3）。
