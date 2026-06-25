@@ -9,6 +9,15 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/chat": ["./knowledge/**/*.md"],
   },
+  // The interactive matrix moved from /map to /wam. Already-seeded Payload data
+  // (site-settings.directionMapUrl, headerNav, footerLinks) and any old bookmarks
+  // may still point at /map, so redirect the old paths instead of 404ing.
+  async redirects() {
+    return [
+      { source: "/map", destination: "/wam", permanent: true },
+      { source: "/map/:path*", destination: "/wam/:path*", permanent: true },
+    ];
+  },
 };
 
 export default withPayload(nextConfig);
