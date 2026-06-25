@@ -321,7 +321,7 @@
 
 > **技术架构不在本 PRD 内定稿，需单独讨论，以 [Tech Spec](./TECH-SPEC.md) 为准。** 本节仅给产品读者一个一句话概览。
 
-- **应用（详见 Tech Spec，待定）**：前端 `apps/kith-inn-fe`（Taro，weapp+H5），后端/DB `apps/website`（Payload + Postgres），AI 复用 DeepSeek 客户端。MVP 无新依赖（语音走系统输入法）。
+- **应用（详见 Tech Spec，待定）**：前端 `apps/kith-inn-fe`（Taro，weapp+H5）；kith-inn 后端**独立成单独文件夹、技术栈自由**，但**复用 `apps/website` 的同一个 Payload**（同一 Postgres，不另开 RDS）；AI 复用 DeepSeek。MVP 无新依赖（语音走系统输入法）。
 - **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**MVP 全部是"确定性代码 / 普通 LLM 调用"，零 agent、零多轮、零自建 ASR**；全产品唯一值得升到 agent 的是「买菜助手」（§6.9 进阶，M2+）。形态阶梯与全触点映射详见 Tech Spec §3。
 
 ---

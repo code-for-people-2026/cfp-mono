@@ -12,15 +12,19 @@
 **原则：最大化复用现有骨架；MVP 无新依赖（语音走系统输入法），ASR 仅可选增强。AI 形态遵循 §3 的使用纪律。**
 
 ```
-微信小程序 / H5  ──►  apps/website (Next.js + Payload)  ──►  Postgres
-  apps/kith-inn-fe       ├─ Payload 集合 (sellers/orders/...)
-  (Taro + React)         ├─ /api/ai/*  (DeepSeek：结构化 / 润色 / 文案)
-  老板侧"大脑"            └─ (可选/非MVP) /api/asr/*  应用内语音识别
+apps/kith-inn-fe  ──►  kith-inn 后端              ──►  apps/website 的 Payload  ──►  Postgres
+(Taro weapp/H5)        (独立文件夹·技术栈自由·待定)        （复用其 Payload / CMS）        （同一 RDS）
+老板侧"大脑"            ├─ 业务逻辑 + 确定性选菜/分组/聚合
+                       ├─ DeepSeek（结构化 / 润色 / 文案）
+                       └─ (可选/非MVP) 应用内 ASR
+
+集合 sellers / orders / dishes … 定义在共享 Payload 上，按 seller 多租户隔离。
 ```
 
 - **前端（老板侧应用）**：`apps/kith-inn-fe`（Taro + React，weapp + H5 双端）。H5 跑自动化与预览，小程序端手测——沿用 [PLAN.md](../../PLAN.md) 既定 H5/weapp 策略。
-- **后端 / 管理台 / DB**：`apps/website`（Payload CMS + 自定义 Next API 路由 + Postgres）。（注：PLAN.md 原写 `apps/site`，按本次决定改用 **`apps/website`**——DeepSeek 客户端也在 website。）
-- **AI（DeepSeek）**：复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到 `apps/website` 或共享包；用于订单结构化、菜单润色/文案、沟通文案。注意**"选哪道菜"是 `apps/website` 里的确定性后端逻辑，不走 LLM**。
+- **后端**：kith-inn 后端**尽量独立成单独文件夹、技术栈自由（待定）**，不与 website 代码耦合；但**复用 `apps/website` 里的同一个 Payload**——即同一套 CMS、同一个 Postgres/RDS，**不再另开第二个 RDS 实例**。`apps/website` 本身是官网项目，我们复用的只是其中的 **Payload**（不是它的网站代码）。
+- **数据**：kith-inn 的集合（sellers / orders / dishes…）落在这个共享 Payload 上，按 `seller` 多租户隔离。
+- **AI（DeepSeek）**：复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到共享包供 kith-inn 后端调用；用于订单结构化、菜单润色/文案、沟通文案。注意**"选哪道菜"是 kith-inn 后端里的确定性逻辑，不走 LLM**。
 - **语音输入：MVP 不自建 ASR**。补充录入只需一个普通文本框，口述交给用户手机输入法的语音键（免费），架构上只要"文本输入 + DeepSeek 结构化"，无需录音上传/云 ASR。
   - 可选增强（非 MVP）：微信「同声传译」插件做应用内语音识别（免费、有配额）；或 weapp 录音 + 云 ASR / Whisper。H5 端可用 Web Speech API。
 
@@ -67,9 +71,10 @@
 
 ## 4. 待单独讨论的技术议题
 
-- **应用拆分**：前端定为 `apps/kith-inn-fe`、后端复用 `apps/website`（本次 review 确定）。仍待议：是否需要独立后端 / 是否要 MCP server 这种形态（取决于 §3 的 AI 形态——MVP 多为普通 LLM 调用，未必需要 MCP）。
-- **LLM host 在哪一层**：前端直连模型？还是后端代理（密钥、配额、审计都更可控，倾向后端，但留待讨论）？
-- **项目代码归属**：kith-inn 的运行时代码放在 `kith-inn/` 下，还是 cfp-mono 的共享 `apps/*`（如 `apps/kith-inn-fe`）？（现仅 `kith-inn/docs/`，代码结构未定。）
+- **应用拆分（已定方向）**：前端 `apps/kith-inn-fe`；kith-inn 后端独立成单独文件夹、技术栈自由；**复用 `apps/website` 的同一个 Payload（同一 CMS / 同一 RDS）**。仍待议：是否要 MCP server 这种形态（取决于 §3 的 AI 形态——MVP 多为普通 LLM 调用，未必需要）。
+- **如何共享 website 的 Payload（关键）**：是把 kith-inn 的集合直接加进 website 的 Payload config，还是 kith-inn 后端作为独立服务、经 Payload 的 REST / Local API / 同一 DB 连接来读写？要在"代码解耦"和"共用同一 Payload/RDS"之间找平衡。
+- **LLM host 在哪一层**：前端直连模型？还是 kith-inn 后端代理（密钥、配额、审计都更可控，倾向后端，但留待讨论）？
+- **项目代码归属 / 文件夹**：kith-inn 前后端代码放 `kith-inn/` 下，还是 cfp-mono 的共享 `apps/*`（如 `apps/kith-inn-fe`、`apps/kith-inn-be`）？（现仅 `kith-inn/docs/`，代码结构未定。）
 - DeepSeek v4 的 function-calling / tool-use 稳定性（买菜助手 agent 的前提）。
 - ASR 选型（若做应用内语音）：微信同传插件 vs 云 ASR vs 自托管。
 - 租户隔离的具体实现（Payload access control / row-level）。
