@@ -1,7 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
 > 状态：草稿 v0.6 ｜ 最近更新：2026-06-25
-> v0.6 变更：**架构 C′**——§1 改为"各自 Payload、同库分 schema"（apps/cms=kith-inn 自己的 Payload `schemaName="kith_inn"`，**website 原封不动**自带 `schemaName="website"`，同一 RDS）；§3.4 M0 不再迁 website、大幅变轻；§7 cms spike 复杂度降 S；§2 DeepSeek 客户端 kith-inn-be 自带不抽 website。**§3 镜像 PRD 主链路状态模型**：索引加 `orders.status`、`fulfillments.serviceDate`、`chat_messages`；§3.3 加写侧状态机（draft 生命周期、slot 首单 upsert、chat 留存）；§3.4 加 `chat_messages` 集合。
+> v0.6 变更：**架构 C′**——§1 改为"各自 Payload、同库分 schema"（apps/cms=kith-inn 自己的 Payload `schemaName="kith_inn"`，**website 原封不动**自带 `schemaName="website"`，同一 RDS）；§3.4 M0 不再迁 website、大幅变轻；§7 cms spike 复杂度降 S；§2 DeepSeek 客户端 kith-inn-be 自带不抽 website。**§3 镜像 PRD 主链路状态模型**：索引加 `orders.status`、`fulfillments.serviceDate`、`chat_messages`；§3.3 加写侧状态机（draft 生命周期、slot upsert 开餐、chat 留存）；§3.4 加 `chat_messages` 集合。**对抗性通审 9 项修正**：§3.3 写侧状态机重写（① draft 纯记录零副作用 → ② 确认订单物化：upsert 开 slot[archived 不自动重开] + 建 fulfillments、取消作废 → ③ date/occasion 反范式实时回写 hook）；§3.2 fulfillments 索引加 occasion、orders 索引加 status（"上次点啥"只看 confirmed）；快照排除 serviceDate/occasion；§7 ICP 决策补 `callContainer` 免合法域名信道、移除悬挂的 P2-4 引用。
 > v0.5 变更：通审/Codex 修正——补回 §3 标题(P1-A)；明确 **legacy(menu-core/community-cooking/recipes)不复用、从 0 新建**；§5 后端合法域名需 ICP 备案(给桃子真机用 = 备案 or 微信云托管)、§7 加该决策项。
 > v0.4 变更：§3 重写——租户隔离升级为硬机制（tenantScoped access 工厂 + 写侧 seller 覆写 + 跨租户引用校验 + 聚合禁裸 SQL）、索引清单、快照/派生/归档、M0 数据层任务（装 multi-tenant 插件、recipes 后门审计）。对应 PRD §7 v1.1 的数据模型。
 > v0.3 变更：§4 把「今天」主对话 agent 抬为 **MVP 唯一 agent**（"MVP 零 agent"作废）；去掉防漏校验、买菜助手并入主 agent；新增 §4.1（一个 agent 多工具、范围外挡回、三层记忆 + 滚动 2 天会话、地址补全、agent 的 100% 覆盖策略）。对应 PRD §5.5。
@@ -61,8 +61,8 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 | 索引 | 服务的查询 |
 |---|---|
 | `orders (seller, date, status, paymentStatus)` | 今天确认订单(status=confirmed)、谁没付款；draft/canceled 同表靠 status 过滤掉 |
-| `orders (seller, customer, placedAt)` | 张阿姨上次点啥（ASC 索引 + `ORDER BY placedAt DESC LIMIT 1` 走 backward scan，**别写 DESC**） |
-| `fulfillments (seller, serviceDate, addrBuilding, status)` | 26B 送了、谁没送、缺口对账（反范式 `serviceDate` 入索引，按用餐日+楼栋成批，免回连 order）|
+| `orders (seller, customer, status, placedAt)` | 张阿姨上次点啥（**只看 status=confirmed**，排除草稿/取消；ASC 索引 + `ORDER BY placedAt DESC LIMIT 1` 走 backward scan，**别写 DESC**） |
+| `fulfillments (seller, serviceDate, occasion, addrBuilding, status)` | 26B 送了、谁没送、缺口对账（反范式 serviceDate+occasion 入索引，按 用餐日+餐次+楼栋 成批，免回连 order；occasion 可空，全天商家全列同段）|
 | `service_slots (seller, date, occasion)` unique | 唯一约束 + 最近一餐定位 + 首单 upsert 命中 |
 | `offerings (seller, mainIngredient, lastUsedAt)` | 菜单主料去重扫描（component 型） |
 | `order_items (seller, order)` | "今天订单"的 join 走索引 |
@@ -73,10 +73,14 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 
 ### 3.3 快照 / 派生 / 归档
 
-- **快照**（`beforeChange` create 时定格）：`order_items.unitPriceCents`(落值时)、`fulfillments.addrBuilding/addrUnit`——归档可回放（"张阿姨上次点啥"靠快照非现状）。
+- **快照**（`beforeChange` create 时定格）：`order_items.unitPriceCents`(落值时)、`fulfillments.addrBuilding/addrUnit`——归档可回放（"张阿姨上次点啥"靠快照非现状）。**注**：`fulfillments.serviceDate/occasion` **不在快照之列**——它们是订单身份（哪一餐），随 order 实时同步（见下 §3.3 写侧状态机 ③），改餐次要跟着搬。
 - **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：送餐分组、采购聚合、"最近一餐"聚焦、未付汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/采购/未付/未送，`slot.status=open` 才进"今天该做"范围)。
 - **归档软删**：`service_slots.status=archived` 时，其下 order/item/fulfillment 写操作经 access.update + hook 拦截，要求显式 `force`（对应二次确认）；不真删；保护范围含 menu_plans。
-- **写侧状态机（确定性 hook/服务，可单测）**：① 记单解析即落 `orders.status=draft`（连 items）持久化，「确认订单」→`confirmed`、「取消」→`canceled`，与会话留存解耦（PRD §7 记单生命周期）；**draft 不进送餐/采购/未付派生口径**。② 落 `order_items` 时按 (seller, order.date, mealOccasion) **upsert `service_slots`→status=open**（无则建），菜单发布同样开餐——slot 不靠手动开。③ `chat_messages` 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
+- **写侧状态机（确定性 hook/服务，可单测）**：
+  - **① draft = 纯记录**：记单解析即落 `orders.status=draft`（连 items）持久化、与会话留存解耦（PRD §7），但**不触任何经营表**——不开 slot、不建 fulfillments。
+  - **② 确认订单 = 物化事务**（draft→`confirmed` 的 afterChange 内）：a) 按 (seller, order.date, mealOccasion) **upsert `service_slots`→open**——仅当 slot 缺失或 ∈{draft, open}；`archived` **不自动重开**，撞上则走 force / 二次确认（与归档软删一致）；菜单发布同样开餐。b) 为每个需履约的 item **建 `fulfillments`**（self/onsite 不进分拣）。「取消」→`canceled` 作废其 fulfillments。**draft 全程零副作用**——故"draft 不进送餐/采购/未付/今天该做口径"由"未物化"天然保证，不靠 read 端过滤。
+  - **③ 反范式回写**：`order_items.mealOccasion` / `orders.date` 改动经 afterChange hook **重写关联 fulfillments 的 `serviceDate/occasion`**（实时同步、非冻结；地址 addrBuilding/addrUnit 仍冻结）——免送餐视图把改过餐次的单批错栋/错日。
+  - **④ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
 
 ### 3.4 M0 数据层任务（方案 C′：kith-inn 自己的 Payload，**不动 website**）
 
@@ -167,8 +171,8 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 
 ## 7. 仍待议 / 后续任务
 
-- **【决策】给桃子真机试用的后端域名**：备案提前（先备案 `kith-inn-be` 域名，数周）vs 微信云托管/云开发（免单独备案、最快上真机）。直接决定 MVP 能不能在不备案下让桃子真用（§5）。
-- **新建 `apps/cms` spike（复杂度 S，C′ 后大幅变轻）**：验证 Payload `schemaName="kith_inn"` + 与 website 同 `DATABASE_URL`、两个 Payload 实例同库分 schema 互不干扰（迁移各跑各的 schema）；以及 `@payloadcms/plugin-multi-tenant` 与 `operators+wechatOpenid` 鉴权链的契合（见 P2-4 风险）。**website 不动**，无迁移历史延续性风险。
+- **【决策·进行中】给桃子真机试用的后端域名**：ICP 备案（`kith-inn-be` 域名，**在审**）vs 微信云托管/云开发免备案试用。后者的 `callContainer`/`callFunction` 走**微信内部信道、不过「合法域名」校验、免 ICP 备案**——可让 kith-inn-be 仍跑 ECS、前面架一个薄云托管服务做代理转发；备案下来后切回直连合法域名、前端调用层几乎不改。注意：**体验版真机仍强制校验合法域名**，DevTools 关「校验合法域名」只对开发版生效，故关开关绕不过——只云托管/云开发这条信道能真正免备案。**2026-06-25 决定**：备案在审，若 MVP 编码完成前下来则直连、连代理都省；没下来再走云托管代理。
+- **新建 `apps/cms` spike（复杂度 S，C′ 后大幅变轻）**：验证 Payload `schemaName="kith_inn"` + 与 website 同 `DATABASE_URL`、两个 Payload 实例同库分 schema 互不干扰（迁移各跑各的 schema）；以及 `@payloadcms/plugin-multi-tenant` 能否与 `operators+wechatOpenid` 自定义鉴权链共存（需 spike 验证：插件默认假设与我们透传 openid 的登录信任根是否冲突，见 §3.1）。**website 不动**，无迁移历史延续性风险。
 - **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，需补"新增 `apps/cms` 容器（schema kith_inn）+ kith-inn-be/fe 部署"；website 部分不变。
 - 是否需要 MCP server 形态（取决于 §4 的 AI 形态；MVP 多为普通 LLM 调用，未必需要）。
 - **ASR 选型（M2）**：微信同传插件 vs 云 ASR vs 自托管（MVP 不做，走系统输入法）。
