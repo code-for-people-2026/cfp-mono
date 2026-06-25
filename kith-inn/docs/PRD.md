@@ -2,7 +2,8 @@
 
 > **命名（已定）**：中文名 **「街坊味」**（接地气，且比"街坊菜"更广，覆盖做饭 / 甜品 / 寿司等多类生产者）；英文代号 **`kith-inn`**（kith=街坊邻里 + inn=小馆/客栈，连读谐音 "kitchen"，含 neighborhood 意味）。
 > 定位描述沿用"社区私房菜助手"。
-> 状态：草稿 v1.2 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> 状态：草稿 v1.3 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> v1.3 变更：**架构定为 C′**（kith-inn 自己的 Payload、`schemaName="kith_inn"`、连 website 同一 RDS 省实例、**website 原封不动**；§8/M0/Tech Spec §1/§3.4/§7 同步，M0 因此变轻 S–M/风险低）。**主链路状态模型补全（P1-D/E/F）**：`orders.status`(draft/confirmed/canceled) 记单生命周期——解析即落 draft 持久化、与会话留存解耦，「确认订单」转正；`service_slots` 首单 upsert→open；`order_items.mealOccasion` 确认前必填 + (date,occasion) 逻辑命中 slot；`fulfillments` 反范式 serviceDate+occasion 按楼栋成批。**P1-G** 解析准确率改可量（字段级 ≥95%、午晚零错配）；**P1-H** occasion 枚举一次列全(breakfast/brunch/lunch/dinner/all-day)。**杂项**：source 枚举、定价解析优先级 + totalCents 派生、recipe json 形状、自家=onsite 不进分拣、fulfillment status 收口、解析兜底、展示对话载体=服务端 `chat_messages`、paymentStatus.confirmed→reconciled（与 orders.status 去歧义）。
 > v1.2 变更：经多智能体通审 + 决策——明确 **kith-inn 从 0 新建，legacy(menu-core/community-cooking/recipes) 完全不复用**；§7 引言、Tech Spec §3.4 据此清理；备案/后端合法域名前提见 §10 + Tech Spec §5。（通审其余 P1-D/E/F 主链路状态模型、G 验收口径、H occasion 枚举待后续逐条处理。）
 > v1.1 变更：§7 重写为**可组合模块平台数据模型**（主干 spine 9 表 + 模块表 + 组合机制 + 四生意映射 + 治理铁律）——经多智能体设计 + 对抗性证伪定稿；关键决定：dish 收进 `offerings`(kind=component)、order 退"日"粒度+餐次落 item、收款内联 orders、delivery/purchasing 零自有表、模块只连 spine。隔离硬机制/索引/迁移见 Tech Spec §3。§8 修正"MVP 零 agent"旧表述。
 > v1.0 变更：新增 §5.5「交互架构」——**一个 agent（今天）+ 三个确定性详情 tab + 同一套后端操作**，主 agent 抬为 MVP 核心（"MVP 零 agent"作废）；定义主对话能力、范围外话术、三层记忆 + 滚动 2 天会话窗口 / 1000 条硬上限。§6.1 改为对话式记单（真实字段 名字+份数+餐次、整天/半天/单餐由 LLM 智能分、地址从顾客历史补全、确认订单语义、去防漏）；§6.4 顾客以接龙名字为识别、默认地址学来的。
@@ -188,7 +189,7 @@
 
 **三层记忆（别混）**：
 
-- **展示的对话（她能滚动看到的历史）**：**滚动 2 天窗口**（今天 + 昨天）；每天 0 点清掉"前天"；另设**硬上限 1000 条，超出删最旧 200 条**；像微信带**时间戳**；滚到顶提示"更早的对话已清理"。（数字先这么定，试用期再调。）
+- **展示的对话（她能滚动看到的历史）**：**滚动 2 天窗口**（今天 + 昨天）；每天 0 点清掉"前天"；另设**硬上限 1000 条，超出删最旧 200 条**；像微信带**时间戳**；滚到顶提示"更早的对话已清理"。（数字先这么定，试用期再调。）**载体 = 服务端持久化**（cms 一张 `chat_messages` 集合，按 seller/operator 隔离，FE 分页拉取）——不是端上 localStorage，换设备/重装仍在；2 天窗口与 1000 条上限都是**服务端写时执行的留存策略**，与业务订单（永久）解耦。
 - **LLM 工作上下文（喂给模型的，≠ 展示历史）**：只喂**最近 ~3–5 轮（≈ 6–10 条）**，并按 **token 预算**截断（大段接龙粘贴、旧的工具返回都裁掉 / 概括）；**事实一律即时调工具重查**，不靠旧上下文（数据可能已变）。不喂整 2 天——省 token、浅工具环、避免被陈旧上下文带偏。
 - **业务数据（真记忆）**：订单 / 菜单都在库里、永久；**历史问题是 agent 查数据，不是翻聊天**。
 
@@ -219,19 +220,20 @@
 
 ### 6.1 记单 · 订单收拢 **[MVP]**
 
-把散落的接龙与私聊单收拢成结构化订单——**记单就发生在「今天」主对话里**（§5.5）：她把接龙往底部一贴、或说一句，agent 回一张**已分午/晚的订单卡**，点「确认订单」就落进「订单」台账。
+把散落的接龙与私聊单收拢成结构化订单——**记单就发生在「今天」主对话里**（§5.5）：她把接龙往底部一贴、或说一句，agent 回一张**已分午/晚的订单卡**（解析时已落 `draft` 草稿单进库，不怕会话清空），点「确认订单」把草稿转正进「订单」台账。
 
 - **贴接龙（主）**：整段粘进来，AI 解析成订单（**名字 + 份数 + 餐次**）。**格式是软的**——整天、半天、只一餐都可能（她有时一天一统计、有时只做晚饭），由 LLM 智能分午/晚。这正是该上 LLM 的地方，**不写死格式**。
 - **说一句补 / 改**（文本框或键盘语音键，免费、**MVP 不自建 ASR**）：私聊单、临时加单、改单都行——"1D28D 王阿姨加两份晚餐""把李叔那单取消""苏月兰改成午餐"，走同一个 `updateOrder`。
 - **地址不在接龙里**（接龙只有名字+份数+餐次）：每条订单的**送餐地址从顾客资料自动补全**（§6.4，按该顾客的默认/最近地址）；**新客首次**由她私信拿到地址、录一次，之后自动带出；**某单临时换地址**可语音改。
 - **特殊要求基本没有**：大锅饭清淡、不分口味忌口；有就当备注，不做卖点。
 - **自家入单**：桃子自家也走同一条接龙（"桃子 6 份晚餐"），当普通一条解析（份数、采购都算进去）。
-- **确认 / 改**：卡片可「确认订单」整批落库，或「逐条改」（自然语言 / 语音 / 点按都行）。
+- **解析兜底**：整段读不懂（乱格式 / 非订单文本）时 agent **不瞎猜**——回"这段没读懂，能拆成『名字 + 份数 + 餐次』再发、或逐条说"；部分成功则只落能确定的、存疑项标"待确认"等她一句话补。**宁可少落、不可错落**（错落 = 漏送根因）。
+- **确认 / 改**：解析即落 `draft` 草稿单（库里，**不怕会话清空**，§7 记单生命周期）；卡片「确认订单」把草稿整批转正（→台账，计入采购/送餐），「逐条改」（自然语言 / 语音 / 点按都行），「取消」作废某单（→canceled）。
 
 **用户故事**：作为桃子，我把接龙一贴、或说一句，就在主对话里得到一张分好午/晚、自动带地址的订单卡，确认一下就齐了——不用靠脑子记谁点了什么。
 
 **验收要点**：
-- 贴一段真实接龙（含整天午+晚、有人跨餐次），解析准确率达到"她无需大改即可用"，**午/晚分组正确**。
+- 贴一段真实接龙（含整天午+晚、有人跨餐次），解析准确率可量：在 ≥10 段真实接龙样本（桃子历史群消息）上，**字段级准确率**（每个 order_item 的 名字+份数+餐次 三字段全对算一条正确）≥ 95%，**午/晚分组零错配**（餐次分错是漏送根因，零容忍）；剩余 ≤5% 由「逐条改」一句话纠正。
 - 老顾客**自动带出地址**；新客提示补地址。
 - 一句话改单（加份 / 取消 / 改餐次 / 换地址）即时生效。
 
@@ -362,21 +364,24 @@
 
 | 集合 | 关键字段 | 说明 |
 |---|---|---|
-| `customers` | `displayName`(识别键，不唯一)、`kind`(regular/walk-in/self)、`defaultAddress`(→customer_addresses 单值外键)、`defaultServings?`、`defaultMealWindow?`、`note?` | 接龙名字为识别；自家=kind:self；不存电话 |
+| `customers` | `displayName`(识别键，不唯一)、`kind`(regular/walk-in/self)、`defaultAddress`(→customer_addresses 单值外键)、`defaultServings?`、`defaultMealWindow?`、`note?` | 接龙名字为识别；自家=kind:self（履约 onsite、不进送餐分拣，但份数/采购照算）；不存电话 |
 | `customer_addresses` | `customer`、`building`、`unit`、`lastUsedAt?` | 1:N；楼栋=送餐分组键来源；地址学来的(§6.4) |
 | **`offerings`** | `name`、**`kind`(combo-meal/single-item/service-session/component)**、`parentOfferings?`(自关联：combo←component 集)、`unitLabel`、`priceCents?`、`category?`、**`mainIngredient?`(index)**、`tags?`、`lastUsedAt?`、`useCount?`、`recipe?`(json，按 kind 互斥：single-item/component 才填)、`active` | **菜单↔订单↔采购的共享枢纽**；一道菜 = kind:component（不单建 dish 表）；套餐内容物经 parentOfferings |
-| `service_slots` | `date`、`granularity`(occasion/time-slot)、`occasion?`(午/晚)、`startAt/endAt?`(时段)、`status`(draft/open/archived)、`capacity?` | 营业餐次/排期/归档锚点；MVP 唯一约束 (seller,date,occasion) |
-| `orders` | `customer`、**`date`(日级)**、`source`(审计，不控流)、`placedAt`、`note?`、**`totalCents`(汇总列，hook 回写)**、`paymentStatus`(unpaid/paid/confirmed,index)、`paymentMethod?`、`paidAt?`、`idempotencyKey?`(幂等)、`createdBy?` | 一次下单意图 = 一个人这一天；不存餐次/份数/价格/配送 |
-| `order_items` | `order`、`offering`、**`mealOccasion?`(午/晚 落这里)**、`quantity`、`unitPriceCents?`(空=派生默认价)、`note?` | 跨午晚 = 同 order 多 item；桃子常 2 item |
-| `fulfillments` | **`orderItem`(挂餐次粒度)**、`mode`(delivery/pickup/onsite)、`status`(pending/handed-off/done)、`addrBuilding`(index)、`addrUnit`、`assignee?`(受控值)、`sequence?`、`timeWindow?` | 履约薄表；地址履约时定格快照 |
+| `service_slots` | `date`、`granularity`(occasion/time-slot)、**`occasion?`(枚举 breakfast/brunch/lunch/dinner/all-day，MVP 只用 lunch/dinner)**、`startAt/endAt?`(时段)、`status`(draft/open/archived)、`capacity?` | 营业餐次/排期/归档锚点；MVP 唯一约束 (seller,date,occasion)；**首单即开餐**：记单落 item 时 be 按该键 upsert slot→open（无则建），菜单发布同样开餐 |
+| `orders` | `customer`、**`date`(=用餐日/service date，日级)**、**`status`(draft/confirmed/canceled,index = 记单生命周期)**、`source`(审计,见下枚举,不控流)、`placedAt`(录入时间，≠用餐日)、`note?`、**`totalCents`(汇总列，hook 回写)**、`paymentStatus`(unpaid/paid/reconciled,index)、`paymentMethod?`、`paidAt?`、`idempotencyKey?`(幂等)、`createdBy?`(→operators) | 一次下单意图 = 一个人这一天；不存餐次/份数/价格/配送 |
+| `order_items` | `order`、`offering`、**`mealOccasion?`(同 occasion 枚举)**、`quantity`、`unitPriceCents?`(空=派生默认价)、`note?` | 跨午晚 = 同 order 多 item；桃子常 2 item；`mealOccasion` 经 LLM 智能分后**确认订单前必填**(occasion 粒度商家)，全天/time-slot 商家可空；slot 归属 = (order.date, mealOccasion) 逻辑命中 service_slots 唯一键，不另设 FK |
+| `fulfillments` | **`orderItem`(挂餐次粒度)**、**`serviceDate`(index,反范式)**、**`occasion?`(反范式)**、`mode`(delivery/pickup/onsite)、`status`(pending/handed-off/done)、`addrBuilding`(index)、`addrUnit`、`assignee?`(受控值)、`sequence?`、`timeWindow?` | 履约薄表；地址 + 用餐日 + 餐次履约时定格快照（送餐视图按 (serviceDate,occasion,addrBuilding) 整栋成批，免回连 order_item→order）|
 
-> **收款 MVP 内联进 `orders`**（paymentStatus/paymentMethod/paidAt），不建 payments 表；V1 抽出是已知破坏性迁移（同名字段，搬家不改语义）。语义钉死：unpaid=没收到 / paid=钱到了 / confirmed=她已核对入账；"谁没付"默认 = unpaid。
+> **收款 MVP 内联进 `orders`**（paymentStatus/paymentMethod/paidAt），不建 payments 表；V1 抽出是已知破坏性迁移（同名字段，搬家不改语义）。语义钉死：unpaid=没收到 / paid=钱到了 / **reconciled=她已核对入账**（旧名 `confirmed`，为与 `orders.status` 的 `confirmed` 区分而改名——收款轴 ≠ 记单生命周期轴）；"谁没付"默认 = unpaid。
+> **记单生命周期（与会话解耦，§5.5 三层记忆：业务数据永久）**：贴接龙/口述解析后**立即落 `status=draft` 的 order + items**——即使她没点确认、即使滚动窗口清掉聊天，草稿仍在库里。「确认订单」把 draft→`confirmed`（进台账、计入采购/送餐口径）；「取消」→`canceled`。**draft 不进送餐/采购/未付口径**，但「订单」tab 随时找回续确认。
+> **枚举（一次列全，避免后续加值要 migration，§7.5 铁律 4）**：`orders.source` = `chat-paste`/`chat-voice`/`manual`/`subscription`/`import`；`occasion`（service_slots 与 order_items 共用）= `breakfast`/`brunch`/`lunch`/`dinner`/`all-day`。
+> **定价解析（确定性，be 纯函数可单测）**：单价取值优先级 = `order_items.unitPriceCents`（这单特价/手填）→ `offerings.priceCents`（菜品定价）→ `sellers.defaultPriceCents`（商家兜底，桃子=30 元/份）。`orders.totalCents` = Σ(item.quantity × 解析单价) 经 afterChange hook 回写，只读派生、不手填；item 增删改即重算。`canceled` 单不计入。**确认订单时 be 把解析出的单价落进 `unitPriceCents`（快照定格，Tech Spec §3.3）**，历史价格不随 offering/seller 改价漂移；draft 期可留空走实时派生。
 
 ### 7.2 模块表（按需）
 
 - **menu-planning → `menu_plans`**：`slot`、`offerings[]`、`publishText?`、`status`(draft/published)。published ≠ 已发微信群（线下动作 App 感知不到）。**不持有 dishes**（内容物在 `offerings.parentOfferings`）。
-- **delivery → 无自有表**：纯行为——`fulfillments` 上的 assignee/status/sequence/addrBuilding + 派生视图（分拣/缺口对账）+ tab/工具。"奶奶分片" = `assignee` 取值（来自 `moduleSettings.delivery.deliverers`），是**数据不是 schema**；单干商家不用 assignee。
-- **purchasing → 无自有表（M2，纯派生）**：订单 × `offering.recipe` 确定性聚合（combo 走 parentOfferings 两跳、single-item 一跳），输出市斤/把/块。
+- **delivery → 无自有表**：纯行为——`fulfillments` 上的 assignee/status/sequence/addrBuilding + 派生视图（分拣/缺口对账）+ tab/工具。"奶奶分片" = `assignee` 取值（来自 `moduleSettings.delivery.deliverers`），是**数据不是 schema**；单干商家不用 assignee。**status 收口**：`pending`(未处理) → `handed-off`(已交送餐人/奶奶、未到顾客，仅分片时用) → `done`(已送达＝语音勾销)；桃子自送则 pending→done 直达。缺口对账 = 数 `status≠done`。
+- **purchasing → 无自有表（M2，纯派生）**：订单 × `offering.recipe` 确定性聚合（combo 走 parentOfferings 两跳、single-item 一跳），输出市斤/把/块。`recipe` json 形状：`{ ingredients: [{ name, qtyPerServing, unit }], yieldServings? }`（unit 用买菜口径：斤/把/块/个）；只 component/single-item 填，combo 不填（其用量 = 内容物之和）。
 - **booking → `subscriptions`（V1）**：`customer`、`offering`、`cadence`(weekly/monthly/adhoc)、`pattern`(json)、`status`(active/paused,index)、`pausedRanges?`。订阅是 order 生成器（按租户物化、带 seller token、bypassPublicClose；禁用 admin key）。
 
 > **MVP 唯一的模块表是 `menu_plans`**；delivery / purchasing 都是"主干之上的行为，零自有表"。
@@ -411,7 +416,7 @@
 
 > **技术架构不在本 PRD 内定稿，需单独讨论，以 [Tech Spec](./TECH-SPEC.md) 为准。** 本节仅给产品读者一个一句话概览。
 
-- **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node 独立）；数据走 `apps/cms`（**唯一 Payload**，从 website 抽出、各 app 共享、同一个 RDS）。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
+- **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node 独立）；数据走 `apps/cms`（kith-inn **自己的 Payload**，`schemaName="kith_inn"`，连**与 website 同一个 RDS**省实例、但 schema 独立；**website 原封不动**）。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
 - **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**有一个核心 agent（「今天」主对话，§5.5），它只编排确定性工具；其余触点都是确定性代码 / 普通 LLM 调用，零自建 ASR**。形态阶梯与全触点映射详见 Tech Spec §4。
 
 ---
@@ -420,9 +425,9 @@
 
 > 每个里程碑都要"可演示 + 可被桃子真用"。
 
-### M0 — 打底（复杂度 **M** ｜ 风险中）
-> 风险点：把 website 的 Payload 抽到 `apps/cms`（方案 C）时，website 已有 100% 覆盖测试要一起改、不能破；Payload/DB 归属与迁移。
-- **建 `apps/cms` + 迁移 website 的 Payload**（方案 C，见 Tech Spec §1/§7）；website 改为消费 cms。
+### M0 — 打底（复杂度 **S–M** ｜ 风险低）
+> 风险点：C′ 下 **website 完全不动**——只新建 kith-inn 自己的 Payload（`schemaName="kith_inn"`）连同一个 RDS，无 website 重构、无迁移历史延续性风险。剩余风险仅在打通调用链 + 多商家 schema 的隔离正确性（Tech Spec §3）。
+- **新建 `apps/cms`**（kith-inn 自己的 Payload，`schemaName="kith_inn"`，连与 website 同库省 RDS；**website 不动**，方案 C′，见 Tech Spec §1/§3.4）。
 - 打通 kith-inn-fe ↔ kith-inn-be ↔ cms/Payload ↔ Postgres ↔ DeepSeek 调用链。
 - 建多商家 schema（§7 的 MVP 集合）。
 - 初始化桃子的菜品池：**一次性语音/快捷录入她的常用菜**（标主料/分类），群历史导出成功则作为加速项叠加；之后日常增量积累。
@@ -503,6 +508,7 @@
 
 - **北极星**：桃子**自发**使用频率（目标：工作日每天用，无需提醒）。
 - 漏单数（工作日）→ 趋近 0。
+- 记单解析字段级准确率 ≥ 95%、午/晚分组零错配（§6.1 验收口径）。
 - 每日"发菜单"耗时显著下降；菜单"采用/小改即用"比例 ≥ 目标。
 - 红包/收款漏收次数下降。
 - 她**主动**把工具推荐/引荐给 ≥1 位其他宝妈。
