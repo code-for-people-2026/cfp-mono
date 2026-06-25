@@ -2,7 +2,8 @@
 
 > **命名（已定）**：中文名 **「街坊味」**（接地气，且比"街坊菜"更广，覆盖做饭 / 甜品 / 寿司等多类生产者）；英文代号 **`kith-inn`**（kith=街坊邻里 + inn=小馆/客栈，连读谐音 "kitchen"，含 neighborhood 意味）。
 > 定位描述沿用"社区私房菜助手"。
-> 状态：草稿 v0.8 ｜ 最近更新：2026-06-24 ｜ 负责人：码成工小队
+> 状态：草稿 v0.9 ｜ 最近更新：2026-06-24 ｜ 负责人：码成工小队
+> v0.9 变更：Tech Spec 议程定稿（前端 Taro+NutUI、后端 Node 独立、方案 C 抽 `apps/cms` 共享 Payload、租户隔离、部署、100% 覆盖策略，详见 [Tech Spec](./TECH-SPEC.md) v0.2）；§8 / M0 同步 C（cms）；里程碑估算改为复杂度/风险口径（基准 1 人 + AI）。
 > v0.8 变更：明确 **§6.0 非 MVP**（多商家自助开通才需要；MVP 仅在 M0 手动 seed 桃子的基础配置）；同步修正 M1 里 §6.3/§6.5 的旧描述。
 > v0.7 变更：英文名改为 `kith-inn`（项目文件夹同步重命名 `kith/`→`kith-inn/`）；按 PR review 订正 Tech Spec 应用引用——前端 `apps/kith-inn-fe`、后端 `apps/website`（非 site）。
 > v0.6 变更：命名定为「街坊味」(kith)；§6.0 配置初始化**改为留白**（设计尚未敲定，待专门讨论）；§0.5 补记**长期愿景**（邻里能力目录 + 按需匹配 + 因人定制工具，远期、与 V1 无关）。
@@ -324,7 +325,7 @@
 
 > **技术架构不在本 PRD 内定稿，需单独讨论，以 [Tech Spec](./TECH-SPEC.md) 为准。** 本节仅给产品读者一个一句话概览。
 
-- **应用（详见 Tech Spec，待定）**：前端 `apps/kith-inn-fe`（Taro，weapp+H5）；kith-inn 后端**独立成单独文件夹、技术栈自由**，但**复用 `apps/website` 的同一个 Payload**（同一 Postgres，不另开 RDS）；AI 复用 DeepSeek。MVP 无新依赖（语音走系统输入法）。
+- **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node 独立）；数据走 `apps/cms`（**唯一 Payload**，从 website 抽出、各 app 共享、同一个 RDS）。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
 - **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**MVP 全部是"确定性代码 / 普通 LLM 调用"，零 agent、零多轮、零自建 ASR**；全产品唯一值得升到 agent 的是「买菜助手」（§6.9 进阶，M2+）。形态阶梯与全触点映射详见 Tech Spec §3。
 
 ---
@@ -333,14 +334,17 @@
 
 > 每个里程碑都要"可演示 + 可被桃子真用"。
 
-### M0 — 打底（~2–3 天）
-- 打通 kith-inn-fe ↔ website/Payload ↔ Postgres ↔ DeepSeek 调用链。
+### M0 — 打底（复杂度 **M** ｜ 风险中）
+> 风险点：把 website 的 Payload 抽到 `apps/cms`（方案 C）时，website 已有 100% 覆盖测试要一起改、不能破；Payload/DB 归属与迁移。
+- **建 `apps/cms` + 迁移 website 的 Payload**（方案 C，见 Tech Spec §1/§7）；website 改为消费 cms。
+- 打通 kith-inn-fe ↔ kith-inn-be ↔ cms/Payload ↔ Postgres ↔ DeepSeek 调用链。
 - 建多商家 schema（§7 的 MVP 集合）。
 - 初始化桃子的菜品池：**一次性语音/快捷录入她的常用菜**（标主料/分类），群历史导出成功则作为加速项叠加；之后日常增量积累。
 - **手动 seed 桃子的基础经营配置**（出餐结构 4 菜 1 汤、服务日周一至五、午/晚、配送方式）——最简方式，**不做 §6.0 的 AI 引导**（§6.0 非 MVP）。
 - **交付**：能在 H5 上登录桃子的"灶台"，看到带主料标注的菜品池。
 
-### M1 — MVP（~1–2 周）
+### M1 — MVP（复杂度 **L** ｜ 风险中）
+> 风险点：订单解析准确率（她要信得过）、FE 100% 覆盖（小程序最难测）、菜单确定性内核的去重/约束正确性。
 - §6.1 记单（接龙粘贴 + 语音补私聊 + AI 结构化 + 防漏校验）。
 - §6.2 AI 菜单生成（菜品池、N 天不重复、整周批量、发布文案）。
 - §6.3 防漏送/防错送（分拣视图 + 整栋/单门牌语音勾销 + 缺口对账）。
