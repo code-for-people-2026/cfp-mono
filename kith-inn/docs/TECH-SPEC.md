@@ -1,4 +1,4 @@
-# Tech Spec：街坊味（kith）
+# Tech Spec：街坊味（kith-inn）
 
 > 状态：草稿 v0.1 ｜ 最近更新：2026-06-24
 > **本文是技术架构的唯一权威来源（source of truth）**；PRD 只做产品层面的简述并指回本文。
@@ -12,15 +12,15 @@
 **原则：最大化复用现有骨架；MVP 无新依赖（语音走系统输入法），ASR 仅可选增强。AI 形态遵循 §3 的使用纪律。**
 
 ```
-微信小程序 / H5  ──►  apps/site (Next.js + Payload)  ──►  Postgres
-  apps/miniapp-fe        ├─ Payload 集合 (sellers/orders/...)
+微信小程序 / H5  ──►  apps/website (Next.js + Payload)  ──►  Postgres
+  apps/kith-inn-fe       ├─ Payload 集合 (sellers/orders/...)
   (Taro + React)         ├─ /api/ai/*  (DeepSeek：结构化 / 润色 / 文案)
   老板侧"大脑"            └─ (可选/非MVP) /api/asr/*  应用内语音识别
 ```
 
-- **前端（老板侧应用）**：`apps/miniapp-fe`（Taro4 + React，weapp + H5 双端）。H5 跑自动化与预览，小程序端手测——沿用 [PLAN.md](../../PLAN.md) 既定策略。
-- **后端 / 管理台 / DB**：`apps/site`（Payload CMS + 自定义 Next API 路由 + Postgres）。PLAN.md 明确 site 即小程序共享后端，**本期不新建 `apps/miniapp-be`**，需隔离再拆。
-- **AI（DeepSeek）**：复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到 `apps/site` 或共享包；用于订单结构化、菜单润色/文案、沟通文案。注意**"选哪道菜"是 `apps/site` 里的确定性后端逻辑，不走 LLM**。
+- **前端（老板侧应用）**：`apps/kith-inn-fe`（Taro + React，weapp + H5 双端）。H5 跑自动化与预览，小程序端手测——沿用 [PLAN.md](../../PLAN.md) 既定 H5/weapp 策略。
+- **后端 / 管理台 / DB**：`apps/website`（Payload CMS + 自定义 Next API 路由 + Postgres）。（注：PLAN.md 原写 `apps/site`，按本次决定改用 **`apps/website`**——DeepSeek 客户端也在 website。）
+- **AI（DeepSeek）**：复用现有客户端模式（现位于 `apps/website/src/lib/deepseek`），抽到 `apps/website` 或共享包；用于订单结构化、菜单润色/文案、沟通文案。注意**"选哪道菜"是 `apps/website` 里的确定性后端逻辑，不走 LLM**。
 - **语音输入：MVP 不自建 ASR**。补充录入只需一个普通文本框，口述交给用户手机输入法的语音键（免费），架构上只要"文本输入 + DeepSeek 结构化"，无需录音上传/云 ASR。
   - 可选增强（非 MVP）：微信「同声传译」插件做应用内语音识别（免费、有配额）；或 weapp 录音 + 云 ASR / Whisper。H5 端可用 Web Speech API。
 
@@ -67,9 +67,9 @@
 
 ## 4. 待单独讨论的技术议题
 
-- **应用拆分**：小程序前端 + 后端如何落地？复用既有 `apps/site` 当后端，还是新建 app？是否需要独立后端 / 是否要 MCP server 这种形态（取决于 §3 的 AI 形态——MVP 多为普通 LLM 调用，未必需要 MCP）。
+- **应用拆分**：前端定为 `apps/kith-inn-fe`、后端复用 `apps/website`（本次 review 确定）。仍待议：是否需要独立后端 / 是否要 MCP server 这种形态（取决于 §3 的 AI 形态——MVP 多为普通 LLM 调用，未必需要 MCP）。
 - **LLM host 在哪一层**：前端直连模型？还是后端代理（密钥、配额、审计都更可控，倾向后端，但留待讨论）？
-- **项目代码归属**：kith 的运行时代码放在 `kith/` 下，还是 cfp-mono 的共享 `apps/*`？（现仅 `kith/docs/`，代码结构未定。）
+- **项目代码归属**：kith-inn 的运行时代码放在 `kith-inn/` 下，还是 cfp-mono 的共享 `apps/*`（如 `apps/kith-inn-fe`）？（现仅 `kith-inn/docs/`，代码结构未定。）
 - DeepSeek v4 的 function-calling / tool-use 稳定性（买菜助手 agent 的前提）。
 - ASR 选型（若做应用内语音）：微信同传插件 vs 云 ASR vs 自托管。
 - 租户隔离的具体实现（Payload access control / row-level）。
