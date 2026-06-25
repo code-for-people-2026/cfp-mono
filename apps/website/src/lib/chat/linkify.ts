@@ -24,7 +24,7 @@ const bareUrl = /(^|[^[\]("'<=])(https?:\/\/[A-Za-z0-9\-._~:/?#[\]@!$&'()*+,;=%]
 // leading group rejects a preceding word char / slash (so it is not part of a longer path
 // or URL) and markdown-link punctuation; the trailing lookahead rejects path continuation
 // (so "/licenses" or "/license/x" is not matched as "/license").
-const bareInternalPath = /(^|[^A-Za-z0-9/\]("'<=])(\/(?:manifesto|license|map))(?![A-Za-z0-9/-])/g;
+const bareInternalPath = /(^|[^A-Za-z0-9/\]("'<=])(\/(?:manifesto|license|wam))(?![A-Za-z0-9/-])/g;
 
 // Trailing punctuation that is almost always sentence punctuation rather than part of the
 // URL. Closing brackets/parens are left alone so URLs that legitimately contain them are

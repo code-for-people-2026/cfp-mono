@@ -14,7 +14,7 @@ export const SiteSettings: GlobalConfig = {
     { name: "shareDescription", label: "分享描述 (OG/SEO)", type: "textarea", required: true },
     {
       name: "directionMapUrl",
-      label: "牛马能力剥夺矩阵链接 (站内 /map)",
+      label: "牛马能力剥夺矩阵链接 (站内 /wam)",
       type: "text",
       required: true,
     },

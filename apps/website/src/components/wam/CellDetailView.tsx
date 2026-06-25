@@ -86,7 +86,7 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
 
       lastSwipeNavigationAt = now
       setActiveCellId(nextCellId)
-      router.replace(`/map/cell/${nextCellId}`, { scroll: false })
+      router.replace(`/wam/cell/${nextCellId}`, { scroll: false })
     },
     [activeCellId, cells, columns, rows, router]
   )
@@ -131,7 +131,7 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
   return (
     <main className="cell-page">
       <header className="cell-page-topbar">
-        <Link href="/map" className="back-link">
+        <Link href="/wam" className="back-link">
           矩阵
         </Link>
         <div>

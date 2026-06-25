@@ -87,22 +87,6 @@ export default async function HomePage() {
               ))}
             </div>
           </div>
-
-          <aside
-            data-testid="hero-site-qr"
-            className="absolute top-20 right-5 z-20 hidden flex-col items-center gap-2 sm:right-8 lg:right-10 xl:flex"
-          >
-            <div className="border border-[var(--border)] bg-white p-2 shadow-[var(--shadow-soft)]">
-              <Image
-                src="/assets/brand/site-qr.png"
-                alt="码成工官网二维码"
-                width={160}
-                height={160}
-                className="h-24 w-24 object-contain"
-              />
-            </div>
-            <span className="text-xs font-black text-[var(--muted)]">扫码分享本站</span>
-          </aside>
         </div>
       </section>
 

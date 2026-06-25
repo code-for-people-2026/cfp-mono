@@ -31,7 +31,7 @@ export default function MatrixGuidePage() {
   return (
     <main className="app-shell guide-shell">
       <header className="guide-topbar">
-        <Link className="guide-back-icon" href="/map" aria-label="返回矩阵" title="返回矩阵">
+        <Link className="guide-back-icon" href="/wam" aria-label="返回矩阵" title="返回矩阵">
           <ArrowLeft size={22} strokeWidth={2.4} />
         </Link>
         <div>

@@ -78,7 +78,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   if (viewportWidth >= 768) {
     await expect(
       page.getByRole("main").getByRole("link", { name: "牛马能力剥夺矩阵", exact: true }),
-    ).toHaveAttribute("href", "/map");
+    ).toHaveAttribute("href", "/wam");
   }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "读数据平权宣言", exact: true })).toBeVisible();
@@ -152,7 +152,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
   await expect(page.getByRole("link", { name: "看牛马能力剥夺矩阵" })).toHaveAttribute(
     "href",
-    "/map",
+    "/wam",
   );
   await expect(page.getByRole("link", { name: "看牛马互助协议" })).toHaveAttribute("href", "/license");
 
@@ -167,7 +167,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
   await expect(footer.getByRole("link", { name: "牛马能力剥夺矩阵", exact: true })).toHaveAttribute(
     "href",
-    "/map",
+    "/wam",
   );
   await expect(footer.getByRole("link", { name: "牛马互助协议", exact: true })).toHaveAttribute(
     "href",
@@ -292,33 +292,6 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
   );
 });
 
-test("homepage hero shows a scannable site QR on wide screens, hidden on narrow ones", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/");
-
-  const heroQr = page.getByTestId("hero-site-qr");
-  await expect(heroQr).toBeVisible();
-  const qrImage = heroQr.getByAltText("码成工官网二维码");
-  await expect(qrImage).toHaveAttribute("src", /site-qr\.png/);
-
-  // It sits above the dialogue box and clear of the centered hero copy (does not overlap content).
-  const dialogue = page.getByTestId("hero-manifesto-slogan");
-  const [qrBox, sloganBox, headingBox] = await Promise.all([
-    heroQr.boundingBox(),
-    dialogue.boundingBox(),
-    page.getByRole("heading", { level: 1 }).boundingBox(),
-  ]);
-  if (!qrBox || !sloganBox || !headingBox) {
-    throw new Error("Missing hero geometry");
-  }
-  expect(qrBox.y).toBeLessThan(sloganBox.y); // above the slogan / dialogue area
-  expect(qrBox.x).toBeGreaterThan(headingBox.x + headingBox.width); // to the right of the centered copy
-
-  // Pointless on phones (the visitor is already on the site) — hidden below the xl breakpoint.
-  await page.setViewportSize({ width: 800, height: 900 });
-  await expect(heroQr).toBeHidden();
-});
-
 test("life scene tags align at the bottom of cards in each row", async ({ page }) => {
   await page.setViewportSize({ width: 820, height: 1000 });
   await page.goto("/");
@@ -429,8 +402,8 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await expect(page.getByText("SOURCE")).toHaveCount(0);
   await expect(page.getByText("ideal/第一个产品/牛马互助协议.md")).toHaveCount(0);
 
-  // /map 现在是互动版牛马能力剥夺矩阵（WAM），不再是纯文本文档页。
-  await page.goto("/map");
+  // /wam 现在是互动版牛马能力剥夺矩阵（WAM），不再是纯文本文档页。
+  await page.goto("/wam");
   await expect(page.getByRole("heading", { name: "牛马能力剥夺矩阵" })).toBeVisible();
   await expect(page.getByText("7 类工友 × 7 样能力")).toBeVisible();
   // 矩阵左上角的「矩阵说明」入口与表头行列。
@@ -467,9 +440,9 @@ test("footer renders on reading pages but not on the chat or matrix page", async
     await expect(page.getByRole("contentinfo")).toBeVisible();
   }
 
-  // The chat and the interactive matrix (/map) are standalone full-screen experiences
+  // The chat and the interactive matrix (/wam) are standalone full-screen experiences
   // outside the reading layout, so they intentionally have no site footer.
-  for (const path of ["/chat", "/map"]) {
+  for (const path of ["/chat", "/wam"]) {
     await page.goto(path);
     await expect(page.getByRole("contentinfo")).toHaveCount(0);
   }

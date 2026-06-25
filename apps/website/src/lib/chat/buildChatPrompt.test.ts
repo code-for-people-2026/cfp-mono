@@ -8,7 +8,7 @@ describe("buildChatPrompt (website)", () => {
     expect(prompt).toContain("不要在对话里整段复制原文");
     expect(prompt).toContain("/manifesto");
     expect(prompt).toContain("/license");
-    expect(prompt).toContain("/map");
+    expect(prompt).toContain("/wam");
   });
 
   it("hands the model clickable markdown links, not bare paths", () => {
@@ -16,7 +16,7 @@ describe("buildChatPrompt (website)", () => {
 
     expect(prompt).toContain("[《数据平权宣言》全文](/manifesto)");
     expect(prompt).toContain("[《牛马互助协议》全文](/license)");
-    expect(prompt).toContain("[牛马能力剥夺矩阵](/map)");
+    expect(prompt).toContain("[牛马能力剥夺矩阵](/wam)");
     expect(prompt).toContain("markdown 链接格式");
   });
 

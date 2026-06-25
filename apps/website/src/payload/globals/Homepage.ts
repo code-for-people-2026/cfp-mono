@@ -104,7 +104,7 @@ export const Homepage: GlobalConfig = {
               required: true,
               options: [
                 { label: "数据平权宣言 (/manifesto)", value: "manifesto" },
-                { label: "牛马能力剥夺矩阵 (/map)", value: "map" },
+                { label: "牛马能力剥夺矩阵 (/wam)", value: "map" },
                 { label: "牛马互助协议 (/license)", value: "license" },
               ],
             },

@@ -128,7 +128,7 @@ export function InteractiveMatrix({ rows, columns, cells }: Props) {
             <thead>
               <tr>
                 <th aria-label="矩阵说明">
-                  <Link className="matrix-corner-link" href="/map/guide">
+                  <Link className="matrix-corner-link" href="/wam/guide">
                     矩阵说明
                   </Link>
                 </th>
@@ -157,7 +157,7 @@ export function InteractiveMatrix({ rows, columns, cells }: Props) {
                       <td key={cell.id} className={column.unsegmented ? 'unsegmented' : undefined}>
                         <Link
                           className="matrix-cell-link"
-                          href={`/map/cell/${cell.id}`}
+                          href={`/wam/cell/${cell.id}`}
                           aria-label={`${cell.id} ${column.title} × ${row.title}`}
                         >
                           <span className="cell-id">{cell.id}</span>
