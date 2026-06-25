@@ -13,7 +13,7 @@ export default async function CellPage({ params }: Props) {
   const cell = getMatrixCell(cellId);
 
   if (!cell) {
-    redirect("/map");
+    redirect("/wam");
   }
 
   return (

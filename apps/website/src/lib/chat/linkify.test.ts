@@ -13,10 +13,10 @@ describe("linkifyAssistantMarkdown (website)", () => {
     expect(linkifyAssistantMarkdown("/manifesto 是宣言全文。")).toContain("[/manifesto](/manifesto)");
   });
 
-  it("turns the bare /map matrix path into a clickable markdown link", () => {
-    const output = linkifyAssistantMarkdown("看牛马能力剥夺矩阵：/map。");
+  it("turns the bare /wam matrix path into a clickable markdown link", () => {
+    const output = linkifyAssistantMarkdown("看牛马能力剥夺矩阵：/wam。");
 
-    expect(output).toContain("[/map](/map)");
+    expect(output).toContain("[/wam](/wam)");
     expect(output).toContain(")。");
   });
 

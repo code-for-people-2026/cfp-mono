@@ -1,6 +1,6 @@
-// 牛马能力剥夺矩阵（互动版 WAM）已迁入官网，挂在站内 /map 路由（见 app/(wam)/map）。
+// 牛马能力剥夺矩阵（互动版 WAM）已迁入官网，挂在站内 /wam 路由（见 app/(wam)/wam）。
 // 官网里与这张矩阵有关的入口都指向这个站内路径，不再外链到独立部署。
-export const directionMapHref = "/map";
+export const directionMapHref = "/wam";
 
 export const siteMetadata = {
   title: "码成工｜为“工友”敲键盘",

@@ -32,11 +32,11 @@ export type SectionBlock<Item> = { heading: string; intro: string; items: Item[]
 
 export type LifeScene = Card & { tags: string[] };
 
-// 「继续阅读」卡片的目标：manifesto/license 是站内文档页，map 指向互动矩阵 /map。
+// 「继续阅读」卡片的目标：manifesto/license 是站内文档页，map 指向互动矩阵 /wam。
 export type ContinueReadTarget = "manifesto" | "map" | "license";
 export type ContinueRead = { label: string; description: string; target: ContinueReadTarget };
 
-// site-documents 集合实际承载的文档页（互动矩阵 /map 不是文档页，故不在此列）。
+// site-documents 集合实际承载的文档页（互动矩阵 /wam 不是文档页，故不在此列）。
 export type DocumentSlug = "manifesto" | "license";
 
 export type HomepageContent = {
