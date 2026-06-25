@@ -2,7 +2,8 @@
 
 > **命名（已定）**：中文名 **「街坊味」**（接地气，且比"街坊菜"更广，覆盖做饭 / 甜品 / 寿司等多类生产者）；英文代号 **`kith-inn`**（kith=街坊邻里 + inn=小馆/客栈，连读谐音 "kitchen"，含 neighborhood 意味）。
 > 定位描述沿用"社区私房菜助手"。
-> 状态：草稿 v1.1 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> 状态：草稿 v1.2 ｜ 最近更新：2026-06-25 ｜ 负责人：码成工小队
+> v1.2 变更：经多智能体通审 + 决策——明确 **kith-inn 从 0 新建，legacy(menu-core/community-cooking/recipes) 完全不复用**；§7 引言、Tech Spec §3.4 据此清理；备案/后端合法域名前提见 §10 + Tech Spec §5。（通审其余 P1-D/E/F 主链路状态模型、G 验收口径、H occasion 枚举待后续逐条处理。）
 > v1.1 变更：§7 重写为**可组合模块平台数据模型**（主干 spine 9 表 + 模块表 + 组合机制 + 四生意映射 + 治理铁律）——经多智能体设计 + 对抗性证伪定稿；关键决定：dish 收进 `offerings`(kind=component)、order 退"日"粒度+餐次落 item、收款内联 orders、delivery/purchasing 零自有表、模块只连 spine。隔离硬机制/索引/迁移见 Tech Spec §3。§8 修正"MVP 零 agent"旧表述。
 > v1.0 变更：新增 §5.5「交互架构」——**一个 agent（今天）+ 三个确定性详情 tab + 同一套后端操作**，主 agent 抬为 MVP 核心（"MVP 零 agent"作废）；定义主对话能力、范围外话术、三层记忆 + 滚动 2 天会话窗口 / 1000 条硬上限。§6.1 改为对话式记单（真实字段 名字+份数+餐次、整天/半天/单餐由 LLM 智能分、地址从顾客历史补全、确认订单语义、去防漏）；§6.4 顾客以接龙名字为识别、默认地址学来的。
 > v0.9 变更：Tech Spec 议程定稿（前端 Taro+NutUI、后端 Node 独立、方案 C 抽 `apps/cms` 共享 Payload、租户隔离、部署、100% 覆盖策略，详见 [Tech Spec](./TECH-SPEC.md) v0.2）；§8 / M0 同步 C（cms）；里程碑估算改为复杂度/风险口径（基准 1 人 + AI）。
@@ -348,7 +349,7 @@
 
 ## 7. 信息架构与数据模型（多商家 · 可组合模块）
 
-> 落到 Payload 集合。**主干（spine）实体不随模块开关增删；模块按 `seller.enabledModules` 组合。** 每个业务集合都带 `seller`（relationship→sellers, required, index）= 租户键（下表不再重复列）。命名沿用仓库 `Recipes.ts` 约定：slug 复数小写、`select` 值 kebab-case、金额用整数分、软停用用 `active`。**租户隔离的硬机制 + 索引 + 迁移注意见 [Tech Spec §3](./TECH-SPEC.md)。**
+> 落到 Payload 集合。**主干（spine）实体不随模块开关增删；模块按 `seller.enabledModules` 组合。** 每个业务集合都带 `seller`（relationship→sellers, required, index）= 租户键（下表不再重复列）。命名约定：slug 复数小写、`select` 值 kebab-case、金额用整数分、软停用用 `active`。**从 0 新建——`packages/menu-core`、`apps/community-cooking`、website 的 `recipes` 集合都是 legacy，kith-inn 完全不复用**（详见 Tech Spec §3.4）。**租户隔离的硬机制 + 索引 + 迁移注意见 [Tech Spec §3](./TECH-SPEC.md)。**
 
 ### 7.1 主干 spine
 
