@@ -57,7 +57,7 @@ jobs:
           changed_files="$(git diff --name-only "$base" "$GITHUB_SHA")"
           printf '%s\n' "$changed_files"
 
-          if printf '%s\n' "$changed_files" | grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$'; then
+          if printf '%s\n' "$changed_files" | grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/.*|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$'; then
             set_website true
             exit 0
           fi
