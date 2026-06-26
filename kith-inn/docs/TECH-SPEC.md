@@ -1,6 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.9 ｜ 最近更新：2026-06-26
+> 状态：草稿 v0.10 ｜ 最近更新：2026-06-26
+> v0.10 变更：**codex #66 P2 三项修正**：§3.3⑤ 订阅物化 idempotencyKey 含 occurrence 坐标（sub id + date + occasion|timeWindow）；§3.3③ 搬单回退兼顾 menu_plan（仍有已发菜单则保持 open）；§3.2 idempotencyKey 撞键返回现存 order（不论状态）。
 > v0.9 变更：**审查 issues spec 补全**：§3.1 增"job 信任根"小节（#63 安全前置）；§3.2 补 `(seller,paymentStatus)` 跨日未付索引（#62）；§3.3 ② 级联完整性、③ 回写加终态守卫 + 搬单幽灵 slot（#61）、⑤ subscription 物化子流程（#63）。
 > v0.8 变更：**对抗审查落地**：① §3 增"时区基准=Asia/Shanghai"（修"今天/0点"未定义的 critical gap）；② §3.2 补 `orders (seller,idempotencyKey)` partial unique（挡重复粘贴 + 订阅物化 job 幂等）+ customers/customer_addresses 索引；③ §3.3②b self/onsite **不建 fulfillment**（修缺口对账 bug）；④ §3.3 归档 archived→open force 守卫**下沉 cms beforeChange hook**。
 > v0.7 变更：**slot 命中键 granularity-aware**（Codex P2 复审）——order_items 加 `timeWindow?`（time-slot 粒度商家才填、快照自 slot 的 startAt/endAt）；slot 归属 / 确认 upsert 键(§3.3②a) / 反范式回写(§3.3③) 均随 `service_slots.granularity` 取 occasion 或 timeWindow，修"time-slot 商家同日不同时段无法区分"；service_slots time-slot 唯一键 = (seller,date,timeWindow)。
@@ -74,7 +75,7 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 | `order_items (seller, order)` | "今天订单"的 join 走索引 |
 | `chat_messages (seller, operator, createdAt)` | 展示对话分页拉取 + 留存裁剪（§5.5；ASC 索引 backward scan 取最近，删最旧 200 走正向）|
 | `subscriptions (seller, status)` [V1] | 这周有哪些预定 |
-| `orders (seller, idempotencyKey)` partial unique **WHERE NOT NULL** | 重复粘贴去重 + 订阅物化 job 幂等（多 NULL 不冲突=partial unique 用途；撞键返回现存 draft）|
+| `orders (seller, idempotencyKey)` partial unique **WHERE NOT NULL** | 重复粘贴去重 + 订阅物化 job 幂等（多 NULL 不冲突=partial unique 用途；撞键返回现存 order 不论 draft/confirmed/canceled，而非新建）|
 | `customers (seller, displayName)`、`customer_addresses (seller, customer, lastUsedAt)` | 记单时名字→顾客、最近地址带出（MVP 量级可全表扫，多租户放大后必备）|
 | `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
@@ -88,9 +89,9 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 - **写侧状态机（确定性 hook/服务，可单测）**：
   - **① draft = 纯记录**：记单解析即落 `orders.status=draft`（连 items）持久化、与会话留存解耦（PRD §7），但**不触任何经营表**——不开 slot、不建 fulfillments。
   - **② 确认订单 = 物化事务**（draft→`confirmed` 的 afterChange 内）：a) 按 (seller, order.date, occasion|timeWindow——随 `service_slots.granularity` 取) **upsert `service_slots`→open**——仅当 slot 缺失或 ∈{draft, open}；`archived` **不自动重开**，撞上则走 force / 二次确认（与归档软删一致）；菜单发布同样开餐。b) 为每个**需配送/自取的 item** **建 `fulfillments`**（**self/onsite 不建 fulfillment 行**——份数/采购靠 order_items，免 onsite 履约永久 pending 污染缺口对账）。「取消」→`canceled`、其 fulfillments **置 `status=canceled`**（终态，退出送餐/缺口口径——delivery 视图不回连 order，取消必须在 fulfillment 自身可见；缺口对账判 `status ∈ {pending,handed-off}`，非 `≠done`）。**draft 全程零副作用**——故"draft 不进送餐/采购/未付/今天该做口径"由"未物化"天然保证，不靠 read 端过滤。**级联完整性（审查 #61）**：fulfillments 只挂 orderItem、不另存 order 反向引用；取消/改单级联由 be 按 order→order_items→fulfillments 遍历——物化事务(②b)保证 item 与其 fulfillment 同生、后续 item 增删（加份/改餐次）经同一 be 操作同步增删其 fulfillment，杜绝 orphan。
-  - **③ 反范式回写**：`order_items.mealOccasion` / `timeWindow` / `orders.date` 改动经 afterChange hook **重写关联 fulfillments 的 `serviceDate/occasion/timeWindow`**（实时同步、非冻结；地址 addrBuilding/addrUnit 仍冻结）——免送餐视图把改过餐次的单批错栋/错日。**回写守卫（审查 #61）**：① 只重写 `status ∈ {pending, handed-off}` 的 fulfillment，**跳过 done/canceled 终态**（免把已送达/已作废履约"搬家复活"）；② 改 `orders.date` 搬单后，检查旧 (date,occasion) 是否还有任一 confirmed 单，**无则把旧 slot 回退 draft**（不进 getTodayGaps，免幽灵餐）；新日 slot 若 archived 则改 date 挡回、提示需先 force 重开（避免半同步）。
+  - **③ 反范式回写**：`order_items.mealOccasion` / `timeWindow` / `orders.date` 改动经 afterChange hook **重写关联 fulfillments 的 `serviceDate/occasion/timeWindow`**（实时同步、非冻结；地址 addrBuilding/addrUnit 仍冻结）——免送餐视图把改过餐次的单批错栋/错日。**回写守卫（审查 #61）**：① 只重写 `status ∈ {pending, handed-off}` 的 fulfillment，**跳过 done/canceled 终态**（免把已送达/已作废履约"搬家复活"）；② 改 `orders.date` 搬单后，检查旧 (date,occasion) 是否还有任一 confirmed 单 **或已发布 menu_plan**——**两者皆无才把旧 slot 回退 draft**（不进 getTodayGaps，免幽灵餐）；若仍有 menu_plan（菜单已发、这餐仍计划做）则保持 open（否则会把计划中的餐从"今天该做"藏掉）；新日 slot 若 archived 则改 date 挡回、提示需先 force 重开（避免半同步）。
   - **④ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
-  - **⑤ subscription 物化（审查 #63，V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中坐标（`(date,occasion)` 或 `(date,timeWindow)`，随 granularity）+ 排除 `pausedRanges` → 物化出 `orders.status=confirmed`（订阅是已确认承诺，非 draft）+ order_items，**走与"确认订单"同一物化事务**（②a 开 slot→open + ②b 建 fulfillments + 快照 unitPriceCents）；以 `(seller, idempotencyKey=sub 前缀)` partial unique 撞重防并发重复；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
+  - **⑤ subscription 物化（审查 #63，V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中坐标（`(date,occasion)` 或 `(date,timeWindow)`，随 granularity）+ 排除 `pausedRanges` → 物化出 `orders.status=confirmed`（订阅是已确认承诺，非 draft）+ order_items，**走与"确认订单"同一物化事务**（②a 开 slot→open + ②b 建 fulfillments + 快照 unitPriceCents）；以 `(seller, idempotencyKey= sub前缀 + 命中坐标)` partial unique 撞重防并发重复——key 含 subscription id + 该期 `(date, occasion|timeWindow)`，否则 recurring/open-ended 的第二期会撞第一期被当重复跳过、后期永不上线；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
 
 ### 3.4 M0 数据层任务（方案 C′：kith-inn 自己的 Payload，**不动 website**）
 
