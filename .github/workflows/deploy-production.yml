@@ -10,7 +10,77 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  affected:
+    runs-on: ubuntu-latest
+    outputs:
+      website: ${{ steps.check.outputs.website }}
+    steps:
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        if: github.event_name == 'push'
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        if: github.event_name == 'push'
+        with:
+          node-version: 22
+
+      - id: check
+        name: Check affected deploy targets
+        run: |
+          set_website() {
+            echo "website=$1" >> "$GITHUB_OUTPUT"
+            echo "website affected: $1"
+          }
+
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            set_website true
+            exit 0
+          fi
+
+          base="${{ github.event.before }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            set_website true
+            exit 0
+          fi
+
+          if ! git cat-file -e "$base^{commit}"; then
+            set_website true
+            exit 0
+          fi
+
+          changed_files="$(git diff --name-only "$base" "$GITHUB_SHA")"
+          printf '%s\n' "$changed_files"
+
+          if printf '%s\n' "$changed_files" | grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$'; then
+            set_website true
+            exit 0
+          fi
+
+          pnpm dlx turbo@2.6.3 run build "--filter=@cfp/website...[$base]" --dry-run=json --no-daemon > turbo-dry-run.json
+          node <<'NODE'
+          const fs = require("node:fs");
+
+          const text = fs.readFileSync("turbo-dry-run.json", "utf8");
+          const start = text.indexOf("{");
+          if (start === -1) {
+            throw new Error("Turbo dry run did not emit JSON.");
+          }
+
+          const data = JSON.parse(text.slice(start));
+          const affected = data.tasks.length > 0;
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `website=${affected ? "true" : "false"}\n`);
+          console.log(`website affected: ${affected}`);
+          NODE
+
   prepare:
+    needs: affected
+    if: needs.affected.outputs.website == 'true'
     runs-on: ubuntu-latest
     outputs:
       configured: ${{ steps.check.outputs.configured }}
@@ -58,8 +128,8 @@ jobs:
           fi
 
   deploy:
-    needs: prepare
-    if: needs.prepare.outputs.configured == 'true'
+    needs: [affected, prepare]
+    if: needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
