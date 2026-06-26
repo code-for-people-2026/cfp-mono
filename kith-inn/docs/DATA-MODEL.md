@@ -1,7 +1,8 @@
 # 数据建模参考：街坊味（kith-inn）
 
 > 本文是数据建模的**概念性参考资料**，便于通读理解每张表、每个字段的业务意义与相互关系。
-> **字段级、索引级、状态机的权威定义以 [`PRD.md`](./PRD.md) §7 与 [`TECH-SPEC.md`](./TECH-SPEC.md) §3 为准**——二者在 PR review 中持续演进，本文若与之有出入，以 PRD/Tech Spec 为准。
+> **字段级、索引级、状态机的权威定义以 [`PRD.md`](./PRD.md) §7 与 [`TECH-SPEC.md`](./TECH-SPEC.md) §3 为准**。
+> **本文反映最新设计**（含在审 PR [#57](https://github.com/code-for-people-2026/cfp-mono/pull/57)/[#66](https://github.com/code-for-people-2026/cfp-mono/pull/66) 的修订，如 `order_items.timeWindow?`、self/onsite 不建 fulfillment、`orders.idempotencyKey` 取值规则、时区基准 Asia/Shanghai 等）。本分支基于 main、其 PRD 暂为较早版本——这些字段在 #57/#66 合并后即与本文一致；**以合并后的 PRD/Tech Spec 为最终权威**，实现以它们为准、勿据本文单独建字段。
 > 面向读者：刚接手 kith-inn、想快速建立数据模型心智模型的人。
 
 ---
