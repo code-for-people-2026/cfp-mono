@@ -1,0 +1,1253 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>街坊味 · 高保真原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202124;
+        --muted: #687076;
+        --soft: #8a7f70;
+        --line: #e6e2da;
+        --paper: #fffaf1;
+        --surface: #ffffff;
+        --wash: #f4f6f3;
+        --red: #d7462f;
+        --red-soft: #fff0ec;
+        --green: #1f8a61;
+        --green-soft: #eaf7ef;
+        --blue: #2864a5;
+        --blue-soft: #edf5ff;
+        --amber: #b96d12;
+        --amber-soft: #fff5df;
+        --shadow: 0 18px 50px rgb(26 24 20 / 12%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(90deg, rgb(255 255 255 / 72%) 1px, transparent 1px),
+          linear-gradient(rgb(255 255 255 / 72%) 1px, transparent 1px),
+          #eef2ec;
+        background-size: 28px 28px;
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      .prototype {
+        display: grid;
+        grid-template-columns: minmax(0, 390px) minmax(280px, 420px);
+        gap: 28px;
+        align-items: start;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      .phone {
+        overflow: hidden;
+        width: 390px;
+        min-height: 844px;
+        border: 1px solid rgb(32 33 36 / 12%);
+        border-radius: 30px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 34px;
+        padding: 8px 22px 0;
+        background: var(--surface);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .battery {
+        position: relative;
+        width: 25px;
+        height: 12px;
+        border: 1.5px solid var(--ink);
+        border-radius: 3px;
+      }
+
+      .battery::after {
+        position: absolute;
+        top: 3px;
+        right: -4px;
+        width: 2px;
+        height: 5px;
+        border-radius: 2px;
+        background: var(--ink);
+        content: "";
+      }
+
+      .battery span {
+        display: block;
+        width: 17px;
+        height: 6px;
+        margin: 2px;
+        border-radius: 2px;
+        background: var(--ink);
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 44px 1fr 44px;
+        align-items: center;
+        height: 54px;
+        padding: 0 16px 10px;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--red);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .top-title {
+        min-width: 0;
+        text-align: center;
+      }
+
+      .top-title strong,
+      .top-title span {
+        display: block;
+      }
+
+      .top-title strong {
+        font-size: 17px;
+        line-height: 1.15;
+      }
+
+      .top-title span {
+        margin-top: 3px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .icon-button {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .icon {
+        display: block;
+        width: 18px;
+        height: 18px;
+      }
+
+      .app {
+        position: relative;
+        min-height: 756px;
+        background: linear-gradient(#fffaf1 0, #f6f8f4 52%, #ffffff 100%);
+      }
+
+      .screen {
+        display: none;
+        padding: 16px 16px 104px;
+      }
+
+      .screen.active {
+        display: block;
+      }
+
+      .today-strip {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+
+      .metric {
+        min-height: 74px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .metric span,
+      .metric strong,
+      .metric small {
+        display: block;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .metric strong {
+        margin-top: 4px;
+        font-size: 24px;
+        line-height: 1.1;
+      }
+
+      .metric small {
+        margin-top: 5px;
+        color: var(--soft);
+        font-size: 11px;
+      }
+
+      .metric.alert {
+        border-color: #f3c7ba;
+        background: var(--red-soft);
+      }
+
+      .metric.good {
+        border-color: #b9dfc8;
+        background: var(--green-soft);
+      }
+
+      .message {
+        display: flex;
+        gap: 10px;
+        margin: 14px 0;
+      }
+
+      .avatar {
+        flex: 0 0 auto;
+        display: grid;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: var(--red);
+        color: #fff;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .bubble {
+        max-width: 304px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .bubble.user {
+        margin-left: auto;
+        border-color: #cc3d2a;
+        background: var(--red);
+        color: #fff;
+      }
+
+      .bubble h3,
+      .side-panel h2,
+      .section-title {
+        margin: 0;
+        font-size: 16px;
+        line-height: 1.3;
+      }
+
+      .bubble p {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .bubble.user p {
+        color: #ffe8e1;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 24px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: var(--wash);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 700;
+        white-space: nowrap;
+      }
+
+      .chip.red {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .chip.green {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .chip.blue {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .chip.amber {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .draft-list {
+        margin-top: 12px;
+        border-top: 1px solid var(--line);
+      }
+
+      .draft-row,
+      .order-row,
+      .delivery-row,
+      .dish-row {
+        display: grid;
+        gap: 8px;
+        align-items: center;
+        min-height: 48px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .draft-row {
+        grid-template-columns: 56px 1fr auto;
+      }
+
+      .draft-row strong,
+      .order-row strong,
+      .delivery-row strong,
+      .dish-row strong {
+        font-size: 13px;
+      }
+
+      .draft-row span,
+      .order-row span,
+      .delivery-row span,
+      .dish-row span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .primary,
+      .secondary,
+      .quiet,
+      .tiny-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 38px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .primary {
+        flex: 1;
+        background: var(--red);
+        color: #fff;
+      }
+
+      .secondary {
+        flex: 1;
+        border: 1px solid var(--red);
+        background: #fff;
+        color: var(--red);
+      }
+
+      .quiet {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .tiny-action {
+        min-height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font-size: 12px;
+      }
+
+      .composer {
+        position: absolute;
+        right: 12px;
+        bottom: 72px;
+        left: 12px;
+        display: grid;
+        grid-template-columns: 40px 1fr 40px;
+        gap: 8px;
+        align-items: center;
+        padding: 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgb(255 255 255 / 94%);
+        box-shadow: 0 10px 30px rgb(26 24 20 / 10%);
+        backdrop-filter: blur(8px);
+      }
+
+      .composer input {
+        width: 100%;
+        min-width: 0;
+        height: 40px;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .nav {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        height: 62px;
+        border-top: 1px solid var(--line);
+        background: rgb(255 255 255 / 96%);
+        backdrop-filter: blur(8px);
+      }
+
+      .nav button {
+        display: grid;
+        gap: 4px;
+        place-items: center;
+        background: transparent;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .nav button.active {
+        color: var(--red);
+      }
+
+      .nav svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      .screen-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .screen-head h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.15;
+      }
+
+      .screen-head p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .date-pill {
+        flex: 0 0 auto;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .band {
+        margin: 0 -16px 14px;
+        padding: 12px 16px;
+        border-top: 1px solid var(--line);
+        border-bottom: 1px solid var(--line);
+        background: #fff;
+      }
+
+      .band-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+      }
+
+      .mini-stat {
+        min-height: 54px;
+      }
+
+      .mini-stat strong,
+      .mini-stat span {
+        display: block;
+      }
+
+      .mini-stat strong {
+        font-size: 20px;
+      }
+
+      .mini-stat span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .meal-card,
+      .order-card,
+      .building-card {
+        margin: 12px 0;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .card-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .card-title strong {
+        font-size: 16px;
+      }
+
+      .dish-row {
+        grid-template-columns: 1fr auto;
+        padding: 10px 0;
+      }
+
+      .dish-meta {
+        display: flex;
+        gap: 6px;
+        margin-top: 4px;
+      }
+
+      .order-card {
+        padding-bottom: 4px;
+      }
+
+      .order-row {
+        grid-template-columns: 44px 1fr auto;
+        padding: 11px 0;
+      }
+
+      .status-dot {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status-dot.draft {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .status-dot.ok {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .status-dot.need {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .delivery-row {
+        grid-template-columns: 1fr auto;
+        padding: 11px 0;
+      }
+
+      .progress {
+        overflow: hidden;
+        height: 8px;
+        margin: 10px 0 4px;
+        border-radius: 8px;
+        background: #eee8dc;
+      }
+
+      .progress span {
+        display: block;
+        height: 100%;
+        border-radius: 8px;
+        background: var(--green);
+      }
+
+      .side-panel {
+        position: sticky;
+        top: 28px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: rgb(255 255 255 / 88%);
+        box-shadow: 0 14px 36px rgb(26 24 20 / 8%);
+        backdrop-filter: blur(10px);
+      }
+
+      .side-panel h2 {
+        font-size: 20px;
+      }
+
+      .side-panel p {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .model-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .model-row {
+        display: grid;
+        grid-template-columns: 108px 1fr;
+        gap: 10px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .model-row strong {
+        color: var(--ink);
+        font-size: 13px;
+      }
+
+      .model-row span {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        z-index: 20;
+        display: none;
+        max-width: min(320px, calc(100vw - 32px));
+        padding: 11px 14px;
+        border-radius: 8px;
+        background: #202124;
+        color: #fff;
+        font-size: 13px;
+        transform: translateX(-50%);
+      }
+
+      .toast.show {
+        display: block;
+      }
+
+      @media (max-width: 860px) {
+        .prototype {
+          display: block;
+          padding: 0;
+          background: var(--paper);
+        }
+
+        .phone {
+          width: 100%;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .app {
+          min-height: calc(100vh - 88px);
+        }
+
+        .side-panel {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="prototype">
+      <section class="phone" aria-label="街坊味小程序原型">
+        <div class="status">
+          <span>9:41</span>
+          <span>5G</span>
+          <div class="battery" aria-hidden="true"><span></span></div>
+        </div>
+
+        <header class="topbar">
+          <div class="brand-mark">味</div>
+          <div class="top-title">
+            <strong>街坊味</strong>
+            <span>桃子的灶台 · 周四</span>
+          </div>
+          <button class="icon-button" type="button" title="设置" aria-label="设置">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.8 1.8 0 0 0 .36 2l.04.04a2 2 0 1 1-2.83 2.83l-.04-.04a1.8 1.8 0 0 0-2-.36 1.8 1.8 0 0 0-1.08 1.65V21a2 2 0 1 1-4 0v-.08a1.8 1.8 0 0 0-1.08-1.65 1.8 1.8 0 0 0-2 .36l-.04.04a2 2 0 1 1-2.83-2.83l.04-.04a1.8 1.8 0 0 0 .36-2 1.8 1.8 0 0 0-1.65-1.08H3a2 2 0 1 1 0-4h.08a1.8 1.8 0 0 0 1.65-1.08 1.8 1.8 0 0 0-.36-2l-.04-.04A2 2 0 1 1 7.16 3.8l.04.04a1.8 1.8 0 0 0 2 .36A1.8 1.8 0 0 0 10.28 2.6V2a2 2 0 1 1 4 0v.08a1.8 1.8 0 0 0 1.08 1.65 1.8 1.8 0 0 0 2-.36l.04-.04A2 2 0 1 1 20.2 6.16l-.04.04a1.8 1.8 0 0 0-.36 2c.3.66.96 1.08 1.65 1.08H21a2 2 0 1 1 0 4h-.08A1.8 1.8 0 0 0 19.4 15Z"></path>
+            </svg>
+          </button>
+        </header>
+
+        <div class="app">
+          <section class="screen active" data-screen="today">
+            <p style="text-align:center;margin:2px 0 12px;color:var(--soft);font-size:11px">展示今天和昨天，更早的对话已清理</p>
+            <div class="today-strip">
+              <div class="metric good">
+                <span>午餐确认</span>
+                <strong id="confirmed-count">17 单</strong>
+                <small>31 份 · 2 个楼栋待交接</small>
+              </div>
+              <div class="metric alert">
+                <span>还差</span>
+                <strong id="gap-count">3 件</strong>
+                <small>1 地址 · 2 未付 · 26B 未送</small>
+              </div>
+            </div>
+
+            <div class="message">
+              <div class="avatar">味</div>
+              <div class="bubble">
+                <h3>今天先把接龙记稳</h3>
+                <p>晚餐草稿有 4 单没确认。确认后才会进送餐分拣和未付汇总。</p>
+                <div class="chips">
+                  <span class="chip green">午餐开餐</span>
+                  <span class="chip amber">晚餐草稿</span>
+                  <span class="chip blue">可生成菜单</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="message">
+              <div class="bubble user">
+                <h3>这段接龙帮我记一下</h3>
+                <p>王阿姨晚2，李叔午1，橙子妈妈晚2，桃子家晚6，小宋晚1。</p>
+              </div>
+            </div>
+
+            <div class="message">
+              <div class="avatar">味</div>
+              <div class="bubble">
+                <h3>已分好午 / 晚，草稿已保存</h3>
+                <p>能确认的先落草稿。李叔是新客，缺楼栋房号。</p>
+                <div class="chips">
+                  <span class="chip green">5 单识别</span>
+                  <span class="chip amber">1 条待补</span>
+                  <span class="chip red">确认前不进清单</span>
+                </div>
+                <div class="draft-list">
+                  <div class="draft-row">
+                    <strong>王阿姨</strong>
+                    <span>晚餐 2 份 · 1D-28D</span>
+                    <span class="chip green">熟客</span>
+                  </div>
+                  <div class="draft-row">
+                    <strong>李叔</strong>
+                    <span>午餐 1 份 · 新客缺地址</span>
+                    <button class="tiny-action" type="button" data-toast="先补楼栋房号，再确认这单">补地址</button>
+                  </div>
+                  <div class="draft-row">
+                    <strong>桃子家</strong>
+                    <span>晚餐 6 份 · 自家不配送</span>
+                    <span class="chip blue">采购算</span>
+                  </div>
+                </div>
+                <div class="actions">
+                  <button class="primary" type="button" id="confirm-orders">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="m20 6-11 11-5-5"></path>
+                    </svg>
+                    确认订单
+                  </button>
+                  <button class="secondary" type="button" data-toast="逐条改：支持加份、取消、改餐次、换地址">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                    </svg>
+                    逐条改
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="message">
+              <div class="bubble user">
+                <h3>26B 送了</h3>
+              </div>
+            </div>
+
+            <div class="message">
+              <div class="avatar">味</div>
+              <div class="bubble">
+                <h3 id="delivery-reply">已标记 26B 送达</h3>
+                <p>午餐还剩 28D 未送，收尾时会继续提醒。</p>
+                <div class="chips">
+                  <span class="chip amber">28D 待送</span>
+                  <span class="chip red">2 单未付</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="screen" data-screen="menu">
+            <div class="screen-head">
+              <div>
+                <h1>本周菜单</h1>
+                <p>只从桃子的菜品池里选，主料避开近两天重复。</p>
+              </div>
+              <div class="date-pill">6/29-7/3</div>
+            </div>
+
+            <div class="band">
+              <div class="band-grid">
+                <div class="mini-stat"><strong>5 天</strong><span>午晚一起排</span></div>
+                <div class="mini-stat"><strong>0 道</strong><span>池外新菜</span></div>
+                <div class="mini-stat"><strong>6 次</strong><span>主料避重</span></div>
+              </div>
+            </div>
+
+            <article class="meal-card">
+              <div class="card-title">
+                <strong>周四 · 午餐</strong>
+                <span class="chip green">已发布</span>
+              </div>
+              <div class="dish-row">
+                <div>
+                  <strong>番茄土豆炖牛腩</strong>
+                  <div class="dish-meta"><span class="chip red">牛肉</span><span class="chip amber">费工</span></div>
+                </div>
+                <button class="icon-button" type="button" title="换一道" aria-label="换一道" data-toast="已换成：香菇滑鸡">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"></path>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                    <path d="M3 22v-6h6"></path>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="dish-row">
+                <div>
+                  <strong>清炒虾仁西葫芦</strong>
+                  <div class="dish-meta"><span class="chip blue">虾仁</span><span class="chip green">清淡</span></div>
+                </div>
+                <button class="icon-button" type="button" title="换一道" aria-label="换一道" data-toast="已换成：青椒肉丝">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"></path>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                    <path d="M3 22v-6h6"></path>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="dish-row">
+                <div>
+                  <strong>蒜蓉空心菜</strong>
+                  <div class="dish-meta"><span class="chip green">青菜</span></div>
+                </div>
+                <button class="icon-button" type="button" title="换一道" aria-label="换一道" data-toast="已换成：手撕包菜">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"></path>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"></path>
+                    <path d="M3 22v-6h6"></path>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="actions">
+                <button class="primary" type="button" data-toast="群通知已生成，可复制到微信">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7"></path>
+                    <path d="m16 6-4-4-4 4"></path>
+                    <path d="M12 2v13"></path>
+                  </svg>
+                  发群文案
+                </button>
+              </div>
+            </article>
+
+            <article class="meal-card">
+              <div class="card-title">
+                <strong>周四 · 晚餐</strong>
+                <span class="chip amber">草稿</span>
+              </div>
+              <div class="dish-row">
+                <div>
+                  <strong>香菇滑鸡</strong>
+                  <div class="dish-meta"><span class="chip red">鸡肉</span><span class="chip green">常做</span></div>
+                </div>
+                <button class="tiny-action" type="button" data-toast="候选：排骨玉米汤、鱼香肉丝、豆腐蒸蛋">候选</button>
+              </div>
+              <div class="dish-row">
+                <div>
+                  <strong>冬瓜丸子汤</strong>
+                  <div class="dish-meta"><span class="chip blue">汤</span><span class="chip green">清爽</span></div>
+                </div>
+                <button class="tiny-action" type="button" data-toast="这道汤近 5 天未用，可保留">说明</button>
+              </div>
+            </article>
+          </section>
+
+          <section class="screen" data-screen="orders">
+            <div class="screen-head">
+              <div>
+                <h1>订单台账</h1>
+                <p>草稿能找回，确认后才进入经营口径。</p>
+              </div>
+              <div class="date-pill">今天</div>
+            </div>
+
+            <div class="band">
+              <div class="band-grid">
+                <div class="mini-stat"><strong>21</strong><span>订单</span></div>
+                <div class="mini-stat"><strong>39</strong><span>份数</span></div>
+                <div class="mini-stat"><strong>2</strong><span>未付</span></div>
+              </div>
+            </div>
+
+            <article class="order-card">
+              <div class="card-title">
+                <strong>午餐</strong>
+                <span class="chip green">17 单确认</span>
+              </div>
+              <div class="order-row">
+                <div class="status-dot ok">收</div>
+                <div>
+                  <strong>王阿姨</strong>
+                  <span>2 份 · 1D-28D · 红包已收</span>
+                </div>
+                <button class="tiny-action" type="button" data-toast="已切换为未付">切收款</button>
+              </div>
+              <div class="order-row">
+                <div class="status-dot need">欠</div>
+                <div>
+                  <strong>小柠檬妈妈</strong>
+                  <span>1 份 · 3A-1202 · 未付</span>
+                </div>
+                <button class="tiny-action" type="button" data-toast="已标为 paid，待晚间核对">标已付</button>
+              </div>
+              <div class="order-row">
+                <div class="status-dot ok">家</div>
+                <div>
+                  <strong>桃子家</strong>
+                  <span>6 份 · 自家 · 不进配送</span>
+                </div>
+                <span class="chip blue">采购算</span>
+              </div>
+            </article>
+
+            <article class="order-card">
+              <div class="card-title">
+                <strong>晚餐草稿</strong>
+                <span class="chip amber">4 单待确认</span>
+              </div>
+              <div class="order-row">
+                <div class="status-dot draft">草</div>
+                <div>
+                  <strong>橙子妈妈</strong>
+                  <span>2 份 · 26B-703 · 晚餐</span>
+                </div>
+                <button class="tiny-action" type="button" data-toast="橙子妈妈已确认，晚餐已开餐">确认</button>
+              </div>
+              <div class="order-row">
+                <div class="status-dot need">址</div>
+                <div>
+                  <strong>李叔</strong>
+                  <span>1 份 · 新客缺地址</span>
+                </div>
+                <button class="tiny-action" type="button" data-toast="可说：李叔住 8 栋 602">补</button>
+              </div>
+            </article>
+          </section>
+
+          <section class="screen" data-screen="delivery">
+            <div class="screen-head">
+              <div>
+                <h1>送餐分拣</h1>
+                <p>按楼栋装篮，整栋或单门牌都能勾。</p>
+              </div>
+              <div class="date-pill">午餐</div>
+            </div>
+
+            <div class="band">
+              <div class="band-grid">
+                <div class="mini-stat"><strong>6 栋</strong><span>需要配送</span></div>
+                <div class="mini-stat"><strong>4 栋</strong><span>已完成</span></div>
+                <div class="mini-stat"><strong>1 栋</strong><span>给奶奶</span></div>
+              </div>
+            </div>
+
+            <div style="margin:14px 0 0">
+              <div style="color:var(--muted);font-size:12px;margin-bottom:8px">分拣汇总 · 按楼栋装篮</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <span class="chip green">3A ×5</span>
+                <span class="chip">3B ×3</span>
+                <span class="chip">5C ×4</span>
+                <span class="chip amber">26B ×3 交接</span>
+                <span class="chip red">28D ×2 缺口</span>
+              </div>
+            </div>
+
+            <article class="building-card">
+              <div class="card-title">
+                <strong>3A · 5 份</strong>
+                <span class="chip green">已送达</span>
+              </div>
+              <div class="progress"><span style="width: 100%"></span></div>
+              <div class="delivery-row">
+                <div>
+                  <strong>1202 小柠檬妈妈</strong>
+                  <span>1 份 · 未付</span>
+                </div>
+                <span class="chip green">完成</span>
+              </div>
+              <div class="delivery-row">
+                <div>
+                  <strong>1501 周姐</strong>
+                  <span>4 份 · 已收</span>
+                </div>
+                <span class="chip green">完成</span>
+              </div>
+            </article>
+
+            <article class="building-card">
+              <div class="card-title">
+                <strong>26B · 3 份</strong>
+                <span class="chip amber" id="handoff-chip">待处理</span>
+              </div>
+              <div class="progress"><span id="handoff-bar" style="width: 33%"></span></div>
+              <div class="delivery-row">
+                <div>
+                  <strong>703 橙子妈妈</strong>
+                  <span>2 份 · 晚餐需二次加热</span>
+                </div>
+                <button class="tiny-action" type="button" id="handoff">交给奶奶</button>
+              </div>
+              <div class="delivery-row">
+                <div>
+                  <strong>802 刘老师</strong>
+                  <span>1 份 · 已收</span>
+                </div>
+                <button class="tiny-action" type="button" data-toast="26B-802 已标送达">送达</button>
+              </div>
+            </article>
+
+            <article class="building-card">
+              <div class="card-title">
+                <strong>收尾缺口</strong>
+                <span class="chip red">1 栋未清</span>
+              </div>
+              <div class="delivery-row">
+                <div>
+                  <strong>28D 王阿姨</strong>
+                  <span>2 份 · 待送 · 红包已收</span>
+                </div>
+                <button class="primary" type="button" data-toast="28D 已送达，午餐缺口清零">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m20 6-11 11-5-5"></path>
+                  </svg>
+                  整栋送完
+                </button>
+              </div>
+            </article>
+          </section>
+
+          <form class="composer" id="composer">
+            <button class="icon-button" type="button" title="语音输入" aria-label="语音输入" data-toast="MVP 用手机输入法语音键，不自建 ASR">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <path d="M12 19v3"></path>
+              </svg>
+            </button>
+            <input aria-label="输入消息" placeholder="粘接龙，或说 26B 送了" />
+            <button class="icon-button" type="submit" title="发送" aria-label="发送">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="m22 2-7 20-4-9-9-4Z"></path>
+                <path d="M22 2 11 13"></path>
+              </svg>
+            </button>
+          </form>
+
+          <nav class="nav" aria-label="主导航">
+            <button class="active" type="button" data-tab="today">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"></path>
+              </svg>
+              <span>今天</span>
+            </button>
+            <button type="button" data-tab="menu">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path>
+              </svg>
+              <span>菜单</span>
+            </button>
+            <button type="button" data-tab="orders">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 6h13"></path>
+                <path d="M8 12h13"></path>
+                <path d="M8 18h13"></path>
+                <path d="M3 6h.01"></path>
+                <path d="M3 12h.01"></path>
+                <path d="M3 18h.01"></path>
+              </svg>
+              <span>订单</span>
+            </button>
+            <button type="button" data-tab="delivery">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 17h4V5H2v12h3"></path>
+                <path d="M14 17h1"></path>
+                <path d="M15 7h4l3 5v5h-2"></path>
+                <circle cx="7.5" cy="17.5" r="2.5"></circle>
+                <circle cx="17.5" cy="17.5" r="2.5"></circle>
+              </svg>
+              <span>送餐</span>
+            </button>
+          </nav>
+        </div>
+      </section>
+
+      <aside class="side-panel" aria-label="原型理解摘记">
+        <h2>街坊味 · 老板侧经营大脑</h2>
+        <p>
+          这版原型把 PRD 的主链路压进一屏：自然语言记单、确认草稿、菜单排程、订单台账、按楼栋分拣。按钮和对话调用同一组后端动作，详情页只做确定性视图。
+        </p>
+        <div class="model-list">
+          <div class="model-row">
+            <strong>orders</strong>
+            <span>draft / confirmed / canceled 分清记单生命周期；确认才进经营口径。</span>
+          </div>
+          <div class="model-row">
+            <strong>service_slots</strong>
+            <span>date + occasion 锚定午晚餐次；确认订单或发布菜单时打开。</span>
+          </div>
+          <div class="model-row">
+            <strong>offerings</strong>
+            <span>菜、套餐、服务都走同一个枢纽；菜单和采购不另建 dish 表。</span>
+          </div>
+          <div class="model-row">
+            <strong>fulfillments</strong>
+            <span>按 order item 建履约，反范式 serviceDate / occasion 支撑分拣。</span>
+          </div>
+        </div>
+
+        <h2 style="margin-top:20px">色彩体系（暖）</h2>
+        <p>砖红 #d7462f 主色 · 蔬菜绿 #1f8a61（已付/已送）· 琥珀 #b96d12（待办/未付/未送）· 米白 #fffaf1。区别于 NutUI 默认 JD 冷红——贴"灶台 / 熟人 / 烟火气"，暖中性色、大字号大触控区（适老）。落地覆盖 <code>--nutui-color-primary</code> 等 CSS 变量。</p>
+
+        <h2 style="margin-top:20px">NutUI 组件 / 图标映射</h2>
+        <div class="model-list">
+          <div class="model-row"><strong>Tabbar</strong><span>底部 今天/菜单/订单/送餐，icon 用 @nutui/icons-react</span></div>
+          <div class="model-row"><strong>Cell / Tag</strong><span>订单·菜单·楼栋行；午晚/主料/付款/自家标签</span></div>
+          <div class="model-row"><strong>Button · Progress · Avatar · Input</strong><span>确认换菜、楼栋进度条、顾客/味头像、语音粘贴条</span></div>
+        </div>
+
+        <h2 style="margin-top:20px">三版评审 · 取长补短</h2>
+        <p>底 = 本版（暖色 · 4 tab · 状态交互 · 全屏 PRD 语义最深）；补 codex 版的"2 天窗口提示""分拣汇总 chips"。codex 版（tmp/）用 NutUI 默认 JD 冷红 #fa2c19，通用但不贴品牌；另有 terracotta 暖色互动版，色彩同向、内容较简。综合取本版为最合适。</p>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      const screens = Array.from(document.querySelectorAll(".screen"));
+      const navButtons = Array.from(document.querySelectorAll(".nav button"));
+      const toast = document.querySelector("#toast");
+      let toastTimer;
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+      }
+
+      function activate(tab) {
+        screens.forEach((screen) => {
+          screen.classList.toggle("active", screen.dataset.screen === tab);
+        });
+        navButtons.forEach((button) => {
+          button.classList.toggle("active", button.dataset.tab === tab);
+        });
+      }
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => activate(button.dataset.tab));
+      });
+
+      document.querySelectorAll("[data-toast]").forEach((el) => {
+        el.addEventListener("click", () => showToast(el.dataset.toast));
+      });
+
+      document.querySelector("#confirm-orders").addEventListener("click", () => {
+        document.querySelector("#confirmed-count").textContent = "22 单";
+        document.querySelector("#gap-count").textContent = "2 件";
+        showToast("订单已确认：晚餐已开餐，并生成送餐清单");
+      });
+
+      document.querySelector("#handoff").addEventListener("click", () => {
+        document.querySelector("#handoff-chip").textContent = "奶奶已接";
+        document.querySelector("#handoff-chip").className = "chip blue";
+        document.querySelector("#handoff-bar").style.width = "66%";
+        showToast("26B 已交给奶奶，收尾时仍会提醒未送达");
+      });
+
+      document.querySelector("#composer").addEventListener("submit", (event) => {
+        event.preventDefault();
+        const input = event.currentTarget.querySelector("input");
+        const text = input.value.trim();
+        showToast(text ? `已收到：${text}` : "可以粘接龙，也可以直接说一句");
+        input.value = "";
+      });
+    </script>
+  </body>
+</html>
