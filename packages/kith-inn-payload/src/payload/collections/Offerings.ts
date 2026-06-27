@@ -1,6 +1,7 @@
 import type { CollectionBeforeChangeHook, CollectionConfig } from "payload";
 import { OFFERING_CATEGORIES, OFFERING_KINDS } from "@cfp/kith-inn-shared";
 import { tenantScoped } from "../access/tenantScoped";
+import { assertSameTenantRefs } from "../hooks/assertSameTenantRefs";
 import { stampSeller } from "../hooks/stampSeller";
 
 /**
@@ -15,7 +16,12 @@ export const Offerings: CollectionConfig = {
   admin: { useAsTitle: "name", group: "菜单" },
   access: tenantScoped(),
   hooks: {
-    beforeChange: [stampSeller as CollectionBeforeChangeHook],
+    // stampSeller nails the row's own seller; assertSameTenantRefs nails every
+    // relationship the row points at (defense in depth, Tech Spec §3.1).
+    beforeChange: [
+      stampSeller as CollectionBeforeChangeHook,
+      assertSameTenantRefs as CollectionBeforeChangeHook,
+    ],
   },
   fields: [
     { name: "name", type: "text", required: true },

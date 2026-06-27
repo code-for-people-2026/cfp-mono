@@ -1,6 +1,8 @@
-import type { Access, CollectionConfig } from "payload";
+import type { Access, CollectionBeforeChangeHook, CollectionConfig } from "payload";
 import { OPERATOR_ROLES } from "@cfp/kith-inn-shared";
 import { tenantScoped } from "../access/tenantScoped";
+import { assertSameTenantRefs } from "../hooks/assertSameTenantRefs";
+import { stampSeller } from "../hooks/stampSeller";
 
 const canAccessAdmin = ({ req }: { req: { user?: unknown } }) => Boolean(req.user);
 
@@ -35,6 +37,15 @@ export const Operators: CollectionConfig = {
     admin: canAccessAdmin,
     ...tenantScoped(),
     create: canCreateOperator,
+  },
+  // Stamp the creator's seller on create (so an authenticated operator can't
+  // create staff attributed to another seller) and guard cross-tenant refs —
+  // same defense-in-depth as every other tenant-scoped collection.
+  hooks: {
+    beforeChange: [
+      stampSeller as CollectionBeforeChangeHook,
+      assertSameTenantRefs as CollectionBeforeChangeHook,
+    ],
   },
   fields: [
     {
