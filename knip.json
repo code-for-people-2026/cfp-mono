@@ -26,6 +26,22 @@
       ],
       "ignoreDependencies": ["react"]
     },
+    "apps/cms": {
+      "entry": [
+        "next.config.ts",
+        "payload.config.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts",
+        "src/app/**/*.{ts,tsx}",
+        "tests/**/*.ts"
+      ]
+    },
+    "packages/kith-inn-shared": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/kith-inn-payload": {
+      "entry": ["src/payload/index.ts"]
+    },
     "packages/ui": {
       "entry": ["src/index.ts"]
     },
