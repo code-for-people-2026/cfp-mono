@@ -1,0 +1,12 @@
+.next/
+node_modules/
+playwright-report/
+test-results/
+payload.db
+payload.db-*
+payload-*.db
+payload-*.db-*
+.env
+.env.local
+next-env.d.ts
+payload-types.ts

@@ -18,6 +18,61 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/cms:
+    dependencies:
+      '@cfp/kith-inn-payload':
+        specifier: workspace:*
+        version: link:../../packages/kith-inn-payload
+      '@payloadcms/db-postgres':
+        specifier: 3.85.1
+        version: 3.85.1(@libsql/client@0.14.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))
+      '@payloadcms/db-sqlite':
+        specifier: 3.85.1
+        version: 3.85.1(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
+      '@payloadcms/next':
+        specifier: 3.85.1
+        version: 3.85.1(@types/react@19.2.17)(graphql@16.14.2)(monaco-editor@0.55.1)(next@16.2.9(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(sass@1.101.0))(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(typescript@5.9.3)
+      next:
+        specifier: 16.2.9
+        version: 16.2.9(@playwright/test@1.60.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(sass@1.101.0)
+      payload:
+        specifier: 3.85.1
+        version: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-dom:
+        specifier: 19.2.3
+        version: 19.2.3(react@19.2.3)
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
+    devDependencies:
+      '@types/node':
+        specifier: ^20.19.26
+        version: 20.19.43
+      '@types/react':
+        specifier: ^19.2.7
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      '@vitest/coverage-v8':
+        specifier: ^4.0.15
+        version: 4.1.8(vitest@4.1.8)
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      eslint-config-next:
+        specifier: 16.2.9
+        version: 16.2.9(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.8(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.25.12)(jiti@2.7.0)(sass@1.101.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   apps/community-cooking:
     dependencies:
       '@cfp/menu-core':
@@ -204,7 +259,7 @@ importers:
         version: 5.9.3
       vitest:
         specifier: ^4.0.15
-        version: 4.1.8(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.25.12)(jiti@2.7.0)(sass@1.101.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 4.1.8(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(sass@1.101.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/eslint-config:
     dependencies:
@@ -217,6 +272,55 @@ importers:
       typescript-eslint:
         specifier: ^8.54.0
         version: 8.61.0(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
+
+  packages/kith-inn-payload:
+    dependencies:
+      '@cfp/kith-inn-shared':
+        specifier: workspace:*
+        version: link:../kith-inn-shared
+      payload:
+        specifier: 3.85.1
+        version: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
+    devDependencies:
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@cfp/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@vitest/coverage-v8':
+        specifier: ^4.0.15
+        version: 4.1.8(vitest@4.1.8)
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.8(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(sass@1.101.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/kith-inn-shared:
+    devDependencies:
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../eslint-config
+      '@cfp/typescript-config':
+        specifier: workspace:*
+        version: link:../typescript-config
+      '@vitest/coverage-v8':
+        specifier: ^4.0.15
+        version: 4.1.8(vitest@4.1.8)
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.8(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(sass@1.101.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/menu-core:
     devDependencies:

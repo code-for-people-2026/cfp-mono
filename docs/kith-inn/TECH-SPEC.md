@@ -1,6 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.10 ｜ 最近更新：2026-06-26
+> 状态：草稿 v0.11 ｜ 最近更新：2026-06-27
+> v0.11 变更：**架构从 C′ 调整为「官网单独 + 共享 cms」**——`apps/cms` 升为 kith-inn 及未来小 app 的【共享 Payload host】（schema `"cms"`，不再 kith-inn 专属、schemaName 不再是 `kith_inn`）；各 app 的集合/类型/逻辑拆进自己的包（kith-inn → `packages/kith-inn-payload` 依赖 `payload`；零依赖领域内核 `packages/kith-inn-shared` 存枚举/类型/契约供 FE+BE+cms 共享）。官网 `apps/website` 仍单独。§1 图与表、§3.4 同步。**多租户插件 no-go**（弃，单走 §3.1 自家 `tenantScoped()` 工厂，详见 apps/cms/SPIKE.md）。
 > v0.10 变更：**codex #66 P2 三项修正**：§3.3⑤ 订阅物化 idempotencyKey 含 occurrence 坐标（sub id + date + occasion|timeWindow）；§3.3③ 搬单回退兼顾 menu_plan（仍有已发菜单则保持 open）；§3.2 idempotencyKey 撞键返回现存 order（不论状态）。
 > v0.9 变更：**审查 issues spec 补全**：§3.1 增"job 信任根"小节（#63 安全前置）；§3.2 补 `(seller,paymentStatus)` 跨日未付索引（#62）；§3.3 ② 级联完整性、③ 回写加终态守卫 + 搬单幽灵 slot（#61）、⑤ subscription 物化子流程（#63）。
 > v0.8 变更：**对抗审查落地**：① §3 增"时区基准=Asia/Shanghai"（修"今天/0点"未定义的 critical gap）；② §3.2 补 `orders (seller,idempotencyKey)` partial unique（挡重复粘贴 + 订阅物化 job 幂等）+ customers/customer_addresses 索引；③ §3.3②b self/onsite **不建 fulfillment**（修缺口对账 bug）；④ §3.3 归档 archived→open force 守卫**下沉 cms beforeChange hook**。
@@ -15,29 +16,38 @@
 
 ---
 
-## 1. 架构总览（应用拆分 = 方案 C′：各自 Payload、同库分 schema）
+## 1. 架构总览（官网单独 Payload + 共享 cms host + 按 app 分模块包；同库分 schema）
 
 ```
-apps/kith-inn-fe      ──HTTPS──►  apps/kith-inn-be          ──REST/GraphQL──►  apps/cms          ──┐
-(Taro+React, NutUI)               (Node/TS, 独立)                               (kith-inn 自己的       │
-weapp + H5                        ├─ 微信登录 / 业务 API                         Payload + admin,      ├─►  一个 Postgres 实例（同一 RDS）
-                                  ├─ DeepSeek 代理 + 确定性逻辑                   schemaName=kith_inn)  │      ├─ schema "kith_inn"  ← apps/cms
-                                  └─ (可选/非MVP) 应用内 ASR                                            │      └─ schema "website"   ← apps/website
-apps/website (官网，原封不动，自带 Payload，schemaName="website") ───────────────────────────────────┘
+apps/kith-inn-fe      ──HTTPS──►  apps/kith-inn-be          ──REST/GraphQL──►  apps/cms            ──┐
+(Taro+React, NutUI)               (Node/TS, Hono)                              (共享 Payload host,  │
+weapp + H5                        ├─ 微信登录 / 业务 API                         schemaName="cms",   ├─►  一个 Postgres 实例（同一 RDS）
+                                  ├─ DeepSeek 代理 + 确定性逻辑                   薄壳、不含业务集合)  │      ├─ schema "cms"      ← apps/cms（kith-inn + 未来小 app 共用）
+                                  └─ (可选/非MVP) 应用内 ASR                                          │      └─ schema "website" ← apps/website
+apps/website (官网，单独 Payload，schemaName="website") ─────────────────────────────────────────────┘
+
+各 app 的集合/类型/逻辑在自己的包里（cms 只装配、不含业务集合）：
+  packages/kith-inn-shared   零依赖领域内核（枚举/类型/契约）—— FE、BE、cms 都 import
+  packages/kith-inn-payload  kith-inn 的 Payload 集合 + 租户 access/hooks —— 只 cms import（依赖 payload + shared）
+  apps/kith-inn-be / -fe     import shared（不拖入 payload）
 ```
 
-> **C′ vs 旧 C**：不再"抽 website 的 Payload 成共享 cms 并改造 website"。改为 **kith-inn 起自己的 Payload（`apps/cms`）、用独立 schema `kith_inn`、连同一个 RDS**；**website 完全不动**（它已用 `schemaName="website"`，仓库现成模式）。省 RDS 的目的不变，但更干净、M0 更轻、且 website 的 `recipes` 后门自然消失（不同 schema、不同 Payload 实例，kith-inn 根本看不到它）。
+> **架构演进**：v0.6 定 C′（kith-inn 自己一个 Payload、schema `kith_inn`）。**v0.11 调整为「官网单独 + 其余共享 cms」**：`apps/cms` 升为 kith-inn 及未来小 app 的共享 Payload host（schema `"cms"`）；各 app 的集合/类型/逻辑放自己的包（`packages/<app>-payload`，依赖零依赖内核 `packages/<app>-shared`），cms 只做装配。**website 仍完全不动**（自带 `schemaName="website"`）。省 RDS 目的不变（共用一个 Postgres 实例），且官网与业务 app 进程/schema/迁移全隔离、未来加 app 不新增 Payload 进程（一台 ECS docker-compose 多容器，4G 够跑数个）。
 
-**各 app 职责：**
+**各 app / 包职责：**
 
-| App | 栈 | 职责 |
+| App / 包 | 栈 | 职责 |
 |---|---|---|
-| **`apps/cms`** | Next + Payload | **kith-inn 自己的 Payload**：数据模型、CRUD/GraphQL/REST API、admin 后台、鉴权、租户 access control、迁移。`schemaName="kith_inn"`，连**与 website 同一个 RDS**（省实例），但 schema 独立、迁移独立。**新建，不抽 website**。 |
-| **`apps/kith-inn-be`** | **Node / TS（独立）** | 业务/领域逻辑：确定性选菜/分组/聚合、订单结构化、DeepSeek 代理、微信登录。经 cms 的 HTTP API 读写。除非 Node 覆盖不了需求才考虑换栈。 |
+| **`apps/cms`** | Next + Payload | **共享 Payload host**：装配各 app 集合、CRUD/GraphQL/REST API、admin 后台、鉴权、迁移。`schemaName="cms"`，连与 website 同一个 RDS（省实例），schema 独立。**薄壳——不含业务集合**，从各 app 的 payload 包 import（kith-inn → `@cfp/kith-inn-payload`）。 |
+| **`packages/kith-inn-payload`** | TS（依赖 `payload`） | kith-inn 的 Payload 集合 + 租户 access/hooks（`tenantScoped`、`stampSeller`…）。只 cms import。 |
+| **`packages/kith-inn-shared`** | TS（**零依赖**） | 领域内核：枚举（一次列全）+ 实体类型 + API 契约。FE、BE、cms 共用，FE/BE 不致拖入 payload。 |
+| **`apps/kith-inn-be`** | **Node / TS（Hono）** | 业务/领域逻辑：确定性选菜/分组/聚合、订单结构化、DeepSeek 代理、微信登录。经 cms 的 HTTP API 读写。 |
 | **`apps/kith-inn-fe`** | **Taro + React**，UI=**NutUI React** | 老板侧小程序（weapp + H5）。经 HTTPS 调 kith-inn-be。**不复用 `packages/ui`（shadcn 仅 Web、小程序跑不了）**。 |
-| **`apps/website`** | Next + Payload（`schemaName="website"`） | 官网，**原封不动**——保留自己的 Payload，只是和 kith-inn 共用一个 Postgres 实例（各自 schema）。 |
+| **`apps/website`** | Next + Payload（`schemaName="website"`） | 官网，**单独、原封不动**——自己的 Payload，与 cms 共用一个 Postgres 实例（各自 schema）。 |
 
-**为什么这么拆**：① 复用同一个 Payload / 同一个 RDS（不另开实例）；② kith-inn 代码与 website 解耦，前端用小程序最佳实践（Taro + NutUI），不被官网 Web 栈拖累；③ CMS 单一事实源，未来加 app 也干净。
+**为什么这么拆**：① 共用一个 RDS（不另开实例）+ 一台 ECS docker-compose 多容器（不每 app 一台机）；② 各 app 集合/逻辑在自己的包、不混在 cms，未来加 app 干净（新包 + cms import）；③ 官网与业务 app 进程/schema/迁移全隔离、互不带入风险；④ 零依赖 `kith-inn-shared` 让 FE/BE 共享领域定义却不拖入 Payload。
+
+> **共享 `cms` schema 的 slug 约定**：所有非官网 app 的表**都进 `cms` 这一个 schema**。Payload 同实例 collection slug **全局唯一**、且 **slug = 表名 = API 路由**（`/api/<slug>`）三合一，无法只前缀表名而留干净 API。故约定：**kith-inn 作为首个 app 保持干净 slug**（`sellers`/`operators`/`offerings`…），**未来进 cms 的 app 自命名空间 slug**（如 `alpha_*`）避免撞名。代价是同 schema 内前缀不一致（kith-inn 无前缀、后来 app 有）——可接受，kith-inn 是 cms 的主 app；若日后想统一，再给 kith-inn 补 `kith_inn_` 前缀（属破坏性改名、需迁移）。
 
 ## 2. 后端 ↔ Payload
 
@@ -93,15 +103,15 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
   - **④ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
   - **⑤ subscription 物化（审查 #63，V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中坐标（`(date,occasion)` 或 `(date,timeWindow)`，随 granularity）+ 排除 `pausedRanges` → 物化出 `orders.status=confirmed`（订阅是已确认承诺，非 draft）+ order_items，**走与"确认订单"同一物化事务**（②a 开 slot→open + ②b 建 fulfillments + 快照 unitPriceCents）；以 `(seller, idempotencyKey= sub前缀 + 命中坐标)` partial unique 撞重防并发重复——key 含 subscription id + 该期 `(date, occasion|timeWindow)`，否则 recurring/open-ended 的第二期会撞第一期被当重复跳过、后期永不上线；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
 
-### 3.4 M0 数据层任务（方案 C′：kith-inn 自己的 Payload，**不动 website**）
+### 3.4 M0 数据层任务（共享 cms host + 按 app 分模块包；**不动 website**）
 
-- **新建 `apps/cms`**（Next + Payload），`schemaName="kith_inn"`，`DATABASE_URL` 指向与 website **同一个 Postgres 实例**（省 RDS）。website 不动（它已 `schemaName="website"`，仓库现成模式可照搬）。
-- 装 `@payloadcms/plugin-multi-tenant`，声明 `sellers` 为 tenant。
-- 实现 `tenantScoped()` access 工厂 + 写侧 seller 覆写 hook + 跨租户引用校验 + 集合遍历断言测试。
-- 定义全部 spine + 模块集合（PRD §7）+ 基础设施集合 `chat_messages`（展示对话留存，§5.5；同样经 `tenantScoped()`）；**全新写、不复用 legacy**（`packages/menu-core`、`apps/community-cooking`、website 的 `recipes` 都是 legacy，以后清理；kith-inn 自己的 Payload/schema 根本不引它们，原"recipes 后门"问题随 C′ 消失）。
+- **新建 `apps/cms`**（共享 Payload host，`schemaName="cms"`）+ **`packages/kith-inn-payload`**（kith-inn 集合/access/hooks）+ **`packages/kith-inn-shared`**（零依赖领域内核：枚举/类型/契约）。`DATABASE_URL` 指向与 website 同一个 Postgres 实例（省 RDS），schema 独立。website 不动。
+- ~~装 `@payloadcms/plugin-multi-tenant`~~ **（no-go，已弃）**：插件以 `user.tenants` 数组 + `tenant` 字段为模型，与我们的单 `seller` 模型冲突，共存只能禁用其 access 逻辑沦为纯 admin 装饰（M0 交付物是 H5、零价值）。改单走下面的自家工厂。详见 apps/cms/SPIKE.md。
+- 实现 `tenantScoped()` access 工厂 + 写侧 seller 覆写 hook + 跨租户引用校验 + 集合遍历断言测试（均在 `packages/kith-inn-payload`）。
+- 定义全部 spine + 模块集合（PRD §7）+ 基础设施集合 `chat_messages`（展示对话留存，§5.5；同样经 `tenantScoped()`）；**全新写、不复用 legacy**（`packages/menu-core`、`apps/community-cooking`、website 的 `recipes` 都是 legacy，以后清理；kith-inn 的 schema 根本不引它们）。
 - seed 桃子一条 `sellers`（enabledModules = menu-planning/delivery/purchasing）+ 菜品池（`offerings` kind=component）。
 
-> C′ 让 M0 大幅变轻：**不再迁移 website 的 Payload、不改 website、无迁移历史延续性风险**——只是新建一个连同库的 Payload。
+> 共享 cms 让 M0 仍轻：**不迁 website、不改 website、无迁移历史延续性风险**——只是新建共享 host + kith-inn 模块包。
 
 > **消费者不是租户**（V1）：是挂在某 seller 下的顾客，下单只看该商家；跨商家下单是后话。
 
@@ -183,8 +193,8 @@ apps/website (官网，原封不动，自带 Payload，schemaName="website") ─
 ## 7. 仍待议 / 后续任务
 
 - **【决策·进行中】给桃子真机试用的后端域名**：ICP 备案（`kith-inn-be` 域名，**在审**）vs 微信云托管/云开发免备案试用。后者的 `callContainer`/`callFunction` 走**微信内部信道、不过「合法域名」校验、免 ICP 备案**——可让 kith-inn-be 仍跑 ECS、前面架一个薄云托管服务做代理转发；备案下来后切回直连合法域名、前端调用层几乎不改。注意：**体验版真机仍强制校验合法域名**，DevTools 关「校验合法域名」只对开发版生效，故关开关绕不过——只云托管/云开发这条信道能真正免备案。**2026-06-25 决定**：备案在审，若 MVP 编码完成前下来则直连、连代理都省；没下来再走云托管代理。
-- **新建 `apps/cms` spike（复杂度 S，C′ 后大幅变轻）**：验证 Payload `schemaName="kith_inn"` + 与 website 同 `DATABASE_URL`、两个 Payload 实例同库分 schema 互不干扰（迁移各跑各的 schema）；以及 `@payloadcms/plugin-multi-tenant` 能否与 `operators+wechatOpenid` 自定义鉴权链共存（需 spike 验证：插件默认假设与我们透传 openid 的登录信任根是否冲突，见 §3.1）。**website 不动**，无迁移历史延续性风险。
-- **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，需补"新增 `apps/cms` 容器（schema kith_inn）+ kith-inn-be/fe 部署"；website 部分不变。
+- **✅ apps/cms spike（已完成，PR1）**：(a) 共享 cms host（schema `"cms"`）与 website 同库分 schema 互不干扰——`tests/spike-coexistence.test.ts` 起真实 postgres 验证 `cms`/`website`/`public` 三 schema 并存零污染；(b) `@payloadcms/plugin-multi-tenant` 与 `operators+wechatOpenid` 鉴权 **no-go**（插件以 `user.tenants` 数组 + `tenant` 字段为模型、与我们单 `seller` 冲突，共存只能禁用其 access 逻辑），弃插件、单走 §3.1 自家 `tenantScoped()` 工厂。结论见 `apps/cms/SPIKE.md`。
+- **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，需补"一台 ECS docker-compose 多容器：`apps/cms`（schema `cms`）+ kith-inn-be + kith-inn-fe H5 + nginx，共一个 RDS"；website 部分不变。
 - 是否需要 MCP server 形态（取决于 §4 的 AI 形态；MVP 多为普通 LLM 调用，未必需要）。
 - **ASR 选型（M2）**：微信同传插件 vs 云 ASR vs 自托管（MVP 不做，走系统输入法）。
 - **DeepSeek v4 的 function-calling / tool-use 稳定性**（买菜助手 agent 的前提，M2+）。

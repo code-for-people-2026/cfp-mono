@@ -2,7 +2,8 @@
 
 > **命名（已定）**：中文名 **「街坊味」**（接地气，且比"街坊菜"更广，覆盖做饭 / 甜品 / 寿司等多类生产者）；英文代号 **`kith-inn`**（kith=街坊邻里 + inn=小馆/客栈，连读谐音 "kitchen"，含 neighborhood 意味）。
 > 定位描述沿用"社区私房菜助手"。
-> 状态：草稿 v1.7 ｜ 最近更新：2026-06-26 ｜ 负责人：码成工小队
+> 状态：草稿 v1.8 ｜ 最近更新：2026-06-27 ｜ 负责人：码成工小队
+> v1.8 变更：**架构同步 Tech Spec v0.11**——`apps/cms` 升为 kith-inn 及未来小 app 的共享 Payload host（schema `"cms"`）；各 app 集合/类型/逻辑拆进自己的包（`packages/kith-inn-payload` + 零依赖 `packages/kith-inn-shared` 供 FE+BE+cms 共享）。§8 同步。
 > v1.7 变更：§7.1 orders idempotencyKey 撞键改为"返回现存 order（不论状态）"+ 订阅物化键含 occurrence 坐标（codex #66 P2）。
 > v1.6 变更：§7.1 offerings 加 combo 的 parentOfferings kind hook 校验（审查 #62）。
 > v1.5 变更：**经多智能体对抗审查（39 候选→10 确认）落地 🔴+🟠 批**：① onsite/self **不建 fulfillment**（修"自家单被永远提示没送"的缺口对账 bug，decision B）——`mode` 收口为 delivery/pickup、份数/采购靠 order_items；② `orders.idempotencyKey` 定取值规则（粘贴/语音按 (seller,customer,date,source) 或接龙哈希、订阅按 sub 前缀、撞键返回现存 draft）+ Tech Spec §3.2 补 partial unique；③ **时区基准 = Asia/Shanghai**（"今天/0点/order.date/留存裁剪/最近一餐/开餐归属"均按此时区算）；④ `fulfillments.assignee` 加 beforeChange hook 校验 ∈ deliverers、deliverers 走 active 软停用；⑤ archived→open 的 force 守卫**下沉 cms beforeChange hook**（统一挡确认/菜单发布/订阅物化/未来工具）；⑥ **MVP 不建** `service_slots.capacity`(V1 booking 才用) 与 `fulfillments.sequence`(与不做路线优化冲突)；⑦ `customers.displayName` 重名/变体 MVP 靠名字归一 + 人工合并、不加 aliases。
@@ -420,7 +421,7 @@
 
 > **技术架构不在本 PRD 内定稿，需单独讨论，以 [Tech Spec](./TECH-SPEC.md) 为准。** 本节仅给产品读者一个一句话概览。
 
-- **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node 独立）；数据走 `apps/cms`（kith-inn **自己的 Payload**，`schemaName="kith_inn"`，连**与 website 同一个 RDS**省实例、但 schema 独立；**website 原封不动**）。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
+- **应用（详见 [Tech Spec](./TECH-SPEC.md)）**：前端 `apps/kith-inn-fe`（Taro+React，UI=NutUI，weapp+H5）；后端 `apps/kith-inn-be`（Node/Hono）；数据走 **共享 `apps/cms`**（Payload host，`schemaName="cms"`，kith-inn + 未来小 app 共用；各 app 集合/类型/逻辑在自己的包：`packages/kith-inn-payload` + 零依赖 `packages/kith-inn-shared`）；连**与 website 同一个 RDS**省实例、各自 schema 独立；**官网 `apps/website` 单独、原封不动**。AI 复用 DeepSeek、key 在服务端。MVP 无新依赖（语音走系统输入法）。
 - **AI 使用纪律**（遵循 Anthropic《Building Effective Agents》）：**用最简单够用的方案，只在确有必要时才加复杂度**。落到本产品——**有一个核心 agent（「今天」主对话，§5.5），它只编排确定性工具；其余触点都是确定性代码 / 普通 LLM 调用，零自建 ASR**。形态阶梯与全触点映射详见 Tech Spec §4。
 
 ---
@@ -430,8 +431,8 @@
 > 每个里程碑都要"可演示 + 可被桃子真用"。
 
 ### M0 — 打底（复杂度 **S–M** ｜ 风险低）
-> 风险点：C′ 下 **website 完全不动**——只新建 kith-inn 自己的 Payload（`schemaName="kith_inn"`）连同一个 RDS，无 website 重构、无迁移历史延续性风险。剩余风险仅在打通调用链 + 多商家 schema 的隔离正确性（Tech Spec §3）。
-- **新建 `apps/cms`**（kith-inn 自己的 Payload，`schemaName="kith_inn"`，连与 website 同库省 RDS；**website 不动**，方案 C′，见 Tech Spec §1/§3.4）。
+> 风险点：**website 完全不动**——只新建共享 `apps/cms` host（schema `"cms"`）+ kith-inn 模块包，连同一个 RDS，无 website 重构、无迁移历史延续性风险。剩余风险仅在打通调用链 + 多商家 schema 的隔离正确性（Tech Spec §3）。
+- **新建共享 `apps/cms`**（Payload host，`schemaName="cms"`，kith-inn + 未来小 app 共用）+ `packages/kith-inn-payload`（集合/access/hooks）+ `packages/kith-inn-shared`（零依赖领域内核）；连与 website 同库省 RDS；**website 不动**（见 Tech Spec §1/§3.4）。
 - 打通 kith-inn-fe ↔ kith-inn-be ↔ cms/Payload ↔ Postgres ↔ DeepSeek 调用链。
 - 建多商家 schema（§7 的 MVP 集合）。
 - 初始化桃子的菜品池：**一次性语音/快捷录入她的常用菜**（标主料/分类），群历史导出成功则作为加速项叠加；之后日常增量积累。
