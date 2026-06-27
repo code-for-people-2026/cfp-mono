@@ -31,7 +31,13 @@ export function sellerIdOf(user: unknown): string | number | null {
   return readSellerId(user.seller);
 }
 
-function readSellerId(seller: unknown): string | number | null {
+/**
+ * Read a seller id off an arbitrary value — used for a DOC's `seller` field
+ * (a bare id or a populated `{ id }`), unlike `sellerIdOf` which is for the
+ * operator shape. Exported so the cross-tenant ref guard can compare a
+ * referenced doc's seller against the operator's.
+ */
+export function readSellerId(seller: unknown): string | number | null {
   if (typeof seller === "string" || typeof seller === "number") return seller;
   if (typeof seller === "object" && seller !== null && "id" in seller) {
     const id = (seller as { id: unknown }).id;
