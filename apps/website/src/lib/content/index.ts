@@ -2,16 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
-import type {
-  ChatPageContent,
-  ContinueRead,
-  DocSection,
-  FooterContent,
-  HomepageContent,
-  SiteDocument,
-  SiteSettings,
-  UiStrings,
-} from "./types";
+import type { ChatPageContent, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
 import {
   chatFallback,
   documentFallback,
@@ -20,169 +11,70 @@ import {
   settingsFallback,
   uiFallback,
 } from "./fallback";
-
-type Raw = Record<string, unknown>;
+import {
+  mapChatPage,
+  mapDocument,
+  mapFooter,
+  mapHomepage,
+  mapSettings,
+  mapUiStrings,
+  pick,
+} from "./mappers";
 
 async function client() {
   return getPayload({ config });
 }
 
-function paragraphs(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.map((item) => String((item as Raw)?.text ?? "")).filter(Boolean)
-    : [];
+// One cached read of the single site-content global, shared by every slice. Returns null
+// when Payload is empty (unseeded) or unreachable so each slice falls back to static
+// content — the site never renders blank/500. Editing the global revalidates the tag.
+const getCachedSiteContent = unstable_cache(
+  async (): Promise<Record<string, unknown> | null> => {
+    try {
+      const payload = await client();
+      const data = (await payload.findGlobal({ slug: "site-content" })) as Record<string, unknown>;
+      const hero = data?.hero as Record<string, unknown> | undefined;
+      return hero?.title ? data : null;
+    } catch {
+      return null;
+    }
+  },
+  ["site-content"],
+  { tags: ["payload:site-content"], revalidate: false },
+);
+
+const EMPTY = {} as Record<string, unknown>;
+
+export async function getHomepage(): Promise<HomepageContent> {
+  const mapped = mapHomepage((await getCachedSiteContent()) ?? EMPTY);
+  return pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
 }
 
-function points(value: unknown): string[] | undefined {
-  const list = paragraphs(value);
-  return list.length ? list : undefined;
+export async function getChatPage(): Promise<ChatPageContent> {
+  const mapped = mapChatPage((await getCachedSiteContent()) ?? EMPTY);
+  return pick(mapped, Boolean(mapped.heading), chatFallback);
 }
 
-function sections(value: unknown): DocSection[] {
-  return Array.isArray(value)
-    ? value.map((item) => {
-        const s = item as Raw;
-        return {
-          label: (s.label as string) || undefined,
-          heading: String(s.heading ?? ""),
-          paragraphs: paragraphs(s.paragraphs),
-          points: points(s.points),
-        };
-      })
-    : [];
+export async function getUiStrings(): Promise<UiStrings> {
+  const mapped = mapUiStrings((await getCachedSiteContent()) ?? EMPTY);
+  return pick(mapped, Boolean(mapped.sendLabel), uiFallback);
 }
 
-function cards(value: unknown) {
-  return Array.isArray(value)
-    ? value.map((item) => ({ title: String((item as Raw).title ?? ""), body: String((item as Raw).body ?? "") }))
-    : [];
+export async function getSiteSettings(): Promise<SiteSettings> {
+  const mapped = mapSettings((await getCachedSiteContent()) ?? EMPTY);
+  return pick(mapped, Boolean(mapped.shareTitle && mapped.brand?.logoPath), settingsFallback);
 }
 
-function block(value: unknown, key: string) {
-  const g = (value ?? {}) as Raw;
-  return { heading: String(g.heading ?? ""), intro: String(g.intro ?? ""), items: cards(g[key]) };
-}
-
-async function fetchHomepage(): Promise<HomepageContent> {
-  const payload = await client();
-  const data = (await payload.findGlobal({ slug: "homepage" })) as Raw;
-  const lifeScenesGroup = (data.lifeScenes ?? {}) as Raw;
-  const continueGroup = (data.continueReads ?? {}) as Raw;
-
-  const continueItems: ContinueRead[] = (Array.isArray(continueGroup.items) ? continueGroup.items : []).map(
-    (item) => {
-      const it = item as Raw;
-      const target = String(it.target ?? "manifesto");
-      return {
-        label: String(it.label ?? ""),
-        description: String(it.description ?? ""),
-        target: (target === "map" || target === "license" ? target : "manifesto") as ContinueRead["target"],
-      };
-    },
-  );
-
-  return {
-    hero: (data.hero ?? {}) as HomepageContent["hero"],
-    dialogueEntry: (data.dialogueEntry ?? {}) as HomepageContent["dialogueEntry"],
-    dialogueSuggestions: (Array.isArray(data.dialogueSuggestions) ? data.dialogueSuggestions : []).map(
-      (item) => ({ label: String((item as Raw).label ?? ""), value: String((item as Raw).value ?? "") }),
-    ),
-    heroFlow: cards(data.heroFlow),
-    identity: block(data.identity, "cards"),
-    whyNow: block(data.whyNow, "points"),
-    lifeScenes: {
-      heading: String(lifeScenesGroup.heading ?? ""),
-      intro: String(lifeScenesGroup.intro ?? ""),
-      items: (Array.isArray(lifeScenesGroup.scenes) ? lifeScenesGroup.scenes : []).map((item) => {
-        const s = item as Raw;
-        return {
-          title: String(s.title ?? ""),
-          body: String(s.body ?? ""),
-          tags: (Array.isArray(s.tags) ? s.tags : []).map((t) => String((t as Raw).tag ?? "")),
-        };
-      }),
-    },
-    direction: block(data.direction, "points"),
-    selfRestraint: block(data.selfRestraint, "points"),
-    continueReads: {
-      heading: String(continueGroup.heading ?? ""),
-      intro: String(continueGroup.intro ?? ""),
-      items: continueItems,
-    },
-  };
+export async function getFooter(): Promise<FooterContent> {
+  const mapped = mapFooter((await getCachedSiteContent()) ?? EMPTY);
+  return pick(mapped, Boolean(mapped.copyright), footerFallback);
 }
 
 async function fetchDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
   const payload = await client();
   const result = await payload.find({ collection: "site-documents", where: { slug: { equals: slug } }, limit: 1 });
-  const doc = (result.docs[0] ?? {}) as Raw;
-  const full = sections(doc.fullSections);
-  return {
-    slug,
-    eyebrow: String(doc.eyebrow ?? ""),
-    title: String(doc.title ?? ""),
-    summary: String(doc.summary ?? ""),
-    meta: (doc.meta as string) || undefined,
-    source: (doc.source as string) || undefined,
-    guide: points(doc.guide),
-    sections: sections(doc.sections),
-    closing: (doc.closing as string) || undefined,
-    fullTitle: (doc.fullTitle as string) || undefined,
-    fullSections: full.length ? full : undefined,
-  };
+  return mapDocument((result.docs[0] ?? {}) as Record<string, unknown>, slug);
 }
-
-async function fetchGlobal<T>(slug: string): Promise<T> {
-  const payload = await client();
-  return (await payload.findGlobal({ slug })) as unknown as T;
-}
-
-// Fall back to static content when Payload is empty (unseeded) OR unreachable (e.g. the
-// DB connection fails) — so the site never renders blank/500. Publishing (revalidateTag)
-// flips the cache from fallback to real CMS data.
-async function safe<T>(fetcher: () => Promise<T>, isValid: (data: T) => boolean, fallback: T): Promise<T> {
-  try {
-    const data = await fetcher();
-    return isValid(data) ? data : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export const getHomepage = unstable_cache(
-  () => safe(fetchHomepage, (d) => Boolean(d.hero?.title), homepageFallback),
-  ["homepage"],
-  { tags: ["payload:homepage"], revalidate: false },
-);
-
-export const getChatPage = unstable_cache(
-  () => safe(() => fetchGlobal<ChatPageContent>("chat-page"), (d) => Boolean(d?.heading), chatFallback),
-  ["chat-page"],
-  { tags: ["payload:chat-page"], revalidate: false },
-);
-
-export const getUiStrings = unstable_cache(
-  () => safe(() => fetchGlobal<UiStrings>("ui-strings"), (d) => Boolean(d?.sendLabel), uiFallback),
-  ["ui-strings"],
-  { tags: ["payload:ui-strings"], revalidate: false },
-);
-
-export const getSiteSettings = unstable_cache(
-  () =>
-    safe(
-      () => fetchGlobal<SiteSettings>("site-settings"),
-      (d) => Boolean(d?.shareTitle && d?.brand?.logoPath),
-      settingsFallback,
-    ),
-  ["site-settings"],
-  { tags: ["payload:site-settings"], revalidate: false },
-);
-
-export const getFooter = unstable_cache(
-  () => safe(() => fetchGlobal<FooterContent>("footer"), (d) => Boolean(d?.copyright), footerFallback),
-  ["footer"],
-  { tags: ["payload:footer"], revalidate: false },
-);
 
 export function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
   return unstable_cache(
@@ -190,4 +82,14 @@ export function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
     ["site-document", slug],
     { tags: [`payload:doc:${slug}`], revalidate: false },
   )();
+}
+
+// Fall back to static content when a fetch returns empty/invalid (so the site never breaks).
+async function safe<T>(fetcher: () => Promise<T>, isValid: (data: T) => boolean, fallback: T): Promise<T> {
+  try {
+    const data = await fetcher();
+    return isValid(data) ? data : fallback;
+  } catch {
+    return fallback;
+  }
 }
