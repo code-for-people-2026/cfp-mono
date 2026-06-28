@@ -1,28 +1,21 @@
-import type { CollectionBeforeChangeHook, CollectionConfig } from "payload";
+import type { CollectionConfig } from "payload";
 import { OFFERING_CATEGORIES, OFFERING_KINDS } from "@cfp/kith-inn-shared";
-import { tenantScoped } from "../access/tenantScoped";
-import { assertSameTenantRefs } from "../hooks/assertSameTenantRefs";
-import { stampSeller } from "../hooks/stampSeller";
+import { sellerField, tenantAccess, tenantHooks } from "./shared";
 
 /**
- * `offerings` — the shared hub of menu ↔ order ↔ purchasing (PRD §7.1). A dish is
- * `kind: "component"`; `mainIngredient` is the real de-duplication axis ("肉就那
- * 几样"). The spike's tenant-scoped test subject: it carries `seller` and goes
- * through `tenantScoped()` + `stampSeller`. Fields expand to the full model in
- * PR3; M0 carries only what the H5 offering-pool deliverable needs.
+ * `offerings` — the shared hub of menu ↔ order ↔ purchasing (PRD §7.1). A dish
+ * is `kind: "component"`; a combo (`combo-meal`) relates to its components via
+ * `parentOfferings` (self-relationship). `mainIngredient` is the real
+ * de-duplication axis ("肉就那几样"). `recipe` (json) feeds purchasing
+ * aggregation (M2). `tags` is a json string-array (not a relational array) to
+ * avoid per-tag sub-tables — part of kith-inn's lean-modeling rule
+ * (cf. website's 60-table over-modeling, issue #72).
  */
 export const Offerings: CollectionConfig = {
   slug: "offerings",
   admin: { useAsTitle: "name", group: "菜单" },
-  access: tenantScoped(),
-  hooks: {
-    // stampSeller nails the row's own seller; assertSameTenantRefs nails every
-    // relationship the row points at (defense in depth, Tech Spec §3.1).
-    beforeChange: [
-      stampSeller as CollectionBeforeChangeHook,
-      assertSameTenantRefs as CollectionBeforeChangeHook,
-    ],
-  },
+  access: tenantAccess,
+  hooks: tenantHooks,
   fields: [
     { name: "name", type: "text", required: true },
     {
@@ -41,11 +34,25 @@ export const Offerings: CollectionConfig = {
       options: OFFERING_CATEGORIES.map((c) => ({ value: c.value, label: c.label })),
     },
     {
-      name: "seller",
+      // combo → its components (self-relationship). A hook in M1 validates that a
+      // combo only points at components (and components carry no parent).
+      name: "parentOfferings",
       type: "relationship",
-      relationTo: "sellers",
-      required: true,
-      index: true,
+      relationTo: "offerings",
+      hasMany: true,
     },
+    { name: "unitLabel", type: "text" },
+    { name: "priceCents", type: "number" },
+    { name: "tags", type: "json" },
+    { name: "lastUsedAt", type: "date" },
+    { name: "useCount", type: "number" },
+    {
+      name: "recipe",
+      type: "json",
+      // shape: { ingredients: [{ name, qtyPerServing, unit }], yieldServings? }
+      // only component/single-item; combo derives from its components.
+    },
+    { name: "active", type: "checkbox", defaultValue: true },
+    sellerField,
   ],
 };

@@ -1,0 +1,25 @@
+{
+  "seller": {
+    "name": "桃子的健康早午餐",
+    "defaultPriceCents": 3000,
+    "enabledModules": ["menu-planning", "delivery", "purchasing"],
+    "moduleSettings": {
+      "menuStructure": "4菜1汤",
+      "serviceDays": ["mon", "tue", "wed", "thu", "fri"],
+      "occasions": ["lunch", "dinner"],
+      "delivery": { "deliverers": ["奶奶"] }
+    }
+  },
+  "offerings": [
+    { "name": "番茄炒蛋", "mainIngredient": "鸡蛋", "category": "veg", "tags": ["清淡"] },
+    { "name": "红烧牛肉", "mainIngredient": "牛肉", "category": "meat", "tags": ["费工"] },
+    { "name": "宫保鸡丁", "mainIngredient": "鸡肉", "category": "meat" },
+    { "name": "清炒时蔬", "mainIngredient": "青菜", "category": "veg", "tags": ["清淡"] },
+    { "name": "糖醋排骨", "mainIngredient": "排骨", "category": "meat", "tags": ["费工"] },
+    { "name": "麻婆豆腐", "mainIngredient": "豆制品", "category": "veg" },
+    { "name": "清蒸鲈鱼", "mainIngredient": "鱼", "category": "meat", "tags": ["费工"] },
+    { "name": "紫菜蛋花汤", "mainIngredient": "鸡蛋", "category": "soup", "tags": ["清淡"] },
+    { "name": "红烧肉", "mainIngredient": "猪肉", "category": "meat", "tags": ["费工"] },
+    { "name": "醋溜土豆丝", "mainIngredient": "土豆", "category": "veg", "tags": ["清淡"] }
+  ]
+}
