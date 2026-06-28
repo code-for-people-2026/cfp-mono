@@ -7,52 +7,49 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Mock fetch returning `response` as JSON (a full `Response`), typed as fetch so
- *  `mock.calls` carries the (url, init) args. */
-const mockFetch = (response: unknown) => ({
-  fetch: vi.fn<typeof fetch>(async () => new Response(JSON.stringify(response))),
+const mockFetch = (response: unknown, status = 200) => ({
+  fetch: vi.fn<typeof fetch>(async () => new Response(JSON.stringify(response), { status })),
+});
+
+const mockStatus = (status: number) => ({
+  fetch: vi.fn<typeof fetch>(async () => new Response("err", { status })),
 });
 
 describe("findOperatorByOpenid", () => {
-  it("returns the operator with a shallow seller id", async () => {
+  it("returns the operator from cms internal endpoint", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const op = await findOperatorByOpenid(
       "openid-1",
-      mockFetch({ docs: [{ id: 1, seller: 7, role: "owner", active: true }] }),
+      mockFetch({ id: 1, sellerId: 7, role: "owner", active: true }),
     );
     expect(op).toEqual({ id: 1, sellerId: 7, role: "owner", active: true });
   });
 
-  it("reads the seller id off a populated doc", async () => {
+  it("returns null on 404 (no operator matches)", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const op = await findOperatorByOpenid(
-      "openid-1",
-      mockFetch({ docs: [{ id: 2, seller: { id: 9, name: "桃子" }, role: "owner", active: true }] }),
-    );
-    expect(op?.sellerId).toBe(9);
+    expect(await findOperatorByOpenid("nobody", mockStatus(404))).toBeNull();
   });
 
-  it("returns null when no operator matches", async () => {
+  it("throws on non-2xx (not 404)", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    expect(await findOperatorByOpenid("nobody", mockFetch({ docs: [] }))).toBeNull();
+    await expect(findOperatorByOpenid("x", mockStatus(500))).rejects.toThrow(/cms operators lookup failed: 500/);
   });
 
-  it("throws on a non-2xx cms response (propagates failure, not empty)", async () => {
+  it("POSTs to /api/internal/operator-by-openid with x-internal-token", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const failing = { fetch: vi.fn(async () => new Response("unauthorized", { status: 401 })) };
-    await expect(findOperatorByOpenid("x", failing)).rejects.toThrow(/cms operators lookup failed: 401/);
-  });
-
-  it("trims a trailing slash on CMS_BASE_URL", async () => {
-    process.env.CMS_BASE_URL = "http://cms.test/";
-    const deps = mockFetch({ docs: [{ id: 1, seller: 7, role: "owner", active: true }] });
+    process.env.CMS_INTERNAL_TOKEN = "the-token";
+    const deps = mockFetch({ id: 1, sellerId: 7, role: "owner", active: true });
     await findOperatorByOpenid("openid-1", deps);
-    expect(deps.fetch.mock.calls[0]?.[0]).toMatch(/^http:\/\/cms\.test\/api\/operators\?/);
+    const [url, init] = deps.fetch.mock.calls[0]!;
+    expect(String(url)).toContain("/api/internal/operator-by-openid");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toMatchObject({ "x-internal-token": "the-token" });
+    delete process.env.CMS_INTERNAL_TOKEN;
   });
 });
 
 describe("findOfferings", () => {
-  it("returns the offerings list from the cms response", async () => {
+  it("returns offerings from cms internal endpoint", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const offerings = await findOfferings(
       "jwt",
@@ -67,17 +64,18 @@ describe("findOfferings", () => {
     expect(await findOfferings("jwt", mockFetch({}))).toEqual([]);
   });
 
-  it("throws on a non-2xx cms response (does not mask as empty menu)", async () => {
-    process.env.CMS_BASE_URL = "http://cms.test";
-    const failing = { fetch: vi.fn(async () => new Response("error", { status: 500 })) };
-    await expect(findOfferings("jwt", failing)).rejects.toThrow(/cms offerings lookup failed: 500/);
-  });
-
-  it("sends the operator JWT in x-kith-inn-operator", async () => {
+  it("sends x-kith-inn-operator + GETs /api/internal/offerings", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch({ docs: [] });
     await findOfferings("the-jwt", deps);
-    expect(deps.fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ "x-kith-inn-operator": "the-jwt" });
+    const [url, init] = deps.fetch.mock.calls[0]!;
+    expect(String(url)).toContain("/api/internal/offerings");
+    expect(init?.headers).toMatchObject({ "x-kith-inn-operator": "the-jwt" });
+  });
+
+  it("throws on non-2xx", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(findOfferings("jwt", mockStatus(500))).rejects.toThrow(/cms offerings lookup failed: 500/);
   });
 });
 
@@ -88,18 +86,15 @@ describe("cmsBase / global fetch fallback", () => {
     await expect(findOfferings("jwt")).rejects.toThrow(/CMS_BASE_URL/);
   });
 
-  it("uses the global fetch when no deps are provided (findOperatorByOpenid)", async () => {
+  it("uses global fetch when no deps (findOperatorByOpenid)", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
-      docs: [{ id: 1, seller: 7, role: "owner", active: true }],
-    })));
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 1, sellerId: 7, role: "owner", active: true })));
     vi.stubGlobal("fetch", fetchMock);
-    const op = await findOperatorByOpenid("openid-1");
-    expect(op?.id).toBe(1);
+    expect((await findOperatorByOpenid("openid-1"))?.id).toBe(1);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it("uses the global fetch when no deps are provided (findOfferings)", async () => {
+  it("uses global fetch when no deps (findOfferings)", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ docs: [] })));
     vi.stubGlobal("fetch", fetchMock);
