@@ -1,0 +1,22 @@
+import { Hono } from "hono";
+import type { AppVars } from "./middleware/sellerAuth";
+import { authRoutes } from "./routes/auth";
+import { healthRoutes } from "./routes/health";
+import { offeringsRoutes } from "./routes/offerings";
+
+/**
+ * Compose the Hono app (no server start — kept pure so tests drive it via
+ * `app.request()`). JWT_SECRET is required at composition time; a missing secret
+ * throws rather than silently issuing tokens under "".
+ */
+export function createApp() {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) throw new Error("JWT_SECRET is required");
+  const app = new Hono<AppVars>();
+  app.route("/", healthRoutes());
+  app.route("/auth", authRoutes(jwtSecret));
+  app.route("/offerings", offeringsRoutes(jwtSecret));
+  return app;
+}
+
+export type App = ReturnType<typeof createApp>;
