@@ -10,6 +10,23 @@ import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 // after this one has run). Run order A→B guarantees content is copied before it is dropped.
 export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   await db.execute(sql`
+   -- P1 (#74): refuse to run if any legacy content has an unpublished draft. This migration
+   -- backfills from the base (published) tables, and the follow-up drops the _status column
+   -- and the version tables that hold drafts — so an unpublished draft would silently become
+   -- the live content. Publish or discard every draft first, then redeploy.
+   DO $$
+   BEGIN
+     IF EXISTS (SELECT 1 FROM "website"."homepage" WHERE _status = 'draft')
+        OR EXISTS (SELECT 1 FROM "website"."footer" WHERE _status = 'draft')
+        OR EXISTS (SELECT 1 FROM "website"."site_settings" WHERE _status = 'draft')
+        OR EXISTS (SELECT 1 FROM "website"."chat_page" WHERE _status = 'draft')
+        OR EXISTS (SELECT 1 FROM "website"."ui_strings" WHERE _status = 'draft')
+        OR EXISTS (SELECT 1 FROM "website"."site_documents" WHERE _status = 'draft')
+     THEN
+       RAISE EXCEPTION 'website content has unpublished drafts — publish or discard them in the CMS before running this migration';
+     END IF;
+   END $$;
+
    CREATE TABLE "website"."site_content" (
   	"id" serial PRIMARY KEY NOT NULL,
   	"hero_kicker" varchar NOT NULL,
