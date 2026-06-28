@@ -46,6 +46,22 @@ export function buildOfferingOps(f: TaoziFixture, sellerId: string | number): Se
   }));
 }
 
+/** Build the operator create-op (桃子, dev openid for H5 login). auth:true needs
+ *  email+password (synthetic, unused — login is by openid, not email/password). */
+export function buildOperatorOp(sellerId: string | number): SeedOp {
+  return {
+    collection: "operators",
+    data: {
+      wechatOpenid: "taozi-dev-openid",
+      email: "taozi@kith-inn.local",
+      password: "taozi-dev-password",
+      role: "owner",
+      active: true,
+      seller: sellerId,
+    },
+  };
+}
+
 /** Minimal Payload surface applySeed needs (keeps it mockable for unit tests). */
 type SeedPayload = {
   find: (args: {
@@ -93,5 +109,11 @@ export async function applySeed(payload: SeedPayload, f: TaoziFixture): Promise<
   for (const op of ops) {
     await payload.create({ collection: op.collection, data: op.data, overrideAccess: true });
   }
+  // Seed 桃子's operator (with dev wechatOpenid for H5 dev-login).
+  await payload.create({
+    collection: "operators",
+    data: buildOperatorOp(seller.id).data,
+    overrideAccess: true,
+  });
   return { seeded: true, sellerId: seller.id, offeringCount: ops.length };
 }

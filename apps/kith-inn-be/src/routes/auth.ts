@@ -45,5 +45,39 @@ export function authRoutes(jwtSecret: string, deps: AuthDeps = {
       return c.json({ error: "wx-login failed" }, 502);
     }
   });
+
+  /**
+   * `POST /auth/dev-login { openid }` — H5 dev shortcut (no Taro.login on H5).
+   * Skips the WeChat code exchange and looks up the operator by openid directly.
+   * Only available when `NODE_ENV !== "production"` — the FE's H5 dev path uses
+   * this; weapp uses /wx-login.
+   */
+  app.post("/dev-login", async (c) => {
+    if (process.env.NODE_ENV === "production") {
+      return c.json({ error: "dev-login disabled in production" }, 404);
+    }
+    const body = (await c.req.json().catch(() => null)) as { openid?: unknown } | null;
+    const openid = body?.openid;
+    if (typeof openid !== "string" || openid === "") {
+      return c.json({ error: "openid required" }, 400);
+    }
+    try {
+      const operator = await deps.findOperatorByOpenid(openid);
+      if (!operator || !operator.active) {
+        return c.json({ error: "operator not provisioned" }, 401);
+      }
+      const token = await issueToken(
+        { operatorId: operator.id, sellerId: operator.sellerId, role: operator.role },
+        jwtSecret,
+      );
+      return c.json({
+        token,
+        operator: { id: operator.id, sellerId: operator.sellerId, role: operator.role },
+      });
+    } catch {
+      return c.json({ error: "dev-login failed" }, 502);
+    }
+  });
+
   return app;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applySeed, buildOfferingOps, buildSellerOp } from "./taozi";
+import { applySeed, buildOfferingOps, buildOperatorOp, buildSellerOp } from "./taozi";
 import type { TaoziFixture } from "./taozi";
 
 const fixture: TaoziFixture = {
@@ -43,6 +43,22 @@ describe("buildOfferingOps", () => {
   });
 });
 
+describe("buildOperatorOp", () => {
+  it("builds an operators create-op with dev openid + synthetic auth", () => {
+    expect(buildOperatorOp(7)).toEqual({
+      collection: "operators",
+      data: {
+        wechatOpenid: "taozi-dev-openid",
+        email: "taozi@kith-inn.local",
+        password: "taozi-dev-password",
+        role: "owner",
+        active: true,
+        seller: 7,
+      },
+    });
+  });
+});
+
 describe("applySeed", () => {
   const makePayload = (existingSeller: unknown) => ({
     find: vi.fn(async () => ({ docs: existingSeller ? [existingSeller] : [] })),
@@ -63,16 +79,17 @@ describe("applySeed", () => {
     const result = await applySeed(payload, fixture);
     expect(result.seeded).toBe(true);
     expect(result.offeringCount).toBe(2);
-    // 1 seller + 2 offerings
-    expect(payload.create).toHaveBeenCalledTimes(3);
+    // 1 seller + 2 offerings + 1 operator
+    expect(payload.create).toHaveBeenCalledTimes(4);
     expect(payload.create.mock.calls[0]?.[0]).toMatchObject({ collection: "sellers" });
     expect(payload.create.mock.calls[1]?.[0]).toMatchObject({ collection: "offerings" });
+    expect(payload.create.mock.calls[3]?.[0]).toMatchObject({ collection: "operators" });
   });
 
   it("seeds the seller even with an empty offering pool", async () => {
     const payload = makePayload(null);
     const result = await applySeed(payload, { ...fixture, offerings: [] });
     expect(result).toEqual({ seeded: true, sellerId: 1, offeringCount: 0 });
-    expect(payload.create).toHaveBeenCalledTimes(1); // seller only
+    expect(payload.create).toHaveBeenCalledTimes(2); // seller + operator
   });
 });
