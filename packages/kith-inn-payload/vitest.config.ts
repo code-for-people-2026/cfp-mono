@@ -16,7 +16,12 @@ export default defineConfig({
         "src/payload/access/**/*.ts",
         "src/payload/hooks/**/*.ts",
         "src/payload/lib/**/*.ts",
+        "src/seed/**/*.ts",
       ],
+      // `src/seed/index.ts` is a pure re-export barrel (declarative, not logic);
+      // tests import `./taozi` directly so the barrel is never executed. Exclude
+      // it so the 100% gate measures real logic, not wiring.
+      exclude: ["src/seed/index.ts"],
       thresholds: {
         statements: 100,
         branches: 100,

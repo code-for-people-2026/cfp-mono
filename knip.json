@@ -32,6 +32,7 @@
         "payload.config.ts",
         "eslint.config.mjs",
         "vitest.config.ts",
+        "seed/run.ts",
         "src/app/**/*.{ts,tsx}",
         "tests/**/*.ts"
       ]
@@ -40,7 +41,7 @@
       "entry": ["src/index.ts"]
     },
     "packages/kith-inn-payload": {
-      "entry": ["src/payload/index.ts"]
+      "entry": ["src/payload/index.ts", "src/seed/index.ts"]
     },
     "packages/ui": {
       "entry": ["src/index.ts"]

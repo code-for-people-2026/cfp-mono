@@ -103,3 +103,11 @@ export type MenuPlanStatus = (typeof MENU_PLAN_STATUSES)[number];
 /** 订阅状态（V1）。 */
 export const SUBSCRIPTION_STATUSES = ["active", "paused"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
+
+/** service_slots.granularity — 按餐次（桃子午/晚）vs 按时段（烘焙取货/家教）。 */
+export const SERVICE_SLOT_GRANULARITIES = ["occasion", "time-slot"] as const;
+export type ServiceSlotGranularity = (typeof SERVICE_SLOT_GRANULARITIES)[number];
+
+/** chat_messages.role — 展示对话里谁说的话。 */
+export const CHAT_ROLES = ["user", "assistant"] as const;
+export type ChatRole = (typeof CHAT_ROLES)[number];

@@ -5,7 +5,8 @@
   "license": "LicenseRef-Cattle",
   "type": "module",
   "exports": {
-    ".": "./src/payload/index.ts"
+    ".": "./src/payload/index.ts",
+    "./seed": "./src/seed/index.ts"
   },
   "scripts": {
     "lint": "eslint .",

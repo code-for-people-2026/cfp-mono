@@ -13,6 +13,7 @@
     "payload": "payload",
     "payload:migrate": "payload migrate",
     "payload:migrate:create": "payload migrate:create",
+    "seed": "tsx seed/run.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
@@ -35,6 +36,7 @@
     "eslint": "^9.39.2",
     "eslint-config-next": "16.2.9",
     "typescript": "^5.9.3",
+    "tsx": "^4.19.0",
     "vitest": "^4.0.15"
   }
 }

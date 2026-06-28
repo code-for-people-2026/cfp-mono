@@ -36,10 +36,25 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       return (result.rows as Array<{ table_name: string }>).map((r) => r.table_name);
     };
 
-    it("creates the cms schema with the kith-inn business tables", async () => {
+    it("creates the cms schema with the full kith-inn spine", async () => {
       const tables = await tablesIn("cms");
+      // Every business collection (PR3) + Payload's migrations bookkeeping.
       expect(tables).toEqual(
-        expect.arrayContaining(["sellers", "operators", "offerings", "payload_migrations"]),
+        expect.arrayContaining([
+          "sellers",
+          "operators",
+          "customers",
+          "customer_addresses",
+          "offerings",
+          "service_slots",
+          "orders",
+          "order_items",
+          "fulfillments",
+          "menu_plans",
+          "chat_messages",
+          "subscriptions",
+          "payload_migrations",
+        ]),
       );
     });
 
