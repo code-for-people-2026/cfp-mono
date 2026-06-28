@@ -26,6 +26,15 @@
       ],
       "ignoreDependencies": ["react"]
     },
+    "apps/kith-inn-fe": {
+      "entry": [
+        "config/**/*.ts",
+        "src/**/*.{ts,tsx}",
+        "eslint.config.mjs",
+        "vitest.config.ts"
+      ],
+      "ignoreDependencies": ["react"]
+    },
     "apps/cms": {
       "entry": [
         "next.config.ts",
