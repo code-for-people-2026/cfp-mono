@@ -6,11 +6,7 @@ import { FormLinks } from "./src/payload/collections/FormLinks";
 import { MatrixSubmissions } from "./src/payload/collections/MatrixSubmissions";
 import { Recipes } from "./src/payload/collections/Recipes";
 import { SiteDocuments } from "./src/payload/collections/SiteDocuments";
-import { ChatPage } from "./src/payload/globals/ChatPage";
-import { Footer } from "./src/payload/globals/Footer";
-import { Homepage } from "./src/payload/globals/Homepage";
-import { SiteSettings } from "./src/payload/globals/SiteSettings";
-import { UiStrings } from "./src/payload/globals/UiStrings";
+import { SiteContent } from "./src/payload/globals/SiteContent";
 import { migrations } from "./src/payload/migrations";
 
 const requiresProductionEnv =
@@ -71,7 +67,7 @@ export default buildConfig({
     },
   },
   collections: [CMSAdmins, SiteDocuments, FormLinks, MatrixSubmissions, Recipes],
-  globals: [Homepage, ChatPage, UiStrings, SiteSettings, Footer],
+  globals: [SiteContent],
   // We hand-write the content shapes in src/lib/content/types.ts and intentionally do not
   // ship a generated payload-types.ts. Disable auto-generation so the Payload CLI (e.g.
   // migrate:create) doesn't emit one whose `declare module 'payload'` augmentation would

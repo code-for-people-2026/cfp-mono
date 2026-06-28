@@ -21,16 +21,14 @@ import {
   type DocumentContent,
 } from "@/content/site";
 
-const text = (items: string[] = []) => items.map((value) => ({ text: value }));
 const card = (item: { title: string; body: string }) => ({ title: item.title, body: item.body });
 
-const sections = (list: DocumentContent["sections"] = []) =>
-  list.map((s) => ({
-    label: s.label,
-    heading: s.heading,
-    paragraphs: text(s.paragraphs),
-    points: text(s.points ?? []),
-  }));
+const section = (s: { label?: string; heading: string; paragraphs: string[]; points?: string[] }) => ({
+  label: s.label,
+  heading: s.heading,
+  paragraphs: s.paragraphs,
+  points: s.points ?? [],
+});
 
 function documentData(doc: DocumentContent, slug: string) {
   return {
@@ -40,12 +38,11 @@ function documentData(doc: DocumentContent, slug: string) {
     summary: doc.summary,
     meta: doc.meta,
     source: doc.source,
-    guide: text(doc.guide ?? []),
-    sections: sections(doc.sections),
+    guide: doc.guide ?? [],
+    sections: doc.sections.map(section),
     closing: doc.closing,
     fullTitle: doc.fullTitle,
-    fullSections: sections(doc.fullSections ?? []),
-    _status: "published" as const,
+    fullSections: (doc.fullSections ?? []).map(section),
   };
 }
 
@@ -55,11 +52,11 @@ const iconKeyByLabel: Record<string, "douyin" | "kuaishou" | "bilibili"> = {
   B站: "bilibili",
 };
 
-// Seed all site copy into Payload from the current static content, published.
-// Guarded by PAYLOAD_SEED so it only runs when explicitly requested.
+// Seed all site copy into the single `site-content` global (json-shaped lists) from the
+// current static content. Drafts are off, so no `_status`. Guarded by PAYLOAD_SEED.
 export async function seedSiteContent(payload: Payload) {
   await payload.updateGlobal({
-    slug: "homepage",
+    slug: "site-content",
     data: {
       hero,
       dialogueEntry,
@@ -75,7 +72,7 @@ export async function seedSiteContent(payload: Payload) {
       lifeScenes: {
         heading: lifeScenesIntro.title,
         intro: lifeScenesIntro.body,
-        scenes: lifeScenes.map((s) => ({ title: s.title, body: s.body, tags: s.tags.map((tag) => ({ tag })) })),
+        scenes: lifeScenes.map((s) => ({ title: s.title, body: s.body, tags: s.tags })),
       },
       direction: {
         heading: "我们怎么判断方向",
@@ -98,60 +95,7 @@ export async function seedSiteContent(payload: Payload) {
           target: item.href === "/manifesto" ? "manifesto" : item.href === "/license" ? "license" : "map",
         })),
       },
-      _status: "published",
-    },
-  });
-
-  await payload.updateGlobal({
-    slug: "chat-page",
-    data: {
-      heading: "从一个问题开始了解码成工",
-      intro: "这里基于已经公开的文本回答。可以直接提问，也可以先从下面几个问题开始。",
-      _status: "published",
-    },
-  });
-
-  await payload.updateGlobal({
-    slug: "ui-strings",
-    data: {
-      backToHome: "回到首页",
-      sendLabel: dialogueEntry.submitLabel,
-      chatRestart: "重新开始",
-      chatLoading: "正在组织回答…",
-      chatDisclaimer: "内容由 AI 基于公开文本生成，请仔细甄别。",
-      chatAssistantName: "码成工助手",
-      chatUserName: "你",
-      chatPlaceholder: dialogueEntry.placeholder,
-      chatResetConfirm: "清空这次对话？内容只保存在本机浏览器。",
-      _status: "published",
-    },
-  });
-
-  await payload.updateGlobal({
-    slug: "site-settings",
-    data: {
-      shareTitle: siteMetadata.title,
-      shareDescription: siteMetadata.description,
-      directionMapUrl: directionMapHref,
-      githubUrl: "https://github.com/code-for-people-2026",
-      brand: {
-        wordmark: "码成工",
-        tagline: "为“工友”敲键盘",
-        logoPath: brandAssets.logoSrc,
-        logoAlt: "码成工 logo",
-      },
-      headerNav: [
-        { label: "数据平权宣言", href: "/manifesto" },
-        { label: "牛马能力剥夺矩阵", href: directionMapHref },
-        { label: "牛马互助协议", href: "/license" },
-      ],
-      _status: "published",
-    },
-  });
-
-  await payload.updateGlobal({
-    slug: "footer",
-    data: {
+      // 页脚
       description:
         "软件也是一种服务。我们把理念、协议和方向公开出来，继续学习如何把技术能力还给真实生活。",
       linksHeading: "网站链接",
@@ -173,7 +117,35 @@ export async function seedSiteContent(payload: Payload) {
       githubLabel: "GitHub",
       beian: "", // 备案后在 Payload 填写；留空则页脚不显示
       copyright: "© 2026 码成工",
-      _status: "published",
+      // 站点设置
+      shareTitle: siteMetadata.title,
+      shareDescription: siteMetadata.description,
+      directionMapUrl: directionMapHref,
+      githubUrl: "https://github.com/code-for-people-2026",
+      brand: {
+        wordmark: "码成工",
+        tagline: "为“工友”敲键盘",
+        logoPath: brandAssets.logoSrc,
+        logoAlt: "码成工 logo",
+      },
+      headerNav: [
+        { label: "数据平权宣言", href: "/manifesto" },
+        { label: "牛马能力剥夺矩阵", href: directionMapHref },
+        { label: "牛马互助协议", href: "/license" },
+      ],
+      // 对话页
+      chatHeading: "从一个问题开始了解码成工",
+      chatIntro: "这里基于已经公开的文本回答。可以直接提问，也可以先从下面几个问题开始。",
+      // 通用文案
+      backToHome: "回到首页",
+      sendLabel: dialogueEntry.submitLabel,
+      chatRestart: "重新开始",
+      chatLoading: "正在组织回答…",
+      chatDisclaimer: "内容由 AI 基于公开文本生成，请仔细甄别。",
+      chatAssistantName: "码成工助手",
+      chatUserName: "你",
+      chatPlaceholder: dialogueEntry.placeholder,
+      chatResetConfirm: "清空这次对话？内容只保存在本机浏览器。",
     },
   });
 

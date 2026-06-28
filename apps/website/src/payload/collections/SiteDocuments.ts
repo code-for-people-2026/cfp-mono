@@ -1,17 +1,18 @@
 import type { CollectionConfig } from "payload";
 import { isAdmin } from "../access/isAdmin";
-import { paragraphsField, sectionsField } from "../fields/shared";
+import { sectionsField, stringsField } from "../fields/shared";
 import { revalidateDocument } from "../hooks/revalidate";
 
-// 数据平权宣言 / 牛马互助协议 / 牛马能力剥夺矩阵 — each rendered by the DocumentPage component.
+// 数据平权宣言 / 牛马互助协议 — each rendered by the DocumentPage component.
+// Drafts are off (every save publishes + revalidates the per-slug tag). guide/sections/
+// fullSections are `json` columns, not `array` child tables (issue #72).
 export const SiteDocuments: CollectionConfig = {
   slug: "site-documents",
   admin: {
     useAsTitle: "title",
     group: "官网内容",
-    defaultColumns: ["title", "slug", "_status", "updatedAt"],
+    defaultColumns: ["title", "slug", "updatedAt"],
   },
-  versions: { drafts: true },
   access: {
     read: () => true,
     create: isAdmin,
@@ -38,7 +39,7 @@ export const SiteDocuments: CollectionConfig = {
     { name: "summary", label: "摘要", type: "textarea", required: true },
     { name: "meta", label: "版本/元信息", type: "text" },
     { name: "source", label: "来源备注", type: "text" },
-    paragraphsField("guide", "先读这一段（导读）"),
+    stringsField("guide", "先读这一段（导读）"),
     sectionsField("sections", "导读正文分节"),
     { name: "closing", label: "结语", type: "textarea" },
     { name: "fullTitle", label: "全文标题", type: "text" },
