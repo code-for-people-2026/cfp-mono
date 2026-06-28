@@ -1,0 +1,11 @@
+{
+  "extends": "@cfp/typescript-config/react-library.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src", "config", "tests", "types"]
+}
