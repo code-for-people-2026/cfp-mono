@@ -63,12 +63,13 @@ export type TodayGaps = {
   unpublishedMenus: number;
 };
 
-/** 跨表"今天还差什么"：草稿未确认 / 未送履约 / 未付 / 菜单未发。纯函数（数据传入）。 */
+/** 跨表"今天还差什么"：草稿未确认 / 未送履约 / 未付 / 菜单未发。纯函数（数据传入）。
+ *  未付口径只算 **confirmed** 单（draft 默认 unpaid 但未成单、canceled 已作废，§7.1）。 */
 export function todayGaps(input: { orders: Order[]; fulfillments: Fulfillment[]; menuPlans: MenuPlan[] }): TodayGaps {
   return {
     unconfirmedOrders: input.orders.filter((o) => o.status === "draft").length,
     pendingDeliveries: input.fulfillments.filter((f) => f.status === "pending" || f.status === "handed-off").length,
-    unpaidOrders: input.orders.filter((o) => o.paymentStatus === "unpaid").length,
+    unpaidOrders: input.orders.filter((o) => o.status === "confirmed" && o.paymentStatus === "unpaid").length,
     unpublishedMenus: input.menuPlans.filter((m) => m.status === "draft").length,
   };
 }
