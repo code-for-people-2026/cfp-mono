@@ -12,6 +12,10 @@ export async function callDeepSeek(input: {
   messages: DeepSeekMessage[];
   maxTokens: number;
   signal?: AbortSignal;
+  /** Override the model (else DEEPSEEK_MODEL env, else deepseek-v4-flash).
+   *  Callers that need the NON-thinking model pass `deepseek-chat` explicitly
+   *  so a missing env can't silently pick the thinking model (empty content). */
+  model?: string;
 }) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY is not configured");
@@ -19,7 +23,7 @@ export async function callDeepSeek(input: {
   // Use `||` not `??`: an env var present but set to "" (a real case in production) must
   // still fall back to the default, otherwise the empty value breaks the request.
   const baseUrl = process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com";
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+  const model = input.model || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 
   const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
     method: "POST",
