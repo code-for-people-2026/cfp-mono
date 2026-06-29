@@ -42,6 +42,27 @@ describe("parseJielong (default generate)", () => {
     mockCall.mockResolvedValueOnce('{"items":[{"customerName":"x","quantity":1,"occasion":"dinner"}],"unknownSegments":[]}');
     expect((await parseJielong("x")).items[0]?.occasion).toBe("dinner");
   });
+
+  it("pins the model to deepseek-chat when DEEPSEEK_MODEL is unset OR empty (Codex)", async () => {
+    const orig = process.env.DEEPSEEK_MODEL;
+    for (const v of [undefined, ""]) {
+      if (v === undefined) delete process.env.DEEPSEEK_MODEL;
+      else process.env.DEEPSEEK_MODEL = v;
+      mockCall.mockResolvedValueOnce('{"items":[],"unknownSegments":[]}');
+      await parseJielong("x");
+      expect(mockCall.mock.calls.at(-1)?.[0].model).toBe("deepseek-chat");
+    }
+    process.env.DEEPSEEK_MODEL = orig;
+  });
+
+  it("respects an explicit DEEPSEEK_MODEL override", async () => {
+    const orig = process.env.DEEPSEEK_MODEL;
+    process.env.DEEPSEEK_MODEL = "some-other-model";
+    mockCall.mockResolvedValueOnce('{"items":[],"unknownSegments":[]}');
+    await parseJielong("x");
+    expect(mockCall.mock.calls.at(-1)?.[0].model).toBe("some-other-model");
+    process.env.DEEPSEEK_MODEL = orig;
+  });
 });
 
 describe("parseJielong (injected generate — pure pass-through)", () => {
