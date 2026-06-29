@@ -1,12 +1,17 @@
 import type { Offering } from "@cfp/kith-inn-shared";
 
-type CmsDeps = { fetch?: typeof fetch };
+/** Injectable fetch boundary (so cms calls are unit-testable without a server). */
+export type CmsDeps = { fetch?: typeof fetch };
 
-function cmsBase(): string {
+/** Resolved cms base URL (trailing slash trimmed); throws if CMS_BASE_URL unset. */
+export function cmsBase(): string {
   const url = process.env.CMS_BASE_URL;
   if (!url) throw new Error("CMS_BASE_URL not configured");
   return url.replace(/\/$/, "");
 }
+
+/** The operator JWT travels in this header on every seller-scoped internal call. */
+export const OPERATOR_JWT_HEADER = "x-kith-inn-operator";
 
 /** The operator fields the BE needs after resolving an openid. */
 export type OperatorRecord = {
@@ -48,7 +53,7 @@ export async function findOperatorByOpenid(openid: string, deps: CmsDeps = {}): 
 export async function findOfferings(operatorJwt: string, deps: CmsDeps = {}): Promise<Offering[]> {
   const fetchImpl = deps.fetch ?? fetch;
   const res = await fetchImpl(`${cmsBase()}/api/internal/offerings`, {
-    headers: { "x-kith-inn-operator": operatorJwt },
+    headers: { [OPERATOR_JWT_HEADER]: operatorJwt },
   });
   if (!res.ok) throw new Error(`cms offerings lookup failed: ${res.status}`);
   const json = (await res.json()) as { docs?: Offering[] };

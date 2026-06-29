@@ -4,6 +4,7 @@ import type { AppVars } from "./middleware/sellerAuth";
 import { authRoutes } from "./routes/auth";
 import { healthRoutes } from "./routes/health";
 import { offeringsRoutes } from "./routes/offerings";
+import { orderRoutes } from "./routes/orders";
 
 /**
  * Compose the Hono app (no server start — kept pure so tests drive it via
@@ -19,6 +20,7 @@ export function createApp() {
   app.route("/", healthRoutes());
   app.route("/auth", authRoutes(jwtSecret));
   app.route("/offerings", offeringsRoutes(jwtSecret));
+  app.route("/orders", orderRoutes(jwtSecret));
   return app;
 }
 
