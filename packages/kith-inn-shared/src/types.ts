@@ -7,16 +7,36 @@
  * Payload's shallow (`number | string`) vs populated (`{ id }`) shapes.
  */
 import type {
+  ChatRole,
+  CustomerKind,
+  FulfillmentMode,
+  FulfillmentStatus,
+  MenuPlanStatus,
+  Occasion,
   OfferingCategory,
   OfferingKind,
   OperatorRole,
+  OrderSource,
+  OrderStatus,
+  PaymentStatus,
+  SellerModule,
   SellerStatus,
+  ServiceSlotGranularity,
+  ServiceSlotStatus,
 } from "./enums";
 
 export type Seller = {
   id: string | number;
   name: string;
+  serviceArea?: string;
+  /** Pricing-resolver fallback (桃子 = 3000 = 30 元/份). */
+  defaultPriceCents?: number;
   status: SellerStatus;
+  /** Combo fact-source: which modules are on — drives access/tab/agent-tool gating. */
+  enabledModules?: SellerModule[];
+  /** Per-module config json (e.g. delivery.deliverers, menuStructure, serviceDays). */
+  moduleSettings?: Record<string, unknown>;
+  profileFreeText?: string;
 };
 
 export type Operator = {
@@ -27,12 +47,123 @@ export type Operator = {
   seller: string | number | Seller;
 };
 
+export type CustomerAddress = {
+  id: string | number;
+  customer: string | number | Customer;
+  /** 楼栋 — the delivery-grouping key (送餐按楼栋成批). */
+  building: string;
+  unit?: string;
+  lastUsedAt?: string;
+  seller: string | number | Seller;
+};
+
+export type Customer = {
+  id: string | number;
+  /** 接龙里的称呼 — identification key (NOT unique; MVP name-normalize + manual merge). */
+  displayName: string;
+  kind: CustomerKind;
+  defaultServings?: number;
+  defaultOccasion?: Occasion;
+  note?: string;
+  defaultAddress?: string | number | CustomerAddress;
+  seller: string | number | Seller;
+};
+
 export type Offering = {
   id: string | number;
   name: string;
   kind: OfferingKind;
   mainIngredient?: string;
   category?: OfferingCategory;
+  /** combo → its components (self-relationship). */
+  parentOfferings?: Array<string | number | Offering>;
+  unitLabel?: string;
+  /** 菜品定价 (pricing-resolver middle priority). */
+  priceCents?: number;
+  /** json string-array (清淡/费工…) — lean modeling, no per-tag sub-tables. */
+  tags?: string[];
+  lastUsedAt?: string;
+  useCount?: number;
+  recipe?: Record<string, unknown>;
   active?: boolean;
+  seller: string | number | Seller;
+};
+
+export type ServiceSlot = {
+  id: string | number;
+  date: string;
+  granularity: ServiceSlotGranularity;
+  occasion?: Occasion;
+  startAt?: string;
+  endAt?: string;
+  status: ServiceSlotStatus;
+  seller: string | number | Seller;
+};
+
+export type OrderItem = {
+  id: string | number;
+  order: string | number | Order;
+  offering: string | number | Offering;
+  mealOccasion?: Occasion;
+  /** time-slot-granularity sellers only; snapshot from the slot's startAt/endAt. */
+  timeWindow?: string;
+  quantity: number;
+  /** Empty = derive default; snapshotted at draft-create (M1 simplification). */
+  unitPriceCents?: number;
+  note?: string;
+  seller: string | number | Seller;
+};
+
+export type Order = {
+  id: string | number;
+  customer: string | number | Customer;
+  /** 用餐日 (≠ 录入时间). Day-granular. */
+  date: string;
+  status: OrderStatus;
+  source: OrderSource;
+  placedAt?: string;
+  note?: string;
+  /** Read-only derived = Σ(item.quantity × resolved unit price); canceled excluded. */
+  totalCents?: number;
+  paymentStatus: PaymentStatus;
+  paymentMethod?: string;
+  paidAt?: string;
+  idempotencyKey?: string;
+  createdBy?: string | number | Operator;
+  seller: string | number | Seller;
+};
+
+export type Fulfillment = {
+  id: string | number;
+  orderItem: string | number | OrderItem;
+  /** Denormalized 用餐日 — delivery views batch on it, avoid re-joining order. */
+  serviceDate: string;
+  occasion?: Occasion;
+  mode: FulfillmentMode;
+  status: FulfillmentStatus;
+  /** Frozen address snapshot. */
+  addrBuilding?: string;
+  addrUnit?: string;
+  /** Controlled value ∈ seller.moduleSettings.delivery.deliverers. */
+  assignee?: string;
+  timeWindow?: string;
+  seller: string | number | Seller;
+};
+
+export type MenuPlan = {
+  id: string | number;
+  slot: string | number | ServiceSlot;
+  offerings: Array<string | number | Offering>;
+  publishText?: string;
+  status: MenuPlanStatus;
+  seller: string | number | Seller;
+};
+
+export type ChatMessage = {
+  id: string | number;
+  operator?: string | number | Operator;
+  content: string;
+  role: ChatRole;
+  createdAt: string;
   seller: string | number | Seller;
 };
