@@ -35,7 +35,17 @@ describe("evaluateSample", () => {
 
   it("handles duplicate items per customer (桃子 6 dinner + 1 lunch)", () => {
     const exp = [item("桃子", 6, "dinner"), item("桃子", 1, "lunch")];
-    expect(evaluateSample(exp, exp).correct).toBe(2);
+    const r = evaluateSample(exp, exp);
+    expect(r.correct).toBe(2);
+    expect(r.misassigned).toBe(0);
+  });
+
+  it("does NOT false-trigger misassign when a customer ordered both meals (Codex)", () => {
+    // 桃子 1 lunch + 1 dinner — perfectly predicted. Same (name,qty) across meals,
+    // but both are correct → must be 0 misassign (the old `some` check tripped here).
+    const exp = [item("桃子", 1, "lunch"), item("桃子", 1, "dinner")];
+    const r = evaluateSample(exp, exp);
+    expect(r).toMatchObject({ correct: 2, pct: 1, misassigned: 0 });
   });
 
   it("empty expected → 100% (vacuous)", () => {

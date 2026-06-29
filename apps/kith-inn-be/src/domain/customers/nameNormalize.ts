@@ -1,22 +1,13 @@
 /**
- * Normalize a 接龙 customer name for matching (PRD §6.4). MVP heuristic:
- * trim → collapse spaces → lowercase (Latin; no-op for CJK) → strip a conservative
- * set of Chinese honorific suffixes. Handles the variants in 桃子's 接龙
- * (`lily`/`Lily`, `Catherine chen`/casing, `王燕萍`/`王阿姨`).
+ * Normalize a 接龙 customer name for matching (PRD §6.4). MVP = trim → collapse
+ * spaces → lowercase (Latin; no-op for CJK). Handles casing/spacing variants
+ * (`lily`/`Lily`, `Catherine chen`/casing).
  *
- * `// ponytail:` bare `姐`/`哥` are NOT stripped (too aggressive — would eat real
- * names). Upgrade to a learned alias table (manual merge, PRD §6.4) when variants
- * denser than this heuristic can handle.
+ * Variant matching (`王燕萍` / `王阿姨` / `小王` = same person) is **manual merge**,
+ * NOT automatic (PRD §6.4) — so we do NOT strip honorifics: `王阿姨`→`王` would
+ * neither match the stored full name `王燕萍` nor stay unique across 王-surnamed
+ * customers (Codex). A learned alias table is the V1 upgrade path when needed.
  */
-const HONORIFIC_SUFFIXES = ["阿姨", "阿叔", "叔叔", "师傅", "大姐", "小哥", "阿姐"];
-
 export function normalizeCustomerName(raw: string): string {
-  let s = raw.trim();
-  for (const suf of HONORIFIC_SUFFIXES) {
-    if (s.length > suf.length && s.endsWith(suf)) {
-      s = s.slice(0, -suf.length).trim();
-      break;
-    }
-  }
-  return s.replace(/\s+/g, " ").toLowerCase();
+  return raw.trim().replace(/\s+/g, " ").toLowerCase();
 }

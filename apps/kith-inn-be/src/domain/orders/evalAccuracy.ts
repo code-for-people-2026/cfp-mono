@@ -24,25 +24,41 @@ const normItem = (it: EvalItem): Norm => ({
 export function evaluateSample(predicted: EvalItem[], expected: EvalItem[]): SampleResult {
   const pred = predicted.map(normItem);
   const exp = expected.map(normItem);
+  const key = (n: Norm) => `${n.name}|${n.qty}|${n.occ}`;
 
+  // Correct = multiset intersection on (name,qty,occasion); consume predicted as we match.
   const predCounts = new Map<string, number>();
-  for (const p of pred) {
-    const k = `${p.name}|${p.qty}|${p.occ}`;
-    predCounts.set(k, (predCounts.get(k) ?? 0) + 1);
-  }
+  for (const p of pred) predCounts.set(key(p), (predCounts.get(key(p)) ?? 0) + 1);
+
   let correct = 0;
+  const unmatchedExp: Norm[] = [];
   for (const e of exp) {
-    const k = `${e.name}|${e.qty}|${e.occ}`;
+    const k = key(e);
     const c = predCounts.get(k) ?? 0;
     if (c > 0) {
       correct++;
       predCounts.set(k, c - 1);
+    } else unmatchedExp.push(e);
+  }
+
+  // Predicted items NOT consumed by a correct match (the remainder).
+  const predRemainder: Norm[] = [];
+  for (const p of pred) {
+    const k = key(p);
+    const c = predCounts.get(k) ?? 0;
+    if (c > 0) {
+      predRemainder.push(p);
+      predCounts.set(k, c - 1);
     }
   }
 
+  // 午/晚 misassign: an UNMATCHED expected (name,qty) whose occasion was given to a
+  // different meal in the remainder. Comparing against the remainder (not all pred)
+  // avoids a false positive when a customer legitimately ordered BOTH meals — e.g.
+  // expected 桃子 1 lunch + 1 dinner, perfectly predicted, must be 0 misassign (Codex).
   let misassigned = 0;
-  for (const e of exp) {
-    if (pred.some((p) => p.name === e.name && p.qty === e.qty && p.occ !== e.occ)) misassigned++;
+  for (const e of unmatchedExp) {
+    if (predRemainder.some((p) => p.name === e.name && p.qty === e.qty && p.occ !== e.occ)) misassigned++;
   }
 
   const total = exp.length;
