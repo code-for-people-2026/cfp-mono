@@ -76,8 +76,9 @@ const defaultGenerate: GenerateParsed = async (input) => {
       maxTokens: 4000,
       // Pin to the NON-thinking model: deepseek-v4-flash (callDeepSeek's default)
       // is a thinking model — rejects response_format + returns empty content at
-      // low token budgets. An explicit DEEPSEEK_MODEL still wins (Codex).
-      model: process.env.DEEPSEEK_MODEL ?? "deepseek-chat",
+      // low token budgets. `||` (not `??`) so an empty-string env var still falls
+      // back — same convention as callDeepSeek (Codex).
+      model: process.env.DEEPSEEK_MODEL || "deepseek-chat",
     });
     try {
       return parsedOrderSchema.parse(extractJsonObject(content));
