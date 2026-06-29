@@ -70,7 +70,9 @@ export async function chatWithTools(
 
 function safeParseArgs(raw: string): Record<string, unknown> {
   try {
-    return JSON.parse(raw) as Record<string, unknown>;
+    const v = JSON.parse(raw);
+    // Only a plain object is a valid args record — reject null / arrays / scalars (Codex).
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
   } catch {
     return {};
   }

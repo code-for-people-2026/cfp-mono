@@ -74,6 +74,14 @@ describe("runAgent", () => {
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
     expect(out).toBe("好了。"); // loop continues after the tool-error message
   });
+
+  it("falls back to today-summary when the LLM call itself throws (outage, Codex)", async () => {
+    const chat = vi.fn(async () => { throw new Error("DeepSeek down"); });
+    const s = mockServices();
+    const out = await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
+    expect(out).toContain("没完全处理过来");
+    expect(s.getTodaySummary).toHaveBeenCalled();
+  });
 });
 
 describe("trimContext", () => {
