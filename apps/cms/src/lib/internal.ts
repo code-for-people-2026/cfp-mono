@@ -31,3 +31,26 @@ export async function operatorScope(req: Request): Promise<OperatorScope | NextR
   const payload = await getPayload({ config: configPromise });
   return { sellerId: decoded.sellerId, operatorId: decoded.operatorId, payload };
 }
+
+/**
+ * Does `id` in `collection` belong to `sellerId`? The internal endpoints write
+ * with overrideAccess (no `req.user`), so the §3.1 `assertSameTenantRefs` hook
+ * (which fires only on authenticated writes) can't guard cross-tenant refs here.
+ * A seller passing another tenant's customer/offering id would otherwise get
+ * stored under their sellerId and leak via depth-populated reads. Validate
+ * every referenced id against the JWT's sellerId before persisting (Codex P1).
+ */
+export async function ownedBy(
+  payload: BasePayload,
+  collection: string,
+  id: string | number,
+  sellerId: string | number,
+): Promise<boolean> {
+  const res = await payload.find({
+    collection,
+    where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
+    limit: 1,
+    overrideAccess: true,
+  });
+  return res.docs.length > 0;
+}

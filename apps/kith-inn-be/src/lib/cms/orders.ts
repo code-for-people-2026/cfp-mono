@@ -126,7 +126,11 @@ export async function listOrders(
   if (query.date) qs.set("date", query.date);
   if (query.status) qs.set("status", query.status);
   const tail = qs.toString();
-  return parseOk(await fetchImpl(`${cmsBase()}/api/internal/orders${tail ? `?${tail}` : ""}`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }), "cms orders list");
+  const json = await parseOk<{ docs?: Order[] }>(
+    await fetchImpl(`${cmsBase()}/api/internal/orders${tail ? `?${tail}` : ""}`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }),
+    "cms orders list",
+  );
+  return json.docs ?? [];
 }
 
 // ---- writes ----

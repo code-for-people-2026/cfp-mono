@@ -42,7 +42,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   });
   const order = orderRes.docs[0] as { id: string | number; date?: string; status?: string; customer?: CustomerDoc } | undefined;
   if (!order) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const itemsRes = await payload.find({ collection: "order_items", where: { order: { equals: id } }, overrideAccess: true });
+  const itemsRes = await payload.find({ collection: "order_items", where: { order: { equals: id } }, limit: 0, overrideAccess: true });
   return NextResponse.json(normalize(order, itemsRes.docs as Array<{ id: string | number; mealOccasion?: string; quantity?: number }>));
 }
 

@@ -1,6 +1,6 @@
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
-import { operatorScope } from "@/lib/internal";
+import { operatorScope, ownedBy } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
@@ -27,7 +27,7 @@ export async function GET(req: Request) {
   const clauses: Where[] = [{ seller: { equals: sellerId } }];
   if (params.has("date")) clauses.push({ date: { equals: params.get("date") } });
   if (params.has("status")) clauses.push({ status: { equals: params.get("status") } });
-  const res = await payload.find({ collection: "orders", where: { and: clauses }, depth: 1, sort: "-date", overrideAccess: true });
+  const res = await payload.find({ collection: "orders", where: { and: clauses }, depth: 1, sort: "-date", limit: 0, overrideAccess: true });
   return NextResponse.json({ docs: res.docs });
 }
 
@@ -43,6 +43,18 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as DraftBody | null;
   if (!body || body.customer === undefined || !body.date || !Array.isArray(body.items)) {
     return NextResponse.json({ error: "customer, date, items required" }, { status: 400 });
+  }
+  // Tenant-ownership guard (Codex P1): overrideAccess writes carry no req.user,
+  // so assertSameTenantRefs can't fire — validate every ref belongs to this
+  // seller before storing (customer + each offering), else depth reads leak.
+  if (!(await ownedBy(payload, "customers", body.customer, sellerId))) {
+    return NextResponse.json({ error: "customer not owned" }, { status: 403 });
+  }
+  const offeringIds = [...new Set(body.items.map((it) => it.offering))];
+  for (const oid of offeringIds) {
+    if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
+      return NextResponse.json({ error: "offering not owned" }, { status: 403 });
+    }
   }
   const order = await payload.create({
     collection: "orders",
