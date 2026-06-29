@@ -35,6 +35,19 @@ describe("GET /menu/week", () => {
     expect(json.missing.category).toBe("meat");
   });
 
+  it("excludes non-component offerings (combo/single-item) from the menu pool (Codex)", async () => {
+    const combo = { id: "combo", name: "4菜1汤套餐", kind: "combo-meal" as const, active: true, seller: 7 } as Offering;
+    const sku = { id: "sku", name: "奶茶", kind: "single-item" as const, active: true, seller: 7 } as Offering;
+    const findOfferings = vi.fn(async () => [...feasible(), combo, sku]);
+    const app = menuRoutes(SECRET, { findOfferings });
+    const res = await app.request("/week", { headers: await auth() });
+    const json = (await res.json()) as { ok: boolean; menu: Array<{ dishes: Offering[] }> };
+    expect(json.ok).toBe(true);
+    const allDishIds = json.menu.flatMap((s) => s.dishes.map((d) => d.id));
+    expect(allDishIds).not.toContain("combo");
+    expect(allDishIds).not.toContain("sku");
+  });
+
   it("401 without a token", async () => {
     expect((await menuRoutes(SECRET, { findOfferings: vi.fn() }).request("/week")).status).toBe(401);
   });

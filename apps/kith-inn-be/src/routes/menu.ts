@@ -16,7 +16,9 @@ export function menuRoutes(jwtSecret: string, deps: MenuDeps = { findOfferings: 
   app.use("*", sellerAuth(jwtSecret));
   app.get("/week", async (c) => {
     const offerings = await deps.findOfferings(c.get("token") as string);
-    const pool = offerings.filter((o) => o.active !== false).map(toMenuDish);
+    // Only component dishes feed the menu core (PRD §6.2「只选池内 component」) —
+    // combo-meal/single-item/service-session are pricing/SKU offerings, not menu items (Codex).
+    const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
     return c.json(generateWeekMenu({ pool }));
   });
   return app;
