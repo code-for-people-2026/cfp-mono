@@ -51,6 +51,11 @@ describe("listFulfillments", () => {
     expect(await listFulfillments("jwt", {}, deps)).toEqual([]);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/fulfillments");
   });
+
+  it("falls back to [] when docs is absent", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    expect(await listFulfillments("jwt", {}, mockFetch({}))).toEqual([]);
+  });
 });
 
 describe("getOrder", () => {

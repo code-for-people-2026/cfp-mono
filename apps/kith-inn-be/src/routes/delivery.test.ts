@@ -24,6 +24,14 @@ describe("GET /delivery", () => {
     expect(listFulfillments.mock.calls[0]![1]).toMatchObject({ date: "2026-06-30", occasion: "dinner" });
   });
 
+  it("passes undefined filters when no query params", async () => {
+    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => []);
+    const app = deliveryRoutes(SECRET, { listFulfillments });
+    const res = await app.request("/", { headers: await auth() });
+    expect(res.status).toBe(200);
+    expect(listFulfillments.mock.calls[0]![1]).toEqual({ date: undefined, occasion: undefined });
+  });
+
   it("401 without a token", async () => {
     expect((await deliveryRoutes(SECRET, { listFulfillments: vi.fn() }).request("/")).status).toBe(401);
   });
