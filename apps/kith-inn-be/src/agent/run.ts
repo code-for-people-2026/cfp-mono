@@ -28,6 +28,17 @@ export function trimContext(history: ChatMessage[], turns = CONTEXT_TURNS): Chat
   return history.slice(-turns * 2);
 }
 
+/** Deterministic fallback when the loop can't produce an answer (maxSteps OR LLM failure).
+ *  Never claims actions that weren't verified — returns a today-summary + ask to rephrase. */
+async function fallbackToday(services: AgentServices): Promise<string> {
+  try {
+    const t = await services.getTodaySummary();
+    return `这块我没完全处理过来。今天：草稿 ${t.unconfirmedOrders} / 待送 ${t.pendingDeliveries} / 未付 ${t.unpaidOrders}。能换种说法再说一遍吗？`;
+  } catch {
+    return "这块我没完全处理过来，能换种说法再说一遍吗？";
+  }
+}
+
 export type RunAgentDeps = { chat?: typeof chatWithTools };
 
 /**
@@ -48,7 +59,13 @@ export async function runAgent(input: {
   ];
 
   for (let step = 0; step < MAX_STEPS; step++) {
-    const res = await chat({ messages, tools: AGENT_TOOL_DEFS });
+    let res;
+    try {
+      res = await chat({ messages, tools: AGENT_TOOL_DEFS });
+    } catch {
+      // LLM call failed (non-2xx / network / DeepSeek outage) — deterministic fallback, don't reject.
+      return fallbackToday(input.services);
+    }
     if (res.toolCalls.length === 0) {
       return res.content ?? "没听清，能再说一遍吗？比如「王燕萍 午餐 2 份」。";
     }
@@ -63,11 +80,6 @@ export async function runAgent(input: {
       messages.push({ role: "tool", content: result, tool_call_id: tc.id });
     }
   }
-  // maxSteps exhausted — deterministic fallback (don't claim actions not verified).
-  try {
-    const t = await input.services.getTodaySummary();
-    return `这块我没完全处理过来。今天：草稿 ${t.unconfirmedOrders} / 待送 ${t.pendingDeliveries} / 未付 ${t.unpaidOrders}。能换种说法再说一遍吗？`;
-  } catch {
-    return "这块我没完全处理过来，能换种说法再说一遍吗？";
-  }
+  // maxSteps exhausted — deterministic fallback.
+  return fallbackToday(input.services);
 }

@@ -54,6 +54,16 @@ describe("chatWithTools", () => {
     expect(r.toolCalls[0]?.args).toEqual({});
   });
 
+  it("rejects syntactically-valid but non-object arguments (null/array/string → {})", async () => {
+    process.env.DEEPSEEK_API_KEY = "sk-test";
+    process.env.DEEPSEEK_BASE_URL = "http://ds.test";
+    for (const bad of ["null", "[]", '"a-string"', "42"]) {
+      const deps = ok({ choices: [{ message: { tool_calls: [{ id: "c1", type: "function", function: { name: "f", arguments: bad } }] } }] });
+      const r = await chatWithTools({ messages: [{ role: "user", content: "x" }] }, deps);
+      expect(r.toolCalls[0]?.args).toEqual({});
+    }
+  });
+
   it("throws on non-2xx", async () => {
     process.env.DEEPSEEK_API_KEY = "sk-test";
     process.env.DEEPSEEK_BASE_URL = "http://ds.test";
