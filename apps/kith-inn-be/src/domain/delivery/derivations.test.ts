@@ -63,12 +63,18 @@ describe("todayGaps", () => {
   const mp = (over: Partial<MenuPlan>): MenuPlan =>
     ({ id: 1, slot: 1, offerings: [], status: "draft", seller: 7, ...over }) as MenuPlan;
 
-  it("counts draft orders, pending fulfillments, unpaid, draft menus", () => {
+  it("counts draft orders, pending fulfillments, confirmed-unpaid, draft menus", () => {
+    // draft/canceled orders default to paymentStatus "unpaid" but must NOT count as 未付 (Codex).
     const r = todayGaps({
-      orders: [order({ id: 1, status: "draft" }), order({ id: 2, status: "confirmed", paymentStatus: "paid" }), order({ id: 3, status: "draft", paymentStatus: "unpaid" })],
+      orders: [
+        order({ id: 1, status: "confirmed", paymentStatus: "unpaid" }), // confirmed unpaid → counts
+        order({ id: 2, status: "confirmed", paymentStatus: "paid" }),
+        order({ id: 3, status: "draft", paymentStatus: "unpaid" }), // draft → unconfirmed, NOT unpaid
+        order({ id: 4, status: "canceled", paymentStatus: "unpaid" }), // canceled → neither
+      ],
       fulfillments: [f({ status: "pending" }), f({ status: "done" }), f({ status: "handed-off" })],
       menuPlans: [mp({ status: "draft" }), mp({ status: "published" })],
     });
-    expect(r).toEqual({ unconfirmedOrders: 2, pendingDeliveries: 2, unpaidOrders: 2, unpublishedMenus: 1 });
+    expect(r).toEqual({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 1, unpublishedMenus: 1 });
   });
 });
