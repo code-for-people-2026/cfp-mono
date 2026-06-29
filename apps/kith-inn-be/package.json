@@ -11,12 +11,14 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "eval:parse": "tsx eval/run-parse.ts"
   },
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",
     "@hono/node-server": "^1.0.0",
-    "hono": "^4.0.0"
+    "hono": "^4.0.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@cfp/eslint-config": "workspace:*",
