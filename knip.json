@@ -47,7 +47,7 @@
       ]
     },
     "apps/kith-inn-be": {
-      "entry": ["src/**/*.ts", "eslint.config.mjs", "vitest.config.ts"]
+      "entry": ["src/**/*.ts", "eval/**/*.ts", "eslint.config.mjs", "vitest.config.ts"]
     },
     "packages/kith-inn-shared": {
       "entry": ["src/index.ts"]
