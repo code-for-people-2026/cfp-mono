@@ -1,0 +1,85 @@
+import { describe, expect, it, vi } from "vitest";
+import type { ChatResult } from "../lib/llm/chatWithTools";
+import type { AgentServices } from "./tools";
+import { runAgent, trimContext } from "./run";
+
+/** A scripted chat mock: returns each ChatResult in sequence, then a bare text. */
+const scriptedChat = (responses: ChatResult[]) => {
+  let i = 0;
+  return vi.fn(async (): Promise<ChatResult> => responses[i++] ?? { content: "（scripted exhausted）", toolCalls: [] });
+};
+
+const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
+  recordOrder: over.recordOrder ?? vi.fn(async () => ({ ok: true as const, orderId: 45 })),
+  confirmOrder: over.confirmOrder ?? vi.fn(async () => ({ ok: true as const })),
+  cancelOrder: over.cancelOrder ?? vi.fn(async () => ({ ok: true as const })),
+  markPaid: over.markPaid ?? vi.fn(async () => ({ ok: true as const })),
+  markDelivered: over.markDelivered ?? vi.fn(async () => ({ ok: true as const, count: 2 })),
+  getTodaySummary:
+    over.getTodaySummary ??
+    vi.fn(async () => ({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 3, recentOrders: "#45 王燕萍" })),
+});
+
+describe("runAgent", () => {
+  it("executes a record_order tool call, then returns the model's final text", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "record_order", args: { customerName: "王燕萍", quantity: 2, occasion: "lunch" } }] },
+      { content: "记好了，王燕萍午餐2份。", toolCalls: [] },
+    ]);
+    const s = mockServices();
+    const out = await runAgent({ userText: "记 王燕萍 午餐2份", history: [], services: s, deps: { chat } });
+    expect(s.recordOrder).toHaveBeenCalledWith({ customerName: "王燕萍", quantity: 2, occasion: "lunch", date: undefined });
+    expect(out).toBe("记好了，王燕萍午餐2份。");
+  });
+
+  it("returns the model's text directly when no tool is called (plain question / scope-out)", async () => {
+    const chat = scriptedChat([{ content: "这个我帮不上，经营上的事尽管吩咐。", toolCalls: [] }]);
+    const out = await runAgent({ userText: "明天天气怎么样", history: [], services: mockServices(), deps: { chat } });
+    expect(out).toBe("这个我帮不上，经营上的事尽管吩咐。");
+  });
+
+  it("falls back to a today-summary after maxSteps exhaustion (always tool-calling)", async () => {
+    const chat = vi.fn(async (): Promise<ChatResult> => ({
+      content: null,
+      toolCalls: [{ id: "c", name: "get_today_summary", args: {} }],
+    }));
+    const s = mockServices();
+    const out = await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
+    expect(out).toContain("没完全处理过来");
+    expect(s.getTodaySummary).toHaveBeenCalled();
+  });
+
+  it("executes multiple tool calls in one step", async () => {
+    const chat = scriptedChat([
+      {
+        content: null,
+        toolCalls: [
+          { id: "c1", name: "record_order", args: { customerName: "桃子", quantity: 1, occasion: "dinner" } },
+          { id: "c2", name: "get_today_summary", args: {} },
+        ],
+      },
+      { content: "都办好了。", toolCalls: [] },
+    ]);
+    const s = mockServices();
+    await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
+    expect(s.recordOrder).toHaveBeenCalled();
+    expect(s.getTodaySummary).toHaveBeenCalled();
+  });
+
+  it("reports an unknown tool gracefully", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "no_such_tool", args: {} }] },
+      { content: "好了。", toolCalls: [] },
+    ]);
+    const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
+    expect(out).toBe("好了。"); // loop continues after the tool-error message
+  });
+});
+
+describe("trimContext", () => {
+  it("keeps only the most recent N*2 messages", () => {
+    const history = Array.from({ length: 20 }, (_, i) => ({ role: "user" as const, content: String(i) }));
+    expect(trimContext(history, 3)).toHaveLength(6);
+    expect(trimContext(history, 3)[0]!.content).toBe("14"); // last 6 = indices 14..19
+  });
+});
