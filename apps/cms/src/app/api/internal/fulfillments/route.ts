@@ -1,3 +1,4 @@
+import type { Where } from "payload";
 import { NextResponse } from "next/server";
 import { operatorScope } from "@/lib/internal";
 
@@ -14,6 +15,23 @@ type FulfillmentInput = {
   assignee?: string;
   timeWindow?: string;
 };
+
+/**
+ * `GET /api/internal/fulfillments[?date=&occasion=]` — the seller's fulfillments
+ * (送餐 tab 的数据源：分拣 + 缺口对账都在 be 派生里算)。seller-scoped; optional
+ * date/occasion filters; depth:1 populates `orderItem`→order (for addrBuilding 已反范式).
+ */
+export async function GET(req: Request) {
+  const scope = await operatorScope(req);
+  if (scope instanceof NextResponse) return scope;
+  const { sellerId, payload } = scope;
+  const params = new URL(req.url).searchParams;
+  const clauses: Where[] = [{ seller: { equals: sellerId } }];
+  if (params.has("date")) clauses.push({ serviceDate: { equals: params.get("date") } });
+  if (params.has("occasion")) clauses.push({ occasion: { equals: params.get("occasion") } });
+  const res = await payload.find({ collection: "fulfillments", where: { and: clauses }, depth: 0, limit: 0, overrideAccess: true });
+  return NextResponse.json({ docs: res.docs });
+}
 
 /**
  * `POST /api/internal/fulfillments` — batch-create fulfillments at confirm time
