@@ -109,6 +109,24 @@ export async function getSeller(operatorJwt: string, deps: CmsDeps = {}): Promis
   return parseOk(await fetchImpl(`${cmsBase()}/api/internal/seller`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }), "cms seller lookup");
 }
 
+/** GET /api/internal/fulfillments[?date=&occasion=] — the seller's fulfillments (送餐 tab 数据源). */
+export async function listFulfillments(
+  operatorJwt: string,
+  query: { date?: string; occasion?: string } = {},
+  deps: CmsDeps = {},
+): Promise<Fulfillment[]> {
+  const fetchImpl = fetchOf(deps);
+  const qs = new URLSearchParams();
+  if (query.date) qs.set("date", query.date);
+  if (query.occasion) qs.set("occasion", query.occasion);
+  const tail = qs.toString();
+  const json = await parseOk<{ docs?: Fulfillment[] }>(
+    await fetchImpl(`${cmsBase()}/api/internal/fulfillments${tail ? `?${tail}` : ""}`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }),
+    "cms fulfillments list",
+  );
+  return json.docs ?? [];
+}
+
 /** GET /api/internal/orders/:id — normalized order + items + customer (confirm/cancel load). */
 export async function getOrder(operatorJwt: string, id: string | number, deps: CmsDeps = {}): Promise<OrderDetail> {
   const fetchImpl = fetchOf(deps);

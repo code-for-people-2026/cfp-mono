@@ -2,7 +2,9 @@ import { cors } from "hono/cors";
 import { Hono } from "hono";
 import type { AppVars } from "./middleware/sellerAuth";
 import { authRoutes } from "./routes/auth";
+import { deliveryRoutes } from "./routes/delivery";
 import { healthRoutes } from "./routes/health";
+import { menuRoutes } from "./routes/menu";
 import { offeringsRoutes } from "./routes/offerings";
 import { orderRoutes } from "./routes/orders";
 
@@ -21,6 +23,8 @@ export function createApp() {
   app.route("/auth", authRoutes(jwtSecret));
   app.route("/offerings", offeringsRoutes(jwtSecret));
   app.route("/orders", orderRoutes(jwtSecret));
+  app.route("/menu", menuRoutes(jwtSecret));
+  app.route("/delivery", deliveryRoutes(jwtSecret));
   return app;
 }
 
