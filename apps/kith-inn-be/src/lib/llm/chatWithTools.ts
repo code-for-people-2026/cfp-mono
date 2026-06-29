@@ -51,7 +51,7 @@ export async function chatWithTools(
   });
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
+    const body = await res.text();
     throw new Error(`DeepSeek chat failed: ${res.status} ${body.slice(0, 200)}`);
   }
 
