@@ -46,18 +46,20 @@ describe("getOrder", () => {
 });
 
 describe("listOrders", () => {
-  it("builds a date+status query string", async () => {
+  it("builds a date+status query string and unwraps {docs}", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch([{ id: 1 }]);
-    await listOrders("jwt", { date: "2026-06-30", status: "confirmed" }, deps);
+    const deps = mockFetch({ docs: [{ id: 1 }] });
+    const orders = await listOrders("jwt", { date: "2026-06-30", status: "confirmed" }, deps);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders?date=2026-06-30&status=confirmed");
+    expect(orders).toEqual([{ id: 1 }]);
   });
 
-  it("omits the query string when no filters", async () => {
+  it("omits the query string when no filters and falls back to [] when docs is absent", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch([]);
-    await listOrders("jwt", {}, deps);
+    const deps = mockFetch({});
+    const orders = await listOrders("jwt", {}, deps);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders");
+    expect(orders).toEqual([]);
   });
 });
 
