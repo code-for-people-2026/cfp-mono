@@ -30,8 +30,8 @@ export type MenuConstraints = {
   mainIngredientWindowDays: number;
   /** 单菜 N 天内不重复（默认 3）。 */
   dishWindowDays: number;
-  /** 每顿费工菜上限（默认 1）。 */
-  laboriousMaxPerSlot: number;
+  /** 每日费工菜上限（跨午+晚累计，默认 1——"避免一天全是麻烦菜"，PRD §6.2）。 */
+  laboriousMaxPerDay: number;
   days: string[];
   meals: MealOccasion[];
 };
@@ -42,7 +42,7 @@ export const DEFAULT_CONSTRAINTS: MenuConstraints = {
   mainIngredientWindowDays: 1,
   // 单菜 2 天内不重（更宽松——同一道菜隔两天可再做）。
   dishWindowDays: 2,
-  laboriousMaxPerSlot: 1,
+  laboriousMaxPerDay: 1,
   days: ["mon", "tue", "wed", "thu", "fri"],
   meals: ["lunch", "dinner"],
 };
@@ -79,17 +79,23 @@ function compareDishes(a: MenuDish, b: MenuDish): number {
 
 type Lookback = { dishIds: Set<string>; mainIngredients: Set<string> };
 
-/** Build the no-repeat lookback from the most recent `k` slots' dishes. */
-function lookbackFrom(slots: Slot[], k: number): Lookback {
+/** Collect dish ids + 主料 from a set of slots (no slicing). */
+function collectFrom(slots: Slot[]): Lookback {
   const dishIds = new Set<string>();
   const mainIngredients = new Set<string>();
-  for (const s of slots.slice(-k)) {
+  for (const s of slots) {
     for (const d of s.dishes) {
       dishIds.add(String(d.id));
       if (d.mainIngredient) mainIngredients.add(d.mainIngredient);
     }
   }
   return { dishIds, mainIngredients };
+}
+
+/** Build the no-repeat lookback from the most recent `k` slots' dishes (generation
+ *  is backward-looking — picks avoid the last k slots). */
+function lookbackFrom(slots: Slot[], k: number): Lookback {
+  return collectFrom(slots.slice(-k));
 }
 
 type SlotFail = Extract<GenerateMenuResult, { ok: false }>;
@@ -137,16 +143,17 @@ function pickSoup(pool: MenuDish[], count: number, dishLb: Lookback): { dishes: 
   return chosen.length >= count ? { dishes: chosen } : { failed: { category: "soup", needed: count, available: chosen.length } };
 }
 
-/** Pick one slot's dishes: structure × category, honoring no-repeat (meat/veg) + LRU soup + 费工 cap. */
+/** Pick one slot's dishes: structure × category, honoring no-repeat (meat/veg) + LRU soup + 费工 cap.
+ *  `laborious` is the DAY-level 费工 tracker (carried across the day's meals — PRD §6.2). */
 function pickSlot(
   pool: MenuDish[],
   dishLb: Lookback,
   miLb: Lookback,
   c: MenuConstraints,
   slotLabel: string,
+  laborious: { count: number; max: number },
 ): { dishes: MenuDish[] } | SlotFail {
   const picked: MenuDish[] = [];
-  const laborious = { count: 0, max: c.laboriousMaxPerSlot };
   for (const [cat, count] of [["meat", c.structure.meat], ["veg", c.structure.veg]] as const) {
     if (count === 0) continue;
     const res = pickConstrained(pool, cat, count, dishLb, miLb, laborious);
@@ -184,6 +191,8 @@ export function generateWeekMenu(input: {
   const history = input.history ?? [];
   const menu: Slot[] = [];
   for (const day of c.days) {
+    // 费工 cap is per-DAY (PRD §6.2) — carry the count across the day's meals.
+    const laborious = { count: 0, max: c.laboriousMaxPerDay };
     for (const occasion of c.meals) {
       const label = `${day}-${occasion}`;
       const prior = [...history, ...menu];
@@ -193,6 +202,7 @@ export function generateWeekMenu(input: {
         lookbackFrom(prior, miLbSlots),
         c,
         label,
+        laborious,
       );
       if ("dishes" in res) {
         menu.push({ day, occasion, dishes: res.dishes });
@@ -229,15 +239,20 @@ export function swapDish(input: {
   const dishLbSlots = c.dishWindowDays * mealsPerDay;
   const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
 
-  // lookback = other slots in the menu (exclude the target slot itself)
-  const otherSlots = input.menu.filter((s) => s !== slot);
-  const dishLb = lookbackFrom(otherSlots, dishLbSlots);
-  const miLb = lookbackFrom(otherSlots, miLbSlots);
+  // Positional neighbors: slots within ±window of the target (NOT the menu tail).
+  // A swap must not create a no-repeat violation with the target's adjacent slots (Codex).
+  const idx = input.menu.indexOf(slot);
+  const dishLb = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= dishLbSlots));
+  const miLb = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= miLbSlots));
   const inSlotIds = new Set(slot.dishes.map((d) => String(d.id)));
   const inSlotMI = new Set(slot.dishes.filter((d) => d.mainIngredient).map((d) => d.mainIngredient));
-  const laboriousAlready = slot.dishes.filter((d) => (d.tags ?? []).includes(LABORIOUS_TAG)).length;
-  const targetIsLaborious = (target.tags ?? []).includes(LABORIOUS_TAG);
-  const laboriousBudget = c.laboriousMaxPerSlot - laboriousAlready + (targetIsLaborious ? 1 : 0);
+  // 费工 cap is per-DAY: count 费工 in the target's day, excluding the dish being swapped out (Codex).
+  const dayLaborious = input.menu
+    .filter((s) => s.day === slot.day)
+    .flatMap((s) => s.dishes)
+    .filter((d) => String(d.id) !== String(target.id) && (d.tags ?? []).includes(LABORIOUS_TAG))
+    .length;
+  const laboriousBudget = c.laboriousMaxPerDay - dayLaborious;
 
   const alt = input.pool
     .filter((d) => d.category === target.category && String(d.id) !== String(target.id))

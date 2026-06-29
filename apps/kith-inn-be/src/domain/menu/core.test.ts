@@ -89,17 +89,19 @@ describe("generateWeekMenu — no-repeat constraints", () => {
     }
   });
 
-  it("费工菜每顿 ≤ 1 (laboriousMaxPerSlot)", () => {
-    // sparsely mark ~1/4 of meat/veg as 费工 (so non-费工 candidates stay plentiful)
-    const pool = feasiblePool.map((d) =>
-      d.category === "soup" ? d : { ...d, tags: Number(String(d.id).slice(1)) % 4 === 0 ? ["费工"] : [] },
-    );
+  it("费工菜每日 ≤ 1 (laboriousMaxPerDay, across lunch+dinner — Codex)", () => {
+    // mark a few spread dishes 费工 (sparse, so non-费工 candidates stay plentiful)
+    const laboriousIds = new Set(["m1", "m5", "v3"]);
+    const pool = feasiblePool.map((d) => ({ ...d, tags: laboriousIds.has(String(d.id)) ? ["费工"] : d.tags ?? [] }));
     const r = generateWeekMenu({ pool });
     if (!r.ok) throw new Error("expected ok");
+    // per-DAY: 费工 summed across the day's lunch+dinner ≤ cap (not per-slot).
+    const byDay = new Map<string, number>();
     for (const slot of r.menu) {
-      const laborious = slot.dishes.filter((d) => (d.tags ?? []).includes("费工")).length;
-      expect(laborious).toBeLessThanOrEqual(DEFAULT_CONSTRAINTS.laboriousMaxPerSlot);
+      const n = slot.dishes.filter((d) => (d.tags ?? []).includes("费工")).length;
+      byDay.set(slot.day, (byDay.get(slot.day) ?? 0) + n);
     }
+    for (const n of byDay.values()) expect(n).toBeLessThanOrEqual(DEFAULT_CONSTRAINTS.laboriousMaxPerDay);
   });
 });
 
