@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { chatWithTools } from "./chatWithTools";
 
 const ORIG_KEY = process.env.DEEPSEEK_API_KEY;
+const ORIG_URL = process.env.DEEPSEEK_BASE_URL;
 afterEach(() => {
   process.env.DEEPSEEK_API_KEY = ORIG_KEY;
+  process.env.DEEPSEEK_BASE_URL = ORIG_URL;
   vi.unstubAllGlobals();
 });
 
@@ -62,5 +64,15 @@ describe("chatWithTools", () => {
   it("throws if the key is missing", async () => {
     delete process.env.DEEPSEEK_API_KEY;
     await expect(chatWithTools({ messages: [{ role: "user", content: "x" }] })).rejects.toThrow(/DEEPSEEK_API_KEY/);
+  });
+
+  it("uses global fetch + default base URL when deps/env are absent", async () => {
+    process.env.DEEPSEEK_API_KEY = "sk-test";
+    delete process.env.DEEPSEEK_BASE_URL;
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] })));
+    vi.stubGlobal("fetch", fetchMock);
+    const r = await chatWithTools({ messages: [{ role: "user", content: "x" }] }); // no deps → global fetch
+    expect(r.content).toBe("ok");
+    expect(String(fetchMock.mock.calls[0]![0])).toBe("https://api.deepseek.com/chat/completions");
   });
 });
