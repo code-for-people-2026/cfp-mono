@@ -46,9 +46,14 @@ jobs:
 
       - run: pnpm verify
 
+      # e2e 只在 PR 时跑。merge 进 main(push)时省掉(playwright install 浏览器 + e2e 较慢),
+      # 但上面 pnpm verify 里的 unit(lint+typecheck+test:coverage+knip+build)仍跑,作为
+      # merge 后的快速复查 + 防御绕过 PR 直推 main 的提交。
       - run: pnpm --filter @cfp/website exec playwright install --with-deps chromium
+        if: github.event_name == 'pull_request'
 
       - run: pnpm test:e2e
+        if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4
         if: always()

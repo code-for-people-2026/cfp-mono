@@ -137,18 +137,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.2.0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm verify
+      # deploy job 只负责「build 镜像 + 发货」:不在 host 装 node_modules、不跑测试。
+      # 测试由 ci.yml 在 PR/push 时守,这里再跑 pnpm verify 只会让 host 与 docker 各占一份
+      # 磁盘,曾叠加撑爆 runner ~15GB 可用空间。docker build 自带 install + next build,
+      # smoke test 只用 curl,所以 host 的 pnpm/node setup 一并去掉。
+      - name: Free disk space
+        run: |
+          # ubuntu-latest 预装了 Android/.NET/Haskell 等约 50GB 工具链,website 镜像 docker build
+          # 时 layer 解压(monaco-editor/next/sharp)需要空间,删掉用不上的预装腾出 15-25GB。
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /usr/local/.ghcup /opt/az /usr/local/share /opt/hostedtoolcache 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
 
       - name: Login to Alibaba Cloud ACR
         uses: aliyun/acr-login@v1
