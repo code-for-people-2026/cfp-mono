@@ -31,7 +31,7 @@
   "devDependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.7",
     "@babel/plugin-transform-class-properties": "^7.29.7",
-    "@babel/preset-react": "^8.0.1",
+    "@babel/preset-react": "^7.29.7",
     "@cfp/eslint-config": "workspace:*",
     "@cfp/typescript-config": "workspace:*",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
