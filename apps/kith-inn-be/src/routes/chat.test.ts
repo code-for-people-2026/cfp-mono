@@ -92,12 +92,15 @@ describe("POST /chat", () => {
 });
 
 describe("GET /chat", () => {
-  it("returns the recent chat history", async () => {
+  it("returns the recent chat history, projected to safe fields", async () => {
     const listChatMessages = vi.fn(async () => sampleHistory());
     const app = chatRoutes(SECRET, { cms: mockCms(), listChatMessages });
     const res = await app.request("/", { headers: await auth() });
+    const json = (await res.json()) as { messages: Record<string, unknown>[] };
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { messages: unknown[] }).messages).toHaveLength(2);
+    expect(json.messages).toHaveLength(2);
+    // operator/seller (populated by cms depth) must NOT leak — only the 4 fields.
+    expect(Object.keys(json.messages[0]!).sort()).toEqual(["content", "createdAt", "id", "role"]);
     expect(listChatMessages).toHaveBeenCalledWith(expect.any(String), { limit: 50 });
   });
 
