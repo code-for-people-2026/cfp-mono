@@ -1,5 +1,5 @@
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input, ScrollView, Text, View } from "@tarojs/components";
 import { TabBar } from "@/components/TabBar";
 import { chatUrl } from "@/services/api";
@@ -18,6 +18,9 @@ export default function Today() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  // True once a send starts — the initial history load must not clobber an
+  // optimistic turn that raced ahead of it (Codex).
+  const sentRef = useRef(false);
 
   useEffect(() => {
     const token = tokens.getToken();
@@ -37,6 +40,7 @@ export default function Today() {
           return;
         }
         // cms returns newest-first; render chronologically (oldest→newest).
+        if (sentRef.current) return; // a send beat the initial load — don't clobber it
         const messages = ((res.data as { messages?: Msg[] }).messages ?? []) as Msg[];
         setMsgs([...messages].reverse());
       })
@@ -51,6 +55,7 @@ export default function Today() {
       Taro.redirectTo({ url: "/pages/login/index" });
       return;
     }
+    sentRef.current = true;
     setMsgs((m) => [...m, { role: "user", content: body }]);
     setText("");
     setSending(true);

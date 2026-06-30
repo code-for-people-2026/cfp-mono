@@ -63,7 +63,14 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   app.get("/", async (c) => {
     const jwt = c.get("token") as string;
     try {
-      const messages = await listChat(jwt, { limit: 50 });
+      // Project to the 4 fields the miniapp needs — cms depth-populates
+      // operator/seller, which must not leak to the client (Codex).
+      const messages = (await listChat(jwt, { limit: 50 })).map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        createdAt: m.createdAt,
+      }));
       return c.json({ messages });
     } catch {
       return c.json({ error: "history failed" }, 502);
