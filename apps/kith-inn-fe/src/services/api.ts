@@ -28,3 +28,19 @@ export function offeringsUrl(): string {
 export function menuWeekUrl(): string {
   return `${beBaseUrl()}/menu/week`;
 }
+
+export function ordersUrl(): string {
+  return `${beBaseUrl()}/orders`;
+}
+
+export function orderUrl(id: string | number): string {
+  return `${beBaseUrl()}/orders/${id}`;
+}
+
+export function orderConfirmUrl(id: string | number): string {
+  return `${beBaseUrl()}/orders/${id}/confirm`;
+}
+
+export function deliveryUrl(): string {
+  return `${beBaseUrl()}/delivery`;
+}
