@@ -1,5 +1,16 @@
 page {
-  background: #fffdf7;
-  color: #333;
+  background: #fffaf1;
+  color: #202124;
   font-size: 30px;
+}
+
+/* Warm "灶台/熟人/烟火气" palette overriding NutUI's default JD cold red (prototype
+   side-panel: "区别于 NutUI 默认 JD 冷红"). Maps --nutui-color-* to the prototype vars. */
+page {
+  --nutui-color-primary: #d7462f;
+  --nutui-color-primary-end: #d7462f;
+  --nutui-color-success: #1f8a61;
+  --nutui-color-warning: #b96d12;
+  --nutui-color-info: #2864a5;
+  --nutui-color-danger: #d7462f;
 }

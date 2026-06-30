@@ -39,7 +39,7 @@ async function login(): Promise<void> {
       token = (res.data as { token: string }).token;
     }
     tokens.setToken(token);
-    Taro.redirectTo({ url: "/pages/kitchen/index" });
+    Taro.redirectTo({ url: "/pages/today/index" });
   } catch {
     Taro.showToast({ title: "登录失败", icon: "error" });
   }
@@ -47,7 +47,7 @@ async function login(): Promise<void> {
 
 export default function Login() {
   useEffect(() => {
-    if (tokens.getToken()) Taro.redirectTo({ url: "/pages/kitchen/index" });
+    if (tokens.getToken()) Taro.redirectTo({ url: "/pages/today/index" });
   }, []);
 
   return (
