@@ -137,6 +137,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 先等 ci.yml 的 verify 通过再 build/部署。merge 路径已由 branch protection 的
+      # required check 把关;这一步堵住 workflow_dispatch 手动触发等 required check 管不到
+      # 的路径(Codex #91 P1)。不在 host 重跑测试,只等 CI 结论,所以不重新占磁盘。
+      - name: Wait for CI (verify) to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          SHA="${{ github.sha }}"
+          RUN_ID=$(gh run list --workflow=ci.yml --commit="$SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
+          if [ -z "$RUN_ID" ]; then
+            echo "No ci.yml run found for $SHA — aborting deploy (CI must pass first)."
+            exit 1
+          fi
+          echo "Waiting for ci.yml run #$RUN_ID (commit $SHA) to finish..."
+          gh run watch "$RUN_ID" --exit-status
+          echo "CI passed, proceeding to build & deploy."
+
       # deploy job 只负责「build 镜像 + 发货」:不在 host 装 node_modules、不跑测试。
       # 测试由 ci.yml 在 PR/push 时守,这里再跑 pnpm verify 只会让 host 与 docker 各占一份
       # 磁盘,曾叠加撑爆 runner ~15GB 可用空间。docker build 自带 install + next build,
