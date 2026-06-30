@@ -32,7 +32,20 @@ export default function Menu() {
       return;
     }
     Taro.request({ url: menuWeekUrl(), header: { Authorization: `Bearer ${token}` } })
-      .then((res) => setWeek(res.data as WeekMenu))
+      .then((res) => {
+        // Validate before storing (Codex): a 401 (expired token) returns {error},
+        // not a WeekMenu — casting blindly crashes the render on `week.menu.map`.
+        if (res.statusCode === 401) {
+          tokens.clearToken();
+          Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode !== 200) {
+          Taro.showToast({ title: "加载失败", icon: "error" });
+          return;
+        }
+        setWeek(res.data as WeekMenu);
+      })
       .catch(() => Taro.showToast({ title: "加载失败", icon: "error" }));
   }, []);
 
