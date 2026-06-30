@@ -33,7 +33,19 @@
         "eslint.config.mjs",
         "vitest.config.ts"
       ],
-      "ignoreDependencies": ["react", "sass"]
+      "ignoreDependencies": [
+        "react",
+        "sass",
+        "@tarojs/webpack5-runner",
+        "tailwindcss",
+        "@tailwindcss/postcss",
+        "postcss",
+        "weapp-tailwindcss",
+        "babel-preset-taro",
+        "@babel/preset-react",
+        "@pmmmwh/react-refresh-webpack-plugin",
+        "react-refresh"
+      ]
     },
     "apps/cms": {
       "entry": [
