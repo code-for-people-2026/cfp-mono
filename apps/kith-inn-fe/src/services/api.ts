@@ -24,3 +24,7 @@ export function devLoginUrl(): string {
 export function offeringsUrl(): string {
   return `${beBaseUrl()}/offerings`;
 }
+
+export function menuWeekUrl(): string {
+  return `${beBaseUrl()}/menu/week`;
+}

@@ -33,7 +33,7 @@
         "eslint.config.mjs",
         "vitest.config.ts"
       ],
-      "ignoreDependencies": ["react"]
+      "ignoreDependencies": ["react", "sass"]
     },
     "apps/cms": {
       "entry": [

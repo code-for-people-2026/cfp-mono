@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",
+    "@nutui/nutui-react-taro": "^3.0.20",
     "@tarojs/components": "4.2.0",
     "@tarojs/helper": "4.2.0",
     "@tarojs/plugin-framework-react": "4.2.0",
@@ -40,6 +41,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^9.39.2",
+    "sass": "^1.101.0",
     "serve": "^14.2.5",
     "typescript": "^5.9.3",
     "vite": "^4.5.14",

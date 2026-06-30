@@ -3,6 +3,7 @@ import {
   DEFAULT_BE_BASE_URL,
   beBaseUrl,
   devLoginUrl,
+  menuWeekUrl,
   offeringsUrl,
   resolveBeBaseUrl,
   wxLoginUrl,
@@ -28,6 +29,7 @@ describe("endpoint builders", () => {
       expect(wxLoginUrl()).toBe("https://be.example.com/auth/wx-login");
       expect(devLoginUrl()).toBe("https://be.example.com/auth/dev-login");
       expect(offeringsUrl()).toBe("https://be.example.com/offerings");
+      expect(menuWeekUrl()).toBe("https://be.example.com/menu/week");
     } finally {
       process.env.BE_BASE_URL = orig;
     }
