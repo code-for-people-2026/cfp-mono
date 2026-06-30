@@ -2,6 +2,7 @@ import { cors } from "hono/cors";
 import { Hono } from "hono";
 import type { AppVars } from "./middleware/sellerAuth";
 import { authRoutes } from "./routes/auth";
+import { chatRoutes } from "./routes/chat";
 import { deliveryRoutes } from "./routes/delivery";
 import { healthRoutes } from "./routes/health";
 import { menuRoutes } from "./routes/menu";
@@ -25,6 +26,7 @@ export function createApp() {
   app.route("/orders", orderRoutes(jwtSecret));
   app.route("/menu", menuRoutes(jwtSecret));
   app.route("/delivery", deliveryRoutes(jwtSecret));
+  app.route("/chat", chatRoutes(jwtSecret));
   return app;
 }
 
