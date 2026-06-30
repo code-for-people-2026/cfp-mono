@@ -38,6 +38,9 @@ describe("endpoint builders", () => {
       expect(orderUrl(9)).toBe("https://be.example.com/orders/9");
       expect(orderConfirmUrl(9)).toBe("https://be.example.com/orders/9/confirm");
       expect(deliveryUrl()).toBe("https://be.example.com/delivery");
+      expect(ordersUrl("2026-06-30")).toBe("https://be.example.com/orders?date=2026-06-30");
+      expect(deliveryUrl("2026-06-30")).toBe("https://be.example.com/delivery?date=2026-06-30");
+      expect(deliveryUrl("2026-06-30", "dinner")).toBe("https://be.example.com/delivery?date=2026-06-30&occasion=dinner");
     } finally {
       process.env.BE_BASE_URL = orig;
     }

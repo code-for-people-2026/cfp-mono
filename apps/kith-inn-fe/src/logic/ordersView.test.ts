@@ -17,6 +17,9 @@ describe("orderStatusDot", () => {
   it("confirmed + paid → 收(green)", () => {
     expect(orderStatusDot(order({ paymentStatus: "paid" }))).toEqual({ label: "收", tone: "green" });
   });
+  it("confirmed + reconciled → 收(green) too (not 欠)", () => {
+    expect(orderStatusDot(order({ paymentStatus: "reconciled" }))).toEqual({ label: "收", tone: "green" });
+  });
   it("confirmed + unpaid → 欠(red)", () => {
     expect(orderStatusDot(order({ paymentStatus: "unpaid" }))).toEqual({ label: "欠", tone: "red" });
   });

@@ -5,6 +5,7 @@ import { Progress, Tag } from "@nutui/nutui-react-taro";
 import { TabBar } from "@/components/TabBar";
 import { deliveryUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
+import { todayShanghai } from "@/logic/time";
 import { buildingProgress, fulfillmentStatusLabel, type DeliveryView } from "@/logic/deliveryView";
 
 const taroStorage: Storage = {
@@ -23,7 +24,7 @@ export default function Delivery() {
       Taro.redirectTo({ url: "/pages/login/index" });
       return;
     }
-    Taro.request({ url: deliveryUrl(), header: { Authorization: `Bearer ${token}` } })
+    Taro.request({ url: deliveryUrl(todayShanghai()), header: { Authorization: `Bearer ${token}` } })
       .then((res) => {
         if (res.statusCode === 401) {
           tokens.clearToken();
