@@ -10,7 +10,8 @@ type StatusDot = { label: string; tone: DotTone };
 export function orderStatusDot(order: Order): StatusDot {
   if (order.status === "canceled") return { label: "废", tone: "muted" };
   if (order.status === "draft") return { label: "草", tone: "amber" };
-  return order.paymentStatus === "paid" ? { label: "收", tone: "green" } : { label: "欠", tone: "red" };
+  // Only `unpaid` owes — paid AND reconciled are collected (Codex).
+  return order.paymentStatus === "unpaid" ? { label: "欠", tone: "red" } : { label: "收", tone: "green" };
 }
 
 /** Customer display name — `order.customer` is populated to a Customer at cms depth 1. */

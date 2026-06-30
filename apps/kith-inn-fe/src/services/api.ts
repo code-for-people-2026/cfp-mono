@@ -29,8 +29,8 @@ export function menuWeekUrl(): string {
   return `${beBaseUrl()}/menu/week`;
 }
 
-export function ordersUrl(): string {
-  return `${beBaseUrl()}/orders`;
+export function ordersUrl(date?: string): string {
+  return `${beBaseUrl()}/orders${date ? `?date=${encodeURIComponent(date)}` : ""}`;
 }
 
 export function orderUrl(id: string | number): string {
@@ -41,6 +41,10 @@ export function orderConfirmUrl(id: string | number): string {
   return `${beBaseUrl()}/orders/${id}/confirm`;
 }
 
-export function deliveryUrl(): string {
-  return `${beBaseUrl()}/delivery`;
+export function deliveryUrl(date?: string, occasion?: string): string {
+  const qs = new URLSearchParams();
+  if (date) qs.set("date", date);
+  if (occasion) qs.set("occasion", occasion);
+  const tail = qs.toString();
+  return `${beBaseUrl()}/delivery${tail ? `?${tail}` : ""}`;
 }
