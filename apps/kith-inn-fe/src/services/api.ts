@@ -48,3 +48,7 @@ export function deliveryUrl(date?: string, occasion?: string): string {
   const tail = qs.toString();
   return `${beBaseUrl()}/delivery${tail ? `?${tail}` : ""}`;
 }
+
+export function chatUrl(): string {
+  return `${beBaseUrl()}/chat`;
+}
