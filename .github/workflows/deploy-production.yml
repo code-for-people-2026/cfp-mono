@@ -224,7 +224,11 @@ jobs:
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env"
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker compose pull && docker compose up -d"
+          # pull 前清掉未用旧镜像 + 构建缓存:ECS 40G 盘会被历次 deploy 累积的旧镜像撑满
+          # (曾导致 docker compose pull 解压时 no space left on device)。prune -af 只删
+          # "没有运行中容器引用的"镜像 → 当前在跑的旧版保留, 新镜像失败可回滚上一版;
+          # 更早的历史 tag 永久留在阿里云 ACR, 需要时 docker pull 回滚。
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker system prune -af && docker compose pull && docker compose up -d"
 
       - name: Smoke test
         env:
