@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BE_BASE_URL,
   beBaseUrl,
+  chatUrl,
   deliveryUrl,
   devLoginUrl,
   menuWeekUrl,
@@ -41,6 +42,7 @@ describe("endpoint builders", () => {
       expect(ordersUrl("2026-06-30")).toBe("https://be.example.com/orders?date=2026-06-30");
       expect(deliveryUrl("2026-06-30")).toBe("https://be.example.com/delivery?date=2026-06-30");
       expect(deliveryUrl("2026-06-30", "dinner")).toBe("https://be.example.com/delivery?date=2026-06-30&occasion=dinner");
+      expect(chatUrl()).toBe("https://be.example.com/chat");
     } finally {
       process.env.BE_BASE_URL = orig;
     }

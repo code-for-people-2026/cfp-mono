@@ -90,3 +90,19 @@ describe("POST /chat", () => {
     expect((await app.request("/", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) })).status).toBe(401);
   });
 });
+
+describe("GET /chat", () => {
+  it("returns the recent chat history", async () => {
+    const listChatMessages = vi.fn(async () => sampleHistory());
+    const app = chatRoutes(SECRET, { cms: mockCms(), listChatMessages });
+    const res = await app.request("/", { headers: await auth() });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { messages: unknown[] }).messages).toHaveLength(2);
+    expect(listChatMessages).toHaveBeenCalledWith(expect.any(String), { limit: 50 });
+  });
+
+  it("502 when the history load fails", async () => {
+    const app = chatRoutes(SECRET, { cms: mockCms(), listChatMessages: vi.fn(async () => { throw new Error("cms down"); }) });
+    expect((await app.request("/", { headers: await auth() })).status).toBe(502);
+  });
+});

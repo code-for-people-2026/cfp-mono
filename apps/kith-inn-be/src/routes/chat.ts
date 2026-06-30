@@ -58,6 +58,18 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   const createChat = deps.createChatMessage ?? createChatMessage;
   const run = deps.runAgent ?? runAgent;
 
+  /** GET /chat — the operator's recent chat history (newest-first from cms), for
+   *  the 「今天」 page to render on mount. */
+  app.get("/", async (c) => {
+    const jwt = c.get("token") as string;
+    try {
+      const messages = await listChat(jwt, { limit: 50 });
+      return c.json({ messages });
+    } catch {
+      return c.json({ error: "history failed" }, 502);
+    }
+  });
+
   app.post("/", async (c) => {
     const jwt = c.get("token") as string;
     const body = (await c.req.json().catch(() => null)) as { text?: string } | null;
