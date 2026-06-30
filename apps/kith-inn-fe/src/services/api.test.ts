@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_BE_BASE_URL,
   beBaseUrl,
+  deliveryUrl,
   devLoginUrl,
   menuWeekUrl,
   offeringsUrl,
+  orderConfirmUrl,
+  orderUrl,
+  ordersUrl,
   resolveBeBaseUrl,
   wxLoginUrl,
 } from "./api";
@@ -30,6 +34,10 @@ describe("endpoint builders", () => {
       expect(devLoginUrl()).toBe("https://be.example.com/auth/dev-login");
       expect(offeringsUrl()).toBe("https://be.example.com/offerings");
       expect(menuWeekUrl()).toBe("https://be.example.com/menu/week");
+      expect(ordersUrl()).toBe("https://be.example.com/orders");
+      expect(orderUrl(9)).toBe("https://be.example.com/orders/9");
+      expect(orderConfirmUrl(9)).toBe("https://be.example.com/orders/9/confirm");
+      expect(deliveryUrl()).toBe("https://be.example.com/delivery");
     } finally {
       process.env.BE_BASE_URL = orig;
     }
