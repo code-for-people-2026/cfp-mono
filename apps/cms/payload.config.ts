@@ -3,6 +3,16 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { collections } from "@cfp/kith-inn-payload";
 
+// Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
+// loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
+// this `pnpm seed` falls back to sqlite (wrong DB) while cms dev uses Postgres.
+// Runs before the env reads below; no-op if .env absent (prod — runtime env).
+try {
+  process.loadEnvFile();
+} catch {
+  /* no .env in cwd — rely on runtime env */
+}
+
 const requiresProductionEnv =
   process.env.VERCEL === "1" || process.env.VERCEL === "true";
 
