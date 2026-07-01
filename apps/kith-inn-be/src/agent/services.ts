@@ -162,6 +162,10 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     },
 
     async markDelivered(input: { address: string }) {
+      // Codex P1: a blank address makes `"...".includes("")` true for every
+      // fulfillment → would mark ALL of them done. Reject up front.
+      const address = input.address?.trim();
+      if (!address) return { ok: false as const, error: "地址不能为空" };
       try {
         const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
         // Address lives on the ORDER (frozen snapshot), not the fulfillment —
@@ -176,7 +180,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         };
         const targets = fulfillments.filter(
           (f) =>
-            orderAddress(f).includes(input.address) &&
+            orderAddress(f).includes(address) &&
             (f.status === "pending" || f.status === "handed-off"),
         );
         if (targets.length === 0) return { ok: true as const, count: 0 };

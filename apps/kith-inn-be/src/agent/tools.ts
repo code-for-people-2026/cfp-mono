@@ -37,7 +37,14 @@ const parseOccasion = (o: unknown): "lunch" | "dinner" => (o === "dinner" ? "din
 const parseOrderItems = (raw: unknown): Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> => {
   const arr = Array.isArray(raw) ? raw : [];
   return arr.map((it) => ({
-    customerName: String((it as { customerName?: unknown })?.customerName ?? ""),
+    // record_orders sends `customerName`; create_customers_and_orders sends
+    // `displayName` (its schema). Accept either so the name survives across both
+    // tools — else the create executor drops the name (Codex P1).
+    customerName: String(
+      (it as { customerName?: unknown; displayName?: unknown })?.customerName ??
+        (it as { displayName?: unknown })?.displayName ??
+        "",
+    ),
     address: typeof (it as { address?: unknown })?.address === "string" ? String((it as { address?: unknown }).address) : undefined,
     quantity: Number((it as { quantity?: unknown })?.quantity ?? 0),
     occasion: parseOccasion((it as { occasion?: unknown })?.occasion),

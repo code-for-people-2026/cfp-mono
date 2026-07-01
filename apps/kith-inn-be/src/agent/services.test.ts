@@ -199,6 +199,14 @@ describe("markDelivered", () => {
     expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
   });
 
+  it("rejects a blank address — ''.includes would otherwise mark ALL (Codex P1)", async () => {
+    const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
+    expect(await svc(cms).markDelivered({ address: "" })).toEqual({ ok: false, error: "地址不能为空" });
+    expect(await svc(cms).markDelivered({ address: "   " })).toEqual({ ok: false, error: "地址不能为空" });
+    expect(cms.listFulfillments).not.toHaveBeenCalled();
+    expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+  });
+
   it("returns a generic error on failure", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
     expect(await svc(cms).markDelivered({ address: "26B" })).toEqual({ ok: false, error: "标记失败" });
