@@ -9,6 +9,7 @@ export default defineAppConfig({
   ],
   window: {
     backgroundTextStyle: "light",
+    backgroundColor: "#fffaf1",
     navigationBarBackgroundColor: "#fffdf7",
     navigationBarTitleText: "街坊味",
     navigationBarTextStyle: "black",

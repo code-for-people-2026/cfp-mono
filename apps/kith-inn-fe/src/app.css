@@ -1,20 +1,22 @@
-@import "tailwindcss";
+/* Tailwind, split so utilities are UNLAYERED. Taro H5 renders <View> as a custom
+   element <taro-view-core> and injects an unlayered `taro-view-core{display:block}`
+   (element selector, specificity 0,0,1) at runtime. While our utilities sat inside
+   @layer utilities, that unlayered rule beat them REGARDLESS of specificity — so
+   .flex/.grid/etc. silently lost (display stayed block, gap/align had no effect).
+   Unlayered utilities are class selectors (0,1,0) > the element selector, so they
+   win. weapp uses native <view> (no custom element) → this is a no-op there. */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/preflight.css" layer(base);
+@import "@nutui/nutui-react-taro/dist/style.css" layer(base);
+@import "tailwindcss/utilities.css";
 
-/* Scan the TS/TSX sources for utility-class usage. Tailwind v4 auto-detection
-   doesn't reach the .tsx under Taro's webpack build, so point it here explicitly
-   (relative to this file). */
+/* Scan TS/TSX for utility-class usage — Tailwind v4 auto-detect doesn't reach
+   the .tsx under Taro's webpack build, so point it here (relative to this file). */
 @source "./**/*.{tsx,ts}";
 
-/* ── Design tokens (prototype 暖色「灶台/熟人/烟火气」) ─────────────────
-   @theme makes them Tailwind utilities (bg-red, text-muted, border-line, …) and
-   emits the --color-* CSS vars on both h5+weapp (only recognized namespaces like
-   --color-* are emitted — not arbitrary --nutui-*). px in CSS → Taro
-   designWidth(750) converts to rpx (weapp).
-
-   NOTE (#87 PR2): the page background + NutUI --nutui-* override are deferred —
-   weapp-tailwindcss drops hand-written page{} rules from the global CSS entry,
-   and @theme ignores non-namespaced vars. PR2 will recolor NutUI at the component
-   level (className/per-component CSS-var overrides) when the pages are restyled. */
+/* ── Design tokens (原型暖色「灶台/熟人/烟火气」). @theme emits the --color-*
+   CSS vars and generates utilities (bg-red, text-muted, border-line, …).
+   原型 390px → designWidth 750 下 px×2=rpx（pxtransform 把 rpx→rem on h5 / 留 rpx on weapp）。 */
 @theme {
   --color-ink: #202124;
   --color-muted: #687076;
@@ -24,17 +26,36 @@
   --color-surface: #ffffff;
   --color-wash: #f4f6f3;
   --color-red: #d7462f;
+  --color-red-soft: #fff0ec;
   --color-green: #1f8a61;
+  --color-green-soft: #eaf7ef;
   --color-blue: #2864a5;
+  --color-blue-soft: #edf5ff;
   --color-amber: #b96d12;
+  --color-amber-soft: #fff5df;
 }
 
-/* ── Component classes (bespoke non-NutUI bits; Tailwind-powered via @apply) ──
-   Keeps JSX clean for repeated patterns (chat bubbles, status dots, nav cells…).
-   PR2 will add the rest as the pages are restyled. */
-@layer components {
-  /* bottom-nav tab cell */
-  .nav-tab {
-    @apply flex flex-1 flex-col items-center justify-center gap-[6px];
+/* ── NutUI → design tokens (global defaults only). NutUI's own CSS reads these
+   --nutui-* vars; we re-point the single-color components at our tokens here so
+   every Button/Progress automatically takes the warm palette. Multi-tone bits
+   (chips, status dots) are themed per-instance via atomic utilities in the JSX.
+   Plain CSS in @layer base survives weapp; utilities layer still wins on top. */
+@layer base {
+  /* NutUI global primary → brand red. This is NutUI's idiomatic theme token
+     (--nutui-color-primary + its gradient stops -1/-2); both stops red = solid.
+     Drives Button primary + any primary-colored accent everywhere. */
+  :root {
+    --nutui-color-primary: var(--color-red);
+    --nutui-color-primary-stop-1: var(--color-red);
+    --nutui-color-primary-stop-2: var(--color-red);
+  }
+  .nut-button-small {
+    --nutui-button-small-height: 56rpx;
+  }
+  .nut-progress {
+    --nutui-progress-color: var(--color-green);
+    --nutui-progress-background: #eee8dc;
+    --nutui-progress-height: 16rpx;
+    --nutui-progress-border-radius: 16rpx;
   }
 }
