@@ -173,6 +173,15 @@ export type ConfirmCustomerItem = {
 
 /** A structured card attached to an assistant chat reply (lower-AI-narration,
  *  higher-trust surface than prose). Lives only on the turn that produced it —
- *  cards are NOT persisted into chat history (MVP). PR1 ships customer-confirm;
- *  PR2 will extend the union with orders/delivery/menu. */
-export type CardPayload = { type: "customer-confirm"; data: { items: ConfirmCustomerItem[] } };
+ *  cards are NOT persisted into chat history (MVP). */
+export type OrderCardData = { orders: Order[]; date: string };
+
+/** Delivery snapshot for a delivery card: outstanding count + per-address groups
+ *  (pre-aggregated so the FE renders without re-deriving). */
+export type DeliveryCardGroup = { address: string; count: number; done: number; total: number };
+export type DeliveryCardData = { totalPending: number; groups: DeliveryCardGroup[] };
+
+export type CardPayload =
+  | { type: "customer-confirm"; data: { items: ConfirmCustomerItem[] } }
+  | { type: "orders"; data: OrderCardData }
+  | { type: "delivery"; data: DeliveryCardData };

@@ -8,7 +8,7 @@ import { TopBar } from "@/components/TopBar";
 import { orderConfirmUrl, orderUrl, ordersUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { todayShanghai } from "@/logic/time";
-import { customerName, orderStatusDot, yuan } from "@/logic/ordersView";
+import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
 
 const taroStorage: Storage = {
   get: (k) => Taro.getStorageSync(k) || null,
@@ -16,15 +16,6 @@ const taroStorage: Storage = {
   remove: (k) => Taro.removeStorageSync(k),
 };
 const tokens = createTokenStore(taroStorage);
-
-/** status tone → per-component NutUI Tag override (square status-dot). */
-/** status tone → atomic utilities (NutUI Tag forced to a square status badge). */
-const STATUS_CLASS: Record<string, string> = {
-  green: "bg-green-soft text-green",
-  red: "bg-red-soft text-red",
-  amber: "bg-amber-soft text-amber",
-  muted: "bg-wash text-muted",
-};
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -101,7 +92,7 @@ export default function Orders() {
               <View key={String(o.id)} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
                 <View className="flex items-center gap-[20rpx]">
                   <Tag
-                    className={`inline-flex h-[68rpx] w-[68rpx] items-center justify-center rounded-[16rpx] text-[24rpx] font-extrabold ${STATUS_CLASS[dot.tone]}`}
+                    className={`inline-flex h-[68rpx] w-[68rpx] items-center justify-center rounded-[16rpx] text-[24rpx] font-extrabold ${STATUS_DOT_CLASS[dot.tone]}`}
                   >
                     {dot.label}
                   </Tag>

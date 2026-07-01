@@ -9,9 +9,9 @@
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
-import type { Customer, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
+import type { Customer, DeliveryCardData, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
-import { gapReport } from "../domain/delivery/derivations";
+import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { setPending } from "./pendingState";
 
@@ -224,6 +224,35 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         // Degrade to zeros rather than throw — the agent loop + tool both call this;
         // a throw would 502 the whole /chat. The fallback prompt asks to rephrase.
         return { unconfirmedOrders: 0, pendingDeliveries: 0, unpaidOrders: 0, recentOrders: "" };
+      }
+    },
+
+    /** Today's orders (active only) for the orders card. */
+    async getTodayOrders(): Promise<Order[]> {
+      try {
+        const today = todayShanghai(now);
+        const orders = await cms.listOrders(jwt, { date: today });
+        return orders.filter((o) => o.status !== "canceled");
+      } catch {
+        return [];
+      }
+    },
+
+    /** Today's delivery snapshot (per-address groups + outstanding) for the delivery card. */
+    async getTodayDelivery(): Promise<DeliveryCardData> {
+      try {
+        const today = todayShanghai(now);
+        const fulfillments = await cms.listFulfillments(jwt, { date: today });
+        const active = fulfillments.filter((f) => f.status !== "canceled");
+        const groups = packingSort(active).map((g) => ({
+          address: g.address,
+          count: g.count,
+          done: g.fulfillments.filter((f) => f.status === "done").length,
+          total: g.fulfillments.length,
+        }));
+        return { totalPending: gapReport(active).totalPending, groups };
+      } catch {
+        return { totalPending: 0, groups: [] };
       }
     },
   };

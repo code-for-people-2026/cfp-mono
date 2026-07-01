@@ -5,7 +5,7 @@ import type { CardPayload } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { chatUrl, confirmCustomersUrl } from "@/services/api";
+import { chatUrl, confirmCustomersUrl, orderConfirmUrl, orderUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
 type Msg = { id?: string | number; role: "user" | "assistant"; content: string; card?: CardPayload };
@@ -124,6 +124,59 @@ export default function Today() {
       .finally(() => setConfirming(false));
   };
 
+  /** 确认 / 标已付 on an orders card → reuse the orders-tab endpoints, then
+   *  optimistically update that order inside the card so the button flips. */
+  const onOrderAct = (msgIdx: number, orderId: string | number, action: "confirm" | "paid") => {
+    const token = tokens.getToken();
+    if (!token) {
+      Taro.redirectTo({ url: "/pages/login/index" });
+      return;
+    }
+    Taro.request({
+      url: action === "confirm" ? orderConfirmUrl(orderId) : orderUrl(orderId),
+      method: action === "confirm" ? "POST" : "PATCH",
+      data: action === "paid" ? { paymentStatus: "paid" } : undefined,
+      header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    })
+      .then((res) => {
+        if (res.statusCode === 401) {
+          tokens.clearToken();
+          Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode >= 400) {
+          Taro.showToast({ title: "操作失败", icon: "error" });
+          return;
+        }
+        Taro.showToast({ title: action === "confirm" ? "已确认" : "已收款", icon: "success" });
+        setMsgs((ms) =>
+          ms.map((m, i) =>
+            i !== msgIdx || !m.card || m.card.type !== "orders"
+              ? m
+              : {
+                  ...m,
+                  card: {
+                    ...m.card,
+                    data: {
+                      ...m.card.data,
+                      orders: m.card.data.orders.map((o) =>
+                        o.id !== orderId
+                          ? o
+                          : {
+                              ...o,
+                              status: action === "confirm" ? "confirmed" : o.status,
+                              paymentStatus: action === "paid" ? ("paid" as const) : o.paymentStatus,
+                            },
+                      ),
+                    },
+                  },
+                },
+          ),
+        );
+      })
+      .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }));
+  };
+
   return (
     <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
@@ -150,7 +203,13 @@ export default function Today() {
                 >
                   <Text>{m.content}</Text>
                   {!me && m.card && (
-                    <ChatCard card={m.card} confirmed={confirmed.has(i)} confirming={confirming} onConfirm={() => confirmCustomers(i)} />
+                    <ChatCard
+                      card={m.card}
+                      confirmed={confirmed.has(i)}
+                      confirming={confirming}
+                      onConfirm={() => confirmCustomers(i)}
+                      onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
+                    />
                   )}
                 </View>
               </View>
