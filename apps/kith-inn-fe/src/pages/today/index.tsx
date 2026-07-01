@@ -84,20 +84,32 @@ export default function Today() {
       .finally(() => setSending(false));
   };
 
-  /** 「都建」 on a customer-confirm card → POST /chat/confirm-customers (deterministic). */
+  /** 「都建」 on a customer-confirm card → POST /chat/confirm-customers with this
+   *  card's items (deterministic; server validates they still match pending). */
   const confirmCustomers = (i: number) => {
     if (confirming) return;
+    const card = msgs[i]?.card;
+    if (card?.type !== "customer-confirm") return;
     const token = tokens.getToken();
     if (!token) {
       Taro.redirectTo({ url: "/pages/login/index" });
       return;
     }
     setConfirming(true);
-    Taro.request({ url: confirmCustomersUrl(), method: "POST", header: { Authorization: `Bearer ${token}`, "content-type": "application/json" } })
+    Taro.request({
+      url: confirmCustomersUrl(),
+      method: "POST",
+      data: { items: card.data.items },
+      header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    })
       .then((res) => {
         if (res.statusCode === 401) {
           tokens.clearToken();
           Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode === 409) {
+          Taro.showToast({ title: "这条过期了，刷新看看", icon: "none" });
           return;
         }
         if (res.statusCode >= 400) {

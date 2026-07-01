@@ -13,7 +13,7 @@ export type AgentServices = {
     items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
   ): Promise<{
     recorded: Array<{ name: string; orderId: string | number }>;
-    needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner" }>;
+    needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
     failed: Array<{ customerName: string; error: string }>;
   }>;
   createCustomersAndOrders(
