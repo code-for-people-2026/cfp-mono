@@ -42,7 +42,7 @@ describe("recordOrders", () => {
       { customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
     ]);
     expect(r.recorded).toEqual([{ name: "王燕萍", orderId: 90 }]);
-    expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" }]);
+    expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
     expect(r.failed).toEqual([]);
     expect(cms.createOrderDraft).toHaveBeenCalledWith(
       "jwt",
@@ -87,7 +87,15 @@ describe("recordOrders", () => {
     clearPending(OP);
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
     await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
-    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
+    clearPending(OP);
+  });
+
+  it("carries a non-default date into pending (Codex P1 — 明天 ≠ today)", async () => {
+    clearPending(OP);
+    const cms = baseCms({ listCustomers: vi.fn(async () => []) });
+    await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
+    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
     clearPending(OP);
   });
 

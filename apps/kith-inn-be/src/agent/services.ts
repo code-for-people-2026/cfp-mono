@@ -57,7 +57,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
      */
     async recordOrders(items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
       const recorded: Array<{ name: string; orderId: string | number }> = [];
-      const needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner" }> = [];
+      const needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> = [];
       const failed: Array<{ customerName: string; error: string }> = [];
       try {
         const [customers, offerings] = await Promise.all([cms.listCustomers(jwt), cms.findOfferings(jwt)]);
@@ -73,7 +73,10 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           const want = normalizeCustomerName(it.customerName);
           const match = customers.find((c) => normalizeCustomerName(c.displayName) === want);
           if (!match) {
-            needsConfirmation.push({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion });
+            // Carry the resolved date (item's own, else the batch default) so the
+            // pending row + later confirm records the new customer for the right
+            // day — not always today (Codex P1).
+            needsConfirmation.push({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date ?? date });
             continue;
           }
           try {

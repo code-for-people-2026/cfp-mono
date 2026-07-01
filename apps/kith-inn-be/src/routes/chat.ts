@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
 import { findOfferings } from "../lib/cms/client";
 import {
@@ -18,6 +19,17 @@ import { createCmsAgentServices, type AgentCms } from "../agent/services";
 import { clearPending, getPending } from "../agent/pendingState";
 import { runAgent } from "../agent/run";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
+
+/** Equality of the submitted payload vs the pending list — the stale-card check
+ *  for POST /chat/confirm-customers (Codex P2). Order-sensitive JSON compare is
+ *  fine: the card's items come straight from the pending response, so FE echoes
+ *  them in the same order. */
+function sameItems(submitted: unknown, pending: ConfirmCustomerItem[]): boolean {
+  if (!Array.isArray(submitted) || submitted.length !== pending.length) return false;
+  const norm = (xs: ConfirmCustomerItem[]) =>
+    JSON.stringify(xs.map((it) => ({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })));
+  return norm(submitted as ConfirmCustomerItem[]) === norm(pending);
+}
 
 /** Real AgentCms = the imported client functions directly (their optional `deps`
  *  param drops to global fetch). Mirrors routes/orders.ts realCms(). */
@@ -108,19 +120,27 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
 
   /**
    * POST /chat/confirm-customers — the deterministic 「都建」 behind the
-   * customer-confirm card (#97). Reads the server-side pending list → creates
-   * customers + draft orders (bypassing the LLM entirely) → clears pending.
+   * customer-confirm card (#97). The body carries the clicked card's items; we
+   * validate they still match the server-side pending list (else the card is
+   * stale — e.g. a newer 接龙 overwrote pending) → creates customers + draft
+   * orders off **pending** (server stays source of truth) → clears pending.
    */
   app.post("/confirm-customers", async (c) => {
     const jwt = c.get("token") as string;
     const operatorId = c.get("operatorId") as string | number;
-    const items = getPending(operatorId);
-    if (items.length === 0) return c.json({ error: "no pending customers" }, 404);
+    const pending = getPending(operatorId);
+    if (pending.length === 0) return c.json({ error: "no pending customers" }, 404);
+    const body = (await c.req.json().catch(() => null)) as { items?: unknown } | null;
+    // Correlate the click with its card: the submitted items must match pending,
+    // else a newer record_orders overwrote pending between render and click (Codex P2).
+    if (!sameItems(body?.items, pending)) {
+      return c.json({ error: "card stale" }, 409);
+    }
     try {
       // Pending items carry `customerName` (recordOrders shape); createCustomersAndOrders
       // takes `displayName` — map across (same join the old create tool did).
       const r = await createCmsAgentServices({ jwt, cms, operatorId }).createCustomersAndOrders(
-        items.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion })),
+        pending.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
       );
       clearPending(operatorId);
       const summary =

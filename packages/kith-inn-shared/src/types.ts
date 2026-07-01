@@ -161,12 +161,14 @@ export type ChatMessage = {
 };
 
 /** One new-customer row surfaced in a customer-confirm card (mirrors the agent's
- *  `needsConfirmation` shape — passed through unchanged). */
+ *  `needsConfirmation` shape — passed through unchanged). `date` is the meal day
+ *  the row should be recorded for (defaults to today at record time). */
 export type ConfirmCustomerItem = {
   customerName: string;
   address?: string;
   quantity: number;
   occasion: "lunch" | "dinner";
+  date?: string;
 };
 
 /** A structured card attached to an assistant chat reply (lower-AI-narration,
