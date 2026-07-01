@@ -13,6 +13,7 @@ import type { Customer, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-sh
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
+import { setPending } from "./pendingState";
 
 /** The cms surface the agent orchestrates: OrderCms (writes + offering read) + the
  *  reads the summary/delivery tools need. Injected so tests mock it wholesale. */
@@ -36,13 +37,15 @@ function customerName(order: Order): string {
 type AgentServicesDeps = {
   jwt: string;
   cms: AgentCms;
+  /** Operator id (from JWT) — keys the server-side pending confirmations. */
+  operatorId: string | number;
   /** Clock for today-scoped ops; default = real time. */
   now?: () => Date;
 };
 
 /** Build a cms-backed AgentServices bound to one operator's JWT. */
 export function createCmsAgentServices(deps: AgentServicesDeps) {
-  const { jwt, cms } = deps;
+  const { jwt, cms, operatorId } = deps;
   const now = deps.now ?? (() => new Date());
 
   return {
@@ -93,6 +96,10 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         // whole-batch failure (cms read down) → everything failed
         for (const it of items) failed.push({ customerName: it.customerName, error: "记单失败" });
       }
+      // #97: persist new-customer confirmations server-side so 「都建」 is a
+      // deterministic button click (POST /chat/confirm-customers), not an LLM
+      // recall across turns. setPending([]) clears when there's nothing pending.
+      setPending(operatorId, needsConfirmation);
       return { recorded, needsConfirmation, failed };
     },
 

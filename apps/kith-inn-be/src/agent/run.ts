@@ -1,3 +1,4 @@
+import type { CardPayload } from "@cfp/kith-inn-shared";
 import { chatWithTools, type ChatMessage } from "../lib/llm/chatWithTools";
 import { AGENT_TOOL_DEFS, AGENT_TOOLS, type AgentServices } from "./tools";
 
@@ -7,17 +8,21 @@ import { AGENT_TOOL_DEFS, AGENT_TOOLS, type AgentServices } from "./tools";
  * 把结果作为 tool 消息回灌 → 再循环，直到模型给出文本答复或 maxSteps 用尽。
  *
  * 纪律：agent 只编排工具（确定性、可测）；范围外话题由 system prompt 礼貌挡回；maxSteps
- * 用尽或出错有确定性兜底（不编造）。`// ponytail:` maxSteps=7 浅环（record_orders + 确认
- * 回合 + create = 多步）——DeepSeek tool-calling 稳定性见 Tech Spec §7，不稳时降级。
+ * 用尽或出错有确定性兜底（不编造）。`// ponytail:` maxSteps=7 浅环（record_orders + 查询
+ * + 状态操作 = 多步）——DeepSeek tool-calling 稳定性见 Tech Spec §7，不稳时降级。
+ *
+ * 工具可附带一张结构化卡片（如新顾客确认卡）；本循环把最后一个非空 card 透传到响应，
+ * 让前端用确定性卡片/按钮取代 LLM 口述（#97/#98）。
  */
 export const AGENT_SYSTEM_PROMPT = `你是「桃子的灶台」（社区私房菜）的经营助手「味」，跟老板桃子对话。她用语音/文字记单、查状态、标送餐/收款。
 
-能力（通过工具）：record_orders（批量记单：每条含 名字+地址+份数+餐次）、create_customers_and_orders（桃子确认新顾客后建+下单）、confirm_order、cancel_order、mark_paid、mark_delivered（地址）、get_today_summary。
+能力（通过工具）：record_orders（批量记单：每条含 名字+地址+份数+餐次）、confirm_order、cancel_order、mark_paid、mark_delivered（地址）、get_today_summary。
 
 纪律：
 - 只帮桃子经营私房菜。与经营无关的问题（天气、闲聊、别的App）礼貌挡回并引导回经营，例如「这个我帮不上，经营上的事尽管吩咐」。
 - 事实以工具返回为准，绝不编造订单号/顾客/状态。没拿到 orderId 绝不能说"已记"。
-- 新顾客必须先 record_orders，拿回 needsConfirmation 后把名单列给桃子确认；桃子说"都建"/补上地址，才调 create_customers_and_orders。绝不擅自建顾客。
+- 新顾客：record_orders 会把他们收进「待确认」并回一张确认卡片。引导桃子点卡片里的「都建」按钮确认——不要自己建顾客，也不要等桃子在对话里说"都建"。
+- 接龙日期默认按今天记；桃子明确说「明天 / X 号」才用那个日期。
 - 接龙里每人一条（含地址）。回答简短、口语化、像街坊邻居。她话短你也短。
 - 有歧义时简短确认（「是午餐 2 份对吗？」），别瞎记——错记是漏送根因。`;
 
@@ -43,7 +48,8 @@ async function fallbackToday(services: AgentServices): Promise<string> {
 export type RunAgentDeps = { chat?: typeof chatWithTools };
 
 /**
- * Run one turn of the agent. Returns the assistant's final text answer.
+ * Run one turn of the agent. Returns the assistant's final text answer + the last
+ * non-empty card a tool emitted (if any) for the front-end to render.
  * @param deps.chat injectable LLM (tests script tool-call sequences).
  */
 export async function runAgent(input: {
@@ -51,13 +57,15 @@ export async function runAgent(input: {
   history: ChatMessage[];
   services: AgentServices;
   deps?: RunAgentDeps;
-}): Promise<string> {
+}): Promise<{ reply: string; card?: CardPayload }> {
   const chat = input.deps?.chat ?? chatWithTools;
   const messages: ChatMessage[] = [
     { role: "system", content: AGENT_SYSTEM_PROMPT },
     ...trimContext(input.history),
     { role: "user", content: input.userText },
   ];
+  // Last non-empty card from any tool this turn — passed through to the response.
+  let card: CardPayload | undefined;
 
   for (let step = 0; step < MAX_STEPS; step++) {
     let res;
@@ -65,10 +73,10 @@ export async function runAgent(input: {
       res = await chat({ messages, tools: AGENT_TOOL_DEFS });
     } catch {
       // LLM call failed (non-2xx / network / DeepSeek outage) — deterministic fallback, don't reject.
-      return fallbackToday(input.services);
+      return { reply: await fallbackToday(input.services), card };
     }
     if (res.toolCalls.length === 0) {
-      return res.content ?? "没听清，能再说一遍吗？比如「王燕萍 午餐 2 份」。";
+      return { reply: res.content ?? "没听清，能再说一遍吗？比如「王燕萍 午餐 2 份」。", card };
     }
     messages.push({
       role: "assistant",
@@ -77,10 +85,14 @@ export async function runAgent(input: {
     });
     for (const tc of res.toolCalls) {
       const tool = AGENT_TOOLS.find((t) => t.def.function.name === tc.name);
-      const result = tool ? await tool.execute(input.services, tc.args) : `工具 ${tc.name} 不存在`;
-      messages.push({ role: "tool", content: result, tool_call_id: tc.id });
+      // Known tool → { text, card? }; unknown tool → a plain text result.
+      const result: { text: string; card?: CardPayload } = tool
+        ? await tool.execute(input.services, tc.args)
+        : { text: `工具 ${tc.name} 不存在` };
+      if (result.card) card = result.card; // last non-empty card wins
+      messages.push({ role: "tool", content: result.text, tool_call_id: tc.id });
     }
   }
   // maxSteps exhausted — deterministic fallback.
-  return fallbackToday(input.services);
+  return { reply: await fallbackToday(input.services), card };
 }

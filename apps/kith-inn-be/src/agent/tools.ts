@@ -1,3 +1,4 @@
+import type { CardPayload } from "@cfp/kith-inn-shared";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 
 /**
@@ -27,7 +28,7 @@ export type AgentServices = {
 
 export type AgentTool = {
   def: ToolDef;
-  execute: (services: AgentServices, args: Record<string, unknown>) => Promise<string>;
+  execute: (services: AgentServices, args: Record<string, unknown>) => Promise<{ text: string; card?: CardPayload }>;
 };
 
 const occasionZh = (o: unknown) => (o === "lunch" ? "午餐" : o === "dinner" ? "晚餐" : String(o));
@@ -37,14 +38,7 @@ const parseOccasion = (o: unknown): "lunch" | "dinner" => (o === "dinner" ? "din
 const parseOrderItems = (raw: unknown): Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> => {
   const arr = Array.isArray(raw) ? raw : [];
   return arr.map((it) => ({
-    // record_orders sends `customerName`; create_customers_and_orders sends
-    // `displayName` (its schema). Accept either so the name survives across both
-    // tools — else the create executor drops the name (Codex P1).
-    customerName: String(
-      (it as { customerName?: unknown; displayName?: unknown })?.customerName ??
-        (it as { displayName?: unknown })?.displayName ??
-        "",
-    ),
+    customerName: String((it as { customerName?: unknown })?.customerName ?? ""),
     address: typeof (it as { address?: unknown })?.address === "string" ? String((it as { address?: unknown }).address) : undefined,
     quantity: Number((it as { quantity?: unknown })?.quantity ?? 0),
     occasion: parseOccasion((it as { occasion?: unknown })?.occasion),
@@ -90,69 +84,36 @@ export const AGENT_TOOLS: AgentTool[] = [
         parts.push(
           `新顾客待确认：${r.needsConfirmation
             .map((x) => `${x.customerName}(${x.address ?? "地址？"})${x.quantity}份${occasionZh(x.occasion)}`)
-            .join("、")}——都建并下单吗？`,
+            .join("、")}——点下面「都建」确认`,
         );
       }
       if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}(${x.error})`).join("、")}`);
-      return parts.join("；") || "没有可记的单。";
-    },
-  },
-  {
-    def: {
-      type: "function",
-      function: {
-        name: "create_customers_and_orders",
-        description: "桃子确认新顾客后调用：建顾客并落草稿。每条含 名字+地址+份数+餐次。",
-        parameters: {
-          type: "object",
-          properties: {
-            items: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  displayName: { type: "string" },
-                  address: { type: "string", description: "送餐地址（自由文本）" },
-                  quantity: { type: "integer" },
-                  occasion: { type: "string", enum: ["lunch", "dinner"] },
-                  date: { type: "string", description: "用餐日 YYYY-MM-DD，默认今天" },
-                },
-                required: ["displayName", "quantity", "occasion"],
-              },
-            },
-          },
-          required: ["items"],
-        },
-      },
-    },
-    execute: async (s, args) => {
-      const items = parseOrderItems(args.items).map((it) => ({ displayName: it.customerName, ...it }));
-      const r = await s.createCustomersAndOrders(items);
-      const parts: string[] = [];
-      if (r.created.length > 0) parts.push(`已建顾客并记单：${r.created.map((x) => `${x.name} #${x.orderId}`).join("、")}`);
-      if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.displayName}(${x.error})`).join("、")}`);
-      return parts.join("；") || "没有要建的顾客。";
+      // The card mirrors needsConfirmation verbatim → the 「都建」 button drives
+      // POST /chat/confirm-customers (deterministic), removing the LLM-recall flakiness (#97).
+      const card: CardPayload | undefined =
+        r.needsConfirmation.length > 0 ? { type: "customer-confirm", data: { items: r.needsConfirmation } } : undefined;
+      return { text: parts.join("；") || "没有可记的单。", card };
     },
   },
   {
     def: { type: "function", function: { name: "confirm_order", description: "确认一个草稿订单（转正：开餐 slot + 建送餐履约）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const r = await s.confirmOrder({ orderId: Number(args.orderId) });
-      return r.ok ? `已确认订单 #${args.orderId}（已开餐、进入送餐清单）。` : `确认失败：${r.error}`;
+      return { text: r.ok ? `已确认订单 #${args.orderId}（已开餐、进入送餐清单）。` : `确认失败：${r.error}` };
     },
   },
   {
     def: { type: "function", function: { name: "cancel_order", description: "取消一个订单（作废，其送餐履约一并取消）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const r = await s.cancelOrder({ orderId: Number(args.orderId) });
-      return r.ok ? `已取消订单 #${args.orderId}。` : `取消失败：${r.error}`;
+      return { text: r.ok ? `已取消订单 #${args.orderId}。` : `取消失败：${r.error}` };
     },
   },
   {
     def: { type: "function", function: { name: "mark_paid", description: "标记一个订单已付款。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const r = await s.markPaid({ orderId: Number(args.orderId) });
-      return r.ok ? `已标记订单 #${args.orderId} 为已付款。` : `标记失败：${r.error}`;
+      return { text: r.ok ? `已标记订单 #${args.orderId} 为已付款。` : `标记失败：${r.error}` };
     },
   },
   {
@@ -160,14 +121,14 @@ export const AGENT_TOOLS: AgentTool[] = [
     execute: async (s, args) => {
       const address = String(args.address ?? "");
       const r = await s.markDelivered({ address });
-      return r.ok ? `已标记 ${address} 送达（${r.count} 份）。` : `标记失败：${r.error}`;
+      return { text: r.ok ? `已标记 ${address} 送达（${r.count} 份）。` : `标记失败：${r.error}` };
     },
   },
   {
     def: { type: "function", function: { name: "get_today_summary", description: "查今天概况：未确认订单 / 待送 / 未付 + 最近订单。用户问「今天什么情况/还差什么」时调它。", parameters: { type: "object", properties: {} } } },
     execute: async (s) => {
       const t = await s.getTodaySummary();
-      return `今天：草稿未确认 ${t.unconfirmedOrders} 单 / 待送 ${t.pendingDeliveries} 份 / 未付 ${t.unpaidOrders} 单。最近订单：${t.recentOrders || "（无）"}`;
+      return { text: `今天：草稿未确认 ${t.unconfirmedOrders} 单 / 待送 ${t.pendingDeliveries} 份 / 未付 ${t.unpaidOrders} 单。最近订单：${t.recentOrders || "（无）"}` };
     },
   },
 ];

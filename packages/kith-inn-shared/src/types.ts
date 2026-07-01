@@ -159,3 +159,18 @@ export type ChatMessage = {
   createdAt: string;
   seller: string | number | Seller;
 };
+
+/** One new-customer row surfaced in a customer-confirm card (mirrors the agent's
+ *  `needsConfirmation` shape — passed through unchanged). */
+export type ConfirmCustomerItem = {
+  customerName: string;
+  address?: string;
+  quantity: number;
+  occasion: "lunch" | "dinner";
+};
+
+/** A structured card attached to an assistant chat reply (lower-AI-narration,
+ *  higher-trust surface than prose). Lives only on the turn that produced it —
+ *  cards are NOT persisted into chat history (MVP). PR1 ships customer-confirm;
+ *  PR2 will extend the union with orders/delivery/menu. */
+export type CardPayload = { type: "customer-confirm"; data: { items: ConfirmCustomerItem[] } };
