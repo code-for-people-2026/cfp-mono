@@ -22,6 +22,8 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   getTodaySummary:
     over.getTodaySummary ??
     vi.fn(async () => ({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 3, recentOrders: "#45 王燕萍" })),
+  getTodayOrders: over.getTodayOrders ?? vi.fn(async () => []),
+  getTodayDelivery: over.getTodayDelivery ?? vi.fn(async () => ({ totalPending: 0, groups: [] })),
 });
 
 describe("runAgent", () => {
@@ -65,6 +67,19 @@ describe("runAgent", () => {
     ]);
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
     expect(out.card).toBeUndefined();
+  });
+
+  it("passes an orders card through when get_orders is called (#98)", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "get_orders", args: {} }] },
+      { content: "看下面卡片。", toolCalls: [] },
+    ]);
+    const s = mockServices({
+      getTodayOrders: vi.fn(async () => [{ id: 1, status: "draft", customer: { displayName: "王燕萍" }, date: "2026-06-29", paymentStatus: "unpaid", items: [] }] as never),
+    });
+    const out = await runAgent({ userText: "订单怎么样", history: [], services: s, deps: { chat } });
+    expect(out.card?.type).toBe("orders");
+    expect((out.card as { data: { orders: unknown[] } }).data.orders).toHaveLength(1);
   });
 
   it("returns the model's text directly when no tool is called (plain question / scope-out)", async () => {

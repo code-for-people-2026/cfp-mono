@@ -1,4 +1,4 @@
-import type { CardPayload } from "@cfp/kith-inn-shared";
+import type { CardPayload, DeliveryCardData, Order } from "@cfp/kith-inn-shared";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 
 /**
@@ -24,6 +24,8 @@ export type AgentServices = {
   markPaid(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   markDelivered(input: { address: string }): Promise<{ ok: true; count: number } | { ok: false; error: string }>;
   getTodaySummary(): Promise<{ unconfirmedOrders: number; pendingDeliveries: number; unpaidOrders: number; recentOrders: string }>;
+  getTodayOrders(): Promise<Order[]>;
+  getTodayDelivery(): Promise<DeliveryCardData>;
 };
 
 export type AgentTool = {
@@ -129,6 +131,28 @@ export const AGENT_TOOLS: AgentTool[] = [
     execute: async (s) => {
       const t = await s.getTodaySummary();
       return { text: `今天：草稿未确认 ${t.unconfirmedOrders} 单 / 待送 ${t.pendingDeliveries} 份 / 未付 ${t.unpaidOrders} 单。最近订单：${t.recentOrders || "（无）"}` };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "get_orders", description: "查今天的订单列表（含状态、可操作）。用户问「订单怎么样/都有谁订了/今天谁订了」时调它。", parameters: { type: "object", properties: {} } } },
+    execute: async (s) => {
+      const orders = await s.getTodayOrders();
+      if (orders.length === 0) return { text: "今天还没有订单。" };
+      const drafts = orders.filter((o) => o.status === "draft").length;
+      const unpaid = orders.filter((o) => o.status === "confirmed" && o.paymentStatus === "unpaid").length;
+      const tail = [drafts > 0 && `草稿 ${drafts}`, unpaid > 0 && `未付 ${unpaid}`].filter(Boolean).join(" / ");
+      return {
+        text: `今天 ${orders.length} 单${tail ? `（${tail}）` : ""}，看下面卡片。`,
+        card: { type: "orders", data: { orders, date: orders[0]?.date ?? "" } },
+      };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "get_delivery", description: "查今天的送餐分拣（按地址、还差几份）。用户问「送餐怎样/还差什么/怎么送」时调它。", parameters: { type: "object", properties: {} } } },
+    execute: async (s) => {
+      const d = await s.getTodayDelivery();
+      if (d.groups.length === 0) return { text: "今天没有要送的。" };
+      return { text: `今天送餐：还差 ${d.totalPending} 份，看下面分拣卡片。`, card: { type: "delivery", data: d } };
     },
   },
 ];

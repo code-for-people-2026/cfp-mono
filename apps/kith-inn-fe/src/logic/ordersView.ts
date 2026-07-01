@@ -1,7 +1,15 @@
 import type { Order } from "@cfp/kith-inn-shared";
 
-type DotTone = "green" | "red" | "amber" | "muted";
+export type DotTone = "green" | "red" | "amber" | "muted";
 type StatusDot = { label: string; tone: DotTone };
+
+/** Status-dot tone → atomic utility classes (shared by the orders tab + chat card). */
+export const STATUS_DOT_CLASS: Record<DotTone, string> = {
+  green: "bg-green-soft text-green",
+  red: "bg-red-soft text-red",
+  amber: "bg-amber-soft text-amber",
+  muted: "bg-wash text-muted",
+};
 
 /**
  * Status dot for an order card (prototype 收/欠/草/废):

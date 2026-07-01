@@ -267,3 +267,40 @@ describe("getTodaySummary", () => {
     expect(await svc(cms).getTodaySummary()).toEqual({ unconfirmedOrders: 0, pendingDeliveries: 0, unpaidOrders: 0, recentOrders: "" });
   });
 });
+
+describe("getTodayOrders", () => {
+  it("returns today's active orders (canceled dropped)", async () => {
+    const cms = baseCms({
+      listOrders: vi.fn(async () => [
+        { id: 1, status: "draft", customer: { displayName: "王燕萍" }, date: "2026-06-29", paymentStatus: "unpaid", items: [{ quantity: 2 }] },
+        { id: 2, status: "canceled", customer: { displayName: "X" }, date: "2026-06-29", paymentStatus: "unpaid", items: [] },
+      ] as never),
+    });
+    expect((await svc(cms).getTodayOrders()).map((o) => o.id)).toEqual([1]);
+  });
+
+  it("degrades to [] on cms failure", async () => {
+    const cms = baseCms({ listOrders: vi.fn(async () => { throw new Error("net"); }) });
+    expect(await svc(cms).getTodayOrders()).toEqual([]);
+  });
+});
+
+describe("getTodayDelivery", () => {
+  const f = (id: number, addr: string, status: string) => ({ id, orderItem: { id: id + 100, order: { id: 1, address: addr } }, status, mode: "delivery" });
+
+  it("groups by address with done/total + totalPending (canceled dropped)", async () => {
+    const cms = baseCms({
+      listFulfillments: vi.fn(async () => [f(11, "26B", "pending"), f(12, "26B", "done"), f(13, "1D", "pending"), f(14, "1D", "canceled")] as never),
+    });
+    const d = await svc(cms).getTodayDelivery();
+    expect(d.totalPending).toBe(2); // 2 pending; canceled + done not counted
+    const g = Object.fromEntries(d.groups.map((x) => [x.address, x]));
+    expect(g["26B"]).toEqual({ address: "26B", count: 2, done: 1, total: 2 });
+    expect(g["1D"]).toEqual({ address: "1D", count: 1, done: 0, total: 1 }); // canceled filtered before packingSort
+  });
+
+  it("degrades to empty on cms failure", async () => {
+    const cms = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
+    expect(await svc(cms).getTodayDelivery()).toEqual({ totalPending: 0, groups: [] });
+  });
+});

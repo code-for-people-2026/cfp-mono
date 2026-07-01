@@ -1,39 +1,91 @@
 import { Text, View } from "@tarojs/components";
-import { Button } from "@nutui/nutui-react-taro";
+import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { CardPayload } from "@cfp/kith-inn-shared";
+import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
 
 const occasionZh = (o: "lunch" | "dinner") => (o === "lunch" ? "午餐" : "晚餐");
 
 /**
- * Renders a structured card attached to an assistant reply (PR1: customer-confirm).
- * The 「都建」 button drives POST /chat/confirm-customers — a deterministic click
- * that replaces the flaky LLM-recall multi-turn confirm (#97). `confirmed` swaps
- * the button for a「已建」chip (the card is one-shot). PR2 will add orders/delivery.
+ * Renders a structured card attached to an assistant reply.
+ * - customer-confirm: lists pending new customers + 「都建」 (POST /chat/confirm-customers).
+ * - orders: today's orders with 确认/标已付 buttons (reuse the orders-tab endpoints).
+ * - delivery: today's per-address packing list (read-only).
+ * Cards are one-shot surfaces on the turn that produced them (not persisted).
  */
-export function ChatCard({ card, confirmed, confirming, onConfirm }: {
+export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct }: {
   card: CardPayload;
   confirmed: boolean;
   confirming: boolean;
   onConfirm: () => void;
+  onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
 }) {
-  if (card.type !== "customer-confirm") return null; // PR2: orders/delivery cards
+  if (card.type === "customer-confirm") {
+    return (
+      <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
+        <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建</Text>
+        {card.data.items.map((it, i) => (
+          <Text key={i} className="mt-[10rpx] block text-[26rpx] text-soft">
+            {it.customerName}（{it.address ?? "地址？"}）{it.quantity}份{occasionZh(it.occasion)}
+          </Text>
+        ))}
+        <View className="mt-[20rpx]">
+          {confirmed ? (
+            <Text className="block text-[24rpx] text-green">已建 ✓</Text>
+          ) : (
+            <Button size="small" type="primary" loading={confirming} className="[background:var(--color-red)] text-white" onClick={onConfirm}>
+              都建
+            </Button>
+          )}
+        </View>
+      </View>
+    );
+  }
+
+  if (card.type === "orders") {
+    const orders = card.data.orders;
+    return (
+      <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
+        <Text className="block text-[26rpx] font-semibold text-ink">今天的订单（{orders.length}）</Text>
+        {orders.map((o) => {
+          const dot = orderStatusDot(o);
+          return (
+            <View key={String(o.id)} className="mt-[16rpx] flex items-center gap-[16rpx]">
+              <Tag className={`inline-flex h-[48rpx] w-[48rpx] flex-none items-center justify-center rounded-[12rpx] text-[22rpx] font-extrabold ${STATUS_DOT_CLASS[dot.tone]}`}>
+                {dot.label}
+              </Tag>
+              <Text className="min-w-0 flex-1 text-[26rpx] font-semibold">{customerName(o)}</Text>
+              <Text className="text-[24rpx] text-muted">{yuan(o.totalCents)}</Text>
+              {onOrderAct && o.status === "draft" && (
+                <Button size="small" type="primary" className="[background:var(--color-red)] text-white" onClick={() => onOrderAct(o.id, "confirm")}>
+                  确认
+                </Button>
+              )}
+              {onOrderAct && o.status === "confirmed" && o.paymentStatus === "unpaid" && (
+                <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={() => onOrderAct(o.id, "paid")}>
+                  标已付
+                </Button>
+              )}
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
+  // delivery
   return (
     <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
-      <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建</Text>
-      {card.data.items.map((it, i) => (
-        <Text key={i} className="mt-[10rpx] block text-[26rpx] text-soft">
-          {it.customerName}（{it.address ?? "地址？"}）{it.quantity}份{occasionZh(it.occasion)}
-        </Text>
-      ))}
-      <View className="mt-[20rpx]">
-        {confirmed ? (
-          <Text className="block text-[24rpx] text-green">已建 ✓</Text>
-        ) : (
-          <Button size="small" type="primary" loading={confirming} className="[background:var(--color-red)] text-white" onClick={onConfirm}>
-            都建
-          </Button>
-        )}
+      <View className="flex items-center justify-between gap-[16rpx]">
+        <Text className="text-[26rpx] font-semibold text-ink">今天送餐</Text>
+        {card.data.totalPending > 0 && <Text className="text-[24rpx] text-red">还差 {card.data.totalPending} 份</Text>}
       </View>
+      {card.data.groups.map((g) => (
+        <View key={g.address} className="mt-[16rpx] flex items-center gap-[16rpx]">
+          <Text className="flex-1 text-[26rpx] font-semibold">{g.address}</Text>
+          <Text className="text-[24rpx] text-muted">{g.count} 份</Text>
+          <Text className="text-[24rpx] text-muted">{g.done}/{g.total}</Text>
+        </View>
+      ))}
     </View>
   );
 }
