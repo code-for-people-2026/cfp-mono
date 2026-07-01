@@ -52,3 +52,7 @@ export function deliveryUrl(date?: string, occasion?: string): string {
 export function chatUrl(): string {
   return `${beBaseUrl()}/chat`;
 }
+
+export function confirmCustomersUrl(): string {
+  return `${beBaseUrl()}/chat/confirm-customers`;
+}

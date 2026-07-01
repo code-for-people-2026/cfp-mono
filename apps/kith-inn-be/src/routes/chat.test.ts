@@ -2,6 +2,7 @@ import type { ChatMessage } from "@cfp/kith-inn-shared";
 import { describe, expect, it, vi } from "vitest";
 import { issueToken } from "../lib/auth/jwt";
 import type { AgentCms } from "../agent/services";
+import { clearPending, getPending, setPending } from "../agent/pendingState";
 import { runAgent } from "../agent/run";
 import { chatRoutes, type ChatRoutesDeps } from "./chat";
 
@@ -46,7 +47,7 @@ describe("POST /chat", () => {
     listChatMessages: over.listChatMessages ?? vi.fn(async () => sampleHistory()),
     createChatMessage:
       over.createChatMessage ?? vi.fn(async () => ({ id: 9, content: "x", role: "assistant", createdAt: "", seller: 7 }) as ChatMessage),
-    runAgent: over.runAgent ?? vi.fn<typeof runAgent>(async () => "已记草稿"),
+    runAgent: over.runAgent ?? vi.fn<typeof runAgent>(async () => ({ reply: "已记草稿" })),
   });
 
   it("runs the agent over reversed history and persists user+assistant messages", async () => {
@@ -108,5 +109,63 @@ describe("GET /chat", () => {
   it("502 when the history load fails", async () => {
     const app = chatRoutes(SECRET, { cms: mockCms(), listChatMessages: vi.fn(async () => { throw new Error("cms down"); }) });
     expect((await app.request("/", { headers: await auth() })).status).toBe(502);
+  });
+});
+
+describe("POST /chat/confirm-customers", () => {
+  // operatorId 1 comes from issueToken in `token()` above.
+  const OP = 1;
+  const cmsWithCombo = (): AgentCms =>
+    ({
+      ...mockCms(),
+      findOfferings: vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "套餐", priceCents: 3000 }] as never),
+      createCustomer: vi.fn(async (_jwt: string, input: { displayName: string }) => ({ id: 55, displayName: input.displayName, kind: "regular" }) as never),
+      createOrderDraft: vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
+    }) as AgentCms;
+
+  it("reads pending → creates customers + orders deterministically → clears pending (#97)", async () => {
+    setPending(OP, [{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    // Best-effort chat write (mirrors POST /chat): a throw here must NOT fail the turn.
+    const createChatMessage = vi.fn(async () => { throw new Error("cms down"); });
+    const app = chatRoutes(SECRET, { cms: cmsWithCombo(), createChatMessage });
+    const res = await app.request("/confirm-customers", { method: "POST", headers: await auth() });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { created: unknown[] }).created).toEqual([{ name: "大龙猫", orderId: 90 }]);
+    expect(getPending(OP)).toEqual([]); // cleared after consuming
+    expect(createChatMessage).toHaveBeenCalledTimes(1); // best-effort "已建" narration attempted
+    clearPending(OP);
+  });
+
+  it("404 when nothing is pending", async () => {
+    clearPending(OP);
+    const app = chatRoutes(SECRET, { cms: mockCms() });
+    expect((await app.request("/confirm-customers", { method: "POST", headers: await auth() })).status).toBe(404);
+  });
+
+  it("401 without a token", async () => {
+    const app = chatRoutes(SECRET, { cms: mockCms() });
+    expect((await app.request("/confirm-customers", { method: "POST" })).status).toBe(401);
+  });
+
+  it("still 200 + clears pending when nothing could be created (no combo)", async () => {
+    setPending(OP, [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" }]);
+    const cms = { ...mockCms(), findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) } as AgentCms;
+    const createChatMessage = vi.fn(async () => ({ id: 9, content: "x", role: "assistant", createdAt: "", seller: 7 }) as ChatMessage);
+    const app = chatRoutes(SECRET, { cms, createChatMessage });
+    const res = await app.request("/confirm-customers", { method: "POST", headers: await auth() });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { created: unknown[] }).created).toEqual([]);
+    expect(createChatMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ content: "没有建成，再看看？" }));
+    expect(getPending(OP)).toEqual([]);
+    clearPending(OP);
+  });
+
+  it("502 when customer creation blows up before the per-item guard", async () => {
+    setPending(OP, [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" }]);
+    // A synchronous throw inside findOfferings escapes its `.catch(() => [])`.
+    const cms = { ...mockCms(), findOfferings: vi.fn(() => { throw new Error("net"); }) } as AgentCms;
+    const app = chatRoutes(SECRET, { cms });
+    expect((await app.request("/confirm-customers", { method: "POST", headers: await auth() })).status).toBe(502);
+    clearPending(OP);
   });
 });

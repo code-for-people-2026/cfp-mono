@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CmsHttpError } from "../lib/cms/orders";
 import { createCmsAgentServices, todayShanghai, type AgentCms } from "./services";
+import { clearPending, getPending, setPending } from "./pendingState";
 
 const NOW = () => new Date("2026-06-29T12:00:00+08:00");
 
@@ -19,7 +20,8 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   listOrders: over.listOrders ?? vi.fn(async () => [] as never),
 });
 
-const svc = (cms: AgentCms) => createCmsAgentServices({ jwt: "jwt", cms, now: NOW });
+const OP = 1;
+const svc = (cms: AgentCms) => createCmsAgentServices({ jwt: "jwt", cms, operatorId: OP, now: NOW });
 
 describe("todayShanghai", () => {
   it("formats the Shanghai date YYYY-MM-DD off the injected clock", () => {
@@ -79,6 +81,21 @@ describe("recordOrders", () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => { throw new Error("net"); }) });
     const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
     expect(r.failed).toHaveLength(1);
+  });
+
+  it("stores new customers into pendingState for deterministic confirm (#97)", async () => {
+    clearPending(OP);
+    const cms = baseCms({ listCustomers: vi.fn(async () => []) });
+    await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    clearPending(OP);
+  });
+
+  it("clears pendingState when there are no new customers (all known)", async () => {
+    setPending(OP, [{ customerName: "陈旧", quantity: 1, occasion: "lunch" }]);
+    const cms = baseCms();
+    await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    expect(getPending(OP)).toEqual([]);
   });
 });
 

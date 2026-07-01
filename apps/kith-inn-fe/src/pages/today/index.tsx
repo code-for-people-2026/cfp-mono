@@ -1,12 +1,14 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { Input, Text, View } from "@tarojs/components";
+import type { CardPayload } from "@cfp/kith-inn-shared";
+import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { chatUrl } from "@/services/api";
+import { chatUrl, confirmCustomersUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
-type Msg = { id?: string | number; role: "user" | "assistant"; content: string };
+type Msg = { id?: string | number; role: "user" | "assistant"; content: string; card?: CardPayload };
 
 const taroStorage: Storage = {
   get: (k) => Taro.getStorageSync(k) || null,
@@ -19,6 +21,9 @@ export default function Today() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  // Indexes of customer-confirm cards already acted on (one-shot button).
+  const [confirmed, setConfirmed] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState(false);
   // True once a send starts — the initial history load must not clobber an
   // optimistic turn that raced ahead of it (Codex).
   const sentRef = useRef(false);
@@ -71,11 +76,40 @@ export default function Today() {
           Taro.showToast({ title: "发送失败", icon: "error" });
           return;
         }
-        const reply = (res.data as { reply?: string }).reply ?? "（没听清，能再说一遍吗？）";
-        setMsgs((m) => [...m, { role: "assistant", content: reply }]);
+        const data = res.data as { reply?: string; card?: CardPayload };
+        const reply = data.reply ?? "（没听清，能再说一遍吗？）";
+        setMsgs((m) => [...m, { role: "assistant", content: reply, card: data.card }]);
       })
       .catch(() => Taro.showToast({ title: "发送失败", icon: "error" }))
       .finally(() => setSending(false));
+  };
+
+  /** 「都建」 on a customer-confirm card → POST /chat/confirm-customers (deterministic). */
+  const confirmCustomers = (i: number) => {
+    if (confirming) return;
+    const token = tokens.getToken();
+    if (!token) {
+      Taro.redirectTo({ url: "/pages/login/index" });
+      return;
+    }
+    setConfirming(true);
+    Taro.request({ url: confirmCustomersUrl(), method: "POST", header: { Authorization: `Bearer ${token}`, "content-type": "application/json" } })
+      .then((res) => {
+        if (res.statusCode === 401) {
+          tokens.clearToken();
+          Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode >= 400) {
+          Taro.showToast({ title: "操作失败", icon: "error" });
+          return;
+        }
+        const n = ((res.data as { created?: unknown[] }).created ?? []).length;
+        setConfirmed((s) => new Set(s).add(i));
+        setMsgs((m) => [...m, { role: "assistant", content: n > 0 ? `已建 ${n} 单。` : "没有建成，再看看？" }]);
+      })
+      .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }))
+      .finally(() => setConfirming(false));
   };
 
   return (
@@ -103,6 +137,9 @@ export default function Today() {
                   }`}
                 >
                   <Text>{m.content}</Text>
+                  {!me && m.card && (
+                    <ChatCard card={m.card} confirmed={confirmed.has(i)} confirming={confirming} onConfirm={() => confirmCustomers(i)} />
+                  )}
                 </View>
               </View>
             );

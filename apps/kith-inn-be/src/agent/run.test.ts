@@ -35,13 +35,42 @@ describe("runAgent", () => {
     expect(s.recordOrders).toHaveBeenCalledWith([
       { customerName: "王燕萍", address: undefined, quantity: 2, occasion: "lunch", date: undefined },
     ]);
-    expect(out).toBe("记好了，王燕萍午餐2份。");
+    expect(out).toEqual({ reply: "记好了，王燕萍午餐2份。" });
+  });
+
+  it("passes a customer-confirm card through when record_orders meets new customers (#97/#98)", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" }] } }] },
+      { content: "新顾客大龙猫，点下面确认哦。", toolCalls: [] },
+    ]);
+    const s = mockServices({
+      recordOrders: vi.fn(async () => ({
+        recorded: [],
+        needsConfirmation: [{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" as const }],
+        failed: [],
+      })),
+    });
+    const out = await runAgent({ userText: "接龙", history: [], services: s, deps: { chat } });
+    expect(out.reply).toBe("新顾客大龙猫，点下面确认哦。");
+    expect(out.card).toEqual({
+      type: "customer-confirm",
+      data: { items: [{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }] },
+    });
+  });
+
+  it("returns no card when record_orders finds only known customers", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }] } }] },
+      { content: "记好了。", toolCalls: [] },
+    ]);
+    const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
+    expect(out.card).toBeUndefined();
   });
 
   it("returns the model's text directly when no tool is called (plain question / scope-out)", async () => {
     const chat = scriptedChat([{ content: "这个我帮不上，经营上的事尽管吩咐。", toolCalls: [] }]);
     const out = await runAgent({ userText: "明天天气怎么样", history: [], services: mockServices(), deps: { chat } });
-    expect(out).toBe("这个我帮不上，经营上的事尽管吩咐。");
+    expect(out).toEqual({ reply: "这个我帮不上，经营上的事尽管吩咐。" });
   });
 
   it("falls back to a today-summary after maxSteps exhaustion (always tool-calling)", async () => {
@@ -51,7 +80,7 @@ describe("runAgent", () => {
     }));
     const s = mockServices();
     const out = await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
-    expect(out).toContain("没完全处理过来");
+    expect(out.reply).toContain("没完全处理过来");
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 
@@ -78,14 +107,14 @@ describe("runAgent", () => {
       { content: "好了。", toolCalls: [] },
     ]);
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
-    expect(out).toBe("好了。"); // loop continues after the tool-error message
+    expect(out).toEqual({ reply: "好了。" }); // loop continues after the tool-error message
   });
 
   it("falls back to today-summary when the LLM call itself throws (outage, Codex)", async () => {
     const chat = vi.fn(async () => { throw new Error("DeepSeek down"); });
     const s = mockServices();
     const out = await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
-    expect(out).toContain("没完全处理过来");
+    expect(out.reply).toContain("没完全处理过来");
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 });
