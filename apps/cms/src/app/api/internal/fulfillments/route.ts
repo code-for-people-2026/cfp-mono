@@ -10,8 +10,6 @@ type FulfillmentInput = {
   occasion?: string;
   mode: string;
   status: string;
-  addrBuilding?: string;
-  addrUnit?: string;
   assignee?: string;
   timeWindow?: string;
 };
@@ -19,7 +17,8 @@ type FulfillmentInput = {
 /**
  * `GET /api/internal/fulfillments[?date=&occasion=]` — the seller's fulfillments
  * (送餐 tab 的数据源：分拣 + 缺口对账都在 be 派生里算)。seller-scoped; optional
- * date/occasion filters; depth:1 populates `orderItem`→order (for addrBuilding 已反范式).
+ * date/occasion filters; depth:2 populates orderItem→order so be can read each
+ * fulfillment's order.address (the delivery address lives on the order, not here).
  */
 export async function GET(req: Request) {
   const scope = await operatorScope(req);
@@ -29,7 +28,7 @@ export async function GET(req: Request) {
   const clauses: Where[] = [{ seller: { equals: sellerId } }];
   if (params.has("date")) clauses.push({ serviceDate: { equals: params.get("date") } });
   if (params.has("occasion")) clauses.push({ occasion: { equals: params.get("occasion") } });
-  const res = await payload.find({ collection: "fulfillments", where: { and: clauses }, depth: 0, limit: 0, overrideAccess: true });
+  const res = await payload.find({ collection: "fulfillments", where: { and: clauses }, depth: 2, limit: 0, overrideAccess: true });
   return NextResponse.json({ docs: res.docs });
 }
 

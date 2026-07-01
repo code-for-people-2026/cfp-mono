@@ -5,40 +5,54 @@ import type { Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
  * 后内存计算）。源头防错（分拣装篮）+ 收尾防漏（缺口对账）+ 最近一餐聚焦 + 今天还差什么。
  */
 
-// ── 按楼栋分拣（源头防错）──────────────────────────────────────────────
+// ── 按地址分拣（源头防错）──────────────────────────────────────────────
 
-export type BuildingGroup = { building: string; count: number; fulfillments: Fulfillment[] };
-
-/** 按楼栋汇总（如 3A×2、26B×1），照这张分拣装篮——在打包环节就把错误挡住。按份数降序。 */
-export function packingSort(fulfillments: Fulfillment[]): BuildingGroup[] {
-  const byBuilding = new Map<string, Fulfillment[]>();
-  for (const f of fulfillments) {
-    const b = f.addrBuilding?.trim() || "（无楼栋）";
-    const arr = byBuilding.get(b) ?? [];
-    arr.push(f);
-    byBuilding.set(b, arr);
+/**
+ * Resolve a fulfillment's delivery address — the address lives on the ORDER
+ * (frozen snapshot), not on the fulfillment. The cms fulfillments route
+ * populates `orderItem → order` (depth 2) so this reads `f.orderItem.order.address`.
+ */
+function orderAddress(f: Fulfillment): string {
+  const oi = f.orderItem;
+  if (oi && typeof oi === "object") {
+    const o = oi.order;
+    if (o && typeof o === "object" && typeof o.address === "string") return o.address.trim();
   }
-  return [...byBuilding.entries()]
-    .map(([building, fs]) => ({ building, count: fs.length, fulfillments: fs }))
-    .sort((a, b) => b.count - a.count || a.building.localeCompare(b.building));
+  return "";
+}
+
+export type AddressGroup = { address: string; count: number; fulfillments: Fulfillment[] };
+
+/** 按地址汇总（如 3e23a×2、26B×1），照这张分拣装篮——在打包环节就把错误挡住。按份数降序。 */
+export function packingSort(fulfillments: Fulfillment[]): AddressGroup[] {
+  const byAddress = new Map<string, Fulfillment[]>();
+  for (const f of fulfillments) {
+    const a = orderAddress(f) || "（无地址）";
+    const arr = byAddress.get(a) ?? [];
+    arr.push(f);
+    byAddress.set(a, arr);
+  }
+  return [...byAddress.entries()]
+    .map(([address, fs]) => ({ address, count: fs.length, fulfillments: fs }))
+    .sort((a, b) => b.count - a.count || a.address.localeCompare(b.address));
 }
 
 // ── 缺口对账（收尾防漏）────────────────────────────────────────────────
 
-export type BuildingGap = { building: string; pending: number };
+export type AddressGap = { address: string; pending: number };
 
 /** 缺口：status∈{pending,handed-off}（未送达且未取消——self/onsite 无行、canceled 终态不计）。
- *  按楼栋列，提示"这趟 N 栋，26B 还没送"。 */
-export function gapReport(fulfillments: Fulfillment[]): { gaps: BuildingGap[]; totalPending: number } {
+ *  按地址列，提示"这趟 N 个地址，26B 还没送"。 */
+export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; totalPending: number } {
   const open = fulfillments.filter((f) => f.status === "pending" || f.status === "handed-off");
-  const byBuilding = new Map<string, number>();
+  const byAddress = new Map<string, number>();
   for (const f of open) {
-    const b = f.addrBuilding?.trim() || "（无楼栋）";
-    byBuilding.set(b, (byBuilding.get(b) ?? 0) + 1);
+    const a = orderAddress(f) || "（无地址）";
+    byAddress.set(a, (byAddress.get(a) ?? 0) + 1);
   }
-  const gaps = [...byBuilding.entries()]
-    .map(([building, pending]) => ({ building, pending }))
-    .sort((a, b) => b.pending - a.pending || a.building.localeCompare(b.building));
+  const gaps = [...byAddress.entries()]
+    .map(([address, pending]) => ({ address, pending }))
+    .sort((a, b) => b.pending - a.pending || a.address.localeCompare(b.address));
   return { gaps, totalPending: open.length };
 }
 

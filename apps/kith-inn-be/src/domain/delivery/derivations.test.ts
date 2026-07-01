@@ -2,26 +2,30 @@ import type { Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 import { describe, expect, it } from "vitest";
 import { gapReport, nearestMeal, packingSort, todayGaps } from "./derivations";
 
+// Address now lives on the ORDER (frozen snapshot); cms populates orderItem→order.
+const at = (address?: string): Fulfillment["orderItem"] =>
+  ({ id: 1, order: { id: 1, address } }) as never;
+
 const f = (over: Partial<Fulfillment> = {}): Fulfillment =>
-  ({ id: 1, orderItem: 1, serviceDate: "2026-06-30", mode: "delivery", status: "pending", seller: 7, ...over }) as Fulfillment;
+  ({ id: 1, orderItem: at("3A"), serviceDate: "2026-06-30", mode: "delivery", status: "pending", seller: 7, ...over }) as Fulfillment;
 
 describe("packingSort", () => {
-  it("groups by building, counts, sorts by count desc then building", () => {
+  it("groups by order address, counts, sorts by count desc then address", () => {
     const fs = [
-      f({ id: 1, addrBuilding: "3A" }),
-      f({ id: 2, addrBuilding: "3A" }),
-      f({ id: 3, addrBuilding: "26B" }),
-      f({ id: 4, addrBuilding: "1D" }),
-      f({ id: 5, addrBuilding: "1D" }),
-      f({ id: 6, addrBuilding: "1D" }),
+      f({ id: 1, orderItem: at("3A") }),
+      f({ id: 2, orderItem: at("3A") }),
+      f({ id: 3, orderItem: at("26B") }),
+      f({ id: 4, orderItem: at("1D") }),
+      f({ id: 5, orderItem: at("1D") }),
+      f({ id: 6, orderItem: at("1D") }),
     ];
     const groups = packingSort(fs);
-    expect(groups.map((g) => `${g.building}×${g.count}`)).toEqual(["1D×3", "3A×2", "26B×1"]);
+    expect(groups.map((g) => `${g.address}×${g.count}`)).toEqual(["1D×3", "3A×2", "26B×1"]);
   });
 
-  it("treats missing building as （无楼栋）", () => {
-    const groups = packingSort([f({ id: 1 }), f({ id: 2, addrBuilding: "  " })]);
-    expect(groups[0]!.building).toBe("（无楼栋）");
+  it("treats missing/blank order address as （无地址）", () => {
+    const groups = packingSort([f({ id: 1, orderItem: at() }), f({ id: 2, orderItem: at("  ") })]);
+    expect(groups[0]!.address).toBe("（无地址）");
     expect(groups[0]!.count).toBe(2);
   });
 });
@@ -29,15 +33,15 @@ describe("packingSort", () => {
 describe("gapReport", () => {
   it("counts pending + handed-off only (done/canceled excluded)", () => {
     const fs = [
-      f({ id: 1, addrBuilding: "3A", status: "pending" }),
-      f({ id: 2, addrBuilding: "3A", status: "done" }),
-      f({ id: 3, addrBuilding: "26B", status: "handed-off" }),
-      f({ id: 4, addrBuilding: "1D", status: "canceled" }),
+      f({ id: 1, orderItem: at("3A"), status: "pending" }),
+      f({ id: 2, orderItem: at("3A"), status: "done" }),
+      f({ id: 3, orderItem: at("26B"), status: "handed-off" }),
+      f({ id: 4, orderItem: at("1D"), status: "canceled" }),
     ];
     const r = gapReport(fs);
     expect(r.totalPending).toBe(2); // 3A pending + 26B handed-off
-    expect(r.gaps).toContainEqual({ building: "3A", pending: 1 });
-    expect(r.gaps).toContainEqual({ building: "26B", pending: 1 });
+    expect(r.gaps).toContainEqual({ address: "3A", pending: 1 });
+    expect(r.gaps).toContainEqual({ address: "26B", pending: 1 });
   });
 
   it("returns empty when all delivered/canceled", () => {

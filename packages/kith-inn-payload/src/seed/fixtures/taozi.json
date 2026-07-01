@@ -22,19 +22,5 @@
     { "name": "红烧肉", "mainIngredient": "猪肉", "category": "meat", "tags": ["费工"] },
     { "name": "醋溜土豆丝", "mainIngredient": "土豆", "category": "veg", "tags": ["清淡"] }
   ],
-  "combo": { "name": "4菜1汤套餐", "priceCents": 3000 },
-  "customers": [
-    { "displayName": "王燕萍", "building": "1D", "unit": "1201" },
-    { "displayName": "lily", "building": "28D", "unit": "803" },
-    { "displayName": "苏月兰", "building": "26B", "unit": "502" },
-    { "displayName": "小柠檬", "building": "1D", "unit": "604" },
-    { "displayName": "李湘", "building": "28D", "unit": "1502" },
-    { "displayName": "大龙猫", "building": "26B", "unit": "301" },
-    { "displayName": "Catherine chen", "building": "1D", "unit": "906" },
-    { "displayName": "coco", "building": "28D", "unit": "401" },
-    { "displayName": "秀", "building": "1D", "unit": "702" },
-    { "displayName": "Luye", "building": "26B", "unit": "1101" },
-    { "displayName": "Sissi-CC", "building": "28D", "unit": "1203" },
-    { "displayName": "桃子自家", "kind": "self" }
-  ]
+  "combo": { "name": "4菜1汤套餐", "priceCents": 3000 }
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applySeed, buildAddressOp, buildComboOp, buildCustomerOps, buildOfferingOps, buildOperatorOp, buildSellerOp } from "./taozi";
+import { applySeed, buildComboOp, buildOfferingOps, buildOperatorOp, buildSellerOp } from "./taozi";
 import type { TaoziFixture } from "./taozi";
 
 const fixture: TaoziFixture = {
@@ -59,37 +59,6 @@ describe("buildOperatorOp", () => {
   });
 });
 
-describe("buildCustomerOps", () => {
-  it("builds one customer op per fixture customer, defaulting kind=regular", () => {
-    const f: TaoziFixture = {
-      seller: { name: "x" },
-      offerings: [],
-      customers: [
-        { displayName: "王燕萍", building: "1D" },
-        { displayName: "桃子自家", kind: "self" },
-      ],
-    };
-    const ops = buildCustomerOps(f, 7);
-    expect(ops).toEqual([
-      { collection: "customers", data: { displayName: "王燕萍", kind: "regular", note: undefined, seller: 7 } },
-      { collection: "customers", data: { displayName: "桃子自家", kind: "self", note: undefined, seller: 7 } },
-    ]);
-  });
-
-  it("returns no ops when the fixture has no customers", () => {
-    expect(buildCustomerOps({ seller: { name: "x" }, offerings: [] }, 7)).toEqual([]);
-  });
-});
-
-describe("buildAddressOp", () => {
-  it("builds a customer_addresses op for the given customer", () => {
-    expect(buildAddressOp(7, 55, { building: "26B", unit: "3F" })).toEqual({
-      collection: "customer_addresses",
-      data: { customer: 55, building: "26B", unit: "3F", seller: 7 },
-    });
-  });
-});
-
 describe("buildComboOp", () => {
   it("builds a combo-meal offering op referencing the component pool", () => {
     const f: TaoziFixture = { seller: { name: "x" }, offerings: [], combo: { name: "4菜1汤套餐", priceCents: 3000 } };
@@ -106,7 +75,6 @@ describe("applySeed", () => {
     create: vi.fn(async ({ data }: { collection: string; data: Record<string, unknown> }) => ({
       id: data.status === "active" ? 1 : 100, // seller gets id 1, offerings 100+
     })),
-    update: vi.fn(async () => ({ id: 100 })),
   });
 
   it("is idempotent — skips when the seller already exists", async () => {
@@ -135,28 +103,23 @@ describe("applySeed", () => {
     expect(payload.create).toHaveBeenCalledTimes(2); // seller + operator
   });
 
-  it("seeds combo + customers + addresses and links defaultAddress", async () => {
+  it("seeds combo referencing the component pool, but NO customers (created at order time)", async () => {
     const payload = makePayload(null);
     const f: TaoziFixture = {
       seller: { name: "桃子测试", defaultPriceCents: 3000 },
       offerings: [{ name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg" }],
       combo: { name: "4菜1汤套餐", priceCents: 3000 },
-      customers: [
-        { displayName: "王燕萍", building: "1D", unit: "1201" },
-        { displayName: "桃子自家", kind: "self" },
-      ],
     };
     const result = await applySeed(payload, f);
     expect(result).toEqual({ seeded: true, sellerId: 1, offeringCount: 1 });
-    // seller + 1 component + 1 combo + operator + 2 customers + 1 address = 7 creates
-    expect(payload.create).toHaveBeenCalledTimes(7);
-    // combo references the captured component id
+    // seller + 1 component + 1 combo + operator = 4 creates (no customers, no addresses)
+    expect(payload.create).toHaveBeenCalledTimes(4);
     const comboCall = payload.create.mock.calls.find(
       (c) => (c[0] as { collection: string }).collection === "offerings" && (c[0].data as { kind?: string }).kind === "combo-meal",
     );
     expect((comboCall![0].data as unknown as { parentOfferings: number[] }).parentOfferings).toEqual([100]);
-    // 王燕萍 (has building) gets her address linked; 桃子自家 (self, no building) does not
-    expect(payload.update).toHaveBeenCalledTimes(1);
-    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({ collection: "customers", id: 100, data: { defaultAddress: 100 } }));
+    // no customer/address collections touched
+    expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customers")).toBe(false);
+    expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customer_addresses")).toBe(false);
   });
 });

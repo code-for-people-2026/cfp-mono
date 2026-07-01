@@ -39,7 +39,7 @@ describe("getSeller", () => {
 describe("listFulfillments", () => {
   it("GETs /api/internal/fulfillments, unwraps {docs}, builds date+occasion query", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch({ docs: [{ id: 1, addrBuilding: "3A" }] });
+    const deps = mockFetch({ docs: [{ id: 1, orderItem: { id: 2, order: { id: 3, address: "3A" } } }] });
     const fs = await listFulfillments("jwt", { date: "2026-06-30", occasion: "dinner" }, deps);
     expect(fs).toHaveLength(1);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/fulfillments?date=2026-06-30&occasion=dinner");

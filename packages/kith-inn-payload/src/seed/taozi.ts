@@ -19,8 +19,6 @@ export type TaoziFixture = {
   }>;
   /** Combo meal 桃子 sells by the 份 (parentOfferings = the whole component pool). */
   combo?: { name: string; priceCents: number };
-  /** Real customers + their default address (building/unit). `kind:"self"` = 桃子自家. */
-  customers?: ReadonlyArray<{ displayName: string; kind?: string; note?: string; building?: string; unit?: string }>;
 };
 
 /** The seeded fixture (桃子) — exported so apps/cms's seed CLI can import it. */
@@ -66,24 +64,6 @@ export function buildOperatorOp(sellerId: string | number): SeedOp {
   };
 }
 
-/** Build customer create-ops (one per fixture customer). `defaultAddress` is
- *  linked inside applySeed after the address row exists (it needs the id). */
-export function buildCustomerOps(f: TaoziFixture, sellerId: string | number): SeedOp[] {
-  return (f.customers ?? []).map((c) => ({
-    collection: "customers",
-    data: { displayName: c.displayName, kind: c.kind ?? "regular", note: c.note, seller: sellerId },
-  }));
-}
-
-/** Build one customer-address create-op for a customer's default address. */
-export function buildAddressOp(
-  sellerId: string | number,
-  customerId: string | number,
-  addr: { building: string; unit?: string },
-): SeedOp {
-  return { collection: "customer_addresses", data: { customer: customerId, building: addr.building, unit: addr.unit, seller: sellerId } };
-}
-
 /** Build the combo offering op — kind=combo-meal, parentOfferings = the component pool. */
 export function buildComboOp(f: TaoziFixture, sellerId: string | number, componentIds: Array<string | number>): SeedOp {
   return {
@@ -112,12 +92,6 @@ type SeedPayload = {
     data: Record<string, unknown>;
     overrideAccess?: boolean;
   }) => Promise<{ id: string | number }>;
-  update: (args: {
-    collection: string;
-    id: string | number;
-    data: Record<string, unknown>;
-    overrideAccess?: boolean;
-  }) => Promise<{ id: string | number }>;
 };
 
 export type SeedResult = {
@@ -128,10 +102,11 @@ export type SeedResult = {
 
 /**
  * Idempotent seed (PRD §9 M0): if a seller with this name already exists, skip
- * (already seeded). Otherwise create 桃子's seller + her offering pool.
+ * (already seeded). Otherwise create 桃子's seller + her offering pool + operator.
+ * Customers are NOT seeded — 桃子 creates them by ordering (接龙): existing matches
+ * by name, new ones after she confirms (see be agent recordOrders/createCustomers).
  * `overrideAccess` throughout — seed is a trusted server-side script, not a
- * tenant request, so it bypasses access control (the seller has no operator
- * session at first-run time).
+ * tenant request, so it bypasses access control.
  */
 export async function applySeed(payload: SeedPayload, f: TaoziFixture): Promise<SeedResult> {
   const existing = await payload.find({
@@ -165,22 +140,5 @@ export async function applySeed(payload: SeedPayload, f: TaoziFixture): Promise<
     data: buildOperatorOp(seller.id).data,
     overrideAccess: true,
   });
-  // Customers + their default address. The address is linked after both rows
-  // exist (it needs the ids) so fulfillments auto-bring the address at confirm
-  // time. 桃子自家 (kind=self, no building) gets no address/self-fulfillment.
-  const customerOps = buildCustomerOps(f, seller.id);
-  const fixtureCustomers = f.customers ?? [];
-  for (let i = 0; i < fixtureCustomers.length; i++) {
-    const c = fixtureCustomers[i]!;
-    const customer = await payload.create({ collection: customerOps[i]!.collection, data: customerOps[i]!.data, overrideAccess: true });
-    if (c.building) {
-      const addr = await payload.create({
-        collection: "customer_addresses",
-        data: buildAddressOp(seller.id, customer.id, { building: c.building, unit: c.unit }).data,
-        overrideAccess: true,
-      });
-      await payload.update({ collection: "customers", id: customer.id, data: { defaultAddress: addr.id }, overrideAccess: true });
-    }
-  }
   return { seeded: true, sellerId: seller.id, offeringCount: ops.length };
 }

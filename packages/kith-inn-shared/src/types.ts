@@ -47,16 +47,6 @@ export type Operator = {
   seller: string | number | Seller;
 };
 
-export type CustomerAddress = {
-  id: string | number;
-  customer: string | number | Customer;
-  /** 楼栋 — the delivery-grouping key (送餐按楼栋成批). */
-  building: string;
-  unit?: string;
-  lastUsedAt?: string;
-  seller: string | number | Seller;
-};
-
 export type Customer = {
   id: string | number;
   /** 接龙里的称呼 — identification key (NOT unique; MVP name-normalize + manual merge). */
@@ -65,7 +55,9 @@ export type Customer = {
   defaultServings?: number;
   defaultOccasion?: Occasion;
   note?: string;
-  defaultAddress?: string | number | CustomerAddress;
+  /** 自由文本送餐地址（如 "3e23a"）——桃子送餐时认得就行，不结构化。下单时若是
+   *  新顾客，凭这个（+姓名）创建；下单（draft-create）时快照进 order.address。 */
+  address?: string;
   seller: string | number | Seller;
 };
 
@@ -125,6 +117,9 @@ export type Order = {
   note?: string;
   /** Read-only derived = Σ(item.quantity × resolved unit price); canceled excluded. */
   totalCents?: number;
+  /** Frozen delivery-address snapshot — copied from customer.address at draft-create,
+   *  like e-commerce (the order never changes address after creation; an edit = new order). */
+  address?: string;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;
   paidAt?: string;
@@ -141,9 +136,6 @@ export type Fulfillment = {
   occasion?: Occasion;
   mode: FulfillmentMode;
   status: FulfillmentStatus;
-  /** Frozen address snapshot. */
-  addrBuilding?: string;
-  addrUnit?: string;
   /** Controlled value ∈ seller.moduleSettings.delivery.deliverers. */
   assignee?: string;
   timeWindow?: string;

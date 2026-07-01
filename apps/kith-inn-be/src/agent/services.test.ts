@@ -14,6 +14,7 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   createFulfillments: over.createFulfillments ?? vi.fn(async () => [] as never),
   setFulfillmentsByOrderItems: over.setFulfillmentsByOrderItems ?? vi.fn(async () => undefined),
   listCustomers: over.listCustomers ?? vi.fn(async () => [{ id: 5, displayName: "王燕萍", kind: "regular" }] as never),
+  createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫", kind: "regular" }) as never),
   listFulfillments: over.listFulfillments ?? vi.fn(async () => [] as never),
   listOrders: over.listOrders ?? vi.fn(async () => [] as never),
 });
@@ -31,11 +32,16 @@ describe("todayShanghai", () => {
   });
 });
 
-describe("recordOrder", () => {
-  it("resolves name→customerId, picks the combo, records a draft", async () => {
+describe("recordOrders", () => {
+  it("records drafts for known customers, collects unknown into needsConfirmation", async () => {
     const cms = baseCms();
-    const r = await svc(cms).recordOrder({ customerName: "王燕萍", quantity: 2, occasion: "lunch" });
-    expect(r).toEqual({ ok: true, orderId: 90 });
+    const r = await svc(cms).recordOrders([
+      { customerName: "王燕萍", address: "1D-1201", quantity: 2, occasion: "lunch" },
+      { customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
+    ]);
+    expect(r.recorded).toEqual([{ name: "王燕萍", orderId: 90 }]);
+    expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" }]);
+    expect(r.failed).toEqual([]);
     expect(cms.createOrderDraft).toHaveBeenCalledWith(
       "jwt",
       expect.objectContaining({
@@ -47,22 +53,73 @@ describe("recordOrder", () => {
     );
   });
 
-  it("errors when the customer name is unknown", async () => {
+  it("does NOT create a customer or record for unknown names", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
-    const r = await svc(cms).recordOrder({ customerName: "陌生人", quantity: 1, occasion: "dinner" });
-    expect(r).toEqual({ ok: false, error: expect.stringMatching(/没找到顾客/) });
+    const r = await svc(cms).recordOrders([{ customerName: "陌生人", quantity: 1, occasion: "dinner" }]);
+    expect(r.recorded).toEqual([]);
+    expect(r.needsConfirmation).toHaveLength(1);
+    expect(cms.createCustomer).not.toHaveBeenCalled();
+    expect(cms.createOrderDraft).not.toHaveBeenCalled();
   });
 
-  it("errors when the pool has no combo offering", async () => {
+  it("fails an item when the pool has no combo offering", async () => {
     const cms = baseCms({ findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) });
-    const r = await svc(cms).recordOrder({ customerName: "王燕萍", quantity: 1, occasion: "lunch" });
-    expect(r).toEqual({ ok: false, error: expect.stringMatching(/没有套餐/) });
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    expect(r.recorded).toEqual([]);
+    expect(r.failed).toEqual([{ customerName: "王燕萍", error: "没有套餐商品，记不了单" }]);
   });
 
-  it("returns a generic error if the draft write throws", async () => {
+  it("collects a per-item failure when the draft write throws (batch continues)", async () => {
     const cms = baseCms({ createOrderDraft: vi.fn(async () => { throw new Error("net"); }) });
-    const r = await svc(cms).recordOrder({ customerName: "王燕萍", quantity: 1, occasion: "lunch" });
-    expect(r).toEqual({ ok: false, error: "记单失败" });
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    expect(r.failed).toEqual([{ customerName: "王燕萍", error: "记单失败" }]);
+  });
+
+  it("fails every item when the cms read throws", async () => {
+    const cms = baseCms({ listCustomers: vi.fn(async () => { throw new Error("net"); }) });
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    expect(r.failed).toHaveLength(1);
+  });
+});
+
+describe("createCustomersAndOrders", () => {
+  it("creates each customer then records a draft, returns created", async () => {
+    const cms = baseCms({
+      createCustomer: vi.fn(async (_jwt, input) => ({ id: 55, displayName: input.displayName, kind: "regular" }) as never),
+    });
+    const r = await svc(cms).createCustomersAndOrders([
+      { displayName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
+    ]);
+    expect(r.created).toEqual([{ name: "大龙猫", orderId: 90 }]);
+    expect(cms.createCustomer).toHaveBeenCalledWith("jwt", { displayName: "大龙猫", address: "26B-301" });
+    expect(cms.createOrderDraft).toHaveBeenCalledWith(
+      "jwt",
+      expect.objectContaining({ customer: 55, source: "chat-paste", items: [expect.objectContaining({ quantity: 1, mealOccasion: "dinner" })] }),
+    );
+  });
+
+  it("collects per-item failures without aborting the batch", async () => {
+    let i = 0;
+    const cms = baseCms({
+      createCustomer: vi.fn(async () => {
+        i++;
+        if (i === 1) throw new Error("net");
+        return { id: 56, displayName: "x", kind: "regular" } as never;
+      }),
+    });
+    const r = await svc(cms).createCustomersAndOrders([
+      { displayName: "坏", quantity: 1, occasion: "lunch" },
+      { displayName: "好", quantity: 1, occasion: "lunch" },
+    ]);
+    expect(r.created).toHaveLength(1);
+    expect(r.failed).toEqual([{ displayName: "坏", error: "建顾客或记单失败" }]);
+  });
+
+  it("fails when the pool has no combo", async () => {
+    const cms = baseCms({ findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) });
+    const r = await svc(cms).createCustomersAndOrders([{ displayName: "大龙猫", quantity: 1, occasion: "lunch" }]);
+    expect(r.created).toEqual([]);
+    expect(r.failed).toEqual([{ displayName: "大龙猫", error: "没有套餐商品，记不了单" }]);
   });
 });
 
@@ -116,33 +173,35 @@ describe("markPaid", () => {
 });
 
 describe("markDelivered", () => {
+  // Address lives on the order now (cms populates orderItem→order).
+  const at = (orderItemId: number, address: string) => ({ id: orderItemId, order: { id: 1, address } });
   const fs = [
-    { orderItem: 201, addrBuilding: "26B", status: "pending" },
-    { orderItem: 202, addrBuilding: "26B", addrUnit: "3F", status: "pending" },
-    { orderItem: 203, addrBuilding: "26B", status: "canceled" },
+    { id: 11, orderItem: at(201, "26B-301"), status: "pending" },
+    { id: 12, orderItem: at(202, "26B-502"), status: "pending" },
+    { id: 13, orderItem: at(203, "26B-301"), status: "canceled" },
   ];
 
-  it("marks a whole building (skips canceled)", async () => {
+  it("marks every fulfillment whose order.address includes the address (skips canceled)", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    const r = await svc(cms).markDelivered({ building: "26B" });
+    const r = await svc(cms).markDelivered({ address: "26B" });
     expect(r).toEqual({ ok: true, count: 2 });
     expect(cms.setFulfillmentsByOrderItems).toHaveBeenCalledWith("jwt", [201, 202], { status: "done" });
   });
 
-  it("marks a single door when unit is given", async () => {
+  it("narrows to a single door when the address is more specific", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    expect(await svc(cms).markDelivered({ building: "26B", unit: "3F" })).toEqual({ ok: true, count: 1 });
+    expect(await svc(cms).markDelivered({ address: "26B-301" })).toEqual({ ok: true, count: 1 });
   });
 
   it("is a no-op (count 0, no write) when nothing matches", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    expect(await svc(cms).markDelivered({ building: "99" })).toEqual({ ok: true, count: 0 });
+    expect(await svc(cms).markDelivered({ address: "99" })).toEqual({ ok: true, count: 0 });
     expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
   });
 
   it("returns a generic error on failure", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
-    expect(await svc(cms).markDelivered({ building: "26B" })).toEqual({ ok: false, error: "标记失败" });
+    expect(await svc(cms).markDelivered({ address: "26B" })).toEqual({ ok: false, error: "标记失败" });
   });
 });
 
@@ -156,9 +215,9 @@ describe("getTodaySummary", () => {
         { status: "canceled", customer: { displayName: "作废" }, paymentStatus: "unpaid" },
       ] as never),
       listFulfillments: vi.fn(async () => [
-        { status: "pending", addrBuilding: "26B" },
-        { status: "done", addrBuilding: "26B" },
-        { status: "handed-off", addrBuilding: "1D" },
+        { status: "pending" },
+        { status: "done" },
+        { status: "handed-off" },
       ] as never),
     });
     const t = await svc(cms).getTodaySummary();

@@ -8,11 +8,20 @@ import type { ToolDef } from "../lib/llm/chatWithTools";
 
 /** The deterministic operations the agent's tools drive (DI — mock in tests). */
 export type AgentServices = {
-  recordOrder(input: { customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }): Promise<{ ok: true; orderId: string | number } | { ok: false; error: string }>;
+  recordOrders(
+    items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
+  ): Promise<{
+    recorded: Array<{ name: string; orderId: string | number }>;
+    needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner" }>;
+    failed: Array<{ customerName: string; error: string }>;
+  }>;
+  createCustomersAndOrders(
+    items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
+  ): Promise<{ created: Array<{ name: string; orderId: string | number }>; failed: Array<{ displayName: string; error: string }> }>;
   confirmOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   cancelOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   markPaid(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
-  markDelivered(input: { building: string; unit?: string }): Promise<{ ok: true; count: number } | { ok: false; error: string }>;
+  markDelivered(input: { address: string }): Promise<{ ok: true; count: number } | { ok: false; error: string }>;
   getTodaySummary(): Promise<{ unconfirmedOrders: number; pendingDeliveries: number; unpaidOrders: number; recentOrders: string }>;
 };
 
@@ -23,30 +32,99 @@ export type AgentTool = {
 
 const occasionZh = (o: unknown) => (o === "lunch" ? "午餐" : o === "dinner" ? "晚餐" : String(o));
 
+const parseOccasion = (o: unknown): "lunch" | "dinner" => (o === "dinner" ? "dinner" : "lunch");
+
+const parseOrderItems = (raw: unknown): Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> => {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((it) => ({
+    customerName: String((it as { customerName?: unknown })?.customerName ?? ""),
+    address: typeof (it as { address?: unknown })?.address === "string" ? String((it as { address?: unknown }).address) : undefined,
+    quantity: Number((it as { quantity?: unknown })?.quantity ?? 0),
+    occasion: parseOccasion((it as { occasion?: unknown })?.occasion),
+    date: typeof (it as { date?: unknown })?.date === "string" ? String((it as { date?: unknown }).date) : undefined,
+  }));
+};
+
 export const AGENT_TOOLS: AgentTool[] = [
   {
     def: {
       type: "function",
       function: {
-        name: "record_order",
-        description: "记一个订单（顾客名+份数+餐次）。用于私聊单/口述加单。落为草稿，需确认才进台账。",
+        name: "record_orders",
+        description: "批量记单（接龙）：每条含 顾客名+地址+份数+餐次。老顾客落草稿；新顾客进 needsConfirmation 等桃子确认，绝不擅自建。",
         parameters: {
           type: "object",
-          properties: { customerName: { type: "string" }, quantity: { type: "integer" }, occasion: { type: "string", enum: ["lunch", "dinner"] }, date: { type: "string", description: "用餐日 YYYY-MM-DD，默认今天" } },
-          required: ["customerName", "quantity", "occasion"],
+          properties: {
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  customerName: { type: "string" },
+                  address: { type: "string", description: "送餐地址（自由文本，如 3e23a）" },
+                  quantity: { type: "integer" },
+                  occasion: { type: "string", enum: ["lunch", "dinner"] },
+                  date: { type: "string", description: "用餐日 YYYY-MM-DD，默认今天" },
+                },
+                required: ["customerName", "quantity", "occasion"],
+              },
+            },
+          },
+          required: ["items"],
         },
       },
     },
     execute: async (s, args) => {
-      const r = await s.recordOrder({
-        customerName: String(args.customerName ?? ""),
-        quantity: Number(args.quantity),
-        occasion: (args.occasion === "dinner" ? "dinner" : "lunch"),
-        date: typeof args.date === "string" ? args.date : undefined,
-      });
-      return r.ok
-        ? `已记草稿订单 #${r.orderId}：${args.customerName} ${occasionZh(args.occasion)} ${args.quantity}份。需确认才进入台账/采购/送餐。`
-        : `记单失败：${r.error}`;
+      const items = parseOrderItems(args.items);
+      const r = await s.recordOrders(items);
+      const parts: string[] = [];
+      if (r.recorded.length > 0) parts.push(`已记草稿：${r.recorded.map((x) => `${x.name} #${x.orderId}`).join("、")}`);
+      if (r.needsConfirmation.length > 0) {
+        parts.push(
+          `新顾客待确认：${r.needsConfirmation
+            .map((x) => `${x.customerName}(${x.address ?? "地址？"})${x.quantity}份${occasionZh(x.occasion)}`)
+            .join("、")}——都建并下单吗？`,
+        );
+      }
+      if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}(${x.error})`).join("、")}`);
+      return parts.join("；") || "没有可记的单。";
+    },
+  },
+  {
+    def: {
+      type: "function",
+      function: {
+        name: "create_customers_and_orders",
+        description: "桃子确认新顾客后调用：建顾客并落草稿。每条含 名字+地址+份数+餐次。",
+        parameters: {
+          type: "object",
+          properties: {
+            items: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  displayName: { type: "string" },
+                  address: { type: "string", description: "送餐地址（自由文本）" },
+                  quantity: { type: "integer" },
+                  occasion: { type: "string", enum: ["lunch", "dinner"] },
+                  date: { type: "string", description: "用餐日 YYYY-MM-DD，默认今天" },
+                },
+                required: ["displayName", "quantity", "occasion"],
+              },
+            },
+          },
+          required: ["items"],
+        },
+      },
+    },
+    execute: async (s, args) => {
+      const items = parseOrderItems(args.items).map((it) => ({ displayName: it.customerName, ...it }));
+      const r = await s.createCustomersAndOrders(items);
+      const parts: string[] = [];
+      if (r.created.length > 0) parts.push(`已建顾客并记单：${r.created.map((x) => `${x.name} #${x.orderId}`).join("、")}`);
+      if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.displayName}(${x.error})`).join("、")}`);
+      return parts.join("；") || "没有要建的顾客。";
     },
   },
   {
@@ -71,10 +149,11 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
   },
   {
-    def: { type: "function", function: { name: "mark_delivered", description: "标记某楼栋（可选房号）已送达——整栋或单门牌都行（手里忙就报楼栋）。", parameters: { type: "object", properties: { building: { type: "string" }, unit: { type: "string" } }, required: ["building"] } } },
+    def: { type: "function", function: { name: "mark_delivered", description: "标记某个地址已送达（按地址片段匹配，如「26B」匹配所有含 26B 的）。", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
     execute: async (s, args) => {
-      const r = await s.markDelivered({ building: String(args.building ?? ""), unit: typeof args.unit === "string" ? args.unit : undefined });
-      return r.ok ? `已标记 ${args.building}${args.unit ? "-" + args.unit : ""} 送达（${r.count} 份）。` : `标记失败：${r.error}`;
+      const address = String(args.address ?? "");
+      const r = await s.markDelivered({ address });
+      return r.ok ? `已标记 ${address} 送达（${r.count} 份）。` : `标记失败：${r.error}`;
     },
   },
   {

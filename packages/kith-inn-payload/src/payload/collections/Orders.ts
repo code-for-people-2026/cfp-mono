@@ -36,6 +36,8 @@ export const Orders: CollectionConfig = {
     { name: "placedAt", type: "date" },
     { name: "note", type: "textarea" },
     { name: "totalCents", type: "number", admin: { readOnly: true } },
+    /** Frozen delivery-address snapshot (自由文本，下单时从 customer.address 快照；不可改). */
+    { name: "address", type: "text", index: true },
     {
       name: "paymentStatus",
       type: "select",

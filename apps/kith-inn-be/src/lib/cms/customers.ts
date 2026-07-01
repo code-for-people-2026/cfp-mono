@@ -20,3 +20,19 @@ export async function listCustomers(
   const json = (await res.json()) as { docs?: Customer[] };
   return json.docs ?? [];
 }
+
+/** POST /api/internal/customers — create a customer (桃子 confirms a new 接龙 name). */
+export async function createCustomer(
+  operatorJwt: string,
+  input: { displayName: string; address?: string },
+  deps: CmsDeps = {},
+): Promise<Customer> {
+  const fetchImpl = deps.fetch ?? fetch;
+  const res = await fetchImpl(`${cmsBase()}/api/internal/customers`, {
+    method: "POST",
+    headers: { [OPERATOR_JWT_HEADER]: operatorJwt, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`cms customers create failed: ${res.status}`);
+  return (await res.json()) as Customer;
+}

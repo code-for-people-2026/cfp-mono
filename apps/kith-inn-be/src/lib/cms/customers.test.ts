@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OPERATOR_JWT_HEADER } from "./client";
-import { listCustomers } from "./customers";
+import { createCustomer, listCustomers } from "./customers";
 
 const ORIG = process.env.CMS_BASE_URL;
 afterEach(() => {
@@ -41,6 +41,35 @@ describe("listCustomers", () => {
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ docs: [{ id: 1 }] })));
     vi.stubGlobal("fetch", fetchMock);
     expect((await listCustomers("jwt"))[0]?.id).toBe(1);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("createCustomer", () => {
+  it("POSTs to /api/internal/customers with the operator JWT + body and returns the created doc", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const created = { id: 55, displayName: "大龙猫", address: "26B-301", kind: "regular", seller: 7 };
+    const deps = mockFetch(created, 201);
+    const result = await createCustomer("jwt", { displayName: "大龙猫", address: "26B-301" }, deps);
+    expect(result).toEqual(created);
+    const [url, init] = deps.fetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://cms.test/api/internal/customers");
+    expect(init?.method).toBe("POST");
+    expect(init?.headers).toMatchObject({ [OPERATOR_JWT_HEADER]: "jwt", "content-type": "application/json" });
+    expect(JSON.parse(init?.body as string)).toMatchObject({ displayName: "大龙猫", address: "26B-301" });
+  });
+
+  it("throws on a non-2xx", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = { fetch: vi.fn(async () => new Response("err", { status: 500 })) };
+    await expect(createCustomer("jwt", { displayName: "x" }, deps)).rejects.toThrow(/500/);
+  });
+
+  it("uses global fetch when deps are omitted", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 7, displayName: "x", kind: "regular" })));
+    vi.stubGlobal("fetch", fetchMock);
+    expect((await createCustomer("jwt", { displayName: "x" }))?.id).toBe(7);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
