@@ -3,23 +3,22 @@ import { operatorScope } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
-type AddressDoc = { building?: string; unit?: string };
-type CustomerDoc = { id: string | number; kind?: string; defaultAddress?: AddressDoc | string | number };
+type CustomerDoc = { id: string | number; kind?: string; address?: string };
 
 /** Flatten Payload's depth population into the OrderDetail shape be consumes. */
 function normalize(
-  order: { id: string | number; date?: string; status?: string; customer?: CustomerDoc | string | number },
+  order: { id: string | number; date?: string; status?: string; address?: string; customer?: CustomerDoc | string | number },
   items: Array<{ id: string | number; mealOccasion?: string; quantity?: number }>,
 ) {
   const c = order.customer;
   const obj = c && typeof c === "object" ? c : undefined;
-  const addr = obj && typeof obj.defaultAddress === "object" ? obj.defaultAddress : undefined;
   const id = obj?.id ?? (typeof c === "string" || typeof c === "number" ? c : 0);
   return {
     id: order.id,
     date: order.date,
     status: order.status,
-    customer: { id, kind: obj?.kind ?? "regular", building: addr?.building, unit: addr?.unit },
+    address: order.address,
+    customer: { id, kind: obj?.kind ?? "regular", address: obj?.address },
     items: items.map((it) => ({ id: it.id, mealOccasion: it.mealOccasion, quantity: it.quantity ?? 0 })),
   };
 }
@@ -37,7 +36,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const orderRes = await payload.find({
     collection: "orders",
     where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
-    depth: 2, // populate customer + customer.defaultAddress
+    depth: 1, // populate customer (address is a flat text field now)
     overrideAccess: true,
   });
   const order = orderRes.docs[0] as { id: string | number; date?: string; status?: string; customer?: CustomerDoc } | undefined;

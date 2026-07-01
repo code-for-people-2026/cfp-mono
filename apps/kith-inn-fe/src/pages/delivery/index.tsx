@@ -48,7 +48,7 @@ export default function Delivery() {
         <View className="mb-[28rpx] flex items-start justify-between gap-[24rpx]">
           <View>
             <Text className="block text-[44rpx] font-bold leading-tight">送餐分拣</Text>
-            <Text className="mt-[12rpx] block text-[26rpx] text-muted">按楼栋装篮。勾销在「今天」说一句（如「26B 送了」）。</Text>
+            <Text className="mt-[12rpx] block text-[26rpx] text-muted">按地址装篮。勾销在「今天」说一句（如「3e23a 送了」）。</Text>
           </View>
           <Text className="flex-none rounded-[16rpx] border border-line bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">午餐</Text>
         </View>
@@ -69,15 +69,15 @@ export default function Delivery() {
           view.sort.map((g) => {
             const p = buildingProgress(g);
             return (
-              <View key={g.building} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
+              <View key={g.address} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
                 <View className="mb-[20rpx] flex items-center justify-between gap-[20rpx]">
-                  <Text className="text-[32rpx] font-bold">{g.building} · {g.count} 份</Text>
+                  <Text className="text-[32rpx] font-bold">{g.address} · {g.count} 份</Text>
                   <Text className="text-[24rpx] text-muted">{p.done}/{p.total}</Text>
                 </View>
                 <Progress percent={p.percent} />
                 {g.fulfillments.map((f) => (
                   <View key={String(f.id)} className="flex items-center gap-[20rpx] border-b border-line py-[22rpx] last:border-b-0">
-                    <Text className="text-[26rpx] font-semibold">{f.addrUnit ? `${g.building}-${f.addrUnit}` : g.building}</Text>
+                    <Text className="text-[26rpx] font-semibold">{g.address}</Text>
                     <Text className="ml-auto text-[24rpx] text-muted">{fulfillmentStatusLabel(f.status)}</Text>
                   </View>
                 ))}

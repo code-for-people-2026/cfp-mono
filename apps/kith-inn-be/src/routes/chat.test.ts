@@ -19,6 +19,7 @@ const mockCms = (): AgentCms =>
     createFulfillments: vi.fn(),
     setFulfillmentsByOrderItems: vi.fn(),
     listCustomers: vi.fn(),
+    createCustomer: vi.fn(),
     listFulfillments: vi.fn(),
     listOrders: vi.fn(),
   }) as AgentCms;

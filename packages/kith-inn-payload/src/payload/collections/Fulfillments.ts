@@ -9,8 +9,10 @@ import { sellerField, tenantAccess, tenantHooks } from "./shared";
 /**
  * `fulfillments` — thin fulfillment table (PRD §7.1). Built only for
  * delivery/pickup items at confirm time (M1); self/onsite get no row (so they
- * don't pollute gap reconciliation). `addrBuilding/addrUnit` are frozen
- * snapshots; `serviceDate/occasion` sync with the order in real time (§3.3).
+ * don't pollute gap reconciliation). Carries NO address — the delivery address
+ * lives on the order (frozen snapshot at draft-create); a fulfillment is purely
+ * a delivery task (order item + status + date + occasion). `serviceDate/occasion`
+ * sync with the order in real time (§3.3).
  * `assignee` ∈ seller.moduleSettings.delivery.deliverers (hook-validated in M1).
  * No `sequence` (MVP — route optimization is explicitly out of scope, §1.3).
  */
@@ -36,8 +38,6 @@ export const Fulfillments: CollectionConfig = {
       defaultValue: "pending",
       index: true,
     },
-    { name: "addrBuilding", type: "text", index: true },
-    { name: "addrUnit", type: "text" },
     { name: "assignee", type: "text" },
     { name: "timeWindow", type: "text" },
     sellerField,

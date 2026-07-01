@@ -39,12 +39,12 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     it("creates the cms schema with the full kith-inn spine", async () => {
       const tables = await tablesIn("cms");
       // Every business collection (PR3) + Payload's migrations bookkeeping.
+      // (customer_addresses was dropped when address became a flat text field on customers.)
       expect(tables).toEqual(
         expect.arrayContaining([
           "sellers",
           "operators",
           "customers",
-          "customer_addresses",
           "offerings",
           "service_slots",
           "orders",

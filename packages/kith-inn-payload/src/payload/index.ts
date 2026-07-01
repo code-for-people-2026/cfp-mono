@@ -1,6 +1,5 @@
 import type { CollectionConfig } from "payload";
 import { ChatMessages } from "./collections/ChatMessages";
-import { CustomerAddresses } from "./collections/CustomerAddresses";
 import { Customers } from "./collections/Customers";
 import { Fulfillments } from "./collections/Fulfillments";
 import { MenuPlans } from "./collections/MenuPlans";
@@ -27,7 +26,6 @@ export const collections: CollectionConfig[] = [
   Operators,
   // 顾客
   Customers,
-  CustomerAddresses,
   // 菜单枢纽
   Offerings,
   MenuPlans,

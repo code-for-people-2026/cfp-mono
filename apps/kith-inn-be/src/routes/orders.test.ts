@@ -12,7 +12,7 @@ const draftDetail: OrderDetail = {
   id: 90,
   date: "2026-06-30",
   status: "draft",
-  customer: { id: 5, kind: "regular", building: "1D" },
+  customer: { id: 5, kind: "regular", address: "1D" },
   items: [{ id: 201, mealOccasion: "lunch", quantity: 1 }],
 };
 

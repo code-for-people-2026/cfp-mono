@@ -14,7 +14,7 @@ const draftDetail: OrderDetail = {
   id: 90,
   date: "2026-06-30",
   status: "draft",
-  customer: { id: 5, kind: "regular", building: "1D", unit: "28D" },
+  customer: { id: 5, kind: "regular", address: "1D-28D" },
   items: [
     { id: 201, mealOccasion: "lunch", quantity: 1 },
     { id: 202, mealOccasion: "dinner", quantity: 1 },
@@ -63,7 +63,7 @@ describe("confirmOrder", () => {
     expect(cms.createFulfillments).toHaveBeenCalledWith(
       JWT,
       expect.arrayContaining([
-        expect.objectContaining({ orderItem: 201, mode: "delivery", status: "pending", addrBuilding: "1D", addrUnit: "28D" }),
+        expect.objectContaining({ orderItem: 201, mode: "delivery", status: "pending" }),
         expect.objectContaining({ orderItem: 202, serviceDate: "2026-06-30", occasion: "dinner" }),
       ]),
     );

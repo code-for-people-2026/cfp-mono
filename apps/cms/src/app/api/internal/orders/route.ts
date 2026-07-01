@@ -47,9 +47,16 @@ export async function POST(req: Request) {
   // Tenant-ownership guard (Codex P1): overrideAccess writes carry no req.user,
   // so assertSameTenantRefs can't fire — validate every ref belongs to this
   // seller before storing (customer + each offering), else depth reads leak.
-  if (!(await ownedBy(payload, "customers", body.customer, sellerId))) {
-    return NextResponse.json({ error: "customer not owned" }, { status: 403 });
-  }
+  // Fetch the customer seller-scoped (one read doubles as the ownership check
+  // AND the source for the frozen address snapshot — like e-commerce, the order
+  // copies the customer's address at creation and never changes it after).
+  const customerDoc = await payload.find({
+    collection: "customers",
+    where: { and: [{ id: { equals: body.customer } }, { seller: { equals: sellerId } }] },
+    limit: 1,
+    overrideAccess: true,
+  });
+  if (!customerDoc.docs[0]) return NextResponse.json({ error: "customer not owned" }, { status: 403 });
   const offeringIds = [...new Set(body.items.map((it) => it.offering))];
   for (const oid of offeringIds) {
     if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
@@ -67,6 +74,8 @@ export async function POST(req: Request) {
       note: body.note,
       idempotencyKey: body.idempotencyKey,
       totalCents: body.totalCents,
+      // Frozen snapshot of the customer's delivery address at order-creation.
+      address: (customerDoc.docs[0] as { address?: string } | undefined)?.address,
       paymentStatus: "unpaid",
       createdBy: operatorId,
       seller: sellerId,

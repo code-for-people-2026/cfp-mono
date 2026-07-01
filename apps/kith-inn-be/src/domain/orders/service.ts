@@ -138,8 +138,6 @@ export async function confirmOrder(jwt: string, orderId: string | number, cms: O
           occasion: it.mealOccasion,
           mode: "delivery",
           status: "pending",
-          addrBuilding: detail.customer.building,
-          addrUnit: detail.customer.unit,
         }));
   const fulfillments = fulfillmentInputs.length > 0 ? await cms.createFulfillments(jwt, fulfillmentInputs) : [];
 

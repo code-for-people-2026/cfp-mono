@@ -11,21 +11,19 @@ type Fulfillment = {
   occasion?: string;
   mode: string;
   status: FulfillmentStatus;
-  addrBuilding?: string;
-  addrUnit?: string;
   assignee?: string;
   timeWindow?: string;
 };
 
-export type BuildingGroup = { building: string; count: number; fulfillments: Fulfillment[] };
+export type AddressGroup = { address: string; count: number; fulfillments: Fulfillment[] };
 
 export type DeliveryView = {
-  sort: BuildingGroup[];
-  gaps: { gaps: Array<{ building: string; pending: number }>; totalPending: number };
+  sort: AddressGroup[];
+  gaps: { gaps: Array<{ address: string; pending: number }>; totalPending: number };
 };
 
-/** Done vs total for a building + percent (0–100) for the progress bar. */
-export function buildingProgress(group: BuildingGroup): { done: number; total: number; percent: number } {
+/** Done vs total for an address group + percent (0–100) for the progress bar. */
+export function buildingProgress(group: AddressGroup): { done: number; total: number; percent: number } {
   const total = group.fulfillments.length;
   const done = group.fulfillments.filter((f) => f.status === "done").length;
   return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) };

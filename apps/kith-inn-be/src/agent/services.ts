@@ -9,7 +9,7 @@
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
-import type { Customer, Fulfillment, Occasion, Order, OrderStatus } from "@cfp/kith-inn-shared";
+import type { Customer, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
@@ -18,6 +18,7 @@ import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms 
  *  reads the summary/delivery tools need. Injected so tests mock it wholesale. */
 export type AgentCms = OrderCms & {
   listCustomers(jwt: string, query?: { name?: string }): Promise<Customer[]>;
+  createCustomer(jwt: string, input: { displayName: string; address?: string }): Promise<Customer>;
   listFulfillments(jwt: string, query?: { date?: string; occasion?: string }): Promise<Fulfillment[]>;
   listOrders(jwt: string, query?: { date?: string; status?: OrderStatus }): Promise<Order[]>;
 };
@@ -45,33 +46,89 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   const now = deps.now ?? (() => new Date());
 
   return {
-    async recordOrder(input: { customerName: string; quantity: number; occasion: Occasion; date?: string }) {
+    /**
+     * Batch-record an 接龙 paste. Existing customers (matched by normalized name)
+     * → draft recorded; new names → collected in `needsConfirmation` for 桃子 to
+     * confirm (NOT created here — customers are created on confirmation, never
+     * speculatively). One combo per item (桃子 = single combo).
+     */
+    async recordOrders(items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+      const recorded: Array<{ name: string; orderId: string | number }> = [];
+      const needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner" }> = [];
+      const failed: Array<{ customerName: string; error: string }> = [];
       try {
-        const customers = await cms.listCustomers(jwt);
-        const want = normalizeCustomerName(input.customerName);
-        const match = customers.find((c) => normalizeCustomerName(c.displayName) === want);
-        if (!match) return { ok: false as const, error: `没找到顾客「${input.customerName}」，先在顾客里录一下地址` };
-
-        const offerings = await cms.findOfferings(jwt);
+        const [customers, offerings] = await Promise.all([cms.listCustomers(jwt), cms.findOfferings(jwt)]);
         // ponytail: 桃子 sells one combo (4菜1汤 30元/份); a 份 = one combo. Multi-combo
         // merchants are V1 — pick the first combo-meal, error if the pool has none.
         const combo = offerings.find((o) => o.kind === "combo-meal");
-        if (!combo) return { ok: false as const, error: "没有套餐商品，记不了单" };
-
-        const result = await recordDraft(
-          jwt,
-          {
-            customer: match.id,
-            date: input.date ?? todayShanghai(now),
-            source: "chat-paste",
-            items: [{ offering: combo.id, mealOccasion: input.occasion, quantity: input.quantity }],
-          },
-          cms,
-        );
-        return { ok: true as const, orderId: result.order.id };
+        const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
+        for (const it of items) {
+          if (!combo) {
+            failed.push({ customerName: it.customerName, error: "没有套餐商品，记不了单" });
+            continue;
+          }
+          const want = normalizeCustomerName(it.customerName);
+          const match = customers.find((c) => normalizeCustomerName(c.displayName) === want);
+          if (!match) {
+            needsConfirmation.push({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion });
+            continue;
+          }
+          try {
+            const result = await recordDraft(
+              jwt,
+              {
+                customer: match.id,
+                date: it.date ?? date,
+                source: "chat-paste",
+                items: [{ offering: combo.id, mealOccasion: it.occasion, quantity: it.quantity }],
+              },
+              cms,
+            );
+            recorded.push({ name: it.customerName, orderId: result.order.id });
+          } catch {
+            failed.push({ customerName: it.customerName, error: "记单失败" });
+          }
+        }
       } catch {
-        return { ok: false as const, error: "记单失败" };
+        // whole-batch failure (cms read down) → everything failed
+        for (const it of items) failed.push({ customerName: it.customerName, error: "记单失败" });
       }
+      return { recorded, needsConfirmation, failed };
+    },
+
+    /**
+     * After 桃子 confirms the new-customer list: create each customer then record
+     * their draft in one pass. Errors are collected per-item (don't abort the batch).
+     */
+    async createCustomersAndOrders(items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+      const created: Array<{ name: string; orderId: string | number }> = [];
+      const failed: Array<{ displayName: string; error: string }> = [];
+      const offerings = await cms.findOfferings(jwt).catch(() => []);
+      const combo = offerings.find((o) => o.kind === "combo-meal");
+      const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
+      for (const it of items) {
+        try {
+          if (!combo) {
+            failed.push({ displayName: it.displayName, error: "没有套餐商品，记不了单" });
+            continue;
+          }
+          const customer = await cms.createCustomer(jwt, { displayName: it.displayName, address: it.address });
+          const result = await recordDraft(
+            jwt,
+            {
+              customer: customer.id,
+              date: it.date ?? date,
+              source: "chat-paste",
+              items: [{ offering: combo.id, mealOccasion: it.occasion, quantity: it.quantity }],
+            },
+            cms,
+          );
+          created.push({ name: it.displayName, orderId: result.order.id });
+        } catch {
+          failed.push({ displayName: it.displayName, error: "建顾客或记单失败" });
+        }
+      }
+      return { created, failed };
     },
 
     async confirmOrder(input: { orderId: string | number }) {
@@ -104,17 +161,26 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       }
     },
 
-    async markDelivered(input: { building: string; unit?: string }) {
+    async markDelivered(input: { address: string }) {
       try {
         const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
+        // Address lives on the ORDER (frozen snapshot), not the fulfillment —
+        // cms populates orderItem→order, so resolve each one's order.address.
+        const orderAddress = (f: Fulfillment): string => {
+          const oi = f.orderItem;
+          if (oi && typeof oi === "object") {
+            const o = oi.order;
+            if (o && typeof o === "object" && typeof o.address === "string") return o.address;
+          }
+          return "";
+        };
         const targets = fulfillments.filter(
           (f) =>
-            f.addrBuilding === input.building &&
-            (input.unit === undefined || f.addrUnit === input.unit) &&
+            orderAddress(f).includes(input.address) &&
             (f.status === "pending" || f.status === "handed-off"),
         );
         if (targets.length === 0) return { ok: true as const, count: 0 };
-        const ids = targets.map((f) => f.orderItem as string | number);
+        const ids = targets.map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem));
         await cms.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
         return { ok: true as const, count: targets.length };
       } catch {

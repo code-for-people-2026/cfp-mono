@@ -19,11 +19,7 @@ export const Customers: CollectionConfig = {
     { name: "defaultServings", type: "number" },
     { name: "defaultOccasion", type: "select", options: [...OCCASIONS] },
     { name: "note", type: "textarea" },
-    {
-      name: "defaultAddress",
-      type: "relationship",
-      relationTo: "customer_addresses",
-    },
+    { name: "address", type: "text", index: true },
     sellerField,
   ],
 };

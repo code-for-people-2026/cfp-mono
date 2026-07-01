@@ -10,7 +10,11 @@ const scriptedChat = (responses: ChatResult[]) => {
 };
 
 const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
-  recordOrder: over.recordOrder ?? vi.fn(async () => ({ ok: true as const, orderId: 45 })),
+  recordOrders:
+    over.recordOrders ??
+    vi.fn(async () => ({ recorded: [{ name: "王燕萍", orderId: 45 }], needsConfirmation: [], failed: [] })),
+  createCustomersAndOrders:
+    over.createCustomersAndOrders ?? vi.fn(async () => ({ created: [{ name: "大龙猫", orderId: 46 }], failed: [] })),
   confirmOrder: over.confirmOrder ?? vi.fn(async () => ({ ok: true as const })),
   cancelOrder: over.cancelOrder ?? vi.fn(async () => ({ ok: true as const })),
   markPaid: over.markPaid ?? vi.fn(async () => ({ ok: true as const })),
@@ -21,14 +25,16 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
 });
 
 describe("runAgent", () => {
-  it("executes a record_order tool call, then returns the model's final text", async () => {
+  it("executes a record_orders tool call, then returns the model's final text", async () => {
     const chat = scriptedChat([
-      { content: null, toolCalls: [{ id: "c1", name: "record_order", args: { customerName: "王燕萍", quantity: 2, occasion: "lunch" } }] },
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" }] } }] },
       { content: "记好了，王燕萍午餐2份。", toolCalls: [] },
     ]);
     const s = mockServices();
     const out = await runAgent({ userText: "记 王燕萍 午餐2份", history: [], services: s, deps: { chat } });
-    expect(s.recordOrder).toHaveBeenCalledWith({ customerName: "王燕萍", quantity: 2, occasion: "lunch", date: undefined });
+    expect(s.recordOrders).toHaveBeenCalledWith([
+      { customerName: "王燕萍", address: undefined, quantity: 2, occasion: "lunch", date: undefined },
+    ]);
     expect(out).toBe("记好了，王燕萍午餐2份。");
   });
 
@@ -54,7 +60,7 @@ describe("runAgent", () => {
       {
         content: null,
         toolCalls: [
-          { id: "c1", name: "record_order", args: { customerName: "桃子", quantity: 1, occasion: "dinner" } },
+          { id: "c1", name: "record_orders", args: { items: [{ customerName: "桃子", quantity: 1, occasion: "dinner" }] } },
           { id: "c2", name: "get_today_summary", args: {} },
         ],
       },
@@ -62,7 +68,7 @@ describe("runAgent", () => {
     ]);
     const s = mockServices();
     await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
-    expect(s.recordOrder).toHaveBeenCalled();
+    expect(s.recordOrders).toHaveBeenCalled();
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 

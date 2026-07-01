@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildingProgress, fulfillmentStatusLabel, type BuildingGroup } from "./deliveryView";
+import { buildingProgress, fulfillmentStatusLabel, type AddressGroup } from "./deliveryView";
 
-const group = (statuses: string[]): BuildingGroup => ({
-  building: "3A",
+const group = (statuses: string[]): AddressGroup => ({
+  address: "3A",
   count: statuses.length,
   fulfillments: statuses.map((s, i) => ({
     id: i,
@@ -23,7 +23,7 @@ describe("buildingProgress", () => {
   it("is 0% when none done", () => {
     expect(buildingProgress(group(["pending", "handed-off"]))).toEqual({ done: 0, total: 2, percent: 0 });
   });
-  it("is 0% for an empty building", () => {
+  it("is 0% for an empty address group", () => {
     expect(buildingProgress(group([]))).toEqual({ done: 0, total: 0, percent: 0 });
   });
 });

@@ -62,8 +62,6 @@ export type FulfillmentInput = {
   occasion?: Occasion;
   mode: FulfillmentMode;
   status: FulfillmentStatus;
-  addrBuilding?: string;
-  addrUnit?: string;
   assignee?: string;
   timeWindow?: string;
 };
@@ -73,7 +71,9 @@ export type OrderDetail = {
   id: string | number;
   date: string;
   status: OrderStatus;
-  customer: { id: string | number; kind: CustomerKind; building?: string; unit?: string };
+  /** Frozen delivery-address snapshot (cms froze it at draft-create from the customer). */
+  address?: string;
+  customer: { id: string | number; kind: CustomerKind; address?: string };
   items: Array<{ id: string | number; mealOccasion?: Occasion; quantity: number }>;
 };
 
