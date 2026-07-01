@@ -52,6 +52,13 @@ export default defineConfig(async () => ({
   h5: {
     publicPath: "/",
     router: { mode: "browser" },
+    // Force CSS extraction even in dev: Taro's webpack5-runner defaults
+    // enableExtract = (mode === 'production'), so dev used style-loader — which
+    // orphaned the entry app.css (compiled to /css/app.css but neither <link>'d
+    // nor JS-injected → unstyled dev page). Extracting makes dev link app.css
+    // like prod. Weapp is unaffected (separate mini config). HMR falls back to
+    // full reload on CSS change, acceptable.
+    enableExtract: true,
     webpackChain(chain, webpack) {
       chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
         { "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? "") },

@@ -4,6 +4,7 @@ import { Text, View } from "@tarojs/components";
 import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { Order } from "@cfp/kith-inn-shared";
 import { TabBar } from "@/components/TabBar";
+import { TopBar } from "@/components/TopBar";
 import { orderConfirmUrl, orderUrl, ordersUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { todayShanghai } from "@/logic/time";
@@ -16,7 +17,14 @@ const taroStorage: Storage = {
 };
 const tokens = createTokenStore(taroStorage);
 
-const TONE = { green: "success", red: "danger", amber: "warning", muted: "default" } as const;
+/** status tone → per-component NutUI Tag override (square status-dot). */
+/** status tone → atomic utilities (NutUI Tag forced to a square status badge). */
+const STATUS_CLASS: Record<string, string> = {
+  green: "bg-green-soft text-green",
+  red: "bg-red-soft text-red",
+  amber: "bg-amber-soft text-amber",
+  muted: "bg-wash text-muted",
+};
 
 export default function Orders() {
   const [orders, setOrders] = useState<Order[] | null>(null);
@@ -71,39 +79,45 @@ export default function Orders() {
   };
 
   return (
-    <View style={{ minHeight: "100vh", paddingBottom: "120px" }}>
-      <View style={{ padding: "32px 24px 0" }}>
-        <Text style={{ fontSize: "44px", fontWeight: "bold" }}>订单台账</Text>
-        <Text style={{ display: "block", color: "#687076", fontSize: "24px", marginTop: "8px" }}>
-          草稿能找回，确认后才进入经营口径。
-        </Text>
-      </View>
-      <View style={{ padding: "0 24px" }}>
+    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+      <TopBar title="街坊味" subtitle="桃子的灶台" />
+      <View className="px-[32rpx] pb-[200rpx] pt-[32rpx]">
+        <View className="mb-[28rpx] flex items-start justify-between gap-[24rpx]">
+          <View>
+            <Text className="block text-[44rpx] font-bold leading-tight">订单台账</Text>
+            <Text className="mt-[12rpx] block text-[26rpx] text-muted">草稿能找回，确认后才进入经营口径。</Text>
+          </View>
+          <Text className="flex-none rounded-[16rpx] border border-line bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">今天</Text>
+        </View>
+
         {orders === null ? (
-          <Text style={{ color: "#687076" }}>加载中…</Text>
+          <Text className="block text-[24rpx] text-muted">加载中…</Text>
         ) : orders.length === 0 ? (
-          <Text style={{ color: "#687076" }}>今天还没有订单。</Text>
+          <Text className="block text-[24rpx] text-muted">今天还没有订单。</Text>
         ) : (
           orders.map((o) => {
             const dot = orderStatusDot(o);
             return (
-              <View
-                key={String(o.id)}
-                style={{ margin: "24px 0", padding: "24px", background: "#fff", borderRadius: "16px", border: "1px solid #e6e2da" }}
-              >
-                <View style={{ display: "flex", alignItems: "center" }}>
-                  <Tag type={TONE[dot.tone]}>{dot.label}</Tag>
-                  <Text style={{ marginLeft: "12px", fontSize: "30px", fontWeight: "bold" }}>{customerName(o)}</Text>
-                  <Text style={{ marginLeft: "auto", fontSize: "26px", color: "#687076" }}>{yuan(o.totalCents)}</Text>
+              <View key={String(o.id)} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
+                <View className="flex items-center gap-[20rpx]">
+                  <Tag
+                    className={`inline-flex h-[68rpx] w-[68rpx] items-center justify-center rounded-[16rpx] text-[24rpx] font-extrabold ${STATUS_CLASS[dot.tone]}`}
+                  >
+                    {dot.label}
+                  </Tag>
+                  <View className="min-w-0 flex-1">
+                    <Text className="text-[26rpx] font-semibold">{customerName(o)}</Text>
+                  </View>
+                  <Text className="text-[24rpx] text-muted">{yuan(o.totalCents)}</Text>
                 </View>
-                <View style={{ display: "flex", gap: "12px", marginTop: "16px" }}>
+                <View className="mt-[16rpx] flex gap-[16rpx]">
                   {o.status === "draft" && (
-                    <Button size="small" type="primary" onClick={() => act(orderConfirmUrl(o.id), "POST")}>
+                    <Button size="small" type="primary" className="[background:var(--color-red)] text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>
                       确认
                     </Button>
                   )}
                   {o.status === "confirmed" && o.paymentStatus === "unpaid" && (
-                    <Button size="small" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>
+                    <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>
                       标已付
                     </Button>
                   )}

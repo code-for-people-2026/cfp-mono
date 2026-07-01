@@ -1,7 +1,8 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
-import { Input, ScrollView, Text, View } from "@tarojs/components";
+import { Input, Text, View } from "@tarojs/components";
 import { TabBar } from "@/components/TabBar";
+import { TopBar } from "@/components/TopBar";
 import { chatUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
@@ -39,8 +40,8 @@ export default function Today() {
           Taro.showToast({ title: "加载失败", icon: "error" });
           return;
         }
-        // cms returns newest-first; render chronologically (oldest→newest).
         if (sentRef.current) return; // a send beat the initial load — don't clobber it
+        // cms returns newest-first; render chronologically (oldest→newest).
         const messages = ((res.data as { messages?: Msg[] }).messages ?? []) as Msg[];
         setMsgs([...messages].reverse());
       })
@@ -78,73 +79,50 @@ export default function Today() {
   };
 
   return (
-    <View style={{ minHeight: "100vh", paddingBottom: "220px" }}>
-      <View style={{ padding: "32px 24px 0" }}>
-        <Text style={{ fontSize: "44px", fontWeight: "bold" }}>今天</Text>
-        <Text style={{ display: "block", color: "#8a7f70", fontSize: "22px", marginTop: "6px" }}>
-          跟「味」说一句，比如「王燕萍 午餐 2 份」或「26B 送了」。
-        </Text>
-      </View>
-      <ScrollView scrollY style={{ padding: "16px 24px", maxHeight: "60vh" }}>
+    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+      <TopBar title="街坊味" subtitle="桃子的灶台" />
+      <View className="px-[32rpx] pb-[260rpx] pt-[32rpx]">
+        <Text className="my-[24rpx] block text-center text-[22rpx] text-soft">展示今天和昨天，更早的已清理</Text>
         {msgs.length === 0 ? (
-          <Text style={{ color: "#687076", fontSize: "26px" }}>还没有对话。粘一段接龙，或直接说一句话。</Text>
+          <Text className="block py-[24rpx] text-center text-[24rpx] text-muted">
+            还没有对话。粘一段接龙，或直接说一句「王燕萍 午餐 2 份」。
+          </Text>
         ) : (
           msgs.map((m, i) => {
             const me = m.role === "user";
             return (
-              <View key={i} style={{ display: "flex", justifyContent: me ? "flex-end" : "flex-start", margin: "14px 0" }}>
+              <View key={i} className={`my-[28rpx] flex gap-[20rpx]${me ? " flex-row-reverse" : ""}`}>
+                {!me && (
+                  <View className="flex h-[60rpx] w-[60rpx] flex-none items-center justify-center rounded-[16rpx] bg-red text-[26rpx] font-extrabold text-white">
+                    味
+                  </View>
+                )}
                 <View
-                  style={{
-                    maxWidth: "80%",
-                    padding: "16px",
-                    borderRadius: "12px",
-                    background: me ? "#d7462f" : "#fff",
-                    color: me ? "#fff" : "#202124",
-                    border: me ? "0" : "1px solid #e6e2da",
-                  }}
+                  className={`max-w-[608rpx] break-words rounded-[16rpx] p-[24rpx] text-[26rpx] leading-relaxed ${
+                    me ? "bg-red text-white" : "border border-line bg-surface"
+                  }`}
                 >
-                  <Text style={{ fontSize: "26px" }}>{m.content}</Text>
+                  <Text>{m.content}</Text>
                 </View>
               </View>
             );
           })
         )}
-      </ScrollView>
-      <View
-        style={{
-          position: "fixed",
-          bottom: "100px",
-          left: "12px",
-          right: "12px",
-          display: "flex",
-          gap: "8px",
-          alignItems: "center",
-          padding: "8px",
-          background: "#fffdf7",
-          borderTop: "1px solid #e6e2da",
-        }}
-      >
-        <Input
-          value={text}
-          onInput={(e) => setText(e.detail.value)}
-          placeholder="粘接龙，或说 26B 送了"
-          style={{ flex: 1, height: "56px", fontSize: "26px" }}
-        />
-        <View
-          onClick={send}
-          style={{
-            padding: "0 20px",
-            height: "56px",
-            display: "flex",
-            alignItems: "center",
-            background: sending ? "#b9b9b9" : "#d7462f",
-            color: "#fff",
-            borderRadius: "8px",
-            fontSize: "26px",
-            fontWeight: 700,
-          }}
-        >
-          {sending ? "…" : "发送"}
+      </View>
+      <View className="fixed inset-x-0 bottom-[108rpx] z-40 border-t border-line bg-paper px-[20rpx] pb-[20rpx] pt-[16rpx]">
+        <View className="flex items-center gap-[16rpx]">
+          <Input
+            className="h-[80rpx] min-w-0 flex-1 rounded-[40rpx] bg-surface px-[32rpx] text-[28rpx] text-ink"
+            value={text}
+            onInput={(e) => setText(e.detail.value)}
+            placeholder="粘接龙，或说 26B 送了"
+          />
+          <View
+            className={`flex h-[80rpx] w-[80rpx] flex-none items-center justify-center rounded-full bg-red text-[36rpx] text-white${sending ? " opacity-60" : ""}`}
+            onClick={send}
+          >
+            {sending ? "…" : "↑"}
+          </View>
         </View>
       </View>
       <TabBar active="today" />

@@ -1,6 +1,7 @@
 import Taro from "@tarojs/taro";
 import { useEffect } from "react";
-import { Button, Text, View } from "@tarojs/components";
+import { Text, View } from "@tarojs/components";
+import { Button } from "@nutui/nutui-react-taro";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { devLoginUrl, wxLoginUrl } from "@/services/api";
 
@@ -51,10 +52,10 @@ export default function Login() {
   }, []);
 
   return (
-    <View style={{ padding: "60px 40px", textAlign: "center" }}>
-      <Text style={{ fontSize: "48px", fontWeight: "bold" }}>街坊味</Text>
-      <View style={{ marginTop: "80px" }}>
-        <Button onClick={login} type="primary" style={{ fontSize: "32px" }}>
+    <View className="flex min-h-screen flex-col items-center justify-center bg-linear-to-b from-paper via-wash to-white px-[80rpx] text-ink">
+      <Text className="text-[96rpx] font-bold">街坊味</Text>
+      <View className="mt-[160rpx] w-full">
+        <Button type="primary" onClick={login} className="[background:var(--color-red)] text-white h-[96rpx] w-full rounded-[16rpx] text-[32rpx]">
           微信登录
         </Button>
       </View>
