@@ -8,8 +8,7 @@
     ".": "./src/index.ts",
     "./enums": "./src/enums.ts",
     "./types": "./src/types.ts",
-    "./schemas": "./src/schemas.ts",
-    "./util": "./src/util.ts"
+    "./schemas": "./src/schemas.ts"
   },
   "scripts": {
     "lint": "eslint .",

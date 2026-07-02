@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { Fulfillment } from "@cfp/kith-inn-shared";
 import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
 import { listFulfillments as listFulfillmentsFn, setFulfillmentsByIds as setFulfillmentsByIdsFn } from "../lib/cms/orders";
-import { todayShanghai } from "@cfp/kith-inn-shared/util";
+import { todayShanghai } from "../lib/domainUtil";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
 /** Injectable cms boundary (default = real fetch client). */

@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   if (scope instanceof NextResponse) return scope;
   const { sellerId, operatorId, payload } = scope;
   const body = (await req.json().catch(() => null)) as DraftBody | null;
-  if (!body || body.customer === undefined || !body.date || !body.occasion || !Array.isArray(body.items)) {
+  if (!body || body.customer === undefined || !body.date || !body.occasion || !Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ error: "customer, date, occasion, items required" }, { status: 400 });
   }
   // Tenant-ownership guard (Codex P1): overrideAccess writes carry no req.user,

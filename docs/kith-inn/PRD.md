@@ -260,7 +260,7 @@
 
 **重复粘贴 / 更新**
 
-- 同一卖家、顾客、日期、餐次是订单的业务唯一坐标。再次粘贴同一天同餐的接龙时，应能**更新现有 order**，而不是生成重复 order。
+- 同一卖家、顾客、日期、餐次是 active 订单的业务唯一坐标。再次粘贴同一天同餐的接龙时，应能**更新现有 draft/confirmed order**，而不是生成重复 order；已取消的历史单不阻止重新下单。
 - 解析确认卡要标出每行是"新增"还是"更新"：例如"王阿姨 7/3 晚餐：2 份 → 3 份"。
 - 如果现有订单已 confirmed，更新前必须二次确认，并明确会同步影响订单台账、送餐清单和收款汇总。
 
@@ -399,13 +399,13 @@
 | `customers` | `displayName`(识别键，不唯一；**重名/昵称变体 MVP 靠解析时名字归一 + 人工合并，不加 aliases 字段**)、`address?`(默认送餐地址字符串)、`defaultServings?`、`defaultOccasion?`(同 occasion 枚举) | 接龙名字为识别；地址不结构化，就是一个 string；不存电话；不设 `self` / 自家特殊标识 |
 | **`offerings`** | `name`、**`kind`(combo-meal/single-item/service-session/component)**、`parentOfferings?`(自关联：combo←component 集)、`unitLabel`、`priceCents?`、**`mainIngredient?`(index)**、`recipe?`(json, 采购聚合预留)、`active` | 菜品池 M1 只让用户维护菜名 + 主料；一道菜 = kind:component；桃子的套餐 = combo-meal；不记录 tags/口味/费工 |
 | `service_slots` | `date`、`granularity`(occasion/time-slot)、**`occasion?`(枚举 breakfast/brunch/lunch/dinner/all-day；granularity=occasion 时必填、time-slot 时留空)**、`startAt/endAt?`(时段)、`status`(draft/open/archived)、`capacity?`(**MVP 不建**，V1 booking/可营业性才用) | **双职责：通用时间桶（所有生意都有）+ 餐次/菜单锚（仅餐类）**。连续生意（奶茶=随时来单）= `granularity=occasion` + `occasion=all-day`，退化为「每天一个桶」、不存在"无 slot"——分拣/缺口/归档全按它成批、一套逻辑；`all-day` 作 occasion 值（非 null）是为让唯一约束 (seller,date,occasion) 原生生效；time-slot 粒度若未来启用，唯一键按 (seller,date,startAt,endAt) 手写。slot 不预设"是餐"，餐次语义（午/晚、绑 menu_plan）由 menu-planning 模块叠加。**确认即开餐**：「确认订单」时 be 按该键 upsert slot→open（仅当 slot 缺失 / draft / open；`archived` 不被自动重开，需 force 二次确认——**force 守卫下沉 cms service_slots beforeChange hook，统一挡确认/菜单发布/订阅物化/未来工具所有写路径**），菜单发布同样开餐；draft / 取消都不碰 slot |
-| `orders` | `customer`、**`date`(=用餐日/service date)**、**`occasion`(同 occasion 枚举)**、**`status`(draft/confirmed/canceled,index = 记单生命周期)**、`source`(审计,见下枚举,不控流)、`placedAt`(录入时间，≠用餐日)、`note?`、`address?`(本单地址字符串快照)、**`totalCents`(汇总列，hook 回写)**、`paymentStatus`(unpaid/paid/reconciled,index)、`paymentMethod?`、`paidAt?`、`idempotencyKey?`、`createdBy?`(→operators) | 一个 order = 一个人的一天一餐；业务唯一坐标 = (seller, customer, date, occasion)，重复粘贴同坐标时更新现存 order |
+| `orders` | `customer`、**`date`(=用餐日/service date)**、**`occasion`(同 occasion 枚举)**、**`status`(draft/confirmed/canceled,index = 记单生命周期)**、`source`(审计,见下枚举,不控流)、`placedAt`(录入时间，≠用餐日)、`note?`、`address?`(本单地址字符串快照)、**`totalCents`(汇总列，hook 回写)**、`paymentStatus`(unpaid/paid/reconciled,index)、`paymentMethod?`、`paidAt?`、`idempotencyKey?`、`createdBy?`(→operators) | 一个 order = 一个人的一天一餐；active 业务唯一坐标 = (seller, customer, date, occasion)，重复粘贴同坐标时更新现存 draft/confirmed order，canceled 历史单不占坑 |
 | `order_items` | `order`、`offering`、`quantity`、`unitPriceCents?`(空=派生默认价)、`note?` | 只表达这餐买了什么和多少；午/晚不在 item 上区分，已上移到 order.occasion |
 | `fulfillments` | **`order`**、**`serviceDate`(index,反范式自 order.date)**、**`occasion`(反范式自 order.occasion)**、`status`(pending/done/**canceled**) | 履约薄表；confirmed 时为普通送餐 order 建立；地址从 order.address 读取，不重复存；不建 assignee/handoff；订单取消则置 `canceled` 终态、退出送餐口径 |
 
 > **收款 MVP 内联进 `orders`**（paymentStatus/paymentMethod/paidAt），不建 payments 表；V1 抽出是已知破坏性迁移（同名字段，搬家不改语义）。语义钉死：unpaid=没收到 / paid=钱到了 / **reconciled=她已核对入账**（旧名 `confirmed`，为与 `orders.status` 的 `confirmed` 区分而改名——收款轴 ≠ 记单生命周期轴）；"谁没付"默认 = unpaid。
 > **记单生命周期（与会话解耦，§5.5 三层记忆：业务数据永久）**：贴接龙/口述解析后，先回确认卡；用户确认后落 `status=draft` 的 order + items，或更新现有同坐标 order。「确认订单」把 draft→`confirmed`——**这步才物化经营状态**：upsert 开餐 slot + 建 fulfillment，并计入送餐/未付等经营口径；「取消」→`canceled`（其 fulfillment 一并置 `status=canceled`、退出送餐/缺口口径）。**draft = 纯记录、零副作用**（不开 slot、不建履约、不进任何派生口径），所以错解析/没确认的草稿不会污染"今天该做"；「订单」tab 随时找回续确认。
-> **重复写入 / 更新语义**：业务唯一坐标是 `(seller, customer, date, occasion)`。同一接龙或后续接龙命中同坐标时，展示为"更新"而不是新建；若现有 order 已 confirmed，写入前必须二次确认并说明影响。
+> **重复写入 / 更新语义**：active 业务唯一坐标是 `(seller, customer, date, occasion)`。同一接龙或后续接龙命中同坐标时，展示为"更新"而不是新建；若现有 order 已 confirmed，写入前必须二次确认并说明影响；若原单已 canceled，可重新创建新单。
 > **枚举（一次列全，避免后续加值要 migration，§7.5 铁律 4）**：`orders.source` = `chat-paste`/`chat-voice`/`manual`/`subscription`/`import`；`occasion`（service_slots 与 orders 共用）= `breakfast`/`brunch`/`lunch`/`dinner`/`all-day`。
 > **定价解析（确定性，be 纯函数可单测）**：单价取值优先级 = `order_items.unitPriceCents`（这单特价/手填）→ `offerings.priceCents`（菜品定价）→ `sellers.defaultPriceCents`（商家兜底，桃子=30 元/份）。`orders.totalCents` = Σ(item.quantity × 解析单价) 经 afterChange hook 回写，只读派生、不手填；item 增删改即重算。`canceled` 单不计入。**确认订单时 be 把解析出的单价落进 `unitPriceCents`（快照定格，Tech Spec §3.3）**，历史价格不随 offering/seller 改价漂移；draft 期可留空走实时派生。
 

@@ -10,10 +10,10 @@
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
 import type { Customer, DeliveryCardData, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
-import { customerName, todayShanghai } from "@cfp/kith-inn-shared/util";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
+import { customerName, todayShanghai } from "../lib/domainUtil";
 import { setPending } from "./pendingState";
 
 /** The cms surface the agent orchestrates: OrderCms (writes + offering read) + the
@@ -141,7 +141,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         return { ok: true as const };
       } catch (e) {
         if (e instanceof OrderStateError) {
-          return { ok: false as const, error: e.code === "slot-archived" ? "需先重开档期" : "订单不是草稿，不能确认" };
+          if (e.code === "slot-archived") return { ok: false as const, error: "需先重开档期" };
+          if (e.code === "empty-order") return { ok: false as const, error: "订单没有明细，不能确认" };
+          return { ok: false as const, error: "订单不是草稿，不能确认" };
         }
         return { ok: false as const, error: "确认失败" };
       }
