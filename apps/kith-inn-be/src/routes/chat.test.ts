@@ -18,7 +18,8 @@ const mockCms = (): AgentCms =>
     updateOrder: vi.fn(),
     upsertSlots: vi.fn(),
     createFulfillments: vi.fn(),
-    setFulfillmentsByOrderItems: vi.fn(),
+    setFulfillmentsByOrders: vi.fn(),
+    setFulfillmentsByIds: vi.fn(),
     listCustomers: vi.fn(),
     createCustomer: vi.fn(),
     listFulfillments: vi.fn(),
@@ -124,7 +125,7 @@ describe("POST /chat/confirm-customers", () => {
     ({
       ...mockCms(),
       findOfferings: vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "套餐", priceCents: 3000 }] as never),
-      createCustomer: vi.fn(async (_jwt: string, input: { displayName: string }) => ({ id: 55, displayName: input.displayName, kind: "regular" }) as never),
+      createCustomer: vi.fn(async (_jwt: string, input: { displayName: string }) => ({ id: 55, displayName: input.displayName }) as never),
       createOrderDraft: vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
     }) as AgentCms;
 

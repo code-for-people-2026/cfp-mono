@@ -1,20 +1,11 @@
 import type { CollectionConfig } from "payload";
-import {
-  FULFILLMENT_MODES,
-  FULFILLMENT_STATUSES,
-  OCCASIONS,
-} from "@cfp/kith-inn-shared";
+import { FULFILLMENT_STATUSES, OCCASIONS } from "@cfp/kith-inn-shared";
 import { sellerField, tenantAccess, tenantHooks } from "./shared";
 
 /**
- * `fulfillments` — thin fulfillment table (PRD §7.1). Built only for
- * delivery/pickup items at confirm time (M1); self/onsite get no row (so they
- * don't pollute gap reconciliation). Carries NO address — the delivery address
- * lives on the order (frozen snapshot at draft-create); a fulfillment is purely
- * a delivery task (order item + status + date + occasion). `serviceDate/occasion`
- * sync with the order in real time (§3.3).
- * `assignee` ∈ seller.moduleSettings.delivery.deliverers (hook-validated in M1).
- * No `sequence` (MVP — route optimization is explicitly out of scope, §1.3).
+ * `fulfillments` — thin delivery task table (PRD §7.1). One fulfillment per
+ * confirmed order; address is read from order.address. No helper assignment or
+ * handoff state in MVP.
  */
 export const Fulfillments: CollectionConfig = {
   slug: "fulfillments",
@@ -23,14 +14,14 @@ export const Fulfillments: CollectionConfig = {
   hooks: tenantHooks,
   fields: [
     {
-      name: "orderItem",
+      name: "order",
       type: "relationship",
-      relationTo: "order_items",
+      relationTo: "orders",
       required: true,
+      index: true,
     },
     { name: "serviceDate", type: "date", required: true, index: true },
     { name: "occasion", type: "select", options: [...OCCASIONS] },
-    { name: "mode", type: "select", options: [...FULFILLMENT_MODES], required: true },
     {
       name: "status",
       type: "select",
@@ -38,8 +29,6 @@ export const Fulfillments: CollectionConfig = {
       defaultValue: "pending",
       index: true,
     },
-    { name: "assignee", type: "text" },
-    { name: "timeWindow", type: "text" },
     sellerField,
   ],
 };

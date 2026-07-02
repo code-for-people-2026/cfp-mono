@@ -48,7 +48,7 @@ describe("listCustomers", () => {
 describe("createCustomer", () => {
   it("POSTs to /api/internal/customers with the operator JWT + body and returns the created doc", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const created = { id: 55, displayName: "大龙猫", address: "26B-301", kind: "regular", seller: 7 };
+    const created = { id: 55, displayName: "大龙猫", address: "26B-301", seller: 7 };
     const deps = mockFetch(created, 201);
     const result = await createCustomer("jwt", { displayName: "大龙猫", address: "26B-301" }, deps);
     expect(result).toEqual(created);
@@ -67,7 +67,7 @@ describe("createCustomer", () => {
 
   it("uses global fetch when deps are omitted", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 7, displayName: "x", kind: "regular" })));
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ id: 7, displayName: "x" })));
     vi.stubGlobal("fetch", fetchMock);
     expect((await createCustomer("jwt", { displayName: "x" }))?.id).toBe(7);
     expect(fetchMock).toHaveBeenCalledOnce();

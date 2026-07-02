@@ -11,9 +11,10 @@ type CmsMocks = { [K in keyof OrderCms]: Mock<OrderCms[K]> };
 const draftDetail: OrderDetail = {
   id: 90,
   date: "2026-06-30",
+  occasion: "lunch",
   status: "draft",
-  customer: { id: 5, kind: "regular", address: "1D" },
-  items: [{ id: 201, mealOccasion: "lunch", quantity: 1 }],
+  customer: { id: 5, address: "1D" },
+  items: [{ id: 201, quantity: 1 }],
 };
 
 function mockCms(over: Partial<CmsMocks> = {}): CmsMocks {
@@ -21,11 +22,11 @@ function mockCms(over: Partial<CmsMocks> = {}): CmsMocks {
     getSeller: over.getSeller ?? vi.fn<OrderCms["getSeller"]>(async () => ({ id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" })),
     findOfferings: over.findOfferings ?? vi.fn<OrderCms["findOfferings"]>(async () => [{ id: 1, name: "套餐", kind: "combo-meal", priceCents: 3000, seller: 7 }]),
     getOrder: over.getOrder ?? vi.fn<OrderCms["getOrder"]>(async () => draftDetail),
-    createOrderDraft: over.createOrderDraft ?? vi.fn<OrderCms["createOrderDraft"]>(async () => ({ order: { id: 90, status: "draft" } as Order, items: [] })),
+    createOrderDraft: over.createOrderDraft ?? vi.fn<OrderCms["createOrderDraft"]>(async () => ({ order: { id: 90, occasion: "lunch", status: "draft" } as Order, items: [] })),
     updateOrder: over.updateOrder ?? vi.fn<OrderCms["updateOrder"]>(async () => ({ id: 90, status: "confirmed" } as Order)),
     upsertSlots: over.upsertSlots ?? vi.fn<OrderCms["upsertSlots"]>(async () => []),
     createFulfillments: over.createFulfillments ?? vi.fn<OrderCms["createFulfillments"]>(async () => []),
-    setFulfillmentsByOrderItems: over.setFulfillmentsByOrderItems ?? vi.fn<OrderCms["setFulfillmentsByOrderItems"]>(async () => undefined),
+    setFulfillmentsByOrders: over.setFulfillmentsByOrders ?? vi.fn<OrderCms["setFulfillmentsByOrders"]>(async () => undefined),
   };
 }
 
@@ -61,7 +62,7 @@ describe("GET /orders", () => {
 });
 
 describe("POST /orders", () => {
-  const body = { customer: 5, date: "2026-06-30", source: "chat-paste", items: [{ offering: 1, mealOccasion: "lunch", quantity: 1 }] };
+  const body = { customer: 5, date: "2026-06-30", occasion: "lunch", source: "chat-paste", items: [{ offering: 1, quantity: 1 }] };
 
   it("records a draft (201) and returns the created order", async () => {
     const cms = mockCms();
@@ -101,7 +102,7 @@ describe("POST /orders/:id/confirm", () => {
   });
 
   it("409 when the order is not a draft", async () => {
-    const notDraft: OrderDetail = { id: 90, date: "x", status: "confirmed", customer: { id: 1, kind: "regular" }, items: [] };
+    const notDraft: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "confirmed", customer: { id: 1 }, items: [] };
     const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => notDraft) });
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });

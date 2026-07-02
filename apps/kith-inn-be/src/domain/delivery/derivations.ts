@@ -10,14 +10,11 @@ import type { AddressGap, AddressGroup, Fulfillment, MenuPlan, Order } from "@cf
 /**
  * Resolve a fulfillment's delivery address — the address lives on the ORDER
  * (frozen snapshot), not on the fulfillment. The cms fulfillments route
- * populates `orderItem → order` (depth 2) so this reads `f.orderItem.order.address`.
+ * populates `order` (depth 1) so this reads `f.order.address`.
  */
 function orderAddress(f: Fulfillment): string {
-  const oi = f.orderItem;
-  if (oi && typeof oi === "object") {
-    const o = oi.order;
-    if (o && typeof o === "object" && typeof o.address === "string") return o.address.trim();
-  }
+  const o = f.order;
+  if (o && typeof o === "object" && typeof o.address === "string") return o.address.trim();
   return "";
 }
 
@@ -41,10 +38,10 @@ export function packingSort(fulfillments: Fulfillment[]): AddressGroup[] {
 
 // AddressGap imported from @cfp/kith-inn-shared (#89 PR B).
 
-/** 缺口：status∈{pending,handed-off}（未送达且未取消——self/onsite 无行、canceled 终态不计）。
+/** 缺口：status=pending（未送达且未取消；canceled 终态不计）。
  *  按地址列，提示"这趟 N 个地址，26B 还没送"。 */
 export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; totalPending: number } {
-  const open = fulfillments.filter((f) => f.status === "pending" || f.status === "handed-off");
+  const open = fulfillments.filter((f) => f.status === "pending");
   const byAddress = new Map<string, number>();
   for (const f of open) {
     const a = orderAddress(f) || "（无地址）";
@@ -57,14 +54,14 @@ export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; to
 }
 
 /**
- * Open fulfillments (pending/handed-off) whose order address contains the fragment
+ * Open fulfillments (pending) whose order address contains the fragment
  * — shared by the agent's mark_delivered tool and the delivery tab's 「送达」 button.
  * Blank fragment → [] (guards against "".includes marking *everything* done).
  */
 export function fulfillmentsMatchingAddress(fulfillments: Fulfillment[], address: string): Fulfillment[] {
   const a = address.trim();
   if (!a) return [];
-  return fulfillments.filter((f) => orderAddress(f).includes(a) && (f.status === "pending" || f.status === "handed-off"));
+  return fulfillments.filter((f) => orderAddress(f).includes(a) && f.status === "pending");
 }
 
 // ── 最近一餐聚焦（PRD §5.5）────────────────────────────────────────────
@@ -93,7 +90,7 @@ export type TodayGaps = {
 export function todayGaps(input: { orders: Order[]; fulfillments: Fulfillment[]; menuPlans: MenuPlan[] }): TodayGaps {
   return {
     unconfirmedOrders: input.orders.filter((o) => o.status === "draft").length,
-    pendingDeliveries: input.fulfillments.filter((f) => f.status === "pending" || f.status === "handed-off").length,
+    pendingDeliveries: input.fulfillments.filter((f) => f.status === "pending").length,
     unpaidOrders: input.orders.filter((o) => o.status === "confirmed" && o.paymentStatus === "unpaid").length,
     unpublishedMenus: input.menuPlans.filter((m) => m.status === "draft").length,
   };

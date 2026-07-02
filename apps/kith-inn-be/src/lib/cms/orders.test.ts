@@ -9,7 +9,8 @@ import {
   getOrder,
   listFulfillments,
   listOrders,
-  setFulfillmentsByOrderItems,
+  setFulfillmentsByIds,
+  setFulfillmentsByOrders,
   updateOrder,
   upsertSlots,
 } from "./orders";
@@ -39,7 +40,7 @@ describe("getSeller", () => {
 describe("listFulfillments", () => {
   it("GETs /api/internal/fulfillments, unwraps {docs}, builds date+occasion query", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch({ docs: [{ id: 1, orderItem: { id: 2, order: { id: 3, address: "3A" } } }] });
+    const deps = mockFetch({ docs: [{ id: 1, order: { id: 3, address: "3A" } }] });
     const fs = await listFulfillments("jwt", { date: "2026-06-30", occasion: "dinner" }, deps);
     expect(fs).toHaveLength(1);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/fulfillments?date=2026-06-30&occasion=dinner");
@@ -61,7 +62,7 @@ describe("listFulfillments", () => {
 describe("getOrder", () => {
   it("GETs /api/internal/orders/:id and returns the normalized detail", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const detail = { id: 90, date: "2026-06-30", status: "draft", customer: { id: 5, kind: "regular" }, items: [] };
+    const detail = { id: 90, date: "2026-06-30", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [] };
     const deps = mockFetch(detail);
     await expect(getOrder("jwt", 90, deps)).resolves.toEqual(detail);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders/90");
@@ -69,11 +70,11 @@ describe("getOrder", () => {
 });
 
 describe("listOrders", () => {
-  it("builds a date+status query string and unwraps {docs}", async () => {
+  it("builds a date+occasion+status query string and unwraps {docs}", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch({ docs: [{ id: 1 }] });
-    const orders = await listOrders("jwt", { date: "2026-06-30", status: "confirmed" }, deps);
-    expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders?date=2026-06-30&status=confirmed");
+    const orders = await listOrders("jwt", { date: "2026-06-30", occasion: "lunch", status: "confirmed" }, deps);
+    expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders?date=2026-06-30&occasion=lunch&status=confirmed");
     expect(orders).toEqual([{ id: 1 }]);
   });
 
@@ -90,7 +91,7 @@ describe("createOrderDraft", () => {
   it("POSTs the draft payload", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch({ order: { id: 90 }, items: [] });
-    await createOrderDraft("jwt", { customer: 5, date: "2026-06-30", source: "chat-paste", items: [], totalCents: 0 }, deps);
+    await createOrderDraft("jwt", { customer: 5, date: "2026-06-30", occasion: "lunch", source: "chat-paste", items: [], totalCents: 0 }, deps);
     const [, init] = deps.fetch.mock.calls[0]!;
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ "content-type": "application/json" });
@@ -123,19 +124,30 @@ describe("createFulfillments", () => {
   it("POSTs the fulfillment array", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch([{ id: 1 }]);
-    await createFulfillments("jwt", [{ orderItem: 201, serviceDate: "2026-06-30", mode: "delivery", status: "pending" }], deps);
+    await createFulfillments("jwt", [{ order: 90, serviceDate: "2026-06-30", occasion: "lunch", status: "pending" }], deps);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/fulfillments");
   });
 });
 
-describe("setFulfillmentsByOrderItems", () => {
-  it("PATCHs the batch update with orderItemIn + set", async () => {
+describe("setFulfillmentsByIds", () => {
+  it("PATCHs the batch update with ids + set", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch({ ok: true });
-    await setFulfillmentsByOrderItems("jwt", [201, 202], { status: "canceled" }, deps);
+    await setFulfillmentsByIds("jwt", [11, 12], { status: "done" }, deps);
     const [, init] = deps.fetch.mock.calls[0]!;
     expect(init?.method).toBe("PATCH");
-    expect(JSON.parse(init?.body as string)).toMatchObject({ orderItemIn: [201, 202], set: { status: "canceled" } });
+    expect(JSON.parse(init?.body as string)).toMatchObject({ ids: [11, 12], set: { status: "done" } });
+  });
+});
+
+describe("setFulfillmentsByOrders", () => {
+  it("PATCHs the batch update with orderIn + set", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = mockFetch({ ok: true });
+    await setFulfillmentsByOrders("jwt", [90], { status: "canceled" }, deps);
+    const [, init] = deps.fetch.mock.calls[0]!;
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toMatchObject({ orderIn: [90], set: { status: "canceled" } });
   });
 });
 

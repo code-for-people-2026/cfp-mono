@@ -8,9 +8,8 @@ const group = (statuses: string[]): AddressGroup => ({
     (s, i) =>
       ({
         id: i,
-        orderItem: i,
+        order: i,
         serviceDate: "2026-06-30",
-        mode: "delivery",
         status: s as "pending" | "done",
       }) as unknown as Fulfillment, // fixture only exercises status — partial is fine for the view helper
   ),
@@ -24,7 +23,7 @@ describe("buildingProgress", () => {
     expect(buildingProgress(group(["done", "done"]))).toEqual({ done: 2, total: 2, percent: 100 });
   });
   it("is 0% when none done", () => {
-    expect(buildingProgress(group(["pending", "handed-off"]))).toEqual({ done: 0, total: 2, percent: 0 });
+    expect(buildingProgress(group(["pending", "pending"]))).toEqual({ done: 0, total: 2, percent: 0 });
   });
   it("is 0% for an empty address group", () => {
     expect(buildingProgress(group([]))).toEqual({ done: 0, total: 0, percent: 0 });
@@ -34,7 +33,6 @@ describe("buildingProgress", () => {
 describe("fulfillmentStatusLabel", () => {
   it("labels each status", () => {
     expect(fulfillmentStatusLabel("done")).toBe("完成");
-    expect(fulfillmentStatusLabel("handed-off")).toBe("已交接");
     expect(fulfillmentStatusLabel("canceled")).toBe("已取消");
     expect(fulfillmentStatusLabel("pending")).toBe("待送");
   });

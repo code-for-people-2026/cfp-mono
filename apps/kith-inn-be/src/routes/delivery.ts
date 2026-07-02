@@ -1,14 +1,14 @@
 import { Hono } from "hono";
 import type { Fulfillment } from "@cfp/kith-inn-shared";
 import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
-import { listFulfillments as listFulfillmentsFn, setFulfillmentsByOrderItems as setFulfillmentsByOrderItemsFn } from "../lib/cms/orders";
+import { listFulfillments as listFulfillmentsFn, setFulfillmentsByIds as setFulfillmentsByIdsFn } from "../lib/cms/orders";
 import { todayShanghai } from "@cfp/kith-inn-shared/util";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
 /** Injectable cms boundary (default = real fetch client). */
 export type DeliveryDeps = {
   listFulfillments: (jwt: string, query: { date?: string; occasion?: string }) => Promise<Fulfillment[]>;
-  setFulfillmentsByOrderItems: typeof setFulfillmentsByOrderItemsFn;
+  setFulfillmentsByIds: typeof setFulfillmentsByIdsFn;
 };
 
 /**
@@ -17,13 +17,13 @@ export type DeliveryDeps = {
  * canceled（终态）不计入视图与计数。
  *
  * `PATCH /fulfillments` — 确定性「送达」勾销，两种 body：
- *  - `{ ids: [...] }`：精确标这几个 orderItem done（按钮用——避免 substring 跨地址误伤，Codex P1）。
+ *  - `{ ids: [...] }`：精确标这几个 fulfillment done（按钮用——避免 substring 跨地址误伤，Codex P1）。
  *  - `{ address }`：把 order.address 含该片段的未完成履约批量标 done（agent/语音用，按片段）。
  *  取代靠 agent `mark_delivered` 的 tool-call（DeepSeek tool-calling 实测不稳）。
  */
 export function deliveryRoutes(
   jwtSecret: string,
-  deps: DeliveryDeps = { listFulfillments: listFulfillmentsFn, setFulfillmentsByOrderItems: setFulfillmentsByOrderItemsFn },
+  deps: DeliveryDeps = { listFulfillments: listFulfillmentsFn, setFulfillmentsByIds: setFulfillmentsByIdsFn },
 ) {
   const app = new Hono<AppVars>();
   app.use("*", sellerAuth(jwtSecret));
@@ -40,11 +40,11 @@ export function deliveryRoutes(
     const jwt = c.get("token") as string;
     const body = (await c.req.json().catch(() => null)) as { ids?: unknown; address?: unknown } | null;
     try {
-      // Exact path (delivery buttons): mark exactly these orderItem ids done — no
+      // Exact path (delivery buttons): mark exactly these fulfillment ids done — no
       // substring spillover across addresses like "3A" matching "13A" (Codex P1).
       if (Array.isArray(body?.ids) && body.ids.length > 0) {
         const ids = body!.ids as Array<string | number>;
-        await deps.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
+        await deps.setFulfillmentsByIds(jwt, ids, { status: "done" });
         return c.json({ ok: true, count: ids.length });
       }
       // Substring path (voice / agent): mark open fulfillments whose address contains the fragment.
@@ -52,9 +52,8 @@ export function deliveryRoutes(
         const fulfillments = await deps.listFulfillments(jwt, { date: todayShanghai(() => new Date()) });
         const targets = fulfillmentsMatchingAddress(fulfillments, body.address);
         if (targets.length === 0) return c.json({ ok: true, count: 0 });
-        // Targets only hold address-matched fulfillments → orderItem is populated (object), never a bare id.
-        const ids = targets.map((f) => (f.orderItem as { id: string | number }).id);
-        await deps.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
+        const ids = targets.map((f) => f.id);
+        await deps.setFulfillmentsByIds(jwt, ids, { status: "done" });
         return c.json({ ok: true, count: targets.length });
       }
       return c.json({ error: "ids or address required" }, 400);

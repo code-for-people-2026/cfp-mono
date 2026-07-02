@@ -2,6 +2,7 @@ import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { collections } from "@cfp/kith-inn-payload";
+import { migrations } from "./src/payload/migrations";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -49,9 +50,10 @@ const db = postgresDatabaseURL
         connectionString: postgresDatabaseURL,
       },
       schemaName,
-      // M0 syncs schema via `push` (PAYLOAD_DB_PUSH=true) in dev/CI. Production
-      // migrations are added in PR3 once the full spine schema lands; for the
-      // spike there is nothing to migrate yet.
+      migrationDir: "src/payload/migrations",
+      // Dev can still use `push` locally, but deploys should apply the checked-in
+      // cms migrations just like website does.
+      prodMigrations: migrations,
       push: process.env.PAYLOAD_DB_PUSH === "true",
     })
   : sqliteAdapter({

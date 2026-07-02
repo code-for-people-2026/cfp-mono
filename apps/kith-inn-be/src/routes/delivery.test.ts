@@ -4,23 +4,24 @@ import { issueToken } from "../lib/auth/jwt";
 import { deliveryRoutes, type DeliveryDeps } from "./delivery";
 
 const SECRET = "test-secret";
-const at = (id: number, address: string): Fulfillment["orderItem"] => ({ id, order: { id: 1, address } }) as never;
+const at = (address: string): Fulfillment["order"] =>
+  ({ id: 1, customer: 1, date: "2026-06-30", occasion: "lunch", status: "confirmed", source: "chat-paste", paymentStatus: "unpaid", address, seller: 7 }) as never;
 const f = (over: Partial<Fulfillment> = {}): Fulfillment =>
-  ({ id: 1, orderItem: at(1, "3A"), serviceDate: "2026-06-30", mode: "delivery", status: "pending", seller: 7, ...over }) as Fulfillment;
+  ({ id: 1, order: at("3A"), serviceDate: "2026-06-30", occasion: "lunch", status: "pending", seller: 7, ...over }) as Fulfillment;
 const auth = async () => ({ Authorization: `Bearer ${await issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET)}` });
 const json = async () => ({ ...(await auth()), "content-type": "application/json" });
 /** Minimal deps with both cms methods stubbed (tests override listFulfillments). */
 const deps = (listFulfillments: DeliveryDeps["listFulfillments"]): DeliveryDeps => ({
   listFulfillments,
-  setFulfillmentsByOrderItems: vi.fn(async () => undefined),
+  setFulfillmentsByIds: vi.fn(async () => undefined),
 });
 
 describe("GET /delivery", () => {
   it("returns address sort + gap report from cms fulfillments", async () => {
     const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
-      f({ id: 1, orderItem: at(101, "3A") }),
-      f({ id: 2, orderItem: at(102, "3A") }),
-      f({ id: 3, orderItem: at(103, "26B"), status: "done" }),
+      f({ id: 1, order: at("3A") }),
+      f({ id: 2, order: at("3A") }),
+      f({ id: 3, order: at("26B"), status: "done" }),
     ]);
     const app = deliveryRoutes(SECRET, deps(listFulfillments));
     const res = await app.request("/?date=2026-06-30&occasion=dinner", { headers: await auth() });
@@ -41,8 +42,8 @@ describe("GET /delivery", () => {
 
   it("excludes canceled fulfillments from sort + counts (Codex P2)", async () => {
     const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
-      f({ id: 1, orderItem: at(101, "3A"), status: "pending" }),
-      f({ id: 2, orderItem: at(102, "3A"), status: "canceled" }),
+      f({ id: 1, order: at("3A"), status: "pending" }),
+      f({ id: 2, order: at("3A"), status: "canceled" }),
     ]);
     const app = deliveryRoutes(SECRET, deps(listFulfillments));
     const res = await app.request("/", { headers: await auth() });
@@ -57,40 +58,40 @@ describe("GET /delivery", () => {
 });
 
 describe("PATCH /fulfillments", () => {
-  it("marks exactly the submitted orderItem ids done (button path, no substring spillover — Codex P1)", async () => {
-    const setFulfillmentsByOrderItems = vi.fn(async () => undefined);
+  it("marks exactly the submitted fulfillment ids done (button path, no substring spillover — Codex P1)", async () => {
+    const setFulfillmentsByIds = vi.fn(async () => undefined);
     const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => []);
-    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByOrderItems });
+    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByIds });
     const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ ids: [201, 202] }) });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { count: number }).count).toBe(2);
-    expect(setFulfillmentsByOrderItems).toHaveBeenCalledWith(expect.any(String), [201, 202], { status: "done" });
+    expect(setFulfillmentsByIds).toHaveBeenCalledWith(expect.any(String), [201, 202], { status: "done" });
     expect(listFulfillments).not.toHaveBeenCalled(); // ids path needs no address lookup
   });
 
   it("marks every open fulfillment whose address contains the fragment done (voice/agent path)", async () => {
     const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
-      f({ id: 11, orderItem: at(201, "26B-301") }),
-      f({ id: 12, orderItem: at(202, "26B-502") }),
-      f({ id: 13, orderItem: at(203, "26B-301"), status: "done" }), // already done → skip
-      f({ id: 14, orderItem: at(204, "1D-1201") }),
+      f({ id: 11, order: at("26B-301") }),
+      f({ id: 12, order: at("26B-502") }),
+      f({ id: 13, order: at("26B-301"), status: "done" }), // already done → skip
+      f({ id: 14, order: at("1D-1201") }),
     ]);
-    const setFulfillmentsByOrderItems = vi.fn(async () => undefined);
-    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByOrderItems });
+    const setFulfillmentsByIds = vi.fn(async () => undefined);
+    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByIds });
     const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "26B" }) });
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { count: number }).count).toBe(2); // 201 + 202 (203 done, 204 other building)
-    expect(setFulfillmentsByOrderItems).toHaveBeenCalledWith(expect.any(String), [201, 202], { status: "done" });
+    expect(((await res.json()) as { count: number }).count).toBe(2); // 11 + 12 (13 done, 14 other building)
+    expect(setFulfillmentsByIds).toHaveBeenCalledWith(expect.any(String), [11, 12], { status: "done" });
   });
 
   it("returns count 0 + no write when nothing matches", async () => {
-    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [f({ orderItem: at(201, "1D") })]);
-    const setFulfillmentsByOrderItems = vi.fn(async () => undefined);
-    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByOrderItems });
+    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [f({ order: at("1D") })]);
+    const setFulfillmentsByIds = vi.fn(async () => undefined);
+    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByIds });
     const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "99X" }) });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { count: number }).count).toBe(0);
-    expect(setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+    expect(setFulfillmentsByIds).not.toHaveBeenCalled();
   });
 
   it("400 when address is missing/blank (blank would otherwise mark ALL)", async () => {
@@ -109,8 +110,8 @@ describe("PATCH /fulfillments", () => {
   });
 
   it("502 when the cms write throws", async () => {
-    const setFulfillmentsByOrderItems = vi.fn(async () => { throw new Error("net"); });
-    const app = deliveryRoutes(SECRET, { listFulfillments: vi.fn(async () => [f({ orderItem: at(201, "1D") })]), setFulfillmentsByOrderItems });
+    const setFulfillmentsByIds = vi.fn(async () => { throw new Error("net"); });
+    const app = deliveryRoutes(SECRET, { listFulfillments: vi.fn(async () => [f({ order: at("1D") })]), setFulfillmentsByIds });
     expect((await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "1D" }) })).status).toBe(502);
   });
 });

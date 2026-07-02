@@ -9,14 +9,15 @@ const NOW = () => new Date("2026-06-29T12:00:00+08:00");
 const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   getSeller: over.getSeller ?? vi.fn(async () => ({ id: 1, name: "桃子", defaultPriceCents: 3000, status: "active" }) as never),
   findOfferings: over.findOfferings ?? vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "4菜1汤套餐", priceCents: 3000 }] as never),
-  getOrder: over.getOrder ?? vi.fn(async () => ({ id: 1, date: "2026-06-29", status: "draft", customer: { id: 5, kind: "regular" }, items: [] }) as never),
+  getOrder: over.getOrder ?? vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [] }) as never),
   createOrderDraft: over.createOrderDraft ?? vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
   updateOrder: over.updateOrder ?? vi.fn(async () => ({ id: 90 }) as never),
   upsertSlots: over.upsertSlots ?? vi.fn(async () => [] as never),
   createFulfillments: over.createFulfillments ?? vi.fn(async () => [] as never),
-  setFulfillmentsByOrderItems: over.setFulfillmentsByOrderItems ?? vi.fn(async () => undefined),
-  listCustomers: over.listCustomers ?? vi.fn(async () => [{ id: 5, displayName: "王燕萍", kind: "regular" }] as never),
-  createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫", kind: "regular" }) as never),
+  setFulfillmentsByOrders: over.setFulfillmentsByOrders ?? vi.fn(async () => undefined),
+  setFulfillmentsByIds: over.setFulfillmentsByIds ?? vi.fn(async () => undefined),
+  listCustomers: over.listCustomers ?? vi.fn(async () => [{ id: 5, displayName: "王燕萍" }] as never),
+  createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫" }) as never),
   listFulfillments: over.listFulfillments ?? vi.fn(async () => [] as never),
   listOrders: over.listOrders ?? vi.fn(async () => [] as never),
 });
@@ -50,8 +51,9 @@ describe("recordOrders", () => {
       expect.objectContaining({
         customer: 5,
         date: "2026-06-29",
+        occasion: "lunch",
         source: "chat-paste",
-        items: [expect.objectContaining({ offering: 10, mealOccasion: "lunch", quantity: 2 })],
+        items: [expect.objectContaining({ offering: 10, quantity: 2 })],
       }),
     );
   });
@@ -111,7 +113,7 @@ describe("recordOrders", () => {
 describe("createCustomersAndOrders", () => {
   it("creates each customer then records a draft, returns created", async () => {
     const cms = baseCms({
-      createCustomer: vi.fn(async (_jwt, input) => ({ id: 55, displayName: input.displayName, kind: "regular" }) as never),
+      createCustomer: vi.fn(async (_jwt, input) => ({ id: 55, displayName: input.displayName }) as never),
     });
     const r = await svc(cms).createCustomersAndOrders([
       { displayName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
@@ -120,7 +122,7 @@ describe("createCustomersAndOrders", () => {
     expect(cms.createCustomer).toHaveBeenCalledWith("jwt", { displayName: "大龙猫", address: "26B-301" });
     expect(cms.createOrderDraft).toHaveBeenCalledWith(
       "jwt",
-      expect.objectContaining({ customer: 55, source: "chat-paste", items: [expect.objectContaining({ quantity: 1, mealOccasion: "dinner" })] }),
+      expect.objectContaining({ customer: 55, occasion: "dinner", source: "chat-paste", items: [expect.objectContaining({ quantity: 1 })] }),
     );
   });
 
@@ -130,7 +132,7 @@ describe("createCustomersAndOrders", () => {
       createCustomer: vi.fn(async () => {
         i++;
         if (i === 1) throw new Error("net");
-        return { id: 56, displayName: "x", kind: "regular" } as never;
+        return { id: 56, displayName: "x" } as never;
       }),
     });
     const r = await svc(cms).createCustomersAndOrders([
@@ -156,13 +158,13 @@ describe("confirmOrder", () => {
   });
 
   it("reports not-draft without confirming", async () => {
-    const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", status: "confirmed", customer: { id: 5, kind: "regular" }, items: [] }) as never) });
+    const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "confirmed", customer: { id: 5 }, items: [] }) as never) });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: expect.stringMatching(/不是草稿/) });
   });
 
   it("reports an archived slot needs force reopen", async () => {
     const cms = baseCms({
-      getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", status: "draft", customer: { id: 5, kind: "regular" }, items: [{ id: 201, mealOccasion: "lunch", quantity: 1 }] }) as never),
+      getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [{ id: 201, quantity: 1 }] }) as never),
       upsertSlots: vi.fn(async () => { throw new CmsHttpError(409, "x"); }),
     });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: "需先重开档期" });
@@ -199,19 +201,19 @@ describe("markPaid", () => {
 });
 
 describe("markDelivered", () => {
-  // Address lives on the order now (cms populates orderItem→order).
-  const at = (orderItemId: number, address: string) => ({ id: orderItemId, order: { id: 1, address } });
+  // Address lives on the order now (cms populates fulfillment.order).
+  const at = (address: string) => ({ id: 1, address });
   const fs = [
-    { id: 11, orderItem: at(201, "26B-301"), status: "pending" },
-    { id: 12, orderItem: at(202, "26B-502"), status: "pending" },
-    { id: 13, orderItem: at(203, "26B-301"), status: "canceled" },
+    { id: 11, order: at("26B-301"), status: "pending" },
+    { id: 12, order: at("26B-502"), status: "pending" },
+    { id: 13, order: at("26B-301"), status: "canceled" },
   ];
 
   it("marks every fulfillment whose order.address includes the address (skips canceled)", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
     const r = await svc(cms).markDelivered({ address: "26B" });
     expect(r).toEqual({ ok: true, count: 2 });
-    expect(cms.setFulfillmentsByOrderItems).toHaveBeenCalledWith("jwt", [201, 202], { status: "done" });
+    expect(cms.setFulfillmentsByIds).toHaveBeenCalledWith("jwt", [11, 12], { status: "done" });
   });
 
   it("narrows to a single door when the address is more specific", async () => {
@@ -222,7 +224,7 @@ describe("markDelivered", () => {
   it("is a no-op (count 0, no write) when nothing matches", async () => {
     const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
     expect(await svc(cms).markDelivered({ address: "99" })).toEqual({ ok: true, count: 0 });
-    expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+    expect(cms.setFulfillmentsByIds).not.toHaveBeenCalled();
   });
 
   it("rejects a blank address — ''.includes would otherwise mark ALL (Codex P1)", async () => {
@@ -230,7 +232,7 @@ describe("markDelivered", () => {
     expect(await svc(cms).markDelivered({ address: "" })).toEqual({ ok: false, error: "地址不能为空" });
     expect(await svc(cms).markDelivered({ address: "   " })).toEqual({ ok: false, error: "地址不能为空" });
     expect(cms.listFulfillments).not.toHaveBeenCalled();
-    expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+    expect(cms.setFulfillmentsByIds).not.toHaveBeenCalled();
   });
 
   it("returns a generic error on failure", async () => {
@@ -251,13 +253,13 @@ describe("getTodaySummary", () => {
       listFulfillments: vi.fn(async () => [
         { status: "pending" },
         { status: "done" },
-        { status: "handed-off" },
+        { status: "canceled" },
       ] as never),
     });
     const t = await svc(cms).getTodaySummary();
     expect(t).toEqual({
       unconfirmedOrders: 1,
-      pendingDeliveries: 2,
+      pendingDeliveries: 1,
       unpaidOrders: 1,
       recentOrders: "王燕萍 草稿；李叔；张三",
     });
@@ -287,7 +289,7 @@ describe("getTodayOrders", () => {
 });
 
 describe("getTodayDelivery", () => {
-  const f = (id: number, addr: string, status: string) => ({ id, orderItem: { id: id + 100, order: { id: 1, address: addr } }, status, mode: "delivery" });
+  const f = (id: number, addr: string, status: string) => ({ id, order: { id: 1, address: addr }, status });
 
   it("groups by address with done/total + totalPending (canceled dropped)", async () => {
     const cms = baseCms({
@@ -296,8 +298,8 @@ describe("getTodayDelivery", () => {
     const d = await svc(cms).getTodayDelivery();
     expect(d.totalPending).toBe(2); // 2 pending; canceled + done not counted
     const g = Object.fromEntries(d.groups.map((x) => [x.address, x]));
-    expect(g["26B"]).toEqual({ address: "26B", count: 2, done: 1, total: 2, ids: [111, 112] });
-    expect(g["1D"]).toEqual({ address: "1D", count: 1, done: 0, total: 1, ids: [113] }); // canceled filtered before packingSort
+    expect(g["26B"]).toEqual({ address: "26B", count: 2, done: 1, total: 2, ids: [11, 12] });
+    expect(g["1D"]).toEqual({ address: "1D", count: 1, done: 0, total: 1, ids: [13] }); // canceled filtered before packingSort
   });
 
   it("degrades to empty on cms failure", async () => {

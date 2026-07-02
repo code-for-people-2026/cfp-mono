@@ -50,13 +50,13 @@ export type Offering = z.infer<typeof offeringSchema>;
 /** 服务时间桶（开餐 slot）。draft=预占，open=确认即开餐，archived=软删。 */
 export type ServiceSlot = z.infer<typeof serviceSlotSchema>;
 
-/** 订单条目（每条 = 一个 offering × 份数，含 mealOccasion / 快照 unitPriceCents）。 */
+/** 订单条目（每条 = 一个 offering × 份数；餐次在 order.occasion）。 */
 export type OrderItem = z.infer<typeof orderItemSchema>;
 
-/** 订单（draft=纯记录→confirm 物化→cancel 终态；address 是 draft-create 时的冻结快照）。 */
+/** 订单（顾客+日期+餐次；draft=纯记录→confirm 物化→cancel 终态；address 是创建时地址快照）。 */
 export type Order = z.infer<typeof orderSchema>;
 
-/** 送餐履约（per orderItem，delivery 模式才建；serviceDate 冗余便于按日分拣）。 */
+/** 送餐履约（per order；serviceDate/occasion 冗余便于按日分拣）。 */
 export type Fulfillment = z.infer<typeof fulfillmentSchema>;
 
 /** 菜单计划（某 slot 卖哪些 offerings + 发群文案）。 */

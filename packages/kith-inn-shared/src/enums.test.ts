@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUSTOMER_KINDS,
   FULFILLMENT_STATUSES,
-  FULFILLMENT_MODES,
   MENU_PLAN_STATUSES,
   OFFERING_CATEGORIES,
   OFFERING_KINDS,
@@ -60,15 +58,12 @@ describe("domain enums", () => {
   it("fulfillment status includes the canceled terminal state", () => {
     expect(FULFILLMENT_STATUSES).toEqual([
       "pending",
-      "handed-off",
       "done",
       "canceled",
     ]);
   });
 
   it("remaining enums are non-empty and kebab-case", () => {
-    expect(FULFILLMENT_MODES.length).toBeGreaterThan(0);
-    expect(CUSTOMER_KINDS).toContain("self");
     expect(SELLER_MODULES).toContain("menu-planning");
     expect(SELLER_STATUSES).toContain("active");
     expect(OPERATOR_ROLES).toContain("owner");

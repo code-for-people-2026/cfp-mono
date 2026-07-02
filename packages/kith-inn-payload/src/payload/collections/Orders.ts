@@ -1,10 +1,10 @@
 import type { CollectionConfig } from "payload";
-import { ORDER_SOURCES, ORDER_STATUSES, PAYMENT_STATUSES } from "@cfp/kith-inn-shared";
+import { OCCASIONS, ORDER_SOURCES, ORDER_STATUSES, PAYMENT_STATUSES } from "@cfp/kith-inn-shared";
 import { sellerField, tenantAccess, tenantHooks } from "./shared";
 
 /**
- * `orders` — one ordering intent, one person, one day (PRD §7.1). Day-granular:
- * no meal/qty/price/delivery here (those live on order_items + fulfillments).
+ * `orders` — one customer, one service date, one occasion (PRD §7.1). Item
+ * quantity/price live on order_items; delivery task lives on fulfillments.
  *
  * M0 ships the schema stub. The §3.3 write-side state machine (draft=纯记录 →
  * 确认物化开 slot + 建 fulfillments → 取消作废) and the `totalCents` recompute
@@ -25,6 +25,7 @@ export const Orders: CollectionConfig = {
       index: true,
     },
     { name: "date", type: "date", required: true, index: true },
+    { name: "occasion", type: "select", options: [...OCCASIONS], required: true, index: true },
     {
       name: "status",
       type: "select",

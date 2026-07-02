@@ -1,15 +1,18 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.11 ｜ 最近更新：2026-06-27
+> 状态：草稿 v0.13 ｜ 最近更新：2026-07-02
+> v0.13 变更：**订单三表定稿**——`orders` 改为一人一日一餐，餐次上移到 `orders.occasion`；`order_items` 不再有 `mealOccasion/timeWindow`；`fulfillments` 改为挂 `order`，地址从 `orders.address` 读取，履约状态收口为 `pending/done/canceled`。
+> v0.12 变更：**同步 PRD v1.10 数据模型决策分层**——已确认：地址用单个 string、不再建 customer_addresses/楼栋地址模型、自家单不设 self/onsite 特例、不做奶奶协同字段、菜品池 M1 只维护菜名 + 主料且 `offerings.recipe` 仅预留；`orders` / `order_items` / `fulfillments` 于 v0.13 定稿。
 > v0.11 变更：**架构从 C′ 调整为「官网单独 + 共享 cms」**——`apps/cms` 升为 kith-inn 及未来小 app 的【共享 Payload host】（schema `"cms"`，不再 kith-inn 专属、schemaName 不再是 `kith_inn`）；各 app 的集合/类型/逻辑拆进自己的包（kith-inn → `packages/kith-inn-payload` 依赖 `payload`；零依赖领域内核 `packages/kith-inn-shared` 存枚举/类型/契约供 FE+BE+cms 共享）。官网 `apps/website` 仍单独。§1 图与表、§3.4 同步。**多租户插件 no-go**（弃，单走 §3.1 自家 `tenantScoped()` 工厂，详见 apps/cms/SPIKE.md）。
-> v0.10 变更：**codex #66 P2 三项修正**：§3.3⑤ 订阅物化 idempotencyKey 含 occurrence 坐标（sub id + date + occasion|timeWindow）；§3.3③ 搬单回退兼顾 menu_plan（仍有已发菜单则保持 open）；§3.2 idempotencyKey 撞键返回现存 order（不论状态）。
+> v0.10 变更：**codex #66 P2 三项修正**：§3.3⑤ 订阅物化 idempotencyKey 含 occurrence 坐标；§3.3③ 搬单回退兼顾 menu_plan（仍有已发菜单则保持 open）；§3.2 idempotencyKey 撞键返回现存 order（不论状态）。
 > v0.9 变更：**审查 issues spec 补全**：§3.1 增"job 信任根"小节（#63 安全前置）；§3.2 补 `(seller,paymentStatus)` 跨日未付索引（#62）；§3.3 ② 级联完整性、③ 回写加终态守卫 + 搬单幽灵 slot（#61）、⑤ subscription 物化子流程（#63）。
-> v0.8 变更：**对抗审查落地**：① §3 增"时区基准=Asia/Shanghai"（修"今天/0点"未定义的 critical gap）；② §3.2 补 `orders (seller,idempotencyKey)` partial unique（挡重复粘贴 + 订阅物化 job 幂等）+ customers/customer_addresses 索引；③ §3.3②b self/onsite **不建 fulfillment**（修缺口对账 bug）；④ §3.3 归档 archived→open force 守卫**下沉 cms beforeChange hook**。
-> v0.7 变更：**slot 命中键 granularity-aware**（Codex P2 复审）——order_items 加 `timeWindow?`（time-slot 粒度商家才填、快照自 slot 的 startAt/endAt）；slot 归属 / 确认 upsert 键(§3.3②a) / 反范式回写(§3.3③) 均随 `service_slots.granularity` 取 occasion 或 timeWindow，修"time-slot 商家同日不同时段无法区分"；service_slots time-slot 唯一键 = (seller,date,timeWindow)。
-> v0.6 变更：**架构 C′**——§1 改为"各自 Payload、同库分 schema"（apps/cms=kith-inn 自己的 Payload `schemaName="kith_inn"`，**website 原封不动**自带 `schemaName="website"`，同一 RDS）；§3.4 M0 不再迁 website、大幅变轻；§7 cms spike 复杂度降 S；§2 DeepSeek 客户端 kith-inn-be 自带不抽 website。**§3 镜像 PRD 主链路状态模型**：索引加 `orders.status`、`fulfillments.serviceDate`、`chat_messages`；§3.3 加写侧状态机（draft 生命周期、slot upsert 开餐、chat 留存）；§3.4 加 `chat_messages` 集合。**对抗性通审 9 项修正**：§3.3 写侧状态机重写（① draft 纯记录零副作用 → ② 确认订单物化：upsert 开 slot[archived 不自动重开] + 建 fulfillments、取消作废 → ③ date/occasion 反范式实时回写 hook）；§3.2 fulfillments 索引加 occasion、orders 索引加 status（"上次点啥"只看 confirmed）；快照排除 serviceDate/occasion；§7 ICP 决策补 `callContainer` 免合法域名信道、移除悬挂的 P2-4 引用。**Codex #53 P1**：`fulfillments.status` 加 `canceled` 终态（§3.2 索引含 status、§3.3 取消即置 canceled、缺口对账判 `∈{pending,handed-off}`）。
+> v0.8 变更：**对抗审查落地**：① §3 增"时区基准=Asia/Shanghai"（修"今天/0点"未定义的 critical gap）；② §3.2 补 `orders (seller,idempotencyKey)` partial unique（挡重复提交 + 订阅物化 job 幂等）；③ §3.3 归档 archived→open force 守卫**下沉 cms beforeChange hook**。
+> v0.7 变更：**slot 命中键 granularity-aware**（Codex P2 复审）：slot 归属 / 确认 upsert 键 / 反范式回写随 `service_slots.granularity` 取餐次或未来时段坐标；订单明细字段已在 v0.13 重定稿。
+> v0.6 变更：**架构 C′**——§1 改为"各自 Payload、同库分 schema"；§3.4 M0 不再迁 website、大幅变轻；§7 cms spike 复杂度降 S；§2 DeepSeek 客户端 kith-inn-be 自带不抽 website。**§3 镜像 PRD 主链路状态模型**：索引加 `orders.status`、`fulfillments.serviceDate`、`chat_messages`；§3.3 加写侧状态机（draft 生命周期、slot upsert 开餐、chat 留存）；§3.4 加 `chat_messages` 集合。订单/履约字段细节已在 v0.13 重定稿。
 > v0.5 变更：通审/Codex 修正——补回 §3 标题(P1-A)；明确 **legacy(menu-core/community-cooking/recipes)不复用、从 0 新建**；§5 后端合法域名需 ICP 备案(给桃子真机用 = 备案 or 微信云托管)、§7 加该决策项。
 > v0.4 变更：§3 重写——租户隔离升级为硬机制（tenantScoped access 工厂 + 写侧 seller 覆写 + 跨租户引用校验 + 聚合禁裸 SQL）、索引清单、快照/派生/归档、M0 数据层任务（装 multi-tenant 插件、recipes 后门审计）。对应 PRD §7 v1.1 的数据模型。
 > v0.3 变更：§4 把「今天」主对话 agent 抬为 **MVP 唯一 agent**（"MVP 零 agent"作废）；去掉防漏校验、买菜助手并入主 agent；新增 §4.1（一个 agent 多工具、范围外挡回、三层记忆 + 滚动 2 天会话、地址补全、agent 的 100% 覆盖策略）。对应 PRD §5.5。
+> v0.11 及更早条目是历史记录；与 v0.13/PRD v1.11 冲突时，以 v0.13/PRD v1.11 为准。
 > **本文是技术架构的唯一权威来源（source of truth）**；PRD 只做产品层面的简述并指回本文。
 > 配套 PRD：[PRD](./PRD.md)
 > **估算口径**：按复杂度 / 风险分级（S / M / L）+ 关键风险，墙钟只作松提示，基准"1 人主导 + AI 编码"。
@@ -59,7 +62,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ## 3. 数据模型与租户隔离
 
-- **集合定义（字段级）见 PRD §7**（主干 spine + 模块表 + 组合机制 + 治理铁律）。本节定**租户隔离的硬机制、索引、迁移注意、派生策略**——这些是经对抗性审查后的实现要求，不是可选项。
+- **集合定义（字段级）见 PRD §7 / DATA-MODEL**（主干 spine + 模块表 + 组合机制 + 治理铁律）。本节定**租户隔离的硬机制、索引、迁移注意、派生策略**。
 
 **时区基准（v0.8 增，对抗审查 critical gap）**：所有"今天 / 0 点 / order.date 查询 / chat_messages 留存裁剪 / 最近一餐聚焦 / slot 开餐归属 / 订阅物化"的日期判定一律以 **Asia/Shanghai** 为准（DB 存 UTC、查询/裁剪/物化按此时区算）——凌晨边界（清前天会话、单算哪天、今晚的单不算进明天）尤其依赖。
 
@@ -77,31 +80,42 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 | 索引 | 服务的查询 |
 |---|---|
-| `orders (seller, date, status, paymentStatus)` | 今天确认订单(status=confirmed)、谁没付款；draft/canceled 同表靠 status 过滤掉 |
+| `orders (seller, date, occasion, status, paymentStatus)` | 今天某餐确认订单(status=confirmed)、谁没付款；draft/canceled 同表靠 status 过滤掉 |
+| `orders (seller, customer, date, occasion)` unique | 业务唯一坐标；重复粘贴同一天同餐同顾客时更新现存 order |
 | `orders (seller, customer, status, placedAt)` | 张阿姨上次点啥（**只看 status=confirmed**，排除草稿/取消；ASC 索引 + `ORDER BY placedAt DESC LIMIT 1` 走 backward scan，**别写 DESC**） |
-| `fulfillments (seller, serviceDate, occasion, addrBuilding, status)` | 26B 送了、谁没送、缺口对账（反范式 serviceDate+occasion 入索引，按 用餐日+餐次+楼栋 成批，免回连 order；occasion 可空，全天商家全列同段）|
+| `fulfillments (seller, serviceDate, occasion, status)` | 谁没送、缺口对账；地址从 populated `order.address` 读取后内存相似度排序 |
 | `service_slots (seller, date, occasion)` unique | 唯一约束 + 最近一餐定位 + 首单 upsert 命中 |
 | `offerings (seller, mainIngredient, lastUsedAt)` | 菜单主料去重扫描（component 型） |
 | `order_items (seller, order)` | "今天订单"的 join 走索引 |
 | `chat_messages (seller, operator, createdAt)` | 展示对话分页拉取 + 留存裁剪（§5.5；ASC 索引 backward scan 取最近，删最旧 200 走正向）|
 | `subscriptions (seller, status)` [V1] | 这周有哪些预定 |
-| `orders (seller, idempotencyKey)` partial unique **WHERE NOT NULL** | 重复粘贴去重 + 订阅物化 job 幂等（多 NULL 不冲突=partial unique 用途；撞键返回现存 order 不论 draft/confirmed/canceled，而非新建）|
-| `customers (seller, displayName)`、`customer_addresses (seller, customer, lastUsedAt)` | 记单时名字→顾客、最近地址带出（MVP 量级可全表扫，多租户放大后必备）|
+| `orders (seller, idempotencyKey)` partial unique **WHERE NOT NULL** | 技术幂等：防同一次提交/订阅物化 job 重复写。业务上的“重复粘贴更新”不要暴露成“撞键”，而是在确认卡展示新增/更新/跳过 |
+| `customers (seller, displayName)`、`customers (seller, address)` | 记单时名字→顾客、默认地址带出；地址是 string，不建 customer_addresses |
 | `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
 > partial unique（如 time-slot 的唯一性）Payload config 表达不了，**手写 SQL**，属"库外资产"、drift 检测不认，迁移清单单列。
 
+**本轮 schema migration（v0.13，未部署，无需数据回填）**：
+
+- `orders` 加 `occasion`，枚举同 `OCCASIONS`，required + index。
+- `orders` 加 `(seller, customer, date, occasion)` 业务唯一索引。
+- `order_items` 删除 `mealOccasion`、`timeWindow`。
+- `fulfillments` 从挂 `orderItem` 改为挂 `order`。
+- `fulfillments.status` 枚举收口为 `pending/done/canceled`。
+- `fulfillments` 删除 `orderItem`、`mode`、`assignee`、`timeWindow`。
+- `customers` 删除 `kind`。
+
 ### 3.3 快照 / 派生 / 归档
 
-- **快照**（`beforeChange` create 时定格）：`order_items.unitPriceCents`(落值时)、`fulfillments.addrBuilding/addrUnit`——归档可回放（"张阿姨上次点啥"靠快照非现状）。**注**：`fulfillments.serviceDate/occasion` **不在快照之列**——它们是订单身份（哪一餐），随 order 实时同步（见下 §3.3 写侧状态机 ③），改餐次要跟着搬。
-- **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：送餐分组、采购聚合、"最近一餐"聚焦、未付汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/采购/未付/未送，`slot.status=open` 才进"今天该做"范围)。
+- **快照**（`beforeChange` create 时定格）：`order_items.unitPriceCents`、`orders.address`。fulfillment 不重复存地址，只通过 `order.address` 展示/排序；不拆 `addrBuilding/addrUnit`。
+- **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：地址相似度排序、"最近一餐"聚焦、未付汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/未付/未送，`slot.status=open` 才进"今天该做"范围)。采购聚合后置，`offerings.recipe` 可预留但 M1 不启用。
 - **归档软删**：`service_slots.status=archived` 时，其下 order/item/fulfillment 写操作经 access.update + hook 拦截，要求显式 `force`（对应二次确认）；不真删；保护范围含 menu_plans。**archived→open 的 force 守卫下沉到 cms 侧 service_slots beforeChange hook**（status 从 archived 转 open 必须带 force 否则拒绝），让确认/菜单发布/订阅物化/未来工具所有写路径统一被挡，不靠 be 各调用点自觉。
 - **写侧状态机（确定性 hook/服务，可单测）**：
-  - **① draft = 纯记录**：记单解析即落 `orders.status=draft`（连 items）持久化、与会话留存解耦（PRD §7），但**不触任何经营表**——不开 slot、不建 fulfillments。
-  - **② 确认订单 = 物化事务**（draft→`confirmed` 的 afterChange 内）：a) 按 (seller, order.date, occasion|timeWindow——随 `service_slots.granularity` 取) **upsert `service_slots`→open**——仅当 slot 缺失或 ∈{draft, open}；`archived` **不自动重开**，撞上则走 force / 二次确认（与归档软删一致）；菜单发布同样开餐。b) 为每个**需配送/自取的 item** **建 `fulfillments`**（**self/onsite 不建 fulfillment 行**——份数/采购靠 order_items，免 onsite 履约永久 pending 污染缺口对账）。「取消」→`canceled`、其 fulfillments **置 `status=canceled`**（终态，退出送餐/缺口口径——delivery 视图不回连 order，取消必须在 fulfillment 自身可见；缺口对账判 `status ∈ {pending,handed-off}`，非 `≠done`）。**draft 全程零副作用**——故"draft 不进送餐/采购/未付/今天该做口径"由"未物化"天然保证，不靠 read 端过滤。**级联完整性（审查 #61）**：fulfillments 只挂 orderItem、不另存 order 反向引用；取消/改单级联由 be 按 order→order_items→fulfillments 遍历——物化事务(②b)保证 item 与其 fulfillment 同生、后续 item 增删（加份/改餐次）经同一 be 操作同步增删其 fulfillment，杜绝 orphan。
-  - **③ 反范式回写**：`order_items.mealOccasion` / `timeWindow` / `orders.date` 改动经 afterChange hook **重写关联 fulfillments 的 `serviceDate/occasion/timeWindow`**（实时同步、非冻结；地址 addrBuilding/addrUnit 仍冻结）——免送餐视图把改过餐次的单批错栋/错日。**回写守卫（审查 #61）**：① 只重写 `status ∈ {pending, handed-off}` 的 fulfillment，**跳过 done/canceled 终态**（免把已送达/已作废履约"搬家复活"）；② 改 `orders.date` 搬单后，检查旧 (date,occasion) 是否还有任一 confirmed 单 **或已发布 menu_plan**——**两者皆无才把旧 slot 回退 draft**（不进 getTodayGaps，免幽灵餐）；若仍有 menu_plan（菜单已发、这餐仍计划做）则保持 open（否则会把计划中的餐从"今天该做"藏掉）；新日 slot 若 archived 则改 date 挡回、提示需先 force 重开（避免半同步）。
+  - **① draft = 纯记录**：记单确认卡确认后才写草稿数据；draft 与会话留存解耦，但**不触任何经营表**——不开 slot、不建履约。
+  - **② 确认订单 = 物化事务**：draft→`confirmed` 时按 `(seller, order.date, order.occasion)` upsert `service_slots`→open，并为该 order 创建一条 fulfillment；`archived` slot 不自动重开，需 force / 二次确认。
+  - **③ 取消/修改级联**：取消 order 时其 fulfillment 置 `canceled` 终态；修改 `orders.date/occasion` 时同步 pending fulfillment 的 `serviceDate/occasion`，跳过 done/canceled 终态；修改 `orders.address` 不需要同步 fulfillment，因为地址从 order 读取。
   - **④ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
-  - **⑤ subscription 物化（审查 #63，V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中坐标（`(date,occasion)` 或 `(date,timeWindow)`，随 granularity）+ 排除 `pausedRanges` → 物化出 `orders.status=confirmed`（订阅是已确认承诺，非 draft）+ order_items，**走与"确认订单"同一物化事务**（②a 开 slot→open + ②b 建 fulfillments + 快照 unitPriceCents）；以 `(seller, idempotencyKey= sub前缀 + 命中坐标)` partial unique 撞重防并发重复——key 含 subscription id + 该期 `(date, occasion|timeWindow)`，否则 recurring/open-ended 的第二期会撞第一期被当重复跳过、后期永不上线；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
+  - **⑤ subscription 物化（V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中 `(date,occasion)` 坐标（未来 time-slot 生意再扩展为 date + start/end slot 坐标）+ 排除 `pausedRanges` → 物化为已确认 order，并走与"确认订单"同一物化事务。`idempotencyKey` 需包含 subscription id + 本期坐标，防 recurring/open-ended 后续期数误撞第一期；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
 
 ### 3.4 M0 数据层任务（共享 cms host + 按 app 分模块包；**不动 website**）
 
@@ -135,7 +149,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 |---|---|---|---|
 | **「今天」主对话 agent** | **4 Agent** | **MVP** | **全产品唯一 agent**：自然语言入口，编排下面这些工具 + 订单结构化；浅多轮、范围外挡回、确定性兜底。工具 = kith-inn-be 后端操作，与详情 tab 同一套（PRD §5.5） |
 | 菜单选菜（工具） | **0 确定性** | MVP | 规则选菜，绝不用 LLM 决定选哪道 |
-| 送餐分组（工具） | **0 确定性** | MVP | 按楼栋分组 / 排序 |
+| 送餐排序（工具） | **0 确定性** | MVP | 按地址字符串相似度/自然排序 |
 | 采购聚合 + 用量估算（工具） | **0 确定性** | M2 | 食材 × 份数；"今天买什么菜"问答调它 |
 | 订单结构化（agent 内解析步） | **1 普通 LLM 调用** | MVP | 接龙/口述→结构化（名字+份数+餐次，智能分午/晚）；顾客名字匹配、带出默认地址 |
 | 菜单润色 / 节令 / 群文案 | **1 普通 LLM 调用** | MVP | 在确定性菜单之后润色 |

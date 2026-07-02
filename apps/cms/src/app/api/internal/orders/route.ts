@@ -4,10 +4,11 @@ import { operatorScope, ownedBy } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
-type DraftItem = { offering: string | number; mealOccasion?: string; quantity: number; unitPriceCents?: number; note?: string };
+type DraftItem = { offering: string | number; quantity: number; unitPriceCents?: number; note?: string };
 type DraftBody = {
   customer: string | number;
   date: string;
+  occasion: string;
   source: string;
   note?: string;
   idempotencyKey?: string;
@@ -16,8 +17,8 @@ type DraftBody = {
 };
 
 /**
- * `GET /api/internal/orders[?date=&status=]` — the seller's order 台账 (seller-
- * scoped; optional date/status filters). depth:1 populates `customer`.
+ * `GET /api/internal/orders[?date=&occasion=&status=]` — the seller's order 台账
+ * (seller-scoped; optional filters). depth:1 populates `customer`.
  */
 export async function GET(req: Request) {
   const scope = await operatorScope(req);
@@ -26,6 +27,7 @@ export async function GET(req: Request) {
   const params = new URL(req.url).searchParams;
   const clauses: Where[] = [{ seller: { equals: sellerId } }];
   if (params.has("date")) clauses.push({ date: { equals: params.get("date") } });
+  if (params.has("occasion")) clauses.push({ occasion: { equals: params.get("occasion") } });
   if (params.has("status")) clauses.push({ status: { equals: params.get("status") } });
   const res = await payload.find({ collection: "orders", where: { and: clauses }, depth: 1, sort: "-date", limit: 0, overrideAccess: true });
   return NextResponse.json({ docs: res.docs });
@@ -41,8 +43,8 @@ export async function POST(req: Request) {
   if (scope instanceof NextResponse) return scope;
   const { sellerId, operatorId, payload } = scope;
   const body = (await req.json().catch(() => null)) as DraftBody | null;
-  if (!body || body.customer === undefined || !body.date || !Array.isArray(body.items)) {
-    return NextResponse.json({ error: "customer, date, items required" }, { status: 400 });
+  if (!body || body.customer === undefined || !body.date || !body.occasion || !Array.isArray(body.items)) {
+    return NextResponse.json({ error: "customer, date, occasion, items required" }, { status: 400 });
   }
   // Tenant-ownership guard (Codex P1): overrideAccess writes carry no req.user,
   // so assertSameTenantRefs can't fire — validate every ref belongs to this
@@ -68,6 +70,7 @@ export async function POST(req: Request) {
     data: {
       customer: body.customer,
       date: body.date,
+      occasion: body.occasion,
       source: body.source,
       status: "draft",
       placedAt: new Date().toISOString(),
@@ -90,7 +93,6 @@ export async function POST(req: Request) {
         data: {
           order: order.id,
           offering: it.offering,
-          mealOccasion: it.mealOccasion,
           quantity: it.quantity,
           unitPriceCents: it.unitPriceCents,
           note: it.note,

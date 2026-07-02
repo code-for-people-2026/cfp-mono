@@ -46,7 +46,7 @@ export default function Delivery() {
   }, [load]);
 
   /** 「这栋送到了」→ PATCH /delivery/fulfillments { ids } (exact — no substring
-   *  spillover) → refetch. Marks only this group's still-open orderItems. */
+   *  spillover) → refetch. Marks only this group's still-open fulfillments. */
   const markBuilding = (g: AddressGroup) => {
     const token = tokens.getToken();
     if (!token) {
@@ -54,8 +54,8 @@ export default function Delivery() {
       return;
     }
     const ids = g.fulfillments
-      .filter((f) => f.status === "pending" || f.status === "handed-off")
-      .map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem));
+      .filter((f) => f.status === "pending")
+      .map((f) => f.id);
     if (ids.length === 0) return;
     Taro.request({
       url: markDeliveredUrl(),
