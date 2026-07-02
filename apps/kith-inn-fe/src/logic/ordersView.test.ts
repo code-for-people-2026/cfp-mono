@@ -5,8 +5,9 @@ import { customerName, orderStatusDot, yuan } from "./ordersView";
 const order = (over: Partial<Order>): Order =>
   ({
     id: 1,
-    customer: { id: 5, displayName: "王燕萍", kind: "regular" },
+    customer: { id: 5, displayName: "王燕萍" },
     date: "2026-06-30",
+    occasion: "lunch",
     status: "confirmed",
     source: "chat-paste",
     paymentStatus: "unpaid",

@@ -23,6 +23,7 @@ export type AgentCms = OrderCms & {
   createCustomer(jwt: string, input: { displayName: string; address?: string }): Promise<Customer>;
   listFulfillments(jwt: string, query?: { date?: string; occasion?: string }): Promise<Fulfillment[]>;
   listOrders(jwt: string, query?: { date?: string; status?: OrderStatus }): Promise<Order[]>;
+  setFulfillmentsByIds(jwt: string, ids: Array<string | number>, set: { status: "done" }): Promise<void>;
 };
 
 type AgentServicesDeps = {
@@ -76,8 +77,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
               {
                 customer: match.id,
                 date: it.date ?? date,
+                occasion: it.occasion,
                 source: "chat-paste",
-                items: [{ offering: combo.id, mealOccasion: it.occasion, quantity: it.quantity }],
+                items: [{ offering: combo.id, quantity: it.quantity }],
               },
               cms,
             );
@@ -119,8 +121,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
             {
               customer: customer.id,
               date: it.date ?? date,
+              occasion: it.occasion,
               source: "chat-paste",
-              items: [{ offering: combo.id, mealOccasion: it.occasion, quantity: it.quantity }],
+              items: [{ offering: combo.id, quantity: it.quantity }],
             },
             cms,
           );
@@ -171,8 +174,8 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
         const targets = fulfillmentsMatchingAddress(fulfillments, address);
         if (targets.length === 0) return { ok: true as const, count: 0 };
-        const ids = targets.map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem));
-        await cms.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
+        const ids = targets.map((f) => f.id);
+        await cms.setFulfillmentsByIds(jwt, ids, { status: "done" });
         return { ok: true as const, count: targets.length };
       } catch {
         return { ok: false as const, error: "标记失败" };
@@ -226,7 +229,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           count: g.count,
           done: g.fulfillments.filter((f) => f.status === "done").length,
           total: g.fulfillments.length,
-          ids: g.fulfillments.map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem)),
+          ids: g.fulfillments.map((f) => f.id),
         }));
         return { totalPending: gapReport(active).totalPending, groups };
       } catch {

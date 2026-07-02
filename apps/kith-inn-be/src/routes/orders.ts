@@ -7,7 +7,7 @@ import {
   getSeller,
   getOrder,
   listOrders as listOrdersFn,
-  setFulfillmentsByOrderItems,
+  setFulfillmentsByOrders,
   updateOrder,
   upsertSlots,
 } from "../lib/cms/orders";
@@ -31,14 +31,14 @@ function realCms(): OrderCms {
     updateOrder,
     upsertSlots,
     createFulfillments,
-    setFulfillmentsByOrderItems,
+    setFulfillmentsByOrders,
   };
 }
 
 /** Injectable boundary (default = real cms). `listOrders` is read-only, kept separate. */
 export type OrderRoutesDeps = {
   cms: OrderCms;
-  listOrders: (jwt: string, query: { date?: string; status?: OrderStatus }) => Promise<Order[]>;
+  listOrders: (jwt: string, query: { date?: string; occasion?: Order["occasion"]; status?: OrderStatus }) => Promise<Order[]>;
 };
 
 /**
@@ -54,6 +54,7 @@ export function orderRoutes(jwtSecret: string, deps: OrderRoutesDeps = { cms: re
   app.get("/", async (c) => {
     const orders = await deps.listOrders(c.get("token") as string, {
       date: c.req.query("date"),
+      occasion: c.req.query("occasion") as Order["occasion"] | undefined,
       status: c.req.query("status") as OrderStatus | undefined,
     });
     return c.json({ orders });
@@ -61,10 +62,10 @@ export function orderRoutes(jwtSecret: string, deps: OrderRoutesDeps = { cms: re
 
   app.post("/", async (c) => {
     const body = (await c.req.json().catch(() => null)) as
-      | { customer?: unknown; date?: unknown; source?: unknown; items?: unknown; note?: string; idempotencyKey?: string }
+      | { customer?: unknown; date?: unknown; occasion?: unknown; source?: unknown; items?: unknown; note?: string; idempotencyKey?: string }
       | null;
-    if (!body || typeof body.customer !== "number" || typeof body.date !== "string" || !Array.isArray(body.items)) {
-      return c.json({ error: "customer, date, items required" }, 400);
+    if (!body || typeof body.customer !== "number" || typeof body.date !== "string" || typeof body.occasion !== "string" || !Array.isArray(body.items)) {
+      return c.json({ error: "customer, date, occasion, items required" }, 400);
     }
     try {
       const result = await recordDraft(c.get("token") as string, body as never, deps.cms);

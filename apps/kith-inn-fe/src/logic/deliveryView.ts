@@ -16,8 +16,6 @@ export function fulfillmentStatusLabel(status: string): string {
   switch (status) {
     case "done":
       return "完成";
-    case "handed-off":
-      return "已交接";
     case "canceled":
       return "已取消";
     default:

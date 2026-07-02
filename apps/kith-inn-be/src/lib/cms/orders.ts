@@ -6,9 +6,7 @@
  * Payload depth docs); FE-facing types live in @cfp/kith-inn-shared.
  */
 import type {
-  CustomerKind,
   Fulfillment,
-  FulfillmentMode,
   FulfillmentStatus,
   Occasion,
   Order,
@@ -25,7 +23,6 @@ import { cmsBase, OPERATOR_JWT_HEADER, type CmsDeps } from "./client";
 
 export type DraftItemInput = {
   offering: string | number;
-  mealOccasion?: Occasion;
   quantity: number;
   unitPriceCents?: number;
   note?: string;
@@ -34,6 +31,7 @@ export type DraftItemInput = {
 export type CreateDraftInput = {
   customer: string | number;
   date: string;
+  occasion: Occasion;
   source: OrderSource;
   note?: string;
   idempotencyKey?: string;
@@ -47,6 +45,7 @@ export type OrderUpdatePatch = Partial<{
   paymentMethod: string;
   paidAt: string;
   date: string;
+  occasion: Occasion;
   note: string;
 }>;
 
@@ -57,24 +56,22 @@ export type SlotUpsertInput = {
 };
 
 export type FulfillmentInput = {
-  orderItem: string | number;
+  order: string | number;
   serviceDate: string;
   occasion?: Occasion;
-  mode: FulfillmentMode;
   status: FulfillmentStatus;
-  assignee?: string;
-  timeWindow?: string;
 };
 
 /** Normalized order load for confirm/cancel (cms flattens Payload's depth population). */
 export type OrderDetail = {
   id: string | number;
   date: string;
+  occasion: Occasion;
   status: OrderStatus;
   /** Frozen delivery-address snapshot (cms froze it at draft-create from the customer). */
   address?: string;
-  customer: { id: string | number; kind: CustomerKind; address?: string };
-  items: Array<{ id: string | number; mealOccasion?: Occasion; quantity: number }>;
+  customer: { id: string | number; address?: string };
+  items: Array<{ id: string | number; quantity: number }>;
 };
 
 // ---- helpers ----
@@ -133,15 +130,16 @@ export async function getOrder(operatorJwt: string, id: string | number, deps: C
   return parseOk(await fetchImpl(`${cmsBase()}/api/internal/orders/${id}`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }), "cms order lookup");
 }
 
-/** GET /api/internal/orders — the seller's orders for a date (+optional status filter). */
+/** GET /api/internal/orders — the seller's orders for a date (+optional occasion/status filter). */
 export async function listOrders(
   operatorJwt: string,
-  query: { date?: string; status?: OrderStatus } = {},
+  query: { date?: string; occasion?: Occasion; status?: OrderStatus } = {},
   deps: CmsDeps = {},
 ): Promise<Order[]> {
   const fetchImpl = fetchOf(deps);
   const qs = new URLSearchParams();
   if (query.date) qs.set("date", query.date);
+  if (query.occasion) qs.set("occasion", query.occasion);
   if (query.status) qs.set("status", query.status);
   const tail = qs.toString();
   const json = await parseOk<{ docs?: Order[] }>(
@@ -189,7 +187,7 @@ export async function upsertSlots(operatorJwt: string, slots: SlotUpsertInput[],
   );
 }
 
-/** POST /api/internal/fulfillments — batch-create fulfillments (delivery/pickup items at confirm). */
+/** POST /api/internal/fulfillments — batch-create fulfillments (one per confirmed order). */
 export async function createFulfillments(operatorJwt: string, items: FulfillmentInput[], deps: CmsDeps = {}): Promise<Fulfillment[]> {
   const fetchImpl = fetchOf(deps);
   return parseOk(
@@ -198,16 +196,30 @@ export async function createFulfillments(operatorJwt: string, items: Fulfillment
   );
 }
 
-/** PATCH /api/internal/fulfillments — set status on all fulfillments whose orderItem ∈ ids (cancel). */
-export async function setFulfillmentsByOrderItems(
+/** PATCH /api/internal/fulfillments — set status on exact fulfillment ids (delivery mark-done). */
+export async function setFulfillmentsByIds(
   operatorJwt: string,
-  orderItemIds: Array<string | number>,
+  ids: Array<string | number>,
   set: { status: FulfillmentStatus },
   deps: CmsDeps = {},
 ): Promise<void> {
   const fetchImpl = fetchOf(deps);
   await parseOk(
-    await fetchImpl(`${cmsBase()}/api/internal/fulfillments`, { method: "PATCH", headers: jsonHeaders(operatorJwt), body: JSON.stringify({ orderItemIn: orderItemIds, set }) }),
+    await fetchImpl(`${cmsBase()}/api/internal/fulfillments`, { method: "PATCH", headers: jsonHeaders(operatorJwt), body: JSON.stringify({ ids, set }) }),
+    "cms fulfillment update",
+  );
+}
+
+/** PATCH /api/internal/fulfillments — set status on fulfillments whose order ∈ ids (cancel). */
+export async function setFulfillmentsByOrders(
+  operatorJwt: string,
+  orderIds: Array<string | number>,
+  set: { status: FulfillmentStatus },
+  deps: CmsDeps = {},
+): Promise<void> {
+  const fetchImpl = fetchOf(deps);
+  await parseOk(
+    await fetchImpl(`${cmsBase()}/api/internal/fulfillments`, { method: "PATCH", headers: jsonHeaders(operatorJwt), body: JSON.stringify({ orderIn: orderIds, set }) }),
     "cms fulfillment update",
   );
 }

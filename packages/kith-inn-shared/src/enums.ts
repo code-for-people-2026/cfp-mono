@@ -9,7 +9,7 @@
  * these as their `select` options.
  */
 
-/** 用餐餐次 — service_slots 与 order_items 共用（PRD §7.1 occasion 枚举）。 */
+/** 用餐餐次 — service_slots 与 orders 共用（PRD §7.1 occasion 枚举）。 */
 export const OCCASIONS = [
   "breakfast",
   "brunch",
@@ -63,22 +63,13 @@ export const OFFERING_CATEGORIES = [
 ] as const;
 export type OfferingCategory = (typeof OFFERING_CATEGORIES)[number]["value"];
 
-/** 履约方式。self/onsite 不建 fulfillment（份数/采购靠 order_items）。 */
-export const FULFILLMENT_MODES = ["delivery", "pickup", "onsite"] as const;
-export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number];
-
 /** 履约状态。canceled 为终态、退出送餐/缺口口径。 */
 export const FULFILLMENT_STATUSES = [
   "pending",
-  "handed-off",
   "done",
   "canceled",
 ] as const;
 export type FulfillmentStatus = (typeof FULFILLMENT_STATUSES)[number];
-
-/** 顾客类型。self=桃子自家（onsite、不建 fulfillment，份数/采购照算）。 */
-export const CUSTOMER_KINDS = ["regular", "walk-in", "self"] as const;
-export type CustomerKind = (typeof CUSTOMER_KINDS)[number];
 
 /** sellers.enabledModules — 组合事实源，驱动 access/tab/agent 工具注册。 */
 export const SELLER_MODULES = [

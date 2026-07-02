@@ -10,8 +10,8 @@ type SlotInput = { date: string; occasion?: string; granularity: string };
  * `POST /api/internal/service-slots/upsert` — open one slot per (date, occasion).
  * For each input: find by (seller, date, occasion); `archived` refuses auto-reopen
  * → 409 (be surfaces "needs force"); draft → flip to open; missing → create open.
- * `// ponytail:` no DB unique constraint yet (§3.2 deferred) — find-then-(create|
- * update) is fine for MVP single-operator; add the partial-unique before concurrency.
+ * The DB unique index backs the business coordinate; this route still does the
+ * friendly archived-slot check before writing.
  */
 export async function POST(req: Request) {
   const scope = await operatorScope(req);

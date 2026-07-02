@@ -4,7 +4,7 @@ import { operatorScope } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
-type CustomerBody = { displayName?: string; address?: string; kind?: string };
+type CustomerBody = { displayName?: string; address?: string };
 
 /**
  * `GET /api/internal/customers` — the seller's customers (optional `?name=`
@@ -46,7 +46,6 @@ export async function POST(req: Request) {
     data: {
       displayName: body.displayName,
       address: body.address,
-      kind: body.kind ?? "regular",
       seller: sellerId,
     },
     overrideAccess: true,

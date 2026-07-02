@@ -13,12 +13,10 @@ const JWT = "jwt";
 const draftDetail: OrderDetail = {
   id: 90,
   date: "2026-06-30",
+  occasion: "lunch",
   status: "draft",
-  customer: { id: 5, kind: "regular", address: "1D-28D" },
-  items: [
-    { id: 201, mealOccasion: "lunch", quantity: 1 },
-    { id: 202, mealOccasion: "dinner", quantity: 1 },
-  ],
+  customer: { id: 5, address: "1D-28D" },
+  items: [{ id: 201, quantity: 1 }],
 };
 
 function mockCms(over: Partial<CmsMocks> = {}): CmsMocks {
@@ -28,18 +26,18 @@ function mockCms(over: Partial<CmsMocks> = {}): CmsMocks {
     getOrder: over.getOrder ?? vi.fn<OrderCms["getOrder"]>(async () => draftDetail),
     createOrderDraft:
       over.createOrderDraft ??
-      vi.fn<OrderCms["createOrderDraft"]>(async (_jwt, input) => ({ order: { id: 90, date: "2026-06-30", status: "draft", totalCents: input.totalCents } as Order, items: [] })),
+      vi.fn<OrderCms["createOrderDraft"]>(async (_jwt, input) => ({ order: { id: 90, date: "2026-06-30", occasion: input.occasion, status: "draft", totalCents: input.totalCents } as Order, items: [] })),
     updateOrder: over.updateOrder ?? vi.fn<OrderCms["updateOrder"]>(async () => ({ id: 90, status: "confirmed" } as Order)),
     upsertSlots: over.upsertSlots ?? vi.fn<OrderCms["upsertSlots"]>(async () => []),
     createFulfillments: over.createFulfillments ?? vi.fn<OrderCms["createFulfillments"]>(async () => []),
-    setFulfillmentsByOrderItems: over.setFulfillmentsByOrderItems ?? vi.fn<OrderCms["setFulfillmentsByOrderItems"]>(async () => undefined),
+    setFulfillmentsByOrders: over.setFulfillmentsByOrders ?? vi.fn<OrderCms["setFulfillmentsByOrders"]>(async () => undefined),
   };
 }
 
 describe("recordDraft", () => {
   it("snapshots per-item prices + totalCents and creates the draft (zero side effects)", async () => {
     const cms = mockCms();
-    await recordDraft(JWT, { customer: 5, date: "2026-06-30", source: "chat-paste", items: [{ offering: 1, mealOccasion: "lunch", quantity: 2 }] }, cms);
+    await recordDraft(JWT, { customer: 5, date: "2026-06-30", occasion: "lunch", source: "chat-paste", items: [{ offering: 1, quantity: 2 }] }, cms);
     expect(cms.getSeller).toHaveBeenCalledWith(JWT);
     expect(cms.createOrderDraft).toHaveBeenCalledWith(JWT, expect.objectContaining({ totalCents: 6000 }));
     expect(cms.createOrderDraft.mock.calls[0]![1].items[0]).toMatchObject({ offering: 1, quantity: 2, unitPriceCents: 3000 });
@@ -47,40 +45,29 @@ describe("recordDraft", () => {
 
   it("falls back to seller.defaultPriceCents when the offering has no price", async () => {
     const cms = mockCms({ findOfferings: vi.fn<OrderCms["findOfferings"]>(async () => [{ id: 9, name: "x", kind: "component", seller: 7 }]) });
-    await recordDraft(JWT, { customer: 5, date: "2026-06-30", source: "manual", items: [{ offering: 9, mealOccasion: "lunch", quantity: 1 }] }, cms);
+    await recordDraft(JWT, { customer: 5, date: "2026-06-30", occasion: "lunch", source: "manual", items: [{ offering: 9, quantity: 1 }] }, cms);
     expect(cms.createOrderDraft.mock.calls[0]![1].items[0]!.unitPriceCents).toBe(3000);
   });
 });
 
 describe("confirmOrder", () => {
-  it("opens one slot per distinct occasion, creates a delivery fulfillment per item, sets confirmed", async () => {
+  it("opens the order occasion slot, creates one fulfillment, sets confirmed", async () => {
     const cms = mockCms();
     await confirmOrder(JWT, 90, cms);
     expect(cms.upsertSlots).toHaveBeenCalledWith(JWT, [
       { date: "2026-06-30", occasion: "lunch", granularity: "occasion" },
-      { date: "2026-06-30", occasion: "dinner", granularity: "occasion" },
     ]);
     expect(cms.createFulfillments).toHaveBeenCalledWith(
       JWT,
       expect.arrayContaining([
-        expect.objectContaining({ orderItem: 201, mode: "delivery", status: "pending" }),
-        expect.objectContaining({ orderItem: 202, serviceDate: "2026-06-30", occasion: "dinner" }),
+        expect.objectContaining({ order: 90, serviceDate: "2026-06-30", occasion: "lunch", status: "pending" }),
       ]),
     );
     expect(cms.updateOrder).toHaveBeenCalledWith(JWT, 90, { status: "confirmed" });
   });
 
-  it("creates NO fulfillment for a self/onsite customer", async () => {
-    const selfDetail: OrderDetail = { id: 91, date: "2026-06-30", status: "draft", customer: { id: 1, kind: "self" }, items: [{ id: 300, mealOccasion: "dinner", quantity: 6 }] };
-    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => selfDetail) });
-    await confirmOrder(JWT, 91, cms);
-    expect(cms.upsertSlots).toHaveBeenCalledOnce(); // still opens the dinner slot
-    expect(cms.createFulfillments).not.toHaveBeenCalled();
-    expect(cms.updateOrder).toHaveBeenCalledWith(JWT, 91, { status: "confirmed" });
-  });
-
   it("throws not-draft when the order is already confirmed", async () => {
-    const confirmed: OrderDetail = { id: 90, date: "x", status: "confirmed", customer: { id: 1, kind: "regular" }, items: [] };
+    const confirmed: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "confirmed", customer: { id: 1 }, items: [] };
     const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => confirmed) });
     await expect(confirmOrder(JWT, 90, cms)).rejects.toMatchObject({ code: "not-draft" });
     expect(cms.upsertSlots).not.toHaveBeenCalled();
@@ -103,23 +90,23 @@ describe("cancelOrder", () => {
   it("cancels the order and all its fulfillments", async () => {
     const cms = mockCms();
     await cancelOrder(JWT, 90, cms);
-    expect(cms.setFulfillmentsByOrderItems).toHaveBeenCalledWith(JWT, [201, 202], { status: "canceled" });
+    expect(cms.setFulfillmentsByOrders).toHaveBeenCalledWith(JWT, [90], { status: "canceled" });
     expect(cms.updateOrder).toHaveBeenCalledWith(JWT, 90, { status: "canceled" });
   });
 
   it("is idempotent — a no-op on an already-canceled order", async () => {
-    const canceled: OrderDetail = { id: 90, date: "x", status: "canceled", customer: { id: 1, kind: "regular" }, items: [{ id: 1, quantity: 1 }] };
+    const canceled: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "canceled", customer: { id: 1 }, items: [{ id: 1, quantity: 1 }] };
     const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => canceled) });
     await cancelOrder(JWT, 90, cms);
-    expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+    expect(cms.setFulfillmentsByOrders).not.toHaveBeenCalled();
     expect(cms.updateOrder).not.toHaveBeenCalled();
   });
 
-  it("skips fulfillment cancel when the order has no items", async () => {
-    const empty: OrderDetail = { id: 90, date: "x", status: "draft", customer: { id: 1, kind: "regular" }, items: [] };
+  it("cancels fulfillments by order id even when the order has no items loaded", async () => {
+    const empty: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "draft", customer: { id: 1 }, items: [] };
     const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => empty) });
     await cancelOrder(JWT, 90, cms);
-    expect(cms.setFulfillmentsByOrderItems).not.toHaveBeenCalled();
+    expect(cms.setFulfillmentsByOrders).toHaveBeenCalledWith(JWT, [90], { status: "canceled" });
     expect(cms.updateOrder).toHaveBeenCalledWith(JWT, 90, { status: "canceled" });
   });
 });

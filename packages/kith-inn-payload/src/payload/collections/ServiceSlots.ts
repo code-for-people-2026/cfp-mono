@@ -8,9 +8,9 @@ import { sellerField, tenantAccess, tenantHooks } from "./shared";
  * (meal businesses, via menu-planning). "确认订单" upserts it → open (M1).
  *
  * M0 ships the schema stub only — the §3.2 unique constraint
- * `(seller, date, occasion)` / `(seller, date, timeWindow)` is a partial-unique
- * that needs a hand-written migration (deferred to the prod-readiness PR with
- * indexSql). `capacity` is V1 (MVP has no public ordering channel).
+ * `(seller, date, occasion)` is hand-written in the CMS migration. Future
+ * time-slot businesses can add a separate `(seller, date, startAt, endAt)`
+ * unique index when that path is implemented.
  */
 export const ServiceSlots: CollectionConfig = {
   slug: "service_slots",

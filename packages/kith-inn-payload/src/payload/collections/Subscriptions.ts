@@ -4,7 +4,7 @@ import { sellerField, tenantAccess, tenantHooks } from "./shared";
 
 /**
  * `subscriptions` — booking module (V1, PRD §7.2). `pattern` (json, required) is
- * the source of truth: which `(date, occasion|timeWindow)` coords this
+ * the source of truth: which date + slot coords this
  * subscription generates orders on (specific-dates / recurring / open-ended). A
  * scheduled job materializes orders per-tenant with a seller token (§3.3⑤, V1).
  * Schema placeholder only in M0 — no behavior.

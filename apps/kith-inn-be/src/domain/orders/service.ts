@@ -42,7 +42,7 @@ export type OrderCms = {
   updateOrder(jwt: string, id: string | number, patch: OrderUpdatePatch): Promise<Order>;
   upsertSlots(jwt: string, slots: SlotUpsertInput[]): Promise<ServiceSlot[]>;
   createFulfillments(jwt: string, items: FulfillmentInput[]): Promise<Fulfillment[]>;
-  setFulfillmentsByOrderItems(jwt: string, ids: Array<string | number>, set: { status: FulfillmentStatus }): Promise<void>;
+  setFulfillmentsByOrders(jwt: string, ids: Array<string | number>, set: { status: FulfillmentStatus }): Promise<void>;
 };
 
 /** Lifecycle errors the route maps to specific status codes. */
@@ -56,10 +56,11 @@ export class OrderStateError extends Error {
 export type RecordDraftInput = {
   customer: string | number;
   date: string;
+  occasion: Occasion;
   source: OrderSource;
   note?: string;
   idempotencyKey?: string;
-  items: Array<{ offering: string | number; mealOccasion?: Occasion; quantity: number; note?: string }>;
+  items: Array<{ offering: string | number; quantity: number; note?: string }>;
 };
 
 /**
@@ -76,7 +77,6 @@ export async function recordDraft(
   const offeringMap = new Map(offerings.map((o) => [String(o.id), o]));
   const items: DraftItemInput[] = input.items.map((it) => ({
     offering: it.offering,
-    mealOccasion: it.mealOccasion,
     quantity: it.quantity,
     unitPriceCents: resolveUnitPrice({ unitPriceCents: undefined }, offeringMap.get(String(it.offering)), seller),
     note: it.note,
@@ -84,6 +84,7 @@ export async function recordDraft(
   return cms.createOrderDraft(jwt, {
     customer: input.customer,
     date: input.date,
+    occasion: input.occasion,
     source: input.source,
     note: input.note,
     idempotencyKey: input.idempotencyKey,
@@ -92,19 +93,12 @@ export async function recordDraft(
   });
 }
 
-/** Distinct meal occasions across an order's items → one slot per occasion (桃子 = lunch/dinner). */
-function distinctOccasions(detail: OrderDetail): Occasion[] {
-  const seen = new Set<Occasion>();
-  for (const it of detail.items) if (it.mealOccasion) seen.add(it.mealOccasion);
-  return [...seen];
-}
-
 export type ConfirmResult = { slots: ServiceSlot[]; fulfillments: Fulfillment[] };
 
 /**
- * Materialize a draft into经营状态 (§3.3 ②): open one slot per distinct occasion,
- * create a fulfillment per delivery/pickup item (self/onsite customers get none),
- * flip the order to confirmed. `archived` slots refuse auto-reopen (cms 409) →
+ * Materialize a draft into经营状态 (§3.3 ②): open the order's occasion slot,
+ * create one fulfillment for the order, then flip the order to confirmed.
+ * `archived` slots refuse auto-reopen (cms 409) →
  * surfaces as `OrderStateError("slot-archived")` (needs explicit force 二次确认).
  */
 export async function confirmOrder(jwt: string, orderId: string | number, cms: OrderCms): Promise<ConfirmResult> {
@@ -114,11 +108,11 @@ export async function confirmOrder(jwt: string, orderId: string | number, cms: O
   // ponytail: 桃子 is occasion-granularity; derive granularity from seller config
   // when a time-slot merchant actually exists.
   const granularity: ServiceSlotGranularity = "occasion";
-  const slotInputs: SlotUpsertInput[] = distinctOccasions(detail).map((occasion) => ({
+  const slotInputs: SlotUpsertInput[] = [{
     date: detail.date,
-    occasion,
+    occasion: detail.occasion,
     granularity,
-  }));
+  }];
   let slots: ServiceSlot[];
   try {
     slots = slotInputs.length > 0 ? await cms.upsertSlots(jwt, slotInputs) : [];
@@ -127,19 +121,12 @@ export async function confirmOrder(jwt: string, orderId: string | number, cms: O
     throw e;
   }
 
-  // self/onsite customers (kind=self) get NO fulfillment — servings/purchasing
-  // count via order_items, so they don't pollute gap reconciliation (§3.3 ②b).
-  const fulfillmentInputs: FulfillmentInput[] =
-    detail.customer.kind === "self"
-      ? []
-      : detail.items.map((it) => ({
-          orderItem: it.id,
-          serviceDate: detail.date,
-          occasion: it.mealOccasion,
-          mode: "delivery",
-          status: "pending",
-        }));
-  const fulfillments = fulfillmentInputs.length > 0 ? await cms.createFulfillments(jwt, fulfillmentInputs) : [];
+  const fulfillments = await cms.createFulfillments(jwt, [{
+    order: detail.id,
+    serviceDate: detail.date,
+    occasion: detail.occasion,
+    status: "pending",
+  }]);
 
   await cms.updateOrder(jwt, orderId, { status: "confirmed" });
   return { slots, fulfillments };
@@ -152,7 +139,6 @@ export async function confirmOrder(jwt: string, orderId: string | number, cms: O
 export async function cancelOrder(jwt: string, orderId: string | number, cms: OrderCms): Promise<void> {
   const detail = await cms.getOrder(jwt, orderId);
   if (detail.status === "canceled") return;
-  const itemIds = detail.items.map((it) => it.id);
-  if (itemIds.length > 0) await cms.setFulfillmentsByOrderItems(jwt, itemIds, { status: "canceled" });
+  await cms.setFulfillmentsByOrders(jwt, [detail.id], { status: "canceled" });
   await cms.updateOrder(jwt, orderId, { status: "canceled" });
 }

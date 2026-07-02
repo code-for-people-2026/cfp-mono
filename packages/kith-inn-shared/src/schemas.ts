@@ -11,8 +11,6 @@
 import { z } from "zod";
 import {
   CHAT_ROLES,
-  CUSTOMER_KINDS,
-  FULFILLMENT_MODES,
   FULFILLMENT_STATUSES,
   MEAL_OCCASIONS,
   MENU_PLAN_STATUSES,
@@ -37,15 +35,13 @@ const OFFERING_CATEGORY_VALUES = ["meat", "veg", "soup", "staple"] as const;
 
 // ── enum schemas (one-way derivation: const array → zod enum) ──
 const occasionSchema = z.enum(OCCASIONS);
-const mealOccasionSchema = z.enum(MEAL_OCCASIONS);
+const menuMealOccasionSchema = z.enum(MEAL_OCCASIONS);
 const orderStatusSchema = z.enum(ORDER_STATUSES);
 const paymentStatusSchema = z.enum(PAYMENT_STATUSES);
 const orderSourceSchema = z.enum(ORDER_SOURCES);
 const offeringKindSchema = z.enum(OFFERING_KINDS);
 const offeringCategorySchema = z.enum(OFFERING_CATEGORY_VALUES);
-const fulfillmentModeSchema = z.enum(FULFILLMENT_MODES);
 const fulfillmentStatusSchema = z.enum(FULFILLMENT_STATUSES);
-const customerKindSchema = z.enum(CUSTOMER_KINDS);
 const sellerModuleSchema = z.enum(SELLER_MODULES);
 const sellerStatusSchema = z.enum(SELLER_STATUSES);
 const operatorRoleSchema = z.enum(OPERATOR_ROLES);
@@ -81,7 +77,6 @@ export const operatorSchema = z.object({
 export const customerSchema = z.object({
   id: id,
   displayName: z.string(),
-  kind: customerKindSchema,
   defaultServings: z.number().optional(),
   defaultOccasion: occasionSchema.optional(),
   note: z.string().optional(),
@@ -140,8 +135,6 @@ export const orderItemSchema = z.object({
   id: id,
   order: rel(z.lazy(() => orderSchema)),
   offering: rel(z.lazy(() => offeringSchema)),
-  mealOccasion: occasionSchema.optional(),
-  timeWindow: z.string().optional(),
   quantity: z.number(),
   unitPriceCents: z.number().optional(),
   note: z.string().optional(),
@@ -152,6 +145,7 @@ export const orderSchema = z.object({
   id: id,
   customer: rel(z.lazy(() => customerSchema)),
   date: z.string(),
+  occasion: occasionSchema,
   status: orderStatusSchema,
   source: orderSourceSchema,
   placedAt: z.string().optional(),
@@ -168,13 +162,10 @@ export const orderSchema = z.object({
 
 export const fulfillmentSchema = z.object({
   id: id,
-  orderItem: rel(z.lazy(() => orderItemSchema)),
+  order: rel(z.lazy(() => orderSchema)),
   serviceDate: z.string(),
   occasion: occasionSchema.optional(),
-  mode: fulfillmentModeSchema,
   status: fulfillmentStatusSchema,
-  assignee: z.string().optional(),
-  timeWindow: z.string().optional(),
   seller: rel(z.lazy(() => sellerSchema)),
 });
 
@@ -208,7 +199,7 @@ export const menuDishSchema = z.object({
 });
 export const menuSlotSchema = z.object({
   day: z.string(),
-  occasion: mealOccasionSchema,
+  occasion: menuMealOccasionSchema,
   dishes: z.array(menuDishSchema),
 });
 export const weekMenuSchema = z.discriminatedUnion("ok", [
@@ -237,7 +228,7 @@ export const confirmCustomerItemSchema = z.object({
   customerName: z.string(),
   address: z.string().optional(),
   quantity: z.number(),
-  occasion: mealOccasionSchema,
+  occasion: menuMealOccasionSchema,
   date: z.string().optional(),
 });
 export const orderCardDataSchema = z.object({ orders: z.array(orderSchema), date: z.string() });
