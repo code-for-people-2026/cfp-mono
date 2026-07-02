@@ -295,8 +295,8 @@ describe("getTodayDelivery", () => {
     const d = await svc(cms).getTodayDelivery();
     expect(d.totalPending).toBe(2); // 2 pending; canceled + done not counted
     const g = Object.fromEntries(d.groups.map((x) => [x.address, x]));
-    expect(g["26B"]).toEqual({ address: "26B", count: 2, done: 1, total: 2 });
-    expect(g["1D"]).toEqual({ address: "1D", count: 1, done: 0, total: 1 }); // canceled filtered before packingSort
+    expect(g["26B"]).toEqual({ address: "26B", count: 2, done: 1, total: 2, ids: [111, 112] });
+    expect(g["1D"]).toEqual({ address: "1D", count: 1, done: 0, total: 1, ids: [113] }); // canceled filtered before packingSort
   });
 
   it("degrades to empty on cms failure", async () => {

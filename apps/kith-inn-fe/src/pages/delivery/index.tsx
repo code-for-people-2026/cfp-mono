@@ -7,7 +7,7 @@ import { TopBar } from "@/components/TopBar";
 import { deliveryUrl, markDeliveredUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { todayShanghai } from "@/logic/time";
-import { buildingProgress, fulfillmentStatusLabel, type DeliveryView } from "@/logic/deliveryView";
+import { buildingProgress, fulfillmentStatusLabel, type AddressGroup, type DeliveryView } from "@/logic/deliveryView";
 
 const taroStorage: Storage = {
   get: (k) => Taro.getStorageSync(k) || null,
@@ -45,17 +45,22 @@ export default function Delivery() {
     load();
   }, [load]);
 
-  /** 「这栋送到了」→ PATCH /delivery/fulfillments { address } → refetch. */
-  const markBuilding = (address: string) => {
+  /** 「这栋送到了」→ PATCH /delivery/fulfillments { ids } (exact — no substring
+   *  spillover) → refetch. Marks only this group's still-open orderItems. */
+  const markBuilding = (g: AddressGroup) => {
     const token = tokens.getToken();
     if (!token) {
       Taro.redirectTo({ url: "/pages/login/index" });
       return;
     }
+    const ids = g.fulfillments
+      .filter((f) => f.status === "pending" || f.status === "handed-off")
+      .map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem));
+    if (ids.length === 0) return;
     Taro.request({
       url: markDeliveredUrl(),
       method: "PATCH",
-      data: { address },
+      data: { ids },
       header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     })
       .then((res) => {
@@ -109,7 +114,7 @@ export default function Delivery() {
                 <Progress percent={p.percent} />
                 {p.done < p.total && (
                   <View className="mt-[16rpx]">
-                    <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => markBuilding(g.address)}>
+                    <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => markBuilding(g)}>
                       这栋送到了
                     </Button>
                   </View>

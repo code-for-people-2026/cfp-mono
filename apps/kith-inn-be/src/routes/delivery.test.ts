@@ -39,13 +39,36 @@ describe("GET /delivery", () => {
     expect(listFulfillments.mock.calls[0]![1]).toEqual({ date: undefined, occasion: undefined });
   });
 
+  it("excludes canceled fulfillments from sort + counts (Codex P2)", async () => {
+    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
+      f({ id: 1, orderItem: at(101, "3A"), status: "pending" }),
+      f({ id: 2, orderItem: at(102, "3A"), status: "canceled" }),
+    ]);
+    const app = deliveryRoutes(SECRET, deps(listFulfillments));
+    const res = await app.request("/", { headers: await auth() });
+    const body = (await res.json()) as { sort: Array<{ address: string; count: number }>; gaps: { totalPending: number } };
+    expect(body.sort[0]).toMatchObject({ address: "3A", count: 1 }); // canceled dropped from the group
+    expect(body.gaps.totalPending).toBe(1);
+  });
+
   it("401 without a token", async () => {
     expect((await deliveryRoutes(SECRET, deps(vi.fn())).request("/")).status).toBe(401);
   });
 });
 
 describe("PATCH /fulfillments", () => {
-  it("marks every open fulfillment whose address contains the fragment done", async () => {
+  it("marks exactly the submitted orderItem ids done (button path, no substring spillover — Codex P1)", async () => {
+    const setFulfillmentsByOrderItems = vi.fn(async () => undefined);
+    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => []);
+    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByOrderItems });
+    const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ ids: [201, 202] }) });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { count: number }).count).toBe(2);
+    expect(setFulfillmentsByOrderItems).toHaveBeenCalledWith(expect.any(String), [201, 202], { status: "done" });
+    expect(listFulfillments).not.toHaveBeenCalled(); // ids path needs no address lookup
+  });
+
+  it("marks every open fulfillment whose address contains the fragment done (voice/agent path)", async () => {
     const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
       f({ id: 11, orderItem: at(201, "26B-301") }),
       f({ id: 12, orderItem: at(202, "26B-502") }),

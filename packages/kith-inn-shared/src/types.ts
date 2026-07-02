@@ -177,8 +177,10 @@ export type ConfirmCustomerItem = {
 export type OrderCardData = { orders: Order[]; date: string };
 
 /** Delivery snapshot for a delivery card: outstanding count + per-address groups
- *  (pre-aggregated so the FE renders without re-deriving). */
-export type DeliveryCardGroup = { address: string; count: number; done: number; total: number };
+ *  (pre-aggregated so the FE renders without re-deriving). `ids` = the group's
+ *  orderItem ids, so the 「送达」 button marks exactly this group (not a substring
+ *  match that would spill across addresses — Codex P1). */
+export type DeliveryCardGroup = { address: string; count: number; done: number; total: number; ids: Array<string | number> };
 export type DeliveryCardData = { totalPending: number; groups: DeliveryCardGroup[] };
 
 export type CardPayload =

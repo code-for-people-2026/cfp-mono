@@ -14,10 +14,12 @@ export type DeliveryDeps = {
 /**
  * `GET /delivery?date=&occasion=` — 送餐 tab 数据源：按楼栋分拣（源头防错）+ 缺口对账
  * （收尾防漏）。两个派生都在 be 算（§7.5 派生不落表）；cms 只给原始 fulfillments。
+ * canceled（终态）不计入视图与计数。
  *
- * `PATCH /fulfillments { address }` — 确定性「送达」勾销：把 order.address 含该片段的
- * 未完成履约批量标 done。取代靠 agent `mark_delivered` 的 tool-call（DeepSeek tool-calling
- * 实测不稳：误读地址 / 幻觉已送达却不发自 tool_call）。
+ * `PATCH /fulfillments` — 确定性「送达」勾销，两种 body：
+ *  - `{ ids: [...] }`：精确标这几个 orderItem done（按钮用——避免 substring 跨地址误伤，Codex P1）。
+ *  - `{ address }`：把 order.address 含该片段的未完成履约批量标 done（agent/语音用，按片段）。
+ *  取代靠 agent `mark_delivered` 的 tool-call（DeepSeek tool-calling 实测不稳）。
  */
 export function deliveryRoutes(
   jwtSecret: string,
@@ -30,24 +32,32 @@ export function deliveryRoutes(
       date: c.req.query("date") || undefined,
       occasion: c.req.query("occasion") || undefined,
     });
-    return c.json({ sort: packingSort(fulfillments), gaps: gapReport(fulfillments) });
+    const active = fulfillments.filter((f) => f.status !== "canceled"); // Codex P2: terminal state, exclude from view + counts
+    return c.json({ sort: packingSort(active), gaps: gapReport(active) });
   });
 
   app.patch("/fulfillments", async (c) => {
     const jwt = c.get("token") as string;
-    const body = (await c.req.json().catch(() => null)) as { address?: unknown } | null;
-    if (typeof body?.address !== "string" || !body.address.trim()) {
-      return c.json({ error: "address required" }, 400);
-    }
+    const body = (await c.req.json().catch(() => null)) as { ids?: unknown; address?: unknown } | null;
     try {
-      const fulfillments = await deps.listFulfillments(jwt, { date: todayShanghai(() => new Date()) });
-      const targets = fulfillmentsMatchingAddress(fulfillments, body.address);
-      if (targets.length === 0) return c.json({ ok: true, count: 0 });
-      // Targets only hold address-matched fulfillments → orderItem is populated
-      // (object with .order.address), never a bare id.
-      const ids = targets.map((f) => (f.orderItem as { id: string | number }).id);
-      await deps.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
-      return c.json({ ok: true, count: targets.length });
+      // Exact path (delivery buttons): mark exactly these orderItem ids done — no
+      // substring spillover across addresses like "3A" matching "13A" (Codex P1).
+      if (Array.isArray(body?.ids) && body.ids.length > 0) {
+        const ids = body!.ids as Array<string | number>;
+        await deps.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
+        return c.json({ ok: true, count: ids.length });
+      }
+      // Substring path (voice / agent): mark open fulfillments whose address contains the fragment.
+      if (typeof body?.address === "string" && body.address.trim()) {
+        const fulfillments = await deps.listFulfillments(jwt, { date: todayShanghai(() => new Date()) });
+        const targets = fulfillmentsMatchingAddress(fulfillments, body.address);
+        if (targets.length === 0) return c.json({ ok: true, count: 0 });
+        // Targets only hold address-matched fulfillments → orderItem is populated (object), never a bare id.
+        const ids = targets.map((f) => (f.orderItem as { id: string | number }).id);
+        await deps.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });
+        return c.json({ ok: true, count: targets.length });
+      }
+      return c.json({ error: "ids or address required" }, 400);
     } catch {
       return c.json({ error: "mark failed" }, 502);
     }

@@ -18,7 +18,7 @@ export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct, o
   confirming: boolean;
   onConfirm: () => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
-  onMarkDelivered?: (address: string) => void;
+  onMarkDelivered?: (ids: Array<string | number>) => void;
 }) {
   if (card.type === "customer-confirm") {
     return (
@@ -85,7 +85,7 @@ export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct, o
           <Text className="flex-1 text-[26rpx] font-semibold">{g.address}</Text>
           <Text className="text-[24rpx] text-muted">{g.count} 份 · {g.done}/{g.total}</Text>
           {onMarkDelivered && g.done < g.total && (
-            <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => onMarkDelivered(g.address)}>
+            <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => onMarkDelivered(g.ids)}>
               送达
             </Button>
           )}

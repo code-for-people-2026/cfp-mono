@@ -235,6 +235,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           count: g.count,
           done: g.fulfillments.filter((f) => f.status === "done").length,
           total: g.fulfillments.length,
+          ids: g.fulfillments.map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem)),
         }));
         return { totalPending: gapReport(active).totalPending, groups };
       } catch {
