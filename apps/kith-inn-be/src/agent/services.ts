@@ -10,6 +10,7 @@
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
 import type { Customer, DeliveryCardData, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
+import { customerName, todayShanghai } from "@cfp/kith-inn-shared/util";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
@@ -23,16 +24,6 @@ export type AgentCms = OrderCms & {
   listFulfillments(jwt: string, query?: { date?: string; occasion?: string }): Promise<Fulfillment[]>;
   listOrders(jwt: string, query?: { date?: string; status?: OrderStatus }): Promise<Order[]>;
 };
-
-/** Today's date (YYYY-MM-DD) in Asia/Shanghai, off the injected clock. */
-export function todayShanghai(now: () => Date): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(now());
-}
-
-function customerName(order: Order): string {
-  const c = order.customer;
-  return typeof c === "object" && c !== null ? c.displayName : `#${c}`;
-}
 
 type AgentServicesDeps = {
   jwt: string;

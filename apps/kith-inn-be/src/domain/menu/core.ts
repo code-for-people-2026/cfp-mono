@@ -7,21 +7,12 @@
  * 费工菜每顿 ≤ 阈值（"避免一天全是麻烦菜"）；频次加权（常做优先、冷门偶尔翻新）。
  * 池子太小填不满结构 → 返回 pool-too-small（PRD §6.2「可做的菜不够了，补几道？」）。
  */
+import type { MealOccasion, MenuDish, MenuSlot, WeekMenu } from "@cfp/kith-inn-shared";
 import type { Offering } from "@cfp/kith-inn-shared";
 
-export type MenuDish = {
-  id: string | number;
-  name: string;
-  category: "meat" | "veg" | "soup" | "staple";
-  mainIngredient?: string;
-  tags?: string[];
-  useCount?: number;
-  lastUsedAt?: string;
-};
-
-export type MealOccasion = "lunch" | "dinner";
-
-export type Slot = { day: string; occasion: MealOccasion; dishes: MenuDish[] };
+export type { MenuDish, MealOccasion };
+/** Backwards-compat alias — core historically used `Slot`; shared calls it `MenuSlot`. */
+export type Slot = MenuSlot;
 
 export type MenuConstraints = {
   /** per-slot 荤素结构（默认 2 荤 2 素 1 汤 = 桃子"4 菜 1 汤"）。 */
@@ -49,9 +40,8 @@ export const DEFAULT_CONSTRAINTS: MenuConstraints = {
 
 const LABORIOUS_TAG = "费工";
 
-export type GenerateMenuResult =
-  | { ok: true; menu: Slot[] }
-  | { ok: false; reason: "pool-too-small"; missing: { category: string; needed: number; available: number; slot: string } };
+/** Backwards-compat alias — shared calls this `WeekMenu`. */
+export type GenerateMenuResult = WeekMenu;
 
 /** Map an Offering (payload) → the slim MenuDish the core selects on. */
 export function toMenuDish(o: Offering): MenuDish {

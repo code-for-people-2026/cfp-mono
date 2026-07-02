@@ -1,23 +1,8 @@
-// FE-local mirror of the week-menu contract (be: domain/menu/core.ts → GET /menu/week).
-// ponytail: duplicate the shape here rather than touch be in an FE-only PR; consolidate
-// into @cfp/kith-inn-shared once the menu contract is shared broadly across fe/be.
+// FE view helpers for the week-menu contract (GET /menu/week). Types come from
+// @cfp/kith-inn-shared (#89 PR B); only presentation logic lives here.
+import type { MealOccasion, MenuDish } from "@cfp/kith-inn-shared";
 
-type MenuCategory = "meat" | "veg" | "soup" | "staple";
-type Occasion = "lunch" | "dinner";
-
-export type MenuDish = {
-  id: string | number;
-  name: string;
-  category: MenuCategory;
-  mainIngredient?: string;
-  tags?: string[];
-};
-
-export type MenuSlot = { day: string; occasion: Occasion; dishes: MenuDish[] };
-
-export type WeekMenu =
-  | { ok: true; menu: MenuSlot[] }
-  | { ok: false; reason: "pool-too-small"; missing: { category: string; needed: number; available: number; slot: string } };
+export type { MenuDish, MenuSlot, WeekMenu } from "@cfp/kith-inn-shared";
 
 const DAY_LABELS: Record<string, string> = {
   mon: "周一",
@@ -34,7 +19,7 @@ export function dayLabel(day: string): string {
   return DAY_LABELS[day] ?? day;
 }
 
-export function occasionLabel(occasion: Occasion): string {
+export function occasionLabel(occasion: MealOccasion): string {
   return occasion === "lunch" ? "午餐" : "晚餐";
 }
 
