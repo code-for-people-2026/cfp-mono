@@ -24,7 +24,7 @@
 
 ### VI. 文档默认中文
 
-项目维护者或 agent 编写的 Spec Kit 文档产物默认使用中文，包括 `spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`、`quickstart.md` 和 `tasks.md`。第三方工具脚手架、上游模板、技能说明或必须保留原文的 API / 协议名可保持原语言。
+项目维护者或 agent 编写的 Spec Kit 文档产物，叙述主体默认使用中文，包括 `spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`、`quickstart.md` 和 `tasks.md`。技术术语、代码标识、API / 协议名称、第三方工具脚手架、上游模板和技能说明可按原文保留。
 
 ## Monorepo 功能规则
 
@@ -38,4 +38,4 @@
 
 本宪法只约束 Spec Kit 文档产物。通用仓库工程规则和 PR 规则仍以 `AGENTS.md` 为准。修改这些原则时，必须更新本文件，并在受影响的功能计划中说明原因。
 
-**版本**: 1.1.0 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-03
+**版本**: 1.1.1 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-03
