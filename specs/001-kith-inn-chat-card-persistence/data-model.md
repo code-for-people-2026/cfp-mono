@@ -1,10 +1,10 @@
-# Data Model: kith-inn Chat Card Persistence
+# 数据模型：kith-inn 聊天卡片持久化
 
-## Entity: Chat Message
+## 实体：Chat Message
 
-Existing visible conversation message for a seller/operator.
+seller/operator 对话中的现有可见消息。
 
-### Existing fields
+### 现有字段
 
 - `id`
 - `operator`
@@ -13,26 +13,26 @@ Existing visible conversation message for a seller/operator.
 - `createdAt`
 - `seller`
 
-### New field
+### 新增字段
 
-- `card`: optional nullable JSON value containing one visible assistant card snapshot.
+- `card`：optional nullable JSON value，保存一张可见 assistant card snapshot。
 
-### Validation Rules
+### 校验规则
 
-- `card` is only meaningful for `role = assistant`.
-- If present, `card` must match the shared `CardPayload` contract.
-- Invalid historical `card` data must be omitted from the client response rather than crashing history load.
-- User messages must not receive generated cards.
+- `card` 只对 `role = assistant` 有意义。
+- 如果存在，`card` 必须匹配共享 `CardPayload` contract。
+- 无效历史 `card` 数据必须从 client response 中省略，而不是让历史加载崩溃。
+- user message 不应携带 generated card。
 
-### State Notes
+### 状态说明
 
-- `card` is a historical snapshot, not a live view.
-- No `cardStatus` or action-state field is added in this feature.
-- New-customer confirmation action recovery will need a later data-model change.
+- `card` 是历史快照，不是 live view。
+- 本功能不新增 `cardStatus` 或 action-state 字段。
+- 新顾客确认动作恢复需要后续 data-model 变更。
 
-## Migration Notes
+## 迁移说明
 
-- Add a nullable JSON/JSONB column to `cms.chat_messages`.
-- Existing rows remain valid with `card = null`.
-- No backfill is required.
-- No retention or pagination schema change is part of this feature.
+- 给 `cms.chat_messages` 添加 nullable JSON / JSONB column。
+- 现有 rows 保持有效，`card = null`。
+- 不需要 backfill。
+- 本功能不包含 retention 或 pagination schema change。

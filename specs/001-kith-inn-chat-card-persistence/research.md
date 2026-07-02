@@ -1,44 +1,44 @@
-# Research: kith-inn Chat Card Persistence
+# 调研记录：kith-inn 聊天卡片持久化
 
-## Current Completion Snapshot
+## 当前完成度快照
 
-The project has moved past skeleton status. Core Payload collections, seller scoping helpers, order lifecycle, delivery derivations, menu generation, manual payment state, agent tools, current-turn chat cards, and Today-page card rendering are already implemented with tests across `@cfp/kith-inn-be`, `@cfp/kith-inn-payload`, and `@cfp/kith-inn-shared`.
+项目已经不是骨架。核心 Payload collections、seller scoping helpers、订单生命周期、送餐派生、菜单生成、手动收款状态、agent tools、当轮聊天卡片和 Today 页 card 渲染都已经实现，并且在 `@cfp/kith-inn-be`、`@cfp/kith-inn-payload` 和 `@cfp/kith-inn-shared` 中已有测试覆盖。
 
-The remaining gap for this feature is narrow: the current turn can produce and render a card, but the persisted chat message only stores text. After reload, `GET /chat` cannot return cards because neither the CMS collection nor the backend projection carries them.
+本功能的缺口很窄：当前 turn 可以产生并渲染 card，但持久化的 chat message 只存文本。reload 后，`GET /chat` 无法返回 card，因为 CMS collection 和 backend projection 都没有承载 card。
 
-## Decision: Store the visible card snapshot on `chat_messages`
+## 决策：把可见 card 快照存到 `chat_messages`
 
-**Rationale**: The card is part of the visible assistant reply. Storing it with the assistant message preserves conversation history without re-running AI or tools.
+**理由**: card 是 assistant reply 的可见组成部分。随 assistant message 一起保存，才能在不重新调用 AI / tools 的情况下恢复聊天历史。
 
-**Alternatives considered**:
+**考虑过的替代方案**:
 
-- Recompute cards from current orders/delivery on history load: rejected because it changes history and may trigger tool-like behavior.
-- Store cards in a separate table: rejected because one assistant message has at most one visible card in the current product.
-- Store raw tool calls and reconstruct cards: rejected because it persists internal traces and violates the display-history boundary.
+- 历史加载时根据当前 orders/delivery 重新计算 card：拒绝，因为这会改变历史，而且接近重新执行 tool 行为。
+- 新建独立 card table：拒绝，因为当前产品里一条 assistant message 最多只有一张可见 card。
+- 存 raw tool calls 再重建 card：拒绝，因为会持久化内部 trace，违反展示历史边界。
 
-## Decision: Use the existing `CardPayload` shape
+## 决策：复用现有 `CardPayload` 形态
 
-**Rationale**: `cardPayloadSchema` already defines the visible card contract shared by backend and frontend. Reusing it avoids a parallel shape.
+**理由**: `cardPayloadSchema` 已经定义了 backend 和 frontend 共享的可见 card contract。复用它可以避免平行形态。
 
-**Alternatives considered**:
+**考虑过的替代方案**:
 
-- Create a looser untyped JSON contract: rejected because invalid historical cards should degrade safely.
-- Version every card type now: deferred until there is evidence of card-shape migration pain.
+- 使用更松的 untyped JSON contract：拒绝，因为无效历史 card 应该能安全降级。
+- 现在就给每种 card 加版本机制：暂缓，等真的出现 card shape migration 痛点再做。
 
-## Decision: Keep `customer-confirm` action recovery out of this feature
+## 决策：`customer-confirm` 动作恢复不放进本功能
 
-**Rationale**: Current confirmation execution depends on in-process `pendingState`. Making「都建」reload-safe requires persisted action state and stale/completed transitions, which is a separate state-machine feature.
+**理由**: 当前确认动作依赖进程内 `pendingState`。让「都建」reload-safe 需要持久化 action state 和 stale/completed 状态转换，这是另一个状态机功能。
 
-**Alternatives considered**:
+**考虑过的替代方案**:
 
-- Include persisted confirmation state now: rejected because it expands the first Spec Kit trial beyond one shippable slice.
-- Hide customer-confirm cards entirely in history: rejected because the user still loses important conversation context.
+- 现在一起做 persisted confirmation state：拒绝，因为会让第一个 Spec Kit 试点超过一个最小可交付切片。
+- 历史里完全隐藏 customer-confirm card：拒绝，因为用户仍会丢失重要对话上下文。
 
-## Decision: Do not change retention or pagination
+## 决策：不改 retention 和 pagination
 
-**Rationale**: Existing history load uses a latest-message limit. Card persistence does not require solving old-history pagination or GC.
+**理由**: 现有历史加载使用 latest-message limit。card persistence 不要求同时解决旧历史分页或 GC。
 
-**Alternatives considered**:
+**考虑过的替代方案**:
 
-- Add cursor pagination now: rejected as a separate display-history feature.
-- Rewrite retention policy now: rejected because it is unrelated to restoring card payloads.
+- 现在加入 cursor pagination：拒绝，作为独立展示历史功能处理。
+- 现在重写 retention policy：拒绝，因为和恢复 card payload 无直接关系。

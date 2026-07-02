@@ -1,8 +1,8 @@
-# Quickstart: Validate kith-inn Chat Card Persistence
+# 快速验证：kith-inn 聊天卡片持久化
 
-## Automated Checks
+## 自动化检查
 
-Run the narrow checks for this feature:
+运行本功能相关的窄检查：
 
 ```bash
 pnpm --filter @cfp/kith-inn-shared test
@@ -11,23 +11,23 @@ pnpm --filter @cfp/kith-inn-be test
 pnpm --filter @cfp/kith-inn-fe test
 ```
 
-Expected outcomes:
+预期结果：
 
-- Shared schema tests cover chat messages with and without valid cards.
-- Payload tests still pass after adding the nullable card field.
-- Backend chat tests prove `POST /chat` persists assistant cards and `GET /chat` returns safe card payloads.
-- Frontend tests or component-level coverage prove restored history messages can render cards and do not crash on missing cards.
+- shared schema tests 覆盖有 card / 无 card 的 chat messages。
+- 添加 nullable card 字段后，Payload tests 继续通过。
+- backend chat tests 证明 `POST /chat` 会持久化 assistant card，`GET /chat` 会返回安全的 card payload。
+- frontend tests 或 component-level coverage 证明历史消息恢复 card 后可以渲染，缺失 card 时不崩溃。
 
-## Manual Smoke
+## 手动冒烟测试
 
-1. Log in to kith-inn.
-2. Ask a Today-page question that returns an orders or delivery card.
-3. Close/reopen or reload the Today page.
-4. Confirm the previous assistant text and card both appear in the same conversation position.
-5. Confirm no new message was sent and no AI response was regenerated.
+1. 登录 kith-inn。
+2. 在 Today page 问一个会返回 orders 或 delivery card 的问题。
+3. 关闭 / 重开或刷新 Today page。
+4. 确认之前的 assistant 文本和 card 都出现在同一个对话位置。
+5. 确认没有发送新消息，也没有重新生成 AI response。
 
-## Non-Goals To Check
+## 明确不做
 
-- Do not add chat pagination or retention GC in this feature.
-- Do not add persisted `customer-confirm` action state in this feature.
-- Do not expose raw tool calls, system prompts, or LLM traces in history.
+- 本功能不增加 chat pagination 或 retention GC。
+- 本功能不增加持久化 `customer-confirm` action state。
+- 本功能不在历史里暴露 raw tool calls、system prompts 或 LLM traces。

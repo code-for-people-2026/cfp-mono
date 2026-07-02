@@ -1,10 +1,10 @@
-# Contract: kith-inn Chat API
+# 契约：kith-inn Chat API
 
 ## `GET /chat`
 
-Loads recent visible chat history for the authenticated seller/operator.
+加载当前已认证 seller/operator 的近期可见聊天历史。
 
-### Response
+### 响应
 
 ```json
 {
@@ -26,19 +26,19 @@ Loads recent visible chat history for the authenticated seller/operator.
 }
 ```
 
-### Rules
+### 规则
 
-- `card` is optional.
-- Messages without cards keep the current shape.
-- Invalid card payloads are omitted from the response.
-- The endpoint must not call an LLM or run agent tools.
-- Seller/operator scoping remains enforced by the existing auth path.
+- `card` 是 optional。
+- 没有 card 的 messages 保持当前 shape。
+- 无效 card payload 从 response 中省略。
+- endpoint 不得调用 LLM 或执行 agent tools。
+- 继续通过现有 auth path 保持 seller/operator scoping。
 
 ## `POST /chat`
 
-Sends one user message and returns the assistant reply.
+发送一条 user message，并返回 assistant reply。
 
-### Response
+### 响应
 
 ```json
 {
@@ -53,8 +53,8 @@ Sends one user message and returns the assistant reply.
 }
 ```
 
-### Persistence Rules
+### 持久化规则
 
-- Persist the user message without a card.
-- Persist the assistant message with the same visible `card` returned to the client when a card exists.
-- Chat persistence remains best-effort after business side effects have committed.
+- user message 持久化时不带 card。
+- assistant message 有可见 `card` 时，持久化的 card 必须和返回给 client 的 card 一致。
+- business side effects 提交后，chat persistence 仍保持 best-effort。
