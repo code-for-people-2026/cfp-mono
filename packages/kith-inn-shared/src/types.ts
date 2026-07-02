@@ -1,189 +1,94 @@
 /**
- * kith-inn domain entity types — the FE ↔ BE ↔ cms contract. Plain TS, no
- * Payload dependency. They mirror the Payload collection shapes (hand-written
- * because cms disables Payload type generation); drift is watched by review.
+ * kith-inn domain + contract types. **Derived from the zod schemas in
+ * `schemas.ts` via `z.infer` (#89)** — schemas are the single source of truth;
+ * this file only re-exports the inferred types + their doc comments. enum types
+ * live in `enums.ts`.
  *
- * `seller` / relationship fields are union of bare id or populated doc, matching
- * Payload's shallow (`number | string`) vs populated (`{ id }`) shapes.
+ * Both imports below are `import type`-only → TS import-elides them, so no zod
+ * runtime leaks to type-only consumers (FE/Taro weapp imports these as types).
+ *
+ * `seller` / relationship fields are a union of bare id or populated doc,
+ * matching Payload's shallow (`number | string`) vs populated (`{ id }`) shapes.
  */
+import type { z } from "zod";
 import type {
-  ChatRole,
-  CustomerKind,
-  FulfillmentMode,
-  FulfillmentStatus,
-  MenuPlanStatus,
-  Occasion,
-  OfferingCategory,
-  OfferingKind,
-  OperatorRole,
-  OrderSource,
-  OrderStatus,
-  PaymentStatus,
-  SellerModule,
-  SellerStatus,
-  ServiceSlotGranularity,
-  ServiceSlotStatus,
-} from "./enums";
+  addressGapSchema,
+  addressGroupSchema,
+  cardPayloadSchema,
+  chatMessageSchema,
+  confirmCustomerItemSchema,
+  customerSchema,
+  deliveryCardDataSchema,
+  deliveryCardGroupSchema,
+  deliveryViewSchema,
+  fulfillmentSchema,
+  menuDishSchema,
+  menuPlanSchema,
+  menuSlotSchema,
+  offeringSchema,
+  operatorSchema,
+  orderCardDataSchema,
+  orderItemSchema,
+  orderSchema,
+  serviceSlotSchema,
+  sellerSchema,
+  weekMenuSchema,
+} from "./schemas";
 
-export type Seller = {
-  id: string | number;
-  name: string;
-  serviceArea?: string;
-  /** Pricing-resolver fallback (桃子 = 3000 = 30 元/份). */
-  defaultPriceCents?: number;
-  status: SellerStatus;
-  /** Combo fact-source: which modules are on — drives access/tab/agent-tool gating. */
-  enabledModules?: SellerModule[];
-  /** Per-module config json (e.g. delivery.deliverers, menuStructure, serviceDays). */
-  moduleSettings?: Record<string, unknown>;
-  profileFreeText?: string;
-};
+/** 经营画像：定价 fallback、开了哪些 module（菜单/送餐/采购）、每 module 配置。 */
+export type Seller = z.infer<typeof sellerSchema>;
 
-export type Operator = {
-  id: string | number;
-  wechatOpenid: string;
-  role: OperatorRole;
-  active: boolean;
-  seller: string | number | Seller;
-};
+/** 登录主体（桃子 owner / 未来帮手 helper）。 */
+export type Operator = z.infer<typeof operatorSchema>;
 
-export type Customer = {
-  id: string | number;
-  /** 接龙里的称呼 — identification key (NOT unique; MVP name-normalize + manual merge). */
-  displayName: string;
-  kind: CustomerKind;
-  defaultServings?: number;
-  defaultOccasion?: Occasion;
-  note?: string;
-  /** 自由文本送餐地址（如 "3e23a"）——桃子送餐时认得就行，不结构化。下单时若是
-   *  新顾客，凭这个（+姓名）创建；下单（draft-create）时快照进 order.address。 */
-  address?: string;
-  seller: string | number | Seller;
-};
+/** 顾客：接龙里的称呼（identify key）+ 自由文本送餐地址（下单时 snapshot 进 order.address）。 */
+export type Customer = z.infer<typeof customerSchema>;
 
-export type Offering = {
-  id: string | number;
-  name: string;
-  kind: OfferingKind;
-  mainIngredient?: string;
-  category?: OfferingCategory;
-  /** combo → its components (self-relationship). */
-  parentOfferings?: Array<string | number | Offering>;
-  unitLabel?: string;
-  /** 菜品定价 (pricing-resolver middle priority). */
-  priceCents?: number;
-  /** json string-array (清淡/费工…) — lean modeling, no per-tag sub-tables. */
-  tags?: string[];
-  lastUsedAt?: string;
-  useCount?: number;
-  recipe?: Record<string, unknown>;
-  active?: boolean;
-  seller: string | number | Seller;
-};
+/** 菜/SKU/套餐/课时（kind）；component=一道菜，combo-meal=按份卖的套餐（parentOfferings=组件池）。 */
+export type Offering = z.infer<typeof offeringSchema>;
 
-export type ServiceSlot = {
-  id: string | number;
-  date: string;
-  granularity: ServiceSlotGranularity;
-  occasion?: Occasion;
-  startAt?: string;
-  endAt?: string;
-  status: ServiceSlotStatus;
-  seller: string | number | Seller;
-};
+/** 服务时间桶（开餐 slot）。draft=预占，open=确认即开餐，archived=软删。 */
+export type ServiceSlot = z.infer<typeof serviceSlotSchema>;
 
-export type OrderItem = {
-  id: string | number;
-  order: string | number | Order;
-  offering: string | number | Offering;
-  mealOccasion?: Occasion;
-  /** time-slot-granularity sellers only; snapshot from the slot's startAt/endAt. */
-  timeWindow?: string;
-  quantity: number;
-  /** Empty = derive default; snapshotted at draft-create (M1 simplification). */
-  unitPriceCents?: number;
-  note?: string;
-  seller: string | number | Seller;
-};
+/** 订单条目（每条 = 一个 offering × 份数，含 mealOccasion / 快照 unitPriceCents）。 */
+export type OrderItem = z.infer<typeof orderItemSchema>;
 
-export type Order = {
-  id: string | number;
-  customer: string | number | Customer;
-  /** 用餐日 (≠ 录入时间). Day-granular. */
-  date: string;
-  status: OrderStatus;
-  source: OrderSource;
-  placedAt?: string;
-  note?: string;
-  /** Read-only derived = Σ(item.quantity × resolved unit price); canceled excluded. */
-  totalCents?: number;
-  /** Frozen delivery-address snapshot — copied from customer.address at draft-create,
-   *  like e-commerce (the order never changes address after creation; an edit = new order). */
-  address?: string;
-  paymentStatus: PaymentStatus;
-  paymentMethod?: string;
-  paidAt?: string;
-  idempotencyKey?: string;
-  createdBy?: string | number | Operator;
-  seller: string | number | Seller;
-};
+/** 订单（draft=纯记录→confirm 物化→cancel 终态；address 是 draft-create 时的冻结快照）。 */
+export type Order = z.infer<typeof orderSchema>;
 
-export type Fulfillment = {
-  id: string | number;
-  orderItem: string | number | OrderItem;
-  /** Denormalized 用餐日 — delivery views batch on it, avoid re-joining order. */
-  serviceDate: string;
-  occasion?: Occasion;
-  mode: FulfillmentMode;
-  status: FulfillmentStatus;
-  /** Controlled value ∈ seller.moduleSettings.delivery.deliverers. */
-  assignee?: string;
-  timeWindow?: string;
-  seller: string | number | Seller;
-};
+/** 送餐履约（per orderItem，delivery 模式才建；serviceDate 冗余便于按日分拣）。 */
+export type Fulfillment = z.infer<typeof fulfillmentSchema>;
 
-export type MenuPlan = {
-  id: string | number;
-  slot: string | number | ServiceSlot;
-  offerings: Array<string | number | Offering>;
-  publishText?: string;
-  status: MenuPlanStatus;
-  seller: string | number | Seller;
-};
+/** 菜单计划（某 slot 卖哪些 offerings + 发群文案）。 */
+export type MenuPlan = z.infer<typeof menuPlanSchema>;
 
-export type ChatMessage = {
-  id: string | number;
-  operator?: string | number | Operator;
-  content: string;
-  role: ChatRole;
-  createdAt: string;
-  seller: string | number | Seller;
-};
+/** 聊天消息（「今天」对话；role=user/assistant）。 */
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
-/** One new-customer row surfaced in a customer-confirm card (mirrors the agent's
- *  `needsConfirmation` shape — passed through unchanged). `date` is the meal day
- *  the row should be recorded for (defaults to today at record time). */
-export type ConfirmCustomerItem = {
-  customerName: string;
-  address?: string;
-  quantity: number;
-  occasion: "lunch" | "dinner";
-  date?: string;
-};
+// ── menu contract (GET /menu/week) ─────────────────────────────────────────
+/** 菜单规划用的一道菜（含 useCount/lastUsedAt 频次信号，FE 镜像曾缺这两个）。 */
+export type MenuDish = z.infer<typeof menuDishSchema>;
+/** 菜单的一个槽（某天某餐的菜）。 */
+export type MenuSlot = z.infer<typeof menuSlotSchema>;
+/** 周菜单结果：成功（slots）或 pool-too-small（菜池填不满去重约束）。 */
+export type WeekMenu = z.infer<typeof weekMenuSchema>;
 
-/** A structured card attached to an assistant chat reply (lower-AI-narration,
- *  higher-trust surface than prose). Lives only on the turn that produced it —
- *  cards are NOT persisted into chat history (MVP). */
-export type OrderCardData = { orders: Order[]; date: string };
+// ── delivery contract (GET /delivery) ──────────────────────────────────────
+/** 按地址分组的送篮（源头防错：照这张装篮）。 */
+export type AddressGroup = z.infer<typeof addressGroupSchema>;
+/** 缺口（收尾防漏：这趟还差几个地址未送）。 */
+export type AddressGap = z.infer<typeof addressGapSchema>;
+/** 送餐 tab 数据源：分拣 + 缺口对账（派生不落表）。 */
+export type DeliveryView = z.infer<typeof deliveryViewSchema>;
 
-/** Delivery snapshot for a delivery card: outstanding count + per-address groups
- *  (pre-aggregated so the FE renders without re-deriving). `ids` = the group's
- *  orderItem ids, so the 「送达」 button marks exactly this group (not a substring
- *  match that would spill across addresses — Codex P1). */
-export type DeliveryCardGroup = { address: string; count: number; done: number; total: number; ids: Array<string | number> };
-export type DeliveryCardData = { totalPending: number; groups: DeliveryCardGroup[] };
-
-export type CardPayload =
-  | { type: "customer-confirm"; data: { items: ConfirmCustomerItem[] } }
-  | { type: "orders"; data: OrderCardData }
-  | { type: "delivery"; data: DeliveryCardData };
+// ── chat cards (#98) ───────────────────────────────────────────────────────
+/** customer-confirm 卡里一行待建顾客（镜像 agent needsConfirmation）。 */
+export type ConfirmCustomerItem = z.infer<typeof confirmCustomerItemSchema>;
+/** orders 卡 data：今天的订单列表 + 日期。 */
+export type OrderCardData = z.infer<typeof orderCardDataSchema>;
+/** delivery 卡里一个地址组（含 ids 供「送达」按钮精确勾销，PR #101 Codex P1）。 */
+export type DeliveryCardGroup = z.infer<typeof deliveryCardGroupSchema>;
+/** delivery 卡 data：缺口数 + 按地址分组。 */
+export type DeliveryCardData = z.infer<typeof deliveryCardDataSchema>;
+/** 聊天回复附带的结构化卡片（PR1 customer-confirm / PR2 orders/delivery）。 */
+export type CardPayload = z.infer<typeof cardPayloadSchema>;
