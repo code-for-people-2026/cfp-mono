@@ -13,3 +13,4 @@ test-results
 .DS_Store
 *.log
 *.tsbuildinfo
+.specify/feature.json
