@@ -4,13 +4,16 @@
 >
 > 社区私房菜助手。中文名 **「街坊味」**，英文代号 **kith-inn**（kith=街坊邻里 + inn=小馆，连读谐音 "kitchen"）。
 
-通过社区街坊里的"生产者"把邻里重新连接起来。产品定义与愿景见文档：
+通过社区街坊里的"生产者"把邻里重新连接起来。项目级定义见：
 
-- 产品需求（PRD）：[docs/PRD.md](./docs/PRD.md)
-- 技术规格（Tech Spec，**架构以此为准**，待单独讨论）：[docs/TECH-SPEC.md](./docs/TECH-SPEC.md)
+- 产品需求（PRD）：[PRD.md](./PRD.md)
+- User stories：[USER-STORIES.md](./USER-STORIES.md)
+- 技术规格（Tech Spec，**架构以此为准**）：[TECH-SPEC.md](./TECH-SPEC.md)
+- 数据建模参考：[DATA-MODEL.md](./DATA-MODEL.md)
+- 高保真原型：[prototype/kith-inn-high-fidelity-prototype.png](./prototype/kith-inn-high-fidelity-prototype.png)
 
-## 现状
+## 代码入口
 
-- 这是**项目骨架**，**尚未做任何技术栈 / 运行时结构决定**。
-- 前端 / 后端 / LLM host 的分层（是否一个小程序前端 + 一个后端、是否复用 cfp-mono 既有 `apps/*`、LLM 在哪一层）**留待 Tech Spec 讨论后再建**。
-- 目前仅固定项目名、承载 PRD 与 Tech Spec 文档。
+- CMS / 后端 / 前端 / Payload 模块 / 共享类型分别在 `apps/cms`、`apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-payload`、`packages/kith-inn-shared`。
+- 新 feature 按 Spec Kit 推进，feature 文档放在仓库根目录的 `specs/` 下，并使用 `kith-inn` 作为 feature 名称前缀。
+- 本目录只保留 kith-inn 的长期产品 / 技术材料，不维护另一套 PR 粒度任务清单。
