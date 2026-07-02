@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import type { ConfirmCustomerItem } from "@cfp/kith-inn-shared";
+import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
 import { findOfferings } from "../lib/cms/client";
 import {
@@ -79,14 +80,20 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   app.get("/", async (c) => {
     const jwt = c.get("token") as string;
     try {
-      // Project to the 4 fields the miniapp needs — cms depth-populates
+      // Project to the visible fields the miniapp needs — cms depth-populates
       // operator/seller, which must not leak to the client (Codex).
-      const messages = (await listChat(jwt, { limit: 50 })).map((m) => ({
-        id: m.id,
-        role: m.role,
-        content: m.content,
-        createdAt: m.createdAt,
-      }));
+      const messages = (await listChat(jwt, { limit: 50 })).map((m) => {
+        const card = cardPayloadSchema.safeParse(m.card);
+        const hasStoredCard = m.card !== undefined && m.card !== null;
+        return {
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          createdAt: m.createdAt,
+          ...(card.success ? { card: card.data } : {}),
+          ...(!card.success && hasStoredCard ? { cardUnavailable: true } : {}),
+        };
+      });
       return c.json({ messages });
     } catch {
       return c.json({ error: "history failed" }, 502);
@@ -109,10 +116,9 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
       // Best-effort: a chat-history write failure must NOT fail the turn once the
       // agent's business side-effects (e.g. record_orders) already committed — a 502
       // here would read as "chat failed" and a retry would duplicate the draft.
-      // The card is intentionally NOT persisted (MVP: cards live only on this turn).
       await Promise.all([
         createChat(jwt, { content: body.text, role: "user" }),
-        createChat(jwt, { content: reply, role: "assistant" }),
+        createChat(jwt, { content: reply, role: "assistant", ...(card ? { card } : {}) }),
       ]).catch(() => null);
       return c.json({ reply, card });
     } catch {
@@ -121,7 +127,7 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   });
 
   /**
-   * POST /chat/confirm-customers — the deterministic 「都建」 behind the
+   * POST /chat/confirm-customers — the deterministic "全部建档并记单" behind the
    * customer-confirm card (#97). The body carries the clicked card's items; we
    * validate they still match the server-side pending list (else the card is
    * stale — e.g. a newer 接龙 overwrote pending) → creates customers + draft

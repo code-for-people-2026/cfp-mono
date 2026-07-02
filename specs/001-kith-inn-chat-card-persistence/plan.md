@@ -39,7 +39,7 @@
 - `apps/kith-inn-be/src/routes/chat.ts` 的 `GET /chat` 只把历史投影成 `id`、`role`、`content`、`createdAt`；没有返回 card。
 - `apps/kith-inn-be/src/lib/cms/chat.ts` 的 `createChatMessage()` 只接受 `{ content, role }`。
 - `apps/kith-inn-fe/src/pages/today/index.tsx` 已支持 `Msg.card`，并在消息有 card 时渲染 `<ChatCard />`。
-- `apps/kith-inn-fe/src/components/ChatCard.tsx` 当前注释仍描述 cards 是 one-shot 且不持久化；`customer-confirm` 只要本地未 confirmed 就会显示可点击「都建」。
+- `apps/kith-inn-fe/src/components/ChatCard.tsx` 当前注释仍描述 cards 是 one-shot 且不持久化；`customer-confirm` 只要本地未 confirmed 就会显示可点击「都建」，该文案和历史/过期卡状态都需要在本功能中改成更准确的“全部建档并记单”语义。
 
 ## 宪法检查
 

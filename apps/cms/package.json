@@ -18,6 +18,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@cfp/kith-inn-shared": "workspace:*",
     "@cfp/kith-inn-payload": "workspace:*",
     "@payloadcms/db-postgres": "3.85.1",
     "@payloadcms/db-sqlite": "3.85.1",

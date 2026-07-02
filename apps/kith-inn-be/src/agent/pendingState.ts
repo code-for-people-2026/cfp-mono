@@ -4,8 +4,9 @@ import type { ConfirmCustomerItem } from "@cfp/kith-inn-shared";
  * Server-side pending new-customer confirmations (#97). When `recordOrders`
  * meets unknown names it stores them here keyed by operator; the
  * `POST /chat/confirm-customers` endpoint reads → creates → clears. This makes
- * 「都建」 a deterministic button click instead of relying on the LLM to recall
- * the list across turns (DeepSeek drops context → flaky multi-turn confirm).
+ * the new-customer confirmation action a deterministic button click instead of
+ * relying on the LLM to recall the list across turns (DeepSeek drops context →
+ * flaky multi-turn confirm).
  *
  * `// ponytail:` in-process Map — a server restart drops pending confirmations
  * (acceptable: 桃子 re-pastes the 接龙, record_orders repopulates). Promote to a

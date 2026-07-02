@@ -3,6 +3,7 @@ import { OPERATOR_JWT_HEADER } from "./client";
 import { createChatMessage, listChatMessages } from "./chat";
 
 const ORIG = process.env.CMS_BASE_URL;
+const CARD = { type: "customer-confirm" as const, data: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "lunch" as const }] } };
 afterEach(() => {
   process.env.CMS_BASE_URL = ORIG;
   vi.unstubAllGlobals();
@@ -15,10 +16,10 @@ const mockFetch = (response: unknown, status = 200) => ({
 describe("listChatMessages", () => {
   it("GETs recent chat with an optional limit and unwraps {docs}", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch({ docs: [{ id: 1, content: "hi", role: "user" }] });
+    const deps = mockFetch({ docs: [{ id: 1, content: "hi", role: "assistant", card: CARD }] });
     const msgs = await listChatMessages("jwt", { limit: 20 }, deps);
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/chat_messages?limit=20");
-    expect(msgs).toEqual([{ id: 1, content: "hi", role: "user" }]);
+    expect(msgs).toEqual([{ id: 1, content: "hi", role: "assistant", card: CARD }]);
   });
 
   it("omits the query string when no limit and returns [] when docs is absent", async () => {
@@ -48,12 +49,20 @@ describe("createChatMessage", () => {
   it("POSTs {content, role} with the operator JWT", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
     const deps = mockFetch({ id: 9, content: "hey", role: "assistant" });
-    const msg = await createChatMessage("jwt", { content: "hey", role: "assistant" }, deps);
+    const msg = await createChatMessage("jwt", { content: "hey", role: "assistant", card: CARD }, deps);
     const [, init] = deps.fetch.mock.calls[0]!;
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ [OPERATOR_JWT_HEADER]: "jwt", "content-type": "application/json" });
-    expect(JSON.parse(init?.body as string)).toEqual({ content: "hey", role: "assistant" });
+    expect(JSON.parse(init?.body as string)).toEqual({ content: "hey", role: "assistant", card: CARD });
     expect(msg.id).toBe(9);
+  });
+
+  it("serializes only visible chat fields and never sends cards for user messages", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = mockFetch({ id: 9, content: "hey", role: "user" });
+    await createChatMessage("jwt", { content: "hey", role: "user", card: CARD, rawToolCalls: [{ name: "x" }] } as never, deps);
+    const [, init] = deps.fetch.mock.calls[0]!;
+    expect(JSON.parse(init?.body as string)).toEqual({ content: "hey", role: "user" });
   });
 
   it("throws on a non-2xx", async () => {

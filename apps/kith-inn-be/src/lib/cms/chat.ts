@@ -1,6 +1,6 @@
 /** be → cms internal calls for the 「今天」chat history (PR7a). Seller-scoped via
  *  the operator JWT header; mirrors lib/cms/client.ts's findOfferings style. */
-import type { ChatMessage, ChatRole } from "@cfp/kith-inn-shared";
+import type { CardPayload, ChatMessage, ChatRole } from "@cfp/kith-inn-shared";
 import { cmsBase, OPERATOR_JWT_HEADER, type CmsDeps } from "./client";
 
 /** GET /api/internal/chat_messages — the seller's recent chat (newest first). */
@@ -24,14 +24,19 @@ export async function listChatMessages(
 /** POST /api/internal/chat_messages — persist one user/assistant message. */
 export async function createChatMessage(
   operatorJwt: string,
-  input: { content: string; role: ChatRole },
+  input: { content: string; role: ChatRole; card?: CardPayload },
   deps: CmsDeps = {},
 ): Promise<ChatMessage> {
   const fetchImpl = deps.fetch ?? fetch;
+  const body = {
+    content: input.content,
+    role: input.role,
+    ...(input.role === "assistant" && input.card ? { card: input.card } : {}),
+  };
   const res = await fetchImpl(`${cmsBase()}/api/internal/chat_messages`, {
     method: "POST",
     headers: { [OPERATOR_JWT_HEADER]: operatorJwt, "content-type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`cms chat create failed: ${res.status}`);
   return (await res.json()) as ChatMessage;

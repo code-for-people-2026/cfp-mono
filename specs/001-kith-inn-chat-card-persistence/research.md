@@ -22,12 +22,12 @@
 
 **考虑过的替代方案**:
 
-- 使用更松的 untyped JSON contract：拒绝，因为无效历史 card 应该能安全降级。
+- 使用更松的 untyped JSON contract：拒绝，因为无法解析的历史 card 应该能安全降级为“卡片数据已过期”占位，而不是把不明结构交给前端。
 - 现在就给每种 card 加版本机制：暂缓，等真的出现 card shape migration 痛点再做。
 
 ## 决策：`customer-confirm` 动作恢复不放进本功能
 
-**理由**: 当前确认动作依赖进程内 `pendingState`。让「都建」reload-safe 需要持久化 action state 和 stale/completed 状态转换，这是另一个状态机功能。
+**理由**: 当前确认动作依赖进程内 `pendingState`，且每个 operator 只有最后一张新顾客确认卡是 active。让“全部建档并记单” reload-safe 需要持久化 action state 和 stale/completed 状态转换，这是另一个状态机功能。本功能只恢复历史卡内容，并把历史/过期卡展示成不可操作状态。
 
 **考虑过的替代方案**:
 

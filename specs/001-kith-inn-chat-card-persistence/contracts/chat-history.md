@@ -30,7 +30,8 @@
 
 - `card` 是 optional。
 - 没有 card 的 messages 保持当前 shape。
-- 无效 card payload 从 response 中省略。
+- 历史 `card` JSON 不符合当前 `CardPayload` contract 时，response 不返回原始 `card`，而是返回 `cardUnavailable: true`，client 显示“卡片数据已过期”占位。
+- 历史 `customer-confirm` card 只表示可见卡片快照，不表示该确认动作仍然 active；client 必须按历史/过期卡处理，除非它来自当前会话最新 assistant response。
 - endpoint 不得调用 LLM 或执行 agent tools。
 - 继续通过现有 auth path 保持 seller/operator scoping。
 

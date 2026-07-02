@@ -48,6 +48,13 @@ describe("domain schemas — happy parse", () => {
     expect(menuPlanSchema.parse({ id, slot: 1, offerings: [10, { id: 20, name: "番茄炒蛋", kind: "component", category: "veg", seller: id }], status: "draft", seller: id })).toMatchObject({ status: "draft" });
     expect(chatMessageSchema.parse({ id, content: "hi", role: "user", createdAt: "t", seller: id })).toMatchObject({ role: "user" });
   });
+
+  it("chatMessage accepts assistant card snapshots but rejects user cards", () => {
+    const card = { type: "customer-confirm" as const, data: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "lunch" as const }] } };
+    expect(chatMessageSchema.parse({ id, content: "待确认", role: "assistant", createdAt: "t", seller: id, card })).toMatchObject({ card });
+    expect(() => chatMessageSchema.parse({ id, content: "接龙文本", role: "user", createdAt: "t", seller: id, card })).toThrow();
+    expect(() => chatMessageSchema.parse({ id, content: "坏卡", role: "assistant", createdAt: "t", seller: id, card: { type: "unknown", data: {} } })).toThrow();
+  });
 });
 
 describe("contract schemas", () => {

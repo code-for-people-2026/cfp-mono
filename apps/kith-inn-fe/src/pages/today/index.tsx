@@ -5,10 +5,11 @@ import type { CardPayload } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
+import { getCustomerConfirmActionState, type ChatCardMessage } from "@/logic/chatCards";
 import { chatUrl, confirmCustomersUrl, markDeliveredUrl, orderConfirmUrl, orderUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
-type Msg = { id?: string | number; role: "user" | "assistant"; content: string; card?: CardPayload };
+type Msg = ChatCardMessage & { id?: string | number; cardUnavailable?: boolean };
 
 const taroStorage: Storage = {
   get: (k) => Taro.getStorageSync(k) || null,
@@ -48,7 +49,7 @@ export default function Today() {
         if (sentRef.current) return; // a send beat the initial load — don't clobber it
         // cms returns newest-first; render chronologically (oldest→newest).
         const messages = ((res.data as { messages?: Msg[] }).messages ?? []) as Msg[];
-        setMsgs([...messages].reverse());
+        setMsgs([...messages].reverse().map((m) => ({ ...m, fromHistory: true })));
       })
       .catch(() => Taro.showToast({ title: "加载失败", icon: "error" }));
   }, []);
@@ -84,12 +85,17 @@ export default function Today() {
       .finally(() => setSending(false));
   };
 
-  /** 「都建」 on a customer-confirm card → POST /chat/confirm-customers with this
-   *  card's items (deterministic; server validates they still match pending). */
+  /** "全部建档并记单" on an active customer-confirm card → POST /chat/confirm-customers
+   *  with this card's items; server validates they still match pending. */
   const confirmCustomers = (i: number) => {
     if (confirming) return;
     const card = msgs[i]?.card;
     if (card?.type !== "customer-confirm") return;
+    const action = getCustomerConfirmActionState(msgs, i, confirmed);
+    if (action?.status !== "active") {
+      if (action?.status === "stale") Taro.showToast({ title: "确认卡已过期，请重新识别", icon: "none" });
+      return;
+    }
     const token = tokens.getToken();
     if (!token) {
       Taro.redirectTo({ url: "/pages/login/index" });
@@ -109,7 +115,7 @@ export default function Today() {
           return;
         }
         if (res.statusCode === 409) {
-          Taro.showToast({ title: "这条过期了，刷新看看", icon: "none" });
+          Taro.showToast({ title: "确认卡已过期，请重新识别", icon: "none" });
           return;
         }
         if (res.statusCode >= 400) {
@@ -236,6 +242,7 @@ export default function Today() {
         ) : (
           msgs.map((m, i) => {
             const me = m.role === "user";
+            const customerConfirmAction = getCustomerConfirmActionState(msgs, i, confirmed);
             return (
               <View key={i} className={`my-[28rpx] flex gap-[20rpx]${me ? " flex-row-reverse" : ""}`}>
                 {!me && (
@@ -254,10 +261,17 @@ export default function Today() {
                       card={m.card}
                       confirmed={confirmed.has(i)}
                       confirming={confirming}
+                      customerConfirmAction={customerConfirmAction}
                       onConfirm={() => confirmCustomers(i)}
                       onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
                       onMarkDelivered={(ids) => onMarkDelivered(i, ids)}
                     />
+                  )}
+                  {!me && !m.card && m.cardUnavailable && (
+                    <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
+                      <Text className="block text-[26rpx] font-semibold text-ink">卡片数据已过期</Text>
+                      <Text className="mt-[10rpx] block text-[24rpx] leading-relaxed text-muted">原始对话仍保留，这张历史卡片无法恢复。</Text>
+                    </View>
                   )}
                 </View>
               </View>
