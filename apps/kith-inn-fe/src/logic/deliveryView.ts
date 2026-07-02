@@ -6,7 +6,8 @@ type FulfillmentStatus = "pending" | "handed-off" | "done" | "canceled";
 
 type Fulfillment = {
   id: string | number;
-  orderItem: string | number;
+  /** cms depth-populates this to an object; bare id is the shallow shape. */
+  orderItem: string | number | { id: string | number };
   serviceDate: string;
   occasion?: string;
   mode: string;

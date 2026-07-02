@@ -177,9 +177,9 @@ export default function Today() {
       .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }));
   };
 
-  /** 「送达」 on a delivery card → PATCH /delivery/fulfillments { address }, then
-   *  optimistically mark that address's group fully done inside the card. */
-  const onMarkDelivered = (msgIdx: number, address: string) => {
+  /** 「送达」 on a delivery card → PATCH /delivery/fulfillments { ids } (exact),
+   *  then optimistically mark the matching group(s) fully done inside the card. */
+  const onMarkDelivered = (msgIdx: number, ids: Array<string | number>) => {
     const token = tokens.getToken();
     if (!token) {
       Taro.redirectTo({ url: "/pages/login/index" });
@@ -188,7 +188,7 @@ export default function Today() {
     Taro.request({
       url: markDeliveredUrl(),
       method: "PATCH",
-      data: { address },
+      data: { ids },
       header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     })
       .then((res) => {
@@ -203,6 +203,7 @@ export default function Today() {
         }
         const count = ((res.data as { count?: number }).count ?? 0) as number;
         Taro.showToast({ title: count > 0 ? `已标记 ${count} 份送达` : "没有待送的", icon: count > 0 ? "success" : "none" });
+        const idSet = new Set(ids);
         setMsgs((ms) =>
           ms.map((m, i) =>
             i !== msgIdx || !m.card || m.card.type !== "delivery"
@@ -213,9 +214,7 @@ export default function Today() {
                     ...m.card,
                     data: {
                       totalPending: Math.max(0, m.card.data.totalPending - count),
-                      groups: m.card.data.groups.map((g) =>
-                        g.address.includes(address) && g.done < g.total ? { ...g, done: g.total } : g,
-                      ),
+                      groups: m.card.data.groups.map((g) => (g.ids.some((id) => idSet.has(id)) ? { ...g, done: g.total } : g)),
                     },
                   },
                 },
@@ -257,7 +256,7 @@ export default function Today() {
                       confirming={confirming}
                       onConfirm={() => confirmCustomers(i)}
                       onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
-                      onMarkDelivered={(address) => onMarkDelivered(i, address)}
+                      onMarkDelivered={(ids) => onMarkDelivered(i, ids)}
                     />
                   )}
                 </View>
