@@ -1,4 +1,4 @@
-import type { Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
+import type { AddressGap, AddressGroup, Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 
 /**
  * 送餐/缺口派生（PRD §6.3 + §7.5「派生不落表」）——纯函数，数据由调用方传入（cms 读
@@ -21,7 +21,7 @@ function orderAddress(f: Fulfillment): string {
   return "";
 }
 
-export type AddressGroup = { address: string; count: number; fulfillments: Fulfillment[] };
+// AddressGroup / AddressGap types come from @cfp/kith-inn-shared (#89 PR B).
 
 /** 按地址汇总（如 3e23a×2、26B×1），照这张分拣装篮——在打包环节就把错误挡住。按份数降序。 */
 export function packingSort(fulfillments: Fulfillment[]): AddressGroup[] {
@@ -39,7 +39,7 @@ export function packingSort(fulfillments: Fulfillment[]): AddressGroup[] {
 
 // ── 缺口对账（收尾防漏）────────────────────────────────────────────────
 
-export type AddressGap = { address: string; pending: number };
+// AddressGap imported from @cfp/kith-inn-shared (#89 PR B).
 
 /** 缺口：status∈{pending,handed-off}（未送达且未取消——self/onsite 无行、canceled 终态不计）。
  *  按地址列，提示"这趟 N 个地址，26B 还没送"。 */

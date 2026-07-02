@@ -1,27 +1,8 @@
-// FE-local mirror of GET /delivery (be: routes/delivery.ts → packingSort + gapReport).
-// ponytail: duplicate the shapes here (be-local types live in domain/delivery/derivations.ts)
-// rather than touch be in an FE-only PR; consolidate into @cfp/kith-inn-shared later (see menuView).
+// FE view helpers for GET /delivery. Types come from @cfp/kith-inn-shared (#89 PR B);
+// only presentation logic lives here.
+import type { AddressGroup } from "@cfp/kith-inn-shared";
 
-type FulfillmentStatus = "pending" | "handed-off" | "done" | "canceled";
-
-type Fulfillment = {
-  id: string | number;
-  /** cms depth-populates this to an object; bare id is the shallow shape. */
-  orderItem: string | number | { id: string | number };
-  serviceDate: string;
-  occasion?: string;
-  mode: string;
-  status: FulfillmentStatus;
-  assignee?: string;
-  timeWindow?: string;
-};
-
-export type AddressGroup = { address: string; count: number; fulfillments: Fulfillment[] };
-
-export type DeliveryView = {
-  sort: AddressGroup[];
-  gaps: { gaps: Array<{ address: string; pending: number }>; totalPending: number };
-};
+export type { AddressGroup, DeliveryView, Fulfillment } from "@cfp/kith-inn-shared";
 
 /** Done vs total for an address group + percent (0–100) for the progress bar. */
 export function buildingProgress(group: AddressGroup): { done: number; total: number; percent: number } {

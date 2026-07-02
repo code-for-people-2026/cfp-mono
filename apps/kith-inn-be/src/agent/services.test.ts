@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CmsHttpError } from "../lib/cms/orders";
-import { createCmsAgentServices, todayShanghai, type AgentCms } from "./services";
+import { todayShanghai } from "@cfp/kith-inn-shared/util";
+import { createCmsAgentServices, type AgentCms } from "./services";
 import { clearPending, getPending, setPending } from "./pendingState";
 
 const NOW = () => new Date("2026-06-29T12:00:00+08:00");

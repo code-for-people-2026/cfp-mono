@@ -22,7 +22,8 @@ export function orderStatusDot(order: Order): StatusDot {
   return order.paymentStatus === "unpaid" ? { label: "欠", tone: "red" } : { label: "收", tone: "green" };
 }
 
-/** Customer display name — `order.customer` is populated to a Customer at cms depth 1. */
+/** Customer display name — mirrors @cfp/kith-inn-shared/util (FE-local: Taro/webpack
+ *  doesn't transpile the shared package's .ts source, so value-importing breaks weapp). */
 export function customerName(order: Order): string {
   const c = order.customer;
   return typeof c === "object" && c !== null ? c.displayName : `#${c}`;

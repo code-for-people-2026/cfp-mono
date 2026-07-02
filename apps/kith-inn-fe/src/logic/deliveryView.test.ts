@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { buildingProgress, fulfillmentStatusLabel, type AddressGroup } from "./deliveryView";
+import { buildingProgress, fulfillmentStatusLabel, type AddressGroup, type Fulfillment } from "./deliveryView";
 
 const group = (statuses: string[]): AddressGroup => ({
   address: "3A",
   count: statuses.length,
-  fulfillments: statuses.map((s, i) => ({
-    id: i,
-    orderItem: i,
-    serviceDate: "2026-06-30",
-    mode: "delivery",
-    status: s as "pending" | "done",
-  })),
+  fulfillments: statuses.map(
+    (s, i) =>
+      ({
+        id: i,
+        orderItem: i,
+        serviceDate: "2026-06-30",
+        mode: "delivery",
+        status: s as "pending" | "done",
+      }) as unknown as Fulfillment, // fixture only exercises status — partial is fine for the view helper
+  ),
 });
 
 describe("buildingProgress", () => {

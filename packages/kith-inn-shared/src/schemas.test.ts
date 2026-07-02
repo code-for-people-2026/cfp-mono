@@ -45,7 +45,7 @@ describe("domain schemas — happy parse", () => {
     expect(orderItemSchema.parse({ id, order: 5, offering: 10, mealOccasion: "lunch", quantity: 2, seller: id })).toMatchObject({ quantity: 2 });
     expect(orderSchema.parse({ id, customer: 7, date: "2026-07-02", status: "draft", source: "chat-paste", paymentStatus: "unpaid", seller: id })).toMatchObject({ status: "draft" });
     expect(fulfillmentSchema.parse({ id, orderItem: 20, serviceDate: "2026-07-02", mode: "delivery", status: "pending", seller: id })).toMatchObject({ status: "pending" });
-    expect(menuPlanSchema.parse({ id, slot: 1, offerings: [10], status: "draft", seller: id })).toMatchObject({ status: "draft" });
+    expect(menuPlanSchema.parse({ id, slot: 1, offerings: [10, { id: 20, name: "番茄炒蛋", kind: "component", category: "veg", seller: id }], status: "draft", seller: id })).toMatchObject({ status: "draft" });
     expect(chatMessageSchema.parse({ id, content: "hi", role: "user", createdAt: "t", seller: id })).toMatchObject({ role: "user" });
   });
 });
