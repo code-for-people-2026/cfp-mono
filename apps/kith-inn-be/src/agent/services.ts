@@ -11,7 +11,7 @@
  */
 import type { Customer, DeliveryCardData, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
-import { gapReport, packingSort } from "../domain/delivery/derivations";
+import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { setPending } from "./pendingState";
 
@@ -178,21 +178,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       if (!address) return { ok: false as const, error: "地址不能为空" };
       try {
         const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
-        // Address lives on the ORDER (frozen snapshot), not the fulfillment —
-        // cms populates orderItem→order, so resolve each one's order.address.
-        const orderAddress = (f: Fulfillment): string => {
-          const oi = f.orderItem;
-          if (oi && typeof oi === "object") {
-            const o = oi.order;
-            if (o && typeof o === "object" && typeof o.address === "string") return o.address;
-          }
-          return "";
-        };
-        const targets = fulfillments.filter(
-          (f) =>
-            orderAddress(f).includes(address) &&
-            (f.status === "pending" || f.status === "handed-off"),
-        );
+        const targets = fulfillmentsMatchingAddress(fulfillments, address);
         if (targets.length === 0) return { ok: true as const, count: 0 };
         const ids = targets.map((f) => (typeof f.orderItem === "object" ? f.orderItem.id : f.orderItem));
         await cms.setFulfillmentsByOrderItems(jwt, ids, { status: "done" });

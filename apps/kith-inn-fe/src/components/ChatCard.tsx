@@ -12,12 +12,13 @@ const occasionZh = (o: "lunch" | "dinner") => (o === "lunch" ? "午餐" : "晚�
  * - delivery: today's per-address packing list (read-only).
  * Cards are one-shot surfaces on the turn that produced them (not persisted).
  */
-export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct }: {
+export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct, onMarkDelivered }: {
   card: CardPayload;
   confirmed: boolean;
   confirming: boolean;
   onConfirm: () => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
+  onMarkDelivered?: (address: string) => void;
 }) {
   if (card.type === "customer-confirm") {
     return (
@@ -82,8 +83,12 @@ export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct }:
       {card.data.groups.map((g) => (
         <View key={g.address} className="mt-[16rpx] flex items-center gap-[16rpx]">
           <Text className="flex-1 text-[26rpx] font-semibold">{g.address}</Text>
-          <Text className="text-[24rpx] text-muted">{g.count} 份</Text>
-          <Text className="text-[24rpx] text-muted">{g.done}/{g.total}</Text>
+          <Text className="text-[24rpx] text-muted">{g.count} 份 · {g.done}/{g.total}</Text>
+          {onMarkDelivered && g.done < g.total && (
+            <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => onMarkDelivered(g.address)}>
+              送达
+            </Button>
+          )}
         </View>
       ))}
     </View>

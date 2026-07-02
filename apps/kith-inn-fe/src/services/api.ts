@@ -49,6 +49,10 @@ export function deliveryUrl(date?: string, occasion?: string): string {
   return `${beBaseUrl()}/delivery${tail ? `?${tail}` : ""}`;
 }
 
+export function markDeliveredUrl(): string {
+  return `${beBaseUrl()}/delivery/fulfillments`;
+}
+
 export function chatUrl(): string {
   return `${beBaseUrl()}/chat`;
 }

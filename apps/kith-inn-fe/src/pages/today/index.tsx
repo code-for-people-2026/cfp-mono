@@ -5,7 +5,7 @@ import type { CardPayload } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { chatUrl, confirmCustomersUrl, orderConfirmUrl, orderUrl } from "@/services/api";
+import { chatUrl, confirmCustomersUrl, markDeliveredUrl, orderConfirmUrl, orderUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
 type Msg = { id?: string | number; role: "user" | "assistant"; content: string; card?: CardPayload };
@@ -177,6 +177,54 @@ export default function Today() {
       .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }));
   };
 
+  /** 「送达」 on a delivery card → PATCH /delivery/fulfillments { address }, then
+   *  optimistically mark that address's group fully done inside the card. */
+  const onMarkDelivered = (msgIdx: number, address: string) => {
+    const token = tokens.getToken();
+    if (!token) {
+      Taro.redirectTo({ url: "/pages/login/index" });
+      return;
+    }
+    Taro.request({
+      url: markDeliveredUrl(),
+      method: "PATCH",
+      data: { address },
+      header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    })
+      .then((res) => {
+        if (res.statusCode === 401) {
+          tokens.clearToken();
+          Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode >= 400) {
+          Taro.showToast({ title: "操作失败", icon: "error" });
+          return;
+        }
+        const count = ((res.data as { count?: number }).count ?? 0) as number;
+        Taro.showToast({ title: count > 0 ? `已标记 ${count} 份送达` : "没有待送的", icon: count > 0 ? "success" : "none" });
+        setMsgs((ms) =>
+          ms.map((m, i) =>
+            i !== msgIdx || !m.card || m.card.type !== "delivery"
+              ? m
+              : {
+                  ...m,
+                  card: {
+                    ...m.card,
+                    data: {
+                      totalPending: Math.max(0, m.card.data.totalPending - count),
+                      groups: m.card.data.groups.map((g) =>
+                        g.address.includes(address) && g.done < g.total ? { ...g, done: g.total } : g,
+                      ),
+                    },
+                  },
+                },
+          ),
+        );
+      })
+      .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }));
+  };
+
   return (
     <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
@@ -209,6 +257,7 @@ export default function Today() {
                       confirming={confirming}
                       onConfirm={() => confirmCustomers(i)}
                       onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
+                      onMarkDelivered={(address) => onMarkDelivered(i, address)}
                     />
                   )}
                 </View>

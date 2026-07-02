@@ -56,6 +56,17 @@ export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; to
   return { gaps, totalPending: open.length };
 }
 
+/**
+ * Open fulfillments (pending/handed-off) whose order address contains the fragment
+ * — shared by the agent's mark_delivered tool and the delivery tab's 「送达」 button.
+ * Blank fragment → [] (guards against "".includes marking *everything* done).
+ */
+export function fulfillmentsMatchingAddress(fulfillments: Fulfillment[], address: string): Fulfillment[] {
+  const a = address.trim();
+  if (!a) return [];
+  return fulfillments.filter((f) => orderAddress(f).includes(a) && (f.status === "pending" || f.status === "handed-off"));
+}
+
 // ── 最近一餐聚焦（PRD §5.5）────────────────────────────────────────────
 
 export type MealFocus = { day: "today" | "tomorrow"; meals: Array<"lunch" | "dinner"> };
