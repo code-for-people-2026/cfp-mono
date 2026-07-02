@@ -64,7 +64,7 @@ export function orderRoutes(jwtSecret: string, deps: OrderRoutesDeps = { cms: re
     const body = (await c.req.json().catch(() => null)) as
       | { customer?: unknown; date?: unknown; occasion?: unknown; source?: unknown; items?: unknown; note?: string; idempotencyKey?: string }
       | null;
-    if (!body || typeof body.customer !== "number" || typeof body.date !== "string" || typeof body.occasion !== "string" || !Array.isArray(body.items)) {
+    if (!body || typeof body.customer !== "number" || typeof body.date !== "string" || typeof body.occasion !== "string" || !Array.isArray(body.items) || body.items.length === 0) {
       return c.json({ error: "customer, date, occasion, items required" }, 400);
     }
     try {

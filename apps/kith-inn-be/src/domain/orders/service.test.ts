@@ -48,6 +48,13 @@ describe("recordDraft", () => {
     await recordDraft(JWT, { customer: 5, date: "2026-06-30", occasion: "lunch", source: "manual", items: [{ offering: 9, quantity: 1 }] }, cms);
     expect(cms.createOrderDraft.mock.calls[0]![1].items[0]!.unitPriceCents).toBe(3000);
   });
+
+  it("rejects empty drafts before any cms write", async () => {
+    const cms = mockCms();
+    await expect(recordDraft(JWT, { customer: 5, date: "2026-06-30", occasion: "lunch", source: "manual", items: [] }, cms)).rejects.toMatchObject({ code: "empty-order" });
+    expect(cms.getSeller).not.toHaveBeenCalled();
+    expect(cms.createOrderDraft).not.toHaveBeenCalled();
+  });
 });
 
 describe("confirmOrder", () => {
@@ -71,6 +78,15 @@ describe("confirmOrder", () => {
     const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => confirmed) });
     await expect(confirmOrder(JWT, 90, cms)).rejects.toMatchObject({ code: "not-draft" });
     expect(cms.upsertSlots).not.toHaveBeenCalled();
+  });
+
+  it("does not materialize an empty draft", async () => {
+    const empty: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "draft", customer: { id: 1 }, items: [] };
+    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => empty) });
+    await expect(confirmOrder(JWT, 90, cms)).rejects.toMatchObject({ code: "empty-order" });
+    expect(cms.upsertSlots).not.toHaveBeenCalled();
+    expect(cms.createFulfillments).not.toHaveBeenCalled();
+    expect(cms.updateOrder).not.toHaveBeenCalled();
   });
 
   it("surfaces an archived slot (cms 409) as slot-archived", async () => {

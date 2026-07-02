@@ -81,7 +81,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 | 索引 | 服务的查询 |
 |---|---|
 | `orders (seller, date, occasion, status, paymentStatus)` | 今天某餐确认订单(status=confirmed)、谁没付款；draft/canceled 同表靠 status 过滤掉 |
-| `orders (seller, customer, date, occasion)` unique | 业务唯一坐标；重复粘贴同一天同餐同顾客时更新现存 order |
+| `orders (seller, customer, date, occasion)` partial unique `WHERE status IN ('draft','confirmed')` | active 业务唯一坐标；重复粘贴同一天同餐同顾客时更新现存 order；canceled 历史单不占坑 |
 | `orders (seller, customer, status, placedAt)` | 张阿姨上次点啥（**只看 status=confirmed**，排除草稿/取消；ASC 索引 + `ORDER BY placedAt DESC LIMIT 1` 走 backward scan，**别写 DESC**） |
 | `fulfillments (seller, serviceDate, occasion, status)` | 谁没送、缺口对账；地址从 populated `order.address` 读取后内存相似度排序 |
 | `service_slots (seller, date, occasion)` unique | 唯一约束 + 最近一餐定位 + 首单 upsert 命中 |
@@ -98,7 +98,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 **本轮 schema migration（v0.13，未部署，无需数据回填）**：
 
 - `orders` 加 `occasion`，枚举同 `OCCASIONS`，required + index。
-- `orders` 加 `(seller, customer, date, occasion)` 业务唯一索引。
+- `orders` 加 `(seller, customer, date, occasion)` active 业务唯一索引，partial predicate: `status IN ('draft','confirmed')`。
 - `order_items` 删除 `mealOccasion`、`timeWindow`。
 - `fulfillments` 从挂 `orderItem` 改为挂 `order`。
 - `fulfillments.status` 枚举收口为 `pending/done/canceled`。

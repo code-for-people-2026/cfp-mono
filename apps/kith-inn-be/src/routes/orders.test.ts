@@ -78,6 +78,12 @@ describe("POST /orders", () => {
     expect(res.status).toBe(400);
   });
 
+  it("400 when items is empty", async () => {
+    const app = orderRoutes(SECRET, deps(mockCms()));
+    const res = await app.request("/", { method: "POST", headers: await json(), body: JSON.stringify({ ...body, items: [] }) });
+    expect(res.status).toBe(400);
+  });
+
   it("502 when cms create throws", async () => {
     const cms = mockCms({ getSeller: vi.fn<OrderCms["getSeller"]>(async () => { throw new Error("cms down"); }) });
     const app = orderRoutes(SECRET, deps(cms));
@@ -107,6 +113,15 @@ describe("POST /orders/:id/confirm", () => {
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
     expect(res.status).toBe(409);
+  });
+
+  it("409 when a draft has no items", async () => {
+    const emptyDraft: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "draft", customer: { id: 1 }, items: [] };
+    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => emptyDraft) });
+    const app = orderRoutes(SECRET, deps(cms));
+    const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
+    expect(res.status).toBe(409);
+    expect(cms.createFulfillments).not.toHaveBeenCalled();
   });
 
   it("502 when confirm throws a non-state error", async () => {

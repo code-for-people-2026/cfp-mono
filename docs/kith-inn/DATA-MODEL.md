@@ -45,7 +45,7 @@ sellers
 关键关系：
 
 - 每张业务表都有 `seller` 租户键。
-- `orders` 按 `(seller, customer, date, occasion)` 形成业务唯一坐标。
+- `orders` 按 `(seller, customer, date, occasion)` 形成 active 业务唯一坐标；`canceled` 历史单不占坑。
 - `order_items` 不承载午/晚，只表达这餐买了什么和多少。
 - `fulfillment` 挂 `order`；地址从 `order.address` 读取，不在 fulfillment 里重复存。
 - 地址是订单快照 string，不拆楼栋/单元/房号。
@@ -141,7 +141,7 @@ sellers
 | `idempotencyKey?` | 技术幂等键，主要防网络重试/重复提交 |
 | `createdBy?` | 操作者 |
 
-业务唯一坐标：`(seller, customer, date, occasion)`。再次粘贴同一天同餐时更新已有 order，不新增重复 order。
+active 业务唯一坐标：`(seller, customer, date, occasion)`。再次粘贴同一天同餐时更新已有 draft/confirmed order，不新增重复 order；canceled 历史单不阻止重下。
 
 ### `order_items`
 
@@ -226,7 +226,7 @@ sellers
 结构迁移目标：
 
 1. `orders` 增加 `occasion` 字段，枚举同 `OCCASIONS`，最终 required + index。
-2. 为 `orders` 加业务唯一约束/索引：`(seller, customer, date, occasion)`。
+2. 为 `orders` 加 active 业务唯一约束/索引：`(seller, customer, date, occasion) WHERE status IN ('draft','confirmed')`。
 3. `order_items` 删除 `mealOccasion`、`timeWindow` 字段；餐次只看 `orders.occasion`。
 4. `fulfillments` 增加 `order` relationship。
 5. `fulfillments.status` 枚举收口为 `pending/done/canceled`。

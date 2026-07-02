@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CmsHttpError } from "../lib/cms/orders";
-import { todayShanghai } from "@cfp/kith-inn-shared/util";
 import { createCmsAgentServices, type AgentCms } from "./services";
+import { todayShanghai } from "../lib/domainUtil";
 import { clearPending, getPending, setPending } from "./pendingState";
 
 const NOW = () => new Date("2026-06-29T12:00:00+08:00");
@@ -9,7 +9,7 @@ const NOW = () => new Date("2026-06-29T12:00:00+08:00");
 const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   getSeller: over.getSeller ?? vi.fn(async () => ({ id: 1, name: "桃子", defaultPriceCents: 3000, status: "active" }) as never),
   findOfferings: over.findOfferings ?? vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "4菜1汤套餐", priceCents: 3000 }] as never),
-  getOrder: over.getOrder ?? vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [] }) as never),
+  getOrder: over.getOrder ?? vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [{ id: 201, quantity: 1 }] }) as never),
   createOrderDraft: over.createOrderDraft ?? vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
   updateOrder: over.updateOrder ?? vi.fn(async () => ({ id: 90 }) as never),
   upsertSlots: over.upsertSlots ?? vi.fn(async () => [] as never),
@@ -160,6 +160,12 @@ describe("confirmOrder", () => {
   it("reports not-draft without confirming", async () => {
     const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "confirmed", customer: { id: 5 }, items: [] }) as never) });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: expect.stringMatching(/不是草稿/) });
+  });
+
+  it("reports empty drafts without confirming", async () => {
+    const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [] }) as never) });
+    expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: "订单没有明细，不能确认" });
+    expect(cms.createFulfillments).not.toHaveBeenCalled();
   });
 
   it("reports an archived slot needs force reopen", async () => {

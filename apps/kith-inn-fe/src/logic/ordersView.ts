@@ -22,8 +22,7 @@ export function orderStatusDot(order: Order): StatusDot {
   return order.paymentStatus === "unpaid" ? { label: "欠", tone: "red" } : { label: "收", tone: "green" };
 }
 
-/** Customer display name — mirrors @cfp/kith-inn-shared/util (FE-local: Taro/webpack
- *  doesn't transpile the shared package's .ts source, so value-importing breaks weapp). */
+/** Customer display name — FE-local because Taro doesn't transpile shared package .ts runtime exports. */
 export function customerName(order: Order): string {
   const c = order.customer;
   return typeof c === "object" && c !== null ? c.displayName : `#${c}`;

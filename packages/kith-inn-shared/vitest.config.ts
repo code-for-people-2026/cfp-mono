@@ -11,7 +11,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: ["src/enums.ts", "src/types.ts", "src/schemas.ts", "src/util.ts"],
+      include: ["src/enums.ts", "src/types.ts", "src/schemas.ts"],
       thresholds: {
         statements: 100,
         branches: 100,

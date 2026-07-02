@@ -47,7 +47,7 @@ export type OrderCms = {
 
 /** Lifecycle errors the route maps to specific status codes. */
 export class OrderStateError extends Error {
-  constructor(public code: "not-draft" | "slot-archived") {
+  constructor(public code: "not-draft" | "slot-archived" | "empty-order") {
     super(code);
     this.name = "OrderStateError";
   }
@@ -73,6 +73,7 @@ export async function recordDraft(
   input: RecordDraftInput,
   cms: OrderCms,
 ): Promise<{ order: Order; items: OrderItem[] }> {
+  if (input.items.length === 0) throw new OrderStateError("empty-order");
   const [seller, offerings] = await Promise.all([cms.getSeller(jwt), cms.findOfferings(jwt)]);
   const offeringMap = new Map(offerings.map((o) => [String(o.id), o]));
   const items: DraftItemInput[] = input.items.map((it) => ({
@@ -104,6 +105,7 @@ export type ConfirmResult = { slots: ServiceSlot[]; fulfillments: Fulfillment[] 
 export async function confirmOrder(jwt: string, orderId: string | number, cms: OrderCms): Promise<ConfirmResult> {
   const detail = await cms.getOrder(jwt, orderId);
   if (detail.status !== "draft") throw new OrderStateError("not-draft");
+  if (detail.items.length === 0) throw new OrderStateError("empty-order");
 
   // ponytail: 桃子 is occasion-granularity; derive granularity from seller config
   // when a time-slot merchant actually exists.

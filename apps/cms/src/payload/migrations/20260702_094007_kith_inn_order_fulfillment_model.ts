@@ -342,7 +342,7 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   CREATE INDEX "orders_seller_idx" ON "cms"."orders" USING btree ("seller_id");
   CREATE INDEX "orders_updated_at_idx" ON "cms"."orders" USING btree ("updated_at");
   CREATE INDEX "orders_created_at_idx" ON "cms"."orders" USING btree ("created_at");
-  CREATE UNIQUE INDEX "orders_seller_customer_date_occasion_unique" ON "cms"."orders" USING btree ("seller_id","customer_id","date","occasion");
+  CREATE UNIQUE INDEX "orders_seller_customer_date_occasion_unique" ON "cms"."orders" USING btree ("seller_id","customer_id","date","occasion") WHERE "status" IN ('draft','confirmed');
   CREATE UNIQUE INDEX "orders_seller_idempotency_key_unique" ON "cms"."orders" USING btree ("seller_id","idempotency_key") WHERE "idempotency_key" IS NOT NULL;
   CREATE INDEX "orders_seller_date_occasion_status_payment_status_idx" ON "cms"."orders" USING btree ("seller_id","date","occasion","status","payment_status");
   CREATE INDEX "orders_seller_customer_status_placed_at_idx" ON "cms"."orders" USING btree ("seller_id","customer_id","status","placed_at");
