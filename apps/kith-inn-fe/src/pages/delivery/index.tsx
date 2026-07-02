@@ -1,10 +1,10 @@
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Text, View } from "@tarojs/components";
-import { Progress, Tag } from "@nutui/nutui-react-taro";
+import { Button, Progress, Tag } from "@nutui/nutui-react-taro";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { deliveryUrl } from "@/services/api";
+import { deliveryUrl, markDeliveredUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { todayShanghai } from "@/logic/time";
 import { buildingProgress, fulfillmentStatusLabel, type DeliveryView } from "@/logic/deliveryView";
@@ -19,7 +19,7 @@ const tokens = createTokenStore(taroStorage);
 export default function Delivery() {
   const [view, setView] = useState<DeliveryView | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     const token = tokens.getToken();
     if (!token) {
       Taro.redirectTo({ url: "/pages/login/index" });
@@ -40,6 +40,38 @@ export default function Delivery() {
       })
       .catch(() => Taro.showToast({ title: "加载失败", icon: "error" }));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  /** 「这栋送到了」→ PATCH /delivery/fulfillments { address } → refetch. */
+  const markBuilding = (address: string) => {
+    const token = tokens.getToken();
+    if (!token) {
+      Taro.redirectTo({ url: "/pages/login/index" });
+      return;
+    }
+    Taro.request({
+      url: markDeliveredUrl(),
+      method: "PATCH",
+      data: { address },
+      header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+    })
+      .then((res) => {
+        if (res.statusCode === 401) {
+          tokens.clearToken();
+          Taro.redirectTo({ url: "/pages/login/index" });
+          return;
+        }
+        if (res.statusCode >= 400) {
+          Taro.showToast({ title: "操作失败", icon: "error" });
+          return;
+        }
+        load();
+      })
+      .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }));
+  };
 
   return (
     <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
@@ -75,6 +107,13 @@ export default function Delivery() {
                   <Text className="text-[24rpx] text-muted">{p.done}/{p.total}</Text>
                 </View>
                 <Progress percent={p.percent} />
+                {p.done < p.total && (
+                  <View className="mt-[16rpx]">
+                    <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => markBuilding(g.address)}>
+                      这栋送到了
+                    </Button>
+                  </View>
+                )}
                 {g.fulfillments.map((f) => (
                   <View key={String(f.id)} className="flex items-center gap-[20rpx] border-b border-line py-[22rpx] last:border-b-0">
                     <Text className="text-[26rpx] font-semibold">{g.address}</Text>

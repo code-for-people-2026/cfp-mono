@@ -1,6 +1,6 @@
 import type { Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 import { describe, expect, it } from "vitest";
-import { gapReport, nearestMeal, packingSort, todayGaps } from "./derivations";
+import { fulfillmentsMatchingAddress, gapReport, nearestMeal, packingSort, todayGaps } from "./derivations";
 
 // Address now lives on the ORDER (frozen snapshot); cms populates orderItem→order.
 const at = (address?: string): Fulfillment["orderItem"] =>
@@ -80,5 +80,28 @@ describe("todayGaps", () => {
       menuPlans: [mp({ status: "draft" }), mp({ status: "published" })],
     });
     expect(r).toEqual({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 1, unpublishedMenus: 1 });
+  });
+});
+
+describe("fulfillmentsMatchingAddress", () => {
+  it("returns open fulfillments whose order address contains the fragment", () => {
+    const fs = [
+      f({ id: 11, orderItem: at("26B-301") }),
+      f({ id: 12, orderItem: at("26B-502"), status: "handed-off" }),
+      f({ id: 13, orderItem: at("26B-301"), status: "done" }), // done → skip
+      f({ id: 14, orderItem: at("1D") }),
+    ];
+    expect(fulfillmentsMatchingAddress(fs, "26B").map((x) => x.id)).toEqual([11, 12]);
+  });
+
+  it("narrows when the fragment is more specific", () => {
+    const fs = [f({ id: 11, orderItem: at("26B-301") }), f({ id: 12, orderItem: at("26B-502") })];
+    expect(fulfillmentsMatchingAddress(fs, "26B-301").map((x) => x.id)).toEqual([11]);
+  });
+
+  it("blank fragment → [] (prevents marking everything done)", () => {
+    const fs = [f({ orderItem: at("1D") })];
+    expect(fulfillmentsMatchingAddress(fs, "")).toEqual([]);
+    expect(fulfillmentsMatchingAddress(fs, "  ")).toEqual([]);
   });
 });
