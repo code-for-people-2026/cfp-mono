@@ -1,35 +1,35 @@
-# Specification Quality Checklist: kith-inn Chat Card Persistence
+# 规格质量检查清单：kith-inn 聊天卡片持久化
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2026-07-02
-**Feature**: [spec.md](../spec.md)
+**目的**: 在进入计划阶段前验证规格的完整性和质量
+**创建日期**: 2026-07-02
+**功能**: [spec.md](../spec.md)
 
-## Content Quality
+## 内容质量
 
-- [x] No implementation details in behavior requirements
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
+- [x] 行为需求不包含实现细节
+- [x] 聚焦用户价值和业务需求
+- [x] 面向非技术干系人可读
+- [x] 必填章节已完成
 
-## Requirement Completeness
+## 需求完整性
 
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Success criteria are technology-agnostic
-- [x] All acceptance scenarios are defined
-- [x] Edge cases are identified
-- [x] Scope is clearly bounded
-- [x] Dependencies and assumptions identified
+- [x] 没有遗留 [NEEDS CLARIFICATION] 标记
+- [x] 需求可测试且无歧义
+- [x] 成功标准可衡量
+- [x] 成功标准不依赖具体技术实现
+- [x] 验收场景已定义
+- [x] 边界情况已识别
+- [x] 作用域边界清晰
+- [x] 依赖和假设已识别
 
-## Feature Readiness
+## 功能准备度
 
-- [x] All functional requirements have clear acceptance criteria
-- [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into behavior requirements
+- [x] 所有功能需求都有清晰验收口径
+- [x] 用户场景覆盖主要流程
+- [x] 功能满足成功标准中定义的可衡量结果
+- [x] 行为需求中没有泄漏实现细节
 
-## Notes
+## 备注
 
-- Project scope paths are included because the monorepo constitution requires them.
-- New-customer confirmation action persistence is intentionally out of scope.
+- 因 monorepo 宪法要求，规格中包含项目作用域路径。
+- 新顾客确认动作持久化状态明确不在本功能范围内。

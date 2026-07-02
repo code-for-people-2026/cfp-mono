@@ -1,10 +1,10 @@
-# Contract: CMS Internal Chat Messages
+# 契约：CMS Internal Chat Messages
 
 ## `GET /api/internal/chat_messages`
 
-Returns recent Payload `chat_messages` documents.
+返回近期 Payload `chat_messages` documents。
 
-### Relevant document fields
+### 相关 document 字段
 
 ```json
 {
@@ -26,9 +26,9 @@ Returns recent Payload `chat_messages` documents.
 
 ## `POST /api/internal/chat_messages`
 
-Creates one visible chat message.
+创建一条可见聊天消息。
 
-### Request body
+### 请求体
 
 ```json
 {
@@ -44,8 +44,8 @@ Creates one visible chat message.
 }
 ```
 
-### Rules
+### 规则
 
-- `card` is optional and nullable.
-- `card` should only be sent for visible assistant messages.
-- The internal API must continue applying existing seller/operator stamping and tenant access controls.
+- `card` 是 optional 且 nullable。
+- `card` 只应随可见 assistant message 发送。
+- internal API 必须继续应用现有 seller/operator stamping 和 tenant access controls。

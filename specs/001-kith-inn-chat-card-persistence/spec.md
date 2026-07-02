@@ -1,118 +1,118 @@
-# Feature Specification: kith-inn Chat Card Persistence
+# 功能规格：kith-inn 聊天卡片持久化
 
-**Feature Branch**: `001-kith-inn-chat-card-persistence`
+**功能分支**: `001-kith-inn-chat-card-persistence`
 
-**Created**: 2026-07-02
+**创建日期**: 2026-07-02
 
-**Status**: Draft
+**状态**: 草稿
 
-**Input**: User description: "Persist assistant chat cards in kith-inn chat history so cards survive reload and render with the original conversation."
+**输入**: 用户描述：“让 kith-inn 聊天历史中的 assistant card 持久化，重新打开 app 后仍能和原始对话一起展示。”
 
-## Project Scope
+## 项目作用域
 
-**Project**: kith-inn
+**项目**: kith-inn
 
-**Allowed source paths**:
+**允许触碰的源码路径**:
 
 - `docs/kith-inn/**`
 - `apps/kith-inn-be/**`
 - `apps/kith-inn-fe/**`
 - `packages/kith-inn-shared/**`
 - `packages/kith-inn-payload/**`
-- `apps/cms/**` only for kith-inn Payload collections, migrations, seed, auth, or internal APIs
+- `apps/cms/**` 中和 kith-inn Payload collections、migrations、seed、auth 或内部 API 有关的部分
 
-**Source material**:
+**来源材料**:
 
-- `docs/kith-inn/PRD.md` sections 5.5, 6.1, 6.3, 7.1
-- `docs/kith-inn/USER-STORIES.md` stories US-T02, US-T03, US-T06, US-O03, US-O04, US-D02
-- `docs/kith-inn/TECH-SPEC.md` section 4.1
-- `docs/kith-inn/DATA-MODEL.md` sections 3, 5, 6
+- `docs/kith-inn/PRD.md` §5.5、§6.1、§6.3、§7.1
+- `docs/kith-inn/USER-STORIES.md` US-T02、US-T03、US-T06、US-O03、US-O04、US-D02
+- `docs/kith-inn/TECH-SPEC.md` §4.1
+- `docs/kith-inn/DATA-MODEL.md` §3、§5、§6
 
-## User Scenarios & Testing *(mandatory)*
+## 用户场景与测试
 
-### User Story 1 - Restore Assistant Cards After Reopen (Priority: P1)
+### 用户故事 1 - 重开后恢复 assistant 卡片（优先级：P1）
 
 桃子问了一个会返回结构化卡片的问题，例如今天有哪些订单、还差哪些送餐、或刚粘贴的接龙里有哪些待确认新顾客。她退出并重新打开小程序后，历史消息里仍能看到 assistant 当时回复的文字和对应卡片。
 
-**Why this priority**: 当前聊天页已经能在当轮展示卡片，但重开后卡片消失，只剩文字。这会让聊天历史不像真实聊天记录，也让老板需要重复提问。
+**优先级理由**: 当前聊天页已经能在当轮展示卡片，但重开后卡片消失，只剩文字。这会让聊天历史不像真实聊天记录，也让老板需要重复提问。
 
-**Independent Test**: 先产生一条带卡片的 assistant 回复，再重新加载聊天页；不发送新消息、不重新调用 AI，历史里仍出现同一张卡片。
+**独立测试**: 先产生一条带卡片的 assistant 回复，再重新加载聊天页；不发送新消息、不重新调用 AI，历史里仍出现同一张卡片。
 
-**Acceptance Scenarios**:
+**验收场景**:
 
-1. **Given** 一条 assistant 历史消息带有订单卡片，**When** 桃子重新打开今天页，**Then** 这条 assistant 消息仍显示订单卡片。
-2. **Given** 一条 assistant 历史消息带有送餐卡片，**When** 桃子重新打开今天页，**Then** 这条 assistant 消息仍显示送餐卡片。
-3. **Given** 一条 assistant 历史消息带有新顾客确认卡片，**When** 桃子重新打开今天页，**Then** 这条 assistant 消息仍显示确认卡片内容；可恢复执行「都建」不属于本 feature。
-
----
-
-### User Story 2 - Preserve Normal Chat History (Priority: P2)
-
-桃子打开今天页时，普通用户消息、普通 assistant 文字回复、带卡片的 assistant 回复按原有时间顺序混排显示；没有卡片的老消息不能因为本 feature 发生展示退化。
-
-**Why this priority**: 卡片只是 assistant 消息的附加展示，不应该破坏已有聊天历史。
-
-**Independent Test**: 准备同时包含纯文本消息和带卡片消息的历史记录；加载今天页后检查顺序和内容。
-
-**Acceptance Scenarios**:
-
-1. **Given** 历史记录里既有纯文本 assistant 回复也有带卡片回复，**When** 桃子打开今天页，**Then** 所有消息按从旧到新的顺序展示。
-2. **Given** 历史记录里有旧格式消息没有卡片，**When** 桃子打开今天页，**Then** 这些消息继续按文本消息展示。
+1. **假设** 一条 assistant 历史消息带有订单卡片，**当** 桃子重新打开今天页，**则** 这条 assistant 消息仍显示订单卡片。
+2. **假设** 一条 assistant 历史消息带有送餐卡片，**当** 桃子重新打开今天页，**则** 这条 assistant 消息仍显示送餐卡片。
+3. **假设** 一条 assistant 历史消息带有新顾客确认卡片，**当** 桃子重新打开今天页，**则** 这条 assistant 消息仍显示确认卡片内容；可恢复执行「都建」不属于本功能。
 
 ---
 
-### User Story 3 - Persist Only Visible Conversation Artifacts (Priority: P3)
+### 用户故事 2 - 保持普通聊天历史（优先级：P2）
+
+桃子打开今天页时，普通用户消息、普通 assistant 文字回复、带卡片的 assistant 回复按原有时间顺序混排显示；没有卡片的老消息不能因为本功能发生展示退化。
+
+**优先级理由**: 卡片只是 assistant 消息的附加展示，不应该破坏已有聊天历史。
+
+**独立测试**: 准备同时包含纯文本消息和带卡片消息的历史记录；加载今天页后检查顺序和内容。
+
+**验收场景**:
+
+1. **假设** 历史记录里既有纯文本 assistant 回复也有带卡片回复，**当** 桃子打开今天页，**则** 所有消息按从旧到新的顺序展示。
+2. **假设** 历史记录里有旧格式消息没有卡片，**当** 桃子打开今天页，**则** 这些消息继续按文本消息展示。
+
+---
+
+### 用户故事 3 - 只持久化用户可见的对话产物（优先级：P3）
 
 系统只恢复用户实际看见过的 assistant 文本和结构化卡片，不把 tool calls、system prompt、raw LLM trace 或内部服务结果显示到历史聊天里。
 
-**Why this priority**: 聊天历史是展示层，不是调试日志；保存过多内部内容会增加噪音和隐私风险。
+**优先级理由**: 聊天历史是展示层，不是调试日志；保存过多内部内容会增加噪音和隐私风险。
 
-**Independent Test**: 产生一次带工具调用的 assistant 回复；历史恢复时只能看到最终 assistant 文本和可见卡片。
+**独立测试**: 产生一次带工具调用的 assistant 回复；历史恢复时只能看到最终 assistant 文本和可见卡片。
 
-**Acceptance Scenarios**:
+**验收场景**:
 
-1. **Given** 一轮聊天内部调用过工具，**When** 桃子重新打开今天页，**Then** 历史里不出现工具调用参数、系统提示词或 raw LLM 消息。
+1. **假设** 一轮聊天内部调用过工具，**当** 桃子重新打开今天页，**则** 历史里不出现工具调用参数、系统提示词或 raw LLM 消息。
 
-### Edge Cases
+### 边界情况
 
 - 历史消息没有卡片字段：继续按普通文本消息展示。
 - 历史消息带有未知或无效卡片：展示文本消息，不让页面崩溃。
 - 历史加载失败：保留现有错误提示，不发送新消息，不自动重试 AI。
-- 旧卡片里的订单或送餐状态可能已经变化：本 feature 恢复的是历史快照，不保证卡片内容实时刷新。
-- 新顾客确认卡片重开后能看到历史内容，但「都建」动作的可恢复状态另起 feature 处理。
+- 旧卡片里的订单或送餐状态可能已经变化：本功能恢复的是历史快照，不保证卡片内容实时刷新。
+- 新顾客确认卡片重开后能看到历史内容，但「都建」动作的可恢复状态另起功能处理。
 
-## Requirements *(mandatory)*
+## 需求
 
-### Functional Requirements
+### 功能需求
 
-- **FR-001**: System MUST persist the visible assistant card payload whenever an assistant reply includes a card.
-- **FR-002**: System MUST return the persisted card with the corresponding assistant message when chat history is loaded.
-- **FR-003**: Users MUST see restored assistant cards inline with their original assistant messages after reopening the app.
-- **FR-004**: System MUST preserve existing chronological message display: user messages, assistant text messages, and assistant card messages appear in conversation order.
-- **FR-005**: System MUST NOT call the LLM or re-run tools merely to restore historical cards.
-- **FR-006**: System MUST NOT persist or display raw tool calls, system prompts, raw LLM traces, or internal service-only data as chat history.
-- **FR-007**: System MUST handle older text-only messages without migration-visible user impact.
-- **FR-008**: System MUST degrade safely for unknown or invalid historical card payloads by showing the assistant text and omitting the broken card.
-- **FR-009**: System MUST make it clear that restored new-customer confirmation cards are historical unless their action state is implemented by a later feature.
+- **FR-001**: 系统必须在 assistant 回复包含可见卡片时，持久化该 card payload。
+- **FR-002**: 系统必须在加载聊天历史时，将持久化的 card 和对应 assistant message 一起返回。
+- **FR-003**: 用户重新打开 app 后，必须能在原 assistant 消息内看到恢复的卡片。
+- **FR-004**: 系统必须保持已有消息时间顺序：用户消息、assistant 文字消息和 assistant 卡片消息都按对话顺序展示。
+- **FR-005**: 系统不得为了恢复历史卡片而调用 LLM 或重新执行工具。
+- **FR-006**: 系统不得把 raw tool calls、system prompts、raw LLM traces 或仅内部服务使用的数据持久化 / 展示为聊天历史。
+- **FR-007**: 系统必须兼容旧的纯文本历史消息，不造成用户可见迁移影响。
+- **FR-008**: 系统遇到未知或无效历史 card payload 时，必须安全降级：展示 assistant 文本并省略损坏卡片。
+- **FR-009**: 系统必须避免让用户误以为恢复的新顾客确认卡已经具备 reload-safe 动作状态；该能力由后续功能处理。
 
-### Key Entities *(include if feature involves data)*
+### 关键实体
 
-- **Chat Message**: A visible message in the seller/operator conversation; has a role, text content, timestamp, and optionally one visible assistant card.
-- **Assistant Card**: A structured visual artifact attached to an assistant message. Current card types include customer confirmation, orders, and delivery.
+- **Chat Message**：seller/operator 对话中的一条可见消息；包含 role、文本内容、时间戳，以及可选的一张 assistant card。
+- **Assistant Card**：附着在 assistant 消息上的结构化可视产物。当前 card 类型包括 customer confirmation、orders 和 delivery。
 
-## Success Criteria *(mandatory)*
+## 成功标准
 
-### Measurable Outcomes
+### 可衡量结果
 
-- **SC-001**: A user can reopen the app after receiving an orders or delivery card and see the same card in history without asking again.
-- **SC-002**: Existing text-only chat history remains visible with no user-facing format change.
-- **SC-003**: Loading history never depends on an LLM response or tool execution.
-- **SC-004**: Invalid or unknown historical card payloads do not crash the chat page.
+- **SC-001**: 用户收到 orders 或 delivery card 后重新打开 app，不需要再问一遍，也能在历史里看到同一张卡片。
+- **SC-002**: 旧的纯文本聊天历史保持可见，用户侧格式不退化。
+- **SC-003**: 历史加载不依赖 LLM response 或 tool execution。
+- **SC-004**: 未知或无效历史 card payload 不会导致聊天页崩溃。
 
-## Assumptions
+## 假设
 
-- One assistant message has at most one visible card; supporting multiple cards per assistant message is out of scope.
-- This feature stores a historical snapshot of the card, not a live query view.
-- Persistent, reload-safe execution for the new-customer「都建」action is out of scope and should be handled by a later feature.
-- Chat history pagination, retention, and garbage collection are out of scope for this feature.
-- The existing kith-inn authentication and seller/operator scoping continue to apply.
+- 一条 assistant message 最多只有一张可见 card；支持多卡片不在本功能范围内。
+- 本功能存储的是 card 的历史快照，不是实时查询视图。
+- 新顾客「都建」动作的持久化状态和 reload-safe 执行不在本功能范围内。
+- 聊天历史分页、留存和 GC 不在本功能范围内。
+- 继续沿用现有 kith-inn authentication 和 seller/operator scoping。
