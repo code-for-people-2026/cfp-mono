@@ -19,6 +19,11 @@ export const OCCASIONS = [
 ] as const;
 export type Occasion = (typeof OCCASIONS)[number];
 
+/** 菜单规划/正餐用的餐次子集（午/晚）。OCCASIONS 的子集 —— 单一定义处，免 types.ts
+ *  内联、be menu/core.ts、fe menuView.ts 各抄一份（#89 收敛）。 */
+export const MEAL_OCCASIONS = ["lunch", "dinner"] as const;
+export type MealOccasion = (typeof MEAL_OCCASIONS)[number];
+
 /** 记单生命周期（PRD §7.1 orders.status）。draft=纯记录零副作用，确认才物化，取消终态。 */
 export const ORDER_STATUSES = ["draft", "confirmed", "canceled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];

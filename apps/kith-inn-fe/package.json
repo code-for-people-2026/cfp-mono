@@ -51,6 +51,7 @@
     "tailwindcss": "^4.1.18",
     "typescript": "^5.9.3",
     "vitest": "^1.6.1",
-    "weapp-tailwindcss": "^5.1.4"
+    "weapp-tailwindcss": "^5.1.4",
+    "zod": "^4.4.3"
   }
 }
