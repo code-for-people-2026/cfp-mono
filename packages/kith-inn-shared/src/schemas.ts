@@ -178,15 +178,6 @@ export const menuPlanSchema = z.object({
   seller: rel(z.lazy(() => sellerSchema)),
 });
 
-export const chatMessageSchema = z.object({
-  id: id,
-  operator: rel(z.lazy(() => operatorSchema)).optional(),
-  content: z.string(),
-  role: chatRoleSchema,
-  createdAt: z.string(),
-  seller: rel(z.lazy(() => sellerSchema)),
-});
-
 // ── menu contract (promoted from be domain/menu/core.ts + fe logic/menuView.ts) ──
 export const menuDishSchema = z.object({
   id: id,
@@ -245,3 +236,21 @@ export const cardPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("orders"), data: orderCardDataSchema }),
   z.object({ type: z.literal("delivery"), data: deliveryCardDataSchema }),
 ]);
+
+export const chatMessageSchema = z.object({
+  id: id,
+  operator: rel(z.lazy(() => operatorSchema)).optional(),
+  content: z.string(),
+  role: chatRoleSchema,
+  createdAt: z.string(),
+  seller: rel(z.lazy(() => sellerSchema)),
+  card: cardPayloadSchema.optional(),
+}).superRefine((message, ctx) => {
+  if (message.role === "user" && message.card) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["card"],
+      message: "user chat messages cannot carry generated cards",
+    });
+  }
+});

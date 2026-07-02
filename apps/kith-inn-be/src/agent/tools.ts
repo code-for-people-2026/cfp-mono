@@ -86,12 +86,12 @@ export const AGENT_TOOLS: AgentTool[] = [
         parts.push(
           `新顾客待确认：${r.needsConfirmation
             .map((x) => `${x.customerName}(${x.address ?? "地址？"})${x.quantity}份${occasionZh(x.occasion)}`)
-            .join("、")}——点下面「都建」确认`,
+            .join("、")}——点下面「全部建档并记单」确认`,
         );
       }
       if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}(${x.error})`).join("、")}`);
-      // The card mirrors needsConfirmation verbatim → the 「都建」 button drives
-      // POST /chat/confirm-customers (deterministic), removing the LLM-recall flakiness (#97).
+      // The card mirrors needsConfirmation verbatim → POST /chat/confirm-customers
+      // handles the deterministic confirmation action, removing LLM-recall flakiness (#97).
       const card: CardPayload | undefined =
         r.needsConfirmation.length > 0 ? { type: "customer-confirm", data: { items: r.needsConfirmation } } : undefined;
       return { text: parts.join("；") || "没有可记的单。", card };

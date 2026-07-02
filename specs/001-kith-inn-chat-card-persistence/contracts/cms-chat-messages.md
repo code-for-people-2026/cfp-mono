@@ -48,4 +48,5 @@
 
 - `card` 是 optional 且 nullable。
 - `card` 只应随可见 assistant message 发送。
+- `card` 是可见结果快照；CMS 不存储也不推导 `customer-confirm` 的 active/stale/completed action state。
 - internal API 必须继续应用现有 seller/operator stamping 和 tenant access controls。

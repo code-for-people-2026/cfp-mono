@@ -1,26 +1,33 @@
 import { Text, View } from "@tarojs/components";
 import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { CardPayload } from "@cfp/kith-inn-shared";
+import { CUSTOMER_CONFIRM_ACTION_LABEL, type CustomerConfirmActionState } from "@/logic/chatCards";
 import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
 
 const occasionZh = (o: "lunch" | "dinner") => (o === "lunch" ? "午餐" : "晚餐");
 
 /**
  * Renders a structured card attached to an assistant reply.
- * - customer-confirm: lists pending new customers + 「都建」 (POST /chat/confirm-customers).
+ * - customer-confirm: lists pending new customers + "全部建档并记单" when active.
  * - orders: today's orders with 确认/标已付 buttons (reuse the orders-tab endpoints).
  * - delivery: today's per-address packing list (read-only).
- * Cards are one-shot surfaces on the turn that produced them (not persisted).
+ * Historical cards are restored snapshots; customer-confirm actions stay one-shot.
  */
-export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct, onMarkDelivered }: {
+export function ChatCard({ card, confirmed = false, confirming, customerConfirmAction, onConfirm, onOrderAct, onMarkDelivered }: {
   card: CardPayload;
-  confirmed: boolean;
+  confirmed?: boolean;
   confirming: boolean;
+  customerConfirmAction?: CustomerConfirmActionState | null;
   onConfirm: () => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
   onMarkDelivered?: (ids: Array<string | number>) => void;
 }) {
   if (card.type === "customer-confirm") {
+    const action = customerConfirmAction ?? (
+      confirmed
+        ? { status: "confirmed" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL, message: "已建" }
+        : { status: "active" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL }
+    );
     return (
       <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
         <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建</Text>
@@ -30,11 +37,11 @@ export function ChatCard({ card, confirmed, confirming, onConfirm, onOrderAct, o
           </Text>
         ))}
         <View className="mt-[20rpx]">
-          {confirmed ? (
-            <Text className="block text-[24rpx] text-green">已建 ✓</Text>
-          ) : (
+          {action.status === "confirmed" && <Text className="block text-[24rpx] text-green">{action.message} ✓</Text>}
+          {action.status === "stale" && <Text className="block text-[24rpx] leading-relaxed text-muted">{action.message}</Text>}
+          {action.status === "active" && (
             <Button size="small" type="primary" loading={confirming} className="[background:var(--color-red)] text-white" onClick={onConfirm}>
-              都建
+              {action.label}
             </Button>
           )}
         </View>

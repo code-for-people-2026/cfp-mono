@@ -18,6 +18,7 @@ export const ChatMessages: CollectionConfig = {
     { name: "operator", type: "relationship", relationTo: "operators", index: true },
     { name: "content", type: "textarea", required: true },
     { name: "role", type: "select", options: [...CHAT_ROLES], defaultValue: "user" },
+    { name: "card", type: "json" },
     sellerField,
   ],
 };

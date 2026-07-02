@@ -29,6 +29,7 @@ const mockCms = (): AgentCms =>
 const token = async () => issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET);
 const auth = async () => ({ Authorization: `Bearer ${await token()}` });
 const json = async () => ({ ...(await auth()), "content-type": "application/json" });
+const CARD = { type: "customer-confirm" as const, data: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "lunch" as const }] } };
 
 const sampleHistory = (): ChatMessage[] => [
   { id: 1, content: "老消息", role: "user", createdAt: "", seller: 7 },
@@ -62,6 +63,26 @@ describe("POST /chat", () => {
     expect((vi.mocked(d.runAgent).mock.calls[0]![0] as { history: unknown[] }).history).toHaveLength(2);
     expect(d.listChatMessages).toHaveBeenCalledWith(expect.any(String), { limit: 20 });
     expect(d.createChatMessage).toHaveBeenCalledTimes(2);
+  });
+
+  it("persists the assistant card snapshot but never attaches a card to the user message", async () => {
+    const d = deps({ runAgent: vi.fn<typeof runAgent>(async () => ({ reply: "先确认新顾客", card: CARD })) });
+    const app = chatRoutes(SECRET, d);
+    const res = await app.request("/", { method: "POST", headers: await json(), body: JSON.stringify({ text: "大龙猫 午餐 1份" }) });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reply: "先确认新顾客", card: CARD });
+    expect(d.createChatMessage).toHaveBeenNthCalledWith(1, expect.any(String), { content: "大龙猫 午餐 1份", role: "user" });
+    expect(d.createChatMessage).toHaveBeenNthCalledWith(2, expect.any(String), { content: "先确认新顾客", role: "assistant", card: CARD });
+  });
+
+  it("persists only visible assistant fields, not raw agent traces", async () => {
+    const d = deps({
+      runAgent: vi.fn<typeof runAgent>(async () => ({ reply: "看卡片", card: CARD, toolCalls: [{ name: "record_orders" }] }) as never),
+    });
+    const app = chatRoutes(SECRET, d);
+    const res = await app.request("/", { method: "POST", headers: await json(), body: JSON.stringify({ text: "hi" }) });
+    expect(res.status).toBe(200);
+    expect(d.createChatMessage).toHaveBeenNthCalledWith(2, expect.any(String), { content: "看卡片", role: "assistant", card: CARD });
   });
 
   it("400 when text is missing", async () => {
@@ -105,6 +126,25 @@ describe("GET /chat", () => {
     // operator/seller (populated by cms depth) must NOT leak — only the 4 fields.
     expect(Object.keys(json.messages[0]!).sort()).toEqual(["content", "createdAt", "id", "role"]);
     expect(listChatMessages).toHaveBeenCalledWith(expect.any(String), { limit: 50 });
+  });
+
+  it("returns valid card snapshots and marks incompatible historical card snapshots as unavailable", async () => {
+    const listChatMessages = vi.fn(async () => [
+      { id: 1, content: "有效卡片", role: "assistant", createdAt: "t1", seller: 7, card: CARD },
+      { id: 2, content: "历史卡片不可解析", role: "assistant", createdAt: "t2", seller: 7, card: { type: "unknown", data: {} } },
+      { id: 3, content: "普通回复", role: "assistant", createdAt: "t3", seller: 7 },
+      { id: 4, content: "用户原话", role: "user", createdAt: "t4", seller: 7 },
+    ] as ChatMessage[]);
+    const app = chatRoutes(SECRET, { cms: mockCms(), listChatMessages });
+    const res = await app.request("/", { headers: await auth() });
+    const body = (await res.json()) as { messages: Record<string, unknown>[] };
+    expect(res.status).toBe(200);
+    expect(body.messages).toEqual([
+      { id: 1, content: "有效卡片", role: "assistant", createdAt: "t1", card: CARD },
+      { id: 2, content: "历史卡片不可解析", role: "assistant", createdAt: "t2", cardUnavailable: true },
+      { id: 3, content: "普通回复", role: "assistant", createdAt: "t3" },
+      { id: 4, content: "用户原话", role: "user", createdAt: "t4" },
+    ]);
   });
 
   it("502 when the history load fails", async () => {

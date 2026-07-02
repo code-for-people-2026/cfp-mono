@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
 import { operatorScope } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
@@ -37,12 +38,18 @@ export async function POST(req: Request) {
   const scope = await operatorScope(req);
   if (scope instanceof NextResponse) return scope;
   const { sellerId, operatorId, payload } = scope;
-  const body = (await req.json().catch(() => null)) as { content?: string; role?: string } | null;
+  const body = (await req.json().catch(() => null)) as { content?: string; role?: string; card?: unknown } | null;
   if (!body?.content) return NextResponse.json({ error: "content required" }, { status: 400 });
   const role = body.role === "assistant" ? "assistant" : "user";
+  const parsedCard =
+    body.card === undefined || body.card === null
+      ? null
+      : cardPayloadSchema.safeParse(body.card);
+  if (parsedCard && !parsedCard.success) return NextResponse.json({ error: "invalid card" }, { status: 400 });
+  const card = role === "assistant" && parsedCard?.success ? parsedCard.data : undefined;
   const doc = await payload.create({
     collection: "chat_messages",
-    data: { content: body.content, role, operator: operatorId, seller: sellerId },
+    data: { content: body.content, role, operator: operatorId, seller: sellerId, ...(card ? { card } : {}) },
     overrideAccess: true,
   });
   return NextResponse.json(doc, { status: 201 });

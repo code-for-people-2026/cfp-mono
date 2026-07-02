@@ -92,9 +92,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         // whole-batch failure (cms read down) → everything failed
         for (const it of items) failed.push({ customerName: it.customerName, error: "记单失败" });
       }
-      // #97: persist new-customer confirmations server-side so 「都建」 is a
-      // deterministic button click (POST /chat/confirm-customers), not an LLM
-      // recall across turns. setPending([]) clears when there's nothing pending.
+      // #97: persist new-customer confirmations server-side so the confirmation
+      // action is a deterministic button click (POST /chat/confirm-customers),
+      // not an LLM recall across turns. setPending([]) clears when there's nothing pending.
       setPending(operatorId, needsConfirmation);
       return { recorded, needsConfirmation, failed };
     },
