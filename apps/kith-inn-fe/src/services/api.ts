@@ -25,6 +25,10 @@ export function offeringsUrl(): string {
   return `${beBaseUrl()}/offerings`;
 }
 
+export function offeringDetailUrl(id: string | number): string {
+  return `${beBaseUrl()}/offerings/${id}`;
+}
+
 export function menuWeekUrl(): string {
   return `${beBaseUrl()}/menu/week`;
 }

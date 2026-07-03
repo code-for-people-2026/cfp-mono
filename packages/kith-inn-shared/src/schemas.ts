@@ -40,7 +40,7 @@ const orderStatusSchema = z.enum(ORDER_STATUSES);
 const paymentStatusSchema = z.enum(PAYMENT_STATUSES);
 const orderSourceSchema = z.enum(ORDER_SOURCES);
 const offeringKindSchema = z.enum(OFFERING_KINDS);
-const offeringCategorySchema = z.enum(OFFERING_CATEGORY_VALUES);
+export const offeringCategorySchema = z.enum(OFFERING_CATEGORY_VALUES);
 const fulfillmentStatusSchema = z.enum(FULFILLMENT_STATUSES);
 const sellerModuleSchema = z.enum(SELLER_MODULES);
 const sellerStatusSchema = z.enum(SELLER_STATUSES);
@@ -119,6 +119,22 @@ export const offeringSchema: z.ZodType<Offering> = z.object({
   active: z.boolean().optional(),
   seller: rel(z.lazy(() => sellerSchema)),
 });
+
+// ── offering write contract (M1 菜品池 CRUD: name + mainIngredient + category) ──
+// z.object 非 passthrough → 多余字段（priceCents/tags/recipe/kind/seller/id）被 strip = M1 白名单。
+export const offeringCreateSchema = z.object({
+  name: z.string().min(1),
+  mainIngredient: z.string().optional(),
+  category: offeringCategorySchema,
+});
+export const offeringUpdateSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+    mainIngredient: z.string().optional(),
+    category: offeringCategorySchema.optional(),
+  })
+  // strip 先跑，再拒绝空对象 → handler 靠 safeParse 即可挡空 PATCH（→ 400，Codex P2）。
+  .refine((d) => Object.keys(d).length > 0, { message: "empty update" });
 
 export const serviceSlotSchema = z.object({
   id: id,

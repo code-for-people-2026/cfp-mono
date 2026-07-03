@@ -13,7 +13,9 @@ import {
   menuDishSchema,
   menuPlanSchema,
   menuSlotSchema,
+  offeringCreateSchema,
   offeringSchema,
+  offeringUpdateSchema,
   operatorSchema,
   orderCardDataSchema,
   orderItemSchema,
@@ -80,6 +82,41 @@ describe("contract schemas", () => {
     expect(cardPayloadSchema.parse({ type: "customer-confirm", data: { items: [{ customerName: "X", quantity: 1, occasion: "lunch" }] } })).toMatchObject({ type: "customer-confirm" });
     expect(cardPayloadSchema.parse({ type: "orders", data: { orders: [], date: "2026-07-02" } })).toMatchObject({ type: "orders" });
     expect(cardPayloadSchema.parse({ type: "delivery", data: { totalPending: 0, groups: [] } })).toMatchObject({ type: "delivery" });
+  });
+});
+
+describe("offering write schemas (M1 菜品池 CRUD)", () => {
+  it("offeringCreateSchema requires name + category, optional mainIngredient, strips extras", () => {
+    expect(offeringCreateSchema.parse({ name: "红烧肉", mainIngredient: "猪肉", category: "meat" })).toEqual({
+      name: "红烧肉",
+      mainIngredient: "猪肉",
+      category: "meat",
+    });
+    // mainIngredient optional
+    expect(offeringCreateSchema.parse({ name: "神秘菜", category: "veg" })).toEqual({ name: "神秘菜", category: "veg" });
+    // extras stripped (M1 whitelist)
+    expect(offeringCreateSchema.parse({ name: "X", category: "soup", priceCents: 3000, kind: "combo-meal", seller: 7 } as Record<string, unknown>)).toEqual({ name: "X", category: "soup" });
+  });
+
+  it("offeringCreateSchema rejects missing name / category / bad category", () => {
+    expect(() => offeringCreateSchema.parse({ category: "meat" } as Record<string, unknown>)).toThrow(); // missing name
+    expect(() => offeringCreateSchema.parse({ name: "X" } as Record<string, unknown>)).toThrow(); // missing category
+    expect(() => offeringCreateSchema.parse({ name: "", category: "meat" })).toThrow(); // empty name
+    expect(() => offeringCreateSchema.parse({ name: "X", category: "seafood" })).toThrow(); // bad category
+  });
+
+  it("offeringUpdateSchema accepts any subset, strips extras", () => {
+    expect(offeringUpdateSchema.parse({ name: "新名" })).toEqual({ name: "新名" });
+    expect(offeringUpdateSchema.parse({ mainIngredient: "番茄" })).toEqual({ mainIngredient: "番茄" });
+    expect(offeringUpdateSchema.parse({ category: "soup" })).toEqual({ category: "soup" });
+    expect(offeringUpdateSchema.parse({ name: "X", category: "meat", priceCents: 99 } as Record<string, unknown>)).toEqual({ name: "X", category: "meat" });
+  });
+
+  it("offeringUpdateSchema rejects empty payload, bad category, empty name", () => {
+    expect(() => offeringUpdateSchema.parse({})).toThrow(); // empty → refine
+    expect(() => offeringUpdateSchema.parse({ priceCents: 99 } as Record<string, unknown>)).toThrow(); // strips to {} → refine
+    expect(() => offeringUpdateSchema.parse({ category: "nope" })).toThrow(); // bad category
+    expect(() => offeringUpdateSchema.parse({ name: "" })).toThrow(); // empty name
   });
 });
 

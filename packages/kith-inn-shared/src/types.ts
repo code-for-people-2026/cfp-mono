@@ -25,7 +25,9 @@ import type {
   menuDishSchema,
   menuPlanSchema,
   menuSlotSchema,
+  offeringCreateSchema,
   offeringSchema,
+  offeringUpdateSchema,
   operatorSchema,
   orderCardDataSchema,
   orderItemSchema,
@@ -46,6 +48,10 @@ export type Customer = z.infer<typeof customerSchema>;
 
 /** 菜/SKU/套餐/课时（kind）；component=一道菜，combo-meal=按份卖的套餐（parentOfferings=组件池）。 */
 export type Offering = z.infer<typeof offeringSchema>;
+/** 菜品池新增写输入（M1：菜名 + 主料 + 分类）。 */
+export type OfferingCreate = z.infer<typeof offeringCreateSchema>;
+/** 菜品池编辑写输入（M1：name/mainIngredient/category 任选，空对象被拒）。 */
+export type OfferingUpdate = z.infer<typeof offeringUpdateSchema>;
 
 /** 服务时间桶（开餐 slot）。draft=预占，open=确认即开餐，archived=软删。 */
 export type ServiceSlot = z.infer<typeof serviceSlotSchema>;
