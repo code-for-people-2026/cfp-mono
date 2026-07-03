@@ -235,7 +235,7 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 
 ## 7. 目标 schema 落地方式（未部署 → push，不走 migration）
 
-项目尚未部署、无真实数据要保，**不维护 migration 文件**：collection 定义即 source of truth，靠 drizzle push（`payload.config.ts` 写死 `push: true`）同步到 DB。上线前（有真实数据时）才用 `payload migrate:create` 生成 baseline，之后增量；partial unique 等 Payload 表达不了的约束保留为独立 SQL 脚本。
+项目尚未部署、无真实数据要保，**不维护 migration 文件**：collection 定义即 source of truth，靠 drizzle push（`payload.config.ts` 写死 `push: true`）同步到 DB。上线前（有真实数据时）才用 `payload migrate:create` 生成 baseline，之后增量；**partial unique（service_slots `(seller,date,occasion)`、orders active 业务唯一坐标、orders `idempotency_key`）Payload `indexes` 表达不了，由 cms `onInit` 的 `ensurePartialUniqueConstraints` 每次启动幂等重建**（`CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE`，见 `apps/cms/src/db/ensureConstraints.ts`）。
 
 当前代码已同步到下面这套目标 schema（`customers.address` / `orders.address` 均已是 string，无需再迁 `customer_addresses`）：
 
