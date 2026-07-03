@@ -130,7 +130,9 @@ export const offeringCreateSchema = z.object({
 export const offeringUpdateSchema = z
   .object({
     name: z.string().min(1).optional(),
-    mainIngredient: z.string().optional(),
+    // nullable so a PATCH can explicitly CLEAR an optional 主料 (null = clear);
+    // undefined (key absent after strip) = leave unchanged (Codex #112 P2).
+    mainIngredient: z.string().nullable().optional(),
     category: offeringCategorySchema.optional(),
   })
   // strip 先跑，再拒绝空对象 → handler 靠 safeParse 即可挡空 PATCH（→ 400，Codex P2）。
