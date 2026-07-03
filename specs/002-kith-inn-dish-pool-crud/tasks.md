@@ -30,7 +30,7 @@ description: "kith-inn 菜品池 CRUD 实现任务"
 
 **目的**: 三端共享写契约；完成前不要开始 route 集成。
 
-- [ ] T006 在 `packages/kith-inn-shared/src/schemas.ts` 新增 `offeringCreateSchema = z.object({ name: z.string().min(1), mainIngredient: z.string().optional(), category: offeringCategorySchema })` 与 `offeringUpdateSchema = z.object({ name: z.string().min(1).optional(), mainIngredient: z.string().optional(), category: offeringCategorySchema.optional() })`（默认非 passthrough → 多余字段被 strip = M1 白名单）。`offeringCategorySchema` 已在本文件定义（`z.enum(OFFERING_CATEGORY_VALUES)`），改为 export 以供复用。覆盖 data-model 写输入契约。
+- [ ] T006 在 `packages/kith-inn-shared/src/schemas.ts` 新增 `offeringCreateSchema = z.object({ name: z.string().min(1), mainIngredient: z.string().optional(), category: offeringCategorySchema })` 与 `offeringUpdateSchema = z.object({ name: z.string().min(1).optional(), mainIngredient: z.string().optional(), category: offeringCategorySchema.optional() }).refine((d) => Object.keys(d).length > 0, { message: "empty update" })`（默认非 passthrough → 多余字段被 strip = M1 白名单；refine 在 strip 后拒绝空 PATCH → 400，使 handler 靠 `safeParse` 即可挡空体，Codex P2）。`offeringCategorySchema` 已在本文件定义（`z.enum(OFFERING_CATEGORY_VALUES)`），改为 export 以供复用。覆盖 data-model 写输入契约、FR-012。
 - [ ] T007 在 `packages/kith-inn-shared/src/types.ts` 用 `z.infer` 推导 `OfferingCreate` / `OfferingUpdate`，不手写平行类型。
 - [ ] T008 确认 `offeringCreateSchema`/`offeringUpdateSchema` 从 `@cfp/kith-inn-shared/schemas` 可 import（schemas 不走 root barrel，与现有约定一致——FE/BE/cms 都从子路径 `schemas` 取）。
 
@@ -69,7 +69,7 @@ description: "kith-inn 菜品池 CRUD 实现任务"
 
 ### Implementation for User Story 2
 
-- [ ] T017 [US2] 在 `apps/cms/src/app/api/internal/offerings/[id]/route.ts`（新文件，参考 `apps/cms/src/app/api/internal/orders/[id]/route.ts`）加 `PATCH`：`operatorScope` → `offeringUpdateSchema.safeParse(body)`（空对象 400、name 给了须非空、category 给了须合法）→ find-then-update（`payload.find({where:{and:[{id},{seller:sellerId}]}})` 无命中 404）→ `payload.update({id, data:<白名单 patch>, overrideAccess:true})` → 200 `{doc}`。覆盖 contracts/cms-internal-offerings PATCH、FR-003/FR-004/FR-011。
+- [ ] T017 [US2] 在 `apps/cms/src/app/api/internal/offerings/[id]/route.ts`（新文件，参考 `apps/cms/src/app/api/internal/orders/[id]/route.ts`）加 `PATCH`：`operatorScope` → `offeringUpdateSchema.safeParse(body)`（空对象由 T006 的 refine 挡 → 400、name 给了须非空、category 给了须合法）→ find-then-update（`payload.find({ where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] } })` 无命中 404，与 orders/[id] 同形、Codex P2）→ `payload.update({id, data:<白名单 patch>, overrideAccess:true})` → 200 `{doc}`。覆盖 contracts/cms-internal-offerings PATCH、FR-003/FR-004/FR-011/FR-012。
 - [ ] T018 [US2] 在 `apps/kith-inn-be/src/lib/cms/offerings.ts` 加 `updateOffering(operatorJwt, id, patch: OfferingUpdate, deps={})` → `PATCH {cmsBase()}/api/internal/offerings/${id}`，返回 doc。
 - [ ] T019 [US2] 在 `apps/kith-inn-be/src/routes/offerings.ts` 加 `PATCH "/:id"`：`sellerAuth`；`offeringUpdateSchema.safeParse(body)`（空 400）；调 `deps.updateOffering(token, id, parsed.data)` → 200 `{offering}`。扩 `OfferingsDeps`。
 - [ ] T020 [US2] 在 `apps/kith-inn-fe/src/services/api.ts` 加 `offeringDetailUrl(id) = `${beBaseUrl()}/offerings/${id}``（PATCH/DELETE/restore 共用）。
@@ -90,7 +90,7 @@ description: "kith-inn 菜品池 CRUD 实现任务"
 
 ### Implementation for User Story 3
 
-- [ ] T024 [US3] 在 `apps/cms/src/app/api/internal/offerings/[id]/route.ts` 加 `DELETE` 与 `POST`（restore）：`operatorScope` → find-then-update 确认归属（无命中 404）→ DELETE: `payload.update({id, data:{active:false}, overrideAccess:true})`；restore: `payload.update({id, data:{active:true}, overrideAccess:true})` → 各 200 `{ok:true}`（幂等）。覆盖 contracts/cms-internal-offerings DELETE/restore、FR-005/FR-006/FR-009/FR-011。
+- [ ] T024 [US3] 在 `apps/cms/src/app/api/internal/offerings/[id]/route.ts` 加 `DELETE`；**另**在 `apps/cms/src/app/api/internal/offerings/[id]/restore/route.ts`（新文件——Next.js App Router 下 `/restore` 是独立路径段，不能塞进 `[id]/route.ts`，否则 `POST /:id/restore` 命中不到会 404，Codex P1）加 `POST`（restore）。两处都 `operatorScope` → find-then-update 确认归属（`payload.find({ where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] } })` 无命中 404）→ DELETE: `payload.update({id, data:{active:false}, overrideAccess:true})`；restore: `payload.update({id, data:{active:true}, overrideAccess:true})` → 各 200 `{ok:true}`（幂等）。覆盖 contracts/cms-internal-offerings DELETE/restore、FR-005/FR-006/FR-009/FR-011。
 - [ ] T025 [US3] 在 `apps/kith-inn-be/src/lib/cms/offerings.ts` 加 `deactivateOffering(operatorJwt, id, deps={})` → `DELETE .../offerings/${id}`、`restoreOffering(operatorJwt, id, deps={})` → `POST .../offerings/${id}/restore`，均返回 `{ok:true}`（非 2xx 抛 `CmsHttpError`）。
 - [ ] T026 [US3] 在 `apps/kith-inn-be/src/routes/offerings.ts` 加 `DELETE "/:id"` 与 `POST "/:id/restore"`：`sellerAuth`；调 `deps.deactivateOffering`/`deps.restoreOffering` → 200 `{ok:true}`。扩 `OfferingsDeps`。
 - [ ] T027 [US3] 在 `apps/kith-inn-fe/src/logic/offeringsCrud.ts` 加 `deactivateOffering(args:{token;id}, req=Taro.request)` → `DELETE offeringDetailUrl(id)`；`restoreOffering(args:{token;id}, req=Taro.request)` → `POST offeringDetailUrl(id) + "/restore"`；加 `partitionByActive(offerings): { active: Offering[]; inactive: Offering[] }` 纯函数（FE 分区用）。
@@ -114,8 +114,8 @@ description: "kith-inn 菜品池 CRUD 实现任务"
 - **Phase 1 基线测试**: 无依赖，先红。
 - **Phase 2 shared schema**: 依赖 Phase 1 测试明确失败；完成后才开 route 集成。
 - **Phase 3 US1（新增）**: 依赖 Phase 2；MVP 切片。
-- **Phase 4 US2（编辑）**: 依赖 Phase 2；与 US3 共用 `offerings/[id]/route.ts`，建议先建 T017（PATCH）再建 T024（DELETE/restore）。
-- **Phase 5 US3（删除+恢复）**: 依赖 Phase 2 + T017 已建 `[id]/route.ts`。
+- **Phase 4 US2（编辑）**: 依赖 Phase 2；建 `offerings/[id]/route.ts`（PATCH）。
+- **Phase 5 US3（删除+恢复）**: 依赖 Phase 2；DELETE 复用 `[id]/route.ts`、restore 在独立 `[id]/restore/route.ts`（Next.js 路径段）。
 - **Phase 6 读过滤 + 收尾**: T029 可与 US1 并行（GET 过滤不依赖写路径）；T030–T032 在所有 US 完成后。
 
 ### Parallel Opportunities

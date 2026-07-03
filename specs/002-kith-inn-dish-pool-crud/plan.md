@@ -80,8 +80,9 @@ packages/kith-inn-shared/src/
 └── types.ts            # + OfferingCreate / OfferingUpdate 推导
 
 apps/cms/src/app/api/internal/offerings/
-├── route.ts            # + POST（GET 不变）
-└── [id]/route.ts       # 新文件：PATCH / DELETE / POST restore（参考 orders/[id]/route.ts）
+├── route.ts               # + POST（GET 不变）
+├── [id]/route.ts          # 新文件：PATCH / DELETE（参考 orders/[id]/route.ts）
+└── [id]/restore/route.ts  # 新文件：POST restore（Next.js 独立路径段，不能塞进 [id]/route.ts）
 
 apps/kith-inn-be/src/
 ├── lib/cms/
