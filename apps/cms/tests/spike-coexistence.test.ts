@@ -109,5 +109,31 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
         /WHERE .*idempotency_key.*IS NOT NULL/i,
       );
     });
+
+    it("re-creates composite lookup indexes lost to push mode (onInit)", async () => {
+      // Non-unique performance indexes from the original migration — kept in the
+      // same ensureConstraints helper so all push-bypass indexes live in one place.
+      const result = await payload.db.execute({
+        drizzle: payload.db.drizzle,
+        sql: sql`
+          SELECT indexname FROM pg_indexes
+          WHERE schemaname = 'cms' AND indexname IN (
+            'orders_seller_date_occasion_status_payment_status_idx',
+            'orders_seller_customer_status_placed_at_idx',
+            'fulfillments_seller_service_date_occasion_status_idx'
+          )
+        `,
+      });
+      const names = (result.rows as Array<{ indexname: string }>).map(
+        (r) => r.indexname,
+      );
+      expect(names).toEqual(
+        expect.arrayContaining([
+          "orders_seller_date_occasion_status_payment_status_idx",
+          "orders_seller_customer_status_placed_at_idx",
+          "fulfillments_seller_service_date_occasion_status_idx",
+        ]),
+      );
+    });
   },
 );

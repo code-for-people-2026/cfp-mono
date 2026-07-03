@@ -2,7 +2,7 @@ import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { collections } from "@cfp/kith-inn-payload";
-import { ensurePartialUniqueConstraints } from "./src/db/ensureConstraints";
+import { ensureConstraints } from "./src/db/ensureConstraints";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -55,8 +55,9 @@ const db = postgresDatabaseURL
       // (pure burden pre-deploy — feature 001 alone spawned docs debt, dev drift,
       // and a migrate runner that won't run on a push-built DB). To switch: run
       // `payload migrate:create` for a baseline once real data exists worth
-      // preserving; partial-unique constraints Payload can't express are re-created
-      // by onInit (ensurePartialUniqueConstraints) — see src/db/ensureConstraints.ts.
+      // preserving; partial-unique + composite lookup indexes Payload's collection
+      // `indexes` can't fully express are re-created by onInit (ensureConstraints)
+      // — see src/db/ensureConstraints.ts.
       push: true,
     })
   : sqliteAdapter({
@@ -68,9 +69,9 @@ const db = postgresDatabaseURL
 export default buildConfig({
   secret: payloadSecret || "code-for-people-dev-secret-change-me",
   db,
-  // Re-create the partial-unique constraints drizzle push can't express (the
-  // three business-critical uniques from the original migration) on every init.
-  onInit: ensurePartialUniqueConstraints,
+  // Re-create the partial-unique + composite lookup indexes drizzle push can't
+  // express (from the original migration) on every init.
+  onInit: ensureConstraints,
   admin: {
     user: "operators",
     importMap: {

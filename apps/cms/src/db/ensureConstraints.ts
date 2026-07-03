@@ -2,10 +2,11 @@ import type { Payload } from "payload";
 import { sql } from "@payloadcms/db-postgres";
 
 /**
- * Partial-unique constraints Payload's `indexes` can't express (WHERE clause) —
- * the three business-critical uniques from the original CMS migration that drizzle
- * push does NOT recreate from collection configs (they only declare per-field
- * `index: true`):
+ * Indexes/constraints drizzle push does NOT recreate from collection configs
+ * (collections only declare per-field `index: true`, and Payload `indexes` can't
+ * express partial predicates) — the six from the original CMS migration:
+ *
+ * Partial-unique (WHERE clause):
  *   - service_slots (seller, date, occasion) WHERE occasion IS NOT NULL
  *       → 最近一餐定位 + 首单 upsert 命中键
  *   - orders (seller, customer, date, occasion) WHERE status IN ('draft','confirmed')
@@ -13,21 +14,27 @@ import { sql } from "@payloadcms/db-postgres";
  *   - orders (seller, idempotency_key) WHERE idempotency_key IS NOT NULL
  *       → 技术幂等（防同一次提交/订阅物化 job 重复写）
  *
+ * Composite lookup (non-unique, performance — kept here, not in collection
+ * `indexes`, so all push-bypass indexes live in one auditable place):
+ *   - orders (seller, date, occasion, status, paymentStatus) → 今天某餐确认订单 / 谁没付款
+ *   - orders (seller, customer, status, placedAt) → 张阿姨上次点啥（backward scan）
+ *   - fulfillments (seller, serviceDate, occasion, status) → 谁没送 / 缺口对账
+ *
  * Run on every Payload init via `onInit`. push rebuilds tables/columns but leaves
- * these hand-written partial uniques alone, so we re-create them idempotently
- * (`IF NOT EXISTS`) — even if a future push ever dropped one, the next boot
- * restores it.
+ * these alone, so re-create idempotently (`IF NOT EXISTS`) — even if a future
+ * push ever dropped one, the next boot restores it.
  *
  * SQLite fallback (no DATABASE_URL) has no schema concept → bail unless postgres.
  *
- * Release 后转 migration 时，这三条可并入 baseline migration 的 up；onInit 仍幂等
- * 保留无妨（约束在 migration 已建，IF NOT EXISTS 跳过）。
+ * Release 后转 migration 时，这些并入 baseline migration 的 up；onInit 仍幂等保留无妨
+ * （约束/索引在 migration 已建，IF NOT EXISTS 跳过）。
  */
-export async function ensurePartialUniqueConstraints(payload: Payload): Promise<void> {
+export async function ensureConstraints(payload: Payload): Promise<void> {
   // SQLite fallback (no DATABASE_URL) has no schemas — the cms.-qualified SQL below
-  // would error. Only postgres carries these constraints.
+  // would error. Only postgres carries these.
   if (payload.db.name !== "postgres") return;
 
+  // ── partial-unique constraints (WHERE clause Payload `indexes` can't express) ──
   await payload.db.execute({
     drizzle: payload.db.drizzle,
     sql: sql`
@@ -52,6 +59,31 @@ export async function ensurePartialUniqueConstraints(payload: Payload): Promise<
       CREATE UNIQUE INDEX IF NOT EXISTS "orders_seller_idempotency_key_unique"
         ON "cms"."orders" ("seller_id", "idempotency_key")
         WHERE "idempotency_key" IS NOT NULL
+    `,
+  });
+
+  // ── composite lookup indexes (non-unique, performance) ──
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE INDEX IF NOT EXISTS "orders_seller_date_occasion_status_payment_status_idx"
+        ON "cms"."orders" ("seller_id", "date", "occasion", "status", "payment_status")
+    `,
+  });
+
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE INDEX IF NOT EXISTS "orders_seller_customer_status_placed_at_idx"
+        ON "cms"."orders" ("seller_id", "customer_id", "status", "placed_at")
+    `,
+  });
+
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE INDEX IF NOT EXISTS "fulfillments_seller_service_date_occasion_status_idx"
+        ON "cms"."fulfillments" ("seller_id", "service_date", "occasion", "status")
     `,
   });
 }
