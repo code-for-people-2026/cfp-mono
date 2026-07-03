@@ -8,6 +8,7 @@ import {
   markDeliveredUrl,
   devLoginUrl,
   menuWeekUrl,
+  offeringDetailUrl,
   offeringsUrl,
   orderConfirmUrl,
   orderUrl,
@@ -36,6 +37,7 @@ describe("endpoint builders", () => {
       expect(wxLoginUrl()).toBe("https://be.example.com/auth/wx-login");
       expect(devLoginUrl()).toBe("https://be.example.com/auth/dev-login");
       expect(offeringsUrl()).toBe("https://be.example.com/offerings");
+      expect(offeringDetailUrl(14)).toBe("https://be.example.com/offerings/14");
       expect(menuWeekUrl()).toBe("https://be.example.com/menu/week");
       expect(ordersUrl()).toBe("https://be.example.com/orders");
       expect(orderUrl(9)).toBe("https://be.example.com/orders/9");

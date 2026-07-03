@@ -93,20 +93,23 @@ sellers
 
 ### `offerings`
 
-菜/SKU/套餐/课时的共享枢纽。对桃子的菜品池，M1 表单只维护菜名和主料。
+菜/SKU/套餐/课时的共享枢纽。对桃子的菜品池，M1 表单维护菜名 + 主料 + 分类（荤/素/汤/主食）。
 
 | 字段 | 业务意义 |
 |---|---|
 | `name` | 菜名 / 套餐名 |
 | `kind` | combo-meal / single-item / service-session / component |
 | `mainIngredient?` | 主料；菜单避重的默认依据 |
+| `category?` | 荤素结构（meat/veg/soup/staple）；菜单内核按它组「2荤2素1汤」；M1 录入必填、可编辑 |
 | `parentOfferings?` | combo-meal 指向 component |
 | `unitLabel?` | 份 / 杯 / 课时 |
 | `priceCents?` | 单价 |
 | `recipe?` | 预留给以后采购聚合；M1 UI 不展示，M1 逻辑不使用 |
-| `active` | 是否启用 |
+| `active` | 是否启用；M1 删除 = 软停用 `false`、可恢复 `true`，不物理删 |
 
 不再给菜维护口味、费工、喜好、忌口等标签。`recipe` 可以留字段，但现在不是桃子的维护负担。
+
+**M1 CRUD 与读过滤**（feature 002）：菜品池 = `kind=component` 的菜；be `GET /offerings` 返回全部 component（含 `active=false`），FE 按 `active` 分「菜品池」/「已停用」两区；菜单生成候选池仍只取 `active && kind=component`（`menu.ts` 既有过滤）。删除/恢复只是 `active` 切换，被 `order_items`/`menu_plans` 引用的菜始终保留 doc。
 
 ### `service_slots`
 
