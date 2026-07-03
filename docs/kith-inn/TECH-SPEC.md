@@ -93,7 +93,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 | `customers (seller, displayName)`、`customers (seller, address)` | 记单时名字→顾客、默认地址带出；地址是 string，不建 customer_addresses |
 | `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
-> 原手写 migration 里的 partial unique + 复合查找索引 drizzle push 都不会从 collection 重建——前者带 WHERE 谓词（Payload `indexes` 不支持），后者虽非 partial 但为审计统一也并入。**全部由 cms `onInit` 的 `ensureConstraints` 每次启动幂等重建**（`CREATE [UNIQUE] INDEX IF NOT EXISTS`，见 `apps/cms/src/db/ensureConstraints.ts`）：三个 partial unique（`service_slots (seller,date,occasion) WHERE occasion IS NOT NULL`、orders active 业务坐标 `WHERE status IN ('draft','confirmed')`、orders `idempotency_key WHERE ... IS NOT NULL`）+ 三个复合查找索引（`orders (seller,date,occasion,status,paymentStatus)`、`orders (seller,customer,status,placedAt)`、`fulfillments (seller,serviceDate,occasion,status)`）。其余常规（单字段）索引自走 push 同步。
+> 原手写 migration 里的 partial unique + 复合查找索引 drizzle push 都不会从 collection 重建——前者带 WHERE 谓词（Payload `indexes` 不支持），后者虽非 partial 但为审计统一也并入。**全部由 cms `onInit` 的 `ensureConstraints` 每次启动幂等重建**（`CREATE [UNIQUE] INDEX IF NOT EXISTS`，见 `apps/cms/src/db/ensureConstraints.ts`）：三个 partial unique（`service_slots (seller,date,occasion) WHERE occasion IS NOT NULL`、orders active 业务坐标 `WHERE status IN ('draft','confirmed')`、orders `idempotency_key WHERE ... IS NOT NULL`）+ 四个复合查找索引（`orders (seller,date,occasion,status,paymentStatus)`、`orders (seller,customer,status,placedAt)`、`fulfillments (seller,serviceDate,occasion,status)`、`chat_messages (seller,operator,createdAt)`）。其余常规（单字段）索引自走 push 同步。
 
 **目标 schema（v0.13 订单三表定稿；已实现，未部署→push 同步不走 migration）**：
 

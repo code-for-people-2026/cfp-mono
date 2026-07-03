@@ -15,7 +15,7 @@ export const ChatMessages: CollectionConfig = {
   access: tenantAccess,
   hooks: tenantHooks,
   fields: [
-    { name: "operator", type: "relationship", relationTo: "operators", index: true },
+    { name: "operator", type: "relationship", relationTo: "operators", required: true, index: true },
     { name: "content", type: "textarea", required: true },
     { name: "role", type: "select", options: [...CHAT_ROLES], defaultValue: "user" },
     { name: "card", type: "json" },
