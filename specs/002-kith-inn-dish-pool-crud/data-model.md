@@ -36,6 +36,7 @@ offeringUpdateSchema = Partial<{ name: string(≥1); mainIngredient: string; cat
 
 - `name` 必填非空（新增/编辑均强制）；空 → 400。
 - `category` 新增必填、取值限 `OFFERING_CATEGORIES`；非法/缺失 → 400。
+- 编辑（PATCH）空请求体 → 400：`offeringUpdateSchema` 附 non-empty refine，在 strip 后拒绝 `{}`。
 - 写白名单只接受 `name`/`mainIngredient`/`category`；其他字段即使在请求体里也被忽略（schema strip + cms handler 不传给 `payload.create/update`）。
 - `kind` 由 cms POST 强制 `component`（忽略客户端值）；PATCH/DELETE/restore 不允许改 kind。
 - `seller` 由 cms 从 JWT 钉死（`operatorScope` → `overrideAccess` + `stampSeller` hook），不取请求体。
