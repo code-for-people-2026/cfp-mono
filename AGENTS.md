@@ -25,3 +25,7 @@
 ## 工程基线
 
 详见 [PLAN.md](./PLAN.md)：pnpm + Turborepo；质量门禁 `pnpm verify`（lint / typecheck / 100% 覆盖率 / knip / build）。提交信息遵循 Conventional Commits。
+
+## Spec Kit 功能规格
+
+新功能改动前先按 [`.specify/memory/constitution.md`](./.specify/memory/constitution.md) 的「何时开 spec 目录」三档判断（**全套 / 轻量 / 不开**，阈值见宪法）；只有「全套 / 轻量」才建 `specs/NNN-<project>-<feature>/`，不开的改动直接走 AGENTS.md + `pnpm verify` + Conventional Commits。
