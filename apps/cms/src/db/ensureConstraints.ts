@@ -19,6 +19,7 @@ import { sql } from "@payloadcms/db-postgres";
  *   - orders (seller, date, occasion, status, paymentStatus) → 今天某餐确认订单 / 谁没付款
  *   - orders (seller, customer, status, placedAt) → 张阿姨上次点啥（backward scan）
  *   - fulfillments (seller, serviceDate, occasion, status) → 谁没送 / 缺口对账
+ *   - chat_messages (seller, operator, createdAt) → 展示对话分页拉取 + 留存裁剪
  *
  * Run on every Payload init via `onInit`. push rebuilds tables/columns but leaves
  * these alone, so re-create idempotently (`IF NOT EXISTS`) — even if a future
@@ -84,6 +85,14 @@ export async function ensureConstraints(payload: Payload): Promise<void> {
     sql: sql`
       CREATE INDEX IF NOT EXISTS "fulfillments_seller_service_date_occasion_status_idx"
         ON "cms"."fulfillments" ("seller_id", "service_date", "occasion", "status")
+    `,
+  });
+
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE INDEX IF NOT EXISTS "chat_messages_seller_operator_created_at_idx"
+        ON "cms"."chat_messages" ("seller_id", "operator_id", "created_at")
     `,
   });
 }

@@ -120,7 +120,8 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
           WHERE schemaname = 'cms' AND indexname IN (
             'orders_seller_date_occasion_status_payment_status_idx',
             'orders_seller_customer_status_placed_at_idx',
-            'fulfillments_seller_service_date_occasion_status_idx'
+            'fulfillments_seller_service_date_occasion_status_idx',
+            'chat_messages_seller_operator_created_at_idx'
           )
         `,
       });
@@ -132,8 +133,20 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
           "orders_seller_date_occasion_status_payment_status_idx",
           "orders_seller_customer_status_placed_at_idx",
           "fulfillments_seller_service_date_occasion_status_idx",
+          "chat_messages_seller_operator_created_at_idx",
         ]),
       );
+    });
+
+    it("chat_messages.operator_id is NOT NULL (collection required:true)", async () => {
+      const result = await payload.db.execute({
+        drizzle: payload.db.drizzle,
+        sql: sql`
+          SELECT is_nullable FROM information_schema.columns
+          WHERE table_schema = 'cms' AND table_name = 'chat_messages' AND column_name = 'operator_id'
+        `,
+      });
+      expect((result.rows as Array<{ is_nullable: string }>)[0]?.is_nullable).toBe("NO");
     });
   },
 );
