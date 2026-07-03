@@ -95,13 +95,14 @@ export default function Kitchen() {
     }
     const token = requireToken();
     if (!token) return;
-    const mainIngredient = form.mainIngredient.trim() || undefined;
+    const mi = form.mainIngredient.trim();
     try {
       if (editingId != null) {
-        const patch: OfferingUpdate = { name, mainIngredient, category: form.category };
+        // null = explicitly clear 主料 (undefined would be dropped by JSON.stringify → field unchanged, Codex #112 P2).
+        const patch: OfferingUpdate = { name, category: form.category, mainIngredient: mi === "" ? null : mi };
         await updateOffering({ token, id: editingId, patch }, req);
       } else {
-        await createOffering({ token, name, mainIngredient, category: form.category }, req);
+        await createOffering({ token, name, mainIngredient: mi || undefined, category: form.category }, req);
       }
       closeForm();
       load();

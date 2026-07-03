@@ -109,6 +109,7 @@ describe("offering write schemas (M1 菜品池 CRUD)", () => {
     expect(offeringUpdateSchema.parse({ name: "新名" })).toEqual({ name: "新名" });
     expect(offeringUpdateSchema.parse({ mainIngredient: "番茄" })).toEqual({ mainIngredient: "番茄" });
     expect(offeringUpdateSchema.parse({ category: "soup" })).toEqual({ category: "soup" });
+    expect(offeringUpdateSchema.parse({ mainIngredient: null })).toEqual({ mainIngredient: null }); // explicit clear
     expect(offeringUpdateSchema.parse({ name: "X", category: "meat", priceCents: 99 } as Record<string, unknown>)).toEqual({ name: "X", category: "meat" });
   });
 

@@ -123,6 +123,18 @@ describe("PATCH /offerings/:id", () => {
     expect(updateOffering).toHaveBeenCalledWith(expect.any(String), "12", { name: "西红柿炒蛋", mainIngredient: "番茄" });
   });
 
+  it("forwards mainIngredient:null as an explicit clear (Codex #112 P2)", async () => {
+    const updateOffering = vi.fn(async () => ({} as Offering));
+    const app = offeringsRoutes(SECRET, mockDeps({ updateOffering }));
+    const res = await app.request("/12", {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ name: "X", mainIngredient: null }),
+    });
+    expect(res.status).toBe(200);
+    expect(updateOffering).toHaveBeenCalledWith(expect.any(String), "12", { name: "X", mainIngredient: null });
+  });
+
   it("400 on empty body (schema refine)", async () => {
     const app = offeringsRoutes(SECRET, mockDeps());
     const res = await app.request("/12", {
