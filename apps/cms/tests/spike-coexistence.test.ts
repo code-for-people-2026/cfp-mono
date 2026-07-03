@@ -73,5 +73,41 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
         expect(cmsTables).not.toContain(websiteTable);
       }
     });
+
+    it("re-creates partial-unique constraints drizzle push can't express (onInit)", async () => {
+      // These three business-critical uniques carry a WHERE clause, so collection
+      // `indexes` (no partial-predicate support) won't build them under push.
+      // ensurePartialUniqueConstraints (payload onInit) must create them on boot.
+      const result = await payload.db.execute({
+        drizzle: payload.db.drizzle,
+        sql: sql`
+          SELECT indexname, indexdef FROM pg_indexes
+          WHERE schemaname = 'cms' AND indexname IN (
+            'service_slots_seller_date_occasion_unique',
+            'orders_seller_customer_date_occasion_unique',
+            'orders_seller_idempotency_key_unique'
+          )
+          ORDER BY indexname
+        `,
+      });
+      const byName = new Map(
+        (result.rows as Array<{ indexname: string; indexdef: string }>).map((r) => [
+          r.indexname,
+          r.indexdef,
+        ]),
+      );
+      expect(byName.get("service_slots_seller_date_occasion_unique")).toMatch(
+        /WHERE .*occasion.*IS NOT NULL/i,
+      );
+      // Postgres rewrites `status IN ('draft','confirmed')` to
+      // `status = ANY (ARRAY['draft'::..., 'confirmed'::...])` in indexdef — match
+      // the tokens, not the syntax.
+      expect(byName.get("orders_seller_customer_date_occasion_unique")).toMatch(
+        /WHERE .*status.*draft.*confirmed/i,
+      );
+      expect(byName.get("orders_seller_idempotency_key_unique")).toMatch(
+        /WHERE .*idempotency_key.*IS NOT NULL/i,
+      );
+    });
   },
 );

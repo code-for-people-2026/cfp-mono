@@ -93,7 +93,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 | `customers (seller, displayName)`、`customers (seller, address)` | 记单时名字→顾客、默认地址带出；地址是 string，不建 customer_addresses |
 | `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
-> partial unique（如 time-slot 唯一性、orders active 业务唯一坐标）Payload config 表达不了，**手写 SQL**（独立约束脚本，库外资产、drift 检测不认）。仓库未部署，常规索引自走 `PAYLOAD_DB_PUSH` 的 drizzle push 同步；上线后这类约束脚本仍需单独维护。
+> partial unique（service_slots `(seller,date,occasion)`、orders active 业务唯一坐标、orders `idempotency_key`）Payload config 表达不了，**由 cms `onInit` 的 `ensurePartialUniqueConstraints` 每次启动幂等重建**（`CREATE UNIQUE INDEX IF NOT EXISTS ... WHERE ...`，见 `apps/cms/src/db/ensureConstraints.ts`）——drizzle push 建不出来这些带 WHERE 的约束，靠 onInit 补。常规（非 partial）索引自走 push 同步。
 
 **目标 schema（v0.13 订单三表定稿；已实现，未部署→push 同步不走 migration）**：
 
