@@ -2,7 +2,6 @@ import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { collections } from "@cfp/kith-inn-payload";
-import { migrations } from "./src/payload/migrations";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -40,8 +39,8 @@ if (requiresProductionEnv && !postgresDatabaseURL) {
 // schema "cms" (website stays untouched on "website"). Each app's collections
 // live in their own package (kith-inn → @cfp/kith-inn-payload) and are aggregated
 // here — this host ships no business collections of its own. Like website's
-// schema, "cms" is a literal: the generated migrations bake it into CREATE TABLE
-// SQL, so making it env-configurable would desync config from migrated schema.
+// schema, "cms" is a literal: drizzle push bakes it into every CREATE TABLE,
+// so making it env-configurable would desync config from the pushed schema.
 const schemaName = "cms";
 
 const db = postgresDatabaseURL
@@ -50,11 +49,13 @@ const db = postgresDatabaseURL
         connectionString: postgresDatabaseURL,
       },
       schemaName,
-      migrationDir: "src/payload/migrations",
-      // Dev can still use `push` locally, but deploys should apply the checked-in
-      // cms migrations just like website does.
-      prodMigrations: migrations,
-      push: process.env.PAYLOAD_DB_PUSH === "true",
+      // Undeployed + no prod data: collection definitions ARE the source of truth,
+      // synced to the DB via drizzle push. No checked-in migrations to maintain
+      // (pure burden pre-deploy — feature 001 alone spawned docs debt, dev drift,
+      // and a migrate runner that won't run on a push-built DB). To switch: run
+      // `payload migrate:create` for a baseline once real data exists worth
+      // preserving; partial-unique constraints Payload can't express stay as SQL.
+      push: true,
     })
   : sqliteAdapter({
       client: {

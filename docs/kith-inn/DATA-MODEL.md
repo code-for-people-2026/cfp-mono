@@ -233,11 +233,11 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 - 采购字段可预留，采购功能后置。
 - 数据操作类对话必须先确认，再写库。
 
-## 7. 当前代码到目标模型的 schema migration 清单
+## 7. 目标 schema 落地方式（未部署 → push，不走 migration）
 
-项目尚未部署，不需要迁移历史数据，只需要把数据库结构迁到目标模型。当前代码已经是 `customers.address` / `orders.address` string；地址不用再迁 `customer_addresses`。`apps/cms` 已补 `src/payload/migrations` 配置，可生成/提交 Payload migration。
+项目尚未部署、无真实数据要保，**不维护 migration 文件**：collection 定义即 source of truth，靠 drizzle push（`payload.config.ts` 写死 `push: true`）同步到 DB。上线前（有真实数据时）才用 `payload migrate:create` 生成 baseline，之后增量；partial unique 等 Payload 表达不了的约束保留为独立 SQL 脚本。
 
-结构迁移目标：
+当前代码已同步到下面这套目标 schema（`customers.address` / `orders.address` 均已是 string，无需再迁 `customer_addresses`）：
 
 1. `orders` 增加 `occasion` 字段，枚举同 `OCCASIONS`，最终 required + index。
 2. 为 `orders` 加 active 业务唯一约束/索引：`(seller, customer, date, occasion) WHERE status IN ('draft','confirmed')`。
@@ -246,7 +246,7 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 5. `fulfillments.status` 枚举收口为 `pending/done/canceled`。
 6. `fulfillments` 删除 `orderItem`、`mode`、`assignee`、`timeWindow` 字段；地址从 `orders.address` 读。
 7. `customers` 删除 `kind` 字段。
-8. 重新生成/手写 Payload migration，清理不再使用的 select enum 类型（如 fulfillment mode、customer kind、旧 fulfillment status）。
+8. 清理不再使用的 select enum 类型（如 fulfillment mode、customer kind、旧 fulfillment status）——改 collection 后 push 同步。
 
 已同步实现点：
 

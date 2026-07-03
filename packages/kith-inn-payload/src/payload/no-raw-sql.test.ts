@@ -6,9 +6,10 @@ import { execSync } from "node:child_process";
  * §3.1 read-side isolation forbids raw SQL: tenant-scoped reads must go through
  * the Payload API (which honors access control + parameterizes). This asserts
  * the package ships NO `sql` tagged-template / `db.execute` raw-SQL at all — any
- * SQL lives in cms migrations (DDL), not in this package's runtime. When PR3
- * adds a partial-unique index builder (`lib/indexSql.ts`), this test is relaxed
- * to permit it there and only there.
+ * DDL lives in drizzle push (driven by collection config in cms) or cms-level
+ * constraint scripts, not in this package's runtime. When PR3 adds a partial-unique
+ * index builder (`lib/indexSql.ts`), this test is relaxed to permit it there and
+ * only there.
  */
 describe("§3.1 no raw SQL in the package runtime", () => {
   it("no `sql\\`` tagged template or `.execute(sql…)` under src/", () => {

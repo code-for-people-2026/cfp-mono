@@ -7,7 +7,7 @@ import config from "../payload.config";
  * 配送 deliverers=["奶奶"]) + her offering pool (component dishes tagged with
  * 主料 + 荤素). Idempotent — re-running skips if the seller already exists.
  *
- *   pnpm --filter @cfp/cms seed     # needs DATABASE_URL + PAYLOAD_DB_PUSH=true
+ *   pnpm --filter @cfp/cms seed     # needs DATABASE_URL (push is baked into config)
  */
 async function main() {
   const payload = await getPayload({ config });

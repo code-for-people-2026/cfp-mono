@@ -38,8 +38,10 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
 
     it("creates the cms schema with the full kith-inn spine", async () => {
       const tables = await tablesIn("cms");
-      // Every business collection (PR3) + Payload's migrations bookkeeping.
-      // (customer_addresses was dropped when address became a flat text field on customers.)
+      // Every business collection. cms runs on drizzle push (payload.config.ts:
+      // push: true, no checked-in migrations) — so no payload_migrations table
+      // (that's a migrate-mode artifact; website keeps its own). customer_addresses
+      // was dropped when address became a flat text field on customers.
       expect(tables).toEqual(
         expect.arrayContaining([
           "sellers",
@@ -53,7 +55,6 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
           "menu_plans",
           "chat_messages",
           "subscriptions",
-          "payload_migrations",
         ]),
       );
     });
