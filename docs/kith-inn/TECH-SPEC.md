@@ -76,7 +76,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 - **job 信任根（审查 #63，V1 安全前置）**：订阅物化 job 的 `seller token` 是第二条信任根（区别于交互式 wx.login 链）——必须服务端签发、**绑定单个 seller_id**、短 TTL、`jti` 防重放；cms 侧校验时**三层相等**才放行 `bypassPublicClose`：`token.seller == 被物化 subscription.customer.seller == 被写集合的 seller`，任一不等或跨租户即 401；并给 token 泄露的检测/吊销路径（黑名单 + kid 轮换）。
 - **多租户插件**：`@payloadcms/plugin-multi-tenant` **当前未安装**——M0 装它并显式声明 `sellers` 为 tenant 集合；它覆盖不到的（跨租户引用校验、写侧覆写）用上面的工厂/hook 补。
 
-### 3.2 索引（手写 migration；Payload `CompoundIndex` 只支持 `{fields, unique?}`，**无 DESC、无 partial 谓词**）
+### 3.2 索引（Payload `CompoundIndex` 只支持 `{fields, unique?}`，**无 DESC、无 partial 谓词**；未部署→push 落地，见 §3.4）
 
 | 索引 | 服务的查询 |
 |---|---|
@@ -93,9 +93,9 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 | `customers (seller, displayName)`、`customers (seller, address)` | 记单时名字→顾客、默认地址带出；地址是 string，不建 customer_addresses |
 | `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
-> partial unique（如 time-slot 的唯一性）Payload config 表达不了，**手写 SQL**，属"库外资产"、drift 检测不认，迁移清单单列。
+> partial unique（如 time-slot 唯一性、orders active 业务唯一坐标）Payload config 表达不了，**手写 SQL**（独立约束脚本，库外资产、drift 检测不认）。仓库未部署，常规索引自走 `PAYLOAD_DB_PUSH` 的 drizzle push 同步；上线后这类约束脚本仍需单独维护。
 
-**本轮 schema migration（v0.13，未部署，无需数据回填）**：
+**目标 schema（v0.13 订单三表定稿；已实现，未部署→push 同步不走 migration）**：
 
 - `orders` 加 `occasion`，枚举同 `OCCASIONS`，required + index。
 - `orders` 加 `(seller, customer, date, occasion)` active 业务唯一索引，partial predicate: `status IN ('draft','confirmed')`。

@@ -35,10 +35,10 @@ into `public`, and does not collide with `website`'s tables. sqlite cannot prove
 schema isolation (it ignores `schemaName`), so the test is `skipIf`-guarded and
 carries no enforceable coverage.
 
-**Operational note:** in CI both `website` and `cms` run with `PAYLOAD_DB_PUSH=true`.
-Each records migrations in its OWN schema-scoped `payload_migrations`
-(`cms.payload_migrations` vs `website.payload_migrations`) — no shared-table
-collision.
+**Operational note:** `cms` runs on drizzle push (`payload.config.ts`: `push: true`,
+no checked-in migrations — undeployed, no data to preserve). `website` keeps its own
+migrate flow. They share the Postgres instance but each in its schema, so no
+table collision.
 
 ## (b) `@payloadcms/plugin-multi-tenant` vs our `operators`+`wechatOpenid` auth — ❌ NO-GO
 
