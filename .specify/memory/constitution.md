@@ -26,7 +26,37 @@
 
 项目维护者或 agent 编写的 Spec Kit 文档产物，叙述主体默认使用中文，包括 `spec.md`、`plan.md`、`research.md`、`data-model.md`、`contracts/`、`quickstart.md` 和 `tasks.md`。技术术语、代码标识、API / 协议名称、第三方工具脚手架、上游模板和技能说明可按原文保留。
 
+## 何时开 spec 目录（三档：全套 / 轻量 / 不开）
+
+不是每个改动都要开 `specs/NNN-*/`。按以下硬阈值归档，避免在「这个算不算大」上临场判断——规则固化，AI 按规则跑，不每次重谈。
+
+### 必须开（全套 spec）
+
+满足任一即建 `specs/NNN-<project>-<feature>/`，产出全套（`spec.md` / `plan.md` / `research.md` / `data-model.md` / `contracts/` / `quickstart.md` / `tasks.md` / `checklists/`）：
+
+- 跨切面（同时动 shared + be + fe + cms 等多层）
+- 动数据模型或 API 契约（collection / schema / 索引 / 端点契约）
+- 含状态机、生命周期、或租户隔离 / 权限判断
+- 预计 ≥2 个 PR
+- 需求模糊，需要先探索 / 对齐
+
+范例：`specs/001-kith-inn-chat-card-persistence/`、`specs/002-kith-inn-dish-pool-crud/`。
+
+### 不开
+
+typo、注释、单字段重命名、明确的小重构、复制既有模式的增量。直接靠 `AGENTS.md` + `pnpm verify` + Conventional Commits 走单 PR，**不建 `specs/` 目录**。
+
+### 中间地带（轻量 spec）
+
+单 PR 但有领域判断或取舍：只写 `spec.md`（做什么 + 验收 + Clarifications 记决策）+ `tasks.md`，跳过 `research.md` / `contracts/` / `checklists/` / `quickstart.md` / `data-model.md`。
+
+### 兜底
+
+拿不准时，**倾向开——但用轻量档**。归档明显错时纠偏一次，顺手把案例补进本节作例子。
+
 ## Monorepo 功能规则
+
+> 先按上节「何时开 spec 目录」判断是否开；开则按本节形态。不开的改动不建 `specs/` 目录。
 
 - 功能目录使用 Spec Kit 默认形态：`specs/<NNN>-<project>-<feature>/`。
 - 项目名写进功能名称，例如 `001-kith-inn-chat-card-persistence`。
@@ -38,4 +68,4 @@
 
 本宪法只约束 Spec Kit 文档产物。通用仓库工程规则和 PR 规则仍以 `AGENTS.md` 为准。修改这些原则时，必须更新本文件，并在受影响的功能计划中说明原因。
 
-**版本**: 1.1.1 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-03
+**版本**: 1.1.2 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-03
