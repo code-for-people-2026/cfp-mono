@@ -23,6 +23,7 @@ be → cms internal，menu_plans 读写（新增）+ ensure-slot。`x-kith-inn-o
 1. **ensure slot**：`payload.find({collection:"service_slots", where:{and:[{seller:{equals:sellerId}},{date:{equals:date}},{occasion:{equals:occasion}}]}})`；命中→用既有（**不动 status**）；未命中→`payload.create({date, occasion, granularity:"occasion", status:"draft", seller})`。
 2. **upsert plan** by (seller, slot)：find 命中→`payload.update({id, data:{offerings, status}, overrideAccess:true})`；未命中→`payload.create({slot, offerings, status, seller, overrideAccess:true})`。
 3. `offerings[]` 每个经 `ownedBy` 验归属（不属→403）。
+- 依赖 `menu_plans (seller, slot)` **唯一索引**（ensureConstraints，见 data-model 迁移）兜底并发竞态——两请求同 target 并发 find-then-create 时第二个被唯一约束拒（M1 单操作者无并发，索引作不变量保险）。
 - 200 `{ docs: MenuPlan[] }`。
 
 > **只此处建 slot 且只建 draft；不改既有 slot.status**（开餐归订单确认）。
@@ -32,6 +33,7 @@ be → cms internal，menu_plans 读写（新增）+ ensure-slot。`x-kith-inn-o
 改 status / publishText / offerings（swap/publish 用，find-then-update 跨租户 404）。body 白名单 `{status?, publishText?, offerings?}`。
 
 - `payload.find({ where:{and:[{id:{equals:id}},{seller:{equals:sellerId}}]}, limit:1 })`，无命中→404。
+- **若 patch 含 `offerings`：每个 id 经 `ownedBy(payload,"offerings",oid,sellerId)` 验归属（不属→403）**——overrideAccess 写无 `req.user`，`assertSameTenantRefs` 不触发，必须手验防别租户 offering 写入 + depth 读泄漏（Codex #115 P1）。
 - `payload.update({id, data:<白名单>, overrideAccess:true})`。
 - 200 `{doc}`。
 

@@ -120,4 +120,4 @@
 - M1 接龙文案用**默认模板**（见 data-model）；需桃子真实群接龙样本校准格式（标题/分隔/截止措辞/送餐说明）——列为 follow-up 校准项，不阻塞。
 - M1 不做：发布后批量改、plan 删除/清空、真发微信群、整周一键发出、菜单 tab 翻周到任意历史日期（日视图可滑到任意日期，周视图范围可调但默认本周/接下来 7 天）。
 - 「今天」agent 菜单工具（US-M06）= feature 004。
-- 仓库未部署、无 prod 数据；schema 走 drizzle push（不改 schema、不加 ensureConstraints）。
+- 仓库未部署、无 prod 数据；schema 走 drizzle push（不改字段；**新增 `menu_plans (seller,slot)` 唯一索引到 ensureConstraints** 防并发重复）。cms PATCH 改 offerings 必须 `ownedBy` 验归属（overrideAccess 无 req.user）。
