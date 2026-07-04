@@ -27,7 +27,7 @@ export function plansByOccasion(plans: MenuPlanView[]): { lunch?: MenuPlanView; 
 export async function loadPlans(token: string, query: string | { from: string; to: string }, req: Req): Promise<MenuPlanView[]> {
   const url = typeof query === "string" ? menuPlansUrl(query) : menuPlansRangeUrl(query.from, query.to);
   const res = await req({ url, header: { Authorization: `Bearer ${token}` } });
-  if (res.statusCode !== 200) throw new Error(`load plans failed: ${res.statusCode}`);
+  if (res.statusCode !== 200) throw Object.assign(new Error(`load plans failed: ${res.statusCode}`), { status: res.statusCode });
   return (res.data as { plans?: MenuPlanView[] }).plans ?? [];
 }
 

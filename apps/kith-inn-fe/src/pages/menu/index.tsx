@@ -59,7 +59,11 @@ export default function Menu() {
     if (!t) return Taro.redirectTo({ url: "/pages/login/index" });
     try {
       setDayPlans(await loadPlans(t, date, req));
-    } catch {
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) {
+        tokens.clearToken();
+        return Taro.redirectTo({ url: "/pages/login/index" });
+      }
       Taro.showToast({ title: "加载失败", icon: "error" });
     }
   }, []);
@@ -73,7 +77,11 @@ export default function Menu() {
       const byDate: Record<string, MenuPlanView[]> = {};
       for (const p of all) (byDate[p.date] ??= []).push(p);
       setWeekPlans(byDate);
-    } catch {
+    } catch (e) {
+      if ((e as { status?: number }).status === 401) {
+        tokens.clearToken();
+        return Taro.redirectTo({ url: "/pages/login/index" });
+      }
       Taro.showToast({ title: "加载失败", icon: "error" });
     }
   }, []);
