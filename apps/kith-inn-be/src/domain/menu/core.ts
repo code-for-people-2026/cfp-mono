@@ -253,3 +253,83 @@ export function swapDish(input: {
     .sort(compareDishes)[0];
   return alt ? { ok: true, replacement: alt } : { ok: false, reason: "no-alternative" };
 }
+
+export type SwapSpecifiedResult =
+  | { ok: true; replacement: MenuDish; warning?: string }
+  | { ok: false; reason: "slot-not-found" | "dish-not-in-slot" | "replacement-not-in-pool" | "replacement-same-as-target" };
+
+/**
+ * 指定换菜（US-M05「把牛腩换成香菇滑鸡」）——用户点名 replacement，系统只校验
+ * （在池内、非同菜）+ 算主料避重 warning，不替用户选。warning 复用 `swapDish` 的
+ * 邻槽 lookback（collectFrom）：replacement 的主料若与目标槽邻槽/同槽其它菜重复 → 提示。
+ * 用户强制指定优先、但提示（PRD §6.2）。caller 收到 warning 后二次确认再应用。
+ */
+export function swapDishSpecified(input: {
+  menu: Slot[];
+  target: { day: string; occasion: MealOccasion };
+  dishId: string | number;
+  replacementId: string | number;
+  pool: MenuDish[];
+  constraints?: Partial<MenuConstraints>;
+}): SwapSpecifiedResult {
+  const c: MenuConstraints = { ...DEFAULT_CONSTRAINTS, ...input.constraints };
+  const slot = input.menu.find((s) => s.day === input.target.day && s.occasion === input.target.occasion);
+  if (!slot) return { ok: false, reason: "slot-not-found" };
+  const target = slot.dishes.find((d) => String(d.id) === String(input.dishId));
+  if (!target) return { ok: false, reason: "dish-not-in-slot" };
+  const replacement = input.pool.find((d) => String(d.id) === String(input.replacementId));
+  if (!replacement) return { ok: false, reason: "replacement-not-in-pool" };
+  if (String(replacement.id) === String(target.id)) return { ok: false, reason: "replacement-same-as-target" };
+
+  const idx = input.menu.indexOf(slot);
+  const mealsPerDay = Math.max(1, c.meals.length);
+  const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
+  const neighborMi = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= miLbSlots)).mainIngredients;
+  const inSlotOtherMi = new Set(
+    slot.dishes.filter((d) => String(d.id) !== String(target.id) && d.mainIngredient).map((d) => d.mainIngredient),
+  );
+  const clash = !!replacement.mainIngredient && (neighborMi.has(replacement.mainIngredient) || inSlotOtherMi.has(replacement.mainIngredient));
+  return clash ? { ok: true, replacement, warning: "会和近期主料重复，仍要换吗？" } : { ok: true, replacement };
+}
+
+/**
+ * date-driven 生成（feature 003）：按任意 `targets: [{date, occasion}]` 列表生成，
+ * 复用 `pickSlot` + lookback（主料/单菜避重、费工 per-date、汤 LRU）。与 `generateWeekMenu`
+ * 的差别仅是输入从 `days×meals` 笛卡尔积改成显式 target 列表（支持"只发明天一餐"、
+ * "排一周"、"重排某餐"）。`day` 字段填具体 date（标签用）。history 种子可选（M1 传 []）。
+ */
+export function generateForTargets(input: {
+  targets: { date: string; occasion: MealOccasion }[];
+  pool: MenuDish[];
+  constraints?: Partial<MenuConstraints>;
+  history?: Slot[];
+}): GenerateMenuResult {
+  const c: MenuConstraints = {
+    ...DEFAULT_CONSTRAINTS,
+    ...input.constraints,
+    structure: { ...DEFAULT_CONSTRAINTS.structure, ...(input.constraints?.structure ?? {}) },
+  };
+  const mealsPerDay = Math.max(1, c.meals.length);
+  const dishLbSlots = c.dishWindowDays * mealsPerDay;
+  const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
+
+  const history = input.history ?? [];
+  const menu: Slot[] = [];
+  const laboriousByDate = new Map<string, { count: number; max: number }>();
+  for (const t of input.targets) {
+    if (!laboriousByDate.has(t.date)) laboriousByDate.set(t.date, { count: 0, max: c.laboriousMaxPerDay });
+    const laborious = laboriousByDate.get(t.date)!;
+    const prior = [...history, ...menu];
+    const res = pickSlot(
+      input.pool,
+      lookbackFrom(prior, dishLbSlots),
+      lookbackFrom(prior, miLbSlots),
+      c,
+      `${t.date}-${t.occasion}`,
+      laborious,
+    );
+    if ("dishes" in res) menu.push({ day: t.date, occasion: t.occasion, dishes: res.dishes });
+    else return res;
+  }
+  return { ok: true, menu };
+}

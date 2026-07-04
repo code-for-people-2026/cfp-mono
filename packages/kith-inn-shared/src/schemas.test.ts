@@ -12,6 +12,7 @@ import {
   fulfillmentSchema,
   menuDishSchema,
   menuPlanSchema,
+  menuPlanViewSchema,
   menuSlotSchema,
   offeringCreateSchema,
   offeringSchema,
@@ -22,6 +23,7 @@ import {
   orderSchema,
   serviceSlotSchema,
   sellerSchema,
+  swapRequestSchema,
   weekMenuSchema,
 } from "./schemas";
 
@@ -82,6 +84,45 @@ describe("contract schemas", () => {
     expect(cardPayloadSchema.parse({ type: "customer-confirm", data: { items: [{ customerName: "X", quantity: 1, occasion: "lunch" }] } })).toMatchObject({ type: "customer-confirm" });
     expect(cardPayloadSchema.parse({ type: "orders", data: { orders: [], date: "2026-07-02" } })).toMatchObject({ type: "orders" });
     expect(cardPayloadSchema.parse({ type: "delivery", data: { totalPending: 0, groups: [] } })).toMatchObject({ type: "delivery" });
+  });
+});
+
+describe("menu plan view + swap contract (feature 003)", () => {
+  it("menuPlanViewSchema parses a draft plan with dishes", () => {
+    const view = {
+      planId: 501,
+      date: "2026-07-08",
+      occasion: "lunch",
+      status: "draft",
+      dishes: [{ id: 12, name: "红烧牛肉", category: "meat" }],
+    };
+    expect(menuPlanViewSchema.parse(view)).toEqual(view);
+  });
+
+  it("menuPlanViewSchema accepts published + publishText + strips extras", () => {
+    const parsed = menuPlanViewSchema.parse({
+      planId: 502,
+      date: "2026-07-08",
+      occasion: "dinner",
+      status: "published",
+      dishes: [],
+      publishText: "【街坊味】…",
+      slot: 91,
+    } as Record<string, unknown>);
+    expect(parsed.publishText).toBe("【街坊味】…");
+    expect(parsed).not.toHaveProperty("slot");
+  });
+
+  it("menuPlanViewSchema rejects bad status / occasion", () => {
+    expect(() => menuPlanViewSchema.parse({ planId: 1, date: "x", occasion: "lunch", status: "archived", dishes: [] })).toThrow();
+    expect(() => menuPlanViewSchema.parse({ planId: 1, date: "x", occasion: "breakfast", status: "draft", dishes: [] })).toThrow();
+  });
+
+  it("swapRequestSchema requires dishId, optional replacementId/force, strips extras", () => {
+    expect(swapRequestSchema.parse({ dishId: 12 })).toEqual({ dishId: 12 });
+    expect(swapRequestSchema.parse({ dishId: 12, replacementId: 19, force: true })).toEqual({ dishId: 12, replacementId: 19, force: true });
+    expect(() => swapRequestSchema.parse({ replacementId: 19 } as Record<string, unknown>)).toThrow();
+    expect(swapRequestSchema.parse({ dishId: 12, junk: 9 } as Record<string, unknown>)).toEqual({ dishId: 12 });
   });
 });
 

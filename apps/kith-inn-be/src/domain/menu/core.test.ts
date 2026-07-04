@@ -3,6 +3,7 @@ import {
   DEFAULT_CONSTRAINTS,
   generateWeekMenu,
   swapDish,
+  swapDishSpecified,
   toMenuDish,
   type MenuDish,
   type Slot,
@@ -210,5 +211,64 @@ describe("toMenuDish", () => {
   it("maps an Offering to the slim MenuDish", () => {
     const d = toMenuDish({ id: 7, name: "红烧牛肉", kind: "component", category: "meat", mainIngredient: "牛肉", tags: ["费工"], seller: 1 } as never);
     expect(d).toMatchObject({ id: 7, name: "红烧牛肉", category: "meat", mainIngredient: "牛肉" });
+  });
+});
+
+describe("swapDishSpecified", () => {
+  const pool: MenuDish[] = [meat(1, "牛"), meat(2, "鸡"), meat(3, "鱼"), veg(1, "青菜"), veg(2, "番茄")];
+  const menu: Slot[] = [
+    { day: "mon", occasion: "lunch", dishes: [meat(1, "牛"), veg(1, "青菜")] },
+    { day: "mon", occasion: "dinner", dishes: [meat(2, "鸡"), veg(2, "番茄")] },
+  ];
+
+  it("指定换成池内不冲突的菜 → ok 无 warning", () => {
+    const r = swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "v1", replacementId: "m3", pool });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.replacement.id).toBe("m3");
+      expect(r.warning).toBeUndefined();
+    }
+  });
+
+  it("主料与邻槽重复 → warning", () => {
+    // lunch 的 v1 换成 m2(鸡)；dinner 已有 m2(鸡) → 鸡 邻槽重复
+    const r = swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "v1", replacementId: "m2", pool });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.warning).toBe("会和近期主料重复，仍要换吗？");
+  });
+
+  it("主料与同槽其它菜重复 → warning", () => {
+    // lunch 的 v1 换成 m1(牛)；lunch 已有 m1(牛)
+    const r = swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "v1", replacementId: "m1", pool });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.warning).toBe("会和近期主料重复，仍要换吗？");
+  });
+
+  it("replacement 不在池 → replacement-not-in-pool", () => {
+    expect(swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "v1", replacementId: "zzz", pool })).toEqual({
+      ok: false,
+      reason: "replacement-not-in-pool",
+    });
+  });
+
+  it("replacement 与 target 同一道 → replacement-same-as-target", () => {
+    expect(swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "m1", replacementId: "m1", pool })).toEqual({
+      ok: false,
+      reason: "replacement-same-as-target",
+    });
+  });
+
+  it("target slot 不存在 → slot-not-found", () => {
+    expect(swapDishSpecified({ menu, target: { day: "wed", occasion: "lunch" }, dishId: "m1", replacementId: "m3", pool })).toEqual({
+      ok: false,
+      reason: "slot-not-found",
+    });
+  });
+
+  it("dishId 不在该 slot → dish-not-in-slot", () => {
+    expect(swapDishSpecified({ menu, target: { day: "mon", occasion: "lunch" }, dishId: "m2", replacementId: "m3", pool })).toEqual({
+      ok: false,
+      reason: "dish-not-in-slot",
+    });
   });
 });

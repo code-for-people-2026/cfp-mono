@@ -220,6 +220,23 @@ export const weekMenuSchema = z.discriminatedUnion("ok", [
   }),
 ]);
 
+// ── menu plan view + swap contract (feature 003 菜单编辑 + 接龙发布) ──
+/** 已发布/暂定菜单的视图（GET /menu/plans 元素 / swap 响应里的 plan）。 */
+export const menuPlanViewSchema = z.object({
+  planId: id,
+  date: z.string(),
+  occasion: menuMealOccasionSchema,
+  status: z.enum(["draft", "published"]),
+  dishes: z.array(menuDishSchema),
+  publishText: z.string().optional(),
+});
+/** POST /menu/plans/:id/swap 请求体（force 仅改 published plan 时需）。 */
+export const swapRequestSchema = z.object({
+  dishId: id,
+  replacementId: id.optional(),
+  force: z.boolean().optional(),
+});
+
 // ── delivery contract (promoted from be domain/delivery/derivations.ts + fe logic/deliveryView.ts) ──
 export const addressGroupSchema = z.object({
   address: z.string(),
