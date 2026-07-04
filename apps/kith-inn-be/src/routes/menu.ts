@@ -94,7 +94,11 @@ export function menuRoutes(
     try {
       const [offerings, existing] = await Promise.all([
         deps.findOfferings(token),
-        deps.listMenuPlans(token, { from: targets[0]!.date, to: targets[targets.length - 1]!.date }),
+        // query the full min..max of target dates (targets may be unsorted/non-contiguous, Codex #116 P2)
+        deps.listMenuPlans(token, (() => {
+          const ds = targets.map((t) => t.date).sort();
+          return { from: ds[0]!, to: ds[ds.length - 1]! };
+        })()),
       ]);
       const pubKey = new Set(
         existing

@@ -54,7 +54,9 @@ export async function POST(req: Request) {
         await payload.update({
           collection: "menu_plans",
           id: existing.id,
-          data: { offerings: p.offerings, status: p.status },
+          // regenerate = new dishes → old publishText is stale; clear it so /publish rebuilds
+          // (Codex #116 P1).
+          data: { offerings: p.offerings, status: p.status, publishText: null },
           overrideAccess: true,
         }),
       );
