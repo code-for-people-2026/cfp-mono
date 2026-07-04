@@ -22,6 +22,16 @@ be → cms internal 调用，menu_plans 读写（本 feature 新增）+ 复用 s
 { "docs": [{ "id": 501, "slot": { "id": 91, "date": "2026-07-06", "occasion": "lunch", "status": "open" }, "offerings": [{ "id": 12, "name": "红烧牛肉", "category": "meat", "mainIngredient": "牛肉", "kind": "component" }], "publishText": null, "status": "published", "seller": 7 }] }
 ```
 
+## `GET /api/internal/menu-plans/:id`（新增）
+
+按 id + seller 读单条 menu_plan（depth: slot + offerings）—— 供 be `publish-text` 按 id 加载、判 publishText 缓存。
+
+### 规则
+
+- `operatorScope` → sellerId。
+- `payload.find({ collection:"menu_plans", where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] }, limit:1, depth:1 })`，无命中 → 404。
+- 200 `{ doc: MenuPlan }`（populated slot + offerings）。
+
 ## `POST /api/internal/menu-plans/upsert`（新增）
 
 按 (seller, slot) upsert menu_plan。body 是数组（一次发布多餐次）。

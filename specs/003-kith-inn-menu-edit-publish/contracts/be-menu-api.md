@@ -22,10 +22,10 @@
 ### 响应（200）
 
 ```json
-{ "replacement": { "id": 19, "name": "香菇滑鸡", "category": "meat", "mainIngredient": "鸡" }, "warning": "会和近期主料重复，仍要换吗？" }
+{ "ok": true, "replacement": { "id": 19, "name": "香菇滑鸡", "category": "meat", "mainIngredient": "鸡" }, "warning": "会和近期主料重复，仍要换吗？" }
 ```
 
-`warning` 仅指定换且破坏主料避重时出现；auto 模式无 warning。
+成功必带 `ok:true`（与失败 `{ok:false,reason}` 共用 `ok` 判别 union）。`warning` 仅指定换且破坏主料避重时出现；auto 模式无 warning。
 
 ### 失败（200 `{ok:false}` —— 业务可恢复，非 HTTP 错误）
 
@@ -33,7 +33,7 @@
 { "ok": false, "reason": "no-alternative" }
 ```
 
-`reason` ∈ `slot-not-found` | `dish-not-in-slot` | `no-alternivative` | `replacement-not-in-pool` | `replacement-same-as-target`。
+`reason` ∈ `slot-not-found` | `dish-not-in-slot` | `no-alternative` | `replacement-not-in-pool` | `replacement-same-as-target`。
 
 ### 规则
 
@@ -104,8 +104,8 @@
 
 ### 规则
 
-- BE 加载 plan（depth: offerings）→ 构建 `MenuSlotText{day(由 slot.date 推), occasion, dishes[name]}` → `publishMenuText({sellerName, priceCents})`（sellerName/priceCents 从 `GET /api/internal/seller`）→ cms `PATCH /api/internal/menu-plans/:id {publishText}`。
-- plan 已有 publishText → 直接返回缓存（不重复调 LLM）。
+- BE `getMenuPlan(id)`（cms `GET /api/internal/menu-plans/:id`，seller-scoped + depth）加载 plan；plan 已有 publishText → 直接返回缓存（不重复调 LLM）。
+- 否则构建 `MenuSlotText{day(由 slot.date 推), occasion, dishes[name]}` → `publishMenuText({sellerName, priceCents})`（sellerName/priceCents 从 `GET /api/internal/seller`）→ cms `PATCH /api/internal/menu-plans/:id {publishText}`。
 - 跨租户 plan id → 404。
 - LLM 失败 → 502 `{error:"publish-text failed"}`（不阻塞已发布的菜单）。
 - 401 无 token。

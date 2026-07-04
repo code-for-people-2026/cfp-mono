@@ -51,7 +51,7 @@ swapMenuRequestSchema = {
 }
 
 // POST /menu/swap 响应（成功）—— be 无状态，FE 用 applySwap 应用
-{ replacement: MenuDish, warning?: string }   // warning 仅指定换 + 主料避重冲突时
+{ ok: true, replacement: MenuDish, warning?: string }   // warning 仅指定换 + 主料避重冲突时
 // 或失败
 { ok: false, reason: "slot-not-found"|"dish-not-in-slot"|"no-alternative"|"replacement-not-in-pool"|"replacement-same-as-target" }
 

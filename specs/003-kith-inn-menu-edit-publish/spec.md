@@ -119,7 +119,7 @@
 - **FR-002**: 系统必须在菜单建议页让桃子对每道菜「换一道」（auto）和「选别的」（指定，弹池子选择器）。
 - **FR-003**: 「选别的」指定替换若破坏主料避重，系统必须先提示（warning），桃子确认后才换（US-M05）。
 - **FR-004**: 系统必须提供 `POST /menu/publish`：把周菜单（MenuSlot[]，mon-fri）按 Asia/Shanghai 当周解析成具体日期，每餐次 upsert `service_slots`→open + upsert `menu_plans`(offerings[], status=published)，返回 plans；不调 LLM。
-- **FR-005**: `POST /menu/publish` 遇 archived slot 必须 409 上抛（复用 cms `service-slots/upsert` 的 archived 守卫），不自动重开；force/二次确认 M1 不做。
+- **FR-005**: `POST /menu/publish` 遇 archived slot 必须 409 上抛（复用 cms `service-slots/upsert` 的 archived 守卫），不自动重开；force/二次确认 M1 不做。**写入按餐次原子**（slot + plan 配对逐餐次写，遇 archived 立即停，不留「开餐但无菜单」半发布；已写餐次保持一致，重新发布 upsert 续上）。
 - **FR-006**: 重复发布必须 upsert（更新现有 menu_plan，不重复建）。
 - **FR-007**: 系统必须提供 `GET /menu/published?date=`：按 Asia/Shanghai 当周（date 默认 today）回读已发布的 menu_plans（depth: slot + offerings，含 publishText），按餐次结构返回。
 - **FR-008**: 系统必须提供 `POST /menu/plans/:id/publish-text`：加载该 plan、调 `publishMenuText`（LLM）、把文案写进 `menu_plan.publishText`、返回文案；已存 publishText 时直接返回（不重复调 LLM）。
@@ -132,7 +132,7 @@
 ### 关键实体
 
 - **MenuPlan（已发布菜单项）**：`menu_plans` 里 status=published 的记录；M1 用户面只读 offerings（菜）+ publishText（文案，按需）。slot→当餐次 service_slot。
-- **Swap 输入/输出（M1 契约）**：`{ menu, target: {day, occasion, dishId}, replacementId? }` → `{ replacement: MenuDish, warning? } | { ok:false, reason }`。由 shared schema 定义，FE↔BE 共享。
+- **Swap 输入/输出（M1 契约）**：`{ menu, target: {day, occasion, dishId}, replacementId? }` → `{ ok:true, replacement: MenuDish, warning? } | { ok:false, reason }`（`ok` 判别 union）。由 shared schema 定义，FE↔BE 共享。
 - **Published 菜单视图**：`GET /menu/published` 返回的按餐次结构（date/occasion/planId/dishes/publishText?），FE 直接渲染。
 
 ## 成功标准

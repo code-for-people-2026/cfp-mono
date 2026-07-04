@@ -20,7 +20,7 @@ description: "kith-inn 菜单换菜 + 发群文案（持久化）实现任务"
 
 **目的**: 固定各层缺口，避免只改一端。
 
-- [ ] T001 [P] 在 `packages/kith-inn-shared/src/schemas.test.ts` 增加 `swapMenuRequestSchema`（menu/target 必填、target.day 限 mon-fri、occasion 限 lunch/dinner、replacementId 可选、多余字段 strip）、`swapMenuResponseSchema`（成功 {replacement,warning?} / 失败 {ok:false,reason} 判别）、`publishedMenuSchema`、`publishTextResponseSchema` 用例。覆盖 FR-001/FR-007/FR-008。
+- [ ] T001 [P] 在 `packages/kith-inn-shared/src/schemas.test.ts` 增加 `swapMenuRequestSchema`（menu/target 必填、target.day 限 mon-fri、occasion 限 lunch/dinner、replacementId 可选、多余字段 strip）、`swapMenuResponseSchema`（**`ok` 判别 union**：成功 `{ok:true,replacement,warning?}` / 失败 `{ok:false,reason}`）、`publishedMenuSchema`、`publishTextResponseSchema` 用例。覆盖 FR-001/FR-007/FR-008。
 - [ ] T002 [P] 在 `apps/kith-inn-be/src/domain/menu/weekDates.test.ts`（新文件）增加 `resolveWeekDates(today, days)` 用例：给定 today（ISO date）算当周 mon-fri 日期；覆盖周一/周三/周日落在哪周、跨月边界（如 2026-08-31 当周）、Asia/Shanghai 基准。
 - [ ] T003 [P] 在 `apps/kith-inn-be/src/domain/menu/core.test.ts` 增加 `swapDishSpecified` 用例：成功返回 replacement、replacement-not-in-pool、replacement-same-as-target、slot-not-found、dish-not-in-slot、主料避重冲突返回 warning（同 pool/lookback 与 `swapDish` 一致）。
 - [ ] T004 [P] 在 `apps/kith-inn-be/src/lib/cms/menuPlans.test.ts`（新文件）增加 mocked-fetch 用例：`listMenuPlans(jwt,{from,to})`→`GET /api/internal/menu-plans?from=&to=` 解 `{docs}`；`upsertMenuPlan(jwt, items[])`→`POST /api/internal/menu-plans/upsert`；`updateMenuPlanPublishText(jwt,id,text)`→`PATCH /api/internal/menu-plans/:id`；非 2xx 抛 `CmsHttpError`。
@@ -52,13 +52,13 @@ description: "kith-inn 菜单换菜 + 发群文案（持久化）实现任务"
 
 - [ ] T012 在 `apps/cms/src/app/api/internal/menu-plans/route.ts`（新文件）加 `GET`：`operatorScope` → sellerId；query `from`/`to` 必填；按 `slot.date` 范围 + seller 过滤、`depth:1`（populate slot；offerings 自动 populated）、`limit:0`、`overrideAccess:true` → `{docs}`。
 - [ ] T013 在 `apps/cms/src/app/api/internal/menu-plans/upsert/route.ts`（新文件）加 `POST`：body `Array<{slot; offerings[]; status}>`；每条 find-then-upsert 按 `(slot, seller)`（命中→update offerings/status；缺→create + seller 钉死）；`slot` 与每个 `offering` 经 `ownedBy` 验归属（不属→403）；`overrideAccess:true`。
-- [ ] T014 在 `apps/cms/src/app/api/internal/menu-plans/[id]/route.ts`（新文件）加 `PATCH`：body 白名单 `{publishText}`；find-then-update 按 `(id, seller)`（跨租户→404）；`payload.update({id, data:{publishText}, overrideAccess:true})` → `{doc}`。
+- [ ] T014 在 `apps/cms/src/app/api/internal/menu-plans/[id]/route.ts`（新文件）加 `PATCH`：body 白名单 `{publishText}`；find-then-update 按 `(id, seller)`（跨租户→404）；`payload.update({id, data:{publishText}, overrideAccess:true})` → `{doc}`。**同文件加 `GET`**：按 `(id, seller)` find（跨租户→404）、`depth:1`（populate slot + offerings）→ `{doc}`（供 publish-text 按 id 读单条 plan，Codex #114 P2）。
 
-**Checkpoint**: cms 三个 menu-plans 端点就位（与 orders/service-slans 同 operatorScope 模式）。
+**Checkpoint**: cms menu-plans 端点就位（GET list / GET :id / upsert / PATCH，与 orders/service-slots 同 operatorScope 模式）。
 
 ## Phase 5：be cms 客户端（menuPlans.ts）
 
-- [ ] T015 在 `apps/kith-inn-be/src/lib/cms/menuPlans.ts`（新文件）实现：`listMenuPlans(jwt, {from, to}, deps={})` → `GET {cmsBase()}/api/internal/menu-plans?from=&to=`，解 `{docs}`；`upsertMenuPlan(jwt, items[], deps={})` → `POST .../menu-plans/upsert`，解 `{docs}`；`updateMenuPlanPublishText(jwt, id, text, deps={})` → `PATCH .../menu-plans/${id}` body `{publishText}`。复用 `client.ts` 的 `cmsBase`/`OPERATOR_JWT_HEADER`/`CmsDeps` 与 `orders.ts` 的 `CmsHttpError`/`parseOk` 模式。
+- [ ] T015 在 `apps/kith-inn-be/src/lib/cms/menuPlans.ts`（新文件）实现：`listMenuPlans(jwt, {from, to}, deps={})` → `GET {cmsBase()}/api/internal/menu-plans?from=&to=`，解 `{docs}`；`getMenuPlan(jwt, id, deps={})` → `GET .../menu-plans/${id}`，解 `{doc}`（publish-text 按 id 读单条，Codex #114 P2）；`upsertMenuPlan(jwt, items[], deps={})` → `POST .../menu-plans/upsert`，解 `{docs}`；`updateMenuPlanPublishText(jwt, id, text, deps={})` → `PATCH .../menu-plans/${id}` body `{publishText}`。复用 `client.ts` 的 `cmsBase`/`OPERATOR_JWT_HEADER`/`CmsDeps` 与 `orders.ts` 的 `CmsHttpError`/`parseOk` 模式。
 
 ## Phase 6：be 路由（swap / publish / published / publish-text）— MVP 核心
 
@@ -71,9 +71,9 @@ description: "kith-inn 菜单换菜 + 发群文案（持久化）实现任务"
 ### Implementation
 
 - [ ] T017 [US1] 在 `apps/kith-inn-be/src/routes/menu.ts` 加 `POST /swap`：`sellerAuth`；`swapMenuRequestSchema.safeParse(body)`（失败 400）；取池子 `deps.findOfferings(token)` 过滤 `active && component` → `pool`；`replacementId` 缺 → `swapDish({menu, target, dishId, pool})`；`replacementId` 给 → `swapDishSpecified({menu, target, replacementId, pool})`；返回 `swapMenuResponseSchema` 形（成功 200，失败也 200 `{ok:false,reason}`）。扩 `MenuDeps` 加 `findOfferings`。覆盖 FR-001。
-- [ ] T018 [US2] 在 `routes/menu.ts` 加 `POST /publish`：`sellerAuth`；body `{menu: MenuSlot[]}`；`resolveWeekDates(todayShanghai())` → day→date；对每餐次：`deps.upsertSlots(token, [{date, occasion, granularity:"occasion"}])`（archived→`CmsHttpError(409)` → 透传 409 `{error:"slot-archived",date,occasion}`）；拿 slotId → 收集到 `upsertMenuPlan` 入参 `{slot:slotId, offerings: dishIds, status:"published"}`；全部 `deps.upsertMenuPlan(token, items)` → 返回 `{plans}`。扩 `MenuDeps`（upsertSlots、upsertMenuPlan）。覆盖 FR-004/FR-005/FR-006。
+- [ ] T018 [US2] 在 `routes/menu.ts` 加 `POST /publish`：`sellerAuth`；body `{menu: MenuSlot[]}`；`resolveWeekDates(todayShanghai())` → day→date；**按餐次逐条原子写**（Codex #114 P1：避免「slot 开了但 menu_plan 没写」的半发布）——对每餐次：`deps.upsertSlots(token, [{date, occasion, granularity:"occasion"}])`（archived→`CmsHttpError(409)` → 立即透传 409 `{error:"slot-archived",date,occasion}` 并停止；此时已写的餐次都是 slot+plan 配对一致，重新发布 upsert 续上）→ 拿 slotId → `deps.upsertMenuPlan(token, [{slot:slotId, offerings: dishIds, status:"published"}])` → 收集 plan；全部餐次完成后返回 `{plans}`。扩 `MenuDeps`（upsertSlots、upsertMenuPlan）。覆盖 FR-004/FR-005/FR-006。
 - [ ] T019 [US2] 在 `routes/menu.ts` 加 `GET /published`：`sellerAuth`；query `date` 缺省 `todayShanghai()`；`resolveWeekDates(date)` → from/to（mon/fri）；`deps.listMenuPlans(token, {from, to})` → 映射成 `publishedSlotSchema[]`（date=slot.date、occasion=slot.occasion、planId、dishes=offerings→MenuDish、publishText）→ `{published}`。扩 `MenuDeps`（listMenuPlans）。覆盖 FR-007。
-- [ ] T020 [US3] 在 `routes/menu.ts` 加 `POST /plans/:id/publish-text`：`sellerAuth`；先用 `listMenuPlans`/直接 cms 找 plan（或新增 `getMenuPlan`）→ 若已有 publishText 直接返回缓存；否则构建 `MenuSlotText{day(由 slot.date→星期几), occasion, dishes: offerings.map(name)}` → `deps.getSeller(token)` 拿 sellerName + defaultPriceCents → `publishMenuText(text, {sellerName, priceCents})` → `deps.updateMenuPlanPublishText(token, id, text)` → `{publishText}`。LLM 失败→502；跨租户 id→404（cms find-then-update）。扩 `MenuDeps`（getSeller、updateMenuPlanPublishText；`publishMenuText` 直接 import）。覆盖 FR-008/FR-013。
+- [ ] T020 [US3] 在 `routes/menu.ts` 加 `POST /plans/:id/publish-text`：`sellerAuth`；`deps.getMenuPlan(token, id)` 读单条 plan（跨租户→404 经 cms 透传）；plan.publishText 已有 → 直接返回缓存（不调 LLM）；否则构建 `MenuSlotText{day(由 slot.date→星期几), occasion, dishes: offerings.map(name)}` → `deps.getSeller(token)` 拿 sellerName + defaultPriceCents → `publishMenuText(text, {sellerName, priceCents})` → `deps.updateMenuPlanPublishText(token, id, text)` → `{publishText}`。LLM 失败→502；跨租户 id→404。扩 `MenuDeps`（getMenuPlan、getSeller、updateMenuPlanPublishText；`publishMenuText` 直接 import）。覆盖 FR-008/FR-013。
 - [ ] T021 把新依赖（findOfferings、upsertSlots、upsertMenuPlan、listMenuPlans、getSeller、updateMenuPlanPublishText）接进 `menuRoutes` 默认 `MenuDeps`（从 `lib/cms/*` import 实际函数）；保持 `app.ts` 挂载 `/menu` 不变。
 
 **Checkpoint**: be 4 端点通；`pnpm --filter @cfp/kith-inn-be test` 绿。
