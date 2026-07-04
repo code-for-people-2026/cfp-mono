@@ -8,6 +8,11 @@ import {
   markDeliveredUrl,
   devLoginUrl,
   menuWeekUrl,
+  menuPlansUrl,
+  menuPlansRangeUrl,
+  menuGenerateUrl,
+  menuPlanSwapUrl,
+  menuPlanPublishUrl,
   offeringDetailUrl,
   offeringsUrl,
   orderConfirmUrl,
@@ -39,6 +44,12 @@ describe("endpoint builders", () => {
       expect(offeringsUrl()).toBe("https://be.example.com/offerings");
       expect(offeringDetailUrl(14)).toBe("https://be.example.com/offerings/14");
       expect(menuWeekUrl()).toBe("https://be.example.com/menu/week");
+      expect(menuPlansUrl()).toBe("https://be.example.com/menu/plans");
+      expect(menuPlansUrl("2026-07-08")).toBe("https://be.example.com/menu/plans?date=2026-07-08");
+      expect(menuPlansRangeUrl("2026-07-06", "2026-07-10")).toBe("https://be.example.com/menu/plans?from=2026-07-06&to=2026-07-10");
+      expect(menuGenerateUrl()).toBe("https://be.example.com/menu/generate");
+      expect(menuPlanSwapUrl(501)).toBe("https://be.example.com/menu/plans/501/swap");
+      expect(menuPlanPublishUrl(501)).toBe("https://be.example.com/menu/plans/501/publish");
       expect(ordersUrl()).toBe("https://be.example.com/orders");
       expect(orderUrl(9)).toBe("https://be.example.com/orders/9");
       expect(orderConfirmUrl(9)).toBe("https://be.example.com/orders/9/confirm");

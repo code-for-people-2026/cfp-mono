@@ -95,4 +95,15 @@ export async function ensureConstraints(payload: Payload): Promise<void> {
         ON "cms"."chat_messages" ("seller_id", "operator_id", "created_at")
     `,
   });
+
+  // ── one-plan-per-slot invariant (feature 003): a menu_plan is unique per (seller, slot).
+  //    Backs the upsert's find-then-create against concurrent races; without it two
+  //    generate requests for the same meal could both create, leaving duplicate plans.
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS "menu_plans_seller_slot_unique"
+        ON "cms"."menu_plans" ("seller_id", "slot_id")
+    `,
+  });
 }

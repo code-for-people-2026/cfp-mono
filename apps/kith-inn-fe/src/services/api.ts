@@ -64,3 +64,23 @@ export function chatUrl(): string {
 export function confirmCustomersUrl(): string {
   return `${beBaseUrl()}/chat/confirm-customers`;
 }
+
+export function menuPlansUrl(date?: string): string {
+  return `${beBaseUrl()}/menu/plans${date ? `?date=${encodeURIComponent(date)}` : ""}`;
+}
+
+export function menuPlansRangeUrl(from: string, to: string): string {
+  return `${beBaseUrl()}/menu/plans?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+}
+
+export function menuGenerateUrl(): string {
+  return `${beBaseUrl()}/menu/generate`;
+}
+
+export function menuPlanSwapUrl(id: string | number): string {
+  return `${beBaseUrl()}/menu/plans/${id}/swap`;
+}
+
+export function menuPlanPublishUrl(id: string | number): string {
+  return `${beBaseUrl()}/menu/plans/${id}/publish`;
+}

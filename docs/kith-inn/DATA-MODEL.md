@@ -190,16 +190,18 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 
 ### `menu_plans`
 
-某天某餐做什么。
+某天某餐做什么。按餐次一条（一餐一 plan）。
 
 | 字段 | 业务意义 |
 |---|---|
-| `slot` | 对应 service slot |
+| `slot` | 对应 service slot（date+occasion） |
 | `offerings[]` | 选中的菜/套餐内容 |
-| `publishText?` | 群通知文案 |
-| `status` | draft / published |
+| `publishText?` | **接龙格式**群通知文案（确定性模板生成，M1 不调 LLM）；换菜后自动清空（防发出旧文案） |
+| `status` | `draft`（暂定）/ `published`（已发出，颜色提示） |
 
 自动排菜默认主料避重；用户指定替换时允许打破避重，只需确认。
+
+**M1 行为（feature 003）**：`generate` 写 draft、`一键发布` 转 published + 生成接龙文案 + 复制（不真发微信群）；改 published plan 需二次确认（be 无 `force`→409）。菜单流程只 ensure slot 存在（缺则建 draft、不改既有 status）——slot open 归订单确认。`(seller, slot)` 唯一索引保证一餐一 plan。published 仅表示 App 内发布/可复制，不等于已发微信群。
 
 ### `subscriptions` (V1)
 

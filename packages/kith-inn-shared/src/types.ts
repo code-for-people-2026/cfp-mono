@@ -24,6 +24,7 @@ import type {
   fulfillmentSchema,
   menuDishSchema,
   menuPlanSchema,
+  menuPlanViewSchema,
   menuSlotSchema,
   offeringCreateSchema,
   offeringSchema,
@@ -34,6 +35,7 @@ import type {
   orderSchema,
   serviceSlotSchema,
   sellerSchema,
+  swapRequestSchema,
   weekMenuSchema,
 } from "./schemas";
 
@@ -78,6 +80,11 @@ export type MenuDish = z.infer<typeof menuDishSchema>;
 export type MenuSlot = z.infer<typeof menuSlotSchema>;
 /** 周菜单结果：成功（slots）或 pool-too-small（菜池填不满去重约束）。 */
 export type WeekMenu = z.infer<typeof weekMenuSchema>;
+
+/** 菜单 plan 视图（feature 003，按餐次）。 */
+export type MenuPlanView = z.infer<typeof menuPlanViewSchema>;
+/** 换菜请求（feature 003）。 */
+export type SwapRequest = z.infer<typeof swapRequestSchema>;
 
 // ── delivery contract (GET /delivery) ──────────────────────────────────────
 /** 按地址分组的送篮（源头防错：照这张装篮）。 */

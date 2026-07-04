@@ -1,0 +1,72 @@
+import type { Where } from "payload";
+import { NextResponse } from "next/server";
+import { operatorScope, ownedBy } from "@/lib/internal";
+
+export const dynamic = "force-dynamic";
+
+type PlanInput = { date: string; occasion?: string; offerings: Array<string | number>; status: string };
+
+/**
+ * `POST /api/internal/menu-plans/upsert` — generate's writer. For each input:
+ *  1. ensure service_slot exists for (seller, date, occasion) — keep existing status
+ *     (do NOT open; slot opening stays order-confirm's job); create as draft if missing.
+ *  2. validate every offering id belongs to the seller (ownedBy, else 403).
+ *  3. upsert menu_plan by (seller, slot) — update offerings/status or create.
+ * The (seller, slot) unique index (ensureConstraints) backs the one-plan-per-slot invariant.
+ */
+export async function POST(req: Request) {
+  const scope = await operatorScope(req);
+  if (scope instanceof NextResponse) return scope;
+  const { sellerId, payload } = scope;
+  const inputs = (await req.json().catch(() => null)) as PlanInput[] | null;
+  if (!Array.isArray(inputs)) return NextResponse.json({ error: "plans[] required" }, { status: 400 });
+
+  const docs = [];
+  for (const p of inputs) {
+    const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: p.date } }];
+    if (p.occasion) clauses.push({ occasion: { equals: p.occasion } });
+    const slotRes = await payload.find({ collection: "service_slots", where: { and: clauses }, limit: 1, overrideAccess: true });
+    let slotId = (slotRes.docs[0] as { id: string | number } | undefined)?.id;
+    if (!slotId) {
+      const created = await payload.create({
+        collection: "service_slots",
+        data: { date: p.date, occasion: p.occasion, granularity: "occasion", status: "draft", seller: sellerId },
+        overrideAccess: true,
+      });
+      slotId = created.id;
+    }
+
+    for (const oid of p.offerings) {
+      if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
+        return NextResponse.json({ error: "offering not owned" }, { status: 403 });
+      }
+    }
+
+    const planRes = await payload.find({
+      collection: "menu_plans",
+      where: { and: [{ slot: { equals: slotId } }, { seller: { equals: sellerId } }] },
+      limit: 1,
+      overrideAccess: true,
+    });
+    const existing = planRes.docs[0] as { id: string | number } | undefined;
+    if (existing) {
+      docs.push(
+        await payload.update({
+          collection: "menu_plans",
+          id: existing.id,
+          data: { offerings: p.offerings, status: p.status },
+          overrideAccess: true,
+        }),
+      );
+    } else {
+      docs.push(
+        await payload.create({
+          collection: "menu_plans",
+          data: { slot: slotId, offerings: p.offerings, status: p.status, seller: sellerId },
+          overrideAccess: true,
+        }),
+      );
+    }
+  }
+  return NextResponse.json({ docs });
+}
