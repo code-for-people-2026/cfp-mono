@@ -64,4 +64,7 @@ swapRequestSchema  = { dishId: id; replacementId?: id; force?: boolean }
 
 ## 迁移说明
 
-无 schema 变更（drizzle push）；无 ensureConstraints 变更；无 migration（未部署）。docs 同步：更新 `docs/kith-inn/DATA-MODEL.md` §4 menu_plans（status draft/published 用法 + 接龙 publishText + ensure-slot）。
+- **无 schema 字段变更**（drizzle push）。
+- **新增 `menu_plans (seller, slot)` 唯一索引**：并入 `apps/cms/src/db/ensureConstraints.ts`（`CREATE UNIQUE INDEX IF NOT EXISTS menu_plans_seller_slot_unique ON cms.menu_plans (seller_id, slot_id)`）——保证"一餐一 plan"不变量，防并发 upsert 重复（Codex #115 P2）。这是本 feature 对 ensureConstraints 的唯一新增。
+- 无 migration 文件（未部署）。
+- docs 同步：更新 `docs/kith-inn/DATA-MODEL.md` §4 menu_plans（status draft/published 用法 + 接龙 publishText + ensure-slot + 唯一索引）。

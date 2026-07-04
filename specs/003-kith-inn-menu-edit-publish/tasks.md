@@ -43,8 +43,9 @@ description: "kith-inn 菜单编辑 + 接龙发布 实现任务"
 ## Phase 4：cms menu-plans internal route（glue）
 
 - [ ] T012 `apps/cms/src/app/api/internal/menu-plans/route.ts`（新）`GET`：`operatorScope`；`from/to` 必填；seller-scoped + `slot.date` 范围、`depth:1`、`limit:0`、`overrideAccess:true` → `{docs}`。
-- [ ] T013 `apps/cms/src/app/api/internal/menu-plans/[id]/route.ts`（新）`GET`（depth，跨租户 404）+ `PATCH`（白名单 `{status?,publishText?,offerings?}`，find-then-update 跨租户 404）。
+- [ ] T013 `apps/cms/src/app/api/internal/menu-plans/[id]/route.ts`（新）`GET`（depth，跨租户 404）+ `PATCH`（白名单 `{status?,publishText?,offerings?}`，find-then-update 跨租户 404；**PATCH 含 offerings 时每个 id 经 `ownedBy` 验归属 403**——Codex #115 P1）。
 - [ ] T014 `apps/cms/src/app/api/internal/menu-plans/upsert/route.ts`（新）`POST`：body `Array<{date,occasion,offerings[],status:"draft"}>`；每条 **ensure slot**（命中不动 status / 缺则 create draft）+ **upsert plan** by (seller,slot) + `ownedBy` 验 offerings 归属（403）→ `{docs}`。
+- [ ] T014b `apps/cms/src/db/ensureConstraints.ts` 加 `menu_plans (seller, slot)` 唯一索引：`CREATE UNIQUE INDEX IF NOT EXISTS "menu_plans_seller_slot_unique" ON "cms"."menu_plans" ("seller_id","slot_id")`（保证一餐一 plan、防并发重复，Codex #115 P2）。
 
 **Checkpoint**: cms 4 端点（GET list / GET id / upsert / PATCH）就位。
 
@@ -60,8 +61,8 @@ description: "kith-inn 菜单编辑 + 接龙发布 实现任务"
 ### Implementation
 - [ ] T017 `apps/kith-inn-be/src/routes/menu.ts` 加 `GET /plans`：`sellerAuth`；`?date=`（单日）或 `?from=&to=`；`deps.listMenuPlans(token, {from,to})` → 映射成 `menuPlanView[]`（date=slot.date、occasion=slot.occasion、dishes=offerings→MenuDish、status、publishText）→ `{plans}`。
 - [ ] T018 [US1] 加 `POST /generate`：`sellerAuth`；body `{targets:[{date,occasion}], force?}`；对每 target：取池子（`deps.findOfferings`）+ 历史 lookback（当范围已存 plan 的菜）→ `generateWeekMenu` → 池太小返 `{ok:false,reason,missing}`；否则 target 已 published 且无 force→409；`deps.upsertMenuPlans(token, items draft)` → `{plans}`。扩 `MenuDeps`。
-- [ ] T019 [US2] 加 `POST /plans/:id/swap`：`sellerAuth`；`swapRequestSchema.safeParse`；`deps.getMenuPlan(token,id)`（404）；published 且无 force→409；auto=`swapDish`/指定=`swapDishSpecified`（取池子+menu 上下文）；失败 `{ok:false,reason}`；成功 → `deps.patchMenuPlan(token, id, {offerings:新ids})` +（published 时）`patchMenuPlan(token,id,{publishText:null})` 清空 → `{plan, warning?}`。
-- [ ] T020 [US3] 加 `POST /plans/:id/publish`：`sellerAuth`；`deps.getMenuPlan`（404）；draft→`patchMenuPlan(token,id,{status:"published"})`；publishText 缺→`buildJielongMenuText(plan, seller)`（seller 经 `deps.getSeller`）→ `patchMenuPlan(token,id,{publishText})`；已存→缓存返回 → `{publishText}`。
+- [ ] T019 [US2] 加 `POST /plans/:id/swap`：`sellerAuth`；`swapRequestSchema.safeParse`；`deps.getMenuPlan(token,id)`（404）；published 且无 force→409；auto=`swapDish`/指定=`swapDishSpecified`（取池子+menu 上下文）；失败 `{ok:false,reason}`；成功 → **单次** `patchMenuPlan(token, id, published ? {offerings:新ids, publishText:null} : {offerings:新ids})`（一次写 offerings + 清 publishText，Codex #115 P2）→ `{plan, warning?}`。
+- [ ] T020 [US3] 加 `POST /plans/:id/publish`：`sellerAuth`；`deps.getMenuPlan`（404）；publishText 缺→`buildJielongMenuText(plan, seller)`（seller 经 `deps.getSeller`）；**单次** `patchMenuPlan(token, id, { status: 已draft?"published":<保持>, publishText })`（status 转换 + 文案一次写，Codex #115 P2）；已存 publishText→缓存返回 → `{publishText}`。
 - [ ] T021 接进 `menuRoutes` 默认 `MenuDeps`（从 `lib/cms/*` import 实际函数）；`app.ts` 挂 `/menu` 不变。
 
 **Checkpoint**: be 4 端点通；`pnpm --filter @cfp/kith-inn-be test` 绿。
