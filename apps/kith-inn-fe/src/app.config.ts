@@ -3,7 +3,6 @@ export default defineAppConfig({
     "pages/today/index",
     "pages/menu/index",
     "pages/orders/index",
-    "pages/delivery/index",
     "pages/kitchen/index",
     "pages/login/index",
   ],

@@ -1,3 +1,4 @@
+import { addressMatches } from "@cfp/kith-inn-shared/addressMatch";
 import type { AddressGap, AddressGroup, Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 
 /**
@@ -53,28 +54,11 @@ export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; to
   return { gaps, totalPending: open.length };
 }
 
-/**
- * Open fulfillments (pending) whose order address matches the fragment — shared by the
- * agent's mark_delivered tool and the address-fragment 勾销.
- *
- * **Prefix, not substring**: 桃子's addresses are 速记 like `3a27b` (栋3 A座 层27 b户);
- * she inputs `3a` to mean 楼栋3A. Substring would false-positive (`3a` matches `2d03a`'s
- * 层03 户a); prefix matches the 楼栋位 correctly.
- *
- * **Boundary-aware for pure-numeric fragments** (Codex #117 P1): `"2"` must mean 楼栋2,
- * not 楼栋26 (`26B-301`). So a pure-digit fragment matches only when the address's
- * **leading digit-run** equals it exactly; a fragment with a letter (`3a`, `26B`) keeps
- * `startsWith` (the letter already disambiguates). Blank → [] (guards `""` matching all).
- */
+/** Open fulfillments (pending) whose order address matches the fragment (prefix + boundary,
+ *  via shared `addressMatches`). Shared by the agent's mark_delivered + the FE preview. */
 export function fulfillmentsMatchingAddress(fulfillments: Fulfillment[], address: string): Fulfillment[] {
-  const a = address.trim();
-  if (!a) return [];
-  const pureNumeric = /^\d+$/.test(a);
-  return fulfillments.filter((f) => {
-    const addr = orderAddress(f);
-    const matches = pureNumeric ? (addr.match(/^\d+/)?.[0] ?? "") === a : addr.startsWith(a);
-    return matches && f.status === "pending";
-  });
+  if (!address.trim()) return [];
+  return fulfillments.filter((f) => addressMatches(orderAddress(f), address) && f.status === "pending");
 }
 
 // ── 最近一餐聚焦（PRD §5.5）────────────────────────────────────────────
