@@ -54,8 +54,11 @@ export default function Orders() {
       const fulfillments = (dv.sort ?? []).flatMap((g) => g.fulfillments ?? []) as Fulfillment[];
       const joined = sortByAddress(joinOrdersFulfillments(orders, fulfillments));
       setRows(joined);
-      const focus = mealFocus(joined);
-      if (focus) setOccasion(focus);
+      // only apply mealFocus on initial load (not refetch after user manually switched, Codex #120 P2)
+      if (loading) {
+        const focus = mealFocus(joined);
+        if (focus) setOccasion(focus);
+      }
     } catch {
       Taro.showToast({ title: "加载失败", icon: "error" });
     } finally {
@@ -72,6 +75,10 @@ export default function Orders() {
     if (!token) return Taro.redirectTo({ url: "/pages/login/index" });
     try {
       const res = await Taro.request({ url, method, data: body, header: { Authorization: `Bearer ${token}`, "content-type": "application/json" } });
+      if (res.statusCode === 401) {
+        tokens.clearToken();
+        return Taro.redirectTo({ url: "/pages/login/index" });
+      }
       if (res.statusCode >= 400) return Taro.showToast({ title: "操作失败", icon: "error" });
       load();
     } catch {
@@ -157,7 +164,7 @@ export default function Orders() {
                   {d.base === "confirmed" && d.payment === "unpaid" && (
                     <Button size="small" className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>标已付</Button>
                   )}
-                  {d.base === "confirmed" && d.payment === "paid" && (
+                  {d.base === "confirmed" && o.paymentStatus === "paid" && (
                     <Button size="small" className="bg-surface text-muted" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "unpaid" })}>回退未付</Button>
                   )}
                   {row.fulfillment && d.delivery === "pending" && (
