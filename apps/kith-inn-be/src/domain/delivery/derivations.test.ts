@@ -82,7 +82,7 @@ describe("todayGaps", () => {
 });
 
 describe("fulfillmentsMatchingAddress", () => {
-  it("returns open fulfillments whose order address contains the fragment", () => {
+  it("returns open fulfillments whose order address starts with the fragment (prefix)", () => {
     const fs = [
       f({ id: 11, order: at("26B-301") }),
       f({ id: 12, order: at("26B-502") }),
@@ -90,6 +90,13 @@ describe("fulfillmentsMatchingAddress", () => {
       f({ id: 14, order: at("1D") }),
     ];
     expect(fulfillmentsMatchingAddress(fs, "26B").map((x) => x.id)).toEqual([11, 12]);
+  });
+
+  it("does NOT match when the fragment appears mid-address (prefix, not substring)", () => {
+    // `3a` is 楼栋3A; `2d03a` is 楼栋2D 层03 a户 — substring would wrongly match the `3a` in `03a`.
+    const fs = [f({ id: 11, order: at("3a27b") }), f({ id: 12, order: at("2d03a") })];
+    expect(fulfillmentsMatchingAddress(fs, "3a").map((x) => x.id)).toEqual([11]);
+    expect(fulfillmentsMatchingAddress(fs, "2d").map((x) => x.id)).toEqual([12]);
   });
 
   it("narrows when the fragment is more specific", () => {

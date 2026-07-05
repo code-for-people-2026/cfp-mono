@@ -54,14 +54,16 @@ export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; to
 }
 
 /**
- * Open fulfillments (pending) whose order address contains the fragment
- * — shared by the agent's mark_delivered tool and the delivery tab's 「送达」 button.
- * Blank fragment → [] (guards against "".includes marking *everything* done).
+ * Open fulfillments (pending) whose order address **starts with** the fragment —
+ * shared by the agent's mark_delivered tool and the address-fragment 勾销.
+ * **Prefix, not substring**: 桃子's addresses are 速记 like `3a27b` (栋3 A座 层27 b户);
+ * she inputs `3a` to mean 楼栋3A. Substring would false-positive (`3a` matches `2d03a`'s
+ * 层03 户a). Prefix matches the 楼栋位 correctly. Blank fragment → [] (guards `""` matching all).
  */
 export function fulfillmentsMatchingAddress(fulfillments: Fulfillment[], address: string): Fulfillment[] {
   const a = address.trim();
   if (!a) return [];
-  return fulfillments.filter((f) => orderAddress(f).includes(a) && f.status === "pending");
+  return fulfillments.filter((f) => orderAddress(f).startsWith(a) && f.status === "pending");
 }
 
 // ── 最近一餐聚焦（PRD §5.5）────────────────────────────────────────────
