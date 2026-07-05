@@ -30,7 +30,7 @@
 - **Q: agent 怎么知道 planId？** → A: `get_menu` 返回的 plan 列表带 planId；agent 先查再操作（或 LLM 从上文 tool 返回中拿）。generate 的返回也带 planId。
 - **Q: 日期怎么传？** → A: 工具 schema 的 `date` 参数定义为 `YYYY-MM-DD` 字符串（Codex #121 P2）。LLM 负责把自然语言"明天""后天"解析成具体日期（system prompt 里给指引："明天 = 今天的日期 +1，今天按 Asia/Shanghai"；run.ts 的 system prompt 注入今天日期）。不传中文相对日期给 be 端点。`get_menu` 的 date 省略时默认今天。
 - **Q: 操作 published 菜单的二次确认？** → A: be 端点已有 force 守卫（无 force→409）。agent 工具收到 409 → 回复「这餐已发给顾客，确定要改吗？」→ 用户确认 → 带 force 重调。与 panel 的 modal 确认等价。
-- **Q: 接龙文案返回给用户怎么展示？** → A: publish_menu 返回 `{ text: 接龙文案, card?: { type: "publish-text", data: { publishText } } }`——文字直接展示在聊天气泡里，桃子复制即可。不做专门 card（文案是纯文本，气泡够用）。
+- **Q: 接龙文案返回给用户怎么展示？** → A: publish_menu 返回 `{ text: 接龙文案 }`——文字直接展示在聊天气泡里，桃子复制即可。不做专门 card（文案是纯文本，气泡够用）。
 
 ## 用户场景
 
@@ -71,3 +71,34 @@
 - agent 不做「选别的」菜品选择器（LLM 从 get_menu 返回的池子里选替代菜；用户指定菜名时 LLM 匹配）。
 - 跨日菜单查询（"上周三做了什么"）deferred（M1 限今天/明天）。
 - agent 菜单操作不返回结构化 card（文案直接文字展示）。
+
+## 可靠性加固（补 PRD §5.5 缺口）
+
+当前 agent 对数据操作（confirm/cancel/mark_paid/mark_delivered）**直接执行不经确认**，只有新顾客建账有确认卡（pendingState）。PRD §5.5 要求"数据操作类先返回确认卡、用户确认后才写入"。本 feature 一并补：
+
+### 新增：操作确认卡（operation-confirm card）
+
+**重操作（不可逆/有副作用）→ 必须确认卡**：
+- `confirm_order`（物化：开 slot + 建 fulfillment）
+- `cancel_order`（终态：退出经营口径）
+- `generate_menu` 写 published plan（force 覆写已有 published）
+- `swap_dish` on published plan
+- `publish_menu`（标记已发出）
+
+**轻操作（可逆/低风险）→ 直接执行**：
+- `record_orders`（draft 零副作用；新顾客已有确认卡）
+- `generate_menu` 写 draft（无副作用）
+- `swap_dish` on draft
+- `mark_paid` / `mark_paid` 回退（可逆）
+- `mark_delivered`（可逆：done→pending）
+- `get_*`（纯查询）
+
+**机制**：重操作的 execute handler 检测"需要确认"→ 返回 `{ text: "将{动作}：{资源详情}，确认？", card: { type: "operation-confirm", data: { toolName, args, summary } } }` → 前端显示确认卡 + 「确认」按钮 → `POST /chat/confirm-operation`（绕开 LLM，确定性执行，同 pendingState 模式）。
+
+### 新增：工具参数 zod safeParse
+
+所有工具的 execute handler 入口加 shared schema safeParse（如 `swapRequestSchema`），LLM 填错参数 → 返"参数有误"文本、不调服务、不崩。现有手动 coerce（parseOccasion/parseOrderItems）保留作兜底。
+
+### shared 加 operation-confirm card 类型
+
+`cardPayloadSchema` 加 `{ type: "operation-confirm", data: { toolName: string; summary: string; args: Record<string, unknown> } }`。
