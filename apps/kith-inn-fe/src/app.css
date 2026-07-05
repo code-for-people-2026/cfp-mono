@@ -59,3 +59,14 @@
     --nutui-progress-border-radius: 16rpx;
   }
 }
+
+/* ── Component classes (unlayered — same priority as utilities; both beat the
+   taro-view-core element selector on H5. These are the app's reusable style
+   primitives; new features should use them instead of re-typing utility clusters.
+   One-off utilities can still be appended in className alongside these.) */
+.page-shell {
+  @apply min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink;
+}
+.card {
+  @apply rounded-[16rpx] border border-line;
+}

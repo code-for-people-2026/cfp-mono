@@ -55,7 +55,7 @@ export default function Login() {
     <View className="flex min-h-screen flex-col items-center justify-center bg-linear-to-b from-paper via-wash to-white px-[80rpx] text-ink">
       <Text className="text-[96rpx] font-bold">街坊味</Text>
       <View className="mt-[160rpx] w-full">
-        <Button type="primary" onClick={login} className="[background:var(--color-red)] text-white h-[96rpx] w-full rounded-[16rpx] text-[32rpx]">
+        <Button type="primary" onClick={login} className="bg-red text-white h-[96rpx] w-full rounded-[16rpx] text-[32rpx]">
           微信登录
         </Button>
       </View>

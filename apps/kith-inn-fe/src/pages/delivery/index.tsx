@@ -79,7 +79,7 @@ export default function Delivery() {
   };
 
   return (
-    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+    <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
       <View className="px-[32rpx] pb-[200rpx] pt-[32rpx]">
         <View className="mb-[28rpx] flex items-start justify-between gap-[24rpx]">
@@ -87,7 +87,7 @@ export default function Delivery() {
             <Text className="block text-[44rpx] font-bold leading-tight">送餐分拣</Text>
             <Text className="mt-[12rpx] block text-[26rpx] text-muted">按地址装篮。勾销在「今天」说一句（如「3e23a 送了」）。</Text>
           </View>
-          <Text className="flex-none rounded-[16rpx] border border-line bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">午餐</Text>
+          <Text className="flex-none card bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">午餐</Text>
         </View>
 
         {view && view.gaps.totalPending > 0 && (
@@ -106,7 +106,7 @@ export default function Delivery() {
           view.sort.map((g) => {
             const p = buildingProgress(g);
             return (
-              <View key={g.address} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
+              <View key={g.address} className="my-[24rpx] card">
                 <View className="mb-[20rpx] flex items-center justify-between gap-[20rpx]">
                   <Text className="text-[32rpx] font-bold">{g.address} · {g.count} 份</Text>
                   <Text className="text-[24rpx] text-muted">{p.done}/{p.total}</Text>
@@ -114,7 +114,7 @@ export default function Delivery() {
                 <Progress percent={p.percent} />
                 {p.done < p.total && (
                   <View className="mt-[16rpx]">
-                    <Button size="small" type="primary" className="[background:var(--color-green)] text-white" onClick={() => markBuilding(g)}>
+                    <Button size="small" type="primary" className="bg-green text-white" onClick={() => markBuilding(g)}>
                       这栋送到了
                     </Button>
                   </View>

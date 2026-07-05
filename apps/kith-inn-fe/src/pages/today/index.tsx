@@ -231,7 +231,7 @@ export default function Today() {
   };
 
   return (
-    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+    <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
       <View className="px-[32rpx] pb-[260rpx] pt-[32rpx]">
         <Text className="my-[24rpx] block text-center text-[22rpx] text-soft">展示今天和昨天，更早的已清理</Text>
@@ -268,7 +268,7 @@ export default function Today() {
                     />
                   )}
                   {!me && !m.card && m.cardUnavailable && (
-                    <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
+                    <View className="mt-[16rpx] card bg-white p-[24rpx]">
                       <Text className="block text-[26rpx] font-semibold text-ink">卡片数据已过期</Text>
                       <Text className="mt-[10rpx] block text-[24rpx] leading-relaxed text-muted">原始对话仍保留，这张历史卡片无法恢复。</Text>
                     </View>
