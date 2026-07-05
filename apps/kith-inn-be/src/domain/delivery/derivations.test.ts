@@ -99,6 +99,13 @@ describe("fulfillmentsMatchingAddress", () => {
     expect(fulfillmentsMatchingAddress(fs, "2d").map((x) => x.id)).toEqual([12]);
   });
 
+  it("pure-numeric fragment matches only the exact leading digit-run (building boundary)", () => {
+    // `2` means 楼栋2, NOT 楼栋26 (`26B-301`); `26` means 楼栋26.
+    const fs = [f({ id: 11, order: at("2a10a") }), f({ id: 12, order: at("26B-301") }), f({ id: 13, order: at("2d05b") })];
+    expect(fulfillmentsMatchingAddress(fs, "2").map((x) => x.id)).toEqual([11, 13]);
+    expect(fulfillmentsMatchingAddress(fs, "26").map((x) => x.id)).toEqual([12]);
+  });
+
   it("narrows when the fragment is more specific", () => {
     const fs = [f({ id: 11, order: at("26B-301") }), f({ id: 12, order: at("26B-502") })];
     expect(fulfillmentsMatchingAddress(fs, "26B-301").map((x) => x.id)).toEqual([11]);
