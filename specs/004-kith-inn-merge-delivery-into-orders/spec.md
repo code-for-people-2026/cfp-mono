@@ -34,7 +34,9 @@
 
 - **Q: 状态怎么一眼看出？** → A: **双轴独立图标**（类 Slack PR 的 emoji reaction）——每行两个并行小指示：**履**（履约 pending○/done✓）+ **付**（付款 unpaid○/paid✓），各上各的色。组合一眼可见：`履✓付○`（已送未付·注意）、`履○付✓`（已付待送）、`履○付○`（待送待付）、`履✓付✓`（全完成·淡）。order.status（draft/confirmed/canceled）作底色。
 
-- **Q: be 改什么？** → A: **预期零改动**。FE 拉 `GET /orders?date=` + `GET /delivery?date=`（fulfillments）在前端 join（order.id == fulfillment.order.id）。勾销/收款用既有 `PATCH /fulfillments`（by address 前缀 / by id）/ `PATCH /orders`（payment）。
+- **Q: be 改什么？** → A: **零契约改动**。FE 拉 `GET /orders?date=` + `GET /delivery?date=`（fulfillments）在前端 join（order.id == fulfillment.order.id）。收款用既有 `PATCH /orders`（payment）。地址前缀勾销走 **前端 preview + `PATCH /fulfillments {ids}` 精确勾**（见下条）。唯一 be 改动：`addressMatches` 抽到 shared、`derivations.ts` import（纯 helper 重定位、非契约/行为变更）。
+
+- **Q: 地址前缀勾销怎么"先确认再勾"？** → A: **前端 preview，不调 be 的 `{address}` 批量端点**（Codex #118 P1：那个端点立刻勾销、不分餐次、只返 `{ok,count}`，没法 preview/撤）。FE 用已加载的 fulfillments + `previewAddressMatch`（当前餐次 + 非 canceled + pending + shared `addressMatches` 前缀+边界）列候选 → 确认卡 → `PATCH /fulfillments {ids}` 精确勾。`addressMatches` 抽 shared，FE 与 be `fulfillmentsMatchingAddress` 共用同一逻辑防漂移。
 
 ## 用户场景与测试
 
@@ -89,10 +91,10 @@
 - **FR-002**: 订单 tab 默认聚焦**最近的未完成餐次**（今天最早一个有 pending 履约的餐次；都完成则最新餐次供回看）；可左右滑切午/晚。
 - **FR-003**: 每行订单显示**双轴独立状态**：履（fulfillment.status pending/done）+ 付（paymentStatus unpaid/paid），各图标各色；order.status 作底色。组合一眼可辨（含 `履✓付○` 已送未付）。
 - **FR-004**: 列表按地址字符串排序（同/近楼栋挨一起）。
-- **FR-005**: **地址前缀批量勾销**——输片段 → 复用 be `PATCH /fulfillments {address}`（走 `fulfillmentsMatchingAddress` 前缀+边界）→ 多命中给确认卡 → 全标 done；0 命中提示。
+- **FR-005**: **地址前缀批量勾销**——输片段 → **前端 preview**（`previewAddressMatch`：当前餐次 + 非 canceled + pending + shared `addressMatches` 前缀+边界，**不落库**）→ 多命中给确认卡 → 确认后 `PATCH /fulfillments {ids}` 精确勾；0 命中提示。**不**用 be 的 `{address}` 批量端点（它立刻勾销、不分餐次）。
 - **FR-006**: 单行勾销 → `PATCH /fulfillments {ids:[...]}`；单行标已付/回退 → `PATCH /orders {paymentStatus}`。
-- **FR-007**: 缺口——当前餐次 `fulfillment.status=pending` 的计数，顶部展示。
-- **FR-008**: be 端**零改动**（orders/delivery/fulfillments 端点全复用；FE join orders+fulfillments）。
+- **FR-007**: 缺口——当前餐次**非 canceled** 行里 `fulfillment.status=pending` 的计数，顶部展示。
+- **FR-008**: be 端**零契约改动**（orders/delivery/fulfillments 端点全复用；FE join orders+fulfillments）。唯一 be 改动：`addressMatches` 抽到 shared、`derivations.ts` import（纯 helper 重定位、非契约/行为变更），FE preview 与 be 共用前缀+边界逻辑防漂移。
 - **FR-009**: 同 PR 更新 `docs/kith-inn/PRD.md` §5.5（4 tab → 3 tab）+ `DATA-MODEL.md`（送餐并入订单）。
 
 ## 成功标准
