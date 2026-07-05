@@ -154,7 +154,7 @@ export default function Kitchen() {
         </View>
 
         {formOpen && (
-          <View className="mb-[32rpx] card">
+          <View className="mb-[32rpx] card bg-surface p-[24rpx]">
             <Text className="mb-[16rpx] block text-[28rpx] font-bold">{editingId != null ? "编辑菜品" : "新增菜品"}</Text>
             <Text className="mb-[8rpx] block text-[24rpx] text-muted">菜名</Text>
             <Input

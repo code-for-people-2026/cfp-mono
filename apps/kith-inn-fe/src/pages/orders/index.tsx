@@ -89,7 +89,7 @@ export default function Orders() {
           orders.map((o) => {
             const dot = orderStatusDot(o);
             return (
-              <View key={String(o.id)} className="my-[24rpx] card">
+              <View key={String(o.id)} className="my-[24rpx] card bg-surface p-[24rpx]">
                 <View className="flex items-center gap-[20rpx]">
                   <Tag
                     className={`inline-flex h-[68rpx] w-[68rpx] items-center justify-center rounded-[16rpx] text-[24rpx] font-extrabold ${STATUS_DOT_CLASS[dot.tone]}`}
