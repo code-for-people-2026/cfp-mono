@@ -17,7 +17,7 @@ description: "kith-inn agent 菜单工具（US-M06）实现任务"
   publishMenu(planId: string|number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   getMenu(date?: string): Promise<MenuPlanView[]>;
   ```
-- [ ] T002 在 `services.ts` 的生产实现（`createCmsAgentServices`）里实现这 4 方法——各调对应 be 菜单路由端点（`POST /menu/generate`、`POST /menu/plans/:id/swap`、`POST /menu/plans/:id/publish`、`GET /menu/plans`），经 `Taro.request`/`fetch`（复用 `lib/cms/client.ts` 的 cmsBase + OPERATOR_JWT_HEADER 模式）。
+- [ ] T002 在 `services.ts` 的生产实现（`createCmsAgentServices`）里实现这 4 方法——各调 **be 菜单路由端点**（`POST /menu/generate`、`POST /menu/plans/:id/swap`、`POST /menu/plans/:id/publish`、`GET /menu/plans`）。注意：这些是 **be 路由**（`sellerAuth` 保护），不是 cms internal route——用 **be base URL + `Authorization: Bearer ${jwt}`**（不是 cmsBase + OPERATOR_JWT_HEADER，Codex #121 P2）。be base URL 可从 `process.env.BE_BASE_URL` 或与 be 自身同进程（agent 在 be 内运行 → 可直接调 `menuRoutes` 的 Hono `app.request()`，免 HTTP 往返）。
 - [ ] T003 在 `services.test.ts` 加 4 方法的 mock-cms 用例：
   - generateMenu：正常返回 plans；pool-too-small 返 `{ok:false, reason}`；published 无 force 返 409。
   - swapDish：auto 模式（无 replacementId）；指定模式；published 无 force 返 409。

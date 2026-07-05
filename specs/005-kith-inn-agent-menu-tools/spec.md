@@ -28,6 +28,7 @@
 
 - **Q: 哪些菜单操作暴露给 agent？** → A: 4 个——`generate_menu`（生成/重排）、`swap_dish`（换一道）、`publish_menu`（发布+文案）、`get_menu`（查菜单）。覆盖 US-M04（随机换）、US-M05（指定换）、US-M06（口头改）、US-M07（发群文案）的 agent 路径。
 - **Q: agent 怎么知道 planId？** → A: `get_menu` 返回的 plan 列表带 planId；agent 先查再操作（或 LLM 从上文 tool 返回中拿）。generate 的返回也带 planId。
+- **Q: 日期怎么传？** → A: 工具 schema 的 `date` 参数定义为 `YYYY-MM-DD` 字符串（Codex #121 P2）。LLM 负责把自然语言"明天""后天"解析成具体日期（system prompt 里给指引："明天 = 今天的日期 +1，今天按 Asia/Shanghai"；run.ts 的 system prompt 注入今天日期）。不传中文相对日期给 be 端点。`get_menu` 的 date 省略时默认今天。
 - **Q: 操作 published 菜单的二次确认？** → A: be 端点已有 force 守卫（无 force→409）。agent 工具收到 409 → 回复「这餐已发给顾客，确定要改吗？」→ 用户确认 → 带 force 重调。与 panel 的 modal 确认等价。
 - **Q: 接龙文案返回给用户怎么展示？** → A: publish_menu 返回 `{ text: 接龙文案, card?: { type: "publish-text", data: { publishText } } }`——文字直接展示在聊天气泡里，桃子复制即可。不做专门 card（文案是纯文本，气泡够用）。
 
@@ -35,11 +36,11 @@
 
 ### US1 — 桃子在「今天」说"生成明天午餐"
 
-桃子：「明天午餐排一下」→ agent 调 `generate_menu({ targets: [{ date: "明天", occasion: "lunch" }] })` → 回复「明天午餐排好了：红烧牛肉、清炒时蔬…」。
+桃子：「明天午餐排一下」→ agent 解析"明天"为 `2026-07-06`（system prompt 注入今天日期）→ 调 `generate_menu({ targets: [{ date: "2026-07-06", occasion: "lunch" }] })` → 回复「明天午餐排好了：红烧牛肉、清炒时蔬…」。
 
 ### US2 — 桃子说"把明天午餐的牛腩换掉"
 
-桃子：「把明天午餐的牛腩换掉」→ agent 先 `get_menu` 拿到 planId + dishes → 调 `swap_dish({ planId, dishId })` → 回复「换成了香菇滑鸡」。
+桃子：「把明天午餐的牛腩换掉」→ agent 先 `get_menu({ date: "2026-07-06" })` 拿到 planId + dishes → 找到"牛腩"的 dishId → 调 `swap_dish({ planId, dishId })` → 回复「换成了香菇滑鸡」。
 
 ### US3 — 桃子说"把明天午餐发出去"
 
@@ -47,7 +48,7 @@
 
 ### US4 — 桃子问"明天菜单是什么"
 
-桃子：「明天菜单是什么」→ agent `get_menu({ date: "明天" })` → 回复「明天午餐：红烧牛肉、清炒时蔬…；晚餐：…」。
+桃子：「明天菜单是什么」→ agent `get_menu({ date: "2026-07-06" })` → 回复「明天午餐：红烧牛肉、清炒时蔬…；晚餐：…」。
 
 ## 需求
 
