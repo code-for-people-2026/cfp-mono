@@ -70,7 +70,7 @@ export default function Orders() {
   };
 
   return (
-    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+    <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
       <View className="px-[32rpx] pb-[200rpx] pt-[32rpx]">
         <View className="mb-[28rpx] flex items-start justify-between gap-[24rpx]">
@@ -78,7 +78,7 @@ export default function Orders() {
             <Text className="block text-[44rpx] font-bold leading-tight">订单台账</Text>
             <Text className="mt-[12rpx] block text-[26rpx] text-muted">草稿能找回，确认后才进入经营口径。</Text>
           </View>
-          <Text className="flex-none rounded-[16rpx] border border-line bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">今天</Text>
+          <Text className="flex-none card bg-white px-[20rpx] py-[16rpx] text-[24rpx] font-extrabold">今天</Text>
         </View>
 
         {orders === null ? (
@@ -89,7 +89,7 @@ export default function Orders() {
           orders.map((o) => {
             const dot = orderStatusDot(o);
             return (
-              <View key={String(o.id)} className="my-[24rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
+              <View key={String(o.id)} className="my-[24rpx] card">
                 <View className="flex items-center gap-[20rpx]">
                   <Tag
                     className={`inline-flex h-[68rpx] w-[68rpx] items-center justify-center rounded-[16rpx] text-[24rpx] font-extrabold ${STATUS_DOT_CLASS[dot.tone]}`}
@@ -103,12 +103,12 @@ export default function Orders() {
                 </View>
                 <View className="mt-[16rpx] flex gap-[16rpx]">
                   {o.status === "draft" && (
-                    <Button size="small" type="primary" className="[background:var(--color-red)] text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>
+                    <Button size="small" type="primary" className="bg-red text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>
                       确认
                     </Button>
                   )}
                   {o.status === "confirmed" && o.paymentStatus === "unpaid" && (
-                    <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>
+                    <Button size="small" className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>
                       标已付
                     </Button>
                   )}

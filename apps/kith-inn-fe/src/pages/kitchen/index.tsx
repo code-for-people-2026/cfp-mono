@@ -144,17 +144,17 @@ export default function Kitchen() {
   const isEmpty = groups.length === 0 && inactive.length === 0;
 
   return (
-    <View className="min-h-screen bg-linear-to-b from-paper via-wash to-white text-ink">
+    <View className="page-shell">
       <TopBar title="桃子的灶台" subtitle="菜品池" />
       <View className="px-[32rpx] pb-[60rpx] pt-[32rpx]">
         <View className="mb-[24rpx] flex justify-end">
-          <Button size="small" type="primary" className="[background:var(--color-red)] text-white" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setFormOpen(true); }}>
+          <Button size="small" type="primary" className="bg-red text-white" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setFormOpen(true); }}>
             + 新增菜品
           </Button>
         </View>
 
         {formOpen && (
-          <View className="mb-[32rpx] rounded-[16rpx] border border-line bg-surface p-[24rpx]">
+          <View className="mb-[32rpx] card">
             <Text className="mb-[16rpx] block text-[28rpx] font-bold">{editingId != null ? "编辑菜品" : "新增菜品"}</Text>
             <Text className="mb-[8rpx] block text-[24rpx] text-muted">菜名</Text>
             <Input
@@ -177,7 +177,7 @@ export default function Kitchen() {
                   key={c.value}
                   size="small"
                   type={form.category === c.value ? "primary" : "default"}
-                  className={form.category === c.value ? "[background:var(--color-red)] text-white" : "[background:var(--color-surface)] text-ink"}
+                  className={form.category === c.value ? "bg-red text-white" : "bg-surface text-ink"}
                   onClick={() => setForm((f) => ({ ...f, category: c.value }))}
                 >
                   {c.label}
@@ -185,10 +185,10 @@ export default function Kitchen() {
               ))}
             </View>
             <View className="flex gap-[16rpx]">
-              <Button size="small" type="primary" className="[background:var(--color-red)] text-white" onClick={submit}>
+              <Button size="small" type="primary" className="bg-red text-white" onClick={submit}>
                 保存
               </Button>
-              <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={closeForm}>
+              <Button size="small" className="bg-surface text-ink" onClick={closeForm}>
                 取消
               </Button>
             </View>
@@ -208,10 +208,10 @@ export default function Kitchen() {
                     <Text className="text-[24rpx] text-muted">{CATEGORIES.find((c) => c.value === offering.category)?.label}</Text>
                   ) : null}
                   <View className="ml-auto flex gap-[12rpx]">
-                    <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={() => edit(offering)}>
+                    <Button size="small" className="bg-surface text-ink" onClick={() => edit(offering)}>
                       编辑
                     </Button>
-                    <Button size="small" className="[background:var(--color-surface)] text-muted" onClick={() => del(offering)}>
+                    <Button size="small" className="bg-surface text-muted" onClick={() => del(offering)}>
                       删除
                     </Button>
                   </View>
@@ -228,7 +228,7 @@ export default function Kitchen() {
               <View key={String(offering.id)} className="flex items-baseline gap-[12rpx] border-b border-line py-[12rpx] last:border-b-0">
                 <Text className="text-[28rpx] text-muted line-through">{offering.name}</Text>
                 <View className="ml-auto">
-                  <Button size="small" type="primary" className="[background:var(--color-amber)] text-white" onClick={() => restore(offering)}>
+                  <Button size="small" type="primary" className="bg-amber text-white" onClick={() => restore(offering)}>
                     恢复
                   </Button>
                 </View>
