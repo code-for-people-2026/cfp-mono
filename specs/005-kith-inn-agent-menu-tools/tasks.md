@@ -35,28 +35,32 @@ description: "kith-inn agent 菜单工具（US-M06）实现任务"
 
 ## Phase 3：run.ts prompt + 集成测试
 
-- [ ] T006 在 `apps/kith-inn-be/src/agent/run.ts` 的 system prompt 加菜单能力描述段落（"你可以帮桃子管理菜单：生成、换菜、发布（发群文案）、查看"）。
+- [ ] T006 在 `apps/kith-inn-be/src/agent/run.ts`：
+  - system prompt 加菜单能力描述段落（"你可以帮桃子管理菜单：生成、换菜、发布（发群文案）、查看"）。
+  - **动态注入今天日期**（Codex #121 P2）：prompt 不再是纯常量——runAgent 时算 `todayShanghai()` 拼进 prompt（"今天是 {date}，用户说'明天'= {date+1}"），让 LLM 能正确解析相对日期。
 - [ ] T007 在 `run.test.ts` 加脚本化用例：mock LLM 返回 `generate_menu` tool_call → 执行 → 断言 reply 含菜名。一条够（证明工具被发现 + 执行）。
 
 ## Phase 3.5：可靠性加固（PRD §5.5 补缺）
 
 - [ ] T007a 在 `packages/kith-inn-shared/src/schemas.ts` 的 `cardPayloadSchema` 加 `{ type: "operation-confirm", data: { toolName: string; summary: string; args: Record<string, unknown> } }`。types.ts 推导。
-- [ ] T007b 在 `apps/kith-inn-be/src/agent/pendingState.ts`（或新建 `pendingOps.ts`）加 per-operator pending operation 机制（同 pendingState 模式）：`setPendingOp(operatorId, { toolName, args, summary })` / `getPendingOp(operatorId)` / `clearPendingOp(operatorId)`。
-- [ ] T007c 在 `apps/kith-inn-be/src/routes/chat.ts` 加 `POST /chat/confirm-operation`（同 `confirm-customers` 模式）：取 pending op → 确认 args 匹配 → 执行对应 AgentServices 方法 → 清 pending → 返回结果。
+- [ ] T007b 在 `apps/kith-inn-be/src/agent/pendingOps.ts`（新文件，同 pendingState 模式）加 per-operator pending operation：`setPendingOp(operatorId, { toolName, args, summary })` / `getPendingOp(operatorId)` / `clearPendingOp(operatorId)`。
+- [ ] T007c 在 `apps/kith-inn-be/src/routes/chat.ts` 加 `POST /chat/confirm-operation`（同 `confirm-customers` 模式）：取 pending op → 执行对应 AgentServices 方法 → 清 pending → 返回结果。
+- [ ] T007d **FE**（Codex #121 P2）：在 `apps/kith-inn-fe/src/components/ChatCard.tsx` 加 `operation-confirm` card 渲染（显示 summary + 「确认」按钮 → `POST /chat/confirm-operation`）；否则未知 card type 走 delivery fallback 会崩。
 - [ ] T008 修改**重操作**的 execute handler（confirm_order、cancel_order、generate_menu force、swap_dish published、publish_menu）→ 检测"需要确认"→ 存 pending op → 返 `{ text: "将{动作}：{summary}，确认？", card: operation-confirm }`。
 - [ ] T009 所有工具 execute handler 入口加 zod safeParse（用 shared schema 校验 LLM 填的参数）；现有手动 coerce（parseOccasion/parseOrderItems）保留作 fallback。
-- [ ] T010 在 `tools.test.ts` 加用例：重操作 → 返确认卡（不直接执行）；确认后 → 执行；轻操作 → 直接执行。zod safeParse 挡非法参数。
+- [ ] T010 **swap_dish replacement 名称**（Codex #121 P2）：swap route 返 `{plan, warning}` 不含 replacement dish。工具层从 plan.dishes 与 args.dishId diff 出新菜名（被换掉的 dishId 不在新 plan.dishes 里、新菜在）。或 be route 加返 `replacement` 字段（更干净，但改契约——倾向工具层 diff）。
+- [ ] T011 在 `tools.test.ts` 加用例：重操作 → 返确认卡（不直接执行）；确认后 → 执行；轻操作 → 直接执行。zod safeParse 挡非法参数。
 
 ## Phase 4：门禁 + PR
 
-- [ ] T011 `pnpm verify`（lint/typecheck/100% 覆盖/knip/build）全绿；PR 描述记录；遵守 AGENTS.md PR/Codex review 流程。
+- [ ] T012 `pnpm verify`（lint/typecheck/100% 覆盖/knip/build）全绿；PR 描述记录；遵守 AGENTS.md PR/Codex review 流程。
 
 ## Dependencies
 
 - Phase 1 无依赖（services 接口 + 实现）。
 - Phase 2 依赖 Phase 1（工具调 services）。
-- Phase 3 依赖 Phase 1+2（run.ts 注册 + prompt）。
-- Phase 3.5（可靠性加固）依赖 Phase 2（改 execute handler）；3.5a/b/c 可与 3 并行。
+- Phase 3 依赖 Phase 1+2（run.ts 注册 + prompt + 日期注入）。
+- Phase 3.5（可靠性加固）依赖 Phase 2（改 execute handler）；3.5a/b/d 可与 3 并行。
 - Phase 4 全部完成后。
 
 ## Out of Scope
