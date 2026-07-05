@@ -25,26 +25,31 @@ description: "kith-inn 合并配送进订单 实现任务"
   - `lifecycleDots(row)`：返 `{ base: "draft"|"confirmed"|"canceled", delivery: "pending"|"done"|"none", payment: "unpaid"|"paid" }`（delivery `none` = 无 fulfillment，draft 单）。
   - `mealFocus(rows)`：今天最早一个有 `delivery==="pending"` 的餐次（午→晚）；都 done → 最晚存在的餐次；空 → null。
   - `sortByAddress(rows)`：按 `order.address` 字符串升序（`localeCompare`），无地址排末。
-  覆盖 FR-002/FR-003/FR-004。
-- [ ] T002 [P] 在同文件加 `gapCount(rows, occasion)`（该餐次 `delivery==="pending"` 计数）+ `byOccasion(rows, occasion)`（筛该餐次 confirmed/canceled 行）用例。覆盖 FR-007。
+  - `byOccasion(rows, occasion)`：**返该餐次所有行**（draft/confirmed/canceled 都留，不按 status 过滤；渲染区分）。
+  - `previewAddressMatch(rows, occasion, fragment)`：返**当前餐次** + `base!=="canceled"` + `delivery==="pending"` + 地址 `addressMatches(addr, fragment)`（shared）的行——供确认卡预览，**不落库**。
+  覆盖 FR-002/FR-003/FR-004/FR-005。
+- [ ] T002 [P] 在同文件加 `gapCount(rows, occasion)`（该餐次**非 canceled** 行里 `delivery==="pending"` 的计数）用例（canceled 不计缺口）。覆盖 FR-007。
 
 ## Phase 2：纯函数实现
 
-- [ ] T003 在 `apps/kith-inn-fe/src/logic/ordersLifecycle.ts`（新）实现 T001/T002 的函数。类型：
+- [ ] T003a 在 `packages/kith-inn-shared/src/addressMatch.ts`（新）抽出 `addressMatches(address: string, fragment: string): boolean`——**前缀 + 纯数字楼栋边界**（与 #117 一致：纯数字片段匹配地址开头完整数字段；带字母 startsWith）。纯函数、单测。`apps/kith-inn-be/src/domain/delivery/derivations.ts` 改 import 此函数（替换内联逻辑，**纯 helper 重定位、非契约变更**）——FE preview 与 be `fulfillmentsMatchingAddress` 共用同一来源，防漂移。
+- [ ] T003b 在 `apps/kith-inn-fe/src/logic/ordersLifecycle.ts`（新）实现 T001/T002 的函数。类型：
   ```ts
   type Row = { order: Order; fulfillment?: Fulfillment };
   function joinOrdersFulfillments(orders: Order[], fulfillments: Fulfillment[]): Row[]
   function lifecycleDots(row: Row): { base; delivery: "pending"|"done"|"none"; payment: "unpaid"|"paid" }
   function mealFocus(rows: Row[]): "lunch" | "dinner" | null
   function sortByAddress(rows: Row[]): Row[]
-  function byOccasion(rows: Row[], occasion: "lunch"|"dinner"): Row[]
-  function gapCount(rows: Row[], occasion: "lunch"|"dinner"): number
+  function byOccasion(rows: Row[], occasion): Row[]   // 不过滤 status
+  function previewAddressMatch(rows, occasion, fragment): Row[]  // 当前餐次 + 非canceled + pending + addressMatches
+  function gapCount(rows, occasion): number  // 非canceled 的 pending 计数
   ```
   - `lifecycleDots.delivery`：`row.fulfillment?.status === "done"` → done；`=== "pending"` → pending；无 fulfillment → none。
   - `lifecycleDots.payment`：`order.paymentStatus === "paid" || "reconciled"` → paid，否则 unpaid。
-  - `lifecycleDots.base`：`order.status`（draft/confirmed/canceled）。
+  - `lifecycleDots.base`：`order.status`。
+  - `previewAddressMatch` 用 `addressMatches`（@cfp/kith-inn-shared）。
 
-**Checkpoint**: 纯函数 100% 单测；`pnpm --filter @cfp/kith-inn-fe test` 绿。
+**Checkpoint**: 纯函数 100% 单测；`pnpm --filter @cfp/kith-inn-shared test` + `@cfp/kith-inn-fe test` 绿。
 
 ## Phase 3：订单页重写 + 删配送 + 三 tab
 
@@ -52,7 +57,7 @@ description: "kith-inn 合并配送进订单 实现任务"
   - mount：并行拉 `GET /orders?date=today` + `GET /delivery?date=today` → `joinOrdersFulfillments` → `sortByAddress` → state。
   - 餐次焦点：`mealFocus` → 默认；顶部 `[◀ 前一餐] 今日·{午餐|晚餐} [后一餐 ▶]` 切午/晚（M1 限今天午/晚）。
   - 缺口：`gapCount(rows, currentOccasion)` 顶部 "本餐次 X 单未送"。
-  - 地址前缀勾销：输入框 + 「勾销」→ 调 `PATCH /delivery/fulfillments {address: 片段}`（be 多命中）→ 200 拿回命中 ids → `Taro.showModal` 列确认 → 确认 → `PATCH /delivery/fulfillments {ids, set:{status:"done"}}` → refetch；0 命中 toast。
+  - 地址前缀勾销（**前端 preview、不先落库**，Codex #118 P1）：输入框 + 「勾销」→ `previewAddressMatch(rows, currentOccasion, 片段)`（已加载的当前餐次 pending + 前缀匹配，**不调 be**）→ 0 命中 toast；≥1 → `Taro.showModal` 列候选（顾客+地址）→ 确认 → `PATCH /delivery/fulfillments {ids: 候选 ids, set:{status:"done"}}`（**精确 ids、非 address**）→ refetch。
   - 列表（`byOccasion` 当前餐次）：每行 顾客/份数/地址 + 双轴 Tag（`lifecycleDots`：[履○/✓][付○/✓] 各色）+ 单行「标送达」（`PATCH /fulfillments {ids:[id]}`）+ 「标已付/回退」（`PATCH /orders {paymentStatus}`）。
   - draft 行淡、canceled 划线灰、不计缺口。
   - 401 → 清 token 跳登录（同 menu 页）。
