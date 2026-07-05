@@ -213,7 +213,7 @@ export default function Menu() {
 function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () => void; onSwap: (dishId: string | number) => void; onPublish: () => void }) {
   const { occasion, plan, onGen, onSwap, onPublish } = props;
   return (
-    <View className="my-[20rpx] card">
+    <View className="my-[20rpx] card bg-surface p-[24rpx]">
       <View className="mb-[16rpx] flex items-center gap-[16rpx]">
         <Text className="text-[30rpx] font-bold">{OCCASION_LABEL[occasion]}</Text>
         {plan?.status === "published" && <Tag className="bg-green-soft text-green">已发出</Tag>}

@@ -106,7 +106,7 @@ export default function Delivery() {
           view.sort.map((g) => {
             const p = buildingProgress(g);
             return (
-              <View key={g.address} className="my-[24rpx] card">
+              <View key={g.address} className="my-[24rpx] card bg-surface p-[24rpx]">
                 <View className="mb-[20rpx] flex items-center justify-between gap-[20rpx]">
                   <Text className="text-[32rpx] font-bold">{g.address} · {g.count} 份</Text>
                   <Text className="text-[24rpx] text-muted">{p.done}/{p.total}</Text>
