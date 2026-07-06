@@ -24,6 +24,10 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
     vi.fn(async () => ({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 3, recentOrders: "#45 王燕萍" })),
   getTodayOrders: over.getTodayOrders ?? vi.fn(async () => []),
   getTodayDelivery: over.getTodayDelivery ?? vi.fn(async () => ({ totalPending: 0, groups: [] })),
+  generateMenu: over.generateMenu ?? vi.fn(async () => ({ ok: true as const, plans: [] })),
+  swapDish: over.swapDish ?? vi.fn(async () => ({ ok: true as const, plan: {} as never })),
+  publishMenu: over.publishMenu ?? vi.fn(async () => ({ ok: true as const, publishText: "test" })),
+  getMenu: over.getMenu ?? vi.fn(async () => []),
 });
 
 describe("runAgent", () => {

@@ -24,6 +24,10 @@ const mockCms = (): AgentCms =>
     createCustomer: vi.fn(),
     listFulfillments: vi.fn(),
     listOrders: vi.fn(),
+  listMenuPlans: vi.fn(),
+  getMenuPlan: vi.fn(),
+  upsertMenuPlans: vi.fn(),
+  patchMenuPlan: vi.fn(),
   }) as AgentCms;
 
 const token = async () => issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET);
