@@ -1,4 +1,4 @@
-import type { CardPayload, DeliveryCardData, Order } from "@cfp/kith-inn-shared";
+import type { CardPayload, DeliveryCardData, MenuPlanView, Order } from "@cfp/kith-inn-shared";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 
 /**
@@ -26,6 +26,11 @@ export type AgentServices = {
   getTodaySummary(): Promise<{ unconfirmedOrders: number; pendingDeliveries: number; unpaidOrders: number; recentOrders: string }>;
   getTodayOrders(): Promise<Order[]>;
   getTodayDelivery(): Promise<DeliveryCardData>;
+  // Menu tools (feature 005)
+  generateMenu(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; plans: MenuPlanView[] } | { ok: false; reason: string }>;
+  swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean): Promise<{ ok: true; plan: MenuPlanView; warning?: string } | { ok: false; error: string }>;
+  publishMenu(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
+  getMenu(date?: string): Promise<MenuPlanView[]>;
 };
 
 export type AgentTool = {
@@ -153,6 +158,54 @@ export const AGENT_TOOLS: AgentTool[] = [
       const d = await s.getTodayDelivery();
       if (d.groups.length === 0) return { text: "今天没有要送的。" };
       return { text: `今天送餐：还差 ${d.totalPending} 份，看下面分拣卡片。`, card: { type: "delivery", data: d } };
+    },
+  },
+  // ── Menu tools (feature 005) ──────────────────────────────────────
+  {
+    def: { type: "function", function: { name: "get_menu", description: "查某天的菜单（已排好的 plan）。用户问「明天/今天菜单是什么」「安排了什么菜」时调它。date 格式 YYYY-MM-DD，省略=今天。", parameters: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD，省略=今天" } } } } },
+    execute: async (s, args) => {
+      const date = typeof args.date === "string" ? args.date : undefined;
+      const plans = await s.getMenu(date);
+      if (plans.length === 0) return { text: `${date ?? "今天"}还没有排菜单。` };
+      const lines = plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
+      return { text: `${date ?? "今天"}菜单：\n${lines.join("\n")}` };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "generate_menu", description: "生成或重新排菜。用户说「排一下明天午餐」「生成下周菜单」「重新排」时调它。targets 是要排的日期+餐次列表。force=true 覆盖已发出的菜单（需桃子确认）。", parameters: { type: "object", properties: { targets: { type: "array", items: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD" }, occasion: { type: "string", enum: ["lunch", "dinner"] } }, required: ["date", "occasion"] } }, force: { type: "boolean" } }, required: ["targets"] } } },
+    execute: async (s, args) => {
+      const targets = Array.isArray(args.targets) ? args.targets.map((t) => ({ date: String((t as { date?: unknown }).date), occasion: (t as { occasion?: unknown }).occasion === "dinner" ? "dinner" as const : "lunch" as const })) : [];
+      if (targets.length === 0) return { text: "没说要排哪天哪餐。" };
+      const r = await s.generateMenu(targets, args.force === true);
+      if (!r.ok) {
+        if (r.reason === "plan-published") return { text: "这餐已经发给顾客了，确定要重新排吗？确认后我覆写。" };
+        if (r.reason === "pool-too-small") return { text: "菜品池不够，排不满。先去菜品池加几道菜。" };
+        return { text: "排菜失败，再试一下？" };
+      }
+      const lines = r.plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
+      return { text: `排好了：\n${lines.join("\n")}` };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "swap_dish", description: "换掉菜单里的一道菜。planId 和 dishId 从 get_menu 返回里拿。不传 replacementId=自动换一道（避重）；传了=指定换。force=true 改已发出的菜单（需桃子确认）。", parameters: { type: "object", properties: { planId: { type: "integer" }, dishId: { type: "integer" }, replacementId: { type: "integer" }, force: { type: "boolean" } }, required: ["planId", "dishId"] } } },
+    execute: async (s, args) => {
+      const r = await s.swapDish(Number(args.planId), Number(args.dishId), args.replacementId !== undefined ? Number(args.replacementId) : undefined, args.force === true);
+      if (!r.ok) {
+        if (r.error === "plan-published") return { text: "这餐已经发出去了，确定要换菜吗？确认后我改（旧文案会作废）。" };
+        if (r.error === "no-alternative") return { text: "池里没有别的同类菜可换了。" };
+        return { text: `换菜失败：${r.error}` };
+      }
+      // diff: find the new dish (in plan.dishes but not matching original dishId)
+      const newName = r.plan.dishes.find((d) => String(d.id) !== String(args.dishId))?.name ?? "新菜";
+      return { text: r.warning ? `换成了${newName}。注意：${r.warning}` : `换成了${newName}。` };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "publish_menu", description: "发布某餐菜单（生成接龙群文案+标记已发出）。planId 从 get_menu 拿。用户说「发出去」「给我文案」「发群通知」时调它。", parameters: { type: "object", properties: { planId: { type: "integer" } }, required: ["planId"] } } },
+    execute: async (s, args) => {
+      const r = await s.publishMenu(Number(args.planId));
+      if (!r.ok) return { text: `发布失败：${r.error}` };
+      return { text: `菜单已发布，文案如下（复制贴群）：\n\n${r.publishText}` };
     },
   },
 ];

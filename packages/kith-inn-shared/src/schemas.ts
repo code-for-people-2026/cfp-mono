@@ -270,6 +270,7 @@ export const cardPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("customer-confirm"), data: z.object({ items: z.array(confirmCustomerItemSchema) }) }),
   z.object({ type: z.literal("orders"), data: orderCardDataSchema }),
   z.object({ type: z.literal("delivery"), data: deliveryCardDataSchema }),
+  z.object({ type: z.literal("operation-confirm"), data: z.object({ toolName: z.string(), summary: z.string(), args: z.record(z.string(), z.unknown()) }) }),
 ]);
 
 export const chatMessageSchema = z.object({

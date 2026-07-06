@@ -9,9 +9,12 @@
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
-import type { Customer, DeliveryCardData, Fulfillment, Order, OrderStatus } from "@cfp/kith-inn-shared";
+import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderStatus, Seller } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
+import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
+import { buildJielongMenuText } from "../domain/menu/jielongText";
+import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { customerName, todayShanghai } from "../lib/domainUtil";
 import { setPending } from "./pendingState";
@@ -24,6 +27,12 @@ export type AgentCms = OrderCms & {
   listFulfillments(jwt: string, query?: { date?: string; occasion?: string }): Promise<Fulfillment[]>;
   listOrders(jwt: string, query?: { date?: string; status?: OrderStatus }): Promise<Order[]>;
   setFulfillmentsByIds(jwt: string, ids: Array<string | number>, set: { status: "done" }): Promise<void>;
+  // Menu plan cms methods (feature 005, reuse feature 003/004 cms clients)
+  listMenuPlans(jwt: string, query: { from: string; to: string }): Promise<MenuPlan[]>;
+  getMenuPlan(jwt: string, id: string | number): Promise<MenuPlan>;
+  upsertMenuPlans(jwt: string, items: MenuPlanUpsertInput[]): Promise<MenuPlan[]>;
+  patchMenuPlan(jwt: string, id: string | number, patch: MenuPlanPatch): Promise<MenuPlan>;
+  getSeller(jwt: string): Promise<Seller>;
 };
 
 type AgentServicesDeps = {
@@ -238,5 +247,118 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         return { totalPending: 0, groups: [] };
       }
     },
+
+    // ── Menu tools (feature 005) ──────────────────────────────────────
+
+    /** Generate or regenerate menu plans for given targets (feature 003 domain fns). */
+    async generateMenu(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean) {
+      try {
+        const [offerings, existing] = await Promise.all([
+          cms.findOfferings(jwt),
+          cms.listMenuPlans(jwt, {
+            from: targets.map((t) => t.date).sort()[0]!,
+            to: targets.map((t) => t.date).sort().at(-1)!,
+          }),
+        ]);
+        const pubKey = new Set(
+          existing.filter((p) => p.status === "published").map((p) => {
+            const s = p.slot as { date?: string; occasion?: string };
+            return `${s?.date}|${s?.occasion}`;
+          }),
+        );
+        for (const t of targets) {
+          if (pubKey.has(`${t.date}|${t.occasion}`) && !force) {
+            return { ok: false as const, reason: "plan-published" };
+          }
+        }
+        const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
+        const result = generateForTargets({ targets, pool });
+        if (!result.ok) return { ok: false as const, reason: "pool-too-small" };
+        const items: MenuPlanUpsertInput[] = result.menu.map((s) => ({
+          date: s.day, occasion: s.occasion, offerings: s.dishes.map((d) => d.id), status: "draft",
+        }));
+        const written = await cms.upsertMenuPlans(jwt, items);
+        return { ok: true as const, plans: written.map(menuPlanToView) };
+      } catch {
+        return { ok: false as const, reason: "generate failed" };
+      }
+    },
+
+    /** Swap a dish in a plan (auto or specified). Returns {plan, warning?} or error. */
+    async swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean) {
+      try {
+        const plan = await cms.getMenuPlan(jwt, planId);
+        if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
+        const offerings = (plan.offerings ?? []) as Offering[];
+        const pool = (await cms.findOfferings(jwt)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
+        const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+        const menu = [{ day: slot.date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+        let newReplacementId: string | number;
+        let warning: string | undefined;
+        if (replacementId !== undefined) {
+          const r = swapDishSpecified({ menu, target: { day: slot.date, occasion: slot.occasion }, dishId, replacementId, pool });
+          if (!r.ok) return { ok: false as const, error: r.reason };
+          newReplacementId = r.replacement.id;
+          warning = r.warning;
+        } else {
+          const r = swapDish({ menu, target: { day: slot.date, occasion: slot.occasion }, dishId, pool });
+          if (!r.ok) return { ok: false as const, error: r.reason };
+          newReplacementId = r.replacement.id;
+        }
+        const newOfferings = offerings.map((o) => (String(o.id) === String(dishId) ? newReplacementId : o.id));
+        const patch: MenuPlanPatch = plan.status === "published"
+          ? { offerings: newOfferings, publishText: null }
+          : { offerings: newOfferings };
+        const updated = await cms.patchMenuPlan(jwt, planId, patch);
+        return { ok: true as const, plan: menuPlanToView(updated), warning };
+      } catch {
+        return { ok: false as const, error: "swap failed" };
+      }
+    },
+
+    /** Publish a plan (draft→published + 接龙文案). */
+    async publishMenu(planId: string | number) {
+      try {
+        const plan = await cms.getMenuPlan(jwt, planId);
+        let text = plan.publishText;
+        const patch: MenuPlanPatch = {};
+        if (plan.status === "draft") patch.status = "published";
+        if (!text) {
+          const seller = await cms.getSeller(jwt);
+          const dishNames = (plan.offerings as Offering[]).map((o) => o.name);
+          const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+          text = buildJielongMenuText({ date: slot.date, occasion: slot.occasion, dishNames }, { name: seller.name, priceCents: seller.defaultPriceCents });
+          patch.publishText = text;
+        }
+        if (Object.keys(patch).length > 0) await cms.patchMenuPlan(jwt, planId, patch);
+        return { ok: true as const, publishText: text };
+      } catch {
+        return { ok: false as const, error: "publish failed" };
+      }
+    },
+
+    /** Get plans for a date (or today). */
+    async getMenu(date?: string) {
+      try {
+        const d = date ?? todayShanghai(now);
+        const plans = await cms.listMenuPlans(jwt, { from: d, to: d });
+        return plans.map(menuPlanToView);
+      } catch {
+        return [];
+      }
+    },
+  };
+}
+
+/** MenuPlan (cms depth-populated) → MenuPlanView. */
+function menuPlanToView(plan: MenuPlan): MenuPlanView {
+  const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+  return {
+    planId: plan.id,
+    date: slot.date,
+    occasion: slot.occasion,
+    status: plan.status,
+    dishes: (plan.offerings as Offering[]).map(toMenuDish),
+    ...(plan.publishText ? { publishText: plan.publishText } : {}),
   };
 }

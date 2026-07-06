@@ -80,6 +80,15 @@ export function ChatCard({ card, confirmed = false, confirming, customerConfirmA
     );
   }
 
+  if (card.type === "operation-confirm") {
+    return (
+      <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
+        <Text className="block text-[26rpx] font-semibold text-amber">{card.data.summary}</Text>
+        <Text className="mt-[8rpx] block text-[24rpx] text-muted">点确认后执行</Text>
+      </View>
+    );
+  }
+
   // delivery
   return (
     <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">

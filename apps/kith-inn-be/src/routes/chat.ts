@@ -16,6 +16,7 @@ import {
   upsertSlots,
 } from "../lib/cms/orders";
 import { createCustomer, listCustomers } from "../lib/cms/customers";
+import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../lib/cms/menuPlans";
 import { createChatMessage, listChatMessages } from "../lib/cms/chat";
 import { createCmsAgentServices, type AgentCms } from "../agent/services";
 import { clearPending, getPending } from "../agent/pendingState";
@@ -50,6 +51,10 @@ function realAgentCms(): AgentCms {
     createCustomer,
     listFulfillments,
     listOrders,
+    listMenuPlans,
+    getMenuPlan,
+    upsertMenuPlans,
+    patchMenuPlan,
   };
 }
 

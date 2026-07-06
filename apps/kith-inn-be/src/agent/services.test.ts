@@ -20,6 +20,10 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫" }) as never),
   listFulfillments: over.listFulfillments ?? vi.fn(async () => [] as never),
   listOrders: over.listOrders ?? vi.fn(async () => [] as never),
+  listMenuPlans: over.listMenuPlans ?? vi.fn(async () => [] as never),
+  getMenuPlan: over.getMenuPlan ?? vi.fn(async () => ({}) as never),
+  upsertMenuPlans: over.upsertMenuPlans ?? vi.fn(async () => [] as never),
+  patchMenuPlan: over.patchMenuPlan ?? vi.fn(async () => ({}) as never),
 });
 
 const OP = 1;
