@@ -262,7 +262,7 @@ export default function Today() {
                       confirmed={confirmed.has(i)}
                       confirming={confirming}
                       customerConfirmAction={customerConfirmAction}
-                      onConfirm={() => confirmCustomers(i)}
+                      onConfirm={(editedItems) => confirmCustomers(i, editedItems)}
                       onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
                       onMarkDelivered={(ids) => onMarkDelivered(i, ids)}
                     />
