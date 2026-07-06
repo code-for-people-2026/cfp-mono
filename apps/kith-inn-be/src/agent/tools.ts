@@ -167,7 +167,11 @@ export const AGENT_TOOLS: AgentTool[] = [
       const date = typeof args.date === "string" ? args.date : undefined;
       const plans = await s.getMenu(date);
       if (plans.length === 0) return { text: `${date ?? "今天"}还没有排菜单。` };
-      const lines = plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
+      const lines = plans.map((p) => {
+        const occ = p.occasion === "lunch" ? "午餐" : "晚餐";
+        const dishes = p.dishes.map((d) => `${d.name}(#${d.id})`).join("、");
+        return `${occ}(plan#${p.planId})：${dishes}`;
+      });
       return { text: `${date ?? "今天"}菜单：\n${lines.join("\n")}` };
     },
   },
@@ -189,14 +193,20 @@ export const AGENT_TOOLS: AgentTool[] = [
   {
     def: { type: "function", function: { name: "swap_dish", description: "换掉菜单里的一道菜。planId 和 dishId 从 get_menu 返回里拿。不传 replacementId=自动换一道（避重）；传了=指定换。force=true 改已发出的菜单（需桃子确认）。", parameters: { type: "object", properties: { planId: { type: "integer" }, dishId: { type: "integer" }, replacementId: { type: "integer" }, force: { type: "boolean" } }, required: ["planId", "dishId"] } } },
     execute: async (s, args) => {
-      const r = await s.swapDish(Number(args.planId), Number(args.dishId), args.replacementId !== undefined ? Number(args.replacementId) : undefined, args.force === true);
+      const originalDishId = Number(args.dishId);
+      // Fetch the old plan first to know which dish we're replacing (for name reporting)
+      const menu = await s.getMenu();
+      const oldPlan = menu.find((p) => String(p.planId) === String(args.planId));
+      const oldDishIds = oldPlan ? new Set(oldPlan.dishes.map((d) => String(d.id))) : new Set<string>();
+      const r = await s.swapDish(Number(args.planId), originalDishId, args.replacementId !== undefined ? Number(args.replacementId) : undefined, args.force === true);
       if (!r.ok) {
         if (r.error === "plan-published") return { text: "这餐已经发出去了，确定要换菜吗？确认后我改（旧文案会作废）。" };
         if (r.error === "no-alternative") return { text: "池里没有别的同类菜可换了。" };
         return { text: `换菜失败：${r.error}` };
       }
-      // diff: find the new dish (in plan.dishes but not matching original dishId)
-      const newName = r.plan.dishes.find((d) => String(d.id) !== String(args.dishId))?.name ?? "新菜";
+      // The replacement is the dish in the new plan that wasn't in the old plan
+      const newDish = r.plan.dishes.find((d) => !oldDishIds.has(String(d.id)));
+      const newName = newDish?.name ?? "新菜";
       return { text: r.warning ? `换成了${newName}。注意：${r.warning}` : `换成了${newName}。` };
     },
   },
