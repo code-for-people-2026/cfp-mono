@@ -1,6 +1,8 @@
 import { Text, View } from "@tarojs/components";
+import { Input } from "@tarojs/components";
 import { Button, Tag } from "@nutui/nutui-react-taro";
-import type { CardPayload } from "@cfp/kith-inn-shared";
+import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
+import { useState } from "react";
 import { CUSTOMER_CONFIRM_ACTION_LABEL, type CustomerConfirmActionState } from "@/logic/chatCards";
 import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
 
@@ -18,35 +20,12 @@ export function ChatCard({ card, confirmed = false, confirming, customerConfirmA
   confirmed?: boolean;
   confirming: boolean;
   customerConfirmAction?: CustomerConfirmActionState | null;
-  onConfirm: () => void;
+  onConfirm: (items?: ConfirmCustomerItem[]) => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
   onMarkDelivered?: (ids: Array<string | number>) => void;
 }) {
   if (card.type === "customer-confirm") {
-    const action = customerConfirmAction ?? (
-      confirmed
-        ? { status: "confirmed" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL, message: "已建" }
-        : { status: "active" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL }
-    );
-    return (
-      <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
-        <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建</Text>
-        {card.data.items.map((it, i) => (
-          <Text key={i} className="mt-[10rpx] block text-[26rpx] text-soft">
-            {it.customerName}（{it.address ?? "地址？"}）{it.quantity}份{occasionZh(it.occasion)}
-          </Text>
-        ))}
-        <View className="mt-[20rpx]">
-          {action.status === "confirmed" && <Text className="block text-[24rpx] text-green">{action.message} ✓</Text>}
-          {action.status === "stale" && <Text className="block text-[24rpx] leading-relaxed text-muted">{action.message}</Text>}
-          {action.status === "active" && (
-            <Button size="small" type="primary" loading={confirming} className="[background:var(--color-red)] text-white" onClick={onConfirm}>
-              {action.label}
-            </Button>
-          )}
-        </View>
-      </View>
-    );
+    return <CustomerConfirmCard card={card} confirmed={confirmed} confirming={confirming} customerConfirmAction={customerConfirmAction} onConfirm={onConfirm} />;
   }
 
   if (card.type === "orders") {
@@ -107,6 +86,57 @@ export function ChatCard({ card, confirmed = false, confirming, customerConfirmA
           )}
         </View>
       ))}
+    </View>
+  );
+}
+
+/** Customer-confirm card with editable address inputs (PRD US-OI05: new customers need address). */
+function CustomerConfirmCard({ card, confirmed, confirming, customerConfirmAction, onConfirm }: {
+  card: Extract<CardPayload, { type: "customer-confirm" }>;
+  confirmed: boolean;
+  confirming: boolean;
+  customerConfirmAction?: CustomerConfirmActionState | null;
+  onConfirm: (items?: ConfirmCustomerItem[]) => void;
+}) {
+  const initial = card.data.items.map((it) => ({ ...it }));
+  const [items, setItems] = useState<ConfirmCustomerItem[]>(initial);
+  const action = customerConfirmAction ?? (
+    confirmed
+      ? { status: "confirmed" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL, message: "已建" }
+      : { status: "active" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL }
+  );
+
+  const updateAddr = (i: number, addr: string) => {
+    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, address: addr } : it)));
+  };
+
+  return (
+    <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
+      <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建（填地址后确认）</Text>
+      {items.map((it, i) => (
+        <View key={i} className="mt-[16rpx]">
+          <Text className="block text-[26rpx] text-soft">{it.customerName} · {it.quantity}份{occasionZh(it.occasion)}</Text>
+          {action.status === "active" ? (
+            <Input
+              value={it.address ?? ""}
+              placeholder="填地址（如 3a27a）"
+              onInput={(e) => updateAddr(i, e.detail.value)}
+              className="mt-[8rpx] rounded-[8rpx] border border-line bg-paper px-[16rpx] py-[10rpx] text-[26rpx]"
+            />
+          ) : (
+            <Text className="mt-[4rpx] block text-[24rpx] text-muted">{it.address ?? "（未填）"}</Text>
+          )}
+        </View>
+      ))}
+      <View className="mt-[20rpx]">
+        {action.status === "confirmed" && <Text className="block text-[24rpx] text-green">{action.message} ✓</Text>}
+        {action.status === "stale" && <Text className="block text-[24rpx] leading-relaxed text-muted">{action.message}</Text>}
+        {action.status === "active" && (
+          <Button size="small" type="primary" loading={confirming} className="bg-red text-white" onClick={() => onConfirm(items)}>
+            {action.label}
+          </Button>
+        )}
+      </View>
     </View>
   );
 }

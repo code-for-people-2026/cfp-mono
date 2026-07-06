@@ -180,7 +180,7 @@ export function menuRoutes(
         const offerings = plan.offerings as unknown as Offering[];
         const slot = plan.slot as unknown as { date: string; occasion: "lunch" | "dinner" };
         text = buildJielongMenuText(
-          { date: slot.date, occasion: slot.occasion, dishNames: offerings.map((o) => o.name) },
+          [{ date: slot.date, occasion: slot.occasion, dishNames: offerings.map((o) => o.name) }],
           { name: seller.name, priceCents: seller.defaultPriceCents },
         );
         patch.publishText = text;

@@ -1,7 +1,7 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { Input, Text, View } from "@tarojs/components";
-import type { CardPayload } from "@cfp/kith-inn-shared";
+import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
@@ -86,8 +86,8 @@ export default function Today() {
   };
 
   /** "全部建档并记单" on an active customer-confirm card → POST /chat/confirm-customers
-   *  with this card's items; server validates they still match pending. */
-  const confirmCustomers = (i: number) => {
+   *  with this card's items (possibly address-edited by 桃子); server validates they still match pending. */
+  const confirmCustomers = (i: number, editedItems?: ConfirmCustomerItem[]) => {
     if (confirming) return;
     const card = msgs[i]?.card;
     if (card?.type !== "customer-confirm") return;
@@ -105,7 +105,7 @@ export default function Today() {
     Taro.request({
       url: confirmCustomersUrl(),
       method: "POST",
-      data: { items: card.data.items },
+      data: { items: editedItems ?? card.data.items },
       header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
     })
       .then((res) => {
