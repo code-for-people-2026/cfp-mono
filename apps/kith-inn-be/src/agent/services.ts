@@ -327,7 +327,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           const seller = await cms.getSeller(jwt);
           const dishNames = (plan.offerings as Offering[]).map((o) => o.name);
           const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
-          text = buildJielongMenuText({ date: slot.date, occasion: slot.occasion, dishNames }, { name: seller.name, priceCents: seller.defaultPriceCents });
+          text = buildJielongMenuText([{ date: slot.date, occasion: slot.occasion, dishNames }], { name: seller.name, priceCents: seller.defaultPriceCents });
           patch.publishText = text;
         }
         if (Object.keys(patch).length > 0) await cms.patchMenuPlan(jwt, planId, patch);

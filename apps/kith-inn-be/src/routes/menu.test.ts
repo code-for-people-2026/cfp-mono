@@ -226,8 +226,10 @@ describe("POST /menu/plans/:id/publish", () => {
     const res = await app.request("/plans/501/publish", { method: "POST", headers: auth() });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { publishText: string };
-    expect(body.publishText).toContain("7月8日");
-    expect(body.publishText).toContain("接龙：");
+    expect(body.publishText).toContain("#接龙");
+    expect(body.publishText).toContain("7.8号星期");
+    expect(body.publishText).toContain("午餐预定接龙");
+    expect(body.publishText).toContain("例 桃子");
     expect(patchMenuPlan).toHaveBeenCalledWith(token, "501", expect.objectContaining({ status: "published", publishText: expect.any(String) }));
   });
 
