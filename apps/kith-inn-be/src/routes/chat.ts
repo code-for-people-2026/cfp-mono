@@ -23,14 +23,13 @@ import { clearPending, getPending } from "../agent/pendingState";
 import { runAgent } from "../agent/run";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
-/** Equality of the submitted payload vs the pending list — the stale-card check
- *  for POST /chat/confirm-customers (Codex P2). Order-sensitive JSON compare is
- *  fine: the card's items come straight from the pending response, so FE echoes
- *  them in the same order. */
+/** Stale-card check for POST /chat/confirm-customers. Compares **immutable** fields
+ *  (customerName/quantity/occasion/date) — NOT address, because 桃子 may have typed
+ *  an address into the card that wasn't in the original pending item (Codex #123 P1). */
 function sameItems(submitted: unknown, pending: ConfirmCustomerItem[]): boolean {
   if (!Array.isArray(submitted) || submitted.length !== pending.length) return false;
   const norm = (xs: ConfirmCustomerItem[]) =>
-    JSON.stringify(xs.map((it) => ({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })));
+    JSON.stringify(xs.map((it) => ({ customerName: it.customerName, quantity: it.quantity, occasion: it.occasion, date: it.date })));
   return norm(submitted as ConfirmCustomerItem[]) === norm(pending);
 }
 
@@ -150,10 +149,13 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
       return c.json({ error: "card stale" }, 409);
     }
     try {
-      // Pending items carry `customerName` (recordOrders shape); createCustomersAndOrders
-      // takes `displayName` — map across (same join the old create tool did).
+      // Use submitted items (may carry 桃子-typed addresses) instead of pending (which
+      // has empty addresses — 接龙 doesn't contain addresses). Map customerName→displayName.
+      // Use submitted items (carry 桃子-typed addresses) — sameItems above guarantees
+      // body.items exists and matches pending on immutable fields. Map customerName→displayName.
+      const submitted = body?.items as ConfirmCustomerItem[];
       const r = await createCmsAgentServices({ jwt, cms, operatorId }).createCustomersAndOrders(
-        pending.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
+        submitted.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
       );
       clearPending(operatorId);
       const summary =
