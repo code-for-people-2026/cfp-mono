@@ -65,4 +65,6 @@ export default defineConfig(async () => ({
       ]);
     },
   },
+  // Sourcemap: dev 开、prod 关（线上泄露源码）。微信开发者工具 Sources 面板打断点。
+  sourceMap: { enable: process.env.NODE_ENV !== "production" },
 }));
