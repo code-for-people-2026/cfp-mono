@@ -1,6 +1,6 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
-import { Input, Text, View } from "@tarojs/components";
+import { Input, ScrollView, Text, View } from "@tarojs/components";
 import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
@@ -28,6 +28,12 @@ export default function Today() {
   // True once a send starts — the initial history load must not clobber an
   // optimistic turn that raced ahead of it (Codex).
   const sentRef = useRef(false);
+  const scrollRef = useRef<string>("");
+
+  // Auto-scroll to bottom on new messages.
+  useEffect(() => {
+    scrollRef.current = `msg-${msgs.length - 1}`;
+  }, [msgs]);
 
   useEffect(() => {
     const token = tokens.getToken();
@@ -233,7 +239,7 @@ export default function Today() {
   return (
     <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
-      <View className="px-[32rpx] pb-[260rpx] pt-[32rpx]">
+      <ScrollView scrollY scrollIntoView={scrollRef.current} className="px-[32rpx] pb-[260rpx] pt-[32rpx]" style={{ height: "calc(100vh - 180rpx)" }}>
         <Text className="my-[24rpx] block text-center text-[22rpx] text-soft">最近消息</Text>
         {msgs.length === 0 ? (
           <Text className="block py-[24rpx] text-center text-[24rpx] text-muted">
@@ -278,7 +284,8 @@ export default function Today() {
             );
           })
         )}
-      </View>
+        <View id={`msg-${msgs.length - 1}`} />
+      </ScrollView>
       <View className="fixed inset-x-0 bottom-[108rpx] z-40 border-t border-line bg-paper px-[20rpx] pb-[20rpx] pt-[16rpx]">
         <View className="flex items-center gap-[16rpx]">
           <Input
