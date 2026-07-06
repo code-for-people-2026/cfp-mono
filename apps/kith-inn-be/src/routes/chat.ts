@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
-import { findOfferings } from "../lib/cms/client";
+import { createOffering, findOfferings } from "../lib/cms/client";
 import {
   createFulfillments,
   createOrderDraft,
@@ -39,6 +39,7 @@ function realAgentCms(): AgentCms {
   return {
     getSeller,
     findOfferings,
+    createOffering,
     getOrder,
     createOrderDraft,
     updateOrder,

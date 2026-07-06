@@ -28,6 +28,8 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   swapDish: over.swapDish ?? vi.fn(async () => ({ ok: true as const, plan: {} as never })),
   publishMenu: over.publishMenu ?? vi.fn(async () => ({ ok: true as const, publishText: "test" })),
   getMenu: over.getMenu ?? vi.fn(async () => []),
+  getDishPool: over.getDishPool ?? vi.fn(async () => []),
+  createOffering: over.createOffering ?? vi.fn(async () => ({ id: 1, name: "test" })),
 });
 
 describe("runAgent", () => {

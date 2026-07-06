@@ -17,9 +17,10 @@
  */
 const WEEK_CN = ["日", "一", "二", "三", "四", "五", "六"];
 
-/** "2026-07-08" → "7.8号星期三"（weekday 对日历日期与时区无关）。 */
+/** "2026-07-08" or "2026-07-08T00:00:00.000Z" → "7.8号星期三"（weekday 对日历日期与时区无关）。 */
 function formatDateLabel(dateIso: string): string {
-  const parts = dateIso.split("-").map(Number);
+  const datePart = dateIso.split("T")[0] ?? dateIso; // handle ISO format from Payload date field
+  const parts = datePart.split("-").map(Number);
   const [y, m, d] = parts.length === 3 ? (parts as [number, number, number]) : [1970, 1, 1];
   const weekday = WEEK_CN[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
   return `${m}.${d}号星期${weekday}`;

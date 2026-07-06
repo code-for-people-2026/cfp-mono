@@ -2,7 +2,7 @@
 // pages do the actual Taro.request — keeping the network boundary in the UI layer
 // (mirrors apps/community-cooking's split).
 
-export const DEFAULT_BE_BASE_URL = "http://localhost:3310";
+export const DEFAULT_BE_BASE_URL = "http://192.168.31.120:3310";
 
 export function resolveBeBaseUrl(value?: string): string {
   const baseUrl = value?.trim() || DEFAULT_BE_BASE_URL;

@@ -24,6 +24,7 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   getMenuPlan: over.getMenuPlan ?? vi.fn(async () => ({}) as never),
   upsertMenuPlans: over.upsertMenuPlans ?? vi.fn(async () => [] as never),
   patchMenuPlan: over.patchMenuPlan ?? vi.fn(async () => ({}) as never),
+  createOffering: over.createOffering ?? vi.fn(async () => ({}) as never),
 });
 
 const OP = 1;

@@ -1,6 +1,6 @@
 {
   "seller": {
-    "name": "桃子的健康早午餐",
+    "name": "桃子",
     "defaultPriceCents": 3000,
     "enabledModules": ["menu-planning", "delivery", "purchasing"],
     "moduleSettings": {

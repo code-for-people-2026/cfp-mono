@@ -110,7 +110,7 @@ export default function Orders() {
         <View className="mb-[20rpx] flex items-center justify-between">
           <View className="flex gap-[16rpx]">
             {(["lunch", "dinner"] as Occasion[]).map((occ) => (
-              <Button key={occ} size="small" type={occasion === occ ? "primary" : "default"} className={occasion === occ ? "bg-red text-white" : "bg-surface text-ink"} onClick={() => setOccasion(occ)}>
+              <Button key={occ} type={occasion === occ ? "primary" : "default"} className={occasion === occ ? "bg-red text-white" : "bg-surface text-ink"} onClick={() => setOccasion(occ)}>
                 {OCCASION_LABEL[occ]}
               </Button>
             ))}
@@ -126,7 +126,7 @@ export default function Orders() {
             onInput={(e) => setPrefix(e.detail.value)}
             className="flex-1 rounded-[12rpx] border border-line bg-white px-[16rpx] py-[12rpx] text-[28rpx]"
           />
-          <Button size="small" type="primary" className="bg-red text-white" onClick={batchDeliver}>勾销</Button>
+          <Button type="primary" className="bg-red text-white" onClick={batchDeliver}>勾销</Button>
         </View>
 
         {loading ? (
@@ -159,16 +159,16 @@ export default function Orders() {
                 </View>
                 <View className="mt-[14rpx] flex flex-wrap gap-[12rpx]">
                   {d.base === "draft" && (
-                    <Button size="small" type="primary" className="bg-red text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>确认</Button>
+                    <Button type="primary" className="bg-red text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>确认</Button>
                   )}
                   {d.base === "confirmed" && d.payment === "unpaid" && (
-                    <Button size="small" className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>标已付</Button>
+                    <Button className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>标已付</Button>
                   )}
                   {d.base === "confirmed" && o.paymentStatus === "paid" && (
-                    <Button size="small" className="bg-surface text-muted" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "unpaid" })}>回退未付</Button>
+                    <Button className="bg-surface text-muted" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "unpaid" })}>回退未付</Button>
                   )}
                   {row.fulfillment && d.delivery === "pending" && (
-                    <Button size="small" className="bg-surface text-ink" onClick={() => act(markDeliveredUrl(), "PATCH", { ids: [row.fulfillment!.id], set: { status: "done" } })}>标送达</Button>
+                    <Button className="bg-surface text-ink" onClick={() => act(markDeliveredUrl(), "PATCH", { ids: [row.fulfillment!.id], set: { status: "done" } })}>标送达</Button>
                   )}
                 </View>
               </View>

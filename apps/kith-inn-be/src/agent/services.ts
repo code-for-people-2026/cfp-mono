@@ -33,6 +33,7 @@ export type AgentCms = OrderCms & {
   upsertMenuPlans(jwt: string, items: MenuPlanUpsertInput[]): Promise<MenuPlan[]>;
   patchMenuPlan(jwt: string, id: string | number, patch: MenuPlanPatch): Promise<MenuPlan>;
   getSeller(jwt: string): Promise<Seller>;
+  createOffering(jwt: string, input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
 };
 
 type AgentServicesDeps = {
@@ -346,6 +347,23 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       } catch {
         return [];
       }
+    },
+
+    /** Get the dish pool (active component offerings). */
+    async getDishPool() {
+      try {
+        const offerings = await cms.findOfferings(jwt);
+        return offerings
+          .filter((o) => o.active !== false && o.kind === "component")
+          .map((o) => ({ id: o.id, name: o.name, mainIngredient: o.mainIngredient, category: o.category }));
+      } catch {
+        return [];
+      }
+    },
+
+    /** Add a dish to the pool (feature 002 cms internal POST). */
+    async createOffering(input: { name: string; mainIngredient?: string; category?: string }) {
+      return cms.createOffering(jwt, input);
     },
   };
 }

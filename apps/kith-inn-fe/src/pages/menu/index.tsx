@@ -163,17 +163,18 @@ export default function Menu() {
     <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
       <View className="px-[32rpx] pb-[200rpx] pt-[24rpx]">
-        <View className="mb-[24rpx] flex gap-[16rpx]">
-          <Button size="small" type={mode === "day" ? "primary" : "default"} className={mode === "day" ? "bg-red text-white" : "bg-surface text-ink"} onClick={() => setMode("day")}>日</Button>
-          <Button size="small" type={mode === "week" ? "primary" : "default"} className={mode === "week" ? "bg-red text-white" : "bg-surface text-ink"} onClick={() => setMode("week")}>周</Button>
+        <View className="mb-[24rpx] flex items-center gap-[20rpx]">
+          <Button type={mode === "day" ? "primary" : "default"} className={`h-[72rpx] min-w-[120rpx] rounded-[12rpx] text-[30rpx] font-bold ${mode === "day" ? "bg-red text-white" : "bg-surface text-ink"}`} onClick={() => setMode("day")}>日视图</Button>
+          <Button type={mode === "week" ? "primary" : "default"} className={`h-[72rpx] min-w-[120rpx] rounded-[12rpx] text-[30rpx] font-bold ${mode === "week" ? "bg-red text-white" : "bg-surface text-ink"}`} onClick={() => setMode("week")}>周视图</Button>
+          <Text className="ml-auto text-[28rpx] text-amber" onClick={() => Taro.navigateTo({ url: "/pages/kitchen/index" })}>管理菜品池</Text>
         </View>
 
         {mode === "day" ? (
           <>
             <View className="mb-[24rpx] flex items-center justify-between">
-              <Button size="small" className="bg-surface text-ink" onClick={() => setDayDate(addDays(dayDate, -1))}>◀ 前一天</Button>
+              <Button className="bg-surface text-ink" onClick={() => setDayDate(addDays(dayDate, -1))}>◀ 前一天</Button>
               <Text className="text-[28rpx] font-bold">{weekdayCn(dayDate)} · {mdLabel(dayDate)}{dayDate === todayShanghai() ? "（今天）" : ""}</Text>
-              <Button size="small" className="bg-surface text-ink" onClick={() => setDayDate(addDays(dayDate, 1))}>后一天 ▶</Button>
+              <Button className="bg-surface text-ink" onClick={() => setDayDate(addDays(dayDate, 1))}>后一天 ▶</Button>
             </View>
             {dayDate !== todayShanghai() && (
               <View className="mb-[16rpx] text-center">
@@ -189,7 +190,7 @@ export default function Menu() {
           <>
             <View className="mb-[20rpx] flex items-center justify-between">
               <Text className="text-[30rpx] font-bold">接下来 7 天</Text>
-              <Button size="small" type="primary" className="bg-red text-white" onClick={genWeek}>生成这周</Button>
+              <Button type="primary" className="bg-red text-white" onClick={genWeek}>生成这周</Button>
             </View>
             {Array.from({ length: 7 }, (_, i) => addDays(todayShanghai(), i)).map((date) => {
               const { lunch, dinner } = plansByOccasion(weekPlans[date] ?? []);
@@ -220,18 +221,18 @@ function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () =>
         {plan?.status === "draft" && <Tag className="bg-amber-soft text-amber">暂定</Tag>}
       </View>
       {!plan ? (
-        <Button size="small" type="primary" className="bg-red text-white" onClick={onGen}>生成{OCCASION_LABEL[occasion]}</Button>
+        <Button type="primary" className="bg-red text-white" onClick={onGen}>生成{OCCASION_LABEL[occasion]}</Button>
       ) : (
         <>
           {plan.dishes.map((d) => (
             <View key={String(d.id)} className="flex items-baseline justify-between border-b border-line py-[12rpx] last:border-b-0">
               <Text className="text-[28rpx]">{d.name}</Text>
-              <Button size="small" className="bg-surface text-muted" onClick={() => onSwap(d.id)}>换</Button>
+              <Button className="bg-surface text-muted" onClick={() => onSwap(d.id)}>换</Button>
             </View>
           ))}
           <View className="mt-[16rpx] flex flex-wrap gap-[16rpx]">
-            <Button size="small" className="bg-surface text-ink" onClick={onGen}>重新生成</Button>
-            <Button size="small" type="primary" className="bg-red text-white" onClick={onPublish}>{plan.status === "published" && plan.publishText ? "复制文案" : "一键发布"}</Button>
+            <Button className="bg-surface text-ink" onClick={onGen}>重新生成</Button>
+            <Button type="primary" className="bg-red text-white" onClick={onPublish}>{plan.status === "published" && plan.publishText ? "复制文案" : "一键发布"}</Button>
           </View>
         </>
       )}
