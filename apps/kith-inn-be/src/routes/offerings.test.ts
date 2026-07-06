@@ -16,6 +16,7 @@ const mockDeps = (overrides: Partial<OfferingsDeps> = {}): OfferingsDeps => ({
   updateOffering: vi.fn(async (_jwt: string, _id: string | number, _patch: OfferingUpdate): Promise<Offering> => ({} as Offering)),
   deactivateOffering: vi.fn(async () => undefined),
   restoreOffering: vi.fn(async () => undefined),
+  purgeOffering: vi.fn(async () => undefined),
   ...overrides,
 });
 
@@ -227,5 +228,22 @@ describe("cms error forwarding", () => {
     const app = offeringsRoutes(SECRET, mockDeps({ deactivateOffering }));
     const res = await app.request("/14", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
     expect(res.status).toBe(404);
+  });
+});
+
+describe("DELETE /offerings/:id/purge", () => {
+  it("hard-deletes, returns 200 {ok:true}", async () => {
+    const purgeOffering = vi.fn(async () => undefined);
+    const app = offeringsRoutes(SECRET, mockDeps({ purgeOffering }));
+    const res = await app.request("/14/purge", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(200);
+    expect(purgeOffering).toHaveBeenCalledWith(expect.any(String), "14");
+  });
+
+  it("forwards cms 500 (FK violation) as 502", async () => {
+    const purgeOffering = vi.fn(async () => { throw new CmsHttpError(500, "fk"); });
+    const app = offeringsRoutes(SECRET, mockDeps({ purgeOffering }));
+    const res = await app.request("/14/purge", { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(500);
   });
 });

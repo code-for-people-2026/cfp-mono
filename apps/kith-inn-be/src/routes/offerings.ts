@@ -6,6 +6,7 @@ import { findOfferings as findOfferingsFn } from "../lib/cms/client";
 import {
   createOffering as createOfferingFn,
   deactivateOffering as deactivateOfferingFn,
+  purgeOffering as purgeOfferingFn,
   restoreOffering as restoreOfferingFn,
   updateOffering as updateOfferingFn,
 } from "../lib/cms/offerings";
@@ -19,6 +20,7 @@ export type OfferingsDeps = {
   updateOffering: (jwt: string, id: string | number, patch: OfferingUpdate) => Promise<Offering>;
   deactivateOffering: (jwt: string, id: string | number) => Promise<void>;
   restoreOffering: (jwt: string, id: string | number) => Promise<void>;
+  purgeOffering: (jwt: string, id: string | number) => Promise<void>;
 };
 
 /** Forward cms error status (e.g. 404 cross-tenant) instead of flattening to 502. */
@@ -39,6 +41,7 @@ export function offeringsRoutes(
     updateOffering: updateOfferingFn,
     deactivateOffering: deactivateOfferingFn,
     restoreOffering: restoreOfferingFn,
+    purgeOffering: purgeOfferingFn,
   },
 ) {
   const app = new Hono<AppVars>();
@@ -87,6 +90,16 @@ export function offeringsRoutes(
       return c.json({ ok: true });
     } catch (e) {
       return c.json({ error: "restore failed" }, cmsStatus(e));
+    }
+  });
+
+  /** DELETE /offerings/:id/purge — hard delete (only for inactive offerings; FK-guarded by DB). */
+  app.delete("/:id/purge", async (c) => {
+    try {
+      await deps.purgeOffering(c.get("token") as string, c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (e) {
+      return c.json({ error: "purge failed" }, cmsStatus(e));
     }
   });
 

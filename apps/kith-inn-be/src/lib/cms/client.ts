@@ -59,3 +59,20 @@ export async function findOfferings(operatorJwt: string, deps: CmsDeps = {}): Pr
   const json = (await res.json()) as { docs?: Offering[] };
   return json.docs ?? [];
 }
+
+/** POST /api/internal/offerings — create a component dish (feature 002). */
+export async function createOffering(
+  operatorJwt: string,
+  input: { name: string; mainIngredient?: string; category?: string },
+  deps: CmsDeps = {},
+): Promise<Offering> {
+  const fetchImpl = deps.fetch ?? fetch;
+  const res = await fetchImpl(`${cmsBase()}/api/internal/offerings`, {
+    method: "POST",
+    headers: { [OPERATOR_JWT_HEADER]: operatorJwt, "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) throw new Error(`cms offering create failed: ${res.status}`);
+  const json = (await res.json()) as { doc: Offering };
+  return json.doc;
+}

@@ -113,7 +113,18 @@ export function menuRoutes(
           return c.json({ error: "plan-published", date: t.date, occasion: t.occasion }, 409);
         }
       }
-      const result = generateForTargets({ targets, pool: poolFrom(offerings) });
+      // Pass existing plans as history so new generation avoids already-planned dishes (Codex/user bug: same dishes each time)
+      const history = existing
+        .filter((p) => p.status === "draft" || p.status === "published")
+        .map((p) => {
+          const s = p.slot as { date: string; occasion: "lunch" | "dinner" };
+          return {
+            day: s.date.split("T")[0]!,
+            occasion: s.occasion,
+            dishes: (p.offerings as Offering[]).map(toMenuDish),
+          };
+        });
+      const result = generateForTargets({ targets, pool: poolFrom(offerings), history });
       if (!result.ok) return c.json(result, 200);
       const items: MenuPlanUpsertInput[] = result.menu.map((s) => ({
         date: s.day,

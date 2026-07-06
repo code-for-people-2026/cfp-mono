@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OPERATOR_JWT_HEADER } from "./client";
 import { CmsHttpError } from "./orders";
-import { createOffering, deactivateOffering, restoreOffering, updateOffering } from "./offerings";
+import { createOffering, deactivateOffering, purgeOffering, restoreOffering, updateOffering } from "./offerings";
 
 const ORIG = process.env.CMS_BASE_URL;
 afterEach(() => {
@@ -80,5 +80,21 @@ describe("global fetch fallback (no deps)", () => {
     vi.stubGlobal("fetch", fetchMock);
     await expect(createOffering("jwt", { name: "X", category: "meat" })).resolves.toMatchObject({ id: 14 });
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+});
+
+describe("purgeOffering", () => {
+  it("DELETEs /api/internal/offerings/:id/purge with JWT", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = mockFetch({ ok: true });
+    await expect(purgeOffering("jwt", 14, deps)).resolves.toBeUndefined();
+    const [url, init] = deps.fetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://cms.test/api/internal/offerings/14/purge");
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("throws on non-2xx", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(purgeOffering("jwt", 99, mockFetch({ error: "fk" }, 500))).rejects.toBeInstanceOf(CmsHttpError);
   });
 });

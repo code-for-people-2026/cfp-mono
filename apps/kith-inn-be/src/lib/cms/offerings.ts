@@ -88,3 +88,19 @@ export async function restoreOffering(
     "cms offering restore",
   );
 }
+
+/** DELETE /api/internal/offerings/:id — hard delete (DB FK-guarded). */
+export async function purgeOffering(
+  operatorJwt: string,
+  id: string | number,
+  deps: CmsDeps = {},
+): Promise<void> {
+  const fetchImpl = fetchOf(deps);
+  await parseOk(
+    await fetchImpl(`${cmsBase()}/api/internal/offerings/${id}/purge`, {
+      method: "DELETE",
+      headers: { [OPERATOR_JWT_HEADER]: operatorJwt },
+    }),
+    "cms offering purge",
+  );
+}

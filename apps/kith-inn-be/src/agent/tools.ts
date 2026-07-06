@@ -31,6 +31,8 @@ export type AgentServices = {
   swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean): Promise<{ ok: true; plan: MenuPlanView; warning?: string } | { ok: false; error: string }>;
   publishMenu(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   getMenu(date?: string): Promise<MenuPlanView[]>;
+  getDishPool(): Promise<Array<{ id: string | number; name: string; mainIngredient?: string; category?: string }>>;
+  createOffering(input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
 };
 
 export type AgentTool = {
@@ -161,6 +163,32 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
   },
   // ── Menu tools (feature 005) ──────────────────────────────────────
+  {
+    def: { type: "function", function: { name: "get_dish_pool", description: "查菜品池里所有可选的菜（用户问「我有哪些菜」「菜品池有什么」「能做什么菜」时调它）。返回菜名+主料+分类。", parameters: { type: "object", properties: {} } } },
+    execute: async (s) => {
+      const pool = await s.getDishPool();
+      if (pool.length === 0) return { text: "菜品池是空的。" };
+      const byCat: Record<string, string[]> = {};
+      const cat = (c?: string) => c ?? "veg";
+      for (const d of pool) (byCat[cat(d.category)] ??= []).push(`${d.name}(${d.mainIngredient ?? "?"})`);
+      const parts = [
+        byCat.meat?.length && `荤：${byCat.meat.join("、")}`,
+        byCat.veg?.length && `素：${byCat.veg.join("、")}`,
+        byCat.soup?.length && `汤：${byCat.soup.join("、")}`,
+        byCat.staple?.length && `主食：${byCat.staple.join("、")}`,
+      ].filter(Boolean);
+      return { text: `菜品池共 ${pool.length} 道菜：\n${parts.join("\n")}` };
+    },
+  },
+  {
+    def: { type: "function", function: { name: "add_dish", description: "往菜品池加一道新菜。用户说「加一道菜叫XX」「新增菜品」时调它。name=菜名（必填），mainIngredient=主料（如牛肉/鸡肉/青菜），category=分类（meat荤/veg素/soup汤/staple主食）。", parameters: { type: "object", properties: { name: { type: "string", description: "菜名，如 蒜蓉粉丝虾" }, mainIngredient: { type: "string", description: "主料，如 虾" }, category: { type: "string", enum: ["meat", "veg", "soup", "staple"], description: "meat=荤 veg=素 soup=汤 staple=主食" } }, required: ["name"] } } },
+    execute: async (s, args) => {
+      const name = String(args.name ?? "").trim();
+      if (!name) return { text: "菜名不能空。" };
+      const r = await s.createOffering({ name, mainIngredient: args.mainIngredient ? String(args.mainIngredient) : undefined, category: args.category ? String(args.category) : undefined });
+      return { text: `加好了：${r.name}（#${r.id}）。` };
+    },
+  },
   {
     def: { type: "function", function: { name: "get_menu", description: "查某天的菜单（已排好的 plan）。用户问「明天/今天菜单是什么」「安排了什么菜」时调它。date 格式 YYYY-MM-DD，省略=今天。", parameters: { type: "object", properties: { date: { type: "string", description: "YYYY-MM-DD，省略=今天" } } } } },
     execute: async (s, args) => {

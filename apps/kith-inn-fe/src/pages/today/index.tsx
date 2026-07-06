@@ -234,7 +234,7 @@ export default function Today() {
     <View className="page-shell">
       <TopBar title="街坊味" subtitle="桃子的灶台" />
       <View className="px-[32rpx] pb-[260rpx] pt-[32rpx]">
-        <Text className="my-[24rpx] block text-center text-[22rpx] text-soft">展示今天和昨天，更早的已清理</Text>
+        <Text className="my-[24rpx] block text-center text-[22rpx] text-soft">最近消息</Text>
         {msgs.length === 0 ? (
           <Text className="block py-[24rpx] text-center text-[24rpx] text-muted">
             还没有对话。粘一段接龙，或直接说一句「王燕萍 午餐 2 份」。
