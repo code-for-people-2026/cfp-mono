@@ -213,11 +213,14 @@ export default function Menu() {
 /** A meal card: 午餐/晚餐 of one day. */
 function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () => void; onSwap: (dishId: string | number) => void; onPublish: () => void }) {
   const { occasion, plan, onGen, onSwap, onPublish } = props;
+  // Published plans read distinctly from draft: green left bar + green-soft tint +
+  // a filled "已发出" tag (#124). Draft keeps the soft amber tag on a plain card.
+  const published = plan?.status === "published";
   return (
-    <View className="my-[20rpx] card bg-surface p-[24rpx]">
+    <View className={`my-[20rpx] card p-[24rpx] ${published ? "border-l-[8rpx] border-green bg-green-soft" : "bg-surface"}`}>
       <View className="mb-[16rpx] flex items-center gap-[16rpx]">
         <Text className="text-[30rpx] font-bold">{OCCASION_LABEL[occasion]}</Text>
-        {plan?.status === "published" && <Tag className="bg-green-soft text-green">已发出</Tag>}
+        {published && <Tag className="bg-green text-white">已发出</Tag>}
         {plan?.status === "draft" && <Tag className="bg-amber-soft text-amber">暂定</Tag>}
       </View>
       {!plan ? (
