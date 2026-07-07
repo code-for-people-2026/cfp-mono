@@ -219,47 +219,6 @@ describe("markUnpaid", () => {
   });
 });
 
-describe("markDelivered", () => {
-  // Address lives on the order now (cms populates fulfillment.order).
-  const at = (address: string) => ({ id: 1, address });
-  const fs = [
-    { id: 11, order: at("26B-301"), status: "pending" },
-    { id: 12, order: at("26B-502"), status: "pending" },
-    { id: 13, order: at("26B-301"), status: "canceled" },
-  ];
-
-  it("marks every fulfillment whose order.address includes the address (skips canceled)", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    const r = await svc(cms).markDelivered({ address: "26B" });
-    expect(r).toEqual({ ok: true, count: 2 });
-    expect(cms.setFulfillmentsByIds).toHaveBeenCalledWith("jwt", [11, 12], { status: "done" });
-  });
-
-  it("narrows to a single door when the address is more specific", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    expect(await svc(cms).markDelivered({ address: "26B-301" })).toEqual({ ok: true, count: 1 });
-  });
-
-  it("is a no-op (count 0, no write) when nothing matches", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    expect(await svc(cms).markDelivered({ address: "99" })).toEqual({ ok: true, count: 0 });
-    expect(cms.setFulfillmentsByIds).not.toHaveBeenCalled();
-  });
-
-  it("rejects a blank address — ''.includes would otherwise mark ALL (Codex P1)", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => fs as never) });
-    expect(await svc(cms).markDelivered({ address: "" })).toEqual({ ok: false, error: "地址不能为空" });
-    expect(await svc(cms).markDelivered({ address: "   " })).toEqual({ ok: false, error: "地址不能为空" });
-    expect(cms.listFulfillments).not.toHaveBeenCalled();
-    expect(cms.setFulfillmentsByIds).not.toHaveBeenCalled();
-  });
-
-  it("returns a generic error on failure", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
-    expect(await svc(cms).markDelivered({ address: "26B" })).toEqual({ ok: false, error: "标记失败" });
-  });
-});
-
 describe("getTodaySummary", () => {
   it("counts drafts / confirmed-unpaid / pending deliveries + recent names", async () => {
     const cms = baseCms({
@@ -338,18 +297,6 @@ describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
   it("previewOrder: null when getOrder throws", async () => {
     const cms = baseCms({ getOrder: vi.fn(async () => { throw new Error("net"); }) });
     expect(await svc(cms).previewOrder(1)).toBeNull();
-  });
-
-  it("previewDelivered: counts address-matched fulfillments; 0 on empty/failed", async () => {
-    const cms = baseCms({ listFulfillments: vi.fn(async () => [
-      { id: 1, status: "pending", order: { address: "1D" } },
-      { id: 2, status: "pending", order: { address: "1D" } },
-      { id: 3, status: "pending", order: { address: "2D" } },
-    ] as never) });
-    expect(await svc(cms).previewDelivered("1D")).toBe(2);
-    expect(await svc(cms).previewDelivered("")).toBe(0);
-    const cms2 = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
-    expect(await svc(cms2).previewDelivered("1D")).toBe(0);
   });
 
   it("previewMenuTargets: ok lines (dry-run, no upsert)", async () => {

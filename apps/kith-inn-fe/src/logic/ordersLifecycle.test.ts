@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   byOccasion,
   gapCount,
+  isCheckable,
   joinOrdersFulfillments,
   lifecycleDots,
   mealFocus,
-  previewAddressMatch,
   sortByAddress,
+  toggleSelection,
+  visibleRows,
 } from "./ordersLifecycle";
 
 const order = (over: Partial<Order>): Order =>
@@ -90,52 +92,6 @@ describe("byOccasion", () => {
   });
 });
 
-describe("previewAddressMatch", () => {
-  it("returns current-meal pending non-canceled matching the fragment", () => {
-    const rows = joinOrdersFulfillments(
-      [order({ id: "1", occasion: "lunch", address: "3a27b" }), order({ id: "2", occasion: "lunch", address: "2d03a" }), order({ id: "3", occasion: "lunch", address: "3a18b", status: "canceled" })],
-      [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" }), ff({ id: "f3", order: "3", status: "pending" })],
-    );
-    const matched = previewAddressMatch(rows, "lunch", "3a");
-    expect(matched.map((r) => r.order.id)).toEqual(["1"]); // not 2 (2d), not 3 (canceled)
-  });
-  it("excludes done and non-matching occasion", () => {
-    const rows = joinOrdersFulfillments(
-      [order({ id: "1", occasion: "lunch", address: "3a27b" }), order({ id: "2", occasion: "dinner", address: "3a27b" })],
-      [ff({ order: "1", status: "done" }), ff({ order: "2", status: "pending" })],
-    );
-    expect(previewAddressMatch(rows, "lunch", "3a")).toEqual([]);
-    expect(previewAddressMatch(rows, "dinner", "3a")).toHaveLength(1);
-  });
-
-  it("handles rows with no address (?? '' fallback)", () => {
-    const rows = joinOrdersFulfillments([order({ id: "1", occasion: "lunch" })], [ff({ order: "1", status: "pending" })]);
-    expect(previewAddressMatch(rows, "lunch", "x")).toEqual([]);
-  });
-
-  it("pure-numeric fragment: building boundary (3 ≠ 26)", () => {
-    const rows = joinOrdersFulfillments(
-      [order({ id: "1", occasion: "lunch", address: "3a27b" }), order({ id: "2", occasion: "lunch", address: "26B-301" })],
-      [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" })],
-    );
-    expect(previewAddressMatch(rows, "lunch", "3").map((r) => r.order.id)).toEqual(["1"]);
-  });
-
-  it("pure-numeric fragment vs non-numeric address (隔壁小区, no leading digit)", () => {
-    const rows = joinOrdersFulfillments(
-      [order({ id: "1", occasion: "lunch", address: "隔壁小区" })],
-      [ff({ order: "1", status: "pending" })],
-    );
-    expect(previewAddressMatch(rows, "lunch", "3")).toEqual([]); // no leading digit → no match
-  });
-
-  it("blank fragment → no match", () => {
-    const rows = joinOrdersFulfillments([order({ id: "1", occasion: "lunch", address: "3a" })], [ff({ order: "1", status: "pending" })]);
-    expect(previewAddressMatch(rows, "lunch", "")).toEqual([]);
-    expect(previewAddressMatch(rows, "lunch", "  ")).toEqual([]);
-  });
-});
-
 describe("gapCount", () => {
   it("counts non-canceled pending for the occasion", () => {
     const rows = joinOrdersFulfillments(
@@ -143,5 +99,55 @@ describe("gapCount", () => {
       [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" }), ff({ id: "f3", order: "3", status: "done" })],
     );
     expect(gapCount(rows, "lunch")).toBe(1); // only order 1 (2 canceled, 3 done)
+  });
+});
+
+describe("visibleRows", () => {
+  it("no prefix → all rows for the occasion (any status)", () => {
+    const rows = joinOrdersFulfillments(
+      [order({ id: "1", occasion: "lunch", address: "3a27b" }), order({ id: "2", occasion: "dinner", address: "3a27b" })],
+      [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" })],
+    );
+    expect(visibleRows(rows, "lunch", "").map((r) => r.order.id)).toEqual(["1"]);
+  });
+
+  it("prefix narrows by address (case-insensitive)", () => {
+    const rows = joinOrdersFulfillments(
+      [order({ id: "1", occasion: "lunch", address: "3A-1201" }), order({ id: "2", occasion: "lunch", address: "2d03a" })],
+      [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" })],
+    );
+    expect(visibleRows(rows, "lunch", "3a").map((r) => r.order.id)).toEqual(["1"]);
+  });
+
+  it("rows with no address fall back to '' (no match with prefix, shown without)", () => {
+    const rows = joinOrdersFulfillments([order({ id: "1", occasion: "lunch" })], [ff({ order: "1", status: "pending" })]);
+    expect(visibleRows(rows, "lunch", "3a")).toEqual([]); // ?? '' branch → no match
+    expect(visibleRows(rows, "lunch", "").map((r) => r.order.id)).toEqual(["1"]); // no prefix → shown
+  });
+
+  it("pure-numeric fragment: building boundary + non-numeric address", () => {
+    const rows = joinOrdersFulfillments(
+      [order({ id: "1", occasion: "lunch", address: "3a27b" }), order({ id: "2", occasion: "lunch", address: "26B-301" }), order({ id: "3", occasion: "lunch", address: "隔壁小区" })],
+      [ff({ order: "1", status: "pending" }), ff({ order: "2", status: "pending" }), ff({ id: "f3", order: "3", status: "pending" })],
+    );
+    // 3 ↔ 3a27b (building 3); not 26B-301 (building 26); not 隔壁小区 (no leading digit)
+    expect(visibleRows(rows, "lunch", "3").map((r) => r.order.id)).toEqual(["1"]);
+  });
+});
+
+describe("isCheckable", () => {
+  it("true only for non-canceled + pending-delivery rows", () => {
+    expect(isCheckable({ order: order({ status: "confirmed" }), fulfillment: ff({ status: "pending" }) })).toBe(true);
+    expect(isCheckable({ order: order({ status: "confirmed" }), fulfillment: ff({ status: "done" }) })).toBe(false);
+    expect(isCheckable({ order: order({ status: "canceled" }), fulfillment: ff({ status: "pending" }) })).toBe(false);
+    expect(isCheckable({ order: order({ status: "draft" }) })).toBe(false); // no fulfillment → delivery none
+  });
+});
+
+describe("toggleSelection", () => {
+  it("adds an unselected id, removes a selected one", () => {
+    expect(toggleSelection([1, 2], 3)).toEqual([1, 2, 3]);
+    expect(toggleSelection([1, 2, 3], 2)).toEqual([1, 3]);
+    expect(toggleSelection([], 5)).toEqual([5]);
   });
 });

@@ -69,32 +69,7 @@ describe("PATCH /fulfillments", () => {
     expect(listFulfillments).not.toHaveBeenCalled(); // ids path needs no address lookup
   });
 
-  it("marks every open fulfillment whose address contains the fragment done (voice/agent path)", async () => {
-    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [
-      f({ id: 11, order: at("26B-301") }),
-      f({ id: 12, order: at("26B-502") }),
-      f({ id: 13, order: at("26B-301"), status: "done" }), // already done → skip
-      f({ id: 14, order: at("1D-1201") }),
-    ]);
-    const setFulfillmentsByIds = vi.fn(async () => undefined);
-    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByIds });
-    const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "26B" }) });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { count: number }).count).toBe(2); // 11 + 12 (13 done, 14 other building)
-    expect(setFulfillmentsByIds).toHaveBeenCalledWith(expect.any(String), [11, 12], { status: "done" });
-  });
-
-  it("returns count 0 + no write when nothing matches", async () => {
-    const listFulfillments = vi.fn<DeliveryDeps["listFulfillments"]>(async () => [f({ order: at("1D") })]);
-    const setFulfillmentsByIds = vi.fn(async () => undefined);
-    const app = deliveryRoutes(SECRET, { listFulfillments, setFulfillmentsByIds });
-    const res = await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "99X" }) });
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { count: number }).count).toBe(0);
-    expect(setFulfillmentsByIds).not.toHaveBeenCalled();
-  });
-
-  it("400 when address is missing/blank (blank would otherwise mark ALL)", async () => {
+  it("400 when body has no ids (address-only mode removed)", async () => {
     const app = deliveryRoutes(SECRET, deps(vi.fn()));
     expect((await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({}) })).status).toBe(400);
     expect((await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "   " }) })).status).toBe(400);
@@ -106,12 +81,12 @@ describe("PATCH /fulfillments", () => {
   });
 
   it("401 without a token", async () => {
-    expect((await deliveryRoutes(SECRET, deps(vi.fn())).request("/fulfillments", { method: "PATCH", body: JSON.stringify({ address: "1D" }) })).status).toBe(401);
+    expect((await deliveryRoutes(SECRET, deps(vi.fn())).request("/fulfillments", { method: "PATCH", body: JSON.stringify({ ids: [1] }) })).status).toBe(401);
   });
 
   it("502 when the cms write throws", async () => {
     const setFulfillmentsByIds = vi.fn(async () => { throw new Error("net"); });
-    const app = deliveryRoutes(SECRET, { listFulfillments: vi.fn(async () => [f({ order: at("1D") })]), setFulfillmentsByIds });
-    expect((await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ address: "1D" }) })).status).toBe(502);
+    const app = deliveryRoutes(SECRET, { listFulfillments: vi.fn(async () => []), setFulfillmentsByIds });
+    expect((await app.request("/fulfillments", { method: "PATCH", headers: await json(), body: JSON.stringify({ ids: [201] }) })).status).toBe(502);
   });
 });

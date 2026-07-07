@@ -203,10 +203,6 @@ export async function dispatchPendingOp(
       const r = await services.markUnpaid?.({ orderId: Number(a.orderId) }) ?? { ok: false as const, error: "not implemented" };
       return r.ok ? `已回退订单 #${a.orderId} 为未付款。` : `回退失败：${r.error}`;
     }
-    case "mark_delivered": {
-      const r = await services.markDelivered({ address: String(a.address) });
-      return r.ok ? `已标记 ${a.address} 送达（${r.count} 份）。` : `标记失败：${r.error}`;
-    }
     case "generate_menu": {
       const targets = a.targets as Array<{ date: string; occasion: "lunch" | "dinner" }>;
       const r = await services.generateMenu(targets, a.force === true);
