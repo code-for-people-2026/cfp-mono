@@ -213,11 +213,13 @@ export default function Menu() {
 /** A meal card: 午餐/晚餐 of one day. */
 function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () => void; onSwap: (dishId: string | number) => void; onPublish: () => void }) {
   const { occasion, plan, onGen, onSwap, onPublish } = props;
-  // Published plans read distinctly from draft: green left bar + green-soft tint +
-  // a filled "已发出" tag (#124). Draft keeps the soft amber tag on a plain card.
+  // Published plans read distinctly from draft: green-soft tint + a filled "已发出"
+  // tag (#124). Draft keeps the soft amber tag on a plain card. (No left border bar —
+  // `.card`'s `border border-line` is declared after Tailwind utilities in app.css
+  // and would override `border-l-*`/`border-green` at equal specificity, Codex #130.)
   const published = plan?.status === "published";
   return (
-    <View className={`my-[20rpx] card p-[24rpx] ${published ? "border-l-[8rpx] border-green bg-green-soft" : "bg-surface"}`}>
+    <View className={`my-[20rpx] card p-[24rpx] ${published ? "bg-green-soft" : "bg-surface"}`}>
       <View className="mb-[16rpx] flex items-center gap-[16rpx]">
         <Text className="text-[30rpx] font-bold">{OCCASION_LABEL[occasion]}</Text>
         {published && <Tag className="bg-green text-white">已发出</Tag>}
