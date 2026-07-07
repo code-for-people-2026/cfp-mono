@@ -35,6 +35,12 @@ export type AgentServices = {
   getMenu(date?: string): Promise<MenuPlanView[]>;
   getDishPool(): Promise<Array<{ id: string | number; name: string; mainIngredient?: string; category?: string }>>;
   createOffering(input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
+  // Preview reads for operation-confirm cards (#126 rich previews) — all read-only.
+  previewOrder(orderId: string | number): Promise<{ displayName: string; quantity: number; occasion: string } | null>;
+  previewDelivered(address: string): Promise<number>;
+  previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; lines: string[] } | { ok: false; reason: string }>;
+  previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean): Promise<{ ok: true; oldName: string; newName: string; warning?: string } | { ok: false; error: string }>;
+  previewPublish(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   markUnpaid?(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Operator id (from JWT) — keys the server-side pending ops (#126). */
   operatorId: string | number;
@@ -46,6 +52,12 @@ export type AgentTool = {
 };
 
 const occasionZh = (o: unknown) => (o === "lunch" ? "午餐" : o === "dinner" ? "晚餐" : String(o));
+
+/** "#45（王燕萍 2份午餐）" — falls back to just the id if the order can't be read. */
+const orderLabel = async (s: AgentServices, orderId: number) => {
+  const o = await s.previewOrder(orderId);
+  return o ? `#${orderId}（${o.displayName} ${o.quantity}份${occasionZh(o.occasion)}）` : `#${orderId}`;
+};
 
 const parseOccasion = (o: unknown): "lunch" | "dinner" => (o === "dinner" ? "dinner" : "lunch");
 
@@ -123,7 +135,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     def: { type: "function", function: { name: "confirm_order", description: "确认一个草稿订单（转正：开餐 slot + 建送餐履约）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const orderId = Number(args.orderId);
-      const summary = `将确认订单 #${orderId}（开餐+建送餐履约）`;
+      const label = await orderLabel(s, orderId);
+      const summary = `将确认订单 ${label}（开餐+建送餐履约）`;
       const opId = setPendingOp(s.operatorId, { toolName: "confirm_order", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("confirm_order", summary, { orderId }, opId) };
     },
@@ -132,7 +145,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     def: { type: "function", function: { name: "cancel_order", description: "取消一个订单（作废，其送餐履约一并取消）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const orderId = Number(args.orderId);
-      const summary = `将取消订单 #${orderId}（作废+退出经营口径）`;
+      const label = await orderLabel(s, orderId);
+      const summary = `将取消订单 ${label}（作废+退出经营口径）`;
       const opId = setPendingOp(s.operatorId, { toolName: "cancel_order", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("cancel_order", summary, { orderId }, opId) };
     },
@@ -141,7 +155,8 @@ export const AGENT_TOOLS: AgentTool[] = [
     def: { type: "function", function: { name: "mark_paid", description: "标记一个订单已付款。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const orderId = Number(args.orderId);
-      const summary = `将标记订单 #${orderId} 为已付款`;
+      const label = await orderLabel(s, orderId);
+      const summary = `将标记订单 ${label} 为已付款`;
       const opId = setPendingOp(s.operatorId, { toolName: "mark_paid", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_paid", summary, { orderId }, opId) };
     },
@@ -150,7 +165,9 @@ export const AGENT_TOOLS: AgentTool[] = [
     def: { type: "function", function: { name: "mark_delivered", description: "标记某个地址已送达（按地址片段匹配，如「26B」匹配所有含 26B 的）。", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
     execute: async (s, args) => {
       const address = String(args.address ?? "");
-      const summary = `将标记地址 ${address} 的订单为已送达`;
+      const count = await s.previewDelivered(address);
+      if (count === 0) return { text: `没找到 ${address} 的待送订单。` };
+      const summary = `将标记 ${address} 送达（${count} 份）`;
       const opId = setPendingOp(s.operatorId, { toolName: "mark_delivered", args: { address }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_delivered", summary, { address }, opId) };
     },
@@ -233,9 +250,12 @@ export const AGENT_TOOLS: AgentTool[] = [
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => ({ date: String((t as { date?: unknown }).date), occasion: (t as { occasion?: unknown }).occasion === "dinner" ? "dinner" as const : "lunch" as const })) : [];
       if (targets.length === 0) return { text: "没说要排哪天哪餐。" };
       const force = args.force === true;
-      const summary = `将为 ${targets.map((t) => `${t.date} ${t.occasion === "lunch" ? "午餐" : "晚餐"}`).join("、")} 排菜`;
+      const preview = await s.previewMenuTargets(targets, force);
+      if (!preview.ok) return { text: preview.reason === "pool-too-small" ? "菜品池不够，排不出来。" : preview.reason === "plan-published" ? "这餐已发给顾客了，要重排得说「强制」。" : "排菜预览失败，再试一下。" };
+      const head = `将为 ${targets.map((t) => `${t.date} ${t.occasion === "lunch" ? "午餐" : "晚餐"}`).join("、")} 排菜`;
+      const summary = `${head}：\n${preview.lines.join("\n")}`;
       const opId = setPendingOp(s.operatorId, { toolName: "generate_menu", args: { targets, force }, summary });
-      return { text: summary + "。点下面「确认」。", card: opConfirmCard("generate_menu", summary, { targets, force }, opId) };
+      return { text: summary + "\n点下面「确认」。", card: opConfirmCard("generate_menu", summary, { targets, force }, opId) };
     },
   },
   {
@@ -245,7 +265,9 @@ export const AGENT_TOOLS: AgentTool[] = [
       const dishId = Number(args.dishId);
       const replacementId = args.replacementId !== undefined ? Number(args.replacementId) : undefined;
       const force = args.force === true;
-      const summary = `将换掉 plan#${planId} 里的菜 #${dishId}${replacementId !== undefined ? ` 换成 #${replacementId}` : "（自动选替代）"}`;
+      const preview = await s.previewSwap(planId, dishId, replacementId, force);
+      if (!preview.ok) return { text: preview.error === "plan-published" ? "这餐已发给顾客了，要改得说「强制」。" : `换不了：${preview.error}` };
+      const summary = `将把 ${preview.oldName} 换成 ${preview.newName}${preview.warning ? `（${preview.warning}）` : ""}`;
       const opId = setPendingOp(s.operatorId, { toolName: "swap_dish", args: { planId, dishId, replacementId, force }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, { planId, dishId, replacementId, force }, opId) };
     },
@@ -254,9 +276,11 @@ export const AGENT_TOOLS: AgentTool[] = [
     def: { type: "function", function: { name: "publish_menu", description: "发布某餐菜单（生成接龙群文案+标记已发出）。planId 从 get_menu 拿。用户说「发出去」「给我文案」「发群通知」时调它。", parameters: { type: "object", properties: { planId: { type: "integer" } }, required: ["planId"] } } },
     execute: async (s, args) => {
       const planId = Number(args.planId);
-      const summary = `将发布菜单 plan#${planId} + 生成接龙文案并复制到剪贴板`;
+      const preview = await s.previewPublish(planId);
+      if (!preview.ok) return { text: "读不到这餐菜单，再试一下。" };
+      const summary = `将发布菜单，接龙文案如下：\n\n${preview.publishText}`;
       const opId = setPendingOp(s.operatorId, { toolName: "publish_menu", args: { planId }, summary });
-      return { text: summary + "。点下面「确认」后文案会自动复制。", card: opConfirmCard("publish_menu", summary, { planId }, opId) };
+      return { text: summary + "\n点下面「确认」后文案会自动复制。", card: opConfirmCard("publish_menu", summary, { planId }, opId) };
     },
   },
 ];
