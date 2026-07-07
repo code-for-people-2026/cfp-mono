@@ -35,7 +35,7 @@ const mockCms = (): AgentCms =>
 const token = async () => issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET);
 const auth = async () => ({ Authorization: `Bearer ${await token()}` });
 const json = async () => ({ ...(await auth()), "content-type": "application/json" });
-const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 } } };
+const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 }, opId: "1" } };
 
 const sampleHistory = (): ChatMessage[] => [
   { id: 1, content: "老消息", role: "user", createdAt: "", seller: 7 },
@@ -161,15 +161,23 @@ describe("GET /chat", () => {
 
 describe("POST /chat/confirm-operation", () => {
   const OP = 1;
-  const post = async (app: ReturnType<typeof chatRoutes>, body: unknown) =>
-    app.request("/confirm-operation", { method: "POST", headers: await json(), body: typeof body === "string" ? body : JSON.stringify(body) });
+  // seed() stores a pending op and returns its opId; post() auto-includes the current
+  // opId so a happy-path click matches. Pass an explicit `opId` to override (stale test).
+  let curOpId = "";
+  const seed = (op: Parameters<typeof setPendingOp>[1]) => { curOpId = setPendingOp(OP, op); };
+  const post = async (app: ReturnType<typeof chatRoutes>, body: Record<string, unknown> | string = {}) =>
+    app.request("/confirm-operation", {
+      method: "POST",
+      headers: await json(),
+      body: typeof body === "string" ? body : JSON.stringify({ opId: curOpId, ...body }),
+    });
 
   it("record_orders splits known/new and records both, then clears pending (#126)", async () => {
     const items = [
       { customerName: "王燕萍", quantity: 1, occasion: "lunch" as const, date: "2026-07-07" },
       { customerName: "大龙猫", quantity: 1, occasion: "dinner" as const, date: "2026-07-07" },
     ];
-    setPendingOp(OP, { toolName: "record_orders", summary: "将记 2 单", args: { items, isNew: [false, true] } });
+    seed({ toolName: "record_orders", summary: "将记 2 单", args: { items, isNew: [false, true] } });
     const cms = {
       ...mockCms(),
       listCustomers: vi.fn(async () => [{ id: 5, displayName: "王燕萍" }] as never),
@@ -189,7 +197,7 @@ describe("POST /chat/confirm-operation", () => {
   });
 
   it("mark_paid marks the order paid on confirm (#126)", async () => {
-    setPendingOp(OP, { toolName: "mark_paid", summary: "将标记 #45 已付款", args: { orderId: 45 } });
+    seed({ toolName: "mark_paid", summary: "将标记 #45 已付款", args: { orderId: 45 } });
     const updateOrder = vi.fn(async () => ({}) as never);
     const app = chatRoutes(SECRET, { cms: { ...mockCms(), updateOrder } as AgentCms });
     const res = await post(app, {});
@@ -199,12 +207,24 @@ describe("POST /chat/confirm-operation", () => {
   });
 
   it("add_dish creates the offering on confirm (#126)", async () => {
-    setPendingOp(OP, { toolName: "add_dish", summary: "将添加 蒜蓉粉丝虾", args: { name: "蒜蓉粉丝虾", mainIngredient: "虾", category: "meat" } });
+    seed({ toolName: "add_dish", summary: "将添加 蒜蓉粉丝虾", args: { name: "蒜蓉粉丝虾", mainIngredient: "虾", category: "meat" } });
     const createOffering = vi.fn(async () => ({ id: 77, name: "蒜蓉粉丝虾" }) as never);
     const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering } as AgentCms });
     const res = await post(app, {});
     expect(res.status).toBe(200);
     expect(createOffering).toHaveBeenCalledWith(expect.any(String), { name: "蒜蓉粉丝虾", mainIngredient: "虾", category: "meat" });
+  });
+
+  it("409 when the submitted opId is stale (older card clicked after a newer op, Codex P1)", async () => {
+    seed({ toolName: "mark_paid", summary: "旧 #45", args: { orderId: 45 } });
+    const staleId = curOpId;
+    seed({ toolName: "cancel_order", summary: "新 #46", args: { orderId: 46 } }); // overwrites
+    const app = chatRoutes(SECRET, { cms: mockCms() });
+    const res = await app.request("/confirm-operation", {
+      method: "POST", headers: await json(), body: JSON.stringify({ opId: staleId }),
+    });
+    expect(res.status).toBe(409); // the older mark_paid card must NOT cancel #46
+    expect(getPendingOp(OP)?.toolName).toBe("cancel_order"); // pending untouched
   });
 
   it("404 when no op is pending", async () => {
@@ -218,16 +238,16 @@ describe("POST /chat/confirm-operation", () => {
     expect((await app.request("/confirm-operation", { method: "POST" })).status).toBe(401);
   });
 
-  it("tolerates a non-JSON body (falls back to pending args)", async () => {
-    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
-    const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering: vi.fn(async () => ({ id: 1, name: "x" })) } as AgentCms });
+  it("rejects a non-JSON body (no opId ⇒ can't prove freshness)", async () => {
+    seed({ toolName: "add_dish", summary: "x", args: { name: "x" } });
+    const app = chatRoutes(SECRET, { cms: mockCms() });
     const res = await app.request("/confirm-operation", { method: "POST", headers: await auth(), body: "not-json" });
-    expect(res.status).toBe(200); // body parse falls back to null → dispatch uses pending args
+    expect(res.status).toBe(409); // body parse → null → opId mismatch → stale
     clearPendingOp(OP);
   });
 
   it("502 when dispatch throws (service write fails)", async () => {
-    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
+    seed({ toolName: "add_dish", summary: "x", args: { name: "x" } });
     const cms = { ...mockCms(), createOffering: vi.fn(() => { throw new Error("net"); }) } as AgentCms;
     const app = chatRoutes(SECRET, { cms });
     expect((await post(app, {})).status).toBe(502);
@@ -235,7 +255,7 @@ describe("POST /chat/confirm-operation", () => {
   });
 
   it("still 200 when the best-effort outcome persist throws", async () => {
-    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
+    seed({ toolName: "add_dish", summary: "x", args: { name: "x" } });
     const createChatMessage = vi.fn(async () => { throw new Error("cms down"); });
     const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering: vi.fn(async () => ({ id: 1, name: "x" })) } as AgentCms, createChatMessage });
     const res = await post(app, {});
@@ -271,7 +291,7 @@ describe("dispatchPendingOp", () => {
       operatorId: 1,
       ...over,
     }) as AgentServices;
-  const op = (toolName: string, args: Record<string, unknown> = {}) => ({ toolName, args, summary: "" });
+  const op = (toolName: string, args: Record<string, unknown> = {}) => ({ opId: "1", toolName, args, summary: "" });
   const run = (s: AgentServices, toolName: string, args: Record<string, unknown> = {}, body: { items?: unknown } | null = null) =>
     dispatchPendingOp(s, op(toolName, args), body);
 

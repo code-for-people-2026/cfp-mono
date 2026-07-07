@@ -269,7 +269,7 @@ export const deliveryCardDataSchema = z.object({ totalPending: z.number(), group
 export const cardPayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("orders"), data: orderCardDataSchema }),
   z.object({ type: z.literal("delivery"), data: deliveryCardDataSchema }),
-  z.object({ type: z.literal("operation-confirm"), data: z.object({ toolName: z.string(), summary: z.string(), args: z.record(z.string(), z.unknown()) }) }),
+  z.object({ type: z.literal("operation-confirm"), data: z.object({ toolName: z.string(), summary: z.string(), args: z.record(z.string(), z.unknown()), opId: z.string() }) }),
 ]);
 
 export const chatMessageSchema = z.object({

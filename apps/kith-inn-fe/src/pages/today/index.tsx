@@ -92,7 +92,8 @@ export default function Today() {
   };
 
   /** "确认" on an operation-confirm card → POST /chat/confirm-operation (#126).
-   *  record_orders cards pass the (address-edited) items; other ops send no body. */
+   *  record_orders cards pass the (address-edited) items; all cards pass the opId
+   *  (server rejects a stale-card click with 409). */
   const confirmOperation = (i: number, items?: ConfirmCustomerItem[]) => {
     if (confirming) return;
     const msg = msgs[i];
@@ -106,10 +107,11 @@ export default function Today() {
       url: `${chatUrl()}/confirm-operation`,
       method: "POST",
       header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
-      data: items ? { items } : {},
+      data: { opId: card.data.opId, ...(items ? { items } : {}) },
     })
       .then((res) => {
         if (res.statusCode === 401) { tokens.clearToken(); Taro.redirectTo({ url: "/pages/login/index" }); return; }
+        if (res.statusCode === 409) { Taro.showToast({ title: "这张确认卡已过期，请重新说一遍", icon: "none" }); return; }
         if (res.statusCode >= 400) { Taro.showToast({ title: "操作失败", icon: "error" }); return; }
         const reply = (res.data as { reply?: string }).reply ?? "已完成。";
         setConfirmed((prev) => new Set(prev).add(i));

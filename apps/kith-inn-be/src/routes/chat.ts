@@ -125,14 +125,18 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
    * POST /chat/confirm-operation — the deterministic "确认" behind operation-confirm
    * cards (#126). Reads the per-operator pending op → dispatches to the corresponding
    * AgentServices write method → clears pending → returns the result text.
-   * Optional body: `{ items? }` for record_orders with address edits.
+   * Body: `{ opId, items? }`. `opId` must match the stored pending op's id, else the
+   * click is from a stale (older) card and we reject 409 (newest-overwrites semantics
+   * mean only the latest card is actionable). `items` carries address edits for
+   * record_orders; immutable fields stay server-side (dispatch trusts pending only).
    */
   app.post("/confirm-operation", async (c) => {
     const jwt = c.get("token") as string;
     const operatorId = c.get("operatorId") as string | number;
     const op = getPendingOp(operatorId);
     if (!op) return c.json({ error: "no pending operation" }, 404);
-    const body = (await c.req.json().catch(() => null)) as { items?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { opId?: unknown; items?: unknown } | null;
+    if (body?.opId !== op.opId) return c.json({ error: "card stale" }, 409);
     const services = createCmsAgentServices({ jwt, cms, operatorId });
     try {
       const result = await dispatchPendingOp(services, op, body);
@@ -152,17 +156,20 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
  *  Exported for direct unit-testing of each opType branch (#126). */
 export async function dispatchPendingOp(
   services: AgentServices,
-  op: { toolName: string; args: Record<string, unknown>; summary: string },
-  body: { items?: unknown } | null,
+  op: { opId: string; toolName: string; args: Record<string, unknown>; summary: string },
+  body: { opId?: unknown; items?: unknown } | null,
 ): Promise<string> {
   const a = op.args;
   switch (op.toolName) {
     case "record_orders": {
-      // The preview classified each item known/new (isNew[i]); on confirm 桃子 may
-      // have typed addresses into the new-customer rows. Split by isNew → record
-      // known (drafts) + create new customers with addresses, then report both.
-      const items = (body?.items ?? a.items) as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
+      // Trust only the pending preview for immutable fields (customerName/quantity/
+      // occasion/date); the body may carry address edits 桃子 typed into new-customer
+      // rows. Merge by index: pending item + body address (else pending's). isNew
+      // comes from pending too. (Codex P1 — don't let a buggy client mutate the order.)
+      const pendingItems = a.items as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
       const isNew = (a.isNew as boolean[] | undefined) ?? [];
+      const bodyAddrs = (Array.isArray(body?.items) ? body!.items : []) as Array<{ address?: string }>;
+      const items = pendingItems.map((it, i) => ({ ...it, address: bodyAddrs[i]?.address ?? it.address }));
       const knownItems = items.filter((_, i) => !isNew[i]);
       const newItems = items.filter((_, i) => isNew[i]);
       const parts: string[] = [];
