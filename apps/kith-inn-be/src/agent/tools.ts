@@ -1,5 +1,6 @@
 import type { CardPayload, DeliveryCardData, MenuPlanView, Order } from "@cfp/kith-inn-shared";
 import type { ToolDef } from "../lib/llm/chatWithTools";
+import { setPendingOp } from "./pendingOps";
 
 /**
  * 「今天」主 agent 的工具（PRD §5.5）。agent 只**编排**这些确定性操作，不持业务逻辑——
@@ -9,6 +10,7 @@ import type { ToolDef } from "../lib/llm/chatWithTools";
 
 /** The deterministic operations the agent's tools drive (DI — mock in tests). */
 export type AgentServices = {
+  previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>): Promise<{ date: string; isNew: boolean[] }>;
   recordOrders(
     items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
   ): Promise<{
@@ -33,6 +35,9 @@ export type AgentServices = {
   getMenu(date?: string): Promise<MenuPlanView[]>;
   getDishPool(): Promise<Array<{ id: string | number; name: string; mainIngredient?: string; category?: string }>>;
   createOffering(input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
+  markUnpaid?(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Operator id (from JWT) — keys the server-side pending ops (#126). */
+  operatorId: string | number;
 };
 
 export type AgentTool = {
@@ -54,6 +59,13 @@ const parseOrderItems = (raw: unknown): Array<{ customerName: string; address?: 
     date: typeof (it as { date?: unknown })?.date === "string" ? String((it as { date?: unknown }).date) : undefined,
   }));
 };
+
+/** Build an operation-confirm card. The `: CardPayload` return annotation contextually
+ *  types the literal so `type: "operation-confirm"` stays a literal — no cast needed (#126). */
+const opConfirmCard = (toolName: string, summary: string, args: Record<string, unknown>): CardPayload => ({
+  type: "operation-confirm",
+  data: { toolName, summary, args },
+});
 
 export const AGENT_TOOLS: AgentTool[] = [
   {
@@ -86,51 +98,48 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
     execute: async (s, args) => {
       const items = parseOrderItems(args.items);
-      const r = await s.recordOrders(items);
-      const parts: string[] = [];
-      if (r.recorded.length > 0) parts.push(`已记草稿：${r.recorded.map((x) => `${x.name} #${x.orderId}`).join("、")}`);
-      if (r.needsConfirmation.length > 0) {
-        parts.push(
-          `新顾客待确认：${r.needsConfirmation
-            .map((x) => `${x.customerName}(${x.address ?? "地址？"})${x.quantity}份${occasionZh(x.occasion)}`)
-            .join("、")}——点下面「全部建档并记单」确认`,
-        );
-      }
-      if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}(${x.error})`).join("、")}`);
-      // The card mirrors needsConfirmation verbatim → POST /chat/confirm-customers
-      // handles the deterministic confirmation action, removing LLM-recall flakiness (#97).
-      const card: CardPayload | undefined =
-        r.needsConfirmation.length > 0 ? { type: "customer-confirm", data: { items: r.needsConfirmation } } : undefined;
-      return { text: parts.join("；") || "没有可记的单。", card };
+      if (items.length === 0) return { text: "没说要记谁的单。" };
+      const { isNew } = await s.previewOrders(items);
+      const newNames = items.filter((_, i) => isNew[i]).map((it) => it.customerName);
+      const summary = `将记 ${items.length} 单：${items.map((it) => `${it.customerName} ${it.quantity}份${occasionZh(it.occasion)}`).join("、")}${newNames.length > 0 ? `（新顾客 ${newNames.join("、")} 待建）` : ""}`;
+      setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: { items, isNew } });
+      return { text: summary + "。点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, { items, isNew }) };
     },
   },
   {
     def: { type: "function", function: { name: "confirm_order", description: "确认一个草稿订单（转正：开餐 slot + 建送餐履约）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
-      const r = await s.confirmOrder({ orderId: Number(args.orderId) });
-      return { text: r.ok ? `已确认订单 #${args.orderId}（已开餐、进入送餐清单）。` : `确认失败：${r.error}` };
+      const orderId = Number(args.orderId);
+      const summary = `将确认订单 #${orderId}（开餐+建送餐履约）`;
+      setPendingOp(s.operatorId, { toolName: "confirm_order", args: { orderId }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("confirm_order", summary, { orderId }) };
     },
   },
   {
     def: { type: "function", function: { name: "cancel_order", description: "取消一个订单（作废，其送餐履约一并取消）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
-      const r = await s.cancelOrder({ orderId: Number(args.orderId) });
-      return { text: r.ok ? `已取消订单 #${args.orderId}。` : `取消失败：${r.error}` };
+      const orderId = Number(args.orderId);
+      const summary = `将取消订单 #${orderId}（作废+退出经营口径）`;
+      setPendingOp(s.operatorId, { toolName: "cancel_order", args: { orderId }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("cancel_order", summary, { orderId }) };
     },
   },
   {
     def: { type: "function", function: { name: "mark_paid", description: "标记一个订单已付款。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
-      const r = await s.markPaid({ orderId: Number(args.orderId) });
-      return { text: r.ok ? `已标记订单 #${args.orderId} 为已付款。` : `标记失败：${r.error}` };
+      const orderId = Number(args.orderId);
+      const summary = `将标记订单 #${orderId} 为已付款`;
+      setPendingOp(s.operatorId, { toolName: "mark_paid", args: { orderId }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_paid", summary, { orderId }) };
     },
   },
   {
     def: { type: "function", function: { name: "mark_delivered", description: "标记某个地址已送达（按地址片段匹配，如「26B」匹配所有含 26B 的）。", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
     execute: async (s, args) => {
       const address = String(args.address ?? "");
-      const r = await s.markDelivered({ address });
-      return { text: r.ok ? `已标记 ${address} 送达（${r.count} 份）。` : `标记失败：${r.error}` };
+      const summary = `将标记地址 ${address} 的订单为已送达`;
+      setPendingOp(s.operatorId, { toolName: "mark_delivered", args: { address }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_delivered", summary, { address }) };
     },
   },
   {
@@ -185,8 +194,10 @@ export const AGENT_TOOLS: AgentTool[] = [
     execute: async (s, args) => {
       const name = String(args.name ?? "").trim();
       if (!name) return { text: "菜名不能空。" };
-      const r = await s.createOffering({ name, mainIngredient: args.mainIngredient ? String(args.mainIngredient) : undefined, category: args.category ? String(args.category) : undefined });
-      return { text: `加好了：${r.name}（#${r.id}）。` };
+      const input = { name, mainIngredient: args.mainIngredient ? String(args.mainIngredient) : undefined, category: args.category ? String(args.category) : undefined };
+      const summary = `将添加：${name}（主料${input.mainIngredient ?? "?"}/${input.category ?? "?"}）`;
+      setPendingOp(s.operatorId, { toolName: "add_dish", args: input, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("add_dish", summary, input) };
     },
   },
   {
@@ -208,42 +219,31 @@ export const AGENT_TOOLS: AgentTool[] = [
     execute: async (s, args) => {
       const targets = Array.isArray(args.targets) ? args.targets.map((t) => ({ date: String((t as { date?: unknown }).date), occasion: (t as { occasion?: unknown }).occasion === "dinner" ? "dinner" as const : "lunch" as const })) : [];
       if (targets.length === 0) return { text: "没说要排哪天哪餐。" };
-      const r = await s.generateMenu(targets, args.force === true);
-      if (!r.ok) {
-        if (r.reason === "plan-published") return { text: "这餐已经发给顾客了，确定要重新排吗？确认后我覆写。" };
-        if (r.reason === "pool-too-small") return { text: "菜品池不够，排不满。先去菜品池加几道菜。" };
-        return { text: "排菜失败，再试一下？" };
-      }
-      const lines = r.plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
-      return { text: `排好了：\n${lines.join("\n")}` };
+      const force = args.force === true;
+      const summary = `将为 ${targets.map((t) => `${t.date} ${t.occasion === "lunch" ? "午餐" : "晚餐"}`).join("、")} 排菜`;
+      setPendingOp(s.operatorId, { toolName: "generate_menu", args: { targets, force }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("generate_menu", summary, { targets, force }) };
     },
   },
   {
     def: { type: "function", function: { name: "swap_dish", description: "换掉菜单里的一道菜。planId 和 dishId 从 get_menu 返回里拿。不传 replacementId=自动换一道（避重）；传了=指定换。force=true 改已发出的菜单（需桃子确认）。", parameters: { type: "object", properties: { planId: { type: "integer" }, dishId: { type: "integer" }, replacementId: { type: "integer" }, force: { type: "boolean" } }, required: ["planId", "dishId"] } } },
     execute: async (s, args) => {
-      const originalDishId = Number(args.dishId);
-      // Fetch the old plan first to know which dish we're replacing (for name reporting)
-      const menu = await s.getMenu();
-      const oldPlan = menu.find((p) => String(p.planId) === String(args.planId));
-      const oldDishIds = oldPlan ? new Set(oldPlan.dishes.map((d) => String(d.id))) : new Set<string>();
-      const r = await s.swapDish(Number(args.planId), originalDishId, args.replacementId !== undefined ? Number(args.replacementId) : undefined, args.force === true);
-      if (!r.ok) {
-        if (r.error === "plan-published") return { text: "这餐已经发出去了，确定要换菜吗？确认后我改（旧文案会作废）。" };
-        if (r.error === "no-alternative") return { text: "池里没有别的同类菜可换了。" };
-        return { text: `换菜失败：${r.error}` };
-      }
-      // The replacement is the dish in the new plan that wasn't in the old plan
-      const newDish = r.plan.dishes.find((d) => !oldDishIds.has(String(d.id)));
-      const newName = newDish?.name ?? "新菜";
-      return { text: r.warning ? `换成了${newName}。注意：${r.warning}` : `换成了${newName}。` };
+      const planId = Number(args.planId);
+      const dishId = Number(args.dishId);
+      const replacementId = args.replacementId !== undefined ? Number(args.replacementId) : undefined;
+      const force = args.force === true;
+      const summary = `将换掉 plan#${planId} 里的菜 #${dishId}${replacementId !== undefined ? ` 换成 #${replacementId}` : "（自动选替代）"}`;
+      setPendingOp(s.operatorId, { toolName: "swap_dish", args: { planId, dishId, replacementId, force }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, { planId, dishId, replacementId, force }) };
     },
   },
   {
     def: { type: "function", function: { name: "publish_menu", description: "发布某餐菜单（生成接龙群文案+标记已发出）。planId 从 get_menu 拿。用户说「发出去」「给我文案」「发群通知」时调它。", parameters: { type: "object", properties: { planId: { type: "integer" } }, required: ["planId"] } } },
     execute: async (s, args) => {
-      const r = await s.publishMenu(Number(args.planId));
-      if (!r.ok) return { text: `发布失败：${r.error}` };
-      return { text: `菜单已发布，文案如下（复制贴群）：\n\n${r.publishText}` };
+      const planId = Number(args.planId);
+      const summary = `将发布菜单 plan#${planId} + 生成接龙文案并复制到剪贴板`;
+      setPendingOp(s.operatorId, { toolName: "publish_menu", args: { planId }, summary });
+      return { text: summary + "。点下面「确认」后文案会自动复制。", card: opConfirmCard("publish_menu", summary, { planId }) };
     },
   },
 ];

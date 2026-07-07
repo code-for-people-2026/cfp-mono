@@ -1,12 +1,12 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
-import { Input, ScrollView, Text, View } from "@tarojs/components";
+import { ScrollView, Text, Textarea, View } from "@tarojs/components";
 import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { getCustomerConfirmActionState, type ChatCardMessage } from "@/logic/chatCards";
-import { chatUrl, confirmCustomersUrl, markDeliveredUrl, orderConfirmUrl, orderUrl } from "@/services/api";
+import type { ChatCardMessage } from "@/logic/chatCards";
+import { chatUrl, markDeliveredUrl, orderConfirmUrl, orderUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
 type Msg = ChatCardMessage & { id?: string | number; cardUnavailable?: boolean };
@@ -91,50 +91,36 @@ export default function Today() {
       .finally(() => setSending(false));
   };
 
-  /** "全部建档并记单" on an active customer-confirm card → POST /chat/confirm-customers
-   *  with this card's items (possibly address-edited by 桃子); server validates they still match pending. */
-  const confirmCustomers = (i: number, editedItems?: ConfirmCustomerItem[]) => {
+  /** "确认" on an operation-confirm card → POST /chat/confirm-operation (#126).
+   *  record_orders cards pass the (address-edited) items; other ops send no body. */
+  const confirmOperation = (i: number, items?: ConfirmCustomerItem[]) => {
     if (confirming) return;
-    const card = msgs[i]?.card;
-    if (card?.type !== "customer-confirm") return;
-    const action = getCustomerConfirmActionState(msgs, i, confirmed);
-    if (action?.status !== "active") {
-      if (action?.status === "stale") Taro.showToast({ title: "确认卡已过期，请重新识别", icon: "none" });
-      return;
-    }
+    const msg = msgs[i];
+    const card = msg?.card;
+    if (card?.type !== "operation-confirm") return;
+    if (msg?.fromHistory || confirmed.has(i)) return;
     const token = tokens.getToken();
-    if (!token) {
-      Taro.redirectTo({ url: "/pages/login/index" });
-      return;
-    }
+    if (!token) { Taro.redirectTo({ url: "/pages/login/index" }); return; }
     setConfirming(true);
     Taro.request({
-      url: confirmCustomersUrl(),
+      url: `${chatUrl()}/confirm-operation`,
       method: "POST",
-      data: { items: editedItems ?? card.data.items },
       header: { Authorization: `Bearer ${token}`, "content-type": "application/json" },
+      data: items ? { items } : {},
     })
       .then((res) => {
-        if (res.statusCode === 401) {
-          tokens.clearToken();
-          Taro.redirectTo({ url: "/pages/login/index" });
-          return;
-        }
-        if (res.statusCode === 409) {
-          Taro.showToast({ title: "确认卡已过期，请重新识别", icon: "none" });
-          return;
-        }
-        if (res.statusCode >= 400) {
-          Taro.showToast({ title: "操作失败", icon: "error" });
-          return;
-        }
-        const n = ((res.data as { created?: unknown[] }).created ?? []).length;
-        setConfirmed((s) => new Set(s).add(i));
-        setMsgs((m) => [...m, { role: "assistant", content: n > 0 ? `已建 ${n} 单。` : "没有建成，再看看？" }]);
+        if (res.statusCode === 401) { tokens.clearToken(); Taro.redirectTo({ url: "/pages/login/index" }); return; }
+        if (res.statusCode >= 400) { Taro.showToast({ title: "操作失败", icon: "error" }); return; }
+        const reply = (res.data as { reply?: string }).reply ?? "已完成。";
+        setConfirmed((prev) => new Set(prev).add(i));
+        setMsgs((m) => [...m, { role: "assistant", content: reply }]);
+        // Copy to clipboard if the reply contains 接龙 text (publish_menu).
+        if (reply.includes("#接龙")) Taro.setClipboardData({ data: reply }).catch(() => {});
       })
       .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }))
       .finally(() => setConfirming(false));
   };
+
 
   /** 确认 / 标已付 on an orders card → reuse the orders-tab endpoints, then
    *  optimistically update that order inside the card so the button flips. */
@@ -248,7 +234,6 @@ export default function Today() {
         ) : (
           msgs.map((m, i) => {
             const me = m.role === "user";
-            const customerConfirmAction = getCustomerConfirmActionState(msgs, i, confirmed);
             return (
               <View key={i} className={`my-[28rpx] flex gap-[20rpx]${me ? " flex-row-reverse" : ""}`}>
                 {!me && (
@@ -267,8 +252,8 @@ export default function Today() {
                       card={m.card}
                       confirmed={confirmed.has(i)}
                       confirming={confirming}
-                      customerConfirmAction={customerConfirmAction}
-                      onConfirm={(editedItems) => confirmCustomers(i, editedItems)}
+                      fromHistory={m.fromHistory}
+                      onConfirmOperation={(editedItems) => confirmOperation(i, editedItems)}
                       onOrderAct={(orderId, action) => onOrderAct(i, orderId, action)}
                       onMarkDelivered={(ids) => onMarkDelivered(i, ids)}
                     />
@@ -286,13 +271,16 @@ export default function Today() {
         )}
         <View id={`msg-${msgs.length - 1}`} />
       </ScrollView>
-      <View className="fixed inset-x-0 bottom-[108rpx] z-40 border-t border-line bg-paper px-[20rpx] pb-[20rpx] pt-[16rpx]">
-        <View className="flex items-center gap-[16rpx]">
-          <Input
-            className="h-[80rpx] min-w-0 flex-1 rounded-[40rpx] bg-surface px-[32rpx] text-[28rpx] text-ink"
+      <View className="fixed inset-x-0 bottom-[108rpx] z-40 border-t border-line bg-paper px-[20px] pb-[20rpx] pt-[16rpx]">
+        <View className="flex items-end gap-[16rpx]">
+          <Textarea
             value={text}
             onInput={(e) => setText(e.detail.value)}
             placeholder="粘接龙，或说 26B 送了"
+            maxlength={-1}
+            autoHeight
+            style={{ maxHeight: "200rpx", minHeight: "80rpx" }}
+            className="min-w-0 flex-1 rounded-[16rpx] bg-surface px-[24rpx] py-[16rpx] text-[28rpx] text-ink"
           />
           <View
             className={`flex h-[80rpx] w-[80rpx] flex-none items-center justify-center rounded-full bg-red text-[36rpx] text-white${sending ? " opacity-60" : ""}`}
