@@ -162,6 +162,16 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
   },
   {
+    def: { type: "function", function: { name: "mark_unpaid", description: "回退一个订单为未付款（桃子说「那个其实没付/回退一下付款」时用）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
+    execute: async (s, args) => {
+      const orderId = Number(args.orderId);
+      const label = await orderLabel(s, orderId);
+      const summary = `将回退订单 ${label} 为未付款`;
+      const opId = setPendingOp(s.operatorId, { toolName: "mark_unpaid", args: { orderId }, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_unpaid", summary, { orderId }, opId) };
+    },
+  },
+  {
     def: { type: "function", function: { name: "mark_delivered", description: "标记某个地址已送达（按地址片段匹配，如「26B」匹配所有含 26B 的）。", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
     execute: async (s, args) => {
       const address = String(args.address ?? "");
