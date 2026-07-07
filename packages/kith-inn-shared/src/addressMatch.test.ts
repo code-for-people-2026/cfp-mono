@@ -13,9 +13,11 @@ describe("addressMatches", () => {
     expect(addressMatches("26B-301", "26")).toBe(true);
   });
 
-  it("letter fragment uses startsWith", () => {
+  it("letter fragment: prefix + case-insensitive (3a/26b ↔ 3A/26B)", () => {
     expect(addressMatches("26B-301", "26B")).toBe(true);
-    expect(addressMatches("26B-301", "26b")).toBe(false); // case-sensitive
+    expect(addressMatches("26B-301", "26b")).toBe(true); // case-insensitive
+    expect(addressMatches("3A-1201", "3a")).toBe(true);
+    expect(addressMatches("3a27b", "3A")).toBe(true);
   });
 
   it("blank fragment → false", () => {

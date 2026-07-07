@@ -2,15 +2,15 @@ import type { Fulfillment, Order } from "@cfp/kith-inn-shared";
 
 // ponytail: inlined copy of addressMatches (shared has the canonical one for be/Node;
 // FE can't value-import shared .ts via Taro webpack — only type imports are stripped).
-// Keep in sync with packages/kith-inn-shared/src/addressMatch.ts.
+// Keep in sync with packages/kith-inn-shared/src/addressMatch.ts — minus the blank-fragment
+// guard: the sole caller (visibleRows) pre-trims + returns early on empty, so it's unreachable here.
 function addressMatches(address: string, fragment: string): boolean {
   const a = fragment.trim();
-  if (!a) return false;
   if (/^\d+$/.test(a)) {
     const m = address.match(/^\d+/);
     return m !== null && m[0] === a;
   }
-  return address.startsWith(a);
+  return address.toLowerCase().startsWith(a.toLowerCase());
 }
 
 export type Occasion = "lunch" | "dinner";
@@ -65,18 +65,30 @@ export function byOccasion(rows: Row[], occasion: Occasion): Row[] {
   return rows.filter((r) => r.order.occasion === occasion);
 }
 
-/** Preview: current meal + non-canceled + pending + address prefix match. Does NOT mutate. */
-export function previewAddressMatch(rows: Row[], occasion: Occasion, fragment: string): Row[] {
-  return byOccasion(rows, occasion).filter((r) => {
-    const d = lifecycleDots(r);
-    return d.base !== "canceled" && d.delivery === "pending" && addressMatches(r.order.address ?? "", fragment);
-  });
-}
-
 /** Gap: non-canceled + pending delivery count for this occasion. */
 export function gapCount(rows: Row[], occasion: Occasion): number {
   return byOccasion(rows, occasion).filter((r) => {
     const d = lifecycleDots(r);
     return d.base !== "canceled" && d.delivery === "pending";
   }).length;
+}
+
+/** Rows to display for an occasion, optionally narrowed by an address prefix (case-insensitive).
+ *  No prefix → all rows for the meal (any status); with prefix → only address-matching rows. */
+export function visibleRows(rows: Row[], occasion: Occasion, prefix: string): Row[] {
+  const frag = prefix.trim();
+  const all = byOccasion(rows, occasion);
+  if (!frag) return all;
+  return all.filter((r) => addressMatches(r.order.address ?? "", frag));
+}
+
+/** A row can be checked off when it's non-canceled and has a pending fulfillment. */
+export function isCheckable(row: Row): boolean {
+  const d = lifecycleDots(row);
+  return d.base !== "canceled" && d.delivery === "pending";
+}
+
+/** Pure toggle: returns a new id list with `id` added or removed. */
+export function toggleSelection(ids: Array<string | number>, id: string | number): Array<string | number> {
+  return ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id];
 }

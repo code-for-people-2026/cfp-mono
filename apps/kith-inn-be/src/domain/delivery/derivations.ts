@@ -1,4 +1,3 @@
-import { addressMatches } from "@cfp/kith-inn-shared/addressMatch";
 import type { AddressGap, AddressGroup, Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 
 /**
@@ -52,13 +51,6 @@ export function gapReport(fulfillments: Fulfillment[]): { gaps: AddressGap[]; to
     .map(([address, pending]) => ({ address, pending }))
     .sort((a, b) => b.pending - a.pending || a.address.localeCompare(b.address));
   return { gaps, totalPending: open.length };
-}
-
-/** Open fulfillments (pending) whose order address matches the fragment (prefix + boundary,
- *  via shared `addressMatches`). Shared by the agent's mark_delivered + the FE preview. */
-export function fulfillmentsMatchingAddress(fulfillments: Fulfillment[], address: string): Fulfillment[] {
-  if (!address.trim()) return [];
-  return fulfillments.filter((f) => addressMatches(orderAddress(f), address) && f.status === "pending");
 }
 
 // ── 最近一餐聚焦（PRD §5.5）────────────────────────────────────────────

@@ -1,8 +1,7 @@
 import { Hono } from "hono";
 import type { Fulfillment } from "@cfp/kith-inn-shared";
-import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
+import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { listFulfillments as listFulfillmentsFn, setFulfillmentsByIds as setFulfillmentsByIdsFn } from "../lib/cms/orders";
-import { todayShanghai } from "../lib/domainUtil";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
 /** Injectable cms boundary (default = real fetch client). */
@@ -16,10 +15,9 @@ export type DeliveryDeps = {
  * （收尾防漏）。两个派生都在 be 算（§7.5 派生不落表）；cms 只给原始 fulfillments。
  * canceled（终态）不计入视图与计数。
  *
- * `PATCH /fulfillments` — 确定性「送达」勾销，两种 body：
- *  - `{ ids: [...] }`：精确标这几个 fulfillment done（按钮用——避免 substring 跨地址误伤，Codex P1）。
- *  - `{ address }`：把 order.address 含该片段的未完成履约批量标 done（agent/语音用，按片段）。
- *  取代靠 agent `mark_delivered` 的 tool-call（DeepSeek tool-calling 实测不稳）。
+ * `PATCH /fulfillments` — 确定性「送达」勾销（订单页/today 卡片按钮用）：`{ ids: [...] }`
+ * 精确标这几个 fulfillment done（避免 substring 跨地址误伤，Codex P1）。历史的 `{ address }`
+ * 片段模式（agent/语音用）随 agent mark_delivered 一并移除——UI 走精确 ids。
  */
 export function deliveryRoutes(
   jwtSecret: string,
@@ -38,25 +36,16 @@ export function deliveryRoutes(
 
   app.patch("/fulfillments", async (c) => {
     const jwt = c.get("token") as string;
-    const body = (await c.req.json().catch(() => null)) as { ids?: unknown; address?: unknown } | null;
+    const body = (await c.req.json().catch(() => null)) as { ids?: unknown } | null;
     try {
-      // Exact path (delivery buttons): mark exactly these fulfillment ids done — no
-      // substring spillover across addresses like "3A" matching "13A" (Codex P1).
+      // Exact path (orders-page / today-card buttons): mark exactly these fulfillment ids
+      // done — no substring spillover across addresses like "3A" matching "13A" (Codex P1).
       if (Array.isArray(body?.ids) && body.ids.length > 0) {
         const ids = body!.ids as Array<string | number>;
         await deps.setFulfillmentsByIds(jwt, ids, { status: "done" });
         return c.json({ ok: true, count: ids.length });
       }
-      // Substring path (voice / agent): mark open fulfillments whose address contains the fragment.
-      if (typeof body?.address === "string" && body.address.trim()) {
-        const fulfillments = await deps.listFulfillments(jwt, { date: todayShanghai(() => new Date()) });
-        const targets = fulfillmentsMatchingAddress(fulfillments, body.address);
-        if (targets.length === 0) return c.json({ ok: true, count: 0 });
-        const ids = targets.map((f) => f.id);
-        await deps.setFulfillmentsByIds(jwt, ids, { status: "done" });
-        return c.json({ ok: true, count: targets.length });
-      }
-      return c.json({ error: "ids or address required" }, 400);
+      return c.json({ error: "ids required" }, 400);
     } catch {
       return c.json({ error: "mark failed" }, 502);
     }

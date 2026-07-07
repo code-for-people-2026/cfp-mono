@@ -20,7 +20,6 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   confirmOrder: over.confirmOrder ?? vi.fn(async () => ({ ok: true as const })),
   cancelOrder: over.cancelOrder ?? vi.fn(async () => ({ ok: true as const })),
   markPaid: over.markPaid ?? vi.fn(async () => ({ ok: true as const })),
-  markDelivered: over.markDelivered ?? vi.fn(async () => ({ ok: true as const, count: 2 })),
   getTodaySummary:
     over.getTodaySummary ??
     vi.fn(async () => ({ unconfirmedOrders: 1, pendingDeliveries: 2, unpaidOrders: 3, recentOrders: "#45 王燕萍" })),
@@ -33,7 +32,6 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   getDishPool: over.getDishPool ?? vi.fn(async () => []),
   createOffering: over.createOffering ?? vi.fn(async () => ({ id: 1, name: "test" })),
   previewOrder: over.previewOrder ?? vi.fn(async () => ({ displayName: "王燕萍", quantity: 1, occasion: "lunch" })),
-  previewDelivered: over.previewDelivered ?? vi.fn(async () => 1),
   previewMenuTargets: over.previewMenuTargets ?? vi.fn(async () => ({ ok: true as const, lines: ["午餐：菜1、菜2"] })),
   previewSwap: over.previewSwap ?? vi.fn(async () => ({ ok: true as const, oldName: "旧菜", newName: "新菜" })),
   previewPublish: over.previewPublish ?? vi.fn(async () => ({ ok: true as const, publishText: "#接龙 test" })),

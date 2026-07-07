@@ -24,7 +24,6 @@ export type AgentServices = {
   confirmOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   cancelOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   markPaid(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
-  markDelivered(input: { address: string }): Promise<{ ok: true; count: number } | { ok: false; error: string }>;
   getTodaySummary(): Promise<{ unconfirmedOrders: number; pendingDeliveries: number; unpaidOrders: number; recentOrders: string }>;
   getTodayOrders(): Promise<Order[]>;
   getTodayDelivery(): Promise<DeliveryCardData>;
@@ -37,7 +36,6 @@ export type AgentServices = {
   createOffering(input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
   // Preview reads for operation-confirm cards (#126 rich previews) — all read-only.
   previewOrder(orderId: string | number): Promise<{ displayName: string; quantity: number; occasion: string } | null>;
-  previewDelivered(address: string): Promise<number>;
   previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; lines: string[] } | { ok: false; reason: string }>;
   previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean): Promise<{ ok: true; oldName: string; newName: string; warning?: string } | { ok: false; error: string }>;
   previewPublish(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
@@ -169,17 +167,6 @@ export const AGENT_TOOLS: AgentTool[] = [
       const summary = `将回退订单 ${label} 为未付款`;
       const opId = setPendingOp(s.operatorId, { toolName: "mark_unpaid", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_unpaid", summary, { orderId }, opId) };
-    },
-  },
-  {
-    def: { type: "function", function: { name: "mark_delivered", description: "标记某个地址已送达（按地址片段匹配，如「26B」匹配所有含 26B 的）。", parameters: { type: "object", properties: { address: { type: "string" } }, required: ["address"] } } },
-    execute: async (s, args) => {
-      const address = String(args.address ?? "");
-      const count = await s.previewDelivered(address);
-      if (count === 0) return { text: `没找到 ${address} 的待送订单。` };
-      const summary = `将标记 ${address} 送达（${count} 份）`;
-      const opId = setPendingOp(s.operatorId, { toolName: "mark_delivered", args: { address }, summary });
-      return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_delivered", summary, { address }, opId) };
     },
   },
   {

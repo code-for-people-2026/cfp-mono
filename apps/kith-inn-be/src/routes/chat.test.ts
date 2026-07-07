@@ -277,7 +277,6 @@ describe("dispatchPendingOp", () => {
       confirmOrder: vi.fn(async () => ok),
       cancelOrder: vi.fn(async () => ok),
       markPaid: vi.fn(async () => ok),
-      markDelivered: vi.fn(async () => ({ ok: true as const, count: 0 })),
       markUnpaid: vi.fn(async () => ok),
       getTodaySummary: vi.fn(),
       getTodayOrders: vi.fn(),
@@ -311,13 +310,6 @@ describe("dispatchPendingOp", () => {
     expect(await run(svc(), "mark_unpaid", { orderId: 5 })).toContain("已回退订单 #5");
     const s = svc({ markUnpaid: undefined });
     expect(await run(s, "mark_unpaid", { orderId: 5 })).toBe("回退失败：not implemented");
-  });
-
-  it("mark_delivered: ok (with count) and fail", async () => {
-    const s = svc({ markDelivered: vi.fn(async () => ({ ok: true as const, count: 3 })) });
-    expect(await run(s, "mark_delivered", { address: "3a" })).toBe("已标记 3a 送达（3 份）。");
-    const s2 = svc({ markDelivered: vi.fn(async () => fail("nope")) });
-    expect(await run(s2, "mark_delivered", { address: "3a" })).toBe("标记失败：nope");
   });
 
   it("generate_menu: ok lists dishes, pool-too-small, and other fail", async () => {

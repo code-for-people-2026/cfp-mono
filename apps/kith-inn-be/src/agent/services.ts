@@ -5,13 +5,13 @@
  * own (the agent only *edits*, it doesn't decide). Same operations the detail tabs
  * will call — two front doors, one implementation.
  *
- * `now` is injectable so `getTodaySummary`/`markDelivered` (today-scoped) are
+ * `now` is injectable so `getTodaySummary` (today-scoped) is
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
 import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderStatus, Seller } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
-import { fulfillmentsMatchingAddress, gapReport, packingSort } from "../domain/delivery/derivations";
+import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
 import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
@@ -203,23 +203,6 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       }
     },
 
-    async markDelivered(input: { address: string }) {
-      // Codex P1: a blank address makes `"...".includes("")` true for every
-      // fulfillment → would mark ALL of them done. Reject up front.
-      const address = input.address?.trim();
-      if (!address) return { ok: false as const, error: "地址不能为空" };
-      try {
-        const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
-        const targets = fulfillmentsMatchingAddress(fulfillments, address);
-        if (targets.length === 0) return { ok: true as const, count: 0 };
-        const ids = targets.map((f) => f.id);
-        await cms.setFulfillmentsByIds(jwt, ids, { status: "done" });
-        return { ok: true as const, count: targets.length };
-      } catch {
-        return { ok: false as const, error: "标记失败" };
-      }
-    },
-
     async getTodaySummary() {
       try {
         const today = todayShanghai(now);
@@ -407,17 +390,6 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         return { displayName, quantity, occasion: o.occasion };
       } catch {
         return null;
-      }
-    },
-    /** Matched fulfillment count for a mark_delivered preview (no customer depth needed). */
-    async previewDelivered(address: string) {
-      const addr = address?.trim();
-      if (!addr) return 0;
-      try {
-        const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
-        return fulfillmentsMatchingAddress(fulfillments, addr).length;
-      } catch {
-        return 0;
       }
     },
     /** Planned dish lines for a generate_menu preview (dry-run, no upsert). */

@@ -1,6 +1,6 @@
 import type { Fulfillment, MenuPlan, Order } from "@cfp/kith-inn-shared";
 import { describe, expect, it } from "vitest";
-import { fulfillmentsMatchingAddress, gapReport, nearestMeal, packingSort, todayGaps } from "./derivations";
+import { gapReport, nearestMeal, packingSort, todayGaps } from "./derivations";
 
 // Address lives on the ORDER (frozen snapshot); cms populates fulfillment.order.
 const at = (address?: string): Fulfillment["order"] =>
@@ -78,42 +78,5 @@ describe("todayGaps", () => {
       menuPlans: [mp({ status: "draft" }), mp({ status: "published" })],
     });
     expect(r).toEqual({ unconfirmedOrders: 1, pendingDeliveries: 1, unpaidOrders: 1, unpublishedMenus: 1 });
-  });
-});
-
-describe("fulfillmentsMatchingAddress", () => {
-  it("returns open fulfillments whose order address starts with the fragment (prefix)", () => {
-    const fs = [
-      f({ id: 11, order: at("26B-301") }),
-      f({ id: 12, order: at("26B-502") }),
-      f({ id: 13, order: at("26B-301"), status: "done" }), // done → skip
-      f({ id: 14, order: at("1D") }),
-    ];
-    expect(fulfillmentsMatchingAddress(fs, "26B").map((x) => x.id)).toEqual([11, 12]);
-  });
-
-  it("does NOT match when the fragment appears mid-address (prefix, not substring)", () => {
-    // `3a` is 楼栋3A; `2d03a` is 楼栋2D 层03 a户 — substring would wrongly match the `3a` in `03a`.
-    const fs = [f({ id: 11, order: at("3a27b") }), f({ id: 12, order: at("2d03a") })];
-    expect(fulfillmentsMatchingAddress(fs, "3a").map((x) => x.id)).toEqual([11]);
-    expect(fulfillmentsMatchingAddress(fs, "2d").map((x) => x.id)).toEqual([12]);
-  });
-
-  it("pure-numeric fragment matches only the exact leading digit-run (building boundary)", () => {
-    // `2` means 楼栋2, NOT 楼栋26 (`26B-301`); `26` means 楼栋26.
-    const fs = [f({ id: 11, order: at("2a10a") }), f({ id: 12, order: at("26B-301") }), f({ id: 13, order: at("2d05b") })];
-    expect(fulfillmentsMatchingAddress(fs, "2").map((x) => x.id)).toEqual([11, 13]);
-    expect(fulfillmentsMatchingAddress(fs, "26").map((x) => x.id)).toEqual([12]);
-  });
-
-  it("narrows when the fragment is more specific", () => {
-    const fs = [f({ id: 11, order: at("26B-301") }), f({ id: 12, order: at("26B-502") })];
-    expect(fulfillmentsMatchingAddress(fs, "26B-301").map((x) => x.id)).toEqual([11]);
-  });
-
-  it("blank fragment → [] (prevents marking everything done)", () => {
-    const fs = [f({ order: at("1D") })];
-    expect(fulfillmentsMatchingAddress(fs, "")).toEqual([]);
-    expect(fulfillmentsMatchingAddress(fs, "  ")).toEqual([]);
   });
 });
