@@ -2,9 +2,10 @@ import type { ChatMessage } from "@cfp/kith-inn-shared";
 import { describe, expect, it, vi } from "vitest";
 import { issueToken } from "../lib/auth/jwt";
 import type { AgentCms } from "../agent/services";
-import { clearPending, getPending, setPending } from "../agent/pendingState";
+import type { AgentServices } from "../agent/tools";
+import { clearPendingOp, getPendingOp, setPendingOp } from "../agent/pendingOps";
 import { runAgent } from "../agent/run";
-import { chatRoutes, type ChatRoutesDeps } from "./chat";
+import { chatRoutes, dispatchPendingOp, type ChatRoutesDeps } from "./chat";
 
 const SECRET = "test-secret";
 
@@ -34,7 +35,7 @@ const mockCms = (): AgentCms =>
 const token = async () => issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET);
 const auth = async () => ({ Authorization: `Bearer ${await token()}` });
 const json = async () => ({ ...(await auth()), "content-type": "application/json" });
-const CARD = { type: "customer-confirm" as const, data: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "lunch" as const }] } };
+const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 } } };
 
 const sampleHistory = (): ChatMessage[] => [
   { id: 1, content: "老消息", role: "user", createdAt: "", seller: 7 },
@@ -158,100 +159,212 @@ describe("GET /chat", () => {
   });
 });
 
-describe("POST /chat/confirm-customers", () => {
-  // operatorId 1 comes from issueToken in `token()` above.
+describe("POST /chat/confirm-operation", () => {
   const OP = 1;
-  // Canonical pending item (carries date — Codex P1) reused for seed + submitted body.
-  const ITEM = { customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" as const, date: "2026-06-29" };
-  const post = async (app: ReturnType<typeof chatRoutes>, items: unknown) =>
-    app.request("/confirm-customers", { method: "POST", headers: await auth(), body: JSON.stringify({ items }) });
+  const post = async (app: ReturnType<typeof chatRoutes>, body: unknown) =>
+    app.request("/confirm-operation", { method: "POST", headers: await json(), body: typeof body === "string" ? body : JSON.stringify(body) });
 
-  const cmsWithCombo = (): AgentCms =>
-    ({
+  it("record_orders splits known/new and records both, then clears pending (#126)", async () => {
+    const items = [
+      { customerName: "王燕萍", quantity: 1, occasion: "lunch" as const, date: "2026-07-07" },
+      { customerName: "大龙猫", quantity: 1, occasion: "dinner" as const, date: "2026-07-07" },
+    ];
+    setPendingOp(OP, { toolName: "record_orders", summary: "将记 2 单", args: { items, isNew: [false, true] } });
+    const cms = {
       ...mockCms(),
+      listCustomers: vi.fn(async () => [{ id: 5, displayName: "王燕萍" }] as never),
       findOfferings: vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "套餐", priceCents: 3000 }] as never),
       createCustomer: vi.fn(async (_jwt: string, input: { displayName: string }) => ({ id: 55, displayName: input.displayName }) as never),
       createOrderDraft: vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
-    }) as AgentCms;
-
-  it("creates the pending customers + orders deterministically then clears (#97)", async () => {
-    setPending(OP, [ITEM]);
-    // Best-effort chat write (mirrors POST /chat): a throw here must NOT fail the turn.
-    const createChatMessage = vi.fn(async () => { throw new Error("cms down"); });
-    const app = chatRoutes(SECRET, { cms: cmsWithCombo(), createChatMessage });
-    const res = await post(app, [ITEM]);
+    } as AgentCms;
+    const app = chatRoutes(SECRET, { cms });
+    // 桃子 typed 大龙猫's address in the card → body carries it for the new-customer row.
+    const res = await post(app, { items: [items[0], { ...items[1], address: "26B" }] });
     expect(res.status).toBe(200);
-    expect(((await res.json()) as { created: unknown[] }).created).toEqual([{ name: "大龙猫", orderId: 90 }]);
-    expect(getPending(OP)).toEqual([]); // cleared after consuming
-    expect(createChatMessage).toHaveBeenCalledTimes(1); // best-effort "已建" narration attempted
-    clearPending(OP);
+    const reply = ((await res.json()) as { reply: string }).reply;
+    expect(reply).toContain("已记草稿"); // 王燕萍 (known) → draft
+    expect(reply).toContain("已建"); // 大龙猫 (new) → customer + draft
+    expect(cms.createCustomer).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ displayName: "大龙猫", address: "26B" }));
+    expect(getPendingOp(OP)).toBeUndefined(); // cleared after dispatch
   });
 
-  it("409 when the submitted items don't match pending (stale card, Codex P2)", async () => {
-    setPending(OP, [ITEM]);
-    const app = chatRoutes(SECRET, { cms: cmsWithCombo() });
-    // A newer record_orders overwrote pending with a different customer → click is stale.
-    const res = await post(app, [{ customerName: "别的顾客", quantity: 1, occasion: "lunch" }]);
-    expect(res.status).toBe(409);
-    expect(getPending(OP)).toEqual([ITEM]); // NOT cleared on a stale rejection
-    clearPending(OP);
+  it("mark_paid marks the order paid on confirm (#126)", async () => {
+    setPendingOp(OP, { toolName: "mark_paid", summary: "将标记 #45 已付款", args: { orderId: 45 } });
+    const updateOrder = vi.fn(async () => ({}) as never);
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), updateOrder } as AgentCms });
+    const res = await post(app, {});
+    expect(res.status).toBe(200);
+    expect(updateOrder).toHaveBeenCalledWith(expect.any(String), 45, expect.objectContaining({ paymentStatus: "paid" }));
+    expect(((await res.json()) as { reply: string }).reply).toContain("#45");
   });
 
-  it("409 when items are missing from the body", async () => {
-    setPending(OP, [ITEM]);
-    const app = chatRoutes(SECRET, { cms: cmsWithCombo() });
-    const res = await app.request("/confirm-customers", { method: "POST", headers: await auth(), body: JSON.stringify({}) });
-    expect(res.status).toBe(409);
-    clearPending(OP);
+  it("add_dish creates the offering on confirm (#126)", async () => {
+    setPendingOp(OP, { toolName: "add_dish", summary: "将添加 蒜蓉粉丝虾", args: { name: "蒜蓉粉丝虾", mainIngredient: "虾", category: "meat" } });
+    const createOffering = vi.fn(async () => ({ id: 77, name: "蒜蓉粉丝虾" }) as never);
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering } as AgentCms });
+    const res = await post(app, {});
+    expect(res.status).toBe(200);
+    expect(createOffering).toHaveBeenCalledWith(expect.any(String), { name: "蒜蓉粉丝虾", mainIngredient: "虾", category: "meat" });
   });
 
-  it("409 when the submitted length differs from pending", async () => {
-    setPending(OP, [ITEM]);
-    const app = chatRoutes(SECRET, { cms: cmsWithCombo() });
-    // Pending has 1 item; submit an empty list (e.g. a card whose items got dropped).
-    const res = await post(app, []);
-    expect(res.status).toBe(409);
-    clearPending(OP);
-  });
-
-  it("404 when nothing is pending", async () => {
-    clearPending(OP);
+  it("404 when no op is pending", async () => {
+    clearPendingOp(OP);
     const app = chatRoutes(SECRET, { cms: mockCms() });
-    expect((await post(app, [ITEM])).status).toBe(404);
+    expect((await post(app, {})).status).toBe(404);
   });
 
   it("401 without a token", async () => {
     const app = chatRoutes(SECRET, { cms: mockCms() });
-    expect((await app.request("/confirm-customers", { method: "POST" })).status).toBe(401);
+    expect((await app.request("/confirm-operation", { method: "POST" })).status).toBe(401);
   });
 
-  it("409 on a non-JSON body (json parse falls back to null → stale)", async () => {
-    setPending(OP, [ITEM]);
-    const app = chatRoutes(SECRET, { cms: cmsWithCombo() });
-    const res = await app.request("/confirm-customers", { method: "POST", headers: await auth(), body: "not-json" });
-    expect(res.status).toBe(409);
-    clearPending(OP);
+  it("tolerates a non-JSON body (falls back to pending args)", async () => {
+    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering: vi.fn(async () => ({ id: 1, name: "x" })) } as AgentCms });
+    const res = await app.request("/confirm-operation", { method: "POST", headers: await auth(), body: "not-json" });
+    expect(res.status).toBe(200); // body parse falls back to null → dispatch uses pending args
+    clearPendingOp(OP);
   });
 
-  it("still 200 + clears pending when nothing could be created (no combo)", async () => {
-    setPending(OP, [ITEM]);
-    const cms = { ...mockCms(), findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) } as AgentCms;
-    const createChatMessage = vi.fn(async () => ({ id: 9, content: "x", role: "assistant", createdAt: "", seller: 7 }) as ChatMessage);
-    const app = chatRoutes(SECRET, { cms, createChatMessage });
-    const res = await post(app, [ITEM]);
-    expect(res.status).toBe(200);
-    expect(((await res.json()) as { created: unknown[] }).created).toEqual([]);
-    expect(createChatMessage).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ content: "没有建成，再看看？" }));
-    expect(getPending(OP)).toEqual([]);
-    clearPending(OP);
-  });
-
-  it("502 when customer creation blows up before the per-item guard", async () => {
-    setPending(OP, [ITEM]);
-    // A synchronous throw inside findOfferings escapes its `.catch(() => [])`.
-    const cms = { ...mockCms(), findOfferings: vi.fn(() => { throw new Error("net"); }) } as AgentCms;
+  it("502 when dispatch throws (service write fails)", async () => {
+    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
+    const cms = { ...mockCms(), createOffering: vi.fn(() => { throw new Error("net"); }) } as AgentCms;
     const app = chatRoutes(SECRET, { cms });
-    expect((await post(app, [ITEM])).status).toBe(502);
-    clearPending(OP);
+    expect((await post(app, {})).status).toBe(502);
+    clearPendingOp(OP);
+  });
+
+  it("still 200 when the best-effort outcome persist throws", async () => {
+    setPendingOp(OP, { toolName: "add_dish", summary: "x", args: { name: "x" } });
+    const createChatMessage = vi.fn(async () => { throw new Error("cms down"); });
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering: vi.fn(async () => ({ id: 1, name: "x" })) } as AgentCms, createChatMessage });
+    const res = await post(app, {});
+    expect(res.status).toBe(200); // dispatch already succeeded; persist is best-effort
+    clearPendingOp(OP);
+  });
+});
+
+describe("dispatchPendingOp", () => {
+  // Direct unit test of each opType branch with a mock AgentServices — avoids the
+  // per-case cms-domain mocking the HTTP route would need. Covers ok/fail paths.
+  const ok = { ok: true as const };
+  const fail = (error: string) => ({ ok: false as const, error });
+  const svc = (over: Partial<AgentServices> = {}): AgentServices =>
+    ({
+      previewOrders: vi.fn(),
+      recordOrders: vi.fn(async () => ({ recorded: [], needsConfirmation: [], failed: [] })),
+      createCustomersAndOrders: vi.fn(async () => ({ created: [], failed: [] })),
+      confirmOrder: vi.fn(async () => ok),
+      cancelOrder: vi.fn(async () => ok),
+      markPaid: vi.fn(async () => ok),
+      markDelivered: vi.fn(async () => ({ ok: true as const, count: 0 })),
+      markUnpaid: vi.fn(async () => ok),
+      getTodaySummary: vi.fn(),
+      getTodayOrders: vi.fn(),
+      getTodayDelivery: vi.fn(),
+      generateMenu: vi.fn(async () => ({ ok: true as const, plans: [] })),
+      swapDish: vi.fn(async () => ({ ok: true as const, plan: {} as never })),
+      publishMenu: vi.fn(async () => ({ ok: true as const, publishText: "T" })),
+      getMenu: vi.fn(),
+      getDishPool: vi.fn(),
+      createOffering: vi.fn(async () => ({ id: 1, name: "x" })),
+      operatorId: 1,
+      ...over,
+    }) as AgentServices;
+  const op = (toolName: string, args: Record<string, unknown> = {}) => ({ toolName, args, summary: "" });
+  const run = (s: AgentServices, toolName: string, args: Record<string, unknown> = {}, body: { items?: unknown } | null = null) =>
+    dispatchPendingOp(s, op(toolName, args), body);
+
+  it("confirm_order: ok and fail", async () => {
+    expect(await run(svc(), "confirm_order", { orderId: 5 })).toContain("已确认订单 #5");
+    const s = svc({ confirmOrder: vi.fn(async () => fail("nope")) });
+    expect(await run(s, "confirm_order", { orderId: 5 })).toBe("确认失败：nope");
+  });
+
+  it("cancel_order: ok and fail", async () => {
+    expect(await run(svc(), "cancel_order", { orderId: 5 })).toContain("已取消订单 #5");
+    const s = svc({ cancelOrder: vi.fn(async () => fail("nope")) });
+    expect(await run(s, "cancel_order", { orderId: 5 })).toBe("取消失败：nope");
+  });
+
+  it("mark_unpaid: ok, and not-implemented when the method is absent", async () => {
+    expect(await run(svc(), "mark_unpaid", { orderId: 5 })).toContain("已回退订单 #5");
+    const s = svc({ markUnpaid: undefined });
+    expect(await run(s, "mark_unpaid", { orderId: 5 })).toBe("回退失败：not implemented");
+  });
+
+  it("mark_delivered: ok (with count) and fail", async () => {
+    const s = svc({ markDelivered: vi.fn(async () => ({ ok: true as const, count: 3 })) });
+    expect(await run(s, "mark_delivered", { address: "3a" })).toBe("已标记 3a 送达（3 份）。");
+    const s2 = svc({ markDelivered: vi.fn(async () => fail("nope")) });
+    expect(await run(s2, "mark_delivered", { address: "3a" })).toBe("标记失败：nope");
+  });
+
+  it("generate_menu: ok lists dishes, pool-too-small, and other fail", async () => {
+    const plans = [
+      { occasion: "lunch", dishes: [{ name: "菜1" }, { name: "菜2" }] },
+      { occasion: "dinner", dishes: [{ name: "菜3" }] },
+    ] as never;
+    const s = svc({ generateMenu: vi.fn(async () => ({ ok: true as const, plans })) });
+    expect(await run(s, "generate_menu", { targets: [] })).toBe("排好了：\n午餐：菜1、菜2\n晚餐：菜3");
+    const sPool = svc({ generateMenu: vi.fn(async () => ({ ok: false as const, reason: "pool-too-small" })) });
+    expect(await run(sPool, "generate_menu")).toBe("菜品池不够。");
+    const sFail = svc({ generateMenu: vi.fn(async () => ({ ok: false as const, reason: "generate failed" })) });
+    expect(await run(sFail, "generate_menu")).toBe("生成失败：generate failed");
+  });
+
+  it("swap_dish: ok and fail", async () => {
+    expect(await run(svc(), "swap_dish", { planId: 1, dishId: 2 })).toBe("已换好。");
+    const s = svc({ swapDish: vi.fn(async () => ({ ok: false as const, error: "nope" })) });
+    expect(await run(s, "swap_dish", { planId: 1, dishId: 2 })).toBe("换菜失败：nope");
+  });
+
+  it("publish_menu: ok returns the copied text and fail", async () => {
+    const s = svc({ publishMenu: vi.fn(async () => ({ ok: true as const, publishText: "#接龙 …" })) });
+    expect(await run(s, "publish_menu", { planId: 1 })).toBe("菜单已发布，文案已复制，去群粘贴：\n\n#接龙 …");
+    const s2 = svc({ publishMenu: vi.fn(async () => ({ ok: false as const, error: "nope" })) });
+    expect(await run(s2, "publish_menu", { planId: 1 })).toBe("发布失败：nope");
+  });
+
+  it("record_orders: covers known/new × recorded/created/failed + body & isNew fallbacks", async () => {
+    const items = [{ customerName: "A", quantity: 1, occasion: "lunch" as const }];
+    // known: recorded yes / failed no
+    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("已记草稿：A");
+    // known: recorded no / failed yes
+    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [], needsConfirmation: [], failed: [{ customerName: "A", error: "x" }] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("失败：A");
+    // new: created yes / failed no
+    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [{ name: "C", orderId: 2 }], failed: [] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("已建：C");
+    // new: created no / failed yes
+    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [], failed: [{ displayName: "D", error: "x" }] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("失败：D");
+    // body null → uses pending a.items; isNew undefined → fallback [] (all known)
+    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items }, null)).toBe("已记草稿：A");
+    // nothing to record
+    expect(await run(svc(), "record_orders", { items: [], isNew: [] }, { items: [] })).toBe("没有可记的单。");
+  });
+
+  it("mark_paid: ok and fail", async () => {
+    expect(await run(svc(), "mark_paid", { orderId: 5 })).toContain("已标记订单 #5");
+    expect(await run(svc({ markPaid: vi.fn(async () => fail("nope")) }), "mark_paid", { orderId: 5 })).toBe("标记失败：nope");
+  });
+
+  it("generate_menu: force=true is forwarded", async () => {
+    const g = vi.fn(async () => ({ ok: true as const, plans: [] })) as never;
+    await run(svc({ generateMenu: g }), "generate_menu", { targets: [{ date: "2026-07-08", occasion: "lunch" }], force: true });
+    expect(g).toHaveBeenCalledWith(expect.anything(), true);
+  });
+
+  it("swap_dish: forwards a specified replacementId", async () => {
+    const sw = vi.fn(async () => ({ ok: true as const, plan: {} as never })) as never;
+    await run(svc({ swapDish: sw }), "swap_dish", { planId: 1, dishId: 2, replacementId: 9 });
+    expect(sw).toHaveBeenCalledWith(1, 2, 9, false);
+  });
+
+  it("add_dish", async () => {
+    const s = svc({ createOffering: vi.fn(async () => ({ id: 9, name: "虾" })) });
+    expect(await run(s, "add_dish", { name: "虾" })).toBe("加好了：虾（#9）。");
+  });
+
+  it("default: unknown opType", async () => {
+    expect(await run(svc(), "bogus")).toBe("未知操作：bogus");
   });
 });

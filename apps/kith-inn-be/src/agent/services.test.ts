@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import { CmsHttpError } from "../lib/cms/orders";
 import { createCmsAgentServices, type AgentCms } from "./services";
 import { todayShanghai } from "../lib/domainUtil";
-import { clearPending, getPending, setPending } from "./pendingState";
 
 const NOW = () => new Date("2026-06-29T12:00:00+08:00");
 
@@ -91,27 +90,22 @@ describe("recordOrders", () => {
     expect(r.failed).toHaveLength(1);
   });
 
-  it("stores new customers into pendingState for deterministic confirm (#97)", async () => {
-    clearPending(OP);
+  it("returns new customers in needsConfirmation (preview flow splits them later, #126)", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
-    await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
-    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
-    clearPending(OP);
+    const r = await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
   });
 
-  it("carries a non-default date into pending (Codex P1 — 明天 ≠ today)", async () => {
-    clearPending(OP);
+  it("carries a non-default date into needsConfirmation (Codex P1 — 明天 ≠ today)", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
-    await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
-    expect(getPending(OP)).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
-    clearPending(OP);
+    const r = await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
+    expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-01" }]);
   });
 
-  it("clears pendingState when there are no new customers (all known)", async () => {
-    setPending(OP, [{ customerName: "陈旧", quantity: 1, occasion: "lunch" }]);
+  it("returns empty needsConfirmation when all customers are known", async () => {
     const cms = baseCms();
-    await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
-    expect(getPending(OP)).toEqual([]);
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    expect(r.needsConfirmation).toEqual([]);
   });
 });
 

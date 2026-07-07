@@ -95,7 +95,7 @@ export type AddressGap = z.infer<typeof addressGapSchema>;
 export type DeliveryView = z.infer<typeof deliveryViewSchema>;
 
 // ── chat cards (#98) ───────────────────────────────────────────────────────
-/** customer-confirm 卡里一行待建顾客（镜像 agent needsConfirmation）。 */
+/** record_orders 预览卡里一行待记/待建顾客（operation-confirm args.items 用）。 */
 export type ConfirmCustomerItem = z.infer<typeof confirmCustomerItemSchema>;
 /** orders 卡 data：今天的订单列表 + 日期。 */
 export type OrderCardData = z.infer<typeof orderCardDataSchema>;
@@ -103,5 +103,5 @@ export type OrderCardData = z.infer<typeof orderCardDataSchema>;
 export type DeliveryCardGroup = z.infer<typeof deliveryCardGroupSchema>;
 /** delivery 卡 data：缺口数 + 按地址分组。 */
 export type DeliveryCardData = z.infer<typeof deliveryCardDataSchema>;
-/** 聊天回复附带的结构化卡片（PR1 customer-confirm / PR2 orders/delivery）。 */
+/** 聊天回复附带的结构化卡片（orders / delivery / operation-confirm）。 */
 export type CardPayload = z.infer<typeof cardPayloadSchema>;

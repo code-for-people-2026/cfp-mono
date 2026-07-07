@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import type { ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
 import { createOffering, findOfferings } from "../lib/cms/client";
@@ -19,19 +18,10 @@ import { createCustomer, listCustomers } from "../lib/cms/customers";
 import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../lib/cms/menuPlans";
 import { createChatMessage, listChatMessages } from "../lib/cms/chat";
 import { createCmsAgentServices, type AgentCms } from "../agent/services";
-import { clearPending, getPending } from "../agent/pendingState";
+import type { AgentServices } from "../agent/tools";
+import { clearPendingOp, getPendingOp } from "../agent/pendingOps";
 import { runAgent } from "../agent/run";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
-
-/** Stale-card check for POST /chat/confirm-customers. Compares **immutable** fields
- *  (customerName/quantity/occasion/date) — NOT address, because 桃子 may have typed
- *  an address into the card that wasn't in the original pending item (Codex #123 P1). */
-function sameItems(submitted: unknown, pending: ConfirmCustomerItem[]): boolean {
-  if (!Array.isArray(submitted) || submitted.length !== pending.length) return false;
-  const norm = (xs: ConfirmCustomerItem[]) =>
-    JSON.stringify(xs.map((it) => ({ customerName: it.customerName, quantity: it.quantity, occasion: it.occasion, date: it.date })));
-  return norm(submitted as ConfirmCustomerItem[]) === norm(pending);
-}
 
 /** Real AgentCms = the imported client functions directly (their optional `deps`
  *  param drops to global fetch). Mirrors routes/orders.ts realCms(). */
@@ -132,44 +122,106 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   });
 
   /**
-   * POST /chat/confirm-customers — the deterministic "全部建档并记单" behind the
-   * customer-confirm card (#97). The body carries the clicked card's items; we
-   * validate they still match the server-side pending list (else the card is
-   * stale — e.g. a newer 接龙 overwrote pending) → creates customers + draft
-   * orders off **pending** (server stays source of truth) → clears pending.
+   * POST /chat/confirm-operation — the deterministic "确认" behind operation-confirm
+   * cards (#126). Reads the per-operator pending op → dispatches to the corresponding
+   * AgentServices write method → clears pending → returns the result text.
+   * Optional body: `{ items? }` for record_orders with address edits.
    */
-  app.post("/confirm-customers", async (c) => {
+  app.post("/confirm-operation", async (c) => {
     const jwt = c.get("token") as string;
     const operatorId = c.get("operatorId") as string | number;
-    const pending = getPending(operatorId);
-    if (pending.length === 0) return c.json({ error: "no pending customers" }, 404);
+    const op = getPendingOp(operatorId);
+    if (!op) return c.json({ error: "no pending operation" }, 404);
     const body = (await c.req.json().catch(() => null)) as { items?: unknown } | null;
-    // Correlate the click with its card: the submitted items must match pending,
-    // else a newer record_orders overwrote pending between render and click (Codex P2).
-    if (!sameItems(body?.items, pending)) {
-      return c.json({ error: "card stale" }, 409);
-    }
+    const services = createCmsAgentServices({ jwt, cms, operatorId });
     try {
-      // Use submitted items (may carry 桃子-typed addresses) instead of pending (which
-      // has empty addresses — 接龙 doesn't contain addresses). Map customerName→displayName.
-      // Use submitted items (carry 桃子-typed addresses) — sameItems above guarantees
-      // body.items exists and matches pending on immutable fields. Map customerName→displayName.
-      const submitted = body?.items as ConfirmCustomerItem[];
-      const r = await createCmsAgentServices({ jwt, cms, operatorId }).createCustomersAndOrders(
-        submitted.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
-      );
-      clearPending(operatorId);
-      const summary =
-        r.created.length > 0
-          ? `已建 ${r.created.length} 单：${r.created.map((x) => x.name).join("、")}`
-          : "没有建成，再看看？";
-      // Best-effort persist of the outcome (mirrors POST /chat).
-      await createChat(jwt, { content: summary, role: "assistant" }).catch(() => null);
-      return c.json({ created: r.created, failed: r.failed });
+      const result = await dispatchPendingOp(services, op, body);
+      clearPendingOp(operatorId);
+      // Best-effort persist the outcome as an assistant message.
+      await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
+      return c.json({ reply: result });
     } catch {
-      return c.json({ error: "confirm failed" }, 502);
+      return c.json({ error: "operation failed" }, 502);
     }
   });
 
   return app;
+}
+
+/** Dispatch a pending op to the corresponding AgentServices write method. Returns the result text.
+ *  Exported for direct unit-testing of each opType branch (#126). */
+export async function dispatchPendingOp(
+  services: AgentServices,
+  op: { toolName: string; args: Record<string, unknown>; summary: string },
+  body: { items?: unknown } | null,
+): Promise<string> {
+  const a = op.args;
+  switch (op.toolName) {
+    case "record_orders": {
+      // The preview classified each item known/new (isNew[i]); on confirm 桃子 may
+      // have typed addresses into the new-customer rows. Split by isNew → record
+      // known (drafts) + create new customers with addresses, then report both.
+      const items = (body?.items ?? a.items) as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
+      const isNew = (a.isNew as boolean[] | undefined) ?? [];
+      const knownItems = items.filter((_, i) => !isNew[i]);
+      const newItems = items.filter((_, i) => isNew[i]);
+      const parts: string[] = [];
+      if (knownItems.length > 0) {
+        const r = await services.recordOrders(knownItems);
+        if (r.recorded.length > 0) parts.push(`已记草稿：${r.recorded.map((x) => x.name).join("、")}`);
+        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => x.customerName).join("、")}`);
+      }
+      if (newItems.length > 0) {
+        const r = await services.createCustomersAndOrders(
+          newItems.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
+        );
+        if (r.created.length > 0) parts.push(`已建：${r.created.map((x) => x.name).join("、")}`);
+        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => x.displayName).join("、")}`);
+      }
+      return parts.join("；") || "没有可记的单。";
+    }
+    case "confirm_order": {
+      const r = await services.confirmOrder({ orderId: Number(a.orderId) });
+      return r.ok ? `已确认订单 #${a.orderId}（已开餐、进入送餐清单）。` : `确认失败：${r.error}`;
+    }
+    case "cancel_order": {
+      const r = await services.cancelOrder({ orderId: Number(a.orderId) });
+      return r.ok ? `已取消订单 #${a.orderId}。` : `取消失败：${r.error}`;
+    }
+    case "mark_paid": {
+      const r = await services.markPaid({ orderId: Number(a.orderId) });
+      return r.ok ? `已标记订单 #${a.orderId} 为已付款。` : `标记失败：${r.error}`;
+    }
+    case "mark_unpaid": {
+      const r = await services.markUnpaid?.({ orderId: Number(a.orderId) }) ?? { ok: false as const, error: "not implemented" };
+      return r.ok ? `已回退订单 #${a.orderId} 为未付款。` : `回退失败：${r.error}`;
+    }
+    case "mark_delivered": {
+      const r = await services.markDelivered({ address: String(a.address) });
+      return r.ok ? `已标记 ${a.address} 送达（${r.count} 份）。` : `标记失败：${r.error}`;
+    }
+    case "generate_menu": {
+      const targets = a.targets as Array<{ date: string; occasion: "lunch" | "dinner" }>;
+      const r = await services.generateMenu(targets, a.force === true);
+      if (!r.ok) return r.reason === "pool-too-small" ? "菜品池不够。" : `生成失败：${r.reason}`;
+      const lines = r.plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
+      return `排好了：\n${lines.join("\n")}`;
+    }
+    case "swap_dish": {
+      const r = await services.swapDish(Number(a.planId), Number(a.dishId), a.replacementId !== undefined ? Number(a.replacementId) : undefined, a.force === true);
+      if (!r.ok) return `换菜失败：${r.error}`;
+      return `已换好。`;
+    }
+    case "publish_menu": {
+      const r = await services.publishMenu(Number(a.planId));
+      if (!r.ok) return `发布失败：${r.error}`;
+      return `菜单已发布，文案已复制，去群粘贴：\n\n${r.publishText}`;
+    }
+    case "add_dish": {
+      const r = await services.createOffering({ name: String(a.name), mainIngredient: a.mainIngredient ? String(a.mainIngredient) : undefined, category: a.category ? String(a.category) : undefined });
+      return `加好了：${r.name}（#${r.id}）。`;
+    }
+    default:
+      return `未知操作：${op.toolName}`;
+  }
 }

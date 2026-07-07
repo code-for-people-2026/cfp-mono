@@ -3,29 +3,53 @@ import { Input } from "@tarojs/components";
 import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { useState } from "react";
-import { CUSTOMER_CONFIRM_ACTION_LABEL, type CustomerConfirmActionState } from "@/logic/chatCards";
 import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
 
 const occasionZh = (o: "lunch" | "dinner") => (o === "lunch" ? "午餐" : "晚餐");
 
 /**
  * Renders a structured card attached to an assistant reply.
- * - customer-confirm: lists pending new customers + "全部建档并记单" when active.
+ * - operation-confirm: write-op preview + 「确认」button (record_orders lists items
+ *   with address inputs for new customers). One-shot: historical cards go read-only.
  * - orders: today's orders with 确认/标已付 buttons (reuse the orders-tab endpoints).
  * - delivery: today's per-address packing list (read-only).
- * Historical cards are restored snapshots; customer-confirm actions stay one-shot.
  */
-export function ChatCard({ card, confirmed = false, confirming, customerConfirmAction, onConfirm, onOrderAct, onMarkDelivered }: {
+export function ChatCard({ card, confirmed = false, confirming, fromHistory, onConfirmOperation, onOrderAct, onMarkDelivered }: {
   card: CardPayload;
   confirmed?: boolean;
   confirming: boolean;
-  customerConfirmAction?: CustomerConfirmActionState | null;
-  onConfirm: (items?: ConfirmCustomerItem[]) => void;
+  fromHistory?: boolean;
+  onConfirmOperation?: (items?: ConfirmCustomerItem[]) => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
   onMarkDelivered?: (ids: Array<string | number>) => void;
 }) {
-  if (card.type === "customer-confirm") {
-    return <CustomerConfirmCard card={card} confirmed={confirmed} confirming={confirming} customerConfirmAction={customerConfirmAction} onConfirm={onConfirm} />;
+  if (card.type === "operation-confirm") {
+    if (card.data.toolName === "record_orders") {
+      return (
+        <RecordOrdersConfirmCard
+          card={card}
+          confirmed={confirmed}
+          confirming={confirming}
+          fromHistory={fromHistory}
+          onConfirmOperation={onConfirmOperation}
+        />
+      );
+    }
+    const active = !confirmed && !fromHistory && onConfirmOperation;
+    return (
+      <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
+        <Text className="block text-[28rpx] font-semibold text-amber">{card.data.summary}</Text>
+        <View className="mt-[16rpx]">
+          {confirmed && <Text className="block text-[26rpx] text-green">已确认 ✓</Text>}
+          {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
+          {active && (
+            <Button type="primary" loading={confirming} className="bg-amber text-white" onClick={() => onConfirmOperation?.()}>
+              确认
+            </Button>
+          )}
+        </View>
+      </View>
+    );
   }
 
   if (card.type === "orders") {
@@ -59,15 +83,6 @@ export function ChatCard({ card, confirmed = false, confirming, customerConfirmA
     );
   }
 
-  if (card.type === "operation-confirm") {
-    return (
-      <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
-        <Text className="block text-[26rpx] font-semibold text-amber">{card.data.summary}</Text>
-        <Text className="mt-[8rpx] block text-[24rpx] text-muted">点确认后执行</Text>
-      </View>
-    );
-  }
-
   // delivery
   return (
     <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
@@ -90,33 +105,28 @@ export function ChatCard({ card, confirmed = false, confirming, customerConfirmA
   );
 }
 
-/** Customer-confirm card with editable address inputs (PRD US-OI05: new customers need address). */
-function CustomerConfirmCard({ card, confirmed, confirming, customerConfirmAction, onConfirm }: {
-  card: Extract<CardPayload, { type: "customer-confirm" }>;
+/** operation-confirm card for record_orders: lists every parsed item, with an
+ *  address input for each NEW customer (isNew[i]). One 确认 builds all (#126 US1). */
+function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onConfirmOperation }: {
+  card: Extract<CardPayload, { type: "operation-confirm" }>;
   confirmed: boolean;
   confirming: boolean;
-  customerConfirmAction?: CustomerConfirmActionState | null;
-  onConfirm: (items?: ConfirmCustomerItem[]) => void;
+  fromHistory?: boolean;
+  onConfirmOperation?: (items?: ConfirmCustomerItem[]) => void;
 }) {
-  const initial = card.data.items.map((it) => ({ ...it }));
-  const [items, setItems] = useState<ConfirmCustomerItem[]>(initial);
-  const action = customerConfirmAction ?? (
-    confirmed
-      ? { status: "confirmed" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL, message: "已建" }
-      : { status: "active" as const, label: CUSTOMER_CONFIRM_ACTION_LABEL }
-  );
-
-  const updateAddr = (i: number, addr: string) => {
-    setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, address: addr } : it)));
-  };
-
+  const args = card.data.args as { items: ConfirmCustomerItem[]; isNew: boolean[] };
+  const [items, setItems] = useState<ConfirmCustomerItem[]>(args.items.map((it) => ({ ...it })));
+  const active = !confirmed && !fromHistory;
+  const updateAddr = (i: number, addr: string) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, address: addr } : it)));
   return (
-    <View className="mt-[16rpx] rounded-[16rpx] border border-line bg-white p-[24rpx]">
-      <Text className="block text-[26rpx] font-semibold text-ink">新顾客待建（填地址后确认）</Text>
+    <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
+      <Text className="block text-[28rpx] font-semibold text-amber">{card.data.summary}</Text>
       {items.map((it, i) => (
-        <View key={i} className="mt-[16rpx]">
-          <Text className="block text-[26rpx] text-soft">{it.customerName} · {it.quantity}份{occasionZh(it.occasion)}</Text>
-          {action.status === "active" ? (
+        <View key={i} className="mt-[12rpx]">
+          <Text className="block text-[26rpx] text-soft">
+            {it.customerName} · {it.quantity}份{occasionZh(it.occasion)}{args.isNew[i] ? " · 新顾客" : ""}
+          </Text>
+          {active && args.isNew[i] ? (
             <Input
               value={it.address ?? ""}
               placeholder="填地址（如 3a27a）"
@@ -124,19 +134,20 @@ function CustomerConfirmCard({ card, confirmed, confirming, customerConfirmActio
               className="mt-[8rpx] rounded-[8rpx] border border-line bg-paper px-[16rpx] py-[10rpx] text-[26rpx]"
             />
           ) : (
-            <Text className="mt-[4rpx] block text-[24rpx] text-muted">{it.address ?? "（未填）"}</Text>
+            args.isNew[i] && <Text className="mt-[4rpx] block text-[24rpx] text-muted">{it.address ?? "（未填）"}</Text>
           )}
         </View>
       ))}
       <View className="mt-[20rpx]">
-        {action.status === "confirmed" && <Text className="block text-[24rpx] text-green">{action.message} ✓</Text>}
-        {action.status === "stale" && <Text className="block text-[24rpx] leading-relaxed text-muted">{action.message}</Text>}
-        {action.status === "active" && (
-          <Button size="small" type="primary" loading={confirming} className="bg-red text-white" onClick={() => onConfirm(items)}>
-            {action.label}
+        {confirmed && <Text className="block text-[26rpx] text-green">已确认 ✓</Text>}
+        {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
+        {active && (
+          <Button type="primary" loading={confirming} className="bg-amber text-white" onClick={() => onConfirmOperation?.(items)}>
+            确认
           </Button>
         )}
       </View>
     </View>
   );
 }
+

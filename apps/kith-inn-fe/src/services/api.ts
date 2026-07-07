@@ -61,10 +61,6 @@ export function chatUrl(): string {
   return `${beBaseUrl()}/chat`;
 }
 
-export function confirmCustomersUrl(): string {
-  return `${beBaseUrl()}/chat/confirm-customers`;
-}
-
 export function menuPlansUrl(date?: string): string {
   return `${beBaseUrl()}/menu/plans${date ? `?date=${encodeURIComponent(date)}` : ""}`;
 }

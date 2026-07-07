@@ -3,7 +3,6 @@ import {
   DEFAULT_BE_BASE_URL,
   beBaseUrl,
   chatUrl,
-  confirmCustomersUrl,
   deliveryUrl,
   markDeliveredUrl,
   devLoginUrl,
@@ -59,7 +58,6 @@ describe("endpoint builders", () => {
       expect(deliveryUrl("2026-06-30", "dinner")).toBe("https://be.example.com/delivery?date=2026-06-30&occasion=dinner");
       expect(markDeliveredUrl()).toBe("https://be.example.com/delivery/fulfillments");
       expect(chatUrl()).toBe("https://be.example.com/chat");
-      expect(confirmCustomersUrl()).toBe("https://be.example.com/chat/confirm-customers");
     } finally {
       process.env.BE_BASE_URL = orig;
     }

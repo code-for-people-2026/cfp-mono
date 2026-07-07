@@ -17,7 +17,6 @@ import { buildJielongMenuText } from "../domain/menu/jielongText";
 import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { customerName, todayShanghai } from "../lib/domainUtil";
-import { setPending } from "./pendingState";
 
 /** The cms surface the agent orchestrates: OrderCms (writes + offering read) + the
  *  reads the summary/delivery tools need. Injected so tests mock it wholesale. */
@@ -51,6 +50,19 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   const now = deps.now ?? (() => new Date());
 
   return {
+    /**
+     * Read-only classify of an 接龙 paste for the record_orders preview card (#126):
+     * which names are existing customers vs new (need 桃子 to type an address).
+     * Returns `isNew` aligned by index with `items` — NO writes. The actual record
+     * happens on confirm (recordOrders for known, createCustomersAndOrders for new).
+     */
+    async previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+      const customers = await cms.listCustomers(jwt).catch(() => []);
+      const knownSet = new Set(customers.map((c) => normalizeCustomerName(c.displayName)));
+      const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
+      return { date, isNew: items.map((it) => !knownSet.has(normalizeCustomerName(it.customerName))) };
+    },
+
     /**
      * Batch-record an 接龙 paste. Existing customers (matched by normalized name)
      * → draft recorded; new names → collected in `needsConfirmation` for 桃子 to
@@ -102,10 +114,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         // whole-batch failure (cms read down) → everything failed
         for (const it of items) failed.push({ customerName: it.customerName, error: "记单失败" });
       }
-      // #97: persist new-customer confirmations server-side so the confirmation
-      // action is a deterministic button click (POST /chat/confirm-customers),
-      // not an LLM recall across turns. setPending([]) clears when there's nothing pending.
-      setPending(operatorId, needsConfirmation);
+      // In the #126 flow record_orders preview already split known/new, so this is
+      // only called for known items and needsConfirmation stays empty. Returned for
+      // any caller that still inspects it.
       return { recorded, needsConfirmation, failed };
     },
 
@@ -365,6 +376,8 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     async createOffering(input: { name: string; mainIngredient?: string; category?: string }) {
       return cms.createOffering(jwt, input);
     },
+
+    operatorId,
   };
 }
 

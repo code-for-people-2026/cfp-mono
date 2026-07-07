@@ -10,6 +10,8 @@ const scriptedChat = (responses: ChatResult[]) => {
 };
 
 const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
+  previewOrders:
+    over.previewOrders ?? vi.fn(async (items: { customerName: string }[]) => ({ date: "2026-07-07", isNew: items.map(() => false) })),
   recordOrders:
     over.recordOrders ??
     vi.fn(async () => ({ recorded: [{ name: "王燕萍", orderId: 45 }], needsConfirmation: [], failed: [] })),
@@ -30,49 +32,48 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   getMenu: over.getMenu ?? vi.fn(async () => []),
   getDishPool: over.getDishPool ?? vi.fn(async () => []),
   createOffering: over.createOffering ?? vi.fn(async () => ({ id: 1, name: "test" })),
+  operatorId: 1,
 });
 
 describe("runAgent", () => {
-  it("executes a record_orders tool call, then returns the model's final text", async () => {
+  it("record_orders previews a confirm card without writing (#126)", async () => {
     const chat = scriptedChat([
       { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" }] } }] },
       { content: "记好了，王燕萍午餐2份。", toolCalls: [] },
     ]);
     const s = mockServices();
     const out = await runAgent({ userText: "记 王燕萍 午餐2份", history: [], services: s, deps: { chat } });
-    expect(s.recordOrders).toHaveBeenCalledWith([
-      { customerName: "王燕萍", address: undefined, quantity: 2, occasion: "lunch", date: undefined },
-    ]);
-    expect(out).toEqual({ reply: "记好了，王燕萍午餐2份。" });
+    // Preview mode: classify (previewOrders) but do NOT write — execution waits for the confirm click.
+    expect(s.previewOrders).toHaveBeenCalled();
+    expect(s.recordOrders).not.toHaveBeenCalled();
+    expect(out.reply).toBe("记好了，王燕萍午餐2份。");
+    expect(out.card?.type).toBe("operation-confirm");
   });
 
-  it("passes a customer-confirm card through when record_orders meets new customers (#97/#98)", async () => {
+  it("record_orders confirm card flags new customers for address entry (#126 US1)", async () => {
     const chat = scriptedChat([
       { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" }] } }] },
-      { content: "新顾客大龙猫，点下面确认哦。", toolCalls: [] },
+      { content: "新顾客大龙猫，点下面确认填地址哦。", toolCalls: [] },
     ]);
-    const s = mockServices({
-      recordOrders: vi.fn(async () => ({
-        recorded: [],
-        needsConfirmation: [{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" as const }],
-        failed: [],
-      })),
-    });
+    const s = mockServices({ previewOrders: vi.fn(async () => ({ date: "2026-07-07", isNew: [true] })) });
     const out = await runAgent({ userText: "接龙", history: [], services: s, deps: { chat } });
-    expect(out.reply).toBe("新顾客大龙猫，点下面确认哦。");
-    expect(out.card).toEqual({
-      type: "customer-confirm",
-      data: { items: [{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }] },
-    });
+    expect(out.reply).toBe("新顾客大龙猫，点下面确认填地址哦。");
+    // Merged card: operation-confirm carrying items + isNew (FE renders address inputs for new).
+    expect(out.card?.type).toBe("operation-confirm");
+    const data = (out.card as { data: { toolName: string; args: Record<string, unknown> } }).data;
+    expect(data.toolName).toBe("record_orders");
+    expect(data.args.isNew).toEqual([true]);
+    expect(s.recordOrders).not.toHaveBeenCalled(); // still preview-only
   });
 
-  it("returns no card when record_orders finds only known customers", async () => {
+  it("record_orders still emits a confirm card for known-only customers (#126)", async () => {
     const chat = scriptedChat([
       { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }] } }] },
       { content: "记好了。", toolCalls: [] },
     ]);
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
-    expect(out.card).toBeUndefined();
+    // Every write op gates behind a confirm card now — known-only included.
+    expect(out.card?.type).toBe("operation-confirm");
   });
 
   it("passes an orders card through when get_orders is called (#98)", async () => {
@@ -105,7 +106,7 @@ describe("runAgent", () => {
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 
-  it("executes multiple tool calls in one step", async () => {
+  it("runs a write tool (preview) and a read tool (direct) in one step (#126)", async () => {
     const chat = scriptedChat([
       {
         content: null,
@@ -118,7 +119,9 @@ describe("runAgent", () => {
     ]);
     const s = mockServices();
     await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
-    expect(s.recordOrders).toHaveBeenCalled();
+    // Write tool previews (no write); read tool executes directly.
+    expect(s.previewOrders).toHaveBeenCalled();
+    expect(s.recordOrders).not.toHaveBeenCalled();
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 
