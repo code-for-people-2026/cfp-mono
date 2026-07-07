@@ -54,7 +54,7 @@ describe("domain schemas — happy parse", () => {
   });
 
   it("chatMessage accepts assistant card snapshots but rejects user cards", () => {
-    const card = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 } } };
+    const card = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 }, opId: "1" } };
     expect(chatMessageSchema.parse({ id, content: "待确认", role: "assistant", createdAt: "t", seller: id, card })).toMatchObject({ card });
     expect(() => chatMessageSchema.parse({ id, content: "接龙文本", role: "user", createdAt: "t", seller: id, card })).toThrow();
     expect(() => chatMessageSchema.parse({ id, content: "坏卡", role: "assistant", createdAt: "t", seller: id, card: { type: "unknown", data: {} } })).toThrow();
@@ -81,7 +81,7 @@ describe("contract schemas", () => {
     expect(orderCardDataSchema.parse({ orders: [order], date: "2026-07-02" })).toMatchObject({ orders: [order] });
     expect(deliveryCardGroupSchema.parse({ address: "3A", count: 2, done: 1, total: 2, ids: [201, 202] })).toMatchObject({ total: 2 });
     expect(deliveryCardDataSchema.parse({ totalPending: 1, groups: [] })).toMatchObject({ totalPending: 1 });
-    expect(cardPayloadSchema.parse({ type: "operation-confirm", data: { toolName: "mark_paid", summary: "x", args: { orderId: 1 } } })).toMatchObject({ type: "operation-confirm" });
+    expect(cardPayloadSchema.parse({ type: "operation-confirm", data: { toolName: "mark_paid", summary: "x", args: { orderId: 1 }, opId: "1" } })).toMatchObject({ type: "operation-confirm" });
     expect(cardPayloadSchema.parse({ type: "orders", data: { orders: [], date: "2026-07-02" } })).toMatchObject({ type: "orders" });
     expect(cardPayloadSchema.parse({ type: "delivery", data: { totalPending: 0, groups: [] } })).toMatchObject({ type: "delivery" });
   });

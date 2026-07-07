@@ -48,6 +48,8 @@ type AgentServicesDeps = {
 export function createCmsAgentServices(deps: AgentServicesDeps) {
   const { jwt, cms, operatorId } = deps;
   const now = deps.now ?? (() => new Date());
+  /** Payload date fields return ISO (e.g. 2026-07-08T00:00:00.000Z); trim to YYYY-MM-DD. */
+  const dayOnly = (iso: string) => iso.split("T")[0]!;
 
   return {
     /**
@@ -55,9 +57,11 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
      * which names are existing customers vs new (need 桃子 to type an address).
      * Returns `isNew` aligned by index with `items` — NO writes. The actual record
      * happens on confirm (recordOrders for known, createCustomersAndOrders for new).
+     * Throws if the customer lookup fails — never silently classify unknown as "new"
+     * (that would create duplicates on confirm). Caller (the tool) surfaces the error.
      */
     async previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
-      const customers = await cms.listCustomers(jwt).catch(() => []);
+      const customers = await cms.listCustomers(jwt);
       const knownSet = new Set(customers.map((c) => normalizeCustomerName(c.displayName)));
       const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
       return { date, isNew: items.map((it) => !knownSet.has(normalizeCustomerName(it.customerName))) };
@@ -304,16 +308,17 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const offerings = (plan.offerings ?? []) as Offering[];
         const pool = (await cms.findOfferings(jwt)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
         const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
-        const menu = [{ day: slot.date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+        const date = dayOnly(slot.date);
+        const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
         let newReplacementId: string | number;
         let warning: string | undefined;
         if (replacementId !== undefined) {
-          const r = swapDishSpecified({ menu, target: { day: slot.date, occasion: slot.occasion }, dishId, replacementId, pool });
+          const r = swapDishSpecified({ menu, target: { day: date, occasion: slot.occasion }, dishId, replacementId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
           newReplacementId = r.replacement.id;
           warning = r.warning;
         } else {
-          const r = swapDish({ menu, target: { day: slot.date, occasion: slot.occasion }, dishId, pool });
+          const r = swapDish({ menu, target: { day: date, occasion: slot.occasion }, dishId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
           newReplacementId = r.replacement.id;
         }
@@ -339,7 +344,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           const seller = await cms.getSeller(jwt);
           const dishNames = (plan.offerings as Offering[]).map((o) => o.name);
           const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
-          text = buildJielongMenuText([{ date: slot.date, occasion: slot.occasion, dishNames }], { name: seller.name, priceCents: seller.defaultPriceCents });
+          text = buildJielongMenuText([{ date: dayOnly(slot.date), occasion: slot.occasion, dishNames }], { name: seller.name, priceCents: seller.defaultPriceCents });
           patch.publishText = text;
         }
         if (Object.keys(patch).length > 0) await cms.patchMenuPlan(jwt, planId, patch);
@@ -386,7 +391,7 @@ function menuPlanToView(plan: MenuPlan): MenuPlanView {
   const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
   return {
     planId: plan.id,
-    date: slot.date,
+    date: slot.date.split("T")[0]!,
     occasion: slot.occasion,
     status: plan.status,
     dishes: (plan.offerings as Offering[]).map(toMenuDish),
