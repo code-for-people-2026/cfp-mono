@@ -226,29 +226,22 @@ export function swapDish(input: {
 
   const c: MenuConstraints = { ...DEFAULT_CONSTRAINTS, ...input.constraints };
   const mealsPerDay = Math.max(1, c.meals.length);
-  const dishLbSlots = c.dishWindowDays * mealsPerDay;
   const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
 
-  // Positional neighbors: slots within ±window of the target (NOT the menu tail).
-  // A swap must not create a no-repeat violation with the target's adjacent slots (Codex).
   const idx = input.menu.indexOf(slot);
-  const dishLb = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= dishLbSlots));
-  const miLb = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= miLbSlots));
   const inSlotIds = new Set(slot.dishes.map((d) => String(d.id)));
-  const inSlotMI = new Set(slot.dishes.filter((d) => d.mainIngredient).map((d) => d.mainIngredient));
-  // 费工 cap is per-DAY: count 费工 in the target's day, excluding the dish being swapped out (Codex).
+  // 费工 cap is per-DAY: count 费工 in the target's day, excluding the dish being swapped out.
   const dayLaborious = input.menu
     .filter((s) => s.day === slot.day)
     .flatMap((s) => s.dishes)
     .filter((d) => String(d.id) !== String(target.id) && (d.tags ?? []).includes(LABORIOUS_TAG))
     .length;
   const laboriousBudget = c.laboriousMaxPerDay - dayLaborious;
+  void miLbSlots; void idx; // swap 不再用 lookback 硬过滤（改为按 useCount/lastUsedAt 排序选最优）
 
   const alt = input.pool
     .filter((d) => d.category === target.category && String(d.id) !== String(target.id))
-    .filter((d) => !dishLb.dishIds.has(String(d.id)))
     .filter((d) => !inSlotIds.has(String(d.id)))
-    .filter((d) => !d.mainIngredient || (!miLb.mainIngredients.has(d.mainIngredient) && !inSlotMI.has(d.mainIngredient)))
     .filter((d) => !(d.tags ?? []).includes(LABORIOUS_TAG) || laboriousBudget > 0)
     .sort(compareDishes)[0];
   return alt ? { ok: true, replacement: alt } : { ok: false, reason: "no-alternative" };
