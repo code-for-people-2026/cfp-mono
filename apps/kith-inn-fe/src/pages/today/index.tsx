@@ -116,8 +116,10 @@ export default function Today() {
         const reply = (res.data as { reply?: string }).reply ?? "已完成。";
         setConfirmed((prev) => new Set(prev).add(i));
         setMsgs((m) => [...m, { role: "assistant", content: reply }]);
-        // Copy to clipboard if the reply contains 接龙 text (publish_menu).
-        if (reply.includes("#接龙")) Taro.setClipboardData({ data: reply }).catch(() => {});
+        // publish_menu: copy ONLY the 接龙 text (everything after the status prefix),
+        // not the whole "菜单已发布…去群粘贴：" sentence — that goes into the WeChat group.
+        const jielong = reply.includes("去群粘贴") ? reply.split("\n\n").slice(1).join("\n\n") : "";
+        if (jielong) Taro.setClipboardData({ data: jielong }).catch(() => {});
       })
       .catch(() => Taro.showToast({ title: "操作失败", icon: "error" }))
       .finally(() => setConfirming(false));

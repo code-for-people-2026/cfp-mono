@@ -130,6 +130,26 @@ describe("runAgent", () => {
     expect(s.getTodaySummary).toHaveBeenCalled();
   });
 
+  it("preserves a write-confirm card when a read card follows in the same turn (Codex P2)", async () => {
+    const chat = scriptedChat([
+      {
+        content: null,
+        toolCalls: [
+          { id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }] } },
+          { id: "c2", name: "get_orders", args: {} },
+        ],
+      },
+      { content: "记好了，看看订单。", toolCalls: [] },
+    ]);
+    const s = mockServices({
+      getTodayOrders: vi.fn(async () => [{ id: 1, status: "draft", customer: { displayName: "王燕萍" }, date: "2026-06-29", paymentStatus: "unpaid", items: [] }] as never),
+    });
+    const out = await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
+    // get_orders emits an orders card AFTER record_orders' operation-confirm card,
+    // but the pending write must stay visible — don't cede to the read card.
+    expect(out.card?.type).toBe("operation-confirm");
+  });
+
   it("reports an unknown tool gracefully", async () => {
     const chat = scriptedChat([
       { content: null, toolCalls: [{ id: "c1", name: "no_such_tool", args: {} }] },

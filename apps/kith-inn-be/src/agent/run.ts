@@ -99,7 +99,14 @@ export async function runAgent(input: {
       const result: { text: string; card?: CardPayload } = tool
         ? await tool.execute(input.services, tc.args)
         : { text: `工具 ${tc.name} 不存在` };
-      if (result.card) card = result.card; // last non-empty card wins
+      if (result.card) {
+        // A write-op confirm card (operation-confirm) must NOT be overwritten by a
+        // read card (orders/delivery) emitted later in the same turn — the pending
+        // op is stored server-side, and losing its confirm button strands the write
+        // until 桃子 retries. Write cards win; only a newer write card replaces one.
+        const isWrite = (c?: CardPayload) => c?.type === "operation-confirm";
+        if (!isWrite(card) || isWrite(result.card)) card = result.card;
+      }
       messages.push({ role: "tool", content: result.text, tool_call_id: tc.id });
     }
   }
