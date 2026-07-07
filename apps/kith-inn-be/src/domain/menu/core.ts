@@ -225,11 +225,16 @@ export function swapDish(input: {
   if (!target) return { ok: false, reason: "dish-not-in-slot" };
 
   const c: MenuConstraints = { ...DEFAULT_CONSTRAINTS, ...input.constraints };
-  const mealsPerDay = Math.max(1, c.meals.length);
-  const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
 
-  const idx = input.menu.indexOf(slot);
   const inSlotIds = new Set(slot.dishes.map((d) => String(d.id)));
+  // In-slot main-ingredient avoidance: a swap must not leave two dishes with the
+  // same mainIngredient in one meal. Build the set from the REMAINING dishes
+  // (excluding the one being swapped out — its mainIngredient is freed). The
+  // cross-slot lookback was dropped in favor of compareDishes (useCount/lastUsedAt),
+  // but this per-slot guard stays (Codex #128).
+  const inSlotMI = new Set(
+    slot.dishes.filter((d) => String(d.id) !== String(target.id) && d.mainIngredient).map((d) => d.mainIngredient),
+  );
   // 费工 cap is per-DAY: count 费工 in the target's day, excluding the dish being swapped out.
   const dayLaborious = input.menu
     .filter((s) => s.day === slot.day)
@@ -237,11 +242,11 @@ export function swapDish(input: {
     .filter((d) => String(d.id) !== String(target.id) && (d.tags ?? []).includes(LABORIOUS_TAG))
     .length;
   const laboriousBudget = c.laboriousMaxPerDay - dayLaborious;
-  void miLbSlots; void idx; // swap 不再用 lookback 硬过滤（改为按 useCount/lastUsedAt 排序选最优）
 
   const alt = input.pool
     .filter((d) => d.category === target.category && String(d.id) !== String(target.id))
     .filter((d) => !inSlotIds.has(String(d.id)))
+    .filter((d) => !d.mainIngredient || !inSlotMI.has(d.mainIngredient))
     .filter((d) => !(d.tags ?? []).includes(LABORIOUS_TAG) || laboriousBudget > 0)
     .sort(compareDishes)[0];
   return alt ? { ok: true, replacement: alt } : { ok: false, reason: "no-alternative" };
