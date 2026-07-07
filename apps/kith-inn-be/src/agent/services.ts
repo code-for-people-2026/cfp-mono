@@ -382,6 +382,100 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       return cms.createOffering(jwt, input);
     },
 
+    // ── Preview reads for operation-confirm cards (#126 rich previews) ───────
+    // All read-only: mirror the write method's compute without persisting. Failures
+    // degrade to a safe default (null / empty / reason) so the tool still emits a card.
+
+    /** Order display info for confirm/cancel/mark_paid/mark_unpaid previews. */
+    async previewOrder(orderId: string | number) {
+      try {
+        const o = await cms.getOrder(jwt, orderId);
+        const c = o.customer;
+        const displayName = c && typeof c === "object" ? ((c as { displayName?: string }).displayName ?? String(o.customer)) : String(o.customer);
+        const quantity = (o.items ?? []).reduce((n, it) => n + (it.quantity ?? 0), 0);
+        return { displayName, quantity, occasion: o.occasion };
+      } catch {
+        return null;
+      }
+    },
+    /** Matched fulfillment count for a mark_delivered preview (no customer depth needed). */
+    async previewDelivered(address: string) {
+      const addr = address?.trim();
+      if (!addr) return 0;
+      try {
+        const fulfillments = await cms.listFulfillments(jwt, { date: todayShanghai(now) });
+        return fulfillmentsMatchingAddress(fulfillments, addr).length;
+      } catch {
+        return 0;
+      }
+    },
+    /** Planned dish lines for a generate_menu preview (dry-run, no upsert). */
+    async previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean) {
+      try {
+        const [offerings, existing] = await Promise.all([
+          cms.findOfferings(jwt),
+          cms.listMenuPlans(jwt, { from: targets.map((t) => t.date).sort()[0]!, to: targets.map((t) => t.date).sort().at(-1)! }),
+        ]);
+        const pubKey = new Set(
+          existing.filter((p) => p.status === "published").map((p) => {
+            const s = p.slot as { date?: string; occasion?: string };
+            return `${s?.date?.split("T")[0]}|${s?.occasion}`;
+          }),
+        );
+        for (const t of targets) if (pubKey.has(`${t.date}|${t.occasion}`) && !force) return { ok: false as const, reason: "plan-published" };
+        const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
+        const result = generateForTargets({ targets, pool });
+        if (!result.ok) return { ok: false as const, reason: "pool-too-small" };
+        return { ok: true as const, lines: result.menu.map((s) => `${s.occasion === "lunch" ? "午餐" : "晚餐"}：${s.dishes.map((d) => d.name).join("、")}`) };
+      } catch {
+        return { ok: false as const, reason: "preview failed" };
+      }
+    },
+    /** old→new dish names for a swap_dish preview (dry-run, no patch). */
+    async previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean) {
+      try {
+        const plan = await cms.getMenuPlan(jwt, planId);
+        if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
+        const offerings = (plan.offerings ?? []) as Offering[];
+        const target = offerings.find((o) => String(o.id) === String(dishId));
+        const pool = (await cms.findOfferings(jwt)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
+        const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+        const date = dayOnly(slot.date);
+        const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+        let newName: string;
+        let warning: string | undefined;
+        if (replacementId !== undefined) {
+          const r = swapDishSpecified({ menu, target: { day: date, occasion: slot.occasion }, dishId, replacementId, pool });
+          if (!r.ok) return { ok: false as const, error: r.reason };
+          newName = r.replacement.name;
+          warning = r.warning;
+        } else {
+          const r = swapDish({ menu, target: { day: date, occasion: slot.occasion }, dishId, pool });
+          if (!r.ok) return { ok: false as const, error: r.reason };
+          newName = r.replacement.name;
+        }
+        return { ok: true as const, oldName: target?.name ?? `#${dishId}`, newName, ...(warning ? { warning } : {}) };
+      } catch {
+        return { ok: false as const, error: "preview failed" };
+      }
+    },
+    /** The 掾龙 text for a publish_menu preview (no status flip / patch). */
+    async previewPublish(planId: string | number) {
+      try {
+        const plan = await cms.getMenuPlan(jwt, planId);
+        let text = plan.publishText;
+        if (!text) {
+          const seller = await cms.getSeller(jwt);
+          const dishNames = (plan.offerings as Offering[]).map((o) => o.name);
+          const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+          text = buildJielongMenuText([{ date: dayOnly(slot.date), occasion: slot.occasion, dishNames }], { name: seller.name, priceCents: seller.defaultPriceCents });
+        }
+        return { ok: true as const, publishText: text };
+      } catch {
+        return { ok: false as const, error: "preview failed" };
+      }
+    },
+
     operatorId,
   };
 }

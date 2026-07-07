@@ -312,3 +312,102 @@ describe("getTodayDelivery", () => {
     expect(await svc(cms).getTodayDelivery()).toEqual({ totalPending: 0, groups: [] });
   });
 });
+
+describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
+  it("previewOrder: populated customer → display info; sums item quantities", async () => {
+    const cms = baseCms({
+      getOrder: vi.fn(async () => ({ id: 1, occasion: "dinner", customer: { id: 5, displayName: "王燕萍" }, items: [{ id: 201, quantity: 2 }, { id: 202, quantity: 1 }] }) as never),
+    });
+    expect(await svc(cms).previewOrder(1)).toEqual({ displayName: "王燕萍", quantity: 3, occasion: "dinner" });
+  });
+
+  it("previewOrder: null when getOrder throws", async () => {
+    const cms = baseCms({ getOrder: vi.fn(async () => { throw new Error("net"); }) });
+    expect(await svc(cms).previewOrder(1)).toBeNull();
+  });
+
+  it("previewDelivered: counts address-matched fulfillments; 0 on empty/failed", async () => {
+    const cms = baseCms({ listFulfillments: vi.fn(async () => [
+      { id: 1, status: "pending", order: { address: "1D" } },
+      { id: 2, status: "pending", order: { address: "1D" } },
+      { id: 3, status: "pending", order: { address: "2D" } },
+    ] as never) });
+    expect(await svc(cms).previewDelivered("1D")).toBe(2);
+    expect(await svc(cms).previewDelivered("")).toBe(0);
+    const cms2 = baseCms({ listFulfillments: vi.fn(async () => { throw new Error("net"); }) });
+    expect(await svc(cms2).previewDelivered("1D")).toBe(0);
+  });
+
+  it("previewMenuTargets: ok lines (dry-run, no upsert)", async () => {
+    const cms = baseCms({
+      findOfferings: vi.fn(async () => [
+        { id: 1, kind: "component", category: "meat", name: "红烧牛肉", mainIngredient: "牛肉", active: true },
+        { id: 2, kind: "component", category: "meat", name: "香菇滑鸡", mainIngredient: "鸡", active: true },
+        { id: 3, kind: "component", category: "veg", name: "青菜", mainIngredient: "青菜", active: true },
+        { id: 4, kind: "component", category: "veg", name: "豆腐", mainIngredient: "豆腐", active: true },
+        { id: 5, kind: "component", category: "soup", name: "蛋花汤", mainIngredient: "蛋", active: true },
+      ] as never),
+    });
+    const r = await svc(cms).previewMenuTargets([{ date: "2026-06-29", occasion: "lunch" }]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.lines[0]).toContain("午餐");
+    expect(cms.upsertMenuPlans).not.toHaveBeenCalled();
+  });
+
+  it("previewMenuTargets: pool-too-small when the pool can't fill the structure", async () => {
+    const cms = baseCms({ findOfferings: vi.fn(async () => [{ id: 1, kind: "component", category: "meat", active: true }] as never) });
+    expect(await svc(cms).previewMenuTargets([{ date: "2026-06-29", occasion: "lunch" }])).toMatchObject({ ok: false, reason: "pool-too-small" });
+  });
+
+  it("previewMenuTargets: plan-published blocks without force", async () => {
+    const cms = baseCms({
+      listMenuPlans: vi.fn(async () => [{ status: "published", slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" } }] as never),
+    });
+    expect(await svc(cms).previewMenuTargets([{ date: "2026-06-29", occasion: "lunch" }])).toMatchObject({ ok: false, reason: "plan-published" });
+  });
+
+  it("previewSwap: ok old→new names (dry-run, no patch); specified replacement", async () => {
+    const cms = baseCms({
+      getMenuPlan: vi.fn(async () => ({
+        id: 50, status: "draft", slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" },
+        offerings: [{ id: 12, name: "牛腩", category: "meat", mainIngredient: "牛肉" }],
+      }) as never),
+      findOfferings: vi.fn(async () => [
+        { id: 12, kind: "component", name: "牛腩", category: "meat", mainIngredient: "牛肉", active: true },
+        { id: 19, kind: "component", name: "香菇滑鸡", category: "meat", mainIngredient: "鸡", active: true },
+      ] as never),
+    });
+    const r = await svc(cms).previewSwap(50, 12, 19);
+    expect(r).toMatchObject({ ok: true, oldName: "牛腩", newName: "香菇滑鸡" });
+    expect(cms.patchMenuPlan).not.toHaveBeenCalled();
+  });
+
+  it("previewSwap: plan-published blocks without force", async () => {
+    const cms = baseCms({
+      getMenuPlan: vi.fn(async () => ({ id: 50, status: "published", slot: { date: "2026-06-29", occasion: "lunch" }, offerings: [] }) as never),
+    });
+    expect(await svc(cms).previewSwap(50, 12, undefined)).toMatchObject({ ok: false, error: "plan-published" });
+  });
+
+  it("previewPublish: returns stored publishText as-is", async () => {
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => ({ id: 50, status: "published", slot: { date: "2026-06-29", occasion: "lunch" }, offerings: [], publishText: "已存文案" }) as never) });
+    expect(await svc(cms).previewPublish(50)).toMatchObject({ ok: true, publishText: "已存文案" });
+    expect(cms.getSeller).not.toHaveBeenCalled();
+  });
+
+  it("previewPublish: builds the jielong text when none stored", async () => {
+    const cms = baseCms({
+      getSeller: vi.fn(async () => ({ id: 1, name: "桃子", defaultPriceCents: 3000, status: "active" }) as never),
+      getMenuPlan: vi.fn(async () => ({ id: 50, status: "draft", slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" }, offerings: [{ id: 1, name: "红烧牛肉" }, { id: 2, name: "青菜" }] }) as never),
+    });
+    const r = await svc(cms).previewPublish(50);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.publishText).toContain("红烧牛肉");
+    expect(cms.patchMenuPlan).not.toHaveBeenCalled();
+  });
+
+  it("previewPublish: fails on cms error", async () => {
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => { throw new Error("net"); }) });
+    expect(await svc(cms).previewPublish(50)).toMatchObject({ ok: false });
+  });
+});
