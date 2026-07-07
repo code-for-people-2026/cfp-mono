@@ -77,26 +77,27 @@ export default function Orders() {
     setSelected([]);
   }, [occasion, prefix]);
 
-  const act = async (url: string, method: "POST" | "PATCH", body?: unknown) => {
+  /** Returns true on success so callers (bulkDeliver) clear selection only when the write landed. */
+  const act = async (url: string, method: "POST" | "PATCH", body?: unknown): Promise<boolean> => {
     const token = tokens.getToken();
-    if (!token) return Taro.redirectTo({ url: "/pages/login/index" });
+    if (!token) { Taro.redirectTo({ url: "/pages/login/index" }); return false; }
     try {
       const res = await Taro.request({ url, method, data: body, header: { Authorization: `Bearer ${token}`, "content-type": "application/json" } });
-      if (res.statusCode === 401) {
-        tokens.clearToken();
-        return Taro.redirectTo({ url: "/pages/login/index" });
-      }
-      if (res.statusCode >= 400) return Taro.showToast({ title: "操作失败", icon: "error" });
+      if (res.statusCode === 401) { tokens.clearToken(); Taro.redirectTo({ url: "/pages/login/index" }); return false; }
+      if (res.statusCode >= 400) { Taro.showToast({ title: "操作失败", icon: "error" }); return false; }
       load();
+      return true;
     } catch {
       Taro.showToast({ title: "操作失败", icon: "error" });
+      return false;
     }
   };
 
   const bulkDeliver = async () => {
     if (selected.length === 0) return;
-    await act(markDeliveredUrl(), "PATCH", { ids: selected, set: { status: "done" } });
-    setSelected([]);
+    // Clear only on success — preserve the selected set so 桃子 can retry on a transient failure (Codex P3).
+    const ok = await act(markDeliveredUrl(), "PATCH", { ids: selected, set: { status: "done" } });
+    if (ok) setSelected([]);
   };
 
   const visible = visibleRows(rows, occasion, prefix);
