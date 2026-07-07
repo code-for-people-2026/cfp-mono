@@ -205,6 +205,27 @@ describe("swapDish", () => {
     const res = swapDish({ menu: m, target: { day: slot.day, occasion: slot.occasion }, dishId: target.id, pool: [target] });
     expect(res).toMatchObject({ ok: false, reason: "no-alternative" });
   });
+
+  it("does not swap in a dish whose mainIngredient is already used by a remaining slot mate (#128)", () => {
+    // Slot has two meats: target (猪, being swapped out) + keeper (牛). The pool's
+    // highest-ranked candidate shares 牛 with the keeper — it must be skipped in
+    // favor of a different-mainIngredient meat (or no-alternative if none).
+    const keeper = meat(1, "牛", { useCount: 0, lastUsedAt: "" });
+    const target = meat(2, "猪", { useCount: 0, lastUsedAt: "" });
+    const slot: Slot = { day: "mon", occasion: "lunch", dishes: [target, keeper, veg(1, "菜")] };
+    const sameMiCandidate = meat(3, "牛", { useCount: 5, lastUsedAt: "recent" }); // would win on useCount
+    const otherMiCandidate = meat(4, "鱼", { useCount: 1, lastUsedAt: "old" });
+    const res = swapDish({
+      menu: [slot],
+      target: { day: "mon", occasion: "lunch" },
+      dishId: target.id,
+      pool: [sameMiCandidate, otherMiCandidate],
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.replacement.mainIngredient).not.toBe("牛"); // keeper's MI is off-limits
+    expect(res.replacement.id).toBe(otherMiCandidate.id);
+  });
 });
 
 describe("toMenuDish", () => {
