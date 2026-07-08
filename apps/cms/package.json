@@ -14,6 +14,7 @@
     "payload:migrate": "payload migrate",
     "payload:migrate:create": "payload migrate:create",
     "seed": "tsx seed/run.ts",
+    "seed:reset:dev": "tsx seed/run.ts --reset-dev",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
