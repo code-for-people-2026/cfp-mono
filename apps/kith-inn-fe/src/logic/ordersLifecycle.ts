@@ -57,7 +57,7 @@ function sortAddr(row: Row): string {
 
 /** Sort by address string (similar addresses cluster). */
 export function sortByAddress(rows: Row[]): Row[] {
-  return [...rows].sort((a, b) => sortAddr(a).localeCompare(sortAddr(b)));
+  return [...rows].sort((a, b) => (sortAddr(a) === sortAddr(b) ? 0 : sortAddr(a) < sortAddr(b) ? -1 : 1));
 }
 
 /** All rows for an occasion (any status — draft/confirmed/canceled all shown, rendered differently). */
