@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createOffering,
   deactivateOffering,
+  parseOfferingImport,
   partitionByActive,
   restoreOffering,
   updateOffering,
@@ -106,5 +107,49 @@ describe("partitionByActive", () => {
 
   it("empty input → both empty", () => {
     expect(partitionByActive([])).toEqual({ active: [], inactive: [] });
+  });
+});
+
+describe("parseOfferingImport", () => {
+  it("parses one dish per line with name, optional ingredient, and category", () => {
+    expect(
+      parseOfferingImport(`
+        番茄炒蛋 鸡蛋 素
+        红烧牛肉 牛肉 荤
+        冬瓜排骨汤 冬瓜 汤
+        米饭 主食
+      `),
+    ).toEqual({
+      items: [
+        { name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg" },
+        { name: "红烧牛肉", mainIngredient: "牛肉", category: "meat" },
+        { name: "冬瓜排骨汤", mainIngredient: "冬瓜", category: "soup" },
+        { name: "米饭", mainIngredient: undefined, category: "staple" },
+      ],
+      errors: [],
+    });
+  });
+
+  it("accepts bullets and reports invalid or duplicate lines", () => {
+    const parsed = parseOfferingImport(
+      `
+        1. 番茄炒蛋 鸡蛋 素
+        - 红烧牛肉 牛肉 荤
+        凉拌黄瓜 黄瓜
+        番茄炒蛋 鸡蛋 素
+        米饭 主食
+      `,
+      new Set(["米饭"]),
+    );
+
+    expect(parsed.items).toEqual([
+      { name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg" },
+      { name: "红烧牛肉", mainIngredient: "牛肉", category: "meat" },
+    ]);
+    expect(parsed.errors.map((e) => ({ line: e.line, reason: e.reason }))).toEqual([
+      { line: 4, reason: "缺少分类（荤/素/汤/主食）" },
+      { line: 5, reason: "菜名重复，已跳过" },
+      { line: 6, reason: "菜名重复，已跳过" },
+    ]);
   });
 });

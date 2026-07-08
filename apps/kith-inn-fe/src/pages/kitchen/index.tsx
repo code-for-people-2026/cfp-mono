@@ -1,6 +1,6 @@
 import Taro from "@tarojs/taro";
 import { useCallback, useEffect, useState } from "react";
-import { Input, Text, View } from "@tarojs/components";
+import { Input, Text, Textarea, View } from "@tarojs/components";
 import { Button } from "@nutui/nutui-react-taro";
 import type { Offering, OfferingCategory, OfferingUpdate } from "@cfp/kith-inn-shared";
 import { TopBar } from "@/components/TopBar";
@@ -8,6 +8,7 @@ import { groupByMainIngredient, type OfferingGroup } from "@/logic/groupByMainIn
 import {
   createOffering,
   deactivateOffering,
+  parseOfferingImport,
   partitionByActive,
   restoreOffering,
   updateOffering,
@@ -42,6 +43,9 @@ export default function Kitchen() {
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [form, setForm] = useState<Form>(EMPTY_FORM);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchText, setBatchText] = useState("");
+  const [importing, setImporting] = useState(false);
 
   const load = useCallback(() => {
     const token = tokens.getToken();
@@ -87,6 +91,15 @@ export default function Kitchen() {
     setForm(EMPTY_FORM);
   };
 
+  const collectExistingNames = (): Set<string> => {
+    const names = new Set<string>();
+    groups.forEach((group) => group.offerings.forEach((offering) => names.add(offering.name)));
+    inactive.forEach((offering) => names.add(offering.name));
+    return names;
+  };
+
+  const parsedImport = parseOfferingImport(batchText, collectExistingNames());
+
   const submit = async () => {
     const name = form.name.trim();
     if (!name) {
@@ -111,9 +124,38 @@ export default function Kitchen() {
     }
   };
 
+  const submitBatch = async () => {
+    const token = requireToken();
+    if (!token) return;
+    const { items } = parseOfferingImport(batchText, collectExistingNames());
+    if (items.length === 0) {
+      Taro.showToast({ title: "没有可导入的菜", icon: "none" });
+      return;
+    }
+    setImporting(true);
+    let ok = 0;
+    let fail = 0;
+    for (const item of items) {
+      try {
+        await createOffering({ token, ...item }, req);
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    setImporting(false);
+    if (ok > 0) {
+      setBatchText("");
+      setBatchOpen(false);
+      load();
+    }
+    Taro.showToast({ title: fail > 0 ? `${ok} 成功 ${fail} 失败` : `已导入 ${ok} 道`, icon: fail > 0 ? "none" : "success" });
+  };
+
   const edit = (o: Offering) => {
     setEditingId(o.id);
     setForm({ name: o.name, mainIngredient: o.mainIngredient ?? "", category: o.category ?? "veg" });
+    setBatchOpen(false);
     setFormOpen(true);
   };
 
@@ -147,11 +189,80 @@ export default function Kitchen() {
     <View className="page-shell">
       <TopBar title="桃子的灶台" subtitle="菜品池" />
       <View className="px-[32rpx] pb-[60rpx] pt-[32rpx]">
-        <View className="mb-[24rpx] flex justify-end">
-          <Button type="primary" className="bg-red text-white" onClick={() => { setEditingId(null); setForm(EMPTY_FORM); setFormOpen(true); }}>
+        <View className="mb-[24rpx] flex justify-end gap-[16rpx]">
+          <Button
+            className="bg-surface text-ink"
+            onClick={() => {
+              closeForm();
+              setBatchOpen(true);
+            }}
+          >
+            批量导入
+          </Button>
+          <Button
+            type="primary"
+            className="bg-red text-white"
+            onClick={() => {
+              setBatchOpen(false);
+              setEditingId(null);
+              setForm(EMPTY_FORM);
+              setFormOpen(true);
+            }}
+          >
             + 新增菜品
           </Button>
         </View>
+
+        {batchOpen && (
+          <View className="mb-[32rpx] card bg-surface p-[24rpx]">
+            <Text className="mb-[12rpx] block text-[28rpx] font-bold">批量导入菜品</Text>
+            <Text className="mb-[6rpx] block text-[24rpx] text-muted">每行一菜：菜名 主料 分类</Text>
+            <Text className="mb-[16rpx] block text-[24rpx] text-muted">分类填：荤 / 素 / 汤 / 主食；主料可省略。</Text>
+            <Textarea
+              value={batchText}
+              onInput={(e) => setBatchText(e.detail.value)}
+              placeholder={"番茄炒蛋 鸡蛋 素\n红烧牛肉 牛肉 荤\n冬瓜排骨汤 冬瓜 汤\n米饭 主食"}
+              maxlength={-1}
+              autoHeight
+              style={{ minHeight: "220rpx" }}
+              className="mb-[16rpx] w-full rounded-[12rpx] border border-line bg-white px-[16rpx] py-[12rpx] text-[28rpx] text-ink"
+            />
+            {parsedImport.items.length > 0 && (
+              <View className="mb-[16rpx] rounded-[12rpx] bg-white p-[16rpx]">
+                <Text className="mb-[8rpx] block text-[24rpx] font-bold text-ink">将导入 {parsedImport.items.length} 道</Text>
+                {parsedImport.items.map((item) => (
+                  <Text key={`${item.name}-${item.category}`} className="block text-[24rpx] text-muted">
+                    {item.name}
+                    {item.mainIngredient ? ` · ${item.mainIngredient}` : ""} · {CATEGORIES.find((c) => c.value === item.category)?.label}
+                  </Text>
+                ))}
+              </View>
+            )}
+            {parsedImport.errors.length > 0 && (
+              <View className="mb-[16rpx] rounded-[12rpx] bg-wash p-[16rpx]">
+                <Text className="mb-[8rpx] block text-[24rpx] font-bold text-amber">需处理 {parsedImport.errors.length} 行</Text>
+                {parsedImport.errors.map((error) => (
+                  <Text key={`${error.line}-${error.text}`} className="block text-[24rpx] text-muted">
+                    第 {error.line} 行：{error.reason}
+                  </Text>
+                ))}
+              </View>
+            )}
+            <View className="flex gap-[16rpx]">
+              <Button
+                type="primary"
+                disabled={parsedImport.items.length === 0 || importing}
+                className="bg-red text-white"
+                onClick={submitBatch}
+              >
+                {importing ? "导入中…" : `导入 ${parsedImport.items.length} 道`}
+              </Button>
+              <Button className="bg-surface text-ink" onClick={() => setBatchOpen(false)}>
+                取消
+              </Button>
+            </View>
+          </View>
+        )}
 
         {formOpen && (
           <View className="mb-[32rpx] card bg-surface p-[24rpx]">

@@ -6,6 +6,8 @@ import { offeringDetailUrl, offeringsUrl } from "../services/api";
 type ReqOptions = { url: string; method?: string; data?: unknown; header?: Record<string, string> };
 type ReqResponse = { statusCode: number; data: unknown };
 export type Req = (options: ReqOptions) => Promise<ReqResponse>;
+export type OfferingImportItem = { name: string; mainIngredient?: string; category: OfferingCreate["category"] };
+export type OfferingImportError = { line: number; text: string; reason: string };
 
 const authHeader = (token: string): Record<string, string> => ({
   Authorization: `Bearer ${token}`,
@@ -74,4 +76,49 @@ export function partitionByActive(offerings: Offering[]): { active: Offering[]; 
     else active.push(o);
   }
   return { active, inactive };
+}
+
+const CATEGORY_BY_TEXT: Record<string, OfferingCreate["category"]> = {
+  meat: "meat",
+  "荤": "meat",
+  "荤菜": "meat",
+  "肉": "meat",
+  veg: "veg",
+  "素": "veg",
+  "素菜": "veg",
+  soup: "soup",
+  "汤": "soup",
+  "汤类": "soup",
+  staple: "staple",
+  "主食": "staple",
+};
+
+const cleanLine = (line: string): string => line.trim().replace(/^[-*•]\s*/, "").replace(/^\d+[.、]\s*/, "");
+
+export function parseOfferingImport(text: string, existingNames: Set<string> = new Set()): { items: OfferingImportItem[]; errors: OfferingImportError[] } {
+  const items: OfferingImportItem[] = [];
+  const errors: OfferingImportError[] = [];
+  const seen = new Set<string>();
+  text.split(/\r?\n/).forEach((raw, i) => {
+    const line = cleanLine(raw);
+    if (!line) return;
+    const parts = line.split(/[\s,，、|]+/).filter(Boolean);
+    const category = CATEGORY_BY_TEXT[parts[parts.length - 1] ?? ""];
+    if (!category) {
+      errors.push({ line: i + 1, text: raw, reason: "缺少分类（荤/素/汤/主食）" });
+      return;
+    }
+    const name = parts[0] ?? "";
+    if (!name) {
+      errors.push({ line: i + 1, text: raw, reason: "缺少菜名" });
+      return;
+    }
+    if (existingNames.has(name) || seen.has(name)) {
+      errors.push({ line: i + 1, text: raw, reason: "菜名重复，已跳过" });
+      return;
+    }
+    seen.add(name);
+    items.push({ name, mainIngredient: parts.length > 2 ? parts[1] : undefined, category });
+  });
+  return { items, errors };
 }
