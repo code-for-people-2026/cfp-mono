@@ -78,6 +78,11 @@ describe("sortByAddress", () => {
     const sorted = sortByAddress(rows);
     expect(sorted[0]!.order.id).toBe("2");
   });
+
+  it("keeps equal addresses stable", () => {
+    const rows = [{ order: order({ id: "1", address: "3a" }) }, { order: order({ id: "2", address: "3a" }) }];
+    expect(sortByAddress(rows).map((r) => r.order.id)).toEqual(["1", "2"]);
+  });
 });
 
 describe("byOccasion", () => {
