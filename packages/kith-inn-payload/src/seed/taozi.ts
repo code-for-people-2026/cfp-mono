@@ -92,6 +92,11 @@ type SeedPayload = {
     data: Record<string, unknown>;
     overrideAccess?: boolean;
   }) => Promise<{ id: string | number }>;
+  delete?: (args: {
+    collection: string;
+    id: string | number;
+    overrideAccess?: boolean;
+  }) => Promise<unknown>;
 };
 
 export type SeedResult = {
@@ -99,6 +104,38 @@ export type SeedResult = {
   sellerId?: string | number;
   offeringCount: number;
 };
+
+export type ResetSeedResult = {
+  deleted: Record<string, number>;
+};
+
+export const RESET_COLLECTIONS = [
+  "chat_messages",
+  "fulfillments",
+  "order_items",
+  "orders",
+  "menu_plans",
+  "service_slots",
+  "subscriptions",
+  "customers",
+  "offerings",
+  "operators",
+  "sellers",
+] as const;
+
+/** Delete all kith-inn business data in FK-safe order. Only the explicit local
+ * dev reset command should call this before inserting the fixed fixture. */
+export async function resetSeedData(payload: Required<Pick<SeedPayload, "find" | "delete">>): Promise<ResetSeedResult> {
+  const deleted: Record<string, number> = {};
+  for (const collection of RESET_COLLECTIONS) {
+    const docs = await payload.find({ collection, where: {}, limit: 0, overrideAccess: true });
+    deleted[collection] = docs.docs.length;
+    for (const doc of docs.docs as Array<{ id: string | number }>) {
+      await payload.delete({ collection, id: doc.id, overrideAccess: true });
+    }
+  }
+  return { deleted };
+}
 
 /**
  * Idempotent seed (PRD §9 M0): if a seller with this name already exists, skip

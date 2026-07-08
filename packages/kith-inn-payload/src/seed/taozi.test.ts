@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { applySeed, buildComboOp, buildOfferingOps, buildOperatorOp, buildSellerOp } from "./taozi";
+import { applySeed, buildComboOp, buildOfferingOps, buildOperatorOp, buildSellerOp, resetSeedData, RESET_COLLECTIONS } from "./taozi";
 import type { TaoziFixture } from "./taozi";
 
 const fixture: TaoziFixture = {
@@ -121,5 +121,23 @@ describe("applySeed", () => {
     // no customer/address collections touched
     expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customers")).toBe(false);
     expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customer_addresses")).toBe(false);
+  });
+});
+
+describe("resetSeedData", () => {
+  it("deletes every kith-inn collection in FK-safe order", async () => {
+    const find = vi.fn(async ({ collection }: { collection: string }) => ({ docs: [{ id: `${collection}-1` }, { id: `${collection}-2` }] }));
+    const del = vi.fn(async () => undefined);
+    const result = await resetSeedData({ find, delete: del });
+
+    expect(result.deleted.chat_messages).toBe(2);
+    const findCalls = find.mock.calls as Array<[{ collection: string }]>;
+    const deleteCalls = del.mock.calls as unknown as Array<[{ collection: string; id: string; overrideAccess: true }]>;
+    expect(findCalls.map((c) => c[0].collection)).toEqual([...RESET_COLLECTIONS]);
+    expect(deleteCalls.slice(0, 2).map((c) => c[0])).toEqual([
+      { collection: "chat_messages", id: "chat_messages-1", overrideAccess: true },
+      { collection: "chat_messages", id: "chat_messages-2", overrideAccess: true },
+    ]);
+    expect(del).toHaveBeenCalledTimes(RESET_COLLECTIONS.length * 2);
   });
 });
