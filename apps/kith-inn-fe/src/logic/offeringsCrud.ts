@@ -103,12 +103,12 @@ export function parseOfferingImport(text: string, existingNames: Set<string> = n
     const line = cleanLine(raw);
     if (!line) return;
     const parts = line.split(/[\s,，、|]+/).filter(Boolean);
-    const category = CATEGORY_BY_TEXT[parts[parts.length - 1] ?? ""];
+    const category = CATEGORY_BY_TEXT[parts[parts.length - 1]!];
     if (!category) {
       errors.push({ line: i + 1, text: raw, reason: "缺少分类（荤/素/汤/主食）" });
       return;
     }
-    const name = parts[0] ?? "";
+    const name = parts.length > 1 ? parts[0] : "";
     if (!name) {
       errors.push({ line: i + 1, text: raw, reason: "缺少菜名" });
       return;

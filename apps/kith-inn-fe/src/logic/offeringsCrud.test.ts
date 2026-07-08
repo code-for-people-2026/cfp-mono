@@ -152,4 +152,11 @@ describe("parseOfferingImport", () => {
       { line: 6, reason: "菜名重复，已跳过" },
     ]);
   });
+
+  it("rejects category-only lines", () => {
+    expect(parseOfferingImport("荤")).toEqual({
+      items: [],
+      errors: [{ line: 1, text: "荤", reason: "缺少菜名" }],
+    });
+  });
 });
