@@ -1,3 +1,4 @@
+import { pathToFileURL } from "node:url";
 import { getPayload } from "payload";
 import { applySeed, resetSeedData, taoziFixture } from "@cfp/kith-inn-payload/seed";
 import config from "../payload.config";
@@ -11,12 +12,22 @@ import config from "../payload.config";
  *   KITH_INN_ALLOW_DEV_SEED_RESET=1 pnpm --filter @cfp/cms seed:reset:dev
  */
 const RESET_ARG = "--reset-dev";
+type Env = Record<string, string | undefined>;
 
 function trueish(value: string | undefined): boolean {
   return value === "1" || value === "true";
 }
 
-function looksLocalDatabaseUrl(raw: string | undefined): boolean {
+export function configuredPostgresUrl(env: Env = process.env): string | undefined {
+  return env.PAYLOAD_DATABASE_URL ||
+    env.DATABASE_URL ||
+    env.DATABASE_URL_UNPOOLED ||
+    env.POSTGRES_URL_NON_POOLING ||
+    env.POSTGRES_URL ||
+    (env.DATABASE_URI?.startsWith("postgres") ? env.DATABASE_URI : undefined);
+}
+
+export function looksLocalDatabaseUrl(raw: string | undefined): boolean {
   if (!raw) return true; // Payload's sqlite fallback is local.
   try {
     const host = new URL(raw).hostname;
@@ -26,19 +37,18 @@ function looksLocalDatabaseUrl(raw: string | undefined): boolean {
   }
 }
 
-function assertDevResetAllowed() {
-  if (process.env.KITH_INN_ALLOW_DEV_SEED_RESET !== "1") {
+export function assertDevResetAllowed(env: Env = process.env) {
+  if (env.KITH_INN_ALLOW_DEV_SEED_RESET !== "1") {
     throw new Error("Refusing destructive seed reset unless KITH_INN_ALLOW_DEV_SEED_RESET=1.");
   }
-  const envText = [process.env.NODE_ENV, process.env.APP_ENV, process.env.CFP_ENV, process.env.VERCEL_ENV]
+  const envText = [env.NODE_ENV, env.APP_ENV, env.CFP_ENV, env.VERCEL_ENV]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  if (/(^|\s)(prod|production|stage|staging|preview)(\s|$)/.test(envText) || trueish(process.env.VERCEL)) {
+  if (/(^|\s)(prod|production|stage|staging|preview)(\s|$)/.test(envText) || trueish(env.VERCEL)) {
     throw new Error("Refusing destructive seed reset outside local dev.");
   }
-  const dbUrl = process.env.PAYLOAD_DATABASE_URL || process.env.DATABASE_URL || process.env.DATABASE_URL_UNPOOLED;
-  if (!looksLocalDatabaseUrl(dbUrl)) {
+  if (!looksLocalDatabaseUrl(configuredPostgresUrl(env))) {
     throw new Error("Refusing destructive seed reset for a non-local database URL.");
   }
 }
@@ -67,7 +77,9 @@ async function main() {
   process.exit(0);
 }
 
-main().catch((err) => {
-  console.error("seed failed:", err);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((err) => {
+    console.error("seed failed:", err);
+    process.exit(1);
+  });
+}
