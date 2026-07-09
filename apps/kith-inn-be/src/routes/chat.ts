@@ -213,7 +213,8 @@ export async function dispatchPendingOp(
     }
     case "generate_menu": {
       const targets = a.targets as Array<{ date: string; occasion: "lunch" | "dinner" }>;
-      const r = await services.generateMenu(targets, a.force === true);
+      const plannedItems = a.plannedItems as Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }> | undefined;
+      const r = await services.generateMenu(targets, a.force === true, plannedItems);
       if (!r.ok) return r.reason === "pool-too-small" ? "菜品池不够。" : `生成失败：${r.reason}`;
       const lines = r.plans.map((p) => `${p.occasion === "lunch" ? "午餐" : "晚餐"}：${p.dishes.map((d) => d.name).join("、")}`);
       return `排好了：\n${lines.join("\n")}`;

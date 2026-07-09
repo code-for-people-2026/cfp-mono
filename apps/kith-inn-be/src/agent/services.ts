@@ -261,15 +261,16 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     // ── Menu tools (feature 005) ──────────────────────────────────────
 
     /** Generate or regenerate menu plans for given targets (feature 003 domain fns). */
-    async generateMenu(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean) {
+    async generateMenu(
+      targets: Array<{ date: string; occasion: "lunch" | "dinner" }>,
+      force?: boolean,
+      plannedItems?: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }>,
+    ) {
       try {
-        const [offerings, existing] = await Promise.all([
-          cms.findOfferings(jwt),
-          cms.listMenuPlans(jwt, {
-            from: targets.map((t) => t.date).sort()[0]!,
-            to: targets.map((t) => t.date).sort().at(-1)!,
-          }),
-        ]);
+        const existing = await cms.listMenuPlans(jwt, {
+          from: targets.map((t) => t.date).sort()[0]!,
+          to: targets.map((t) => t.date).sort().at(-1)!,
+        });
         const pubKey = new Set(
           existing.filter((p) => p.status === "published").map((p) => {
             const s = p.slot as { date?: string; occasion?: string };
@@ -281,12 +282,18 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
             return { ok: false as const, reason: "plan-published" };
           }
         }
-        const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
-        const result = generateForTargets({ targets, pool });
-        if (!result.ok) return { ok: false as const, reason: "pool-too-small" };
-        const items: MenuPlanUpsertInput[] = result.menu.map((s) => ({
-          date: s.day, occasion: s.occasion, offerings: s.dishes.map((d) => d.id), status: "draft",
-        }));
+        let items: MenuPlanUpsertInput[];
+        if (plannedItems) {
+          items = plannedItems.map((it) => ({ ...it, status: "draft" }));
+        } else {
+          const offerings = await cms.findOfferings(jwt);
+          const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
+          const result = generateForTargets({ targets, pool });
+          if (!result.ok) return { ok: false as const, reason: "pool-too-small" };
+          items = result.menu.map((s) => ({
+            date: s.day, occasion: s.occasion, offerings: s.dishes.map((d) => d.id), status: "draft",
+          }));
+        }
         const written = await cms.upsertMenuPlans(jwt, items);
         return { ok: true as const, plans: written.map(menuPlanToView) };
       } catch {
@@ -409,7 +416,11 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const pool = offerings.filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
         const result = generateForTargets({ targets, pool });
         if (!result.ok) return { ok: false as const, reason: "pool-too-small" };
-        return { ok: true as const, lines: result.menu.map((s) => `${s.occasion === "lunch" ? "午餐" : "晚餐"}：${s.dishes.map((d) => d.name).join("、")}`) };
+        return {
+          ok: true as const,
+          lines: result.menu.map((s) => `${s.occasion === "lunch" ? "午餐" : "晚餐"}：${s.dishes.map((d) => d.name).join("、")}`),
+          plannedItems: result.menu.map((s) => ({ date: s.day, occasion: s.occasion, offerings: s.dishes.map((d) => d.id) })),
+        };
       } catch {
         return { ok: false as const, reason: "preview failed" };
       }
@@ -425,19 +436,19 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
         const date = dayOnly(slot.date);
         const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
-        let newName: string;
+        let replacement: { id: string | number; name: string };
         let warning: string | undefined;
         if (replacementId !== undefined) {
           const r = swapDishSpecified({ menu, target: { day: date, occasion: slot.occasion }, dishId, replacementId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
-          newName = r.replacement.name;
+          replacement = r.replacement;
           warning = r.warning;
         } else {
           const r = swapDish({ menu, target: { day: date, occasion: slot.occasion }, dishId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
-          newName = r.replacement.name;
+          replacement = r.replacement;
         }
-        return { ok: true as const, oldName: target?.name ?? `#${dishId}`, newName, ...(warning ? { warning } : {}) };
+        return { ok: true as const, oldName: target?.name ?? `#${dishId}`, newName: replacement.name, replacementId: replacement.id, ...(warning ? { warning } : {}) };
       } catch {
         return { ok: false as const, error: "preview failed" };
       }

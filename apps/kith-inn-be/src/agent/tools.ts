@@ -28,7 +28,11 @@ export type AgentServices = {
   getTodayOrders(): Promise<Order[]>;
   getTodayDelivery(): Promise<DeliveryCardData>;
   // Menu tools (feature 005)
-  generateMenu(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; plans: MenuPlanView[] } | { ok: false; reason: string }>;
+  generateMenu(
+    targets: Array<{ date: string; occasion: "lunch" | "dinner" }>,
+    force?: boolean,
+    plannedItems?: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }>,
+  ): Promise<{ ok: true; plans: MenuPlanView[] } | { ok: false; reason: string }>;
   swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean): Promise<{ ok: true; plan: MenuPlanView; warning?: string } | { ok: false; error: string }>;
   publishMenu(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   getMenu(date?: string): Promise<MenuPlanView[]>;
@@ -36,8 +40,8 @@ export type AgentServices = {
   createOffering(input: { name: string; mainIngredient?: string; category?: string }): Promise<{ id: string | number; name: string }>;
   // Preview reads for operation-confirm cards (#126 rich previews) — all read-only.
   previewOrder(orderId: string | number): Promise<{ displayName: string; quantity: number; occasion: string } | null>;
-  previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; lines: string[] } | { ok: false; reason: string }>;
-  previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean): Promise<{ ok: true; oldName: string; newName: string; warning?: string } | { ok: false; error: string }>;
+  previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; lines: string[]; plannedItems: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }> } | { ok: false; reason: string }>;
+  previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean): Promise<{ ok: true; oldName: string; newName: string; replacementId: string | number; warning?: string } | { ok: false; error: string }>;
   previewPublish(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   markUnpaid?(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Operator id (from JWT) — keys the server-side pending ops (#126). */
@@ -251,8 +255,9 @@ export const AGENT_TOOLS: AgentTool[] = [
       if (!preview.ok) return { text: preview.reason === "pool-too-small" ? "菜品池不够，排不出来。" : preview.reason === "plan-published" ? "这餐已发给顾客了，要重排得说「强制」。" : "排菜预览失败，再试一下。" };
       const head = `将为 ${targets.map((t) => `${t.date} ${t.occasion === "lunch" ? "午餐" : "晚餐"}`).join("、")} 排菜`;
       const summary = `${head}：\n${preview.lines.join("\n")}`;
-      const opId = setPendingOp(s.operatorId, { toolName: "generate_menu", args: { targets, force }, summary });
-      return { text: summary + "\n点下面「确认」。", card: opConfirmCard("generate_menu", summary, { targets, force }, opId) };
+      const opArgs = { targets, force, plannedItems: preview.plannedItems };
+      const opId = setPendingOp(s.operatorId, { toolName: "generate_menu", args: opArgs, summary });
+      return { text: summary + "\n点下面「确认」。", card: opConfirmCard("generate_menu", summary, opArgs, opId) };
     },
   },
   {
@@ -265,8 +270,9 @@ export const AGENT_TOOLS: AgentTool[] = [
       const preview = await s.previewSwap(planId, dishId, replacementId, force);
       if (!preview.ok) return { text: preview.error === "plan-published" ? "这餐已发给顾客了，要改得说「强制」。" : `换不了：${preview.error}` };
       const summary = `将把 ${preview.oldName} 换成 ${preview.newName}${preview.warning ? `（${preview.warning}）` : ""}`;
-      const opId = setPendingOp(s.operatorId, { toolName: "swap_dish", args: { planId, dishId, replacementId, force }, summary });
-      return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, { planId, dishId, replacementId, force }, opId) };
+      const opArgs = { planId, dishId, replacementId: preview.replacementId, force };
+      const opId = setPendingOp(s.operatorId, { toolName: "swap_dish", args: opArgs, summary });
+      return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, opArgs, opId) };
     },
   },
   {
