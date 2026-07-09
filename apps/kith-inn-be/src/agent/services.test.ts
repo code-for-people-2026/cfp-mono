@@ -294,6 +294,23 @@ describe("generateMenu", () => {
     expect(await svc(cms).generateMenu([{ date: "2026-06-29", occasion: "lunch" }])).toEqual({ ok: false, reason: "plan-published" });
     expect(cms.upsertMenuPlans).not.toHaveBeenCalled();
   });
+
+  it("writes previewed offering ids instead of recomputing random choices", async () => {
+    const cms = baseCms({
+      findOfferings: vi.fn(async () => { throw new Error("should not recompute"); }),
+      upsertMenuPlans: vi.fn(async () => [{
+        id: 50,
+        status: "draft",
+        slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" },
+        offerings: [{ id: 9, name: "预览菜", category: "meat", mainIngredient: "牛" }],
+      }] as never),
+    });
+    const plannedItems = [{ date: "2026-06-29", occasion: "lunch" as const, offerings: [9, 8, 7, 6, 5] }];
+    const r = await svc(cms).generateMenu([{ date: "2026-06-29", occasion: "lunch" }], false, plannedItems);
+    expect(r.ok).toBe(true);
+    expect(cms.findOfferings).not.toHaveBeenCalled();
+    expect(cms.upsertMenuPlans).toHaveBeenCalledWith("jwt", [{ ...plannedItems[0], status: "draft" }]);
+  });
 });
 
 describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
@@ -321,7 +338,12 @@ describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
     });
     const r = await svc(cms).previewMenuTargets([{ date: "2026-06-29", occasion: "lunch" }]);
     expect(r.ok).toBe(true);
-    if (r.ok) expect(r.lines[0]).toContain("午餐");
+    if (r.ok) {
+      expect(r.lines[0]).toContain("午餐");
+      expect(r.plannedItems).toHaveLength(1);
+      expect(r.plannedItems[0]).toMatchObject({ date: "2026-06-29", occasion: "lunch" });
+      expect(r.plannedItems[0]!.offerings).toHaveLength(5);
+    }
     expect(cms.upsertMenuPlans).not.toHaveBeenCalled();
   });
 
@@ -349,7 +371,7 @@ describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
       ] as never),
     });
     const r = await svc(cms).previewSwap(50, 12, 19);
-    expect(r).toMatchObject({ ok: true, oldName: "牛腩", newName: "香菇滑鸡" });
+    expect(r).toMatchObject({ ok: true, oldName: "牛腩", newName: "香菇滑鸡", replacementId: 19 });
     expect(cms.patchMenuPlan).not.toHaveBeenCalled();
   });
 

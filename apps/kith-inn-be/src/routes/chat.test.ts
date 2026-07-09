@@ -387,10 +387,11 @@ describe("dispatchPendingOp", () => {
     expect(operationReplySucceeded("失败：A（记单失败）")).toBe(false);
   });
 
-  it("generate_menu: force=true is forwarded", async () => {
+  it("generate_menu: force=true and planned preview ids are forwarded", async () => {
     const g = vi.fn(async () => ({ ok: true as const, plans: [] })) as never;
-    await run(svc({ generateMenu: g }), "generate_menu", { targets: [{ date: "2026-07-08", occasion: "lunch" }], force: true });
-    expect(g).toHaveBeenCalledWith(expect.anything(), true);
+    const plannedItems = [{ date: "2026-07-08", occasion: "lunch", offerings: [9, 8, 7] }];
+    await run(svc({ generateMenu: g }), "generate_menu", { targets: [{ date: "2026-07-08", occasion: "lunch" }], force: true, plannedItems });
+    expect(g).toHaveBeenCalledWith(expect.anything(), true, plannedItems);
   });
 
   it("swap_dish: forwards a specified replacementId", async () => {

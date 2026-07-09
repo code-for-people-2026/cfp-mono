@@ -32,8 +32,8 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   getDishPool: over.getDishPool ?? vi.fn(async () => []),
   createOffering: over.createOffering ?? vi.fn(async () => ({ id: 1, name: "test" })),
   previewOrder: over.previewOrder ?? vi.fn(async () => ({ displayName: "王燕萍", quantity: 1, occasion: "lunch" })),
-  previewMenuTargets: over.previewMenuTargets ?? vi.fn(async () => ({ ok: true as const, lines: ["午餐：菜1、菜2"] })),
-  previewSwap: over.previewSwap ?? vi.fn(async () => ({ ok: true as const, oldName: "旧菜", newName: "新菜" })),
+  previewMenuTargets: over.previewMenuTargets ?? vi.fn(async () => ({ ok: true as const, lines: ["午餐：菜1、菜2"], plannedItems: [{ date: "2026-07-08", occasion: "lunch" as const, offerings: [1, 2] }] })),
+  previewSwap: over.previewSwap ?? vi.fn(async () => ({ ok: true as const, oldName: "旧菜", newName: "新菜", replacementId: 9 })),
   previewPublish: over.previewPublish ?? vi.fn(async () => ({ ok: true as const, publishText: "#接龙 test" })),
   operatorId: 1,
 });
