@@ -15,6 +15,14 @@ function addressMatches(address: string, fragment: string): boolean {
 
 export type Occasion = "lunch" | "dinner";
 export type Row = { order: Order; fulfillment?: Fulfillment };
+export type OrdersSummary = {
+  orders: number;
+  servings: number;
+  totalCents: number;
+  drafts: number;
+  unpaid: number;
+  pendingDeliveries: number;
+};
 
 /** Pair orders with their fulfillment (by order.id); draft/canceled orders may have none. */
 export function joinOrdersFulfillments(orders: Order[], fulfillments: Fulfillment[]): Row[] {
@@ -86,6 +94,32 @@ export function visibleRows(rows: Row[], occasion: Occasion, prefix: string): Ro
 export function isCheckable(row: Row): boolean {
   const d = lifecycleDots(row);
   return d.base !== "canceled" && d.delivery === "pending";
+}
+
+/** Quantity shown in the orders page. listOrders may carry `items` as an API extra. */
+export function orderQuantity(order: Order): number {
+  const items = (order as { items?: Array<{ quantity?: number }> }).items;
+  const sum = items?.reduce((n, it) => n + (it.quantity ?? 0), 0) ?? 0;
+  return sum > 0 ? sum : 1;
+}
+
+/** One selectable row can receive at least one bulk action (paid or delivered). */
+export function isSelectable(row: Row): boolean {
+  const d = lifecycleDots(row);
+  return d.base === "confirmed" && (d.payment === "unpaid" || d.delivery === "pending");
+}
+
+/** Active-day summary for the orders page header. */
+export function summarizeRows(rows: Row[]): OrdersSummary {
+  const active = rows.filter((r) => r.order.status !== "canceled");
+  return {
+    orders: active.length,
+    servings: active.reduce((n, r) => n + orderQuantity(r.order), 0),
+    totalCents: active.reduce((n, r) => n + (r.order.totalCents ?? 0), 0),
+    drafts: active.filter((r) => r.order.status === "draft").length,
+    unpaid: active.filter((r) => r.order.status === "confirmed" && r.order.paymentStatus === "unpaid").length,
+    pendingDeliveries: active.filter((r) => lifecycleDots(r).delivery === "pending").length,
+  };
 }
 
 /** Pure toggle: returns a new id list with `id` added or removed. */

@@ -40,11 +40,11 @@ export function ChatCard({ card, confirmed = false, confirming, fromHistory, onC
       <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
         <Text className="block text-[28rpx] font-semibold text-amber">{card.data.summary}</Text>
         <View className="mt-[16rpx]">
-          {confirmed && <Text className="block text-[26rpx] text-green">已确认 ✓</Text>}
+          {confirmed && <Text className="block text-[26rpx] text-green">已处理 ✓</Text>}
           {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
           {active && (
-            <Button type="primary" loading={confirming} className="bg-amber text-white" onClick={() => onConfirmOperation?.()}>
-              确认
+            <Button type="primary" disabled={confirming} className={confirming ? "bg-surface text-muted" : "bg-amber text-white"} onClick={() => onConfirmOperation?.()}>
+              {confirming ? "处理中..." : "确认"}
             </Button>
           )}
         </View>
@@ -116,7 +116,7 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
 }) {
   const args = card.data.args as { items: ConfirmCustomerItem[]; isNew: boolean[] };
   const [items, setItems] = useState<ConfirmCustomerItem[]>(args.items.map((it) => ({ ...it })));
-  const active = !confirmed && !fromHistory;
+  const active = !confirmed && !fromHistory && !!onConfirmOperation;
   const updateAddr = (i: number, addr: string) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, address: addr } : it)));
   return (
     <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
@@ -139,15 +139,14 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
         </View>
       ))}
       <View className="mt-[20rpx]">
-        {confirmed && <Text className="block text-[26rpx] text-green">已确认 ✓</Text>}
+        {confirmed && <Text className="block text-[26rpx] text-green">已记为草稿 ✓</Text>}
         {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
         {active && (
-          <Button type="primary" loading={confirming} className="bg-amber text-white" onClick={() => onConfirmOperation?.(items)}>
-            确认
+          <Button type="primary" disabled={confirming} className={confirming ? "bg-surface text-muted" : "bg-amber text-white"} onClick={() => onConfirmOperation?.(items)}>
+            {confirming ? "记录中..." : "记为草稿"}
           </Button>
         )}
       </View>
     </View>
   );
 }
-

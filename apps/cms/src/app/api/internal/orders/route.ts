@@ -30,7 +30,22 @@ export async function GET(req: Request) {
   if (params.has("occasion")) clauses.push({ occasion: { equals: params.get("occasion") } });
   if (params.has("status")) clauses.push({ status: { equals: params.get("status") } });
   const res = await payload.find({ collection: "orders", where: { and: clauses }, depth: 1, sort: "-date", limit: 0, overrideAccess: true });
-  return NextResponse.json({ docs: res.docs });
+  const orderIds = res.docs.map((o) => o.id);
+  if (orderIds.length === 0) return NextResponse.json({ docs: [] });
+  const items = await payload.find({
+    collection: "order_items",
+    where: { and: [{ seller: { equals: sellerId } }, { order: { in: orderIds } }] },
+    limit: 0,
+    overrideAccess: true,
+  });
+  const byOrder = new Map<string, unknown[]>();
+  for (const it of items.docs as Array<{ order?: { id?: string | number } | string | number }>) {
+    const id = typeof it.order === "object" ? it.order?.id : it.order;
+    if (id === undefined) continue;
+    const key = String(id);
+    byOrder.set(key, [...(byOrder.get(key) ?? []), it]);
+  }
+  return NextResponse.json({ docs: res.docs.map((o) => ({ ...o, items: byOrder.get(String(o.id)) ?? [] })) });
 }
 
 /**

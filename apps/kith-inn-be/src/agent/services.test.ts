@@ -286,6 +286,16 @@ describe("getTodayDelivery", () => {
   });
 });
 
+describe("generateMenu", () => {
+  it("blocks an already-published ISO-dated plan without force", async () => {
+    const cms = baseCms({
+      listMenuPlans: vi.fn(async () => [{ status: "published", slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" } }] as never),
+    });
+    expect(await svc(cms).generateMenu([{ date: "2026-06-29", occasion: "lunch" }])).toEqual({ ok: false, reason: "plan-published" });
+    expect(cms.upsertMenuPlans).not.toHaveBeenCalled();
+  });
+});
+
 describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
   it("previewOrder: populated customer → display info; sums item quantities", async () => {
     const cms = baseCms({

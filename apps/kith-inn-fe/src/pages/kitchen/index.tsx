@@ -4,12 +4,13 @@ import { Input, Text, Textarea, View } from "@tarojs/components";
 import { Button } from "@nutui/nutui-react-taro";
 import type { Offering, OfferingCategory, OfferingUpdate } from "@cfp/kith-inn-shared";
 import { TopBar } from "@/components/TopBar";
-import { groupByMainIngredient, type OfferingGroup } from "@/logic/groupByMainIngredient";
+import { groupByCategory, type OfferingGroup } from "@/logic/groupByMainIngredient";
 import {
   createOffering,
   deactivateOffering,
   parseOfferingImport,
   partitionByActive,
+  purgeOffering,
   restoreOffering,
   updateOffering,
   type Req,
@@ -66,7 +67,7 @@ export default function Kitchen() {
         }
         const all = (res.data as { offerings?: Offering[] }).offerings ?? [];
         const { active, inactive } = partitionByActive(all);
-        setGroups(groupByMainIngredient(active));
+        setGroups(groupByCategory(active));
         setInactive(inactive);
       })
       .catch(() => Taro.showToast({ title: "加载失败", icon: "error" }));
@@ -180,6 +181,19 @@ export default function Kitchen() {
       load();
     } catch {
       Taro.showToast({ title: "恢复失败", icon: "error" });
+    }
+  };
+
+  const purge = async (o: Offering) => {
+    const token = requireToken();
+    if (!token) return;
+    const c = await Taro.showModal({ title: "永久删除", content: `彻底删除「${o.name}」？删除后不能恢复。` });
+    if (!c.confirm) return;
+    try {
+      await purgeOffering({ token, id: o.id }, req);
+      load();
+    } catch {
+      Taro.showToast({ title: "删除失败", icon: "error" });
     }
   };
 
@@ -310,14 +324,12 @@ export default function Kitchen() {
           <Text className="block py-[24rpx] text-center text-[24rpx] text-muted">菜品池还是空的。</Text>
         ) : (
           groups.map((group) => (
-            <View key={group.mainIngredient} className="mt-[32rpx] first:mt-0">
-              <Text className="block text-[30rpx] font-bold text-amber">主料 · {group.mainIngredient}</Text>
+            <View key={group.category} className="mt-[32rpx] first:mt-0">
+              <Text className="block text-[30rpx] font-bold text-amber">分类 · {group.label}</Text>
               {group.offerings.map((offering) => (
                 <View key={String(offering.id)} className="flex flex-wrap items-baseline gap-[12rpx] border-b border-line py-[14rpx] last:border-b-0">
                   <Text className="text-[32rpx]">{offering.name}</Text>
-                  {offering.category ? (
-                    <Text className="text-[24rpx] text-muted">{CATEGORIES.find((c) => c.value === offering.category)?.label}</Text>
-                  ) : null}
+                  {offering.mainIngredient ? <Text className="text-[24rpx] text-muted">{offering.mainIngredient}</Text> : null}
                   <View className="ml-auto flex gap-[12rpx]">
                     <Button className="bg-surface text-ink" onClick={() => edit(offering)}>
                       编辑
@@ -338,9 +350,12 @@ export default function Kitchen() {
             {inactive.map((offering) => (
               <View key={String(offering.id)} className="flex items-baseline gap-[12rpx] border-b border-line py-[12rpx] last:border-b-0">
                 <Text className="text-[28rpx] text-muted line-through">{offering.name}</Text>
-                <View className="ml-auto">
+                <View className="ml-auto flex gap-[12rpx]">
                   <Button type="primary" className="bg-amber text-white" onClick={() => restore(offering)}>
                     恢复
+                  </Button>
+                  <Button className="bg-surface text-red" onClick={() => purge(offering)}>
+                    永久删除
                   </Button>
                 </View>
               </View>

@@ -112,7 +112,12 @@ export default function Menu() {
     if (!t) return;
     const from = todayShanghai();
     const targets = Array.from({ length: 7 }, (_, i) => addDays(from, i)).flatMap((date) => [{ date, occasion: "lunch" as const }, { date, occasion: "dinner" as const }]);
-    const r = await generatePlans(t, targets, req);
+    let r = await generatePlans(t, targets, req);
+    if (!r.ok && r.reason === "plan-published") {
+      const force = await confirm("重新生成这周", "这 7 天里有菜单已发给顾客，重新生成会清掉旧文案，确定？");
+      if (!force) return;
+      r = await generatePlans(t, targets, req, true);
+    }
     if (!r.ok) {
       Taro.showToast({ title: r.reason === "pool-too-small" ? "菜品池不够" : "无法生成", icon: "none" });
       return;

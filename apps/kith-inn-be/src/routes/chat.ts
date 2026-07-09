@@ -140,10 +140,11 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
     const services = createCmsAgentServices({ jwt, cms, operatorId });
     try {
       const result = await dispatchPendingOp(services, op, body);
-      clearPendingOp(operatorId);
+      const ok = operationReplySucceeded(result);
+      if (ok) clearPendingOp(operatorId);
       // Best-effort persist the outcome as an assistant message.
       await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
-      return c.json({ reply: result });
+      return c.json({ reply: result, ok });
     } catch {
       return c.json({ error: "operation failed" }, 502);
     }
@@ -173,19 +174,26 @@ export async function dispatchPendingOp(
       const knownItems = items.filter((_, i) => !isNew[i]);
       const newItems = items.filter((_, i) => isNew[i]);
       const parts: string[] = [];
+      let hasDraft = false;
       if (knownItems.length > 0) {
         const r = await services.recordOrders(knownItems);
-        if (r.recorded.length > 0) parts.push(`已记草稿：${r.recorded.map((x) => x.name).join("、")}`);
-        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => x.customerName).join("、")}`);
+        if (r.recorded.length > 0) {
+          hasDraft = true;
+          parts.push(`已记为草稿：${r.recorded.map((x) => x.name).join("、")}`);
+        }
+        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}（${x.error}）`).join("、")}`);
       }
       if (newItems.length > 0) {
         const r = await services.createCustomersAndOrders(
           newItems.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
         );
-        if (r.created.length > 0) parts.push(`已建：${r.created.map((x) => x.name).join("、")}`);
-        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => x.displayName).join("、")}`);
+        if (r.created.length > 0) {
+          hasDraft = true;
+          parts.push(`已建顾客并记为草稿：${r.created.map((x) => x.name).join("、")}`);
+        }
+        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.displayName}（${x.error}）`).join("、")}`);
       }
-      return parts.join("；") || "没有可记的单。";
+      return parts.length > 0 ? `${parts.join("；")}${hasDraft ? "。到订单页确认后进入送餐清单。" : ""}` : "没有可记的单。";
     }
     case "confirm_order": {
       const r = await services.confirmOrder({ orderId: Number(a.orderId) });
@@ -227,4 +235,19 @@ export async function dispatchPendingOp(
     default:
       return `未知操作：${op.toolName}`;
   }
+}
+
+export function operationReplySucceeded(reply: string): boolean {
+  return (
+    reply.includes("已记为草稿") ||
+    reply.includes("已建顾客并记为草稿") ||
+    reply.startsWith("已确认订单") ||
+    reply.startsWith("已取消订单") ||
+    reply.startsWith("已标记订单") ||
+    reply.startsWith("已回退订单") ||
+    reply.startsWith("排好了：") ||
+    reply.startsWith("已换好") ||
+    reply.startsWith("菜单已发布") ||
+    reply.startsWith("加好了：")
+  );
 }

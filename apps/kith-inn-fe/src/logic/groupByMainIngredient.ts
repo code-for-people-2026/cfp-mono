@@ -1,22 +1,28 @@
-import type { Offering } from "@cfp/kith-inn-shared";
+import type { Offering, OfferingCategory } from "@cfp/kith-inn-shared";
 
-/** A group of offerings sharing a 主料 (main ingredient). */
+/** A group of offerings sharing a 菜品分类. */
 export type OfferingGroup = {
-  mainIngredient: string;
+  category: OfferingCategory | "uncategorized";
+  label: string;
   offerings: Offering[];
 };
 
-const FALLBACK_KEY = "其他";
+const ORDER: Array<{ category: OfferingGroup["category"]; label: string }> = [
+  { category: "meat", label: "荤" },
+  { category: "veg", label: "素" },
+  { category: "soup", label: "汤" },
+  { category: "staple", label: "主食" },
+  { category: "uncategorized", label: "未分类" },
+];
 
 /**
- * Group offerings by `mainIngredient` (the real de-dup axis, PRD §6.2: "肉就那
- * 几样"). Offerings without a mainIngredient fall under "其他". Pure + deterministic
- * — the kitchen page's 主料 sectioning.
+ * Group offerings by category in the kitchen page's default display order.
+ * 主料 stays on each row; grouping by 主料 made the pool hard to scan.
  */
-export function groupByMainIngredient(offerings: Offering[]): OfferingGroup[] {
-  const map = new Map<string, Offering[]>();
+export function groupByCategory(offerings: Offering[]): OfferingGroup[] {
+  const map = new Map<OfferingGroup["category"], Offering[]>();
   for (const offering of offerings) {
-    const key = offering.mainIngredient ?? FALLBACK_KEY;
+    const key = offering.category ?? "uncategorized";
     const list = map.get(key);
     if (list) {
       list.push(offering);
@@ -24,8 +30,8 @@ export function groupByMainIngredient(offerings: Offering[]): OfferingGroup[] {
       map.set(key, [offering]);
     }
   }
-  return [...map.entries()].map(([mainIngredient, list]) => ({
-    mainIngredient,
-    offerings: list,
-  }));
+  return ORDER.flatMap(({ category, label }) => {
+    const list = map.get(category);
+    return list ? [{ category, label, offerings: list }] : [];
+  });
 }
