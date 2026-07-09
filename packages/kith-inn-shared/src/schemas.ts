@@ -96,9 +96,6 @@ interface Offering {
   parentOfferings?: Array<string | number | Offering>;
   unitLabel?: string;
   priceCents?: number;
-  tags?: string[];
-  lastUsedAt?: string;
-  useCount?: number;
   recipe?: Record<string, unknown>;
   active?: boolean;
   seller: string | number | Seller;
@@ -112,16 +109,13 @@ export const offeringSchema: z.ZodType<Offering> = z.object({
   parentOfferings: z.array(rel(z.lazy(() => offeringSchema))).optional(),
   unitLabel: z.string().optional(),
   priceCents: z.number().optional(),
-  tags: z.array(z.string()).optional(),
-  lastUsedAt: z.string().optional(),
-  useCount: z.number().optional(),
   recipe: z.record(z.string(), z.unknown()).optional(),
   active: z.boolean().optional(),
   seller: rel(z.lazy(() => sellerSchema)),
 });
 
 // ── offering write contract (M1 菜品池 CRUD: name + mainIngredient + category) ──
-// z.object 非 passthrough → 多余字段（priceCents/tags/recipe/kind/seller/id）被 strip = M1 白名单。
+// z.object 非 passthrough → 多余字段（priceCents/recipe/kind/seller/id）被 strip = M1 白名单。
 export const offeringCreateSchema = z.object({
   name: z.string().min(1),
   mainIngredient: z.string().optional(),
@@ -202,9 +196,6 @@ export const menuDishSchema = z.object({
   name: z.string(),
   category: offeringCategorySchema,
   mainIngredient: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  useCount: z.number().optional(),
-  lastUsedAt: z.string().optional(),
 });
 export const menuSlotSchema = z.object({
   day: z.string(),

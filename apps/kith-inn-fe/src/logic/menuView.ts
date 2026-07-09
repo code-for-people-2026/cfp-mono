@@ -27,18 +27,12 @@ export type ChipTone = "red" | "amber" | "green" | "blue";
 type DishChip = { label: string; tone: ChipTone };
 
 /**
- * Chips for a dish, in display order: main ingredient (red) → 汤 (blue, for soup) →
- * tags (费工=amber, 清淡=green, anything else=green). Mirrors the prototype's chip palette.
+ * Chips for a dish, in display order: main ingredient (red) → 汤 (blue, for soup).
  */
 export function dishChips(dish: MenuDish): DishChip[] {
   const chips: DishChip[] = [];
   if (dish.mainIngredient) chips.push({ label: dish.mainIngredient, tone: "red" });
   if (dish.category === "soup") chips.push({ label: "汤", tone: "blue" });
-  for (const tag of dish.tags ?? []) {
-    if (tag === "费工") chips.push({ label: "费工", tone: "amber" });
-    else if (tag === "清淡") chips.push({ label: "清淡", tone: "green" });
-    else chips.push({ label: tag, tone: "green" });
-  }
   return chips;
 }
 

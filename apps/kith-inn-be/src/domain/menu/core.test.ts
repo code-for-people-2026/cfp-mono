@@ -1,6 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
-  DEFAULT_CONSTRAINTS,
   generateWeekMenu,
   swapDish,
   swapDishSpecified,
@@ -14,7 +13,6 @@ const meat = (n: number, mainIngredient: string, opts: Partial<MenuDish> = {}): 
   name: `肉${n}`,
   category: "meat",
   mainIngredient,
-  tags: [],
   ...opts,
 });
 const veg = (n: number, mainIngredient: string, opts: Partial<MenuDish> = {}): MenuDish => ({
@@ -22,7 +20,6 @@ const veg = (n: number, mainIngredient: string, opts: Partial<MenuDish> = {}): M
   name: `素${n}`,
   category: "veg",
   mainIngredient,
-  tags: [],
   ...opts,
 });
 const soup = (n: number, opts: Partial<MenuDish> = {}): MenuDish => ({
@@ -30,7 +27,6 @@ const soup = (n: number, opts: Partial<MenuDish> = {}): MenuDish => ({
   name: `汤${n}`,
   category: "soup",
   mainIngredient: `汤料${n}`,
-  tags: [],
   ...opts,
 });
 
@@ -90,36 +86,49 @@ describe("generateWeekMenu — no-repeat constraints", () => {
     }
   });
 
-  it("费工菜每日 ≤ 1 (laboriousMaxPerDay, across lunch+dinner — Codex)", () => {
-    // mark a few spread dishes 费工 (sparse, so non-费工 candidates stay plentiful)
-    const laboriousIds = new Set(["m1", "m5", "v3"]);
-    const pool = feasiblePool.map((d) => ({ ...d, tags: laboriousIds.has(String(d.id)) ? ["费工"] : d.tags ?? [] }));
-    const r = generateWeekMenu({ pool });
-    if (!r.ok) throw new Error("expected ok");
-    // per-DAY: 费工 summed across the day's lunch+dinner ≤ cap (not per-slot).
-    const byDay = new Map<string, number>();
-    for (const slot of r.menu) {
-      const n = slot.dishes.filter((d) => (d.tags ?? []).includes("费工")).length;
-      byDay.set(slot.day, (byDay.get(slot.day) ?? 0) + n);
-    }
-    for (const n of byDay.values()) expect(n).toBeLessThanOrEqual(DEFAULT_CONSTRAINTS.laboriousMaxPerDay);
-  });
-});
-
-describe("generateWeekMenu — frequency weighting", () => {
-  it("prefers higher-useCount dishes when unconstrained (single slot)", () => {
+  it("shrinks no-repeat windows when the pool is below the full-window minimum", () => {
     const pool: MenuDish[] = [
-      meat(1, "牛", { useCount: 1 }),
-      meat(2, "鸡", { useCount: 9 }),
-      veg(1, "青菜", { useCount: 1 }),
-      veg(2, "豆腐", { useCount: 9 }),
-      soup(1, { useCount: 5 }),
+      meat(1, "牛"),
+      meat(2, "鸡"),
+      meat(3, "鱼"),
+      meat(4, "猪"),
+      veg(1, "青菜"),
+      veg(2, "豆腐"),
+      veg(3, "茄子"),
+      veg(4, "土豆"),
+      soup(1),
     ];
-    const r = generateWeekMenu({ pool, constraints: { days: ["mon"], meals: ["lunch"] } });
+    const r = generateWeekMenu({ pool, constraints: { days: ["mon", "tue"], meals: ["lunch", "dinner"] } });
     if (!r.ok) throw new Error("expected ok");
-    const ids = r.menu[0]!.dishes.map((d) => d.id);
-    expect(ids).toContain("m2"); // high-useCount meat
-    expect(ids).toContain("v2"); // high-useCount veg
+
+    const ids = (slot: Slot, category: "meat" | "veg") => slot.dishes.filter((d) => d.category === category).map((d) => String(d.id));
+    for (let i = 1; i < r.menu.length; i++) {
+      for (const category of ["meat", "veg"] as const) {
+        const prev = new Set(ids(r.menu[i - 1]!, category));
+        expect(ids(r.menu[i]!, category).some((id) => prev.has(id))).toBe(false);
+      }
+    }
+  });
+
+  it("randomly samples from valid candidates", () => {
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    const pool: MenuDish[] = [
+      meat(1, "牛"),
+      meat(2, "鸡"),
+      meat(3, "鱼"),
+      veg(1, "青菜"),
+      veg(2, "豆腐"),
+      veg(3, "茄子"),
+      soup(1),
+      soup(2),
+    ];
+    try {
+      const r = generateWeekMenu({ pool, constraints: { days: ["mon"], meals: ["lunch"] } });
+      if (!r.ok) throw new Error("expected ok");
+      expect(r.menu[0]!.dishes.map((d) => d.id)).toEqual(["m3", "m2", "v3", "v2", "s2"]);
+    } finally {
+      random.mockRestore();
+    }
   });
 });
 
@@ -142,7 +151,7 @@ describe("generateWeekMenu — pool-too-small", () => {
   });
 });
 
-describe("generateWeekMenu — soup LRU rotation", () => {
+describe("generateWeekMenu — soup rotation", () => {
   it("rotates soups across slots (not the same soup twice in a row when alternatives exist)", () => {
     const r = generateWeekMenu({ pool: feasiblePool });
     if (!r.ok) throw new Error("expected ok");
@@ -208,13 +217,12 @@ describe("swapDish", () => {
 
   it("does not swap in a dish whose mainIngredient is already used by a remaining slot mate (#128)", () => {
     // Slot has two meats: target (猪, being swapped out) + keeper (牛). The pool's
-    // highest-ranked candidate shares 牛 with the keeper — it must be skipped in
-    // favor of a different-mainIngredient meat (or no-alternative if none).
-    const keeper = meat(1, "牛", { useCount: 0, lastUsedAt: "" });
-    const target = meat(2, "猪", { useCount: 0, lastUsedAt: "" });
+    // same-mainIngredient candidate shares 牛 with the keeper — it must be skipped.
+    const keeper = meat(1, "牛");
+    const target = meat(2, "猪");
     const slot: Slot = { day: "mon", occasion: "lunch", dishes: [target, keeper, veg(1, "菜")] };
-    const sameMiCandidate = meat(3, "牛", { useCount: 5, lastUsedAt: "recent" }); // would win on useCount
-    const otherMiCandidate = meat(4, "鱼", { useCount: 1, lastUsedAt: "old" });
+    const sameMiCandidate = meat(3, "牛");
+    const otherMiCandidate = meat(4, "鱼");
     const res = swapDish({
       menu: [slot],
       target: { day: "mon", occasion: "lunch" },
@@ -230,8 +238,8 @@ describe("swapDish", () => {
 
 describe("toMenuDish", () => {
   it("maps an Offering to the slim MenuDish", () => {
-    const d = toMenuDish({ id: 7, name: "红烧牛肉", kind: "component", category: "meat", mainIngredient: "牛肉", tags: ["费工"], seller: 1 } as never);
-    expect(d).toMatchObject({ id: 7, name: "红烧牛肉", category: "meat", mainIngredient: "牛肉" });
+    const d = toMenuDish({ id: 7, name: "红烧牛肉", kind: "component", category: "meat", mainIngredient: "牛肉", seller: 1 } as never);
+    expect(d).toEqual({ id: 7, name: "红烧牛肉", category: "meat", mainIngredient: "牛肉" });
   });
 });
 

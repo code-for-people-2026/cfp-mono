@@ -21,23 +21,13 @@ describe("occasionLabel", () => {
 });
 
 describe("dishChips", () => {
-  it("orders main ingredient → tags with the right tones", () => {
-    const dish: MenuDish = { id: 1, name: "番茄土豆炖牛腩", category: "meat", mainIngredient: "牛肉", tags: ["费工"] };
-    expect(dishChips(dish)).toEqual([
-      { label: "牛肉", tone: "red" },
-      { label: "费工", tone: "amber" },
-    ]);
+  it("shows main ingredient", () => {
+    const dish: MenuDish = { id: 1, name: "番茄土豆炖牛腩", category: "meat", mainIngredient: "牛肉" };
+    expect(dishChips(dish)).toEqual([{ label: "牛肉", tone: "red" }]);
   });
 
   it("marks the soup category as a blue 汤 chip", () => {
     expect(dishChips({ id: 2, name: "冬瓜丸子汤", category: "soup" })).toEqual([{ label: "汤", tone: "blue" }]);
-  });
-
-  it("清淡 → green, unknown tag → green, no main ingredient → no red chip", () => {
-    expect(dishChips({ id: 3, name: "清炒时蔬", category: "veg", tags: ["清淡", "家常"] })).toEqual([
-      { label: "清淡", tone: "green" },
-      { label: "家常", tone: "green" },
-    ]);
   });
 
   it("returns no chips when there is nothing to show", () => {

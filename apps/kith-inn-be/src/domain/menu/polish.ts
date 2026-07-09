@@ -2,7 +2,7 @@ import { callDeepSeek } from "../../lib/deepseek/client";
 
 /**
  * 菜单润色层（PRD §6.2）——LLM **只润色，不决定选菜**。这里实现「一键发布文案」：
- * 把确定性内核选好的菜单写成桃子本人语气的微信群通知（菜名 + 价格 + 截止）。
+ * 把菜单内核选好的菜单写成桃子本人语气的微信群通知（菜名 + 价格 + 截止）。
  * 菜名口语化/节令提示是同类轻润色，按需扩。
  */
 export type MenuSlotText = { day: string; occasion: "lunch" | "dinner"; dishes: string[] };

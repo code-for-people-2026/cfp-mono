@@ -5,7 +5,7 @@ import type { TaoziFixture } from "./taozi";
 const fixture: TaoziFixture = {
   seller: { name: "测试商家", defaultPriceCents: 3000, enabledModules: ["menu-planning"] },
   offerings: [
-    { name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg", tags: ["清淡"] },
+    { name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg" },
     { name: "红烧牛肉", mainIngredient: "牛肉", category: "meat" },
   ],
 };
@@ -30,7 +30,6 @@ describe("buildOfferingOps", () => {
         kind: "component",
         mainIngredient: "鸡蛋",
         category: "veg",
-        tags: ["清淡"],
         seller: 7,
         active: true,
       },

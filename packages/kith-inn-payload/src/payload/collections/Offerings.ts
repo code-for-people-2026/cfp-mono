@@ -7,9 +7,7 @@ import { sellerField, tenantAccess, tenantHooks } from "./shared";
  * is `kind: "component"`; a combo (`combo-meal`) relates to its components via
  * `parentOfferings` (self-relationship). `mainIngredient` is the real
  * de-duplication axis ("肉就那几样"). `recipe` (json) feeds purchasing
- * aggregation (M2). `tags` is a json string-array (not a relational array) to
- * avoid per-tag sub-tables — part of kith-inn's lean-modeling rule
- * (cf. website's 60-table over-modeling, issue #72).
+ * aggregation (M2).
  */
 export const Offerings: CollectionConfig = {
   slug: "offerings",
@@ -43,9 +41,6 @@ export const Offerings: CollectionConfig = {
     },
     { name: "unitLabel", type: "text" },
     { name: "priceCents", type: "number" },
-    { name: "tags", type: "json" },
-    { name: "lastUsedAt", type: "date" },
-    { name: "useCount", type: "number" },
     {
       name: "recipe",
       type: "json",
