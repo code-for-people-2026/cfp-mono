@@ -74,7 +74,7 @@ export type MenuPlan = z.infer<typeof menuPlanSchema>;
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 // ── menu contract (GET /menu/week) ─────────────────────────────────────────
-/** 菜单规划用的一道菜（含 useCount/lastUsedAt 频次信号，FE 镜像曾缺这两个）。 */
+/** 菜单规划用的一道菜。 */
 export type MenuDish = z.infer<typeof menuDishSchema>;
 /** 菜单的一个槽（某天某餐的菜）。 */
 export type MenuSlot = z.infer<typeof menuSlotSchema>;

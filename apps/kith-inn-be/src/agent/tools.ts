@@ -3,12 +3,12 @@ import type { ToolDef } from "../lib/llm/chatWithTools";
 import { setPendingOp } from "./pendingOps";
 
 /**
- * 「今天」主 agent 的工具（PRD §5.5）。agent 只**编排**这些确定性操作，不持业务逻辑——
+ * 「今天」主 agent 的工具（PRD §5.5）。agent 只**编排**这些后端操作，不持业务逻辑——
  * 与「菜单/订单/送餐」详情 tab 同一套后端操作（两个前门、一套实现）。`AgentServices`
  * 是这些操作的服务端抽象（生产里 cms-backed，测试里 mock）。
  */
 
-/** The deterministic operations the agent's tools drive (DI — mock in tests). */
+/** The backend operations the agent's tools drive (DI — mock in tests). */
 export type AgentServices = {
   previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>): Promise<{ date: string; isNew: boolean[] }>;
   recordOrders(

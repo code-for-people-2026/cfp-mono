@@ -15,7 +15,6 @@ export type TaoziFixture = {
     name: string;
     mainIngredient?: string;
     category?: string;
-    tags?: string[];
   }>;
   /** Combo meal 桃子 sells by the 份 (parentOfferings = the whole component pool). */
   combo?: { name: string; priceCents: number };
@@ -41,7 +40,6 @@ export function buildOfferingOps(f: TaoziFixture, sellerId: string | number): Se
       kind: "component",
       mainIngredient: o.mainIngredient,
       category: o.category,
-      tags: o.tags,
       seller: sellerId,
       active: true,
     },

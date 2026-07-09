@@ -5,15 +5,15 @@ import { AGENT_TOOL_DEFS, AGENT_TOOLS, type AgentServices } from "./tools";
 
 /**
  * 「今天」主 agent 的编排循环（PRD §5.5 / Tech Spec §4.1）。手搓 DeepSeek 原生
- * function-calling（非 SDK）：发 messages+tools → 若返回 tool_calls 就执行确定性工具、
+ * function-calling（非 SDK）：发 messages+tools → 若返回 tool_calls 就执行受控工具、
  * 把结果作为 tool 消息回灌 → 再循环，直到模型给出文本答复或 maxSteps 用尽。
  *
- * 纪律：agent 只编排工具（确定性、可测）；范围外话题由 system prompt 礼貌挡回；maxSteps
- * 用尽或出错有确定性兜底（不编造）。`// ponytail:` maxSteps=7 浅环（record_orders + 查询
+ * 纪律：agent 只编排工具（可测）；范围外话题由 system prompt 礼貌挡回；maxSteps
+ * 用尽或出错有兜底（不编造）。`// ponytail:` maxSteps=7 浅环（record_orders + 查询
  * + 状态操作 = 多步）——DeepSeek tool-calling 稳定性见 Tech Spec §7，不稳时降级。
  *
  * 工具可附带一张结构化卡片（如新顾客确认卡）；本循环把最后一个非空 card 透传到响应，
- * 让前端用确定性卡片/按钮取代 LLM 口述（#97/#98）。
+ * 让前端用结构化卡片/按钮取代 LLM 口述（#97/#98）。
  */
 export const AGENT_SYSTEM_PROMPT = `你是「桃子的灶台」（社区私房菜）的经营助手「味」，跟老板桃子对话。她用语音/文字记单、查状态、标送餐/收款、管理菜单。
 

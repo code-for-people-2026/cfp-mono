@@ -53,7 +53,7 @@ export type OfferingKind = (typeof OFFERING_KINDS)[number];
 
 /**
  * offerings.category — kebab values + 中文 labels（PRD §7 命名约定：select 值
- * kebab-case）。菜单确定性内核靠它组「2 荤 2 素 1 汤」。
+ * kebab-case）。菜单内核靠它组「2 荤 2 素 1 汤」。
  */
 export const OFFERING_CATEGORIES = [
   { value: "meat", label: "荤" },

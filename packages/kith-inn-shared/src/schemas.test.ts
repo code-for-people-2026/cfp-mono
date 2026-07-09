@@ -62,7 +62,7 @@ describe("domain schemas — happy parse", () => {
 });
 
 describe("contract schemas", () => {
-  const dish = { id, name: "红烧牛肉", category: "meat" as const, mainIngredient: "牛肉", tags: ["费工"], useCount: 3, lastUsedAt: "t" };
+  const dish = { id, name: "红烧牛肉", category: "meat" as const, mainIngredient: "牛肉" };
 
   it("menu / address / deliveryView", () => {
     expect(menuDishSchema.parse(dish)).toEqual(dish);
