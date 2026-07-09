@@ -273,7 +273,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const pubKey = new Set(
           existing.filter((p) => p.status === "published").map((p) => {
             const s = p.slot as { date?: string; occasion?: string };
-            return `${s?.date}|${s?.occasion}`;
+            return `${s?.date?.split("T")[0]}|${s?.occasion}`;
           }),
         );
         for (const t of targets) {

@@ -113,8 +113,9 @@ export default function Today() {
         if (res.statusCode === 401) { tokens.clearToken(); Taro.redirectTo({ url: "/pages/login/index" }); return; }
         if (res.statusCode === 409) { Taro.showToast({ title: "这张确认卡已过期，请重新说一遍", icon: "none" }); return; }
         if (res.statusCode >= 400) { Taro.showToast({ title: "操作失败", icon: "error" }); return; }
-        const reply = (res.data as { reply?: string }).reply ?? "已完成。";
-        setConfirmed((prev) => new Set(prev).add(i));
+        const data = res.data as { reply?: string; ok?: boolean };
+        const reply = data.reply ?? "已完成。";
+        if (data.ok !== false) setConfirmed((prev) => new Set(prev).add(i));
         setMsgs((m) => [...m, { role: "assistant", content: reply }]);
         // publish_menu: copy ONLY the 接龙 text (everything after the status prefix),
         // not the whole "菜单已发布…去群粘贴：" sentence — that goes into the WeChat group.
@@ -246,7 +247,7 @@ export default function Today() {
                   </View>
                 )}
                 <View
-                  className={`max-w-[608rpx] break-words rounded-[16rpx] p-[24rpx] text-[26rpx] leading-relaxed ${
+                  className={`box-border max-w-[608rpx] break-all rounded-[16rpx] p-[24rpx] text-[26rpx] leading-relaxed ${me ? "ml-[80rpx]" : "mr-[80rpx]"} ${
                     me ? "bg-red text-white" : "border border-line bg-surface"
                   }`}
                 >

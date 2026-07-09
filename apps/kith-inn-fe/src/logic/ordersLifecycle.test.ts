@@ -4,10 +4,13 @@ import {
   byOccasion,
   gapCount,
   isCheckable,
+  isSelectable,
   joinOrdersFulfillments,
   lifecycleDots,
   mealFocus,
+  orderQuantity,
   sortByAddress,
+  summarizeRows,
   toggleSelection,
   visibleRows,
 } from "./ordersLifecycle";
@@ -146,6 +149,33 @@ describe("isCheckable", () => {
     expect(isCheckable({ order: order({ status: "confirmed" }), fulfillment: ff({ status: "done" }) })).toBe(false);
     expect(isCheckable({ order: order({ status: "canceled" }), fulfillment: ff({ status: "pending" }) })).toBe(false);
     expect(isCheckable({ order: order({ status: "draft" }) })).toBe(false); // no fulfillment → delivery none
+  });
+});
+
+describe("orderQuantity / summarizeRows / isSelectable", () => {
+  it("sums API-extra order items, falling back to 1", () => {
+    expect(orderQuantity(order({ items: [{ quantity: 2 }, { quantity: 1 }] } as unknown as Partial<Order>))).toBe(3);
+    expect(orderQuantity(order({ items: [{}, { quantity: 0 }] } as unknown as Partial<Order>))).toBe(1);
+    expect(orderQuantity(order({}))).toBe(1);
+  });
+
+  it("summarizes active orders for the day header", () => {
+    const rows = joinOrdersFulfillments(
+      [
+        order({ id: "1", status: "draft", totalCents: 3000, items: [{ quantity: 2 }] } as unknown as Partial<Order>),
+        order({ id: "2", status: "confirmed", paymentStatus: "unpaid", totalCents: 3000 }),
+        order({ id: "4", status: "confirmed", paymentStatus: "paid" }),
+        order({ id: "3", status: "canceled", totalCents: 3000 }),
+      ],
+      [ff({ order: "2", status: "pending" })],
+    );
+    expect(summarizeRows(rows)).toEqual({ orders: 3, servings: 4, totalCents: 6000, drafts: 1, unpaid: 1, pendingDeliveries: 1 });
+  });
+
+  it("selectable only when a confirmed row has a bulk action", () => {
+    expect(isSelectable({ order: order({ status: "confirmed", paymentStatus: "unpaid" }) })).toBe(true);
+    expect(isSelectable({ order: order({ status: "confirmed", paymentStatus: "paid" }), fulfillment: ff({ status: "pending" }) })).toBe(true);
+    expect(isSelectable({ order: order({ status: "draft" }) })).toBe(false);
   });
 });
 

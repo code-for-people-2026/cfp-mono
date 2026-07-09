@@ -5,7 +5,7 @@ import type { AgentCms } from "../agent/services";
 import type { AgentServices } from "../agent/tools";
 import { clearPendingOp, getPendingOp, setPendingOp } from "../agent/pendingOps";
 import { runAgent } from "../agent/run";
-import { chatRoutes, dispatchPendingOp, type ChatRoutesDeps } from "./chat";
+import { chatRoutes, dispatchPendingOp, operationReplySucceeded, type ChatRoutesDeps } from "./chat";
 
 const SECRET = "test-secret";
 
@@ -189,11 +189,31 @@ describe("POST /chat/confirm-operation", () => {
     // 桃子 typed 大龙猫's address in the card → body carries it for the new-customer row.
     const res = await post(app, { items: [items[0], { ...items[1], address: "26B" }] });
     expect(res.status).toBe(200);
-    const reply = ((await res.json()) as { reply: string }).reply;
-    expect(reply).toContain("已记草稿"); // 王燕萍 (known) → draft
-    expect(reply).toContain("已建"); // 大龙猫 (new) → customer + draft
+    const body = (await res.json()) as { reply: string; ok: boolean };
+    const reply = body.reply;
+    expect(body.ok).toBe(true);
+    expect(reply).toContain("已记为草稿"); // 王燕萍 (known) → draft
+    expect(reply).toContain("已建顾客并记为草稿"); // 大龙猫 (new) → customer + draft
+    expect(reply).toContain("到订单页确认后进入送餐清单");
     expect(cms.createCustomer).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ displayName: "大龙猫", address: "26B" }));
     expect(getPendingOp(OP)).toBeUndefined(); // cleared after dispatch
+  });
+
+  it("keeps the pending card active when record_orders fully fails", async () => {
+    const items = [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" as const, date: "2026-07-07" }];
+    seed({ toolName: "record_orders", summary: "将记 1 单", args: { items, isNew: [false] } });
+    const cms = {
+      ...mockCms(),
+      listCustomers: vi.fn(async () => [{ id: 5, displayName: "王燕萍" }] as never),
+      findOfferings: vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "套餐", priceCents: 3000 }] as never),
+      createOrderDraft: vi.fn(async () => { throw new Error("net"); }),
+    } as AgentCms;
+    const app = chatRoutes(SECRET, { cms });
+    const res = await post(app, { items });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ reply: "失败：王燕萍（记单失败）", ok: false });
+    expect(getPendingOp(OP)?.toolName).toBe("record_orders");
+    clearPendingOp(OP);
   });
 
   it("mark_paid marks the order paid on confirm (#126)", async () => {
@@ -341,15 +361,17 @@ describe("dispatchPendingOp", () => {
   it("record_orders: covers known/new × recorded/created/failed + body & isNew fallbacks", async () => {
     const items = [{ customerName: "A", quantity: 1, occasion: "lunch" as const }];
     // known: recorded yes / failed no
-    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("已记草稿：A");
+    const confirmOrder = vi.fn(async () => ({ ok: true as const }));
+    expect(await run(svc({ confirmOrder, recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("已记为草稿：A。到订单页确认后进入送餐清单。");
+    expect(confirmOrder).not.toHaveBeenCalled();
     // known: recorded no / failed yes
-    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [], needsConfirmation: [], failed: [{ customerName: "A", error: "x" }] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("失败：A");
+    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [], needsConfirmation: [], failed: [{ customerName: "A", error: "x" }] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("失败：A（x）");
     // new: created yes / failed no
-    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [{ name: "C", orderId: 2 }], failed: [] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("已建：C");
+    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [{ name: "C", orderId: 2 }], failed: [] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("已建顾客并记为草稿：C。到订单页确认后进入送餐清单。");
     // new: created no / failed yes
-    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [], failed: [{ displayName: "D", error: "x" }] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("失败：D");
+    expect(await run(svc({ createCustomersAndOrders: vi.fn(async () => ({ created: [], failed: [{ displayName: "D", error: "x" }] })) }), "record_orders", { items, isNew: [true] }, { items })).toBe("失败：D（x）");
     // body null → uses pending a.items; isNew undefined → fallback [] (all known)
-    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items }, null)).toBe("已记草稿：A");
+    expect(await run(svc({ recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items }, null)).toBe("已记为草稿：A。到订单页确认后进入送餐清单。");
     // nothing to record
     expect(await run(svc(), "record_orders", { items: [], isNew: [] }, { items: [] })).toBe("没有可记的单。");
   });
@@ -357,6 +379,12 @@ describe("dispatchPendingOp", () => {
   it("mark_paid: ok and fail", async () => {
     expect(await run(svc(), "mark_paid", { orderId: 5 })).toContain("已标记订单 #5");
     expect(await run(svc({ markPaid: vi.fn(async () => fail("nope")) }), "mark_paid", { orderId: 5 })).toBe("标记失败：nope");
+  });
+
+  it("classifies operation replies for card success state", () => {
+    expect(operationReplySucceeded("已记为草稿：A。到订单页确认后进入送餐清单。")).toBe(true);
+    expect(operationReplySucceeded("已记为草稿：A；失败：B（记单失败）。到订单页确认后进入送餐清单。")).toBe(true);
+    expect(operationReplySucceeded("失败：A（记单失败）")).toBe(false);
   });
 
   it("generate_menu: force=true is forwarded", async () => {

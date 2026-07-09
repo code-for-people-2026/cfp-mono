@@ -64,6 +64,12 @@ export async function restoreOffering(args: { token: string; id: string | number
   if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`restore failed: ${res.statusCode}`);
 }
 
+/** DELETE /offerings/:id/purge — hard-delete an inactive dish. */
+export async function purgeOffering(args: { token: string; id: string | number }, req: Req): Promise<void> {
+  const res = await req({ url: `${offeringDetailUrl(args.id)}/purge`, method: "DELETE", header: { Authorization: `Bearer ${args.token}` } });
+  if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`purge failed: ${res.statusCode}`);
+}
+
 /**
  * Split offerings into 菜品池 (active) / 已停用 (inactive). `active` defaults to
  * true (undefined → active); only explicit `active === false` is 已停用.

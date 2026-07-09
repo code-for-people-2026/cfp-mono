@@ -5,6 +5,7 @@ import {
   deactivateOffering,
   parseOfferingImport,
   partitionByActive,
+  purgeOffering,
   restoreOffering,
   updateOffering,
   type Req,
@@ -91,6 +92,24 @@ describe("restoreOffering", () => {
   it("throws on non-2xx", async () => {
     const req = vi.fn(async () => ({ statusCode: 404, data: { error: "not found" } })) as unknown as Req;
     await expect(restoreOffering({ token: "t", id: 99 }, req)).rejects.toThrow();
+  });
+});
+
+describe("purgeOffering", () => {
+  it("DELETEs /offerings/:id/purge, resolves void on 200", async () => {
+    const cap: { v?: ReqOptions } = {};
+    const req = vi.fn(async (o: ReqOptions) => {
+      cap.v = o;
+      return { statusCode: 200, data: { ok: true } };
+    }) as unknown as Req;
+    await expect(purgeOffering({ token: "t", id: 14 }, req)).resolves.toBeUndefined();
+    expect(cap.v?.url).toMatch(/\/offerings\/14\/purge$/);
+    expect(cap.v?.method).toBe("DELETE");
+  });
+
+  it("throws on non-2xx", async () => {
+    const req = vi.fn(async () => ({ statusCode: 500, data: { error: "fk" } })) as unknown as Req;
+    await expect(purgeOffering({ token: "t", id: 99 }, req)).rejects.toThrow();
   });
 });
 

@@ -105,7 +105,7 @@ export function menuRoutes(
           .filter((p) => p.status === "published")
           .map((p) => {
             const s = p.slot as { date?: string; occasion?: string } | undefined;
-            return `${s?.date}|${s?.occasion}`;
+            return `${s?.date?.split("T")[0]}|${s?.occasion}`;
           }),
       );
       for (const t of targets) {

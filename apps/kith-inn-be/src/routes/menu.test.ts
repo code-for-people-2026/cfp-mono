@@ -121,7 +121,9 @@ describe("POST /menu/generate", () => {
   });
 
   it("409 when a target is already published and no force", async () => {
-    const app = menuRoutes(SECRET, mockDeps({ listMenuPlans: vi.fn(async () => [fullPlan({ status: "published" })]) }));
+    const published = fullPlan({ status: "published" });
+    (published.slot as { date: string }).date = "2026-07-08T00:00:00.000Z";
+    const app = menuRoutes(SECRET, mockDeps({ listMenuPlans: vi.fn(async () => [published]) }));
     const res = await app.request("/generate", {
       method: "POST",
       headers: auth(),
