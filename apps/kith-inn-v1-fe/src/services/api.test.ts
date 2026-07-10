@@ -221,14 +221,28 @@ describe("API client", () => {
 
   it("keeps session for business errors and uses stable fallbacks", async () => {
     const store = sessions();
-    const request = adapter(422, {});
+    const data = {};
+    const request = adapter(422, data);
     const client = createApiClient({ request, sessions: store, baseUrl: "http://be.test" });
     await expect(client.request("/merchant/check", { method: "POST", data: { x: 1 } }))
-      .rejects.toEqual(new ApiError(422, "request-failed", "请求失败"));
+      .rejects.toEqual(new ApiError(422, "request-failed", "请求失败", data));
     expect(store.clearSession).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledWith(expect.objectContaining({
       header: { Authorization: "Bearer operator-token", "content-type": "application/json" }
     }));
+  });
+
+  it("preserves structured business error data for the menu UI", async () => {
+    const data = {
+      error: "offering-pool-insufficient",
+      message: "菜品池分类不足",
+      shortages: [{ category: "soup", required: 1, available: 0 }]
+    };
+    const client = createApiClient({ request: adapter(422, data), sessions: sessions() });
+    await expect(client.generateMenus({
+      targets: [{ date: "2026-07-13", occasion: "lunch" }],
+      replaceExisting: false
+    })).rejects.toMatchObject({ code: data.error, message: data.message, data });
   });
 
   it("normalizes the base URL and works without a token or auth callback", async () => {

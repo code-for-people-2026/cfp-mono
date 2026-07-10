@@ -4,10 +4,12 @@ import {
   buildSingleTarget,
   buildMenuRange,
   buildWorkWeekTargets,
+  generationErrorText,
   needsReplaceConfirmation,
   relaxedRulesText,
   replaceMealSlot
 } from "./menu";
+import { ApiError } from "../services/api";
 
 const slot = (id: number, date: string): MealSlot => ({
   id,
@@ -52,6 +54,35 @@ describe("menu target view logic", () => {
     expect(needsReplaceConfirmation({ code: "meal-slots-exist" })).toBe(true);
     expect(needsReplaceConfirmation({ code: "offering-pool-insufficient" })).toBe(false);
     expect(needsReplaceConfirmation(null)).toBe(false);
+  });
+
+  it("explains category counts when the offering pool is insufficient", () => {
+    const error = new ApiError(422, "offering-pool-insufficient", "菜品池分类不足", {
+      shortages: [
+        null,
+        "bad",
+        { category: 1, required: 1, available: 0 },
+        { category: "other", required: 1, available: 0 },
+        { category: "soup", required: "1", available: 0 },
+        { category: "soup", required: 1, available: "0" },
+        { category: "meat", required: 2, available: 1 },
+        { category: "soup", required: 1, available: 0 }
+      ]
+    });
+    expect(generationErrorText(error)).toBe(
+      "菜品池不足：荤菜缺 1 道（需 2，现有 1）、汤缺 1 道（需 1，现有 0）"
+    );
+    expect(generationErrorText(new ApiError(422, "offering-pool-insufficient", "原始提示")))
+      .toBe("原始提示");
+    expect(generationErrorText(new ApiError(422, "offering-pool-insufficient", "原始提示", null)))
+      .toBe("原始提示");
+    expect(generationErrorText(new ApiError(422, "offering-pool-insufficient", "原始提示", {})))
+      .toBe("原始提示");
+    expect(generationErrorText(new ApiError(422, "offering-pool-insufficient", "原始提示", { shortages: "bad" })))
+      .toBe("原始提示");
+    expect(generationErrorText(new ApiError(409, "meal-slots-exist", "已有菜单", {})))
+      .toBe("已有菜单");
+    expect(generationErrorText("bad")).toBe("菜单生成失败");
   });
 });
 
