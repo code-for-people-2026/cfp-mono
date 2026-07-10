@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { CmsCustomerProfile, MealSlot, Order, SellerSnapshot } from "@cfp/kith-inn-v1-shared";
 import {
   buildDraftOrder,
-  draftOrderPatch,
+  editOrderPatch,
   existingOrderSummary,
-  OrderDraftOnlyError,
-  publicCustomerProfile
+  ConfirmedImpactConfirmationRequiredError,
+  InvalidOrderTransitionError,
+  publicCustomerProfile,
+  resubmitOrderPatch,
+  transitionOrder
 } from "./service";
 
 const seller: SellerSnapshot = {
@@ -91,18 +94,95 @@ describe("manual draft order service", () => {
     })).toMatchObject({ unitPriceCents: 2500, customerOpenid: null, note: null });
   });
 
-  it("creates draft-only patches and rejects non-draft edits", () => {
-    expect(draftOrderPatch(order, {
+  it("allows draft edits, confirms confirmed impact and rejects canceled edits", () => {
+    expect(editOrderPatch(order, {
       quantity: 3,
       displayName: "王姨",
       address: "3A-1202",
       note: "门口放"
     })).toEqual({ quantity: 3, displayName: "王姨", address: "3A-1202", note: "门口放" });
-    expect(draftOrderPatch(order, { note: null })).toEqual({ note: null });
-    expect(() => draftOrderPatch({ ...order, status: "confirmed" }, { quantity: 3 }))
-      .toThrow(OrderDraftOnlyError);
-    expect(() => draftOrderPatch({ ...order, status: "canceled" }, { quantity: 3 }))
-      .toThrow(OrderDraftOnlyError);
+    expect(editOrderPatch(order, { note: null })).toEqual({ note: null });
+    expect(() => editOrderPatch({ ...order, status: "confirmed" }, { quantity: 3 }))
+      .toThrow(ConfirmedImpactConfirmationRequiredError);
+    expect(editOrderPatch(
+      { ...order, status: "confirmed" },
+      { quantity: 3, confirmedImpactAccepted: true }
+    )).toEqual({ quantity: 3 });
+    expect(() => editOrderPatch({ ...order, status: "canceled" }, { quantity: 3 }))
+      .toThrow(InvalidOrderTransitionError);
+  });
+
+  it("transitions business status with idempotent target states", () => {
+    const now = "2026-07-11T00:00:00.000Z";
+    expect(transitionOrder(order, "confirm", now)).toEqual({
+      status: "confirmed",
+      confirmedAt: now,
+      canceledAt: null
+    });
+    expect(transitionOrder({ ...order, status: "confirmed", confirmedAt: now }, "confirm", now)).toBeNull();
+    expect(transitionOrder(order, "cancel", now)).toEqual({ status: "canceled", canceledAt: now });
+    expect(transitionOrder({ ...order, status: "confirmed", confirmedAt: now }, "cancel", now))
+      .toEqual({ status: "canceled", canceledAt: now });
+    expect(transitionOrder({ ...order, status: "canceled", canceledAt: now }, "cancel", now)).toBeNull();
+    expect(() => transitionOrder({ ...order, status: "canceled" }, "confirm", now))
+      .toThrow(InvalidOrderTransitionError);
+  });
+
+  it("toggles payment and delivery only for confirmed orders", () => {
+    const now = "2026-07-11T00:00:00.000Z";
+    const confirmed = { ...order, status: "confirmed" as const, confirmedAt: now };
+    expect(transitionOrder(confirmed, "mark-paid", now)).toEqual({ paymentStatus: "paid", paidAt: now });
+    expect(transitionOrder({ ...confirmed, paymentStatus: "paid", paidAt: now }, "mark-paid", now)).toBeNull();
+    expect(transitionOrder({ ...confirmed, paymentStatus: "paid", paidAt: now }, "mark-unpaid", now))
+      .toEqual({ paymentStatus: "unpaid", paidAt: null });
+    expect(transitionOrder(confirmed, "mark-unpaid", now)).toBeNull();
+    expect(transitionOrder(confirmed, "mark-delivered", now)).toEqual({ deliveryStatus: "done", deliveredAt: now });
+    expect(transitionOrder({ ...confirmed, deliveryStatus: "done", deliveredAt: now }, "mark-delivered", now)).toBeNull();
+    expect(transitionOrder({ ...confirmed, deliveryStatus: "done", deliveredAt: now }, "mark-pending-delivery", now))
+      .toEqual({ deliveryStatus: "pending", deliveredAt: null });
+    expect(transitionOrder(confirmed, "mark-pending-delivery", now)).toBeNull();
+    for (const status of ["draft", "canceled"] as const) {
+      expect(() => transitionOrder({ ...order, status }, "mark-paid", now)).toThrow(InvalidOrderTransitionError);
+      expect(() => transitionOrder({ ...order, status }, "mark-delivered", now)).toThrow(InvalidOrderTransitionError);
+    }
+  });
+
+  it("resubmits canceled orders with fresh snapshots and cleared lifecycle fields", () => {
+    const canceled = {
+      ...order,
+      status: "canceled" as const,
+      paymentStatus: "paid" as const,
+      paidAt: "2026-07-10T00:00:00.000Z",
+      deliveryStatus: "done" as const,
+      deliveredAt: "2026-07-10T00:01:00.000Z",
+      confirmedAt: "2026-07-09T00:00:00.000Z",
+      canceledAt: "2026-07-10T00:02:00.000Z"
+    };
+    expect(resubmitOrderPatch(canceled, {
+      quantity: 4,
+      displayName: "王姨",
+      address: "3A-1202",
+      note: "门口放"
+    }, 2500)).toEqual({
+      status: "draft",
+      quantity: 4,
+      displayName: "王姨",
+      address: "3A-1202",
+      note: "门口放",
+      unitPriceCents: 2500,
+      paymentStatus: "unpaid",
+      paidAt: null,
+      deliveryStatus: "pending",
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null
+    });
+    expect(() => resubmitOrderPatch(order, {
+      quantity: 2,
+      displayName: "王阿姨",
+      address: "3A-1201",
+      note: null
+    }, 3000)).toThrow(InvalidOrderTransitionError);
   });
 
   it("exposes no openid and returns only the duplicate summary", () => {

@@ -4,6 +4,7 @@ import {
   authResponseSchema,
   cmsCustomerProfileSchema,
   cmsOrderCreateSchema,
+  cmsOrderUpdateSchema,
   customerProfileCreateSchema,
   customerProfileSchema,
   customerProfilesResponseSchema,
@@ -19,11 +20,15 @@ import {
   mealSlotsExistErrorSchema,
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
+  orderActionResponseSchema,
+  orderActionSchema,
   orderExistsErrorSchema,
   orderListQuerySchema,
   orderListResponseSchema,
   orderMutationResponseSchema,
+  orderResubmitSchema,
   orderSchema,
+  orderStateErrorSchema,
   offeringPoolInsufficientErrorSchema,
   offeringCreateSchema,
   offeringSchema,
@@ -352,6 +357,45 @@ describe("manual order API schemas", () => {
     }).existing.status).toBe("confirmed");
   });
 
+  it("validates lifecycle actions, confirmed edits and CMS persistence patches", () => {
+    const actions = [
+      "confirm",
+      "cancel",
+      "resubmit",
+      "mark-paid",
+      "mark-unpaid",
+      "mark-delivered",
+      "mark-pending-delivery"
+    ];
+    expect(actions.map((action) => orderActionSchema.parse(action))).toEqual(actions);
+    expect(orderActionResponseSchema.parse({ doc: order }).doc).toEqual(order);
+    expect(orderResubmitSchema.parse({
+      quantity: 3,
+      displayName: " 王姨 ",
+      address: " 3A-1202 ",
+      note: "门口放"
+    })).toEqual({ quantity: 3, displayName: "王姨", address: "3A-1202", note: "门口放" });
+    expect(manualOrderUpdateSchema.parse({ quantity: 3, confirmedImpactAccepted: true }))
+      .toEqual({ quantity: 3, confirmedImpactAccepted: true });
+    expect(cmsOrderUpdateSchema.parse({
+      status: "confirmed",
+      confirmedAt: "2026-07-11T00:00:00.000Z",
+      canceledAt: null,
+      paymentStatus: "paid",
+      paidAt: "2026-07-11T00:01:00.000Z",
+      deliveryStatus: "done",
+      deliveredAt: "2026-07-11T00:02:00.000Z"
+    })).toMatchObject({ status: "confirmed", paymentStatus: "paid", deliveryStatus: "done" });
+    expect(orderStateErrorSchema.parse({
+      error: "invalid-order-transition",
+      message: "状态转换无效"
+    }).error).toBe("invalid-order-transition");
+    expect(orderStateErrorSchema.parse({
+      error: "confirmed-impact-confirmation-required",
+      message: "需要确认影响"
+    }).error).toBe("confirmed-impact-confirmation-required");
+  });
+
   it("rejects seller/openid injection, invalid profile choices and malformed order data", () => {
     expect(customerProfileCreateSchema.safeParse({ displayName: "王阿姨", address: "3A", openid: "leak" }).success).toBe(false);
     expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, quantity: 1 }).success).toBe(false);
@@ -364,7 +408,14 @@ describe("manual order API schemas", () => {
     expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, customerProfileId: 21, quantity: 0 }).success).toBe(false);
     expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, customerProfileId: 21, quantity: 1, seller: 99 }).success).toBe(false);
     expect(manualOrderUpdateSchema.safeParse({}).success).toBe(false);
+    expect(manualOrderUpdateSchema.safeParse({ confirmedImpactAccepted: true }).success).toBe(false);
+    expect(manualOrderUpdateSchema.safeParse({ quantity: 2, confirmedImpactAccepted: false }).success).toBe(false);
     expect(manualOrderUpdateSchema.safeParse({ status: "confirmed" }).success).toBe(false);
+    expect(orderActionSchema.safeParse("bulk-mark-delivered").success).toBe(false);
+    expect(orderResubmitSchema.safeParse({ quantity: 1, displayName: "王姨", address: "3A", note: null, seller: 7 }).success)
+      .toBe(false);
+    expect(cmsOrderUpdateSchema.safeParse({}).success).toBe(false);
+    expect(cmsOrderUpdateSchema.safeParse({ status: "confirmed", confirmedImpactAccepted: true }).success).toBe(false);
     expect(orderListQuerySchema.safeParse({ date: "2026-02-30", occasion: "lunch" }).success).toBe(false);
     expect(orderSchema.safeParse({ ...order, totalCents: 5999 }).success).toBe(false);
     expect(cmsOrderCreateSchema.safeParse({ ...order, seller: 99 }).success).toBe(false);

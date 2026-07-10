@@ -1,7 +1,7 @@
 import { apiErrorSchema, orderSchema } from "@cfp/kith-inn-v1-shared/api";
 import type {
   CmsOrderCreate,
-  ManualOrderUpdate,
+  CmsOrderUpdate,
   Order
 } from "@cfp/kith-inn-v1-shared";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
@@ -80,7 +80,7 @@ export async function createOrder(token: string, input: CmsOrderCreate, deps: Cm
 export async function updateOrder(
   token: string,
   id: string | number,
-  input: ManualOrderUpdate,
+  input: CmsOrderUpdate,
   deps: CmsOrderDeps = {}
 ): Promise<Order> {
   const body = await cmsRequest(`/api/internal/kiv1/orders/${encodeURIComponent(id)}`, token, {

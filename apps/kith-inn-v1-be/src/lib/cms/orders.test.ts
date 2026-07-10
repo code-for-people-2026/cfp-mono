@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CmsOrderCreate, ManualOrderUpdate } from "@cfp/kith-inn-v1-shared";
+import type { CmsOrderCreate, CmsOrderUpdate } from "@cfp/kith-inn-v1-shared";
 import {
   CmsOrderError,
   createOrder,
@@ -71,12 +71,24 @@ describe("CMS order client", () => {
 
     await expect(getOrder("jwt", 31, response({ doc: order }))).resolves.toEqual(order);
     await expect(createOrder("jwt", createInput, response({ doc: order }, 201))).resolves.toEqual(order);
-    const patch: ManualOrderUpdate = { quantity: 3, note: "门口放" };
+    const patch: CmsOrderUpdate = { quantity: 3, note: "门口放" };
     const updateDeps = response({ doc: { ...order, quantity: 3, totalCents: 9000, note: "门口放" } });
     await expect(updateOrder("jwt", 31, patch, updateDeps)).resolves.toMatchObject({ quantity: 3, totalCents: 9000 });
     expect(updateDeps.fetch).toHaveBeenCalledWith(
       "http://cms.test/api/internal/kiv1/orders/31",
       expect.objectContaining({ method: "PATCH", body: JSON.stringify(patch) })
+    );
+
+    const lifecycle: CmsOrderUpdate = {
+      status: "confirmed",
+      confirmedAt: "2026-07-11T00:00:00.000Z",
+      canceledAt: null
+    };
+    const lifecycleDeps = response({ doc: { ...order, ...lifecycle } });
+    await expect(updateOrder("jwt", 31, lifecycle, lifecycleDeps)).resolves.toMatchObject(lifecycle);
+    expect(lifecycleDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/orders/31",
+      expect.objectContaining({ method: "PATCH", body: JSON.stringify(lifecycle) })
     );
   });
 

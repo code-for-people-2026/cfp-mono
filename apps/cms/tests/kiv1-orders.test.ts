@@ -254,7 +254,7 @@ describe("order persistence boundary", () => {
     });
   });
 
-  it("patches only draft snapshot fields after an owned lookup", async () => {
+  it("patches only BE-decided snapshot and lifecycle fields after an owned lookup", async () => {
     const payload = payloadWith();
     mocks.getPayload.mockResolvedValue(payload);
     const response = await orderRoute.PATCH(json("/orders/31", "PATCH", {
@@ -268,6 +268,26 @@ describe("order persistence boundary", () => {
       collection: "kiv1_orders",
       id: "31",
       data: { quantity: 3, displayName: "王姨", address: "3A-1202", note: null },
+      overrideAccess: true
+    });
+
+    const lifecycle = {
+      status: "confirmed",
+      confirmedAt: "2026-07-11T00:00:00.000Z",
+      canceledAt: null,
+      paymentStatus: "paid",
+      paidAt: "2026-07-11T00:01:00.000Z",
+      deliveryStatus: "done",
+      deliveredAt: "2026-07-11T00:02:00.000Z"
+    };
+    const lifecycleResponse = await orderRoute.PATCH(json("/orders/31", "PATCH", lifecycle), {
+      params: Promise.resolve({ id: "31" })
+    });
+    expect(lifecycleResponse.status).toBe(200);
+    expect(payload.update).toHaveBeenLastCalledWith({
+      collection: "kiv1_orders",
+      id: "31",
+      data: lifecycle,
       overrideAccess: true
     });
   });
@@ -284,7 +304,13 @@ describe("order persistence boundary", () => {
     expect((await createOrder(json("/orders", "POST", { ...createInput, seller: 99 }))).status).toBe(422);
     expect((await createOrder(request("/orders", { method: "POST" }))).status).toBe(400);
     expect((await listOrders(request("/orders"))).status).toBe(400);
-    expect((await orderRoute.PATCH(json("/orders/31", "PATCH", { status: "confirmed" }), {
+    expect((await orderRoute.PATCH(json("/orders/31", "PATCH", {
+      quantity: 3,
+      confirmedImpactAccepted: true
+    }), {
+      params: Promise.resolve({ id: "31" })
+    })).status).toBe(422);
+    expect((await orderRoute.PATCH(json("/orders/31", "PATCH", { mealSlotId: 12 }), {
       params: Promise.resolve({ id: "31" })
     })).status).toBe(422);
   });

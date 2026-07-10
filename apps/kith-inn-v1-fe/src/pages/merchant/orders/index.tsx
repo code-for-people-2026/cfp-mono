@@ -7,13 +7,17 @@ import type {
   MealSlot,
   Occasion,
   Order,
+  OrderAction,
   OrderSummary
 } from "@cfp/kith-inn-v1-shared";
 import { merchantRoute } from "@/logic/login";
 import {
-  buildDraftEdit,
+  availableOrderActions,
   buildManualOrderCreate,
+  buildOrderEdit,
   duplicateDraftUpdate,
+  orderResubmitInput,
+  orderStateText,
   orderSummaryText,
   replaceOrder
 } from "@/logic/orders";
@@ -49,6 +53,16 @@ const EMPTY_SUMMARY: OrderSummary = {
 const handledAuthFailure = (error: unknown) =>
   error instanceof ApiError && (error.status === 401 || error.status === 403);
 
+const ACTION_LABELS: Record<OrderAction, string> = {
+  confirm: "确认",
+  cancel: "取消",
+  resubmit: "重提",
+  "mark-paid": "标已付",
+  "mark-unpaid": "标未付",
+  "mark-delivered": "标已送",
+  "mark-pending-delivery": "标待送"
+};
+
 export default function MerchantOrders() {
   const loadRevision = useRef(0);
   const [date, setDate] = useState("");
@@ -68,6 +82,8 @@ export default function MerchantOrders() {
   const [editDisplayName, setEditDisplayName] = useState("");
   const [editAddress, setEditAddress] = useState("");
   const [editNote, setEditNote] = useState("");
+  const [confirmedEditPending, setConfirmedEditPending] = useState(false);
+  const [pendingAction, setPendingAction] = useState<{ id: string | number; action: "cancel" | "resubmit" } | null>(null);
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "login") {
@@ -87,6 +103,8 @@ export default function MerchantOrders() {
     setSummary(EMPTY_SUMMARY);
     setPendingDuplicate(null);
     setEditing(null);
+    setConfirmedEditPending(false);
+    setPendingAction(null);
   };
 
   const load = async (targetOccasion: Occasion) => {
@@ -168,27 +186,47 @@ export default function MerchantOrders() {
     setEditDisplayName(order.displayName);
     setEditAddress(order.address);
     setEditNote(order.note ?? "");
+    setConfirmedEditPending(false);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = async (confirmedImpactAccepted = false) => {
     if (!editing) return;
-    const patch = buildDraftEdit({
+    const patch = buildOrderEdit({
       quantity: editQuantity,
       displayName: editDisplayName,
       address: editAddress,
       note: editNote
-    });
+    }, confirmedImpactAccepted);
     if (!patch) {
-      await Taro.showToast({ title: "草稿修改内容无效", icon: "none" });
+      await Taro.showToast({ title: "订单修改内容无效", icon: "none" });
+      return;
+    }
+    if (editing.status === "confirmed" && !confirmedImpactAccepted) {
+      setConfirmedEditPending(true);
       return;
     }
     try {
-      const doc = await api.updateOrder(editing.id, patch);
-      setOrders((current) => replaceOrder(current, doc));
+      await api.updateOrder(editing.id, patch);
       setEditing(null);
+      setConfirmedEditPending(false);
+      await load(occasion);
     } catch (error) {
       if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: "草稿修改失败", icon: "none" });
+      await Taro.showToast({ title: "订单修改失败", icon: "none" });
+    }
+  };
+
+  const runAction = async (order: Order, action: OrderAction) => {
+    try {
+      await api.actOnOrder(order.id, action, action === "resubmit" ? orderResubmitInput(order) : undefined);
+      setPendingAction(null);
+      await load(occasion);
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
+      await Taro.showToast({
+        title: error instanceof Error ? error.message : "订单操作失败",
+        icon: "none"
+      });
     }
   };
 
@@ -258,27 +296,66 @@ export default function MerchantOrders() {
 
       {editing && (
         <View className="card order-form edit-order-form">
-          <Text className="section-title">修改草稿</Text>
-          <Input placeholder="编辑份数" type="number" value={editQuantity} onInput={(event) => setEditQuantity(event.detail.value)} />
-          <Input placeholder="编辑称呼" value={editDisplayName} onInput={(event) => setEditDisplayName(event.detail.value)} />
-          <Input placeholder="编辑地址" value={editAddress} onInput={(event) => setEditAddress(event.detail.value)} />
-          <Input placeholder="编辑备注" value={editNote} onInput={(event) => setEditNote(event.detail.value)} />
-          <Button className="primary" onClick={() => void saveEdit()}>保存草稿修改</Button>
+          <Text className="section-title">{editing.status === "confirmed" ? "修改已确认订单" : "修改草稿"}</Text>
+          <Input placeholder="编辑份数" type="number" value={editQuantity} onInput={(event) => {
+            setEditQuantity(event.detail.value);
+            setConfirmedEditPending(false);
+          }} />
+          <Input placeholder="编辑称呼" value={editDisplayName} onInput={(event) => {
+            setEditDisplayName(event.detail.value);
+            setConfirmedEditPending(false);
+          }} />
+          <Input placeholder="编辑地址" value={editAddress} onInput={(event) => {
+            setEditAddress(event.detail.value);
+            setConfirmedEditPending(false);
+          }} />
+          <Input placeholder="编辑备注" value={editNote} onInput={(event) => {
+            setEditNote(event.detail.value);
+            setConfirmedEditPending(false);
+          }} />
+          <Button className="primary" onClick={() => void saveEdit()}>
+            {editing.status === "confirmed" ? "保存已确认订单修改" : "保存草稿修改"}
+          </Button>
+          {confirmedEditPending && (
+            <Button className="danger" onClick={() => void saveEdit(true)}>确认影响并保存</Button>
+          )}
         </View>
       )}
 
       {orders.map((order) => (
-        <View className="card order-card" key={String(order.id)}>
+        <View className="card order-card" key={String(order.id)} data-order-id={String(order.id)}>
           <View className="order-copy">
             <Text className="section-title">{order.displayName}</Text>
             <Text>{order.address}</Text>
             <Text>{order.quantity} 份 · ¥{(order.totalCents / 100).toFixed(2)}</Text>
             {order.note && <Text className="meta">备注：{order.note}</Text>}
-            <Text className="meta">{order.status === "draft" ? "草稿" : order.status}</Text>
+            <Text className="meta">{orderStateText(order)}</Text>
           </View>
-          {order.status === "draft" && (
+          {order.status !== "canceled" && (
             <Button size="mini" aria-label={`编辑 ${order.displayName}`} onClick={() => beginEdit(order)}>编辑</Button>
           )}
+          {availableOrderActions(order).map((action) => {
+            const needsConfirmation = action === "cancel" || action === "resubmit";
+            const isPending = needsConfirmation && pendingAction?.action === action &&
+              String(pendingAction.id) === String(order.id);
+            return isPending ? (
+              <Button
+                key={action}
+                size="mini"
+                className="danger"
+                onClick={() => void runAction(order, action)}
+              >确认{ACTION_LABELS[action]}</Button>
+            ) : (
+              <Button
+                key={action}
+                size="mini"
+                aria-label={`${ACTION_LABELS[action]} ${order.displayName}`}
+                onClick={() => needsConfirmation
+                  ? setPendingAction({ id: order.id, action })
+                  : void runAction(order, action)}
+              >{ACTION_LABELS[action]}</Button>
+            );
+          })}
         </View>
       ))}
     </View>

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
 import { ApiError } from "../services/api";
 import {
-  buildDraftEdit,
+  availableOrderActions,
   buildManualOrderCreate,
+  buildOrderEdit,
   duplicateDraftUpdate,
+  orderResubmitInput,
+  orderStateText,
   orderSummaryText,
   replaceOrder
 } from "./orders";
@@ -70,12 +73,21 @@ describe("manual-order form logic", () => {
     expect(buildManualOrderCreate({ ...base, quantity: "1.5" })).toBeNull();
   });
 
-  it("builds non-empty draft edits with trimmed snapshots", () => {
-    expect(buildDraftEdit({ quantity: "3", displayName: " 王姨 ", address: " 3A-1202 ", note: " 门口放 " }))
+  it("builds trimmed edits and explicit confirmed impact acceptance", () => {
+    const form = { quantity: "3", displayName: " 王姨 ", address: " 3A-1202 ", note: " 门口放 " };
+    expect(buildOrderEdit(form))
       .toEqual({ quantity: 3, displayName: "王姨", address: "3A-1202", note: "门口放" });
-    expect(buildDraftEdit({ quantity: "1", displayName: "王姨", address: "3A", note: "" }))
+    expect(buildOrderEdit(form, true))
+      .toEqual({
+        quantity: 3,
+        displayName: "王姨",
+        address: "3A-1202",
+        note: "门口放",
+        confirmedImpactAccepted: true
+      });
+    expect(buildOrderEdit({ quantity: "1", displayName: "王姨", address: "3A", note: "" }))
       .toEqual({ quantity: 1, displayName: "王姨", address: "3A", note: null });
-    expect(buildDraftEdit({ quantity: "0", displayName: "", address: "3A", note: "" })).toBeNull();
+    expect(buildOrderEdit({ quantity: "0", displayName: "", address: "3A", note: "" })).toBeNull();
   });
 
   it("turns only an active duplicate into an explicit same-id draft update", () => {
@@ -102,6 +114,31 @@ describe("manual-order form logic", () => {
 });
 
 describe("order-list view logic", () => {
+  it("selects single-order actions and renders three independent state axes", () => {
+    expect(availableOrderActions(order())).toEqual(["confirm", "cancel"]);
+    expect(availableOrderActions(order({ status: "confirmed" })))
+      .toEqual(["cancel", "mark-paid", "mark-delivered"]);
+    expect(availableOrderActions(order({
+      status: "confirmed",
+      paymentStatus: "paid",
+      deliveryStatus: "done"
+    }))).toEqual(["cancel", "mark-unpaid", "mark-pending-delivery"]);
+    expect(availableOrderActions(order({ status: "canceled" }))).toEqual(["resubmit"]);
+    expect(orderStateText(order({ status: "confirmed", paymentStatus: "paid", deliveryStatus: "done" })))
+      .toBe("业务：已确认；付款：已付；配送：已送");
+    expect(orderStateText(order())).toBe("业务：草稿；付款：未付；配送：待送");
+  });
+
+  it("reuses the current snapshots for explicit canceled-order resubmit", () => {
+    expect(orderResubmitInput(order({
+      status: "canceled",
+      quantity: 4,
+      displayName: "王姨",
+      address: "3A-1202",
+      note: "门口放"
+    }))).toEqual({ quantity: 4, displayName: "王姨", address: "3A-1202", note: "门口放" });
+  });
+
   it("renders the four confirmed-only summary counters", () => {
     const summary: OrderSummary = { confirmedOrders: 2, totalQuantity: 5, unpaid: 1, pendingDelivery: 2 };
     expect(orderSummaryText(summary)).toBe("已确认 2 单，共 5 份；未付 1 单，待送 2 单");

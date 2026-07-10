@@ -14,7 +14,9 @@ import type {
   OfferingUpdate,
   RelaxedRule,
   Order,
+  OrderAction,
   OrderListResponse,
+  OrderResubmit,
   SwapMenuItemResponse
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
@@ -333,6 +335,13 @@ export function createApiClient(options: ClientOptions) {
     },
     async updateOrder(id: string | number, input: ManualOrderUpdate): Promise<Order> {
       const body = record(await request(`/merchant/orders/${encodeURIComponent(id)}`, { method: "PATCH", data: input }));
+      return parseOrder(body?.doc);
+    },
+    async actOnOrder(id: string | number, action: OrderAction, input?: OrderResubmit): Promise<Order> {
+      const body = record(await request(
+        `/merchant/orders/${encodeURIComponent(id)}/${action}`,
+        { method: "POST", ...(input === undefined ? {} : { data: input }) }
+      ));
       return parseOrder(body?.doc);
     }
   };

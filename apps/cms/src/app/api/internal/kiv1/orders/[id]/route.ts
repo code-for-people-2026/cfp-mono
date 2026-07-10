@@ -1,4 +1,4 @@
-import { manualOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
+import { cmsOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
 import { findOwned, hasSellerField, operatorScope } from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../route";
@@ -26,7 +26,7 @@ export async function PATCH(req: Request, { params }: RouteContext) {
   } catch {
     return NextResponse.json({ error: "invalid-json" }, { status: 400 });
   }
-  const parsed = manualOrderUpdateSchema.safeParse(body);
+  const parsed = cmsOrderUpdateSchema.safeParse(body);
   if (hasSellerField(body) || !parsed.success) {
     return NextResponse.json({ error: "invalid-order-update" }, { status: 422 });
   }
