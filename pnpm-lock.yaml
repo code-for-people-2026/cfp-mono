@@ -30,6 +30,9 @@ importers:
       '@cfp/kith-inn-shared':
         specifier: workspace:*
         version: link:../../packages/kith-inn-shared
+      '@cfp/kith-inn-v1-payload':
+        specifier: workspace:*
+        version: link:../../packages/kith-inn-v1-payload
       '@payloadcms/db-postgres':
         specifier: 3.85.1
         version: 3.85.1(@libsql/client@0.14.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))

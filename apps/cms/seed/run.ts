@@ -1,6 +1,14 @@
 import { pathToFileURL } from "node:url";
 import { getPayload } from "payload";
-import { applySeed, resetSeedData, taoziFixture } from "@cfp/kith-inn-payload/seed";
+import {
+  applySeed as applyOldSeed,
+  resetSeedData as resetOldSeedData,
+  taoziFixture,
+} from "@cfp/kith-inn-payload/seed";
+import {
+  applySeed as applyV1Seed,
+  RESET_COLLECTIONS as V1_RESET_COLLECTIONS,
+} from "@cfp/kith-inn-v1-payload/seed";
 import config from "../payload.config";
 
 /**
@@ -13,6 +21,19 @@ import config from "../payload.config";
  */
 const RESET_ARG = "--reset-dev";
 type Env = Record<string, string | undefined>;
+type ResetPayload = {
+  find: (args: {
+    collection: string;
+    where: Record<string, unknown>;
+    limit: number;
+    overrideAccess: boolean;
+  }) => Promise<{ docs: Array<{ id: string | number }> }>;
+  delete: (args: {
+    collection: string;
+    id: string | number;
+    overrideAccess: boolean;
+  }) => Promise<unknown>;
+};
 
 function trueish(value: string | undefined): boolean {
   return value === "1" || value === "true";
@@ -53,23 +74,56 @@ export function assertDevResetAllowed(env: Env = process.env) {
   }
 }
 
+export async function applyAllSeeds(payload: unknown) {
+  const old = await applyOldSeed(
+    payload as Parameters<typeof applyOldSeed>[0],
+    taoziFixture,
+  );
+  const v1 = await applyV1Seed(payload as Parameters<typeof applyV1Seed>[0]);
+  return { old, v1 };
+}
+
+export async function resetAllSeedData(payload: ResetPayload) {
+  const old = await resetOldSeedData(
+    payload as Parameters<typeof resetOldSeedData>[0],
+  );
+  const deleted: Record<string, number> = {};
+  for (const collection of V1_RESET_COLLECTIONS) {
+    const docs = await payload.find({
+      collection,
+      where: {},
+      limit: 0,
+      overrideAccess: true,
+    });
+    deleted[collection] = docs.docs.length;
+    for (const doc of docs.docs) {
+      await payload.delete({
+        collection,
+        id: doc.id,
+        overrideAccess: true,
+      });
+    }
+  }
+  return { old, v1: { deleted } };
+}
+
 async function main() {
   const resetDev = process.argv.includes(RESET_ARG);
   if (resetDev) assertDevResetAllowed();
   const payload = await getPayload({ config });
   try {
-    // Cast: the real Payload's `find`/`create` carry rich overload signatures
-    // (e.g. `where: Where`); applySeed only needs the narrow seed surface, so we
-    // adapt it via the parameter type rather than coupling the package to Payload's
-    // exact arg shapes.
-    const reset = resetDev ? await resetSeedData(payload as unknown as Parameters<typeof resetSeedData>[0]) : null;
-    const result = await applySeed(
-      payload as unknown as Parameters<typeof applySeed>[0],
-      taoziFixture,
-    );
-    if (reset) console.log(`✓ reset local dev data (${Object.entries(reset.deleted).map(([k, v]) => `${k}:${v}`).join(", ")})`);
-    if (result.seeded) console.log(`✓ seeded 桃子's seller + ${result.offeringCount} offerings (seller ${result.sellerId})`);
+    const reset = resetDev
+      ? await resetAllSeedData(payload as unknown as ResetPayload)
+      : null;
+    const result = await applyAllSeeds(payload);
+    if (reset) {
+      const deleted = { ...reset.old.deleted, ...reset.v1.deleted };
+      console.log(`✓ reset local dev data (${Object.entries(deleted).map(([k, v]) => `${k}:${v}`).join(", ")})`);
+    }
+    if (result.old.seeded) console.log(`✓ seeded 桃子's seller + ${result.old.offeringCount} offerings (seller ${result.old.sellerId})`);
     else console.log("✓ seed skipped: 桃子 already exists; existing data left unchanged");
+    if (result.v1.seeded) console.log(`✓ seeded v1 桃子 seller/operator (seller ${result.v1.sellerId})`);
+    else console.log("✓ v1 seed skipped: 桃子 seller/operator already exist");
   } finally {
     await payload.destroy();
   }

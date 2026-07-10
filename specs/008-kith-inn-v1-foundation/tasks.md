@@ -117,11 +117,11 @@
 
 ### 测试
 
-- [ ] T023 [US1] 先为 old + v1 collection 聚合、`admin.user=operators`、`schemaName=cms`、health 和无第二 Payload host 补失败回归：`apps/cms/tests/spike-coexistence.test.ts`
+- [x] T023 [US1] 先为 old + v1 collection 聚合、`admin.user=operators`、`schemaName=cms`、health 和无第二 Payload host 补失败回归：`apps/cms/tests/spike-coexistence.test.ts`
 
 ### 实现
 
-- [ ] T024 [US1] 增加 v1 payload workspace 依赖并聚合 collections，保持 adapter/Admin/onInit/routes 不变：`apps/cms/package.json`、`apps/cms/payload.config.ts`、`pnpm-lock.yaml`
+- [x] T024 [US1] 增加 v1 payload workspace 依赖并聚合 collections，保持 adapter/Admin/onInit/routes 不变：`apps/cms/package.json`、`apps/cms/payload.config.ts`、`pnpm-lock.yaml`
 
 **Checkpoint**: `apps/cms` 是唯一共享 Payload host，v1 collection 已装配但没有业务 API。
 
@@ -133,8 +133,8 @@
 
 **独立测试**: 在 PostgreSQL 启动共享 config，验证旧主表和七个 `kiv1_` 主表都位于 `cms`，`public`/`website` 无 v1 表，且未认证 v1 请求被拒绝。
 
-- [ ] T025 [US2] 扩展 PostgreSQL 共存测试，覆盖七个 v1 主表前缀、完整最小索引清单、同 seller 重复 operator openid 拒绝、跨 seller 同 openid 允许、旧表保留和 `public`/`website` schema 无 v1 表：`apps/cms/tests/spike-coexistence.test.ts`
-- [ ] T026 [US3] 扩展共享 config 回归，覆盖旧 Admin user 不变、`kiv1_operators` 非 auth、未认证 deny 和旧 internal routes 不变：`apps/cms/tests/spike-coexistence.test.ts`
+- [x] T025 [US2] 扩展 PostgreSQL 共存测试，覆盖七个 v1 主表前缀、完整最小索引清单、同 seller 重复 operator openid 拒绝、跨 seller 同 openid 允许、旧表保留和 `public`/`website` schema 无 v1 表：`apps/cms/tests/spike-coexistence.test.ts`
+- [x] T026 [US3] 扩展共享 config 回归，覆盖旧 Admin user 不变、`kiv1_operators` 非 auth、未认证 deny 和旧 internal routes 不变：`apps/cms/tests/spike-coexistence.test.ts`
 
 ---
 
@@ -146,11 +146,11 @@
 
 ### 测试
 
-- [ ] T027 [US4] 先为旧 seed 后 v1 seed 的顺序、seeded/skipped 结果、失败重试和 reset FK-safe 编排补失败回归：`apps/cms/tests/seed-run.test.ts`
+- [x] T027 [US4] 先为旧 seed 后 v1 seed 的顺序、seeded/skipped 结果、失败重试和 reset FK-safe 编排补失败回归：`apps/cms/tests/seed-run.test.ts`
 
 ### 实现
 
-- [ ] T028 [US4] 在共享入口编排两个 package 的 seed/reset，同时保留环境与本地数据库安全守卫：`apps/cms/seed/run.ts`
+- [x] T028 [US4] 在共享入口编排两个 package 的 seed/reset，同时保留环境与本地数据库安全守卫：`apps/cms/seed/run.ts`
 
 ---
 
@@ -158,9 +158,9 @@
 
 **目的**: 完整验证 M0 规格并确认长期文档没有实现漂移。
 
-- [ ] T029 运行 shared、payload、CMS 窄测试和 PostgreSQL 共存测试，按 `specs/008-kith-inn-v1-foundation/quickstart.md` 验证共享 host/seed
-- [ ] T030 [P] 核对分享路由、same-schema、openid 可空、七 collection 和 M0 非目标；仅在实现决策发生变化时同步 `docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
-- [ ] T031 运行仓库 `pnpm verify` 并将完整 M0 完成状态记录在 `specs/008-kith-inn-v1-foundation/tasks.md`
+- [x] T029 运行 shared、payload、CMS 窄测试和 PostgreSQL 共存测试，按 `specs/008-kith-inn-v1-foundation/quickstart.md` 验证共享 host/seed
+- [x] T030 [P] 核对分享路由、same-schema、openid 可空、七 collection 和 M0 非目标；仅在实现决策发生变化时同步 `docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+- [x] T031 运行仓库 `pnpm verify` 并将完整 M0 完成状态记录在 `specs/008-kith-inn-v1-foundation/tasks.md`
 
 ---
 
