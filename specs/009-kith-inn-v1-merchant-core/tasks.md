@@ -6,7 +6,7 @@
 
 **Tests**: 本功能含认证、租户隔离、导入解析、菜单规则和订单状态机。所有非平凡逻辑与信任边界必须先补失败测试，再写实现；shared/BE/FE 可执行纯逻辑继续保持 100% coverage。
 
-**Organization**: 任务按 M1-A/B/C 三个顺序 PR 与三个用户故事组织。后一个 PR 只在前一个 rebase merge 后从最新 `main` 开始，不建堆叠 PR。
+**Organization**: 任务按 M1-A、M1-B、M1-C1、M1-C2、M1-C3 五个顺序纵向 PR 与三个用户故事组织。后一个 PR 只在前一个 rebase merge 后从最新 `main` 开始，不建堆叠 PR；M1-C 不按 shared/CMS/BE/FE 技术层拆空壳。
 
 ## Format: `[ID] [P?] [Story] Description`
 
@@ -116,36 +116,95 @@
 
 ---
 
-## Phase 5：User Story 3——手动记录并完成订单（P3，M1-C）
+## Phase 5：User Story 3——顾客资料与草稿补单（P3，M1-C1）
 
-**Goal**: 桃子不依赖顾客侧即可补单、确认、收款、送达、取消和复制清单。
+**Goal**: 桃子不依赖顾客侧即可选择或创建顾客资料，按餐次记录、查看和修改 draft 手动订单。
 
-**Independent Test**: 新建无 openid profile/manual order，验证 duplicate/resubmit、三状态轴、汇总、批量送达、跨 seller 和 confirmed 影响确认。
+**Independent Test**: 新建无 openid profile/manual draft order，刷新后可见；重复补同一 profile+slot 先冲突，明确更新后复用同一 order id，另一个 seller 无法读取或引用。
 
-### Tests for User Story 3 ⚠️
+### Tests for M1-C1 / User Story 3 ⚠️
 
-- [ ] T042 [US3] M1-B rebase merge 后从最新 `main` 创建 M1-C 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T043 [P] [US3] 先覆盖 merchant profile/order/list/summary/action/bulk 请求响应、稳定错误和 seller 字段拒绝 schema：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T044 [P] [US3] 先覆盖 draft→confirmed/canceled、canceled→resubmit、confirmed-only payment/delivery、时间清理、重复幂等、confirmed 编辑确认、汇总和纯文本清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`
-- [ ] T045 [P] [US3] 先覆盖 CMS seller snapshot、profile list/create openid 强制为空，以及 order list/create/patch 字段白名单、slot/profile owner、unique、跨 seller 404 和停用 membership：`apps/cms/tests/kiv1-orders.test.ts`
-- [ ] T046 [P] [US3] 先覆盖 BE seller/profile/order CMS clients、manual price fallback/snapshot、duplicate 409、action 状态映射、bulk partial result 和无跨 seller 泄露：`apps/kith-inn-v1-be/src/lib/cms/seller.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
-- [ ] T047 [P] [US3] 先覆盖 FE 订单分组/汇总、编辑/取消/resubmit 确认、付款送达按钮、批量选中和地址排序清单：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T048 [US3] 先扩展失败的 H5 “新 profile → 补单 → 修改 → 确认 → 付款 → 送达 → 取消 → resubmit”关键流和跨 seller negative flow：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [ ] T042 [US3] 本规划 PR rebase merge 后从最新 `main` 创建 M1-C1 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
+- [ ] T043 [P] [US3] 先覆盖 seller/profile、order list/create/edit 请求响应、summary、稳定错误、重复最小摘要和 seller 字段拒绝 schema，不预建 action/bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [ ] T044 [P] [US3] 先覆盖手动订单 price fallback、顾客/单价快照、draft 编辑、重复坐标冲突和 confirmed-only 汇总，不实现状态迁移或清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`
+- [ ] T045 [P] [US3] 先覆盖 CMS seller snapshot、profile list/create openid 强制为空，以及 draft order list/create/patch 字段白名单、slot/profile owner、unique、跨 seller 404 和停用 membership：`apps/cms/tests/kiv1-orders.test.ts`
+- [ ] T046 [P] [US3] 先覆盖 BE seller/profile/order CMS clients、manual create/list/draft-edit routes、duplicate 409 和无跨 seller 泄露：`apps/kith-inn-v1-be/src/lib/cms/seller.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [ ] T047 [P] [US3] 先覆盖 FE 餐次订单分组/汇总、profile 选择/创建、重复更新确认、draft 编辑和 API 请求：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [ ] T048 [US3] 先扩展失败的 H5 “选择餐次 → 新 profile → 草稿补单 → 重复确认更新 → 修改”关键流和跨 seller negative flow：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
-### Implementation for User Story 3
+### Implementation for M1-C1 / User Story 3
 
-- [ ] T049 [US3] 实现 profile/order/action/bulk API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
-- [ ] T050 [US3] 实现 seller-scoped CMS seller/profile/order routes、relationship owner 与写字段白名单，不下沉状态机：`apps/cms/src/app/api/internal/kiv1/seller/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer-profiles/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
-- [ ] T051 [US3] 实现订单纯状态机/汇总/清单、CMS clients 和 merchant order/action/bulk routes：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/lib/cms/seller.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/kith-inn-v1-be/src/app.ts`
-- [ ] T052 [US3] 实现原生 Taro 订单页、profile 选择/创建、重复更新/resubmit、状态操作、批量送达和剪贴板清单：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T053 [P] [US3] 核对取消后重提、confirmed-only 付款/送达、手动 profile 无 openid 和清单范围，并仅在实现决策漂移时同步：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+- [ ] T049 [US3] 实现 seller/profile 与 order list/create/edit/summary API schemas 和共享类型，不导出 action/bulk schema：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [ ] T050 [US3] 实现 seller-scoped CMS seller/profile/order list/create 和订单快照 edit routes、relationship owner 与当前切片写字段白名单，不下沉状态机：`apps/cms/src/app/api/internal/kiv1/seller/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer-profiles/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
+- [ ] T051 [US3] 实现手动订单创建/编辑与汇总纯逻辑、seller/profile/order CMS clients 和 merchant list/create/edit routes：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/lib/cms/seller.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/kith-inn-v1-be/src/app.ts`
+- [ ] T052 [US3] 实现原生 Taro 订单页、餐次选择、profile 选择/创建、草稿补单、重复更新和订单编辑 UI：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
 
-### M1-C / M1 Complete Gate
+### M1-C1 PR Gate
 
-- [ ] T054 [US3] 运行全部 shared/BE/FE coverage、CMS SQLite/PostgreSQL tenant/relationship 回归、完整商家 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 2 分钟手动订单生命周期
-- [ ] T055 [US3] 按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 连续从空本地数据跑通“seed → 登录 → 菜品 → 一周菜单 → 手动补单 → 确认 → 付款/送达”，确认 booking batch/customer session/AI/支付数据与入口均未创建
-- [ ] T056 [US3] 运行 `pnpm verify`，检查 M1 全 diff 不修改旧 `@cfp/kith-inn-*` 业务源码、不新增 collection/Payload app/数据库，并将 T042–T056 与完整 M1 状态记录在 `specs/009-kith-inn-v1-merchant-core/tasks.md`
-- [ ] T057 [US3] 提交 M1-C ready PR，等待 checks 与 Codex review；逐条修复或解释并 resolve 所有 actionable threads：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [ ] T053 [US3] 运行相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL profile/order tenant 回归、M1-C1 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证草稿补单切片并记录 T042–T053 状态
+- [ ] T054 [US3] 提交 M1-C1 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；不得预建 confirm/cancel/payment/delivery/bulk/clipboard API 或 UI：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+
+**Checkpoint**: M1-C1 可独立交付；桃子可记录和修改草稿订单，尚不能改变订单生命周期。
+
+---
+
+## Phase 6：User Story 3——订单生命周期（P3，M1-C2）
+
+**Goal**: 桃子可对单条订单执行确认、取消、明确重提、付款和送达状态转换，并看到一致汇总。
+
+**Independent Test**: 同一订单从 draft 确认，双向切换付款/送达，取消后退出汇总，普通操作被拒绝，明确 resubmit 后同一 id 回到 draft 且旧生命周期时间清空。
+
+### Tests for M1-C2 / User Story 3 ⚠️
+
+- [ ] T055 [US3] M1-C1 rebase merge 后从最新 `main` 创建 M1-C2 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
+- [ ] T056 [P] [US3] 先覆盖 confirm/cancel/resubmit/payment/delivery action、confirmed edit impact 确认和稳定状态错误 schema，不预建 bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [ ] T057 [P] [US3] 先覆盖 draft→confirmed/canceled、canceled→resubmit、confirmed-only payment/delivery、幂等目标状态、时间同步/清理、confirmed 编辑确认和 canceled 普通操作拒绝：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`
+- [ ] T058 [P] [US3] 先覆盖 CMS 生命周期 patch 白名单，以及 BE CMS update client、单条 action route 状态映射、汇总刷新、跨 seller 404 和非法迁移零写入：`apps/cms/tests/kiv1-orders.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [ ] T059 [P] [US3] 先覆盖 FE confirm/cancel/resubmit 与 confirmed edit 二次确认、付款/送达双向按钮、三状态轴展示和汇总刷新：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [ ] T060 [US3] 先扩展失败的 H5 “草稿 → 确认 → 已付 → 已送 → 取消 → 明确重提”纵向流，并断言非法操作不改变订单：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+
+### Implementation for M1-C2 / User Story 3
+
+- [ ] T061 [US3] 实现单条 order action、confirmed edit impact 确认 API schemas 与共享类型，不包含 bulk：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [ ] T062 [US3] 扩展订单纯状态机、CMS 生命周期 patch 白名单与 client，增加 confirm/cancel/resubmit/payment/delivery merchant actions：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
+- [ ] T063 [US3] 扩展订单页的单条生命周期按钮、confirmed edit 与状态操作二次确认、状态与汇总反馈，不增加批量或剪贴板入口：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [ ] T064 [P] [US3] 核对取消后重提、confirmed-only 付款/送达和手动 profile 无 openid 规则，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+
+### M1-C2 PR Gate
+
+- [ ] T065 [US3] 运行 M1-C1 回归、相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL 生命周期 tenant 回归、M1-C2 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单条生命周期并记录 T055–T065 状态
+- [ ] T066 [US3] 提交 M1-C2 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；批量送达与剪贴板清单保持未实现：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+
+**Checkpoint**: M1-C2 可独立交付；单条订单生命周期完整，尚无多单批量和经营清单。
+
+---
+
+## Phase 7：User Story 3——批量送达、清单与 M1 收口（P3，M1-C3）
+
+**Goal**: 桃子可显式选择多条当前商家订单批量标已送，并复制只统计 confirmed 订单的地址排序清单。
+
+**Independent Test**: 准备多条 confirmed/draft/canceled 与跨 seller 订单，批量操作只更新明确选中的合法订单并逐项返回结果；复制文本只含 confirmed，数量与汇总一致。
+
+### Tests for M1-C3 / User Story 3 ⚠️
+
+- [ ] T067 [US3] M1-C2 rebase merge 后从最新 `main` 创建 M1-C3 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
+- [ ] T068 [P] [US3] 先覆盖 bulk mark-delivered 最多 100 个去重 id、逐项结果与错误 schema：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [ ] T069 [P] [US3] 先覆盖 bulk 复用单条状态机、partial result、未选中/非法/跨 seller 零写入，以及 confirmed-only 地址/称呼稳定排序清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [ ] T070 [P] [US3] 先覆盖 FE 显式批量选中、逐项失败反馈、地址排序清单、draft/canceled 排除和平台剪贴板调用：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [ ] T071 [US3] 先扩展失败的 H5 多订单批量送达、partial failure 与复制 confirmed-only 清单关键流：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+
+### Implementation for M1-C3 / User Story 3
+
+- [ ] T072 [US3] 实现 bulk mark-delivered API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [ ] T073 [US3] 实现 bulk route 逐 id 复用单条状态机并返回 partial result，扩展 confirmed-only 清单纯逻辑：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`
+- [ ] T074 [US3] 实现订单页批量选择/已送、逐项结果和平台剪贴板清单交互：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [ ] T075 [P] [US3] 核对清单范围、批量 tenant 边界和公开文案，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+
+### M1-C3 / M1 Complete Gate
+
+- [ ] T076 [US3] 运行全部 shared/BE/FE coverage、CMS SQLite/PostgreSQL tenant/relationship 回归、完整商家 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 2 分钟手动订单生命周期
+- [ ] T077 [US3] 从空本地数据跑通“seed → 登录 → 菜品 → 一周菜单 → 手动补单 → 确认 → 付款/送达 → 批量/清单”，运行 `pnpm verify`，确认未创建 booking batch/customer session/AI/支付入口、未修改旧业务源码或新增 collection，并记录 T067–T077 与完整 M1 状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [ ] T078 [US3] 提交 M1-C3 ready PR，等待 checks/Codex review；逐条修复或解释并 resolve 所有 actionable threads：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1 完成；桃子可在没有顾客侧的情况下跑通菜单和商家订单经营闭环。
 
@@ -157,28 +216,31 @@
 
 - **Phase 1（M1-A Setup）**: 规格 PR 合并后开始；不能单独提交。
 - **Phase 2（认证/tenant foundation）**: 依赖 Phase 1，阻塞三个用户故事。
-- **Phase 3（US1 / M1-A）**: 依赖 Phase 2；完成并合并后才开始 M1-B。
-- **Phase 4（US2 / M1-B）**: 依赖 M1-A，因为使用登录、菜品与 workspace；完成并合并后才开始 M1-C。
-- **Phase 5（US3 / M1-C）**: 依赖 M1-B，因为手动订单选择 meal slot；完成即完成 M1。
+- **Phase 3（US1 / M1-A）**: 依赖 Phase 2；已完成并合并。
+- **Phase 4（US2 / M1-B）**: 依赖 M1-A；已完成并合并。
+- **Phase 5（US3 / M1-C1）**: 依赖 M1-B，因为手动订单选择 meal slot；交付 profile 与草稿订单纵向流。
+- **Phase 6（US3 / M1-C2）**: 依赖 M1-C1 的持久化边界与订单页；交付单条生命周期。
+- **Phase 7（US3 / M1-C3）**: 依赖 M1-C2 的单条状态机；交付批量、清单并完成 M1。
 
 ### User Story Dependencies
 
-- **US1（P1）**: 首个独立 MVP；交付登录和菜品池。
-- **US2（P2）**: 使用 US1 菜品和认证，但可用 seed/fixture 独立验证菜单规则。
-- **US3（P3）**: 使用 US2 餐次和 US1 认证，但可用 fixture 独立验证订单状态机。
+- **US1（P1）**: 首个独立 MVP；已交付登录和菜品池。
+- **US2（P2）**: 使用 US1 菜品和认证；已交付菜单。
+- **US3（P3）**: 使用 US2 餐次和 US1 认证；按 C1/C2/C3 三个可独立验证的增量顺序交付。
 
 ### Within Each User Story
 
-- 所有 tests task 先完成并确认失败，再开始 implementation task。
-- shared contract → CMS persistence → BE domain/route → FE 页面 → H5 e2e。
-- seller/relationship owner 检查先于任何 `overrideAccess` 写入。
-- 每个 PR 通过窄验证和 `pnpm verify`，Codex review 闭环后才合并。
+- 所有 tests task 先完成并确认失败，再开始对应 implementation task。
+- 每个 M1-C PR 都必须包含 shared contract、CMS persistence、BE domain/route、FE 页面和 H5 e2e 中该切片实际需要的最小纵向改动。
+- seller/relationship owner 检查先于任何 `overrideAccess` 写入；状态机只在 BE。
+- 每个 PR 通过窄验证和 `pnpm verify`，Codex review 闭环并 rebase merge 后才开始下一个。
+- 不提前添加后续切片 schema、route、按钮或测试占位，避免以“方便下一 PR”为由重新扩大当前 diff。
 
 ### Parallel Opportunities
 
 - M1-A workspace 的 BE/FE 配置可并行；auth 的 CMS/BE/FE 失败测试可在 shared claims 确定后并行。
-- 每个用户故事的 shared、CMS、BE domain、FE logic 失败测试修改不同文件，可并行准备。
-- M1-A/B/C 不并行实施，避免堆叠 PR 和未合并契约漂移。
+- 每个切片的 shared、CMS、BE domain、FE logic 失败测试修改不同文件，可并行准备。
+- M1-A/B/C1/C2/C3 不并行实施，避免堆叠 PR 和未合并契约漂移。
 
 ---
 
@@ -202,14 +264,31 @@ Task T031: BE client/route tests
 Task T032: FE menu logic tests
 ```
 
-## Parallel Example：M1-C / US3
+## Parallel Example：M1-C1 / US3
 
 ```text
-Task T043: shared profile/order API tests
-Task T044: pure order state/summary tests
+Task T043: shared profile/draft-order API tests
+Task T044: basic order service/summary tests
 Task T045: CMS profile/order owner tests
-Task T046: BE client/route tests
-Task T047: FE order/list logic tests
+Task T046: BE client/list/create/edit route tests
+Task T047: FE draft-order logic tests
+```
+
+## Parallel Example：M1-C2 / US3
+
+```text
+Task T056: shared action contract tests
+Task T057: pure order state-machine tests
+Task T058: CMS/BE lifecycle boundary tests
+Task T059: FE lifecycle logic tests
+```
+
+## Parallel Example：M1-C3 / US3
+
+```text
+Task T068: shared bulk contract tests
+Task T069: BE bulk/checklist tests
+Task T070: FE selection/clipboard tests
 ```
 
 ---
@@ -225,9 +304,11 @@ Task T047: FE order/list logic tests
 
 ### Incremental Delivery
 
-1. **M1-A**: 登录 + 菜品池 → 可独立试用。
-2. **M1-B**: 单餐/一周菜单 + 换菜 → 可独立试用。
-3. **M1-C**: 手动订单 + 生命周期 → M1 经营闭环。
+1. **M1-A**: 登录 + 菜品池 → 已独立试用。
+2. **M1-B**: 单餐/一周菜单 + 换菜 → 已独立试用。
+3. **M1-C1**: 顾客资料 + 草稿补单/修改 → 可独立记录订单。
+4. **M1-C2**: 单条确认/取消/重提/付款/送达 → 可独立完成生命周期。
+5. **M1-C3**: 批量送达 + 经营清单 + 总验收 → M1 经营闭环。
 
 ### Deliberate Deferrals
 
