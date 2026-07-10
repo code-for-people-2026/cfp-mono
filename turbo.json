@@ -18,7 +18,15 @@
     "CHAT_RATE_LIMIT_PER_HOUR",
     "SUMMARY_RATE_LIMIT_PER_MINUTE",
     "SUMMARY_RATE_LIMIT_PER_HOUR",
-    "VERCEL"
+    "VERCEL",
+    "KITH_INN_V1_JWT_SECRET",
+    "KITH_INN_V1_INTERNAL_TOKEN",
+    "KITH_INN_V1_ALLOW_DEV_LOGIN",
+    "CMS_BASE_URL",
+    "WX_APPID",
+    "WX_SECRET",
+    "BE_PORT",
+    "BE_BASE_URL"
   ],
   "tasks": {
     "build": {

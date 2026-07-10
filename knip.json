@@ -61,6 +61,27 @@
     "apps/kith-inn-be": {
       "entry": ["src/**/*.ts", "eval/**/*.ts", "eslint.config.mjs", "vitest.config.ts"]
     },
+    "apps/kith-inn-v1-be": {
+      "entry": ["src/**/*.ts", "eslint.config.mjs", "vitest.config.ts"]
+    },
+    "apps/kith-inn-v1-fe": {
+      "entry": [
+        "config/**/*.ts",
+        "src/**/*.{ts,tsx}",
+        "playwright.config.ts",
+        "tests/**/*.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts"
+      ],
+      "ignoreDependencies": [
+        "react",
+        "@tarojs/webpack5-runner",
+        "babel-preset-taro",
+        "@babel/preset-react",
+        "@pmmmwh/react-refresh-webpack-plugin",
+        "react-refresh"
+      ]
+    },
     "packages/kith-inn-shared": {
       "entry": ["src/index.ts", "src/schemas.ts"]
     },

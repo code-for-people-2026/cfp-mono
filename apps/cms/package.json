@@ -21,6 +21,7 @@
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",
     "@cfp/kith-inn-payload": "workspace:*",
+    "@cfp/kith-inn-v1-shared": "workspace:*",
     "@cfp/kith-inn-v1-payload": "workspace:*",
     "@payloadcms/db-postgres": "3.85.1",
     "@payloadcms/db-sqlite": "3.85.1",

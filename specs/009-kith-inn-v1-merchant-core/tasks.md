@@ -21,10 +21,10 @@
 
 **Purpose**: 只为第一个实际功能切片建立 v1 BE/FE；本阶段结束时 workspace 还不能单独交付，必须继续完成 Phase 2–3。
 
-- [ ] T001 从 M1 规格 PR 合并后的最新 `main` 创建 M1-A 分支，确认 `apps/kith-inn-v1-be/**`、`apps/kith-inn-v1-fe/**` 仍不存在，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T002 初始化可运行的 `@cfp/kith-inn-v1-be` Hono workspace 与 3311 health/boot 配置：`apps/kith-inn-v1-be/package.json`、`apps/kith-inn-v1-be/.env.example`、`apps/kith-inn-v1-be/eslint.config.mjs`、`apps/kith-inn-v1-be/tsconfig.json`、`apps/kith-inn-v1-be/vitest.config.ts`、`apps/kith-inn-v1-be/src/index.ts`、`apps/kith-inn-v1-be/src/app.ts`、`apps/kith-inn-v1-be/src/routes/health.ts`
-- [ ] T003 [P] 初始化不含 NutUI/Tailwind 的 `@cfp/kith-inn-v1-fe` Taro workspace、10087 H5/weapp 构建和最小商家 app shell：`apps/kith-inn-v1-fe/package.json`、`apps/kith-inn-v1-fe/.env.example`、`apps/kith-inn-v1-fe/babel.config.js`、`apps/kith-inn-v1-fe/config/index.ts`、`apps/kith-inn-v1-fe/eslint.config.mjs`、`apps/kith-inn-v1-fe/tsconfig.json`、`apps/kith-inn-v1-fe/vitest.config.ts`、`apps/kith-inn-v1-fe/src/index.html`、`apps/kith-inn-v1-fe/src/app.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T004 注册两个 workspace、v1 独立 secrets 和 direct shared 依赖，保持旧环境变量/端口不变：`apps/cms/package.json`、`apps/cms/.env.example`、`turbo.json`、`knip.json`、`pnpm-lock.yaml`
+- [X] T001 从 M1 规格 PR 合并后的最新 `main` 创建 M1-A 分支，确认 `apps/kith-inn-v1-be/**`、`apps/kith-inn-v1-fe/**` 仍不存在，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交（起点：`25c1d68`）
+- [X] T002 初始化可运行的 `@cfp/kith-inn-v1-be` Hono workspace 与 3311 health/boot 配置：`apps/kith-inn-v1-be/package.json`、`apps/kith-inn-v1-be/.env.example`、`apps/kith-inn-v1-be/eslint.config.mjs`、`apps/kith-inn-v1-be/tsconfig.json`、`apps/kith-inn-v1-be/vitest.config.ts`、`apps/kith-inn-v1-be/src/index.ts`、`apps/kith-inn-v1-be/src/app.ts`、`apps/kith-inn-v1-be/src/routes/health.ts`
+- [X] T003 [P] 初始化不含 NutUI/Tailwind 的 `@cfp/kith-inn-v1-fe` Taro workspace、10087 H5/weapp 构建和最小商家 app shell：`apps/kith-inn-v1-fe/package.json`、`apps/kith-inn-v1-fe/.env.example`、`apps/kith-inn-v1-fe/babel.config.js`、`apps/kith-inn-v1-fe/config/index.ts`、`apps/kith-inn-v1-fe/eslint.config.mjs`、`apps/kith-inn-v1-fe/tsconfig.json`、`apps/kith-inn-v1-fe/vitest.config.ts`、`apps/kith-inn-v1-fe/src/index.html`、`apps/kith-inn-v1-fe/src/app.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T004 注册两个 workspace、v1 独立 secrets 和 direct shared 依赖，保持旧环境变量/端口不变：`apps/cms/package.json`、`apps/cms/.env.example`、`turbo.json`、`knip.json`、`pnpm-lock.yaml`
 
 **Checkpoint**: 两个 workspace 能进入 lint/typecheck/build 图，但不得在此提交空壳 PR。
 
@@ -36,14 +36,14 @@
 
 **⚠️ CRITICAL**: Phase 2 未完成前不得实现菜品、菜单或订单 route。
 
-- [ ] T005 先覆盖 selection/operator token 的签发、kind 隔离、签名、过期、畸形输入和 claims schema 失败分支：`packages/kith-inn-v1-shared/src/auth.test.ts`
-- [ ] T006 实现无第三方 JWT 依赖的 Web Crypto helper、5 分钟 selection/7 天 operator claims schema 和稳定导出：`packages/kith-inn-v1-shared/src/auth.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`packages/kith-inn-v1-shared/package.json`
-- [ ] T007 [P] 先覆盖 v1 service token fail-closed、membership lookup、operator/seller active 重查、JWT kind/expiry、body seller 拒绝和跨 seller 404：`apps/cms/tests/kiv1-auth.test.ts`
-- [ ] T008 实现独立 `x-kith-inn-v1-*` 身份 helper 与 `/api/internal/kiv1/auth/operator-memberships` bootstrap，不修改旧 internal helper/route：`apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/auth/operator-memberships/route.ts`
-- [ ] T009 [P] 先覆盖 code2Session、显式 dev login 双开关、零/单/多 membership、多 seller 选择 token、防伪 seller、membership 停用/seller 暂停和 bearer middleware：`apps/kith-inn-v1-be/src/lib/wx/code2session.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.test.ts`、`apps/kith-inn-v1-be/src/routes/auth.test.ts`、`apps/kith-inn-v1-be/src/middleware/operatorAuth.test.ts`
-- [ ] T010 实现微信交换、CMS bootstrap client、wx/dev/select-seller routes 和 operator bearer middleware，weapp 失败不得 fallback dev login：`apps/kith-inn-v1-be/src/lib/wx/code2session.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.ts`、`apps/kith-inn-v1-be/src/routes/auth.ts`、`apps/kith-inn-v1-be/src/middleware/operatorAuth.ts`、`apps/kith-inn-v1-be/src/app.ts`
-- [ ] T011 [P] 先覆盖 H5/weapp 登录分流、token storage、401/403 清会话、多 seller 必须选择和绝不存 openid：`apps/kith-inn-v1-fe/src/store/session.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/login.test.ts`
-- [ ] T012 实现 v1 session store、API client、登录/选择 seller 页面和 merchant route guard：`apps/kith-inn-v1-fe/src/store/session.ts`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/login.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/login/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts`
+- [X] T005 先覆盖 selection/operator token 的签发、kind 隔离、签名、过期、畸形输入和 claims schema 失败分支：`packages/kith-inn-v1-shared/src/auth.test.ts`
+- [X] T006 实现无第三方 JWT 依赖的 Web Crypto helper、5 分钟 selection/7 天 operator claims schema 和稳定导出：`packages/kith-inn-v1-shared/src/auth.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`packages/kith-inn-v1-shared/package.json`
+- [X] T007 [P] 先覆盖 v1 service token fail-closed、membership lookup、operator/seller active 重查、JWT kind/expiry、body seller 拒绝和跨 seller 404：`apps/cms/tests/kiv1-auth.test.ts`
+- [X] T008 实现独立 `x-kith-inn-v1-*` 身份 helper 与 `/api/internal/kiv1/auth/operator-memberships` bootstrap，不修改旧 internal helper/route：`apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/auth/operator-memberships/route.ts`
+- [X] T009 [P] 先覆盖 code2Session、显式 dev login 双开关、零/单/多 membership、多 seller 选择 token、防伪 seller、membership 停用/seller 暂停和 bearer middleware：`apps/kith-inn-v1-be/src/lib/wx/code2session.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.test.ts`、`apps/kith-inn-v1-be/src/routes/auth.test.ts`、`apps/kith-inn-v1-be/src/middleware/operatorAuth.test.ts`
+- [X] T010 实现微信交换、CMS bootstrap client、wx/dev/select-seller routes 和 operator bearer middleware，weapp 失败不得 fallback dev login：`apps/kith-inn-v1-be/src/lib/wx/code2session.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.ts`、`apps/kith-inn-v1-be/src/routes/auth.ts`、`apps/kith-inn-v1-be/src/middleware/operatorAuth.ts`、`apps/kith-inn-v1-be/src/app.ts`
+- [X] T011 [P] 先覆盖 H5/weapp 登录分流、token storage、401/403 清会话、多 seller 必须选择和绝不存 openid：`apps/kith-inn-v1-fe/src/store/session.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/login.test.ts`
+- [X] T012 实现 v1 session store、API client、登录/选择 seller 页面和 merchant route guard：`apps/kith-inn-v1-fe/src/store/session.ts`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/login.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/login/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts`
 
 **Checkpoint**: seeded 桃子能通过显式 H5 dev login 或真实 weapp login 获得单 seller token；多 seller 必选；停用 membership 后 CMS 立即拒绝。
 
@@ -57,26 +57,26 @@
 
 ### Tests for User Story 1 ⚠️
 
-- [ ] T013 [P] [US1] 先覆盖 merchant offering、import preview/commit、逐行结果和额外 seller 字段拒绝的共享 API schema/type：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T014 [P] [US1] 先覆盖空行、常见分隔符、荤/素/汤映射、字段过长、未知分类、50 行上限、重名默认 skip 与显式 overwrite：`apps/kith-inn-v1-be/src/domain/offerings/importText.test.ts`
-- [ ] T015 [P] [US1] 先覆盖 CMS offering list/create/patch、active 筛选、同 seller unique、跨 seller 404、停用 membership 和 body seller 422，并更新旧 route 清单回归只新增 `kiv1` namespace：`apps/cms/tests/kiv1-offerings.test.ts`、`apps/cms/tests/spike-coexistence.test.ts`
-- [ ] T016 [P] [US1] 先覆盖 BE CMS offering client、merchant route schema、逐行 partial result、401/403/404/409/422 映射和 commit 重新解析/重查：`apps/kith-inn-v1-be/src/lib/cms/offerings.test.ts`、`apps/kith-inn-v1-be/src/routes/offerings.test.ts`
-- [ ] T017 [P] [US1] 先覆盖 FE 菜品 active 分组、preview 汇总、conflict action、提交结果和 API 请求：`apps/kith-inn-v1-fe/src/logic/offeringsImport.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T018 [US1] 先编写失败的 H5 “dev login → 新增/编辑/停用/恢复 → import preview/commit”纵向测试和未授权重定向：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/playwright.config.ts`
+- [X] T013 [P] [US1] 先覆盖 merchant offering、import preview/commit、逐行结果和额外 seller 字段拒绝的共享 API schema/type：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [X] T014 [P] [US1] 先覆盖空行、常见分隔符、荤/素/汤映射、字段过长、未知分类、50 行上限、重名默认 skip 与显式 overwrite：`apps/kith-inn-v1-be/src/domain/offerings/importText.test.ts`
+- [X] T015 [P] [US1] 先覆盖 CMS offering list/create/patch、active 筛选、同 seller unique、跨 seller 404、停用 membership 和 body seller 422，并更新旧 route 清单回归只新增 `kiv1` namespace：`apps/cms/tests/kiv1-offerings.test.ts`、`apps/cms/tests/spike-coexistence.test.ts`
+- [X] T016 [P] [US1] 先覆盖 BE CMS offering client、merchant route schema、逐行 partial result、401/403/404/409/422 映射和 commit 重新解析/重查：`apps/kith-inn-v1-be/src/lib/cms/offerings.test.ts`、`apps/kith-inn-v1-be/src/routes/offerings.test.ts`
+- [X] T017 [P] [US1] 先覆盖 FE 菜品 active 分组、preview 汇总、conflict action、提交结果和 API 请求：`apps/kith-inn-v1-fe/src/logic/offeringsImport.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [X] T018 [US1] 先编写失败的 H5 “dev login → 新增/编辑/停用/恢复 → import preview/commit”纵向测试和未授权重定向：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/playwright.config.ts`
 
 ### Implementation for User Story 1
 
-- [ ] T019 [US1] 实现 offering/import/auth response schemas、共享实体类型和稳定子路径导出：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`packages/kith-inn-v1-shared/package.json`
-- [ ] T020 [US1] 实现 seller-scoped CMS offering routes，仅允许 name/mainIngredient/category/active 白名单且不提供 DELETE：`apps/cms/src/app/api/internal/kiv1/offerings/route.ts`、`apps/cms/src/app/api/internal/kiv1/offerings/[id]/route.ts`
-- [ ] T021 [US1] 实现纯文本解析/preview/commit、CMS client 和受 operator middleware 保护的 merchant offering routes：`apps/kith-inn-v1-be/src/domain/offerings/importText.ts`、`apps/kith-inn-v1-be/src/lib/cms/offerings.ts`、`apps/kith-inn-v1-be/src/routes/offerings.ts`、`apps/kith-inn-v1-be/src/app.ts`
-- [ ] T022 [US1] 实现原生 Taro 菜品页、单条表单、停用/恢复和 import preview/conflict/结果 UI：`apps/kith-inn-v1-fe/src/logic/offeringsImport.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T023 [US1] 打通 Playwright 的 CMS seed、3304/3311/10087 三服务启动和数据唯一命名/清理，使 M1-A H5 测试真实经过 BE/CMS：`apps/kith-inn-v1-fe/playwright.config.ts`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [X] T019 [US1] 实现 offering/import/auth response schemas、共享实体类型和稳定子路径导出：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`packages/kith-inn-v1-shared/package.json`
+- [X] T020 [US1] 实现 seller-scoped CMS offering routes，仅允许 name/mainIngredient/category/active 白名单且不提供 DELETE：`apps/cms/src/app/api/internal/kiv1/offerings/route.ts`、`apps/cms/src/app/api/internal/kiv1/offerings/[id]/route.ts`
+- [X] T021 [US1] 实现纯文本解析/preview/commit、CMS client 和受 operator middleware 保护的 merchant offering routes：`apps/kith-inn-v1-be/src/domain/offerings/importText.ts`、`apps/kith-inn-v1-be/src/lib/cms/offerings.ts`、`apps/kith-inn-v1-be/src/routes/offerings.ts`、`apps/kith-inn-v1-be/src/app.ts`
+- [X] T022 [US1] 实现原生 Taro 菜品页、单条表单、停用/恢复和 import preview/conflict/结果 UI：`apps/kith-inn-v1-fe/src/logic/offeringsImport.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T023 [US1] 打通 Playwright 的 CMS seed、3304/3311/10087 三服务启动和数据唯一命名/清理，使 M1-A H5 测试真实经过 BE/CMS：`apps/kith-inn-v1-fe/playwright.config.ts`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ### M1-A PR Gate
 
-- [ ] T024 [US1] 运行 shared/BE/FE 100% coverage、CMS SQLite + PostgreSQL 双 seller tenant 回归、M1-A H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 30 秒登录和 50 行 preview 2 秒预算
-- [ ] T025 [US1] 运行 `pnpm verify`，确认 M1-A 未创建 menu/orders/customer/booking/AI 页面或 route、未修改旧 `@cfp/kith-inn-*` 业务源码，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录 T001–T025 完成状态
-- [ ] T026 [US1] 提交 M1-A ready PR，等待 checks 与 Codex review；逐条修复或解释并 resolve 所有 actionable threads 后停止，M1-B 任务保持未勾选：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T024 [US1] 运行 shared/BE/FE 100% coverage、CMS SQLite + PostgreSQL 双 seller tenant 回归、M1-A H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 30 秒登录和 50 行 preview 2 秒预算
+- [X] T025 [US1] 运行 `pnpm verify`，确认 M1-A 未创建 menu/orders/customer/booking/AI 页面或 route、未修改旧 `@cfp/kith-inn-*` 业务源码，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录 T001–T025 完成状态
+- [X] T026 [US1] 提交 M1-A ready PR，等待 checks 与 Codex review；逐条修复或解释并 resolve 所有 actionable threads 后停止，M1-B 任务保持未勾选：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-A 可独立交付；两个新 workspace 都承载登录/菜品实际功能，没有 M1-B/C 空文件。
 
