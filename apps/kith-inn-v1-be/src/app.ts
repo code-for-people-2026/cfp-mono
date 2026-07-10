@@ -5,6 +5,7 @@ import { authRoutes } from "./routes/auth";
 import { healthRoutes } from "./routes/health";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
+import { customerProfilesRoutes, ordersRoutes } from "./routes/orders";
 
 export function createApp(options: { jwtSecret?: string } = {}) {
   const jwtSecret = options.jwtSecret ?? process.env.KITH_INN_V1_JWT_SECRET;
@@ -15,6 +16,8 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.route("/auth/operator", authRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
+  app.route("/merchant/customer-profiles", customerProfilesRoutes(jwtSecret));
+  app.route("/merchant/orders", ordersRoutes(jwtSecret));
   return app;
 }
 

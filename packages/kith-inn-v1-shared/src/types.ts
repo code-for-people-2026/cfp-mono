@@ -15,6 +15,10 @@ import type {
   importPreviewResponseSchema,
   generateMenusInputSchema,
   generateMenusResponseSchema,
+  cmsCustomerProfileSchema,
+  cmsOrderCreateSchema,
+  customerProfileCreateSchema,
+  customerProfileSchema,
   mealSlotCreateSchema,
   mealSlotSchema,
   mealSlotTargetSchema,
@@ -23,7 +27,13 @@ import type {
   offeringCreateSchema,
   offeringSchema,
   offeringUpdateSchema,
+  manualOrderCreateSchema,
+  manualOrderUpdateSchema,
+  orderListResponseSchema,
+  orderSchema,
+  orderSummarySchema,
   relaxedRuleSchema,
+  sellerSnapshotSchema,
   swapMenuItemResponseSchema
 } from "./api";
 
@@ -50,3 +60,13 @@ export type GenerateMenusInput = z.infer<typeof generateMenusInputSchema>;
 export type GenerateMenusResponse = z.infer<typeof generateMenusResponseSchema>;
 export type SwapMenuItemResponse = z.infer<typeof swapMenuItemResponseSchema>;
 export type RelaxedRule = z.infer<typeof relaxedRuleSchema>;
+export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
+export type CustomerProfile = z.infer<typeof customerProfileSchema>;
+export type CmsCustomerProfile = z.infer<typeof cmsCustomerProfileSchema>;
+export type CustomerProfileCreate = z.infer<typeof customerProfileCreateSchema>;
+export type Order = z.infer<typeof orderSchema>;
+export type ManualOrderCreate = z.infer<typeof manualOrderCreateSchema>;
+export type ManualOrderUpdate = z.infer<typeof manualOrderUpdateSchema>;
+export type CmsOrderCreate = z.infer<typeof cmsOrderCreateSchema>;
+export type OrderSummary = z.infer<typeof orderSummarySchema>;
+export type OrderListResponse = z.infer<typeof orderListResponseSchema>;

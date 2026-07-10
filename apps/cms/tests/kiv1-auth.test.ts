@@ -11,6 +11,7 @@ vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 import {
   findOwned,
   hasSellerField,
+  isUniqueConflict,
   operatorScope,
   servicePayload
 } from "../src/lib/kiv1-internal";
@@ -169,5 +170,16 @@ describe("seller boundary helpers", () => {
       collection: "kiv1_offerings",
       where: { and: [{ id: { equals: 99 } }, { seller: { equals: 7 } }] }
     }));
+  });
+
+  it("recognizes top-level and nested database uniqueness errors only", () => {
+    expect(isUniqueConflict({ status: 409 })).toBe(true);
+    expect(isUniqueConflict(new Error("duplicate key"))).toBe(true);
+    expect(isUniqueConflict({ cause: { code: "SQLITE_CONSTRAINT_UNIQUE" } })).toBe(true);
+    expect(isUniqueConflict({ cause: { code: "23505" } })).toBe(true);
+    const cycle: { cause?: unknown } = {};
+    cycle.cause = cycle;
+    expect(isUniqueConflict(cycle)).toBe(false);
+    expect(isUniqueConflict(new Error("foreign key constraint"))).toBe(false);
   });
 });

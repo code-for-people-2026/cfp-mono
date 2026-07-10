@@ -22,7 +22,7 @@ export default defineConfig(async () => ({
   h5: {
     publicPath: "/",
     router: { mode: "browser" },
-    devServer: { port: 10087 },
+    devServer: { port: 10087, open: false },
     webpackChain(chain, webpack) {
       chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
         { "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? "") }

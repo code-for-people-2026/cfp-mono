@@ -70,8 +70,11 @@ M1 不提供 PATCH/DELETE。
 ## 6. Orders
 
 - `GET /api/internal/kiv1/orders?mealSlotId=`：先验证 meal slot owner，再按 seller+mealSlot 查询。
+- `GET /api/internal/kiv1/orders/:id`：seller-owned detail，供 BE 在草稿编辑前读取当前状态。
 - `POST /api/internal/kiv1/orders`：只允许 BE 已决策后的完整 snapshot；CMS 验证 mealSlot/customerProfile owner，seller stamp，unique 冲突 409。
 - `PATCH /api/internal/kiv1/orders/:id`：seller-owned find 后，只允许 quantity、unitPriceCents、displayName、address、note、status/payment/delivery 与对应 timestamps 白名单。
+
+M1-C1 的 PATCH schema 仅开放 quantity、displayName、address、note；unitPrice/status/payment/delivery 与时间字段由 M1-C2 在状态机落地时再加入，M1-C1 不预建。
 
 CMS 不决定状态迁移；但仍运行 shared input schema、同 seller relationship guard，并拒绝 body 额外 relationship/seller 字段。
 
