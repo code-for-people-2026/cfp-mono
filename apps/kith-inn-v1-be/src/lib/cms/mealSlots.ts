@@ -1,4 +1,8 @@
-import { apiErrorSchema, mealSlotSchema } from "@cfp/kith-inn-v1-shared/api";
+import {
+  apiErrorSchema,
+  mealSlotSchema,
+  menuItemSnapshotSchema
+} from "@cfp/kith-inn-v1-shared/api";
 import type {
   MealSlot,
   MealSlotCreate,
@@ -8,6 +12,9 @@ import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsMealSlotDeps = { fetch?: typeof fetch };
 const apiErrorCodeSchema = apiErrorSchema.pick({ error: true });
+const listedMealSlotSchema = mealSlotSchema.extend({
+  menuItems: menuItemSnapshotSchema.array()
+});
 
 export class CmsMealSlotError extends Error {
   constructor(
@@ -67,7 +74,7 @@ export async function listMealSlots(
   const body = await cmsRequest(`/api/internal/kiv1/meal-slots?${query}`, token, {}, deps);
   const docs = typeof body === "object" && body !== null ? (body as { docs?: unknown }).docs : undefined;
   if (!Array.isArray(docs)) throw new CmsMealSlotError(502, "invalid-cms-response", "餐次服务返回无效数据");
-  const parsed = docs.map((doc) => mealSlotSchema.safeParse(doc));
+  const parsed = docs.map((doc) => listedMealSlotSchema.safeParse(doc));
   if (parsed.some((result) => !result.success)) {
     throw new CmsMealSlotError(502, "invalid-cms-response", "餐次服务返回无效数据");
   }

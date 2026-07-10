@@ -76,7 +76,8 @@ function request(app: ReturnType<typeof mealSlotsRoutes>, path: string, init: Re
 
 describe("merchant meal-slot list", () => {
   it("validates the date range, forwards the operator token and protects the route", async () => {
-    const listMealSlots = vi.fn(async () => [existing]);
+    const incomplete = { ...existing, id: 12, menuItems: existing.menuItems.slice(0, 1) };
+    const listMealSlots = vi.fn(async () => [existing, incomplete]);
     const app = mealSlotsRoutes(SECRET, deps({ listMealSlots }));
     const response = await request(app, "/?from=2026-07-01&to=2026-07-31");
     expect(response.status).toBe(200);
@@ -89,7 +90,8 @@ describe("merchant meal-slot list", () => {
 
 describe("menu generation route", () => {
   it("returns every existing target before writes and succeeds when explicitly retried with replace", async () => {
-    const injected = deps({ listMealSlots: vi.fn(async () => [existing]) });
+    const incomplete = { ...existing, menuItems: existing.menuItems.slice(0, 1) };
+    const injected = deps({ listMealSlots: vi.fn(async () => [incomplete]) });
     const app = mealSlotsRoutes(SECRET, injected);
     const input = { targets: [{ date: existing.date, occasion: existing.occasion }] };
     const conflict = await request(app, "/generate-menus", { method: "POST", body: JSON.stringify(input) });

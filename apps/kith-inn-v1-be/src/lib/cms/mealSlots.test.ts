@@ -47,6 +47,13 @@ describe("CMS meal-slot client", () => {
       { headers: { "x-kith-inn-v1-operator": "jwt" } }
     );
 
+    const incomplete = { ...slot, menuItems: menuItems.slice(0, 1) };
+    await expect(listMealSlots(
+      "jwt",
+      { from: "2026-07-01", to: "2026-07-31" },
+      response({ docs: [incomplete] })
+    )).resolves.toEqual([incomplete]);
+
     const detailDeps = response({ doc: slot });
     await expect(getMealSlot("jwt", 11, detailDeps)).resolves.toEqual(slot);
     expect(detailDeps.fetch).toHaveBeenCalledWith(
