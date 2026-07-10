@@ -176,6 +176,7 @@ v1 商家侧产品身份。它不是 Payload Admin user，也不复用旧 `opera
 - batch、meal slots、createdBy 必须属于同一 v1 seller。
 - `sharePath` 不落库；由固定 route + publicId 生成。
 - batch closed/archived 不删除或取消已有订单。
+- 任意状态的现存 batch 后续都可用于解析 customer session 的 seller；closed/archived 不接受新订单，但不阻断顾客读取自己的历史订单。
 - M0 不实现 publicId 生成和分享动作，只保证字段/唯一约束。
 
 ## `kiv1_orders`
