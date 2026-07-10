@@ -142,6 +142,7 @@ export default function MerchantOfferings() {
   return (
     <View className="page offerings-page">
       <Text className="title">菜品池</Text>
+      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
 
       <View className="card form-card">
         <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>

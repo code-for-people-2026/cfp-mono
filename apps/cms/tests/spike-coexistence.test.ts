@@ -239,6 +239,85 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       }
     });
 
+    it("enforces meal-slot uniqueness and nested offering ownership in PostgreSQL", async () => {
+      const suffix = crypto.randomUUID();
+      const sellerA = await payload.create({
+        collection: "kiv1_sellers",
+        data: { name: `菜单租户 A ${suffix}`, defaultPriceCents: 3000, status: "active" },
+        overrideAccess: true,
+      });
+      const sellerB = await payload.create({
+        collection: "kiv1_sellers",
+        data: { name: `菜单租户 B ${suffix}`, defaultPriceCents: 3000, status: "active" },
+        overrideAccess: true,
+      });
+      const offeringA = await payload.create({
+        collection: "kiv1_offerings",
+        data: { seller: sellerA.id, name: `菜 A ${suffix}`, category: "veg", active: true },
+        overrideAccess: true,
+      });
+      const offeringB = await payload.create({
+        collection: "kiv1_offerings",
+        data: { seller: sellerB.id, name: `菜 B ${suffix}`, category: "veg", active: true },
+        overrideAccess: true,
+      });
+      const item = (offering: string | number, name: string) => ({
+        offering,
+        nameSnapshot: name,
+        mainIngredientSnapshot: null,
+        categorySnapshot: "veg" as const,
+      });
+      const slotA = await payload.create({
+        collection: "kiv1_meal_slots",
+        data: {
+          seller: sellerA.id,
+          date: "2030-01-07",
+          occasion: "lunch",
+          menuItems: [item(offeringA.id, "菜 A")],
+          orderStatus: "draft",
+        },
+        overrideAccess: true,
+      });
+      const slotB = await payload.create({
+        collection: "kiv1_meal_slots",
+        data: {
+          seller: sellerB.id,
+          date: "2030-01-07",
+          occasion: "lunch",
+          menuItems: [item(offeringB.id, "菜 B")],
+          orderStatus: "draft",
+        },
+        overrideAccess: true,
+      });
+
+      try {
+        await expect(payload.create({
+          collection: "kiv1_meal_slots",
+          data: {
+            seller: sellerA.id,
+            date: "2030-01-07",
+            occasion: "lunch",
+            menuItems: [item(offeringA.id, "重复")],
+            orderStatus: "draft",
+          },
+          overrideAccess: true,
+        })).rejects.toThrow();
+        await expect(payload.update({
+          collection: "kiv1_meal_slots",
+          id: slotA.id,
+          data: { menuItems: [item(offeringB.id, "越权")] },
+          overrideAccess: true,
+        })).rejects.toThrow(/跨 seller relationship/);
+      } finally {
+        await payload.delete({ collection: "kiv1_meal_slots", id: slotA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_meal_slots", id: slotB.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_offerings", id: offeringA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_offerings", id: offeringB.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_sellers", id: sellerA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_sellers", id: sellerB.id, overrideAccess: true });
+      }
+    });
+
     it("re-creates partial-unique constraints drizzle push can't express (onInit)", async () => {
       // These three business-critical uniques carry a WHERE clause, so collection
       // `indexes` (no partial-predicate support) won't build them under push.

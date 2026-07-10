@@ -48,6 +48,7 @@ POST/PATCH schema 与 shared offering API schema 一致；CMS 只做字段白名
 ## 4. Meal slots
 
 - `GET /api/internal/kiv1/meal-slots?from=&to=`：seller filter，允许 BE 查询 7 日历史。
+- `GET /api/internal/kiv1/meal-slots/:id`：seller-owned detail，供换菜前读取当前快照；跨 seller 仍返回 404。
 - `POST /api/internal/kiv1/meal-slots`：创建一个完整 target snapshot；冲突 409。
 - `PATCH /api/internal/kiv1/meal-slots/:id`：只允许 menuItems/generatedAt；先验证每个 offering 属于 token seller。
 

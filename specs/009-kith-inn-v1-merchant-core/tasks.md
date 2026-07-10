@@ -90,26 +90,26 @@
 
 ### Tests for User Story 2 ⚠️
 
-- [ ] T027 [US2] M1-A rebase merge 后从最新 `main` 创建 M1-B 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T028 [P] [US2] 先覆盖 meal-slot list/generate/swap 请求响应、31 日范围、20 target 上限、conflict/insufficient/relaxed error schema：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T029 [P] [US2] 先覆盖 2 meat/2 veg/1 soup、active-only、单餐不重复、分类不足无结果、snapshot、同周/同日/7 日字典序评分、同分随机源和 swap 无候选：`apps/kith-inn-v1-be/src/domain/menu/generate.test.ts`
-- [ ] T030 [P] [US2] 先覆盖 CMS meal-slot 日期范围、create unique、seller stamp、PATCH menu 白名单、嵌套 offering owner 和跨 seller 404：`apps/cms/tests/kiv1-meal-slots.test.ts`
-- [ ] T031 [P] [US2] 先覆盖 BE meal-slot CMS client、已有 target 409/确认 replace、分类不足零写入、批量重试和 swap 原子性：`apps/kith-inn-v1-be/src/lib/cms/mealSlots.test.ts`、`apps/kith-inn-v1-be/src/routes/mealSlots.test.ts`
-- [ ] T032 [P] [US2] 先覆盖 FE target 生成、已有菜单确认、relaxed 说明、单项 swap 视图和 API 请求：`apps/kith-inn-v1-fe/src/logic/menu.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T033 [US2] 先扩展失败的 H5 单餐/工作周生成、覆盖确认和换菜关键流：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [X] T027 [US2] M1-A rebase merge 后从最新 `main` 创建 M1-B 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交（起点：`2412603`）
+- [X] T028 [P] [US2] 先覆盖 meal-slot list/generate/swap 请求响应、31 日范围、20 target 上限、conflict/insufficient/relaxed error schema：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [X] T029 [P] [US2] 先覆盖 2 meat/2 veg/1 soup、active-only、单餐不重复、分类不足无结果、snapshot、同周/同日/7 日字典序评分、同分随机源和 swap 无候选：`apps/kith-inn-v1-be/src/domain/menu/generate.test.ts`
+- [X] T030 [P] [US2] 先覆盖 CMS meal-slot 日期范围、create unique、seller stamp、PATCH menu 白名单、嵌套 offering owner 和跨 seller 404：`apps/cms/tests/kiv1-meal-slots.test.ts`
+- [X] T031 [P] [US2] 先覆盖 BE meal-slot CMS client、已有 target 409/确认 replace、分类不足零写入、批量重试和 swap 原子性：`apps/kith-inn-v1-be/src/lib/cms/mealSlots.test.ts`、`apps/kith-inn-v1-be/src/routes/mealSlots.test.ts`
+- [X] T032 [P] [US2] 先覆盖 FE target 生成、已有菜单确认、relaxed 说明、单项 swap 视图和 API 请求：`apps/kith-inn-v1-fe/src/logic/menu.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [X] T033 [US2] 先扩展失败的 H5 单餐/工作周生成、覆盖确认和换菜关键流：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ### Implementation for User Story 2
 
-- [ ] T034 [US2] 实现 meal-slot/generate/swap API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
-- [ ] T035 [US2] 实现 CMS meal-slot list/create/patch，逐项校验 menu offering owner：`apps/cms/src/app/api/internal/kiv1/meal-slots/route.ts`、`apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/route.ts`
-- [ ] T036 [US2] 实现纯菜单生成/评分/swap、CMS client 和 merchant meal-slot routes：`apps/kith-inn-v1-be/src/domain/menu/generate.ts`、`apps/kith-inn-v1-be/src/lib/cms/mealSlots.ts`、`apps/kith-inn-v1-be/src/routes/mealSlots.ts`、`apps/kith-inn-v1-be/src/app.ts`
-- [ ] T037 [US2] 实现原生 Taro 菜单页、日期/午晚 target、覆盖确认、relaxed 提示和 swap UI：`apps/kith-inn-v1-fe/src/logic/menu.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T038 [P] [US2] 核对“近期=目标日前 7 个日历日”和软偏好优先级；仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`
+- [X] T034 [US2] 实现 meal-slot/generate/swap API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [X] T035 [US2] 实现 CMS meal-slot list/create/patch，逐项校验 menu offering owner：`apps/cms/src/app/api/internal/kiv1/meal-slots/route.ts`、`apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/route.ts`
+- [X] T036 [US2] 实现纯菜单生成/评分/swap、CMS client 和 merchant meal-slot routes：`apps/kith-inn-v1-be/src/domain/menu/generate.ts`、`apps/kith-inn-v1-be/src/lib/cms/mealSlots.ts`、`apps/kith-inn-v1-be/src/routes/mealSlots.ts`、`apps/kith-inn-v1-be/src/app.ts`
+- [X] T037 [US2] 实现原生 Taro 菜单页、日期/午晚 target、覆盖确认、relaxed 提示和 swap UI：`apps/kith-inn-v1-fe/src/logic/menu.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T038 [P] [US2] 核对“近期=目标日前 7 个日历日”和软偏好优先级；仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`（实现与既有文档一致，无需修改）
 
 ### M1-B PR Gate
 
-- [ ] T039 [US2] 运行 M1-A 回归、shared/BE/FE coverage、CMS PostgreSQL 嵌套 tenant 回归、菜单 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单餐 3 秒预算和足量池 10 餐次无同周重复菜/同日重复主料
-- [ ] T040 [US2] 运行 `pnpm verify`，确认 M1-B 未预建 orders/customer/booking/AI 页面或 route、未修改旧业务源码，并记录 T027–T040 完成状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T039 [US2] 运行 M1-A 回归、shared/BE/FE coverage、CMS PostgreSQL 嵌套 tenant 回归、菜单 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单餐 3 秒预算和足量池 10 餐次无同周重复菜/同日重复主料
+- [X] T040 [US2] 运行 `pnpm verify`，确认 M1-B 未预建 orders/customer/booking/AI 页面或 route、未修改旧业务源码，并记录 T027–T040 完成状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 - [ ] T041 [US2] 提交 M1-B ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止，M1-C 保持未勾选：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-B 可独立交付；菜单硬约束不可放宽，有限菜品池下软偏好冲突可解释。

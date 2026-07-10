@@ -2,9 +2,14 @@ import type {
   ImportCommitInput,
   ImportCommitResponse,
   ImportPreviewResponse,
+  GenerateMenusInput,
+  GenerateMenusResponse,
+  MealSlot,
   Offering,
   OfferingCreate,
-  OfferingUpdate
+  OfferingUpdate,
+  RelaxedRule,
+  SwapMenuItemResponse
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
 import type { SessionStore } from "../store/session";
@@ -97,6 +102,52 @@ function parseCommit(value: unknown): ImportCommitResponse {
   return body as ImportCommitResponse;
 }
 
+const relaxedRules = [
+  "same-week-offering",
+  "same-day-main-ingredient",
+  "recent-offering",
+  "recent-main-ingredient"
+] as const;
+
+function parseMealSlot(value: unknown): MealSlot {
+  const slot = record(value);
+  const items = Array.isArray(slot?.menuItems) ? slot.menuItems.map(record) : [];
+  const validItems = items.length === 5 && items.every((item) => item &&
+    validId(item.offeringId) &&
+    typeof item.nameSnapshot === "string" && item.nameSnapshot !== "" &&
+    (item.mainIngredientSnapshot === null || typeof item.mainIngredientSnapshot === "string") &&
+    (["meat", "veg", "soup"] as const).includes(item.categorySnapshot as MealSlot["menuItems"][number]["categorySnapshot"]));
+  if (!slot || !validId(slot.id) || !validId(slot.sellerId) ||
+    typeof slot.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(slot.date) ||
+    !(slot.occasion === "lunch" || slot.occasion === "dinner") || !validItems ||
+    !(slot.orderStatus === "draft" || slot.orderStatus === "open" || slot.orderStatus === "closed") ||
+    !(slot.priceCents === null || (typeof slot.priceCents === "number" && Number.isInteger(slot.priceCents) && slot.priceCents >= 0)) ||
+    !(slot.generatedAt === null || typeof slot.generatedAt === "string")) {
+    throw new ApiError(502, "invalid-api-response", "菜单数据无效");
+  }
+  return slot as MealSlot;
+}
+
+function parseRelaxedRules(value: unknown): RelaxedRule[] {
+  if (!Array.isArray(value) || value.some((rule) =>
+    typeof rule !== "string" || !relaxedRules.includes(rule as RelaxedRule))) {
+    throw new ApiError(502, "invalid-api-response", "菜单数据无效");
+  }
+  return value as RelaxedRule[];
+}
+
+function parseGeneration(value: unknown): GenerateMenusResponse {
+  const body = record(value);
+  if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "菜单数据无效");
+  return { docs: body.docs.map(parseMealSlot), relaxedRules: parseRelaxedRules(body.relaxedRules) };
+}
+
+function parseSwap(value: unknown): SwapMenuItemResponse {
+  const body = record(value);
+  if (!body) throw new ApiError(502, "invalid-api-response", "菜单数据无效");
+  return { doc: parseMealSlot(body.doc), relaxedRules: parseRelaxedRules(body.relaxedRules) };
+}
+
 type ClientOptions = {
   request: RequestAdapter;
   sessions: SessionStore;
@@ -174,6 +225,24 @@ export function createApiClient(options: ClientOptions) {
       return parseCommit(await request("/merchant/offerings/import/commit", {
         method: "POST",
         data: input
+      }));
+    },
+    async listMealSlots(from: string, to: string): Promise<MealSlot[]> {
+      const value = await request<unknown>(`/merchant/meal-slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+      const body = record(value);
+      if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "菜单数据无效");
+      return body.docs.map(parseMealSlot);
+    },
+    async generateMenus(input: GenerateMenusInput): Promise<GenerateMenusResponse> {
+      return parseGeneration(await request("/merchant/meal-slots/generate-menus", {
+        method: "POST",
+        data: input
+      }));
+    },
+    async swapMenuItem(mealSlotId: string | number, offeringId: string | number): Promise<SwapMenuItemResponse> {
+      return parseSwap(await request(`/merchant/meal-slots/${encodeURIComponent(mealSlotId)}/swap-menu-item`, {
+        method: "POST",
+        data: { offeringId }
       }));
     }
   };

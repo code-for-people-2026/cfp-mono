@@ -1,5 +1,13 @@
 import { z } from "zod";
-import { offeringCategorySchema, relationshipIdSchema, zonedDateTimeSchema } from "./schemas";
+import {
+  calendarDateSchema,
+  mealSlotOrderStatusSchema,
+  nonNegativeIntegerSchema,
+  occasionSchema,
+  offeringCategorySchema,
+  relationshipIdSchema,
+  zonedDateTimeSchema
+} from "./schemas";
 
 export const operatorSessionSchema = z.object({
   operatorId: relationshipIdSchema,
@@ -133,6 +141,98 @@ export const importCommitResponseSchema = z.object({
     skipped: z.number().int().nonnegative(),
     failed: z.number().int().nonnegative()
   }).strict()
+}).strict();
+
+export const relaxedRuleSchema = z.enum([
+  "same-week-offering",
+  "same-day-main-ingredient",
+  "recent-offering",
+  "recent-main-ingredient"
+]);
+
+export const menuItemSnapshotSchema = z.object({
+  offeringId: relationshipIdSchema,
+  nameSnapshot: shortText,
+  mainIngredientSnapshot: mainIngredient,
+  categorySnapshot: offeringCategorySchema
+}).strict();
+
+export const mealSlotTargetSchema = z.object({
+  date: calendarDateSchema,
+  occasion: occasionSchema
+}).strict();
+
+const dateNumber = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
+const validRange = ({ from, to }: { from: string; to: string }) => {
+  const days = (dateNumber(to) - dateNumber(from)) / 86_400_000;
+  return days >= 0 && days <= 30;
+};
+
+export const mealSlotRangeSchema = z.object({
+  from: calendarDateSchema,
+  to: calendarDateSchema
+}).strict().refine(validRange, { message: "日期范围最多 31 天" });
+
+export const mealSlotSchema = z.object({
+  id: relationshipIdSchema,
+  sellerId: relationshipIdSchema,
+  date: calendarDateSchema,
+  occasion: occasionSchema,
+  menuItems: z.array(menuItemSnapshotSchema).length(5),
+  orderStatus: mealSlotOrderStatusSchema,
+  priceCents: nonNegativeIntegerSchema.nullable(),
+  generatedAt: zonedDateTimeSchema.nullable()
+}).strict();
+
+export const mealSlotCreateSchema = z.object({
+  date: calendarDateSchema,
+  occasion: occasionSchema,
+  menuItems: z.array(menuItemSnapshotSchema).length(5),
+  generatedAt: zonedDateTimeSchema
+}).strict();
+
+export const mealSlotUpdateSchema = z.object({
+  menuItems: z.array(menuItemSnapshotSchema).length(5),
+  generatedAt: zonedDateTimeSchema
+}).strict();
+
+const uniqueTargets = z.array(mealSlotTargetSchema).min(1).max(100).transform((targets) => [
+  ...new Map(targets.map((target) => [`${target.date}:${target.occasion}`, target])).values()
+]).refine((targets) => targets.length <= 20, { message: "一次最多生成 20 个餐次" });
+
+export const generateMenusInputSchema = z.object({
+  targets: uniqueTargets,
+  replaceExisting: z.boolean().default(false)
+}).strict();
+
+export const generateMenusResponseSchema = z.object({
+  docs: z.array(mealSlotSchema),
+  relaxedRules: z.array(relaxedRuleSchema)
+}).strict();
+
+export const swapMenuItemInputSchema = z.object({
+  offeringId: relationshipIdSchema
+}).strict();
+
+export const swapMenuItemResponseSchema = z.object({
+  doc: mealSlotSchema,
+  relaxedRules: z.array(relaxedRuleSchema)
+}).strict();
+
+export const mealSlotsExistErrorSchema = z.object({
+  error: z.literal("meal-slots-exist"),
+  message: z.string().min(1),
+  existingTargets: z.array(mealSlotTargetSchema).min(1)
+}).strict();
+
+export const offeringPoolInsufficientErrorSchema = z.object({
+  error: z.literal("offering-pool-insufficient"),
+  message: z.string().min(1),
+  shortages: z.array(z.object({
+    category: offeringCategorySchema,
+    required: z.number().int().positive(),
+    available: z.number().int().nonnegative()
+  }).strict()).min(1)
 }).strict();
 
 export type OperatorSessionData = z.infer<typeof operatorSessionSchema>;
