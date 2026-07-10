@@ -113,7 +113,8 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
     const parsed = mealSlotRangeSchema.safeParse({ from: c.req.query("from"), to: c.req.query("to") });
     if (!parsed.success) return c.json({ error: "invalid-date-range", message: "日期范围无效" }, 400);
     try {
-      return c.json({ docs: await deps.listMealSlots(c.get("operatorToken"), parsed.data) });
+      const docs = await deps.listMealSlots(c.get("operatorToken"), parsed.data);
+      return c.json({ docs: docs.filter(({ menuItems }) => menuItems.length === 5) });
     } catch (error) {
       return dependencyError(c, error);
     }
