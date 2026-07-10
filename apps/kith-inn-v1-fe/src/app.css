@@ -48,7 +48,8 @@ button.primary {
   color: #ffffff;
 }
 
-.offerings-page {
+.offerings-page,
+.menu-page {
   display: flex;
   flex-direction: column;
   gap: 28rpx;
@@ -101,6 +102,48 @@ button.category.selected {
 }
 
 .meta {
+  color: #766859;
+  font-size: 24rpx;
+}
+
+.menu-controls input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+  background: #fffdf9;
+}
+
+.menu-controls button {
+  margin-top: 16rpx;
+}
+
+button.danger {
+  background: #6f2b21;
+  color: #ffffff;
+}
+
+.notice {
+  color: #8a4f21;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  padding: 18rpx 0;
+  border-bottom: 1px solid #eee2d5;
+}
+
+.menu-item-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.menu-item-main {
   color: #766859;
   font-size: 24rpx;
 }

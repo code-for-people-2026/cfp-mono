@@ -2,10 +2,10 @@ import { defineConfig } from "@playwright/test";
 
 const reuseExistingServer = !process.env.CI;
 const sharedEnv = {
-  KITH_INN_V1_JWT_SECRET: "m1-a-e2e-jwt-secret",
-  KITH_INN_V1_INTERNAL_TOKEN: "m1-a-e2e-internal-token"
+  KITH_INN_V1_JWT_SECRET: "m1-b-e2e-jwt-secret",
+  KITH_INN_V1_INTERNAL_TOKEN: "m1-b-e2e-internal-token"
 };
-const resetCmsDatabase = "node --input-type=module -e \"import{rmSync}from'node:fs';for(const suffix of ['','-shm','-wal'])rmSync('../cms/payload-m1-a-e2e.db'+suffix,{force:true})\"";
+const resetCmsDatabase = "node --input-type=module -e \"import{rmSync}from'node:fs';for(const suffix of ['','-shm','-wal'])rmSync('../cms/payload-m1-b-e2e.db'+suffix,{force:true})\"";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -28,8 +28,8 @@ export default defineConfig({
         DATABASE_URL_UNPOOLED: "",
         POSTGRES_URL_NON_POOLING: "",
         POSTGRES_URL: "",
-        DATABASE_URI: "file:./payload-m1-a-e2e.db",
-        PAYLOAD_SECRET: "m1-a-e2e-payload-secret"
+        DATABASE_URI: "file:./payload-m1-b-e2e.db",
+        PAYLOAD_SECRET: "m1-b-e2e-payload-secret"
       }
     },
     {

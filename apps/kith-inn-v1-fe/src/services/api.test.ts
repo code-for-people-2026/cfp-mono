@@ -140,6 +140,69 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
+  it("sends and validates meal-slot list/generate/swap requests", async () => {
+    const menuItems = [
+      { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+      { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+      { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+      { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+      { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+    ];
+    const slot = {
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch",
+      menuItems,
+      orderStatus: "draft",
+      priceCents: null,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    };
+    const request = vi.fn<RequestAdapter>(async ({ url }) => {
+      if (url.includes("generate-menus")) return { statusCode: 200, data: { docs: [slot], relaxedRules: ["recent-offering"] } };
+      if (url.includes("swap-menu-item")) return { statusCode: 200, data: { doc: slot, relaxedRules: [] } };
+      return { statusCode: 200, data: { docs: [slot] } };
+    });
+    const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
+    await expect(client.listMealSlots("2026-07-01", "2026-07-31")).resolves.toEqual([slot]);
+    await expect(client.generateMenus({
+      targets: [{ date: "2026-07-13", occasion: "lunch" }],
+      replaceExisting: false
+    })).resolves.toMatchObject({ docs: [slot], relaxedRules: ["recent-offering"] });
+    await expect(client.swapMenuItem(11, 5)).resolves.toMatchObject({ doc: slot, relaxedRules: [] });
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: "http://be.test/merchant/meal-slots?from=2026-07-01&to=2026-07-31"
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/meal-slots/generate-menus",
+      data: { targets: [{ date: "2026-07-13", occasion: "lunch" }], replaceExisting: false }
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/meal-slots/11/swap-menu-item",
+      data: { offeringId: 5 }
+    }));
+  });
+
+  it("rejects malformed meal-slot envelopes", async () => {
+    const store = sessions();
+    for (const data of [null, {}, { docs: [{}] }]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: store }).listMealSlots("2026-07-01", "2026-07-31"))
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    await expect(createApiClient({ request: adapter(200, { docs: [], relaxedRules: ["unknown"] }), sessions: store })
+      .generateMenus({ targets: [{ date: "2026-07-13", occasion: "lunch" }], replaceExisting: false }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: store })
+      .generateMenus({ targets: [{ date: "2026-07-13", occasion: "lunch" }], replaceExisting: false }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, {}), sessions: store }).swapMenuItem(11, 5))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: store }).swapMenuItem(11, 5))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+  });
+
   it("sends bearer for merchant calls and clears session on 401/403", async () => {
     for (const status of [401, 403]) {
       const store = sessions();

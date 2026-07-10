@@ -7,10 +7,18 @@ import {
   importCommitResponseSchema,
   importPreviewInputSchema,
   importPreviewResponseSchema,
+  generateMenusInputSchema,
+  generateMenusResponseSchema,
+  mealSlotRangeSchema,
+  mealSlotSchema,
+  mealSlotsExistErrorSchema,
+  offeringPoolInsufficientErrorSchema,
   offeringCreateSchema,
   offeringSchema,
   offeringUpdateSchema,
   selectSellerInputSchema,
+  swapMenuItemInputSchema,
+  swapMenuItemResponseSchema,
   wxLoginInputSchema
 } from "./api";
 
@@ -125,6 +133,79 @@ describe("offering import API schemas", () => {
     expect(importCommitResponseSchema.safeParse({
       results: [{ line: 1, status: "failed", id: 1 }],
       summary: { created: 0, overwritten: 0, skipped: 0, failed: 1 }
+    }).success).toBe(false);
+  });
+});
+
+describe("meal-slot API schemas", () => {
+  const target = { date: "2026-07-13", occasion: "lunch" };
+  const menuItems = [
+    { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+    { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+    { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+    { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+    { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+  ];
+  const slot = {
+    id: 11,
+    sellerId: 7,
+    ...target,
+    menuItems,
+    orderStatus: "draft",
+    priceCents: null,
+    generatedAt: "2026-07-10T01:00:00.000Z"
+  };
+
+  it("accepts valid 31-day ranges and rejects reversed or longer ranges", () => {
+    expect(mealSlotRangeSchema.parse({ from: "2026-07-01", to: "2026-07-31" })).toEqual({
+      from: "2026-07-01",
+      to: "2026-07-31"
+    });
+    expect(mealSlotRangeSchema.safeParse({ from: "2026-07-31", to: "2026-07-01" }).success).toBe(false);
+    expect(mealSlotRangeSchema.safeParse({ from: "2026-07-01", to: "2026-08-01" }).success).toBe(false);
+    expect(mealSlotRangeSchema.safeParse({ from: "bad", to: "2026-07-01" }).success).toBe(false);
+  });
+
+  it("deduplicates targets, limits the result to 20 and rejects seller injection", () => {
+    expect(generateMenusInputSchema.parse({ targets: [target, target] })).toEqual({
+      targets: [target],
+      replaceExisting: false
+    });
+    const twentyOne = Array.from({ length: 21 }, (_, day) => ({
+      date: `2026-07-${String(day + 1).padStart(2, "0")}`,
+      occasion: "lunch"
+    }));
+    expect(generateMenusInputSchema.safeParse({ targets: twentyOne }).success).toBe(false);
+    expect(generateMenusInputSchema.safeParse({ targets: [target], seller: 99 }).success).toBe(false);
+    expect(generateMenusInputSchema.safeParse({ targets: [] }).success).toBe(false);
+  });
+
+  it("validates meal-slot, generation and swap response envelopes", () => {
+    expect(mealSlotSchema.parse(slot)).toEqual(slot);
+    expect(generateMenusResponseSchema.parse({ docs: [slot], relaxedRules: ["recent-offering"] }).docs).toHaveLength(1);
+    expect(swapMenuItemInputSchema.parse({ offeringId: 1 })).toEqual({ offeringId: 1 });
+    expect(swapMenuItemResponseSchema.parse({ doc: slot, relaxedRules: [] }).doc.id).toBe(11);
+    expect(generateMenusResponseSchema.safeParse({ docs: [slot], relaxedRules: ["unknown"] }).success).toBe(false);
+    expect(swapMenuItemInputSchema.safeParse({ offeringId: 1, seller: 99 }).success).toBe(false);
+    expect(mealSlotSchema.safeParse({ ...slot, menuItems: menuItems.slice(1) }).success).toBe(false);
+  });
+
+  it("validates actionable existing/insufficient errors", () => {
+    expect(mealSlotsExistErrorSchema.parse({
+      error: "meal-slots-exist",
+      message: "餐次已存在",
+      existingTargets: [target]
+    }).existingTargets).toEqual([target]);
+    expect(offeringPoolInsufficientErrorSchema.parse({
+      error: "offering-pool-insufficient",
+      message: "菜品池不足",
+      shortages: [{ category: "soup", required: 1, available: 0 }]
+    }).shortages[0]).toEqual({ category: "soup", required: 1, available: 0 });
+    expect(mealSlotsExistErrorSchema.safeParse({ error: "meal-slots-exist", message: "x", existingTargets: [] }).success).toBe(false);
+    expect(offeringPoolInsufficientErrorSchema.safeParse({
+      error: "offering-pool-insufficient",
+      message: "x",
+      shortages: [{ category: "other", required: 1, available: 0 }]
     }).success).toBe(false);
   });
 });
