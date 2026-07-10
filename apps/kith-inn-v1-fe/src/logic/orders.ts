@@ -1,6 +1,8 @@
 import type {
+  BulkMarkDeliveredResult,
   ManualOrderCreate,
   ManualOrderUpdate,
+  MealSlot,
   Order,
   OrderAction,
   OrderResubmit,
@@ -106,4 +108,44 @@ export function replaceOrder(orders: Order[], replacement: Order): Order[] {
   return [...orders.filter((order) => String(order.id) !== String(replacement.id)), replacement]
     .sort((left, right) => left.address.localeCompare(right.address) ||
       left.displayName.localeCompare(right.displayName, "zh-CN") || String(left.id).localeCompare(String(right.id)));
+}
+
+const sameOrderId = (left: string | number, right: string | number) => String(left) === String(right);
+
+export function toggleBulkOrderSelection(selected: Array<string | number>, order: Order): Array<string | number> {
+  if (order.status !== "confirmed") return selected;
+  return selected.some((id) => sameOrderId(id, order.id))
+    ? selected.filter((id) => !sameOrderId(id, order.id))
+    : [...selected, order.id];
+}
+
+export function bulkDeliveryFeedback(results: BulkMarkDeliveredResult[]): string[] {
+  return results.map((result) => result.status === "updated"
+    ? `订单 ${result.id}：已送`
+    : `订单 ${result.id}：失败（${result.error}）`);
+}
+
+function confirmedChecklistOrders(orders: Order[]): Order[] {
+  return orders.filter((order) => order.status === "confirmed")
+    .sort((left, right) => left.address.localeCompare(right.address) ||
+      left.displayName.localeCompare(right.displayName, "zh-CN") ||
+      String(left.id).localeCompare(String(right.id)));
+}
+
+export function orderChecklistText(mealSlot: MealSlot, orders: Order[]): string {
+  const confirmed = confirmedChecklistOrders(orders);
+  const occasion = mealSlot.occasion === "lunch" ? "午餐" : "晚餐";
+  return [
+    `餐次：${mealSlot.date} ${occasion}`,
+    `总份数：${confirmed.reduce((total, order) => total + order.quantity, 0)}`,
+    ...confirmed.map((order) => `${order.address}｜${order.displayName}｜${order.quantity} 份`)
+  ].join("\n");
+}
+
+export function copyOrderChecklist(
+  mealSlot: MealSlot,
+  orders: Order[],
+  setClipboardData: (options: { data: string }) => Promise<unknown>
+): Promise<unknown> {
+  return setClipboardData({ data: orderChecklistText(mealSlot, orders) });
 }

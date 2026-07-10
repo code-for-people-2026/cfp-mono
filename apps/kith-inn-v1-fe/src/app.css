@@ -211,3 +211,12 @@ button.danger {
   flex-direction: column;
   gap: 10rpx;
 }
+
+.checklist-card button.primary {
+  margin-top: 24rpx;
+}
+
+.order-checklist {
+  display: block;
+  white-space: pre-wrap;
+}

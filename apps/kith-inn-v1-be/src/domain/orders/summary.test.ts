@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Order } from "@cfp/kith-inn-v1-shared";
-import { summarizeOrders } from "./summary";
+import { confirmedOrdersForChecklist, summarizeOrders } from "./summary";
 
 const order = (overrides: Partial<Order> = {}): Order => ({
   id: 31,
@@ -38,5 +38,17 @@ describe("order summary", () => {
     const empty = { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 };
     expect(summarizeOrders([])).toEqual(empty);
     expect(summarizeOrders([order({ status: "draft", confirmedAt: null })])).toEqual(empty);
+  });
+
+  it("keeps only confirmed checklist rows in stable address/name/id order", () => {
+    const sameAddress = order({ id: 34, address: "2B", displayName: "李叔" });
+    expect(confirmedOrdersForChecklist([
+      order({ id: 35, address: "3A", displayName: "王阿姨" }),
+      order({ id: 33, address: "2B", displayName: "阿姨" }),
+      sameAddress,
+      order({ id: 32, address: "2B", displayName: "李叔" }),
+      order({ id: 36, status: "draft", confirmedAt: null }),
+      order({ id: 37, status: "canceled", canceledAt: "2026-07-10T02:00:00.000Z" })
+    ]).map(({ id }) => id)).toEqual([33, 32, 34, 35]);
   });
 });

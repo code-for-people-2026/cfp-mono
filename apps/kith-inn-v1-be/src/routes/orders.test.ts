@@ -364,6 +364,68 @@ describe("merchant order routes", () => {
     });
   });
 
+  it("marks only deduplicated selected orders delivered and returns partial results", async () => {
+    const confirmed = {
+      ...order,
+      status: "confirmed" as const,
+      confirmedAt: "2026-07-10T00:00:00.000Z"
+    };
+    const orders = new Map<string, Order>([
+      ["31", confirmed],
+      ["32", { ...confirmed, id: 32, deliveryStatus: "done", deliveredAt: "2026-07-10T01:00:00.000Z" }],
+      ["33", { ...order, id: 33 }],
+      ["34", { ...confirmed, id: 34 }]
+    ]);
+    const updateOrder = vi.fn(async (_token: string, id: string | number, patch: CmsOrderUpdate) => {
+      const current = orders.get(String(id))!;
+      const updated = { ...current, ...patch };
+      orders.set(String(id), updated);
+      return updated;
+    });
+    const routeDeps = deps({
+      getOrder: vi.fn(async (_token, id) => {
+        if (String(id) === "99") throw new CmsOrderError(404, "not-found", "不存在");
+        if (String(id) === "35") throw new Error("offline");
+        return orders.get(String(id))!;
+      }),
+      updateOrder
+    });
+    const response = await request(ordersRoutes(SECRET, routeDeps), "/bulk-mark-delivered", {
+      method: "POST",
+      body: JSON.stringify({ ids: [31, 32, 33, 99, 35, 31] })
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ results: [
+      { id: 31, status: "updated" },
+      { id: 32, status: "updated" },
+      { id: 33, status: "failed", error: "invalid-order-transition" },
+      { id: 99, status: "failed", error: "not-found" },
+      { id: 35, status: "failed", error: "cms-unavailable" }
+    ] });
+    expect(updateOrder).toHaveBeenCalledTimes(1);
+    expect(updateOrder).toHaveBeenCalledWith(token, 31, {
+      deliveryStatus: "done",
+      deliveredAt: routeDeps.now()
+    });
+    expect(orders.get("34")).toMatchObject({ deliveryStatus: "pending", deliveredAt: null });
+  });
+
+  it("rejects malformed bulk selections without reading or writing orders", async () => {
+    const routeDeps = deps();
+    const app = ordersRoutes(SECRET, routeDeps);
+    for (const body of [
+      "{",
+      JSON.stringify({ ids: [] }),
+      JSON.stringify({ ids: [31], seller: 7 }),
+      JSON.stringify({ ids: Array.from({ length: 101 }, (_, index) => index + 1) })
+    ]) {
+      const response = await request(app, "/bulk-mark-delivered", { method: "POST", body });
+      expect(response.status).toBe(body === "{" ? 400 : 422);
+    }
+    expect(routeDeps.getOrder).not.toHaveBeenCalled();
+    expect(routeDeps.updateOrder).not.toHaveBeenCalled();
+  });
+
   it("rejects unknown/malformed actions and preserves cross-seller 404 with zero writes", async () => {
     const routeDeps = deps();
     const app = ordersRoutes(SECRET, routeDeps);
