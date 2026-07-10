@@ -154,6 +154,24 @@ describe("menu generation route", () => {
     expect(listMealSlots).toHaveBeenCalledWith(token, { from: "2026-07-06", to: "2026-07-13" });
   });
 
+  it("splits distant target history into CMS ranges of at most 31 calendar days", async () => {
+    const listMealSlots = vi.fn(async () => []);
+    const injected = deps({ listMealSlots });
+    const response = await request(mealSlotsRoutes(SECRET, injected), "/generate-menus", {
+      method: "POST",
+      body: JSON.stringify({
+        targets: [
+          { date: "2026-07-01", occasion: "lunch" },
+          { date: "2026-07-25", occasion: "lunch" },
+          { date: "2026-07-31", occasion: "dinner" }
+        ]
+      })
+    });
+    expect(response.status).toBe(200);
+    expect(listMealSlots).toHaveBeenNthCalledWith(1, token, { from: "2026-06-24", to: "2026-07-01" });
+    expect(listMealSlots).toHaveBeenNthCalledWith(2, token, { from: "2026-07-18", to: "2026-07-31" });
+  });
+
   it("recovers a concurrent create conflict only after explicit replace confirmation", async () => {
     const listMealSlots = vi.fn()
       .mockResolvedValueOnce([])
