@@ -3,12 +3,12 @@ import { configDefaults, defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
-    exclude: [...configDefaults.exclude],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    exclude: [...configDefaults.exclude, "tests/e2e/**", "dist/**"],
     coverage: {
       provider: "v8",
       reporter: ["text", "lcov"],
-      include: ["src/api.ts", "src/auth.ts", "src/enums.ts", "src/schemas.ts"],
+      include: ["src/services/**/*.ts", "src/store/**/*.ts", "src/logic/**/*.ts"],
       thresholds: {
         statements: 100,
         branches: 100,

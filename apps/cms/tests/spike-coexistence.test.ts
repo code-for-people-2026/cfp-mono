@@ -69,6 +69,7 @@ describe("shared CMS assembly", () => {
       "chat_messages",
       "customers",
       "fulfillments",
+      "kiv1",
       "menu-plans",
       "offerings",
       "operator-by-openid",
@@ -78,10 +79,10 @@ describe("shared CMS assembly", () => {
     ]);
   });
 
-  it("does not create a second v1 Payload/FE/BE workspace", () => {
+  it("keeps one Payload host while M1 adds the two actual v1 product workspaces", () => {
     expect(existsSync(new URL("../../kith-inn-v1-cms", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("../../kith-inn-v1-fe", import.meta.url))).toBe(false);
-    expect(existsSync(new URL("../../kith-inn-v1-be", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("../../kith-inn-v1-fe", import.meta.url))).toBe(true);
+    expect(existsSync(new URL("../../kith-inn-v1-be", import.meta.url))).toBe(true);
   });
 });
 
