@@ -2,6 +2,8 @@ import type {
   ManualOrderCreate,
   ManualOrderUpdate,
   Order,
+  OrderAction,
+  OrderResubmit,
   OrderSummary
 } from "@cfp/kith-inn-v1-shared";
 import { ApiError } from "../services/api";
@@ -34,18 +36,50 @@ export function buildManualOrderCreate(form: ManualOrderForm): ManualOrderCreate
     : null;
 }
 
-export function buildDraftEdit(form: {
+export function buildOrderEdit(form: {
   quantity: string;
   displayName: string;
   address: string;
   note: string;
-}): ManualOrderUpdate | null {
+}, confirmedImpactAccepted = false): ManualOrderUpdate | null {
   const quantity = positiveInteger(form.quantity);
   const displayName = form.displayName.trim();
   const address = form.address.trim();
   return quantity !== null && displayName && address
-    ? { quantity, displayName, address, note: form.note.trim() || null }
+    ? {
+      quantity,
+      displayName,
+      address,
+      note: form.note.trim() || null,
+      ...(confirmedImpactAccepted ? { confirmedImpactAccepted: true as const } : {})
+    }
     : null;
+}
+
+export function availableOrderActions(order: Order): OrderAction[] {
+  if (order.status === "draft") return ["confirm", "cancel"];
+  if (order.status === "canceled") return ["resubmit"];
+  return [
+    "cancel",
+    order.paymentStatus === "paid" ? "mark-unpaid" : "mark-paid",
+    order.deliveryStatus === "done" ? "mark-pending-delivery" : "mark-delivered"
+  ];
+}
+
+export function orderResubmitInput(order: Order): OrderResubmit {
+  return {
+    quantity: order.quantity,
+    displayName: order.displayName,
+    address: order.address,
+    note: order.note
+  };
+}
+
+export function orderStateText(order: Order): string {
+  const business = { draft: "草稿", confirmed: "已确认", canceled: "已取消" }[order.status];
+  const payment = order.paymentStatus === "paid" ? "已付" : "未付";
+  const delivery = order.deliveryStatus === "done" ? "已送" : "待送";
+  return `业务：${business}；付款：${payment}；配送：${delivery}`;
 }
 
 export function duplicateDraftUpdate(error: unknown, input: ManualOrderCreate): {

@@ -324,8 +324,29 @@ export const manualOrderUpdateSchema = z.object({
   quantity: positiveIntegerSchema.optional(),
   displayName: shortText.optional(),
   address: addressSchema.optional(),
-  note: noteSchema.optional()
-}).strict().refine((value) => Object.keys(value).length > 0, { message: "至少更新一个字段" });
+  note: noteSchema.optional(),
+  confirmedImpactAccepted: z.literal(true).optional()
+}).strict().refine(
+  (value) => [value.quantity, value.displayName, value.address, value.note].some((field) => field !== undefined),
+  { message: "至少更新一个订单字段" }
+);
+
+export const orderResubmitSchema = z.object({
+  quantity: positiveIntegerSchema,
+  displayName: shortText,
+  address: addressSchema,
+  note: noteSchema
+}).strict();
+
+export const orderActionSchema = z.enum([
+  "confirm",
+  "cancel",
+  "resubmit",
+  "mark-paid",
+  "mark-unpaid",
+  "mark-delivered",
+  "mark-pending-delivery"
+]);
 
 export const cmsOrderCreateSchema = z.object({
   mealSlotId: relationshipIdSchema,
@@ -346,6 +367,21 @@ export const cmsOrderCreateSchema = z.object({
   note: noteSchema
 }).strict();
 
+export const cmsOrderUpdateSchema = z.object({
+  quantity: positiveIntegerSchema.optional(),
+  unitPriceCents: nonNegativeIntegerSchema.optional(),
+  displayName: shortText.optional(),
+  address: addressSchema.optional(),
+  note: noteSchema.optional(),
+  status: orderStatusSchema.optional(),
+  paymentStatus: paymentStatusSchema.optional(),
+  paidAt: zonedDateTimeSchema.nullable().optional(),
+  deliveryStatus: deliveryStatusSchema.optional(),
+  deliveredAt: zonedDateTimeSchema.nullable().optional(),
+  confirmedAt: zonedDateTimeSchema.nullable().optional(),
+  canceledAt: zonedDateTimeSchema.nullable().optional()
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "至少更新一个字段" });
+
 export const orderSummarySchema = z.object({
   confirmedOrders: nonNegativeIntegerSchema,
   totalQuantity: nonNegativeIntegerSchema,
@@ -362,6 +398,13 @@ export const orderListResponseSchema = z.object({
 export const orderMutationResponseSchema = z.object({
   doc: orderSchema,
   profile: customerProfileSchema
+}).strict();
+
+export const orderActionResponseSchema = z.object({ doc: orderSchema }).strict();
+
+export const orderStateErrorSchema = z.object({
+  error: z.enum(["invalid-order-transition", "confirmed-impact-confirmation-required"]),
+  message: z.string().min(1)
 }).strict();
 
 const existingOrderSchema = z.object({

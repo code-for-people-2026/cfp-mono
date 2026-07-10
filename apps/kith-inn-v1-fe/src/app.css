@@ -195,11 +195,19 @@ button.danger {
 
 .order-card {
   align-items: center;
+  flex-wrap: wrap;
+}
+
+.order-card button {
+  flex: 1;
+  min-width: 140rpx;
+  margin: 0;
 }
 
 .order-copy {
   display: flex;
   flex: 1;
+  flex-basis: 100%;
   flex-direction: column;
   gap: 10rpx;
 }

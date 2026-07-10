@@ -257,6 +257,11 @@ describe("API client", () => {
           ? { statusCode: 201, data: { doc: profile } }
           : { statusCode: 200, data: { docs: [profile] } };
       }
+      if (url.endsWith("/confirm")) return {
+        statusCode: 200,
+        data: { doc: { ...order, status: "confirmed", confirmedAt: "2026-07-11T00:00:00.000Z" } }
+      };
+      if (url.endsWith("/resubmit")) return { statusCode: 200, data: { doc: order } };
       if (method === "POST") return { statusCode: 201, data: { doc: order, profile } };
       if (method === "PATCH") return { statusCode: 200, data: { doc: { ...order, quantity: 3, totalCents: 9000 } } };
       return {
@@ -278,6 +283,9 @@ describe("API client", () => {
     await expect(client.createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 2, note: null }))
       .resolves.toEqual({ doc: order, profile });
     await expect(client.updateOrder(31, { quantity: 3 })).resolves.toMatchObject({ quantity: 3, totalCents: 9000 });
+    await expect(client.actOnOrder(31, "confirm")).resolves.toMatchObject({ status: "confirmed" });
+    const resubmit = { quantity: 2, displayName: "王阿姨", address: "3A-1201", note: null };
+    await expect(client.actOnOrder(31, "resubmit", resubmit)).resolves.toMatchObject({ status: "draft" });
     expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
       url: "http://be.test/merchant/customer-profiles?query=%E7%8E%8B%20%E9%98%BF%E5%A7%A8"
     }));
@@ -298,6 +306,15 @@ describe("API client", () => {
       method: "PATCH",
       url: "http://be.test/merchant/orders/31",
       data: { quantity: 3 }
+    }));
+    expect(request).toHaveBeenNthCalledWith(6, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/orders/31/confirm"
+    }));
+    expect(request).toHaveBeenNthCalledWith(7, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/orders/31/resubmit",
+      data: resubmit
     }));
   });
 
@@ -325,6 +342,8 @@ describe("API client", () => {
       .createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 1, note: null }))
       .rejects.toMatchObject({ code: "invalid-api-response" });
     await expect(createApiClient({ request: adapter(200, null), sessions: store }).updateOrder(31, { quantity: 2 }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: store }).actOnOrder(31, "confirm"))
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 

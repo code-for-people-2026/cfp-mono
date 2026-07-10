@@ -17,6 +17,7 @@ import type {
   generateMenusResponseSchema,
   cmsCustomerProfileSchema,
   cmsOrderCreateSchema,
+  cmsOrderUpdateSchema,
   customerProfileCreateSchema,
   customerProfileSchema,
   mealSlotCreateSchema,
@@ -29,7 +30,9 @@ import type {
   offeringUpdateSchema,
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
+  orderActionSchema,
   orderListResponseSchema,
+  orderResubmitSchema,
   orderSchema,
   orderSummarySchema,
   relaxedRuleSchema,
@@ -68,5 +71,8 @@ export type Order = z.infer<typeof orderSchema>;
 export type ManualOrderCreate = z.infer<typeof manualOrderCreateSchema>;
 export type ManualOrderUpdate = z.infer<typeof manualOrderUpdateSchema>;
 export type CmsOrderCreate = z.infer<typeof cmsOrderCreateSchema>;
+export type CmsOrderUpdate = z.infer<typeof cmsOrderUpdateSchema>;
+export type OrderAction = z.infer<typeof orderActionSchema>;
+export type OrderResubmit = z.infer<typeof orderResubmitSchema>;
 export type OrderSummary = z.infer<typeof orderSummarySchema>;
 export type OrderListResponse = z.infer<typeof orderListResponseSchema>;

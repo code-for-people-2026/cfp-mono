@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CmsCustomerProfile,
   CmsOrderCreate,
+  CmsOrderUpdate,
   CustomerProfileCreate,
   MealSlot,
-  ManualOrderUpdate,
   Order,
   SellerSnapshot
 } from "@cfp/kith-inn-v1-shared";
@@ -98,11 +98,12 @@ function deps(overrides: Partial<OrdersDeps> = {}): OrdersDeps {
       totalCents: input.quantity * input.unitPriceCents,
       ...input
     })),
-    updateOrder: vi.fn(async (_token: string, _id: string | number, input: ManualOrderUpdate) => ({
+    updateOrder: vi.fn(async (_token: string, _id: string | number, input: CmsOrderUpdate) => ({
       ...order,
       ...input,
-      totalCents: (input.quantity ?? order.quantity) * order.unitPriceCents
+      totalCents: (input.quantity ?? order.quantity) * (input.unitPriceCents ?? order.unitPriceCents)
     })),
+    now: () => "2026-07-11T00:00:00.000Z",
     ...overrides
   };
 }
@@ -168,7 +169,7 @@ describe("merchant customer-profile routes", () => {
   });
 });
 
-describe("merchant draft-order routes", () => {
+describe("merchant order routes", () => {
   it("lists the selected meal slot with confirmed-only summary", async () => {
     const confirmed = {
       ...order,
@@ -255,7 +256,7 @@ describe("merchant draft-order routes", () => {
     }
   });
 
-  it("edits only draft snapshots and rejects non-draft orders", async () => {
+  it("edits draft snapshots and requires explicit confirmed impact acceptance", async () => {
     const routeDeps = deps();
     const app = ordersRoutes(SECRET, routeDeps);
     const response = await request(app, "/31", {
@@ -270,13 +271,115 @@ describe("merchant draft-order routes", () => {
       note: "门口放"
     });
 
-    for (const status of ["confirmed", "canceled"] as const) {
-      const blocked = ordersRoutes(SECRET, deps({ getOrder: vi.fn(async () => ({ ...order, status })) }));
-      expect((await request(blocked, "/31", {
-        method: "PATCH",
-        body: JSON.stringify({ quantity: 4 })
-      })).status).toBe(409);
-    }
+    const confirmedDeps = deps({
+      getOrder: vi.fn(async () => ({
+        ...order,
+        status: "confirmed" as const,
+        confirmedAt: "2026-07-10T00:00:00.000Z"
+      }))
+    });
+    const confirmed = ordersRoutes(SECRET, confirmedDeps);
+    const missingAcceptance = await request(confirmed, "/31", {
+      method: "PATCH",
+      body: JSON.stringify({ quantity: 4 })
+    });
+    expect(missingAcceptance.status).toBe(409);
+    await expect(missingAcceptance.json()).resolves.toMatchObject({ error: "confirmed-impact-confirmation-required" });
+    expect(confirmedDeps.updateOrder).not.toHaveBeenCalled();
+
+    expect((await request(confirmed, "/31", {
+      method: "PATCH",
+      body: JSON.stringify({ quantity: 4, confirmedImpactAccepted: true })
+    })).status).toBe(200);
+    expect(confirmedDeps.updateOrder).toHaveBeenCalledWith(token, "31", { quantity: 4 });
+
+    const canceledDeps = deps({ getOrder: vi.fn(async () => ({ ...order, status: "canceled" as const })) });
+    const canceled = await request(ordersRoutes(SECRET, canceledDeps), "/31", {
+      method: "PATCH",
+      body: JSON.stringify({ quantity: 4 })
+    });
+    expect(canceled.status).toBe(409);
+    await expect(canceled.json()).resolves.toMatchObject({ error: "invalid-order-transition" });
+    expect(canceledDeps.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it("runs single-order lifecycle actions, refreshes summaries and skips idempotent writes", async () => {
+    let current: Order = order;
+    const updateOrder = vi.fn(async (_token: string, _id: string | number, patch: CmsOrderUpdate) => {
+      current = {
+        ...current,
+        ...patch,
+        totalCents: (patch.quantity ?? current.quantity) * (patch.unitPriceCents ?? current.unitPriceCents)
+      };
+      return current;
+    });
+    const routeDeps = deps({
+      getOrder: vi.fn(async () => current),
+      listOrders: vi.fn(async () => [current]),
+      updateOrder
+    });
+    const app = ordersRoutes(SECRET, routeDeps);
+
+    const confirm = await request(app, "/31/confirm", { method: "POST" });
+    expect(confirm.status).toBe(200);
+    await expect(confirm.json()).resolves.toMatchObject({ doc: { status: "confirmed", confirmedAt: routeDeps.now() } });
+    expect((await request(app, "/31/confirm", { method: "POST" })).status).toBe(200);
+    expect(updateOrder).toHaveBeenCalledTimes(1);
+    await expect((await request(app, "/?date=2026-07-13&occasion=lunch")).json()).resolves.toMatchObject({
+      summary: { confirmedOrders: 1, totalQuantity: 2, unpaid: 1, pendingDelivery: 1 }
+    });
+
+    expect((await request(app, "/31/mark-paid", { method: "POST" })).status).toBe(200);
+    expect((await request(app, "/31/mark-delivered", { method: "POST" })).status).toBe(200);
+    expect(current).toMatchObject({ paymentStatus: "paid", deliveryStatus: "done" });
+    expect((await request(app, "/31/cancel", { method: "POST" })).status).toBe(200);
+    await expect((await request(app, "/?date=2026-07-13&occasion=lunch")).json()).resolves.toMatchObject({
+      summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
+    });
+
+    const writesBeforeInvalid = updateOrder.mock.calls.length;
+    const invalid = await request(app, "/31/mark-paid", { method: "POST" });
+    expect(invalid.status).toBe(409);
+    await expect(invalid.json()).resolves.toMatchObject({ error: "invalid-order-transition" });
+    expect(updateOrder).toHaveBeenCalledTimes(writesBeforeInvalid);
+
+    const resubmit = await request(app, "/31/resubmit", {
+      method: "POST",
+      body: JSON.stringify({ quantity: 4, displayName: "王姨", address: "3A-1202", note: "门口放" })
+    });
+    expect(resubmit.status).toBe(200);
+    await expect(resubmit.json()).resolves.toMatchObject({
+      doc: {
+        id: 31,
+        status: "draft",
+        quantity: 4,
+        unitPriceCents: 3000,
+        paymentStatus: "unpaid",
+        deliveryStatus: "pending",
+        confirmedAt: null,
+        canceledAt: null,
+        paidAt: null,
+        deliveredAt: null
+      }
+    });
+  });
+
+  it("rejects unknown/malformed actions and preserves cross-seller 404 with zero writes", async () => {
+    const routeDeps = deps();
+    const app = ordersRoutes(SECRET, routeDeps);
+    expect((await request(app, "/31/bulk-mark-delivered", { method: "POST" })).status).toBe(404);
+    expect((await request(app, "/31/resubmit", {
+      method: "POST",
+      body: JSON.stringify({ quantity: 2 })
+    })).status).toBe(422);
+    expect((await request(app, "/31/resubmit", { method: "POST", body: "{" })).status).toBe(400);
+
+    const foreignDeps = deps({
+      getOrder: vi.fn(async () => { throw new CmsOrderError(404, "not-found", "不存在"); })
+    });
+    const foreign = await request(ordersRoutes(SECRET, foreignDeps), "/31/confirm", { method: "POST" });
+    expect(foreign.status).toBe(404);
+    expect(foreignDeps.updateOrder).not.toHaveBeenCalled();
   });
 
   it("rejects invalid selectors, profile ids, injected fields and malformed JSON", async () => {
@@ -288,6 +391,10 @@ describe("merchant draft-order routes", () => {
       body: JSON.stringify({ mealSlotId: 11, customerProfileId: 21, quantity: 1, seller: 99 })
     })).status).toBe(422);
     expect((await request(app, "/31", { method: "PATCH", body: JSON.stringify({ status: "confirmed" }) })).status).toBe(422);
+    expect((await request(app, "/31", {
+      method: "PATCH",
+      body: JSON.stringify({ confirmedImpactAccepted: true })
+    })).status).toBe(422);
     expect((await request(app, "/31", { method: "PATCH", body: "{" })).status).toBe(400);
 
     const missingSlot = ordersRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => []) }));
@@ -359,7 +466,11 @@ describe("merchant draft-order routes", () => {
       if (url.includes("/meal-slots?")) return new Response(JSON.stringify({ docs: [slot] }));
       if (url.endsWith("/meal-slots/11")) return new Response(JSON.stringify({ doc: slot }));
       if (url.includes("/orders?")) return new Response(JSON.stringify({ docs: [order] }));
-      if (url.endsWith("/orders/31")) return new Response(JSON.stringify({ doc: order }));
+      if (url.endsWith("/orders/31")) return new Response(JSON.stringify({
+        doc: method === "PATCH"
+          ? { ...order, status: "confirmed", confirmedAt: "2026-07-11T00:00:00.000Z" }
+          : order
+      }));
       if (url.endsWith("/orders") && method === "POST") {
         return new Response(JSON.stringify({ doc: order }), { status: 201 });
       }
@@ -383,6 +494,7 @@ describe("merchant draft-order routes", () => {
       method: "PATCH",
       body: JSON.stringify({ quantity: 3 })
     })).status).toBe(200);
+    expect((await request(app, "/31/confirm", { method: "POST" })).status).toBe(200);
     expect(fetch).toHaveBeenCalled();
   });
 });

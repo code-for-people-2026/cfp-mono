@@ -156,23 +156,23 @@
 
 ### Tests for M1-C2 / User Story 3 ⚠️
 
-- [ ] T055 [US3] M1-C1 rebase merge 后从最新 `main` 创建 M1-C2 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T056 [P] [US3] 先覆盖 confirm/cancel/resubmit/payment/delivery action、confirmed edit impact 确认和稳定状态错误 schema，不预建 bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T057 [P] [US3] 先覆盖 draft→confirmed/canceled、canceled→resubmit、confirmed-only payment/delivery、幂等目标状态、时间同步/清理、confirmed 编辑确认和 canceled 普通操作拒绝：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`
-- [ ] T058 [P] [US3] 先覆盖 CMS 生命周期 patch 白名单，以及 BE CMS update client、单条 action route 状态映射、汇总刷新、跨 seller 404 和非法迁移零写入：`apps/cms/tests/kiv1-orders.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
-- [ ] T059 [P] [US3] 先覆盖 FE confirm/cancel/resubmit 与 confirmed edit 二次确认、付款/送达双向按钮、三状态轴展示和汇总刷新：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T060 [US3] 先扩展失败的 H5 “草稿 → 确认 → 已付 → 已送 → 取消 → 明确重提”纵向流，并断言非法操作不改变订单：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [X] T055 [US3] M1-C1 rebase merge 后从最新 `main` 创建 M1-C2 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交（起点：`cd7c0ce`）
+- [X] T056 [P] [US3] 先覆盖 confirm/cancel/resubmit/payment/delivery action、confirmed edit impact 确认和稳定状态错误 schema，不预建 bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [X] T057 [P] [US3] 先覆盖 draft→confirmed/canceled、canceled→resubmit、confirmed-only payment/delivery、幂等目标状态、时间同步/清理、confirmed 编辑确认和 canceled 普通操作拒绝：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`
+- [X] T058 [P] [US3] 先覆盖 CMS 生命周期 patch 白名单，以及 BE CMS update client、单条 action route 状态映射、汇总刷新、跨 seller 404 和非法迁移零写入：`apps/cms/tests/kiv1-orders.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [X] T059 [P] [US3] 先覆盖 FE confirm/cancel/resubmit 与 confirmed edit 二次确认、付款/送达双向按钮、三状态轴展示和汇总刷新：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [X] T060 [US3] 先扩展失败的 H5 “草稿 → 确认 → 已付 → 已送 → 取消 → 明确重提”纵向流，并断言非法操作不改变订单：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ### Implementation for M1-C2 / User Story 3
 
-- [ ] T061 [US3] 实现单条 order action、confirmed edit impact 确认 API schemas 与共享类型，不包含 bulk：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
-- [ ] T062 [US3] 扩展订单纯状态机、CMS 生命周期 patch 白名单与 client，增加 confirm/cancel/resubmit/payment/delivery merchant actions：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
-- [ ] T063 [US3] 扩展订单页的单条生命周期按钮、confirmed edit 与状态操作二次确认、状态与汇总反馈，不增加批量或剪贴板入口：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T064 [P] [US3] 核对取消后重提、confirmed-only 付款/送达和手动 profile 无 openid 规则，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+- [X] T061 [US3] 实现单条 order action、confirmed edit impact 确认 API schemas 与共享类型，不包含 bulk：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [X] T062 [US3] 扩展订单纯状态机、CMS 生命周期 patch 白名单与 client，增加 confirm/cancel/resubmit/payment/delivery merchant actions：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
+- [X] T063 [US3] 扩展订单页的单条生命周期按钮、confirmed edit 与状态操作二次确认、状态与汇总反馈，不增加批量或剪贴板入口：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T064 [P] [US3] 核对取消后重提、confirmed-only 付款/送达和手动 profile 无 openid 规则，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`（核对一致，无需修改）
 
 ### M1-C2 PR Gate
 
-- [ ] T065 [US3] 运行 M1-C1 回归、相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL 生命周期 tenant 回归、M1-C2 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单条生命周期并记录 T055–T065 状态
+- [X] T065 [US3] 运行 M1-C1 回归、相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL 生命周期 tenant 回归、M1-C2 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单条生命周期并记录 T055–T065 状态
 - [ ] T066 [US3] 提交 M1-C2 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；批量送达与剪贴板清单保持未实现：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-C2 可独立交付；单条订单生命周期完整，尚无多单批量和经营清单。

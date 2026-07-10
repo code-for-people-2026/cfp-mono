@@ -2,13 +2,15 @@ import {
   customerProfileCreateSchema,
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
-  orderListQuerySchema
+  orderActionSchema,
+  orderListQuerySchema,
+  orderResubmitSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   CmsCustomerProfile,
   CmsOrderCreate,
+  CmsOrderUpdate,
   CustomerProfileCreate,
-  ManualOrderUpdate,
   MealSlot,
   Order,
   SellerSnapshot
@@ -16,10 +18,13 @@ import type {
 import { Hono, type Context } from "hono";
 import {
   buildDraftOrder,
-  draftOrderPatch,
+  ConfirmedImpactConfirmationRequiredError,
+  editOrderPatch,
   existingOrderSummary,
-  OrderDraftOnlyError,
-  publicCustomerProfile
+  InvalidOrderTransitionError,
+  publicCustomerProfile,
+  resubmitOrderPatch,
+  transitionOrder
 } from "../domain/orders/service";
 import { summarizeOrders } from "../domain/orders/summary";
 import {
@@ -54,7 +59,8 @@ export type OrdersDeps = {
   listOrders: (token: string, mealSlotId: string | number) => Promise<Order[]>;
   getOrder: (token: string, id: string | number) => Promise<Order>;
   createOrder: (token: string, input: CmsOrderCreate) => Promise<Order>;
-  updateOrder: (token: string, id: string | number, input: ManualOrderUpdate) => Promise<Order>;
+  updateOrder: (token: string, id: string | number, input: CmsOrderUpdate) => Promise<Order>;
+  now: () => string;
 };
 
 const defaultDeps: OrdersDeps = {
@@ -66,7 +72,8 @@ const defaultDeps: OrdersDeps = {
   listOrders: (token, mealSlotId) => listOrdersFn(token, mealSlotId),
   getOrder: (token, id) => getOrderFn(token, id),
   createOrder: (token, input) => createOrderFn(token, input),
-  updateOrder: (token, id, input) => updateOrderFn(token, id, input)
+  updateOrder: (token, id, input) => updateOrderFn(token, id, input),
+  now: () => new Date().toISOString()
 };
 
 async function bodyOf(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
@@ -205,11 +212,44 @@ export function ordersRoutes(secret: string, deps: OrdersDeps = defaultDeps) {
     if (!parsed.success) return c.json({ error: "invalid-order-update", message: "订单修改无效" }, 422);
     const token = c.get("operatorToken");
     try {
-      const patch = draftOrderPatch(await deps.getOrder(token, c.req.param("id")), parsed.data);
+      const patch = editOrderPatch(await deps.getOrder(token, c.req.param("id")), parsed.data);
       return c.json({ doc: await deps.updateOrder(token, c.req.param("id"), patch) });
     } catch (error) {
-      if (error instanceof OrderDraftOnlyError) {
-        return c.json({ error: "order-draft-only", message: error.message }, 409);
+      if (error instanceof ConfirmedImpactConfirmationRequiredError) {
+        return c.json({ error: "confirmed-impact-confirmation-required", message: error.message }, 409);
+      }
+      if (error instanceof InvalidOrderTransitionError) {
+        return c.json({ error: "invalid-order-transition", message: error.message }, 409);
+      }
+      return dependencyError(c, error);
+    }
+  });
+
+  app.post("/:id/:action", async (c) => {
+    const action = orderActionSchema.safeParse(c.req.param("action"));
+    if (!action.success) return c.json({ error: "not-found", message: "订单操作不存在" }, 404);
+    const token = c.get("operatorToken");
+    const id = c.req.param("id");
+    try {
+      const order = await deps.getOrder(token, id);
+      let patch: CmsOrderUpdate | null;
+      if (action.data === "resubmit") {
+        const body = await bodyOf(c);
+        if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+        const input = orderResubmitSchema.safeParse(body.value);
+        if (!input.success) return c.json({ error: "invalid-order-resubmit", message: "订单重提数据无效" }, 422);
+        const [mealSlot, seller] = await Promise.all([
+          deps.getMealSlot(token, order.mealSlotId),
+          deps.getSeller(token)
+        ]);
+        patch = resubmitOrderPatch(order, input.data, mealSlot.priceCents ?? seller.defaultPriceCents);
+      } else {
+        patch = transitionOrder(order, action.data, deps.now());
+      }
+      return c.json({ doc: patch === null ? order : await deps.updateOrder(token, id, patch) });
+    } catch (error) {
+      if (error instanceof InvalidOrderTransitionError) {
+        return c.json({ error: "invalid-order-transition", message: error.message }, 409);
       }
       return dependencyError(c, error);
     }
