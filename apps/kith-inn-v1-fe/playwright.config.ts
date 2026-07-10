@@ -23,6 +23,11 @@ export default defineConfig({
       timeout: 120_000,
       env: {
         ...sharedEnv,
+        PAYLOAD_DATABASE_URL: "",
+        DATABASE_URL: "",
+        DATABASE_URL_UNPOOLED: "",
+        POSTGRES_URL_NON_POOLING: "",
+        POSTGRES_URL: "",
         DATABASE_URI: "file:./payload-m1-a-e2e.db",
         PAYLOAD_SECRET: "m1-a-e2e-payload-secret"
       }
