@@ -9,7 +9,7 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   const jwtSecret = options.jwtSecret ?? process.env.KITH_INN_V1_JWT_SECRET;
   if (!jwtSecret) throw new Error("KITH_INN_V1_JWT_SECRET is required");
   const app = new Hono<AppVars>();
-  app.use("*", cors());
+  app.use("*", cors({ allowHeaders: ["Content-Type", "Authorization"] }));
   app.route("/health", healthRoutes());
   app.route("/auth/operator", authRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));

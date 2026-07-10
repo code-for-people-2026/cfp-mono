@@ -13,6 +13,19 @@ describe("createApp", () => {
     await expect(response.json()).resolves.toEqual({ status: "ok" });
   });
 
+  it("allows the H5 JSON and bearer headers during CORS preflight", async () => {
+    const response = await createApp({ jwtSecret: "test-secret" }).request("/auth/operator/dev-login", {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://localhost:10087",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "content-type,authorization"
+      }
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type,Authorization");
+  });
+
   it("fails closed without the dedicated v1 JWT secret", () => {
     delete process.env.KITH_INN_V1_JWT_SECRET;
     expect(() => createApp()).toThrow(/KITH_INN_V1_JWT_SECRET/);
