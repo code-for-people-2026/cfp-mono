@@ -23,6 +23,15 @@ export function commitSummaryText(commit: Pick<ImportCommitResponse, "summary">)
   return `新增 ${created} 行，覆盖 ${overwritten} 行，跳过 ${skipped} 行，失败 ${failed} 行`;
 }
 
+export function commitResultText(result: ImportCommitResponse["results"][number]): string {
+  if (result.status === "failed") return `失败：${result.error}`;
+  return {
+    created: "新增成功",
+    overwritten: "覆盖成功",
+    skipped: "已跳过"
+  }[result.status];
+}
+
 export function setConflictAction(
   conflicts: ImportCommitInput["conflicts"],
   line: number,

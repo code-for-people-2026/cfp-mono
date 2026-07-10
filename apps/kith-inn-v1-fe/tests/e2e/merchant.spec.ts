@@ -42,10 +42,14 @@ test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }
   await page.getByLabel("覆盖第 1 行").click();
   await taroButton(page, /^确认导入$/).click();
   await expect(page.getByText("新增 1 行，覆盖 1 行，跳过 0 行，失败 1 行")).toBeVisible();
+  await expect(page.getByText("第 1 行：覆盖成功")).toBeVisible();
+  await expect(page.getByText("第 2 行：新增成功")).toBeVisible();
+  await expect(page.getByText("第 3 行：失败：每行需要菜名和分类")).toBeVisible();
   await expect(page.getByText(imported, { exact: true })).toBeVisible();
 
   const fiftyRows = Array.from({ length: 50 }, (_, index) => `预算菜-${suffix}-${index} 素`).join("\n");
   await page.getByRole("textbox", { name: "每行一道菜" }).fill(fiftyRows);
+  await expect(taroButton(page, /^确认导入$/)).toHaveCount(0);
   const previewStartedAt = Date.now();
   await taroButton(page, /^预览导入$/).click();
   await expect(page.getByText("可新增 50 行，重名 0 行，错误 0 行")).toBeVisible();

@@ -9,6 +9,7 @@ import type {
   OfferingCategory
 } from "@cfp/kith-inn-v1-shared";
 import {
+  commitResultText,
   commitSummaryText,
   partitionOfferings,
   previewSummaryText,
@@ -118,6 +119,13 @@ export default function MerchantOfferings() {
     }
   };
 
+  const changeImportText = (value: string) => {
+    setImportText(value);
+    setPreview(null);
+    setConflicts([]);
+    setCommit(null);
+  };
+
   return (
     <View className="page offerings-page">
       <Text className="title">菜品池</Text>
@@ -172,7 +180,7 @@ export default function MerchantOfferings() {
           maxlength={20_000}
           placeholder="每行一道菜"
           value={importText}
-          onInput={(event) => setImportText(event.detail.value)}
+          onInput={(event) => changeImportText(event.detail.value)}
         />
         <Button onClick={() => void previewText()}>预览导入</Button>
         {preview && (
@@ -193,7 +201,16 @@ export default function MerchantOfferings() {
             <Button className="primary" onClick={() => void commitText()}>确认导入</Button>
           </View>
         )}
-        {commit && <Text>{commitSummaryText(commit)}</Text>}
+        {commit && (
+          <View>
+            <Text>{commitSummaryText(commit)}</Text>
+            {commit.results.map((result) => (
+              <Text key={`${result.line}-${result.status}`}>
+                第 {result.line} 行：{commitResultText(result)}
+              </Text>
+            ))}
+          </View>
+        )}
       </View>
     </View>
   );

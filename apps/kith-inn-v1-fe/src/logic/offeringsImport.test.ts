@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ImportCommitResponse, ImportPreviewResponse, Offering } from "@cfp/kith-inn-v1-shared";
 import {
+  commitResultText,
   commitSummaryText,
   partitionOfferings,
   previewSummaryText,
@@ -26,6 +27,13 @@ describe("offering view logic", () => {
     expect(previewSummaryText(preview)).toBe("可新增 2 行，重名 1 行，错误 3 行");
     const commit = { summary: { created: 2, overwritten: 1, skipped: 3, failed: 1 } } as ImportCommitResponse;
     expect(commitSummaryText(commit)).toBe("新增 2 行，覆盖 1 行，跳过 3 行，失败 1 行");
+    const results: ImportCommitResponse["results"] = [
+      { line: 1, status: "created", id: 1 },
+      { line: 2, status: "overwritten", id: 2 },
+      { line: 3, status: "skipped", id: 3 },
+      { line: 4, status: "failed", error: "格式错误" }
+    ];
+    expect(results.map(commitResultText)).toEqual(["新增成功", "覆盖成功", "已跳过", "失败：格式错误"]);
   });
 
   it("records only explicit overwrite actions and can return a conflict to default skip", () => {
