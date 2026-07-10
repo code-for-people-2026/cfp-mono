@@ -6,7 +6,7 @@
 
 ## 摘要
 
-M0 不新建 Payload app。新建 `packages/kith-inn-v1-shared` 和 `packages/kith-inn-v1-payload`，由现有 `apps/cms` 聚合七个 `kiv1_` collections 和 v1 seed；所有表继续落在 PostgreSQL `cms` schema。Payload Admin 仍使用旧 `operators`，`kiv1_operators` 只表示 v1 产品身份。M0 不建空的 FE/BE workspace，不实现业务 API 或 AI。
+M0 不新建 Payload app。新建 `packages/kith-inn-v1-shared` 和 `packages/kith-inn-v1-payload`，由现有 `apps/cms` 聚合七个 `kiv1_` collections 和 v1 seed；所有表继续落在 PostgreSQL `cms` schema。Payload Admin 仍使用旧 `operators`，`kiv1_operators` 按 `(seller, wechatOpenid)` 表示 v1 租户成员资格。M0 不建空的 FE/BE workspace，不实现业务 API 或 AI。
 
 ## 技术上下文
 
@@ -24,7 +24,7 @@ M0 不新建 Payload app。新建 `packages/kith-inn-v1-shared` 和 `packages/ki
 
 **性能目标**: 不新增 Payload 常驻进程；七个 v1 collection 不改变旧 API 的查询路径
 
-**约束**: 同一 Payload config、同一 `cms` schema；所有 v1 slug/table 使用 `kiv1_` 前缀；不 import 旧业务 package；Admin 身份与 v1 产品身份分离；遵守 100% coverage 与 knip 门禁
+**约束**: 同一 Payload config、同一 `cms` schema；所有 v1 slug/table 使用 `kiv1_` 前缀；不 import 旧业务 package；所有业务数据带 seller；operator 按 seller + openid 唯一；Admin 身份与 v1 产品身份分离；遵守 100% coverage 与 knip 门禁
 
 **规模 / 作用域**: 1 个 v1 seller、1 个 v1 operator、7 个 v1 collection；只交付模型、共享 host 装配、seed 和验证
 
@@ -47,9 +47,10 @@ M0 不新建 Payload app。新建 `packages/kith-inn-v1-shared` 和 `packages/ki
 1. 分享入口统一为 `/pages/booking/index?batchId=...`；`sharePath` 由公开 id 派生，不落库。
 2. v1 复用 `apps/cms` 和 `cms` schema；所有 collection/table/API slug 使用 `kiv1_` 前缀隔离，不新增 Payload 实例。
 3. `admin.user` 继续是旧 `operators`；`kiv1_operators` 是普通业务身份，后续 v1 API 自己签发和验证 JWT。
-4. `customer_profile.openid` 可空，支持桃子为尚未进入小程序的私聊顾客建资料；未绑定资料不能自动暴露给顾客。
-5. 数据模型由 11 个 collection 收敛为 7 个：合并 menu plan → meal slot、fulfillment → order，batch 直接 has-many meal slots，删除未使用的 order items。
-6. 日历日字段固定存 `YYYY-MM-DD` 文本，避免 datetime 的 UTC 日偏移。
+4. `kiv1_operators` 按 `(seller, wechatOpenid)` 唯一；同一 openid 可管理多个 seller，也可同时作为 customer，当前 session role 决定权限。
+5. `customer_profile.openid` 可空，支持桃子为尚未进入小程序的私聊顾客建资料；未绑定资料不能自动暴露给顾客或按称呼/地址认领。
+6. 数据模型由 11 个 collection 收敛为 7 个：合并 menu plan → meal slot、fulfillment → order，batch 直接 has-many meal slots，删除未使用的 order items。
+7. 日历日字段固定存 `YYYY-MM-DD` 文本，避免 datetime 的 UTC 日偏移。
 
 ## 宪法检查
 
@@ -142,7 +143,7 @@ apps/cms/
 
 - 建立 `@cfp/kith-inn-v1-shared` 的枚举、日期/金额/实体 schema 和类型。
 - 建立 `@cfp/kith-inn-v1-payload` 的七个带 `kiv1_` 前缀的 collection、CMS authenticated access、同 seller 关系守卫和 collection traversal 断言。
-- 用普通复合唯一索引约束菜名、日期餐次和 profile + meal slot 订单坐标。
+- 用普通复合唯一索引约束 operator membership、菜名、日期餐次和 profile + meal slot 订单坐标。
 - 建立只创建 v1 seller/operator 的幂等 seed；不写共享 host 代码。
 
 独立交付标准：两个 package 可被共享 Payload config 装配，测试通过，依赖图中没有旧 `@cfp/kith-inn-*`。
@@ -161,7 +162,7 @@ apps/cms/
 
 - **共享进程 blast radius**: v1 collection 配置错误会影响 `apps/cms` 启动，因此 M0-B 必须保留旧 collection 清单回归和完整 build。
 - **同 schema 命名**: 前缀是硬约束；traversal 测试扫描所有 v1 slug，发现无前缀立即失败。
-- **Admin 与产品权限**: 共享 CMS 登录是可信运维面，允许检查所有 v1 seller；商家/顾客隔离必须在未来 v1 internal route 中按自有 JWT 强制执行。
+- **Admin 与产品权限**: 单 v1 seller 的 M0 暂把共享 CMS 登录视为可信运维面；第二个 seller 上线前必须引入明确的平台管理员边界或关闭共享 Admin 的 v1 全局访问。商家/顾客隔离必须在未来 v1 internal route 中按自有 JWT 强制执行。
 - **schema push**: 只适用于尚无生产数据阶段；首批需保留的真实订单进入前，整个 `apps/cms` 统一转 migration baseline，不能只迁移 v1 子集。
 - **精简模型上限**: 当订单确实需要多个商品明细，或一次订单出现多个独立履约任务时，再拆 `order_items`/`fulfillments`。
 

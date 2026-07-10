@@ -21,7 +21,15 @@ kiv1_orders
 - `apps/cms.admin.user` 继续是旧 `operators`；M0 不修改。
 - `kiv1_operators` 不启用 Payload auth，不需要 email/password。
 - 已认证共享 CMS Admin 是可信运维身份，可以检查 v1 collections；这项权限不等于 v1 商家/顾客产品权限。
+- 上一条只适用于单 v1 seller 的 M0；第二个 seller 上线前必须引入明确的平台管理员边界或关闭共享 Admin 的 v1 全局访问。
 - 未认证请求对全部 v1 collection 默认 deny。
+
+## V1 产品身份
+
+- 一条 `kiv1_operators` 记录是一条 seller membership，按 `(seller, wechatOpenid)` 复合唯一；同一 openid 可以属于多个 seller。
+- 同一 openid 可以同时绑定 customer profile，operator/customer 由当前入口和 v1 JWT role 区分。
+- MVP 的全部 seller 共用一个小程序 AppID；未来接入多个 AppID 前，身份坐标必须增加 appId。
+- 桃子手工创建的无 openid customer profile 只在商家侧可用；未来只能显式认领/合并，不按称呼或地址自动绑定。
 
 ## Admin 命名
 
@@ -45,7 +53,7 @@ kiv1_orders
 ## 产品 API 边界
 
 - 顾客和桃子的小程序不直接使用共享 Payload Admin token。
-- 后续 `apps/kith-inn-v1-be` 使用独立 v1 JWT；CMS internal route 先验证 JWT，再从 claims 推导 seller/openid。
+- 后续 `apps/kith-inn-v1-be` 使用独立 v1 JWT；operator 登录命中多个 seller 时先选择一个，CMS internal route 再从 claims 推导 role/seller/openid。
 - internal route 使用 Payload local API `overrideAccess` 时，必须显式验证记录 owner、状态机和跨 seller 引用。
 - v1 internal route/header/secret 必须使用独立命名，不复用旧 kith-inn 的 route 或 JWT。
 

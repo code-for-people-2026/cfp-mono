@@ -53,6 +53,7 @@ kiv1_seller
 - 关系写入时，以 `data.seller` 或更新前原记录 seller 作为有效 seller，逐项校验目标记录属于同一 seller。
 - 共享 Payload Admin 是可信运维面；未认证请求直接访问 v1 collection 时默认 deny。
 - 后续产品 internal route 使用 `overrideAccess` 时，必须从已验证 v1 JWT 推导 seller/openid，并显式做 owner、状态机和关系校验。
+- MVP 所有 seller 共用一个小程序 AppID；若未来接入多个 AppID，operator/profile/order 身份坐标必须增加 appId。
 - 日历日保存为合法 `YYYY-MM-DD` 文本并按 Asia/Shanghai 解释；真实时刻保存带时区 datetime。
 - 金额统一为整数分；份数统一为正整数。
 - seller 永不物理删除；历史相关实体优先停用或改状态。
@@ -159,18 +160,20 @@ v1 商家侧产品身份，不是 Payload Admin user。
 | 字段 | 类型 | 约束/说明 |
 |---|---|---|
 | `seller` | relationship | 必填 → `kiv1_sellers` |
-| `wechatOpenid` | text | 必填，全局 unique；Admin 列表不完整展示 |
+| `wechatOpenid` | text | 必填；与 seller 组成复合 unique，Admin 列表不完整展示 |
 | `active` | checkbox | 必填，默认 true |
 
 规则：
 
 - 不设置 `auth: true`，不生成 email/password。
-- 后续 v1 backend 用 code2Session 得到 openid，查有效 operator 后签发自己的 JWT。
+- 一条 operator 记录表示“某 openid 在某 seller 的成员资格”；同一 openid 可以管理多个 seller。
+- 后续 v1 backend 用 code2Session 得到 openid：只命中一个 seller 时直接签发 JWT，命中多个时先选择 seller。
+- 同一 openid 也可以绑定 customer profile；operator/customer 由 session role 区分。
 - MVP 只有 owner 行为，不维护尚无权限差异的 role 字段。
 
 索引：
 
-- unique `wechatOpenid`
+- unique `(seller, wechatOpenid)`
 - `seller`
 
 ### `kiv1_customer_profiles`
@@ -192,6 +195,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 - 桃子为私聊顾客创建 profile 时 openid 可以为空。
 - 顾客只能读取 `seller + 当前 openid + active=true` 的 profile。
 - 不按相同称呼或地址自动绑定 openid。
+- 无 openid profile 未来只能经显式认领/合并绑定；MVP 允许顾客新建一条自己的 profile，旧手动资料继续只在商家侧可见。
 - 同一 openid 可有多条 profile；同一地址可被多人分别保存。
 - profile 修改/停用不影响历史订单快照。
 
@@ -403,12 +407,13 @@ confirmed + done → pending + deliveredAt=null
 
 - `apps/cms.admin.user` 仍是旧 `operators`。
 - 已认证 Admin 是可信运维身份，可检查所有 v1 seller 数据。
+- 上一条只适用于单 v1 seller 的 M0；第二个 seller 上线前必须引入明确的平台管理员边界或关闭共享 Admin 的 v1 全局访问。
 - 未认证 Payload collection 请求默认 deny。
 - `kiv1_operators` 不提供 Payload 登录，不与旧 operator 建 relationship。
 
 ### V1 operator session
 
-- v1 backend 验证微信 code 后按 `kiv1_operators.wechatOpenid` 登录。
+- v1 backend 验证微信 code 后按 `kiv1_operators.wechatOpenid` 查询 seller memberships；多条时先选择 seller。
 - operator JWT 只能访问 claims.sellerId。
 - CMS internal route 使用 `overrideAccess` 时必须重新验证 JWT、目标 seller 和关系 owner。
 
@@ -436,7 +441,7 @@ confirmed + done → pending + deliveredAt=null
 
 ## 10. 最小索引清单
 
-- `kiv1_operators.wechatOpenid` unique
+- `kiv1_operators (seller, wechatOpenid)` unique
 - `kiv1_customer_profiles (seller, openid, active)`
 - `kiv1_offerings (seller, name)` unique
 - `kiv1_offerings (seller, active, category)`

@@ -18,6 +18,7 @@
 8. **商家确认锁单**：顾客提交是 `draft`；桃子确认后 `confirmed`，顾客不能再自助改份数或取消。
 9. **公开文案降风险**：顾客可见文案优先使用“预订登记”，避免“点餐/外卖/团购/平台”等表述。
 10. **最小数据模型**：MVP 只有套餐份数和单次送达，先用七个 collection；出现多商品或多履约任务后再拆表。
+11. **多租户坐标从第一天存在**：所有业务读写包含 seller；operator 唯一键是 `seller + wechatOpenid`，同一微信可管理多个 seller。
 
 ## 2. Monorepo 结构
 
@@ -72,6 +73,7 @@ apps/cms                        # 既有共享 Payload host，M0 装配 v1 colle
 - `kiv1_operators` 是普通 v1 业务 collection，不设置 `auth: true`，不接管 Payload Admin。
 - 未认证请求直接访问 v1 Payload collection 时默认 deny。
 - Payload Admin token 不作为 v1 商家或顾客产品 token。
+- M0 只有一个 v1 seller，允许现有共享 Admin 检查全部 v1 数据；第二个 v1 seller 上线前，必须把共享 Admin 收口为明确的平台管理员身份或关闭其 v1 数据访问，不能继续把任意旧 operator 当作全局管理员。
 
 ### 5.2 商家侧
 
@@ -79,8 +81,9 @@ apps/cms                        # 既有共享 Payload host，M0 装配 v1 colle
 wx.login
   → POST /auth/operator/wx-login
   → code2Session 得到 openid
-  → 按 kiv1_operators.wechatOpenid 查有效 operator
-  → 签发 v1 operator JWT
+  → 查找该 openid 的全部有效 kiv1_operators membership
+  → 只有一个 seller 时直接选择；多个 seller 时让 operator 选择
+  → 为选中的 seller 签发 v1 operator JWT
 ```
 
 operator JWT 至少包含：
@@ -91,6 +94,10 @@ operator JWT 至少包含：
 - `exp`
 
 商家 API 只能访问 JWT `sellerId` 下的数据。MVP 只有 owner 行为，不预建没有权限差异的 helper 角色。
+
+`kiv1_operators` 使用 `(seller, wechatOpenid)` 复合唯一，不把 openid 设为全局唯一。同一微信可以管理多个 seller，也可以用同一 openid 在顾客入口建立 customer session；JWT role 决定当前权限。
+
+MVP 假设所有 seller 使用同一个小程序 AppID，因此同一微信得到同一个 openid。若未来一个平台接入多个 AppID，必须先把身份坐标升级为 `appId + openid`，不能跨 AppID 直接比较 openid。
 
 ### 5.3 顾客侧
 
@@ -205,6 +212,7 @@ POST   /customer/orders/:id/cancel
 - 顾客自己创建 profile 时 openid 必须来自 customer JWT。
 - 桃子手动创建的 profile 可以没有 openid；这类资料只在商家侧可见。
 - 不按称呼/地址自动绑定 openid。
+- 无 openid profile 后续只能通过显式认领/合并流程绑定；MVP 允许顾客先新建一条 openid-bound profile，旧手动订单保持商家侧可见。
 - profile 修改不影响订单中的称呼/地址快照；删除是 `active=false`。
 
 ### 订单
@@ -216,6 +224,7 @@ POST   /customer/orders/:id/cancel
 - paymentStatus 与 deliveryStatus 直接放在 order 上，互相独立。
 - 桃子可修改/取消 confirmed order，但必须提示影响备餐/送餐。
 - 手动订单只有在保存了已验证的 customerOpenid 时才会出现在该顾客“我的订单”。
+- 桃子进入同一小程序时也有自己的 openid；同一个值可以出现在 operator membership 和她自己的 customer profile/order 中，不发生角色冲突。
 
 ## 8. 数据模型摘要
 
@@ -266,6 +275,7 @@ MVP 主链路不使用 AI。
 - 未认证请求不能直接访问 v1 Payload collection。
 - 所有 v1 slug/table 使用 `kiv1_` 前缀，旧 collection 不变。
 - 跨 v1 seller relationship 被拒绝，包括 batch has-many 和菜单嵌套 offering。
+- 同一 openid 可拥有多个 seller membership；operator 登录在多个 seller 时必须显式选择，JWT 只含一个 sellerId。
 - 顾客只能看到当前 openid 的 profiles/orders；无 openid 手动资料不暴露。
 - draft 可由顾客改份数/取消，confirmed 不可改。
 - batch/meal slot 关闭后不能新增订单。
