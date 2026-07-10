@@ -8,6 +8,22 @@ test("未授权访问菜品页会回到登录", async ({ page }) => {
   await expect(taroButton(page, /^开发登录$/)).toBeVisible();
 });
 
+test("成员资格停用后显示明确提示并回到登录", async ({ page }) => {
+  await page.route("**/merchant/offerings?active=all", async (route) => {
+    await route.fulfill({
+      status: 403,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "membership-inactive", message: "商家身份已停用" })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/login\/index/);
+  await expect(page.getByText("商家身份已停用", { exact: true })).toBeVisible();
+  await expect(page.getByText("菜品加载失败", { exact: true })).toHaveCount(0);
+});
+
 test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const original = `测试菜-${suffix}`;

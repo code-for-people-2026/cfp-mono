@@ -21,6 +21,7 @@ const api = createApiClient({ request, sessions });
 
 export default function MerchantLogin() {
   const [selection, setSelection] = useState<SellerSelectionResponse | null>(null);
+  const membershipInactive = Taro.getCurrentInstance().router?.params.reason === "membership-inactive";
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "offerings") {
@@ -70,6 +71,7 @@ export default function MerchantLogin() {
     <View className="page login-page">
       <Text className="title">街坊味</Text>
       <Text className="subtitle">桃子的商家工作台</Text>
+      {membershipInactive && <Text>商家身份已停用</Text>}
       {selection ? (
         <View className="card seller-list">
           <Text className="section-title">请选择本次经营的商家</Text>

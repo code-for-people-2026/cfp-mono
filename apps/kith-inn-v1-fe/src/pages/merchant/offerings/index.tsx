@@ -16,7 +16,7 @@ import {
   setConflictAction
 } from "@/logic/offeringsImport";
 import { merchantRoute } from "@/logic/login";
-import { createApiClient, type RequestAdapter } from "@/services/api";
+import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
 
 const storage: Storage = {
@@ -32,8 +32,14 @@ const request: RequestAdapter = async (options) => {
 const api = createApiClient({
   request,
   sessions,
-  onAuthFailure: () => void Taro.redirectTo({ url: "/pages/merchant/login/index" })
+  onAuthFailure: (status) => {
+    const reason = status === 403 ? "?reason=membership-inactive" : "";
+    void Taro.redirectTo({ url: `/pages/merchant/login/index${reason}` });
+  }
 });
+
+const handledAuthFailure = (error: unknown) =>
+  error instanceof ApiError && (error.status === 401 || error.status === 403);
 
 const CATEGORIES: Array<{ value: OfferingCategory; label: string }> = [
   { value: "meat", label: "荤" },
@@ -59,7 +65,10 @@ export default function MerchantOfferings() {
     if (merchantRoute(sessions.getSession()) === "login") {
       void Taro.redirectTo({ url: "/pages/merchant/login/index" });
     } else {
-      void load().catch(() => Taro.showToast({ title: "菜品加载失败", icon: "none" }));
+      void load().catch((error: unknown) => {
+        if (handledAuthFailure(error)) return;
+        return Taro.showToast({ title: "菜品加载失败", icon: "none" });
+      });
     }
   }, []);
 
@@ -78,7 +87,8 @@ export default function MerchantOfferings() {
         : await api.updateOffering(editingId, input);
       setOfferings((current) => [...current.filter((item) => String(item.id) !== String(doc.id)), doc]);
       resetForm();
-    } catch {
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: "菜品保存失败", icon: "none" });
     }
   };
@@ -94,7 +104,8 @@ export default function MerchantOfferings() {
     try {
       const doc = await api.updateOffering(offering.id, { active });
       setOfferings((current) => current.map((item) => String(item.id) === String(doc.id) ? doc : item));
-    } catch {
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: active ? "恢复失败" : "停用失败", icon: "none" });
     }
   };
@@ -104,7 +115,8 @@ export default function MerchantOfferings() {
       setPreview(await api.previewOfferingImport(importText));
       setConflicts([]);
       setCommit(null);
-    } catch {
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: "导入预览失败", icon: "none" });
     }
   };
@@ -114,7 +126,8 @@ export default function MerchantOfferings() {
       const result = await api.commitOfferingImport({ text: importText, conflicts });
       setCommit(result);
       await load();
-    } catch {
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: "导入提交失败", icon: "none" });
     }
   };
