@@ -48,6 +48,11 @@ describe("menu target view logic", () => {
     expect(buildWorkWeekTargets("2026-07-10", [])).toEqual([]);
     expect(buildMenuRange("2026-07-10")).toEqual({ from: "2026-07-10", to: "2026-08-09" });
     expect(buildMenuRange("bad")).toBeNull();
+    for (const invalidDate of ["2026-13-01", "2026-02-30"]) {
+      expect(buildSingleTarget(invalidDate, "lunch")).toEqual([]);
+      expect(buildWorkWeekTargets(invalidDate, ["lunch"])).toEqual([]);
+      expect(buildMenuRange(invalidDate)).toBeNull();
+    }
   });
 
   it("recognizes existing-menu confirmation without treating other errors as conflicts", () => {
