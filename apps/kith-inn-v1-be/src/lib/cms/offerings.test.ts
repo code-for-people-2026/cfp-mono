@@ -63,6 +63,12 @@ describe("CMS offering client", () => {
 
   it("uses stable fallbacks for malformed CMS responses", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(listOfferings("jwt", "all", response({ error: "offering-name-conflict" }, 409)))
+      .rejects.toMatchObject({
+        status: 409,
+        code: "offering-name-conflict",
+        message: "菜品服务失败"
+      });
     await expect(listOfferings("jwt", "all", response("bad", 500))).rejects.toMatchObject({
       code: "cms-offering-failed",
       message: "菜品服务失败"

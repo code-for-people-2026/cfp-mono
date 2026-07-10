@@ -3,6 +3,7 @@ import type { Offering, OfferingCreate, OfferingUpdate } from "@cfp/kith-inn-v1-
 
 export const KIV1_OPERATOR_HEADER = "x-kith-inn-v1-operator";
 export type CmsOfferingDeps = { fetch?: typeof fetch };
+const apiErrorCodeSchema = apiErrorSchema.pick({ error: true });
 
 export class CmsOfferingError extends Error {
   constructor(
@@ -36,9 +37,10 @@ async function cmsRequest(
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const parsed = apiErrorSchema.safeParse(body);
+    const codeOnly = apiErrorCodeSchema.safeParse(body);
     throw new CmsOfferingError(
       response.status,
-      parsed.success ? parsed.data.error : "cms-offering-failed",
+      parsed.success ? parsed.data.error : codeOnly.success ? codeOnly.data.error : "cms-offering-failed",
       parsed.success ? parsed.data.message : "菜品服务失败"
     );
   }
