@@ -4,6 +4,7 @@ import type {
   CmsOrderUpdate,
   Order
 } from "@cfp/kith-inn-v1-shared";
+import { KIV1_INTERNAL_HEADER } from "./auth";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsOrderDeps = { fetch?: typeof fetch };
@@ -33,9 +34,13 @@ async function cmsRequest(
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
     ...(init.method ? { method: init.method } : {}),
-    headers: init.data === undefined
-      ? { [KIV1_OPERATOR_HEADER]: token }
-      : { [KIV1_OPERATOR_HEADER]: token, "content-type": "application/json" },
+    headers: {
+      [KIV1_OPERATOR_HEADER]: token,
+      ...(init.data === undefined ? {} : { "content-type": "application/json" }),
+      ...(init.method === "PATCH"
+        ? { [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "" }
+        : {})
+    },
     ...(init.data === undefined ? {} : { body: JSON.stringify(init.data) })
   });
   const body = await response.json().catch(() => ({}));

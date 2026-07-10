@@ -13,12 +13,18 @@ type Kiv1OperatorScope = {
   payload: BasePayload;
 };
 
-export async function servicePayload(req: Request): Promise<BasePayload | NextResponse> {
+export function requireServiceAuth(req: Request): NextResponse | null {
   const expected = process.env.KITH_INN_V1_INTERNAL_TOKEN;
   if (!expected) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   if (req.headers.get(KIV1_INTERNAL_HEADER) !== expected) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  return null;
+}
+
+export async function servicePayload(req: Request): Promise<BasePayload | NextResponse> {
+  const authError = requireServiceAuth(req);
+  if (authError) return authError;
   return getPayload({ config: configPromise });
 }
 

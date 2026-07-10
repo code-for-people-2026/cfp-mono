@@ -1,6 +1,6 @@
 import { cmsOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
-import { findOwned, hasSellerField, operatorScope } from "@/lib/kiv1-internal";
+import { findOwned, hasSellerField, operatorScope, requireServiceAuth } from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../route";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,8 @@ export async function GET(req: Request, { params }: RouteContext) {
 }
 
 export async function PATCH(req: Request, { params }: RouteContext) {
+  const serviceAuthError = requireServiceAuth(req);
+  if (serviceAuthError) return serviceAuthError;
   const scope = await operatorScope(req);
   if (scope instanceof NextResponse) return scope;
   let body: unknown;
