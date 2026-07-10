@@ -33,13 +33,14 @@
 
 ## 决策 3：共享 Admin 身份与 v1 产品身份分离
 
-**Decision**: `apps/cms.admin.user` 保持旧 `operators`；`kiv1_operators` 是普通 collection，不设为 Admin user。共享 CMS 已认证用户是可信运维身份；未来 v1 商家/顾客 API 使用 v1 自有 JWT 和 internal routes。
+**Decision**: `apps/cms.admin.user` 保持旧 `operators`；`kiv1_operators` 是普通 collection，不设为 Admin user。共享 CMS 已认证用户是单 v1 seller 阶段的可信运维身份；未来 v1 商家/顾客 API 使用 v1 自有 JWT 和 internal routes。第二个 v1 seller 上线前必须引入明确的平台管理员边界或关闭共享 Admin 的 v1 全局访问。
 
 **Rationale**:
 
 - 一个 Payload Admin 只能配置一个 user collection；切换到 v1 operator 会破坏旧 Admin 登录。
 - Payload Admin 是内部运维面，不是顾客或商家小程序 API；允许它检查多个项目数据不等于产品权限共享。
 - v1 internal routes 可以像旧项目一样在验 JWT 后用 local API，但必须使用独立 header、secret、route 前缀和 seller/openid 校验。
+- MVP 只有一个 v1 seller，暂时保留现有 Admin 最省改动；把权限收口设为第二个 seller 的发布门槛，可以避免把临时运维假设误当成多租户授权模型。
 
 **Alternatives considered**:
 
@@ -47,7 +48,23 @@
 - **按 openid 把旧 operator 映射到 v1 operator**: 能做 seller-scoped Admin，但每次访问需要异步映射并造成跨项目身份耦合，当前只有可信运维用户，收益不足。
 - **新增全局 CMS admin collection 并迁移旧 Admin**: 长期更整洁，但会改旧认证和 access，超出 M0。
 
-## 决策 4：核心模型收敛为七个 collection
+## 决策 4：operator 按 seller + openid 表示成员资格
+
+**Decision**: `kiv1_operators` 每条记录表示一个 seller membership，使用 `(seller, wechatOpenid)` 复合唯一；同一 openid 可管理多个 seller，也可同时绑定 customer profile。登录时只命中一个 seller 则直接进入，命中多个时先选择 seller。MVP 假设所有 seller 使用同一个小程序 AppID；未来接入多个 AppID 时身份坐标增加 appId。
+
+**Rationale**:
+
+- openid 在同一小程序 AppID 内标识微信用户，不代表用户只能属于一个 seller。
+- 全局 unique 会阻止桃子或平台运营者管理多个 seller；复合唯一正好表达租户成员关系。
+- operator/customer 是权限角色，不是两套微信身份；同一 openid 可以在不同入口签发不同 role 的 session。
+
+**Alternatives considered**:
+
+- **wechatOpenid 全局 unique**: 实现最简单，但第一个多 seller operator 出现时就必须迁移约束和登录流程。
+- **立即拆 users + memberships**: 可复用全局用户资料，但 M0 没有跨租户用户属性，新增 collection 和关联没有实际收益。
+- **要求 operator 使用另一微信身份下单**: 不符合微信身份机制，也增加桃子自己的使用成本。
+
+## 决策 5：核心模型收敛为七个 collection
 
 **Decision**: 只建立 sellers、operators、customer profiles、offerings、meal slots、booking batches、orders。
 
@@ -63,22 +80,23 @@
 - **保留 11 个 collection**: 与旧项目形状接近，但共享 host 会额外承担四组表、关系和一致性逻辑。
 - **全部塞进 orders JSON**: 文件更少，但会失去餐次唯一性和关系完整性。
 
-## 决策 5：顾客资料允许暂不绑定 openid
+## 决策 6：顾客资料允许暂不绑定 openid
 
-**Decision**: `customer_profiles.openid` 可空；顾客自己创建时由会话写入，桃子手动创建时可空。未绑定资料和订单默认只在商家侧可见。
+**Decision**: `customer_profiles.openid` 可空；顾客自己创建时由会话写入，桃子手动创建时可空。未绑定资料和订单默认只在商家侧可见；后续只能通过显式认领/合并绑定，MVP 不做自动匹配。
 
 **Rationale**:
 
 - 私聊顾客可能从未进入小程序，系统不可能拥有其 openid。
 - 仅凭相同称呼或地址自动认领会泄露个人信息。
 - 订单保存 `customerOpenid` 快照，资料未来绑定不会自动暴露历史手工订单。
+- MVP 让顾客另建自己的 openid-bound profile，比提前实现高风险的资料认领和历史订单归属迁移更稳妥。
 
 **Alternatives considered**:
 
 - **profile 强制 openid**: 无法承载私聊补单。
 - **拆 customer 与 address 两张表**: 超出“称呼 + 地址一体”的确认规则。
 
-## 决策 6：业务日期存日历日字符串
+## 决策 7：业务日期存日历日字符串
 
 **Decision**: meal slot 的 `date` 使用经 schema 校验的 `YYYY-MM-DD` 文本；deadline、paidAt、deliveredAt 等时刻使用 ISO datetime。
 
@@ -92,12 +110,13 @@
 - **Payload datetime 存午夜**: 每个边界都要约定 UTC/上海转换。
 - **整数 epoch day**: 可行但不利于 Admin 检查和人工排障。
 
-## 决策 7：使用普通复合唯一约束
+## 决策 8：使用普通复合唯一约束
 
 **Decision**:
 
 - meal slot unique `(seller, date, occasion)`。
 - offering unique `(seller, name)`。
+- operator unique `(seller, wechatOpenid)`。
 - 有 profile 的 order unique `(seller, mealSlot, customerProfile)`；null profile 留给后续接龙兜底。
 - canceled 后再次登记复用同一记录并显式回到 draft。
 
@@ -111,7 +130,7 @@
 - **只靠 beforeChange 查询防重**: 并发下有竞态。
 - **active-status partial unique**: 能保留多条 canceled 历史，但需额外 SQL 和选择逻辑，当前无审计需求。
 
-## 决策 8：沿用共享 schema push 生命周期
+## 决策 9：沿用共享 schema push 生命周期
 
 **Decision**: M0 沿用 `apps/cms` 当前 push 模式，v1 表落在 `cms` schema；首批需保留的真实数据进入前，由整个 shared CMS 建立 migration baseline。
 

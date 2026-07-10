@@ -62,7 +62,8 @@ pnpm --filter @cfp/cms test
 - 所有 v1 collection slug 都以 `kiv1_` 开头，数量正好为七。
 - 未认证默认拒绝；共享 CMS Admin 可检查 v1 数据。
 - 顶层、has-many 和 menuItems 嵌套 relationship 的跨 v1 seller 引用全部被拒绝。
-- 普通复合唯一索引拒绝重复 meal slot、菜名和 profile + slot 订单。
+- 普通复合唯一索引拒绝同 seller 下重复的 operator、meal slot、菜名和 profile + slot 订单。
+- 同一 wechatOpenid 可在两个 seller 下各创建一条 operator membership，且两个 seller 的数据互相隔离。
 - seed 首次创建、再次跳过、共享编排失败后可重试。
 - PostgreSQL `cms` schema 同时含旧表和 `kiv1_` 表；`website`/`public` schema 不出现 v1 表。
 - Payload config 的 schema、Admin user、端口、健康检查和旧 collection 清单不变。

@@ -111,6 +111,7 @@
 - 桃子通过已绑定的 operator 身份进入商家侧。
 - 商家侧只展示桃子的菜品、订餐批次、订单。
 - 顾客从分享卡片进入时不看到商家后台入口。
+- 一个 openid 只绑定一个 seller 时直接进入；未来同一微信管理多个 seller 时，先选择本次要管理的 seller，再签发对应 seller 的 operator session。
 
 ### US-G02 顾客静默识别
 
@@ -122,6 +123,7 @@
 - openid 只作为身份键，不展示给顾客。
 - 获取 openid 失败时不允许提交订单，提示“微信身份识别失败，请重进小程序”。
 - 不调用 `wx.getUserProfile`，不弹头像昵称授权。
+- 同一微信在同一小程序内可以同时是某 seller 的 operator 和 customer；系统按当前入口和 session role 区分，不要求两个 openid。
 
 ### US-G03 顾客资料按 openid 复用
 
@@ -137,6 +139,7 @@
 - 同一顾客多个地址保存为多条 profile；同一地址多人下单也保存为多条 profile，避免误组合。
 - 顾客侧只展示绑定当前 openid 的资料。
 - 桃子替尚未进入小程序的私聊顾客创建资料时，openid 可以为空；这类资料只在商家侧可见，不能按相同称呼或地址自动认领给某个微信用户。
+- 私聊顾客以后进入小程序时，MVP 允许重新建一条 openid-bound profile；历史无 openid profile 的显式认领/合并后置，未确认绑定前不向顾客展示旧资料或旧订单。
 
 ## 4. 菜品池与菜单
 
@@ -354,7 +357,7 @@
 - 桃子可以选择日期、餐次、份数，填写或选择顾客资料。
 - 顾客资料仍按“称呼 + 地址”一条 profile 保存；可选已有资料，也可新建资料。
 - 私聊顾客尚未进入小程序时，新 profile 可以没有 openid；不得根据称呼或地址猜测绑定微信身份。
-- 自己家下单不特殊建模，例如可建一条 profile：“桃子家 · 自家不送”。
+- 自己家下单不特殊建模，例如可建一条 profile：“桃子家 · 自家不送”；桃子希望在顾客侧也看到这张订单时，可把该 profile 绑定她自己的 openid。
 - 手动添加的订单和顾客自助提交的订单进入同一订单列表、同一生命周期。
 - 若命中同一 `customerProfile + mealSlot` 的订单，提示“更新现有订单”而不是静默新增重复订单。
 - 手动添加订单的来源标记为 `manual`，方便以后排查。
@@ -439,7 +442,7 @@
 ## 9. 数据规则
 
 - `seller`：商家/租户，MVP 只有桃子。
-- `operators`：v1 商家侧身份，绑定 v1 seller 和微信 openid；不作为共享 Payload Admin 用户。
+- `operators`：v1 商家侧成员资格，一条记录绑定一个 v1 seller 和一个微信 openid；同一 openid 可管理多个 seller，但每个 seller 只保留一条成员记录；不作为共享 Payload Admin 用户。
 - `customer_profiles`：顾客在某商家下的一条“称呼 + 地址”资料；openid 可空，只有绑定当前 openid 的资料才在顾客侧出现。
 - `offerings`：菜品池。
 - `meal_slots`：某个 `YYYY-MM-DD` 日历日的午餐/晚餐，同时保存菜单快照、价格、截止时间和预订状态。
@@ -450,6 +453,8 @@
 核心约束：
 
 - 同一 `seller + mealSlot + customerProfile` 只保留一条 order；重复提交或取消后重订都复用该记录。
+- operator 唯一坐标是 `seller + wechatOpenid`；customer profile 和 order 的读取范围也始终包含 seller。
+- 同一 openid 可以在不同 seller 下拥有互相隔离的 profiles/orders，也可以在同一 seller 下同时拥有 operator/customer 两种角色。
 - 顾客重复提交同餐次是更新，不是新增。
 - 桃子手动添加同坐标订单也是更新确认，不是新增重复订单。
 - 顾客只能读 `customerOpenid` 等于当前 openid 的订单；不按称呼或地址匹配订单归属。
@@ -516,6 +521,7 @@
 - openid 只能作为后端身份键，不暴露给用户。
 - 顾客首填称呼和地址，之后从历史资料选择；一条历史资料 = 一个称呼 + 一个地址。
 - 桃子可创建无 openid 的私聊顾客资料；此类资料和订单默认只在商家侧可见。
+- 桃子本人使用同一小程序时也有自己的 openid；该 openid 可同时用于 operator 登录和她自己的 customer profile。
 - 订餐批次只允许提交所选餐次。
 - 已关闭餐次不能新增订单，但历史订单可查看。
 - 顾客只读自己的订单生命周期；唯一写权限是截止前修改/取消自己的 draft 订单。

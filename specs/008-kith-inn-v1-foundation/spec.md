@@ -103,7 +103,9 @@
 - 任意 v1 collection 忘记 `kiv1_` 前缀时，装配测试必须失败。
 - v1 collection 数量或顺序变化时，不得改变旧 collection 对外 slug。
 - `kiv1_operators.wechatOpenid` 与旧 `operators.wechatOpenid` 可以值相同，但记录、seller 和 token 语义完全独立。
-- 桃子手动建立的顾客资料可能尚无 openid；此类资料只能通过商家业务 API 使用，不能被顾客自动认领。
+- 同一 openid 可以在不同 seller 下各有一条 `kiv1_operators` membership；同一 seller 下重复时必须拒绝。
+- 同一 openid 可以同时用于 operator membership 和 customer profile/order，当前入口和 JWT role 决定权限。
+- 桃子手动建立的顾客资料可能尚无 openid；此类资料只能通过商家业务 API 使用，不能被顾客自动认领，后续绑定必须经过显式认领/合并。
 - 顾客资料停用后，历史订单快照仍可读。
 - 餐次日期必须按 Asia/Shanghai 的 `YYYY-MM-DD` 日历日解释，不能因 UTC 转换偏移一天。
 - 共享 CMS schema push 或 seed 发生错误时，不能自动 drop/reset 整个 `cms` schema。
@@ -117,11 +119,11 @@
 - **FR-003**: 所有 v1 collection slug 必须以 `kiv1_` 开头，Admin group 必须以“街坊味 v1”开头。
 - **FR-004**: M0 必须建立且只建立七个 v1 业务集合：商家、operator、顾客资料、菜品、餐次、预订批次、订单。
 - **FR-005**: 共享 Payload Admin user 必须继续使用旧 `operators` collection；`kiv1_operators` 是普通 v1 业务 collection，不启用 Payload Admin auth。
-- **FR-006**: v1 collections 必须默认拒绝未认证 Payload 请求；已认证共享 CMS Admin 是可信运维入口，可检查 v1 数据，但不代表 v1 产品权限。
-- **FR-007**: 每个 seller-owned v1 collection 必须带 `seller`；所有关系写入必须校验引用记录属于同一 v1 seller。
+- **FR-006**: v1 collections 必须默认拒绝未认证 Payload 请求；已认证共享 CMS Admin 是可信运维入口，可检查 v1 数据，但不代表 v1 产品权限。第二个 v1 seller 上线前，必须引入明确的平台管理员边界或关闭共享 Admin 的 v1 全局访问。
+- **FR-007**: 每个 seller-owned v1 collection 必须带 `seller`；所有关系写入必须校验引用记录属于同一 v1 seller；operator 必须按 `(seller, wechatOpenid)` 唯一，同一 openid 可以属于多个 seller。
 - **FR-008**: 未来 v1 产品 route 使用 `overrideAccess` 时，必须从已验证的 v1 JWT 推导 seller/openid，并在写入前验证 owner 和跨 seller 引用；不得信任请求体 seller。
 - **FR-009**: 顾客资料必须把称呼和地址保存为一个整体；openid 可以为空，以支持桃子替尚未进入小程序的顾客记单。
-- **FR-010**: 未绑定 openid 的顾客资料不得通过顾客身份查询；系统不得仅凭称呼或地址自动绑定 openid。
+- **FR-010**: 未绑定 openid 的顾客资料不得通过顾客身份查询；系统不得仅凭称呼或地址自动绑定 openid，未来只能通过显式认领/合并流程绑定。
 - **FR-011**: 餐次必须同时承载日期、午/晚、菜单快照、预订状态、截止时间和价格，不建立一对一的独立菜单计划集合。
 - **FR-012**: 预订批次必须直接关联多个餐次，不建立只用于连接批次与餐次的独立集合；分享 path 由公开 id 派生，不落库。
 - **FR-013**: 订单必须直接保存套餐份数、单价快照、称呼/地址快照、确认状态、付款状态和送达状态，不建立订单明细或履约一对一集合。
@@ -134,7 +136,7 @@
 ### 核心实体
 
 - **商家**: v1 的租户根，保存商家名、默认套餐价格和启用状态；不复用旧 seller。
-- **Operator**: v1 商家侧产品身份，绑定一个 v1 seller 和唯一微信身份；不是 Payload Admin user。
+- **Operator**: v1 商家侧成员资格；一条记录绑定一个 seller 和一个微信身份，按 `(seller, wechatOpenid)` 唯一；不是 Payload Admin user。
 - **顾客资料**: 一条“称呼 + 地址”的绑定资料，可选绑定一个 openid；订单保存其快照。
 - **菜品**: 菜名、主料、类别和启用状态，是菜单生成候选池。
 - **餐次**: 某个日历日的午餐或晚餐，包含菜单快照以及预订开放、截止和价格信息。
@@ -155,7 +157,8 @@
 
 - “第一个 milestone”指 `TECH-SPEC.md` 中最先列出的 M0“骨架与数据层”。
 - `website` 继续使用独立 Payload app 和 PostgreSQL `website` schema；本功能只调整共享 `apps/cms`。
-- 共享 `apps/cms` 是可信运维面，目前由旧 kith-inn `operators` 登录；它不是任一产品的公网业务 API。
+- 共享 `apps/cms` 是单 v1 seller 阶段的可信运维面，目前由旧 kith-inn `operators` 登录；它不是任一产品的公网业务 API，第二个 v1 seller 上线前必须收紧其全局权限。
 - MVP 只有桃子，但 v1 seller 仍独立建模；未来其他项目也必须使用自己的 collection 前缀。
+- MVP 的全部 seller 共用一个小程序 AppID，因此可在同一 AppID 内按 openid 比较身份；未来接入多个 AppID 时，身份坐标必须增加 appId。
 - v1 尚无生产数据，沿用 `apps/cms` 当前 schema push 模式；出现需保留的真实数据后统一建立 migration baseline。
 - `apps/kith-inn-v1-be` 和 `apps/kith-inn-v1-fe` 在出现第一个可运行商家功能切片时再创建，不在 M0 建空壳。
