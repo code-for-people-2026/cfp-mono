@@ -196,7 +196,7 @@ POST   /customer/orders/:id/cancel
 - 菜品池只维护菜名、主料、分类、启用状态。
 - 菜单直接保存为 `meal_slot.menuItems` 快照，不建立独立 menu plan。
 - 默认结构先写死为 2 荤 2 素 1 汤。
-- 生成只从启用菜品选；尽量避开近期同菜和同主料。
+- 生成只从启用菜品选；“近期”固定为目标日期前 7 个日历日，同周同菜、同日同主料和近期同菜/主料按固定优先级尽量避开，放宽时返回明确说明。
 - 菜品池不足时返回明确错误，不发明菜。
 - 日历日保存为合法 `YYYY-MM-DD`，统一按 Asia/Shanghai 解释。
 
@@ -300,6 +300,7 @@ MVP 主链路不使用 AI。
 
 ### M1：菜单与商家侧订单
 
+- 按 M1-A“operator 登录 + 菜品池”、M1-B“单餐/一周菜单 + 换菜”、M1-C“商家手动订单闭环”三个顺序 PR 交付；后一个只在前一个合并后开始。
 - 创建 `apps/kith-inn-v1-be` 和 `apps/kith-inn-v1-fe`。
 - 实现 v1 operator 登录和 `/api/internal/kiv1/*` persistence routes。
 - 菜品池 CRUD + 批量导入。
