@@ -110,7 +110,7 @@
 
 - [X] T039 [US2] 运行 M1-A 回归、shared/BE/FE coverage、CMS PostgreSQL 嵌套 tenant 回归、菜单 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单餐 3 秒预算和足量池 10 餐次无同周重复菜/同日重复主料
 - [X] T040 [US2] 运行 `pnpm verify`，确认 M1-B 未预建 orders/customer/booking/AI 页面或 route、未修改旧业务源码，并记录 T027–T040 完成状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
-- [ ] T041 [US2] 提交 M1-B ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止，M1-C 保持未勾选：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T041 [US2] 提交 M1-B ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止，M1-C 保持未勾选：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-B 可独立交付；菜单硬约束不可放宽，有限菜品池下软偏好冲突可解释。
 
