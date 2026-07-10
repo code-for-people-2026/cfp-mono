@@ -2,14 +2,16 @@
 
 ## 1. M1 交付与 PR 切分
 
-**Decision**: 一个规格覆盖 M1，按 M1-A“登录+菜品池”、M1-B“菜单”、M1-C“商家订单”三个顺序 PR 实施；每个 PR 等前一个合并后从最新 `main` 开始。
+**Decision**: 一个规格覆盖 M1。M1-A“登录+菜品池”和 M1-B“菜单”已经分别完成；剩余订单按 M1-C1“顾客资料+草稿补单”、M1-C2“订单生命周期”、M1-C3“批量送达+清单收口”三个顺序纵向 PR 实施。每个 PR 等前一个 rebase merge 后从最新 `main` 开始。
 
-**Rationale**: 三个切片分别有可演示价值，且依赖顺序明确。把 workspace scaffold 单独拆 PR 会违反“出现实际功能才创建”的 M0 决策；把整个 M1 放进一个 PR 又会同时审认证、生成规则和订单状态机，blast radius 过大。
+**Rationale**: #146 的 M1-B 实践表明，把完整跨层用户故事放进一个 PR 仍会形成过大的 review 循环。新的订单切分保持纵向价值：C1 能实际记录和修改草稿，C2 能处理单条生命周期，C3 增加多单效率并完成总验收；每个切片都可独立运行和回归。把 shared schema、CMS route 或 FE scaffold 单独拆 PR 仍没有用户价值，因此不采用按技术层拆分。
 
 **Alternatives considered**:
 
 - 单独 scaffold PR：没有用户价值，拒绝。
 - 一个 M1 大 PR：review 和回归范围过大，拒绝。
+- 一个完整 M1-C PR：仍会同时审 profile、持久化边界、状态机、批量与整页交互，已根据 #146 经验拒绝。
+- 按 shared/CMS/BE/FE 技术层拆 PR：中间提交不可独立使用，拒绝。
 - 堆叠 PR：Codex 自动 review 与仓库 rebase merge 约束使其收益有限，拒绝。
 
 ## 2. Brownfield 复用方式

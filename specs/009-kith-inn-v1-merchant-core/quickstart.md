@@ -67,11 +67,20 @@ pnpm --filter @cfp/kith-inn-v1-fe dev:h5
 
 ## 5. M1-C：订单
 
+### M1-C1：顾客资料与草稿补单
+
 - 新建无 openid 的“王阿姨 · 3A-1201” profile 和 manual draft order。
 - 重复补同一 profile+slot 得到 conflict，不新增。
-- 修改 draft，确认后汇总增加；再标 paid、done 并验证时间。
+- 明确选择更新后仍复用同一 order id；修改 draft 后刷新数据一致。
+
+### M1-C2：订单生命周期
+
+- 确认 draft 后汇总增加；再标 paid、done 并验证时间。
 - confirmed 编辑需要二次确认；取消后退出汇总。
 - canceled 普通操作拒绝；明确 resubmit 后同一 id 回到 draft 且时间/付款/送达重置。
+
+### M1-C3：批量与清单
+
 - 批量 mark-delivered 只改选中且 confirmed 的当前 seller orders。
 - 复制清单只含 confirmed active orders。
 
@@ -101,7 +110,7 @@ pnpm verify
 
 ## 8. 完成判定
 
-- M1-A/B/C 各自 quickstart 和 H5 关键流通过。
+- M1-A/B 与 M1-C1/C2/C3 各自 quickstart 和 H5 关键流通过。
 - old + v1 CMS 共存、旧 routes/Admin/health 继续通过。
 - 所有 tenant negative path fail closed。
 - 新增 workspace 都承载实际页面/route，没有空壳或预建 M2 目录。
