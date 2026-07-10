@@ -1,48 +1,57 @@
 # Tech Spec：街坊味 v1（kith-inn-v1）
 
-> 状态：草稿 v0.1
+> 状态：草稿 v0.2
 >
-> 日期：2026-07-09
+> 日期：2026-07-10
 >
-> 目标：基于 [USER-STORIES.md](./USER-STORIES.md) 新建 `kith-inn-v1`，不影响旧 `kith-inn`。
+> 目标：基于 [USER-STORIES.md](./USER-STORIES.md) 新建 `kith-inn-v1`，共享仓库基础设施和 `apps/cms` Payload 进程，但不复用旧 `kith-inn` 业务代码或业务数据。
 
 ## 1. 架构原则
 
-1. **另起炉灶**：v1 不 import `apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-shared`、`packages/kith-inn-payload` 的任何业务代码。
-2. **可以参考，不复用逻辑**：菜单避重、订单状态机、Payload access 写法可以照着重写；不要抽公共包。
-3. **不用 agent**：MVP 主链路没有 AI 对话。顾客侧下单、菜单生成、订单确认、送达/收款都走确定性 UI + 确定性后端。
-4. **顾客轻身份**：顾客不显式登录；小程序 `wx.login` → 后端 code2Session → openid → customer JWT。
-5. **商家确认锁单**：顾客提交是 `draft`；桃子确认后 `confirmed`，顾客不能再自助改份数/取消。
-6. **公开文案降风险**：顾客可见文案优先用“预订登记”，避免“点餐/外卖/团购/平台”等公开表述。
+1. **业务另起炉灶**：v1 不 import `apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-shared`、`packages/kith-inn-payload` 的业务代码。
+2. **共享 Payload 运行时**：除 `website` 外，小项目共用 `apps/cms` 的 Payload 实例、端口和 PostgreSQL `cms` schema，控制 ECS 常驻资源。
+3. **前缀隔离**：v1 collection/table/API slug 全部以 `kiv1_` 开头；v1 relationship 不指向旧 kith-inn collection。
+4. **可以参考，不抽公共业务包**：菜单避重、JWT、CMS internal route、关系守卫和 seed 写法可以参考旧实现后重写。
+5. **不用 agent**：MVP 主链路没有 AI 对话；菜单、预订登记和订单生命周期都走确定性 UI + 后端。
+6. **顾客轻身份**：顾客不显式登录；小程序 `wx.login` → v1 后端 code2Session → openid → v1 customer JWT。
+7. **身份不混用**：共享 Payload Admin、v1 operator JWT、v1 customer JWT 是三种不同信任域。
+8. **商家确认锁单**：顾客提交是 `draft`；桃子确认后 `confirmed`，顾客不能再自助改份数或取消。
+9. **公开文案降风险**：顾客可见文案优先使用“预订登记”，避免“点餐/外卖/团购/平台”等表述。
+10. **最小数据模型**：MVP 只有套餐份数和单次送达，先用七个 collection；出现多商品或多履约任务后再拆表。
 
 ## 2. Monorepo 结构
 
+最终结构按 milestone 逐步创建：
+
 ```text
-apps/kith-inn-v1-fe
-apps/kith-inn-v1-be
-packages/kith-inn-v1-shared
-packages/kith-inn-v1-payload
+apps/kith-inn-v1-fe             # M1 创建，Taro 商家侧 + 顾客侧
+apps/kith-inn-v1-be             # M1 创建，Hono 业务 API
+packages/kith-inn-v1-shared     # M0 创建，枚举/schema/API 类型
+packages/kith-inn-v1-payload    # M0 创建，v1 collections/hooks/seed
+apps/cms                        # 既有共享 Payload host，M0 装配 v1 collections
 ```
 
-仍可复用仓库基础设施：pnpm、Turborepo、TypeScript、Vitest、Taro、Hono、Payload、共享 `apps/cms` host。这里的“复用”只指工程底座，不复用旧 kith-inn 业务逻辑。
+仍可复用 pnpm、Turborepo、TypeScript、Vitest、Taro、Hono、Payload 和 PostgreSQL 等工程底座。v1 不创建第二套 Payload/Next app，也不增加 CMS 端口。
 
-`apps/cms` 作为共享 Payload host 可继续装配 v1 collections；v1 collection slug 必须带 `kiv1_` 前缀，避免和旧 `kith-inn` 的 `orders/customers/offerings` 撞名。
+`apps/cms` 继续使用 `schemaName = "cms"`。旧 collection 保持原 slug；v1 使用 `kiv1_` 前缀避免 `orders/customers/offerings` 等名称碰撞。
 
-## 3. 应用职责
+## 3. 模块职责
 
 | 模块 | 技术 | 职责 |
 |---|---|---|
-| `apps/kith-inn-v1-fe` | Taro + React | 同一个小程序内的商家侧 + 顾客侧页面。 |
-| `apps/kith-inn-v1-be` | Hono | 认证、菜单生成、预订批次、订单生命周期、顾客权限。 |
-| `packages/kith-inn-v1-shared` | TS + zod | v1 枚举、schema、API 契约类型。 |
-| `packages/kith-inn-v1-payload` | Payload collections | v1 数据集合、access、hooks。 |
-| `apps/cms` | Next + Payload | 共享 CMS host，只装配 collections，不写 v1 业务逻辑。 |
+| `apps/kith-inn-v1-fe` | Taro + React | 同一个小程序内的商家侧和顾客侧页面。 |
+| `apps/kith-inn-v1-be` | Hono | 微信登录、v1 JWT、菜单生成、预订批次、订单生命周期和顾客权限。 |
+| `packages/kith-inn-v1-shared` | TypeScript + Zod | v1 枚举、schema、API 契约类型和 `YYYY-MM-DD` 校验。 |
+| `packages/kith-inn-v1-payload` | Payload collections | 七个 `kiv1_` collection、同 seller 关系守卫、索引和 v1 seed。 |
+| `apps/cms` | Next + Payload | 聚合各项目 collections/seed；后续承载命名空间隔离的薄 internal persistence routes，不做 v1 领域决策。 |
+
+`apps/cms` 的旧 internal routes 不复用。v1 后续 route 使用 `/api/internal/kiv1/*` 前缀和独立 JWT/header；route 只做鉴权、seller/owner 校验和 Payload local API 转换，业务状态机留在 v1 backend/domain。
 
 ## 4. 前端页面
 
 ### 商家侧
 
-- `/pages/merchant/menu`：菜品池、菜单生成、换菜。
+- `/pages/merchant/menu`：菜品池、批量录入、菜单生成、换菜。
 - `/pages/merchant/batches`：选择日期/餐次，生成预订登记批次，分享小程序卡片。
 - `/pages/merchant/orders`：按日期/餐次看订单，确认、标已付、标已送、取消、手动补单。
 - `/pages/merchant/jielong-import`：审核兜底入口，默认隐藏或弱入口。
@@ -50,40 +59,70 @@ packages/kith-inn-v1-payload
 ### 顾客侧
 
 - `/pages/booking/index?batchId=...`：顾客从分享卡片进入，做预订登记。
-- `/pages/customer/orders`：顾客看自己的订单，draft 且未截止时可改份数/取消。
+- `/pages/customer/orders`：顾客查看自己的订单；draft 且未截止时可改份数或取消。
+
+分享 path 只在代码中由固定 route + batch publicId 生成，不存数据库字段。
 
 ## 5. 认证与权限
 
-### 商家侧
+### 5.1 共享 Payload Admin
 
-桃子使用 operator 身份登录：
+- `apps/cms.admin.user` 继续使用旧 `operators`，M0 不改现有 Admin 登录。
+- 共享 Admin 是可信运维入口，可以检查 `cms` schema 中多个项目的数据。
+- `kiv1_operators` 是普通 v1 业务 collection，不设置 `auth: true`，不接管 Payload Admin。
+- 未认证请求直接访问 v1 Payload collection 时默认 deny。
+- Payload Admin token 不作为 v1 商家或顾客产品 token。
 
-```text
-wx.login → POST /auth/operator/wx-login → operator JWT
-```
-
-operator JWT 只能访问自己的 `seller` 数据。
-
-### 顾客侧
-
-顾客进入分享卡片时静默建会话：
+### 5.2 商家侧
 
 ```text
-wx.login + batchPublicId → POST /auth/customer/session → customer JWT
+wx.login
+  → POST /auth/operator/wx-login
+  → code2Session 得到 openid
+  → 按 kiv1_operators.wechatOpenid 查有效 operator
+  → 签发 v1 operator JWT
 ```
 
-customer JWT 包含：
+operator JWT 至少包含：
+
+- `operatorId`
+- `sellerId`
+- `role: operator`
+- `exp`
+
+商家 API 只能访问 JWT `sellerId` 下的数据。MVP 只有 owner 行为，不预建没有权限差异的 helper 角色。
+
+### 5.3 顾客侧
+
+```text
+wx.login + batchPublicId
+  → POST /auth/customer/session
+  → code2Session 得到 openid
+  → 从 open batch 解析 sellerId
+  → 签发 v1 customer JWT
+```
+
+customer JWT 至少包含：
 
 - `sellerId`
 - `openid`
+- `role: customer`
+- `exp`
 
-顾客只能读写 `sellerId + openid` 范围内的数据：
+顾客只能访问：
 
-- 自己的 `customer_profiles`
-- 自己的订单
-- 当前分享批次的可见餐次
+- 当前 `sellerId + openid` 下绑定且 active 的 customer profiles。
+- `customerOpenid` 等于当前 openid 的订单。
+- 当前分享批次允许公开的 meal slots 和菜单快照。
 
-顾客不能确认订单、标已付、标已送。
+顾客不能确认订单、标已付、标已送，也不能按称呼或地址认领资料/订单。
+
+### 5.4 Backend → CMS
+
+- v1 backend 调用独立的 `/api/internal/kiv1/*` routes。
+- internal route 必须验证 v1 JWT，不能只相信请求体中的 seller/openid。
+- 使用 Payload local API `overrideAccess` 前，route 显式校验目标记录属于 JWT seller/openid，并校验所有 relationship 同 seller。
+- v1 route、header、JWT secret 不复用旧 kith-inn；共享的只有 Payload 进程和数据库 adapter。
 
 ## 6. 后端 API 草案
 
@@ -94,15 +133,12 @@ POST   /auth/operator/wx-login
 
 GET    /merchant/offerings
 POST   /merchant/offerings
-PATCH  /merchant/offerings/:id
-DELETE /merchant/offerings/:id
-
-GET    /merchant/menu-plans?from=&to=
-POST   /merchant/menu-plans/generate
-POST   /merchant/menu-plans/:id/swap
+PATCH  /merchant/offerings/:id        # 编辑或 active=false/true
 
 GET    /merchant/meal-slots?from=&to=
-PATCH  /merchant/meal-slots/:id
+POST   /merchant/meal-slots/generate-menus
+POST   /merchant/meal-slots/:id/swap-menu-item
+PATCH  /merchant/meal-slots/:id       # 价格、截止时间、预订状态
 
 POST   /merchant/booking-batches
 PATCH  /merchant/booking-batches/:id
@@ -115,11 +151,14 @@ POST   /merchant/orders/:id/cancel
 POST   /merchant/orders/:id/mark-paid
 POST   /merchant/orders/:id/mark-unpaid
 POST   /merchant/orders/:id/mark-delivered
+POST   /merchant/orders/:id/mark-pending-delivery
 POST   /merchant/orders/bulk-mark-delivered
 
 POST   /merchant/jielong/preview
 POST   /merchant/jielong/commit
 ```
+
+菜品不提供物理删除 API；停用/恢复统一通过 `PATCH active`。
 
 ### 顾客 API
 
@@ -131,7 +170,7 @@ GET    /public/booking-batches/:publicId
 GET    /customer/profiles
 POST   /customer/profiles
 PATCH  /customer/profiles/:id
-DELETE /customer/profiles/:id
+DELETE /customer/profiles/:id          # 软停用 active=false
 
 GET    /customer/orders
 POST   /customer/orders
@@ -139,100 +178,132 @@ PATCH  /customer/orders/:id
 POST   /customer/orders/:id/cancel
 ```
 
-`PATCH /customer/orders/:id` 只允许改 draft 订单的份数；`cancel` 也只允许 draft 且未截止/未关闭。
+`PATCH /customer/orders/:id` 和 cancel 只允许当前 openid 的 draft order，且 meal slot 仍 open、未过 deadline。profile DELETE 不删除历史订单。
 
 ## 7. 核心业务规则
 
-### 菜单
+### 菜单与餐次
 
 - 菜品池只维护菜名、主料、分类、启用状态。
-- 菜单生成只从启用菜品选。
-- 默认结构先写死：2 荤 2 素 1 汤。
-- 尽量避开近期同菜和同主料。
+- 菜单直接保存为 `meal_slot.menuItems` 快照，不建立独立 menu plan。
+- 默认结构先写死为 2 荤 2 素 1 汤。
+- 生成只从启用菜品选；尽量避开近期同菜和同主料。
 - 菜品池不足时返回明确错误，不发明菜。
+- 日历日保存为合法 `YYYY-MM-DD`，统一按 Asia/Shanghai 解释。
 
 ### 分享批次
 
-- `booking_batch` 是落库记录，保存本次分享的多个 `meal_slots`。
-- 分享 path 带随机 `publicId`，不暴露数据库 id。
-- 关闭 batch = 这张卡片整体不再接受新增订单。
-- 关闭 slot = 这个餐次不再接受新增订单。
-
-### 订单
-
-- 顾客提交生成/更新 `draft` order。
-- 同一 `seller + customerProfile + date + occasion` 只能有一个 active order。
-- 桃子确认后变 `confirmed`，进入备餐、未付、未送口径。
-- `confirmed` 锁单：顾客不能自助修改/取消，只能联系桃子。
-- 桃子可修改/取消 confirmed 订单，但必须提示影响备餐/送餐。
+- `booking_batch` 直接 has-many 关联多个 meal slots，不建立连接 collection。
+- publicId 使用不可顺序猜测的随机 id，不暴露数据库 id。
+- 分享 path 由 `/pages/booking/index?batchId=<publicId>` 派生，不落库。
+- 关闭 batch 只关闭这张分享入口；关闭 meal slot 会阻止所有批次继续提交该餐次。
+- 关闭不自动取消已有订单。
 
 ### 顾客资料
 
-- `customer_profile` 是“称呼 + 地址”的绑定资料。
-- 不做称呼表和地址表自由组合。
-- 订单保存 `displayName` 和 `address` 快照。
-- profile 修改不影响历史订单。
+- profile 是“称呼 + 地址”的绑定资料，不拆成自由组合。
+- 顾客自己创建 profile 时 openid 必须来自 customer JWT。
+- 桃子手动创建的 profile 可以没有 openid；这类资料只在商家侧可见。
+- 不按称呼/地址自动绑定 openid。
+- profile 修改不影响订单中的称呼/地址快照；删除是 `active=false`。
 
-## 8. AI 使用
+### 订单
+
+- 一个 order = 一个 customer profile + 一个 meal slot 的套餐份数。
+- 同一 `seller + mealSlot + customerProfile` 只保留一条记录；重复提交和取消后重订复用该记录。
+- 顾客提交生成/更新 draft；桃子确认后变 confirmed 并锁单。
+- confirmed 才进入备餐、未付、未送口径。
+- paymentStatus 与 deliveryStatus 直接放在 order 上，互相独立。
+- 桃子可修改/取消 confirmed order，但必须提示影响备餐/送餐。
+- 手动订单只有在保存了已验证的 customerOpenid 时才会出现在该顾客“我的订单”。
+
+## 8. 数据模型摘要
+
+MVP 七个 collection：
+
+```text
+kiv1_sellers
+kiv1_operators
+kiv1_customer_profiles
+kiv1_offerings
+kiv1_meal_slots
+kiv1_booking_batches
+kiv1_orders
+```
+
+不建立：
+
+- `kiv1_menu_plans`：菜单快照并入 meal slot。
+- `kiv1_booking_batch_slots`：batch 直接 has-many meal slots。
+- `kiv1_order_items`：套餐份数和单价快照直接在 order。
+- `kiv1_fulfillments`：送达状态直接在 order。
+
+完整字段与状态机见 [DATA-MODEL.md](./DATA-MODEL.md)。
+
+## 9. AI 使用
 
 MVP 主链路不使用 AI。
 
-唯一保留的 AI/LLM 入口是审核兜底或迁移工具：
+唯一保留的后置入口是审核兜底/迁移工具：
 
-- `POST /merchant/jielong/preview`
 - 输入微信群接龙文本。
 - 解析日期、餐次、顾客名、份数。
-- 没地址也允许写订单，地址为空。
+- 没地址也允许写 order，且不创建 customer profile。
 - 必须预览确认后才写库。
 
-如果不启用兜底入口，v1 可以完全没有 LLM 依赖。
+如果不启用兜底入口，v1 完全没有 LLM 依赖。
 
-## 9. 测试策略
+## 10. 测试策略
 
-- `packages/kith-inn-v1-shared`：schema/enums 单测。
-- `apps/kith-inn-v1-be`：纯函数 + Hono route 单测。
-- `packages/kith-inn-v1-payload`：tenant access、hooks、collection traversal 单测。
-- `apps/kith-inn-v1-fe`：逻辑函数单测；H5 关键流 e2e。
+- `packages/kith-inn-v1-shared`：枚举、日期、金额和实体 schema 单测。
+- `packages/kith-inn-v1-payload`：collection 前缀/数量、索引、同 seller relationship guard、seed 单测。
+- `apps/cms`：旧 + v1 collection 聚合、同 `cms` schema 共存、seed 编排回归。
+- `apps/kith-inn-v1-be`：纯函数、JWT、owner guard、状态机和 Hono route 单测。
+- `apps/kith-inn-v1-fe`：逻辑函数单测；H5 关键流 e2e；weapp 真机 smoke。
 
 最小必测：
 
-- 顾客 openid 只能看到自己的资料和订单。
-- draft 订单可由顾客改份数/取消。
-- confirmed 订单顾客不可改。
-- 桃子确认订单后进入经营口径。
-- booking batch/slot 关闭后不能新增订单。
+- 未认证请求不能直接访问 v1 Payload collection。
+- 所有 v1 slug/table 使用 `kiv1_` 前缀，旧 collection 不变。
+- 跨 v1 seller relationship 被拒绝，包括 batch has-many 和菜单嵌套 offering。
+- 顾客只能看到当前 openid 的 profiles/orders；无 openid 手动资料不暴露。
+- draft 可由顾客改份数/取消，confirmed 不可改。
+- batch/meal slot 关闭后不能新增订单。
 - 菜单生成不选停用菜、不发明菜。
 
-## 10. Milestones
+所有 milestone 最终通过仓库质量门禁 `pnpm verify`。
 
-### M0：骨架与数据层
+## 11. Milestones
 
-- 新建 4 个 v1 workspace。
-- `packages/kith-inn-v1-shared`：枚举、schema、契约。
-- `packages/kith-inn-v1-payload`：collections + tenant/customer access。
-- `apps/cms` 装配 v1 collections。
-- seed 桃子 seller/operator。
+### M0：共享 CMS 骨架与数据层
 
-交付：能在 CMS 看到 v1 的 seller、operator、菜品、餐次、订单集合。
+- 新建 `packages/kith-inn-v1-shared` 和 `packages/kith-inn-v1-payload`。
+- 建立七个 `kiv1_` collection、索引、关系守卫和幂等桃子 seller/operator seed。
+- `apps/cms` 聚合 v1 collections/seed，继续使用同一进程、端口和 `cms` schema。
+- 验证旧表与 `kiv1_` 表同 schema 共存，旧 Admin、health、routes 和 seed 不回归。
+- 不创建空的 v1 FE/BE workspace。
+
+交付：只启动现有 `apps/cms` 即可看到旧 + v1 collections；M0 不增加 Payload 常驻进程。
 
 ### M1：菜单与商家侧订单
 
+- 创建 `apps/kith-inn-v1-be` 和 `apps/kith-inn-v1-fe`。
+- 实现 v1 operator 登录和 `/api/internal/kiv1/*` persistence routes。
 - 菜品池 CRUD + 批量导入。
 - 单餐/多餐菜单生成、换菜。
-- 商家手动补单、改单。
-- 商家确认订单、标已付、标已送、取消。
+- 商家手动补单、改单、确认、标已付、标已送、取消。
 
 交付：不依赖顾客侧，也能让桃子手动跑通“菜单 → 补单 → 确认 → 送达/收款”。
 
 ### M2：顾客预订登记
 
 - 顾客静默 openid 会话。
-- 顾客 profile select/新增。
+- 顾客 profile select/新增/软停用。
 - booking batch 创建与分享。
 - 顾客提交、改份数、取消 draft。
-- confirmed 锁单。
+- confirmed 锁单与顾客只读生命周期。
 
-交付：顾客从分享卡片进入，完成预订登记；桃子确认后顾客不可再改。
+交付：顾客从分享卡片进入完成预订登记；桃子确认后顾客不可再改。
 
 ### M3：体验版验证与审核兜底
 
@@ -247,7 +318,8 @@ MVP 主链路不使用 AI。
 
 - 数据导出/删除能力最小闭环。
 - 错误态、空态、截止/关闭态打磨。
-- `pnpm verify` 全绿。
 - 小程序类目/资质路径确认。
+- 建立共享 `apps/cms` migration baseline，停止对真实数据环境使用 schema push。
+- `pnpm verify` 全绿。
 
 交付：可提交体验版/审核版。
