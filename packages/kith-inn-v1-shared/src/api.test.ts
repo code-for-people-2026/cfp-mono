@@ -345,6 +345,11 @@ describe("manual order API schemas", () => {
       message: "已取消订单需要明确重提",
       existing: { id: 31, status: "canceled", quantity: 2 }
     }).error).toBe("canceled-order-exists");
+    expect(orderExistsErrorSchema.parse({
+      error: "order-exists",
+      message: "已确认订单已存在",
+      existing: { id: 31, status: "confirmed", quantity: 2 }
+    }).existing.status).toBe("confirmed");
   });
 
   it("rejects seller/openid injection, invalid profile choices and malformed order data", () => {
@@ -364,7 +369,7 @@ describe("manual order API schemas", () => {
     expect(orderSchema.safeParse({ ...order, totalCents: 5999 }).success).toBe(false);
     expect(cmsOrderCreateSchema.safeParse({ ...order, seller: 99 }).success).toBe(false);
     expect(orderExistsErrorSchema.safeParse({
-      error: "order-exists",
+      error: "canceled-order-exists",
       message: "x",
       existing: { id: 31, status: "confirmed", quantity: 2 }
     }).success).toBe(false);

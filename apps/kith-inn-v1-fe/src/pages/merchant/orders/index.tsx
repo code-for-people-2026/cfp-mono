@@ -1,6 +1,6 @@
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   CustomerProfile,
   ManualOrderUpdate,
@@ -50,6 +50,7 @@ const handledAuthFailure = (error: unknown) =>
   error instanceof ApiError && (error.status === 401 || error.status === 403);
 
 export default function MerchantOrders() {
+  const loadRevision = useRef(0);
   const [date, setDate] = useState("");
   const [occasion, setOccasion] = useState<Occasion>("lunch");
   const [mealSlot, setMealSlot] = useState<MealSlot | null>(null);
@@ -79,9 +80,21 @@ export default function MerchantOrders() {
     });
   }, []);
 
+  const clearLoadedOrderState = () => {
+    loadRevision.current += 1;
+    setMealSlot(null);
+    setOrders([]);
+    setSummary(EMPTY_SUMMARY);
+    setPendingDuplicate(null);
+    setEditing(null);
+  };
+
   const load = async (targetOccasion: Occasion) => {
+    clearLoadedOrderState();
+    const revision = loadRevision.current;
     try {
       const result = await api.listOrders(date, targetOccasion);
+      if (revision !== loadRevision.current) return;
       setOccasion(targetOccasion);
       setMealSlot(result.mealSlot);
       setOrders(result.docs);
@@ -185,7 +198,10 @@ export default function MerchantOrders() {
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
 
       <View className="card order-controls">
-        <Input placeholder="订单日期" value={date} onInput={(event) => setDate(event.detail.value)} />
+        <Input placeholder="订单日期" value={date} onInput={(event) => {
+          setDate(event.detail.value);
+          clearLoadedOrderState();
+        }} />
         <View className="order-actions">
           <Button onClick={() => void load("lunch")}>查看午餐订单</Button>
           <Button onClick={() => void load("dinner")}>查看晚餐订单</Button>
@@ -203,19 +219,37 @@ export default function MerchantOrders() {
               key={String(profile.id)}
               size="mini"
               className={String(customerProfileId) === String(profile.id) ? "selected" : ""}
-              onClick={() => setCustomerProfileId(profile.id)}
+              onClick={() => {
+                setCustomerProfileId(profile.id);
+                setPendingDuplicate(null);
+              }}
             >选择 {profile.displayName} {profile.address}</Button>
           ))}
-          <Button size="mini" onClick={() => setCustomerProfileId(null)}>新建顾客资料</Button>
+          <Button size="mini" onClick={() => {
+            setCustomerProfileId(null);
+            setPendingDuplicate(null);
+          }}>新建顾客资料</Button>
         </View>
         {customerProfileId === null && (
           <>
-            <Input placeholder="顾客称呼" value={displayName} onInput={(event) => setDisplayName(event.detail.value)} />
-            <Input placeholder="顾客地址" value={address} onInput={(event) => setAddress(event.detail.value)} />
+            <Input placeholder="顾客称呼" value={displayName} onInput={(event) => {
+              setDisplayName(event.detail.value);
+              setPendingDuplicate(null);
+            }} />
+            <Input placeholder="顾客地址" value={address} onInput={(event) => {
+              setAddress(event.detail.value);
+              setPendingDuplicate(null);
+            }} />
           </>
         )}
-        <Input placeholder="份数" type="number" value={quantity} onInput={(event) => setQuantity(event.detail.value)} />
-        <Input placeholder="备注" value={note} onInput={(event) => setNote(event.detail.value)} />
+        <Input placeholder="份数" type="number" value={quantity} onInput={(event) => {
+          setQuantity(event.detail.value);
+          setPendingDuplicate(null);
+        }} />
+        <Input placeholder="备注" value={note} onInput={(event) => {
+          setNote(event.detail.value);
+          setPendingDuplicate(null);
+        }} />
         <Button className="primary" onClick={() => void save()}>草稿补单</Button>
         {pendingDuplicate && (
           <Button className="danger" onClick={() => void confirmDuplicate()}>确认更新现有草稿</Button>

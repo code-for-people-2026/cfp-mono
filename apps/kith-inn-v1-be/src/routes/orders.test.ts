@@ -233,8 +233,8 @@ describe("merchant draft-order routes", () => {
     }));
   });
 
-  it("returns a minimal duplicate summary for active and canceled orders", async () => {
-    for (const status of ["draft", "canceled"] as const) {
+  it("returns a minimal duplicate summary for draft, confirmed and canceled orders", async () => {
+    for (const status of ["draft", "confirmed", "canceled"] as const) {
       const existing = { ...order, status };
       const routeDeps = deps({
         listOrders: vi.fn(async () => [existing]),
