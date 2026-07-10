@@ -1,7 +1,8 @@
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
-import { collections } from "@cfp/kith-inn-payload";
+import { collections as kithInnCollections } from "@cfp/kith-inn-payload";
+import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
 import { ensureConstraints } from "./src/db/ensureConstraints";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
@@ -42,7 +43,7 @@ if (requiresProductionEnv && !postgresDatabaseURL) {
 // here — this host ships no business collections of its own. Like website's
 // schema, "cms" is a literal: drizzle push bakes it into every CREATE TABLE,
 // so making it env-configurable would desync config from the pushed schema.
-const schemaName = "cms";
+export const schemaName = "cms";
 
 const db = postgresDatabaseURL
   ? postgresAdapter({
@@ -82,7 +83,7 @@ export default buildConfig({
   // @cfp/kith-inn-payload). We hand-write shapes and ship no generated
   // payload-types.ts (mirrors apps/website); `req.user` stays loosely typed and
   // is narrowed at use sites via isOperator/isAuthorizedOperator.
-  collections,
+  collections: [...kithInnCollections, ...kithInnV1Collections],
   typescript: {
     autoGenerate: false,
   },
