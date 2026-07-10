@@ -111,6 +111,63 @@ function relaxedFrom(score: Score): RelaxedRule[] {
   return RULES.filter((_, index) => score[index]! > 0);
 }
 
+function pairs(candidates: Offering[]): Array<[Offering, Offering]> {
+  const result: Array<[Offering, Offering]> = [];
+  for (let left = 0; left < candidates.length - 1; left += 1) {
+    for (let right = left + 1; right < candidates.length; right += 1) {
+      result.push([candidates[left]!, candidates[right]!]);
+    }
+  }
+  return result;
+}
+
+function scoreMenu(items: Offering[], baseScores: Map<Offering, Score>): Score {
+  const score: Score = [0, 0, 0, 0];
+  items.forEach((item) => {
+    baseScores.get(item)!.forEach((value, index) => { score[index]! += value; });
+  });
+  for (let left = 0; left < items.length - 1; left += 1) {
+    const main = items[left]!.mainIngredient;
+    for (let right = left + 1; right < items.length; right += 1) {
+      if (main && main === items[right]!.mainIngredient) score[1] += 1;
+    }
+  }
+  return score;
+}
+
+function chooseMenu(
+  active: Offering[],
+  target: MealSlotTarget,
+  context: MealSlot[],
+  random: () => number
+): { items: MenuItemSnapshot[]; score: Score } {
+  const baseScores = new Map(active.map((item) => [item, scoreOffering(item, target, context, [])]));
+  const meatPairs = pairs(active.filter(({ category }) => category === "meat"));
+  const vegPairs = pairs(active.filter(({ category }) => category === "veg"));
+  const soups = active.filter(({ category }) => category === "soup");
+  let bestItems: Offering[] | null = null;
+  let bestScore: Score | null = null;
+  let tied = 0;
+  for (const meat of meatPairs) {
+    for (const veg of vegPairs) {
+      for (const soup of soups) {
+        const items = [...meat, ...veg, soup];
+        const score = scoreMenu(items, baseScores);
+        const comparison = bestScore ? compareScore(score, bestScore) : -1;
+        if (comparison < 0) {
+          bestItems = items;
+          bestScore = score;
+          tied = 1;
+        } else if (comparison === 0) {
+          tied += 1;
+          if (random() >= 1 - 1 / tied) bestItems = items;
+        }
+      }
+    }
+  }
+  return { items: bestItems!.map(snapshot), score: bestScore! };
+}
+
 function assertPool(offerings: Offering[]): Offering[] {
   const active = offerings.filter(({ active }) => active);
   const shortages = CATEGORIES.flatMap((category) => {
@@ -143,17 +200,9 @@ export function generateMenus({
   const targetsInOrder = [...targets].sort((left, right) =>
     left.date.localeCompare(right.date) || (left.occasion === "lunch" ? -1 : 1));
   const menus = targetsInOrder.map((target, targetIndex) => {
-    const menuItems: MenuItemSnapshot[] = [];
-    for (const category of CATEGORIES) {
-      for (let count = 0; count < REQUIRED[category]; count += 1) {
-        const candidates = active.filter((candidate) =>
-          candidate.category === category &&
-          !menuItems.some((item) => idEquals(item.offeringId, candidate.id)));
-        const picked = choose(candidates, target, context, menuItems, random);
-        menuItems.push(picked.item);
-        relaxedFrom(picked.score).forEach((rule) => relaxed.add(rule));
-      }
-    }
+    const picked = chooseMenu(active, target, context, random);
+    const menuItems = picked.items;
+    relaxedFrom(picked.score).forEach((rule) => relaxed.add(rule));
     context.push({
       id: `generated-${targetIndex}`,
       sellerId: active[0]!.sellerId,

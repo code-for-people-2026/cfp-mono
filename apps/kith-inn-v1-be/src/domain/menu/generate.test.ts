@@ -133,6 +133,10 @@ describe("menu generator soft preference order", () => {
 
   it("prioritizes same-week offering, then same-day main, then recent offering, then recent main", () => {
     expect(selectedSoup([
+      historySlot("2026-07-14", "lunch", 6, "别的主料")
+    ]).offeringId).toBe(5);
+
+    expect(selectedSoup([
       historySlot("2026-07-14", "lunch", 5, "别的主料"),
       historySlot("2026-07-10", "lunch", 6, "番茄")
     ]).offeringId).toBe(6);
@@ -166,6 +170,24 @@ describe("menu generator soft preference order", () => {
     });
     expect(relaxed.relaxedRules).toEqual(["recent-offering", "recent-main-ingredient"]);
   });
+
+  it("scores the complete menu so an early meat tie cannot force an avoidable soup-main conflict", () => {
+    const result = generateMenus({
+      offerings: [
+        offering(1, "meat", "荤 X", "X"),
+        offering(2, "meat", "荤 Y", "Y"),
+        offering(3, "meat", "荤 Z", "Z"),
+        offering(4, "veg", "素 A", "A"),
+        offering(5, "veg", "素 B", "B"),
+        offering(6, "soup", "汤 X", "X")
+      ],
+      targets: [{ date: "2026-07-13", occasion: "lunch" }],
+      history: [],
+      random: () => 0
+    });
+    expect(result.menus[0]!.menuItems.map(({ offeringId }) => offeringId)).toEqual([2, 3, 4, 5, 6]);
+    expect(result.relaxedRules).toEqual([]);
+  });
 });
 
 describe("menu item swap", () => {
@@ -198,8 +220,12 @@ describe("menu item swap", () => {
     const swapped = swapMenuItem({
       slot,
       offeringId: 5,
-      offerings: [...baseOfferings(), offering(6, "soup", "新汤", "海带")],
-      history: [slot],
+      offerings: [
+        ...baseOfferings(),
+        offering(6, "soup", "新汤", "海带"),
+        offering(7, "soup", "近期汤", "菌菇")
+      ],
+      history: [slot, historySlot("2026-07-12", "lunch", 7, "菌菇")],
       random: () => 0
     });
     expect(swapped?.menuItems.filter(({ offeringId }) => offeringId !== 5)).toHaveLength(5);
