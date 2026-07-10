@@ -173,7 +173,7 @@
 ### M1-C2 PR Gate
 
 - [X] T065 [US3] 运行 M1-C1 回归、相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL 生命周期 tenant 回归、M1-C2 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证单条生命周期并记录 T055–T065 状态
-- [ ] T066 [US3] 提交 M1-C2 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；批量送达与剪贴板清单保持未实现：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T066 [US3] 提交 M1-C2 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；批量送达与剪贴板清单保持未实现：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-C2 可独立交付；单条订单生命周期完整，尚无多单批量和经营清单。
 
