@@ -142,7 +142,7 @@
 ### M1-C1 PR Gate
 
 - [X] T053 [US3] 运行相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL profile/order tenant 回归、M1-C1 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证草稿补单切片并记录 T042–T053 状态
-- [ ] T054 [US3] 提交 M1-C1 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；不得预建 confirm/cancel/payment/delivery/bulk/clipboard API 或 UI：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T054 [US3] 提交 M1-C1 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；不得预建 confirm/cancel/payment/delivery/bulk/clipboard API 或 UI：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-C1 可独立交付；桃子可记录和修改草稿订单，尚不能改变订单生命周期。
 
