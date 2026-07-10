@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   apiErrorSchema,
   authResponseSchema,
+  cmsCustomerProfileSchema,
+  cmsOrderCreateSchema,
+  customerProfileCreateSchema,
+  customerProfileSchema,
+  customerProfilesResponseSchema,
   devLoginInputSchema,
   importCommitInputSchema,
   importCommitResponseSchema,
@@ -12,11 +17,19 @@ import {
   mealSlotRangeSchema,
   mealSlotSchema,
   mealSlotsExistErrorSchema,
+  manualOrderCreateSchema,
+  manualOrderUpdateSchema,
+  orderExistsErrorSchema,
+  orderListQuerySchema,
+  orderListResponseSchema,
+  orderMutationResponseSchema,
+  orderSchema,
   offeringPoolInsufficientErrorSchema,
   offeringCreateSchema,
   offeringSchema,
   offeringUpdateSchema,
   selectSellerInputSchema,
+  sellerSnapshotSchema,
   swapMenuItemInputSchema,
   swapMenuItemResponseSchema,
   wxLoginInputSchema
@@ -206,6 +219,154 @@ describe("meal-slot API schemas", () => {
       error: "offering-pool-insufficient",
       message: "x",
       shortages: [{ category: "other", required: 1, available: 0 }]
+    }).success).toBe(false);
+  });
+});
+
+describe("manual order API schemas", () => {
+  const profile = {
+    id: 21,
+    sellerId: 7,
+    displayName: "王阿姨",
+    address: "3A-1201",
+    active: true
+  };
+  const slot = {
+    id: 11,
+    sellerId: 7,
+    date: "2026-07-13",
+    occasion: "lunch",
+    menuItems: [
+      { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+      { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+      { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+      { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+      { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+    ],
+    orderStatus: "draft",
+    priceCents: null,
+    generatedAt: "2026-07-10T01:00:00.000Z"
+  };
+  const order = {
+    id: 31,
+    sellerId: 7,
+    mealSlotId: 11,
+    customerProfileId: 21,
+    status: "draft",
+    source: "manual",
+    displayName: "王阿姨",
+    address: "3A-1201",
+    quantity: 2,
+    unitPriceCents: 3000,
+    totalCents: 6000,
+    paymentStatus: "unpaid",
+    paidAt: null,
+    deliveryStatus: "pending",
+    deliveredAt: null,
+    confirmedAt: null,
+    canceledAt: null,
+    note: "少辣"
+  };
+
+  it("accepts seller/profile and draft-order response envelopes", () => {
+    expect(sellerSnapshotSchema.parse({ id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" }))
+      .toMatchObject({ id: 7, defaultPriceCents: 3000 });
+    expect(customerProfileSchema.parse(profile)).toEqual(profile);
+    expect(cmsCustomerProfileSchema.parse({ ...profile, openid: null })).toEqual({ ...profile, openid: null });
+    expect(customerProfilesResponseSchema.parse({ docs: [profile] })).toEqual({ docs: [profile] });
+    expect(orderSchema.parse(order)).toEqual(order);
+    expect(orderListResponseSchema.parse({
+      mealSlot: slot,
+      docs: [order],
+      summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
+    }).docs).toEqual([order]);
+    expect(orderMutationResponseSchema.parse({ doc: order, profile }).profile).toEqual(profile);
+  });
+
+  it("accepts exactly one profile source and non-empty draft edits", () => {
+    expect(manualOrderCreateSchema.parse({ mealSlotId: 11, customerProfileId: 21, quantity: 2 })).toEqual({
+      mealSlotId: 11,
+      customerProfileId: 21,
+      quantity: 2,
+      note: null
+    });
+    expect(manualOrderCreateSchema.parse({
+      mealSlotId: 11,
+      newProfile: { displayName: " 王阿姨 ", address: " 3A-1201 " },
+      quantity: 1,
+      note: ""
+    })).toEqual({
+      mealSlotId: 11,
+      newProfile: { displayName: "王阿姨", address: "3A-1201" },
+      quantity: 1,
+      note: ""
+    });
+    expect(manualOrderUpdateSchema.parse({ quantity: 3, address: "3A-1202" })).toEqual({
+      quantity: 3,
+      address: "3A-1202"
+    });
+    expect(orderListQuerySchema.parse({ date: "2026-07-13", occasion: "lunch" })).toEqual({
+      date: "2026-07-13",
+      occasion: "lunch"
+    });
+    expect(customerProfileCreateSchema.parse({ displayName: "王阿姨", address: "3A-1201" })).toEqual({
+      displayName: "王阿姨",
+      address: "3A-1201"
+    });
+  });
+
+  it("validates CMS persistence input and actionable duplicate summaries", () => {
+    const persisted = {
+      mealSlotId: 11,
+      customerProfileId: 21,
+      customerOpenid: null,
+      status: "draft",
+      source: "manual",
+      displayName: "王阿姨",
+      address: "3A-1201",
+      quantity: 2,
+      unitPriceCents: 3000,
+      paymentStatus: "unpaid",
+      paidAt: null,
+      deliveryStatus: "pending",
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      note: null
+    };
+    expect(cmsOrderCreateSchema.parse(persisted)).toEqual(persisted);
+    expect(orderExistsErrorSchema.parse({
+      error: "order-exists",
+      message: "订单已存在",
+      existing: { id: 31, status: "draft", quantity: 2 }
+    }).existing.id).toBe(31);
+    expect(orderExistsErrorSchema.parse({
+      error: "canceled-order-exists",
+      message: "已取消订单需要明确重提",
+      existing: { id: 31, status: "canceled", quantity: 2 }
+    }).error).toBe("canceled-order-exists");
+  });
+
+  it("rejects seller/openid injection, invalid profile choices and malformed order data", () => {
+    expect(customerProfileCreateSchema.safeParse({ displayName: "王阿姨", address: "3A", openid: "leak" }).success).toBe(false);
+    expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, quantity: 1 }).success).toBe(false);
+    expect(manualOrderCreateSchema.safeParse({
+      mealSlotId: 11,
+      customerProfileId: 21,
+      newProfile: { displayName: "王阿姨", address: "3A" },
+      quantity: 1
+    }).success).toBe(false);
+    expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, customerProfileId: 21, quantity: 0 }).success).toBe(false);
+    expect(manualOrderCreateSchema.safeParse({ mealSlotId: 11, customerProfileId: 21, quantity: 1, seller: 99 }).success).toBe(false);
+    expect(manualOrderUpdateSchema.safeParse({}).success).toBe(false);
+    expect(manualOrderUpdateSchema.safeParse({ status: "confirmed" }).success).toBe(false);
+    expect(orderListQuerySchema.safeParse({ date: "2026-02-30", occasion: "lunch" }).success).toBe(false);
+    expect(orderSchema.safeParse({ ...order, totalCents: 5999 }).success).toBe(false);
+    expect(cmsOrderCreateSchema.safeParse({ ...order, seller: 99 }).success).toBe(false);
+    expect(orderExistsErrorSchema.safeParse({
+      error: "order-exists",
+      message: "x",
+      existing: { id: 31, status: "confirmed", quantity: 2 }
     }).success).toBe(false);
   });
 });

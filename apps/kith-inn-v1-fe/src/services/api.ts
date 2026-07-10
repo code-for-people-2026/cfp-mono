@@ -1,14 +1,20 @@
 import type {
+  CustomerProfile,
+  CustomerProfileCreate,
   ImportCommitInput,
   ImportCommitResponse,
   ImportPreviewResponse,
   GenerateMenusInput,
   GenerateMenusResponse,
   MealSlot,
+  ManualOrderCreate,
+  ManualOrderUpdate,
   Offering,
   OfferingCreate,
   OfferingUpdate,
   RelaxedRule,
+  Order,
+  OrderListResponse,
   SwapMenuItemResponse
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
@@ -153,6 +159,59 @@ function parseSwap(value: unknown): SwapMenuItemResponse {
   return { doc: parseMealSlot(body.doc), relaxedRules: parseRelaxedRules(body.relaxedRules) };
 }
 
+function parseCustomerProfile(value: unknown): CustomerProfile {
+  const profile = record(value);
+  if (!profile || Object.hasOwn(profile, "openid") || !validId(profile.id) || !validId(profile.sellerId) ||
+    typeof profile.displayName !== "string" || profile.displayName === "" ||
+    typeof profile.address !== "string" || profile.address === "" || typeof profile.active !== "boolean") {
+    throw new ApiError(502, "invalid-api-response", "顾客资料数据无效");
+  }
+  return profile as CustomerProfile;
+}
+
+function validNullableDate(value: unknown): boolean {
+  return value === null || (typeof value === "string" && !Number.isNaN(Date.parse(value)));
+}
+
+function parseOrder(value: unknown): Order {
+  const order = record(value);
+  if (!order || !validId(order.id) || !validId(order.sellerId) || !validId(order.mealSlotId) ||
+    !validId(order.customerProfileId) ||
+    !(order.status === "draft" || order.status === "confirmed" || order.status === "canceled") ||
+    order.source !== "manual" || typeof order.displayName !== "string" || order.displayName === "" ||
+    typeof order.address !== "string" || order.address === "" ||
+    typeof order.quantity !== "number" || !Number.isInteger(order.quantity) || order.quantity <= 0 ||
+    typeof order.unitPriceCents !== "number" || !Number.isInteger(order.unitPriceCents) || order.unitPriceCents < 0 ||
+    order.totalCents !== order.quantity * order.unitPriceCents ||
+    !(order.paymentStatus === "unpaid" || order.paymentStatus === "paid") || !validNullableDate(order.paidAt) ||
+    !(order.deliveryStatus === "pending" || order.deliveryStatus === "done") || !validNullableDate(order.deliveredAt) ||
+    !validNullableDate(order.confirmedAt) || !validNullableDate(order.canceledAt) ||
+    !(order.note === null || typeof order.note === "string")) {
+    throw new ApiError(502, "invalid-api-response", "订单数据无效");
+  }
+  return order as Order;
+}
+
+function parseOrderSummary(value: unknown): OrderListResponse["summary"] {
+  const summary = record(value);
+  const keys = ["confirmedOrders", "totalQuantity", "unpaid", "pendingDelivery"] as const;
+  if (!summary || keys.some((key) => typeof summary[key] !== "number" ||
+    !Number.isInteger(summary[key]) || (summary[key] as number) < 0)) {
+    throw new ApiError(502, "invalid-api-response", "订单汇总无效");
+  }
+  return summary as OrderListResponse["summary"];
+}
+
+function parseOrderList(value: unknown): OrderListResponse {
+  const body = record(value);
+  if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "订单数据无效");
+  return {
+    mealSlot: parseMealSlot(body.mealSlot),
+    docs: body.docs.map(parseOrder),
+    summary: parseOrderSummary(body.summary)
+  };
+}
+
 type ClientOptions = {
   request: RequestAdapter;
   sessions: SessionStore;
@@ -250,6 +309,30 @@ export function createApiClient(options: ClientOptions) {
         method: "POST",
         data: { offeringId }
       }));
+    },
+    async listCustomerProfiles(query = ""): Promise<CustomerProfile[]> {
+      const value = await request<unknown>(`/merchant/customer-profiles?query=${encodeURIComponent(query)}`);
+      const body = record(value);
+      if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "顾客资料数据无效");
+      return body.docs.map(parseCustomerProfile);
+    },
+    async createCustomerProfile(input: CustomerProfileCreate): Promise<CustomerProfile> {
+      const value = await request<unknown>("/merchant/customer-profiles", { method: "POST", data: input });
+      return parseCustomerProfile(record(value)?.doc);
+    },
+    async listOrders(date: string, occasion: "lunch" | "dinner"): Promise<OrderListResponse> {
+      return parseOrderList(await request(
+        `/merchant/orders?date=${encodeURIComponent(date)}&occasion=${encodeURIComponent(occasion)}`
+      ));
+    },
+    async createOrder(input: ManualOrderCreate): Promise<{ doc: Order; profile: CustomerProfile }> {
+      const body = record(await request("/merchant/orders", { method: "POST", data: input }));
+      if (!body) throw new ApiError(502, "invalid-api-response", "订单数据无效");
+      return { doc: parseOrder(body.doc), profile: parseCustomerProfile(body.profile) };
+    },
+    async updateOrder(id: string | number, input: ManualOrderUpdate): Promise<Order> {
+      const body = record(await request(`/merchant/orders/${encodeURIComponent(id)}`, { method: "PATCH", data: input }));
+      return parseOrder(body?.doc);
     }
   };
 }

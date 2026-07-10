@@ -131,3 +131,90 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
   await taroButton(page, /^查看未来 31 天菜单$/).click();
   await expect(page.locator(".menu-slot")).toHaveCount(11);
 });
+
+test("选择餐次后新建顾客资料、补草稿单、重复确认更新并修改", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const displayName = `订单顾客-${suffix}`;
+  const address = `9C-${suffix}`;
+  const rows = [
+    `订单荤一-${suffix} 牛肉-${suffix} 荤`,
+    `订单荤二-${suffix} 猪肉-${suffix} 荤`,
+    `订单素一-${suffix} 青菜-${suffix} 素`,
+    `订单素二-${suffix} 豆腐-${suffix} 素`,
+    `订单汤-${suffix} 番茄-${suffix} 汤`
+  ];
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await page.getByRole("textbox", { name: "每行一道菜" }).fill(rows.join("\n"));
+  await taroButton(page, /^预览导入$/).click();
+  await taroButton(page, /^确认导入$/).click();
+  await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
+
+  await taroButton(page, /^菜单$/).click();
+  await page.getByRole("textbox", { name: "菜单起始日期" }).fill("2026-09-21");
+  await taroButton(page, /^生成午餐$/).click();
+  await expect(page.getByText("2026-09-21 午餐", { exact: true })).toBeVisible();
+  await taroButton(page, /^订单$/).click();
+
+  await expect(page.getByText("餐次订单", { exact: true })).toBeVisible();
+  await page.getByRole("textbox", { name: "订单日期" }).fill("2026-09-21");
+  await taroButton(page, /^查看午餐订单$/).click();
+  await expect(page.getByText("已确认 0 单，共 0 份；未付 0 单，待送 0 单", { exact: true })).toBeVisible();
+
+  await page.getByRole("textbox", { name: "顾客称呼" }).fill(displayName);
+  await page.getByRole("textbox", { name: "顾客地址" }).fill(address);
+  await page.getByRole("spinbutton").first().fill("2");
+  await page.getByRole("textbox", { name: "备注" }).fill("少辣");
+  await taroButton(page, /^草稿补单$/).click();
+  const orderCard = page.locator(".order-card").filter({ hasText: displayName });
+  await expect(orderCard).toContainText("2 份");
+
+  await page.getByRole("spinbutton").first().fill("3");
+  await taroButton(page, /^草稿补单$/).click();
+  await expect(taroButton(page, /^确认更新现有草稿$/)).toBeVisible();
+  await taroButton(page, /^确认更新现有草稿$/).click();
+  await expect(orderCard).toContainText("3 份");
+
+  await orderCard.getByLabel(`编辑 ${displayName}`).click();
+  await page.locator('.edit-order-form input[type="number"]').fill("4");
+  await page.getByRole("textbox", { name: "编辑地址" }).fill(`${address}-改`);
+  await taroButton(page, /^保存草稿修改$/).click();
+  await expect(orderCard).toContainText("4 份");
+  await expect(orderCard).toContainText(`${address}-改`);
+
+  await page.reload();
+  await page.getByRole("textbox", { name: "订单日期" }).fill("2026-09-21");
+  await taroButton(page, /^查看午餐订单$/).click();
+  await expect(page.locator(".order-card").filter({ hasText: displayName })).toContainText("4 份");
+
+  const mealSlotId = await page.locator(".orders-page").getAttribute("data-meal-slot-id");
+  const foreign = await page.evaluate(async (targetMealSlotId) => {
+    const tokenIn = (value: unknown): string => {
+      if (typeof value === "string") {
+        try {
+          return tokenIn(JSON.parse(value));
+        } catch {
+          return "";
+        }
+      }
+      if (typeof value !== "object" || value === null) return "";
+      const record = value as Record<string, unknown>;
+      if (typeof record.token === "string") return record.token;
+      return Object.values(record).map(tokenIn).find(Boolean) ?? "";
+    };
+    let token = "";
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const raw = localStorage.getItem(localStorage.key(index) ?? "");
+      token ||= tokenIn(raw);
+    }
+    const headers = { Authorization: `Bearer ${token}`, "content-type": "application/json" };
+    const response = await fetch("http://127.0.0.1:3311/merchant/orders", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ mealSlotId: targetMealSlotId, customerProfileId: 999999999, quantity: 1 })
+    });
+    return { status: response.status, body: await response.json() as { error?: string } };
+  }, mealSlotId);
+  expect(foreign).toEqual({ status: 404, body: expect.objectContaining({ error: "customer-profile-not-found" }) });
+});

@@ -124,24 +124,24 @@
 
 ### Tests for M1-C1 / User Story 3 ⚠️
 
-- [ ] T042 [US3] 本规划 PR rebase merge 后从最新 `main` 创建 M1-C1 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T043 [P] [US3] 先覆盖 seller/profile、order list/create/edit 请求响应、summary、稳定错误、重复最小摘要和 seller 字段拒绝 schema，不预建 action/bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T044 [P] [US3] 先覆盖手动订单 price fallback、顾客/单价快照、draft 编辑、重复坐标冲突和 confirmed-only 汇总，不实现状态迁移或清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`
-- [ ] T045 [P] [US3] 先覆盖 CMS seller snapshot、profile list/create openid 强制为空，以及 draft order list/create/patch 字段白名单、slot/profile owner、unique、跨 seller 404 和停用 membership：`apps/cms/tests/kiv1-orders.test.ts`
-- [ ] T046 [P] [US3] 先覆盖 BE seller/profile/order CMS clients、manual create/list/draft-edit routes、duplicate 409 和无跨 seller 泄露：`apps/kith-inn-v1-be/src/lib/cms/seller.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
-- [ ] T047 [P] [US3] 先覆盖 FE 餐次订单分组/汇总、profile 选择/创建、重复更新确认、draft 编辑和 API 请求：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T048 [US3] 先扩展失败的 H5 “选择餐次 → 新 profile → 草稿补单 → 重复确认更新 → 修改”关键流和跨 seller negative flow：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [X] T042 [US3] 本规划 PR rebase merge 后从最新 `main` 创建 M1-C1 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交（起点：`90ed2b0`）
+- [X] T043 [P] [US3] 先覆盖 seller/profile、order list/create/edit 请求响应、summary、稳定错误、重复最小摘要和 seller 字段拒绝 schema，不预建 action/bulk contract：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [X] T044 [P] [US3] 先覆盖手动订单 price fallback、顾客/单价快照、draft 编辑、重复坐标冲突和 confirmed-only 汇总，不实现状态迁移或清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`
+- [X] T045 [P] [US3] 先覆盖 CMS seller snapshot、profile list/create openid 强制为空，以及 draft order list/create/patch 字段白名单、slot/profile owner、unique、跨 seller 404 和停用 membership：`apps/cms/tests/kiv1-orders.test.ts`
+- [X] T046 [P] [US3] 先覆盖 BE seller/profile/order CMS clients、manual create/list/draft-edit routes、duplicate 409 和无跨 seller 泄露：`apps/kith-inn-v1-be/src/lib/cms/seller.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [X] T047 [P] [US3] 先覆盖 FE 餐次订单分组/汇总、profile 选择/创建、重复更新确认、draft 编辑和 API 请求：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [X] T048 [US3] 先扩展失败的 H5 “选择餐次 → 新 profile → 草稿补单 → 重复确认更新 → 修改”关键流和跨 seller negative flow：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ### Implementation for M1-C1 / User Story 3
 
-- [ ] T049 [US3] 实现 seller/profile 与 order list/create/edit/summary API schemas 和共享类型，不导出 action/bulk schema：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
-- [ ] T050 [US3] 实现 seller-scoped CMS seller/profile/order list/create 和订单快照 edit routes、relationship owner 与当前切片写字段白名单，不下沉状态机：`apps/cms/src/app/api/internal/kiv1/seller/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer-profiles/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
-- [ ] T051 [US3] 实现手动订单创建/编辑与汇总纯逻辑、seller/profile/order CMS clients 和 merchant list/create/edit routes：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/lib/cms/seller.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/kith-inn-v1-be/src/app.ts`
-- [ ] T052 [US3] 实现原生 Taro 订单页、餐次选择、profile 选择/创建、草稿补单、重复更新和订单编辑 UI：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T049 [US3] 实现 seller/profile 与 order list/create/edit/summary API schemas 和共享类型，不导出 action/bulk schema：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [X] T050 [US3] 实现 seller-scoped CMS seller/profile/order list/create 和订单快照 edit routes、relationship owner 与当前切片写字段白名单，不下沉状态机：`apps/cms/src/app/api/internal/kiv1/seller/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer-profiles/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/orders/[id]/route.ts`
+- [X] T051 [US3] 实现手动订单创建/编辑与汇总纯逻辑、seller/profile/order CMS clients 和 merchant list/create/edit routes：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/lib/cms/seller.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`、`apps/kith-inn-v1-be/src/app.ts`
+- [X] T052 [US3] 实现原生 Taro 订单页、餐次选择、profile 选择/创建、草稿补单、重复更新和订单编辑 UI：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`
 
 ### M1-C1 PR Gate
 
-- [ ] T053 [US3] 运行相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL profile/order tenant 回归、M1-C1 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证草稿补单切片并记录 T042–T053 状态
+- [X] T053 [US3] 运行相关 shared/BE/FE 100% coverage、CMS SQLite/PostgreSQL profile/order tenant 回归、M1-C1 H5 e2e、weapp build 和 `pnpm verify`，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证草稿补单切片并记录 T042–T053 状态
 - [ ] T054 [US3] 提交 M1-C1 ready PR，等待 checks/Codex review 并闭环 actionable threads 后停止；不得预建 confirm/cancel/payment/delivery/bulk/clipboard API 或 UI：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1-C1 可独立交付；桃子可记录和修改草稿订单，尚不能改变订单生命周期。

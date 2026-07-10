@@ -203,6 +203,178 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
+  it("sends and validates customer-profile and draft-order requests", async () => {
+    const profile = {
+      id: 21,
+      sellerId: 7,
+      displayName: "王阿姨",
+      address: "3A-1201",
+      active: true
+    };
+    const slot = {
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch" as const,
+      menuItems: [
+        { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" as const },
+        { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" as const },
+        { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" as const },
+        { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" as const },
+        { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" as const }
+      ],
+      orderStatus: "draft" as const,
+      priceCents: null,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    };
+    const order = {
+      id: 31,
+      sellerId: 7,
+      mealSlotId: 11,
+      customerProfileId: 21,
+      status: "draft" as const,
+      source: "manual" as const,
+      displayName: "王阿姨",
+      address: "3A-1201",
+      quantity: 2,
+      unitPriceCents: 3000,
+      totalCents: 6000,
+      paymentStatus: "unpaid" as const,
+      paidAt: "2026-07-10T01:00:00.000Z",
+      deliveryStatus: "pending" as const,
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      note: "少辣"
+    };
+    const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
+      if (url.includes("customer-profiles")) {
+        return method === "POST"
+          ? { statusCode: 201, data: { doc: profile } }
+          : { statusCode: 200, data: { docs: [profile] } };
+      }
+      if (method === "POST") return { statusCode: 201, data: { doc: order, profile } };
+      if (method === "PATCH") return { statusCode: 200, data: { doc: { ...order, quantity: 3, totalCents: 9000 } } };
+      return {
+        statusCode: 200,
+        data: {
+          mealSlot: slot,
+          docs: [order],
+          summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
+        }
+      };
+    });
+    const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
+    await expect(client.listCustomerProfiles("王 阿姨")).resolves.toEqual([profile]);
+    await expect(client.createCustomerProfile({ displayName: "王阿姨", address: "3A-1201" })).resolves.toEqual(profile);
+    await expect(client.listOrders("2026-07-13", "lunch")).resolves.toMatchObject({ mealSlot: slot, docs: [order] });
+    await expect(client.createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 2, note: null }))
+      .resolves.toEqual({ doc: order, profile });
+    await expect(client.updateOrder(31, { quantity: 3 })).resolves.toMatchObject({ quantity: 3, totalCents: 9000 });
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: "http://be.test/merchant/customer-profiles?query=%E7%8E%8B%20%E9%98%BF%E5%A7%A8"
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/customer-profiles"
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      url: "http://be.test/merchant/orders?date=2026-07-13&occasion=lunch"
+    }));
+    expect(request).toHaveBeenNthCalledWith(4, expect.objectContaining({ method: "POST", data: {
+      mealSlotId: 11,
+      customerProfileId: 21,
+      quantity: 2,
+      note: null
+    } }));
+    expect(request).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      method: "PATCH",
+      url: "http://be.test/merchant/orders/31",
+      data: { quantity: 3 }
+    }));
+  });
+
+  it("rejects malformed customer-profile and order envelopes", async () => {
+    const store = sessions();
+    for (const data of [null, {}, { docs: [{}] }]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: store }).listCustomerProfiles(""))
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    await expect(createApiClient({ request: adapter(200, { doc: {} }), sessions: store })
+      .createCustomerProfile({ displayName: "王阿姨", address: "3A" }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const data of [null, {}, {
+      mealSlot: {},
+      docs: [],
+      summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
+    }]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: store }).listOrders("2026-07-13", "lunch"))
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    await expect(createApiClient({ request: adapter(200, { doc: {}, profile: {} }), sessions: store })
+      .createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 1, note: null }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: store })
+      .createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 1, note: null }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: store }).updateOrder(31, { quantity: 2 }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+  });
+
+  it("rejects invalid order timestamps and summary counters", async () => {
+    const slot = {
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch",
+      menuItems: [
+        { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+        { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+        { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+        { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+        { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+      ],
+      orderStatus: "draft",
+      priceCents: null,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    };
+    const order = {
+      id: 31,
+      sellerId: 7,
+      mealSlotId: 11,
+      customerProfileId: 21,
+      status: "draft",
+      source: "manual",
+      displayName: "王阿姨",
+      address: "3A",
+      quantity: 1,
+      unitPriceCents: 3000,
+      totalCents: 3000,
+      paymentStatus: "unpaid",
+      paidAt: "bad",
+      deliveryStatus: "pending",
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      note: null
+    };
+    const zero = { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 };
+    await expect(createApiClient({
+      request: adapter(200, { mealSlot: slot, docs: [order], summary: zero }),
+      sessions: sessions()
+    }).listOrders("2026-07-13", "lunch")).rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const summary of [
+      { ...zero, confirmedOrders: "0" },
+      { ...zero, totalQuantity: 1.5 },
+      { ...zero, unpaid: -1 }
+    ]) {
+      await expect(createApiClient({
+        request: adapter(200, { mealSlot: slot, docs: [], summary }),
+        sessions: sessions()
+      }).listOrders("2026-07-13", "lunch")).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+  });
+
   it("sends bearer for merchant calls and clears session on 401/403", async () => {
     for (const status of [401, 403]) {
       const store = sessions();

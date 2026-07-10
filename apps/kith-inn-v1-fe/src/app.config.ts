@@ -2,7 +2,8 @@ export default defineAppConfig({
   pages: [
     "pages/merchant/login/index",
     "pages/merchant/offerings/index",
-    "pages/merchant/menu/index"
+    "pages/merchant/menu/index",
+    "pages/merchant/orders/index"
   ],
   window: {
     backgroundTextStyle: "light",

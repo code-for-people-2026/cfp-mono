@@ -318,6 +318,102 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       }
     });
 
+    it("enforces profile/order tenant relationships and order uniqueness in PostgreSQL", async () => {
+      const suffix = crypto.randomUUID();
+      const sellerA = await payload.create({
+        collection: "kiv1_sellers",
+        data: { name: `订单租户 A ${suffix}`, defaultPriceCents: 3000, status: "active" },
+        overrideAccess: true,
+      });
+      const sellerB = await payload.create({
+        collection: "kiv1_sellers",
+        data: { name: `订单租户 B ${suffix}`, defaultPriceCents: 3000, status: "active" },
+        overrideAccess: true,
+      });
+      const profileA = await payload.create({
+        collection: "kiv1_customer_profiles",
+        data: { seller: sellerA.id, openid: null, displayName: "顾客 A", address: "A-101", active: true },
+        overrideAccess: true,
+      });
+      const profileB = await payload.create({
+        collection: "kiv1_customer_profiles",
+        data: { seller: sellerB.id, openid: null, displayName: "顾客 B", address: "B-101", active: true },
+        overrideAccess: true,
+      });
+      const slotA = await payload.create({
+        collection: "kiv1_meal_slots",
+        data: { seller: sellerA.id, date: "2030-02-01", occasion: "lunch", orderStatus: "draft" },
+        overrideAccess: true,
+      });
+      const slotB = await payload.create({
+        collection: "kiv1_meal_slots",
+        data: { seller: sellerB.id, date: "2030-02-01", occasion: "lunch", orderStatus: "draft" },
+        overrideAccess: true,
+      });
+      const orderA = await payload.create({
+        collection: "kiv1_orders",
+        data: {
+          seller: sellerA.id,
+          mealSlot: slotA.id,
+          customerProfile: profileA.id,
+          status: "draft",
+          source: "manual",
+          displayName: "顾客 A",
+          address: "A-101",
+          quantity: 1,
+          unitPriceCents: 3000,
+          paymentStatus: "unpaid",
+          deliveryStatus: "pending",
+        },
+        overrideAccess: true,
+      });
+
+      try {
+        await expect(payload.create({
+          collection: "kiv1_orders",
+          data: {
+            seller: sellerA.id,
+            mealSlot: slotA.id,
+            customerProfile: profileA.id,
+            status: "draft",
+            source: "manual",
+            displayName: "重复顾客",
+            address: "A-102",
+            quantity: 2,
+            unitPriceCents: 3000,
+            paymentStatus: "unpaid",
+            deliveryStatus: "pending",
+          },
+          overrideAccess: true,
+        })).rejects.toThrow();
+        await expect(payload.create({
+          collection: "kiv1_orders",
+          data: {
+            seller: sellerA.id,
+            mealSlot: slotB.id,
+            customerProfile: profileB.id,
+            status: "draft",
+            source: "manual",
+            displayName: "越权顾客",
+            address: "B-101",
+            quantity: 1,
+            unitPriceCents: 3000,
+            paymentStatus: "unpaid",
+            deliveryStatus: "pending",
+          },
+          overrideAccess: true,
+        })).rejects.toThrow(/跨 seller relationship/);
+      } finally {
+        await payload.delete({ collection: "kiv1_orders", id: orderA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_meal_slots", id: slotA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_meal_slots", id: slotB.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_customer_profiles", id: profileA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_customer_profiles", id: profileB.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_sellers", id: sellerA.id, overrideAccess: true });
+        await payload.delete({ collection: "kiv1_sellers", id: sellerB.id, overrideAccess: true });
+      }
+    });
+
     it("re-creates partial-unique constraints drizzle push can't express (onInit)", async () => {
       // These three business-critical uniques carry a WHERE clause, so collection
       // `indexes` (no partial-predicate support) won't build them under push.

@@ -49,7 +49,8 @@ button.primary {
 }
 
 .offerings-page,
-.menu-page {
+.menu-page,
+.orders-page {
   display: flex;
   flex-direction: column;
   gap: 28rpx;
@@ -146,4 +147,59 @@ button.danger {
 .menu-item-main {
   color: #766859;
   font-size: 24rpx;
+}
+
+.order-controls input,
+.order-form input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+  background: #fffdf9;
+}
+
+.order-actions,
+.profile-list,
+.order-card {
+  display: flex;
+  gap: 16rpx;
+}
+
+.order-actions button {
+  flex: 1;
+}
+
+.profile-list {
+  flex-wrap: wrap;
+  margin-bottom: 20rpx;
+}
+
+.profile-list button {
+  margin: 0;
+}
+
+.profile-list button.selected {
+  background: #d98965;
+  color: #ffffff;
+}
+
+.order-form button.primary {
+  margin-top: 16rpx;
+}
+
+.order-form button.danger {
+  margin-top: 16rpx;
+}
+
+.order-card {
+  align-items: center;
+}
+
+.order-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10rpx;
 }

@@ -90,6 +90,17 @@ export function isUniqueConflict(error: unknown): boolean {
   const status = typeof error === "object" && error !== null && "status" in error
     ? (error as { status?: unknown }).status
     : undefined;
-  const message = error instanceof Error ? error.message : String(error);
-  return status === 409 || /unique|duplicate|already exists|constraint/i.test(message);
+  if (status === 409) return true;
+  const seen = new Set<object>();
+  const pending: unknown[] = [error];
+  while (pending.length > 0) {
+    const value = pending.pop();
+    if (typeof value === "string" && /unique|duplicate|already exists|23505|sqlite_constraint_unique/i.test(value)) {
+      return true;
+    }
+    if (typeof value !== "object" || value === null || seen.has(value)) continue;
+    seen.add(value);
+    for (const key of Object.getOwnPropertyNames(value)) pending.push((value as Record<string, unknown>)[key]);
+  }
+  return false;
 }
