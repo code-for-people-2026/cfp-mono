@@ -280,6 +280,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 - batch、mealSlots、createdBy 必须属于同一 seller。
 - `sharePath` 不落库；由 `/pages/booking/index?batchId=<publicId>` 派生。
 - batch closed/archived 不取消已有订单。
+- 任意状态的现存 batch 都可为 customer session 解析 seller；closed/archived 只禁止通过该分享入口新增订单，不阻断顾客读取自己的历史订单。
 - 关闭 batch 只关闭该分享入口；关闭 meal slot 会影响引用它的所有 batch。
 
 索引：
@@ -419,7 +420,8 @@ confirmed + done → pending + deliveredAt=null
 
 ### V1 customer session
 
-- customer JWT 只含由 batch 解析的 sellerId 和 code2Session 得到的 openid。
+- session endpoint 只要求 batch 存在，不要求 open；无效 batchId 拒绝，closed/archived batch 仍可换取 session。
+- customer JWT 只含由 batch 解析的 sellerId 和 code2Session 得到的 openid；session 本身不授予订单写权限。
 - profile 读写按 seller + openid；order 读取按 seller + customerOpenid。
 - 只能修改自己的 draft order，且 slot open、未截止。
 - 不能确认、标已付、标已送。
