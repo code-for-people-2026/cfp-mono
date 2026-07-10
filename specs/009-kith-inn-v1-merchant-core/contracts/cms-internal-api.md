@@ -14,6 +14,7 @@
 - CMS 使用独立 `KITH_INN_V1_JWT_SECRET` 验证 `kind=operator`、签名和 exp。
 - CMS 随后查询 `kiv1_operators`：id=operatorId、seller=sellerId、active=true，并确认关联 `kiv1_sellers.status=active`；不匹配返回 403。
 - seller 从 token stamp/filter；body 中出现 seller 必须返回 422，不得覆盖 token seller。
+- `PATCH /api/internal/kiv1/orders/:id` 还必须同时携带 `x-kith-inn-v1-internal`，确保生命周期与 confirmed 编辑只能由 BE 状态机决策；operator JWT 单独调用必须返回 401。
 
 统一跨 seller 行为：404 `not-found`，不得区分“不存在”和“属于其他 seller”。
 

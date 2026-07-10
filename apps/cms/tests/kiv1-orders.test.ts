@@ -14,6 +14,7 @@ import { GET as listOrders, POST as createOrder } from "../src/app/api/internal/
 import * as orderRoute from "../src/app/api/internal/kiv1/orders/[id]/route";
 
 const SECRET = "v1-secret";
+const INTERNAL = "v1-internal";
 const originalEnv = { ...process.env };
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
 const sellerDoc = { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" };
@@ -93,7 +94,11 @@ function payloadWith(options: PayloadOptions = {}) {
 function request(path: string, init: RequestInit = {}) {
   return new Request(`http://cms.test/api/internal/kiv1${path}`, {
     ...init,
-    headers: { "x-kith-inn-v1-operator": token, ...init.headers }
+    headers: {
+      "x-kith-inn-v1-operator": token,
+      "x-kith-inn-v1-internal": INTERNAL,
+      ...init.headers
+    }
   });
 }
 
@@ -108,6 +113,7 @@ function json(path: string, method: "POST" | "PATCH", body: unknown) {
 beforeEach(() => {
   vi.resetAllMocks();
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
+  process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
 
 afterEach(() => {
@@ -290,6 +296,21 @@ describe("order persistence boundary", () => {
       data: lifecycle,
       overrideAccess: true
     });
+  });
+
+  it("rejects operator-only PATCH calls before lifecycle fields reach Payload", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await orderRoute.PATCH(new Request("http://cms.test/api/internal/kiv1/orders/31", {
+      method: "PATCH",
+      headers: {
+        "content-type": "application/json",
+        "x-kith-inn-v1-operator": token
+      },
+      body: JSON.stringify({ status: "confirmed" })
+    }), { params: Promise.resolve({ id: "31" }) });
+    expect(response.status).toBe(401);
+    expect(payload.update).not.toHaveBeenCalled();
   });
 
   it("rejects missing/cross-seller relationships, extra fields and malformed JSON", async () => {

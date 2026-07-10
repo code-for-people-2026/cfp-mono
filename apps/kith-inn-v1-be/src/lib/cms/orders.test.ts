@@ -62,6 +62,7 @@ const response = (body: unknown, status = 200) => ({
 describe("CMS order client", () => {
   it("lists, gets, creates and patches through the operator boundary", async () => {
     process.env.CMS_BASE_URL = "http://cms.test/";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
     const listDeps = response({ docs: [order] });
     await expect(listOrders("jwt", 11, listDeps)).resolves.toEqual([order]);
     expect(listDeps.fetch).toHaveBeenCalledWith(
@@ -76,7 +77,11 @@ describe("CMS order client", () => {
     await expect(updateOrder("jwt", 31, patch, updateDeps)).resolves.toMatchObject({ quantity: 3, totalCents: 9000 });
     expect(updateDeps.fetch).toHaveBeenCalledWith(
       "http://cms.test/api/internal/kiv1/orders/31",
-      expect.objectContaining({ method: "PATCH", body: JSON.stringify(patch) })
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({ "x-kith-inn-v1-internal": "internal" }),
+        body: JSON.stringify(patch)
+      })
     );
 
     const lifecycle: CmsOrderUpdate = {
@@ -88,7 +93,11 @@ describe("CMS order client", () => {
     await expect(updateOrder("jwt", 31, lifecycle, lifecycleDeps)).resolves.toMatchObject(lifecycle);
     expect(lifecycleDeps.fetch).toHaveBeenCalledWith(
       "http://cms.test/api/internal/kiv1/orders/31",
-      expect.objectContaining({ method: "PATCH", body: JSON.stringify(lifecycle) })
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({ "x-kith-inn-v1-internal": "internal" }),
+        body: JSON.stringify(lifecycle)
+      })
     );
   });
 
