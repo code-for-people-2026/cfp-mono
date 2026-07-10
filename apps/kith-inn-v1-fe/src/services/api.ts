@@ -31,7 +31,12 @@ export type RequestOptions = {
 export type RequestAdapter = (options: RequestOptions) => Promise<{ statusCode: number; data: unknown }>;
 
 export class ApiError extends Error {
-  constructor(public readonly status: number, public readonly code: string, message: string) {
+  constructor(
+    public readonly status: number,
+    public readonly code: string,
+    message: string,
+    public readonly data?: unknown
+  ) {
     super(message);
   }
 }
@@ -181,7 +186,8 @@ export function createApiClient(options: ClientOptions) {
     throw new ApiError(
       response.statusCode,
       parsed?.error ?? "request-failed",
-      parsed?.message ?? "请求失败"
+      parsed?.message ?? "请求失败",
+      response.data
     );
   }
 

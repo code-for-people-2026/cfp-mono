@@ -6,6 +6,7 @@ import {
   buildSingleTarget,
   buildMenuRange,
   buildWorkWeekTargets,
+  generationErrorText,
   needsReplaceConfirmation,
   relaxedRulesText,
   replaceMealSlot
@@ -87,7 +88,7 @@ export default function MerchantMenu() {
       }
       if (handledAuthFailure(error)) return;
       await Taro.showToast({
-        title: error instanceof Error ? error.message : "菜单生成失败",
+        title: generationErrorText(error),
         icon: "none"
       });
     }

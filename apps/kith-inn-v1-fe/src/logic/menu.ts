@@ -4,6 +4,7 @@ import type {
   Occasion,
   RelaxedRule
 } from "@cfp/kith-inn-v1-shared";
+import { ApiError } from "../services/api";
 
 const DAY_MS = 86_400_000;
 const RULE_LABELS: Record<RelaxedRule, string> = {
@@ -13,6 +14,24 @@ const RULE_LABELS: Record<RelaxedRule, string> = {
   "recent-main-ingredient": "近 7 日不重复主料"
 };
 const RULE_ORDER = Object.keys(RULE_LABELS) as RelaxedRule[];
+const CATEGORY_LABELS = { meat: "荤菜", veg: "素菜", soup: "汤" } as const;
+
+type PoolShortage = {
+  category: keyof typeof CATEGORY_LABELS;
+  required: number;
+  available: number;
+};
+
+function poolShortages(value: unknown): PoolShortage[] {
+  if (typeof value !== "object" || value === null || !("shortages" in value) ||
+    !Array.isArray(value.shortages)) return [];
+  return value.shortages.filter((shortage): shortage is PoolShortage => {
+    if (typeof shortage !== "object" || shortage === null) return false;
+    const item = shortage as Record<string, unknown>;
+    return typeof item.category === "string" && item.category in CATEGORY_LABELS &&
+      Number.isInteger(item.required) && Number.isInteger(item.available);
+  });
+}
 
 function validDate(value: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
@@ -49,6 +68,17 @@ export function buildWorkWeekTargets(date: string, occasions: Occasion[]): MealS
 export function needsReplaceConfirmation(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error &&
     (error as { code?: unknown }).code === "meal-slots-exist";
+}
+
+export function generationErrorText(error: unknown): string {
+  const fallback = error instanceof Error ? error.message : "菜单生成失败";
+  if (!(error instanceof ApiError) || error.code !== "offering-pool-insufficient") return fallback;
+  const shortages = poolShortages(error.data);
+  return shortages.length === 0
+    ? fallback
+    : `菜品池不足：${shortages.map(({ category, required, available }) =>
+      `${CATEGORY_LABELS[category]}缺 ${Math.max(0, required - available)} 道（需 ${required}，现有 ${available}）`
+    ).join("、")}`;
 }
 
 export function relaxedRulesText(rules: RelaxedRule[]): string {
