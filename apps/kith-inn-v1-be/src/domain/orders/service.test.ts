@@ -147,6 +147,16 @@ describe("manual draft order service", () => {
     }
   });
 
+  it("applies the single-order delivery transition independently to bulk candidates", () => {
+    const now = "2026-07-11T00:00:00.000Z";
+    const confirmed = { ...order, status: "confirmed" as const, confirmedAt: now };
+    expect(transitionOrder(confirmed, "mark-delivered", now))
+      .toEqual({ deliveryStatus: "done", deliveredAt: now });
+    expect(transitionOrder({ ...confirmed, deliveryStatus: "done", deliveredAt: now }, "mark-delivered", now))
+      .toBeNull();
+    expect(() => transitionOrder(order, "mark-delivered", now)).toThrow(InvalidOrderTransitionError);
+  });
+
   it("resubmits canceled orders with fresh snapshots and cleared lifecycle fields", () => {
     const canceled = {
       ...order,

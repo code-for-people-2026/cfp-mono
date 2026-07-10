@@ -1,7 +1,8 @@
-import { Button, Input, Text, View } from "@tarojs/components";
+import { Button, Checkbox, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import type {
+  BulkMarkDeliveredResult,
   CustomerProfile,
   ManualOrderUpdate,
   MealSlot,
@@ -15,11 +16,15 @@ import {
   availableOrderActions,
   buildManualOrderCreate,
   buildOrderEdit,
+  bulkDeliveryFeedback,
+  copyOrderChecklist,
   duplicateDraftUpdate,
+  orderChecklistText,
   orderResubmitInput,
   orderStateText,
   orderSummaryText,
-  replaceOrder
+  replaceOrder,
+  toggleBulkOrderSelection
 } from "@/logic/orders";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
@@ -84,6 +89,8 @@ export default function MerchantOrders() {
   const [editNote, setEditNote] = useState("");
   const [confirmedEditPending, setConfirmedEditPending] = useState(false);
   const [pendingAction, setPendingAction] = useState<{ id: string | number; action: "cancel" | "resubmit" } | null>(null);
+  const [selectedOrderIds, setSelectedOrderIds] = useState<Array<string | number>>([]);
+  const [bulkResults, setBulkResults] = useState<BulkMarkDeliveredResult[]>([]);
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "login") {
@@ -105,6 +112,8 @@ export default function MerchantOrders() {
     setEditing(null);
     setConfirmedEditPending(false);
     setPendingAction(null);
+    setSelectedOrderIds([]);
+    setBulkResults([]);
   };
 
   const load = async (targetOccasion: Occasion) => {
@@ -230,6 +239,29 @@ export default function MerchantOrders() {
     }
   };
 
+  const runBulkDelivery = async () => {
+    if (selectedOrderIds.length === 0) return;
+    try {
+      const results = await api.bulkMarkDelivered(selectedOrderIds);
+      await load(occasion);
+      setBulkResults(results);
+      setSelectedOrderIds([]);
+    } catch (error) {
+      if (handledAuthFailure(error)) return;
+      await Taro.showToast({ title: "批量送达失败", icon: "none" });
+    }
+  };
+
+  const copyChecklist = async () => {
+    if (!mealSlot) return;
+    try {
+      await copyOrderChecklist(mealSlot, orders, Taro.setClipboardData);
+      await Taro.showToast({ title: "清单已复制", icon: "success" });
+    } catch {
+      await Taro.showToast({ title: "清单复制失败", icon: "none" });
+    }
+  };
+
   return (
     <View className="page orders-page" data-meal-slot-id={mealSlot ? String(mealSlot.id) : ""}>
       <Text className="title">餐次订单</Text>
@@ -248,6 +280,23 @@ export default function MerchantOrders() {
       </View>
 
       {mealSlot && <Text className="notice">{orderSummaryText(summary)}</Text>}
+
+      {mealSlot && (
+        <View className="card checklist-card">
+          <Text className="section-title">备餐/送餐清单</Text>
+          <Text className="order-checklist">{orderChecklistText(mealSlot, orders)}</Text>
+          <Button className="primary" onClick={() => void copyChecklist()}>复制备餐/送餐清单</Button>
+        </View>
+      )}
+
+      {selectedOrderIds.length > 0 && (
+        <Button className="primary" onClick={() => void runBulkDelivery()}>
+          批量标已送（{selectedOrderIds.length}）
+        </Button>
+      )}
+      {bulkDeliveryFeedback(bulkResults).map((feedback) => (
+        <Text className="notice" key={feedback}>{feedback}</Text>
+      ))}
 
       <View className="card order-form">
         <Text className="section-title">顾客资料与草稿补单</Text>
@@ -331,6 +380,14 @@ export default function MerchantOrders() {
             {order.note && <Text className="meta">备注：{order.note}</Text>}
             <Text className="meta">{orderStateText(order)}</Text>
           </View>
+          {order.status === "confirmed" && (
+            <Checkbox
+              value={String(order.id)}
+              checked={selectedOrderIds.some((id) => String(id) === String(order.id))}
+              aria-label={`选择 ${order.displayName}`}
+              onClick={() => setSelectedOrderIds((current) => toggleBulkOrderSelection(current, order))}
+            >选择</Checkbox>
+          )}
           {order.status !== "canceled" && (
             <Button size="mini" aria-label={`编辑 ${order.displayName}`} onClick={() => beginEdit(order)}>编辑</Button>
           )}

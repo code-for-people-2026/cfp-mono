@@ -257,6 +257,13 @@ describe("API client", () => {
           ? { statusCode: 201, data: { doc: profile } }
           : { statusCode: 200, data: { docs: [profile] } };
       }
+      if (url.endsWith("/bulk-mark-delivered")) return {
+        statusCode: 200,
+        data: { results: [
+          { id: 31, status: "updated" },
+          { id: 32, status: "failed", error: "invalid-order-transition" }
+        ] }
+      };
       if (url.endsWith("/confirm")) return {
         statusCode: 200,
         data: { doc: { ...order, status: "confirmed", confirmedAt: "2026-07-11T00:00:00.000Z" } }
@@ -286,6 +293,10 @@ describe("API client", () => {
     await expect(client.actOnOrder(31, "confirm")).resolves.toMatchObject({ status: "confirmed" });
     const resubmit = { quantity: 2, displayName: "王阿姨", address: "3A-1201", note: null };
     await expect(client.actOnOrder(31, "resubmit", resubmit)).resolves.toMatchObject({ status: "draft" });
+    await expect(client.bulkMarkDelivered([31, 32])).resolves.toEqual([
+      { id: 31, status: "updated" },
+      { id: 32, status: "failed", error: "invalid-order-transition" }
+    ]);
     expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
       url: "http://be.test/merchant/customer-profiles?query=%E7%8E%8B%20%E9%98%BF%E5%A7%A8"
     }));
@@ -316,6 +327,11 @@ describe("API client", () => {
       url: "http://be.test/merchant/orders/31/resubmit",
       data: resubmit
     }));
+    expect(request).toHaveBeenNthCalledWith(8, expect.objectContaining({
+      method: "POST",
+      url: "http://be.test/merchant/orders/bulk-mark-delivered",
+      data: { ids: [31, 32] }
+    }));
   });
 
   it("rejects malformed customer-profile and order envelopes", async () => {
@@ -345,6 +361,18 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
     await expect(createApiClient({ request: adapter(200, null), sessions: store }).actOnOrder(31, "confirm"))
       .rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const data of [
+      null,
+      {},
+      { results: [null] },
+      { results: [{ id: "", status: "updated" }] },
+      { results: [{ id: 31, status: "failed" }] },
+      { results: [{ id: 31, status: "failed", error: "" }] },
+      { results: [{ id: 31, status: "updated", error: "not-found" }] }
+    ]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: store }).bulkMarkDelivered([31]))
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
   });
 
   it("rejects invalid order timestamps and summary counters", async () => {

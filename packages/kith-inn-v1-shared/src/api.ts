@@ -402,6 +402,25 @@ export const orderMutationResponseSchema = z.object({
 
 export const orderActionResponseSchema = z.object({ doc: orderSchema }).strict();
 
+export const bulkMarkDeliveredInputSchema = z.object({
+  ids: z.array(relationshipIdSchema).min(1).max(100).transform((ids) => [
+    ...new Map(ids.map((id) => [String(id), id])).values()
+  ])
+}).strict();
+
+export const bulkMarkDeliveredResultSchema = z.discriminatedUnion("status", [
+  z.object({ id: relationshipIdSchema, status: z.literal("updated") }).strict(),
+  z.object({
+    id: relationshipIdSchema,
+    status: z.literal("failed"),
+    error: z.string().trim().min(1)
+  }).strict()
+]);
+
+export const bulkMarkDeliveredResponseSchema = z.object({
+  results: z.array(bulkMarkDeliveredResultSchema).max(100)
+}).strict();
+
 export const orderStateErrorSchema = z.object({
   error: z.enum(["invalid-order-transition", "confirmed-impact-confirmation-required"]),
   message: z.string().min(1)

@@ -10,6 +10,8 @@ import type {
   sellerInputSchema
 } from "./schemas";
 import type {
+  bulkMarkDeliveredInputSchema,
+  bulkMarkDeliveredResultSchema,
   importCommitInputSchema,
   importCommitResponseSchema,
   importPreviewResponseSchema,
@@ -76,3 +78,5 @@ export type OrderAction = z.infer<typeof orderActionSchema>;
 export type OrderResubmit = z.infer<typeof orderResubmitSchema>;
 export type OrderSummary = z.infer<typeof orderSummarySchema>;
 export type OrderListResponse = z.infer<typeof orderListResponseSchema>;
+export type BulkMarkDeliveredInput = z.infer<typeof bulkMarkDeliveredInputSchema>;
+export type BulkMarkDeliveredResult = z.infer<typeof bulkMarkDeliveredResultSchema>;

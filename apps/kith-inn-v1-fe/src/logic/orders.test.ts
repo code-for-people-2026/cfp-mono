@@ -1,15 +1,19 @@
-import { describe, expect, it } from "vitest";
-import type { Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
+import { describe, expect, it, vi } from "vitest";
+import type { MealSlot, Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
 import { ApiError } from "../services/api";
 import {
   availableOrderActions,
   buildManualOrderCreate,
   buildOrderEdit,
+  bulkDeliveryFeedback,
+  copyOrderChecklist,
   duplicateDraftUpdate,
+  orderChecklistText,
   orderResubmitInput,
   orderStateText,
   orderSummaryText,
-  replaceOrder
+  replaceOrder,
+  toggleBulkOrderSelection
 } from "./orders";
 
 const order = (overrides: Partial<Order> = {}): Order => ({
@@ -33,6 +37,23 @@ const order = (overrides: Partial<Order> = {}): Order => ({
   note: null,
   ...overrides
 });
+
+const slot: MealSlot = {
+  id: 11,
+  sellerId: 7,
+  date: "2026-07-13",
+  occasion: "lunch",
+  menuItems: [
+    { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+    { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+    { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+    { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+    { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+  ],
+  orderStatus: "draft",
+  priceCents: null,
+  generatedAt: "2026-07-10T01:00:00.000Z"
+};
 
 describe("manual-order form logic", () => {
   it("builds an existing-profile order or a complete new profile", () => {
@@ -153,5 +174,45 @@ describe("order-list view logic", () => {
     expect(replaceOrder([second], sameAddress)).toEqual([sameAddress, second]);
     const sameName = order({ id: 30, address: "2B", displayName: "李叔" });
     expect(replaceOrder([second], sameName)).toEqual([sameName, second]);
+  });
+
+  it("explicitly selects only confirmed orders and reports every bulk result", () => {
+    const confirmed = order({ status: "confirmed", confirmedAt: "2026-07-10T00:00:00.000Z" });
+    expect(toggleBulkOrderSelection([], confirmed)).toEqual([31]);
+    expect(toggleBulkOrderSelection([31], confirmed)).toEqual([]);
+    expect(toggleBulkOrderSelection([], order())).toEqual([]);
+    expect(toggleBulkOrderSelection([], order({ status: "canceled" }))).toEqual([]);
+    expect(bulkDeliveryFeedback([
+      { id: 31, status: "updated" },
+      { id: "order-32", status: "failed", error: "invalid-order-transition" }
+    ])).toEqual([
+      "订单 31：已送",
+      "订单 order-32：失败（invalid-order-transition）"
+    ]);
+  });
+
+  it("builds and copies a confirmed-only checklist in address/name/id order", async () => {
+    const orders = [
+      order({ id: 35, status: "confirmed", confirmedAt: "2026-07-10T00:00:00.000Z", address: "3A", quantity: 2 }),
+      order({ id: 34, status: "confirmed", confirmedAt: "2026-07-10T00:00:00.000Z", address: "2B", displayName: "李叔", quantity: 1, totalCents: 3000 }),
+      order({ id: 32, status: "confirmed", confirmedAt: "2026-07-10T00:00:00.000Z", address: "2B", displayName: "李叔", quantity: 1, totalCents: 3000 }),
+      order({ id: 33, status: "confirmed", confirmedAt: "2026-07-10T00:00:00.000Z", address: "2B", displayName: "阿姨", quantity: 3, totalCents: 9000 }),
+      order({ id: 36, status: "draft", address: "1A", displayName: "草稿" }),
+      order({ id: 37, status: "canceled", address: "1A", displayName: "取消" })
+    ];
+    const text = [
+      "餐次：2026-07-13 午餐",
+      "总份数：7",
+      "2B｜阿姨｜3 份",
+      "2B｜李叔｜1 份",
+      "2B｜李叔｜1 份",
+      "3A｜王阿姨｜2 份"
+    ].join("\n");
+    expect(orderChecklistText(slot, orders)).toBe(text);
+    const setClipboardData = vi.fn(async () => undefined);
+    await copyOrderChecklist(slot, orders, setClipboardData);
+    expect(setClipboardData).toHaveBeenCalledWith({ data: text });
+    expect(orderChecklistText({ ...slot, occasion: "dinner" }, []))
+      .toBe("餐次：2026-07-13 晚餐\n总份数：0");
   });
 });

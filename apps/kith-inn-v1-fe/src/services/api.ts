@@ -1,4 +1,5 @@
 import type {
+  BulkMarkDeliveredResult,
   CustomerProfile,
   CustomerProfileCreate,
   ImportCommitInput,
@@ -215,6 +216,26 @@ function parseOrderList(value: unknown): OrderListResponse {
   };
 }
 
+function parseBulkMarkDelivered(value: unknown): BulkMarkDeliveredResult[] {
+  const body = record(value);
+  if (!body || !Array.isArray(body.results)) {
+    throw new ApiError(502, "invalid-api-response", "批量送达结果无效");
+  }
+  return body.results.map((value) => {
+    const result = record(value);
+    if (!result || !validId(result.id)) {
+      throw new ApiError(502, "invalid-api-response", "批量送达结果无效");
+    }
+    if (result.status === "updated" && !Object.hasOwn(result, "error")) {
+      return { id: result.id, status: "updated" };
+    }
+    if (result.status === "failed" && typeof result.error === "string" && result.error !== "") {
+      return { id: result.id, status: "failed", error: result.error };
+    }
+    throw new ApiError(502, "invalid-api-response", "批量送达结果无效");
+  });
+}
+
 type ClientOptions = {
   request: RequestAdapter;
   sessions: SessionStore;
@@ -336,6 +357,12 @@ export function createApiClient(options: ClientOptions) {
     async updateOrder(id: string | number, input: ManualOrderUpdate): Promise<Order> {
       const body = record(await request(`/merchant/orders/${encodeURIComponent(id)}`, { method: "PATCH", data: input }));
       return parseOrder(body?.doc);
+    },
+    async bulkMarkDelivered(ids: Array<string | number>): Promise<BulkMarkDeliveredResult[]> {
+      return parseBulkMarkDelivered(await request("/merchant/orders/bulk-mark-delivered", {
+        method: "POST",
+        data: { ids }
+      }));
     },
     async actOnOrder(id: string | number, action: OrderAction, input?: OrderResubmit): Promise<Order> {
       const body = record(await request(

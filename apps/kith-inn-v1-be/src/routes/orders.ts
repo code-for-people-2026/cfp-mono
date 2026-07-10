@@ -1,4 +1,5 @@
 import {
+  bulkMarkDeliveredInputSchema,
   customerProfileCreateSchema,
   manualOrderCreateSchema,
   manualOrderUpdateSchema,
@@ -7,6 +8,7 @@ import {
   orderResubmitSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
+  BulkMarkDeliveredResult,
   CmsCustomerProfile,
   CmsOrderCreate,
   CmsOrderUpdate,
@@ -223,6 +225,33 @@ export function ordersRoutes(secret: string, deps: OrdersDeps = defaultDeps) {
       }
       return dependencyError(c, error);
     }
+  });
+
+  app.post("/bulk-mark-delivered", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const parsed = bulkMarkDeliveredInputSchema.safeParse(body.value);
+    if (!parsed.success) return c.json({ error: "invalid-bulk-selection", message: "批量订单选择无效" }, 422);
+    const token = c.get("operatorToken");
+    const now = deps.now();
+    const results: BulkMarkDeliveredResult[] = [];
+    for (const id of parsed.data.ids) {
+      try {
+        const order = await deps.getOrder(token, id);
+        const patch = transitionOrder(order, "mark-delivered", now);
+        if (patch !== null) await deps.updateOrder(token, id, patch);
+        results.push({ id, status: "updated" });
+      } catch (error) {
+        results.push({
+          id,
+          status: "failed",
+          error: error instanceof InvalidOrderTransitionError
+            ? "invalid-order-transition"
+            : isDependencyError(error) ? error.code : "cms-unavailable"
+        });
+      }
+    }
+    return c.json({ results });
   });
 
   app.post("/:id/:action", async (c) => {

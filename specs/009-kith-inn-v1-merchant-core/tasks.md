@@ -187,23 +187,23 @@
 
 ### Tests for M1-C3 / User Story 3 ⚠️
 
-- [ ] T067 [US3] M1-C2 rebase merge 后从最新 `main` 创建 M1-C3 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交
-- [ ] T068 [P] [US3] 先覆盖 bulk mark-delivered 最多 100 个去重 id、逐项结果与错误 schema：`packages/kith-inn-v1-shared/src/api.test.ts`
-- [ ] T069 [P] [US3] 先覆盖 bulk 复用单条状态机、partial result、未选中/非法/跨 seller 零写入，以及 confirmed-only 地址/称呼稳定排序清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
-- [ ] T070 [P] [US3] 先覆盖 FE 显式批量选中、逐项失败反馈、地址排序清单、draft/canceled 排除和平台剪贴板调用：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
-- [ ] T071 [US3] 先扩展失败的 H5 多订单批量送达、partial failure 与复制 confirmed-only 清单关键流：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
+- [X] T067 [US3] M1-C2 rebase merge 后从最新 `main` 创建 M1-C3 分支，并在 `specs/009-kith-inn-v1-merchant-core/tasks.md` 记录起点提交（起点：`69b3b0a`）
+- [X] T068 [P] [US3] 先覆盖 bulk mark-delivered 最多 100 个去重 id、逐项结果与错误 schema：`packages/kith-inn-v1-shared/src/api.test.ts`
+- [X] T069 [P] [US3] 先覆盖 bulk 复用单条状态机、partial result、未选中/非法/跨 seller 零写入，以及 confirmed-only 地址/称呼稳定排序清单：`apps/kith-inn-v1-be/src/domain/orders/service.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-be/src/routes/orders.test.ts`
+- [X] T070 [P] [US3] 先覆盖 FE 显式批量选中、逐项失败反馈、地址排序清单、draft/canceled 排除和平台剪贴板调用：`apps/kith-inn-v1-fe/src/logic/orders.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`
+- [X] T071 [US3] 先扩展失败的 H5 多订单批量送达、partial failure 与复制 confirmed-only 清单关键流：`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ### Implementation for M1-C3 / User Story 3
 
-- [ ] T072 [US3] 实现 bulk mark-delivered API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
-- [ ] T073 [US3] 实现 bulk route 逐 id 复用单条状态机并返回 partial result，扩展 confirmed-only 清单纯逻辑：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`
-- [ ] T074 [US3] 实现订单页批量选择/已送、逐项结果和平台剪贴板清单交互：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
-- [ ] T075 [P] [US3] 核对清单范围、批量 tenant 边界和公开文案，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`
+- [X] T072 [US3] 实现 bulk mark-delivered API schemas 与共享类型：`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`
+- [X] T073 [US3] 实现 bulk route 逐 id 复用单条状态机并返回 partial result，扩展 confirmed-only 清单纯逻辑：`apps/kith-inn-v1-be/src/domain/orders/service.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-be/src/routes/orders.ts`
+- [X] T074 [US3] 实现订单页批量选择/已送、逐项结果和平台剪贴板清单交互：`apps/kith-inn-v1-fe/src/logic/orders.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/app.css`
+- [X] T075 [P] [US3] 核对清单范围、批量 tenant 边界和公开文案，仅在实现决策漂移时同步长期文档：`docs/kith-inn-v1/USER-STORIES.md`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/DATA-MODEL.md`（核对一致，无需修改）
 
 ### M1-C3 / M1 Complete Gate
 
-- [ ] T076 [US3] 运行全部 shared/BE/FE coverage、CMS SQLite/PostgreSQL tenant/relationship 回归、完整商家 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 2 分钟手动订单生命周期
-- [ ] T077 [US3] 从空本地数据跑通“seed → 登录 → 菜品 → 一周菜单 → 手动补单 → 确认 → 付款/送达 → 批量/清单”，运行 `pnpm verify`，确认未创建 booking batch/customer session/AI/支付入口、未修改旧业务源码或新增 collection，并记录 T067–T077 与完整 M1 状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T076 [US3] 运行全部 shared/BE/FE coverage、CMS SQLite/PostgreSQL tenant/relationship 回归、完整商家 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 2 分钟手动订单生命周期
+- [X] T077 [US3] 从空本地数据跑通“seed → 登录 → 菜品 → 一周菜单 → 手动补单 → 确认 → 付款/送达 → 批量/清单”，运行 `pnpm verify`，确认未创建 booking batch/customer session/AI/支付入口、未修改旧业务源码或新增 collection，并记录 T067–T077 与完整 M1 状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 - [ ] T078 [US3] 提交 M1-C3 ready PR，等待 checks/Codex review；逐条修复或解释并 resolve 所有 actionable threads：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1 完成；桃子可在没有顾客侧的情况下跑通菜单和商家订单经营闭环。

@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-10
 
-**Status**: In Progress（M1-A/B 已完成，M1-C1/C2/C3 待实施）
+**Status**: Complete（M1-A/B/C1/C2/C3 已完成）
 
 **Input**: User description: "完成 M0 后进入 M1；先交付商家登录与菜品池，再交付菜单生成和商家侧订单闭环。创建真正可运行的 v1 前后端，不实现顾客预订、分享、AI 或支付。"
 

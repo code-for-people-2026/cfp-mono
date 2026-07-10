@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   apiErrorSchema,
   authResponseSchema,
+  bulkMarkDeliveredInputSchema,
+  bulkMarkDeliveredResponseSchema,
   cmsCustomerProfileSchema,
   cmsOrderCreateSchema,
   cmsOrderUpdateSchema,
@@ -394,6 +396,28 @@ describe("manual order API schemas", () => {
       error: "confirmed-impact-confirmation-required",
       message: "需要确认影响"
     }).error).toBe("confirmed-impact-confirmation-required");
+  });
+
+  it("deduplicates at most 100 bulk delivery ids and validates per-order results", () => {
+    expect(bulkMarkDeliveredInputSchema.parse({ ids: [31, 31, "order-32"] }))
+      .toEqual({ ids: [31, "order-32"] });
+    expect(bulkMarkDeliveredResponseSchema.parse({
+      results: [
+        { id: 31, status: "updated" },
+        { id: "order-32", status: "failed", error: "invalid-order-transition" }
+      ]
+    }).results).toHaveLength(2);
+    expect(bulkMarkDeliveredInputSchema.safeParse({ ids: [] }).success).toBe(false);
+    expect(bulkMarkDeliveredInputSchema.safeParse({
+      ids: Array.from({ length: 101 }, (_, index) => index + 1)
+    }).success).toBe(false);
+    expect(bulkMarkDeliveredInputSchema.safeParse({ ids: [31], seller: 7 }).success).toBe(false);
+    expect(bulkMarkDeliveredResponseSchema.safeParse({
+      results: [{ id: 31, status: "failed" }]
+    }).success).toBe(false);
+    expect(bulkMarkDeliveredResponseSchema.safeParse({
+      results: [{ id: 31, status: "updated", error: "not-found" }]
+    }).success).toBe(false);
   });
 
   it("rejects seller/openid injection, invalid profile choices and malformed order data", () => {
