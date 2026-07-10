@@ -70,9 +70,17 @@ function dependencyError(c: Context, error: unknown) {
 
 const keyOf = ({ date, occasion }: MealSlotTarget) => `${date}:${occasion}`;
 
-function generationRange(targets: MealSlotTarget[]) {
-  const dates = targets.map(({ date }) => date).sort();
-  return { from: addCalendarDays(dates[0]!, -7), to: dates.at(-1)! };
+function generationRanges(targets: MealSlotTarget[]) {
+  const dates = [...new Set(targets.map(({ date }) => date))].sort();
+  return dates.reduce<Array<{ from: string; to: string }>>((ranges, date) => {
+    const current = ranges.at(-1);
+    if (!current || date > addCalendarDays(current.from, 30)) {
+      ranges.push({ from: addCalendarDays(date, -7), to: date });
+    } else {
+      current.to = date;
+    }
+    return ranges;
+  }, []);
 }
 
 async function persistMenu(
@@ -118,8 +126,10 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
     if (!parsed.success) return c.json({ error: "invalid-menu-targets", message: "菜单目标无效" }, 422);
     const token = c.get("operatorToken");
     try {
-      const range = generationRange(parsed.data.targets);
-      const slots = await deps.listMealSlots(token, range);
+      const slotBatches = await Promise.all(
+        generationRanges(parsed.data.targets).map((range) => deps.listMealSlots(token, range))
+      );
+      const slots = [...new Map(slotBatches.flat().map((slot) => [keyOf(slot), slot])).values()];
       const targetKeys = new Set(parsed.data.targets.map(keyOf));
       const existing = slots.filter((slot) => targetKeys.has(keyOf(slot)));
       if (existing.length > 0 && !parsed.data.replaceExisting) {
