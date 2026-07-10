@@ -247,6 +247,10 @@ describe("API client", () => {
       canceledAt: null,
       note: "少辣"
     };
+    const nonManualOrders = [
+      { ...order, id: 32, source: "customer-card" as const },
+      { ...order, id: 33, source: "jielong-import" as const }
+    ];
     const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
       if (url.includes("customer-profiles")) {
         return method === "POST"
@@ -259,7 +263,7 @@ describe("API client", () => {
         statusCode: 200,
         data: {
           mealSlot: slot,
-          docs: [order],
+          docs: [order, ...nonManualOrders],
           summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
         }
       };
@@ -267,7 +271,10 @@ describe("API client", () => {
     const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
     await expect(client.listCustomerProfiles("王 阿姨")).resolves.toEqual([profile]);
     await expect(client.createCustomerProfile({ displayName: "王阿姨", address: "3A-1201" })).resolves.toEqual(profile);
-    await expect(client.listOrders("2026-07-13", "lunch")).resolves.toMatchObject({ mealSlot: slot, docs: [order] });
+    await expect(client.listOrders("2026-07-13", "lunch")).resolves.toMatchObject({
+      mealSlot: slot,
+      docs: [order, ...nonManualOrders]
+    });
     await expect(client.createOrder({ mealSlotId: 11, customerProfileId: 21, quantity: 2, note: null }))
       .resolves.toEqual({ doc: order, profile });
     await expect(client.updateOrder(31, { quantity: 3 })).resolves.toMatchObject({ quantity: 3, totalCents: 9000 });

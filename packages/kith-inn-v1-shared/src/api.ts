@@ -366,7 +366,7 @@ export const orderMutationResponseSchema = z.object({
 
 const existingOrderSchema = z.object({
   id: relationshipIdSchema,
-  status: z.enum(["draft", "canceled"]),
+  status: orderStatusSchema,
   quantity: positiveIntegerSchema
 }).strict();
 
