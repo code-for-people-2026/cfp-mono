@@ -11,7 +11,7 @@ const REF = "2020-06-01";
 const validSnapshot = (over: Partial<RawParsedOrderInput> = {}): RawParsedOrderInput => ({
   mode: "snapshot",
   scope: [{ date: "2020-06-08", occasion: "dinner", dateEvidence: "6.8号星期一晚餐" }],
-  items: [{ customerName: "桃子", date: "2020-06-08", occasion: "dinner", quantity: 8 }],
+  items: [{ customerName: "桃子", date: "2020-06-08", occasion: "dinner", quantity: 8, evidence: "桃子 8份晚餐" }],
   unknownSegments: [],
   ...over,
 });
@@ -34,7 +34,7 @@ describe("parseOrderInput deterministic validation", () => {
   it("fails closed when the normalized date disagrees with its evidence", async () => {
     const result = await injected("6.8号星期一晚餐 桃子8份", validSnapshot({
       scope: [{ date: "2020-06-09", occasion: "dinner", dateEvidence: "6.8号星期一晚餐" }],
-      items: [{ customerName: "桃子", date: "2020-06-09", occasion: "dinner", quantity: 8 }],
+      items: [{ customerName: "桃子", date: "2020-06-09", occasion: "dinner", quantity: 8, evidence: "桃子8份" }],
     }));
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "date-mismatch" }));
   });
@@ -42,7 +42,7 @@ describe("parseOrderInput deterministic validation", () => {
   it("fails closed when the stated weekday contradicts the calendar", async () => {
     const result = await injected("6.13号星期五午餐 桃子1份", validSnapshot({
       scope: [{ date: "2020-06-13", occasion: "lunch", dateEvidence: "6.13号星期五午餐" }],
-      items: [{ customerName: "桃子", date: "2020-06-13", occasion: "lunch", quantity: 1 }],
+      items: [{ customerName: "桃子", date: "2020-06-13", occasion: "lunch", quantity: 1, evidence: "桃子1份" }],
     }));
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "weekday-mismatch" }));
   });
@@ -53,7 +53,7 @@ describe("parseOrderInput deterministic validation", () => {
       operation: "add",
       operationEvidence: "加",
       scope: [{ date: "2026-07-13", occasion: "dinner", dateEvidence: "明天晚餐" }],
-      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "dinner", quantity: 2 }],
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "dinner", quantity: 2, evidence: "加王阿姨2份" }],
       unknownSegments: [],
     }, "2026-07-12");
     expect(result.issues).toEqual([]);
@@ -66,7 +66,7 @@ describe("parseOrderInput deterministic validation", () => {
       operation: "add",
       operationEvidence: "加",
       scope: [{ date: "2026-07-13", occasion: "lunch", dateEvidence: "明天" }],
-      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch", quantity: 2 }],
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch", quantity: 2, evidence: "加王阿姨2份" }],
       unknownSegments: [],
     }, "2026-07-12");
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "occasion-evidence-missing" }));
@@ -77,7 +77,7 @@ describe("parseOrderInput deterministic validation", () => {
       mode: "increment",
       operation: "add",
       scope: [{ date: "2026-07-13", occasion: "dinner", dateEvidence: "7月13日晚餐" }],
-      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "dinner", quantity: 2 }],
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "dinner", quantity: 2, evidence: "王阿姨2份" }],
       unknownSegments: [],
     }, "2026-07-12");
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "operation-evidence-missing" }));
@@ -89,7 +89,7 @@ describe("parseOrderInput deterministic validation", () => {
       operation: "add",
       operationEvidence: "加",
       scope: [{ date: "2026-07-11", occasion: "lunch", dateEvidence: "今天（7月14日）午餐" }],
-      items: [{ customerName: "王阿姨", date: "2026-07-11", occasion: "lunch", quantity: 2 }],
+      items: [{ customerName: "王阿姨", date: "2026-07-11", occasion: "lunch", quantity: 2, evidence: "加王阿姨2份" }],
       unknownSegments: [],
     }, "2026-07-11");
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "date-conflict" }));
@@ -112,9 +112,19 @@ describe("parseOrderInput deterministic validation", () => {
 
   it("blocks an item whose date/occasion is outside the declared scope", async () => {
     const result = await injected("6.8号星期一晚餐 桃子8份", validSnapshot({
-      items: [{ customerName: "桃子", date: "2020-06-08", occasion: "lunch", quantity: 8 }],
+      items: [{ customerName: "桃子", date: "2020-06-08", occasion: "lunch", quantity: 8, evidence: "桃子8份" }],
     }));
     expect(result.issues).toContainEqual(expect.objectContaining({ code: "item-outside-scope" }));
+  });
+
+  it("blocks items whose customer or quantity lacks matching raw evidence", async () => {
+    const result = await injected("6.8号星期一晚餐 桃子1份\n例 王阿姨2份", validSnapshot({
+      items: [
+        { customerName: "王阿姨", date: "2020-06-08", occasion: "dinner", quantity: 2, evidence: "王阿姨2份" },
+        { customerName: "桃子", date: "2020-06-08", occasion: "dinner", quantity: 2, evidence: "桃子1份" },
+      ],
+    }));
+    expect(result.issues.map((issue) => issue.code)).toEqual(expect.arrayContaining(["item-evidence-missing", "item-evidence-mismatch"]));
   });
 });
 

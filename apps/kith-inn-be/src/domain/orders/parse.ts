@@ -13,6 +13,7 @@ const itemSchema = z.object({
   date: calendarDateSchema,
   occasion: mealSchema,
   quantity: z.number().int().positive(),
+  evidence: z.string().trim().min(1).optional(),
 });
 
 export const rawParsedOrderInputSchema = z.object({
@@ -35,6 +36,8 @@ export type ParseIssue = {
     | "occasion-evidence-missing"
     | "operation-evidence-missing"
     | "operation-evidence-mismatch"
+    | "item-evidence-missing"
+    | "item-evidence-mismatch"
     | "duplicate-scope"
     | "item-outside-scope"
     | "unknown-segment"
@@ -97,6 +100,30 @@ function operationFromEvidence(evidence: string): "add" | "set" | undefined {
   return add === set ? undefined : add ? "add" : "set";
 }
 
+const CN_DIGITS: Record<string, number> = { 零: 0, 〇: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+
+function chineseInteger(value: string): number | undefined {
+  if (!/[十百]/.test(value)) {
+    const digits = [...value].map((char) => CN_DIGITS[char]);
+    return digits.every((digit) => digit !== undefined) ? Number(digits.join("")) : undefined;
+  }
+  let total = 0;
+  let digit = 0;
+  for (const char of value) {
+    if (char in CN_DIGITS) digit = CN_DIGITS[char]!;
+    else if (char === "十") { total += (digit || 1) * 10; digit = 0; }
+    else if (char === "百") { total += (digit || 1) * 100; digit = 0; }
+    else return undefined;
+  }
+  return total + digit;
+}
+
+function statedQuantities(evidence: string): number[] {
+  return [...evidence.matchAll(/(\d+|[零〇一二两三四五六七八九十百]+)\s*份/g)]
+    .map((match) => /^\d+$/.test(match[1]!) ? Number(match[1]) : chineseInteger(match[1]!))
+    .filter((quantity): quantity is number => quantity !== undefined);
+}
+
 function statedWeekday(evidence: string): string | undefined {
   return evidence.match(/(?:星期|周)\s*([一二三四五六日天])/)?.[1]?.replace("天", "日");
 }
@@ -144,6 +171,12 @@ function validateParsed(rawText: string, parsed: RawParsedOrderInput, referenceD
     if (!scopeKeys.has(`${item.date}|${item.occasion}`)) {
       issues.push({ code: "item-outside-scope", message: `${item.customerName} 的 ${item.date} ${item.occasion} 不在接龙标题范围内` });
     }
+    const evidenceLine = item.evidence && rawText.split(/\r?\n/).find((line) => line.includes(item.evidence!) && !/^\s*(?:例|示例)(?:\s|[:：])/.test(line));
+    if (!item.evidence || !evidenceLine) {
+      issues.push({ code: "item-evidence-missing", message: `原文中找不到 ${item.customerName} 的订单依据`, evidence: item.evidence });
+    } else if (!item.evidence.includes(item.customerName) || !statedQuantities(item.evidence).includes(item.quantity)) {
+      issues.push({ code: "item-evidence-mismatch", message: `${item.customerName} 的顾客或份数与原文依据不一致：${item.evidence}`, evidence: item.evidence });
+    }
   }
   for (const segment of parsed.unknownSegments) {
     issues.push({ code: "unknown-segment", message: `这行像订单但没解析完整：${segment}`, evidence: segment });
@@ -187,15 +220,15 @@ export function buildParseSystemPrompt(referenceDate: string): string {
 - 订单行按其明确餐次映射对应 scope；单餐模板中没写餐次可继承唯一餐次，多餐时不明确则放 unknownSegments。
 
 【订单】
-- items 每条必须含 customerName、date、occasion、正整数 quantity；同一人午晚餐拆两条。
+- items 每条必须含 customerName、date、occasion、正整数 quantity 和 evidence；evidence 逐字复制同时包含顾客名和份数的最短原文片段。同一人午晚餐拆两条。
 - 菜单编号菜名、价格、“例 桃子 1份午餐晚餐”、空白编号都忽略，不放 items，也不放 unknownSegments。
 - 只有疑似真实顾客订单但缺关键字段/读不懂的原文行才放 unknownSegments。宁缺毋滥，不猜。
 - 顾客名原样保留大小写、空格和连字符。
 
 只输出 JSON，不要 markdown 或解释。snapshot 示例：
-{"mode":"snapshot","scope":[{"date":"2020-06-08","occasion":"dinner","dateEvidence":"6.8号星期一晚餐"}],"items":[{"customerName":"桃子","date":"2020-06-08","occasion":"dinner","quantity":8}],"unknownSegments":[]}
+{"mode":"snapshot","scope":[{"date":"2020-06-08","occasion":"dinner","dateEvidence":"6.8号星期一晚餐"}],"items":[{"customerName":"桃子","date":"2020-06-08","occasion":"dinner","quantity":8,"evidence":"桃子   8份晚餐"}],"unknownSegments":[]}
 increment 示例：
-{"mode":"increment","operation":"add","operationEvidence":"加","scope":[{"date":"2026-07-13","occasion":"dinner","dateEvidence":"明天晚餐"}],"items":[{"customerName":"王阿姨","date":"2026-07-13","occasion":"dinner","quantity":2}],"unknownSegments":[]}`;
+{"mode":"increment","operation":"add","operationEvidence":"加","scope":[{"date":"2026-07-13","occasion":"dinner","dateEvidence":"明天晚餐"}],"items":[{"customerName":"王阿姨","date":"2026-07-13","occasion":"dinner","quantity":2,"evidence":"加王阿姨2份"}],"unknownSegments":[]}`;
 }
 
 const MAX_PARSE_RETRIES = 1;

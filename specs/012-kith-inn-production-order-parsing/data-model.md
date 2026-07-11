@@ -8,7 +8,7 @@
 
 - `mode`: `snapshot | increment`
 - `scope`: 一至多个 `{ date, occasion, dateEvidence }`
-- `items`: `{ customerName, date, occasion, quantity }[]`
+- `items`: `{ customerName, date, occasion, quantity, evidence }[]`
 - `operation`: increment 时为 `add | set`；snapshot 不使用
 - `operationEvidence`: increment 时逐字复制原文中的动作短语；snapshot 不使用
 - `unknownSegments`: 疑似订单但无法安全解释的原文片段
@@ -17,6 +17,7 @@
 约束：
 
 - 每条 item 必须四字段完整，`quantity` 为正整数，日期为真实 `YYYY-MM-DD`。
+- 每条 item 的 `evidence` 必须逐字来自用户原文，并同时包含与解析结果一致的顾客名和份数。
 - item 的日期/餐次必须属于 scope。
 - snapshot 至少有一个明确 scope；increment 恰好一个 item 与一个 scope。
 - `dateEvidence` 必须来自用户原文并同时覆盖日期和餐次；其中多个日期表达必须解析为同一天，周几若出现必须与解析日期一致。

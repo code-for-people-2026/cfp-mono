@@ -101,6 +101,11 @@ export const AGENT_TOOLS: AgentTool[] = [
       }
       const items = parsed.items;
       if (items.length === 0) return { text: "没找到可以确认的订单。" };
+      if (parsed.mode === "increment") {
+        const item = items[0]!;
+        const action = parsed.operation === "add" ? `增加 ${item.quantity} 份` : `改成 ${item.quantity} 份`;
+        return { text: `已识别为单独补单：${item.date} ${item.customerName} ${item.occasion === "lunch" ? "午餐" : "晚餐"}${action}。当前版本还不能安全修改已有订单，订单对账上线前不会生成确认卡。` };
+      }
       let isNew: boolean[];
       try {
         ({ isNew } = await s.previewOrders(items));
@@ -108,11 +113,11 @@ export const AGENT_TOOLS: AgentTool[] = [
         return { text: "查不到顾客信息，稍后再试一下？" };
       }
       const newNames = items.filter((_, i) => isNew[i]).map((it) => it.customerName);
-      const mode = parsed.mode === "snapshot" ? "完整接龙（以本次为准）" : "单独补单";
+      const mode = "完整接龙（当前仅新增草稿，不会覆盖或取消已有订单）";
       const summary = `${mode}，将记 ${items.length} 单：${items.map((it) => `${it.date} ${it.customerName} ${it.quantity}份${occasionZh(it.occasion)}`).join("、")}${newNames.length > 0 ? `（新顾客 ${newNames.join("、")} 待建）` : ""}`;
       const opArgs = { items, isNew, inputMode: parsed.mode };
       const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: opArgs });
-      return { text: summary + "。点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, opArgs, opId) };
+      return { text: summary + "。同一天已贴过接龙时请不要确认；首次记单可点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, opArgs, opId) };
     },
   },
   {

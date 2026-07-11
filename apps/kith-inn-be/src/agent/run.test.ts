@@ -12,10 +12,9 @@ const scriptedChat = (responses: ChatResult[]) => {
 const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   parseOrders:
     over.parseOrders ?? vi.fn(async () => ({
-      mode: "increment" as const,
-      operation: "add" as const,
+      mode: "snapshot" as const,
       scope: [{ date: "2026-07-07", occasion: "lunch" as const, dateEvidence: "7月7日午餐" }],
-      items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" as const, date: "2026-07-07" }],
+      items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" as const, date: "2026-07-07", evidence: "王燕萍2份" }],
       unknownSegments: [],
       issues: [],
     })),
@@ -69,10 +68,9 @@ describe("runAgent", () => {
     ]);
     const s = mockServices({
       parseOrders: vi.fn(async () => ({
-        mode: "increment" as const,
-        operation: "add" as const,
+        mode: "snapshot" as const,
         scope: [{ date: "2026-07-07", occasion: "dinner" as const, dateEvidence: "7月7日晚餐" }],
-        items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" as const, date: "2026-07-07" }],
+        items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" as const, date: "2026-07-07", evidence: "大龙猫1份" }],
         unknownSegments: [],
         issues: [],
       })),

@@ -24,7 +24,7 @@
     { "date": "2026-07-13", "occasion": "dinner", "dateEvidence": "7.13号星期一午餐晚餐" }
   ],
   "items": [
-    { "customerName": "王燕萍", "date": "2026-07-13", "occasion": "lunch", "quantity": 2 }
+    { "customerName": "王燕萍", "date": "2026-07-13", "occasion": "lunch", "quantity": 2, "evidence": "王燕萍 2份午餐" }
   ],
   "unknownSegments": [],
   "issues": []
@@ -39,7 +39,7 @@
   "operation": "add",
   "operationEvidence": "加",
   "scope": [{ "date": "2026-07-13", "occasion": "dinner", "dateEvidence": "7月13日晚餐" }],
-  "items": [{ "customerName": "王阿姨", "date": "2026-07-13", "occasion": "dinner", "quantity": 2 }],
+  "items": [{ "customerName": "王阿姨", "date": "2026-07-13", "occasion": "dinner", "quantity": 2, "evidence": "加王阿姨 2 份" }],
   "unknownSegments": [],
   "issues": []
 }
@@ -56,6 +56,7 @@
 - scope 的原文依据没有明确餐次，或自然语言补单没有可验证且与 `operation` 一致的动作依据；
 - 多餐模板中订单行无法唯一映射餐次/日期；
 - item 缺顾客、日期、餐次或正整数份数；
+- item 没有可回查且与解析结果一致的顾客名与份数原文依据；
 - scope 为空、item 超出 scope、increment 不止一个坐标；
 - 存在疑似真实订单但无法完整解析，可能导致 snapshot 错误退出现单；
 - 模型输出未通过严格 schema。
@@ -64,7 +65,7 @@
 
 ## 确认卡最小展示
 
-每条候选至少展示：完整日期、午/晚餐、顾客、份数。snapshot 标明“完整接龙，以本次为准”；increment 标明“单独补单”。PR 2 增加当前值、变化类型和最终值。
+每条候选至少展示：完整日期、午/晚餐、顾客、份数。PR 1 的 snapshot 明确标明“当前仅新增草稿，不覆盖或取消已有订单”；increment 在 PR 2 的安全对账写入上线前只展示解析理解，不生成可执行确认卡。PR 2 再展示最终的“以本次为准”、当前值、变化类型和最终值。
 
 ## 评测口径
 
