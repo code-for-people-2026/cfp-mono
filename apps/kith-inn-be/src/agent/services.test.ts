@@ -35,7 +35,7 @@ describe("production order parsing and preview", () => {
   it("uses the injected Shanghai today as the parser reference date", async () => {
     vi.mocked(callDeepSeek).mockResolvedValueOnce(JSON.stringify({
       mode: "snapshot",
-      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29号星期一" }],
+      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29号星期一午餐" }],
       items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 1 }],
       unknownSegments: [],
     }));
