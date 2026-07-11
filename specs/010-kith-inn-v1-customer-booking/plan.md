@@ -125,16 +125,17 @@ apps/cms/
 
 - 扩展 MealSlot 对外 contract，加入 price/deadline/orderStatus 配置与可选状态派生。
 - 增加 operator-scoped booking-batch CMS/BE routes 和商家 batches 页面。
-- 生成 publicId、标题和固定 share path；weapp 使用平台分享能力，H5 只显示/复制 path 供验证。
+- 生成 publicId、标题和固定 share path；商家页只显示/复制 path 供验证，不发出指向尚未注册页面的真实卡片。
 - 支持关闭 batch 或 meal slot；不创建 customer claims/page/API。
 
-**独立交付**: 桃子能配置可登记餐次、创建/关闭批次并获得可分享 path。
+**独立交付**: 桃子能配置可登记餐次、创建/关闭批次并预览确定性的待分享 path；真实微信分享在目标页存在的 M2-B 启用。
 
 ### M2-B：顾客静默会话与只读分享页
 
 - M2-A rebase merge 后从最新 `main` 开始。
 - 增加 customer claims、与 operator 分离的 middleware/storage、微信登录和双开关 H5 dev customer login。
 - 增加 service-auth batch→seller bootstrap、customer-scoped public batch read 和 `/pages/booking/index` 只读页。
+- 在目标页真实存在后为商家 batches 页面启用 weapp 原生分享；M2-B 真机 smoke 同时验证点击卡片、`wx.login` 和 query 恢复。
 - closed/archived batch 仍能建立 session/展示，invalid publicId 不签 token；不创建 profile/order 写 API。
 
 **独立交付**: 顾客从有效卡片静默进入并只读看到限定批次，身份与商家侧完全隔离。

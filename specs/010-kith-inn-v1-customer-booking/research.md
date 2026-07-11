@@ -40,7 +40,7 @@
 
 ## 4. Customer 登录 bootstrap 与 dev login
 
-**Decision**: weapp 把 `wx.login` code 与 batch publicId 交给 BE；BE 先 code2Session 得到 openid，再用独立 service-auth CMS lookup 验证 batch 存在、解析 seller active，最后签 customer JWT。closed/archived batch 可签发，invalid publicId 不签发。H5 e2e 提供 customer dev login，但必须同时满足非 production 与既有 `KITH_INN_V1_ALLOW_DEV_LOGIN=1`；weapp 失败不得 fallback。
+**Decision**: weapp 把 `wx.login` code 与 batch publicId 交给 BE；BE 先用独立 service-auth CMS lookup 验证 batch 存在并解析 active seller，再且仅再调用一次 code2Session 得到 openid，最后签 customer JWT。closed/archived batch 可签发，invalid publicId 不消费一次性 code、也不签发 token。H5 e2e 提供 customer dev login，但必须同时满足非 production 与既有 `KITH_INN_V1_ALLOW_DEV_LOGIN=1`；weapp 失败不得 fallback。
 
 **Rationale**: 登录前没有 customer token，只能使用窄 service bootstrap；H5 无法调用真实 `wx.login`，双开关沿用已验证的 operator 测试模式。
 
@@ -76,7 +76,7 @@
 
 ## 7. PublicId 与分享 path
 
-**Decision**: BE 使用运行时 Web Crypto 生成随机 UUID publicId，数据库 unique 作为并发兜底；冲突时有限重试。share path 固定为 `/pages/booking/index?batchId=<encoded-publicId>`，不落库。标题由日期范围/餐次生成，允许桃子在 1–120 字内修改。
+**Decision**: BE 使用运行时 Web Crypto 生成随机 UUID publicId，数据库 unique 作为并发兜底；冲突时有限重试。share path 固定为 `/pages/booking/index?batch=<encoded-publicId>`，不落库。标题由日期范围/餐次生成，允许桃子在 1–120 字内修改。
 
 **Rationale**: UUID 不可顺序枚举、无需新依赖；固定 path 可确定性测试。数据库 unique 仍是最终保障。
 
@@ -88,7 +88,7 @@
 
 ## 8. 微信分享与 H5 验证
 
-**Decision**: weapp batches 页面使用平台分享按钮和页面分享回调提供 title/path；不调用用户资料授权。H5 显示并允许复制同一 path，供自动化验证，不模拟真实微信群卡片。正式微信行为由真机 smoke 验证。
+**Decision**: M2-A 的 batches 页面只显示并复制确定性的 title/path，供 contract 和 H5 自动化验证，不发出指向尚未注册页面的真实卡片。M2-B 注册 `/pages/booking/index` 并完成只读入口后，才在同一 batches 页面启用 weapp 平台分享按钮和页面分享回调；不调用用户资料授权。正式微信行为由 M2-B 真机 smoke 验证。
 
 **Rationale**: Playwright 能验证 path/title 数据流但不能证明微信平台转发；把 H5 mock 当作真实分享会给出错误保证。现有 Taro 原生组件已足够。
 
@@ -111,7 +111,7 @@
 
 ## 10. 多餐次提交与幂等
 
-**Decision**: 一个 customer submit request 携带 batchPublicId、profile/newProfile、本次 displayName/address 和最多 20 个去重 `{mealSlotId,quantity}`。BE 每项重新读取 batch/slot/profile/order，串行 create/update/resubmit，返回 created/updated/resubmitted/failed；单项失败不回滚。数据库 unique 和冲突后重读保证重试幂等。
+**Decision**: 一个 customer submit request 携带 batchPublicId、profile/newProfile、本次 displayName/address 和最多 20 个去重 `{mealSlotId,quantity,resubmitCanceled}`。完全相同的重复项按首次位置处理一次；同一 mealSlot 的 quantity 或规范化后的 resubmitCanceled 不同则整请求 422。BE 每项重新读取 batch/slot/profile/order，串行 create/update/resubmit，返回 created/updated/resubmitted/failed；单项失败不回滚。数据库 unique 和冲突后重读保证重试幂等。
 
 **Rationale**: 微信网络下部分失败必须可解释、可安全重试；最多 20 项不需要 bulk transaction。串行行为更容易保持确定结果和控制 CMS 压力。
 

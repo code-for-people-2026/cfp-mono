@@ -83,7 +83,7 @@ M2 请求仅允许关闭：
 
 ## 4. 分享 UI 约定
 
-M2-A 的商家页使用 `share.title/path`：微信小程序调用页面原生分享能力，H5 显示并复制 path。不得构造永久域名，也不得把 operator token 放入 path。分享入口即使 closed 仍可建立顾客 session 和读取历史状态，但界面必须明确只读。
+M2-A 的商家页先显示并复制 `share.title/path`，但不发出指向尚未注册顾客页的真实卡片。M2-B 注册真实只读目标页后，同一商家页才调用微信小程序原生分享能力；H5 继续只显示/复制 path。不得构造永久域名，也不得把 operator token 放入 path。分享入口即使 closed 仍可建立顾客 session 和读取历史状态，但界面必须明确只读。
 
 ## 5. M1 兼容
 

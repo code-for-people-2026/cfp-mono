@@ -17,11 +17,11 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 - `[US1]`～`[US4]`：对应 spec.md 用户故事。
 - 每条任务给出预期修改或验证的准确路径。
 
-## Phase 1：M2-A 商家餐次配置与分享批次（US1）
+## Phase 1：M2-A 商家餐次配置与批次 path（US1）
 
 **Goal**: 桃子可以配置餐次预订状态、创建/关闭 booking batch，并获得固定分享 path。
 
-**Independent Test**: 以 operator 登录，开放两个有效餐次，创建 batch、复制/分享 path，再分别关闭 batch 和 slot；验证 batch close 不修改 slot，slot close 会让所有入口中的该餐次不可写。
+**Independent Test**: 以 operator 登录，开放两个有效餐次，创建 batch 并预览/复制 path，再分别关闭 batch 和 slot；验证 batch close 不修改 slot、slot close 会让所有入口中的该餐次不可写，且 M2-A 不发出指向未注册页面的真实卡片。
 
 ### Tests first
 
@@ -39,11 +39,11 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 - [ ] T009 [US1] 在 `apps/cms/src/app/api/internal/kiv1/booking-batches/[id]/route.ts` 实现 owner-scoped 幂等关闭，且不联动修改 meal slot
 - [ ] T010 [US1] 在 `apps/kith-inn-v1-be/src/lib/cms/mealSlots.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 实现 CMS client、open 前置条件、价格解析、UUID/default title/share path 纯逻辑
 - [ ] T011 [US1] 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts`、`apps/kith-inn-v1-be/src/routes/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 装配 merchant endpoints 与稳定错误码
-- [ ] T012 [US1] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/bookingBatches.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现商家批次页、weapp 分享与 H5 path 复制
+- [ ] T012 [US1] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/bookingBatches.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现商家批次页与 weapp/H5 path 预览复制，M2-A 不注册顾客页或启用原生分享
 
 ### Gate / PR
 
-- [ ] T013 [US1] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；按 `quickstart.md` 完成真机分享 smoke，并记录 M2-A 60 秒和零内部标识指标
+- [ ] T013 [US1] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；验证 M2-A 无原生分享入口，并记录 60 秒和零内部标识指标
 - [ ] T014 [US1] 审计 M2-A diff：不含 customer auth/profile/order write，不改 `packages/kith-inn-v1-payload` collection/索引、不改旧 `@cfp/kith-inn-*` 业务 package、不新增 workspace/依赖
 - [ ] T015 [US1] 提交并推送 `codex/kith-inn-v1-m2-a`，创建 base=`main` 的 ready PR；等待一次自动 Codex review，逐条回复/修复并 resolve actionable thread 后 rebase merge
 
@@ -72,12 +72,12 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 - [ ] T023 [US2] 在 `apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/auth/customer-session/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/customer/booking-batches/[publicId]/route.ts` 实现 service bootstrap 与只读 customer scope
 - [ ] T024 [US2] 在 `apps/kith-inn-v1-be/src/middleware/customerAuth.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/routes/auth.ts` 实现微信/dev customer session 与 operator/customer token 隔离
 - [ ] T025 [US2] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.ts`、`apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 customer-authenticated public batch read 与只读原因派生
-- [ ] T026 [US2] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/store/customerSession.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现静默登录和只读分享页
+- [ ] T026 [US2] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/store/customerSession.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现静默登录、只读目标页并在目标存在后启用 weapp 原生分享
 - [ ] T027 [US2] 在 `apps/kith-inn-v1-be/.env.example` 和 `apps/kith-inn-v1-fe/.env.example` 记录微信配置、customer dev login 双开关与生产禁用语义
 
 ### Gate / PR
 
-- [ ] T028 [US2] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；完成 `wx.login`/query 真机 smoke，并记录 M2-B 正常网络 5 秒指标
+- [ ] T028 [US2] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；完成原生分享卡片→目标页→`wx.login`/query 真机 smoke，并记录 M2-B 正常网络 5 秒指标
 - [ ] T029 [US2] 审计 M2-B diff：无 profile/order 写 API、无 operator session 回归、无新持久化字段/secret 日志/Node-only weapp 依赖
 - [ ] T030 [US2] 从 M2-A 合并后的 main 提交并推送 `codex/kith-inn-v1-m2-b`，创建 ready PR；等待一次自动 Codex review，处理完 actionable thread 后 rebase merge
 
@@ -93,7 +93,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ### Tests first
 
-- [ ] T031 [P] [US3] 在 `packages/kith-inn-v1-shared/src/api.test.ts` 添加 customer profile、reservation input、1–20 唯一 items、created/updated/resubmitted/failed result 与 customer-card CMS schema 测试并确认先失败
+- [ ] T031 [P] [US3] 在 `packages/kith-inn-v1-shared/src/api.test.ts` 添加 customer profile、reservation input、1–20 去重 items、完全重复项归一化、冲突重复项 422、created/updated/resubmitted/failed result 与 customer-card CMS schema 测试并确认先失败
 - [ ] T032 [P] [US3] 在 `apps/cms/tests/kiv1-customer-profiles.test.ts` 添加 seller+openid list/create、响应隐藏 openid、service token 与 profile owner guard 测试并确认先失败
 - [ ] T033 [P] [US3] 在 `apps/cms/tests/kiv1-customer-orders.test.ts` 添加 customer order 查重/create/update、profile/slot/openid relationship guard、唯一冲突和 customer-card 白名单测试并确认先失败
 - [ ] T034 [P] [US3] 在 `apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts` 添加 create/update/显式 resubmit/confirmed lock、价格快照、逐项部分成功和 profile 不回滚测试并确认先失败
@@ -171,7 +171,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 ## Implementation Strategy
 
 1. 先合并本规格 PR；它只包含 `specs/010-kith-inn-v1-customer-booking/**`。
-2. M2-A 交付商家分享能力，是 M2-B 顾客入口的唯一前置。
+2. M2-A 交付商家配置、batch 和待分享 path；M2-B 在目标页存在后一次性启用真实分享，是顾客入口的完整纵向切片。
 3. M2-B 只建立 customer 信任域和只读页，便于单独审查 auth 边界。
 4. M2-C 集中 profile + 首次提交，复用 M1 商家订单页验证持久化结果。
 5. M2-D 最后增加自助变更和总验收，不把未来 M3/M4 能力带入。
