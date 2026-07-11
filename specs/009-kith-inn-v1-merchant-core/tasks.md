@@ -204,7 +204,7 @@
 
 - [X] T076 [US3] 运行全部 shared/BE/FE coverage、CMS SQLite/PostgreSQL tenant/relationship 回归、完整商家 H5 e2e 和 weapp build，按 `specs/009-kith-inn-v1-merchant-core/quickstart.md` 验证 2 分钟手动订单生命周期
 - [X] T077 [US3] 从空本地数据跑通“seed → 登录 → 菜品 → 一周菜单 → 手动补单 → 确认 → 付款/送达 → 批量/清单”，运行 `pnpm verify`，确认未创建 booking batch/customer session/AI/支付入口、未修改旧业务源码或新增 collection，并记录 T067–T077 与完整 M1 状态：`specs/009-kith-inn-v1-merchant-core/tasks.md`
-- [ ] T078 [US3] 提交 M1-C3 ready PR，等待 checks/Codex review；逐条修复或解释并 resolve 所有 actionable threads：`specs/009-kith-inn-v1-merchant-core/tasks.md`
+- [X] T078 [US3] 提交 M1-C3 ready PR，等待 checks/Codex review；逐条修复或解释并 resolve 所有 actionable threads：`specs/009-kith-inn-v1-merchant-core/tasks.md`
 
 **Checkpoint**: M1 完成；桃子可在没有顾客侧的情况下跑通菜单和商家订单经营闭环。
 
