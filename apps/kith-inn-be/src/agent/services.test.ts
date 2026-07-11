@@ -36,7 +36,7 @@ describe("production order parsing and preview", () => {
     vi.mocked(callDeepSeek).mockResolvedValueOnce(JSON.stringify({
       mode: "snapshot",
       scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29号星期一午餐" }],
-      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 1 }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 1, evidence: "王燕萍1份" }],
       unknownSegments: [],
     }));
     const result = await svc(baseCms()).parseOrders("6.29号星期一午餐 王燕萍1份");
