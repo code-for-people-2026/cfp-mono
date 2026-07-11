@@ -1,4 +1,5 @@
 const WX_CODE2SESSION_URL = "https://api.weixin.qq.com/sns/jscode2session";
+const INVALID_CODE_ERRCODES = new Set([40029, 40163]);
 
 export type Code2SessionDeps = { fetch?: typeof fetch };
 
@@ -15,10 +16,10 @@ export async function code2session(code: string, deps: Code2SessionDeps = {}): P
   const url = `${WX_CODE2SESSION_URL}?appid=${encodeURIComponent(appid)}&secret=${encodeURIComponent(secret)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`;
   const response = await (deps.fetch ?? fetch)(url);
   if (!response.ok) throw new Code2SessionError("unavailable", `code2session failed: ${response.status}`);
-  const body = await response.json() as { openid?: unknown; errmsg?: unknown };
+  const body = await response.json() as { openid?: unknown; errcode?: unknown; errmsg?: unknown };
   if (typeof body.openid !== "string" || body.openid === "") {
     throw new Code2SessionError(
-      "invalid",
+      typeof body.errcode === "number" && INVALID_CODE_ERRCODES.has(body.errcode) ? "invalid" : "unavailable",
       `code2session failed: ${typeof body.errmsg === "string" ? body.errmsg : "no openid"}`
     );
   }

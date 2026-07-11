@@ -164,6 +164,8 @@ export const menuItemSnapshotSchema = z.object({
   categorySnapshot: offeringCategorySchema
 }).strict();
 
+export const customerMenuItemSnapshotSchema = menuItemSnapshotSchema.omit({ offeringId: true }).strict();
+
 export const mealSlotTargetSchema = z.object({
   date: calendarDateSchema,
   occasion: occasionSchema
@@ -349,7 +351,7 @@ export const customerBookingUnavailableReasonSchema = z.enum([
 export const customerBookingSlotViewSchema = z.object({
   date: calendarDateSchema,
   occasion: occasionSchema,
-  menuItems: z.array(menuItemSnapshotSchema).length(5),
+  menuItems: z.array(customerMenuItemSnapshotSchema).length(5),
   unitPriceCents: nonNegativeIntegerSchema,
   orderDeadline: zonedDateTimeSchema.nullable(),
   canBook: z.boolean(),
