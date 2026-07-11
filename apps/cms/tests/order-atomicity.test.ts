@@ -1,7 +1,24 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getPayload, type Payload } from "payload";
 import config from "../payload.config";
+import { withTransaction } from "../src/lib/internal";
 import { cancelOrderAtomic, confirmOrderAtomic, createDraftAtomic, type DraftBody } from "../src/lib/orderLifecycle";
+
+describe.skipIf(Boolean(process.env.DATABASE_URL || process.env.PAYLOAD_DATABASE_URL))("SQLite fallback transactions", () => {
+  let payload: Payload;
+
+  beforeAll(async () => {
+    payload = await getPayload({ config });
+  });
+
+  afterAll(async () => {
+    if (payload) await payload.destroy();
+  });
+
+  it("starts the shared request transaction used by atomic order writes", async () => {
+    await expect(withTransaction(payload, async () => "ok")).resolves.toBe("ok");
+  });
+});
 
 describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)("kith-inn order atomicity", () => {
   let payload: Payload;
@@ -142,6 +159,30 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       data: { seller: sellerId, order: created.order.id, serviceDate: "2026-08-04", occasion: "lunch", status: "pending" },
       overrideAccess: true,
     })).rejects.toThrow();
+  });
+
+  it("reuses the winning slot when two different orders confirm the same coordinate concurrently", async () => {
+    const first = await createDraftAtomic(payload, sellerId, operatorId, draft("2026-08-08"));
+    const secondCustomer = await payload.create({
+      collection: "customers",
+      data: { displayName: `并发顾客 ${suffix}`, address: "2D-18D", seller: sellerId },
+      overrideAccess: true,
+    });
+    const second = await createDraftAtomic(payload, sellerId, operatorId, { ...draft("2026-08-08"), customer: secondCustomer.id });
+    const results = await Promise.all([
+      confirmOrderAtomic(payload, sellerId, first.order.id),
+      confirmOrderAtomic(payload, sellerId, second.order.id),
+    ]);
+    expect(results).toHaveLength(2);
+    expect((await orderState(first.order.id)).order.status).toBe("confirmed");
+    expect((await orderState(second.order.id)).order.status).toBe("confirmed");
+    const slots = await payload.find({
+      collection: "service_slots",
+      where: { and: [{ seller: { equals: sellerId } }, { date: { equals: "2026-08-08" } }, { occasion: { equals: "lunch" } }] },
+      limit: 0,
+      overrideAccess: true,
+    });
+    expect(slots.docs).toHaveLength(1);
   });
 
   it("rejects an archived slot without changing the draft", async () => {

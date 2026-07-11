@@ -65,6 +65,10 @@ const db = postgresDatabaseURL
       client: {
         url: process.env.DATABASE_URI || "file:./payload.db",
       },
+      // Payload disables SQLite transactions unless this is set. Use an
+      // immediate write lock so the order lifecycle keeps the same atomic
+      // semantics as Postgres in local fallback mode.
+      transactionOptions: { behavior: "immediate" },
     });
 
 export default buildConfig({
