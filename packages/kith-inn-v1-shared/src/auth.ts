@@ -3,6 +3,7 @@ import { relationshipIdSchema } from "./schemas";
 
 export const SELECTION_TOKEN_TTL_SECONDS = 5 * 60;
 export const OPERATOR_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+export const CUSTOMER_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export const operatorSelectionChoiceSchema = z.object({
   operatorId: relationshipIdSchema,
@@ -28,9 +29,18 @@ export const operatorClaimsSchema = z.object({
   ...timestamps
 }).strict().refine(({ exp, iat }) => exp > iat, { message: "exp 必须晚于 iat" });
 
+export const customerClaimsSchema = z.object({
+  kind: z.literal("customer"),
+  sellerId: relationshipIdSchema,
+  openid: z.string().trim().min(1),
+  role: z.literal("customer"),
+  ...timestamps
+}).strict().refine(({ exp, iat }) => exp > iat, { message: "exp 必须晚于 iat" });
+
 export type OperatorSelectionChoice = z.infer<typeof operatorSelectionChoiceSchema>;
 export type OperatorSelectionClaims = z.infer<typeof operatorSelectionClaimsSchema>;
 export type OperatorClaims = z.infer<typeof operatorClaimsSchema>;
+export type CustomerClaims = z.infer<typeof customerClaimsSchema>;
 
 const headerSchema = z.object({ alg: z.literal("HS256"), typ: z.literal("JWT") }).strict();
 const encoder = new TextEncoder();
@@ -132,6 +142,21 @@ export async function issueOperatorToken(
   return issue(claims, secret);
 }
 
+export async function issueCustomerToken(
+  identity: Pick<CustomerClaims, "sellerId" | "openid">,
+  secret: string,
+  nowSeconds = now()
+): Promise<string> {
+  const claims = customerClaimsSchema.parse({
+    kind: "customer",
+    ...identity,
+    role: "customer",
+    iat: nowSeconds,
+    exp: nowSeconds + CUSTOMER_TOKEN_TTL_SECONDS
+  });
+  return issue(claims, secret);
+}
+
 export function verifyOperatorSelectionToken(
   token: string,
   secret: string,
@@ -146,4 +171,12 @@ export function verifyOperatorToken(
   nowSeconds = now()
 ): Promise<OperatorClaims | null> {
   return verify(token, secret, operatorClaimsSchema, nowSeconds);
+}
+
+export function verifyCustomerToken(
+  token: string,
+  secret: string,
+  nowSeconds = now()
+): Promise<CustomerClaims | null> {
+  return verify(token, secret, customerClaimsSchema, nowSeconds);
 }

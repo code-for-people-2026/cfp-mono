@@ -49,6 +49,16 @@ function initialConfig(slot: MealSlot): SlotConfig {
   };
 }
 
+function WeappShareLifecycle() {
+  Taro.useShareAppMessage(({ target }) => {
+    const dataset = (target as { dataset?: { title?: unknown; path?: unknown } } | undefined)?.dataset;
+    return typeof dataset?.title === "string" && typeof dataset.path === "string"
+      ? { title: dataset.title, path: dataset.path }
+      : { title: "街坊味预订", path: "/pages/merchant/batches/index" };
+  });
+  return null;
+}
+
 export default function MerchantBatches() {
   const [date, setDate] = useState("");
   const [slots, setSlots] = useState<MealSlot[]>([]);
@@ -137,6 +147,7 @@ export default function MerchantBatches() {
 
   return (
     <View className="page batches-page">
+      {process.env.TARO_ENV === "weapp" && <WeappShareLifecycle />}
       <Text className="title">预订批次</Text>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
 
@@ -210,6 +221,13 @@ export default function MerchantBatches() {
             onClick={() => void copyBookingBatchPath(entry.share, (options) => Taro.setClipboardData(options))
               .then(() => Taro.showToast({ title: "path 已复制", icon: "none" }))}
           >复制 path</Button>
+          {process.env.TARO_ENV === "weapp" && (
+            <Button
+              openType="share"
+              data-title={entry.share.title}
+              data-path={entry.share.path}
+            >分享给朋友</Button>
+          )}
           {entry.doc.status === "open" && closingId === null && (
             <Button className="danger" aria-label="关闭预订批次" onClick={() => setClosingId(entry.doc.id)}>关闭批次</Button>
           )}

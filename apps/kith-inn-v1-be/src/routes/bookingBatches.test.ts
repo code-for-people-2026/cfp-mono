@@ -2,15 +2,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BookingBatch,
   CmsBookingBatchCreate,
+  CmsCustomerBookingBatch,
   MealSlot
 } from "@cfp/kith-inn-v1-shared";
-import { issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
+import { issueCustomerToken, issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 import { CmsBookingBatchError } from "../lib/cms/bookingBatches";
 import { CmsMealSlotError } from "../lib/cms/mealSlots";
-import { bookingBatchesRoutes, type BookingBatchesDeps } from "./bookingBatches";
+import {
+  bookingBatchesRoutes,
+  publicBookingBatchesRoutes,
+  type BookingBatchesDeps,
+  type PublicBookingBatchesDeps
+} from "./bookingBatches";
 
 const SECRET = "v1-secret";
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
+const customerToken = await issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, SECRET);
 const NOW = "2026-07-10T01:00:00.000Z";
 const originalEnv = { ...process.env };
 afterEach(() => {
@@ -243,5 +250,70 @@ describe("merchant booking-batch close", () => {
       method: "PATCH",
       body: JSON.stringify({ status: "closed" })
     })).status).toBe(200);
+  });
+});
+
+describe("public customer booking-batch view", () => {
+  const internal = (overrides: Partial<CmsCustomerBookingBatch> = {}): CmsCustomerBookingBatch => ({
+    seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
+    batch: batch(),
+    slots: [slot()],
+    ...overrides
+  });
+  const publicDeps = (overrides: Partial<PublicBookingBatchesDeps> = {}): PublicBookingBatchesDeps => ({
+    getCustomerBookingBatch: vi.fn(async () => internal()),
+    now: () => NOW,
+    ...overrides
+  });
+  const publicRequest = (app: ReturnType<typeof publicBookingBatchesRoutes>, bearer = customerToken) =>
+    app.request(`/${UUIDS[0]}`, { headers: { Authorization: `Bearer ${bearer}` } });
+
+  it("returns resolved price, availability and keeps closed/archived batches readable", async () => {
+    const injected = publicDeps();
+    const response = await publicRequest(publicBookingBatchesRoutes(SECRET, injected));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      sellerName: "桃子",
+      title: batch().title,
+      status: "open",
+      slots: [{ unitPriceCents: 3000, canBook: true, unavailableReason: null }]
+    });
+    expect(injected.getCustomerBookingBatch).toHaveBeenCalledWith(customerToken, UUIDS[0]);
+
+    for (const status of ["closed", "archived"] as const) {
+      const app = publicBookingBatchesRoutes(SECRET, publicDeps({
+        getCustomerBookingBatch: vi.fn(async () => internal({ batch: batch({ status }) }))
+      }));
+      const body = await (await publicRequest(app)).json() as { slots: Array<{ canBook: boolean; unavailableReason: string }> };
+      expect(body.slots[0]).toMatchObject({ canBook: false, unavailableReason: "booking-batch-closed" });
+    }
+  });
+
+  it("isolates token kinds and preserves hidden not-found semantics", async () => {
+    const app = publicBookingBatchesRoutes(SECRET, publicDeps());
+    expect((await app.request(`/${UUIDS[0]}`)).status).toBe(401);
+    expect((await publicRequest(app, token)).status).toBe(401);
+    const hidden = publicBookingBatchesRoutes(SECRET, publicDeps({
+      getCustomerBookingBatch: vi.fn(async () => {
+        throw new CmsBookingBatchError(404, "booking-batch-not-found", "不存在");
+      })
+    }));
+    expect((await publicRequest(hidden)).status).toBe(404);
+    const inactive = publicBookingBatchesRoutes(SECRET, publicDeps({
+      getCustomerBookingBatch: vi.fn(async () => { throw new CmsBookingBatchError(403, "seller-inactive", "停用"); })
+    }));
+    expect((await publicRequest(inactive)).status).toBe(403);
+    const offline = publicBookingBatchesRoutes(SECRET, publicDeps({
+      getCustomerBookingBatch: vi.fn(async () => { throw new Error("offline"); })
+    }));
+    expect((await publicRequest(offline)).status).toBe(502);
+  });
+
+  it("wires the real customer CMS client and clock by default", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const fetch = vi.fn<typeof globalThis.fetch>(async () => new Response(JSON.stringify(internal())));
+    vi.stubGlobal("fetch", fetch);
+    expect((await publicRequest(publicBookingBatchesRoutes(SECRET))).status).toBe(200);
+    expect(fetch).toHaveBeenCalledOnce();
   });
 });

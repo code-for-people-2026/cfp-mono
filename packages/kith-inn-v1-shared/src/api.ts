@@ -306,6 +306,67 @@ export const sellerSnapshotSchema = z.object({
   status: sellerStatusSchema
 }).strict();
 
+export const customerSessionSchema = z.object({
+  sellerName: shortText,
+  role: z.literal("customer"),
+  expiresAt: zonedDateTimeSchema
+}).strict();
+
+export const customerSessionResponseSchema = z.object({
+  token: z.string().min(1),
+  session: customerSessionSchema
+}).strict();
+
+export const customerWxSessionInputSchema = z.object({
+  code: z.string().min(1),
+  batchPublicId: z.string().uuid()
+}).strict();
+
+export const customerDevSessionInputSchema = z.object({
+  openid: z.string().trim().min(1),
+  batchPublicId: z.string().uuid()
+}).strict();
+
+export const customerSessionBootstrapInputSchema = z.object({
+  batchPublicId: z.string().uuid()
+}).strict();
+
+export const customerSessionBootstrapResponseSchema = z.object({
+  seller: sellerSnapshotSchema,
+  batch: bookingBatchSchema
+}).strict();
+
+export const cmsCustomerBookingBatchSchema = customerSessionBootstrapResponseSchema.extend({
+  slots: z.array(mealSlotSchema).min(1).max(20)
+}).strict();
+
+export const customerBookingUnavailableReasonSchema = z.enum([
+  "booking-batch-closed",
+  "meal-slot-closed",
+  "order-deadline-passed"
+]);
+
+export const customerBookingSlotViewSchema = z.object({
+  date: calendarDateSchema,
+  occasion: occasionSchema,
+  menuItems: z.array(menuItemSnapshotSchema).length(5),
+  unitPriceCents: nonNegativeIntegerSchema,
+  orderDeadline: zonedDateTimeSchema.nullable(),
+  canBook: z.boolean(),
+  unavailableReason: customerBookingUnavailableReasonSchema.nullable()
+}).strict().refine(
+  ({ canBook, unavailableReason }) => canBook === (unavailableReason === null),
+  { message: "可登记状态与原因不一致" }
+);
+
+export const customerBookingBatchViewSchema = z.object({
+  sellerName: shortText,
+  title: z.string().trim().min(1).max(120),
+  status: bookingBatchStatusSchema,
+  sharePath: z.string().startsWith("/pages/booking/index?batch="),
+  slots: z.array(customerBookingSlotViewSchema).min(1).max(20)
+}).strict();
+
 export const customerProfileSchema = z.object({
   id: relationshipIdSchema,
   sellerId: relationshipIdSchema,

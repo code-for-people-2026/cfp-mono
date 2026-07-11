@@ -1,8 +1,8 @@
 import { cors } from "hono/cors";
 import { Hono } from "hono";
 import type { AppVars } from "./middleware/operatorAuth";
-import { authRoutes } from "./routes/auth";
-import { bookingBatchesRoutes } from "./routes/bookingBatches";
+import { authRoutes, customerAuthRoutes } from "./routes/auth";
+import { bookingBatchesRoutes, publicBookingBatchesRoutes } from "./routes/bookingBatches";
 import { healthRoutes } from "./routes/health";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
@@ -15,6 +15,8 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.use("*", cors({ allowHeaders: ["Content-Type", "Authorization"] }));
   app.route("/health", healthRoutes());
   app.route("/auth/operator", authRoutes(jwtSecret));
+  app.route("/auth/customer", customerAuthRoutes(jwtSecret));
+  app.route("/public/booking-batches", publicBookingBatchesRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
   app.route("/merchant/booking-batches", bookingBatchesRoutes(jwtSecret));

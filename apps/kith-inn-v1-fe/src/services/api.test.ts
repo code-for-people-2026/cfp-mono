@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError, createApiClient, resolveBeBaseUrl, type RequestAdapter } from "./api";
 import type { SessionStore } from "../store/session";
+import type { CustomerSessionStore } from "../store/customerSession";
 
 const sessions = (token: string | null = "operator-token"): SessionStore => ({
   getSession: vi.fn(() => token ? {
@@ -16,6 +17,16 @@ const sessions = (token: string | null = "operator-token"): SessionStore => ({
 });
 
 const adapter = (statusCode: number, data: unknown): RequestAdapter => vi.fn(async () => ({ statusCode, data }));
+const customerSessions = (token: string | null = "customer-token"): CustomerSessionStore => ({
+  getSession: vi.fn(() => token ? {
+    token,
+    sellerName: "桃子",
+    role: "customer" as const,
+    expiresAt: "2027-01-01T00:00:00.000Z"
+  } : null),
+  setSession: vi.fn(),
+  clearSession: vi.fn()
+});
 
 describe("API client", () => {
   it("calls all auth endpoints without leaking an existing bearer token", async () => {
@@ -48,6 +59,163 @@ describe("API client", () => {
       url: "http://be.test/auth/operator/select-seller",
       data: { selectionToken: "selection", sellerId: 8 }
     }));
+  });
+
+  it("uses separate customer login and public-view authentication", async () => {
+    const publicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+    const session = {
+      token: "new-customer-token",
+      session: { sellerName: "桃子", role: "customer", expiresAt: "2027-01-01T00:00:00.000Z" }
+    };
+    const view = {
+      sellerName: "桃子",
+      title: "午餐预订",
+      status: "open",
+      sharePath: `/pages/booking/index?batch=${publicId}`,
+      slots: [{
+        date: "2026-07-13",
+        occasion: "lunch",
+        menuItems: Array.from({ length: 5 }, (_, index) => ({
+          offeringId: index + 1,
+          nameSnapshot: `菜${index + 1}`,
+          mainIngredientSnapshot: null,
+          categorySnapshot: index < 2 ? "meat" : index < 4 ? "veg" : "soup"
+        })),
+        unitPriceCents: 3000,
+        orderDeadline: "2026-07-12T01:00:00.000Z",
+        canBook: true,
+        unavailableReason: null
+      }]
+    };
+    const request = vi.fn<RequestAdapter>(async ({ url }) => ({
+      statusCode: 200,
+      data: url.includes("/public/") ? view : session
+    }));
+    const customers = customerSessions();
+    const client = createApiClient({ request, sessions: sessions(), customerSessions: customers, baseUrl: "http://be.test" });
+    await expect(client.customerWxSession("wx-code", publicId)).resolves.toEqual(session);
+    await expect(client.customerDevSession("dev-openid", publicId)).resolves.toEqual(session);
+    await expect(client.getPublicBookingBatch(publicId)).resolves.toEqual(view);
+    const stringIdView = await createApiClient({
+      request: adapter(200, {
+        ...view,
+        slots: [{
+          ...view.slots[0],
+          menuItems: [{
+            ...view.slots[0]!.menuItems[0],
+            offeringId: "offering-1",
+            mainIngredientSnapshot: "牛肉"
+          }, ...view.slots[0]!.menuItems.slice(1)]
+        }]
+      }),
+      sessions: sessions(),
+      customerSessions: customers
+    }).getPublicBookingBatch(publicId);
+    expect(stringIdView.slots[0]!.menuItems[0]!.offeringId).toBe("offering-1");
+    for (const unavailableReason of [
+      "booking-batch-closed",
+      "meal-slot-closed",
+      "order-deadline-passed"
+    ] as const) {
+      await expect(createApiClient({
+        request: adapter(200, {
+          ...view,
+          slots: [{ ...view.slots[0], canBook: false, unavailableReason }]
+        }),
+        sessions: sessions(),
+        customerSessions: customers
+      }).getPublicBookingBatch(publicId)).resolves.toMatchObject({
+        slots: [{ canBook: false, unavailableReason }]
+      });
+    }
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: "http://be.test/auth/customer/wx-session",
+      data: { code: "wx-code", batchPublicId: publicId },
+      header: { "content-type": "application/json" }
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: "http://be.test/auth/customer/dev-session",
+      data: { openid: "dev-openid", batchPublicId: publicId }
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      url: `http://be.test/public/booking-batches/${publicId}`,
+      header: { "content-type": "application/json", Authorization: "Bearer customer-token" }
+    }));
+  });
+
+  it("rejects sensitive/malformed customer payloads and clears only customer auth", async () => {
+    const publicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+    for (const data of [null, { token: "x", session: {} }, {
+      token: "x",
+      session: { sellerName: "桃子", sellerId: 7, role: "customer", expiresAt: "2027-01-01T00:00:00.000Z" }
+    }]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: sessions() })
+        .customerDevSession("dev", publicId)).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    for (const data of [null, {}, { sellerName: "桃子", title: "x", status: "open", sharePath: "bad", slots: [] }]) {
+      await expect(createApiClient({
+        request: adapter(200, data),
+        sessions: sessions(),
+        customerSessions: customerSessions()
+      }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    const base = {
+      sellerName: "桃子",
+      title: "午餐预订",
+      status: "open",
+      sharePath: `/pages/booking/index?batch=${publicId}`
+    };
+    const item = {
+      offeringId: 1,
+      nameSnapshot: "菜",
+      mainIngredientSnapshot: null,
+      categorySnapshot: "veg"
+    };
+    const slot = {
+      date: "2026-07-13",
+      occasion: "lunch",
+      menuItems: Array.from({ length: 5 }, () => item),
+      unitPriceCents: 3000,
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      canBook: true,
+      unavailableReason: null
+    };
+    for (const badSlot of [
+      null,
+      { ...slot, menuItems: null },
+      { ...slot, menuItems: Array(5).fill(null) },
+      { ...slot, menuItems: [{ ...item, offeringId: 1.5 }, ...Array(4).fill(item)] },
+      { ...slot, menuItems: [{ ...item, offeringId: "" }, ...Array(4).fill(item)] }
+    ]) {
+      await expect(createApiClient({
+        request: adapter(200, { ...base, slots: [badSlot] }),
+        sessions: sessions(),
+        customerSessions: customerSessions()
+      }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    const operators = sessions();
+    const customers = customerSessions();
+    await expect(createApiClient({
+      request: adapter(401, { error: "invalid-customer-session", message: "失效" }),
+      sessions: operators,
+      customerSessions: customers
+    }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ status: 401 });
+    expect(customers.clearSession).toHaveBeenCalledOnce();
+    expect(operators.clearSession).not.toHaveBeenCalled();
+
+    await expect(createApiClient({
+      request: adapter(403, {}),
+      sessions: operators
+    }).getPublicBookingBatch(publicId)).rejects.toMatchObject({
+      status: 403,
+      code: "request-failed",
+      message: "请求失败"
+    });
+    await expect(createApiClient({
+      request: adapter(500, {}),
+      sessions: operators,
+      customerSessions: customerSessions(null)
+    }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ status: 500 });
   });
 
   it("validates seller selection and rejects malformed login payloads", async () => {

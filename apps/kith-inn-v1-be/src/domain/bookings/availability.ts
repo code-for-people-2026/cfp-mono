@@ -1,5 +1,7 @@
 import type {
   BookingBatch,
+  CmsCustomerBookingBatch,
+  CustomerBookingBatchView,
   MealSlot,
   MealSlotBookingConfig
 } from "@cfp/kith-inn-v1-shared";
@@ -53,5 +55,35 @@ export function bookingBatchShare(batch: BookingBatch) {
   return {
     title: batch.title,
     path: `/pages/booking/index?batch=${encodeURIComponent(batch.publicId)}`
+  };
+}
+
+export function customerBookingBatchView(
+  { seller, batch, slots }: CmsCustomerBookingBatch,
+  now: string
+): CustomerBookingBatchView {
+  return {
+    sellerName: seller.name,
+    title: batch.title,
+    status: batch.status,
+    sharePath: bookingBatchShare(batch).path,
+    slots: slots.map((slot) => {
+      const unavailableReason = batch.status !== "open"
+        ? "booking-batch-closed" as const
+        : slot.orderStatus !== "open"
+          ? "meal-slot-closed" as const
+          : slot.orderDeadline === null || Date.parse(slot.orderDeadline) <= Date.parse(now)
+            ? "order-deadline-passed" as const
+            : null;
+      return {
+        date: slot.date,
+        occasion: slot.occasion,
+        menuItems: slot.menuItems,
+        unitPriceCents: slot.priceCents ?? seller.defaultPriceCents,
+        orderDeadline: slot.orderDeadline,
+        canBook: unavailableReason === null,
+        unavailableReason
+      };
+    })
   };
 }

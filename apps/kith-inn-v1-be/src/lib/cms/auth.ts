@@ -1,3 +1,6 @@
+import { customerSessionBootstrapResponseSchema } from "@cfp/kith-inn-v1-shared/api";
+import type { CustomerSessionBootstrapResponse } from "@cfp/kith-inn-v1-shared";
+
 export const KIV1_INTERNAL_HEADER = "x-kith-inn-v1-internal";
 
 export type OperatorMembership = {
@@ -53,4 +56,25 @@ export async function findOperatorMemberships(
     throw new Error("invalid cms auth response");
   }
   return body.memberships;
+}
+
+export async function findCustomerSessionBootstrap(
+  batchPublicId: string,
+  deps: CmsAuthDeps = {}
+): Promise<CustomerSessionBootstrapResponse> {
+  const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}/api/internal/kiv1/auth/customer-session`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? ""
+    },
+    body: JSON.stringify({ batchPublicId })
+  });
+  const body = await response.json().catch(() => ({})) as { error?: unknown };
+  if (!response.ok) {
+    throw new CmsAuthError(response.status, typeof body.error === "string" ? body.error : "cms-auth-failed");
+  }
+  const parsed = customerSessionBootstrapResponseSchema.safeParse(body);
+  if (!parsed.success) throw new Error("invalid cms customer bootstrap response");
+  return parsed.data;
 }

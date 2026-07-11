@@ -1,16 +1,19 @@
 import {
   apiErrorSchema,
-  bookingBatchSchema
+  bookingBatchSchema,
+  cmsCustomerBookingBatchSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   BookingBatch,
   BookingBatchUpdate,
-  CmsBookingBatchCreate
+  CmsBookingBatchCreate,
+  CmsCustomerBookingBatch
 } from "@cfp/kith-inn-v1-shared";
 import { KIV1_INTERNAL_HEADER } from "./auth";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsBookingBatchDeps = { fetch?: typeof fetch };
+export const KIV1_CUSTOMER_HEADER = "x-kith-inn-v1-customer";
 const apiErrorCodeSchema = apiErrorSchema.pick({ error: true });
 
 export class CmsBookingBatchError extends Error {
@@ -105,4 +108,28 @@ export async function updateBookingBatch(
     { method: "PATCH", data: input },
     deps
   ));
+}
+
+export async function getCustomerBookingBatch(
+  token: string,
+  publicId: string,
+  deps: CmsBookingBatchDeps = {}
+): Promise<CmsCustomerBookingBatch> {
+  const response = await (deps.fetch ?? fetch)(
+    `${cmsBaseUrl()}/api/internal/kiv1/customer/booking-batches/${encodeURIComponent(publicId)}`,
+    { headers: { [KIV1_CUSTOMER_HEADER]: token } }
+  );
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const parsed = apiErrorSchema.safeParse(body);
+    const codeOnly = apiErrorCodeSchema.safeParse(body);
+    throw new CmsBookingBatchError(
+      response.status,
+      parsed.success ? parsed.data.error : codeOnly.success ? codeOnly.data.error : "cms-booking-batch-failed",
+      parsed.success ? parsed.data.message : "预订批次服务失败"
+    );
+  }
+  const parsed = cmsCustomerBookingBatchSchema.safeParse(body);
+  if (!parsed.success) throw new CmsBookingBatchError(502, "invalid-cms-response", "预订批次服务返回无效数据");
+  return parsed.data;
 }

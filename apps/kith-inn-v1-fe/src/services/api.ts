@@ -6,6 +6,8 @@ import type {
   BookingBatchMutationResponse,
   CustomerProfile,
   CustomerProfileCreate,
+  CustomerBookingBatchView,
+  CustomerSessionResponse,
   ImportCommitInput,
   ImportCommitResponse,
   ImportPreviewResponse,
@@ -27,6 +29,7 @@ import type {
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
 import type { SessionStore } from "../store/session";
+import type { CustomerSessionStore } from "../store/customerSession";
 import { parseOperatorSessionData } from "../store/session";
 
 export const DEFAULT_BE_BASE_URL = "http://localhost:3311";
@@ -83,6 +86,26 @@ function parseAuthResponse(value: unknown): AuthResponse {
     }
   }
   throw new ApiError(502, "invalid-api-response", "登录服务返回无效数据");
+}
+
+function parseCustomerSessionResponse(value: unknown): CustomerSessionResponse {
+  const body = record(value);
+  const session = record(body?.session);
+  if (!body || typeof body.token !== "string" || body.token === "" || !session ||
+    Object.hasOwn(session, "sellerId") || Object.hasOwn(session, "openid") ||
+    typeof session.sellerName !== "string" || session.sellerName === "" ||
+    session.role !== "customer" || typeof session.expiresAt !== "string" ||
+    Number.isNaN(Date.parse(session.expiresAt))) {
+    throw new ApiError(502, "invalid-api-response", "顾客登录服务返回无效数据");
+  }
+  return {
+    token: body.token,
+    session: {
+      sellerName: session.sellerName,
+      role: "customer",
+      expiresAt: session.expiresAt
+    }
+  };
 }
 
 function parseError(value: unknown): { error: string; message: string } | null {
@@ -175,6 +198,35 @@ function parseBookingBatchList(value: unknown): BookingBatchListResponse {
   const body = record(value);
   if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
   return { docs: body.docs.map(parseBookingBatchMutation) };
+}
+
+function parseCustomerBookingBatchView(value: unknown): CustomerBookingBatchView {
+  const body = record(value);
+  if (!body || Object.hasOwn(body, "sellerId") || typeof body.sellerName !== "string" || body.sellerName === "" ||
+    typeof body.title !== "string" || body.title === "" ||
+    !(body.status === "open" || body.status === "closed" || body.status === "archived") ||
+    typeof body.sharePath !== "string" || !body.sharePath.startsWith("/pages/booking/index?batch=") ||
+    !Array.isArray(body.slots)) {
+    throw new ApiError(502, "invalid-api-response", "预订入口数据无效");
+  }
+  const slots = body.slots.map((value) => {
+    const slot = record(value);
+    const items = Array.isArray(slot?.menuItems) ? slot.menuItems.map(record) : [];
+    const validItems = items.length === 5 && items.every((item) => item && validId(item.offeringId) &&
+      typeof item.nameSnapshot === "string" && item.nameSnapshot !== "" &&
+      (item.mainIngredientSnapshot === null || typeof item.mainIngredientSnapshot === "string") &&
+      (item.categorySnapshot === "meat" || item.categorySnapshot === "veg" || item.categorySnapshot === "soup"));
+    const validReason = slot?.unavailableReason === null || slot?.unavailableReason === "booking-batch-closed" ||
+      slot?.unavailableReason === "meal-slot-closed" || slot?.unavailableReason === "order-deadline-passed";
+    if (!slot || typeof slot.date !== "string" || !(slot.occasion === "lunch" || slot.occasion === "dinner") ||
+      !validItems || typeof slot.unitPriceCents !== "number" || !Number.isInteger(slot.unitPriceCents) ||
+      slot.unitPriceCents < 0 || !validNullableDate(slot.orderDeadline) || typeof slot.canBook !== "boolean" ||
+      !validReason || slot.canBook !== (slot.unavailableReason === null)) {
+      throw new ApiError(502, "invalid-api-response", "预订入口数据无效");
+    }
+    return slot as CustomerBookingBatchView["slots"][number];
+  });
+  return { ...body, slots } as CustomerBookingBatchView;
 }
 
 function parseRelaxedRules(value: unknown): RelaxedRule[] {
@@ -274,6 +326,7 @@ function parseBulkMarkDelivered(value: unknown): BulkMarkDeliveredResult[] {
 type ClientOptions = {
   request: RequestAdapter;
   sessions: SessionStore;
+  customerSessions?: CustomerSessionStore;
   baseUrl?: string;
   onAuthFailure?: (status: 401 | 403) => void;
 };
@@ -317,6 +370,30 @@ export function createApiClient(options: ClientOptions) {
     }));
   }
 
+  async function customerAuth(path: string, data: unknown): Promise<CustomerSessionResponse> {
+    return parseCustomerSessionResponse(await request<unknown>(path, {
+      method: "POST",
+      data,
+      authenticated: false
+    }));
+  }
+
+  async function customerRequest(path: string): Promise<unknown> {
+    const token = options.customerSessions?.getSession()?.token;
+    const header: Record<string, string> = { "content-type": "application/json" };
+    if (token) header.Authorization = `Bearer ${token}`;
+    const response = await options.request({ url: `${baseUrl}${path}`, method: "GET", header });
+    if (response.statusCode >= 200 && response.statusCode < 300) return response.data;
+    const parsed = parseError(response.data);
+    if (response.statusCode === 401 || response.statusCode === 403) options.customerSessions?.clearSession();
+    throw new ApiError(
+      response.statusCode,
+      parsed?.error ?? "request-failed",
+      parsed?.message ?? "请求失败",
+      response.data
+    );
+  }
+
   function offeringDoc(value: unknown): Offering {
     return parseOffering(record(value)?.doc);
   }
@@ -327,6 +404,15 @@ export function createApiClient(options: ClientOptions) {
     devLogin: (openid: string) => auth("/auth/operator/dev-login", { openid }),
     selectSeller: (selectionToken: string, sellerId: string | number) =>
       auth("/auth/operator/select-seller", { selectionToken, sellerId }),
+    customerWxSession: (code: string, batchPublicId: string) =>
+      customerAuth("/auth/customer/wx-session", { code, batchPublicId }),
+    customerDevSession: (openid: string, batchPublicId: string) =>
+      customerAuth("/auth/customer/dev-session", { openid, batchPublicId }),
+    async getPublicBookingBatch(publicId: string): Promise<CustomerBookingBatchView> {
+      return parseCustomerBookingBatchView(await customerRequest(
+        `/public/booking-batches/${encodeURIComponent(publicId)}`
+      ));
+    },
     async listOfferings(active: "all" | "true" | "false" = "all"): Promise<Offering[]> {
       const value = await request<unknown>(`/merchant/offerings?active=${active}`);
       const docs = typeof value === "object" && value !== null ? (value as { docs?: unknown }).docs : undefined;

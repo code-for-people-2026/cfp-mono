@@ -1,16 +1,25 @@
 import {
+  CUSTOMER_TOKEN_TTL_SECONDS,
   OPERATOR_TOKEN_TTL_SECONDS,
+  issueCustomerToken,
   issueOperatorSelectionToken,
   issueOperatorToken,
   verifyOperatorSelectionToken
 } from "@cfp/kith-inn-v1-shared/auth";
-import { Hono } from "hono";
+import {
+  customerDevSessionInputSchema,
+  customerWxSessionInputSchema
+} from "@cfp/kith-inn-v1-shared/api";
+import type { CustomerSessionBootstrapResponse } from "@cfp/kith-inn-v1-shared";
+import { Hono, type Context } from "hono";
 import {
   findOperatorMemberships as findOperatorMembershipsFn,
+  findCustomerSessionBootstrap as findCustomerSessionBootstrapFn,
+  CmsAuthError,
   type MembershipLookup,
   type OperatorMembership
 } from "../lib/cms/auth";
-import { code2session as code2sessionFn } from "../lib/wx/code2session";
+import { Code2SessionError, code2session as code2sessionFn } from "../lib/wx/code2session";
 
 export type AuthDeps = {
   code2session: (code: string) => Promise<string>;
@@ -18,9 +27,21 @@ export type AuthDeps = {
   now: () => number;
 };
 
+export type CustomerAuthDeps = {
+  code2session: (code: string) => Promise<string>;
+  findCustomerSessionBootstrap: (batchPublicId: string) => Promise<CustomerSessionBootstrapResponse>;
+  now: () => number;
+};
+
 const defaultDeps: AuthDeps = {
   code2session: code2sessionFn,
   findOperatorMemberships: findOperatorMembershipsFn,
+  now: () => Math.floor(Date.now() / 1000)
+};
+
+const defaultCustomerDeps: CustomerAuthDeps = {
+  code2session: code2sessionFn,
+  findCustomerSessionBootstrap: findCustomerSessionBootstrapFn,
   now: () => Math.floor(Date.now() / 1000)
 };
 
@@ -129,6 +150,71 @@ export function authRoutes(secret: string, deps: AuthDeps = defaultDeps) {
         : c.json({ error: "membership-inactive", message: "商家身份已停用" }, 403);
     } catch {
       return c.json({ error: "cms-unavailable", message: "商家身份服务暂不可用" }, 502);
+    }
+  });
+
+  return app;
+}
+
+async function customerSession(
+  bootstrap: CustomerSessionBootstrapResponse,
+  openid: string,
+  secret: string,
+  now: number
+) {
+  return {
+    token: await issueCustomerToken({ sellerId: bootstrap.seller.id, openid }, secret, now),
+    session: {
+      sellerName: bootstrap.seller.name,
+      role: "customer" as const,
+      expiresAt: new Date((now + CUSTOMER_TOKEN_TTL_SECONDS) * 1000).toISOString()
+    }
+  };
+}
+
+function customerBootstrapError(c: Context, error: unknown) {
+  if (error instanceof CmsAuthError && error.status === 404) {
+    return c.json({ error: "booking-batch-not-found", message: "预订入口不存在" }, 404);
+  }
+  if (error instanceof CmsAuthError && error.status === 403) {
+    return c.json({ error: "seller-inactive", message: "商家暂不可用" }, 403);
+  }
+  return c.json({ error: "cms-unavailable", message: "预订入口服务暂不可用" }, 502);
+}
+
+export function customerAuthRoutes(secret: string, deps: CustomerAuthDeps = defaultCustomerDeps) {
+  const app = new Hono();
+
+  app.post("/wx-session", async (c) => {
+    const parsed = customerWxSessionInputSchema.safeParse(await json(c.req));
+    if (!parsed.success) return c.json({ error: "invalid-login-input", message: "微信登录参数无效" }, 422);
+    let bootstrap: CustomerSessionBootstrapResponse;
+    try {
+      bootstrap = await deps.findCustomerSessionBootstrap(parsed.data.batchPublicId);
+    } catch (error) {
+      return customerBootstrapError(c, error);
+    }
+    try {
+      const openid = await deps.code2session(parsed.data.code);
+      return c.json(await customerSession(bootstrap, openid, secret, deps.now()));
+    } catch (error) {
+      return error instanceof Code2SessionError && error.kind === "invalid"
+        ? c.json({ error: "invalid-wechat-code", message: "微信登录凭证无效" }, 401)
+        : c.json({ error: "wechat-unavailable", message: "微信身份服务暂不可用" }, 502);
+    }
+  });
+
+  app.post("/dev-session", async (c) => {
+    if (process.env.NODE_ENV === "production" || process.env.KITH_INN_V1_ALLOW_DEV_LOGIN !== "1") {
+      return c.json({ error: "not-found", message: "接口不存在" }, 404);
+    }
+    const parsed = customerDevSessionInputSchema.safeParse(await json(c.req));
+    if (!parsed.success) return c.json({ error: "invalid-login-input", message: "开发身份参数无效" }, 422);
+    try {
+      const bootstrap = await deps.findCustomerSessionBootstrap(parsed.data.batchPublicId);
+      return c.json(await customerSession(bootstrap, parsed.data.openid, secret, deps.now()));
+    } catch (error) {
+      return customerBootstrapError(c, error);
     }
   });
 
