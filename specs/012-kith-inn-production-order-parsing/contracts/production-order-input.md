@@ -20,8 +20,8 @@
 {
   "mode": "snapshot",
   "scope": [
-    { "date": "2026-07-13", "occasion": "lunch", "dateEvidence": "7.13号星期一" },
-    { "date": "2026-07-13", "occasion": "dinner", "dateEvidence": "7.13号星期一" }
+    { "date": "2026-07-13", "occasion": "lunch", "dateEvidence": "7.13号星期一午餐晚餐" },
+    { "date": "2026-07-13", "occasion": "dinner", "dateEvidence": "7.13号星期一午餐晚餐" }
   ],
   "items": [
     { "customerName": "王燕萍", "date": "2026-07-13", "occasion": "lunch", "quantity": 2 }
@@ -37,6 +37,7 @@
 {
   "mode": "increment",
   "operation": "add",
+  "operationEvidence": "加",
   "scope": [{ "date": "2026-07-13", "occasion": "dinner", "dateEvidence": "7月13日晚餐" }],
   "items": [{ "customerName": "王阿姨", "date": "2026-07-13", "occasion": "dinner", "quantity": 2 }],
   "unknownSegments": [],
@@ -51,7 +52,8 @@
 下列任一情况不产生 `operation-confirm`：
 
 - 原文没有可验证的日期证据；
-- 非法日期，或明确周几与日历日期冲突；
+- 非法日期、同一依据中的日期表达互相冲突，或明确周几与日历日期冲突；
+- scope 的原文依据没有明确餐次，或自然语言补单没有可验证且与 `operation` 一致的动作依据；
 - 多餐模板中订单行无法唯一映射餐次/日期；
 - item 缺顾客、日期、餐次或正整数份数；
 - scope 为空、item 超出 scope、increment 不止一个坐标；

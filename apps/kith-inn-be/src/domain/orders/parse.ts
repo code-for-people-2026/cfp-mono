@@ -18,6 +18,7 @@ const itemSchema = z.object({
 export const rawParsedOrderInputSchema = z.object({
   mode: z.enum(["snapshot", "increment"]),
   operation: z.enum(["add", "set"]).optional(),
+  operationEvidence: z.string().trim().min(1).optional(),
   scope: z.array(scopeSchema).min(1),
   items: z.array(itemSchema),
   unknownSegments: z.array(z.string().trim().min(1)),
@@ -28,8 +29,12 @@ export type ParseIssue = {
   code:
     | "date-evidence-missing"
     | "date-unresolvable"
+    | "date-conflict"
     | "date-mismatch"
     | "weekday-mismatch"
+    | "occasion-evidence-missing"
+    | "operation-evidence-missing"
+    | "operation-evidence-mismatch"
     | "duplicate-scope"
     | "item-outside-scope"
     | "unknown-segment"
@@ -53,20 +58,43 @@ function addDays(date: string, days: number): string {
   return toDate(value.getUTCFullYear(), value.getUTCMonth() + 1, value.getUTCDate());
 }
 
-function resolveDateEvidence(evidence: string, referenceDate: string): string | undefined {
-  if (evidence.includes("后天")) return addDays(referenceDate, 2);
-  if (evidence.includes("明天")) return addDays(referenceDate, 1);
-  if (evidence.includes("今天")) return referenceDate;
+function resolveDateEvidence(evidence: string, referenceDate: string): { date?: string; conflict: boolean } {
+  const dates = new Set<string>();
+  let invalid = false;
+  const add = (date: string) => {
+    if (calendarDateSchema.safeParse(date).success) dates.add(date);
+    else invalid = true;
+  };
 
-  const explicit = evidence.match(/(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*(?:月|[-/.])\s*(\d{1,2})\s*(?:日|号)?/);
-  const short = evidence.match(/(\d{1,2})\s*(?:月|[/.])\s*(\d{1,2})\s*(?:日|号)?/);
-  const [, referenceYear] = referenceDate.match(/^(\d{4})-/) ?? [];
-  const normalized = explicit
-    ? toDate(Number(explicit[1]), Number(explicit[2]), Number(explicit[3]))
-    : short && referenceYear
-      ? toDate(Number(referenceYear), Number(short[1]), Number(short[2]))
-      : undefined;
-  return normalized && calendarDateSchema.safeParse(normalized).success ? normalized : undefined;
+  if (evidence.includes("今天")) add(referenceDate);
+  if (evidence.includes("明天")) add(addDays(referenceDate, 1));
+  if (evidence.includes("后天")) add(addDays(referenceDate, 2));
+
+  const explicitRanges: Array<[number, number]> = [];
+  for (const match of evidence.matchAll(/(\d{4})\s*(?:年|[-/.])\s*(\d{1,2})\s*(?:月|[-/.])\s*(\d{1,2})\s*(?:日|号)?/g)) {
+    add(toDate(Number(match[1]), Number(match[2]), Number(match[3])));
+    explicitRanges.push([match.index, match.index + match[0].length]);
+  }
+  const referenceYear = Number(referenceDate.slice(0, 4));
+  for (const match of evidence.matchAll(/(\d{1,2})\s*(?:月|[/.])\s*(\d{1,2})\s*(?:日|号)?/g)) {
+    const end = match.index + match[0].length;
+    if (!explicitRanges.some(([start, explicitEnd]) => start <= match.index && end <= explicitEnd)) {
+      add(toDate(referenceYear, Number(match[1]), Number(match[2])));
+    }
+  }
+
+  return { date: !invalid && dates.size === 1 ? dates.values().next().value : undefined, conflict: dates.size > 1 };
+}
+
+const MEAL_EVIDENCE = {
+  lunch: /午餐|午饭|中午|午\s*[、和及/]?\s*晚餐/,
+  dinner: /晚餐|晚饭|晚上/,
+} as const;
+
+function operationFromEvidence(evidence: string): "add" | "set" | undefined {
+  const add = /追加|再加|多加|加/.test(evidence);
+  const set = /改成|改为|总共/.test(evidence);
+  return add === set ? undefined : add ? "add" : "set";
 }
 
 function statedWeekday(evidence: string): string | undefined {
@@ -90,7 +118,15 @@ function validateParsed(rawText: string, parsed: RawParsedOrderInput, referenceD
       issues.push({ code: "date-evidence-missing", message: `原文中找不到日期依据：${scope.dateEvidence}`, evidence: scope.dateEvidence });
       continue;
     }
-    const resolved = resolveDateEvidence(scope.dateEvidence, referenceDate);
+    if (!MEAL_EVIDENCE[scope.occasion].test(scope.dateEvidence)) {
+      issues.push({ code: "occasion-evidence-missing", message: `日期餐次依据没有明确${scope.occasion === "lunch" ? "午餐" : "晚餐"}：${scope.dateEvidence}`, evidence: scope.dateEvidence });
+    }
+    const resolution = resolveDateEvidence(scope.dateEvidence, referenceDate);
+    if (resolution.conflict) {
+      issues.push({ code: "date-conflict", message: `日期依据包含互相冲突的日期：${scope.dateEvidence}`, evidence: scope.dateEvidence });
+      continue;
+    }
+    const resolved = resolution.date;
     if (!resolved) {
       issues.push({ code: "date-unresolvable", message: `日期依据无法解析：${scope.dateEvidence}`, evidence: scope.dateEvidence });
       continue;
@@ -113,10 +149,17 @@ function validateParsed(rawText: string, parsed: RawParsedOrderInput, referenceD
     issues.push({ code: "unknown-segment", message: `这行像订单但没解析完整：${segment}`, evidence: segment });
   }
   if (parsed.mode === "snapshot") {
-    if (parsed.operation) issues.push({ code: "increment-shape", message: "完整接龙不能带单笔增量动作" });
+    if (parsed.operation || parsed.operationEvidence) issues.push({ code: "increment-shape", message: "完整接龙不能带单笔增量动作" });
     if (parsed.items.length === 0) issues.push({ code: "empty-snapshot", message: "接龙里没有明确订单，不能据此清空现有订单" });
-  } else if (!parsed.operation || parsed.items.length !== 1 || parsed.scope.length !== 1) {
-    issues.push({ code: "increment-shape", message: "单独补单必须只有一个日期、餐次、顾客、份数和明确动作" });
+  } else {
+    if (!parsed.operation || parsed.items.length !== 1 || parsed.scope.length !== 1) {
+      issues.push({ code: "increment-shape", message: "单独补单必须只有一个日期、餐次、顾客、份数和明确动作" });
+    }
+    if (!parsed.operationEvidence || !rawText.includes(parsed.operationEvidence)) {
+      issues.push({ code: "operation-evidence-missing", message: "原文中找不到明确的增量动作（如“加”或“改成”）", evidence: parsed.operationEvidence });
+    } else if (operationFromEvidence(parsed.operationEvidence) !== parsed.operation) {
+      issues.push({ code: "operation-evidence-mismatch", message: `增量动作依据与解析结果不一致：${parsed.operationEvidence}`, evidence: parsed.operationEvidence });
+    }
   }
   return issues;
 }
@@ -135,12 +178,12 @@ export function buildParseSystemPrompt(referenceDate: string): string {
 
 【模式】
 - 有接龙标题、菜单、编号订单列表的完整文本：mode=snapshot，表示 scope 范围内最终完整清单。
-- 一句话只操作某个顾客某天某餐：mode=increment；“加/再加/多加/追加 N 份” operation=add，“改成/改为/总共 N 份” operation=set。
+- 一句话只操作某个顾客某天某餐：mode=increment；“加/再加/多加/追加 N 份” operation=add，“改成/改为/总共 N 份” operation=set。operationEvidence 逐字复制表达动作的最短原文；没有明确动作时不要猜，放入 unknownSegments。
 
 【日期与 scope】
 - 每个接龙标题都输出一个 scope；午餐=lunch，晚餐=dinner。标题午晚餐合写时输出两个 scope。
 - date 必须是 YYYY-MM-DD。省略年份用参考日期的年份；今天/明天/后天相对参考日期计算。绝不因为缺日期默认今天。
-- dateEvidence 必须逐字复制用户原文中包含日期（以及若有周几）的最短短语，例如“6.8号星期一”“明天晚餐”。不要改写证据。
+- dateEvidence 必须逐字复制用户原文中同时包含日期、餐次（以及若有周几）的最短连续片段，例如“6.8号星期一晚餐”“明天晚餐”。不要改写证据，也不要因为原文缺餐次而默认午餐或晚餐。
 - 订单行按其明确餐次映射对应 scope；单餐模板中没写餐次可继承唯一餐次，多餐时不明确则放 unknownSegments。
 
 【订单】
@@ -150,9 +193,9 @@ export function buildParseSystemPrompt(referenceDate: string): string {
 - 顾客名原样保留大小写、空格和连字符。
 
 只输出 JSON，不要 markdown 或解释。snapshot 示例：
-{"mode":"snapshot","scope":[{"date":"2020-06-08","occasion":"dinner","dateEvidence":"6.8号星期一"}],"items":[{"customerName":"桃子","date":"2020-06-08","occasion":"dinner","quantity":8}],"unknownSegments":[]}
+{"mode":"snapshot","scope":[{"date":"2020-06-08","occasion":"dinner","dateEvidence":"6.8号星期一晚餐"}],"items":[{"customerName":"桃子","date":"2020-06-08","occasion":"dinner","quantity":8}],"unknownSegments":[]}
 increment 示例：
-{"mode":"increment","operation":"add","scope":[{"date":"2026-07-13","occasion":"dinner","dateEvidence":"明天晚餐"}],"items":[{"customerName":"王阿姨","date":"2026-07-13","occasion":"dinner","quantity":2}],"unknownSegments":[]}`;
+{"mode":"increment","operation":"add","operationEvidence":"加","scope":[{"date":"2026-07-13","occasion":"dinner","dateEvidence":"明天晚餐"}],"items":[{"customerName":"王阿姨","date":"2026-07-13","occasion":"dinner","quantity":2}],"unknownSegments":[]}`;
 }
 
 const MAX_PARSE_RETRIES = 1;

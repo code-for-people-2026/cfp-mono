@@ -10,6 +10,7 @@
 - `scope`: 一至多个 `{ date, occasion, dateEvidence }`
 - `items`: `{ customerName, date, occasion, quantity }[]`
 - `operation`: increment 时为 `add | set`；snapshot 不使用
+- `operationEvidence`: increment 时逐字复制原文中的动作短语；snapshot 不使用
 - `unknownSegments`: 疑似订单但无法安全解释的原文片段
 - `issues`: 日期缺失/非法、周几冲突、范围歧义等阻断原因
 
@@ -18,7 +19,8 @@
 - 每条 item 必须四字段完整，`quantity` 为正整数，日期为真实 `YYYY-MM-DD`。
 - item 的日期/餐次必须属于 scope。
 - snapshot 至少有一个明确 scope；increment 恰好一个 item 与一个 scope。
-- `dateEvidence` 必须来自用户原文；周几若出现必须与解析日期一致。
+- `dateEvidence` 必须来自用户原文并同时覆盖日期和餐次；其中多个日期表达必须解析为同一天，周几若出现必须与解析日期一致。
+- `operationEvidence` 必须来自用户原文并与 `operation` 一致；模型不得替缺少动作的输入默认 `add` 或 `set`。
 - `issues` 或高风险 `unknownSegments` 非空时只能返回补全/纠错消息，不能成为 pending 写操作。
 
 ## ReconciliationPreview（内存 pending 对象）
