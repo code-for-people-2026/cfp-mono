@@ -9,18 +9,18 @@
 
 ## 2. 分片验收
 
-### M2-A：商家配置与分享批次
+### M2-A：商家配置与批次 path
 
 1. 桃子登录，生成至少两个含五道菜的餐次。
 2. 为餐次设置价格或默认价、未来截止时间并开放预订。
 3. 选择 1–20 个 open slot 创建 batch，确认生成 UUID publicId 与固定小程序 path。
-4. 微信小程序分享卡片；H5 复制 path。
+4. 在 weapp/H5 商家页预览并复制 path；确认 M2-A 尚不显示原生分享按钮，也不发出指向未注册顾客页的卡片。
 5. 关闭 batch，确认餐次本身没有被关闭；关闭单个 slot，确认所有 batch 中该 slot 都不可登记。
 6. 在预热且正常网络条件下计时“配置餐次 → 选择餐次 → 创建可分享批次”，记录结果不超过 60 秒，并检查分享入口内部数据库标识暴露数量为 0。
 
 ### M2-B：顾客静默 session 与只读入口
 
-1. 从分享 path 进入，调用 `wx.login` 并以临时 code 建立 customer session。
+1. 从 M2-A 创建的 batch 发出微信原生分享卡片，点击后进入真实 path，调用 `wx.login` 并以临时 code 建立 customer session。
 2. 确认页面显示 seller、batch、菜单、解析后价格与截止时间，且无 operator 选择页。
 3. 使用另一 seller 的 token 访问 publicId，确认 404。
 4. 关闭 batch 或 slot 后重新进入，确认历史内容仍可读且登记入口禁用并显示原因。
@@ -49,7 +49,7 @@
 
 ```bash
 pnpm --filter @cfp/kith-inn-v1-shared test
-pnpm --filter @cfp/kith-inn-v1-cms test
+pnpm --filter @cfp/cms test
 pnpm --filter @cfp/kith-inn-v1-be test
 pnpm --filter @cfp/kith-inn-v1-fe test
 pnpm verify
