@@ -7,6 +7,7 @@ import type {
   BookingBatch,
   BookingBatchUpdate,
   CmsBookingBatchCreate,
+  CmsCustomerBookingBatch,
   MealSlot
 } from "@cfp/kith-inn-v1-shared";
 import { Hono, type Context } from "hono";
@@ -14,11 +15,13 @@ import {
   assertBatchSlotsAvailable,
   BookingAvailabilityError,
   bookingBatchShare,
+  customerBookingBatchView,
   defaultBookingBatchTitle
 } from "../domain/bookings/availability";
 import {
   CmsBookingBatchError,
   createBookingBatch as createBookingBatchFn,
+  getCustomerBookingBatch as getCustomerBookingBatchFn,
   listBookingBatches as listBookingBatchesFn,
   updateBookingBatch as updateBookingBatchFn
 } from "../lib/cms/bookingBatches";
@@ -27,6 +30,7 @@ import {
   getMealSlot as getMealSlotFn
 } from "../lib/cms/mealSlots";
 import { operatorAuth, type AppVars } from "../middleware/operatorAuth";
+import { customerAuth, type CustomerAppVars } from "../middleware/customerAuth";
 
 export type BookingBatchesDeps = {
   listBookingBatches: (token: string, status?: BookingBatch["status"]) => Promise<BookingBatch[]>;
@@ -136,5 +140,38 @@ export function bookingBatchesRoutes(secret: string, deps: BookingBatchesDeps = 
     }
   });
 
+  return app;
+}
+
+export type PublicBookingBatchesDeps = {
+  getCustomerBookingBatch: (token: string, publicId: string) => Promise<CmsCustomerBookingBatch>;
+  now: () => string;
+};
+
+const defaultPublicDeps: PublicBookingBatchesDeps = {
+  getCustomerBookingBatch: (token, publicId) => getCustomerBookingBatchFn(token, publicId),
+  now: () => new Date().toISOString()
+};
+
+export function publicBookingBatchesRoutes(
+  secret: string,
+  deps: PublicBookingBatchesDeps = defaultPublicDeps
+) {
+  const app = new Hono<CustomerAppVars>();
+  app.use("*", customerAuth(secret));
+  app.get("/:publicId", async (c) => {
+    try {
+      const internal = await deps.getCustomerBookingBatch(c.get("customerToken"), c.req.param("publicId"));
+      return c.json(customerBookingBatchView(internal, deps.now()));
+    } catch (error) {
+      if (error instanceof CmsBookingBatchError && error.status === 404) {
+        return c.json({ error: "booking-batch-not-found", message: "预订入口不存在" }, 404);
+      }
+      if (error instanceof CmsBookingBatchError && error.status === 403) {
+        return c.json({ error: error.code, message: error.message }, 403);
+      }
+      return c.json({ error: "cms-unavailable", message: "预订批次服务暂不可用" }, 502);
+    }
+  });
   return app;
 }

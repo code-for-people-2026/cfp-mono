@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  CUSTOMER_TOKEN_TTL_SECONDS,
   OPERATOR_TOKEN_TTL_SECONDS,
   SELECTION_TOKEN_TTL_SECONDS,
+  customerClaimsSchema,
+  issueCustomerToken,
   issueOperatorSelectionToken,
   issueOperatorToken,
   operatorClaimsSchema,
   operatorSelectionClaimsSchema,
+  verifyCustomerToken,
   verifyOperatorSelectionToken,
   verifyOperatorToken
 } from "./auth";
@@ -40,6 +44,41 @@ describe("operator token", () => {
     await expect(verifyOperatorToken("not-a-jwt", SECRET, NOW)).resolves.toBeNull();
     await expect(verifyOperatorToken("%.payload.signature", SECRET, NOW)).resolves.toBeNull();
     await expect(verifyOperatorToken("e30.bm90LWpzb24.invalid", SECRET, NOW)).resolves.toBeNull();
+  });
+});
+
+describe("customer token", () => {
+  it("issues and verifies a seven-day seller-bound token", async () => {
+    const token = await issueCustomerToken({ sellerId: "seller-7", openid: "wx-customer" }, SECRET, NOW);
+    await expect(verifyCustomerToken(token, SECRET, NOW)).resolves.toEqual({
+      kind: "customer",
+      sellerId: "seller-7",
+      openid: "wx-customer",
+      role: "customer",
+      iat: NOW,
+      exp: NOW + CUSTOMER_TOKEN_TTL_SECONDS
+    });
+  });
+
+  it("keeps customer and operator token kinds isolated", async () => {
+    const customer = await issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, SECRET, NOW);
+    const operator = await issueOperatorToken({ operatorId: 3, sellerId: 7 }, SECRET, NOW);
+    await expect(verifyOperatorToken(customer, SECRET, NOW)).resolves.toBeNull();
+    await expect(verifyCustomerToken(operator, SECRET, NOW)).resolves.toBeNull();
+    await expect(verifyCustomerToken(customer, SECRET, NOW + CUSTOMER_TOKEN_TTL_SECONDS)).resolves.toBeNull();
+  });
+
+  it("rejects invalid customer claims and empty secrets", async () => {
+    expect(customerClaimsSchema.safeParse({
+      kind: "customer",
+      sellerId: 7,
+      openid: "",
+      role: "customer",
+      iat: NOW,
+      exp: NOW + 1
+    }).success).toBe(false);
+    await expect(issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, "", NOW)).rejects.toThrow(/secret/i);
+    await expect(verifyCustomerToken("a.b.c", "", NOW)).resolves.toBeNull();
   });
 });
 

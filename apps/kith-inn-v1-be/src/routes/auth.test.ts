@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { verifyOperatorSelectionToken, verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
-import { authRoutes, type AuthDeps } from "./auth";
+import { verifyCustomerToken, verifyOperatorSelectionToken, verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
+import { CmsAuthError } from "../lib/cms/auth";
+import { Code2SessionError } from "../lib/wx/code2session";
+import { authRoutes, customerAuthRoutes, type AuthDeps, type CustomerAuthDeps } from "./auth";
 
 const SECRET = "v1-secret";
 const NOW = 1_800_000_000;
@@ -20,6 +22,26 @@ const post = (app: ReturnType<typeof authRoutes>, path: string, body?: unknown) 
   method: "POST",
   headers: { "content-type": "application/json" },
   ...(body === undefined ? {} : { body: JSON.stringify(body) })
+});
+
+const customerBootstrap = {
+  seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" as const },
+  batch: {
+    id: 31,
+    sellerId: 7,
+    publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+    title: "一周预订",
+    status: "open" as const,
+    mealSlotIds: [11],
+    createdById: 1
+  }
+};
+
+const customerDeps = (overrides: Partial<CustomerAuthDeps> = {}): CustomerAuthDeps => ({
+  code2session: vi.fn(async () => "wx-customer"),
+  findCustomerSessionBootstrap: vi.fn(async () => customerBootstrap),
+  now: () => NOW,
+  ...overrides
 });
 
 beforeEach(() => {
@@ -147,6 +169,95 @@ describe("seller selection", () => {
   });
 });
 
+describe("customer session", () => {
+  it("bootstraps before exchanging one code and returns no identity fields", async () => {
+    const order: string[] = [];
+    const injected = customerDeps({
+      findCustomerSessionBootstrap: vi.fn(async () => { order.push("bootstrap"); return customerBootstrap; }),
+      code2session: vi.fn(async () => { order.push("code2session"); return "wx-customer"; })
+    });
+    const response = await post(customerAuthRoutes(SECRET, injected), "/wx-session", {
+      code: "one-time-code",
+      batchPublicId: customerBootstrap.batch.publicId
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { token: string; session: Record<string, unknown> };
+    expect(order).toEqual(["bootstrap", "code2session"]);
+    expect(injected.code2session).toHaveBeenCalledOnce();
+    expect(JSON.stringify(body)).not.toMatch(/openid|sellerId/);
+    expect(body.session).toMatchObject({ sellerName: "桃子", role: "customer" });
+    await expect(verifyCustomerToken(body.token, SECRET, NOW)).resolves.toMatchObject({
+      sellerId: 7,
+      openid: "wx-customer"
+    });
+  });
+
+  it("does not consume a code for an invalid batch and maps WeChat failures", async () => {
+    const invalid = customerDeps({
+      findCustomerSessionBootstrap: vi.fn(async () => { throw new CmsAuthError(404, "booking-batch-not-found"); })
+    });
+    expect((await post(customerAuthRoutes(SECRET, invalid), "/wx-session", {
+      code: "one-time-code",
+      batchPublicId: customerBootstrap.batch.publicId
+    })).status).toBe(404);
+    expect(invalid.code2session).not.toHaveBeenCalled();
+
+    for (const [error, status] of [
+      [new Code2SessionError("invalid", "bad code"), 401],
+      [new Code2SessionError("unavailable", "timeout"), 502],
+      [new Error("unknown"), 502]
+    ] as const) {
+      const deps = customerDeps({ code2session: vi.fn(async () => { throw error; }) });
+      expect((await post(customerAuthRoutes(SECRET, deps), "/wx-session", {
+        code: "secret-code",
+        batchPublicId: customerBootstrap.batch.publicId
+      })).status).toBe(status);
+    }
+  });
+
+  it("keeps dev login behind both switches and never calls WeChat", async () => {
+    const injected = customerDeps();
+    delete process.env.KITH_INN_V1_ALLOW_DEV_LOGIN;
+    expect((await post(customerAuthRoutes(SECRET, injected), "/dev-session", {
+      openid: "dev-customer",
+      batchPublicId: customerBootstrap.batch.publicId
+    })).status).toBe(404);
+    process.env.KITH_INN_V1_ALLOW_DEV_LOGIN = "1";
+    process.env.NODE_ENV = "production";
+    expect((await post(customerAuthRoutes(SECRET, injected), "/dev-session", {
+      openid: "dev-customer",
+      batchPublicId: customerBootstrap.batch.publicId
+    })).status).toBe(404);
+    process.env.NODE_ENV = "test";
+    const response = await post(customerAuthRoutes(SECRET, injected), "/dev-session", {
+      openid: "dev-customer",
+      batchPublicId: customerBootstrap.batch.publicId
+    });
+    expect(response.status).toBe(200);
+    expect(injected.code2session).not.toHaveBeenCalled();
+    expect((await post(customerAuthRoutes(SECRET, injected), "/dev-session", {
+      openid: "",
+      batchPublicId: customerBootstrap.batch.publicId
+    })).status).toBe(422);
+  });
+
+  it("validates inputs and maps inactive/malformed CMS responses", async () => {
+    const app = customerAuthRoutes(SECRET, customerDeps());
+    expect((await post(app, "/wx-session", { code: "x", batchPublicId: "bad" })).status).toBe(422);
+    expect((await post(app, "/dev-session", { openid: "x", batchPublicId: "bad" })).status).toBe(422);
+    for (const [error, status] of [
+      [new CmsAuthError(403, "seller-inactive"), 403],
+      [new Error("offline"), 502]
+    ] as const) {
+      const deps = customerDeps({ findCustomerSessionBootstrap: vi.fn(async () => { throw error; }) });
+      expect((await post(customerAuthRoutes(SECRET, deps), "/dev-session", {
+        openid: "dev-customer",
+        batchPublicId: customerBootstrap.batch.publicId
+      })).status).toBe(status);
+    }
+  });
+});
+
 describe("default dependencies", () => {
   it("wires the real boundaries and current clock", async () => {
     process.env.WX_APPID = "app";
@@ -160,6 +271,21 @@ describe("default dependencies", () => {
     vi.stubGlobal("fetch", fetchMock);
     const response = await post(authRoutes(SECRET), "/wx-login", { code: "wx-code" });
     expect(response.status).toBe(200);
+    vi.unstubAllGlobals();
+  });
+
+  it("wires the real customer bootstrap and current clock", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const fetchMock = vi.fn<typeof fetch>(async () => new Response(JSON.stringify(customerBootstrap)));
+    vi.stubGlobal("fetch", fetchMock);
+    const response = await post(customerAuthRoutes(SECRET), "/dev-session", {
+      openid: "dev-customer",
+      batchPublicId: customerBootstrap.batch.publicId
+    });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { token: string };
+    await expect(verifyCustomerToken(body.token, SECRET)).resolves.toMatchObject({ openid: "dev-customer" });
     vi.unstubAllGlobals();
   });
 });

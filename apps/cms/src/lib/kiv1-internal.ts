@@ -1,14 +1,22 @@
-import { verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
+import { verifyCustomerToken, verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 import configPromise from "@payload-config";
 import { getPayload, type BasePayload } from "payload";
 import { NextResponse } from "next/server";
 
 const KIV1_INTERNAL_HEADER = "x-kith-inn-v1-internal";
 const KIV1_OPERATOR_HEADER = "x-kith-inn-v1-operator";
+const KIV1_CUSTOMER_HEADER = "x-kith-inn-v1-customer";
 
 type Kiv1OperatorScope = {
   operatorId: string | number;
   sellerId: string | number;
+  token: string;
+  payload: BasePayload;
+};
+
+type Kiv1CustomerScope = {
+  sellerId: string | number;
+  openid: string;
   token: string;
   payload: BasePayload;
 };
@@ -70,6 +78,31 @@ export async function operatorScope(req: Request): Promise<Kiv1OperatorScope | N
     token,
     payload
   };
+}
+
+export async function customerScope(req: Request): Promise<Kiv1CustomerScope | NextResponse> {
+  const secret = process.env.KITH_INN_V1_JWT_SECRET;
+  if (!secret) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
+  const token = req.headers.get(KIV1_CUSTOMER_HEADER);
+  if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const claims = await verifyCustomerToken(token, secret);
+  if (!claims) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  const payload = await getPayload({ config: configPromise });
+  const sellers = await payload.find({
+    collection: "kiv1_sellers",
+    where: { and: [
+      { id: { equals: claims.sellerId } },
+      { status: { equals: "active" } }
+    ] },
+    limit: 1,
+    depth: 0,
+    overrideAccess: true
+  });
+  if (sellers.docs.length === 0) {
+    return NextResponse.json({ error: "seller-inactive" }, { status: 403 });
+  }
+  return { sellerId: claims.sellerId, openid: claims.openid, token, payload };
 }
 
 export function hasSellerField(value: unknown): boolean {

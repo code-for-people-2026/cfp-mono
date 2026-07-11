@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BookingBatch, CmsBookingBatchCreate } from "@cfp/kith-inn-v1-shared";
+import type { BookingBatch, CmsBookingBatchCreate, CmsCustomerBookingBatch } from "@cfp/kith-inn-v1-shared";
 import {
   CmsBookingBatchError,
   createBookingBatch,
+  getCustomerBookingBatch,
   listBookingBatches,
   updateBookingBatch
 } from "./bookingBatches";
@@ -104,5 +105,58 @@ describe("CMS booking-batch client", () => {
     await expect(listBookingBatches("jwt")).resolves.toEqual([]);
     delete process.env.CMS_BASE_URL;
     await expect(listBookingBatches("jwt")).rejects.toThrow(/CMS_BASE_URL/);
+  });
+});
+
+describe("CMS customer booking-batch client", () => {
+  const customerBatch: CmsCustomerBookingBatch = {
+    seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
+    batch,
+    slots: [{
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch",
+      menuItems: Array.from({ length: 5 }, (_, index) => ({
+        offeringId: index + 1,
+        nameSnapshot: `菜${index + 1}`,
+        mainIngredientSnapshot: null,
+        categorySnapshot: index < 2 ? "meat" as const : index < 4 ? "veg" as const : "soup" as const
+      })),
+      orderStatus: "open",
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      priceCents: null,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    }]
+  };
+
+  it("uses only the customer header and validates the snapshot", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test/";
+    const deps = response(customerBatch);
+    await expect(getCustomerBookingBatch("customer-jwt", batch.publicId, deps)).resolves.toEqual(customerBatch);
+    expect(deps.fetch).toHaveBeenCalledWith(
+      `http://cms.test/api/internal/kiv1/customer/booking-batches/${batch.publicId}`,
+      { headers: { "x-kith-inn-v1-customer": "customer-jwt" } }
+    );
+  });
+
+  it("preserves not-found and rejects malformed snapshots", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(getCustomerBookingBatch("jwt", batch.publicId, response({ error: "not-found" }, 404)))
+      .rejects.toMatchObject({ status: 404, code: "not-found" });
+    await expect(getCustomerBookingBatch("jwt", batch.publicId, response({ error: "forbidden", message: "失败" }, 403)))
+      .rejects.toMatchObject({ status: 403, code: "forbidden", message: "失败" });
+    await expect(getCustomerBookingBatch("jwt", batch.publicId, {
+      fetch: vi.fn(async () => new Response("bad", { status: 500 }))
+    })).rejects.toMatchObject({ code: "cms-booking-batch-failed" });
+    await expect(getCustomerBookingBatch("jwt", batch.publicId, response({})))
+      .rejects.toMatchObject({ code: "invalid-cms-response" });
+  });
+
+  it("uses global fetch by default", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const fetch = response(customerBatch).fetch;
+    vi.stubGlobal("fetch", fetch);
+    await expect(getCustomerBookingBatch("jwt", batch.publicId)).resolves.toEqual(customerBatch);
   });
 });

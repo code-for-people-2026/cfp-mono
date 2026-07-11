@@ -49,7 +49,10 @@ export default defineConfig({
       url: "http://127.0.0.1:10087",
       reuseExistingServer,
       timeout: 120_000,
-      env: { BE_BASE_URL: "http://127.0.0.1:3311" }
+      env: {
+        BE_BASE_URL: "http://127.0.0.1:3311",
+        KITH_INN_V1_CUSTOMER_DEV_OPENID: "e2e-customer-openid"
+      }
     }
   ]
 });

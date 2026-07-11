@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CmsAuthError, findOperatorMemberships } from "./auth";
+import { CmsAuthError, findCustomerSessionBootstrap, findOperatorMemberships } from "./auth";
 
 const originalEnv = { ...process.env };
 afterEach(() => {
@@ -59,5 +59,55 @@ describe("findOperatorMemberships", () => {
     await expect(findOperatorMemberships({ operatorId: 1 })).resolves.toHaveLength(1);
     expect(fetchMock.mock.calls[0]![1]?.headers).toMatchObject({ "x-kith-inn-v1-internal": "" });
     expect(new CmsAuthError(502, "cms-unavailable")).toMatchObject({ status: 502, code: "cms-unavailable" });
+  });
+});
+
+describe("findCustomerSessionBootstrap", () => {
+  const body = {
+    seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
+    batch: {
+      id: 31,
+      sellerId: 7,
+      publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "一周预订",
+      status: "open",
+      mealSlotIds: [11],
+      createdById: 1
+    }
+  };
+
+  it("posts the public id with service auth and validates the response", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test/";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const fetchMock = response(body);
+    await expect(findCustomerSessionBootstrap(body.batch.publicId, { fetch: fetchMock })).resolves.toEqual(body);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/auth/customer-session",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ "x-kith-inn-v1-internal": "internal" }),
+        body: JSON.stringify({ batchPublicId: body.batch.publicId })
+      })
+    );
+  });
+
+  it("preserves CMS failures and rejects malformed success", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(findCustomerSessionBootstrap(body.batch.publicId, {
+      fetch: response({ error: "seller-inactive" }, 403)
+    })).rejects.toMatchObject({ status: 403, code: "seller-inactive" });
+    await expect(findCustomerSessionBootstrap(body.batch.publicId, {
+      fetch: response({ seller: {} })
+    })).rejects.toThrow(/invalid cms customer bootstrap response/);
+    await expect(findCustomerSessionBootstrap(body.batch.publicId, {
+      fetch: vi.fn(async () => new Response("bad", { status: 500 }))
+    })).rejects.toMatchObject({ code: "cms-auth-failed" });
+  });
+
+  it("uses global fetch by default", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const fetchMock = response(body);
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(findCustomerSessionBootstrap(body.batch.publicId)).resolves.toEqual(body);
   });
 });

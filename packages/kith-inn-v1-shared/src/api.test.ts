@@ -9,12 +9,19 @@ import {
   bookingBatchUpdateSchema,
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
+  cmsCustomerBookingBatchSchema,
   cmsCustomerProfileSchema,
   cmsOrderCreateSchema,
   cmsOrderUpdateSchema,
+  customerBookingBatchViewSchema,
+  customerDevSessionInputSchema,
   customerProfileCreateSchema,
   customerProfileSchema,
   customerProfilesResponseSchema,
+  customerSessionBootstrapInputSchema,
+  customerSessionBootstrapResponseSchema,
+  customerSessionResponseSchema,
+  customerWxSessionInputSchema,
   devLoginInputSchema,
   importCommitInputSchema,
   importCommitResponseSchema,
@@ -78,6 +85,91 @@ describe("auth API schemas", () => {
     expect(devLoginInputSchema.safeParse({ openid: "" }).success).toBe(false);
     expect(selectSellerInputSchema.safeParse({ selectionToken: "", sellerId: 7 }).success).toBe(false);
     expect(apiErrorSchema.safeParse({ error: "bad" }).success).toBe(false);
+  });
+});
+
+describe("customer booking entry API schemas", () => {
+  const publicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+  const batch = {
+    id: 31,
+    sellerId: 7,
+    publicId,
+    title: "7 月 13 日预订",
+    status: "open",
+    mealSlotIds: [11],
+    createdById: 1
+  };
+  const slot = {
+    id: 11,
+    sellerId: 7,
+    date: "2026-07-13",
+    occasion: "lunch",
+    menuItems: [
+      { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+      { offeringId: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+      { offeringId: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+      { offeringId: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+      { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+    ],
+    orderStatus: "open",
+    orderDeadline: "2026-07-12T01:00:00.000Z",
+    priceCents: null,
+    generatedAt: "2026-07-10T01:00:00.000Z"
+  };
+
+  it("accepts strict customer login, session and bootstrap contracts", () => {
+    expect(customerWxSessionInputSchema.parse({ code: "temporary", batchPublicId: publicId }))
+      .toEqual({ code: "temporary", batchPublicId: publicId });
+    expect(customerDevSessionInputSchema.parse({ openid: "dev-customer", batchPublicId: publicId }))
+      .toEqual({ openid: "dev-customer", batchPublicId: publicId });
+    expect(customerSessionResponseSchema.parse({
+      token: "customer-jwt",
+      session: { sellerName: "桃子", role: "customer", expiresAt: "2026-07-18T10:00:00.000Z" }
+    }).session.sellerName).toBe("桃子");
+    expect(customerSessionBootstrapInputSchema.parse({ batchPublicId: publicId })).toEqual({ batchPublicId: publicId });
+    expect(customerSessionBootstrapResponseSchema.parse({
+      seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
+      batch
+    }).batch.publicId).toBe(publicId);
+
+    expect(customerWxSessionInputSchema.safeParse({ code: "temporary", batchPublicId: publicId, openid: "leak" }).success)
+      .toBe(false);
+    expect(customerDevSessionInputSchema.safeParse({ openid: "", batchPublicId: publicId }).success).toBe(false);
+    expect(customerSessionResponseSchema.safeParse({
+      token: "jwt",
+      session: { sellerName: "桃子", sellerId: 7, role: "customer", expiresAt: "2026-07-18T10:00:00.000Z" }
+    }).success).toBe(false);
+  });
+
+  it("accepts internal snapshots and public views without tenant identifiers", () => {
+    expect(cmsCustomerBookingBatchSchema.parse({
+      seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
+      batch,
+      slots: [slot]
+    }).slots[0]?.id).toBe(11);
+    expect(customerBookingBatchViewSchema.parse({
+      sellerName: "桃子",
+      title: batch.title,
+      status: "open",
+      sharePath: `/pages/booking/index?batch=${publicId}`,
+      slots: [{
+        date: slot.date,
+        occasion: slot.occasion,
+        menuItems: slot.menuItems,
+        unitPriceCents: 3000,
+        orderDeadline: slot.orderDeadline,
+        canBook: true,
+        unavailableReason: null
+      }]
+    }).slots[0]?.unitPriceCents).toBe(3000);
+    expect(customerBookingBatchViewSchema.safeParse({
+      sellerName: "桃子",
+      sellerId: 7,
+      title: batch.title,
+      status: "open",
+      sharePath: `/pages/booking/index?batch=${publicId}`,
+      slots: []
+    }).success).toBe(false);
   });
 });
 

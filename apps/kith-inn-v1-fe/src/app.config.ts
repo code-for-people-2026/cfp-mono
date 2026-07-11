@@ -4,7 +4,8 @@ export default defineAppConfig({
     "pages/merchant/offerings/index",
     "pages/merchant/menu/index",
     "pages/merchant/batches/index",
-    "pages/merchant/orders/index"
+    "pages/merchant/orders/index",
+    "pages/booking/index"
   ],
   window: {
     backgroundTextStyle: "light",

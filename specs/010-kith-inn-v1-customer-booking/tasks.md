@@ -45,7 +45,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 - [x] T013 [US1] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；验证 M2-A 无原生分享入口，并记录 60 秒和零内部标识指标
 - [x] T014 [US1] 审计 M2-A diff：不含 customer auth/profile/order write，不改 `packages/kith-inn-v1-payload` collection/索引、不改旧 `@cfp/kith-inn-*` 业务 package、不新增 workspace/依赖
-- [ ] T015 [US1] 提交并推送 `codex/kith-inn-v1-m2-a`，创建 base=`main` 的 ready PR；等待一次自动 Codex review，逐条回复/修复并 resolve actionable thread 后 rebase merge
+- [x] T015 [US1] 提交并推送 `codex/kith-inn-v1-m2-a`，创建 base=`main` 的 ready PR；等待一次自动 Codex review，逐条回复/修复并 resolve actionable thread 后 rebase merge
 
 **Checkpoint**: M2-A 独立可用；合并后才能开始 M2-B。
 
@@ -59,26 +59,28 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ### Tests first
 
-- [ ] T016 [P] [US2] 在 `packages/kith-inn-v1-shared/src/auth.test.ts` 和 `packages/kith-inn-v1-shared/src/api.test.ts` 添加 customer claims、session、login、public batch view contract 测试并确认先失败
-- [ ] T017 [P] [US2] 在 `apps/cms/tests/kiv1-customer-auth.test.ts` 添加 service bootstrap、customer JWT kind/expiry/seller owner、closed batch read 与跨 seller 404 测试并确认先失败
-- [ ] T018 [P] [US2] 在 `apps/kith-inn-v1-be/src/middleware/customerAuth.test.ts` 和 `apps/kith-inn-v1-be/src/routes/auth.test.ts` 添加 customer token 隔离、微信 code 只使用一次、dev 双开关和敏感信息不落日志测试并确认先失败
-- [ ] T019 [P] [US2] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts` 添加 public view、resolved price、canBook reason、closed/archived 可读与跨 seller 404 测试并确认先失败
-- [ ] T020 [P] [US2] 在 `apps/kith-inn-v1-fe/src/store/customerSession.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts` 添加独立 storage、query 恢复、silent login 与只读派生测试并确认先失败
-- [ ] T021 [P] [US2] 在 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 添加 H5 dev customer login、batch 展示、closed 状态与 query 恢复的无头 E2E 并确认先失败
+- [x] T016 [P] [US2] 在 `packages/kith-inn-v1-shared/src/auth.test.ts` 和 `packages/kith-inn-v1-shared/src/api.test.ts` 添加 customer claims、session、login、public batch view contract 测试并确认先失败
+- [x] T017 [P] [US2] 在 `apps/cms/tests/kiv1-customer-auth.test.ts` 添加 service bootstrap、customer JWT kind/expiry/seller owner、closed batch read 与跨 seller 404 测试并确认先失败
+- [x] T018 [P] [US2] 在 `apps/kith-inn-v1-be/src/middleware/customerAuth.test.ts` 和 `apps/kith-inn-v1-be/src/routes/auth.test.ts` 添加 customer token 隔离、微信 code 只使用一次、dev 双开关和敏感信息不落日志测试并确认先失败
+- [x] T019 [P] [US2] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts` 添加 public view、resolved price、canBook reason、closed/archived 可读与跨 seller 404 测试并确认先失败
+- [x] T020 [P] [US2] 在 `apps/kith-inn-v1-fe/src/store/customerSession.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts` 添加独立 storage、query 恢复、silent login 与只读派生测试并确认先失败
+- [x] T021 [P] [US2] 在 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 添加 H5 dev customer login、batch 展示、closed 状态与 query 恢复的无头 E2E 并确认先失败
 
 ### Implementation
 
-- [ ] T022 [US2] 在 `packages/kith-inn-v1-shared/src/auth.ts`、`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 customer claims/login/session/public view schema，确保编译产物兼容 Taro loader
-- [ ] T023 [US2] 在 `apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/auth/customer-session/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/customer/booking-batches/[publicId]/route.ts` 实现 service bootstrap 与只读 customer scope
-- [ ] T024 [US2] 在 `apps/kith-inn-v1-be/src/middleware/customerAuth.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/routes/auth.ts` 实现微信/dev customer session 与 operator/customer token 隔离
-- [ ] T025 [US2] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.ts`、`apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 customer-authenticated public batch read 与只读原因派生
-- [ ] T026 [US2] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/store/customerSession.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现静默登录、只读目标页并在目标存在后启用 weapp 原生分享
-- [ ] T027 [US2] 在 `apps/kith-inn-v1-be/.env.example` 和 `apps/kith-inn-v1-fe/.env.example` 记录微信配置、customer dev login 双开关与生产禁用语义
+- [x] T022 [US2] 在 `packages/kith-inn-v1-shared/src/auth.ts`、`packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 customer claims/login/session/public view schema，确保编译产物兼容 Taro loader
+- [x] T023 [US2] 在 `apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/auth/customer-session/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/customer/booking-batches/[publicId]/route.ts` 实现 service bootstrap 与只读 customer scope
+- [x] T024 [US2] 在 `apps/kith-inn-v1-be/src/middleware/customerAuth.ts`、`apps/kith-inn-v1-be/src/lib/cms/auth.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/routes/auth.ts` 实现微信/dev customer session 与 operator/customer token 隔离
+- [x] T025 [US2] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.ts`、`apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 customer-authenticated public batch read 与只读原因派生
+- [x] T026 [US2] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/store/customerSession.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现静默登录、只读目标页并在目标存在后启用 weapp 原生分享
+- [x] T027 [US2] 在 `apps/kith-inn-v1-be/.env.example` 和 `apps/kith-inn-v1-fe/.env.example` 记录微信配置、customer dev login 双开关与生产禁用语义
 
 ### Gate / PR
 
 - [ ] T028 [US2] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；完成原生分享卡片→目标页→`wx.login`/query 真机 smoke，并记录 M2-B 正常网络 5 秒指标
-- [ ] T029 [US2] 审计 M2-B diff：无 profile/order 写 API、无 operator session 回归、无新持久化字段/secret 日志/Node-only weapp 依赖
+
+> 自动门禁、SQLite/PostgreSQL、无头 H5、weapp build 与 5 秒指标已完成；原生分享卡片和真实 `wx.login` 的真机 smoke 待维护者使用已配置微信小程序的设备执行。
+- [x] T029 [US2] 审计 M2-B diff：无 profile/order 写 API、无 operator session 回归、无新持久化字段/secret 日志/Node-only weapp 依赖
 - [ ] T030 [US2] 从 M2-A 合并后的 main 提交并推送 `codex/kith-inn-v1-m2-b`，创建 ready PR；等待一次自动 Codex review，处理完 actionable thread 后 rebase merge
 
 **Checkpoint**: M2-B 独立可用；合并后才能开始 M2-C。
