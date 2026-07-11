@@ -426,6 +426,23 @@ describe("merchant order routes", () => {
     expect(routeDeps.updateOrder).not.toHaveBeenCalled();
   });
 
+  it("propagates bulk authorization failures so the client clears its session", async () => {
+    for (const status of [401, 403] as const) {
+      const routeDeps = deps({
+        getOrder: vi.fn(async () => {
+          throw new CmsOrderError(status, status === 401 ? "invalid-token" : "membership-inactive", "身份失效");
+        })
+      });
+      const response = await request(ordersRoutes(SECRET, routeDeps), "/bulk-mark-delivered", {
+        method: "POST",
+        body: JSON.stringify({ ids: [31, 32] })
+      });
+      expect(response.status).toBe(status);
+      expect(routeDeps.getOrder).toHaveBeenCalledTimes(1);
+      expect(routeDeps.updateOrder).not.toHaveBeenCalled();
+    }
+  });
+
   it("rejects unknown/malformed actions and preserves cross-seller 404 with zero writes", async () => {
     const routeDeps = deps();
     const app = ordersRoutes(SECRET, routeDeps);

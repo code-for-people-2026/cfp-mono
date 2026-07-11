@@ -242,6 +242,9 @@ export function ordersRoutes(secret: string, deps: OrdersDeps = defaultDeps) {
         if (patch !== null) await deps.updateOrder(token, id, patch);
         results.push({ id, status: "updated" });
       } catch (error) {
+        if (isDependencyError(error) && (error.status === 401 || error.status === 403)) {
+          return dependencyError(c, error);
+        }
         results.push({
           id,
           status: "failed",
