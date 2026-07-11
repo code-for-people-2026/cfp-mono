@@ -128,46 +128,55 @@ export async function createDraftAtomic(
 }
 
 export async function confirmOrderAtomic(payload: BasePayload, sellerId: string | number, id: string | number): Promise<ConfirmResult> {
-  try {
-    return await withTransaction(payload, async (req) => {
-      const existing = await completedConfirmation(payload, sellerId, id, req);
-      if (existing) return existing;
-      const order = await scopedOrder(payload, sellerId, id, req);
-      if (!order) throw new OrderLifecycleError("not-found");
-      if (order.status !== "draft") throw new OrderLifecycleError("not-draft");
-      const items = await payload.find({
-        collection: "order_items",
-        where: { and: [{ seller: { equals: sellerId } }, { order: { equals: id } }] },
-        limit: 1,
-        overrideAccess: true,
-        req,
-      });
-      if (items.docs.length === 0) throw new OrderLifecycleError("empty-order");
-
-      const found = (await payload.find({ collection: "service_slots", where: slotWhere(sellerId, order), limit: 1, overrideAccess: true, req })).docs[0] as ServiceSlot | undefined;
-      if (found?.status === "archived") throw new OrderLifecycleError("slot-archived");
-      const slot = found
-        ? found.status === "open"
-          ? found
-          : await payload.update({ collection: "service_slots", id: found.id, data: { status: "open" }, overrideAccess: true, req })
-        : await payload.create({
-            collection: "service_slots",
-            data: { date: order.date, occasion: order.occasion, granularity: "occasion", status: "open", seller: sellerId },
-            overrideAccess: true,
-            req,
-          });
-      const fulfillment = await payload.create({
-        collection: "fulfillments",
-        data: { order: order.id, serviceDate: order.date, occasion: order.occasion, status: "pending", seller: sellerId },
-        overrideAccess: true,
-        req,
-      });
-      await payload.update({ collection: "orders", id, data: { status: "confirmed" }, overrideAccess: true, req });
-      return { slots: [slot as ServiceSlot], fulfillments: [fulfillment as Fulfillment], alreadyConfirmed: false };
+  const confirmOnce = () => withTransaction(payload, async (req) => {
+    const existing = await completedConfirmation(payload, sellerId, id, req);
+    if (existing) return existing;
+    const order = await scopedOrder(payload, sellerId, id, req);
+    if (!order) throw new OrderLifecycleError("not-found");
+    if (order.status !== "draft") throw new OrderLifecycleError("not-draft");
+    const items = await payload.find({
+      collection: "order_items",
+      where: { and: [{ seller: { equals: sellerId } }, { order: { equals: id } }] },
+      limit: 1,
+      overrideAccess: true,
+      req,
     });
+    if (items.docs.length === 0) throw new OrderLifecycleError("empty-order");
+
+    const found = (await payload.find({ collection: "service_slots", where: slotWhere(sellerId, order), limit: 1, overrideAccess: true, req })).docs[0] as ServiceSlot | undefined;
+    if (found?.status === "archived") throw new OrderLifecycleError("slot-archived");
+    const slot = found
+      ? found.status === "open"
+        ? found
+        : await payload.update({ collection: "service_slots", id: found.id, data: { status: "open" }, overrideAccess: true, req })
+      : await payload.create({
+          collection: "service_slots",
+          data: { date: order.date, occasion: order.occasion, granularity: "occasion", status: "open", seller: sellerId },
+          overrideAccess: true,
+          req,
+        });
+    const fulfillment = await payload.create({
+      collection: "fulfillments",
+      data: { order: order.id, serviceDate: order.date, occasion: order.occasion, status: "pending", seller: sellerId },
+      overrideAccess: true,
+      req,
+    });
+    await payload.update({ collection: "orders", id, data: { status: "confirmed" }, overrideAccess: true, req });
+    return { slots: [slot as ServiceSlot], fulfillments: [fulfillment as Fulfillment], alreadyConfirmed: false };
+  });
+
+  try {
+    return await confirmOnce();
   } catch (error) {
     const completed = await completedConfirmation(payload, sellerId, id);
     if (completed) return completed;
+    const order = await scopedOrder(payload, sellerId, id);
+    if (order?.status === "draft") {
+      const slot = await payload.find({ collection: "service_slots", where: slotWhere(sellerId, order), limit: 1, overrideAccess: true });
+      // A different order can win the first-create race for this coordinate.
+      // Once its open slot is visible, retry this order exactly once and reuse it.
+      if ((slot.docs[0] as ServiceSlot | undefined)?.status === "open") return confirmOnce();
+    }
     throw error;
   }
 }
