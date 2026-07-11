@@ -28,6 +28,7 @@ import type {
   cmsOrderUpdateSchema,
   cmsCustomerBookingBatchSchema,
   customerBookingBatchViewSchema,
+  customerMenuItemSnapshotSchema,
   customerDevSessionInputSchema,
   customerSessionBootstrapResponseSchema,
   customerSessionResponseSchema,
@@ -87,6 +88,7 @@ export type CustomerSessionResponse = z.infer<typeof customerSessionResponseSche
 export type CustomerSessionBootstrapResponse = z.infer<typeof customerSessionBootstrapResponseSchema>;
 export type CmsCustomerBookingBatch = z.infer<typeof cmsCustomerBookingBatchSchema>;
 export type CustomerBookingBatchView = z.infer<typeof customerBookingBatchViewSchema>;
+export type CustomerMenuItemSnapshot = z.infer<typeof customerMenuItemSnapshotSchema>;
 export type GenerateMenusInput = z.infer<typeof generateMenusInputSchema>;
 export type GenerateMenusResponse = z.infer<typeof generateMenusResponseSchema>;
 export type SwapMenuItemResponse = z.infer<typeof swapMenuItemResponseSchema>;

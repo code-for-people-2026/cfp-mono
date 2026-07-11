@@ -78,7 +78,11 @@ export function customerBookingBatchView(
       return {
         date: slot.date,
         occasion: slot.occasion,
-        menuItems: slot.menuItems,
+        menuItems: slot.menuItems.map(({ nameSnapshot, mainIngredientSnapshot, categorySnapshot }) => ({
+          nameSnapshot,
+          mainIngredientSnapshot,
+          categorySnapshot
+        })),
         unitPriceCents: slot.priceCents ?? seller.defaultPriceCents,
         orderDeadline: slot.orderDeadline,
         canBook: unavailableReason === null,

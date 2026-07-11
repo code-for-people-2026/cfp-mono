@@ -86,6 +86,8 @@ it("derives a tenant-free customer view, resolved prices and deterministic reaso
       { canBook: false, unavailableReason: "order-deadline-passed" }
     ]
   });
+  expect(customerBookingBatchView(internal, "2026-07-10T01:00:00.000Z").slots[0]?.menuItems[0])
+    .toEqual({ nameSnapshot: "菜1", mainIngredientSnapshot: null, categorySnapshot: "meat" });
   expect(customerBookingBatchView({ ...internal, batch: { ...internal.batch, status: "archived" } }, "2026-07-10T01:00:00.000Z")
     .slots.every(({ unavailableReason }) => unavailableReason === "booking-batch-closed")).toBe(true);
 });

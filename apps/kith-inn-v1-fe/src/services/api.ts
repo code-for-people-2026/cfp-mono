@@ -212,7 +212,7 @@ function parseCustomerBookingBatchView(value: unknown): CustomerBookingBatchView
   const slots = body.slots.map((value) => {
     const slot = record(value);
     const items = Array.isArray(slot?.menuItems) ? slot.menuItems.map(record) : [];
-    const validItems = items.length === 5 && items.every((item) => item && validId(item.offeringId) &&
+    const validItems = items.length === 5 && items.every((item) => item && !Object.hasOwn(item, "offeringId") &&
       typeof item.nameSnapshot === "string" && item.nameSnapshot !== "" &&
       (item.mainIngredientSnapshot === null || typeof item.mainIngredientSnapshot === "string") &&
       (item.categorySnapshot === "meat" || item.categorySnapshot === "veg" || item.categorySnapshot === "soup"));
@@ -336,7 +336,12 @@ export function createApiClient(options: ClientOptions) {
 
   async function request<T>(
     path: string,
-    config: { method?: "GET" | "POST" | "PATCH"; data?: unknown; authenticated?: boolean } = {}
+    config: {
+      method?: "GET" | "POST" | "PATCH";
+      data?: unknown;
+      authenticated?: boolean;
+      clearOperatorSession?: boolean;
+    } = {}
   ): Promise<T> {
     const authenticated = config.authenticated !== false;
     const token = authenticated ? options.sessions.getSession()?.token : null;
@@ -350,7 +355,7 @@ export function createApiClient(options: ClientOptions) {
     });
     if (response.statusCode >= 200 && response.statusCode < 300) return response.data as T;
     const parsed = parseError(response.data);
-    if (response.statusCode === 401 || response.statusCode === 403) {
+    if ((response.statusCode === 401 || response.statusCode === 403) && config.clearOperatorSession !== false) {
       options.sessions.clearSession();
       options.onAuthFailure?.(response.statusCode);
     }
@@ -374,7 +379,8 @@ export function createApiClient(options: ClientOptions) {
     return parseCustomerSessionResponse(await request<unknown>(path, {
       method: "POST",
       data,
-      authenticated: false
+      authenticated: false,
+      clearOperatorSession: false
     }));
   }
 

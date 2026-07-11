@@ -68,8 +68,10 @@ export default function CustomerBooking() {
       {view.slots.map((slot) => (
         <View className="card booking-slot" key={`${slot.date}-${slot.occasion}`}>
           <Text className="section-title">{slot.date} {occasionText(slot.occasion)}</Text>
-          {slot.menuItems.map((item) => (
-            <Text className="booking-menu-item" key={String(item.offeringId)}>{item.nameSnapshot}</Text>
+          {slot.menuItems.map((item, index) => (
+            <Text className="booking-menu-item" key={`${item.categorySnapshot}-${item.nameSnapshot}-${index}`}>
+              {item.nameSnapshot}
+            </Text>
           ))}
           <Text className="booking-price">{formatBookingPrice(slot.unitPriceCents)} / 份</Text>
           <Text className="meta">截止：{slot.orderDeadline ?? "未设置"}</Text>

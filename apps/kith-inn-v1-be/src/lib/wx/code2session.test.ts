@@ -26,8 +26,16 @@ describe("code2session", () => {
     process.env.WX_SECRET = "secret";
     await expect(code2session("code", { fetch: vi.fn(async () => new Response("{}", { status: 500 })) })).rejects.toThrow(/500/);
     await expect(code2session("code", { fetch: vi.fn(async () => new Response("not-json")) })).rejects.toThrow();
-    await expect(code2session("code", { fetch: vi.fn(async () => new Response(JSON.stringify({ errcode: 1, errmsg: "bad code" }))) })).rejects.toThrow(/bad code/);
-    await expect(code2session("code", { fetch: vi.fn(async () => new Response("{}")) })).rejects.toThrow(/no openid/);
+    for (const errcode of [40029, 40163]) {
+      await expect(code2session("code", {
+        fetch: vi.fn(async () => new Response(JSON.stringify({ errcode, errmsg: "bad code" })))
+      })).rejects.toMatchObject({ kind: "invalid", message: expect.stringMatching(/bad code/) });
+    }
+    for (const body of [{ errcode: -1, errmsg: "system busy" }, { errcode: 45011, errmsg: "rate limit" }, {}]) {
+      await expect(code2session("code", {
+        fetch: vi.fn(async () => new Response(JSON.stringify(body)))
+      })).rejects.toMatchObject({ kind: "unavailable" });
+    }
   });
 
   it("uses global fetch when no dependency is injected", async () => {

@@ -76,9 +76,8 @@ describe("API client", () => {
         date: "2026-07-13",
         occasion: "lunch",
         menuItems: Array.from({ length: 5 }, (_, index) => ({
-          offeringId: index + 1,
           nameSnapshot: `菜${index + 1}`,
-          mainIngredientSnapshot: null,
+          mainIngredientSnapshot: index === 0 ? "牛肉" : null,
           categorySnapshot: index < 2 ? "meat" : index < 4 ? "veg" : "soup"
         })),
         unitPriceCents: 3000,
@@ -96,7 +95,7 @@ describe("API client", () => {
     await expect(client.customerWxSession("wx-code", publicId)).resolves.toEqual(session);
     await expect(client.customerDevSession("dev-openid", publicId)).resolves.toEqual(session);
     await expect(client.getPublicBookingBatch(publicId)).resolves.toEqual(view);
-    const stringIdView = await createApiClient({
+    await expect(createApiClient({
       request: adapter(200, {
         ...view,
         slots: [{
@@ -110,8 +109,7 @@ describe("API client", () => {
       }),
       sessions: sessions(),
       customerSessions: customers
-    }).getPublicBookingBatch(publicId);
-    expect(stringIdView.slots[0]!.menuItems[0]!.offeringId).toBe("offering-1");
+    }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ code: "invalid-api-response" });
     for (const unavailableReason of [
       "booking-batch-closed",
       "meal-slot-closed",
@@ -166,7 +164,6 @@ describe("API client", () => {
       sharePath: `/pages/booking/index?batch=${publicId}`
     };
     const item = {
-      offeringId: 1,
       nameSnapshot: "菜",
       mainIngredientSnapshot: null,
       categorySnapshot: "veg"
@@ -184,8 +181,8 @@ describe("API client", () => {
       null,
       { ...slot, menuItems: null },
       { ...slot, menuItems: Array(5).fill(null) },
-      { ...slot, menuItems: [{ ...item, offeringId: 1.5 }, ...Array(4).fill(item)] },
-      { ...slot, menuItems: [{ ...item, offeringId: "" }, ...Array(4).fill(item)] }
+      { ...slot, menuItems: [{ ...item, nameSnapshot: "" }, ...Array(4).fill(item)] },
+      { ...slot, menuItems: [{ ...item, offeringId: 1 }, ...Array(4).fill(item)] }
     ]) {
       await expect(createApiClient({
         request: adapter(200, { ...base, slots: [badSlot] }),
@@ -201,6 +198,13 @@ describe("API client", () => {
       customerSessions: customers
     }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ status: 401 });
     expect(customers.clearSession).toHaveBeenCalledOnce();
+    expect(operators.clearSession).not.toHaveBeenCalled();
+
+    await expect(createApiClient({
+      request: adapter(401, { error: "invalid-wechat-code", message: "失效" }),
+      sessions: operators,
+      customerSessions: customers
+    }).customerWxSession("bad-code", publicId)).rejects.toMatchObject({ status: 401 });
     expect(operators.clearSession).not.toHaveBeenCalled();
 
     await expect(createApiClient({

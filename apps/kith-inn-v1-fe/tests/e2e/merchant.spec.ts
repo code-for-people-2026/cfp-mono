@@ -102,8 +102,8 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
   await expect(single.locator(".menu-item")).toHaveCount(5);
 
   const firstName = await single.locator(".menu-item-name").first().innerText();
-  await single.getByLabel(`换掉 ${firstName}`).click();
-  await expect(single.locator(".menu-item-name").filter({ hasText: firstName })).toHaveCount(0);
+  await single.getByLabel(`换掉 ${firstName}`, { exact: true }).click();
+  await expect(single.getByText(firstName, { exact: true })).toHaveCount(0);
 
   await taroButton(page, /^生成午餐$/).click();
   await expect(taroButton(page, /^确认覆盖已有菜单$/)).toBeVisible();

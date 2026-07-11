@@ -155,13 +155,32 @@ describe("customer booking entry API schemas", () => {
       slots: [{
         date: slot.date,
         occasion: slot.occasion,
-        menuItems: slot.menuItems,
+        menuItems: slot.menuItems.map(({ nameSnapshot, mainIngredientSnapshot, categorySnapshot }) => ({
+          nameSnapshot,
+          mainIngredientSnapshot,
+          categorySnapshot
+        })),
         unitPriceCents: 3000,
         orderDeadline: slot.orderDeadline,
         canBook: true,
         unavailableReason: null
       }]
     }).slots[0]?.unitPriceCents).toBe(3000);
+    expect(customerBookingBatchViewSchema.safeParse({
+      sellerName: "桃子",
+      title: batch.title,
+      status: "open",
+      sharePath: `/pages/booking/index?batch=${publicId}`,
+      slots: [{
+        date: slot.date,
+        occasion: slot.occasion,
+        menuItems: slot.menuItems,
+        unitPriceCents: 3000,
+        orderDeadline: slot.orderDeadline,
+        canBook: true,
+        unavailableReason: null
+      }]
+    }).success).toBe(false);
     expect(customerBookingBatchViewSchema.safeParse({
       sellerName: "桃子",
       sellerId: 7,
