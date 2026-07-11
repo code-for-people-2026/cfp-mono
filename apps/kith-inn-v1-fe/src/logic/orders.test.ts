@@ -51,6 +51,7 @@ const slot: MealSlot = {
     { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
   ],
   orderStatus: "draft",
+  orderDeadline: null,
   priceCents: null,
   generatedAt: "2026-07-10T01:00:00.000Z"
 };

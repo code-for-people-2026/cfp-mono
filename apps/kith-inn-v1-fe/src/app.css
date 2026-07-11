@@ -56,6 +56,49 @@ button.primary {
   gap: 28rpx;
 }
 
+.batches-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.batch-controls input,
+.batch-slot input,
+.batch-create input {
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+  background: #fffdf9;
+}
+
+.batch-actions,
+.close-confirmation {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.batch-actions button,
+.batch-card button {
+  flex: 1;
+  margin-top: 16rpx;
+}
+
+.batch-actions button.selected {
+  background: #d98965;
+  color: #ffffff;
+}
+
+.share-path {
+  display: block;
+  overflow-wrap: anywhere;
+  padding: 18rpx 0;
+  color: #6f2b21;
+}
+
 .form-card input,
 .import-card textarea {
   box-sizing: border-box;

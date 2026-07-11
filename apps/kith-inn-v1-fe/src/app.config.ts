@@ -3,6 +3,7 @@ export default defineAppConfig({
     "pages/merchant/login/index",
     "pages/merchant/offerings/index",
     "pages/merchant/menu/index",
+    "pages/merchant/batches/index",
     "pages/merchant/orders/index"
   ],
   window: {

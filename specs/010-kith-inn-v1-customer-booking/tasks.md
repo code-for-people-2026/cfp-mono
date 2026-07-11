@@ -25,26 +25,26 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ### Tests first
 
-- [ ] T001 [P] [US1] 在 `packages/kith-inn-v1-shared/src/api.test.ts` 为含 `orderDeadline` 的 MealSlot、booking config、batch create/update/list/share schema 添加 contract 测试并确认先失败
-- [ ] T002 [P] [US1] 在 `apps/cms/tests/kiv1-booking-batches.test.ts` 添加 operator owner、relationship guard、service token、创建/关闭 batch 的 route 测试并确认先失败
-- [ ] T003 [P] [US1] 在 `apps/cms/tests/kiv1-meal-slots.test.ts` 添加 booking config 白名单、owner 与 service token 测试并确认先失败
-- [ ] T004 [P] [US1] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts` 和 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 添加 UUID、1–20 去重、默认标题、open 前置条件、关闭幂等与错误映射测试并确认先失败
-- [ ] T005 [P] [US1] 在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts` 添加可选餐次、分享 path、关闭提示的纯逻辑测试并确认先失败
-- [ ] T006 [P] [US1] 在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 添加配置餐次、创建/关闭批次和 H5 复制 path 的无头场景并确认先失败
+- [x] T001 [P] [US1] 在 `packages/kith-inn-v1-shared/src/api.test.ts` 为含 `orderDeadline` 的 MealSlot、booking config、batch create/update/list/share schema 添加 contract 测试并确认先失败
+- [x] T002 [P] [US1] 在 `apps/cms/tests/kiv1-booking-batches.test.ts` 添加 operator owner、relationship guard、service token、创建/关闭 batch 的 route 测试并确认先失败
+- [x] T003 [P] [US1] 在 `apps/cms/tests/kiv1-meal-slots.test.ts` 添加 booking config 白名单、owner 与 service token 测试并确认先失败
+- [x] T004 [P] [US1] 在 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts` 和 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 添加 UUID、1–20 去重、默认标题、open 前置条件、关闭幂等与错误映射测试并确认先失败
+- [x] T005 [P] [US1] 在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts` 添加可选餐次、分享 path、关闭提示的纯逻辑测试并确认先失败
+- [x] T006 [P] [US1] 在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 添加配置餐次、创建/关闭批次和 H5 复制 path 的无头场景并确认先失败
 
 ### Implementation
 
-- [ ] T007 [US1] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 merchant booking config/batch contract，并为 MealSlot 补 `orderDeadline`
-- [ ] T008 [US1] 在 `apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/booking-config/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/booking-batches/route.ts` 实现 service-auth 的配置、batch list/create 与同 seller guard
-- [ ] T009 [US1] 在 `apps/cms/src/app/api/internal/kiv1/booking-batches/[id]/route.ts` 实现 owner-scoped 幂等关闭，且不联动修改 meal slot
-- [ ] T010 [US1] 在 `apps/kith-inn-v1-be/src/lib/cms/mealSlots.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 实现 CMS client、open 前置条件、价格解析、UUID/default title/share path 纯逻辑
-- [ ] T011 [US1] 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts`、`apps/kith-inn-v1-be/src/routes/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 装配 merchant endpoints 与稳定错误码
-- [ ] T012 [US1] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/bookingBatches.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现商家批次页与 weapp/H5 path 预览复制，M2-A 不注册顾客页或启用原生分享
+- [x] T007 [US1] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 merchant booking config/batch contract，并为 MealSlot 补 `orderDeadline`
+- [x] T008 [US1] 在 `apps/cms/src/lib/kiv1-internal.ts`、`apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/booking-config/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/booking-batches/route.ts` 实现 service-auth 的配置、batch list/create 与同 seller guard
+- [x] T009 [US1] 在 `apps/cms/src/app/api/internal/kiv1/booking-batches/[id]/route.ts` 实现 owner-scoped 幂等关闭，且不联动修改 meal slot
+- [x] T010 [US1] 在 `apps/kith-inn-v1-be/src/lib/cms/mealSlots.ts`、`apps/kith-inn-v1-be/src/lib/cms/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/domain/bookings/availability.ts` 实现 CMS client、open 前置条件、价格解析、UUID/default title/share path 纯逻辑
+- [x] T011 [US1] 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts`、`apps/kith-inn-v1-be/src/routes/bookingBatches.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 装配 merchant endpoints 与稳定错误码
+- [x] T012 [US1] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/bookingBatches.ts`、`apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现商家批次页与 weapp/H5 path 预览复制，M2-A 不注册顾客页或启用原生分享
 
 ### Gate / PR
 
-- [ ] T013 [US1] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；验证 M2-A 无原生分享入口，并记录 60 秒和零内部标识指标
-- [ ] T014 [US1] 审计 M2-A diff：不含 customer auth/profile/order write，不改 `packages/kith-inn-v1-payload` collection/索引、不改旧 `@cfp/kith-inn-*` 业务 package、不新增 workspace/依赖
+- [x] T013 [US1] 运行 shared/CMS/BE/FE 窄测试、`pnpm --filter @cfp/kith-inn-v1-fe build:weapp`、`CI=1` H5 E2E 与 `pnpm verify`；验证 M2-A 无原生分享入口，并记录 60 秒和零内部标识指标
+- [x] T014 [US1] 审计 M2-A diff：不含 customer auth/profile/order write，不改 `packages/kith-inn-v1-payload` collection/索引、不改旧 `@cfp/kith-inn-*` 业务 package、不新增 workspace/依赖
 - [ ] T015 [US1] 提交并推送 `codex/kith-inn-v1-m2-a`，创建 base=`main` 的 ready PR；等待一次自动 Codex review，逐条回复/修复并 resolve actionable thread 后 rebase merge
 
 **Checkpoint**: M2-A 独立可用；合并后才能开始 M2-B。

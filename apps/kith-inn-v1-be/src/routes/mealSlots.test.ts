@@ -40,6 +40,7 @@ const existing: MealSlot = {
   occasion: "lunch",
   menuItems,
   orderStatus: "draft",
+  orderDeadline: null,
   priceCents: null,
   generatedAt: NOW
 };
@@ -53,6 +54,7 @@ function deps(overrides: Partial<MealSlotsDeps> = {}): MealSlotsDeps {
       id: 20,
       sellerId: 7,
       orderStatus: "draft" as const,
+      orderDeadline: null,
       priceCents: null,
       ...input
     } as MealSlot)),
@@ -61,6 +63,7 @@ function deps(overrides: Partial<MealSlotsDeps> = {}): MealSlotsDeps {
       id,
       ...patch
     })),
+    updateMealSlotBookingConfig: vi.fn(async (_token, id, patch) => ({ ...existing, id, ...patch })),
     now: () => NOW,
     random: () => 0,
     ...overrides
@@ -277,6 +280,88 @@ describe("menu item swap route", () => {
   });
 });
 
+describe("meal-slot booking config route", () => {
+  it("opens a complete slot with a future deadline and can close it", async () => {
+    const injected = deps();
+    const app = mealSlotsRoutes(SECRET, injected);
+    const open = await request(app, "/11/booking-config", {
+      method: "PATCH",
+      body: JSON.stringify({
+        priceCents: 2800,
+        orderDeadline: "2026-07-11T01:00:00.000Z",
+        orderStatus: "open"
+      })
+    });
+    expect(open.status).toBe(200);
+    expect(injected.updateMealSlotBookingConfig).toHaveBeenCalledWith(token, 11, {
+      priceCents: 2800,
+      orderDeadline: "2026-07-11T01:00:00.000Z",
+      orderStatus: "open"
+    });
+
+    const close = await request(mealSlotsRoutes(SECRET, deps({
+      getMealSlot: vi.fn(async () => ({
+        ...existing,
+        orderStatus: "open" as const,
+        orderDeadline: "2026-07-11T01:00:00.000Z"
+      }))
+    })), "/11/booking-config", {
+      method: "PATCH",
+      body: JSON.stringify({ orderStatus: "closed" })
+    });
+    expect(close.status).toBe(200);
+  });
+
+  it("rejects incomplete, expired and backward state transitions before CMS writes", async () => {
+    const cases: Array<{ slot: MealSlot; patch: unknown; status: number; error: string }> = [
+      { slot: existing, patch: { orderStatus: "open" }, status: 422, error: "meal-slot-not-ready" },
+      {
+        slot: { ...existing, orderDeadline: "2026-07-09T01:00:00.000Z" },
+        patch: { orderStatus: "open" },
+        status: 422,
+        error: "meal-slot-not-ready"
+      },
+      {
+        slot: { ...existing, orderStatus: "open", orderDeadline: "2026-07-11T01:00:00.000Z" },
+        patch: { orderStatus: "draft" },
+        status: 409,
+        error: "invalid-meal-slot-transition"
+      },
+      {
+        slot: { ...existing, orderStatus: "closed" },
+        patch: { orderStatus: "open", orderDeadline: "2026-07-11T01:00:00.000Z" },
+        status: 409,
+        error: "invalid-meal-slot-transition"
+      }
+    ];
+    for (const item of cases) {
+      const injected = deps({ getMealSlot: vi.fn(async () => item.slot) });
+      const response = await request(mealSlotsRoutes(SECRET, injected), "/11/booking-config", {
+        method: "PATCH",
+        body: JSON.stringify(item.patch)
+      });
+      expect(response.status).toBe(item.status);
+      await expect(response.json()).resolves.toMatchObject({ error: item.error });
+      expect(injected.updateMealSlotBookingConfig).not.toHaveBeenCalled();
+    }
+  });
+
+  it("validates JSON/body and maps CMS failures", async () => {
+    const app = mealSlotsRoutes(SECRET, deps());
+    expect((await request(app, "/11/booking-config", { method: "PATCH", body: "{" })).status).toBe(400);
+    expect((await request(app, "/11/booking-config", { method: "PATCH", body: JSON.stringify({}) })).status).toBe(422);
+    const unavailable = mealSlotsRoutes(SECRET, deps({
+      updateMealSlotBookingConfig: vi.fn(async () => {
+        throw new CmsMealSlotError(500, "booking-config-failed", "失败");
+      })
+    }));
+    expect((await request(unavailable, "/11/booking-config", {
+      method: "PATCH",
+      body: JSON.stringify({ priceCents: 2800 })
+    })).status).toBe(502);
+  });
+});
+
 describe("meal-slot dependency errors", () => {
   it("preserves actionable CMS statuses and maps unknown failures to 502", async () => {
     for (const status of [401, 403, 404, 409, 422, 500]) {
@@ -322,11 +407,15 @@ describe("meal-slot dependency errors", () => {
         const patch = JSON.parse(String(init?.body)) as MealSlotUpdate;
         return new Response(JSON.stringify({ doc: { ...existing, ...patch } }));
       }
+      if (url.endsWith("/meal-slots/11/booking-config") && method === "PATCH") {
+        const patch = JSON.parse(String(init?.body)) as { priceCents: number };
+        return new Response(JSON.stringify({ doc: { ...existing, ...patch } }));
+      }
       if (url.includes("/meal-slots?") && method === "GET") return new Response(JSON.stringify({ docs: [] }));
       if (url.endsWith("/meal-slots") && method === "POST") {
         const input = JSON.parse(String(init?.body)) as MealSlotCreate;
         return new Response(JSON.stringify({
-          doc: { id: 20, sellerId: 7, orderStatus: "draft", priceCents: null, ...input }
+          doc: { id: 20, sellerId: 7, orderStatus: "draft", orderDeadline: null, priceCents: null, ...input }
         }), { status: 201 });
       }
       return new Response("not found", { status: 404 });
@@ -340,6 +429,10 @@ describe("meal-slot dependency errors", () => {
     expect((await request(app, "/11/swap-menu-item", {
       method: "POST",
       body: JSON.stringify({ offeringId: 5 })
+    })).status).toBe(200);
+    expect((await request(app, "/11/booking-config", {
+      method: "PATCH",
+      body: JSON.stringify({ priceCents: 2800 })
     })).status).toBe(200);
     expect(fetch).toHaveBeenCalled();
   });

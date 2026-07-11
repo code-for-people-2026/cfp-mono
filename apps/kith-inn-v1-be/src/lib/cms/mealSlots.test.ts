@@ -4,6 +4,7 @@ import {
   createMealSlot,
   getMealSlot,
   listMealSlots,
+  updateMealSlotBookingConfig,
   updateMealSlot
 } from "./mealSlots";
 
@@ -27,6 +28,7 @@ const slot = {
   occasion: "lunch" as const,
   menuItems,
   orderStatus: "draft" as const,
+  orderDeadline: null,
   priceCents: null,
   generatedAt: "2026-07-10T01:00:00.000Z"
 };
@@ -76,6 +78,25 @@ describe("CMS meal-slot client", () => {
       "http://cms.test/api/internal/kiv1/meal-slots/11",
       expect.objectContaining({ method: "PATCH", body: JSON.stringify(patch) })
     );
+
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const bookingConfig = { orderDeadline: "2026-07-12T01:00:00.000Z", orderStatus: "open" as const };
+    const configDeps = response({ doc: { ...slot, ...bookingConfig } });
+    await expect(updateMealSlotBookingConfig("jwt", 11, bookingConfig, configDeps)).resolves.toMatchObject(bookingConfig);
+    expect(configDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/meal-slots/11/booking-config",
+      expect.objectContaining({
+        method: "PATCH",
+        headers: expect.objectContaining({ "x-kith-inn-v1-internal": "internal" }),
+        body: JSON.stringify(bookingConfig)
+      })
+    );
+    delete process.env.KITH_INN_V1_INTERNAL_TOKEN;
+    const emptyTokenDeps = response({ doc: { ...slot, priceCents: 2800 } });
+    await updateMealSlotBookingConfig("jwt", 11, { priceCents: 2800 }, emptyTokenDeps);
+    expect(emptyTokenDeps.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ "x-kith-inn-v1-internal": "" })
+    }));
   });
 
   it("preserves CMS errors and rejects malformed success payloads", async () => {

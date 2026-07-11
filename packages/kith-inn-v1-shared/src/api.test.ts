@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   apiErrorSchema,
   authResponseSchema,
+  bookingBatchCreateSchema,
+  bookingBatchListResponseSchema,
+  bookingBatchMutationResponseSchema,
+  bookingBatchSchema,
+  bookingBatchUpdateSchema,
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
   cmsCustomerProfileSchema,
@@ -18,6 +23,7 @@ import {
   generateMenusInputSchema,
   generateMenusResponseSchema,
   mealSlotRangeSchema,
+  mealSlotBookingConfigSchema,
   mealSlotSchema,
   mealSlotsExistErrorSchema,
   manualOrderCreateSchema,
@@ -172,6 +178,7 @@ describe("meal-slot API schemas", () => {
     ...target,
     menuItems,
     orderStatus: "draft",
+    orderDeadline: null,
     priceCents: null,
     generatedAt: "2026-07-10T01:00:00.000Z"
   };
@@ -228,6 +235,52 @@ describe("meal-slot API schemas", () => {
       shortages: [{ category: "other", required: 1, available: 0 }]
     }).success).toBe(false);
   });
+
+  it("validates meal-slot booking config and booking-batch contracts", () => {
+    const openSlot = {
+      ...slot,
+      orderStatus: "open",
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      priceCents: 2800
+    };
+    const batch = {
+      id: 31,
+      sellerId: 7,
+      publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "7 月 13 日预订",
+      status: "open",
+      mealSlotIds: [11],
+      createdById: 1
+    };
+    const share = {
+      title: batch.title,
+      path: `/pages/booking/index?batch=${batch.publicId}`
+    };
+
+    expect(mealSlotBookingConfigSchema.parse({
+      priceCents: null,
+      orderDeadline: openSlot.orderDeadline,
+      orderStatus: "open"
+    })).toEqual({ priceCents: null, orderDeadline: openSlot.orderDeadline, orderStatus: "open" });
+    expect(mealSlotSchema.parse(openSlot)).toEqual(openSlot);
+    expect(bookingBatchCreateSchema.parse({ mealSlotIds: [11, 11], title: " 7 月 13 日预订 " }))
+      .toEqual({ mealSlotIds: [11], title: "7 月 13 日预订" });
+    expect(bookingBatchUpdateSchema.parse({ status: "closed" })).toEqual({ status: "closed" });
+    expect(bookingBatchSchema.parse(batch)).toEqual(batch);
+    expect(bookingBatchMutationResponseSchema.parse({ doc: batch, share })).toEqual({ doc: batch, share });
+    expect(bookingBatchListResponseSchema.parse({ docs: [{ doc: batch, share }] }).docs).toHaveLength(1);
+
+    expect(mealSlotBookingConfigSchema.safeParse({}).success).toBe(false);
+    expect(mealSlotBookingConfigSchema.safeParse({ orderStatus: "archived" }).success).toBe(false);
+    expect(mealSlotBookingConfigSchema.safeParse({ seller: 7, priceCents: 1 }).success).toBe(false);
+    expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: [] }).success).toBe(false);
+    expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: Array.from({ length: 21 }, (_, index) => index + 1) }).success)
+      .toBe(false);
+    expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: [11], publicId: "leak" }).success).toBe(false);
+    expect(bookingBatchUpdateSchema.safeParse({ status: "open" }).success).toBe(false);
+    expect(bookingBatchMutationResponseSchema.safeParse({ doc: batch, share: { ...share, sellerId: 7 } }).success)
+      .toBe(false);
+  });
 });
 
 describe("manual order API schemas", () => {
@@ -251,6 +304,7 @@ describe("manual order API schemas", () => {
       { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
     ],
     orderStatus: "draft",
+    orderDeadline: null,
     priceCents: null,
     generatedAt: "2026-07-10T01:00:00.000Z"
   };
