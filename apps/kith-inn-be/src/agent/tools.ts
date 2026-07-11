@@ -1,4 +1,5 @@
 import type { CardPayload, DeliveryCardData, MenuPlanView, Order } from "@cfp/kith-inn-shared";
+import type { ParsedOrderInput } from "../domain/orders/parse";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 import { setPendingOp } from "./pendingOps";
 
@@ -10,16 +11,17 @@ import { setPendingOp } from "./pendingOps";
 
 /** The backend operations the agent's tools drive (DI — mock in tests). */
 export type AgentServices = {
-  previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>): Promise<{ date: string; isNew: boolean[] }>;
+  parseOrders(rawText: string): Promise<ParsedOrderInput>;
+  previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>): Promise<{ isNew: boolean[] }>;
   recordOrders(
-    items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
+    items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>,
   ): Promise<{
     recorded: Array<{ name: string; orderId: string | number }>;
-    needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
+    needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>;
     failed: Array<{ customerName: string; error: string }>;
   }>;
   createCustomersAndOrders(
-    items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>,
+    items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>,
   ): Promise<{ created: Array<{ name: string; orderId: string | number }>; failed: Array<{ displayName: string; error: string }> }>;
   confirmOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   cancelOrder(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
@@ -61,19 +63,6 @@ const orderLabel = async (s: AgentServices, orderId: number) => {
   return o ? `#${orderId}（${o.displayName} ${o.quantity}份${occasionZh(o.occasion)}）` : `#${orderId}`;
 };
 
-const parseOccasion = (o: unknown): "lunch" | "dinner" => (o === "dinner" ? "dinner" : "lunch");
-
-const parseOrderItems = (raw: unknown): Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> => {
-  const arr = Array.isArray(raw) ? raw : [];
-  return arr.map((it) => ({
-    customerName: String((it as { customerName?: unknown })?.customerName ?? ""),
-    address: typeof (it as { address?: unknown })?.address === "string" ? String((it as { address?: unknown }).address) : undefined,
-    quantity: Number((it as { quantity?: unknown })?.quantity ?? 0),
-    occasion: parseOccasion((it as { occasion?: unknown })?.occasion),
-    date: typeof (it as { date?: unknown })?.date === "string" ? String((it as { date?: unknown }).date) : undefined,
-  }));
-};
-
 /** Build an operation-confirm card. The `: CardPayload` return annotation contextually
  *  types the literal so `type: "operation-confirm"` stays a literal — no cast needed (#126).
  *  `opId` ties the card to its server-side pending op so a stale click is rejected (409). */
@@ -88,49 +77,42 @@ export const AGENT_TOOLS: AgentTool[] = [
       type: "function",
       function: {
         name: "record_orders",
-        description: "批量记单（接龙）：每条含 顾客名+地址+份数+餐次。老顾客落草稿；新顾客进 needsConfirmation 等桃子确认，绝不擅自建。",
+        description: "解析并预览完整接龙或一句补单。必须把用户本轮原文逐字放进 rawText，不要自己提取或补写日期、餐次、顾客、份数。",
         parameters: {
           type: "object",
           properties: {
-            items: {
-              type: "array",
-              items: {
-                type: "object",
-                properties: {
-                  customerName: { type: "string" },
-                  address: { type: "string", description: "送餐地址（自由文本，如 3e23a）" },
-                  quantity: { type: "integer" },
-                  occasion: { type: "string", enum: ["lunch", "dinner"] },
-                  date: { type: "string", description: "用餐日 YYYY-MM-DD，默认今天" },
-                },
-                required: ["customerName", "quantity", "occasion"],
-              },
-            },
+            rawText: { type: "string", description: "用户本轮发送的完整原文，必须逐字转交" },
           },
-          required: ["items"],
+          required: ["rawText"],
         },
       },
     },
     execute: async (s, args) => {
-      const items = parseOrderItems(args.items);
-      if (items.length === 0) return { text: "没说要记谁的单。" };
-      // previewOrders throws if the customer lookup fails — never silently mark
-      // everyone "new" (would create duplicates on confirm). Surface a retry prompt
-      // instead of emitting a card. The resolved date is stamped onto undated items
-      // so a card generated before midnight doesn't record for the wrong day when
-      // confirmed after (Codex P2).
-      let date: string;
+      const rawText = typeof args.rawText === "string" ? args.rawText.trim() : "";
+      if (!rawText) return { text: "没看到要记的接龙或补单。" };
+      let parsed: ParsedOrderInput;
+      try {
+        parsed = await s.parseOrders(rawText);
+      } catch {
+        return { text: "这段订单没解析成功，稍后再试一下。" };
+      }
+      if (parsed.issues.length > 0) {
+        return { text: `这段先不能记：${parsed.issues.map((issue) => issue.message).join("；")}。请检查后再发。` };
+      }
+      const items = parsed.items;
+      if (items.length === 0) return { text: "没找到可以确认的订单。" };
       let isNew: boolean[];
       try {
-        ({ date, isNew } = await s.previewOrders(items));
+        ({ isNew } = await s.previewOrders(items));
       } catch {
         return { text: "查不到顾客信息，稍后再试一下？" };
       }
-      const stamped = items.map((it) => ({ ...it, date: it.date ?? date }));
-      const newNames = stamped.filter((_, i) => isNew[i]).map((it) => it.customerName);
-      const summary = `将记 ${stamped.length} 单：${stamped.map((it) => `${it.customerName} ${it.quantity}份${occasionZh(it.occasion)}`).join("、")}${newNames.length > 0 ? `（新顾客 ${newNames.join("、")} 待建）` : ""}`;
-      const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: { items: stamped, isNew } });
-      return { text: summary + "。点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, { items: stamped, isNew }, opId) };
+      const newNames = items.filter((_, i) => isNew[i]).map((it) => it.customerName);
+      const mode = parsed.mode === "snapshot" ? "完整接龙（以本次为准）" : "单独补单";
+      const summary = `${mode}，将记 ${items.length} 单：${items.map((it) => `${it.date} ${it.customerName} ${it.quantity}份${occasionZh(it.occasion)}`).join("、")}${newNames.length > 0 ? `（新顾客 ${newNames.join("、")} 待建）` : ""}`;
+      const opArgs = { items, isNew, inputMode: parsed.mode };
+      const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: opArgs });
+      return { text: summary + "。点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, opArgs, opId) };
     },
   },
   {

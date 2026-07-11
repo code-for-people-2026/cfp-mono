@@ -14,6 +14,7 @@ import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
+import { parseOrderInput } from "../domain/orders/parse";
 import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { customerName, todayShanghai } from "../lib/domainUtil";
@@ -52,6 +53,10 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   const dayOnly = (iso: string) => iso.split("T")[0]!;
 
   return {
+    async parseOrders(rawText: string) {
+      return parseOrderInput(rawText, { referenceDate: todayShanghai(now) });
+    },
+
     /**
      * Read-only classify of an 接龙 paste for the record_orders preview card (#126):
      * which names are existing customers vs new (need 桃子 to type an address).
@@ -60,11 +65,10 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
      * Throws if the customer lookup fails — never silently classify unknown as "new"
      * (that would create duplicates on confirm). Caller (the tool) surfaces the error.
      */
-    async previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+    async previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>) {
       const customers = await cms.listCustomers(jwt);
       const knownSet = new Set(customers.map((c) => normalizeCustomerName(c.displayName)));
-      const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
-      return { date, isNew: items.map((it) => !knownSet.has(normalizeCustomerName(it.customerName))) };
+      return { isNew: items.map((it) => !knownSet.has(normalizeCustomerName(it.customerName))) };
     },
 
     /**
@@ -73,16 +77,15 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
      * confirm (NOT created here — customers are created on confirmation, never
      * speculatively). One combo per item (桃子 = single combo).
      */
-    async recordOrders(items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+    async recordOrders(items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>) {
       const recorded: Array<{ name: string; orderId: string | number }> = [];
-      const needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }> = [];
+      const needsConfirmation: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }> = [];
       const failed: Array<{ customerName: string; error: string }> = [];
       try {
         const [customers, offerings] = await Promise.all([cms.listCustomers(jwt), cms.findOfferings(jwt)]);
         // ponytail: 桃子 sells one combo (4菜1汤 30元/份); a 份 = one combo. Multi-combo
         // merchants are V1 — pick the first combo-meal, error if the pool has none.
         const combo = offerings.find((o) => o.kind === "combo-meal");
-        const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
         for (const it of items) {
           if (!combo) {
             failed.push({ customerName: it.customerName, error: "没有套餐商品，记不了单" });
@@ -94,7 +97,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
             // Carry the resolved date (item's own, else the batch default) so the
             // pending row + later confirm records the new customer for the right
             // day — not always today (Codex P1).
-            needsConfirmation.push({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date ?? date });
+            needsConfirmation.push({ customerName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date });
             continue;
           }
           try {
@@ -102,7 +105,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
               jwt,
               {
                 customer: match.id,
-                date: it.date ?? date,
+                date: it.date,
                 occasion: it.occasion,
                 source: "chat-paste",
                 items: [{ offering: combo.id, quantity: it.quantity }],
@@ -128,12 +131,11 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
      * After 桃子 confirms the new-customer list: create each customer then record
      * their draft in one pass. Errors are collected per-item (don't abort the batch).
      */
-    async createCustomersAndOrders(items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>) {
+    async createCustomersAndOrders(items: Array<{ displayName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>) {
       const created: Array<{ name: string; orderId: string | number }> = [];
       const failed: Array<{ displayName: string; error: string }> = [];
       const offerings = await cms.findOfferings(jwt).catch(() => []);
       const combo = offerings.find((o) => o.kind === "combo-meal");
-      const date = items.find((it) => it.date)?.date ?? todayShanghai(now);
       for (const it of items) {
         try {
           if (!combo) {
@@ -145,7 +147,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
             jwt,
             {
               customer: customer.id,
-              date: it.date ?? date,
+              date: it.date,
               occasion: it.occasion,
               source: "chat-paste",
               items: [{ offering: combo.id, quantity: it.quantity }],

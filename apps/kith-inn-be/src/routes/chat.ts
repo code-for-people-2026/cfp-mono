@@ -165,7 +165,7 @@ export async function dispatchPendingOp(
       // occasion/date); the body may carry address edits 桃子 typed into new-customer
       // rows. Merge by index: pending item + body address (else pending's). isNew
       // comes from pending too. (Codex P1 — don't let a buggy client mutate the order.)
-      const pendingItems = a.items as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date?: string }>;
+      const pendingItems = a.items as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>;
       const isNew = (a.isNew as boolean[] | undefined) ?? [];
       const bodyAddrs = (Array.isArray(body?.items) ? body!.items : []) as Array<{ address?: string }>;
       const items = pendingItems.map((it, i) => ({ ...it, address: bodyAddrs[i]?.address ?? it.address }));

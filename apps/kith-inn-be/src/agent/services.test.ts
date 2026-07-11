@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
+vi.mock("../lib/deepseek/client", () => ({ callDeepSeek: vi.fn() }));
+
 import { CmsHttpError } from "../lib/cms/orders";
+import { callDeepSeek } from "../lib/deepseek/client";
 import { createCmsAgentServices, type AgentCms } from "./services";
 import { todayShanghai } from "../lib/domainUtil";
 
@@ -28,6 +31,28 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
 const OP = 1;
 const svc = (cms: AgentCms) => createCmsAgentServices({ jwt: "jwt", cms, operatorId: OP, now: NOW });
 
+describe("production order parsing and preview", () => {
+  it("uses the injected Shanghai today as the parser reference date", async () => {
+    vi.mocked(callDeepSeek).mockResolvedValueOnce(JSON.stringify({
+      mode: "snapshot",
+      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29号星期一" }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 1 }],
+      unknownSegments: [],
+    }));
+    const result = await svc(baseCms()).parseOrders("6.29号星期一午餐 王燕萍1份");
+    expect(result.issues).toEqual([]);
+    expect(vi.mocked(callDeepSeek).mock.calls[0]?.[0].messages[0]?.content).toContain("2026-06-29");
+  });
+
+  it("classifies known and new names without supplying a fallback date", async () => {
+    const result = await svc(baseCms()).previewOrders([
+      { customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 1 },
+      { customerName: "大龙猫", date: "2026-06-29", occasion: "dinner", quantity: 1 },
+    ]);
+    expect(result).toEqual({ isNew: [false, true] });
+  });
+});
+
 describe("todayShanghai", () => {
   it("formats the Shanghai date YYYY-MM-DD off the injected clock", () => {
     expect(todayShanghai(() => new Date("2026-06-29T12:00:00+08:00"))).toBe("2026-06-29");
@@ -43,8 +68,8 @@ describe("recordOrders", () => {
   it("records drafts for known customers, collects unknown into needsConfirmation", async () => {
     const cms = baseCms();
     const r = await svc(cms).recordOrders([
-      { customerName: "王燕萍", address: "1D-1201", quantity: 2, occasion: "lunch" },
-      { customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
+      { customerName: "王燕萍", address: "1D-1201", quantity: 2, occasion: "lunch", date: "2026-06-29" },
+      { customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner", date: "2026-06-29" },
     ]);
     expect(r.recorded).toEqual([{ name: "王燕萍", orderId: 90 }]);
     expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
@@ -63,7 +88,7 @@ describe("recordOrders", () => {
 
   it("does NOT create a customer or record for unknown names", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
-    const r = await svc(cms).recordOrders([{ customerName: "陌生人", quantity: 1, occasion: "dinner" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "陌生人", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
     expect(r.recorded).toEqual([]);
     expect(r.needsConfirmation).toHaveLength(1);
     expect(cms.createCustomer).not.toHaveBeenCalled();
@@ -72,26 +97,26 @@ describe("recordOrders", () => {
 
   it("fails an item when the pool has no combo offering", async () => {
     const cms = baseCms({ findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) });
-    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch", date: "2026-06-29" }]);
     expect(r.recorded).toEqual([]);
     expect(r.failed).toEqual([{ customerName: "王燕萍", error: "没有套餐商品，记不了单" }]);
   });
 
   it("collects a per-item failure when the draft write throws (batch continues)", async () => {
     const cms = baseCms({ createOrderDraft: vi.fn(async () => { throw new Error("net"); }) });
-    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch", date: "2026-06-29" }]);
     expect(r.failed).toEqual([{ customerName: "王燕萍", error: "记单失败" }]);
   });
 
   it("fails every item when the cms read throws", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => { throw new Error("net"); }) });
-    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch", date: "2026-06-29" }]);
     expect(r.failed).toHaveLength(1);
   });
 
   it("returns new customers in needsConfirmation (preview flow splits them later, #126)", async () => {
     const cms = baseCms({ listCustomers: vi.fn(async () => []) });
-    const r = await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
     expect(r.needsConfirmation).toEqual([{ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-06-29" }]);
   });
 
@@ -103,7 +128,7 @@ describe("recordOrders", () => {
 
   it("returns empty needsConfirmation when all customers are known", async () => {
     const cms = baseCms();
-    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }]);
+    const r = await svc(cms).recordOrders([{ customerName: "王燕萍", quantity: 1, occasion: "lunch", date: "2026-06-29" }]);
     expect(r.needsConfirmation).toEqual([]);
   });
 });
@@ -114,7 +139,7 @@ describe("createCustomersAndOrders", () => {
       createCustomer: vi.fn(async (_jwt, input) => ({ id: 55, displayName: input.displayName }) as never),
     });
     const r = await svc(cms).createCustomersAndOrders([
-      { displayName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner" },
+      { displayName: "大龙猫", address: "26B-301", quantity: 1, occasion: "dinner", date: "2026-06-29" },
     ]);
     expect(r.created).toEqual([{ name: "大龙猫", orderId: 90 }]);
     expect(cms.createCustomer).toHaveBeenCalledWith("jwt", { displayName: "大龙猫", address: "26B-301" });
@@ -134,8 +159,8 @@ describe("createCustomersAndOrders", () => {
       }),
     });
     const r = await svc(cms).createCustomersAndOrders([
-      { displayName: "坏", quantity: 1, occasion: "lunch" },
-      { displayName: "好", quantity: 1, occasion: "lunch" },
+      { displayName: "坏", quantity: 1, occasion: "lunch", date: "2026-06-29" },
+      { displayName: "好", quantity: 1, occasion: "lunch", date: "2026-06-29" },
     ]);
     expect(r.created).toHaveLength(1);
     expect(r.failed).toEqual([{ displayName: "坏", error: "建顾客或记单失败" }]);
@@ -143,7 +168,7 @@ describe("createCustomersAndOrders", () => {
 
   it("fails when the pool has no combo", async () => {
     const cms = baseCms({ findOfferings: vi.fn(async () => [{ id: 11, kind: "component" }] as never) });
-    const r = await svc(cms).createCustomersAndOrders([{ displayName: "大龙猫", quantity: 1, occasion: "lunch" }]);
+    const r = await svc(cms).createCustomersAndOrders([{ displayName: "大龙猫", quantity: 1, occasion: "lunch", date: "2026-06-29" }]);
     expect(r.created).toEqual([]);
     expect(r.failed).toEqual([{ displayName: "大龙猫", error: "没有套餐商品，记不了单" }]);
   });

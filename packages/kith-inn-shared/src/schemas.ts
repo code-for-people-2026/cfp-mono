@@ -53,6 +53,11 @@ const chatRoleSchema = z.enum(CHAT_ROLES);
 /** id-or-populated-doc union (payload shallow = number|string; depth-populated = doc). */
 const rel = <T extends z.ZodType>(doc: T) => z.union([z.string(), z.number(), doc]);
 const id = z.union([z.string(), z.number()]);
+export const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
+}, "日期必须是有效的 YYYY-MM-DD");
 
 // ── domain entities ──
 export const sellerSchema = z.object({
@@ -246,7 +251,7 @@ export const confirmCustomerItemSchema = z.object({
   address: z.string().optional(),
   quantity: z.number(),
   occasion: menuMealOccasionSchema,
-  date: z.string().optional(),
+  date: calendarDateSchema,
 });
 export const orderCardDataSchema = z.object({ orders: z.array(orderSchema), date: z.string() });
 export const deliveryCardGroupSchema = z.object({

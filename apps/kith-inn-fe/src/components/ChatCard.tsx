@@ -4,8 +4,7 @@ import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
 import { useState } from "react";
 import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
-
-const occasionZh = (o: "lunch" | "dinner") => (o === "lunch" ? "午餐" : "晚餐");
+import { orderConfirmLine } from "@/logic/orderConfirmView";
 
 /**
  * Renders a structured card attached to an assistant reply.
@@ -124,7 +123,7 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
       {items.map((it, i) => (
         <View key={i} className="mt-[12rpx]">
           <Text className="block text-[26rpx] text-soft">
-            {it.customerName} · {it.quantity}份{occasionZh(it.occasion)}{args.isNew[i] ? " · 新顾客" : ""}
+            {orderConfirmLine(it)}{args.isNew[i] ? " · 新顾客" : ""}
           </Text>
           {active && args.isNew[i] ? (
             <Input

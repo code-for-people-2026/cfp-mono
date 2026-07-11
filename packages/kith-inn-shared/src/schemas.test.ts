@@ -76,7 +76,9 @@ describe("contract schemas", () => {
   });
 
   it("cards", () => {
-    expect(confirmCustomerItemSchema.parse({ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-02" })).toMatchObject({ occasion: "dinner" });
+    expect(confirmCustomerItemSchema.parse({ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-02" })).toMatchObject({ occasion: "dinner", date: "2026-07-02" });
+    expect(() => confirmCustomerItemSchema.parse({ customerName: "大龙猫", quantity: 1, occasion: "dinner" })).toThrow();
+    expect(() => confirmCustomerItemSchema.parse({ customerName: "大龙猫", quantity: 1, occasion: "dinner", date: "2026-02-30" })).toThrow();
     const order = { id, customer: 7, date: "2026-07-02", occasion: "lunch" as const, status: "draft" as const, source: "chat-paste", paymentStatus: "unpaid", seller: id };
     expect(orderCardDataSchema.parse({ orders: [order], date: "2026-07-02" })).toMatchObject({ orders: [order] });
     expect(deliveryCardGroupSchema.parse({ address: "3A", count: 2, done: 1, total: 2, ids: [201, 202] })).toMatchObject({ total: 2 });

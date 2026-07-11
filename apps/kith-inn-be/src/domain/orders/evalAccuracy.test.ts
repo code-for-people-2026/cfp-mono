@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { evaluateAll, evaluateSample } from "./evalAccuracy";
 
-const item = (customerName: string, quantity: number, occasion: string) => ({ customerName, quantity, occasion });
+const item = (customerName: string, quantity: number, occasion: string, date = "2020-06-08") => ({ customerName, quantity, occasion, date });
 
 describe("evaluateSample", () => {
   it("perfect match → 100%, 0 misassign", () => {
@@ -18,6 +18,12 @@ describe("evaluateSample", () => {
   it("wrong quantity is not correct, and is not a meal misassign", () => {
     const exp = [item("桃子", 8, "dinner")];
     const pred = [item("桃子", 6, "dinner")];
+    expect(evaluateSample(pred, exp)).toMatchObject({ correct: 0, total: 1, pct: 0, misassigned: 0 });
+  });
+
+  it("requires the service date to match all other fields", () => {
+    const exp = [item("桃子", 1, "dinner", "2020-06-08")];
+    const pred = [item("桃子", 1, "dinner", "2020-06-09")];
     expect(evaluateSample(pred, exp)).toMatchObject({ correct: 0, total: 1, pct: 0, misassigned: 0 });
   });
 
