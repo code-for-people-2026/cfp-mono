@@ -1,7 +1,7 @@
 import type { Order } from "@cfp/kith-inn-shared";
 import { describe, expect, it, vi, type Mock } from "vitest";
 import { issueToken } from "../lib/auth/jwt";
-import type { OrderDetail } from "../lib/cms/orders";
+import { CmsHttpError, type OrderDetail } from "../lib/cms/orders";
 import type { OrderCms } from "../domain/orders/service";
 import { orderRoutes, type OrderRoutesDeps } from "./orders";
 
@@ -23,10 +23,9 @@ function mockCms(over: Partial<CmsMocks> = {}): CmsMocks {
     findOfferings: over.findOfferings ?? vi.fn<OrderCms["findOfferings"]>(async () => [{ id: 1, name: "套餐", kind: "combo-meal", priceCents: 3000, seller: 7 }]),
     getOrder: over.getOrder ?? vi.fn<OrderCms["getOrder"]>(async () => draftDetail),
     createOrderDraft: over.createOrderDraft ?? vi.fn<OrderCms["createOrderDraft"]>(async () => ({ order: { id: 90, occasion: "lunch", status: "draft" } as Order, items: [] })),
+    confirmOrderAtomic: over.confirmOrderAtomic ?? vi.fn<OrderCms["confirmOrderAtomic"]>(async () => ({ slots: [], fulfillments: [] })),
+    cancelOrderAtomic: over.cancelOrderAtomic ?? vi.fn<OrderCms["cancelOrderAtomic"]>(async () => undefined),
     updateOrder: over.updateOrder ?? vi.fn<OrderCms["updateOrder"]>(async () => ({ id: 90, status: "confirmed" } as Order)),
-    upsertSlots: over.upsertSlots ?? vi.fn<OrderCms["upsertSlots"]>(async () => []),
-    createFulfillments: over.createFulfillments ?? vi.fn<OrderCms["createFulfillments"]>(async () => []),
-    setFulfillmentsByOrders: over.setFulfillmentsByOrders ?? vi.fn<OrderCms["setFulfillmentsByOrders"]>(async () => undefined),
   };
 }
 
@@ -104,28 +103,26 @@ describe("POST /orders/:id/confirm", () => {
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
     expect(res.status).toBe(200);
-    expect(cms.updateOrder).toHaveBeenCalledWith(expect.any(String), "90", { status: "confirmed" });
+    expect(cms.confirmOrderAtomic).toHaveBeenCalledWith(expect.any(String), "90");
   });
 
   it("409 when the order is not a draft", async () => {
-    const notDraft: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "confirmed", customer: { id: 1 }, items: [] };
-    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => notDraft) });
+    const cms = mockCms({ confirmOrderAtomic: vi.fn<OrderCms["confirmOrderAtomic"]>(async () => { throw new CmsHttpError(409, "confirm", "not-draft"); }) });
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
     expect(res.status).toBe(409);
   });
 
   it("409 when a draft has no items", async () => {
-    const emptyDraft: OrderDetail = { id: 90, date: "x", occasion: "lunch", status: "draft", customer: { id: 1 }, items: [] };
-    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => emptyDraft) });
+    const cms = mockCms({ confirmOrderAtomic: vi.fn<OrderCms["confirmOrderAtomic"]>(async () => { throw new CmsHttpError(409, "confirm", "empty-order"); }) });
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
     expect(res.status).toBe(409);
-    expect(cms.createFulfillments).not.toHaveBeenCalled();
+    expect(cms.confirmOrderAtomic).toHaveBeenCalledOnce();
   });
 
   it("502 when confirm throws a non-state error", async () => {
-    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => { throw new Error("cms down"); }) });
+    const cms = mockCms({ confirmOrderAtomic: vi.fn<OrderCms["confirmOrderAtomic"]>(async () => { throw new Error("cms down"); }) });
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/confirm", { method: "POST", headers: await auth() });
     expect(res.status).toBe(502);
@@ -138,11 +135,11 @@ describe("POST /orders/:id/cancel", () => {
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/cancel", { method: "POST", headers: await auth() });
     expect(res.status).toBe(200);
-    expect(cms.updateOrder).toHaveBeenCalledWith(expect.any(String), "90", { status: "canceled" });
+    expect(cms.cancelOrderAtomic).toHaveBeenCalledWith(expect.any(String), "90");
   });
 
   it("502 when cancel throws", async () => {
-    const cms = mockCms({ getOrder: vi.fn<OrderCms["getOrder"]>(async () => { throw new Error("cms down"); }) });
+    const cms = mockCms({ cancelOrderAtomic: vi.fn<OrderCms["cancelOrderAtomic"]>(async () => { throw new Error("cms down"); }) });
     const app = orderRoutes(SECRET, deps(cms));
     const res = await app.request("/90/cancel", { method: "POST", headers: await auth() });
     expect(res.status).toBe(502);

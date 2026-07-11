@@ -10,10 +10,9 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   findOfferings: over.findOfferings ?? vi.fn(async () => [{ id: 10, kind: "combo-meal", name: "4菜1汤套餐", priceCents: 3000 }] as never),
   getOrder: over.getOrder ?? vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [{ id: 201, quantity: 1 }] }) as never),
   createOrderDraft: over.createOrderDraft ?? vi.fn(async () => ({ order: { id: 90 }, items: [] }) as never),
+  confirmOrderAtomic: over.confirmOrderAtomic ?? vi.fn(async () => ({ slots: [], fulfillments: [] })),
+  cancelOrderAtomic: over.cancelOrderAtomic ?? vi.fn(async () => undefined),
   updateOrder: over.updateOrder ?? vi.fn(async () => ({ id: 90 }) as never),
-  upsertSlots: over.upsertSlots ?? vi.fn(async () => [] as never),
-  createFulfillments: over.createFulfillments ?? vi.fn(async () => [] as never),
-  setFulfillmentsByOrders: over.setFulfillmentsByOrders ?? vi.fn(async () => undefined),
   setFulfillmentsByIds: over.setFulfillmentsByIds ?? vi.fn(async () => undefined),
   listCustomers: over.listCustomers ?? vi.fn(async () => [{ id: 5, displayName: "王燕萍" }] as never),
   createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫" }) as never),
@@ -157,26 +156,25 @@ describe("confirmOrder", () => {
   });
 
   it("reports not-draft without confirming", async () => {
-    const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "confirmed", customer: { id: 5 }, items: [] }) as never) });
+    const cms = baseCms({ confirmOrderAtomic: vi.fn(async () => { throw new CmsHttpError(409, "x", "not-draft"); }) });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: expect.stringMatching(/不是草稿/) });
   });
 
   it("reports empty drafts without confirming", async () => {
-    const cms = baseCms({ getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [] }) as never) });
+    const cms = baseCms({ confirmOrderAtomic: vi.fn(async () => { throw new CmsHttpError(409, "x", "empty-order"); }) });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: "订单没有明细，不能确认" });
-    expect(cms.createFulfillments).not.toHaveBeenCalled();
+    expect(cms.confirmOrderAtomic).toHaveBeenCalledOnce();
   });
 
   it("reports an archived slot needs force reopen", async () => {
     const cms = baseCms({
-      getOrder: vi.fn(async () => ({ id: 1, date: "2026-06-29", occasion: "lunch", status: "draft", customer: { id: 5 }, items: [{ id: 201, quantity: 1 }] }) as never),
-      upsertSlots: vi.fn(async () => { throw new CmsHttpError(409, "x"); }),
+      confirmOrderAtomic: vi.fn(async () => { throw new CmsHttpError(409, "x", "slot-archived"); }),
     });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: "需先重开档期" });
   });
 
   it("returns a generic error on an unexpected failure", async () => {
-    const cms = baseCms({ getOrder: vi.fn(async () => { throw new Error("net"); }) });
+    const cms = baseCms({ confirmOrderAtomic: vi.fn(async () => { throw new Error("net"); }) });
     expect(await svc(cms).confirmOrder({ orderId: 1 })).toEqual({ ok: false, error: "确认失败" });
   });
 });
@@ -187,7 +185,7 @@ describe("cancelOrder", () => {
   });
 
   it("returns a generic error on failure", async () => {
-    const cms = baseCms({ getOrder: vi.fn(async () => { throw new Error("net"); }) });
+    const cms = baseCms({ cancelOrderAtomic: vi.fn(async () => { throw new Error("net"); }) });
     expect(await svc(cms).cancelOrder({ orderId: 1 })).toEqual({ ok: false, error: "取消失败" });
   });
 });

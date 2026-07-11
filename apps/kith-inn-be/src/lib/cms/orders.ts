@@ -79,7 +79,7 @@ export type OrderDetail = {
 /** A non-2xx from a cms internal endpoint. Carries `status` so callers (e.g. the
  *  order service) can distinguish e.g. 409 archived-slot from a real failure. */
 export class CmsHttpError extends Error {
-  constructor(public status: number, label: string) {
+  constructor(public status: number, label: string, public code?: string) {
     super(`${label} failed: ${status}`);
     this.name = "CmsHttpError";
   }
@@ -94,8 +94,10 @@ const jsonHeaders = (jwt: string) => ({
 const fetchOf = (deps: CmsDeps): typeof fetch => deps.fetch ?? fetch;
 
 async function parseOk<T>(res: Response, label: string): Promise<T> {
-  if (!res.ok) throw new CmsHttpError(res.status, label);
-  return (await res.json()) as T;
+  const body = (await res.json().catch(() => undefined)) as { error?: string } | T | undefined;
+  const code = typeof body === "object" && body !== null && "error" in body ? body.error : undefined;
+  if (!res.ok) throw new CmsHttpError(res.status, label, code);
+  return body as T;
 }
 
 // ---- reads ----
@@ -161,6 +163,30 @@ export async function createOrderDraft(
   return parseOk(
     await fetchImpl(`${cmsBase()}/api/internal/orders`, { method: "POST", headers: jsonHeaders(operatorJwt), body: JSON.stringify(input) }),
     "cms order create",
+  );
+}
+
+export type ConfirmOrderResult = { slots: ServiceSlot[]; fulfillments: Fulfillment[]; alreadyConfirmed?: boolean };
+
+/** POST /api/internal/orders/:id/confirm — atomic slot + fulfillment + order transition. */
+export async function confirmOrderAtomic(
+  operatorJwt: string,
+  id: string | number,
+  deps: CmsDeps = {},
+): Promise<ConfirmOrderResult> {
+  const fetchImpl = fetchOf(deps);
+  return parseOk(
+    await fetchImpl(`${cmsBase()}/api/internal/orders/${id}/confirm`, { method: "POST", headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }),
+    "cms order confirm",
+  );
+}
+
+/** POST /api/internal/orders/:id/cancel — atomic fulfillment + order cancellation. */
+export async function cancelOrderAtomic(operatorJwt: string, id: string | number, deps: CmsDeps = {}): Promise<void> {
+  const fetchImpl = fetchOf(deps);
+  await parseOk(
+    await fetchImpl(`${cmsBase()}/api/internal/orders/${id}/cancel`, { method: "POST", headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }),
+    "cms order cancel",
   );
 }
 

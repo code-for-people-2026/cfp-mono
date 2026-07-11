@@ -1,6 +1,6 @@
 import configPromise from "@payload-config";
-import type { BasePayload } from "payload";
-import { getPayload } from "payload";
+import type { BasePayload, PayloadRequest } from "payload";
+import { commitTransaction, createLocalReq, getPayload, initTransaction, killTransaction } from "payload";
 import { NextResponse } from "next/server";
 import { verifyToken } from "./jwt";
 
@@ -45,12 +45,29 @@ export async function ownedBy(
   collection: string,
   id: string | number,
   sellerId: string | number,
+  req?: PayloadRequest,
 ): Promise<boolean> {
   const res = await payload.find({
     collection,
     where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
     limit: 1,
     overrideAccess: true,
+    req,
   });
   return res.docs.length > 0;
+}
+
+/** Run multiple Payload Local API operations under one shared DB transaction. */
+export async function withTransaction<T>(payload: BasePayload, work: (req: PayloadRequest) => Promise<T>): Promise<T> {
+  const req = await createLocalReq({}, payload);
+  const started = await initTransaction(req);
+  if (!started) throw new Error("database transactions unavailable");
+  try {
+    const result = await work(req);
+    await commitTransaction(req);
+    return result;
+  } catch (error) {
+    await killTransaction(req);
+    throw error;
+  }
 }

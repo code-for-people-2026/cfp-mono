@@ -1,35 +1,26 @@
 /**
- * Order lifecycle service (PRD §7.1 / Tech Spec §3.3 ①②). be is the SOLE writer
- * of order/fulfillment state in MVP, so the §3.3 data-integrity invariants live
- * HERE in one place (ponytail: not duplicated as cms hooks until a 2nd writer
- * appears — e.g. the V1 subscription-materialization job). All methods are thin
- * orchestration over the injected `OrderCms`; the pricing logic is pure (pricing.ts).
+ * Order lifecycle service (PRD §7.1 / Tech Spec §3.3 ①②). Pricing stays in be;
+ * multi-write lifecycle invariants live in cms, the only process holding the
+ * Payload/Postgres transaction. These methods are thin calls over `OrderCms`.
  *
- * Lifecycle: `recordDraft` (pure record, zero side effects) → `confirmOrder`
- * (materialize: open slots + create fulfillments + status=confirmed) →
- * `cancelOrder` (status=canceled + fulfillments=canceled terminal). draft NEVER
- * touches slots/fulfillments, so an un-confirmed draft can't pollute "今天该做".
+ * Lifecycle: `recordDraft` → atomic cms draft+items; `confirmOrder` → atomic cms
+ * slot+fulfillment+confirmed; `cancelOrder` → atomic cms terminal cancellation.
  */
 import type {
-  Fulfillment,
-  FulfillmentStatus,
   Occasion,
   Offering,
   Order,
   OrderItem,
   OrderSource,
   Seller,
-  ServiceSlot,
-  ServiceSlotGranularity,
 } from "@cfp/kith-inn-shared";
 import { CmsHttpError } from "../../lib/cms/orders";
 import type {
+  ConfirmOrderResult,
   CreateDraftInput,
   DraftItemInput,
-  FulfillmentInput,
   OrderDetail,
   OrderUpdatePatch,
-  SlotUpsertInput,
 } from "../../lib/cms/orders";
 import { computeTotalCents, resolveUnitPrice } from "./pricing";
 
@@ -39,10 +30,9 @@ export type OrderCms = {
   findOfferings(jwt: string): Promise<Offering[]>;
   getOrder(jwt: string, id: string | number): Promise<OrderDetail>;
   createOrderDraft(jwt: string, input: CreateDraftInput): Promise<{ order: Order; items: OrderItem[] }>;
+  confirmOrderAtomic(jwt: string, id: string | number): Promise<ConfirmOrderResult>;
+  cancelOrderAtomic(jwt: string, id: string | number): Promise<void>;
   updateOrder(jwt: string, id: string | number, patch: OrderUpdatePatch): Promise<Order>;
-  upsertSlots(jwt: string, slots: SlotUpsertInput[]): Promise<ServiceSlot[]>;
-  createFulfillments(jwt: string, items: FulfillmentInput[]): Promise<Fulfillment[]>;
-  setFulfillmentsByOrders(jwt: string, ids: Array<string | number>, set: { status: FulfillmentStatus }): Promise<void>;
 };
 
 /** Lifecycle errors the route maps to specific status codes. */
@@ -94,44 +84,24 @@ export async function recordDraft(
   });
 }
 
-export type ConfirmResult = { slots: ServiceSlot[]; fulfillments: Fulfillment[] };
+export type ConfirmResult = ConfirmOrderResult;
 
 /**
- * Materialize a draft into经营状态 (§3.3 ②): open the order's occasion slot,
- * create one fulfillment for the order, then flip the order to confirmed.
+ * Ask cms to materialize a draft into经营状态 (§3.3 ②) in one transaction.
  * `archived` slots refuse auto-reopen (cms 409) →
  * surfaces as `OrderStateError("slot-archived")` (needs explicit force 二次确认).
  */
 export async function confirmOrder(jwt: string, orderId: string | number, cms: OrderCms): Promise<ConfirmResult> {
-  const detail = await cms.getOrder(jwt, orderId);
-  if (detail.status !== "draft") throw new OrderStateError("not-draft");
-  if (detail.items.length === 0) throw new OrderStateError("empty-order");
-
-  // ponytail: 桃子 is occasion-granularity; derive granularity from seller config
-  // when a time-slot merchant actually exists.
-  const granularity: ServiceSlotGranularity = "occasion";
-  const slotInputs: SlotUpsertInput[] = [{
-    date: detail.date,
-    occasion: detail.occasion,
-    granularity,
-  }];
-  let slots: ServiceSlot[];
   try {
-    slots = slotInputs.length > 0 ? await cms.upsertSlots(jwt, slotInputs) : [];
+    return await cms.confirmOrderAtomic(jwt, orderId);
   } catch (e) {
-    if (e instanceof CmsHttpError && e.status === 409) throw new OrderStateError("slot-archived");
+    if (e instanceof CmsHttpError && e.status === 409) {
+      if (e.code === "slot-archived") throw new OrderStateError("slot-archived");
+      if (e.code === "empty-order") throw new OrderStateError("empty-order");
+      if (e.code === "not-draft") throw new OrderStateError("not-draft");
+    }
     throw e;
   }
-
-  const fulfillments = await cms.createFulfillments(jwt, [{
-    order: detail.id,
-    serviceDate: detail.date,
-    occasion: detail.occasion,
-    status: "pending",
-  }]);
-
-  await cms.updateOrder(jwt, orderId, { status: "confirmed" });
-  return { slots, fulfillments };
 }
 
 /**
@@ -139,8 +109,5 @@ export async function confirmOrder(jwt: string, orderId: string | number, cms: O
  * delivery/gap口径). Idempotent — a second cancel on an already-canceled order is a no-op.
  */
 export async function cancelOrder(jwt: string, orderId: string | number, cms: OrderCms): Promise<void> {
-  const detail = await cms.getOrder(jwt, orderId);
-  if (detail.status === "canceled") return;
-  await cms.setFulfillmentsByOrders(jwt, [detail.id], { status: "canceled" });
-  await cms.updateOrder(jwt, orderId, { status: "canceled" });
+  await cms.cancelOrderAtomic(jwt, orderId);
 }

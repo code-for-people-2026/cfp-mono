@@ -1,20 +1,9 @@
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
-import { operatorScope, ownedBy } from "@/lib/internal";
+import { operatorScope } from "@/lib/internal";
+import { createDraftAtomic, OrderLifecycleError, type DraftBody } from "@/lib/orderLifecycle";
 
 export const dynamic = "force-dynamic";
-
-type DraftItem = { offering: string | number; quantity: number; unitPriceCents?: number; note?: string };
-type DraftBody = {
-  customer: string | number;
-  date: string;
-  occasion: string;
-  source: string;
-  note?: string;
-  idempotencyKey?: string;
-  items: DraftItem[];
-  totalCents: number;
-};
 
 /**
  * `GET /api/internal/orders[?date=&occasion=&status=]` — the seller's order 台账
@@ -61,61 +50,13 @@ export async function POST(req: Request) {
   if (!body || body.customer === undefined || !body.date || !body.occasion || !Array.isArray(body.items) || body.items.length === 0) {
     return NextResponse.json({ error: "customer, date, occasion, items required" }, { status: 400 });
   }
-  // Tenant-ownership guard (Codex P1): overrideAccess writes carry no req.user,
-  // so assertSameTenantRefs can't fire — validate every ref belongs to this
-  // seller before storing (customer + each offering), else depth reads leak.
-  // Fetch the customer seller-scoped (one read doubles as the ownership check
-  // AND the source for the frozen address snapshot — like e-commerce, the order
-  // copies the customer's address at creation and never changes it after).
-  const customerDoc = await payload.find({
-    collection: "customers",
-    where: { and: [{ id: { equals: body.customer } }, { seller: { equals: sellerId } }] },
-    limit: 1,
-    overrideAccess: true,
-  });
-  if (!customerDoc.docs[0]) return NextResponse.json({ error: "customer not owned" }, { status: 403 });
-  const offeringIds = [...new Set(body.items.map((it) => it.offering))];
-  for (const oid of offeringIds) {
-    if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
-      return NextResponse.json({ error: "offering not owned" }, { status: 403 });
+  try {
+    const result = await createDraftAtomic(payload, sellerId, operatorId, body);
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof OrderLifecycleError) {
+      return NextResponse.json({ error: error.code }, { status: error.status });
     }
+    throw error;
   }
-  const order = await payload.create({
-    collection: "orders",
-    data: {
-      customer: body.customer,
-      date: body.date,
-      occasion: body.occasion,
-      source: body.source,
-      status: "draft",
-      placedAt: new Date().toISOString(),
-      note: body.note,
-      idempotencyKey: body.idempotencyKey,
-      totalCents: body.totalCents,
-      // Frozen snapshot of the customer's delivery address at order-creation.
-      address: (customerDoc.docs[0] as { address?: string } | undefined)?.address,
-      paymentStatus: "unpaid",
-      createdBy: operatorId,
-      seller: sellerId,
-    },
-    overrideAccess: true,
-  });
-  const items = [];
-  for (const it of body.items) {
-    items.push(
-      await payload.create({
-        collection: "order_items",
-        data: {
-          order: order.id,
-          offering: it.offering,
-          quantity: it.quantity,
-          unitPriceCents: it.unitPriceCents,
-          note: it.note,
-          seller: sellerId,
-        },
-        overrideAccess: true,
-      }),
-    );
-  }
-  return NextResponse.json({ order, items }, { status: 201 });
 }
