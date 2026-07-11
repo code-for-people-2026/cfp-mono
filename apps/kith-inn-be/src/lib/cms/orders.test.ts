@@ -3,6 +3,8 @@ import type { Seller } from "@cfp/kith-inn-shared";
 import { OPERATOR_JWT_HEADER } from "./client";
 import { CmsHttpError } from "./orders";
 import {
+  cancelOrderAtomic,
+  confirmOrderAtomic,
   createFulfillments,
   createOrderDraft,
   getSeller,
@@ -96,6 +98,31 @@ describe("createOrderDraft", () => {
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ "content-type": "application/json" });
     expect(JSON.parse(init?.body as string)).toMatchObject({ customer: 5, totalCents: 0 });
+  });
+});
+
+describe("atomic lifecycle", () => {
+  it("POSTs confirm to the order-scoped endpoint", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = mockFetch({ slots: [], fulfillments: [], alreadyConfirmed: false });
+    await expect(confirmOrderAtomic("jwt", 90, deps)).resolves.toMatchObject({ slots: [], fulfillments: [] });
+    expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders/90/confirm");
+    expect(deps.fetch.mock.calls[0]![1]?.method).toBe("POST");
+  });
+
+  it("POSTs cancel to the order-scoped endpoint", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const deps = mockFetch({ ok: true, alreadyCanceled: false });
+    await expect(cancelOrderAtomic("jwt", 90, deps)).resolves.toBeUndefined();
+    expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders/90/cancel");
+  });
+
+  it("preserves the stable cms error code", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(confirmOrderAtomic("jwt", 90, mockFetch({ error: "slot-archived" }, 409))).rejects.toMatchObject({
+      status: 409,
+      code: "slot-archived",
+    });
   });
 });
 

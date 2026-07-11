@@ -13,6 +13,8 @@ import { sql } from "@payloadcms/db-postgres";
  *       → active 业务唯一坐标（重复粘贴同坐标更新，而非新增重复 order）
  *   - orders (seller, idempotency_key) WHERE idempotency_key IS NOT NULL
  *       → 技术幂等（防同一次提交/订阅物化 job 重复写）
+ *   - fulfillments (seller, order)
+ *       → 一张订单全生命周期最多一条履约，兜住并发确认
  *
  * Composite lookup (non-unique, performance — kept here, not in collection
  * `indexes`, so all push-bypass indexes live in one auditable place):
@@ -60,6 +62,14 @@ export async function ensureConstraints(payload: Payload): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS "orders_seller_idempotency_key_unique"
         ON "cms"."orders" ("seller_id", "idempotency_key")
         WHERE "idempotency_key" IS NOT NULL
+    `,
+  });
+
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS "fulfillments_seller_order_unique"
+        ON "cms"."fulfillments" ("seller_id", "order_id")
     `,
   });
 

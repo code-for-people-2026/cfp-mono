@@ -2,14 +2,13 @@ import { Hono } from "hono";
 import type { Order, OrderStatus } from "@cfp/kith-inn-shared";
 import { findOfferings } from "../lib/cms/client";
 import {
-  createFulfillments,
+  cancelOrderAtomic,
+  confirmOrderAtomic,
   createOrderDraft,
   getSeller,
   getOrder,
   listOrders as listOrdersFn,
-  setFulfillmentsByOrders,
   updateOrder,
-  upsertSlots,
 } from "../lib/cms/orders";
 import type { OrderUpdatePatch } from "../lib/cms/orders";
 import type { OrderCms } from "../domain/orders/service";
@@ -28,10 +27,9 @@ function realCms(): OrderCms {
     findOfferings,
     getOrder,
     createOrderDraft,
+    confirmOrderAtomic,
+    cancelOrderAtomic,
     updateOrder,
-    upsertSlots,
-    createFulfillments,
-    setFulfillmentsByOrders,
   };
 }
 

@@ -3,16 +3,15 @@ import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
 import { createOffering, findOfferings } from "../lib/cms/client";
 import {
-  createFulfillments,
+  cancelOrderAtomic,
+  confirmOrderAtomic,
   createOrderDraft,
   getSeller,
   getOrder,
   listFulfillments,
   listOrders,
   setFulfillmentsByIds,
-  setFulfillmentsByOrders,
   updateOrder,
-  upsertSlots,
 } from "../lib/cms/orders";
 import { createCustomer, listCustomers } from "../lib/cms/customers";
 import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../lib/cms/menuPlans";
@@ -32,10 +31,9 @@ function realAgentCms(): AgentCms {
     createOffering,
     getOrder,
     createOrderDraft,
+    confirmOrderAtomic,
+    cancelOrderAtomic,
     updateOrder,
-    upsertSlots,
-    createFulfillments,
-    setFulfillmentsByOrders,
     setFulfillmentsByIds,
     listCustomers,
     createCustomer,

@@ -425,7 +425,8 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
           WHERE schemaname = 'cms' AND indexname IN (
             'service_slots_seller_date_occasion_unique',
             'orders_seller_customer_date_occasion_unique',
-            'orders_seller_idempotency_key_unique'
+            'orders_seller_idempotency_key_unique',
+            'fulfillments_seller_order_unique'
           )
           ORDER BY indexname
         `,
@@ -447,6 +448,9 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       );
       expect(byName.get("orders_seller_idempotency_key_unique")).toMatch(
         /WHERE .*idempotency_key.*IS NOT NULL/i,
+      );
+      expect(byName.get("fulfillments_seller_order_unique")).toMatch(
+        /UNIQUE INDEX .*\(seller_id, order_id\)/i,
       );
     });
 
