@@ -1,13 +1,14 @@
 import { normalizeCustomerName } from "../customers/nameNormalize";
 
 /** An item as the parser emits it / the eval fixture expects it. */
-export type EvalItem = { customerName: string; quantity: number; occasion: string };
+export type EvalItem = { customerName: string; date: string; quantity: number; occasion: string };
 
 export type SampleResult = { correct: number; total: number; pct: number; misassigned: number };
 
-type Norm = { name: string; qty: number; occ: string };
+type Norm = { name: string; date: string; qty: number; occ: string };
 const normItem = (it: EvalItem): Norm => ({
   name: normalizeCustomerName(it.customerName),
+  date: it.date,
   qty: it.quantity,
   occ: it.occasion,
 });
@@ -15,8 +16,8 @@ const normItem = (it: EvalItem): Norm => ({
 /**
  * Evaluate one 接龙 parse (PRD §6.1 acceptance).
  * - **fieldAccuracy**: an expected item is "correct" iff a predicted item matches on
- *   all three of normalized-name + quantity + occasion (multiset, so duplicates count).
- * - **misassigned (午/晚 错配, must be 0)**: an expected (name, quantity) exists in
+ *   all four of date + normalized-name + quantity + occasion (multiset, so duplicates count).
+ * - **misassigned (午/晚 错配, must be 0)**: an expected (date, name, quantity) exists in
  *   predicted but with a *different* occasion — i.e. the meal was assigned wrong.
  *
  * Pure + unit-tested; the eval runner (eval/) feeds it real parse output.
@@ -24,9 +25,9 @@ const normItem = (it: EvalItem): Norm => ({
 export function evaluateSample(predicted: EvalItem[], expected: EvalItem[]): SampleResult {
   const pred = predicted.map(normItem);
   const exp = expected.map(normItem);
-  const key = (n: Norm) => `${n.name}|${n.qty}|${n.occ}`;
+  const key = (n: Norm) => `${n.date}|${n.name}|${n.qty}|${n.occ}`;
 
-  // Correct = multiset intersection on (name,qty,occasion); consume predicted as we match.
+  // Correct = multiset intersection on (date,name,qty,occasion); consume as we match.
   const predCounts = new Map<string, number>();
   for (const p of pred) predCounts.set(key(p), (predCounts.get(key(p)) ?? 0) + 1);
 
@@ -52,13 +53,13 @@ export function evaluateSample(predicted: EvalItem[], expected: EvalItem[]): Sam
     }
   }
 
-  // 午/晚 misassign: an UNMATCHED expected (name,qty) whose occasion was given to a
+  // 午/晚 misassign: an UNMATCHED expected (date,name,qty) whose occasion was given to a
   // different meal in the remainder. Comparing against the remainder (not all pred)
   // avoids a false positive when a customer legitimately ordered BOTH meals — e.g.
   // expected 桃子 1 lunch + 1 dinner, perfectly predicted, must be 0 misassign (Codex).
   let misassigned = 0;
   for (const e of unmatchedExp) {
-    if (predRemainder.some((p) => p.name === e.name && p.qty === e.qty && p.occ !== e.occ)) misassigned++;
+    if (predRemainder.some((p) => p.date === e.date && p.name === e.name && p.qty === e.qty && p.occ !== e.occ)) misassigned++;
   }
 
   const total = exp.length;

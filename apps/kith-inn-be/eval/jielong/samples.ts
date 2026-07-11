@@ -1,17 +1,28 @@
 /**
  * 桃子的真实群接龙样本（eval ground truth）。`raw` 是粘贴原文，`expected` 是人工
- * 标注的正确解析（名字+份数+餐次）。`例` 行是格式示例、不是订单——已排除。
+ * 标注的正确解析（日期+名字+份数+餐次）。`例` 行是格式示例、不是订单——已排除。
  * 顾客名按原文存（eval 比较前对 predicted/expected 都做 normalize）。
  *
  * 难点覆盖：中文份数"一份"、餐次位置不定（8份晚餐/晚餐一份/晚餐1份）、
  * 名字变体（lily/Catherine chen/Sissi-CC/秀）、一段含午+晚两菜单、菜单行 vs 订单行。
  */
-export type ExpectedItem = { customerName: string; quantity: number; occasion: "lunch" | "dinner" };
-export type JielongSample = { id: string; raw: string; expected: ExpectedItem[] };
+type ExpectedSeed = { customerName: string; quantity: number; occasion: "lunch" | "dinner" };
+export type ExpectedItem = ExpectedSeed & { date: string };
+type RawJielongSample = {
+  id: string;
+  raw: string;
+  dateByOccasion: Partial<Record<"lunch" | "dinner", string>>;
+  expected: ExpectedSeed[];
+  expectedIssueCodes?: string[];
+};
+export type JielongSample = Omit<RawJielongSample, "dateByOccasion" | "expected"> & { expected: ExpectedItem[] };
 
-export const jielongSamples: JielongSample[] = [
+export const JIELONG_EVAL_REFERENCE_DATE = "2020-06-01";
+
+const rawJielongSamples: RawJielongSample[] = [
   {
     id: "0608-mon-dinner",
+    dateByOccasion: { dinner: "2020-06-08" },
     raw: `#接龙
 6.8号星期一晚餐预定接龙（30元）
   1.凉拌牛肉
@@ -32,6 +43,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0609-tue-lunch-dinner",
+    dateByOccasion: { lunch: "2020-06-09", dinner: "2020-06-09" },
     raw: `#接龙
 6.9号星期二午餐预定接龙（30元）
    1.红烧鲈鱼
@@ -68,6 +80,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0610-wed-lunch-dinner",
+    dateByOccasion: { lunch: "2020-06-10", dinner: "2020-06-10" },
     raw: `#接龙
 6.10号星期三午餐预定接龙（30元）
    1.红烧猪脚
@@ -86,6 +99,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0611-thu-dinner",
+    dateByOccasion: { dinner: "2020-06-11" },
     raw: `#接龙
 6.11号星期四晚餐预定接龙（30元）
    1.小炒牛肉
@@ -99,6 +113,8 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0613-fri-dinner-5",
+    dateByOccasion: { lunch: "2020-06-13", dinner: "2020-06-12" },
+    expectedIssueCodes: ["weekday-mismatch"],
     raw: `#接龙
 6.13号星期五午餐预定接龙（30元）
    1.炖牛排骨
@@ -117,6 +133,8 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0613-fri-multi",
+    dateByOccasion: { lunch: "2020-06-13", dinner: "2020-06-12" },
+    expectedIssueCodes: ["weekday-mismatch"],
     raw: `#接龙
 6.13号星期五午餐预定接龙（30元）
    1.炖牛排骨
@@ -151,6 +169,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0615-mon-lunch-dinner",
+    dateByOccasion: { lunch: "2020-06-15", dinner: "2020-06-15" },
     raw: `#接龙
 6.15号星期一午餐预定接龙（30元）
   1.小炒牛肉
@@ -169,6 +188,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0618-thu-lunch-dinner",
+    dateByOccasion: { lunch: "2020-06-18", dinner: "2020-06-18" },
     raw: `#接龙
 6.18号星期四午餐预定接龙（30元）
    1.红烧鲈鱼
@@ -201,6 +221,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0622-mon-dinner",
+    dateByOccasion: { dinner: "2020-06-22" },
     raw: `#接龙
 6.22号星期一晚餐预定接龙（30元）
   1.土豆烧排骨
@@ -219,6 +240,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0623-tue-dinner",
+    dateByOccasion: { dinner: "2020-06-23" },
     raw: `#接龙
 6.23号星期二晚餐预定接龙（30元）
    1.炒鸡肉丁
@@ -232,6 +254,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0624-wed-lunch-dinner",
+    dateByOccasion: { lunch: "2020-06-24", dinner: "2020-06-24" },
     raw: `#接龙
 6.24号星期三午晚餐预定接龙（30元）
   1.小炒牛肉
@@ -249,6 +272,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0626-fri-dinner-4",
+    dateByOccasion: { dinner: "2020-06-26" },
     raw: `#接龙
 6.26号星期五晚餐预定接龙（30元）
    1.红烧肉
@@ -262,6 +286,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0626-fri-dinner-luye",
+    dateByOccasion: { dinner: "2020-06-26" },
     raw: `#接龙
 6.26号星期五晚餐预定接龙（30元）
    1.红烧肉
@@ -279,6 +304,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0629-mon-dinner-5",
+    dateByOccasion: { dinner: "2020-06-29" },
     raw: `#接龙
 6.29号星期一晚餐预定接龙（30元）
   1.萝卜炖牛腩
@@ -293,6 +319,7 @@ export const jielongSamples: JielongSample[] = [
   },
   {
     id: "0629-mon-dinner-sissi",
+    dateByOccasion: { dinner: "2020-06-29" },
     raw: `#接龙
 6.29号星期一晚餐预定接龙（30元）
   1.萝卜炖牛腩
@@ -310,3 +337,8 @@ export const jielongSamples: JielongSample[] = [
     ],
   },
 ];
+
+export const jielongSamples: JielongSample[] = rawJielongSamples.map(({ dateByOccasion, expected, ...sample }) => ({
+  ...sample,
+  expected: expected.map((item) => ({ ...item, date: dateByOccasion[item.occasion]! })),
+}));

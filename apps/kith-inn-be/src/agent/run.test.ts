@@ -10,8 +10,17 @@ const scriptedChat = (responses: ChatResult[]) => {
 };
 
 const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
+  parseOrders:
+    over.parseOrders ?? vi.fn(async () => ({
+      mode: "increment" as const,
+      operation: "add" as const,
+      scope: [{ date: "2026-07-07", occasion: "lunch" as const, dateEvidence: "7月7日午餐" }],
+      items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" as const, date: "2026-07-07" }],
+      unknownSegments: [],
+      issues: [],
+    })),
   previewOrders:
-    over.previewOrders ?? vi.fn(async (items: { customerName: string }[]) => ({ date: "2026-07-07", isNew: items.map(() => false) })),
+    over.previewOrders ?? vi.fn(async (items: { customerName: string }[]) => ({ isNew: items.map(() => false) })),
   recordOrders:
     over.recordOrders ??
     vi.fn(async () => ({ recorded: [{ name: "王燕萍", orderId: 45 }], needsConfirmation: [], failed: [] })),
@@ -41,7 +50,7 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
 describe("runAgent", () => {
   it("record_orders previews a confirm card without writing (#126)", async () => {
     const chat = scriptedChat([
-      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 2, occasion: "lunch" }] } }] },
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { rawText: "7月7日午餐，加王燕萍2份" } }] },
       { content: "记好了，王燕萍午餐2份。", toolCalls: [] },
     ]);
     const s = mockServices();
@@ -55,10 +64,20 @@ describe("runAgent", () => {
 
   it("record_orders confirm card flags new customers for address entry (#126 US1)", async () => {
     const chat = scriptedChat([
-      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" }] } }] },
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { rawText: "7月7日晚餐，加大龙猫1份" } }] },
       { content: "新顾客大龙猫，点下面确认填地址哦。", toolCalls: [] },
     ]);
-    const s = mockServices({ previewOrders: vi.fn(async () => ({ date: "2026-07-07", isNew: [true] })) });
+    const s = mockServices({
+      parseOrders: vi.fn(async () => ({
+        mode: "increment" as const,
+        operation: "add" as const,
+        scope: [{ date: "2026-07-07", occasion: "dinner" as const, dateEvidence: "7月7日晚餐" }],
+        items: [{ customerName: "大龙猫", quantity: 1, occasion: "dinner" as const, date: "2026-07-07" }],
+        unknownSegments: [],
+        issues: [],
+      })),
+      previewOrders: vi.fn(async () => ({ isNew: [true] })),
+    });
     const out = await runAgent({ userText: "接龙", history: [], services: s, deps: { chat } });
     expect(out.reply).toBe("新顾客大龙猫，点下面确认填地址哦。");
     // Merged card: operation-confirm carrying items + isNew (FE renders address inputs for new).
@@ -71,12 +90,22 @@ describe("runAgent", () => {
 
   it("record_orders still emits a confirm card for known-only customers (#126)", async () => {
     const chat = scriptedChat([
-      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }] } }] },
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { rawText: "7月7日午餐，加王燕萍1份" } }] },
       { content: "记好了。", toolCalls: [] },
     ]);
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
     // Every write op gates behind a confirm card now — known-only included.
     expect(out.card?.type).toBe("operation-confirm");
+  });
+
+  it("forces record_orders to receive the user's exact turn instead of model-rewritten text", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { rawText: "模型改写后的文本" } }] },
+      { content: "请确认。", toolCalls: [] },
+    ]);
+    const s = mockServices();
+    await runAgent({ userText: "用户原始接龙", history: [], services: s, deps: { chat } });
+    expect(s.parseOrders).toHaveBeenCalledWith("用户原始接龙");
   });
 
   it("passes an orders card through when get_orders is called (#98)", async () => {
@@ -114,7 +143,7 @@ describe("runAgent", () => {
       {
         content: null,
         toolCalls: [
-          { id: "c1", name: "record_orders", args: { items: [{ customerName: "桃子", quantity: 1, occasion: "dinner" }] } },
+          { id: "c1", name: "record_orders", args: { rawText: "7月7日晚餐，加桃子1份" } },
           { id: "c2", name: "get_today_summary", args: {} },
         ],
       },
@@ -133,7 +162,7 @@ describe("runAgent", () => {
       {
         content: null,
         toolCalls: [
-          { id: "c1", name: "record_orders", args: { items: [{ customerName: "王燕萍", quantity: 1, occasion: "lunch" }] } },
+          { id: "c1", name: "record_orders", args: { rawText: "7月7日午餐，加王燕萍1份" } },
           { id: "c2", name: "get_orders", args: {} },
         ],
       },

@@ -358,7 +358,7 @@ describe("dispatchPendingOp", () => {
   });
 
   it("record_orders: covers known/new × recorded/created/failed + body & isNew fallbacks", async () => {
-    const items = [{ customerName: "A", quantity: 1, occasion: "lunch" as const }];
+    const items = [{ customerName: "A", quantity: 1, occasion: "lunch" as const, date: "2026-07-07" }];
     // known: recorded yes / failed no
     const confirmOrder = vi.fn(async () => ({ ok: true as const }));
     expect(await run(svc({ confirmOrder, recordOrders: vi.fn(async () => ({ recorded: [{ name: "A", orderId: 1 }], needsConfirmation: [], failed: [] })) }), "record_orders", { items, isNew: [false] }, { items })).toBe("已记为草稿：A。到订单页确认后进入送餐清单。");

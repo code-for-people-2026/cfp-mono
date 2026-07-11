@@ -5,9 +5,9 @@
  * 不进 CI 硬门禁（LLM 抖动会 flake）；M1 验收口径 = 字段级 ≥95% 且 午/晚错配 0。
  */
 import { readFileSync } from "node:fs";
-import { parseJielong } from "../src/domain/orders/parse";
+import { parseOrderInput } from "../src/domain/orders/parse";
 import { evaluateAll, type EvalItem } from "../src/domain/orders/evalAccuracy";
-import { jielongSamples } from "./jielong/samples";
+import { JIELONG_EVAL_REFERENCE_DATE, jielongSamples } from "./jielong/samples";
 
 function loadEnvFile(path: string) {
   // ponytail: tiny .env loader (no dotenv dep). Runner-only, gitignored file.
@@ -30,19 +30,24 @@ async function main() {
   }
 
   const predicted: Record<string, EvalItem[]> = {};
+  const startedAt = performance.now();
+  let issueMismatchCount = 0;
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-chat";
+  console.log(`model=${model} referenceDate=${JIELONG_EVAL_REFERENCE_DATE} samples=${jielongSamples.length}`);
   for (const s of jielongSamples) {
     process.stdout.write(`parsing ${s.id} … `);
+    const sampleStartedAt = performance.now();
     try {
-      const parsed = await parseJielong(s.raw);
-      predicted[s.id] = parsed.items.map((it) => ({
-        customerName: it.customerName,
-        quantity: it.quantity,
-        occasion: it.occasion,
-      }));
-      console.log(`${parsed.items.length} items, ${parsed.unknownSegments.length} unknown`);
+      const parsed = await parseOrderInput(s.raw, { referenceDate: JIELONG_EVAL_REFERENCE_DATE });
+      predicted[s.id] = parsed.items;
+      const actualIssues = [...new Set(parsed.issues.map((issue) => issue.code))].sort();
+      const expectedIssues = [...(s.expectedIssueCodes ?? [])].sort();
+      if (JSON.stringify(actualIssues) !== JSON.stringify(expectedIssues)) issueMismatchCount++;
+      console.log(`${parsed.items.length} items, issues=[${actualIssues.join(",") || "none"}], ${Math.round(performance.now() - sampleStartedAt)}ms`);
     } catch (e) {
       console.log(`ERROR: ${(e as Error).message}`);
       predicted[s.id] = [];
+      issueMismatchCount++;
     }
   }
 
@@ -57,8 +62,10 @@ async function main() {
   console.log("────────────────────────────────────────────");
   console.log(`  field accuracy : ${(fieldAccuracy * 100).toFixed(1)}%  (target ≥ 95%)`);
   console.log(`  午/晚 错配      : ${totalMisassigned}  (target = 0)`);
+  console.log(`  issue mismatches: ${issueMismatchCount}  (target = 0)`);
+  console.log(`  elapsed         : ${Math.round(performance.now() - startedAt)}ms`);
 
-  const pass = fieldAccuracy >= 0.95 && totalMisassigned === 0;
+  const pass = fieldAccuracy >= 0.95 && totalMisassigned === 0 && issueMismatchCount === 0;
   console.log(pass ? "\n✓ M1 acceptance MET" : "\n✗ M1 acceptance NOT met");
   process.exit(pass ? 0 : 1);
 }
