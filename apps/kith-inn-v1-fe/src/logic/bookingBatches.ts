@@ -6,6 +6,7 @@ import type {
 } from "@cfp/kith-inn-v1-shared";
 
 const sameId = (left: string | number, right: string | number) => String(left) === String(right);
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
 
 export function selectableBookingSlots(slots: MealSlot[], now: string): MealSlot[] {
   return slots.filter((slot) => slot.orderStatus === "open" && slot.orderDeadline !== null &&
@@ -31,13 +32,18 @@ export function buildBookingConfig(input: {
   const price = input.priceYuan.trim();
   const deadline = input.orderDeadline.trim();
   if (price && !/^\d+(?:\.\d{1,2})?$/.test(price)) return null;
-  if (deadline && Number.isNaN(Date.parse(deadline))) return null;
+  const deadlineInstant = deadline ? Date.parse(`${deadline}:00.000+08:00`) : null;
+  if (deadlineInstant !== null && Number.isNaN(deadlineInstant)) return null;
   const priceCents = price ? Math.round(Number(price) * 100) : null;
   return {
     priceCents,
-    orderDeadline: deadline ? new Date(deadline).toISOString() : null,
+    orderDeadline: deadlineInstant === null ? null : new Date(deadlineInstant).toISOString(),
     orderStatus: input.orderStatus
   };
+}
+
+export function bookingDeadlineInputValue(value: string | null): string {
+  return value === null ? "" : new Date(Date.parse(value) + SHANGHAI_OFFSET_MS).toISOString().slice(0, 16);
 }
 
 export function copyBookingBatchPath(

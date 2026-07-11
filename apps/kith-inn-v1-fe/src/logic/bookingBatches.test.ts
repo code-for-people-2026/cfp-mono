@@ -2,6 +2,7 @@ import { expect, it, vi } from "vitest";
 import type { BookingBatch, MealSlot } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
+  bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
   selectableBookingSlots,
@@ -41,7 +42,7 @@ it("selects only open unexpired slots and toggles stable ids", () => {
 
 it("parses yuan/deadline config without leaking invalid values", () => {
   expect(buildBookingConfig({ priceYuan: "28.50", orderDeadline: "2026-07-12T09:00", orderStatus: "open" }))
-    .toEqual({ priceCents: 2850, orderDeadline: new Date("2026-07-12T09:00").toISOString(), orderStatus: "open" });
+    .toEqual({ priceCents: 2850, orderDeadline: "2026-07-12T01:00:00.000Z", orderStatus: "open" });
   expect(buildBookingConfig({ priceYuan: "", orderDeadline: "", orderStatus: "draft" }))
     .toEqual({ priceCents: null, orderDeadline: null, orderStatus: "draft" });
   expect(buildBookingConfig({ priceYuan: "28", orderDeadline: "", orderStatus: "draft" }))
@@ -50,6 +51,8 @@ it("parses yuan/deadline config without leaking invalid values", () => {
   expect(buildBookingConfig({ priceYuan: "28", orderDeadline: "bad", orderStatus: "open" })).toBeNull();
   expect(buildBookingConfig({ priceYuan: "-1", orderDeadline: "2026-07-12T09:00", orderStatus: "open" })).toBeNull();
   expect(buildBookingConfig({ priceYuan: "abc", orderDeadline: "", orderStatus: "draft" })).toBeNull();
+  expect(bookingDeadlineInputValue("2026-07-12T01:00:00.000Z")).toBe("2026-07-12T09:00");
+  expect(bookingDeadlineInputValue(null)).toBe("");
 });
 
 it("copies the deterministic public path and describes close impact", async () => {

@@ -7,6 +7,7 @@ import type {
 } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
+  bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
   selectableBookingSlots
@@ -44,7 +45,7 @@ type SlotConfig = { priceYuan: string; orderDeadline: string };
 function initialConfig(slot: MealSlot): SlotConfig {
   return {
     priceYuan: slot.priceCents === null ? "" : (slot.priceCents / 100).toFixed(2).replace(/\.00$/, ""),
-    orderDeadline: slot.orderDeadline === null ? "" : slot.orderDeadline.slice(0, 16)
+    orderDeadline: bookingDeadlineInputValue(slot.orderDeadline)
   };
 }
 
@@ -74,6 +75,7 @@ export default function MerchantBatches() {
     try {
       const docs = await api.listMealSlots(range.from, range.to);
       setSlots(docs);
+      setSelected([]);
       setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot)])));
       setBatches(await api.listBookingBatches());
     } catch (error) {
