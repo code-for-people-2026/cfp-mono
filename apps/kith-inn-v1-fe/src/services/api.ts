@@ -1,5 +1,9 @@
 import type {
   BulkMarkDeliveredResult,
+  BookingBatch,
+  BookingBatchCreate,
+  BookingBatchListResponse,
+  BookingBatchMutationResponse,
   CustomerProfile,
   CustomerProfileCreate,
   ImportCommitInput,
@@ -8,6 +12,7 @@ import type {
   GenerateMenusInput,
   GenerateMenusResponse,
   MealSlot,
+  MealSlotBookingConfig,
   ManualOrderCreate,
   ManualOrderUpdate,
   Offering,
@@ -135,11 +140,41 @@ function parseMealSlot(value: unknown): MealSlot {
     typeof slot.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(slot.date) ||
     !(slot.occasion === "lunch" || slot.occasion === "dinner") || !validItems ||
     !(slot.orderStatus === "draft" || slot.orderStatus === "open" || slot.orderStatus === "closed") ||
+    !validNullableDate(slot.orderDeadline) ||
     !(slot.priceCents === null || (typeof slot.priceCents === "number" && Number.isInteger(slot.priceCents) && slot.priceCents >= 0)) ||
     !(slot.generatedAt === null || typeof slot.generatedAt === "string")) {
     throw new ApiError(502, "invalid-api-response", "菜单数据无效");
   }
   return slot as MealSlot;
+}
+
+function parseBookingBatch(value: unknown): BookingBatch {
+  const batch = record(value);
+  if (!batch || !validId(batch.id) || !validId(batch.sellerId) ||
+    typeof batch.publicId !== "string" || batch.publicId === "" ||
+    typeof batch.title !== "string" || batch.title === "" ||
+    !(batch.status === "open" || batch.status === "closed" || batch.status === "archived") ||
+    !Array.isArray(batch.mealSlotIds) || batch.mealSlotIds.length === 0 || !batch.mealSlotIds.every(validId) ||
+    !validId(batch.createdById)) {
+    throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
+  }
+  return batch as BookingBatch;
+}
+
+function parseBookingBatchMutation(value: unknown): BookingBatchMutationResponse {
+  const body = record(value);
+  const share = record(body?.share);
+  if (!body || !share || typeof share.title !== "string" || share.title === "" ||
+    typeof share.path !== "string" || !share.path.startsWith("/pages/booking/index?batch=")) {
+    throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
+  }
+  return { doc: parseBookingBatch(body.doc), share: { title: share.title, path: share.path } };
+}
+
+function parseBookingBatchList(value: unknown): BookingBatchListResponse {
+  const body = record(value);
+  if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
+  return { docs: body.docs.map(parseBookingBatchMutation) };
 }
 
 function parseRelaxedRules(value: unknown): RelaxedRule[] {
@@ -332,6 +367,29 @@ export function createApiClient(options: ClientOptions) {
       return parseSwap(await request(`/merchant/meal-slots/${encodeURIComponent(mealSlotId)}/swap-menu-item`, {
         method: "POST",
         data: { offeringId }
+      }));
+    },
+    async updateMealSlotBookingConfig(
+      mealSlotId: string | number,
+      input: MealSlotBookingConfig
+    ): Promise<MealSlot> {
+      const body = record(await request(`/merchant/meal-slots/${encodeURIComponent(mealSlotId)}/booking-config`, {
+        method: "PATCH",
+        data: input
+      }));
+      return parseMealSlot(body?.doc);
+    },
+    async listBookingBatches(status?: BookingBatch["status"]): Promise<BookingBatchListResponse["docs"]> {
+      const query = status ? `?status=${encodeURIComponent(status)}` : "";
+      return parseBookingBatchList(await request(`/merchant/booking-batches${query}`)).docs;
+    },
+    async createBookingBatch(input: BookingBatchCreate): Promise<BookingBatchMutationResponse> {
+      return parseBookingBatchMutation(await request("/merchant/booking-batches", { method: "POST", data: input }));
+    },
+    async closeBookingBatch(id: string | number): Promise<BookingBatchMutationResponse> {
+      return parseBookingBatchMutation(await request(`/merchant/booking-batches/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        data: { status: "closed" }
       }));
     },
     async listCustomerProfiles(query = ""): Promise<CustomerProfile[]> {

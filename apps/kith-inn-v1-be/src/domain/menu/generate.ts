@@ -209,6 +209,7 @@ export function generateMenus({
       ...target,
       menuItems,
       orderStatus: "draft",
+      orderDeadline: null,
       priceCents: null,
       generatedAt: null
     });

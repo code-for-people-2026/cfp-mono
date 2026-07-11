@@ -155,6 +155,7 @@ describe("API client", () => {
       occasion: "lunch",
       menuItems,
       orderStatus: "draft",
+      orderDeadline: null,
       priceCents: null,
       generatedAt: "2026-07-10T01:00:00.000Z"
     };
@@ -203,6 +204,112 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
+  it("configures meal slots and manages booking batches", async () => {
+    const slot = {
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch" as const,
+      menuItems: Array.from({ length: 5 }, (_, index) => ({
+        offeringId: index + 1,
+        nameSnapshot: `菜${index + 1}`,
+        mainIngredientSnapshot: null,
+        categorySnapshot: index < 2 ? "meat" as const : index < 4 ? "veg" as const : "soup" as const
+      })),
+      orderStatus: "open" as const,
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      priceCents: 2800,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    };
+    const batch = {
+      id: 31,
+      sellerId: 7,
+      publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "午餐预订",
+      status: "open" as const,
+      mealSlotIds: [11],
+      createdById: 1
+    };
+    const share = { title: batch.title, path: `/pages/booking/index?batch=${batch.publicId}` };
+    const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
+      if (url.includes("booking-config")) return { statusCode: 200, data: { doc: slot } };
+      if (url.endsWith("/booking-batches") && method === "POST") return { statusCode: 201, data: { doc: batch, share } };
+      if (url.endsWith("/booking-batches/31")) {
+        return { statusCode: 200, data: { doc: { ...batch, status: "closed" }, share } };
+      }
+      return { statusCode: 200, data: { docs: [{ doc: batch, share }] } };
+    });
+    const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
+    const config = { priceCents: 2800, orderDeadline: slot.orderDeadline, orderStatus: "open" as const };
+    await expect(client.updateMealSlotBookingConfig(11, config)).resolves.toEqual(slot);
+    await expect(client.listBookingBatches("open")).resolves.toEqual([{ doc: batch, share }]);
+    await expect(client.listBookingBatches()).resolves.toEqual([{ doc: batch, share }]);
+    await expect(client.createBookingBatch({ title: "午餐预订", mealSlotIds: [11] }))
+      .resolves.toEqual({ doc: batch, share });
+    await expect(client.closeBookingBatch(31)).resolves.toMatchObject({ doc: { status: "closed" }, share });
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      method: "PATCH",
+      url: "http://be.test/merchant/meal-slots/11/booking-config",
+      data: config
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: "http://be.test/merchant/booking-batches?status=open"
+    }));
+    expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({ url: "http://be.test/merchant/booking-batches" }));
+    expect(request).toHaveBeenNthCalledWith(4, expect.objectContaining({ method: "POST" }));
+    expect(request).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      method: "PATCH",
+      data: { status: "closed" }
+    }));
+  });
+
+  it("rejects malformed booking-batch envelopes", async () => {
+    const valid = {
+      id: 31,
+      sellerId: 7,
+      publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "午餐预订",
+      status: "open",
+      mealSlotIds: [11],
+      createdById: 1
+    };
+    const share = { title: valid.title, path: `/pages/booking/index?batch=${valid.publicId}` };
+    const invalidDocs = [
+      null,
+      { ...valid, id: "" },
+      { ...valid, sellerId: 1.5 },
+      { ...valid, publicId: 1 },
+      { ...valid, publicId: "" },
+      { ...valid, title: 1 },
+      { ...valid, title: "" },
+      { ...valid, status: "bad" },
+      { ...valid, mealSlotIds: "bad" },
+      { ...valid, mealSlotIds: [] },
+      { ...valid, mealSlotIds: [null] },
+      { ...valid, createdById: null }
+    ];
+    for (const doc of invalidDocs) {
+      await expect(createApiClient({
+        request: adapter(200, { docs: [{ doc, share }] }),
+        sessions: sessions()
+      }).listBookingBatches()).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    for (const data of [
+      null,
+      {},
+      { docs: "bad" },
+      { docs: [null] },
+      { docs: [{ doc: valid, share: null }] },
+      { docs: [{ doc: valid, share: { ...share, title: 1 } }] },
+      { docs: [{ doc: valid, share: { ...share, title: "" } }] },
+      { docs: [{ doc: valid, share: { ...share, path: 1 } }] },
+      { docs: [{ doc: valid, share: { ...share, path: "/wrong" } }] }
+    ]) {
+      await expect(createApiClient({ request: adapter(200, data), sessions: sessions() }).listBookingBatches())
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+  });
+
   it("sends and validates customer-profile and draft-order requests", async () => {
     const profile = {
       id: 21,
@@ -224,6 +331,7 @@ describe("API client", () => {
         { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" as const }
       ],
       orderStatus: "draft" as const,
+      orderDeadline: null,
       priceCents: null,
       generatedAt: "2026-07-10T01:00:00.000Z"
     };
@@ -389,6 +497,7 @@ describe("API client", () => {
         { offeringId: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
       ],
       orderStatus: "draft",
+      orderDeadline: null,
       priceCents: null,
       generatedAt: "2026-07-10T01:00:00.000Z"
     };

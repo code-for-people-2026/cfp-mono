@@ -132,6 +132,60 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
   await expect(page.locator(".menu-slot")).toHaveCount(11);
 });
 
+test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => {
+  const suffix = Date.now().toString(36);
+  const target = new Date(Date.now() + (120 + Date.now() % 100) * 86_400_000);
+  const targetDate = target.toISOString().slice(0, 10);
+  const deadline = new Date(target.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const rows = [
+    `批次荤一-${suffix} 牛肉-${suffix} 荤`,
+    `批次荤二-${suffix} 猪肉-${suffix} 荤`,
+    `批次素一-${suffix} 青菜-${suffix} 素`,
+    `批次素二-${suffix} 豆腐-${suffix} 素`,
+    `批次汤-${suffix} 番茄-${suffix} 汤`
+  ];
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await page.getByRole("textbox", { name: "每行一道菜" }).fill(rows.join("\n"));
+  await taroButton(page, /^预览导入$/).click();
+  await taroButton(page, /^确认导入$/).click();
+  await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
+  await taroButton(page, /^菜单$/).click();
+  await page.getByRole("textbox", { name: "菜单起始日期" }).fill(targetDate);
+  await taroButton(page, /^生成午餐$/).click();
+  await expect(page.getByText(`${targetDate} 午餐`, { exact: true })).toBeVisible();
+  await taroButton(page, /^预订批次$/).click();
+
+  await page.getByRole("textbox", { name: "批次起始日期" }).fill(targetDate);
+  const startedAt = Date.now();
+  await taroButton(page, /^查看餐次$/).click();
+  const slot = page.locator(".batch-slot").filter({ hasText: `${targetDate} 午餐` });
+  await slot.getByRole("textbox", { name: "价格（元）" }).fill("28");
+  await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T09:00`);
+  const configResponse = page.waitForResponse((response) =>
+    response.url().includes("/booking-config") && response.request().method() === "PATCH");
+  await taroButton(page, /^开放预订$/).click();
+  expect((await configResponse).status()).toBe(200);
+  const selectSlot = slot.getByLabel(`选择 ${targetDate} 午餐`);
+  await expect(selectSlot).toBeEnabled();
+  await selectSlot.click();
+  await expect(page.getByText("已选择 1 个餐次", { exact: true })).toBeVisible();
+  const createResponse = page.waitForResponse((response) =>
+    response.url().endsWith("/merchant/booking-batches") && response.request().method() === "POST");
+  await taroButton(page, /^创建预订批次$/).click();
+  expect((await createResponse).status()).toBe(201);
+  const batch = page.locator(".batch-card").filter({ hasText: `${targetDate} 午餐预订` });
+  await expect(batch).toContainText("/pages/booking/index?batch=");
+  await batch.getByLabel("复制分享 path").click();
+  await expect(page.getByText("path 已复制", { exact: true })).toBeVisible();
+  await batch.getByLabel("关闭预订批次").click();
+  await taroButton(page, /^确认关闭批次$/).click();
+  await expect(batch).toContainText("已关闭");
+  expect(Date.now() - startedAt).toBeLessThan(60_000);
+  await expect(page.getByText(/operator-token|sellerId|createdById/)).toHaveCount(0);
+  await expect(page.getByLabel(/分享给朋友|原生分享/)).toHaveCount(0);
+});
+
 test("选择餐次后新建顾客资料、补草稿单、重复确认更新并修改", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const displayName = `订单顾客-${suffix}`;

@@ -26,6 +26,7 @@ type MealSlotDoc = {
     categorySnapshot: MenuItemSnapshot["categorySnapshot"];
   }> | null;
   orderStatus: MealSlot["orderStatus"];
+  orderDeadline?: string | null;
   priceCents?: number | null;
   generatedAt?: string | null;
 };
@@ -49,6 +50,7 @@ export function normalizeMealSlot(doc: MealSlotDoc): MealSlot {
       categorySnapshot: item.categorySnapshot
     })),
     orderStatus: doc.orderStatus,
+    orderDeadline: doc.orderDeadline ?? null,
     priceCents: doc.priceCents ?? null,
     generatedAt: doc.generatedAt ?? null
   };

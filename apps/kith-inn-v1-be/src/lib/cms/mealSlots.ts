@@ -5,9 +5,11 @@ import {
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   MealSlot,
+  MealSlotBookingConfig,
   MealSlotCreate,
   MealSlotUpdate
 } from "@cfp/kith-inn-v1-shared";
+import { KIV1_INTERNAL_HEADER } from "./auth";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsMealSlotDeps = { fetch?: typeof fetch };
@@ -35,14 +37,16 @@ function cmsBaseUrl(): string {
 async function cmsRequest(
   path: string,
   token: string,
-  init: { method?: "POST" | "PATCH"; data?: unknown } = {},
+  init: { method?: "POST" | "PATCH"; data?: unknown; service?: boolean } = {},
   deps: CmsMealSlotDeps = {}
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
     ...(init.method ? { method: init.method } : {}),
-    headers: init.data === undefined
-      ? { [KIV1_OPERATOR_HEADER]: token }
-      : { [KIV1_OPERATOR_HEADER]: token, "content-type": "application/json" },
+    headers: {
+      [KIV1_OPERATOR_HEADER]: token,
+      ...(init.data === undefined ? {} : { "content-type": "application/json" }),
+      ...(init.service ? { [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "" } : {})
+    },
     ...(init.data === undefined ? {} : { body: JSON.stringify(init.data) })
   });
   const body = await response.json().catch(() => ({}));
@@ -107,4 +111,18 @@ export async function updateMealSlot(
     method: "PATCH",
     data: input
   }, deps));
+}
+
+export async function updateMealSlotBookingConfig(
+  token: string,
+  id: string | number,
+  input: MealSlotBookingConfig,
+  deps: CmsMealSlotDeps = {}
+): Promise<MealSlot> {
+  return parseDoc(await cmsRequest(
+    `/api/internal/kiv1/meal-slots/${encodeURIComponent(id)}/booking-config`,
+    token,
+    { method: "PATCH", data: input, service: true },
+    deps
+  ));
 }

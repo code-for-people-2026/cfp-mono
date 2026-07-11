@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  bookingBatchStatusSchema,
   calendarDateSchema,
   deliveryStatusSchema,
   mealSlotOrderStatusSchema,
@@ -186,6 +187,7 @@ export const mealSlotSchema = z.object({
   occasion: occasionSchema,
   menuItems: z.array(menuItemSnapshotSchema).length(5),
   orderStatus: mealSlotOrderStatusSchema,
+  orderDeadline: zonedDateTimeSchema.nullable(),
   priceCents: nonNegativeIntegerSchema.nullable(),
   generatedAt: zonedDateTimeSchema.nullable()
 }).strict();
@@ -200,6 +202,59 @@ export const mealSlotCreateSchema = z.object({
 export const mealSlotUpdateSchema = z.object({
   menuItems: z.array(menuItemSnapshotSchema).length(5),
   generatedAt: zonedDateTimeSchema
+}).strict();
+
+export const mealSlotBookingConfigSchema = z.object({
+  priceCents: nonNegativeIntegerSchema.nullable().optional(),
+  orderDeadline: zonedDateTimeSchema.nullable().optional(),
+  orderStatus: mealSlotOrderStatusSchema.optional()
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "至少更新一个预订配置字段" });
+
+const uniqueMealSlotIds = z.array(relationshipIdSchema).min(1).transform((ids) => [
+  ...new Map(ids.map((id) => [String(id), id])).values()
+]).refine((ids) => ids.length <= 20, { message: "一个预订批次最多包含 20 个餐次" });
+
+export const bookingBatchSchema = z.object({
+  id: relationshipIdSchema,
+  sellerId: relationshipIdSchema,
+  publicId: z.string().uuid(),
+  title: z.string().trim().min(1).max(120),
+  status: bookingBatchStatusSchema,
+  mealSlotIds: z.array(relationshipIdSchema).min(1).max(20),
+  createdById: relationshipIdSchema
+}).strict();
+
+export const bookingBatchCreateSchema = z.object({
+  title: z.string().trim().min(1).max(120).optional(),
+  mealSlotIds: uniqueMealSlotIds
+}).strict();
+
+export const cmsBookingBatchCreateSchema = z.object({
+  publicId: z.string().uuid(),
+  title: z.string().trim().min(1).max(120),
+  status: z.literal("open"),
+  mealSlotIds: z.array(relationshipIdSchema).min(1).max(20),
+  createdById: relationshipIdSchema
+}).strict();
+
+export const bookingBatchUpdateSchema = z.object({ status: z.literal("closed") }).strict();
+
+export const bookingBatchListQuerySchema = z.object({
+  status: bookingBatchStatusSchema.optional()
+}).strict();
+
+export const bookingBatchShareSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  path: z.string().startsWith("/pages/booking/index?batch=")
+}).strict();
+
+export const bookingBatchMutationResponseSchema = z.object({
+  doc: bookingBatchSchema,
+  share: bookingBatchShareSchema
+}).strict();
+
+export const bookingBatchListResponseSchema = z.object({
+  docs: z.array(bookingBatchMutationResponseSchema)
 }).strict();
 
 const uniqueTargets = z.array(mealSlotTargetSchema).min(1).max(100).transform((targets) => [

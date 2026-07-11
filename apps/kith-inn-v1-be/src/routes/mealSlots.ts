@@ -1,16 +1,22 @@
 import {
   generateMenusInputSchema,
+  mealSlotBookingConfigSchema,
   mealSlotRangeSchema,
   swapMenuItemInputSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   MealSlot,
+  MealSlotBookingConfig,
   MealSlotCreate,
   MealSlotTarget,
   MealSlotUpdate,
   Offering
 } from "@cfp/kith-inn-v1-shared";
 import { Hono, type Context } from "hono";
+import {
+  BookingAvailabilityError,
+  nextBookingConfig
+} from "../domain/bookings/availability";
 import {
   addCalendarDays,
   generateMenus,
@@ -22,6 +28,7 @@ import {
   createMealSlot as createMealSlotFn,
   getMealSlot as getMealSlotFn,
   listMealSlots as listMealSlotsFn,
+  updateMealSlotBookingConfig as updateMealSlotBookingConfigFn,
   updateMealSlot as updateMealSlotFn
 } from "../lib/cms/mealSlots";
 import {
@@ -36,6 +43,11 @@ export type MealSlotsDeps = {
   getMealSlot: (token: string, id: string | number) => Promise<MealSlot>;
   createMealSlot: (token: string, input: MealSlotCreate) => Promise<MealSlot>;
   updateMealSlot: (token: string, id: string | number, input: MealSlotUpdate) => Promise<MealSlot>;
+  updateMealSlotBookingConfig: (
+    token: string,
+    id: string | number,
+    input: MealSlotBookingConfig
+  ) => Promise<MealSlot>;
   now: () => string;
   random: () => number;
 };
@@ -46,6 +58,7 @@ const defaultDeps: MealSlotsDeps = {
   getMealSlot: (token, id) => getMealSlotFn(token, id),
   createMealSlot: (token, input) => createMealSlotFn(token, input),
   updateMealSlot: (token, id, input) => updateMealSlotFn(token, id, input),
+  updateMealSlotBookingConfig: (token, id, input) => updateMealSlotBookingConfigFn(token, id, input),
   now: () => new Date().toISOString(),
   random: Math.random
 };
@@ -198,6 +211,25 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
       });
       return c.json({ doc, relaxedRules: swapped.relaxedRules });
     } catch (error) {
+      return dependencyError(c, error);
+    }
+  });
+
+  app.patch("/:id/booking-config", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const parsed = mealSlotBookingConfigSchema.safeParse(body.value);
+    if (!parsed.success) return c.json({ error: "invalid-booking-config", message: "预订配置无效" }, 422);
+    const token = c.get("operatorToken");
+    try {
+      const slot = await deps.getMealSlot(token, c.req.param("id"));
+      const input = nextBookingConfig(slot, parsed.data, deps.now());
+      return c.json({ doc: await deps.updateMealSlotBookingConfig(token, slot.id, input) });
+    } catch (error) {
+      if (error instanceof BookingAvailabilityError) {
+        const message = error.code === "meal-slot-not-ready" ? "餐次尚未满足开放预订条件" : "餐次状态不可回退";
+        return c.json({ error: error.code, message }, error.status);
+      }
       return dependencyError(c, error);
     }
   });

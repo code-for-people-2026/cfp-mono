@@ -113,6 +113,7 @@ export default function MerchantMenu() {
       <Text className="title">菜单计划</Text>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/offerings/index" })}>菜品池</Button>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/orders/index" })}>订单</Button>
+      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
 
       <View className="card menu-controls">
         <Input

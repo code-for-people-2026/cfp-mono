@@ -51,6 +51,7 @@ const historySlot = (
     snapshot(soupId, "soup", soupMain)
   ],
   orderStatus: "draft",
+  orderDeadline: null,
   priceCents: null,
   generatedAt: "2026-07-01T00:00:00.000Z"
 });
@@ -204,6 +205,7 @@ describe("menu item swap", () => {
       ...generated.target,
       menuItems: generated.menuItems,
       orderStatus: "draft",
+      orderDeadline: null,
       priceCents: null,
       generatedAt: "2026-07-10T00:00:00.000Z"
     };

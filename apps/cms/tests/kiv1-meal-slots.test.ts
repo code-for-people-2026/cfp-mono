@@ -10,8 +10,10 @@ vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
 import { GET, POST } from "../src/app/api/internal/kiv1/meal-slots/route";
 import * as detailRoute from "../src/app/api/internal/kiv1/meal-slots/[id]/route";
+import * as bookingConfigRoute from "../src/app/api/internal/kiv1/meal-slots/[id]/booking-config/route";
 
 const SECRET = "v1-secret";
+const INTERNAL = "internal-secret";
 const originalEnv = { ...process.env };
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
 const generatedAt = "2026-07-10T01:00:00.000Z";
@@ -30,6 +32,7 @@ const slotDoc = {
   occasion: "lunch",
   menuItems: storedItems,
   orderStatus: "draft",
+  orderDeadline: null,
   priceCents: null,
   generatedAt
 };
@@ -84,6 +87,7 @@ function json(path: string, method: "POST" | "PATCH", body: unknown) {
 beforeEach(() => {
   vi.resetAllMocks();
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
+  process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
 
 afterEach(() => {
@@ -103,6 +107,7 @@ describe("GET /api/internal/kiv1/meal-slots", () => {
       occasion: "lunch",
       menuItems,
       orderStatus: "draft",
+      orderDeadline: null,
       priceCents: null,
       generatedAt
     }] });
@@ -201,5 +206,52 @@ describe("GET/PATCH /api/internal/kiv1/meal-slots/:id", () => {
     expect((await detailRoute.PATCH(json("/11", "PATCH", { menuItems, generatedAt }), {
       params: Promise.resolve({ id: "11" })
     })).status).toBe(422);
+  });
+});
+
+describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
+  it("requires service auth and patches only owned booking fields", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    expect((await bookingConfigRoute.PATCH(
+      json("/11/booking-config", "PATCH", { priceCents: 2800 }),
+      { params: Promise.resolve({ id: "11" }) }
+    )).status).toBe(401);
+
+    const response = await bookingConfigRoute.PATCH(request("/11/booking-config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body: JSON.stringify({
+        priceCents: 2800,
+        orderDeadline: "2026-07-12T01:00:00.000Z",
+        orderStatus: "open"
+      })
+    }), { params: Promise.resolve({ id: "11" }) });
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith({
+      collection: "kiv1_meal_slots",
+      id: "11",
+      data: {
+        priceCents: 2800,
+        orderDeadline: "2026-07-12T01:00:00.000Z",
+        orderStatus: "open"
+      },
+      overrideAccess: true
+    });
+  });
+
+  it("rejects missing/cross-seller slots, invalid JSON and non-booking fields", async () => {
+    const call = (body: string, id = "11") => bookingConfigRoute.PATCH(request(`/${id}/booking-config`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body
+    }), { params: Promise.resolve({ id }) });
+    mocks.getPayload.mockResolvedValue(payloadWith({ slots: [] }));
+    expect((await call(JSON.stringify({ orderStatus: "closed" }), "99")).status).toBe(404);
+    mocks.getPayload.mockResolvedValue(payloadWith());
+    expect((await call("{")).status).toBe(400);
+    expect((await call(JSON.stringify({}))).status).toBe(422);
+    expect((await call(JSON.stringify({ seller: 7, orderStatus: "closed" }))).status).toBe(422);
+    expect((await call(JSON.stringify({ menuItems }))).status).toBe(422);
   });
 });
