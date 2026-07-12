@@ -12,7 +12,7 @@
 |---|---|---|
 | PR 1（#166） | 可信解析 | T001–T016 |
 | PR 2（#168） | 快照对账核心与既有生产链路 | T017–T025 |
-| PR 3 | 增量对账核心 | T026–T028 |
+| PR 3（#171） | 增量对账核心 | T026–T028 |
 | PR 4 | 增量生产确认链路 | T029–T030 |
 | PR 5 | 长期文档与最终验收 | T031–T034 |
 
@@ -95,8 +95,8 @@
 - [x] T026 [P] [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.test.ts` 增加无现单 add、已有现单 add、set、confirmed 和不得影响同日其他订单测试
 - [x] T027 [P] [US3] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加 increment/add/set 的事务计算、预览后变化、同一 operation key 重试幂等和不同 operation key 并发追加拒绝陈旧测试
 - [x] T028 [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.ts` 与 `apps/cms/src/lib/orderLifecycle.ts` 完成 increment 单坐标差异和事务内 add/set 最终数量语义
-- [ ] T029 [US3] 在 `apps/kith-inn-be/src/agent/tools.ts`、`apps/kith-inn-be/src/agent/tools.test.ts`、`apps/kith-inn-be/src/routes/chat.ts` 与 `apps/kith-inn-be/src/routes/chat.test.ts` 中生成“当前 + 增加量 → 最终”或“当前 → 改成目标”的确认摘要并处理 stale-preview 重预览提示
-- [ ] T030 [US3] 在 `apps/kith-inn-fe/src/logic/orderConfirmView.ts`、`apps/kith-inn-fe/src/logic/orderConfirmView.test.ts` 与 `apps/kith-inn-fe/src/components/ChatCard.tsx` 中展示 add/set 运算，不把自然语言未提及订单渲染为取消项
+- [x] T029 [US3] 在 `apps/kith-inn-be/src/agent/services.ts`、`apps/kith-inn-be/src/agent/services.test.ts`、`apps/kith-inn-be/src/agent/tools.ts`、`apps/kith-inn-be/src/agent/tools.test.ts`、`apps/kith-inn-be/src/routes/chat.ts` 与 `apps/kith-inn-be/src/routes/chat.test.ts` 中生成“当前 + 增加量 → 最终”或“当前 → 改成目标”的确认摘要并处理 stale-preview 重预览提示
+- [x] T030 [US3] 在 `apps/kith-inn-fe/src/logic/orderConfirmView.ts`、`apps/kith-inn-fe/src/logic/orderConfirmView.test.ts` 与 `apps/kith-inn-fe/src/components/ChatCard.tsx` 中展示 add/set 运算，不把自然语言未提及订单渲染为取消项
 
 **Checkpoint**: 完整快照和单笔增量共用一个原子写入口，但删除语义和确认文案严格分开。
 

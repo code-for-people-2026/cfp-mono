@@ -111,7 +111,7 @@ docs/kith-inn/
 - BE 预览完整接龙的新增、更新、退出和未变化。
 - CMS 增加 seller-scoped 原子 reconcile 契约，用预览指纹拒绝陈旧确认，事务内创建/更新/取消订单与履约。
 
-### PR 3：增量对账核心
+### PR 3：增量对账核心（已合并 #171）
 
 - BE 预览唯一业务坐标的 add/set 运算；CMS 在现有 reconcile 事务内计算最终数量。
 - 覆盖 PostgreSQL 幂等、陈旧预览和不同 operation key 并发，不接 Agent、聊天入口或 FE。

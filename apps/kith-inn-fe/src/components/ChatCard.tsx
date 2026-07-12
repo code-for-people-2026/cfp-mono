@@ -105,7 +105,7 @@ export function ChatCard({ card, confirmed = false, confirming, fromHistory, onC
 }
 
 /** operation-confirm card for record_orders: lists every parsed item, with an
- *  address input for each newCustomer candidate. One confirmation applies the snapshot. */
+ *  address input for each newCustomer candidate. One confirmation applies the reconciliation. */
 function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onConfirmOperation }: {
   card: Extract<CardPayload, { type: "operation-confirm" }>;
   confirmed: boolean;
@@ -117,6 +117,7 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
   const supported = Array.isArray(raw.candidates) && Array.isArray(raw.rows);
   const candidates = supported ? raw.candidates! : [];
   const rows = supported ? raw.rows! : [];
+  const increment = raw.mode === "increment";
   const [addresses, setAddresses] = useState<Array<{ address?: string }>>(candidates.map((candidate) => ({ address: candidate.newCustomer?.address })));
   const active = !confirmed && !fromHistory && !!onConfirmOperation;
   const updateAddr = (i: number, address: string) => setAddresses((prev) => prev.map((item, idx) => idx === i ? { address } : item));
@@ -134,7 +135,7 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
       {rows.map((row, i) => (
         <View key={i} className="mt-[12rpx]">
           <Text className="block text-[26rpx] text-soft">
-            {orderReconciliationLine(row)}
+            {orderReconciliationLine(row, increment ? raw.operation : undefined)}
           </Text>
         </View>
       ))}
@@ -154,11 +155,11 @@ function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onC
         </View>
       ))}
       <View className="mt-[20rpx]">
-        {confirmed && <Text className="block text-[26rpx] text-green">已按本次接龙更新 ✓</Text>}
+        {confirmed && <Text className="block text-[26rpx] text-green">{increment ? "已完成单独补单 ✓" : "已按本次接龙更新 ✓"}</Text>}
         {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
         {active && (
           <Button type="primary" disabled={confirming} className={confirming ? "bg-surface text-muted" : "bg-amber text-white"} onClick={() => onConfirmOperation?.(addresses)}>
-            {confirming ? "更新中..." : "确认按本次更新"}
+            {confirming ? "更新中..." : increment ? "确认补单" : "确认按本次更新"}
           </Button>
         )}
       </View>

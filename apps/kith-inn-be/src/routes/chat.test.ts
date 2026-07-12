@@ -237,8 +237,13 @@ describe("POST /chat/confirm-operation", () => {
     const cms = { ...mockCms(), reconcileOrders: vi.fn(async () => { throw new CmsHttpError(409, "reconcile", "stale-preview"); }) } as AgentCms;
     const res = await post(chatRoutes(SECRET, { cms }));
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "stale-preview" });
+    expect(await res.json()).toMatchObject({ error: "stale-preview", message: expect.stringContaining("重新粘贴接龙") });
     expect(getPendingOp(OP)).toBeUndefined();
+
+    seed({ toolName: "record_orders", summary: "单独补单", args: { ...preview, mode: "increment", operation: "add" } });
+    const incrementRes = await post(chatRoutes(SECRET, { cms }));
+    expect(incrementRes.status).toBe(409);
+    expect(await incrementRes.json()).toMatchObject({ error: "stale-preview", message: expect.stringContaining("重新说一遍补单") });
   });
 
   it("clears a reconciliation card that would overwrite paid or delivered work", async () => {
@@ -407,9 +412,13 @@ describe("dispatchPendingOp", () => {
       mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp", rows: [],
       candidates: [{ newCustomer: { displayName: "新客", address: "原地址" }, date: "2026-07-07", occasion: "lunch" as const, quantity: 1, offering: 9, unitPriceCents: 3000, totalCents: 3000 }],
     };
-    const reconcileOrderSnapshot = vi.fn(async () => ({ ok: true as const, created: [{ orderId: 1 }], updated: [{ orderId: 2, beforeQuantity: 1, afterQuantity: 2 }], canceled: [{ orderId: 3 }], unchanged: [{ orderId: 4 }] }));
-    expect(await run(svc({ reconcileOrderSnapshot }), "record_orders", preview)).toBe("已按最新完整接龙更新：新增 1、更新 1、取消 1、不变 1。");
-    expect(reconcileOrderSnapshot).toHaveBeenCalledWith(expect.objectContaining({ operationKey: "op", candidates: [expect.objectContaining({ newCustomer: { displayName: "新客", address: "原地址" } })] }));
+    const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [{ orderId: 1 }], updated: [{ orderId: 2, beforeQuantity: 1, afterQuantity: 2 }], canceled: [{ orderId: 3 }], unchanged: [{ orderId: 4 }] }));
+    expect(await run(svc({ reconcileOrders }), "record_orders", preview)).toBe("已按最新完整接龙更新：新增 1、更新 1、取消 1、不变 1。");
+    expect(reconcileOrders).toHaveBeenCalledWith(expect.objectContaining({ operationKey: "op", candidates: [expect.objectContaining({ newCustomer: { displayName: "新客", address: "原地址" } })] }));
+
+    const increment = { ...preview, mode: "increment" as const, operation: "add" as const };
+    expect(await run(svc({ reconcileOrders }), "record_orders", increment)).toBe("已完成单独补单：新增 1、更新 1、不变 1。");
+    expect(reconcileOrders).toHaveBeenLastCalledWith(expect.objectContaining({ mode: "increment", operation: "add" }));
   });
 
   it("mark_paid: ok and fail", async () => {
@@ -419,6 +428,7 @@ describe("dispatchPendingOp", () => {
 
   it("classifies operation replies for card success state", () => {
     expect(operationReplySucceeded("已按最新完整接龙更新：新增 1、更新 0、取消 0、不变 0。")).toBe(true);
+    expect(operationReplySucceeded("已完成单独补单：新增 0、更新 1、不变 0。")).toBe(true);
     expect(operationReplySucceeded("失败：A（记单失败）")).toBe(false);
   });
 
