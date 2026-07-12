@@ -173,9 +173,12 @@ export async function dispatchPendingOp(
       // addresses for new-customer candidates, aligned by candidate index.
       const preview = a as unknown as OrderReconciliationPreview;
       const bodyAddrs = (Array.isArray(body?.items) ? body!.items : []) as Array<{ address?: string }>;
-      const candidates = preview.candidates.map((candidate, index) => candidate.newCustomer
-        ? { ...candidate, newCustomer: { ...candidate.newCustomer, address: bodyAddrs[index]?.address ?? candidate.newCustomer.address } }
-        : candidate);
+      const candidates = preview.candidates.map((candidate, index) => {
+        if (!candidate.newCustomer) return candidate;
+        const submittedAddress = bodyAddrs[index]?.address;
+        const address = typeof submittedAddress === "string" ? submittedAddress.trim() || undefined : candidate.newCustomer.address;
+        return { ...candidate, newCustomer: { ...candidate.newCustomer, address } };
+      });
       const request = {
         mode: preview.mode,
         operation: preview.operation,

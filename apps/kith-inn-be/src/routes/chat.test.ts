@@ -201,6 +201,22 @@ describe("POST /chat/confirm-operation", () => {
     expect(getPendingOp(OP)).toBeUndefined();
   });
 
+  it("normalizes a blank new-customer address to missing", async () => {
+    const preview = {
+      mode: "snapshot" as const, operationKey: "op-blank-address", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp",
+      candidates: [{ newCustomer: { displayName: "大龙猫" }, quantity: 1, occasion: "lunch" as const, date: "2026-07-07", offering: 10, unitPriceCents: 3000, totalCents: 3000 }],
+      rows: [],
+    };
+    seed({ toolName: "record_orders", summary: "完整接龙", args: preview });
+    const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [{ orderId: 90 }], updated: [], canceled: [], unchanged: [] }));
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), reconcileOrders } as AgentCms });
+
+    expect((await post(app, { items: [{ address: "   " }] })).status).toBe(200);
+    expect(reconcileOrders).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      candidates: [expect.objectContaining({ newCustomer: { displayName: "大龙猫", address: undefined } })],
+    }));
+  });
+
   it("keeps the pending card active when reconciliation fails", async () => {
     const preview = { mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [], rows: [] };
     seed({ toolName: "record_orders", summary: "完整接龙", args: preview });
