@@ -177,6 +177,13 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     };
 
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "settled-order" });
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, {
+      ...body,
+      mode: "increment",
+      operation: "set",
+      operationKey: crypto.randomUUID(),
+      candidates: [{ ...body.candidates[0]!, quantity: 1, totalCents: 3000 }],
+    })).rejects.toMatchObject({ code: "settled-order" });
   });
 
   it("blocks regular order writes while a reconciliation write lock is held", async () => {

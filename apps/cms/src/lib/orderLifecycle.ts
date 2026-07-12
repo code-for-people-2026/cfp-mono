@@ -466,12 +466,12 @@ export async function reconcileOrdersAtomic(
       const existingItem = existing.items[0]!;
       const unchanged = existingItem.quantity === finalQuantity
         && String(relationId(existingItem.offering)) === String(candidate.offering);
+      if (body.mode === "increment" || !unchanged) assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       if (unchanged) {
         await payload.update({ collection: "orders", id: existing.id, data: { idempotencyKey: marker(body.operationKey, "n", finalQuantity, finalQuantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
         result.unchanged.push({ orderId: existing.id });
         continue;
       }
-      assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       await payload.delete({ collection: "order_items", id: existingItem.id, overrideAccess: true, req });
       await payload.create({ collection: "order_items", data: { order: existing.id, offering: candidate.offering, quantity: finalQuantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
       await payload.update({ collection: "orders", id: existing.id, data: { totalCents: finalTotalCents, idempotencyKey: marker(body.operationKey, "u", existingItem.quantity, finalQuantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });

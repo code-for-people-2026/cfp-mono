@@ -220,7 +220,7 @@ export function buildIncrementPreview(input: IncrementPreviewInput): OrderReconc
     && beforeQuantity === afterQuantity
     && relationshipId(current.items[0]!.offering) === input.offering;
   const customerName = matched?.displayName ?? parsed.customerName.trim();
-  if (current && !unchanged) assertReconciliationMutable(current, customerName);
+  if (current) assertReconciliationMutable(current, customerName);
   const unitPriceCents = unchanged && current.items[0]!.unitPriceCents !== undefined
     ? current.items[0]!.unitPriceCents!
     : input.unitPriceCents;
