@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getPayload, type Payload } from "payload";
 import config from "../payload.config";
 import { confirmOrderAtomic, createDraftAtomic, reconcileOrdersAtomic } from "../src/lib/orderLifecycle";
+import { lockOrderReconciliationWrites, withTransaction } from "../src/lib/internal";
 
 describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)("order snapshot reconciliation", () => {
   let payload: Payload;
@@ -96,6 +97,7 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     const existing = await payload.find({ collection: "orders", where: { and: [{ seller: { equals: sellerId } }, { customer: { equals: customers[0]!.id } }, { status: { in: ["draft", "confirmed"] } }] }, limit: 1, overrideAccess: true });
     await payload.update({ collection: "orders", id: existing.docs[0]!.id, data: { paymentStatus: "paid" }, overrideAccess: true });
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
+    await payload.update({ collection: "orders", id: existing.docs[0]!.id, data: { paymentStatus: "unpaid" }, overrideAccess: true });
   });
 
   it("rejects a preview after its combo price changes", async () => {
@@ -111,6 +113,53 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     await payload.update({ collection: "offerings", id: driftOffering.id, data: { priceCents: 3200 }, overrideAccess: true });
 
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
+  });
+
+  it.each(["paid", "done"])("rejects changing a confirmed order whose side effect is %s", async (settledState) => {
+    const settledDate = settledState === "paid" ? "2026-09-16" : "2026-09-17";
+    const draft = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[0]!.id, date: settledDate, occasion: "lunch", source: "manual", totalCents: 3000,
+      items: [{ offering: offeringId, quantity: 1, unitPriceCents: 3000 }],
+    });
+    const confirmed = await confirmOrderAtomic(payload, sellerId, draft.order.id);
+    if (settledState === "paid") await payload.update({ collection: "orders", id: draft.order.id, data: { paymentStatus: "paid" }, overrideAccess: true });
+    else await payload.update({ collection: "fulfillments", id: confirmed.fulfillments[0]!.id, data: { status: "done" }, overrideAccess: true });
+    const current = await payload.findByID({ collection: "orders", id: draft.order.id, depth: 1, overrideAccess: true });
+    const items = await payload.find({ collection: "order_items", where: { order: { equals: draft.order.id } }, limit: 0, overrideAccess: true });
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot", operationKey: crypto.randomUUID(), scope: [{ date: settledDate, occasion: "lunch" }],
+      expectedFingerprint: fingerprintActiveOrders([{ ...current, occasion: "lunch", paymentStatus: current.paymentStatus as string, items: items.docs } as never]),
+      candidates: [{ customer: customers[0]!.id, date: settledDate, occasion: "lunch", quantity: 2, offering: offeringId, unitPriceCents: 3000, totalCents: 6000 }],
+    };
+
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "settled-order" });
+  });
+
+  it("blocks regular order writes while a reconciliation write lock is held", async () => {
+    const lockDate = "2026-09-18";
+    let release!: () => void;
+    let locked!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const acquired = new Promise<void>((resolve) => { locked = resolve; });
+    const lockTransaction = withTransaction(payload, async (req) => {
+      await lockOrderReconciliationWrites(payload, req);
+      locked();
+      await hold;
+    });
+    await acquired;
+    let created = false;
+    const regularWrite = createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[1]!.id, date: lockDate, occasion: "lunch", source: "manual", totalCents: 3000,
+      items: [{ offering: offeringId, quantity: 1, unitPriceCents: 3000 }],
+    }).then(() => { created = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(created).toBe(false);
+    } finally {
+      release();
+      await Promise.all([lockTransaction, regularWrite]);
+    }
+    expect(created).toBe(true);
   });
 
   it("rolls back every change on an injected item failure", async () => {

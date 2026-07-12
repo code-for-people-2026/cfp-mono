@@ -74,15 +74,13 @@ export async function withTransaction<T>(payload: BasePayload, work: (req: Paylo
 }
 
 /**
- * Serialize reconciliation for each seller/date/occasion inside the current
- * PostgreSQL transaction. Sorted, transaction-scoped advisory locks cover the
- * empty-scope race without adding a lock table; SQLite already starts write
+ * Serialize reconciliation against every regular order/fulfillment writer.
+ * PostgreSQL table locks make existing Payload writers participate without a
+ * second application-level locking protocol; SQLite already starts write
  * transactions with `BEGIN IMMEDIATE` and therefore needs no extra lock.
  */
-export async function lockOrderReconciliationScopes(
+export async function lockOrderReconciliationWrites(
   payload: BasePayload,
-  sellerId: string | number,
-  scopes: Array<{ date: string; occasion: string }>,
   req: PayloadRequest,
 ): Promise<void> {
   if (payload.db.name !== "postgres") return;
@@ -90,11 +88,13 @@ export async function lockOrderReconciliationScopes(
   const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
   if (!transaction) throw new Error("database transaction session unavailable");
 
-  const keys = [...new Set(scopes.map(({ date, occasion }) => `kith-inn:orders:${String(sellerId)}:${date}:${occasion}`))].sort();
   const db = payload.db as BasePayload["db"] & {
     execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
   };
-  for (const key of keys) {
-    await db.execute({ db: transaction, sql: sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))` });
-  }
+  // ponytail: this global lock is intentionally coarse for a single-seller MVP;
+  // move every writer to per-scope locks only when reconciliation throughput demands it.
+  await db.execute({
+    db: transaction,
+    sql: sql`LOCK TABLE "cms"."fulfillments", "cms"."orders", "cms"."order_items" IN SHARE ROW EXCLUSIVE MODE`,
+  });
 }

@@ -241,6 +241,16 @@ describe("POST /chat/confirm-operation", () => {
     expect(getPendingOp(OP)).toBeUndefined();
   });
 
+  it("clears a reconciliation card that would overwrite paid or delivered work", async () => {
+    const preview = { mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [], rows: [] };
+    seed({ toolName: "record_orders", summary: "完整接龙", args: preview });
+    const cms = { ...mockCms(), reconcileOrders: vi.fn(async () => { throw new CmsHttpError(409, "reconcile", "settled-order"); }) } as AgentCms;
+    const res = await post(chatRoutes(SECRET, { cms }));
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ error: "settled-order", message: expect.stringMatching(/已付款或已送达/) });
+    expect(getPendingOp(OP)).toBeUndefined();
+  });
+
   it("keeps a pending operation when dispatch returns a non-success reply", async () => {
     seed({ toolName: "not-implemented", summary: "未知", args: {} });
     const res = await post(chatRoutes(SECRET, { cms: mockCms() }));

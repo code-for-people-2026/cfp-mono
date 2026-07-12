@@ -63,7 +63,7 @@
 无 active --新增--> draft
 draft --更新数量--> draft
 confirmed --更新数量--> confirmed
-draft/confirmed --快照退出--> canceled
+draft/未结算 confirmed --快照退出--> canceled
 canceled 历史 + 新候选 --新增--> 新 draft
 ```
 
@@ -73,6 +73,7 @@ canceled 历史 + 新候选 --新增--> 新 draft
 - 每个实际变化的订单写入由 operationKey 派生的坐标级 `idempotencyKey`，用于识别同次确认重试；不增加持久化对账表。
 - confirmed 更新不创建第二条 fulfillment，也不退回 draft；确认卡必须预先提示经营影响。
 - 快照退出使用 canceled 终态，不物理删除。
+- paid/reconciled 或 fulfillment=done 的订单不走批量快照退出/更新，由 `settled-order` 失败关闭并提示单独处理。
 
 ## OrderItem
 

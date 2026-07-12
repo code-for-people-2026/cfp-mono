@@ -51,7 +51,7 @@
 
 **Decision**: BE 用当前 seller-scoped customers/orders/offerings 构造差异卡和预览指纹；确认时把服务端 pending 中的不可变候选、范围和 expected active-order fingerprint 一次提交给 CMS。CMS 在事务内重新读取目标范围并比较 fingerprint；不一致返回 `stale-preview`，一致才计算并应用全部变化。
 
-**Rationale**: BE 最适合生成用户文案与新客地址输入，CMS 才能在同一数据库快照中防止 preview 后数据变化并原子修改多张订单。指纹覆盖目标范围所有 active order 的 id/status/paymentStatus/updatedAt/items，能发现插入、取消、付款或数量变化；录入来源不影响对账，无需进入指纹。
+**Rationale**: BE 最适合生成用户文案与新客地址输入，CMS 才能在同一数据库快照中防止 preview 后数据变化并原子修改多张订单。指纹覆盖目标范围所有 active order 的 id/status/paymentStatus/updatedAt/items，能发现插入、取消、付款或数量变化；确认事务再用数据库写锁与当前 fulfillment 状态保护普通补单、送达和收款并发。录入来源不影响对账，无需进入指纹。
 
 **Alternatives considered**:
 

@@ -85,9 +85,9 @@ pnpm verify
 
 ### 场景 7：confirmed 更新和退出
 
-准备 confirmed 订单及 pending/done fulfillment，分别让新快照更新数量与移除该顾客。
+准备 confirmed 订单及 pending/done fulfillment，并分别准备 unpaid/paid 付款状态，让新快照更新数量或移除该顾客。
 
-预期：卡片突出经营影响；更新后 order 保持 confirmed、同一 fulfillment 保持原状态；移除后 order 与 fulfillment 都 canceled。
+预期：unpaid + pending 的 confirmed 订单可在确认后更新或退出；paid/reconciled 或 done 的订单不生成可执行批量变更，确认阶段再次校验并返回 `settled-order`，整次快照不留下部分写入。
 
 ## 最终检查
 

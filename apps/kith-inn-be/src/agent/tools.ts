@@ -1,5 +1,6 @@
 import type { CardPayload, DeliveryCardData, MenuPlanView, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult } from "@cfp/kith-inn-shared";
 import type { ParsedOrderInput } from "../domain/orders/parse";
+import { ReconciliationError } from "../domain/orders/reconciliation";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 import { setPendingOp } from "./pendingOps";
 
@@ -111,7 +112,8 @@ export const AGENT_TOOLS: AgentTool[] = [
       let preview: OrderReconciliationPreview;
       try {
         preview = await s.previewOrderReconciliation(parsed, crypto.randomUUID());
-      } catch {
+      } catch (error) {
+        if (error instanceof ReconciliationError && error.code === "settled-order") return { text: error.message };
         return { text: "查不到当前订单或顾客信息，稍后再试一下？" };
       }
       const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;

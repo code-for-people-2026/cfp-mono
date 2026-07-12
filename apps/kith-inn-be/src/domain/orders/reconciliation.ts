@@ -16,6 +16,7 @@ export type ReconciliationOrder = {
   occasion: "lunch" | "dinner";
   status: "draft" | "confirmed";
   paymentStatus: string;
+  fulfillmentStatus?: string;
   updatedAt: string;
   items: Array<{ id: Id; offering: Relationship; quantity: number; unitPriceCents?: number }>;
 };
@@ -40,7 +41,7 @@ type SnapshotPreviewInput = {
 
 export class ReconciliationError extends Error {
   constructor(
-    public code: "empty-snapshot" | "duplicate-coordinate" | "ambiguous-customer" | "outside-scope" | "inconsistent-order" | "duplicate-scope" | "invalid-quantity",
+    public code: "empty-snapshot" | "duplicate-coordinate" | "ambiguous-customer" | "outside-scope" | "inconsistent-order" | "duplicate-scope" | "invalid-quantity" | "settled-order",
     message: string,
   ) {
     super(message);
@@ -51,6 +52,11 @@ export class ReconciliationError extends Error {
 const relationshipId = (value: Relationship): Id => typeof value === "object" ? value.id : value;
 const coordinate = (customer: Id, date: string, occasion: string) => `${String(customer)}|${date.split("T")[0]!}|${occasion}`;
 const scopeCoordinate = (date: string, occasion: string) => `${date.split("T")[0]!}|${occasion}`;
+const assertReconciliationMutable = (order: ReconciliationOrder, customerName: string) => {
+  if (order.paymentStatus !== "unpaid" || (order.status === "confirmed" && order.fulfillmentStatus !== "pending")) {
+    throw new ReconciliationError("settled-order", `${customerName} 的订单已付款或已送达，请单独处理`);
+  }
+};
 
 export { fingerprintActiveOrders } from "@cfp/kith-inn-shared/orderReconciliation";
 
@@ -132,9 +138,11 @@ export function buildSnapshotPreview(input: SnapshotPreviewInput): OrderReconcil
     const unchanged = currentItem.quantity === candidate.quantity
       && relationshipId(currentItem.offering) === candidate.offering
       && (currentItem.unitPriceCents ?? 0) === candidate.unitPriceCents;
+    const name = typeof current.customer === "object" ? current.customer.displayName : candidateNames.get(key)!;
+    if (!unchanged) assertReconciliationMutable(current, name);
     return {
       kind: unchanged ? "unchanged" : "update",
-      customerName: typeof current.customer === "object" ? current.customer.displayName : candidateNames.get(key)!,
+      customerName: name,
       date: candidate.date,
       occasion: candidate.occasion,
       beforeQuantity: currentItem.quantity,
@@ -145,9 +153,11 @@ export function buildSnapshotPreview(input: SnapshotPreviewInput): OrderReconcil
   });
 
   for (const current of currentByCoordinate.values()) {
+    const name = typeof current.customer === "object" ? current.customer.displayName : String(relationshipId(current.customer));
+    assertReconciliationMutable(current, name);
     rows.push({
       kind: "cancel",
-      customerName: typeof current.customer === "object" ? current.customer.displayName : String(relationshipId(current.customer)),
+      customerName: name,
       date: current.date,
       occasion: current.occasion,
       beforeQuantity: current.items[0]!.quantity,
