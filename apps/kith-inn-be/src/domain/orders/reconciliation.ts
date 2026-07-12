@@ -39,6 +39,10 @@ type SnapshotPreviewInput = {
   allowEmptySnapshot?: boolean;
 };
 
+type IncrementPreviewInput = Omit<SnapshotPreviewInput, "allowEmptySnapshot"> & {
+  operation: "add" | "set";
+};
+
 export class ReconciliationError extends Error {
   constructor(
     public code: "empty-snapshot" | "duplicate-coordinate" | "ambiguous-customer" | "outside-scope" | "inconsistent-order" | "duplicate-scope" | "invalid-quantity" | "settled-order",
@@ -177,5 +181,76 @@ export function buildSnapshotPreview(input: SnapshotPreviewInput): OrderReconcil
     expectedFingerprint: fingerprintActiveOrders(activeOrders),
     candidates,
     rows,
+  };
+}
+
+export function buildIncrementPreview(input: IncrementPreviewInput): OrderReconciliationPreview {
+  if (input.scope.length !== 1 || input.items.length !== 1) {
+    throw new ReconciliationError("invalid-quantity", "单笔补单必须只包含一个日期、餐次和顾客");
+  }
+  const parsed = input.items[0]!;
+  const targetScope = input.scope[0]!;
+  if (scopeCoordinate(parsed.date, parsed.occasion) !== scopeCoordinate(targetScope.date, targetScope.occasion)) {
+    throw new ReconciliationError("outside-scope", `${parsed.customerName} 不在补单范围内`);
+  }
+  if (!Number.isInteger(parsed.quantity) || parsed.quantity <= 0) {
+    throw new ReconciliationError("invalid-quantity", `${parsed.customerName} 的份数必须为正整数`);
+  }
+
+  const normalizedName = normalizeCustomerName(parsed.customerName);
+  const matches = input.customers.filter((customer) => normalizeCustomerName(customer.displayName) === normalizedName);
+  if (matches.length > 1) throw new ReconciliationError("ambiguous-customer", `${parsed.customerName} 匹配到多个顾客`);
+  const matched = matches[0];
+  const activeOrders = matched
+    ? input.orders.filter((order) => coordinate(relationshipId(order.customer), order.date, order.occasion) === coordinate(matched.id, parsed.date, parsed.occasion))
+    : [];
+  const currentByCoordinate = new Map<string, ReconciliationOrder>();
+  for (const order of activeOrders) {
+    const key = coordinate(relationshipId(order.customer), order.date, order.occasion);
+    if (order.items.length !== 1 || currentByCoordinate.has(key)) {
+      throw new ReconciliationError("inconsistent-order", `active order ${String(order.id)} 不满足唯一订单明细约束`);
+    }
+    currentByCoordinate.set(key, order);
+  }
+
+  const current = matched ? currentByCoordinate.get(coordinate(matched.id, parsed.date, parsed.occasion)) : undefined;
+  const beforeQuantity = current?.items[0]?.quantity ?? 0;
+  const afterQuantity = input.operation === "add" ? beforeQuantity + parsed.quantity : parsed.quantity;
+  const unchanged = current !== undefined
+    && beforeQuantity === afterQuantity
+    && relationshipId(current.items[0]!.offering) === input.offering;
+  const customerName = matched?.displayName ?? parsed.customerName.trim();
+  if (current && !unchanged) assertReconciliationMutable(current, customerName);
+  const unitPriceCents = unchanged && current.items[0]!.unitPriceCents !== undefined
+    ? current.items[0]!.unitPriceCents!
+    : input.unitPriceCents;
+  const candidate: OrderReconciliationCandidate = {
+    ...(matched ? { customer: matched.id } : { newCustomer: { displayName: customerName } }),
+    date: parsed.date,
+    occasion: parsed.occasion,
+    quantity: parsed.quantity,
+    offering: input.offering,
+    unitPriceCents,
+    totalCents: unitPriceCents * parsed.quantity,
+  };
+
+  return {
+    mode: "increment",
+    operation: input.operation,
+    operationKey: input.operationKey,
+    scope: input.scope,
+    expectedFingerprint: fingerprintActiveOrders(activeOrders),
+    candidates: [candidate],
+    rows: [{
+      kind: current ? input.operation : "create",
+      customerName,
+      date: parsed.date,
+      occasion: parsed.occasion,
+      beforeQuantity,
+      ...(input.operation === "add" ? { changeQuantity: parsed.quantity } : {}),
+      afterQuantity,
+      ...(current ? { orderStatus: current.status } : {}),
+      affectsConfirmed: Boolean(current && !unchanged && current.status === "confirmed"),
+    }],
   };
 }

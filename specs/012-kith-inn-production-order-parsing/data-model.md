@@ -30,7 +30,7 @@
 
 - `mode`、`scope`
 - `rows`: 新增、更新、退出、未变化的差异行
-- `expectedFingerprint`: 预览时目标范围所有 active order 的稳定指纹
+- `expectedFingerprint`: 预览时目标数据（snapshot 范围或 increment 唯一坐标）的稳定指纹
 - `operationKey`: 标识这一次确认操作的不可预测键，用于区分网络重试和另一笔独立操作
 - `candidates`: 解析候选及已匹配 customer/套餐/价格信息
 - `summary`: 用户确认卡文案
@@ -41,7 +41,7 @@
 
 - snapshot 对 scope 内全部 active order 做全集差异，不区分此前录入方式；缺席项为退出。
 - increment 只允许一个坐标，不生成未提及订单的退出项。
-- fingerprint 覆盖 active 集合成员和每张订单的 id/status/paymentStatus/updatedAt/items；顺序归一后比较。
+- snapshot fingerprint 覆盖 scope 内 active 集合；increment fingerprint 只覆盖唯一目标坐标；均包含相关订单的 id/status/paymentStatus/updatedAt/items 并归一顺序。
 - 同一 operationKey 的重复/并发提交只应用一次；不同 operationKey 命中陈旧 fingerprint 时必须重预览。
 - pending 仍按 operator 只保留最新一张卡；fingerprint 另行防数据库陈旧。
 
@@ -73,7 +73,7 @@ canceled 历史 + 新候选 --新增--> 新 draft
 - 每个实际变化的订单写入由 operationKey 派生的坐标级 `idempotencyKey`，用于识别同次确认重试；不增加持久化对账表。
 - confirmed 更新不创建第二条 fulfillment，也不退回 draft；确认卡必须预先提示经营影响。
 - 快照退出使用 canceled 终态，不物理删除。
-- paid/reconciled 或 fulfillment=done 的订单不走批量快照退出/更新，由 `settled-order` 失败关闭并提示单独处理。
+- paid/reconciled 或 fulfillment=done 的订单不走自动对账退出/更新，由 `settled-order` 失败关闭并提示单独处理。
 
 ## OrderItem
 

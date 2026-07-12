@@ -6,7 +6,7 @@ import config from "../payload.config";
 import { confirmOrderAtomic, createDraftAtomic, reconcileOrdersAtomic } from "../src/lib/orderLifecycle";
 import { lockOrderReconciliationWrites, withTransaction } from "../src/lib/internal";
 
-describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)("order snapshot reconciliation", () => {
+describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)("order reconciliation", () => {
   let payload: Payload;
   let sellerId: string | number;
   let operatorId: string | number;
@@ -16,16 +16,19 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
   const date = "2026-09-13";
   const scope = [{ date, occasion: "lunch" as const }];
 
-  const activeFingerprint = async () => {
+  const activeFingerprint = async (targetDate = date, targetCustomer?: string | number) => {
     const orders = await payload.find({
       collection: "orders",
-      where: { and: [{ seller: { equals: sellerId } }, { date: { equals: date } }, { occasion: { equals: "lunch" } }, { status: { in: ["draft", "confirmed"] } }] },
+      where: { and: [{ seller: { equals: sellerId } }, { date: { equals: targetDate } }, { occasion: { equals: "lunch" } }, { status: { in: ["draft", "confirmed"] } }] },
       depth: 1,
       limit: 0,
       overrideAccess: true,
     });
-    const items = await payload.find({ collection: "order_items", where: { order: { in: orders.docs.map((order) => order.id) } }, limit: 0, overrideAccess: true });
-    return fingerprintActiveOrders(orders.docs.map((order) => ({
+    const targetOrders = targetCustomer === undefined
+      ? orders.docs
+      : orders.docs.filter((order) => String(typeof order.customer === "object" ? order.customer.id : order.customer) === String(targetCustomer));
+    const items = await payload.find({ collection: "order_items", where: { order: { in: targetOrders.map((order) => order.id) } }, limit: 0, overrideAccess: true });
+    return fingerprintActiveOrders(targetOrders.map((order) => ({
       id: order.id,
       customer: order.customer as { id: string | number },
       date: order.date,
@@ -53,6 +56,20 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
   const candidate = (customer: string | number, quantity: number) => ({
     customer, date, occasion: "lunch" as const, quantity, offering: offeringId, unitPriceCents: 3000, totalCents: quantity * 3000,
   });
+
+  const incrementRequest = async (targetDate: string, customer: string | number, quantity: number, operation: "add" | "set", operationKey = crypto.randomUUID()): Promise<OrderReconciliationRequest> => ({
+    mode: "increment",
+    operation,
+    operationKey,
+    scope: [{ date: targetDate, occasion: "lunch" }],
+    expectedFingerprint: await activeFingerprint(targetDate, customer),
+    candidates: [{ customer, date: targetDate, occasion: "lunch", quantity, offering: offeringId, unitPriceCents: 3000, totalCents: quantity * 3000 }],
+  });
+
+  const orderQuantity = async (orderId: string | number) => {
+    const items = await payload.find({ collection: "order_items", where: { order: { equals: orderId } }, limit: 1, overrideAccess: true });
+    return items.docs[0]!.quantity;
+  };
 
   beforeAll(async () => {
     payload = await getPayload({ config });
@@ -320,5 +337,55 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       overrideAccess: true,
     });
     expect(active.docs).toHaveLength(1);
+  });
+
+  it("creates a draft when add targets a missing coordinate", async () => {
+    const incrementDate = "2026-09-23";
+    const result = await reconcileOrdersAtomic(payload, sellerId, operatorId, await incrementRequest(incrementDate, customers[0]!.id, 2, "add"));
+    const created = await payload.findByID({ collection: "orders", id: result.created[0]!.orderId, overrideAccess: true });
+
+    expect(created).toMatchObject({ status: "draft", source: "manual", totalCents: 6000 });
+    expect(await orderQuantity(created.id)).toBe(2);
+  });
+
+  it("applies add/set to one confirmed coordinate and retries add only once", async () => {
+    const incrementDate = "2026-09-24";
+    const target = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[0]!.id, date: incrementDate, occasion: "lunch", source: "manual", totalCents: 3000,
+      items: [{ offering: offeringId, quantity: 1, unitPriceCents: 3000 }],
+    });
+    const other = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[1]!.id, date: incrementDate, occasion: "lunch", source: "manual", totalCents: 12000,
+      items: [{ offering: offeringId, quantity: 4, unitPriceCents: 3000 }],
+    });
+    await confirmOrderAtomic(payload, sellerId, target.order.id);
+    const add = await incrementRequest(incrementDate, customers[0]!.id, 2, "add");
+    await reconcileOrdersAtomic(payload, sellerId, operatorId, await incrementRequest(incrementDate, customers[1]!.id, 1, "add"));
+
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, add)).resolves.toMatchObject({ updated: [{ beforeQuantity: 1, afterQuantity: 3 }] });
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, add)).resolves.toMatchObject({ alreadyApplied: true });
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, await incrementRequest(incrementDate, customers[0]!.id, 2, "set"))).resolves.toMatchObject({ updated: [{ beforeQuantity: 3, afterQuantity: 2 }] });
+    expect(await orderQuantity(target.order.id)).toBe(2);
+    expect(await orderQuantity(other.order.id)).toBe(5);
+    await expect(payload.findByID({ collection: "orders", id: target.order.id, overrideAccess: true })).resolves.toMatchObject({ status: "confirmed" });
+    const fulfillments = await payload.find({ collection: "fulfillments", where: { order: { equals: target.order.id } }, limit: 1, overrideAccess: true });
+    expect(fulfillments.docs[0]).toMatchObject({ status: "pending" });
+  });
+
+  it("lets only one of two independent adds based on the same preview apply", async () => {
+    const incrementDate = "2026-09-25";
+    const target = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[2]!.id, date: incrementDate, occasion: "lunch", source: "manual", totalCents: 3000,
+      items: [{ offering: offeringId, quantity: 1, unitPriceCents: 3000 }],
+    });
+    const first = await incrementRequest(incrementDate, customers[2]!.id, 2, "add");
+    const results = await Promise.allSettled([
+      reconcileOrdersAtomic(payload, sellerId, operatorId, first),
+      reconcileOrdersAtomic(payload, sellerId, operatorId, { ...first, operationKey: crypto.randomUUID() }),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected").map((result) => result.reason)).toEqual([expect.objectContaining({ code: "stale-preview" })]);
+    expect(await orderQuantity(target.order.id)).toBe(3);
   });
 });

@@ -6,7 +6,15 @@
 
 ## Phase 1：Setup
 
-**Purpose**: 固定两个 PR 的范围、现有测试入口与禁止触碰路径。
+**Purpose**: 固定五个最小 PR 的范围、现有测试入口与禁止触碰路径。
+
+| PR | 单一目标 | Tasks |
+|---|---|---|
+| PR 1（#166） | 可信解析 | T001–T016 |
+| PR 2（#168） | 快照对账核心与既有生产链路 | T017–T025 |
+| PR 3 | 增量对账核心 | T026–T028 |
+| PR 4 | 增量生产确认链路 | T029–T030 |
+| PR 5 | 长期文档与最终验收 | T031–T034 |
 
 - [x] T001 核对 `specs/012-kith-inn-production-order-parsing/plan.md` 的 PR 切分，并记录 `apps/kith-inn-be/package.json`、`apps/cms/package.json`、`apps/kith-inn-fe/package.json` 的现有验证命令
 
@@ -84,9 +92,9 @@
 
 **Independent Test**: 已有同日多人订单时分别执行“加 2 份”和“改成 2 份”；只目标订单改变，卡片计算与落库一致，重复网络提交不重复增加。
 
-- [ ] T026 [P] [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.test.ts` 增加无现单 add、已有现单 add、set、confirmed 和不得影响同日其他订单测试
-- [ ] T027 [P] [US3] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加 increment/add/set 的事务计算、预览后变化、同一 operation key 重试幂等和不同 operation key 并发追加拒绝陈旧测试
-- [ ] T028 [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.ts` 与 `apps/cms/src/lib/orderLifecycle.ts` 完成 increment 单坐标差异和事务内 add/set 最终数量语义
+- [x] T026 [P] [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.test.ts` 增加无现单 add、已有现单 add、set、confirmed 和不得影响同日其他订单测试
+- [x] T027 [P] [US3] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加 increment/add/set 的事务计算、预览后变化、同一 operation key 重试幂等和不同 operation key 并发追加拒绝陈旧测试
+- [x] T028 [US3] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.ts` 与 `apps/cms/src/lib/orderLifecycle.ts` 完成 increment 单坐标差异和事务内 add/set 最终数量语义
 - [ ] T029 [US3] 在 `apps/kith-inn-be/src/agent/tools.ts`、`apps/kith-inn-be/src/agent/tools.test.ts`、`apps/kith-inn-be/src/routes/chat.ts` 与 `apps/kith-inn-be/src/routes/chat.test.ts` 中生成“当前 + 增加量 → 最终”或“当前 → 改成目标”的确认摘要并处理 stale-preview 重预览提示
 - [ ] T030 [US3] 在 `apps/kith-inn-fe/src/logic/orderConfirmView.ts`、`apps/kith-inn-fe/src/logic/orderConfirmView.test.ts` 与 `apps/kith-inn-fe/src/components/ChatCard.tsx` 中展示 add/set 运算，不把自然语言未提及订单渲染为取消项
 
@@ -96,12 +104,12 @@
 
 ## Phase 7：Polish & Cross-Cutting Concerns
 
-**Purpose**: 同步长期产品/架构事实，完成 PR 2 与 #155 的全部门禁。
+**Purpose**: 同步长期产品/架构事实，在 PR 5 完成 #155 的全部门禁。
 
 - [ ] T031 [P] 在 `docs/kith-inn/PRD.md` 与 `docs/kith-inn/USER-STORIES.md` 写明完整接龙覆盖范围内全部订单且不区分录入方式、自然语言 add/set 语义和确认卡运算展示
 - [ ] T032 [P] 在 `docs/kith-inn/DATA-MODEL.md` 与 `docs/kith-inn/TECH-SPEC.md` 更新 reconcile 事务、陈旧 fingerprint、confirmed 更新/退出和不新增持久化 snapshot 的事实
 - [ ] T033 运行 `specs/012-kith-inn-production-order-parsing/quickstart.md` 全部相关测试、`pnpm verify` 与真实 PostgreSQL 故障/并发场景，修复所有回归
-- [ ] T034 检查 `git diff --check`、确认无 `kith-inn-v1` 文件变化、勾选 `specs/012-kith-inn-production-order-parsing/tasks.md`，在 PR 说明记录两个 PR 的验收映射并在第二个 PR 关闭 #155
+- [ ] T034 检查 `git diff --check`、确认无 `kith-inn-v1` 文件变化、勾选 `specs/012-kith-inn-production-order-parsing/tasks.md`，在 PR 说明记录五个 PR 的验收映射并在 PR 5 关闭 #155
 
 ---
 
@@ -111,7 +119,7 @@
 - US1 → US4，先完成生产唯一解析入口，再用同一入口做真实四字段评测；两者构成 PR 1。
 - PR 1 → US2，只有可信 snapshot scope 才允许实现批量退出订单。
 - US2 → US3，共用 reconciliation diff、CMS endpoint、fingerprint 和差异卡；US3 只增加单坐标 add/set 语义。
-- US2 + US3 → Polish，长期文档与全仓验证完成后提交 PR 2 并关闭 #155。
+- US2 → US3 核心 → US3 生产集成 → Polish，PR 5 完成长文档、全仓验证并关闭 #155。
 
 ## Parallel Opportunities
 
@@ -130,12 +138,16 @@
 3. 完成 US4 的四字段真实 eval 并记录结果。
 4. 运行 `pnpm verify`，提交独立 PR；不提前加入 CMS 对账。
 
-### PR 2：最终对账切片
+### PR 2：快照对账核心（#168，已完成）
 
 1. 从 PR 1 合并后的 main 建新分支，复用同一 `specs/012-*`。
-2. 先完成 US2 snapshot 全集差异和原子 reconcile。
-3. 再完成 US3 increment add/set；复用 endpoint，不另建写路径。
-4. 更新长期文档、运行全门禁，提交第二个 PR并关闭 #155。
+2. 完成 US2 snapshot 全集差异、原子 reconcile 和既有生产确认链路。
+
+### PR 3–5：增量核心、生产集成与验收
+
+1. PR 3 只完成 T026–T028，复用 endpoint，不另建写路径。
+2. PR 4 只完成 T029–T030，把已验证的核心接入 Agent、聊天确认和 FE。
+3. PR 5 完成 T031–T034，更新长期文档、运行全门禁并关闭 #155。
 
 ## Format Validation
 
