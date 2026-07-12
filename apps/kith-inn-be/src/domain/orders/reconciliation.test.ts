@@ -166,4 +166,17 @@ describe("increment reconciliation preview", () => {
     ]);
     expect(buildIncrementPreview({ ...input, operation: "add" }).expectedFingerprint).toBe(fingerprintActiveOrders([target]));
   });
+
+  it.each([
+    ["已付款", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
+    ["已送达", { paymentStatus: "unpaid", fulfillmentStatus: "done" }],
+  ])("blocks a no-op set on a %s order", (_label, sideEffects) => {
+    const current = order({ id: 1, customer: customers[0]!, status: "confirmed", items: [item(101, 1)], ...sideEffects });
+    expect(() => buildIncrementPreview({
+      ...base,
+      operation: "set",
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch", quantity: 1 }],
+      orders: [current],
+    })).toThrowError(expect.objectContaining({ code: "settled-order" }));
+  });
 });
