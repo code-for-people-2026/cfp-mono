@@ -150,11 +150,14 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
     } catch (error) {
       if (error instanceof CmsHttpError && error.code === "stale-preview") {
         clearPendingOp(operatorId);
-        return c.json({ error: "stale-preview", message: "订单已经变化，请重新粘贴接龙查看最新差异" }, 409);
+        const message = op.toolName === "record_orders" && (op.args as { mode?: unknown }).mode === "increment"
+          ? "订单已经变化，请重新说一遍补单，系统会按最新数量重新计算"
+          : "订单已经变化，请重新粘贴接龙查看最新差异";
+        return c.json({ error: "stale-preview", message }, 409);
       }
       if (error instanceof CmsHttpError && error.code === "settled-order") {
         clearPendingOp(operatorId);
-        return c.json({ error: "settled-order", message: "接龙涉及已付款或已送达订单，请单独处理这些订单" }, 409);
+        return c.json({ error: "settled-order", message: "本次修改涉及已付款或已送达订单，请单独处理这些订单" }, 409);
       }
       return c.json({ error: "operation failed" }, 502);
     }
@@ -191,8 +194,10 @@ export async function dispatchPendingOp(
         expectedFingerprint: preview.expectedFingerprint,
         candidates,
       };
-      const result = await services.reconcileOrderSnapshot(request);
-      return `已按最新完整接龙更新：新增 ${result.created.length}、更新 ${result.updated.length}、取消 ${result.canceled.length}、不变 ${result.unchanged.length}。`;
+      const result = await services.reconcileOrders(request);
+      return preview.mode === "increment"
+        ? `已完成单独补单：新增 ${result.created.length}、更新 ${result.updated.length}、不变 ${result.unchanged.length}。`
+        : `已按最新完整接龙更新：新增 ${result.created.length}、更新 ${result.updated.length}、取消 ${result.canceled.length}、不变 ${result.unchanged.length}。`;
     }
     case "confirm_order": {
       const r = await services.confirmOrder({ orderId: Number(a.orderId) });
@@ -240,6 +245,7 @@ export async function dispatchPendingOp(
 export function operationReplySucceeded(reply: string): boolean {
   return (
     reply.startsWith("已按最新完整接龙更新") ||
+    reply.startsWith("已完成单独补单") ||
     reply.startsWith("已确认订单") ||
     reply.startsWith("已取消订单") ||
     reply.startsWith("已标记订单") ||

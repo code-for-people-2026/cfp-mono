@@ -23,7 +23,7 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   previewOrderReconciliation: over.previewOrderReconciliation ?? vi.fn(async () => ({
     mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [], rows: [],
   })),
-  reconcileOrderSnapshot: over.reconcileOrderSnapshot ?? vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] })),
+  reconcileOrders: over.reconcileOrders ?? vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] })),
   recordOrders:
     over.recordOrders ??
     vi.fn(async () => ({ recorded: [{ name: "王燕萍", orderId: 45 }], needsConfirmation: [], failed: [] })),

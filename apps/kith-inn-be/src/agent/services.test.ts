@@ -81,6 +81,30 @@ describe("production order parsing and preview", () => {
     expect(cms.listOrders).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
   });
 
+  it("builds an increment add preview from the current target quantity", async () => {
+    const cms = baseCms({
+      listOrders: vi.fn(async () => [{
+        id: 90, customer: { id: 5, displayName: "王燕萍" }, date: "2026-06-29", occasion: "lunch", status: "draft", paymentStatus: "unpaid", updatedAt: "2026-06-29T01:00:00.000Z",
+        items: [{ id: 201, offering: 10, quantity: 1, unitPriceCents: 3000 }],
+      }, {
+        id: 91, customer: { id: 6, displayName: "李叔叔" }, date: "2026-06-29", occasion: "lunch", status: "draft", paymentStatus: "unpaid", updatedAt: "2026-06-29T01:00:00.000Z",
+        items: [{ id: 202, offering: 10, quantity: 4, unitPriceCents: 3000 }],
+      }] as never),
+    });
+    const preview = await svc(cms).previewOrderReconciliation({
+      mode: "increment",
+      operation: "add",
+      operationEvidence: "加",
+      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29午餐" }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 2, evidence: "加王燕萍2份" }],
+      unknownSegments: [],
+      issues: [],
+    }, "op-add");
+
+    expect(preview).toMatchObject({ mode: "increment", operation: "add", candidates: [{ customer: 5, quantity: 2 }] });
+    expect(preview.rows).toEqual([expect.objectContaining({ kind: "add", beforeQuantity: 1, changeQuantity: 2, afterQuantity: 3 })]);
+  });
+
   it("uses a populated order customer when the separate customer read is stale", async () => {
     const cms = baseCms({
       listCustomers: vi.fn(async () => []),
@@ -132,7 +156,7 @@ describe("production order parsing and preview", () => {
     const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] }));
     const service = svc(baseCms({ reconcileOrders }));
     const request = { mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-06-29", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [] };
-    await expect(service.reconcileOrderSnapshot(request)).resolves.toMatchObject({ ok: true });
+    await expect(service.reconcileOrders(request)).resolves.toMatchObject({ ok: true });
     expect(reconcileOrders).toHaveBeenCalledWith("jwt", request);
   });
 });

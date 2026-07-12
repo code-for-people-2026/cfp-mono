@@ -14,7 +14,7 @@ import { setPendingOp } from "./pendingOps";
 export type AgentServices = {
   parseOrders(rawText: string): Promise<ParsedOrderInput>;
   previewOrderReconciliation(parsed: ParsedOrderInput, operationKey: string): Promise<OrderReconciliationPreview>;
-  reconcileOrderSnapshot(input: OrderReconciliationRequest): Promise<OrderReconciliationResult>;
+  reconcileOrders(input: OrderReconciliationRequest): Promise<OrderReconciliationResult>;
   previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>): Promise<{ isNew: boolean[] }>;
   recordOrders(
     items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>,
@@ -104,11 +104,6 @@ export const AGENT_TOOLS: AgentTool[] = [
       }
       const items = parsed.items;
       if (items.length === 0) return { text: "没找到可以确认的订单。" };
-      if (parsed.mode === "increment") {
-        const item = items[0]!;
-        const action = parsed.operation === "add" ? `增加 ${item.quantity} 份` : `改成 ${item.quantity} 份`;
-        return { text: `已识别为单独补单：${item.date} ${item.customerName} ${item.occasion === "lunch" ? "午餐" : "晚餐"}${action}。当前版本还不能安全修改已有订单，订单对账上线前不会生成确认卡。` };
-      }
       let preview: OrderReconciliationPreview;
       try {
         preview = await s.previewOrderReconciliation(parsed, crypto.randomUUID());
@@ -116,10 +111,19 @@ export const AGENT_TOOLS: AgentTool[] = [
         if (error instanceof ReconciliationError) return { text: error.message };
         return { text: "查不到当前订单或顾客信息，稍后再试一下？" };
       }
-      const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;
-      const confirmed = preview.rows.filter((row) => row.affectsConfirmed).length;
-      const scopeLabel = preview.scope.map((entry) => `${entry.date} ${occasionZh(entry.occasion)}`).join("、");
-      const summary = `完整接龙（以本次为准，${scopeLabel}）：新增 ${count("create")}、更新 ${count("update")}、取消 ${count("cancel")}、不变 ${count("unchanged")}${confirmed > 0 ? `；其中 ${confirmed} 单会同步影响备餐、送餐和收款口径` : ""}`;
+      let summary: string;
+      if (preview.mode === "increment") {
+        const row = preview.rows[0]!;
+        const calculation = preview.operation === "add"
+          ? `当前 ${row.beforeQuantity ?? 0} 份 + ${row.changeQuantity ?? 0} 份 → 共 ${row.afterQuantity} 份`
+          : `当前 ${row.beforeQuantity ?? 0} 份 → 改成 ${row.afterQuantity} 份`;
+        summary = `单独补单（${row.date} ${occasionZh(row.occasion)} ${row.customerName}）：${calculation}${row.affectsConfirmed ? "；会同步影响备餐、送餐和收款口径" : ""}`;
+      } else {
+        const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;
+        const confirmed = preview.rows.filter((row) => row.affectsConfirmed).length;
+        const scopeLabel = preview.scope.map((entry) => `${entry.date} ${occasionZh(entry.occasion)}`).join("、");
+        summary = `完整接龙（以本次为准，${scopeLabel}）：新增 ${count("create")}、更新 ${count("update")}、取消 ${count("cancel")}、不变 ${count("unchanged")}${confirmed > 0 ? `；其中 ${confirmed} 单会同步影响备餐、送餐和收款口径` : ""}`;
+      }
       const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: preview });
       return { text: `${summary}。请核对下面的变化后确认。`, card: opConfirmCard("record_orders", summary, preview, opId) };
     },

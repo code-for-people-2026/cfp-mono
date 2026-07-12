@@ -16,7 +16,7 @@ import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../
 import { buildJielongMenuText } from "../domain/menu/jielongText";
 import { parseOrderInput } from "../domain/orders/parse";
 import type { ParsedOrderInput } from "../domain/orders/parse";
-import { buildSnapshotPreview, type ReconciliationOrder } from "../domain/orders/reconciliation";
+import { buildIncrementPreview, buildSnapshotPreview, type ReconciliationOrder } from "../domain/orders/reconciliation";
 import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { customerName, todayShanghai } from "../lib/domainUtil";
@@ -63,7 +63,6 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     },
 
     async previewOrderReconciliation(parsed: ParsedOrderInput, operationKey: string): Promise<OrderReconciliationPreview> {
-      if (parsed.mode !== "snapshot") throw new Error("snapshot required");
       const scope = parsed.scope.map(({ date, occasion }) => ({ date, occasion }));
       const [customers, offerings, seller, orderLists, fulfillmentLists] = await Promise.all([
         cms.listCustomers(jwt),
@@ -87,7 +86,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
           previewCustomers.set(String(order.customer.id), order.customer);
         }
       }
-      return buildSnapshotPreview({
+      const input = {
         scope,
         items: parsed.items,
         customers: [...previewCustomers.values()],
@@ -96,10 +95,15 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         orders: activeOrders
           .map((order) => ({ ...order, fulfillmentStatus: fulfillmentByOrder.get(String(order.id)) })) as unknown as ReconciliationOrder[],
         operationKey,
-      });
+      };
+      if (parsed.mode === "increment") {
+        if (!parsed.operation) throw new Error("increment operation required");
+        return buildIncrementPreview({ ...input, operation: parsed.operation });
+      }
+      return buildSnapshotPreview(input);
     },
 
-    async reconcileOrderSnapshot(input: OrderReconciliationRequest) {
+    async reconcileOrders(input: OrderReconciliationRequest) {
       return cms.reconcileOrders(jwt, input);
     },
 

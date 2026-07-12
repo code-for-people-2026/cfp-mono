@@ -48,15 +48,26 @@ describe("record_orders production tool", () => {
     expect(getPendingOp(OPERATOR)?.args).toMatchObject({ expectedFingerprint: "fp-1", operationKey: "op-1" });
   });
 
-  it("does not emit an executable card for increments before reconciliation is wired", async () => {
+  it.each([
+    ["add" as const, "加", { kind: "add" as const, beforeQuantity: 1, changeQuantity: 2, afterQuantity: 3 }, "当前 1 份 + 2 份 → 共 3 份"],
+    ["set" as const, "改成", { kind: "set" as const, beforeQuantity: 3, afterQuantity: 2 }, "当前 3 份 → 改成 2 份"],
+  ])("emits an executable %s increment card with an explicit calculation", async (operation, operationEvidence, row, expected) => {
     const svc = services({
-      parseOrders: vi.fn(async () => ({ ...parsed, mode: "increment" as const, operation: "add" as const, operationEvidence: "加" })),
+      parseOrders: vi.fn(async () => ({ ...parsed, mode: "increment" as const, operation, operationEvidence })),
+      previewOrderReconciliation: vi.fn(async () => ({
+        mode: "increment" as const,
+        operation,
+        operationKey: `op-${operation}`,
+        scope: [{ date: "2026-07-13", occasion: "lunch" as const }],
+        expectedFingerprint: "fp",
+        candidates: [{ customer: 12, date: "2026-07-13", occasion: "lunch" as const, quantity: 2, offering: 9, unitPriceCents: 3000, totalCents: 6000 }],
+        rows: [{ ...row, customerName: "王燕萍", date: "2026-07-13", occasion: "lunch" as const, affectsConfirmed: false }],
+      })),
     });
     const result = await recordTool.execute(svc, { rawText: "7月13日午餐，加王燕萍2份" });
-    expect(result.card).toBeUndefined();
-    expect(result.text).toContain("还不能安全修改已有订单");
-    expect(svc.previewOrderReconciliation).not.toHaveBeenCalled();
-    expect(getPendingOp(OPERATOR)).toBeUndefined();
+    expect(result.card?.type).toBe("operation-confirm");
+    expect(result.text).toContain(expected);
+    expect(getPendingOp(OPERATOR)?.args).toMatchObject({ mode: "increment", operation });
   });
 
   it("fails closed without a card when deterministic issues exist", async () => {
