@@ -81,6 +81,34 @@ describe("production order parsing and preview", () => {
     expect(cms.listOrders).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
   });
 
+  it("uses a populated order customer when the separate customer read is stale", async () => {
+    const cms = baseCms({
+      listCustomers: vi.fn(async () => []),
+      listOrders: vi.fn(async () => [{
+        id: 90,
+        customer: { id: 5, displayName: "王燕萍" },
+        date: "2026-06-29",
+        occasion: "lunch",
+        status: "draft",
+        paymentStatus: "unpaid",
+        updatedAt: "2026-06-29T01:00:00.000Z",
+        items: [{ id: 201, offering: 10, quantity: 1, unitPriceCents: 3000 }],
+      }] as never),
+    });
+    const preview = await svc(cms).previewOrderReconciliation({
+      mode: "snapshot",
+      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29午餐" }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 2, evidence: "王燕萍2份" }],
+      unknownSegments: [],
+      issues: [],
+    }, "op-stale-customers");
+
+    expect(preview).toMatchObject({
+      candidates: [{ customer: 5, quantity: 2 }],
+      rows: [{ kind: "update", customerName: "王燕萍", beforeQuantity: 1, afterQuantity: 2 }],
+    });
+  });
+
   it("joins fulfillment state and blocks changing a delivered order", async () => {
     const cms = baseCms({
       listOrders: vi.fn(async () => [{

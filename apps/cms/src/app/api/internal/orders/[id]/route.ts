@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { operatorScope } from "@/lib/internal";
+import { lockOrderReconciliationWrites, operatorScope, withTransaction } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
@@ -58,12 +58,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const { sellerId, payload } = scope;
   const { id } = await params;
   const data = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-  const existing = await payload.find({
-    collection: "orders",
-    where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
-    overrideAccess: true,
+  const updated = await withTransaction(payload, async (payloadReq) => {
+    await lockOrderReconciliationWrites(payload, payloadReq);
+    const existing = await payload.find({
+      collection: "orders",
+      where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
+      overrideAccess: true,
+      req: payloadReq,
+    });
+    if (!existing.docs[0]) return undefined;
+    return payload.update({ collection: "orders", id, data, overrideAccess: true, req: payloadReq });
   });
-  if (!existing.docs[0]) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const updated = await payload.update({ collection: "orders", id, data, overrideAccess: true });
+  if (!updated) return NextResponse.json({ error: "not found" }, { status: 404 });
   return NextResponse.json(updated);
 }

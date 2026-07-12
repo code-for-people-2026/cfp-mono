@@ -75,9 +75,10 @@ export async function withTransaction<T>(payload: BasePayload, work: (req: Paylo
 
 /**
  * Serialize reconciliation against every regular order/fulfillment writer.
- * PostgreSQL table locks make existing Payload writers participate without a
- * second application-level locking protocol; SQLite already starts write
- * transactions with `BEGIN IMMEDIATE` and therefore needs no extra lock.
+ * Every application writer must acquire this lock before its first read so it
+ * cannot resume from a stale decision after reconciliation commits. SQLite
+ * already starts write transactions with `BEGIN IMMEDIATE` and needs no extra
+ * lock.
  */
 export async function lockOrderReconciliationWrites(
   payload: BasePayload,

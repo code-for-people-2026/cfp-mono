@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { orderConfirmLine, orderReconciliationLine } from "./orderConfirmView";
+import { orderConfirmLine, orderReconciliationConflictMessage, orderReconciliationLine } from "./orderConfirmView";
 
 describe("orderConfirmLine", () => {
   it("shows the full service date and Chinese meal label", () => {
@@ -21,5 +21,14 @@ describe("orderReconciliationLine", () => {
 
   it("marks confirmed business impact", () => {
     expect(orderReconciliationLine({ ...row, kind: "update", beforeQuantity: 1, orderStatus: "confirmed", affectsConfirmed: true })).toContain("影响备餐/送餐/收款");
+  });
+});
+
+describe("orderReconciliationConflictMessage", () => {
+  it("distinguishes settled orders from an expired preview", () => {
+    expect(orderReconciliationConflictMessage({ error: "settled-order", message: "王阿姨的订单已付款，请单独处理" })).toBe("王阿姨的订单已付款，请单独处理");
+    expect(orderReconciliationConflictMessage({ error: "settled-order" })).toBe("接龙涉及已付款或已送达订单，请单独处理");
+    expect(orderReconciliationConflictMessage({ error: "stale-preview" })).toBe("这张确认卡已过期，请重新说一遍");
+    expect(orderReconciliationConflictMessage(null)).toBe("这张确认卡已过期，请重新说一遍");
   });
 });

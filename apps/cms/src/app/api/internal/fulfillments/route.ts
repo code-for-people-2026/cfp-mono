@@ -1,6 +1,6 @@
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
-import { operatorScope, ownedBy } from "@/lib/internal";
+import { lockOrderReconciliationWrites, operatorScope, ownedBy, withTransaction } from "@/lib/internal";
 
 export const dynamic = "force-dynamic";
 
@@ -38,13 +38,18 @@ export async function POST(req: Request) {
   const { sellerId, payload } = scope;
   const inputs = (await req.json().catch(() => null)) as FulfillmentInput[] | null;
   if (!Array.isArray(inputs)) return NextResponse.json({ error: "fulfillments[] required" }, { status: 400 });
-  const created = [];
-  for (const f of inputs) {
-    if (!(await ownedBy(payload, "orders", f.order, sellerId))) {
-      return NextResponse.json({ error: "order not owned" }, { status: 403 });
+  const created = await withTransaction(payload, async (payloadReq) => {
+    await lockOrderReconciliationWrites(payload, payloadReq);
+    for (const f of inputs) {
+      if (!(await ownedBy(payload, "orders", f.order, sellerId, payloadReq))) return undefined;
     }
-    created.push(await payload.create({ collection: "fulfillments", data: { ...f, seller: sellerId }, overrideAccess: true }));
-  }
+    const docs = [];
+    for (const f of inputs) {
+      docs.push(await payload.create({ collection: "fulfillments", data: { ...f, seller: sellerId }, overrideAccess: true, req: payloadReq }));
+    }
+    return docs;
+  });
+  if (!created) return NextResponse.json({ error: "order not owned" }, { status: 403 });
   return NextResponse.json(created, { status: 201 });
 }
 
@@ -58,12 +63,17 @@ export async function PATCH(req: Request) {
   const { sellerId, payload } = scope;
   const body = (await req.json().catch(() => null)) as { ids?: Array<string | number>; orderIn?: Array<string | number>; set?: Record<string, unknown> } | null;
   if (!body?.set || (!body.ids && !body.orderIn)) return NextResponse.json({ error: "ids or orderIn, set required" }, { status: 400 });
+  const set = body.set;
   const target: Where = body.ids ? { id: { in: body.ids } } : { order: { in: body.orderIn ?? [] } };
-  const res = await payload.update({
-    collection: "fulfillments",
-    where: { and: [{ seller: { equals: sellerId } }, target] },
-    data: body.set,
-    overrideAccess: true,
+  const res = await withTransaction(payload, async (payloadReq) => {
+    await lockOrderReconciliationWrites(payload, payloadReq);
+    return payload.update({
+      collection: "fulfillments",
+      where: { and: [{ seller: { equals: sellerId } }, target] },
+      data: set,
+      overrideAccess: true,
+      req: payloadReq,
+    });
   });
   return NextResponse.json({ ok: true, updated: res.docs.length });
 }

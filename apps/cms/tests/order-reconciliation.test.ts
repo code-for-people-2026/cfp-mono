@@ -162,6 +162,75 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     expect(created).toBe(true);
   });
 
+  it("makes reconciliation read after a regular confirmation that already holds the lock", async () => {
+    const lockDate = "2026-09-19";
+    const draft = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[1]!.id, date: lockDate, occasion: "lunch", source: "manual", totalCents: 3000,
+      items: [{ offering: offeringId, quantity: 1, unitPriceCents: 3000 }],
+    });
+    const current = await payload.findByID({ collection: "orders", id: draft.order.id, depth: 1, overrideAccess: true });
+    const items = await payload.find({ collection: "order_items", where: { order: { equals: draft.order.id } }, limit: 0, overrideAccess: true });
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot",
+      operationKey: crypto.randomUUID(),
+      scope: [{ date: lockDate, occasion: "lunch" }],
+      expectedFingerprint: fingerprintActiveOrders([{ ...current, occasion: "lunch", paymentStatus: current.paymentStatus as string, items: items.docs } as never]),
+      candidates: [{ customer: customers[1]!.id, date: lockDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 }],
+    };
+    let release!: () => void;
+    let paused!: () => void;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const reachedRead = new Promise<void>((resolve) => { paused = resolve; });
+    const find = payload.find.bind(payload);
+    let intercepted = false;
+    const spy = vi.spyOn(payload, "find").mockImplementation(async (args) => {
+      if (!intercepted && args.collection === "orders" && args.req) {
+        intercepted = true;
+        paused();
+        await hold;
+      }
+      return find(args as never);
+    });
+    const confirming = confirmOrderAtomic(payload, sellerId, draft.order.id);
+    await reachedRead;
+    let reconciled = false;
+    const reconciliation = reconcileOrdersAtomic(payload, sellerId, operatorId, body)
+      .then((value) => ({ value }), (error: unknown) => ({ error }))
+      .finally(() => { reconciled = true; });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(reconciled).toBe(false);
+    } finally {
+      release();
+      await confirming;
+      spy.mockRestore();
+    }
+    expect(await reconciliation).toMatchObject({ error: { code: "stale-preview" } });
+  });
+
+  it("reuses the address supplied by a later row for one normalized new customer", async () => {
+    const customerName = `后补地址${suffix}`;
+    const addressDate = "2026-09-20";
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot",
+      operationKey: crypto.randomUUID(),
+      scope: [{ date: addressDate, occasion: "lunch" }, { date: addressDate, occasion: "dinner" }],
+      expectedFingerprint: fingerprintActiveOrders([]),
+      candidates: [
+        { newCustomer: { displayName: customerName }, date: addressDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+        { newCustomer: { displayName: customerName, address: "26B" }, date: addressDate, occasion: "dinner", quantity: 2, offering: offeringId, unitPriceCents: 3000, totalCents: 6000 },
+      ],
+    };
+
+    await reconcileOrdersAtomic(payload, sellerId, operatorId, body);
+    const createdCustomers = await payload.find({ collection: "customers", where: { and: [{ seller: { equals: sellerId } }, { displayName: { equals: customerName } }] }, limit: 0, overrideAccess: true });
+    const createdOrders = await payload.find({ collection: "orders", where: { and: [{ seller: { equals: sellerId } }, { date: { equals: addressDate } }] }, limit: 0, overrideAccess: true });
+    expect(createdCustomers.docs).toHaveLength(1);
+    expect(createdCustomers.docs[0]?.address).toBe("26B");
+    expect(createdOrders.docs).toHaveLength(2);
+    expect(createdOrders.docs.map((order) => order.address)).toEqual(["26B", "26B"]);
+  });
+
   it("rolls back every change on an injected item failure", async () => {
     const before = await activeFingerprint();
     const body = await request([{ newCustomer: { displayName: `失败新客${suffix}` }, date, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 }]);
