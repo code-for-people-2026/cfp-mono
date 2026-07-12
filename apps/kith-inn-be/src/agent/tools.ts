@@ -113,7 +113,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       try {
         preview = await s.previewOrderReconciliation(parsed, crypto.randomUUID());
       } catch (error) {
-        if (error instanceof ReconciliationError && error.code === "settled-order") return { text: error.message };
+        if (error instanceof ReconciliationError) return { text: error.message };
         return { text: "查不到当前订单或顾客信息，稍后再试一下？" };
       }
       const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;

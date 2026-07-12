@@ -80,14 +80,20 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         String(typeof fulfillment.order === "object" ? fulfillment.order.id : fulfillment.order),
         fulfillment.status,
       ]));
+      const activeOrders = orderLists.flat().filter((order) => order.status === "draft" || order.status === "confirmed");
+      const previewCustomers = new Map(customers.map((customer) => [String(customer.id), customer]));
+      for (const order of activeOrders) {
+        if (typeof order.customer === "object" && !previewCustomers.has(String(order.customer.id))) {
+          previewCustomers.set(String(order.customer.id), order.customer);
+        }
+      }
       return buildSnapshotPreview({
         scope,
         items: parsed.items,
-        customers,
+        customers: [...previewCustomers.values()],
         offering: combo.id,
         unitPriceCents,
-        orders: orderLists.flat()
-          .filter((order) => order.status === "draft" || order.status === "confirmed")
+        orders: activeOrders
           .map((order) => ({ ...order, fulfillmentStatus: fulfillmentByOrder.get(String(order.id)) })) as unknown as ReconciliationOrder[],
         operationKey,
       });

@@ -80,6 +80,13 @@ describe("record_orders production tool", () => {
     expect(getPendingOp(OPERATOR)).toBeUndefined();
   });
 
+  it("surfaces other reconciliation validation errors", async () => {
+    const error = new ReconciliationError("ambiguous-customer", "存在多个同名顾客，请先区分后再发");
+    const result = await recordTool.execute(services({ previewOrderReconciliation: vi.fn(async () => { throw error; }) }), { rawText: "x" });
+    expect(result).toEqual({ text: "存在多个同名顾客，请先区分后再发" });
+    expect(getPendingOp(OPERATOR)).toBeUndefined();
+  });
+
   it("rejects an empty raw text", async () => {
     const svc = services();
     expect(await recordTool.execute(svc, { rawText: " " })).toEqual({ text: "没看到要记的接龙或补单。" });

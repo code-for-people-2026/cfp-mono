@@ -77,6 +77,7 @@ export async function createDraftAtomic(
   body: DraftBody,
 ): Promise<{ order: Order; items: OrderItem[] }> {
   return withTransaction(payload, async (req) => {
+    await lockOrderReconciliationWrites(payload, req);
     const customerDoc = await payload.find({
       collection: "customers",
       where: { and: [{ id: { equals: body.customer } }, { seller: { equals: sellerId } }] },
@@ -130,6 +131,7 @@ export async function createDraftAtomic(
 
 export async function confirmOrderAtomic(payload: BasePayload, sellerId: string | number, id: string | number): Promise<ConfirmResult> {
   const confirmOnce = () => withTransaction(payload, async (req) => {
+    await lockOrderReconciliationWrites(payload, req);
     const existing = await completedConfirmation(payload, sellerId, id, req);
     if (existing) return existing;
     const order = await scopedOrder(payload, sellerId, id, req);
@@ -189,6 +191,7 @@ export async function cancelOrderAtomic(
 ): Promise<{ ok: true; alreadyCanceled: boolean }> {
   try {
     return await withTransaction(payload, async (req) => {
+      await lockOrderReconciliationWrites(payload, req);
       const order = await scopedOrder(payload, sellerId, id, req);
       if (!order) throw new OrderLifecycleError("not-found");
       if (order.status === "canceled") return { ok: true, alreadyCanceled: true };
@@ -343,6 +346,7 @@ export async function reconcileOrdersAtomic(
     }
     const seller = await payload.findByID({ collection: "sellers", id: sellerId, overrideAccess: true, req });
     const customerAddresses = new Map<string, string | undefined>();
+    const newCustomerAddresses = new Map<string, string>();
     const candidateKeys = new Set<string>();
     const scopeKeys = new Set(body.scope.map((entry) => `${entry.date}|${entry.occasion}`));
     if (scopeKeys.size !== body.scope.length) throw new OrderLifecycleError("invalid-reconciliation");
@@ -359,6 +363,8 @@ export async function reconcileOrdersAtomic(
         const found = await payload.find({ collection: "customers", where: { and: [{ id: { equals: candidate.customer } }, { seller: { equals: sellerId } }] }, limit: 1, overrideAccess: true, req });
         if (!found.docs[0]) throw new OrderLifecycleError("not-owned");
         customerAddresses.set(String(candidate.customer), found.docs[0].address ?? undefined);
+      } else if (candidate.newCustomer!.address) {
+        newCustomerAddresses.set(identity.slice(4), candidate.newCustomer!.address);
       }
     }
 
@@ -386,7 +392,7 @@ export async function reconcileOrdersAtomic(
         if (!created) {
           const doc = await payload.create({
             collection: "customers",
-            data: { displayName: candidate.newCustomer!.displayName, address: candidate.newCustomer!.address, seller: sellerId },
+            data: { displayName: candidate.newCustomer!.displayName, address: newCustomerAddresses.get(name), seller: sellerId },
             overrideAccess: true,
             req,
           });

@@ -6,6 +6,7 @@ import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
 import type { ChatCardMessage } from "@/logic/chatCards";
+import { orderReconciliationConflictMessage } from "@/logic/orderConfirmView";
 import { chatUrl, markDeliveredUrl, orderConfirmUrl, orderUrl } from "@/services/api";
 import { createTokenStore, type Storage } from "@/store/auth";
 
@@ -111,7 +112,7 @@ export default function Today() {
     })
       .then((res) => {
         if (res.statusCode === 401) { tokens.clearToken(); Taro.redirectTo({ url: "/pages/login/index" }); return; }
-        if (res.statusCode === 409) { Taro.showToast({ title: "这张确认卡已过期，请重新说一遍", icon: "none" }); return; }
+        if (res.statusCode === 409) { Taro.showToast({ title: orderReconciliationConflictMessage(res.data), icon: "none" }); return; }
         if (res.statusCode >= 400) { Taro.showToast({ title: "操作失败", icon: "error" }); return; }
         const data = res.data as { reply?: string; ok?: boolean };
         const reply = data.reply ?? "已完成。";
