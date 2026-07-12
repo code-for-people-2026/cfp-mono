@@ -1,10 +1,10 @@
 import { Text, View } from "@tarojs/components";
 import { Input } from "@tarojs/components";
 import { Button, Tag } from "@nutui/nutui-react-taro";
-import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
+import type { CardPayload, OrderReconciliationPreview } from "@cfp/kith-inn-shared";
 import { useState } from "react";
 import { customerName, orderStatusDot, STATUS_DOT_CLASS, yuan } from "@/logic/ordersView";
-import { orderConfirmLine } from "@/logic/orderConfirmView";
+import { orderReconciliationLine } from "@/logic/orderConfirmView";
 
 /**
  * Renders a structured card attached to an assistant reply.
@@ -18,7 +18,7 @@ export function ChatCard({ card, confirmed = false, confirming, fromHistory, onC
   confirmed?: boolean;
   confirming: boolean;
   fromHistory?: boolean;
-  onConfirmOperation?: (items?: ConfirmCustomerItem[]) => void;
+  onConfirmOperation?: (items?: Array<{ address?: string }>) => void;
   onOrderAct?: (orderId: string | number, action: "confirm" | "paid") => void;
   onMarkDelivered?: (ids: Array<string | number>) => void;
 }) {
@@ -105,44 +105,60 @@ export function ChatCard({ card, confirmed = false, confirming, fromHistory, onC
 }
 
 /** operation-confirm card for record_orders: lists every parsed item, with an
- *  address input for each NEW customer (isNew[i]). One 确认 builds all (#126 US1). */
+ *  address input for each newCustomer candidate. One confirmation applies the snapshot. */
 function RecordOrdersConfirmCard({ card, confirmed, confirming, fromHistory, onConfirmOperation }: {
   card: Extract<CardPayload, { type: "operation-confirm" }>;
   confirmed: boolean;
   confirming: boolean;
   fromHistory?: boolean;
-  onConfirmOperation?: (items?: ConfirmCustomerItem[]) => void;
+  onConfirmOperation?: (items?: Array<{ address?: string }>) => void;
 }) {
-  const args = card.data.args as { items: ConfirmCustomerItem[]; isNew: boolean[] };
-  const [items, setItems] = useState<ConfirmCustomerItem[]>(args.items.map((it) => ({ ...it })));
+  const raw = card.data.args as Partial<OrderReconciliationPreview>;
+  const supported = Array.isArray(raw.candidates) && Array.isArray(raw.rows);
+  const candidates = supported ? raw.candidates! : [];
+  const rows = supported ? raw.rows! : [];
+  const [addresses, setAddresses] = useState<Array<{ address?: string }>>(candidates.map((candidate) => ({ address: candidate.newCustomer?.address })));
   const active = !confirmed && !fromHistory && !!onConfirmOperation;
-  const updateAddr = (i: number, addr: string) => setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, address: addr } : it)));
+  const updateAddr = (i: number, address: string) => setAddresses((prev) => prev.map((item, idx) => idx === i ? { address } : item));
+  if (!supported) {
+    return (
+      <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
+        <Text className="block text-[28rpx] font-semibold text-amber">{card.data.summary}</Text>
+        <Text className="mt-[12rpx] block text-[24rpx] text-muted">这张旧版确认卡已过期，请重新粘贴接龙</Text>
+      </View>
+    );
+  }
   return (
     <View className="mt-[16rpx] card bg-amber-soft p-[24rpx]">
       <Text className="block text-[28rpx] font-semibold text-amber">{card.data.summary}</Text>
-      {items.map((it, i) => (
+      {rows.map((row, i) => (
         <View key={i} className="mt-[12rpx]">
           <Text className="block text-[26rpx] text-soft">
-            {orderConfirmLine(it)}{args.isNew[i] ? " · 新顾客" : ""}
+            {orderReconciliationLine(row)}
           </Text>
-          {active && args.isNew[i] ? (
+        </View>
+      ))}
+      {candidates.map((candidate, i) => candidate.newCustomer && (
+        <View key={`new-${i}`} className="mt-[12rpx]">
+          <Text className="block text-[24rpx] text-muted">{candidate.newCustomer.displayName} · 新顾客</Text>
+          {active ? (
             <Input
-              value={it.address ?? ""}
+              value={addresses[i]?.address ?? ""}
               placeholder="填地址（如 3a27a）"
               onInput={(e) => updateAddr(i, e.detail.value)}
               className="mt-[8rpx] rounded-[8rpx] border border-line bg-paper px-[16rpx] py-[10rpx] text-[26rpx]"
             />
           ) : (
-            args.isNew[i] && <Text className="mt-[4rpx] block text-[24rpx] text-muted">{it.address ?? "（未填）"}</Text>
+            <Text className="mt-[4rpx] block text-[24rpx] text-muted">{addresses[i]?.address ?? "（未填）"}</Text>
           )}
         </View>
       ))}
       <View className="mt-[20rpx]">
-        {confirmed && <Text className="block text-[26rpx] text-green">已记为草稿 ✓</Text>}
+        {confirmed && <Text className="block text-[26rpx] text-green">已按本次接龙更新 ✓</Text>}
         {!confirmed && fromHistory && <Text className="block text-[24rpx] text-muted">这张确认卡已过期</Text>}
         {active && (
-          <Button type="primary" disabled={confirming} className={confirming ? "bg-surface text-muted" : "bg-amber text-white"} onClick={() => onConfirmOperation?.(items)}>
-            {confirming ? "记录中..." : "记为草稿"}
+          <Button type="primary" disabled={confirming} className={confirming ? "bg-surface text-muted" : "bg-amber text-white"} onClick={() => onConfirmOperation?.(addresses)}>
+            {confirming ? "更新中..." : "确认按本次更新"}
           </Button>
         )}
       </View>

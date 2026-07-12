@@ -32,6 +32,12 @@ import type {
   operatorSchema,
   orderCardDataSchema,
   orderItemSchema,
+  orderReconciliationCandidateSchema,
+  orderReconciliationPreviewSchema,
+  orderReconciliationRequestSchema,
+  orderReconciliationResultSchema,
+  orderReconciliationRowSchema,
+  orderReconciliationScopeSchema,
   orderSchema,
   serviceSlotSchema,
   sellerSchema,
@@ -93,6 +99,14 @@ export type AddressGroup = z.infer<typeof addressGroupSchema>;
 export type AddressGap = z.infer<typeof addressGapSchema>;
 /** 送餐 tab 数据源：分拣 + 缺口对账（派生不落表）。 */
 export type DeliveryView = z.infer<typeof deliveryViewSchema>;
+
+// ── atomic order reconciliation contract (feature 012) ─────────────────────
+export type OrderReconciliationScope = z.infer<typeof orderReconciliationScopeSchema>;
+export type OrderReconciliationCandidate = z.infer<typeof orderReconciliationCandidateSchema>;
+export type OrderReconciliationRow = z.infer<typeof orderReconciliationRowSchema>;
+export type OrderReconciliationRequest = z.infer<typeof orderReconciliationRequestSchema>;
+export type OrderReconciliationPreview = z.infer<typeof orderReconciliationPreviewSchema>;
+export type OrderReconciliationResult = z.infer<typeof orderReconciliationResultSchema>;
 
 // ── chat cards (#98) ───────────────────────────────────────────────────────
 /** record_orders 预览卡里一行待记/待建顾客（operation-confirm args.items 用）。 */

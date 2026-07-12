@@ -1,4 +1,5 @@
-import type { Fulfillment, Order, OrderItem, ServiceSlot } from "@cfp/kith-inn-shared";
+import type { Fulfillment, Order, OrderItem, OrderReconciliationRequest, OrderReconciliationResult, ServiceSlot } from "@cfp/kith-inn-shared";
+import { fingerprintActiveOrders, type ActiveOrderFingerprintInput } from "@cfp/kith-inn-shared/orderReconciliation";
 import type { BasePayload, PayloadRequest, Where } from "payload";
 import { ownedBy, withTransaction } from "./internal";
 
@@ -16,8 +17,8 @@ export type DraftBody = {
 
 export class OrderLifecycleError extends Error {
   constructor(
-    public code: "empty-order" | "inconsistent-order" | "not-draft" | "not-found" | "slot-archived",
-    public status = code === "not-found" ? 404 : 409,
+    public code: "empty-order" | "inconsistent-order" | "not-draft" | "not-found" | "slot-archived" | "invalid-reconciliation" | "not-owned" | "stale-preview",
+    public status = code === "invalid-reconciliation" ? 400 : code === "not-owned" ? 403 : code === "not-found" ? 404 : 409,
   ) {
     super(code);
     this.name = "OrderLifecycleError";
@@ -204,6 +205,243 @@ export async function cancelOrderAtomic(
   } catch (error) {
     const order = await scopedOrder(payload, sellerId, id);
     if (order?.status === "canceled") return { ok: true, alreadyCanceled: true };
+    throw error;
+  }
+}
+
+type ReconcileOrder = ActiveOrderFingerprintInput & {
+  customer: string | number | { id: string | number; displayName?: string };
+  status: "draft" | "confirmed";
+};
+
+const relationId = (value: string | number | { id: string | number }) => typeof value === "object" ? value.id : value;
+const dayOnly = (value: string) => value.split("T")[0]!;
+const coordinate = (customer: string | number, date: string, occasion: string) => `${String(customer)}|${dayOnly(date)}|${occasion}`;
+const operationPrefix = (key: string) => `reconcile:${key}:`;
+
+async function loadActiveOrders(
+  payload: BasePayload,
+  sellerId: string | number,
+  scope: OrderReconciliationRequest["scope"],
+  req?: PayloadRequest,
+): Promise<ReconcileOrder[]> {
+  const found = await payload.find({
+    collection: "orders",
+    where: {
+      and: [
+        { seller: { equals: sellerId } },
+        { status: { in: ["draft", "confirmed"] } },
+        { or: scope.map((entry) => ({ and: [{ date: { equals: entry.date } }, { occasion: { equals: entry.occasion } }] } as Where)) },
+      ],
+    },
+    depth: 1,
+    limit: 0,
+    overrideAccess: true,
+    req,
+  });
+  if (found.docs.length === 0) return [];
+  const items = await payload.find({
+    collection: "order_items",
+    where: { and: [{ seller: { equals: sellerId } }, { order: { in: found.docs.map((order) => order.id) } }] },
+    limit: 0,
+    overrideAccess: true,
+    req,
+  });
+  return found.docs.map((order) => ({
+    id: order.id,
+    customer: order.customer as ReconcileOrder["customer"],
+    date: order.date,
+    occasion: order.occasion as "lunch" | "dinner",
+    status: order.status as "draft" | "confirmed",
+    paymentStatus: order.paymentStatus as string,
+    updatedAt: order.updatedAt,
+    items: items.docs.filter((item) => String(relationId(item.order as string | number | { id: string | number })) === String(order.id)).map((item) => ({
+      id: item.id,
+      offering: item.offering as string | number | { id: string | number },
+      quantity: item.quantity,
+      unitPriceCents: item.unitPriceCents ?? undefined,
+    })),
+  }));
+}
+
+async function completedReconciliation(
+  payload: BasePayload,
+  sellerId: string | number,
+  operationKey: string,
+  req?: PayloadRequest,
+): Promise<OrderReconciliationResult | undefined> {
+  const found = await payload.find({
+    collection: "orders",
+    where: { and: [{ seller: { equals: sellerId } }, { idempotencyKey: { contains: operationPrefix(operationKey) } }] },
+    limit: 0,
+    overrideAccess: true,
+    req,
+  });
+  if (found.docs.length === 0) return undefined;
+  const result: OrderReconciliationResult = { ok: true, created: [], updated: [], canceled: [], unchanged: [], alreadyApplied: true };
+  for (const order of found.docs) {
+    const suffix = String(order.idempotencyKey).slice(operationPrefix(operationKey).length).split(":");
+    const [kind, before, after] = suffix;
+    if (kind === "c") result.created.push({ orderId: order.id });
+    else if (kind === "u") result.updated.push({ orderId: order.id, beforeQuantity: Number(before), afterQuantity: Number(after) });
+    else if (kind === "x") result.canceled.push({ orderId: order.id });
+  }
+  return result;
+}
+
+const marker = (operationKey: string, kind: "c" | "u" | "x", before: number, after: number, customer: string | number, date: string, occasion: string) =>
+  `${operationPrefix(operationKey)}${kind}:${before}:${after}:${String(customer)}:${date}:${occasion}`;
+
+async function assertFulfillmentConsistency(
+  payload: BasePayload,
+  sellerId: string | number,
+  order: ReconcileOrder,
+  req: PayloadRequest,
+) {
+  const fulfillments = await payload.find({
+    collection: "fulfillments",
+    where: { and: [{ seller: { equals: sellerId } }, { order: { equals: order.id } }] },
+    limit: 2,
+    overrideAccess: true,
+    req,
+  });
+  if ((order.status === "confirmed" && fulfillments.docs.length !== 1) || (order.status === "draft" && fulfillments.docs.length !== 0)) {
+    throw new OrderLifecycleError("inconsistent-order");
+  }
+}
+
+/** Apply a server-generated snapshot in one transaction; no write happens before fingerprint validation. */
+export async function reconcileOrdersAtomic(
+  payload: BasePayload,
+  sellerId: string | number,
+  operatorId: string | number,
+  body: OrderReconciliationRequest,
+): Promise<OrderReconciliationResult> {
+  const apply = () => withTransaction(payload, async (req) => {
+    const completed = await completedReconciliation(payload, sellerId, body.operationKey, req);
+    if (completed) return completed;
+    if (body.mode !== "snapshot") throw new OrderLifecycleError("invalid-reconciliation");
+    const active = await loadActiveOrders(payload, sellerId, body.scope, req);
+    if (fingerprintActiveOrders(active) !== body.expectedFingerprint) throw new OrderLifecycleError("stale-preview");
+
+    const offeringPrices = new Map<string, number | undefined>();
+    const offerings = [...new Set(body.candidates.map((candidate) => candidate.offering))];
+    for (const offering of offerings) {
+      const found = await payload.find({ collection: "offerings", where: { and: [{ id: { equals: offering } }, { seller: { equals: sellerId } }] }, limit: 1, overrideAccess: true, req });
+      const doc = found.docs[0];
+      if (!doc) throw new OrderLifecycleError("not-owned");
+      if (doc.kind !== "combo-meal" || doc.active === false) throw new OrderLifecycleError("invalid-reconciliation");
+      offeringPrices.set(String(offering), doc.priceCents ?? undefined);
+    }
+    const seller = await payload.findByID({ collection: "sellers", id: sellerId, overrideAccess: true, req });
+    const customerAddresses = new Map<string, string | undefined>();
+    const candidateKeys = new Set<string>();
+    const scopeKeys = new Set(body.scope.map((entry) => `${entry.date}|${entry.occasion}`));
+    if (scopeKeys.size !== body.scope.length) throw new OrderLifecycleError("invalid-reconciliation");
+    for (const candidate of body.candidates) {
+      if (candidate.totalCents !== candidate.quantity * candidate.unitPriceCents) throw new OrderLifecycleError("invalid-reconciliation");
+      if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents)) throw new OrderLifecycleError("invalid-reconciliation");
+      const identity = candidate.customer !== undefined
+        ? String(candidate.customer)
+        : `new:${candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase()}`;
+      const candidateKey = coordinate(identity, candidate.date, candidate.occasion);
+      if (candidateKeys.has(candidateKey)) throw new OrderLifecycleError("invalid-reconciliation");
+      candidateKeys.add(candidateKey);
+      if (candidate.customer !== undefined) {
+        const found = await payload.find({ collection: "customers", where: { and: [{ id: { equals: candidate.customer } }, { seller: { equals: sellerId } }] }, limit: 1, overrideAccess: true, req });
+        if (!found.docs[0]) throw new OrderLifecycleError("not-owned");
+        customerAddresses.set(String(candidate.customer), found.docs[0].address ?? undefined);
+      }
+    }
+
+    const current = new Map<string, ReconcileOrder>();
+    for (const order of active) {
+      const key = coordinate(relationId(order.customer), order.date, order.occasion);
+      if (order.items.length !== 1 || current.has(key)) throw new OrderLifecycleError("inconsistent-order");
+      current.set(key, order);
+      await assertFulfillmentConsistency(payload, sellerId, order, req);
+    }
+
+    const result: OrderReconciliationResult = { ok: true, created: [], updated: [], canceled: [], unchanged: [] };
+    const newCustomers = new Map<string, { id: string | number; address?: string }>();
+    for (const candidate of body.candidates) {
+      let customer: string | number;
+      let address: string | undefined;
+      if (candidate.customer !== undefined) {
+        customer = candidate.customer;
+        address = customerAddresses.get(String(customer));
+      } else {
+        const name = candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase();
+        let created = newCustomers.get(name);
+        if (!created) {
+          const doc = await payload.create({
+            collection: "customers",
+            data: { displayName: candidate.newCustomer!.displayName, address: candidate.newCustomer!.address, seller: sellerId },
+            overrideAccess: true,
+            req,
+          });
+          created = { id: doc.id, address: doc.address ?? undefined };
+          newCustomers.set(name, created);
+        }
+        customer = created.id;
+        address = created.address;
+      }
+      const key = coordinate(customer, candidate.date, candidate.occasion);
+      const existing = current.get(key);
+      if (!existing) {
+        const order = await payload.create({
+          collection: "orders",
+          data: {
+            customer,
+            date: candidate.date,
+            occasion: candidate.occasion,
+            source: "chat-paste",
+            status: "draft",
+            placedAt: new Date().toISOString(),
+            totalCents: candidate.totalCents,
+            address,
+            paymentStatus: "unpaid",
+            idempotencyKey: marker(body.operationKey, "c", 0, candidate.quantity, candidate.customer ?? `new-${candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase()}`, candidate.date, candidate.occasion),
+            createdBy: operatorId,
+            seller: sellerId,
+          },
+          overrideAccess: true,
+          req,
+        });
+        await payload.create({ collection: "order_items", data: { order: order.id, offering: candidate.offering, quantity: candidate.quantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
+        result.created.push({ orderId: order.id });
+        continue;
+      }
+      current.delete(key);
+      const existingItem = existing.items[0]!;
+      const unchanged = existingItem.quantity === candidate.quantity
+        && String(relationId(existingItem.offering)) === String(candidate.offering)
+        && (existingItem.unitPriceCents ?? 0) === candidate.unitPriceCents;
+      if (unchanged) {
+        result.unchanged.push({ orderId: existing.id });
+        continue;
+      }
+      await payload.delete({ collection: "order_items", id: existingItem.id, overrideAccess: true, req });
+      await payload.create({ collection: "order_items", data: { order: existing.id, offering: candidate.offering, quantity: candidate.quantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
+      await payload.update({ collection: "orders", id: existing.id, data: { totalCents: candidate.totalCents, idempotencyKey: marker(body.operationKey, "u", existingItem.quantity, candidate.quantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
+      result.updated.push({ orderId: existing.id, beforeQuantity: existingItem.quantity, afterQuantity: candidate.quantity });
+    }
+
+    for (const existing of current.values()) {
+      if (existing.status === "confirmed") {
+        await payload.update({ collection: "fulfillments", where: { and: [{ seller: { equals: sellerId } }, { order: { equals: existing.id } }] }, data: { status: "canceled" }, overrideAccess: true, req });
+      }
+      await payload.update({ collection: "orders", id: existing.id, data: { status: "canceled", idempotencyKey: marker(body.operationKey, "x", existing.items[0]!.quantity, 0, relationId(existing.customer), existing.date, existing.occasion) }, overrideAccess: true, req });
+      result.canceled.push({ orderId: existing.id });
+    }
+    return result;
+  });
+
+  try {
+    return await apply();
+  } catch (error) {
+    const completed = await completedReconciliation(payload, sellerId, body.operationKey);
+    if (completed) return completed;
     throw error;
   }
 }

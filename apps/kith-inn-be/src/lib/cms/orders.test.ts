@@ -11,6 +11,7 @@ import {
   getOrder,
   listFulfillments,
   listOrders,
+  reconcileOrders,
   setFulfillmentsByIds,
   setFulfillmentsByOrders,
   updateOrder,
@@ -98,6 +99,32 @@ describe("createOrderDraft", () => {
     expect(init?.method).toBe("POST");
     expect(init?.headers).toMatchObject({ "content-type": "application/json" });
     expect(JSON.parse(init?.body as string)).toMatchObject({ customer: 5, totalCents: 0 });
+  });
+});
+
+describe("reconcileOrders", () => {
+  const body = {
+    mode: "snapshot" as const,
+    operationKey: "op-1",
+    scope: [{ date: "2026-07-13", occasion: "lunch" as const }],
+    expectedFingerprint: "fp",
+    candidates: [{ customer: 5, date: "2026-07-13", occasion: "lunch" as const, quantity: 2, offering: 9, unitPriceCents: 3000, totalCents: 6000 }],
+  };
+
+  it("POSTs one atomic request and returns the stable result", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    const result = { ok: true as const, created: [], updated: [{ orderId: 1, beforeQuantity: 1, afterQuantity: 2 }], canceled: [], unchanged: [] };
+    const deps = mockFetch(result);
+    await expect(reconcileOrders("jwt", body, deps)).resolves.toEqual(result);
+    const [url, init] = deps.fetch.mock.calls[0]!;
+    expect(String(url)).toBe("http://cms.test/api/internal/orders/reconcile");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual(body);
+  });
+
+  it("preserves stale-preview for the chat route", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    await expect(reconcileOrders("jwt", body, mockFetch({ error: "stale-preview" }, 409))).rejects.toMatchObject({ status: 409, code: "stale-preview" });
   });
 });
 

@@ -16,6 +16,14 @@ const services = (over: Partial<AgentServices> = {}) => ({
   operatorId: OPERATOR,
   parseOrders: vi.fn(async () => parsed),
   previewOrders: vi.fn(async () => ({ isNew: [false] })),
+  previewOrderReconciliation: vi.fn(async () => ({
+    mode: "snapshot" as const,
+    operationKey: "op-1",
+    scope: [{ date: "2026-07-13", occasion: "lunch" as const }],
+    expectedFingerprint: "fp-1",
+    candidates: [{ customer: 12, date: "2026-07-13", occasion: "lunch" as const, quantity: 2, offering: 9, unitPriceCents: 3000, totalCents: 6000 }],
+    rows: [{ kind: "create" as const, customerName: "王燕萍", date: "2026-07-13", occasion: "lunch" as const, afterQuantity: 2, affectsConfirmed: false }],
+  })),
   ...over,
 }) as AgentServices;
 
@@ -35,8 +43,8 @@ describe("record_orders production tool", () => {
     expect(svc.parseOrders).toHaveBeenCalledWith("原样接龙");
     expect(result.card?.type).toBe("operation-confirm");
     expect(result.text).toContain("2026-07-13");
-    expect(result.text).toContain("仅新增草稿");
-    expect(getPendingOp(OPERATOR)?.args).toMatchObject({ items: parsed.items, isNew: [false], inputMode: "snapshot" });
+    expect(result.text).toContain("以本次为准");
+    expect(getPendingOp(OPERATOR)?.args).toMatchObject({ expectedFingerprint: "fp-1", operationKey: "op-1" });
   });
 
   it("does not emit an executable card for increments before reconciliation is wired", async () => {
@@ -46,7 +54,7 @@ describe("record_orders production tool", () => {
     const result = await recordTool.execute(svc, { rawText: "7月13日午餐，加王燕萍2份" });
     expect(result.card).toBeUndefined();
     expect(result.text).toContain("还不能安全修改已有订单");
-    expect(svc.previewOrders).not.toHaveBeenCalled();
+    expect(svc.previewOrderReconciliation).not.toHaveBeenCalled();
     expect(getPendingOp(OPERATOR)).toBeUndefined();
   });
 
@@ -55,12 +63,12 @@ describe("record_orders production tool", () => {
     const result = await recordTool.execute(svc, { rawText: "冲突接龙" });
     expect(result).toEqual({ text: expect.stringContaining("日期和周几不一致") });
     expect(getPendingOp(OPERATOR)).toBeUndefined();
-    expect(svc.previewOrders).not.toHaveBeenCalled();
+    expect(svc.previewOrderReconciliation).not.toHaveBeenCalled();
   });
 
   it("fails closed when parsing or customer preview fails", async () => {
     expect(await recordTool.execute(services({ parseOrders: vi.fn(async () => { throw new Error("model down"); }) }), { rawText: "x" })).toEqual({ text: expect.stringContaining("解析") });
-    expect(await recordTool.execute(services({ previewOrders: vi.fn(async () => { throw new Error("cms down"); }) }), { rawText: "x" })).toEqual({ text: expect.stringContaining("顾客") });
+    expect(await recordTool.execute(services({ previewOrderReconciliation: vi.fn(async () => { throw new Error("cms down"); }) }), { rawText: "x" })).toEqual({ text: expect.stringContaining("顾客") });
     expect(getPendingOp(OPERATOR)).toBeUndefined();
   });
 

@@ -20,6 +20,10 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
     })),
   previewOrders:
     over.previewOrders ?? vi.fn(async (items: { customerName: string }[]) => ({ isNew: items.map(() => false) })),
+  previewOrderReconciliation: over.previewOrderReconciliation ?? vi.fn(async () => ({
+    mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [], rows: [],
+  })),
+  reconcileOrderSnapshot: over.reconcileOrderSnapshot ?? vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] })),
   recordOrders:
     over.recordOrders ??
     vi.fn(async () => ({ recorded: [{ name: "王燕萍", orderId: 45 }], needsConfirmation: [], failed: [] })),
@@ -54,8 +58,8 @@ describe("runAgent", () => {
     ]);
     const s = mockServices();
     const out = await runAgent({ userText: "记 王燕萍 午餐2份", history: [], services: s, deps: { chat } });
-    // Preview mode: classify (previewOrders) but do NOT write — execution waits for the confirm click.
-    expect(s.previewOrders).toHaveBeenCalled();
+    // Preview mode computes the full reconciliation but does NOT write.
+    expect(s.previewOrderReconciliation).toHaveBeenCalled();
     expect(s.recordOrders).not.toHaveBeenCalled();
     expect(out.reply).toBe("记好了，王燕萍午餐2份。");
     expect(out.card?.type).toBe("operation-confirm");
@@ -74,15 +78,19 @@ describe("runAgent", () => {
         unknownSegments: [],
         issues: [],
       })),
-      previewOrders: vi.fn(async () => ({ isNew: [true] })),
+      previewOrderReconciliation: vi.fn(async () => ({
+        mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-07-07", occasion: "dinner" as const }], expectedFingerprint: "fp",
+        candidates: [{ newCustomer: { displayName: "大龙猫" }, date: "2026-07-07", occasion: "dinner" as const, quantity: 1, offering: 9, unitPriceCents: 3000, totalCents: 3000 }],
+        rows: [{ kind: "create" as const, customerName: "大龙猫", date: "2026-07-07", occasion: "dinner" as const, afterQuantity: 1, affectsConfirmed: false }],
+      })),
     });
     const out = await runAgent({ userText: "接龙", history: [], services: s, deps: { chat } });
     expect(out.reply).toBe("新顾客大龙猫，点下面确认填地址哦。");
-    // Merged card: operation-confirm carrying items + isNew (FE renders address inputs for new).
+    // Merged card carries immutable candidates; FE renders an address input for newCustomer.
     expect(out.card?.type).toBe("operation-confirm");
     const data = (out.card as { data: { toolName: string; args: Record<string, unknown> } }).data;
     expect(data.toolName).toBe("record_orders");
-    expect(data.args.isNew).toEqual([true]);
+    expect(data.args.candidates).toEqual([expect.objectContaining({ newCustomer: { displayName: "大龙猫" } })]);
     expect(s.recordOrders).not.toHaveBeenCalled(); // still preview-only
   });
 
@@ -150,7 +158,7 @@ describe("runAgent", () => {
     const s = mockServices();
     await runAgent({ userText: "x", history: [], services: s, deps: { chat } });
     // Write tool previews (no write); read tool executes directly.
-    expect(s.previewOrders).toHaveBeenCalled();
+    expect(s.previewOrderReconciliation).toHaveBeenCalled();
     expect(s.recordOrders).not.toHaveBeenCalled();
     expect(s.getTodaySummary).toHaveBeenCalled();
   });

@@ -18,6 +18,23 @@ pnpm verify
 
 预期：生产 `record_orders` 与 eval 调同一解析入口；真实样本四字段准确率 ≥95%、午晚错配 0；模型输出异常和日期风险样本 fail closed；全仓门禁通过。
 
+### 真实模型评测记录（2026-07-12）
+
+```bash
+pnpm --filter @cfp/kith-inn-be eval:parse
+```
+
+- 模型：`deepseek-chat`
+- 参考日期：`2020-06-01`
+- 样本数：15
+- 四字段准确率：100.0%
+- 午/晚错配：0
+- issue mismatch：0
+- 总耗时：28,040ms
+- 结果：M1 acceptance MET
+
+密钥由本地 gitignored `.env` 注入，未写入命令、日志或仓库。
+
 ### 场景 1：菜单噪声与双餐标题
 
 粘贴含午餐/晚餐标题、不同菜名、编号菜品、示例行和多位顾客的完整接龙。

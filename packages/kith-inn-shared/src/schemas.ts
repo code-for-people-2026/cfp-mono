@@ -245,6 +245,77 @@ export const deliveryViewSchema = z.object({
   gaps: z.object({ gaps: z.array(addressGapSchema), totalPending: z.number() }),
 });
 
+// ── atomic order reconciliation contract (feature 012) ──
+export const orderReconciliationScopeSchema = z.object({
+  date: calendarDateSchema,
+  occasion: menuMealOccasionSchema,
+});
+export const orderReconciliationCandidateSchema = z.object({
+  customer: id.optional(),
+  newCustomer: z.object({ displayName: z.string().trim().min(1), address: z.string().trim().min(1).optional() }).optional(),
+  date: calendarDateSchema,
+  occasion: menuMealOccasionSchema,
+  quantity: z.number().int().positive(),
+  offering: id,
+  unitPriceCents: z.number().int().nonnegative(),
+  totalCents: z.number().int().nonnegative(),
+}).superRefine((candidate, ctx) => {
+  if ((candidate.customer === undefined) === (candidate.newCustomer === undefined)) {
+    ctx.addIssue({ code: "custom", message: "candidate must identify exactly one existing or new customer" });
+  }
+});
+export const orderReconciliationRowSchema = z.object({
+  kind: z.enum(["create", "update", "cancel", "unchanged", "add", "set"]),
+  customerName: z.string().trim().min(1),
+  date: calendarDateSchema,
+  occasion: menuMealOccasionSchema,
+  beforeQuantity: z.number().int().nonnegative().optional(),
+  changeQuantity: z.number().int().positive().optional(),
+  afterQuantity: z.number().int().nonnegative(),
+  orderStatus: orderStatusSchema.optional(),
+  affectsConfirmed: z.boolean(),
+});
+
+const orderReconciliationBaseSchema = z.object({
+  mode: z.enum(["snapshot", "increment"]),
+  operation: z.enum(["add", "set"]).optional(),
+  operationKey: z.string().trim().min(1),
+  scope: z.array(orderReconciliationScopeSchema).min(1),
+  expectedFingerprint: z.string().min(1),
+  candidates: z.array(orderReconciliationCandidateSchema),
+});
+
+function validateOrderReconciliation(
+  value: z.infer<typeof orderReconciliationBaseSchema>,
+  ctx: z.RefinementCtx,
+) {
+  if ((value.mode === "increment") !== (value.operation !== undefined)) {
+    ctx.addIssue({ code: "custom", path: ["operation"], message: "operation is required only for increment mode" });
+  }
+  if (value.mode === "increment" && (value.scope.length !== 1 || value.candidates.length !== 1)) {
+    ctx.addIssue({ code: "custom", message: "increment must contain exactly one scope and candidate" });
+  }
+  const scope = new Set(value.scope.map((entry) => `${entry.date}|${entry.occasion}`));
+  value.candidates.forEach((candidate, index) => {
+    if (!scope.has(`${candidate.date}|${candidate.occasion}`)) {
+      ctx.addIssue({ code: "custom", path: ["candidates", index], message: "candidate is outside reconciliation scope" });
+    }
+  });
+}
+
+export const orderReconciliationRequestSchema = orderReconciliationBaseSchema.superRefine(validateOrderReconciliation);
+export const orderReconciliationPreviewSchema = orderReconciliationBaseSchema.extend({
+  rows: z.array(orderReconciliationRowSchema),
+}).superRefine(validateOrderReconciliation);
+export const orderReconciliationResultSchema = z.object({
+  ok: z.literal(true),
+  created: z.array(z.object({ orderId: id })),
+  updated: z.array(z.object({ orderId: id, beforeQuantity: z.number().int().nonnegative(), afterQuantity: z.number().int().nonnegative() })),
+  canceled: z.array(z.object({ orderId: id })),
+  unchanged: z.array(z.object({ orderId: id })),
+  alreadyApplied: z.boolean().optional(),
+});
+
 // ── chat cards (#98) ──
 export const confirmCustomerItemSchema = z.object({
   customerName: z.string(),

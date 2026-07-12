@@ -21,6 +21,7 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
   createCustomer: over.createCustomer ?? vi.fn(async () => ({ id: 55, displayName: "大龙猫" }) as never),
   listFulfillments: over.listFulfillments ?? vi.fn(async () => [] as never),
   listOrders: over.listOrders ?? vi.fn(async () => [] as never),
+  reconcileOrders: over.reconcileOrders ?? vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] })),
   listMenuPlans: over.listMenuPlans ?? vi.fn(async () => [] as never),
   getMenuPlan: over.getMenuPlan ?? vi.fn(async () => ({}) as never),
   upsertMenuPlans: over.upsertMenuPlans ?? vi.fn(async () => [] as never),
@@ -50,6 +51,38 @@ describe("production order parsing and preview", () => {
       { customerName: "大龙猫", date: "2026-06-29", occasion: "dinner", quantity: 1 },
     ]);
     expect(result).toEqual({ isNew: [false, true] });
+  });
+
+  it("builds a seller-scoped snapshot diff with combo pricing", async () => {
+    const cms = baseCms({
+      listOrders: vi.fn(async () => [{
+        id: 90,
+        customer: { id: 5, displayName: "王燕萍" },
+        date: "2026-06-29T00:00:00.000Z",
+        occasion: "lunch",
+        status: "draft",
+        paymentStatus: "unpaid",
+        updatedAt: "2026-06-29T01:00:00.000Z",
+        items: [{ id: 201, offering: 10, quantity: 1, unitPriceCents: 3000 }],
+      }] as never),
+    });
+    const preview = await svc(cms).previewOrderReconciliation({
+      mode: "snapshot",
+      scope: [{ date: "2026-06-29", occasion: "lunch", dateEvidence: "6.29午餐" }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch", quantity: 2, evidence: "王燕萍2份" }],
+      unknownSegments: [],
+      issues: [],
+    }, "op-1");
+    expect(preview).toMatchObject({ operationKey: "op-1", candidates: [{ customer: 5, quantity: 2, totalCents: 6000 }], rows: [{ kind: "update", beforeQuantity: 1, afterQuantity: 2 }] });
+    expect(cms.listOrders).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
+  });
+
+  it("forwards the immutable reconciliation request to CMS", async () => {
+    const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] }));
+    const service = svc(baseCms({ reconcileOrders }));
+    const request = { mode: "snapshot" as const, operationKey: "op", scope: [{ date: "2026-06-29", occasion: "lunch" as const }], expectedFingerprint: "fp", candidates: [] };
+    await expect(service.reconcileOrderSnapshot(request)).resolves.toMatchObject({ ok: true });
+    expect(reconcileOrders).toHaveBeenCalledWith("jwt", request);
   });
 });
 

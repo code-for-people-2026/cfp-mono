@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { cardPayloadSchema } from "@cfp/kith-inn-shared/schemas";
+import type { OrderReconciliationPreview } from "@cfp/kith-inn-shared";
 import type { ChatMessage as LlmMessage } from "../lib/llm/chatWithTools";
 import { createOffering, findOfferings } from "../lib/cms/client";
 import {
@@ -10,9 +11,11 @@ import {
   getOrder,
   listFulfillments,
   listOrders,
+  reconcileOrders,
   setFulfillmentsByIds,
   updateOrder,
 } from "../lib/cms/orders";
+import { CmsHttpError } from "../lib/cms/orders";
 import { createCustomer, listCustomers } from "../lib/cms/customers";
 import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../lib/cms/menuPlans";
 import { createChatMessage, listChatMessages } from "../lib/cms/chat";
@@ -39,6 +42,7 @@ function realAgentCms(): AgentCms {
     createCustomer,
     listFulfillments,
     listOrders,
+    reconcileOrders,
     listMenuPlans,
     getMenuPlan,
     upsertMenuPlans,
@@ -143,7 +147,11 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
       // Best-effort persist the outcome as an assistant message.
       await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
       return c.json({ reply: result, ok });
-    } catch {
+    } catch (error) {
+      if (error instanceof CmsHttpError && error.code === "stale-preview") {
+        clearPendingOp(operatorId);
+        return c.json({ error: "stale-preview", message: "订单已经变化，请重新粘贴接龙查看最新差异" }, 409);
+      }
       return c.json({ error: "operation failed" }, 502);
     }
   });
@@ -161,37 +169,23 @@ export async function dispatchPendingOp(
   const a = op.args;
   switch (op.toolName) {
     case "record_orders": {
-      // Trust only the pending preview for immutable fields (customerName/quantity/
-      // occasion/date); the body may carry address edits 桃子 typed into new-customer
-      // rows. Merge by index: pending item + body address (else pending's). isNew
-      // comes from pending too. (Codex P1 — don't let a buggy client mutate the order.)
-      const pendingItems = a.items as Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>;
-      const isNew = (a.isNew as boolean[] | undefined) ?? [];
+      // Quantities/scope/fingerprint remain server-side; the client may only fill
+      // addresses for new-customer candidates, aligned by candidate index.
+      const preview = a as unknown as OrderReconciliationPreview;
       const bodyAddrs = (Array.isArray(body?.items) ? body!.items : []) as Array<{ address?: string }>;
-      const items = pendingItems.map((it, i) => ({ ...it, address: bodyAddrs[i]?.address ?? it.address }));
-      const knownItems = items.filter((_, i) => !isNew[i]);
-      const newItems = items.filter((_, i) => isNew[i]);
-      const parts: string[] = [];
-      let hasDraft = false;
-      if (knownItems.length > 0) {
-        const r = await services.recordOrders(knownItems);
-        if (r.recorded.length > 0) {
-          hasDraft = true;
-          parts.push(`已记为草稿：${r.recorded.map((x) => x.name).join("、")}`);
-        }
-        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.customerName}（${x.error}）`).join("、")}`);
-      }
-      if (newItems.length > 0) {
-        const r = await services.createCustomersAndOrders(
-          newItems.map((it) => ({ displayName: it.customerName, address: it.address, quantity: it.quantity, occasion: it.occasion, date: it.date })),
-        );
-        if (r.created.length > 0) {
-          hasDraft = true;
-          parts.push(`已建顾客并记为草稿：${r.created.map((x) => x.name).join("、")}`);
-        }
-        if (r.failed.length > 0) parts.push(`失败：${r.failed.map((x) => `${x.displayName}（${x.error}）`).join("、")}`);
-      }
-      return parts.length > 0 ? `${parts.join("；")}${hasDraft ? "。到订单页确认后进入送餐清单。" : ""}` : "没有可记的单。";
+      const candidates = preview.candidates.map((candidate, index) => candidate.newCustomer
+        ? { ...candidate, newCustomer: { ...candidate.newCustomer, address: bodyAddrs[index]?.address ?? candidate.newCustomer.address } }
+        : candidate);
+      const request = {
+        mode: preview.mode,
+        operation: preview.operation,
+        operationKey: preview.operationKey,
+        scope: preview.scope,
+        expectedFingerprint: preview.expectedFingerprint,
+        candidates,
+      };
+      const result = await services.reconcileOrderSnapshot(request);
+      return `已按最新完整接龙更新：新增 ${result.created.length}、更新 ${result.updated.length}、取消 ${result.canceled.length}、不变 ${result.unchanged.length}。`;
     }
     case "confirm_order": {
       const r = await services.confirmOrder({ orderId: Number(a.orderId) });
@@ -238,8 +232,7 @@ export async function dispatchPendingOp(
 
 export function operationReplySucceeded(reply: string): boolean {
   return (
-    reply.includes("已记为草稿") ||
-    reply.includes("已建顾客并记为草稿") ||
+    reply.startsWith("已按最新完整接龙更新") ||
     reply.startsWith("已确认订单") ||
     reply.startsWith("已取消订单") ||
     reply.startsWith("已标记订单") ||
