@@ -88,6 +88,10 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     ]);
     const result = await reconcileOrdersAtomic(payload, sellerId, operatorId, body);
     expect(result).toMatchObject({ created: [{}], updated: [{ orderId: created[0]!.order.id, beforeQuantity: 1, afterQuantity: 2 }], canceled: [{ orderId: created[2]!.order.id }], unchanged: [{ orderId: created[1]!.order.id }] });
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).resolves.toMatchObject({
+      alreadyApplied: true,
+      unchanged: [{ orderId: created[1]!.order.id }],
+    });
     const fulfillment = await payload.find({ collection: "fulfillments", where: { order: { equals: created[2]!.order.id } }, limit: 1, overrideAccess: true });
     expect(fulfillment.docs[0]?.status).toBe("canceled");
   });
@@ -113,6 +117,29 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     await payload.update({ collection: "offerings", id: driftOffering.id, data: { priceCents: 3200 }, overrideAccess: true });
 
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
+  });
+
+  it("preserves an unchanged paid order after its combo price changes", async () => {
+    const priceDate = "2026-09-22";
+    const pricedOffering = await payload.create({ collection: "offerings", data: { name: `历史价套餐 ${suffix}`, kind: "combo-meal", priceCents: 2500, active: true, seller: sellerId }, overrideAccess: true });
+    const draft = await createDraftAtomic(payload, sellerId, operatorId, {
+      customer: customers[2]!.id, date: priceDate, occasion: "lunch", source: "manual", totalCents: 2500,
+      items: [{ offering: pricedOffering.id, quantity: 1, unitPriceCents: 2500 }],
+    });
+    await confirmOrderAtomic(payload, sellerId, draft.order.id);
+    await payload.update({ collection: "orders", id: draft.order.id, data: { paymentStatus: "paid" }, overrideAccess: true });
+    const current = await payload.findByID({ collection: "orders", id: draft.order.id, depth: 1, overrideAccess: true });
+    const items = await payload.find({ collection: "order_items", where: { order: { equals: draft.order.id } }, limit: 0, overrideAccess: true });
+    await payload.update({ collection: "offerings", id: pricedOffering.id, data: { priceCents: 3200 }, overrideAccess: true });
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot", operationKey: crypto.randomUUID(), scope: [{ date: priceDate, occasion: "lunch" }],
+      expectedFingerprint: fingerprintActiveOrders([{ ...current, occasion: "lunch", paymentStatus: "paid", items: items.docs } as never]),
+      candidates: [{ customer: customers[2]!.id, date: priceDate, occasion: "lunch", quantity: 1, offering: pricedOffering.id, unitPriceCents: 2500, totalCents: 2500 }],
+    };
+
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).resolves.toMatchObject({ unchanged: [{ orderId: draft.order.id }] });
+    const unchanged = await payload.findByID({ collection: "orders", id: draft.order.id, overrideAccess: true });
+    expect(unchanged.totalCents).toBe(2500);
   });
 
   it.each(["paid", "done"])("rejects changing a confirmed order whose side effect is %s", async (settledState) => {
@@ -229,6 +256,23 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     expect(createdCustomers.docs[0]?.address).toBe("26B");
     expect(createdOrders.docs).toHaveLength(2);
     expect(createdOrders.docs.map((order) => order.address)).toEqual(["26B", "26B"]);
+  });
+
+  it("rejects a new-customer preview when that normalized name now exists", async () => {
+    const customerName = `预览后 新客${suffix}`;
+    const staleDate = "2026-09-21";
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot",
+      operationKey: crypto.randomUUID(),
+      scope: [{ date: staleDate, occasion: "lunch" }],
+      expectedFingerprint: fingerprintActiveOrders([]),
+      candidates: [{ newCustomer: { displayName: customerName }, date: staleDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 }],
+    };
+    await payload.create({ collection: "customers", data: { displayName: `  预览后   新客${suffix}  `, seller: sellerId }, overrideAccess: true });
+
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
+    const createdOrders = await payload.find({ collection: "orders", where: { and: [{ seller: { equals: sellerId } }, { date: { equals: staleDate } }] }, limit: 0, overrideAccess: true });
+    expect(createdOrders.docs).toHaveLength(0);
   });
 
   it("rolls back every change on an injected item failure", async () => {

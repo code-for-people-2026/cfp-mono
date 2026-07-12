@@ -220,6 +220,7 @@ type ReconcileOrder = ActiveOrderFingerprintInput & {
 const relationId = (value: string | number | { id: string | number }) => typeof value === "object" ? value.id : value;
 const dayOnly = (value: string) => value.split("T")[0]!;
 const coordinate = (customer: string | number, date: string, occasion: string) => `${String(customer)}|${dayOnly(date)}|${occasion}`;
+const normalizedCustomerName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
 const operationPrefix = (key: string) => `reconcile:${key}:`;
 
 async function loadActiveOrders(
@@ -288,11 +289,12 @@ async function completedReconciliation(
     if (kind === "c") result.created.push({ orderId: order.id });
     else if (kind === "u") result.updated.push({ orderId: order.id, beforeQuantity: Number(before), afterQuantity: Number(after) });
     else if (kind === "x") result.canceled.push({ orderId: order.id });
+    else if (kind === "n") result.unchanged.push({ orderId: order.id });
   }
   return result;
 }
 
-const marker = (operationKey: string, kind: "c" | "u" | "x", before: number, after: number, customer: string | number, date: string, occasion: string) =>
+const marker = (operationKey: string, kind: "c" | "u" | "x" | "n", before: number, after: number, customer: string | number, date: string, occasion: string) =>
   `${operationPrefix(operationKey)}${kind}:${before}:${after}:${String(customer)}:${date}:${occasion}`;
 
 async function assertFulfillmentConsistency(
@@ -334,6 +336,12 @@ export async function reconcileOrdersAtomic(
     if (completed) return completed;
     const active = await loadActiveOrders(payload, sellerId, body.scope, req);
     if (fingerprintActiveOrders(active) !== body.expectedFingerprint) throw new OrderLifecycleError("stale-preview");
+    const current = new Map<string, ReconcileOrder>();
+    for (const order of active) {
+      const key = coordinate(relationId(order.customer), order.date, order.occasion);
+      if (order.items.length !== 1 || current.has(key)) throw new OrderLifecycleError("inconsistent-order");
+      current.set(key, order);
+    }
 
     const offeringPrices = new Map<string, number | undefined>();
     const offerings = [...new Set(body.candidates.map((candidate) => candidate.offering))];
@@ -347,15 +355,25 @@ export async function reconcileOrdersAtomic(
     const seller = await payload.findByID({ collection: "sellers", id: sellerId, overrideAccess: true, req });
     const customerAddresses = new Map<string, string | undefined>();
     const newCustomerAddresses = new Map<string, string>();
+    const newCustomerNames = new Set<string>();
     const candidateKeys = new Set<string>();
     const scopeKeys = new Set(body.scope.map((entry) => `${entry.date}|${entry.occasion}`));
     if (scopeKeys.size !== body.scope.length) throw new OrderLifecycleError("invalid-reconciliation");
     for (const candidate of body.candidates) {
       if (candidate.totalCents !== candidate.quantity * candidate.unitPriceCents) throw new OrderLifecycleError("invalid-reconciliation");
-      if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents)) throw new OrderLifecycleError("stale-preview");
+      const existing = candidate.customer === undefined
+        ? undefined
+        : current.get(coordinate(candidate.customer, candidate.date, candidate.occasion));
+      const existingItem = existing?.items[0];
+      const preservesHistoricalPrice = existingItem?.quantity === candidate.quantity
+        && String(relationId(existingItem.offering)) === String(candidate.offering)
+        && existingItem.unitPriceCents === candidate.unitPriceCents;
+      if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents) && !preservesHistoricalPrice) {
+        throw new OrderLifecycleError("stale-preview");
+      }
       const identity = candidate.customer !== undefined
         ? String(candidate.customer)
-        : `new:${candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase()}`;
+        : `new:${normalizedCustomerName(candidate.newCustomer!.displayName)}`;
       const candidateKey = coordinate(identity, candidate.date, candidate.occasion);
       if (candidateKeys.has(candidateKey)) throw new OrderLifecycleError("invalid-reconciliation");
       candidateKeys.add(candidateKey);
@@ -366,14 +384,17 @@ export async function reconcileOrdersAtomic(
       } else if (candidate.newCustomer!.address && !newCustomerAddresses.has(identity.slice(4))) {
         newCustomerAddresses.set(identity.slice(4), candidate.newCustomer!.address);
       }
+      if (candidate.customer === undefined) newCustomerNames.add(identity.slice(4));
+    }
+    if (newCustomerNames.size > 0) {
+      const latestCustomers = await payload.find({ collection: "customers", where: { seller: { equals: sellerId } }, limit: 0, overrideAccess: true, req });
+      if (latestCustomers.docs.some((customer) => newCustomerNames.has(normalizedCustomerName(customer.displayName)))) {
+        throw new OrderLifecycleError("stale-preview");
+      }
     }
 
-    const current = new Map<string, ReconcileOrder>();
     const fulfillments = new Map<string, Fulfillment>();
     for (const order of active) {
-      const key = coordinate(relationId(order.customer), order.date, order.occasion);
-      if (order.items.length !== 1 || current.has(key)) throw new OrderLifecycleError("inconsistent-order");
-      current.set(key, order);
       const fulfillment = await assertFulfillmentConsistency(payload, sellerId, order, req);
       if (fulfillment) fulfillments.set(String(order.id), fulfillment);
     }
@@ -387,7 +408,7 @@ export async function reconcileOrdersAtomic(
         customer = candidate.customer;
         address = customerAddresses.get(String(customer));
       } else {
-        const name = candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase();
+        const name = normalizedCustomerName(candidate.newCustomer!.displayName);
         let created = newCustomers.get(name);
         if (!created) {
           const doc = await payload.create({
@@ -417,7 +438,7 @@ export async function reconcileOrdersAtomic(
             totalCents: candidate.totalCents,
             address,
             paymentStatus: "unpaid",
-            idempotencyKey: marker(body.operationKey, "c", 0, candidate.quantity, candidate.customer ?? `new-${candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase()}`, candidate.date, candidate.occasion),
+            idempotencyKey: marker(body.operationKey, "c", 0, candidate.quantity, candidate.customer ?? `new-${normalizedCustomerName(candidate.newCustomer!.displayName)}`, candidate.date, candidate.occasion),
             createdBy: operatorId,
             seller: sellerId,
           },
@@ -431,9 +452,9 @@ export async function reconcileOrdersAtomic(
       current.delete(key);
       const existingItem = existing.items[0]!;
       const unchanged = existingItem.quantity === candidate.quantity
-        && String(relationId(existingItem.offering)) === String(candidate.offering)
-        && (existingItem.unitPriceCents ?? 0) === candidate.unitPriceCents;
+        && String(relationId(existingItem.offering)) === String(candidate.offering);
       if (unchanged) {
+        await payload.update({ collection: "orders", id: existing.id, data: { idempotencyKey: marker(body.operationKey, "n", candidate.quantity, candidate.quantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
         result.unchanged.push({ orderId: existing.id });
         continue;
       }
