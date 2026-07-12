@@ -1,4 +1,5 @@
 import configPromise from "@payload-config";
+import { sql } from "@payloadcms/db-postgres";
 import type { BasePayload, PayloadRequest } from "payload";
 import { commitTransaction, createLocalReq, getPayload, initTransaction, killTransaction } from "payload";
 import { NextResponse } from "next/server";
@@ -69,5 +70,31 @@ export async function withTransaction<T>(payload: BasePayload, work: (req: Paylo
   } catch (error) {
     await killTransaction(req);
     throw error;
+  }
+}
+
+/**
+ * Serialize reconciliation for each seller/date/occasion inside the current
+ * PostgreSQL transaction. Sorted, transaction-scoped advisory locks cover the
+ * empty-scope race without adding a lock table; SQLite already starts write
+ * transactions with `BEGIN IMMEDIATE` and therefore needs no extra lock.
+ */
+export async function lockOrderReconciliationScopes(
+  payload: BasePayload,
+  sellerId: string | number,
+  scopes: Array<{ date: string; occasion: string }>,
+  req: PayloadRequest,
+): Promise<void> {
+  if (payload.db.name !== "postgres") return;
+  const transactionId = await req.transactionID;
+  const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
+  if (!transaction) throw new Error("database transaction session unavailable");
+
+  const keys = [...new Set(scopes.map(({ date, occasion }) => `kith-inn:orders:${String(sellerId)}:${date}:${occasion}`))].sort();
+  const db = payload.db as BasePayload["db"] & {
+    execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
+  };
+  for (const key of keys) {
+    await db.execute({ db: transaction, sql: sql`SELECT pg_advisory_xact_lock(hashtextextended(${key}, 0))` });
   }
 }

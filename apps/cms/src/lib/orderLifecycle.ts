@@ -1,7 +1,7 @@
 import type { Fulfillment, Order, OrderItem, OrderReconciliationRequest, OrderReconciliationResult, ServiceSlot } from "@cfp/kith-inn-shared";
 import { fingerprintActiveOrders, type ActiveOrderFingerprintInput } from "@cfp/kith-inn-shared/orderReconciliation";
 import type { BasePayload, PayloadRequest, Where } from "payload";
-import { ownedBy, withTransaction } from "./internal";
+import { lockOrderReconciliationScopes, ownedBy, withTransaction } from "./internal";
 
 export type DraftItem = { offering: string | number; quantity: number; unitPriceCents?: number; note?: string };
 export type DraftBody = {
@@ -318,9 +318,10 @@ export async function reconcileOrdersAtomic(
   body: OrderReconciliationRequest,
 ): Promise<OrderReconciliationResult> {
   const apply = () => withTransaction(payload, async (req) => {
+    if (body.mode !== "snapshot") throw new OrderLifecycleError("invalid-reconciliation");
+    await lockOrderReconciliationScopes(payload, sellerId, body.scope, req);
     const completed = await completedReconciliation(payload, sellerId, body.operationKey, req);
     if (completed) return completed;
-    if (body.mode !== "snapshot") throw new OrderLifecycleError("invalid-reconciliation");
     const active = await loadActiveOrders(payload, sellerId, body.scope, req);
     if (fingerprintActiveOrders(active) !== body.expectedFingerprint) throw new OrderLifecycleError("stale-preview");
 
@@ -330,7 +331,7 @@ export async function reconcileOrdersAtomic(
       const found = await payload.find({ collection: "offerings", where: { and: [{ id: { equals: offering } }, { seller: { equals: sellerId } }] }, limit: 1, overrideAccess: true, req });
       const doc = found.docs[0];
       if (!doc) throw new OrderLifecycleError("not-owned");
-      if (doc.kind !== "combo-meal" || doc.active === false) throw new OrderLifecycleError("invalid-reconciliation");
+      if (doc.kind !== "combo-meal" || doc.active === false) throw new OrderLifecycleError("stale-preview");
       offeringPrices.set(String(offering), doc.priceCents ?? undefined);
     }
     const seller = await payload.findByID({ collection: "sellers", id: sellerId, overrideAccess: true, req });
@@ -340,7 +341,7 @@ export async function reconcileOrdersAtomic(
     if (scopeKeys.size !== body.scope.length) throw new OrderLifecycleError("invalid-reconciliation");
     for (const candidate of body.candidates) {
       if (candidate.totalCents !== candidate.quantity * candidate.unitPriceCents) throw new OrderLifecycleError("invalid-reconciliation");
-      if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents)) throw new OrderLifecycleError("invalid-reconciliation");
+      if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents)) throw new OrderLifecycleError("stale-preview");
       const identity = candidate.customer !== undefined
         ? String(candidate.customer)
         : `new:${candidate.newCustomer!.displayName.trim().replace(/\s+/g, " ").toLowerCase()}`;

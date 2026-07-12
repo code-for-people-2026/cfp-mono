@@ -98,6 +98,21 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
   });
 
+  it("rejects a preview after its combo price changes", async () => {
+    const driftDate = "2026-09-14";
+    const driftOffering = await payload.create({ collection: "offerings", data: { name: `改价套餐 ${suffix}`, kind: "combo-meal", priceCents: 3000, active: true, seller: sellerId }, overrideAccess: true });
+    const body: OrderReconciliationRequest = {
+      mode: "snapshot",
+      operationKey: crypto.randomUUID(),
+      scope: [{ date: driftDate, occasion: "lunch" }],
+      expectedFingerprint: fingerprintActiveOrders([]),
+      candidates: [{ customer: customers[0]!.id, date: driftDate, occasion: "lunch", quantity: 1, offering: driftOffering.id, unitPriceCents: 3000, totalCents: 3000 }],
+    };
+    await payload.update({ collection: "offerings", id: driftOffering.id, data: { priceCents: 3200 }, overrideAccess: true });
+
+    await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).rejects.toMatchObject({ code: "stale-preview" });
+  });
+
   it("rolls back every change on an injected item failure", async () => {
     const before = await activeFingerprint();
     const body = await request([{ newCustomer: { displayName: `失败新客${suffix}` }, date, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 }]);
@@ -117,5 +132,31 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     ]);
     expect(results.some((result) => result.alreadyApplied)).toBe(true);
     await expect(reconcileOrdersAtomic(payload, sellerId, operatorId, body)).resolves.toMatchObject({ ok: true, alreadyApplied: true });
+  });
+
+  it("serializes different snapshot operations for the same empty scope", async () => {
+    const concurrentDate = "2026-09-15";
+    const concurrentScope = [{ date: concurrentDate, occasion: "lunch" as const }];
+    const makeBody = (displayName: string): OrderReconciliationRequest => ({
+      mode: "snapshot",
+      operationKey: crypto.randomUUID(),
+      scope: concurrentScope,
+      expectedFingerprint: fingerprintActiveOrders([]),
+      candidates: [{ newCustomer: { displayName }, date: concurrentDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 }],
+    });
+
+    const results = await Promise.allSettled([
+      reconcileOrdersAtomic(payload, sellerId, operatorId, makeBody(`并发甲${suffix}`)),
+      reconcileOrdersAtomic(payload, sellerId, operatorId, makeBody(`并发乙${suffix}`)),
+    ]);
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rejected").map((result) => result.reason)).toEqual([expect.objectContaining({ code: "stale-preview" })]);
+    const active = await payload.find({
+      collection: "orders",
+      where: { and: [{ seller: { equals: sellerId } }, { date: { equals: concurrentDate } }, { occasion: { equals: "lunch" } }, { status: { in: ["draft", "confirmed"] } }] },
+      limit: 0,
+      overrideAccess: true,
+    });
+    expect(active.docs).toHaveLength(1);
   });
 });

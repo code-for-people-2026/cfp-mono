@@ -55,6 +55,10 @@ describe("production order parsing and preview", () => {
 
   it("builds a seller-scoped snapshot diff with combo pricing", async () => {
     const cms = baseCms({
+      findOfferings: vi.fn(async () => [
+        { id: 9, kind: "combo-meal", name: "已停用套餐", priceCents: 9999, active: false },
+        { id: 10, kind: "combo-meal", name: "4菜1汤套餐", priceCents: 3000, active: true },
+      ] as never),
       listOrders: vi.fn(async () => [{
         id: 90,
         customer: { id: 5, displayName: "王燕萍" },
@@ -73,7 +77,7 @@ describe("production order parsing and preview", () => {
       unknownSegments: [],
       issues: [],
     }, "op-1");
-    expect(preview).toMatchObject({ operationKey: "op-1", candidates: [{ customer: 5, quantity: 2, totalCents: 6000 }], rows: [{ kind: "update", beforeQuantity: 1, afterQuantity: 2 }] });
+    expect(preview).toMatchObject({ operationKey: "op-1", candidates: [{ customer: 5, offering: 10, quantity: 2, totalCents: 6000 }], rows: [{ kind: "update", beforeQuantity: 1, afterQuantity: 2 }] });
     expect(cms.listOrders).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
   });
 

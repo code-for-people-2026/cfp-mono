@@ -48,6 +48,8 @@ type AgentServicesDeps = {
   now?: () => Date;
 };
 
+const isActiveCombo = (offering: Offering) => offering.kind === "combo-meal" && offering.active !== false;
+
 /** Build a cms-backed AgentServices bound to one operator's JWT. */
 export function createCmsAgentServices(deps: AgentServicesDeps) {
   const { jwt, cms, operatorId } = deps;
@@ -69,7 +71,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         cms.getSeller(jwt),
         Promise.all(scope.map((entry) => cms.listOrders(jwt, { date: entry.date, occasion: entry.occasion }))),
       ]);
-      const combo = offerings.find((offering) => offering.kind === "combo-meal");
+      const combo = offerings.find(isActiveCombo);
       if (!combo) throw new Error("没有套餐商品");
       const unitPriceCents = combo.priceCents ?? seller.defaultPriceCents;
       if (unitPriceCents === undefined) throw new Error("套餐没有价格");
@@ -116,7 +118,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         const [customers, offerings] = await Promise.all([cms.listCustomers(jwt), cms.findOfferings(jwt)]);
         // ponytail: 桃子 sells one combo (4菜1汤 30元/份); a 份 = one combo. Multi-combo
         // merchants are V1 — pick the first combo-meal, error if the pool has none.
-        const combo = offerings.find((o) => o.kind === "combo-meal");
+        const combo = offerings.find(isActiveCombo);
         for (const it of items) {
           if (!combo) {
             failed.push({ customerName: it.customerName, error: "没有套餐商品，记不了单" });
@@ -166,7 +168,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       const created: Array<{ name: string; orderId: string | number }> = [];
       const failed: Array<{ displayName: string; error: string }> = [];
       const offerings = await cms.findOfferings(jwt).catch(() => []);
-      const combo = offerings.find((o) => o.kind === "combo-meal");
+      const combo = offerings.find(isActiveCombo);
       for (const it of items) {
         try {
           if (!combo) {
