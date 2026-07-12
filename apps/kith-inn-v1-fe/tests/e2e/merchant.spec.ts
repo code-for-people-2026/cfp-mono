@@ -164,7 +164,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T09:00`);
   const configResponse = page.waitForResponse((response) =>
     response.url().includes("/booking-config") && response.request().method() === "PATCH");
-  await taroButton(page, /^开放预订$/).click();
+  await slot.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();
   expect((await configResponse).status()).toBe(200);
   const selectSlot = slot.getByLabel(`选择 ${targetDate} 午餐`);
   await expect(selectSlot).toBeEnabled();
