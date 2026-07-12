@@ -57,7 +57,16 @@ jobs:
       - name: Run affected E2E
         run: |
           v1_filter=()
-          if ! git diff --quiet origin/main...HEAD -- apps/cms apps/kith-inn-v1-be packages/kith-inn-v1-payload; then
+          if ! git diff --quiet origin/main...HEAD -- \
+            apps/cms/package.json \
+            apps/cms/next.config.ts \
+            apps/cms/payload.config.ts \
+            apps/cms/seed/run.ts \
+            apps/cms/src/app/api/health/route.ts \
+            apps/cms/src/app/api/internal/kiv1 \
+            apps/cms/src/lib/kiv1-internal.ts \
+            apps/kith-inn-v1-be \
+            packages/kith-inn-v1-payload; then
             v1_filter+=(--filter=@cfp/kith-inn-v1-fe)
           fi
           pnpm turbo run test:e2e --affected "${v1_filter[@]}"
