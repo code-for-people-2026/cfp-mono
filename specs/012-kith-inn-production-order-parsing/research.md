@@ -49,7 +49,7 @@
 
 ## 决策 4：差异预览在 BE，原子应用和新鲜度校验在 CMS
 
-**Decision**: BE 用当前 seller-scoped customers/orders/offerings 构造差异卡和预览指纹；确认时把服务端 pending 中的不可变候选、范围和 expected active-order fingerprint 一次提交给 CMS。CMS 在事务内重新读取目标范围并比较 fingerprint；不一致返回 `stale-preview`，一致才计算并应用全部变化。
+**Decision**: BE 用当前 seller-scoped customers/orders/offerings 构造差异卡和预览指纹；snapshot 指纹覆盖目标范围，increment 只覆盖唯一业务坐标。确认时把服务端 pending 中的不可变候选、范围和 expected active-order fingerprint 一次提交给 CMS。CMS 在事务内重新读取相同目标并比较 fingerprint；不一致返回 `stale-preview`，一致才计算并应用全部变化。
 
 **Rationale**: BE 最适合生成用户文案与新客地址输入，CMS 才能在同一数据库快照中防止 preview 后数据变化并原子修改多张订单。指纹覆盖目标范围所有 active order 的 id/status/paymentStatus/updatedAt/items，能发现插入、取消、付款或数量变化；确认事务再用数据库写锁与当前 fulfillment 状态保护普通补单、送达和收款并发。录入来源不影响对账，无需进入指纹。
 
@@ -83,11 +83,11 @@
 - 更新 confirmed 后重新创建 fulfillment：拒绝。fulfillment 按 order 唯一，且现记录已表达同一送餐任务。
 - 把 updated order 退回 draft：拒绝。与“同步影响经营口径”冲突，也增加人工再次确认订单步骤。
 
-## 决策 7：两个 PR 共用一份全套 spec
+## 决策 7：五个最小 PR 共用一份全套 spec
 
-**Decision**: PR 1 交付唯一生产解析、fail closed 和真实 eval；PR 2 交付快照/增量对账、CMS 事务和 FE 差异卡。#155 在 PR 2 合并后关闭。
+**Decision**: PR 1 交付唯一生产解析、fail closed 和真实 eval；PR 2 交付快照对账核心；PR 3 交付增量对账核心；PR 4 接入 Agent/聊天/FE；PR 5 同步长期文档并完成最终验证。#155 在 PR 5 合并后关闭。
 
-**Rationale**: AI 解析与多订单事务可分别验证和 review；PR 1 独立消除日期静默默认，PR 2 依赖其明确的模式/范围契约。拆成两个 issue 会削弱同一验收目标的可追踪性。
+**Rationale**: #168 的多轮审查表明，即使同属一个规格，快照、增量和界面集成仍有不同不变量；按仓库 PR 纪律拆分可缩小 diff、测试面和 review 状态空间，同时保留同一 issue/spec 的验收追踪。
 
 **Alternatives considered**:
 

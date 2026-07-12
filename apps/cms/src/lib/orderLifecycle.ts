@@ -322,7 +322,7 @@ const assertReconciliationMutable = (order: ReconcileOrder, fulfillment?: Fulfil
   }
 };
 
-/** Apply a server-generated snapshot in one transaction; no write happens before fingerprint validation. */
+/** Apply a server-generated reconciliation in one transaction; no write happens before fingerprint validation. */
 export async function reconcileOrdersAtomic(
   payload: BasePayload,
   sellerId: string | number,
@@ -330,11 +330,17 @@ export async function reconcileOrdersAtomic(
   body: OrderReconciliationRequest,
 ): Promise<OrderReconciliationResult> {
   const apply = () => withTransaction(payload, async (req) => {
-    if (body.mode !== "snapshot") throw new OrderLifecycleError("invalid-reconciliation");
+    if ((body.mode === "increment" && (body.operation === undefined || body.scope.length !== 1 || body.candidates.length !== 1))
+      || (body.mode === "snapshot" && body.operation !== undefined)) throw new OrderLifecycleError("invalid-reconciliation");
     await lockOrderReconciliationWrites(payload, req);
     const completed = await completedReconciliation(payload, sellerId, body.operationKey, req);
     if (completed) return completed;
-    const active = await loadActiveOrders(payload, sellerId, body.scope, req);
+    const scopeActive = await loadActiveOrders(payload, sellerId, body.scope, req);
+    const active = body.mode === "snapshot" ? scopeActive : scopeActive.filter((order) => {
+      const candidate = body.candidates[0]!;
+      return candidate.customer !== undefined && coordinate(relationId(order.customer), order.date, order.occasion)
+        === coordinate(candidate.customer, candidate.date, candidate.occasion);
+    });
     if (fingerprintActiveOrders(active) !== body.expectedFingerprint) throw new OrderLifecycleError("stale-preview");
     const current = new Map<string, ReconcileOrder>();
     for (const order of active) {
@@ -365,7 +371,10 @@ export async function reconcileOrdersAtomic(
         ? undefined
         : current.get(coordinate(candidate.customer, candidate.date, candidate.occasion));
       const existingItem = existing?.items[0];
-      const preservesHistoricalPrice = existingItem?.quantity === candidate.quantity
+      const finalQuantity = body.mode === "increment" && body.operation === "add" && existingItem
+        ? existingItem.quantity + candidate.quantity
+        : candidate.quantity;
+      const preservesHistoricalPrice = existingItem?.quantity === finalQuantity
         && String(relationId(existingItem.offering)) === String(candidate.offering)
         && existingItem.unitPriceCents === candidate.unitPriceCents;
       if (candidate.unitPriceCents !== (offeringPrices.get(String(candidate.offering)) ?? seller.defaultPriceCents) && !preservesHistoricalPrice) {
@@ -425,6 +434,10 @@ export async function reconcileOrdersAtomic(
       }
       const key = coordinate(customer, candidate.date, candidate.occasion);
       const existing = current.get(key);
+      const finalQuantity = body.mode === "increment" && body.operation === "add" && existing
+        ? existing.items[0]!.quantity + candidate.quantity
+        : candidate.quantity;
+      const finalTotalCents = finalQuantity * candidate.unitPriceCents;
       if (!existing) {
         const order = await payload.create({
           collection: "orders",
@@ -432,40 +445,40 @@ export async function reconcileOrdersAtomic(
             customer,
             date: candidate.date,
             occasion: candidate.occasion,
-            source: "chat-paste",
+            source: body.mode === "snapshot" ? "chat-paste" : "manual",
             status: "draft",
             placedAt: new Date().toISOString(),
-            totalCents: candidate.totalCents,
+            totalCents: finalTotalCents,
             address,
             paymentStatus: "unpaid",
-            idempotencyKey: marker(body.operationKey, "c", 0, candidate.quantity, candidate.customer ?? `new-${normalizedCustomerName(candidate.newCustomer!.displayName)}`, candidate.date, candidate.occasion),
+            idempotencyKey: marker(body.operationKey, "c", 0, finalQuantity, candidate.customer ?? `new-${normalizedCustomerName(candidate.newCustomer!.displayName)}`, candidate.date, candidate.occasion),
             createdBy: operatorId,
             seller: sellerId,
           },
           overrideAccess: true,
           req,
         });
-        await payload.create({ collection: "order_items", data: { order: order.id, offering: candidate.offering, quantity: candidate.quantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
+        await payload.create({ collection: "order_items", data: { order: order.id, offering: candidate.offering, quantity: finalQuantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
         result.created.push({ orderId: order.id });
         continue;
       }
       current.delete(key);
       const existingItem = existing.items[0]!;
-      const unchanged = existingItem.quantity === candidate.quantity
+      const unchanged = existingItem.quantity === finalQuantity
         && String(relationId(existingItem.offering)) === String(candidate.offering);
       if (unchanged) {
-        await payload.update({ collection: "orders", id: existing.id, data: { idempotencyKey: marker(body.operationKey, "n", candidate.quantity, candidate.quantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
+        await payload.update({ collection: "orders", id: existing.id, data: { idempotencyKey: marker(body.operationKey, "n", finalQuantity, finalQuantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
         result.unchanged.push({ orderId: existing.id });
         continue;
       }
       assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       await payload.delete({ collection: "order_items", id: existingItem.id, overrideAccess: true, req });
-      await payload.create({ collection: "order_items", data: { order: existing.id, offering: candidate.offering, quantity: candidate.quantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
-      await payload.update({ collection: "orders", id: existing.id, data: { totalCents: candidate.totalCents, idempotencyKey: marker(body.operationKey, "u", existingItem.quantity, candidate.quantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
-      result.updated.push({ orderId: existing.id, beforeQuantity: existingItem.quantity, afterQuantity: candidate.quantity });
+      await payload.create({ collection: "order_items", data: { order: existing.id, offering: candidate.offering, quantity: finalQuantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
+      await payload.update({ collection: "orders", id: existing.id, data: { totalCents: finalTotalCents, idempotencyKey: marker(body.operationKey, "u", existingItem.quantity, finalQuantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
+      result.updated.push({ orderId: existing.id, beforeQuantity: existingItem.quantity, afterQuantity: finalQuantity });
     }
 
-    for (const existing of current.values()) {
+    for (const existing of body.mode === "snapshot" ? current.values() : []) {
       assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       if (existing.status === "confirmed") {
         await payload.update({ collection: "fulfillments", where: { and: [{ seller: { equals: sellerId } }, { order: { equals: existing.id } }] }, data: { status: "canceled" }, overrideAccess: true, req });

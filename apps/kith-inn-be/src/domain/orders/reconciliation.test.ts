@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ReconciliationError, buildSnapshotPreview, fingerprintActiveOrders, type ReconciliationOrder } from "./reconciliation";
+import { ReconciliationError, buildIncrementPreview, buildSnapshotPreview, fingerprintActiveOrders, type ReconciliationOrder } from "./reconciliation";
 
 const scope = [{ date: "2026-07-13", occasion: "lunch" as const }];
 const customers = [
@@ -126,5 +126,44 @@ describe("snapshot reconciliation preview", () => {
     expect(() => buildSnapshotPreview({ ...base, scope: [scope[0]!, scope[0]!], items: [one] })).toThrowError(expect.objectContaining({ code: "duplicate-scope" }));
     expect(() => buildSnapshotPreview({ ...base, items: [{ ...one, quantity: 0 }] })).toThrowError(expect.objectContaining({ code: "invalid-quantity" }));
     expect(new ReconciliationError("empty-snapshot", "x").name).toBe("ReconciliationError");
+  });
+});
+
+describe("increment reconciliation preview", () => {
+  const base = { scope, customers, offering: 9, unitPriceCents: 3000, operationKey: "op-increment" };
+
+  it("creates a missing coordinate and explains add from zero", () => {
+    const preview = buildIncrementPreview({
+      ...base,
+      operation: "add",
+      items: [{ customerName: "新街坊", date: "2026-07-13", occasion: "lunch", quantity: 2 }],
+      orders: [order({ id: 2, customer: customers[1]!, items: [item(102, 4)] })],
+    });
+
+    expect(preview).toMatchObject({
+      mode: "increment",
+      operation: "add",
+      candidates: [{ newCustomer: { displayName: "新街坊" }, quantity: 2, totalCents: 6000 }],
+      rows: [{ kind: "create", beforeQuantity: 0, changeQuantity: 2, afterQuantity: 2, affectsConfirmed: false }],
+    });
+    expect(preview.expectedFingerprint).toBe(fingerprintActiveOrders([]));
+  });
+
+  it("distinguishes add from set without rendering another same-day order", () => {
+    const target = order({ id: 1, customer: customers[0]!, status: "confirmed", fulfillmentStatus: "pending", items: [item(101, 1)] });
+    const other = order({ id: 2, customer: customers[1]!, items: [item(102, 4)] });
+    const input = {
+      ...base,
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch" as const, quantity: 2 }],
+      orders: [target, other],
+    };
+
+    expect(buildIncrementPreview({ ...input, operation: "add" }).rows).toEqual([
+      expect.objectContaining({ kind: "add", beforeQuantity: 1, changeQuantity: 2, afterQuantity: 3, affectsConfirmed: true }),
+    ]);
+    expect(buildIncrementPreview({ ...input, operation: "set" }).rows).toEqual([
+      expect.objectContaining({ kind: "set", beforeQuantity: 1, afterQuantity: 2, affectsConfirmed: true }),
+    ]);
+    expect(buildIncrementPreview({ ...input, operation: "add" }).expectedFingerprint).toBe(fingerprintActiveOrders([target]));
   });
 });

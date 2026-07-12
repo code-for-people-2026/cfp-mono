@@ -1,12 +1,12 @@
 # 实施计划：kith-inn 生产接龙解析与订单对账
 
-**分支**: `codex/fix-kith-inn-production-parsing` | **日期**: 2026-07-11 | **规格**: [spec.md](./spec.md)
+**分支**: 多个 `codex/*` 最小切片（见“PR 切分”） | **日期**: 2026-07-13 | **规格**: [spec.md](./spec.md)
 
 **输入**: `/specs/012-kith-inn-production-order-parsing/spec.md`
 
 ## Summary
 
-把生产 `record_orders` 从“让主 agent 直接猜结构化 items”改为“主 agent 原样转交用户文本，再调用唯一、可评测的订单解析器”：解析器区分完整接龙快照与自然语言单笔增量，输出带原文日期证据的日期、餐次、顾客和份数，确定性校验日期、周几、范围和关键字段，任何风险项都不生成可执行卡。第二个 PR 在现有确认卡与 CMS 事务基础上增加订单对账：完整接龙覆盖目标范围全部订单且不区分此前录入方式，自然语言只修改单一坐标；预览展示新增、更新、退出和未变化，确认时用 operation key 保证同次请求只生效一次、用预览指纹拒绝陈旧数据，并在一个 CMS 事务中应用全部变化。不新增 collection、依赖、平行 agent 或通用导入系统。
+把生产 `record_orders` 从“让主 agent 直接猜结构化 items”改为“主 agent 原样转交用户文本，再调用唯一、可评测的订单解析器”：解析器区分完整接龙快照与自然语言单笔增量，输出带原文日期证据的日期、餐次、顾客和份数，确定性校验日期、周几、范围和关键字段，任何风险项都不生成可执行卡。后续按快照核心、增量核心、生产集成和最终文档验收拆成独立 PR：完整接龙覆盖目标范围全部订单且不区分此前录入方式，自然语言只修改单一坐标；预览展示新增、更新、退出和未变化，确认时用 operation key 保证同次请求只生效一次、用预览指纹拒绝陈旧数据，并在一个 CMS 事务中应用全部变化。不新增 collection、依赖、平行 agent 或通用导入系统。
 
 ## Technical Context
 
@@ -26,18 +26,18 @@
 
 **约束**: Asia/Shanghai 日期口径；四字段 fail closed；100% 覆盖门禁；seller JWT 租户隔离；确认前零写入；未结算 confirmed 变更同步履约/汇总，已付款/已核账/已送达冲突失败关闭；不触碰 kith-inn-v1
 
-**规模/范围**: 单卖家 MVP，修改 `apps/kith-inn-be`、`packages/kith-inn-shared`、`apps/cms`、必要 `apps/kith-inn-fe` 与长期文档；预计两个 PR
+**规模/范围**: 单卖家 MVP，修改 `apps/kith-inn-be`、`packages/kith-inn-shared`、`apps/cms`、必要 `apps/kith-inn-fe` 与长期文档；共五个可独立验证的 PR
 
 ## Constitution Check
 
-- **I 功能规格**：通过。#155 跨 BE/shared/CMS/必要 FE，修改内部 API 契约并预计两个 PR，使用全套 spec。
+- **I 功能规格**：通过。#155 跨 BE/shared/CMS/必要 FE，修改内部 API 契约并拆成五个 PR，使用全套 spec。
 - **II Monorepo 作用域**：通过。允许路径已写入 spec；任何 `kith-inn-v1`、菜单内容校验和通用导入能力明确排除。
 - **III Brownfield 事实**：通过。生产 agent 直接构造可缺日期的 items，`parseJielong` 仅供 eval 且不含日期；CMS 仅支持原子创建/确认/取消、不支持对账；确认卡用 per-operator pending op 防旧卡。事实见 [research.md](./research.md)。
-- **IV 最小切片**：通过。PR 1 只收敛唯一解析链路，PR 2 只增加订单快照/增量对账；复用现有 DeepSeek client、operation-confirm、Payload transaction 和订单状态机。
+- **IV 最小切片**：通过。解析、快照核心、增量核心、生产集成、文档验收各自独立；复用现有 DeepSeek client、operation-confirm、Payload transaction 和订单状态机。
 - **V 验证与审查**：通过。解析/日期纯函数单测、agent 编排测试、CMS 故障注入与并发测试、≥10 段真实模型 eval、`pnpm verify`；每个 PR 按 AGENTS.md 处理 Codex review。
 - **VI 中文文档**：通过。规格、计划、契约和长期文档叙述主体使用中文。
 
-**设计后复核**：通过。Phase 1 没有新增依赖、collection、状态或越界项目；两个 PR 都能独立 review，第二个建立在第一个的解析契约上。
+**设计后复核**：通过。没有新增依赖、collection、状态或越界项目；五个 PR 都只有一个主要不变量，并按依赖顺序独立 review。
 
 ## Project Structure
 
@@ -104,13 +104,25 @@ docs/kith-inn/
 - 生产 `record_orders` 只接收原始用户文本，由唯一解析器输出模式、范围和四字段候选。
 - 严格校验日期证据、周几、餐次和未知片段；缺失或冲突时不生成确认卡。
 - 确认卡强制展示完整日期；真实样本补日期 ground truth，eval 覆盖生产入口并记录真实模型结果。
-- 不改变现有“确认后逐条创建草稿”的写入语义；snapshot 明确标为仅新增且提示重复接龙不要确认，increment 在 PR 2 安全对账上线前不生成确认卡。重复快照更新和 add/set 写入均在 PR 2 完成。
+- 不改变现有“确认后逐条创建草稿”的写入语义；snapshot 和 increment 分别在后续快照核心、增量核心与生产集成 PR 中上线。
 
-### PR 2：快照对账与自然语言补单
+### PR 2：快照对账核心（已合并 #168）
 
-- BE 预览当前订单差异，确认卡展示新增、更新、退出、未变化及增量计算。
+- BE 预览完整接龙的新增、更新、退出和未变化。
 - CMS 增加 seller-scoped 原子 reconcile 契约，用预览指纹拒绝陈旧确认，事务内创建/更新/取消订单与履约。
-- FE 展示差异与 confirmed 影响；长期文档同步最终快照与增量语义。
+
+### PR 3：增量对账核心
+
+- BE 预览唯一业务坐标的 add/set 运算；CMS 在现有 reconcile 事务内计算最终数量。
+- 覆盖 PostgreSQL 幂等、陈旧预览和不同 operation key 并发，不接 Agent、聊天入口或 FE。
+
+### PR 4：生产确认链路
+
+- Agent、聊天确认和 FE 接入增量预览与落库，展示“当前 + 增加量 → 最终”或 set 目标。
+
+### PR 5：文档与最终验收
+
+- 同步长期产品/架构文档，运行全仓与真实 PostgreSQL 门禁，完成 #155 验收。
 
 ## Complexity Tracking
 
