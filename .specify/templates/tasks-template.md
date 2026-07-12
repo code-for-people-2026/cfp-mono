@@ -13,6 +13,17 @@ description: "Task list template for feature implementation"
 
 **Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
 
+## PR 切片（必须）
+
+生成具体 `tasks.md` 时，必须先把所有任务映射到 `plan.md` 的 PR 拆分计划。每个任务只属于
+一个 PR；每个 PR 只承载一个目标或核心不变量，并拥有可独立运行的验证。不得把后续
+user story、无关重构或顺手清理并入较早的 PR。
+
+| PR | 目标 / 核心不变量 | 包含任务 | 独立验证 | 依赖 |
+|----|-------------------|----------|----------|------|
+| PR1 | [单一目标] | [T001, T002, ...] | [检查或验收] | 无 |
+| PR2 | [单一目标] | [T003, T004, ...] | [检查或验收] | PR1 |
+
 ## Format: `[ID] [P?] [Story] Description`
 
 - **[P]**: Can run in parallel (different files, no dependencies)
