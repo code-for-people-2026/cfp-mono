@@ -54,7 +54,13 @@ jobs:
       - run: pnpm --filter @cfp/website exec playwright install --with-deps chromium
         if: github.event_name == 'pull_request'
 
-      - run: pnpm turbo run test:e2e --affected
+      - name: Run affected E2E
+        run: |
+          v1_filter=()
+          if ! git diff --quiet origin/main...HEAD -- apps/cms apps/kith-inn-v1-be packages/kith-inn-v1-payload; then
+            v1_filter+=(--filter=@cfp/kith-inn-v1-fe)
+          fi
+          pnpm turbo run test:e2e --affected "${v1_filter[@]}"
         if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4
