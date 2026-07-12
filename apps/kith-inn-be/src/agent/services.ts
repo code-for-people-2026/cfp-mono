@@ -9,12 +9,14 @@
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
-import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderStatus, Seller } from "@cfp/kith-inn-shared";
+import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult, OrderStatus, Seller } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
 import { parseOrderInput } from "../domain/orders/parse";
+import type { ParsedOrderInput } from "../domain/orders/parse";
+import { buildSnapshotPreview, type ReconciliationOrder } from "../domain/orders/reconciliation";
 import type { MenuPlanPatch, MenuPlanUpsertInput } from "../lib/cms/menuPlans";
 import { cancelOrder, confirmOrder, recordDraft, OrderStateError, type OrderCms } from "../domain/orders/service";
 import { customerName, todayShanghai } from "../lib/domainUtil";
@@ -25,7 +27,8 @@ export type AgentCms = OrderCms & {
   listCustomers(jwt: string, query?: { name?: string }): Promise<Customer[]>;
   createCustomer(jwt: string, input: { displayName: string; address?: string }): Promise<Customer>;
   listFulfillments(jwt: string, query?: { date?: string; occasion?: string }): Promise<Fulfillment[]>;
-  listOrders(jwt: string, query?: { date?: string; status?: OrderStatus }): Promise<Order[]>;
+  listOrders(jwt: string, query?: { date?: string; occasion?: "lunch" | "dinner"; status?: OrderStatus }): Promise<Order[]>;
+  reconcileOrders(jwt: string, input: OrderReconciliationRequest): Promise<OrderReconciliationResult>;
   setFulfillmentsByIds(jwt: string, ids: Array<string | number>, set: { status: "done" }): Promise<void>;
   // Menu plan cms methods (feature 005, reuse feature 003/004 cms clients)
   listMenuPlans(jwt: string, query: { from: string; to: string }): Promise<MenuPlan[]>;
@@ -55,6 +58,34 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   return {
     async parseOrders(rawText: string) {
       return parseOrderInput(rawText, { referenceDate: todayShanghai(now) });
+    },
+
+    async previewOrderReconciliation(parsed: ParsedOrderInput, operationKey: string): Promise<OrderReconciliationPreview> {
+      if (parsed.mode !== "snapshot") throw new Error("snapshot required");
+      const scope = parsed.scope.map(({ date, occasion }) => ({ date, occasion }));
+      const [customers, offerings, seller, orderLists] = await Promise.all([
+        cms.listCustomers(jwt),
+        cms.findOfferings(jwt),
+        cms.getSeller(jwt),
+        Promise.all(scope.map((entry) => cms.listOrders(jwt, { date: entry.date, occasion: entry.occasion }))),
+      ]);
+      const combo = offerings.find((offering) => offering.kind === "combo-meal");
+      if (!combo) throw new Error("没有套餐商品");
+      const unitPriceCents = combo.priceCents ?? seller.defaultPriceCents;
+      if (unitPriceCents === undefined) throw new Error("套餐没有价格");
+      return buildSnapshotPreview({
+        scope,
+        items: parsed.items,
+        customers,
+        offering: combo.id,
+        unitPriceCents,
+        orders: orderLists.flat().filter((order) => order.status === "draft" || order.status === "confirmed") as unknown as ReconciliationOrder[],
+        operationKey,
+      });
+    },
+
+    async reconcileOrderSnapshot(input: OrderReconciliationRequest) {
+      return cms.reconcileOrders(jwt, input);
     },
 
     /**

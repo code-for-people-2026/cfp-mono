@@ -1,4 +1,4 @@
-import type { CardPayload, DeliveryCardData, MenuPlanView, Order } from "@cfp/kith-inn-shared";
+import type { CardPayload, DeliveryCardData, MenuPlanView, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult } from "@cfp/kith-inn-shared";
 import type { ParsedOrderInput } from "../domain/orders/parse";
 import type { ToolDef } from "../lib/llm/chatWithTools";
 import { setPendingOp } from "./pendingOps";
@@ -12,6 +12,8 @@ import { setPendingOp } from "./pendingOps";
 /** The backend operations the agent's tools drive (DI — mock in tests). */
 export type AgentServices = {
   parseOrders(rawText: string): Promise<ParsedOrderInput>;
+  previewOrderReconciliation(parsed: ParsedOrderInput, operationKey: string): Promise<OrderReconciliationPreview>;
+  reconcileOrderSnapshot(input: OrderReconciliationRequest): Promise<OrderReconciliationResult>;
   previewOrders(items: Array<{ customerName: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>): Promise<{ isNew: boolean[] }>;
   recordOrders(
     items: Array<{ customerName: string; address?: string; quantity: number; occasion: "lunch" | "dinner"; date: string }>,
@@ -106,18 +108,18 @@ export const AGENT_TOOLS: AgentTool[] = [
         const action = parsed.operation === "add" ? `增加 ${item.quantity} 份` : `改成 ${item.quantity} 份`;
         return { text: `已识别为单独补单：${item.date} ${item.customerName} ${item.occasion === "lunch" ? "午餐" : "晚餐"}${action}。当前版本还不能安全修改已有订单，订单对账上线前不会生成确认卡。` };
       }
-      let isNew: boolean[];
+      let preview: OrderReconciliationPreview;
       try {
-        ({ isNew } = await s.previewOrders(items));
+        preview = await s.previewOrderReconciliation(parsed, crypto.randomUUID());
       } catch {
-        return { text: "查不到顾客信息，稍后再试一下？" };
+        return { text: "查不到当前订单或顾客信息，稍后再试一下？" };
       }
-      const newNames = items.filter((_, i) => isNew[i]).map((it) => it.customerName);
-      const mode = "完整接龙（当前仅新增草稿，不会覆盖或取消已有订单）";
-      const summary = `${mode}，将记 ${items.length} 单：${items.map((it) => `${it.date} ${it.customerName} ${it.quantity}份${occasionZh(it.occasion)}`).join("、")}${newNames.length > 0 ? `（新顾客 ${newNames.join("、")} 待建）` : ""}`;
-      const opArgs = { items, isNew, inputMode: parsed.mode };
-      const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: opArgs });
-      return { text: summary + "。同一天已贴过接龙时请不要确认；首次记单可点下面「确认」" + (newNames.length > 0 ? "，新顾客填一下地址。" : "。"), card: opConfirmCard("record_orders", summary, opArgs, opId) };
+      const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;
+      const confirmed = preview.rows.filter((row) => row.affectsConfirmed).length;
+      const scopeLabel = preview.scope.map((entry) => `${entry.date} ${occasionZh(entry.occasion)}`).join("、");
+      const summary = `完整接龙（以本次为准，${scopeLabel}）：新增 ${count("create")}、更新 ${count("update")}、取消 ${count("cancel")}、不变 ${count("unchanged")}${confirmed > 0 ? `；其中 ${confirmed} 单会同步影响备餐、送餐和收款口径` : ""}`;
+      const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: preview });
+      return { text: `${summary}。请核对下面的变化后确认。`, card: opConfirmCard("record_orders", summary, preview, opId) };
     },
   },
   {

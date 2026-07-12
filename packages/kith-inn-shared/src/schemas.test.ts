@@ -20,6 +20,9 @@ import {
   operatorSchema,
   orderCardDataSchema,
   orderItemSchema,
+  orderReconciliationPreviewSchema,
+  orderReconciliationRequestSchema,
+  orderReconciliationResultSchema,
   orderSchema,
   serviceSlotSchema,
   sellerSchema,
@@ -86,6 +89,77 @@ describe("contract schemas", () => {
     expect(cardPayloadSchema.parse({ type: "operation-confirm", data: { toolName: "mark_paid", summary: "x", args: { orderId: 1 }, opId: "1" } })).toMatchObject({ type: "operation-confirm" });
     expect(cardPayloadSchema.parse({ type: "orders", data: { orders: [], date: "2026-07-02" } })).toMatchObject({ type: "orders" });
     expect(cardPayloadSchema.parse({ type: "delivery", data: { totalPending: 0, groups: [] } })).toMatchObject({ type: "delivery" });
+  });
+});
+
+describe("order reconciliation contract", () => {
+  const request = {
+    mode: "snapshot" as const,
+    operationKey: "op-random-1",
+    scope: [{ date: "2026-07-13", occasion: "lunch" as const }],
+    expectedFingerprint: "fingerprint-1",
+    candidates: [{
+      customer: 12,
+      date: "2026-07-13",
+      occasion: "lunch" as const,
+      quantity: 2,
+      offering: 9,
+      unitPriceCents: 3000,
+      totalCents: 6000,
+    }],
+  };
+
+  it("accepts a snapshot request and a complete preview diff", () => {
+    expect(orderReconciliationRequestSchema.parse(request)).toEqual(request);
+    const preview = {
+      ...request,
+      rows: [{
+        kind: "update" as const,
+        customerName: "王阿姨",
+        date: "2026-07-13",
+        occasion: "lunch" as const,
+        beforeQuantity: 1,
+        afterQuantity: 2,
+        orderStatus: "confirmed" as const,
+        affectsConfirmed: true,
+      }],
+    };
+    expect(orderReconciliationPreviewSchema.parse(preview)).toEqual(preview);
+  });
+
+  it("accepts a new customer instead of an existing customer id", () => {
+    const candidate = { ...request.candidates[0], customer: undefined, newCustomer: { displayName: "新街坊", address: "26B" } };
+    expect(orderReconciliationRequestSchema.parse({ ...request, candidates: [candidate] })).toMatchObject({
+      candidates: [{ newCustomer: { displayName: "新街坊", address: "26B" } }],
+    });
+  });
+
+  it("rejects ambiguous customer identity, out-of-scope candidates and invalid quantities", () => {
+    const candidate = request.candidates[0];
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, candidates: [{ ...candidate, newCustomer: { displayName: "重复" } }] })).toThrow();
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, candidates: [{ ...candidate, customer: undefined }] })).toThrow();
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, candidates: [{ ...candidate, date: "2026-07-14" }] })).toThrow();
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, candidates: [{ ...candidate, quantity: 0 }] })).toThrow();
+  });
+
+  it("requires increment operation and forbids it on snapshots", () => {
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, operation: "add" })).toThrow();
+    expect(orderReconciliationRequestSchema.parse({ ...request, mode: "increment", operation: "set" })).toMatchObject({ mode: "increment", operation: "set" });
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, mode: "increment" })).toThrow();
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, mode: "increment", operation: "add", scope: [...request.scope, { date: "2026-07-13", occasion: "dinner" }] })).toThrow();
+    expect(() => orderReconciliationRequestSchema.parse({ ...request, mode: "increment", operation: "add", candidates: [...request.candidates, { ...request.candidates[0], customer: 13 }] })).toThrow();
+  });
+
+  it("parses stable reconcile results", () => {
+    const result = {
+      ok: true as const,
+      created: [{ orderId: 101 }],
+      updated: [{ orderId: 90, beforeQuantity: 1, afterQuantity: 2 }],
+      canceled: [{ orderId: 88 }],
+      unchanged: [{ orderId: 87 }],
+      alreadyApplied: true,
+    };
+    expect(orderReconciliationResultSchema.parse(result)).toEqual(result);
   });
 });
 

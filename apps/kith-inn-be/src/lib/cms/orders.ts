@@ -10,6 +10,8 @@ import type {
   FulfillmentStatus,
   Occasion,
   Order,
+  OrderReconciliationRequest,
+  OrderReconciliationResult,
   OrderItem,
   OrderSource,
   OrderStatus,
@@ -72,6 +74,11 @@ export type OrderDetail = {
   address?: string;
   customer: { id: string | number; address?: string };
   items: Array<{ id: string | number; quantity: number }>;
+};
+
+export type ReconciliationOrderRead = Order & {
+  updatedAt: string;
+  items: Array<{ id: string | number; offering: string | number | { id: string | number }; quantity: number; unitPriceCents?: number }>;
 };
 
 // ---- helpers ----
@@ -137,18 +144,31 @@ export async function listOrders(
   operatorJwt: string,
   query: { date?: string; occasion?: Occasion; status?: OrderStatus } = {},
   deps: CmsDeps = {},
-): Promise<Order[]> {
+): Promise<ReconciliationOrderRead[]> {
   const fetchImpl = fetchOf(deps);
   const qs = new URLSearchParams();
   if (query.date) qs.set("date", query.date);
   if (query.occasion) qs.set("occasion", query.occasion);
   if (query.status) qs.set("status", query.status);
   const tail = qs.toString();
-  const json = await parseOk<{ docs?: Order[] }>(
+  const json = await parseOk<{ docs?: ReconciliationOrderRead[] }>(
     await fetchImpl(`${cmsBase()}/api/internal/orders${tail ? `?${tail}` : ""}`, { headers: { [OPERATOR_JWT_HEADER]: operatorJwt } }),
     "cms orders list",
   );
   return json.docs ?? [];
+}
+
+/** POST one immutable preview to CMS for fingerprint validation + atomic application. */
+export async function reconcileOrders(
+  operatorJwt: string,
+  input: OrderReconciliationRequest,
+  deps: CmsDeps = {},
+): Promise<OrderReconciliationResult> {
+  const fetchImpl = fetchOf(deps);
+  return parseOk(
+    await fetchImpl(`${cmsBase()}/api/internal/orders/reconcile`, { method: "POST", headers: jsonHeaders(operatorJwt), body: JSON.stringify(input) }),
+    "cms order reconcile",
+  );
 }
 
 // ---- writes ----

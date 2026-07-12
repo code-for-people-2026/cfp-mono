@@ -9,7 +9,8 @@
     "./enums": "./src/enums.ts",
     "./types": "./src/types.ts",
     "./schemas": "./src/schemas.ts",
-    "./addressMatch": "./src/addressMatch.ts"
+    "./addressMatch": "./src/addressMatch.ts",
+    "./orderReconciliation": "./src/orderReconciliation.ts"
   },
   "scripts": {
     "lint": "eslint .",

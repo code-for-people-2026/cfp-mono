@@ -1,7 +1,7 @@
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import { ScrollView, Text, Textarea, View } from "@tarojs/components";
-import type { CardPayload, ConfirmCustomerItem } from "@cfp/kith-inn-shared";
+import type { CardPayload } from "@cfp/kith-inn-shared";
 import { ChatCard } from "@/components/ChatCard";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
@@ -94,7 +94,7 @@ export default function Today() {
   /** "确认" on an operation-confirm card → POST /chat/confirm-operation (#126).
    *  record_orders cards pass the (address-edited) items; all cards pass the opId
    *  (server rejects a stale-card click with 409). */
-  const confirmOperation = (i: number, items?: ConfirmCustomerItem[]) => {
+  const confirmOperation = (i: number, items?: Array<{ address?: string }>) => {
     if (confirming) return;
     const msg = msgs[i];
     const card = msg?.card;

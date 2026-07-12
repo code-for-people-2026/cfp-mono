@@ -51,7 +51,7 @@
 - [x] T012 [P] [US4] 在 `apps/kith-inn-be/src/domain/orders/evalAccuracy.test.ts` 先增加日期参与整条匹配、午晚错配和多重集合消费测试
 - [x] T013 [US4] 在 `apps/kith-inn-be/src/domain/orders/evalAccuracy.ts` 将准确率收紧为日期+餐次+顾客+份数四字段全对
 - [x] T014 [US4] 在 `apps/kith-inn-be/eval/run-parse.ts` 改为调用生产解析入口并输出模型、参考日期、issues、四字段准确率、午晚错配和耗时
-- [ ] T015 [US4] 运行真实模型 eval，把不含密钥的命令、模型、样本数、参考日期、准确率、错配和时间追加到 `specs/012-kith-inn-production-order-parsing/quickstart.md`
+- [x] T015 [US4] 运行真实模型 eval，把不含密钥的命令、模型、样本数、参考日期、准确率、错配和时间追加到 `specs/012-kith-inn-production-order-parsing/quickstart.md`
 - [x] T016 [US4] 运行 PR 1 相关测试、`pnpm verify` 与 `git diff --check`，确认 `git diff --name-only` 不含任何 `kith-inn-v1`/`kiv1` 路径并更新 `specs/012-kith-inn-production-order-parsing/tasks.md`
 
 **Checkpoint（PR 1）**: US1 与 US4 完成后提交第一个 PR；#155 保持打开，等待快照对账 PR。
@@ -64,15 +64,15 @@
 
 **Independent Test**: 先导入旧快照和自然语言补单，再预览含新增、改量和撤回的新快照；确认前零写入，确认后目标范围精确等于新快照，故障或陈旧卡不产生部分变化。
 
-- [ ] T017 [P] [US2] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.test.ts` 先覆盖 snapshot 的 create/update/cancel/unchanged、全部 active 订单覆盖、空快照明确清空/疑似残缺阻断、名字归一、confirmed 警告和稳定 fingerprint
-- [ ] T018 [P] [US2] 在 `apps/cms/tests/order-reconciliation.test.ts` 先覆盖真实 PostgreSQL 新增/更新/取消/未变化、confirmed fulfillment、陈旧 fingerprint、故障回滚，以及同一 operation key 重复/同时提交只生效一次
-- [ ] T019 [P] [US2] 在 `packages/kith-inn-shared/src/schemas.ts`、`types.ts` 与 `schemas.test.ts` 定义并测试差异行和记单确认卡参数契约
-- [ ] T020 [US2] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.ts` 实现 seller 当前数据到 snapshot 差异、最终数量、confirmed 影响和 expected fingerprint 的纯函数
-- [ ] T021 [US2] 在 `apps/cms/src/lib/orderLifecycle.ts` 实现 seller-scoped reconcile：事务内重验 fingerprint、创建新客/草稿、替换现单 items/total、取消退出项及同步 fulfillment
-- [ ] T022 [US2] 在 `apps/cms/src/app/api/internal/orders/reconcile/route.ts` 暴露内部原子对账契约并映射 `invalid-reconciliation`、`not-owned`、`stale-preview`、`inconsistent-order`
-- [ ] T023 [US2] 在 `apps/kith-inn-be/src/lib/cms/orders.ts` 与 `orders.test.ts` 增加一次性 reconcile client、请求/响应类型和稳定错误码测试
-- [ ] T024 [US2] 在 `apps/kith-inn-be/src/agent/services.ts`、`apps/kith-inn-be/src/agent/services.test.ts`、`apps/kith-inn-be/src/agent/tools.ts`、`apps/kith-inn-be/src/agent/tools.test.ts`、`apps/kith-inn-be/src/routes/chat.ts` 与 `apps/kith-inn-be/src/routes/chat.test.ts` 中用差异预览替换逐条创建，pending 只保存不可变候选、范围、operation key 和 fingerprint
-- [ ] T025 [US2] 在 `apps/kith-inn-fe/src/logic/orderConfirmView.ts`、`apps/kith-inn-fe/src/logic/orderConfirmView.test.ts` 与 `apps/kith-inn-fe/src/components/ChatCard.tsx` 中展示新增/更新/取消/不变、当前→最终数量和 confirmed 经营影响，不展示录入来源
+- [x] T017 [P] [US2] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.test.ts` 先覆盖 snapshot 的 create/update/cancel/unchanged、全部 active 订单覆盖、空快照明确清空/疑似残缺阻断、名字归一、confirmed 警告和稳定 fingerprint
+- [x] T018 [P] [US2] 在 `apps/cms/tests/order-reconciliation.test.ts` 先覆盖真实 PostgreSQL 新增/更新/取消/未变化、confirmed fulfillment、陈旧 fingerprint、故障回滚，以及同一 operation key 重复/同时提交只生效一次
+- [x] T019 [P] [US2] 在 `packages/kith-inn-shared/src/schemas.ts`、`types.ts` 与 `schemas.test.ts` 定义并测试差异行和记单确认卡参数契约
+- [x] T020 [US2] 在 `apps/kith-inn-be/src/domain/orders/reconciliation.ts` 实现 seller 当前数据到 snapshot 差异、最终数量、confirmed 影响和 expected fingerprint 的纯函数
+- [x] T021 [US2] 在 `apps/cms/src/lib/orderLifecycle.ts` 实现 seller-scoped reconcile：事务内重验 fingerprint、创建新客/草稿、替换现单 items/total、取消退出项及同步 fulfillment
+- [x] T022 [US2] 在 `apps/cms/src/app/api/internal/orders/reconcile/route.ts` 暴露内部原子对账契约并映射 `invalid-reconciliation`、`not-owned`、`stale-preview`、`inconsistent-order`
+- [x] T023 [US2] 在 `apps/kith-inn-be/src/lib/cms/orders.ts` 与 `orders.test.ts` 增加一次性 reconcile client、请求/响应类型和稳定错误码测试
+- [x] T024 [US2] 在 `apps/kith-inn-be/src/agent/services.ts`、`apps/kith-inn-be/src/agent/services.test.ts`、`apps/kith-inn-be/src/agent/tools.ts`、`apps/kith-inn-be/src/agent/tools.test.ts`、`apps/kith-inn-be/src/routes/chat.ts` 与 `apps/kith-inn-be/src/routes/chat.test.ts` 中用差异预览替换逐条创建，pending 只保存不可变候选、范围、operation key 和 fingerprint
+- [x] T025 [US2] 在 `apps/kith-inn-fe/src/logic/orderConfirmView.ts`、`apps/kith-inn-fe/src/logic/orderConfirmView.test.ts` 与 `apps/kith-inn-fe/src/components/ChatCard.tsx` 中展示新增/更新/取消/不变、当前→最终数量和 confirmed 经营影响，不展示录入来源
 
 **Checkpoint**: 完整接龙的“最后一次为准”成为独立可验证的原子切片，不再依赖数据库冲突表达重复粘贴。
 
