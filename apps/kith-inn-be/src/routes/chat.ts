@@ -152,6 +152,10 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
         clearPendingOp(operatorId);
         return c.json({ error: "stale-preview", message: "订单已经变化，请重新粘贴接龙查看最新差异" }, 409);
       }
+      if (error instanceof CmsHttpError && error.code === "settled-order") {
+        clearPendingOp(operatorId);
+        return c.json({ error: "settled-order", message: "接龙涉及已付款或已送达订单，请单独处理这些订单" }, 409);
+      }
       return c.json({ error: "operation failed" }, 502);
     }
   });

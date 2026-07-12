@@ -75,4 +75,4 @@ CMS 在一个事务中：
 
 ## 确认卡契约
 
-snapshot 行类型：`create | update | cancel | unchanged`；increment 行类型：`create | add | set`。每行展示日期、餐次、顾客及最终数量；update/add/set 展示当前值和运算。确认卡不展示或区分订单录入来源；涉及 confirmed 时显示“会同步影响备餐、送餐和收款口径”。
+snapshot 行类型：`create | update | cancel | unchanged`；increment 行类型：`create | add | set`。每行展示日期、餐次、顾客及最终数量；update/add/set 展示当前值和运算。确认卡不展示或区分订单录入来源；涉及未结算 confirmed 时显示“会同步影响备餐、送餐和收款口径”。若 update/cancel 命中 paid/reconciled 或 fulfillment=done，预览失败关闭；确认阶段再次校验并返回 `settled-order`，整次不写入。

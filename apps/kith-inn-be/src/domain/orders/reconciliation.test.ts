@@ -23,7 +23,7 @@ describe("snapshot reconciliation preview", () => {
     const orders = [
       order({ id: 1, customer: customers[0]!, items: [item(101, 1)] }),
       order({ id: 2, customer: customers[1]!, items: [item(102, 2)] }),
-      order({ id: 3, customer: customers[2]!, status: "confirmed", paymentStatus: "paid", items: [item(103, 1)] }),
+      order({ id: 3, customer: customers[2]!, status: "confirmed", fulfillmentStatus: "pending", items: [item(103, 1)] }),
       order({ id: 99, customer: customers[0]!, date: "2026-07-14" }),
     ];
     const preview = buildSnapshotPreview({
@@ -61,7 +61,7 @@ describe("snapshot reconciliation preview", () => {
       customers: [{ id: 12, displayName: "Wang AYi" }],
       offering: 9,
       unitPriceCents: 3000,
-      orders: [order({ id: 1, customer: { id: 12, displayName: "Wang AYi" }, status: "confirmed" })],
+      orders: [order({ id: 1, customer: { id: 12, displayName: "Wang AYi" }, status: "confirmed", fulfillmentStatus: "pending" })],
       operationKey: "op-2",
     });
     expect(preview.rows[0]).toMatchObject({ kind: "update", affectsConfirmed: true, orderStatus: "confirmed" });
@@ -79,6 +79,18 @@ describe("snapshot reconciliation preview", () => {
     const input = { scope, items: [], customers, offering: 9, unitPriceCents: 3000, orders: [order({ id: 1, customer: customers[0]! })], operationKey: "op-clear" };
     expect(() => buildSnapshotPreview(input)).toThrowError(expect.objectContaining({ code: "empty-snapshot" }));
     expect(buildSnapshotPreview({ ...input, allowEmptySnapshot: true }).rows[0]).toMatchObject({ kind: "cancel", afterQuantity: 0 });
+  });
+
+  it.each([
+    ["已付款", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
+    ["已送达", { paymentStatus: "unpaid", fulfillmentStatus: "done" }],
+  ])("blocks automatic changes to %s confirmed orders", (_label, sideEffects) => {
+    const current = order({ id: 1, customer: customers[0]!, status: "confirmed", ...sideEffects });
+    const input = { scope, customers, offering: 9, unitPriceCents: 3000, orders: [current], operationKey: "op-settled" };
+    const update = [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch" as const, quantity: 2 }];
+
+    expect(() => buildSnapshotPreview({ ...input, items: update })).toThrowError(expect.objectContaining({ code: "settled-order" }));
+    expect(() => buildSnapshotPreview({ ...input, items: [], allowEmptySnapshot: true })).toThrowError(expect.objectContaining({ code: "settled-order" }));
   });
 
   it("fails closed on duplicate coordinates, ambiguous names, bad scope and inconsistent active orders", () => {

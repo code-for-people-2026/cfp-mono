@@ -81,6 +81,25 @@ describe("production order parsing and preview", () => {
     expect(cms.listOrders).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
   });
 
+  it("joins fulfillment state and blocks changing a delivered order", async () => {
+    const cms = baseCms({
+      listOrders: vi.fn(async () => [{
+        id: 90, customer: { id: 5, displayName: "王燕萍" }, date: "2026-06-29", occasion: "lunch", status: "confirmed", paymentStatus: "unpaid", updatedAt: "2026-06-29T01:00:00.000Z",
+        items: [{ id: 201, offering: 10, quantity: 1, unitPriceCents: 3000 }],
+      }] as never),
+      listFulfillments: vi.fn(async () => [{ id: 301, order: 90, status: "done" }] as never),
+    });
+    const parsed = {
+      mode: "snapshot" as const,
+      scope: [{ date: "2026-06-29", occasion: "lunch" as const, dateEvidence: "6.29午餐" }],
+      items: [{ customerName: "王燕萍", date: "2026-06-29", occasion: "lunch" as const, quantity: 2, evidence: "王燕萍2份" }],
+      unknownSegments: [], issues: [],
+    };
+
+    await expect(svc(cms).previewOrderReconciliation(parsed, "op-delivered")).rejects.toMatchObject({ code: "settled-order" });
+    expect(cms.listFulfillments).toHaveBeenCalledWith("jwt", { date: "2026-06-29", occasion: "lunch" });
+  });
+
   it("forwards the immutable reconciliation request to CMS", async () => {
     const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [], updated: [], canceled: [], unchanged: [] }));
     const service = svc(baseCms({ reconcileOrders }));

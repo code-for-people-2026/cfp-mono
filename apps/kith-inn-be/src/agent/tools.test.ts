@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ReconciliationError } from "../domain/orders/reconciliation";
 import { clearPendingOp, getPendingOp } from "./pendingOps";
 import { AGENT_TOOLS, type AgentServices } from "./tools";
 
@@ -69,6 +70,13 @@ describe("record_orders production tool", () => {
   it("fails closed when parsing or customer preview fails", async () => {
     expect(await recordTool.execute(services({ parseOrders: vi.fn(async () => { throw new Error("model down"); }) }), { rawText: "x" })).toEqual({ text: expect.stringContaining("解析") });
     expect(await recordTool.execute(services({ previewOrderReconciliation: vi.fn(async () => { throw new Error("cms down"); }) }), { rawText: "x" })).toEqual({ text: expect.stringContaining("顾客") });
+    expect(getPendingOp(OPERATOR)).toBeUndefined();
+  });
+
+  it("explains why settled orders cannot be changed by a full snapshot", async () => {
+    const error = new ReconciliationError("settled-order", "王燕萍的订单已付款或已送达，请单独处理");
+    const result = await recordTool.execute(services({ previewOrderReconciliation: vi.fn(async () => { throw error; }) }), { rawText: "x" });
+    expect(result).toEqual({ text: expect.stringMatching(/已付款或已送达.*单独处理/) });
     expect(getPendingOp(OPERATOR)).toBeUndefined();
   });
 

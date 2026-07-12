@@ -225,7 +225,7 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 - 接龙粘贴后先解析成确认卡。
 - 确认卡逐行标明：新增 / 更新 / 跳过。
 - 命中同一天同餐同顾客的现有 order 时，展示改前/改后数量。
-- 现有订单已 confirmed 时，必须二次确认，因为会影响送餐和收款口径。
+- 现有订单已 confirmed 时，必须二次确认，因为会影响送餐和收款口径；paid/reconciled 或 fulfillment=done 是既成经营事实，完整接龙不得自动覆盖，必须单独处理。
 - `idempotencyKey` 只在后台防“同一次提交重复发送”，不要把“撞键”暴露给用户。
 
 ## 6. 几条硬规则

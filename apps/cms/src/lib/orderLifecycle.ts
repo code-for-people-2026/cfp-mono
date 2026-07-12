@@ -1,7 +1,7 @@
 import type { Fulfillment, Order, OrderItem, OrderReconciliationRequest, OrderReconciliationResult, ServiceSlot } from "@cfp/kith-inn-shared";
 import { fingerprintActiveOrders, type ActiveOrderFingerprintInput } from "@cfp/kith-inn-shared/orderReconciliation";
 import type { BasePayload, PayloadRequest, Where } from "payload";
-import { lockOrderReconciliationScopes, ownedBy, withTransaction } from "./internal";
+import { lockOrderReconciliationWrites, ownedBy, withTransaction } from "./internal";
 
 export type DraftItem = { offering: string | number; quantity: number; unitPriceCents?: number; note?: string };
 export type DraftBody = {
@@ -17,7 +17,7 @@ export type DraftBody = {
 
 export class OrderLifecycleError extends Error {
   constructor(
-    public code: "empty-order" | "inconsistent-order" | "not-draft" | "not-found" | "slot-archived" | "invalid-reconciliation" | "not-owned" | "stale-preview",
+    public code: "empty-order" | "inconsistent-order" | "not-draft" | "not-found" | "slot-archived" | "invalid-reconciliation" | "not-owned" | "stale-preview" | "settled-order",
     public status = code === "invalid-reconciliation" ? 400 : code === "not-owned" ? 403 : code === "not-found" ? 404 : 409,
   ) {
     super(code);
@@ -297,7 +297,7 @@ async function assertFulfillmentConsistency(
   sellerId: string | number,
   order: ReconcileOrder,
   req: PayloadRequest,
-) {
+): Promise<Fulfillment | undefined> {
   const fulfillments = await payload.find({
     collection: "fulfillments",
     where: { and: [{ seller: { equals: sellerId } }, { order: { equals: order.id } }] },
@@ -308,7 +308,14 @@ async function assertFulfillmentConsistency(
   if ((order.status === "confirmed" && fulfillments.docs.length !== 1) || (order.status === "draft" && fulfillments.docs.length !== 0)) {
     throw new OrderLifecycleError("inconsistent-order");
   }
+  return fulfillments.docs[0] as Fulfillment | undefined;
 }
+
+const assertReconciliationMutable = (order: ReconcileOrder, fulfillment?: Fulfillment) => {
+  if (order.paymentStatus !== "unpaid" || (order.status === "confirmed" && fulfillment?.status !== "pending")) {
+    throw new OrderLifecycleError("settled-order");
+  }
+};
 
 /** Apply a server-generated snapshot in one transaction; no write happens before fingerprint validation. */
 export async function reconcileOrdersAtomic(
@@ -319,7 +326,7 @@ export async function reconcileOrdersAtomic(
 ): Promise<OrderReconciliationResult> {
   const apply = () => withTransaction(payload, async (req) => {
     if (body.mode !== "snapshot") throw new OrderLifecycleError("invalid-reconciliation");
-    await lockOrderReconciliationScopes(payload, sellerId, body.scope, req);
+    await lockOrderReconciliationWrites(payload, req);
     const completed = await completedReconciliation(payload, sellerId, body.operationKey, req);
     if (completed) return completed;
     const active = await loadActiveOrders(payload, sellerId, body.scope, req);
@@ -356,11 +363,13 @@ export async function reconcileOrdersAtomic(
     }
 
     const current = new Map<string, ReconcileOrder>();
+    const fulfillments = new Map<string, Fulfillment>();
     for (const order of active) {
       const key = coordinate(relationId(order.customer), order.date, order.occasion);
       if (order.items.length !== 1 || current.has(key)) throw new OrderLifecycleError("inconsistent-order");
       current.set(key, order);
-      await assertFulfillmentConsistency(payload, sellerId, order, req);
+      const fulfillment = await assertFulfillmentConsistency(payload, sellerId, order, req);
+      if (fulfillment) fulfillments.set(String(order.id), fulfillment);
     }
 
     const result: OrderReconciliationResult = { ok: true, created: [], updated: [], canceled: [], unchanged: [] };
@@ -422,6 +431,7 @@ export async function reconcileOrdersAtomic(
         result.unchanged.push({ orderId: existing.id });
         continue;
       }
+      assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       await payload.delete({ collection: "order_items", id: existingItem.id, overrideAccess: true, req });
       await payload.create({ collection: "order_items", data: { order: existing.id, offering: candidate.offering, quantity: candidate.quantity, unitPriceCents: candidate.unitPriceCents, seller: sellerId }, overrideAccess: true, req });
       await payload.update({ collection: "orders", id: existing.id, data: { totalCents: candidate.totalCents, idempotencyKey: marker(body.operationKey, "u", existingItem.quantity, candidate.quantity, customer, candidate.date, candidate.occasion) }, overrideAccess: true, req });
@@ -429,6 +439,7 @@ export async function reconcileOrdersAtomic(
     }
 
     for (const existing of current.values()) {
+      assertReconciliationMutable(existing, fulfillments.get(String(existing.id)));
       if (existing.status === "confirmed") {
         await payload.update({ collection: "fulfillments", where: { and: [{ seller: { equals: sellerId } }, { order: { equals: existing.id } }] }, data: { status: "canceled" }, overrideAccess: true, req });
       }

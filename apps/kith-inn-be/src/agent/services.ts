@@ -65,23 +65,30 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     async previewOrderReconciliation(parsed: ParsedOrderInput, operationKey: string): Promise<OrderReconciliationPreview> {
       if (parsed.mode !== "snapshot") throw new Error("snapshot required");
       const scope = parsed.scope.map(({ date, occasion }) => ({ date, occasion }));
-      const [customers, offerings, seller, orderLists] = await Promise.all([
+      const [customers, offerings, seller, orderLists, fulfillmentLists] = await Promise.all([
         cms.listCustomers(jwt),
         cms.findOfferings(jwt),
         cms.getSeller(jwt),
         Promise.all(scope.map((entry) => cms.listOrders(jwt, { date: entry.date, occasion: entry.occasion }))),
+        Promise.all(scope.map((entry) => cms.listFulfillments(jwt, { date: entry.date, occasion: entry.occasion }))),
       ]);
       const combo = offerings.find(isActiveCombo);
       if (!combo) throw new Error("没有套餐商品");
       const unitPriceCents = combo.priceCents ?? seller.defaultPriceCents;
       if (unitPriceCents === undefined) throw new Error("套餐没有价格");
+      const fulfillmentByOrder = new Map(fulfillmentLists.flat().map((fulfillment) => [
+        String(typeof fulfillment.order === "object" ? fulfillment.order.id : fulfillment.order),
+        fulfillment.status,
+      ]));
       return buildSnapshotPreview({
         scope,
         items: parsed.items,
         customers,
         offering: combo.id,
         unitPriceCents,
-        orders: orderLists.flat().filter((order) => order.status === "draft" || order.status === "confirmed") as unknown as ReconciliationOrder[],
+        orders: orderLists.flat()
+          .filter((order) => order.status === "draft" || order.status === "confirmed")
+          .map((order) => ({ ...order, fulfillmentStatus: fulfillmentByOrder.get(String(order.id)) })) as unknown as ReconciliationOrder[],
         operationKey,
       });
     },

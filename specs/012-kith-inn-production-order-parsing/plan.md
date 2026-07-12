@@ -24,7 +24,7 @@
 
 **性能目标**: 每次解析只增加一次现有 DeepSeek 普通调用；确认保持一次 BE→CMS 写请求；单次接龙按桃子真实规模（通常几十行、至多低百行）在线完成
 
-**约束**: Asia/Shanghai 日期口径；四字段 fail closed；100% 覆盖门禁；seller JWT 租户隔离；确认前零写入；confirmed 变更同步履约/汇总；不触碰 kith-inn-v1
+**约束**: Asia/Shanghai 日期口径；四字段 fail closed；100% 覆盖门禁；seller JWT 租户隔离；确认前零写入；未结算 confirmed 变更同步履约/汇总，已付款/已核账/已送达冲突失败关闭；不触碰 kith-inn-v1
 
 **规模/范围**: 单卖家 MVP，修改 `apps/kith-inn-be`、`packages/kith-inn-shared`、`apps/cms`、必要 `apps/kith-inn-fe` 与长期文档；预计两个 PR
 
