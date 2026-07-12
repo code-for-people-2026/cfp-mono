@@ -363,7 +363,7 @@ export async function reconcileOrdersAtomic(
         const found = await payload.find({ collection: "customers", where: { and: [{ id: { equals: candidate.customer } }, { seller: { equals: sellerId } }] }, limit: 1, overrideAccess: true, req });
         if (!found.docs[0]) throw new OrderLifecycleError("not-owned");
         customerAddresses.set(String(candidate.customer), found.docs[0].address ?? undefined);
-      } else if (candidate.newCustomer!.address) {
+      } else if (candidate.newCustomer!.address && !newCustomerAddresses.has(identity.slice(4))) {
         newCustomerAddresses.set(identity.slice(4), candidate.newCustomer!.address);
       }
     }
