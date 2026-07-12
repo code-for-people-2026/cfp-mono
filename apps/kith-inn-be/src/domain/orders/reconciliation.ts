@@ -136,8 +136,11 @@ export function buildSnapshotPreview(input: SnapshotPreviewInput): OrderReconcil
     currentByCoordinate.delete(key);
     const currentItem = current.items[0]!;
     const unchanged = currentItem.quantity === candidate.quantity
-      && relationshipId(currentItem.offering) === candidate.offering
-      && (currentItem.unitPriceCents ?? 0) === candidate.unitPriceCents;
+      && relationshipId(currentItem.offering) === candidate.offering;
+    if (unchanged && currentItem.unitPriceCents !== undefined) {
+      candidate.unitPriceCents = currentItem.unitPriceCents;
+      candidate.totalCents = currentItem.unitPriceCents * candidate.quantity;
+    }
     const name = typeof current.customer === "object" ? current.customer.displayName : candidateNames.get(key)!;
     if (!unchanged) assertReconciliationMutable(current, name);
     return {

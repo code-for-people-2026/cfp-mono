@@ -93,6 +93,29 @@ describe("snapshot reconciliation preview", () => {
     expect(() => buildSnapshotPreview({ ...input, items: [], allowEmptySnapshot: true })).toThrowError(expect.objectContaining({ code: "settled-order" }));
   });
 
+  it("preserves a settled order's historical price when product and quantity are unchanged", () => {
+    const current = order({
+      id: 1,
+      customer: customers[0]!,
+      status: "confirmed",
+      paymentStatus: "paid",
+      fulfillmentStatus: "pending",
+      items: [{ ...item(101, 1), unitPriceCents: 2500 }],
+    });
+    const preview = buildSnapshotPreview({
+      scope,
+      items: [{ customerName: "王阿姨", date: "2026-07-13", occasion: "lunch", quantity: 1 }],
+      customers,
+      offering: 9,
+      unitPriceCents: 3000,
+      orders: [current],
+      operationKey: "op-old-price",
+    });
+
+    expect(preview.rows).toEqual([expect.objectContaining({ kind: "unchanged" })]);
+    expect(preview.candidates).toEqual([expect.objectContaining({ unitPriceCents: 2500, totalCents: 2500 })]);
+  });
+
   it("fails closed on duplicate coordinates, ambiguous names, bad scope and inconsistent active orders", () => {
     const base = { scope, customers, offering: 9, unitPriceCents: 3000, orders: [], operationKey: "op-bad" };
     const one = { customerName: "王阿姨", date: "2026-07-13", occasion: "lunch" as const, quantity: 1 };
