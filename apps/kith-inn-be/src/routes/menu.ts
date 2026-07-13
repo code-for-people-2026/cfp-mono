@@ -39,7 +39,7 @@ function toView(plan: MenuPlan): MenuPlanView {
     occasion: slot.occasion,
     status: plan.status,
     dishes: (plan.offerings as unknown as Offering[]).map(toMenuDish),
-    publishText: plan.publishText,
+    ...(plan.publishText == null ? {} : { publishText: plan.publishText }),
   };
 }
 

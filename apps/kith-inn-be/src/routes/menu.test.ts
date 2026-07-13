@@ -1,4 +1,5 @@
 import type { MenuPlan, MenuPlanView, Offering, Seller } from "@cfp/kith-inn-shared";
+import { specifiedSwapSuccessResponseSchema } from "@cfp/kith-inn-shared/schemas";
 import { describe, expect, it, vi } from "vitest";
 import { issueToken } from "../lib/auth/jwt";
 import { CmsHttpError } from "../lib/cms/orders";
@@ -237,11 +238,12 @@ describe("POST /menu/plans/:id/swap", () => {
   });
 
   it("published plan with force → clears publishText (single patch)", async () => {
-    const patchMenuPlan = vi.fn(async (_jwt: string, _id, patch) => ({ ...fullPlan({ status: "published" }), ...patch }) as MenuPlan);
+    const patchMenuPlan = vi.fn(async (_jwt: string, _id, patch) => ({ ...fullPlan({ status: "published" }), ...patch, offerings: (patch.offerings ?? []).map((id: string | number) => feasible().find((item) => String(item.id) === String(id))!) }) as MenuPlan);
     const app = menuRoutes(SECRET, mockDeps({ getMenuPlan: vi.fn(async () => fullPlan({ status: "published", publishText: "旧" })), patchMenuPlan }));
     const res = await app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "m1", replacementId: "m3", force: true }) });
     expect(res.status).toBe(200);
     expect(patchMenuPlan).toHaveBeenCalledWith(token, "501", expect.objectContaining({ publishText: null, offerings: expect.any(Array) }));
+    expect(specifiedSwapSuccessResponseSchema.parse(await res.json()).plan.publishText).toBeUndefined();
   });
 
   it("404 when plan not owned (cms 404)", async () => {

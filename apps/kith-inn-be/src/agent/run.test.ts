@@ -122,7 +122,7 @@ describe("runAgent", () => {
     const out = await runAgent({ userText: "把牛腩换掉", history: [], services: s, deps: { chat } });
 
     expect(s.swapDish).not.toHaveBeenCalled();
-    expect(out.card).toMatchObject({ data: { args: { planId: 50, dishId: 1, dishIndex: 2, replacementId: 3 } } });
+    expect(out.card).toMatchObject({ data: { args: { planId: 50, dishId: 1, dishIndex: 2, replacementId: 3, automatic: true } } });
     expect((out.card as { data: { summary: string } }).data.summary).toContain("菜品池较小，本次允许");
   });
 
