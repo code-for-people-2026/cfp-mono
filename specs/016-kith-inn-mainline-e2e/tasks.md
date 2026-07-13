@@ -33,7 +33,7 @@
 - [x] T008 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 调用 `apps/cms/seed/run.ts` 的项目级 reset/seed 真实逻辑，以 `kiv1_*` sentinel 断言 id、内容、数量及访问变化均为零
 - [x] T009 [US4] 运行 `apps/cms/tests/kith-inn-mainline-integration.test.ts`、既有 `apps/cms/tests/seed-run.test.ts`、`pnpm verify` 与 `git diff --check`，记录 PR2 PostgreSQL 命令和人工 diff
 
-**PR2 验证记录（2026-07-13）**：本地 PostgreSQL 窄测试 18/18 通过（2.50s），强制重跑 CMS coverage 与 `pnpm verify` 通过；人工 diff 为 326 insertions / 5 deletions。
+**PR2 验证记录（2026-07-13）**：显式 opt-in 下本地 PostgreSQL 窄测试 19/19 通过（2.39s），无 opt-in 时破坏性 suite 安全跳过，强制重跑 CMS coverage 与 `pnpm verify` 通过；人工 diff 为 340 insertions / 13 deletions。
 
 ## Phase 3：User Story 1 - H5 订单 happy path（PR3，P1）
 

@@ -154,21 +154,24 @@ describe.skipIf(!hasMainlinePostgres)("kith-inn real CMS/PostgreSQL mainline", (
       set: { status: "done" },
     }));
     await expect(json<{ updated: number }>(bulkResponse)).resolves.toMatchObject({ updated: 1 });
+    const beforeRejectedWritesA = await tenantState(sellerA.sellerId);
     expect((await menuPlanUpsert.POST(routeRequest(sellerA.token, "/menu-plans/upsert", "POST", [
-      { date: "2026-10-11", occasion: "lunch", offerings: [sellerB.componentId], status: "draft" },
+      { date: "2026-10-11", occasion: "lunch", offerings: [sellerA.componentId], status: "draft" },
+      { date: "2026-10-12", occasion: "lunch", offerings: [sellerB.componentId], status: "draft" },
     ]))).status).toBe(403);
     expect((await orders.POST(routeRequest(
       sellerA.token,
       "/orders",
       "POST",
-      draftInput(customerB.id, sellerA.comboId, "2026-10-11"),
+      draftInput(customerB.id, sellerA.comboId, "2026-10-13"),
     ))).status).toBe(403);
     expect((await orders.POST(routeRequest(
       sellerA.token,
       "/orders",
       "POST",
-      draftInput(customerA.id, sellerB.comboId, "2026-10-12"),
+      draftInput(customerA.id, sellerB.comboId, "2026-10-14"),
     ))).status).toBe(403);
+    expect(await tenantState(sellerA.sellerId)).toEqual(beforeRejectedWritesA);
     expect(await tenantState(sellerB.sellerId)).toEqual(beforeB);
   });
 
