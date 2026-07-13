@@ -45,8 +45,8 @@
 |----|----------------------|----------|----------|------|
 | PR0 | 固定 #156 行为、契约与后续小切片，不改运行时 | `specs/013-kith-inn-address-confirmation/**` | requirements checklist、speckit analyze、`git diff --check` | 无 |
 | PR1 | 任一确认入口都不能让空地址草稿进入经营口径 | `apps/cms/src/lib/orderLifecycle.ts`、CMS 原子测试、BE order service/route/agent、对应长期文档 | CMS 真实 PG 零副作用；BE route 与口头确认返回“先补地址”；`pnpm verify` | PR0 |
-| PR2 | CMS 一次补地址原子更新目标订单快照和顾客默认地址，其他订单不变 | CMS lifecycle/internal route/真实 PG 测试、Payload 注释、数据/技术文档 | 成功、回滚、租户、并发、同值重试与 route 边界；`pnpm verify` | PR1 |
-| PR3 | BE 只按既定契约暴露 seller-authenticated 补地址 API | BE CMS client/order service/order route 与测试 | JWT/body/响应/错误映射契约；`pnpm verify` | PR2 |
+| PR2 | CMS 一次补地址原子更新目标订单快照和顾客默认地址，且通用 PATCH 不能绕过 | CMS lifecycle/address route/通用 order route/真实 PG 测试、Payload 注释、数据/技术文档 | 成功、回滚、租户、并发、同值重试、route 边界与 address 旁路拒绝；`pnpm verify` | PR1 |
+| PR3 | BE 只按既定契约暴露 seller-authenticated 补地址 API，通用 PATCH 使用字段白名单 | BE CMS client/order service/order route 与测试 | JWT/body/响应/错误映射及 address 旁路拒绝；`pnpm verify` | PR2 |
 | PR4 | 订单页在原订单上下文完成 P1 补地址闭环，并展示可操作错误 | FE orders page/logic/service、产品文档 | 缺地址识别、端点、保存/刷新/再确认及错误文案测试；`pnpm verify` | PR3 |
 | PR5 | 订单录入确认卡准确标出所有将形成缺地址草稿的候选，并完成最终验收 | shared reconciliation row、BE preview、FE `ChatCard`/纯函数、最终长期文档与 quickstart | 新客、既有顾客、既有订单地址三类 preview 与 FE 展示测试；完整 quickstart、`pnpm verify` | PR4 |
 

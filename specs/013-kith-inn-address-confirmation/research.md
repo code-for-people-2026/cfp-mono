@@ -4,7 +4,7 @@
 
 - `createDraftAtomic` 与 `reconcileOrdersAtomic` 会把 `customers.address` 快照到 `orders.address`，顾客地址为空时仍允许创建 draft，符合“先记单后补地址”。
 - `confirmOrderAtomic` 已用 PostgreSQL 事务和 `lockOrderReconciliationWrites` 串行化确认/对账，事务内依次打开餐次、创建 fulfillment、写 confirmed，但未检查 `order.address`。
-- CMS 通用 `PATCH /api/internal/orders/:id` 只改一张订单；customers 没有可与订单更新合并的写端点，因此前端连续两次写无法满足原子补全。
+- CMS 通用 `PATCH /api/internal/orders/:id` 会把 body 原样传给 Payload，BE 通用 PATCH 也只删除 `status` 后透传未知字段；因此当前 `{address: ...}` 能绕过快照语义。customers 又没有可与订单更新合并的写端点，前端连续两次写也无法满足原子补全。
 - BE 的订单 service/route 和 Agent 口头确认最终都调用同一个 CMS confirm 端点；稳定 `OrderLifecycleError`/`OrderStateError` 已能传递 `409` 生命周期错误。
 - `record_orders` preview 已加载完整 customer 和 active order，但 shared 差异行没有地址状态；确认卡只给 `newCustomer` 显示可选地址输入。
 - 订单页会显示 `order.address`，缺失时只是省略地址并仍显示“确认订单”；所有非 2xx 写入都只提示“操作失败”。
@@ -20,9 +20,9 @@
 
 ## 决策 2：用专用原子端点完成一次性补地址
 
-**Decision**: 新增 seller-scoped `PATCH /orders/:id/address`（BE 与 CMS 各一层），body 仅 `{address}`。CMS 在现有写锁和同一事务内校验非空、目标订单属于 seller 且为 draft，然后同时更新目标 `orders.address` 与关联 `customers.address`。
+**Decision**: 新增 seller-scoped `PATCH /orders/:id/address`（BE 与 CMS 各一层），body 仅 `{address}`。CMS 在现有写锁和同一事务内校验非空、目标订单属于 seller 且为 draft，然后同时更新目标 `orders.address` 与关联 `customers.address`。同时把既有 BE/CMS 通用订单 PATCH 改为现有可更新字段白名单，明确拒绝或剥离 `address`、`customer`、`seller`、`status` 等生命周期/归属字段；仅含禁用字段时返回 400。
 
-**Rationale**: 两个字段表达不同时间语义但必须一次成功；专用端点比扩张通用 PATCH 更小，也不会让客户端任意改 customer 或已冻结快照。
+**Rationale**: 两个字段表达不同时间语义但必须一次成功；专用端点比扩张通用 PATCH 更小。只新增端点而不关闭旧透传路径仍可破坏快照，因此 CMS 权威边界和 BE 公共边界都必须使用白名单。
 
 **Alternatives considered**: 连续 PATCH customer/order 会部分成功；把补地址塞进 confirm 会违反“补全后再独立确认”；新增 address service/表没有额外价值。
 
