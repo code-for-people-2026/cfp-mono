@@ -14,6 +14,13 @@
 - 每项是非负冲突次数；按下标顺序字典序比较。
 - `sameDayMainIngredient` 同时统计历史同日餐次与当前餐剩余菜。
 
+## SwapTarget
+
+- `dishId`: 目标 offering ID。
+- `dishIndex?`: 当前餐 dishes/offerings 中的零起始位置；提供时必须与 `dishId` 匹配。
+- 省略 `dishIndex` 时选择第一个匹配 ID，兼容既有 menu/chat 调用。
+- 领域成功结果携带解析后的 `targetIndex`，所有写回只修改该位置。
+
 ## RelaxedRule
 
 - 枚举：`same-week-offering`、`same-day-main-ingredient`、`recent-offering`、`recent-main-ingredient`。
@@ -28,5 +35,5 @@
 
 ## 写入不变量
 
-- `menu_plans.offerings` 数量和顺序不变，仅目标 dish ID 所在位置替换。
+- `menu_plans.offerings` 数量和顺序不变，仅 `targetIndex` 所在位置替换；即使同一 dish ID 出现多次也不得批量替换。
 - published + force 成功后继续把 `publishText` 清为 null；无 force 不写。

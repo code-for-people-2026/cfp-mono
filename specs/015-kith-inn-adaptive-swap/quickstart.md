@@ -10,17 +10,26 @@ pnpm verify
 
 核对四类边界、四级优先级、相同评分随机注入、目标日前 1–7 日/自然周边界、仅目标位置变化。
 
-## PR3：历史与菜单页解释
+## PR3：双前门历史集成
 
 ```bash
 pnpm --filter @cfp/kith-inn-be test -- src/routes/menu.test.ts
+pnpm --filter @cfp/kith-inn-be test -- src/agent/services.test.ts src/agent/run.test.ts
+pnpm verify
+```
+
+核对 menu route/chat 自动分支历史查询范围、当前 plan 排除、preview/confirm 固化选择、响应 `relaxedRules`、重复 offering 单位置写回，以及指定/published 既有测试。
+
+## PR4：H5 runtime 契约与解释
+
+```bash
 pnpm --filter @cfp/kith-inn-fe test -- src/logic/menuEdit.test.ts
 pnpm verify
 ```
 
-核对自动分支历史查询范围、当前 plan 排除、响应 `relaxedRules`、中文映射，以及指定/published 既有测试。
+核对 success-response runtime parse、未知规则拒绝、`dishIndex` 发送、中文固定顺序及菜单餐卡瞬时提示。
 
-## PR4：H5 小池链路
+## PR5：H5 小池链路
 
 ```bash
 CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e
@@ -32,5 +41,5 @@ git diff --check
 
 ## 完成判定
 
-- 四个 PR 均经 Codex review，无新 comment、无 unresolved thread、required checks 全绿后 rebase merge。
+- 五个 PR 均经 Codex review，无新 comment、无 unresolved thread、required checks 全绿后 rebase merge。
 - GitHub #163 验收项全部有自动化证据；然后才进入 #157。
