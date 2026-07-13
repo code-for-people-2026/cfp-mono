@@ -9,11 +9,12 @@
  * deterministic in tests; default = real clock. Today = Asia/Shanghai date
  * (桃子's tz), formatted via the en-CA locale trick (YYYY-MM-DD).
  */
-import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult, OrderStatus, Seller } from "@cfp/kith-inn-shared";
+import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult, OrderStatus, RelaxedRule, Seller } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport, packingSort } from "../domain/delivery/derivations";
 import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
+import { swapHistoryFromPlans, swapHistoryRange } from "../domain/menu/swapContext";
 import { parseOrderInput } from "../domain/orders/parse";
 import type { ParsedOrderInput } from "../domain/orders/parse";
 import { buildIncrementPreview, buildSnapshotPreview, type ReconciliationOrder } from "../domain/orders/reconciliation";
@@ -56,6 +57,22 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   const now = deps.now ?? (() => new Date());
   /** Payload date fields return ISO (e.g. 2026-07-08T00:00:00.000Z); trim to YYYY-MM-DD. */
   const dayOnly = (iso: string) => iso.split("T")[0]!;
+  const readSwapInputs = async (plan: MenuPlan, includeHistory: boolean) => {
+    const offerings = (plan.offerings ?? []) as Offering[];
+    const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
+    const date = dayOnly(slot.date);
+    const [poolOfferings, historyPlans] = await Promise.all([
+      cms.findOfferings(jwt),
+      includeHistory ? cms.listMenuPlans(jwt, swapHistoryRange(date)) : Promise.resolve([]),
+    ]);
+    return {
+      offerings,
+      pool: poolOfferings.filter((offering) => offering.active !== false && offering.kind === "component").map(toMenuDish),
+      menu: [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }],
+      target: { day: date, occasion: slot.occasion },
+      history: swapHistoryFromPlans(historyPlans, plan.id),
+    };
+  };
 
   return {
     async parseOrders(rawText: string) {
@@ -354,33 +371,36 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     },
 
     /** Swap a dish in a plan (auto or specified). Returns {plan, warning?} or error. */
-    async swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean) {
+    async swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number) {
       try {
         const plan = await cms.getMenuPlan(jwt, planId);
         if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
-        const offerings = (plan.offerings ?? []) as Offering[];
-        const pool = (await cms.findOfferings(jwt)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
-        const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
-        const date = dayOnly(slot.date);
-        const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+        const { offerings, pool, menu, target, history } = await readSwapInputs(plan, replacementId === undefined);
         let newReplacementId: string | number;
+        let targetIndex: number;
         let warning: string | undefined;
+        let relaxedRules: RelaxedRule[] | undefined;
         if (replacementId !== undefined) {
-          const r = swapDishSpecified({ menu, target: { day: date, occasion: slot.occasion }, dishId, replacementId, pool });
+          const r = swapDishSpecified({ menu, target, dishId, dishIndex, replacementId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
           newReplacementId = r.replacement.id;
+          targetIndex = r.targetIndex;
           warning = r.warning;
         } else {
-          const r = swapDish({ menu, target: { day: date, occasion: slot.occasion }, dishId, pool });
+          const r = swapDish({ menu, target, dishId, dishIndex, pool, history });
           if (!r.ok) return { ok: false as const, error: r.reason };
           newReplacementId = r.replacement.id;
+          targetIndex = r.targetIndex;
+          relaxedRules = r.relaxedRules;
         }
-        const newOfferings = offerings.map((o) => (String(o.id) === String(dishId) ? newReplacementId : o.id));
+        const newOfferings = offerings.map((offering, index) => index === targetIndex ? newReplacementId : offering.id);
         const patch: MenuPlanPatch = plan.status === "published"
           ? { offerings: newOfferings, publishText: null }
           : { offerings: newOfferings };
         const updated = await cms.patchMenuPlan(jwt, planId, patch);
-        return { ok: true as const, plan: menuPlanToView(updated), warning };
+        return relaxedRules
+          ? { ok: true as const, plan: menuPlanToView(updated), relaxedRules }
+          : { ok: true as const, plan: menuPlanToView(updated), ...(warning ? { warning } : {}) };
       } catch {
         return { ok: false as const, error: "swap failed" };
       }
@@ -478,29 +498,37 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       }
     },
     /** old→new dish names for a swap_dish preview (dry-run, no patch). */
-    async previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean) {
+    async previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean, dishIndex?: number) {
       try {
         const plan = await cms.getMenuPlan(jwt, planId);
         if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
-        const offerings = (plan.offerings ?? []) as Offering[];
-        const target = offerings.find((o) => String(o.id) === String(dishId));
-        const pool = (await cms.findOfferings(jwt)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
-        const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
-        const date = dayOnly(slot.date);
-        const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+        const { offerings, pool, menu, target, history } = await readSwapInputs(plan, replacementId === undefined);
         let replacement: { id: string | number; name: string };
+        let targetIndex: number;
         let warning: string | undefined;
+        let relaxedRules: RelaxedRule[] | undefined;
         if (replacementId !== undefined) {
-          const r = swapDishSpecified({ menu, target: { day: date, occasion: slot.occasion }, dishId, replacementId, pool });
+          const r = swapDishSpecified({ menu, target, dishId, dishIndex, replacementId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
           replacement = r.replacement;
+          targetIndex = r.targetIndex;
           warning = r.warning;
         } else {
-          const r = swapDish({ menu, target: { day: date, occasion: slot.occasion }, dishId, pool });
+          const r = swapDish({ menu, target, dishId, dishIndex, pool, history });
           if (!r.ok) return { ok: false as const, error: r.reason };
           replacement = r.replacement;
+          targetIndex = r.targetIndex;
+          relaxedRules = r.relaxedRules;
         }
-        return { ok: true as const, oldName: target?.name ?? `#${dishId}`, newName: replacement.name, replacementId: replacement.id, ...(warning ? { warning } : {}) };
+        return {
+          ok: true as const,
+          oldName: offerings[targetIndex]?.name ?? `#${dishId}`,
+          newName: replacement.name,
+          replacementId: replacement.id,
+          targetIndex,
+          ...(relaxedRules ? { relaxedRules } : {}),
+          ...(warning ? { warning } : {}),
+        };
       } catch {
         return { ok: false as const, error: "preview failed" };
       }

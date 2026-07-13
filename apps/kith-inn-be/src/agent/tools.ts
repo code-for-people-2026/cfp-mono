@@ -1,4 +1,4 @@
-import type { CardPayload, DeliveryCardData, MenuPlanView, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult } from "@cfp/kith-inn-shared";
+import type { CardPayload, DeliveryCardData, MenuPlanView, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult, RelaxedRule } from "@cfp/kith-inn-shared";
 import type { ParsedOrderInput } from "../domain/orders/parse";
 import { ReconciliationError } from "../domain/orders/reconciliation";
 import type { ToolDef } from "../lib/llm/chatWithTools";
@@ -38,7 +38,7 @@ export type AgentServices = {
     force?: boolean,
     plannedItems?: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }>,
   ): Promise<{ ok: true; plans: MenuPlanView[] } | { ok: false; reason: string }>;
-  swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean): Promise<{ ok: true; plan: MenuPlanView; warning?: string } | { ok: false; error: string }>;
+  swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number): Promise<{ ok: true; plan: MenuPlanView; warning?: string; relaxedRules?: RelaxedRule[] } | { ok: false; error: string }>;
   publishMenu(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   getMenu(date?: string): Promise<MenuPlanView[]>;
   getDishPool(): Promise<Array<{ id: string | number; name: string; mainIngredient?: string; category?: string }>>;
@@ -46,7 +46,7 @@ export type AgentServices = {
   // Preview reads for operation-confirm cards (#126 rich previews) — all read-only.
   previewOrder(orderId: string | number): Promise<{ displayName: string; quantity: number; occasion: string } | null>;
   previewMenuTargets(targets: Array<{ date: string; occasion: "lunch" | "dinner" }>, force?: boolean): Promise<{ ok: true; lines: string[]; plannedItems: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }> } | { ok: false; reason: string }>;
-  previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean): Promise<{ ok: true; oldName: string; newName: string; replacementId: string | number; warning?: string } | { ok: false; error: string }>;
+  previewSwap(planId: string | number, dishId: string | number, replacementId: string | number | undefined, force?: boolean, dishIndex?: number): Promise<{ ok: true; oldName: string; newName: string; replacementId: string | number; targetIndex: number; warning?: string; relaxedRules?: RelaxedRule[] } | { ok: false; error: string }>;
   previewPublish(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   markUnpaid?(input: { orderId: string | number }): Promise<{ ok: true } | { ok: false; error: string }>;
   /** Operator id (from JWT) — keys the server-side pending ops (#126). */
@@ -59,6 +59,12 @@ export type AgentTool = {
 };
 
 const occasionZh = (o: unknown) => (o === "lunch" ? "午餐" : o === "dinner" ? "晚餐" : String(o));
+const relaxedRuleZh: Record<RelaxedRule, string> = {
+  "same-week-offering": "本周已安排过同一道菜",
+  "same-day-main-ingredient": "当天主料重复",
+  "recent-offering": "近 7 天已安排过同一道菜",
+  "recent-main-ingredient": "近 7 天主料重复",
+};
 
 /** "#45（王燕萍 2份午餐）" — falls back to just the id if the order can't be read. */
 const orderLabel = async (s: AgentServices, orderId: number) => {
@@ -264,8 +270,12 @@ export const AGENT_TOOLS: AgentTool[] = [
       const force = args.force === true;
       const preview = await s.previewSwap(planId, dishId, replacementId, force);
       if (!preview.ok) return { text: preview.error === "plan-published" ? "这餐已发给顾客了，要改得说「强制」。" : `换不了：${preview.error}` };
-      const summary = `将把 ${preview.oldName} 换成 ${preview.newName}${preview.warning ? `（${preview.warning}）` : ""}`;
-      const opArgs = { planId, dishId, replacementId: preview.replacementId, force };
+      const relaxed = preview.relaxedRules?.length
+        ? `菜品池较小，本次允许：${preview.relaxedRules.map((rule) => relaxedRuleZh[rule]).join("、")}`
+        : undefined;
+      const notes = [preview.warning, relaxed].filter(Boolean).join("；");
+      const summary = `将把 ${preview.oldName} 换成 ${preview.newName}${notes ? `（${notes}）` : ""}`;
+      const opArgs = { planId, dishId, dishIndex: preview.targetIndex, replacementId: preview.replacementId, force };
       const opId = setPendingOp(s.operatorId, { toolName: "swap_dish", args: opArgs, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, opArgs, opId) };
     },

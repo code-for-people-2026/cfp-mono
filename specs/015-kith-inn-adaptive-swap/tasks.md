@@ -38,12 +38,12 @@
 
 **Independent Test**: mock CMS 返回目标周/近 7 日/当前 plan 和重复 offering，分别调用 menu route、agent preview/confirm，验证查询范围、当前 plan 排除、选择/解释一致、单位置 patch 与既有保护。
 
-- [ ] T009 [P] [US2] 先在 `packages/kith-inn-shared/src/schemas.test.ts` 写失败测试，再于 `schemas.ts` / `types.ts` 扩展 swap request 的可选非负整数 `dishIndex`，并增加区分自动/指定成功分支的 shared runtime response schema
-- [ ] T010 [US1] 先在 `apps/kith-inn-be/src/routes/menu.test.ts` 写失败测试：目标相关范围、当前 plan 排除、inactive 候选排除、空/非空 `relaxedRules`、显式位置匹配和重复 ID 只改一个 offerings 位置
-- [ ] T011 [US1] 在 `apps/kith-inn-be/src/routes/menu.ts` 并行读取启用菜池和历史 plans，排除当前 plan、映射 history、传入 `dishIndex`，按 `targetIndex` 单位置写回并返回自动分支 `relaxedRules`
-- [ ] T012 [US2] 先在 `apps/kith-inn-be/src/agent/services.test.ts`、`agent/run.test.ts` 写失败测试：`swapDish` / `previewSwap` 使用同一目标历史、排除当前 plan、返回解释、确认参数固化 preview replacement、重复 ID 单位置写回且确认卡提示放宽原因
-- [ ] T013 [US2] 在 `apps/kith-inn-be/src/agent/services.ts`、`agent/tools.ts` 与必要 `agent/run.ts` 类型中接入历史和 `relaxedRules`；auto preview 把胜出 replacement 写进 pending op，确认不得重随机，直接 auto 调用按 `targetIndex` 写回
-- [ ] T014 [US3] 复用并运行 `routes/menu.test.ts` 与 `agent/services.test.ts` 已有的指定换菜 warning、published 无 force 和 force 清文案用例；仅补双前门历史接入造成的新回归断言，运行 shared/route/agent 定向测试、`pnpm verify`、`git diff --check`
+- [x] T009 [P] [US2] 先在 `packages/kith-inn-shared/src/schemas.test.ts` 写失败测试，再于 `schemas.ts` / `types.ts` 扩展 swap request 的可选非负整数 `dishIndex`，并增加区分自动/指定成功分支的 shared runtime response schema
+- [x] T010 [US1] 先在 `apps/kith-inn-be/src/routes/menu.test.ts` 写失败测试：目标相关范围、当前 plan 排除、inactive 候选排除、空/非空 `relaxedRules`、显式位置匹配和重复 ID 只改一个 offerings 位置
+- [x] T011 [US1] 在 `apps/kith-inn-be/src/routes/menu.ts` 并行读取启用菜池和历史 plans，排除当前 plan、映射 history、传入 `dishIndex`，按 `targetIndex` 单位置写回并返回自动分支 `relaxedRules`
+- [x] T012 [US2] 先在 `apps/kith-inn-be/src/agent/services.test.ts`、`agent/run.test.ts` 写失败测试：`swapDish` / `previewSwap` 使用同一目标历史、排除当前 plan、返回解释、确认参数固化 preview replacement、重复 ID 单位置写回且确认卡提示放宽原因
+- [x] T013 [US2] 在 `apps/kith-inn-be/src/agent/services.ts`、`agent/tools.ts` 与必要 `agent/run.ts` 类型中接入历史和 `relaxedRules`；auto preview 把胜出 replacement 写进 pending op，确认不得重随机，直接 auto 调用按 `targetIndex` 写回
+- [x] T014 [US3] 复用并运行 `routes/menu.test.ts` 与 `agent/services.test.ts` 已有的指定换菜 warning、published 无 force 和 force 清文案用例；仅补双前门历史接入造成的新回归断言，运行 shared/route/agent 定向测试、`pnpm verify`、`git diff --check`
 
 ## Phase 4：User Story 2 - H5 runtime 契约与解释（PR4，P1）
 

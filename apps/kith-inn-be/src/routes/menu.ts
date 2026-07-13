@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import type { MenuPlan, MenuPlanView, Offering, Seller } from "@cfp/kith-inn-shared";
+import type { MenuPlan, MenuPlanView, Offering, RelaxedRule, Seller } from "@cfp/kith-inn-shared";
 import { swapRequestSchema } from "@cfp/kith-inn-shared/schemas";
 import { findOfferings as findOfferingsFn } from "../lib/cms/client";
 import { CmsHttpError, getSeller as getSellerFn } from "../lib/cms/orders";
@@ -14,6 +14,7 @@ import {
 } from "../lib/cms/menuPlans";
 import { generateForTargets, generateWeekMenu, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
+import { swapHistoryFromPlans, swapHistoryRange } from "../domain/menu/swapContext";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
 /** Injectable cms boundary (default = real cms clients). */
@@ -152,26 +153,42 @@ export function menuRoutes(
       }
       const offerings = plan.offerings as unknown as Offering[];
       const dishObjs = offerings;
-      const pool = (await deps.findOfferings(token)).filter((o) => o.active !== false && o.kind === "component").map(toMenuDish);
       const slotView = toView(plan);
+      const [poolOfferings, historyPlans] = await Promise.all([
+        deps.findOfferings(token),
+        parsed.data.replacementId === undefined
+          ? deps.listMenuPlans(token, swapHistoryRange(slotView.date))
+          : Promise.resolve([]),
+      ]);
+      const pool = poolFrom(poolOfferings);
       const menu = [{ day: slotView.date, occasion: slotView.occasion, dishes: slotView.dishes }];
-      const target = { day: slotView.date, occasion: slotView.occasion, dishId: parsed.data.dishId };
+      const target = { day: slotView.date, occasion: slotView.occasion };
       let replacementId: string | number;
+      let targetIndex: number;
       let warning: string | undefined;
+      let relaxedRules: RelaxedRule[] | undefined;
       if (parsed.data.replacementId !== undefined) {
-        const r = swapDishSpecified({ menu, target, dishId: parsed.data.dishId, replacementId: parsed.data.replacementId, pool });
+        const r = swapDishSpecified({ menu, target, dishId: parsed.data.dishId, dishIndex: parsed.data.dishIndex, replacementId: parsed.data.replacementId, pool });
         if (!r.ok) return c.json({ error: r.reason }, 400);
         replacementId = r.replacement.id;
+        targetIndex = r.targetIndex;
         warning = r.warning;
       } else {
-        const r = swapDish({ menu, target, dishId: parsed.data.dishId, pool });
+        const r = swapDish({
+          menu, target, dishId: parsed.data.dishId, dishIndex: parsed.data.dishIndex, pool,
+          history: swapHistoryFromPlans(historyPlans, plan.id),
+        });
         if (!r.ok) return c.json({ error: r.reason }, 409);
         replacementId = r.replacement.id;
+        targetIndex = r.targetIndex;
+        relaxedRules = r.relaxedRules;
       }
-      const newOfferings = dishObjs.map((o) => (String(o.id) === String(parsed.data.dishId) ? replacementId : o.id));
+      const newOfferings = dishObjs.map((o, index) => index === targetIndex ? replacementId : o.id);
       const patch: MenuPlanPatch = plan.status === "published" ? { offerings: newOfferings, publishText: null } : { offerings: newOfferings };
       const updated = await deps.patchMenuPlan(token, id, patch);
-      return c.json({ plan: toView(updated), ...(warning ? { warning } : {}) });
+      return c.json(relaxedRules
+        ? { plan: toView(updated), relaxedRules }
+        : { plan: toView(updated), ...(warning ? { warning } : {}) });
     } catch (e) {
       return c.json({ error: "swap failed" }, cmsStatus(e));
     }

@@ -31,6 +31,10 @@ const baseCms = (over: Partial<AgentCms> = {}): AgentCms => ({
 
 const OP = 1;
 const svc = (cms: AgentCms) => createCmsAgentServices({ jwt: "jwt", cms, operatorId: OP, now: NOW });
+const component = (id: number, name: string, mainIngredient: string, active = true) => ({ id, kind: "component", name, category: "meat", mainIngredient, active });
+const planWith = (offerings: unknown[], over: Record<string, unknown> = {}) => ({
+  id: 50, status: "draft", slot: { date: "2026-06-29T00:00:00.000Z", occasion: "lunch" }, offerings, ...over,
+});
 
 describe("production order parsing and preview", () => {
   it("uses the injected Shanghai today as the parser reference date", async () => {
@@ -444,6 +448,31 @@ describe("generateMenu", () => {
   });
 });
 
+describe("swapDish", () => {
+  it("uses target history, excludes the current plan, and patches only the resolved duplicate position", async () => {
+    const [target, used, conflict, clean] = [component(1, "牛腩", "牛"), component(2, "白切鸡", "鸡"), component(3, "鱼排", "鱼"), component(4, "排骨", "猪")];
+    const current = planWith([target, used, target]);
+    const listMenuPlans = vi.fn(async () => [planWith([clean]), planWith([conflict], { id: 51, slot: { date: "2026-06-28", occasion: "dinner" } })] as never);
+    const patchMenuPlan = vi.fn(async (_jwt, _id, patch) => ({ ...current, ...patch }) as never);
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => current as never), findOfferings: vi.fn(async () => [target, used, conflict, clean] as never), listMenuPlans, patchMenuPlan });
+
+    expect(await svc(cms).swapDish(50, 1)).toMatchObject({ ok: true, relaxedRules: [] });
+    expect(listMenuPlans).toHaveBeenCalledWith("jwt", { from: "2026-06-22", to: "2026-07-05" });
+    expect(patchMenuPlan).toHaveBeenCalledWith("jwt", 50, { offerings: [4, 2, 1] });
+  });
+
+  it("uses an explicit preview position and keeps published protection/force clearing", async () => {
+    const [target, used, replacement] = [component(1, "牛腩", "牛"), component(2, "白切鸡", "鸡"), component(3, "鱼排", "鱼")];
+    const published = planWith([target, used, target], { status: "published", publishText: "旧文案" });
+    const patchMenuPlan = vi.fn(async (_jwt, _id, patch) => ({ ...published, ...patch }) as never);
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => published as never), findOfferings: vi.fn(async () => [target, used, replacement] as never), patchMenuPlan });
+
+    expect(await svc(cms).swapDish(50, 1, 3, false, 2)).toEqual({ ok: false, error: "plan-published" });
+    expect(await svc(cms).swapDish(50, 1, 3, true, 2)).toMatchObject({ ok: true });
+    expect(patchMenuPlan).toHaveBeenCalledWith("jwt", 50, { offerings: [1, 2, 3], publishText: null });
+  });
+});
+
 describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
   it("previewOrder: populated customer → display info; sums item quantities", async () => {
     const cms = baseCms({
@@ -503,6 +532,21 @@ describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
     });
     const r = await svc(cms).previewSwap(50, 12, 19);
     expect(r).toMatchObject({ ok: true, oldName: "牛腩", newName: "香菇滑鸡", replacementId: 19 });
+    expect(cms.patchMenuPlan).not.toHaveBeenCalled();
+  });
+
+  it("previewSwap: automatic preview returns the fixed target and history explanation", async () => {
+    const [target, used, replacement] = [component(1, "牛腩", "牛"), component(2, "白切鸡", "鸡"), component(3, "鱼排", "鱼")];
+    const current = planWith([target, used]);
+    const history = planWith([replacement], { id: 51, slot: { date: "2026-06-28", occasion: "dinner" } });
+    const listMenuPlans = vi.fn(async () => [current, history] as never);
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => current as never), findOfferings: vi.fn(async () => [target, used, replacement] as never), listMenuPlans });
+
+    expect(await svc(cms).previewSwap(50, 1, undefined)).toMatchObject({
+      ok: true, replacementId: 3, targetIndex: 0,
+      relaxedRules: ["recent-offering", "recent-main-ingredient"],
+    });
+    expect(listMenuPlans).toHaveBeenCalledWith("jwt", { from: "2026-06-22", to: "2026-07-05" });
     expect(cms.patchMenuPlan).not.toHaveBeenCalled();
   });
 

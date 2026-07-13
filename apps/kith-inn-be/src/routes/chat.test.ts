@@ -403,7 +403,7 @@ describe("dispatchPendingOp", () => {
   it("swap_dish: ok and fail", async () => {
     expect(await run(svc(), "swap_dish", { planId: 1, dishId: 2 })).toBe("已换好。");
     const s = svc({ swapDish: vi.fn(async () => ({ ok: false as const, error: "nope" })) });
-    expect(await run(s, "swap_dish", { planId: 1, dishId: 2 })).toBe("换菜失败：nope");
+    expect(await run(s, "swap_dish", { planId: 1, dishId: 2, dishIndex: 0 })).toBe("换菜失败：nope");
   });
 
   it("publish_menu: ok returns the copied text and fail", async () => {
@@ -445,10 +445,10 @@ describe("dispatchPendingOp", () => {
     expect(g).toHaveBeenCalledWith(expect.anything(), true, plannedItems);
   });
 
-  it("swap_dish: forwards a specified replacementId", async () => {
+  it("swap_dish: forwards the frozen replacementId and dishIndex", async () => {
     const sw = vi.fn(async () => ({ ok: true as const, plan: {} as never })) as never;
-    await run(svc({ swapDish: sw }), "swap_dish", { planId: 1, dishId: 2, replacementId: 9 });
-    expect(sw).toHaveBeenCalledWith(1, 2, 9, false);
+    await run(svc({ swapDish: sw }), "swap_dish", { planId: 1, dishId: 2, replacementId: 9, dishIndex: 3, force: true });
+    expect(sw).toHaveBeenCalledWith(1, 2, 9, true, 3);
   });
 
   it("add_dish", async () => {
