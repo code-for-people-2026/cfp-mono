@@ -1,36 +1,48 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-
-const seedMocks = vi.hoisted(() => ({
-  oldApplySeed: vi.fn(),
-  oldResetSeedData: vi.fn(),
-  v1ApplySeed: vi.fn(),
-}));
-
-vi.mock("@cfp/kith-inn-payload/seed", () => ({
-  applySeed: seedMocks.oldApplySeed,
-  resetSeedData: seedMocks.oldResetSeedData,
-  taoziFixture: { seller: { name: "桃子" }, offerings: [] },
-}));
-
-vi.mock("@cfp/kith-inn-v1-payload/seed", () => ({
-  applySeed: seedMocks.v1ApplySeed,
-  RESET_COLLECTIONS: [
-    "kiv1_orders",
-    "kiv1_booking_batches",
-    "kiv1_meal_slots",
-    "kiv1_customer_profiles",
-    "kiv1_offerings",
-    "kiv1_operators",
-    "kiv1_sellers",
-  ],
-}));
-
 import {
-  applyAllSeeds,
   assertDevResetAllowed,
   configuredPostgresUrl,
-  resetAllSeedData,
+  parseSeedProject,
+  runProjectSeed,
 } from "../seed/run";
+
+type Doc = { id: string | number; [key: string]: unknown };
+type Operation = { action: "find" | "create" | "delete"; collection: string };
+
+const matchesWhere = (doc: Doc, where: Record<string, unknown>): boolean =>
+  Object.entries(where).every(([field, condition]) => {
+    if (field === "and") {
+      return (condition as Array<Record<string, unknown>>).every((entry) => matchesWhere(doc, entry));
+    }
+    if (condition && typeof condition === "object" && "equals" in condition) {
+      return doc[field] === (condition as { equals: unknown }).equals;
+    }
+    return true;
+  });
+
+const fakePayload = (initial: Record<string, Doc[]>) => {
+  const state = structuredClone(initial);
+  const operations: Operation[] = [];
+  let nextId = 0;
+  const payload = {
+    find: vi.fn(async ({ collection, where }: { collection: string; where: Record<string, unknown> }) => {
+      operations.push({ action: "find", collection });
+      return { docs: (state[collection] ?? []).filter((doc) => matchesWhere(doc, where)) };
+    }),
+    create: vi.fn(async ({ collection, data }: { collection: string; data: Record<string, unknown> }) => {
+      operations.push({ action: "create", collection });
+      const doc = { id: `${collection}-created-${++nextId}`, ...data };
+      (state[collection] ??= []).push(doc);
+      return doc;
+    }),
+    delete: vi.fn(async ({ collection, id }: { collection: string; id: string | number }) => {
+      operations.push({ action: "delete", collection });
+      state[collection] = (state[collection] ?? []).filter((doc) => doc.id !== id);
+    }),
+  };
+  return { operations, payload, state };
+};
 
 const allow = { KITH_INN_ALLOW_DEV_SEED_RESET: "1" };
 
@@ -38,93 +50,43 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
-describe("shared seed orchestration", () => {
-  it("runs the old seed before v1 and returns both seeded/skipped results", async () => {
-    const oldResult = { seeded: false, offeringCount: 0 };
-    const v1Result = {
-      seeded: true,
-      sellerId: 2,
-      sellerCreated: true,
-      operatorCreated: true,
-    };
-    seedMocks.oldApplySeed.mockResolvedValue(oldResult);
-    seedMocks.v1ApplySeed.mockResolvedValue(v1Result);
+describe("project-scoped seed orchestration", () => {
+  it.each([false, true])("kith-inn reset=%s preserves kiv1 sentinel with zero kiv1 access", async (resetDev) => {
+    const sentinel = { id: "kiv1-sentinel", marker: { keep: true } };
+    const { operations, payload, state } = fakePayload({ kiv1_sellers: [sentinel] });
 
-    const payload = {};
-    await expect(applyAllSeeds(payload)).resolves.toEqual({
-      old: oldResult,
-      v1: v1Result,
-    });
-    expect(seedMocks.oldApplySeed).toHaveBeenCalledWith(payload, expect.anything());
-    expect(seedMocks.v1ApplySeed).toHaveBeenCalledWith(payload);
-    expect(seedMocks.oldApplySeed.mock.invocationCallOrder[0]).toBeLessThan(
-      seedMocks.v1ApplySeed.mock.invocationCallOrder[0]!,
-    );
+    await runProjectSeed(payload, "kith-inn", resetDev);
+
+    expect(state.kiv1_sellers).toEqual([sentinel]);
+    expect(operations.length).toBeGreaterThan(0);
+    expect(operations.filter(({ collection }) => collection.startsWith("kiv1_"))).toEqual([]);
   });
 
-  it("can retry the shared seed after v1 fails", async () => {
-    seedMocks.oldApplySeed.mockResolvedValue({ seeded: false, offeringCount: 0 });
-    seedMocks.v1ApplySeed
-      .mockRejectedValueOnce(new Error("temporary v1 failure"))
-      .mockResolvedValueOnce({
-        seeded: false,
-        sellerId: 2,
-        sellerCreated: false,
-        operatorCreated: false,
-      });
+  it.each([false, true])("kiv1 reset=%s preserves kith-inn sentinel with zero kith-inn access", async (resetDev) => {
+    const sentinel = { id: "kith-sentinel", name: "不可改的旧项目", marker: { keep: true } };
+    const { operations, payload, state } = fakePayload({ sellers: [sentinel] });
 
-    await expect(applyAllSeeds({})).rejects.toThrow("temporary v1 failure");
-    await expect(applyAllSeeds({})).resolves.toMatchObject({
-      old: { seeded: false },
-      v1: { seeded: false },
-    });
-    expect(seedMocks.oldApplySeed).toHaveBeenCalledTimes(2);
-    expect(seedMocks.v1ApplySeed).toHaveBeenCalledTimes(2);
+    await runProjectSeed(payload, "kiv1", resetDev);
+
+    expect(state.sellers).toEqual([sentinel]);
+    expect(operations.length).toBeGreaterThan(0);
+    expect(operations.every(({ collection }) => collection.startsWith("kiv1_"))).toBe(true);
   });
 
-  it("resets old data first, then deletes every v1 collection in FK-safe order", async () => {
-    seedMocks.oldResetSeedData.mockResolvedValue({ deleted: { sellers: 1 } });
-    const find = vi.fn(async ({ collection }: { collection: string }) => ({
-      docs: [{ id: `${collection}-1` }],
-    }));
-    const deleteDoc = vi.fn().mockResolvedValue(undefined);
-    const payload = { find, delete: deleteDoc };
+  it("requires one known project and has no all-project fallback", () => {
+    expect(parseSeedProject(["kith-inn"])).toBe("kith-inn");
+    expect(parseSeedProject(["--reset-dev", "kiv1"])).toBe("kiv1");
+    expect(() => parseSeedProject([])).toThrow(/project/);
+    expect(() => parseSeedProject(["all"])).toThrow(/project/);
+  });
 
-    await expect(resetAllSeedData(payload)).resolves.toEqual({
-      old: { deleted: { sellers: 1 } },
-      v1: {
-        deleted: {
-          kiv1_orders: 1,
-          kiv1_booking_batches: 1,
-          kiv1_meal_slots: 1,
-          kiv1_customer_profiles: 1,
-          kiv1_offerings: 1,
-          kiv1_operators: 1,
-          kiv1_sellers: 1,
-        },
-      },
-    });
-    expect(seedMocks.oldResetSeedData).toHaveBeenCalledWith(payload);
-    expect(seedMocks.oldResetSeedData.mock.invocationCallOrder[0]).toBeLessThan(
-      find.mock.invocationCallOrder[0]!,
-    );
-    expect(find.mock.calls.map(([args]) => args.collection)).toEqual([
-      "kiv1_orders",
-      "kiv1_booking_batches",
-      "kiv1_meal_slots",
-      "kiv1_customer_profiles",
-      "kiv1_offerings",
-      "kiv1_operators",
-      "kiv1_sellers",
-    ]);
-    expect(deleteDoc.mock.calls.map(([args]) => [args.collection, args.id])).toEqual([
-      ["kiv1_orders", "kiv1_orders-1"],
-      ["kiv1_booking_batches", "kiv1_booking_batches-1"],
-      ["kiv1_meal_slots", "kiv1_meal_slots-1"],
-      ["kiv1_customer_profiles", "kiv1_customer_profiles-1"],
-      ["kiv1_offerings", "kiv1_offerings-1"],
-      ["kiv1_operators", "kiv1_operators-1"],
-      ["kiv1_sellers", "kiv1_sellers-1"],
+  it("exposes only the four explicit project scripts", () => {
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
+    expect(Object.keys(pkg.scripts).filter((name) => name.startsWith("seed"))).toEqual([
+      "seed:kith-inn",
+      "seed:kith-inn:reset:dev",
+      "seed:kiv1",
+      "seed:kiv1:reset:dev",
     ]);
   });
 });
@@ -147,6 +109,14 @@ describe("configuredPostgresUrl", () => {
 });
 
 describe("assertDevResetAllowed", () => {
+  it("requires the explicit destructive-reset switch", () => {
+    expect(() => assertDevResetAllowed({})).toThrow(/KITH_INN_ALLOW_DEV_SEED_RESET=1/);
+  });
+
+  it.each(["production", "staging", "preview"])("rejects the %s environment", (APP_ENV) => {
+    expect(() => assertDevResetAllowed({ ...allow, APP_ENV })).toThrow(/outside local dev/);
+  });
+
   it("rejects a remote Postgres URL from fallback env names", () => {
     expect(() => assertDevResetAllowed({
       ...allow,
