@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { clearPendingOp, completePendingOp, getCompletedOp, getPendingOp, setPendingOp } from "./pendingOps";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { clearPendingOp, completePendingOp, getCompletedOp, getPendingOp, setPendingOp, startPendingOp } from "./pendingOps";
 
 afterEach(() => {
   clearPendingOp(1);
@@ -36,5 +36,14 @@ describe("pendingOps", () => {
     expect(getCompletedOp(1, doneId)).toEqual({ opId: doneId, reply: "done" });
     expect(getCompletedOp(1, nextId)).toBeUndefined();
     expect(getPendingOp(1)?.opId).toBe(nextId);
+  });
+
+  it("single-flights overlapping executions for the same op", () => {
+    const execute = vi.fn(() => Promise.resolve("done"));
+    const first = startPendingOp(1, "same", execute);
+    const retry = startPendingOp(1, "same", execute);
+    expect(first.joined).toBe(false);
+    expect(retry).toEqual({ promise: first.promise, joined: true });
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

@@ -20,9 +20,11 @@ export type PendingOp = {
   summary: string;
 };
 export type CompletedOp = { opId: string; reply: string };
+type InFlightOp = { opId: string; promise: Promise<string> };
 
 const pending = new Map<string | number, PendingOp>();
 const completed = new Map<string | number, CompletedOp>();
+const inFlight = new Map<string | number, InFlightOp>();
 let counter = 0;
 
 /** Store the op for `operatorId`, returning the opaque id the card must carry. */
@@ -42,13 +44,28 @@ export function getCompletedOp(operatorId: string | number, opId: unknown): Comp
   return result?.opId === opId ? result : undefined;
 }
 
+/** Let overlapping retries await the first execution instead of dispatching twice. */
+export function startPendingOp(operatorId: string | number, opId: string, execute: () => Promise<string>) {
+  const active = inFlight.get(operatorId);
+  if (active?.opId === opId) return { promise: active.promise, joined: true };
+  const promise = execute();
+  inFlight.set(operatorId, { opId, promise });
+  return { promise, joined: false };
+}
+
+export function clearInFlightOp(operatorId: string | number, opId: string): void {
+  if (inFlight.get(operatorId)?.opId === opId) inFlight.delete(operatorId);
+}
+
 /** Remember one replayable success per operator; never clear a newer pending op. */
 export function completePendingOp(operatorId: string | number, opId: string, reply: string): void {
   if (pending.get(operatorId)?.opId === opId) pending.delete(operatorId);
+  clearInFlightOp(operatorId, opId);
   completed.set(operatorId, { opId, reply });
 }
 
 export function clearPendingOp(operatorId: string | number): void {
   pending.delete(operatorId);
   completed.delete(operatorId);
+  inFlight.delete(operatorId);
 }

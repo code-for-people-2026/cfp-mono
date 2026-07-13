@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Response } from "@playwright/test";
+import { expect, test, type Page, type Request, type Response } from "@playwright/test";
 import type { Fulfillment, ServiceSlot } from "@cfp/kith-inn-shared";
 import {
   MAINLINE_ADDRESS_DATE,
@@ -38,9 +38,16 @@ async function chat(page: Page, text: string): Promise<Response> {
 }
 
 async function confirmReconciliation(page: Page): Promise<Response> {
-  const response = page.waitForResponse((res) => res.url() === `${MAINLINE_BE}/chat/confirm-operation` && res.request().method() === "POST");
-  await page.locator("taro-button-core").filter({ hasText: /^确认按本次更新$/ }).click();
+  const request = await startReconciliation(page);
+  const response = await request.response();
+  if (!response) throw new Error("confirm-operation response missing");
   return response;
+}
+
+async function startReconciliation(page: Page): Promise<Request> {
+  const request = page.waitForRequest((req) => req.url() === `${MAINLINE_BE}/chat/confirm-operation` && req.method() === "POST");
+  await page.locator("taro-button-core").filter({ hasText: /^确认按本次更新$/ }).click();
+  return request;
 }
 
 async function openOrders(page: Page, daysAfterToday: number) {
@@ -50,12 +57,11 @@ async function openOrders(page: Page, daysAfterToday: number) {
   for (let day = 0; day < daysAfterToday; day++) await nextDay.click();
 }
 
-async function replayPost(page: Page, source: Response, count: number) {
-  const request = source.request();
+async function replayPost(page: Page, request: Request, count: number) {
   const authorization = (await request.allHeaders()).authorization;
   return page.evaluate(async ({ url, authorization, body, count }) => Promise.all(Array.from({ length: count }, async () => {
     const response = await fetch(url, { method: "POST", headers: { Authorization: authorization, "content-type": "application/json" }, body: body ?? undefined });
-    return { status: response.status, body: await response.json() as unknown };
+    return { status: response.status, body: await response.json() as Record<string, unknown> };
   })), { url: request.url(), authorization, body: request.postData(), count });
 }
 
@@ -133,7 +139,7 @@ test("E2E-ADDRESS-001：H5 新客留空地址仍可确认并进入无地址组",
   await expect(readOrderAggregate(request, token, MAINLINE_ADDRESS_DATE)).resolves.toEqual({ orders: [], fulfillments: [] });
   await login(page);
   expect((await chat(page, MAINLINE_ADDRESS_TEXT)).status()).toBe(200);
-  await expect(page.getByPlaceholder("填地址（如 3a27a）")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "填地址（如 3a27a）" })).toBeVisible();
   expect((await confirmReconciliation(page)).status()).toBe(200);
   const draft = await readOrderAggregate(request, token, MAINLINE_ADDRESS_DATE);
   expect(draft.orders).toHaveLength(1);
@@ -155,9 +161,10 @@ test("E2E-IDEMP-001：重复接龙、operation 重试与并发确认不重复经
   await expect(readOrderAggregate(request, token, MAINLINE_IDEMP_DATE)).resolves.toEqual({ orders: [], fulfillments: [] });
   await login(page);
   expect((await chat(page, MAINLINE_IDEMP_TEXT)).status()).toBe(200);
-  const firstOperation = await confirmReconciliation(page);
-  expect(firstOperation.status()).toBe(200);
-  expect(await replayPost(page, firstOperation, 1)).toEqual([expect.objectContaining({ status: 200, body: expect.objectContaining({ alreadyCompleted: true }) })]);
+  const operationRequest = await startReconciliation(page);
+  const [firstOperation, operationRetries] = await Promise.all([operationRequest.response(), replayPost(page, operationRequest, 1)]);
+  expect(firstOperation?.status()).toBe(200);
+  expect(operationRetries).toEqual([expect.objectContaining({ status: 200, body: expect.objectContaining({ alreadyCompleted: true }) })]);
 
   expect((await chat(page, MAINLINE_IDEMP_TEXT)).status()).toBe(200);
   await expect(page.getByText("不变 1", { exact: false }).last()).toBeVisible();
@@ -167,12 +174,14 @@ test("E2E-IDEMP-001：重复接龙、operation 重试与并发确认不重复经
   expect(draft.orders[0]!.items).toEqual([expect.objectContaining({ quantity: 2 })]);
 
   await openOrders(page, 2);
-  const confirmPromise = page.waitForResponse((res) => /\/orders\/[^/]+\/confirm$/.test(new URL(res.url()).pathname) && res.request().method() === "POST");
+  const confirmPromise = page.waitForRequest((req) => /\/orders\/[^/]+\/confirm$/.test(new URL(req.url()).pathname) && req.method() === "POST");
   await page.locator("taro-button-core").filter({ hasText: /^确认订单$/ }).click();
-  const firstConfirm = await confirmPromise;
-  expect(firstConfirm.status()).toBe(200);
-  const retries = await replayPost(page, firstConfirm, 3);
-  expect(retries).toEqual(Array(3).fill(expect.objectContaining({ status: 200, body: expect.objectContaining({ alreadyConfirmed: true }) })));
+  const confirmRequest = await confirmPromise;
+  const [firstConfirm, retries] = await Promise.all([confirmRequest.response(), replayPost(page, confirmRequest, 3)]);
+  if (!firstConfirm) throw new Error("order confirm response missing");
+  const outcomes = [{ status: firstConfirm.status(), body: await firstConfirm.json() as Record<string, unknown> }, ...retries];
+  expect(outcomes.every((outcome) => outcome.status === 200)).toBe(true);
+  expect(outcomes.filter((outcome) => outcome.body.alreadyConfirmed === true)).toHaveLength(3);
   const final = await readOrderAggregate(request, token, MAINLINE_IDEMP_DATE);
   expect(final.orders).toEqual([expect.objectContaining({ status: "confirmed", items: [expect.objectContaining({ quantity: 2 })] })]);
   expect(final.fulfillments).toEqual([expect.objectContaining({ status: "pending", order: expect.objectContaining({ id: final.orders[0]!.id }) })]);

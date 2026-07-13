@@ -172,6 +172,13 @@ describe("POST /chat/confirm-operation", () => {
       headers: await json(),
       body: typeof body === "string" ? body : JSON.stringify({ opId: curOpId, ...body }),
     });
+  const overlappingPosts = async (app: ReturnType<typeof chatRoutes>) => {
+    const headers = await json();
+    const request = () => app.request("/confirm-operation", {
+      method: "POST", headers, body: JSON.stringify({ opId: curOpId }),
+    });
+    return [request(), request()] as const;
+  };
 
   it("record_orders submits one immutable reconciliation and merges only new-customer addresses", async () => {
     const preview = {
@@ -203,6 +210,40 @@ describe("POST /chat/confirm-operation", () => {
     expect(retry.status).toBe(200);
     expect(await retry.json()).toMatchObject({ ok: true, alreadyCompleted: true, reply: expect.stringContaining("新增 1") });
     expect(reconcileOrders).toHaveBeenCalledTimes(1);
+  });
+
+  it("single-flights overlapping confirmations for one operation", async () => {
+    seed({ toolName: "add_dish", summary: "添加菜", args: { name: "蒸蛋", category: "vegetable" } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const createOffering = vi.fn(async () => { await gate; return { id: 77, name: "蒸蛋" } as never; });
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), createOffering } as AgentCms });
+    const [first, retry] = await overlappingPosts(app);
+    await vi.waitFor(() => expect(createOffering).toHaveBeenCalledTimes(1));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(createOffering).toHaveBeenCalledTimes(1);
+    release();
+    const responses = await Promise.all([first, retry]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    expect(await Promise.all(responses.map((response) => response.json()))).toContainEqual(expect.objectContaining({ alreadyCompleted: true }));
+    expect(createOffering).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares an overlapping failed result while keeping the operation pending", async () => {
+    seed({ toolName: "mark_paid", summary: "标记付款", args: { orderId: 45 } });
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const updateOrder = vi.fn(async () => { await gate; throw new Error("cms down"); });
+    const app = chatRoutes(SECRET, { cms: { ...mockCms(), updateOrder } as AgentCms });
+    const [first, retry] = await overlappingPosts(app);
+    await vi.waitFor(() => expect(updateOrder).toHaveBeenCalledTimes(1));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(updateOrder).toHaveBeenCalledTimes(1);
+    release();
+    const bodies = await Promise.all((await Promise.all([first, retry])).map((response) => response.json()));
+    expect(bodies).toEqual([expect.objectContaining({ ok: false }), expect.objectContaining({ ok: false })]);
+    expect(updateOrder).toHaveBeenCalledTimes(1);
+    expect(getPendingOp(OP)?.opId).toBe(curOpId);
   });
 
   it.each([

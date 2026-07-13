@@ -61,7 +61,7 @@
 - [x] T018 [US3] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 增加 `E2E-IDEMP-001`：重复接龙确认、同 operation retry 与订单 confirm retry/并发，断言 active order、item 集合和有效 fulfillment 计数不增长
 - [x] T019 [US3] 分别运行 date/address/idempotency tagged E2E 与完整 mainline、`pnpm verify`、`git diff --check`，确认 PR4 不修改 v1 文件且人工 diff 不超预算
 
-**PR4 验证记录（2026-07-14）**：date/address/idempotency tagged E2E 分别 1/1 通过，完整 mainline 4/4 通过；BE 431/431 测试通过且 coverage 四项 100%，`pnpm verify` 与 `git diff --check` 通过，无 v1 文件变更，人工 diff 为 198 insertions / 23 deletions。
+**PR4 验证记录（2026-07-14）**：date/address/idempotency tagged E2E 分别 1/1 通过，完整 mainline 4/4 通过；BE 434/434 测试通过且 coverage 四项 100%，`pnpm verify` 与 `git diff --check` 通过，无 v1 文件变更，人工 diff 为 281 insertions / 27 deletions。
 
 ## Phase 5：User Story 2 - 菜单、收款与送达连续收尾（PR5，P1）
 
