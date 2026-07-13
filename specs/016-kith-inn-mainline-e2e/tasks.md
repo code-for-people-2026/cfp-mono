@@ -48,7 +48,7 @@
 - [x] T014 [US1] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 实现 `E2E-ORDER-001`：H5 dev-login、完整午晚接龙、preview 断言、确认草稿/订单、数据库前后差异与 order/item/slot/fulfillment 唯一性
 - [x] T015 [US1] 最小扩展 `.github/workflows/ci.yml` 的旧 kith-inn changed-path trigger 以覆盖 orders/customers/fulfillments/service-slots/chat/orderLifecycle；运行 mainline happy path 两次、workflow 等价 dry-run、`pnpm verify` 与 `git diff --check`
 
-**PR3 验证记录（2026-07-13）**：PostgreSQL mainline happy path 独立重置连续通过，旧 SQLite E2E 与 mainline 串行通过；affected dry-run 仅选中 `@cfp/kith-inn-fe#test:e2e`，`pnpm verify` 与 `git diff --check` 通过；人工 diff 为 275 insertions / 8 deletions。
+**PR3 验证记录（2026-07-13）**：PostgreSQL mainline happy path 独立重置连续通过，且从数据库完全停止状态可等待 healthy 后成功启动；旧 SQLite E2E 与 mainline 串行通过；affected dry-run 仅选中 `@cfp/kith-inn-fe#test:e2e`，`pnpm verify` 与 `git diff --check` 通过；人工 diff 为 277 insertions / 9 deletions。
 
 ## Phase 4：User Story 3 - 失败、地址与幂等（PR4，P1）
 

@@ -20,7 +20,7 @@ test("E2E-ORDER-001：H5 接龙 preview 到确认订单贯通真实 PostgreSQL",
   })).status()).toBe(422);
 
   await page.goto("/");
-  const loginResponse = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/auth/dev-login`);
+  const loginResponse = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/auth/dev-login` && response.request().method() === "POST");
   await page.getByText("开发登录（跳过微信）", { exact: true }).click();
   expect((await loginResponse).status()).toBe(200);
   await expect(page).toHaveURL(/pages\/today\/index/);
@@ -34,7 +34,7 @@ test("E2E-ORDER-001：H5 接龙 preview 到确认订单贯通真实 PostgreSQL",
   await expect(page.getByText("新顾客", { exact: false })).toHaveCount(3);
   await expect(readOrderAggregate(request, token)).resolves.toEqual({ orders: [], fulfillments: [] });
 
-  const reconcileResponse = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/chat/confirm-operation`);
+  const reconcileResponse = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/chat/confirm-operation` && response.request().method() === "POST");
   await page.locator("taro-button-core").filter({ hasText: /^确认按本次更新$/ }).click();
   expect((await reconcileResponse).status()).toBe(200);
   await expect(page.getByText("已按最新完整接龙更新：新增 3", { exact: false })).toBeVisible();
@@ -47,7 +47,7 @@ test("E2E-ORDER-001：H5 接龙 preview 到确认订单贯通真实 PostgreSQL",
   await expect(buttons).toHaveCount(3);
   const slots: ServiceSlot[] = [];
   for (let remaining = 3; remaining > 0; remaining--) {
-    const responsePromise = page.waitForResponse((response) => /\/orders\/[^/]+\/confirm$/.test(new URL(response.url()).pathname));
+    const responsePromise = page.waitForResponse((response) => /\/orders\/[^/]+\/confirm$/.test(new URL(response.url()).pathname) && response.request().method() === "POST");
     await buttons.first().click();
     const response = await responsePromise;
     expect(response.status()).toBe(200);
