@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import type { Seller } from "@cfp/kith-inn-shared";
 import { OPERATOR_JWT_HEADER } from "./client";
-import { CmsHttpError } from "./orders";
+import { CmsHttpError, type OrderUpdatePatch } from "./orders";
 import {
   cancelOrderAtomic,
   confirmOrderAtomic,
@@ -154,12 +154,17 @@ describe("atomic lifecycle", () => {
 });
 
 describe("updateOrder", () => {
+  it("excludes lifecycle, snapshot, and ownership fields from the patch contract", () => {
+    expectTypeOf<Extract<keyof OrderUpdatePatch, "status" | "address" | "customer" | "seller">>().toEqualTypeOf<never>();
+  });
+
   it("PATCHs the order", async () => {
     process.env.CMS_BASE_URL = "http://cms.test";
-    const deps = mockFetch({ id: 90, status: "confirmed" });
-    await updateOrder("jwt", 90, { status: "confirmed" }, deps);
+    const deps = mockFetch({ id: 90, paymentStatus: "paid" });
+    await updateOrder("jwt", 90, { paymentStatus: "paid", note: "放门口" }, deps);
     const [, init] = deps.fetch.mock.calls[0]!;
     expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ paymentStatus: "paid", note: "放门口" });
     expect(String(deps.fetch.mock.calls[0]![0])).toBe("http://cms.test/api/internal/orders/90");
   });
 });
