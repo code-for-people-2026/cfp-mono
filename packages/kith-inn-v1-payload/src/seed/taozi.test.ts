@@ -3,6 +3,7 @@ import {
   applySeed,
   buildOperatorData,
   buildSellerData,
+  resetSeedData,
   RESET_COLLECTIONS,
   TAOZI_OPERATOR_OPENID,
   TAOZI_SELLER_NAME
@@ -114,5 +115,23 @@ describe("v1 reset collection 顺序", () => {
       "kiv1_sellers"
     ]);
     expect(RESET_COLLECTIONS.every((slug) => slug.startsWith("kiv1_"))).toBe(true);
+  });
+
+  it("按外键安全顺序删除并汇总每个 kiv1 collection", async () => {
+    const find = vi.fn(async ({ collection }: { collection: string }) => ({
+      docs: [{ id: `${collection}-1` }, { id: `${collection}-2` }]
+    }));
+    const deleteDoc = vi.fn(async (_args: { collection: string; id: string | number; overrideAccess: boolean }) => undefined);
+
+    await expect(resetSeedData({ find, delete: deleteDoc })).resolves.toEqual({
+      deleted: Object.fromEntries(RESET_COLLECTIONS.map((collection) => [collection, 2]))
+    });
+    expect(find.mock.calls.map(([args]) => args.collection)).toEqual([...RESET_COLLECTIONS]);
+    expect(deleteDoc).toHaveBeenCalledTimes(RESET_COLLECTIONS.length * 2);
+    expect(deleteDoc.mock.calls[0]?.[0]).toEqual({
+      collection: "kiv1_orders",
+      id: "kiv1_orders-1",
+      overrideAccess: true
+    });
   });
 });

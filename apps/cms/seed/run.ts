@@ -7,7 +7,7 @@ import {
 } from "@cfp/kith-inn-payload/seed";
 import {
   applySeed as applyV1Seed,
-  RESET_COLLECTIONS as V1_RESET_COLLECTIONS,
+  resetSeedData as resetV1SeedData,
 } from "@cfp/kith-inn-v1-payload/seed";
 import config from "../payload.config";
 
@@ -16,24 +16,14 @@ import config from "../payload.config";
  * 配送 deliverers=["奶奶"]) + her offering pool (component dishes tagged with
  * 主料 + 荤素).
  *
- *   pnpm --filter @cfp/cms seed
- *   KITH_INN_ALLOW_DEV_SEED_RESET=1 pnpm --filter @cfp/cms seed:reset:dev
+ *   pnpm --filter @cfp/cms seed:kith-inn
+ *   pnpm --filter @cfp/cms seed:kiv1
+ *   KITH_INN_ALLOW_DEV_SEED_RESET=1 pnpm --filter @cfp/cms seed:kith-inn:reset:dev
+ *   KITH_INN_ALLOW_DEV_SEED_RESET=1 pnpm --filter @cfp/cms seed:kiv1:reset:dev
  */
 const RESET_ARG = "--reset-dev";
 type Env = Record<string, string | undefined>;
-type ResetPayload = {
-  find: (args: {
-    collection: string;
-    where: Record<string, unknown>;
-    limit: number;
-    overrideAccess: boolean;
-  }) => Promise<{ docs: Array<{ id: string | number }> }>;
-  delete: (args: {
-    collection: string;
-    id: string | number;
-    overrideAccess: boolean;
-  }) => Promise<unknown>;
-};
+export type SeedProject = "kith-inn" | "kiv1";
 
 function trueish(value: string | undefined): boolean {
   return value === "1" || value === "true";
@@ -74,56 +64,49 @@ export function assertDevResetAllowed(env: Env = process.env) {
   }
 }
 
-export async function applyAllSeeds(payload: unknown) {
-  const old = await applyOldSeed(
-    payload as Parameters<typeof applyOldSeed>[0],
-    taoziFixture,
-  );
-  const v1 = await applyV1Seed(payload as Parameters<typeof applyV1Seed>[0]);
-  return { old, v1 };
+export function parseSeedProject(args: string[]): SeedProject {
+  const project = args.find((arg) => !arg.startsWith("-"));
+  if (project === "kith-inn" || project === "kiv1") return project;
+  throw new Error("Seed project must be exactly one of: kith-inn, kiv1.");
 }
 
-export async function resetAllSeedData(payload: ResetPayload) {
-  const old = await resetOldSeedData(
-    payload as Parameters<typeof resetOldSeedData>[0],
-  );
-  const deleted: Record<string, number> = {};
-  for (const collection of V1_RESET_COLLECTIONS) {
-    const docs = await payload.find({
-      collection,
-      where: {},
-      limit: 0,
-      overrideAccess: true,
-    });
-    deleted[collection] = docs.docs.length;
-    for (const doc of docs.docs) {
-      await payload.delete({
-        collection,
-        id: doc.id,
-        overrideAccess: true,
-      });
-    }
+export async function runProjectSeed(payload: unknown, project: SeedProject, resetDev: boolean) {
+  if (project === "kith-inn") {
+    const reset = resetDev
+      ? await resetOldSeedData(payload as Parameters<typeof resetOldSeedData>[0])
+      : null;
+    const seed = await applyOldSeed(
+      payload as Parameters<typeof applyOldSeed>[0],
+      taoziFixture,
+    );
+    return { project: "kith-inn" as const, reset, seed };
   }
-  return { old, v1: { deleted } };
+
+  const reset = resetDev
+    ? await resetV1SeedData(payload as Parameters<typeof resetV1SeedData>[0])
+    : null;
+  const seed = await applyV1Seed(payload as Parameters<typeof applyV1Seed>[0]);
+  return { project: "kiv1" as const, reset, seed };
 }
 
 async function main() {
+  const project = parseSeedProject(process.argv.slice(2));
   const resetDev = process.argv.includes(RESET_ARG);
   if (resetDev) assertDevResetAllowed();
   const payload = await getPayload({ config });
   try {
-    const reset = resetDev
-      ? await resetAllSeedData(payload as unknown as ResetPayload)
-      : null;
-    const result = await applyAllSeeds(payload);
-    if (reset) {
-      const deleted = { ...reset.old.deleted, ...reset.v1.deleted };
-      console.log(`✓ reset local dev data (${Object.entries(deleted).map(([k, v]) => `${k}:${v}`).join(", ")})`);
+    const result = await runProjectSeed(payload, project, resetDev);
+    if (result.reset) {
+      console.log(`✓ reset ${project} local dev data (${Object.entries(result.reset.deleted).map(([k, v]) => `${k}:${v}`).join(", ")})`);
     }
-    if (result.old.seeded) console.log(`✓ seeded 桃子's seller + ${result.old.offeringCount} offerings (seller ${result.old.sellerId})`);
-    else console.log("✓ seed skipped: 桃子 already exists; existing data left unchanged");
-    if (result.v1.seeded) console.log(`✓ seeded v1 桃子 seller/operator (seller ${result.v1.sellerId})`);
-    else console.log("✓ v1 seed skipped: 桃子 seller/operator already exist");
+    if (result.project === "kith-inn") {
+      if (result.seed.seeded) console.log(`✓ seeded 桃子's seller + ${result.seed.offeringCount} offerings (seller ${result.seed.sellerId})`);
+      else console.log("✓ kith-inn seed skipped: 桃子 already exists; existing data left unchanged");
+    } else if (result.seed.seeded) {
+      console.log(`✓ seeded kiv1 桃子 seller/operator (seller ${result.seed.sellerId})`);
+    } else {
+      console.log("✓ kiv1 seed skipped: 桃子 seller/operator already exist");
+    }
   } finally {
     await payload.destroy();
   }

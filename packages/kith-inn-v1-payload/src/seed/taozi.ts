@@ -39,6 +39,11 @@ type SeedPayload = {
     data: Record<string, unknown>;
     overrideAccess: boolean;
   }) => Promise<{ id: string | number }>;
+  delete?: (args: {
+    collection: string;
+    id: string | number;
+    overrideAccess: boolean;
+  }) => Promise<unknown>;
 };
 
 export type SeedResult = {
@@ -47,6 +52,29 @@ export type SeedResult = {
   sellerCreated: boolean;
   operatorCreated: boolean;
 };
+
+export type ResetSeedResult = {
+  deleted: Record<string, number>;
+};
+
+export async function resetSeedData(
+  payload: Required<Pick<SeedPayload, "find" | "delete">>
+): Promise<ResetSeedResult> {
+  const deleted: Record<string, number> = {};
+  for (const collection of RESET_COLLECTIONS) {
+    const docs = await payload.find({
+      collection,
+      where: {},
+      limit: 0,
+      overrideAccess: true
+    });
+    deleted[collection] = docs.docs.length;
+    for (const doc of docs.docs) {
+      await payload.delete({ collection, id: doc.id, overrideAccess: true });
+    }
+  }
+  return { deleted };
+}
 
 export async function applySeed(payload: SeedPayload): Promise<SeedResult> {
   const sellers = await payload.find({
