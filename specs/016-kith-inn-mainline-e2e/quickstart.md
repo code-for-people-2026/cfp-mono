@@ -32,6 +32,7 @@ PAYLOAD_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54324/cfp \
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54324/cfp \
 PAYLOAD_SECRET=mainline-e2e-payload-secret \
 PAYLOAD_DB_PUSH=true \
+KITH_INN_ALLOW_DEV_SEED_RESET=1 \
 pnpm --filter @cfp/cms exec vitest run tests/kith-inn-mainline-integration.test.ts
 ```
 

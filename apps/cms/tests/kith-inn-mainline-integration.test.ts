@@ -41,15 +41,19 @@ describe.skipIf(!hasMainlinePostgres)("kith-inn real CMS/PostgreSQL mainline", (
   const createCustomer = async (tenant: MainlineTenant, name: string): Promise<JsonDoc> =>
     json(await customers.POST(routeRequest(tenant.token, "/customers", "POST", { displayName: name, address: `${name}-address` })), 201);
 
+  const draftInput = (customer: Id, offering: Id, date: string) => ({
+    customer,
+    date,
+    occasion: "lunch",
+    source: "manual",
+    totalCents: 3000,
+    items: [{ offering, quantity: 1, unitPriceCents: 3000 }],
+  });
+
   const createDraft = async (tenant: MainlineTenant, customer: Id, date: string): Promise<JsonDoc> => {
-    const result = await json<{ order: JsonDoc }>(await orders.POST(routeRequest(tenant.token, "/orders", "POST", {
-      customer,
-      date,
-      occasion: "lunch",
-      source: "manual",
-      totalCents: 3000,
-      items: [{ offering: tenant.comboId, quantity: 1, unitPriceCents: 3000 }],
-    })), 201);
+    const result = await json<{ order: JsonDoc }>(await orders.POST(
+      routeRequest(tenant.token, "/orders", "POST", draftInput(customer, tenant.comboId, date)),
+    ), 201);
     return result.order;
   };
 
@@ -73,15 +77,19 @@ describe.skipIf(!hasMainlinePostgres)("kith-inn real CMS/PostgreSQL mainline", (
   }, 60_000);
 
   afterAll(async () => {
-    if (!payload) return;
     try {
-      await resetSeedData(payload as Parameters<typeof resetSeedData>[0]);
-      if (v1ProfileId !== undefined) await payload.delete({ collection: "kiv1_customer_profiles", id: v1ProfileId, overrideAccess: true });
-      if (v1SellerId !== undefined) await payload.delete({ collection: "kiv1_sellers", id: v1SellerId, overrideAccess: true });
+      if (payload) {
+        await resetSeedData(payload as Parameters<typeof resetSeedData>[0]);
+        if (v1ProfileId !== undefined) await payload.delete({ collection: "kiv1_customer_profiles", id: v1ProfileId, overrideAccess: true });
+        if (v1SellerId !== undefined) await payload.delete({ collection: "kiv1_sellers", id: v1SellerId, overrideAccess: true });
+      }
     } finally {
-      await payload.destroy();
-      if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
-      else process.env.JWT_SECRET = originalJwtSecret;
+      try {
+        if (payload) await payload.destroy();
+      } finally {
+        if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+        else process.env.JWT_SECRET = originalJwtSecret;
+      }
     }
   });
 
@@ -149,14 +157,18 @@ describe.skipIf(!hasMainlinePostgres)("kith-inn real CMS/PostgreSQL mainline", (
     expect((await menuPlanUpsert.POST(routeRequest(sellerA.token, "/menu-plans/upsert", "POST", [
       { date: "2026-10-11", occasion: "lunch", offerings: [sellerB.componentId], status: "draft" },
     ]))).status).toBe(403);
-    expect((await orders.POST(routeRequest(sellerA.token, "/orders", "POST", {
-      customer: customerB.id,
-      date: "2026-10-11",
-      occasion: "lunch",
-      source: "manual",
-      totalCents: 3000,
-      items: [{ offering: sellerB.comboId, quantity: 1, unitPriceCents: 3000 }],
-    }))).status).toBe(403);
+    expect((await orders.POST(routeRequest(
+      sellerA.token,
+      "/orders",
+      "POST",
+      draftInput(customerB.id, sellerA.comboId, "2026-10-11"),
+    ))).status).toBe(403);
+    expect((await orders.POST(routeRequest(
+      sellerA.token,
+      "/orders",
+      "POST",
+      draftInput(customerA.id, sellerB.comboId, "2026-10-12"),
+    ))).status).toBe(403);
     expect(await tenantState(sellerB.sellerId)).toEqual(beforeB);
   });
 
