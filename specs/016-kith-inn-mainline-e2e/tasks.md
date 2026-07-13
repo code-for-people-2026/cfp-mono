@@ -80,7 +80,7 @@
 - [x] T023 用 `.github/workflows/ci.yml` 的等价 range/filter 命令验证 `CI-AFFECTED-001` 路径矩阵：旧 kith FE/BE/CMS/shared helper 100% 选中，纯 v1/website/community-cooking 0 次误选，共享 CMS 同时选中时保持 `--concurrency=1`
 - [x] T024 连续运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e:mainline` 三次，运行根 `pnpm test:e2e` 的目标 dry-run、`pnpm verify` 和 `git diff --check`，把耗时/产物/最终任务状态同步到 `specs/016-kith-inn-mainline-e2e/{quickstart,tasks}.md`
 
-**PR5 验证记录（2026-07-14）**：连续 H5 journey 与完整 mainline 4/4 在 CI 模式连续三次通过（21s / 21s / 22s）；受控 webServer failure 仅留下本次 CMS `ECONNREFUSED` 日志，受控 assertion failure 同时生成 trace、error context、HTML report 与五类 service log；synthetic Git tree 路径矩阵全部符合预期，根 E2E dry-run、`pnpm verify` 与 `git diff --check` 通过，无 v1 文件变更，人工 diff 为 130 insertions / 12 deletions。
+**PR5 验证记录（2026-07-14）**：连续 H5 journey 与完整 mainline 4/4 在 CI 模式连续三次通过（21s / 21s / 22s）；受控 webServer failure 仅留下本次 CMS `ECONNREFUSED` 日志，受控 assertion failure 同时生成 trace、error context、HTML report 与五类 service log；synthetic Git tree 路径矩阵全部符合预期，根 E2E dry-run、`pnpm verify` 与 `git diff --check` 通过，无 v1 文件变更，人工 diff 为 148 insertions / 12 deletions。
 
 ## Dependencies & Execution Order
 

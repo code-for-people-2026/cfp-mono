@@ -79,10 +79,10 @@ const relaxedRuleZh: Record<RelaxedRule, string> = {
   "recent-main-ingredient": "近 7 天主料重复",
 };
 
-async function selectOrderCards(page: Page, payment: "付○" | "付✓") {
+async function selectOrderCards(page: Page, payment: "付○" | "付✓", count = 3) {
   const cards = page.locator(".card").filter({ has: page.getByText(payment, { exact: true }) });
   await expect(cards).toHaveCount(3);
-  for (let index = 0; index < 3; index++) await cards.nth(index).locator(":scope > taro-view-core").first().click();
+  for (let index = 0; index < count; index++) await cards.nth(index).locator(":scope > taro-view-core").first().click();
 }
 
 test("E2E-ORDER-001 / E2E-MAIN-001：H5 从接龙连续完成菜单、收款与送达", async ({ page, request }) => {
@@ -176,6 +176,8 @@ test("E2E-ORDER-001 / E2E-MAIN-001：H5 从接龙连续完成菜单、收款与�
   expect(swapResponse.status()).toBe(200);
   const swapped = await swapResponse.json() as { plan: MenuPlanView; relaxedRules: RelaxedRule[] };
   expect(swapped.relaxedRules.length).toBeGreaterThan(0);
+  expect(String(swapped.plan.dishes[targetIndex]!.id)).not.toBe(String(target.id));
+  expect(swapped.plan.dishes[targetIndex]!.name).not.toBe(target.name);
   const expectedNames = original.dishes.map((dish, index) => index === targetIndex ? swapped.plan.dishes[index]!.name : dish.name);
   expect(swapped.plan.dishes.map((dish) => dish.name)).toEqual(expectedNames);
   await expect.poll(() => dishNames(lunchCard)).toEqual(expectedNames);
@@ -203,10 +205,26 @@ test("E2E-ORDER-001 / E2E-MAIN-001：H5 从接龙连续完成菜单、收款与�
   expect((await Promise.all(paid)).every((response) => response.status() === 200)).toBe(true);
   await expect.poll(async () => (await readOrderAggregate(request, token)).orders.every((order) => order.paymentStatus === "paid")).toBe(true);
 
-  await selectOrderCards(page, "付✓");
-  const delivered = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/delivery/fulfillments` && response.request().method() === "PATCH");
-  await page.locator("taro-button-core").filter({ hasText: /^批量送达\(3\)$/ }).click();
-  expect((await delivered).status()).toBe(200);
+  await selectOrderCards(page, "付✓", 2);
+  const firstDelivery = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/delivery/fulfillments` && response.request().method() === "PATCH");
+  await page.locator("taro-button-core").filter({ hasText: /^批量送达\(2\)$/ }).click();
+  const firstDeliveryResponse = await firstDelivery;
+  expect(firstDeliveryResponse.status()).toBe(200);
+  const firstDeliveryBody = firstDeliveryResponse.request().postDataJSON() as { ids: Array<string | number>; set: { status: string } };
+  expect(firstDeliveryBody.set).toEqual({ status: "done" });
+  const firstDeliveryIds = firstDeliveryBody.ids.map(String).sort();
+  expect(firstDeliveryIds).toHaveLength(2);
+  expect(new Set(firstDeliveryIds).size).toBe(2);
+  const afterFirstDelivery = await readOrderAggregate(request, token);
+  expect(afterFirstDelivery.fulfillments.filter((fulfillment) => fulfillment.status === "done").map((fulfillment) => String(fulfillment.id)).sort()).toEqual(firstDeliveryIds);
+  expect(afterFirstDelivery.fulfillments.filter((fulfillment) => fulfillment.status === "pending")).toHaveLength(1);
+
+  const pendingCard = page.locator(".card").filter({ has: page.getByText("送○", { exact: true }) });
+  await expect(pendingCard).toHaveCount(1);
+  await pendingCard.locator(":scope > taro-view-core").first().click();
+  const finalDelivery = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/delivery/fulfillments` && response.request().method() === "PATCH");
+  await page.locator("taro-button-core").filter({ hasText: /^批量送达\(1\)$/ }).click();
+  expect((await finalDelivery).status()).toBe(200);
   await expect(page.getByText("草稿 0 · 未付 0 · 待送 0", { exact: true })).toBeVisible();
   const settled = await readOrderAggregate(request, token);
   expect(settled.orders.every((order) => order.status === "confirmed" && order.paymentStatus === "paid")).toBe(true);
