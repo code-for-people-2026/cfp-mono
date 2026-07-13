@@ -201,9 +201,13 @@ describe("POST /chat/confirm-operation", () => {
     expect(getPendingOp(OP)).toBeUndefined();
   });
 
-  it("normalizes a blank new-customer address to missing", async () => {
+  it.each([
+    ["omitted", {}],
+    ["empty", { items: [{ address: "" }] }],
+    ["blank", { items: [{ address: "   " }] }],
+  ] as const)("reconciles when a new-customer address is %s", async (_label, submitted) => {
     const preview = {
-      mode: "snapshot" as const, operationKey: "op-blank-address", scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp",
+      mode: "snapshot" as const, operationKey: `op-${_label}-address`, scope: [{ date: "2026-07-07", occasion: "lunch" as const }], expectedFingerprint: "fp",
       candidates: [{ newCustomer: { displayName: "大龙猫" }, quantity: 1, occasion: "lunch" as const, date: "2026-07-07", offering: 10, unitPriceCents: 3000, totalCents: 3000 }],
       rows: [],
     };
@@ -211,7 +215,9 @@ describe("POST /chat/confirm-operation", () => {
     const reconcileOrders = vi.fn(async () => ({ ok: true as const, created: [{ orderId: 90 }], updated: [], canceled: [], unchanged: [] }));
     const app = chatRoutes(SECRET, { cms: { ...mockCms(), reconcileOrders } as AgentCms });
 
-    expect((await post(app, { items: [{ address: "   " }] })).status).toBe(200);
+    const res = await post(app, submitted);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true });
     expect(reconcileOrders).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
       candidates: [expect.objectContaining({ newCustomer: { displayName: "大龙猫", address: undefined } })],
     }));
