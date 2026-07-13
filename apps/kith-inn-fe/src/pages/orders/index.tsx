@@ -156,7 +156,7 @@ export default function Orders() {
                   <View className="flex items-start gap-[16rpx]">
                     <View className="min-w-0 flex-1">
                       <Text className={`block text-[28rpx] font-semibold ${d.base === "canceled" ? "line-through" : ""}`}>{customerName(o)}</Text>
-                      <Text className="mt-[6rpx] block text-[24rpx] text-muted">{orderQuantity(o)}份{o.address ? ` · ${o.address}` : ""}</Text>
+                      <Text className="mt-[6rpx] block text-[24rpx] text-muted">{orderQuantity(o)}份 · {o.address?.trim() || "（无地址）"}</Text>
                     </View>
                     <View className="flex shrink-0 gap-[8rpx]">
                       {d.delivery !== "none" && (

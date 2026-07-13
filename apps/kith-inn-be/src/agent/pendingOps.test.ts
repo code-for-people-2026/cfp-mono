@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { clearPendingOp, getPendingOp, setPendingOp } from "./pendingOps";
+import { clearPendingOp, completePendingOp, getCompletedOp, getPendingOp, setPendingOp } from "./pendingOps";
 
 afterEach(() => {
   clearPendingOp(1);
@@ -27,5 +27,14 @@ describe("pendingOps", () => {
     const id2 = setPendingOp(1, { toolName: "b", args: {}, summary: "B" });
     expect(getPendingOp(1)?.toolName).toBe("b");
     expect(id2).not.toBe(id1); // newer op ⇒ different opId (stale-card guard)
+  });
+
+  it("replays only the exact completed op without clearing a newer pending op", () => {
+    const doneId = setPendingOp(1, { toolName: "a", args: {}, summary: "A" });
+    const nextId = setPendingOp(1, { toolName: "b", args: {}, summary: "B" });
+    completePendingOp(1, doneId, "done");
+    expect(getCompletedOp(1, doneId)).toEqual({ opId: doneId, reply: "done" });
+    expect(getCompletedOp(1, nextId)).toBeUndefined();
+    expect(getPendingOp(1)?.opId).toBe(nextId);
   });
 });

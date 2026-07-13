@@ -199,6 +199,10 @@ describe("POST /chat/confirm-operation", () => {
       candidates: [expect.objectContaining({ customer: 5 }), expect.objectContaining({ newCustomer: { displayName: "大龙猫", address: "26B" } })],
     }));
     expect(getPendingOp(OP)).toBeUndefined();
+    const retry = await post(app, { items: [{}, { address: "26B" }] });
+    expect(retry.status).toBe(200);
+    expect(await retry.json()).toMatchObject({ ok: true, alreadyCompleted: true, reply: expect.stringContaining("新增 1") });
+    expect(reconcileOrders).toHaveBeenCalledTimes(1);
   });
 
   it.each([
