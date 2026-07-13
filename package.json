@@ -13,7 +13,7 @@
     "test:e2e": "turbo run test:e2e",
     "knip": "knip",
     "verify": "pnpm lint && pnpm typecheck && pnpm test:coverage && pnpm knip && pnpm build",
-    "db:up": "docker compose up -d postgres",
+    "db:up": "docker compose up -d --wait postgres",
     "db:down": "docker compose down"
   },
   "devDependencies": {
