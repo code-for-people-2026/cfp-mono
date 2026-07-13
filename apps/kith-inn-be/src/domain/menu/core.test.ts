@@ -177,62 +177,95 @@ describe("generateWeekMenu — history", () => {
 });
 
 describe("swapDish", () => {
-  const menu = (): Slot[] => {
-    const r = generateWeekMenu({ pool: feasiblePool });
-    if (!r.ok) throw new Error("expected ok");
-    return r.menu;
-  };
+  const old = meat(90, "猪");
+  const target = { day: "2026-07-08", occasion: "lunch" as const };
+  const slot = (dishes: MenuDish[] = [old, veg(1, "青菜")]): Slot => ({ ...target, dishes });
+  const historySlot = (day: string, dishes: MenuDish[]): Slot => ({ day, occasion: "dinner", dishes });
+  const run = (pool: MenuDish[], history: Slot[] = [], extra: { dishIndex?: number; random?: () => number } = {}) =>
+    swapDish({ menu: [slot()], target, dishId: old.id, pool, history, ...extra });
 
-  it("replaces a dish with a different one of the same category, not already in the slot", () => {
-    const m = menu();
-    const slot = m[0]!;
-    const target = slot.dishes.find((d) => d.category === "meat")!;
-    const res = swapDish({ menu: m, target: { day: slot.day, occasion: slot.occasion }, dishId: target.id, pool: feasiblePool });
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.replacement.id).not.toBe(target.id);
-    expect(res.replacement.category).toBe("meat");
-    expect(slot.dishes.some((d) => d.id === res.replacement.id)).toBe(false);
+  it("selects a zero-conflict candidate from an ample pool", () => {
+    const clean = meat(1, "鱼");
+    const clashing = meat(2, "牛");
+    const res = run([clashing, clean], [historySlot(target.day, [veg(8, "牛")])]);
+    expect(res).toEqual({ ok: true, replacement: clean, targetIndex: 0, relaxedRules: [] });
   });
 
-  it("returns slot-not-found for an unknown slot", () => {
-    const res = swapDish({ menu: menu(), target: { day: "sat", occasion: "lunch" }, dishId: "m1", pool: feasiblePool });
-    expect(res).toMatchObject({ ok: false, reason: "slot-not-found" });
-  });
-
-  it("returns dish-not-in-slot when the id isn't in the slot", () => {
-    const m = menu();
-    const res = swapDish({ menu: m, target: { day: m[0]!.day, occasion: m[0]!.occasion }, dishId: "m99", pool: feasiblePool });
-    expect(res).toMatchObject({ ok: false, reason: "dish-not-in-slot" });
-  });
-
-  it("returns no-alternative when the pool is exhausted for the category", () => {
-    const m = menu();
-    const slot = m[0]!;
-    const target = slot.dishes.find((d) => d.category === "meat")!;
-    // tiny pool: only the target meat + nothing else eligible
-    const res = swapDish({ menu: m, target: { day: slot.day, occasion: slot.occasion }, dishId: target.id, pool: [target] });
-    expect(res).toMatchObject({ ok: false, reason: "no-alternative" });
-  });
-
-  it("does not swap in a dish whose mainIngredient is already used by a remaining slot mate (#128)", () => {
-    // Slot has two meats: target (猪, being swapped out) + keeper (牛). The pool's
-    // same-mainIngredient candidate shares 牛 with the keeper — it must be skipped.
-    const keeper = meat(1, "牛");
-    const target = meat(2, "猪");
-    const slot: Slot = { day: "mon", occasion: "lunch", dishes: [target, keeper, veg(1, "菜")] };
-    const sameMiCandidate = meat(3, "牛");
-    const otherMiCandidate = meat(4, "鱼");
-    const res = swapDish({
-      menu: [slot],
-      target: { day: "mon", occasion: "lunch" },
-      dishId: target.id,
-      pool: [sameMiCandidate, otherMiCandidate],
+  it("still selects the only eligible candidate and explains a remaining-meal conflict", () => {
+    const only = meat(1, "牛");
+    const current = slot([old, veg(8, "牛")]);
+    expect(swapDish({ menu: [current], target, dishId: old.id, pool: [only] })).toEqual({
+      ok: true,
+      replacement: only,
+      targetIndex: 0,
+      relaxedRules: ["same-day-main-ingredient"],
     });
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    expect(res.replacement.mainIngredient).not.toBe("牛"); // keeper's MI is off-limits
-    expect(res.replacement.id).toBe(otherMiCandidate.id);
+  });
+
+  it("returns errors only for a missing slot, target or eligible alternative", () => {
+    expect(swapDish({ menu: [slot()], target: { ...target, day: "2026-07-09" }, dishId: old.id, pool: [meat(1, "鱼")] })).toMatchObject({ ok: false, reason: "slot-not-found" });
+    expect(swapDish({ menu: [slot()], target, dishId: "missing", pool: [meat(1, "鱼")] })).toMatchObject({ ok: false, reason: "dish-not-in-slot" });
+    expect(run([old, veg(2, "土豆")])).toMatchObject({ ok: false, reason: "no-alternative" });
+  });
+
+  it("compares all four conflict counts lexicographically", () => {
+    const a = meat(1, "鱼");
+    const b = meat(2, "鸡");
+    const random = vi.fn(() => 0.5);
+    expect(run([a, b], [historySlot(target.day, [veg(3, "鱼")]), historySlot("2026-07-09", [b])], { random })).toMatchObject({ ok: true, replacement: a });
+    expect(random).not.toHaveBeenCalled();
+    expect(run([a, b], [historySlot("2026-07-05", [a]), historySlot(target.day, [veg(3, "鸡")])])).toMatchObject({ ok: true, replacement: a });
+    expect(run([a, b], [historySlot("2026-07-05", [veg(3, "鱼"), b])])).toMatchObject({ ok: true, replacement: a });
+    expect(run([a, b], [historySlot("2026-07-05", [veg(3, "鱼"), veg(4, "鸡"), soup(8, { mainIngredient: "鸡" })])])).toMatchObject({ ok: true, replacement: a });
+  });
+
+  it("uses calendar days and Monday-Sunday natural weeks across boundaries", () => {
+    const only = meat(1, "鱼");
+    const rulesFor = (day: string) => {
+      const res = run([only], [historySlot(day, [only])]);
+      if (!res.ok) throw new Error("expected swap");
+      return res.relaxedRules;
+    };
+    expect(rulesFor("2026-07-01")).toEqual(["recent-offering", "recent-main-ingredient"]); // -7 days
+    expect(rulesFor("2026-06-30")).toEqual([]); // -8 days
+    expect(rulesFor("2026-07-08")).toEqual(["same-week-offering", "same-day-main-ingredient"]);
+    expect(rulesFor("2026-07-09")).toEqual(["same-week-offering"]); // future is not recent
+
+    const noMain: MenuDish = { id: "plain", name: "无主料菜", category: "meat" };
+    const noMainResult = run([noMain], [historySlot("2026-07-01", [noMain])]);
+    expect(noMainResult).toMatchObject({ ok: true, relaxedRules: ["recent-offering"] });
+
+    const yearTarget = { day: "2027-01-01", occasion: "lunch" as const };
+    const res = swapDish({ menu: [{ ...yearTarget, dishes: [old] }], target: yearTarget, dishId: old.id, pool: [only], history: [historySlot("2026-12-28", [only])] });
+    expect(res).toMatchObject({ ok: true, relaxedRules: ["same-week-offering", "recent-offering", "recent-main-ingredient"] });
+  });
+
+  it("uses injected randomness only to resolve ties and clamps boundary values", () => {
+    const first = meat(1, "鱼");
+    const last = meat(2, "鸡");
+    const low = vi.fn(() => 0);
+    const high = vi.fn(() => 1);
+    expect(run([first, last], [], { random: low })).toMatchObject({ ok: true, replacement: first });
+    expect(run([first, last], [], { random: high })).toMatchObject({ ok: true, replacement: last });
+    expect(low).toHaveBeenCalledOnce();
+    expect(high).toHaveBeenCalledOnce();
+  });
+
+  it("resolves duplicate targets by explicit index or the first match without mutating other positions", () => {
+    const duplicate = { ...old };
+    const keeper = veg(2, "土豆");
+    const current = slot([old, keeper, duplicate]);
+    const replacement = meat(1, "鱼");
+    const implicit = swapDish({ menu: [current], target, dishId: old.id, pool: [replacement] });
+    const explicit = swapDish({ menu: [current], target, dishId: old.id, dishIndex: 2, pool: [replacement] });
+    expect(implicit).toMatchObject({ ok: true, targetIndex: 0 });
+    expect(explicit).toMatchObject({ ok: true, targetIndex: 2 });
+    expect(swapDish({ menu: [current], target, dishId: old.id, dishIndex: 1, pool: [replacement] })).toMatchObject({ ok: false, reason: "dish-not-in-slot" });
+    if (!explicit.ok) throw new Error("expected swap");
+    const next = [...current.dishes];
+    next[explicit.targetIndex] = explicit.replacement;
+    expect(next).toEqual([old, keeper, replacement]);
+    expect(current.dishes).toEqual([old, keeper, duplicate]);
   });
 });
 
@@ -299,5 +332,20 @@ describe("swapDishSpecified", () => {
       ok: false,
       reason: "dish-not-in-slot",
     });
+  });
+
+  it("重复 dish 可指定目标位置，省略时默认首项", () => {
+    const duplicateMenu: Slot[] = [{ day: "2026-07-08", occasion: "lunch", dishes: [meat(1, "牛"), veg(1, "青菜"), meat(1, "牛")] }];
+    const input = { menu: duplicateMenu, target: { day: "2026-07-08", occasion: "lunch" as const }, dishId: "m1", replacementId: "m3", pool };
+    expect(swapDishSpecified(input)).toMatchObject({ ok: true, targetIndex: 0 });
+    expect(swapDishSpecified({ ...input, dishIndex: 2 })).toMatchObject({ ok: true, targetIndex: 2 });
+    expect(swapDishSpecified({ ...input, dishIndex: 1 })).toMatchObject({ ok: false, reason: "dish-not-in-slot" });
+  });
+
+  it("显式历史只在既有主料窗口内触发 warning", () => {
+    const datedMenu: Slot[] = [{ day: "2026-07-08", occasion: "lunch", dishes: [meat(1, "牛"), veg(1, "青菜")] }];
+    const input = { menu: datedMenu, target: { day: "2026-07-08", occasion: "lunch" as const }, dishId: "v1", replacementId: "m2", pool };
+    expect(swapDishSpecified({ ...input, history: [{ day: "2026-07-07", occasion: "dinner", dishes: [meat(8, "鸡")] }] })).toMatchObject({ ok: true, warning: "会和近期主料重复，仍要换吗？" });
+    expect(swapDishSpecified({ ...input, history: [{ day: "2026-07-06", occasion: "dinner", dishes: [meat(8, "鸡")] }] })).not.toHaveProperty("warning");
   });
 });

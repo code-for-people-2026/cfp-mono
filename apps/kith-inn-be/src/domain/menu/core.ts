@@ -6,7 +6,7 @@
  * 约束：只选池内 component；最近 N 天主料不重复（"肉就那几样"）；单菜 N′ 天不重复；
  * 池子太小填不满结构 → 返回 pool-too-small（PRD §6.2「可做的菜不够了，补几道？」）。
  */
-import type { MealOccasion, MenuDish, MenuSlot, WeekMenu } from "@cfp/kith-inn-shared";
+import type { MealOccasion, MenuDish, MenuSlot, RelaxedRule, WeekMenu } from "@cfp/kith-inn-shared";
 import type { Offering } from "@cfp/kith-inn-shared";
 
 export type { MenuDish, MealOccasion };
@@ -187,42 +187,118 @@ export function generateWeekMenu(input: {
 }
 
 export type SwapResult =
-  | { ok: true; replacement: MenuDish }
+  | { ok: true; replacement: MenuDish; targetIndex: number; relaxedRules: RelaxedRule[] }
   | { ok: false; reason: "slot-not-found" | "dish-not-in-slot" | "no-alternative" };
 
+type SwapScore = [number, number, number, number];
+
+const DAY_MS = 86_400_000;
+const RELAXED_RULES: RelaxedRule[] = [
+  "same-week-offering",
+  "same-day-main-ingredient",
+  "recent-offering",
+  "recent-main-ingredient",
+];
+const sameId = (left: string | number, right: string | number) => String(left) === String(right);
+const dateNumber = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
+
+function weekMonday(value: string): number {
+  const day = new Date(dateNumber(value)).getUTCDay();
+  return dateNumber(value) - ((day + 6) % 7) * DAY_MS;
+}
+
+function isRecent(slotDay: string, targetDay: string): boolean {
+  const days = (dateNumber(targetDay) - dateNumber(slotDay)) / DAY_MS;
+  return days >= 1 && days <= 7;
+}
+
+function countDishes(slots: Slot[], predicate: (slot: Slot, dish: MenuDish) => boolean): number {
+  return slots.reduce((total, slot) => total + slot.dishes.filter((dish) => predicate(slot, dish)).length, 0);
+}
+
+function scoreSwapCandidate(candidate: MenuDish, targetDay: string, history: Slot[], remaining: MenuDish[]): SwapScore {
+  const main = candidate.mainIngredient;
+  return [
+    countDishes(history, (slot, dish) => weekMonday(slot.day) === weekMonday(targetDay) && sameId(dish.id, candidate.id)),
+    (main ? countDishes(history, (slot, dish) => slot.day === targetDay && dish.mainIngredient === main) : 0)
+      + (main ? remaining.filter((dish) => dish.mainIngredient === main).length : 0),
+    countDishes(history, (slot, dish) => isRecent(slot.day, targetDay) && sameId(dish.id, candidate.id)),
+    main ? countDishes(history, (slot, dish) => isRecent(slot.day, targetDay) && dish.mainIngredient === main) : 0,
+  ];
+}
+
+function compareSwapScore(left: SwapScore, right: SwapScore): number {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index]! - right[index]!;
+  }
+  return 0;
+}
+
+function chooseSwapCandidate(
+  candidates: MenuDish[],
+  targetDay: string,
+  history: Slot[],
+  remaining: MenuDish[],
+  random: () => number,
+): { replacement: MenuDish; score: SwapScore } {
+  const scored = candidates.map((replacement) => ({ replacement, score: scoreSwapCandidate(replacement, targetDay, history, remaining) }));
+  const best = scored.reduce((winner, candidate) => compareSwapScore(candidate.score, winner.score) < 0 ? candidate : winner);
+  const tied = scored.filter((candidate) => compareSwapScore(candidate.score, best.score) === 0);
+  if (tied.length === 1) return tied[0]!;
+  const sample = random();
+  const bounded = Number.isFinite(sample) ? Math.min(1, Math.max(0, sample)) : 0;
+  return tied[Math.min(Math.floor(bounded * tied.length), tied.length - 1)]!;
+}
+
+function resolveTargetIndex(slot: Slot, dishId: string | number, dishIndex?: number): number {
+  if (dishIndex === undefined) return slot.dishes.findIndex((dish) => sameId(dish.id, dishId));
+  if (!Number.isInteger(dishIndex) || dishIndex < 0) return -1;
+  const dish = slot.dishes[dishIndex];
+  return dish && sameId(dish.id, dishId) ? dishIndex : -1;
+}
+
 /**
- * 一键换菜：在满足约束的候选里替换某道菜（不让她自己想替代品）。同分类、未在 lookback、
- * 不已在槽内，然后随机取一道。
+ * 一键换菜：资格只要求同分类、非目标且当前餐未使用；历史与主料冲突进入四级评分，
+ * 只在最优分并列时随机。
  */
 export function swapDish(input: {
   menu: Slot[];
   target: { day: string; occasion: MealOccasion };
   dishId: string | number;
+  dishIndex?: number;
   pool: MenuDish[];
+  history?: Slot[];
+  random?: () => number;
   constraints?: Partial<MenuConstraints>;
 }): SwapResult {
   const slot = input.menu.find((s) => s.day === input.target.day && s.occasion === input.target.occasion);
   if (!slot) return { ok: false, reason: "slot-not-found" };
-  const target = slot.dishes.find((d) => String(d.id) === String(input.dishId));
-  if (!target) return { ok: false, reason: "dish-not-in-slot" };
+  const targetIndex = resolveTargetIndex(slot, input.dishId, input.dishIndex);
+  if (targetIndex < 0) return { ok: false, reason: "dish-not-in-slot" };
+  const target = slot.dishes[targetIndex]!;
 
-  const inSlotIds = new Set(slot.dishes.map((d) => String(d.id)));
-  // In-slot main-ingredient avoidance: a swap must not leave two dishes with the
-  // same mainIngredient in one meal. Build the set from the REMAINING dishes
-  // (excluding the one being swapped out — its mainIngredient is freed).
-  const inSlotMI = new Set(
-    slot.dishes.filter((d) => String(d.id) !== String(target.id) && d.mainIngredient).map((d) => d.mainIngredient),
-  );
+  const inSlotIds = new Set(slot.dishes.map((dish) => String(dish.id)));
   const candidates = input.pool
-    .filter((d) => d.category === target.category && String(d.id) !== String(target.id))
-    .filter((d) => !inSlotIds.has(String(d.id)))
-    .filter((d) => !d.mainIngredient || !inSlotMI.has(d.mainIngredient));
-  const alt = takeRandom(candidates, 1)[0];
-  return alt ? { ok: true, replacement: alt } : { ok: false, reason: "no-alternative" };
+    .filter((dish) => dish.category === target.category && !sameId(dish.id, target.id))
+    .filter((dish) => !inSlotIds.has(String(dish.id)));
+  if (candidates.length === 0) return { ok: false, reason: "no-alternative" };
+  const picked = chooseSwapCandidate(
+    candidates,
+    input.target.day,
+    input.history ?? [],
+    slot.dishes.filter((_, index) => index !== targetIndex),
+    input.random ?? Math.random,
+  );
+  return {
+    ok: true,
+    replacement: picked.replacement,
+    targetIndex,
+    relaxedRules: RELAXED_RULES.filter((_, index) => picked.score[index]! > 0),
+  };
 }
 
 export type SwapSpecifiedResult =
-  | { ok: true; replacement: MenuDish; warning?: string }
+  | { ok: true; replacement: MenuDish; targetIndex: number; warning?: string }
   | { ok: false; reason: "slot-not-found" | "dish-not-in-slot" | "replacement-not-in-pool" | "replacement-same-as-target" };
 
 /**
@@ -235,15 +311,18 @@ export function swapDishSpecified(input: {
   menu: Slot[];
   target: { day: string; occasion: MealOccasion };
   dishId: string | number;
+  dishIndex?: number;
   replacementId: string | number;
   pool: MenuDish[];
+  history?: Slot[];
   constraints?: Partial<MenuConstraints>;
 }): SwapSpecifiedResult {
   const c: MenuConstraints = { ...DEFAULT_CONSTRAINTS, ...input.constraints };
   const slot = input.menu.find((s) => s.day === input.target.day && s.occasion === input.target.occasion);
   if (!slot) return { ok: false, reason: "slot-not-found" };
-  const target = slot.dishes.find((d) => String(d.id) === String(input.dishId));
-  if (!target) return { ok: false, reason: "dish-not-in-slot" };
+  const targetIndex = resolveTargetIndex(slot, input.dishId, input.dishIndex);
+  if (targetIndex < 0) return { ok: false, reason: "dish-not-in-slot" };
+  const target = slot.dishes[targetIndex]!;
   const replacement = input.pool.find((d) => String(d.id) === String(input.replacementId));
   if (!replacement) return { ok: false, reason: "replacement-not-in-pool" };
   if (String(replacement.id) === String(target.id)) return { ok: false, reason: "replacement-same-as-target" };
@@ -251,12 +330,17 @@ export function swapDishSpecified(input: {
   const idx = input.menu.indexOf(slot);
   const mealsPerDay = Math.max(1, c.meals.length);
   const miLbSlots = c.mainIngredientWindowDays * mealsPerDay;
-  const neighborMi = collectFrom(input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= miLbSlots)).mainIngredients;
+  const neighborSlots = input.history
+    ? input.history.filter((historySlot) => Math.abs(dateNumber(historySlot.day) - dateNumber(input.target.day)) <= c.mainIngredientWindowDays * DAY_MS)
+    : input.menu.filter((_, i) => i !== idx && Math.abs(i - idx) <= miLbSlots);
+  const neighborMi = collectFrom(neighborSlots).mainIngredients;
   const inSlotOtherMi = new Set(
-    slot.dishes.filter((d) => String(d.id) !== String(target.id) && d.mainIngredient).map((d) => d.mainIngredient),
+    slot.dishes.filter((_, index) => index !== targetIndex).filter((dish) => dish.mainIngredient).map((dish) => dish.mainIngredient),
   );
   const clash = !!replacement.mainIngredient && (neighborMi.has(replacement.mainIngredient) || inSlotOtherMi.has(replacement.mainIngredient));
-  return clash ? { ok: true, replacement, warning: "会和近期主料重复，仍要换吗？" } : { ok: true, replacement };
+  return clash
+    ? { ok: true, replacement, targetIndex, warning: "会和近期主料重复，仍要换吗？" }
+    : { ok: true, replacement, targetIndex };
 }
 
 /**

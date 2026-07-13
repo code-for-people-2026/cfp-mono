@@ -24,6 +24,7 @@ import {
   orderReconciliationRequestSchema,
   orderReconciliationResultSchema,
   orderSchema,
+  relaxedRuleSchema,
   serviceSlotSchema,
   sellerSchema,
   swapRequestSchema,
@@ -164,6 +165,18 @@ describe("order reconciliation contract", () => {
 });
 
 describe("menu plan view + swap contract (feature 003)", () => {
+  it("relaxedRuleSchema accepts only the four priority-ordered rules", () => {
+    const rules = [
+      "same-week-offering",
+      "same-day-main-ingredient",
+      "recent-offering",
+      "recent-main-ingredient",
+    ] as const;
+    expect(relaxedRuleSchema.options).toEqual(rules);
+    expect(rules.map((rule) => relaxedRuleSchema.parse(rule))).toEqual(rules);
+    expect(() => relaxedRuleSchema.parse("same-meal-offering")).toThrow();
+  });
+
   it("menuPlanViewSchema parses a draft plan with dishes", () => {
     const view = {
       planId: 501,

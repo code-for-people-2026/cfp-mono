@@ -26,11 +26,11 @@
 
 **Independent Test**: 不启动 HTTP/CMS，直接用固定菜单、历史、菜品池、可选 dishIndex 与随机源验证四类边界、四级优先级、解释和单位置不变量。
 
-- [ ] T004 [P] [US1] 先在 `packages/kith-inn-shared/src/schemas.test.ts` 写失败契约测试，再于 `schemas.ts` / `types.ts` 增加四个固定 `RelaxedRule` 值和有序类型
-- [ ] T005 [US1] 先在 `apps/kith-inn-be/src/domain/menu/core.test.ts` 写失败测试：充足池、小池、唯一候选、无候选、各级字典序、日期边界、当前餐剩余主料、并列/边界随机、重复 dish 的显式位置/默认首项和其他位置不变
-- [ ] T006 [US1] 在 `apps/kith-inn-be/src/domain/menu/core.ts` 实现日历日/自然周、冲突计数、字典序比较、放宽规则、可注入随机源及 `dishIndex` 目标解析 pure helper
-- [ ] T007 [US1] 在 `apps/kith-inn-be/src/domain/menu/core.ts` 改造 `swapDish` 与 `swapDishSpecified`：资格过滤与偏好评分分离，接收显式 history/可选位置，成功返回 replacement + `targetIndex`（auto 另含 `relaxedRules`）
-- [ ] T008 [US1] 运行 shared/core 定向测试、`pnpm verify`、`git diff --check`，确认 PR2 人工 diff 不超 review 预算
+- [x] T004 [P] [US1] 先在 `packages/kith-inn-shared/src/schemas.test.ts` 写失败契约测试，再于 `schemas.ts` / `types.ts` 增加四个固定 `RelaxedRule` 值和有序类型
+- [x] T005 [US1] 先在 `apps/kith-inn-be/src/domain/menu/core.test.ts` 写失败测试：充足池、小池、唯一候选、无候选、各级字典序、日期边界、当前餐剩余主料、并列/边界随机、重复 dish 的显式位置/默认首项和其他位置不变
+- [x] T006 [US1] 在 `apps/kith-inn-be/src/domain/menu/core.ts` 实现日历日/自然周、冲突计数、字典序比较、放宽规则、可注入随机源及 `dishIndex` 目标解析 pure helper
+- [x] T007 [US1] 在 `apps/kith-inn-be/src/domain/menu/core.ts` 改造 `swapDish` 与 `swapDishSpecified`：资格过滤与偏好评分分离，接收显式 history/可选位置，成功返回 replacement + `targetIndex`（auto 另含 `relaxedRules`）
+- [x] T008 [US1] 运行 shared/core 定向测试、`pnpm verify`、`git diff --check`，确认 PR2 人工 diff 不超 review 预算
 
 ## Phase 3：User Story 1/2/3 - 双前门历史集成（PR3，P1）
 

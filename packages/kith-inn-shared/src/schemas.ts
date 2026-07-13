@@ -226,6 +226,13 @@ export const menuPlanViewSchema = z.object({
   dishes: z.array(menuDishSchema),
   publishText: z.string().optional(),
 });
+/** 自动换菜按固定优先级返回的放宽规则。 */
+export const relaxedRuleSchema = z.enum([
+  "same-week-offering",
+  "same-day-main-ingredient",
+  "recent-offering",
+  "recent-main-ingredient",
+]);
 /** POST /menu/plans/:id/swap 请求体（force 仅改 published plan 时需）。 */
 export const swapRequestSchema = z.object({
   dishId: id,
