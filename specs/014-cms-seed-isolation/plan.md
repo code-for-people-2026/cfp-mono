@@ -41,7 +41,7 @@
 
 | PR | 单一目标 / 核心不变量 | 主要路径 | 独立验证 | 依赖 |
 |----|----------------------|----------|----------|------|
-| PR1 | 任一项目 seed/reset 对另一项目零读写删，且只暴露项目级命令 | `apps/cms/seed/`、`apps/cms/tests/seed-run.test.ts`、两个 payload package 的 `src/seed/`、`apps/cms/package.json`、`apps/cms/README.md` | 双向哨兵测试、package seed 单测、`pnpm verify` | #156 已完成 |
+| PR1 | 任一项目 seed/reset 对另一项目零读写删，且只暴露项目级命令 | `apps/cms/seed/`、`apps/cms/tests/seed-run.test.ts`、`apps/kith-inn-v1-fe/playwright.config.ts`、两个 payload package 的 `src/seed/`、`apps/cms/package.json`、CMS README 与相关 specs 命令文档 | 双向哨兵测试、package seed 单测、v1 H5 E2E、`pnpm verify` | #156 已完成 |
 
 该对称安全边界不能拆成两个先后 PR：只修一个方向时，含糊入口和另一个破坏方向仍然存在，无法独立满足“无跨项目命令”的核心不变量。预计 diff 若略超 400 行，主要来自 issue 强制要求的轻量 spec 与四场景哨兵测试，不包含业务功能或无关重构。
 
@@ -64,6 +64,9 @@ apps/cms/
 ├── tests/seed-run.test.ts
 ├── package.json
 └── README.md
+
+apps/kith-inn-v1-fe/
+└── playwright.config.ts
 
 packages/kith-inn-payload/src/seed/
 └── taozi.ts

@@ -35,10 +35,10 @@ FE H5 默认访问 `http://localhost:3311`，dev server 使用 10087；真机 we
 
 ## 3. M1-A：登录与菜品池
 
-1. 初始化共享 seed：
+1. 初始化 v1 项目 seed：
 
 ```bash
-pnpm --filter @cfp/cms seed
+pnpm --filter @cfp/cms seed:kiv1
 ```
 
 2. 启动 CMS、v1 BE、v1 H5：

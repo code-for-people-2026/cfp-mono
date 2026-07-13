@@ -31,16 +31,14 @@ old kith-inn collections
 
 ## Seed 编排
 
-单一命令保持不变：
+命令必须显式选择项目：
 
 ```bash
-pnpm --filter @cfp/cms seed
+pnpm --filter @cfp/cms seed:kith-inn
+pnpm --filter @cfp/cms seed:kiv1
 ```
 
-执行顺序：
-
-1. 旧 kith-inn `applySeed`。
-2. kith-inn-v1 `applySeed`。
+每个命令只调用对应项目的 `applySeed`，不得读取、写入或删除另一项目的 collections；需要初始化两个项目时分别执行两个命令。
 3. 分别输出 seeded/skipped 结果。
 
 重复执行不得清空数据。显式 reset 时，先按各 package 的 FK-safe 顺序删除，再分别 seed；reset 安全守卫仍只在 `apps/cms/seed/run.ts` 维护一份。

@@ -18,7 +18,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${resetCmsDatabase} && pnpm --dir ../cms seed && pnpm --dir ../cms dev`,
+      command: `${resetCmsDatabase} && pnpm --dir ../cms seed:kiv1 && pnpm --dir ../cms dev`,
       url: "http://127.0.0.1:3304/api/health",
       reuseExistingServer,
       timeout: 120_000,
