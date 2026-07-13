@@ -38,7 +38,7 @@ export type AgentServices = {
     force?: boolean,
     plannedItems?: Array<{ date: string; occasion: "lunch" | "dinner"; offerings: Array<string | number> }>,
   ): Promise<{ ok: true; plans: MenuPlanView[] } | { ok: false; reason: string }>;
-  swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number): Promise<{ ok: true; plan: MenuPlanView; warning?: string; relaxedRules?: RelaxedRule[] } | { ok: false; error: string }>;
+  swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number, frozenAutomatic?: boolean): Promise<{ ok: true; plan: MenuPlanView; warning?: string; relaxedRules?: RelaxedRule[] } | { ok: false; error: string }>;
   publishMenu(planId: string | number): Promise<{ ok: true; publishText: string } | { ok: false; error: string }>;
   getMenu(date?: string): Promise<MenuPlanView[]>;
   getDishPool(): Promise<Array<{ id: string | number; name: string; mainIngredient?: string; category?: string }>>;
@@ -275,7 +275,7 @@ export const AGENT_TOOLS: AgentTool[] = [
         : undefined;
       const notes = [preview.warning, relaxed].filter(Boolean).join("；");
       const summary = `将把 ${preview.oldName} 换成 ${preview.newName}${notes ? `（${notes}）` : ""}`;
-      const opArgs = { planId, dishId, dishIndex: preview.targetIndex, replacementId: preview.replacementId, force };
+      const opArgs = { planId, dishId, dishIndex: preview.targetIndex, replacementId: preview.replacementId, force, automatic: replacementId === undefined };
       const opId = setPendingOp(s.operatorId, { toolName: "swap_dish", args: opArgs, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("swap_dish", summary, opArgs, opId) };
     },

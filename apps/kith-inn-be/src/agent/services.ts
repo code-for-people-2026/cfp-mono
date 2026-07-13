@@ -373,7 +373,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     },
 
     /** Swap a dish in a plan (auto or specified). Returns {plan, warning?} or error. */
-    async swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number) {
+    async swapDish(planId: string | number, dishId: string | number, replacementId?: string | number, force?: boolean, dishIndex?: number, frozenAutomatic?: boolean) {
       try {
         const plan = await cms.getMenuPlan(jwt, planId);
         if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
@@ -384,7 +384,12 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
         let targetIndex: number;
         let warning: string | undefined;
         let relaxedRules: RelaxedRule[] | undefined;
-        if (replacementId !== undefined) {
+        if (replacementId !== undefined && frozenAutomatic) {
+          const r = swapDish({ menu, target, dishId, dishIndex, pool: pool.filter((dish) => String(dish.id) === String(replacementId)) });
+          if (!r.ok) return { ok: false as const, error: r.reason };
+          newReplacementId = r.replacement.id;
+          targetIndex = r.targetIndex;
+        } else if (replacementId !== undefined) {
           const r = swapDishSpecified({ menu, target, dishId, dishIndex, replacementId, pool });
           if (!r.ok) return { ok: false as const, error: r.reason };
           newReplacementId = r.replacement.id;

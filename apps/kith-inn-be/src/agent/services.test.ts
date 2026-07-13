@@ -471,6 +471,16 @@ describe("swapDish", () => {
     expect(await svc(cms).swapDish(50, 1, 3, true, 2)).toMatchObject({ ok: true });
     expect(patchMenuPlan).toHaveBeenCalledWith("jwt", 50, { offerings: [1, 2, 3], publishText: null });
   });
+
+  it("revalidates a frozen automatic replacement against the current slot", async () => {
+    const [target, replacement] = [component(1, "牛腩", "牛"), component(3, "鱼排", "鱼")];
+    const getMenuPlan = vi.fn().mockResolvedValueOnce(planWith([target])).mockResolvedValueOnce(planWith([target, replacement]));
+    const patchMenuPlan = vi.fn(async (_jwt, _id, patch) => ({ ...planWith([target]), ...patch }) as never);
+    const service = svc(baseCms({ getMenuPlan, findOfferings: vi.fn(async () => [target, replacement] as never), patchMenuPlan }));
+    expect(await service.swapDish(50, 1, 3, false, 0, true)).toMatchObject({ ok: true });
+    expect(await service.swapDish(50, 1, 3, false, 0, true)).toEqual({ ok: false, error: "no-alternative" });
+    expect(patchMenuPlan).toHaveBeenCalledOnce();
+  });
 });
 
 describe("preview reads (operation-confirm cards, #126 rich previews)", () => {

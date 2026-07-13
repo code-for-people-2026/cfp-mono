@@ -445,10 +445,10 @@ describe("dispatchPendingOp", () => {
     expect(g).toHaveBeenCalledWith(expect.anything(), true, plannedItems);
   });
 
-  it("swap_dish: forwards the frozen replacementId and dishIndex", async () => {
+  it("swap_dish: forwards the frozen automatic replacement and dishIndex", async () => {
     const sw = vi.fn(async () => ({ ok: true as const, plan: {} as never })) as never;
-    await run(svc({ swapDish: sw }), "swap_dish", { planId: 1, dishId: 2, replacementId: 9, dishIndex: 3, force: true });
-    expect(sw).toHaveBeenCalledWith(1, 2, 9, true, 3);
+    await run(svc({ swapDish: sw }), "swap_dish", { planId: 1, dishId: 2, replacementId: 9, dishIndex: 3, force: true, automatic: true });
+    expect(sw).toHaveBeenCalledWith(1, 2, 9, true, 3, true);
   });
 
   it("add_dish", async () => {
