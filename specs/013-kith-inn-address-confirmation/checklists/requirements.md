@@ -1,4 +1,4 @@
-# Specification Quality Checklist: kith-inn 缺地址确认守卫
+# Specification Quality Checklist: kith-inn 配送地址选填与自动带出
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 
@@ -33,4 +33,5 @@
 
 ## Notes
 
-- 16/16 items pass after the first validation iteration; no clarification markers remain.
+- 16/16 项通过；没有 clarification marker。
+- 2026-07-13 根据桃子实际操作纠正核心需求：配送地址选填，缺地址不得阻断订单确认。
