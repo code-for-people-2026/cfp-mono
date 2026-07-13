@@ -550,6 +550,14 @@ describe("preview reads (operation-confirm cards, #126 rich previews)", () => {
     expect(cms.patchMenuPlan).not.toHaveBeenCalled();
   });
 
+  it("previewSwap: rejects an invalid target before loading history", async () => {
+    const current = planWith([component(1, "牛腩", "牛")]);
+    const listMenuPlans = vi.fn(async () => { throw new Error("history unavailable"); });
+    const cms = baseCms({ getMenuPlan: vi.fn(async () => current as never), listMenuPlans });
+    expect(await svc(cms).previewSwap(50, 999, undefined)).toEqual({ ok: false, error: "dish-not-in-slot" });
+    expect(listMenuPlans).not.toHaveBeenCalled();
+  });
+
   it("previewSwap: plan-published blocks without force", async () => {
     const cms = baseCms({
       getMenuPlan: vi.fn(async () => ({ id: 50, status: "published", slot: { date: "2026-06-29", occasion: "lunch" }, offerings: [] }) as never),

@@ -12,7 +12,7 @@ import {
   type MenuPlanPatch,
   type MenuPlanUpsertInput,
 } from "../lib/cms/menuPlans";
-import { generateForTargets, generateWeekMenu, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
+import { generateForTargets, generateWeekMenu, resolveSwapTarget, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
 import { swapHistoryFromPlans, swapHistoryRange } from "../domain/menu/swapContext";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
@@ -154,6 +154,10 @@ export function menuRoutes(
       const offerings = plan.offerings as unknown as Offering[];
       const dishObjs = offerings;
       const slotView = toView(plan);
+      const menu = [{ day: slotView.date, occasion: slotView.occasion, dishes: slotView.dishes }];
+      if (!resolveSwapTarget(menu[0]!, parsed.data.dishId, parsed.data.dishIndex)) {
+        return c.json({ error: "dish-not-in-slot" }, parsed.data.replacementId === undefined ? 409 : 400);
+      }
       const [poolOfferings, historyPlans] = await Promise.all([
         deps.findOfferings(token),
         parsed.data.replacementId === undefined
@@ -161,7 +165,6 @@ export function menuRoutes(
           : Promise.resolve([]),
       ]);
       const pool = poolFrom(poolOfferings);
-      const menu = [{ day: slotView.date, occasion: slotView.occasion, dishes: slotView.dishes }];
       const target = { day: slotView.date, occasion: slotView.occasion };
       let replacementId: string | number;
       let targetIndex: number;

@@ -244,7 +244,7 @@ function relaxedRulesFrom(score: SwapConflictScore): RelaxedRule[] {
   return RELAXED_RULES.filter((_, index) => score[index]! > 0);
 }
 
-function resolveSwapTarget(slot: Slot, dishId: string | number, dishIndex?: number): { dish: MenuDish; index: number } | undefined {
+export function resolveSwapTarget(slot: Slot, dishId: string | number, dishIndex?: number): { dish: MenuDish; index: number } | undefined {
   const index = dishIndex === undefined
     ? slot.dishes.findIndex((dish) => idEquals(dish.id, dishId))
     : dishIndex;
