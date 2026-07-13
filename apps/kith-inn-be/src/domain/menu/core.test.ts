@@ -354,12 +354,30 @@ describe("scoreSwapCandidate", () => {
     const history: Slot[] = [{ day: "2025-12-29", occasion: "lunch", dishes: [candidate] }];
     expect(scoreSwapCandidate({ candidate, targetDate: "2026-01-01", history, remaining: [] })).toEqual([1, 0, 1, 1]);
   });
+
+  it("does not treat cleared null mainIngredient values as conflicts", () => {
+    const withoutMain = (id: string): MenuDish => ({ id, name: id, category: "meat", mainIngredient: null } as unknown as MenuDish);
+    expect(scoreSwapCandidate({
+      candidate: withoutMain("candidate"),
+      targetDate: "2026-07-13",
+      history: [
+        { day: "2026-07-13", occasion: "dinner", dishes: [withoutMain("same-day")] },
+        { day: "2026-07-12", occasion: "lunch", dishes: [withoutMain("recent")] },
+      ],
+      remaining: [withoutMain("remaining")],
+    })).toEqual([0, 0, 0, 0]);
+  });
 });
 
 describe("toMenuDish", () => {
   it("maps an Offering to the slim MenuDish", () => {
     const d = toMenuDish({ id: 7, name: "红烧牛肉", kind: "component", category: "meat", mainIngredient: "牛肉", seller: 1 } as never);
     expect(d).toEqual({ id: 7, name: "红烧牛肉", category: "meat", mainIngredient: "牛肉" });
+  });
+
+  it("normalizes a cleared runtime mainIngredient to undefined", () => {
+    const d = toMenuDish({ id: 7, name: "时蔬", kind: "component", category: "veg", mainIngredient: null, seller: 1 } as never);
+    expect(d.mainIngredient).toBeUndefined();
   });
 });
 

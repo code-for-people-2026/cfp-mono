@@ -43,7 +43,7 @@ export function toMenuDish(o: Offering): MenuDish {
     id: o.id,
     name: o.name,
     category: (o.category ?? "veg") as MenuDish["category"],
-    mainIngredient: o.mainIngredient,
+    mainIngredient: o.mainIngredient || undefined,
   };
 }
 
@@ -214,7 +214,7 @@ export function scoreSwapCandidate(input: {
 }): SwapConflictScore {
   const score: [number, number, number, number] = [0, 0, 0, 0];
   const targetWeek = weekKey(input.targetDate);
-  const main = input.candidate.mainIngredient;
+  const main = input.candidate.mainIngredient || undefined;
   for (const slot of input.history) {
     const sameWeek = targetWeek !== undefined && weekKey(slot.day) === targetWeek;
     const recent = isRecent(slot.day, input.targetDate);
