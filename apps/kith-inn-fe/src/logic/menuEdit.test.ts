@@ -1,6 +1,15 @@
 import type { MenuPlanView } from "@cfp/kith-inn-shared";
 import { describe, expect, it, vi } from "vitest";
-import { generatePlans, loadPlans, OCCASION_LABEL, plansByOccasion, publishPlan, swapDish, type Req } from "./menuEdit";
+import {
+  formatRelaxedRules,
+  generatePlans,
+  loadPlans,
+  OCCASION_LABEL,
+  plansByOccasion,
+  publishPlan,
+  swapDish,
+  type Req,
+} from "./menuEdit";
 
 type ReqOptions = Parameters<Req>[0];
 const plan = (occasion: "lunch" | "dinner", over: Partial<MenuPlanView> = {}): MenuPlanView => ({
@@ -106,7 +115,7 @@ describe("generatePlans", () => {
 });
 
 describe("swapDish", () => {
-  it("POSTs /menu/plans/:id/swap, returns plan + warning", async () => {
+  it("runtime-parses the specified response and keeps its optional warning", async () => {
     const { req, cap } = rec({ statusCode: 200, data: { plan: plan("lunch"), warning: "会和近期主料重复" } });
     const r = await swapDish("t", 501, { dishId: "m1", replacementId: "m2" }, req);
     expect(r.warning).toBe("会和近期主料重复");
@@ -114,9 +123,45 @@ describe("swapDish", () => {
     expect(cap.v?.data).toEqual({ dishId: "m1", replacementId: "m2" });
   });
 
+  it("runtime-parses the automatic response and passes dishIndex through", async () => {
+    const { req, cap } = rec({
+      statusCode: 200,
+      data: { plan: plan("lunch"), relaxedRules: ["same-week-offering", "recent-main-ingredient"] },
+    });
+    const r = await swapDish("t", 501, { dishId: "m1", dishIndex: 2 }, req);
+    expect(r.relaxedRules).toEqual(["same-week-offering", "recent-main-ingredient"]);
+    expect(cap.v?.data).toEqual({ dishId: "m1", dishIndex: 2 });
+  });
+
+  it("rejects unknown automatic relaxedRules at runtime", async () => {
+    const { req } = rec({ statusCode: 200, data: { plan: plan("lunch"), relaxedRules: ["unknown-rule"] } });
+    await expect(swapDish("t", 501, { dishId: "m1" }, req)).rejects.toThrow();
+  });
+
+  it("rejects an automatic response missing relaxedRules", async () => {
+    const { req } = rec({ statusCode: 200, data: { plan: plan("lunch") } });
+    await expect(swapDish("t", 501, { dishId: "m1" }, req)).rejects.toThrow();
+  });
+
   it("throws on non-2xx", async () => {
     const req = vi.fn(async () => ({ statusCode: 409, data: { error: "plan-published" } })) as unknown as Req;
     await expect(swapDish("t", 501, { dishId: "m1" }, req)).rejects.toThrow();
+  });
+});
+
+describe("formatRelaxedRules", () => {
+  it("returns no notice when no preference was relaxed", () => {
+    expect(formatRelaxedRules([])).toBeUndefined();
+  });
+
+  it("renders every reason once in the fixed conflict-priority order", () => {
+    expect(formatRelaxedRules([
+      "recent-main-ingredient",
+      "same-day-main-ingredient",
+      "same-week-offering",
+      "recent-offering",
+      "same-week-offering",
+    ])).toBe("菜品池较小，本次允许：本周已安排过同一道菜、当天主料重复、近 7 天已安排过同一道菜、近 7 天主料重复");
   });
 });
 

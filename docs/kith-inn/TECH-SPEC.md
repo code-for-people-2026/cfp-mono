@@ -1,6 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.15 ｜ 最近更新：2026-07-13
+> 状态：草稿 v0.16 ｜ 最近更新：2026-07-13
+> v0.16 变更：**自适应换菜契约**——menu route 与「今天」agent 按目标日期读取同一 seller 历史，以固定四级冲突择优；用 `dishIndex` 精确写回一个位置，自动响应返回有序 `relaxedRules`，H5 经共享 Zod schema 运行时验证后显示完整中文原因。
 > v0.15 变更：**生产订单对账定稿**——唯一解析入口区分完整接龙 snapshot 与单坐标 increment；CMS 用 fingerprint、operation key 和单事务原子应用新增/更新/退出，不新增持久化 snapshot 表。
 > v0.14 变更：**订单写入原子性**——草稿 order+items、确认 slot+fulfillment+order、取消 fulfillment+order 分别收进 CMS 单事务；BE 改调粗粒度 confirm/cancel 内部端点；新增 `fulfillments (seller,order)` unique 兜住并发确认。
 > v0.13 变更：**订单三表定稿**——`orders` 改为一人一日一餐，餐次上移到 `orders.occasion`；`order_items` 不再有 `mealOccasion/timeWindow`；`fulfillments` 改为挂 `order`，地址从 `orders.address` 读取，履约状态收口为 `pending/done/canceled`。
@@ -61,6 +62,8 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 - **访问方式**：kith-inn-be 经 cms 的 **REST / GraphQL HTTP API** 读写（跨进程，标准做法），**不**为了用 Payload Local API 而与 cms 同进程耦合。
 - **不绕过 Payload**：写数据一律走 Payload API（让校验 / hooks / 租户 access control 生效），**禁止 kith-inn-be 直连同一个库写裸 SQL**（否则隔离/校验全失效）。
 - **LLM host**：DeepSeek 调用一律走 kith-inn-be（**API key 只在服务端**）。kith-inn-be **自带一份客户端**（可参考 website 现有写法 `apps/website/src/lib/deepseek`，但**不抽取、不改 website**——C′ 下 website 原封不动）。
+- **自适应换菜**：menu route 与「今天」agent 两个前门都读取以目标日期为中心、覆盖前 7 个日历日和目标自然周的 seller-scoped menu plans，并按 plan id 排除当前餐。自动候选只保留启用、同分类、非目标且当前餐未使用的菜，再按“同周同菜 → 同日同主料 → 近 7 日同菜 → 近 7 日同主料”四级冲突字典序择优；只在完全同分候选间随机。小池仍选冲突最少者并返回对应有序 `relaxedRules`，只有候选为空才失败。
+- **位置与确认一致性**：自动/指定请求都可带零起始 `dishIndex`；提供时必须与 `dishId` 匹配，省略时兼容为第一个匹配项，写回始终只改 `targetIndex` 一个位置。agent preview 固化胜出 replacement 与位置，确认时校验其当前资格但不重新随机；指定换菜仍保持用户选择优先和既有 warning。
 
 ## 3. 数据模型与租户隔离
 
@@ -171,7 +174,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ### 4.1 「今天」主 agent 架构（对应 PRD §5.5）
 
-- **一个 agent，多工具**：agent 不持有业务逻辑，只**编排** kith-inn-be 的后端操作（记单/改单/出菜单/换菜/标已送/切已付/查状态/查历史…）。**这些工具与"菜单/订单/送餐"详情 tab 调的是同一套操作**——两个前门、一套实现，无重叠。
+- **一个 agent，多工具**：agent 不持有业务逻辑，只**编排** kith-inn-be 的后端操作（记单/改单/出菜单/换菜/标已送/切已付/查状态/查历史…）。**这些工具与"菜单/订单/送餐"详情 tab 调的是同一套操作**——两个前门、一套实现，无重叠。自动换菜两边使用相同历史窗口和四级评分，确认卡在规则非空时以“菜品池较小，本次允许”展示全部中文原因。
 - **范围外挡回**：agent 的 system prompt 限定职责（帮桃子经营私房菜）；无关问题礼貌拒绝 + 引导回经营。
 - **三层记忆（别混）**：
   - 展示的对话（她能滚动看到的）：**滚动 2 天窗口**（今天+昨天，每天 0 点清前天）+ **硬上限 1000 条（超出删最旧 200）**；带时间戳；到顶提示"更早已清理"。（数字暂定，试用期调。）
@@ -205,7 +208,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 - **`kith-inn-be`**：业务逻辑写成**纯函数 + 依赖注入**（确定性选菜/聚合/订单结构化）→ 单测轻松 100%；**边界全 mock**（DeepSeek、微信 openid、cms 的 HTTP API）。这正是"确定性内核 + 薄 LLM"的回报——确定性=可测，LLM 只在边界 mock。
 - **`apps/cms`（Payload 集合）**：重点测 **access control（租户隔离，安全攸关，必测）**、hooks、校验，对着 CI 的临时 postgres 跑。
-- **`kith-inn-fe`（Taro）**：**逻辑（hooks/状态/调接口）与展示分离**；逻辑 vitest 测到 100%，集成靠 H5 的 playwright e2e，**weapp 第一阶段手动测**（PLAN.md 既定）。FE 的 100% 最难，靠"组件小 + 逻辑抽离"扛。
+- **`kith-inn-fe`（Taro）**：**逻辑（hooks/状态/调接口）与展示分离**；逻辑 vitest 测到 100%，集成靠 H5 的 playwright e2e，**weapp 第一阶段手动测**（PLAN.md 既定）。换菜 helper 按自动/指定请求分支使用 `@cfp/kith-inn-shared/schemas` 的 success schema 做 runtime parse；未知规则或自动响应缺少 `relaxedRules` 一律进入失败处理。H5 以零起始 `dishIndex` 绑定点击位置，非空规则按固定顺序显示在对应 plan 餐卡，空数组不显示。Taro 的 H5/weapp Babel rule 通过 `compile.include` 转译 shared workspace 的 `.ts` runtime exports，避免把类型语法原样交给 webpack。FE 的 100% 最难，靠"组件小 + 逻辑抽离"扛。
 - **覆盖排除**：生成的类型、配置、Payload 生成物、纯展示（交 e2e）排除在外，让 100% 落在真逻辑上（PLAN.md：代码刻意小而清楚，让 100% 有意义）。
 - **代价自觉**：100% 是真税，从第一天约束代码风格（小、纯、可 mock）——前述架构选择（确定性内核、数据/逻辑分离）部分就是为交得起这个税。
 

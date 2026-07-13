@@ -22,6 +22,10 @@ export default defineConfig(async () => ({
   },
   plugins: [],
   mini: {
+    // Taro 只把 target config 传给 runner，故 H5/weapp 各自声明 shared include。
+    compile: {
+      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src")],
+    },
     // weapp-tailwindcss@5：给 Tailwind v4 utility 类做微信小程序 WXSS 转义
     // (特殊字符 / : . [ ) + rem→rpx。仅作用于 weapp 目标；h5 走 postcss
     // (@tailwindcss/postcss，见 postcss.config.mjs)。
@@ -50,6 +54,10 @@ export default defineConfig(async () => ({
     },
   },
   h5: {
+    // FE 直接消费 shared 的 Zod runtime schema；将 workspace .ts 纳入 Babel rule。
+    compile: {
+      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src")],
+    },
     publicPath: "/",
     router: { mode: "browser" },
     // Force CSS extraction even in dev: Taro's webpack5-runner defaults
