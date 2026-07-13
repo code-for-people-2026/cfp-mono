@@ -21,7 +21,7 @@ import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../l
 import { createChatMessage, listChatMessages } from "../lib/cms/chat";
 import { createCmsAgentServices, type AgentCms } from "../agent/services";
 import type { AgentServices } from "../agent/tools";
-import { clearPendingOp, completePendingOp, getCompletedOp, getPendingOp } from "../agent/pendingOps";
+import { clearInFlightOp, clearPendingOp, completePendingOp, getCompletedOp, getPendingOp, startPendingOp } from "../agent/pendingOps";
 import { runAgent } from "../agent/run";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
@@ -142,14 +142,17 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
     if (!op) return c.json({ error: "no pending operation" }, 404);
     if (body?.opId !== op.opId) return c.json({ error: "card stale" }, 409);
     const services = createCmsAgentServices({ jwt, cms, operatorId });
+    const execution = startPendingOp(operatorId, op.opId, () => dispatchPendingOp(services, op, body));
     try {
-      const result = await dispatchPendingOp(services, op, body);
+      const result = await execution.promise;
       const ok = operationReplySucceeded(result);
       if (ok) completePendingOp(operatorId, op.opId, result);
+      else clearInFlightOp(operatorId, op.opId);
       // Best-effort persist the outcome as an assistant message.
-      await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
-      return c.json({ reply: result, ok });
+      if (!execution.joined) await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
+      return c.json({ reply: result, ok, ...(execution.joined && ok ? { alreadyCompleted: true } : {}) });
     } catch (error) {
+      clearInFlightOp(operatorId, op.opId);
       if (error instanceof CmsHttpError && error.code === "stale-preview") {
         clearPendingOp(operatorId);
         const message = op.toolName === "record_orders" && (op.args as { mode?: unknown }).mode === "increment"
