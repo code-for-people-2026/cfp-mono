@@ -16,6 +16,7 @@ jobs:
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
+      KITH_INN_ALLOW_DEV_SEED_RESET: "1"
     services:
       postgres:
         image: postgres:17-alpine

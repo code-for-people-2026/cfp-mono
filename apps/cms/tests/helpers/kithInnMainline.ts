@@ -80,15 +80,27 @@ export async function startKithInnMainline(): Promise<{
   sellerB: MainlineTenant;
 }> {
   if (!hasMainlinePostgres) throw new Error("kith-inn mainline integration requires PostgreSQL");
-  assertDevResetAllowed({ ...process.env, KITH_INN_ALLOW_DEV_SEED_RESET: "1" });
-  process.env.JWT_SECRET = MAINLINE_JWT_SECRET;
-  const payload = await getPayload({ config });
-  await resetSeedData(payload as Parameters<typeof resetSeedData>[0]);
-  return {
-    payload,
-    sellerA: await createTenant(payload, "seller-a"),
-    sellerB: await createTenant(payload, "seller-b"),
-  };
+  assertDevResetAllowed();
+  const originalJwtSecret = process.env.JWT_SECRET;
+  let payload: Payload | undefined;
+  try {
+    process.env.JWT_SECRET = MAINLINE_JWT_SECRET;
+    payload = await getPayload({ config });
+    await resetSeedData(payload as Parameters<typeof resetSeedData>[0]);
+    return {
+      payload,
+      sellerA: await createTenant(payload, "seller-a"),
+      sellerB: await createTenant(payload, "seller-b"),
+    };
+  } catch (error) {
+    if (payload) {
+      await resetSeedData(payload as Parameters<typeof resetSeedData>[0]).catch(() => undefined);
+      await payload.destroy().catch(() => undefined);
+    }
+    if (originalJwtSecret === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = originalJwtSecret;
+    throw error;
+  }
 }
 
 export function routeRequest(token: string, path: string, method = "GET", body?: unknown): Request {
