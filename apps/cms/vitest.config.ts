@@ -9,7 +9,7 @@ export default defineConfig({
     // Real-Postgres suites boot the same Payload schema; drizzle push must not
     // race another file's onInit/index reconciliation.
     fileParallelism: false,
-    include: ["tests/**/*.test.ts", "src/app/api/internal/orders/[id]/route.test.ts"],
+    include: ["tests/**/*.test.ts", "src/**/*.test.ts"],
   },
   resolve: {
     alias: {
