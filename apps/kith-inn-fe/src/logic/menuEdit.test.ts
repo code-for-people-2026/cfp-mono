@@ -1,6 +1,7 @@
 import type { MenuPlanView } from "@cfp/kith-inn-shared";
 import { describe, expect, it, vi } from "vitest";
 import {
+  clearSwapNoticesForPlans,
   formatRelaxedRules,
   generatePlans,
   loadPlans,
@@ -162,6 +163,19 @@ describe("formatRelaxedRules", () => {
       "recent-offering",
       "same-week-offering",
     ])).toBe("菜品池较小，本次允许：本周已安排过同一道菜、当天主料重复、近 7 天已安排过同一道菜、近 7 天主料重复");
+  });
+});
+
+describe("clearSwapNoticesForPlans", () => {
+  it("drops notices for plans replaced by a load or regeneration", () => {
+    expect(clearSwapNoticesForPlans(
+      { "501": "旧提示", "502": "保留提示" },
+      [plan("lunch", { planId: 501 })],
+    )).toEqual({ "502": "保留提示" });
+  });
+
+  it("keeps notices when no matching plan was replaced", () => {
+    expect(clearSwapNoticesForPlans({ "501": "保留提示" }, [])).toEqual({ "501": "保留提示" });
   });
 });
 

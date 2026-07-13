@@ -6,6 +6,7 @@ import type { MenuPlanView } from "@cfp/kith-inn-shared";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
 import {
+  clearSwapNoticesForPlans,
   formatRelaxedRules,
   generatePlans,
   loadPlans,
@@ -68,7 +69,9 @@ export default function Menu() {
     const t = tokens.getToken();
     if (!t) return Taro.redirectTo({ url: "/pages/login/index" });
     try {
-      setDayPlans(await loadPlans(t, date, req));
+      const plans = await loadPlans(t, date, req);
+      setDayPlans(plans);
+      setSwapNotices((current) => clearSwapNoticesForPlans(current, plans));
     } catch (e) {
       if ((e as { status?: number }).status === 401) {
         tokens.clearToken();
@@ -87,6 +90,7 @@ export default function Menu() {
       const byDate: Record<string, MenuPlanView[]> = {};
       for (const p of all) (byDate[p.date] ??= []).push(p);
       setWeekPlans(byDate);
+      setSwapNotices((current) => clearSwapNoticesForPlans(current, all));
     } catch (e) {
       if ((e as { status?: number }).status === 401) {
         tokens.clearToken();
@@ -113,6 +117,7 @@ export default function Menu() {
       Taro.showToast({ title: r.reason === "pool-too-small" ? "菜品池不够" : "无法生成", icon: "none" });
       return;
     }
+    setSwapNotices((current) => clearSwapNoticesForPlans(current, plan ? [...r.plans, plan] : r.plans));
     if (mode === "day") loadDay(date);
     else loadWeek();
   };
@@ -132,6 +137,10 @@ export default function Menu() {
       Taro.showToast({ title: r.reason === "pool-too-small" ? "菜品池不够" : "无法生成", icon: "none" });
       return;
     }
+    setSwapNotices((current) => clearSwapNoticesForPlans(current, [
+      ...r.plans,
+      ...Object.values(weekPlans).flat(),
+    ]));
     loadWeek();
   };
 
