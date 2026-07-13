@@ -9,7 +9,11 @@ const be = "http://127.0.0.1:3311";
 const llm = "http://127.0.0.1:3321";
 const serviceDir = resolve("test-results/mainline-services");
 mkdirSync(serviceDir, { recursive: true });
-const logged = (command: string, name: string) => `(${command}) > ${JSON.stringify(mainlineServiceLog(name))} 2>&1`;
+const prepareServiceDir = `rm -rf ${JSON.stringify(serviceDir)} && mkdir -p ${JSON.stringify(serviceDir)}`;
+const logged = (command: string, name: string) => {
+  const path = JSON.stringify(mainlineServiceLog(name));
+  return `: > ${path} && (${command}) >> ${path} 2>&1`;
+};
 const sharedEnv = {
   JWT_SECRET: "mainline-e2e-jwt-secret",
   CMS_INTERNAL_TOKEN: "mainline-e2e-internal-token",
@@ -26,7 +30,7 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:10087", trace: "retain-on-failure" },
   webServer: [
     {
-      command: logged(`${process.env.CI ? "" : "pnpm --dir ../.. db:up && "}pnpm --dir ../cms seed:kith-inn:reset:dev && pnpm --dir ../cms exec next dev -p 3306`, "cms"),
+      command: `${prepareServiceDir} && ${logged(`${process.env.CI ? "" : "pnpm --dir ../.. db:up && "}pnpm --dir ../cms seed:kith-inn:reset:dev && pnpm --dir ../cms exec next dev -p 3306`, "cms")}`,
       url: `${cms}/api/health`, timeout: 180_000, reuseExistingServer: false,
       env: {
         ...sharedEnv,

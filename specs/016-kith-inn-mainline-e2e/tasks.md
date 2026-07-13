@@ -69,16 +69,18 @@
 
 **Independent Test**: 从 `E2E-ORDER-001` 的页面会话与真实 confirmed orders 继续，所有业务动作通过 H5；最终 API 只读断言菜单 published、目标位置唯一变化、订单 paid、履约 done。
 
-- [ ] T020 [US2] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 把 `E2E-MAIN-001` 接到订单 happy path：H5 生成目标餐菜单、记录原始位置、自动换菜并验证完整中文放宽原因与非目标位置不变
-- [ ] T021 [US2] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 继续通过 H5 发布当前菜单、对目标订单标已付并精确批量送达，最终断言 publish text、未付口径和 fulfillment 状态
+- [x] T020 [US2] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 把 `E2E-MAIN-001` 接到订单 happy path：H5 生成目标餐菜单、记录原始位置、自动换菜并验证完整中文放宽原因与非目标位置不变
+- [x] T021 [US2] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 继续通过 H5 发布当前菜单、对目标订单标已付并精确批量送达，最终断言 publish text、未付口径和 fulfillment 状态
 
 ## Phase 6：CI 证据与交付收口（PR5）
 
 **Goal**: 让相关 PR 稳定执行目标 suite，失败能下载完整诊断材料，无关项目不被误选。
 
-- [ ] T022 在 `apps/kith-inn-fe/playwright.mainline.config.ts` 与 `.github/workflows/ci.yml` 清理旧 mainline 产物、保留 failure trace/report，并上传 CMS/BE/fixed-LLM service logs；验证 webServer failure 和 assertion failure 两类 artifact
-- [ ] T023 用 `.github/workflows/ci.yml` 的等价 range/filter 命令验证 `CI-AFFECTED-001` 路径矩阵：旧 kith FE/BE/CMS/shared helper 100% 选中，纯 v1/website/community-cooking 0 次误选，共享 CMS 同时选中时保持 `--concurrency=1`
-- [ ] T024 连续运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e:mainline` 三次，运行根 `pnpm test:e2e` 的目标 dry-run、`pnpm verify` 和 `git diff --check`，把耗时/产物/最终任务状态同步到 `specs/016-kith-inn-mainline-e2e/{quickstart,tasks}.md`
+- [x] T022 在 `apps/kith-inn-fe/playwright.mainline.config.ts` 与 `.github/workflows/ci.yml` 清理旧 mainline 产物、保留 failure trace/report，并上传 CMS/BE/fixed-LLM service logs；验证 webServer failure 和 assertion failure 两类 artifact
+- [x] T023 用 `.github/workflows/ci.yml` 的等价 range/filter 命令验证 `CI-AFFECTED-001` 路径矩阵：旧 kith FE/BE/CMS/shared helper 100% 选中，纯 v1/website/community-cooking 0 次误选，共享 CMS 同时选中时保持 `--concurrency=1`
+- [x] T024 连续运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e:mainline` 三次，运行根 `pnpm test:e2e` 的目标 dry-run、`pnpm verify` 和 `git diff --check`，把耗时/产物/最终任务状态同步到 `specs/016-kith-inn-mainline-e2e/{quickstart,tasks}.md`
+
+**PR5 验证记录（2026-07-14）**：连续 H5 journey 与完整 mainline 4/4 在 CI 模式连续三次通过（21s / 21s / 22s）；受控 webServer failure 仅留下本次 CMS `ECONNREFUSED` 日志，受控 assertion failure 同时生成 trace、error context、HTML report 与五类 service log；synthetic Git tree 路径矩阵全部符合预期，根 E2E dry-run、`pnpm verify` 与 `git diff --check` 通过，无 v1 文件变更，人工 diff 为 130 insertions / 12 deletions。
 
 ## Dependencies & Execution Order
 

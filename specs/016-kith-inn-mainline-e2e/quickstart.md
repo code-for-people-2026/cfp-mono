@@ -62,6 +62,8 @@ CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e
 - 纯 v1 或 website 业务变化不会误选旧 kith-inn FE。
 - 共享 CMS host/config 同时选中两套时 `--concurrency=1` 生效。
 
+PR5 使用不修改工作树的 synthetic Git tree 逐类执行 workflow 等价 dry-run：旧 kith FE、BE、CMS menu route、`packages/kith-inn-shared` 与 mainline helper 均选中 `@cfp/kith-inn-fe#test:e2e`；纯 v1 只选 v1 suite，纯 website/community-cooking 只选各自 suite；共享 `apps/cms/payload.config.ts` 同时选中旧/v1 条件，最终仍由 `--concurrency=1` 串行。
+
 ## 6. 全量门禁
 
 ```bash
@@ -70,6 +72,13 @@ git diff --check
 ```
 
 PR5 合并前，连续运行 mainline 3 次并记录每次耗时与结果。失败 trace/report/service log 应位于 [场景契约](./contracts/e2e-scenarios.md#5-证据契约) 指定目录并被 CI artifact 收集。
+
+PR5 最终证据（2026-07-14）：
+
+- `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e:mainline` 连续三次均为 4/4，通过耗时 21s、21s、22s。
+- 停止 PostgreSQL 的受控 webServer failure 会先清空 service 目录，只留下本次 `cms.log`，其中明确记录 `ECONNREFUSED 127.0.0.1:54324`。
+- 受控 assertion failure 生成场景 `trace.zip`、`error-context.md`、HTML report，以及 CMS/BE/H5/fixed-LLM/fixed-LLM-request 日志；临时失败断言已还原。
+- 根入口使用 `pnpm turbo run test:e2e --dry=json` 枚举所有 workspace E2E target；CI affected 命令再按上述路径矩阵缩小实际执行集合。
 
 ## 7. 本地清理
 
