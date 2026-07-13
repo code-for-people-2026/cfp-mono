@@ -79,7 +79,7 @@
 
 ## Phase 6：长期事实与最终验收（PR2）
 
-- [ ] T013 在 `docs/kith-inn/PRD.md`、`USER-STORIES.md`、`DATA-MODEL.md` 与 `TECH-SPEC.md` 删除地址必填/待补阻断描述，写明选填、未来订单自动带出和无地址兜底
+- [ ] T013 在 `docs/kith-inn/PRD.md`、`USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md` 与 `prototype/index.html` 删除地址必填/待补阻断描述，写明选填、未来订单自动带出和无地址兜底
 - [ ] T014 执行 `specs/013-kith-inn-address-confirmation/quickstart.md`、`pnpm verify`、diff/v1 检查，核对 SC-001–SC-005 并完成 #156
 
 **Checkpoint（PR2）**: review 无新 comments、checks 全绿并 rebase merge 后关闭 #156，开始 #164。
