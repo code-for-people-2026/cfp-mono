@@ -1,6 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.14 ｜ 最近更新：2026-07-11
+> 状态：草稿 v0.15 ｜ 最近更新：2026-07-13
+> v0.15 变更：**生产订单对账定稿**——唯一解析入口区分完整接龙 snapshot 与单坐标 increment；CMS 用 fingerprint、operation key 和单事务原子应用新增/更新/退出，不新增持久化 snapshot 表。
 > v0.14 变更：**订单写入原子性**——草稿 order+items、确认 slot+fulfillment+order、取消 fulfillment+order 分别收进 CMS 单事务；BE 改调粗粒度 confirm/cancel 内部端点；新增 `fulfillments (seller,order)` unique 兜住并发确认。
 > v0.13 变更：**订单三表定稿**——`orders` 改为一人一日一餐，餐次上移到 `orders.occasion`；`order_items` 不再有 `mealOccasion/timeWindow`；`fulfillments` 改为挂 `order`，地址从 `orders.address` 读取，履约状态收口为 `pending/done/canceled`。
 > v0.12 变更：**同步 PRD v1.10 数据模型决策分层**——已确认：地址用单个 string、不再建 customer_addresses/楼栋地址模型、自家单不设 self/onsite 特例、不做奶奶协同字段、菜品池 M1 只维护菜名 + 主料且 `offerings.recipe` 仅预留；`orders` / `order_items` / `fulfillments` 于 v0.13 定稿。
@@ -116,8 +117,9 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
   - **① draft = 纯记录事务**：记单确认卡确认后才写草稿数据；CMS 在一个 Payload/Postgres 事务内写 order + 全部 order_items，任一 item 失败全部回滚。draft 与会话留存解耦，且**不触任何经营表**——不开 slot、不建履约。
   - **② 确认订单 = 物化事务**：BE 对 CMS 只发一次 `POST /api/internal/orders/:id/confirm`；CMS 在同一事务内按 `(seller, order.date, order.occasion)` upsert `service_slots`→open、为该 order 创建一条 fulfillment、再把 order 置 `confirmed`。`archived` slot 不自动重开，整次回滚；已确认重试读回同一结果，`fulfillments (seller,order)` unique 阻止并发重复。
   - **③ 取消/修改级联**：取消走一次 `POST /api/internal/orders/:id/cancel`，CMS 在同一事务内把 order 与其 fulfillment 置 `canceled` 终态，重复取消幂等；修改 `orders.date/occasion` 时同步 pending fulfillment 的 `serviceDate/occasion`，跳过 done/canceled 终态；修改 `orders.address` 不需要同步 fulfillment，因为地址从 order 读取。
-  - **④ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
-  - **⑤ subscription 物化（V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中 `(date,occasion)` 坐标（未来 time-slot 生意再扩展为 date + start/end slot 坐标）+ 排除 `pausedRanges` → 物化为已确认 order，并走与"确认订单"同一物化事务。`idempotencyKey` 需包含 subscription id + 本期坐标，防 recurring/open-ended 后续期数误撞第一期；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
+  - **④ 完整接龙 / 补单对账事务**：BE 先用生产唯一解析入口生成 snapshot 或 increment 预览和 `expectedFingerprint`，用户确认后只调用一次 `POST /api/internal/orders/reconcile`。CMS 锁住对账写入，在同一事务内重读 active orders 并校验 fingerprint，再创建/更新/取消 order + item；snapshot 覆盖范围内全部 active orders，不看 `source`，increment 只改一个业务坐标。退出 confirmed order 时同步取消 pending fulfillment；paid/reconciled 或 done 在预览和事务内都返回 `settled-order`。同一 `operationKey` 重试返回已完成结果，不重复追加；不同操作造成数据变化时旧卡返回 `stale-preview`。预览不落专用 snapshot 表，数据库只保留业务实体和用于幂等恢复的 operation marker。
+  - **⑤ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
+  - **⑥ subscription 物化（V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中 `(date,occasion)` 坐标（未来 time-slot 生意再扩展为 date + start/end slot 坐标）+ 排除 `pausedRanges` → 物化为已确认 order，并走与"确认订单"同一物化事务。`idempotencyKey` 需包含 subscription id + 本期坐标，防 recurring/open-ended 后续期数误撞第一期；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
 
 ### 3.4 M0 数据层任务（共享 cms host + 按 app 分模块包；**不动 website**）
 
@@ -153,7 +155,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 | 菜单选菜（工具） | **0 确定性** | MVP | 规则选菜，绝不用 LLM 决定选哪道 |
 | 送餐排序（工具） | **0 确定性** | MVP | 按地址字符串相似度/自然排序 |
 | 采购聚合 + 用量估算（工具） | **0 确定性** | M2 | 食材 × 份数；"今天买什么菜"问答调它 |
-| 订单结构化（agent 内解析步） | **1 普通 LLM 调用** | MVP | 接龙/口述→结构化（名字+份数+餐次，智能分午/晚）；顾客名字匹配、带出默认地址 |
+| 订单结构化（agent 内解析步） | **1 普通 LLM 调用 + 确定性校验/对账** | MVP | agent 只原样转交输入；统一解析日期+餐次+顾客+份数，日期/周几冲突或歧义时 fail closed；snapshot 做范围差异，increment 做单坐标 add/set |
 | 菜单润色 / 节令 / 群文案 | **1 普通 LLM 调用** | MVP | 在确定性菜单之后润色 |
 | 沟通文案模板 | **1 普通 LLM 调用** | M2 | 场景→一段她口气的话 |
 | 经营画像·配置初始化（onboarding） | **1 普通 LLM 调用 / 轻 workflow** | 非 MVP | 引导式问答出结构化配置，详见 PRD §6.0（留白） |
@@ -176,6 +178,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
   - LLM 工作上下文（喂模型的，≠ 展示历史）：只喂**最近 ~3–5 轮（≈ 6–10 条）** + **token 预算**截断（大段接龙、旧工具返回裁掉/概括）；**事实即时调工具重查**、不靠旧上下文；不喂整 2 天——省 token、浅环、防陈旧上下文带偏。
   - 业务数据（真记忆）：在库里、永久；**历史问题 = agent 调工具查数据**，不是翻聊天。
 - **地址补全**：订单结构化时按"接龙名字 → 顾客默认/最近地址"带出（PRD §6.4）；新名字无地址 → 提示补录。
+- **订单解析与确认边界**：主 agent 不生成可信结构化 items，只把原始输入交给 `record_orders`；工具内唯一解析实现忽略菜单正文，严格校验日期、周几、餐次、顾客和正整数份数。snapshot 确认卡展示新增/更新/退出/不变，increment 展示`当前 + 增量 → 最终`或`当前 → 目标`；确认前零业务写入。
 - **100% 覆盖策略**：**工具**是确定性纯函数、直接单测到 100%；**agent 编排**用 **mock 掉 LLM + 脚本化工具序列** 测路由/兜底/挡回；端到端行为用 **e2e / eval** 兜（不强求 agent 的随机输出进 100% 行覆盖，靠覆盖排除 + e2e）。
 
 ## 5. 部署（套现有阿里云模型，见 [DEPLOYMENT.md](../../DEPLOYMENT.md)）

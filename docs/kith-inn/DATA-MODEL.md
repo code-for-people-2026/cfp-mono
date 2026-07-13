@@ -1,6 +1,6 @@
 # 数据模型参考：街坊味（kith-inn）
 
-> 本文是 [`PRD.md`](./PRD.md) §7 的解释版，按 v1.11 目标模型描述。代码层已按本文同步；数据库结构迁移清单见文末。
+> 本文是 [`PRD.md`](./PRD.md) §7 的解释版，按 v1.12 目标模型描述。代码层已按本文同步；数据库结构迁移清单见文末。
 
 ## 0. 当前代码同步状态
 
@@ -214,19 +214,22 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 
 ## 5. 重复写入与幂等
 
-原来的“撞键返回现存 draft”意思是：
+`idempotencyKey` 的基础技术语义是：
 
-> 创建订单时带一个 `idempotencyKey`。如果数据库里已经有同 key 的订单，就不再新建，而是返回那条已有 draft，避免重复粘贴或网络重试生成两条单。
+> 创建订单时带一个 `idempotencyKey`。如果数据库里已经有同 key 的订单，就不再新建，而是返回那条已有 order，避免网络重试生成两条单。
 
-这个机制适合技术防重，但不适合作为桃子能理解的交互。
+这个机制适合技术防重，但不作为桃子能理解的交互或订单来源分类。
 
-推荐交互：
+当前生产对账分为两种输入模式：
 
-- 接龙粘贴后先解析成确认卡。
-- 确认卡逐行标明：新增 / 更新 / 跳过。
-- 命中同一天同餐同顾客的现有 order 时，展示改前/改后数量。
-- 现有订单已 confirmed 时，必须二次确认，因为会影响送餐和收款口径；paid/reconciled 或 fulfillment=done 是既成经营事实，完整接龙不得自动覆盖，必须单独处理。
-- `idempotencyKey` 只在后台防“同一次提交重复发送”，不要把“撞键”暴露给用户。
+- **snapshot（完整接龙）**：范围是标题中的日期 + 餐次；候选集合与该范围内全部 active order 做差异，不区分原订单来自接龙还是自然语言。确认卡展示新增、更新、取消和不变，确认后整体以本次接龙为准。
+- **increment（单笔补单）**：只加载顾客 + 日期 + 餐次这一业务坐标。`add`在事务内用当前数量加上增量，`set`直接设置最终数量；不得扫描或取消同日其他订单。
+
+预览会根据范围内 active order 的身份、状态、更新时间和 item 内容生成 `expectedFingerprint`，并带一个 `operationKey`。确认时 CMS 先锁住对账写入，在同一 PostgreSQL 事务内重新读取并校验 fingerprint；不一致就返回 `stale-preview`，所有写入回滚，要求重新预览。同一 `operationKey` 的重试通过写回订单的操作 marker 返回既有结果，避免网络重试把 add 再执行一次。
+
+confirmed order 仍可在桃子确认后更新；snapshot 退出 confirmed order 时，同时把其 pending fulfillment 置为 canceled。`paymentStatus=paid/reconciled` 或 fulfillment 已 done 的订单属于既成事实，预览和确认阶段都拒绝批量变更，整批不留下部分写入。
+
+系统**不新增持久化 reconciliation snapshot 表**：确认卡携带的不可变预览只用于本次确认，数据库事实仍是 orders、order_items、fulfillments 及 operation marker。订单的 `source` 仅供审计，不参与覆盖、补单或确认逻辑。
 
 ## 6. 几条硬规则
 
