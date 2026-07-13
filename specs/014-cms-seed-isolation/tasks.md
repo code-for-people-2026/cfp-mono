@@ -28,11 +28,11 @@
 
 **Independent Test**: 仅四个项目级脚本存在；未知项目拒绝；既有显式开关、本地数据库和环境保护测试通过。
 
-- [x] T007 [US3] 在 `apps/cms/package.json` 删除含糊入口并增加四个项目级 seed/reset 脚本，在 `apps/cms/tests/seed-run.test.ts` 保留安全守卫并覆盖未知项目拒绝
+- [x] T007 [US3] 在 `apps/cms/package.json` 删除含糊入口并增加四个项目级 seed/reset 脚本，在 `apps/kith-inn-v1-fe/playwright.config.ts` 改用 kiv1 入口，并在 `apps/cms/tests/seed-run.test.ts` 保留安全守卫及覆盖未知项目拒绝
 
 ## Phase 4：文档与验收
 
-- [x] T008 在 `apps/cms/README.md` 记录四个命令与安全边界，运行相关单测、`pnpm verify`、`git diff --check` 并确认无 schema/API 变化
+- [x] T008 在 `apps/cms/README.md` 与相关历史 specs 更新项目级命令，运行相关单测、v1 H5 E2E、`pnpm verify`、`git diff --check` 并确认无 schema/API 变化
 
 ## Dependencies & Execution Order
 

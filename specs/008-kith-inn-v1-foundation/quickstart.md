@@ -22,14 +22,16 @@ pnpm db:up
 
 3. 按现有 `apps/cms/.env.example` 配置 `PAYLOAD_DATABASE_URL` 和 `PAYLOAD_SECRET`。v1 不增加第二套数据库连接或 Payload secret。
 
-4. 连续执行两次共享 seed：
+4. 分别连续执行两次项目级 seed：
 
 ```bash
-pnpm --filter @cfp/cms seed
-pnpm --filter @cfp/cms seed
+pnpm --filter @cfp/cms seed:kith-inn
+pnpm --filter @cfp/cms seed:kith-inn
+pnpm --filter @cfp/cms seed:kiv1
+pnpm --filter @cfp/cms seed:kiv1
 ```
 
-预期：第一次分别初始化旧项目和 v1；第二次两边都幂等跳过。v1 最终只有一条桃子 seller 和一条 v1 operator。
+预期：两个项目各自第一次初始化、第二次幂等跳过；任一命令均不访问另一项目。v1 最终只有一条桃子 seller 和一条 v1 operator。
 
 ## 启动与手工 smoke
 

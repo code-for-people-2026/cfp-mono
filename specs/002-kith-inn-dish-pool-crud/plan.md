@@ -41,7 +41,7 @@
 - **`apps/kith-inn-fe/src/services/api.ts`**：有 `offeringsUrl()`；无 create/update/delete URL 构造。
 - **`apps/cms/vitest.config.ts`**：`include: ["tests/**/*.test.ts"]`——cms 路由 handler 不在单测/line-coverage 范围（注释明说 cms 是薄 host，100% 逻辑在 `@cfp/kith-inn-payload`）。
 - **`apps/cms/src/db/ensureConstraints.ts`**：offerings 无 partial-unique/复合索引需要（`mainIngredient` 已 `index:true` 由 push 管理）。本 feature 不改 ensureConstraints。
-- **seed**：`apps/cms/seed/run.ts` → `taoziFixture`，菜为 component、active 默认 true。改 schema 后 re-seed：`DROP SCHEMA cms CASCADE` + `pnpm --filter @cfp/cms seed`（本 feature 不改 schema，通常无需 re-seed）。
+- **seed**：`apps/cms/seed/run.ts` → `taoziFixture`，菜为 component、active 默认 true。改 schema 后 re-seed：`DROP SCHEMA cms CASCADE` + `pnpm --filter @cfp/cms seed:kith-inn`（本 feature 不改 schema，通常无需 re-seed）。
 - **FK 现实**：`order_items.offering`、`menu_plans.offerings[]`、`offerings.parentOfferings` 引用 offerings → postgres FK `ON DELETE NO ACTION` → 物理删被引用菜会抛错 → 本 feature 用软停用规避。
 
 ## 宪法检查
