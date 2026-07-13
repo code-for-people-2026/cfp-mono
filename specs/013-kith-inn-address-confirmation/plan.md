@@ -31,7 +31,7 @@
 ## Constitution Check
 
 - **I 功能规格**：通过。#156 曾错误规划为跨层生命周期功能，现用原目录完整纠正，避免仓库保留可执行的错误规格。
-- **II Monorepo 作用域**：通过。只触碰 `specs/013-kith-inn-address-confirmation`、kith-inn CMS 测试和 `docs/kith-inn`；`kith-inn-v1` 明确排除。
+- **II Monorepo 作用域**：通过。只触碰 `specs/013-kith-inn-address-confirmation`、`apps/cms/src/app/api/internal/orders/[id]`、`apps/cms/tests/order-*.test.ts`、`apps/kith-inn-be/src/routes/{orders,chat}*`、`apps/kith-inn-be/src/agent/run*` 与 `docs/kith-inn`；`kith-inn-v1` 明确排除。
 - **III Brownfield 事实**：通过。现有确认卡地址输入可空，CMS 在创建新订单时复制顾客默认地址，确认不校验地址，送餐分组保留“（无地址）”；同时记录通用 PATCH 透传和 Agent prompt 仍要求填地址的缺口。详见 [research.md](./research.md)。
 - **IV 最小切片**：通过。PR0R 只纠正错误设计；PR1 只封住订单快照通用 PATCH 旁路；PR2 只让交互和回归证据符合地址选填事实。
 - **V 验证与审查**：通过。两片都运行定向检查、`pnpm verify`/文档检查和 v1 路径守卫，并完成 Codex review。
@@ -85,7 +85,8 @@ docs/kith-inn/
 ├── PRD.md
 ├── USER-STORIES.md
 ├── DATA-MODEL.md
-└── TECH-SPEC.md
+├── TECH-SPEC.md
+└── prototype/index.html
 ```
 
 **结构决策**: 不重写正确的记单/确认实现；只在现有 BE/CMS route 用显式白名单封住快照旁路，并把现有 Agent 提示从“填好地址”改为“地址选填”。其余工作只补真实 PG 证据和长期文档。
