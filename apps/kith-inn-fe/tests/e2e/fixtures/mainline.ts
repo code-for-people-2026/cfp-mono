@@ -19,17 +19,22 @@ export async function apiLogin(request: APIRequestContext): Promise<string> {
   return ((await response.json()) as { token: string }).token;
 }
 
-export async function readOrderAggregate(request: APIRequestContext, token: string): Promise<OrderAggregate> {
+export async function readOrderAggregate(request: APIRequestContext, token: string, date = MAINLINE_DATE): Promise<OrderAggregate> {
   const headers = { Authorization: `Bearer ${token}` };
   const [ordersResponse, deliveryResponse] = await Promise.all([
-    request.get(`${MAINLINE_BE}/orders?date=${MAINLINE_DATE}`, { headers }),
-    request.get(`${MAINLINE_BE}/delivery?date=${MAINLINE_DATE}`, { headers }),
+    request.get(`${MAINLINE_BE}/orders?date=${date}`, { headers }),
+    request.get(`${MAINLINE_BE}/delivery?date=${date}`, { headers }),
   ]);
   await expectOk(ordersResponse);
   await expectOk(deliveryResponse);
   const orders = ((await ordersResponse.json()) as { orders: MainlineOrder[] }).orders;
   const delivery = (await deliveryResponse.json()) as DeliveryView;
   return { orders, fulfillments: delivery.sort.flatMap((group) => group.fulfillments) };
+}
+
+export async function readDeliveryView(request: APIRequestContext, token: string, date: string): Promise<DeliveryView> {
+  const response = await expectOk(await request.get(`${MAINLINE_BE}/delivery?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }));
+  return response.json() as Promise<DeliveryView>;
 }
 
 export function expectOrderAggregate(aggregate: OrderAggregate, status: "draft" | "confirmed") {

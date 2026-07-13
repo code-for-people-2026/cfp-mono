@@ -21,7 +21,7 @@ import { listMenuPlans, getMenuPlan, upsertMenuPlans, patchMenuPlan } from "../l
 import { createChatMessage, listChatMessages } from "../lib/cms/chat";
 import { createCmsAgentServices, type AgentCms } from "../agent/services";
 import type { AgentServices } from "../agent/tools";
-import { clearPendingOp, getPendingOp } from "../agent/pendingOps";
+import { clearPendingOp, completePendingOp, getCompletedOp, getPendingOp } from "../agent/pendingOps";
 import { runAgent } from "../agent/run";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
@@ -126,7 +126,7 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   /**
    * POST /chat/confirm-operation — the deterministic "确认" behind operation-confirm
    * cards (#126). Reads the per-operator pending op → dispatches to the corresponding
-   * AgentServices write method → clears pending → returns the result text.
+   * AgentServices write method → retains one replayable success → returns the result text.
    * Body: `{ opId, items? }`. `opId` must match the stored pending op's id, else the
    * click is from a stale (older) card and we reject 409 (newest-overwrites semantics
    * mean only the latest card is actionable). `items` carries address edits for
@@ -135,15 +135,17 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
   app.post("/confirm-operation", async (c) => {
     const jwt = c.get("token") as string;
     const operatorId = c.get("operatorId") as string | number;
+    const body = (await c.req.json().catch(() => null)) as { opId?: unknown; items?: unknown } | null;
+    const completed = getCompletedOp(operatorId, body?.opId);
+    if (completed) return c.json({ reply: completed.reply, ok: true, alreadyCompleted: true });
     const op = getPendingOp(operatorId);
     if (!op) return c.json({ error: "no pending operation" }, 404);
-    const body = (await c.req.json().catch(() => null)) as { opId?: unknown; items?: unknown } | null;
     if (body?.opId !== op.opId) return c.json({ error: "card stale" }, 409);
     const services = createCmsAgentServices({ jwt, cms, operatorId });
     try {
       const result = await dispatchPendingOp(services, op, body);
       const ok = operationReplySucceeded(result);
-      if (ok) clearPendingOp(operatorId);
+      if (ok) completePendingOp(operatorId, op.opId, result);
       // Best-effort persist the outcome as an assistant message.
       await createChat(jwt, { content: result, role: "assistant" }).catch(() => null);
       return c.json({ reply: result, ok });
