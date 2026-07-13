@@ -5,7 +5,16 @@ import { Button, Tag } from "@nutui/nutui-react-taro";
 import type { MenuPlanView } from "@cfp/kith-inn-shared";
 import { TabBar } from "@/components/TabBar";
 import { TopBar } from "@/components/TopBar";
-import { generatePlans, loadPlans, OCCASION_LABEL, plansByOccasion, publishPlan, swapDish, type Req } from "@/logic/menuEdit";
+import {
+  formatRelaxedRules,
+  generatePlans,
+  loadPlans,
+  OCCASION_LABEL,
+  plansByOccasion,
+  publishPlan,
+  swapDish,
+  type Req,
+} from "@/logic/menuEdit";
 import { createTokenStore, type Storage } from "@/store/auth";
 import { todayShanghai } from "@/logic/time";
 
@@ -44,6 +53,7 @@ export default function Menu() {
   const [dayDate, setDayDate] = useState<string>(todayShanghai());
   const [dayPlans, setDayPlans] = useState<MenuPlanView[]>([]);
   const [weekPlans, setWeekPlans] = useState<Record<string, MenuPlanView[]>>({});
+  const [swapNotices, setSwapNotices] = useState<Record<string, string>>({});
 
   const requireToken = useCallback((): string | null => {
     const t = tokens.getToken();
@@ -125,15 +135,29 @@ export default function Menu() {
     loadWeek();
   };
 
-  const swapAuto = async (plan: MenuPlanView, dishId: string | number) => {
+  const swapAuto = async (plan: MenuPlanView, dishId: string | number, dishIndex: number) => {
     const t = requireToken();
     if (!t) return;
     const force = plan.status === "published" ? await confirm("换菜", `「${OCCASION_LABEL[plan.occasion]}」已发出，换菜会作旧文案，确定？`) : false;
     if (plan.status === "published" && !force) return;
     try {
-      await swapDish(t, plan.planId, { dishId, force }, req);
-      if (mode === "day") loadDay(plan.date);
-      else loadWeek();
+      const result = await swapDish(t, plan.planId, { dishId, dishIndex, force }, req);
+      const planKey = String(plan.planId);
+      const notice = formatRelaxedRules(result.relaxedRules);
+      setSwapNotices((current) => {
+        const next = { ...current };
+        if (notice) next[planKey] = notice;
+        else delete next[planKey];
+        return next;
+      });
+      if (mode === "day") {
+        setDayPlans((current) => current.map((item) => String(item.planId) === planKey ? result.plan : item));
+      } else {
+        setWeekPlans((current) => ({
+          ...current,
+          [plan.date]: (current[plan.date] ?? []).map((item) => String(item.planId) === planKey ? result.plan : item),
+        }));
+      }
     } catch {
       Taro.showToast({ title: "换菜失败", icon: "error" });
     }
@@ -188,7 +212,17 @@ export default function Menu() {
             )}
             {(["lunch", "dinner"] as const).map((occasion) => {
               const plan = dayByOccasion[occasion];
-              return <MealCard key={occasion} occasion={occasion} plan={plan} onGen={() => gen(dayDate, occasion, plan)} onSwap={(dishId) => plan && swapAuto(plan, dishId)} onPublish={() => plan && publish(plan)} />;
+              return (
+                <MealCard
+                  key={occasion}
+                  occasion={occasion}
+                  plan={plan}
+                  swapNotice={plan ? swapNotices[String(plan.planId)] : undefined}
+                  onGen={() => gen(dayDate, occasion, plan)}
+                  onSwap={(dishId, dishIndex) => plan && swapAuto(plan, dishId, dishIndex)}
+                  onPublish={() => plan && publish(plan)}
+                />
+              );
             })}
           </>
         ) : (
@@ -216,8 +250,15 @@ export default function Menu() {
 }
 
 /** A meal card: 午餐/晚餐 of one day. */
-function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () => void; onSwap: (dishId: string | number) => void; onPublish: () => void }) {
-  const { occasion, plan, onGen, onSwap, onPublish } = props;
+function MealCard(props: {
+  occasion: Occasion;
+  plan?: MenuPlanView;
+  swapNotice?: string;
+  onGen: () => void;
+  onSwap: (dishId: string | number, dishIndex: number) => void;
+  onPublish: () => void;
+}) {
+  const { occasion, plan, swapNotice, onGen, onSwap, onPublish } = props;
   // Published plans read distinctly from draft: green-soft tint + a filled "已发出"
   // tag (#124). Draft keeps the soft amber tag on a plain card. (No left border bar —
   // `.card`'s `border border-line` is declared after Tailwind utilities in app.css
@@ -234,12 +275,13 @@ function MealCard(props: { occasion: Occasion; plan?: MenuPlanView; onGen: () =>
         <Button type="primary" className="bg-red text-white" onClick={onGen}>生成{OCCASION_LABEL[occasion]}</Button>
       ) : (
         <>
-          {plan.dishes.map((d) => (
-            <View key={String(d.id)} className="flex items-baseline justify-between border-b border-line py-[12rpx] last:border-b-0">
+          {plan.dishes.map((d, dishIndex) => (
+            <View key={`${String(d.id)}-${dishIndex}`} className="flex items-baseline justify-between border-b border-line py-[12rpx] last:border-b-0">
               <Text className="text-[28rpx]">{d.name}</Text>
-              <Button className="bg-surface text-muted" onClick={() => onSwap(d.id)}>换</Button>
+              <Button className="bg-surface text-muted" onClick={() => onSwap(d.id, dishIndex)}>换</Button>
             </View>
           ))}
+          {swapNotice && <Text className="mt-[16rpx] block text-[24rpx] text-amber">{swapNotice}</Text>}
           <View className="mt-[16rpx] flex flex-wrap gap-[16rpx]">
             <Button className="bg-surface text-ink" onClick={onGen}>重新生成</Button>
             <Button type="primary" className="bg-red text-white" onClick={onPublish}>{plan.status === "published" && plan.publishText ? "复制文案" : "一键发布"}</Button>

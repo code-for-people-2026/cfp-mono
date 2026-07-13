@@ -1,4 +1,15 @@
-import type { MenuPlanView } from "@cfp/kith-inn-shared";
+import type {
+  AutoSwapSuccessResponse,
+  MenuPlanView,
+  RelaxedRule,
+  SpecifiedSwapSuccessResponse,
+  SwapRequest,
+} from "@cfp/kith-inn-shared";
+import { RELAXED_RULES } from "@cfp/kith-inn-shared/enums";
+import {
+  autoSwapSuccessResponseSchema,
+  specifiedSwapSuccessResponseSchema,
+} from "@cfp/kith-inn-shared/schemas";
 import { menuGenerateUrl, menuPlanPublishUrl, menuPlanSwapUrl, menuPlansRangeUrl, menuPlansUrl } from "../services/api";
 
 /** Minimal structural Taro.request shape (loose; tests pass a vi.fn). */
@@ -12,6 +23,20 @@ const authHeader = (token: string): Record<string, string> => ({
 });
 
 export const OCCASION_LABEL: Record<"lunch" | "dinner", string> = { lunch: "午餐", dinner: "晚餐" };
+
+const RELAXED_RULE_LABEL: Record<RelaxedRule, string> = {
+  "same-week-offering": "本周已安排过同一道菜",
+  "same-day-main-ingredient": "当天主料重复",
+  "recent-offering": "近 7 天已安排过同一道菜",
+  "recent-main-ingredient": "近 7 天主料重复",
+};
+
+/** 自动换菜放宽说明；按领域优先级排序并去重，空规则不生成提示。 */
+export function formatRelaxedRules(rules: RelaxedRule[]): string | undefined {
+  const selected = new Set(rules);
+  const reasons = RELAXED_RULES.filter((rule) => selected.has(rule)).map((rule) => RELAXED_RULE_LABEL[rule]);
+  return reasons.length > 0 ? `菜品池较小，本次允许：${reasons.join("、")}` : undefined;
+}
 
 /** Split one day's plans into 午餐 / 晚餐 (either may be absent). */
 export function plansByOccasion(plans: MenuPlanView[]): { lunch?: MenuPlanView; dinner?: MenuPlanView } {
@@ -49,15 +74,29 @@ export async function generatePlans(
 }
 
 /** POST /menu/plans/:id/swap — 换一道（auto/指定）。非 2xx 抛（page 决定如何提示）。 */
+export function swapDish(
+  token: string,
+  planId: string | number,
+  body: Omit<SwapRequest, "replacementId"> & { replacementId?: undefined },
+  req: Req,
+): Promise<AutoSwapSuccessResponse>;
+export function swapDish(
+  token: string,
+  planId: string | number,
+  body: Omit<SwapRequest, "replacementId"> & { replacementId: string | number },
+  req: Req,
+): Promise<SpecifiedSwapSuccessResponse>;
 export async function swapDish(
   token: string,
   planId: string | number,
-  body: { dishId: string | number; replacementId?: string | number; force?: boolean },
+  body: SwapRequest,
   req: Req,
-): Promise<{ plan: MenuPlanView; warning?: string }> {
+): Promise<AutoSwapSuccessResponse | SpecifiedSwapSuccessResponse> {
   const res = await req({ url: menuPlanSwapUrl(planId), method: "POST", data: body, header: authHeader(token) });
   if (res.statusCode < 200 || res.statusCode >= 300) throw new Error(`swap failed: ${res.statusCode}`);
-  return res.data as { plan: MenuPlanView; warning?: string };
+  return body.replacementId === undefined
+    ? autoSwapSuccessResponseSchema.parse(res.data)
+    : specifiedSwapSuccessResponseSchema.parse(res.data);
 }
 
 /** POST /menu/plans/:id/publish — 一键发布（接龙文案 + 标记）。 */

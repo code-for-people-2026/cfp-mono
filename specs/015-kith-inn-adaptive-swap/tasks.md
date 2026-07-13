@@ -51,11 +51,11 @@
 
 **Independent Test**: FE 纯测试覆盖合法自动/指定响应、未知规则拒绝、中文固定顺序和 dishIndex 请求；页面交互覆盖提示按 plan 归属且空规则不显示。
 
-- [ ] T015 [US2] 先在 `apps/kith-inn-fe/src/logic/menuEdit.test.ts` 写失败测试：自动 success runtime parse、指定 success 兼容、未知 `relaxedRules` 拒绝、缺失自动必填字段拒绝、规则中文固定顺序与 `dishIndex` 请求透传
-- [ ] T016 [US2] 在 `apps/kith-inn-fe/src/logic/menuEdit.ts` 按请求分支消费 shared runtime response schema，并实现完整、固定顺序的放宽规则中文纯函数
-- [ ] T017 [US2] 在 `apps/kith-inn-fe/src/pages/menu/index.tsx` 为每道菜传零起始 `dishIndex`，消费自动响应并在对应餐卡显示本次“菜品池较小”原因，空规则不显示
-- [ ] T018 [US2] 同步 `docs/kith-inn/TECH-SPEC.md`：双前门历史语义、四级放宽解释、位置精确性和 runtime response validation
-- [ ] T019 [US2] 运行 shared/FE logic 定向测试、`pnpm verify`、`git diff --check`，确认 contract 示例与实际 H5 请求/响应一致
+- [x] T015 [US2] 先在 `apps/kith-inn-fe/src/logic/menuEdit.test.ts` 写失败测试：自动 success runtime parse、指定 success 兼容、未知 `relaxedRules` 拒绝、缺失自动必填字段拒绝、规则中文固定顺序与 `dishIndex` 请求透传
+- [x] T016 [US2] 在 `apps/kith-inn-fe/src/logic/menuEdit.ts` 按请求分支消费 shared runtime response schema，并实现完整、固定顺序的放宽规则中文纯函数
+- [x] T017 [US2] 在 `apps/kith-inn-fe/src/pages/menu/index.tsx` 为每道菜传零起始 `dishIndex`，消费自动响应并在对应餐卡显示本次“菜品池较小”原因，空规则不显示
+- [x] T018 [US2] 同步 `docs/kith-inn/TECH-SPEC.md`：双前门历史语义、四级放宽解释、位置精确性和 runtime response validation
+- [x] T019 [US2] 运行 shared/FE logic 定向测试、`pnpm verify`、`git diff --check`，确认 contract 示例与实际 H5 请求/响应一致
 
 ## Phase 5：User Story 2 - H5 小池验收（PR5，P1）
 
