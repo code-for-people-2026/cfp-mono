@@ -263,6 +263,15 @@ describe("POST /menu/plans/:id/swap", () => {
     const res = await app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "m1" }) });
     expect(res.status).toBe(409);
   });
+
+  it("rejects an invalid automatic target before loading history", async () => {
+    const listMenuPlans = vi.fn(async () => { throw new Error("history unavailable"); });
+    const app = menuRoutes(SECRET, mockDeps({ listMenuPlans }));
+    const res = await app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "missing" }) });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: "dish-not-in-slot" });
+    expect(listMenuPlans).not.toHaveBeenCalled();
+  });
 });
 
 describe("POST /menu/plans/:id/publish", () => {

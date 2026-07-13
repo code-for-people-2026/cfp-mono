@@ -12,7 +12,7 @@
 import type { Customer, DeliveryCardData, Fulfillment, MenuPlan, MenuPlanView, Offering, Order, OrderReconciliationPreview, OrderReconciliationRequest, OrderReconciliationResult, OrderStatus, RelaxedRule, Seller } from "@cfp/kith-inn-shared";
 import { normalizeCustomerName } from "../domain/customers/nameNormalize";
 import { gapReport, packingSort } from "../domain/delivery/derivations";
-import { generateForTargets, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
+import { generateForTargets, resolveSwapTarget, swapDish, swapDishSpecified, toMenuDish } from "../domain/menu/core";
 import { buildJielongMenuText } from "../domain/menu/jielongText";
 import { swapHistoryFromPlans, swapHistoryRange } from "../domain/menu/swapContext";
 import { parseOrderInput } from "../domain/orders/parse";
@@ -57,10 +57,12 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
   const now = deps.now ?? (() => new Date());
   /** Payload date fields return ISO (e.g. 2026-07-08T00:00:00.000Z); trim to YYYY-MM-DD. */
   const dayOnly = (iso: string) => iso.split("T")[0]!;
-  const readSwapInputs = async (plan: MenuPlan, includeHistory: boolean) => {
+  const readSwapInputs = async (plan: MenuPlan, includeHistory: boolean, dishId: string | number, dishIndex?: number) => {
     const offerings = (plan.offerings ?? []) as Offering[];
     const slot = plan.slot as { date: string; occasion: "lunch" | "dinner" };
     const date = dayOnly(slot.date);
+    const menu = [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }];
+    if (!resolveSwapTarget(menu[0]!, dishId, dishIndex)) return undefined;
     const [poolOfferings, historyPlans] = await Promise.all([
       cms.findOfferings(jwt),
       includeHistory ? cms.listMenuPlans(jwt, swapHistoryRange(date)) : Promise.resolve([]),
@@ -68,7 +70,7 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     return {
       offerings,
       pool: poolOfferings.filter((offering) => offering.active !== false && offering.kind === "component").map(toMenuDish),
-      menu: [{ day: date, occasion: slot.occasion, dishes: offerings.map(toMenuDish) }],
+      menu,
       target: { day: date, occasion: slot.occasion },
       history: swapHistoryFromPlans(historyPlans, plan.id),
     };
@@ -375,7 +377,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       try {
         const plan = await cms.getMenuPlan(jwt, planId);
         if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
-        const { offerings, pool, menu, target, history } = await readSwapInputs(plan, replacementId === undefined);
+        const inputs = await readSwapInputs(plan, replacementId === undefined, dishId, dishIndex);
+        if (!inputs) return { ok: false as const, error: "dish-not-in-slot" };
+        const { offerings, pool, menu, target, history } = inputs;
         let newReplacementId: string | number;
         let targetIndex: number;
         let warning: string | undefined;
@@ -502,7 +506,9 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
       try {
         const plan = await cms.getMenuPlan(jwt, planId);
         if (plan.status === "published" && !force) return { ok: false as const, error: "plan-published" };
-        const { offerings, pool, menu, target, history } = await readSwapInputs(plan, replacementId === undefined);
+        const inputs = await readSwapInputs(plan, replacementId === undefined, dishId, dishIndex);
+        if (!inputs) return { ok: false as const, error: "dish-not-in-slot" };
+        const { offerings, pool, menu, target, history } = inputs;
         let replacement: { id: string | number; name: string };
         let targetIndex: number;
         let warning: string | undefined;
