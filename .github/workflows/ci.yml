@@ -76,8 +76,10 @@ jobs:
             apps/cms/src/lib/internal.ts \
             apps/cms/src/lib/orderLifecycle.ts \
             apps/cms/src/lib/serviceSlotDate.ts \
+            apps/cms/tests/helpers/kithInnMainline.ts \
             apps/kith-inn-be \
-            packages/kith-inn-payload; then
+            packages/kith-inn-payload \
+            packages/kith-inn-shared; then
             e2e_filters+=(--filter=@cfp/kith-inn-fe)
           fi
           if ! git diff --quiet origin/main...HEAD -- \
@@ -103,3 +105,4 @@ jobs:
             apps/*/coverage
             apps/*/playwright-report
             apps/*/test-results
+            apps/kith-inn-fe/test-results/mainline-services

@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { expect, type APIRequestContext, type APIResponse, type Page } from "@playwright/test";
-import type { DeliveryView, Fulfillment, Order, OrderItem } from "@cfp/kith-inn-shared";
+import type { DeliveryView, Fulfillment, MenuPlanView, Order, OrderItem } from "@cfp/kith-inn-shared";
 import { MAINLINE_DATE } from "./fixed-llm-server";
 
 export const MAINLINE_BE = "http://127.0.0.1:3311";
@@ -35,6 +35,11 @@ export async function readOrderAggregate(request: APIRequestContext, token: stri
 export async function readDeliveryView(request: APIRequestContext, token: string, date: string): Promise<DeliveryView> {
   const response = await expectOk(await request.get(`${MAINLINE_BE}/delivery?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }));
   return response.json() as Promise<DeliveryView>;
+}
+
+export async function readMenuPlans(request: APIRequestContext, token: string, date = MAINLINE_DATE): Promise<MenuPlanView[]> {
+  const response = await expectOk(await request.get(`${MAINLINE_BE}/menu/plans?date=${date}`, { headers: { Authorization: `Bearer ${token}` } }));
+  return ((await response.json()) as { plans: MenuPlanView[] }).plans;
 }
 
 export function expectOrderAggregate(aggregate: OrderAggregate, status: "draft" | "confirmed") {

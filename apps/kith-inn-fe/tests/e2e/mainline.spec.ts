@@ -1,5 +1,5 @@
-import { expect, test, type Page, type Request, type Response } from "@playwright/test";
-import type { Fulfillment, ServiceSlot } from "@cfp/kith-inn-shared";
+import { expect, test, type Locator, type Page, type Request, type Response } from "@playwright/test";
+import type { Fulfillment, MenuPlanView, RelaxedRule, ServiceSlot } from "@cfp/kith-inn-shared";
 import {
   MAINLINE_ADDRESS_DATE,
   MAINLINE_ADDRESS_TEXT,
@@ -17,6 +17,7 @@ import {
   expectOrderAggregate,
   freezeMainlineDate,
   readDeliveryView,
+  readMenuPlans,
   readOrderAggregate,
 } from "./fixtures/mainline";
 
@@ -65,7 +66,26 @@ async function replayPost(page: Page, request: Request, count: number) {
   })), { url: request.url(), authorization, body: request.postData(), count });
 }
 
-test("E2E-ORDER-001：H5 接龙 preview 到确认订单贯通真实 PostgreSQL", async ({ page, request }) => {
+async function dishNames(card: Locator): Promise<string[]> {
+  const swapButtons = card.locator("taro-button-core").filter({ hasText: /^换$/ });
+  await expect(swapButtons).toHaveCount(5);
+  return swapButtons.locator("..").locator("taro-text-core").allInnerTexts();
+}
+
+const relaxedRuleZh: Record<RelaxedRule, string> = {
+  "same-week-offering": "本周已安排过同一道菜",
+  "same-day-main-ingredient": "当天主料重复",
+  "recent-offering": "近 7 天已安排过同一道菜",
+  "recent-main-ingredient": "近 7 天主料重复",
+};
+
+async function selectOrderCards(page: Page, payment: "付○" | "付✓") {
+  const cards = page.locator(".card").filter({ has: page.getByText(payment, { exact: true }) });
+  await expect(cards).toHaveCount(3);
+  for (let index = 0; index < 3; index++) await cards.nth(index).locator(":scope > taro-view-core").first().click();
+}
+
+test("E2E-ORDER-001 / E2E-MAIN-001：H5 从接龙连续完成菜单、收款与送达", async ({ page, request }) => {
   const token = await apiLogin(request);
   await expect(readOrderAggregate(request, token)).resolves.toEqual({ orders: [], fulfillments: [] });
   expect((await request.post(`${MAINLINE_LLM}/chat/completions`, {
@@ -117,6 +137,81 @@ test("E2E-ORDER-001：H5 接龙 preview 到确认订单贯通真实 PostgreSQL",
   expectOrderAggregate(await readOrderAggregate(request, token), "confirmed");
   await expect(page.getByText("送○", { exact: true })).toHaveCount(3);
   await expect(page.getByText("付○", { exact: true })).toHaveCount(3);
+
+  await page.getByText("菜单", { exact: true }).click();
+  const lunchCard = page.locator(".card").filter({ has: page.getByText("午餐", { exact: true }) }).first();
+  const dinnerCard = page.locator(".card").filter({ has: page.getByText("晚餐", { exact: true }) }).first();
+  const lunchGenerated = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/menu/generate` && response.request().method() === "POST");
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+  const original = ((await (await lunchGenerated).json()) as { plans: MenuPlanView[] }).plans[0]!;
+  const dinnerGenerated = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/menu/generate` && response.request().method() === "POST");
+  await dinnerCard.locator("taro-button-core").filter({ hasText: /^生成晚餐$/ }).click();
+  const dinnerPlan = ((await (await dinnerGenerated).json()) as { plans: MenuPlanView[] }).plans[0]!;
+  const targetIndex = original.dishes.findIndex((dish) => dish.category === "soup");
+  expect(targetIndex).toBeGreaterThanOrEqual(0);
+  const dinnerSoup = dinnerPlan.dishes.find((dish) => dish.category === "soup")!;
+  expect(String(dinnerSoup.id)).not.toBe(String(original.dishes[targetIndex]!.id));
+
+  await page.locator("taro-button-core").filter({ hasText: /^后一天 ▶$/ }).click();
+  const nextGenerated = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/menu/generate` && response.request().method() === "POST");
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+  let nextPlan = ((await (await nextGenerated).json()) as { plans: MenuPlanView[] }).plans[0]!;
+  const usedSoupIds = new Set([String(original.dishes[targetIndex]!.id), String(dinnerSoup.id)]);
+  const nextSoupIndex = nextPlan.dishes.findIndex((dish) => dish.category === "soup");
+  if (usedSoupIds.has(String(nextPlan.dishes[nextSoupIndex]!.id))) {
+    const historySwap = page.waitForResponse((response) => response.url().endsWith(`/menu/plans/${nextPlan.planId}/swap`) && response.request().method() === "POST");
+    await lunchCard.getByText(nextPlan.dishes[nextSoupIndex]!.name, { exact: true }).locator("..").locator("taro-button-core").click();
+    const historySwapResponse = await historySwap;
+    expect(historySwapResponse.status()).toBe(200);
+    nextPlan = ((await historySwapResponse.json()) as { plan: MenuPlanView }).plan;
+  }
+  expect(new Set([String(original.dishes[targetIndex]!.id), String(dinnerSoup.id), String(nextPlan.dishes[nextSoupIndex]!.id)]).size).toBe(3);
+  await page.locator("taro-button-core").filter({ hasText: /^◀ 前一天$/ }).click();
+  await expect.poll(() => dishNames(lunchCard)).toEqual(original.dishes.map((dish) => dish.name));
+
+  const target = original.dishes[targetIndex]!;
+  const swap = page.waitForResponse((response) => response.url().endsWith(`/menu/plans/${original.planId}/swap`) && response.request().method() === "POST");
+  await lunchCard.getByText(target.name, { exact: true }).locator("..").locator("taro-button-core").click();
+  const swapResponse = await swap;
+  expect(swapResponse.status()).toBe(200);
+  const swapped = await swapResponse.json() as { plan: MenuPlanView; relaxedRules: RelaxedRule[] };
+  expect(swapped.relaxedRules.length).toBeGreaterThan(0);
+  const expectedNames = original.dishes.map((dish, index) => index === targetIndex ? swapped.plan.dishes[index]!.name : dish.name);
+  expect(swapped.plan.dishes.map((dish) => dish.name)).toEqual(expectedNames);
+  await expect.poll(() => dishNames(lunchCard)).toEqual(expectedNames);
+  const fullRelaxation = `菜品池较小，本次允许：${swapped.relaxedRules.map((rule) => relaxedRuleZh[rule]).join("、")}`;
+  await expect(lunchCard.getByText(fullRelaxation, { exact: true })).toBeVisible();
+
+  const publish = page.waitForResponse((response) => response.url().endsWith(`/menu/plans/${original.planId}/publish`) && response.request().method() === "POST");
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^一键发布$/ }).click();
+  const publishResponse = await publish;
+  expect(publishResponse.status()).toBe(200);
+  const { publishText } = await publishResponse.json() as { publishText: string };
+  expect(publishText).toContain("#接龙");
+  for (const name of expectedNames) expect(publishText).toContain(name);
+  await expect(lunchCard.getByText("已发出", { exact: true })).toBeVisible();
+  const persistedPlans = await readMenuPlans(request, token);
+  expect(persistedPlans).toContainEqual(expect.objectContaining({
+    planId: original.planId, status: "published", dishes: swapped.plan.dishes, publishText,
+  }));
+
+  await page.getByText("订单", { exact: true }).click();
+  const confirmed = await readOrderAggregate(request, token);
+  await selectOrderCards(page, "付○");
+  const paid = confirmed.orders.map((order) => page.waitForResponse((response) => response.url().endsWith(`/orders/${String(order.id)}`) && response.request().method() === "PATCH"));
+  await page.locator("taro-button-core").filter({ hasText: /^批量已付\(3\)$/ }).click();
+  expect((await Promise.all(paid)).every((response) => response.status() === 200)).toBe(true);
+  await expect.poll(async () => (await readOrderAggregate(request, token)).orders.every((order) => order.paymentStatus === "paid")).toBe(true);
+
+  await selectOrderCards(page, "付✓");
+  const delivered = page.waitForResponse((response) => response.url() === `${MAINLINE_BE}/delivery/fulfillments` && response.request().method() === "PATCH");
+  await page.locator("taro-button-core").filter({ hasText: /^批量送达\(3\)$/ }).click();
+  expect((await delivered).status()).toBe(200);
+  await expect(page.getByText("草稿 0 · 未付 0 · 待送 0", { exact: true })).toBeVisible();
+  const settled = await readOrderAggregate(request, token);
+  expect(settled.orders.every((order) => order.status === "confirmed" && order.paymentStatus === "paid")).toBe(true);
+  expect(settled.fulfillments).toHaveLength(3);
+  expect(settled.fulfillments.every((fulfillment) => fulfillment.status === "done")).toBe(true);
 });
 
 test("E2E-DATE-001：缺日期与周几冲突均提示补全且零写入", async ({ page, request }) => {
