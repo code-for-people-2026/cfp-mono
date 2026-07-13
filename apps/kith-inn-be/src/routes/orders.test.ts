@@ -147,18 +147,43 @@ describe("POST /orders/:id/cancel", () => {
 });
 
 describe("PATCH /orders/:id", () => {
-  it("updates payment/date/note and strips status", async () => {
+  it("passes every ordinary field and strips forbidden fields from a mixed body", async () => {
     const cms = mockCms();
     const app = orderRoutes(SECRET, deps(cms));
-    const res = await app.request("/90", { method: "PATCH", headers: await json(), body: JSON.stringify({ status: "confirmed", paymentStatus: "paid" }) });
+    const patch = {
+      paymentStatus: "paid",
+      paymentMethod: "wechat",
+      paidAt: "2026-07-13T08:00:00.000Z",
+      date: "2026-07-14",
+      occasion: "dinner",
+      note: "放门口",
+    };
+    const res = await app.request("/90", {
+      method: "PATCH",
+      headers: await json(),
+      body: JSON.stringify({
+        ...patch,
+        address: "9Z-999",
+        status: "confirmed",
+        customer: 99,
+        seller: 99,
+        unknown: "forged",
+      }),
+    });
     expect(res.status).toBe(200);
-    expect(cms.updateOrder).toHaveBeenCalledWith(expect.any(String), "90", { paymentStatus: "paid" });
+    expect(cms.updateOrder).toHaveBeenCalledWith(expect.any(String), "90", patch);
   });
 
-  it("400 when no updatable fields remain", async () => {
-    const app = orderRoutes(SECRET, deps(mockCms()));
-    const res = await app.request("/90", { method: "PATCH", headers: await json(), body: JSON.stringify({ status: "confirmed" }) });
+  it("400 when only forbidden or unknown fields remain", async () => {
+    const cms = mockCms();
+    const app = orderRoutes(SECRET, deps(cms));
+    const res = await app.request("/90", {
+      method: "PATCH",
+      headers: await json(),
+      body: JSON.stringify({ address: "9Z-999", status: "confirmed", customer: 99, seller: 99, unknown: "forged" }),
+    });
     expect(res.status).toBe(400);
+    expect(cms.updateOrder).not.toHaveBeenCalled();
   });
 
   it("502 when cms update throws", async () => {

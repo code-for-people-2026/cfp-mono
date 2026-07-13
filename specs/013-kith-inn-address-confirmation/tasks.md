@@ -30,10 +30,10 @@
 
 **Purpose**: 关闭通用 PATCH 改写地址、归属和生命周期的既有旁路，同时保留普通付款/日期/餐次/备注更新。
 
-- [ ] T004 [P] 在 `apps/cms/src/app/api/internal/orders/[id]/route.test.ts` 增加普通字段通过、address/status/customer/seller/未知字段拒绝或剥离、仅禁用字段 400 与快照不变测试
-- [ ] T005 在 `apps/cms/src/app/api/internal/orders/[id]/route.ts` 用显式普通字段白名单构造 Payload update data
-- [ ] T006 [P] 在 `apps/kith-inn-be/src/routes/orders.test.ts` 增加相同白名单、混合 body 不透传禁用字段与仅禁用字段 400 测试
-- [ ] T007 在 `apps/kith-inn-be/src/routes/orders.ts` 用显式普通字段白名单替代只删除 status 的黑名单
+- [x] T004 [P] 在 `apps/cms/src/app/api/internal/orders/[id]/route.test.ts` 增加普通字段通过、address/status/customer/seller/未知字段拒绝或剥离、仅禁用字段 400 与快照不变测试
+- [x] T005 在 `apps/cms/src/app/api/internal/orders/[id]/route.ts` 用显式普通字段白名单构造 Payload update data
+- [x] T006 [P] 在 `apps/kith-inn-be/src/routes/orders.test.ts` 增加相同白名单、混合 body 不透传禁用字段与仅禁用字段 400 测试
+- [x] T007 在 `apps/kith-inn-be/src/routes/orders.ts` 用显式普通字段白名单替代只删除 status 的黑名单
 
 **Checkpoint（PR1）**: 任意通用订单 PATCH 都不能破坏地址快照或租户/生命周期，但既有普通更新保持兼容。
 
