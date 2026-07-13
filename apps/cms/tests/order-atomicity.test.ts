@@ -209,7 +209,7 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     const created = await createDraftAtomic(payload, sellerId, operatorId, draft("2026-08-05"));
     await payload.create({
       collection: "service_slots",
-      data: { seller: sellerId, date: "2026-08-05", occasion: "lunch", granularity: "occasion", status: "archived" },
+      data: { seller: sellerId, date: "2026-08-05T00:00:00.000Z", occasion: "lunch", granularity: "occasion", status: "archived" },
       overrideAccess: true,
     });
     await expect(confirmOrderAtomic(payload, sellerId, created.order.id)).rejects.toMatchObject({ code: "slot-archived" });

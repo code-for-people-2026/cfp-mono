@@ -55,10 +55,22 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Run affected E2E
-        env:
-          TURBO_SCM_BASE: origin/main
         run: |
-          v1_filter=()
+          e2e_filters=('--filter=...[origin/main]')
+          if ! git diff --quiet origin/main...HEAD -- \
+            apps/cms/package.json \
+            apps/cms/next.config.ts \
+            apps/cms/payload.config.ts \
+            apps/cms/seed/run.ts \
+            apps/cms/src/app/api/health/route.ts \
+            apps/cms/src/app/api/internal/menu-plans \
+            apps/cms/src/app/api/internal/offerings \
+            apps/cms/src/app/api/internal/operator-by-openid \
+            apps/cms/src/lib/internal.ts \
+            apps/kith-inn-be \
+            packages/kith-inn-payload; then
+            e2e_filters+=(--filter=@cfp/kith-inn-fe)
+          fi
           if ! git diff --quiet origin/main...HEAD -- \
             apps/cms/package.json \
             apps/cms/next.config.ts \
@@ -69,9 +81,9 @@ jobs:
             apps/cms/src/lib/kiv1-internal.ts \
             apps/kith-inn-v1-be \
             packages/kith-inn-v1-payload; then
-            v1_filter+=(--filter=@cfp/kith-inn-v1-fe)
+            e2e_filters+=(--filter=@cfp/kith-inn-v1-fe)
           fi
-          pnpm turbo run test:e2e --affected "${v1_filter[@]}"
+          pnpm turbo run test:e2e "${e2e_filters[@]}"
         if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4
