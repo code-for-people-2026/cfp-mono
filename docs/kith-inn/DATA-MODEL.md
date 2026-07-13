@@ -225,7 +225,7 @@ Payload 内置 `createdAt` 是留存/分页键（按 `(seller, operator, created
 - **snapshot（完整接龙）**：范围是标题中的日期 + 餐次；候选集合与该范围内全部 active order 做差异，不区分原订单来自接龙还是自然语言。确认卡展示新增、更新、取消和不变，确认后整体以本次接龙为准。
 - **increment（单笔补单）**：只加载顾客 + 日期 + 餐次这一业务坐标。`add`在事务内用当前数量加上增量，`set`直接设置最终数量；不得扫描或取消同日其他订单。
 
-预览会根据范围内 active order 的身份、状态、更新时间和 item 内容生成 `expectedFingerprint`，并带一个 `operationKey`。确认时 CMS 先锁住对账写入，在同一 PostgreSQL 事务内重新读取并校验 fingerprint；不一致就返回 `stale-preview`，所有写入回滚，要求重新预览。同一 `operationKey` 的重试通过写回订单的操作 marker 返回既有结果，避免网络重试把 add 再执行一次。
+预览会根据范围内 active order 的身份、状态、更新时间和 item 内容生成 `expectedFingerprint`，并带一个 `operationKey`。确认时 CMS 先锁住对账写入，在同一 PostgreSQL 事务内重新读取并校验 fingerprint；不一致就返回 `stale-preview`，所有写入回滚，要求重新预览。同一 request 以相同 `operationKey` **直接重试 CMS reconcile 端点**时，通过写回订单的操作 marker 返回既有结果，避免 add 再执行一次；聊天层成功后会清除内存 pending op，因此当前只保证丢响应后不重复写入，不保证原确认卡能回放成功结果。
 
 confirmed order 仍可在桃子确认后更新；snapshot 退出 confirmed order 时，同时把其 pending fulfillment 置为 canceled。`paymentStatus=paid/reconciled` 或 fulfillment 已 done 的订单属于既成事实，预览和确认阶段都拒绝批量变更，整批不留下部分写入。
 
