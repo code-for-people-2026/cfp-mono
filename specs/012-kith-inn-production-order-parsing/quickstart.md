@@ -83,7 +83,7 @@ PR 2 验证完整快照，PR 3 只验证增量纯函数与 CMS 原子语义，PR
 
 预览一份含新增、更新、取消的 snapshot，在确认前用订单页改变任一目标订单；另在每个 reconcile 写入阶段注入失败。
 
-预期：同一 operation key 的重复或同时确认只应用一次；若首次成功但响应丢失，重试返回已完成；不同操作导致数据变化后，旧卡返回 `stale-preview` 并要求重新预览。故障注入后所有订单/items/fulfillments 保持操作前状态。
+预期：CMS 对同一 operation key 的重复或同时请求只应用一次；若首次成功但响应丢失，直接以同一 request 重试 CMS reconcile 端点会返回已完成。聊天层成功后会清除内存 pending op，因此原卡重试只要求不重复写入，不保证回放成功结果。不同操作导致数据变化后，旧卡返回 `stale-preview` 并要求重新预览。故障注入后所有订单/items/fulfillments 保持操作前状态。
 
 ### 场景 7：confirmed 更新和退出（PR 2）
 
