@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   generateWeekMenu,
+  scoreSwapCandidate,
   swapDish,
   swapDishSpecified,
   toMenuDish,
@@ -215,9 +216,8 @@ describe("swapDish", () => {
     expect(res).toMatchObject({ ok: false, reason: "no-alternative" });
   });
 
-  it("does not swap in a dish whose mainIngredient is already used by a remaining slot mate (#128)", () => {
-    // Slot has two meats: target (猪, being swapped out) + keeper (牛). The pool's
-    // same-mainIngredient candidate shares 牛 with the keeper — it must be skipped.
+  it("prefers a dish whose mainIngredient is not used by a remaining slot mate (#128)", () => {
+    // 同餐主料重复从硬过滤改为第二级偏好；无冲突候选仍应胜出。
     const keeper = meat(1, "牛");
     const target = meat(2, "猪");
     const slot: Slot = { day: "mon", occasion: "lunch", dishes: [target, keeper, veg(1, "菜")] };
@@ -231,8 +231,128 @@ describe("swapDish", () => {
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.replacement.mainIngredient).not.toBe("牛"); // keeper's MI is off-limits
+    expect(res.replacement.mainIngredient).not.toBe("牛"); // 无冲突候选的第二级分数更低
     expect(res.replacement.id).toBe(otherMiCandidate.id);
+  });
+
+  it("allows the only eligible candidate and explains the relaxed same-day rule", () => {
+    const target = meat(1, "猪");
+    const keeper = meat(2, "牛");
+    const candidate = meat(3, "牛");
+    const slot: Slot = { day: "2026-07-13", occasion: "lunch", dishes: [target, keeper] };
+    const before = [...slot.dishes];
+    const random = vi.fn(() => 0);
+
+    const res = swapDish({
+      menu: [slot],
+      target: { day: slot.day, occasion: slot.occasion },
+      dishId: target.id,
+      pool: [candidate],
+      random,
+    });
+
+    expect(res).toEqual({
+      ok: true,
+      replacement: candidate,
+      targetIndex: 0,
+      relaxedRules: ["same-day-main-ingredient"],
+    });
+    expect(slot.dishes).toEqual(before);
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      name: "same-week offering before lower-level conflicts",
+      history: (preferred: MenuDish, rejected: MenuDish): Slot[] => [
+        { day: "2026-07-14", occasion: "lunch", dishes: [rejected] },
+        { day: "2026-07-13", occasion: "dinner", dishes: [meat(90, preferred.mainIngredient!)] },
+        { day: "2026-07-12", occasion: "lunch", dishes: [preferred] },
+      ],
+    },
+    {
+      name: "same-day main before recent offering and main",
+      history: (preferred: MenuDish, rejected: MenuDish): Slot[] => [
+        { day: "2026-07-13", occasion: "dinner", dishes: [meat(90, rejected.mainIngredient!)] },
+        { day: "2026-07-12", occasion: "lunch", dishes: [preferred] },
+      ],
+    },
+    {
+      name: "recent offering before recent main",
+      history: (preferred: MenuDish, rejected: MenuDish): Slot[] => [
+        { day: "2026-07-12", occasion: "lunch", dishes: [rejected, meat(90, preferred.mainIngredient!)] },
+      ],
+    },
+    {
+      name: "recent main as the final tie-break level",
+      history: (_preferred: MenuDish, rejected: MenuDish): Slot[] => [
+        { day: "2026-07-12", occasion: "lunch", dishes: [meat(90, rejected.mainIngredient!)] },
+      ],
+    },
+  ])("uses $name", ({ history }) => {
+    const target = meat(1, "猪");
+    const preferred = meat(2, "鸡");
+    const rejected = meat(3, "牛");
+    const random = vi.fn(() => 0);
+    const res = swapDish({
+      menu: [{ day: "2026-07-13", occasion: "lunch", dishes: [target] }],
+      target: { day: "2026-07-13", occasion: "lunch" },
+      dishId: target.id,
+      pool: [rejected, preferred],
+      history: history(preferred, rejected),
+      random,
+    });
+    expect(res.ok && res.replacement.id).toBe(preferred.id);
+    expect(random).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { sample: -1, expected: "m2" },
+    { sample: 0, expected: "m2" },
+    { sample: 0.999, expected: "m3" },
+    { sample: 1, expected: "m3" },
+  ])("clamps tied-candidate random sample $sample", ({ sample, expected }) => {
+    const random = vi.fn(() => sample);
+    const res = swapDish({
+      menu: [{ day: "2026-07-13", occasion: "lunch", dishes: [meat(1, "猪")] }],
+      target: { day: "2026-07-13", occasion: "lunch" },
+      dishId: "m1",
+      pool: [meat(2, "鸡"), meat(3, "牛")],
+      random,
+    });
+    expect(res.ok && res.replacement.id).toBe(expected);
+    expect(random).toHaveBeenCalledOnce();
+  });
+
+  it("uses dishIndex for duplicate ids and defaults to the first occurrence", () => {
+    const duplicate = meat(1, "猪");
+    const candidate = meat(3, "猪");
+    const slot: Slot = { day: "2026-07-13", occasion: "lunch", dishes: [duplicate, veg(1, "菜"), duplicate] };
+    const base = { menu: [slot], target: { day: slot.day, occasion: slot.occasion }, dishId: duplicate.id, pool: [candidate] };
+
+    expect(swapDish({ ...base, dishIndex: 2 })).toMatchObject({ ok: true, targetIndex: 2 });
+    expect(swapDish(base)).toMatchObject({ ok: true, targetIndex: 0 });
+    expect(swapDish({ ...base, dishIndex: 1 })).toEqual({ ok: false, reason: "dish-not-in-slot" });
+  });
+});
+
+describe("scoreSwapCandidate", () => {
+  it("counts natural-week, same-day, 1-day and 7-day boundaries but excludes day 8", () => {
+    const candidate = meat(9, "鸡");
+    const history: Slot[] = [
+      { day: "2026-07-14", occasion: "lunch", dishes: [candidate] },
+      { day: "2026-07-13", occasion: "dinner", dishes: [meat(90, "鸡")] },
+      { day: "2026-07-12", occasion: "lunch", dishes: [candidate] },
+      { day: "2026-07-06", occasion: "lunch", dishes: [candidate] },
+      { day: "2026-07-05", occasion: "lunch", dishes: [candidate] },
+    ];
+    expect(scoreSwapCandidate({ candidate, targetDate: "2026-07-13", history, remaining: [meat(91, "鸡")] })).toEqual([1, 2, 2, 2]);
+  });
+
+  it("treats a Monday in December and Thursday in January as the same natural week", () => {
+    const candidate = meat(9, "鸡");
+    const history: Slot[] = [{ day: "2025-12-29", occasion: "lunch", dishes: [candidate] }];
+    expect(scoreSwapCandidate({ candidate, targetDate: "2026-01-01", history, remaining: [] })).toEqual([1, 0, 1, 1]);
   });
 });
 
@@ -299,5 +419,26 @@ describe("swapDishSpecified", () => {
       ok: false,
       reason: "dish-not-in-slot",
     });
+  });
+
+  it("重复 dishId 时按显式位置解析并返回 targetIndex", () => {
+    const duplicate = meat(1, "牛");
+    const repeatedMenu: Slot[] = [{ day: "mon", occasion: "lunch", dishes: [duplicate, veg(1, "青菜"), duplicate] }];
+    expect(swapDishSpecified({
+      menu: repeatedMenu,
+      target: { day: "mon", occasion: "lunch" },
+      dishId: duplicate.id,
+      dishIndex: 2,
+      replacementId: "m3",
+      pool,
+    })).toMatchObject({ ok: true, targetIndex: 2 });
+    expect(swapDishSpecified({
+      menu: repeatedMenu,
+      target: { day: "mon", occasion: "lunch" },
+      dishId: duplicate.id,
+      dishIndex: 1,
+      replacementId: "m3",
+      pool,
+    })).toEqual({ ok: false, reason: "dish-not-in-slot" });
   });
 });

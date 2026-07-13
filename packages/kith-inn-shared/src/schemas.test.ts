@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { RELAXED_RULES } from "./enums";
 import {
   addressGapSchema,
   addressGroupSchema,
@@ -24,6 +25,7 @@ import {
   orderReconciliationRequestSchema,
   orderReconciliationResultSchema,
   orderSchema,
+  relaxedRuleSchema,
   serviceSlotSchema,
   sellerSchema,
   swapRequestSchema,
@@ -199,6 +201,17 @@ describe("menu plan view + swap contract (feature 003)", () => {
     expect(swapRequestSchema.parse({ dishId: 12, replacementId: 19, force: true })).toEqual({ dishId: 12, replacementId: 19, force: true });
     expect(() => swapRequestSchema.parse({ replacementId: 19 } as Record<string, unknown>)).toThrow();
     expect(swapRequestSchema.parse({ dishId: 12, junk: 9 } as Record<string, unknown>)).toEqual({ dishId: 12 });
+  });
+
+  it("relaxedRuleSchema keeps the four conflict rules in priority order", () => {
+    expect(RELAXED_RULES).toEqual([
+      "same-week-offering",
+      "same-day-main-ingredient",
+      "recent-offering",
+      "recent-main-ingredient",
+    ]);
+    RELAXED_RULES.forEach((rule) => expect(relaxedRuleSchema.parse(rule)).toBe(rule));
+    expect(() => relaxedRuleSchema.parse("unknown-rule")).toThrow();
   });
 });
 

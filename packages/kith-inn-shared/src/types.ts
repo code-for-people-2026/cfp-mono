@@ -39,6 +39,7 @@ import type {
   orderReconciliationRowSchema,
   orderReconciliationScopeSchema,
   orderSchema,
+  relaxedRuleSchema,
   serviceSlotSchema,
   sellerSchema,
   swapRequestSchema,
@@ -91,6 +92,8 @@ export type WeekMenu = z.infer<typeof weekMenuSchema>;
 export type MenuPlanView = z.infer<typeof menuPlanViewSchema>;
 /** 换菜请求（feature 003）。 */
 export type SwapRequest = z.infer<typeof swapRequestSchema>;
+/** 自动换菜实际放宽的规则，顺序遵循固定四级冲突优先级。 */
+export type RelaxedRule = z.infer<typeof relaxedRuleSchema>;
 
 // ── delivery contract (GET /delivery) ──────────────────────────────────────
 /** 按地址分组的送篮（源头防错：照这张装篮）。 */

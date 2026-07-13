@@ -96,6 +96,14 @@ export type ServiceSlotStatus = (typeof SERVICE_SLOT_STATUSES)[number];
 export const MENU_PLAN_STATUSES = ["draft", "published"] as const;
 export type MenuPlanStatus = (typeof MENU_PLAN_STATUSES)[number];
 
+/** 自动换菜的四级放宽原因；数组顺序也是冲突评分的业务优先级。 */
+export const RELAXED_RULES = [
+  "same-week-offering",
+  "same-day-main-ingredient",
+  "recent-offering",
+  "recent-main-ingredient",
+] as const;
+
 /** 订阅状态（V1）。 */
 export const SUBSCRIPTION_STATUSES = ["active", "paused"] as const;
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number];
