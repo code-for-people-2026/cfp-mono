@@ -67,6 +67,7 @@ jobs:
             apps/cms/src/app/api/internal/offerings \
             apps/cms/src/app/api/internal/operator-by-openid \
             apps/cms/src/lib/internal.ts \
+            apps/cms/src/lib/serviceSlotDate.ts \
             apps/kith-inn-be \
             packages/kith-inn-payload; then
             e2e_filters+=(--filter=@cfp/kith-inn-fe)
@@ -83,7 +84,7 @@ jobs:
             packages/kith-inn-v1-payload; then
             e2e_filters+=(--filter=@cfp/kith-inn-v1-fe)
           fi
-          pnpm turbo run test:e2e "${e2e_filters[@]}"
+          pnpm turbo run test:e2e --concurrency=1 "${e2e_filters[@]}"
         if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4

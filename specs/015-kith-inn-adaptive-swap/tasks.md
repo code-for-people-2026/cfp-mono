@@ -68,7 +68,7 @@
 - [x] T022 [US2] 验证 `turbo --affected` 会运行新 suite；仅在证据表明不会运行时，最小更新 `.github/workflows/ci.yml` 的 kith-inn E2E filter，不并入 #157 的 PostgreSQL/跨租户场景
 - [x] T023 [US2] 运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e`、`pnpm verify`、`git diff --check`，记录耗时和失败 trace 路径
 
-**PR5 验证记录**：H5 E2E 1/1 通过（15.8s）；CI 用 `--filter=...[origin/main]` 选择普通 affected suite，并为 kith-inn BE/CMS 路径 union `@cfp/kith-inn-fe`；kith-inn CMS 使用独立 3305 端口，与 v1 的 3304 可并行；失败 trace 保留在 `apps/kith-inn-fe/test-results/**/trace.zip`。
+**PR5 验证记录**：H5 E2E 1/1 通过（15.8s）；CI 用 `--filter=...[origin/main]` 选择普通 affected suite，并为 kith-inn BE/CMS 路径 union `@cfp/kith-inn-fe`；旧 kith-inn CMS 使用 3305、v1 使用 3304，且 CMS-backed E2E 串行运行以隔离共享 `.next` 构建目录；失败 trace 保留在 `apps/kith-inn-fe/test-results/**/trace.zip`。
 
 ## Dependencies & Execution Order
 
