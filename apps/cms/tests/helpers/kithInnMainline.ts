@@ -4,7 +4,8 @@ import { assertDevResetAllowed, configuredPostgresUrl } from "../../seed/run";
 import { resetSeedData } from "@cfp/kith-inn-payload/seed";
 
 export const MAINLINE_JWT_SECRET = "kith-inn-mainline-postgres-secret";
-export const hasMainlinePostgres = Boolean(configuredPostgresUrl());
+export const hasMainlinePostgres = Boolean(configuredPostgresUrl())
+  && process.env.KITH_INN_ALLOW_DEV_SEED_RESET === "1";
 
 type Id = string | number;
 
@@ -79,7 +80,7 @@ export async function startKithInnMainline(): Promise<{
   sellerA: MainlineTenant;
   sellerB: MainlineTenant;
 }> {
-  if (!hasMainlinePostgres) throw new Error("kith-inn mainline integration requires PostgreSQL");
+  if (!hasMainlinePostgres) throw new Error("kith-inn mainline integration requires PostgreSQL and explicit reset opt-in");
   assertDevResetAllowed();
   const originalJwtSecret = process.env.JWT_SECRET;
   let payload: Payload | undefined;

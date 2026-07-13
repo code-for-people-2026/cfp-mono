@@ -9,9 +9,9 @@ type PlanInput = { date: string; occasion?: string; offerings: Array<string | nu
 
 /**
  * `POST /api/internal/menu-plans/upsert` — generate's writer. For each input:
- *  1. ensure service_slot exists for (seller, date, occasion) — keep existing status
+ *  1. validate every offering id in the full batch belongs to the seller (ownedBy, else 403).
+ *  2. ensure service_slot exists for (seller, date, occasion) — keep existing status
  *     (do NOT open; slot opening stays order-confirm's job); create as draft if missing.
- *  2. validate every offering id belongs to the seller (ownedBy, else 403).
  *  3. upsert menu_plan by (seller, slot) — update offerings/status or create.
  * The (seller, slot) unique index (ensureConstraints) backs the one-plan-per-slot invariant.
  */
@@ -21,6 +21,14 @@ export async function POST(req: Request) {
   const { sellerId, payload } = scope;
   const inputs = (await req.json().catch(() => null)) as PlanInput[] | null;
   if (!Array.isArray(inputs)) return NextResponse.json({ error: "plans[] required" }, { status: 400 });
+
+  for (const p of inputs) {
+    for (const oid of p.offerings) {
+      if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
+        return NextResponse.json({ error: "offering not owned" }, { status: 403 });
+      }
+    }
+  }
 
   const docs = [];
   for (const p of inputs) {
@@ -38,12 +46,6 @@ export async function POST(req: Request) {
         overrideAccess: true,
       });
       slotId = created.id;
-    }
-
-    for (const oid of p.offerings) {
-      if (!(await ownedBy(payload, "offerings", oid, sellerId))) {
-        return NextResponse.json({ error: "offering not owned" }, { status: 403 });
-      }
     }
 
     const planRes = await payload.find({
