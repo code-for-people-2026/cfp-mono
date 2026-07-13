@@ -42,7 +42,6 @@ export type CreateDraftInput = {
 };
 
 export type OrderUpdatePatch = Partial<{
-  status: OrderStatus;
   paymentStatus: Order["paymentStatus"];
   paymentMethod: string;
   paidAt: string;
@@ -210,7 +209,7 @@ export async function cancelOrderAtomic(operatorJwt: string, id: string | number
   );
 }
 
-/** PATCH /api/internal/orders/:id — update simple order fields (status/payment/date/note). */
+/** PATCH /api/internal/orders/:id — update ordinary payment/date/occasion/note fields. */
 export async function updateOrder(
   operatorJwt: string,
   id: string | number,
