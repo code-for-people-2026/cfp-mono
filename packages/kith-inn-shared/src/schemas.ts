@@ -20,6 +20,7 @@ import {
   ORDER_SOURCES,
   ORDER_STATUSES,
   PAYMENT_STATUSES,
+  RELAXED_RULES,
   SERVICE_SLOT_GRANULARITIES,
   SERVICE_SLOT_STATUSES,
   SELLER_MODULES,
@@ -48,6 +49,7 @@ const operatorRoleSchema = z.enum(OPERATOR_ROLES);
 const serviceSlotStatusSchema = z.enum(SERVICE_SLOT_STATUSES);
 const serviceSlotGranularitySchema = z.enum(SERVICE_SLOT_GRANULARITIES);
 const menuPlanStatusSchema = z.enum(MENU_PLAN_STATUSES);
+export const relaxedRuleSchema = z.enum(RELAXED_RULES);
 const chatRoleSchema = z.enum(CHAT_ROLES);
 
 /** id-or-populated-doc union (payload shallow = number|string; depth-populated = doc). */
