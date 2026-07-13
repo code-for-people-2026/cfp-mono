@@ -1,8 +1,30 @@
-# 契约：kith-inn 缺地址确认与补全
+# 契约：kith-inn 配送地址选填与自动带出
 
-## 统一缺地址规则
+本功能不新增端点或响应字段；以下记录既有输入和生命周期契约，防止未来误改为必填。
 
-服务端权威判定为 `!address?.trim()`。FE 的展示与按钮状态使用同一语义，但不能替代 CMS 守卫。
+## 接龙确认卡输入
+
+`record_orders` 的确认请求可为新顾客候选携带按 candidate index 对齐的可选地址：
+
+```json
+{
+  "items": [
+    {},
+    { "address": "3A-2701" }
+  ]
+}
+```
+
+- `items`、单项对象或 `address` 均可缺省。
+- `address` trim 后为空时等同未填写，不返回校验错误。
+- 只有 `newCustomer` 候选读取客户端地址；既有顾客候选不能借此改顾客资料或订单快照。
+
+## Reconciliation 写入
+
+- 新顾客地址未填写：创建可空地址的 customer 和 order。
+- 新顾客地址已填写：创建 customer 时保存默认地址，并复制到本批次该顾客的新 order。
+- 既有顾客的新 order：读取 `customers.address`，复制到 `orders.address`；candidate 不需要地址。
+- 已有 active order：数量或套餐 reconciliation 不改写既有 `orders.address`。
 
 ## 确认订单
 
@@ -11,79 +33,19 @@
 - BE：`POST /orders/{id}/confirm`，Bearer operator JWT
 - CMS：`POST /api/internal/orders/{id}/confirm`，`x-kith-inn-operator` JWT
 
-缺地址时 CMS 返回：
+地址不是请求字段或前置条件。只要订单满足既有 draft、明细和餐次规则，`address` 缺失也返回正常确认结果，创建 fulfillment 并转为 confirmed；不得返回 `missing-address`。
 
-```json
-HTTP 409
-{ "error": "missing-address" }
-```
+## 送餐展示
 
-BE 对点击入口返回：
+fulfillment 从关联 order 读取地址：
 
-```json
-HTTP 409
-{ "error": "missing-address", "message": "请先补地址再确认订单" }
-```
+- 非空地址：按地址字符串分组和排序。
+- 缺失或 trim 后为空：进入“（无地址）”分组。
 
-Agent 口头确认返回同义文案。拒绝前后订单 status、slot 和 fulfillment 完全一致。
+两种情况都保留在待送、送达和统计口径中。
 
-## 补齐订单地址
+## 快照不变量
 
-### BE → 桃子端
-
-`PATCH /orders/{id}/address`
-
-Headers：`Authorization: Bearer <operator-jwt>`、`Content-Type: application/json`
-
-### BE → CMS
-
-`PATCH /api/internal/orders/{id}/address`
-
-Headers：`x-kith-inn-operator: <operator-jwt>`、`Content-Type: application/json`
-
-两层请求 body 相同：
-
-```json
-{ "address": "3A-2701" }
-```
-
-成功 `200`：
-
-```json
-{
-  "orderId": 90,
-  "customerId": 5,
-  "address": "3A-2701",
-  "alreadyCompleted": false
-}
-```
-
-`alreadyCompleted` 可省略或为 false；相同地址直接重试时为 true。服务端先 trim，再把同一值原子写入目标 order 快照和 customer 默认地址。
-
-既有 BE `PATCH /orders/{id}` 与 CMS `PATCH /api/internal/orders/{id}` 只接受既定普通字段白名单（付款、日期、餐次、备注）；不得接受 `address`、`status`、`customer`、`seller` 等快照、生命周期或归属字段。请求仅含禁用/未知字段时返回 `400 no updatable fields`，混合请求也不得把禁用字段传给 Payload。
-
-错误：
-
-- `400 invalid-address`：body 缺失、非字符串或 trim 后为空。
-- `404 not-found`：订单不存在或不属于当前 seller；不泄露其他租户资源。
-- `409 not-draft`：目标订单不是 draft。
-- `409 address-present`：快照已有不同的非空地址；需另走未来明确的改地址能力。
-- `5xx`：事务失败；customer 与 order 均不得留下部分写入。相同请求可直接重试。
-
-## 确认卡展示字段
-
-`OrderReconciliationRow` 增加：
-
-```json
-{ "addressMissing": true }
-```
-
-该字段可选以兼容旧聊天卡，但新生成的 create/update/unchanged/add/set candidate row 必须提供 boolean。它只存在于 preview `rows`，构造 CMS reconcile request 时不传递；FE 为 true 的候选显示“待补地址”，仍允许保存 draft。
-
-## 原子性与并发
-
-- 地址补全与 confirm/reconcile 使用同一个 PostgreSQL 写锁和事务。
-- 补全写 customer 失败或写 order 失败时整体回滚。
-- completion 与 confirm 并发时，confirm 要么先因缺地址失败，要么在补全提交后成功；禁止 confirmed+空地址。
-- 其他既有订单地址快照始终不在补全事务的写集合中。
-- 通用订单 PATCH 的 BE 与 CMS 测试必须证明 `{address: ...}` 无法改变空或非空快照。
+- customer 默认地址只作为未来新订单的复制来源。
+- order 地址在创建时冻结；更新 customer 或后续修改订单数量不追溯改变它。
+- 不读取或修改其他 seller、其他顾客或 kith-inn-v1 数据。

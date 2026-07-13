@@ -1,62 +1,48 @@
-# 研究：kith-inn 缺地址确认守卫
+# 研究：kith-inn 配送地址选填与自动带出
 
 ## Brownfield 事实
 
-- `createDraftAtomic` 与 `reconcileOrdersAtomic` 会把 `customers.address` 快照到 `orders.address`，顾客地址为空时仍允许创建 draft，符合“先记单后补地址”。
-- `confirmOrderAtomic` 已用 PostgreSQL 事务和 `lockOrderReconciliationWrites` 串行化确认/对账，事务内依次打开餐次、创建 fulfillment、写 confirmed，但未检查 `order.address`。
-- CMS 通用 `PATCH /api/internal/orders/:id` 会把 body 原样传给 Payload，BE 通用 PATCH 也只删除 `status` 后透传未知字段；因此当前 `{address: ...}` 能绕过快照语义。customers 又没有可与订单更新合并的写端点，前端连续两次写也无法满足原子补全。
-- BE 的订单 service/route 和 Agent 口头确认最终都调用同一个 CMS confirm 端点；稳定 `OrderLifecycleError`/`OrderStateError` 已能传递 `409` 生命周期错误。
-- `record_orders` preview 已加载完整 customer 和 active order，但 shared 差异行没有地址状态；确认卡只给 `newCustomer` 显示可选地址输入。
-- 订单页会显示 `order.address`，缺失时只是省略地址并仍显示“确认订单”；所有非 2xx 写入都只提示“操作失败”。
-- `orders.address` 已存在且可空，无需 schema/migration；其注释称“不可改”，需要收窄为“创建后冻结，缺失草稿可显式补齐一次”。
+- `ChatCard` 只为 `newCustomer` 显示地址输入，输入没有 required 约束；提交空白时，BE route 会 trim 为 `undefined` 并继续 reconciliation。
+- `reconcileOrdersAtomic` 创建新顾客时可保存可选地址，同批次为该顾客创建的订单都复制该值。
+- `reconcileOrdersAtomic` 为既有顾客创建新订单时，从当前 `customers.address` 复制到 `orders.address`；接龙候选不需要重复携带地址。
+- `createDraftAtomic` 同样在订单创建时复制顾客地址，顾客无地址时仍可创建 draft。
+- `confirmOrderAtomic` 没有地址前置条件；缺地址 draft 可正常打开餐次、创建 fulfillment 并转为 confirmed。
+- 送餐派生逻辑把空地址归入“（无地址）”，不会过滤订单或 fulfillment。
+- `customers.address` 和 `orders.address` 都已经是可空自由文本，无需 schema、migration 或新 collection。
+- 当前真实行为缺少两条集中回归证据：缺地址 draft 的完整确认，以及首次保存地址后下一次独立下单自动带出。
 
-## 决策 1：确认守卫只在 CMS 原子入口判定
+## 决策 1：地址是选填便利信息，不是确认前置条件
 
-**Decision**: `confirmOrderAtomic` 在任何 slot/fulfillment/status 写入前，以 `!order.address?.trim()` 判定缺地址并抛出 `409 missing-address`；BE route 和 Agent 只把该错误翻译为“请先补地址再确认订单”。
+**Decision**: 新顾客、既有顾客和订单都允许没有地址；确认生命周期不新增 `missing-address` 或等价守卫。
 
-**Rationale**: 点击、口头和未来入口最终都经过 CMS，单点守卫不会因界面遗漏而绕过；检查位于现有事务内，可证明拒绝时经营数据零变化。
+**Rationale**: 接龙不会每次包含地址，桃子在系统外也记得住址。强制补录只会增加重复劳动，与真实操作相反。
 
-**Alternatives considered**: 只禁用 FE 按钮会被聊天或直接 API 绕过；BE 先 GET 再确认存在竞态；数据库把 `orders.address` 改成 required 会破坏允许缺地址 draft 的需求。
+**Alternatives considered**: 缺地址只允许 draft、确认前补地址、只在 FE 禁用确认；三者都会错误阻断合法订单。
 
-## 决策 2：用专用原子端点完成一次性补地址
+## 决策 2：默认地址只在新订单创建时复制
 
-**Decision**: 新增 seller-scoped `PATCH /orders/:id/address`（BE 与 CMS 各一层），body 仅 `{address}`。CMS 在现有写锁和同一事务内校验非空、目标订单属于 seller 且为 draft，然后同时更新目标 `orders.address` 与关联 `customers.address`。同时把既有 BE/CMS 通用订单 PATCH 改为现有可更新字段白名单，明确拒绝或剥离 `address`、`customer`、`seller`、`status` 等生命周期/归属字段；仅含禁用字段时返回 400。
+**Decision**: 桃子选填地址时保存为顾客默认地址；之后匹配到同一顾客的新订单在创建时复制它为 `orders.address`，输入无需重复提供。
 
-**Rationale**: 两个字段表达不同时间语义但必须一次成功；专用端点比扩张通用 PATCH 更小。只新增端点而不关闭旧透传路径仍可破坏快照，因此 CMS 权威边界和 BE 公共边界都必须使用白名单。
+**Rationale**: 一次记录即可服务未来订单，同时保持每张订单对当次送餐信息的独立快照。
 
-**Alternatives considered**: 连续 PATCH customer/order 会部分成功；把补地址塞进 confirm 会违反“补全后再独立确认”；新增 address service/表没有额外价值。
+**Alternatives considered**: 每次接龙要求地址不符合输入事实；展示时动态读取 customer 会让历史订单随资料变化。
 
-## 决策 3：地址快照只允许从缺失变为非空
+## 决策 3：空地址与历史快照都保持显式语义
 
-**Decision**: 补全仅用于 draft 且当前快照为空。成功后同地址重试返回既有结果并标记 `alreadyCompleted`；不同地址再次调用返回 `409 address-present`。顾客已有默认地址也不在 confirm 时静默回填，必须显式提交目标订单的地址。
+**Decision**: `null`、空字符串和纯空白统一视为未填写；无地址 fulfillment 进入“（无地址）”分组。顾客默认地址变化只影响之后创建的订单，不追溯更新旧快照。
 
-**Rationale**: 既保持历史订单快照语义，也让响应丢失后的直接重试安全。显式值可同时纠正顾客默认地址；同一顾客其他订单不参与写入。
+**Rationale**: 无地址不是坏数据，只表示系统没有记录；快照不追溯才能还原当次订单。
 
-**Alternatives considered**: 允许任意改非空快照会悄悄改写履约事实；自动复制 customer 默认值无法证明桃子确认了旧草稿地址；追溯更新全部订单违反快照语义。
+**Alternatives considered**: 过滤无地址任务会漏单；追溯回填会改写历史。
 
-## 决策 4：补地址与确认复用现有写锁串行化
+## 决策 4：不新增生产能力，只补证据和文档
 
-**Decision**: `completeOrderAddressAtomic` 与 confirm/reconcile 共用 `lockOrderReconciliationWrites`，不新增 version 字段或另一套锁。
+**Decision**: 删除原方案中的确认守卫、补地址 API、通用 PATCH 收紧、待补状态和地址补全 UI；保留现有运行时，新增最小真实 PG 回归测试并纠正 PRD/User Stories/Tech Spec/Data Model。
 
-**Rationale**: 并发时只有两种合法结果：确认先读到空值而失败，随后补全；或补全先提交，随后确认成功。不存在 confirmed+空地址中间态。
-
-**Alternatives considered**: 乐观版本字段需要 migration 且现有全局事务锁已覆盖本写域；进程内 mutex 不能保护多实例 CMS。
-
-## 决策 5：确认卡用展示字段，订单页用现有行内操作
-
-**Decision**: reconciliation row 增加向后兼容的 `addressMissing?: boolean`。三类候选互斥判定：已有 active order 时只看该订单快照，不回退 customer 默认地址；将新建既有顾客订单时看 customer 默认地址；新客看确认卡输入。FE 显示“待补地址”。订单页在缺地址 draft 行内显示一个 Input 和“保存地址”，成功刷新后再使用既有“确认订单”。
-
-**Rationale**: row 字段只服务预览，不进入 CMS reconcile 写请求；订单页无需新页面、弹窗或全局 store，满足一次进入、一次保存。
-
-**Alternatives considered**: 把地址状态塞进 candidate 会把展示信息带入写契约；只标新客会漏掉无默认地址的既有顾客和旧空快照；新建地址管理页增加无关导航和状态。
-
-## 决策 6：六个小 PR，规划独立 review
-
-**Decision**: 规划、确认守卫、CMS 原子补全、BE 契约适配、订单页补全、确认卡状态分别成 PR；先完成 P1 的订单页补全闭环，再做 P2 确认卡提前提示；每片都在合并前完成 Codex review，#156 在 PR5 合并后关闭。
-
-**Rationale**: 守卫、CMS 事务、BE 适配与两个 UI 入口有不同正确性边界；CMS 事务和 BE 适配合并后预计会超过 400 行，因此按现有内部 API 边界再拆一片，让每次运行时 diff 保持在默认 review 预算内，并让安全守卫最先上线。
+**Rationale**: 当前代码已经实现正确业务。额外生产改动没有用户价值，反而制造新故障面。
 
 ## 未采用的新能力
 
-- 不新增地址结构化、地址历史、地址选择器、通用 customer 编辑或历史 confirmed 数据修复。
-- 不自动确认补全后的订单，不增加自取模式，不修改任何 kith-inn-v1 路径。
+- 不新增地址结构化、地址历史、地址选择器、强制补录或专用 order-address endpoint。
+- 不自动猜测地址，不从其他顾客复制，不追溯修改既有订单。
+- 不修改任何 kith-inn-v1 路径。

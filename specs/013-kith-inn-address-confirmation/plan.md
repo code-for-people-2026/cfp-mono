@@ -1,4 +1,4 @@
-# 实施计划：kith-inn 缺地址确认守卫
+# 实施计划：kith-inn 配送地址选填与自动带出
 
 **分支**: 多个 `codex/*` 最小切片（见“PR 拆分计划”） | **日期**: 2026-07-13 | **规格**: [spec.md](./spec.md)
 
@@ -6,49 +6,45 @@
 
 ## Summary
 
-允许接龙或自然语言先保存缺地址草稿，但把“订单地址快照非空”设为 CMS 原子确认事务的统一前置条件；缺地址时返回稳定错误，订单、餐次和履约零变化。新增一个 seller-scoped 原子补地址端点，只允许把 draft 的空地址快照补为非空值，并在同一事务更新该顾客默认地址；确认卡和订单页明确展示“待补地址”，订单页在原订单上下文完成补齐。复用现有 Payload 事务、写锁、Hono 路由和 Taro 输入组件，不新增字段、collection、依赖或 v1 逻辑。
+配送地址保持选填：新顾客可以不填地址，缺地址订单仍能确认并进入送餐清单；一旦为顾客保存地址，后续匹配到该顾客的新订单会在创建时复制默认地址为订单快照。Brownfield 代码已经实现这些行为，本功能不新增确认守卫、补地址 API、字段或 UI，只纠正错误规格与长期文档，并补足跨两次下单和缺地址确认的真实 PostgreSQL 回归测试。
 
 ## Technical Context
 
 **语言/版本**: TypeScript 5.9，Node.js 20+
 
-**主要依赖**: Hono 4、Payload 3.85.1、Next.js 16.2.9、Taro 4.2、React 18、Zod 4、Vitest 4
+**主要依赖**: Hono 4、Payload 3.85.1、Next.js 16.2.9、Taro 4.2、React 18、Vitest 4
 
-**存储**: PostgreSQL（`cms` schema）；沿用 `customers.address` 与 `orders.address`，无 migration
+**存储**: PostgreSQL（`cms` schema）；沿用可空的 `customers.address` 与 `orders.address`，无 migration
 
-**测试**: Vitest 单元/契约测试、真实 PostgreSQL 事务与并发测试、仓库 `pnpm verify`
+**测试**: Vitest、真实 PostgreSQL 事务测试、仓库 `pnpm verify`
 
 **目标平台**: Linux 容器内的 kith-inn-be/CMS 与 Taro 小程序/H5
 
 **项目类型**: pnpm/Turborepo monorepo 中的 Hono 服务、Next/Payload CMS 和 Taro 前端
 
-**性能目标**: 确认仍为一次 BE→CMS 请求；补地址为一次 BE→CMS 请求和一个短事务；不增加 LLM 调用
+**性能目标**: 不增加请求、写入或 LLM 调用；沿用现有记单与确认链路
 
-**约束**: 缺地址 fail closed；地址补全与确认并发后不得出现 confirmed+空地址；seller JWT 隔离；100% 覆盖门禁；不触碰 kith-inn-v1
+**约束**: 地址选填；缺地址不得阻断确认；订单地址为创建时快照；100% 覆盖门禁；不触碰 kith-inn-v1
 
-**规模/范围**: 单卖家 MVP；允许修改 `apps/cms`、`apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-shared`、`packages/kith-inn-payload` 与 `docs/kith-inn`
+**规模/范围**: 运行时只补测试，长期事实只修改 `docs/kith-inn`；不修改生产源码、schema 或 API
 
 ## Constitution Check
 
-- **I 功能规格**：通过。#156 跨 CMS/BE/FE/shared、修改内部 API 与生命周期，使用全套 spec。
-- **II Monorepo 作用域**：通过。仅触碰上列 kith-inn 路径；`kith-inn-v1` 明确排除。
-- **III Brownfield 事实**：通过。当前草稿会快照可空的顾客地址，CMS 确认未校验地址；通用订单 PATCH 不能原子更新顾客和订单；确认卡仅让新客填地址，订单页没有补全入口。详见 [research.md](./research.md)。
-- **IV 最小切片**：通过。规格、确认守卫、CMS 原子补全、BE 适配、订单页补全、确认卡提示各为独立 PR；先完成 P1 补全闭环，再交付 P2 的提前提示。
-- **V 验证与审查**：通过。每片均有定向测试、`pnpm verify`、v1 路径检查，并按 AGENTS.md 完成 Codex review。
-- **VI 中文文档**：通过。功能与长期文档叙述主体均为中文。
+- **I 功能规格**：通过。#156 曾错误规划为跨层生命周期功能，现用原目录完整纠正，避免仓库保留可执行的错误规格。
+- **II Monorepo 作用域**：通过。只触碰 `specs/013-kith-inn-address-confirmation`、kith-inn CMS 测试和 `docs/kith-inn`；`kith-inn-v1` 明确排除。
+- **III Brownfield 事实**：通过。现有确认卡地址输入可空，CMS 在创建新订单时复制顾客默认地址，确认不校验地址，送餐分组保留“（无地址）”。详见 [research.md](./research.md)。
+- **IV 最小切片**：通过。PR0R 只纠正错误设计；PR1 只补回归证据和长期文档，不改生产行为。
+- **V 验证与审查**：通过。两片都运行定向检查、`pnpm verify`/文档检查和 v1 路径守卫，并完成 Codex review。
+- **VI 中文文档**：通过。规格和长期文档叙述主体均为中文。
 
-**设计后复核**：通过。设计没有新增依赖、字段、collection、通用地址系统或迁移；六片各自只有一个可独立验证的目标。CMS 事务与 BE 适配分开后，运行时 PR 人工 diff 预计均低于 400 行；规划 PR 的全套规格文件若超过 400 行，在 PR 说明列明其交叉引用关系并保持低于 800 行。
+**设计后复核**：通过。没有新增依赖、字段、collection、端点、状态或迁移。PR0R 必须一次同步全套已合并规格，否则 `spec.md`、契约与可执行 `tasks.md` 会互相矛盾；预计人工 diff 超过 400 但低于 800 行，在 PR 说明记录这一不可拆原因。PR1 预计低于 400 行。
 
 ## PR 拆分计划
 
 | PR | 单一目标 / 核心不变量 | 主要路径 | 独立验证 | 依赖 |
 |----|----------------------|----------|----------|------|
-| PR0 | 固定 #156 行为、契约与后续小切片，不改运行时 | `specs/013-kith-inn-address-confirmation/**` | requirements checklist、speckit analyze、`git diff --check` | 无 |
-| PR1 | 任一确认入口都不能让空地址草稿进入经营口径 | `apps/cms/src/lib/orderLifecycle.ts`、CMS 原子测试、BE order service/route/agent、对应长期文档 | CMS 真实 PG 零副作用；BE route 与口头确认返回“先补地址”；`pnpm verify` | PR0 |
-| PR2 | CMS 一次补地址原子更新目标订单快照和顾客默认地址，且通用 PATCH 不能绕过 | CMS lifecycle/address route/通用 order route/真实 PG 测试、Payload 注释、数据/技术文档 | 成功、回滚、租户、并发、同值重试、route 边界与 address 旁路拒绝；`pnpm verify` | PR1 |
-| PR3 | BE 只按既定契约暴露 seller-authenticated 补地址 API，通用 PATCH 使用字段白名单 | BE CMS client/order service/order route 与测试 | JWT/body/响应/错误映射及 address 旁路拒绝；`pnpm verify` | PR2 |
-| PR4 | 订单页在原订单上下文完成 P1 补地址闭环，并展示可操作错误 | FE orders page/logic/service、产品文档 | 缺地址识别、端点、保存/刷新/再确认及错误文案测试；`pnpm verify` | PR3 |
-| PR5 | 订单录入确认卡准确标出所有将形成缺地址草稿的候选，并完成最终验收 | shared reconciliation row、BE preview、FE `ChatCard`/纯函数、最终长期文档与 quickstart | 新客、既有顾客、既有订单地址三类 preview 与 FE 展示测试；完整 quickstart、`pnpm verify` | PR4 |
+| PR0R | 用桃子的真实操作纠正 #156 全套规格，确保没有人执行“缺地址禁止确认” | `specs/013-kith-inn-address-confirmation/**` | requirements checklist、speckit analyze、`git diff --check` | 已合并 #174 |
+| PR1 | 用回归测试和长期文档锁定“地址选填、保存一次后续带出、历史快照不变” | `apps/cms/tests/order-atomicity.test.ts`、`apps/cms/tests/order-reconciliation.test.ts`、`apps/kith-inn-be/src/routes/chat.test.ts`、`docs/kith-inn/**` | 真实 PG 定向测试、BE test、`pnpm verify`、v1 guard | PR0R |
 
 ## Project Structure
 
@@ -61,41 +57,19 @@ specs/013-kith-inn-address-confirmation/
 ├── research.md
 ├── data-model.md
 ├── quickstart.md
-├── contracts/
-│   └── address-confirmation.md
-├── checklists/
-│   └── requirements.md
+├── contracts/address-confirmation.md
+├── checklists/requirements.md
 └── tasks.md
 ```
 
 ### Source Code (repository root)
 
 ```text
-apps/cms/
-├── src/lib/orderLifecycle.ts
-├── src/app/api/internal/orders/[id]/
-│   ├── confirm/route.ts
-│   └── address/route.ts
-└── tests/order-atomicity.test.ts
+apps/cms/tests/
+├── order-atomicity.test.ts
+└── order-reconciliation.test.ts
 
-apps/kith-inn-be/src/
-├── domain/orders/service.ts
-├── lib/cms/orders.ts
-├── routes/orders.ts
-└── agent/services.ts
-
-apps/kith-inn-fe/src/
-├── components/ChatCard.tsx
-├── logic/orderConfirmView.ts
-├── logic/ordersLifecycle.ts
-├── pages/orders/index.tsx
-└── services/api.ts
-
-packages/kith-inn-shared/src/
-├── schemas.ts
-└── types.ts
-
-packages/kith-inn-payload/src/payload/collections/Orders.ts
+apps/kith-inn-be/src/routes/chat.test.ts
 
 docs/kith-inn/
 ├── PRD.md
@@ -104,8 +78,8 @@ docs/kith-inn/
 └── TECH-SPEC.md
 ```
 
-**结构决策**: 最终一致性守卫与双实体写入留在唯一持有 PostgreSQL 事务的 CMS；BE 只映射稳定错误、暴露 seller-authenticated 路由；shared 只增加确认卡需要的兼容展示字段；FE 用现有订单页和确认卡，不新增页面或状态框架。
+**结构决策**: 生产代码已经满足更正后的业务，不为“证明存在”改动它；只在持有真实事务的 CMS 测试中补跨订单证据，在现有 BE route 测试中守住地址可空输入，并纠正长期文档。
 
 ## Complexity Tracking
 
-无宪法例外。专用补地址端点是同时维护订单快照和顾客默认地址所需的最小事务边界；通用订单 PATCH 或前端连续调用两个端点都无法保证原子性。
+无宪法例外或新增复杂度。删除错误方案比实现补地址端点、状态和多层适配更符合 Brownfield 与最小切片原则。
