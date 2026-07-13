@@ -5,6 +5,17 @@ export const dynamic = "force-dynamic";
 
 type CustomerDoc = { id: string | number; address?: string };
 
+const UPDATABLE_ORDER_FIELDS = ["paymentStatus", "paymentMethod", "paidAt", "date", "occasion", "note"] as const;
+
+function selectOrderUpdateData(body: unknown) {
+  const source = Object(body) as Record<string, unknown>;
+  const data: Record<string, unknown> = {};
+  for (const field of UPDATABLE_ORDER_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) data[field] = source[field];
+  }
+  return data;
+}
+
 /** Flatten Payload's depth population into the OrderDetail shape be consumes. */
 function normalize(
   order: { id: string | number; date?: string; occasion?: string; status?: string; address?: string; customer?: CustomerDoc | string | number },
@@ -47,17 +58,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 }
 
 /**
- * `PATCH /api/internal/orders/:id` — apply simple field updates (status/payment/
- * date/note) from be. find-then-update to enforce seller scoping (404 if the
- * order isn't this seller's). be guarantees `status` only changes via the
- * lifecycle (confirm/cancel), never a direct FE PATCH.
+ * `PATCH /api/internal/orders/:id` — apply ordinary payment/date/occasion/note
+ * updates from be. Snapshot, ownership, lifecycle, and unknown fields never
+ * reach Payload. find-then-update enforces seller scoping (404 if the order
+ * isn't this seller's).
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const scope = await operatorScope(req);
   if (scope instanceof NextResponse) return scope;
   const { sellerId, payload } = scope;
   const { id } = await params;
-  const data = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const body = await req.json().catch(() => ({}));
+  const data = selectOrderUpdateData(body);
+  if (Object.keys(data).length === 0) return NextResponse.json({ error: "no updatable fields" }, { status: 400 });
   const updated = await withTransaction(payload, async (payloadReq) => {
     await lockOrderReconciliationWrites(payload, payloadReq);
     const existing = await payload.find({

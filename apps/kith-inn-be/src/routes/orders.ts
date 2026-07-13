@@ -15,6 +15,17 @@ import type { OrderCms } from "../domain/orders/service";
 import { OrderStateError, cancelOrder, confirmOrder, recordDraft } from "../domain/orders/service";
 import { sellerAuth, type AppVars } from "../middleware/sellerAuth";
 
+const UPDATABLE_ORDER_FIELDS = ["paymentStatus", "paymentMethod", "paidAt", "date", "occasion", "note"] as const satisfies readonly (keyof OrderUpdatePatch)[];
+
+function selectOrderUpdatePatch(body: unknown): OrderUpdatePatch {
+  const source = Object(body) as Record<string, unknown>;
+  const patch: Record<string, unknown> = {};
+  for (const field of UPDATABLE_ORDER_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(source, field)) patch[field] = source[field];
+  }
+  return patch as OrderUpdatePatch;
+}
+
 /**
  * Real cms surface = the imported client functions directly (their optional
  * `deps` param is happily dropped — they default to global fetch). No wrapper
@@ -94,12 +105,11 @@ export function orderRoutes(jwtSecret: string, deps: OrderRoutesDeps = { cms: re
     }
   });
 
-  /** Payment / date / note only — `status` is stripped (it only changes via the
-   *  confirm/cancel lifecycle, never a direct FE PATCH). `delete` is allowed
-   *  because `status` is optional on OrderUpdatePatch. */
+  /** Ordinary payment/date/occasion/note fields only. Snapshot, ownership,
+   *  lifecycle, and unknown fields never cross the CMS boundary. */
   app.patch("/:id", async (c) => {
-    const patch = { ...((await c.req.json().catch(() => ({}))) as OrderUpdatePatch) };
-    delete patch.status;
+    const body = await c.req.json().catch(() => ({}));
+    const patch = selectOrderUpdatePatch(body);
     if (Object.keys(patch).length === 0) return c.json({ error: "no updatable fields" }, 400);
     try {
       const order = await deps.cms.updateOrder(c.get("token") as string, c.req.param("id"), patch);

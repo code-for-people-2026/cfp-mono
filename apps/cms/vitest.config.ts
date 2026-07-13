@@ -1,18 +1,15 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
-// apps/cms is a thin Payload host: its only test is the postgres schema-isolation
-// probe (tests/spike-coexistence.test.ts), which boots the assembled Payload and
-// is excluded from line coverage. The tenant-isolation logic that needs 100%
-// coverage lives in @cfp/kith-inn-payload, not here — mirroring apps/website,
-// this host ships no enforceable logic of its own.
+// CMS combines real-Postgres integration suites with a colocated route boundary
+// regression. Payload schema initialization must remain serialized across them.
 export default defineConfig({
   test: {
     environment: "node",
     // Real-Postgres suites boot the same Payload schema; drizzle push must not
     // race another file's onInit/index reconciliation.
     fileParallelism: false,
-    include: ["tests/**/*.test.ts"],
+    include: ["tests/**/*.test.ts", "src/app/api/internal/orders/[id]/route.test.ts"],
   },
   resolve: {
     alias: {
