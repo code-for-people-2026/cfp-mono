@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test -c playwright.config.ts && pnpm test:e2e:mainline",
+    "test:e2e:mainline": "playwright test -c playwright.mainline.config.ts"
   },
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",

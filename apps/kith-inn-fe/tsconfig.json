@@ -9,5 +9,5 @@
       "@/*": ["./src/*"]
     }
   },
-  "include": ["src", "config", "tests", "types", "playwright.config.ts"]
+  "include": ["src", "config", "tests", "types", "playwright.config.ts", "playwright.mainline.config.ts"]
 }

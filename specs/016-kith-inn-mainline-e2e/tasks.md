@@ -41,12 +41,14 @@
 
 **Independent Test**: 运行 `test:e2e:mainline`，从项目级 reset/seed 开始，由 H5 完成登录、粘贴含午晚餐的固定接龙、确认 preview 和确认订单；support API 只读断言每个业务坐标唯一、draft 前无经营副作用、confirm 后 slot/fulfillment 一致。
 
-- [ ] T010 [P] [US1] 在 `apps/kith-inn-fe/tests/e2e/fixtures/fixed-llm-server.ts` 实现测试专用 DeepSeek-compatible 固定 HTTP 服务，只返回场景 contract 允许的 tool call，未知输入明确失败
-- [ ] T011 [P] [US1] 在 `apps/kith-inn-fe/tests/e2e/fixtures/mainline.ts` 实现日期冻结、API 登录/只读查询、响应断言、订单聚合唯一性与服务日志路径 helper，不直接代替 H5 业务动作
-- [ ] T012 [US1] 在 `apps/kith-inn-fe/playwright.mainline.config.ts` 编排本地 `pnpm db:up`（CI 复用 service）、kith-inn safe reset/seed、fixed LLM、CMS 3306、BE 3311 与 H5 10087，并隔离 mainline report/results/logs
-- [ ] T013 [US1] 在 `apps/kith-inn-fe/package.json` 增加 `test:e2e:mainline`，让既有 `test:e2e` 串行执行 #185 快速 config 与 PostgreSQL mainline config，不新增 Playwright 版本
-- [ ] T014 [US1] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 实现 `E2E-ORDER-001`：H5 dev-login、完整午晚接龙、preview 断言、确认草稿/订单、数据库前后差异与 order/item/slot/fulfillment 唯一性
-- [ ] T015 [US1] 最小扩展 `.github/workflows/ci.yml` 的旧 kith-inn changed-path trigger 以覆盖 orders/customers/fulfillments/service-slots/chat/orderLifecycle；运行 mainline happy path 两次、workflow 等价 dry-run、`pnpm verify` 与 `git diff --check`
+- [x] T010 [P] [US1] 在 `apps/kith-inn-fe/tests/e2e/fixtures/fixed-llm-server.ts` 实现测试专用 DeepSeek-compatible 固定 HTTP 服务，只返回场景 contract 允许的 tool call，未知输入明确失败
+- [x] T011 [P] [US1] 在 `apps/kith-inn-fe/tests/e2e/fixtures/mainline.ts` 实现日期冻结、API 登录/只读查询、响应断言、订单聚合唯一性与服务日志路径 helper，不直接代替 H5 业务动作
+- [x] T012 [US1] 在 `apps/kith-inn-fe/playwright.mainline.config.ts` 编排本地 `pnpm db:up`（CI 复用 service）、kith-inn safe reset/seed、fixed LLM、CMS 3306、BE 3311 与 H5 10087，并隔离 mainline report/results/logs
+- [x] T013 [US1] 在 `apps/kith-inn-fe/package.json` 增加 `test:e2e:mainline`，让既有 `test:e2e` 串行执行 #185 快速 config 与 PostgreSQL mainline config，不新增 Playwright 版本
+- [x] T014 [US1] 在 `apps/kith-inn-fe/tests/e2e/mainline.spec.ts` 实现 `E2E-ORDER-001`：H5 dev-login、完整午晚接龙、preview 断言、确认草稿/订单、数据库前后差异与 order/item/slot/fulfillment 唯一性
+- [x] T015 [US1] 最小扩展 `.github/workflows/ci.yml` 的旧 kith-inn changed-path trigger 以覆盖 orders/customers/fulfillments/service-slots/chat/orderLifecycle；运行 mainline happy path 两次、workflow 等价 dry-run、`pnpm verify` 与 `git diff --check`
+
+**PR3 验证记录（2026-07-13）**：PostgreSQL mainline happy path 独立重置连续通过，旧 SQLite E2E 与 mainline 串行通过；affected dry-run 仅选中 `@cfp/kith-inn-fe#test:e2e`，`pnpm verify` 与 `git diff --check` 通过；人工 diff 为 275 insertions / 8 deletions。
 
 ## Phase 4：User Story 3 - 失败、地址与幂等（PR4，P1）
 
