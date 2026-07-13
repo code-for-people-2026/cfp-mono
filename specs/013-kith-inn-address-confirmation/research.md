@@ -8,6 +8,8 @@
 - `createDraftAtomic` 同样在订单创建时复制顾客地址，顾客无地址时仍可创建 draft。
 - `confirmOrderAtomic` 没有地址前置条件；缺地址 draft 可正常打开餐次、创建 fulfillment 并转为 confirmed。
 - 送餐派生逻辑把空地址归入“（无地址）”，不会过滤订单或 fulfillment。
+- BE 通用 `PATCH /orders/:id` 运行时只删除 `status`，CMS 通用 PATCH 又把 body 原样传给 Payload，因此客户端仍可用 `{address: ...}` 改写订单快照。
+- Agent system prompt 仍要求新顾客“填好地址”再确认，会把选填字段说成事实上的必填项。
 - `customers.address` 和 `orders.address` 都已经是可空自由文本，无需 schema、migration 或新 collection。
 - 当前真实行为缺少两条集中回归证据：缺地址 draft 的完整确认，以及首次保存地址后下一次独立下单自动带出。
 
@@ -35,11 +37,11 @@
 
 **Alternatives considered**: 过滤无地址任务会漏单；追溯回填会改写历史。
 
-## 决策 4：不新增生产能力，只补证据和文档
+## 决策 4：只修两个现有边界缺口
 
-**Decision**: 删除原方案中的确认守卫、补地址 API、通用 PATCH 收紧、待补状态和地址补全 UI；保留现有运行时，新增最小真实 PG 回归测试并纠正 PRD/User Stories/Tech Spec/Data Model。
+**Decision**: BE 与 CMS 的通用订单 PATCH 都改为普通字段白名单，禁止 address/status/customer/seller/未知字段；Agent prompt 明确地址选填。删除原方案中的确认守卫、补地址 API、待补状态和地址补全 UI，其余运行时保持不变，并新增最小真实 PG 回归测试与长期文档。
 
-**Rationale**: 当前代码已经实现正确业务。额外生产改动没有用户价值，反而制造新故障面。
+**Rationale**: 快照旁路会真实破坏历史不变量，prompt 会直接误导用户，必须修；两处都可在现有边界内用极小改动完成。其余生产改动没有用户价值。
 
 ## 未采用的新能力
 
