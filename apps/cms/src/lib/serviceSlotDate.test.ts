@@ -9,5 +9,7 @@ describe("normalizeServiceSlotDate", () => {
 
   it("rejects invalid values", () => {
     expect(() => normalizeServiceSlotDate("not-a-date")).toThrow(TypeError);
+    expect(() => normalizeServiceSlotDate(null)).toThrow(TypeError);
+    expect(() => normalizeServiceSlotDate(0)).toThrow(TypeError);
   });
 });
