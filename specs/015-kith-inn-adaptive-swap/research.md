@@ -12,19 +12,25 @@
 - **Rationale**: 只有资格条件属于不能违反的业务约束，避重是可放宽偏好；因此存在一个合格候选就应成功。
 - **Alternatives rejected**: 把同餐主料继续做硬约束会破坏“仅一个候选仍可换”的验收。
 
-## 决策 3：历史范围覆盖最近窗口与完整自然周
+## 决策 3：所有自动换菜前门共享历史语义
 
-- **Decision**: 路由查询 `min(target-7d, weekMonday)` 至 `weekSunday` 的 menu plans，按 plan ID 排除当前 plan，再传给纯内核；近 7 日只计 target 前 1–7 日，同周则可计目标周内其他日期。
-- **Rationale**: 一个范围同时完整支持四级规则；既有 CMS list 已 seller-scoped，无需新端点或 schema。
-- **Alternatives rejected**: 只查过去 7 日会漏掉同周未来已排菜单；把当前 plan 留在历史会重复计算当前餐。
+- **Decision**: menu route、chat `swapDish` 与 `previewSwap` 都查询 `min(target-7d, weekMonday)` 至 `weekSunday` 的 menu plans，按 plan ID 排除当前 plan，再传给纯内核；chat preview 把胜出 replacement 固化到确认参数。
+- **Rationale**: 一个范围同时完整支持四级规则；两个产品前门不会因调用路径不同给出不同结果；既有 CMS list 已 seller-scoped。
+- **Alternatives rejected**: 只改 route 会让 chat 绕过历史；只查过去 7 日会漏掉同周未来已排菜单；确认时重新自动选择会因随机或历史变化偏离确认卡。
 
-## 决策 4：解释是响应中的瞬时值
+## 决策 4：用位置标识保证只替换一个 occurrence
 
-- **Decision**: 自动换菜成功总是返回有序 `relaxedRules`（可为空）；FE 把它映射成中文并在对应餐卡显示，本值不落 CMS。
+- **Decision**: API 接受可选零起始 `dishIndex`；提供时校验该位置的 ID，省略时兼容地选择第一个匹配项。领域成功结果返回 `targetIndex`，route/agent 复制 offerings 后只写该下标。
+- **Rationale**: `menu_plans.offerings` 是无唯一约束的 hasMany，现有数据和指定换菜都可能产生重复 ID，单靠 `dishId` 无法表达点击位置。
+- **Alternatives rejected**: 新增 DB/schema 唯一约束超出范围且数组元素唯一无法直接由现有索引保证；禁止指定重复会改变“用户选择优先”。
+
+## 决策 5：解释是响应中的瞬时值并在边界做 runtime 校验
+
+- **Decision**: 自动换菜成功总是返回有序 `relaxedRules`（可为空）；H5 先用 shared success schema 解析响应，再映射中文并在对应餐卡显示；chat 确认卡消费同一规则集合；本值不落 CMS。
 - **Rationale**: 解释描述的是一次选择过程，持久化后会与后续换菜失配；页面可见提示满足“不静默放宽”。
-- **Alternatives rejected**: 只写日志用户不可见；只用通用 toast 无法说明具体放宽；持久化需要无必要的数据迁移与生命周期设计。
+- **Alternatives rejected**: TypeScript 类型断言不能防后端回归或版本错配；只写日志用户不可见；持久化需要无必要的数据迁移与生命周期设计。
 
-## 决策 5：最小 H5 E2E 独立成片
+## 决策 6：最小 H5 E2E 独立成片
 
 - **Decision**: 为非 v1 FE 增加最小 Playwright config 和单一菜单换菜场景，复用现有 kith-inn seed、dev-login、CMS/BE/H5 webServer 模式与仓库 Playwright 版本。
 - **Rationale**: #163 明确要求 H5 验收，且该设施可由 #157 继续扩展；独立 PR 避免领域/UI diff 超 review 预算。
