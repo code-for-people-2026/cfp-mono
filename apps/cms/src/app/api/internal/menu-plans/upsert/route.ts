@@ -23,14 +23,17 @@ export async function POST(req: Request) {
 
   const docs = [];
   for (const p of inputs) {
-    const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: p.date } }];
+    // Payload normalizes date query operands to ISO timestamps. Persist the same
+    // representation so SQLite's text comparison matches Postgres semantics.
+    const slotDate = new Date(`${p.date}T00:00:00.000Z`).toISOString();
+    const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: slotDate } }];
     if (p.occasion) clauses.push({ occasion: { equals: p.occasion } });
     const slotRes = await payload.find({ collection: "service_slots", where: { and: clauses }, limit: 1, overrideAccess: true });
     let slotId = (slotRes.docs[0] as { id: string | number } | undefined)?.id;
     if (!slotId) {
       const created = await payload.create({
         collection: "service_slots",
-        data: { date: p.date, occasion: p.occasion, granularity: "occasion", status: "draft", seller: sellerId },
+        data: { date: slotDate, occasion: p.occasion, granularity: "occasion", status: "draft", seller: sellerId },
         overrideAccess: true,
       });
       slotId = created.id;
