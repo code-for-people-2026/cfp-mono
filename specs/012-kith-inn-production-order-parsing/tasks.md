@@ -13,7 +13,7 @@
 | PR 1（#166） | 可信解析 | T001–T016 |
 | PR 2（#168） | 快照对账核心与既有生产链路 | T017–T025 |
 | PR 3（#171） | 增量对账核心 | T026–T028 |
-| PR 4 | 增量生产确认链路 | T029–T030 |
+| PR 4（#172） | 增量生产确认链路 | T029–T030 |
 | PR 5 | 长期文档与最终验收 | T031–T034 |
 
 - [x] T001 核对 `specs/012-kith-inn-production-order-parsing/plan.md` 的 PR 切分，并记录 `apps/kith-inn-be/package.json`、`apps/cms/package.json`、`apps/kith-inn-fe/package.json` 的现有验证命令
@@ -106,10 +106,10 @@
 
 **Purpose**: 同步长期产品/架构事实，在 PR 5 完成 #155 的全部门禁。
 
-- [ ] T031 [P] 在 `docs/kith-inn/PRD.md` 与 `docs/kith-inn/USER-STORIES.md` 写明完整接龙覆盖范围内全部订单且不区分录入方式、自然语言 add/set 语义和确认卡运算展示
-- [ ] T032 [P] 在 `docs/kith-inn/DATA-MODEL.md` 与 `docs/kith-inn/TECH-SPEC.md` 更新 reconcile 事务、陈旧 fingerprint、confirmed 更新/退出和不新增持久化 snapshot 的事实
-- [ ] T033 运行 `specs/012-kith-inn-production-order-parsing/quickstart.md` 全部相关测试、`pnpm verify` 与真实 PostgreSQL 故障/并发场景，修复所有回归
-- [ ] T034 检查 `git diff --check`、确认无 `kith-inn-v1` 文件变化、勾选 `specs/012-kith-inn-production-order-parsing/tasks.md`，在 PR 说明记录五个 PR 的验收映射并在 PR 5 关闭 #155
+- [x] T031 [P] 在 `docs/kith-inn/PRD.md` 与 `docs/kith-inn/USER-STORIES.md` 写明完整接龙覆盖范围内全部订单且不区分录入方式、自然语言 add/set 语义和确认卡运算展示
+- [x] T032 [P] 在 `docs/kith-inn/DATA-MODEL.md` 与 `docs/kith-inn/TECH-SPEC.md` 更新 reconcile 事务、陈旧 fingerprint、confirmed 更新/退出和不新增持久化 snapshot 的事实
+- [x] T033 运行 `specs/012-kith-inn-production-order-parsing/quickstart.md` 全部相关测试、`pnpm verify` 与真实 PostgreSQL 故障/并发场景，修复所有回归
+- [x] T034 检查 `git diff --check`、确认无 `kith-inn-v1` 文件变化、勾选 `specs/012-kith-inn-production-order-parsing/tasks.md`，在 PR 说明记录五个 PR 的验收映射并在 PR 5 关闭 #155
 
 ---
 

@@ -116,7 +116,7 @@ docs/kith-inn/
 - BE 预览唯一业务坐标的 add/set 运算；CMS 在现有 reconcile 事务内计算最终数量。
 - 覆盖 PostgreSQL 幂等、陈旧预览和不同 operation key 并发，不接 Agent、聊天入口或 FE。
 
-### PR 4：生产确认链路
+### PR 4：生产确认链路（已合并 #172）
 
 - Agent、聊天确认和 FE 接入增量预览与落库，展示“当前 + 增加量 → 最终”或 set 目标。
 

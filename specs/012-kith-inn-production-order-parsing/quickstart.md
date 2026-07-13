@@ -18,7 +18,7 @@ pnpm verify
 
 预期：生产 `record_orders` 与 eval 调同一解析入口；真实样本四字段准确率 ≥95%、午晚错配 0；模型输出异常和日期风险样本 fail closed；全仓门禁通过。
 
-### 真实模型评测记录（2026-07-12）
+### 真实模型评测记录（2026-07-13）
 
 ```bash
 pnpm --filter @cfp/kith-inn-be eval:parse
@@ -30,7 +30,7 @@ pnpm --filter @cfp/kith-inn-be eval:parse
 - 四字段准确率：100.0%
 - 午/晚错配：0
 - issue mismatch：0
-- 总耗时：28,040ms
+- 总耗时：25,295ms
 - 结果：M1 acceptance MET
 
 密钥由本地 gitignored `.env` 注入，未写入命令、日志或仓库。
