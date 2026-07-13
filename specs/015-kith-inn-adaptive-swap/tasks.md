@@ -63,10 +63,12 @@
 
 **Independent Test**: Playwright 准备有菜单的餐次并把目标分类收缩为唯一冲突候选，页面点击换菜后同时验证菜名、顺序与提示。
 
-- [ ] T020 [P] [US2] 在 `apps/kith-inn-fe/package.json`、`playwright.config.ts` 建立最小 H5 E2E 命令与 CMS kith-inn seed→BE→H5 webServer 编排，只声明仓库 lockfile 已有的 Playwright 版本
-- [ ] T021 [US2] 在 `apps/kith-inn-fe/tests/e2e/menu-swap.spec.ts` 实现 dev-login、菜单准备、活跃同类池收缩、点击换菜、单位置变化及中文放宽提示断言
-- [ ] T022 [US2] 验证 `turbo --affected` 会运行新 suite；仅在证据表明不会运行时，最小更新 `.github/workflows/ci.yml` 的 kith-inn E2E filter，不并入 #157 的 PostgreSQL/跨租户场景
-- [ ] T023 [US2] 运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e`、`pnpm verify`、`git diff --check`，记录耗时和失败 trace 路径
+- [x] T020 [P] [US2] 在 `apps/kith-inn-fe/package.json`、`playwright.config.ts` 建立最小 H5 E2E 命令与 CMS kith-inn seed→BE→H5 webServer 编排，只声明仓库 lockfile 已有的 Playwright 版本
+- [x] T021 [US2] 在 `apps/kith-inn-fe/tests/e2e/menu-swap.spec.ts` 实现 dev-login、菜单准备、活跃同类池收缩、点击换菜、单位置变化及中文放宽提示断言
+- [x] T022 [US2] 验证 `turbo --affected` 会运行新 suite；仅在证据表明不会运行时，最小更新 `.github/workflows/ci.yml` 的 kith-inn E2E filter，不并入 #157 的 PostgreSQL/跨租户场景
+- [x] T023 [US2] 运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e`、`pnpm verify`、`git diff --check`，记录耗时和失败 trace 路径
+
+**PR5 验证记录**：H5 E2E 1/1 通过（16.0s）；`turbo run test:e2e --affected --dry=json` 包含 `@cfp/kith-inn-fe#test:e2e`，无需修改 CI；失败 trace 保留在 `apps/kith-inn-fe/test-results/**/trace.zip`。
 
 ## Dependencies & Execution Order
 

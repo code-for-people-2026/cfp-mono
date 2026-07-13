@@ -12,7 +12,8 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",
@@ -35,6 +36,7 @@
     "@babel/preset-react": "^7.29.7",
     "@cfp/eslint-config": "workspace:*",
     "@cfp/typescript-config": "workspace:*",
+    "@playwright/test": "^1.57.0",
     "@pmmmwh/react-refresh-webpack-plugin": "^0.6.2",
     "@tailwindcss/postcss": "^4.1.18",
     "@tarojs/cli": "4.2.0",
