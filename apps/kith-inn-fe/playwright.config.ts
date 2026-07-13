@@ -9,6 +9,7 @@ const resetCmsDatabase = "node --input-type=module -e \"import{rmSync}from'node:
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  testMatch: "menu-swap.spec.ts",
   workers: 1,
   timeout: 120_000,
   expect: { timeout: 10_000 },

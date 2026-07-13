@@ -64,10 +64,16 @@ jobs:
             apps/cms/payload.config.ts \
             apps/cms/seed/run.ts \
             apps/cms/src/app/api/health/route.ts \
+            apps/cms/src/app/api/internal/chat_messages \
+            apps/cms/src/app/api/internal/customers \
+            apps/cms/src/app/api/internal/fulfillments \
             apps/cms/src/app/api/internal/menu-plans \
             apps/cms/src/app/api/internal/offerings \
             apps/cms/src/app/api/internal/operator-by-openid \
+            apps/cms/src/app/api/internal/orders \
+            apps/cms/src/app/api/internal/service-slots \
             apps/cms/src/lib/internal.ts \
+            apps/cms/src/lib/orderLifecycle.ts \
             apps/cms/src/lib/serviceSlotDate.ts \
             apps/kith-inn-be \
             packages/kith-inn-payload; then
