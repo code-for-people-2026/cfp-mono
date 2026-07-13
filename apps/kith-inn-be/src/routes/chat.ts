@@ -224,7 +224,11 @@ export async function dispatchPendingOp(
       return `排好了：\n${lines.join("\n")}`;
     }
     case "swap_dish": {
-      const r = await services.swapDish(Number(a.planId), Number(a.dishId), a.replacementId !== undefined ? Number(a.replacementId) : undefined, a.force === true);
+      const replacementId = a.replacementId === undefined ? undefined : Number(a.replacementId);
+      const force = a.force === true;
+      const r = a.dishIndex === undefined
+        ? await services.swapDish(Number(a.planId), Number(a.dishId), replacementId, force)
+        : await services.swapDish(Number(a.planId), Number(a.dishId), replacementId, force, Number(a.dishIndex));
       if (!r.ok) return `换菜失败：${r.error}`;
       return `已换好。`;
     }

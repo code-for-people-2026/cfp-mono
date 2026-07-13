@@ -231,8 +231,17 @@ export const menuPlanViewSchema = z.object({
 /** POST /menu/plans/:id/swap 请求体（force 仅改 published plan 时需）。 */
 export const swapRequestSchema = z.object({
   dishId: id,
+  dishIndex: z.number().int().nonnegative().optional(),
   replacementId: id.optional(),
   force: z.boolean().optional(),
+});
+export const autoSwapSuccessResponseSchema = z.object({
+  plan: menuPlanViewSchema,
+  relaxedRules: z.array(relaxedRuleSchema),
+});
+export const specifiedSwapSuccessResponseSchema = z.object({
+  plan: menuPlanViewSchema,
+  warning: z.string().optional(),
 });
 
 // ── delivery contract (promoted from be domain/delivery/derivations.ts + fe logic/deliveryView.ts) ──

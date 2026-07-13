@@ -14,6 +14,7 @@ import type { z } from "zod";
 import type {
   addressGapSchema,
   addressGroupSchema,
+  autoSwapSuccessResponseSchema,
   cardPayloadSchema,
   chatMessageSchema,
   confirmCustomerItemSchema,
@@ -42,6 +43,7 @@ import type {
   relaxedRuleSchema,
   serviceSlotSchema,
   sellerSchema,
+  specifiedSwapSuccessResponseSchema,
   swapRequestSchema,
   weekMenuSchema,
 } from "./schemas";
@@ -92,6 +94,10 @@ export type WeekMenu = z.infer<typeof weekMenuSchema>;
 export type MenuPlanView = z.infer<typeof menuPlanViewSchema>;
 /** 换菜请求（feature 003）。 */
 export type SwapRequest = z.infer<typeof swapRequestSchema>;
+/** 自动换菜成功响应；relaxedRules 即使为空也必须存在。 */
+export type AutoSwapSuccessResponse = z.infer<typeof autoSwapSuccessResponseSchema>;
+/** 指定换菜成功响应；保持既有可选 warning 契约。 */
+export type SpecifiedSwapSuccessResponse = z.infer<typeof specifiedSwapSuccessResponseSchema>;
 /** 自动换菜实际放宽的规则，顺序遵循固定四级冲突优先级。 */
 export type RelaxedRule = z.infer<typeof relaxedRuleSchema>;
 

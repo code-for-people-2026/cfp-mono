@@ -45,7 +45,7 @@ const mockServices = (over: Partial<AgentServices> = {}): AgentServices => ({
   createOffering: over.createOffering ?? vi.fn(async () => ({ id: 1, name: "test" })),
   previewOrder: over.previewOrder ?? vi.fn(async () => ({ displayName: "王燕萍", quantity: 1, occasion: "lunch" })),
   previewMenuTargets: over.previewMenuTargets ?? vi.fn(async () => ({ ok: true as const, lines: ["午餐：菜1、菜2"], plannedItems: [{ date: "2026-07-08", occasion: "lunch" as const, offerings: [1, 2] }] })),
-  previewSwap: over.previewSwap ?? vi.fn(async () => ({ ok: true as const, oldName: "旧菜", newName: "新菜", replacementId: 9 })),
+  previewSwap: over.previewSwap ?? vi.fn(async () => ({ ok: true as const, oldName: "旧菜", newName: "新菜", replacementId: 9, targetIndex: 0 })),
   previewPublish: over.previewPublish ?? vi.fn(async () => ({ ok: true as const, publishText: "#接龙 test" })),
   operatorId: 1,
 });
@@ -105,6 +105,25 @@ describe("runAgent", () => {
     const out = await runAgent({ userText: "x", history: [], services: mockServices(), deps: { chat } });
     // Every write op gates behind a confirm card now — known-only included.
     expect(out.card?.type).toBe("operation-confirm");
+  });
+
+  it("swap_dish freezes the automatic preview replacement and explains relaxed rules", async () => {
+    const chat = scriptedChat([
+      { content: null, toolCalls: [{ id: "c1", name: "swap_dish", args: { planId: 50, dishId: 1 } }] },
+      { content: "请确认换菜。", toolCalls: [] },
+    ]);
+    const s = mockServices({
+      previewSwap: vi.fn(async () => ({
+        ok: true as const, oldName: "牛腩", newName: "鱼排", replacementId: 3, targetIndex: 2,
+        relaxedRules: ["same-week-offering" as const, "recent-main-ingredient" as const],
+      })),
+    });
+
+    const out = await runAgent({ userText: "把牛腩换掉", history: [], services: s, deps: { chat } });
+
+    expect(s.swapDish).not.toHaveBeenCalled();
+    expect(out.card).toMatchObject({ data: { args: { planId: 50, dishId: 1, dishIndex: 2, replacementId: 3 } } });
+    expect((out.card as { data: { summary: string } }).data.summary).toContain("菜品池较小，本次允许");
   });
 
   it("forces record_orders to receive the user's exact turn instead of model-rewritten text", async () => {

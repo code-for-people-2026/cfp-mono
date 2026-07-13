@@ -164,6 +164,50 @@ describe("POST /menu/generate", () => {
 });
 
 describe("POST /menu/plans/:id/swap", () => {
+  it("uses the target history range, excludes the current plan, and returns empty relaxedRules", async () => {
+    const clean = dish("m4", "meat", "猪");
+    const staleCurrent = fullPlan({ offerings: [clean] });
+    const conflict = fullPlan({ id: 502, offerings: [dish("m3", "meat", "鱼")] });
+    const listMenuPlans = vi.fn(async () => [staleCurrent, conflict]);
+    const patchMenuPlan = vi.fn(async (_jwt: string, _id, patch) => fullPlan({ offerings: (patch.offerings ?? []).map((id: string | number) => feasible().find((item) => String(item.id) === String(id))!) }));
+    const pool = [...fullPlan().offerings as Offering[], dish("m3", "meat", "鱼"), clean];
+    const app = menuRoutes(SECRET, mockDeps({ findOfferings: vi.fn(async () => pool), listMenuPlans, patchMenuPlan }));
+
+    const res = await app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "m1" }) });
+
+    expect(res.status).toBe(200);
+    expect(listMenuPlans).toHaveBeenCalledWith(token, { from: "2026-07-01", to: "2026-07-12" });
+    const body = (await res.json()) as { relaxedRules: unknown[]; plan: { dishes: Array<{ id: string | number }> } };
+    expect(body.relaxedRules).toEqual([]);
+    expect(body.plan.dishes[0]?.id).toBe("m4");
+  });
+
+  it("excludes inactive candidates and returns all relaxed rules in priority order", async () => {
+    const onlyActive = dish("m3", "meat", "鱼");
+    const inactive = { ...dish("m4", "meat", "猪"), active: false } as Offering;
+    const history = fullPlan({ id: 502, offerings: [onlyActive] });
+    (history.slot as { date: string }).date = "2026-07-07";
+    const app = menuRoutes(SECRET, mockDeps({
+      findOfferings: vi.fn(async () => [dish("m1", "meat", "牛"), dish("m2", "meat", "鸡"), onlyActive, inactive]),
+      listMenuPlans: vi.fn(async () => [history]),
+    }));
+
+    const body = await (await app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "m1" }) })).json();
+    expect(body).toMatchObject({ relaxedRules: ["same-week-offering", "recent-offering", "recent-main-ingredient"] });
+  });
+
+  it("uses dishIndex to patch only one duplicate offering and rejects a mismatched position", async () => {
+    const duplicate = fullPlan({ offerings: [dish("m1", "meat", "牛"), dish("m2", "meat", "鸡"), dish("m1", "meat", "牛")] });
+    const patchMenuPlan = vi.fn(async (_jwt: string, _id, patch) => ({ ...duplicate, ...patch }) as MenuPlan);
+    const app = menuRoutes(SECRET, mockDeps({ getMenuPlan: vi.fn(async () => duplicate), patchMenuPlan }));
+    const request = (dishIndex: number) => app.request("/plans/501/swap", { method: "POST", headers: auth(), body: JSON.stringify({ dishId: "m1", dishIndex, replacementId: "m3" }) });
+
+    expect((await request(1)).status).toBe(400);
+    expect((await request(2)).status).toBe(200);
+    expect(patchMenuPlan).toHaveBeenCalledOnce();
+    expect(patchMenuPlan).toHaveBeenCalledWith(token, "501", { offerings: ["m1", "m2", "m3"] });
+  });
+
   it("auto-swaps a dish (draft) and patches offerings", async () => {
     const patchMenuPlan = vi.fn(async (_jwt: string, _id, patch) => ({ ...fullPlan(), offerings: [], ...patch }) as MenuPlan);
     const app = menuRoutes(SECRET, mockDeps({ patchMenuPlan }));

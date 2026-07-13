@@ -29,6 +29,8 @@ import {
   serviceSlotSchema,
   sellerSchema,
   swapRequestSchema,
+  autoSwapSuccessResponseSchema,
+  specifiedSwapSuccessResponseSchema,
   weekMenuSchema,
 } from "./schemas";
 
@@ -196,11 +198,21 @@ describe("menu plan view + swap contract (feature 003)", () => {
     expect(() => menuPlanViewSchema.parse({ planId: 1, date: "x", occasion: "breakfast", status: "draft", dishes: [] })).toThrow();
   });
 
-  it("swapRequestSchema requires dishId, optional replacementId/force, strips extras", () => {
+  it("swapRequestSchema accepts an optional non-negative integer dishIndex", () => {
     expect(swapRequestSchema.parse({ dishId: 12 })).toEqual({ dishId: 12 });
-    expect(swapRequestSchema.parse({ dishId: 12, replacementId: 19, force: true })).toEqual({ dishId: 12, replacementId: 19, force: true });
+    expect(swapRequestSchema.parse({ dishId: 12, dishIndex: 0, replacementId: 19, force: true })).toEqual({ dishId: 12, dishIndex: 0, replacementId: 19, force: true });
+    expect(() => swapRequestSchema.parse({ dishId: 12, dishIndex: -1 })).toThrow();
+    expect(() => swapRequestSchema.parse({ dishId: 12, dishIndex: 1.5 })).toThrow();
     expect(() => swapRequestSchema.parse({ replacementId: 19 } as Record<string, unknown>)).toThrow();
     expect(swapRequestSchema.parse({ dishId: 12, junk: 9 } as Record<string, unknown>)).toEqual({ dishId: 12 });
+  });
+
+  it("runtime-validates distinct automatic and specified swap success responses", () => {
+    const plan = { planId: 501, date: "2026-07-08", occasion: "lunch", status: "draft", dishes: [] };
+    expect(autoSwapSuccessResponseSchema.parse({ plan, relaxedRules: [] })).toEqual({ plan, relaxedRules: [] });
+    expect(specifiedSwapSuccessResponseSchema.parse({ plan, warning: "会和近期主料重复，仍要换吗？" })).toEqual({ plan, warning: "会和近期主料重复，仍要换吗？" });
+    expect(() => autoSwapSuccessResponseSchema.parse({ plan })).toThrow();
+    expect(() => autoSwapSuccessResponseSchema.parse({ plan, relaxedRules: ["unknown-rule"] })).toThrow();
   });
 
   it("relaxedRuleSchema keeps the four conflict rules in priority order", () => {
