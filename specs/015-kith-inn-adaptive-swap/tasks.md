@@ -68,7 +68,7 @@
 - [x] T022 [US2] 验证 `turbo --affected` 会运行新 suite；仅在证据表明不会运行时，最小更新 `.github/workflows/ci.yml` 的 kith-inn E2E filter，不并入 #157 的 PostgreSQL/跨租户场景
 - [x] T023 [US2] 运行 `CI=1 pnpm --filter @cfp/kith-inn-fe test:e2e`、`pnpm verify`、`git diff --check`，记录耗时和失败 trace 路径
 
-**PR5 验证记录**：H5 E2E 1/1 通过（16.0s）；`turbo run test:e2e --affected --dry=json` 包含 `@cfp/kith-inn-fe#test:e2e`，无需修改 CI；失败 trace 保留在 `apps/kith-inn-fe/test-results/**/trace.zip`。
+**PR5 验证记录**：H5 E2E 1/1 通过（16.0s）；`turbo run test:e2e --affected --dry=json` 包含 `@cfp/kith-inn-fe#test:e2e`；CI 显式设置 `TURBO_SCM_BASE=origin/main`，避免 merge ref 缺少本地 `main` 时误跑全仓 E2E；失败 trace 保留在 `apps/kith-inn-fe/test-results/**/trace.zip`。
 
 ## Dependencies & Execution Order
 

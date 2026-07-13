@@ -55,6 +55,8 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Run affected E2E
+        env:
+          TURBO_SCM_BASE: origin/main
         run: |
           v1_filter=()
           if ! git diff --quiet origin/main...HEAD -- \
