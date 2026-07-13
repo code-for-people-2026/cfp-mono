@@ -26,6 +26,7 @@ draft + address present --确认--> confirmed + fulfillment
 
 - 创建 draft 时可以从空 customer 默认地址得到空快照。
 - 补地址只允许目标 order 为 draft 且当前快照缺失；它不改变 status、slot、fulfillment、付款或明细。
+- `orders.address` 只能经专用补全事务从缺失变为非空；BE/CMS 通用订单 PATCH 均不得接受 address 或其他生命周期/租户字段。
 - 快照补齐后，同值请求是幂等读取；不同值请求返回 `address-present`，不把补全端点变成通用改地址入口。
 - confirm 只读取 order 快照；即使 customer 默认地址已存在，也不静默替代空快照。
 - canceled/confirmed order 不由补全端点修改；历史 confirmed 缺地址数据不迁移。

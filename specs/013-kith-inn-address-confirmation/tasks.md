@@ -10,8 +10,8 @@
 |----|-------------------|----------|----------|------|
 | PR0 | 固定完整规格与小 PR 边界，不改运行时 | T001–T002 | checklist、speckit analyze、diff check | 无 |
 | PR1 | 缺地址确认在所有入口失败且经营数据零变化 | T003–T009 | CMS 真实 PG、BE service/route/Agent、`pnpm verify` | PR0 |
-| PR2 | CMS 原子补地址同时更新目标订单和顾客默认地址 | T010–T014 | CMS domain/route、成功/回滚/租户/并发、`pnpm verify` | PR1 |
-| PR3 | BE 按既定契约暴露补地址 API，不承载第二套写逻辑 | T015–T019 | CMS client、order service/route 契约、`pnpm verify` | PR2 |
+| PR2 | CMS 原子补地址同时更新目标订单和顾客默认地址，并关闭通用 PATCH 旁路 | T010–T014 | CMS domain/route、成功/回滚/租户/并发/旁路、`pnpm verify` | PR1 |
+| PR3 | BE 按既定契约暴露补地址 API，并用字段白名单关闭公共 PATCH 旁路 | T015–T019 | CMS client、order service/route 契约与旁路测试、`pnpm verify` | PR2 |
 | PR4 | 订单页在原订单上下文补齐地址，完成 P1 用户闭环 | T020–T025 | FE logic/API、保存/刷新/再确认文案、`pnpm verify` | PR3 |
 | PR5 | 订单录入确认卡准确标记缺地址候选并最终验收 | T026–T033 | shared/BE preview/FE 卡片、完整 quickstart、`pnpm verify` | PR4 |
 
@@ -68,12 +68,12 @@
 ### PR2 Tests：CMS 原子补地址
 
 - [ ] T010 [P] [US2] 在 `apps/cms/tests/order-atomicity.test.ts` 增加双实体成功且 status 不变、另一历史订单不变、customer/order 故障回滚、空白/租户/状态/同值与异值重试、受控 completion/confirm 并发测试
-- [ ] T011 [P] [US2] 在 `apps/cms/src/app/api/internal/orders/[id]/address/route.test.ts` 增加 body 校验、operator seller 隔离、成功响应和四类稳定错误映射的 route 边界测试
+- [ ] T011 [P] [US2] 在 `apps/cms/src/app/api/internal/orders/[id]/address/route.test.ts` 与 `apps/cms/src/app/api/internal/orders/[id]/route.test.ts` 增加 address body/错误映射，以及通用 PATCH 拒绝 address/status/customer/seller/未知字段且不改快照的边界测试
 
 ### PR2 Implementation：CMS 原子补地址
 
 - [ ] T012 [US2] 在 `apps/cms/src/lib/orderLifecycle.ts` 实现 `completeOrderAddressAtomic`：复用现有写锁和事务，只把缺失 draft 快照补为非空并同步关联 customer，支持同值幂等
-- [ ] T013 [US2] 在 `apps/cms/src/app/api/internal/orders/[id]/address/route.ts` 暴露 seller-scoped PATCH 契约并映射 `invalid-address`、`not-found`、`not-draft`、`address-present`
+- [ ] T013 [US2] 在 `apps/cms/src/app/api/internal/orders/[id]/address/route.ts` 暴露 seller-scoped PATCH 契约，并在 `apps/cms/src/app/api/internal/orders/[id]/route.ts` 把通用 PATCH 收紧为普通字段白名单、仅禁用字段返回 400
 - [ ] T014 [US2] 在 `packages/kith-inn-payload/src/payload/collections/Orders.ts`、`docs/kith-inn/DATA-MODEL.md` 与 `docs/kith-inn/TECH-SPEC.md` 收窄快照注释并记录 CMS 原子补全事实，按 `quickstart.md` 跑 PR2 检查
 
 **Checkpoint（PR2）**: CMS 内部数据边界完整可用；尚未暴露 BE/FE 入口。
@@ -81,12 +81,12 @@
 ### PR3 Tests：BE 补地址契约
 
 - [ ] T015 [P] [US2] 在 `apps/kith-inn-be/src/lib/cms/orders.test.ts` 增加 `PATCH /api/internal/orders/:id/address` 的 JWT/body/响应与稳定错误码契约测试
-- [ ] T016 [P] [US2] 在 `apps/kith-inn-be/src/domain/orders/service.test.ts` 与 `apps/kith-inn-be/src/routes/orders.test.ts` 增加 trim、参数校验、成功及 `not-draft`/`address-present`/未知失败映射测试
+- [ ] T016 [P] [US2] 在 `apps/kith-inn-be/src/domain/orders/service.test.ts` 与 `apps/kith-inn-be/src/routes/orders.test.ts` 增加补全参数/错误映射，以及通用 PATCH 不透传 address/status/customer/seller/未知字段、仅禁用字段返回 400 的测试
 
 ### PR3 Implementation：BE 补地址契约
 
 - [ ] T017 [US2] 在 `apps/kith-inn-be/src/lib/cms/orders.ts` 增加 address completion 请求/响应类型与薄 CMS client
-- [ ] T018 [US2] 在 `apps/kith-inn-be/src/domain/orders/service.ts` 与 `apps/kith-inn-be/src/routes/orders.ts` 增加薄 service/route，不扩张通用订单 PATCH 或重做 CMS 生命周期判断
+- [ ] T018 [US2] 在 `apps/kith-inn-be/src/domain/orders/service.ts` 与 `apps/kith-inn-be/src/routes/orders.ts` 增加薄补全 service/route，并把通用订单 PATCH 改为既定普通字段白名单，不重做 CMS 生命周期判断
 - [ ] T019 [US2] 在 `docs/kith-inn/TECH-SPEC.md` 同步 BE→CMS 契约，按 `specs/013-kith-inn-address-confirmation/quickstart.md` 运行 BE 与全仓检查
 
 **Checkpoint（PR3）**: seller-authenticated 补地址 API 可独立调用，所有一致性仍由 PR2 CMS 事务保证。

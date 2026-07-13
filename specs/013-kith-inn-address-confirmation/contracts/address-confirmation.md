@@ -60,6 +60,8 @@ Headers：`x-kith-inn-operator: <operator-jwt>`、`Content-Type: application/jso
 
 `alreadyCompleted` 可省略或为 false；相同地址直接重试时为 true。服务端先 trim，再把同一值原子写入目标 order 快照和 customer 默认地址。
 
+既有 BE `PATCH /orders/{id}` 与 CMS `PATCH /api/internal/orders/{id}` 只接受既定普通字段白名单（付款、日期、餐次、备注）；不得接受 `address`、`status`、`customer`、`seller` 等快照、生命周期或归属字段。请求仅含禁用/未知字段时返回 `400 no updatable fields`，混合请求也不得把禁用字段传给 Payload。
+
 错误：
 
 - `400 invalid-address`：body 缺失、非字符串或 trim 后为空。
@@ -84,3 +86,4 @@ Headers：`x-kith-inn-operator: <operator-jwt>`、`Content-Type: application/jso
 - 补全写 customer 失败或写 order 失败时整体回滚。
 - completion 与 confirm 并发时，confirm 要么先因缺地址失败，要么在补全提交后成功；禁止 confirmed+空地址。
 - 其他既有订单地址快照始终不在补全事务的写集合中。
+- 通用订单 PATCH 的 BE 与 CMS 测试必须证明 `{address: ...}` 无法改变空或非空快照。

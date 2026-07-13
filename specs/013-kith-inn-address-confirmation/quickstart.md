@@ -29,6 +29,7 @@ pnpm verify
 2. 在 customer/order 任一步注入失败，两处均保持旧值。
 3. 相同地址重复请求返回既有结果；不同地址、非 draft、空白输入和跨 seller id 均失败关闭。
 4. 用一个受控并发请求同时执行补地址与确认；无论执行顺序如何，最终都不出现 confirmed+空地址或重复 fulfillment。
+5. 直接调用 CMS 通用订单 PATCH 发送 `{address: "旁路"}`，请求被拒绝且订单快照不变。
 
 ## PR3：BE 补地址适配
 
@@ -37,7 +38,7 @@ pnpm --filter @cfp/kith-inn-be test
 pnpm verify
 ```
 
-验证 operator JWT、trim 后 body、CMS 响应透传，以及 `invalid-address`、`not-found`、`not-draft`、`address-present` 和未知失败的稳定映射；BE 不自行连续写 customer/order。
+验证 operator JWT、trim 后 body、CMS 响应透传，以及 `invalid-address`、`not-found`、`not-draft`、`address-present` 和未知失败的稳定映射；BE 不自行连续写 customer/order，通用订单 PATCH 也不会把 `address` 等禁用字段透传给 CMS。
 
 ## PR4：订单页闭环
 
@@ -64,7 +65,7 @@ pnpm verify
 ```bash
 pnpm verify
 git diff --check
-git diff --name-only | rg 'kith-inn-v1|kiv1' && exit 1 || true
+git diff --name-only origin/main...HEAD | rg 'kith-inn-v1|kiv1' && exit 1 || true
 ```
 
 预期全仓门禁通过、无 v1 文件变化，并逐项核对 [spec.md](./spec.md) 的 SC-001–SC-006。
