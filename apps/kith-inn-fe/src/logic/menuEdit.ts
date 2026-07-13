@@ -38,6 +38,15 @@ export function formatRelaxedRules(rules: RelaxedRule[]): string | undefined {
   return reasons.length > 0 ? `菜品池较小，本次允许：${reasons.join("、")}` : undefined;
 }
 
+/** Plan 被重新加载或生成后，之前自动换菜产生的临时提示不再属于当前版本。 */
+export function clearSwapNoticesForPlans(
+  notices: Readonly<Record<string, string>>,
+  plans: MenuPlanView[],
+): Record<string, string> {
+  const replacedPlanIds = new Set(plans.map((plan) => String(plan.planId)));
+  return Object.fromEntries(Object.entries(notices).filter(([planId]) => !replacedPlanIds.has(planId)));
+}
+
 /** Split one day's plans into 午餐 / 晚餐 (either may be absent). */
 export function plansByOccasion(plans: MenuPlanView[]): { lunch?: MenuPlanView; dinner?: MenuPlanView } {
   const out: { lunch?: MenuPlanView; dinner?: MenuPlanView } = {};
