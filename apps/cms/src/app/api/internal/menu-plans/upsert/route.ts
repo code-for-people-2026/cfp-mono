@@ -1,6 +1,7 @@
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
 import { operatorScope, ownedBy } from "@/lib/internal";
+import { normalizeServiceSlotDate } from "@/lib/serviceSlotDate";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   for (const p of inputs) {
     // Payload normalizes date query operands to ISO timestamps. Persist the same
     // representation so SQLite's text comparison matches Postgres semantics.
-    const slotDate = new Date(`${p.date}T00:00:00.000Z`).toISOString();
+    const slotDate = normalizeServiceSlotDate(p.date);
     const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: slotDate } }];
     if (p.occasion) clauses.push({ occasion: { equals: p.occasion } });
     const slotRes = await payload.find({ collection: "service_slots", where: { and: clauses }, limit: 1, overrideAccess: true });

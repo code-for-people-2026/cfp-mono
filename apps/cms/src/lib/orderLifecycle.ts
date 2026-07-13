@@ -2,6 +2,7 @@ import type { Fulfillment, Order, OrderItem, OrderReconciliationRequest, OrderRe
 import { fingerprintActiveOrders, type ActiveOrderFingerprintInput } from "@cfp/kith-inn-shared/orderReconciliation";
 import type { BasePayload, PayloadRequest, Where } from "payload";
 import { lockOrderReconciliationWrites, ownedBy, withTransaction } from "./internal";
+import { normalizeServiceSlotDate } from "./serviceSlotDate";
 
 export type DraftItem = { offering: string | number; quantity: number; unitPriceCents?: number; note?: string };
 export type DraftBody = {
@@ -40,7 +41,7 @@ const scopedOrder = async (payload: BasePayload, sellerId: string | number, id: 
 const slotWhere = (sellerId: string | number, order: OrderDoc): Where => ({
   and: [
     { seller: { equals: sellerId } },
-    { date: { equals: order.date } },
+    { date: { equals: normalizeServiceSlotDate(order.date) } },
     { occasion: { equals: order.occasion } },
   ],
 });
@@ -154,7 +155,7 @@ export async function confirmOrderAtomic(payload: BasePayload, sellerId: string 
         : await payload.update({ collection: "service_slots", id: found.id, data: { status: "open" }, overrideAccess: true, req })
       : await payload.create({
           collection: "service_slots",
-          data: { date: order.date, occasion: order.occasion, granularity: "occasion", status: "open", seller: sellerId },
+          data: { date: normalizeServiceSlotDate(order.date), occasion: order.occasion, granularity: "occasion", status: "open", seller: sellerId },
           overrideAccess: true,
           req,
         });

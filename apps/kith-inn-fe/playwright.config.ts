@@ -18,8 +18,8 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: `${resetCmsDatabase} && pnpm --dir ../cms seed:kith-inn && pnpm --dir ../cms dev`,
-      url: "http://127.0.0.1:3304/api/health",
+      command: `${resetCmsDatabase} && pnpm --dir ../cms seed:kith-inn && pnpm --dir ../cms exec next dev -p 3305`,
+      url: "http://127.0.0.1:3305/api/health",
       reuseExistingServer,
       timeout: 120_000,
       env: {
@@ -40,7 +40,7 @@ export default defineConfig({
       timeout: 60_000,
       env: {
         ...sharedEnv,
-        CMS_BASE_URL: "http://127.0.0.1:3304",
+        CMS_BASE_URL: "http://127.0.0.1:3305",
         BE_PORT: "3310",
       },
     },

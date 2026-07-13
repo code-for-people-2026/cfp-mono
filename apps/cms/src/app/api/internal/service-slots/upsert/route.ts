@@ -1,6 +1,7 @@
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
 import { operatorScope } from "@/lib/internal";
+import { normalizeServiceSlotDate } from "@/lib/serviceSlotDate";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,8 @@ export async function POST(req: Request) {
 
   const result = [];
   for (const s of inputs) {
-    const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: s.date } }];
+    const slotDate = normalizeServiceSlotDate(s.date);
+    const clauses: Where[] = [{ seller: { equals: sellerId } }, { date: { equals: slotDate } }];
     if (s.occasion) clauses.push({ occasion: { equals: s.occasion } });
     const key = { and: clauses };
     const found = (await payload.find({ collection: "service_slots", where: key, overrideAccess: true })).docs[0] as
@@ -38,7 +40,7 @@ export async function POST(req: Request) {
       result.push(
         await payload.create({
           collection: "service_slots",
-          data: { date: s.date, occasion: s.occasion, granularity: s.granularity, status: "open", seller: sellerId },
+          data: { date: slotDate, occasion: s.occasion, granularity: s.granularity, status: "open", seller: sellerId },
           overrideAccess: true,
         }),
       );
