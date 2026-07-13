@@ -110,7 +110,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ### 3.3 快照 / 派生 / 归档
 
-- **快照**（`beforeChange` create 时定格）：`order_items.unitPriceCents`、`orders.address`。fulfillment 不重复存地址，只通过 `order.address` 展示/排序；不拆 `addrBuilding/addrUnit`。
+- **快照**（create 时定格）：`order_items.unitPriceCents`、`orders.address`。新订单复制顾客当时的选填默认地址；没有地址则快照为空，仍可确认并创建 fulfillment。顾客默认地址后续变化不回写旧订单。fulfillment 不重复存地址，只通过 `order.address` 展示/排序；无地址项进入兜底组，不拆 `addrBuilding/addrUnit`。
 - **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：地址相似度排序、"最近一餐"聚焦、未付汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/未付/未送，`slot.status=open` 才进"今天该做"范围)。采购聚合后置，`offerings.recipe` 可预留但 M1 不启用。
 - **归档软删**：`service_slots.status=archived` 时，其下 order/item/fulfillment 写操作经 access.update + hook 拦截，要求显式 `force`（对应二次确认）；不真删；保护范围含 menu_plans。**archived→open 的 force 守卫下沉到 cms 侧 service_slots beforeChange hook**（status 从 archived 转 open 必须带 force 否则拒绝），让确认/菜单发布/订阅物化/未来工具所有写路径统一被挡，不靠 be 各调用点自觉。
 - **写侧状态机（确定性 hook/服务，可单测）**：
@@ -177,7 +177,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
   - 展示的对话（她能滚动看到的）：**滚动 2 天窗口**（今天+昨天，每天 0 点清前天）+ **硬上限 1000 条（超出删最旧 200）**；带时间戳；到顶提示"更早已清理"。（数字暂定，试用期调。）
   - LLM 工作上下文（喂模型的，≠ 展示历史）：只喂**最近 ~3–5 轮（≈ 6–10 条）** + **token 预算**截断（大段接龙、旧工具返回裁掉/概括）；**事实即时调工具重查**、不靠旧上下文；不喂整 2 天——省 token、浅环、防陈旧上下文带偏。
   - 业务数据（真记忆）：在库里、永久；**历史问题 = agent 调工具查数据**，不是翻聊天。
-- **地址补全**：订单结构化时按"接龙名字 → 顾客默认/最近地址"带出（PRD §6.4）；新名字无地址 → 提示补录。
+- **地址选填与带出**：订单结构化时按“接龙名字 → 顾客当前默认地址”带出（PRD §6.4）；新名字的地址输入框选填，可留空直接确认。填写一次后保存到顾客并供后续新订单复制；一直不填也不阻断订单或履约。
 - **订单解析与确认边界**：主 agent 不生成可信结构化 items，只把原始输入交给 `record_orders`；工具内唯一解析实现忽略菜单正文，严格校验日期、周几、餐次、顾客和正整数份数。snapshot 确认卡展示新增/更新/退出/不变，increment 展示`当前 + 增量 → 最终`或`当前 → 目标`；确认前零业务写入。
 - **100% 覆盖策略**：**工具**是确定性纯函数、直接单测到 100%；**agent 编排**用 **mock 掉 LLM + 脚本化工具序列** 测路由/兜底/挡回；端到端行为用 **e2e / eval** 兜（不强求 agent 的随机输出进 100% 行覆盖，靠覆盖排除 + e2e）。
 

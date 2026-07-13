@@ -48,7 +48,7 @@ sellers
 - `orders` 按 `(seller, customer, date, occasion)` 形成 active 业务唯一坐标；`canceled` 历史单不占坑。
 - `order_items` 不承载午/晚，只表达这餐买了什么和多少。
 - `fulfillment` 挂 `order`；地址从 `order.address` 读取，不在 fulfillment 里重复存。
-- 地址是订单快照 string，不拆楼栋/单元/房号。
+- 顾客默认地址和订单地址快照都是选填 string，不拆楼栋/单元/房号；没有地址不阻断订单生命周期。
 
 ## 3. 主干实体
 
@@ -84,7 +84,7 @@ sellers
 | 字段 | 业务意义 |
 |---|---|
 | `displayName` | 接龙里的称呼；不唯一，MVP 靠名字归一 + 人工合并 |
-| `address?` | 默认送餐地址 string |
+| `address?` | 选填的默认送餐地址 string；保存后供未来新订单自动带出 |
 | `defaultServings?` | 默认份数 |
 | `defaultOccasion?` | 默认餐次 |
 | `note?` | 轻备注；不做忌口/喜好/二次加热系统 |
@@ -137,7 +137,7 @@ sellers
 | `status` | draft / confirmed / canceled |
 | `source` | chat-paste / chat-voice / manual / subscription / import |
 | `placedAt` | 录入时间 |
-| `address?` | 本单地址 string 快照 |
+| `address?` | 选填的本单地址 string 快照；创建时复制顾客当时的默认地址，没有则留空 |
 | `totalCents` | 派生总价 |
 | `paymentStatus` | unpaid / paid / reconciled |
 | `paymentMethod?` / `paidAt?` | 手动收款记录 |
@@ -145,6 +145,8 @@ sellers
 | `createdBy?` | 操作者 |
 
 active 业务唯一坐标：`(seller, customer, date, occasion)`。再次粘贴同一天同餐时更新已有 draft/confirmed order，不新增重复 order；canceled 历史单不阻止重下。
+
+顾客默认地址只服务未来新订单：默认地址改变后，旧 `order.address` 保持创建时的值，新订单复制新值。顾客始终没有默认地址时，订单快照可一直为空，确认和履约照常进行；送餐视图将其归入“无地址”兜底组。
 
 ### `order_items`
 

@@ -45,9 +45,9 @@
 
 **Independent Test**: 真实 PG 中以无地址顾客创建 draft 并确认，得到 confirmed order 与唯一 fulfillment；BE 接龙确认接受空白/缺省地址。
 
-- [ ] T008 [P] [US1] 在 `apps/cms/tests/order-atomicity.test.ts` 增加无地址 customer→draft→confirmed+fulfillment 的真实 PostgreSQL 回归测试
-- [ ] T009 [P] [US1] 在 `apps/kith-inn-be/src/routes/chat.test.ts` 扩充新顾客地址缺省与纯空白场景，证明 reconciliation 正常执行且不产生必填错误
-- [ ] T010 [P] [US1] 在 `apps/kith-inn-be/src/agent/run.ts` 与 `run.test.ts` 把新顾客提示改为地址选填并继续引导点击确认卡
+- [x] T008 [P] [US1] 在 `apps/cms/tests/order-atomicity.test.ts` 增加无地址 customer→draft→confirmed+fulfillment 的真实 PostgreSQL 回归测试
+- [x] T009 [P] [US1] 在 `apps/kith-inn-be/src/routes/chat.test.ts` 扩充新顾客地址缺省与纯空白场景，证明 reconciliation 正常执行且不产生必填错误
+- [x] T010 [P] [US1] 在 `apps/kith-inn-be/src/agent/run.ts` 与 `run.test.ts` 把新顾客提示改为地址选填并继续引导点击确认卡
 
 **Checkpoint（US1）**: 地址缺失不会阻断从接龙确认到送餐任务的主链路。
 
@@ -59,7 +59,7 @@
 
 **Independent Test**: 第一次 reconciliation 创建带地址顾客和订单；第二次用同一顾客 id、新日期且不传地址，新订单仍复制默认地址。
 
-- [ ] T011 [US2] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加跨两次 reconciliation 的默认地址自动带出测试，并覆盖始终无默认地址时后续订单仍可为空
+- [x] T011 [US2] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加跨两次 reconciliation 的默认地址自动带出测试，并覆盖始终无默认地址时后续订单仍可为空
 
 **Checkpoint（US2）**: “填一次、以后自动带出”和“永远不填也能继续”都有真实数据库证据。
 
@@ -71,7 +71,7 @@
 
 **Independent Test**: 已有订单创建后更新 customer 默认地址，再创建新订单；前者保持原值，后者使用新值。
 
-- [ ] T012 [US3] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加 customer 地址变化后旧快照不变、后续新订单使用新值的测试
+- [x] T012 [US3] 在 `apps/cms/tests/order-reconciliation.test.ts` 增加 customer 地址变化后旧快照不变、后续新订单使用新值的测试
 
 **Checkpoint（US3）**: 默认资料与订单历史的时间语义由测试锁定。
 
@@ -79,8 +79,8 @@
 
 ## Phase 6：长期事实与最终验收（PR2）
 
-- [ ] T013 在 `docs/kith-inn/PRD.md`、`USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md` 与 `prototype/index.html` 删除地址必填/待补阻断描述，写明选填、未来订单自动带出和无地址兜底
-- [ ] T014 执行 `specs/013-kith-inn-address-confirmation/quickstart.md`、`pnpm verify`、diff/v1 检查，核对 SC-001–SC-005 并完成 #156
+- [x] T013 在 `docs/kith-inn/PRD.md`、`USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md` 与 `prototype/index.html` 删除地址必填/待补阻断描述，写明选填、未来订单自动带出和无地址兜底
+- [x] T014 执行 `specs/013-kith-inn-address-confirmation/quickstart.md`、`pnpm verify`、diff/v1 检查，核对 SC-001–SC-005 并完成 #156
 
 **Checkpoint（PR2）**: review 无新 comments、checks 全绿并 rebase merge 后关闭 #156，开始 #164。
 

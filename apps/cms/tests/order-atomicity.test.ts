@@ -185,6 +185,26 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     expect(slots.docs).toHaveLength(1);
   });
 
+  it("confirms an addressless customer's draft and creates one fulfillment", async () => {
+    const addresslessCustomer = await payload.create({
+      collection: "customers",
+      data: { displayName: `无地址顾客 ${suffix}`, seller: sellerId },
+      overrideAccess: true,
+    });
+    const created = await createDraftAtomic(payload, sellerId, operatorId, {
+      ...draft("2026-08-09"),
+      customer: addresslessCustomer.id,
+    });
+    expect(created.order.address ?? null).toBeNull();
+
+    await confirmOrderAtomic(payload, sellerId, created.order.id);
+
+    const state = await orderState(created.order.id);
+    expect(state.order).toMatchObject({ status: "confirmed" });
+    expect(state.order.address ?? null).toBeNull();
+    expect(state.fulfillments).toEqual([expect.objectContaining({ status: "pending" })]);
+  });
+
   it("rejects an archived slot without changing the draft", async () => {
     const created = await createDraftAtomic(payload, sellerId, operatorId, draft("2026-08-05"));
     await payload.create({

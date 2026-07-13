@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatResult } from "../lib/llm/chatWithTools";
 import type { AgentServices } from "./tools";
-import { runAgent, trimContext } from "./run";
+import { AGENT_SYSTEM_PROMPT, runAgent, trimContext } from "./run";
 
 /** A scripted chat mock: returns each ChatResult in sequence, then a bare text. */
 const scriptedChat = (responses: ChatResult[]) => {
@@ -68,7 +68,7 @@ describe("runAgent", () => {
   it("record_orders confirm card flags new customers for address entry (#126 US1)", async () => {
     const chat = scriptedChat([
       { content: null, toolCalls: [{ id: "c1", name: "record_orders", args: { rawText: "7月7日晚餐，加大龙猫1份" } }] },
-      { content: "新顾客大龙猫，点下面确认填地址哦。", toolCalls: [] },
+      { content: "新顾客大龙猫，地址选填，点下面确认哦。", toolCalls: [] },
     ]);
     const s = mockServices({
       parseOrders: vi.fn(async () => ({
@@ -85,7 +85,10 @@ describe("runAgent", () => {
       })),
     });
     const out = await runAgent({ userText: "接龙", history: [], services: s, deps: { chat } });
-    expect(out.reply).toBe("新顾客大龙猫，点下面确认填地址哦。");
+    expect(out.reply).toBe("新顾客大龙猫，地址选填，点下面确认哦。");
+    expect(AGENT_SYSTEM_PROMPT).toContain("地址输入框是选填");
+    expect(AGENT_SYSTEM_PROMPT).toContain("不填地址直接点卡片里的「确认」");
+    expect(AGENT_SYSTEM_PROMPT).not.toContain("填好地址");
     // Merged card carries immutable candidates; FE renders an address input for newCustomer.
     expect(out.card?.type).toBe("operation-confirm");
     const data = (out.card as { data: { toolName: string; args: Record<string, unknown> } }).data;

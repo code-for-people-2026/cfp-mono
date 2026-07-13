@@ -57,6 +57,14 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     customer, date, occasion: "lunch" as const, quantity, offering: offeringId, unitPriceCents: 3000, totalCents: quantity * 3000,
   });
 
+  const emptyScopeRequest = (targetDate: string, candidates: OrderReconciliationRequest["candidates"]): OrderReconciliationRequest => ({
+    mode: "snapshot",
+    operationKey: crypto.randomUUID(),
+    scope: [{ date: targetDate, occasion: "lunch" }],
+    expectedFingerprint: fingerprintActiveOrders([]),
+    candidates,
+  });
+
   const incrementRequest = async (targetDate: string, customer: string | number, quantity: number, operation: "add" | "set", operationKey = crypto.randomUUID()): Promise<OrderReconciliationRequest> => ({
     mode: "increment",
     operation,
@@ -280,6 +288,76 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
     expect(createdCustomers.docs[0]?.address).toBe("26B");
     expect(createdOrders.docs).toHaveLength(2);
     expect(createdOrders.docs.map((order) => order.address)).toEqual(["26B", "26B"]);
+  });
+
+  it("copies a saved new-customer address into a later independent order", async () => {
+    const customerName = `跨次地址${suffix}`;
+    const firstDate = "2026-09-26";
+    const secondDate = "2026-09-27";
+    const first = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(firstDate, [
+      { newCustomer: { displayName: customerName, address: "3A-2701" }, date: firstDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+    const matched = await payload.find({
+      collection: "customers",
+      where: { and: [{ seller: { equals: sellerId } }, { displayName: { equals: customerName } }] },
+      limit: 1,
+      overrideAccess: true,
+    });
+    const customer = matched.docs[0]!;
+    const second = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(secondDate, [
+      { customer: customer.id, date: secondDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+
+    const firstOrder = await payload.findByID({ collection: "orders", id: first.created[0]!.orderId, overrideAccess: true });
+    const secondOrder = await payload.findByID({ collection: "orders", id: second.created[0]!.orderId, overrideAccess: true });
+    expect(customer.address).toBe("3A-2701");
+    expect([firstOrder.address, secondOrder.address]).toEqual(["3A-2701", "3A-2701"]);
+  });
+
+  it("keeps later independent orders addressless when no default was saved", async () => {
+    const customerName = `始终无地址${suffix}`;
+    const firstDate = "2026-09-28";
+    const secondDate = "2026-09-29";
+    const first = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(firstDate, [
+      { newCustomer: { displayName: customerName }, date: firstDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+    const matched = await payload.find({
+      collection: "customers",
+      where: { and: [{ seller: { equals: sellerId } }, { displayName: { equals: customerName } }] },
+      limit: 1,
+      overrideAccess: true,
+    });
+    const customer = matched.docs[0]!;
+    const second = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(secondDate, [
+      { customer: customer.id, date: secondDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+
+    const firstOrder = await payload.findByID({ collection: "orders", id: first.created[0]!.orderId, overrideAccess: true });
+    const secondOrder = await payload.findByID({ collection: "orders", id: second.created[0]!.orderId, overrideAccess: true });
+    expect(customer.address ?? null).toBeNull();
+    expect([firstOrder.address ?? null, secondOrder.address ?? null]).toEqual([null, null]);
+  });
+
+  it("keeps an old order snapshot when the customer default address changes", async () => {
+    const firstDate = "2026-09-30";
+    const secondDate = "2026-10-01";
+    const customer = await payload.create({
+      collection: "customers",
+      data: { displayName: `搬家顾客${suffix}`, address: "旧址 1A", seller: sellerId },
+      overrideAccess: true,
+    });
+    const first = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(firstDate, [
+      { customer: customer.id, date: firstDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+    await payload.update({ collection: "customers", id: customer.id, data: { address: "新址 2B" }, overrideAccess: true });
+    const oldOrder = await payload.findByID({ collection: "orders", id: first.created[0]!.orderId, overrideAccess: true });
+    const second = await reconcileOrdersAtomic(payload, sellerId, operatorId, emptyScopeRequest(secondDate, [
+      { customer: customer.id, date: secondDate, occasion: "lunch", quantity: 1, offering: offeringId, unitPriceCents: 3000, totalCents: 3000 },
+    ]));
+    const newOrder = await payload.findByID({ collection: "orders", id: second.created[0]!.orderId, overrideAccess: true });
+
+    expect(oldOrder.address).toBe("旧址 1A");
+    expect(newOrder.address).toBe("新址 2B");
   });
 
   it("rejects a new-customer preview when that normalized name now exists", async () => {
