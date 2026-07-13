@@ -27,11 +27,13 @@
 
 **Independent Test**: 在本地/CI PostgreSQL 中创建 seller A/B 同类资源与 v1 sentinel，通过真实旧 kith-inn internal route handler/CMS client 执行读写和跨租户尝试；A 只见 A、B 零变化，kith reset 前后 v1 sentinel 完全一致。
 
-- [ ] T005 [P] [US4] 在 `apps/cms/tests/helpers/kithInnMainline.ts` 建立要求 PostgreSQL 的 Payload 生命周期、双 seller/operator/resource fixture、清理与稳定业务标识 helper，缺 PostgreSQL 时明确 skip/fail 规则
-- [ ] T006 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 先写真实 customers/orders/reconcile/confirm/menu-plans/fulfillments/service-slots 读写的 seller A happy-path 集成断言
-- [ ] T007 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 增加 seller A 对 seller B 的读取、update、bulk ids 与跨 seller relationship 攻击矩阵，断言拒绝/空结果及 B 零变化
-- [ ] T008 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 调用 `apps/cms/seed/run.ts` 的项目级 reset/seed 真实逻辑，以 `kiv1_*` sentinel 断言 id、内容、数量及访问变化均为零
-- [ ] T009 [US4] 运行 `apps/cms/tests/kith-inn-mainline-integration.test.ts`、既有 `apps/cms/tests/seed-run.test.ts`、`pnpm verify` 与 `git diff --check`，记录 PR2 PostgreSQL 命令和人工 diff
+- [x] T005 [P] [US4] 在 `apps/cms/tests/helpers/kithInnMainline.ts` 建立要求 PostgreSQL 的 Payload 生命周期、双 seller/operator/resource fixture、清理与稳定业务标识 helper，缺 PostgreSQL 时明确 skip/fail 规则
+- [x] T006 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 先写真实 customers/orders/reconcile/confirm/menu-plans/fulfillments/service-slots 读写的 seller A happy-path 集成断言
+- [x] T007 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 增加 seller A 对 seller B 的读取、update、bulk ids 与跨 seller relationship 攻击矩阵，断言拒绝/空结果及 B 零变化
+- [x] T008 [US4] 在 `apps/cms/tests/kith-inn-mainline-integration.test.ts` 调用 `apps/cms/seed/run.ts` 的项目级 reset/seed 真实逻辑，以 `kiv1_*` sentinel 断言 id、内容、数量及访问变化均为零
+- [x] T009 [US4] 运行 `apps/cms/tests/kith-inn-mainline-integration.test.ts`、既有 `apps/cms/tests/seed-run.test.ts`、`pnpm verify` 与 `git diff --check`，记录 PR2 PostgreSQL 命令和人工 diff
+
+**PR2 验证记录（2026-07-13）**：本地 PostgreSQL 窄测试 18/18 通过（2.29s），`pnpm verify` 与 `git diff --check` 通过；人工 diff 为 299 insertions / 5 deletions。
 
 ## Phase 3：User Story 1 - H5 订单 happy path（PR3，P1）
 
