@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test -c playwright.config.ts && pnpm test:e2e:mainline",
-    "test:e2e:mainline": "playwright test -c playwright.mainline.config.ts"
+    "test:e2e:mainline": "rm -rf test-results/mainline-services && mkdir -p test-results/mainline-services && playwright test -c playwright.mainline.config.ts"
   },
   "dependencies": {
     "@cfp/kith-inn-shared": "workspace:*",

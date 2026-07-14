@@ -1,5 +1,3 @@
-import { mkdirSync } from "node:fs";
-import { resolve } from "node:path";
 import { defineConfig } from "@playwright/test";
 import { mainlineServiceLog } from "./tests/e2e/fixtures/mainline";
 
@@ -7,9 +5,6 @@ const databaseUrl = "postgresql://postgres:postgres@127.0.0.1:54324/cfp";
 const cms = "http://127.0.0.1:3306";
 const be = "http://127.0.0.1:3311";
 const llm = "http://127.0.0.1:3321";
-const serviceDir = resolve("test-results/mainline-services");
-mkdirSync(serviceDir, { recursive: true });
-const prepareServiceDir = `rm -rf ${JSON.stringify(serviceDir)} && mkdir -p ${JSON.stringify(serviceDir)}`;
 const logged = (command: string, name: string) => {
   const path = JSON.stringify(mainlineServiceLog(name));
   return `: > ${path} && (${command}) >> ${path} 2>&1`;
@@ -30,7 +25,7 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:10087", trace: "retain-on-failure" },
   webServer: [
     {
-      command: `${prepareServiceDir} && ${logged(`${process.env.CI ? "" : "pnpm --dir ../.. db:up && "}pnpm --dir ../cms seed:kith-inn:reset:dev && pnpm --dir ../cms exec next dev -p 3306`, "cms")}`,
+      command: logged(`${process.env.CI ? "" : "pnpm --dir ../.. db:up && "}pnpm --dir ../cms seed:kith-inn:reset:dev && pnpm --dir ../cms exec next dev -p 3306`, "cms"),
       url: `${cms}/api/health`, timeout: 180_000, reuseExistingServer: false,
       env: {
         ...sharedEnv,
