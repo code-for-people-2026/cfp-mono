@@ -1,7 +1,6 @@
-import { assertCmsProductionEnv } from "./config/production";
-
 /** Next waits for register before accepting requests, including standalone. */
-export function register(env: Record<string, string | undefined> = process.env): void {
-  if (env.NEXT_RUNTIME !== "nodejs" || env.NEXT_PHASE === "phase-production-build") return;
-  assertCmsProductionEnv(env);
+export async function register(): Promise<void> {
+  if (process.env.NEXT_RUNTIME !== "nodejs" || process.env.NEXT_PHASE === "phase-production-build") return;
+  const { assertCmsProductionEnv } = await import("./config/production");
+  assertCmsProductionEnv();
 }
