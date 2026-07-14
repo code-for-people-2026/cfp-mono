@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { getPayload, type Payload } from "payload";
 import config from "../payload.config";
 import { migrations } from "../migrations/generated";
@@ -8,6 +8,7 @@ import {
   assertMigrationHead,
   assertMigrationHistorySafe,
   databasePushEnabled,
+  readAppliedMigrations,
 } from "../migrations/production";
 
 const execFileAsync = promisify(execFile);
@@ -75,6 +76,18 @@ describe("production migration policy", () => {
     );
     expect(Object.values(pkg.default.scripts).join(" ")).not.toMatch(/migrate:(?:fresh|reset|refresh)/);
   });
+
+  it("distinguishes a fresh database from a push-created cms schema without history", async () => {
+    const freshQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ relation: null }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(readAppliedMigrations(freshQuery)).resolves.toEqual([]);
+
+    const legacyPushQuery = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ relation: null }] })
+      .mockResolvedValueOnce({ rows: [{ table_name: "sellers" }] });
+    await expect(readAppliedMigrations(legacyPushQuery)).rejects.toThrow(/unsafe migration history/);
+  });
 });
 
 describe.skipIf(!configuredDatabaseUrl)("production migration against PostgreSQL", () => {
@@ -123,7 +136,7 @@ describe.skipIf(!configuredDatabaseUrl)("production migration against PostgreSQL
     }
   }, 120_000);
 
-  it("fails closed before migrate for foreign or development-push history", async () => {
+  it("fails closed before migrate for foreign, dev-push, or missing history", async () => {
     const pool = new adminPayload!.db.pg!.Pool({ connectionString: isolatedDatabaseUrl() });
     try {
       await pool.query(
@@ -136,6 +149,10 @@ describe.skipIf(!configuredDatabaseUrl)("production migration against PostgreSQL
       await pool.query(
         "UPDATE cms.payload_migrations SET name = 'dev', batch = -1 WHERE name = '20990101_uncommitted'",
       );
+      await expect(runMigration()).rejects.toMatchObject({
+        stderr: expect.stringContaining("unsafe migration history"),
+      });
+      await pool.query("DROP TABLE cms.payload_migrations");
       await expect(runMigration()).rejects.toMatchObject({
         stderr: expect.stringContaining("unsafe migration history"),
       });

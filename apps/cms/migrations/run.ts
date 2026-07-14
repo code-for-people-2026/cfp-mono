@@ -5,19 +5,8 @@ import { migrations } from "./generated";
 import {
   assertMigrationHead,
   assertMigrationHistorySafe,
-  type AppliedMigration,
+  readAppliedMigrations,
 } from "./production";
-
-async function readAppliedMigrations(): Promise<AppliedMigration[]> {
-  const exists = await payload.db.pool.query<{ relation: string | null }>(
-    "SELECT to_regclass('cms.payload_migrations') AS relation",
-  );
-  if (!exists.rows[0]?.relation) return [];
-  const applied = await payload.db.pool.query<{ name: string; batch: number }>(
-    "SELECT name, batch FROM cms.payload_migrations ORDER BY id ASC",
-  );
-  return applied.rows.map(({ name, batch }) => ({ name, batch: Number(batch) }));
-}
 
 export async function runProductionMigrations(): Promise<string> {
   await payload.init({ config, disableOnInit: true });
@@ -26,9 +15,10 @@ export async function runProductionMigrations(): Promise<string> {
       throw new Error("production migrations require PostgreSQL with schema push disabled");
     }
     const expected = migrations.map(({ name }) => name);
-    assertMigrationHistorySafe(await readAppliedMigrations(), expected);
+    const query = (statement: string) => payload.db.pool.query(statement);
+    assertMigrationHistorySafe(await readAppliedMigrations(query), expected);
     await payload.db.migrate();
-    assertMigrationHead(await readAppliedMigrations(), expected);
+    assertMigrationHead(await readAppliedMigrations(query), expected);
     return expected.at(-1)!;
   } finally {
     await payload.destroy();

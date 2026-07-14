@@ -2,7 +2,8 @@ import configPromise from "@payload-config";
 import { getPayload } from "payload";
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { GET as health } from "./route";
-import { probeCmsDatabase, readyResponse } from "../ready/route";
+import { probeCmsDatabase, readyResponse, verifyCmsDatabaseReady } from "../ready/route";
+import { migrations } from "../../../../migrations/generated";
 
 const request = (token = "internal-value") =>
   new Request("http://cms/api/ready", { headers: { "x-internal-token": token } });
@@ -27,6 +28,31 @@ describe("CMS probes", () => {
     });
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, service: "cms" });
+  });
+
+  it("requires the exact committed migration head when schema push is disabled", async () => {
+    const findSeller = vi.fn();
+    const missingHead = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ relation: null }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(verifyCmsDatabaseReady({
+      dbName: "postgres",
+      pushEnabled: false,
+      query: missingHead,
+      findSeller,
+    })).rejects.toThrow(/migration head mismatch/);
+    expect(findSeller).not.toHaveBeenCalled();
+
+    const exactHead = vi.fn()
+      .mockResolvedValueOnce({ rows: [{ relation: "cms.payload_migrations" }] })
+      .mockResolvedValueOnce({ rows: migrations.map(({ name }) => ({ name, batch: 1 })) });
+    await expect(verifyCmsDatabaseReady({
+      dbName: "postgres",
+      pushEnabled: false,
+      query: exactHead,
+      findSeller,
+    })).resolves.toBeUndefined();
+    expect(findSeller).toHaveBeenCalledOnce();
   });
 
   it("redacts PostgreSQL or schema probe failures", async () => {
