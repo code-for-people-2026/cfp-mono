@@ -1,4 +1,5 @@
 import fixture from "./fixtures/taozi.json";
+import type { PayloadRequest } from "payload";
 
 /** A single seed create-op: target collection + doc data. */
 export type SeedOp = { collection: string; data: Record<string, unknown> };
@@ -48,11 +49,11 @@ export function buildOfferingOps(f: TaoziFixture, sellerId: string | number): Se
 
 /** Build the operator create-op (桃子, dev openid for H5 login). auth:true needs
  *  email+password (synthetic, unused — login is by openid, not email/password). */
-export function buildOperatorOp(sellerId: string | number): SeedOp {
+export function buildOperatorOp(sellerId: string | number, wechatOpenid = "taozi-dev-openid"): SeedOp {
   return {
     collection: "operators",
     data: {
-      wechatOpenid: "taozi-dev-openid",
+      wechatOpenid,
       email: "taozi@kith-inn.local",
       password: "taozi-dev-password",
       role: "owner",
@@ -84,11 +85,20 @@ type SeedPayload = {
     where: Record<string, unknown>;
     limit?: number;
     overrideAccess?: boolean;
-  }) => Promise<{ docs: unknown[] }>;
+    req?: PayloadRequest;
+  }) => Promise<{ docs: Array<{ id: string | number; [key: string]: unknown }> }>;
   create: (args: {
     collection: string;
     data: Record<string, unknown>;
     overrideAccess?: boolean;
+    req?: PayloadRequest;
+  }) => Promise<{ id: string | number }>;
+  update: (args: {
+    collection: string;
+    id: string | number;
+    data: Record<string, unknown>;
+    overrideAccess?: boolean;
+    req?: PayloadRequest;
   }) => Promise<{ id: string | number }>;
   delete?: (args: {
     collection: string;
@@ -99,9 +109,11 @@ type SeedPayload = {
 
 export type SeedResult = {
   seeded: boolean;
-  sellerId?: string | number;
+  sellerId: string | number;
   offeringCount: number;
 };
+
+export type ApplySeedOptions = { operatorOpenid?: string; req?: PayloadRequest };
 
 export type ResetSeedResult = {
   deleted: Record<string, number>;
@@ -136,44 +148,49 @@ export async function resetSeedData(payload: Required<Pick<SeedPayload, "find" |
 }
 
 /**
- * Idempotent seed (PRD §9 M0): if a seller with this name already exists, skip
- * (already seeded). Otherwise create 桃子's seller + her offering pool + operator.
+ * Idempotently converge 桃子's baseline by stable seller, offering, and operator
+ * business keys. Existing partial rows are repaired instead of skipping.
  * Customers are NOT seeded — 桃子 creates them by ordering (接龙): existing matches
  * by name, new ones after she confirms (see be agent recordOrders/createCustomers).
  * `overrideAccess` throughout — seed is a trusted server-side script, not a
  * tenant request, so it bypasses access control.
  */
-export async function applySeed(payload: SeedPayload, f: TaoziFixture): Promise<SeedResult> {
-  const existing = await payload.find({
-    collection: "sellers",
-    where: { name: { equals: f.seller.name } },
-    limit: 1,
-    overrideAccess: true,
-  });
-  if (existing.docs.length > 0) {
-    return { seeded: false, offeringCount: 0 };
-  }
-  const seller = await payload.create({
-    collection: "sellers",
-    data: buildSellerOp(f).data,
-    overrideAccess: true,
-  });
+export async function applySeed(payload: SeedPayload, f: TaoziFixture, options: ApplySeedOptions = {}): Promise<SeedResult> {
+  let created = false;
+  const upsert = async (collection: string, where: Record<string, unknown>, data: Record<string, unknown>, updateData = data) => {
+    const existing = await payload.find({ collection, where, limit: 2, overrideAccess: true, req: options.req });
+    if (existing.docs.length > 1) throw new Error(`ambiguous seed key in ${collection}`);
+    if (existing.docs[0]) {
+      return payload.update({ collection, id: existing.docs[0].id, data: updateData, overrideAccess: true, req: options.req });
+    }
+    created = true;
+    return payload.create({ collection, data, overrideAccess: true, req: options.req });
+  };
+
+  const seller = await upsert("sellers", { name: { equals: f.seller.name } }, buildSellerOp(f).data);
   // Offering pool (components) — capture ids so the combo can reference them.
   const ops = buildOfferingOps(f, seller.id);
   const componentIds: Array<string | number> = [];
   for (const op of ops) {
-    const created = await payload.create({ collection: op.collection, data: op.data, overrideAccess: true });
-    componentIds.push(created.id);
+    const offering = await upsert("offerings", { and: [
+      { seller: { equals: seller.id } },
+      { name: { equals: op.data.name } },
+      { kind: { equals: "component" } },
+    ] }, op.data);
+    componentIds.push(offering.id);
   }
   // 桃子 sells one combo (4菜1汤 30元/份); parentOfferings = the whole component pool.
   if (f.combo) {
-    await payload.create({ collection: "offerings", data: buildComboOp(f, seller.id, componentIds).data, overrideAccess: true });
+    await upsert("offerings", { and: [
+      { seller: { equals: seller.id } },
+      { name: { equals: f.combo.name } },
+      { kind: { equals: "combo-meal" } },
+    ] }, buildComboOp(f, seller.id, componentIds).data);
   }
   // Seed 桃子's operator (with dev wechatOpenid for H5 dev-login).
-  await payload.create({
-    collection: "operators",
-    data: buildOperatorOp(seller.id).data,
-    overrideAccess: true,
-  });
-  return { seeded: true, sellerId: seller.id, offeringCount: ops.length };
+  const operator = buildOperatorOp(seller.id, options.operatorOpenid).data;
+  const operatorUpdate = { ...operator };
+  delete operatorUpdate.password;
+  await upsert("operators", { email: { equals: operator.email } }, operator, operatorUpdate);
+  return { seeded: created, sellerId: seller.id, offeringCount: ops.length };
 }

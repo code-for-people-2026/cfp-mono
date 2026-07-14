@@ -56,10 +56,10 @@
 - [x] T018 [US1] 已生成并审阅 baseline，生产仅通过 `payload:migrate:production` 推进 `cms` schema，本地开发仍可 push；真实 PostgreSQL migration/readiness 13/13、CMS coverage 18 files/150 passed/1 skipped、`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；人工 diff 374 行，baseline 机器生成主体另计
 
 ### PR4-B：桃子基线
-- [ ] T019 [US1] 先在 `packages/kith-inn-payload/src/seed/taozi.test.ts` 与 `apps/cms/tests/seed-production.test.ts` 覆盖半成品恢复、重复收敛、事务失败、稳定键和 secret OpenID不输出
-- [ ] T020 [US1] 在 `packages/kith-inn-payload/src/seed/taozi.ts` 与 `apps/cms/seed/run.ts` 实现事务化幂等收敛和 `KITH_INN_TRIAL_OPENID` 受控覆盖，不修改 fixture 的 dev OpenID
-- [ ] T021 [US1] 在 `apps/cms/tests/seed-production.test.ts` 增加同库 v1 sentinel，证明 migration/旧 kith seed 不 seed、reset 或改写 v1 业务数据
-- [ ] T022 [US1] 对 fresh/existing PostgreSQL 各跑 migration+seed 两次和受控中断恢复，运行 CMS/payload coverage、`pnpm verify`、`git diff --check` 并区分生成/人工 diff
+- [x] T019 [US1] 已先取得半成品恢复、重复收敛、事务失败、稳定键、歧义键失败关闭和 secret OpenID 零输出的 red 证据，再由 payload/CMS 测试转绿
+- [x] T020 [US1] 已在 `packages/kith-inn-payload/src/seed/taozi.ts` 与 `apps/cms/seed/run.ts` 实现共享事务请求下的幂等 upsert、`KITH_INN_TRIAL_OPENID` 受控覆盖和仅含非敏感 seller ID 的机器可读结果；fixture dev OpenID 保持不变
+- [x] T021 [US1] 已在同一 PostgreSQL 隔离库写入 v1 sentinel，证明两轮 migration/旧 kith seed、冲突 rollback 与恢复均不访问、reset 或改写 v1 数据
+- [x] T022 [US1] fresh→existing PostgreSQL 的 migration+seed 两轮、三类写 rollback/恢复均通过；CMS coverage 19 files/152 passed/1 skipped，payload 52/52 且四项 100%，`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；无生成文件，人工 diff 331 行
 
 ### PR5：生产镜像
 
