@@ -59,7 +59,7 @@
 - [x] T019 [US1] 已先取得半成品恢复、重复收敛、事务失败、稳定键、歧义键失败关闭和 secret OpenID 零输出的 red 证据，再由 payload/CMS 测试转绿
 - [x] T020 [US1] 已在 `packages/kith-inn-payload/src/seed/taozi.ts` 与 `apps/cms/seed/run.ts` 实现共享事务请求下的幂等 upsert、`KITH_INN_TRIAL_OPENID` 受控覆盖和仅含非敏感 seller ID 的机器可读结果；fixture dev OpenID 保持不变
 - [x] T021 [US1] 已在同一 PostgreSQL 隔离库写入 v1 sentinel，证明两轮 migration/旧 kith seed、冲突 rollback 与恢复均不访问、reset 或改写 v1 数据
-- [x] T022 [US1] fresh→existing PostgreSQL 的 migration+seed 两轮、三类写 rollback/恢复均通过；CMS coverage 19 files/152 passed/1 skipped，payload 52/52 且四项 100%，`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；无生成文件，人工 diff 331 行
+- [x] T022 [US1] fresh PostgreSQL migration 后两个独立 seed 子进程并发收敛、跨 seller operator 冲突下三类写 rollback/恢复与 v1 sentinel 均通过（隔离 PG 2/2）；CMS 标准 coverage 17 files/108 passed、2 files/45 tests 安全跳过，payload 54/54 且四项 100%，`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；无生成文件，人工 diff 388 行
 
 ### PR5：生产镜像
 

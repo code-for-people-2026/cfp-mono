@@ -36,6 +36,7 @@ describe("production trial OpenID", () => {
     expect(() => resolveTrialOpenid({ NODE_ENV: "production" })).toThrow(/KITH_INN_TRIAL_OPENID/);
     expect(() => resolveTrialOpenid({ NODE_ENV: "production", KITH_INN_TRIAL_OPENID: "change-me" })).toThrow(/KITH_INN_TRIAL_OPENID/);
     expect(() => resolveTrialOpenid({ NODE_ENV: "production", KITH_INN_TRIAL_OPENID: "taozi-dev-openid" })).toThrow(/KITH_INN_TRIAL_OPENID/);
+    expect(() => resolveTrialOpenid({ NODE_ENV: "production", KITH_INN_TRIAL_OPENID: "taozi-v1-dev-openid" })).toThrow(/KITH_INN_TRIAL_OPENID/);
   });
 });
 
@@ -57,14 +58,19 @@ describe.skipIf(!configuredDatabaseUrl)("production seed against PostgreSQL", ()
     try {
       await run(["migrations/run.ts"]);
       await pool.query("INSERT INTO cms.kiv1_sellers (name) VALUES ($1)", ["v1-seed-sentinel"]);
-      const first = await run(["seed/run.ts", "kith-inn"]);
+      const concurrent = await Promise.all([
+        run(["seed/run.ts", "kith-inn"]),
+        run(["seed/run.ts", "kith-inn"]),
+      ]);
       await run(["migrations/run.ts"]);
       const second = await run(["seed/run.ts", "kith-inn"]);
-      expect(`${first.stdout}${first.stderr}${second.stdout}${second.stderr}`).not.toContain(trialOpenid);
-      expect([first, second].map(({ stdout }) => JSON.parse(stdout.trim().split("\n").at(-1)!))).toEqual([
-        expect.objectContaining({ project: "kith-inn", status: "provisioned", offeringCount: 20 }),
-        expect.objectContaining({ project: "kith-inn", status: "reconciled", offeringCount: 20 }),
-      ]);
+      const runs = [...concurrent, second];
+      expect(runs.flatMap(({ stdout, stderr }) => [stdout, stderr]).join("\n")).not.toContain(trialOpenid);
+      const summaries = runs.map(({ stdout }) => JSON.parse(stdout.trim().split("\n").at(-1)!));
+      expect(summaries.map(({ status }) => status).sort()).toEqual(["provisioned", "reconciled", "reconciled"]);
+      for (const summary of summaries) {
+        expect(summary).toEqual(expect.objectContaining({ project: "kith-inn", offeringCount: 20 }));
+      }
       const taozi = await pool.query("SELECT id FROM cms.sellers WHERE name = '桃子'");
       expect(taozi.rowCount).toBe(1);
       const taoziId = taozi.rows[0].id;
@@ -73,17 +79,19 @@ describe.skipIf(!configuredDatabaseUrl)("production seed against PostgreSQL", ()
       expect(await pool.query("SELECT name FROM cms.kiv1_sellers")).toMatchObject({ rows: [{ name: "v1-seed-sentinel" }] });
 
       const other = await pool.query("INSERT INTO cms.sellers (name) VALUES ('冲突商家') RETURNING id");
-      const conflictOpenid = "transaction-conflict-openid";
-      await pool.query("INSERT INTO cms.operators (email, wechat_openid, seller_id) VALUES ($1, $2, $3)", ["other@kith-inn.local", conflictOpenid, other.rows[0].id]);
+      await pool.query("UPDATE cms.operators SET seller_id = $1 WHERE email = 'taozi@kith-inn.local'", [other.rows[0].id]);
       await pool.query("UPDATE cms.sellers SET status = 'paused' WHERE name = '桃子'");
       await pool.query("UPDATE cms.offerings SET active = false WHERE seller_id = $1 AND name = '番茄炒蛋'", [taoziId]);
-      await expect(run(["seed/run.ts", "kith-inn"], conflictOpenid)).rejects.toMatchObject({
-        stdout: expect.not.stringContaining(conflictOpenid),
-        stderr: expect.not.stringContaining(conflictOpenid),
+      await expect(run(["seed/run.ts", "kith-inn"], "rejected-openid")).rejects.toMatchObject({
+        stdout: expect.not.stringContaining("rejected-openid"),
+        stderr: expect.not.stringContaining("rejected-openid"),
       });
       expect(await pool.query("SELECT status FROM cms.sellers WHERE name = '桃子'")).toMatchObject({ rows: [{ status: "paused" }] });
       expect(await pool.query("SELECT active FROM cms.offerings WHERE seller_id = $1 AND name = '番茄炒蛋'", [taoziId])).toMatchObject({ rows: [{ active: false }] });
-      expect(await pool.query("SELECT wechat_openid FROM cms.operators WHERE email = 'taozi@kith-inn.local'")).toMatchObject({ rows: [{ wechat_openid: trialOpenid }] });
+      expect(await pool.query("SELECT seller_id, wechat_openid FROM cms.operators WHERE email = 'taozi@kith-inn.local'")).toMatchObject({
+        rows: [{ seller_id: other.rows[0].id, wechat_openid: trialOpenid }],
+      });
+      await pool.query("UPDATE cms.operators SET seller_id = $1 WHERE email = 'taozi@kith-inn.local'", [taoziId]);
       const recovered = await run(["seed/run.ts", "kith-inn"], "recovery-openid");
       expect(`${recovered.stdout}${recovered.stderr}`).not.toContain("recovery-openid");
       expect(await pool.query("SELECT status FROM cms.sellers WHERE name = '桃子'")).toMatchObject({ rows: [{ status: "active" }] });
