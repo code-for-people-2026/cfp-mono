@@ -5,7 +5,20 @@ export async function up({ db }: MigrateUpArgs): Promise<void> {
   const existingTables = await db.execute(sql`
     SELECT table_name FROM information_schema.tables WHERE table_schema = 'cms'
   `)
-  if (shouldAdoptCmsBaseline(existingTables.rows.map(({ table_name }) => String(table_name)))) return
+  if (shouldAdoptCmsBaseline(existingTables.rows.map(({ table_name }) => String(table_name)))) {
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "cms"."payload_migrations" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "name" varchar,
+        "batch" numeric,
+        "updated_at" timestamp(3) with time zone DEFAULT now() NOT NULL,
+        "created_at" timestamp(3) with time zone DEFAULT now() NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS "payload_migrations_updated_at_idx" ON "cms"."payload_migrations" USING btree ("updated_at");
+      CREATE INDEX IF NOT EXISTS "payload_migrations_created_at_idx" ON "cms"."payload_migrations" USING btree ("created_at");
+    `)
+    return
+  }
 
   await db.execute(sql`
    CREATE SCHEMA IF NOT EXISTS "cms";

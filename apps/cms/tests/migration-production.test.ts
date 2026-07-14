@@ -89,6 +89,7 @@ describe("production migration contract", () => {
   it("adopts only a complete push-era schema", () => {
     expect(shouldAdoptCmsBaseline([])).toBe(false);
     expect(shouldAdoptCmsBaseline(CMS_BASELINE_TABLES)).toBe(true);
+    expect(shouldAdoptCmsBaseline([...CMS_BASELINE_TABLES, "payload_migrations"])).toBe(true);
     expect(() => shouldAdoptCmsBaseline(["sellers", "payload_migrations"])).toThrow(/incomplete CMS schema/);
   });
 });
@@ -143,6 +144,10 @@ describe.skipIf(!lifecycleEnabled)("PostgreSQL migration lifecycle (explicit dis
         collection: "kiv1_sellers",
         data: { name: `adoption-sentinel-${crypto.randomUUID()}`, status: "active" },
         overrideAccess: true,
+      });
+      await pushed.db.execute({
+        drizzle: pushed.db.drizzle,
+        sql: sql`DROP TABLE "cms"."payload_migrations" CASCADE`,
       });
     } finally {
       await pushed.destroy();

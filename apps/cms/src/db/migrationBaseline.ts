@@ -28,7 +28,6 @@ export const CMS_BASELINE_TABLES = [
   "payload_locked_documents_rels",
   "payload_preferences",
   "payload_preferences_rels",
-  "payload_migrations",
 ] as const;
 
 /** Accept an empty database or a complete push-era schema, never a partial one. */

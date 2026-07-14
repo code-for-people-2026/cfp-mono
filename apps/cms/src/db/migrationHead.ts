@@ -32,9 +32,8 @@ export async function prepareCmsBaselineAdoption(payload: Pick<Payload, "db">): 
     drizzle: payload.db.drizzle,
     sql: sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'cms'`,
   });
-  if (!shouldAdoptCmsBaseline((tables.rows as Array<{ table_name: string }>).map(({ table_name }) => table_name))) {
-    return;
-  }
+  const tableNames = (tables.rows as Array<{ table_name: string }>).map(({ table_name }) => table_name);
+  if (!shouldAdoptCmsBaseline(tableNames) || !tableNames.includes("payload_migrations")) return;
   await payload.db.execute({
     drizzle: payload.db.drizzle,
     sql: sql`DELETE FROM "cms"."payload_migrations" WHERE "batch" = -1`,
