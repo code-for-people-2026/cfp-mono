@@ -1,6 +1,14 @@
 import path from "node:path";
 import { defineConfig } from "@tarojs/cli";
 import { WeappTailwindcss } from "weapp-tailwindcss/webpack";
+import { productionBeBaseUrl } from "./production";
+
+const isDevBuild = process.env.KITH_INN_DEV_BUILD === "1";
+const embeddedBeBaseUrl = isDevBuild ? (process.env.BE_BASE_URL ?? "") : productionBeBaseUrl(process.env.BE_BASE_URL);
+const embeddedBuildEnv = {
+  "process.env.BE_BASE_URL": JSON.stringify(embeddedBeBaseUrl),
+  "process.env.KITH_INN_DEV_BUILD": JSON.stringify(isDevBuild ? "1" : "0"),
+};
 
 export default defineConfig(async () => ({
   projectName: "kith-inn",
@@ -24,7 +32,7 @@ export default defineConfig(async () => ({
   mini: {
     // Taro 只把 target config 传给 runner，故 H5/weapp 各自声明 shared include。
     compile: {
-      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src")],
+      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src"), path.resolve(__dirname)],
     },
     // weapp-tailwindcss@5：给 Tailwind v4 utility 类做微信小程序 WXSS 转义
     // (特殊字符 / : . [ ) + rem→rpx。仅作用于 weapp 目标；h5 走 postcss
@@ -32,11 +40,9 @@ export default defineConfig(async () => ({
     // 配方：https://tw.icebreaker.top/docs/quick-start/v4/taro-webpack
     webpackChain(chain, webpack) {
       // Webpack5 不给浏览器/weapp bundle polyfill Node 的 `process` 全局（Vite 会），
-      // 且只替换约定 env（TARO_ENV/NODE_ENV）。process.env.BE_BASE_URL 自定义，留作运行时
-      // 访问会 ReferenceError。构建期替换；"" → resolveBeBaseUrl 回退 DEFAULT_BE_BASE_URL。
-      chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
-        { "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? "") },
-      ]);
+      // 且只替换约定 env（TARO_ENV/NODE_ENV）。自定义 build env 留作运行时访问会
+      // ReferenceError，因此构建期固化；production 校验在任何 webpack 输出前完成。
+      chain.plugin("kith-inn-build-env").use(webpack.DefinePlugin, [embeddedBuildEnv]);
       chain.merge({
         plugin: {
           install: {
@@ -56,7 +62,7 @@ export default defineConfig(async () => ({
   h5: {
     // FE 直接消费 shared 的 Zod runtime schema；将 workspace .ts 纳入 Babel rule。
     compile: {
-      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src")],
+      include: [path.resolve(__dirname, "../../../packages/kith-inn-shared/src"), path.resolve(__dirname)],
     },
     publicPath: "/",
     router: { mode: "browser" },
@@ -68,11 +74,9 @@ export default defineConfig(async () => ({
     // full reload on CSS change, acceptable.
     enableExtract: true,
     webpackChain(chain, webpack) {
-      chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
-        { "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? "") },
-      ]);
+      chain.plugin("kith-inn-build-env").use(webpack.DefinePlugin, [embeddedBuildEnv]);
     },
   },
   // Sourcemap: dev 开、prod 关（线上泄露源码）。微信开发者工具 Sources 面板打断点。
-  sourceMap: { enable: process.env.NODE_ENV !== "production" },
+  sourceMap: { enable: isDevBuild },
 }));

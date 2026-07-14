@@ -8,6 +8,9 @@ jobs:
   preview-build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Build-only origin; release workflows must inject the approved kith-inn API host.
+      BE_BASE_URL: https://codeforpeople.cn
     steps:
       - uses: actions/checkout@v4
 

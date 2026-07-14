@@ -34,11 +34,11 @@
 
 ### PR2：前端生产 URL 与登录边界
 
-- [ ] T006 [P] [US1] 先在 `apps/kith-inn-fe/src/services/api.test.ts` 增加生产 URL 的缺失、保留 `.invalid`、HTTP、IP、localhost、局域网、查询/片段负例与合法 HTTPS 正例
-- [ ] T007 [US1] 在 `apps/kith-inn-fe/config/production.ts`、`config/index.ts` 与 `src/services/api.ts` 实现构建期/运行期同源校验，非生产保留本地默认而生产禁止回退
-- [ ] T008 [US1] 先新增 `apps/kith-inn-fe/src/pages/login/index.test.tsx`，再修改 `apps/kith-inn-fe/src/pages/login/index.tsx`，保证生产 weapp 微信登录失败不调用 dev-login且 H5 内部状态明确失败
-- [ ] T009 [US1] 在 `apps/kith-inn-fe/.env.example` 与 `package.json` 记录生产 build 前置，并连续验证合法 URL 的 `build:h5`、`build:weapp` 与非法 URL 的零产物
-- [ ] T010 [US1] 运行 `@cfp/kith-inn-fe` test/coverage/lint/typecheck、`pnpm verify`、`git diff --check`，记录 PR2 人工 diff <400 行
+- [x] T006 [P] [US1] 先在 `apps/kith-inn-fe/src/services/api.test.ts` 增加生产 URL 的缺失、IANA 文档/测试保留域、HTTP、IP、localhost、局域网、查询/片段负例与合法 HTTPS 正例
+- [x] T007 [US1] 在 `apps/kith-inn-fe/config/production.ts`、`config/index.ts` 与 `src/services/api.ts` 实现构建期/运行期同源校验，非生产保留本地默认而生产禁止回退
+- [x] T008 [US1] 先新增 `apps/kith-inn-fe/src/pages/login/index.test.tsx`，再修改 `apps/kith-inn-fe/src/pages/login/index.tsx`，保证生产 weapp 微信登录失败不调用 dev-login且 H5 内部状态明确失败
+- [x] T009 [US1] 在 `apps/kith-inn-fe/.env.example` 与 `package.json` 记录生产 build 前置，并连续验证合法 URL 的 `build:h5`、`build:weapp` 与非法 URL 的零产物
+- [x] T010 [US1] 运行 `@cfp/kith-inn-fe` test/coverage/lint/typecheck、`pnpm verify`、`git diff --check`；PR2 人工 diff 304 行（252 insertions + 52 deletions，<400）
 
 ### PR3：CMS/BE fail-closed 与 readiness
 
