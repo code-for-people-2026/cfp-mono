@@ -1,7 +1,7 @@
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 import { collections as kithInnCollections } from "@cfp/kith-inn-payload";
 import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
 import { assertCmsProductionEnv } from "./src/config/production";
@@ -49,7 +49,9 @@ const db = postgresDatabaseURL
         connectionString: postgresDatabaseURL,
       },
       schemaName,
-      migrationDir: fileURLToPath(new URL("./migrations", import.meta.url)),
+      // Package scripts run with apps/cms as cwd. Avoid a bundled cross-realm
+      // URL here: Node's URL path conversion rejects that instance in CI.
+      migrationDir: resolve(process.cwd(), "migrations"),
       // Local development keeps Payload's convenient schema push. Production is
       // advanced only by the checked-in, deploy-time migration command.
       push: process.env.NODE_ENV !== "production",

@@ -31,6 +31,8 @@ describe("production migration contract", () => {
       scripts: Record<string, string>;
     };
     expect(source).toContain('push: process.env.NODE_ENV !== "production"');
+    expect(source).toContain('migrationDir: resolve(process.cwd(), "migrations")');
+    expect(source).not.toContain("fileURLToPath");
     expect(source).not.toContain("prodMigrations");
     expect(pkg.scripts["migrate:production"]).toBe("payload migrate");
     expect(Object.keys(pkg.scripts).filter((name) => /migrate:(fresh|reset|refresh)/.test(name))).toEqual([]);
