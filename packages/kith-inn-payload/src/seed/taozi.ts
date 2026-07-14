@@ -83,6 +83,7 @@ type SeedPayload = {
   find: (args: {
     collection: string;
     where: Record<string, unknown>;
+    depth?: number;
     limit?: number;
     overrideAccess?: boolean;
     req?: PayloadRequest;
@@ -157,10 +158,17 @@ export async function resetSeedData(payload: Required<Pick<SeedPayload, "find" |
  */
 export async function applySeed(payload: SeedPayload, f: TaoziFixture, options: ApplySeedOptions = {}): Promise<SeedResult> {
   let created = false;
-  const upsert = async (collection: string, where: Record<string, unknown>, data: Record<string, unknown>, updateData = data) => {
-    const existing = await payload.find({ collection, where, limit: 2, overrideAccess: true, req: options.req });
+  const upsert = async (
+    collection: string,
+    where: Record<string, unknown>,
+    data: Record<string, unknown>,
+    updateData = data,
+    acceptsExisting?: (doc: { id: string | number; [key: string]: unknown }) => boolean,
+  ) => {
+    const existing = await payload.find({ collection, where, depth: 0, limit: 2, overrideAccess: true, req: options.req });
     if (existing.docs.length > 1) throw new Error(`ambiguous seed key in ${collection}`);
     if (existing.docs[0]) {
+      if (acceptsExisting && !acceptsExisting(existing.docs[0])) throw new Error(`conflicting seed key in ${collection}`);
       return payload.update({ collection, id: existing.docs[0].id, data: updateData, overrideAccess: true, req: options.req });
     }
     created = true;
@@ -191,6 +199,17 @@ export async function applySeed(payload: SeedPayload, f: TaoziFixture, options: 
   const operator = buildOperatorOp(seller.id, options.operatorOpenid).data;
   const operatorUpdate = { ...operator };
   delete operatorUpdate.password;
-  await upsert("operators", { email: { equals: operator.email } }, operator, operatorUpdate);
+  await upsert(
+    "operators",
+    { email: { equals: operator.email } },
+    operator,
+    operatorUpdate,
+    (existing) => {
+      const existingSeller = typeof existing.seller === "object" && existing.seller !== null
+        ? (existing.seller as { id: unknown }).id
+        : existing.seller;
+      return String(existingSeller) === String(seller.id);
+    },
+  );
   return { seeded: created, sellerId: seller.id, offeringCount: ops.length };
 }

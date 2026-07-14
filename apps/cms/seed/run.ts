@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { sql } from "@payloadcms/db-postgres";
 import type { BasePayload, PayloadRequest } from "payload";
 import { commitTransaction, createLocalReq, getPayload, initTransaction, killTransaction } from "payload";
 import type { SeedResult } from "@cfp/kith-inn-payload/seed";
@@ -27,6 +28,7 @@ const RESET_ARG = "--reset-dev";
 type Env = Record<string, string | undefined>;
 export type SeedProject = "kith-inn" | "kiv1";
 const OPENID_PLACEHOLDER = /(change[-_ ]?me|replace[-_ ]?me|placeholder|example|test[-_ ]?secret|dev[-_ ]?secret)/i;
+const DEV_OPENID = /(?:^|[-_])dev[-_]?openid$/i;
 
 function trueish(value: string | undefined): boolean {
   return value === "1" || value === "true";
@@ -34,7 +36,7 @@ function trueish(value: string | undefined): boolean {
 
 export function resolveTrialOpenid(env: Env = process.env): string {
   const configured = env.KITH_INN_TRIAL_OPENID?.trim();
-  if (configured && configured !== "taozi-dev-openid" && !OPENID_PLACEHOLDER.test(configured)) return configured;
+  if (configured && !DEV_OPENID.test(configured) && !OPENID_PLACEHOLDER.test(configured)) return configured;
   if (env.NODE_ENV === "production") {
     throw new Error("KITH_INN_TRIAL_OPENID is required and cannot be a placeholder");
   }
@@ -45,6 +47,16 @@ export async function withSeedTransaction<T>(payload: BasePayload, work: (req: P
   const req = await createLocalReq({}, payload);
   if (!await initTransaction(req)) throw new Error("database transactions unavailable");
   try {
+    if (payload.db.name === "postgres") {
+      const transactionId = await req.transactionID;
+      const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
+      if (!transaction) throw new Error("database transaction session unavailable");
+      const db = payload.db as BasePayload["db"] & {
+        execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
+      };
+      // One fixed transaction-scoped lock serializes all 桃子 seed key reads/writes.
+      await db.execute({ db: transaction, sql: sql`SELECT pg_advisory_xact_lock(180717)` });
+    }
     const result = await work(req);
     await commitTransaction(req);
     return result;

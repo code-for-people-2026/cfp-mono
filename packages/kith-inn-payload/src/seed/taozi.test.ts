@@ -150,6 +150,24 @@ describe("applySeed", () => {
     expect(payload.create).not.toHaveBeenCalled();
   });
 
+  it("refuses to reassign the fixed operator email from another seller", async () => {
+    const payload = makePayload({
+      sellers: [{ id: 1, name: fixture.seller.name }],
+      operators: [{ id: 2, email: "taozi@kith-inn.local", seller: 99, wechatOpenid: "other" }],
+    });
+    await expect(applySeed(payload, fixture)).rejects.toThrow(/conflicting seed key in operators/);
+    expect(payload.state.operators![0]).toMatchObject({ seller: 99, wechatOpenid: "other" });
+  });
+
+  it("accepts a populated operator relationship owned by the 桃子 seller", async () => {
+    const payload = makePayload({
+      sellers: [{ id: 1, name: fixture.seller.name }],
+      operators: [{ id: 2, email: "taozi@kith-inn.local", seller: { id: 1 }, wechatOpenid: "old" }],
+    });
+    await expect(applySeed(payload, fixture, { operatorOpenid: "new" })).resolves.toMatchObject({ sellerId: 1 });
+    expect(payload.state.operators![0]).toMatchObject({ seller: 1, wechatOpenid: "new" });
+  });
+
   it("seeds combo referencing the component pool, but NO customers (created at order time)", async () => {
     const payload = makePayload();
     const f: TaoziFixture = {
