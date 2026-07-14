@@ -18,11 +18,11 @@ function assertCmsOrigin(value: string): void {
   } catch {
     throw new Error("CMS_BASE_URL must be an explicit HTTP(S) origin");
   }
-  const hostname = url.hostname.replace(/^\[|\]$/g, "");
+  const hostname = url.hostname.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
   if (
     !["http:", "https:"].includes(url.protocol) ||
     Boolean(url.username || url.password) ||
-    hostname === "localhost" ||
+    hostname === "localhost" || hostname.endsWith(".localhost") ||
     isIP(hostname) !== 0 ||
     RESERVED_HOST.test(hostname) ||
     url.port === "0" ||

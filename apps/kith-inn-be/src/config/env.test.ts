@@ -26,6 +26,8 @@ describe("assertKithInnProductionEnv", () => {
     ["CMS_BASE_URL", "http://user:pass@cms:3304"],
     ["CMS_BASE_URL", "http://:pass@cms:3304"],
     ["CMS_BASE_URL", "http://localhost:3304"],
+    ["CMS_BASE_URL", "http://localhost.:3304"],
+    ["CMS_BASE_URL", "http://admin.localhost.:3304"],
     ["CMS_BASE_URL", "http://127.0.0.1:3304"],
     ["CMS_BASE_URL", "http://cms:0"],
     ["CMS_BASE_URL", "http://cms:3304/api"],

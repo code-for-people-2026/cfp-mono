@@ -12,17 +12,20 @@ function required(env: Env, name: string): string {
 export function assertCmsProductionEnv(env: Env = process.env): void {
   if (env.NODE_ENV !== "production") return;
   const databaseUrl = required(env, "PAYLOAD_DATABASE_URL");
-  let databaseHost = "";
+  let parsedDatabaseUrl: URL;
   try {
-    databaseHost = new URL(databaseUrl).hostname.toLowerCase();
+    parsedDatabaseUrl = new URL(databaseUrl);
   } catch {
     throw new Error("PAYLOAD_DATABASE_URL must use non-local PostgreSQL");
   }
+  const databaseHost = parsedDatabaseUrl.hostname.replace(/\.$/, "").toLowerCase();
   if (
-    !/^postgres(?:ql)?:\/\//i.test(databaseUrl) ||
-    databaseHost === "localhost" ||
+    !["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol) ||
+    !databaseHost ||
+    databaseHost === "localhost" || databaseHost.endsWith(".localhost") ||
     databaseHost === "[::1]" ||
-    /^127\./.test(databaseHost)
+    /^127\./.test(databaseHost) ||
+    parsedDatabaseUrl.searchParams.has("host")
   ) {
     throw new Error("PAYLOAD_DATABASE_URL must use non-local PostgreSQL");
   }
