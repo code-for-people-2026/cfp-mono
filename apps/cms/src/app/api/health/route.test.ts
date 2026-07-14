@@ -37,6 +37,34 @@ describe("CMS probes", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ ok: false, service: "cms", category: "database_unavailable" });
   });
+
+  it("bounds a stalled PostgreSQL probe and clears its timer", async () => {
+    vi.useFakeTimers();
+    try {
+      const stalled = readyResponse(request(), {
+        internalToken: "internal-value",
+        probe: () => new Promise<void>(() => undefined),
+        timeoutMs: 5_000,
+      });
+      const sentinel = Symbol("hung");
+      const outcome = Promise.race([
+        stalled,
+        new Promise<typeof sentinel>((resolve) => setTimeout(() => resolve(sentinel), 5_001)),
+      ]);
+      await vi.advanceTimersByTimeAsync(5_001);
+      const response = await outcome;
+      expect(response).not.toBe(sentinel);
+      expect((response as Response).status).toBe(503);
+      expect(await (response as Response).json()).toEqual({
+        ok: false,
+        service: "cms",
+        category: "database_unavailable",
+      });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe.skipIf(!process.env.PAYLOAD_DATABASE_URL)("CMS PostgreSQL readiness", () => {

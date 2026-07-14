@@ -4,6 +4,7 @@ type Env = Record<string, string | undefined>;
 
 const PLACEHOLDER = /(change[-_ ]?me|replace[-_ ]?me|placeholder|example|test[-_ ]?secret|dev[-_ ]?secret)/i;
 const NUMERIC_IPV4 = /^(?:0x[\da-f]+|\d+)(?:\.(?:0x[\da-f]+|\d+)){0,3}$/i;
+const RESERVED_HOST = /(?:^|\.)(?:invalid|example|test|local|lan|home\.arpa)$/i;
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
@@ -28,6 +29,7 @@ export function assertCmsProductionEnv(env: Env = process.env): void {
     databaseHost === "localhost" || databaseHost.endsWith(".localhost") ||
     isIP(databaseHost) !== 0 ||
     NUMERIC_IPV4.test(databaseHost) ||
+    RESERVED_HOST.test(databaseHost) ||
     parsedDatabaseUrl.searchParams.has("host")
   ) {
     throw new Error("PAYLOAD_DATABASE_URL must use non-local PostgreSQL");

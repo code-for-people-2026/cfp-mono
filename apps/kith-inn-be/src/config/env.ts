@@ -3,7 +3,7 @@ import { isIP } from "node:net";
 type Env = Record<string, string | undefined>;
 
 const PLACEHOLDER = /(change[-_ ]?me|replace[-_ ]?me|placeholder|example|test[-_ ]?secret|dev[-_ ]?secret)/i;
-const RESERVED_HOST = /(?:\.invalid|\.example|\.test)$/i;
+const RESERVED_HOST = /(?:^|\.)(?:invalid|example|test|local|lan|home\.arpa)$/i;
 
 function required(env: Env, name: string): string {
   const value = env[name]?.trim();
@@ -34,6 +34,25 @@ function assertCmsOrigin(value: string): void {
   }
 }
 
+function assertDeepSeekBaseUrl(value: string | undefined): void {
+  if (value === undefined || value === "") return;
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw new Error("DEEPSEEK_BASE_URL must be the official HTTPS origin");
+  }
+  if (
+    url.origin !== "https://api.deepseek.com" ||
+    Boolean(url.username || url.password) ||
+    url.pathname !== "/" ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new Error("DEEPSEEK_BASE_URL must be the official HTTPS origin");
+  }
+}
+
 /** Validate every production trust boundary before the Hono server starts. */
 export function assertKithInnProductionEnv(env: Env = process.env): void {
   if (env.NODE_ENV !== "production") return;
@@ -44,4 +63,5 @@ export function assertKithInnProductionEnv(env: Env = process.env): void {
   required(env, "WX_APPID");
   required(env, "WX_SECRET");
   required(env, "DEEPSEEK_API_KEY");
+  assertDeepSeekBaseUrl(env.DEEPSEEK_BASE_URL);
 }
