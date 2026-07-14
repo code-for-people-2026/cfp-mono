@@ -29,8 +29,8 @@ import { sql } from "@payloadcms/db-postgres";
  *
  * SQLite fallback (no DATABASE_URL) has no schema concept → bail unless postgres.
  *
- * Release 后转 migration 时，这些并入 baseline migration 的 up；onInit 仍幂等保留无妨
- * （约束/索引在 migration 已建，IF NOT EXISTS 跳过）。
+ * Production baseline 已包含这些索引且关闭 onInit DDL；此函数只服务本地 schema push，
+ * 在 push 重建表结构后幂等恢复无法由 collection config 表达的约束。
  */
 export async function ensureConstraints(payload: Payload): Promise<void> {
   // SQLite fallback (no DATABASE_URL) has no schemas — the cms.-qualified SQL below

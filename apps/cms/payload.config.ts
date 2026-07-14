@@ -5,6 +5,7 @@ import { collections as kithInnCollections } from "@cfp/kith-inn-payload";
 import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
 import { assertCmsProductionEnv } from "./src/config/production";
 import { ensureConstraints } from "./src/db/ensureConstraints";
+import { databasePushEnabled } from "./migrations/production";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -45,15 +46,10 @@ const db = postgresDatabaseURL
         connectionString: postgresDatabaseURL,
       },
       schemaName,
-      // Undeployed + no prod data: collection definitions ARE the source of truth,
-      // synced to the DB via drizzle push. No checked-in migrations to maintain
-      // (pure burden pre-deploy — feature 001 alone spawned docs debt, dev drift,
-      // and a migrate runner that won't run on a push-built DB). To switch: run
-      // `payload migrate:create` for a baseline once real data exists worth
-      // preserving; partial-unique + composite lookup indexes Payload's collection
-      // `indexes` can't fully express are re-created by onInit (ensureConstraints)
-      // — see src/db/ensureConstraints.ts.
-      push: true,
+      migrationDir: "migrations/generated",
+      // Local development keeps fast schema push. Production only advances the
+      // fixed cms schema through the checked-in, explicitly invoked migrations.
+      push: databasePushEnabled(),
     })
   : sqliteAdapter({
       client: {
@@ -68,9 +64,9 @@ const db = postgresDatabaseURL
 export default buildConfig({
   secret: payloadSecret || "code-for-people-dev-secret-change-me",
   db,
-  // Re-create the partial-unique + composite lookup indexes drizzle push can't
-  // express (from the original migration) on every init.
-  onInit: ensureConstraints,
+  // Schema push needs to restore constraints it cannot express. Production DDL
+  // lives only in committed migrations, so runtime startup performs no schema writes.
+  onInit: databasePushEnabled() ? ensureConstraints : undefined,
   admin: {
     user: "operators",
     importMap: {

@@ -53,7 +53,7 @@
 
 ## 6. Schema、seed 与回滚
 
-- 部署顺序：为目标 RDS 创建或验证可恢复备份 → 记录非敏感 backup ID/时间 → 单次 `payload migrate` → 幂等 `seed:kith-inn`/provision → 启动候选 → readiness → smoke。备份缺失、不可恢复或无法绑定目标数据库时必须在 migration 前失败关闭。
+- 部署顺序：为目标 RDS 创建或验证可恢复备份 → 记录非敏感 backup ID/时间 → 单次 `payload:migrate:production` → 幂等 `seed:kith-inn`/provision → 启动候选 → readiness → smoke。备份缺失、不可恢复或无法绑定目标数据库时必须在 migration 前失败关闭。
 - migration/seed 失败不得启动候选；生产禁止 `push`、`migrate:fresh/reset`、`seed:*:reset:dev`。
 - 应用失败先回滚到 `previousReleaseSha`；若 migration 与旧版不兼容，停止流量并选择已审计 down、前向修复或 RDS 恢复，不自动猜测。
 

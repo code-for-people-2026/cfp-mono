@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "payload": "payload",
     "payload:migrate": "payload migrate",
+    "payload:migrate:production": "NODE_ENV=production PAYLOAD_DB_PUSH=false tsx migrations/run.ts",
     "payload:migrate:create": "payload migrate:create",
     "seed:kith-inn": "tsx seed/run.ts kith-inn",
     "seed:kith-inn:reset:dev": "tsx seed/run.ts kith-inn --reset-dev",
