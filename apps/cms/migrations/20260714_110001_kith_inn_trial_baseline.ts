@@ -1,6 +1,12 @@
-import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
+import { MigrateUpArgs, sql } from '@payloadcms/db-postgres'
+import { shouldAdoptCmsBaseline } from '../src/db/migrationBaseline'
 
 export async function up({ db }: MigrateUpArgs): Promise<void> {
+  const existingTables = await db.execute(sql`
+    SELECT table_name FROM information_schema.tables WHERE table_schema = 'cms'
+  `)
+  if (shouldAdoptCmsBaseline(existingTables.rows.map(({ table_name }) => String(table_name)))) return
+
   await db.execute(sql`
    CREATE SCHEMA IF NOT EXISTS "cms";
   CREATE TYPE "cms"."enum_sellers_enabled_modules" AS ENUM('menu-planning', 'delivery', 'purchasing', 'booking');
@@ -592,64 +598,6 @@ export async function up({ db }: MigrateUpArgs): Promise<void> {
   CREATE UNIQUE INDEX "menu_plans_seller_slot_unique" ON "cms"."menu_plans" ("seller_id", "slot_id");`)
 }
 
-export async function down({ db }: MigrateDownArgs): Promise<void> {
-  await db.execute(sql`
-   DROP TABLE "cms"."sellers_enabled_modules" CASCADE;
-  DROP TABLE "cms"."sellers" CASCADE;
-  DROP TABLE "cms"."operators_sessions" CASCADE;
-  DROP TABLE "cms"."operators" CASCADE;
-  DROP TABLE "cms"."customers" CASCADE;
-  DROP TABLE "cms"."offerings" CASCADE;
-  DROP TABLE "cms"."offerings_rels" CASCADE;
-  DROP TABLE "cms"."menu_plans" CASCADE;
-  DROP TABLE "cms"."menu_plans_rels" CASCADE;
-  DROP TABLE "cms"."service_slots" CASCADE;
-  DROP TABLE "cms"."orders" CASCADE;
-  DROP TABLE "cms"."order_items" CASCADE;
-  DROP TABLE "cms"."fulfillments" CASCADE;
-  DROP TABLE "cms"."chat_messages" CASCADE;
-  DROP TABLE "cms"."subscriptions" CASCADE;
-  DROP TABLE "cms"."kiv1_sellers" CASCADE;
-  DROP TABLE "cms"."kiv1_operators" CASCADE;
-  DROP TABLE "cms"."kiv1_customer_profiles" CASCADE;
-  DROP TABLE "cms"."kiv1_offerings" CASCADE;
-  DROP TABLE "cms"."kiv1_meal_slots_menu_items" CASCADE;
-  DROP TABLE "cms"."kiv1_meal_slots" CASCADE;
-  DROP TABLE "cms"."kiv1_booking_batches" CASCADE;
-  DROP TABLE "cms"."kiv1_booking_batches_rels" CASCADE;
-  DROP TABLE "cms"."kiv1_orders" CASCADE;
-  DROP TABLE "cms"."payload_kv" CASCADE;
-  DROP TABLE "cms"."payload_locked_documents" CASCADE;
-  DROP TABLE "cms"."payload_locked_documents_rels" CASCADE;
-  DROP TABLE "cms"."payload_preferences" CASCADE;
-  DROP TABLE "cms"."payload_preferences_rels" CASCADE;
-  DROP TABLE "cms"."payload_migrations" CASCADE;
-  DROP TYPE "cms"."enum_sellers_enabled_modules";
-  DROP TYPE "cms"."enum_sellers_status";
-  DROP TYPE "cms"."enum_operators_role";
-  DROP TYPE "cms"."enum_customers_default_occasion";
-  DROP TYPE "cms"."enum_offerings_kind";
-  DROP TYPE "cms"."enum_offerings_category";
-  DROP TYPE "cms"."enum_menu_plans_status";
-  DROP TYPE "cms"."enum_service_slots_granularity";
-  DROP TYPE "cms"."enum_service_slots_occasion";
-  DROP TYPE "cms"."enum_service_slots_status";
-  DROP TYPE "cms"."enum_orders_occasion";
-  DROP TYPE "cms"."enum_orders_status";
-  DROP TYPE "cms"."enum_orders_source";
-  DROP TYPE "cms"."enum_orders_payment_status";
-  DROP TYPE "cms"."enum_fulfillments_occasion";
-  DROP TYPE "cms"."enum_fulfillments_status";
-  DROP TYPE "cms"."enum_chat_messages_role";
-  DROP TYPE "cms"."enum_subscriptions_status";
-  DROP TYPE "cms"."enum_kiv1_sellers_status";
-  DROP TYPE "cms"."enum_kiv1_offerings_category";
-  DROP TYPE "cms"."enum_kiv1_meal_slots_menu_items_category_snapshot";
-  DROP TYPE "cms"."enum_kiv1_meal_slots_occasion";
-  DROP TYPE "cms"."enum_kiv1_meal_slots_order_status";
-  DROP TYPE "cms"."enum_kiv1_booking_batches_status";
-  DROP TYPE "cms"."enum_kiv1_orders_status";
-  DROP TYPE "cms"."enum_kiv1_orders_source";
-  DROP TYPE "cms"."enum_kiv1_orders_payment_status";
-  DROP TYPE "cms"."enum_kiv1_orders_delivery_status";`)
+export async function down(): Promise<void> {
+  throw new Error('CMS baseline migration is irreversible')
 }

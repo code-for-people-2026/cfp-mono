@@ -120,7 +120,7 @@
 
 ## Dependencies & Execution Order
 
-- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4a→PR4b→PR5→PR9 逐片从最新 main 开始，上一片未合并不得发出下一片 PR。
+- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4a→PR4b→PR5→PR6→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得发出下一片 PR。
 - PR2/PR3 固定配置边界，PR4a 生成生产 migration，PR4b 再收敛 seed；PR5 只包装已验证 app。PR6 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
 - PR4a baseline migration 是机器生成 diff；PR4a/PR4b 人工 diff 分别按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。

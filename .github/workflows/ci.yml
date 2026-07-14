@@ -17,6 +17,7 @@ jobs:
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
       KITH_INN_ALLOW_DEV_SEED_RESET: "1"
+      CMS_MIGRATION_TEST_DISPOSABLE: "1"
       # Build-only origin; release workflows must inject the approved kith-inn API host.
       BE_BASE_URL: https://codeforpeople.cn
     services:

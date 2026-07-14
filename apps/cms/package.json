@@ -13,7 +13,7 @@
     "payload": "payload",
     "payload:migrate": "payload migrate",
     "payload:migrate:create": "payload migrate:create",
-    "migrate:production": "payload migrate",
+    "migrate:production": "tsx src/db/runProductionMigrations.ts",
     "seed:kith-inn": "tsx seed/run.ts kith-inn",
     "seed:kith-inn:reset:dev": "tsx seed/run.ts kith-inn --reset-dev",
     "seed:kiv1": "tsx seed/run.ts kiv1",

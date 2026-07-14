@@ -23,7 +23,7 @@ docker build -f apps/kith-inn-fe/Dockerfile \
 在一次性 PostgreSQL 中运行 CMS migration 集成测试，并分别验证 fresh DB、已迁移 DB、seed 重跑和中途失败恢复：
 
 ```bash
-pnpm --filter @cfp/cms test -- migration-production seed-production
+CMS_MIGRATION_TEST_DISPOSABLE=1 pnpm --filter @cfp/cms test -- migration-production seed-production
 pnpm --filter @cfp/cms test:coverage
 ```
 

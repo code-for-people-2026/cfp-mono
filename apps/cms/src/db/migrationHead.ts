@@ -1,9 +1,15 @@
 import { sql } from "@payloadcms/db-postgres";
 import type { Payload } from "payload";
+import { shouldAdoptCmsBaseline } from "./migrationBaseline";
 
 export const CMS_MIGRATION_HEAD = "20260714_110001_kith_inn_trial_baseline";
 
-const DESTRUCTIVE_MIGRATION_COMMANDS = new Set(["migrate:fresh", "migrate:reset", "migrate:refresh"]);
+const DESTRUCTIVE_MIGRATION_COMMANDS = new Set([
+  "migrate:down",
+  "migrate:fresh",
+  "migrate:reset",
+  "migrate:refresh",
+]);
 
 /** Fail closed before Payload can run a destructive migration in production. */
 export function assertProductionMigrationCommand(
@@ -13,6 +19,26 @@ export function assertProductionMigrationCommand(
   if (nodeEnv === "production" && argv.some((arg) => DESTRUCTIVE_MIGRATION_COMMANDS.has(arg))) {
     throw new Error("Destructive CMS migration commands are disabled in production");
   }
+}
+
+export function shouldRequireCmsMigrationHead(nodeEnv = process.env.NODE_ENV): boolean {
+  return nodeEnv === "production";
+}
+
+/** Remove only Payload's dev marker after proving a pushed schema is complete. */
+export async function prepareCmsBaselineAdoption(payload: Pick<Payload, "db">): Promise<void> {
+  if (payload.db.name !== "postgres") throw new Error("CMS baseline adoption requires PostgreSQL");
+  const tables = await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`SELECT table_name FROM information_schema.tables WHERE table_schema = 'cms'`,
+  });
+  if (!shouldAdoptCmsBaseline((tables.rows as Array<{ table_name: string }>).map(({ table_name }) => table_name))) {
+    return;
+  }
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`DELETE FROM "cms"."payload_migrations" WHERE "batch" = -1`,
+  });
 }
 
 /** Require the deployed schema to be exactly at the checked-in migration head. */
