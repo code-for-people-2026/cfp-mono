@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { productionBeBaseUrl } from "../../config/production";
 import {
   DEFAULT_BE_BASE_URL,
   beBaseUrl,
@@ -30,11 +31,59 @@ describe("resolveBeBaseUrl", () => {
   it("trims whitespace and strips trailing slashes", () => {
     expect(resolveBeBaseUrl("  https://be.example.com//  ")).toBe("https://be.example.com");
   });
+
+  it.each([
+    ["missing", undefined],
+    ["blank", "   "],
+    ["reserved .invalid", "https://api.example.invalid"],
+    ["reserved .example", "https://api.example"],
+    ["reserved .test", "https://api.example.test"],
+    ["reserved example.com", "https://example.com"],
+    ["reserved example.net subdomain", "https://api.example.net"],
+    ["reserved example.org", "https://example.org"],
+    ["http", "http://codeforpeople.cn"],
+    ["credentials", "https://user@codeforpeople.cn"],
+    ["non-numeric port", "https://codeforpeople.cn:https"],
+    ["zero port", "https://codeforpeople.cn:0"],
+    ["out-of-range port", "https://codeforpeople.cn:65536"],
+    ["IPv4", "https://192.168.1.20"],
+    ["IPv6", "https://[::1]"],
+    ["localhost", "https://localhost"],
+    ["localhost subdomain", "https://api.localhost"],
+    ["LAN hostname", "https://be.local"],
+    ["query", "https://codeforpeople.cn?debug=1"],
+    ["fragment", "https://codeforpeople.cn#debug"],
+    ["path", "https://codeforpeople.cn/api"],
+  ])("rejects %s production URL", (_label, value) => {
+    expect(() => productionBeBaseUrl(value)).toThrow("生产 BE_BASE_URL");
+  });
+
+  it("accepts and normalizes a legal production HTTPS origin", () => {
+    expect(productionBeBaseUrl("  https://codeforpeople.cn///  ")).toBe("https://codeforpeople.cn");
+    expect(productionBeBaseUrl("https://codeforpeople.cn:443/")).toBe("https://codeforpeople.cn:443");
+  });
 });
 
 describe("endpoint builders", () => {
+  it("uses the validated production origin and disables dev-login", () => {
+    const originalDevBuild = process.env.KITH_INN_DEV_BUILD;
+    const originalBaseUrl = process.env.BE_BASE_URL;
+    delete process.env.KITH_INN_DEV_BUILD;
+    process.env.BE_BASE_URL = "https://codeforpeople.cn/";
+    try {
+      expect(beBaseUrl()).toBe("https://codeforpeople.cn");
+      expect(() => devLoginUrl()).toThrow("生产构建禁用 dev-login");
+    } finally {
+      if (originalDevBuild === undefined) delete process.env.KITH_INN_DEV_BUILD;
+      else process.env.KITH_INN_DEV_BUILD = originalDevBuild;
+      process.env.BE_BASE_URL = originalBaseUrl;
+    }
+  });
+
   it("build against BE_BASE_URL when set", () => {
+    const originalDevBuild = process.env.KITH_INN_DEV_BUILD;
     const orig = process.env.BE_BASE_URL;
+    process.env.KITH_INN_DEV_BUILD = "1";
     process.env.BE_BASE_URL = "https://be.example.com/";
     try {
       expect(beBaseUrl()).toBe("https://be.example.com");
@@ -59,16 +108,22 @@ describe("endpoint builders", () => {
       expect(markDeliveredUrl()).toBe("https://be.example.com/delivery/fulfillments");
       expect(chatUrl()).toBe("https://be.example.com/chat");
     } finally {
+      if (originalDevBuild === undefined) delete process.env.KITH_INN_DEV_BUILD;
+      else process.env.KITH_INN_DEV_BUILD = originalDevBuild;
       process.env.BE_BASE_URL = orig;
     }
   });
 
   it("fall back to the local default be port", () => {
+    const originalDevBuild = process.env.KITH_INN_DEV_BUILD;
     const orig = process.env.BE_BASE_URL;
+    process.env.KITH_INN_DEV_BUILD = "1";
     delete process.env.BE_BASE_URL;
     try {
       expect(offeringsUrl()).toBe(`${DEFAULT_BE_BASE_URL}/offerings`);
     } finally {
+      if (originalDevBuild === undefined) delete process.env.KITH_INN_DEV_BUILD;
+      else process.env.KITH_INN_DEV_BUILD = originalDevBuild;
       process.env.BE_BASE_URL = orig;
     }
   });

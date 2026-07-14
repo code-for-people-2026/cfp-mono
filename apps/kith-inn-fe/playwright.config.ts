@@ -46,7 +46,7 @@ export default defineConfig({
       },
     },
     {
-      command: "pnpm build:h5 && pnpm exec serve -s dist -l 10086",
+      command: "pnpm build:h5:dev && pnpm exec serve -s dist -l 10086",
       url: "http://127.0.0.1:10086",
       reuseExistingServer,
       timeout: 120_000,

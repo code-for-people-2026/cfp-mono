@@ -2,6 +2,8 @@
 // pages do the actual Taro.request — keeping the network boundary in the UI layer
 // (mirrors apps/community-cooking's split).
 
+import { productionBeBaseUrl } from "../../config/production";
+
 export const DEFAULT_BE_BASE_URL = "http://192.168.31.120:3310";
 
 export function resolveBeBaseUrl(value?: string): string {
@@ -10,7 +12,9 @@ export function resolveBeBaseUrl(value?: string): string {
 }
 
 export function beBaseUrl(): string {
-  return resolveBeBaseUrl(process.env.BE_BASE_URL);
+  return process.env.KITH_INN_DEV_BUILD === "1"
+    ? resolveBeBaseUrl(process.env.BE_BASE_URL)
+    : productionBeBaseUrl(process.env.BE_BASE_URL);
 }
 
 export function wxLoginUrl(): string {
@@ -18,6 +22,7 @@ export function wxLoginUrl(): string {
 }
 
 export function devLoginUrl(): string {
+  if (process.env.KITH_INN_DEV_BUILD !== "1") throw new Error("生产构建禁用 dev-login");
   return `${beBaseUrl()}/auth/dev-login`;
 }
 

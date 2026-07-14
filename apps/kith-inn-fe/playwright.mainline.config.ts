@@ -53,7 +53,7 @@ export default defineConfig({
       },
     },
     {
-      command: logged("pnpm build:h5 && pnpm exec serve -s dist -l 10087", "h5"),
+      command: logged("pnpm build:h5:dev && pnpm exec serve -s dist -l 10087", "h5"),
       url: "http://127.0.0.1:10087", timeout: 120_000, reuseExistingServer: false,
       env: { BE_BASE_URL: be },
     },
