@@ -1,6 +1,7 @@
 import configPromise from "@payload-config";
 import { getPayload } from "payload";
 import { NextResponse } from "next/server";
+import { assertCmsMigrationHead } from "../../../db/migrationHead";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,7 @@ function timeoutAfter(ms: number) {
 export async function probeCmsDatabase(): Promise<void> {
   const payload = await getPayload({ config: configPromise });
   if (payload.db.name !== "postgres") throw new Error("PostgreSQL required");
+  await assertCmsMigrationHead(payload);
   await payload.find({ collection: "sellers", limit: 1, depth: 0, overrideAccess: true });
 }
 

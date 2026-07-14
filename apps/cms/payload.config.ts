@@ -1,10 +1,12 @@
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
+import { fileURLToPath } from "node:url";
 import { collections as kithInnCollections } from "@cfp/kith-inn-payload";
 import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
 import { assertCmsProductionEnv } from "./src/config/production";
 import { ensureConstraints } from "./src/db/ensureConstraints";
+import { assertProductionMigrationCommand } from "./src/db/migrationHead";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -15,6 +17,8 @@ try {
 } catch {
   /* no .env in cwd — rely on runtime env */
 }
+
+assertProductionMigrationCommand();
 
 // Next evaluates route modules while building; runtime config must still fail
 // before serving, while build-time image creation remains secret-free.
@@ -45,15 +49,10 @@ const db = postgresDatabaseURL
         connectionString: postgresDatabaseURL,
       },
       schemaName,
-      // Undeployed + no prod data: collection definitions ARE the source of truth,
-      // synced to the DB via drizzle push. No checked-in migrations to maintain
-      // (pure burden pre-deploy — feature 001 alone spawned docs debt, dev drift,
-      // and a migrate runner that won't run on a push-built DB). To switch: run
-      // `payload migrate:create` for a baseline once real data exists worth
-      // preserving; partial-unique + composite lookup indexes Payload's collection
-      // `indexes` can't fully express are re-created by onInit (ensureConstraints)
-      // — see src/db/ensureConstraints.ts.
-      push: true,
+      migrationDir: fileURLToPath(new URL("./migrations", import.meta.url)),
+      // Local development keeps Payload's convenient schema push. Production is
+      // advanced only by the checked-in, deploy-time migration command.
+      push: process.env.NODE_ENV !== "production",
     })
   : sqliteAdapter({
       client: {
@@ -68,8 +67,7 @@ const db = postgresDatabaseURL
 export default buildConfig({
   secret: payloadSecret || "code-for-people-dev-secret-change-me",
   db,
-  // Re-create the partial-unique + composite lookup indexes drizzle push can't
-  // express (from the original migration) on every init.
+  // Re-create custom indexes idempotently after local push and runtime startup.
   onInit: ensureConstraints,
   admin: {
     user: "operators",
