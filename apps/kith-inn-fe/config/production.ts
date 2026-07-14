@@ -32,6 +32,8 @@ export function productionBeBaseUrl(value?: string): string {
     host === "localhost" ||
     host.endsWith(".localhost") ||
     host.endsWith(".local") ||
+    host.endsWith(".lan") ||
+    host.endsWith(".home.arpa") ||
     host.endsWith(".invalid") ||
     host.endsWith(".example") ||
     host.endsWith(".test") ||
