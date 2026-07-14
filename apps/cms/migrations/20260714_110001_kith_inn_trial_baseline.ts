@@ -1,6 +1,6 @@
 import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-postgres'
 
-export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
+export async function up({ db }: MigrateUpArgs): Promise<void> {
   await db.execute(sql`
    CREATE SCHEMA IF NOT EXISTS "cms";
   CREATE TYPE "cms"."enum_sellers_enabled_modules" AS ENUM('menu-planning', 'delivery', 'purchasing', 'booking');
@@ -592,7 +592,7 @@ export async function up({ db, payload, req }: MigrateUpArgs): Promise<void> {
   CREATE UNIQUE INDEX "menu_plans_seller_slot_unique" ON "cms"."menu_plans" ("seller_id", "slot_id");`)
 }
 
-export async function down({ db, payload, req }: MigrateDownArgs): Promise<void> {
+export async function down({ db }: MigrateDownArgs): Promise<void> {
   await db.execute(sql`
    DROP TABLE "cms"."sellers_enabled_modules" CASCADE;
   DROP TABLE "cms"."sellers" CASCADE;
