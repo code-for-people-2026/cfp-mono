@@ -6,14 +6,17 @@
 
 ```bash
 pnpm verify
-BE_BASE_URL=https://api.example.invalid pnpm --filter @cfp/kith-inn-fe build:h5
-BE_BASE_URL=https://api.example.invalid pnpm --filter @cfp/kith-inn-fe build:weapp
+: "${KITH_INN_BE_BASE_URL:?请从外部注入已备案且已配置 TLS 的真实 HTTPS BE URL}"
+BE_BASE_URL="$KITH_INN_BE_BASE_URL" pnpm --filter @cfp/kith-inn-fe build:h5
+BE_BASE_URL="$KITH_INN_BE_BASE_URL" pnpm --filter @cfp/kith-inn-fe build:weapp
 docker build -f apps/cms/Dockerfile -t kith-inn-cms:verify .
 docker build -f apps/kith-inn-be/Dockerfile -t kith-inn-be:verify .
-docker build -f apps/kith-inn-fe/Dockerfile -t kith-inn-h5:verify .
+docker build -f apps/kith-inn-fe/Dockerfile \
+  --build-arg BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
+  -t kith-inn-h5:verify .
 ```
 
-预期：四类产物均成功且可关联当前 SHA。再对缺失、HTTP、IP、localhost、局域网 URL 运行前端配置窄测，全部必须在构建前失败；不要把真实域名写入仓库。
+预期：外部变量为空或不是已备案、已配置 TLS 的合法 HTTPS host 时，上述参数检查/构建校验立即失败；成功时四类产物均可关联当前 SHA。再对 `https://api.example.invalid`（仅负例）、HTTP、IP、localhost、局域网 URL 运行前端配置窄测，全部必须在构建前失败；不要把真实域名写入仓库。
 
 ## 2. Schema 与桃子基线
 
@@ -28,9 +31,11 @@ pnpm --filter @cfp/cms test:coverage
 
 ## 3. 本地生产等价编排
 
-使用只含假值的本地验证 env，不复用 GitHub Production secret：
+使用仓库提交的假值模板生成被忽略的本地验证 env，再按本机环境覆盖；不得修改模板或复用 GitHub Production secret：
 
 ```bash
+cp deploy/.env.verify.example deploy/.env.verify
+# 仅在 deploy/.env.verify 写本地验证覆盖；该文件不得提交
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.verify config
 nginx -t -c "$PWD/deploy/nginx.example.conf"
 docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.verify up -d
@@ -43,8 +48,9 @@ bash deploy/smoke-test.sh kith-inn
 
 1. 在 GitHub `Production` Environment 由维护者配置 issue #158 列出的缺失 secrets/variables；只核对名称与存在性，不回显值。
 2. 手动触发 `deploy-production.yml` 的 kith-inn target，指定最新 main SHA。
-3. 核对 ACR digest、单次 migration、幂等 seed、Compose health 和部署后 smoke 均绑定该 SHA。
-4. 在候选健康后执行一次受控服务失败，按 `deploy/RUNBOOK.md` 回滚至上一 digest；记录耗时和 schema 处置，目标 ≤15 分钟。
+3. 核对 migration 前可恢复 RDS 备份的非敏感 ID/时间、ACR digest、单次 migration、幂等 seed、Compose health 和部署后 smoke 均绑定该 SHA。
+4. 下载该 run 成功末尾生成的 `smoke-passed.json` artifact，核对 SHA、run ID、三镜像 digest、migration head、backup ID/时间和 passed 状态；失败 run 不得存在该 artifact。
+5. 在候选健康后执行一次受控服务失败，按 `deploy/RUNBOOK.md` 回滚至上一 digest；记录耗时和 schema 处置，目标 ≤15 分钟。
 
 缺少备案/微信合法域名、TLS、任一 secret 或 smoke 失败时必须停在这里，不上传体验版。
 
@@ -53,12 +59,13 @@ bash deploy/smoke-test.sh kith-inn
 先执行无外部写入的 dry-run：
 
 ```bash
-BE_BASE_URL=https://api.example.invalid \
+: "${KITH_INN_BE_BASE_URL:?请从外部注入已备案且已配置 TLS 的真实 HTTPS BE URL}"
+BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
   pnpm --filter @cfp/kith-inn-fe upload:weapp -- \
   --version 0.0.0 --desc "trial-<short-sha>" --dry-run
 ```
 
-实际上传只通过 `release-kith-inn-weapp.yml`：选择第 4 步已 `smoke_passed` 的 main SHA，经 Environment 审批后运行。预期上传日志不显示私钥/OpenID，微信版本说明和构建摘要可关联同一 SHA；桃子已加入体验成员，请求合法域名与上传 IP 白名单均开启。
+实际上传只通过 `release-kith-inn-weapp.yml`：选择第 4 步已通过部署的 main SHA，由 workflow 查询并下载该 SHA 的 `smoke-passed.json`，逐字段验证后经 Environment 审批运行；手填 SHA 不是通过凭据。预期上传日志不显示私钥/OpenID，微信版本说明和构建摘要可关联同一 SHA；桃子已加入体验成员，请求合法域名与上传 IP 白名单均开启。
 
 ## 6. 桃子白名单真机验收
 
