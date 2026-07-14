@@ -46,14 +46,15 @@
 | PR1 | 固化 #158 范围、部署决策、契约与依赖有序任务 | `specs/017-kith-inn-trial-deployment/**` | checklist、analyze、链接/格式检查 | 无 |
 | PR2 | 生产 H5/weapp 只能使用显式合法 HTTPS BE URL，且无 dev-login 降级 | `apps/kith-inn-fe/**` | URL 负例单测、H5/weapp 生产构建、FE coverage | PR1 |
 | PR3 | CMS/BE 缺少生产 DB、认证、微信或内部服务配置时在接流量前失败，并提供依赖 readiness | `apps/cms/**`、`apps/kith-inn-be/**` | env/route 单测、PostgreSQL readiness、两端 build | PR2 |
-| PR4 | `cms` schema 只由提交的 migration 推进，桃子基线可幂等收敛且真实 OpenID 不入库外证据 | `apps/cms/payload.config.ts`、`apps/cms/migrations/**`、`apps/cms/seed/**`、`packages/kith-inn-payload/src/seed/**` | fresh/existing PG migration、seed 两次/中断恢复、零 reset | PR3 |
-| PR5 | CMS、BE、H5 均生成同一提交可追踪、非 root、可启动的生产镜像 | 三个 app 的 `Dockerfile`、`next.config.ts`、`.dockerignore` | 逐镜像 build、非 root/health、secret 扫描 | PR4 |
+| PR4-A | `cms` schema 只由提交的 migration 推进，生产 push/reset 与错误 head 均失败关闭 | `apps/cms/payload.config.ts`、`apps/cms/migrations/**` | fresh/existing PG、重复 migration、错误 head | PR3 |
+| PR4-B | 桃子基线可事务化幂等收敛且真实 OpenID 不入库外证据 | `apps/cms/seed/**`、`packages/kith-inn-payload/src/seed/**` | seed 两次/中断恢复、v1 sentinel、零 reset | PR4-A |
+| PR5 | CMS、BE、H5 均生成同一提交可追踪、非 root、可启动的生产镜像 | 三个 app 的 `Dockerfile`、`next.config.ts`、`.dockerignore` | 逐镜像 build、非 root/health、secret 扫描 | PR4-B |
 | PR6 | Compose、Nginx、smoke 与中文 runbook 能部署和回滚完整 kith-inn 栈 | `deploy/**`、`DEPLOYMENT.md`、`docs/kith-inn/TECH-SPEC.md` | compose/nginx 静态检查、受控失败、health+认证+只读 smoke | PR5 |
 | PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时备份、迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/备份/失败回滚演练 | PR6 |
 | PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过，并留下脱敏证据 | `specs/017-kith-inn-trial-deployment/evidence/**`、必要 runbook 勘误 | 生产 smoke、版本关联、真机核心链路、回滚演练 | PR8 |
 
-PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；若 seed 等人工 diff 预计超过 400 行，则把 seed 收敛拆为后续独立 PR，不与 migration 强行合并。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
+PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4-A 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；评估确认 migration 与 seed 合并会超过 400 行，因此落实为依赖有序的 PR4-A/PR4-B。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
 
 ## Project Structure
 

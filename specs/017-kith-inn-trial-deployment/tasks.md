@@ -9,8 +9,9 @@
 | PR1 | 固化 #158 范围、部署决策、契约与依赖有序任务 | T001–T005 | checklist、analyze、`git diff --check` | 无 |
 | PR2 | 生产 H5/weapp 只含显式合法 HTTPS BE URL 且无 dev-login 降级 | T006–T010 | URL 负例、H5/weapp build、FE coverage、`pnpm verify` | PR1 |
 | PR3 | CMS/BE 缺生产配置时 fail closed，并提供真实依赖 readiness | T011–T016 | env/route 测试、PG readiness、两端 build、`pnpm verify` | PR2 |
-| PR4 | 生产 `cms` schema 只走 migration，桃子基线幂等且真实 OpenID 不进证据 | T017–T022 | fresh/existing PG、seed 重跑/恢复、零 reset、`pnpm verify` | PR3 |
-| PR5 | CMS/BE/H5 形成同 SHA 可追踪、非 root、可启动镜像 | T023–T027 | 三镜像 build/health/secret scan、`pnpm verify` | PR4 |
+| PR4-A | 生产 `cms` schema 只走 migration，错误 head 与 push/reset 均失败关闭 | T017–T018 | fresh/existing PG、重复 migration、错误 head、`pnpm verify` | PR3 |
+| PR4-B | 桃子基线事务化幂等收敛且真实 OpenID 不进证据 | T019–T022 | seed 重跑/恢复、v1 sentinel、零 reset、`pnpm verify` | PR4-A |
+| PR5 | CMS/BE/H5 形成同 SHA 可追踪、非 root、可启动镜像 | T023–T027 | 三镜像 build/health/secret scan、`pnpm verify` | PR4-B |
 | PR6 | Compose/Nginx/runbook 与无后门 smoke 证明完整栈可部署回滚 | T028–T034 | config/env 模板静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR5 |
 | PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6 |
 | PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7 |
@@ -49,10 +50,12 @@
 - [x] T015 [P] [US1] 同步 `apps/cms/.env.example` 与 `apps/kith-inn-be/.env.example` 的变量名、secret/非 secret 边界和 fail-closed 说明
 - [x] T016 [US1] 已通过 CMS/BE env/readiness 窄测、真实 PostgreSQL `cms` schema readiness、两端 build/coverage、`pnpm verify` 与 `git diff --check`；PR3 人工 diff 467 行（451 insertions + 16 deletions）；超出默认 400 行来自 review 发现的同一 fail-closed 不变量安全/正确性闭环，拆到后续会合并已知绕过、key 外送或挂起风险
 
-### PR4：生产 migration 与桃子基线
+### PR4-A：生产 migration
 
-- [ ] T017 [US1] 先在 `apps/cms/tests/migration-production.test.ts` 固定 fresh DB、已迁移 DB、重复 migrate、禁止 push/reset 与 migration head 不匹配场景
-- [ ] T018 [US1] 在 `apps/cms/migrations/**` 生成并审阅 baseline，修改 `apps/cms/payload.config.ts` 与 `package.json` 使生产只执行显式 migration、本地开发仍可 push
+- [x] T017 [US1] 已先在 `apps/cms/tests/migration-production.test.ts` 固定 fresh DB、已迁移 DB、重复 migrate、禁止 push/reset 与 migration head 不匹配场景，并取得缺少 migration 模块的 red 证据
+- [x] T018 [US1] 已生成并审阅 baseline，生产仅通过 `payload:migrate:production` 推进 `cms` schema，本地开发仍可 push；真实 PostgreSQL 5/5、CMS coverage 18 files/148 passed/1 skipped、`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；人工 diff 291 行，baseline 机器生成主体另计
+
+### PR4-B：桃子基线
 - [ ] T019 [US1] 先在 `packages/kith-inn-payload/src/seed/taozi.test.ts` 与 `apps/cms/tests/seed-production.test.ts` 覆盖半成品恢复、重复收敛、事务失败、稳定键和 secret OpenID不输出
 - [ ] T020 [US1] 在 `packages/kith-inn-payload/src/seed/taozi.ts` 与 `apps/cms/seed/run.ts` 实现事务化幂等收敛和 `KITH_INN_TRIAL_OPENID` 受控覆盖，不修改 fixture 的 dev OpenID
 - [ ] T021 [US1] 在 `apps/cms/tests/seed-production.test.ts` 增加同库 v1 sentinel，证明 migration/旧 kith seed 不 seed、reset 或改写 v1 业务数据
@@ -117,10 +120,10 @@
 
 ## Dependencies & Execution Order
 
-- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
-- PR2/PR3 固定配置边界，PR4 才生成生产 migration/seed；PR5 只包装已验证 app。PR6 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
+- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
+- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
-- PR4 baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
+- PR4-A baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
 
 ## Parallel Opportunities
 
