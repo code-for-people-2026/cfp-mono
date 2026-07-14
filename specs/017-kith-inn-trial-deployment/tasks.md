@@ -42,12 +42,12 @@
 
 ### PR3：CMS/BE fail-closed 与 readiness
 
-- [ ] T011 [P] [US1] 先在 `apps/cms/src/config/production.test.ts` 覆盖 PostgreSQL、Payload/JWT/internal token 缺失或占位值及非生产 SQLite 正例
-- [ ] T012 [P] [US1] 先在 `apps/kith-inn-be/src/config/env.test.ts` 覆盖 JWT、CMS URL/token、微信与 DeepSeek 配置，并在 `src/routes/readiness.test.ts` 覆盖 CMS/DB 依赖失败
-- [ ] T013 [US1] 在 `apps/cms/src/config/production.ts`、`apps/cms/payload.config.ts`、`apps/cms/src/app/api/ready/route.ts` 与 `apps/cms/src/app/api/health/route.test.ts` 实现生产启动校验和脱敏 PG/schema readiness
-- [ ] T014 [US1] 在 `apps/kith-inn-be/src/config/env.ts`、`src/app.ts`、`src/index.ts` 与 `src/routes/readiness.ts` 实现生产启动校验、`GET /ready` 和稳定 503 类别
-- [ ] T015 [P] [US1] 同步 `apps/cms/.env.example` 与 `apps/kith-inn-be/.env.example` 的变量名、secret/非 secret 边界和 fail-closed 说明
-- [ ] T016 [US1] 运行 CMS/BE env/readiness 窄测、真实 PostgreSQL readiness、两端 build/coverage、`pnpm verify` 与 `git diff --check`
+- [x] T011 [P] [US1] 先在 `apps/cms/src/config/production.test.ts` 覆盖 PostgreSQL、Payload/JWT/internal token 缺失或占位值及非生产 SQLite 正例
+- [x] T012 [P] [US1] 先在 `apps/kith-inn-be/src/config/env.test.ts` 覆盖 JWT、CMS URL/token、微信与 DeepSeek 配置，并在 `src/routes/readiness.test.ts` 覆盖 CMS/DB 依赖失败
+- [x] T013 [US1] 在 `apps/cms/src/config/production.ts`、`apps/cms/payload.config.ts`、`apps/cms/src/app/api/ready/route.ts` 与 `apps/cms/src/app/api/health/route.test.ts` 实现生产启动校验和脱敏 PG/schema readiness
+- [x] T014 [US1] 在 `apps/kith-inn-be/src/config/env.ts`、`src/app.ts`、`src/index.ts` 与 `src/routes/readiness.ts` 实现生产启动校验、`GET /ready` 和稳定 503 类别
+- [x] T015 [P] [US1] 同步 `apps/cms/.env.example` 与 `apps/kith-inn-be/.env.example` 的变量名、secret/非 secret 边界和 fail-closed 说明
+- [x] T016 [US1] 已通过 CMS/BE env/readiness 窄测、真实 PostgreSQL `cms` schema readiness、两端 build/coverage、`pnpm verify` 与 `git diff --check`；PR3 人工 diff 323 行（307 insertions + 16 deletions，<400）
 
 ### PR4：生产 migration 与桃子基线
 
