@@ -53,7 +53,7 @@
 ### PR4-A：生产 migration
 
 - [x] T017 [US1] 已先在 `apps/cms/tests/migration-production.test.ts` 固定 fresh DB、已迁移 DB、重复 migrate、禁止 push/reset 与 migration head 不匹配场景，并取得缺少 migration 模块的 red 证据
-- [x] T018 [US1] 已生成并审阅 baseline，生产仅通过 `payload:migrate:production` 推进 `cms` schema，本地开发仍可 push；真实 PostgreSQL 5/5、CMS coverage 18 files/148 passed/1 skipped、`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；人工 diff 291 行，baseline 机器生成主体另计
+- [x] T018 [US1] 已生成并审阅 baseline，生产仅通过 `payload:migrate:production` 推进 `cms` schema，本地开发仍可 push；真实 PostgreSQL migration/readiness 13/13、CMS coverage 18 files/150 passed/1 skipped、`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；人工 diff 374 行，baseline 机器生成主体另计
 
 ### PR4-B：桃子基线
 - [ ] T019 [US1] 先在 `packages/kith-inn-payload/src/seed/taozi.test.ts` 与 `apps/cms/tests/seed-production.test.ts` 覆盖半成品恢复、重复收敛、事务失败、稳定键和 secret OpenID不输出

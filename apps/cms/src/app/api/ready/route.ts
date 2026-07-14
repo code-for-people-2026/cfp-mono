@@ -1,10 +1,23 @@
 import configPromise from "@payload-config";
 import { getPayload } from "payload";
 import { NextResponse } from "next/server";
+import { migrations } from "../../../../migrations/generated";
+import {
+  assertMigrationHead,
+  databasePushEnabled,
+  type MigrationQuery,
+  readAppliedMigrations,
+} from "../../../../migrations/production";
 
 export const dynamic = "force-dynamic";
 
 type ReadyDeps = { internalToken?: string; probe: () => Promise<void>; timeoutMs?: number };
+type DatabaseReadyDeps = {
+  dbName: string;
+  pushEnabled: boolean;
+  query: MigrationQuery;
+  findSeller: () => Promise<unknown>;
+};
 
 function timeoutAfter(ms: number) {
   let timer: ReturnType<typeof setTimeout>;
@@ -14,10 +27,23 @@ function timeoutAfter(ms: number) {
   return { promise, cancel: () => clearTimeout(timer) };
 }
 
+export async function verifyCmsDatabaseReady(deps: DatabaseReadyDeps): Promise<void> {
+  if (deps.dbName !== "postgres") throw new Error("PostgreSQL required");
+  if (!deps.pushEnabled) {
+    const expected = migrations.map(({ name }) => name);
+    assertMigrationHead(await readAppliedMigrations(deps.query), expected);
+  }
+  await deps.findSeller();
+}
+
 export async function probeCmsDatabase(): Promise<void> {
   const payload = await getPayload({ config: configPromise });
-  if (payload.db.name !== "postgres") throw new Error("PostgreSQL required");
-  await payload.find({ collection: "sellers", limit: 1, depth: 0, overrideAccess: true });
+  await verifyCmsDatabaseReady({
+    dbName: payload.db.name,
+    pushEnabled: databasePushEnabled(),
+    query: (statement) => payload.db.pool.query(statement),
+    findSeller: () => payload.find({ collection: "sellers", limit: 1, depth: 0, overrideAccess: true }),
+  });
 }
 
 export async function readyResponse(
