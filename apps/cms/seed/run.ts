@@ -1,5 +1,7 @@
 import { pathToFileURL } from "node:url";
-import { getPayload } from "payload";
+import type { BasePayload, PayloadRequest } from "payload";
+import { commitTransaction, createLocalReq, getPayload, initTransaction, killTransaction } from "payload";
+import type { SeedResult } from "@cfp/kith-inn-payload/seed";
 import {
   applySeed as applyOldSeed,
   resetSeedData as resetOldSeedData,
@@ -24,9 +26,41 @@ import config from "../payload.config";
 const RESET_ARG = "--reset-dev";
 type Env = Record<string, string | undefined>;
 export type SeedProject = "kith-inn" | "kiv1";
+const OPENID_PLACEHOLDER = /(change[-_ ]?me|replace[-_ ]?me|placeholder|example|test[-_ ]?secret|dev[-_ ]?secret)/i;
 
 function trueish(value: string | undefined): boolean {
   return value === "1" || value === "true";
+}
+
+export function resolveTrialOpenid(env: Env = process.env): string {
+  const configured = env.KITH_INN_TRIAL_OPENID?.trim();
+  if (configured && configured !== "taozi-dev-openid" && !OPENID_PLACEHOLDER.test(configured)) return configured;
+  if (env.NODE_ENV === "production") {
+    throw new Error("KITH_INN_TRIAL_OPENID is required and cannot be a placeholder");
+  }
+  return "taozi-dev-openid";
+}
+
+export async function withSeedTransaction<T>(payload: BasePayload, work: (req: PayloadRequest) => Promise<T>): Promise<T> {
+  const req = await createLocalReq({}, payload);
+  if (!await initTransaction(req)) throw new Error("database transactions unavailable");
+  try {
+    const result = await work(req);
+    await commitTransaction(req);
+    return result;
+  } catch (error) {
+    await killTransaction(req);
+    throw error;
+  }
+}
+
+export function formatKithInnSeedSummary(result: SeedResult): string {
+  return JSON.stringify({
+    project: "kith-inn",
+    status: result.seeded ? "provisioned" : "reconciled",
+    sellerId: result.sellerId,
+    offeringCount: result.offeringCount,
+  });
 }
 
 export function configuredPostgresUrl(env: Env = process.env): string | undefined {
@@ -70,7 +104,12 @@ export function parseSeedProject(args: string[]): SeedProject {
   throw new Error("Seed project must be exactly one of: kith-inn, kiv1.");
 }
 
-export async function runProjectSeed(payload: unknown, project: SeedProject, resetDev: boolean) {
+export async function runProjectSeed(
+  payload: unknown,
+  project: SeedProject,
+  resetDev: boolean,
+  options: { operatorOpenid?: string; req?: PayloadRequest } = {},
+) {
   if (project === "kith-inn") {
     const reset = resetDev
       ? await resetOldSeedData(payload as Parameters<typeof resetOldSeedData>[0])
@@ -78,6 +117,7 @@ export async function runProjectSeed(payload: unknown, project: SeedProject, res
     const seed = await applyOldSeed(
       payload as Parameters<typeof applyOldSeed>[0],
       taoziFixture,
+      options,
     );
     return { project: "kith-inn" as const, reset, seed };
   }
@@ -93,15 +133,17 @@ async function main() {
   const project = parseSeedProject(process.argv.slice(2));
   const resetDev = process.argv.includes(RESET_ARG);
   if (resetDev) assertDevResetAllowed();
+  const operatorOpenid = project === "kith-inn" ? resolveTrialOpenid() : undefined;
   const payload = await getPayload({ config });
   try {
-    const result = await runProjectSeed(payload, project, resetDev);
+    const result = project === "kith-inn" && !resetDev
+      ? await withSeedTransaction(payload, (req) => runProjectSeed(payload, project, false, { operatorOpenid, req }))
+      : await runProjectSeed(payload, project, resetDev, { operatorOpenid });
     if (result.reset) {
       console.log(`✓ reset ${project} local dev data (${Object.entries(result.reset.deleted).map(([k, v]) => `${k}:${v}`).join(", ")})`);
     }
     if (result.project === "kith-inn") {
-      if (result.seed.seeded) console.log(`✓ seeded 桃子's seller + ${result.seed.offeringCount} offerings (seller ${result.seed.sellerId})`);
-      else console.log("✓ kith-inn seed skipped: 桃子 already exists; existing data left unchanged");
+      console.log(formatKithInnSeedSummary(result.seed));
     } else if (result.seed.seeded) {
       console.log(`✓ seeded kiv1 桃子 seller/operator (seller ${result.seed.sellerId})`);
     } else {
@@ -115,8 +157,8 @@ async function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((err) => {
-    console.error("seed failed:", err);
+  main().catch(() => {
+    console.error("seed failed: provisioning_failed; verify required env and database state");
     process.exit(1);
   });
 }

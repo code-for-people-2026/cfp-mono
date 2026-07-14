@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { applySeed, buildComboOp, buildOfferingOps, buildOperatorOp, buildSellerOp, resetSeedData, RESET_COLLECTIONS } from "./taozi";
+import type { PayloadRequest } from "payload";
 import type { TaoziFixture } from "./taozi";
 
 const fixture: TaoziFixture = {
@@ -56,6 +57,11 @@ describe("buildOperatorOp", () => {
       },
     });
   });
+
+  it("accepts a production OpenID without changing the dev default", () => {
+    expect(buildOperatorOp(7, "trial-openid").data.wechatOpenid).toBe("trial-openid");
+    expect(buildOperatorOp(7).data.wechatOpenid).toBe("taozi-dev-openid");
+  });
 });
 
 describe("buildComboOp", () => {
@@ -69,22 +75,34 @@ describe("buildComboOp", () => {
 });
 
 describe("applySeed", () => {
-  const makePayload = (existingSeller: unknown) => ({
-    find: vi.fn(async () => ({ docs: existingSeller ? [existingSeller] : [] })),
-    create: vi.fn(async ({ data }: { collection: string; data: Record<string, unknown> }) => ({
-      id: data.status === "active" ? 1 : 100, // seller gets id 1, offerings 100+
-    })),
-  });
-
-  it("is idempotent — skips when the seller already exists", async () => {
-    const payload = makePayload({ id: 9, name: "测试商家" });
-    const result = await applySeed(payload, fixture);
-    expect(result).toEqual({ seeded: false, offeringCount: 0 });
-    expect(payload.create).not.toHaveBeenCalled();
-  });
+  type Doc = { id: string | number; [key: string]: unknown };
+  const makePayload = (initial: Record<string, Doc[]> = {}) => {
+    const state = structuredClone(initial);
+    let nextId = 10;
+    const matches = (doc: Doc, where: Record<string, unknown>): boolean =>
+      Object.entries(where).every(([field, condition]) => field === "and"
+        ? (condition as Record<string, unknown>[]).every((entry) => matches(doc, entry))
+        : doc[field] === (condition as { equals: unknown }).equals);
+    return {
+      state,
+      find: vi.fn(async ({ collection, where }: { collection: string; where: Record<string, unknown> }) => ({
+        docs: (state[collection] ?? []).filter((doc) => matches(doc, where)),
+      })),
+      create: vi.fn(async ({ collection, data }: { collection: string; data: Record<string, unknown> }) => {
+        const doc = { id: ++nextId, ...data };
+        (state[collection] ??= []).push(doc);
+        return doc;
+      }),
+      update: vi.fn(async ({ collection, id, data }: { collection: string; id: string | number; data: Record<string, unknown> }) => {
+        const doc = state[collection]!.find((entry) => entry.id === id)!;
+        Object.assign(doc, data);
+        return doc;
+      }),
+    };
+  };
 
   it("creates the seller + offering pool when absent", async () => {
-    const payload = makePayload(null);
+    const payload = makePayload();
     const result = await applySeed(payload, fixture);
     expect(result.seeded).toBe(true);
     expect(result.offeringCount).toBe(2);
@@ -96,27 +114,57 @@ describe("applySeed", () => {
   });
 
   it("seeds the seller even with an empty offering pool", async () => {
-    const payload = makePayload(null);
+    const payload = makePayload();
     const result = await applySeed(payload, { ...fixture, offerings: [] });
-    expect(result).toEqual({ seeded: true, sellerId: 1, offeringCount: 0 });
+    expect(result).toMatchObject({ seeded: true, offeringCount: 0 });
     expect(payload.create).toHaveBeenCalledTimes(2); // seller + operator
   });
 
+  it("recovers a partial seed and converges repeatedly by stable keys", async () => {
+    const payload = makePayload({
+      sellers: [{ id: 1, name: fixture.seller.name, status: "inactive" }],
+      offerings: [{ id: 2, name: fixture.offerings[0]!.name, kind: "component", seller: 1 }],
+    });
+    const req = { transactionID: Promise.resolve("seed") } as PayloadRequest;
+
+    const first = await applySeed(payload, fixture, { operatorOpenid: "trial-openid", req });
+    const second = await applySeed(payload, fixture, { operatorOpenid: "trial-openid", req });
+
+    expect(first).toEqual({ seeded: true, sellerId: 1, offeringCount: 2 });
+    expect(second).toEqual({ seeded: false, sellerId: 1, offeringCount: 2 });
+    expect(payload.state.sellers).toHaveLength(1);
+    expect(payload.state.offerings).toHaveLength(2);
+    expect(payload.state.operators).toHaveLength(1);
+    expect(payload.state.operators![0]).toMatchObject({ email: "taozi@kith-inn.local", wechatOpenid: "trial-openid", seller: 1 });
+    for (const call of [...payload.create.mock.calls, ...payload.update.mock.calls]) {
+      expect(call[0]).toMatchObject({ req });
+    }
+  });
+
+  it("fails closed when a stable seed key is already ambiguous", async () => {
+    const payload = makePayload({ sellers: [
+      { id: 1, name: fixture.seller.name },
+      { id: 2, name: fixture.seller.name },
+    ] });
+    await expect(applySeed(payload, fixture)).rejects.toThrow(/ambiguous seed key in sellers/);
+    expect(payload.create).not.toHaveBeenCalled();
+  });
+
   it("seeds combo referencing the component pool, but NO customers (created at order time)", async () => {
-    const payload = makePayload(null);
+    const payload = makePayload();
     const f: TaoziFixture = {
       seller: { name: "桃子测试", defaultPriceCents: 3000 },
       offerings: [{ name: "番茄炒蛋", mainIngredient: "鸡蛋", category: "veg" }],
       combo: { name: "4菜1汤套餐", priceCents: 3000 },
     };
     const result = await applySeed(payload, f);
-    expect(result).toEqual({ seeded: true, sellerId: 1, offeringCount: 1 });
+    expect(result).toMatchObject({ seeded: true, offeringCount: 1 });
     // seller + 1 component + 1 combo + operator = 4 creates (no customers, no addresses)
     expect(payload.create).toHaveBeenCalledTimes(4);
     const comboCall = payload.create.mock.calls.find(
       (c) => (c[0] as { collection: string }).collection === "offerings" && (c[0].data as { kind?: string }).kind === "combo-meal",
     );
-    expect((comboCall![0].data as unknown as { parentOfferings: number[] }).parentOfferings).toEqual([100]);
+    expect((comboCall![0].data as unknown as { parentOfferings: number[] }).parentOfferings).toHaveLength(1);
     // no customer/address collections touched
     expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customers")).toBe(false);
     expect(payload.create.mock.calls.some((c) => (c[0] as { collection: string }).collection === "customer_addresses")).toBe(false);
