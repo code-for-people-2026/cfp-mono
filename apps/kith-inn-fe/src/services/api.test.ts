@@ -52,6 +52,7 @@ describe("resolveBeBaseUrl", () => {
     ["localhost subdomain", "https://api.localhost"],
     ["LAN hostname", "https://be.local"],
     ["LAN-only .lan hostname", "https://api.lan"],
+    ["home network special-use zone", "https://home.arpa"],
     ["home network special-use hostname", "https://router.home.arpa"],
     ["query", "https://codeforpeople.cn?debug=1"],
     ["fragment", "https://codeforpeople.cn#debug"],
