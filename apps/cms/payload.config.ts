@@ -3,6 +3,7 @@ import { sqliteAdapter } from "@payloadcms/db-sqlite";
 import { buildConfig } from "payload";
 import { collections as kithInnCollections } from "@cfp/kith-inn-payload";
 import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
+import { assertCmsProductionEnv } from "./src/config/production";
 import { ensureConstraints } from "./src/db/ensureConstraints";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
@@ -15,8 +16,9 @@ try {
   /* no .env in cwd — rely on runtime env */
 }
 
-const requiresProductionEnv =
-  process.env.VERCEL === "1" || process.env.VERCEL === "true";
+// Next evaluates route modules while building; runtime config must still fail
+// before serving, while build-time image creation remains secret-free.
+if (process.env.NEXT_PHASE !== "phase-production-build") assertCmsProductionEnv();
 
 const postgresDatabaseURL =
   process.env.PAYLOAD_DATABASE_URL ||
@@ -27,14 +29,6 @@ const postgresDatabaseURL =
   (process.env.DATABASE_URI?.startsWith("postgres") ? process.env.DATABASE_URI : undefined);
 
 const payloadSecret = process.env.PAYLOAD_SECRET;
-
-if (requiresProductionEnv && !payloadSecret) {
-  throw new Error("PAYLOAD_SECRET is required for Vercel deployments.");
-}
-
-if (requiresProductionEnv && !postgresDatabaseURL) {
-  throw new Error("A Postgres database URL is required for Vercel Payload deployments.");
-}
 
 // apps/cms is the SHARED Payload host for kith-inn and future small apps. It
 // shares the SAME Postgres instance as apps/website but is isolated to its own

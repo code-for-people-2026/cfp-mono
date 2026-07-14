@@ -14,6 +14,7 @@ export default defineConfig({
       reporter: ["text", "lcov"],
       include: [
         "src/app.ts",
+        "src/config/**/*.ts",
         "src/routes/**/*.ts",
         "src/middleware/**/*.ts",
         "src/lib/**/*.ts",
