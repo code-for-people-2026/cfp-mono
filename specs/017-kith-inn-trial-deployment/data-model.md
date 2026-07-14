@@ -15,10 +15,12 @@
 
 - `releaseSha`、`environment`、`deployedAt`、`workflowRunUrl`。
 - `schemaMigrationHead`: 已应用的最后 migration 标识。
+- `backupId`、`backupCreatedAt`: migration 前为目标 RDS 创建或验证的可恢复备份之非敏感标识与时间。
 - `publicBeHost`、`cmsHost`、`h5Host`: 仅主机名，不含凭据；H5 标记 internal。
 - `previousReleaseSha`: 应用回滚点。
 - `status`: `pending | healthy | failed | rolled_back`。
 - 规则：readiness/smoke 未全绿不得为 `healthy`；失败必须关联诊断与回滚动作。
+- 规则：无可恢复备份记录不得进入 migration；backup ID 不代表凭据，不得包含连接信息。
 
 ## TrialOperatorBinding
 
@@ -30,10 +32,12 @@
 
 ## SmokeEvidence
 
-- `releaseSha`、`startedAt`、`durationMs`。
+- `markerSchemaVersion`、`releaseSha`、`startedAt`、`durationMs`。
 - `checks`: CMS liveness/readiness、BE liveness/readiness、operator lookup、短时 JWT、只读 offerings。
+- `deployRunId`、`cmsImageDigest`、`beImageDigest`、`h5ImageDigest`、`schemaMigrationHead`、`backupId`、`backupCreatedAt`: 绑定部署 run 与可恢复数据点的非敏感 marker 字段。
 - `writeCount`: 必须为 `0`；`redactionPassed`: 必须为 `true`。
 - `status`: `passed | failed`；失败只保存错误类别和关联日志，不保存 token/OpenID。
+- 规则：只有成功路径可把上述字段与完整 main `releaseSha` 写入 `smoke-passed.json` artifact；上传流程必须按 SHA 查询并逐字段校验，不能接受人工声明。
 
 ## DeviceAcceptanceEvidence
 

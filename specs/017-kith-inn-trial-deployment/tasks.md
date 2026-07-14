@@ -11,9 +11,9 @@
 | PR3 | CMS/BE 缺生产配置时 fail closed，并提供真实依赖 readiness | T011–T016 | env/route 测试、PG readiness、两端 build、`pnpm verify` | PR2 |
 | PR4 | 生产 `cms` schema 只走 migration，桃子基线幂等且真实 OpenID 不进证据 | T017–T022 | fresh/existing PG、seed 重跑/恢复、零 reset、`pnpm verify` | PR3 |
 | PR5 | CMS/BE/H5 形成同 SHA 可追踪、非 root、可启动镜像 | T023–T027 | 三镜像 build/health/secret scan、`pnpm verify` | PR4 |
-| PR6 | Compose/Nginx/runbook 与无后门 smoke 证明完整栈可部署回滚 | T028–T034 | config 静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR5 |
-| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行迁移/部署/smoke/回滚 | T035–T038 | affected/缺 secret/失败演练、action lint、`pnpm verify` | PR6 |
-| PR8 | 独立手动工作流可重复上传已 smoke_passed 的指定体验版 | T039–T044 | uploader 单测、dry-run、测试上传、`pnpm verify` | PR7 |
+| PR6 | Compose/Nginx/runbook 与无后门 smoke 证明完整栈可部署回滚 | T028–T034 | config/env 模板静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR5 |
+| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6 |
+| PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过并留下脱敏证据 | T045–T050 | 生产 smoke、版本关联、核心链路、回滚演练 | PR8 |
 
 ## Phase 1: 规格与规划（PR1）
@@ -34,7 +34,7 @@
 
 ### PR2：前端生产 URL 与登录边界
 
-- [ ] T006 [P] [US1] 先在 `apps/kith-inn-fe/src/services/api.test.ts` 增加生产 URL 的缺失、HTTP、IP、localhost、局域网、查询/片段负例与合法 HTTPS 正例
+- [ ] T006 [P] [US1] 先在 `apps/kith-inn-fe/src/services/api.test.ts` 增加生产 URL 的缺失、保留 `.invalid`、HTTP、IP、localhost、局域网、查询/片段负例与合法 HTTPS 正例
 - [ ] T007 [US1] 在 `apps/kith-inn-fe/config/production.ts`、`config/index.ts` 与 `src/services/api.ts` 实现构建期/运行期同源校验，非生产保留本地默认而生产禁止回退
 - [ ] T008 [US1] 先新增 `apps/kith-inn-fe/src/pages/login/index.test.tsx`，再修改 `apps/kith-inn-fe/src/pages/login/index.tsx`，保证生产 weapp 微信登录失败不调用 dev-login且 H5 内部状态明确失败
 - [ ] T009 [US1] 在 `apps/kith-inn-fe/.env.example` 与 `package.json` 记录生产 build 前置，并连续验证合法 URL 的 `build:h5`、`build:weapp` 与非法 URL 的零产物
@@ -74,20 +74,20 @@
 
 ### PR6：编排、smoke 与 runbook
 
-- [ ] T028 [P] [US2] 扩展 `deploy/docker-compose.prod.yml`，加入 CMS/BE/H5、healthcheck、私网/loopback 端口、不可变镜像变量和 migration/provision one-shot 服务
+- [ ] T028 [P] [US2] 扩展 `deploy/docker-compose.prod.yml`，加入 CMS/BE/H5、healthcheck、私网/loopback 端口、不可变镜像变量和 migration/provision one-shot 服务；新增仅含假值的 `deploy/.env.verify.example`，并新增/更新 `deploy/.gitignore` 以忽略本地 `.env.verify`
 - [ ] T029 [P] [US2] 扩展 `deploy/nginx.example.conf`，提供 API HTTPS、CMS/H5 内部限制、80→443、代理 header 与证书/域名占位契约
 - [ ] T030 [US2] 先在 `apps/kith-inn-be/src/smoke/deployed.test.ts` 覆盖 operator 缺失、seller ID 不匹配、TTL、只读请求、上游失败及 token/OpenID 零输出
 - [ ] T031 [US2] 在 `apps/kith-inn-be/src/smoke/deployed.ts` 与 `apps/kith-inn-be/package.json` 实现容器内一次性 `smoke:deployed`，精确比对 provisioning seller ID、复用 CMS lookup/JWT/`GET /offerings` 且不新增 HTTP route
 - [ ] T032 [US2] 扩展 `deploy/smoke-test.sh` 串行验证 CMS/BE liveness/readiness、H5、容器内认证+只读 CLI、零写入和 release SHA
-- [ ] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖 env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
+- [ ] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
 - [ ] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
 
 ### PR7：生产部署工作流
 
 - [ ] T035 [US2] 在 `.github/workflows/deploy-production.yml` 增加 kith-inn affected 输出、手动 target 与专用 secret/variable 存在性检查，无关项目/未配置环境不得执行真实部署
-- [ ] T036 [US2] 在 `.github/workflows/deploy-production.yml` 增加同 SHA 三镜像 build/push、digest 记录、单次 migration/provision、Compose rollout 与部署后 smoke
+- [ ] T036 [US2] 在 `.github/workflows/deploy-production.yml` 增加同 SHA 三镜像 build/push、digest 记录、migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、provisioning seller ID 机器输出直传 smoke、Compose rollout；仅在部署后 smoke 成功末尾上传含 schema version/SHA/run/digest/migration/backup/status 且设 `retention-days: 30` 的 `smoke-passed.json` artifact
 - [ ] T037 [US2] 在 `.github/workflows/deploy-production.yml` 与 `deploy/RUNBOOK.md` 实现 smoke 失败自动恢复上一镜像 digest、schema 不兼容时停止并转人工数据恢复的边界
-- [ ] T038 [US2] 用 actionlint、synthetic git range/Turbo dry-run、缺 secret、migration/smoke 失败演练验证 workflow，确认 website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
+- [ ] T038 [US2] 用 actionlint、synthetic git range/Turbo dry-run，以及缺 secret、备份缺失/不可恢复、migration/smoke 失败演练验证 workflow 全部 fail closed 且失败路径无 `smoke-passed.json`；确认成功 marker 字段完整、website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
 
 ## Phase 4: User Story 3 - 可重复上传微信体验版（P3，PR8）
 
@@ -95,11 +95,11 @@
 
 **Independent Test**: uploader 对固定产物完成 dry-run；缺 AppID/私钥/HTTPS URL/版本或非 main SHA 时上传调用为零；受控测试凭据上传后微信版本可关联 SHA且日志脱敏。
 
-- [ ] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
+- [ ] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、按 SHA 查询/下载 `smoke-passed.json` 及字段/SHA/run/digest/migration/status 不匹配负例、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
 - [ ] T040 [US3] 在 `apps/kith-inn-fe/package.json`、`pnpm-lock.yaml` 与 `apps/kith-inn-fe/project.config.json` 锁定 `miniprogram-ci`、上传命令和 `urlCheck=true` 的非敏感项目配置
 - [ ] T041 [US3] 在 `apps/kith-inn-fe/scripts/upload-weapp.ts` 实现 build digest、`ci.upload`、短 SHA 版本说明、0600 临时私钥和 finally 清理
-- [ ] T042 [US3] 新增 `.github/workflows/release-kith-inn-weapp.yml`，仅 `workflow_dispatch` 接受已 smoke_passed main SHA，经 Environment 审批和 IP 白名单后上传
-- [ ] T043 [US3] 运行缺凭据/非法 URL/非 main SHA 负例、同 SHA 两次 dry-run与一次受控测试上传，检查日志/产物无私钥、OpenID、token
+- [ ] T042 [US3] 新增 `.github/workflows/release-kith-inn-weapp.yml`，仅 `workflow_dispatch` 选择 main SHA，通过 GitHub Actions API 查找并严格校验 PR7 为该 SHA 生成的未过期 `smoke-passed.json` 后，经 Environment 审批和 IP 白名单上传；不得把手填 SHA 本身视为通过证明
+- [ ] T043 [US3] 运行缺凭据/非法 URL/非 main SHA/无 marker/marker 字段错配负例、同 SHA 两次 dry-run与一次受控测试上传，检查日志/产物无私钥、OpenID、token
 - [ ] T044 [US3] 运行 uploader coverage、H5/weapp production build、`pnpm verify` 与 `git diff --check`，记录 PR8 人工 diff <400 行
 
 ## Phase 5: User Story 4 - 桃子白名单真机交付（P4，PR9）

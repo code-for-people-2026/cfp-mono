@@ -33,7 +33,7 @@
 *GATE: Phase 0 前与 Phase 1 后均已复核。*
 
 - **全套规格**：跨 CMS/BE/FE/部署、改变生产 schema 生命周期且预计多个 PR，已产出宪法要求的全部文档。
-- **Monorepo 作用域**：只允许修改 `apps/cms`、`apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-payload`、`deploy`、`.github/workflows`、`DEPLOYMENT.md`、`docs/kith-inn` 与本规格目录；不修改 `@cfp/kith-inn-v1-*` 业务 package。
+- **Monorepo 作用域**：只允许修改 `apps/cms`、`apps/kith-inn-be`、`apps/kith-inn-fe`、`packages/kith-inn-payload`、`deploy`、`.github/workflows`、`DEPLOYMENT.md`、`docs/kith-inn`、本规格目录，以及 PR8 为锁定 `miniprogram-ci` 依赖所需的根 `pnpm-lock.yaml`；不修改 `@cfp/kith-inn-v1-*` 业务 package。
 - **Brownfield 事实**：现有生产只部署 website；CMS/BE 无 Dockerfile；H5/weapp 会回退 `192.168.31.120`；CMS `push:true` 且仅 Vercel 强校验；现有 seed 硬编码 dev OpenID 并按 seller 存在直接跳过；专用生产/上传 secrets 尚未配置。
 - **可审查切片**：下表按配置契约→schema/seed→镜像→编排/smoke→部署→上传→真机验收排序，每片一个不变量并可独立验证。
 - **完成定义**：每片包含窄验证与 `pnpm verify`，外发后逐条闭环 Codex review。
@@ -49,8 +49,8 @@
 | PR4 | `cms` schema 只由提交的 migration 推进，桃子基线可幂等收敛且真实 OpenID 不入库外证据 | `apps/cms/payload.config.ts`、`apps/cms/migrations/**`、`apps/cms/seed/**`、`packages/kith-inn-payload/src/seed/**` | fresh/existing PG migration、seed 两次/中断恢复、零 reset | PR3 |
 | PR5 | CMS、BE、H5 均生成同一提交可追踪、非 root、可启动的生产镜像 | 三个 app 的 `Dockerfile`、`next.config.ts`、`.dockerignore` | 逐镜像 build、非 root/health、secret 扫描 | PR4 |
 | PR6 | Compose、Nginx、smoke 与中文 runbook 能部署和回滚完整 kith-inn 栈 | `deploy/**`、`DEPLOYMENT.md`、`docs/kith-inn/TECH-SPEC.md` | compose/nginx 静态检查、受控失败、health+认证+只读 smoke | PR5 |
-| PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时构建、迁移、部署、smoke/回滚 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/失败回滚演练 | PR6 |
-| PR8 | 独立手动工作流可重复构建并上传指定提交的体验版，上传前全部 fail closed | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、dry-run、受控测试上传 | PR7 |
+| PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时备份、迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/备份/失败回滚演练 | PR6 |
+| PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过，并留下脱敏证据 | `specs/017-kith-inn-trial-deployment/evidence/**`、必要 runbook 勘误 | 生产 smoke、版本关联、真机核心链路、回滚演练 | PR8 |
 
 PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；若 seed 等人工 diff 预计超过 400 行，则把 seed 收敛拆为后续独立 PR，不与 migration 强行合并。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
