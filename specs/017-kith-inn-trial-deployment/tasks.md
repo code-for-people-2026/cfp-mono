@@ -110,7 +110,7 @@
 
 ### PR7-B3：smoke 通过凭据与失败演练
 
-- [ ] T038 [US2] 仅在 smoke 成功末尾上传含 schema version/SHA/run/四 digest/migration/backup/status 且 `retention-days: 30` 的 `smoke-passed.json`；用 actionlint、缺配置/备份、migration/smoke 失败演练证明全部 fail closed 且失败路径无 artifact，确认 website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
+- [x] T038 [US2] 仅在 smoke 成功末尾上传含 schema version/SHA/run/四 digest/migration/backup/status 且 `retention-days: 30` 的 `smoke-passed.json`；用 actionlint、缺配置/备份、migration/smoke 失败演练证明全部 fail closed 且失败路径无 artifact，确认 website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
 
 ## Phase 4: User Story 3 - 可重复上传微信体验版（P3，PR8）
 

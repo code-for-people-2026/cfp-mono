@@ -259,7 +259,32 @@ jobs:
             "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh")"
           migration_head="$(jq -er '.migrationHead' <<<"$result")"
           seller_id="$(jq -er '.sellerId' <<<"$result")"
-          printf 'migration_head=%s\nseller_id=%s\n' "$migration_head" "$seller_id" >> "$GITHUB_OUTPUT"
+          smoke_evidence="$(jq -cer '.smokeEvidence' <<<"$result")"
+          printf 'migration_head=%s\nseller_id=%s\nsmoke_evidence=%s\n' \
+            "$migration_head" "$seller_id" "$smoke_evidence" >> "$GITHUB_OUTPUT"
+
+      - name: Write kith-inn smoke marker
+        if: success() && steps.check.outputs.configured == 'true'
+        env:
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          KITH_INN_CMS_DIGEST: ${{ steps.push.outputs.cms_digest }}
+          KITH_INN_CMS_OPS_DIGEST: ${{ steps.push.outputs.cms_ops_digest }}
+          KITH_INN_BE_DIGEST: ${{ steps.push.outputs.be_digest }}
+          KITH_INN_H5_DIGEST: ${{ steps.push.outputs.h5_digest }}
+          KITH_INN_MIGRATION_HEAD: ${{ steps.deploy.outputs.migration_head }}
+          KITH_INN_BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
+          KITH_INN_BACKUP_CREATED_AT: ${{ steps.backup.outputs.backup_created_at }}
+          KITH_INN_SMOKE_EVIDENCE_JSON: ${{ steps.deploy.outputs.smoke_evidence }}
+        run: bash deploy/write-kith-inn-smoke-marker.sh
+
+      - name: Upload kith-inn smoke marker
+        if: success() && steps.check.outputs.configured == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kith-inn-smoke-passed-${{ github.sha }}
+          path: smoke-passed.json
+          if-no-files-found: error
+          retention-days: 30
 
   deploy:
     needs: [affected, prepare, prepare_kith_inn]
