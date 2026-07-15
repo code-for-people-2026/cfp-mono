@@ -150,6 +150,8 @@ elif [[ "$*" == *'image ls '*'--format'* ]]; then
     'registry.example/cfp-kith-inn-cms sha256:container' \
     'registry.example/cfp-kith-inn-cms sha256:stale' \
     'registry.example/unrelated sha256:unrelated'
+elif [[ "${MOCK_PRUNE_FAIL:-false}" == true && "$*" == *'image rm sha256:stale'* ]]; then
+  exit 45
 elif [[ "${MOCK_MIGRATION_FAIL:-false}" == true && "$*" == *'--exit-code-from kith-inn-cms-migrate'* ]]; then
   exit 42
 elif [[ "${MOCK_CANDIDATE_PULL_FAIL:-false}" == true && "$*" == *' pull' ]]; then
@@ -203,6 +205,16 @@ grep -Fq 'image rm sha256:stale' "$success_log" || fail "successful rollout did 
 for retained in current previous container unrelated; do
   ! grep -Fq "image rm sha256:$retained" "$success_log" || fail "successful rollout pruned retained image: $retained"
 done
+
+printf 'old=true\n' > "$tmp/rollout/deploy/.env.kith-inn"
+printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
+PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$tmp/prune-failure.log" MOCK_PRUNE_FAIL=true \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$tmp/rollout/deploy/smoke-ok.sh" \
+  bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/prune-failure.output" 2>&1 \
+  || fail "post-smoke image cleanup failure blocked a successful rollout"
+grep -Fq 'stale_image_cleanup_failed' "$tmp/prune-failure.output" \
+  || fail "post-smoke image cleanup failure was not reported"
 
 digest="repo@sha256:$(printf 'a%.0s' {1..64})"
 marker="$tmp/smoke-passed.json"

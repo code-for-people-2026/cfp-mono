@@ -17,10 +17,12 @@ for command in docker jq; do command -v "$command" >/dev/null || { echo "missing
 
 compose_for() { docker compose -f "$compose_file" --env-file "$1" "${@:2}"; }
 prune_stale_kith_images() {
-  local work env_file images image repository image_id containers container rows
-  work="$(mktemp -d)"
-  : > "$work/repositories"
-  : > "$work/protected-image-ids"
+  local work env_file images image repository image_id containers container rows cleanup_failed=false
+  work="$(mktemp -d)" || return 1
+  if ! : > "$work/repositories" || ! : > "$work/protected-image-ids"; then
+    rm -rf "$work"
+    return 1
+  fi
 
   for env_file in "$current" "$previous"; do
     [[ -f "$env_file" ]] || continue
@@ -38,19 +40,29 @@ prune_stale_kith_images() {
   containers="$(docker ps -aq)" || { rm -rf "$work"; return 1; }
   while IFS= read -r container; do
     [[ -n "$container" ]] || continue
-    docker inspect --format '{{.Image}}' "$container" >> "$work/protected-image-ids"
+    if ! docker inspect --format '{{.Image}}' "$container" >> "$work/protected-image-ids"; then
+      rm -rf "$work"
+      return 1
+    fi
   done <<< "$containers"
-  sort -u -o "$work/repositories" "$work/repositories"
-  sort -u -o "$work/protected-image-ids" "$work/protected-image-ids"
+  if ! sort -u -o "$work/repositories" "$work/repositories" ||
+     ! sort -u -o "$work/protected-image-ids" "$work/protected-image-ids"; then
+    rm -rf "$work"
+    return 1
+  fi
 
   rows="$(docker image ls --no-trunc --format '{{.Repository}} {{.ID}}')" || { rm -rf "$work"; return 1; }
   while read -r repository image_id; do
     [[ -n "$repository" && -n "$image_id" ]] || continue
     grep -Fxq "$repository" "$work/repositories" || continue
     grep -Fxq "$image_id" "$work/protected-image-ids" && continue
-    docker image rm "$image_id"
+    if ! docker image rm "$image_id"; then
+      cleanup_failed=true
+      printf 'stale kith image could not be removed: %s\n' "$image_id" >&2
+    fi
   done <<< "$rows"
   rm -rf "$work"
+  [[ "$cleanup_failed" == false ]]
 }
 rollback_runtime() {
   if [[ ! -f "$previous" ]]; then
@@ -102,4 +114,6 @@ RELEASE_SHA="$RELEASE_SHA" KITH_INN_COMPOSE_FILE="$compose_file" KITH_INN_ENV_FI
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" KITH_INN_TRIAL_OPENID="$openid" \
   bash "$smoke_script" kith-inn
 trap - ERR
-prune_stale_kith_images
+if ! prune_stale_kith_images; then
+  echo '{"status":"warning","warning":"stale_image_cleanup_failed"}' >&2
+fi
