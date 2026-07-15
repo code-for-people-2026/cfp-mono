@@ -8,6 +8,7 @@
 | BE runtime | `NODE_ENV=production`、`JWT_SECRET`、`CMS_BASE_URL`、`CMS_INTERNAL_TOKEN`、`WX_APPID`、`WX_SECRET`、`DEEPSEEK_API_KEY` | CMS URL 必须显式；secret 不能为空/占位；生产无 dev-login |
 | H5/weapp build | `NODE_ENV=production`、`BE_BASE_URL` | 只允许有效 `https://` 主机；拒绝 IP、localhost、局域网、查询/片段和隐式默认值 |
 | 桃子 provisioning/smoke | `KITH_INN_TRIAL_OPENID` | OpenID 仅为 Environment secret；provisioning 以机器可读结果输出非敏感 seller ID，流水线直接传给 smoke，禁止把 seller ID 配成 Environment 输入或人工复制/猜测 |
+| ECS 部署传输 | `ECS_SSH_KEY`、`ECS_SSH_KNOWN_HOSTS` | host key 必须经可信通道预置；禁止关闭 SSH host 校验后传输 env/secret |
 | 体验版上传 | `WX_APPID`、`KITH_INN_MINIPROGRAM_PRIVATE_KEY` | 私钥只写临时 0600 文件并在 finally 删除；上传 IP 白名单开启 |
 
 非敏感 URL、镜像名、版本说明可用 GitHub Environment variable；secret 缺失时 kith-inn job 必须失败关闭或明确保持未配置，不能影响无关项目 job。任何值不得由工作流拼入 PR 或普通 artifact。
