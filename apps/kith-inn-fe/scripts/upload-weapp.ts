@@ -18,7 +18,7 @@ interface UploadArgs {
 interface SmokeMarker { releaseSha: string; deployRunId: string; [key: string]: unknown }
 interface CiModule {
   Project: new (options: { appid: string; type: "miniProgram"; projectPath: string; privateKeyPath: string }) => unknown;
-  upload(options: { project: unknown; version: string; desc: string }): Promise<unknown>;
+  upload(options: { project: unknown; version: string; desc: string; setting: { useProjectConfig: true } }): Promise<unknown>;
 }
 interface Runtime { loadCi(): Promise<CiModule> }
 
@@ -84,7 +84,7 @@ export async function runUploadWeapp(args: UploadArgs, env: Record<string, strin
     const privateKeyPath = join(keyDir, "private.key"); writeFileSync(privateKeyPath, privateKey, { mode: 0o600 }); chmodSync(privateKeyPath, 0o600);
     const ci = await runtime.loadCi();
     const project = new ci.Project({ appid, type: "miniProgram", projectPath: args.projectPath, privateKeyPath });
-    await ci.upload({ project, version: args.version, desc: args.desc });
+    await ci.upload({ project, version: args.version, desc: args.desc, setting: { useProjectConfig: true } });
     return result;
   } catch {
     throw new Error("微信体验版上传失败");
