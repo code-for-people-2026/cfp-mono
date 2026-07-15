@@ -8,7 +8,7 @@ values=(); for key in "${keys[@]}"; do values+=("$key=value-$key"); done
 tricky='literal${UNEXPANDED}'"'"'slash\end'
 printf '%s\n' 'services:' '  test:' '    image: busybox' '    environment:' '      VALUE: ${KITH_INN_JWT_SECRET}' >"$tmp/compose.yml"
 env "${values[@]}" KITH_INN_JWT_SECRET="$tricky" COMPOSE_ENV_OUTPUT="$tmp/env" bash "$script"
-[[ "$(stat -f '%Lp' "$tmp/env" 2>/dev/null || stat -c '%a' "$tmp/env")" == 600 ]]
+[[ "$(stat -c '%a' "$tmp/env" 2>/dev/null || stat -f '%Lp' "$tmp/env")" == 600 ]]
 docker compose -f "$tmp/compose.yml" --env-file "$tmp/env" config --format json |
   jq -e --arg value "$tricky" '(.services.test.environment.VALUE | gsub("\\$\\$"; "$")) == $value' >/dev/null
 rm "$tmp/env"

@@ -24,7 +24,7 @@ run() {
   KITH_INN_REMOTE_ROOT="$tmp" COMPOSE_BIN="$root/deploy/tests/fake-kith-compose.sh" \
     SMOKE_BIN="$root/deploy/tests/fake-kith-smoke.sh" FAKE_COMPOSE_LOG="$tmp/compose.log" \
     FAKE_SMOKE_LOG="$tmp/smoke.log" FAKE_DEPLOY_MODE="$1" \
-    RELEASE_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bash "$script"
+    RELEASE_SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "${BASH_BIN:-bash}" "$script"
 }
 new_env
 run success >"$tmp/success"
@@ -42,6 +42,13 @@ printf '%s\n' "KITH_INN_TRIAL_OPENID='legacy-openid'" >"$tmp/.env.kith-inn"
 if run migration >"$tmp/legacy.out" 2>"$tmp/legacy.err"; then exit 1; fi
 grep -q '"stage":"preflight","recovery":"no_change"' "$tmp/legacy.err"
 ! grep -Eq ' pull | run | stop ' "$tmp/compose.log"
+
+mkdir "$tmp/no-curl"
+for command in sed head jq; do ln -s "$(command -v "$command")" "$tmp/no-curl/$command"; done
+new_env; rm -f "$tmp/.env.kith-inn"
+if PATH="$tmp/no-curl" BASH_BIN=/bin/bash run success >"$tmp/curl.out" 2>"$tmp/curl.err"; then exit 1; fi
+grep -q '"stage":"preflight","recovery":"no_change"' "$tmp/curl.err"
+! grep -q ' pull ' "$tmp/compose.log"
 
 new_env; old_env
 if run migration >"$tmp/migration.out" 2>"$tmp/migration.err"; then exit 1; fi
