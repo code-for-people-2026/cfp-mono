@@ -11,13 +11,14 @@ assert_contains() { grep -Fq -- "$2" "$1" || fail "$1 is missing: $2"; }
 for required in \
   'target:' 'kith_inn:' 'prepare_kith_inn:' 'deploy-kith-inn:' \
   'needs: [affected, prepare_kith_inn, deploy]' "needs.deploy.result == 'success'" \
+  "needs.prepare_kith_inn.result == 'success'" \
   "github.ref == 'refs/heads/main'" "github.ref != 'refs/heads/main'" \
   'bash deploy/check-kith-inn-production-config.sh' \
   'bash deploy/create-rds-backup.sh' 'bash ~/cfp-kith/deploy/kith-inn-rollout.sh' \
+  'needs.prepare_kith_inn.outputs.cms_digest' 'needs.prepare_kith_inn.outputs.cms_ops_digest' \
+  'needs.prepare_kith_inn.outputs.be_digest' 'needs.prepare_kith_inn.outputs.h5_digest' \
   'jq-1.7.1/jq-linux-amd64' '5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5' \
-  'KITH_INN_BE_BASE_URL=$remote_be_url' \
-  'bash deploy/write-smoke-marker.sh' 'name: smoke-passed-${{ github.sha }}' \
-  'retention-days: 30'; do
+  'KITH_INN_BE_BASE_URL=$remote_be_url'; do
   assert_contains "$workflow" "$required"
 done
 
@@ -133,7 +134,6 @@ run_failure() {
   fi
   grep -Fq 'up -d --no-deps --wait --wait-timeout 120 kith-inn-cms kith-inn-be kith-inn-h5' "$log" \
     || fail "$mode did not restore runtime images"
-  [[ ! -e "$tmp/rollout/deploy/smoke-passed.json" ]] || fail "$mode failure generated a marker"
 }
 run_failure migration "$tmp/rollout/deploy/smoke-ok.sh" true
 run_failure smoke "$tmp/rollout/deploy/smoke-fail.sh" false
@@ -170,15 +170,5 @@ PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$tmp/prune-failure.log" MOCK_PRUNE_FAIL=t
   || fail "post-smoke image cleanup failure blocked a successful rollout"
 grep -Fq 'stale_image_cleanup_failed' "$tmp/prune-failure.output" \
   || fail "post-smoke image cleanup failure was not reported"
-
-digest="repo@sha256:$(printf 'a%.0s' {1..64})"
-marker="$tmp/smoke-passed.json"
-RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 DEPLOY_RUN_ID=123 \
-  CMS_IMAGE_DIGEST="$digest" CMS_OPS_IMAGE_DIGEST="$digest" BE_IMAGE_DIGEST="$digest" H5_IMAGE_DIGEST="$digest" \
-  SCHEMA_MIGRATION_HEAD=20260714_105116_initial_cms_schema BACKUP_ID=9001 BACKUP_CREATED_AT=2026-07-15T01:02:03Z \
-  bash "$repo_root/deploy/write-smoke-marker.sh" "$marker"
-jq -e '.schemaVersion == 1 and .releaseSha and .deployRunId and .cmsImageDigest and .cmsOpsImageDigest and
-  .beImageDigest and .h5ImageDigest and .schemaMigrationHead and .backupId and .backupCreatedAt and .smokeStatus == "passed"' \
-  "$marker" >/dev/null || fail "success marker is incomplete"
 
 echo "production workflow verification passed"
