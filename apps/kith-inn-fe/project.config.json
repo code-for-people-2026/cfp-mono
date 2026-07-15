@@ -1,0 +1,8 @@
+{
+  "miniprogramRoot": "dist/",
+  "projectname": "kith-inn",
+  "description": "kith-inn 桃子体验版",
+  "appid": "touristappid",
+  "setting": { "urlCheck": true, "es6": true, "postcss": true, "minified": true },
+  "compileType": "miniprogram"
+}

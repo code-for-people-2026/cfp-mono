@@ -118,12 +118,12 @@
 
 **Independent Test**: uploader 对固定产物完成 dry-run；缺 AppID/私钥/HTTPS URL/版本或非 main SHA 时上传调用为零；受控测试凭据上传后微信版本可关联 SHA且日志脱敏。
 
-- [ ] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、按 SHA 查询/下载 `smoke-passed.json` 及字段/SHA/run/四 digest/migration/status 不匹配负例、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
-- [ ] T040 [US3] 在 `apps/kith-inn-fe/package.json`、`pnpm-lock.yaml` 与 `apps/kith-inn-fe/project.config.json` 锁定 `miniprogram-ci`、上传命令和 `urlCheck=true` 的非敏感项目配置
-- [ ] T041 [US3] 在 `apps/kith-inn-fe/scripts/upload-weapp.ts` 实现 build digest、`ci.upload`、短 SHA 版本说明、0600 临时私钥和 finally 清理
-- [ ] T042 [US3] 新增 `.github/workflows/release-kith-inn-weapp.yml`，仅 `workflow_dispatch` 选择 main SHA，通过 GitHub Actions API 查找并严格校验 PR7 为该 SHA 生成的未过期 `smoke-passed.json` 后，经 Environment 审批和 IP 白名单上传；不得把手填 SHA 本身视为通过证明
-- [ ] T043 [US3] 运行缺凭据/非法 URL/非 main SHA/无 marker/marker 字段错配负例、同 SHA 两次 dry-run与一次受控测试上传，检查日志/产物无私钥、OpenID、token
-- [ ] T044 [US3] 运行 uploader coverage、H5/weapp production build、`pnpm verify` 与 `git diff --check`，记录 PR8 人工 diff <400 行
+- [x] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、按 SHA 查询/下载 `smoke-passed.json` 及字段/SHA/run/四 digest/migration/status 不匹配负例、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
+- [x] T040 [US3] 在 `apps/kith-inn-fe/package.json`、`pnpm-lock.yaml` 与 `apps/kith-inn-fe/project.config.json` 锁定 `miniprogram-ci`、上传命令和 `urlCheck=true` 的非敏感项目配置
+- [x] T041 [US3] 在 `apps/kith-inn-fe/scripts/upload-weapp.ts` 实现 build digest、`ci.upload`、短 SHA 版本说明、0600 临时私钥和 finally 清理
+- [x] T042 [US3] 新增 `.github/workflows/release-kith-inn-weapp.yml`，仅 `workflow_dispatch` 选择 main SHA，通过 GitHub Actions API 查找并严格校验 PR7 为该 SHA 生成的未过期 `smoke-passed.json` 后，经 Environment 审批和 IP 白名单上传；不得把手填 SHA 本身视为通过证明
+- [x] T043 [US3] 运行缺凭据/非法 URL/非 main SHA/无 marker/marker 字段错配负例、同 SHA 两次 dry-run与一次受控测试上传，检查日志/产物无私钥、OpenID、token
+- [x] T044 [US3] 运行 uploader coverage、H5/weapp production build、`pnpm verify` 与 `git diff --check`，记录 PR8 人工 diff <400 行
 
 ## Phase 5: User Story 4 - 桃子白名单真机交付（P4，PR9）
 
