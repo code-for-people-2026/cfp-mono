@@ -71,7 +71,7 @@ KITH_INN_BE_BASE_URL="$KITH_INN_BE_BASE_URL" RELEASE_SHA="$(git rev-parse HEAD)"
 ## 4. 受控部署与回滚演练
 
 1. 在 GitHub `Production` Environment 由维护者配置 issue #158 列出的缺失 secrets/variables；只核对名称与存在性，不回显值。
-2. 手动触发 `deploy-production.yml` 的 kith-inn target，指定最新 main SHA。
+2. 运行 `gh workflow run deploy-production.yml --ref main -f target=kith-inn`，只选择最新 main 的 kith-inn target。
 3. 核对 migration 前可恢复 RDS 备份的非敏感 ID/时间、ACR digest、单次 migration、幂等 seed、Compose health 和部署后 smoke 均绑定该 SHA。
 4. 下载该 run 成功末尾生成的 `smoke-passed.json` artifact，核对 SHA、run ID、CMS runtime/CMS ops/BE/H5 四镜像 digest、migration head、backup ID/时间和 passed 状态；失败 run 不得存在该 artifact。
 5. 在候选健康后执行一次受控服务失败，按 `deploy/RUNBOOK.md` 回滚至上一 digest；记录耗时和 schema 处置，目标 ≤15 分钟。
