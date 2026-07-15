@@ -1,5 +1,7 @@
 # kith-inn
 
+![kith-inn logo](./kith-inn-logo.png)
+
 > **口号：廛闬扑地，歌吹沸天。**
 >
 > 社区私房菜助手。中文名 **「街坊味」**，英文代号 **kith-inn**（kith=街坊邻里 + inn=小馆，连读谐音 "kitchen"）。
