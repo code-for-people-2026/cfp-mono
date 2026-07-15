@@ -246,6 +246,8 @@ jobs:
             'chmod 600 ~/cfp-mono/.env.kith-inn.next ~/cfp-mono/deploy/docker-compose.kith-inn.prod.yml.next'
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'" >/dev/null
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh preflight-candidate"
 
       - id: gate
         name: Gate kith-inn writes before creating the recovery point
@@ -317,7 +319,7 @@ jobs:
 
       - name: Restore the last-good runtime when the gated deployment fails
         if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
-        timeout-minutes: 5
+        timeout-minutes: 30
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}

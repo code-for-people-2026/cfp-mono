@@ -45,7 +45,10 @@ resolve_releases() {
     current_compose="$current_release/docker-compose.kith-inn.prod.yml"
   fi
   if [[ -e "$previous_pointer" ]]; then
-    previous_release="$(read_release_pointer "$previous_pointer")" || fail preflight invalid_previous_pointer
+    if ! previous_release="$(read_release_pointer "$previous_pointer")"; then
+      previous_release=
+      rm -f -- "$previous_pointer" || fail preflight invalid_previous_pointer
+    fi
   fi
 }
 resolve_releases
@@ -79,6 +82,11 @@ validate_current() {
   [[ "$old_sha" =~ ^[0-9a-f]{40}$ && "$old_seller" =~ ^[0-9]+$ ]] &&
     compose "$current_env" config --quiet >/dev/null 2>&1
 }
+validate_candidate() {
+  [[ "$release_sha" =~ ^[0-9a-f]{40}$ && -f "$next_compose" && -f "$next_env" ]] &&
+    [[ "$(value "$next_env" KITH_INN_RELEASE_SHA)" == "$release_sha" ]] &&
+    compose "$next_env" config --quiet >/dev/null 2>&1
+}
 restore_current() {
   local old_sha old_seller
   validate_current || return 1
@@ -108,6 +116,13 @@ command -v "$smoke_bin" >/dev/null || fail preflight no_change
 command -v jq >/dev/null || fail preflight no_change
 command -v curl >/dev/null || fail preflight no_change
 command -v date >/dev/null || fail preflight no_change
+if [[ "$action" == preflight-candidate ]]; then
+  validate_candidate || fail preflight no_change
+  [[ ! -f "$current_env" ]] || validate_current || fail preflight no_change
+  compose "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || fail preflight no_change
+  printf '{"status":"candidate_ready"}\n'
+  exit 0
+fi
 if [[ "$action" == gate-writes || "$action" == restore-runtime ]]; then
   if [[ ! -f "$current_env" ]]; then printf '{"status":"skipped","reason":"active_runtime_unavailable"}\n'; exit 0; fi
   validate_current || fail preflight no_change
@@ -133,10 +148,8 @@ if [[ "$action" == gate-writes || "$action" == restore-runtime ]]; then
   exit 0
 fi
 [[ "$action" == deploy ]] || fail preflight unsupported_action
-[[ "$release_sha" =~ ^[0-9a-f]{40}$ && -f "$next_compose" && -f "$next_env" ]] || fail preflight no_change
-[[ "$(value "$next_env" KITH_INN_RELEASE_SHA)" == "$release_sha" ]] || fail preflight no_change
+validate_candidate || fail preflight no_change
 [[ ! -f "$current_env" ]] || validate_current || fail preflight no_change
-compose "$next_env" config --quiet >/dev/null 2>&1 || fail preflight no_change
 
 compose "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || recover pull
 migration_output="$(compose "$next_env" run --rm --no-deps kith-inn-cms-migrate 2>&1)" || recover migration
