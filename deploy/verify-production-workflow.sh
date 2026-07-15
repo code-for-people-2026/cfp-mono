@@ -18,9 +18,16 @@ for required in \
   'needs.prepare_kith_inn.outputs.cms_digest' 'needs.prepare_kith_inn.outputs.cms_ops_digest' \
   'needs.prepare_kith_inn.outputs.be_digest' 'needs.prepare_kith_inn.outputs.h5_digest' \
   'jq-1.7.1/jq-linux-amd64' '5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5' \
+  'gate-writes' 'restore-runtime' "steps.gate.outcome == 'success'" 'GITHUB_STEP_SUMMARY' \
   'KITH_INN_BE_BASE_URL=$remote_be_url'; do
   assert_contains "$workflow" "$required"
 done
+stage_line="$(grep -nF 'id: stage' "$workflow" | cut -d: -f1)"
+gate_line="$(grep -nF 'id: gate' "$workflow" | cut -d: -f1)"
+backup_line="$(grep -nF 'id: backup' "$workflow" | cut -d: -f1)"
+rollout_line="$(grep -nF 'id: rollout' "$workflow" | cut -d: -f1)"
+(( stage_line < gate_line && gate_line < backup_line && backup_line < rollout_line )) \
+  || fail "candidate staging, write gate, backup, and rollout are out of order"
 
 bash "$repo_root/deploy/tests/production-targets.test.sh"
 
@@ -35,7 +42,13 @@ case "$*" in
     printf '{"DBInstanceNetInfos":{"DBInstanceNetInfo":[{"ConnectionString":"%s"}]}}' "$host" ;;
   *CreateBackup*) printf '{"BackupJobId":"5071"}' ;;
   *DescribeBackupTasks*)
-    if [[ "${MOCK_BACKUP_MISSING:-false}" == true ]]; then backup=''; else backup=',"BackupId":"9001"'; fi
+    if [[ "${MOCK_BACKUP_MISSING:-false}" == true ]]; then
+      backup=''
+    elif [[ "${MOCK_BACKUP_ID_INVALID:-false}" == true ]]; then
+      backup=',"BackupId":"bad id"'
+    else
+      backup=',"BackupId":"9001"'
+    fi
     printf '{"Items":{"BackupJob":[{"BackupJobId":"5071","BackupStatus":"Finished"%s}]}}' "$backup" ;;
   *DescribeBackups*)
     if [[ "${MOCK_BACKUP_UNAVAILABLE:-false}" == true ]]; then status=Failed; available=0; else status=Success; available=1; fi
@@ -55,7 +68,7 @@ if PATH="$tmp/bin:$PATH" MOCK_BACKUP_UNAVAILABLE=true RDS_INSTANCE_ID=rm-test \
   BACKUP_POLL_SECONDS=0 bash "$repo_root/deploy/create-rds-backup.sh" >/dev/null 2>&1; then
   fail "unrecoverable backup was accepted"
 fi
-for mode in MOCK_RDS_MISMATCH MOCK_BACKUP_MISSING; do
+for mode in MOCK_RDS_MISMATCH MOCK_BACKUP_MISSING MOCK_BACKUP_ID_INVALID; do
   if env PATH="$tmp/bin:$PATH" "$mode=true" RDS_INSTANCE_ID=rm-test BACKUP_POLL_SECONDS=0 \
     PAYLOAD_DATABASE_URL='postgresql://user:secret@rm-test.pg.rds.aliyuncs.com:5432/cfp' \
     bash "$repo_root/deploy/create-rds-backup.sh" >/dev/null 2>&1; then
@@ -68,6 +81,7 @@ mkdir -p "$tmp/rollout/deploy"
 cp "$repo_root/deploy/docker-compose.kith-inn.prod.yml" "$tmp/rollout/deploy/"
 cp "$repo_root/deploy/kith-inn-rollout.sh" "$tmp/rollout/deploy/"
 printf 'old=true\n' > "$tmp/rollout/deploy/.env.kith-inn"
+printf 'previous=true\n' > "$tmp/rollout/deploy/.env.kith-inn.previous"
 printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
 cat > "$tmp/bin/docker" <<'MOCK'
 #!/usr/bin/env bash
@@ -101,6 +115,8 @@ elif [[ "$*" == *'image ls '*'--format'* ]]; then
     'registry.example/unrelated sha256:unrelated'
 elif [[ "${MOCK_PRUNE_FAIL:-false}" == true && "$*" == *'image rm sha256:stale'* ]]; then
   exit 45
+elif [[ "${MOCK_GATE_FAIL:-false}" == true && "$*" == *' stop kith-inn-cms kith-inn-be kith-inn-h5'* ]]; then
+  exit 46
 elif [[ "${MOCK_MIGRATION_FAIL:-false}" == true && "$*" == *'--exit-code-from kith-inn-cms-migrate'* ]]; then
   exit 42
 elif [[ "${MOCK_CANDIDATE_PULL_FAIL:-false}" == true && "$*" == *' pull' ]]; then
@@ -113,6 +129,8 @@ chmod +x "$tmp/bin/docker"
 cat > "$tmp/rollout/deploy/smoke-ok.sh" <<'MOCK'
 #!/usr/bin/env bash
 : "${KITH_INN_BE_BASE_URL:?KITH_INN_BE_BASE_URL is required}"
+grep -qx 'old=true' "$KITH_INN_RELEASE_DIR/.env.kith-inn"
+grep -qx 'candidate=true' "$KITH_INN_RELEASE_DIR/.env.kith-inn.next"
 printf '{"status":"passed"}\n'
 MOCK
 cat > "$tmp/rollout/deploy/smoke-fail.sh" <<'MOCK'
@@ -120,10 +138,28 @@ cat > "$tmp/rollout/deploy/smoke-fail.sh" <<'MOCK'
 exit 13
 MOCK
 chmod +x "$tmp/rollout/deploy/smoke-"*.sh
+
+gate_log="$tmp/gate.log"
+PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$gate_log" KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" \
+  bash "$tmp/rollout/deploy/kith-inn-rollout.sh" gate-writes
+grep -Fq 'stop kith-inn-cms kith-inn-be kith-inn-h5' "$gate_log" || fail "write gate did not stop runtimes"
+restore_log="$tmp/restore.log"
+PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$restore_log" KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" \
+  bash "$tmp/rollout/deploy/kith-inn-rollout.sh" restore-runtime
+grep -Fq 'up -d --no-deps --wait --wait-timeout 120 kith-inn-cms kith-inn-be kith-inn-h5' "$restore_log" \
+  || fail "write gate recovery did not restore the last-good runtime"
+if PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$tmp/gate-failure.log" MOCK_GATE_FAIL=true \
+  KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" bash "$tmp/rollout/deploy/kith-inn-rollout.sh" gate-writes \
+  >"$tmp/gate-failure.output" 2>&1; then
+  fail "failed write gate was accepted"
+fi
+grep -Fq 'up -d --no-deps --wait --wait-timeout 120 kith-inn-cms kith-inn-be kith-inn-h5' \
+  "$tmp/gate-failure.log" || fail "failed write gate did not attempt runtime recovery"
+
 run_failure() {
   local mode="$1" smoke="$2" log
   log="$tmp/$mode.log"
-  cp "$tmp/rollout/deploy/.env.kith-inn" "$tmp/rollout/deploy/.env.kith-inn.next"
+  printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
   if PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$log" MOCK_MIGRATION_FAIL="${3:-false}" \
     MOCK_ROLLBACK_FAIL="${4:-false}" MOCK_CANDIDATE_PULL_FAIL="${5:-false}" \
     RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
@@ -134,6 +170,8 @@ run_failure() {
   fi
   grep -Fq 'up -d --no-deps --wait --wait-timeout 120 kith-inn-cms kith-inn-be kith-inn-h5' "$log" \
     || fail "$mode did not restore runtime images"
+  grep -qx 'old=true' "$tmp/rollout/deploy/.env.kith-inn" \
+    || fail "$mode replaced the last-good env before smoke success"
 }
 run_failure migration "$tmp/rollout/deploy/smoke-ok.sh" true
 run_failure smoke "$tmp/rollout/deploy/smoke-fail.sh" false
@@ -152,6 +190,9 @@ PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$success_log" \
   KITH_INN_BE_BASE_URL=https://kith.example.cn \
   KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$tmp/rollout/deploy/smoke-ok.sh" \
   bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/success.output" 2>&1
+grep -qx 'candidate=true' "$tmp/rollout/deploy/.env.kith-inn" || fail "successful rollout did not promote candidate env"
+grep -qx 'old=true' "$tmp/rollout/deploy/.env.kith-inn.previous" || fail "successful rollout lost prior env"
+[[ ! -e "$tmp/rollout/deploy/.env.kith-inn.next" ]] || fail "successful rollout retained candidate env"
 grep -Fq 'image rm sha256:stale' "$success_log" || fail "successful rollout did not prune a stale kith image"
 prune_line="$(grep -nF 'image rm sha256:stale' "$success_log" | head -n 1 | cut -d: -f1)"
 pull_line="$(grep -nF ' pull' "$success_log" | head -n 1 | cut -d: -f1)"

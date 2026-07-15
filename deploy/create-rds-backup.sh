@@ -45,6 +45,7 @@ for ((attempt=1; attempt<=attempts; attempt++)); do
   (( attempt < attempts )) && sleep "$poll_seconds"
 done
 [[ -n "$backup_id" ]] || { echo "RDS backup task timed out" >&2; exit 4; }
+[[ "$backup_id" =~ ^[A-Za-z0-9._:-]+$ ]] || { echo "invalid RDS backup ID" >&2; exit 4; }
 
 for ((attempt=1; attempt<=attempts; attempt++)); do
   backups="$(aliyun rds DescribeBackups --DBInstanceId "$RDS_INSTANCE_ID" --BackupId "$backup_id")"

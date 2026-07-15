@@ -331,22 +331,6 @@ jobs:
           tar -xzf /tmp/aliyun-cli.tgz -C /tmp
           sudo install -m 0755 /tmp/aliyun /usr/local/bin/aliyun
 
-      - id: backup
-        name: Create and verify recoverable target RDS backup
-        env:
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIBABA_CLOUD_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
-          ALIBABA_CLOUD_IGNORE_PROFILE: "TRUE"
-          RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
-          RDS_BACKUP_METHOD: ${{ vars.KITH_INN_RDS_BACKUP_METHOD || 'Physical' }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          backup="$(bash deploy/create-rds-backup.sh)"
-          echo "id=$(jq -r .backupId <<<"$backup")" >> "$GITHUB_OUTPUT"
-          echo "created_at=$(jq -r .backupCreatedAt <<<"$backup")" >> "$GITHUB_OUTPUT"
-          echo "Recoverable RDS backup verified."
-
       - name: Write SSH key
         env:
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
@@ -361,7 +345,8 @@ jobs:
           echo '5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5  /tmp/jq' | sha256sum -c -
           chmod 700 /tmp/jq
 
-      - name: Roll out, smoke, and automatically restore prior runtime on failure
+      - id: stage
+        name: Stage candidate without changing the active runtime
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
@@ -407,8 +392,57 @@ jobs:
           scp "${ssh_args[@]}" .env.kith-inn.next "$remote:~/cfp-kith/deploy/.env.kith-inn.next"
           printf -v remote_login 'docker login --username %q --password-stdin %q' "$ACR_USERNAME" "$ACR_REGISTRY"
           printf '%s' "$ACR_PASSWORD" | ssh "${ssh_args[@]}" "$remote" "$remote_login"
+          ssh "${ssh_args[@]}" "$remote" \
+            'chmod 700 ~/cfp-kith/bin/jq && chmod 600 ~/cfp-kith/deploy/.env.kith-inn.next'
+
+      - id: gate
+        name: Gate kith-inn writes before creating the recovery point
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"; ssh_args=(-i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no)
+          ssh "${ssh_args[@]}" "$remote" \
+            'PATH=$HOME/cfp-kith/bin:$PATH bash ~/cfp-kith/deploy/kith-inn-rollout.sh gate-writes'
+
+      - id: backup
+        name: Create and verify recoverable target RDS backup
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIBABA_CLOUD_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIBABA_CLOUD_IGNORE_PROFILE: "TRUE"
+          RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
+          RDS_BACKUP_METHOD: ${{ vars.KITH_INN_RDS_BACKUP_METHOD || 'Physical' }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          backup="$(bash deploy/create-rds-backup.sh)"
+          backup_id="$(jq -r .backupId <<<"$backup")"
+          backup_created_at="$(jq -r .backupCreatedAt <<<"$backup")"
+          echo "id=$backup_id" >> "$GITHUB_OUTPUT"
+          echo "created_at=$backup_created_at" >> "$GITHUB_OUTPUT"
+          printf '### kith-inn recovery point\n\n- Backup ID: `%s`\n- Created at: `%s`\n' \
+            "$backup_id" "$backup_created_at" >> "$GITHUB_STEP_SUMMARY"
+          echo "Recoverable RDS backup verified."
+
+      - id: rollout
+        name: Roll out, smoke, and automatically restore prior runtime on failure
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"; ssh_args=(-i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no)
           printf -v remote_be_url '%q' "$KITH_INN_BE_BASE_URL"
           ssh "${ssh_args[@]}" "$remote" \
-            "chmod 700 ~/cfp-kith/bin/jq && chmod 600 ~/cfp-kith/deploy/.env.kith-inn.next && \
-            PATH=\$HOME/cfp-kith/bin:\$PATH KITH_INN_BE_BASE_URL=$remote_be_url RELEASE_SHA='$GITHUB_SHA' \
-            bash ~/cfp-kith/deploy/kith-inn-rollout.sh"
+            "PATH=\$HOME/cfp-kith/bin:\$PATH KITH_INN_BE_BASE_URL=$remote_be_url RELEASE_SHA='$GITHUB_SHA' \
+            bash ~/cfp-kith/deploy/kith-inn-rollout.sh rollout"
+
+      - name: Restore the last-good runtime when the gated deployment fails
+        if: failure() && steps.gate.outcome == 'success'
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"; ssh_args=(-i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no)
+          ssh "${ssh_args[@]}" "$remote" \
+            'PATH=$HOME/cfp-kith/bin:$PATH bash ~/cfp-kith/deploy/kith-inn-rollout.sh restore-runtime'
