@@ -62,11 +62,11 @@ bash deploy/verify-nginx-example.sh
 provision_result="$("${compose[@]}" logs --no-color --no-log-prefix kith-inn-cms-provision | tail -n 1)"
 seller_id="$(jq -er 'select(.project == "kith-inn") | .sellerId' <<<"$provision_result")"
 : "${KITH_INN_TRIAL_OPENID:?请从受控本地 secret 注入，禁止回显或提交}"
-RELEASE_SHA="$(git rev-parse HEAD)" KITH_INN_ENV_FILE=deploy/.env.verify \
+KITH_INN_BE_BASE_URL="$KITH_INN_BE_BASE_URL" RELEASE_SHA="$(git rev-parse HEAD)" KITH_INN_ENV_FILE=deploy/.env.verify \
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" bash deploy/smoke-test.sh kith-inn
 ```
 
-预期：CMS/BE liveness+readiness、H5 静态入口、operator lookup、短时 JWT 与只读 offerings 全绿，写入变化为 0。随后制造缺 token、DB 不可达、错误 migration head 和失效 operator，候选均不得标记健康。
+预期：CMS/BE liveness+readiness、H5 静态入口、真实 HTTPS BE ingress、operator lookup、短时 JWT 与只读 offerings 全绿，写入变化为 0。随后制造缺 token、DB 不可达、错误 migration head、TLS/域名错误和失效 operator，候选均不得标记健康。
 
 ## 4. 受控部署与回滚演练
 
