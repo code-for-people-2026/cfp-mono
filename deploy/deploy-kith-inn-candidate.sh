@@ -10,6 +10,7 @@ compose_bin="${COMPOSE_BIN:-docker}"
 smoke_bin="${SMOKE_BIN:-$root/deploy/smoke-test.sh}"
 release_sha="${RELEASE_SHA:-}"
 runtime=(kith-inn-cms kith-inn-be kith-inn-h5)
+rollback_images=(kith-inn-cms-migrate "${runtime[@]}")
 all_services=(kith-inn-cms-migrate kith-inn-cms-provision "${runtime[@]}")
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
 value() { sed -n "s/^$2=//p" "$1" | head -n 1; }
@@ -28,7 +29,7 @@ recover() {
   old_sha="$(value "$current_env" KITH_INN_RELEASE_SHA)"
   old_seller="$(value "$current_env" KITH_INN_PROVISIONED_SELLER_ID)"
   if [[ ! "$old_sha" =~ ^[0-9a-f]{40}$ || -z "$old_seller" ]] ||
-    ! compose "$current_env" pull "${runtime[@]}" >/dev/null 2>&1 ||
+    ! compose "$current_env" pull "${rollback_images[@]}" >/dev/null 2>&1 ||
     ! compose "$current_env" up -d --no-deps "${runtime[@]}" >/dev/null 2>&1 ||
     ! smoke "$current_env" "$old_sha" "$old_seller" >/dev/null 2>&1; then
     compose "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true

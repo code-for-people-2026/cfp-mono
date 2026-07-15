@@ -210,6 +210,7 @@ jobs:
           ALIBABA_CLOUD_CLI_PLUGIN_AUTO_INSTALL: "true"
           ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
           ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: bash deploy/create-rds-backup.sh
 
       - id: deploy
@@ -221,13 +222,13 @@ jobs:
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
           ECS_SSH_KNOWN_HOSTS: ${{ secrets.ECS_SSH_KNOWN_HOSTS }}
           ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-          ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-          CMS_DIGEST: ${{ steps.push.outputs.cms_digest }}
-          CMS_OPS_DIGEST: ${{ steps.push.outputs.cms_ops_digest }}
-          BE_DIGEST: ${{ steps.push.outputs.be_digest }}
-          H5_DIGEST: ${{ steps.push.outputs.h5_digest }}
+          KITH_INN_RELEASE_SHA: ${{ github.sha }}
+          KITH_INN_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms@${{ steps.push.outputs.cms_digest }}
+          KITH_INN_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms-ops@${{ steps.push.outputs.cms_ops_digest }}
+          KITH_INN_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-be@${{ steps.push.outputs.be_digest }}
+          KITH_INN_H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-h5@${{ steps.push.outputs.h5_digest }}
           PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
@@ -246,23 +247,7 @@ jobs:
           chmod 600 ~/.ssh/cfp-ecs
           chmod 600 ~/.ssh/known_hosts
           trap 'rm -f .env.kith-inn.remote ~/.ssh/cfp-ecs ~/.ssh/known_hosts' EXIT
-          {
-            printf 'KITH_INN_RELEASE_SHA=%s\n' "$RELEASE_SHA"
-            printf 'KITH_INN_CMS_IMAGE=%s/%s/kith-inn-cms@%s\n' "$ACR_REGISTRY" "$ACR_NAMESPACE" "$CMS_DIGEST"
-            printf 'KITH_INN_CMS_OPS_IMAGE=%s/%s/kith-inn-cms-ops@%s\n' "$ACR_REGISTRY" "$ACR_NAMESPACE" "$CMS_OPS_DIGEST"
-            printf 'KITH_INN_BE_IMAGE=%s/%s/kith-inn-be@%s\n' "$ACR_REGISTRY" "$ACR_NAMESPACE" "$BE_DIGEST"
-            printf 'KITH_INN_H5_IMAGE=%s/%s/kith-inn-h5@%s\n' "$ACR_REGISTRY" "$ACR_NAMESPACE" "$H5_DIGEST"
-            printf 'PAYLOAD_DATABASE_URL=%s\n' "$PAYLOAD_DATABASE_URL"
-            printf 'KITH_INN_PAYLOAD_SECRET=%s\n' "$KITH_INN_PAYLOAD_SECRET"
-            printf 'KITH_INN_JWT_SECRET=%s\n' "$KITH_INN_JWT_SECRET"
-            printf 'KITH_INN_CMS_INTERNAL_TOKEN=%s\n' "$KITH_INN_CMS_INTERNAL_TOKEN"
-            printf 'KITH_INN_TRIAL_OPENID=%s\n' "$KITH_INN_TRIAL_OPENID"
-            printf 'KITH_INN_WX_APPID=%s\n' "$KITH_INN_WX_APPID"
-            printf 'KITH_INN_WX_SECRET=%s\n' "$KITH_INN_WX_SECRET"
-            printf 'KITH_INN_DEEPSEEK_API_KEY=%s\n' "$KITH_INN_DEEPSEEK_API_KEY"
-            printf 'KITH_INN_BE_BASE_URL=%s\n' "$KITH_INN_BE_BASE_URL"
-          } > .env.kith-inn.remote
-          chmod 600 .env.kith-inn.remote
+          COMPOSE_ENV_OUTPUT=.env.kith-inn.remote bash deploy/write-kith-inn-compose-env.sh
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" 'mkdir -p ~/cfp-mono/deploy'
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes \
             deploy/docker-compose.kith-inn.prod.yml deploy/smoke-test.sh deploy/deploy-kith-inn-candidate.sh \
