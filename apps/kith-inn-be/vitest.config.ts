@@ -18,6 +18,7 @@ export default defineConfig({
         "src/routes/**/*.ts",
         "src/middleware/**/*.ts",
         "src/lib/**/*.ts",
+        "src/smoke/deployed.ts",
       ],
       thresholds: {
         statements: 100,

@@ -12,8 +12,9 @@
 | PR4-A | 生产 `cms` schema 只走 migration，错误 head 与 push/reset 均失败关闭 | T017–T018 | fresh/existing PG、重复 migration、错误 head、`pnpm verify` | PR3 |
 | PR4-B | 桃子基线事务化幂等收敛且真实 OpenID 不进证据 | T019–T022 | seed 重跑/恢复、v1 sentinel、零 reset、`pnpm verify` | PR4-A |
 | PR5 | CMS/BE/H5 形成同 SHA 可追踪、非 root、可启动镜像 | T023–T027 | 三镜像 build/health/secret scan、`pnpm verify` | PR4-B |
-| PR6 | Compose/Nginx/runbook 与无后门 smoke 证明完整栈可部署回滚 | T028–T034 | config/env 模板静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR5 |
-| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6 |
+| PR6-A | 容器内 smoke 只用短时 operator JWT 精确验证目标 seller 的只读 offerings | T030–T031 | operator/seller/TTL/上游负例、BE coverage/build、`pnpm verify` | PR5 |
+| PR6-B | Compose/Nginx/runbook 组装已验证 smoke，证明完整栈可部署回滚 | T028–T029、T032–T034 | config/env 模板静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR6-A |
+| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6-B |
 | PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过并留下脱敏证据 | T045–T050 | 生产 smoke、版本关联、核心链路、回滚演练 | PR8 |
 
@@ -75,12 +76,15 @@
 
 **Independent Test**: 本地生产等价 Compose 在 Nginx/TLS 占位配置下通过 readiness；内部 CLI建立短时认证并只读 offerings、写入为零；任一依赖失败触发非零、脱敏诊断和上一 digest 回滚。
 
-### PR6：编排、smoke 与 runbook
+### PR6-A：无后门的容器内 smoke
+
+- [x] T030 [US2] 先在 `apps/kith-inn-be/src/smoke/deployed.test.ts` 覆盖 operator 缺失、seller ID 不匹配、TTL、只读请求、上游失败及 token/OpenID 零输出
+- [x] T031 [US2] 在 `apps/kith-inn-be/src/smoke/deployed.ts` 与 `apps/kith-inn-be/package.json` 实现容器内一次性 `smoke:deployed`，精确比对 provisioning seller ID、复用 CMS lookup/JWT/`GET /offerings` 且不新增 HTTP route
+
+### PR6-B：编排、smoke 入口与 runbook
 
 - [ ] T028 [P] [US2] 扩展 `deploy/docker-compose.prod.yml`，加入 CMS/BE/H5、healthcheck、私网/loopback 端口、不可变镜像变量和 migration/provision one-shot 服务；新增仅含假值的 `deploy/.env.verify.example`，并新增/更新 `deploy/.gitignore` 以忽略本地 `.env.verify`
 - [ ] T029 [P] [US2] 扩展 `deploy/nginx.example.conf`，提供 API HTTPS、CMS/H5 内部限制、80→443、代理 header 与证书/域名占位契约
-- [ ] T030 [US2] 先在 `apps/kith-inn-be/src/smoke/deployed.test.ts` 覆盖 operator 缺失、seller ID 不匹配、TTL、只读请求、上游失败及 token/OpenID 零输出
-- [ ] T031 [US2] 在 `apps/kith-inn-be/src/smoke/deployed.ts` 与 `apps/kith-inn-be/package.json` 实现容器内一次性 `smoke:deployed`，精确比对 provisioning seller ID、复用 CMS lookup/JWT/`GET /offerings` 且不新增 HTTP route
 - [ ] T032 [US2] 扩展 `deploy/smoke-test.sh` 串行验证 CMS/BE liveness/readiness、H5、容器内认证+只读 CLI、零写入和 release SHA
 - [ ] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
 - [ ] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
@@ -120,8 +124,8 @@
 
 ## Dependencies & Execution Order
 
-- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
-- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
+- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
+- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
 - PR4-A baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
 
@@ -129,7 +133,7 @@
 
 - PR3 的 CMS env 测试 T011 与 BE env/readiness 测试 T012 文件独立，可并行；实现仍依次收口。
 - PR5 的三个 Dockerfile T023–T025 文件独立，可并行，T026 统一验证后再收口。
-- PR6 的 Compose T028、Nginx T029 与文档 T033 可并行起草；T030→T031→T032 的 smoke 链必须顺序完成。
+- PR6-A 的 T030→T031 必须顺序完成；其合并后，PR6-B 的 Compose T028、Nginx T029 与文档 T033 可并行起草，再由 T032/T034 收口。
 
 ## Requirement Coverage
 

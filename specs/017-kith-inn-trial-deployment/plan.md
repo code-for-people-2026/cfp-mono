@@ -49,8 +49,9 @@
 | PR4-A | `cms` schema 只由提交的 migration 推进，生产 push/reset 与错误 head 均失败关闭 | `apps/cms/payload.config.ts`、`apps/cms/migrations/**` | fresh/existing PG、重复 migration、错误 head | PR3 |
 | PR4-B | 桃子基线可事务化幂等收敛且真实 OpenID 不入库外证据 | `apps/cms/seed/**`、`packages/kith-inn-payload/src/seed/**` | seed 两次/中断恢复、v1 sentinel、零 reset | PR4-A |
 | PR5 | CMS、BE、H5 均生成同一提交可追踪、非 root、可启动的生产镜像 | 三个 app 的 `Dockerfile`、`next.config.ts`、`.dockerignore` | 逐镜像 build、非 root/health、secret 扫描 | PR4-B |
-| PR6 | Compose、Nginx、smoke 与中文 runbook 能部署和回滚完整 kith-inn 栈 | `deploy/**`、`DEPLOYMENT.md`、`docs/kith-inn/TECH-SPEC.md` | compose/nginx 静态检查、受控失败、health+认证+只读 smoke | PR5 |
-| PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时备份、迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/备份/失败回滚演练 | PR6 |
+| PR6-A | 容器内 smoke 只用短时 operator JWT 精确验证目标 seller 的只读 offerings | `apps/kith-inn-be/src/smoke/**`、BE build/package 配置 | operator/seller/TTL/上游负例、BE coverage/build | PR5 |
+| PR6-B | Compose、Nginx、smoke 入口与中文 runbook 能部署和回滚完整 kith-inn 栈 | `deploy/**`、`DEPLOYMENT.md`、`docs/kith-inn/TECH-SPEC.md` | compose/nginx 静态检查、受控失败、health+认证+只读 smoke | PR6-A |
+| PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时备份、迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/备份/失败回滚演练 | PR6-B |
 | PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过，并留下脱敏证据 | `specs/017-kith-inn-trial-deployment/evidence/**`、必要 runbook 勘误 | 生产 smoke、版本关联、真机核心链路、回滚演练 | PR8 |
 
