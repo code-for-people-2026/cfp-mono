@@ -16,6 +16,7 @@
     "payload:migrate:create": "payload migrate:create",
     "seed:kith-inn": "tsx seed/run.ts kith-inn",
     "seed:kith-inn:reset:dev": "tsx seed/run.ts kith-inn --reset-dev",
+    "smoke:snapshot": "tsx smoke/business-snapshot-cli.ts",
     "seed:kiv1": "tsx seed/run.ts kiv1",
     "seed:kiv1:reset:dev": "tsx seed/run.ts kiv1 --reset-dev",
     "test": "vitest run",

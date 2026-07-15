@@ -89,9 +89,9 @@
 
 ### PR6-B2：smoke 入口与回滚 runbook
 
-- [ ] T032 [US2] 扩展 `deploy/smoke-test.sh` 串行验证 CMS/BE liveness/readiness、H5、容器内认证+只读 CLI、零写入和 release SHA
-- [ ] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
-- [ ] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
+- [x] T032 [US2] 扩展 `deploy/smoke-test.sh` 串行验证 CMS/BE liveness/readiness、H5、容器内认证+只读 CLI、零写入和 release SHA
+- [x] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
+- [x] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
 
 ### PR7：生产部署工作流
 
