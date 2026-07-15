@@ -5,7 +5,7 @@
 ## ReleaseCandidate
 
 - `releaseSha`: 40 位 Git commit，主键。
-- `cmsImageDigest`、`beImageDigest`、`h5ImageDigest`: 不可变镜像摘要。
+- `cmsImageDigest`、`cmsOpsImageDigest`、`beImageDigest`、`h5ImageDigest`: 不可变镜像摘要；ops 只运行同 SHA 的 migration/provision，不承载流量。
 - `weappBuildDigest`、`weappVersion`: 小程序构建摘要与上传版本。
 - `configFingerprint`: 只含变量名/非敏感选项的摘要，不含值。
 - `state`: `built | deployed | smoke_passed | uploaded | device_accepted | rejected | rolled_back`。
@@ -34,7 +34,7 @@
 
 - `markerSchemaVersion`、`releaseSha`、`startedAt`、`durationMs`。
 - `checks`: CMS liveness/readiness、BE liveness/readiness、operator lookup、短时 JWT、只读 offerings。
-- `deployRunId`、`cmsImageDigest`、`beImageDigest`、`h5ImageDigest`、`schemaMigrationHead`、`backupId`、`backupCreatedAt`: 绑定部署 run 与可恢复数据点的非敏感 marker 字段。
+- `deployRunId`、`cmsImageDigest`、`cmsOpsImageDigest`、`beImageDigest`、`h5ImageDigest`、`schemaMigrationHead`、`backupId`、`backupCreatedAt`: 绑定部署 run、四个不可变产物与可恢复数据点的非敏感 marker 字段。
 - `writeCount`: 必须为 `0`；`redactionPassed`: 必须为 `true`。
 - `status`: `passed | failed`；失败只保存错误类别和关联日志，不保存 token/OpenID。
 - 规则：只有成功路径可把上述字段与完整 main `releaseSha` 写入 `smoke-passed.json` artifact；上传流程必须按 SHA 查询并逐字段校验，不能接受人工声明。

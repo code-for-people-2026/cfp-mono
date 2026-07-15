@@ -3,6 +3,7 @@ set -euo pipefail
 
 release_sha="${RELEASE_SHA:-}"
 cms_image="${KITH_INN_CMS_IMAGE:-}"
+cms_ops_image="${KITH_INN_CMS_OPS_IMAGE:-}"
 be_image="${KITH_INN_BE_IMAGE:-}"
 h5_image="${KITH_INN_H5_IMAGE:-}"
 
@@ -12,7 +13,7 @@ fail() {
 }
 
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "RELEASE_SHA must be a full lowercase commit SHA"
-[[ -n "$cms_image" && -n "$be_image" && -n "$h5_image" ]] || fail "all three image names are required"
+[[ -n "$cms_image" && -n "$cms_ops_image" && -n "$be_image" && -n "$h5_image" ]] || fail "all four image names are required"
 command -v docker >/dev/null || fail "docker is required"
 
 containers=()
@@ -24,8 +25,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-assert_image_contract() {
-  local role="$1" image="$2" user revision config
+assert_image_metadata() {
+  local role="$1" image="$2" user revision
   docker image inspect "$image" >/dev/null 2>&1 || fail "$role image is missing"
   revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
   [[ "$revision" == "$release_sha" ]] || fail "$role image revision label does not match RELEASE_SHA"
@@ -33,12 +34,26 @@ assert_image_contract() {
   case "$user" in
     ""|root|0|0:0) fail "$role image must declare a non-root user" ;;
   esac
-  config="$(docker image inspect --format '{{json .Config.Healthcheck}}' "$image")"
-  [[ "$config" != "null" && "$config" != "<nil>" ]] || fail "$role image must declare a healthcheck"
   if docker image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$image" |
     grep -Eq '^(PAYLOAD_SECRET|JWT_SECRET|CMS_INTERNAL_TOKEN|WX_SECRET|DEEPSEEK_API_KEY|KITH_INN_TRIAL_OPENID)='; then
     fail "$role image config contains a secret-bearing environment variable"
   fi
+}
+
+assert_image_contract() {
+  local role="$1" image="$2" config
+  assert_image_metadata "$role" "$image"
+  config="$(docker image inspect --format '{{json .Config.Healthcheck}}' "$image")"
+  [[ "$config" != "null" && "$config" != "<nil>" ]] || fail "$role image must declare a healthcheck"
+}
+
+assert_ops_image_contract() {
+  local image="$1" workdir command
+  assert_image_metadata cms-ops "$image"
+  workdir="$(docker image inspect --format '{{.Config.WorkingDir}}' "$image")"
+  command="$(docker image inspect --format '{{json .Config.Cmd}}' "$image")"
+  [[ "$workdir" == "/app/apps/cms" ]] || fail "cms-ops image working directory is invalid"
+  [[ "$command" == '["./node_modules/.bin/tsx","migrations/run.ts"]' ]] || fail "cms-ops image command is invalid"
 }
 
 start_container() {
@@ -80,6 +95,7 @@ assert_no_forbidden_content() {
 }
 
 assert_image_contract cms "$cms_image"
+assert_ops_image_contract "$cms_ops_image"
 assert_image_contract be "$be_image"
 assert_image_contract h5 "$h5_image"
 
@@ -124,8 +140,9 @@ assert_no_forbidden_content cms "$cms_container" /app
 assert_no_forbidden_content be "$be_container" /app
 assert_no_forbidden_content h5 "$h5_container" /usr/share/nginx/html
 
-printf '{"releaseSha":"%s","cmsImageId":"%s","beImageId":"%s","h5ImageId":"%s","status":"passed"}\n' \
+printf '{"releaseSha":"%s","cmsImageId":"%s","cmsOpsImageId":"%s","beImageId":"%s","h5ImageId":"%s","status":"passed"}\n' \
   "$release_sha" \
   "$(docker image inspect --format '{{.Id}}' "$cms_image")" \
+  "$(docker image inspect --format '{{.Id}}' "$cms_ops_image")" \
   "$(docker image inspect --format '{{.Id}}' "$be_image")" \
   "$(docker image inspect --format '{{.Id}}' "$h5_image")"

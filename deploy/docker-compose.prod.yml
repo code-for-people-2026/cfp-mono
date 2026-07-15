@@ -3,6 +3,6 @@ services:
     image: ${WEBSITE_IMAGE}
     restart: unless-stopped
     env_file:
-      - ./.env.production
+      - ${WEBSITE_ENV_FILE:-./.env.production}
     ports:
       - "3302:3302"

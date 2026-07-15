@@ -14,7 +14,7 @@
 
 ## 2. 构建与版本契约
 
-- CMS、BE、H5 镜像 tag 使用 `releaseSha`，部署记录使用 registry 返回的 digest；容器以非 root 用户运行。
+- CMS runtime、短生命周期 CMS ops、BE、H5 四个镜像 tag 使用同一 `releaseSha`，部署记录使用 registry 返回的四个 digest；容器均以非 root 用户运行。ops image 只运行 migration/provision，结束后不承载流量；不得用未纳入 marker 的临时 builder 代替。
 - H5 与 weapp 必须在构建前调用同一个 `BE_BASE_URL` 校验器；源码中本地默认值只允许非生产开发。
 - weapp 上传入口接收 `--version`、`--desc`、`--project-path`，版本说明必须含短 SHA；重复执行同一输入得到同一构建摘要，但微信上传记录可有新的执行时间。
 - 正式目标入口：`pnpm --filter @cfp/kith-inn-fe upload:weapp -- --version <version> --desc <redacted-description>`；`--dry-run` 完成全部本地校验/构建但不调用微信。
@@ -56,10 +56,11 @@
 - 部署顺序：为目标 RDS 创建或验证可恢复备份 → 记录非敏感 backup ID/时间 → 单次 `payload:migrate:production` → 幂等 `seed:kith-inn`/provision → 启动候选 → readiness → smoke。备份缺失、不可恢复或无法绑定目标数据库时必须在 migration 前失败关闭。
 - migration/seed 失败不得启动候选；生产禁止 `push`、`migrate:fresh/reset`、`seed:*:reset:dev`。
 - 应用失败先回滚到 `previousReleaseSha`；若 migration 与旧版不兼容，停止流量并选择已审计 down、前向修复或 RDS 恢复，不自动猜测。
+- 应用回滚不重跑旧 ops image；记录的 `cmsOpsImageDigest` 用于追溯已执行 DDL/seed 供应链，schema 处置仍以 migration head 与备份为准。
 
 ## 7. 体验版与证据
 
-PR7 只在 smoke 全部成功后生成 `smoke-passed.json`，内容为 schema version、完整 `releaseSha`、deploy run ID、三镜像 digest、migration head、非敏感 backup ID/时间与 `smokeStatus: passed`，并上传为按 SHA 命名且设置 `retention-days: 30` 的 GitHub Actions artifact；失败路径不得产生该 marker。
+PR7 只在 smoke 全部成功后生成 `smoke-passed.json`，内容为 schema version、完整 `releaseSha`、deploy run ID、CMS runtime/CMS ops/BE/H5 四镜像 digest、migration head、非敏感 backup ID/时间与 `smokeStatus: passed`，并上传为按 SHA 命名且设置 `retention-days: 30` 的 GitHub Actions artifact；失败路径不得产生该 marker。
 
 上传 workflow 必须显式选择 main commit，随后通过 GitHub Actions API 查询、下载并校验该 SHA 对应且未过期的 `smoke-passed.json`；artifact 缺失/过期，或 SHA、run ID、digest、migration head、状态任一不一致均失败，不能信任手填 SHA 或手工抄录结果。校验通过并经 GitHub Environment 审批后才可上传；不得由任意 PR 或无关 main push 自动上传。
 
