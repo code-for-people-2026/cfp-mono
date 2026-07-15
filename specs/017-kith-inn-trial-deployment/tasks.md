@@ -106,7 +106,7 @@
 
 ### PR7-B2：备份门禁、候选部署与回滚
 
-- [ ] T037 [US2] 在 `.github/workflows/deploy-production.yml` 与 `deploy/RUNBOOK.md` 实现 migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、seller ID 机器输出直传、Compose rollout、部署后 smoke；任一步失败自动恢复上一应用 digest，schema 不兼容时停止并转人工数据恢复
+- [x] T037 [US2] 已在 `.github/workflows/deploy-production.yml` 与 `deploy/RUNBOOK.md` 实现 migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、seller ID 机器输出直传、Compose rollout、部署后公开入口 smoke；任一步失败自动恢复上一应用 digest，schema 不兼容时停止并转 `manual_recovery_required`
 
 ### PR7-B3：smoke 通过凭据与失败演练
 

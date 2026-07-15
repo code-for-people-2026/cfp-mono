@@ -138,7 +138,22 @@ KITH_INN_BE_BASE_URL="https://<已备案且微信后台已配置的-BE-host>" \
 
 smoke 会核对五个容器的 release SHA、Compose 实际 loopback 健康、H5，以及与 weapp 构建相同的 `KITH_INN_BE_BASE_URL` 所经过的真实 TLS/Nginx liveness、readiness 和 `/offerings` 未认证边界；JWT 认证只读仍在 BE 容器 loopback 内执行，避免域名误配外送 token。它还验证 operator/seller、60 秒 JWT、只读 offerings，以及目标 seller 全业务 collection 的前后哈希；成功必须为 `writeCount: 0`。seller ID 只能由本次 provision JSON 直传，不能配置为 Environment 输入。任一步失败都不得生成上传凭据或进入体验版上传。
 
-### 9.2 诊断与 15 分钟回滚
+### 9.2 Production workflow 与通过凭据
+
+`.github/workflows/deploy-production.yml` 的手动入口必须显式选择 `website`、`kith-inn` 或 `all`；main push 则通过 git range + Turbo dry-run 分别判断受影响目标。kith-inn 未受影响或专用配置缺失时只记录缺失的变量名，不记录、打印或要求无关项目补齐其值，也不执行真实部署。
+
+GitHub `Production` Environment 需要以下名称：
+
+- secrets：`ALIYUN_ACR_*`、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ECS_*`、`KITH_INN_DATABASE_URL`、`KITH_INN_PAYLOAD_SECRET`、`KITH_INN_JWT_SECRET`、`KITH_INN_CMS_INTERNAL_TOKEN`、`KITH_INN_TRIAL_OPENID`、`KITH_INN_WX_APPID`、`KITH_INN_WX_SECRET`、`KITH_INN_DEEPSEEK_API_KEY`；
+- variables：`ALIYUN_REGION_ID`、`KITH_INN_RDS_INSTANCE_ID`、`KITH_INN_BE_BASE_URL`；可选 `KITH_INN_RDS_BACKUP_METHOD=Physical|Snapshot`、`KITH_INN_DEEPSEEK_BASE_URL`、`KITH_INN_DEEPSEEK_MODEL`。
+
+job 等目标 SHA 的 `ci.yml` 通过后构建并推送四个同 SHA 镜像，记录 registry digest；随后把数据库 URL host 绑定到目标 RDS endpoint，创建备份并等到 task `Finished`、备份集 `Success` 且 `IsAvail=1`，才允许在 ECS 各执行一次 migration、provision 和候选 runtime。provision 的非敏感 seller ID 在同一远端进程直接传给 smoke，不是 workflow 输入。
+
+只有 rollout/readiness/smoke 全部通过，才生成 `smoke-passed-<完整 SHA>` artifact（保留 30 天）。其中 `smoke-passed.json` 固定记录 schema version、完整 SHA、deploy run ID、四个 digest、migration head、backup ID/时间与 `smokeStatus=passed`；任何失败 run 都没有该文件。
+
+rollout 前保留权限为 `0600` 的上一份 runtime env/digest。migration、provision、readiness 或 smoke 失败时自动只恢复上一版 CMS/BE/H5，绝不运行旧 ops image 或猜测数据库回退；若首次部署没有上一版，或旧 runtime 无法通过新 schema 的 health，则停止候选并输出 `manual_recovery_required`，转入下面的数据恢复分支。
+
+### 9.3 诊断与 15 分钟回滚
 
 - `database_unavailable`/migration head 错误：停止候选，不改 schema；检查 RDS 网络、备份和 migration 日志。
 - `internal_auth_failed`/token 错误：轮换并一致更新 CMS/BE token 后重新部署，不打印旧值。

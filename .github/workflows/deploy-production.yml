@@ -297,3 +297,163 @@ jobs:
         env:
           SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: bash deploy/smoke-test.sh
+
+  deploy-kith-inn:
+    needs: [affected, prepare_kith_inn]
+    if: needs.affected.outputs.kith_inn == 'true' && needs.prepare_kith_inn.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment: Production
+    permissions:
+      actions: read
+      contents: read
+    env:
+      CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-kith-inn-cms:${{ github.sha }}
+      CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-kith-inn-cms-ops:${{ github.sha }}
+      BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-kith-inn-be:${{ github.sha }}
+      H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-kith-inn-h5:${{ github.sha }}
+      KITH_INN_BE_BASE_URL: ${{ vars.KITH_INN_BE_BASE_URL }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait for CI (verify) to pass
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id="$(gh run list --workflow=ci.yml --commit="$GITHUB_SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+          [[ -n "$run_id" ]] || { echo "No ci.yml run found for $GITHUB_SHA" >&2; exit 1; }
+          gh run watch "$run_id" --exit-status
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/az 2>/dev/null || true
+          sudo apt-get clean
+
+      - name: Login to Alibaba Cloud ACR
+        uses: aliyun/acr-login@v1
+        with:
+          login-server: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+
+      - id: images
+        name: Build and push four exact-SHA images
+        run: |
+          docker build --build-arg RELEASE_SHA="$GITHUB_SHA" -f apps/cms/Dockerfile -t "$CMS_IMAGE" .
+          docker build --target jobs --build-arg RELEASE_SHA="$GITHUB_SHA" -f apps/cms/Dockerfile -t "$CMS_OPS_IMAGE" .
+          docker build --build-arg RELEASE_SHA="$GITHUB_SHA" -f apps/kith-inn-be/Dockerfile -t "$BE_IMAGE" .
+          docker build --build-arg RELEASE_SHA="$GITHUB_SHA" --build-arg BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
+            -f apps/kith-inn-fe/Dockerfile -t "$H5_IMAGE" .
+          push_digest() {
+            local image="$1" key="$2" log digest
+            log="$(docker push "$image" 2>&1)"; printf '%s\n' "$log"
+            digest="$(sed -nE 's/.*digest: (sha256:[0-9a-f]{64}).*/\1/p' <<<"$log" | tail -n 1)"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "registry digest missing for $key" >&2; exit 1; }
+            echo "$key=${image%:*}@$digest" >> "$GITHUB_OUTPUT"
+          }
+          push_digest "$CMS_IMAGE" cms
+          push_digest "$CMS_OPS_IMAGE" cms_ops
+          push_digest "$BE_IMAGE" be
+          push_digest "$H5_IMAGE" h5
+
+      - name: Install pinned Alibaba Cloud CLI
+        run: |
+          url=https://github.com/aliyun/aliyun-cli/releases/download/v3.3.18/aliyun-cli-linux-3.3.18-amd64.tgz
+          curl -fsSLo /tmp/aliyun-cli.tgz "$url"
+          echo '0823286604dbd8beb8d65dd0694d23c913e7c5d5a02b20a3593a4f8a6517f1d4  /tmp/aliyun-cli.tgz' | sha256sum -c -
+          tar -xzf /tmp/aliyun-cli.tgz -C /tmp
+          sudo install -m 0755 /tmp/aliyun /usr/local/bin/aliyun
+
+      - id: backup
+        name: Create and verify recoverable target RDS backup
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIBABA_CLOUD_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIBABA_CLOUD_IGNORE_PROFILE: "TRUE"
+          RDS_INSTANCE_ID: ${{ vars.KITH_INN_RDS_INSTANCE_ID }}
+          RDS_BACKUP_METHOD: ${{ vars.KITH_INN_RDS_BACKUP_METHOD || 'Physical' }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.KITH_INN_DATABASE_URL }}
+        run: |
+          backup="$(bash deploy/create-rds-backup.sh)"
+          echo "id=$(jq -r .backupId <<<"$backup")" >> "$GITHUB_OUTPUT"
+          echo "created_at=$(jq -r .backupCreatedAt <<<"$backup")" >> "$GITHUB_OUTPUT"
+          echo "Recoverable RDS backup verified."
+
+      - name: Write SSH key
+        env:
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
+          chmod 600 ~/.ssh/cfp-ecs
+
+      - name: Roll out, smoke, and automatically restore prior runtime on failure
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.KITH_INN_DATABASE_URL }}
+          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
+          KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
+          KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
+          KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
+          KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
+          KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}
+          KITH_INN_DEEPSEEK_API_KEY: ${{ secrets.KITH_INN_DEEPSEEK_API_KEY }}
+          KITH_INN_DEEPSEEK_BASE_URL: ${{ vars.KITH_INN_DEEPSEEK_BASE_URL }}
+          KITH_INN_DEEPSEEK_MODEL: ${{ vars.KITH_INN_DEEPSEEK_MODEL }}
+          KITH_INN_CMS_IMAGE: ${{ steps.images.outputs.cms }}
+          KITH_INN_CMS_OPS_IMAGE: ${{ steps.images.outputs.cms_ops }}
+          KITH_INN_BE_IMAGE: ${{ steps.images.outputs.be }}
+          KITH_INN_H5_IMAGE: ${{ steps.images.outputs.h5 }}
+        run: |
+          write_env() {
+            local name="$1" value="$2"
+            [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { echo "multiline env rejected: $name" >&2; exit 1; }
+            value="${value//\\/\\\\}"; value="${value//\"/\\\"}"; value="${value//\$/\$\$}"
+            printf '%s="%s"\n' "$name" "$value" >> .env.kith-inn.next
+          }
+          : > .env.kith-inn.next
+          for name in PAYLOAD_DATABASE_URL KITH_INN_PAYLOAD_SECRET KITH_INN_JWT_SECRET KITH_INN_CMS_INTERNAL_TOKEN \
+            KITH_INN_TRIAL_OPENID KITH_INN_WX_APPID KITH_INN_WX_SECRET KITH_INN_DEEPSEEK_API_KEY \
+            KITH_INN_CMS_IMAGE KITH_INN_CMS_OPS_IMAGE KITH_INN_BE_IMAGE KITH_INN_H5_IMAGE; do
+            write_env "$name" "${!name}"
+          done
+          write_env KITH_INN_DEEPSEEK_BASE_URL "${KITH_INN_DEEPSEEK_BASE_URL:-https://api.deepseek.com}"
+          write_env KITH_INN_DEEPSEEK_MODEL "${KITH_INN_DEEPSEEK_MODEL:-deepseek-chat}"
+          chmod 600 .env.kith-inn.next
+          remote="$ECS_USER@$ECS_HOST"; ssh_args=(-i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no)
+          ssh "${ssh_args[@]}" "$remote" 'mkdir -p ~/cfp-kith/deploy && chmod 700 ~/cfp-kith ~/cfp-kith/deploy'
+          scp "${ssh_args[@]}" deploy/docker-compose.kith-inn.prod.yml deploy/smoke-test.sh \
+            deploy/kith-inn-rollout.sh "$remote:~/cfp-kith/deploy/"
+          scp "${ssh_args[@]}" .env.kith-inn.next "$remote:~/cfp-kith/deploy/.env.kith-inn.next"
+          printf -v remote_login 'docker login --username %q --password-stdin %q' "$ACR_USERNAME" "$ACR_REGISTRY"
+          printf '%s' "$ACR_PASSWORD" | ssh "${ssh_args[@]}" "$remote" "$remote_login"
+          ssh "${ssh_args[@]}" "$remote" \
+            "chmod 600 ~/cfp-kith/deploy/.env.kith-inn.next && RELEASE_SHA='$GITHUB_SHA' bash ~/cfp-kith/deploy/kith-inn-rollout.sh"
+
+      - name: Write smoke-passed marker
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          DEPLOY_RUN_ID: ${{ github.run_id }}
+          CMS_IMAGE_DIGEST: ${{ steps.images.outputs.cms }}
+          CMS_OPS_IMAGE_DIGEST: ${{ steps.images.outputs.cms_ops }}
+          BE_IMAGE_DIGEST: ${{ steps.images.outputs.be }}
+          H5_IMAGE_DIGEST: ${{ steps.images.outputs.h5 }}
+          BACKUP_ID: ${{ steps.backup.outputs.id }}
+          BACKUP_CREATED_AT: ${{ steps.backup.outputs.created_at }}
+        run: |
+          SCHEMA_MIGRATION_HEAD="$(sed -nE "s/.*name: '([^']+)'.*/\1/p" apps/cms/migrations/generated/index.ts | tail -n 1)"
+          export SCHEMA_MIGRATION_HEAD
+          bash deploy/write-smoke-marker.sh smoke-passed.json
+
+      - name: Upload exact-SHA smoke credential
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-passed-${{ github.sha }}
+          path: smoke-passed.json
+          if-no-files-found: error
+          retention-days: 30
