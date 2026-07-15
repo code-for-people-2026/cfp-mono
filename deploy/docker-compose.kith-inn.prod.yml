@@ -1,0 +1,75 @@
+services:
+  kith-inn-cms-migrate:
+    image: ${KITH_INN_CMS_OPS_IMAGE:?KITH_INN_CMS_OPS_IMAGE is required}
+    restart: "no"
+    working_dir: /app/apps/cms
+    command: ["./node_modules/.bin/tsx", "migrations/run.ts"]
+    environment: &cms-environment
+      NODE_ENV: production
+      PAYLOAD_DB_PUSH: "false"
+      PAYLOAD_DATABASE_URL: ${PAYLOAD_DATABASE_URL:?PAYLOAD_DATABASE_URL is required}
+      PAYLOAD_SECRET: ${KITH_INN_PAYLOAD_SECRET:?KITH_INN_PAYLOAD_SECRET is required}
+      JWT_SECRET: ${KITH_INN_JWT_SECRET:?KITH_INN_JWT_SECRET is required}
+      CMS_INTERNAL_TOKEN: ${KITH_INN_CMS_INTERNAL_TOKEN:?KITH_INN_CMS_INTERNAL_TOKEN is required}
+
+  kith-inn-cms-provision:
+    image: ${KITH_INN_CMS_OPS_IMAGE:?KITH_INN_CMS_OPS_IMAGE is required}
+    restart: "no"
+    working_dir: /app/apps/cms
+    command: ["./node_modules/.bin/tsx", "seed/run.ts", "kith-inn"]
+    environment:
+      <<: *cms-environment
+      KITH_INN_TRIAL_OPENID: ${KITH_INN_TRIAL_OPENID:?KITH_INN_TRIAL_OPENID is required}
+    depends_on:
+      kith-inn-cms-migrate:
+        condition: service_completed_successfully
+
+  kith-inn-cms:
+    image: ${KITH_INN_CMS_IMAGE:?KITH_INN_CMS_IMAGE is required}
+    restart: unless-stopped
+    environment: *cms-environment
+    ports:
+      - "127.0.0.1:${KITH_INN_CMS_LOOPBACK_PORT:-3304}:3304"
+    depends_on:
+      kith-inn-cms-provision:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3304/api/ready',{headers:{'x-internal-token':process.env.CMS_INTERNAL_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  kith-inn-be:
+    image: ${KITH_INN_BE_IMAGE:?KITH_INN_BE_IMAGE is required}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${KITH_INN_JWT_SECRET:?KITH_INN_JWT_SECRET is required}
+      CMS_BASE_URL: http://kith-inn-cms:3304
+      CMS_INTERNAL_TOKEN: ${KITH_INN_CMS_INTERNAL_TOKEN:?KITH_INN_CMS_INTERNAL_TOKEN is required}
+      WX_APPID: ${KITH_INN_WX_APPID:?KITH_INN_WX_APPID is required}
+      WX_SECRET: ${KITH_INN_WX_SECRET:?KITH_INN_WX_SECRET is required}
+      DEEPSEEK_API_KEY: ${KITH_INN_DEEPSEEK_API_KEY:?KITH_INN_DEEPSEEK_API_KEY is required}
+      DEEPSEEK_BASE_URL: ${KITH_INN_DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${KITH_INN_DEEPSEEK_MODEL:-deepseek-chat}
+    ports:
+      - "127.0.0.1:${KITH_INN_BE_LOOPBACK_PORT:-3310}:3310"
+    depends_on:
+      kith-inn-cms:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3310/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  kith-inn-h5:
+    image: ${KITH_INN_H5_IMAGE:?KITH_INN_H5_IMAGE is required}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${KITH_INN_H5_LOOPBACK_PORT:-3305}:8080"
+    depends_on:
+      kith-inn-be:
+        condition: service_healthy

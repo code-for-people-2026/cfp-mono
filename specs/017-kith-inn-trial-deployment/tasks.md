@@ -13,8 +13,9 @@
 | PR4-B | 桃子基线事务化幂等收敛且真实 OpenID 不进证据 | T019–T022 | seed 重跑/恢复、v1 sentinel、零 reset、`pnpm verify` | PR4-A |
 | PR5 | CMS/BE/H5 形成同 SHA 可追踪、非 root、可启动镜像 | T023–T027 | 三镜像 build/health/secret scan、`pnpm verify` | PR4-B |
 | PR6-A | 容器内 smoke 只用短时 operator JWT 精确验证目标 seller 的只读 offerings | T030–T031 | operator/seller/TTL/上游负例、BE coverage/build、`pnpm verify` | PR5 |
-| PR6-B | Compose/Nginx/runbook 组装已验证 smoke，证明完整栈可部署回滚 | T028–T029、T032–T034 | config/env 模板静态检查、health+auth+read-only、失败回滚、`pnpm verify` | PR6-A |
-| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6-B |
+| PR6-B1 | CMS job image 与 Compose/Nginx 固定 migration→provision→候选的可启动私网拓扑 | T028–T029 | job 真实命令、compose/nginx 静态检查、loopback/私网暴露、`pnpm verify` | PR6-A |
+| PR6-B2 | smoke/runbook 动态传递 seller、证明全业务表零写入并指导失败回滚 | T032–T034 | health+auth+read-only、全表快照、受控失败/回滚、`pnpm verify` | PR6-B1 |
+| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6-B2 |
 | PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7 |
 | PR9 | 实际云环境与桃子白名单真机完整通过并留下脱敏证据 | T045–T050 | 生产 smoke、版本关联、核心链路、回滚演练 | PR8 |
 
@@ -81,10 +82,13 @@
 - [x] T030 [US2] 先在 `apps/kith-inn-be/src/smoke/deployed.test.ts` 覆盖 operator 缺失、seller ID 不匹配、TTL、只读请求、上游失败及 token/OpenID 零输出
 - [x] T031 [US2] 在 `apps/kith-inn-be/src/smoke/deployed.ts` 与 `apps/kith-inn-be/package.json` 实现容器内一次性 `smoke:deployed`，精确比对 provisioning seller ID、复用 CMS lookup/JWT/`GET /offerings` 且不新增 HTTP route
 
-### PR6-B：编排、smoke 入口与 runbook
+### PR6-B1：可启动的 job、编排与入口契约
 
-- [ ] T028 [P] [US2] 扩展 `deploy/docker-compose.prod.yml`，加入 CMS/BE/H5、healthcheck、私网/loopback 端口、不可变镜像变量和 migration/provision one-shot 服务；新增仅含假值的 `deploy/.env.verify.example`，并新增/更新 `deploy/.gitignore` 以忽略本地 `.env.verify`
-- [ ] T029 [P] [US2] 扩展 `deploy/nginx.example.conf`，提供 API HTTPS、CMS/H5 内部限制、80→443、代理 header 与证书/域名占位契约
+- [x] T028 [P] [US2] 新增 `deploy/docker-compose.kith-inn.prod.yml` 与 `deploy/verify-kith-inn-compose.sh`，保持 website Compose 独立并加入 CMS runtime/CMS ops/BE/H5、healthcheck、loopback 端口、四 digest 和 migration/provision；提交假值 `.env.verify.example` 并忽略本地 `.env.verify`
+- [x] T029 [P] [US2] 扩展 `deploy/nginx.example.conf` 与 `deploy/verify-nginx-example.sh`，保留 website 入口并提供 API HTTPS、CMS/H5 内部限制、80→443、代理 header、临时证书物化与可重复 `nginx -t`
+
+### PR6-B2：smoke 入口与回滚 runbook
+
 - [ ] T032 [US2] 扩展 `deploy/smoke-test.sh` 串行验证 CMS/BE liveness/readiness、H5、容器内认证+只读 CLI、零写入和 release SHA
 - [ ] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
 - [ ] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
@@ -92,7 +96,7 @@
 ### PR7：生产部署工作流
 
 - [ ] T035 [US2] 在 `.github/workflows/deploy-production.yml` 增加 kith-inn affected 输出、手动 target 与专用 secret/variable 存在性检查，无关项目/未配置环境不得执行真实部署
-- [ ] T036 [US2] 在 `.github/workflows/deploy-production.yml` 增加同 SHA 三镜像 build/push、digest 记录、migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、provisioning seller ID 机器输出直传 smoke、Compose rollout；仅在部署后 smoke 成功末尾上传含 schema version/SHA/run/digest/migration/backup/status 且设 `retention-days: 30` 的 `smoke-passed.json` artifact
+- [ ] T036 [US2] 在 `.github/workflows/deploy-production.yml` 增加同 SHA CMS runtime/CMS ops/BE/H5 四镜像 build/push、digest 记录、migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、provisioning seller ID 机器输出直传 smoke、Compose rollout；仅在部署后 smoke 成功末尾上传含 schema version/SHA/run/四 digest/migration/backup/status 且设 `retention-days: 30` 的 `smoke-passed.json` artifact
 - [ ] T037 [US2] 在 `.github/workflows/deploy-production.yml` 与 `deploy/RUNBOOK.md` 实现 smoke 失败自动恢复上一镜像 digest、schema 不兼容时停止并转人工数据恢复的边界
 - [ ] T038 [US2] 用 actionlint、synthetic git range/Turbo dry-run，以及缺 secret、备份缺失/不可恢复、migration/smoke 失败演练验证 workflow 全部 fail closed 且失败路径无 `smoke-passed.json`；确认成功 marker 字段完整、website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
 
@@ -102,7 +106,7 @@
 
 **Independent Test**: uploader 对固定产物完成 dry-run；缺 AppID/私钥/HTTPS URL/版本或非 main SHA 时上传调用为零；受控测试凭据上传后微信版本可关联 SHA且日志脱敏。
 
-- [ ] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、按 SHA 查询/下载 `smoke-passed.json` 及字段/SHA/run/digest/migration/status 不匹配负例、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
+- [ ] T039 [US3] 先在 `apps/kith-inn-fe/scripts/upload-weapp.test.ts` 覆盖参数、合法 URL、main SHA、按 SHA 查询/下载 `smoke-passed.json` 及字段/SHA/run/四 digest/migration/status 不匹配负例、临时私钥权限/清理、dry-run 与微信 SDK 错误脱敏
 - [ ] T040 [US3] 在 `apps/kith-inn-fe/package.json`、`pnpm-lock.yaml` 与 `apps/kith-inn-fe/project.config.json` 锁定 `miniprogram-ci`、上传命令和 `urlCheck=true` 的非敏感项目配置
 - [ ] T041 [US3] 在 `apps/kith-inn-fe/scripts/upload-weapp.ts` 实现 build digest、`ci.upload`、短 SHA 版本说明、0600 临时私钥和 finally 清理
 - [ ] T042 [US3] 新增 `.github/workflows/release-kith-inn-weapp.yml`，仅 `workflow_dispatch` 选择 main SHA，通过 GitHub Actions API 查找并严格校验 PR7 为该 SHA 生成的未过期 `smoke-passed.json` 后，经 Environment 审批和 IP 白名单上传；不得把手填 SHA 本身视为通过证明
@@ -117,15 +121,15 @@
 
 - [ ] T045 [US4] 新增 `specs/017-kith-inn-trial-deployment/evidence/trial-acceptance.md` 脱敏模板，字段与 `data-model.md`/发布契约一致并明确禁录内容
 - [ ] T046 [US4] 在 GitHub Production Environment、阿里云与微信后台配置域名/TLS、专用 secret、请求合法域名、上传 IP 白名单和桃子体验成员，仅把名称/存在性结果写入 `evidence/trial-acceptance.md`
-- [ ] T047 [US4] 从最新 main 运行 kith-inn production target，核对 RDS `cms` migration/seed、三镜像 digest、readiness 与 health+认证+只读 smoke，并记录脱敏 run 链接
+- [ ] T047 [US4] 从最新 main 运行 kith-inn production target，核对 RDS `cms` migration/seed、CMS runtime/CMS ops/BE/H5 四镜像 digest、readiness 与 health+认证+只读 smoke，并记录脱敏 run 链接
 - [ ] T048 [US4] 对同一 smoke_passed SHA 运行体验版上传 workflow，核对微信版本、构建摘要、请求域名与桃子白名单后更新 `evidence/trial-acceptance.md`
 - [ ] T049 [US4] 由桃子真机在域名校验开启时完成微信登录、记单、确认订单、菜单生成/换菜/发布、标已付和批量送达，记录步骤布尔结果与脱敏最终状态
 - [ ] T050 [US4] 演练上一 digest/数据恢复分支并完成最终 `pnpm verify`、证据 secret 扫描、`git diff --check`；全部通过后将 Release Candidate 标为 `device_accepted` 并关闭 #158
 
 ## Dependencies & Execution Order
 
-- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
-- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B 才组装 runtime/smoke，PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
+- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B1→PR6-B2→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
+- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B1 固定可启动 runtime 拓扑，PR6-B2 再组装 smoke/回滚证据；PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
 - PR4-A baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
 
@@ -133,7 +137,7 @@
 
 - PR3 的 CMS env 测试 T011 与 BE env/readiness 测试 T012 文件独立，可并行；实现仍依次收口。
 - PR5 的三个 Dockerfile T023–T025 文件独立，可并行，T026 统一验证后再收口。
-- PR6-A 的 T030→T031 必须顺序完成；其合并后，PR6-B 的 Compose T028、Nginx T029 与文档 T033 可并行起草，再由 T032/T034 收口。
+- PR6-A 的 T030→T031 必须顺序完成；其合并后，PR6-B1 的 Compose T028 与 Nginx T029 可并行起草；B1 合并后，PR6-B2 才以 T032/T033/T034 组装 smoke、文档和失败回滚验收。
 
 ## Requirement Coverage
 

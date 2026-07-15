@@ -17,6 +17,21 @@ COPY packages/eslint-config/package.json packages/eslint-config/package.json
 COPY packages/typescript-config/package.json packages/typescript-config/package.json
 RUN pnpm install --frozen-lockfile --filter @cfp/cms...
 
+# Short-lived production operations retain the CLI source/toolchain without
+# expanding the minimal Next standalone runtime image.
+FROM deps AS jobs
+ARG RELEASE_SHA
+RUN test -n "$RELEASE_SHA"
+LABEL org.opencontainers.image.source="https://github.com/code-for-people-2026/cfp-mono"
+LABEL org.opencontainers.image.revision=$RELEASE_SHA
+ENV NODE_ENV=production
+ENV PAYLOAD_DB_PUSH=false
+ENV RELEASE_SHA=$RELEASE_SHA
+COPY . .
+WORKDIR /app/apps/cms
+USER node
+CMD ["./node_modules/.bin/tsx", "migrations/run.ts"]
+
 FROM deps AS builder
 ARG RELEASE_SHA
 RUN test -n "$RELEASE_SHA"

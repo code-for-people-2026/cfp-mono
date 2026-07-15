@@ -34,7 +34,7 @@
 
 ## R5 产物与网络边界
 
-**Decision**: CMS 用 Next standalone 镜像，BE 用编译后 Node 镜像，H5 用只读静态 Nginx 镜像；服务端口只暴露给 Compose/host loopback，host Nginx 提供公网 TLS。所有产物绑定 commit SHA/镜像 digest。
+**Decision**: CMS runtime 用最小 Next standalone 镜像，migration/provision 用独立、非 root、短生命周期 CMS ops image；BE 用编译后 Node 镜像，H5 用只读静态 Nginx 镜像。四个镜像绑定同一 commit SHA/各自 digest；服务端口只暴露给 Compose/host loopback，host Nginx 提供公网 TLS。
 
 **Rationale**: Payload 官方支持 Next standalone 多阶段 Docker 构建；该方案沿用仓库 website 模式，同时让 H5 有独立、可回滚产物：[Payload Production Deployment](https://payloadcms.com/docs/production/deployment)。
 
