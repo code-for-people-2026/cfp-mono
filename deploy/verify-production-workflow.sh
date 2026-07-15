@@ -11,6 +11,7 @@ assert_contains() { grep -Fq -- "$2" "$1" || fail "$1 is missing: $2"; }
 for required in \
   'target:' 'kith_inn:' 'prepare-kith-inn:' 'deploy-kith-inn:' \
   'needs: [affected, prepare-kith-inn, deploy]' "needs.deploy.result == 'success'" \
+  "github.ref == 'refs/heads/main'" "github.ref != 'refs/heads/main'" \
   'bash deploy/kith-inn-check-production-env.sh' \
   'bash deploy/create-rds-backup.sh' 'bash ~/cfp-kith/deploy/kith-inn-rollout.sh' \
   'bash deploy/write-smoke-marker.sh' 'name: smoke-passed-${{ github.sha }}' \
@@ -59,6 +60,15 @@ chmod +x "$tmp/bin/pnpm"
   PATH="$tmp/bin:$PATH" MOCK_KITH_AFFECTED=true GITHUB_OUTPUT="$output" \
     bash deploy/production-targets.sh push website "$base" HEAD
   grep -qx 'website=false' "$output" && grep -qx 'kith_inn=true' "$output" || fail "kith range was not isolated"
+
+  base="$(git rev-parse HEAD)"
+  echo node_modules > .dockerignore
+  git add . && git commit -qm docker-context
+  output="$tmp/dockerignore.output"
+  PATH="$tmp/bin:$PATH" GITHUB_OUTPUT="$output" \
+    bash deploy/production-targets.sh push website "$base" HEAD
+  grep -qx 'website=true' "$output" && grep -qx 'kith_inn=true' "$output" \
+    || fail "root .dockerignore did not affect every root-context image"
 )
 output="$tmp/manual.output"
 GITHUB_OUTPUT="$output" bash "$repo_root/deploy/production-targets.sh" workflow_dispatch kith-inn '' ''
@@ -117,6 +127,29 @@ if [[ "$*" == *'logs --no-color --no-log-prefix kith-inn-cms-provision'* ]]; the
   printf '{"project":"kith-inn","status":"provisioned","sellerId":"seller-1","offeringCount":1}\n'
 elif [[ "$*" == *'config --format json'* ]]; then
   printf '{"services":{"kith-inn-cms-provision":{"environment":{"KITH_INN_TRIAL_OPENID":"masked"}}}}'
+elif [[ "$*" == *'config --images'* ]]; then
+  if [[ "$*" == *'.env.kith-inn.previous'* ]]; then
+    printf 'registry.example/cfp-kith-inn-cms@sha256:%064d\n' 2
+  else
+    printf 'registry.example/cfp-kith-inn-cms@sha256:%064d\n' 1
+  fi
+elif [[ "$*" == *'image inspect'* ]]; then
+  if [[ "$*" == *'sha256:0000000000000000000000000000000000000000000000000000000000000002'* ]]; then
+    printf 'sha256:previous\n'
+  else
+    printf 'sha256:current\n'
+  fi
+elif [[ "$*" == 'ps -aq' ]]; then
+  printf 'container-retained\n'
+elif [[ "$*" == *'inspect --format {{.Image}} container-retained'* ]]; then
+  printf 'sha256:container\n'
+elif [[ "$*" == *'image ls '*'--format'* ]]; then
+  printf '%s\n' \
+    'registry.example/cfp-kith-inn-cms sha256:current' \
+    'registry.example/cfp-kith-inn-cms sha256:previous' \
+    'registry.example/cfp-kith-inn-cms sha256:container' \
+    'registry.example/cfp-kith-inn-cms sha256:stale' \
+    'registry.example/unrelated sha256:unrelated'
 elif [[ "${MOCK_MIGRATION_FAIL:-false}" == true && "$*" == *'--exit-code-from kith-inn-cms-migrate'* ]]; then
   exit 42
 elif [[ "${MOCK_CANDIDATE_PULL_FAIL:-false}" == true && "$*" == *' pull' ]]; then
@@ -158,6 +191,18 @@ grep -Fq 'manual_recovery_required' "$tmp/schema.output" || fail "schema-incompa
 ! grep -Fq ' stop kith-inn-cms' "$tmp/pull-outage.log" || fail "pre-migration outage stopped healthy runtime"
 [[ "$(grep -c -- '--exit-code-from kith-inn-cms-migrate' "$tmp/smoke.log")" == 1 ]] || fail "rollback reran old migration"
 [[ "$(grep -c -- '--exit-code-from kith-inn-cms-provision' "$tmp/smoke.log")" == 1 ]] || fail "rollback reran old provision"
+
+printf 'old=true\n' > "$tmp/rollout/deploy/.env.kith-inn"
+printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
+success_log="$tmp/success.log"
+PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$success_log" \
+  RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$tmp/rollout/deploy/smoke-ok.sh" \
+  bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/success.output" 2>&1
+grep -Fq 'image rm sha256:stale' "$success_log" || fail "successful rollout did not prune a stale kith image"
+for retained in current previous container unrelated; do
+  ! grep -Fq "image rm sha256:$retained" "$success_log" || fail "successful rollout pruned retained image: $retained"
+done
 
 digest="repo@sha256:$(printf 'a%.0s' {1..64})"
 marker="$tmp/smoke-passed.json"

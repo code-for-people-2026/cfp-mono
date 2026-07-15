@@ -28,7 +28,7 @@ if [[ ! "$base" =~ ^[0-9a-f]{40}$ || "$base" == 00000000000000000000000000000000
 fi
 changed="$(git diff --name-only "$base" "$head")"
 printf '%s\n' "$changed"
-if grep -Eq '^(\.github/workflows/deploy-production\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$' <<<"$changed"; then
+if grep -Eq '^(\.dockerignore|\.github/workflows/deploy-production\.yml|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$' <<<"$changed"; then
   emit true true
   exit 0
 fi

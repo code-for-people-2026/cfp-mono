@@ -16,6 +16,42 @@ state_changed=false
 for command in docker jq; do command -v "$command" >/dev/null || { echo "missing command: $command" >&2; exit 2; }; done
 
 compose_for() { docker compose -f "$compose_file" --env-file "$1" "${@:2}"; }
+prune_stale_kith_images() {
+  local work env_file images image repository image_id containers container rows
+  work="$(mktemp -d)"
+  : > "$work/repositories"
+  : > "$work/protected-image-ids"
+
+  for env_file in "$current" "$previous"; do
+    [[ -f "$env_file" ]] || continue
+    images="$(compose_for "$env_file" config --images)" || { rm -rf "$work"; return 1; }
+    while IFS= read -r image; do
+      [[ -n "$image" ]] || continue
+      repository="${image%%@*}"
+      printf '%s\n' "$repository" >> "$work/repositories"
+      if image_id="$(docker image inspect --format '{{.Id}}' "$image" 2>/dev/null)"; then
+        printf '%s\n' "$image_id" >> "$work/protected-image-ids"
+      fi
+    done <<< "$images"
+  done
+
+  containers="$(docker ps -aq)" || { rm -rf "$work"; return 1; }
+  while IFS= read -r container; do
+    [[ -n "$container" ]] || continue
+    docker inspect --format '{{.Image}}' "$container" >> "$work/protected-image-ids"
+  done <<< "$containers"
+  sort -u -o "$work/repositories" "$work/repositories"
+  sort -u -o "$work/protected-image-ids" "$work/protected-image-ids"
+
+  rows="$(docker image ls --no-trunc --format '{{.Repository}} {{.ID}}')" || { rm -rf "$work"; return 1; }
+  while read -r repository image_id; do
+    [[ -n "$repository" && -n "$image_id" ]] || continue
+    grep -Fxq "$repository" "$work/repositories" || continue
+    grep -Fxq "$image_id" "$work/protected-image-ids" && continue
+    docker image rm "$image_id"
+  done <<< "$rows"
+  rm -rf "$work"
+}
 rollback_runtime() {
   if [[ ! -f "$previous" ]]; then
     compose_for "$current" stop "${runtime[@]}" >/dev/null 2>&1 || true
@@ -66,3 +102,4 @@ RELEASE_SHA="$RELEASE_SHA" KITH_INN_COMPOSE_FILE="$compose_file" KITH_INN_ENV_FI
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" KITH_INN_TRIAL_OPENID="$openid" \
   bash "$smoke_script" kith-inn
 trap - ERR
+prune_stale_kith_images

@@ -25,6 +25,12 @@ jobs:
       website: ${{ steps.check.outputs.website }}
       kith_inn: ${{ steps.check.outputs.kith_inn }}
     steps:
+      - name: Require main branch for production deployment
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Production deployment is only allowed from refs/heads/main; got $GITHUB_REF" >&2
+          exit 1
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -302,6 +308,7 @@ jobs:
     needs: [affected, prepare_kith_inn, deploy]
     if: >-
       always() &&
+      github.ref == 'refs/heads/main' &&
       needs.affected.outputs.kith_inn == 'true' &&
       needs.prepare_kith_inn.outputs.configured == 'true' &&
       (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
