@@ -10,6 +10,7 @@ assert_contains() { grep -Fq -- "$2" "$1" || fail "$1 is missing: $2"; }
 
 for required in \
   'target:' 'kith_inn:' 'prepare-kith-inn:' 'deploy-kith-inn:' \
+  'needs: [affected, prepare-kith-inn, deploy]' "needs.deploy.result == 'success'" \
   'bash deploy/kith-inn-check-production-env.sh' \
   'bash deploy/create-rds-backup.sh' 'bash ~/cfp-kith/deploy/kith-inn-rollout.sh' \
   'bash deploy/write-smoke-marker.sh' 'name: smoke-passed-${{ github.sha }}' \
@@ -22,7 +23,9 @@ mkdir -p "$tmp/repo/deploy" "$tmp/repo/docs" "$tmp/bin"
 cp "$repo_root/deploy/production-targets.sh" "$tmp/repo/deploy/"
 cat > "$tmp/bin/pnpm" <<'MOCK'
 #!/usr/bin/env bash
-if [[ "$*" == *'@cfp/cms'* && "${MOCK_KITH_AFFECTED:-false}" == true ]]; then
+if [[ "${MOCK_TURBO_FAIL:-false}" == true ]]; then
+  exit 88
+elif [[ "$*" == *'@cfp/cms'* && "${MOCK_KITH_AFFECTED:-false}" == true ]]; then
   printf '{"tasks":[{"taskId":"@cfp/cms#build"}]}'
 elif [[ "$*" == *'@cfp/website'* && "${MOCK_WEBSITE_AFFECTED:-false}" == true ]]; then
   printf '{"tasks":[{"taskId":"@cfp/website#build"}]}'
@@ -44,6 +47,10 @@ chmod +x "$tmp/bin/pnpm"
   output="$tmp/docs.output"
   PATH="$tmp/bin:$PATH" GITHUB_OUTPUT="$output" bash deploy/production-targets.sh push website "$base" HEAD
   grep -qx 'website=false' "$output" && grep -qx 'kith_inn=false' "$output" || fail "docs-only range affected a deploy target"
+  if PATH="$tmp/bin:$PATH" MOCK_TURBO_FAIL=true GITHUB_OUTPUT="$tmp/turbo-fail.output" \
+    bash deploy/production-targets.sh push website "$base" HEAD >/dev/null 2>&1; then
+    fail "failed Turbo dry-run was accepted"
+  fi
 
   base="$(git rev-parse HEAD)"
   mkdir -p apps/kith-inn-be && echo change > apps/kith-inn-be/change.ts
@@ -112,6 +119,8 @@ elif [[ "$*" == *'config --format json'* ]]; then
   printf '{"services":{"kith-inn-cms-provision":{"environment":{"KITH_INN_TRIAL_OPENID":"masked"}}}}'
 elif [[ "${MOCK_MIGRATION_FAIL:-false}" == true && "$*" == *'--exit-code-from kith-inn-cms-migrate'* ]]; then
   exit 42
+elif [[ "${MOCK_CANDIDATE_PULL_FAIL:-false}" == true && "$*" == *' pull' ]]; then
+  exit 44
 elif [[ "${MOCK_ROLLBACK_FAIL:-false}" == true && "$*" == *'kith-inn-cms kith-inn-be kith-inn-h5'* ]]; then
   exit 43
 fi
@@ -130,19 +139,23 @@ run_failure() {
   local mode="$1" smoke="$2" log
   log="$tmp/$mode.log"
   cp "$tmp/rollout/deploy/.env.kith-inn" "$tmp/rollout/deploy/.env.kith-inn.next"
-  if PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$log" MOCK_MIGRATION_FAIL="${3:-false}" MOCK_ROLLBACK_FAIL="${4:-false}" \
+  if PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$log" MOCK_MIGRATION_FAIL="${3:-false}" \
+    MOCK_ROLLBACK_FAIL="${4:-false}" MOCK_CANDIDATE_PULL_FAIL="${5:-false}" \
     RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
     KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$smoke" \
     bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/$mode.output" 2>&1; then
     fail "$mode failure was accepted"
   fi
-  grep -Fq 'pull kith-inn-cms kith-inn-be kith-inn-h5' "$log" || fail "$mode did not restore runtime images"
+  grep -Fq 'up -d --no-deps --wait --wait-timeout 120 kith-inn-cms kith-inn-be kith-inn-h5' "$log" \
+    || fail "$mode did not restore runtime images"
   [[ ! -e "$tmp/rollout/deploy/smoke-passed.json" ]] || fail "$mode failure generated a marker"
 }
 run_failure migration "$tmp/rollout/deploy/smoke-ok.sh" true
 run_failure smoke "$tmp/rollout/deploy/smoke-fail.sh" false
 run_failure schema "$tmp/rollout/deploy/smoke-fail.sh" false true
+run_failure pull-outage "$tmp/rollout/deploy/smoke-ok.sh" false true true
 grep -Fq 'manual_recovery_required' "$tmp/schema.output" || fail "schema-incompatible rollback did not hand off"
+! grep -Fq ' stop kith-inn-cms' "$tmp/pull-outage.log" || fail "pre-migration outage stopped healthy runtime"
 [[ "$(grep -c -- '--exit-code-from kith-inn-cms-migrate' "$tmp/smoke.log")" == 1 ]] || fail "rollback reran old migration"
 [[ "$(grep -c -- '--exit-code-from kith-inn-cms-provision' "$tmp/smoke.log")" == 1 ]] || fail "rollback reran old provision"
 

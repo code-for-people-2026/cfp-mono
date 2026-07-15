@@ -147,11 +147,11 @@ GitHub `Production` Environment 需要以下名称：
 - secrets：`ALIYUN_ACR_*`、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ECS_*`、`KITH_INN_DATABASE_URL`、`KITH_INN_PAYLOAD_SECRET`、`KITH_INN_JWT_SECRET`、`KITH_INN_CMS_INTERNAL_TOKEN`、`KITH_INN_TRIAL_OPENID`、`KITH_INN_WX_APPID`、`KITH_INN_WX_SECRET`、`KITH_INN_DEEPSEEK_API_KEY`；
 - variables：`ALIYUN_REGION_ID`、`KITH_INN_RDS_INSTANCE_ID`、`KITH_INN_BE_BASE_URL`；可选 `KITH_INN_RDS_BACKUP_METHOD=Physical|Snapshot`、`KITH_INN_DEEPSEEK_BASE_URL`、`KITH_INN_DEEPSEEK_MODEL`。
 
-job 等目标 SHA 的 `ci.yml` 通过后构建并推送四个同 SHA 镜像，记录 registry digest；随后把数据库 URL host 绑定到目标 RDS endpoint，创建备份并等到 task `Finished`、备份集 `Success` 且 `IsAvail=1`，才允许在 ECS 各执行一次 migration、provision 和候选 runtime。provision 的非敏感 seller ID 在同一远端进程直接传给 smoke，不是 workflow 输入。
+job 等目标 SHA 的 `ci.yml` 通过后，先等同一 run 的 website deploy 成功或明确跳过，避免两个 job 并发操作同一 ECS Docker daemon；随后构建并推送四个同 SHA 镜像，记录 registry digest。数据库 URL host 绑定到目标 RDS endpoint，且备份 task `Finished`、备份集 `Success` 与 `IsAvail=1` 后，才允许在 ECS 各执行一次 migration、provision 和候选 runtime。provision 的非敏感 seller ID 在同一远端进程直接传给 smoke，不是 workflow 输入。
 
 只有 rollout/readiness/smoke 全部通过，才生成 `smoke-passed-<完整 SHA>` artifact（保留 30 天）。其中 `smoke-passed.json` 固定记录 schema version、完整 SHA、deploy run ID、四个 digest、migration head、backup ID/时间与 `smokeStatus=passed`；任何失败 run 都没有该文件。
 
-rollout 前保留权限为 `0600` 的上一份 runtime env/digest。migration、provision、readiness 或 smoke 失败时自动只恢复上一版 CMS/BE/H5，绝不运行旧 ops image 或猜测数据库回退；若首次部署没有上一版，或旧 runtime 无法通过新 schema 的 health，则停止候选并输出 `manual_recovery_required`，转入下面的数据恢复分支。
+rollout 前保留权限为 `0600` 的上一份 runtime env/digest。候选 pull 在 migration 前失败时复用本机仍被运行容器引用的上一镜像并保持健康 runtime，不因 registry 故障主动停服；migration、provision、readiness 或 smoke 失败时自动只恢复上一版 CMS/BE/H5，绝不运行旧 ops image 或猜测数据库回退。若首次部署没有上一版，或 migration 开始后旧 runtime 无法通过新 schema 的 health，则停止候选并输出 `manual_recovery_required`，转入下面的数据恢复分支。
 
 ### 9.3 诊断与 15 分钟回滚
 

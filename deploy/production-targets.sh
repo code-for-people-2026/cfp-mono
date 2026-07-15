@@ -40,18 +40,26 @@ grep -Eq '^deploy/(docker-compose\.kith-inn\.prod\.yml|\.env\.verify\.example|ki
 if grep -Eq '^deploy/(smoke-test\.sh|nginx\.example\.conf|production-targets\.sh)$' <<<"$changed"; then website=true; kith=true; fi
 
 turbo_affected() {
-  local json args=() filter
+  local json result args=() filter
   json="$(mktemp)"
   for filter in "$@"; do args+=("--filter=$filter...[$base]"); done
-  pnpm dlx turbo@2.6.3 run build "${args[@]}" --dry-run=json --no-daemon > "$json"
-  node - "$json" <<'NODE'
+  if ! pnpm dlx turbo@2.6.3 run build "${args[@]}" --dry-run=json --no-daemon > "$json"; then
+    rm -f "$json"
+    return 1
+  fi
+  if ! result="$(node - "$json" <<'NODE'
 const fs = require("node:fs");
 const text = fs.readFileSync(process.argv[2], "utf8");
 const start = text.indexOf("{");
 if (start < 0) throw new Error("Turbo dry run did not emit JSON");
 process.stdout.write(JSON.parse(text.slice(start)).tasks.length ? "true" : "false");
 NODE
+  )"; then
+    rm -f "$json"
+    return 1
+  fi
   rm -f "$json"
+  printf '%s' "$result"
 }
 [[ "$website" == true ]] || website="$(turbo_affected @cfp/website)"
 [[ "$kith" == true ]] || kith="$(turbo_affected @cfp/cms @cfp/kith-inn-be @cfp/kith-inn-fe)"

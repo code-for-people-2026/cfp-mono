@@ -8,6 +8,7 @@ candidate="$release_dir/.env.kith-inn.next"
 previous="$release_dir/.env.kith-inn.previous"
 smoke_script="${KITH_INN_SMOKE_SCRIPT:-$release_dir/smoke-test.sh}"
 runtime=(kith-inn-cms kith-inn-be kith-inn-h5)
+state_changed=false
 : "${RELEASE_SHA:?RELEASE_SHA is required}"
 [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ && -f "$compose_file" && -f "$candidate" && -f "$smoke_script" ]] || {
   echo '{"status":"failed","error":"invalid_rollout_configuration"}' >&2; exit 2;
@@ -22,10 +23,14 @@ rollback_runtime() {
     return 70
   fi
   install -m 600 "$previous" "$current"
-  if ! compose_for "$current" pull "${runtime[@]}" ||
-     ! compose_for "$current" up -d --no-deps --wait --wait-timeout 120 "${runtime[@]}"; then
-    compose_for "$current" stop "${runtime[@]}" >/dev/null 2>&1 || true
-    echo '{"status":"manual_recovery_required","error":"schema_incompatible_or_rollback_unhealthy"}' >&2
+  if ! compose_for "$current" up -d --no-deps --wait --wait-timeout 120 "${runtime[@]}"; then
+    if [[ "$state_changed" == true ]]; then
+      compose_for "$current" stop "${runtime[@]}" >/dev/null 2>&1 || true
+      error=schema_incompatible_or_rollback_unhealthy
+    else
+      error=pre_migration_rollback_verification_failed
+    fi
+    printf '{"status":"manual_recovery_required","error":"%s"}\n' "$error" >&2
     return 71
   fi
   echo '{"status":"rolled_back","scope":"application_runtime_only"}' >&2
@@ -45,6 +50,7 @@ install -m 600 "$candidate" "$current"
 rm -f "$candidate"
 trap on_error ERR
 compose_for "$current" pull
+state_changed=true
 compose_for "$current" up --no-deps --abort-on-container-exit \
   --exit-code-from kith-inn-cms-migrate kith-inn-cms-migrate
 compose_for "$current" up --no-deps --abort-on-container-exit \

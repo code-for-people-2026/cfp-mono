@@ -299,8 +299,12 @@ jobs:
         run: bash deploy/smoke-test.sh
 
   deploy-kith-inn:
-    needs: [affected, prepare_kith_inn]
-    if: needs.affected.outputs.kith_inn == 'true' && needs.prepare_kith_inn.outputs.configured == 'true'
+    needs: [affected, prepare_kith_inn, deploy]
+    if: >-
+      always() &&
+      needs.affected.outputs.kith_inn == 'true' &&
+      needs.prepare_kith_inn.outputs.configured == 'true' &&
+      (needs.deploy.result == 'success' || needs.deploy.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     environment: Production
