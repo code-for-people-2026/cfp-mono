@@ -264,7 +264,7 @@ jobs:
             "$migration_head" "$seller_id" "$smoke_evidence" >> "$GITHUB_OUTPUT"
 
       - name: Write kith-inn smoke marker
-        if: success() && steps.check.outputs.configured == 'true'
+        if: success() && steps.check.outputs.configured == 'true' && github.ref == 'refs/heads/main'
         env:
           DEPLOY_RUN_ID: ${{ github.run_id }}
           KITH_INN_CMS_DIGEST: ${{ steps.push.outputs.cms_digest }}
@@ -278,7 +278,7 @@ jobs:
         run: bash deploy/write-kith-inn-smoke-marker.sh
 
       - name: Upload kith-inn smoke marker
-        if: success() && steps.check.outputs.configured == 'true'
+        if: success() && steps.check.outputs.configured == 'true' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
           name: kith-inn-smoke-passed-${{ github.sha }}

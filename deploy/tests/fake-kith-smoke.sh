@@ -5,6 +5,8 @@ if [[ "${FAKE_DEPLOY_MODE:-success}" == smoke && "${KITH_INN_ENV_FILE:-}" == *.n
 if [[ "${FAKE_DEPLOY_MODE:-success}" == incompatible ]]; then exit 1; fi
 if [[ "${FAKE_DEPLOY_MODE:-success}" == invalid-smoke ]]; then
   echo '{"status":"passed","writeCount":1,"redactionPassed":true}'
+elif [[ "${FAKE_DEPLOY_MODE:-success}" == incomplete-smoke ]]; then
+  echo '{"status":"passed","writeCount":0,"redactionPassed":true}'
 else
   echo '{"status":"passed","writeCount":0,"redactionPassed":true,"durationMs":123,"checks":["cms_liveness","cms_readiness","be_liveness","be_readiness","h5","be_ingress_liveness","be_ingress_readiness","be_ingress_auth_boundary","operator","jwt","offerings"]}'
 fi

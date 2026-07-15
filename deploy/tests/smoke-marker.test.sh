@@ -51,7 +51,9 @@ ruby -ryaml -e '
   deploy = kith.index { |step| step["name"] == "Deploy and smoke kith-inn candidate" }
   abort "marker 顺序无效" unless deploy && marker && upload && deploy < marker && marker < upload
   [kith.fetch(marker), kith.fetch(upload)].each do |step|
-    abort "失败路径必须跳过证据" unless step.fetch("if").include?("success()")
+    condition = step.fetch("if")
+    abort "失败路径必须跳过证据" unless condition.include?("success()")
+    abort "非 main 不得生成证据" unless condition.include?("github.ref == '\''refs/heads/main'\''")
   end
   artifact = kith.fetch(upload)
   abort "artifact 配置无效" unless artifact["uses"] == "actions/upload-artifact@v4" &&
