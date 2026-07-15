@@ -77,12 +77,15 @@ public_be_url="$(https_origin "${KITH_INN_BE_BASE_URL:-}")"
 compose=(docker compose -f "$compose_file" --env-file "$env_file")
 started_seconds="$(date +%s)"
 
-for service in kith-inn-cms-migrate kith-inn-cms-provision kith-inn-cms kith-inn-be kith-inn-h5; do
+for service in kith-inn-cms kith-inn-be kith-inn-h5; do
   image_id="$("${compose[@]}" images -q "$service")"
   [[ -n "$image_id" ]] || fail "release_mismatch"
   revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image_id")"
   [[ "$revision" == "$release_sha" ]] || fail "release_mismatch"
 done
+ops_images="$("${compose[@]}" config --format json | jq -er '[.services["kith-inn-cms-migrate"].image, .services["kith-inn-cms-provision"].image] | unique | select(length == 1) | .[]')" || fail "release_mismatch"
+ops_revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$ops_images")" || fail "release_mismatch"
+[[ "$ops_revision" == "$release_sha" ]] || fail "release_mismatch"
 
 host_port() {
   local binding

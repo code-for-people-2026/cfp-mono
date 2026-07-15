@@ -49,6 +49,7 @@ grep -q -- '--env-file .*\.kith-inn up -d --no-deps' "$tmp/compose.log"
 new_env; old_env
 if run smoke >"$tmp/smoke.out" 2>"$tmp/smoke.err"; then exit 1; fi
 grep -q -- '--env-file .*\.next up -d --no-deps' "$tmp/compose.log"
+grep -q -- '--env-file .*\.kith-inn pull kith-inn-cms-migrate kith-inn-cms' "$tmp/compose.log"
 grep -q -- '--env-file .*\.kith-inn up -d --no-deps' "$tmp/compose.log"
 grep -q 'rolled_back' "$tmp/smoke.err"
 
