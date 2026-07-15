@@ -51,6 +51,7 @@ recover() {
 command -v "$compose_bin" >/dev/null || fail preflight no_change
 command -v "$smoke_bin" >/dev/null || fail preflight no_change
 command -v jq >/dev/null || fail preflight no_change
+command -v curl >/dev/null || fail preflight no_change
 if [[ -f "$current_env" ]]; then
   old_sha="$(value "$current_env" KITH_INN_RELEASE_SHA)"
   old_seller="$(value "$current_env" KITH_INN_PROVISIONED_SELLER_ID)"
