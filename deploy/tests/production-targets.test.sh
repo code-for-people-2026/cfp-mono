@@ -76,6 +76,8 @@ kith_deploy_line="$(grep -n 'id: deploy' <<<"$kith_job" | cut -d: -f1)"
 grep -q 'docker-compose.kith-inn.prod.yml.next' <<<"$kith_job"
 grep -q "steps.gate.outcome != 'skipped'" <<<"$kith_job"
 grep -q 'failure() || cancelled()' <<<"$kith_job"
+grep -q 'preflight-candidate' <<<"$kith_job"
+grep -A2 'Restore the last-good runtime' <<<"$kith_job" | grep -q 'timeout-minutes: 30'
 grep -q 'GITHUB_STEP_SUMMARY' <<<"$kith_job"
 
 required=(

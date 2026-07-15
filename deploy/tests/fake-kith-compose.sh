@@ -18,4 +18,6 @@ elif [[ "$joined" == *" stop kith-inn-cms kith-inn-be kith-inn-h5 "* && "${FAKE_
   exit 1
 elif [[ "$joined" == *" pull kith-inn-cms-migrate kith-inn-cms kith-inn-be kith-inn-h5 "* && "${FAKE_DEPLOY_MODE:-success}" == pull-fail ]]; then
   exit 1
+elif [[ "$joined" == *" pull "* && "$env_file" == *.next && "${FAKE_DEPLOY_MODE:-success}" == candidate-pull-fail ]]; then
+  exit 1
 fi

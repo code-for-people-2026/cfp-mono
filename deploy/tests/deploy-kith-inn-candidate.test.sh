@@ -54,6 +54,12 @@ if run pull-fail gate-writes >"$case_dir/pull-fail.out" 2>"$case_dir/pull-fail.e
 run pull-fail restore-runtime >"$case_dir/pull-cleanup.out"
 grep -q 'write_gate_not_attempted' "$case_dir/pull-cleanup.out"
 ! grep -q ' stop ' "$case_dir/compose.log"
+reset_case; new_env; old_env
+if run candidate-pull-fail preflight-candidate >"$case_dir/candidate-pull.out" 2>"$case_dir/candidate-pull.err"; then exit 1; fi
+grep -q 'preflight.*no_change' "$case_dir/candidate-pull.err"
+grep -q -- '--env-file .*\.env.kith-inn.next pull ' "$case_dir/compose.log"
+! grep -q ' stop ' "$case_dir/compose.log"
+[[ ! -e "$case_dir/.kith-inn-write-gate" ]]
 reset_case; new_env
 run success >"$case_dir/first.out"
 jq -e '.status == "passed" and .sellerId == "1" and .smokeEvidence.status == "passed" and
@@ -73,6 +79,12 @@ grep -qx "KITH_INN_RELEASE_SHA='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" "$cur
 grep -qx "KITH_INN_RELEASE_SHA='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" "$previous_release/.env.kith-inn"
 grep -q '# candidate-compose' "$current_release/docker-compose.kith-inn.prod.yml"
 grep -q '# last-good-compose' "$previous_release/docker-compose.kith-inn.prod.yml"
+
+reset_case; new_env; old_env
+printf '%s\n' "$case_dir/.kith-inn-releases/.release.missing" >"$case_dir/.kith-inn-previous"
+run success >"$case_dir/stale-previous.out"
+previous_release="$(cat "$case_dir/.kith-inn-previous")"
+grep -qx "KITH_INN_RELEASE_SHA='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" "$previous_release/.env.kith-inn"
 
 reset_case; new_env; printf '%s\n' "KITH_INN_TRIAL_OPENID='legacy-openid'" >"$case_dir/.env.kith-inn"
 if run migration >"$case_dir/legacy.out" 2>"$case_dir/legacy.err"; then exit 1; fi
