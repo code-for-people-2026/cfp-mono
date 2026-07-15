@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 selector="$root/deploy/resolve-production-targets.sh"
 config_check="$root/deploy/check-kith-inn-production-config.sh"
+workflow="$root/.github/workflows/deploy-production.yml"
 tmp="$(mktemp -d)"
 worktree=""
 trap 'if [[ -n "$worktree" ]]; then git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true; fi; rm -rf "$tmp"' EXIT
@@ -62,6 +63,10 @@ run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
 assert_output "$tmp/shared-range" true true
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
+
+deploy_job="$(sed -n '/^  deploy:/,$p' "$workflow")"
+grep -q 'needs: \[affected, prepare, prepare_kith_inn\]' <<<"$deploy_job"
+grep -q "needs.prepare_kith_inn.result == 'success'.*needs.prepare_kith_inn.result == 'skipped'" <<<"$deploy_job"
 
 required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
