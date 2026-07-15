@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-type ReadinessDeps = { fetch: typeof fetch; cmsBaseUrl: string; internalToken: string };
+type ReadinessDeps = { fetch: typeof fetch; cmsBaseUrl: string; internalToken: string; releaseSha: string };
 
 export function readinessRoutes(deps: ReadinessDeps) {
   const app = new Hono();
@@ -13,9 +13,9 @@ export function readinessRoutes(deps: ReadinessDeps) {
       if (!response.ok) throw new Error("CMS not ready");
       const body = (await response.json()) as { ok?: unknown; service?: unknown } | null;
       if (body?.ok !== true || body?.service !== "cms") throw new Error("CMS readiness contract mismatch");
-      return c.json({ ok: true, service: "kith-inn-be" });
+      return c.json({ ok: true, service: "kith-inn-be", releaseSha: deps.releaseSha });
     } catch {
-      return c.json({ ok: false, service: "kith-inn-be", category: "cms_unavailable" }, 503);
+      return c.json({ ok: false, service: "kith-inn-be", releaseSha: deps.releaseSha, category: "cms_unavailable" }, 503);
     }
   });
   return app;
