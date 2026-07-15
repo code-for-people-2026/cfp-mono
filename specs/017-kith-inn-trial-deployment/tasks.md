@@ -63,11 +63,11 @@
 
 ### PR5：生产镜像
 
-- [ ] T023 [P] [US1] 在 `apps/cms/next.config.ts` 启用 standalone，并新增 `apps/cms/Dockerfile` 构建可运行、非 root 的 CMS 镜像
-- [ ] T024 [P] [US1] 新增 `apps/kith-inn-be/Dockerfile`，只携带生产编译输出/依赖，以非 root 用户运行 `dist/index.js`
-- [ ] T025 [P] [US1] 新增 `apps/kith-inn-fe/Dockerfile` 与 `apps/kith-inn-fe/nginx.conf`，用显式 `BE_BASE_URL` 构建 H5并以只读静态 Nginx 提供 SPA fallback
-- [ ] T026 [US1] 在 `deploy/verify-kith-inn-images.sh` 验证三镜像 SHA label、非 root、health、H5 fallback、只读文件系统可行性与常见 secret/局域网字符串零命中
-- [ ] T027 [US1] 对同一 SHA 连续构建 CMS/BE/H5 三镜像和 weapp 产物各两次并比对追踪信息，再运行 `deploy/verify-kith-inn-images.sh`、相关 app coverage、`pnpm verify` 与 `git diff --check`
+- [x] T023 [P] [US1] 在 `apps/cms/next.config.ts` 启用 standalone，并新增 `apps/cms/Dockerfile` 构建可运行、非 root 的 CMS 镜像
+- [x] T024 [P] [US1] 新增 `apps/kith-inn-be/Dockerfile`，只携带生产编译输出/依赖，以非 root 用户运行 `dist/index.js`
+- [x] T025 [P] [US1] 新增 `apps/kith-inn-fe/Dockerfile` 与 `apps/kith-inn-fe/nginx.conf`，用显式 `BE_BASE_URL` 构建 H5并以只读静态 Nginx 提供 SPA fallback
+- [x] T026 [US1] 在 `deploy/verify-kith-inn-images.sh` 验证三镜像 SHA label、非 root、health、H5 fallback、只读文件系统可行性与常见 secret/局域网字符串零命中
+- [x] T027 [US1] 同一 SHA 下两轮 CMS/BE/H5 镜像均通过统一 verifier：CMS/BE 镜像 ID 一致，H5 静态文件树摘要一致，三镜像 revision label 与 H5 `release.json` 均一致；weapp 两轮完整文件树摘要一致且敏感/局域网字符串零命中；相关 app coverage、`BE_BASE_URL=https://codeforpeople.cn pnpm verify` 与 `git diff --check` 通过；人工 diff 297 行（291 insertions + 6 deletions）
 
 ## Phase 3: User Story 2 - 部署后自动证明可用（P2，PR6–PR7）
 

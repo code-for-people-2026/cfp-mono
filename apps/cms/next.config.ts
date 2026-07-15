@@ -1,7 +1,10 @@
 import { withPayload } from "@payloadcms/next/withPayload";
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
+  output: "standalone",
+  outputFileTracingRoot: fileURLToPath(new URL("../..", import.meta.url)),
   allowedDevOrigins: ["127.0.0.1"],
   devIndicators: false,
   // Workspace source packages consumed by this host export .ts source (not built

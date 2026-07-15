@@ -20,5 +20,9 @@
 **/.env
 **/.env.*
 !**/.env.example
+**/*.key
+**/*.p12
+**/*.pfx
+**/*private*.pem
 **/payload*.db
 **/payload*.db-*
