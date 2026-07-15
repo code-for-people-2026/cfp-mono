@@ -67,6 +67,16 @@ worktree=""
 deploy_job="$(sed -n '/^  deploy:/,$p' "$workflow")"
 grep -q 'needs: \[affected, prepare, prepare_kith_inn\]' <<<"$deploy_job"
 grep -q "needs.prepare_kith_inn.result == 'success'.*needs.prepare_kith_inn.result == 'skipped'" <<<"$deploy_job"
+kith_job="$(sed -n '/^  prepare_kith_inn:/,/^  deploy:/p' "$workflow")"
+stage_line="$(grep -n 'id: stage' <<<"$kith_job" | cut -d: -f1)"
+gate_line="$(grep -n 'id: gate' <<<"$kith_job" | cut -d: -f1)"
+backup_line="$(grep -n 'id: backup' <<<"$kith_job" | cut -d: -f1)"
+kith_deploy_line="$(grep -n 'id: deploy' <<<"$kith_job" | cut -d: -f1)"
+(( stage_line < gate_line && gate_line < backup_line && backup_line < kith_deploy_line ))
+grep -q 'docker-compose.kith-inn.prod.yml.next' <<<"$kith_job"
+grep -q "steps.gate.outcome != 'skipped'" <<<"$kith_job"
+grep -q 'failure() || cancelled()' <<<"$kith_job"
+grep -q 'GITHUB_STEP_SUMMARY' <<<"$kith_job"
 
 required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD

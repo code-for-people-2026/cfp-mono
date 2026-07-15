@@ -121,8 +121,8 @@ gh run watch --repo code-for-people-2026/cfp-mono
 2. 四个镜像变量必须为 ACR digest；secret 至少包括 kith-inn 专用 Payload/JWT/CMS token、桃子 OpenID、微信 AppID/AppSecret、DeepSeek key，以及由可信通道取得的 ECS host key 行 `ECS_SSH_KNOWN_HOSTS`。不得复用 website 的 `PAYLOAD_SECRET`，不得用 `StrictHostKeyChecking=no` 传输生产 secret。
 3. 先执行 `docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.kith-inn config --quiet`、`bash deploy/verify-kith-inn-compose.sh deploy/.env.kith-inn` 和 `bash deploy/verify-nginx-example.sh`。
 4. DNS A/AAAA 必须指向目标 ECS；证书 SAN、有效期与完整链必须匹配已备案且已加入微信 request 合法域名的 BE host。`nginx -t` 成功后才 reload，公网只开放 80/443，CMS/H5 保持内网或 loopback。
-5. 工作流用固定版本 Alibaba Cloud CLI 调用 `CreateBackup`，轮询 `DescribeBackupTasks` 到 `Finished`，再用 `DescribeBackups` 验证唯一 `Success` 备份集；只有取得非敏感 backup ID/UTC 时间才可进入 migration。官方接口约束见 [CreateBackup](https://help.aliyun.com/en/rds/developer-reference/api-rds-2014-08-15-createbackup) 与 [DescribeBackupTasks](https://help.aliyun.com/en/rds/api-query-backup-tasks)。禁止 `push`、fresh/reset 和开发 seed reset。
-6. 工作流把同 SHA 四个 digest 与 secret 写入目标机 `0600` 的 `.env.kith-inn.next`，远程脚本按 pull→单次 migration→单次 provision→三项 runtime rollout→smoke 执行；seller ID 只从 provision JSON 在进程内直传。以下命令仅用于受控人工复现：
+5. 工作流先无副作用地 stage 候选，再停止 CMS/BE/H5 关闭用户写入口；随后用固定版本 Alibaba Cloud CLI 调用 `CreateBackup`，轮询 `DescribeBackupTasks` 到 `Finished`，再用 `DescribeBackups` 验证唯一 `Success` 备份集。只有取得并写入 job summary 的非敏感 backup ID/UTC 时间才可进入 migration；gate、备份或部署失败都会幂等恢复 last-good runtime。官方接口约束见 [CreateBackup](https://help.aliyun.com/en/rds/developer-reference/api-rds-2014-08-15-createbackup) 与 [DescribeBackupTasks](https://help.aliyun.com/en/rds/api-query-backup-tasks)。禁止 `push`、fresh/reset 和开发 seed reset。
+6. 工作流把同 SHA 四个 digest 与 secret 写入目标机 `0600` 的 `.env.kith-inn.next`，并把候选 Compose 写入独立 `.next`；远程脚本按 pull→单次 migration→单次 provision→三项 runtime rollout→smoke 执行。smoke 成功后才把 env+Compose 固化为不可变 release bundle，并通过单一指针 rename 原子提升为 current；seller ID 只从 provision JSON 在进程内直传。以下命令仅用于受控人工复现：
 
 ```bash
 compose=(docker compose -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.kith-inn)
@@ -145,6 +145,6 @@ smoke 会核对五个容器的 release SHA、Compose 实际 loopback 健康、H5
 - `operator_not_provisioned`/`seller_mismatch`：核对 provision 输出与受控 OpenID，重跑幂等 provision；禁止手改 seller ID 或删除生产数据。
 - TLS/DNS/Nginx 失败：保持候选不对外，修复证书链/host/allowlist 后重新 `nginx -t`；关闭域名校验不算修复。
 
-计时从 smoke 失败开始：远程脚本不会在 migration/provision 成功前替换 runtime；rollout 后失败则自动用 `.env.kith-inn` 记录的上一组三项应用 digest 恢复并复跑完整只读 smoke（不运行旧 ops image、不重跑 migration）。复验失败即停止三项 runtime 并返回 `manual_data_recovery_required`，选择已审计 down、前向修复，或从本次 backup ID 恢复到独立 RDS 后验证再切换；不得自动回退数据库。首次部署没有上一应用时只停止候选并保留备份/日志供人工处置。
+计时从 smoke 失败开始：候选 Compose 不覆盖 last-good Compose，且 `.kith-inn-current` 指向同时包含 env/Compose 的已验证 bundle；rollout 后失败只用该 pair 恢复上一组三项应用 digest 并复跑完整只读 smoke（不运行旧 migration/provision）。复验失败即停止三项 runtime 并返回 `manual_data_recovery_required`，选择已审计 down、前向修复，或从 job summary 记录的 backup ID 恢复到独立 RDS 后验证再切换；不得自动回退数据库。首次部署没有上一应用时只停止候选并保留备份/日志供人工处置。
 
 上传前还必须确认同一 SHA 的部署 smoke 凭据、微信上传私钥/IP 白名单、体验成员和合法域名；真实微信登录与核心链路只由开启域名校验的桃子真机验收证明。
