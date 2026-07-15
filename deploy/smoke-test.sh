@@ -34,6 +34,7 @@ fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 compose_file="${KITH_INN_COMPOSE_FILE:-$repo_root/deploy/docker-compose.kith-inn.prod.yml}"
+project_directory="${KITH_INN_PROJECT_DIRECTORY:-$(dirname "$compose_file")}"
 env_file="${KITH_INN_ENV_FILE:-$repo_root/deploy/.env.verify}"
 release_sha="${RELEASE_SHA:-}"
 seller_id="${KITH_INN_PROVISIONED_SELLER_ID:-}"
@@ -74,7 +75,7 @@ ingress_release() {
 }
 
 public_be_url="$(https_origin "${KITH_INN_BE_BASE_URL:-}")"
-compose=(docker compose -f "$compose_file" --env-file "$env_file")
+compose=(docker compose --project-directory "$project_directory" -f "$compose_file" --env-file "$env_file")
 started_seconds="$(date +%s)"
 
 for service in kith-inn-cms kith-inn-be kith-inn-h5; do

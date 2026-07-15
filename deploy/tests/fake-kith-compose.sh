@@ -14,4 +14,8 @@ elif [[ "$joined" == *" run --rm --no-deps kith-inn-cms-provision "* ]]; then
   echo '{"project":"kith-inn","status":"reconciled","sellerId":1,"offeringCount":21}'
 elif [[ "$joined" == *" up -d --no-deps "* && "$env_file" == *.next && "${FAKE_DEPLOY_MODE:-success}" == rollout ]]; then
   exit 1
+elif [[ "$joined" == *" stop kith-inn-cms kith-inn-be kith-inn-h5 "* && "${FAKE_DEPLOY_MODE:-success}" == gate-fail ]]; then
+  exit 1
+elif [[ "$joined" == *" pull kith-inn-cms-migrate kith-inn-cms kith-inn-be kith-inn-h5 "* && "${FAKE_DEPLOY_MODE:-success}" == pull-fail ]]; then
+  exit 1
 fi

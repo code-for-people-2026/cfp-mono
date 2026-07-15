@@ -201,20 +201,8 @@ jobs:
         with:
           version: 3.3.18
 
-      - id: backup
-        name: Create and verify recoverable RDS backup
-        if: steps.check.outputs.configured == 'true'
-        env:
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIBABA_CLOUD_CLI_PLUGIN_AUTO_INSTALL: "true"
-          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
-          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: bash deploy/create-rds-backup.sh
-
-      - id: deploy
-        name: Deploy and smoke kith-inn candidate
+      - id: stage
+        name: Stage kith-inn candidate without changing the active runtime
         if: steps.check.outputs.configured == 'true'
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
@@ -244,19 +232,60 @@ jobs:
           install -d -m 700 ~/.ssh
           printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
           printf '%s\n' "$ECS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/cfp-ecs
-          chmod 600 ~/.ssh/known_hosts
-          trap 'rm -f .env.kith-inn.remote ~/.ssh/cfp-ecs ~/.ssh/known_hosts' EXIT
+          chmod 600 ~/.ssh/cfp-ecs ~/.ssh/known_hosts
+          trap 'rm -f .env.kith-inn.remote' EXIT
           COMPOSE_ENV_OUTPUT=.env.kith-inn.remote bash deploy/write-kith-inn-compose-env.sh
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" 'mkdir -p ~/cfp-mono/deploy'
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes deploy/docker-compose.kith-inn.prod.yml \
+            "$remote:~/cfp-mono/deploy/docker-compose.kith-inn.prod.yml.next"
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes \
-            deploy/docker-compose.kith-inn.prod.yml deploy/smoke-test.sh deploy/deploy-kith-inn-candidate.sh \
-            "$remote:~/cfp-mono/deploy/"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes .env.kith-inn.remote "$remote:~/cfp-mono/.env.kith-inn.next"
+            deploy/smoke-test.sh deploy/deploy-kith-inn-candidate.sh "$remote:~/cfp-mono/deploy/"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes .env.kith-inn.remote \
+            "$remote:~/cfp-mono/.env.kith-inn.next"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            'chmod 600 ~/cfp-mono/.env.kith-inn.next ~/cfp-mono/deploy/docker-compose.kith-inn.prod.yml.next'
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'" >/dev/null
+
+      - id: gate
+        name: Gate kith-inn writes before creating the recovery point
+        if: steps.check.outputs.configured == 'true'
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            'bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh gate-writes'
+
+      - id: backup
+        name: Create and verify recoverable RDS backup
+        if: steps.check.outputs.configured == 'true'
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIBABA_CLOUD_CLI_PLUGIN_AUTO_INSTALL: "true"
+          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          backup="$(bash deploy/create-rds-backup.sh)"
+          backup_id="$(jq -er .backupId <<<"$backup")"
+          backup_created_at="$(jq -er .backupCreatedAt <<<"$backup")"
+          printf '### kith-inn recovery point\n\n- Backup ID: `%s`\n- Created at: `%s`\n' \
+            "$backup_id" "$backup_created_at" >> "$GITHUB_STEP_SUMMARY"
+
+      - id: deploy
+        name: Deploy and smoke kith-inn candidate
+        if: steps.check.outputs.configured == 'true'
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          set -euo pipefail
+          remote="$ECS_USER@$ECS_HOST"
           result="$(ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh")"
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh deploy")"
           migration_head="$(jq -er '.migrationHead' <<<"$result")"
           seller_id="$(jq -er '.sellerId' <<<"$result")"
           smoke_evidence="$(jq -cer '.smokeEvidence' <<<"$result")"
@@ -285,6 +314,21 @@ jobs:
           path: smoke-passed.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Restore the last-good runtime when the gated deployment fails
+        if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
+        timeout-minutes: 5
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            'bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh restore-runtime'
+
+      - name: Remove local deployment credentials
+        if: always()
+        run: rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.kith-inn.remote
 
   deploy:
     needs: [affected, prepare, prepare_kith_inn]
