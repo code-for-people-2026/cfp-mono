@@ -31,7 +31,7 @@ fi
 
 changed_files="$(git diff --name-only "$base" "$head")"
 printf '%s\n' "$changed_files"
-if grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/.*|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$' <<< "$changed_files"; then
+if grep -Eq '^(\.dockerignore|\.github/workflows/deploy-production\.yml|deploy/.*|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$' <<< "$changed_files"; then
   write_targets true true
   exit 0
 fi

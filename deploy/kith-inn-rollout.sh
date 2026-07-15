@@ -10,6 +10,7 @@ smoke_script="${KITH_INN_SMOKE_SCRIPT:-$release_dir/smoke-test.sh}"
 runtime=(kith-inn-cms kith-inn-be kith-inn-h5)
 state_changed=false
 : "${RELEASE_SHA:?RELEASE_SHA is required}"
+: "${KITH_INN_BE_BASE_URL:?KITH_INN_BE_BASE_URL is required}"
 [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ && -f "$compose_file" && -f "$candidate" && -f "$smoke_script" ]] || {
   echo '{"status":"failed","error":"invalid_rollout_configuration"}' >&2; exit 2;
 }
@@ -97,6 +98,9 @@ on_error() {
 install -m 600 "$candidate" "$current"
 rm -f "$candidate"
 trap on_error ERR
+if ! prune_stale_kith_images; then
+  echo '{"status":"warning","warning":"stale_image_cleanup_failed","phase":"pre_pull"}' >&2
+fi
 compose_for "$current" pull
 state_changed=true
 compose_for "$current" up --no-deps --abort-on-container-exit \
@@ -110,7 +114,8 @@ compose_for "$current" up -d --no-deps --wait --wait-timeout 120 kith-inn-be
 compose_for "$current" up -d --no-deps --wait --wait-timeout 120 kith-inn-h5
 openid="$(compose_for "$current" config --format json | \
   jq -er '.services["kith-inn-cms-provision"].environment.KITH_INN_TRIAL_OPENID | select(length > 0)')"
-RELEASE_SHA="$RELEASE_SHA" KITH_INN_COMPOSE_FILE="$compose_file" KITH_INN_ENV_FILE="$current" \
+RELEASE_SHA="$RELEASE_SHA" KITH_INN_BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
+  KITH_INN_COMPOSE_FILE="$compose_file" KITH_INN_ENV_FILE="$current" \
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" KITH_INN_TRIAL_OPENID="$openid" \
   bash "$smoke_script" kith-inn
 trap - ERR

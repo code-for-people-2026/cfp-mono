@@ -60,6 +60,10 @@ base="$head"
 head="$(synthetic_commit deploy/.production-target-test 'test: shared deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
 assert_output "$tmp/shared-range" true true
+base="$head"
+head="$(synthetic_commit .dockerignore 'test: root docker context range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/dockerignore-range"
+assert_output "$tmp/dockerignore-range" true true
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
 

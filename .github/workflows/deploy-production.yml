@@ -382,9 +382,9 @@ jobs:
           ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
           ALIBABA_CLOUD_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
           ALIBABA_CLOUD_IGNORE_PROFILE: "TRUE"
-          RDS_INSTANCE_ID: ${{ vars.KITH_INN_RDS_INSTANCE_ID }}
+          RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
           RDS_BACKUP_METHOD: ${{ vars.KITH_INN_RDS_BACKUP_METHOD || 'Physical' }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.KITH_INN_DATABASE_URL }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           backup="$(bash deploy/create-rds-backup.sh)"
           echo "id=$(jq -r .backupId <<<"$backup")" >> "$GITHUB_OUTPUT"
@@ -399,6 +399,12 @@ jobs:
           printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
           chmod 600 ~/.ssh/cfp-ecs
 
+      - name: Download pinned jq for ECS smoke
+        run: |
+          curl -fsSLo /tmp/jq https://github.com/jqlang/jq/releases/download/jq-1.7.1/jq-linux-amd64
+          echo '5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5  /tmp/jq' | sha256sum -c -
+          chmod 700 /tmp/jq
+
       - name: Roll out, smoke, and automatically restore prior runtime on failure
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
@@ -406,7 +412,7 @@ jobs:
           ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.KITH_INN_DATABASE_URL }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
           KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
@@ -437,14 +443,19 @@ jobs:
           write_env KITH_INN_DEEPSEEK_MODEL "${KITH_INN_DEEPSEEK_MODEL:-deepseek-chat}"
           chmod 600 .env.kith-inn.next
           remote="$ECS_USER@$ECS_HOST"; ssh_args=(-i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no)
-          ssh "${ssh_args[@]}" "$remote" 'mkdir -p ~/cfp-kith/deploy && chmod 700 ~/cfp-kith ~/cfp-kith/deploy'
+          ssh "${ssh_args[@]}" "$remote" \
+            'mkdir -p ~/cfp-kith/bin ~/cfp-kith/deploy && chmod 700 ~/cfp-kith ~/cfp-kith/bin ~/cfp-kith/deploy'
           scp "${ssh_args[@]}" deploy/docker-compose.kith-inn.prod.yml deploy/smoke-test.sh \
             deploy/kith-inn-rollout.sh "$remote:~/cfp-kith/deploy/"
+          scp "${ssh_args[@]}" /tmp/jq "$remote:~/cfp-kith/bin/jq"
           scp "${ssh_args[@]}" .env.kith-inn.next "$remote:~/cfp-kith/deploy/.env.kith-inn.next"
           printf -v remote_login 'docker login --username %q --password-stdin %q' "$ACR_USERNAME" "$ACR_REGISTRY"
           printf '%s' "$ACR_PASSWORD" | ssh "${ssh_args[@]}" "$remote" "$remote_login"
+          printf -v remote_be_url '%q' "$KITH_INN_BE_BASE_URL"
           ssh "${ssh_args[@]}" "$remote" \
-            "chmod 600 ~/cfp-kith/deploy/.env.kith-inn.next && RELEASE_SHA='$GITHUB_SHA' bash ~/cfp-kith/deploy/kith-inn-rollout.sh"
+            "chmod 700 ~/cfp-kith/bin/jq && chmod 600 ~/cfp-kith/deploy/.env.kith-inn.next && \
+            PATH=\$HOME/cfp-kith/bin:\$PATH KITH_INN_BE_BASE_URL=$remote_be_url RELEASE_SHA='$GITHUB_SHA' \
+            bash ~/cfp-kith/deploy/kith-inn-rollout.sh"
 
       - name: Write smoke-passed marker
         env:

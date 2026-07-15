@@ -9,73 +9,21 @@ fail() { echo "production workflow verification failed: $*" >&2; exit 1; }
 assert_contains() { grep -Fq -- "$2" "$1" || fail "$1 is missing: $2"; }
 
 for required in \
-  'target:' 'kith_inn:' 'prepare-kith-inn:' 'deploy-kith-inn:' \
-  'needs: [affected, prepare-kith-inn, deploy]' "needs.deploy.result == 'success'" \
+  'target:' 'kith_inn:' 'prepare_kith_inn:' 'deploy-kith-inn:' \
+  'needs: [affected, prepare_kith_inn, deploy]' "needs.deploy.result == 'success'" \
   "github.ref == 'refs/heads/main'" "github.ref != 'refs/heads/main'" \
-  'bash deploy/kith-inn-check-production-env.sh' \
+  'bash deploy/check-kith-inn-production-config.sh' \
   'bash deploy/create-rds-backup.sh' 'bash ~/cfp-kith/deploy/kith-inn-rollout.sh' \
+  'jq-1.7.1/jq-linux-amd64' '5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5' \
+  'KITH_INN_BE_BASE_URL=$remote_be_url' \
   'bash deploy/write-smoke-marker.sh' 'name: smoke-passed-${{ github.sha }}' \
   'retention-days: 30'; do
   assert_contains "$workflow" "$required"
 done
 
-# 在真实临时 git range 上运行受影响判断；pnpm mock 只替代 Turbo 的 dry-run JSON。
-mkdir -p "$tmp/repo/deploy" "$tmp/repo/docs" "$tmp/bin"
-cp "$repo_root/deploy/production-targets.sh" "$tmp/repo/deploy/"
-cat > "$tmp/bin/pnpm" <<'MOCK'
-#!/usr/bin/env bash
-if [[ "${MOCK_TURBO_FAIL:-false}" == true ]]; then
-  exit 88
-elif [[ "$*" == *'@cfp/cms'* && "${MOCK_KITH_AFFECTED:-false}" == true ]]; then
-  printf '{"tasks":[{"taskId":"@cfp/cms#build"}]}'
-elif [[ "$*" == *'@cfp/website'* && "${MOCK_WEBSITE_AFFECTED:-false}" == true ]]; then
-  printf '{"tasks":[{"taskId":"@cfp/website#build"}]}'
-else
-  printf '{"tasks":[]}'
-fi
-MOCK
-chmod +x "$tmp/bin/pnpm"
-(
-  cd "$tmp/repo"
-  git init -q
-  git config user.email verify@example.invalid
-  git config user.name verify
-  echo initial > docs/readme.md
-  git add . && git commit -qm initial
-  base="$(git rev-parse HEAD)"
-  echo unrelated >> docs/readme.md
-  git add . && git commit -qm docs
-  output="$tmp/docs.output"
-  PATH="$tmp/bin:$PATH" GITHUB_OUTPUT="$output" bash deploy/production-targets.sh push website "$base" HEAD
-  grep -qx 'website=false' "$output" && grep -qx 'kith_inn=false' "$output" || fail "docs-only range affected a deploy target"
-  if PATH="$tmp/bin:$PATH" MOCK_TURBO_FAIL=true GITHUB_OUTPUT="$tmp/turbo-fail.output" \
-    bash deploy/production-targets.sh push website "$base" HEAD >/dev/null 2>&1; then
-    fail "failed Turbo dry-run was accepted"
-  fi
+bash "$repo_root/deploy/tests/production-targets.test.sh"
 
-  base="$(git rev-parse HEAD)"
-  mkdir -p apps/kith-inn-be && echo change > apps/kith-inn-be/change.ts
-  git add . && git commit -qm kith
-  output="$tmp/kith.output"
-  PATH="$tmp/bin:$PATH" MOCK_KITH_AFFECTED=true GITHUB_OUTPUT="$output" \
-    bash deploy/production-targets.sh push website "$base" HEAD
-  grep -qx 'website=false' "$output" && grep -qx 'kith_inn=true' "$output" || fail "kith range was not isolated"
-
-  base="$(git rev-parse HEAD)"
-  echo node_modules > .dockerignore
-  git add . && git commit -qm docker-context
-  output="$tmp/dockerignore.output"
-  PATH="$tmp/bin:$PATH" GITHUB_OUTPUT="$output" \
-    bash deploy/production-targets.sh push website "$base" HEAD
-  grep -qx 'website=true' "$output" && grep -qx 'kith_inn=true' "$output" \
-    || fail "root .dockerignore did not affect every root-context image"
-)
-output="$tmp/manual.output"
-GITHUB_OUTPUT="$output" bash "$repo_root/deploy/production-targets.sh" workflow_dispatch kith-inn '' ''
-grep -qx 'website=false' "$output" && grep -qx 'kith_inn=true' "$output" || fail "manual kith target was not isolated"
-output="$tmp/missing.output"
-GITHUB_OUTPUT="$output" bash "$repo_root/deploy/kith-inn-check-production-env.sh" >/dev/null
-grep -qx 'configured=false' "$output" || fail "missing kith secrets did not remain unconfigured"
+mkdir -p "$tmp/bin"
 
 # fake aliyun 覆盖 URL/实例绑定、成功备份与不可恢复备份。
 cat > "$tmp/bin/aliyun" <<'MOCK'
@@ -163,6 +111,7 @@ MOCK
 chmod +x "$tmp/bin/docker"
 cat > "$tmp/rollout/deploy/smoke-ok.sh" <<'MOCK'
 #!/usr/bin/env bash
+: "${KITH_INN_BE_BASE_URL:?KITH_INN_BE_BASE_URL is required}"
 printf '{"status":"passed"}\n'
 MOCK
 cat > "$tmp/rollout/deploy/smoke-fail.sh" <<'MOCK'
@@ -177,6 +126,7 @@ run_failure() {
   if PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$log" MOCK_MIGRATION_FAIL="${3:-false}" \
     MOCK_ROLLBACK_FAIL="${4:-false}" MOCK_CANDIDATE_PULL_FAIL="${5:-false}" \
     RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+    KITH_INN_BE_BASE_URL=https://kith.example.cn \
     KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$smoke" \
     bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/$mode.output" 2>&1; then
     fail "$mode failure was accepted"
@@ -199,9 +149,13 @@ printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
 success_log="$tmp/success.log"
 PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$success_log" \
   RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  KITH_INN_BE_BASE_URL=https://kith.example.cn \
   KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$tmp/rollout/deploy/smoke-ok.sh" \
   bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/success.output" 2>&1
 grep -Fq 'image rm sha256:stale' "$success_log" || fail "successful rollout did not prune a stale kith image"
+prune_line="$(grep -nF 'image rm sha256:stale' "$success_log" | head -n 1 | cut -d: -f1)"
+pull_line="$(grep -nF ' pull' "$success_log" | head -n 1 | cut -d: -f1)"
+(( prune_line < pull_line )) || fail "stale kith images were not pruned before candidate pull"
 for retained in current previous container unrelated; do
   ! grep -Fq "image rm sha256:$retained" "$success_log" || fail "successful rollout pruned retained image: $retained"
 done
@@ -210,6 +164,7 @@ printf 'old=true\n' > "$tmp/rollout/deploy/.env.kith-inn"
 printf 'candidate=true\n' > "$tmp/rollout/deploy/.env.kith-inn.next"
 PATH="$tmp/bin:$PATH" MOCK_DOCKER_LOG="$tmp/prune-failure.log" MOCK_PRUNE_FAIL=true \
   RELEASE_SHA=0123456789abcdef0123456789abcdef01234567 \
+  KITH_INN_BE_BASE_URL=https://kith.example.cn \
   KITH_INN_RELEASE_DIR="$tmp/rollout/deploy" KITH_INN_SMOKE_SCRIPT="$tmp/rollout/deploy/smoke-ok.sh" \
   bash "$tmp/rollout/deploy/kith-inn-rollout.sh" >"$tmp/prune-failure.output" 2>&1 \
   || fail "post-smoke image cleanup failure blocked a successful rollout"

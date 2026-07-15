@@ -140,18 +140,18 @@ smoke 会核对五个容器的 release SHA、Compose 实际 loopback 健康、H5
 
 ### 9.2 Production workflow 与通过凭据
 
-`.github/workflows/deploy-production.yml` 的手动入口必须在 `main` ref 上显式选择 `website`、`kith-inn` 或 `all`；从其他 ref dispatch 会在受影响判断前直接失败，kith-inn 部署 job 另有同样的 `main` 守卫。main push 则通过 git range + Turbo dry-run 分别判断受影响目标；根 `.dockerignore` 会同时影响所有以仓库根为 context 的镜像，因此必须触发两个目标。kith-inn 未受影响或专用配置缺失时只记录缺失的变量名，不记录、打印或要求无关项目补齐其值，也不执行真实部署。
+`.github/workflows/deploy-production.yml` 的手动入口必须在 `main` ref 上显式选择 `website` 或 `kith-inn`；从其他 ref dispatch 会在受影响判断前直接失败，kith-inn 部署 job 另有同样的 `main` 守卫。main push 则通过 git range + Turbo dry-run 分别判断受影响目标；根 `.dockerignore` 会同时影响所有以仓库根为 context 的镜像，因此必须触发两个目标。kith-inn 未受影响或专用配置缺失时只记录缺失的变量名，不记录、打印或要求无关项目补齐其值，也不执行真实部署。
 
 GitHub `Production` Environment 需要以下名称：
 
-- secrets：`ALIYUN_ACR_*`、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ECS_*`、`KITH_INN_DATABASE_URL`、`KITH_INN_PAYLOAD_SECRET`、`KITH_INN_JWT_SECRET`、`KITH_INN_CMS_INTERNAL_TOKEN`、`KITH_INN_TRIAL_OPENID`、`KITH_INN_WX_APPID`、`KITH_INN_WX_SECRET`、`KITH_INN_DEEPSEEK_API_KEY`；
-- variables：`ALIYUN_REGION_ID`、`KITH_INN_RDS_INSTANCE_ID`、`KITH_INN_BE_BASE_URL`；可选 `KITH_INN_RDS_BACKUP_METHOD=Physical|Snapshot`、`KITH_INN_DEEPSEEK_BASE_URL`、`KITH_INN_DEEPSEEK_MODEL`。
+- secrets：`ALIYUN_ACR_*`、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ECS_*`、`DATABASE_URL`、`KITH_INN_PAYLOAD_SECRET`、`KITH_INN_JWT_SECRET`、`KITH_INN_CMS_INTERNAL_TOKEN`、`KITH_INN_TRIAL_OPENID`、`KITH_INN_WX_APPID`、`KITH_INN_WX_SECRET`、`KITH_INN_DEEPSEEK_API_KEY`；
+- variables：`ALIYUN_REGION_ID`、`ALIYUN_RDS_INSTANCE_ID`、`KITH_INN_BE_BASE_URL`；可选 `KITH_INN_RDS_BACKUP_METHOD=Physical|Snapshot`、`KITH_INN_DEEPSEEK_BASE_URL`、`KITH_INN_DEEPSEEK_MODEL`。
 
-job 等目标 SHA 的 `ci.yml` 通过后，先等同一 run 的 website deploy 成功或明确跳过，避免两个 job 并发操作同一 ECS Docker daemon；随后构建并推送四个同 SHA 镜像，记录 registry digest。数据库 URL host 绑定到目标 RDS endpoint，且备份 task `Finished`、备份集 `Success` 与 `IsAvail=1` 后，才允许在 ECS 各执行一次 migration、provision 和候选 runtime。provision 的非敏感 seller ID 在同一远端进程直接传给 smoke，不是 workflow 输入。
+job 等目标 SHA 的 `ci.yml` 通过后，先等同一 run 的 website deploy 成功或明确跳过，避免两个 job 并发操作同一 ECS Docker daemon；随后构建并推送四个同 SHA 镜像，记录 registry digest。数据库 URL host 绑定到目标 RDS endpoint，且备份 task `Finished`、备份集 `Success` 与 `IsAvail=1` 后，才允许在 ECS 各执行一次 migration、provision 和候选 runtime。workflow 会把校验和固定的 `jq 1.7.1` 放入远端专用 `PATH`；手动执行 rollout 时也必须预装 `jq`。provision 的非敏感 seller ID 在同一远端进程直接传给 smoke，不是 workflow 输入。
 
 只有 rollout/readiness/smoke 全部通过，才生成 `smoke-passed-<完整 SHA>` artifact（保留 30 天）。其中 `smoke-passed.json` 固定记录 schema version、完整 SHA、deploy run ID、四个 digest、migration head、backup ID/时间与 `smokeStatus=passed`；任何失败 run 都没有该文件。
 
-rollout 前保留权限为 `0600` 的上一份 runtime env/digest。候选 pull 在 migration 前失败时复用本机仍被运行容器引用的上一镜像并保持健康 runtime，不因 registry 故障主动停服；migration、provision、readiness 或 smoke 失败时自动只恢复上一版 CMS/BE/H5，绝不运行旧 ops image 或猜测数据库回退。若首次部署没有上一版，或 migration 开始后旧 runtime 无法通过新 schema 的 health，则停止候选并输出 `manual_recovery_required`，转入下面的数据恢复分支。smoke 成功后才清理同一组 kith 仓库中的旧镜像；当前 env、上一版 env 以及任意现存容器引用的 image ID 都受保护，无关仓库也不处理，避免 40G ECS 被历史 digest/layer 持续占满。清理冲突会输出 `stale_image_cleanup_failed` 告警，但不把已经通过 smoke 的 release 改判为失败，也不阻断通过凭据生成。
+rollout 前保留权限为 `0600` 的上一份 runtime env/digest。候选 pull 前先尽力清理同一组 kith 仓库中的旧镜像，避免磁盘已满时连候选拉取都无法开始；当前 env、上一版 env 以及任意现存容器引用的 image ID 都受保护，无关仓库也不处理。候选 pull 在 migration 前失败时复用本机仍被运行容器引用的上一镜像并保持健康 runtime，不因 registry 故障主动停服；migration、provision、readiness 或 smoke 失败时自动只恢复上一版 CMS/BE/H5，绝不运行旧 ops image 或猜测数据库回退。若首次部署没有上一版，或 migration 开始后旧 runtime 无法通过新 schema 的 health，则停止候选并输出 `manual_recovery_required`，转入下面的数据恢复分支。smoke 成功后再次执行同样的受保护清理，避免 40G ECS 被历史 digest/layer 持续占满。清理冲突会输出带阶段的 `stale_image_cleanup_failed` 告警，但不阻断候选流程，也不把已经通过 smoke 的 release 改判为失败。
 
 ### 9.3 诊断与 15 分钟回滚
 
