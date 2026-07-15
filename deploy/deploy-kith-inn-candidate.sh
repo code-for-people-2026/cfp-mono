@@ -27,7 +27,12 @@ smoke() {
   result="$(KITH_INN_ENV_FILE="$1" RELEASE_SHA="$2" KITH_INN_PROVISIONED_SELLER_ID="$3" \
     KITH_INN_TRIAL_OPENID="$(value "$1" KITH_INN_TRIAL_OPENID)" \
     KITH_INN_BE_BASE_URL="$(value "$1" KITH_INN_BE_BASE_URL)" "$smoke_bin" kith-inn)" || return
-  jq -ce 'select(.status == "passed" and .writeCount == 0 and .redactionPassed == true)' <<<"$result"
+  jq -ce '
+    select(.durationMs | type == "number" and . >= 0 and floor == .) |
+    select(.checks == ["cms_liveness","cms_readiness","be_liveness","be_readiness","h5",
+      "be_ingress_liveness","be_ingress_readiness","be_ingress_auth_boundary","operator","jwt","offerings"]) |
+    select(.status == "passed" and .writeCount == 0 and .redactionPassed == true)
+  ' <<<"$result"
 }
 recover() {
   local stage="$1" old_sha old_seller

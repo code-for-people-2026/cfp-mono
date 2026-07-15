@@ -73,6 +73,11 @@ if run invalid-smoke >"$tmp/invalid-smoke.out" 2>"$tmp/invalid-smoke.err"; then 
 grep -q 'manual_data_recovery_required' "$tmp/invalid-smoke.err"
 
 new_env; old_env
+if run incomplete-smoke >"$tmp/incomplete-smoke.out" 2>"$tmp/incomplete-smoke.err"; then exit 1; fi
+grep -q 'manual_data_recovery_required' "$tmp/incomplete-smoke.err"
+grep -qx "KITH_INN_RELEASE_SHA='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" "$tmp/.env.kith-inn"
+
+new_env; old_env
 if run incompatible >"$tmp/incompatible.out" 2>"$tmp/incompatible.err"; then exit 1; fi
 grep -q 'manual_data_recovery_required' "$tmp/incompatible.err"
 grep -q -- '--env-file .*\.kith-inn stop' "$tmp/compose.log"
