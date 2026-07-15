@@ -120,7 +120,7 @@ describe("runUploadWeapp", () => {
       { ...baseEnv, WX_APPID: "wx1234567890abcdef", KITH_INN_MINIPROGRAM_PRIVATE_KEY: "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----", KITH_INN_MINIPROGRAM_IP_WHITELIST_ENABLED: "true" },
       { loadCi: async () => ({ Project, upload }) },
     );
-    expect(result.status).toBe("uploaded"); expect(upload).toHaveBeenCalledOnce();
+    expect(result.status).toBe("uploaded"); expect(upload).toHaveBeenCalledOnce(); expect(upload).toHaveBeenCalledWith(expect.objectContaining({ setting: { useProjectConfig: true } }));
     expect(() => statSync(keyPath)).toThrow();
   });
 
