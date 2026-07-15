@@ -15,8 +15,9 @@
 | PR6-A | 容器内 smoke 只用短时 operator JWT 精确验证目标 seller 的只读 offerings | T030–T031 | operator/seller/TTL/上游负例、BE coverage/build、`pnpm verify` | PR5 |
 | PR6-B1 | CMS job image 与 Compose/Nginx 固定 migration→provision→候选的可启动私网拓扑 | T028–T029 | job 真实命令、compose/nginx 静态检查、loopback/私网暴露、`pnpm verify` | PR6-A |
 | PR6-B2 | smoke/runbook 动态传递 seller、证明全业务表零写入并指导失败回滚 | T032–T034 | health+auth+read-only、全表快照、受控失败/回滚、`pnpm verify` | PR6-B1 |
-| PR7 | 生产工作流只对受影响且配置完整的 kith-inn 执行备份/迁移/部署/smoke/回滚并持久化通过凭据 | T035–T038 | affected/缺 secret/备份/失败演练、marker、action lint、`pnpm verify` | PR6-B2 |
-| PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7 |
+| PR7-A | 生产工作流精确选择 target，kith-inn 缺专用配置时不进入真实部署 | T035 | synthetic range/手动 target/缺配置、action lint、`pnpm verify` | PR6-B2 |
+| PR7-B | kith-inn 生产路径先备份再部署、smoke/回滚并持久化通过凭据 | T036–T038 | 备份/migration/smoke 失败演练、marker、`pnpm verify` | PR7-A |
+| PR8 | 独立手动工作流只在校验同 SHA 持久化 smoke 凭据后可重复上传体验版 | T039–T044 | uploader/marker 负例、dry-run、测试上传、`pnpm verify` | PR7-B |
 | PR9 | 实际云环境与桃子白名单真机完整通过并留下脱敏证据 | T045–T050 | 生产 smoke、版本关联、核心链路、回滚演练 | PR8 |
 
 ## Phase 1: 规格与规划（PR1）
@@ -93,9 +94,12 @@
 - [x] T033 [P] [US2] 更新 `deploy/RUNBOOK.md`、`DEPLOYMENT.md` 与 `docs/kith-inn/TECH-SPEC.md`，覆盖从 `deploy/.env.verify.example` materialize 本地覆盖、env/secret、RDS migration/seed、DNS/TLS、Nginx、smoke、上传前置和应用/数据回滚
 - [x] T034 [US2] 验证 compose/nginx 静态配置、成功 smoke、DB/token/operator/TLS 受控失败与 15 分钟回滚演练，再运行相关 coverage、`pnpm verify`、`git diff --check`
 
-### PR7：生产部署工作流
+### PR7-A：生产 target 与配置门禁
 
-- [ ] T035 [US2] 在 `.github/workflows/deploy-production.yml` 增加 kith-inn affected 输出、手动 target 与专用 secret/variable 存在性检查，无关项目/未配置环境不得执行真实部署
+- [x] T035 [US2] 在 `.github/workflows/deploy-production.yml` 增加 kith-inn affected 输出、手动 target 与专用 secret/variable 存在性检查，无关项目/未配置环境不得执行真实部署
+
+### PR7-B：备份、部署、smoke、回滚与凭据
+
 - [ ] T036 [US2] 在 `.github/workflows/deploy-production.yml` 增加同 SHA CMS runtime/CMS ops/BE/H5 四镜像 build/push、digest 记录、migration 前目标 RDS 可恢复备份创建/验证与非敏感 ID/时间记录、单次 migration/provision、provisioning seller ID 机器输出直传 smoke、Compose rollout；仅在部署后 smoke 成功末尾上传含 schema version/SHA/run/四 digest/migration/backup/status 且设 `retention-days: 30` 的 `smoke-passed.json` artifact
 - [ ] T037 [US2] 在 `.github/workflows/deploy-production.yml` 与 `deploy/RUNBOOK.md` 实现 smoke 失败自动恢复上一镜像 digest、schema 不兼容时停止并转人工数据恢复的边界
 - [ ] T038 [US2] 用 actionlint、synthetic git range/Turbo dry-run，以及缺 secret、备份缺失/不可恢复、migration/smoke 失败演练验证 workflow 全部 fail closed 且失败路径无 `smoke-passed.json`；确认成功 marker 字段完整、website 独立路径不变后运行 `pnpm verify` 与 `git diff --check`
@@ -128,8 +132,8 @@
 
 ## Dependencies & Execution Order
 
-- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B1→PR6-B2→PR7→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
-- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B1 固定可启动 runtime 拓扑，PR6-B2 再组装 smoke/回滚证据；PR7 才赋予生产写权限，PR8 只上传 PR7 已验证 SHA，PR9 才操作真实云与真机。
+- PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B1→PR6-B2→PR7-A→PR7-B→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
+- PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B1 固定可启动 runtime 拓扑，PR6-B2 再组装 smoke/回滚证据；PR7-A 只选择 target 并验证配置，PR7-B 才赋予生产写权限，PR8 只上传 PR7-B 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
 - PR4-A baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
 

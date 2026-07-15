@@ -52,11 +52,12 @@
 | PR6-A | 容器内 smoke 只用短时 operator JWT 精确验证目标 seller 的只读 offerings | `apps/kith-inn-be/src/smoke/**`、BE build/package 配置 | operator/seller/TTL/上游负例、BE coverage/build | PR5 |
 | PR6-B1 | 同一 SHA 的 CMS job image、Compose 与 Nginx 能静态验证并按 migration→provision→候选顺序启动 | `apps/cms/Dockerfile`、`deploy/**` | job 真实命令、compose/nginx 静态检查、私网/loopback 暴露 | PR6-A |
 | PR6-B2 | 标准 smoke 与中文 runbook 能动态传递 seller、证明零写入并指导失败回滚 | `apps/cms/smoke/**`、`deploy/**`、`DEPLOYMENT.md`、`docs/kith-inn/TECH-SPEC.md` | health+认证+只读 smoke、全业务表快照、受控失败/回滚 | PR6-B1 |
-| PR7 | 现有生产工作流只在 kith-inn 受影响且专用 secrets 完整时备份、迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | action lint、affected dry-run、缺 secret/备份/失败回滚演练 | PR6-B2 |
-| PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7 |
+| PR7-A | 生产工作流能精确选择 website/kith-inn target，且 kith-inn 缺专用配置时不得进入真实部署 | `.github/workflows/deploy-production.yml`、`deploy/**` | affected synthetic range、手动 target、缺配置负例、action lint | PR6-B2 |
+| PR7-B | kith-inn 生产路径先备份再迁移、部署、smoke/回滚，并持久化同 SHA 的通过凭据 | `.github/workflows/deploy-production.yml`、`deploy/**` | 备份/migration/smoke 失败演练、marker、`pnpm verify` | PR7-A |
+| PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7-B |
 | PR9 | 实际云环境与桃子白名单真机完整通过，并留下脱敏证据 | `specs/017-kith-inn-trial-deployment/evidence/**`、必要 runbook 勘误 | 生产 smoke、版本关联、真机核心链路、回滚演练 | PR8 |
 
-PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4-A 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；评估确认 migration 与 seed 合并会超过 400 行，因此落实为依赖有序的 PR4-A/PR4-B。PR6-B 的 job/编排/入口与三份 runbook 合计会明显超过 400 行，因此拆为先固定可启动拓扑的 PR6-B1，再组装 smoke/回滚证据的 PR6-B2。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
+PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4-A 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；评估确认 migration 与 seed 合并会超过 400 行，因此落实为依赖有序的 PR4-A/PR4-B。PR6-B 的 job/编排/入口与三份 runbook 合计会明显超过 400 行，因此拆为先固定可启动拓扑的 PR6-B1，再组装 smoke/回滚证据的 PR6-B2。PR7 的 target/config 门禁可在不赋予生产写权限时独立验收，因此先做 PR7-A，再由 PR7-B 消费其输出执行备份与发布。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
 
 ## Project Structure
 

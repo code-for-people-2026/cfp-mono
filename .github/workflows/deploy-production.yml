@@ -2,6 +2,15 @@ name: Deploy Production
 
 on:
   workflow_dispatch:
+    inputs:
+      target:
+        description: Production deploy target
+        required: true
+        default: website
+        type: choice
+        options:
+          - website
+          - kith-inn
   push:
     branches: [main]
 
@@ -14,9 +23,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       website: ${{ steps.check.outputs.website }}
+      kith_inn: ${{ steps.check.outputs.kith_inn }}
     steps:
       - uses: actions/checkout@v4
-        if: github.event_name == 'push'
         with:
           fetch-depth: 0
 
@@ -32,51 +41,10 @@ jobs:
 
       - id: check
         name: Check affected deploy targets
-        run: |
-          set_website() {
-            echo "website=$1" >> "$GITHUB_OUTPUT"
-            echo "website affected: $1"
-          }
-
-          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
-            set_website true
-            exit 0
-          fi
-
-          base="${{ github.event.before }}"
-          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
-            set_website true
-            exit 0
-          fi
-
-          if ! git cat-file -e "$base^{commit}"; then
-            set_website true
-            exit 0
-          fi
-
-          changed_files="$(git diff --name-only "$base" "$GITHUB_SHA")"
-          printf '%s\n' "$changed_files"
-
-          if printf '%s\n' "$changed_files" | grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/.*|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$'; then
-            set_website true
-            exit 0
-          fi
-
-          pnpm dlx turbo@2.6.3 run build "--filter=@cfp/website...[$base]" --dry-run=json --no-daemon > turbo-dry-run.json
-          node <<'NODE'
-          const fs = require("node:fs");
-
-          const text = fs.readFileSync("turbo-dry-run.json", "utf8");
-          const start = text.indexOf("{");
-          if (start === -1) {
-            throw new Error("Turbo dry run did not emit JSON.");
-          }
-
-          const data = JSON.parse(text.slice(start));
-          const affected = data.tasks.length > 0;
-          fs.appendFileSync(process.env.GITHUB_OUTPUT, `website=${affected ? "true" : "false"}\n`);
-          console.log(`website affected: ${affected}`);
-          NODE
+        env:
+          DEPLOY_TARGET: ${{ inputs.target }}
+          DEPLOY_BASE: ${{ github.event.before }}
+        run: bash deploy/resolve-production-targets.sh
 
   prepare:
     needs: affected
@@ -126,6 +94,41 @@ jobs:
             echo "configured=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Production deployment skipped because required secrets are missing: ${missing[*]}"
           fi
+
+  prepare_kith_inn:
+    needs: affected
+    if: needs.affected.outputs.kith_inn == 'true'
+    runs-on: ubuntu-latest
+    environment: Production
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: check
+        name: Check kith-inn production configuration
+        env:
+          ALIYUN_ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+          ALIYUN_ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
+          ALIYUN_ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
+          ALIYUN_ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
+          KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
+          KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
+          KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
+          KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
+          KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}
+          KITH_INN_DEEPSEEK_API_KEY: ${{ secrets.KITH_INN_DEEPSEEK_API_KEY }}
+          KITH_INN_BE_BASE_URL: ${{ vars.KITH_INN_BE_BASE_URL }}
+        run: bash deploy/check-kith-inn-production-config.sh
 
   deploy:
     needs: [affected, prepare]
