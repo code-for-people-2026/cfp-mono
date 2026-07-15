@@ -28,7 +28,8 @@ run() {
 }
 new_env
 run success >"$tmp/success"
-jq -e '.status == "passed" and .sellerId == "1"' "$tmp/success" >/dev/null
+jq -e '.status == "passed" and .sellerId == "1" and .smokeEvidence.status == "passed" and
+  .smokeEvidence.writeCount == 0 and (.smokeEvidence.startedAt | test("Z$"))' "$tmp/success" >/dev/null
 grep -qx 'KITH_INN_PROVISIONED_SELLER_ID=1' "$tmp/.env.kith-inn"
 grep -q "|openid'new|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa$" "$tmp/smoke.log"
 
@@ -66,6 +67,10 @@ grep -q -- '--env-file .*\.next up -d --no-deps' "$tmp/compose.log"
 grep -q -- '--env-file .*\.kith-inn pull kith-inn-cms-migrate kith-inn-cms' "$tmp/compose.log"
 grep -q -- '--env-file .*\.kith-inn up -d --no-deps' "$tmp/compose.log"
 grep -q 'rolled_back' "$tmp/smoke.err"
+
+new_env; old_env
+if run invalid-smoke >"$tmp/invalid-smoke.out" 2>"$tmp/invalid-smoke.err"; then exit 1; fi
+grep -q 'manual_data_recovery_required' "$tmp/invalid-smoke.err"
 
 new_env; old_env
 if run incompatible >"$tmp/incompatible.out" 2>"$tmp/incompatible.err"; then exit 1; fi
