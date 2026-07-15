@@ -29,6 +29,7 @@
     "apps/kith-inn-fe": {
       "entry": [
         "config/**/*.ts",
+        "scripts/upload-weapp-cli.ts",
         "src/**/*.{ts,tsx}",
         "eslint.config.mjs",
         "vitest.config.ts"
