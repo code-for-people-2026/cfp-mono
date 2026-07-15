@@ -7,13 +7,22 @@
 ```bash
 pnpm verify
 : "${KITH_INN_BE_BASE_URL:?请从外部注入已备案且已配置 TLS 的真实 HTTPS BE URL}"
+release_sha="$(git rev-parse HEAD)"
 BE_BASE_URL="$KITH_INN_BE_BASE_URL" pnpm --filter @cfp/kith-inn-fe build:h5
 BE_BASE_URL="$KITH_INN_BE_BASE_URL" pnpm --filter @cfp/kith-inn-fe build:weapp
-docker build -f apps/cms/Dockerfile -t kith-inn-cms:verify .
-docker build -f apps/kith-inn-be/Dockerfile -t kith-inn-be:verify .
+docker build --build-arg RELEASE_SHA="$release_sha" \
+  -f apps/cms/Dockerfile -t kith-inn-cms:verify .
+docker build --build-arg RELEASE_SHA="$release_sha" \
+  -f apps/kith-inn-be/Dockerfile -t kith-inn-be:verify .
 docker build -f apps/kith-inn-fe/Dockerfile \
+  --build-arg RELEASE_SHA="$release_sha" \
   --build-arg BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
   -t kith-inn-h5:verify .
+RELEASE_SHA="$release_sha" \
+  KITH_INN_CMS_IMAGE=kith-inn-cms:verify \
+  KITH_INN_BE_IMAGE=kith-inn-be:verify \
+  KITH_INN_H5_IMAGE=kith-inn-h5:verify \
+  bash deploy/verify-kith-inn-images.sh
 ```
 
 预期：外部变量为空或不是已备案、已配置 TLS 的合法 HTTPS host 时，上述参数检查/构建校验立即失败；成功时四类产物均可关联当前 SHA。再对 `https://api.example.invalid`（仅负例）、HTTP、IP、localhost、局域网 URL 运行前端配置窄测，全部必须在构建前失败；不要把真实域名写入仓库。
