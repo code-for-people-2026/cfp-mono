@@ -37,6 +37,12 @@ run success >"$tmp/upgrade"
 grep -qx "KITH_INN_RELEASE_SHA='bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'" "$tmp/.env.kith-inn.previous"
 grep -qx "KITH_INN_RELEASE_SHA='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'" "$tmp/.env.kith-inn"
 
+new_env
+printf '%s\n' "KITH_INN_TRIAL_OPENID='legacy-openid'" >"$tmp/.env.kith-inn"
+if run migration >"$tmp/legacy.out" 2>"$tmp/legacy.err"; then exit 1; fi
+grep -q '"stage":"preflight","recovery":"no_change"' "$tmp/legacy.err"
+! grep -Eq ' pull | run | stop ' "$tmp/compose.log"
+
 new_env; old_env
 if run migration >"$tmp/migration.out" 2>"$tmp/migration.err"; then exit 1; fi
 ! grep -q -- '--env-file .*\.next up -d --no-deps' "$tmp/compose.log"

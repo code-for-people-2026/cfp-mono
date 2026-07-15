@@ -262,8 +262,11 @@ jobs:
           printf 'migration_head=%s\nseller_id=%s\n' "$migration_head" "$seller_id" >> "$GITHUB_OUTPUT"
 
   deploy:
-    needs: [affected, prepare]
-    if: needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
+    needs: [affected, prepare, prepare_kith_inn]
+    if: >-
+      always() && needs.affected.result == 'success' && needs.prepare.result == 'success' &&
+      (needs.prepare_kith_inn.result == 'success' || needs.prepare_kith_inn.result == 'skipped') &&
+      needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

@@ -35,7 +35,7 @@ recover() {
   fi
   old_sha="$(value "$current_env" KITH_INN_RELEASE_SHA)"
   old_seller="$(value "$current_env" KITH_INN_PROVISIONED_SELLER_ID)"
-  if [[ ! "$old_sha" =~ ^[0-9a-f]{40}$ || -z "$old_seller" ]] ||
+  if [[ ! "$old_sha" =~ ^[0-9a-f]{40}$ || ! "$old_seller" =~ ^[0-9]+$ ]] ||
     ! compose "$current_env" pull "${rollback_images[@]}" >/dev/null 2>&1 ||
     ! compose "$current_env" up -d --no-deps "${runtime[@]}" >/dev/null 2>&1 ||
     ! smoke "$current_env" "$old_sha" "$old_seller" >/dev/null 2>&1; then
@@ -51,6 +51,12 @@ recover() {
 command -v "$compose_bin" >/dev/null || fail preflight no_change
 command -v "$smoke_bin" >/dev/null || fail preflight no_change
 command -v jq >/dev/null || fail preflight no_change
+if [[ -f "$current_env" ]]; then
+  old_sha="$(value "$current_env" KITH_INN_RELEASE_SHA)"
+  old_seller="$(value "$current_env" KITH_INN_PROVISIONED_SELLER_ID)"
+  [[ "$old_sha" =~ ^[0-9a-f]{40}$ && "$old_seller" =~ ^[0-9]+$ ]] &&
+    compose "$current_env" config --quiet >/dev/null 2>&1 || fail preflight no_change
+fi
 
 compose "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || fail pull no_change
 migration_output="$(compose "$next_env" run --rm --no-deps kith-inn-cms-migrate 2>&1)" || recover migration
