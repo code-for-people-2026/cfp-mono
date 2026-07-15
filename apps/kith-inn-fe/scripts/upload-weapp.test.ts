@@ -48,7 +48,7 @@ describe("upload arguments and smoke credential", () => {
       ["--version", "!"], ["--version", "1", "--desc", "x"],
       ["--version", "1", "--desc", "x\n", "--project-path", "/tmp/p"],
       ["--version", "1", "--desc", "x".repeat(65), "--project-path", "/tmp/p"],
-      ["--version"],
+      ["--version"], ["--version", "1", "--desc", `trial-${sha.slice(0, 12)}`, "--project-path", "/tmp/p"],
     ]) expect(() => parseUploadArgs(argv)).toThrow("上传参数无效");
   });
   it("binds a complete passed marker to the selected SHA and deployment run", () => {

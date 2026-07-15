@@ -35,7 +35,7 @@ export function parseUploadArgs(argv: string[]): UploadArgs {
   const version = values["--version"] ?? ""; const desc = values["--desc"] ?? "";
   const projectPath = values["--project-path"] ?? ""; const markerPath = values["--marker"];
   if (markerOnly && !markerPath) invalidArgs();
-  if (!markerOnly && (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/.test(version) || !desc || desc.length > 64 || /[\r\n]/.test(desc) || !projectPath)) invalidArgs();
+  if (!markerOnly && (!/^[0-9A-Za-z][0-9A-Za-z._-]{0,31}$/.test(version) || !desc || desc.length > 64 || /[\r\n]/.test(desc) || !projectPath || (!dryRun && !markerPath))) invalidArgs();
   return { version, desc, projectPath: projectPath ? resolve(projectPath) : "", dryRun, markerPath, markerOnly };
 }
 
