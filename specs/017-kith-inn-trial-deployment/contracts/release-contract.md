@@ -35,9 +35,9 @@
 
 标准入口 `bash deploy/smoke-test.sh kith-inn` 顺序执行：
 
-1. 检查 CMS/BE liveness 与 readiness、H5 静态入口。
+1. 按 Compose 实际 loopback 端口检查 CMS/BE liveness 与 readiness、H5 静态入口；同时要求与发布构建相同的合法 HTTPS BE origin，通过真实 TLS/Nginx 检查 liveness、readiness 与 `/offerings` 未认证边界。
 2. provisioning 输出只含状态与 `sellerId` 的机器可读结果；同一 workflow job 解析该结果并直接传给 BE 容器内一次性 `smoke:deployed` CLI。CLI 用 `KITH_INN_TRIAL_OPENID` 调 CMS operator lookup，并要求返回 seller ID 精确等于该结果；seller ID 不是部署输入，不允许人工复制或猜测。
-3. CLI 在内存签发 TTL ≤60 秒 JWT，再对公开 BE 执行 `GET /offerings`；不打印 token/OpenID，并在退出前清除引用。
+3. CLI 在内存签发 TTL ≤60 秒 JWT，再通过 BE 容器 loopback 执行 `GET /offerings`；不打印 token/OpenID，并在退出前清除引用。公网 ingress 只以无 token 请求验证 401，避免错误 host 接收 JWT。
 4. 对 smoke 前后只读基线计数，写入变化必须为 0。
 5. 输出只含 release SHA、各检查状态、耗时与错误类别；任一步失败返回非零并触发发布阻断/回滚。
 

@@ -42,6 +42,32 @@ fail() { printf '{"status":"failed","error":"%s"}\n' "$1" >&2; exit 1; }
 for command in curl docker jq; do command -v "$command" >/dev/null || fail "missing_command"; done
 [[ -f "$compose_file" && -f "$env_file" ]] || fail "invalid_configuration"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ && -n "$seller_id" && -n "$openid" ]] || fail "invalid_configuration"
+
+https_origin() {
+  local value="${1%/}" authority host port
+  [[ "$value" =~ ^https://[A-Za-z0-9.-]+(:[1-9][0-9]{0,4})?$ ]] || fail "invalid_configuration"
+  authority="${value#https://}"
+  host="$(printf '%s' "${authority%%:*}" | tr '[:upper:]' '[:lower:]')"
+  [[ "$host" == *.* && "$host" != *..* && "$host" =~ ^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$ ]] || fail "invalid_configuration"
+  [[ ! "$host" =~ ^(0x[0-9a-f]+|[0-9]+)(\.(0x[0-9a-f]+|[0-9]+))*$ ]] || fail "invalid_configuration"
+  case "$host" in
+    localhost|*.localhost|*.local|*.lan|home.arpa|*.home.arpa|*.invalid|*.example|*.test|example.com|*.example.com|example.net|*.example.net|example.org|*.example.org)
+      fail "invalid_configuration" ;;
+  esac
+  if [[ "$authority" == *:* ]]; then
+    port="${authority##*:}"
+    (( 10#$port > 0 && 10#$port <= 65535 )) || fail "invalid_configuration"
+  fi
+  printf '%s' "$value"
+}
+
+is_unauthorized() {
+  local code
+  code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "$1")" || return 1
+  [[ "$code" == 401 ]]
+}
+
+public_be_url="$(https_origin "${KITH_INN_BE_BASE_URL:-}")"
 compose=(docker compose -f "$compose_file" --env-file "$env_file")
 started_seconds="$(date +%s)"
 
@@ -66,6 +92,9 @@ retry cms_readiness "${compose[@]}" exec -T kith-inn-cms node -e \
 retry be_liveness curl -fsS -m 10 "http://127.0.0.1:$be_port/" || exit 1
 retry be_readiness curl -fsS -m 10 "http://127.0.0.1:$be_port/ready" || exit 1
 retry h5 curl -fsS -m 10 "http://127.0.0.1:$h5_port/" || exit 1
+retry be_ingress_liveness curl -fsS -m 10 "$public_be_url/" || exit 1
+retry be_ingress_readiness curl -fsS -m 10 "$public_be_url/ready" || exit 1
+retry be_ingress_auth_boundary is_unauthorized "$public_be_url/offerings" || exit 1
 
 snapshot() {
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" "${compose[@]}" run --rm --no-deps \
@@ -95,7 +124,7 @@ after="$(snapshot)" || fail "business_snapshot_failed"
 duration_ms="$(( ($(date +%s) - started_seconds) * 1000 ))"
 jq -cn --arg releaseSha "$release_sha" --argjson durationMs "$duration_ms" '{
   releaseSha: $releaseSha,
-  checks: ["cms_liveness","cms_readiness","be_liveness","be_readiness","h5","operator","jwt","offerings"],
+  checks: ["cms_liveness","cms_readiness","be_liveness","be_readiness","h5","be_ingress_liveness","be_ingress_readiness","be_ingress_auth_boundary","operator","jwt","offerings"],
   writeCount: 0,
   redactionPassed: true,
   durationMs: $durationMs,

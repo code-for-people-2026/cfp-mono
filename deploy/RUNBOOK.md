@@ -131,11 +131,12 @@ compose=(docker compose -f deploy/docker-compose.kith-inn.prod.yml --env-file de
 provision_result="$("${compose[@]}" logs --no-color --no-log-prefix kith-inn-cms-provision | tail -n 1)"
 seller_id="$(jq -er 'select(.project == "kith-inn") | .sellerId' <<<"$provision_result")"
 : "${KITH_INN_TRIAL_OPENID:?必须由受控 secret 环境注入，禁止回显}"
-RELEASE_SHA="<40位main提交>" KITH_INN_ENV_FILE=deploy/.env.kith-inn \
+KITH_INN_BE_BASE_URL="https://<已备案且微信后台已配置的-BE-host>" \
+  RELEASE_SHA="<40位main提交>" KITH_INN_ENV_FILE=deploy/.env.kith-inn \
   KITH_INN_PROVISIONED_SELLER_ID="$seller_id" bash deploy/smoke-test.sh kith-inn
 ```
 
-smoke 会核对五个容器的 release SHA、CMS/BE liveness/readiness、H5、operator/seller、60 秒 JWT、只读 offerings，以及目标 seller 全业务 collection 的前后哈希；成功必须为 `writeCount: 0`。seller ID 只能由本次 provision JSON 直传，不能配置为 Environment 输入。任一步失败都不得生成上传凭据或进入体验版上传。
+smoke 会核对五个容器的 release SHA、Compose 实际 loopback 健康、H5，以及与 weapp 构建相同的 `KITH_INN_BE_BASE_URL` 所经过的真实 TLS/Nginx liveness、readiness 和 `/offerings` 未认证边界；JWT 认证只读仍在 BE 容器 loopback 内执行，避免域名误配外送 token。它还验证 operator/seller、60 秒 JWT、只读 offerings，以及目标 seller 全业务 collection 的前后哈希；成功必须为 `writeCount: 0`。seller ID 只能由本次 provision JSON 直传，不能配置为 Environment 输入。任一步失败都不得生成上传凭据或进入体验版上传。
 
 ### 9.2 诊断与 15 分钟回滚
 
