@@ -18,6 +18,8 @@
 - `apps/website`：官方网站 + Payload 管理后台 + 对话/摘要 API，容器端口 `3302`。
 - 镜像：`cfp-website`，由 GitHub Actions 构建并推送到 ACR。
 - 数据库：复用现有 RDS PostgreSQL（`apps/site` 退役后接管）。
+- `apps/cms` + `apps/kith-inn-be` + `apps/kith-inn-fe` H5：同一 ECS 上的独立 Compose override；四个不可变镜像（含短生命周期 CMS ops）共用 RDS 实例但固定使用 `cms` schema，website 拓扑不变。
+- 桃子正式入口是 weapp 体验版；BE 使用已备案并配置到微信后台的 HTTPS request 合法域名，CMS/H5 仅限内部 allowlist。
 
 ## 从 Vercel 迁移（两步）
 
@@ -74,6 +76,8 @@ pnpm --filter @cfp/website payload:migrate:create <name>   # 需要本地 Postgr
 
 > 迁移 CLI 能加载 TS 配置，依赖 `apps/website` 的 `package.json` 标了 `"type":"module"`。构建用普通 `next build`（Turbopack），import 不带 `.js` 扩展名。生成迁移时若本地出现 `apps/website/payload-types.ts`（已 gitignore），删掉即可，不要提交。
 
+kith-inn 的 `cms` schema 不沿用上述 website 自动迁移：候选发布必须先创建/验证 RDS 可恢复备份，再由同 SHA 的 CMS ops image 显式执行 committed migration 与幂等桃子 provision；两者成功后才启动 runtime。部署后运行 `RELEASE_SHA=<sha> bash deploy/smoke-test.sh kith-inn`，验证 readiness、动态 seller 的认证只读请求及 15 张业务/关系表零写入。完整失败处理见 `deploy/RUNBOOK.md` §9。
+
 ## 回滚
 
 在服务器上保留上一个镜像标签。部署后如果冒烟测试失败，手动把镜像标签改回上一个版本，然后运行：
@@ -83,6 +87,8 @@ docker compose pull
 docker compose up -d
 ```
 
+kith-inn 应用回滚恢复上一组 CMS/BE/H5 digest，但不重跑旧 ops image；如新 schema 与旧应用不兼容，停止流量并选择已审计 down、前向修复或发布前 RDS 备份恢复，不得用 reset 代替数据恢复。
+
 ## 临时验证
 
-如果 ICP 备案、DNS 或 SSL 还没准备好，可以先用 ECS 公网 IP 或临时域名做仅冒烟测试的验证。备案和证书完成后再切换到正式域名。
+website 可继续使用临时域名验证。kith-inn 的 H5 也仅可内部验证；桃子真机体验版必须使用已备案、有效 TLS 且已加入微信后台的合法域名，不能以公网 IP、临时未备案域名或关闭域名校验代替。

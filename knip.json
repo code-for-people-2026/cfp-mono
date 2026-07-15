@@ -54,6 +54,7 @@
         "eslint.config.mjs",
         "vitest.config.ts",
         "seed/run.ts",
+        "smoke/snapshot.ts",
         "src/app/**/*.{ts,tsx}",
         "tests/**/*.ts"
       ]

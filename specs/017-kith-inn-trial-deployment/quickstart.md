@@ -57,7 +57,7 @@ bash deploy/verify-kith-inn-compose.sh deploy/.env.verify
 bash deploy/verify-nginx-example.sh
 # 指定 kith-inn 叶子服务，只按依赖启动本项目，不拉取或重启独立 website。
 WEBSITE_ENV_FILE=./.env.website.verify.example docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.verify up -d kith-inn-h5
-bash deploy/smoke-test.sh kith-inn
+RELEASE_SHA="$release_sha" bash deploy/smoke-test.sh kith-inn
 ```
 
 预期：CMS/BE liveness+readiness、H5 静态入口、operator lookup、短时 JWT 与只读 offerings 全绿，写入变化为 0。随后制造缺 token、DB 不可达、错误 migration head 和失效 operator，候选均不得标记健康。

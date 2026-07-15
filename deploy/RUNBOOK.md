@@ -110,3 +110,34 @@ gh run watch --repo code-for-people-2026/cfp-mono
 - **Payload 生成类型未提交（类型安全 follow-up）**：`payload-types.ts` 是生成物、未提交，CI 在其缺席下按宽松类型通过。若要完整 schema 类型安全，需提交它并修 `seed.ts` / `lib/content` 里 6 处严格类型不匹配（slug/target 联合类型、`as Raw` 改 `as unknown as`）。属独立改进。
 - **证书自动续期未对接服务器**：当前证书在本机签发、手动传到 ECS。备案后改为服务器侧自动续期 + reload。
 - **临时放行的 3302**：备案后关闭。
+
+## 9. kith-inn 桃子体验版（旧项目）
+
+本节只覆盖 `apps/cms`、`apps/kith-inn-be` 与 `apps/kith-inn-fe`；`kith-inn-v1` 和 website 保持独立。生产候选由同一 main SHA 的 CMS runtime、CMS ops、BE、H5 四个 registry digest 组成，CMS 使用共享 RDS 的固定 `cms` schema。
+
+### 9.1 配置与入口
+
+1. 从 `deploy/.env.verify.example` 复制本地 `.env.verify`，权限设为 `0600`；生产值只由 GitHub `Production` Environment materialize 到 ECS 临时 env 文件，不回显、不提交。专用 secret 包括 `KITH_INN_PAYLOAD_SECRET`、`KITH_INN_JWT_SECRET`、`KITH_INN_CMS_INTERNAL_TOKEN`、微信/DeepSeek 凭据与 `KITH_INN_TRIAL_OPENID`；seller ID 不是输入。
+2. 四个 image 必须为 ACR `name@sha256:<64hex>`；本地验证可用 Docker image ID。先运行 `verify-kith-inn-compose.sh` 与 `verify-nginx-example.sh`，再只启动叶子服务 `kith-inn-h5`，避免拉取或重启 website。
+3. BE 仅通过已备案、证书有效并加入微信 request 合法域名的 HTTPS host 暴露。CMS/H5 host 保持 IP allowlist/VPN 内部访问；容器端口只绑定 loopback，Nginx 是唯一公网入口。安装证书后必须 `nginx -t` 再 reload。
+
+### 9.2 RDS、发布与 smoke
+
+顺序不可交换：创建/验证目标 RDS 的可恢复备份并记录非敏感 backup ID/时间 → 运行 CMS ops migration → 运行一次幂等 provision → 启动 CMS/BE/H5 → readiness → smoke。备份不可恢复、migration head 错误或 provision 非零时不得启动候选；生产禁止 push/reset。
+
+```bash
+WEBSITE_ENV_FILE=./.env.website.verify.example \
+  docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml \
+  --env-file deploy/.env.verify up -d kith-inn-h5
+RELEASE_SHA=<完整-main-sha> bash deploy/smoke-test.sh kith-inn
+```
+
+smoke 从本次 provision 日志解析唯一 seller ID，直接注入 BE 容器的一次性 CLI；CLI 用仅存于内存的 OpenID 签发最多 60 秒 JWT并只读 `/offerings`。前后分别由 CMS ops 统计旧 kith-inn 的 15 张业务/关系表，任一计数或内容指纹变化即失败。输出只含 SHA、布尔检查、零写入与稳定错误类别，不含 OpenID、token、env 或上游正文。
+
+发布前受控验证 DB 不可达、internal token 错误、operator 停用和 TLS/域名错误：对应 readiness/smoke 必须非零，且不得生成 `smoke-passed.json`。微信体验版上传还必须等待 PR7 的同 SHA smoke artifact、合法域名、上传密钥/IP 白名单和 Environment 审批；H5 成功不能代替真机微信登录。
+
+### 9.3 15 分钟回滚分支
+
+- **应用兼容**：保留数据库，恢复上一组 CMS/BE/H5 registry digest，`up -d kith-inn-h5` 后重新跑 readiness/smoke；不重跑旧 CMS ops image。目标 15 分钟内恢复流量。
+- **schema 不兼容**：先停止 Nginx 对候选转发并保留现场；只能选择已审计 down migration、前向修复或按发布前 backup ID 恢复 RDS。恢复后核对 migration head、重新 provision/readiness/smoke；禁止自动猜测或生产 reset。
+- 记录 release SHA、四 digest、migration head、backup ID/时间、错误类别、选择的分支和耗时；不得记录真实 host、凭据、OpenID、JWT 或顾客数据。

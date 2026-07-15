@@ -214,9 +214,9 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ## 7. 仍待议 / 后续任务
 
-- **【决策·进行中】给桃子真机试用的后端域名**：ICP 备案（`kith-inn-be` 域名，**在审**）vs 微信云托管/云开发免备案试用。后者的 `callContainer`/`callFunction` 走**微信内部信道、不过「合法域名」校验、免 ICP 备案**——可让 kith-inn-be 仍跑 ECS、前面架一个薄云托管服务做代理转发；备案下来后切回直连合法域名、前端调用层几乎不改。注意：**体验版真机仍强制校验合法域名**，DevTools 关「校验合法域名」只对开发版生效，故关开关绕不过——只云托管/云开发这条信道能真正免备案。**2026-06-25 决定**：备案在审，若 MVP 编码完成前下来则直连、连代理都省；没下来再走云托管代理。
+- **✅ 桃子真机后端域名（spec 017）**：复用现有 ECS + RDS + ACR，并落实已备案主体下、证书有效且已加入微信后台的 HTTPS request 合法域名；微信云托管只保留为后续备选，本轮不实施。真机始终开启域名校验，H5 仅供内部验证。
 - **✅ apps/cms spike（已完成，PR1）**：(a) 共享 cms host（schema `"cms"`）与 website 同库分 schema 互不干扰——`tests/spike-coexistence.test.ts` 起真实 postgres 验证 `cms`/`website`/`public` 三 schema 并存零污染；(b) `@payloadcms/plugin-multi-tenant` 与 `operators+wechatOpenid` 鉴权 **no-go**（插件以 `user.tenants` 数组 + `tenant` 字段为模型、与我们单 `seller` 冲突，共存只能禁用其 access 逻辑），弃插件、单走 §3.1 自家 `tenantScoped()` 工厂。结论见 `apps/cms/SPIKE.md`。
-- **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，需补"一台 ECS docker-compose 多容器：`apps/cms`（schema `cms`）+ kith-inn-be + kith-inn-fe H5 + nginx，共一个 RDS"；website 部分不变。
+- **体验版部署契约（spec 017）**：一台 ECS 以独立 Compose override 运行 CMS runtime/CMS ops/BE/H5，同 SHA 四 digest 共用 RDS 的 `cms` schema且不改变 website。顺序固定为可恢复备份 → committed migration → 幂等桃子 provision → runtime readiness → 动态 seller 的短 JWT 只读 smoke；前后统计旧 kith-inn 全部 15 张业务/关系表并要求零写入。应用回滚恢复上一 digest，schema 不兼容时停止流量并走审计过的 down/前向修复/RDS 恢复。
 - 是否需要 MCP server 形态（取决于 §4 的 AI 形态；MVP 多为普通 LLM 调用，未必需要）。
 - **ASR 选型（M2）**：微信同传插件 vs 云 ASR vs 自托管（MVP 不做，走系统输入法）。
 - **DeepSeek v4 的 function-calling / tool-use 稳定性**（买菜助手 agent 的前提，M2+）。

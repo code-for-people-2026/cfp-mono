@@ -38,7 +38,7 @@
 1. 检查 CMS/BE liveness 与 readiness、H5 静态入口。
 2. provisioning 输出只含状态与 `sellerId` 的机器可读结果；同一 workflow job 解析该结果并直接传给 BE 容器内一次性 `smoke:deployed` CLI。CLI 用 `KITH_INN_TRIAL_OPENID` 调 CMS operator lookup，并要求返回 seller ID 精确等于该结果；seller ID 不是部署输入，不允许人工复制或猜测。
 3. CLI 在内存签发 TTL ≤60 秒 JWT，再对公开 BE 执行 `GET /offerings`；不打印 token/OpenID，并在退出前清除引用。
-4. 对 smoke 前后只读基线计数，写入变化必须为 0。
+4. 对旧 kith-inn 全部业务/关系表读取行数与内容指纹基线；前后必须完全相等，写入变化为 0，且不得把行内容写入输出。
 5. 输出只含 release SHA、各检查状态、耗时与错误类别；任一步失败返回非零并触发发布阻断/回滚。
 
 该 CLI 不是 HTTP route，不可从公网调用。真实 `wx.login → code2session` 成功只由真机验收证明。
