@@ -1,7 +1,10 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    "smoke-deployed": "src/smoke/deployed-cli.ts",
+  },
   clean: true,
   format: ["esm"],
   platform: "node",
