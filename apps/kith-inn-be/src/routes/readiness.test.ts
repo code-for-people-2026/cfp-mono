@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readinessRoutes } from "./readiness";
 
 const requestReady = (fetchImpl: typeof fetch) =>
-  readinessRoutes({ fetch: fetchImpl, cmsBaseUrl: "http://cms:3304", internalToken: "internal-value" }).request("/");
+  readinessRoutes({ fetch: fetchImpl, cmsBaseUrl: "http://cms:3304", internalToken: "internal-value", releaseSha: "release-a" }).request("/");
 
 describe("GET /ready", () => {
   it("passes only after the authenticated CMS readiness probe succeeds", async () => {
@@ -11,7 +11,7 @@ describe("GET /ready", () => {
     );
     const response = await requestReady(fetchMock as typeof fetch);
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true, service: "kith-inn-be" });
+    expect(await response.json()).toEqual({ ok: true, service: "kith-inn-be", releaseSha: "release-a" });
     expect(fetchMock).toHaveBeenCalledWith("http://cms:3304/api/ready", {
       headers: { "x-internal-token": "internal-value" },
       signal: expect.any(AbortSignal),
@@ -27,6 +27,6 @@ describe("GET /ready", () => {
   ])("returns a stable, redacted 503 when %s", async (_label, fetchMock) => {
     const response = await requestReady(fetchMock as typeof fetch);
     expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ ok: false, service: "kith-inn-be", category: "cms_unavailable" });
+    expect(await response.json()).toEqual({ ok: false, service: "kith-inn-be", releaseSha: "release-a", category: "cms_unavailable" });
   });
 });

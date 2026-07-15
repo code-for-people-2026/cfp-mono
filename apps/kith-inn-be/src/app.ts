@@ -21,13 +21,15 @@ export function createApp() {
   assertKithInnProductionEnv();
   const jwtSecret = process.env.JWT_SECRET;
   if (!jwtSecret) throw new Error("JWT_SECRET is required");
+  const releaseSha = process.env.RELEASE_SHA ?? "unknown";
   const app = new Hono<AppVars>();
   app.use("*", cors());
-  app.route("/", healthRoutes());
+  app.route("/", healthRoutes(releaseSha));
   app.route("/ready", readinessRoutes({
     fetch,
     cmsBaseUrl: process.env.CMS_BASE_URL ?? "",
     internalToken: process.env.CMS_INTERNAL_TOKEN ?? "",
+    releaseSha,
   }));
   app.route("/auth", authRoutes(jwtSecret));
   app.route("/offerings", offeringsRoutes(jwtSecret));

@@ -67,6 +67,12 @@ is_unauthorized() {
   [[ "$code" == 401 ]]
 }
 
+ingress_release() {
+  local endpoint="$1" contract="$2"
+  curl -fsS -m 10 "$public_be_url$endpoint" |
+    jq -e --arg releaseSha "$release_sha" ".releaseSha == \$releaseSha and ($contract)"
+}
+
 public_be_url="$(https_origin "${KITH_INN_BE_BASE_URL:-}")"
 compose=(docker compose -f "$compose_file" --env-file "$env_file")
 started_seconds="$(date +%s)"
@@ -92,8 +98,8 @@ retry cms_readiness "${compose[@]}" exec -T kith-inn-cms node -e \
 retry be_liveness curl -fsS -m 10 "http://127.0.0.1:$be_port/" || exit 1
 retry be_readiness curl -fsS -m 10 "http://127.0.0.1:$be_port/ready" || exit 1
 retry h5 curl -fsS -m 10 "http://127.0.0.1:$h5_port/" || exit 1
-retry be_ingress_liveness curl -fsS -m 10 "$public_be_url/" || exit 1
-retry be_ingress_readiness curl -fsS -m 10 "$public_be_url/ready" || exit 1
+retry be_ingress_liveness ingress_release / '.status == "ok"' || exit 1
+retry be_ingress_readiness ingress_release /ready '.ok == true and .service == "kith-inn-be"' || exit 1
 retry be_ingress_auth_boundary is_unauthorized "$public_be_url/offerings" || exit 1
 
 snapshot() {
