@@ -19,6 +19,8 @@
 - 镜像：`cfp-website`，由 GitHub Actions 构建并推送到 ACR。
 - 数据库：复用现有 RDS PostgreSQL（`apps/site` 退役后接管）。
 
+kith-inn 是独立发布目标，不改变上述 website 路径：CMS runtime、短生命周期 CMS ops、BE、内部 H5 四镜像绑定同一提交；CMS 使用同一 RDS 的独立 `cms` schema，外部流量只经 Nginx 80/443。标准顺序为可恢复备份 → 单次 migration/provision → runtime 启动 → readiness → `bash deploy/smoke-test.sh kith-inn`。完整变量、DNS/TLS、上传前置与应用/数据回滚见 [中文 Runbook](./deploy/RUNBOOK.md#9-kith-inn-桃子体验版)。
+
 ## 从 Vercel 迁移（两步）
 
 website 原先部署在 Vercel。迁移分两步、Vercel 全程不停：
@@ -48,6 +50,8 @@ website 原先部署在 Vercel。迁移分两步、Vercel 全程不停：
 - `PAYLOAD_SECRET`
 - `NEXT_PUBLIC_SITE_URL`（指向 website 的子域 / 正式域名）
 - `DEEPSEEK_API_KEY`（对话/摘要 API 必需；可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`）
+
+kith-inn 另用专属的数据库/Payload/JWT/CMS token、桃子 OpenID、微信登录与小程序上传凭据；只在 GitHub `Production` Environment 或目标主机权限受限文件中配置。缺任一项只阻断 kith-inn，不得影响 website，也不得把 seller ID 当作 secret 输入（它由 provision 结果直传 smoke）。
 
 ## 部署流程
 
@@ -82,6 +86,8 @@ pnpm --filter @cfp/website payload:migrate:create <name>   # 需要本地 Postgr
 docker compose pull
 docker compose up -d
 ```
+
+kith-inn 应用回滚只恢复上一 CMS/BE/H5 digest，不运行旧 ops image；schema 默认 forward-only。若旧应用不兼容新 migration，停止流量并按 Runbook 选择前向修复、已审计 down 或 RDS 备份恢复。
 
 ## 临时验证
 

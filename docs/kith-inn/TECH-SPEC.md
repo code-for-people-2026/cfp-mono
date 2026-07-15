@@ -190,12 +190,14 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 | 组件 | 部署 |
 |---|---|
-| `apps/cms` | ECS 容器（仿 `cfp-website` 镜像），Nginx/SSL，连**那一个共享 RDS**；Payload + admin 的家 |
+| `apps/cms` | ECS runtime + 短生命周期 ops 镜像；固定 `cms` schema，以提交的 migration + 幂等 provision 推进，生产禁止 push/reset |
 | `apps/kith-inn-be` | ECS 容器，HTTPS + **合法域名**（微信硬性要求），调 cms |
 | `apps/kith-inn-fe`·weapp | `taro build --type weapp` → **`miniprogram-ci`** 推到微信平台 → 体验版/审核/发布 |
 | `apps/kith-inn-fe`·H5 | `taro build --type h5` → Nginx 静态托管（子域），跑自动化 + 预览 |
 | DB | **一个共享 RDS Postgres**（C 让 cms 接管） |
 
+- 四镜像必须绑定同一 SHA/digest；Compose 显式执行 migration → provision → CMS → BE → H5，website 的 Compose 与 secret 保持独立。
+- 部署 smoke 在容器内用受控 OpenID 查 operator、比对 provision seller ID、签发最长 60 秒 JWT 并只读 offerings；目标 seller 全业务表前后快照必须一致。操作、DNS/TLS、上传前置和 15 分钟回滚以 [Runbook](../../deploy/RUNBOOK.md#9-kith-inn-桃子体验版) 为准。
 - **MVP 试用 = weapp 体验版（白名单）——但"后端域名"是隐藏前提，别只盯前端**：真机体验版会**校验合法域名**，`kith-inn-be` 的 API 域名必须是已在小程序后台配置的 **request 合法域名、且需 ICP 备案**。**只把前端从 H5 换成 weapp，绕不过后端域名这一关**——否则体验版装到桃子手机上、API 全调不通。
   - 给桃子真机试用的可行前提，二选一：① **先给 `kith-inn-be` 域名做 ICP 备案**（数周周期，等于把备案提前到 MVP 前置）；② 用 **微信云托管 / 云开发**（其域名由微信侧处理、免单独备案，最快上真机）。**关闭域名校验的开发者工具调试不算桃子真用**。
   - **H5 子域仅团队内部开发 / 自动化测试**，不对外（未备案 HTTPS 不得对外服务，见 RUNBOOK/DEPLOYMENT）。
@@ -214,9 +216,8 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ## 7. 仍待议 / 后续任务
 
-- **【决策·进行中】给桃子真机试用的后端域名**：ICP 备案（`kith-inn-be` 域名，**在审**）vs 微信云托管/云开发免备案试用。后者的 `callContainer`/`callFunction` 走**微信内部信道、不过「合法域名」校验、免 ICP 备案**——可让 kith-inn-be 仍跑 ECS、前面架一个薄云托管服务做代理转发；备案下来后切回直连合法域名、前端调用层几乎不改。注意：**体验版真机仍强制校验合法域名**，DevTools 关「校验合法域名」只对开发版生效，故关开关绕不过——只云托管/云开发这条信道能真正免备案。**2026-06-25 决定**：备案在审，若 MVP 编码完成前下来则直连、连代理都省；没下来再走云托管代理。
+- **【外部前置·每次发布复核】给桃子真机试用的后端域名**：当前实现只支持已备案主体下、证书有效且已加入微信 request 合法域名的 HTTPS 直连；仓库不声明备案/微信后台状态已完成。任一前置缺失即阻断发布，云托管/云开发仍是未实施备选，不能临时关闭域名校验替代。
 - **✅ apps/cms spike（已完成，PR1）**：(a) 共享 cms host（schema `"cms"`）与 website 同库分 schema 互不干扰——`tests/spike-coexistence.test.ts` 起真实 postgres 验证 `cms`/`website`/`public` 三 schema 并存零污染；(b) `@payloadcms/plugin-multi-tenant` 与 `operators+wechatOpenid` 鉴权 **no-go**（插件以 `user.tenants` 数组 + `tenant` 字段为模型、与我们单 `seller` 冲突，共存只能禁用其 access 逻辑），弃插件、单走 §3.1 自家 `tenantScoped()` 工厂。结论见 `apps/cms/SPIKE.md`。
-- **更新 DEPLOYMENT.md**：现写"website 承载 Payload + DB"，需补"一台 ECS docker-compose 多容器：`apps/cms`（schema `cms`）+ kith-inn-be + kith-inn-fe H5 + nginx，共一个 RDS"；website 部分不变。
 - 是否需要 MCP server 形态（取决于 §4 的 AI 形态；MVP 多为普通 LLM 调用，未必需要）。
 - **ASR 选型（M2）**：微信同传插件 vs 云 ASR vs 自托管（MVP 不做，走系统输入法）。
 - **DeepSeek v4 的 function-calling / tool-use 稳定性**（买菜助手 agent 的前提，M2+）。

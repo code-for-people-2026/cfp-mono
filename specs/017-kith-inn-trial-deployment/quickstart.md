@@ -52,12 +52,18 @@ export KITH_INN_CMS_IMAGE="$(docker image inspect --format '{{.Id}}' kith-inn-cm
 export KITH_INN_CMS_OPS_IMAGE="$(docker image inspect --format '{{.Id}}' kith-inn-cms-ops:verify)"
 export KITH_INN_BE_IMAGE="$(docker image inspect --format '{{.Id}}' kith-inn-be:verify)"
 export KITH_INN_H5_IMAGE="$(docker image inspect --format '{{.Id}}' kith-inn-h5:verify)"
-WEBSITE_ENV_FILE=./.env.website.verify.example docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.verify config --quiet
+export WEBSITE_ENV_FILE=./.env.website.verify.example
+compose=(docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.verify)
+"${compose[@]}" config --quiet
 bash deploy/verify-kith-inn-compose.sh deploy/.env.verify
 bash deploy/verify-nginx-example.sh
 # 指定 kith-inn 叶子服务，只按依赖启动本项目，不拉取或重启独立 website。
-WEBSITE_ENV_FILE=./.env.website.verify.example docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.verify up -d kith-inn-h5
-bash deploy/smoke-test.sh kith-inn
+"${compose[@]}" up -d kith-inn-h5
+provision_result="$("${compose[@]}" logs --no-color --no-log-prefix kith-inn-cms-provision | tail -n 1)"
+seller_id="$(jq -er 'select(.project == "kith-inn") | .sellerId' <<<"$provision_result")"
+: "${KITH_INN_TRIAL_OPENID:?请从受控本地 secret 注入，禁止回显或提交}"
+RELEASE_SHA="$(git rev-parse HEAD)" KITH_INN_ENV_FILE=deploy/.env.verify \
+  KITH_INN_PROVISIONED_SELLER_ID="$seller_id" bash deploy/smoke-test.sh kith-inn
 ```
 
 预期：CMS/BE liveness+readiness、H5 静态入口、operator lookup、短时 JWT 与只读 offerings 全绿，写入变化为 0。随后制造缺 token、DB 不可达、错误 migration head 和失效 operator，候选均不得标记健康。

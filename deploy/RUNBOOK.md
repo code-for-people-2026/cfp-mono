@@ -110,3 +110,40 @@ gh run watch --repo code-for-people-2026/cfp-mono
 - **Payload 生成类型未提交（类型安全 follow-up）**：`payload-types.ts` 是生成物、未提交，CI 在其缺席下按宽松类型通过。若要完整 schema 类型安全，需提交它并修 `seed.ts` / `lib/content` 里 6 处严格类型不匹配（slug/target 联合类型、`as Raw` 改 `as unknown as`）。属独立改进。
 - **证书自动续期未对接服务器**：当前证书在本机签发、手动传到 ECS。备案后改为服务器侧自动续期 + reload。
 - **临时放行的 3302**：备案后关闭。
+
+## 9. kith-inn 桃子体验版
+
+本节只描述受控候选；是否已备案、证书是否有效、微信合法域名和体验成员是否配置，必须在每次发布现场复核，仓库文档不代表外部状态已完成。
+
+### 9.1 配置与上线顺序
+
+1. `cp deploy/.env.verify.example deploy/.env.kith-inn`，设为 `0600` 并只在目标主机填值；该文件、真实 OpenID、数据库 URL 与任何 secret 都不得提交或粘贴到日志。
+2. 四个镜像变量必须为 ACR digest；secret 至少包括 kith-inn 专用 Payload/JWT/CMS token、桃子 OpenID、微信 AppID/AppSecret 与 DeepSeek key。不得复用 website 的 `PAYLOAD_SECRET`。
+3. 先执行 `docker compose -f deploy/docker-compose.prod.yml -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.kith-inn config --quiet`、`bash deploy/verify-kith-inn-compose.sh deploy/.env.kith-inn` 和 `bash deploy/verify-nginx-example.sh`。
+4. DNS A/AAAA 必须指向目标 ECS；证书 SAN、有效期与完整链必须匹配已备案且已加入微信 request 合法域名的 BE host。`nginx -t` 成功后才 reload，公网只开放 80/443，CMS/H5 保持内网或 loopback。
+5. 在 migration 前创建或核验目标 RDS 的可恢复备份，记录非敏感 backup ID、时间和目标库；缺失或不可恢复时停止。禁止 `push`、fresh/reset 和开发 seed reset。
+6. 保存当前四个 digest 与 migration head 作为回滚点，再仅执行一次候选启动：
+
+```bash
+compose=(docker compose -f deploy/docker-compose.kith-inn.prod.yml --env-file deploy/.env.kith-inn)
+"${compose[@]}" pull
+"${compose[@]}" up -d kith-inn-h5
+provision_result="$("${compose[@]}" logs --no-color --no-log-prefix kith-inn-cms-provision | tail -n 1)"
+seller_id="$(jq -er 'select(.project == "kith-inn") | .sellerId' <<<"$provision_result")"
+: "${KITH_INN_TRIAL_OPENID:?必须由受控 secret 环境注入，禁止回显}"
+RELEASE_SHA="<40位main提交>" KITH_INN_ENV_FILE=deploy/.env.kith-inn \
+  KITH_INN_PROVISIONED_SELLER_ID="$seller_id" bash deploy/smoke-test.sh kith-inn
+```
+
+smoke 会核对五个容器的 release SHA、CMS/BE liveness/readiness、H5、operator/seller、60 秒 JWT、只读 offerings，以及目标 seller 全业务 collection 的前后哈希；成功必须为 `writeCount: 0`。seller ID 只能由本次 provision JSON 直传，不能配置为 Environment 输入。任一步失败都不得生成上传凭据或进入体验版上传。
+
+### 9.2 诊断与 15 分钟回滚
+
+- `database_unavailable`/migration head 错误：停止候选，不改 schema；检查 RDS 网络、备份和 migration 日志。
+- `internal_auth_failed`/token 错误：轮换并一致更新 CMS/BE token 后重新部署，不打印旧值。
+- `operator_not_provisioned`/`seller_mismatch`：核对 provision 输出与受控 OpenID，重跑幂等 provision；禁止手改 seller ID 或删除生产数据。
+- TLS/DNS/Nginx 失败：保持候选不对外，修复证书链/host/allowlist 后重新 `nginx -t`；关闭域名校验不算修复。
+
+计时从 smoke 失败开始：前 2 分钟冻结上传并保存脱敏类别；5 分钟内把 CMS/BE/H5 改回记录的上一 digest（不运行旧 ops image、不重跑 migration），执行 `up -d --no-deps kith-inn-cms kith-inn-be kith-inn-h5`；10 分钟内复跑 readiness/smoke；15 分钟内记录恢复结果。若旧应用与新 schema 不兼容，立即停止流量，选择已审计 down、前向修复，或从备份恢复到独立 RDS 后验证再切换；不得盲目自动回退数据库。
+
+上传前还必须确认同一 SHA 的部署 smoke 凭据、微信上传私钥/IP 白名单、体验成员和合法域名；真实微信登录与核心链路只由开启域名校验的桃子真机验收证明。
