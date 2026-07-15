@@ -13,7 +13,14 @@ runtime=(kith-inn-cms kith-inn-be kith-inn-h5)
 rollback_images=(kith-inn-cms-migrate "${runtime[@]}")
 all_services=(kith-inn-cms-migrate kith-inn-cms-provision "${runtime[@]}")
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
-value() { sed -n "s/^$2=//p" "$1" | head -n 1; }
+value() {
+  local raw
+  raw="$(sed -n "s/^$2=//p" "$1" | head -n 1)"
+  if [[ "$raw" == \'*\' ]]; then
+    raw="${raw:1:${#raw}-2}"
+    sed "s/\\\\'/'/g" <<<"$raw"
+  else printf '%s\n' "$raw"; fi
+}
 compose() { "$compose_bin" compose -f "$compose_file" --env-file "$1" "${@:2}"; }
 smoke() {
   KITH_INN_ENV_FILE="$1" RELEASE_SHA="$2" KITH_INN_PROVISIONED_SELLER_ID="$3" \
