@@ -326,6 +326,16 @@ describe("customer reservation API schemas", () => {
     expect(customerReservationResultSchema.safeParse({ ...failed, doc: order }).success).toBe(false);
     expect(customerReservationResultSchema.safeParse({ mealSlotId: 11, status: "created", error: "bad" }).success)
       .toBe(false);
+    expect(customerReservationResultSchema.safeParse({
+      mealSlotId: 12,
+      status: "created",
+      doc: order
+    }).success).toBe(false);
+    expect(customerReservationResultSchema.safeParse({
+      mealSlotId: 11,
+      status: "created",
+      doc: { ...order, note: "商户内部备注" }
+    }).success).toBe(false);
     expect(customerReservationResponseSchema.safeParse({
       profile,
       results: [
