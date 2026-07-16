@@ -1,4 +1,4 @@
-import { cmsCustomerOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
+import { cmsCustomerOrderUpdateSchema, customerOrderCancelSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
 import { customerWriteScope, withCustomerOrderLock } from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../../../orders/route";
@@ -7,25 +7,17 @@ import { batchPublicId, databaseId, writeRelationshipsAvailable } from "../route
 export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
+type CustomerWriteScope = Exclude<Awaited<ReturnType<typeof customerWriteScope>>, NextResponse>;
 
-export async function PATCH(req: Request, { params }: RouteContext) {
-  const scope = await customerWriteScope(req);
-  if (scope instanceof NextResponse) return scope;
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ error: "invalid-json" }, { status: 400 });
-  }
-  const parsed = cmsCustomerOrderUpdateSchema.safeParse(body);
-  if (!parsed.success) return NextResponse.json({ error: "invalid-customer-order-update" }, { status: 422 });
+async function persistOwnedOrder(
+  scope: CustomerWriteScope,
+  req: Request,
+  context: RouteContext,
+  input: { data: Record<string, unknown>; expectedStatus: "draft" | "canceled"; reprice: boolean; failure: string }
+) {
   const selectedBatch = batchPublicId(req);
   if (!selectedBatch) return NextResponse.json({ error: "invalid-batch-public-id" }, { status: 400 });
-  const expectedStatus = new URL(req.url).searchParams.get("expectedStatus");
-  if (expectedStatus !== "draft" && expectedStatus !== "canceled") {
-    return NextResponse.json({ error: "invalid-expected-order-status" }, { status: 400 });
-  }
-  const { id } = await params;
+  const { id } = await context.params;
   const storedOrderId = databaseId(id);
   if (!storedOrderId) return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
   try {
@@ -38,10 +30,8 @@ export async function PATCH(req: Request, { params }: RouteContext) {
         ] },
         limit: 1, depth: 0, overrideAccess: true, req: transactionReq
       });
-      if (!owned.docs[0]) {
-        return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
-      }
-      if ((owned.docs[0] as { status?: unknown }).status !== expectedStatus) {
+      if (!owned.docs[0]) return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
+      if ((owned.docs[0] as { status?: unknown }).status !== input.expectedStatus) {
         return NextResponse.json({
           error: "customer-order-status-changed",
           message: "订单状态已变化，请重试"
@@ -56,12 +46,50 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       });
       if (price instanceof NextResponse) return price;
       const doc = await scope.payload.update({
-        collection: "kiv1_orders", id: storedOrderId, data: { ...parsed.data, unitPriceCents: price },
+        collection: "kiv1_orders", id: storedOrderId,
+        data: input.reprice ? { ...input.data, unitPriceCents: price } : input.data,
         overrideAccess: true, req: transactionReq
       });
       return NextResponse.json({ doc: normalizeOrder(doc as Parameters<typeof normalizeOrder>[0]) });
     });
   } catch {
-    return NextResponse.json({ error: "customer-order-update-failed" }, { status: 500 });
+    return NextResponse.json({ error: input.failure }, { status: 500 });
   }
+}
+
+export async function PATCH(req: Request, context: RouteContext) {
+  const scope = await customerWriteScope(req);
+  if (scope instanceof NextResponse) return scope;
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid-json" }, { status: 400 });
+  }
+  const parsed = cmsCustomerOrderUpdateSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: "invalid-customer-order-update" }, { status: 422 });
+  const expectedStatus = new URL(req.url).searchParams.get("expectedStatus");
+  if (expectedStatus !== "draft" && expectedStatus !== "canceled") {
+    return NextResponse.json({ error: "invalid-expected-order-status" }, { status: 400 });
+  }
+  return persistOwnedOrder(scope, req, context, {
+    data: parsed.data, expectedStatus, reprice: true, failure: "customer-order-update-failed"
+  });
+}
+
+export async function POST(req: Request, context: RouteContext) {
+  const scope = await customerWriteScope(req);
+  if (scope instanceof NextResponse) return scope;
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "invalid-json" }, { status: 400 });
+  }
+  const parsed = customerOrderCancelSchema.omit({ batchPublicId: true }).safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: "invalid-customer-order-cancel" }, { status: 422 });
+  return persistOwnedOrder(scope, req, context, {
+    data: { status: "canceled", canceledAt: new Date().toISOString() },
+    expectedStatus: "draft", reprice: false, failure: "customer-order-cancel-failed"
+  });
 }
