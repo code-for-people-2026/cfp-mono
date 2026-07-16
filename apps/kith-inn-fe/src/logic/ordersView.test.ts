@@ -15,14 +15,14 @@ const order = (over: Partial<Order>): Order =>
   }) as Order;
 
 describe("orderStatusDot", () => {
-  it("confirmed + paid → 收(green)", () => {
-    expect(orderStatusDot(order({ paymentStatus: "paid" }))).toEqual({ label: "收", tone: "green" });
+  it("confirmed + paid → 到(green)", () => {
+    expect(orderStatusDot(order({ paymentStatus: "paid" }))).toEqual({ label: "到", tone: "green" });
   });
-  it("confirmed + reconciled → 收(green) too (not 欠)", () => {
-    expect(orderStatusDot(order({ paymentStatus: "reconciled" }))).toEqual({ label: "收", tone: "green" });
+  it("confirmed + reconciled → 到(green) too (not 待)", () => {
+    expect(orderStatusDot(order({ paymentStatus: "reconciled" }))).toEqual({ label: "到", tone: "green" });
   });
-  it("confirmed + unpaid → 欠(red)", () => {
-    expect(orderStatusDot(order({ paymentStatus: "unpaid" }))).toEqual({ label: "欠", tone: "red" });
+  it("confirmed + unpaid → 待(red)", () => {
+    expect(orderStatusDot(order({ paymentStatus: "unpaid" }))).toEqual({ label: "待", tone: "red" });
   });
   it("draft → 草(amber)", () => {
     expect(orderStatusDot(order({ status: "draft" }))).toEqual({ label: "草", tone: "amber" });

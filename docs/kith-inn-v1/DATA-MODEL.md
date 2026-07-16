@@ -43,7 +43,7 @@ kiv1_seller
 2. 系统把某日某餐的菜单快照写进 `kiv1_meal_slots.menuItems`。
 3. 桃子选择多个 meal slots 生成 `kiv1_booking_batches` 并分享。
 4. 顾客选择/新增 profile，按 meal slot 提交 order。
-5. 桃子确认 order 后进入备餐、收款、送达口径。
+5. 桃子确认 order 后进入备餐、到账记录、送达口径。
 
 ## 3. 通用规则
 
@@ -360,7 +360,7 @@ confirmedAt = now
 deliveryStatus = pending
 ```
 
-确认后顾客锁单；订单进入备餐、未付、未送口径。
+确认后顾客锁单；订单进入备餐、未标到账、未送口径。
 
 ### 商家取消
 
@@ -369,9 +369,9 @@ draft | confirmed → canceled
 canceledAt = now
 ```
 
-canceled 退出经营口径；付款/送达历史字段保留供查看。
+canceled 退出经营口径；到账记录/送达历史字段保留供查看。
 
-### 标已付
+### 标记到账
 
 ```text
 unpaid → paid + paidAt
@@ -387,7 +387,7 @@ confirmed + pending → done + deliveredAt
 confirmed + done → pending + deliveredAt=null
 ```
 
-不影响付款状态；draft/canceled 不允许标已送。
+不影响到账记录状态；draft/canceled 不允许标已送。
 
 ## 7. 读侧派生
 
@@ -396,7 +396,7 @@ confirmed + done → pending + deliveredAt=null
 - 分享路径：固定 booking route + batch publicId。
 - 订单总价：quantity × unitPriceCents。
 - 餐次总份数：confirmed orders 的 quantity 求和。
-- 未付：confirmed + unpaid。
+- 未标到账：confirmed + unpaid。
 - 未送：confirmed + deliveryStatus pending。
 - 顾客“我的订单”：seller + customerOpenid。
 - 商家订单列表：先按 date/occasion 找 meal slot，再按 seller + mealSlot 查询，按 address 字符串排序。
@@ -424,7 +424,7 @@ confirmed + done → pending + deliveredAt=null
 - customer JWT 只含由 batch 解析的 sellerId 和 code2Session 得到的 openid；session 本身不授予订单写权限。
 - profile 读写按 seller + openid；order 读取按 seller + customerOpenid。
 - 只能修改自己的 draft order，且 slot open、未截止。
-- 不能确认、标已付、标已送。
+- 不能确认、标记到账、标已送。
 
 ### 未登录
 

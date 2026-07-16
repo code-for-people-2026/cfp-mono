@@ -12,14 +12,14 @@ export const STATUS_DOT_CLASS: Record<DotTone, string> = {
 };
 
 /**
- * Status dot for an order card (prototype 收/欠/草/废):
- * canceled → 废(muted); draft → 草(amber); confirmed+paid → 收(green); confirmed+unpaid → 欠(red).
+ * Status dot for an order card (prototype 到/待/草/废):
+ * canceled → 废(muted); draft → 草(amber); confirmed+paid → 到(green); confirmed+unpaid → 待(red).
  */
 export function orderStatusDot(order: Order): StatusDot {
   if (order.status === "canceled") return { label: "废", tone: "muted" };
   if (order.status === "draft") return { label: "草", tone: "amber" };
   // 只有 `unpaid` 尚未标记到账；`paid` 与历史 `reconciled` 均按已标记到账展示。
-  return order.paymentStatus === "unpaid" ? { label: "欠", tone: "red" } : { label: "收", tone: "green" };
+  return order.paymentStatus === "unpaid" ? { label: "待", tone: "red" } : { label: "到", tone: "green" };
 }
 
 /** Customer display name — FE-local because Taro doesn't transpile shared package .ts runtime exports. */

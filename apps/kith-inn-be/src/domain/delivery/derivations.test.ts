@@ -66,7 +66,7 @@ describe("todayGaps", () => {
     ({ id: 1, slot: 1, offerings: [], status: "draft", seller: 7, ...over }) as MenuPlan;
 
   it("counts draft orders, pending fulfillments, confirmed-unpaid, draft menus", () => {
-    // draft/canceled orders default to paymentStatus "unpaid" but must NOT count as 未付 (Codex).
+    // draft/canceled orders default to paymentStatus "unpaid" but must NOT count as 未标到账 (Codex).
     const r = todayGaps({
       orders: [
         order({ id: 1, status: "confirmed", paymentStatus: "unpaid" }), // confirmed unpaid → counts

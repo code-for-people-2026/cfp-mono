@@ -162,7 +162,7 @@ export function chatRoutes(jwtSecret: string, deps: ChatRoutesDeps = {}) {
       }
       if (error instanceof CmsHttpError && error.code === "settled-order") {
         clearPendingOp(operatorId);
-        return c.json({ error: "settled-order", message: "本次修改涉及已付款或已送达订单，请单独处理这些订单" }, 409);
+        return c.json({ error: "settled-order", message: "本次修改涉及已标记到账或已送达订单，请单独处理这些订单" }, 409);
       }
       return c.json({ error: "operation failed" }, 502);
     }
@@ -214,11 +214,11 @@ export async function dispatchPendingOp(
     }
     case "mark_paid": {
       const r = await services.markPaid({ orderId: Number(a.orderId) });
-      return r.ok ? `已标记订单 #${a.orderId} 为已付款。` : `标记失败：${r.error}`;
+      return r.ok ? `已记录订单 #${a.orderId} 到账。` : `标记失败：${r.error}`;
     }
     case "mark_unpaid": {
       const r = await services.markUnpaid?.({ orderId: Number(a.orderId) }) ?? { ok: false as const, error: "not implemented" };
-      return r.ok ? `已回退订单 #${a.orderId} 为未付款。` : `回退失败：${r.error}`;
+      return r.ok ? `已撤销订单 #${a.orderId} 的到账记录。` : `撤销失败：${r.error}`;
     }
     case "generate_menu": {
       const targets = a.targets as Array<{ date: string; occasion: "lunch" | "dinner" }>;
@@ -256,8 +256,8 @@ export function operationReplySucceeded(reply: string): boolean {
     reply.startsWith("已完成单独补单") ||
     reply.startsWith("已确认订单") ||
     reply.startsWith("已取消订单") ||
-    reply.startsWith("已标记订单") ||
-    reply.startsWith("已回退订单") ||
+    reply.startsWith("已记录订单") ||
+    reply.startsWith("已撤销订单") ||
     reply.startsWith("排好了：") ||
     reply.startsWith("已换好") ||
     reply.startsWith("菜单已发布") ||

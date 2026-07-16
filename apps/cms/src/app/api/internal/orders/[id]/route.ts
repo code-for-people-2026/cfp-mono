@@ -78,6 +78,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (data.paymentStatus === "unpaid") {
       data.paidAt = null;
       data.paymentMethod = null;
+    } else if (typeof data.paidAt !== "string") {
+      data.paidAt = new Date().toISOString();
     }
   }
   const updated = await withTransaction(payload, async (payloadReq) => {

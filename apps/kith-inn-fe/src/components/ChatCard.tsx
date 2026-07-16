@@ -10,7 +10,7 @@ import { orderReconciliationLine } from "@/logic/orderConfirmView";
  * Renders a structured card attached to an assistant reply.
  * - operation-confirm: write-op preview + 「确认」button (record_orders lists items
  *   with address inputs for new customers). One-shot: historical cards go read-only.
- * - orders: today's orders with 确认/标已付 buttons (reuse the orders-tab endpoints).
+ * - orders: today's orders with 确认/标记到账 buttons (reuse the orders-tab endpoints).
  * - delivery: today's per-address packing list (read-only).
  */
 export function ChatCard({ card, confirmed = false, confirming, fromHistory, onConfirmOperation, onOrderAct, onMarkDelivered }: {
@@ -72,7 +72,7 @@ export function ChatCard({ card, confirmed = false, confirming, fromHistory, onC
               )}
               {onOrderAct && o.status === "confirmed" && o.paymentStatus === "unpaid" && (
                 <Button size="small" className="[background:var(--color-surface)] text-ink" onClick={() => onOrderAct(o.id, "paid")}>
-                  标已付
+                  标记到账
                 </Button>
               )}
             </View>
