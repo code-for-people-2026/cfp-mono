@@ -8,13 +8,18 @@
 
 ## PR 流程（重要）
 
-本仓库的 PR 发出后会由 **Codex 自动 review**。合并前必须：
+开 PR / push 属外发动作，需先与发起人确认。发起人明确要求 Codex 持续推进一个远目标时，
+该授权覆盖既定范围内依赖有序的 PR 链，但不扩大允许路径、产品目标或外部门禁。
 
-1. 逐条 review Codex 的每条 comment；
-2. **该改的改；不该改的，回复说明理由**（不无脑照改，也不无脑忽略）；
-3. **所有重要 comment 都 resolve 掉**，PR 才能合并。
+涉及实现、发布、收口或合并一个或多个 PR 时，支持 skills 的 agent 必须使用
+[`pr-review-converge`](./.agents/skills/pr-review-converge/SKILL.md)。不支持 skills 的 agent 仍必须
+满足以下硬门禁：
 
-开 PR / push 属外发动作，需先与发起人确认。
+1. 逐条判断 Codex 的每条 comment；该改的改，不该改的用中文回复具体理由；
+2. 所有重要 comment 均已妥善处理并 resolve，unresolved thread 数为 0；
+3. latest head 的 required CI 全绿，最新 Codex review 明确无新增 actionable comment，且
+   `mergeStateStatus=CLEAN`；
+4. 只允许 rebase merge，不得 squash 或创建 merge commit。
 
 ### PR 粒度纪律
 
@@ -32,12 +37,6 @@
   与当前目标无关的新功能或重构必须建 issue，放到后续 PR。
 - **例外要可证伪**：只有拆开后无法独立构建、验证或保持兼容时才允许合并切片；
   PR 说明必须写明不可拆原因、额外风险和对应验证。
-
-### 合并与审查机制（实测，2026-06）
-
-- **只允许 rebase merge**：仓库 `allow_rebase_merge=true`、squash / merge-commit 均 false。`gh pr merge` 必须用 `--rebase`（`--squash` 会报 "Squash merges are not allowed"）。
-- **Codex 自动 review 只触发于 base = `main` 的 PR**。base 指向其他 feature 分支的"堆叠 PR"不会自动审，需在 PR 下手动评论 `@codex review` 触发。
-- **合并时 `--delete-branch` 删掉 base 分支，会连带关闭 base 指向它的堆叠 PR（且无法 reopen，因 base 已删）**。要堆叠：先 `gh pr edit <上层> --base main` 把上层 retarget 到 main，再合并下层；或下层合并时不删 base。
 
 ## 工程基线
 

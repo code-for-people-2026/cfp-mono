@@ -11,18 +11,29 @@ description: "Task list template for feature implementation"
 
 **Tests**: The examples below include test tasks. Tests are OPTIONAL - only include them if explicitly requested in the feature specification.
 
-**Organization**: Tasks are grouped by user story to enable independent implementation and testing of each story.
+**Organization**: User stories provide requirement traceability and final acceptance; dependency-ordered PR slices provide the implementation and merge sequence.
 
 ## PR 切片（必须）
 
 生成具体 `tasks.md` 时，必须先把所有任务映射到 `plan.md` 的 PR 拆分计划。每个任务只属于
-一个 PR；每个 PR 只承载一个目标或核心不变量，并拥有可独立运行的验证。不得把后续
-user story、无关重构或顺手清理并入较早的 PR。
+一个 PR；每个 PR 只承载一个目标或核心不变量，并拥有可独立运行的验证。一个 user story
+可以跨多个 PR；不得为了闭合 story，把可分别 review 的技术层、后续 story、无关重构或
+顺手清理并入较早的 PR。
 
-| PR | 目标 / 核心不变量 | 包含任务 | 独立验证 | 依赖 |
-|----|-------------------|----------|----------|------|
-| PR1 | [单一目标] | [T001, T002, ...] | [检查或验收] | 无 |
-| PR2 | [单一目标] | [T003, T004, ...] | [检查或验收] | PR1 |
+| PR | 目标 / 核心不变量 | 关联故事/需求 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
+|----|-------------------|---------------|----------|-----------------|----------|-----------|------|
+| PR1 | [单一目标] | [US/FR] | [T001, ...] | [路径 / 不做什么] | [检查] | [行数] | 无 |
+| PR2 | [单一目标] | [US/FR] | [T002, ...] | [路径 / 不做什么] | [检查] | [行数] | PR1 |
+
+### 每个 PR 的统一完成定义（不分配 Task ID）
+
+1. 独立验证、适用的文档链接检查、`git diff --check` 和人工 diff 统计通过。
+2. `pnpm verify` 通过。
+3. Ready PR 的 latest-head CI 与 Codex review 按 `pr-review-converge` skill 收敛。
+4. unresolved thread 为 0、`mergeStateStatus=CLEAN`，并已 rebase merge。
+
+Task ID 只用于产生代码/文档或独立验收证据的工作。真机 smoke 等人工证据必须保留任务且
+只能按事实勾选；不得为每个 PR 重复创建“运行 verify / 开 PR / 等 review / merge”任务。
 
 ## Format: `[ID] [P?] [Story] Description`
 
