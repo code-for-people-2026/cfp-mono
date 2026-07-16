@@ -394,6 +394,52 @@ export const customerProfileResponseSchema = z.object({
   doc: customerProfileSchema
 }).strict();
 
+export const customerReservationProfileSchema = z.union([
+  z.object({ customerProfileId: relationshipIdSchema }).strict(),
+  z.object({ newProfile: customerProfileCreateSchema }).strict()
+]);
+
+export const customerReservationItemSchema = z.object({
+  mealSlotId: relationshipIdSchema,
+  quantity: positiveIntegerSchema,
+  resubmitCanceled: z.boolean().default(false)
+}).strict();
+
+const customerReservationItemsInputSchema = z.array(customerReservationItemSchema).min(1).superRefine(
+  (items, context) => {
+    const firstByMealSlot = new Map<string, (typeof items)[number]>();
+    items.forEach((item, index) => {
+      const key = String(item.mealSlotId);
+      const first = firstByMealSlot.get(key);
+      if (first === undefined) {
+        firstByMealSlot.set(key, item);
+        return;
+      }
+      if (first.quantity !== item.quantity || first.resubmitCanceled !== item.resubmitCanceled) {
+        context.addIssue({
+          code: "custom",
+          message: "同一餐次的份数和重登记标志必须一致",
+          path: [index]
+        });
+      }
+    });
+  }
+);
+
+export const customerReservationItemsSchema = customerReservationItemsInputSchema.transform((items) => [
+  ...new Map(items.map((item) => [String(item.mealSlotId), item])).values()
+]).refine((items) => items.length <= 20, { message: "一次最多登记 20 个餐次" });
+
+export const normalizeCustomerReservationItems = (items: unknown) => customerReservationItemsSchema.parse(items);
+
+export const customerReservationInputSchema = z.object({
+  batchPublicId: z.string().uuid(),
+  profile: customerReservationProfileSchema,
+  displayName: shortText,
+  address: addressSchema,
+  items: customerReservationItemsSchema
+}).strict();
+
 export const orderSchema = z.object({
   id: relationshipIdSchema,
   sellerId: relationshipIdSchema,
@@ -417,6 +463,35 @@ export const orderSchema = z.object({
   ({ quantity, unitPriceCents, totalCents }) => quantity * unitPriceCents === totalCents,
   { message: "订单总价与份数、单价不一致" }
 );
+
+export const customerReservationOrderSchema = orderSchema.safeExtend({
+  status: z.literal("draft"),
+  source: z.literal("customer-card")
+});
+
+export const customerReservationResultSchema = z.discriminatedUnion("status", [
+  z.object({ mealSlotId: relationshipIdSchema, status: z.literal("created"), doc: customerReservationOrderSchema }).strict(),
+  z.object({ mealSlotId: relationshipIdSchema, status: z.literal("updated"), doc: customerReservationOrderSchema }).strict(),
+  z.object({
+    mealSlotId: relationshipIdSchema,
+    status: z.literal("resubmitted"),
+    doc: customerReservationOrderSchema
+  }).strict(),
+  z.object({
+    mealSlotId: relationshipIdSchema,
+    status: z.literal("failed"),
+    error: z.string().trim().min(1),
+    message: z.string().trim().min(1)
+  }).strict()
+]);
+
+export const customerReservationResponseSchema = z.object({
+  profile: customerProfileSchema,
+  results: z.array(customerReservationResultSchema).min(1).max(20).refine(
+    (results) => new Set(results.map((result) => String(result.mealSlotId))).size === results.length,
+    { message: "每个餐次只能返回一个登记结果" }
+  )
+}).strict();
 
 export const orderListQuerySchema = z.object({
   date: calendarDateSchema,
@@ -484,6 +559,40 @@ export const cmsOrderCreateSchema = z.object({
   canceledAt: z.null(),
   note: noteSchema
 }).strict();
+
+export const cmsCustomerOrderCreateSchema = z.object({
+  mealSlotId: relationshipIdSchema,
+  customerProfileId: relationshipIdSchema,
+  customerOpenid: z.string().trim().min(1),
+  status: z.literal("draft"),
+  source: z.literal("customer-card"),
+  displayName: shortText,
+  address: addressSchema,
+  quantity: positiveIntegerSchema,
+  unitPriceCents: nonNegativeIntegerSchema,
+  paymentStatus: z.literal("unpaid"),
+  paidAt: z.null(),
+  deliveryStatus: z.literal("pending"),
+  deliveredAt: z.null(),
+  confirmedAt: z.null(),
+  canceledAt: z.null(),
+  note: noteSchema
+}).strict();
+
+export const cmsCustomerOrderUpdateSchema = z.object({
+  quantity: positiveIntegerSchema.optional(),
+  unitPriceCents: nonNegativeIntegerSchema.optional(),
+  displayName: shortText.optional(),
+  address: addressSchema.optional(),
+  note: noteSchema.optional(),
+  status: z.literal("draft").optional(),
+  paymentStatus: z.literal("unpaid").optional(),
+  paidAt: z.null().optional(),
+  deliveryStatus: z.literal("pending").optional(),
+  deliveredAt: z.null().optional(),
+  confirmedAt: z.null().optional(),
+  canceledAt: z.null().optional()
+}).strict().refine((value) => Object.keys(value).length > 0, { message: "至少更新一个字段" });
 
 export const cmsOrderUpdateSchema = z.object({
   quantity: positiveIntegerSchema.optional(),

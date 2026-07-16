@@ -10,6 +10,8 @@ import {
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
   cmsCustomerBookingBatchSchema,
+  cmsCustomerOrderCreateSchema,
+  cmsCustomerOrderUpdateSchema,
   cmsCustomerProfileSchema,
   cmsOrderCreateSchema,
   cmsOrderUpdateSchema,
@@ -18,6 +20,9 @@ import {
   customerProfileCreateSchema,
   customerProfileSchema,
   customerProfilesResponseSchema,
+  customerReservationInputSchema,
+  customerReservationResponseSchema,
+  customerReservationResultSchema,
   customerSessionBootstrapInputSchema,
   customerSessionBootstrapResponseSchema,
   customerSessionResponseSchema,
@@ -48,6 +53,7 @@ import {
   offeringCreateSchema,
   offeringSchema,
   offeringUpdateSchema,
+  normalizeCustomerReservationItems,
   selectSellerInputSchema,
   sellerSnapshotSchema,
   swapMenuItemInputSchema,
@@ -189,6 +195,172 @@ describe("customer booking entry API schemas", () => {
       sharePath: `/pages/booking/index?batch=${publicId}`,
       slots: []
     }).success).toBe(false);
+  });
+});
+
+describe("customer reservation API schemas", () => {
+  const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+  const profile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A-1201", active: true };
+  const order = {
+    id: 31,
+    sellerId: 7,
+    mealSlotId: 11,
+    customerProfileId: 21,
+    status: "draft",
+    source: "customer-card",
+    displayName: "王阿姨",
+    address: "3A-1201",
+    quantity: 2,
+    unitPriceCents: 3000,
+    totalCents: 6000,
+    paymentStatus: "unpaid",
+    paidAt: null,
+    deliveryStatus: "pending",
+    deliveredAt: null,
+    confirmedAt: null,
+    canceledAt: null,
+    note: null
+  };
+
+  it("normalizes identical items in first-seen order and profile snapshots", () => {
+    const input = customerReservationInputSchema.parse({
+      batchPublicId,
+      profile: { customerProfileId: 21 },
+      displayName: " 王阿姨 ",
+      address: " 3A-1201 ",
+      items: [
+        { mealSlotId: 11, quantity: 2 },
+        { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: true },
+        { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+      ]
+    });
+
+    expect(input).toEqual({
+      batchPublicId,
+      profile: { customerProfileId: 21 },
+      displayName: "王阿姨",
+      address: "3A-1201",
+      items: [
+        { mealSlotId: 11, quantity: 2, resubmitCanceled: false },
+        { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: true }
+      ]
+    });
+    expect(normalizeCustomerReservationItems([
+      { mealSlotId: "slot-12", quantity: 1 },
+      { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: false }
+    ])).toEqual([{ mealSlotId: "slot-12", quantity: 1, resubmitCanceled: false }]);
+  });
+
+  it("accepts one to twenty unique items and exactly one profile choice", () => {
+    const twenty = Array.from({ length: 20 }, (_, index) => ({ mealSlotId: index + 1, quantity: index + 1 }));
+    expect(customerReservationInputSchema.parse({
+      batchPublicId,
+      profile: { newProfile: { displayName: "王阿姨", address: "3A-1201" } },
+      displayName: "王阿姨",
+      address: "3A-1201",
+      items: twenty
+    }).items).toHaveLength(20);
+    expect(customerReservationInputSchema.safeParse({
+      batchPublicId,
+      profile: { customerProfileId: 21, newProfile: { displayName: "王阿姨", address: "3A" } },
+      displayName: "王阿姨",
+      address: "3A",
+      items: [{ mealSlotId: 1, quantity: 1 }]
+    }).success).toBe(false);
+    expect(customerReservationInputSchema.safeParse({
+      batchPublicId,
+      profile: {},
+      displayName: "王阿姨",
+      address: "3A",
+      items: []
+    }).success).toBe(false);
+    expect(customerReservationInputSchema.safeParse({
+      batchPublicId,
+      profile: { customerProfileId: 21 },
+      displayName: "王阿姨",
+      address: "3A",
+      items: [...twenty, { mealSlotId: 21, quantity: 1 }]
+    }).success).toBe(false);
+  });
+
+  it("rejects conflicting duplicates and all owner or state injection", () => {
+    const base = {
+      batchPublicId,
+      profile: { customerProfileId: 21 },
+      displayName: "王阿姨",
+      address: "3A",
+      items: [{ mealSlotId: 11, quantity: 1 }]
+    };
+    expect(customerReservationInputSchema.safeParse({
+      ...base,
+      items: [{ mealSlotId: 11, quantity: 1 }, { mealSlotId: 11, quantity: 2 }]
+    }).success).toBe(false);
+    expect(customerReservationInputSchema.safeParse({
+      ...base,
+      items: [{ mealSlotId: 11, quantity: 1 }, { mealSlotId: 11, quantity: 1, resubmitCanceled: true }]
+    }).success).toBe(false);
+    for (const injected of [
+      { seller: 7 }, { sellerId: 7 }, { openid: "leak" }, { customerOpenid: "leak" },
+      { source: "customer-card" }, { status: "draft" }
+    ]) {
+      expect(customerReservationInputSchema.safeParse({ ...base, ...injected }).success).toBe(false);
+      expect(customerProfileCreateSchema.safeParse({ displayName: "王阿姨", address: "3A", ...injected }).success)
+        .toBe(false);
+    }
+    expect(customerReservationInputSchema.safeParse({
+      ...base,
+      items: [{ mealSlotId: 11, quantity: 1, status: "draft" }]
+    }).success).toBe(false);
+  });
+
+  it("validates created, updated, resubmitted and failed results", () => {
+    for (const status of ["created", "updated", "resubmitted"] as const) {
+      expect(customerReservationResultSchema.parse({ mealSlotId: 11, status, doc: order }).status).toBe(status);
+    }
+    const failed = { mealSlotId: 12, status: "failed", error: "meal-slot-closed", message: "餐次已关闭" };
+    expect(customerReservationResultSchema.parse(failed)).toEqual(failed);
+    expect(customerReservationResponseSchema.parse({
+      profile,
+      results: [{ mealSlotId: 11, status: "created", doc: order }, failed]
+    }).results).toHaveLength(2);
+    expect(customerReservationResultSchema.safeParse({ ...failed, doc: order }).success).toBe(false);
+    expect(customerReservationResultSchema.safeParse({ mealSlotId: 11, status: "created", error: "bad" }).success)
+      .toBe(false);
+    expect(customerReservationResponseSchema.safeParse({
+      profile,
+      results: [
+        { mealSlotId: 11, status: "created", doc: order },
+        { mealSlotId: "11", status: "updated", doc: order }
+      ]
+    }).success).toBe(false);
+  });
+
+  it("validates strict customer-card persistence snapshots", () => {
+    const create = {
+      mealSlotId: 11,
+      customerProfileId: 21,
+      customerOpenid: "wx-customer",
+      status: "draft",
+      source: "customer-card",
+      displayName: "王阿姨",
+      address: "3A-1201",
+      quantity: 2,
+      unitPriceCents: 3000,
+      paymentStatus: "unpaid",
+      paidAt: null,
+      deliveryStatus: "pending",
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      note: null
+    };
+    expect(cmsCustomerOrderCreateSchema.parse(create)).toEqual(create);
+    expect(cmsCustomerOrderUpdateSchema.parse({ quantity: 3, status: "draft", canceledAt: null }))
+      .toEqual({ quantity: 3, status: "draft", canceledAt: null });
+    expect(cmsCustomerOrderCreateSchema.safeParse({ ...create, seller: 7 }).success).toBe(false);
+    expect(cmsCustomerOrderCreateSchema.safeParse({ ...create, source: "manual" }).success).toBe(false);
+    expect(cmsCustomerOrderUpdateSchema.safeParse({ customerOpenid: "leak", quantity: 3 }).success).toBe(false);
+    expect(cmsCustomerOrderUpdateSchema.safeParse({}).success).toBe(false);
   });
 });
 
