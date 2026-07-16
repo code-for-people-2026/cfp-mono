@@ -1,10 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 
-const mocks = vi.hoisted(() => ({ getPayload: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getPayload: vi.fn(), createLocalReq: vi.fn(), initTransaction: vi.fn(),
+  commitTransaction: vi.fn(), killTransaction: vi.fn()
+}));
 vi.mock("payload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("payload")>()),
-  getPayload: mocks.getPayload
+  getPayload: mocks.getPayload,
+  createLocalReq: mocks.createLocalReq,
+  initTransaction: mocks.initTransaction,
+  commitTransaction: mocks.commitTransaction,
+  killTransaction: mocks.killTransaction
 }));
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
@@ -56,6 +63,7 @@ type PayloadOptions = {
   orders?: Array<Record<string, unknown>>;
   createError?: unknown;
   updateError?: unknown;
+  database?: "postgres" | "sqlite";
 };
 
 function matchesOwned(where: unknown, docs: Array<Record<string, unknown>>) {
@@ -88,7 +96,9 @@ function payloadWith(options: PayloadOptions = {}) {
   const update = options.updateError
     ? vi.fn(async () => { throw options.updateError; })
     : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({ ...orderDoc, id, ...data }));
-  return { find, create, update };
+  const execute = vi.fn(async () => ({ rows: [] }));
+  return { find, create, update, execute,
+    db: { name: options.database ?? "sqlite", sessions: { tx: { db: {} } }, execute } };
 }
 
 function request(path: string, init: RequestInit = {}) {
@@ -112,6 +122,10 @@ function json(path: string, method: "POST" | "PATCH", body: unknown) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.createLocalReq.mockResolvedValue({ transactionID: Promise.resolve("tx") });
+  mocks.initTransaction.mockResolvedValue(true);
+  mocks.commitTransaction.mockResolvedValue(undefined);
+  mocks.killTransaction.mockResolvedValue(undefined);
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
   process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
@@ -274,7 +288,8 @@ describe("order persistence boundary", () => {
       collection: "kiv1_orders",
       id: "31",
       data: { quantity: 3, displayName: "王姨", address: "3A-1202", note: null },
-      overrideAccess: true
+      overrideAccess: true,
+      req: expect.anything()
     });
 
     const lifecycle = {
@@ -294,8 +309,22 @@ describe("order persistence boundary", () => {
       collection: "kiv1_orders",
       id: "31",
       data: lifecycle,
-      overrideAccess: true
+      overrideAccess: true,
+      req: expect.anything()
     });
+  });
+
+  it("atomically rejects a stale merchant confirm after customer cancellation", async () => {
+    const payload = payloadWith({ database: "postgres", orders: [{
+      ...orderDoc, status: "canceled", canceledAt: "2026-07-11T00:00:00.000Z"
+    }] });
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await orderRoute.PATCH(json("/orders/31", "PATCH", {
+      status: "confirmed", confirmedAt: "2026-07-11T00:01:00.000Z", canceledAt: null
+    }), { params: Promise.resolve({ id: "31" }) });
+    expect(response.status).toBe(409);
+    expect(payload.execute).toHaveBeenCalledOnce();
+    expect(payload.update).not.toHaveBeenCalled();
   });
 
   it("rejects operator-only PATCH calls before lifecycle fields reach Payload", async () => {

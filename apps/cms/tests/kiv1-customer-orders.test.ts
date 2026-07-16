@@ -90,6 +90,7 @@ function payloadWith(options: {
   orderStatus?: "draft" | "confirmed" | "canceled";
   batchStatus?: "open" | "closed"; slotStatus?: "open" | "closed"; orderDeadline?: string | null;
   slotPrice?: number | null;
+  profileActive?: boolean;
   database?: "postgres" | "sqlite";
 } = {}) {
   const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
@@ -100,12 +101,14 @@ function payloadWith(options: {
       orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline,
       priceCents: options.slotPrice ?? null }
     : slot);
+  const currentProfiles = profiles.map((profile) => profile.id === 21 && options.profileActive !== undefined
+    ? { ...profile, active: options.profileActive } : profile);
   const find = vi.fn(async ({ collection, where, depth }: { collection: string; where?: unknown; depth?: number }) => {
     if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active", defaultPriceCents: 3000 }, { id: 8, status: "active", defaultPriceCents: 3000 }]) };
     if (collection === "kiv1_booking_batches") return { docs: matching(where, [{ id: 41, seller: 7,
       publicId: BATCH_PUBLIC_ID, status: options.batchStatus ?? "open", mealSlots: [11] }]) };
     if (collection === "kiv1_meal_slots") return { docs: matching(where, currentSlots) };
-    if (collection === "kiv1_customer_profiles") return { docs: matching(where, profiles) };
+    if (collection === "kiv1_customer_profiles") return { docs: matching(where, currentProfiles) };
     if (collection === "kiv1_orders") {
       const docs = matching(where, currentOrders);
       return { docs: depth === 1 ? docs.map((doc) => ({
@@ -368,7 +371,7 @@ describe("customer order persistence boundary", () => {
       await expect(response.json()).resolves.toMatchObject({ error: code });
       expect(payload.update).not.toHaveBeenCalled();
     }
-    const payload = payloadWith({ database: "sqlite" });
+    const payload = payloadWith({ database: "sqlite", profileActive: false });
     mocks.getPayload.mockResolvedValue(payload);
     const response = await cancelOrder(request("/31", {
       method: "POST", body: { confirmed: true }, token: ownerToken
