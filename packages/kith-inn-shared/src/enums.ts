@@ -28,7 +28,7 @@ export type MealOccasion = (typeof MEAL_OCCASIONS)[number];
 export const ORDER_STATUSES = ["draft", "confirmed", "canceled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-/** 收款轴（≠ 记单轴）。reconciled=她已核对入账（旧名 confirmed）。 */
+/** 手工到账记录轴（≠ 记单轴）。当前只写 unpaid/paid；reconciled 仅兼容历史数据。 */
 export const PAYMENT_STATUSES = ["unpaid", "paid", "reconciled"] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 

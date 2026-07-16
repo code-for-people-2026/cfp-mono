@@ -18,7 +18,7 @@ export const STATUS_DOT_CLASS: Record<DotTone, string> = {
 export function orderStatusDot(order: Order): StatusDot {
   if (order.status === "canceled") return { label: "废", tone: "muted" };
   if (order.status === "draft") return { label: "草", tone: "amber" };
-  // Only `unpaid` owes — paid AND reconciled are collected (Codex).
+  // 只有 `unpaid` 尚未标记到账；`paid` 与历史 `reconciled` 均按已标记到账展示。
   return order.paymentStatus === "unpaid" ? { label: "欠", tone: "red" } : { label: "收", tone: "green" };
 }
 

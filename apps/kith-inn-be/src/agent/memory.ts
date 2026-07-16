@@ -1,7 +1,7 @@
 /**
- * 展示对话留存策略（PRD §5.5 / Tech Spec §4.1 三层记忆·展示层）。滚动 2 天窗口（今天+
- * 昨天，每天 0 点清前天）+ 1000 条硬上限（超出删最旧 200）。纯函数——cms 写 chat_messages
- * 时由 be 调用它裁剪（§3.3④）。LLM 上下文裁剪见 run.ts:trimContext（≠ 展示历史）。
+ * 旧版、尚未接入写链路的日期窗口裁剪 helper，仅保留给现有调用方/测试兼容，不代表当前
+ * 产品契约。#160 将以稳定游标分页和按 seller/operator 的容量上限替换或删除它。
+ * LLM 上下文裁剪见 run.ts:trimContext（≠ 展示历史）。
  *
  * `// ponytail:` 0 点边界按 `now` 的本地时区算（生产服务器配 Asia/Shanghai，或调用方传
  * Asia/Shanghai 本地化的 now）；要硬保证跨时区时再上 TZ 库。
