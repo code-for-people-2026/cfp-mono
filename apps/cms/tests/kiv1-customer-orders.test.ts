@@ -209,7 +209,7 @@ describe("customer order persistence boundary", () => {
     }), context("31"))).status).toBe(404);
     expect((await updateOrder(request("/34", {
       method: "PATCH", body: { quantity: 3 }, token: ownerToken
-    }), context("34"))).status).toBe(200);
+    }), context("34"))).status).toBe(404);
     expect((await updateOrder(request("/31", {
       method: "PATCH", body: { quantity: 3, customerOpenid: "forged" }, token: ownerToken
     }), context("31"))).status).toBe(422);
