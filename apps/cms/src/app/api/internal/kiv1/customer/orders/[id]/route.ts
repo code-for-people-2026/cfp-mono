@@ -23,7 +23,7 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     collection: "kiv1_orders",
     where: { and: [
       { id: { equals: id } }, { seller: { equals: scope.sellerId } },
-      { customerOpenid: { equals: scope.openid } }, { source: { equals: "customer-card" } }
+      { customerOpenid: { equals: scope.openid } }
     ] },
     limit: 1, depth: 0, overrideAccess: true
   });
