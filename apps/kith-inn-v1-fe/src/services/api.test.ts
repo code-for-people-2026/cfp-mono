@@ -222,6 +222,59 @@ describe("API client", () => {
     }).getPublicBookingBatch(publicId)).rejects.toMatchObject({ status: 500 });
   });
 
+  it("lists owned profiles and submits public-target reservations with customer auth", async () => {
+    const profile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true };
+    const target = { date: "2026-07-13", occasion: "lunch" as const };
+    const result = { profile, results: [{ target, status: "failed" as const, error: "meal-slot-closed", message: "已关闭" }] };
+    const request = vi.fn<RequestAdapter>(async ({ url }) => url.endsWith("/customer/profiles")
+      ? { statusCode: 200, data: { docs: [profile] } }
+      : { statusCode: 200, data: result });
+    const client = createApiClient({ request, sessions: sessions(), customerSessions: customerSessions(), baseUrl: "http://be.test" });
+    await expect(client.listOwnedCustomerProfiles()).resolves.toEqual([profile]);
+    const input = { batchPublicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11", profile: { customerProfileId: 21 },
+      displayName: "王阿姨", address: "3A", items: [{ target, quantity: 2, resubmitCanceled: false }] };
+    await expect(client.submitCustomerReservations(input)).resolves.toEqual(result);
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({ url: "http://be.test/customer/profiles",
+      method: "GET", header: { "content-type": "application/json", Authorization: "Bearer customer-token" } }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({ url: "http://be.test/customer/reservations",
+      method: "POST", data: input }));
+    await expect(createApiClient({ request: adapter(200, { docs: [{ ...profile, openid: "leak" }] }), sessions: sessions(),
+      customerSessions: customerSessions() }).listOwnedCustomerProfiles()).rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: sessions(), customerSessions: customerSessions() })
+      .listOwnedCustomerProfiles()).rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, { ...result, results: [] }), sessions: sessions(),
+      customerSessions: customerSessions() }).submitCustomerReservations(input)).rejects.toMatchObject({ code: "invalid-api-response" });
+    const order = { id: 31, sellerId: 7, mealSlotId: 11, customerProfileId: 21, status: "draft" as const,
+      source: "customer-card" as const, displayName: "王阿姨", address: "3A", quantity: 2, unitPriceCents: 3000,
+      totalCents: 6000, paymentStatus: "unpaid" as const, paidAt: null, deliveryStatus: "pending" as const,
+      deliveredAt: null, confirmedAt: null, canceledAt: null, note: null };
+    for (const status of ["created", "updated", "resubmitted"] as const) await expect(createApiClient({
+      request: adapter(200, { profile, results: [{ target, status, doc: order }] }), sessions: sessions(),
+      customerSessions: customerSessions()
+    }).submitCustomerReservations(input)).resolves.toMatchObject({ results: [{ status }] });
+    for (const doc of [{ ...order, status: "confirmed" }, { ...order, source: "manual" },
+      { ...order, paymentStatus: "paid" }, { ...order, paidAt: "2026-07-01T00:00:00.000Z" },
+      { ...order, deliveryStatus: "done" }, { ...order, deliveredAt: "2026-07-01T00:00:00.000Z" },
+      { ...order, confirmedAt: "2026-07-01T00:00:00.000Z" }, { ...order, canceledAt: "2026-07-01T00:00:00.000Z" },
+      { ...order, note: "内部" }, { ...order, customerProfileId: 99 }, { ...order, sellerId: 8 }])
+      await expect(createApiClient({ request: adapter(200, { profile, results: [{ target, status: "created", doc }] }),
+        sessions: sessions(), customerSessions: customerSessions() }).submitCustomerReservations(input))
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const data of [null, {}, { profile: { ...profile, active: false }, results: result.results },
+      { profile, results: "bad" }, { profile, results: Array(21).fill(result.results[0]) },
+      { profile, results: [null] }, { profile, results: [{ target: null }] },
+      { profile, results: [{ target: { ...target, date: 1 } }] }, { profile, results: [{ target: { ...target, date: "bad" } }] },
+      { profile, results: [{ target: { ...target, occasion: "breakfast" } }] },
+      { profile, results: [result.results[0], result.results[0]] },
+      { profile, results: [{ target, status: "failed", error: 1, message: "x" }] },
+      { profile, results: [{ target, status: "failed", error: "", message: "x" }] },
+      { profile, results: [{ target, status: "failed", error: "x", message: 1 }] },
+      { profile, results: [{ target, status: "failed", error: "x", message: "" }] },
+      { profile, results: [{ target, status: "unknown" }] }]) await expect(createApiClient({ request: adapter(200, data),
+        sessions: sessions(), customerSessions: customerSessions() }).submitCustomerReservations(input))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+  });
+
   it("validates seller selection and rejects malformed login payloads", async () => {
     const store = sessions();
     const selection = {

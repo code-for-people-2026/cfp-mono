@@ -1,5 +1,8 @@
 import type {
   CustomerBookingBatchView,
+  CustomerProfile,
+  CustomerReservationInput,
+  CustomerReservationResult,
   CustomerSessionResponse
 } from "@cfp/kith-inn-v1-shared";
 
@@ -38,4 +41,49 @@ export function bookingUnavailableText(
   if (reason === "meal-slot-closed") return "本餐次已关闭";
   if (reason === "order-deadline-passed") return "已过登记截止时间";
   return "可登记";
+}
+
+export const profileUseText = (sellerName: string) => `用于${sellerName}识别订单和送餐地址`;
+export const defaultCustomerProfile = (profiles: CustomerProfile[]) => profiles.length === 1 ? profiles[0]! : null;
+
+export type CustomerBookingForm = {
+  profile: CustomerProfile | null;
+  createNew: boolean;
+  saveAsNew: boolean;
+  displayName: string;
+  address: string;
+  quantities: Record<string, string>;
+};
+
+export type CustomerReservationDraft = {
+  input: CustomerReservationInput;
+  items: Array<{ target: CustomerReservationInput["items"][number]["target"]; quantity: number; unitPriceCents: number }>;
+  totalCents: number;
+};
+
+export function buildCustomerReservation(batchPublicId: string, view: CustomerBookingBatchView,
+  form: CustomerBookingForm): CustomerReservationDraft | null {
+  const displayName = form.displayName.trim();
+  const address = form.address.trim();
+  const profileChoice = form.createNew || form.saveAsNew
+    ? { newProfile: { displayName, address } }
+    : form.profile ? { customerProfileId: form.profile.id } : null;
+  if (!displayName || !address || !profileChoice) return null;
+  const items: CustomerReservationDraft["items"] = [];
+  for (const slot of view.slots) {
+    const raw = (form.quantities[`${slot.date}:${slot.occasion}`] ?? "").trim();
+    if (!raw) continue;
+    const quantity = Number(raw);
+    if (!slot.canBook || !Number.isSafeInteger(quantity) || quantity <= 0) return null;
+    items.push({ target: { date: slot.date, occasion: slot.occasion }, quantity, unitPriceCents: slot.unitPriceCents });
+  }
+  if (items.length === 0) return null;
+  return { input: { batchPublicId, profile: profileChoice, displayName, address,
+    items: items.map(({ target, quantity }) => ({ target, quantity, resubmitCanceled: false })) }, items,
+  totalCents: items.reduce((total, item) => total + item.quantity * item.unitPriceCents, 0) };
+}
+
+export function reservationResultText(result: CustomerReservationResult): string {
+  if (result.status === "failed") return `失败：${result.message}`;
+  return { created: "登记成功", updated: "已更新", resubmitted: "已重新登记" }[result.status];
 }
