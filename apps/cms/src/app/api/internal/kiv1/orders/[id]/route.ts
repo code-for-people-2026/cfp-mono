@@ -34,11 +34,15 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "invalid-order-update" }, { status: 422 });
   }
   const { id } = await params;
+  const storedOrderId = /^\d+$/.test(id) ? Number(id) : NaN;
+  if (!Number.isSafeInteger(storedOrderId) || storedOrderId <= 0) {
+    return NextResponse.json({ error: "not-found" }, { status: 404 });
+  }
   try {
-    return await withCustomerOrderLock(scope.payload, id, async (transactionReq) => {
+    return await withCustomerOrderLock(scope.payload, storedOrderId, async (transactionReq) => {
       const result = await scope.payload.find({
         collection: "kiv1_orders",
-        where: { and: [{ id: { equals: id } }, { seller: { equals: scope.sellerId } }] },
+        where: { and: [{ id: { equals: storedOrderId } }, { seller: { equals: scope.sellerId } }] },
         limit: 1, depth: 0, overrideAccess: true, req: transactionReq
       });
       const stored = result.docs[0] as { status?: unknown } | undefined;
@@ -46,11 +50,12 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       const expectedStatus = parsed.data.status === "confirmed" ? "draft"
         : parsed.data.status === "draft" ? "canceled" : undefined;
       if ((expectedStatus !== undefined && stored.status !== expectedStatus)
+        || (parsed.data.status === "canceled" && stored.status === "canceled")
         || (parsed.data.status === undefined && stored.status === "canceled")) {
         return NextResponse.json({ error: "order-status-changed", message: "订单状态已变化，请重试" }, { status: 409 });
       }
       const doc = await scope.payload.update({
-        collection: "kiv1_orders", id, data: parsed.data, overrideAccess: true, req: transactionReq
+        collection: "kiv1_orders", id: storedOrderId, data: parsed.data, overrideAccess: true, req: transactionReq
       });
       return NextResponse.json({ doc: normalizeOrder(doc as Parameters<typeof normalizeOrder>[0]) });
     });
