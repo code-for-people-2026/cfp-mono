@@ -71,10 +71,11 @@ export function buildCustomerReservation(batchPublicId: string, view: CustomerBo
   if (!displayName || !address || !profileChoice) return null;
   const items: CustomerReservationDraft["items"] = [];
   for (const slot of view.slots) {
+    if (!slot.canBook) continue;
     const raw = (form.quantities[`${slot.date}:${slot.occasion}`] ?? "").trim();
     if (!raw) continue;
     const quantity = Number(raw);
-    if (!slot.canBook || !Number.isSafeInteger(quantity) || quantity <= 0) return null;
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) return null;
     items.push({ target: { date: slot.date, occasion: slot.occasion }, quantity, unitPriceCents: slot.unitPriceCents });
   }
   if (items.length === 0) return null;

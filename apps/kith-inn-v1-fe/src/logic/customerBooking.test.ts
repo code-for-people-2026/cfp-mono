@@ -85,6 +85,10 @@ describe("customer booking entry logic", () => {
     expect(buildCustomerReservation(PUBLIC_ID, view, { ...base, quantities: { "2026-07-13:lunch": "1.5" } })).toBeNull();
     expect(buildCustomerReservation(PUBLIC_ID, { ...view, slots: [{ ...view.slots[0]!, canBook: false,
       unavailableReason: "meal-slot-closed" as const }] }, { ...base, quantities: { "2026-07-13:lunch": "1" } })).toBeNull();
+    expect(buildCustomerReservation(PUBLIC_ID, { ...view, slots: [{ ...view.slots[0]!, canBook: false,
+      unavailableReason: "meal-slot-closed" as const }, view.slots[1]!] },
+    { ...base, quantities: { "2026-07-13:lunch": "1", "2026-07-14:dinner": "2" } })?.items)
+      .toEqual([{ target: { date: "2026-07-14", occasion: "dinner" }, quantity: 2, unitPriceCents: 2800 }]);
     for (const [status, expected] of [["created", "登记成功"], ["updated", "已更新"], ["resubmitted", "已重新登记"]] as const)
       expect(reservationResultText({ target: { date: "2026-07-13", occasion: "lunch" }, status, doc: {} } as never)).toBe(expected);
     expect(reservationResultText({ target: { date: "2026-07-14", occasion: "dinner" }, status: "failed",

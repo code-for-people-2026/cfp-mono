@@ -280,16 +280,18 @@ function parseCustomerReservation(value: unknown): CustomerReservationResponse {
     if (!result || !target || typeof target.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(target.date) ||
       !(target.occasion === "lunch" || target.occasion === "dinner"))
       throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
-    if (result.status === "failed" && typeof result.error === "string" && result.error !== "" &&
-      typeof result.message === "string" && result.message !== "") return result as CustomerReservationResult;
-    if (result.status === "created" || result.status === "updated" || result.status === "resubmitted") {
+    if (result.status === "failed" && Object.keys(result).length === 4 && typeof result.error === "string" &&
+      result.error !== "" && typeof result.message === "string" && result.message !== "")
+      return { target, status: "failed", error: result.error, message: result.message } as CustomerReservationResult;
+    if ((result.status === "created" || result.status === "updated" || result.status === "resubmitted") &&
+      Object.keys(result).length === 3) {
       const doc = parseOrder(result.doc);
       if (doc.status !== "draft" || doc.source !== "customer-card" || doc.paymentStatus !== "unpaid" ||
         doc.paidAt !== null || doc.deliveryStatus !== "pending" || doc.deliveredAt !== null ||
         doc.confirmedAt !== null || doc.canceledAt !== null || doc.note !== null ||
         String(doc.customerProfileId) !== String(profile.id) || String(doc.sellerId) !== String(profile.sellerId))
         throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
-      return { ...result, doc } as CustomerReservationResult;
+      return { target, status: result.status, doc } as CustomerReservationResult;
     }
     throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
   });
