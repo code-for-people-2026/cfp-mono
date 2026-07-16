@@ -9,6 +9,9 @@ const SECRET = "v1-secret";
 const token = await issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, SECRET);
 const operatorToken = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
 const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+const target = (day: number, occasion: "lunch" | "dinner" = "lunch") => ({
+  date: `2026-07-${String(day).padStart(2, "0")}`, occasion
+});
 const profile = {
   id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true
 } satisfies CustomerProfile;
@@ -21,12 +24,12 @@ const order = {
 const result: CustomerReservationResponse = {
   profile,
   results: [
-    { mealSlotId: 11, status: "created", doc: order },
-    { mealSlotId: 12, status: "failed", error: "meal-slot-closed", message: "餐次已关闭登记" },
-    { mealSlotId: 13, status: "failed", error: "database-detail", message: "secret" }
+    { target: target(13), status: "created", doc: order },
+    { target: target(14), status: "failed", error: "meal-slot-closed", message: "餐次已关闭登记" },
+    { target: target(15), status: "failed", error: "database-detail", message: "secret" }
   ]
 };
-const input = (items: unknown = [{ mealSlotId: 11, quantity: 2 }]) => ({
+const input = (items: unknown = [{ target: target(13), quantity: 2 }]) => ({
   batchPublicId, profile: { customerProfileId: 21 }, displayName: "王阿姨", address: "3A", items
 });
 
@@ -44,18 +47,18 @@ describe("customer reservation route", () => {
     const injected = deps();
     const app = customerOrderRoutes(SECRET, injected);
     const response = await request(app, JSON.stringify(input([
-      { mealSlotId: 11, quantity: 2 }, { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+      { target: target(13), quantity: 2 }, { target: target(13), quantity: 2, resubmitCanceled: false }
     ])));
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ...result, results: [
       result.results[0], result.results[1],
-      { mealSlotId: 13, status: "failed", error: "reservation-item-failed", message: "登记失败" }
+      { target: target(15), status: "failed", error: "reservation-item-failed", message: "登记失败" }
     ] });
     expect(injected.submit).toHaveBeenCalledWith(token, "wx-customer", expect.objectContaining({
-      items: [{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }]
+      items: [{ target: target(13), quantity: 2, resubmitCanceled: false }]
     }));
     expect((await request(app, JSON.stringify(input(
-      Array.from({ length: 20 }, (_, index) => ({ mealSlotId: index + 1, quantity: 1 }))
+      Array.from({ length: 20 }, (_, index) => ({ target: target(index + 1), quantity: 1 }))
     )))).status).toBe(200);
     expect((await request(app, JSON.stringify(input()), operatorToken)).status).toBe(401);
     expect((await app.request("/", { method: "POST" })).status).toBe(401);
@@ -66,8 +69,9 @@ describe("customer reservation route", () => {
     const app = customerOrderRoutes(SECRET, injected);
     expect((await request(app, "{")).status).toBe(400);
     for (const value of [
-      input([{ mealSlotId: 11, quantity: 1 }, { mealSlotId: 11, quantity: 2 }]),
-      input(Array.from({ length: 21 }, (_, index) => ({ mealSlotId: index + 1, quantity: 1 }))),
+      input([{ target: target(13), quantity: 1 }, { target: target(13), quantity: 2 }]),
+      input(Array.from({ length: 21 }, (_, index) => ({ target: target(index + 1), quantity: 1 }))),
+      input([{ target: target(13), mealSlotId: 11, quantity: 1 }]),
       { ...input(), sellerId: 7, openid: "leak", source: "customer-card", status: "draft" }
     ]) expect((await request(app, JSON.stringify(value))).status).toBe(422);
     expect(injected.submit).not.toHaveBeenCalled();

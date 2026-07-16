@@ -200,6 +200,8 @@ describe("customer booking entry API schemas", () => {
 
 describe("customer reservation API schemas", () => {
   const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+  const lunch = { date: "2026-07-13", occasion: "lunch" } as const;
+  const dinner = { date: "2026-07-13", occasion: "dinner" } as const;
   const profile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A-1201", active: true };
   const order = {
     id: 31,
@@ -229,9 +231,9 @@ describe("customer reservation API schemas", () => {
       displayName: " 王阿姨 ",
       address: " 3A-1201 ",
       items: [
-        { mealSlotId: 11, quantity: 2 },
-        { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: true },
-        { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+        { target: lunch, quantity: 2 },
+        { target: dinner, quantity: 1, resubmitCanceled: true },
+        { target: lunch, quantity: 2, resubmitCanceled: false }
       ]
     });
 
@@ -241,18 +243,21 @@ describe("customer reservation API schemas", () => {
       displayName: "王阿姨",
       address: "3A-1201",
       items: [
-        { mealSlotId: 11, quantity: 2, resubmitCanceled: false },
-        { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: true }
+        { target: lunch, quantity: 2, resubmitCanceled: false },
+        { target: dinner, quantity: 1, resubmitCanceled: true }
       ]
     });
     expect(normalizeCustomerReservationItems([
-      { mealSlotId: 11, quantity: 1 },
-      { mealSlotId: "11", quantity: 1, resubmitCanceled: false }
-    ])).toEqual([{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }]);
+      { target: lunch, quantity: 1 },
+      { target: { ...lunch }, quantity: 1, resubmitCanceled: false }
+    ])).toEqual([{ target: lunch, quantity: 1, resubmitCanceled: false }]);
   });
 
   it("accepts one to twenty unique items and exactly one profile choice", () => {
-    const twenty = Array.from({ length: 20 }, (_, index) => ({ mealSlotId: index + 1, quantity: index + 1 }));
+    const twenty = Array.from({ length: 20 }, (_, index) => ({
+      target: { date: `2026-07-${String(index + 1).padStart(2, "0")}`, occasion: "lunch" },
+      quantity: index + 1
+    }));
     expect(customerReservationInputSchema.parse({
       batchPublicId,
       profile: { newProfile: { displayName: "王阿姨", address: "3A-1201" } },
@@ -265,7 +270,7 @@ describe("customer reservation API schemas", () => {
       profile: { customerProfileId: 21, newProfile: { displayName: "王阿姨", address: "3A" } },
       displayName: "王阿姨",
       address: "3A",
-      items: [{ mealSlotId: 1, quantity: 1 }]
+      items: [{ target: lunch, quantity: 1 }]
     }).success).toBe(false);
     expect(customerReservationInputSchema.safeParse({
       batchPublicId,
@@ -279,7 +284,7 @@ describe("customer reservation API schemas", () => {
       profile: { customerProfileId: 21 },
       displayName: "王阿姨",
       address: "3A",
-      items: [...twenty, { mealSlotId: 21, quantity: 1 }]
+      items: [...twenty, { target: { date: "2026-07-21", occasion: "lunch" }, quantity: 1 }]
     }).success).toBe(false);
   });
 
@@ -289,15 +294,15 @@ describe("customer reservation API schemas", () => {
       profile: { customerProfileId: 21 },
       displayName: "王阿姨",
       address: "3A",
-      items: [{ mealSlotId: 11, quantity: 1 }]
+      items: [{ target: lunch, quantity: 1 }]
     };
     expect(customerReservationInputSchema.safeParse({
       ...base,
-      items: [{ mealSlotId: 11, quantity: 1 }, { mealSlotId: 11, quantity: 2 }]
+      items: [{ target: lunch, quantity: 1 }, { target: lunch, quantity: 2 }]
     }).success).toBe(false);
     expect(customerReservationInputSchema.safeParse({
       ...base,
-      items: [{ mealSlotId: 11, quantity: 1 }, { mealSlotId: 11, quantity: 1, resubmitCanceled: true }]
+      items: [{ target: lunch, quantity: 1 }, { target: lunch, quantity: 1, resubmitCanceled: true }]
     }).success).toBe(false);
     for (const injected of [
       { seller: 7 }, { sellerId: 7 }, { openid: "leak" }, { customerOpenid: "leak" },
@@ -309,63 +314,68 @@ describe("customer reservation API schemas", () => {
     }
     expect(customerReservationInputSchema.safeParse({
       ...base,
-      items: [{ mealSlotId: 11, quantity: 1, status: "draft" }]
+      items: [{ target: lunch, quantity: 1, mealSlotId: 11, status: "draft" }]
+    }).success).toBe(false);
+    expect(customerReservationInputSchema.safeParse({
+      ...base,
+      items: [{ target: { ...lunch, sellerId: 7 }, quantity: 1 }]
+    }).success).toBe(false);
+    expect(customerReservationInputSchema.safeParse({
+      ...base,
+      items: [{ target: { date: "bad", occasion: "breakfast" }, quantity: 1 }]
     }).success).toBe(false);
   });
 
   it("validates created, updated, resubmitted and failed results", () => {
     for (const status of ["created", "updated", "resubmitted"] as const) {
-      expect(customerReservationResultSchema.parse({ mealSlotId: 11, status, doc: order }).status).toBe(status);
+      expect(customerReservationResultSchema.parse({ target: lunch, status, doc: order }).status).toBe(status);
     }
-    const failed = { mealSlotId: 12, status: "failed", error: "meal-slot-closed", message: "餐次已关闭" };
+    const failed = { target: dinner, status: "failed", error: "meal-slot-closed", message: "餐次已关闭" };
     expect(customerReservationResultSchema.parse(failed)).toEqual(failed);
     expect(customerReservationResponseSchema.parse({
       profile,
-      results: [{ mealSlotId: 11, status: "created", doc: order }, failed]
+      results: [{ target: lunch, status: "created", doc: order }, failed]
     }).results).toHaveLength(2);
     expect(customerReservationResultSchema.safeParse({ ...failed, doc: order }).success).toBe(false);
-    expect(customerReservationResultSchema.safeParse({ mealSlotId: 11, status: "created", error: "bad" }).success)
+    expect(customerReservationResultSchema.safeParse({ target: lunch, status: "created", error: "bad" }).success)
       .toBe(false);
     expect(customerReservationResultSchema.safeParse({
-      mealSlotId: 12,
+      target: lunch,
       status: "created",
-      doc: order
+      doc: order,
+      mealSlotId: 11
     }).success).toBe(false);
     expect(customerReservationResultSchema.safeParse({
-      mealSlotId: 11,
+      target: lunch,
       status: "created",
       doc: { ...order, note: "商户内部备注" }
     }).success).toBe(false);
     expect(customerReservationResponseSchema.safeParse({
       profile,
       results: [
-        { mealSlotId: 11, status: "created", doc: order },
-        { mealSlotId: "11", status: "updated", doc: order }
+        { target: lunch, status: "created", doc: order },
+        { target: { ...lunch }, status: "updated", doc: order }
       ]
     }).success).toBe(false);
     expect(customerReservationResponseSchema.safeParse({
-      profile,
-      results: [{ mealSlotId: 12, status: "created", doc: order }]
-    }).success).toBe(false);
-    expect(customerReservationResponseSchema.safeParse({
       profile: { ...profile, id: 22 },
-      results: [{ mealSlotId: 11, status: "created", doc: order }]
+      results: [{ target: lunch, status: "created", doc: order }]
     }).success).toBe(false);
     expect(customerReservationResponseSchema.safeParse({
       profile: { ...profile, active: false },
-      results: [{ mealSlotId: 11, status: "created", doc: order }]
+      results: [{ target: lunch, status: "created", doc: order }]
     }).success).toBe(false);
     expect(customerReservationResponseSchema.safeParse({
       profile,
-      results: [{ mealSlotId: 11, status: "created", doc: { ...order, sellerId: 8 } }]
+      results: [{ target: lunch, status: "created", doc: { ...order, sellerId: 8 } }]
     }).success).toBe(false);
     expect(customerReservationResultSchema.safeParse({
-      mealSlotId: 11,
+      target: lunch,
       status: "created",
       doc: { ...order, paymentStatus: "paid", paidAt: "2026-07-16T00:00:00.000Z" }
     }).success).toBe(false);
     expect(customerReservationResultSchema.safeParse({
-      mealSlotId: 11,
+      target: lunch,
       status: "updated",
       doc: { ...order, deliveryStatus: "done", deliveredAt: "2026-07-16T00:00:00.000Z" }
     }).success).toBe(false);

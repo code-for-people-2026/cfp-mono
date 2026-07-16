@@ -31,10 +31,11 @@ const defaults: CustomerReservationDeps = {
 };
 const fail = (code: string, message: string): never => { throw new ItemError(code, message); };
 
-function available(internal: CmsCustomerBookingBatch, slotId: string | number, now: string) {
+function available(internal: CmsCustomerBookingBatch, target: CustomerReservationInput["items"][number]["target"], now: string) {
   if (internal.batch.status !== "open") fail("booking-batch-closed", "预订批次已关闭");
-  const slot = internal.slots.find(({ id }) => String(id) === String(slotId));
-  if (!slot || !internal.batch.mealSlotIds.some((id) => String(id) === String(slotId)))
+  const matches = internal.slots.filter(({ date, occasion }) => date === target.date && occasion === target.occasion);
+  const slot = matches.length === 1 ? matches[0] : undefined;
+  if (!slot || !internal.batch.mealSlotIds.some((id) => String(id) === String(slot.id)))
     return fail("meal-slot-not-in-batch", "餐次不属于当前预订批次");
   if (slot.orderStatus !== "open") fail("meal-slot-closed", "餐次已关闭登记");
   if (slot.orderDeadline === null || Date.parse(slot.orderDeadline) <= Date.parse(now))
@@ -42,13 +43,13 @@ function available(internal: CmsCustomerBookingBatch, slotId: string | number, n
   return slot;
 }
 
-function resultFailure(mealSlotId: string | number, error: unknown): CustomerReservationResult {
+function resultFailure(target: CustomerReservationInput["items"][number]["target"], error: unknown): CustomerReservationResult {
   const candidate = error as Error & { code?: unknown; status?: unknown };
   const known = error instanceof ItemError || (
     error instanceof Error && typeof candidate.status === "number" && typeof candidate.code === "string"
   );
-  if (!known) return { mealSlotId, status: "failed", error: "reservation-item-failed", message: "登记失败" };
-  return { mealSlotId, status: "failed", error: candidate.code as string, message: candidate.message };
+  if (!known) return { target, status: "failed", error: "reservation-item-failed", message: "登记失败" };
+  return { target, status: "failed", error: candidate.code as string, message: candidate.message };
 }
 
 function writable(order: Order) {
@@ -60,32 +61,37 @@ async function recheck(token: string, input: CustomerReservationInput, profile: 
   item: CustomerReservationInput["items"][number], deps: CustomerReservationDeps
 ) {
   const internal = await deps.getBatch(token, input.batchPublicId);
-  const slot = available(internal, item.mealSlotId, deps.now());
+  const slot = available(internal, item.target, deps.now());
   const owned = (await deps.listProfiles(token)).find(({ id, sellerId, active }) =>
     String(id) === String(profile.id) && String(sellerId) === String(internal.seller.id) && active);
   if (!owned) fail("customer-profile-inactive", "顾客资料已停用或不存在");
-  return { quantity: item.quantity, unitPriceCents: slot.priceCents ?? internal.seller.defaultPriceCents,
-    displayName: input.displayName, address: input.address, note: null };
+  return { mealSlotId: slot.id, snapshot: {
+    quantity: item.quantity, unitPriceCents: slot.priceCents ?? internal.seller.defaultPriceCents,
+    displayName: input.displayName, address: input.address, note: null
+  } };
 }
 
 async function writeItem(token: string, openid: string, input: CustomerReservationInput, profile: CustomerProfile,
   item: CustomerReservationInput["items"][number], deps: CustomerReservationDeps
 ): Promise<CustomerReservationResult> {
-  let snapshot = await recheck(token, input, profile, item, deps);
-  let existing = await deps.findOrder(token, item.mealSlotId, profile.id);
+  let checked = await recheck(token, input, profile, item, deps);
+  let existing = await deps.findOrder(token, checked.mealSlotId, profile.id);
   if (!existing) {
     try {
       const doc = await deps.createOrder(token, {
-        mealSlotId: item.mealSlotId, customerProfileId: profile.id, customerOpenid: openid, status: "draft",
-        source: "customer-card", ...snapshot, paymentStatus: "unpaid", paidAt: null, deliveryStatus: "pending",
+        mealSlotId: checked.mealSlotId, customerProfileId: profile.id, customerOpenid: openid, status: "draft",
+        source: "customer-card", ...checked.snapshot, paymentStatus: "unpaid", paidAt: null, deliveryStatus: "pending",
         deliveredAt: null, confirmedAt: null, canceledAt: null
       }, input.batchPublicId);
-      return { mealSlotId: item.mealSlotId, status: "created", doc: customerReservationOrderSchema.parse(doc) };
+      return { target: item.target, status: "created", doc: customerReservationOrderSchema.parse(doc) };
     } catch (error) {
       if (!(error instanceof CmsOrderError) || error.status !== 409 || error.code !== "order-exists") throw error;
-      existing = await deps.findOrder(token, item.mealSlotId, profile.id);
+      existing = await deps.findOrder(token, checked.mealSlotId, profile.id);
       if (!existing) throw error;
-      snapshot = await recheck(token, input, profile, item, deps);
+      const latest = await recheck(token, input, profile, item, deps);
+      if (String(latest.mealSlotId) !== String(checked.mealSlotId))
+        return fail("meal-slot-not-in-batch", "餐次不属于当前预订批次");
+      checked = latest;
     }
   }
   const current = writable(existing);
@@ -94,15 +100,15 @@ async function writeItem(token: string, openid: string, input: CustomerReservati
   if (expectedStatus === "canceled" && !item.resubmitCanceled)
     return fail("canceled-order-confirmation-required", "订单已取消，请确认后重登记");
   const resubmitting = expectedStatus === "canceled";
-  const patch: CmsCustomerOrderUpdate = resubmitting ? { ...snapshot, status: "draft", paymentStatus: "unpaid",
-    paidAt: null, deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null } : snapshot;
+  const patch: CmsCustomerOrderUpdate = resubmitting ? { ...checked.snapshot, status: "draft", paymentStatus: "unpaid",
+    paidAt: null, deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null } : checked.snapshot;
   let updated: Order;
   try {
     updated = await deps.updateOrder(token, current.id, patch, expectedStatus, input.batchPublicId);
   } catch (error) {
     if (!(error instanceof CmsOrderError) || error.status !== 409 || error.code !== "customer-order-status-changed")
       throw error;
-    const latest = await deps.findOrder(token, item.mealSlotId, profile.id);
+    const latest = await deps.findOrder(token, checked.mealSlotId, profile.id);
     if (latest) {
       const raced = writable(latest);
       if (raced.status === "confirmed") return fail("confirmed-order-locked", "商家已确认，不能修改");
@@ -111,7 +117,7 @@ async function writeItem(token: string, openid: string, input: CustomerReservati
     return fail("order-status-changed", "订单状态已变化，请重新提交");
   }
   const doc = customerReservationOrderSchema.parse(updated);
-  return { mealSlotId: item.mealSlotId, status: resubmitting ? "resubmitted" : "updated", doc };
+  return { target: item.target, status: resubmitting ? "resubmitted" : "updated", doc };
 }
 
 export async function submitCustomerReservations(token: string, openid: string, input: CustomerReservationInput,
@@ -126,7 +132,7 @@ export async function submitCustomerReservations(token: string, openid: string, 
   const results: CustomerReservationResult[] = [];
   for (const item of input.items) {
     try { results.push(await writeItem(token, openid, input, selected, item, deps)); }
-    catch (error) { results.push(resultFailure(item.mealSlotId, error)); }
+    catch (error) { results.push(resultFailure(item.target, error)); }
   }
   if (results.some(({ status }) => status !== "failed")) await deps.touchProfile(token, selected.id).catch(() => undefined);
   return { profile: { ...selected, active: true }, results };
