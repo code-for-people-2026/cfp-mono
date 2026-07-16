@@ -104,13 +104,24 @@ customer JWT 不保存 batch id；同一 seller 的另一有效 batch 可复用 
 
 - `sharePath = /pages/booking/index?batch=<publicId>`；
 - seller name、batch title/status；
-- 每个 slot 的菜单、解析后价格、deadline；
+- 每个 slot 的 `date`、`occasion`、菜单、解析后价格、deadline；
 - `canBook` 与不可登记原因（batch closed、slot closed、deadline passed）；
 - 不返回 seller id、openid、createdBy 等内部字段。
 
-### 3.3 ReservationSubmitResult
+### 3.3 PublicMealSlotTarget
 
-每个输入餐次返回一个 discriminated result：`created`、`updated`、`resubmitted` 或 `failed`。成功项返回订单摘要，失败项返回稳定错误码和中文消息；响应顺序与去重后的输入顺序一致。
+顾客登记请求与逐项结果共用的非持久化公开坐标：
+
+```text
+target.date: YYYY-MM-DD
+target.occasion: lunch | dinner
+```
+
+同一 seller 的日期 + 餐次受既有唯一约束保护；BE 仍必须把坐标限定在请求的 `batchPublicId` 内唯一解析，并用解析后的内部 meal-slot ID 调用 CMS。客户端不能提交该内部 ID，逐项结果也不能用它作为页面关联字段。
+
+### 3.4 ReservationSubmitResult
+
+每个输入公开 target 返回一个 discriminated result：`created`、`updated`、`resubmitted` 或 `failed`。成功项返回既有鉴权后订单摘要，失败项返回稳定错误码和中文消息；每项顶层回显同一公开 target，响应顺序与去重后的输入顺序一致，UI 不依赖订单摘要中的关系 ID。
 
 ## 4. Tenant 与关系不变量
 
@@ -119,7 +130,7 @@ customer JWT 不保存 batch id；同一 seller 的另一有效 batch 可复用 
 3. order 的 `mealSlot`、`customerProfile` 必须与 order 同 seller。
 4. customer profile 必须同时匹配 customer JWT 的 `sellerId + openid`。
 5. customer order owner 必须同时匹配 `seller + customerOpenid`；称呼、地址和 profile id 都不能替代 openid owner 判断。
-6. 客户端不得提交或覆盖 seller、openid、source、状态轴或服务端时间戳。
+6. 客户端不得提交或覆盖内部 meal-slot ID、seller、openid、source、状态轴或服务端时间戳。
 
 ## 5. 数据迁移与兼容
 

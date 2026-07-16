@@ -2,9 +2,9 @@
 
 ## 1. M2 交付与 PR 切分
 
-**Decision**: 一个全套规格继续覆盖 M2。M2-A“商家批次”和 M2-B“顾客会话+只读分享页”已经合并；剩余工作按 C1 strict contract、C2 profile persistence、C3 order persistence、C4 BE domain/clients、C5 BE HTTP、C6 FE/E2E、D1 strict contract、D2 persistence、D3 BE、D4 FE/E2E 十个顺序 PR 实施。后一个只在前一个 rebase merge 后从最新 `main` 开始。
+**Decision**: 一个全套规格继续覆盖 M2。M2-A/B 与 C1 strict contract、C2 profile persistence、C3 order persistence、C4 BE domain/clients、C5 BE HTTP 已合并。C6 前先以 C5R 原子纠偏 shared reservation contract、BE domain 和既有 HTTP route，再按 C6 FE/E2E、D1 strict contract、D2 persistence、D3 BE、D4 FE/E2E 顺序实施。后一个只在前一个 rebase merge 后从最新 `main` 开始。
 
-**Rationale**: 旧计划低估了测试与信任边界成本：PR #152 实际 `+2136/-19`，PR #153 实际 `+1861/-42`。宪法 1.2.0 与 `AGENTS.md` 现要求默认人工 diff `<400` 行，因此继续用跨 shared/CMS/BE/FE 的 C/D 纵向片会重复产生千行级 review。新的每片都锁定一个可独立验证的契约、安全或状态不变量，并保持仓库门禁可通过；这不是预建空壳，也不允许提前加入下一片 route/page。
+**Rationale**: 旧计划低估了测试与信任边界成本：PR #152 实际 `+2136/-19`，PR #153 实际 `+1861/-42`。宪法 1.2.0 与 `AGENTS.md` 现要求默认人工 diff `<400` 行，因此继续用跨 shared/CMS/BE/FE 的 C/D 纵向片会重复产生千行级 review。C5R 虽同步三个已存在层，但只切换一个 live endpoint 的坐标不变量；拆开会让 `main` 类型不一致或留下不可执行的半契约，且不改 CMS/FE。其余每片继续锁定一个可独立验证的契约、安全或状态不变量。
 
 **Alternatives considered**:
 
@@ -112,15 +112,17 @@
 
 ## 10. 多餐次提交与幂等
 
-**Decision**: 一个 customer submit request 携带 batchPublicId、profile/newProfile、本次 displayName/address 和最多 20 个去重 `{mealSlotId,quantity,resubmitCanceled}`。完全相同的重复项按首次位置处理一次；同一 mealSlot 的 quantity 或规范化后的 resubmitCanceled 不同则整请求 422。BE 每项重新读取 batch/slot/profile/order，串行 create/update/resubmit，返回 created/updated/resubmitted/failed；单项失败不回滚。数据库 unique 和冲突后重读保证重试幂等。
+**Decision**: 一个 customer submit request 携带 batchPublicId、profile/newProfile、本次 displayName/address 和最多 20 个去重 `{target:{date,occasion},quantity,resubmitCanceled}`。`target` 只复用 `BookingBatchView` 已公开的日期与午/晚餐，不接受内部 `mealSlotId`。完全相同的重复项按首次位置处理一次；同一公开坐标的 quantity 或规范化后的 resubmitCanceled 不同则整请求 422。BE 在指定 batch 的已验证 slot 快照中唯一解析每个 target，再用内部 ID 调用既有 CMS client；逐项结果用同一公开 target 关联页面餐次。BE 串行 create/update/resubmit，返回 created/updated/resubmitted/failed；单项失败不回滚。数据库 unique 和冲突后重读保证重试幂等。
 
-**Rationale**: 微信网络下部分失败必须可解释、可安全重试；最多 20 项不需要 bulk transaction。串行行为更容易保持确定结果和控制 CMS 压力。
+**Rationale**: FR-009 明确禁止公开内部关系标识，而 C5 合并后的写 contract 要求 FE 提交未出现在公开读模型中的 `mealSlotId`，使 C6 无法构造合法请求。seller 内日期+餐次是既有领域唯一坐标，限定在 `batchPublicId` 后既可稳定解析，也不会扩大公开数据。微信网络下部分失败必须可解释、可安全重试；最多 20 项不需要 bulk transaction。
 
 **Alternatives considered**:
 
 - 全局事务：跨内部 HTTP 边界复杂且失败体验差，拒绝。
 - 每餐由 FE 单独请求：确认摘要与结果聚合更复杂，且无法统一 profile 创建，拒绝。
 - 并行写 20 项：当前规模无性能收益，冲突/权限错误更难解释。
+- 在公开 view 暴露 `mealSlotId`：违反 FR-009 的零内部关系标识边界，拒绝。
+- 由 FE 根据数组位置或菜单内容猜测餐次：重排或同菜单时不稳定，拒绝。
 
 ## 11. 顾客订单状态门禁
 
