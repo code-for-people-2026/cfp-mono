@@ -2,14 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import type { CmsCustomerBookingBatch, CustomerProfile, CustomerReservationInput, MealSlot, Order } from "@cfp/kith-inn-v1-shared";
 import { CmsOrderError } from "../../lib/cms/orders";
 import { CustomerReservationError, reservationNow, submitCustomerReservations, type CustomerReservationDeps } from "./service";
-
 const NOW = "2026-07-10T01:00:00.000Z";
 const profile: CustomerProfile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true };
 const slot = (id: number, overrides: Partial<MealSlot> = {}): MealSlot => ({
   id, sellerId: 7, date: "2026-07-13", occasion: "lunch",
-  menuItems: Array.from({ length: 5 }, (_, index) => ({ offeringId: index + 1,
-    nameSnapshot: `菜${index + 1}`, mainIngredientSnapshot: null,
-    categorySnapshot: index < 2 ? "meat" : index < 4 ? "veg" : "soup" })),
+  menuItems: Array.from({ length: 5 }, (_, index) => ({ offeringId: index + 1, nameSnapshot: `菜${index + 1}`,
+    mainIngredientSnapshot: null, categorySnapshot: index < 2 ? "meat" : index < 4 ? "veg" : "soup" })),
   orderStatus: "open", orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: null, generatedAt: NOW,
   ...overrides
 });
@@ -33,19 +31,16 @@ function deps(overrides: Partial<CustomerReservationDeps> = {}): CustomerReserva
     getBatch: vi.fn(async () => internal()), listProfiles: vi.fn(async () => [profile]),
     createProfile: vi.fn(async () => profile), touchProfile: vi.fn(async () => profile), findOrder: vi.fn(async () => null),
     createOrder: vi.fn(async (_token, value) => order(Number(value.mealSlotId), {
-      customerProfileId: value.customerProfileId,
-      displayName: value.displayName, address: value.address, quantity: value.quantity,
-      unitPriceCents: value.unitPriceCents, totalCents: value.quantity * value.unitPriceCents
-    })),
-    updateOrder: vi.fn(async (_token, id, value) => order(Number(id) - 20, {
-      ...value, totalCents: (value.quantity ?? 1) * (value.unitPriceCents ?? 3000)
-    })),
+      customerProfileId: value.customerProfileId, displayName: value.displayName, address: value.address,
+      quantity: value.quantity, unitPriceCents: value.unitPriceCents,
+      totalCents: value.quantity * value.unitPriceCents })),
+    updateOrder: vi.fn(async (_token, id, value) => order(Number(id) - 20,
+      { ...value, totalCents: (value.quantity ?? 1) * (value.unitPriceCents ?? 3000) })),
     now: () => NOW, ...overrides
   };
 }
 const submit = (items: CustomerReservationInput["items"], injected: CustomerReservationDeps, useNew = false) =>
   submitCustomerReservations("jwt", "wx", input(items, useNew), injected);
-
 describe("customer reservation orchestration", () => {
   it("creates a new profile then creates/updates items sequentially with price snapshots", async () => {
     const injected = deps({
@@ -55,28 +50,23 @@ describe("customer reservation orchestration", () => {
     const result = await submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false },
       { mealSlotId: 12, quantity: 3, resubmitCanceled: false }], injected, true);
     expect(result.results.map(({ status }) => status)).toEqual(["created", "updated"]);
-    expect(injected.createOrder).toHaveBeenCalledWith("jwt", expect.objectContaining({
-      customerOpenid: "wx", source: "customer-card", unitPriceCents: 3000, quantity: 2
-    }), internal().batch.publicId);
-    expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 32, expect.objectContaining({
-      unitPriceCents: 2800, quantity: 3, displayName: "本次称呼"
-    }), "draft", internal().batch.publicId);
+    expect(injected.createOrder).toHaveBeenCalledWith("jwt", expect.objectContaining({ customerOpenid: "wx",
+      source: "customer-card", unitPriceCents: 3000, quantity: 2 }), internal().batch.publicId);
+    expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 32, expect.objectContaining({ unitPriceCents: 2800,
+      quantity: 3, displayName: "本次称呼" }), "draft", internal().batch.publicId);
     expect(injected.getBatch).toHaveBeenCalledTimes(2);
     expect(injected.listProfiles).toHaveBeenCalledTimes(2);
     expect(injected.touchProfile).toHaveBeenCalledOnce();
   });
-
   it("resubmits canceled orders and returns deterministic partial failures", async () => {
     const states = new Map<number, Order | null>([[11, order(11, { status: "canceled", canceledAt: NOW })],
       [12, order(12, { status: "confirmed", confirmedAt: NOW })],
       [13, order(13, { status: "canceled", canceledAt: NOW })], [14, order(14, { source: "manual" })]]);
     const batch = internal([slot(11), slot(12), slot(13), slot(14), slot(15, { orderStatus: "closed" }), slot(16)]);
-    const injected = deps({ getBatch: vi.fn(async () => batch),
-      findOrder: vi.fn(async (_token, id) => {
-        if (Number(id) === 16) throw new Error("offline");
-        return states.get(Number(id)) ?? null;
-      })
-    });
+    const injected = deps({ getBatch: vi.fn(async () => batch), findOrder: vi.fn(async (_token, id) => {
+      if (Number(id) === 16) throw new Error("offline");
+      return states.get(Number(id)) ?? null;
+    }) });
     const result = await submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: true },
       { mealSlotId: 12, quantity: 1, resubmitCanceled: false }, { mealSlotId: 13, quantity: 1, resubmitCanceled: false },
       { mealSlotId: 14, quantity: 1, resubmitCanceled: false }, { mealSlotId: 15, quantity: 1, resubmitCanceled: false },
@@ -85,26 +75,20 @@ describe("customer reservation orchestration", () => {
       "resubmitted", "confirmed-order-locked", "canceled-order-confirmation-required", "order-coordinate-occupied",
       "meal-slot-closed", "reservation-item-failed"
     ]);
-    expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, expect.objectContaining({
-      status: "draft", paymentStatus: "unpaid", canceledAt: null
-    }), "canceled", internal().batch.publicId);
+    expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, expect.objectContaining({ status: "draft",
+      paymentStatus: "unpaid", canceledAt: null }), "canceled", internal().batch.publicId);
     expect(result.results[5]).toMatchObject({ message: "登记失败" });
   });
-
   it("re-reads unique conflicts, preserves profiles and rejects missing owners", async () => {
     const raced = deps({ createOrder: vi.fn(async () => { throw new CmsOrderError(409, "order-exists", "已存在"); }),
-      findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11))
-    });
+      findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11)) });
     await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], raced))
       .resolves.toMatchObject({ results: [{ status: "updated" }] });
     const oldProfile = { ...profile, displayName: "王", address: "3A" };
     const newProfile = { ...oldProfile, id: 22 };
-    const retry = deps({ listProfiles: vi.fn(async () => [oldProfile, newProfile]),
-      createProfile: vi.fn(async () => newProfile) });
-    await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], retry, true)).resolves.toMatchObject({
-      profile: newProfile,
-      results: [{ status: "created", doc: { customerProfileId: 22 } }]
-    });
+    const retry = deps({ listProfiles: vi.fn(async () => [oldProfile, newProfile]), createProfile: vi.fn(async () => newProfile) });
+    await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], retry, true))
+      .resolves.toMatchObject({ profile: newProfile, results: [{ status: "created", doc: { customerProfileId: 22 } }] });
     expect(retry.createProfile).toHaveBeenCalledWith("jwt", { displayName: "王", address: "3A" });
     const closed = internal(); closed.batch.status = "closed";
     const closedRace = deps({
@@ -123,13 +107,11 @@ describe("customer reservation orchestration", () => {
     await expect(submit([{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }],
       deps({ listProfiles: vi.fn(async () => []) }))).rejects.toBeInstanceOf(CustomerReservationError);
   });
-
   it("rechecks batch, deadline, profile and dependency failures for every item", async () => {
     const one = [{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }] as const;
     const run = (overrides: Partial<CustomerReservationDeps>) => submit([...one], deps(overrides));
     const closed = internal(); closed.batch.status = "closed";
-    await expect(run({ getBatch: vi.fn(async () => closed) }))
-      .resolves.toMatchObject({ results: [{ error: "booking-batch-closed" }] });
+    await expect(run({ getBatch: vi.fn(async () => closed) })).resolves.toMatchObject({ results: [{ error: "booking-batch-closed" }] });
     await expect(run({ getBatch: vi.fn(async () => internal([slot(11, { orderDeadline: null })])) }))
       .resolves.toMatchObject({ results: [{ error: "order-deadline-passed" }] });
     await expect(run({ listProfiles: vi.fn().mockResolvedValueOnce([profile]).mockResolvedValueOnce([]) }))
@@ -146,7 +128,6 @@ describe("customer reservation orchestration", () => {
     }
     expect(Date.parse(reservationNow())).not.toBeNaN();
   });
-
   it("maps atomic status-change conflicts back to stable customer domain errors", async () => {
     for (const [latest, expected] of [
       [order(11, { status: "confirmed", confirmedAt: NOW }), "confirmed-order-locked"],
@@ -154,12 +135,8 @@ describe("customer reservation orchestration", () => {
       [order(11), "order-status-changed"],
       [null, "order-status-changed"]
     ] as const) {
-      const injected = deps({
-        findOrder: vi.fn().mockResolvedValueOnce(order(11)).mockResolvedValueOnce(latest),
-        updateOrder: vi.fn(async () => {
-          throw new CmsOrderError(409, "customer-order-status-changed", "订单状态已变化，请重试");
-        })
-      });
+      const injected = deps({ findOrder: vi.fn().mockResolvedValueOnce(order(11)).mockResolvedValueOnce(latest),
+        updateOrder: vi.fn(async () => { throw new CmsOrderError(409, "customer-order-status-changed", "订单状态已变化，请重试"); }) });
       await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], injected))
         .resolves.toMatchObject({ results: [{ status: "failed", error: expected }] });
       expect(injected.findOrder).toHaveBeenCalledTimes(2);
