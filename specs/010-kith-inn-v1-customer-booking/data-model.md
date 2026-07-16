@@ -130,7 +130,7 @@ target.occasion: lunch | dinner
 3. order 的 `mealSlot`、`customerProfile` 必须与 order 同 seller。
 4. customer profile 必须同时匹配 customer JWT 的 `sellerId + openid`。
 5. customer order owner 必须同时匹配 `seller + customerOpenid`；称呼、地址和 profile id 都不能替代 openid owner 判断。
-6. 客户端不得提交或覆盖内部 meal-slot ID、seller、openid、source、状态轴或服务端时间戳。
+6. 顾客 reservation 请求不得提交内部 meal-slot ID；所有顾客请求均不得提交或覆盖 seller、openid、source、状态轴或服务端时间戳。商家 batch/manual-order 继续使用各自既有的 owner-scoped `mealSlotId` contract。
 
 ## 5. 数据迁移与兼容
 
