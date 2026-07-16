@@ -95,7 +95,7 @@ function payloadWith(options: PayloadOptions = {}) {
     }));
   const update = options.updateError
     ? vi.fn(async () => { throw options.updateError; })
-    : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({ ...orderDoc, id, ...data }));
+    : vi.fn(async ({ id, data }: { id: string | number; data: Record<string, unknown> }) => ({ ...orderDoc, id, ...data }));
   const execute = vi.fn(async () => ({ rows: [] }));
   return { find, create, update, execute,
     db: { name: options.database ?? "sqlite", sessions: { tx: { db: {} } }, execute } };
@@ -286,7 +286,7 @@ describe("order persistence boundary", () => {
     expect(response.status).toBe(200);
     expect(payload.update).toHaveBeenCalledWith({
       collection: "kiv1_orders",
-      id: "31",
+      id: 31,
       data: { quantity: 3, displayName: "王姨", address: "3A-1202", note: null },
       overrideAccess: true,
       req: expect.anything()
@@ -307,14 +307,14 @@ describe("order persistence boundary", () => {
     expect(lifecycleResponse.status).toBe(200);
     expect(payload.update).toHaveBeenLastCalledWith({
       collection: "kiv1_orders",
-      id: "31",
+      id: 31,
       data: lifecycle,
       overrideAccess: true,
       req: expect.anything()
     });
   });
 
-  it("atomically rejects a stale merchant confirm after customer cancellation", async () => {
+  it("atomically rejects stale merchant lifecycle writes after customer cancellation", async () => {
     const payload = payloadWith({ database: "postgres", orders: [{
       ...orderDoc, status: "canceled", canceledAt: "2026-07-11T00:00:00.000Z"
     }] });
@@ -323,7 +323,22 @@ describe("order persistence boundary", () => {
       status: "confirmed", confirmedAt: "2026-07-11T00:01:00.000Z", canceledAt: null
     }), { params: Promise.resolve({ id: "31" }) });
     expect(response.status).toBe(409);
-    expect(payload.execute).toHaveBeenCalledOnce();
+    const repeatedCancel = await orderRoute.PATCH(json("/orders/31", "PATCH", {
+      status: "canceled", canceledAt: "2026-07-11T00:02:00.000Z"
+    }), { params: Promise.resolve({ id: "31" }) });
+    expect(repeatedCancel.status).toBe(409);
+    expect(payload.execute).toHaveBeenCalledTimes(2);
+    expect(payload.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects malformed order ids before taking the PostgreSQL row lock", async () => {
+    const payload = payloadWith({ database: "postgres" });
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await orderRoute.PATCH(json("/orders/not-a-number", "PATCH", { quantity: 3 }), {
+      params: Promise.resolve({ id: "not-a-number" })
+    });
+    expect(response.status).toBe(404);
+    expect(payload.execute).not.toHaveBeenCalled();
     expect(payload.update).not.toHaveBeenCalled();
   });
 
