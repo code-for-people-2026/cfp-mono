@@ -2,7 +2,7 @@
 
 ## 1. 前置条件
 
-1. 从最新 `main` 分别创建 M2-A、M2-B、M2-C、M2-D 分支；前一 PR rebase merge 后再开始下一 PR。
+1. M2-A/B 已合并。先从最新 `main` 合并只改本规格目录的恢复计划 PR，再严格按 C1→C2→C3→C4→C5→C6→D1→D2→D3→D4 创建分支；前一 PR rebase merge 后才开始下一片。
 2. 使用仓库要求的 Node.js、pnpm、PostgreSQL/Payload 环境。
 3. 配置既有 operator JWT、internal service token、微信 app credentials；本地可显式开启 dev login。
 4. 运行独立幂等的桃子 seller/operator seed。M2 不修改 seed 语义，也不清空旧业务 collection。
@@ -20,38 +20,60 @@
 
 ### M2-B：顾客静默 session 与只读入口
 
+> 代码与自动门禁已完成；以下原生卡片/真实 `wx.login` 步骤仍是 T028，必须由维护者真机执行。
+
 1. 从 M2-A 创建的 batch 发出微信原生分享卡片，点击后进入真实 path，调用 `wx.login` 并以临时 code 建立 customer session。
 2. 确认页面显示 seller、batch、菜单、解析后价格与截止时间，且无 operator 选择页。
 3. 使用另一 seller 的 token 访问 publicId，确认 404。
 4. 关闭 batch 或 slot 后重新进入，确认历史内容仍可读且登记入口禁用并显示原因。
 5. 在正常网络下从点击有效分享入口开始计时，记录商家与批次餐次首次可见不超过 5 秒，过程中无显式注册或个人资料授权。
 
-### M2-C：资料与多餐次登记
+### M2-C1：strict shared contract
 
-1. 新建一份顾客资料并选择两个餐次提交不同份数。
-2. 确认两条 customer-card draft 保存 customerOpenid、profile、姓名/地址/价格快照。
-3. 再次提交同一 profile/slot，确认更新原 order id，不新增重复订单。
-4. 让其中一项确认或截止，批量提交后确认可写项成功、失败项单独返回原因。
-5. 编辑当前登记的地址但不保存资料，确认 profile 不变；选择保存为新资料时确认新增 profile。
-6. 分别计时首次顾客与已有单资料顾客的两个餐次提交流程，记录结果不超过 90 秒和 45 秒。
+1. 运行 shared 失败测试，再实现 customer profile/reservation strict schema。
+2. 验证 1–20 个餐次、完全相同重复项只保留首次位置、份数或规范化重登记标志冲突时整请求 422。
+3. 验证请求不能注入 seller/openid/source/status，结果只允许 created/updated/resubmitted/failed。
 
-### M2-D：我的预订与自助变更
+### M2-C2/C3：CMS owner 与 relationship 边界
 
-1. 顾客只看到当前 seller + openid 的订单和三条状态轴。
-2. 在 open batch/slot/deadline 内修改 draft 份数，确认 id 不变。
-3. 显式取消 draft；再次登记时先得到确认提示，确认后重置同一 id。
-4. 桃子确认订单后，顾客修改、取消和重登记均被拒绝。
-5. 软停用 profile，确认其不再用于新登记，但历史订单仍可见且快照不变。
+1. C2 验证 profile list/create/touch 始终按 customer JWT 的 seller+openid，写入另需 service token，响应不含 openid。
+2. C3 验证 order 查重/create/update 同时校验 seller、customerOpenid、slot、profile 与 source，unique 冲突稳定可重读。
+3. 两片分别运行 SQLite 与 PostgreSQL；跨 seller/openid 统一 404，关系错误不产生部分写入。
+
+### M2-C4/C5：BE 编排与 HTTP
+
+1. C4 用纯领域和 CMS client 测试逐项 create/update/resubmit/confirmed lock、价格快照、部分成功与 profile 不回滚。
+2. C5 验证 customer JWT、整请求 422、最多 20 项、稳定错误映射和逐项结果顺序；不增加 FE 页面。
+
+### M2-C6：资料与多餐次登记 UI
+
+1. 首次填写称呼/地址时确认展示“用于桃子识别订单和送餐地址”，再新建资料并选择两个餐次提交不同份数；确认 customer-card draft 在商家订单页可见。
+2. 重复提交同一 profile/slot，确认更新原 order id；让其中一项确认或截止，确认另一项仍成功且失败原因明确。
+3. 编辑本次地址但不保存时 profile 不变；选择保存为新资料时新增 profile。
+4. 分别计时首次顾客与已有单资料顾客的两个餐次流程，记录不超过 90 秒和 45 秒。
+5. 运行 FE coverage、`CI=1` 无头 H5 E2E 与 weapp build；真机登记由维护者执行。
+6. T028 与维护者发布结论未完成前，只记录实现验证结果，不把顾客写入 UI 标记为“可发布”或“已交付”。
+
+### M2-D1/D2：自助管理 contract 与 persistence
+
+1. D1 验证 own-order/edit/cancel/deactivate strict contract，禁止 owner 和三状态轴注入。
+2. D2 验证 own-order 只按 seller+customerOpenid、profile deactivate 幂等且历史订单仍可见，跨顾客统一 404。
+
+### M2-D3/D4：BE 门禁、顾客页面与总验收
+
+1. D3 在每次修改/取消前重查 batch、slot、deadline、owner、status；桃子确认后顾客立即锁单。
+2. D4 验证顾客只看到自有订单和三状态轴，在允许窗口修改/取消，软停用 profile 不影响历史快照。
+3. 运行 FE coverage、无头 H5 E2E、weapp build；从空 M2 数据完成 seed→分享→登记→商家确认→顾客锁单总验收。
 
 ## 3. 自动化验证
 
-每个实现 PR 至少运行受影响 workspace 的窄测试，再运行总门禁：
+每个实现 PR 至少运行受影响 workspace 的 100% coverage 窄测试，再运行总门禁：
 
 ```bash
-pnpm --filter @cfp/kith-inn-v1-shared test
+pnpm --filter @cfp/kith-inn-v1-shared test:coverage
 pnpm --filter @cfp/cms test
-pnpm --filter @cfp/kith-inn-v1-be test
-pnpm --filter @cfp/kith-inn-v1-fe test
+pnpm --filter @cfp/kith-inn-v1-be test:coverage
+pnpm --filter @cfp/kith-inn-v1-fe test:coverage
 pnpm verify
 ```
 
@@ -65,8 +87,9 @@ CI=1 pnpm --filter @cfp/kith-inn-v1-fe test:e2e
 
 ## 4. PR 门禁
 
+- 每片开 PR 前用 `git diff --numstat origin/main...HEAD` 统计人工编写 diff；默认 `<400` 行，`>400` 必须解释不可拆原因、风险和验证，`>800` 不得开 PR。
 - diff 中没有旧 `@cfp/kith-inn-*` 业务 package 修改。
 - 没有新 workspace、collection、索引、运行进程或依赖，除非后续有独立 spec 明确批准。
 - 没有 M3 对账/催款/状态批量管理增强，也没有 M4 AI 营销能力。
-- PR 置为 ready for review 后只等待 base=main 的 Codex 自动 review；不重复评论触发。
+- PR 置为 ready 后等待 base=main 的 Codex 自动 review；每轮修复与 latest head CI 完成后再精确评论 `@codex review`，直至 latest head 无新 comment。
 - 每条 actionable comment 要么修复并回复，要么说明不采纳理由；重要 thread 全部 resolve 后才可合并。

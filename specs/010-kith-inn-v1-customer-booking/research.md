@@ -2,14 +2,15 @@
 
 ## 1. M2 交付与 PR 切分
 
-**Decision**: 一个全套规格覆盖 M2，实施按 M2-A“商家批次”、M2-B“顾客会话+只读分享页”、M2-C“资料+首次登记”、M2-D“我的预订+修改/取消/软停用”四个顺序纵向 PR。后一个只在前一个 rebase merge 后从最新 `main` 开始。
+**Decision**: 一个全套规格继续覆盖 M2。M2-A“商家批次”和 M2-B“顾客会话+只读分享页”已经合并；剩余工作按 C1 strict contract、C2 profile persistence、C3 order persistence、C4 BE domain/clients、C5 BE HTTP、C6 FE/E2E、D1 strict contract、D2 persistence、D3 BE、D4 FE/E2E 十个顺序 PR 实施。后一个只在前一个 rebase merge 后从最新 `main` 开始。
 
-**Rationale**: M2 同时跨 shared/CMS/BE/FE、两类身份和订单状态门禁，单 PR 过大；按技术层拆又会产生不可运行中间态。四个切片分别交付可演示价值，并让每次 review 聚焦一个信任边界。
+**Rationale**: 旧计划低估了测试与信任边界成本：PR #152 实际 `+2136/-19`，PR #153 实际 `+1861/-42`。宪法 1.2.0 与 `AGENTS.md` 现要求默认人工 diff `<400` 行，因此继续用跨 shared/CMS/BE/FE 的 C/D 纵向片会重复产生千行级 review。新的每片都锁定一个可独立验证的契约、安全或状态不变量，并保持仓库门禁可通过；这不是预建空壳，也不允许提前加入下一片 route/page。
 
 **Alternatives considered**:
 
 - 一个 M2 PR：review 面过大，拒绝。
-- 按 shared/CMS/BE/FE 拆：中间 PR 没有用户价值，拒绝。
+- 继续按原 C/D 纵向切片：有用户价值但已由 #152/#153 证明不可审查，拒绝。
+- 每个文件或每个 endpoint 单独拆：会割裂同一 owner/状态不变量，拒绝；按可独立验证的边界拆。
 - 把 customer auth 单独做基础设施 PR：无可见入口，拒绝；与只读分享页合并。
 - 堆叠 PR：仓库 review/rebase 机制收益有限，拒绝。
 
@@ -135,11 +136,22 @@
 
 ## 12. 验证策略
 
-**Decision**: 每个 PR 先写 shared contract、BE pure/domain、CMS tenant/owner、FE logic 和 H5 flow 失败测试；shared/BE/FE 继续 100% coverage。CMS 同时跑 SQLite/PostgreSQL，H5 全程 `CI=1` 无头，weapp build 每个 PR，M2-B/D 另做真机 wx.login/share smoke。最终运行 `pnpm verify`。
+**Decision**: 每片只补本层不变量的失败测试，再实现对应最小范围；shared/BE/FE 继续 100% coverage，CMS persistence 片同时跑 SQLite/PostgreSQL，FE 片用 `CI=1` 无头 H5 E2E 并构建 weapp。每片最后运行 `pnpm verify`。M2-B 的原生分享卡片 → 目标页 → 真实 `wx.login`/query 恢复只能由维护者真机验证，T028 在此之前保持未完成；H5 自动化不得替代该门禁。
 
-**Rationale**: 纯逻辑、真实 persistence boundary、H5 装配和 weapp 平台能力分别需要不同验证层；任何单层都不能替代其他层。
+**Rationale**: 纯逻辑、真实 persistence boundary、H5 装配和 weapp 平台能力分别需要不同验证层；任何单层都不能替代其他层。分层小 PR 允许 review 聚焦当前不变量，同时用完整门禁证明中间状态仍可构建和回归。
 
 **Alternatives considered**:
 
 - 只 mock API 的 FE 测试：不能证明 JWT/tenant/persistence，拒绝。
 - 只做 E2E：失败定位慢且无法穷举 owner/state 分支，拒绝。
+
+## 13. Review 预算与发布标记
+
+**Decision**: 每片开 PR 前按 `origin/main` 统计人工编写 diff，默认 `<400` 行。`>400` 必须先尝试继续拆分；确实不可拆时，在 PR 说明写明不可拆原因、额外风险与独立验证。`>800` 不开 PR。C6 可以完成实现与合并，但 T028 和维护者负责的发布结论未完成前，不把顾客写入 UI 标记为“可发布”或“已交付”。
+
+**Rationale**: 预算是可执行的 review 风险门禁，不是事后说明；实现完成与允许发布是两个独立状态。真机平台能力和发布结论不应被无头 H5 结果替代。
+
+**Alternatives considered**:
+
+- 只在 PR 超大后补解释：失去“先拆再写”的约束，拒绝。
+- 用 H5 dev login/share path 测试代替真机：无法证明微信一次性 code、原生卡片和 query 恢复，拒绝。
