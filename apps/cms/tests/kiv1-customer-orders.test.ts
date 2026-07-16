@@ -75,18 +75,20 @@ function payloadWith(options: {
   updateError?: unknown;
   orderStatus?: "draft" | "confirmed" | "canceled";
   batchStatus?: "open" | "closed"; slotStatus?: "open" | "closed"; orderDeadline?: string | null;
+  slotPrice?: number | null;
   database?: "postgres" | "sqlite";
 } = {}) {
   const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
     ? { ...doc, status: options.orderStatus }
     : doc);
   const find = vi.fn(async ({ collection, where }: { collection: string; where?: unknown }) => {
-    if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active" }, { id: 8, status: "active" }]) };
+    if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active", defaultPriceCents: 3000 }, { id: 8, status: "active", defaultPriceCents: 3000 }]) };
     if (collection === "kiv1_booking_batches") return { docs: matching(where, [{ id: 41, seller: 7,
       publicId: BATCH_PUBLIC_ID, status: options.batchStatus ?? "open", mealSlots: [11] }]) };
     if (collection === "kiv1_meal_slots") return { docs: matching(where, slots.map((slot) => slot.id === 11
       ? { ...slot, orderStatus: options.slotStatus ?? slot.orderStatus,
-      orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline
+      orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline,
+      priceCents: options.slotPrice ?? null
       } : slot)) };
     if (collection === "kiv1_customer_profiles") return { docs: matching(where, profiles) };
     if (collection === "kiv1_orders") return { docs: matching(where, currentOrders) };
@@ -258,7 +260,7 @@ describe("customer order persistence boundary", () => {
     }), context("31"));
     expect(response.status).toBe(200);
     expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
-      collection: "kiv1_orders", id: "31", data: { quantity: 3, unitPriceCents: 3200 }, overrideAccess: true,
+      collection: "kiv1_orders", id: 31, data: { quantity: 3, unitPriceCents: 3000 }, overrideAccess: true,
       req: expect.anything()
     }));
     expect(payload.execute.mock.invocationCallOrder[0]).toBeLessThan(payload.find.mock.invocationCallOrder.at(-1)!);
@@ -304,6 +306,15 @@ describe("customer order persistence boundary", () => {
       body: { quantity: 3 }, token: ownerToken }), { params: Promise.resolve({ id: "31" }) });
     await expect(response.json()).resolves.toMatchObject({ error: "meal-slot-closed" });
     expect(closed.update).not.toHaveBeenCalled();
+    const repriced = payloadWith({ slotPrice: 2800 });
+    mocks.getPayload.mockResolvedValue(repriced);
+    expect((await createOrder(request("", { method: "POST", body: createInput, token: ownerToken }))).status).toBe(201);
+    expect(repriced.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ unitPriceCents: 2800 }) }));
+    const invalid = payloadWith();
+    mocks.getPayload.mockResolvedValue(invalid);
+    const rejected = await createOrder(request("", { method: "POST", body: { ...createInput, mealSlotId: "undefined" }, token: ownerToken }));
+    expect(rejected.status).toBe(409);
+    expect(invalid.execute).not.toHaveBeenCalled();
   });
 
   it("normalizes order update failures", async () => {

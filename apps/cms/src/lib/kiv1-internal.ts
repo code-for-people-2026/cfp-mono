@@ -158,10 +158,12 @@ export async function withCustomerOrderLock<T>(
 
 /** Lock the exact batch and slot whose availability predicates guard a customer write. */
 export async function lockCustomerAvailability(payload: BasePayload, req: PayloadRequest, input: {
-  sellerId: string | number; batchPublicId: string; mealSlotId: string | number;
+  sellerId: number; batchPublicId: string; mealSlotId: number;
 }) {
   const postgres = await postgresTransaction(payload, req);
   if (!postgres) return;
+  await postgres.database.execute({ db: postgres.transaction,
+    sql: sql`SELECT "id" FROM "cms"."kiv1_sellers" WHERE "id" = ${input.sellerId} FOR UPDATE` });
   await postgres.database.execute({ db: postgres.transaction, sql: sql`SELECT "id" FROM "cms"."kiv1_booking_batches"
     WHERE "seller_id" = ${input.sellerId} AND "public_id" = ${input.batchPublicId} FOR UPDATE` });
   await postgres.database.execute({ db: postgres.transaction, sql: sql`SELECT "id" FROM "cms"."kiv1_meal_slots"
