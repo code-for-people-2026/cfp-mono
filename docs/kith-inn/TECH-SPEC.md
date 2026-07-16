@@ -1,6 +1,7 @@
 # Tech Spec：街坊味（kith-inn）
 
-> 状态：草稿 v0.16 ｜ 最近更新：2026-07-13
+> 状态：草稿 v0.17 ｜ 最近更新：2026-07-16
+> v0.17 变更：到账状态明确为用户手工双态记录，不接支付；聊天历史采用最近页 + `(createdAt,id)` 游标上翻和按 seller/operator 的容量上限，不再按固定两天窗口清理；顾客纠错与数据权利不进入首轮试用门禁。
 > v0.16 变更：**自适应换菜契约**——menu route 与「今天」agent 按目标日期读取同一 seller 历史，以固定四级冲突择优；用 `dishIndex` 精确写回一个位置，自动响应返回有序 `relaxedRules`，H5 经共享 Zod schema 运行时验证后显示完整中文原因。
 > v0.15 变更：**生产订单对账定稿**——唯一解析入口区分完整接龙 snapshot 与单坐标 increment；CMS 用 fingerprint、operation key 和单事务原子应用新增/更新/退出，不新增持久化 snapshot 表。
 > v0.14 变更：**订单写入原子性**——草稿 order+items、确认 slot+fulfillment+order、取消 fulfillment+order 分别收进 CMS 单事务；BE 改调粗粒度 confirm/cancel 内部端点；新增 `fulfillments (seller,order)` unique 兜住并发确认。
@@ -69,7 +70,7 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 - **集合定义（字段级）见 PRD §7 / DATA-MODEL**（主干 spine + 模块表 + 组合机制 + 治理铁律）。本节定**租户隔离的硬机制、索引、迁移注意、派生策略**。
 
-**时区基准（v0.8 增，对抗审查 critical gap）**：所有"今天 / 0 点 / order.date 查询 / chat_messages 留存裁剪 / 最近一餐聚焦 / slot 开餐归属 / 订阅物化"的日期判定一律以 **Asia/Shanghai** 为准（DB 存 UTC、查询/裁剪/物化按此时区算）——凌晨边界（清前天会话、单算哪天、今晚的单不算进明天）尤其依赖。
+**时区基准（v0.8 增，对抗审查 critical gap）**：所有"今天 / order.date 查询 / 最近一餐聚焦 / slot 开餐归属 / 订阅物化"的日期判定一律以 **Asia/Shanghai** 为准（DB 存 UTC、查询/物化按此时区算）——凌晨边界（单算哪天、今晚的单不算进明天）尤其依赖。`chat_messages` 改为按容量留存，不再依赖自然日边界。
 
 ### 3.1 租户隔离（multi-tenant，第一天就建对，MVP 单租户也照建；必测 100%）
 
@@ -85,19 +86,19 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 | 索引 | 服务的查询 |
 |---|---|
-| `orders (seller, date, occasion, status, paymentStatus)` | 今天某餐确认订单(status=confirmed)、谁没付款；draft/canceled 同表靠 status 过滤掉 |
+| `orders (seller, date, occasion, status, paymentStatus)` | 今天某餐确认订单(status=confirmed)、哪些订单未标记到账；draft/canceled 同表靠 status 过滤掉 |
 | `orders (seller, customer, date, occasion)` partial unique `WHERE status IN ('draft','confirmed')` | active 业务唯一坐标；重复粘贴同一天同餐同顾客时更新现存 order；canceled 历史单不占坑 |
 | `orders (seller, customer, status, placedAt)` | 张阿姨上次点啥（**只看 status=confirmed**，排除草稿/取消；ASC 索引 + `ORDER BY placedAt DESC LIMIT 1` 走 backward scan，**别写 DESC**） |
 | `fulfillments (seller, serviceDate, occasion, status)` | 谁没送、缺口对账；地址从 populated `order.address` 读取后内存相似度排序 |
 | `service_slots (seller, date, occasion)` unique | 唯一约束 + 最近一餐定位 + 首单 upsert 命中 |
 | `offerings (seller, mainIngredient, lastUsedAt)` | 菜单主料去重扫描（component 型） |
 | `order_items (seller, order)` | "今天订单"的 join 走索引 |
-| `chat_messages (seller, operator, createdAt)` | 展示对话分页拉取 + 留存裁剪（§5.5；ASC 索引 backward scan 取最近，删最旧 200 走正向）|
+| `chat_messages (seller, operator, createdAt)` | 展示对话取最近页，并用 `(createdAt,id)` 稳定游标向前翻页；ASC 索引 backward scan 取最近、正向扫描淘汰最早页。`id` 作为同时间戳 tie-breaker，避免重/漏消息 |
 | `subscriptions (seller, status)` [V1] | 这周有哪些预定 |
 | `orders (seller, idempotencyKey)` partial unique **WHERE NOT NULL** | 技术幂等：防同一次提交/订阅物化 job 重复写。业务上的“重复粘贴更新”不要暴露成“撞键”，而是在确认卡展示新增/更新/跳过 |
 | `fulfillments (seller, order)` unique | 一张订单全生命周期最多一条履约；并发/重复确认由数据库最终兜底 |
 | `customers (seller, displayName)`、`customers (seller, address)` | 记单时名字→顾客、默认地址带出；地址是 string，不建 customer_addresses |
-| `orders (seller, paymentStatus)` | 跨日"谁没付款/未付汇总"（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
+| `orders (seller, paymentStatus)` | 跨日“哪些订单未标记到账”的手工记录汇总（paymentStatus 在 `(seller,date,status,paymentStatus)` 第 4 列、跨日查询命中不了，故单列；MVP 量级可全表扫）|
 
 > 原手写 migration 里的 partial unique + 复合查找索引 drizzle push 都不会从 collection 重建——前者带 WHERE 谓词（Payload `indexes` 不支持），后者虽非 partial 但为审计统一也并入。**全部由 cms `onInit` 的 `ensureConstraints` 每次启动幂等重建**（`CREATE [UNIQUE] INDEX IF NOT EXISTS`，见 `apps/cms/src/db/ensureConstraints.ts`）：三个 partial unique（`service_slots (seller,date,occasion) WHERE occasion IS NOT NULL`、orders active 业务坐标 `WHERE status IN ('draft','confirmed')`、orders `idempotency_key WHERE ... IS NOT NULL`）+ 一个 fulfillment 全状态 unique（`fulfillments (seller,order)`）+ 四个复合查找索引（`orders (seller,date,occasion,status,paymentStatus)`、`orders (seller,customer,status,placedAt)`、`fulfillments (seller,serviceDate,occasion,status)`、`chat_messages (seller,operator,createdAt)`）。其余常规（单字段）索引自走 push 同步。
 
@@ -114,14 +115,14 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 ### 3.3 快照 / 派生 / 归档
 
 - **快照**（create 时定格）：`order_items.unitPriceCents`、`orders.address`。新订单复制顾客当时的选填默认地址；没有地址则快照为空，仍可确认并创建 fulfillment。顾客默认地址后续变化不回写旧订单。fulfillment 不重复存地址，只通过 `order.address` 展示/排序；无地址项进入兜底组，不拆 `addrBuilding/addrUnit`。
-- **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：地址相似度排序、"最近一餐"聚焦、未付汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/未付/未送，`slot.status=open` 才进"今天该做"范围)。采购聚合后置，`offerings.recipe` 可预留但 M1 不启用。
+- **派生不落表**（kith-inn-be 确定性纯函数，§4 阶梯0、§6 单测 100%）：地址相似度排序、"最近一餐"聚焦、未标记到账汇总、`getTodayGaps(seller,date)`("今天还差什么"=跨表逐项查 menu_plan/未标记到账/未送，`slot.status=open` 才进"今天该做"范围)。采购聚合后置，`offerings.recipe` 可预留但 M1 不启用。
 - **归档软删**：`service_slots.status=archived` 时，其下 order/item/fulfillment 写操作经 access.update + hook 拦截，要求显式 `force`（对应二次确认）；不真删；保护范围含 menu_plans。**archived→open 的 force 守卫下沉到 cms 侧 service_slots beforeChange hook**（status 从 archived 转 open 必须带 force 否则拒绝），让确认/菜单发布/订阅物化/未来工具所有写路径统一被挡，不靠 be 各调用点自觉。
 - **写侧状态机（确定性 hook/服务，可单测）**：
   - **① draft = 纯记录事务**：记单确认卡确认后才写草稿数据；CMS 在一个 Payload/Postgres 事务内写 order + 全部 order_items，任一 item 失败全部回滚。draft 与会话留存解耦，且**不触任何经营表**——不开 slot、不建履约。
   - **② 确认订单 = 物化事务**：BE 对 CMS 只发一次 `POST /api/internal/orders/:id/confirm`；CMS 在同一事务内按 `(seller, order.date, order.occasion)` upsert `service_slots`→open、为该 order 创建一条 fulfillment、再把 order 置 `confirmed`。`archived` slot 不自动重开，整次回滚；已确认重试读回同一结果，`fulfillments (seller,order)` unique 阻止并发重复。
   - **③ 取消/修改级联**：取消走一次 `POST /api/internal/orders/:id/cancel`，CMS 在同一事务内把 order 与其 fulfillment 置 `canceled` 终态，重复取消幂等；修改 `orders.date/occasion` 时同步 pending fulfillment 的 `serviceDate/occasion`，跳过 done/canceled 终态；修改 `orders.address` 不需要同步 fulfillment，因为地址从 order 读取。
-  - **④ 完整接龙 / 补单对账事务**：BE 先用生产唯一解析入口生成 snapshot 或 increment 预览和 `expectedFingerprint`，用户确认后只调用一次 `POST /api/internal/orders/reconcile`。CMS 锁住对账写入，在同一事务内重读 active orders 并校验 fingerprint，再创建/更新/取消 order + item；snapshot 覆盖范围内全部 active orders，不看 `source`，increment 只改一个业务坐标。退出 confirmed order 时同步取消 pending fulfillment；paid/reconciled 或 done 在预览和事务内都返回 `settled-order`。CMS 收到同一 `operationKey` 的端点重试时返回已完成结果，不重复追加；不同操作造成数据变化时旧卡返回 `stale-preview`。聊天层成功后清除内存 pending op，当前只继承“不重复写入”的安全性，不承诺丢响应后用原卡回放结果。预览不落专用 snapshot 表，数据库只保留业务实体和用于幂等恢复的 operation marker。
-  - **⑤ `chat_messages`** 写时执行留存策略（2 天窗口 + 1000 条上限超删 200），与业务表无级联。
+  - **④ 完整接龙 / 补单对账事务**：BE 先用生产唯一解析入口生成 snapshot 或 increment 预览和 `expectedFingerprint`，用户确认后只调用一次 `POST /api/internal/orders/reconcile`。CMS 锁住对账写入，在同一事务内重读 active orders 并校验 fingerprint，再创建/更新/取消 order + item；snapshot 覆盖范围内全部 active orders，不看 `source`，increment 只改一个业务坐标。退出 confirmed order 时同步取消 pending fulfillment；paid、历史兼容值 reconciled 或 done 在预览和事务内都返回 `settled-order`。CMS 收到同一 `operationKey` 的端点重试时返回已完成结果，不重复追加；不同操作造成数据变化时旧卡返回 `stale-preview`。聊天层成功后清除内存 pending op，当前只继承“不重复写入”的安全性，不承诺丢响应后用原卡回放结果。预览不落专用 snapshot 表，数据库只保留业务实体和用于幂等恢复的 operation marker。
+  - **⑤ `chat_messages`** 查询默认返回最近一页，并以 `(createdAt,id)` keyset cursor 向更早消息翻页；按 seller/operator 执行有界容量留存，超过实现规格确定的上限时批量删除最早页，与业务表无级联。清理失败不得回滚当前聊天写入，但必须可观测、可重试。
   - **⑥ subscription 物化（V1）**：定时 job 扫 `status=active` 订阅 → 按 `pattern` 命中 `(date,occasion)` 坐标（未来 time-slot 生意再扩展为 date + start/end slot 坐标）+ 排除 `pausedRanges` → 物化为已确认 order，并走与"确认订单"同一物化事务。`idempotencyKey` 需包含 subscription id + 本期坐标，防 recurring/open-ended 后续期数误撞第一期；目标 slot 若 archived 则该期跳过 + 告警（不自动 force）。job 经 §3.1 job 信任根带 seller token。
 
 ### 3.4 M0 数据层任务（共享 cms host + 按 app 分模块包；**不动 website**）
@@ -174,11 +175,11 @@ apps/website (官网，单独 Payload，schemaName="website") ──────
 
 ### 4.1 「今天」主 agent 架构（对应 PRD §5.5）
 
-- **一个 agent，多工具**：agent 不持有业务逻辑，只**编排** kith-inn-be 的后端操作（记单/改单/出菜单/换菜/标已送/切已付/查状态/查历史…）。**这些工具与"菜单/订单/送餐"详情 tab 调的是同一套操作**——两个前门、一套实现，无重叠。自动换菜两边使用相同历史窗口和四级评分，确认卡在规则非空时以“菜品池较小，本次允许”展示全部中文原因。
+- **一个 agent，多工具**：agent 不持有业务逻辑，只**编排** kith-inn-be 的后端操作（记单/改单/出菜单/换菜/标已送/手工记录到账/查状态/查历史…）。**这些工具与"菜单/订单/送餐"详情 tab 调的是同一套操作**——两个前门、一套实现，无重叠。自动换菜两边使用相同历史窗口和四级评分，确认卡在规则非空时以“菜品池较小，本次允许”展示全部中文原因。
 - **范围外挡回**：agent 的 system prompt 限定职责（帮桃子经营私房菜）；无关问题礼貌拒绝 + 引导回经营。
 - **三层记忆（别混）**：
-  - 展示的对话（她能滚动看到的）：**滚动 2 天窗口**（今天+昨天，每天 0 点清前天）+ **硬上限 1000 条（超出删最旧 200）**；带时间戳；到顶提示"更早已清理"。（数字暂定，试用期调。）
-  - LLM 工作上下文（喂模型的，≠ 展示历史）：只喂**最近 ~3–5 轮（≈ 6–10 条）** + **token 预算**截断（大段接龙、旧工具返回裁掉/概括）；**事实即时调工具重查**、不靠旧上下文；不喂整 2 天——省 token、浅环、防陈旧上下文带偏。
+  - 展示的对话（她能滚动看到的）：默认最近一页，向上滚动时以 `(createdAt,id)` 游标加载更早页并保持阅读位置；按 seller/operator 有界留存，容量阈值由实现规格结合试用数据固定。到达保留边界时提示“更早的对话已清理”。
+  - LLM 工作上下文（喂模型的，≠ 展示历史）：只喂**最近 ~3–5 轮（≈ 6–10 条）** + **token 预算**截断（大段接龙、旧工具返回裁掉/概括）；**事实即时调工具重查**、不靠旧上下文；不喂整段展示历史——省 token、浅环、防陈旧上下文带偏。
   - 业务数据（真记忆）：在库里、永久；**历史问题 = agent 调工具查数据**，不是翻聊天。
 - **地址选填与带出**：订单结构化时按“接龙名字 → 顾客当前默认地址”带出（PRD §6.4）；新名字的地址输入框选填，可留空直接确认。填写一次后保存到顾客并供后续新订单复制；一直不填也不阻断订单或履约。
 - **订单解析与确认边界**：主 agent 不生成可信结构化 items，只把原始输入交给 `record_orders`；工具内唯一解析实现忽略菜单正文，严格校验日期、周几、餐次、顾客和正整数份数。snapshot 确认卡展示新增/更新/退出/不变，increment 展示`当前 + 增量 → 最终`或`当前 → 目标`；确认前零业务写入。

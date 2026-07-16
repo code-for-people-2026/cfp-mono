@@ -3,11 +3,9 @@ import { CHAT_ROLES } from "@cfp/kith-inn-shared";
 import { sellerField, tenantAccess, tenantHooks } from "./shared";
 
 /**
- * `chat_messages` — the「今天」main-conversation retention (PRD §5.5 / §7.1).
- * Carrier of the DISPLAYED conversation (not business memory, which is the
- * permanent orders/offerings). 2-day rolling window + 1000-hard-cap retention
- * policy is applied server-side at write time (M1); createdAt (Payload-built-in)
- * is the pagination/trim key, scoped by (seller, operator).
+ * `chat_messages` —「今天」主对话的展示历史（PRD §5.5 / §7.1）。它不是业务记忆；
+ * 订单、菜单和履约才是长期业务事实。当前只提供最近一页读取；稳定游标分页与按
+ * (seller, operator) 容量有界留存由 #160 实现，不再采用固定两天窗口。
  */
 export const ChatMessages: CollectionConfig = {
   slug: "chat_messages",
