@@ -2,6 +2,7 @@ import { cmsCustomerOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
 import { customerWriteScope, withCustomerOrderLock } from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../../../orders/route";
+import { batchPublicId, writeRelationshipsAvailable } from "../route";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +19,8 @@ export async function PATCH(req: Request, { params }: RouteContext) {
   }
   const parsed = cmsCustomerOrderUpdateSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: "invalid-customer-order-update" }, { status: 422 });
+  const selectedBatch = batchPublicId(req);
+  if (!selectedBatch) return NextResponse.json({ error: "invalid-batch-public-id" }, { status: 400 });
   const expectedStatus = new URL(req.url).searchParams.get("expectedStatus");
   if (expectedStatus !== "draft" && expectedStatus !== "canceled") {
     return NextResponse.json({ error: "invalid-expected-order-status" }, { status: 400 });
@@ -42,6 +45,14 @@ export async function PATCH(req: Request, { params }: RouteContext) {
           message: "订单状态已变化，请重试"
         }, { status: 409 });
       }
+      const stored = owned.docs[0] as { mealSlot?: unknown; customerProfile?: unknown };
+      const relationId = (value: unknown) => typeof value === "object" && value !== null && "id" in value
+        ? (value as { id: string | number }).id : value as string | number;
+      const unavailable = await writeRelationshipsAvailable(scope.payload, transactionReq, {
+        sellerId: scope.sellerId, openid: scope.openid, batchPublicId: selectedBatch,
+        mealSlotId: relationId(stored.mealSlot), customerProfileId: relationId(stored.customerProfile)
+      });
+      if (unavailable) return unavailable;
       const doc = await scope.payload.update({
         collection: "kiv1_orders", id, data: parsed.data, overrideAccess: true, req: transactionReq
       });

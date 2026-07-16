@@ -24,12 +24,16 @@ import { GET as findBySlot } from "../src/app/api/internal/kiv1/customer/orders/
 
 const SECRET = "v1-secret";
 const INTERNAL = "v1-internal";
+const BATCH_PUBLIC_ID = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
 const originalEnv = { ...process.env };
 const ownerToken = await issueCustomerToken({ sellerId: 7, openid: "wx-owner" }, SECRET);
 const neighborToken = await issueCustomerToken({ sellerId: 7, openid: "wx-neighbor" }, SECRET);
 const foreignSellerToken = await issueCustomerToken({ sellerId: 8, openid: "wx-owner" }, SECRET);
 const operatorToken = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
-const slots = [{ id: 11, seller: 7 }, { id: 12, seller: 8 }];
+const slots = [
+  { id: 11, seller: 7, orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" }, { id: 12,
+    seller: 8, orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" }
+];
 const profiles = [
   { id: 21, seller: 7, openid: "wx-owner", active: true },
   { id: 22, seller: 7, openid: "wx-neighbor", active: true },
@@ -70,6 +74,7 @@ function payloadWith(options: {
   createError?: unknown;
   updateError?: unknown;
   orderStatus?: "draft" | "confirmed" | "canceled";
+  batchStatus?: "open" | "closed"; slotStatus?: "open" | "closed"; orderDeadline?: string | null;
   database?: "postgres" | "sqlite";
 } = {}) {
   const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
@@ -77,7 +82,12 @@ function payloadWith(options: {
     : doc);
   const find = vi.fn(async ({ collection, where }: { collection: string; where?: unknown }) => {
     if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active" }, { id: 8, status: "active" }]) };
-    if (collection === "kiv1_meal_slots") return { docs: matching(where, slots) };
+    if (collection === "kiv1_booking_batches") return { docs: matching(where, [{ id: 41, seller: 7,
+      publicId: BATCH_PUBLIC_ID, status: options.batchStatus ?? "open", mealSlots: [11] }]) };
+    if (collection === "kiv1_meal_slots") return { docs: matching(where, slots.map((slot) => slot.id === 11
+      ? { ...slot, orderStatus: options.slotStatus ?? slot.orderStatus,
+      orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline
+      } : slot)) };
     if (collection === "kiv1_customer_profiles") return { docs: matching(where, profiles) };
     if (collection === "kiv1_orders") return { docs: matching(where, currentOrders) };
     return { docs: [] };
@@ -98,14 +108,16 @@ function payloadWith(options: {
 }
 
 function request(path: string, options: {
-  method?: string; body?: unknown; token?: string; internal?: boolean
+  method?: string; body?: unknown; token?: string; internal?: boolean; batch?: boolean
 } = {}) {
   const headers: Record<string, string> = {};
   if (options.token !== undefined) headers["x-kith-inn-v1-customer"] = options.token;
   if (options.internal !== false) headers["x-kith-inn-v1-internal"] = INTERNAL;
   if (options.body !== undefined) headers["content-type"] = "application/json";
-  return new Request(`http://cms.test/api/internal/kiv1/customer/orders${path}`, {
-    method: options.method ?? "GET",
+  const method = options.method ?? "GET";
+  const query = method !== "GET" && options.batch !== false ? `${path.includes("?") ? "&" : "?"}batchPublicId=${BATCH_PUBLIC_ID}` : "";
+  return new Request(`http://cms.test/api/internal/kiv1/customer/orders${path}${query}`, {
+    method,
     headers,
     ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) })
   });
@@ -272,6 +284,26 @@ describe("customer order persistence boundary", () => {
     }), context);
     expect(resubmitted.status).toBe(200);
     expect(canceled.execute).not.toHaveBeenCalled();
+  });
+
+  it("rechecks batch, slot and deadline inside the customer write transaction", async () => {
+    for (const [payload, code] of [
+      [payloadWith({ batchStatus: "closed" }), "booking-batch-closed"],
+      [payloadWith({ slotStatus: "closed" }), "meal-slot-closed"],
+      [payloadWith({ orderDeadline: "2020-01-01T00:00:00.000Z" }), "order-deadline-passed"]
+    ] as const) {
+      mocks.getPayload.mockResolvedValue(payload);
+      const response = await createOrder(request("", { method: "POST", body: createInput, token: ownerToken }));
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({ error: code });
+      expect(payload.create).not.toHaveBeenCalled();
+    }
+    const closed = payloadWith({ slotStatus: "closed" });
+    mocks.getPayload.mockResolvedValue(closed);
+    const response = await updateOrder(request("/31?expectedStatus=draft", { method: "PATCH",
+      body: { quantity: 3 }, token: ownerToken }), { params: Promise.resolve({ id: "31" }) });
+    await expect(response.json()).resolves.toMatchObject({ error: "meal-slot-closed" });
+    expect(closed.update).not.toHaveBeenCalled();
   });
 
   it("normalizes order update failures", async () => {
