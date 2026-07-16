@@ -12,6 +12,18 @@ export type CustomerOrderRouteDeps = {
   submit: (token: string, openid: string, input: CustomerReservationInput) => Promise<CustomerReservationResponse>;
 };
 const defaultDeps: CustomerOrderRouteDeps = { submit: submitCustomerReservations };
+const publicItemErrors = new Set([
+  "booking-batch-closed",
+  "meal-slot-not-in-batch",
+  "meal-slot-closed",
+  "order-deadline-passed",
+  "customer-profile-inactive",
+  "order-coordinate-occupied",
+  "confirmed-order-locked",
+  "canceled-order-confirmation-required",
+  "order-status-changed",
+  "reservation-item-failed"
+]);
 
 async function bodyOf(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
   try {
@@ -38,6 +50,12 @@ function dependencyError(c: Context, error: unknown) {
   return c.json({ error: "cms-unavailable", message: "预订登记服务暂不可用" }, 502);
 }
 
+function sanitizeResult(result: CustomerReservationResponse["results"][number]) {
+  if (result.status !== "failed" || publicItemErrors.has(result.error)) return result;
+  return { mealSlotId: result.mealSlotId, status: "failed" as const,
+    error: "reservation-item-failed", message: "登记失败" };
+}
+
 export function customerOrderRoutes(secret: string, deps: CustomerOrderRouteDeps = defaultDeps) {
   const app = new Hono<CustomerAppVars>();
   app.use("*", customerAuth(secret));
@@ -50,7 +68,7 @@ export function customerOrderRoutes(secret: string, deps: CustomerOrderRouteDeps
     }
     try {
       const result = await deps.submit(c.get("customerToken"), c.get("customerOpenid"), parsed.data);
-      return c.json(result);
+      return c.json({ ...result, results: result.results.map(sanitizeResult) });
     } catch (error) {
       return dependencyError(c, error);
     }
