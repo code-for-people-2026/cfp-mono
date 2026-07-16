@@ -52,7 +52,7 @@ function dependencyError(c: Context, error: unknown) {
 
 function sanitizeResult(result: CustomerReservationResponse["results"][number]) {
   if (result.status !== "failed" || publicItemErrors.has(result.error)) return result;
-  return { mealSlotId: result.mealSlotId, status: "failed" as const,
+  return { target: result.target, status: "failed" as const,
     error: "reservation-item-failed", message: "登记失败" };
 }
 

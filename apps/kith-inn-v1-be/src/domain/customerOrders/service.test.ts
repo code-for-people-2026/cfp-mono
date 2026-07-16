@@ -5,12 +5,13 @@ import { CustomerReservationError, reservationNow, submitCustomerReservations, t
 const NOW = "2026-07-10T01:00:00.000Z";
 const profile: CustomerProfile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true };
 const slot = (id: number, overrides: Partial<MealSlot> = {}): MealSlot => ({
-  id, sellerId: 7, date: "2026-07-13", occasion: "lunch",
+  id, sellerId: 7, date: `2026-07-${String(id + 2).padStart(2, "0")}`, occasion: "lunch",
   menuItems: Array.from({ length: 5 }, (_, index) => ({ offeringId: index + 1, nameSnapshot: `菜${index + 1}`,
     mainIngredientSnapshot: null, categorySnapshot: index < 2 ? "meat" : index < 4 ? "veg" : "soup" })),
   orderStatus: "open", orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: null, generatedAt: NOW,
   ...overrides
 });
+const target = (id: number) => ({ date: slot(id).date, occasion: slot(id).occasion });
 const internal = (slots: MealSlot[] = [slot(11), slot(12, { priceCents: 2800 })]): CmsCustomerBookingBatch => ({
   seller: { id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" },
   batch: { id: 31, sellerId: 7, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11", title: "一周", status: "open",
@@ -47,9 +48,10 @@ describe("customer reservation orchestration", () => {
       findOrder: vi.fn(async (_token, id) => Number(id) === 12 ? order(12) : null),
       touchProfile: vi.fn(async () => { throw new Error("offline"); })
     });
-    const result = await submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false },
-      { mealSlotId: 12, quantity: 3, resubmitCanceled: false }], injected, true);
+    const result = await submit([{ target: target(11), quantity: 2, resubmitCanceled: false },
+      { target: target(12), quantity: 3, resubmitCanceled: false }], injected, true);
     expect(result.results.map(({ status }) => status)).toEqual(["created", "updated"]);
+    expect(result.results.map(({ target: itemTarget }) => itemTarget)).toEqual([target(11), target(12)]);
     expect(injected.createOrder).toHaveBeenCalledWith("jwt", expect.objectContaining({ customerOpenid: "wx",
       source: "customer-card", unitPriceCents: 3000, quantity: 2 }), internal().batch.publicId);
     expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 32, expect.objectContaining({ unitPriceCents: 2800,
@@ -67,27 +69,29 @@ describe("customer reservation orchestration", () => {
       if (Number(id) === 16) throw new Error("offline");
       return states.get(Number(id)) ?? null;
     }) });
-    const result = await submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: true },
-      { mealSlotId: 12, quantity: 1, resubmitCanceled: false }, { mealSlotId: 13, quantity: 1, resubmitCanceled: false },
-      { mealSlotId: 14, quantity: 1, resubmitCanceled: false }, { mealSlotId: 15, quantity: 1, resubmitCanceled: false },
-      { mealSlotId: 16, quantity: 1, resubmitCanceled: false }], injected);
+    const result = await submit([{ target: target(11), quantity: 2, resubmitCanceled: true },
+      { target: target(12), quantity: 1, resubmitCanceled: false },
+      { target: target(13), quantity: 1, resubmitCanceled: false },
+      { target: target(14), quantity: 1, resubmitCanceled: false },
+      { target: target(15), quantity: 1, resubmitCanceled: false },
+      { target: target(16), quantity: 1, resubmitCanceled: false }], injected);
     expect(result.results.map((item) => item.status === "failed" ? item.error : item.status)).toEqual([
       "resubmitted", "confirmed-order-locked", "canceled-order-confirmation-required", "order-coordinate-occupied",
       "meal-slot-closed", "reservation-item-failed"
     ]);
     expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, expect.objectContaining({ status: "draft",
       paymentStatus: "unpaid", canceledAt: null }), "canceled", internal().batch.publicId);
-    expect(result.results[5]).toMatchObject({ message: "登记失败" });
+    expect(result.results[5]).toMatchObject({ target: target(16), message: "登记失败" });
   });
   it("re-reads unique conflicts, preserves profiles and rejects missing owners", async () => {
     const raced = deps({ createOrder: vi.fn(async () => { throw new CmsOrderError(409, "order-exists", "已存在"); }),
       findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11)) });
-    await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], raced))
+    await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }], raced))
       .resolves.toMatchObject({ results: [{ status: "updated" }] });
     const oldProfile = { ...profile, displayName: "王", address: "3A" };
     const newProfile = { ...oldProfile, id: 22 };
     const retry = deps({ listProfiles: vi.fn(async () => [oldProfile, newProfile]), createProfile: vi.fn(async () => newProfile) });
-    await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], retry, true))
+    await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }], retry, true))
       .resolves.toMatchObject({ profile: newProfile, results: [{ status: "created", doc: { customerProfileId: 22 } }] });
     expect(retry.createProfile).toHaveBeenCalledWith("jwt", { displayName: "王", address: "3A" });
     const closed = internal(); closed.batch.status = "closed";
@@ -96,19 +100,27 @@ describe("customer reservation orchestration", () => {
       createOrder: vi.fn(async () => { throw new CmsOrderError(409, "order-exists", "已存在"); }),
       findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11))
     });
-    await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], closedRace))
+    await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }], closedRace))
       .resolves.toMatchObject({ results: [{ error: "booking-batch-closed" }] });
     expect(closedRace.updateOrder).not.toHaveBeenCalled();
+    const moved = deps({
+      getBatch: vi.fn().mockResolvedValueOnce(internal()).mockResolvedValueOnce(internal([slot(17, target(11))])),
+      createOrder: vi.fn(async () => { throw new CmsOrderError(409, "order-exists", "已存在"); }),
+      findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11))
+    });
+    await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }], moved))
+      .resolves.toMatchObject({ results: [{ error: "meal-slot-not-in-batch" }] });
+    expect(moved.updateOrder).not.toHaveBeenCalled();
     const failed = deps({ getBatch: vi.fn(async () => internal([])), listProfiles: vi.fn(async () => [profile]) });
-    const created = await submit([{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }], failed, true);
-    expect(created.results[0]).toMatchObject({ status: "failed", error: "meal-slot-not-in-batch" });
+    const created = await submit([{ target: target(11), quantity: 1, resubmitCanceled: false }], failed, true);
+    expect(created.results[0]).toMatchObject({ target: target(11), status: "failed", error: "meal-slot-not-in-batch" });
     expect(failed.createProfile).toHaveBeenCalledOnce();
     expect(failed.touchProfile).not.toHaveBeenCalled();
-    await expect(submit([{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }],
+    await expect(submit([{ target: target(11), quantity: 1, resubmitCanceled: false }],
       deps({ listProfiles: vi.fn(async () => []) }))).rejects.toBeInstanceOf(CustomerReservationError);
   });
   it("rechecks batch, deadline, profile and dependency failures for every item", async () => {
-    const one = [{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }] as const;
+    const one = [{ target: target(11), quantity: 1, resubmitCanceled: false }] as const;
     const run = (overrides: Partial<CustomerReservationDeps>) => submit([...one], deps(overrides));
     const closed = internal(); closed.batch.status = "closed";
     await expect(run({ getBatch: vi.fn(async () => closed) })).resolves.toMatchObject({ results: [{ error: "booking-batch-closed" }] });
@@ -137,7 +149,7 @@ describe("customer reservation orchestration", () => {
     ] as const) {
       const injected = deps({ findOrder: vi.fn().mockResolvedValueOnce(order(11)).mockResolvedValueOnce(latest),
         updateOrder: vi.fn(async () => { throw new CmsOrderError(409, "customer-order-status-changed", "订单状态已变化，请重试"); }) });
-      await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }], injected))
+      await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }], injected))
         .resolves.toMatchObject({ results: [{ status: "failed", error: expected }] });
       expect(injected.findOrder).toHaveBeenCalledTimes(2);
     }
@@ -146,9 +158,17 @@ describe("customer reservation orchestration", () => {
       new CmsOrderError(500, "cms-failed", "失败"),
       new CmsOrderError(409, "other-conflict", "冲突")
     ]) {
-      await expect(submit([{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }],
+      await expect(submit([{ target: target(11), quantity: 2, resubmitCanceled: false }],
         deps({ findOrder: vi.fn(async () => order(11)), updateOrder: vi.fn(async () => { throw error; }) })))
         .resolves.toMatchObject({ results: [{ status: "failed" }] });
     }
+  });
+  it("rejects an ambiguous public target without using either internal id", async () => {
+    const duplicate = slot(12, target(11));
+    const injected = deps({ getBatch: vi.fn(async () => internal([slot(11), duplicate])) });
+    await expect(submit([{ target: target(11), quantity: 1, resubmitCanceled: false }], injected))
+      .resolves.toMatchObject({ results: [{ target: target(11), error: "meal-slot-not-in-batch" }] });
+    expect(injected.findOrder).not.toHaveBeenCalled();
+    expect(injected.createOrder).not.toHaveBeenCalled();
   });
 });

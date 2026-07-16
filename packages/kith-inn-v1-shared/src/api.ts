@@ -400,19 +400,19 @@ export const customerReservationProfileSchema = z.union([
 ]);
 
 export const customerReservationItemSchema = z.object({
-  mealSlotId: relationshipIdSchema,
+  target: mealSlotTargetSchema,
   quantity: positiveIntegerSchema,
   resubmitCanceled: z.boolean().default(false)
 }).strict();
 
 const customerReservationItemsInputSchema = z.array(customerReservationItemSchema).min(1).superRefine(
   (items, context) => {
-    const firstByMealSlot = new Map<string, (typeof items)[number]>();
+    const firstByTarget = new Map<string, (typeof items)[number]>();
     items.forEach((item, index) => {
-      const key = String(item.mealSlotId);
-      const first = firstByMealSlot.get(key);
+      const key = `${item.target.date}:${item.target.occasion}`;
+      const first = firstByTarget.get(key);
       if (first === undefined) {
-        firstByMealSlot.set(key, item);
+        firstByTarget.set(key, item);
         return;
       }
       if (first.quantity !== item.quantity || first.resubmitCanceled !== item.resubmitCanceled) {
@@ -427,12 +427,12 @@ const customerReservationItemsInputSchema = z.array(customerReservationItemSchem
 );
 
 export const customerReservationItemsSchema = customerReservationItemsInputSchema.transform((items) => {
-  const firstByMealSlot = new Map<string, (typeof items)[number]>();
+  const firstByTarget = new Map<string, (typeof items)[number]>();
   items.forEach((item) => {
-    const key = String(item.mealSlotId);
-    if (!firstByMealSlot.has(key)) firstByMealSlot.set(key, item);
+    const key = `${item.target.date}:${item.target.occasion}`;
+    if (!firstByTarget.has(key)) firstByTarget.set(key, item);
   });
-  return [...firstByMealSlot.values()];
+  return [...firstByTarget.values()];
 }).refine((items) => items.length <= 20, { message: "一次最多登记 20 个餐次" });
 
 export const normalizeCustomerReservationItems = (items: unknown) => customerReservationItemsSchema.parse(items);
@@ -482,34 +482,30 @@ export const customerReservationOrderSchema = orderSchema.safeExtend({
 });
 
 export const customerReservationResultSchema = z.discriminatedUnion("status", [
-  z.object({ mealSlotId: relationshipIdSchema, status: z.literal("created"), doc: customerReservationOrderSchema }).strict(),
-  z.object({ mealSlotId: relationshipIdSchema, status: z.literal("updated"), doc: customerReservationOrderSchema }).strict(),
+  z.object({ target: mealSlotTargetSchema, status: z.literal("created"), doc: customerReservationOrderSchema }).strict(),
+  z.object({ target: mealSlotTargetSchema, status: z.literal("updated"), doc: customerReservationOrderSchema }).strict(),
   z.object({
-    mealSlotId: relationshipIdSchema,
+    target: mealSlotTargetSchema,
     status: z.literal("resubmitted"),
     doc: customerReservationOrderSchema
   }).strict(),
   z.object({
-    mealSlotId: relationshipIdSchema,
+    target: mealSlotTargetSchema,
     status: z.literal("failed"),
     error: z.string().trim().min(1),
     message: z.string().trim().min(1)
   }).strict()
-]).refine(
-  (result) => result.status === "failed" || String(result.mealSlotId) === String(result.doc.mealSlotId),
-  { message: "成功登记结果必须匹配餐次" }
-);
+]);
 
 export const customerReservationResponseSchema = z.object({
   profile: customerProfileSchema.safeExtend({ active: z.literal(true) }),
   results: z.array(customerReservationResultSchema).min(1).max(20).refine(
-    (results) => new Set(results.map((result) => String(result.mealSlotId))).size === results.length,
+    (results) => new Set(results.map(({ target }) => `${target.date}:${target.occasion}`)).size === results.length,
     { message: "每个餐次只能返回一个登记结果" }
   )
 }).strict().refine(
   ({ profile, results }) => results.every((result) => result.status === "failed" || (
-    String(result.mealSlotId) === String(result.doc.mealSlotId)
-    && String(result.doc.customerProfileId) === String(profile.id)
+    String(result.doc.customerProfileId) === String(profile.id)
     && String(result.doc.sellerId) === String(profile.sellerId)
   )),
   { message: "成功登记结果必须匹配餐次、商户和顾客资料" }
