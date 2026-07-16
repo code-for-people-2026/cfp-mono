@@ -120,25 +120,30 @@ export async function customerWriteScope(req: Request): Promise<Kiv1CustomerScop
   return customerScope(req);
 }
 
-/** Lock one v1 order so the customer status check and write cannot race a merchant update. */
+async function postgresTransaction(payload: BasePayload, req: PayloadRequest) {
+  if (payload.db.name !== "postgres") return null;
+  const transactionId = await req.transactionID;
+  const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
+  if (!transaction) throw new Error("database transaction session unavailable");
+  return { transaction, database: payload.db as BasePayload["db"] & {
+    execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
+  } };
+}
+
+/** Run a v1 customer write transaction and optionally lock its existing order. */
 export async function withCustomerOrderLock<T>(
   payload: BasePayload,
-  id: string | number,
+  id: string | number | null,
   work: (req: PayloadRequest) => Promise<T>
 ): Promise<T> {
   const req = await createLocalReq({}, payload);
   const started = await initTransaction(req);
   if (!started) throw new Error("database transactions unavailable");
   try {
-    if (payload.db.name === "postgres") {
-      const transactionId = await req.transactionID;
-      const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
-      if (!transaction) throw new Error("database transaction session unavailable");
-      const database = payload.db as BasePayload["db"] & {
-        execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
-      };
-      await database.execute({
-        db: transaction,
+    const postgres = await postgresTransaction(payload, req);
+    if (postgres && id !== null) {
+      await postgres.database.execute({
+        db: postgres.transaction,
         sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
       });
     }
@@ -149,6 +154,18 @@ export async function withCustomerOrderLock<T>(
     await killTransaction(req);
     throw error;
   }
+}
+
+/** Lock the exact batch and slot whose availability predicates guard a customer write. */
+export async function lockCustomerAvailability(payload: BasePayload, req: PayloadRequest, input: {
+  sellerId: string | number; batchPublicId: string; mealSlotId: string | number;
+}) {
+  const postgres = await postgresTransaction(payload, req);
+  if (!postgres) return;
+  await postgres.database.execute({ db: postgres.transaction, sql: sql`SELECT "id" FROM "cms"."kiv1_booking_batches"
+    WHERE "seller_id" = ${input.sellerId} AND "public_id" = ${input.batchPublicId} FOR UPDATE` });
+  await postgres.database.execute({ db: postgres.transaction, sql: sql`SELECT "id" FROM "cms"."kiv1_meal_slots"
+    WHERE "seller_id" = ${input.sellerId} AND "id" = ${input.mealSlotId} FOR UPDATE` });
 }
 
 export function hasSellerField(value: unknown): boolean {

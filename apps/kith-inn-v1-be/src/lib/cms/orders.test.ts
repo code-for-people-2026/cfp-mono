@@ -12,6 +12,7 @@ import {
 } from "./orders";
 
 const originalEnv = { ...process.env };
+const BATCH_PUBLIC_ID = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
 afterEach(() => {
   process.env = { ...originalEnv };
   vi.unstubAllGlobals();
@@ -76,12 +77,16 @@ describe("CMS order client", () => {
     await expect(findCustomerOrderBySlot("customer", 11, 21, response({ doc: null }))).resolves.toBeNull();
     const customerCreate = { ...createInput, customerOpenid: "wx", source: "customer-card" as const, note: null };
     const createDeps = response({ doc: customerOrder }, 201);
-    await expect(createCustomerOrder("customer", customerCreate, createDeps)).resolves.toEqual(customerOrder);
+    await expect(createCustomerOrder("customer", customerCreate, BATCH_PUBLIC_ID, createDeps)).resolves.toEqual(customerOrder);
+    expect(createDeps.fetch).toHaveBeenCalledWith(
+      `http://cms.test/api/internal/kiv1/customer/orders?batchPublicId=${BATCH_PUBLIC_ID}`,
+      expect.objectContaining({ method: "POST" })
+    );
     const updateDeps = response({ doc: { ...customerOrder, quantity: 3, totalCents: 9000 } });
-    await expect(updateCustomerOrder("customer", 31, { quantity: 3 }, "draft", updateDeps))
+    await expect(updateCustomerOrder("customer", 31, { quantity: 3 }, "draft", BATCH_PUBLIC_ID, updateDeps))
       .resolves.toMatchObject({ quantity: 3 });
     expect(updateDeps.fetch).toHaveBeenCalledWith(
-      "http://cms.test/api/internal/kiv1/customer/orders/31?expectedStatus=draft",
+      `http://cms.test/api/internal/kiv1/customer/orders/31?expectedStatus=draft&batchPublicId=${BATCH_PUBLIC_ID}`,
       expect.objectContaining({ method: "PATCH" })
     );
     for (const deps of [createDeps, updateDeps]) {

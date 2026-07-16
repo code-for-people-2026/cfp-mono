@@ -112,18 +112,19 @@ export async function findCustomerOrderBySlot(
 }
 
 export async function createCustomerOrder(
-  token: string, input: CmsCustomerOrderCreate, deps: CmsOrderDeps = {}
+  token: string, input: CmsCustomerOrderCreate, batchPublicId: string, deps: CmsOrderDeps = {}
 ): Promise<Order> {
-  const body = await cmsRequest("/api/internal/kiv1/customer/orders", token,
+  const query = new URLSearchParams({ batchPublicId }).toString();
+  const body = await cmsRequest(`/api/internal/kiv1/customer/orders?${query}`, token,
     { method: "POST", data: input, customer: true }, deps);
   return parseOrder((body as { doc?: unknown } | null)?.doc);
 }
 
 export async function updateCustomerOrder(
   token: string, id: string | number, input: CmsCustomerOrderUpdate, expectedStatus: "draft" | "canceled",
-  deps: CmsOrderDeps = {}
+  batchPublicId: string, deps: CmsOrderDeps = {}
 ): Promise<Order> {
-  const query = new URLSearchParams({ expectedStatus }).toString();
+  const query = new URLSearchParams({ expectedStatus, batchPublicId }).toString();
   const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}?${query}`, token,
     { method: "PATCH", data: input, customer: true }, deps);
   return parseOrder((body as { doc?: unknown } | null)?.doc);
