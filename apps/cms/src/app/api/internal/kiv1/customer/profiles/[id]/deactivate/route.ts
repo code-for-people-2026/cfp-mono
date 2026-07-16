@@ -1,3 +1,4 @@
+import { customerProfileDeactivateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
 import { customerWriteScope } from "@/lib/kiv1-internal";
 import { normalizeCustomerProfile, type CustomerProfileDoc } from "../../route";
@@ -9,8 +10,17 @@ type RouteContext = { params: Promise<{ id: string }> };
 export async function POST(req: Request, { params }: RouteContext) {
   const scope = await customerWriteScope(req);
   if (scope instanceof NextResponse) return scope;
-  if ((await req.text()).trim() !== "") {
-    return NextResponse.json({ error: "invalid-customer-profile-deactivate" }, { status: 422 });
+  const rawBody = await req.text();
+  if (rawBody.trim() !== "") {
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      return NextResponse.json({ error: "invalid-json" }, { status: 400 });
+    }
+    if (!customerProfileDeactivateSchema.safeParse(body).success) {
+      return NextResponse.json({ error: "invalid-customer-profile-deactivate" }, { status: 422 });
+    }
   }
   const { id } = await params;
   const result = await scope.payload.find({

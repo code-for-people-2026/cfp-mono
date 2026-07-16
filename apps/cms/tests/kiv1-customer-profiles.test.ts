@@ -162,6 +162,18 @@ describe("customer profile persistence boundary", () => {
       },
       body: "{"
     }))).status).toBe(400);
+    expect((await deactivateProfile(new Request(
+      "http://cms.test/api/internal/kiv1/customer/profiles/21/deactivate",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-kith-inn-v1-customer": ownerToken,
+          "x-kith-inn-v1-internal": INTERNAL
+        },
+        body: "{"
+      }
+    ), { params: Promise.resolve({ id: "21" }) })).status).toBe(400);
     mocks.getPayload.mockResolvedValue(payloadWith({ createError: new Error("offline") }));
     expect((await profileRoutes.POST(request("", {
       method: "POST", body: { displayName: "王阿姨", address: "3A" }, token: ownerToken
@@ -220,7 +232,7 @@ describe("customer profile persistence boundary", () => {
     }), context("21"))).status).toBe(422);
 
     const response = await deactivateProfile(request("/21/deactivate", {
-      method: "POST", token: ownerToken
+      method: "POST", body: {}, token: ownerToken
     }), context("21"));
     expect(response.status).toBe(200);
     expect(payload.update).toHaveBeenCalledWith({
