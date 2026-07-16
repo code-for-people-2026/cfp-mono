@@ -35,6 +35,7 @@ function deps(overrides: Partial<CustomerReservationDeps> = {}): CustomerReserva
     getBatch: vi.fn(async () => internal()), listProfiles: vi.fn(async () => [profile]),
     createProfile: vi.fn(async () => profile), touchProfile: vi.fn(async () => profile), findOrder: vi.fn(async () => null),
     createOrder: vi.fn(async (_token, value) => order(Number(value.mealSlotId), {
+      customerProfileId: value.customerProfileId,
       displayName: value.displayName, address: value.address, quantity: value.quantity,
       unitPriceCents: value.unitPriceCents, totalCents: value.quantity * value.unitPriceCents
     })),
@@ -63,7 +64,7 @@ describe("customer reservation orchestration", () => {
       unitPriceCents: 2800, quantity: 3, displayName: "本次称呼"
     }), "draft");
     expect(injected.getBatch).toHaveBeenCalledTimes(2);
-    expect(injected.listProfiles).toHaveBeenCalledTimes(3);
+    expect(injected.listProfiles).toHaveBeenCalledTimes(2);
     expect(injected.touchProfile).toHaveBeenCalledOnce();
   });
 
@@ -103,12 +104,17 @@ describe("customer reservation orchestration", () => {
     await expect(submitCustomerReservations("jwt", "wx", input([
       { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
     ]), raced)).resolves.toMatchObject({ results: [{ status: "updated" }] });
-    const retryProfile = { ...profile, displayName: "王", address: "3A" };
-    const retry = deps({ listProfiles: vi.fn(async () => [retryProfile]), findOrder: vi.fn(async () => order(11)) });
+    const oldProfile = { ...profile, displayName: "王", address: "3A" };
+    const newProfile = { ...oldProfile, id: 22 };
+    const retry = deps({ listProfiles: vi.fn(async () => [oldProfile, newProfile]),
+      createProfile: vi.fn(async () => newProfile) });
     await expect(submitCustomerReservations("jwt", "wx", input([
       { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
-    ], true), retry)).resolves.toMatchObject({ profile: retryProfile, results: [{ status: "updated" }] });
-    expect(retry.createProfile).not.toHaveBeenCalled();
+    ], true), retry)).resolves.toMatchObject({
+      profile: newProfile,
+      results: [{ status: "created", doc: { customerProfileId: 22 } }]
+    });
+    expect(retry.createProfile).toHaveBeenCalledWith("jwt", { displayName: "王", address: "3A" });
     const closed = internal(); closed.batch.status = "closed";
     const closedRace = deps({
       getBatch: vi.fn().mockResolvedValueOnce(internal()).mockResolvedValueOnce(closed),
@@ -153,5 +159,35 @@ describe("customer reservation orchestration", () => {
         .resolves.toMatchObject({ results: [{ status: "failed" }] });
     }
     expect(Date.parse(reservationNow())).not.toBeNaN();
+  });
+
+  it("maps atomic status-change conflicts back to stable customer domain errors", async () => {
+    for (const [latest, expected] of [
+      [order(11, { status: "confirmed", confirmedAt: NOW }), "confirmed-order-locked"],
+      [order(11, { status: "canceled", canceledAt: NOW }), "canceled-order-confirmation-required"],
+      [order(11), "order-status-changed"],
+      [null, "order-status-changed"]
+    ] as const) {
+      const injected = deps({
+        findOrder: vi.fn().mockResolvedValueOnce(order(11)).mockResolvedValueOnce(latest),
+        updateOrder: vi.fn(async () => {
+          throw new CmsOrderError(409, "customer-order-status-changed", "订单状态已变化，请重试");
+        })
+      });
+      await expect(submitCustomerReservations("jwt", "wx", input([
+        { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+      ]), injected)).resolves.toMatchObject({ results: [{ status: "failed", error: expected }] });
+      expect(injected.findOrder).toHaveBeenCalledTimes(2);
+    }
+    for (const error of [
+      new Error("offline"),
+      new CmsOrderError(500, "cms-failed", "失败"),
+      new CmsOrderError(409, "other-conflict", "冲突")
+    ]) {
+      await expect(submitCustomerReservations("jwt", "wx", input([
+        { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+      ]), deps({ findOrder: vi.fn(async () => order(11)), updateOrder: vi.fn(async () => { throw error; }) })))
+        .resolves.toMatchObject({ results: [{ status: "failed" }] });
+    }
   });
 });
