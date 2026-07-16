@@ -4,6 +4,7 @@ import { issueCustomerToken, issueOperatorToken } from "@cfp/kith-inn-v1-shared/
 import { CustomerReservationError } from "../domain/customerOrders/service";
 import { CmsBookingBatchError } from "../lib/cms/bookingBatches";
 import { CmsCustomerProfileError } from "../lib/cms/customerProfiles";
+import { CmsOrderError } from "../lib/cms/orders";
 import { customerOrderManagementRoutes, customerOrderRoutes, type CustomerOrderManagementRouteDeps,
   type CustomerOrderRouteDeps } from "./customerOrders";
 
@@ -138,5 +139,16 @@ describe("customer order management routes", () => {
     }));
     expect((await call(missingBatch, "/31", { method: "PATCH", body: JSON.stringify({ batchPublicId, quantity: 2 }) })).status)
       .toBe(404);
+    for (const [error, status, code] of [
+      [new CmsOrderError(409, "relationship-owner-mismatch", "internal"), 404, "order-not-found"],
+      [new CmsOrderError(404, "customer-order-not-found", "internal"), 404, "order-not-found"],
+      [new CmsOrderError(409, "meal-slot-closed", "餐次关闭"), 409, "meal-slot-closed"],
+      [new CmsOrderError(422, "invalid-customer-order-update", "internal"), 502, "cms-unavailable"]
+    ] as const) {
+      const hidden = customerOrderManagementRoutes(SECRET, managementDeps({ edit: vi.fn(async () => { throw error; }) }));
+      const response = await call(hidden, "/31", { method: "PATCH", body: JSON.stringify({ batchPublicId, quantity: 2 }) });
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({ error: code });
+    }
   });
 });

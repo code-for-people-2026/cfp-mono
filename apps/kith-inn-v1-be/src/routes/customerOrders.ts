@@ -27,6 +27,10 @@ const defaultDeps: CustomerOrderRouteDeps = { submit: submitCustomerReservations
 const managementDefaults: CustomerOrderManagementRouteDeps = {
   list: listCustomerOrders, edit: editCustomerOrder, cancel: cancelCustomerOrder
 };
+const publicCmsOrderErrors = new Set([
+  "invalid-customer-session", "seller-inactive", "booking-batch-closed", "meal-slot-not-in-batch",
+  "meal-slot-closed", "order-deadline-passed", "customer-profile-inactive", "customer-order-status-changed"
+]);
 const publicItemErrors = new Set([
   "booking-batch-closed",
   "meal-slot-not-in-batch",
@@ -55,7 +59,16 @@ function dependencyError(c: Context, error: unknown) {
       error.status as 400 | 401 | 403 | 404 | 409 | 422
     );
   }
-  if ((error instanceof CmsCustomerProfileError || error instanceof CmsBookingBatchError || error instanceof CmsOrderError)
+  if (error instanceof CmsOrderError) {
+    if (error.code === "customer-order-not-found" || error.code === "relationship-owner-mismatch") {
+      return c.json({ error: "order-not-found", message: "订单不存在" }, 404);
+    }
+    if (publicCmsOrderErrors.has(error.code)
+      && ([401, 403, 404, 409, 422] as const).includes(error.status as 401)) {
+      return c.json({ error: error.code, message: error.message }, error.status as 401 | 403 | 404 | 409 | 422);
+    }
+  }
+  if ((error instanceof CmsCustomerProfileError || error instanceof CmsBookingBatchError)
     && ([401, 403, 404, 409, 422] as const).includes(error.status as 401)) {
     return c.json(
       { error: error.code, message: error.message },
