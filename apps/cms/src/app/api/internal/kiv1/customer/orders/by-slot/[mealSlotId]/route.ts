@@ -22,8 +22,7 @@ export async function GET(req: Request, { params }: RouteContext) {
     collection: "kiv1_orders",
     where: { and: [
       { seller: { equals: scope.sellerId } }, { customerOpenid: { equals: scope.openid } },
-      { mealSlot: { equals: mealSlotId } }, { customerProfile: { equals: customerProfileId } },
-      { source: { equals: "customer-card" } }
+      { mealSlot: { equals: mealSlotId } }, { customerProfile: { equals: customerProfileId } }
     ] },
     limit: 1, depth: 0, overrideAccess: true
   });

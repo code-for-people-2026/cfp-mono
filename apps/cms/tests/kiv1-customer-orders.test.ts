@@ -25,7 +25,8 @@ const profiles = [
   { id: 22, seller: 7, openid: "wx-neighbor", active: true },
   { id: 23, seller: 8, openid: "wx-owner", active: true },
   { id: 24, seller: 7, openid: "wx-owner", active: false },
-  { id: 25, seller: 7, openid: "wx-owner", active: true }
+  { id: 25, seller: 7, openid: "wx-owner", active: true },
+  { id: 26, seller: 7, openid: "wx-owner", active: true }
 ];
 const order = {
   id: 31, seller: 7, mealSlot: 11, customerProfile: 21, customerOpenid: "wx-owner",
@@ -37,7 +38,7 @@ const orders = [
   order,
   { ...order, id: 32, customerProfile: 22, customerOpenid: "wx-neighbor" },
   { ...order, id: 33, seller: 8, mealSlot: 12, customerProfile: 23 },
-  { ...order, id: 34, source: "manual" }
+  { ...order, id: 34, customerProfile: 25, source: "manual" }
 ];
 
 function includes(where: unknown, field: string, value: unknown) {
@@ -68,7 +69,9 @@ function payloadWith(options: { createError?: unknown; updateError?: unknown } =
     : vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 35, ...data }));
   const update = options.updateError
     ? vi.fn(async () => { throw options.updateError; })
-    : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({ ...order, id, ...data }));
+    : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
+      ...orders.find((doc) => String(doc.id) === id), id, ...data
+    }));
   return { find, create, update };
 }
 
@@ -119,14 +122,16 @@ describe("customer order persistence boundary", () => {
       collection: "kiv1_orders",
       where: { and: [
         { seller: { equals: 7 } }, { customerOpenid: { equals: "wx-owner" } },
-        { mealSlot: { equals: 11 } }, { customerProfile: { equals: 21 } },
-        { source: { equals: "customer-card" } }
+        { mealSlot: { equals: 11 } }, { customerProfile: { equals: 21 } }
       ] }
     }));
     expect((await findBySlot(request("/by-slot/11", { token: ownerToken }), {
       params: Promise.resolve({ mealSlotId: "11" })
     })).status).toBe(400);
     await expect((await findBySlot(request("/by-slot/11?customerProfileId=25", { token: ownerToken }), {
+      params: Promise.resolve({ mealSlotId: "11" })
+    })).json()).resolves.toMatchObject({ doc: { id: 34, source: "manual" } });
+    await expect((await findBySlot(request("/by-slot/11?customerProfileId=26", { token: ownerToken }), {
       params: Promise.resolve({ mealSlotId: "11" })
     })).json()).resolves.toEqual({ doc: null });
   });
@@ -204,7 +209,7 @@ describe("customer order persistence boundary", () => {
     }), context("31"))).status).toBe(404);
     expect((await updateOrder(request("/34", {
       method: "PATCH", body: { quantity: 3 }, token: ownerToken
-    }), context("34"))).status).toBe(404);
+    }), context("34"))).status).toBe(200);
     expect((await updateOrder(request("/31", {
       method: "PATCH", body: { quantity: 3, customerOpenid: "forged" }, token: ownerToken
     }), context("31"))).status).toBe(422);
