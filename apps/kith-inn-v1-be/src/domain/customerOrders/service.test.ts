@@ -61,7 +61,7 @@ describe("customer reservation orchestration", () => {
     }));
     expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 32, expect.objectContaining({
       unitPriceCents: 2800, quantity: 3, displayName: "本次称呼"
-    }));
+    }), "draft");
     expect(injected.getBatch).toHaveBeenCalledTimes(2);
     expect(injected.listProfiles).toHaveBeenCalledTimes(3);
     expect(injected.touchProfile).toHaveBeenCalledOnce();
@@ -92,7 +92,7 @@ describe("customer reservation orchestration", () => {
     ]);
     expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, expect.objectContaining({
       status: "draft", paymentStatus: "unpaid", canceledAt: null
-    }));
+    }), "canceled");
     expect(result.results[5]).toMatchObject({ message: "登记失败" });
   });
 

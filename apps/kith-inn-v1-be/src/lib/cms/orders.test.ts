@@ -78,7 +78,12 @@ describe("CMS order client", () => {
     const createDeps = response({ doc: customerOrder }, 201);
     await expect(createCustomerOrder("customer", customerCreate, createDeps)).resolves.toEqual(customerOrder);
     const updateDeps = response({ doc: { ...customerOrder, quantity: 3, totalCents: 9000 } });
-    await expect(updateCustomerOrder("customer", 31, { quantity: 3 }, updateDeps)).resolves.toMatchObject({ quantity: 3 });
+    await expect(updateCustomerOrder("customer", 31, { quantity: 3 }, "draft", updateDeps))
+      .resolves.toMatchObject({ quantity: 3 });
+    expect(updateDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/customer/orders/31?expectedStatus=draft",
+      expect.objectContaining({ method: "PATCH" })
+    );
     for (const deps of [createDeps, updateDeps]) {
       expect(deps.fetch).toHaveBeenCalledWith(expect.stringContaining("/customer/orders"), expect.objectContaining({
         headers: expect.objectContaining({

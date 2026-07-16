@@ -1,10 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueCustomerToken, issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 
-const mocks = vi.hoisted(() => ({ getPayload: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getPayload: vi.fn(),
+  createLocalReq: vi.fn(),
+  initTransaction: vi.fn(),
+  commitTransaction: vi.fn(),
+  killTransaction: vi.fn()
+}));
 vi.mock("payload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("payload")>()),
-  getPayload: mocks.getPayload
+  getPayload: mocks.getPayload,
+  createLocalReq: mocks.createLocalReq,
+  initTransaction: mocks.initTransaction,
+  commitTransaction: mocks.commitTransaction,
+  killTransaction: mocks.killTransaction
 }));
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
@@ -56,12 +66,20 @@ function matching(where: unknown, docs: Array<Record<string, unknown>>) {
   ));
 }
 
-function payloadWith(options: { createError?: unknown; updateError?: unknown } = {}) {
+function payloadWith(options: {
+  createError?: unknown;
+  updateError?: unknown;
+  orderStatus?: "draft" | "confirmed" | "canceled";
+  database?: "postgres" | "sqlite";
+} = {}) {
+  const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
+    ? { ...doc, status: options.orderStatus }
+    : doc);
   const find = vi.fn(async ({ collection, where }: { collection: string; where?: unknown }) => {
     if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active" }, { id: 8, status: "active" }]) };
     if (collection === "kiv1_meal_slots") return { docs: matching(where, slots) };
     if (collection === "kiv1_customer_profiles") return { docs: matching(where, profiles) };
-    if (collection === "kiv1_orders") return { docs: matching(where, orders) };
+    if (collection === "kiv1_orders") return { docs: matching(where, currentOrders) };
     return { docs: [] };
   });
   const create = options.createError
@@ -70,9 +88,13 @@ function payloadWith(options: { createError?: unknown; updateError?: unknown } =
   const update = options.updateError
     ? vi.fn(async () => { throw options.updateError; })
     : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
-      ...orders.find((doc) => String(doc.id) === id), id, ...data
+      ...currentOrders.find((doc) => String(doc.id) === id), id, ...data
     }));
-  return { find, create, update };
+  const execute = vi.fn(async () => ({ rows: [] }));
+  return {
+    find, create, update, execute,
+    db: { name: options.database ?? "postgres", sessions: { tx: { db: {} } }, execute }
+  };
 }
 
 function request(path: string, options: {
@@ -98,6 +120,10 @@ const createInput = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.createLocalReq.mockResolvedValue({ transactionID: Promise.resolve("tx") });
+  mocks.initTransaction.mockResolvedValue(true);
+  mocks.commitTransaction.mockResolvedValue(undefined);
+  mocks.killTransaction.mockResolvedValue(undefined);
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
   process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
@@ -198,29 +224,54 @@ describe("customer order persistence boundary", () => {
     const payload = payloadWith();
     mocks.getPayload.mockResolvedValue(payload);
     const context = (id: string) => ({ params: Promise.resolve({ id }) });
-    expect((await updateOrder(request("/31", {
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3 }, token: ownerToken, internal: false
     }), context("31"))).status).toBe(401);
-    expect((await updateOrder(request("/31", {
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3 }, token: neighborToken
     }), context("31"))).status).toBe(404);
-    expect((await updateOrder(request("/31", {
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3 }, token: foreignSellerToken
     }), context("31"))).status).toBe(404);
-    expect((await updateOrder(request("/34", {
+    expect((await updateOrder(request("/34?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3 }, token: ownerToken
     }), context("34"))).status).toBe(404);
-    expect((await updateOrder(request("/31", {
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3, customerOpenid: "forged" }, token: ownerToken
     }), context("31"))).status).toBe(422);
-    const response = await updateOrder(request("/31", {
+    vi.clearAllMocks();
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3, unitPriceCents: 3200 }, token: ownerToken
     }), context("31"));
     expect(response.status).toBe(200);
-    expect(payload.update).toHaveBeenCalledWith({
-      collection: "kiv1_orders", id: "31", data: { quantity: 3, unitPriceCents: 3200 }, overrideAccess: true
-    });
+    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
+      collection: "kiv1_orders", id: "31", data: { quantity: 3, unitPriceCents: 3200 }, overrideAccess: true,
+      req: expect.anything()
+    }));
+    expect(payload.execute.mock.invocationCallOrder[0]).toBeLessThan(payload.find.mock.invocationCallOrder.at(-1)!);
+    expect(mocks.commitTransaction).toHaveBeenCalledOnce();
     expect(JSON.stringify(await response.json())).not.toContain("openid");
+  });
+
+  it("atomically rejects merchant status races while allowing explicit canceled resubmission", async () => {
+    const confirmed = payloadWith({ orderStatus: "confirmed" });
+    mocks.getPayload.mockResolvedValue(confirmed);
+    const context = { params: Promise.resolve({ id: "31" }) };
+    const raced = await updateOrder(request("/31?expectedStatus=draft", {
+      method: "PATCH", body: { quantity: 3 }, token: ownerToken
+    }), context);
+    expect(raced.status).toBe(409);
+    await expect(raced.json()).resolves.toMatchObject({ error: "customer-order-status-changed" });
+    expect(confirmed.update).not.toHaveBeenCalled();
+
+    const canceled = payloadWith({ orderStatus: "canceled", database: "sqlite" });
+    mocks.getPayload.mockResolvedValue(canceled);
+    const resubmitted = await updateOrder(request("/31?expectedStatus=canceled", {
+      method: "PATCH", body: { status: "draft", canceledAt: null }, token: ownerToken
+    }), context);
+    expect(resubmitted.status).toBe(200);
+    expect(canceled.execute).not.toHaveBeenCalled();
   });
 
   it("normalizes order update failures", async () => {
@@ -233,8 +284,30 @@ describe("customer order persistence boundary", () => {
       },
       body: "{"
     }), { params: Promise.resolve({ id: "31" }) })).status).toBe(400);
-    expect((await updateOrder(request("/31", {
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
       method: "PATCH", body: { quantity: 3 }, token: ownerToken
     }), { params: Promise.resolve({ id: "31" }) })).status).toBe(500);
+    expect(mocks.killTransaction).toHaveBeenCalledOnce();
+    expect((await updateOrder(request("/31", {
+      method: "PATCH", body: { quantity: 3 }, token: ownerToken
+    }), { params: Promise.resolve({ id: "31" }) })).status).toBe(400);
+  });
+
+  it("fails closed when the database transaction or row-lock session is unavailable", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    const context = { params: Promise.resolve({ id: "31" }) };
+    mocks.initTransaction.mockResolvedValueOnce(false);
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
+      method: "PATCH", body: { quantity: 3 }, token: ownerToken
+    }), context)).status).toBe(500);
+    expect(payload.update).not.toHaveBeenCalled();
+    expect(mocks.killTransaction).not.toHaveBeenCalled();
+
+    mocks.createLocalReq.mockResolvedValueOnce({ transactionID: Promise.resolve(null) });
+    expect((await updateOrder(request("/31?expectedStatus=draft", {
+      method: "PATCH", body: { quantity: 3 }, token: ownerToken
+    }), context)).status).toBe(500);
+    expect(mocks.killTransaction).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,15 @@
 import { verifyCustomerToken, verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 import configPromise from "@payload-config";
-import { getPayload, type BasePayload } from "payload";
+import { sql } from "@payloadcms/db-postgres";
+import {
+  commitTransaction,
+  createLocalReq,
+  getPayload,
+  initTransaction,
+  killTransaction,
+  type BasePayload,
+  type PayloadRequest
+} from "payload";
 import { NextResponse } from "next/server";
 
 const KIV1_INTERNAL_HEADER = "x-kith-inn-v1-internal";
@@ -109,6 +118,37 @@ export async function customerWriteScope(req: Request): Promise<Kiv1CustomerScop
   const authError = requireServiceAuth(req);
   if (authError) return authError;
   return customerScope(req);
+}
+
+/** Lock one v1 order so the customer status check and write cannot race a merchant update. */
+export async function withCustomerOrderLock<T>(
+  payload: BasePayload,
+  id: string | number,
+  work: (req: PayloadRequest) => Promise<T>
+): Promise<T> {
+  const req = await createLocalReq({}, payload);
+  const started = await initTransaction(req);
+  if (!started) throw new Error("database transactions unavailable");
+  try {
+    if (payload.db.name === "postgres") {
+      const transactionId = await req.transactionID;
+      const transaction = transactionId == null ? undefined : payload.db.sessions?.[String(transactionId)]?.db;
+      if (!transaction) throw new Error("database transaction session unavailable");
+      const database = payload.db as BasePayload["db"] & {
+        execute(args: { db: unknown; sql: ReturnType<typeof sql> }): Promise<unknown>;
+      };
+      await database.execute({
+        db: transaction,
+        sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
+      });
+    }
+    const result = await work(req);
+    await commitTransaction(req);
+    return result;
+  } catch (error) {
+    await killTransaction(req);
+    throw error;
+  }
 }
 
 export function hasSellerField(value: unknown): boolean {
