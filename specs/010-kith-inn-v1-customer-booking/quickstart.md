@@ -2,7 +2,7 @@
 
 ## 1. 前置条件
 
-1. M2-A/B 已合并。先从最新 `main` 合并只改本规格目录的恢复计划 PR，再严格按 C1→C2→C3→C4→C5→C6→D1→D2→D3→D4 创建分支；前一 PR rebase merge 后才开始下一片。
+1. M2-A/B、恢复计划与 C1～C5 已合并。先从最新 `main` 合并只改本规格目录的公开餐次坐标纠偏计划 PR，再严格按 C5R→C6→D1→D2→D3→D4 创建分支；前一 PR rebase merge 后才开始下一片。
 2. 使用仓库要求的 Node.js、pnpm、PostgreSQL/Payload 环境。
 3. 配置既有 operator JWT、internal service token、微信 app credentials；本地可显式开启 dev login。
 4. 运行独立幂等的桃子 seller/operator seed。M2 不修改 seed 语义，也不清空旧业务 collection。
@@ -45,13 +45,22 @@
 1. C4 用纯领域和 CMS client 测试逐项 create/update/resubmit/confirmed lock、价格快照、部分成功与 profile 不回滚。
 2. C5 验证 customer JWT、整请求 422、最多 20 项、稳定错误映射和逐项结果顺序；不增加 FE 页面。
 
+> C1～C5 已分别由 PR #214、#217、#218、#219、#220 合并。
+
+### M2-C5R：公开餐次坐标纠偏
+
+1. 先写 shared/BE 失败测试，验证 reservation 输入与逐项结果只使用 strict `{target:{date,occasion}}`，并拒绝客户端注入 `mealSlotId`。
+2. 验证完全重复 target 仍归一化、冲突重复整请求 422，BE 只在指定 batch 内把公开 target 唯一解析到内部餐次。
+3. 验证 CMS client 仍只接收服务端解析的内部 ID，HTTP 成功/失败结果只回显公开 target，未知逐项错误继续净化。
+4. 运行 shared 与 BE 100% coverage、`pnpm verify`、路径审计和人工 diff 统计；该 live endpoint 必须原子切换但不修改 CMS 或 FE，人工 diff `<400`。
+
 ### M2-C6：资料与多餐次登记 UI
 
 1. 首次填写称呼/地址时确认展示“用于桃子识别订单和送餐地址”，再新建资料并选择两个餐次提交不同份数；确认 customer-card draft 在商家订单页可见。
 2. 重复提交同一 profile/slot，确认更新原 order id；让其中一项确认或截止，确认另一项仍成功且失败原因明确。
 3. 编辑本次地址但不保存时 profile 不变；选择保存为新资料时新增 profile。
 4. 分别计时首次顾客与已有单资料顾客的两个餐次流程，记录不超过 90 秒和 45 秒。
-5. 运行 FE coverage、`CI=1` 无头 H5 E2E 与 weapp build；真机登记由维护者执行。
+5. 运行 FE coverage、`CI=1` 无头 H5 E2E 与 weapp build；真机登记由维护者执行。FE 只从公开 batch view 的日期与餐次构造 target，不读取或猜测内部 ID。
 6. T028 与维护者发布结论未完成前，只记录实现验证结果，不把顾客写入 UI 标记为“可发布”或“已交付”。
 
 ### M2-D1/D2：自助管理 contract 与 persistence
