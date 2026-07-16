@@ -32,10 +32,16 @@ import type {
   customerBookingBatchViewSchema,
   customerMenuItemSnapshotSchema,
   customerDevSessionInputSchema,
+  customerOrderCancelSchema,
+  customerOrderResponseSchema,
+  customerOrderUpdateSchema,
+  customerOrdersResponseSchema,
+  customerOrderViewSchema,
   customerSessionBootstrapResponseSchema,
   customerSessionResponseSchema,
   customerWxSessionInputSchema,
   customerProfileCreateSchema,
+  customerProfileDeactivateSchema,
   customerProfileSchema,
   customerReservationInputSchema,
   customerReservationItemSchema,
@@ -105,12 +111,18 @@ export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
 export type CustomerProfile = z.infer<typeof customerProfileSchema>;
 export type CmsCustomerProfile = z.infer<typeof cmsCustomerProfileSchema>;
 export type CustomerProfileCreate = z.infer<typeof customerProfileCreateSchema>;
+export type CustomerProfileDeactivate = z.infer<typeof customerProfileDeactivateSchema>;
 export type CustomerReservationProfile = z.infer<typeof customerReservationProfileSchema>;
 export type CustomerReservationItem = z.infer<typeof customerReservationItemSchema>;
 export type CustomerReservationInput = z.infer<typeof customerReservationInputSchema>;
 export type CustomerReservationOrder = z.infer<typeof customerReservationOrderSchema>;
 export type CustomerReservationResult = z.infer<typeof customerReservationResultSchema>;
 export type CustomerReservationResponse = z.infer<typeof customerReservationResponseSchema>;
+export type CustomerOrderView = z.infer<typeof customerOrderViewSchema>;
+export type CustomerOrdersResponse = z.infer<typeof customerOrdersResponseSchema>;
+export type CustomerOrderResponse = z.infer<typeof customerOrderResponseSchema>;
+export type CustomerOrderUpdate = z.infer<typeof customerOrderUpdateSchema>;
+export type CustomerOrderCancel = z.infer<typeof customerOrderCancelSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type ManualOrderCreate = z.infer<typeof manualOrderCreateSchema>;
 export type ManualOrderUpdate = z.infer<typeof manualOrderUpdateSchema>;

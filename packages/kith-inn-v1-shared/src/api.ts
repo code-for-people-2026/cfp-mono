@@ -386,6 +386,8 @@ export const customerProfileCreateSchema = z.object({
   address: addressSchema
 }).strict();
 
+export const customerProfileDeactivateSchema = z.object({}).strict();
+
 export const customerProfilesResponseSchema = z.object({
   docs: z.array(customerProfileSchema)
 }).strict();
@@ -510,6 +512,47 @@ export const customerReservationResponseSchema = z.object({
   )),
   { message: "成功登记结果必须匹配餐次、商户和顾客资料" }
 );
+
+export const customerOrderViewSchema = z.object({
+  id: relationshipIdSchema,
+  target: mealSlotTargetSchema,
+  menuItems: z.array(customerMenuItemSnapshotSchema).length(5),
+  orderStatus: mealSlotOrderStatusSchema,
+  orderDeadline: zonedDateTimeSchema.nullable(),
+  displayName: shortText,
+  address: addressSchema,
+  quantity: positiveIntegerSchema,
+  unitPriceCents: nonNegativeIntegerSchema,
+  totalCents: nonNegativeIntegerSchema,
+  status: orderStatusSchema,
+  paymentStatus: paymentStatusSchema,
+  paidAt: zonedDateTimeSchema.nullable(),
+  deliveryStatus: deliveryStatusSchema,
+  deliveredAt: zonedDateTimeSchema.nullable(),
+  confirmedAt: zonedDateTimeSchema.nullable(),
+  canceledAt: zonedDateTimeSchema.nullable()
+}).strict().refine(
+  ({ quantity, unitPriceCents, totalCents }) => quantity * unitPriceCents === totalCents,
+  { message: "订单总价与份数、单价不一致" }
+);
+
+export const customerOrdersResponseSchema = z.object({
+  docs: z.array(customerOrderViewSchema)
+}).strict();
+
+export const customerOrderResponseSchema = z.object({
+  doc: customerOrderViewSchema
+}).strict();
+
+export const customerOrderUpdateSchema = z.object({
+  batchPublicId: z.string().uuid(),
+  quantity: positiveIntegerSchema
+}).strict();
+
+export const customerOrderCancelSchema = z.object({
+  batchPublicId: z.string().uuid(),
+  confirmed: z.literal(true)
+}).strict();
 
 export const orderListQuerySchema = z.object({
   date: calendarDateSchema,

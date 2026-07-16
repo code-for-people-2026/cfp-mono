@@ -17,7 +17,13 @@ import {
   cmsOrderUpdateSchema,
   customerBookingBatchViewSchema,
   customerDevSessionInputSchema,
+  customerOrderCancelSchema,
+  customerOrderResponseSchema,
+  customerOrderUpdateSchema,
+  customerOrdersResponseSchema,
+  customerOrderViewSchema,
   customerProfileCreateSchema,
+  customerProfileDeactivateSchema,
   customerProfileSchema,
   customerProfilesResponseSchema,
   customerReservationInputSchema,
@@ -409,6 +415,77 @@ describe("customer reservation API schemas", () => {
     expect(cmsCustomerOrderUpdateSchema.safeParse({ customerOpenid: "leak", quantity: 3 }).success).toBe(false);
     expect(cmsCustomerOrderUpdateSchema.safeParse({ note: "隐藏备注" }).success).toBe(false);
     expect(cmsCustomerOrderUpdateSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe("customer self-service API schemas", () => {
+  const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+  const view = {
+    id: 31,
+    target: { date: "2026-07-13", occasion: "lunch" },
+    menuItems: [
+      { nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+      { nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+      { nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+      { nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+      { nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+    ],
+    orderStatus: "open",
+    orderDeadline: "2026-07-12T01:00:00.000Z",
+    displayName: "历史称呼",
+    address: "历史地址",
+    quantity: 2,
+    unitPriceCents: 3000,
+    totalCents: 6000,
+    status: "draft",
+    paymentStatus: "unpaid",
+    paidAt: null,
+    deliveryStatus: "pending",
+    deliveredAt: null,
+    confirmedAt: null,
+    canceledAt: null
+  } as const;
+
+  it("accepts strict own-order views with historical snapshots and three state axes", () => {
+    expect(customerOrderViewSchema.parse(view)).toEqual(view);
+    expect(customerOrdersResponseSchema.parse({ docs: [view] }).docs[0]).toMatchObject({
+      displayName: "历史称呼",
+      address: "历史地址",
+      unitPriceCents: 3000
+    });
+    expect(customerOrderResponseSchema.parse({ doc: view }).doc.id).toBe(31);
+    expect(customerOrderViewSchema.safeParse({ ...view, totalCents: 5999 }).success).toBe(false);
+    expect(customerOrderViewSchema.safeParse({ ...view, sellerId: 7 }).success).toBe(false);
+    expect(customerOrderViewSchema.safeParse({ ...view, customerOpenid: "leak" }).success).toBe(false);
+    expect(customerOrderViewSchema.safeParse({ ...view, source: "customer-card" }).success).toBe(false);
+    expect(customerOrderViewSchema.safeParse({ ...view, mealSlotId: 11 }).success).toBe(false);
+    expect(customerOrderViewSchema.safeParse({ ...view, customerProfileId: 21 }).success).toBe(false);
+  });
+
+  it("accepts only customer-controlled edit, cancel and deactivate fields", () => {
+    expect(customerOrderUpdateSchema.parse({ batchPublicId, quantity: 3 })).toEqual({ batchPublicId, quantity: 3 });
+    expect(customerOrderCancelSchema.parse({ batchPublicId, confirmed: true })).toEqual({ batchPublicId, confirmed: true });
+    expect(customerProfileDeactivateSchema.parse({})).toEqual({});
+
+    const injections = [
+      { sellerId: 7 },
+      { openid: "leak" },
+      { source: "customer-card" },
+      { status: "confirmed" },
+      { paymentStatus: "paid" },
+      { deliveryStatus: "done" },
+      { confirmedAt: "2026-07-11T00:00:00.000Z" },
+      { canceledAt: "2026-07-11T00:00:00.000Z" },
+      { paidAt: "2026-07-11T00:00:00.000Z" },
+      { deliveredAt: "2026-07-11T00:00:00.000Z" }
+    ];
+    expect(injections.every((extra) => !customerOrderUpdateSchema.safeParse({ batchPublicId, quantity: 3, ...extra }).success))
+      .toBe(true);
+    expect(injections.every((extra) => !customerOrderCancelSchema.safeParse({ batchPublicId, confirmed: true, ...extra }).success))
+      .toBe(true);
+    expect(injections.every((extra) => !customerProfileDeactivateSchema.safeParse(extra).success)).toBe(true);
+    expect(customerOrderUpdateSchema.safeParse({ batchPublicId, quantity: 0 }).success).toBe(false);
+    expect(customerOrderCancelSchema.safeParse({ batchPublicId, confirmed: false }).success).toBe(false);
   });
 });
 
