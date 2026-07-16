@@ -477,7 +477,8 @@ export const customerReservationOrderSchema = orderSchema.safeExtend({
   deliveryStatus: z.literal("pending"),
   deliveredAt: z.null(),
   confirmedAt: z.null(),
-  canceledAt: z.null()
+  canceledAt: z.null(),
+  note: z.null()
 });
 
 export const customerReservationResultSchema = z.discriminatedUnion("status", [
@@ -494,7 +495,10 @@ export const customerReservationResultSchema = z.discriminatedUnion("status", [
     error: z.string().trim().min(1),
     message: z.string().trim().min(1)
   }).strict()
-]);
+]).refine(
+  (result) => result.status === "failed" || String(result.mealSlotId) === String(result.doc.mealSlotId),
+  { message: "成功登记结果必须匹配餐次" }
+);
 
 export const customerReservationResponseSchema = z.object({
   profile: customerProfileSchema.safeExtend({ active: z.literal(true) }),
