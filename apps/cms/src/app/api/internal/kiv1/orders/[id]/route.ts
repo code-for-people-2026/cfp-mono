@@ -1,6 +1,7 @@
 import { cmsOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
-import { findOwned, hasSellerField, operatorScope, requireServiceAuth } from "@/lib/kiv1-internal";
+import { findOwned, hasSellerField, operatorScope, requireServiceAuth, withCustomerOrderLock }
+  from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../route";
 
 export const dynamic = "force-dynamic";
@@ -33,17 +34,26 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "invalid-order-update" }, { status: 422 });
   }
   const { id } = await params;
-  if (!await findOwned(scope.payload, "kiv1_orders", id, scope.sellerId)) {
-    return NextResponse.json({ error: "not-found" }, { status: 404 });
-  }
   try {
-    const doc = await scope.payload.update({
-      collection: "kiv1_orders",
-      id,
-      data: parsed.data,
-      overrideAccess: true
+    return await withCustomerOrderLock(scope.payload, id, async (transactionReq) => {
+      const result = await scope.payload.find({
+        collection: "kiv1_orders",
+        where: { and: [{ id: { equals: id } }, { seller: { equals: scope.sellerId } }] },
+        limit: 1, depth: 0, overrideAccess: true, req: transactionReq
+      });
+      const stored = result.docs[0] as { status?: unknown } | undefined;
+      if (!stored) return NextResponse.json({ error: "not-found" }, { status: 404 });
+      const expectedStatus = parsed.data.status === "confirmed" ? "draft"
+        : parsed.data.status === "draft" ? "canceled" : undefined;
+      if ((expectedStatus !== undefined && stored.status !== expectedStatus)
+        || (parsed.data.status === undefined && stored.status === "canceled")) {
+        return NextResponse.json({ error: "order-status-changed", message: "订单状态已变化，请重试" }, { status: 409 });
+      }
+      const doc = await scope.payload.update({
+        collection: "kiv1_orders", id, data: parsed.data, overrideAccess: true, req: transactionReq
+      });
+      return NextResponse.json({ doc: normalizeOrder(doc as Parameters<typeof normalizeOrder>[0]) });
     });
-    return NextResponse.json({ doc: normalizeOrder(doc as Parameters<typeof normalizeOrder>[0]) });
   } catch {
     return NextResponse.json({ error: "order-update-failed" }, { status: 500 });
   }

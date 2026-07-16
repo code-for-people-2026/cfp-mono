@@ -13,7 +13,8 @@ async function persistOwnedOrder(
   scope: CustomerWriteScope,
   req: Request,
   context: RouteContext,
-  input: { data: Record<string, unknown>; expectedStatus: "draft" | "canceled"; reprice: boolean; failure: string }
+  input: { data: Record<string, unknown>; expectedStatus: "draft" | "canceled"; reprice: boolean;
+    requireActiveProfile: boolean; failure: string }
 ) {
   const selectedBatch = batchPublicId(req);
   if (!selectedBatch) return NextResponse.json({ error: "invalid-batch-public-id" }, { status: 400 });
@@ -42,7 +43,8 @@ async function persistOwnedOrder(
         ? (value as { id: string | number }).id : value as string | number;
       const price = await writeRelationshipsAvailable(scope.payload, transactionReq, {
         sellerId: scope.sellerId, openid: scope.openid, batchPublicId: selectedBatch,
-        mealSlotId: relationId(stored.mealSlot), customerProfileId: relationId(stored.customerProfile)
+        mealSlotId: relationId(stored.mealSlot), customerProfileId: relationId(stored.customerProfile),
+        requireActiveProfile: input.requireActiveProfile
       });
       if (price instanceof NextResponse) return price;
       const doc = await scope.payload.update({
@@ -73,7 +75,8 @@ export async function PATCH(req: Request, context: RouteContext) {
     return NextResponse.json({ error: "invalid-expected-order-status" }, { status: 400 });
   }
   return persistOwnedOrder(scope, req, context, {
-    data: parsed.data, expectedStatus, reprice: true, failure: "customer-order-update-failed"
+    data: parsed.data, expectedStatus, reprice: true, requireActiveProfile: expectedStatus === "canceled",
+    failure: "customer-order-update-failed"
   });
 }
 
@@ -90,6 +93,7 @@ export async function POST(req: Request, context: RouteContext) {
   if (!parsed.success) return NextResponse.json({ error: "invalid-customer-order-cancel" }, { status: 422 });
   return persistOwnedOrder(scope, req, context, {
     data: { status: "canceled", canceledAt: new Date().toISOString() },
-    expectedStatus: "draft", reprice: false, failure: "customer-order-cancel-failed"
+    expectedStatus: "draft", reprice: false, requireActiveProfile: false,
+    failure: "customer-order-cancel-failed"
   });
 }

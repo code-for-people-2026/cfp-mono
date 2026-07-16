@@ -83,6 +83,7 @@ export const databaseId = (value: unknown): number | null => { const id = typeof
   : typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN; return Number.isSafeInteger(id) && id > 0 ? id : null; };
 export async function writeRelationshipsAvailable(payload: BasePayload, transactionReq: PayloadRequest, input: {
   sellerId: string | number; openid: string; batchPublicId: string; mealSlotId: string | number; customerProfileId: string | number;
+  requireActiveProfile?: boolean;
 }): Promise<NextResponse | number> {
   const sellerId = databaseId(input.sellerId), mealSlotId = databaseId(input.mealSlotId),
     customerProfileId = databaseId(input.customerProfileId);
@@ -95,7 +96,8 @@ export async function writeRelationshipsAvailable(payload: BasePayload, transact
     payload.find({ collection: "kiv1_meal_slots", where: { and: [{ id: { equals: mealSlotId } },
       { seller: { equals: sellerId } }] }, ...common }),
     payload.find({ collection: "kiv1_customer_profiles", where: { and: [{ id: { equals: customerProfileId } },
-      { seller: { equals: sellerId } }, { openid: { equals: input.openid } }, { active: { equals: true } }] }, ...common }),
+      { seller: { equals: sellerId } }, { openid: { equals: input.openid } },
+      ...(input.requireActiveProfile === false ? [] : [{ active: { equals: true } }])] }, ...common }),
     payload.find({ collection: "kiv1_sellers", where: { id: { equals: sellerId } }, ...common })
   ]);
   const batch = batches.docs[0] as { status?: unknown; mealSlots?: unknown } | undefined;
