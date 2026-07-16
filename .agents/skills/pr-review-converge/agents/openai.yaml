@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Review Convergence"
+  short_description: "Drive PRs through CI and review to rebase merge"
+  default_prompt: "Use $pr-review-converge to deliver the next dependency-ready PR slice and repeat until the authorized goal is complete."
