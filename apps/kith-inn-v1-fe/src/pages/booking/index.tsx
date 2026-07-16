@@ -10,7 +10,9 @@ import {
   canceledReservationDraft,
   defaultCustomerProfile,
   formatBookingPrice,
+  loadCustomerBookingState,
   profileUseText,
+  reservationRefreshError,
   reservationResultText,
   type CustomerReservationDraft
 } from "@/logic/customerBooking";
@@ -69,8 +71,8 @@ export default function CustomerBooking() {
       }
     ).then((response) => {
       customerSessions.setSession({ token: response.token, ...response.session });
-      return Promise.all([api.getPublicBookingBatch(publicId), api.listOwnedCustomerProfiles()]);
-    }).then(([nextView, nextProfiles]) => {
+      return loadCustomerBookingState(api, publicId);
+    }).then(({ view: nextView, profiles: nextProfiles }) => {
       setView(nextView); setProfiles(nextProfiles);
       const selected = defaultCustomerProfile(nextProfiles);
       setProfile(selected); setCreateNew(nextProfiles.length === 0);
@@ -97,10 +99,9 @@ export default function CustomerBooking() {
     submittingRef.current = true; setSubmitting(true); setFormError("");
     try {
       const current = await api.getPublicBookingBatch(publicId);
-      const prices = new Map(current.slots.map((slot) => [`${slot.date}:${slot.occasion}`, slot.unitPriceCents]));
-      if (draft.items.some(({ target, unitPriceCents }) =>
-        prices.get(`${target.date}:${target.occasion}`) !== unitPriceCents)) {
-        setView(current); setDraft(null); setFormError("餐次价格已更新，请重新确认"); return;
+      const refreshError = reservationRefreshError(draft, current);
+      if (refreshError) {
+        setView(current); setDraft(null); setFormError(refreshError); return;
       }
       const response = await api.submitCustomerReservations(draft.input);
       setResults(response.results); setProfile(response.profile); setCreateNew(false); setSaveAsNew(false);

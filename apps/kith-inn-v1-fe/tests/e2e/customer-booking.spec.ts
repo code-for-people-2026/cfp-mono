@@ -78,14 +78,20 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   await page.getByText("确认重新登记已取消餐次", { exact: true }).click();
   await page.getByText("确认提交", { exact: true }).click();
   await expect(page.getByText("已重新登记", { exact: true })).toBeVisible();
-  expect((await request.patch(`${BE}/merchant/meal-slots/${docs[1]!.id}/booking-config`, {
-    headers, data: { priceCents: 3000, orderDeadline: deadline, orderStatus: "closed" }
-  })).ok()).toBe(true);
+  let raceCloseStatus = 0;
+  await page.route("**/public/booking-batches/**", async (route) => {
+    const response = await route.fetch();
+    raceCloseStatus = (await request.patch(`${BE}/merchant/meal-slots/${docs[1]!.id}/booking-config`, {
+      headers, data: { priceCents: 3000, orderDeadline: deadline, orderStatus: "closed" }
+    })).status();
+    await route.fulfill({ response });
+  }, { times: 1 });
   await page.getByText("继续修改", { exact: true }).click();
   await page.getByText("查看确认摘要", { exact: true }).click();
   await page.getByText("确认提交", { exact: true }).click();
   await expect(page.getByText("已更新", { exact: true })).toBeVisible();
   await expect(page.getByText("失败：餐次已关闭登记", { exact: true })).toBeVisible();
+  expect(raceCloseStatus).toBe(200);
   await page.reload();
   await expect(page).toHaveURL(/pages\/booking\/index\?batch=/);
   await expect(page.getByText(`顾客多餐预订-${suffix}`, { exact: true })).toBeVisible();
@@ -112,7 +118,13 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
     headers,
     data: { status: "closed" }
   })).ok()).toBe(true);
+  let readOnlyProfileRequests = 0;
+  await page.route("**/customer/profiles", async (route) => {
+    readOnlyProfileRequests += 1;
+    await route.fulfill({ status: 500, json: { error: "temporary", message: "临时失败" } });
+  });
   await page.reload();
   await expect(page.getByText("批次已关闭", { exact: true })).toBeVisible();
   await expect(page.getByText("本批次已关闭，仅供查看", { exact: true })).toHaveCount(2);
+  expect(readOnlyProfileRequests).toBe(0);
 });

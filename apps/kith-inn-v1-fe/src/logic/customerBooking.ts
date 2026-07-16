@@ -30,6 +30,15 @@ export function beginCustomerSession(
     : deps.api.customerDevSession(deps.devOpenid, batchPublicId);
 }
 
+export async function loadCustomerBookingState(api: {
+  getPublicBookingBatch: (batchPublicId: string) => Promise<CustomerBookingBatchView>;
+  listOwnedCustomerProfiles: () => Promise<CustomerProfile[]>;
+}, batchPublicId: string): Promise<{ view: CustomerBookingBatchView; profiles: CustomerProfile[] }> {
+  const view = await api.getPublicBookingBatch(batchPublicId);
+  const profiles = view.slots.some(({ canBook }) => canBook) ? await api.listOwnedCustomerProfiles() : [];
+  return { view, profiles };
+}
+
 export function formatBookingPrice(cents: number): string {
   return `¥${(cents / 100).toFixed(2)}`;
 }
@@ -60,6 +69,17 @@ export type CustomerReservationDraft = {
   items: Array<{ target: CustomerReservationInput["items"][number]["target"]; quantity: number; unitPriceCents: number }>;
   totalCents: number;
 };
+
+export function reservationRefreshError(draft: CustomerReservationDraft,
+  view: CustomerBookingBatchView): string | null {
+  const slots = new Map(view.slots.map((slot) => [`${slot.date}:${slot.occasion}`, slot]));
+  for (const item of draft.items) {
+    const slot = slots.get(`${item.target.date}:${item.target.occasion}`);
+    if (!slot || !slot.canBook) return "餐次状态已更新，请重新确认";
+    if (slot.unitPriceCents !== item.unitPriceCents) return "餐次价格已更新，请重新确认";
+  }
+  return null;
+}
 
 export function buildCustomerReservation(batchPublicId: string, view: CustomerBookingBatchView,
   form: CustomerBookingForm): CustomerReservationDraft | null {
