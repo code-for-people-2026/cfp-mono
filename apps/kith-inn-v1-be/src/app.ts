@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import type { AppVars } from "./middleware/operatorAuth";
 import { authRoutes, customerAuthRoutes } from "./routes/auth";
 import { bookingBatchesRoutes, publicBookingBatchesRoutes } from "./routes/bookingBatches";
+import { customerOrderRoutes } from "./routes/customerOrders";
+import { customerProfileRoutes } from "./routes/customerProfiles";
 import { healthRoutes } from "./routes/health";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
@@ -17,6 +19,8 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.route("/auth/operator", authRoutes(jwtSecret));
   app.route("/auth/customer", customerAuthRoutes(jwtSecret));
   app.route("/public/booking-batches", publicBookingBatchesRoutes(jwtSecret));
+  app.route("/customer/profiles", customerProfileRoutes(jwtSecret));
+  app.route("/customer/reservations", customerOrderRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
   app.route("/merchant/booking-batches", bookingBatchesRoutes(jwtSecret));
