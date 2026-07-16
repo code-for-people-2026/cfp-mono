@@ -18,7 +18,8 @@ export type CustomerReservationDeps = {
   touchProfile: (token: string, id: string | number) => Promise<CustomerProfile>;
   findOrder: (token: string, slotId: string | number, profileId: string | number) => Promise<Order | null>;
   createOrder: (token: string, input: CmsCustomerOrderCreate) => Promise<Order>;
-  updateOrder: (token: string, id: string | number, input: CmsCustomerOrderUpdate) => Promise<Order>;
+  updateOrder: (token: string, id: string | number, input: CmsCustomerOrderUpdate,
+    expectedStatus: "draft" | "canceled") => Promise<Order>;
   now: () => string;
 };
 
@@ -92,14 +93,15 @@ async function writeItem(token: string, openid: string, input: CustomerReservati
     }
   }
   const current = writable(existing);
-  if (current.status === "confirmed") fail("confirmed-order-locked", "商家已确认，不能修改");
-  if (current.status === "canceled" && !item.resubmitCanceled) {
-    fail("canceled-order-confirmation-required", "订单已取消，请确认后重登记");
+  const expectedStatus = current.status;
+  if (expectedStatus === "confirmed") return fail("confirmed-order-locked", "商家已确认，不能修改");
+  if (expectedStatus === "canceled" && !item.resubmitCanceled) {
+    return fail("canceled-order-confirmation-required", "订单已取消，请确认后重登记");
   }
-  const resubmitting = current.status === "canceled";
+  const resubmitting = expectedStatus === "canceled";
   const patch: CmsCustomerOrderUpdate = resubmitting ? { ...snapshot, status: "draft", paymentStatus: "unpaid",
     paidAt: null, deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null } : snapshot;
-  const doc = customerReservationOrderSchema.parse(await deps.updateOrder(token, current.id, patch));
+  const doc = customerReservationOrderSchema.parse(await deps.updateOrder(token, current.id, patch, expectedStatus));
   return { mealSlotId: item.mealSlotId, status: resubmitting ? "resubmitted" : "updated", doc };
 }
 

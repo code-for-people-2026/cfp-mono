@@ -120,9 +120,11 @@ export async function createCustomerOrder(
 }
 
 export async function updateCustomerOrder(
-  token: string, id: string | number, input: CmsCustomerOrderUpdate, deps: CmsOrderDeps = {}
+  token: string, id: string | number, input: CmsCustomerOrderUpdate, expectedStatus: "draft" | "canceled",
+  deps: CmsOrderDeps = {}
 ): Promise<Order> {
-  const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}`, token,
+  const query = new URLSearchParams({ expectedStatus }).toString();
+  const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}?${query}`, token,
     { method: "PATCH", data: input, customer: true }, deps);
   return parseOrder((body as { doc?: unknown } | null)?.doc);
 }
