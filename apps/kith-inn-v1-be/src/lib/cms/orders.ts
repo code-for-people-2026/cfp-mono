@@ -1,4 +1,4 @@
-import { apiErrorSchema, orderSchema } from "@cfp/kith-inn-v1-shared/api";
+import { apiErrorSchema, customerOrdersResponseSchema, orderSchema } from "@cfp/kith-inn-v1-shared/api";
 import type {
   CmsCustomerOrderCreate,
   CmsCustomerOrderUpdate,
@@ -111,6 +111,13 @@ export async function findCustomerOrderBySlot(
   return doc === null ? null : parseOrder(doc);
 }
 
+export async function listCustomerOwnedOrders(token: string, deps: CmsOrderDeps = {}) {
+  const body = await cmsRequest("/api/internal/kiv1/customer/orders", token, { customer: true }, deps);
+  const parsed = customerOrdersResponseSchema.safeParse(body);
+  if (!parsed.success) throw new CmsOrderError(502, "invalid-cms-response", "订单服务返回无效数据");
+  return parsed.data.docs;
+}
+
 export async function createCustomerOrder(
   token: string, input: CmsCustomerOrderCreate, batchPublicId: string, deps: CmsOrderDeps = {}
 ): Promise<Order> {
@@ -127,5 +134,14 @@ export async function updateCustomerOrder(
   const query = new URLSearchParams({ expectedStatus, batchPublicId }).toString();
   const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}?${query}`, token,
     { method: "PATCH", data: input, customer: true }, deps);
+  return parseOrder((body as { doc?: unknown } | null)?.doc);
+}
+
+export async function cancelCustomerOwnedOrder(
+  token: string, id: string | number, batchPublicId: string, deps: CmsOrderDeps = {}
+): Promise<Order> {
+  const query = new URLSearchParams({ batchPublicId }).toString();
+  const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}?${query}`, token,
+    { method: "POST", data: { confirmed: true }, customer: true }, deps);
   return parseOrder((body as { doc?: unknown } | null)?.doc);
 }

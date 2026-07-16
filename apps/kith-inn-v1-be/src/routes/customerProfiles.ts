@@ -1,9 +1,10 @@
-import { customerProfileCreateSchema } from "@cfp/kith-inn-v1-shared/api";
+import { customerProfileCreateSchema, customerProfileDeactivateSchema } from "@cfp/kith-inn-v1-shared/api";
 import type { CustomerProfile, CustomerProfileCreate } from "@cfp/kith-inn-v1-shared";
 import { Hono, type Context } from "hono";
 import {
   CmsCustomerProfileError,
   createCustomerOwnedProfile,
+  deactivateCustomerOwnedProfile,
   listCustomerOwnedProfiles
 } from "../lib/cms/customerProfiles";
 import { customerAuth, type CustomerAppVars } from "../middleware/customerAuth";
@@ -11,10 +12,12 @@ import { customerAuth, type CustomerAppVars } from "../middleware/customerAuth";
 export type CustomerProfileRouteDeps = {
   listProfiles: (token: string) => Promise<CustomerProfile[]>;
   createProfile: (token: string, input: CustomerProfileCreate) => Promise<CustomerProfile>;
+  deactivateProfile: (token: string, id: string | number) => Promise<CustomerProfile>;
 };
 const defaultDeps: CustomerProfileRouteDeps = {
   listProfiles: listCustomerOwnedProfiles,
-  createProfile: createCustomerOwnedProfile
+  createProfile: createCustomerOwnedProfile,
+  deactivateProfile: deactivateCustomerOwnedProfile
 };
 
 async function bodyOf(c: Context): Promise<{ ok: true; value: unknown } | { ok: false }> {
@@ -59,6 +62,16 @@ export function customerProfileRoutes(secret: string, deps: CustomerProfileRoute
     } catch (error) {
       return dependencyError(c, error);
     }
+  });
+
+  app.post("/:id/deactivate", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    if (!customerProfileDeactivateSchema.safeParse(body.value).success) {
+      return c.json({ error: "invalid-customer-profile-deactivate", message: "停用资料参数无效" }, 422);
+    }
+    try { return c.json({ doc: await deps.deactivateProfile(c.get("customerToken"), c.req.param("id")) }); }
+    catch (error) { return dependencyError(c, error); }
   });
 
   return app;

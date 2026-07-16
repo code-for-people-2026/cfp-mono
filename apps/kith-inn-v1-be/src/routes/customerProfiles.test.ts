@@ -15,6 +15,7 @@ function deps(overrides: Partial<CustomerProfileRouteDeps> = {}): CustomerProfil
   return {
     listProfiles: vi.fn(async () => [profile]),
     createProfile: vi.fn(async (_token: string, input: CustomerProfileCreate) => ({ ...profile, id: 22, ...input })),
+    deactivateProfile: vi.fn(async () => ({ ...profile, active: false })),
     ...overrides
   };
 }
@@ -70,5 +71,18 @@ describe("customer profile routes", () => {
     expect((await request(app, "/", {
       method: "POST", body: JSON.stringify({ displayName: "王", address: "3A" })
     })).status).toBe(422);
+  });
+
+  it("strictly deactivates an owned profile", async () => {
+    const injected = deps();
+    const app = customerProfileRoutes(SECRET, injected);
+    const response = await request(app, "/21/deactivate", { method: "POST", body: "{}" });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ doc: { id: 21, active: false } });
+    expect(injected.deactivateProfile).toHaveBeenCalledWith(token, "21");
+    expect((await request(app, "/21/deactivate", { method: "POST", body: "{" })).status).toBe(400);
+    expect((await request(app, "/21/deactivate", { method: "POST", body: JSON.stringify({ active: false }) })).status).toBe(422);
+    const failed = customerProfileRoutes(SECRET, deps({ deactivateProfile: vi.fn(async () => { throw new Error("offline"); }) }));
+    expect((await request(failed, "/21/deactivate", { method: "POST", body: "{}" })).status).toBe(502);
   });
 });

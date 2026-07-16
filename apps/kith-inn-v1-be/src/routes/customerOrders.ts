@@ -1,17 +1,32 @@
-import { customerReservationInputSchema } from "@cfp/kith-inn-v1-shared/api";
-import type { CustomerReservationInput, CustomerReservationResponse } from "@cfp/kith-inn-v1-shared";
+import { customerOrderCancelSchema, customerOrderUpdateSchema, customerReservationInputSchema }
+  from "@cfp/kith-inn-v1-shared/api";
+import type { CustomerOrderCancel, CustomerOrderUpdate, CustomerOrderView, CustomerReservationInput,
+  CustomerReservationResponse } from "@cfp/kith-inn-v1-shared";
 import { Hono, type Context } from "hono";
 import {
   CustomerReservationError,
+  cancelCustomerOrder,
+  editCustomerOrder,
+  listCustomerOrders,
   submitCustomerReservations
 } from "../domain/customerOrders/service";
 import { CmsCustomerProfileError } from "../lib/cms/customerProfiles";
+import { CmsBookingBatchError } from "../lib/cms/bookingBatches";
+import { CmsOrderError } from "../lib/cms/orders";
 import { customerAuth, type CustomerAppVars } from "../middleware/customerAuth";
 
 export type CustomerOrderRouteDeps = {
   submit: (token: string, openid: string, input: CustomerReservationInput) => Promise<CustomerReservationResponse>;
 };
+export type CustomerOrderManagementRouteDeps = {
+  list: (token: string) => Promise<CustomerOrderView[]>;
+  edit: (token: string, id: string | number, input: CustomerOrderUpdate) => Promise<CustomerOrderView>;
+  cancel: (token: string, id: string | number, input: CustomerOrderCancel) => Promise<CustomerOrderView>;
+};
 const defaultDeps: CustomerOrderRouteDeps = { submit: submitCustomerReservations };
+const managementDefaults: CustomerOrderManagementRouteDeps = {
+  list: listCustomerOrders, edit: editCustomerOrder, cancel: cancelCustomerOrder
+};
 const publicItemErrors = new Set([
   "booking-batch-closed",
   "meal-slot-not-in-batch",
@@ -40,7 +55,7 @@ function dependencyError(c: Context, error: unknown) {
       error.status as 400 | 401 | 403 | 404 | 409 | 422
     );
   }
-  if (error instanceof CmsCustomerProfileError
+  if ((error instanceof CmsCustomerProfileError || error instanceof CmsBookingBatchError || error instanceof CmsOrderError)
     && ([401, 403, 404, 409, 422] as const).includes(error.status as 401)) {
     return c.json(
       { error: error.code, message: error.message },
@@ -48,6 +63,11 @@ function dependencyError(c: Context, error: unknown) {
     );
   }
   return c.json({ error: "cms-unavailable", message: "预订登记服务暂不可用" }, 502);
+}
+
+async function managementResponse(c: Context, operation: () => Promise<Record<string, unknown>>) {
+  try { return c.json(await operation()); }
+  catch (error) { return dependencyError(c, error); }
 }
 
 function sanitizeResult(result: CustomerReservationResponse["results"][number]) {
@@ -72,6 +92,30 @@ export function customerOrderRoutes(secret: string, deps: CustomerOrderRouteDeps
     } catch (error) {
       return dependencyError(c, error);
     }
+  });
+  return app;
+}
+
+export function customerOrderManagementRoutes(secret: string,
+  deps: CustomerOrderManagementRouteDeps = managementDefaults) {
+  const app = new Hono<CustomerAppVars>();
+  app.use("*", customerAuth(secret));
+  app.get("/", (c) => managementResponse(c, async () => ({ docs: await deps.list(c.get("customerToken")) })));
+  app.patch("/:id", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const parsed = customerOrderUpdateSchema.safeParse(body.value);
+    if (!parsed.success) return c.json({ error: "invalid-customer-order-update", message: "修改订单参数无效" }, 422);
+    return managementResponse(c, async () => ({ doc:
+      await deps.edit(c.get("customerToken"), c.req.param("id"), parsed.data) }));
+  });
+  app.post("/:id/cancel", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const parsed = customerOrderCancelSchema.safeParse(body.value);
+    if (!parsed.success) return c.json({ error: "invalid-customer-order-cancel", message: "取消订单参数无效" }, 422);
+    return managementResponse(c, async () => ({ doc:
+      await deps.cancel(c.get("customerToken"), c.req.param("id"), parsed.data) }));
   });
   return app;
 }
