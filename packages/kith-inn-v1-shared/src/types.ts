@@ -22,6 +22,8 @@ import type {
   importPreviewResponseSchema,
   generateMenusInputSchema,
   generateMenusResponseSchema,
+  cmsCustomerOrderCreateSchema,
+  cmsCustomerOrderUpdateSchema,
   cmsCustomerProfileSchema,
   cmsBookingBatchCreateSchema,
   cmsOrderCreateSchema,
@@ -35,6 +37,12 @@ import type {
   customerWxSessionInputSchema,
   customerProfileCreateSchema,
   customerProfileSchema,
+  customerReservationInputSchema,
+  customerReservationItemSchema,
+  customerReservationOrderSchema,
+  customerReservationProfileSchema,
+  customerReservationResponseSchema,
+  customerReservationResultSchema,
   mealSlotCreateSchema,
   mealSlotBookingConfigSchema,
   mealSlotSchema,
@@ -97,11 +105,19 @@ export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
 export type CustomerProfile = z.infer<typeof customerProfileSchema>;
 export type CmsCustomerProfile = z.infer<typeof cmsCustomerProfileSchema>;
 export type CustomerProfileCreate = z.infer<typeof customerProfileCreateSchema>;
+export type CustomerReservationProfile = z.infer<typeof customerReservationProfileSchema>;
+export type CustomerReservationItem = z.infer<typeof customerReservationItemSchema>;
+export type CustomerReservationInput = z.infer<typeof customerReservationInputSchema>;
+export type CustomerReservationOrder = z.infer<typeof customerReservationOrderSchema>;
+export type CustomerReservationResult = z.infer<typeof customerReservationResultSchema>;
+export type CustomerReservationResponse = z.infer<typeof customerReservationResponseSchema>;
 export type Order = z.infer<typeof orderSchema>;
 export type ManualOrderCreate = z.infer<typeof manualOrderCreateSchema>;
 export type ManualOrderUpdate = z.infer<typeof manualOrderUpdateSchema>;
 export type CmsOrderCreate = z.infer<typeof cmsOrderCreateSchema>;
 export type CmsOrderUpdate = z.infer<typeof cmsOrderUpdateSchema>;
+export type CmsCustomerOrderCreate = z.infer<typeof cmsCustomerOrderCreateSchema>;
+export type CmsCustomerOrderUpdate = z.infer<typeof cmsCustomerOrderUpdateSchema>;
 export type OrderAction = z.infer<typeof orderActionSchema>;
 export type OrderResubmit = z.infer<typeof orderResubmitSchema>;
 export type OrderSummary = z.infer<typeof orderSummarySchema>;
