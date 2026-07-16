@@ -7,7 +7,9 @@ import {
   canceledReservationDraft,
   defaultCustomerProfile,
   formatBookingPrice,
+  loadCustomerBookingState,
   profileUseText,
+  reservationRefreshError,
   reservationResultText
 } from "./customerBooking";
 
@@ -75,6 +77,25 @@ describe("customer booking entry logic", () => {
       .toEqual({ newProfile: { displayName: "王阿姨", address: "3A" } });
     expect(buildCustomerReservation(PUBLIC_ID, view, { ...form, profile: null, createNew: true })!.input.profile)
       .toEqual({ newProfile: { displayName: "王阿姨", address: "3A" } });
+  });
+
+  it("rechecks availability and skips profile loading for read-only batches", async () => {
+    const draft = buildCustomerReservation(PUBLIC_ID, view, { profile, createNew: false, saveAsNew: false,
+      displayName: "王阿姨", address: "3A", quantities: { "2026-07-13:lunch": "1" } })!;
+    expect(reservationRefreshError(draft, view)).toBeNull();
+    expect(reservationRefreshError(draft, { ...view, slots: [{ ...view.slots[0]!, unitPriceCents: 3100 }] }))
+      .toBe("餐次价格已更新，请重新确认");
+    expect(reservationRefreshError(draft, { ...view, slots: [{ ...view.slots[0]!, canBook: false,
+      unavailableReason: "meal-slot-closed" as const }] })).toBe("餐次状态已更新，请重新确认");
+    expect(reservationRefreshError(draft, { ...view, slots: [] })).toBe("餐次状态已更新，请重新确认");
+    const api = { getPublicBookingBatch: vi.fn(async () => ({ ...view, status: "closed" as const,
+      slots: view.slots.map((slot) => ({ ...slot, canBook: false as const,
+        unavailableReason: "booking-batch-closed" as const })) })), listOwnedCustomerProfiles: vi.fn(async () => [profile]) };
+    await expect(loadCustomerBookingState(api, PUBLIC_ID)).resolves.toMatchObject({ profiles: [] });
+    expect(api.listOwnedCustomerProfiles).not.toHaveBeenCalled();
+    await expect(loadCustomerBookingState({ ...api, getPublicBookingBatch: vi.fn(async () => view) }, PUBLIC_ID))
+      .resolves.toMatchObject({ profiles: [profile] });
+    expect(api.listOwnedCustomerProfiles).toHaveBeenCalledOnce();
   });
 
   it("rejects incomplete forms and labels every partial result", () => {
