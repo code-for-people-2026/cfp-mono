@@ -105,6 +105,12 @@ export async function customerScope(req: Request): Promise<Kiv1CustomerScope | N
   return { sellerId: claims.sellerId, openid: claims.openid, token, payload };
 }
 
+export async function customerWriteScope(req: Request): Promise<Kiv1CustomerScope | NextResponse> {
+  const authError = requireServiceAuth(req);
+  if (authError) return authError;
+  return customerScope(req);
+}
+
 export function hasSellerField(value: unknown): boolean {
   return typeof value === "object" && value !== null && Object.hasOwn(value, "seller");
 }
