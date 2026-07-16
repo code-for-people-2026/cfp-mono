@@ -65,9 +65,13 @@ export function customerProfileRoutes(secret: string, deps: CustomerProfileRoute
   });
 
   app.post("/:id/deactivate", async (c) => {
-    const body = await bodyOf(c);
-    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
-    if (!customerProfileDeactivateSchema.safeParse(body.value).success) {
+    const rawBody = await c.req.text();
+    let body: unknown = {};
+    if (rawBody.trim() !== "") {
+      try { body = JSON.parse(rawBody); }
+      catch { return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400); }
+    }
+    if (!customerProfileDeactivateSchema.safeParse(body).success) {
       return c.json({ error: "invalid-customer-profile-deactivate", message: "停用资料参数无效" }, 422);
     }
     try { return c.json({ doc: await deps.deactivateProfile(c.get("customerToken"), c.req.param("id")) }); }
