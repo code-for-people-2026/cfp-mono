@@ -186,10 +186,49 @@ describe("PATCH /orders/:id", () => {
     expect(cms.updateOrder).not.toHaveBeenCalled();
   });
 
+  it("rejects reconciled and other non-user payment states", async () => {
+    const cms = mockCms();
+    const app = orderRoutes(SECRET, deps(cms));
+    const res = await app.request("/90", {
+      method: "PATCH",
+      headers: await json(),
+      body: JSON.stringify({ paymentStatus: "reconciled" }),
+    });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({ error: "paymentStatus must be unpaid or paid" });
+    expect(cms.updateOrder).not.toHaveBeenCalled();
+  });
+
+  it("timestamps a paid mark and clears the whole record when it is revoked", async () => {
+    const cms = mockCms();
+    const app = orderRoutes(SECRET, deps(cms));
+
+    expect((await app.request("/90", {
+      method: "PATCH",
+      headers: await json(),
+      body: JSON.stringify({ paymentStatus: "paid" }),
+    })).status).toBe(200);
+    expect(cms.updateOrder).toHaveBeenLastCalledWith(expect.any(String), "90", {
+      paymentStatus: "paid",
+      paidAt: expect.any(String),
+    });
+
+    expect((await app.request("/90", {
+      method: "PATCH",
+      headers: await json(),
+      body: JSON.stringify({ paymentStatus: "unpaid", paidAt: "stale", paymentMethod: "wechat" }),
+    })).status).toBe(200);
+    expect(cms.updateOrder).toHaveBeenLastCalledWith(expect.any(String), "90", {
+      paymentStatus: "unpaid",
+      paidAt: null,
+      paymentMethod: null,
+    });
+  });
+
   it("502 when cms update throws", async () => {
     const cms = mockCms({ updateOrder: vi.fn<OrderCms["updateOrder"]>(async () => { throw new Error("cms down"); }) });
     const app = orderRoutes(SECRET, deps(cms));
-    const res = await app.request("/90", { method: "PATCH", headers: await json(), body: JSON.stringify({ paymentStatus: "paid" }) });
+    const res = await app.request("/90", { method: "PATCH", headers: await json(), body: JSON.stringify({ note: "少辣" }) });
     expect(res.status).toBe(502);
   });
 

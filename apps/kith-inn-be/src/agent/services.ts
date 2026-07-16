@@ -264,10 +264,8 @@ export function createCmsAgentServices(deps: AgentServicesDeps) {
     },
 
     async markUnpaid(input: { orderId: string | number }) {
-      // ponytail: OrderUpdatePatch.paidAt 类型是 string（非 nullable），且全仓无人读 paidAt——
-      // 回退只翻 paymentStatus=unpaid，留旧 paidAt 无害。要部分退款/清付款时间时再扩类型为 nullable。
       try {
-        await cms.updateOrder(jwt, input.orderId, { paymentStatus: "unpaid" });
+        await cms.updateOrder(jwt, input.orderId, { paymentStatus: "unpaid", paidAt: null, paymentMethod: null });
         return { ok: true as const };
       } catch {
         return { ok: false as const, error: "回退失败" };
