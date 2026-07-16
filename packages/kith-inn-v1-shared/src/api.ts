@@ -426,9 +426,14 @@ const customerReservationItemsInputSchema = z.array(customerReservationItemSchem
   }
 );
 
-export const customerReservationItemsSchema = customerReservationItemsInputSchema.transform((items) => [
-  ...new Map(items.map((item) => [String(item.mealSlotId), item])).values()
-]).refine((items) => items.length <= 20, { message: "一次最多登记 20 个餐次" });
+export const customerReservationItemsSchema = customerReservationItemsInputSchema.transform((items) => {
+  const firstByMealSlot = new Map<string, (typeof items)[number]>();
+  items.forEach((item) => {
+    const key = String(item.mealSlotId);
+    if (!firstByMealSlot.has(key)) firstByMealSlot.set(key, item);
+  });
+  return [...firstByMealSlot.values()];
+}).refine((items) => items.length <= 20, { message: "一次最多登记 20 个餐次" });
 
 export const normalizeCustomerReservationItems = (items: unknown) => customerReservationItemsSchema.parse(items);
 
@@ -466,7 +471,13 @@ export const orderSchema = z.object({
 
 export const customerReservationOrderSchema = orderSchema.safeExtend({
   status: z.literal("draft"),
-  source: z.literal("customer-card")
+  source: z.literal("customer-card"),
+  paymentStatus: z.literal("unpaid"),
+  paidAt: z.null(),
+  deliveryStatus: z.literal("pending"),
+  deliveredAt: z.null(),
+  confirmedAt: z.null(),
+  canceledAt: z.null()
 });
 
 export const customerReservationResultSchema = z.discriminatedUnion("status", [
@@ -491,7 +502,13 @@ export const customerReservationResponseSchema = z.object({
     (results) => new Set(results.map((result) => String(result.mealSlotId))).size === results.length,
     { message: "每个餐次只能返回一个登记结果" }
   )
-}).strict();
+}).strict().refine(
+  ({ profile, results }) => results.every((result) => result.status === "failed" || (
+    String(result.mealSlotId) === String(result.doc.mealSlotId)
+    && String(result.doc.customerProfileId) === String(profile.id)
+  )),
+  { message: "成功登记结果必须匹配餐次和顾客资料" }
+);
 
 export const orderListQuerySchema = z.object({
   date: calendarDateSchema,
