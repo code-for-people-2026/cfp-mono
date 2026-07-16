@@ -1,10 +1,13 @@
 import { apiErrorSchema, orderSchema } from "@cfp/kith-inn-v1-shared/api";
 import type {
+  CmsCustomerOrderCreate,
+  CmsCustomerOrderUpdate,
   CmsOrderCreate,
   CmsOrderUpdate,
   Order
 } from "@cfp/kith-inn-v1-shared";
 import { KIV1_INTERNAL_HEADER } from "./auth";
+import { KIV1_CUSTOMER_HEADER } from "./bookingBatches";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsOrderDeps = { fetch?: typeof fetch };
@@ -29,15 +32,15 @@ function cmsBaseUrl(): string {
 async function cmsRequest(
   path: string,
   token: string,
-  init: { method?: "POST" | "PATCH"; data?: unknown } = {},
+  init: { method?: "POST" | "PATCH"; data?: unknown; customer?: boolean } = {},
   deps: CmsOrderDeps = {}
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
     ...(init.method ? { method: init.method } : {}),
     headers: {
-      [KIV1_OPERATOR_HEADER]: token,
+      [init.customer ? KIV1_CUSTOMER_HEADER : KIV1_OPERATOR_HEADER]: token,
       ...(init.data === undefined ? {} : { "content-type": "application/json" }),
-      ...(init.method === "PATCH"
+      ...(init.method === "PATCH" || (init.customer && init.method === "POST")
         ? { [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "" }
         : {})
     },
@@ -94,4 +97,32 @@ export async function updateOrder(
   }, deps);
   const doc = typeof body === "object" && body !== null ? (body as { doc?: unknown }).doc : undefined;
   return parseOrder(doc);
+}
+
+export async function findCustomerOrderBySlot(
+  token: string, mealSlotId: string | number, customerProfileId: string | number, deps: CmsOrderDeps = {}
+): Promise<Order | null> {
+  const query = new URLSearchParams({ customerProfileId: String(customerProfileId) });
+  const body = await cmsRequest(
+    `/api/internal/kiv1/customer/orders/by-slot/${encodeURIComponent(mealSlotId)}?${query}`,
+    token, { customer: true }, deps
+  );
+  const doc = (body as { doc?: unknown } | null)?.doc;
+  return doc === null ? null : parseOrder(doc);
+}
+
+export async function createCustomerOrder(
+  token: string, input: CmsCustomerOrderCreate, deps: CmsOrderDeps = {}
+): Promise<Order> {
+  const body = await cmsRequest("/api/internal/kiv1/customer/orders", token,
+    { method: "POST", data: input, customer: true }, deps);
+  return parseOrder((body as { doc?: unknown } | null)?.doc);
+}
+
+export async function updateCustomerOrder(
+  token: string, id: string | number, input: CmsCustomerOrderUpdate, deps: CmsOrderDeps = {}
+): Promise<Order> {
+  const body = await cmsRequest(`/api/internal/kiv1/customer/orders/${encodeURIComponent(id)}`, token,
+    { method: "PATCH", data: input, customer: true }, deps);
+  return parseOrder((body as { doc?: unknown } | null)?.doc);
 }

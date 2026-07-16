@@ -1,11 +1,15 @@
 import {
   apiErrorSchema,
+  customerProfileSchema,
   cmsCustomerProfileSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   CmsCustomerProfile,
+  CustomerProfile,
   CustomerProfileCreate
 } from "@cfp/kith-inn-v1-shared";
+import { KIV1_INTERNAL_HEADER } from "./auth";
+import { KIV1_CUSTOMER_HEADER } from "./bookingBatches";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsCustomerProfileDeps = { fetch?: typeof fetch };
@@ -30,15 +34,17 @@ function cmsBaseUrl(): string {
 async function cmsRequest(
   path: string,
   token: string,
-  input: CustomerProfileCreate | undefined,
+  init: { method?: "POST"; data?: CustomerProfileCreate; customer?: boolean },
   deps: CmsCustomerProfileDeps
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
-    ...(input ? { method: "POST" } : {}),
-    headers: input
-      ? { [KIV1_OPERATOR_HEADER]: token, "content-type": "application/json" }
-      : { [KIV1_OPERATOR_HEADER]: token },
-    ...(input ? { body: JSON.stringify(input) } : {})
+    ...(init.method ? { method: init.method } : {}),
+    headers: {
+      [init.customer ? KIV1_CUSTOMER_HEADER : KIV1_OPERATOR_HEADER]: token,
+      ...(init.data === undefined ? {} : { "content-type": "application/json" }),
+      ...(init.customer && init.method ? { [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "" } : {})
+    },
+    ...(init.data === undefined ? {} : { body: JSON.stringify(init.data) })
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -59,13 +65,19 @@ function parseProfile(value: unknown): CmsCustomerProfile {
   return parsed.data;
 }
 
+function parseCustomerProfile(value: unknown): CustomerProfile {
+  const parsed = customerProfileSchema.safeParse(value);
+  if (!parsed.success) throw new CmsCustomerProfileError(502, "invalid-cms-response", "顾客资料服务返回无效数据");
+  return parsed.data;
+}
+
 export async function listCustomerProfiles(
   token: string,
   query: string,
   deps: CmsCustomerProfileDeps = {}
 ): Promise<CmsCustomerProfile[]> {
   const search = new URLSearchParams({ query }).toString();
-  const body = await cmsRequest(`/api/internal/kiv1/customer-profiles?${search}`, token, undefined, deps);
+  const body = await cmsRequest(`/api/internal/kiv1/customer-profiles?${search}`, token, {}, deps);
   const docs = typeof body === "object" && body !== null ? (body as { docs?: unknown }).docs : undefined;
   if (!Array.isArray(docs)) {
     throw new CmsCustomerProfileError(502, "invalid-cms-response", "顾客资料服务返回无效数据");
@@ -78,7 +90,30 @@ export async function createCustomerProfile(
   input: CustomerProfileCreate,
   deps: CmsCustomerProfileDeps = {}
 ): Promise<CmsCustomerProfile> {
-  const body = await cmsRequest("/api/internal/kiv1/customer-profiles", token, input, deps);
+  const body = await cmsRequest("/api/internal/kiv1/customer-profiles", token, { method: "POST", data: input }, deps);
   const doc = typeof body === "object" && body !== null ? (body as { doc?: unknown }).doc : undefined;
   return parseProfile(doc);
+}
+
+export async function listCustomerOwnedProfiles(token: string, deps: CmsCustomerProfileDeps = {}) {
+  const body = await cmsRequest("/api/internal/kiv1/customer/profiles", token, { customer: true }, deps);
+  const docs = typeof body === "object" && body !== null ? (body as { docs?: unknown }).docs : undefined;
+  if (!Array.isArray(docs)) throw new CmsCustomerProfileError(502, "invalid-cms-response", "顾客资料服务返回无效数据");
+  return docs.map(parseCustomerProfile);
+}
+
+export async function createCustomerOwnedProfile(
+  token: string, input: CustomerProfileCreate, deps: CmsCustomerProfileDeps = {}
+) {
+  const body = await cmsRequest("/api/internal/kiv1/customer/profiles", token,
+    { method: "POST", data: input, customer: true }, deps);
+  return parseCustomerProfile((body as { doc?: unknown } | null)?.doc);
+}
+
+export async function touchCustomerOwnedProfile(
+  token: string, id: string | number, deps: CmsCustomerProfileDeps = {}
+) {
+  const body = await cmsRequest(`/api/internal/kiv1/customer/profiles/${encodeURIComponent(id)}/touch`, token,
+    { method: "POST", customer: true }, deps);
+  return parseCustomerProfile((body as { doc?: unknown } | null)?.doc);
 }
