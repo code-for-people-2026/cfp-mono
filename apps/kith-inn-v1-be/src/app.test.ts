@@ -29,7 +29,9 @@ describe("createApp", () => {
   it("mounts customer-owned profile and reservation routes behind customer auth", async () => {
     const app = createApp({ jwtSecret: "test-secret" });
     expect((await app.request("/customer/profiles")).status).toBe(401);
+    expect((await app.request("/customer/profiles/21/deactivate", { method: "POST" })).status).toBe(401);
     expect((await app.request("/customer/reservations", { method: "POST" })).status).toBe(401);
+    expect((await app.request("/customer/orders")).status).toBe(401);
   });
 
   it("fails closed without the dedicated v1 JWT secret", () => {

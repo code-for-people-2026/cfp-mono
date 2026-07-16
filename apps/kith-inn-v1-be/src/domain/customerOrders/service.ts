@@ -1,10 +1,12 @@
-import { customerReservationOrderSchema } from "@cfp/kith-inn-v1-shared/api";
-import type { CmsCustomerBookingBatch, CmsCustomerOrderCreate, CmsCustomerOrderUpdate, CustomerProfile, CustomerReservationInput,
-  CustomerReservationResponse, CustomerReservationResult, Order } from "@cfp/kith-inn-v1-shared";
+import { customerOrderViewSchema, customerReservationOrderSchema } from "@cfp/kith-inn-v1-shared/api";
+import type { CmsCustomerBookingBatch, CmsCustomerOrderCreate, CmsCustomerOrderUpdate, CustomerOrderCancel, CustomerOrderUpdate,
+  CustomerOrderView, CustomerProfile, CustomerReservationInput, CustomerReservationResponse, CustomerReservationResult, Order }
+  from "@cfp/kith-inn-v1-shared";
 import { getCustomerBookingBatch } from "../../lib/cms/bookingBatches";
 import { createCustomerOwnedProfile, listCustomerOwnedProfiles, touchCustomerOwnedProfile }
   from "../../lib/cms/customerProfiles";
-import { CmsOrderError, createCustomerOrder, findCustomerOrderBySlot, updateCustomerOrder } from "../../lib/cms/orders";
+import { cancelCustomerOwnedOrder, CmsOrderError, createCustomerOrder, findCustomerOrderBySlot,
+  listCustomerOwnedOrders, updateCustomerOrder } from "../../lib/cms/orders";
 
 export class CustomerReservationError extends Error {
   constructor(public readonly status: number, public readonly code: string, message: string) { super(message); }
@@ -22,12 +24,24 @@ export type CustomerReservationDeps = {
     batchPublicId: string) => Promise<Order>;
   now: () => string;
 };
+export type CustomerOrderManagementDeps = {
+  getBatch: (token: string, publicId: string) => Promise<CmsCustomerBookingBatch>;
+  listOrders: (token: string) => Promise<CustomerOrderView[]>;
+  updateOrder: (token: string, id: string | number, input: CmsCustomerOrderUpdate, expectedStatus: "draft",
+    batchPublicId: string) => Promise<Order>;
+  cancelOrder: (token: string, id: string | number, batchPublicId: string) => Promise<Order>;
+  now: () => string;
+};
 
 export const reservationNow = () => new Date().toISOString();
 const defaults: CustomerReservationDeps = {
   getBatch: getCustomerBookingBatch, listProfiles: listCustomerOwnedProfiles,
   createProfile: createCustomerOwnedProfile, touchProfile: touchCustomerOwnedProfile,
   findOrder: findCustomerOrderBySlot, createOrder: createCustomerOrder, updateOrder: updateCustomerOrder, now: reservationNow
+};
+const managementDefaults: CustomerOrderManagementDeps = {
+  getBatch: getCustomerBookingBatch, listOrders: listCustomerOwnedOrders, updateOrder: updateCustomerOrder,
+  cancelOrder: cancelCustomerOwnedOrder, now: reservationNow
 };
 const fail = (code: string, message: string): never => { throw new ItemError(code, message); };
 
@@ -136,4 +150,50 @@ export async function submitCustomerReservations(token: string, openid: string, 
   }
   if (results.some(({ status }) => status !== "failed")) await deps.touchProfile(token, selected.id).catch(() => undefined);
   return { profile: { ...selected, active: true }, results };
+}
+
+export const listCustomerOrders = (token: string, deps: CustomerOrderManagementDeps = managementDefaults) =>
+  deps.listOrders(token);
+
+async function writableCustomerOrder(token: string, id: string | number, batchPublicId: string,
+  deps: CustomerOrderManagementDeps) {
+  const internal = await deps.getBatch(token, batchPublicId);
+  const current = (await deps.listOrders(token)).find((doc) => String(doc.id) === String(id));
+  if (!current) throw new CustomerReservationError(404, "order-not-found", "订单不存在");
+  try { available(internal, current.target, deps.now()); }
+  catch (error) { const item = error as ItemError; throw new CustomerReservationError(409, item.code, item.message); }
+  if (current.status === "confirmed") throw new CustomerReservationError(409, "confirmed-order-locked", "桃子已确认，请在群里联系桃子");
+  if (current.status !== "draft") throw new CustomerReservationError(409, "order-status-changed", "订单状态已变化，请刷新");
+  return current;
+}
+
+function projectCustomerOrder(current: CustomerOrderView, saved: Order) {
+  const { quantity, unitPriceCents, totalCents, status, paymentStatus, paidAt, deliveryStatus, deliveredAt,
+    confirmedAt, canceledAt } = saved;
+  return customerOrderViewSchema.parse({ ...current, quantity, unitPriceCents, totalCents, status, paymentStatus,
+    paidAt, deliveryStatus, deliveredAt, confirmedAt, canceledAt });
+}
+
+async function writeCustomerOrder(token: string, id: string | number, batchPublicId: string,
+  write: () => Promise<Order>, deps: CustomerOrderManagementDeps) {
+  const current = await writableCustomerOrder(token, id, batchPublicId, deps);
+  try { return projectCustomerOrder(current, await write()); }
+  catch (error) {
+    if (!(error instanceof CmsOrderError) || error.status !== 409 || error.code !== "customer-order-status-changed") throw error;
+    const latest = (await deps.listOrders(token)).find((doc) => String(doc.id) === String(id));
+    if (latest?.status === "confirmed") throw new CustomerReservationError(409, "confirmed-order-locked", "桃子已确认，请在群里联系桃子");
+    throw new CustomerReservationError(409, "order-status-changed", "订单状态已变化，请刷新");
+  }
+}
+
+export function editCustomerOrder(token: string, id: string | number, input: CustomerOrderUpdate,
+  deps: CustomerOrderManagementDeps = managementDefaults) {
+  return writeCustomerOrder(token, id, input.batchPublicId,
+    () => deps.updateOrder(token, id, { quantity: input.quantity }, "draft", input.batchPublicId), deps);
+}
+
+export function cancelCustomerOrder(token: string, id: string | number, input: CustomerOrderCancel,
+  deps: CustomerOrderManagementDeps = managementDefaults) {
+  return writeCustomerOrder(token, id, input.batchPublicId,
+    () => deps.cancelOrder(token, id, input.batchPublicId), deps);
 }

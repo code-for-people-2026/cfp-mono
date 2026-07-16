@@ -3,6 +3,7 @@ import {
   CmsCustomerProfileError,
   createCustomerOwnedProfile,
   createCustomerProfile,
+  deactivateCustomerOwnedProfile,
   listCustomerOwnedProfiles,
   touchCustomerOwnedProfile,
   listCustomerProfiles
@@ -44,7 +45,14 @@ describe("CMS customer-profile client", () => {
     await expect(createCustomerOwnedProfile("customer", { displayName: "王阿姨", address: "3A" }, createDeps))
       .resolves.toEqual(owned);
     await expect(touchCustomerOwnedProfile("customer", 21, touchDeps)).resolves.toEqual(owned);
-    for (const deps of [createDeps, touchDeps]) expect(deps.fetch).toHaveBeenCalledWith(expect.any(String),
+    const deactivateDeps = response({ doc: { ...owned, active: false } });
+    await expect(deactivateCustomerOwnedProfile("customer", 21, deactivateDeps))
+      .resolves.toMatchObject({ id: 21, active: false });
+    expect(deactivateDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/customer/profiles/21/deactivate",
+      expect.objectContaining({ method: "POST", body: "{}" })
+    );
+    for (const deps of [createDeps, touchDeps, deactivateDeps]) expect(deps.fetch).toHaveBeenCalledWith(expect.any(String),
       expect.objectContaining({ headers: expect.objectContaining({
         "x-kith-inn-v1-customer": "customer", "x-kith-inn-v1-internal": "internal"
       }) }));

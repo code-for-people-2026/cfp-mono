@@ -6,7 +6,8 @@ import {
 import type {
   CmsCustomerProfile,
   CustomerProfile,
-  CustomerProfileCreate
+  CustomerProfileCreate,
+  CustomerProfileDeactivate
 } from "@cfp/kith-inn-v1-shared";
 import { KIV1_INTERNAL_HEADER } from "./auth";
 import { KIV1_CUSTOMER_HEADER } from "./bookingBatches";
@@ -34,7 +35,7 @@ function cmsBaseUrl(): string {
 async function cmsRequest(
   path: string,
   token: string,
-  init: { method?: "POST"; data?: CustomerProfileCreate; customer?: boolean },
+  init: { method?: "POST"; data?: CustomerProfileCreate | CustomerProfileDeactivate; customer?: boolean },
   deps: CmsCustomerProfileDeps
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
@@ -115,5 +116,13 @@ export async function touchCustomerOwnedProfile(
 ) {
   const body = await cmsRequest(`/api/internal/kiv1/customer/profiles/${encodeURIComponent(id)}/touch`, token,
     { method: "POST", customer: true }, deps);
+  return parseCustomerProfile((body as { doc?: unknown } | null)?.doc);
+}
+
+export async function deactivateCustomerOwnedProfile(
+  token: string, id: string | number, deps: CmsCustomerProfileDeps = {}
+) {
+  const body = await cmsRequest(`/api/internal/kiv1/customer/profiles/${encodeURIComponent(id)}/deactivate`, token,
+    { method: "POST", data: {}, customer: true }, deps);
   return parseCustomerProfile((body as { doc?: unknown } | null)?.doc);
 }

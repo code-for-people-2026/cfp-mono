@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CmsOrderCreate, CmsOrderUpdate } from "@cfp/kith-inn-v1-shared";
 import {
   CmsOrderError,
+  cancelCustomerOwnedOrder,
   createCustomerOrder,
   createOrder,
   findCustomerOrderBySlot,
   getOrder,
   listOrders,
+  listCustomerOwnedOrders,
   updateCustomerOrder,
   updateOrder
 } from "./orders";
@@ -62,6 +64,15 @@ const response = (body: unknown, status = 200) => ({
     headers: { "content-type": "application/json" }
   }))
 });
+const customerView = {
+  id: 31, target: { date: "2026-07-13", occasion: "lunch" as const },
+  menuItems: Array.from({ length: 5 }, (_, index) => ({ nameSnapshot: `菜${index + 1}`,
+    mainIngredientSnapshot: null, categorySnapshot: index < 2 ? "meat" as const : index < 4 ? "veg" as const : "soup" as const })),
+  orderStatus: "open" as const, orderDeadline: "2026-07-12T01:00:00.000Z", displayName: "王阿姨",
+  address: "3A-1201", quantity: 2, unitPriceCents: 3000, totalCents: 6000, status: "draft" as const,
+  paymentStatus: "unpaid" as const, paidAt: null, deliveryStatus: "pending" as const, deliveredAt: null,
+  confirmedAt: null, canceledAt: null
+};
 
 describe("CMS order client", () => {
   it("finds, creates and patches orders through the customer owner boundary", async () => {
@@ -75,6 +86,8 @@ describe("CMS order client", () => {
       { headers: { "x-kith-inn-v1-customer": "customer" } }
     );
     await expect(findCustomerOrderBySlot("customer", 11, 21, response({ doc: null }))).resolves.toBeNull();
+    const listOwnedDeps = response({ docs: [customerView] });
+    await expect(listCustomerOwnedOrders("customer", listOwnedDeps)).resolves.toEqual([customerView]);
     const customerCreate = { ...createInput, customerOpenid: "wx", source: "customer-card" as const, note: null };
     const createDeps = response({ doc: customerOrder }, 201);
     await expect(createCustomerOrder("customer", customerCreate, BATCH_PUBLIC_ID, createDeps)).resolves.toEqual(customerOrder);
@@ -89,7 +102,14 @@ describe("CMS order client", () => {
       `http://cms.test/api/internal/kiv1/customer/orders/31?expectedStatus=draft&batchPublicId=${BATCH_PUBLIC_ID}`,
       expect.objectContaining({ method: "PATCH" })
     );
-    for (const deps of [createDeps, updateDeps]) {
+    const cancelDeps = response({ doc: { ...customerOrder, status: "canceled", canceledAt: "2026-07-11T00:00:00.000Z" } });
+    await expect(cancelCustomerOwnedOrder("customer", 31, BATCH_PUBLIC_ID, cancelDeps))
+      .resolves.toMatchObject({ status: "canceled" });
+    expect(cancelDeps.fetch).toHaveBeenCalledWith(
+      `http://cms.test/api/internal/kiv1/customer/orders/31?batchPublicId=${BATCH_PUBLIC_ID}`,
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ confirmed: true }) })
+    );
+    for (const deps of [createDeps, updateDeps, cancelDeps]) {
       expect(deps.fetch).toHaveBeenCalledWith(expect.stringContaining("/customer/orders"), expect.objectContaining({
         headers: expect.objectContaining({
           "x-kith-inn-v1-customer": "customer", "x-kith-inn-v1-internal": "internal"
@@ -97,6 +117,8 @@ describe("CMS order client", () => {
       }));
     }
     await expect(findCustomerOrderBySlot("customer", 11, 21, response({ doc: {} })))
+      .rejects.toMatchObject({ code: "invalid-cms-response" });
+    await expect(listCustomerOwnedOrders("customer", response({ docs: [{}] })))
       .rejects.toMatchObject({ code: "invalid-cms-response" });
   });
 

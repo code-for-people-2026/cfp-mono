@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CmsCustomerBookingBatch, CustomerProfile, CustomerReservationInput, MealSlot, Order } from "@cfp/kith-inn-v1-shared";
+import type { CmsCustomerBookingBatch, CustomerOrderView, CustomerProfile, CustomerReservationInput, MealSlot, Order } from "@cfp/kith-inn-v1-shared";
 import { CmsOrderError } from "../../lib/cms/orders";
-import { CustomerReservationError, reservationNow, submitCustomerReservations, type CustomerReservationDeps } from "./service";
+import { cancelCustomerOrder, CustomerReservationError, editCustomerOrder, listCustomerOrders, reservationNow,
+  submitCustomerReservations, type CustomerOrderManagementDeps, type CustomerReservationDeps } from "./service";
 const NOW = "2026-07-10T01:00:00.000Z";
 const profile: CustomerProfile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true };
 const slot = (id: number, overrides: Partial<MealSlot> = {}): MealSlot => ({
@@ -23,6 +24,13 @@ const order = (mealSlotId: number, overrides: Partial<Order> = {}): Order => ({
   totalCents: 3000, paymentStatus: "unpaid", paidAt: null, deliveryStatus: "pending", deliveredAt: null,
   confirmedAt: null, canceledAt: null, note: null, ...overrides
 });
+const view = (overrides: Partial<CustomerOrderView> = {}): CustomerOrderView => ({
+  id: 31, target: target(11), menuItems: slot(11).menuItems.map(({ nameSnapshot, mainIngredientSnapshot,
+    categorySnapshot }) => ({ nameSnapshot, mainIngredientSnapshot, categorySnapshot })),
+  orderStatus: "open", orderDeadline: "2026-07-12T01:00:00.000Z", displayName: "快照", address: "旧址",
+  quantity: 1, unitPriceCents: 3000, totalCents: 3000, status: "draft", paymentStatus: "unpaid", paidAt: null,
+  deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null, ...overrides
+});
 const input = (items: CustomerReservationInput["items"], useNew = false): CustomerReservationInput => ({
   batchPublicId: internal().batch.publicId, profile: useNew ? { newProfile: { displayName: "王", address: "3A" } }
     : { customerProfileId: 21 }, displayName: "本次称呼", address: "本次地址", items
@@ -39,6 +47,13 @@ function deps(overrides: Partial<CustomerReservationDeps> = {}): CustomerReserva
       { ...value, totalCents: (value.quantity ?? 1) * (value.unitPriceCents ?? 3000) })),
     now: () => NOW, ...overrides
   };
+}
+function managementDeps(overrides: Partial<CustomerOrderManagementDeps> = {}): CustomerOrderManagementDeps {
+  return { getBatch: vi.fn(async () => internal()), listOrders: vi.fn(async () => [view()]),
+    updateOrder: vi.fn(async (_token, id, update) => order(11, { id, quantity: update.quantity,
+      totalCents: (update.quantity ?? 1) * 3000 })),
+    cancelOrder: vi.fn(async (_token, id) => order(11, { id, status: "canceled", canceledAt: NOW })),
+    now: () => NOW, ...overrides };
 }
 const submit = (items: CustomerReservationInput["items"], injected: CustomerReservationDeps, useNew = false) =>
   submitCustomerReservations("jwt", "wx", input(items, useNew), injected);
@@ -170,5 +185,47 @@ describe("customer reservation orchestration", () => {
       .resolves.toMatchObject({ results: [{ target: target(11), error: "meal-slot-not-in-batch" }] });
     expect(injected.findOrder).not.toHaveBeenCalled();
     expect(injected.createOrder).not.toHaveBeenCalled();
+  });
+
+  it("lists, edits and cancels writable own drafts through atomic CMS writes", async () => {
+    const injected = managementDeps();
+    await expect(listCustomerOrders("jwt", injected)).resolves.toEqual([view()]);
+    await expect(editCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, quantity: 3 }, injected))
+      .resolves.toMatchObject({ id: 31, quantity: 3, totalCents: 9000, status: "draft" });
+    await expect(cancelCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, confirmed: true }, injected))
+      .resolves.toMatchObject({ id: 31, status: "canceled", canceledAt: NOW });
+    expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, { quantity: 3 }, "draft", internal().batch.publicId);
+    expect(injected.cancelOrder).toHaveBeenCalledWith("jwt", 31, internal().batch.publicId);
+  });
+
+  it("rejects missing, closed and non-draft orders and remaps atomic confirm races", async () => {
+    await expect(editCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, quantity: 2 },
+      managementDeps({ listOrders: vi.fn(async () => []) }))).rejects.toMatchObject({ status: 404, code: "order-not-found" });
+    for (const status of ["confirmed", "canceled"] as const) {
+      await expect(editCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, quantity: 2 },
+        managementDeps({ listOrders: vi.fn(async () => [view({ status, confirmedAt: status === "confirmed" ? NOW : null,
+          canceledAt: status === "canceled" ? NOW : null })]) }))).rejects.toMatchObject({
+        code: status === "confirmed" ? "confirmed-order-locked" : "order-status-changed"
+      });
+    }
+    const closed = internal(); closed.batch.status = "closed";
+    await expect(cancelCustomerOrder("jwt", 31, { batchPublicId: closed.batch.publicId, confirmed: true },
+      managementDeps({ getBatch: vi.fn(async () => closed) }))).rejects.toMatchObject({ code: "booking-batch-closed" });
+    for (const [overrides, code] of [[{ orderStatus: "closed" }, "meal-slot-closed"],
+      [{ orderDeadline: NOW }, "order-deadline-passed"]] as const) {
+      const unavailable = internal([slot(11, overrides)]);
+      await expect(editCustomerOrder("jwt", 31, { batchPublicId: unavailable.batch.publicId, quantity: 2 },
+        managementDeps({ getBatch: vi.fn(async () => unavailable) }))).rejects.toMatchObject({ code });
+    }
+    for (const latest of [view({ status: "confirmed", confirmedAt: NOW }), view()]) {
+      const raced = managementDeps({
+        listOrders: vi.fn().mockResolvedValueOnce([view()]).mockResolvedValueOnce([latest]),
+        updateOrder: vi.fn(async () => { throw new CmsOrderError(409, "customer-order-status-changed", "状态变化"); })
+      });
+      await expect(editCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, quantity: 2 }, raced))
+        .rejects.toMatchObject({ code: latest.status === "confirmed" ? "confirmed-order-locked" : "order-status-changed" });
+    }
+    await expect(editCustomerOrder("jwt", 31, { batchPublicId: internal().batch.publicId, quantity: 2 },
+      managementDeps({ updateOrder: vi.fn(async () => { throw new Error("offline"); }) }))).rejects.toThrow("offline");
   });
 });
