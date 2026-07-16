@@ -19,7 +19,7 @@ vi.mock("payload", async (importOriginal) => ({
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
 import { GET as listOrders, POST as createOrder } from "../src/app/api/internal/kiv1/customer/orders/route";
-import { PATCH as updateOrder } from "../src/app/api/internal/kiv1/customer/orders/[id]/route";
+import { PATCH as updateOrder, POST as cancelOrder } from "../src/app/api/internal/kiv1/customer/orders/[id]/route";
 import { GET as findBySlot } from "../src/app/api/internal/kiv1/customer/orders/by-slot/[mealSlotId]/route";
 
 const SECRET = "v1-secret";
@@ -351,6 +351,41 @@ describe("customer order persistence boundary", () => {
     }), context);
     expect(resubmitted.status).toBe(200);
     expect(canceled.execute).not.toHaveBeenCalled();
+  });
+
+  it("cancels only an available owner draft under the customer write lock", async () => {
+    const context = { params: Promise.resolve({ id: "31" }) };
+    for (const [payload, token, status, code] of [
+      [payloadWith(), neighborToken, 404, "customer-order-not-found"],
+      [payloadWith({ orderStatus: "confirmed" }), ownerToken, 409, "customer-order-status-changed"],
+      [payloadWith({ slotStatus: "closed" }), ownerToken, 409, "meal-slot-closed"]
+    ] as const) {
+      mocks.getPayload.mockResolvedValue(payload);
+      const response = await cancelOrder(request("/31", {
+        method: "POST", body: { confirmed: true }, token
+      }), context);
+      expect(response.status).toBe(status);
+      await expect(response.json()).resolves.toMatchObject({ error: code });
+      expect(payload.update).not.toHaveBeenCalled();
+    }
+    const payload = payloadWith({ database: "sqlite" });
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await cancelOrder(request("/31", {
+      method: "POST", body: { confirmed: true }, token: ownerToken
+    }), context);
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
+      collection: "kiv1_orders", id: 31,
+      data: { status: "canceled", canceledAt: expect.any(String) },
+      overrideAccess: true, req: expect.anything()
+    }));
+    expect(payload.execute).not.toHaveBeenCalled();
+    expect((await cancelOrder(request("/31", {
+      method: "POST", body: { confirmed: false }, token: ownerToken
+    }), context)).status).toBe(422);
+    expect((await cancelOrder(new Request("http://cms.test/api/internal/kiv1/customer/orders/31", {
+      method: "POST", headers: { "x-kith-inn-v1-customer": ownerToken, "x-kith-inn-v1-internal": INTERNAL }, body: "{"
+    }), context)).status).toBe(400);
   });
 
   it("rechecks batch, slot and deadline inside the customer write transaction", async () => {
