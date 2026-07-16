@@ -76,7 +76,7 @@ describe("customer profile routes", () => {
   it("strictly deactivates an owned profile", async () => {
     const injected = deps();
     const app = customerProfileRoutes(SECRET, injected);
-    const response = await request(app, "/21/deactivate", { method: "POST", body: "{}" });
+    const response = await request(app, "/21/deactivate", { method: "POST" });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ doc: { id: 21, active: false } });
     expect(injected.deactivateProfile).toHaveBeenCalledWith(token, "21");
