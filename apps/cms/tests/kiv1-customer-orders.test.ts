@@ -18,7 +18,7 @@ vi.mock("payload", async (importOriginal) => ({
 }));
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
-import { POST as createOrder } from "../src/app/api/internal/kiv1/customer/orders/route";
+import { GET as listOrders, POST as createOrder } from "../src/app/api/internal/kiv1/customer/orders/route";
 import { PATCH as updateOrder } from "../src/app/api/internal/kiv1/customer/orders/[id]/route";
 import { GET as findBySlot } from "../src/app/api/internal/kiv1/customer/orders/by-slot/[mealSlotId]/route";
 
@@ -30,9 +30,20 @@ const ownerToken = await issueCustomerToken({ sellerId: 7, openid: "wx-owner" },
 const neighborToken = await issueCustomerToken({ sellerId: 7, openid: "wx-neighbor" }, SECRET);
 const foreignSellerToken = await issueCustomerToken({ sellerId: 8, openid: "wx-owner" }, SECRET);
 const operatorToken = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
+const menuItems = [
+  { offering: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },
+  { offering: 2, nameSnapshot: "荤二", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" },
+  { offering: 3, nameSnapshot: "素一", mainIngredientSnapshot: "青菜", categorySnapshot: "veg" },
+  { offering: 4, nameSnapshot: "素二", mainIngredientSnapshot: null, categorySnapshot: "veg" },
+  { offering: 5, nameSnapshot: "汤一", mainIngredientSnapshot: "番茄", categorySnapshot: "soup" }
+];
 const slots = [
-  { id: 11, seller: 7, orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" }, { id: 12,
-    seller: 8, orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" }
+  { id: 11, seller: 7, date: "2026-07-13", occasion: "lunch", menuItems,
+    orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" },
+  { id: 12, seller: 8, date: "2026-07-13", occasion: "dinner", menuItems,
+    orderStatus: "open", orderDeadline: "2099-07-20T00:00:00.000Z" },
+  { id: 13, seller: 7, date: "2026-07-14", occasion: "dinner", menuItems,
+    orderStatus: "closed", orderDeadline: "2026-07-13T00:00:00.000Z" }
 ];
 const profiles = [
   { id: 21, seller: 7, openid: "wx-owner", active: true },
@@ -52,7 +63,10 @@ const orders = [
   order,
   { ...order, id: 32, customerProfile: 22, customerOpenid: "wx-neighbor" },
   { ...order, id: 33, seller: 8, mealSlot: 12, customerProfile: 23 },
-  { ...order, id: 34, customerProfile: 25, source: "manual" }
+  { ...order, id: 34, customerProfile: 25, source: "manual" },
+  { ...order, id: 35, mealSlot: 13, customerProfile: 24, status: "canceled",
+    displayName: "停用前称呼", address: "历史地址", quantity: 1, unitPriceCents: 2800,
+    canceledAt: "2026-07-12T00:00:00.000Z" }
 ];
 
 function includes(where: unknown, field: string, value: unknown) {
@@ -81,17 +95,24 @@ function payloadWith(options: {
   const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
     ? { ...doc, status: options.orderStatus }
     : doc);
-  const find = vi.fn(async ({ collection, where }: { collection: string; where?: unknown }) => {
+  const currentSlots = slots.map((slot) => slot.id === 11
+    ? { ...slot, orderStatus: options.slotStatus ?? slot.orderStatus,
+      orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline,
+      priceCents: options.slotPrice ?? null }
+    : slot);
+  const find = vi.fn(async ({ collection, where, depth }: { collection: string; where?: unknown; depth?: number }) => {
     if (collection === "kiv1_sellers") return { docs: matching(where, [{ id: 7, status: "active", defaultPriceCents: 3000 }, { id: 8, status: "active", defaultPriceCents: 3000 }]) };
     if (collection === "kiv1_booking_batches") return { docs: matching(where, [{ id: 41, seller: 7,
       publicId: BATCH_PUBLIC_ID, status: options.batchStatus ?? "open", mealSlots: [11] }]) };
-    if (collection === "kiv1_meal_slots") return { docs: matching(where, slots.map((slot) => slot.id === 11
-      ? { ...slot, orderStatus: options.slotStatus ?? slot.orderStatus,
-      orderDeadline: options.orderDeadline === undefined ? slot.orderDeadline : options.orderDeadline,
-      priceCents: options.slotPrice ?? null
-      } : slot)) };
+    if (collection === "kiv1_meal_slots") return { docs: matching(where, currentSlots) };
     if (collection === "kiv1_customer_profiles") return { docs: matching(where, profiles) };
-    if (collection === "kiv1_orders") return { docs: matching(where, currentOrders) };
+    if (collection === "kiv1_orders") {
+      const docs = matching(where, currentOrders);
+      return { docs: depth === 1 ? docs.map((doc) => ({
+        ...doc,
+        mealSlot: currentSlots.find((slot) => slot.id === doc.mealSlot)
+      })) : docs };
+    }
     return { docs: [] };
   });
   const create = options.createError
@@ -145,6 +166,50 @@ beforeEach(() => {
 afterEach(() => { process.env = { ...originalEnv }; });
 
 describe("customer order persistence boundary", () => {
+  it.each(["postgres", "sqlite"] as const)("lists only owner customer-card history on %s", async (database) => {
+    const payload = payloadWith({ database, slotStatus: "closed" });
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await listOrders(request("", { token: ownerToken, internal: false }));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.docs.map((doc: { id: number }) => doc.id)).toEqual([35, 31]);
+    expect(body.docs[0]).toMatchObject({
+      target: { date: "2026-07-14", occasion: "dinner" },
+      displayName: "停用前称呼",
+      address: "历史地址",
+      quantity: 1,
+      unitPriceCents: 2800,
+      totalCents: 2800,
+      status: "canceled",
+      paymentStatus: "unpaid",
+      deliveryStatus: "pending"
+    });
+    expect(body.docs[0].menuItems[0]).toEqual({
+      nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat"
+    });
+    for (const hidden of ["sellerId", "customerOpenid", "source", "mealSlotId", "customerProfileId"]) {
+      expect(JSON.stringify(body)).not.toContain(hidden);
+    }
+    expect(payload.find).toHaveBeenLastCalledWith(expect.objectContaining({
+      collection: "kiv1_orders",
+      where: { and: [
+        { seller: { equals: 7 } },
+        { customerOpenid: { equals: "wx-owner" } },
+        { source: { equals: "customer-card" } }
+      ] },
+      depth: 1
+    }));
+  });
+
+  it("isolates own-order history across both owner axes and rejects operator sessions", async () => {
+    mocks.getPayload.mockResolvedValue(payloadWith());
+    await expect((await listOrders(request("", { token: neighborToken, internal: false }))).json())
+      .resolves.toMatchObject({ docs: [{ id: 32 }] });
+    await expect((await listOrders(request("", { token: foreignSellerToken, internal: false }))).json())
+      .resolves.toMatchObject({ docs: [{ id: 33 }] });
+    expect((await listOrders(request("", { token: operatorToken, internal: false }))).status).toBe(401);
+  });
+
   it("finds an existing order only at the complete owner+slot+profile coordinate", async () => {
     const payload = payloadWith();
     mocks.getPayload.mockResolvedValue(payload);
