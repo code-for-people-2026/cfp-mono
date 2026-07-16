@@ -44,11 +44,14 @@ function available(internal: CmsCustomerBookingBatch, slotId: string | number, n
 }
 
 function resultFailure(mealSlotId: string | number, error: unknown): CustomerReservationResult {
-  if (!(error instanceof Error)) {
+  const candidate = error as Error & { code?: unknown; status?: unknown };
+  const known = error instanceof ItemError || (
+    error instanceof Error && typeof candidate.status === "number" && typeof candidate.code === "string"
+  );
+  if (!known) {
     return { mealSlotId, status: "failed", error: "reservation-item-failed", message: "登记失败" };
   }
-  const code = "code" in error && typeof error.code === "string" ? error.code : "reservation-item-failed";
-  return { mealSlotId, status: "failed", error: code, message: error.message };
+  return { mealSlotId, status: "failed", error: candidate.code as string, message: candidate.message };
 }
 
 function writable(order: Order) {
@@ -56,17 +59,23 @@ function writable(order: Order) {
   return order;
 }
 
-async function writeItem(token: string, openid: string, input: CustomerReservationInput, profile: CustomerProfile,
+async function recheck(token: string, input: CustomerReservationInput, profile: CustomerProfile,
   item: CustomerReservationInput["items"][number], deps: CustomerReservationDeps
-): Promise<CustomerReservationResult> {
+) {
   const internal = await deps.getBatch(token, input.batchPublicId);
   const slot = available(internal, item.mealSlotId, deps.now());
   const owned = (await deps.listProfiles(token)).find(({ id, sellerId, active }) =>
     String(id) === String(profile.id) && String(sellerId) === String(internal.seller.id) && active);
   if (!owned) fail("customer-profile-inactive", "顾客资料已停用或不存在");
-  let existing = await deps.findOrder(token, item.mealSlotId, profile.id);
-  const snapshot = { quantity: item.quantity, unitPriceCents: slot.priceCents ?? internal.seller.defaultPriceCents,
+  return { quantity: item.quantity, unitPriceCents: slot.priceCents ?? internal.seller.defaultPriceCents,
     displayName: input.displayName, address: input.address, note: null };
+}
+
+async function writeItem(token: string, openid: string, input: CustomerReservationInput, profile: CustomerProfile,
+  item: CustomerReservationInput["items"][number], deps: CustomerReservationDeps
+): Promise<CustomerReservationResult> {
+  let snapshot = await recheck(token, input, profile, item, deps);
+  let existing = await deps.findOrder(token, item.mealSlotId, profile.id);
   if (!existing) {
     try {
       const doc = await deps.createOrder(token, {
@@ -79,6 +88,7 @@ async function writeItem(token: string, openid: string, input: CustomerReservati
       if (!(error instanceof CmsOrderError) || error.status !== 409 || error.code !== "order-exists") throw error;
       existing = await deps.findOrder(token, item.mealSlotId, profile.id);
       if (!existing) throw error;
+      snapshot = await recheck(token, input, profile, item, deps);
     }
   }
   const current = writable(existing);
@@ -97,15 +107,19 @@ export async function submitCustomerReservations(token: string, openid: string, 
   deps: CustomerReservationDeps = defaults
 ): Promise<CustomerReservationResponse> {
   const choice = input.profile;
-  const selected = "newProfile" in choice
-    ? await deps.createProfile(token, choice.newProfile)
-    : (await deps.listProfiles(token)).find(({ id, active }) => String(id) === String(choice.customerProfileId) && active);
+  const profiles = await deps.listProfiles(token);
+  const selected = "newProfile" in choice ? profiles.find(({ displayName, address, active }) =>
+    displayName === choice.newProfile.displayName && address === choice.newProfile.address && active)
+    ?? await deps.createProfile(token, choice.newProfile)
+    : profiles.find(({ id, active }) => String(id) === String(choice.customerProfileId) && active);
   if (!selected) throw new CustomerReservationError(404, "customer-profile-not-found", "顾客资料不存在");
   const results: CustomerReservationResult[] = [];
   for (const item of input.items) {
     try { results.push(await writeItem(token, openid, input, selected, item, deps)); }
     catch (error) { results.push(resultFailure(item.mealSlotId, error)); }
   }
-  if (results.some(({ status }) => status !== "failed")) await deps.touchProfile(token, selected.id);
+  if (results.some(({ status }) => status !== "failed")) {
+    await deps.touchProfile(token, selected.id).catch(() => undefined);
+  }
   return { profile: { ...selected, active: true }, results };
 }

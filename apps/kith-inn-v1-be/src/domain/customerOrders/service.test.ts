@@ -47,7 +47,10 @@ function deps(overrides: Partial<CustomerReservationDeps> = {}): CustomerReserva
 
 describe("customer reservation orchestration", () => {
   it("creates a new profile then creates/updates items sequentially with price snapshots", async () => {
-    const injected = deps({ findOrder: vi.fn(async (_token, id) => Number(id) === 12 ? order(12) : null) });
+    const injected = deps({
+      findOrder: vi.fn(async (_token, id) => Number(id) === 12 ? order(12) : null),
+      touchProfile: vi.fn(async () => { throw new Error("offline"); })
+    });
     const result = await submitCustomerReservations("jwt", "wx", input([
       { mealSlotId: 11, quantity: 2, resubmitCanceled: false },
       { mealSlotId: 12, quantity: 3, resubmitCanceled: false }
@@ -60,7 +63,7 @@ describe("customer reservation orchestration", () => {
       unitPriceCents: 2800, quantity: 3, displayName: "本次称呼"
     }));
     expect(injected.getBatch).toHaveBeenCalledTimes(2);
-    expect(injected.listProfiles).toHaveBeenCalledTimes(2);
+    expect(injected.listProfiles).toHaveBeenCalledTimes(3);
     expect(injected.touchProfile).toHaveBeenCalledOnce();
   });
 
@@ -90,6 +93,7 @@ describe("customer reservation orchestration", () => {
     expect(injected.updateOrder).toHaveBeenCalledWith("jwt", 31, expect.objectContaining({
       status: "draft", paymentStatus: "unpaid", canceledAt: null
     }));
+    expect(result.results[5]).toMatchObject({ message: "登记失败" });
   });
 
   it("re-reads unique conflicts, preserves profiles and rejects missing owners", async () => {
@@ -99,6 +103,22 @@ describe("customer reservation orchestration", () => {
     await expect(submitCustomerReservations("jwt", "wx", input([
       { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
     ]), raced)).resolves.toMatchObject({ results: [{ status: "updated" }] });
+    const retryProfile = { ...profile, displayName: "王", address: "3A" };
+    const retry = deps({ listProfiles: vi.fn(async () => [retryProfile]), findOrder: vi.fn(async () => order(11)) });
+    await expect(submitCustomerReservations("jwt", "wx", input([
+      { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+    ], true), retry)).resolves.toMatchObject({ profile: retryProfile, results: [{ status: "updated" }] });
+    expect(retry.createProfile).not.toHaveBeenCalled();
+    const closed = internal(); closed.batch.status = "closed";
+    const closedRace = deps({
+      getBatch: vi.fn().mockResolvedValueOnce(internal()).mockResolvedValueOnce(closed),
+      createOrder: vi.fn(async () => { throw new CmsOrderError(409, "order-exists", "已存在"); }),
+      findOrder: vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(order(11))
+    });
+    await expect(submitCustomerReservations("jwt", "wx", input([
+      { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
+    ]), closedRace)).resolves.toMatchObject({ results: [{ error: "booking-batch-closed" }] });
+    expect(closedRace.updateOrder).not.toHaveBeenCalled();
     const failed = deps({ getBatch: vi.fn(async () => internal([])), listProfiles: vi.fn(async () => [profile]) });
     const created = await submitCustomerReservations("jwt", "wx", input([
       { mealSlotId: 11, quantity: 1, resubmitCanceled: false }
