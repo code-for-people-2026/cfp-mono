@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CmsOrderCreate, CmsOrderUpdate } from "@cfp/kith-inn-v1-shared";
 import {
   CmsOrderError,
+  createCustomerOrder,
   createOrder,
+  findCustomerOrderBySlot,
   getOrder,
   listOrders,
+  updateCustomerOrder,
   updateOrder
 } from "./orders";
 
@@ -60,6 +63,33 @@ const response = (body: unknown, status = 200) => ({
 });
 
 describe("CMS order client", () => {
+  it("finds, creates and patches orders through the customer owner boundary", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test/";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const customerOrder = { ...order, source: "customer-card" as const };
+    const findDeps = response({ doc: customerOrder });
+    await expect(findCustomerOrderBySlot("customer", 11, 21, findDeps)).resolves.toEqual(customerOrder);
+    expect(findDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/customer/orders/by-slot/11?customerProfileId=21",
+      { headers: { "x-kith-inn-v1-customer": "customer" } }
+    );
+    await expect(findCustomerOrderBySlot("customer", 11, 21, response({ doc: null }))).resolves.toBeNull();
+    const customerCreate = { ...createInput, customerOpenid: "wx", source: "customer-card" as const, note: null };
+    const createDeps = response({ doc: customerOrder }, 201);
+    await expect(createCustomerOrder("customer", customerCreate, createDeps)).resolves.toEqual(customerOrder);
+    const updateDeps = response({ doc: { ...customerOrder, quantity: 3, totalCents: 9000 } });
+    await expect(updateCustomerOrder("customer", 31, { quantity: 3 }, updateDeps)).resolves.toMatchObject({ quantity: 3 });
+    for (const deps of [createDeps, updateDeps]) {
+      expect(deps.fetch).toHaveBeenCalledWith(expect.stringContaining("/customer/orders"), expect.objectContaining({
+        headers: expect.objectContaining({
+          "x-kith-inn-v1-customer": "customer", "x-kith-inn-v1-internal": "internal"
+        })
+      }));
+    }
+    await expect(findCustomerOrderBySlot("customer", 11, 21, response({ doc: {} })))
+      .rejects.toMatchObject({ code: "invalid-cms-response" });
+  });
+
   it("lists, gets, creates and patches through the operator boundary", async () => {
     process.env.CMS_BASE_URL = "http://cms.test/";
     process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";

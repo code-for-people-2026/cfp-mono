@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CmsCustomerProfileError,
+  createCustomerOwnedProfile,
   createCustomerProfile,
+  listCustomerOwnedProfiles,
+  touchCustomerOwnedProfile,
   listCustomerProfiles
 } from "./customerProfiles";
 
@@ -27,6 +30,33 @@ const response = (body: unknown, status = 200) => ({
 });
 
 describe("CMS customer-profile client", () => {
+  it("lists, creates and touches profiles through the customer owner boundary", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test/";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const owned = { ...profile, openid: undefined };
+    const listDeps = response({ docs: [owned] });
+    await expect(listCustomerOwnedProfiles("customer", listDeps)).resolves.toEqual([owned]);
+    expect(listDeps.fetch).toHaveBeenCalledWith("http://cms.test/api/internal/kiv1/customer/profiles", {
+      headers: { "x-kith-inn-v1-customer": "customer" }
+    });
+    const createDeps = response({ doc: owned }, 201);
+    const touchDeps = response({ doc: owned });
+    await expect(createCustomerOwnedProfile("customer", { displayName: "王阿姨", address: "3A" }, createDeps))
+      .resolves.toEqual(owned);
+    await expect(touchCustomerOwnedProfile("customer", 21, touchDeps)).resolves.toEqual(owned);
+    for (const deps of [createDeps, touchDeps]) expect(deps.fetch).toHaveBeenCalledWith(expect.any(String),
+      expect.objectContaining({ headers: expect.objectContaining({
+        "x-kith-inn-v1-customer": "customer", "x-kith-inn-v1-internal": "internal"
+      }) }));
+    await expect(listCustomerOwnedProfiles("customer", response(null)))
+      .rejects.toMatchObject({ code: "invalid-cms-response" });
+    await expect(createCustomerOwnedProfile("customer", { displayName: "王", address: "3A" }, response({ doc: {} })))
+      .rejects.toMatchObject({ code: "invalid-cms-response" });
+    delete process.env.KITH_INN_V1_INTERNAL_TOKEN;
+    await expect(touchCustomerOwnedProfile("customer", 21, response({ error: "profile-gone" }, 404)))
+      .rejects.toMatchObject({ status: 404, code: "profile-gone" });
+  });
+
   it("lists with an encoded query and creates through the operator boundary", async () => {
     process.env.CMS_BASE_URL = "http://cms.test/";
     const listDeps = response({ docs: [profile] });
