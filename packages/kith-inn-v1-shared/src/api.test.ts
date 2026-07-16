@@ -246,9 +246,9 @@ describe("customer reservation API schemas", () => {
       ]
     });
     expect(normalizeCustomerReservationItems([
-      { mealSlotId: "slot-12", quantity: 1 },
-      { mealSlotId: "slot-12", quantity: 1, resubmitCanceled: false }
-    ])).toEqual([{ mealSlotId: "slot-12", quantity: 1, resubmitCanceled: false }]);
+      { mealSlotId: 11, quantity: 1 },
+      { mealSlotId: "11", quantity: 1, resubmitCanceled: false }
+    ])).toEqual([{ mealSlotId: 11, quantity: 1, resubmitCanceled: false }]);
   });
 
   it("accepts one to twenty unique items and exactly one profile choice", () => {
@@ -332,6 +332,24 @@ describe("customer reservation API schemas", () => {
         { mealSlotId: 11, status: "created", doc: order },
         { mealSlotId: "11", status: "updated", doc: order }
       ]
+    }).success).toBe(false);
+    expect(customerReservationResponseSchema.safeParse({
+      profile,
+      results: [{ mealSlotId: 12, status: "created", doc: order }]
+    }).success).toBe(false);
+    expect(customerReservationResponseSchema.safeParse({
+      profile: { ...profile, id: 22 },
+      results: [{ mealSlotId: 11, status: "created", doc: order }]
+    }).success).toBe(false);
+    expect(customerReservationResultSchema.safeParse({
+      mealSlotId: 11,
+      status: "created",
+      doc: { ...order, paymentStatus: "paid", paidAt: "2026-07-16T00:00:00.000Z" }
+    }).success).toBe(false);
+    expect(customerReservationResultSchema.safeParse({
+      mealSlotId: 11,
+      status: "updated",
+      doc: { ...order, deliveryStatus: "done", deliveredAt: "2026-07-16T00:00:00.000Z" }
     }).success).toBe(false);
   });
 
