@@ -270,6 +270,8 @@ describe("API client", () => {
       { profile, results: [{ target, status: "failed", error: "", message: "x" }] },
       { profile, results: [{ target, status: "failed", error: "x", message: 1 }] },
       { profile, results: [{ target, status: "failed", error: "x", message: "" }] },
+      { profile, results: [{ ...result.results[0], internal: "leak" }] },
+      { profile, results: [{ target, status: "created", doc: order, internal: "leak" }] },
       { profile, results: [{ target, status: "unknown" }] }]) await expect(createApiClient({ request: adapter(200, data),
         sessions: sessions(), customerSessions: customerSessions() }).submitCustomerReservations(input))
       .rejects.toMatchObject({ code: "invalid-api-response" });

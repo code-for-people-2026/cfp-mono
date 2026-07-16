@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test";
 const BE = "http://127.0.0.1:3311";
 
 test("顾客从分享页完成资料与多餐次登记并看到部分结果", async ({ page, request }) => {
-  const firstStarted = Date.now();
   const suffix = Date.now().toString(36);
   const target = new Date(Date.now() + (180 + Date.now() % 80) * 86_400_000);
   const date = target.toISOString().slice(0, 10);
@@ -39,6 +38,7 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
 
   await page.goto("/pages/booking/index");
   await expect(page.getByText("这个预订登记链接已失效", { exact: true })).toBeVisible();
+  const firstStarted = Date.now();
   await page.goto(share.path);
   await expect(page.getByText(`顾客多餐预订-${suffix}`, { exact: true })).toBeVisible();
   await expect(page.getByText("桃子", { exact: true })).toBeVisible();
