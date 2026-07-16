@@ -42,7 +42,7 @@ export type CreateDraftInput = {
 };
 
 export type OrderUpdatePatch = Partial<{
-  paymentStatus: Order["paymentStatus"];
+  paymentStatus: "unpaid" | "paid";
   paymentMethod: string | null;
   paidAt: string | null;
   date: string;

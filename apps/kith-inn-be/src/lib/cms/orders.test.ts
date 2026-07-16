@@ -156,6 +156,7 @@ describe("atomic lifecycle", () => {
 describe("updateOrder", () => {
   it("excludes lifecycle, snapshot, and ownership fields from the patch contract", () => {
     expectTypeOf<Extract<keyof OrderUpdatePatch, "status" | "address" | "customer" | "seller">>().toEqualTypeOf<never>();
+    expectTypeOf<NonNullable<OrderUpdatePatch["paymentStatus"]>>().toEqualTypeOf<"unpaid" | "paid">();
   });
 
   it("PATCHs the order", async () => {
