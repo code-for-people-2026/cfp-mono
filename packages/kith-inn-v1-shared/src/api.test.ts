@@ -341,6 +341,14 @@ describe("customer reservation API schemas", () => {
       profile: { ...profile, id: 22 },
       results: [{ mealSlotId: 11, status: "created", doc: order }]
     }).success).toBe(false);
+    expect(customerReservationResponseSchema.safeParse({
+      profile: { ...profile, active: false },
+      results: [{ mealSlotId: 11, status: "created", doc: order }]
+    }).success).toBe(false);
+    expect(customerReservationResponseSchema.safeParse({
+      profile,
+      results: [{ mealSlotId: 11, status: "created", doc: { ...order, sellerId: 8 } }]
+    }).success).toBe(false);
     expect(customerReservationResultSchema.safeParse({
       mealSlotId: 11,
       status: "created",
@@ -377,7 +385,9 @@ describe("customer reservation API schemas", () => {
       .toEqual({ quantity: 3, status: "draft", canceledAt: null });
     expect(cmsCustomerOrderCreateSchema.safeParse({ ...create, seller: 7 }).success).toBe(false);
     expect(cmsCustomerOrderCreateSchema.safeParse({ ...create, source: "manual" }).success).toBe(false);
+    expect(cmsCustomerOrderCreateSchema.safeParse({ ...create, note: "隐藏备注" }).success).toBe(false);
     expect(cmsCustomerOrderUpdateSchema.safeParse({ customerOpenid: "leak", quantity: 3 }).success).toBe(false);
+    expect(cmsCustomerOrderUpdateSchema.safeParse({ note: "隐藏备注" }).success).toBe(false);
     expect(cmsCustomerOrderUpdateSchema.safeParse({}).success).toBe(false);
   });
 });

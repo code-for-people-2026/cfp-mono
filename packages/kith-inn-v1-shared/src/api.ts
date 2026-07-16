@@ -497,7 +497,7 @@ export const customerReservationResultSchema = z.discriminatedUnion("status", [
 ]);
 
 export const customerReservationResponseSchema = z.object({
-  profile: customerProfileSchema,
+  profile: customerProfileSchema.safeExtend({ active: z.literal(true) }),
   results: z.array(customerReservationResultSchema).min(1).max(20).refine(
     (results) => new Set(results.map((result) => String(result.mealSlotId))).size === results.length,
     { message: "每个餐次只能返回一个登记结果" }
@@ -506,8 +506,9 @@ export const customerReservationResponseSchema = z.object({
   ({ profile, results }) => results.every((result) => result.status === "failed" || (
     String(result.mealSlotId) === String(result.doc.mealSlotId)
     && String(result.doc.customerProfileId) === String(profile.id)
+    && String(result.doc.sellerId) === String(profile.sellerId)
   )),
-  { message: "成功登记结果必须匹配餐次和顾客资料" }
+  { message: "成功登记结果必须匹配餐次、商户和顾客资料" }
 );
 
 export const orderListQuerySchema = z.object({
@@ -593,7 +594,7 @@ export const cmsCustomerOrderCreateSchema = z.object({
   deliveredAt: z.null(),
   confirmedAt: z.null(),
   canceledAt: z.null(),
-  note: noteSchema
+  note: z.null()
 }).strict();
 
 export const cmsCustomerOrderUpdateSchema = z.object({
@@ -601,7 +602,7 @@ export const cmsCustomerOrderUpdateSchema = z.object({
   unitPriceCents: nonNegativeIntegerSchema.optional(),
   displayName: shortText.optional(),
   address: addressSchema.optional(),
-  note: noteSchema.optional(),
+  note: z.null().optional(),
   status: z.literal("draft").optional(),
   paymentStatus: z.literal("unpaid").optional(),
   paidAt: z.null().optional(),
