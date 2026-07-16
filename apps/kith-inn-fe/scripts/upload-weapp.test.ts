@@ -37,6 +37,16 @@ describe("upload arguments and smoke credential", () => {
       "actions/download-artifact@v4", "environment: Production"])
       expect(workflow).toContain(token);
   });
+  it("routes the real upload through the trusted fixed ECS egress", () => {
+    const workflow = readFileSync(join(__dirname, "../../../.github/workflows/release-kith-inn-weapp.yml"), "utf8");
+    for (const token of ["KITH_INN_UPLOAD_PROXY_SSH_KEY", "KITH_INN_UPLOAD_PROXY_SSH_USER",
+      "ECS_SSH_KNOWN_HOSTS", "StrictHostKeyChecking=yes",
+      "-D 127.0.0.1:1080", "proxychains4", "PROXYCHAINS_CONF_FILE", '"$egress" == "$ECS_HOST"',
+      "trap cleanup EXIT"])
+      expect(workflow).toContain(token);
+    expect(workflow).not.toContain("StrictHostKeyChecking=no");
+    expect(workflow).not.toContain("ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}");
+  });
   it("requires version/description/project path and rejects unknown arguments", () => {
     expect(parseUploadArgs(["--", "--version", "1.2.3", "--desc", `trial-${sha.slice(0, 12)}`, "--project-path", "/tmp/p", "--dry-run"]))
       .toMatchObject({ version: "1.2.3", dryRun: true });

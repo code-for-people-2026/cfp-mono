@@ -9,7 +9,7 @@
 | H5/weapp build | `NODE_ENV=production`、`BE_BASE_URL` | 只允许有效 `https://` 主机；拒绝 IP、localhost、局域网、查询/片段和隐式默认值 |
 | 桃子 provisioning/smoke | `KITH_INN_TRIAL_OPENID` | OpenID 仅为 Environment secret；provisioning 以机器可读结果输出非敏感 seller ID，流水线直接传给 smoke，禁止把 seller ID 配成 Environment 输入或人工复制/猜测 |
 | ECS 部署传输 | `ECS_SSH_KEY`、`ECS_SSH_KNOWN_HOSTS` | host key 必须经可信通道预置；禁止关闭 SSH host 校验后传输 env/secret |
-| 体验版上传 | `WX_APPID`、`KITH_INN_MINIPROGRAM_PRIVATE_KEY` | 私钥只写临时 0600 文件并在 finally 删除；上传 IP 白名单开启 |
+| 体验版上传 | `WX_APPID`、`KITH_INN_MINIPROGRAM_PRIVATE_KEY`、`KITH_INN_UPLOAD_PROXY_SSH_USER`、`KITH_INN_UPLOAD_PROXY_SSH_KEY`、`ECS_HOST`、`ECS_SSH_KNOWN_HOSTS` | 私钥只写临时 0600 文件并在 finally 删除；上传经严格 host key 校验的 SSH SOCKS 隧道从 ECS 固定出口发出，运行时核对出口等于 `ECS_HOST`；代理 SSH key 只允许端口转发，不复用部署 key |
 
 非敏感 URL、镜像名、版本说明可用 GitHub Environment variable；secret 缺失时 kith-inn job 必须失败关闭或明确保持未配置，不能影响无关项目 job。任何值不得由工作流拼入 PR 或普通 artifact。
 
@@ -64,5 +64,7 @@
 PR7 只在 smoke 全部成功后生成 `smoke-passed.json`，内容为 schema version、完整 `releaseSha`、deploy run ID、CMS runtime/CMS ops/BE/H5 四镜像 digest、migration head、非敏感 backup ID/时间与 `smokeStatus: passed`，并上传为按 SHA 命名且设置 `retention-days: 30` 的 GitHub Actions artifact；失败路径不得产生该 marker。
 
 上传 workflow 必须显式选择 main commit，随后通过 GitHub Actions API 查询、下载并校验该 SHA 对应且未过期的 `smoke-passed.json`；artifact 缺失/过期，或 SHA、run ID、digest、migration head、状态任一不一致均失败，不能信任手填 SHA 或手工抄录结果。校验通过并经 GitHub Environment 审批后才可上传；不得由任意 PR 或无关 main push 自动上传。
+
+微信代码上传 IP 白名单只允许 ECS 的固定公网出口。标准 GitHub-hosted runner 的动态共享 IP 范围不得加入白名单；实际 `miniprogram-ci` 进程必须经临时 SSH SOCKS 隧道和 `proxychains4` 发出，请求前用外部回显地址核对出口精确等于受控 `ECS_HOST`，任一不一致均在读取上传私钥前失败。隧道使用独立、无 shell/无 sudo/仅端口转发的 SSH 身份，并在成功或失败后删除 runner 侧 key、known-hosts、控制 socket 与代理配置。
 
 证据至少记录：release SHA、镜像 digest、migration head、脱敏 host/TLS 检查、smoke run、weapp version/上传 run、体验成员确认、`domainValidationEnabled=true`、微信登录与 7 个核心步骤结果。证据不得含 secret、OpenID、JWT、顾客姓名/地址、私钥内容或完整生产 env。
