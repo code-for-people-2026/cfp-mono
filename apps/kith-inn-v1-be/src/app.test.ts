@@ -26,6 +26,12 @@ describe("createApp", () => {
     expect(response.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type,Authorization");
   });
 
+  it("mounts customer-owned profile and reservation routes behind customer auth", async () => {
+    const app = createApp({ jwtSecret: "test-secret" });
+    expect((await app.request("/customer/profiles")).status).toBe(401);
+    expect((await app.request("/customer/reservations", { method: "POST" })).status).toBe(401);
+  });
+
   it("fails closed without the dedicated v1 JWT secret", () => {
     delete process.env.KITH_INN_V1_JWT_SECRET;
     expect(() => createApp()).toThrow(/KITH_INN_V1_JWT_SECRET/);
