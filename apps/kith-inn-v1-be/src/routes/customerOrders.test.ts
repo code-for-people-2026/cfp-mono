@@ -12,9 +12,19 @@ const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
 const profile = {
   id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: true
 } satisfies CustomerProfile;
+const order = {
+  id: 31, sellerId: 7, mealSlotId: 11, customerProfileId: 21, status: "draft" as const,
+  source: "customer-card" as const, displayName: "王阿姨", address: "3A", quantity: 2,
+  unitPriceCents: 3000, totalCents: 6000, paymentStatus: "unpaid" as const, paidAt: null,
+  deliveryStatus: "pending" as const, deliveredAt: null, confirmedAt: null, canceledAt: null, note: null
+};
 const result: CustomerReservationResponse = {
   profile,
-  results: [{ mealSlotId: 11, status: "failed", error: "meal-slot-closed", message: "餐次已关闭登记" }]
+  results: [
+    { mealSlotId: 11, status: "created", doc: order },
+    { mealSlotId: 12, status: "failed", error: "meal-slot-closed", message: "餐次已关闭登记" },
+    { mealSlotId: 13, status: "failed", error: "database-detail", message: "secret" }
+  ]
 };
 const input = (items: unknown = [{ mealSlotId: 11, quantity: 2 }]) => ({
   batchPublicId, profile: { customerProfileId: 21 }, displayName: "王阿姨", address: "3A", items
@@ -37,7 +47,10 @@ describe("customer reservation route", () => {
       { mealSlotId: 11, quantity: 2 }, { mealSlotId: 11, quantity: 2, resubmitCanceled: false }
     ])));
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual(result);
+    await expect(response.json()).resolves.toEqual({ ...result, results: [
+      result.results[0], result.results[1],
+      { mealSlotId: 13, status: "failed", error: "reservation-item-failed", message: "登记失败" }
+    ] });
     expect(injected.submit).toHaveBeenCalledWith(token, "wx-customer", expect.objectContaining({
       items: [{ mealSlotId: 11, quantity: 2, resubmitCanceled: false }]
     }));
