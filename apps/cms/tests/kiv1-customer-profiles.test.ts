@@ -9,6 +9,7 @@ vi.mock("payload", async (importOriginal) => ({
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
 import * as profileRoutes from "../src/app/api/internal/kiv1/customer/profiles/route";
+import { POST as deactivateProfile } from "../src/app/api/internal/kiv1/customer/profiles/[id]/deactivate/route";
 import { POST as touchProfile } from "../src/app/api/internal/kiv1/customer/profiles/[id]/touch/route";
 
 const SECRET = "v1-secret";
@@ -169,6 +170,9 @@ describe("customer profile persistence boundary", () => {
     expect((await touchProfile(request("/21/touch", { method: "POST", token: ownerToken }), {
       params: Promise.resolve({ id: "21" })
     })).status).toBe(500);
+    expect((await deactivateProfile(request("/21/deactivate", { method: "POST", token: ownerToken }), {
+      params: Promise.resolve({ id: "21" })
+    })).status).toBe(500);
   });
 
   it("touches only an active owner profile and returns 404 across either owner axis", async () => {
@@ -196,5 +200,44 @@ describe("customer profile persistence boundary", () => {
       overrideAccess: true
     });
     expect(JSON.stringify(await response.json())).not.toContain("openid");
+  });
+
+  it("idempotently deactivates only an owner profile without rewriting snapshots", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    const context = (id: string) => ({ params: Promise.resolve({ id }) });
+    expect((await deactivateProfile(request("/21/deactivate", {
+      method: "POST", token: ownerToken, internal: false
+    }), context("21"))).status).toBe(401);
+    expect((await deactivateProfile(request("/21/deactivate", {
+      method: "POST", token: neighborToken
+    }), context("21"))).status).toBe(404);
+    expect((await deactivateProfile(request("/21/deactivate", {
+      method: "POST", token: foreignSellerToken
+    }), context("21"))).status).toBe(404);
+    expect((await deactivateProfile(request("/21/deactivate", {
+      method: "POST", body: { active: true }, token: ownerToken
+    }), context("21"))).status).toBe(422);
+
+    const response = await deactivateProfile(request("/21/deactivate", {
+      method: "POST", token: ownerToken
+    }), context("21"));
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith({
+      collection: "kiv1_customer_profiles",
+      id: "21",
+      data: { active: false },
+      overrideAccess: true
+    });
+    await expect(response.json()).resolves.toEqual({
+      doc: { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: false }
+    });
+
+    const repeated = await deactivateProfile(request("/24/deactivate", {
+      method: "POST", token: ownerToken
+    }), context("24"));
+    expect(repeated.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledOnce();
+    expect(JSON.stringify(await repeated.json())).not.toContain("openid");
   });
 });

@@ -1,12 +1,70 @@
-import { cmsCustomerOrderCreateSchema, customerSessionBootstrapInputSchema } from "@cfp/kith-inn-v1-shared/api";
+import type { CustomerOrderView } from "@cfp/kith-inn-v1-shared";
+import {
+  cmsCustomerOrderCreateSchema,
+  customerOrdersResponseSchema,
+  customerOrderViewSchema,
+  customerSessionBootstrapInputSchema
+} from "@cfp/kith-inn-v1-shared/api";
 import { relationshipIdSchema } from "@cfp/kith-inn-v1-shared/schemas";
 import type { BasePayload, PayloadRequest } from "payload";
 import { NextResponse } from "next/server";
-import { customerWriteScope, isUniqueConflict, lockCustomerAvailability, withCustomerOrderLock }
+import { customerScope, customerWriteScope, isUniqueConflict, lockCustomerAvailability, withCustomerOrderLock }
   from "@/lib/kiv1-internal";
+import { normalizeMealSlot } from "../../meal-slots/route";
 import { normalizeOrder } from "../../orders/route";
 
 export const dynamic = "force-dynamic";
+
+type CustomerOrderDoc = Parameters<typeof normalizeOrder>[0] & {
+  mealSlot: Parameters<typeof normalizeMealSlot>[0];
+};
+
+export function normalizeCustomerOrder(doc: CustomerOrderDoc): CustomerOrderView {
+  const order = normalizeOrder(doc);
+  const slot = normalizeMealSlot(doc.mealSlot);
+  return customerOrderViewSchema.parse({
+    id: order.id,
+    target: { date: slot.date, occasion: slot.occasion },
+    menuItems: slot.menuItems.map(({ nameSnapshot, mainIngredientSnapshot, categorySnapshot }) => ({
+      nameSnapshot,
+      mainIngredientSnapshot,
+      categorySnapshot
+    })),
+    orderStatus: slot.orderStatus,
+    orderDeadline: slot.orderDeadline,
+    displayName: order.displayName,
+    address: order.address,
+    quantity: order.quantity,
+    unitPriceCents: order.unitPriceCents,
+    totalCents: order.totalCents,
+    status: order.status,
+    paymentStatus: order.paymentStatus,
+    paidAt: order.paidAt,
+    deliveryStatus: order.deliveryStatus,
+    deliveredAt: order.deliveredAt,
+    confirmedAt: order.confirmedAt,
+    canceledAt: order.canceledAt
+  });
+}
+
+export async function GET(req: Request) {
+  const scope = await customerScope(req);
+  if (scope instanceof NextResponse) return scope;
+  const result = await scope.payload.find({
+    collection: "kiv1_orders",
+    where: { and: [
+      { seller: { equals: scope.sellerId } },
+      { customerOpenid: { equals: scope.openid } },
+      { source: { equals: "customer-card" } }
+    ] },
+    limit: 0,
+    depth: 1,
+    overrideAccess: true
+  });
+  const docs = (result.docs as CustomerOrderDoc[]).map(normalizeCustomerOrder)
+    .sort((left, right) => right.target.date.localeCompare(left.target.date));
+  return NextResponse.json(customerOrdersResponseSchema.parse({ docs }));
+}
 
 export function relationshipId(value: string): string | number | null {
   const parsed = relationshipIdSchema.safeParse(/^\d+$/.test(value) ? Number(value) : value);
