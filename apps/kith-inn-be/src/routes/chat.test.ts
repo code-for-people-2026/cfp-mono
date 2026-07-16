@@ -36,7 +36,7 @@ const mockCms = (): AgentCms =>
 const token = async () => issueToken({ operatorId: 1, sellerId: 7, role: "owner" }, SECRET);
 const auth = async () => ({ Authorization: `Bearer ${await token()}` });
 const json = async () => ({ ...(await auth()), "content-type": "application/json" });
-const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 }, opId: "1" } };
+const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将记录 #1 已到账", args: { orderId: 1 }, opId: "1" } };
 
 const sampleHistory = (): ChatMessage[] => [
   { id: 1, content: "老消息", role: "user", createdAt: "", seller: 7 },
@@ -303,7 +303,7 @@ describe("POST /chat/confirm-operation", () => {
     const cms = { ...mockCms(), reconcileOrders: vi.fn(async () => { throw new CmsHttpError(409, "reconcile", "settled-order"); }) } as AgentCms;
     const res = await post(chatRoutes(SECRET, { cms }));
     expect(res.status).toBe(409);
-    expect(await res.json()).toMatchObject({ error: "settled-order", message: expect.stringMatching(/已付款或已送达/) });
+    expect(await res.json()).toMatchObject({ error: "settled-order", message: expect.stringMatching(/已标记到账或已送达/) });
     expect(getPendingOp(OP)).toBeUndefined();
   });
 
@@ -317,7 +317,7 @@ describe("POST /chat/confirm-operation", () => {
   });
 
   it("mark_paid marks the order paid on confirm (#126)", async () => {
-    seed({ toolName: "mark_paid", summary: "将标记 #45 已付款", args: { orderId: 45 } });
+    seed({ toolName: "mark_paid", summary: "将记录 #45 已到账", args: { orderId: 45 } });
     const updateOrder = vi.fn(async () => ({}) as never);
     const app = chatRoutes(SECRET, { cms: { ...mockCms(), updateOrder } as AgentCms });
     const res = await post(app, {});
@@ -427,9 +427,9 @@ describe("dispatchPendingOp", () => {
   });
 
   it("mark_unpaid: ok, and not-implemented when the method is absent", async () => {
-    expect(await run(svc(), "mark_unpaid", { orderId: 5 })).toContain("已回退订单 #5");
+    expect(await run(svc(), "mark_unpaid", { orderId: 5 })).toContain("已撤销订单 #5 的到账记录");
     const s = svc({ markUnpaid: undefined });
-    expect(await run(s, "mark_unpaid", { orderId: 5 })).toBe("回退失败：not implemented");
+    expect(await run(s, "mark_unpaid", { orderId: 5 })).toBe("撤销失败：not implemented");
   });
 
   it("generate_menu: ok lists dishes, pool-too-small, and other fail", async () => {
@@ -473,7 +473,7 @@ describe("dispatchPendingOp", () => {
   });
 
   it("mark_paid: ok and fail", async () => {
-    expect(await run(svc(), "mark_paid", { orderId: 5 })).toContain("已标记订单 #5");
+    expect(await run(svc(), "mark_paid", { orderId: 5 })).toContain("已记录订单 #5 到账");
     expect(await run(svc({ markPaid: vi.fn(async () => fail("nope")) }), "mark_paid", { orderId: 5 })).toBe("标记失败：nope");
   });
 

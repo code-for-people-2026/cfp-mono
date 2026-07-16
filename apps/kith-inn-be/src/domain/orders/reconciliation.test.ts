@@ -82,7 +82,7 @@ describe("snapshot reconciliation preview", () => {
   });
 
   it.each([
-    ["已付款", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
+    ["已标记到账", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
     ["已送达", { paymentStatus: "unpaid", fulfillmentStatus: "done" }],
   ])("blocks automatic changes to %s confirmed orders", (_label, sideEffects) => {
     const current = order({ id: 1, customer: customers[0]!, status: "confirmed", ...sideEffects });
@@ -168,7 +168,7 @@ describe("increment reconciliation preview", () => {
   });
 
   it.each([
-    ["已付款", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
+    ["已标记到账", { paymentStatus: "paid", fulfillmentStatus: "pending" }],
     ["已送达", { paymentStatus: "unpaid", fulfillmentStatus: "done" }],
   ])("blocks a no-op set on a %s order", (_label, sideEffects) => {
     const current = order({ id: 1, customer: customers[0]!, status: "confirmed", items: [item(101, 1)], ...sideEffects });

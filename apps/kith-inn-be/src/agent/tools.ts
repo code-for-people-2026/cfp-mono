@@ -123,12 +123,12 @@ export const AGENT_TOOLS: AgentTool[] = [
         const calculation = preview.operation === "add"
           ? `当前 ${row.beforeQuantity ?? 0} 份 + ${row.changeQuantity ?? 0} 份 → 共 ${row.afterQuantity} 份`
           : `当前 ${row.beforeQuantity ?? 0} 份 → 改成 ${row.afterQuantity} 份`;
-        summary = `单独补单（${row.date} ${occasionZh(row.occasion)} ${row.customerName}）：${calculation}${row.affectsConfirmed ? "；会同步影响备餐、送餐和收款口径" : ""}`;
+        summary = `单独补单（${row.date} ${occasionZh(row.occasion)} ${row.customerName}）：${calculation}${row.affectsConfirmed ? "；会同步影响备餐、送餐和到账记录口径" : ""}`;
       } else {
         const count = (kind: string) => preview.rows.filter((row) => row.kind === kind).length;
         const confirmed = preview.rows.filter((row) => row.affectsConfirmed).length;
         const scopeLabel = preview.scope.map((entry) => `${entry.date} ${occasionZh(entry.occasion)}`).join("、");
-        summary = `完整接龙（以本次为准，${scopeLabel}）：新增 ${count("create")}、更新 ${count("update")}、取消 ${count("cancel")}、不变 ${count("unchanged")}${confirmed > 0 ? `；其中 ${confirmed} 单会同步影响备餐、送餐和收款口径` : ""}`;
+        summary = `完整接龙（以本次为准，${scopeLabel}）：新增 ${count("create")}、更新 ${count("update")}、取消 ${count("cancel")}、不变 ${count("unchanged")}${confirmed > 0 ? `；其中 ${confirmed} 单会同步影响备餐、送餐和到账记录口径` : ""}`;
       }
       const opId = setPendingOp(s.operatorId, { toolName: "record_orders", summary, args: preview });
       return { text: `${summary}。请核对下面的变化后确认。`, card: opConfirmCard("record_orders", summary, preview, opId) };
@@ -155,30 +155,30 @@ export const AGENT_TOOLS: AgentTool[] = [
     },
   },
   {
-    def: { type: "function", function: { name: "mark_paid", description: "标记一个订单已付款。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
+    def: { type: "function", function: { name: "mark_paid", description: "手工记录一个订单已到账；只更新经营记录，不处理真实付款。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const orderId = Number(args.orderId);
       const label = await orderLabel(s, orderId);
-      const summary = `将标记订单 ${label} 为已付款`;
+      const summary = `将记录订单 ${label} 已到账`;
       const opId = setPendingOp(s.operatorId, { toolName: "mark_paid", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_paid", summary, { orderId }, opId) };
     },
   },
   {
-    def: { type: "function", function: { name: "mark_unpaid", description: "回退一个订单为未付款（桃子说「那个其实没付/回退一下付款」时用）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
+    def: { type: "function", function: { name: "mark_unpaid", description: "撤销一个订单的手工到账记录（桃子说「那个其实没付/撤销到账」时用）。", parameters: { type: "object", properties: { orderId: { type: "integer" } }, required: ["orderId"] } } },
     execute: async (s, args) => {
       const orderId = Number(args.orderId);
       const label = await orderLabel(s, orderId);
-      const summary = `将回退订单 ${label} 为未付款`;
+      const summary = `将撤销订单 ${label} 的到账记录`;
       const opId = setPendingOp(s.operatorId, { toolName: "mark_unpaid", args: { orderId }, summary });
       return { text: summary + "。点下面「确认」。", card: opConfirmCard("mark_unpaid", summary, { orderId }, opId) };
     },
   },
   {
-    def: { type: "function", function: { name: "get_today_summary", description: "查今天概况：未确认订单 / 待送 / 未付 + 最近订单。用户问「今天什么情况/还差什么」时调它。", parameters: { type: "object", properties: {} } } },
+    def: { type: "function", function: { name: "get_today_summary", description: "查今天概况：未确认订单 / 待送 / 未标到账 + 最近订单。用户问「今天什么情况/还差什么」时调它。", parameters: { type: "object", properties: {} } } },
     execute: async (s) => {
       const t = await s.getTodaySummary();
-      return { text: `今天：草稿未确认 ${t.unconfirmedOrders} 单 / 待送 ${t.pendingDeliveries} 份 / 未付 ${t.unpaidOrders} 单。最近订单：${t.recentOrders || "（无）"}` };
+      return { text: `今天：草稿未确认 ${t.unconfirmedOrders} 单 / 待送 ${t.pendingDeliveries} 份 / 未标到账 ${t.unpaidOrders} 单。最近订单：${t.recentOrders || "（无）"}` };
     },
   },
   {
@@ -188,7 +188,7 @@ export const AGENT_TOOLS: AgentTool[] = [
       if (orders.length === 0) return { text: "今天还没有订单。" };
       const drafts = orders.filter((o) => o.status === "draft").length;
       const unpaid = orders.filter((o) => o.status === "confirmed" && o.paymentStatus === "unpaid").length;
-      const tail = [drafts > 0 && `草稿 ${drafts}`, unpaid > 0 && `未付 ${unpaid}`].filter(Boolean).join(" / ");
+      const tail = [drafts > 0 && `草稿 ${drafts}`, unpaid > 0 && `未标到账 ${unpaid}`].filter(Boolean).join(" / ");
       return {
         text: `今天 ${orders.length} 单${tail ? `（${tail}）` : ""}，看下面卡片。`,
         card: { type: "orders", data: { orders, date: orders[0]?.date ?? "" } },

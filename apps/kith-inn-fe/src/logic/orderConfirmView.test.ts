@@ -22,14 +22,14 @@ describe("orderReconciliationLine", () => {
   });
 
   it("marks confirmed business impact", () => {
-    expect(orderReconciliationLine({ ...row, kind: "update", beforeQuantity: 1, orderStatus: "confirmed", affectsConfirmed: true })).toContain("影响备餐/送餐/收款");
+    expect(orderReconciliationLine({ ...row, kind: "update", beforeQuantity: 1, orderStatus: "confirmed", affectsConfirmed: true })).toContain("影响备餐/送餐/到账记录");
   });
 });
 
 describe("orderReconciliationConflictMessage", () => {
   it("distinguishes settled orders from an expired preview", () => {
-    expect(orderReconciliationConflictMessage({ error: "settled-order", message: "王阿姨的订单已付款，请单独处理" })).toBe("王阿姨的订单已付款，请单独处理");
-    expect(orderReconciliationConflictMessage({ error: "settled-order" })).toBe("本次修改涉及已付款或已送达订单，请单独处理");
+    expect(orderReconciliationConflictMessage({ error: "settled-order", message: "王阿姨的订单已标记到账，请单独处理" })).toBe("王阿姨的订单已标记到账，请单独处理");
+    expect(orderReconciliationConflictMessage({ error: "settled-order" })).toBe("本次修改涉及已标记到账或已送达订单，请单独处理");
     expect(orderReconciliationConflictMessage({ error: "stale-preview", message: "订单已变化，请重新说一遍补单" })).toBe("订单已变化，请重新说一遍补单");
     expect(orderReconciliationConflictMessage({ error: "stale-preview" })).toBe("这张确认卡已过期，请重新说一遍");
     expect(orderReconciliationConflictMessage(null)).toBe("这张确认卡已过期，请重新说一遍");

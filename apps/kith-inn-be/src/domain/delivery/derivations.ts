@@ -74,8 +74,8 @@ export type TodayGaps = {
   unpublishedMenus: number;
 };
 
-/** 跨表"今天还差什么"：草稿未确认 / 未送履约 / 未付 / 菜单未发。纯函数（数据传入）。
- *  未付口径只算 **confirmed** 单（draft 默认 unpaid 但未成单、canceled 已作废，§7.1）。 */
+/** 跨表"今天还差什么"：草稿未确认 / 未送履约 / 未标到账 / 菜单未发。纯函数（数据传入）。
+ *  未标到账口径只算 **confirmed** 单（draft 默认 unpaid 但未成单、canceled 已作废，§7.1）。 */
 export function todayGaps(input: { orders: Order[]; fulfillments: Fulfillment[]; menuPlans: MenuPlan[] }): TodayGaps {
   return {
     unconfirmedOrders: input.orders.filter((o) => o.status === "draft").length,

@@ -8,8 +8,8 @@ afterEach(() => {
 
 describe("pendingOps", () => {
   it("set + get + clear", () => {
-    setPendingOp(1, { toolName: "mark_paid", args: { orderId: 45 }, summary: "将标记 #45 已付款" });
-    expect(getPendingOp(1)).toMatchObject({ toolName: "mark_paid", args: { orderId: 45 }, summary: "将标记 #45 已付款" });
+    setPendingOp(1, { toolName: "mark_paid", args: { orderId: 45 }, summary: "将记录 #45 已到账" });
+    expect(getPendingOp(1)).toMatchObject({ toolName: "mark_paid", args: { orderId: 45 }, summary: "将记录 #45 已到账" });
     expect(getPendingOp(1)?.opId).toEqual(expect.any(String));
     clearPendingOp(1);
     expect(getPendingOp(1)).toBeUndefined();

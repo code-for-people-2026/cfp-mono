@@ -3,7 +3,7 @@ import { OPERATOR_JWT_HEADER } from "./client";
 import { createChatMessage, listChatMessages } from "./chat";
 
 const ORIG = process.env.CMS_BASE_URL;
-const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 }, opId: "1" } };
+const CARD = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将记录 #1 已到账", args: { orderId: 1 }, opId: "1" } };
 afterEach(() => {
   process.env.CMS_BASE_URL = ORIG;
   vi.unstubAllGlobals();

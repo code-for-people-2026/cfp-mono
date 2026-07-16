@@ -165,7 +165,7 @@ export default function Orders() {
                         </Tag>
                       )}
                       <Tag className={`inline-flex h-[44rpx] items-center rounded-[8rpx] px-[12rpx] text-[22rpx] ${d.payment === "paid" ? "bg-green-soft text-green" : "bg-red-soft text-red"}`}>
-                        {d.payment === "paid" ? "付✓" : "付○"}
+                        {d.payment === "paid" ? "到账✓" : "到账○"}
                       </Tag>
                     </View>
                     <Text className="shrink-0 text-[24rpx] text-muted">{yuan(o.totalCents)}</Text>
@@ -175,10 +175,10 @@ export default function Orders() {
                       <Button type="primary" className="bg-red text-white" onClick={() => act(orderConfirmUrl(o.id), "POST")}>确认订单</Button>
                     )}
                     {d.base === "confirmed" && d.payment === "unpaid" && (
-                      <Button className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>标已付</Button>
+                      <Button className="bg-surface text-ink" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "paid" })}>标记到账</Button>
                     )}
                     {d.base === "confirmed" && o.paymentStatus === "paid" && (
-                      <Button className="bg-surface text-muted" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "unpaid" })}>回退未付</Button>
+                      <Button className="bg-surface text-muted" onClick={() => act(orderUrl(o.id), "PATCH", { paymentStatus: "unpaid" })}>撤销到账</Button>
                     )}
                     {row.fulfillment && d.delivery === "pending" && (
                       <Button className="bg-surface text-ink" onClick={() => act(markDeliveredUrl(), "PATCH", { ids: [row.fulfillment!.id], set: { status: "done" } })}>标送达</Button>
@@ -212,7 +212,7 @@ export default function Orders() {
 
         <View className="mb-[20rpx] card bg-surface p-[20rpx]">
           <Text className="block text-[28rpx] font-bold">{summary.orders} 单 · {summary.servings} 份 · {yuan(summary.totalCents)}</Text>
-          <Text className="mt-[8rpx] block text-[24rpx] text-muted">草稿 {summary.drafts} · 未付 {summary.unpaid} · 待送 {summary.pendingDeliveries}</Text>
+          <Text className="mt-[8rpx] block text-[24rpx] text-muted">草稿 {summary.drafts} · 未标到账 {summary.unpaid} · 待送 {summary.pendingDeliveries}</Text>
         </View>
 
         <View className="mb-[16rpx]">
@@ -229,7 +229,7 @@ export default function Orders() {
             className={selectedUnpaidIds.length === 0 ? "bg-surface text-muted" : "bg-green text-white"}
             onClick={bulkPaid}
           >
-            批量已付{selectedUnpaidIds.length > 0 ? `(${selectedUnpaidIds.length})` : ""}
+            批量标到账{selectedUnpaidIds.length > 0 ? `(${selectedUnpaidIds.length})` : ""}
           </Button>
           <Button
             type="primary"

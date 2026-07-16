@@ -58,7 +58,7 @@ const coordinate = (customer: Id, date: string, occasion: string) => `${String(c
 const scopeCoordinate = (date: string, occasion: string) => `${date.split("T")[0]!}|${occasion}`;
 const assertReconciliationMutable = (order: ReconciliationOrder, customerName: string) => {
   if (order.paymentStatus !== "unpaid" || (order.status === "confirmed" && order.fulfillmentStatus !== "pending")) {
-    throw new ReconciliationError("settled-order", `${customerName} 的订单已付款或已送达，请单独处理`);
+    throw new ReconciliationError("settled-order", `${customerName} 的订单已标记到账或已送达，请单独处理`);
   }
 };
 

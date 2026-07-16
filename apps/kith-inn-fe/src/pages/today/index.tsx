@@ -128,7 +128,7 @@ export default function Today() {
   };
 
 
-  /** 确认 / 标已付 on an orders card → reuse the orders-tab endpoints, then
+  /** 确认 / 标记到账 on an orders card → reuse the orders-tab endpoints, then
    *  optimistically update that order inside the card so the button flips. */
   const onOrderAct = (msgIdx: number, orderId: string | number, action: "confirm" | "paid") => {
     const token = tokens.getToken();
@@ -152,7 +152,7 @@ export default function Today() {
           Taro.showToast({ title: "操作失败", icon: "error" });
           return;
         }
-        Taro.showToast({ title: action === "confirm" ? "已确认" : "已收款", icon: "success" });
+        Taro.showToast({ title: action === "confirm" ? "已确认" : "已记录到账", icon: "success" });
         setMsgs((ms) =>
           ms.map((m, i) =>
             i !== msgIdx || !m.card || m.card.type !== "orders"

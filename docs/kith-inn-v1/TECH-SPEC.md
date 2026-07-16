@@ -54,7 +54,7 @@ apps/cms                        # 既有共享 Payload host，M0 装配 v1 colle
 
 - `/pages/merchant/menu`：菜品池、批量录入、菜单生成、换菜。
 - `/pages/merchant/batches`：选择日期/餐次，生成预订登记批次，分享小程序卡片。
-- `/pages/merchant/orders`：按日期/餐次看订单，确认、标已付、标已送、取消、手动补单。
+- `/pages/merchant/orders`：按日期/餐次看订单，确认、标记到账、标已送、取消、手动补单。
 - `/pages/merchant/jielong-import`：审核兜底入口，默认隐藏或弱入口。
 
 ### 顾客侧
@@ -124,7 +124,7 @@ customer JWT 至少包含：
 - `customerOpenid` 等于当前 openid 的订单。
 - 当前分享批次允许公开的 meal slots 和菜单快照。
 
-顾客不能确认订单、标已付、标已送，也不能按称呼或地址认领资料/订单。
+顾客不能确认订单、标记到账、标已送，也不能按称呼或地址认领资料/订单。
 
 ### 5.4 Backend → CMS
 
@@ -222,7 +222,7 @@ POST   /customer/orders/:id/cancel
 - 一个 order = 一个 customer profile + 一个 meal slot 的套餐份数。
 - 同一 `seller + mealSlot + customerProfile` 只保留一条记录；重复提交和取消后重订复用该记录。
 - 顾客提交生成/更新 draft；桃子确认后变 confirmed 并锁单。
-- confirmed 才进入备餐、未付、未送口径。
+- confirmed 才进入备餐、未标到账、未送口径。
 - paymentStatus 与 deliveryStatus 直接放在 order 上，互相独立。
 - 桃子可修改/取消 confirmed order，但必须提示影响备餐/送餐。
 - 手动订单只有在保存了已验证的 customerOpenid 时才会出现在该顾客“我的订单”。
@@ -305,9 +305,9 @@ MVP 主链路不使用 AI。
 - 实现 v1 operator 登录和 `/api/internal/kiv1/*` persistence routes。
 - 菜品池 CRUD + 批量导入。
 - 单餐/多餐菜单生成、换菜。
-- 商家手动补单、改单、确认、标已付、标已送、取消。
+- 商家手动补单、改单、确认、标记到账、标已送、取消。
 
-交付：不依赖顾客侧，也能让桃子手动跑通“菜单 → 补单 → 确认 → 送达/收款”。
+交付：不依赖顾客侧，也能让桃子手动跑通“菜单 → 补单 → 确认 → 送达/到账记录”。
 
 ### M2：顾客预订登记
 

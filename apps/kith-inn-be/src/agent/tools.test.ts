@@ -85,9 +85,9 @@ describe("record_orders production tool", () => {
   });
 
   it("explains why settled orders cannot be changed by a full snapshot", async () => {
-    const error = new ReconciliationError("settled-order", "王燕萍的订单已付款或已送达，请单独处理");
+    const error = new ReconciliationError("settled-order", "王燕萍的订单已标记到账或已送达，请单独处理");
     const result = await recordTool.execute(services({ previewOrderReconciliation: vi.fn(async () => { throw error; }) }), { rawText: "x" });
-    expect(result).toEqual({ text: expect.stringMatching(/已付款或已送达.*单独处理/) });
+    expect(result).toEqual({ text: expect.stringMatching(/已标记到账或已送达.*单独处理/) });
     expect(getPendingOp(OPERATOR)).toBeUndefined();
   });
 

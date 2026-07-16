@@ -61,7 +61,7 @@ describe("domain schemas — happy parse", () => {
   });
 
   it("chatMessage accepts assistant card snapshots but rejects user cards", () => {
-    const card = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将标记 #1 已付款", args: { orderId: 1 }, opId: "1" } };
+    const card = { type: "operation-confirm" as const, data: { toolName: "mark_paid", summary: "将记录 #1 已到账", args: { orderId: 1 }, opId: "1" } };
     expect(chatMessageSchema.parse({ id, content: "待确认", role: "assistant", createdAt: "t", seller: id, card })).toMatchObject({ card });
     expect(() => chatMessageSchema.parse({ id, content: "接龙文本", role: "user", createdAt: "t", seller: id, card })).toThrow();
     expect(() => chatMessageSchema.parse({ id, content: "坏卡", role: "assistant", createdAt: "t", seller: id, card: { type: "unknown", data: {} } })).toThrow();
@@ -86,7 +86,7 @@ describe("contract schemas", () => {
     expect(confirmCustomerItemSchema.parse({ customerName: "大龙猫", address: "26B", quantity: 1, occasion: "dinner", date: "2026-07-02" })).toMatchObject({ occasion: "dinner", date: "2026-07-02" });
     expect(() => confirmCustomerItemSchema.parse({ customerName: "大龙猫", quantity: 1, occasion: "dinner" })).toThrow();
     expect(() => confirmCustomerItemSchema.parse({ customerName: "大龙猫", quantity: 1, occasion: "dinner", date: "2026-02-30" })).toThrow();
-    const order = { id, customer: 7, date: "2026-07-02", occasion: "lunch" as const, status: "draft" as const, source: "chat-paste", paymentStatus: "unpaid", seller: id };
+    const order = { id, customer: 7, date: "2026-07-02", occasion: "lunch" as const, status: "draft" as const, source: "chat-paste", paymentStatus: "unpaid", paymentMethod: null, paidAt: null, seller: id };
     expect(orderCardDataSchema.parse({ orders: [order], date: "2026-07-02" })).toMatchObject({ orders: [order] });
     expect(deliveryCardGroupSchema.parse({ address: "3A", count: 2, done: 1, total: 2, ids: [201, 202] })).toMatchObject({ total: 2 });
     expect(deliveryCardDataSchema.parse({ totalPending: 1, groups: [] })).toMatchObject({ totalPending: 1 });

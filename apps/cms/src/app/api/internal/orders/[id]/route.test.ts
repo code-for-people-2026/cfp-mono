@@ -131,4 +131,18 @@ describe("PATCH /api/internal/orders/:id", () => {
       data: { paymentStatus: "unpaid", paidAt: null, paymentMethod: null },
     }));
   });
+
+  it("timestamps a manual arrival mark when the caller omits paidAt", async () => {
+    const payload = payloadWith();
+    internal.operatorScope.mockResolvedValue({ sellerId: 7, payload });
+
+    const response = await PATCH(request({ paymentStatus: "paid" }), context);
+
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { paymentStatus: "paid", paidAt: expect.any(String) },
+    }));
+    const data = vi.mocked(payload.update).mock.calls[0]![0].data;
+    expect(Number.isNaN(Date.parse(String(data.paidAt)))).toBe(false);
+  });
 });
