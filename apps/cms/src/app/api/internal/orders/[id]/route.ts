@@ -71,6 +71,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = await req.json().catch(() => ({}));
   const data = selectOrderUpdateData(body);
   if (Object.keys(data).length === 0) return NextResponse.json({ error: "no updatable fields" }, { status: 400 });
+  if (Object.prototype.hasOwnProperty.call(data, "paymentStatus")) {
+    if (data.paymentStatus !== "unpaid" && data.paymentStatus !== "paid") {
+      return NextResponse.json({ error: "paymentStatus must be unpaid or paid" }, { status: 400 });
+    }
+    if (data.paymentStatus === "unpaid") {
+      data.paidAt = null;
+      data.paymentMethod = null;
+    }
+  }
   const updated = await withTransaction(payload, async (payloadReq) => {
     await lockOrderReconciliationWrites(payload, payloadReq);
     const existing = await payload.find({

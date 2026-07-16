@@ -104,4 +104,31 @@ describe("PATCH /api/internal/orders/:id", () => {
     await expect(response.json()).resolves.toEqual({ error: "no updatable fields" });
     expect(payload.update).not.toHaveBeenCalled();
   });
+
+  it("rejects historical or unknown payment states", async () => {
+    const payload = payloadWith();
+    internal.operatorScope.mockResolvedValue({ sellerId: 7, payload });
+
+    const response = await PATCH(request({ paymentStatus: "reconciled" }), context);
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "paymentStatus must be unpaid or paid" });
+    expect(payload.update).not.toHaveBeenCalled();
+  });
+
+  it("clears arrival metadata when the manual mark is revoked", async () => {
+    const payload = payloadWith();
+    internal.operatorScope.mockResolvedValue({ sellerId: 7, payload });
+
+    const response = await PATCH(request({
+      paymentStatus: "unpaid",
+      paidAt: "2026-07-13T08:00:00.000Z",
+      paymentMethod: "wechat",
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { paymentStatus: "unpaid", paidAt: null, paymentMethod: null },
+    }));
+  });
 });

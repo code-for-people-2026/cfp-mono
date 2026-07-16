@@ -111,6 +111,17 @@ export function orderRoutes(jwtSecret: string, deps: OrderRoutesDeps = { cms: re
     const body = await c.req.json().catch(() => ({}));
     const patch = selectOrderUpdatePatch(body);
     if (Object.keys(patch).length === 0) return c.json({ error: "no updatable fields" }, 400);
+    if (patch.paymentStatus !== undefined) {
+      if (patch.paymentStatus !== "unpaid" && patch.paymentStatus !== "paid") {
+        return c.json({ error: "paymentStatus must be unpaid or paid" }, 400);
+      }
+      if (patch.paymentStatus === "unpaid") {
+        patch.paidAt = null;
+        patch.paymentMethod = null;
+      } else if (typeof patch.paidAt !== "string") {
+        patch.paidAt = new Date().toISOString();
+      }
+    }
     try {
       const order = await deps.cms.updateOrder(c.get("token") as string, c.req.param("id"), patch);
       return c.json(order);

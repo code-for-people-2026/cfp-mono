@@ -341,11 +341,14 @@ describe("markPaid", () => {
 });
 
 describe("markUnpaid", () => {
-  it("sets paymentStatus=unpaid (paidAt left as-is — type is non-nullable, field unread)", async () => {
+  it("revokes the complete manual arrival record", async () => {
     const cms = baseCms();
     expect(await svc(cms).markUnpaid({ orderId: 90 })).toEqual({ ok: true });
-    // exact patch (no paidAt) locks the deliberate simplification in services.ts.
-    expect(cms.updateOrder).toHaveBeenCalledWith("jwt", 90, { paymentStatus: "unpaid" });
+    expect(cms.updateOrder).toHaveBeenCalledWith("jwt", 90, {
+      paymentStatus: "unpaid",
+      paidAt: null,
+      paymentMethod: null,
+    });
   });
 
   it("returns a generic error on failure", async () => {
