@@ -7,6 +7,9 @@ import type {
   CustomerProfile,
   CustomerProfileCreate,
   CustomerBookingBatchView,
+  CustomerReservationInput,
+  CustomerReservationResponse,
+  CustomerReservationResult,
   CustomerSessionResponse,
   ImportCommitInput,
   ImportCommitResponse,
@@ -259,6 +262,42 @@ function parseCustomerProfile(value: unknown): CustomerProfile {
   return profile as CustomerProfile;
 }
 
+function parseOwnedCustomerProfiles(value: unknown): CustomerProfile[] {
+  const body = record(value);
+  if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "顾客资料数据无效");
+  return body.docs.map(parseCustomerProfile);
+}
+
+function parseCustomerReservation(value: unknown): CustomerReservationResponse {
+  const body = record(value);
+  if (!body || !Array.isArray(body.results) || body.results.length < 1 || body.results.length > 20)
+    throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+  const profile = parseCustomerProfile(body.profile);
+  if (!profile.active) throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+  const results = body.results.map((value) => {
+    const result = record(value);
+    const target = record(result?.target);
+    if (!result || !target || typeof target.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(target.date) ||
+      !(target.occasion === "lunch" || target.occasion === "dinner"))
+      throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+    if (result.status === "failed" && typeof result.error === "string" && result.error !== "" &&
+      typeof result.message === "string" && result.message !== "") return result as CustomerReservationResult;
+    if (result.status === "created" || result.status === "updated" || result.status === "resubmitted") {
+      const doc = parseOrder(result.doc);
+      if (doc.status !== "draft" || doc.source !== "customer-card" || doc.paymentStatus !== "unpaid" ||
+        doc.paidAt !== null || doc.deliveryStatus !== "pending" || doc.deliveredAt !== null ||
+        doc.confirmedAt !== null || doc.canceledAt !== null || doc.note !== null ||
+        String(doc.customerProfileId) !== String(profile.id) || String(doc.sellerId) !== String(profile.sellerId))
+        throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+      return { ...result, doc } as CustomerReservationResult;
+    }
+    throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+  });
+  if (new Set(results.map(({ target }) => `${target.date}:${target.occasion}`)).size !== results.length)
+    throw new ApiError(502, "invalid-api-response", "预订登记结果无效");
+  return { profile: { ...profile, active: true }, results };
+}
+
 function validNullableDate(value: unknown): boolean {
   return value === null || (typeof value === "string" && !Number.isNaN(Date.parse(value)));
 }
@@ -384,11 +423,12 @@ export function createApiClient(options: ClientOptions) {
     }));
   }
 
-  async function customerRequest(path: string): Promise<unknown> {
+  async function customerRequest(path: string, config: { method?: "GET" | "POST"; data?: unknown } = {}): Promise<unknown> {
     const token = options.customerSessions?.getSession()?.token;
     const header: Record<string, string> = { "content-type": "application/json" };
     if (token) header.Authorization = `Bearer ${token}`;
-    const response = await options.request({ url: `${baseUrl}${path}`, method: "GET", header });
+    const response = await options.request({ url: `${baseUrl}${path}`, method: config.method ?? "GET",
+      ...(config.data === undefined ? {} : { data: config.data }), header });
     if (response.statusCode >= 200 && response.statusCode < 300) return response.data;
     const parsed = parseError(response.data);
     if (response.statusCode === 401 || response.statusCode === 403) options.customerSessions?.clearSession();
@@ -418,6 +458,12 @@ export function createApiClient(options: ClientOptions) {
       return parseCustomerBookingBatchView(await customerRequest(
         `/public/booking-batches/${encodeURIComponent(publicId)}`
       ));
+    },
+    async listOwnedCustomerProfiles(): Promise<CustomerProfile[]> {
+      return parseOwnedCustomerProfiles(await customerRequest("/customer/profiles"));
+    },
+    async submitCustomerReservations(input: CustomerReservationInput): Promise<CustomerReservationResponse> {
+      return parseCustomerReservation(await customerRequest("/customer/reservations", { method: "POST", data: input }));
     },
     async listOfferings(active: "all" | "true" | "false" = "all"): Promise<Offering[]> {
       const value = await request<unknown>(`/merchant/offerings?active=${active}`);

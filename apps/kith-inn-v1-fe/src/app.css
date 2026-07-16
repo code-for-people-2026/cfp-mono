@@ -86,6 +86,7 @@ button.primary {
 
 .batch-controls input,
 .batch-slot input,
+.booking-slot input,
 .batch-create input {
   box-sizing: border-box;
   width: 100%;
