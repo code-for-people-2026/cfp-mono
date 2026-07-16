@@ -1,12 +1,13 @@
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CustomerBookingBatchView, CustomerProfile, CustomerReservationResult } from "@cfp/kith-inn-v1-shared";
 import {
   beginCustomerSession,
   bookingBatchPublicId,
   bookingUnavailableText,
   buildCustomerReservation,
+  canceledReservationDraft,
   defaultCustomerProfile,
   formatBookingPrice,
   profileUseText,
@@ -44,6 +45,8 @@ export default function CustomerBooking() {
   const [draft, setDraft] = useState<CustomerReservationDraft | null>(null);
   const [results, setResults] = useState<CustomerReservationResult[] | null>(null);
   const [formError, setFormError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const params = Taro.getCurrentInstance().router?.params ?? {};
   const publicId = bookingBatchPublicId(params);
 
@@ -89,17 +92,27 @@ export default function CustomerBooking() {
     if (!next) return setFormError("请选择资料，并为至少一个可登记餐次填写正整数份数");
     setFormError(""); setDraft(next);
   };
-  const submit = () => {
-    if (!draft) return;
-    void api.submitCustomerReservations(draft.input).then((response) => {
+  const submit = async () => {
+    if (!draft || !publicId || submittingRef.current) return;
+    submittingRef.current = true; setSubmitting(true); setFormError("");
+    try {
+      const current = await api.getPublicBookingBatch(publicId);
+      const prices = new Map(current.slots.map((slot) => [`${slot.date}:${slot.occasion}`, slot.unitPriceCents]));
+      if (draft.items.some(({ target, unitPriceCents }) =>
+        prices.get(`${target.date}:${target.occasion}`) !== unitPriceCents)) {
+        setView(current); setDraft(null); setFormError("餐次价格已更新，请重新确认"); return;
+      }
+      const response = await api.submitCustomerReservations(draft.input);
       setResults(response.results); setProfile(response.profile); setCreateNew(false); setSaveAsNew(false);
       setProfiles((current) => current.some(({ id }) => String(id) === String(response.profile.id))
         ? current : [...current, response.profile]);
-    }).catch(() => setFormError("提交失败，请稍后重试"));
+    } catch { setFormError("提交失败，请稍后重试"); }
+    finally { submittingRef.current = false; setSubmitting(false); }
   };
 
   if (error) return <View className="page booking-page"><Text className="notice">{error}</Text></View>;
   if (!view) return <View className="page booking-page"><Text>正在加载预订信息…</Text></View>;
+  const retryCanceled = draft && results && profile ? canceledReservationDraft(draft, results, profile) : null;
 
   return (
     <View className="page booking-page">
@@ -153,8 +166,10 @@ export default function CustomerBooking() {
         </Text>)}
         <Text>总计：{formatBookingPrice(draft.totalCents)}</Text>
         {formError && <Text className="notice">{formError}</Text>}
-        <Button className="primary" onClick={submit}>确认提交</Button>
-        <Button onClick={() => setDraft(null)}>返回修改</Button>
+        <Button className="primary" disabled={submitting} onClick={() => void submit()}>
+          {submitting ? "提交中…" : "确认提交"}
+        </Button>
+        <Button disabled={submitting} onClick={() => setDraft(null)}>返回修改</Button>
       </View>}
       {results && <View className="card booking-results">
         <Text className="section-title">登记结果</Text>
@@ -162,6 +177,9 @@ export default function CustomerBooking() {
           <Text>{result.target.date} {occasionText(result.target.occasion)}</Text>
           <Text>{reservationResultText(result)}</Text>
         </View>)}
+        {retryCanceled && <Button onClick={() => { setDraft(retryCanceled); setResults(null); }}>
+          确认重新登记已取消餐次
+        </Button>}
         <Button onClick={() => { setDraft(null); setResults(null); }}>继续修改</Button>
       </View>}
     </View>

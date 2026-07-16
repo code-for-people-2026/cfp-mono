@@ -52,14 +52,32 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   await page.getByRole("spinbutton").nth(1).fill("1");
   await page.getByText("查看确认摘要", { exact: true }).click();
   await expect(page.getByText("总计：¥86.00", { exact: true })).toBeVisible();
+  expect((await request.patch(`${BE}/merchant/meal-slots/${docs[0]!.id}/booking-config`, {
+    headers, data: { priceCents: 2900, orderDeadline: deadline, orderStatus: "open" }
+  })).ok()).toBe(true);
   await page.getByText("确认提交", { exact: true }).click();
+  await expect(page.getByText("餐次价格已更新，请重新确认", { exact: true })).toBeVisible();
+  await page.getByText("查看确认摘要", { exact: true }).click();
+  await expect(page.getByText("总计：¥88.00", { exact: true })).toBeVisible();
+  await page.getByText("确认提交", { exact: true }).dblclick();
   await expect(page.getByText("登记成功", { exact: true })).toHaveCount(2);
   expect(Date.now() - firstStarted).toBeLessThan(90_000);
+  let lunchOrderId: string | number | undefined;
   for (const occasion of ["lunch", "dinner"]) {
     const orders = await (await request.get(`${BE}/merchant/orders?date=${date}&occasion=${occasion}`, { headers })).json() as
-      { docs: Array<{ source: string; displayName: string }> };
-    expect(orders.docs).toContainEqual(expect.objectContaining({ source: "customer-card", displayName: "王阿姨" }));
+      { docs: Array<{ id: string | number; source: string; displayName: string }> };
+    const matches = orders.docs.filter(({ source, displayName }) => source === "customer-card" && displayName === "王阿姨");
+    expect(matches).toHaveLength(1);
+    if (occasion === "lunch") lunchOrderId = matches[0]!.id;
   }
+  expect((await request.post(`${BE}/merchant/orders/${lunchOrderId}/cancel`, { headers })).ok()).toBe(true);
+  await page.getByText("继续修改", { exact: true }).click();
+  await page.getByText("查看确认摘要", { exact: true }).click();
+  await page.getByText("确认提交", { exact: true }).click();
+  await expect(page.getByText("失败：订单已取消，请确认后重登记", { exact: true })).toBeVisible();
+  await page.getByText("确认重新登记已取消餐次", { exact: true }).click();
+  await page.getByText("确认提交", { exact: true }).click();
+  await expect(page.getByText("已重新登记", { exact: true })).toBeVisible();
   expect((await request.patch(`${BE}/merchant/meal-slots/${docs[1]!.id}/booking-config`, {
     headers, data: { priceCents: 3000, orderDeadline: deadline, orderStatus: "closed" }
   })).ok()).toBe(true);

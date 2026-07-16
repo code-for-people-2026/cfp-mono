@@ -4,6 +4,7 @@ import {
   bookingBatchPublicId,
   bookingUnavailableText,
   buildCustomerReservation,
+  canceledReservationDraft,
   defaultCustomerProfile,
   formatBookingPrice,
   profileUseText,
@@ -88,5 +89,11 @@ describe("customer booking entry logic", () => {
       expect(reservationResultText({ target: { date: "2026-07-13", occasion: "lunch" }, status, doc: {} } as never)).toBe(expected);
     expect(reservationResultText({ target: { date: "2026-07-14", occasion: "dinner" }, status: "failed",
       error: "meal-slot-closed", message: "本餐次已关闭" })).toBe("失败：本餐次已关闭");
+    expect(canceledReservationDraft(buildCustomerReservation(PUBLIC_ID, view,
+      { ...base, quantities: { "2026-07-13:lunch": "1" } })!, [], profile)).toBeNull();
+    expect(canceledReservationDraft(buildCustomerReservation(PUBLIC_ID, view,
+      { ...base, quantities: { "2026-07-13:lunch": "1" } })!, [{ target: { date: "2026-07-13", occasion: "lunch" },
+      status: "failed", error: "canceled-order-confirmation-required", message: "需确认" }], profile)?.input)
+      .toMatchObject({ profile: { customerProfileId: 21 }, items: [{ resubmitCanceled: true }] });
   });
 });

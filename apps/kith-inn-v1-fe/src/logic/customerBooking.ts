@@ -87,3 +87,17 @@ export function reservationResultText(result: CustomerReservationResult): string
   if (result.status === "failed") return `失败：${result.message}`;
   return { created: "登记成功", updated: "已更新", resubmitted: "已重新登记" }[result.status];
 }
+
+export function canceledReservationDraft(draft: CustomerReservationDraft, results: CustomerReservationResult[],
+  profile: CustomerProfile): CustomerReservationDraft | null {
+  const canceled = new Set(results.filter((result) => result.status === "failed" &&
+    result.error === "canceled-order-confirmation-required")
+    .map(({ target }) => `${target.date}:${target.occasion}`));
+  if (canceled.size === 0) return null;
+  const matches = ({ target }: { target: { date: string; occasion: string } }) =>
+    canceled.has(`${target.date}:${target.occasion}`);
+  const items = draft.items.filter(matches);
+  return { input: { ...draft.input, profile: { customerProfileId: profile.id },
+    items: draft.input.items.filter(matches).map((item) => ({ ...item, resubmitCanceled: true })) }, items,
+  totalCents: items.reduce((total, item) => total + item.quantity * item.unitPriceCents, 0) };
+}
