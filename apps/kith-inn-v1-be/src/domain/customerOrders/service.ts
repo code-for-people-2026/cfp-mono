@@ -101,7 +101,24 @@ async function writeItem(token: string, openid: string, input: CustomerReservati
   const resubmitting = expectedStatus === "canceled";
   const patch: CmsCustomerOrderUpdate = resubmitting ? { ...snapshot, status: "draft", paymentStatus: "unpaid",
     paidAt: null, deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null } : snapshot;
-  const doc = customerReservationOrderSchema.parse(await deps.updateOrder(token, current.id, patch, expectedStatus));
+  let updated: Order;
+  try {
+    updated = await deps.updateOrder(token, current.id, patch, expectedStatus);
+  } catch (error) {
+    if (!(error instanceof CmsOrderError) || error.status !== 409 || error.code !== "customer-order-status-changed") {
+      throw error;
+    }
+    const latest = await deps.findOrder(token, item.mealSlotId, profile.id);
+    if (latest) {
+      const raced = writable(latest);
+      if (raced.status === "confirmed") return fail("confirmed-order-locked", "商家已确认，不能修改");
+      if (raced.status === "canceled") {
+        return fail("canceled-order-confirmation-required", "订单已取消，请确认后重登记");
+      }
+    }
+    return fail("order-status-changed", "订单状态已变化，请重新提交");
+  }
+  const doc = customerReservationOrderSchema.parse(updated);
   return { mealSlotId: item.mealSlotId, status: resubmitting ? "resubmitted" : "updated", doc };
 }
 
@@ -109,11 +126,10 @@ export async function submitCustomerReservations(token: string, openid: string, 
   deps: CustomerReservationDeps = defaults
 ): Promise<CustomerReservationResponse> {
   const choice = input.profile;
-  const profiles = await deps.listProfiles(token);
-  const selected = "newProfile" in choice ? profiles.find(({ displayName, address, active }) =>
-    displayName === choice.newProfile.displayName && address === choice.newProfile.address && active)
-    ?? await deps.createProfile(token, choice.newProfile)
-    : profiles.find(({ id, active }) => String(id) === String(choice.customerProfileId) && active);
+  const selected = "newProfile" in choice
+    ? await deps.createProfile(token, choice.newProfile)
+    : (await deps.listProfiles(token)).find(({ id, active }) =>
+      String(id) === String(choice.customerProfileId) && active);
   if (!selected) throw new CustomerReservationError(404, "customer-profile-not-found", "顾客资料不存在");
   const results: CustomerReservationResult[] = [];
   for (const item of input.items) {
