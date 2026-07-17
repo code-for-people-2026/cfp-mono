@@ -1,11 +1,16 @@
-import { cmsOrderCreateSchema } from "@cfp/kith-inn-v1-shared/api";
+import { cmsJielongOrderCreateSchema, cmsOrderCreateSchema, previewHashSchema }
+  from "@cfp/kith-inn-v1-shared/api";
 import type { Order } from "@cfp/kith-inn-v1-shared";
 import { NextResponse } from "next/server";
 import {
   findOwned,
   hasSellerField,
   isUniqueConflict,
-  operatorScope
+  jielongMarker,
+  jielongMarkerFromNote,
+  operatorScope,
+  requireServiceAuth,
+  stripJielongMarker
 } from "@/lib/kiv1-internal";
 
 export const dynamic = "force-dynamic";
@@ -59,7 +64,7 @@ export function normalizeOrder(doc: OrderDoc): Order {
     deliveredAt: doc.deliveredAt ?? null,
     confirmedAt: doc.confirmedAt ?? null,
     canceledAt: doc.canceledAt ?? null,
-    note: doc.note ?? null
+    note: doc.source === "jielong-import" ? stripJielongMarker(doc.note) : doc.note ?? null
   };
 }
 
@@ -71,6 +76,25 @@ async function requestJson(req: Request): Promise<{ ok: true; value: unknown } |
   }
 }
 
+async function findJielongOrder(
+  payload: Parameters<typeof findOwned>[0],
+  sellerId: string | number,
+  mealSlotId: string | number,
+  marker: string
+): Promise<OrderDoc | undefined> {
+  const result = await payload.find({
+    collection: "kiv1_orders",
+    where: { and: [
+      { seller: { equals: sellerId } },
+      { mealSlot: { equals: mealSlotId } },
+      { source: { equals: "jielong-import" } },
+      { note: { contains: marker } }
+    ] },
+    limit: 0, depth: 0, overrideAccess: true
+  });
+  return (result.docs as OrderDoc[]).find((doc) => jielongMarkerFromNote(doc.note) === marker);
+}
+
 export async function GET(req: Request) {
   const scope = await operatorScope(req);
   if (scope instanceof NextResponse) return scope;
@@ -79,6 +103,21 @@ export async function GET(req: Request) {
   const mealSlotId = /^\d+$/.test(rawMealSlotId) ? Number(rawMealSlotId) : rawMealSlotId;
   if (!await findOwned(scope.payload, "kiv1_meal_slots", mealSlotId, scope.sellerId)) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
+  }
+  const search = new URL(req.url).searchParams;
+  const previewHash = search.get("previewHash");
+  const rawLineNumber = search.get("lineNumber");
+  if (previewHash !== null || rawLineNumber !== null) {
+    const serviceAuthError = requireServiceAuth(req);
+    if (serviceAuthError) return serviceAuthError;
+    const lineNumber = rawLineNumber !== null && /^\d+$/.test(rawLineNumber) ? Number(rawLineNumber) : NaN;
+    if (!previewHashSchema.safeParse(previewHash).success || !Number.isSafeInteger(lineNumber)
+      || lineNumber <= 0 || lineNumber > 99_999) {
+      return NextResponse.json({ error: "invalid-jielong-marker" }, { status: 400 });
+    }
+    const marker = jielongMarker(previewHash!, lineNumber);
+    const doc = await findJielongOrder(scope.payload, scope.sellerId, mealSlotId, marker);
+    return NextResponse.json({ doc: doc ? normalizeOrder(doc) : null });
   }
   const result = await scope.payload.find({
     collection: "kiv1_orders",
@@ -103,14 +142,28 @@ export async function POST(req: Request) {
   if (scope instanceof NextResponse) return scope;
   const body = await requestJson(req);
   if (!body.ok) return NextResponse.json({ error: "invalid-json" }, { status: 400 });
-  const parsed = cmsOrderCreateSchema.safeParse(body.value);
+  const imported = typeof body.value === "object" && body.value !== null
+    && "source" in body.value && body.value.source === "jielong-import";
+  if (imported) {
+    const serviceAuthError = requireServiceAuth(req);
+    if (serviceAuthError) return serviceAuthError;
+  }
+  const parsed = imported
+    ? cmsJielongOrderCreateSchema.safeParse(body.value)
+    : cmsOrderCreateSchema.safeParse(body.value);
   if (hasSellerField(body.value) || !parsed.success) {
     return NextResponse.json({ error: "invalid-order" }, { status: 422 });
   }
   const input = parsed.data;
   if (!await findOwned(scope.payload, "kiv1_meal_slots", input.mealSlotId, scope.sellerId) ||
-    !await findOwned(scope.payload, "kiv1_customer_profiles", input.customerProfileId, scope.sellerId)) {
+    (input.source === "manual" &&
+      !await findOwned(scope.payload, "kiv1_customer_profiles", input.customerProfileId, scope.sellerId))) {
     return NextResponse.json({ error: "invalid-order-relationship" }, { status: 422 });
+  }
+  const marker = input.source === "jielong-import" ? jielongMarker(input.previewHash, input.lineNumber) : null;
+  if (marker) {
+    const doc = await findJielongOrder(scope.payload, scope.sellerId, input.mealSlotId, marker);
+    if (doc) return NextResponse.json({ doc: normalizeOrder(doc) });
   }
   try {
     const doc = await scope.payload.create({
@@ -132,7 +185,7 @@ export async function POST(req: Request) {
         deliveredAt: input.deliveredAt,
         confirmedAt: input.confirmedAt,
         canceledAt: input.canceledAt,
-        note: input.note
+        note: marker ? `${marker}${input.note ?? ""}` : input.note
       },
       overrideAccess: true
     });

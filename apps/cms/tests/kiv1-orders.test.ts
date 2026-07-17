@@ -95,7 +95,9 @@ function payloadWith(options: PayloadOptions = {}) {
     }));
   const update = options.updateError
     ? vi.fn(async () => { throw options.updateError; })
-    : vi.fn(async ({ id, data }: { id: string | number; data: Record<string, unknown> }) => ({ ...orderDoc, id, ...data }));
+    : vi.fn(async ({ id, data }: { id: string | number; data: Record<string, unknown> }) => ({
+      ...(orders.find((doc) => String(doc.id) === String(id)) ?? orderDoc), id, ...data
+    }));
   const execute = vi.fn(async () => ({ rows: [] }));
   return { find, create, update, execute,
     db: { name: options.database ?? "sqlite", sessions: { tx: { db: {} } }, execute } };
@@ -194,6 +196,8 @@ describe("seller and customer-profile persistence boundary", () => {
 });
 
 describe("order persistence boundary", () => {
+  const previewHash = "a".repeat(64);
+  const marker = `__kiv1_jielong:${previewHash}:00002\n`;
   const createInput = {
     mealSlotId: 11,
     customerProfileId: 21,
@@ -211,6 +215,16 @@ describe("order persistence boundary", () => {
     confirmedAt: null,
     canceledAt: null,
     note: "少辣"
+  };
+  const importedInput = {
+    ...createInput,
+    customerProfileId: null,
+    source: "jielong-import",
+    displayName: "接龙顾客",
+    address: null,
+    note: null,
+    previewHash,
+    lineNumber: 2
   };
 
   it("lists orders only after validating the owned meal slot", async () => {
@@ -321,6 +335,126 @@ describe("order persistence boundary", () => {
       },
       overrideAccess: true
     });
+  });
+
+  it("requires service and operator auth and stamps only imported-order fields", async () => {
+    const payload = payloadWith({ orders: [] });
+    mocks.getPayload.mockResolvedValue(payload);
+    const operatorOnly = new Request("http://cms.test/api/internal/kiv1/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-operator": token },
+      body: JSON.stringify(importedInput)
+    });
+    expect((await createOrder(operatorOnly)).status).toBe(401);
+    const serviceOnly = new Request("http://cms.test/api/internal/kiv1/orders", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body: JSON.stringify(importedInput)
+    });
+    expect((await createOrder(serviceOnly)).status).toBe(401);
+
+    const response = await createOrder(json("/orders", "POST", importedInput));
+    expect(response.status).toBe(201);
+    expect(payload.create).toHaveBeenCalledWith({
+      collection: "kiv1_orders",
+      data: {
+        seller: 7,
+        mealSlot: 11,
+        customerProfile: null,
+        customerOpenid: null,
+        status: "draft",
+        source: "jielong-import",
+        displayName: "接龙顾客",
+        address: null,
+        quantity: 2,
+        unitPriceCents: 3000,
+        paymentStatus: "unpaid",
+        paidAt: null,
+        deliveryStatus: "pending",
+        deliveredAt: null,
+        confirmedAt: null,
+        canceledAt: null,
+        note: marker
+      },
+      overrideAccess: true
+    });
+    const responseBody = await response.json() as { doc: Record<string, unknown> };
+    expect(responseBody).toMatchObject({ doc: { note: null, source: "jielong-import" } });
+    expect(responseBody.doc).not.toHaveProperty("previewHash");
+    expect(responseBody.doc).not.toHaveProperty("lineNumber");
+    expect(JSON.stringify(responseBody)).not.toContain("__kiv1_jielong");
+
+    mocks.getPayload.mockResolvedValue(payloadWith({ slots: [], orders: [] }));
+    expect((await createOrder(json("/orders", "POST", importedInput))).status).toBe(422);
+    mocks.getPayload.mockResolvedValue(payloadWith({ orders: [] }));
+    for (const injected of [
+      { ...importedInput, seller: 99 },
+      { ...importedInput, customerProfileId: 21 },
+      { ...importedInput, address: "3A" },
+      { ...importedInput, status: "confirmed" }
+    ]) expect((await createOrder(json("/orders", "POST", injected))).status).toBe(422);
+  });
+
+  it("finds and reuses imported markers on SQLite and PostgreSQL", async () => {
+    const imported = {
+      ...orderDoc, id: 32, customerProfile: null, source: "jielong-import", displayName: "接龙顾客",
+      address: null, note: marker
+    };
+    for (const database of ["sqlite", "postgres"] as const) {
+      const payload = payloadWith({ database, orders: [imported] });
+      mocks.getPayload.mockResolvedValue(payload);
+      const lookup = await listOrders(request(`/orders?mealSlotId=11&previewHash=${previewHash}&lineNumber=2`));
+      expect(lookup.status).toBe(200);
+      await expect(lookup.json()).resolves.toMatchObject({ doc: { id: 32, note: null } });
+      const repeated = await createOrder(json("/orders", "POST", importedInput));
+      expect(repeated.status).toBe(200);
+      expect(payload.create).not.toHaveBeenCalled();
+    }
+    const operatorOnlyLookup = request(`/orders?mealSlotId=11&previewHash=${previewHash}&lineNumber=2`, {
+      headers: { "x-kith-inn-v1-internal": "" }
+    });
+    expect((await listOrders(operatorOnlyLookup)).status).toBe(401);
+    expect((await listOrders(request("/orders?mealSlotId=11&previewHash=bad&lineNumber=2"))).status).toBe(400);
+
+    const embedded = { ...imported, note: `__kiv1_jielong:${"b".repeat(64)}:00003\n${marker}` };
+    const payload = payloadWith({ orders: [embedded] });
+    mocks.getPayload.mockResolvedValue(payload);
+    const lookup = await listOrders(request(`/orders?mealSlotId=11&previewHash=${previewHash}&lineNumber=2`));
+    await expect(lookup.json()).resolves.toEqual({ doc: null });
+    expect((await createOrder(json("/orders", "POST", importedInput))).status).toBe(201);
+  });
+
+  it("preserves the marker across the 914/915 visible-note boundary", async () => {
+    const imported = {
+      ...orderDoc, id: 32, customerProfile: null, source: "jielong-import", displayName: "接龙顾客",
+      address: null, note: marker
+    };
+    const createPayload = payloadWith({ orders: [] });
+    mocks.getPayload.mockResolvedValue(createPayload);
+    expect((await createOrder(json("/orders", "POST", { ...importedInput, note: "好".repeat(914) }))).status).toBe(201);
+    expect(createPayload.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ note: `${marker}${"好".repeat(914)}` })
+    }));
+    expect((await createOrder(json("/orders", "POST", { ...importedInput, note: "好".repeat(915) }))).status).toBe(422);
+
+    const payload = payloadWith({ orders: [imported] });
+    mocks.getPayload.mockResolvedValue(payload);
+    const accepted = await orderRoute.PATCH(json("/orders/32", "PATCH", { note: "好".repeat(914) }), {
+      params: Promise.resolve({ id: "32" })
+    });
+    expect(accepted.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith(expect.objectContaining({
+      id: 32,
+      data: { note: `${marker}${"好".repeat(914)}` }
+    }));
+    await expect(accepted.json()).resolves.toMatchObject({ doc: { note: "好".repeat(914) } });
+    expect((await orderRoute.PATCH(json("/orders/32", "PATCH", { note: "好".repeat(915) }), {
+      params: Promise.resolve({ id: "32" })
+    })).status).toBe(422);
+
+    const manualPayload = payloadWith({ orders: [] });
+    mocks.getPayload.mockResolvedValue(manualPayload);
+    expect((await createOrder(json("/orders", "POST", { ...createInput, note: "好".repeat(1000) }))).status).toBe(201);
   });
 
   it("patches only BE-decided snapshot and lifecycle fields after an owned lookup", async () => {

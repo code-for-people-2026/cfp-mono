@@ -284,8 +284,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: SQLite/PostgreSQL 均要求 operator JWT + service secret，重查 seller/slot；只允许 jielong-import 的 null profile/openid/address 和服务端白名单字段；86 字符 marker 对外不可见，914/915 字符可见备注边界确定。
 
-- [ ] T079 [US5] 在 `apps/cms/tests/kiv1-orders.test.ts` 覆盖导入 create 的鉴权、owner、relationship、nullable、字段注入、marker 剥离/保留、914/915 字符可见备注边界和响应白名单
-- [ ] T080 [US5] 在 `apps/cms/src/app/api/internal/kiv1/orders/{route.ts,[id]/route.ts}` 与 `apps/cms/src/lib/kiv1-internal.ts` 实现导入写入、内部 note 标记剥离/保留和顺序重试查重，不放宽 manual/customer-card
+- [x] T079 [US5] 在 `apps/cms/tests/kiv1-orders.test.ts` 覆盖导入 create 的鉴权、owner、relationship、nullable、字段注入、marker 剥离/保留、914/915 字符可见备注边界和响应白名单
+- [x] T080 [US5] 在 `apps/cms/src/app/api/internal/kiv1/orders/{route.ts,[id]/route.ts}` 与 `apps/cms/src/lib/kiv1-internal.ts` 实现导入写入、内部 note 标记剥离/保留和顺序重试查重，不放宽 manual/customer-card
 
 ## Phase 17：M3-D BE preview/commit（US5）
 
