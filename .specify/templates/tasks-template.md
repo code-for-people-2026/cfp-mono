@@ -15,15 +15,20 @@ description: "Task list template for feature implementation"
 
 ## PR 切片（必须）
 
-生成具体 `tasks.md` 时，必须先把所有任务映射到 `plan.md` 的 PR 拆分计划。每个任务只属于
-一个 PR；每个 PR 只承载一个目标或核心不变量，并拥有可独立运行的验证。一个 user story
-可以跨多个 PR；不得为了闭合 story，把可分别 review 的技术层、后续 story、无关重构或
-顺手清理并入较早的 PR。
+生成具体 `tasks.md` 时，必须先把所有任务映射到 `plan.md` 的 PR 拆分计划。下方 phase 继续按
+user story 排列以保留需求追踪；本表是实际执行和合并顺序，两者是正交索引，不得把整个
+story 默认当成一个 PR。每个可执行 Task ID 必须在“包含任务”列恰好出现一次；每个 PR 只
+承载一个目标或核心不变量，并拥有可独立运行的验证。一个 user story 可以跨多个 PR；不得
+为了闭合 story，把可分别 review 的技术层、后续 story、无关重构或顺手清理并入较早的 PR。
 
 | PR | 目标 / 核心不变量 | 关联故事/需求 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | [单一目标] | [US/FR] | [T001, ...] | [路径 / 不做什么] | [检查] | [行数] | 无 |
 | PR2 | [单一目标] | [US/FR] | [T002, ...] | [路径 / 不做什么] | [检查] | [行数] | PR1 |
+
+生成或更新完成后必须校验：所有可执行 Task ID 均被本表覆盖且没有重复；表内依赖无环并与
+`plan.md` 一致；每片均填写目标、精确路径/非目标、独立验证和 diff 预算。任一项不满足时，
+`tasks.md` 尚不可执行。
 
 ### 每个 PR 的统一完成定义（不分配 Task ID）
 
@@ -57,11 +62,15 @@ Task ID 只用于产生代码/文档或独立验收证据的工作。真机 smok
   - Feature requirements from plan.md
   - Entities from data-model.md
   - Endpoints from contracts/
+  - Dependency-ordered PR slices from plan.md, mapping every generated Task ID exactly once
 
   Tasks MUST be organized by user story so each story can be:
   - Implemented independently
   - Tested independently
   - Delivered as an MVP increment
+
+  User-story phase order preserves requirement traceability; it does not define PR boundaries.
+  The mandatory PR table above defines the actual implementation and merge queue.
 
   DO NOT keep these sample tasks in the generated tasks.md file.
   ============================================================================
