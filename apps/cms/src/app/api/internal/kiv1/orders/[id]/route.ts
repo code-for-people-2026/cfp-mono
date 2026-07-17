@@ -47,6 +47,9 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       });
       const stored = result.docs[0] as { status?: unknown; source?: unknown; note?: string | null } | undefined;
       if (!stored) return NextResponse.json({ error: "not-found" }, { status: 404 });
+      if (stored.source === "jielong-import" && parsed.data.address !== undefined) {
+        return NextResponse.json({ error: "invalid-order-update" }, { status: 422 });
+      }
       let update = parsed.data;
       if (stored.source === "jielong-import" && parsed.data.note !== undefined) {
         const marker = jielongMarkerFromNote(stored.note);

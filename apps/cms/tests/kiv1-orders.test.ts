@@ -451,6 +451,10 @@ describe("order persistence boundary", () => {
     expect((await orderRoute.PATCH(json("/orders/32", "PATCH", { note: "好".repeat(915) }), {
       params: Promise.resolve({ id: "32" })
     })).status).toBe(422);
+    expect((await orderRoute.PATCH(json("/orders/32", "PATCH", { address: "3A-1201" }), {
+      params: Promise.resolve({ id: "32" })
+    })).status).toBe(422);
+    expect(payload.update).toHaveBeenCalledTimes(1);
 
     const manualPayload = payloadWith({ orders: [] });
     mocks.getPayload.mockResolvedValue(manualPayload);
