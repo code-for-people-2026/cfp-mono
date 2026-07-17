@@ -291,8 +291,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: preview 零写入；commit 重新解析并重查餐次/当前价格，未写入时价格变化要求重新预览；首次提交成功但响应丢失后即使价格变化仍按旧 hash 返回 existing，旧 hash 搭配改过称呼/份数/目标/行号的文本则拒绝；顾客 batch 关闭/过期不阻止 seller-owned、有价格餐次导入；hash 篡改失败，相同 hash+行号重复提交订单增量为 0。
 
-- [ ] T081 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/jielong.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖绑定 seller/slot/price 的 preview hash、未写入价格变化失效、成功后价格漂移仍幂等、旧 hash 配篡改原文拒绝、关闭/过期顾客窗口不阻止接龙、确认、顺序重试与错误净化
-- [ ] T082 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/jielong.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 `/merchant/jielong/preview`、`/merchant/jielong/commit` 与 SHA-256 preview hash
+- [x] T081 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/jielong.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖绑定 seller/slot/price 的 preview hash、未写入价格变化失效、成功后价格漂移仍幂等、旧 hash 配篡改原文拒绝、关闭/过期顾客窗口不阻止接龙、确认、顺序重试与错误净化
+- [x] T082 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/jielong.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 `/merchant/jielong/preview`、`/merchant/jielong/commit` 与 SHA-256 preview hash
 
 ## Phase 18：M3-E FE preview/confirm API 与逻辑（US5）
 
