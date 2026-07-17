@@ -406,6 +406,51 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
+  it("sends jielong preview/commit requests and consumes only strict matching responses", async () => {
+    const text = "2026-07-20 午餐\n1. 王阿姨 2份";
+    const previewHash = "a".repeat(64);
+    const preview = {
+      previewHash,
+      target: { date: "2026-07-20", occasion: "lunch" },
+      lines: [{ lineNumber: 2, displayName: "王阿姨", quantity: 2, unitPriceCents: 3000, totalCents: 6000 }],
+      totalCents: 6000
+    };
+    const commit = { previewHash, results: [{ lineNumber: 2, status: "created", orderId: 31 }] };
+    const request = vi.fn<RequestAdapter>(async ({ url }) => ({
+      statusCode: 200,
+      data: url.endsWith("/preview") ? preview : commit
+    }));
+    const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
+
+    await expect(client.previewJielongImport(text)).resolves.toEqual(preview);
+    await expect(client.commitJielongImport({ text, previewHash, confirmed: true })).resolves.toEqual(commit);
+    expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      url: "http://be.test/merchant/jielong/preview",
+      method: "POST",
+      data: { text }
+    }));
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      url: "http://be.test/merchant/jielong/commit",
+      method: "POST",
+      data: { text, previewHash, confirmed: true }
+    }));
+
+    for (const data of [
+      { ...preview, sellerId: 7 },
+      { ...preview, totalCents: 5999 },
+      { ...preview, lines: [preview.lines[0], { ...preview.lines[0], lineNumber: 1 }], totalCents: 12_000 }
+    ]) await expect(createApiClient({ request: adapter(200, data), sessions: sessions() }).previewJielongImport(text))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const data of [
+      { ...commit, extra: true },
+      { ...commit, previewHash: "b".repeat(64) }
+    ]) await expect(createApiClient({ request: adapter(200, data), sessions: sessions() }).commitJielongImport({
+      text,
+      previewHash,
+      confirmed: true
+    })).rejects.toMatchObject({ code: "invalid-api-response" });
+  });
+
   it("sends and validates meal-slot list/generate/swap requests", async () => {
     const menuItems = [
       { offeringId: 1, nameSnapshot: "荤一", mainIngredientSnapshot: "牛肉", categorySnapshot: "meat" },

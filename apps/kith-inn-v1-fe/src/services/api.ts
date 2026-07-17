@@ -17,6 +17,9 @@ import type {
   ImportCommitInput,
   ImportCommitResponse,
   ImportPreviewResponse,
+  JielongCommitInput,
+  JielongCommitResponse,
+  JielongPreviewResponse,
   GenerateMenusInput,
   GenerateMenusResponse,
   MealSlot,
@@ -34,6 +37,7 @@ import type {
   SwapMenuItemResponse
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
+import { z } from "zod/v4/mini";
 import type { SessionStore } from "../store/session";
 import type { CustomerSessionStore } from "../store/customerSession";
 import { parseOperatorSessionData } from "../store/session";
@@ -148,6 +152,58 @@ function parseCommit(value: unknown): ImportCommitResponse {
     throw new ApiError(502, "invalid-api-response", "导入结果无效");
   }
   return body as ImportCommitResponse;
+}
+
+const jielongHashSchema = z.string().check(z.regex(/^[0-9a-f]{64}$/));
+const jielongLineNumberSchema = z.int().check(z.positive());
+const jielongLinesAreOrdered = (lines: { lineNumber: number }[]) =>
+  lines.every((entry, index) => index === 0 || entry.lineNumber > lines[index - 1]!.lineNumber);
+const jielongTargetSchema = z.strictObject({
+  date: z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/), z.refine((value) => {
+    const [year, month, day] = value.split("-").map(Number);
+    const date = new Date(Date.UTC(year!, month! - 1, day));
+    return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
+  })),
+  occasion: z.enum(["lunch", "dinner"])
+});
+const jielongPreviewLineSchema = z.strictObject({
+  lineNumber: jielongLineNumberSchema,
+  displayName: z.string().check(z.trim(), z.minLength(1), z.maxLength(80)),
+  quantity: z.int().check(z.positive()),
+  unitPriceCents: z.int().check(z.nonnegative()),
+  totalCents: z.int().check(z.nonnegative())
+}).check(z.refine(({ quantity, unitPriceCents, totalCents }) => quantity * unitPriceCents === totalCents));
+const jielongPreviewResponseSchema = z.strictObject({
+  previewHash: jielongHashSchema,
+  target: jielongTargetSchema,
+  lines: z.array(jielongPreviewLineSchema).check(
+    z.minLength(1), z.maxLength(100), z.refine(jielongLinesAreOrdered)
+  ),
+  totalCents: z.int().check(z.nonnegative())
+}).check(z.refine(({ lines, totalCents }) =>
+  lines.reduce((sum, entry) => sum + entry.totalCents, 0) === totalCents
+));
+const jielongCommitResponseSchema = z.strictObject({
+  previewHash: jielongHashSchema,
+  results: z.array(z.strictObject({
+    lineNumber: jielongLineNumberSchema,
+    status: z.enum(["created", "existing"]),
+    orderId: z.union([z.string().check(z.minLength(1)), z.int()])
+  })).check(z.minLength(1), z.maxLength(100), z.refine(jielongLinesAreOrdered))
+});
+
+function parseJielongPreview(value: unknown): JielongPreviewResponse {
+  const parsed = jielongPreviewResponseSchema.safeParse(value);
+  if (!parsed.success) throw new ApiError(502, "invalid-api-response", "接龙预览数据无效");
+  return parsed.data;
+}
+
+function parseJielongCommit(value: unknown, previewHash: string): JielongCommitResponse {
+  const parsed = jielongCommitResponseSchema.safeParse(value);
+  if (!parsed.success || parsed.data.previewHash !== previewHash) {
+    throw new ApiError(502, "invalid-api-response", "接龙导入结果无效");
+  }
+  return parsed.data;
 }
 
 const relaxedRules = [
@@ -554,6 +610,18 @@ export function createApiClient(options: ClientOptions) {
         method: "POST",
         data: input
       }));
+    },
+    async previewJielongImport(text: string): Promise<JielongPreviewResponse> {
+      return parseJielongPreview(await request("/merchant/jielong/preview", {
+        method: "POST",
+        data: { text }
+      }));
+    },
+    async commitJielongImport(input: JielongCommitInput): Promise<JielongCommitResponse> {
+      return parseJielongCommit(await request("/merchant/jielong/commit", {
+        method: "POST",
+        data: input
+      }), input.previewHash);
     },
     async listMealSlots(from: string, to: string): Promise<MealSlot[]> {
       const value = await request<unknown>(`/merchant/meal-slots?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
