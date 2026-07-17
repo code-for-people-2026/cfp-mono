@@ -5,6 +5,7 @@ import { CmsMealSlotError } from "../lib/cms/mealSlots";
 import { CmsOrderError } from "../lib/cms/orders";
 import { CmsSellerError } from "../lib/cms/seller";
 import { jielongRoutes, type JielongDeps } from "./jielong";
+import { previewJielong } from "../domain/jielong/service";
 
 const SECRET = "v1-secret";
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
@@ -32,7 +33,12 @@ describe("merchant jielong routes", () => {
     const injected = deps(); const app = jielongRoutes(SECRET, injected);
     expect((await app.request("/preview", { method: "POST" })).status).toBe(401);
     expect((await post(app, "/preview", "{")).status).toBe(400);
-    expect((await post(app, "/preview", { text: "bad" })).status).toBe(422);
+    expect((await post(app, "/preview", {})).status).toBe(422);
+    for (const invalid of ["", "bad"]) {
+      const rejected = await post(app, "/preview", { text: invalid });
+      expect(rejected.status).toBe(422);
+      await expect(rejected.json()).resolves.toMatchObject({ error: "invalid-jielong-text" });
+    }
     const response = await post(app, "/preview", { text });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({ totalCents: 6000, lines: [{ lineNumber: 2 }] });
@@ -57,6 +63,21 @@ describe("merchant jielong routes", () => {
     const stale = await post(changed, "/commit", { text, previewHash: preview.previewHash, confirmed: true });
     expect(stale.status).toBe(409);
     await expect(stale.json()).resolves.toMatchObject({ error: "preview-hash-mismatch" });
+    const changedTarget = await post(app, "/commit", {
+      text: text.replace("2026-07-20", "2026-07-21"), previewHash: preview.previewHash, confirmed: true
+    });
+    await expect(changedTarget.json()).resolves.toMatchObject({ error: "preview-hash-mismatch" });
+    const completed = deps({ getSeller: vi.fn(async () => { throw new Error("price offline"); }),
+      findOrder: vi.fn(async (_token, _slot, hash, line) => imported({
+        mealSlotId: 11, customerProfileId: null, customerOpenid: null, status: "draft", source: "jielong-import",
+        displayName: "王阿姨", address: null, quantity: 2, unitPriceCents: 3000, paymentStatus: "unpaid",
+        paidAt: null, deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null,
+        note: null, previewHash: hash, lineNumber: line
+      })) });
+    const hash = previewJielong(text, { sellerId: 7, mealSlotId: 11, unitPriceCents: 3000 }).previewHash;
+    expect((await post(jielongRoutes(SECRET, completed), "/commit", { text, previewHash: hash, confirmed: true })).status)
+      .toBe(200);
+    expect(completed.getSeller).not.toHaveBeenCalled();
     const failed = jielongRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => { throw new Error("secret"); }) }));
     const failure = await post(failed, "/preview", { text });
     expect(failure.status).toBe(502);

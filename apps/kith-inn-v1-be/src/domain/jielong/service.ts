@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalizeJielongInput, parseJielongText } from "@cfp/kith-inn-v1-shared";
 import type {
   CmsJielongOrderCreate,
+  JielongCanonicalLine,
   JielongCommitInput,
   JielongCommitResponse,
   JielongPreviewResponse,
@@ -16,6 +17,7 @@ export type JielongBinding = {
 export type JielongCommitDeps = {
   findOrder: (mealSlotId: string | number, previewHash: string, lineNumber: number) => Promise<Order | null>;
   createOrder: (input: CmsJielongOrderCreate) => Promise<Order>;
+  getUnitPriceCents: () => Promise<number>;
 };
 
 export class JielongServiceError extends Error {
@@ -39,19 +41,19 @@ export function previewJielong(text: string, binding: JielongBinding): JielongPr
   return { previewHash, target: canonical.target, lines, totalCents: lines.reduce((sum, line) => sum + line.totalCents, 0) };
 }
 
-const matchesLine = (order: Order, line: JielongPreviewResponse["lines"][number], binding: JielongBinding) =>
+const matchesLine = (order: Order, line: JielongCanonicalLine, binding: Omit<JielongBinding, "unitPriceCents">) =>
   order.source === "jielong-import" && String(order.sellerId) === String(binding.sellerId)
   && String(order.mealSlotId) === String(binding.mealSlotId)
   && order.displayName === line.displayName && order.quantity === line.quantity;
 
 export async function commitJielong(
   input: JielongCommitInput,
-  binding: JielongBinding,
+  binding: Omit<JielongBinding, "unitPriceCents">,
   deps: JielongCommitDeps
 ): Promise<JielongCommitResponse> {
-  const preview = previewJielong(input.text, binding);
+  const canonical = parseJielongText(input.text);
   const existing: (Order | null)[] = [];
-  for (const line of preview.lines) {
+  for (const line of canonical.lines) {
     const order = await deps.findOrder(binding.mealSlotId, input.previewHash, line.lineNumber);
     if (order && !matchesLine(order, line, binding)) throw new JielongServiceError("接龙预览已失效");
     existing.push(order);
@@ -64,9 +66,11 @@ export async function commitJielong(
       throw new JielongServiceError("接龙预览已失效");
     }
     return { previewHash: input.previewHash, results: existing.map((order, index) => ({
-      lineNumber: preview.lines[index]!.lineNumber, status: "existing", orderId: order!.id
+      lineNumber: canonical.lines[index]!.lineNumber, status: "existing", orderId: order!.id
     })) };
   }
+  const unitPriceCents = await deps.getUnitPriceCents();
+  const preview = previewJielong(input.text, { ...binding, unitPriceCents });
   if (preview.previewHash !== input.previewHash) throw new JielongServiceError("接龙预览已失效");
 
   const results: JielongCommitResponse["results"] = [];
@@ -75,7 +79,7 @@ export async function commitJielong(
     const doc = found ?? await deps.createOrder({
       mealSlotId: binding.mealSlotId, customerProfileId: null, customerOpenid: null,
       status: "draft", source: "jielong-import", displayName: line.displayName, address: null,
-      quantity: line.quantity, unitPriceCents: binding.unitPriceCents, paymentStatus: "unpaid", paidAt: null,
+      quantity: line.quantity, unitPriceCents, paymentStatus: "unpaid", paidAt: null,
       deliveryStatus: "pending", deliveredAt: null, confirmedAt: null, canceledAt: null, note: null,
       previewHash: input.previewHash, lineNumber: line.lineNumber
     });
