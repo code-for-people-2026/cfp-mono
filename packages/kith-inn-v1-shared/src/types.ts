@@ -20,6 +20,14 @@ import type {
   importCommitInputSchema,
   importCommitResponseSchema,
   importPreviewResponseSchema,
+  jielongCanonicalInputSchema,
+  jielongCanonicalLineSchema,
+  jielongCommitInputSchema,
+  jielongCommitResponseSchema,
+  jielongCommitResultSchema,
+  jielongPreviewInputSchema,
+  jielongPreviewLineSchema,
+  jielongPreviewResponseSchema,
   generateMenusInputSchema,
   generateMenusResponseSchema,
   cmsCustomerOrderCreateSchema,
@@ -84,6 +92,14 @@ export type OfferingUpdate = z.infer<typeof offeringUpdateSchema>;
 export type ImportPreviewResponse = z.infer<typeof importPreviewResponseSchema>;
 export type ImportCommitInput = z.infer<typeof importCommitInputSchema>;
 export type ImportCommitResponse = z.infer<typeof importCommitResponseSchema>;
+export type JielongCanonicalLine = z.infer<typeof jielongCanonicalLineSchema>;
+export type JielongCanonicalInput = z.infer<typeof jielongCanonicalInputSchema>;
+export type JielongPreviewInput = z.infer<typeof jielongPreviewInputSchema>;
+export type JielongPreviewLine = z.infer<typeof jielongPreviewLineSchema>;
+export type JielongPreviewResponse = z.infer<typeof jielongPreviewResponseSchema>;
+export type JielongCommitInput = z.infer<typeof jielongCommitInputSchema>;
+export type JielongCommitResult = z.infer<typeof jielongCommitResultSchema>;
+export type JielongCommitResponse = z.infer<typeof jielongCommitResponseSchema>;
 export type MenuItemSnapshot = z.infer<typeof menuItemSnapshotSchema>;
 export type MealSlotTarget = z.infer<typeof mealSlotTargetSchema>;
 export type MealSlot = z.infer<typeof mealSlotSchema>;

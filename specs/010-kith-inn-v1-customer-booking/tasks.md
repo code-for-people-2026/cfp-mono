@@ -277,8 +277,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: grammar、1～100 行/一万字符边界、行序、金额、preview hash 与 strict commit schema 全部确定性；只有标题或任何非法非空行都整批拒绝。
 
-- [ ] T077 [US5] 在 `packages/kith-inn-v1-shared/src/{api,jielong}.test.ts` 覆盖 strict preview/commit schema、header-only 拒绝、1/100/101 行边界、确定性 grammar 与 canonical input
-- [ ] T078 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,jielong.ts,types.ts,index.ts}` 实现 parser、preview/commit DTO 和 canonical input，不增加 hash 计算、route 或写入
+- [x] T077 [US5] 在 `packages/kith-inn-v1-shared/src/{api,jielong}.test.ts` 覆盖 strict preview/commit schema、header-only 拒绝、1/100/101 行边界、确定性 grammar 与 canonical input
+- [x] T078 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,jielong.ts,types.ts,index.ts}` 实现 parser、preview/commit DTO 和 canonical input，不增加 hash 计算、route 或写入
 
 ## Phase 16：M3-C CMS 导入持久化边界（US5）
 
