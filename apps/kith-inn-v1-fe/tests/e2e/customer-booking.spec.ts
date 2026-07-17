@@ -38,7 +38,8 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   };
 
   await page.goto("/pages/booking/index");
-  await expect(page.getByText("这个预订登记链接已失效", { exact: true })).toBeVisible();
+  await expect(page.getByText("这个预订登记链接已失效，请从原预订卡片重新进入", { exact: true })).toBeVisible();
+  await expect(page.locator(".page-state")).toContainText("请从原预订卡片重新进入");
   const firstStarted = Date.now();
   await page.goto(share.path);
   await expect(page.getByText(`顾客多餐预订-${suffix}`, { exact: true })).toBeVisible();
@@ -117,6 +118,14 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   expect(profilesResponse.status(), JSON.stringify(profiles)).toBe(200);
   expect(profiles.docs).toEqual([expect.objectContaining({ address: "3A-1201" })]);
 
+  const expiringDeadline = new Date(Date.now() + 5_000).toISOString();
+  expect((await request.patch(`${BE}/merchant/meal-slots/${docs[0]!.id}/booking-config`, {
+    headers, data: { priceCents: 2900, orderDeadline: expiringDeadline, orderStatus: "open" }
+  })).ok()).toBe(true);
+  await page.waitForTimeout(5_100);
+  await page.reload();
+  await expect(page.getByText("已过登记截止时间；如需登记请联系桃子", { exact: true })).toBeVisible();
+
   expect((await request.patch(`${BE}/merchant/booking-batches/${doc.id}`, {
     headers,
     data: { status: "closed" }
@@ -128,7 +137,8 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   });
   await page.reload();
   await expect(page.getByText("批次已关闭", { exact: true })).toBeVisible();
-  await expect(page.getByText("本批次已关闭，仅供查看", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("本批次已关闭，仅供查看；如有疑问请联系桃子", { exact: true })).toHaveCount(2);
+  await expect(page.locator(".page-state")).toContainText("当前批次暂无可登记餐次");
   expect(readOnlyProfileRequests).toBe(0);
   await page.getByText("查看个人信息用途说明", { exact: true }).click();
   await expect(page.locator(".privacy-page")).not.toContainText(PUBLIC_RISK_COPY);

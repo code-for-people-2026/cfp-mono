@@ -3,6 +3,7 @@ import {
   beginCustomerSession,
   bookingBatchPublicId,
   bookingUnavailableText,
+  customerBookingPageNotice,
   buildCustomerReservation,
   canceledReservationDraft,
   defaultCustomerProfile,
@@ -52,9 +53,15 @@ describe("customer booking entry logic", () => {
   it("derives concise read-only labels", () => {
     expect(formatBookingPrice(3000)).toBe("¥30.00");
     expect(bookingUnavailableText(null)).toBe("可登记");
-    expect(bookingUnavailableText("booking-batch-closed")).toBe("本批次已关闭，仅供查看");
-    expect(bookingUnavailableText("meal-slot-closed")).toBe("本餐次已关闭");
-    expect(bookingUnavailableText("order-deadline-passed")).toBe("已过登记截止时间");
+    expect(bookingUnavailableText("booking-batch-closed")).toBe("本批次已关闭，仅供查看；如有疑问请联系桃子");
+    expect(bookingUnavailableText("meal-slot-closed")).toBe("本餐次已关闭；如需登记请联系桃子");
+    expect(bookingUnavailableText("order-deadline-passed")).toBe("已过登记截止时间；如需登记请联系桃子");
+    expect(customerBookingPageNotice(null, "")).toBe("正在加载预订信息…");
+    expect(customerBookingPageNotice(null, "加载失败，请重试")).toBe("加载失败，请重试");
+    expect(customerBookingPageNotice(view, "")).toBeNull();
+    expect(customerBookingPageNotice({ ...view, slots: view.slots.map((slot) => ({ ...slot, canBook: false,
+      unavailableReason: "order-deadline-passed" as const })) }, ""))
+      .toBe("当前批次暂无可登记餐次；已有预订可在“我的预订”查看");
   });
 
   it("defaults exactly one profile and explains its narrow purpose", () => {

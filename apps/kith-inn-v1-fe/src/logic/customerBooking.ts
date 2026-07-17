@@ -46,10 +46,17 @@ export function formatBookingPrice(cents: number): string {
 export function bookingUnavailableText(
   reason: CustomerBookingBatchView["slots"][number]["unavailableReason"]
 ): string {
-  if (reason === "booking-batch-closed") return "本批次已关闭，仅供查看";
-  if (reason === "meal-slot-closed") return "本餐次已关闭";
-  if (reason === "order-deadline-passed") return "已过登记截止时间";
+  if (reason === "booking-batch-closed") return "本批次已关闭，仅供查看；如有疑问请联系桃子";
+  if (reason === "meal-slot-closed") return "本餐次已关闭；如需登记请联系桃子";
+  if (reason === "order-deadline-passed") return "已过登记截止时间；如需登记请联系桃子";
   return "可登记";
+}
+
+export function customerBookingPageNotice(view: CustomerBookingBatchView | null, error: string): string | null {
+  if (error) return error;
+  if (!view) return "正在加载预订信息…";
+  return view.slots.some(({ canBook }) => canBook)
+    ? null : "当前批次暂无可登记餐次；已有预订可在“我的预订”查看";
 }
 
 export const profileUseText = (sellerName: string) => `用于${sellerName}识别订单和送餐地址`;

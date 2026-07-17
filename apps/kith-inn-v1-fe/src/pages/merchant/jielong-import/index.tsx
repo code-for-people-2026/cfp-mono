@@ -6,9 +6,11 @@ import {
   applyJielongPreview,
   commitConfirmedJielongImport,
   createJielongImportState,
+  jielongImportPageNotice,
   setJielongConfirmed,
   setJielongText,
-  summarizeJielongCommit
+  summarizeJielongCommit,
+  type JielongImportActivity
 } from "@/logic/jielongImport";
 import { merchantRoute } from "@/logic/login";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
@@ -40,7 +42,9 @@ const money = (cents: number) => `¥${(cents / 100).toFixed(2)}`;
 export default function MerchantJielongImport() {
   const [state, setState] = useState(createJielongImportState);
   const [result, setResult] = useState<JielongCommitResponse | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<JielongImportActivity>("idle");
+  const [pageError, setPageError] = useState("");
+  const busy = activity !== "idle";
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "login") {
@@ -50,39 +54,45 @@ export default function MerchantJielongImport() {
 
   const previewText = async () => {
     const text = state.text;
-    setBusy(true);
+    setActivity("previewing"); setPageError("");
     try {
       const preview = await api.previewJielongImport(text);
       setState((current) => current.text === text ? applyJielongPreview(text, preview) : current);
       setResult(null);
     } catch (error) {
       if (!handledAuthFailure(error)) {
+        setPageError("接龙预览失败，请检查文本格式后重试");
         await Taro.showToast({ title: error instanceof Error ? error.message : "接龙预览失败", icon: "none" });
       }
     } finally {
-      setBusy(false);
+      setActivity("idle");
     }
   };
 
   const commitText = async () => {
-    setBusy(true);
+    setActivity("committing"); setPageError("");
     try {
       setResult(await commitConfirmedJielongImport(api, state));
     } catch (error) {
       if (!handledAuthFailure(error)) {
+        setPageError("接龙写入失败，请重新预览并确认后重试");
         await Taro.showToast({ title: error instanceof Error ? error.message : "接龙导入失败", icon: "none" });
       }
     } finally {
-      setBusy(false);
+      setActivity("idle");
     }
   };
 
   const summary = result ? summarizeJielongCommit(result) : null;
+  const pageNotice = jielongImportPageNotice(activity, state.text, pageError);
   return (
     <View className="page jielong-import-page">
       <Text className="title">接龙导入兜底</Text>
       <Text className="subtitle">确定性解析，不调用 AI；写入前必须核对预览。</Text>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
+      {pageNotice && <View className="card page-state"><Text className={pageError ? "notice" : "meta"}>
+        {pageNotice}
+      </Text></View>}
       <View className="card jielong-import-card">
         <Textarea
           aria-label="粘贴接龙文本"
@@ -92,7 +102,7 @@ export default function MerchantJielongImport() {
           value={state.text}
           onInput={(event) => {
             setState((current) => setJielongText(current, event.detail.value));
-            setResult(null);
+            setResult(null); setPageError("");
           }}
         />
         <Button disabled={busy || !state.text} onClick={() => void previewText()}>预览接龙</Button>

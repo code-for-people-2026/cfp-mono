@@ -326,8 +326,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: booking、customer orders、merchant orders 与 jielong 页的 loading/empty/error/closed/deadline 状态都有唯一、可执行文案；无匿名或 mock 降级。
 
-- [ ] T093 [US6] 在 `apps/kith-inn-v1-fe/src/logic/{customerBooking,customerOrders,orders,jielongImport}.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking,customer-orders,merchant,jielong-import}.spec.ts` 建立错误、空态、截止和关闭状态矩阵
-- [ ] T094 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/jielong-import/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 收口状态呈现，不改变业务状态机
+- [x] T093 [US6] 在 `apps/kith-inn-v1-fe/src/logic/{customerBooking,customerOrders,orders,jielongImport}.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking,customer-orders,merchant,jielong-import}.spec.ts` 建立错误、空态、截止和关闭状态矩阵
+- [x] T094 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/jielong-import/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 收口状态呈现，不改变业务状态机
 
 ## Phase 23：M4-C 自动化总验收与真实门禁记账（US6）
 

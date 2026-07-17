@@ -18,6 +18,14 @@ export function jielongImportEnabled(value: string | undefined): boolean {
   return value === "1";
 }
 
+export type JielongImportActivity = "idle" | "previewing" | "committing";
+export function jielongImportPageNotice(activity: JielongImportActivity, text: string, error: string): string | null {
+  if (error) return error;
+  if (activity === "previewing") return "正在解析接龙文本…";
+  if (activity === "committing") return "正在写入草稿订单…";
+  return text.trim() ? null : "请粘贴接龙文本后预览";
+}
+
 export function createJielongImportState(): JielongImportState {
   return { text: "", preview: null, confirmedPreviewHash: null };
 }

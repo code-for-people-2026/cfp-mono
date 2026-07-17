@@ -5,6 +5,7 @@ import {
   commitConfirmedJielongImport,
   createJielongImportState,
   jielongImportEnabled,
+  jielongImportPageNotice,
   setJielongConfirmed,
   setJielongText,
   summarizeJielongCommit
@@ -29,6 +30,15 @@ const result: JielongCommitResponse = {
 };
 
 describe("jielong import logic", () => {
+  it("distinguishes empty, loading and retryable error states", () => {
+    expect(jielongImportPageNotice("idle", "", "")).toBe("请粘贴接龙文本后预览");
+    expect(jielongImportPageNotice("previewing", text, "")).toBe("正在解析接龙文本…");
+    expect(jielongImportPageNotice("committing", text, "")).toBe("正在写入草稿订单…");
+    expect(jielongImportPageNotice("idle", text, "接龙预览失败，请检查文本格式后重试"))
+      .toBe("接龙预览失败，请检查文本格式后重试");
+    expect(jielongImportPageNotice("idle", text, "")).toBeNull();
+  });
+
   it("keeps the fallback disabled unless the build flag is explicitly one", () => {
     expect(jielongImportEnabled(undefined)).toBe(false);
     expect(jielongImportEnabled("true")).toBe(false);

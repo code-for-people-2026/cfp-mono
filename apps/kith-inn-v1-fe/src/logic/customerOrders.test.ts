@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CustomerBookingBatchView, CustomerOrderView } from "@cfp/kith-inn-v1-shared";
-import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerWriteErrorText } from "./customerOrders";
+import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerOrdersPageNotice,
+  customerWriteErrorText } from "./customerOrders";
 
 const order = (overrides: Partial<CustomerOrderView> = {}): CustomerOrderView => ({
   id: 31, target: { date: "2026-07-13", occasion: "lunch" }, menuItems: [], orderStatus: "open",
@@ -38,5 +39,12 @@ describe("customer order presentation", () => {
     expect(customerWriteErrorText({ code: "confirmed-order-locked" })).toBe("桃子已确认，请在群里联系桃子");
     expect(customerWriteErrorText({ code: "meal-slot-closed" })).toBe("本餐次已截止，请在群里联系桃子");
     expect(customerWriteErrorText(new Error("offline"))).toBe("操作失败，请刷新后重试");
+  });
+
+  it("distinguishes loading, error and actionable empty states", () => {
+    expect(customerOrdersPageNotice(false, "", 0)).toBe("正在加载我的预订…");
+    expect(customerOrdersPageNotice(false, "加载失败", 0)).toBe("加载失败");
+    expect(customerOrdersPageNotice(true, "", 0)).toBe("还没有预订记录；请从预订卡片选择餐次登记");
+    expect(customerOrdersPageNotice(true, "", 1)).toBeNull();
   });
 });
