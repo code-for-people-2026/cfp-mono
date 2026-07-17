@@ -2,7 +2,7 @@
 
 ## 1. 前置条件
 
-1. M2-A/B、恢复计划与 C1～C5 已合并。先从最新 `main` 合并只改本规格目录的公开餐次坐标纠偏计划 PR，再严格按 C5R→C6→D1→D2→D3→D4 创建分支；前一 PR rebase merge 后才开始下一片。
+1. M2-A/B、恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并，D2R 已完成取消持久化纠偏。从最新 `main` 开始 D4；T028 微信真机门禁仍保持未完成。
 2. 使用仓库要求的 Node.js、pnpm、PostgreSQL/Payload 环境。
 3. 配置既有 operator JWT、internal service token、微信 app credentials；本地可显式开启 dev login。
 4. 运行独立幂等的桃子 seller/operator seed。M2 不修改 seed 语义，也不清空旧业务 collection。
@@ -45,7 +45,7 @@
 1. C4 用纯领域和 CMS client 测试逐项 create/update/resubmit/confirmed lock、价格快照、部分成功与 profile 不回滚。
 2. C5 验证 customer JWT、整请求 422、最多 20 项、稳定错误映射和逐项结果顺序；不增加 FE 页面。
 
-> C1～C5 已分别由 PR #214、#217、#218、#219、#220 合并。
+> C1～C6 已分别由 PR #214、#217、#218、#219、#220、#222、#223 合并。
 
 ### M2-C5R：公开餐次坐标纠偏
 
@@ -68,9 +68,9 @@
 1. D1 验证 own-order/edit/cancel/deactivate strict contract，禁止 owner 和三状态轴注入。
 2. D2 验证 own-order 只按 seller+customerOpenid、profile deactivate 幂等且历史订单仍可见，跨顾客统一 404。
 
-### M2-D3/D4：BE 门禁、顾客页面与总验收
+### M2-D4：顾客页面与总验收
 
-1. D3 在每次修改/取消前重查 batch、slot、deadline、owner、status；桃子确认后顾客立即锁单。
+1. D3 已由 PR #227 合并；D2 及其取消持久化纠偏分别由 PR #225、#226 合并。
 2. D4 验证顾客只看到自有订单和三状态轴，在允许窗口修改/取消，软停用 profile 不影响历史快照。
 3. 运行 FE coverage、无头 H5 E2E、weapp build；从空 M2 数据完成 seed→分享→登记→商家确认→顾客锁单总验收。
 
