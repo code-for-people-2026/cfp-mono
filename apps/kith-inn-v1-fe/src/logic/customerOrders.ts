@@ -11,7 +11,8 @@ export function customerOrderLockText(order: CustomerOrderView, batch: CustomerB
   if (order.status === "canceled") return "订单已取消";
   if (!batch) return "如需修改，请从预订卡片进入";
   const slot = batch.slots.find(({ date, occasion }) => date === order.target.date && occasion === order.target.occasion);
-  return batch.status === "open" && slot?.canBook && order.orderStatus === "open"
+  if (!slot) return "如需修改，请从预订卡片进入";
+  return batch.status === "open" && slot.canBook && order.orderStatus === "open"
     ? null : "本餐次已截止，请在群里联系桃子";
 }
 

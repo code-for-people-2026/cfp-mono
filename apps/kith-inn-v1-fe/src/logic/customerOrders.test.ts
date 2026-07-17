@@ -28,7 +28,7 @@ describe("customer order presentation", () => {
     expect(customerOrderLockText(order({ status: "canceled" }), batch())).toBe("订单已取消");
     expect(customerOrderLockText(order(), null)).toBe("如需修改，请从预订卡片进入");
     expect(customerOrderLockText(order(), batch({ status: "closed" }))).toBe("本餐次已截止，请在群里联系桃子");
-    expect(customerOrderLockText(order(), batch({ slots: [] }))).toBe("本餐次已截止，请在群里联系桃子");
+    expect(customerOrderLockText(order(), batch({ slots: [] }))).toBe("如需修改，请从预订卡片进入");
   });
 
   it("validates quantities and stabilizes race error copy", () => {

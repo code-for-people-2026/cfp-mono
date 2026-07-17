@@ -2,7 +2,7 @@ import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { CustomerBookingBatchView, CustomerOrderView, CustomerProfile } from "@cfp/kith-inn-v1-shared";
-import { bookingBatchPublicId, formatBookingPrice } from "@/logic/customerBooking";
+import { beginCustomerSession, bookingBatchPublicId, formatBookingPrice } from "@/logic/customerBooking";
 import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerWriteErrorText }
   from "@/logic/customerOrders";
 import { createApiClient, type RequestAdapter } from "@/services/api";
@@ -11,7 +11,8 @@ import { createSessionStore, type Storage } from "@/store/session";
 
 const storage: Storage & CustomerStorage = { get: (key) => Taro.getStorageSync(key) || null,
   set: (key, value) => Taro.setStorageSync(key, value), remove: (key) => Taro.removeStorageSync(key) };
-const api = createApiClient({ sessions: createSessionStore(storage), customerSessions: createCustomerSessionStore(storage),
+const customerSessions = createCustomerSessionStore(storage);
+const api = createApiClient({ sessions: createSessionStore(storage), customerSessions,
   request: (async (options) => { const response = await Taro.request(options);
     return { statusCode: response.statusCode, data: response.data }; }) as RequestAdapter });
 const occasionText = (value: "lunch" | "dinner") => value === "lunch" ? "午餐" : "晚餐";
@@ -25,8 +26,15 @@ export default function CustomerOrders() {
   const [confirmOrder, setConfirmOrder] = useState<string | null>(null);
   const [confirmProfile, setConfirmProfile] = useState<string | null>(null);
   const [error, setError] = useState("");
-  useEffect(() => { void Promise.all([api.listOwnedCustomerOrders(), api.listOwnedCustomerProfiles(),
-    publicId ? api.getPublicBookingBatch(publicId) : Promise.resolve(null)])
+  useEffect(() => { if (!publicId) return setError("我的预订加载失败，请从预订卡片重试");
+    void beginCustomerSession(process.env.TARO_ENV === "weapp" ? "weapp" : "h5", publicId, { api,
+      devOpenid: process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID ?? "", wxCode: async () => {
+        const { code } = await Taro.login();
+        if (!code) throw new Error("wx.login 未返回 code");
+        return code;
+      } }).then((response) => { customerSessions.setSession({ token: response.token, ...response.session });
+      return Promise.all([api.listOwnedCustomerOrders(), api.listOwnedCustomerProfiles(),
+        api.getPublicBookingBatch(publicId)]); })
     .then(([nextOrders, nextProfiles, nextBatch]) => {
       setOrders(nextOrders); setProfiles(nextProfiles); setBatch(nextBatch);
       setQuantities(Object.fromEntries(nextOrders.map((order) => [String(order.id), String(order.quantity)])));
