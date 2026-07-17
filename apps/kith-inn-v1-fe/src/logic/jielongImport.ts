@@ -36,12 +36,18 @@ export async function commitConfirmedJielongImport(
   client: JielongCommitter,
   state: JielongImportState
 ): Promise<JielongCommitResponse | null> {
-  if (!state.preview || state.confirmedPreviewHash !== state.preview.previewHash) return null;
-  return client.commitJielongImport({
+  const preview = state.preview;
+  if (!preview || state.confirmedPreviewHash !== preview.previewHash) return null;
+  const response = await client.commitJielongImport({
     text: state.text,
-    previewHash: state.preview.previewHash,
+    previewHash: preview.previewHash,
     confirmed: true
   });
+  if (response.previewHash !== preview.previewHash || response.results.length !== preview.lines.length ||
+    response.results.some((result, index) => result.lineNumber !== preview.lines[index]!.lineNumber)) {
+    throw new Error("接龙导入结果与确认预览不匹配");
+  }
+  return response;
 }
 
 export function summarizeJielongCommit(response: JielongCommitResponse) {

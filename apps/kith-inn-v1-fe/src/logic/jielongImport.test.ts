@@ -9,12 +9,15 @@ import {
   summarizeJielongCommit
 } from "./jielongImport";
 
-const text = "2026-07-20 午餐\n1. 王阿姨 2份";
+const text = "2026-07-20 午餐\n1. 王阿姨 2份\n2. 李叔 1份";
 const preview: JielongPreviewResponse = {
   previewHash: "a".repeat(64),
   target: { date: "2026-07-20", occasion: "lunch" },
-  lines: [{ lineNumber: 2, displayName: "王阿姨", quantity: 2, unitPriceCents: 3000, totalCents: 6000 }],
-  totalCents: 6000
+  lines: [
+    { lineNumber: 2, displayName: "王阿姨", quantity: 2, unitPriceCents: 3000, totalCents: 6000 },
+    { lineNumber: 3, displayName: "李叔", quantity: 1, unitPriceCents: 3000, totalCents: 3000 }
+  ],
+  totalCents: 9000
 };
 const result: JielongCommitResponse = {
   previewHash: preview.previewHash,
@@ -60,5 +63,16 @@ describe("jielong import logic", () => {
 
   it("derives created and existing totals from a strict commit result", () => {
     expect(summarizeJielongCommit(result)).toEqual({ created: 1, existing: 1, total: 2 });
+  });
+
+  it("rejects commit results that do not match every confirmed preview line", async () => {
+    const state = setJielongConfirmed(applyJielongPreview(text, preview), true);
+    for (const incompatible of [
+      { ...result, previewHash: "b".repeat(64) },
+      { ...result, results: result.results.slice(0, 1) },
+      { ...result, results: [{ ...result.results[0]!, lineNumber: 1 }, result.results[1]!] }
+    ]) await expect(commitConfirmedJielongImport({
+      commitJielongImport: vi.fn(async () => incompatible)
+    }, state)).rejects.toThrow("接龙导入结果与确认预览不匹配");
   });
 });
