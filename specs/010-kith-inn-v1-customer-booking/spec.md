@@ -4,7 +4,7 @@
 
 **Created**: 2026-07-11
 
-**Status**: 实施中（M2-A/B、M2-C1～C6 与 M2-D1～D3 已合并，D2R 已完成取消持久化纠偏；剩余自动化实现为 D4，T028 微信真机门禁仍未完成）
+**Status**: 实施中（M2-A/B、M2-C1～C6、M2-D1～D4 与 D2R 已合并，D4 由 PR #230 完成；继续 M3/M4 自动化收口，T028 微信真机门禁仍未完成）
 
 **Input**: User description: "完成 M1 后进入 M2；桃子创建并分享预订批次，顾客从微信小程序卡片静默识别身份，选择或新增称呼与地址资料，为批次内多个餐次登记份数，并在桃子确认前查看、修改或取消自己的草稿订单。"
 
@@ -165,8 +165,8 @@
 - **FR-024**: M2 不得接在线支付、退款、配送路线、顾客头像昵称手机号、AI/agent 或接龙导入，也不得创建顾客自助认领/合并无 openid 手工资料的入口。
 - **FR-025**: 本功能必须先补会失败的共享契约、身份隔离、tenant/owner、状态门禁、并发幂等和关键双端流程测试，再实现对应行为，并通过每个实现 PR 的窄验证与仓库完整质量门禁。
 - **FR-026**: 接龙兜底必须使用确定性文本协议：首个非空行只接受 `YYYY-MM-DD 午餐|晚餐`，其余非空行只接受可选序号加“称呼 正整数份数”；单次最多一百个数据行、原文最多一万字符，任一数据行非法则整次拒绝。
-- **FR-027**: preview 必须只读并在当前 seller 下把日期/餐次唯一解析为已有 meal slot；响应包含稳定 preview hash、逐行结果与金额摘要，不得创建 profile/order 或返回内部 owner 信息。
-- **FR-028**: commit 必须要求 `confirmed=true`、原文和匹配的 preview hash，重新解析并重查 seller/meal slot；相同 hash + 数据行序号的顺序重试必须幂等，原文重算不匹配或当前餐次不可用时不得写入。
+- **FR-027**: preview 必须只读并在当前 seller 下把日期/餐次唯一解析为已有 meal slot；响应包含绑定 seller、餐次身份、当前单价与 canonical input 的稳定 preview hash、逐行结果与金额摘要，不得创建 profile/order 或返回内部 owner 信息。
+- **FR-028**: commit 必须要求 `confirmed=true`、原文和匹配的 preview hash，重新解析并重查 seller/meal slot/当前单价；相同 hash + 数据行序号的顺序重试必须幂等，原文、餐次身份或单价重算不匹配以及当前餐次不可用时不得写入。
 - **FR-029**: 接龙订单必须为 draft、`source=jielong-import`，使用服务端餐次价格并保存称呼/价格快照；customerProfile、customerOpenid 和 address 必须为空，且无地址订单在商家 UI/配送清单显示“无地址”。
 - **FR-030**: 接龙入口必须由默认关闭的构建开关控制，不出现在顾客或商家主导航；解析和提交不得调用 AI/LLM、聊天或 agent 服务。
 - **FR-031**: 顾客数据导出必须完全复用当前 customer session 已有 owner-scoped profile/order API，产出含版本号和导出时间的 JSON；不得导出 token、openid、operator、服务密钥、内部备注或其他 owner 数据。

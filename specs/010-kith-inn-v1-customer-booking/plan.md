@@ -189,18 +189,20 @@ apps/cms/
 
 | PR | 单一目标 / 核心不变量 | 主要路径 | 独立验证 | 依赖 |
 |---|---|---|---|---|
-| M3-A | `jielong-import` 订单可为空 profile/address，其他来源仍严格 | shared order contract、BE summary、FE order parser/logic/page | shared/BE/FE coverage；“无地址”呈现 | D4 |
+| M3-A | `jielong-import` 订单可为空 profile/address，其他来源仍严格 | shared order contract、CMS normalize、BE summary、FE order parser/logic/page | shared/CMS/BE/FE coverage；“无地址”呈现 | D4 |
 | M3-B | 确定性接龙 grammar、canonical input 与 preview/commit contract | `packages/kith-inn-v1-shared/src/**` | strict schema/parser 100% coverage；非法整批拒绝 | M3-A |
 | M3-C | CMS 只允许 operator + service 创建 owner-scoped 导入订单，并保留内部幂等标记 | `/api/internal/kiv1/orders`、`apps/cms/src/lib/kiv1-internal.ts`、v1 CMS tests | SQLite/PostgreSQL tenant/relationship/nullable/marker 白名单 | M3-B |
-| M3-D | BE preview 只读、commit 重查并按 hash+行号幂等 | BE domain、CMS client、merchant routes | BE 100% coverage；零写预览、重复提交零增量 | M3-C |
+| M3-D | BE preview 只读、commit 重查文本/餐次/价格并按 hash+行号幂等 | BE domain、CMS client、merchant routes | BE 100% coverage；零写预览、价格变化失效、重复提交零增量 | M3-C |
 | M3-E | FE API/logic 只消费 strict preview 并要求显式确认 | FE services/logic | FE 100% coverage；篡改 hash/未确认不发 commit | M3-D |
 | M3-F | 默认关闭的弱入口完成预览→确认→结果闭环 | FE page/config/css、headless E2E | H5 E2E、weapp build；默认主导航入口数 0 | M3-E |
 | M3-G | 顾客公开文案统一并提供个人信息用途说明页 | FE customer pages、privacy page、E2E | 禁用公开风险词审计、H5/weapp；不冒充后台配置 | M3-F |
 | M4-A | 顾客复制 owner-scoped JSON 并批量软停用资料 | FE customer logic/page/E2E | 跨 owner 字段 0、历史订单 100% 可读 | M3-G |
 | M4-B | 错误、空数据、截止和关闭状态一致可执行 | FE pages/logic/E2E | H5 状态矩阵、weapp build | M4-A |
-| M4-C | 只记录 latest-main 自动门禁与真实人工门禁 | `specs/010-kith-inn-v1-customer-booking/**` | migration readiness 只读检查、全量 headless/verify 证据 | M4-B |
+| M4-C | 只记录 latest-main 自动门禁与独立人工门禁 | `specs/010-kith-inn-v1-customer-booking/**` | migration readiness 只读检查、全量 headless/verify；真机/后台证据不阻塞前序自动化 | M4-B |
 
 所有实现片从前一片 rebase merge 后的最新 `main` 开始，不 stacked。每片人工 diff 默认 `<400`；超过 400 行先继续拆，无法拆时在 PR 说明解释，超过 800 行停止。
+
+T028、T087、T090、T097 是独立发布门禁，不属于任一自动化 PR 的合并依赖；缺少真机、微信后台或审核证据时继续后续可自动化切片，并在 M4-C 保持这些任务未完成。
 
 ## Complexity Tracking
 
