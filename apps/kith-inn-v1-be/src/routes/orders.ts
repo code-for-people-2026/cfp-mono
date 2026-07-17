@@ -214,8 +214,13 @@ export function ordersRoutes(secret: string, deps: OrdersDeps = defaultDeps) {
     if (!parsed.success) return c.json({ error: "invalid-order-update", message: "订单修改无效" }, 422);
     const token = c.get("operatorToken");
     try {
-      const patch = editOrderPatch(await deps.getOrder(token, c.req.param("id")), parsed.data);
-      return c.json({ doc: await deps.updateOrder(token, c.req.param("id"), patch) });
+      const order = await deps.getOrder(token, c.req.param("id"));
+      const patch = editOrderPatch(order, parsed.data);
+      return c.json({
+        doc: Object.keys(patch).length === 0
+          ? order
+          : await deps.updateOrder(token, c.req.param("id"), patch)
+      });
     } catch (error) {
       if (error instanceof ConfirmedImpactConfirmationRequiredError) {
         return c.json({ error: "confirmed-impact-confirmation-required", message: error.message }, 409);
