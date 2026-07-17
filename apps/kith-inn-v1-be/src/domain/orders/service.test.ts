@@ -209,6 +209,17 @@ describe("manual draft order service", () => {
       address: "3A-1201",
       note: null
     }, 3000)).toThrow(InvalidOrderTransitionError);
+    expect(() => resubmitOrderPatch({
+      ...canceled,
+      source: "jielong-import",
+      customerProfileId: null,
+      address: null
+    }, {
+      quantity: 2,
+      displayName: "接龙顾客",
+      address: "误填地址",
+      note: null
+    }, 3000)).toThrow("接龙导入订单不能沿用手工重提");
   });
 
   it("exposes no openid and returns only the duplicate summary", () => {

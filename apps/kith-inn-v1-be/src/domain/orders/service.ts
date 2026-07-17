@@ -86,6 +86,9 @@ export function transitionOrder(order: Order, action: LifecycleAction, now: stri
 
 export function resubmitOrderPatch(order: Order, input: OrderResubmit, unitPriceCents: number): CmsOrderUpdate {
   if (order.status !== "canceled") throw new InvalidOrderTransitionError("只有已取消订单可以重提");
+  if (order.source === "jielong-import") {
+    throw new InvalidOrderTransitionError("接龙导入订单不能沿用手工重提");
+  }
   return {
     ...input,
     unitPriceCents,
