@@ -91,9 +91,9 @@ M3 接龙订单沿用同一实体，但使用以下受限组合：
 | `customerProfile`、`customerOpenid`、`address` | 固定为空；不得创建或更新 profile |
 | `source` | 固定为 `jielong-import` |
 | `displayName`、`quantity`、价格 | 来自 strict parser 与服务端餐次价格快照 |
-| `note` | CMS 保存内部导入标记与可选用户备注；对外 DTO 必须剥离内部标记 |
+| `note` | CMS 保存 86 字符内部导入标记与最多 914 字符可见备注；对外 DTO 必须剥离内部标记 |
 
-内部导入标记由 `previewHash + 数据行序号` 派生。CMS create 在写入前按 seller、mealSlot 与标记查找既有订单；顺序网络重试返回既有记录。商家修改导入订单 note 时必须保留内部前缀。该方案不提供并发唯一约束；若需要并发导入或强唯一性，必须新增独立迁移设计。
+内部导入标记固定为 `__kiv1_jielong:<64 位 previewHash>:<5 位零填充原始行号>\n`，共 86 个 ASCII 字符。CMS create 在写入前按 seller、mealSlot 与标记查找既有订单；顺序网络重试返回既有记录。`kiv1_orders.note` 的总上限仍为 1,000，故导入订单可见备注最多 914 字符，CMS 必须覆盖 914 接受、915 拒绝；manual/customer-card 仍可使用 1,000 字符。商家修改导入订单 note 时必须保留内部前缀，normalize 只对 `jielong-import` 剥离它。该方案不提供并发唯一约束；若需要并发导入或强唯一性，必须新增独立迁移设计。
 
 ## 3. 非持久化模型
 
@@ -137,7 +137,7 @@ target.occasion: lunch | dinner
 
 ### 3.5 JielongPreview
 
-接龙 parser 输出不落库的 canonical model：日期、午餐/晚餐、按原始数据行排序的 `lineNumber/displayName/quantity`。BE 在当前 seller 下唯一解析 meal slot、补服务端价格，以 seller、餐次身份、当前单价和 canonical input 的 SHA-256 作为 `previewHash`。commit 重新执行同一解析、价格读取和 hash；价格变化时 hash 不匹配并要求重新预览，不保存 preview session。
+接龙 parser 输出不落库的 canonical model：日期、午餐/晚餐、按原始数据行排序的 `lineNumber/displayName/quantity`，且至少包含一个、最多一百个数据行。BE 在当前 seller 下唯一解析 meal slot、补服务端价格，以 seller、餐次身份、当前单价和 canonical input 的 SHA-256 作为 `previewHash`。commit 重新执行同一解析并先检查 supplied hash 的全部行标记：全已存在时直接返回 `existing`；存在缺口时才读取当前价格和重算 hash，价格变化则零新增并要求重新预览。不保存 preview session，也不把顾客登记的 batch/status/deadline 当作接龙导入门禁。
 
 ## 4. Tenant 与关系不变量
 
