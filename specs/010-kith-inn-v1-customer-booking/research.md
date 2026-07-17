@@ -2,7 +2,7 @@
 
 ## 1. M2 交付与 PR 切分
 
-**Decision**: 一个全套规格继续覆盖 M2。M2-A/B、C1～C6 与 D1～D3 已合并，D2 后另由 D2R 完成取消持久化纠偏；剩余自动化实现只有 D4 FE/E2E，T028 微信真机门禁保持未完成。D4 从 D3 rebase merge 后的最新 `main` 开始，不重复实现已合并的 contract、persistence 或 BE 门禁。
+**Decision**: 一个全套规格继续覆盖 M2，并承载长期文档已定义的 M3/M4 收口。M2-A/B、C1～C6、D1～D4 与 D2R 已合并；T028 微信真机门禁和 T057 历史预算事实保持未完成。M3/M4 必须先兼容 nullable 导入订单，再依次交付 parser、persistence、BE、FE、隐私/文案、数据控制与状态验收。
 
 **Rationale**: 旧计划低估了测试与信任边界成本：PR #152 实际 `+2136/-19`，PR #153 实际 `+1861/-42`。宪法 1.2.0 与 `AGENTS.md` 现要求默认人工 diff `<400` 行，因此继续用跨 shared/CMS/BE/FE 的 C/D 纵向片会重复产生千行级 review。C5R 虽同步三个已存在层，但只切换一个 live endpoint 的坐标不变量；拆开会让 `main` 类型不一致或留下不可执行的半契约，且不改 CMS/FE。其余每片继续锁定一个可独立验证的契约、安全或状态不变量。
 
@@ -25,7 +25,7 @@
 - session collection：无服务端 session 需求，增加清理/过期状态，拒绝。
 - batch-slot 连接 collection：existing hasMany 足够，拒绝。
 - order item/fulfillment：当前只有套餐份数和单次送达，拒绝。
-- M2 单独 migration：共享 CMS migration baseline 由 M4 统一建立，拒绝。
+- M2 单独 migration：拒绝；共享 CMS production migration baseline 已由 `main` 的独立改动建立，本目标只读验收，若修复需越出授权路径则停止。
 
 ## 3. Customer JWT 与身份隔离
 

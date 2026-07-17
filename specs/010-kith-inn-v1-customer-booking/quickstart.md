@@ -2,7 +2,7 @@
 
 ## 1. 前置条件
 
-1. M2-A/B、恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并，D2R 已完成取消持久化纠偏。从最新 `main` 开始 D4；T028 微信真机门禁仍保持未完成。
+1. M2-A/B、C1～C6、D1～D4 与 D2R 已合并。从最新 `main` 按 M3-A～M4-C 串行推进；T028 微信真机门禁仍保持未完成。
 2. 使用仓库要求的 Node.js、pnpm、PostgreSQL/Payload 环境。
 3. 配置既有 operator JWT、internal service token、微信 app credentials；本地可显式开启 dev login。
 4. 运行独立幂等的桃子 seller/operator seed。M2 不修改 seed 语义，也不清空旧业务 collection。
@@ -99,6 +99,6 @@ CI=1 pnpm --filter @cfp/kith-inn-v1-fe test:e2e
 - 每片开 PR 前用 `git diff --numstat origin/main...HEAD` 统计人工编写 diff；默认 `<400` 行，`>400` 必须解释不可拆原因、风险和验证，`>800` 不得开 PR。
 - diff 中没有旧 `@cfp/kith-inn-*` 业务 package 修改。
 - 没有新 workspace、collection、索引、运行进程或依赖，除非后续有独立 spec 明确批准。
-- 没有 M3 对账/催款/状态批量管理增强，也没有 M4 AI 营销能力。
+- 没有在线支付、M3 对账/催款增强或 M4 AI 营销能力；接龙兜底是默认关闭的确定性 parser，不调用 AI。
 - PR 置为 ready 后等待 base=main 的 Codex 自动 review；每轮修复与 latest head CI 完成后再精确评论 `@codex review`，直至 latest head 无新 comment。
 - 每条 actionable comment 要么修复并回复，要么说明不采纳理由；重要 thread 全部 resolve 后才可合并。
