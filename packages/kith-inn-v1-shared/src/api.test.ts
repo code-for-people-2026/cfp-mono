@@ -38,6 +38,10 @@ import {
   importCommitResponseSchema,
   importPreviewInputSchema,
   importPreviewResponseSchema,
+  jielongCommitInputSchema,
+  jielongCommitResponseSchema,
+  jielongPreviewInputSchema,
+  jielongPreviewResponseSchema,
   generateMenusInputSchema,
   generateMenusResponseSchema,
   mealSlotRangeSchema,
@@ -97,6 +101,66 @@ describe("auth API schemas", () => {
     expect(devLoginInputSchema.safeParse({ openid: "" }).success).toBe(false);
     expect(selectSellerInputSchema.safeParse({ selectionToken: "", sellerId: 7 }).success).toBe(false);
     expect(apiErrorSchema.safeParse({ error: "bad" }).success).toBe(false);
+  });
+});
+
+describe("jielong API schemas", () => {
+  const hash = "a".repeat(64);
+  const line = {
+    lineNumber: 2,
+    displayName: "王阿姨",
+    quantity: 2,
+    unitPriceCents: 3000,
+    totalCents: 6000
+  };
+
+  it("accepts strict preview and confirmed commit contracts", () => {
+    expect(jielongPreviewInputSchema.parse({ text: "2026-07-20 午餐\n王阿姨 2份" }))
+      .toEqual({ text: "2026-07-20 午餐\n王阿姨 2份" });
+    expect(jielongPreviewResponseSchema.parse({
+      previewHash: hash,
+      target: { date: "2026-07-20", occasion: "lunch" },
+      lines: [line],
+      totalCents: 6000
+    }).lines).toEqual([line]);
+    expect(jielongCommitInputSchema.parse({
+      text: "2026-07-20 午餐\n王阿姨 2份",
+      previewHash: hash,
+      confirmed: true
+    }).confirmed).toBe(true);
+    expect(jielongCommitResponseSchema.parse({
+      previewHash: hash,
+      results: [
+        { lineNumber: 2, status: "created", orderId: 31 },
+        { lineNumber: 3, status: "existing", orderId: "order-32" }
+      ]
+    }).results).toHaveLength(2);
+  });
+
+  it("rejects injections, inconsistent money, hashes and result order", () => {
+    expect(jielongPreviewInputSchema.safeParse({ text: "x", sellerId: 7 }).success).toBe(false);
+    expect(jielongCommitInputSchema.safeParse({ text: "x", previewHash: hash, confirmed: false }).success).toBe(false);
+    expect(jielongCommitInputSchema.safeParse({ text: "x", previewHash: "A".repeat(64), confirmed: true }).success)
+      .toBe(false);
+    expect(jielongPreviewResponseSchema.safeParse({
+      previewHash: hash,
+      target: { date: "2026-07-20", occasion: "lunch" },
+      lines: [{ ...line, totalCents: 5999 }],
+      totalCents: 5999
+    }).success).toBe(false);
+    expect(jielongPreviewResponseSchema.safeParse({
+      previewHash: hash,
+      target: { date: "2026-07-20", occasion: "lunch" },
+      lines: [line],
+      totalCents: 5999
+    }).success).toBe(false);
+    expect(jielongCommitResponseSchema.safeParse({
+      previewHash: hash,
+      results: [
+        { lineNumber: 3, status: "created", orderId: 31 },
+        { lineNumber: 2, status: "existing", orderId: 32 }
+      ]
+    }).success).toBe(false);
   });
 });
 

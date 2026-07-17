@@ -171,6 +171,59 @@ export const mealSlotTargetSchema = z.object({
   occasion: occasionSchema
 }).strict();
 
+export const jielongTextSchema = z.string().min(1).max(10_000);
+export const previewHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
+export const jielongCanonicalLineSchema = z.object({
+  lineNumber: positiveIntegerSchema,
+  displayName: shortText,
+  quantity: positiveIntegerSchema
+}).strict();
+
+const linesAreOrdered = (lines: { lineNumber: number }[]) =>
+  lines.every((entry, index) => index === 0 || entry.lineNumber > lines[index - 1]!.lineNumber);
+const jielongCanonicalLinesSchema = z.array(jielongCanonicalLineSchema).min(1).max(100)
+  .refine(linesAreOrdered, { message: "接龙行号必须按原文严格递增" });
+
+export const jielongCanonicalInputSchema = z.object({
+  target: mealSlotTargetSchema,
+  lines: jielongCanonicalLinesSchema
+}).strict();
+export const jielongPreviewInputSchema = z.object({ text: jielongTextSchema }).strict();
+
+export const jielongPreviewLineSchema = jielongCanonicalLineSchema.extend({
+  unitPriceCents: nonNegativeIntegerSchema,
+  totalCents: nonNegativeIntegerSchema
+}).strict().refine(
+  ({ quantity, unitPriceCents, totalCents }) => quantity * unitPriceCents === totalCents,
+  { message: "行金额必须等于份数乘单价" }
+);
+export const jielongPreviewResponseSchema = z.object({
+  previewHash: previewHashSchema,
+  target: mealSlotTargetSchema,
+  lines: z.array(jielongPreviewLineSchema).min(1).max(100)
+    .refine(linesAreOrdered, { message: "接龙行号必须按原文严格递增" }),
+  totalCents: nonNegativeIntegerSchema
+}).strict().refine(
+  ({ lines, totalCents }) => lines.reduce((sum, entry) => sum + entry.totalCents, 0) === totalCents,
+  { message: "总金额必须等于逐行金额之和" }
+);
+
+export const jielongCommitInputSchema = z.object({
+  text: jielongTextSchema,
+  previewHash: previewHashSchema,
+  confirmed: z.literal(true)
+}).strict();
+export const jielongCommitResultSchema = z.object({
+  lineNumber: positiveIntegerSchema,
+  status: z.enum(["created", "existing"]),
+  orderId: relationshipIdSchema
+}).strict();
+export const jielongCommitResponseSchema = z.object({
+  previewHash: previewHashSchema,
+  results: z.array(jielongCommitResultSchema).min(1).max(100)
+    .refine(linesAreOrdered, { message: "接龙行号必须按原文严格递增" })
+}).strict();
+
 const dateNumber = (value: string) => Date.parse(`${value}T00:00:00.000Z`);
 const validRange = ({ from, to }: { from: string; to: string }) => {
   const days = (dateNumber(to) - dateNumber(from)) / 86_400_000;
