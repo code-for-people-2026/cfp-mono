@@ -679,6 +679,27 @@ export const cmsOrderCreateSchema = z.object({
   note: noteSchema
 }).strict();
 
+export const cmsJielongOrderCreateSchema = z.object({
+  mealSlotId: relationshipIdSchema,
+  customerProfileId: z.null(),
+  customerOpenid: z.null(),
+  status: z.literal("draft"),
+  source: z.literal("jielong-import"),
+  displayName: shortText,
+  address: z.null(),
+  quantity: positiveIntegerSchema,
+  unitPriceCents: nonNegativeIntegerSchema,
+  paymentStatus: z.literal("unpaid"),
+  paidAt: z.null(),
+  deliveryStatus: z.literal("pending"),
+  deliveredAt: z.null(),
+  confirmedAt: z.null(),
+  canceledAt: z.null(),
+  note: z.string().max(914).nullable(),
+  previewHash: previewHashSchema,
+  lineNumber: positiveIntegerSchema.max(99_999)
+}).strict();
+
 export const cmsCustomerOrderCreateSchema = z.object({
   mealSlotId: relationshipIdSchema,
   customerProfileId: relationshipIdSchema,

@@ -33,6 +33,7 @@ import type {
   cmsCustomerOrderCreateSchema,
   cmsCustomerOrderUpdateSchema,
   cmsCustomerProfileSchema,
+  cmsJielongOrderCreateSchema,
   cmsBookingBatchCreateSchema,
   cmsOrderCreateSchema,
   cmsOrderUpdateSchema,
@@ -143,6 +144,7 @@ export type Order = z.infer<typeof orderSchema>;
 export type ManualOrderCreate = z.infer<typeof manualOrderCreateSchema>;
 export type ManualOrderUpdate = z.infer<typeof manualOrderUpdateSchema>;
 export type CmsOrderCreate = z.infer<typeof cmsOrderCreateSchema>;
+export type CmsJielongOrderCreate = z.infer<typeof cmsJielongOrderCreateSchema>;
 export type CmsOrderUpdate = z.infer<typeof cmsOrderUpdateSchema>;
 export type CmsCustomerOrderCreate = z.infer<typeof cmsCustomerOrderCreateSchema>;
 export type CmsCustomerOrderUpdate = z.infer<typeof cmsCustomerOrderUpdateSchema>;

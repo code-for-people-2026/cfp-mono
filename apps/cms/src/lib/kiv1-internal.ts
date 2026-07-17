@@ -15,6 +15,7 @@ import { NextResponse } from "next/server";
 const KIV1_INTERNAL_HEADER = "x-kith-inn-v1-internal";
 const KIV1_OPERATOR_HEADER = "x-kith-inn-v1-operator";
 const KIV1_CUSTOMER_HEADER = "x-kith-inn-v1-customer";
+const JIELONG_MARKER_PATTERN = /^__kiv1_jielong:[0-9a-f]{64}:\d{5}\n/;
 
 type Kiv1OperatorScope = {
   operatorId: string | number;
@@ -37,6 +38,20 @@ export function requireServiceAuth(req: Request): NextResponse | null {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   return null;
+}
+
+export function jielongMarker(previewHash: string, lineNumber: number): string {
+  return `__kiv1_jielong:${previewHash}:${String(lineNumber).padStart(5, "0")}\n`;
+}
+
+export function jielongMarkerFromNote(note: string | null | undefined): string | null {
+  return note?.match(JIELONG_MARKER_PATTERN)?.[0] ?? null;
+}
+
+export function stripJielongMarker(note: string | null | undefined): string | null {
+  const marker = jielongMarkerFromNote(note);
+  if (!marker) return note ?? null;
+  return note!.slice(marker.length) || null;
 }
 
 export async function servicePayload(req: Request): Promise<BasePayload | NextResponse> {
