@@ -251,7 +251,7 @@ describe("order persistence boundary", () => {
       customerProfile: null,
       source: "jielong-import",
       displayName: "接龙顾客",
-      address: null
+      address: ""
     };
     mocks.getPayload.mockResolvedValue(payloadWith({ orders: [imported] }));
     const response = await listOrders(request("/orders?mealSlotId=11"));
