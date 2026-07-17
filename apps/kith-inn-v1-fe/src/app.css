@@ -68,6 +68,31 @@ button.primary {
   gap: 28rpx;
 }
 
+.customer-orders-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.customer-profiles button,
+.customer-order-actions button {
+  margin-top: 16rpx;
+}
+
+.status-axes {
+  display: flex;
+  justify-content: space-between;
+  margin: 20rpx 0;
+}
+
+.customer-order-actions input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+}
+
 .booking-menu-item,
 .booking-price,
 .batch-status,

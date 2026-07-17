@@ -61,6 +61,7 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   await expect(page.getByText("总计：¥88.00", { exact: true })).toBeVisible();
   await page.getByText("确认提交", { exact: true }).dblclick();
   await expect(page.getByText("登记成功", { exact: true })).toHaveCount(2);
+  await expect(page.getByText("查看我的预订", { exact: true })).toBeVisible();
   expect(Date.now() - firstStarted).toBeLessThan(90_000);
   let lunchOrderId: string | number | undefined;
   for (const occasion of ["lunch", "dinner"]) {

@@ -7,6 +7,9 @@ import type {
   CustomerProfile,
   CustomerProfileCreate,
   CustomerBookingBatchView,
+  CustomerOrderCancel,
+  CustomerOrderUpdate,
+  CustomerOrderView,
   CustomerReservationInput,
   CustomerReservationResponse,
   CustomerReservationResult,
@@ -268,6 +271,45 @@ function parseOwnedCustomerProfiles(value: unknown): CustomerProfile[] {
   return body.docs.map(parseCustomerProfile);
 }
 
+function parseCustomerOrderView(value: unknown): CustomerOrderView {
+  const order = record(value);
+  const target = record(order?.target);
+  const items = Array.isArray(order?.menuItems) ? order.menuItems.map(record) : [];
+  const allowed = ["id", "target", "menuItems", "orderStatus", "orderDeadline", "displayName", "address", "quantity",
+    "unitPriceCents", "totalCents", "status", "paymentStatus", "paidAt", "deliveryStatus", "deliveredAt",
+    "confirmedAt", "canceledAt"];
+  if (!order || Object.keys(order).some((key) => !allowed.includes(key)) || !validId(order.id) || !target ||
+    Object.keys(target).length !== 2 || typeof target.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(target.date) ||
+    !(target.occasion === "lunch" || target.occasion === "dinner") || items.length !== 5 || items.some((item) => !item ||
+      Object.keys(item).length !== 3 || typeof item.nameSnapshot !== "string" || item.nameSnapshot === "" ||
+      !(item.mainIngredientSnapshot === null || typeof item.mainIngredientSnapshot === "string") ||
+      !(item.categorySnapshot === "meat" || item.categorySnapshot === "veg" || item.categorySnapshot === "soup")) ||
+    !(order.orderStatus === "draft" || order.orderStatus === "open" || order.orderStatus === "closed") ||
+    !validNullableDate(order.orderDeadline) || typeof order.displayName !== "string" || order.displayName === "" ||
+    typeof order.address !== "string" || order.address === "" || typeof order.quantity !== "number" ||
+    !Number.isInteger(order.quantity) || order.quantity <= 0 || typeof order.unitPriceCents !== "number" ||
+    !Number.isInteger(order.unitPriceCents) || order.unitPriceCents < 0 || order.totalCents !== order.quantity * order.unitPriceCents ||
+    !(order.status === "draft" || order.status === "confirmed" || order.status === "canceled") ||
+    !(order.paymentStatus === "unpaid" || order.paymentStatus === "paid") || !validNullableDate(order.paidAt) ||
+    !(order.deliveryStatus === "pending" || order.deliveryStatus === "done") || !validNullableDate(order.deliveredAt) ||
+    !validNullableDate(order.confirmedAt) || !validNullableDate(order.canceledAt))
+    throw new ApiError(502, "invalid-api-response", "顾客订单数据无效");
+  return order as CustomerOrderView;
+}
+
+function parseOwnedCustomerOrders(value: unknown): CustomerOrderView[] {
+  const body = record(value);
+  if (!body || Object.keys(body).length !== 1 || !Array.isArray(body.docs))
+    throw new ApiError(502, "invalid-api-response", "顾客订单数据无效");
+  return body.docs.map(parseCustomerOrderView);
+}
+
+function parseOwnedCustomerOrder(value: unknown): CustomerOrderView {
+  const body = record(value);
+  if (!body || Object.keys(body).length !== 1) throw new ApiError(502, "invalid-api-response", "顾客订单数据无效");
+  return parseCustomerOrderView(body.doc);
+}
+
 function parseCustomerReservation(value: unknown): CustomerReservationResponse {
   const body = record(value);
   if (!body || !Array.isArray(body.results) || body.results.length < 1 || body.results.length > 20)
@@ -425,7 +467,7 @@ export function createApiClient(options: ClientOptions) {
     }));
   }
 
-  async function customerRequest(path: string, config: { method?: "GET" | "POST"; data?: unknown } = {}): Promise<unknown> {
+  async function customerRequest(path: string, config: { method?: "GET" | "POST" | "PATCH"; data?: unknown } = {}): Promise<unknown> {
     const token = options.customerSessions?.getSession()?.token;
     const header: Record<string, string> = { "content-type": "application/json" };
     if (token) header.Authorization = `Bearer ${token}`;
@@ -463,6 +505,24 @@ export function createApiClient(options: ClientOptions) {
     },
     async listOwnedCustomerProfiles(): Promise<CustomerProfile[]> {
       return parseOwnedCustomerProfiles(await customerRequest("/customer/profiles"));
+    },
+    async deactivateOwnedCustomerProfile(id: string | number): Promise<CustomerProfile> {
+      const profile = parseCustomerProfile(record(await customerRequest(
+        `/customer/profiles/${encodeURIComponent(id)}/deactivate`, { method: "POST", data: {} }
+      ))?.doc);
+      if (profile.active) throw new ApiError(502, "invalid-api-response", "顾客资料数据无效");
+      return profile;
+    },
+    async listOwnedCustomerOrders(): Promise<CustomerOrderView[]> {
+      return parseOwnedCustomerOrders(await customerRequest("/customer/orders"));
+    },
+    async updateOwnedCustomerOrder(id: string | number, input: CustomerOrderUpdate): Promise<CustomerOrderView> {
+      return parseOwnedCustomerOrder(await customerRequest(`/customer/orders/${encodeURIComponent(id)}`,
+        { method: "PATCH", data: input }));
+    },
+    async cancelOwnedCustomerOrder(id: string | number, input: CustomerOrderCancel): Promise<CustomerOrderView> {
+      return parseOwnedCustomerOrder(await customerRequest(`/customer/orders/${encodeURIComponent(id)}/cancel`,
+        { method: "POST", data: input }));
     },
     async submitCustomerReservations(input: CustomerReservationInput): Promise<CustomerReservationResponse> {
       return parseCustomerReservation(await customerRequest("/customer/reservations", { method: "POST", data: input }));

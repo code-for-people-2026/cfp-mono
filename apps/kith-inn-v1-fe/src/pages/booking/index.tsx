@@ -122,6 +122,9 @@ export default function CustomerBooking() {
       <Text className="batch-status">
         {view.status === "open" ? "开放登记" : view.status === "closed" ? "批次已关闭" : "批次已归档"}
       </Text>
+      {publicId && <Button onClick={() => void Taro.navigateTo({
+        url: `/pages/customer/orders/index?batch=${encodeURIComponent(publicId)}`
+      })}>查看我的预订</Button>}
       {view.slots.map((slot) => (
         <View className="card booking-slot" key={`${slot.date}-${slot.occasion}`}>
           <Text className="section-title">{slot.date} {occasionText(slot.occasion)}</Text>

@@ -277,6 +277,45 @@ describe("API client", () => {
       .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
+  it("manages only validated owned orders and deactivates owned profiles", async () => {
+    const batchPublicId = "72b8b5fc-84d2-4c70-a35b-0a42742fcd11";
+    const item = { nameSnapshot: "红烧肉", mainIngredientSnapshot: "猪肉", categorySnapshot: "meat" as const };
+    const order = { id: 31, target: { date: "2026-07-13", occasion: "lunch" as const },
+      menuItems: Array.from({ length: 5 }, () => item), orderStatus: "open" as const,
+      orderDeadline: "2026-07-12T01:00:00.000Z", displayName: "王阿姨", address: "3A", quantity: 2,
+      unitPriceCents: 3000, totalCents: 6000, status: "draft" as const, paymentStatus: "unpaid" as const,
+      paidAt: null, deliveryStatus: "pending" as const, deliveredAt: null, confirmedAt: null, canceledAt: null };
+    const profile = { id: 21, sellerId: 7, displayName: "王阿姨", address: "3A", active: false };
+    const request = vi.fn<RequestAdapter>(async ({ url }) => url.endsWith("/deactivate")
+      ? { statusCode: 200, data: { doc: profile } }
+      : { statusCode: 200, data: url.endsWith("/customer/orders") ? { docs: [order] } : { doc: order } });
+    const client = createApiClient({ request, sessions: sessions(), customerSessions: customerSessions(), baseUrl: "http://be.test" });
+    await expect(client.listOwnedCustomerOrders()).resolves.toEqual([order]);
+    await expect(client.updateOwnedCustomerOrder(31, { batchPublicId, quantity: 3 })).resolves.toEqual(order);
+    await expect(client.cancelOwnedCustomerOrder(31, { batchPublicId, confirmed: true })).resolves.toEqual(order);
+    await expect(client.deactivateOwnedCustomerProfile(21)).resolves.toEqual(profile);
+    expect(request).toHaveBeenNthCalledWith(2, expect.objectContaining({ url: "http://be.test/customer/orders/31",
+      method: "PATCH", data: { batchPublicId, quantity: 3 } }));
+    expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({ url: "http://be.test/customer/orders/31/cancel",
+      method: "POST", data: { batchPublicId, confirmed: true } }));
+    expect(request).toHaveBeenNthCalledWith(4, expect.objectContaining({ url: "http://be.test/customer/profiles/21/deactivate",
+      method: "POST", data: {} }));
+    await expect(createApiClient({ request: adapter(200, { docs: [{ ...order, customerOpenid: "leak" }] }),
+      sessions: sessions(), customerSessions: customerSessions() }).listOwnedCustomerOrders())
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const data of [null, { docs: [], extra: true }]) await expect(createApiClient({ request: adapter(200, data),
+      sessions: sessions(), customerSessions: customerSessions() }).listOwnedCustomerOrders())
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, { doc: null }), sessions: sessions(),
+      customerSessions: customerSessions() }).updateOwnedCustomerOrder(31, { batchPublicId, quantity: 3 }))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, null), sessions: sessions(), customerSessions: customerSessions() })
+      .cancelOwnedCustomerOrder(31, { batchPublicId, confirmed: true })).rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, { doc: { ...profile, active: true } }), sessions: sessions(),
+      customerSessions: customerSessions() }).deactivateOwnedCustomerProfile(21))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
+  });
+
   it("validates seller selection and rejects malformed login payloads", async () => {
     const store = sessions();
     const selection = {
