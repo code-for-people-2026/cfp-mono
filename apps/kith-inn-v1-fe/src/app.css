@@ -122,8 +122,19 @@ button.primary {
 }
 
 .customer-profiles button,
+.customer-data-controls button,
 .customer-order-actions button {
   margin-top: 16rpx;
+}
+
+.customer-data-controls .meta,
+.deactivation-failure {
+  display: block;
+  margin-top: 16rpx;
+}
+
+.deactivation-failure {
+  color: #a33a2b;
 }
 
 .status-axes {
