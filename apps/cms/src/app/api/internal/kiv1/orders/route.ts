@@ -49,7 +49,7 @@ export function normalizeOrder(doc: OrderDoc): Order {
     status: doc.status,
     source: doc.source,
     displayName: doc.displayName,
-    address: doc.address ?? null,
+    address: doc.source === "jielong-import" && !doc.address?.trim() ? null : doc.address ?? null,
     quantity: doc.quantity,
     unitPriceCents: doc.unitPriceCents,
     totalCents: doc.quantity * doc.unitPriceCents,
