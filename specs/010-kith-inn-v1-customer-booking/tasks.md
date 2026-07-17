@@ -9,12 +9,12 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Tests**: 本功能要求 contract、领域、route、FE logic、H5 E2E 与 weapp smoke；每个实现 PR 先写能失败的窄测试，再实现，再运行 `pnpm verify`。
 
-**Organization**: M2-A/B、恢复计划、坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2 后另由 D2R 完成取消持久化纠偏。剩余自动化实现只有 D4，T028 仍是未完成的微信真机门禁；C6 的历史预算任务 T057 因实际人工 diff 为 459 additions / 20 deletions（479 行）而保持未完成，不把合并事实误记为预算达标。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
+**Organization**: M2-A/B、C1～C6、D1～D4 与 D2R 已合并，D4 对应 PR #230。T028 仍是微信真机门禁，T057 仍因历史人工 diff 479 行保持未完成。M3/M4 按本文件的十个 PR 切片串行推进；每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
 
 ## 格式
 
 - `[P]`：可与同阶段其他 `[P]` 任务并行，且不会修改同一文件。
-- `[US1]`～`[US4]`：对应 spec.md 用户故事。
+- `[US1]`～`[US6]`：对应 spec.md 用户故事。
 - 每条任务给出预期修改或验证的准确路径。
 
 ## Phase 1：M2-A 商家餐次配置与批次 path（US1）
@@ -101,7 +101,17 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | D1 | own-order/edit/cancel/deactivate contract | T059–T062 | shared 100% coverage | 已合并 PR #224 |
 | D2 | owner-scoped persistence 与历史可见 | T063–T066 | CMS SQLite/PostgreSQL | 已合并 PR #225；D2R 纠偏 PR #226 |
 | D3 | BE 修改/取消、截止重查和 confirmed 锁单 | T067–T070 | BE domain/route coverage | 已合并 PR #227 |
-| D4 | 顾客页面、H5/weapp 与 M2 总验收 | T071–T074 | FE coverage、无头 H5、weapp | D3；`<400` |
+| D4 | 顾客页面、H5/weapp 与 M2 总验收 | T071–T074 | FE coverage、无头 H5、weapp | 已合并 PR #230；363 行 |
+| M3-A | nullable 导入订单读模型 | T075–T076 | shared/BE/FE coverage | D4；`<400` |
+| M3-B | strict 接龙 parser/contract | T077–T078 | shared 100% coverage | M3-A；`<400` |
+| M3-C | owner-scoped CMS 导入写入 | T079–T080 | CMS SQLite/PostgreSQL | M3-B；`<400` |
+| M3-D | BE preview/commit 与幂等 | T081–T082 | BE 100% coverage | M3-C；`<400` |
+| M3-E | FE preview/confirm API/logic | T083–T084 | FE 100% coverage | M3-D；`<400` |
+| M3-F | feature-gated 兜底页面 | T085–T087 | headless H5、weapp、真机证据独立 | M3-E；`<400` |
+| M3-G | 公开文案与隐私提示 | T088–T090 | FE coverage、headless H5、weapp | M3-F；`<400` |
+| M4-A | 顾客数据复制与资料批量软停用 | T091–T092 | FE coverage、headless H5 | M3-G；`<400` |
+| M4-B | 错误/空态/截止/关闭态打磨 | T093–T094 | FE coverage、headless H5、weapp | M4-A；`<400` |
+| M4-C | latest-main 自动化与人工门禁记账 | T095–T097 | 全量 headless/verify；人工证据独立 | M4-B；`<400` |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
 
@@ -247,12 +257,87 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 无头 H5 跑通查看→修改→取消→商家确认→顾客锁单→资料停用；历史订单和三状态轴保持可见。
 
-- [ ] T071 [US4] 先在 `apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerOrders.test.ts`、`apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-orders.spec.ts` 覆盖 D4 页面逻辑与总纵向流，并确认测试失败
-- [ ] T072 [US4] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/customerOrders.ts`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现 D4 页面
-- [ ] T073 [US4] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、M2 scope/path 审计与人工 diff 统计；确认 D4 只含 `apps/kith-inn-v1-fe/src/**` 和 `apps/kith-inn-v1-fe/tests/e2e/**` 且 `<400` 行，并在 T028 未完成时不宣称可发布
-- [ ] T074 [US4] 提交 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerOrders.ts`、`apps/kith-inn-v1-fe/src/logic/customerOrders.test.ts`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts`、`apps/kith-inn-v1-fe/src/app.css`、`apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-orders.spec.ts`，推送并创建 M2-D4 ready PR；闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T071 [US4] 在 FE service/logic 与 `customer-booking.spec.ts`、`customer-orders.spec.ts` 覆盖 D4 页面逻辑和总纵向流，并确认测试先失败
+- [x] T072 [US4] 在 `apps/kith-inn-v1-fe/src/**` 实现顾客订单页、session bootstrap、修改/取消与资料停用
+- [x] T073 [US4] FE 100% coverage（60 tests，506/506 statements、684/684 branches、177/177 functions、430/430 lines）、8 条无头 H5 E2E、weapp build 与 `pnpm verify` 全绿；人工 diff 361 additions / 2 deletions（363 行），T028 仍未完成
+- [x] T074 [US4] PR #230 已完成 latest-head CI、两轮 Codex review、unresolved=0，并于 2026-07-17 rebase merge
 
 **Checkpoint**: M2 实现闭环；发布状态仍由 T028 与维护者结论单独决定。
+
+---
+
+## Phase 14：M3-A nullable 导入订单读模型（US5）
+
+**Independent Test**: `jielong-import` 可为空 profile/address 并显示“无地址”；manual/customer-card 的缺失字段仍拒绝，既有排序、汇总和编辑无回归。
+
+- [ ] T075 [US5] 在 `packages/kith-inn-v1-shared/src/api.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts` 和 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 覆盖按 source 区分的 nullable 读模型、稳定排序和“无地址”清单
+- [ ] T076 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,types.ts}`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/orders.ts` 和 `apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx` 实现向后兼容读模型
+
+## Phase 15：M3-B strict 接龙 parser/contract（US5）
+
+**Independent Test**: grammar、100 行/一万字符边界、行序、金额、preview hash 与 strict commit schema 全部确定性；任何非法非空行整批拒绝。
+
+- [ ] T077 [US5] 在 `packages/kith-inn-v1-shared/src/{api,jielong}.test.ts` 覆盖 strict preview/commit schema、确定性 grammar 与 canonical input
+- [ ] T078 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,jielong.ts,types.ts,index.ts}` 实现 parser、preview/commit DTO 和 canonical input，不增加 hash 计算、route 或写入
+
+## Phase 16：M3-C CMS 导入持久化边界（US5）
+
+**Independent Test**: SQLite/PostgreSQL 均要求 operator JWT + service secret，重查 seller/slot；只允许 jielong-import 的 null profile/openid/address 和服务端白名单字段。
+
+- [ ] T079 [US5] 在 `apps/cms/tests/kiv1-orders.test.ts` 覆盖导入 create 的鉴权、owner、relationship、nullable、字段注入和响应白名单
+- [ ] T080 [US5] 在 `apps/cms/src/app/api/internal/kiv1/orders/{route.ts,[id]/route.ts}` 与 `apps/cms/src/lib/kiv1-internal.ts` 实现导入写入、内部 note 标记剥离/保留和顺序重试查重，不放宽 manual/customer-card
+
+## Phase 17：M3-D BE preview/commit（US5）
+
+**Independent Test**: preview 零写入；commit 重新解析/重查、按服务端价格写入；hash 篡改失败，相同 hash+行号重复提交订单增量为 0。
+
+- [ ] T081 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/jielong.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖 preview hash、确认、顺序重试幂等、owner/slot 与错误净化
+- [ ] T082 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/jielong.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 `/merchant/jielong/preview`、`/merchant/jielong/commit` 与 SHA-256 preview hash
+
+## Phase 18：M3-E FE preview/confirm API 与逻辑（US5）
+
+**Independent Test**: FE 只展示服务端 strict preview；未确认、hash 不匹配或非法结果不调用 commit，重试保持同一原文/hash。
+
+- [ ] T083 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api,logic/jielongImport}.test.ts` 覆盖 strict 响应、确认门禁与结果派生
+- [ ] T084 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api.ts,logic/jielongImport.ts}` 实现 typed client/logic，不注册页面或导航
+
+## Phase 19：M3-F 默认关闭的接龙兜底页面（US5）
+
+**Independent Test**: 默认构建主导航入口数为 0；显式开关构建的无头 H5 跑通粘贴→预览→确认→商家订单“无地址”，weapp build 通过。
+
+- [ ] T085 [US5] 在 `apps/kith-inn-v1-fe/src/logic/jielongImport.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts` 覆盖默认隐藏、显式启用和纵向导入
+- [ ] T086 [US5] 在 `apps/kith-inn-v1-fe/{config/index.ts,.env.example,src/app.config.ts,src/app.css,src/pages/merchant/jielong-import/index.tsx}` 实现 feature-gated 弱入口与页面
+- [ ] T087 [US5] 使用已配置微信小程序的真机完成接龙兜底页体验版 smoke；不得以 H5/weapp build 替代
+
+## Phase 20：M3-G 公开文案与隐私提示（US6）
+
+**Independent Test**: 顾客公开页统一“预订登记”，风险词审计为 0；称呼/地址用途、保存/软停用/历史保留边界可见，H5/weapp 无回归。
+
+- [ ] T088 [US6] 在 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking.spec.ts,customer-orders.spec.ts}` 覆盖公开文案审计、隐私说明入口及用途/保留边界
+- [ ] T089 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/privacy/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现文案与说明页
+- [ ] T090 [US6] 在微信后台完成正式用户隐私保护指引配置并留存真实审核证据；页面文案和自动化不得替代
+
+## Phase 21：M4-A 顾客数据控制（US6）
+
+**Independent Test**: 版本化 JSON 只含当前 owner 的 active profiles/own orders；批量软停用需二次确认，部分失败可重试，历史订单可读率 100%。
+
+- [ ] T091 [US6] 在 FE customer logic/page tests 与 headless E2E 覆盖安全导出字段、复制、二次确认、逐项停用和部分失败
+- [ ] T092 [US6] 在 `apps/kith-inn-v1-fe/src/{logic/customerData.ts,pages/customer/orders/index.tsx,services/api.ts,app.css}` 实现数据复制与批量软停用，不增加物理删除 API
+
+## Phase 22：M4-B 页面状态收口（US6）
+
+**Independent Test**: booking、customer orders、merchant orders 与 jielong 页的 loading/empty/error/closed/deadline 状态都有唯一、可执行文案；无匿名或 mock 降级。
+
+- [ ] T093 [US6] 在 `apps/kith-inn-v1-fe/src/logic/{customerBooking,customerOrders,orders,jielongImport}.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking,customer-orders,merchant,jielong-import}.spec.ts` 建立错误、空态、截止和关闭状态矩阵
+- [ ] T094 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/merchant/jielong-import/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 收口状态呈现，不改变业务状态机
+
+## Phase 23：M4-C 自动化总验收与真实门禁记账（US6）
+
+**Independent Test**: latest main 的 migration readiness 只读检查、workspace coverage、全量无头 H5、weapp build 与 `pnpm verify` 全绿；人工门禁只凭真实证据勾选。
+
+- [ ] T095 [US6] 在 `specs/010-kith-inn-v1-customer-booking/tasks.md` 记录 latest-main 自动化命令、结果、head 与 scope 审计证据
+- [x] T096 [US6] 已只读核实 `main` 的 `cae51c0`、`1f8622f` 包含共享 CMS production migration baseline、production runner、ready/health gate 与对应测试；本目标不修改其允许范围外文件
+- [ ] T097 [US6] 完成小程序类目/资质路径确认、体验版/审核版结论并留存真实证据；不得因自动化全绿而勾选
 
 ---
 
@@ -262,22 +347,23 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 恢复计划 PR
   └─ C1 ─ C2 ─ C3 ─ C4 ─ C5
                          └─ 坐标纠偏计划 ─ C5R ─ C6 ─ D1 ─ D2 ─ D3 ─ D4
+  └─ M3-A ─ M3-B ─ M3-C ─ M3-D ─ M3-E ─ M3-F ─ M3-G ─ M4-A ─ M4-B ─ M4-C
 ```
 
-- M2-A 的 T001–T015、M2-B 的 T016–T027/T029/T030、C1～C6 的 T031–T056/T058 和 D1～D3 的 T059–T070 已完成；T028 保持未完成真机门禁，T057 因历史 C6 人工 diff 为 479 行而保持未完成。
-- 剩余 D4 产品代码 PR 不与其他切片并行、不 stacked；从 D3 rebase merge 后的最新 `main` 开始。
+- M2 的 T001–T027/T029–T056/T058–T074 已完成；T028 保持未完成真机门禁，T057 因历史 C6 人工 diff 为 479 行保持未完成。
+- M3/M4 PR 不并行、不 stacked；每片从前一片合并后的最新 `main` 开始。
 - 每片 tests-first；只实现当前层的不变量，不预建下一片 route/page/scaffold。
-- C5R 是 C6 的新增顺序依赖；D1/D2/D3 是 D4 的顺序依赖。
+- nullable 读模型是导入写入前置；parser contract 是 CMS/BE/FE 共同边界；M4 只在 M3 自动化闭环后开始。
 
 ## Parallel Opportunities
 
 - 不并行推进 PR；同一片内若测试涉及多个既有文件，可在同一失败测试阶段准备，但实现仍在测试确认失败后开始。
-- C6/D4 的 H5 与 coverage 可在实现完成后并行运行；weapp build 和 `pnpm verify` 仍以同一 head 为准汇总。
+- 同一片的独立 test suite 可并行运行；weapp build 和 `pnpm verify` 仍以同一 head 为准汇总。
 
 ## Implementation Strategy
 
-1. 恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2R 也已完成取消持久化纠偏。C6 的合并不改变 T057 历史预算未达标与 T028 真机未验证的事实。
-2. 从最新 `main` 实施 D4 页面和总验收，不重复实现已合并的 contract、persistence 或 BE 门禁。
-3. D4 只接顾客页面、FE/H5/weapp 自动化与 M2 总验收；T028 继续作为独立真机门禁。
+1. M2 与 D2R 已合并；T057 历史预算未达标与 T028 真机未验证的事实不变。
+2. 严格按 M3-A～M4-C 串行实施，不重复已合并能力，不预建下一片 scaffold。
+3. 接龙默认关闭且无 AI；M4 数据删除只做已规定的 profile 软停用，历史订单不改写。
 4. 每轮修复后等待 latest-head CI，再精确 `@codex review`；latest head 无新 comment、unresolved=0、CI 全绿、mergeState=CLEAN 后才 rebase merge。
-5. T028 只能由维护者真机完成；H5 自动化不改变该任务状态。
+5. T028、T087、T090、T097 只能由真实设备/微信后台/审核事实完成；自动化不改变其状态。

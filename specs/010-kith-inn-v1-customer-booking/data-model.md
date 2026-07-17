@@ -1,8 +1,8 @@
-# 数据模型：街坊味 v1 顾客预订登记
+# 数据模型：街坊味 v1 顾客预订登记与 MVP 收口
 
 ## 1. 结论
 
-M2 复用 M0 已建立的七个 `kiv1_` collection，不新增 collection、字段、索引、数据库、进程或 workspace。M2 的持久化需求已经由 `kiv1_meal_slots`、`kiv1_booking_batches`、`kiv1_customer_profiles` 和 `kiv1_orders` 覆盖；本阶段只补 API contract、领域校验和界面。
+M2～M4 复用 M0 已建立的七个 `kiv1_` collection，不新增 collection、字段、索引、数据库、进程或 workspace。接龙兜底使用 `kiv1_orders` 已预留的 nullable profile/address 与 `jielong-import` source；顾客数据控制复用 profile 软停用和 own-order 读取。
 
 ## 2. 既有持久化实体
 
@@ -83,6 +83,18 @@ M2 顾客卡片订单使用既有字段：
 
 顾客修改或取消前，BE 必须同时验证：订单属于当前 `seller + customerOpenid`、当前入口 batch 为 open 且包含该餐次、餐次为 open、截止时间未到、订单仍为 draft。确认订单永远拒绝顾客写入。
 
+M3 接龙订单沿用同一实体，但使用以下受限组合：
+
+| 字段 | 接龙导入语义 |
+|---|---|
+| `seller`、`mealSlot` | 来自 operator session 与服务端日期/餐次唯一解析 |
+| `customerProfile`、`customerOpenid`、`address` | 固定为空；不得创建或更新 profile |
+| `source` | 固定为 `jielong-import` |
+| `displayName`、`quantity`、价格 | 来自 strict parser 与服务端餐次价格快照 |
+| `note` | CMS 保存内部导入标记与可选用户备注；对外 DTO 必须剥离内部标记 |
+
+内部导入标记由 `previewHash + 数据行序号` 派生。CMS create 在写入前按 seller、mealSlot 与标记查找既有订单；顺序网络重试返回既有记录。商家修改导入订单 note 时必须保留内部前缀。该方案不提供并发唯一约束；若需要并发导入或强唯一性，必须新增独立迁移设计。
+
 ## 3. 非持久化模型
 
 ### 3.1 CustomerSessionClaims
@@ -123,6 +135,10 @@ target.occasion: lunch | dinner
 
 每个输入公开 target 返回一个 discriminated result：`created`、`updated`、`resubmitted` 或 `failed`。成功项返回既有鉴权后订单摘要，失败项返回稳定错误码和中文消息；每项顶层回显同一公开 target，响应顺序与去重后的输入顺序一致，UI 不依赖订单摘要中的关系 ID。
 
+### 3.5 JielongPreview
+
+接龙 parser 输出不落库的 canonical model：日期、午餐/晚餐、按原始数据行排序的 `lineNumber/displayName/quantity`。BE 在当前 seller 下唯一解析 meal slot、补服务端价格，以 canonical input 的 SHA-256 作为 `previewHash`。commit 重新执行同一解析、hash 和当前餐次重查，不保存 preview session。
+
 ## 4. Tenant 与关系不变量
 
 1. operator/customer 均只能读取当前 session seller 的数据。
@@ -134,4 +150,4 @@ target.occasion: lunch | dinner
 
 ## 5. 数据迁移与兼容
 
-M2 没有 schema migration。旧 M1 手工订单保持 `source=manual` 且 `customerOpenid=null`，不会出现在顾客“我的预订”中；商家订单列表继续同时显示 manual 和 customer-card。现有 seed 只需在测试场景中通过公开 API 创建餐次、batch、profile 和 order，不改变独立幂等的桃子 seller/operator seed。
+M2～M4 不新增业务 schema migration。旧 M1 手工订单保持 `source=manual` 且 `customerOpenid=null`；M3 导入订单为 `source=jielong-import` 且 profile/openid/address 为空，只出现在商家侧。共享 CMS production migration baseline 已在 `main` 独立建立，本目标只读验收，不修改授权范围外的 migration/runtime 文件。
