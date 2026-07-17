@@ -365,6 +365,26 @@ describe("merchant order routes", () => {
     });
   });
 
+  it("rejects resubmitting an imported order before it can persist an address", async () => {
+    const routeDeps = deps({
+      getOrder: vi.fn(async () => ({
+        ...order,
+        customerProfileId: null,
+        source: "jielong-import" as const,
+        address: null,
+        status: "canceled" as const,
+        canceledAt: "2026-07-10T00:00:00.000Z"
+      }))
+    });
+    const response = await request(ordersRoutes(SECRET, routeDeps), "/31/resubmit", {
+      method: "POST",
+      body: JSON.stringify({ quantity: 2, displayName: "接龙顾客", address: "误填地址", note: null })
+    });
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: "invalid-order-transition" });
+    expect(routeDeps.updateOrder).not.toHaveBeenCalled();
+  });
+
   it("marks only deduplicated selected orders delivered and returns partial results", async () => {
     const confirmed = {
       ...order,

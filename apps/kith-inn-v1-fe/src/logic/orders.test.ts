@@ -158,6 +158,12 @@ describe("order-list view logic", () => {
       deliveryStatus: "done"
     }))).toEqual(["cancel", "mark-unpaid", "mark-pending-delivery"]);
     expect(availableOrderActions(order({ status: "canceled" }))).toEqual(["resubmit"]);
+    expect(availableOrderActions(order({
+      status: "canceled",
+      source: "jielong-import",
+      customerProfileId: null,
+      address: null
+    }))).toEqual([]);
     expect(orderStateText(order({ status: "confirmed", paymentStatus: "paid", deliveryStatus: "done" })))
       .toBe("业务：已确认；付款：已付；配送：已送");
     expect(orderStateText(order())).toBe("业务：草稿；付款：未付；配送：待送");

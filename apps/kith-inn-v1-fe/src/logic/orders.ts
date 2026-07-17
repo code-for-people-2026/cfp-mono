@@ -64,7 +64,7 @@ export function buildOrderEdit(form: {
 
 export function availableOrderActions(order: Order): OrderAction[] {
   if (order.status === "draft") return ["confirm", "cancel"];
-  if (order.status === "canceled") return ["resubmit"];
+  if (order.status === "canceled") return order.source === "jielong-import" ? [] : ["resubmit"];
   return [
     "cancel",
     order.paymentStatus === "paid" ? "mark-unpaid" : "mark-paid",
