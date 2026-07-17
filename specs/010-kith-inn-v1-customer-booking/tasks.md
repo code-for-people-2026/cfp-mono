@@ -9,7 +9,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Tests**: 本功能要求 contract、领域、route、FE logic、H5 E2E 与 weapp smoke；每个实现 PR 先写能失败的窄测试，再实现，再运行 `pnpm verify`。
 
-**Organization**: M2-A/B、恢复计划、坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2 后另由 D2R 完成取消持久化纠偏。剩余自动化实现只有 D4，T028 仍是未完成的微信真机门禁。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
+**Organization**: M2-A/B、恢复计划、坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2 后另由 D2R 完成取消持久化纠偏。剩余自动化实现只有 D4，T028 仍是未完成的微信真机门禁；C6 的历史预算任务 T057 因实际人工 diff 为 459 additions / 20 deletions（479 行）而保持未完成，不把合并事实误记为预算达标。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
 
 ## 格式
 
@@ -97,7 +97,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | C4 | BE domain、CMS clients 与部分成功编排 | T043–T046 | BE 100% coverage | 已合并 PR #219 |
 | C5 | profile/reservation HTTP 与错误映射 | T047–T050 | BE route 100% coverage | 已合并 PR #220 |
 | C5R | 公开餐次坐标 contract/domain/HTTP 原子纠偏 | T051–T054 | shared/BE 100% coverage | 已合并 PR #222 |
-| C6 | 资料选择、摘要、多餐次提交 UI | T055–T058 | FE coverage、无头 H5、weapp | 已合并 PR #223 |
+| C6 | 资料选择、摘要、多餐次提交 UI | T055–T058 | FE coverage、无头 H5、weapp | 已合并 PR #223；T057 历史预算未达标 |
 | D1 | own-order/edit/cancel/deactivate contract | T059–T062 | shared 100% coverage | 已合并 PR #224 |
 | D2 | owner-scoped persistence 与历史可见 | T063–T066 | CMS SQLite/PostgreSQL | 已合并 PR #225；D2R 纠偏 PR #226 |
 | D3 | BE 修改/取消、截止重查和 confirmed 锁单 | T067–T070 | BE domain/route coverage | 已合并 PR #227 |
@@ -195,10 +195,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 - [x] T055 [US3] 先在 `apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 覆盖资料用途短文案、公开 target、资料/摘要/提交、partial result 与 H5 纵向流，并确认测试失败
 - [x] T056 [US3] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 实现用途短文案与 C6 UI，只从公开 batch view 构造 target，不增加“我的预订”页面
-- [x] T057 [US3] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、90 秒/45 秒指标、路径审计与人工 diff 统计；确认 C6 只含 `apps/kith-inn-v1-fe/src/**` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 且 `<400` 行，并在 T028/维护者发布结论完成前不标记可发布或已交付
+- [ ] T057 [US3] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、90 秒/45 秒指标、路径审计与人工 diff 统计；C6 路径符合范围且自动化已通过，但按 `5e1d63f..3b37a29` 实测人工 diff 为 459 additions / 20 deletions（479 行），超过 `<400` 默认预算，未找到合并前例外说明，因此本任务保持未完成；T028/维护者发布结论完成前仍不得标记可发布或已交付
 - [x] T058 [US3] 提交 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/app.css` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts`，推送并创建 M2-C6 ready PR；闭环 latest-head CI/Codex review 后 rebase merge（PR #223 已合并）
 
-**Checkpoint**: C1–C6 实现首次多餐次登记；T028 未完成时交付状态仍受真机门禁约束。
+**Checkpoint**: C1–C6 产品实现与自动化已合并；微信分享卡片到真实登录/query 的路径仍待 T028 真机验证，且 T057 历史预算未达标，不据此宣称 C6 已完整交付。
 
 ---
 
@@ -264,7 +264,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
                          └─ 坐标纠偏计划 ─ C5R ─ C6 ─ D1 ─ D2 ─ D3 ─ D4
 ```
 
-- M2-A 的 T001–T015、M2-B 的 T016–T027/T029/T030、C1～C6 的 T031–T058 和 D1～D3 的 T059–T070 已完成；T028 保持未完成真机门禁。
+- M2-A 的 T001–T015、M2-B 的 T016–T027/T029/T030、C1～C6 的 T031–T056/T058 和 D1～D3 的 T059–T070 已完成；T028 保持未完成真机门禁，T057 因历史 C6 人工 diff 为 479 行而保持未完成。
 - 剩余 D4 产品代码 PR 不与其他切片并行、不 stacked；从 D3 rebase merge 后的最新 `main` 开始。
 - 每片 tests-first；只实现当前层的不变量，不预建下一片 route/page/scaffold。
 - C5R 是 C6 的新增顺序依赖；D1/D2/D3 是 D4 的顺序依赖。
@@ -276,7 +276,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ## Implementation Strategy
 
-1. 恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2R 也已完成取消持久化纠偏。
+1. 恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2R 也已完成取消持久化纠偏。C6 的合并不改变 T057 历史预算未达标与 T028 真机未验证的事实。
 2. 从最新 `main` 实施 D4 页面和总验收，不重复实现已合并的 contract、persistence 或 BE 门禁。
 3. D4 只接顾客页面、FE/H5/weapp 自动化与 M2 总验收；T028 继续作为独立真机门禁。
 4. 每轮修复后等待 latest-head CI，再精确 `@codex review`；latest head 无新 comment、unresolved=0、CI 全绿、mergeState=CLEAN 后才 rebase merge。
