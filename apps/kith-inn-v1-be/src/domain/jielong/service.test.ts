@@ -39,7 +39,9 @@ describe("jielong preview and commit", () => {
       results: [{ status: "existing" }, { status: "existing" }]
     });
     await expect(commitJielong({ ...input, text: TEXT.replace("李叔", "赵叔") }, binding, deps))
-      .rejects.toMatchObject({ code: "jielong-preview-stale" });
+      .rejects.toMatchObject({ code: "preview-hash-mismatch" });
+    await expect(commitJielong({ ...input, text: "2026-07-20 午餐\n\n李叔 1份" }, binding, deps))
+      .rejects.toMatchObject({ code: "preview-hash-mismatch" });
 
     stored.clear(); deps.createOrder.mockClear();
     deps.createOrder.mockImplementationOnce(persist).mockRejectedValueOnce(new Error("offline"));
@@ -49,7 +51,7 @@ describe("jielong preview and commit", () => {
     });
     stored.clear(); deps.createOrder.mockClear();
     await expect(commitJielong(input, { ...binding, unitPriceCents: 3100 }, deps))
-      .rejects.toMatchObject({ code: "jielong-preview-stale" });
+      .rejects.toMatchObject({ code: "preview-hash-mismatch" });
     expect(deps.createOrder).not.toHaveBeenCalled();
   });
 });

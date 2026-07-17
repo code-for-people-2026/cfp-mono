@@ -20,7 +20,7 @@ export type JielongCommitDeps = {
 
 export class JielongServiceError extends Error {
   readonly status = 409;
-  readonly code = "jielong-preview-stale";
+  readonly code = "preview-hash-mismatch";
 }
 
 export function previewJielong(text: string, binding: JielongBinding): JielongPreviewResponse {
@@ -40,7 +40,8 @@ export function previewJielong(text: string, binding: JielongBinding): JielongPr
 }
 
 const matchesLine = (order: Order, line: JielongPreviewResponse["lines"][number], binding: JielongBinding) =>
-  order.source === "jielong-import" && String(order.mealSlotId) === String(binding.mealSlotId)
+  order.source === "jielong-import" && String(order.sellerId) === String(binding.sellerId)
+  && String(order.mealSlotId) === String(binding.mealSlotId)
   && order.displayName === line.displayName && order.quantity === line.quantity;
 
 export async function commitJielong(
@@ -56,6 +57,12 @@ export async function commitJielong(
     existing.push(order);
   }
   if (existing.every((order) => order !== null)) {
+    const originalUnitPriceCents = existing[0]!.unitPriceCents;
+    const original = previewJielong(input.text, { ...binding, unitPriceCents: originalUnitPriceCents });
+    if (original.previewHash !== input.previewHash
+      || existing.some((order) => order!.unitPriceCents !== originalUnitPriceCents)) {
+      throw new JielongServiceError("接龙预览已失效");
+    }
     return { previewHash: input.previewHash, results: existing.map((order, index) => ({
       lineNumber: preview.lines[index]!.lineNumber, status: "existing", orderId: order!.id
     })) };

@@ -51,8 +51,10 @@ export function jielongRoutes(secret: string, deps: JielongDeps = defaultDeps) {
       const [slots, seller] = await Promise.all([
         deps.listMealSlots(token, { from: target.date, to: target.date }), deps.getSeller(token)
       ]);
-      const slot = slots.find((candidate) => candidate.date === target.date && candidate.occasion === target.occasion);
-      if (!slot) return c.json({ error: "meal-slot-not-found", message: "餐次不存在" }, 404);
+      const matches = slots.filter((candidate) => candidate.date === target.date && candidate.occasion === target.occasion);
+      if (matches.length === 0) return c.json({ error: "meal-slot-not-found", message: "餐次不存在" }, 404);
+      if (matches.length > 1) return c.json({ error: "meal-slot-ambiguous", message: "餐次不唯一" }, 409);
+      const slot = matches[0]!;
       const binding = { sellerId: c.get("sellerId"), mealSlotId: slot.id,
         unitPriceCents: slot.priceCents ?? seller.defaultPriceCents };
       if (!commit) return c.json(previewJielong(parsed.data.text, binding));
