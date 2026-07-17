@@ -2,7 +2,7 @@
 
 ## 1. 前置条件
 
-1. M2-A/B、C1～C6、D1～D4 与 D2R 已合并。从最新 `main` 按 M3-A～M4-C 串行推进；T028 微信真机门禁仍保持未完成。
+1. M2-A/B、C1～C6、D1～D4、D2R 与 M3-A～M4-C 自动化切片均已实施并验收；T028/T087/T090/T097 人工发布门禁仍保持未完成。
 2. 使用仓库要求的 Node.js、pnpm、PostgreSQL/Payload 环境。
 3. 配置既有 operator JWT、internal service token、微信 app credentials；本地可显式开启 dev login。
 4. 运行独立幂等的桃子 seller/operator seed。M2 不修改 seed 语义，也不清空旧业务 collection。
