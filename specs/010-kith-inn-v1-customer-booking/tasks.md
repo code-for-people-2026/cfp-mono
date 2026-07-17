@@ -9,7 +9,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Tests**: 本功能要求 contract、领域、route、FE logic、H5 E2E 与 weapp smoke；每个实现 PR 先写能失败的窄测试，再实现，再运行 `pnpm verify`。
 
-**Organization**: M2-A/B、恢复计划与 C1～C5 已合并；剩余任务严格按 plan.md 的坐标纠偏计划→C5R→C6→D1→D2→D3→D4 顺序切分。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
+**Organization**: M2-A/B、恢复计划、坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2 后另由 D2R 完成取消持久化纠偏。剩余自动化实现只有 D4，T028 仍是未完成的微信真机门禁。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
 
 ## 格式
 
@@ -96,11 +96,11 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | C3 | order owner/relationship/unique 坐标 | T039–T042 | CMS SQLite/PostgreSQL | 已合并 PR #218 |
 | C4 | BE domain、CMS clients 与部分成功编排 | T043–T046 | BE 100% coverage | 已合并 PR #219 |
 | C5 | profile/reservation HTTP 与错误映射 | T047–T050 | BE route 100% coverage | 已合并 PR #220 |
-| C5R | 公开餐次坐标 contract/domain/HTTP 原子纠偏 | T051–T054 | shared/BE 100% coverage | 坐标纠偏计划 PR；`<400` |
-| C6 | 资料选择、摘要、多餐次提交 UI | T055–T058 | FE coverage、无头 H5、weapp | C5R；`<400` |
-| D1 | own-order/edit/cancel/deactivate contract | T059–T062 | shared 100% coverage | C6；`<400` |
-| D2 | owner-scoped persistence 与历史可见 | T063–T066 | CMS SQLite/PostgreSQL | D1；`<400` |
-| D3 | BE 修改/取消、截止重查和 confirmed 锁单 | T067–T070 | BE domain/route coverage | D2；`<400` |
+| C5R | 公开餐次坐标 contract/domain/HTTP 原子纠偏 | T051–T054 | shared/BE 100% coverage | 已合并 PR #222 |
+| C6 | 资料选择、摘要、多餐次提交 UI | T055–T058 | FE coverage、无头 H5、weapp | 已合并 PR #223 |
+| D1 | own-order/edit/cancel/deactivate contract | T059–T062 | shared 100% coverage | 已合并 PR #224 |
+| D2 | owner-scoped persistence 与历史可见 | T063–T066 | CMS SQLite/PostgreSQL | 已合并 PR #225；D2R 纠偏 PR #226 |
+| D3 | BE 修改/取消、截止重查和 confirmed 锁单 | T067–T070 | BE domain/route coverage | 已合并 PR #227 |
 | D4 | 顾客页面、H5/weapp 与 M2 总验收 | T071–T074 | FE coverage、无头 H5、weapp | D3；`<400` |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
@@ -180,10 +180,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: shared/BE 测试覆盖拒绝 `mealSlotId` 注入、按公开 target 归一化与冲突 422、batch 内唯一解析、CMS 仅接收服务端 ID、成功/失败结果按 target 关联和未知错误净化。
 
-- [ ] T051 [US3] 先在 `packages/kith-inn-v1-shared/src/api.test.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts` 和 `apps/kith-inn-v1-be/src/routes/customerOrders.test.ts` 覆盖 C5R strict target、重复归一化、解析、结果与错误净化，并确认测试失败
-- [ ] T052 [US3] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.ts` 和 `apps/kith-inn-v1-be/src/routes/customerOrders.ts` 原子切换 live reservation endpoint；不修改 CMS route 或 FE
-- [ ] T053 [US3] 运行 shared/BE 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 C5R 只含 T051/T052 的精确路径且 `<400` 行；若超过则停止开 PR 并重新设计兼容切分
-- [ ] T054 [US3] 提交 T051/T052 精确路径，推送并创建 M2-C5R ready PR；在 PR 说明记录跨 shared/BE 原子切换是保持 `main` 类型一致且 contract 可执行的最小例外，闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T051 [US3] 先在 `packages/kith-inn-v1-shared/src/api.test.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts` 和 `apps/kith-inn-v1-be/src/routes/customerOrders.test.ts` 覆盖 C5R strict target、重复归一化、解析、结果与错误净化，并确认测试失败
+- [x] T052 [US3] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts`、`packages/kith-inn-v1-shared/src/index.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.ts` 和 `apps/kith-inn-v1-be/src/routes/customerOrders.ts` 原子切换 live reservation endpoint；不修改 CMS route 或 FE
+- [x] T053 [US3] 运行 shared/BE 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 C5R 只含 T051/T052 的精确路径且 `<400` 行；若超过则停止开 PR 并重新设计兼容切分
+- [x] T054 [US3] 提交 T051/T052 精确路径，推送并创建 M2-C5R ready PR；在 PR 说明记录跨 shared/BE 原子切换是保持 `main` 类型一致且 contract 可执行的最小例外，闭环 latest-head CI/Codex review 后 rebase merge（PR #222 已合并）
 
 ---
 
@@ -193,10 +193,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 无头 H5 跑通新/旧资料、两个餐次、部分失败和商家可见；weapp build 通过，T028 不被 H5 替代。
 
-- [ ] T055 [US3] 先在 `apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 覆盖资料用途短文案、公开 target、资料/摘要/提交、partial result 与 H5 纵向流，并确认测试失败
-- [ ] T056 [US3] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 实现用途短文案与 C6 UI，只从公开 batch view 构造 target，不增加“我的预订”页面
-- [ ] T057 [US3] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、90 秒/45 秒指标、路径审计与人工 diff 统计；确认 C6 只含 `apps/kith-inn-v1-fe/src/**` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 且 `<400` 行，并在 T028/维护者发布结论完成前不标记可发布或已交付
-- [ ] T058 [US3] 提交 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/app.css` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts`，推送并创建 M2-C6 ready PR；闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T055 [US3] 先在 `apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 覆盖资料用途短文案、公开 target、资料/摘要/提交、partial result 与 H5 纵向流，并确认测试失败
+- [x] T056 [US3] 在 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx` 和 `apps/kith-inn-v1-fe/src/app.css` 实现用途短文案与 C6 UI，只从公开 batch view 构造 target，不增加“我的预订”页面
+- [x] T057 [US3] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、90 秒/45 秒指标、路径审计与人工 diff 统计；确认 C6 只含 `apps/kith-inn-v1-fe/src/**` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` 且 `<400` 行，并在 T028/维护者发布结论完成前不标记可发布或已交付
+- [x] T058 [US3] 提交 `apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.ts`、`apps/kith-inn-v1-fe/src/logic/customerBooking.test.ts`、`apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/app.css` 和 `apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts`，推送并创建 M2-C6 ready PR；闭环 latest-head CI/Codex review 后 rebase merge（PR #223 已合并）
 
 **Checkpoint**: C1–C6 实现首次多餐次登记；T028 未完成时交付状态仍受真机门禁约束。
 
@@ -208,10 +208,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: strict schema 只接受规定字段，own-order view 保留历史快照，额外 seller/openid/source/status/time 字段全部拒绝。
 
-- [ ] T059 [US4] 先在 `packages/kith-inn-v1-shared/src/api.test.ts` 覆盖 own-order/view、edit、cancel、deactivate strict contract 和状态轴注入拒绝，并确认测试失败
-- [ ] T060 [US4] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 D1 contracts
-- [ ] T061 [US4] 运行 shared 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 D1 只改 `packages/kith-inn-v1-shared/**` 且 `<400` 行
-- [ ] T062 [US4] 提交 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/api.test.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts`，推送并创建 M2-D1 ready PR；闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T059 [US4] 先在 `packages/kith-inn-v1-shared/src/api.test.ts` 覆盖 own-order/view、edit、cancel、deactivate strict contract 和状态轴注入拒绝，并确认测试失败
+- [x] T060 [US4] 在 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts` 实现 D1 contracts
+- [x] T061 [US4] 运行 shared 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 D1 只改 `packages/kith-inn-v1-shared/**` 且 `<400` 行
+- [x] T062 [US4] 提交 `packages/kith-inn-v1-shared/src/api.ts`、`packages/kith-inn-v1-shared/src/api.test.ts`、`packages/kith-inn-v1-shared/src/types.ts` 和 `packages/kith-inn-v1-shared/src/index.ts`，推送并创建 M2-D1 ready PR；闭环 latest-head CI/Codex review 后 rebase merge（PR #224 已合并）
 
 ---
 
@@ -221,10 +221,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: SQLite/PostgreSQL 覆盖幂等停用、历史订单读取、跨顾客 404、customer 写 service guard 和快照不变。
 
-- [ ] T063 [US4] 先扩展 `apps/cms/tests/kiv1-customer-profiles.test.ts` 和 `apps/cms/tests/kiv1-customer-orders.test.ts`，覆盖 D2 deactivate、own list、owner update、历史可见与跨顾客 404，并确认测试失败
-- [ ] T064 [US4] 在 `apps/cms/src/app/api/internal/kiv1/customer/profiles/[id]/deactivate/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/customer/orders/[id]/route.ts` 实现 D2 persistence boundary
-- [ ] T065 [US4] 运行 CMS SQLite/PostgreSQL 窄测试、`pnpm verify`、路径审计与人工 diff 统计，确认 D2 只含 `apps/cms/src/app/api/internal/kiv1/customer/**` 和 `apps/cms/tests/kiv1-customer-*.test.ts`、人工 diff `<400` 行且历史数据不改写
-- [ ] T066 [US4] 提交 `apps/cms/src/app/api/internal/kiv1/customer/profiles/[id]/deactivate/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/[id]/route.ts`、`apps/cms/tests/kiv1-customer-profiles.test.ts` 和 `apps/cms/tests/kiv1-customer-orders.test.ts`，推送并创建 M2-D2 ready PR；闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T063 [US4] 先扩展 `apps/cms/tests/kiv1-customer-profiles.test.ts` 和 `apps/cms/tests/kiv1-customer-orders.test.ts`，覆盖 D2 deactivate、own list、owner update、历史可见与跨顾客 404，并确认测试失败
+- [x] T064 [US4] 在 `apps/cms/src/app/api/internal/kiv1/customer/profiles/[id]/deactivate/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/route.ts` 和 `apps/cms/src/app/api/internal/kiv1/customer/orders/[id]/route.ts` 实现 D2 persistence boundary
+- [x] T065 [US4] 运行 CMS SQLite/PostgreSQL 窄测试、`pnpm verify`、路径审计与人工 diff 统计，确认 D2 只含 `apps/cms/src/app/api/internal/kiv1/customer/**` 和 `apps/cms/tests/kiv1-customer-*.test.ts`、人工 diff `<400` 行且历史数据不改写
+- [x] T066 [US4] 提交 `apps/cms/src/app/api/internal/kiv1/customer/profiles/[id]/deactivate/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/route.ts`、`apps/cms/src/app/api/internal/kiv1/customer/orders/[id]/route.ts`、`apps/cms/tests/kiv1-customer-profiles.test.ts` 和 `apps/cms/tests/kiv1-customer-orders.test.ts`，推送并创建 M2-D2 ready PR；闭环 latest-head CI/Codex review 后 rebase merge（PR #225 已合并；取消持久化原子边界由 D2R PR #226 纠偏）
 
 ---
 
@@ -234,10 +234,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: domain/route 覆盖 own list、edit/cancel/deactivate、closed/expired、confirmed/canceled、跨 owner 404 和非法状态零写入。
 
-- [ ] T067 [US4] 先在 `apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖 D3 重查与错误映射，并确认测试失败
-- [ ] T068 [US4] 在 `apps/kith-inn-v1-be/src/domain/customerOrders/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 D3 own list/edit/cancel/deactivate 与锁单门禁
-- [ ] T069 [US4] 运行 BE 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 D3 只含 `apps/kith-inn-v1-be/src/**`、人工 diff `<400` 行且不增加 FE 页面
-- [ ] T070 [US4] 提交 `apps/kith-inn-v1-be/src/domain/customerOrders/service.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.test.ts`、`apps/kith-inn-v1-be/src/app.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts`，推送并创建 M2-D3 ready PR；闭环 latest-head CI/Codex review 后 rebase merge
+- [x] T067 [US4] 先在 `apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖 D3 重查与错误映射，并确认测试失败
+- [x] T068 [US4] 在 `apps/kith-inn-v1-be/src/domain/customerOrders/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 D3 own list/edit/cancel/deactivate 与锁单门禁
+- [x] T069 [US4] 运行 BE 100% coverage、`pnpm verify`、路径审计与人工 diff 统计，确认 D3 只含 `apps/kith-inn-v1-be/src/**`、人工 diff `<400` 行且不增加 FE 页面
+- [x] T070 [US4] 提交 `apps/kith-inn-v1-be/src/domain/customerOrders/service.ts`、`apps/kith-inn-v1-be/src/domain/customerOrders/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.ts`、`apps/kith-inn-v1-be/src/lib/cms/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.ts`、`apps/kith-inn-v1-be/src/routes/customerProfiles.test.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.ts`、`apps/kith-inn-v1-be/src/routes/customerOrders.test.ts`、`apps/kith-inn-v1-be/src/app.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts`，推送并创建 M2-D3 ready PR；闭环 latest-head CI/Codex review 后 rebase merge（PR #227 已合并）
 
 ---
 
@@ -264,8 +264,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
                          └─ 坐标纠偏计划 ─ C5R ─ C6 ─ D1 ─ D2 ─ D3 ─ D4
 ```
 
-- M2-A 的 T001–T015、M2-B 的 T016–T027/T029/T030 和 C1～C5 的 T031–T050 已完成；T028 保持未完成真机门禁。
-- 六个剩余产品代码 PR 不并行、不 stacked；每片 rebase merge 后从最新 `main` 开始下一片。
+- M2-A 的 T001–T015、M2-B 的 T016–T027/T029/T030、C1～C6 的 T031–T058 和 D1～D3 的 T059–T070 已完成；T028 保持未完成真机门禁。
+- 剩余 D4 产品代码 PR 不与其他切片并行、不 stacked；从 D3 rebase merge 后的最新 `main` 开始。
 - 每片 tests-first；只实现当前层的不变量，不预建下一片 route/page/scaffold。
 - C5R 是 C6 的新增顺序依赖；D1/D2/D3 是 D4 的顺序依赖。
 
@@ -276,8 +276,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ## Implementation Strategy
 
-1. 恢复计划与 C1～C5 已合并；先合并只修改本规格目录的公开餐次坐标纠偏计划 PR。
-2. C5R 原子切换 live reservation contract/domain/HTTP，保持 CMS 内部 ID 边界不变；随后 C6 接 UI。
-3. D1→D3 依次锁定自助管理 contract、persistence 与 BE 门禁，D4 最后接页面和总验收。
+1. 恢复计划、公开餐次坐标纠偏计划、C1～C6 与 D1～D3 已合并；D2R 也已完成取消持久化纠偏。
+2. 从最新 `main` 实施 D4 页面和总验收，不重复实现已合并的 contract、persistence 或 BE 门禁。
+3. D4 只接顾客页面、FE/H5/weapp 自动化与 M2 总验收；T028 继续作为独立真机门禁。
 4. 每轮修复后等待 latest-head CI，再精确 `@codex review`；latest head 无新 comment、unresolved=0、CI 全绿、mergeState=CLEAN 后才 rebase merge。
 5. T028 只能由维护者真机完成；H5 自动化不改变该任务状态。
