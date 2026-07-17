@@ -56,6 +56,37 @@ button.primary {
   gap: 28rpx;
 }
 
+.jielong-import-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.fallback-entry button {
+  margin-top: 16rpx;
+}
+
+.jielong-import-card textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 300rpx;
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+  background: #fffdf9;
+}
+
+.jielong-preview text,
+.jielong-result text {
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.jielong-total {
+  font-weight: 600;
+}
+
 .batches-page {
   display: flex;
   flex-direction: column;

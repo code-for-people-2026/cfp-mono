@@ -12,6 +12,7 @@ import {
   replaceMealSlot
 } from "@/logic/menu";
 import { merchantRoute } from "@/logic/login";
+import { jielongImportEnabled } from "@/logic/jielongImport";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
 
@@ -114,6 +115,15 @@ export default function MerchantMenu() {
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/offerings/index" })}>菜品池</Button>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/orders/index" })}>订单</Button>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
+
+      {jielongImportEnabled(process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT) && (
+        <View className="card fallback-entry">
+          <Text className="meta">仅在顾客预订登记无法上线时使用</Text>
+          <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/jielong-import/index" })}>
+            接龙导入（兜底）
+          </Button>
+        </View>
+      )}
 
       <View className="card menu-controls">
         <Input

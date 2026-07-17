@@ -4,6 +4,7 @@ import {
   applyJielongPreview,
   commitConfirmedJielongImport,
   createJielongImportState,
+  jielongImportEnabled,
   setJielongConfirmed,
   setJielongText,
   summarizeJielongCommit
@@ -28,6 +29,12 @@ const result: JielongCommitResponse = {
 };
 
 describe("jielong import logic", () => {
+  it("keeps the fallback disabled unless the build flag is explicitly one", () => {
+    expect(jielongImportEnabled(undefined)).toBe(false);
+    expect(jielongImportEnabled("true")).toBe(false);
+    expect(jielongImportEnabled("1")).toBe(true);
+  });
+
   it("requires an explicit confirmation bound to the current preview hash", async () => {
     const commitJielongImport = vi.fn(async () => result);
     const empty = createJielongImportState();

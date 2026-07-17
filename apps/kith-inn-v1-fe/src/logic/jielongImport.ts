@@ -14,6 +14,10 @@ type JielongCommitter = {
   commitJielongImport(input: JielongCommitInput): Promise<JielongCommitResponse>;
 };
 
+export function jielongImportEnabled(value: string | undefined): boolean {
+  return value === "1";
+}
+
 export function createJielongImportState(): JielongImportState {
   return { text: "", preview: null, confirmedPreviewHash: null };
 }
