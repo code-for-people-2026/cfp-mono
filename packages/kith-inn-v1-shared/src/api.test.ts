@@ -738,6 +738,12 @@ describe("manual order API schemas", () => {
   };
 
   it("accepts seller/profile and draft-order response envelopes", () => {
+    const importedOrder = {
+      ...order,
+      source: "jielong-import" as const,
+      customerProfileId: null,
+      address: null
+    };
     expect(sellerSnapshotSchema.parse({ id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" }))
       .toMatchObject({ id: 7, defaultPriceCents: 3000 });
     expect(customerProfileSchema.parse(profile)).toEqual(profile);
@@ -750,6 +756,16 @@ describe("manual order API schemas", () => {
       summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
     }).docs).toEqual([order]);
     expect(orderMutationResponseSchema.parse({ doc: order, profile }).profile).toEqual(profile);
+    expect(orderSchema.parse(importedOrder)).toEqual(importedOrder);
+    expect(orderSchema.safeParse({ ...order, customerProfileId: null, address: null }).success).toBe(false);
+    expect(orderSchema.safeParse({
+      ...order,
+      source: "customer-card",
+      customerProfileId: null,
+      address: null
+    }).success).toBe(false);
+    expect(orderSchema.safeParse({ ...importedOrder, customerProfileId: 21, address: "3A" }).success).toBe(false);
+    expect(orderSchema.safeParse({ ...importedOrder, address: "3A" }).success).toBe(false);
   });
 
   it("accepts exactly one profile source and non-empty draft edits", () => {

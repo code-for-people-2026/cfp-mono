@@ -14,11 +14,11 @@ type OrderDoc = {
   id: string | number;
   seller: unknown;
   mealSlot: unknown;
-  customerProfile: unknown;
+  customerProfile?: unknown | null;
   status: Order["status"];
   source: Order["source"];
   displayName: string;
-  address: string;
+  address?: string | null;
   quantity: number;
   unitPriceCents: number;
   paymentStatus: Order["paymentStatus"];
@@ -36,16 +36,20 @@ function relationshipId(value: unknown): string | number {
     : value as string | number;
 }
 
+function nullableRelationshipId(value: unknown): string | number | null {
+  return value === null || value === undefined ? null : relationshipId(value);
+}
+
 export function normalizeOrder(doc: OrderDoc): Order {
   return {
     id: doc.id,
     sellerId: relationshipId(doc.seller),
     mealSlotId: relationshipId(doc.mealSlot),
-    customerProfileId: relationshipId(doc.customerProfile),
+    customerProfileId: nullableRelationshipId(doc.customerProfile),
     status: doc.status,
     source: doc.source,
     displayName: doc.displayName,
-    address: doc.address,
+    address: doc.address ?? null,
     quantity: doc.quantity,
     unitPriceCents: doc.unitPriceCents,
     totalCents: doc.quantity * doc.unitPriceCents,

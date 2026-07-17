@@ -42,13 +42,21 @@ describe("order summary", () => {
 
   it("keeps only confirmed checklist rows in stable address/name/id order", () => {
     const sameAddress = order({ id: 34, address: "2B", displayName: "李叔" });
+    const imported = order({
+      id: 38,
+      source: "jielong-import",
+      customerProfileId: null,
+      address: null,
+      displayName: "接龙顾客"
+    });
     expect(confirmedOrdersForChecklist([
       order({ id: 35, address: "3A", displayName: "王阿姨" }),
       order({ id: 33, address: "2B", displayName: "阿姨" }),
       sameAddress,
       order({ id: 32, address: "2B", displayName: "李叔" }),
       order({ id: 36, status: "draft", confirmedAt: null }),
-      order({ id: 37, status: "canceled", canceledAt: "2026-07-10T02:00:00.000Z" })
-    ]).map(({ id }) => id)).toEqual([33, 32, 34, 35]);
+      order({ id: 37, status: "canceled", canceledAt: "2026-07-10T02:00:00.000Z" }),
+      imported
+    ]).map(({ id }) => id)).toEqual([33, 32, 34, 35, 38]);
   });
 });

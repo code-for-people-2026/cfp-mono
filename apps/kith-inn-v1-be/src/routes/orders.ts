@@ -139,7 +139,7 @@ export function customerProfilesRoutes(secret: string, deps: OrdersDeps = defaul
   return app;
 }
 
-function sameId(left: string | number, right: string | number) {
+function sameId(left: string | number | null, right: string | number) {
   return String(left) === String(right);
 }
 

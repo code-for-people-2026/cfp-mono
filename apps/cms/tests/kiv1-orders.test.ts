@@ -244,6 +244,40 @@ describe("order persistence boundary", () => {
     }));
   });
 
+  it("normalizes nullable imported-order relationships and address", async () => {
+    const imported = {
+      ...orderDoc,
+      id: 32,
+      customerProfile: null,
+      source: "jielong-import",
+      displayName: "接龙顾客",
+      address: null
+    };
+    mocks.getPayload.mockResolvedValue(payloadWith({ orders: [imported] }));
+    const response = await listOrders(request("/orders?mealSlotId=11"));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ docs: [{
+      id: 32,
+      sellerId: 7,
+      mealSlotId: 11,
+      customerProfileId: null,
+      status: "draft",
+      source: "jielong-import",
+      displayName: "接龙顾客",
+      address: null,
+      quantity: 2,
+      unitPriceCents: 3000,
+      totalCents: 6000,
+      paymentStatus: "unpaid",
+      paidAt: null,
+      deliveryStatus: "pending",
+      deliveredAt: null,
+      confirmedAt: null,
+      canceledAt: null,
+      note: "少辣"
+    }] });
+  });
+
   it("validates both relationships and stamps seller on create", async () => {
     const payload = payloadWith({ orders: [] });
     mocks.getPayload.mockResolvedValue(payload);

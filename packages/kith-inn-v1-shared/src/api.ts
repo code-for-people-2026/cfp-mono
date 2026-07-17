@@ -451,11 +451,11 @@ export const orderSchema = z.object({
   id: relationshipIdSchema,
   sellerId: relationshipIdSchema,
   mealSlotId: relationshipIdSchema,
-  customerProfileId: relationshipIdSchema,
+  customerProfileId: relationshipIdSchema.nullable(),
   status: orderStatusSchema,
   source: orderSourceSchema,
   displayName: shortText,
-  address: addressSchema,
+  address: addressSchema.nullable(),
   quantity: positiveIntegerSchema,
   unitPriceCents: nonNegativeIntegerSchema,
   totalCents: nonNegativeIntegerSchema,
@@ -467,6 +467,11 @@ export const orderSchema = z.object({
   canceledAt: zonedDateTimeSchema.nullable(),
   note: noteSchema
 }).strict().refine(
+  ({ source, customerProfileId, address }) => source === "jielong-import"
+    ? customerProfileId === null && address === null
+    : customerProfileId !== null && address !== null,
+  { message: "订单资料与地址不符合来源约束" }
+).refine(
   ({ quantity, unitPriceCents, totalCents }) => quantity * unitPriceCents === totalCents,
   { message: "订单总价与份数、单价不一致" }
 );

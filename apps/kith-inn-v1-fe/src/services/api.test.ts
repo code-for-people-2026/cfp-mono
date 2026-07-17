@@ -623,7 +623,13 @@ describe("API client", () => {
     };
     const nonManualOrders = [
       { ...order, id: 32, source: "customer-card" as const },
-      { ...order, id: 33, source: "jielong-import" as const }
+      {
+        ...order,
+        id: 33,
+        source: "jielong-import" as const,
+        customerProfileId: null,
+        address: null
+      }
     ];
     const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
       if (url.includes("customer-profiles")) {
@@ -706,6 +712,21 @@ describe("API client", () => {
       url: "http://be.test/merchant/orders/bulk-mark-delivered",
       data: { ids: [31, 32] }
     }));
+    for (const invalid of [
+      { ...order, customerProfileId: null, address: null },
+      { ...order, source: "customer-card", customerProfileId: null, address: null },
+      { ...order, source: "jielong-import", customerProfileId: 21, address: "3A-1201" },
+      { ...order, source: "jielong-import", customerProfileId: null, address: "3A-1201" }
+    ]) {
+      await expect(createApiClient({
+        request: adapter(200, {
+          mealSlot: slot,
+          docs: [invalid],
+          summary: { confirmedOrders: 0, totalQuantity: 0, unpaid: 0, pendingDelivery: 0 }
+        }),
+        sessions: sessions()
+      }).listOrders("2026-07-13", "lunch")).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
   });
 
   it("rejects malformed customer-profile and order envelopes", async () => {

@@ -270,8 +270,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: `jielong-import` 可为空 profile/address 并显示“无地址”；manual/customer-card 的缺失字段仍拒绝，既有排序、汇总和编辑无回归。
 
-- [ ] T075 [US5] 在 `packages/kith-inn-v1-shared/src/api.test.ts`、`apps/cms/tests/kiv1-orders.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts` 和 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 覆盖按 source 区分的 nullable DTO、CMS normalize、稳定排序和“无地址”清单
-- [ ] T076 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,types.ts}`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/orders.ts` 和 `apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx` 实现向后兼容读模型
+- [x] T075 [US5] 在 `packages/kith-inn-v1-shared/src/api.test.ts`、`apps/cms/tests/kiv1-orders.test.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.test.ts`、`apps/kith-inn-v1-fe/src/services/api.test.ts` 和 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 覆盖按 source 区分的 nullable DTO、CMS normalize、稳定排序和“无地址”清单
+- [x] T076 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,types.ts}`、`apps/cms/src/app/api/internal/kiv1/orders/route.ts`、`apps/kith-inn-v1-be/src/domain/orders/summary.ts`、`apps/kith-inn-v1-fe/src/services/api.ts`、`apps/kith-inn-v1-fe/src/logic/orders.ts` 和 `apps/kith-inn-v1-fe/src/pages/merchant/orders/index.tsx` 实现向后兼容读模型
 
 ## Phase 15：M3-B strict 接龙 parser/contract（US5）
 

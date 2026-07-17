@@ -69,12 +69,17 @@ export function availableOrderActions(order: Order): OrderAction[] {
 }
 
 export function orderResubmitInput(order: Order): OrderResubmit {
+  if (order.address === null) throw new Error("接龙导入订单没有地址，不能沿用手工重提");
   return {
     quantity: order.quantity,
     displayName: order.displayName,
     address: order.address,
     note: order.note
   };
+}
+
+export function orderAddressText(order: Pick<Order, "address">): string {
+  return order.address ?? "无地址";
 }
 
 export function orderStateText(order: Order): string {
@@ -106,7 +111,7 @@ export function orderSummaryText(summary: OrderSummary): string {
 
 export function replaceOrder(orders: Order[], replacement: Order): Order[] {
   return [...orders.filter((order) => String(order.id) !== String(replacement.id)), replacement]
-    .sort((left, right) => left.address.localeCompare(right.address) ||
+    .sort((left, right) => orderAddressText(left).localeCompare(orderAddressText(right)) ||
       left.displayName.localeCompare(right.displayName, "zh-CN") || String(left.id).localeCompare(String(right.id)));
 }
 
@@ -127,7 +132,7 @@ export function bulkDeliveryFeedback(results: BulkMarkDeliveredResult[]): string
 
 function confirmedChecklistOrders(orders: Order[]): Order[] {
   return orders.filter((order) => order.status === "confirmed")
-    .sort((left, right) => left.address.localeCompare(right.address) ||
+    .sort((left, right) => orderAddressText(left).localeCompare(orderAddressText(right)) ||
       left.displayName.localeCompare(right.displayName, "zh-CN") ||
       String(left.id).localeCompare(String(right.id)));
 }
@@ -138,7 +143,7 @@ export function orderChecklistText(mealSlot: MealSlot, orders: Order[]): string 
   return [
     `餐次：${mealSlot.date} ${occasion}`,
     `总份数：${confirmed.reduce((total, order) => total + order.quantity, 0)}`,
-    ...confirmed.map((order) => `${order.address}｜${order.displayName}｜${order.quantity} 份`)
+    ...confirmed.map((order) => `${orderAddressText(order)}｜${order.displayName}｜${order.quantity} 份`)
   ].join("\n");
 }
 
