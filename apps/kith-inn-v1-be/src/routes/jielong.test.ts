@@ -40,6 +40,8 @@ describe("merchant jielong routes", () => {
     expect(injected.findOrder).not.toHaveBeenCalled(); expect(injected.createOrder).not.toHaveBeenCalled();
     expect((await post(jielongRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => []) })),
       "/preview", { text })).status).toBe(404);
+    expect((await post(jielongRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => [slot, { ...slot, id: 12 }]) })),
+      "/preview", { text })).status).toBe(409);
   });
 
   it("requires confirmation, rechecks price, commits, and sanitizes failures", async () => {
@@ -52,7 +54,9 @@ describe("merchant jielong routes", () => {
     expect(injected.createOrder).toHaveBeenCalledWith(token, expect.objectContaining({ source: "jielong-import",
       customerProfileId: null, customerOpenid: null, address: null, previewHash: preview.previewHash }));
     const changed = jielongRoutes(SECRET, deps({ getSeller: vi.fn(async () => ({ ...seller, defaultPriceCents: 3100 })) }));
-    expect((await post(changed, "/commit", { text, previewHash: preview.previewHash, confirmed: true })).status).toBe(409);
+    const stale = await post(changed, "/commit", { text, previewHash: preview.previewHash, confirmed: true });
+    expect(stale.status).toBe(409);
+    await expect(stale.json()).resolves.toMatchObject({ error: "preview-hash-mismatch" });
     const failed = jielongRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => { throw new Error("secret"); }) }));
     const failure = await post(failed, "/preview", { text });
     expect(failure.status).toBe(502);
