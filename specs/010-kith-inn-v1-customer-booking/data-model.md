@@ -137,7 +137,7 @@ target.occasion: lunch | dinner
 
 ### 3.5 JielongPreview
 
-接龙 parser 输出不落库的 canonical model：日期、午餐/晚餐、按原始数据行排序的 `lineNumber/displayName/quantity`。BE 在当前 seller 下唯一解析 meal slot、补服务端价格，以 canonical input 的 SHA-256 作为 `previewHash`。commit 重新执行同一解析、hash 和当前餐次重查，不保存 preview session。
+接龙 parser 输出不落库的 canonical model：日期、午餐/晚餐、按原始数据行排序的 `lineNumber/displayName/quantity`。BE 在当前 seller 下唯一解析 meal slot、补服务端价格，以 seller、餐次身份、当前单价和 canonical input 的 SHA-256 作为 `previewHash`。commit 重新执行同一解析、价格读取和 hash；价格变化时 hash 不匹配并要求重新预览，不保存 preview session。
 
 ## 4. Tenant 与关系不变量
 
