@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { CustomerBookingBatchView, CustomerOrderView, CustomerProfile } from "@cfp/kith-inn-v1-shared";
 import { beginCustomerSession, bookingBatchPublicId, formatBookingPrice } from "@/logic/customerBooking";
+import { copyCustomerData, deactivateCustomerProfiles } from "@/logic/customerData";
 import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerWriteErrorText }
   from "@/logic/customerOrders";
 import { createApiClient, type RequestAdapter } from "@/services/api";
@@ -25,6 +26,9 @@ export default function CustomerOrders() {
   const [quantities, setQuantities] = useState<Record<string, string>>({});
   const [confirmOrder, setConfirmOrder] = useState<string | null>(null);
   const [confirmProfile, setConfirmProfile] = useState<string | null>(null);
+  const [confirmAllProfiles, setConfirmAllProfiles] = useState(false);
+  const [deactivationFailures, setDeactivationFailures] = useState<CustomerProfile[]>([]);
+  const [actionNotice, setActionNotice] = useState("");
   const [error, setError] = useState("");
   useEffect(() => { if (!publicId) return setError("我的预订加载失败，请从预订卡片重试");
     void beginCustomerSession(process.env.TARO_ENV === "weapp" ? "weapp" : "h5", publicId, { api,
@@ -59,12 +63,44 @@ export default function CustomerOrders() {
       setProfiles((current) => current.filter(({ id }) => String(id) !== String(profile.id)));
       setConfirmProfile(null); setError(""); } catch { setError("资料停用失败，请稍后重试"); }
   };
+  const copyData = async () => {
+    try { await copyCustomerData(profiles, orders, (options) => Taro.setClipboardData(options));
+      setActionNotice("我的数据已复制"); setError("");
+    } catch { setError("数据复制失败，请稍后重试"); }
+  };
+  const deactivateAll = async () => {
+    if (!confirmAllProfiles) return setConfirmAllProfiles(true);
+    const results = await deactivateCustomerProfiles(profiles, (id) => api.deactivateOwnedCustomerProfile(id));
+    const deactivatedIds = new Set(results.filter(({ status }) => status === "deactivated")
+      .map(({ profile }) => String(profile.id)));
+    const failures = results.filter(({ status }) => status === "failed").map(({ profile }) => profile);
+    setProfiles((current) => current.filter(({ id }) => !deactivatedIds.has(String(id))));
+    setDeactivationFailures(failures);
+    setConfirmAllProfiles(false);
+    const successCount = results.length - failures.length;
+    setActionNotice(failures.length > 0
+      ? `已软停用 ${successCount} 条资料；${failures.length} 条失败，可重试`
+      : `已软停用 ${successCount} 条资料；历史预订仍可查看`);
+    setError("");
+  };
   return <View className="page customer-orders-page">
     <Text className="title">我的预订</Text>
     <Button onClick={() => void Taro.navigateTo({ url: "/pages/privacy/index" })}>
       查看个人信息用途说明
     </Button>
     {error && <Text className="notice">{error}</Text>}
+    {actionNotice && <Text className="notice">{actionNotice}</Text>}
+    <View className="card customer-data-controls">
+      <Text className="section-title">我的数据</Text>
+      <Button onClick={() => void copyData()}>复制我的数据</Button>
+      {profiles.length > 0 && <Button className="danger" onClick={() => void deactivateAll()}>
+        {confirmAllProfiles ? `确认批量软停用 ${profiles.length} 条资料` : "删除保存的资料"}
+      </Button>}
+      <Text className="meta">“删除”仅批量软停用常用资料，不会物理删除或改写历史预订。</Text>
+      {deactivationFailures.map((profile) => <Text className="deactivation-failure" key={String(profile.id)}>
+        停用失败：{profile.displayName}，请重试
+      </Text>)}
+    </View>
     <View className="card customer-profiles"><Text className="section-title">常用资料</Text>
       {profiles.length === 0 && <Text className="meta">暂无可用资料</Text>}
       {profiles.map((profile) => <Button key={String(profile.id)} onClick={() => void deactivate(profile)}>

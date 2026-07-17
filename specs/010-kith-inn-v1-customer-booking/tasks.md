@@ -319,8 +319,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 版本化 JSON 只含当前 owner 的 active profiles/own orders；批量软停用需二次确认，部分失败可重试，历史订单可读率 100%。
 
-- [ ] T091 [US6] 在 FE customer logic/page tests 与 headless E2E 覆盖安全导出字段、复制、二次确认、逐项停用和部分失败
-- [ ] T092 [US6] 在 `apps/kith-inn-v1-fe/src/{logic/customerData.ts,pages/customer/orders/index.tsx,services/api.ts,app.css}` 实现数据复制与批量软停用，不增加物理删除 API
+- [x] T091 [US6] 在 FE customer logic/page tests 与 headless E2E 覆盖安全导出字段、复制、二次确认、逐项停用和部分失败
+- [x] T092 [US6] 在 `apps/kith-inn-v1-fe/src/{logic/customerData.ts,pages/customer/orders/index.tsx,services/api.ts,app.css}` 实现数据复制与批量软停用，不增加物理删除 API
 
 ## Phase 22：M4-B 页面状态收口（US6）
 
