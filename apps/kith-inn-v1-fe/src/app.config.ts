@@ -5,7 +5,8 @@ const pages = [
   "pages/merchant/batches/index",
   "pages/merchant/orders/index",
   "pages/booking/index",
-  "pages/customer/orders/index"
+  "pages/customer/orders/index",
+  "pages/privacy/index"
 ];
 if (process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT === "1") {
   pages.push("pages/merchant/jielong-import/index");

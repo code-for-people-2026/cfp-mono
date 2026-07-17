@@ -87,6 +87,22 @@ button.primary {
   font-weight: 600;
 }
 
+.privacy-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.privacy-card text {
+  display: block;
+  margin-bottom: 20rpx;
+  line-height: 1.6;
+}
+
+.privacy-card text:last-child {
+  margin-bottom: 0;
+}
+
 .batches-page {
   display: flex;
   flex-direction: column;

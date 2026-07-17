@@ -125,6 +125,9 @@ export default function CustomerBooking() {
       {publicId && <Button onClick={() => void Taro.navigateTo({
         url: `/pages/customer/orders/index?batch=${encodeURIComponent(publicId)}`
       })}>查看我的预订</Button>}
+      <Button onClick={() => void Taro.navigateTo({ url: "/pages/privacy/index" })}>
+        查看个人信息用途说明
+      </Button>
       {view.slots.map((slot) => (
         <View className="card booking-slot" key={`${slot.date}-${slot.occasion}`}>
           <Text className="section-title">{slot.date} {occasionText(slot.occasion)}</Text>
