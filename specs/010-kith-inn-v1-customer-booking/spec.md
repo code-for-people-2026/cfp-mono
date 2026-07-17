@@ -166,7 +166,7 @@
 - **FR-025**: 本功能必须先补会失败的共享契约、身份隔离、tenant/owner、状态门禁、并发幂等和关键双端流程测试，再实现对应行为，并通过每个实现 PR 的窄验证与仓库完整质量门禁。
 - **FR-026**: 接龙兜底必须使用确定性文本协议：首个非空行只接受 `YYYY-MM-DD 午餐|晚餐`，其余非空行只接受可选序号加“称呼 正整数份数”；单次必须包含一至一百个数据行、原文最多一万字符，只有标题或任一数据行非法都整次拒绝。
 - **FR-027**: preview 必须只读并在当前 seller 下把日期/餐次唯一解析为已有 meal slot；响应包含绑定 seller、餐次身份、当前单价与 canonical input 的稳定 preview hash、逐行结果与金额摘要，不得创建 profile/order 或返回内部 owner 信息。
-- **FR-028**: commit 必须要求 `confirmed=true`、原文和匹配的 preview hash，重新解析并重查 seller/meal slot；若 supplied hash 的全部数据行标记已存在，必须在价格校验前幂等返回 `existing`，否则重读当前单价并重算 hash，原文、餐次身份或单价不匹配时零新增。接龙只要求 seller-owned meal slot 有有效服务端单价，不受顾客 batch/status/deadline 限制。
+- **FR-028**: commit 必须要求 `confirmed=true`、原文和匹配的 preview hash，重新解析并重查 seller/meal slot；若 supplied hash 的全部数据行标记已存在且既有 seller/slot/行号/称呼/份数快照逐行匹配，必须在价格校验前幂等返回 `existing`，旧 hash 搭配改过的原文必须拒绝；否则重读当前单价并重算 hash，原文、餐次身份或单价不匹配时零新增。接龙只要求 seller-owned meal slot 有有效服务端单价，不受顾客 batch/status/deadline 限制。
 - **FR-029**: 接龙订单必须为 draft、`source=jielong-import`，使用服务端餐次价格并保存称呼/价格快照；customerProfile、customerOpenid 和 address 必须为空，且无地址订单在商家 UI/配送清单显示“无地址”。
 - **FR-030**: 接龙入口必须由默认关闭的构建开关控制，不出现在顾客或商家主导航；解析和提交不得调用 AI/LLM、聊天或 agent 服务。
 - **FR-031**: 顾客数据导出必须完全复用当前 customer session 已有 owner-scoped profile/order API，产出含版本号和导出时间的 JSON；不得导出 token、openid、operator、服务密钥、内部备注或其他 owner 数据。
