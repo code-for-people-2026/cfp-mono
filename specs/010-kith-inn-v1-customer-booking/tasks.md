@@ -111,7 +111,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | M3-G | 公开文案与隐私提示 | T088–T089 | FE coverage、headless H5、weapp | M3-F 自动化完成；`<400` |
 | M4-A | 顾客数据复制与资料批量软停用 | T091–T092 | FE coverage、headless H5 | M3-G；`<400` |
 | M4-B | 错误/空态/截止/关闭态打磨 | T093–T094 | FE coverage、headless H5、weapp | M4-A；`<400` |
-| M4-C | latest-main 自动化与人工门禁记账 | T087/T090/T095–T097 | 全量 headless/verify；人工证据独立 | M4-B；`<400` |
+| M4-C | latest-main 自动化与人工门禁记账 | T095–T096 | 全量 headless/verify；记录但不完成人工门禁 | M4-B；`<400` |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
 
@@ -275,23 +275,23 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ## Phase 15：M3-B strict 接龙 parser/contract（US5）
 
-**Independent Test**: grammar、100 行/一万字符边界、行序、金额、preview hash 与 strict commit schema 全部确定性；任何非法非空行整批拒绝。
+**Independent Test**: grammar、1～100 行/一万字符边界、行序、金额、preview hash 与 strict commit schema 全部确定性；只有标题或任何非法非空行都整批拒绝。
 
-- [ ] T077 [US5] 在 `packages/kith-inn-v1-shared/src/{api,jielong}.test.ts` 覆盖 strict preview/commit schema、确定性 grammar 与 canonical input
+- [ ] T077 [US5] 在 `packages/kith-inn-v1-shared/src/{api,jielong}.test.ts` 覆盖 strict preview/commit schema、header-only 拒绝、1/100/101 行边界、确定性 grammar 与 canonical input
 - [ ] T078 [US5] 在 `packages/kith-inn-v1-shared/src/{api.ts,jielong.ts,types.ts,index.ts}` 实现 parser、preview/commit DTO 和 canonical input，不增加 hash 计算、route 或写入
 
 ## Phase 16：M3-C CMS 导入持久化边界（US5）
 
-**Independent Test**: SQLite/PostgreSQL 均要求 operator JWT + service secret，重查 seller/slot；只允许 jielong-import 的 null profile/openid/address 和服务端白名单字段。
+**Independent Test**: SQLite/PostgreSQL 均要求 operator JWT + service secret，重查 seller/slot；只允许 jielong-import 的 null profile/openid/address 和服务端白名单字段；86 字符 marker 对外不可见，914/915 字符可见备注边界确定。
 
-- [ ] T079 [US5] 在 `apps/cms/tests/kiv1-orders.test.ts` 覆盖导入 create 的鉴权、owner、relationship、nullable、字段注入和响应白名单
+- [ ] T079 [US5] 在 `apps/cms/tests/kiv1-orders.test.ts` 覆盖导入 create 的鉴权、owner、relationship、nullable、字段注入、marker 剥离/保留、914/915 字符可见备注边界和响应白名单
 - [ ] T080 [US5] 在 `apps/cms/src/app/api/internal/kiv1/orders/{route.ts,[id]/route.ts}` 与 `apps/cms/src/lib/kiv1-internal.ts` 实现导入写入、内部 note 标记剥离/保留和顺序重试查重，不放宽 manual/customer-card
 
 ## Phase 17：M3-D BE preview/commit（US5）
 
-**Independent Test**: preview 零写入；commit 重新解析并重查餐次/当前价格，预览后价格变化要求重新预览；hash 篡改失败，相同 hash+行号重复提交订单增量为 0。
+**Independent Test**: preview 零写入；commit 重新解析并重查餐次/当前价格，未写入时价格变化要求重新预览；首次提交成功但响应丢失后即使价格变化仍按旧 hash 返回 existing；顾客 batch 关闭/过期不阻止 seller-owned、有价格餐次导入；hash 篡改失败，相同 hash+行号重复提交订单增量为 0。
 
-- [ ] T081 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/jielong.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖绑定 seller/slot/price 的 preview hash、价格变化失效、确认、顺序重试幂等与错误净化
+- [ ] T081 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.test.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.test.ts`、`apps/kith-inn-v1-be/src/routes/jielong.test.ts` 和 `apps/kith-inn-v1-be/src/app.test.ts` 覆盖绑定 seller/slot/price 的 preview hash、未写入价格变化失效、成功后价格漂移仍幂等、关闭/过期顾客窗口不阻止接龙、确认、顺序重试与错误净化
 - [ ] T082 [US5] 在 `apps/kith-inn-v1-be/src/domain/jielong/service.ts`、`apps/kith-inn-v1-be/src/lib/cms/orders.ts`、`apps/kith-inn-v1-be/src/routes/jielong.ts` 和 `apps/kith-inn-v1-be/src/app.ts` 实现 `/merchant/jielong/preview`、`/merchant/jielong/commit` 与 SHA-256 preview hash
 
 ## Phase 18：M3-E FE preview/confirm API 与逻辑（US5）
@@ -333,14 +333,13 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: latest main 的 migration readiness 只读检查、workspace coverage、全量无头 H5、weapp build 与 `pnpm verify` 全绿；人工门禁只凭真实证据勾选。
 
-- [ ] T095 [US6] 在 `specs/010-kith-inn-v1-customer-booking/tasks.md` 记录 latest-main 自动化命令、结果、head 与 scope 审计证据
+- [ ] T095 [US6] 在 `specs/010-kith-inn-v1-customer-booking/tasks.md` 记录 latest-main 自动化命令、结果、head、scope 审计证据，以及 T028/T087/T090/T097 的真实未完成/完成状态；不得用本任务完成任何缺少真实证据的人工门禁
 - [ ] T096 [US6] 在 M4-C 的 latest main 重新只读核实 production migration baseline、runner、ready/health gate 与对应测试并记录 head；规划时已见 `cae51c0`、`1f8622f`，但不以早期检查替代最终验收，且不修改授权范围外文件
-- [ ] T097 [US6] 完成小程序类目/资质路径确认、体验版/审核版结论并留存真实证据；不得因自动化全绿而勾选
-
 ### 独立人工发布门禁（不阻塞自动化切片）
 
 - [ ] T087 [US5] 使用已配置微信小程序的真机完成接龙兜底页体验版 smoke；不得以 H5/weapp build 替代
 - [ ] T090 [US6] 在微信后台完成正式用户隐私保护指引配置并留存真实审核证据；页面文案和自动化不得替代
+- [ ] T097 [US6] 完成小程序类目/资质路径确认、体验版/审核版结论并留存真实证据；不得因自动化全绿而勾选
 
 ---
 
