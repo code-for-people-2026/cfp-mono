@@ -91,7 +91,11 @@ export async function GET(req: Request) {
     depth: 0,
     overrideAccess: true
   });
-  return NextResponse.json({ docs: (result.docs as OrderDoc[]).map(normalizeOrder) });
+  const docs = (result.docs as OrderDoc[]).map(normalizeOrder)
+    .sort((left, right) => (left.address ?? "无地址").localeCompare(right.address ?? "无地址") ||
+      left.displayName.localeCompare(right.displayName, "zh-CN") ||
+      String(left.id).localeCompare(String(right.id)));
+  return NextResponse.json({ docs });
 }
 
 export async function POST(req: Request) {

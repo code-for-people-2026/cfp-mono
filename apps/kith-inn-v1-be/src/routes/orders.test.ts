@@ -304,6 +304,23 @@ describe("merchant order routes", () => {
     expect(canceledDeps.updateOrder).not.toHaveBeenCalled();
   });
 
+  it("treats imported snapshot-only edits as a no-op without calling CMS", async () => {
+    const imported = {
+      ...order,
+      customerProfileId: null,
+      source: "jielong-import" as const,
+      address: null
+    };
+    const routeDeps = deps({ getOrder: vi.fn(async () => imported) });
+    const response = await request(ordersRoutes(SECRET, routeDeps), "/31", {
+      method: "PATCH",
+      body: JSON.stringify({ displayName: "误改称呼", address: "误填地址" })
+    });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ doc: imported });
+    expect(routeDeps.updateOrder).not.toHaveBeenCalled();
+  });
+
   it("runs single-order lifecycle actions, refreshes summaries and skips idempotent writes", async () => {
     let current: Order = order;
     const updateOrder = vi.fn(async (_token: string, _id: string | number, patch: CmsOrderUpdate) => {
