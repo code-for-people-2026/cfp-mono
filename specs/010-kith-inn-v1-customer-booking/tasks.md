@@ -298,8 +298,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: FE 只展示服务端 strict preview；未确认、hash 不匹配或非法结果不调用 commit，重试保持同一原文/hash。
 
-- [ ] T083 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api,logic/jielongImport}.test.ts` 覆盖 strict 响应、确认门禁与结果派生
-- [ ] T084 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api.ts,logic/jielongImport.ts}` 实现 typed client/logic，不注册页面或导航
+- [x] T083 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api,logic/jielongImport}.test.ts` 覆盖 strict 响应、确认门禁与结果派生
+- [x] T084 [US5] 在 `apps/kith-inn-v1-fe/src/{services/api.ts,logic/jielongImport.ts}` 实现 typed client/logic，不注册页面或导航
 
 ## Phase 19：M3-F 默认关闭的接龙兜底页面（US5）
 

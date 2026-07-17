@@ -27,7 +27,8 @@
     "@tarojs/shared": "4.2.0",
     "@tarojs/taro": "4.2.0",
     "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "react-dom": "18.2.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.7",
