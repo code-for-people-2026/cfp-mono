@@ -305,8 +305,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 默认构建主导航入口数为 0；显式开关构建的无头 H5 跑通粘贴→预览→确认→商家订单“无地址”，weapp build 通过。
 
-- [ ] T085 [US5] 在 `apps/kith-inn-v1-fe/src/logic/jielongImport.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts` 覆盖默认隐藏、显式启用和纵向导入
-- [ ] T086 [US5] 在 `apps/kith-inn-v1-fe/{config/index.ts,.env.example,src/app.config.ts,src/app.css,src/pages/merchant/jielong-import/index.tsx}` 实现 feature-gated 弱入口与页面
+- [x] T085 [US5] 在 `apps/kith-inn-v1-fe/src/logic/jielongImport.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts` 覆盖默认隐藏、显式启用和纵向导入
+- [x] T086 [US5] 在 `apps/kith-inn-v1-fe/{config/index.ts,.env.example,src/app.config.ts,src/app.css,src/pages/merchant/jielong-import/index.tsx}` 实现 feature-gated 弱入口与页面
 
 ## Phase 20：M3-G 公开文案与隐私提示（US6）
 

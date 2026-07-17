@@ -17,6 +17,9 @@ export default defineConfig(async () => ({
       chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
         {
           "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? ""),
+          "process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT": JSON.stringify(
+            process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT ?? ""
+          ),
           "process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID": JSON.stringify(
             process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID ?? ""
           )
@@ -32,6 +35,9 @@ export default defineConfig(async () => ({
       chain.plugin("process-env-be-base-url").use(webpack.DefinePlugin, [
         {
           "process.env.BE_BASE_URL": JSON.stringify(process.env.BE_BASE_URL ?? ""),
+          "process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT": JSON.stringify(
+            process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT ?? ""
+          ),
           "process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID": JSON.stringify(
             process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID ?? ""
           )
