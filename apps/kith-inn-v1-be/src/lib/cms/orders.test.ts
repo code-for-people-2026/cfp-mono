@@ -3,8 +3,10 @@ import type { CmsOrderCreate, CmsOrderUpdate } from "@cfp/kith-inn-v1-shared";
 import {
   CmsOrderError,
   cancelCustomerOwnedOrder,
+  createJielongOrder,
   createCustomerOrder,
   createOrder,
+  findJielongOrder,
   findCustomerOrderBySlot,
   getOrder,
   listOrders,
@@ -161,6 +163,27 @@ describe("CMS order client", () => {
         body: JSON.stringify(lifecycle)
       })
     );
+  });
+
+  it("finds and creates imported orders with double authorization", async () => {
+    process.env.CMS_BASE_URL = "http://cms.test";
+    process.env.KITH_INN_V1_INTERNAL_TOKEN = "internal";
+    const hash = "a".repeat(64);
+    const imported = { ...order, customerProfileId: null, source: "jielong-import" as const, address: null };
+    const findDeps = response({ doc: imported });
+    await expect(findJielongOrder("jwt", 11, hash, 2, findDeps)).resolves.toEqual(imported);
+    expect(findDeps.fetch).toHaveBeenCalledWith(
+      `http://cms.test/api/internal/kiv1/orders?mealSlotId=11&previewHash=${hash}&lineNumber=2`,
+      { headers: { "x-kith-inn-v1-operator": "jwt", "x-kith-inn-v1-internal": "internal" } }
+    );
+    await expect(findJielongOrder("jwt", 11, hash, 2, response({ doc: null }))).resolves.toBeNull();
+    const input = { ...createInput, customerProfileId: null, customerOpenid: null, source: "jielong-import" as const,
+      address: null, previewHash: hash, lineNumber: 2 };
+    const createDeps = response({ doc: imported }, 201);
+    await expect(createJielongOrder("jwt", input, createDeps)).resolves.toEqual(imported);
+    expect(createDeps.fetch).toHaveBeenCalledWith(expect.stringContaining("/orders"), expect.objectContaining({
+      method: "POST", headers: expect.objectContaining({ "x-kith-inn-v1-internal": "internal" })
+    }));
   });
 
   it("preserves errors and rejects malformed success envelopes", async () => {

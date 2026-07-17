@@ -6,6 +6,7 @@ import { bookingBatchesRoutes, publicBookingBatchesRoutes } from "./routes/booki
 import { customerOrderManagementRoutes, customerOrderRoutes } from "./routes/customerOrders";
 import { customerProfileRoutes } from "./routes/customerProfiles";
 import { healthRoutes } from "./routes/health";
+import { jielongRoutes } from "./routes/jielong";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
 import { customerProfilesRoutes, ordersRoutes } from "./routes/orders";
@@ -26,6 +27,7 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
   app.route("/merchant/booking-batches", bookingBatchesRoutes(jwtSecret));
   app.route("/merchant/customer-profiles", customerProfilesRoutes(jwtSecret));
+  app.route("/merchant/jielong", jielongRoutes(jwtSecret));
   app.route("/merchant/orders", ordersRoutes(jwtSecret));
   return app;
 }

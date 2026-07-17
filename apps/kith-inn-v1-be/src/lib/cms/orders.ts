@@ -2,6 +2,7 @@ import { apiErrorSchema, customerOrdersResponseSchema, orderSchema } from "@cfp/
 import type {
   CmsCustomerOrderCreate,
   CmsCustomerOrderUpdate,
+  CmsJielongOrderCreate,
   CmsOrderCreate,
   CmsOrderUpdate,
   Order
@@ -32,7 +33,7 @@ function cmsBaseUrl(): string {
 async function cmsRequest(
   path: string,
   token: string,
-  init: { method?: "POST" | "PATCH"; data?: unknown; customer?: boolean } = {},
+  init: { method?: "POST" | "PATCH"; data?: unknown; customer?: boolean; service?: boolean } = {},
   deps: CmsOrderDeps = {}
 ): Promise<unknown> {
   const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}${path}`, {
@@ -40,7 +41,7 @@ async function cmsRequest(
     headers: {
       [init.customer ? KIV1_CUSTOMER_HEADER : KIV1_OPERATOR_HEADER]: token,
       ...(init.data === undefined ? {} : { "content-type": "application/json" }),
-      ...(init.method === "PATCH" || (init.customer && init.method === "POST")
+      ...(init.service || init.method === "PATCH" || (init.customer && init.method === "POST")
         ? { [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "" }
         : {})
     },
@@ -83,6 +84,23 @@ export async function createOrder(token: string, input: CmsOrderCreate, deps: Cm
   const body = await cmsRequest("/api/internal/kiv1/orders", token, { method: "POST", data: input }, deps);
   const doc = typeof body === "object" && body !== null ? (body as { doc?: unknown }).doc : undefined;
   return parseOrder(doc);
+}
+
+export async function findJielongOrder(
+  token: string, mealSlotId: string | number, previewHash: string, lineNumber: number, deps: CmsOrderDeps = {}
+): Promise<Order | null> {
+  const query = new URLSearchParams({ mealSlotId: String(mealSlotId), previewHash, lineNumber: String(lineNumber) });
+  const body = await cmsRequest(`/api/internal/kiv1/orders?${query}`, token, { service: true }, deps);
+  const doc = (body as { doc?: unknown } | null)?.doc;
+  return doc === null ? null : parseOrder(doc);
+}
+
+export async function createJielongOrder(
+  token: string, input: CmsJielongOrderCreate, deps: CmsOrderDeps = {}
+): Promise<Order> {
+  const body = await cmsRequest("/api/internal/kiv1/orders", token,
+    { method: "POST", data: input, service: true }, deps);
+  return parseOrder((body as { doc?: unknown } | null)?.doc);
 }
 
 export async function updateOrder(
