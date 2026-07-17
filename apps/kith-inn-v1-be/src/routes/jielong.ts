@@ -1,4 +1,5 @@
-import { jielongCommitInputSchema, jielongPreviewInputSchema } from "@cfp/kith-inn-v1-shared/api";
+import { jielongCommitInputSchema, jielongPreviewInputSchema, jielongTextSchema }
+  from "@cfp/kith-inn-v1-shared/api";
 import { parseJielongText } from "@cfp/kith-inn-v1-shared";
 import type { CmsJielongOrderCreate, MealSlot, Order, SellerSnapshot } from "@cfp/kith-inn-v1-shared";
 import { Hono, type Context } from "hono";
@@ -41,6 +42,11 @@ export function jielongRoutes(secret: string, deps: JielongDeps = defaultDeps) {
   const handle = async (c: Context<AppVars>, commit: boolean) => {
     const body = await bodyOf(c);
     if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const rawText = typeof body.value === "object" && body.value !== null && "text" in body.value
+      ? body.value.text : undefined;
+    if (typeof rawText === "string" && !jielongTextSchema.safeParse(rawText).success) {
+      return c.json({ error: "invalid-jielong-text", message: "接龙文本格式无效" }, 422);
+    }
     const parsed = (commit ? jielongCommitInputSchema : jielongPreviewInputSchema).safeParse(body.value);
     if (!parsed.success) return c.json({ error: "invalid-jielong-input", message: "接龙参数无效" }, 422);
     let target;
@@ -48,19 +54,22 @@ export function jielongRoutes(secret: string, deps: JielongDeps = defaultDeps) {
     catch { return c.json({ error: "invalid-jielong-text", message: "接龙文本格式无效" }, 422); }
     const token = c.get("operatorToken");
     try {
-      const [slots, seller] = await Promise.all([
-        deps.listMealSlots(token, { from: target.date, to: target.date }), deps.getSeller(token)
-      ]);
+      const slots = await deps.listMealSlots(token, { from: target.date, to: target.date });
       const matches = slots.filter((candidate) => candidate.date === target.date && candidate.occasion === target.occasion);
-      if (matches.length === 0) return c.json({ error: "meal-slot-not-found", message: "餐次不存在" }, 404);
-      if (matches.length > 1) return c.json({ error: "meal-slot-ambiguous", message: "餐次不唯一" }, 409);
+      if (matches.length !== 1) {
+        if (commit) return c.json({ error: "preview-hash-mismatch", message: "接龙预览已失效" }, 409);
+        return matches.length === 0
+          ? c.json({ error: "meal-slot-not-found", message: "餐次不存在" }, 404)
+          : c.json({ error: "meal-slot-ambiguous", message: "餐次不唯一" }, 409);
+      }
       const slot = matches[0]!;
-      const binding = { sellerId: c.get("sellerId"), mealSlotId: slot.id,
-        unitPriceCents: slot.priceCents ?? seller.defaultPriceCents };
-      if (!commit) return c.json(previewJielong(parsed.data.text, binding));
+      const binding = { sellerId: c.get("sellerId"), mealSlotId: slot.id };
+      const getUnitPriceCents = async () => slot.priceCents ?? (await deps.getSeller(token)).defaultPriceCents;
+      if (!commit) return c.json(previewJielong(parsed.data.text, { ...binding,
+        unitPriceCents: await getUnitPriceCents() }));
       return c.json(await commitJielong(jielongCommitInputSchema.parse(body.value), binding, {
         findOrder: (mealSlotId, hash, line) => deps.findOrder(token, mealSlotId, hash, line),
-        createOrder: (input) => deps.createOrder(token, input)
+        createOrder: (input) => deps.createOrder(token, input), getUnitPriceCents
       }));
     } catch (error) { return dependencyError(c, error); }
   };

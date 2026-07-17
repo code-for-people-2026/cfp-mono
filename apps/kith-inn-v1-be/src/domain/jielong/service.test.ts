@@ -28,29 +28,32 @@ describe("jielong preview and commit", () => {
     };
     const deps = {
       findOrder: vi.fn(async (_slot: string | number, _hash: string, line: number) => stored.get(line) ?? null),
-      createOrder: vi.fn(persist)
+      createOrder: vi.fn(persist), getUnitPriceCents: vi.fn(async () => 3000)
     };
     const preview = previewJielong(TEXT, binding);
     const input = { text: TEXT, previewHash: preview.previewHash, confirmed: true as const };
     await expect(commitJielong(input, binding, deps)).resolves.toMatchObject({
       previewHash: preview.previewHash, results: [{ status: "created" }, { status: "created" }]
     });
-    await expect(commitJielong(input, { ...binding, unitPriceCents: 3100 }, deps)).resolves.toMatchObject({
+    deps.getUnitPriceCents.mockClear();
+    deps.getUnitPriceCents.mockRejectedValueOnce(new Error("price offline"));
+    await expect(commitJielong(input, binding, deps)).resolves.toMatchObject({
       results: [{ status: "existing" }, { status: "existing" }]
     });
+    expect(deps.getUnitPriceCents).not.toHaveBeenCalled();
     await expect(commitJielong({ ...input, text: TEXT.replace("李叔", "赵叔") }, binding, deps))
       .rejects.toMatchObject({ code: "preview-hash-mismatch" });
     await expect(commitJielong({ ...input, text: "2026-07-20 午餐\n\n李叔 1份" }, binding, deps))
       .rejects.toMatchObject({ code: "preview-hash-mismatch" });
 
-    stored.clear(); deps.createOrder.mockClear();
+    stored.clear(); deps.createOrder.mockClear(); deps.getUnitPriceCents.mockReset().mockResolvedValue(3000);
     deps.createOrder.mockImplementationOnce(persist).mockRejectedValueOnce(new Error("offline"));
     await expect(commitJielong(input, binding, deps)).rejects.toThrow("offline");
     await expect(commitJielong(input, binding, deps)).resolves.toMatchObject({
       results: [{ status: "existing" }, { status: "created" }]
     });
-    stored.clear(); deps.createOrder.mockClear();
-    await expect(commitJielong(input, { ...binding, unitPriceCents: 3100 }, deps))
+    stored.clear(); deps.createOrder.mockClear(); deps.getUnitPriceCents.mockResolvedValue(3100);
+    await expect(commitJielong(input, binding, deps))
       .rejects.toMatchObject({ code: "preview-hash-mismatch" });
     expect(deps.createOrder).not.toHaveBeenCalled();
   });
