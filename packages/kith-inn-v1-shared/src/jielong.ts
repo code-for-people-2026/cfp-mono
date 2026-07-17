@@ -2,7 +2,8 @@ import { jielongCanonicalInputSchema, jielongTextSchema } from "./api";
 import type { JielongCanonicalInput } from "./types";
 
 const headerPattern = /^(\d{4}-\d{2}-\d{2})\s+(午餐|晚餐)$/;
-const rowPattern = /^(?:\d+[.、)）]\s*)?(.+?)\s+([1-9]\d*)份$/;
+const listMarkerPattern = /^\d+[.、)）]\s*/;
+const rowPattern = /^(.+?)\s+([1-9]\d*)份$/;
 
 const invalidText = (): never => {
   throw new Error("接龙文本格式无效");
@@ -20,7 +21,7 @@ export function parseJielongText(text: string): JielongCanonicalInput {
   if (!headerMatch || rows.length === 0) return invalidText();
 
   const lines = rows.map(({ lineNumber, value }) => {
-    const match = rowPattern.exec(value);
+    const match = rowPattern.exec(value.replace(listMarkerPattern, ""));
     if (!match) return invalidText();
     return { lineNumber, displayName: match[1]!, quantity: Number(match[2]) };
   });
