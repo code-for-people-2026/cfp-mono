@@ -8,6 +8,7 @@ import {
   bulkDeliveryFeedback,
   copyOrderChecklist,
   duplicateDraftUpdate,
+  orderAddressText,
   orderChecklistText,
   orderResubmitInput,
   orderStateText,
@@ -175,6 +176,23 @@ describe("order-list view logic", () => {
     expect(replaceOrder([second], sameAddress)).toEqual([sameAddress, second]);
     const sameName = order({ id: 30, address: "2B", displayName: "李叔" });
     expect(replaceOrder([second], sameName)).toEqual([sameName, second]);
+  });
+
+  it("renders and stably sorts imported orders without an address", () => {
+    const imported = order({
+      id: 38,
+      source: "jielong-import",
+      customerProfileId: null,
+      address: null,
+      displayName: "接龙顾客",
+      status: "confirmed",
+      confirmedAt: "2026-07-10T00:00:00.000Z"
+    });
+    const addressed = order({ id: 37, address: "3A", status: "confirmed" });
+    expect(orderAddressText(imported)).toBe("无地址");
+    expect(() => orderResubmitInput(imported)).toThrow("接龙导入订单没有地址，不能沿用手工重提");
+    expect(replaceOrder([imported], addressed)).toEqual([addressed, imported]);
+    expect(orderChecklistText(slot, [imported, addressed])).toContain("无地址｜接龙顾客｜2 份");
   });
 
   it("explicitly selects only confirmed orders and reports every bulk result", () => {

@@ -2,7 +2,7 @@ import type { Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
 
 export function confirmedOrdersForChecklist(orders: Order[]): Order[] {
   return orders.filter((order) => order.status === "confirmed")
-    .sort((left, right) => left.address.localeCompare(right.address) ||
+    .sort((left, right) => (left.address ?? "无地址").localeCompare(right.address ?? "无地址") ||
       left.displayName.localeCompare(right.displayName, "zh-CN") ||
       String(left.id).localeCompare(String(right.id)));
 }

@@ -19,6 +19,7 @@ import {
   bulkDeliveryFeedback,
   copyOrderChecklist,
   duplicateDraftUpdate,
+  orderAddressText,
   orderChecklistText,
   orderResubmitInput,
   orderStateText,
@@ -193,7 +194,7 @@ export default function MerchantOrders() {
     setEditing(order);
     setEditQuantity(String(order.quantity));
     setEditDisplayName(order.displayName);
-    setEditAddress(order.address);
+    setEditAddress(order.address ?? "");
     setEditNote(order.note ?? "");
     setConfirmedEditPending(false);
   };
@@ -375,7 +376,7 @@ export default function MerchantOrders() {
         <View className="card order-card" key={String(order.id)} data-order-id={String(order.id)}>
           <View className="order-copy">
             <Text className="section-title">{order.displayName}</Text>
-            <Text>{order.address}</Text>
+            <Text>{orderAddressText(order)}</Text>
             <Text>{order.quantity} 份 · ¥{(order.totalCents / 100).toFixed(2)}</Text>
             {order.note && <Text className="meta">备注：{order.note}</Text>}
             <Text className="meta">{orderStateText(order)}</Text>

@@ -348,12 +348,16 @@ function validNullableDate(value: unknown): boolean {
 
 function parseOrder(value: unknown): Order {
   const order = record(value);
+  const sourceIsValid = order !== null &&
+    (["customer-card", "manual", "jielong-import"] as const).includes(order.source as Order["source"]);
+  const ownerSnapshotIsValid = order?.source === "jielong-import"
+    ? order.customerProfileId === null && order.address === null
+    : order !== null && validId(order.customerProfileId) &&
+      typeof order.address === "string" && order.address !== "";
   if (!order || !validId(order.id) || !validId(order.sellerId) || !validId(order.mealSlotId) ||
-    !validId(order.customerProfileId) ||
     !(order.status === "draft" || order.status === "confirmed" || order.status === "canceled") ||
-    !(["customer-card", "manual", "jielong-import"] as const).includes(order.source as Order["source"]) ||
+    !sourceIsValid || !ownerSnapshotIsValid ||
     typeof order.displayName !== "string" || order.displayName === "" ||
-    typeof order.address !== "string" || order.address === "" ||
     typeof order.quantity !== "number" || !Number.isInteger(order.quantity) || order.quantity <= 0 ||
     typeof order.unitPriceCents !== "number" || !Number.isInteger(order.unitPriceCents) || order.unitPriceCents < 0 ||
     order.totalCents !== order.quantity * order.unitPriceCents ||
