@@ -9,7 +9,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Tests**: 本功能要求 contract、领域、route、FE logic、H5 E2E 与 weapp smoke；每个实现 PR 先写能失败的窄测试，再实现，再运行 `pnpm verify`。
 
-**Organization**: M2-A/B、C1～C6、D1～D4 与 D2R 已合并，D4 对应 PR #230。T028 仍是微信真机门禁，T057 仍因历史人工 diff 479 行保持未完成。M3/M4 按本文件的十个自动化 PR 切片串行推进；T028/T087/T090/T097 是独立发布门禁，不阻塞后续可自动化切片。每片从前一片 rebase merge 后的最新 `main` 开始，完成 ready review、latest-head CI 与 Codex thread 闭环后才进入下一片。
+**Organization**: M2-A/B、C1～C6、D1～D4、D2R 与 M3/M4 十个自动化 PR 切片均已串行完成；每片都从前一片 rebase merge 后的最新 `main` 开始并闭环 ready review、latest-head CI 与 Codex threads。T028/T087/T090/T097 是仍未完成的独立人工发布门禁，T057 仍按历史人工 diff 479 行事实保持未完成。
 
 ## 格式
 
@@ -333,8 +333,18 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: latest main 的 migration readiness 只读检查、workspace coverage、全量无头 H5、weapp build 与 `pnpm verify` 全绿；人工门禁只凭真实证据勾选。
 
-- [ ] T095 [US6] 在 `specs/010-kith-inn-v1-customer-booking/tasks.md` 记录 latest-main 自动化命令、结果、head、scope 审计证据，以及 T028/T087/T090/T097 的真实未完成/完成状态；不得用本任务完成任何缺少真实证据的人工门禁
-- [ ] T096 [US6] 在 M4-C 的 latest main 重新只读核实 production migration baseline、runner、ready/health gate 与对应测试并记录 head；规划时已见 `cae51c0`、`1f8622f`，但不以早期检查替代最终验收，且不修改授权范围外文件
+- [x] T095 [US6] 在 `specs/010-kith-inn-v1-customer-booking/tasks.md` 记录 latest-main 自动化命令、结果、head、scope 审计证据，以及 T028/T087/T090/T097 的真实未完成/完成状态；不得用本任务完成任何缺少真实证据的人工门禁
+- [x] T096 [US6] 在 M4-C 的 latest main 重新只读核实 production migration baseline、runner、ready/health gate 与对应测试并记录 head；规划时已见 `cae51c0`、`1f8622f`，但不以早期检查替代最终验收，且不修改授权范围外文件
+
+### M4-C 验收记录（2026-07-17）
+
+- **受验基线**：从当时 latest `origin/main` `2cc075da998123dae8cc53c266e9e5666733feb2`（PR #240 rebase merge）创建 M4-C 分支；验收完成后重新 `git fetch origin main`，本地基线与远端仍相同、worktree 无业务改动。`cae51c0`、`1f8622f` 均经 `git merge-base --is-ancestor <commit> HEAD` 确认为该 head 的祖先。
+- **migration/readiness 只读验收**：checked-in head 仍为 `20260714_105116_initial_cms_schema`。`apps/cms/migrations/run.ts` 强制 PostgreSQL 且关闭 schema push，迁移前只接受安全的 committed prefix、迁移后要求精确 head；`/api/health` 只承担 liveness，带内部鉴权的 `/api/ready` 才检查 PostgreSQL、精确 migration head 与 seller query。未修改这些授权范围外文件。
+- **migration/readiness 测试**：`PAYLOAD_DATABASE_URL=<local-postgres> DATABASE_URL=<local-postgres> PAYLOAD_SECRET=<test-only> PAYLOAD_DB_PUSH=true pnpm --filter @cfp/cms exec vitest run tests/migration-production.test.ts src/app/api/health/route.test.ts`，2 files、13/13 tests 通过；覆盖 fresh DB migration、同 head 重跑并保留 sentinel、危险/缺失历史 fail-closed、ready 精确 head、鉴权、超时与错误净化。
+- **v1 workspace coverage**：`pnpm --filter @cfp/kith-inn-v1-shared test:coverage` 为 4 files、61 tests、288/288 statements、58/58 branches、64/64 functions、265/265 lines；`pnpm --filter @cfp/kith-inn-v1-be test:coverage` 为 26 files、163 tests、1416/1416 statements、979/979 branches、348/348 functions、1188/1188 lines；`pnpm --filter @cfp/kith-inn-v1-fe test:coverage` 为 12 files、74 tests、598/598 statements、759/759 branches、210/210 functions、500/500 lines。
+- **纵向与构建门禁**：`CI=1 pnpm --filter @cfp/kith-inn-v1-fe test:e2e` 为 9/9 无头 H5 tests 通过；`pnpm --filter @cfp/kith-inn-v1-fe build:weapp` 通过；以本地 PostgreSQL 和 CI 同等必要环境运行 `pnpm verify`，lint 13/13、typecheck 13/13、coverage 13/13、knip 退出 0、build 13/13。
+- **scope 审计**：汇总 PR #229～#240 的 `gh pr diff <pr> --name-only` 后共有 61 个唯一路径；业务与文档改动全部位于授权的 v1 workspaces、`/api/internal/kiv1/**`、`apps/cms/src/lib/kiv1-internal.ts`、对应 `kiv1-*` tests 和 `specs/010-*`。唯一根级文件是 PR #236 为 v1 FE 增加 `zod` 直接依赖所生成的 3 行 `pnpm-lock.yaml` 更新；旧 apps/packages、`docs/kith-inn/**`、`specs/016-*`、`specs/017-*` 命中均为 0。
+- **真实发布状态**：T028、T087、T090、T097 均缺少真机、微信后台或审核证据，继续保持未完成；本验收不以 H5、weapp build 或自动化替代。T057 也继续按历史 479 行人工 diff 事实保持未完成。
 ### 独立人工发布门禁（不阻塞自动化切片）
 
 - [ ] T087 [US5] 使用已配置微信小程序的真机完成接龙兜底页体验版 smoke；不得以 H5/weapp build 替代
@@ -365,7 +375,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 ## Implementation Strategy
 
 1. M2 与 D2R 已合并；T057 历史预算未达标与 T028 真机未验证的事实不变。
-2. 严格按 M3-A～M4-C 串行实施，不重复已合并能力，不预建下一片 scaffold。
+2. M3-A～M4-C 已严格串行实施，没有重复已合并能力或预建下一片 scaffold。
 3. 接龙默认关闭且无 AI；M4 数据删除只做已规定的 profile 软停用，历史订单不改写。
 4. 每轮修复后等待 latest-head CI，再精确 `@codex review`；latest head 无新 comment、unresolved=0、CI 全绿、mergeState=CLEAN 后才 rebase merge。
 5. T028、T087、T090、T097 只能由真实设备/微信后台/审核事实完成；自动化不改变其状态。
