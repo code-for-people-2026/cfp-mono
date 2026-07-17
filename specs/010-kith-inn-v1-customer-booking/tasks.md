@@ -312,8 +312,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 顾客公开页统一“预订登记”，风险词审计为 0；称呼/地址用途、保存/软停用/历史保留边界可见，H5/weapp 无回归。
 
-- [ ] T088 [US6] 在 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking.spec.ts,customer-orders.spec.ts}` 覆盖公开文案审计、隐私说明入口及用途/保留边界
-- [ ] T089 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/privacy/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现文案与说明页
+- [x] T088 [US6] 在 `apps/kith-inn-v1-fe/tests/e2e/{customer-booking.spec.ts,customer-orders.spec.ts}` 覆盖公开文案审计、隐私说明入口及用途/保留边界
+- [x] T089 [US6] 在 `apps/kith-inn-v1-fe/src/pages/booking/index.tsx`、`apps/kith-inn-v1-fe/src/pages/customer/orders/index.tsx`、`apps/kith-inn-v1-fe/src/pages/privacy/index.tsx`、`apps/kith-inn-v1-fe/src/app.config.ts` 和 `apps/kith-inn-v1-fe/src/app.css` 实现文案与说明页
 
 ## Phase 21：M4-A 顾客数据控制（US6）
 

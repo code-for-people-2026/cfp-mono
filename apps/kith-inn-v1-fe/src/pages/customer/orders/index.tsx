@@ -61,6 +61,9 @@ export default function CustomerOrders() {
   };
   return <View className="page customer-orders-page">
     <Text className="title">我的预订</Text>
+    <Button onClick={() => void Taro.navigateTo({ url: "/pages/privacy/index" })}>
+      查看个人信息用途说明
+    </Button>
     {error && <Text className="notice">{error}</Text>}
     <View className="card customer-profiles"><Text className="section-title">常用资料</Text>
       {profiles.length === 0 && <Text className="meta">暂无可用资料</Text>}

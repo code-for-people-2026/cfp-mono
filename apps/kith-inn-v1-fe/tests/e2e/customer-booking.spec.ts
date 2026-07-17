@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 const BE = "http://127.0.0.1:3311";
+const PUBLIC_RISK_COPY = /点餐|外卖|团购|平台/;
 
 test("顾客从分享页完成资料与多餐次登记并看到部分结果", async ({ page, request }) => {
   const suffix = Date.now().toString(36);
@@ -46,6 +47,7 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   for (const name of menuNames) await expect(page.getByText(name, { exact: true })).toHaveCount(2);
   await expect(page.getByText("可登记", { exact: true })).toHaveCount(2);
   await expect(page.getByText("用于桃子识别订单和送餐地址", { exact: true })).toBeVisible();
+  await expect(page.locator(".booking-page")).not.toContainText(PUBLIC_RISK_COPY);
   await page.getByRole("textbox", { name: "称呼" }).fill("王阿姨");
   await page.getByRole("textbox", { name: "送餐地址" }).fill("3A-1201");
   await page.getByRole("spinbutton").nth(0).fill("2");
@@ -128,4 +130,14 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   await expect(page.getByText("批次已关闭", { exact: true })).toBeVisible();
   await expect(page.getByText("本批次已关闭，仅供查看", { exact: true })).toHaveCount(2);
   expect(readOnlyProfileRequests).toBe(0);
+  await page.getByText("查看个人信息用途说明", { exact: true }).click();
+  await expect(page.locator(".privacy-page")).not.toContainText(PUBLIC_RISK_COPY);
+  await expect(page.getByText(
+    "称呼用于桃子识别您的预订登记，地址用于按约定送达。",
+    { exact: true }
+  )).toBeVisible();
+  await expect(page.getByText(
+    "首次使用新资料完成登记时，会保存为常用资料；修改已有资料时，只有选择“另存为新资料”才会额外保存，否则只用于本次登记。",
+    { exact: true }
+  )).toBeVisible();
 });
