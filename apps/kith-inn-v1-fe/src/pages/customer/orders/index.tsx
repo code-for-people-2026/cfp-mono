@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import type { CustomerBookingBatchView, CustomerOrderView, CustomerProfile } from "@cfp/kith-inn-v1-shared";
 import { beginCustomerSession, bookingBatchPublicId, formatBookingPrice } from "@/logic/customerBooking";
 import { copyCustomerData, deactivateCustomerProfiles } from "@/logic/customerData";
-import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerWriteErrorText }
+import { customerOrderLabels, customerOrderLockText, customerOrderQuantity, customerOrdersPageNotice,
+  customerWriteErrorText }
   from "@/logic/customerOrders";
 import { createApiClient, type RequestAdapter } from "@/services/api";
 import { createCustomerSessionStore, type CustomerStorage } from "@/store/customerSession";
@@ -89,12 +90,13 @@ export default function CustomerOrders() {
       : `已软停用 ${successCount} 条资料；历史预订仍可查看`);
     setError("");
   };
+  const pageNotice = customerOrdersPageNotice(dataLoaded, error, orders.length);
   return <View className="page customer-orders-page">
     <Text className="title">我的预订</Text>
     <Button onClick={() => void Taro.navigateTo({ url: "/pages/privacy/index" })}>
       查看个人信息用途说明
     </Button>
-    {error && <Text className="notice">{error}</Text>}
+    {pageNotice && <View className="card page-state"><Text className={error ? "notice" : "meta"}>{pageNotice}</Text></View>}
     {actionNotice && <Text className="notice">{actionNotice}</Text>}
     <View className="card customer-data-controls">
       <Text className="section-title">我的数据</Text>
@@ -108,12 +110,11 @@ export default function CustomerOrders() {
       </Text>)}
     </View>
     <View className="card customer-profiles"><Text className="section-title">常用资料</Text>
-      {profiles.length === 0 && <Text className="meta">暂无可用资料</Text>}
+      {dataLoaded && profiles.length === 0 && <Text className="meta">暂无可用资料</Text>}
       {profiles.map((profile) => <Button key={String(profile.id)} onClick={() => void deactivate(profile)}>
         {confirmProfile === String(profile.id) ? `确认停用${profile.displayName}` : `停用资料：${profile.displayName}`}
       </Button>)}
     </View>
-    {orders.length === 0 && <View className="card"><Text>还没有预订记录</Text></View>}
     {orders.map((order) => { const lock = customerOrderLockText(order, batch); const labels = customerOrderLabels(order);
       return <View className="card customer-order-card" key={String(order.id)}>
         <Text className="section-title">{order.target.date} {occasionText(order.target.occasion)}</Text>

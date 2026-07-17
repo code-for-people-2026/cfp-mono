@@ -19,13 +19,15 @@ import {
   bulkDeliveryFeedback,
   copyOrderChecklist,
   duplicateDraftUpdate,
+  merchantOrdersPageNotice,
   orderAddressText,
   orderChecklistText,
   orderResubmitInput,
   orderStateText,
   orderSummaryText,
   replaceOrder,
-  toggleBulkOrderSelection
+  toggleBulkOrderSelection,
+  type MerchantOrdersPageStatus
 } from "@/logic/orders";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
@@ -92,6 +94,7 @@ export default function MerchantOrders() {
   const [pendingAction, setPendingAction] = useState<{ id: string | number; action: "cancel" | "resubmit" } | null>(null);
   const [selectedOrderIds, setSelectedOrderIds] = useState<Array<string | number>>([]);
   const [bulkResults, setBulkResults] = useState<BulkMarkDeliveredResult[]>([]);
+  const [pageStatus, setPageStatus] = useState<MerchantOrdersPageStatus>("idle");
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "login") {
@@ -115,10 +118,12 @@ export default function MerchantOrders() {
     setPendingAction(null);
     setSelectedOrderIds([]);
     setBulkResults([]);
+    setPageStatus("idle");
   };
 
   const load = async (targetOccasion: Occasion) => {
     clearLoadedOrderState();
+    setPageStatus("loading");
     const revision = loadRevision.current;
     try {
       const result = await api.listOrders(date, targetOccasion);
@@ -128,8 +133,11 @@ export default function MerchantOrders() {
       setOrders(result.docs);
       setSummary(result.summary);
       setPendingDuplicate(null);
+      setPageStatus("loaded");
     } catch (error) {
+      if (revision !== loadRevision.current) return;
       if (handledAuthFailure(error)) return;
+      setPageStatus("error");
       await Taro.showToast({
         title: error instanceof Error ? error.message : "订单加载失败",
         icon: "none"
@@ -263,10 +271,14 @@ export default function MerchantOrders() {
     }
   };
 
+  const pageNotice = merchantOrdersPageNotice(pageStatus, orders.length);
   return (
     <View className="page orders-page" data-meal-slot-id={mealSlot ? String(mealSlot.id) : ""}>
       <Text className="title">餐次订单</Text>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
+      {pageNotice && <View className="card page-state"><Text className={pageStatus === "error" ? "notice" : "meta"}>
+        {pageNotice}
+      </Text></View>}
 
       <View className="card order-controls">
         <Input placeholder="订单日期" value={date} onInput={(event) => {

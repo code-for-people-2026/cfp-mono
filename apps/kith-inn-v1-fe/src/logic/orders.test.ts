@@ -10,6 +10,7 @@ import {
   duplicateDraftUpdate,
   orderAddressText,
   orderChecklistText,
+  merchantOrdersPageNotice,
   orderResubmitInput,
   orderStateText,
   orderSummaryText,
@@ -58,6 +59,14 @@ const slot: MealSlot = {
 };
 
 describe("manual-order form logic", () => {
+  it("distinguishes idle, loading, error and empty order pages", () => {
+    expect(merchantOrdersPageNotice("idle", 0)).toBe("请填写日期并查看午餐或晚餐订单");
+    expect(merchantOrdersPageNotice("loading", 0)).toBe("正在加载餐次订单…");
+    expect(merchantOrdersPageNotice("error", 0)).toBe("餐次订单加载失败，请检查日期后重试");
+    expect(merchantOrdersPageNotice("loaded", 0)).toBe("当前餐次还没有订单，可在下方补录草稿");
+    expect(merchantOrdersPageNotice("loaded", 1)).toBeNull();
+  });
+
   it("builds an existing-profile order or a complete new profile", () => {
     expect(buildManualOrderCreate({
       mealSlotId: 11,

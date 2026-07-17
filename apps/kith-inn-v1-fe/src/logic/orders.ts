@@ -113,6 +113,14 @@ export function orderSummaryText(summary: OrderSummary): string {
   return `已确认 ${summary.confirmedOrders} 单，共 ${summary.totalQuantity} 份；未付 ${summary.unpaid} 单，待送 ${summary.pendingDelivery} 单`;
 }
 
+export type MerchantOrdersPageStatus = "idle" | "loading" | "error" | "loaded";
+export function merchantOrdersPageNotice(status: MerchantOrdersPageStatus, orderCount: number): string | null {
+  if (status === "idle") return "请填写日期并查看午餐或晚餐订单";
+  if (status === "loading") return "正在加载餐次订单…";
+  if (status === "error") return "餐次订单加载失败，请检查日期后重试";
+  return orderCount === 0 ? "当前餐次还没有订单，可在下方补录草稿" : null;
+}
+
 export function replaceOrder(orders: Order[], replacement: Order): Order[] {
   return [...orders.filter((order) => String(order.id) !== String(replacement.id)), replacement]
     .sort((left, right) => orderAddressText(left).localeCompare(orderAddressText(right)) ||

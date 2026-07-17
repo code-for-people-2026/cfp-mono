@@ -8,6 +8,7 @@ import {
   bookingUnavailableText,
   buildCustomerReservation,
   canceledReservationDraft,
+  customerBookingPageNotice,
   defaultCustomerProfile,
   formatBookingPrice,
   loadCustomerBookingState,
@@ -54,7 +55,7 @@ export default function CustomerBooking() {
 
   useEffect(() => {
     if (!publicId) {
-      setError("这个预订登记链接已失效");
+      setError("这个预订登记链接已失效，请从原预订卡片重新进入");
       return;
     }
     void beginCustomerSession(
@@ -77,7 +78,7 @@ export default function CustomerBooking() {
       const selected = defaultCustomerProfile(nextProfiles);
       setProfile(selected); setCreateNew(nextProfiles.length === 0);
       setDisplayName(selected?.displayName ?? ""); setAddress(selected?.address ?? "");
-    }).catch(() => setError("预订信息加载失败，请稍后重试"));
+    }).catch(() => setError("预订信息加载失败，请从原预订卡片重新进入"));
   }, [publicId]);
 
   const selectProfile = (selected: CustomerProfile) => {
@@ -111,8 +112,10 @@ export default function CustomerBooking() {
     finally { submittingRef.current = false; setSubmitting(false); }
   };
 
-  if (error) return <View className="page booking-page"><Text className="notice">{error}</Text></View>;
-  if (!view) return <View className="page booking-page"><Text>正在加载预订信息…</Text></View>;
+  const pageNotice = customerBookingPageNotice(view, error);
+  if (!view) return <View className="page booking-page"><View className="card page-state">
+    <Text className={error ? "notice" : "meta"}>{pageNotice}</Text>
+  </View></View>;
   const retryCanceled = draft && results && profile ? canceledReservationDraft(draft, results, profile) : null;
 
   return (
@@ -122,6 +125,7 @@ export default function CustomerBooking() {
       <Text className="batch-status">
         {view.status === "open" ? "开放登记" : view.status === "closed" ? "批次已关闭" : "批次已归档"}
       </Text>
+      {pageNotice && <View className="card page-state"><Text className="notice">{pageNotice}</Text></View>}
       {publicId && <Button onClick={() => void Taro.navigateTo({
         url: `/pages/customer/orders/index?batch=${encodeURIComponent(publicId)}`
       })}>查看我的预订</Button>}

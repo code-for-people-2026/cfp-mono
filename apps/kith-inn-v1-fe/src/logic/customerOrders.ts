@@ -29,3 +29,9 @@ export function customerWriteErrorText(error: unknown): string {
     .includes(String(code))) return "本餐次已截止，请在群里联系桃子";
   return "操作失败，请刷新后重试";
 }
+
+export function customerOrdersPageNotice(loaded: boolean, error: string, orderCount: number): string | null {
+  if (error) return error;
+  if (!loaded) return "正在加载我的预订…";
+  return orderCount === 0 ? "还没有预订记录；请从预订卡片选择餐次登记" : null;
+}
