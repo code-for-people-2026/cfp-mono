@@ -113,6 +113,17 @@ describe("manual-order form logic", () => {
     expect(buildOrderEdit({ quantity: "0", displayName: "", address: "3A", note: "" })).toBeNull();
   });
 
+  it("omits immutable imported snapshots from edit requests", () => {
+    const form = { quantity: "3", displayName: "", address: "", note: " 门口放 " };
+    expect(buildOrderEdit(form, false, "jielong-import")).toEqual({ quantity: 3, note: "门口放" });
+    expect(buildOrderEdit(form, true, "jielong-import")).toEqual({
+      quantity: 3,
+      note: "门口放",
+      confirmedImpactAccepted: true
+    });
+    expect(buildOrderEdit({ ...form, quantity: "0" }, false, "jielong-import")).toBeNull();
+  });
+
   it("turns only an active duplicate into an explicit same-id draft update", () => {
     const input = { mealSlotId: 11, customerProfileId: 21, quantity: 3, note: "少辣" } as const;
     expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "已存在", {

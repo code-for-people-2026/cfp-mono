@@ -48,6 +48,10 @@ export function editOrderPatch(order: Order, input: ManualOrderUpdate): CmsOrder
   }
   const patch = { ...input };
   delete patch.confirmedImpactAccepted;
+  if (order.source === "jielong-import") {
+    delete patch.displayName;
+    delete patch.address;
+  }
   return patch;
 }
 
