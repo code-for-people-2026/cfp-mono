@@ -170,7 +170,7 @@ apps/cms/
 | M2-C5R | reservation 输入与逐项结果只使用公开 `{date, occasion}`，BE 在指定 batch 内解析内部餐次 | `packages/kith-inn-v1-shared/src/{api.ts,api.test.ts,types.ts,index.ts}`、`apps/kith-inn-v1-be/src/domain/customerOrders/{service.ts,service.test.ts}`、`apps/kith-inn-v1-be/src/routes/{customerOrders.ts,customerOrders.test.ts}` | shared/BE 100% coverage；拒绝 `mealSlotId` 注入、坐标唯一解析、按公开坐标返回结果、未知错误净化 | 已合并 PR #222 |
 | M2-C6 | booking UI 完成资料选择、确认摘要和多餐次提交 | `apps/kith-inn-v1-fe/src/{services/api.ts,services/api.test.ts,logic/customerBooking.ts,logic/customerBooking.test.ts,pages/booking/index.tsx,app.css}`、`apps/kith-inn-v1-fe/tests/e2e/customer-booking.spec.ts` | FE 100% coverage、无头 H5 E2E、weapp build、维护者真机登记 smoke | 已合并 PR #223；T028 仍未完成 |
 
-**独立交付**: C1～C6 已完成并合并；首次/回访顾客可从卡片完成多餐次 draft 登记，桃子在 M1 订单页可见。T028 未完成前不据此宣称可发布。
+**独立交付**: C1～C6 产品实现与 H5/weapp 自动化已合并；H5 流程覆盖首次/回访顾客的多餐次 draft 登记，桃子可在 M1 订单页看到结果。微信分享卡片 → 目标页 → 真实 `wx.login`/query 恢复仍待 T028 真机验证，不据此宣称卡片登记可用或可发布。
 
 ### M2-D1～D4：我的预订、修改/取消与资料软停用
 
