@@ -29,8 +29,10 @@ export default function CustomerOrders() {
   const [confirmAllProfiles, setConfirmAllProfiles] = useState(false);
   const [deactivationFailures, setDeactivationFailures] = useState<CustomerProfile[]>([]);
   const [actionNotice, setActionNotice] = useState("");
+  const [dataLoaded, setDataLoaded] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { if (!publicId) return setError("我的预订加载失败，请从预订卡片重试");
+  useEffect(() => { setDataLoaded(false);
+    if (!publicId) return setError("我的预订加载失败，请从预订卡片重试");
     void beginCustomerSession(process.env.TARO_ENV === "weapp" ? "weapp" : "h5", publicId, { api,
       devOpenid: process.env.KITH_INN_V1_CUSTOMER_DEV_OPENID ?? "", wxCode: async () => {
         const { code } = await Taro.login();
@@ -42,6 +44,7 @@ export default function CustomerOrders() {
     .then(([nextOrders, nextProfiles, nextBatch]) => {
       setOrders(nextOrders); setProfiles(nextProfiles); setBatch(nextBatch);
       setQuantities(Object.fromEntries(nextOrders.map((order) => [String(order.id), String(order.quantity)])));
+      setDataLoaded(true);
     }).catch(() => setError("我的预订加载失败，请从预订卡片重试")); }, [publicId]);
   const replace = (next: CustomerOrderView) => setOrders((current) => current.map((order) =>
     String(order.id) === String(next.id) ? next : order));
@@ -61,9 +64,12 @@ export default function CustomerOrders() {
     if (confirmProfile !== String(profile.id)) return setConfirmProfile(String(profile.id));
     try { await api.deactivateOwnedCustomerProfile(profile.id);
       setProfiles((current) => current.filter(({ id }) => String(id) !== String(profile.id)));
+      setDeactivationFailures((current) => current.filter(({ id }) => String(id) !== String(profile.id)));
+      setActionNotice("资料已软停用；历史预订仍可查看");
       setConfirmProfile(null); setError(""); } catch { setError("资料停用失败，请稍后重试"); }
   };
   const copyData = async () => {
+    if (!dataLoaded) return setError("我的数据尚未加载完成");
     try { await copyCustomerData(profiles, orders, (options) => Taro.setClipboardData(options));
       setActionNotice("我的数据已复制"); setError("");
     } catch { setError("数据复制失败，请稍后重试"); }
@@ -92,7 +98,7 @@ export default function CustomerOrders() {
     {actionNotice && <Text className="notice">{actionNotice}</Text>}
     <View className="card customer-data-controls">
       <Text className="section-title">我的数据</Text>
-      <Button onClick={() => void copyData()}>复制我的数据</Button>
+      <Button disabled={!dataLoaded} onClick={() => void copyData()}>复制我的数据</Button>
       {profiles.length > 0 && <Button className="danger" onClick={() => void deactivateAll()}>
         {confirmAllProfiles ? `确认批量软停用 ${profiles.length} 条资料` : "删除保存的资料"}
       </Button>}
