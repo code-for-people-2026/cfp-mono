@@ -2,7 +2,7 @@
 
 ## 1. M2 交付与 PR 切分
 
-**Decision**: 一个全套规格继续覆盖 M2。M2-A/B 与 C1 strict contract、C2 profile persistence、C3 order persistence、C4 BE domain/clients、C5 BE HTTP 已合并。C6 前先以 C5R 原子纠偏 shared reservation contract、BE domain 和既有 HTTP route，再按 C6 FE/E2E、D1 strict contract、D2 persistence、D3 BE、D4 FE/E2E 顺序实施。后一个只在前一个 rebase merge 后从最新 `main` 开始。
+**Decision**: 一个全套规格继续覆盖 M2。M2-A/B、C1～C6 与 D1～D3 已合并，D2 后另由 D2R 完成取消持久化纠偏；剩余自动化实现只有 D4 FE/E2E，T028 微信真机门禁保持未完成。D4 从 D3 rebase merge 后的最新 `main` 开始，不重复实现已合并的 contract、persistence 或 BE 门禁。
 
 **Rationale**: 旧计划低估了测试与信任边界成本：PR #152 实际 `+2136/-19`，PR #153 实际 `+1861/-42`。宪法 1.2.0 与 `AGENTS.md` 现要求默认人工 diff `<400` 行，因此继续用跨 shared/CMS/BE/FE 的 C/D 纵向片会重复产生千行级 review。C5R 虽同步三个已存在层，但只切换一个 live endpoint 的坐标不变量；拆开会让 `main` 类型不一致或留下不可执行的半契约，且不改 CMS/FE。其余每片继续锁定一个可独立验证的契约、安全或状态不变量。
 
