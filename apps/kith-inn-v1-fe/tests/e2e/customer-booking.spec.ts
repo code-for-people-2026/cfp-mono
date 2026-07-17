@@ -133,11 +133,11 @@ test("顾客从分享页完成资料与多餐次登记并看到部分结果", as
   await page.getByText("查看个人信息用途说明", { exact: true }).click();
   await expect(page.locator(".privacy-page")).not.toContainText(PUBLIC_RISK_COPY);
   await expect(page.getByText(
-    "称呼用于桃子识别您的预订登记，地址用于按约定送达。",
+    "称呼用于当前商家识别您的预订登记，地址用于按约定送达。",
     { exact: true }
   )).toBeVisible();
   await expect(page.getByText(
-    "首次使用新资料完成登记时，会保存为常用资料；修改已有资料时，只有选择“另存为新资料”才会额外保存，否则只用于本次登记。",
+    "首次提交新资料时，会先保存为常用资料；即使餐次登记因状态变化失败，该资料仍会保留。",
     { exact: true }
   )).toBeVisible();
 });
