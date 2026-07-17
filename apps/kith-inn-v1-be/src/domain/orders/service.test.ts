@@ -113,6 +113,21 @@ describe("manual draft order service", () => {
       .toThrow(InvalidOrderTransitionError);
   });
 
+  it("preserves imported order snapshots while editing quantity and note", () => {
+    const imported = {
+      ...order,
+      customerProfileId: null,
+      source: "jielong-import" as const,
+      address: null
+    };
+    expect(editOrderPatch(imported, {
+      quantity: 3,
+      displayName: "误改称呼",
+      address: "误填地址",
+      note: "门口放"
+    })).toEqual({ quantity: 3, note: "门口放" });
+  });
+
   it("transitions business status with idempotent target states", () => {
     const now = "2026-07-11T00:00:00.000Z";
     expect(transitionOrder(order, "confirm", now)).toEqual({

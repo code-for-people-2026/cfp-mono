@@ -206,7 +206,7 @@ export default function MerchantOrders() {
       displayName: editDisplayName,
       address: editAddress,
       note: editNote
-    }, confirmedImpactAccepted);
+    }, confirmedImpactAccepted, editing.source);
     if (!patch) {
       await Taro.showToast({ title: "订单修改内容无效", icon: "none" });
       return;
@@ -351,14 +351,18 @@ export default function MerchantOrders() {
             setEditQuantity(event.detail.value);
             setConfirmedEditPending(false);
           }} />
-          <Input placeholder="编辑称呼" value={editDisplayName} onInput={(event) => {
-            setEditDisplayName(event.detail.value);
-            setConfirmedEditPending(false);
-          }} />
-          <Input placeholder="编辑地址" value={editAddress} onInput={(event) => {
-            setEditAddress(event.detail.value);
-            setConfirmedEditPending(false);
-          }} />
+          {editing.source !== "jielong-import" && (
+            <>
+              <Input placeholder="编辑称呼" value={editDisplayName} onInput={(event) => {
+                setEditDisplayName(event.detail.value);
+                setConfirmedEditPending(false);
+              }} />
+              <Input placeholder="编辑地址" value={editAddress} onInput={(event) => {
+                setEditAddress(event.detail.value);
+                setConfirmedEditPending(false);
+              }} />
+            </>
+          )}
           <Input placeholder="编辑备注" value={editNote} onInput={(event) => {
             setEditNote(event.detail.value);
             setConfirmedEditPending(false);

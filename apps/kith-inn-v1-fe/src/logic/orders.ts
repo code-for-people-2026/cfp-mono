@@ -43,17 +43,21 @@ export function buildOrderEdit(form: {
   displayName: string;
   address: string;
   note: string;
-}, confirmedImpactAccepted = false): ManualOrderUpdate | null {
+}, confirmedImpactAccepted = false, source: Order["source"] = "manual"): ManualOrderUpdate | null {
   const quantity = positiveInteger(form.quantity);
+  const common = quantity === null ? null : {
+    quantity,
+    note: form.note.trim() || null,
+    ...(confirmedImpactAccepted ? { confirmedImpactAccepted: true as const } : {})
+  };
+  if (source === "jielong-import") return common;
   const displayName = form.displayName.trim();
   const address = form.address.trim();
-  return quantity !== null && displayName && address
+  return common !== null && displayName && address
     ? {
-      quantity,
+      ...common,
       displayName,
-      address,
-      note: form.note.trim() || null,
-      ...(confirmedImpactAccepted ? { confirmedImpactAccepted: true as const } : {})
+      address
     }
     : null;
 }
