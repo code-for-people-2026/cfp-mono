@@ -13,7 +13,8 @@ fail() { printf 'website cutover verification failed: %s\n' "$1" >&2; exit 1; }
 command -v "$curl_bin" >/dev/null || fail "curl is unavailable"
 command -v "$jq_bin" >/dev/null || fail "jq is unavailable"
 [[ "$origin_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "WEBSITE_ORIGIN_IP must be an IPv4 address"
-[[ "$cdn_cname" =~ ^[A-Za-z0-9.-]+$ ]] || fail "WEBSITE_CDN_CNAME must be a hostname"
+[[ "$cdn_cname" =~ ^[A-Za-z0-9.-]+\.kunlunsl\.com\.?$ ]] ||
+  fail "WEBSITE_CDN_CNAME must be an Alibaba Cloud CDN CNAME"
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail "EXPECTED_RELEASE_SHA must be a full commit SHA"
 
 verify_runtime() {
@@ -60,7 +61,7 @@ verify_edge_redirect() {
 verify_runtime "$origin_ip" origin
 verify_redirect http 80
 verify_redirect https 443
-if "$curl_bin" -fsS --connect-timeout 3 --max-time 5 \
+if "$curl_bin" -sS --connect-timeout 3 --max-time 5 \
   "http://$origin_ip:3302/api/health" >/dev/null 2>&1; then
   fail "origin port 3302 is publicly reachable"
 fi
