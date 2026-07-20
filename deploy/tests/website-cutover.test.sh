@@ -18,6 +18,8 @@ run success >"$tmp/success"
 jq -e --arg sha "$sha" '.status == "passed" and .releaseSha == $sha' "$tmp/success" >/dev/null
 run success kunlunaq >"$tmp/success-kunlunaq"
 jq -e --arg sha "$sha" '.status == "passed" and .releaseSha == $sha' "$tmp/success-kunlunaq" >/dev/null
+run edge-301 kunlunaq >"$tmp/edge-301"
+jq -e --arg sha "$sha" '.status == "passed" and .releaseSha == $sha' "$tmp/edge-301" >/dev/null
 for invalid_cname in 192.0.2.10 origin.example.com; do
   if WEBSITE_ORIGIN_IP=192.0.2.10 WEBSITE_CDN_CNAME="$invalid_cname" \
     EXPECTED_RELEASE_SHA="$sha" CURL_BIN="$fake" FAKE_RELEASE_SHA="$sha" \

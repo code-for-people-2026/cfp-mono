@@ -50,12 +50,15 @@ verify_redirect() {
 }
 
 verify_edge_redirect() {
-  local result
+  local result canonical_redirect
+  canonical_redirect='https://www.codeforpeople.cn/cutover-probe?source=precutover'
   result="$("$curl_bin" -sS --proto '=http' --max-time 15 -o /dev/null \
     -w '%{http_code} %{redirect_url}' --connect-to "$website_host:80:$cdn_cname:80" \
     "http://$website_host/cutover-probe?source=precutover")" || fail "edge HTTP probe failed"
-  [[ "$result" == '308 https://www.codeforpeople.cn/cutover-probe?source=precutover' ]] ||
-    fail "edge does not force canonical HTTPS"
+  case "$result" in
+    "301 $canonical_redirect"|"308 $canonical_redirect") ;;
+    *) fail "edge does not force canonical HTTPS" ;;
+  esac
 }
 
 verify_runtime "$origin_ip" origin
