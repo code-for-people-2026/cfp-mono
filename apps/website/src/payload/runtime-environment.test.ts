@@ -39,6 +39,19 @@ describe("resolvePayloadRuntimeEnvironment", () => {
     ).toThrow("A Postgres database URL is required for production Payload runtimes.");
   });
 
+  it.each(["https://example.test/cfp", "postgres://", "postgresql://[::1"])(
+    "rejects the invalid production database URL %s",
+    (databaseURL) => {
+      expect(() =>
+        resolvePayloadRuntimeEnvironment({
+          NODE_ENV: "production",
+          PAYLOAD_SECRET: productionEnvironment.PAYLOAD_SECRET,
+          DATABASE_URL: databaseURL,
+        }),
+      ).toThrow("A Postgres database URL is required for production Payload runtimes.");
+    },
+  );
+
   it("accepts the complete production contract", () => {
     expect(resolvePayloadRuntimeEnvironment(productionEnvironment)).toEqual({
       payloadSecret: productionEnvironment.PAYLOAD_SECRET,
