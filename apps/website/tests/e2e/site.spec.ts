@@ -206,9 +206,11 @@ test("homepage presents the public-facing idea and paths to continue", async ({
     "rel",
     /noreferrer/,
   );
-  await expect(footer.getByText("备案信息待补充")).toHaveCount(0);
+  const filing = footer.getByRole("link", { name: "粤ICP备2026098322号-1", exact: true });
+  await expect(filing).toHaveAttribute("href", "https://beian.miit.gov.cn/");
+  await expect(filing).toHaveAttribute("target", "_blank");
+  await expect(filing).toHaveAttribute("rel", /noreferrer/);
   await expect(footer.getByText("© 2026 码成工")).toBeVisible();
-  await expect(footer.locator('a[href*="beian"]')).toHaveCount(0);
 });
 
 test("homepage follows the visitor system color scheme", async ({ page }) => {

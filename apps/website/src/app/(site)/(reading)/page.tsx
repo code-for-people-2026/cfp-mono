@@ -1,3 +1,4 @@
+import type { Metadata, ResolvingMetadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Factory, FileText, HeartHandshake, Map, Route, ShieldCheck, Store } from "lucide-react";
@@ -10,6 +11,15 @@ const readIcons = [FileText, Map, ShieldCheck, HeartHandshake];
 // Rendered per request from cached Payload data (no DB access at build); the data layer
 // caches by tag and is invalidated on publish.
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(_: object, parent: ResolvingMetadata): Promise<Metadata> {
+  const canonicalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.codeforpeople.cn";
+  const inherited = await parent;
+  return {
+    alternates: { canonical: canonicalSiteUrl },
+    openGraph: { ...inherited.openGraph, url: canonicalSiteUrl },
+  };
+}
 
 export default async function HomePage() {
   const [home, settings] = await Promise.all([getHomepage(), getSiteSettings()]);

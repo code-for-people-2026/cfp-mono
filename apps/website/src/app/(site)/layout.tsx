@@ -4,7 +4,9 @@ import "../globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const { shareTitle, shareDescription } = await getSiteSettings();
+  const canonicalSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://www.codeforpeople.cn";
   return {
+    metadataBase: new URL(canonicalSiteUrl),
     title: shareTitle,
     description: shareDescription,
     openGraph: {

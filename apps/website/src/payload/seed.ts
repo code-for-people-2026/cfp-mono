@@ -115,7 +115,7 @@ export async function seedSiteContent(payload: Payload) {
         qrAlt: c.qrSrc ? `${c.label}二维码` : undefined,
       })),
       githubLabel: "GitHub",
-      beian: "", // 备案后在 Payload 填写；留空则页脚不显示
+      beian: "粤ICP备2026098322号-1",
       copyright: "© 2026 码成工",
       // 站点设置
       shareTitle: siteMetadata.title,

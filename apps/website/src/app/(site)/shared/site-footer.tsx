@@ -27,6 +27,7 @@ function BrandIcon({ path, testId }: { path: string; testId?: string }) {
 
 const socialChipClass =
   "flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]";
+const defaultIcpFiling = "粤ICP备2026098322号-1";
 
 function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][number] }) {
   const icon = iconByKey[channel.iconKey];
@@ -75,6 +76,7 @@ function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][nu
 export async function SiteFooter() {
   const [footer, settings] = await Promise.all([getFooter(), getSiteSettings()]);
   const { brand } = settings;
+  const icpFiling = footer.beian || defaultIcpFiling;
 
   return (
     <footer id="follow" className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
@@ -145,7 +147,15 @@ export async function SiteFooter() {
         </div>
 
         <p className="mt-10 border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted)]">
-          {footer.beian ? `${footer.beian} · ` : ""}
+          <a
+            href="https://beian.miit.gov.cn/"
+            target="_blank"
+            rel="noreferrer"
+            className="no-underline transition-colors hover:text-[var(--accent)]"
+          >
+            {icpFiling}
+          </a>{" "}
+          ·{" "}
           {footer.copyright}
         </p>
       </div>
