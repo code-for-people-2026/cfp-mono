@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SITE_URL="${SITE_URL:-http://127.0.0.1:3302}"
+SITE_URL="${SITE_URL%/}"
 target="${1:-website}"
 
 # Containers need a few seconds after `up -d` before the app accepts
@@ -9,6 +10,7 @@ target="${1:-website}"
 # failing on the first refused connection.
 RETRIES="${SMOKE_RETRIES:-30}"
 SLEEP="${SMOKE_SLEEP:-2}"
+fail() { printf '{"status":"failed","error":"%s"}\n' "$1" >&2; exit 1; }
 
 retry() {
   local label="$1"
@@ -25,8 +27,17 @@ retry() {
 }
 
 if [[ "$target" == "website" ]]; then
+  release_sha="${RELEASE_SHA:-}"
+  [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "invalid_configuration"
+  for command in curl jq; do command -v "$command" >/dev/null || fail "missing_command"; done
+  website_release() {
+    local endpoint="$1" contract="$2"
+    curl -fsS -m 10 "$SITE_URL$endpoint" |
+      jq -e --arg releaseSha "$release_sha" ".releaseSha == \$releaseSha and ($contract)"
+  }
   retry website curl -fsS -m 10 "$SITE_URL/"
-  retry website_health curl -fsS -m 10 "$SITE_URL/api/health"
+  retry website_health website_release /api/health '.status == "ok"'
+  retry website_readiness website_release /api/ready '.ok == true and .service == "website"'
   echo "Smoke tests passed"
   exit 0
 fi
@@ -39,7 +50,6 @@ env_file="${KITH_INN_ENV_FILE:-$repo_root/deploy/.env.verify}"
 release_sha="${RELEASE_SHA:-}"
 seller_id="${KITH_INN_PROVISIONED_SELLER_ID:-}"
 openid="${KITH_INN_TRIAL_OPENID:-}"
-fail() { printf '{"status":"failed","error":"%s"}\n' "$1" >&2; exit 1; }
 for command in curl docker jq; do command -v "$command" >/dev/null || fail "missing_command"; done
 [[ -f "$compose_file" && -f "$env_file" ]] || fail "invalid_configuration"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ && -n "$seller_id" && -n "$openid" ]] || fail "invalid_configuration"

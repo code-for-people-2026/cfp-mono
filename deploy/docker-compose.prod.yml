@@ -5,4 +5,4 @@ services:
     env_file:
       - ${WEBSITE_ENV_FILE:-./.env.production}
     ports:
-      - "3302:3302"
+      - "127.0.0.1:3302:3302"

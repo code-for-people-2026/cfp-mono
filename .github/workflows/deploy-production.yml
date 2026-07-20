@@ -398,7 +398,8 @@ jobs:
           printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
           chmod 600 ~/.ssh/cfp-ecs
 
-      - name: Deploy on ECS
+      - name: Deploy website candidate on ECS
+        id: rollout
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
@@ -428,19 +429,39 @@ jobs:
           WEBSITE_IMAGE=$WEBSITE_IMAGE
           EOF
 
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono/deploy"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/deploy-website-candidate.sh "$ECS_USER@$ECS_HOST:~/cfp-mono/deploy/"
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
           # pull 前清掉未用旧镜像 + 构建缓存:ECS 40G 盘会被历次 deploy 累积的旧镜像撑满
           # (曾导致 docker compose pull 解压时 no space left on device)。prune -af 只删
           # "没有运行中容器引用的"镜像 → 当前在跑的旧版保留, 新镜像失败可回滚上一版;
           # 更早的历史 tag 永久留在阿里云 ACR, 需要时 docker pull 回滚。
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "cd ~/cfp-mono && docker system prune -af && docker compose pull && docker compose up -d"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+            "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && docker system prune -af && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh deploy"
 
       - name: Smoke test
         env:
           SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
-        run: bash deploy/smoke-test.sh
+        run: bash deploy/smoke-test.sh website
+
+      - name: Finalize website release
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh finalize"
+
+      - name: Restore the last-good website when rollout validation fails
+        if: ${{ (failure() || cancelled()) && steps.rollout.outcome != 'skipped' }}
+        timeout-minutes: 10
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh restore-runtime"
