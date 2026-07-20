@@ -29,5 +29,5 @@ jobs:
 
       - name: Build deployable image
         run: |
-          docker build --build-arg RELEASE_SHA="${{ github.event.pull_request.head.sha }}" \
+          docker build --build-arg RELEASE_SHA="${{ github.sha }}" \
             -f apps/website/Dockerfile -t cfp-website:preview .
