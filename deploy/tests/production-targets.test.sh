@@ -66,6 +66,10 @@ head="$(synthetic_commit deploy/kith-inn-candidate.fixture 'test: kith deploy ra
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-deploy-range"
 assert_output "$tmp/kith-deploy-range" false true
 base="$head"
+head="$(synthetic_commit deploy/create-rds-backup.sh 'test: kith backup contract range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-backup-range"
+assert_output "$tmp/kith-backup-range" false true
+base="$head"
 head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
 assert_output "$tmp/shared-contract-range" true true
