@@ -15,6 +15,23 @@ function nonBlank(value) {
 }
 
 /**
+ * @param {string | undefined} value
+ * @returns {string | undefined}
+ */
+function asPostgresURL(value) {
+  if (!value) return undefined;
+
+  try {
+    const parsed = new URL(value);
+    const hasPostgresProtocol =
+      parsed.protocol === "postgres:" || parsed.protocol === "postgresql:";
+    return hasPostgresProtocol && parsed.hostname ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * @param {Record<string, string | undefined>} environment
  * @returns {{ payloadSecret: string | undefined; postgresDatabaseURL: string | undefined }}
  */
@@ -25,8 +42,7 @@ export function resolvePayloadRuntimeEnvironment(environment = process.env) {
     .find(Boolean);
   const databaseURI = nonBlank(environment.DATABASE_URI);
   const databaseURL = configuredDatabaseURL || databaseURI;
-  const postgresDatabaseURL =
-    databaseURL && /^postgres(?:ql)?:\/\//.test(databaseURL) ? databaseURL : undefined;
+  const postgresDatabaseURL = asPostgresURL(databaseURL);
 
   const isVercelDeployment = environment.VERCEL === "1" || environment.VERCEL === "true";
   const isSelfHostedProductionRuntime =
