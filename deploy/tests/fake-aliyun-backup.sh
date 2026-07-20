@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 operation="${2:-}"
+[[ " $* " == *" --region cn-shenzhen "* ]] || {
+  printf 'global region is missing\n' >&2
+  exit 3
+}
 case "$operation" in
   DescribeDBInstances)
     if [[ "${FAKE_BACKUP_MODE:-success}" == endpoint-mismatch ]]; then
