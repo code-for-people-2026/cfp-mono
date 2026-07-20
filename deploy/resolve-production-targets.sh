@@ -42,14 +42,14 @@ while IFS= read -r path; do
       ;;
     deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/*)
       ;;
-    deploy/create-rds-backup.sh | deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/verify-nginx-example.sh)
+    deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/verify-nginx-example.sh)
       write_targets true true
       exit 0
       ;;
     deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
       website_deploy=true
       ;;
-    deploy/.env.verify.example | deploy/*kith-inn*)
+    deploy/.env.verify.example | deploy/create-rds-backup.sh | deploy/*kith-inn*)
       kith_inn_deploy=true
       ;;
     deploy/*)
