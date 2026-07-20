@@ -47,6 +47,8 @@ jobs:
     outputs:
       configured: ${{ steps.check.outputs.configured }}
     steps:
+      - uses: actions/checkout@v4
+
       - id: check
         name: Check production deployment configuration
         env:
@@ -427,6 +429,16 @@ jobs:
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
             "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && docker system prune -af && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh preflight-candidate"
 
+      - id: gate
+        name: Gate website writes before creating the recovery point
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh gate-writes"
+
       - id: backup
         name: Create and verify website RDS recovery point
         env:
@@ -467,7 +479,7 @@ jobs:
             "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh finalize"
 
       - name: Restore the last-good website when rollout validation fails
-        if: ${{ (failure() || cancelled()) && steps.rollout.outcome != 'skipped' }}
+        if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
         timeout-minutes: 10
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}

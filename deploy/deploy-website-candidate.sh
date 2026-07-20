@@ -15,6 +15,7 @@ next_images="$current_images.next"
 next_runtime="$current_runtime.next"
 last_good="$root/.website-last-good"
 rollout_marker="$root/.website-rollout"
+write_gate_marker="$root/.website-write-gate"
 
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
 value() { sed -n "s/^$2=//p" "$1" | head -n 1; }
@@ -85,10 +86,22 @@ restore_last_good() {
     compose "$current_compose" "$current_images" "$current_runtime" \
       up -d --no-deps website >/dev/null 2>&1 && probe "$old_sha"
 }
+restore_current() {
+  local current_sha
+  validate_bundle "$current_compose" "$current_images" "$current_runtime" || return 1
+  current_sha="$(bundle_sha "$current_images")" || return 1
+  if compose "$current_compose" "$current_images" "$current_runtime" \
+    up -d --no-deps website >/dev/null 2>&1 && probe "$current_sha"; then
+    return 0
+  fi
+  compose "$current_compose" "$current_images" "$current_runtime" pull website >/dev/null 2>&1 &&
+    compose "$current_compose" "$current_images" "$current_runtime" \
+      up -d --no-deps website >/dev/null 2>&1 && probe "$current_sha"
+}
 recover() {
   local stage="$1"
   if restore_last_good; then
-    rm -f "$rollout_marker"
+    rm -f "$rollout_marker" "$write_gate_marker"
     fail "$stage" rolled_back
   fi
   compose "$current_compose" "$current_images" "$current_runtime" stop website >/dev/null 2>&1 || true
@@ -109,10 +122,39 @@ if [[ "$action" == preflight-candidate ]]; then
   exit 0
 fi
 
+if [[ "$action" == gate-writes ]]; then
+  if [[ ! -e "$current_compose" && ! -e "$current_images" && ! -e "$current_runtime" ]]; then
+    printf '{"status":"skipped","reason":"active_runtime_unavailable"}\n'
+    exit 0
+  fi
+  validate_bundle "$current_compose" "$current_images" "$current_runtime" || fail preflight no_change
+  [[ ! -e "$rollout_marker" && ! -e "$write_gate_marker" ]] || fail write_gate manual_recovery_required
+  compose "$current_compose" "$current_images" "$current_runtime" pull website >/dev/null 2>&1 || fail write_gate no_change
+  printf 'attempted\n' >"$write_gate_marker.next"
+  chmod 600 "$write_gate_marker.next"
+  mv -f "$write_gate_marker.next" "$write_gate_marker"
+  if ! compose "$current_compose" "$current_images" "$current_runtime" stop website >/dev/null 2>&1; then
+    if restore_current; then
+      rm -f "$write_gate_marker"
+      fail write_gate rolled_back
+    fi
+    fail write_gate manual_recovery_required
+  fi
+  printf '{"status":"writes_gated"}\n'
+  exit 0
+fi
+
 if [[ "$action" == restore-runtime ]]; then
-  [[ -f "$rollout_marker" ]] || { printf '{"status":"skipped","reason":"rollout_not_attempted"}\n'; exit 0; }
-  if restore_last_good; then
-    rm -f "$rollout_marker"
+  if [[ -f "$rollout_marker" ]]; then
+    restore_command=restore_last_good
+  elif [[ -f "$write_gate_marker" ]]; then
+    restore_command=restore_current
+  else
+    printf '{"status":"skipped","reason":"write_gate_not_attempted"}\n'
+    exit 0
+  fi
+  if "$restore_command"; then
+    rm -f "$rollout_marker" "$write_gate_marker"
     printf '{"status":"last_good_runtime_restored"}\n'
     exit 0
   fi
@@ -123,7 +165,7 @@ if [[ "$action" == finalize ]]; then
   [[ -f "$rollout_marker" && "$(head -n 1 "$rollout_marker")" == "$release_sha" ]] || recover finalize
   validate_bundle "$current_compose" "$current_images" "$current_runtime" "$release_sha" || recover finalize
   probe "$release_sha" || recover finalize
-  rm -f "$rollout_marker" "$next_compose" "$next_images" "$next_runtime"
+  rm -f "$rollout_marker" "$write_gate_marker" "$next_compose" "$next_images" "$next_runtime"
   printf '{"status":"release_finalized","releaseSha":"%s"}\n' "$release_sha"
   exit 0
 fi
@@ -136,6 +178,7 @@ if [[ -e "$current_compose" || -e "$current_images" || -e "$current_runtime" ]];
   validate_bundle "$current_compose" "$current_images" "$current_runtime" || fail preflight no_change
   current_available=true
 fi
+[[ "$current_available" == false || -f "$write_gate_marker" ]] || fail preflight no_change
 compose "$next_compose" "$next_images" "$next_runtime" pull website >/dev/null 2>&1 || fail pull no_change
 if [[ "$current_available" == true ]]; then snapshot_current || fail persist no_change; fi
 printf '%s\n' "$release_sha" >"$rollout_marker.next"

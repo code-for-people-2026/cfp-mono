@@ -34,7 +34,7 @@
 
 工作流：`.github/workflows/deploy-production.yml`，仅由 push 到 `main` 触发；生产发布不得从任意分支手动触发。
 
-步骤：等待同一 main SHA 的 `pnpm verify` → 构建并推送 `cfp-website` → 取得 ACR digest → 用固定 SSH host key 把候选 stage 到 ECS 并预拉 digest → 创建且验证 RDS 物理备份 → 启动候选 → 本机和公网 readiness/smoke → 固化 last-good。容器只跑 `next start`；建/升级表由 Payload 适配器在首次连库时自动应用迁移（`prodMigrations`），因此 RDS 恢复点必须在启动候选前完成。
+步骤：等待同一 main SHA 的 `pnpm verify` → 构建并推送 `cfp-website` → 取得 ACR digest → 用固定 SSH host key 把候选 stage 到 ECS 并预拉 digest → 暂停当前 website 以阻断写入 → 创建且验证 RDS 物理备份 → 启动候选 → 本机和公网 readiness/smoke → 固化 last-good。容器只跑 `next start`；建/升级表由 Payload 适配器在首次连库时自动应用迁移（`prodMigrations`），因此 RDS 恢复点必须在启动候选前完成。写入门禁到候选就绪之间网站会短暂不可用；备份或发布失败时 workflow 会恢复原运行态。
 
 `prepare` 任务会先检查所需 Secret/Variable 是否齐全，任何缺失都会令 workflow 失败；不得静默跳过 website 发布。
 

@@ -42,6 +42,9 @@ grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.e
 [[ ! -e "$case_dir/.website-rollout" ]]
 
 reset_case
+run success gate-writes >"$case_dir/gate.out"
+grep -q 'writes_gated' "$case_dir/gate.out"
+[[ -f "$case_dir/.website-write-gate" ]]
 run success >"$case_dir/deploy.out"
 grep -q 'candidate_ready' "$case_dir/deploy.out"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha@sha256:$candidate_digest" "$case_dir/.env"
@@ -53,8 +56,10 @@ grep -q -- '--project-name cfp-mono' "$case_dir/compose.log"
 run success finalize >"$case_dir/finalize.out"
 grep -q 'release_finalized' "$case_dir/finalize.out"
 [[ ! -e "$case_dir/.website-rollout" ]]
+[[ ! -e "$case_dir/.website-write-gate" ]]
 
 reset_case
+run success gate-writes >/dev/null
 run success >/dev/null
 run rollback-pull restore-runtime >"$case_dir/restore.out"
 grep -q 'last_good_runtime_restored' "$case_dir/restore.out"
@@ -64,6 +69,7 @@ grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.e
 
 for mode in rollout readiness; do
   reset_case
+  run success gate-writes >/dev/null
   if run "$mode" >"$case_dir/$mode.out" 2>"$case_dir/$mode.err"; then exit 1; fi
   grep -q 'rolled_back' "$case_dir/$mode.err"
   grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
@@ -71,12 +77,14 @@ for mode in rollout readiness; do
 done
 
 reset_case
+run success gate-writes >/dev/null
 if run pull >"$case_dir/pull.out" 2>"$case_dir/pull.err"; then exit 1; fi
 grep -q 'no_change' "$case_dir/pull.err"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
 [[ ! -e "$case_dir/.website-rollout" ]]
 
 reset_case
+run success gate-writes >/dev/null
 if FAKE_INSTALL_FAIL_MATCH='.website-last-good/.env.next' \
   run success >"$case_dir/snapshot.out" 2>"$case_dir/snapshot.err"; then exit 1; fi
 grep -q 'persist.*no_change' "$case_dir/snapshot.err"
@@ -85,6 +93,7 @@ grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.e
 [[ ! -e "$case_dir/.website-last-good/docker-compose.yml" ]]
 
 reset_case
+run success gate-writes >/dev/null
 run success >/dev/null
 if FAKE_INSTALL_FAIL_MATCH='.env.production.restore' \
   run success restore-runtime >"$case_dir/restore-copy.out" 2>"$case_dir/restore-copy.err"; then exit 1; fi
@@ -93,6 +102,19 @@ grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha@sha256:$cand
 grep -qx 'PAYLOAD_SECRET=candidate' "$case_dir/.env.production"
 grep -q '# candidate$' "$case_dir/docker-compose.yml"
 [[ -f "$case_dir/.website-rollout" ]]
+
+reset_case
+run success gate-writes >"$case_dir/gate-only.out"
+grep -q -- 'stop website' "$case_dir/compose.log"
+run success restore-runtime >"$case_dir/gate-restore.out"
+grep -q 'last_good_runtime_restored' "$case_dir/gate-restore.out"
+grep -q -- 'up -d --no-deps website' "$case_dir/compose.log"
+[[ ! -e "$case_dir/.website-write-gate" ]]
+
+reset_case
+if run success >"$case_dir/ungated.out" 2>"$case_dir/ungated.err"; then exit 1; fi
+grep -q 'preflight.*no_change' "$case_dir/ungated.err"
+[[ ! -e "$case_dir/.website-rollout" ]]
 
 reset_case
 rm "$case_dir/docker-compose.yml" "$case_dir/.env" "$case_dir/.env.production"
