@@ -31,10 +31,34 @@ fi
 
 changed_files="$(git diff --name-only "$base" "$head")"
 printf '%s\n' "$changed_files"
-if grep -Eq '^(\.github/workflows/deploy-production\.yml|deploy/.*|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|turbo\.json)$' <<< "$changed_files"; then
-  write_targets true true
-  exit 0
-fi
+
+website_deploy=false
+kith_inn_deploy=false
+while IFS= read -r path; do
+  case "$path" in
+    .github/workflows/deploy-production.yml | package.json | pnpm-lock.yaml | pnpm-workspace.yaml | turbo.json)
+      write_targets true true
+      exit 0
+      ;;
+    deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/*)
+      ;;
+    deploy/create-rds-backup.sh | deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/verify-nginx-example.sh)
+      write_targets true true
+      exit 0
+      ;;
+    deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
+      website_deploy=true
+      ;;
+    deploy/.env.verify.example | deploy/*kith-inn*)
+      kith_inn_deploy=true
+      ;;
+    deploy/*)
+      # 新增且尚未分类的部署文件按共享契约处理，避免漏发生产目标。
+      write_targets true true
+      exit 0
+      ;;
+  esac
+done <<< "$changed_files"
 
 if [[ -n "${TURBO_BIN:-}" ]]; then
   turbo=("$TURBO_BIN")
@@ -56,9 +80,13 @@ turbo_has_tasks() {
   '
 }
 
-website="$(turbo_has_tasks "@cfp/website...[$base]")"
-kith_inn="$(turbo_has_tasks \
+website_affected="$(turbo_has_tasks "@cfp/website...[$base]")"
+kith_inn_affected="$(turbo_has_tasks \
   "@cfp/cms...[$base]" \
   "@cfp/kith-inn-be...[$base]" \
   "@cfp/kith-inn-fe...[$base]")"
+website=false
+kith_inn=false
+if [[ "$website_deploy" == true || "$website_affected" == true ]]; then website=true; fi
+if [[ "$kith_inn_deploy" == true || "$kith_inn_affected" == true ]]; then kith_inn=true; fi
 write_targets "$website" "$kith_inn"
