@@ -4,7 +4,6 @@ set -euo pipefail
 root="${WEBSITE_REMOTE_ROOT:-$HOME/cfp-mono}"
 compose_bin="${COMPOSE_BIN:-docker}"
 curl_bin="${CURL_BIN:-curl}"
-jq_bin="${JQ_BIN:-jq}"
 install_bin="${INSTALL_BIN:-install}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
@@ -39,13 +38,11 @@ validate_bundle() {
   compose "$compose_file" "$image_env" "$runtime_env" config --quiet >/dev/null 2>&1
 }
 probe() {
-  local expected="$1" response attempt retries="${WEBSITE_READY_RETRIES:-30}"
+  local expected="$1" expected_response response attempt retries="${WEBSITE_READY_RETRIES:-30}"
+  expected_response="{\"ok\":true,\"service\":\"website\",\"releaseSha\":\"$expected\"}"
   for ((attempt = 1; attempt <= retries; attempt++)); do
     response="$($curl_bin -fsS -m 10 http://127.0.0.1:3302/api/ready 2>/dev/null || true)"
-    if "$jq_bin" -e --arg sha "$expected" \
-      '.ok == true and .service == "website" and .releaseSha == $sha' <<<"$response" >/dev/null 2>&1; then
-      return 0
-    fi
+    [[ "$response" == "$expected_response" ]] && return 0
     (( attempt == retries )) || sleep "${WEBSITE_READY_SLEEP:-2}"
   done
   return 1
@@ -93,14 +90,13 @@ recover() {
     fail "$stage" rolled_back
   fi
   compose "$current_compose" "$current_images" "$current_runtime" stop website >/dev/null 2>&1 || true
-  rm -f "$rollout_marker"
   fail "$stage" manual_recovery_required
 }
 
 [[ -n "$root" && "$root" != / ]] || fail preflight no_change
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail preflight no_change
 [[ "${WEBSITE_READY_RETRIES:-30}" =~ ^[1-9][0-9]*$ ]] || fail preflight no_change
-for command in "$compose_bin" "$curl_bin" "$jq_bin" "$install_bin"; do
+for command in "$compose_bin" "$curl_bin" "$install_bin"; do
   command -v "$command" >/dev/null || fail preflight no_change
 done
 

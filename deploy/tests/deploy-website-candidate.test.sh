@@ -83,6 +83,18 @@ grep -q 'manual_recovery_required' "$case_dir/restore-copy.err"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha" "$case_dir/.env"
 grep -qx 'PAYLOAD_SECRET=candidate' "$case_dir/.env.production"
 grep -q '# candidate$' "$case_dir/docker-compose.yml"
+[[ -f "$case_dir/.website-rollout" ]]
+
+reset_case
+rm "$case_dir/docker-compose.yml" "$case_dir/.env" "$case_dir/.env.production"
+if run rollout >"$case_dir/first-rollout.out" 2>"$case_dir/first-rollout.err"; then exit 1; fi
+grep -q 'manual_recovery_required' "$case_dir/first-rollout.err"
+[[ -f "$case_dir/.website-rollout" ]]
+[[ ! -e "$case_dir/.website-last-good" ]]
+if run success >"$case_dir/stale.out" 2>"$case_dir/stale.err"; then exit 1; fi
+grep -q 'stale_rollout.*manual_recovery_required' "$case_dir/stale.err"
+[[ -f "$case_dir/.website-rollout" ]]
+[[ ! -e "$case_dir/.website-last-good" ]]
 
 reset_case
 printf 'WEBSITE_IMAGE=registry.example/cfp-website:latest\n' >"$case_dir/.env.next"
