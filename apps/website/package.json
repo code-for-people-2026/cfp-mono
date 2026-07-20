@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev -p 3302",
     "build": "CFP_WEBSITE_BUILD=1 next build",
-    "start": "node scripts/validate-production-env.mjs && next start -p 3302",
+    "start": "CFP_WEBSITE_BUILD= node scripts/validate-production-env.mjs && CFP_WEBSITE_BUILD= next start -p 3302",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "payload": "payload",

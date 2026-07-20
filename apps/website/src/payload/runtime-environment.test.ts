@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { resolvePayloadRuntimeEnvironment } from "./runtime-environment.mjs";
 
@@ -6,6 +8,8 @@ const productionEnvironment = {
   PAYLOAD_SECRET: "production-secret",
   DATABASE_URL: "postgresql://payload@example.test/cfp",
 };
+
+const websiteRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 describe("resolvePayloadRuntimeEnvironment", () => {
   it("requires PAYLOAD_SECRET in a production runtime", () => {
@@ -52,6 +56,22 @@ describe("resolvePayloadRuntimeEnvironment", () => {
       payloadSecret: undefined,
       postgresDatabaseURL: undefined,
     });
+  });
+
+  it("does not let the build marker bypass the production start preflight", () => {
+    const result = spawnSync(process.execPath, ["scripts/validate-production-env.mjs"], {
+      cwd: websiteRoot,
+      encoding: "utf8",
+      env: {
+        CFP_WEBSITE_BUILD: "1",
+        NODE_ENV: "production",
+      },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "PAYLOAD_SECRET is required for production Payload runtimes.",
+    );
   });
 
   it.each(["1", "true"])(
