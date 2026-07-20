@@ -33,10 +33,10 @@ while IFS= read -r path; do
       write_targets true true
       exit 0
       ;;
-    deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/*)
+    deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/* | deploy/nginx.example.conf | \
+      deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
-    deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | \
-      deploy/verify-nginx-example.sh | deploy/create-rds-backup.sh)
+    deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/create-rds-backup.sh)
       write_targets true true
       exit 0
       ;;

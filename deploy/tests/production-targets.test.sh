@@ -70,6 +70,10 @@ head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract rang
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
 assert_output "$tmp/shared-contract-range" true true
 base="$head"
+head="$(synthetic_commit deploy/nginx.example.conf 'test: external ingress contract range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/ingress-contract-range"
+assert_output "$tmp/ingress-contract-range" false false
+base="$head"
 head="$(synthetic_commit deploy/RUNBOOK.md 'test: deploy documentation range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/deploy-docs-range"
 assert_output "$tmp/deploy-docs-range" false false
