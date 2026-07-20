@@ -8,27 +8,9 @@ import { Recipes } from "./src/payload/collections/Recipes";
 import { SiteDocuments } from "./src/payload/collections/SiteDocuments";
 import { SiteContent } from "./src/payload/globals/SiteContent";
 import { migrations } from "./src/payload/migrations";
+import { resolvePayloadRuntimeEnvironment } from "./src/payload/runtime-environment.mjs";
 
-const requiresProductionEnv =
-  process.env.VERCEL === "1" || process.env.VERCEL === "true";
-
-const postgresDatabaseURL =
-  process.env.PAYLOAD_DATABASE_URL ||
-  process.env.DATABASE_URL ||
-  process.env.DATABASE_URL_UNPOOLED ||
-  process.env.POSTGRES_URL_NON_POOLING ||
-  process.env.POSTGRES_URL ||
-  (process.env.DATABASE_URI?.startsWith("postgres") ? process.env.DATABASE_URI : undefined);
-
-const payloadSecret = process.env.PAYLOAD_SECRET;
-
-if (requiresProductionEnv && !payloadSecret) {
-  throw new Error("PAYLOAD_SECRET is required for Vercel deployments.");
-}
-
-if (requiresProductionEnv && !postgresDatabaseURL) {
-  throw new Error("A Postgres database URL is required for Vercel Payload deployments.");
-}
+const { payloadSecret, postgresDatabaseURL } = resolvePayloadRuntimeEnvironment();
 
 // website 与 apps/site 共用同一个 Postgres 库（cfp）。两个 Payload 应用都在管理各自的
 // schema，若同处 public 会互相覆盖建表，因此把 website 隔离到独立 schema。
