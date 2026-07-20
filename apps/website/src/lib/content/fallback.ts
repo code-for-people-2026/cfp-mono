@@ -129,6 +129,7 @@ export const footerFallback: FooterContent = {
     qrAlt: c.qrSrc ? `${c.label}二维码` : undefined,
   })),
   githubLabel: "GitHub",
+  beian: "粤ICP备2026098322号-1",
   copyright: "© 2026 码成工",
 };
 

@@ -138,7 +138,12 @@ export const SiteContent: GlobalConfig = {
               },
             },
             { name: "githubLabel", label: "GitHub 文字", type: "text", required: true },
-            { name: "beian", label: "备案信息（留空则不显示，备案后填）", type: "text" },
+            {
+              name: "beian",
+              label: "ICP备案信息",
+              type: "text",
+              defaultValue: "粤ICP备2026098322号-1",
+            },
             { name: "copyright", label: "版权", type: "text", required: true },
           ],
         },
