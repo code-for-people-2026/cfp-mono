@@ -13,6 +13,10 @@ if [[ "$joined" == *" pull website " && "$image" == *":${CANDIDATE_SHA}" &&
   "${FAKE_DEPLOY_MODE:-success}" == pull ]]; then
   exit 1
 fi
+if [[ "$joined" == *" pull website " && "$image" != *":${CANDIDATE_SHA}" &&
+  "${FAKE_DEPLOY_MODE:-success}" == rollback-pull ]]; then
+  exit 1
+fi
 if [[ "$joined" == *" up -d --no-deps website " && "$image" == *":${CANDIDATE_SHA}" &&
   "${FAKE_DEPLOY_MODE:-success}" == rollout ]]; then
   exit 1

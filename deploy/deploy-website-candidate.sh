@@ -77,9 +77,13 @@ restore_last_good() {
   old_sha="$(bundle_sha "$last_good/.env")" || return 1
   install_bundle "$last_good" .restore || return 1
   promote_files .restore || return 1
+  if compose "$current_compose" "$current_images" "$current_runtime" \
+    up -d --no-deps website >/dev/null 2>&1 && probe "$old_sha"; then
+    return 0
+  fi
   compose "$current_compose" "$current_images" "$current_runtime" pull website >/dev/null 2>&1 &&
-    compose "$current_compose" "$current_images" "$current_runtime" up -d --no-deps website >/dev/null 2>&1 &&
-    probe "$old_sha"
+    compose "$current_compose" "$current_images" "$current_runtime" \
+      up -d --no-deps website >/dev/null 2>&1 && probe "$old_sha"
 }
 recover() {
   local stage="$1"
