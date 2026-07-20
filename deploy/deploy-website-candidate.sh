@@ -5,6 +5,7 @@ root="${WEBSITE_REMOTE_ROOT:-$HOME/cfp-mono}"
 compose_bin="${COMPOSE_BIN:-docker}"
 curl_bin="${CURL_BIN:-curl}"
 jq_bin="${JQ_BIN:-jq}"
+install_bin="${INSTALL_BIN:-install}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
 current_compose="$root/docker-compose.yml"
@@ -51,24 +52,24 @@ probe() {
 }
 install_bundle() {
   local source="$1" suffix="$2"
-  install -m 600 "$source/docker-compose.yml" "$current_compose$suffix"
-  install -m 600 "$source/.env" "$current_images$suffix"
-  install -m 600 "$source/.env.production" "$current_runtime$suffix"
+  "$install_bin" -m 600 "$source/docker-compose.yml" "$current_compose$suffix" || return 1
+  "$install_bin" -m 600 "$source/.env" "$current_images$suffix" || return 1
+  "$install_bin" -m 600 "$source/.env.production" "$current_runtime$suffix" || return 1
 }
 promote_files() {
-  mv -f "$current_compose$1" "$current_compose"
-  mv -f "$current_images$1" "$current_images"
-  mv -f "$current_runtime$1" "$current_runtime"
+  mv -f "$current_compose$1" "$current_compose" || return 1
+  mv -f "$current_images$1" "$current_images" || return 1
+  mv -f "$current_runtime$1" "$current_runtime" || return 1
 }
 snapshot_current() {
-  mkdir -p "$last_good"
-  chmod 700 "$last_good"
-  install -m 600 "$current_compose" "$last_good/docker-compose.yml.next"
-  install -m 600 "$current_images" "$last_good/.env.next"
-  install -m 600 "$current_runtime" "$last_good/.env.production.next"
-  mv -f "$last_good/docker-compose.yml.next" "$last_good/docker-compose.yml"
-  mv -f "$last_good/.env.next" "$last_good/.env"
-  mv -f "$last_good/.env.production.next" "$last_good/.env.production"
+  mkdir -p "$last_good" || return 1
+  chmod 700 "$last_good" || return 1
+  "$install_bin" -m 600 "$current_compose" "$last_good/docker-compose.yml.next" || return 1
+  "$install_bin" -m 600 "$current_images" "$last_good/.env.next" || return 1
+  "$install_bin" -m 600 "$current_runtime" "$last_good/.env.production.next" || return 1
+  mv -f "$last_good/docker-compose.yml.next" "$last_good/docker-compose.yml" || return 1
+  mv -f "$last_good/.env.next" "$last_good/.env" || return 1
+  mv -f "$last_good/.env.production.next" "$last_good/.env.production" || return 1
 }
 restore_last_good() {
   local old_sha
@@ -99,7 +100,7 @@ recover() {
 [[ -n "$root" && "$root" != / ]] || fail preflight no_change
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail preflight no_change
 [[ "${WEBSITE_READY_RETRIES:-30}" =~ ^[1-9][0-9]*$ ]] || fail preflight no_change
-for command in "$compose_bin" "$curl_bin" "$jq_bin" install; do
+for command in "$compose_bin" "$curl_bin" "$jq_bin" "$install_bin"; do
   command -v "$command" >/dev/null || fail preflight no_change
 done
 
@@ -135,9 +136,9 @@ if [[ "$current_available" == true ]]; then snapshot_current || fail persist no_
 printf '%s\n' "$release_sha" >"$rollout_marker.next"
 chmod 600 "$rollout_marker.next"
 mv -f "$rollout_marker.next" "$rollout_marker"
-install -m 600 "$next_compose" "$current_compose.promote" || recover persist
-install -m 600 "$next_images" "$current_images.promote" || recover persist
-install -m 600 "$next_runtime" "$current_runtime.promote" || recover persist
+"$install_bin" -m 600 "$next_compose" "$current_compose.promote" || recover persist
+"$install_bin" -m 600 "$next_images" "$current_images.promote" || recover persist
+"$install_bin" -m 600 "$next_runtime" "$current_runtime.promote" || recover persist
 promote_files .promote || recover persist
 compose "$current_compose" "$current_images" "$current_runtime" up -d --no-deps website >/dev/null 2>&1 || recover rollout
 probe "$release_sha" || recover readiness
