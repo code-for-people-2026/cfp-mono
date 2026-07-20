@@ -1,18 +1,12 @@
 name: Deploy Production
 
 on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Production deploy target
-        required: true
-        default: website
-        type: choice
-        options:
-          - website
-          - kith-inn
   push:
     branches: [main]
+
+permissions:
+  actions: read
+  contents: read
 
 concurrency:
   group: production
@@ -42,7 +36,6 @@ jobs:
       - id: check
         name: Check affected deploy targets
         env:
-          DEPLOY_TARGET: ${{ inputs.target }}
           DEPLOY_BASE: ${{ github.event.before }}
         run: bash deploy/resolve-production-targets.sh
 
@@ -50,6 +43,7 @@ jobs:
     needs: affected
     if: needs.affected.outputs.website == 'true'
     runs-on: ubuntu-latest
+    environment: Production
     outputs:
       configured: ${{ steps.check.outputs.configured }}
     steps:
@@ -60,40 +54,19 @@ jobs:
           ALIYUN_ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
           ALIYUN_ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ALIYUN_ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
           ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_SSH_KNOWN_HOSTS: ${{ secrets.ECS_SSH_KNOWN_HOSTS }}
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
-        run: |
-          missing=()
-          for name in \
-            ALIYUN_ACR_REGISTRY \
-            ALIYUN_ACR_NAMESPACE \
-            ALIYUN_ACR_USERNAME \
-            ALIYUN_ACR_PASSWORD \
-            ECS_SSH_KEY \
-            ECS_HOST \
-            ECS_USER \
-            DATABASE_URL \
-            PAYLOAD_SECRET \
-            NEXT_PUBLIC_SITE_URL \
-            DEEPSEEK_API_KEY
-          do
-            if [ -z "${!name}" ]; then
-              missing+=("$name")
-            fi
-          done
-
-          if [ "${#missing[@]}" -eq 0 ]; then
-            echo "configured=true" >> "$GITHUB_OUTPUT"
-            echo "Production deployment is configured."
-          else
-            echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Production deployment skipped because required secrets are missing: ${missing[*]}"
-          fi
+        run: bash deploy/check-website-production-config.sh
 
   prepare_kith_inn:
     needs: affected
@@ -339,16 +312,17 @@ jobs:
       (needs.prepare_kith_inn.result == 'success' || needs.prepare_kith_inn.result == 'skipped') &&
       needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    environment: Production
     env:
       RELEASE_SHA: ${{ github.sha }}
-      WEBSITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ github.sha }}
+      WEBSITE_IMAGE_TAG: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
       # 先等 ci.yml 的 verify 通过再 build/部署。merge 路径已由 branch protection 的
-      # required check 把关;这一步堵住 workflow_dispatch 手动触发等 required check 管不到
-      # 的路径(Codex #91 P1)。不在 host 重跑测试,只等 CI 结论,所以不重新占磁盘。
+      # required check 把关；这里再等 main push 的 CI 结论，避免绕过 PR 的直推提交提前发布。
+      # 不在 host 重跑测试，只等 CI 结论，所以不重新占磁盘。
       - name: Wait for CI (verify) to pass
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -384,25 +358,27 @@ jobs:
           username: ${{ secrets.ALIYUN_ACR_USERNAME }}
           password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
 
-      - name: Build and push image
+      - name: Build image
         run: |
           docker build --build-arg RELEASE_SHA="$RELEASE_SHA" \
-            -f apps/website/Dockerfile -t "$WEBSITE_IMAGE" .
-          docker push "$WEBSITE_IMAGE"
+            -f apps/website/Dockerfile -t "$WEBSITE_IMAGE_TAG" .
 
-      - name: Write SSH key
-        env:
-          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
-          chmod 600 ~/.ssh/cfp-ecs
+      - id: push
+        name: Push immutable website image
+        run: bash deploy/push-website-image.sh
 
-      - name: Deploy website candidate on ECS
-        id: rollout
+      - name: Install Alibaba Cloud CLI
+        uses: aliyun/setup-aliyun-cli-action@09a5f86915bb556e27bf050e9a5e339aeb073df5
+        with:
+          version: 3.3.18
+
+      - id: stage
+        name: Stage website candidate without changing the active runtime
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
+          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
+          ECS_SSH_KNOWN_HOSTS: ${{ secrets.ECS_SSH_KNOWN_HOSTS }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PAYLOAD_SECRET: ${{ secrets.PAYLOAD_SECRET }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
@@ -412,7 +388,15 @@ jobs:
           ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
+          WEBSITE_IMAGE: ${{ env.WEBSITE_IMAGE_TAG }}@${{ steps.push.outputs.website_digest }}
         run: |
+          set -euo pipefail
+          remote="$ECS_USER@$ECS_HOST"
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
+          printf '%s\n' "$ECS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/cfp-ecs ~/.ssh/known_hosts
+          trap 'rm -f .env.production.remote .env.images.remote' EXIT
           cat > .env.production.remote <<EOF
           DATABASE_URL=$DATABASE_URL
           PAYLOAD_DATABASE_URL=$DATABASE_URL
@@ -429,19 +413,45 @@ jobs:
           WEBSITE_IMAGE=$WEBSITE_IMAGE
           EOF
 
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" "mkdir -p ~/cfp-mono/deploy"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/docker-compose.prod.yml "$ECS_USER@$ECS_HOST:~/cfp-mono/docker-compose.yml.next"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.production.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.production.next"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no .env.images.remote "$ECS_USER@$ECS_HOST:~/cfp-mono/.env.next"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no deploy/deploy-website-candidate.sh "$ECS_USER@$ECS_HOST:~/cfp-mono/deploy/"
-          printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" "mkdir -p ~/cfp-mono/deploy"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes deploy/docker-compose.prod.yml "$remote:~/cfp-mono/docker-compose.yml.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes .env.production.remote "$remote:~/cfp-mono/.env.production.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes .env.images.remote "$remote:~/cfp-mono/.env.next"
+          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes deploy/deploy-website-candidate.sh "$remote:~/cfp-mono/deploy/"
+          printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
           # pull 前清掉未用旧镜像 + 构建缓存:ECS 40G 盘会被历次 deploy 累积的旧镜像撑满
           # (曾导致 docker compose pull 解压时 no space left on device)。prune -af 只删
           # "没有运行中容器引用的"镜像 → 当前在跑的旧版保留, 新镜像失败可回滚上一版;
           # 更早的历史 tag 永久留在阿里云 ACR, 需要时 docker pull 回滚。
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
-            "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && docker system prune -af && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh deploy"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && docker system prune -af && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh preflight-candidate"
+
+      - id: backup
+        name: Create and verify website RDS recovery point
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
+          ALIBABA_CLOUD_CLI_PLUGIN_AUTO_INSTALL: "true"
+          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
+          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
+          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          backup="$(bash deploy/create-rds-backup.sh)"
+          backup_id="$(jq -er .backupId <<<"$backup")"
+          backup_created_at="$(jq -er .backupCreatedAt <<<"$backup")"
+          printf '### website recovery point\n\n- Backup ID: `%s`\n- Created at: `%s`\n' \
+            "$backup_id" "$backup_created_at" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy website candidate on ECS
+        id: rollout
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
+            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh deploy"
 
       - name: Smoke test
         env:
@@ -453,7 +463,7 @@ jobs:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
         run: |
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$ECS_USER@$ECS_HOST" \
             "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh finalize"
 
       - name: Restore the last-good website when rollout validation fails
@@ -463,5 +473,13 @@ jobs:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
         run: |
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=no "$ECS_USER@$ECS_HOST" \
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$ECS_USER@$ECS_HOST" \
             "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh restore-runtime"
+
+      - name: Remove local website deployment credentials
+        if: always()
+        env:
+          ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
+        run: |
+          docker logout "$ACR_REGISTRY" >/dev/null 2>&1 || true
+          rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.production.remote .env.images.remote

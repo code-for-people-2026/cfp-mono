@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 selector="$root/deploy/resolve-production-targets.sh"
 config_check="$root/deploy/check-kith-inn-production-config.sh"
+website_config_check="$root/deploy/check-website-production-config.sh"
 workflow="$root/.github/workflows/deploy-production.yml"
 preview_workflow="$root/.github/workflows/deploy-preview.yml"
 tmp="$(mktemp -d)"
@@ -33,14 +34,8 @@ synthetic_commit() {
   git -C "$worktree" rev-parse HEAD
 }
 
-run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual-website"
-assert_output "$tmp/manual-website" true false
-run_selector "$root" workflow_dispatch kith-inn "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual-kith"
-assert_output "$tmp/manual-kith" false true
-
-if run_selector "$root" workflow_dispatch unknown "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual-invalid" 2>/dev/null; then
-  echo "非法手动 target 必须失败" >&2
-  exit 1
+if run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual" 2>/dev/null; then
+  echo "生产 selector 必须拒绝非 push 事件" >&2; exit 1
 fi
 
 run_selector "$root" push "" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
@@ -67,9 +62,9 @@ head="$(synthetic_commit deploy/kith-inn-candidate.fixture 'test: kith deploy ra
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-deploy-range"
 assert_output "$tmp/kith-deploy-range" false true
 base="$head"
-head="$(synthetic_commit deploy/create-rds-backup.sh 'test: kith backup contract range')"
-run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-backup-range"
-assert_output "$tmp/kith-backup-range" false true
+head="$(synthetic_commit deploy/create-rds-backup.sh 'test: shared backup contract range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-backup-range"
+assert_output "$tmp/shared-backup-range" true true
 base="$head"
 head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
@@ -90,14 +85,26 @@ git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
 
 deploy_job="$(sed -n '/^  deploy:/,$p' "$workflow")"
+! grep -q 'workflow_dispatch' "$workflow"
+grep -q '^permissions:' "$workflow"
+grep -q 'actions: read' "$workflow"
+! grep -q 'StrictHostKeyChecking=no' "$workflow"
 grep -q 'needs: \[affected, prepare, prepare_kith_inn\]' <<<"$deploy_job"
 grep -q "needs.prepare_kith_inn.result == 'success'.*needs.prepare_kith_inn.result == 'skipped'" <<<"$deploy_job"
 grep -q 'RELEASE_SHA: \${{ github.sha }}' <<<"$deploy_job"
 grep -q 'docker build --build-arg RELEASE_SHA="$RELEASE_SHA"' <<<"$deploy_job"
+grep -q 'WEBSITE_IMAGE_TAG.*steps.push.outputs.website_digest' <<<"$deploy_job"
 grep -q 'id: rollout' <<<"$deploy_job"
 grep -q 'chmod 600 .*\.env.production.next' <<<"$deploy_job"
 grep -q 'deploy-website-candidate.sh deploy' <<<"$deploy_job"
 grep -q 'deploy-website-candidate.sh finalize' <<<"$deploy_job"
+grep -q 'deploy-website-candidate.sh preflight-candidate' <<<"$deploy_job"
+stage_line="$(grep -n 'id: stage' <<<"$deploy_job" | cut -d: -f1)"
+website_backup_line="$(grep -n 'id: backup' <<<"$deploy_job" | cut -d: -f1)"
+rollout_line="$(grep -n 'id: rollout' <<<"$deploy_job" | cut -d: -f1)"
+(( stage_line < website_backup_line && website_backup_line < rollout_line ))
+grep -q '### website recovery point' <<<"$deploy_job"
+grep -q 'Remove local website deployment credentials' <<<"$deploy_job"
 grep -A3 'Restore the last-good website' <<<"$deploy_job" | grep -q 'timeout-minutes: 10'
 grep -q 'docker build --build-arg RELEASE_SHA="${{ github.sha }}"' "$preview_workflow"
 kith_job="$(sed -n '/^  prepare_kith_inn:/,/^  deploy:/p' "$workflow")"
@@ -148,5 +155,30 @@ fi
 env "${all_values[@]}" KITH_INN_BE_BASE_URL='   ' GITHUB_OUTPUT="$tmp/blank" bash "$config_check" > "$tmp/blank.log"
 grep -qx 'configured=false' "$tmp/blank"
 grep -q 'KITH_INN_BE_BASE_URL' "$tmp/blank.log"
+
+website_required=(
+  ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
+  ALIYUN_ACCESS_KEY_ID ALIYUN_ACCESS_KEY_SECRET ALIYUN_REGION_ID ALIYUN_RDS_INSTANCE_ID
+  ECS_SSH_KEY ECS_SSH_KNOWN_HOSTS ECS_HOST ECS_USER DATABASE_URL PAYLOAD_SECRET
+  NEXT_PUBLIC_SITE_URL DEEPSEEK_API_KEY
+)
+website_values=()
+for name in "${website_required[@]}"; do website_values+=("$name=website-sentinel-$name"); done
+: > "$tmp/website-configured"
+env "${website_values[@]}" GITHUB_OUTPUT="$tmp/website-configured" \
+  bash "$website_config_check" > "$tmp/website-configured.log"
+grep -qx 'configured=true' "$tmp/website-configured"
+! grep -q 'website-sentinel' "$tmp/website-configured.log"
+
+website_missing=()
+for entry in "${website_values[@]}"; do
+  [[ "$entry" == ECS_SSH_KNOWN_HOSTS=* ]] || website_missing+=("$entry")
+done
+if env "${website_missing[@]}" GITHUB_OUTPUT="$tmp/website-missing" \
+  bash "$website_config_check" > "$tmp/website-missing.log" 2>&1; then
+  echo "website 缺配置必须失败" >&2; exit 1
+fi
+grep -q 'ECS_SSH_KNOWN_HOSTS' "$tmp/website-missing.log"
+! grep -q 'website-sentinel' "$tmp/website-missing.log"
 
 echo "production target/config tests passed"

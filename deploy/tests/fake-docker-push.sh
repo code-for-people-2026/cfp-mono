@@ -8,6 +8,7 @@ case "${FAKE_DOCKER_MODE:-ok}" in
 esac
 
 case "$2" in
+  *cfp-website*) suffix=5 ;;
   *cms-ops*) suffix=2 ;;
   *cms*) suffix=1 ;;
   *be*) suffix=3 ;;

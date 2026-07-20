@@ -11,14 +11,7 @@ write_targets() {
   printf 'affected targets: website=%s kith-inn=%s\n' "$website" "$kith_inn"
 }
 
-if [[ "${GITHUB_EVENT_NAME:-}" != push ]]; then
-  case "${DEPLOY_TARGET:-}" in
-    website) write_targets true false ;;
-    kith-inn) write_targets false true ;;
-    *) echo "unsupported production deploy target" >&2; exit 1 ;;
-  esac
-  exit 0
-fi
+[[ "${GITHUB_EVENT_NAME:-}" == push ]] || { echo "production deploy only supports push" >&2; exit 1; }
 
 base="${DEPLOY_BASE:-}"
 head="${GITHUB_SHA:-}"
@@ -42,14 +35,15 @@ while IFS= read -r path; do
       ;;
     deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/*)
       ;;
-    deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/verify-nginx-example.sh)
+    deploy/nginx.example.conf | deploy/resolve-production-targets.sh | deploy/smoke-test.sh | \
+      deploy/verify-nginx-example.sh | deploy/create-rds-backup.sh)
       write_targets true true
       exit 0
       ;;
     deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
       website_deploy=true
       ;;
-    deploy/.env.verify.example | deploy/create-rds-backup.sh | deploy/*kith-inn*)
+    deploy/.env.verify.example | deploy/*kith-inn*)
       kith_inn_deploy=true
       ;;
     deploy/*)

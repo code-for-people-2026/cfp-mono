@@ -21,7 +21,7 @@ value() { sed -n "s/^$2=//p" "$1" | head -n 1; }
 bundle_sha() {
   local image
   image="$(value "$1" WEBSITE_IMAGE)"
-  [[ "$image" =~ :([0-9a-f]{40})$ ]] || return 1
+  [[ "$image" =~ :([0-9a-f]{40})(@sha256:[0-9a-f]{64})?$ ]] || return 1
   printf '%s\n' "${BASH_REMATCH[1]}"
 }
 compose() {
@@ -31,10 +31,12 @@ compose() {
     --project-directory "$root" -f "$compose_file" --env-file "$image_env" "$@"
 }
 validate_bundle() {
-  local compose_file="$1" image_env="$2" runtime_env="$3" expected="${4:-}" actual
+  local compose_file="$1" image_env="$2" runtime_env="$3" expected="${4:-}" require_digest="${5:-false}" actual image
   [[ -f "$compose_file" && -f "$image_env" && -f "$runtime_env" ]] || return 1
   actual="$(bundle_sha "$image_env")" || return 1
   [[ -z "$expected" || "$actual" == "$expected" ]] || return 1
+  image="$(value "$image_env" WEBSITE_IMAGE)"
+  [[ "$require_digest" != true || "$image" =~ @sha256:[0-9a-f]{64}$ ]] || return 1
   compose "$compose_file" "$image_env" "$runtime_env" config --quiet >/dev/null 2>&1
 }
 probe() {
@@ -100,6 +102,13 @@ for command in "$compose_bin" "$curl_bin" "$install_bin"; do
   command -v "$command" >/dev/null || fail preflight no_change
 done
 
+if [[ "$action" == preflight-candidate ]]; then
+  validate_bundle "$next_compose" "$next_images" "$next_runtime" "$release_sha" true || fail preflight no_change
+  compose "$next_compose" "$next_images" "$next_runtime" pull website >/dev/null 2>&1 || fail pull no_change
+  printf '{"status":"candidate_preflight_passed","releaseSha":"%s"}\n' "$release_sha"
+  exit 0
+fi
+
 if [[ "$action" == restore-runtime ]]; then
   [[ -f "$rollout_marker" ]] || { printf '{"status":"skipped","reason":"rollout_not_attempted"}\n'; exit 0; }
   if restore_last_good; then
@@ -121,7 +130,7 @@ fi
 
 [[ "$action" == deploy ]] || fail preflight unsupported_action
 if [[ -f "$rollout_marker" ]]; then recover stale_rollout; fi
-validate_bundle "$next_compose" "$next_images" "$next_runtime" "$release_sha" || fail preflight no_change
+validate_bundle "$next_compose" "$next_images" "$next_runtime" "$release_sha" true || fail preflight no_change
 current_available=false
 if [[ -e "$current_compose" || -e "$current_images" || -e "$current_runtime" ]]; then
   validate_bundle "$current_compose" "$current_images" "$current_runtime" || fail preflight no_change

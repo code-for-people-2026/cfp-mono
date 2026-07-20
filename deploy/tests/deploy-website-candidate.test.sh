@@ -5,14 +5,17 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 script="$repo/deploy/deploy-website-candidate.sh"
 candidate_sha="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 current_sha="bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+candidate_digest="$(printf '%064d' 1)"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 case_dir="$tmp/case"
 
 write_bundle() {
-  local suffix="$1" sha="$2" label="$3"
+  local suffix="$1" sha="$2" label="$3" image
+  image="registry.example/cfp-website:$sha"
+  [[ "$label" == candidate ]] && image="$image@sha256:$candidate_digest"
   printf 'services: { website: { image: "${WEBSITE_IMAGE}" } } # %s\n' "$label" >"$case_dir/docker-compose.yml$suffix"
-  printf 'WEBSITE_IMAGE=registry.example/cfp-website:%s\n' "$sha" >"$case_dir/.env$suffix"
+  printf 'WEBSITE_IMAGE=%s\n' "$image" >"$case_dir/.env$suffix"
   printf 'PAYLOAD_SECRET=%s\n' "$label" >"$case_dir/.env.production$suffix"
 }
 reset_case() {
@@ -33,9 +36,15 @@ run() {
 }
 
 reset_case
+run success preflight-candidate >"$case_dir/preflight.out"
+grep -q 'candidate_preflight_passed' "$case_dir/preflight.out"
+grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
+[[ ! -e "$case_dir/.website-rollout" ]]
+
+reset_case
 run success >"$case_dir/deploy.out"
 grep -q 'candidate_ready' "$case_dir/deploy.out"
-grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha" "$case_dir/.env"
+grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha@sha256:$candidate_digest" "$case_dir/.env"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.website-last-good/.env"
 grep -q -- '--env-file .*\.env.next pull website' "$case_dir/compose.log"
 grep -q -- '--env-file .*\.env up -d --no-deps website' "$case_dir/compose.log"
@@ -80,7 +89,7 @@ run success >/dev/null
 if FAKE_INSTALL_FAIL_MATCH='.env.production.restore' \
   run success restore-runtime >"$case_dir/restore-copy.out" 2>"$case_dir/restore-copy.err"; then exit 1; fi
 grep -q 'manual_recovery_required' "$case_dir/restore-copy.err"
-grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha" "$case_dir/.env"
+grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha@sha256:$candidate_digest" "$case_dir/.env"
 grep -qx 'PAYLOAD_SECRET=candidate' "$case_dir/.env.production"
 grep -q '# candidate$' "$case_dir/docker-compose.yml"
 [[ -f "$case_dir/.website-rollout" ]]
@@ -100,6 +109,12 @@ reset_case
 printf 'WEBSITE_IMAGE=registry.example/cfp-website:latest\n' >"$case_dir/.env.next"
 if run success >"$case_dir/invalid.out" 2>"$case_dir/invalid.err"; then exit 1; fi
 grep -q 'preflight.*no_change' "$case_dir/invalid.err"
+[[ ! -e "$case_dir/.website-rollout" ]]
+
+reset_case
+printf 'WEBSITE_IMAGE=registry.example/cfp-website:%s\n' "$candidate_sha" >"$case_dir/.env.next"
+if run success preflight-candidate >"$case_dir/mutable.out" 2>"$case_dir/mutable.err"; then exit 1; fi
+grep -q 'preflight.*no_change' "$case_dir/mutable.err"
 [[ ! -e "$case_dir/.website-rollout" ]]
 
 grep -qx '      - "127.0.0.1:3302:3302"' "$repo/deploy/docker-compose.prod.yml"

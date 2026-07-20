@@ -32,22 +32,16 @@
 
 ## 3. 部署流程（GitHub Actions）
 
-工作流：`.github/workflows/deploy-production.yml`，触发：push 到 `main` 或手动 `workflow_dispatch`。
+工作流：`.github/workflows/deploy-production.yml`，仅由 push 到 `main` 触发；生产发布不得从任意分支手动触发。
 
-步骤：`pnpm verify`（lint/类型/测试/构建）→ 登录 ACR → 构建并推送 `cfp-website` 镜像 → SSH 到 ECS（`docker login` + `docker compose pull && up -d`）→ 冒烟测试。容器只跑 `next start`；建/升级表由 Payload 适配器在首次连库时自动应用迁移（`prodMigrations`），部署流程里没有单独的 `payload migrate` 步骤。
+步骤：等待同一 main SHA 的 `pnpm verify` → 构建并推送 `cfp-website` → 取得 ACR digest → 用固定 SSH host key 把候选 stage 到 ECS 并预拉 digest → 创建且验证 RDS 物理备份 → 启动候选 → 本机和公网 readiness/smoke → 固化 last-good。容器只跑 `next start`；建/升级表由 Payload 适配器在首次连库时自动应用迁移（`prodMigrations`），因此 RDS 恢复点必须在启动候选前完成。
 
-`prepare` 任务会先检查所需 Secret 是否齐全，缺则跳过部署。
+`prepare` 任务会先检查所需 Secret/Variable 是否齐全，任何缺失都会令 workflow 失败；不得静默跳过 website 发布。
 
 ### 所需 GitHub Secrets（仅名称，值不入库）
-`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`、`ECS_HOST`、`ECS_USER`、`ECS_SSH_KEY`、`DATABASE_URL`、`PAYLOAD_SECRET`、`NEXT_PUBLIC_SITE_URL`、`DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`）
+`ALIYUN_ACR_REGISTRY`、`ALIYUN_ACR_NAMESPACE`、`ALIYUN_ACR_USERNAME`、`ALIYUN_ACR_PASSWORD`、`ALIYUN_ACCESS_KEY_ID`、`ALIYUN_ACCESS_KEY_SECRET`、`ECS_HOST`、`ECS_USER`、`ECS_SSH_KEY`、`ECS_SSH_KNOWN_HOSTS`、`DATABASE_URL`、`PAYLOAD_SECRET`、`NEXT_PUBLIC_SITE_URL`、`DEEPSEEK_API_KEY`（可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`）。`ALIYUN_REGION_ID`、`ALIYUN_RDS_INSTANCE_ID` 使用 Production Environment Variable。
 
-> 注意：这些 Secret 里**没有**阿里云主 AccessKey。AccessKey 只用于人工跑 CLI/签证书，见第 7 节。
-
-### 手动触发
-```bash
-gh workflow run deploy-production.yml --ref <branch> --repo code-for-people-2026/cfp-mono
-gh run watch --repo code-for-people-2026/cfp-mono
-```
+> 注意：GitHub 里只允许使用权限收敛到目标 RDS/部署资源的 RAM AccessKey，不得使用阿里云主账号 AccessKey。
 
 ## 4. 服务器侧一次性配置（已完成，留作复现/重建参考）
 
@@ -86,13 +80,13 @@ gh run watch --repo code-for-people-2026/cfp-mono
 
 **健康检查**：`curl http://127.0.0.1:3302/api/health`（ECS 本地）。
 
-**回滚**：镜像按 commit SHA 打标签。回滚时在 ECS 的 `~/cfp-mono/.env` 把 `WEBSITE_IMAGE` 改回上一个 SHA，然后 `docker compose pull && docker compose up -d`。
+**回滚**：workflow 在公网 smoke/finalize 前保留上一份已验证 bundle；失败时优先用本地 last-good digest 自动恢复并复验。无法恢复时保留 rollout marker、停止候选并要求人工处置，禁止把未验证候选晋升为 last-good。
 
 ## 7. 凭据与安全
 
 | 凭据 | 存放位置 | 说明 |
 |---|---|---|
-| 阿里云 AccessKey（RAM `cfp-deploy-cli`） | **仅本机** `~/.aliyun/config.json`（profile `cfp-deploy`）+ `~/.acme.sh/account.conf` | 不在仓库、不在 GitHub、不在 ECS |
+| 阿里云 AccessKey（受限 RAM） | 本机 `~/.aliyun/config.json`；生产部署专用值存 GitHub `Production` Environment Secret | 不在仓库、不在 ECS；不得使用主账号 AccessKey |
 | 部署相关密钥 | GitHub Secrets | 见第 3 节名单 |
 | RDS 密码 / PAYLOAD_SECRET | GitHub Secrets，ECS 上 `~/cfp-mono/.env.production` | 不入库 |
 
