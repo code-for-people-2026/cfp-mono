@@ -45,9 +45,10 @@ grep -q 'release_finalized' "$case_dir/finalize.out"
 
 reset_case
 run success >/dev/null
-run success restore-runtime >"$case_dir/restore.out"
+run rollback-pull restore-runtime >"$case_dir/restore.out"
 grep -q 'last_good_runtime_restored' "$case_dir/restore.out"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
+! grep -q " pull website" "$case_dir/compose.log"
 [[ ! -e "$case_dir/.website-rollout" ]]
 
 for mode in rollout readiness; do
