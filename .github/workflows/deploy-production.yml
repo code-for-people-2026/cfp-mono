@@ -341,6 +341,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
+      RELEASE_SHA: ${{ github.sha }}
       WEBSITE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -385,7 +386,8 @@ jobs:
 
       - name: Build and push image
         run: |
-          docker build -f apps/website/Dockerfile -t "$WEBSITE_IMAGE" .
+          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" \
+            -f apps/website/Dockerfile -t "$WEBSITE_IMAGE" .
           docker push "$WEBSITE_IMAGE"
 
       - name: Write SSH key

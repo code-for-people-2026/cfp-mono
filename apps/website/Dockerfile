@@ -1,4 +1,4 @@
-ARG RELEASE_SHA=unknown
+ARG RELEASE_SHA
 
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
@@ -21,6 +21,8 @@ COPY packages/typescript-config/package.json packages/typescript-config/package.
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS builder
+ARG RELEASE_SHA
+RUN printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'
 COPY . .
 RUN pnpm --filter @cfp/website build
 
