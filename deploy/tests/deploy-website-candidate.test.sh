@@ -26,6 +26,8 @@ run() {
   : >"$case_dir/compose.log"
   WEBSITE_REMOTE_ROOT="$case_dir" COMPOSE_BIN="$repo/deploy/tests/fake-website-compose.sh" \
     CURL_BIN="$repo/deploy/tests/fake-website-ready.sh" FAKE_COMPOSE_LOG="$case_dir/compose.log" \
+    INSTALL_BIN="$repo/deploy/tests/fake-install.sh" \
+    FAKE_INSTALL_FAIL_MATCH="${FAKE_INSTALL_FAIL_MATCH:-}" \
     FAKE_DEPLOY_MODE="$mode" CANDIDATE_SHA="$candidate_sha" WEBSITE_READY_RETRIES=1 \
     WEBSITE_READY_SLEEP=0 RELEASE_SHA="$candidate_sha" bash "$script" "$action"
 }
@@ -64,6 +66,23 @@ if run pull >"$case_dir/pull.out" 2>"$case_dir/pull.err"; then exit 1; fi
 grep -q 'no_change' "$case_dir/pull.err"
 grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
 [[ ! -e "$case_dir/.website-rollout" ]]
+
+reset_case
+if FAKE_INSTALL_FAIL_MATCH='.website-last-good/.env.next' \
+  run success >"$case_dir/snapshot.out" 2>"$case_dir/snapshot.err"; then exit 1; fi
+grep -q 'persist.*no_change' "$case_dir/snapshot.err"
+grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$current_sha" "$case_dir/.env"
+[[ ! -e "$case_dir/.website-rollout" ]]
+[[ ! -e "$case_dir/.website-last-good/docker-compose.yml" ]]
+
+reset_case
+run success >/dev/null
+if FAKE_INSTALL_FAIL_MATCH='.env.production.restore' \
+  run success restore-runtime >"$case_dir/restore-copy.out" 2>"$case_dir/restore-copy.err"; then exit 1; fi
+grep -q 'manual_recovery_required' "$case_dir/restore-copy.err"
+grep -qx "WEBSITE_IMAGE=registry.example/cfp-website:$candidate_sha" "$case_dir/.env"
+grep -qx 'PAYLOAD_SECRET=candidate' "$case_dir/.env.production"
+grep -q '# candidate$' "$case_dir/docker-compose.yml"
 
 reset_case
 printf 'WEBSITE_IMAGE=registry.example/cfp-website:latest\n' >"$case_dir/.env.next"
