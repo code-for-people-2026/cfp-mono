@@ -17,19 +17,22 @@ command -v jq >/dev/null || fail "jq is unavailable"
 authority="${database_url#*://}"; authority="${authority%%/*}"; authority="${authority##*@}"
 database_host="$(tr '[:upper:]' '[:lower:]' <<<"${authority%%:*}")"
 [[ -n "$database_host" ]] || fail "database endpoint is invalid"
-instance_result="$($aliyun_bin rds DescribeDBInstances --RegionId "$region" --ConnectionString "$database_host")" ||
+instance_result="$($aliyun_bin rds DescribeDBInstances --region "$region" \
+  --RegionId "$region" --ConnectionString "$database_host")" ||
   fail "database endpoint lookup failed"
 jq -e --arg id "$instance" '[.Items.DBInstance[]? | select(.DBInstanceId == $id)] | length == 1' \
   <<<"$instance_result" >/dev/null || fail "backup instance does not match database endpoint"
 
-create_result="$($aliyun_bin rds CreateBackup --RegionId "$region" --DBInstanceId "$instance" --BackupMethod Physical)" ||
+create_result="$($aliyun_bin rds CreateBackup --region "$region" \
+  --RegionId "$region" --DBInstanceId "$instance" --BackupMethod Physical)" ||
   fail "CreateBackup request failed"
 job_id="$(jq -er '.BackupJobId | tostring | select(test("^[0-9]+$"))' <<<"$create_result")" ||
   fail "CreateBackup did not return a job ID"
 
 backup_id=""
 for ((attempt=1; attempt<=retries; attempt++)); do
-  task_result="$($aliyun_bin rds DescribeBackupTasks --RegionId "$region" --DBInstanceId "$instance" --BackupJobId "$job_id")" ||
+  task_result="$($aliyun_bin rds DescribeBackupTasks --region "$region" \
+    --RegionId "$region" --DBInstanceId "$instance" --BackupJobId "$job_id")" ||
     fail "DescribeBackupTasks request failed"
   task="$(jq -cer --arg id "$job_id" '
     [.Items.BackupJob[]? | select((.BackupJobId | tostring) == $id)] | select(length == 1) | .[0]
@@ -46,7 +49,8 @@ for ((attempt=1; attempt<=retries; attempt++)); do
 done
 [[ -n "$backup_id" ]] || fail "backup job timed out"
 
-verified="$($aliyun_bin rds DescribeBackups --RegionId "$region" --DBInstanceId "$instance" \
+verified="$($aliyun_bin rds DescribeBackups --region "$region" \
+  --RegionId "$region" --DBInstanceId "$instance" \
   --BackupId "$backup_id" --BackupStatus Success)" || fail "DescribeBackups request failed"
 backup_record="$(jq -cer --arg id "$backup_id" '
   [.Items.Backup[]? | select((.BackupId | tostring) == $id and .BackupStatus == "Success" and (.IsAvail | tostring) == "1")] |
