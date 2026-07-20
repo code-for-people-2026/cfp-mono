@@ -8,13 +8,16 @@ tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 sha=0123456789abcdef0123456789abcdef01234567
 
 run() {
-  WEBSITE_ORIGIN_IP=192.0.2.10 WEBSITE_CDN_CNAME=www.example.w.kunlunsl.com \
+  local cname_suffix="${2:-kunlunsl}"
+  WEBSITE_ORIGIN_IP=192.0.2.10 WEBSITE_CDN_CNAME="www.example.w.$cname_suffix.com" \
     EXPECTED_RELEASE_SHA="$sha" CURL_BIN="$fake" FAKE_RELEASE_SHA="$sha" \
     FAKE_CUTOVER_MODE="$1" bash "$script"
 }
 
 run success >"$tmp/success"
 jq -e --arg sha "$sha" '.status == "passed" and .releaseSha == $sha' "$tmp/success" >/dev/null
+run success kunlunaq >"$tmp/success-kunlunaq"
+jq -e --arg sha "$sha" '.status == "passed" and .releaseSha == $sha' "$tmp/success-kunlunaq" >/dev/null
 for invalid_cname in 192.0.2.10 origin.example.com; do
   if WEBSITE_ORIGIN_IP=192.0.2.10 WEBSITE_CDN_CNAME="$invalid_cname" \
     EXPECTED_RELEASE_SHA="$sha" CURL_BIN="$fake" FAKE_RELEASE_SHA="$sha" \
