@@ -13,7 +13,7 @@ fail() { printf 'website cutover verification failed: %s\n' "$1" >&2; exit 1; }
 command -v "$curl_bin" >/dev/null || fail "curl is unavailable"
 command -v "$jq_bin" >/dev/null || fail "jq is unavailable"
 [[ "$origin_ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] || fail "WEBSITE_ORIGIN_IP must be an IPv4 address"
-[[ "$cdn_cname" =~ ^[A-Za-z0-9.-]+\.kunlunsl\.com\.?$ ]] ||
+[[ "$cdn_cname" =~ ^[A-Za-z0-9.-]+\.(kunlunsl|kunlunaq)\.com\.?$ ]] ||
   fail "WEBSITE_CDN_CNAME must be an Alibaba Cloud CDN CNAME"
 [[ "$expected_sha" =~ ^[0-9a-f]{40}$ ]] || fail "EXPECTED_RELEASE_SHA must be a full commit SHA"
 
