@@ -1,3 +1,5 @@
+ARG RELEASE_SHA=unknown
+
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -23,7 +25,10 @@ COPY . .
 RUN pnpm --filter @cfp/website build
 
 FROM base AS runner
+ARG RELEASE_SHA
 ENV NODE_ENV=production
+ENV RELEASE_SHA="$RELEASE_SHA"
+LABEL org.opencontainers.image.revision="$RELEASE_SHA"
 WORKDIR /app
 COPY --from=builder /app ./
 EXPOSE 3302
