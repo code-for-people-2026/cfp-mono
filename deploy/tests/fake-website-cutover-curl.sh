@@ -20,6 +20,8 @@ fi
 if [[ "$write_out" == true ]]; then
   if [[ "$mode" == bad-redirect ]]; then
     printf '302 https://codeforpeople.cn/cutover-probe?source=precutover'
+  elif [[ "$mode" == edge-301 && "$edge" == true ]]; then
+    printf '301 https://www.codeforpeople.cn/cutover-probe?source=precutover'
   else
     printf '308 https://www.codeforpeople.cn/cutover-probe?source=precutover'
   fi
