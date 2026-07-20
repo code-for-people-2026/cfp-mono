@@ -94,6 +94,7 @@ checkout_line="$(grep -n 'actions/checkout@v4' <<<"$website_prepare_job" | cut -
 config_check_line="$(grep -n 'check-website-production-config.sh' <<<"$website_prepare_job" | cut -d: -f1)"
 (( checkout_line < config_check_line ))
 grep -q 'needs: \[affected, prepare, prepare_kith_inn\]' <<<"$deploy_job"
+grep -q 'timeout-minutes: 120' <<<"$deploy_job"
 grep -q "needs.prepare_kith_inn.result == 'success'.*needs.prepare_kith_inn.result == 'skipped'" <<<"$deploy_job"
 grep -q 'RELEASE_SHA: \${{ github.sha }}' <<<"$deploy_job"
 grep -q 'docker build --build-arg RELEASE_SHA="$RELEASE_SHA"' <<<"$deploy_job"
@@ -112,7 +113,7 @@ grep -q 'deploy-website-candidate.sh gate-writes' <<<"$deploy_job"
 grep -A3 'Restore the last-good website' <<<"$deploy_job" | grep -q "steps.gate.outcome != 'skipped'"
 grep -q '### website recovery point' <<<"$deploy_job"
 grep -q 'Remove local website deployment credentials' <<<"$deploy_job"
-grep -A3 'Restore the last-good website' <<<"$deploy_job" | grep -q 'timeout-minutes: 10'
+grep -A3 'Restore the last-good website' <<<"$deploy_job" | grep -q 'timeout-minutes: 15'
 grep -q 'docker build --build-arg RELEASE_SHA="${{ github.sha }}"' "$preview_workflow"
 kith_job="$(sed -n '/^  prepare_kith_inn:/,/^  deploy:/p' "$workflow")"
 stage_line="$(grep -n 'id: stage' <<<"$kith_job" | cut -d: -f1)"

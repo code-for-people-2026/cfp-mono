@@ -314,7 +314,7 @@ jobs:
       (needs.prepare_kith_inn.result == 'success' || needs.prepare_kith_inn.result == 'skipped') &&
       needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     environment: Production
     env:
       RELEASE_SHA: ${{ github.sha }}
@@ -431,6 +431,7 @@ jobs:
 
       - id: gate
         name: Gate website writes before creating the recovery point
+        timeout-minutes: 10
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
@@ -441,6 +442,7 @@ jobs:
 
       - id: backup
         name: Create and verify website RDS recovery point
+        timeout-minutes: 35
         env:
           ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
           ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
@@ -457,6 +459,7 @@ jobs:
 
       - name: Deploy website candidate on ECS
         id: rollout
+        timeout-minutes: 10
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
@@ -466,11 +469,13 @@ jobs:
             "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh deploy"
 
       - name: Smoke test
+        timeout-minutes: 5
         env:
           SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: bash deploy/smoke-test.sh website
 
       - name: Finalize website release
+        timeout-minutes: 10
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
@@ -480,7 +485,7 @@ jobs:
 
       - name: Restore the last-good website when rollout validation fails
         if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
-        timeout-minutes: 10
+        timeout-minutes: 15
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
