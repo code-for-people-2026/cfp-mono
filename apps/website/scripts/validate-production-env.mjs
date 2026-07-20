@@ -2,5 +2,6 @@ import { resolvePayloadRuntimeEnvironment } from "../src/payload/runtime-environ
 
 resolvePayloadRuntimeEnvironment({
   ...process.env,
+  CFP_WEBSITE_BUILD: undefined,
   NODE_ENV: "production",
 });
