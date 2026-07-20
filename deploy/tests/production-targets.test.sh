@@ -58,7 +58,27 @@ head="$(synthetic_commit apps/kith-inn-be/.production-target-test 'test: kith ra
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-range"
 assert_output "$tmp/kith-range" false true
 base="$head"
-head="$(synthetic_commit deploy/.production-target-test 'test: shared deploy range')"
+head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/website-deploy-range"
+assert_output "$tmp/website-deploy-range" true false
+base="$head"
+head="$(synthetic_commit deploy/kith-inn-candidate.fixture 'test: kith deploy range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-deploy-range"
+assert_output "$tmp/kith-deploy-range" false true
+base="$head"
+head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
+assert_output "$tmp/shared-contract-range" true true
+base="$head"
+head="$(synthetic_commit deploy/RUNBOOK.md 'test: deploy documentation range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/deploy-docs-range"
+assert_output "$tmp/deploy-docs-range" false false
+base="$head"
+head="$(synthetic_commit deploy/tests/.production-target-test 'test: deploy test range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/deploy-test-range"
+assert_output "$tmp/deploy-test-range" false false
+base="$head"
+head="$(synthetic_commit deploy/.production-target-test 'test: unknown deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
 assert_output "$tmp/shared-range" true true
 git -C "$root" worktree remove --force "$worktree" >/dev/null
