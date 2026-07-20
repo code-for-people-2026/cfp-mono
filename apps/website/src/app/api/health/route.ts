@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveReleaseSha } from "@/lib/deployment/release";
 
 // Lightweight liveness probe for deploy smoke tests and the reverse proxy.
 // Intentionally does not touch the database — it reports that the Next server
@@ -6,5 +7,5 @@ import { NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  return NextResponse.json({ status: "ok" });
+  return NextResponse.json({ status: "ok", releaseSha: resolveReleaseSha() });
 }
