@@ -470,8 +470,10 @@ jobs:
 
       - name: Smoke test
         timeout-minutes: 5
+        # NEXT_PUBLIC_SITE_URL 是页面对外 canonical 域名；DNS 切换前不能用它验证 ECS candidate。
+        # demo 域名始终直达同一台 ECS，因此能验证刚切换的容器而不会误测 Vercel。
         env:
-          SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          SITE_URL: https://demo.codeforpeople.cn
         run: bash deploy/smoke-test.sh website
 
       - name: Finalize website release
