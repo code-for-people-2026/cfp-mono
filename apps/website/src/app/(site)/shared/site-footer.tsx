@@ -86,7 +86,7 @@ export async function SiteFooter() {
             <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
               <Image
                 src={brand.logoPath}
-                alt="码成工页脚标识"
+                alt="码成仝页脚标识"
                 width={44}
                 height={44}
                 className="h-10 w-10 object-contain"

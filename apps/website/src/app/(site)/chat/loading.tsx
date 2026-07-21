@@ -10,14 +10,14 @@ export default function ChatLoading() {
       <header className="flex h-16 shrink-0 items-center gap-3">
         <Image
           src={brandAssets.logoSrc}
-          alt="码成工 logo"
+          alt="码成仝 logo"
           width={38}
           height={38}
           priority
           className="h-9 w-9 object-contain"
         />
         <span className="flex flex-col">
-          <span className="text-lg font-black leading-none">码成工</span>
+          <span className="text-lg font-black leading-none">码成仝</span>
           <span className="mt-1 text-xs font-semibold text-[var(--muted)]">为“工友”敲键盘</span>
         </span>
       </header>

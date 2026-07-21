@@ -116,17 +116,17 @@ export async function seedSiteContent(payload: Payload) {
       })),
       githubLabel: "GitHub",
       beian: "粤ICP备2026098322号-1",
-      copyright: "© 2026 码成工",
+      copyright: "© 2026 码成仝",
       // 站点设置
       shareTitle: siteMetadata.title,
       shareDescription: siteMetadata.description,
       directionMapUrl: directionMapHref,
       githubUrl: "https://github.com/code-for-people-2026",
       brand: {
-        wordmark: "码成工",
+        wordmark: "码成仝",
         tagline: "为“工友”敲键盘",
         logoPath: brandAssets.logoSrc,
-        logoAlt: "码成工 logo",
+        logoAlt: "码成仝 logo",
       },
       headerNav: [
         { label: "数据平权宣言", href: "/manifesto" },
@@ -134,7 +134,7 @@ export async function seedSiteContent(payload: Payload) {
         { label: "牛马互助协议", href: "/license" },
       ],
       // 对话页
-      chatHeading: "从一个问题开始了解码成工",
+      chatHeading: "从一个问题开始了解码成仝",
       chatIntro: "这里基于已经公开的文本回答。可以直接提问，也可以先从下面几个问题开始。",
       // 通用文案
       backToHome: "回到首页",
@@ -142,7 +142,7 @@ export async function seedSiteContent(payload: Payload) {
       chatRestart: "重新开始",
       chatLoading: "正在组织回答…",
       chatDisclaimer: "内容由 AI 基于公开文本生成，请仔细甄别。",
-      chatAssistantName: "码成工助手",
+      chatAssistantName: "码成仝助手",
       chatUserName: "你",
       chatPlaceholder: dialogueEntry.placeholder,
       chatResetConfirm: "清空这次对话？内容只保存在本机浏览器。",
