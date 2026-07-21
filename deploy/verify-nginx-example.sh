@@ -45,15 +45,13 @@ command -v openssl >/dev/null || fail "openssl is required"
 [[ -r "$config" ]] || fail "nginx config is missing"
 config_text="$(<"$config")"
 trap 'rm -rf "$work_dir"' EXIT
-mkdir -p "$work_dir/ssl"/{website,demo,kith-inn}
+mkdir -p "$work_dir/ssl"/{website,kith-inn}
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -subj '/CN=kith-inn.example.invalid' \
   -keyout "$work_dir/ssl/kith-inn/privkey.pem" \
   -out "$work_dir/ssl/kith-inn/fullchain.pem" >/dev/null 2>&1
-for role in website demo; do
-  cp "$work_dir/ssl/kith-inn/privkey.pem" "$work_dir/ssl/$role/privkey.pem"
-  cp "$work_dir/ssl/kith-inn/fullchain.pem" "$work_dir/ssl/$role/fullchain.pem"
-done
+cp "$work_dir/ssl/kith-inn/privkey.pem" "$work_dir/ssl/website/privkey.pem"
+cp "$work_dir/ssl/kith-inn/fullchain.pem" "$work_dir/ssl/website/fullchain.pem"
 
 for expected in \
   'proxy_pass http://127.0.0.1:3302;' \
@@ -63,19 +61,16 @@ for expected in \
   'return 308 https://$host$request_uri;'; do
   grep -Fq "$expected" <<<"$config_text" || fail "required website or kith-inn route is missing"
 done
-[[ "$(grep -Fc 'proxy_pass http://127.0.0.1:3302;' <<<"$config_text")" == "2" ]] ||
-  fail "www and demo must be the only website proxy blocks"
-[[ "$(grep -Fc 'ssl_protocols TLSv1.2 TLSv1.3;' <<<"$config_text")" -ge "3" ]] ||
+[[ "$(grep -Fc 'proxy_pass http://127.0.0.1:3302;' <<<"$config_text")" == "1" ]] ||
+  fail "www must be the only website proxy block"
+! grep -Fq 'demo.codeforpeople.cn' <<<"$config_text" || fail "retired demo host must be absent"
+[[ "$(grep -Fc 'ssl_protocols TLSv1.2 TLSv1.3;' <<<"$config_text")" -ge "2" ]] ||
   fail "website TLS servers must reject TLS versions older than 1.2"
 assert_server_contains 'codeforpeople.cn www.codeforpeople.cn' '80' \
   'return 308 https://www.codeforpeople.cn$request_uri;'
-assert_server_contains 'demo.codeforpeople.cn' '80' \
-  'return 308 https://demo.codeforpeople.cn$request_uri;'
 assert_server_contains 'codeforpeople.cn' '443 ssl http2' \
   'return 308 https://www.codeforpeople.cn$request_uri;'
 assert_server_contains 'www.codeforpeople.cn' '443 ssl http2' \
-  'proxy_pass http://127.0.0.1:3302;'
-assert_server_contains 'demo.codeforpeople.cn' '443 ssl http2' \
   'proxy_pass http://127.0.0.1:3302;'
 [[ "$(grep -Fc 'allow 192.0.2.0/24;' <<<"$config_text")" == "1" ]] ||
   fail "CMS allowlist must appear exactly once"

@@ -21,19 +21,21 @@
 
 kith-inn 是独立发布目标，不改变上述 website 路径：CMS runtime、短生命周期 CMS ops、BE、内部 H5 四镜像绑定同一提交；CMS 使用同一 RDS 的独立 `cms` schema，外部流量只经 Nginx 80/443。标准顺序为可恢复备份 → 单次 migration/provision → runtime 启动 → readiness → `bash deploy/smoke-test.sh kith-inn`。完整变量、DNS/TLS、上传前置与应用/数据回滚见 [中文 Runbook](./deploy/RUNBOOK.md#9-kith-inn-桃子体验版)。
 
-## 从 Vercel 迁移（两步）
+## Website 生产入口
 
-website 原先部署在 Vercel。迁移分两步、Vercel 全程不停：
+website 已从 Vercel 迁移到阿里云，稳态链路为：
 
-1. **并行验证**：把 website 部署到阿里云的**临时子域**（如 `website-staging.codeforpeople.cn`，照搬现有 `demo.codeforpeople.cn` 的 IP+HTTPS 模式），Vercel 继续服务正式域名。在临时子域验证通过。
-2. **切换并撤 Vercel**：DNS 把正式域名从 Vercel 切到 ECS；在 Vercel 后台删除 website（及已归档的 duanwu）项目，删掉 `apps/website/vercel.json` 和本地 `.vercel/`。
+- `www.codeforpeople.cn` → 阿里云 CDN → ECS Nginx → `127.0.0.1:3302`。
+- `codeforpeople.cn` → ECS Nginx → `https://www.codeforpeople.cn`。
+- 生产 workflow 以正式域名保留 Host/SNI/证书校验，并用 `curl --connect-to` 绕过 CDN 直连 ECS 做发布 smoke；不保留公开的临时验证域名。
+- Vercel website 项目及 Git 集成已退役，不再参与构建或发布。
 
 ## 阿里云准备清单
 
 1. ECS / Docker / ACR / RDS 均已就绪（`apps/site` 第一阶段已建好，website 复用）。
-2. 创建 website 临时子域的 DNS 记录 -> ECS 公网 IP。
-3. 为该子域签发 SSL 证书（acme.sh DNS-01，见 RUNBOOK）。
-4. 中国大陆**正式**域名指向 ECS 前，先完成 ICP 备案；验证阶段用临时子域即可。
+2. `www` 的 DNS 指向阿里云 CDN CNAME，CDN 以正式域名作为回源 Host/SNI 并经 HTTPS 回源 ECS。
+3. 根域 DNS 指向 ECS，只提供到 `www` 的永久重定向；ECS 证书覆盖根域和 `www`。
+4. 中国大陆正式入口上线前必须完成 ICP 备案；发布验证直接连接源站，不另建公开临时域名。
 
 ## GitHub 密钥
 
@@ -48,7 +50,7 @@ website 原先部署在 Vercel。迁移分两步、Vercel 全程不停：
 - `ECS_SSH_KEY`
 - `DATABASE_URL`
 - `PAYLOAD_SECRET`
-- `NEXT_PUBLIC_SITE_URL`（指向 website 的子域 / 正式域名）
+- `NEXT_PUBLIC_SITE_URL`（固定为 website 正式 canonical 域名）
 - `DEEPSEEK_API_KEY`（对话/摘要 API 必需；可选 `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL`）
 
 kith-inn 另用专属的数据库/Payload/JWT/CMS token、桃子 OpenID、微信登录与小程序上传凭据；只在 GitHub `Production` Environment 或目标主机权限受限文件中配置。缺任一项只阻断 kith-inn，不得影响 website，也不得把 seller ID 当作 secret 输入（它由 provision 结果直传 smoke）。
@@ -89,6 +91,6 @@ docker compose up -d
 
 kith-inn 应用回滚只恢复上一 CMS/BE/H5 digest，不运行旧 ops image；schema 默认 forward-only。若旧应用不兼容新 migration，停止流量并按 Runbook 选择前向修复、已审计 down 或 RDS 备份恢复。
 
-## 临时验证
+## 发布验证
 
-如果 ICP 备案、DNS 或 SSL 还没准备好，可以先用 ECS 公网 IP 或临时域名做仅冒烟测试的验证。备案和证书完成后再切换到正式域名。
+workflow 通过正式 URL 配合 `SITE_CONNECT_TO` 直连 ECS，在不依赖 CDN 缓存或额外公开域名的情况下验证源站 TLS、Nginx、root、health、readiness 与 release SHA。公网验收再独立验证 CDN 和根域重定向。
