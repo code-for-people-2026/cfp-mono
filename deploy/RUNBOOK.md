@@ -51,6 +51,7 @@
 3. **nginx**：`dnf install -y nginx`，反代配置在 `/etc/nginx/conf.d/`：
    - 根域和 `www` 的 80 入口统一跳转到 `https://www.codeforpeople.cn`。
    - 根域 443 永久跳转到 `www`；`www` 的 443 入口反代 `127.0.0.1:3302`。
+   - 80/443 各保留一个 `default_server`，对未知 Host 返回 `444`，避免退役域名落入正式站点。
    - nginx 1.24 用 `listen 443 ssl http2;`（**不支持** `http2 on;` 新语法）。
    - 反代 502 排查：先确认后端容器已就绪；若系统启用了 SELinux，需 `setsebool -P httpd_can_network_connect 1`。
 4. **HTTPS 证书**：用 acme.sh + **DNS-01** 验证签发 Let's Encrypt 证书（不需要 80 端口）。

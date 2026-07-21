@@ -18,5 +18,9 @@ if (( ${#missing[@]} > 0 )); then
   printf 'website production configuration is missing: %s\n' "${missing[*]}" >&2
   exit 1
 fi
+if [[ "$NEXT_PUBLIC_SITE_URL" != 'https://www.codeforpeople.cn' ]]; then
+  echo 'website production configuration is invalid: NEXT_PUBLIC_SITE_URL must use the canonical production URL' >&2
+  exit 1
+fi
 echo 'configured=true' >> "$GITHUB_OUTPUT"
 echo 'website production deployment is configured.'
