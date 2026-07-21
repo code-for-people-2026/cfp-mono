@@ -30,12 +30,16 @@ if [[ "$target" == "website" ]]; then
   release_sha="${RELEASE_SHA:-}"
   [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "invalid_configuration"
   for command in curl jq; do command -v "$command" >/dev/null || fail "missing_command"; done
+  website_curl=(curl -fsS -m 10)
+  if [[ -n "${SITE_CONNECT_TO:-}" ]]; then
+    website_curl+=(--connect-to "$SITE_CONNECT_TO")
+  fi
   website_release() {
     local endpoint="$1" contract="$2"
-    curl -fsS -m 10 "$SITE_URL$endpoint" |
+    "${website_curl[@]}" "$SITE_URL$endpoint" |
       jq -e --arg releaseSha "$release_sha" ".releaseSha == \$releaseSha and ($contract)"
   }
-  retry website curl -fsS -m 10 "$SITE_URL/"
+  retry website "${website_curl[@]}" "$SITE_URL/"
   retry website_health website_release /api/health '.status == "ok"'
   retry website_readiness website_release /api/ready '.ok == true and .service == "website"'
   echo "Smoke tests passed"
