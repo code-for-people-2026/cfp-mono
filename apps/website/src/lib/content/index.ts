@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
+import { SITE_CONTENT_CACHE_KEY, siteDocumentCacheKey } from "./cache-keys";
 import type { ChatPageContent, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
 import {
   chatFallback,
@@ -39,7 +40,7 @@ const getCachedSiteContent = unstable_cache(
       return null;
     }
   },
-  ["site-content"],
+  SITE_CONTENT_CACHE_KEY,
   { tags: ["payload:site-content"], revalidate: false },
 );
 
@@ -79,7 +80,7 @@ async function fetchDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> 
 export function getDocument(slug: SiteDocument["slug"]): Promise<SiteDocument> {
   return unstable_cache(
     () => safe(() => fetchDocument(slug), (d) => Boolean(d.title), documentFallback(slug)),
-    ["site-document", slug],
+    siteDocumentCacheKey(slug),
     { tags: [`payload:doc:${slug}`], revalidate: false },
   )();
 }
