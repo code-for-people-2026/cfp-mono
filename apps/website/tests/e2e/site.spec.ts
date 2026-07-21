@@ -6,8 +6,8 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await page.goto("/");
 
   const shareDescription =
-    "码成工是一个想在 AI 时代为“工友”敲键盘的组织构想：从真实生活出发，把软件能力和数据红利更多还给生产它、使用它的人。";
-  const shareTitle = "码成工｜为“工友”敲键盘";
+    "码成仝是一个想在 AI 时代为“工友”敲键盘的组织构想：从真实生活出发，把软件能力和数据红利更多还给生产它、使用它的人。";
+  const shareTitle = "码成仝｜为“工友”敲键盘";
 
   await expect(page).toHaveTitle(shareTitle);
   await expect(page.locator('meta[name="description"]')).toHaveAttribute(
@@ -38,7 +38,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   );
 
   await expect(
-    page.getByRole("heading", { name: "你好，我们是码成工" }),
+    page.getByRole("heading", { name: "你好，我们是码成仝" }),
   ).toBeVisible();
   await expect(page.locator("body")).not.toContainText("Public AI Lab");
   await expect(page.locator("body")).not.toContainText("公共智能实验室");
@@ -55,11 +55,11 @@ test("homepage presents the public-facing idea and paths to continue", async ({
     page.locator('section[aria-label="了解项目入口"]').getByText("从一个问题开始了解我们"),
   ).toBeVisible();
   await expect(
-    page.getByText("想了解码成工，可以先从一个朴素的问题开始"),
+    page.getByText("想了解码成仝，可以先从一个朴素的问题开始"),
   ).toHaveCount(0);
   await expect(page.getByText("可以先问一个问题")).toHaveCount(0);
   await expect(page.getByRole("textbox", { name: "想了解的问题" })).toBeVisible();
-  await expect(page.getByPlaceholder(/码成工是什么/)).toBeVisible();
+  await expect(page.getByPlaceholder(/码成仝是什么/)).toBeVisible();
   await expect(page.getByPlaceholder(/为什么说软件也是一种服务/)).toBeVisible();
   await expect(page.getByPlaceholder(/工友价代表什么/)).toBeVisible();
   await expect(page.getByRole("button", { name: "开始了解" })).toBeVisible();
@@ -86,10 +86,10 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "我们是谁，服务谁" })).toBeVisible();
   await expect(
-    page.getByText("码成工还在早期。我们先把为什么做、服务谁、如何自我约束讲清楚"),
+    page.getByText("码成仝还在早期。我们先把为什么做、服务谁、如何自我约束讲清楚"),
   ).toBeVisible();
   await expect(page.getByText("首页先把基本身份讲清楚")).toHaveCount(0);
-  await expect(page.getByText("码成工，一个为“工友”敲键盘的组织")).toBeVisible();
+  await expect(page.getByText("码成仝，一个为“工友”敲键盘的组织")).toBeVisible();
   await expect(page.getByText("工友不是一个行业")).toBeVisible();
   await expect(
     page.getByText("项目还在筹备中：数据平权宣言、牛马互助协议和牛马能力剥夺矩阵已经公开"),
@@ -135,7 +135,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("一起做或提出批评")).toHaveCount(0);
 
   await expect(page.getByRole("main").getByRole("heading", { name: "关注后续" })).toHaveCount(0);
-  await expect(page.getByAltText("码成工 logo")).toHaveAttribute(
+  await expect(page.getByAltText("码成仝 logo")).toHaveAttribute(
     "src",
     /code-for-people-logo\.png/,
   );
@@ -210,7 +210,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(filing).toHaveAttribute("href", "https://beian.miit.gov.cn/");
   await expect(filing).toHaveAttribute("target", "_blank");
   await expect(filing).toHaveAttribute("rel", /noreferrer/);
-  await expect(footer.getByText("© 2026 码成工")).toBeVisible();
+  await expect(footer.getByText("© 2026 码成仝")).toBeVisible();
 });
 
 test("homepage follows the visitor system color scheme", async ({ page }) => {
@@ -241,7 +241,7 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
   await page.goto("/");
 
   const metrics = await page.evaluate(() => {
-    const headerLogo = document.querySelector('img[alt="码成工 logo"]');
+    const headerLogo = document.querySelector('img[alt="码成仝 logo"]');
     if (!headerLogo) {
       throw new Error("Missing header logo");
     }

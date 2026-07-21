@@ -3,14 +3,14 @@
 export const directionMapHref = "/wam";
 
 export const siteMetadata = {
-  title: "码成工｜为“工友”敲键盘",
+  title: "码成仝｜为“工友”敲键盘",
   description:
-    "码成工是一个想在 AI 时代为“工友”敲键盘的组织构想：从真实生活出发，把软件能力和数据红利更多还给生产它、使用它的人。",
+    "码成仝是一个想在 AI 时代为“工友”敲键盘的组织构想：从真实生活出发，把软件能力和数据红利更多还给生产它、使用它的人。",
 };
 
 export const hero = {
   kicker: "数据平权 · AI 下乡",
-  title: "你好，我们是码成工",
+  title: "你好，我们是码成仝",
   organizationLine: "一个为“工友”敲键盘的组织",
   manifestoLine: "软件也是一种服务，为何不还给人民",
   body: "",
@@ -34,7 +34,7 @@ export const heroFlow = [
 export const dialogueSuggestions = [
   {
     label: "你们是谁",
-    value: "码成工是什么？你们为什么说自己是为“工友”敲键盘的组织？",
+    value: "码成仝是什么？你们为什么说自己是为“工友”敲键盘的组织？",
   },
   {
     label: "为什么还给人民",
@@ -52,7 +52,7 @@ export const dialogueSuggestions = [
 
 export const dialogueEntry = {
   prompt: "从一个问题开始了解我们",
-  placeholder: "比如：码成工是什么？为什么说软件也是一种服务？工友价代表什么？",
+  placeholder: "比如：码成仝是什么？为什么说软件也是一种服务？工友价代表什么？",
   submitLabel: "开始了解",
   note:
     "回答基于已经公开的文本。项目仍在早期，内容由 AI 生成，请仔细甄别。",
@@ -61,13 +61,13 @@ export const dialogueEntry = {
 export const identityIntro = {
   title: "我们是谁，服务谁",
   body:
-    "码成工还在早期。我们先把为什么做、服务谁、如何自我约束讲清楚，也把要探索的方向摆出来。",
+    "码成仝还在早期。我们先把为什么做、服务谁、如何自我约束讲清楚，也把要探索的方向摆出来。",
 };
 
 export const identityCards = [
   {
     title: "我们是谁",
-    body: "码成工，一个为“工友”敲键盘的组织。我们想在 AI 时代把软件能力更多还给生产数据、使用服务的人。",
+    body: "码成仝，一个为“工友”敲键盘的组织。我们想在 AI 时代把软件能力更多还给生产数据、使用服务的人。",
   },
   {
     title: "服务谁",
@@ -250,7 +250,7 @@ export const manifesto: DocumentContent = {
     "这份宣言回答一个问题：当 AI 让软件生产力开始过剩，平台继续坐在生产者与使用者中间收租，还合不合理。",
   meta: "v0.4 · 端午摆摊公开版",
   guide: [
-    "这不是产品说明，也不是法律协议，而是码成工为什么要做这件事的立场文本。",
+    "这不是产品说明，也不是法律协议，而是码成仝为什么要做这件事的立场文本。",
     "如果你第一次听说我们，可以先读摘要；如果你想知道这套话从哪里来，请往下读完整宣言。",
   ],
   sections: [

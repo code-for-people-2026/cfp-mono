@@ -120,10 +120,10 @@ describe("mapSettings", () => {
       shareDescription: "D",
       directionMapUrl: "/wam",
       githubUrl: "gh",
-      brand: { wordmark: "码成工", tagline: "副", logoPath: "/l.png", logoAlt: "alt" },
+      brand: { wordmark: "码成仝", tagline: "副", logoPath: "/l.png", logoAlt: "alt" },
       headerNav: [{ label: "n", href: "/h" }],
     });
-    expect(out.brand.wordmark).toBe("码成工");
+    expect(out.brand.wordmark).toBe("码成仝");
     expect(out.headerNav).toEqual([{ label: "n", href: "/h" }]);
   });
 });
