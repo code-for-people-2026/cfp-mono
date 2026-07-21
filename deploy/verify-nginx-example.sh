@@ -64,8 +64,12 @@ done
 [[ "$(grep -Fc 'proxy_pass http://127.0.0.1:3302;' <<<"$config_text")" == "1" ]] ||
   fail "www must be the only website proxy block"
 ! grep -Fq 'demo.codeforpeople.cn' <<<"$config_text" || fail "retired demo host must be absent"
+[[ "$(grep -Fc 'default_server;' <<<"$config_text")" == "2" ]] ||
+  fail "HTTP and HTTPS must each define one default server"
 [[ "$(grep -Fc 'ssl_protocols TLSv1.2 TLSv1.3;' <<<"$config_text")" -ge "2" ]] ||
   fail "website TLS servers must reject TLS versions older than 1.2"
+assert_server_contains '_' '80 default_server' 'return 444;'
+assert_server_contains '_' '443 ssl http2 default_server' 'return 444;'
 assert_server_contains 'codeforpeople.cn www.codeforpeople.cn' '80' \
   'return 308 https://www.codeforpeople.cn$request_uri;'
 assert_server_contains 'codeforpeople.cn' '443 ssl http2' \

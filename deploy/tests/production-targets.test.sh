@@ -179,7 +179,13 @@ website_required=(
   NEXT_PUBLIC_SITE_URL DEEPSEEK_API_KEY
 )
 website_values=()
-for name in "${website_required[@]}"; do website_values+=("$name=website-sentinel-$name"); done
+for name in "${website_required[@]}"; do
+  if [[ "$name" == NEXT_PUBLIC_SITE_URL ]]; then
+    website_values+=("$name=https://www.codeforpeople.cn")
+  else
+    website_values+=("$name=website-sentinel-$name")
+  fi
+done
 : > "$tmp/website-configured"
 env "${website_values[@]}" GITHUB_OUTPUT="$tmp/website-configured" \
   bash "$website_config_check" > "$tmp/website-configured.log"
@@ -196,5 +202,13 @@ if env "${website_missing[@]}" GITHUB_OUTPUT="$tmp/website-missing" \
 fi
 grep -q 'ECS_SSH_KNOWN_HOSTS' "$tmp/website-missing.log"
 ! grep -q 'website-sentinel' "$tmp/website-missing.log"
+
+if env "${website_values[@]}" NEXT_PUBLIC_SITE_URL=https://demo.codeforpeople.cn \
+  GITHUB_OUTPUT="$tmp/website-wrong-url" bash "$website_config_check" \
+  > "$tmp/website-wrong-url.log" 2>&1; then
+  echo "website canonical URL 错误时必须失败" >&2; exit 1
+fi
+grep -q 'NEXT_PUBLIC_SITE_URL' "$tmp/website-wrong-url.log"
+! grep -q 'website-sentinel' "$tmp/website-wrong-url.log"
 
 echo "production target/config tests passed"
