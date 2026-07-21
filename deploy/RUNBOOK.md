@@ -27,7 +27,7 @@
 | ECS | `<ECS_PUBLIC_IP>`，Alibaba Cloud Linux 3，已装 Docker + Compose |
 | RDS | PostgreSQL 17，内网 `<RDS_ENDPOINT>:5432`，与 ECS **同 VPC**（走内网）；库 `cfp`，账号 `cfpadmin` |
 | ACR | 个人版实例 `<ACR_REGISTRY>`，命名空间 `<ACR_NAMESPACE>`，开启「仓库自动创建/私有」|
-| 域名 | website 临时子域（A 记录指向 ECS）；正式域名验证通过后再从 Vercel 切来 |
+| 域名 | `www.codeforpeople.cn` 经阿里云 CDN 回源 ECS；根域直达 ECS 并永久跳转到 `www` |
 | 端口 | ECS 内部：website 容器 `3302`；nginx `80`/`443` |
 
 ## 3. 部署流程（GitHub Actions）
@@ -49,28 +49,24 @@
 2. **部署 SSH key**：CI 用独立 ed25519 key 登录 ECS（公钥在 `~/.ssh/authorized_keys`，私钥存 `ECS_SSH_KEY`）。
    - ⚠️ 写私钥时必须保留结尾换行（`printf '%s\n'`，不能用 `printf '%s'`，否则 `error in libcrypto`）。
 3. **nginx**：`dnf install -y nginx`，反代配置在 `/etc/nginx/conf.d/`：
-   - `demo.codeforpeople.cn.conf`：80 → `127.0.0.1:3302`
-   - `demo-ssl.conf`：443（SSL）→ `127.0.0.1:3302`
+   - 根域和 `www` 的 80 入口统一跳转到 `https://www.codeforpeople.cn`。
+   - 根域 443 永久跳转到 `www`；`www` 的 443 入口反代 `127.0.0.1:3302`。
    - nginx 1.24 用 `listen 443 ssl http2;`（**不支持** `http2 on;` 新语法）。
    - 反代 502 排查：先确认后端容器已就绪；若系统启用了 SELinux，需 `setsebool -P httpd_can_network_connect 1`。
 4. **HTTPS 证书**：用 acme.sh + **DNS-01** 验证签发 Let's Encrypt 证书（不需要 80 端口）。
    ```bash
    export Ali_Key=<ID>; export Ali_Secret=<SECRET>   # 临时，勿入库
-   acme.sh --issue --dns dns_ali -d demo.codeforpeople.cn --server letsencrypt --keylength ec-256
+   acme.sh --issue --dns dns_ali -d codeforpeople.cn -d www.codeforpeople.cn --server letsencrypt --keylength ec-256
    ```
    证书放 `/etc/nginx/ssl/`，`nginx -t && systemctl reload nginx`。
 
-## 5. ICP 备案：现状与通过后的切换
+## 5. Website 正式入口稳态
 
-**关键认知**：阿里云在大陆 ECS 上对**明文 HTTP** 流量按 `Host` 头拦截未备案域名（**与端口无关**，3302 也拦）；**HTTPS 加密了 Host，拦不到**，故 HTTPS 可暂时访问。但这只是技术现象——
-
-> **未备案不得对公众提供网站服务。** 当前 `https://demo.codeforpeople.cn` 仅供内部/团队测试，**不可公开推广**。阿里云仍可能人工巡检/整改。
-
-**备案通过后**应做：
-1. 关掉对外暴露的 `3302`（安全组删除该入方向规则），只留 80/443。
-2. 配置 80 → 443 跳转。
-3. 证书续期改用宝塔一键 SSL 或服务器侧 acme.sh 定时任务（见第 8 节）。
-4. 如需对外，可接入已购的 CDN。
+1. 安全组只对 website 公开 80/443；容器端口 `3302` 仅绑定 loopback。
+2. `www` 由阿里云 CDN 提供公网 HTTPS，CDN 用 `www` 作为回源 Host/SNI 并经 443 回源。
+3. 根域的 HTTP/HTTPS 均由 ECS 返回到 `www` 的永久重定向。
+4. workflow 使用正式域名配合 `SITE_CONNECT_TO` 直连 ECS 做发布 smoke；不依赖 CDN，也不保留公开的临时验证域名。
+5. CDN/源站证书续期后必须复验完整链、SNI、有效期和 Nginx reload。
 
 ## 6. 运维操作
 
@@ -103,7 +99,6 @@
 - **首次上线清旧表（可选）**：`cfp` 库 `public` schema 里可能残留 site 时代的 Payload 表。它们和 website 的 `website` schema 不冲突，可在确认 website 正常后再清理，不是上线前置条件。
 - **Payload 生成类型未提交（类型安全 follow-up）**：`payload-types.ts` 是生成物、未提交，CI 在其缺席下按宽松类型通过。若要完整 schema 类型安全，需提交它并修 `seed.ts` / `lib/content` 里 6 处严格类型不匹配（slug/target 联合类型、`as Raw` 改 `as unknown as`）。属独立改进。
 - **证书自动续期未对接服务器**：当前证书在本机签发、手动传到 ECS。备案后改为服务器侧自动续期 + reload。
-- **临时放行的 3302**：备案后关闭。
 
 ## 9. kith-inn 桃子体验版
 
