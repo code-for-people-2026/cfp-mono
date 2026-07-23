@@ -72,9 +72,12 @@ const ACTION_LABELS: Record<OrderAction, string> = {
 };
 
 export default function MerchantOrders() {
+  const params = Taro.getCurrentInstance().router?.params ?? {};
+  const routeDate = params.date ?? "";
+  const routeOccasion: Occasion = params.occasion === "dinner" ? "dinner" : "lunch";
   const loadRevision = useRef(0);
-  const [date, setDate] = useState("");
-  const [occasion, setOccasion] = useState<Occasion>("lunch");
+  const [date, setDate] = useState(routeDate);
+  const [occasion, setOccasion] = useState<Occasion>(routeOccasion);
   const [mealSlot, setMealSlot] = useState<MealSlot | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<OrderSummary>(EMPTY_SUMMARY);
@@ -105,6 +108,7 @@ export default function MerchantOrders() {
       if (handledAuthFailure(error)) return;
       return Taro.showToast({ title: "顾客资料加载失败", icon: "none" });
     });
+    if (routeDate) void load(routeOccasion);
   }, []);
 
   const clearLoadedOrderState = () => {
@@ -121,7 +125,7 @@ export default function MerchantOrders() {
     setPageStatus("idle");
   };
 
-  const load = async (targetOccasion: Occasion) => {
+  async function load(targetOccasion: Occasion) {
     clearLoadedOrderState();
     setPageStatus("loading");
     const revision = loadRevision.current;
@@ -143,7 +147,7 @@ export default function MerchantOrders() {
         icon: "none"
       });
     }
-  };
+  }
 
   const save = async () => {
     if (!mealSlot) {

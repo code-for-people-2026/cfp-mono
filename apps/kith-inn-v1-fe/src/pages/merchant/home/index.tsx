@@ -76,6 +76,7 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
     const session = sessions.getSession();
     const waiting = meals.reduce((total, meal) => total + meal.card.waitingConfirmation, 0);
     const partial = meals.some((meal) => meal.orderError);
+    const deliveryOccasion = meals.find(({ card }) => card.slot && card.pendingDelivery > 0)?.card.occasion ?? meals.find(({ card }) => card.slot)?.card.occasion ?? "lunch";
 
     return <View className="page merchant-home">
     <View className="home-heading"><View><Text className="title">{session?.sellerName ?? "商家"}，今天好</Text>
@@ -100,7 +101,7 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
         <Button onClick={() => go("/pages/merchant/menu/index")}>排本周菜单</Button>
         <Button onClick={() => go("/pages/merchant/batches/index")}>预订批次</Button>
         <Button onClick={() => go("/pages/merchant/orders/index")}>查看订单</Button>
-        <Button onClick={() => go("/pages/merchant/orders/index?mode=delivery")}>配送清单</Button>
+        <Button onClick={() => go(`/pages/merchant/orders/index?date=${date}&occasion=${deliveryOccasion}`)}>配送清单</Button>
       </View>
     </>}
     <MerchantNav active="home" />
