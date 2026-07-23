@@ -93,20 +93,42 @@ export function orderStateText(order: Order): string {
   return `业务：${business}；付款：${payment}；配送：${delivery}`;
 }
 
-export function duplicateDraftUpdate(error: unknown, input: ManualOrderCreate): {
-  id: string | number;
-  patch: ManualOrderUpdate;
-} | null {
-  if (!(error instanceof ApiError) || error.code !== "order-exists" ||
+export type ManualOrderConflict =
+  | { kind: "update-draft"; id: string | number; patch: ManualOrderUpdate }
+  | { kind: "resubmit-canceled"; id: string | number; input: OrderResubmit }
+  | { kind: "view-existing"; id: string | number; source: Order["source"] | "unknown" };
+
+export function manualOrderConflict(
+  error: unknown,
+  input: ManualOrderCreate,
+  orders: Order[]
+): ManualOrderConflict | null {
+  if (!(error instanceof ApiError) ||
+    (error.code !== "order-exists" && error.code !== "canceled-order-exists") ||
     typeof error.data !== "object" || error.data === null || !("existing" in error.data)) return null;
-  const existing = (error.data as { existing?: unknown }).existing;
-  if (typeof existing !== "object" || existing === null) return null;
-  const value = existing as { id?: unknown; status?: unknown };
-  const validId = (typeof value.id === "string" && value.id !== "") ||
-    (typeof value.id === "number" && Number.isInteger(value.id));
-  return validId && value.status === "draft"
-    ? { id: value.id as string | number, patch: { quantity: input.quantity, note: input.note } }
-    : null;
+  const value = (error.data as { existing?: unknown }).existing;
+  if (typeof value !== "object" || value === null) return null;
+  const existing = value as { id?: unknown; status?: unknown };
+  const validId = (typeof existing.id === "string" && existing.id !== "") ||
+    (typeof existing.id === "number" && Number.isInteger(existing.id));
+  if (!validId || (existing.status !== "draft" && existing.status !== "confirmed" &&
+    existing.status !== "canceled")) return null;
+  const id = existing.id as string | number;
+  const loaded = orders.find((order) => sameOrderId(order.id, id));
+  if (!loaded || loaded.status !== existing.status) return { kind: "view-existing", id, source: "unknown" };
+  if (loaded.source === "manual" && error.code === "order-exists" && loaded.status === "draft") {
+    return { kind: "update-draft", id, patch: { quantity: input.quantity, note: input.note } };
+  }
+  if (loaded.source === "manual" && error.code === "canceled-order-exists" &&
+    loaded.status === "canceled" && loaded.address !== null) {
+    return { kind: "resubmit-canceled", id, input: {
+      quantity: input.quantity,
+      displayName: loaded.displayName,
+      address: loaded.address,
+      note: input.note
+    } };
+  }
+  return { kind: "view-existing", id, source: loaded.source };
 }
 
 export function orderSummaryText(summary: OrderSummary): string {
@@ -118,7 +140,7 @@ export function merchantOrdersPageNotice(status: MerchantOrdersPageStatus, order
   if (status === "idle") return "请填写日期并查看午餐或晚餐订单";
   if (status === "loading") return "正在加载餐次订单…";
   if (status === "error") return "餐次订单加载失败，请检查日期后重试";
-  return orderCount === 0 ? "当前餐次还没有订单，可在下方补录草稿" : null;
+  return orderCount === 0 ? "当前餐次还没有订单，可手动补录待确认订单" : null;
 }
 
 export function replaceOrder(orders: Order[], replacement: Order): Order[] {

@@ -133,6 +133,9 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
           {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button size="mini" disabled={status === "loading"} onClick={() => void this.retryMeal(card.occasion)}>重新加载</Button></View>
             : <><Text className="home-summary">已确认 {card.confirmedQuantity} 份 · 待确认 {card.waitingConfirmation} 笔</Text>
               <Text className="meta">{card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送</Text></>}
+          <Button className="manual-add" size="mini" onClick={() => goDetail(
+            `/pages/merchant/orders/add/index?date=${date}&occasion=${card.occasion}`
+          )}>手动加单</Button>
         </> : <><Text className="home-menu">今天还没有安排这个餐次</Text>
           <Button size="mini" onClick={() => goMain("/pages/merchant/menu/index")}>先排菜单</Button></>}
       </View>)}</View>

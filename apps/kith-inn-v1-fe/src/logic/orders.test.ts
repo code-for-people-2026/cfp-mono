@@ -7,7 +7,7 @@ import {
   buildOrderEdit,
   bulkDeliveryFeedback,
   copyOrderChecklist,
-  duplicateDraftUpdate,
+  manualOrderConflict,
   orderAddressText,
   orderChecklistText,
   merchantOrdersPageNotice,
@@ -63,7 +63,7 @@ describe("manual-order form logic", () => {
     expect(merchantOrdersPageNotice("idle", 0)).toBe("请填写日期并查看午餐或晚餐订单");
     expect(merchantOrdersPageNotice("loading", 0)).toBe("正在加载餐次订单…");
     expect(merchantOrdersPageNotice("error", 0)).toBe("餐次订单加载失败，请检查日期后重试");
-    expect(merchantOrdersPageNotice("loaded", 0)).toBe("当前餐次还没有订单，可在下方补录草稿");
+    expect(merchantOrdersPageNotice("loaded", 0)).toBe("当前餐次还没有订单，可手动补录待确认订单");
     expect(merchantOrdersPageNotice("loaded", 1)).toBeNull();
   });
 
@@ -133,26 +133,46 @@ describe("manual-order form logic", () => {
     expect(buildOrderEdit({ ...form, quantity: "0" }, false, "jielong-import")).toBeNull();
   });
 
-  it("turns only an active duplicate into an explicit same-id draft update", () => {
+  it("keeps manual duplicate, canceled and customer-card conflicts explicit", () => {
     const input = { mealSlotId: 11, customerProfileId: 21, quantity: 3, note: "少辣" } as const;
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "已存在", {
-      existing: { id: 31, status: "draft", quantity: 2 }
-    }), input)).toEqual({ id: 31, patch: { quantity: 3, note: "少辣" } });
-    expect(duplicateDraftUpdate(new ApiError(409, "canceled-order-exists", "已取消", {
-      existing: { id: 31, status: "canceled", quantity: 2 }
-    }), input)).toBeNull();
-    expect(duplicateDraftUpdate(new Error("offline"), input)).toBeNull();
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "坏数据", {}), input)).toBeNull();
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "坏数据", { existing: null }), input)).toBeNull();
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "坏数据", {
-      existing: { id: null, status: "draft" }
-    }), input)).toBeNull();
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "已取消", {
-      existing: { id: "order-31", status: "canceled" }
-    }), input)).toBeNull();
-    expect(duplicateDraftUpdate(new ApiError(409, "order-exists", "已存在", {
+    const conflict = (code: "order-exists" | "canceled-order-exists", existing: Order) =>
+      new ApiError(409, code, "已存在", { existing: {
+        id: existing.id, status: existing.status, quantity: existing.quantity
+      } });
+
+    expect(manualOrderConflict(conflict("order-exists", order()), input, [order()]))
+      .toEqual({ kind: "update-draft", id: 31, patch: { quantity: 3, note: "少辣" } });
+    const canceled = order({
+      status: "canceled",
+      displayName: "王姨",
+      address: "3A-1202",
+      canceledAt: "2026-07-12T00:00:00.000Z"
+    });
+    expect(manualOrderConflict(conflict("canceled-order-exists", canceled), input, [canceled]))
+      .toEqual({ kind: "resubmit-canceled", id: 31, input: {
+        quantity: 3, displayName: "王姨", address: "3A-1202", note: "少辣"
+      } });
+    const customer = order({ source: "customer-card" });
+    expect(manualOrderConflict(conflict("order-exists", customer), input, [customer]))
+      .toEqual({ kind: "view-existing", id: 31, source: "customer-card" });
+    const confirmed = order({ status: "confirmed", confirmedAt: "2026-07-12T00:00:00.000Z" });
+    expect(manualOrderConflict(conflict("order-exists", confirmed), input, [confirmed]))
+      .toEqual({ kind: "view-existing", id: 31, source: "manual" });
+    expect(manualOrderConflict(conflict("order-exists", order()), input, []))
+      .toEqual({ kind: "view-existing", id: 31, source: "unknown" });
+    expect(manualOrderConflict(new ApiError(409, "order-exists", "坏数据", {}), input, [order()])).toBeNull();
+    expect(manualOrderConflict(new ApiError(409, "order-exists", "坏数据", {
+      existing: null
+    }), input, [order()])).toBeNull();
+    expect(manualOrderConflict(new ApiError(409, "order-exists", "已存在", {
       existing: { id: "order-31", status: "draft" }
-    }), input)).toEqual({ id: "order-31", patch: { quantity: 3, note: "少辣" } });
+    }), input, [order({ id: "order-31" })])).toEqual({
+      kind: "update-draft", id: "order-31", patch: { quantity: 3, note: "少辣" }
+    });
+    expect(manualOrderConflict(new ApiError(409, "order-exists", "坏数据", {
+      existing: { id: null, status: "draft" }
+    }), input, [order()])).toBeNull();
+    expect(manualOrderConflict(new Error("offline"), input, [order()])).toBeNull();
   });
 });
 

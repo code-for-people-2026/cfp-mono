@@ -465,6 +465,15 @@ button.danger {
 
 .home-order-error button { margin: 0; }
 
+.home-meal-card button.manual-add {
+  width: 100%;
+  margin: 22rpx 0 0;
+  border: 1px solid #d98965;
+  background: #fff8ed;
+  color: #8f3428;
+  font-weight: 700;
+}
+
 .home-quick {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -505,4 +514,75 @@ button.danger {
   color: #a93c2e;
   font-weight: 800;
   opacity: 1;
+}
+
+button.manual-add-entry {
+  margin-top: 0;
+}
+
+.manual-order-page {
+  display: flex;
+  flex-direction: column;
+  gap: 28rpx;
+}
+
+.manual-order-page button.manual-back {
+  width: 100%;
+  margin: 0;
+  border: 1px solid #e2d4c5;
+  background: #fffdf8;
+  color: #4e4237;
+}
+
+.manual-slot text,
+.manual-selected,
+.manual-conflict text {
+  display: block;
+}
+
+.manual-slot .meta,
+.manual-slot .notice {
+  margin-top: 18rpx;
+}
+
+.manual-search {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.manual-search input,
+.manual-form input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 20rpx;
+  border: 1px solid #ddcdbb;
+  border-radius: 14rpx;
+  background: #fffdf9;
+}
+
+.manual-search input {
+  flex: 1;
+}
+
+.manual-search button,
+.manual-customer > button {
+  margin: 0;
+}
+
+.manual-form input {
+  margin-bottom: 20rpx;
+}
+
+.manual-selected {
+  margin-bottom: 20rpx;
+  padding: 20rpx;
+  border-radius: 14rpx;
+  background: #f6eee4;
+}
+
+.manual-form button.primary,
+.manual-conflict button {
+  margin-top: 20rpx;
 }
