@@ -373,10 +373,10 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 **Goal**: 桃子从今日餐次进入专用页面，为已排菜单但未开放、正在预订、已截止或已关闭餐次补录 manual draft 私信订单，且重复/重提均需显式确认。
 
-**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card/jielong-import 冲突保留 source 并转查看既有订单；未开放、开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
+**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card 冲突保留 source 并转查看既有订单；未开放、开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
 
-- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖未开放/开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、非 manual 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
-- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将非 manual 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
+- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖未开放/开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、customer-card 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
+- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将 customer-card 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
 
 ### 独立人工发布门禁（不阻塞自动化切片）
 
