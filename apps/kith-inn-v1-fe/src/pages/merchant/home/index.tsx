@@ -71,6 +71,22 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
     }
   };
 
+  private retryMeal = async (occasion: Occasion) => {
+    const previous = this.state.meals.find(({ card }) => card.occasion === occasion);
+    if (!previous?.card.slot) return;
+    const current = ++this.revision;
+    try {
+      const result = await api.listOrders(this.state.date, occasion);
+      if (current !== this.revision) return;
+      const card = buildMerchantMealCard({ occasion, slot: result.mealSlot, orders: result.docs, summary: result.summary, now: new Date() });
+      this.setState(({ meals }) => ({ meals: meals.map((meal) => meal.card.occasion === occasion
+        ? { card, orderError: false }
+        : meal) }));
+    } catch (error) {
+      if (error instanceof ApiError && (error.status === 401 || error.status === 403)) return;
+    }
+  };
+
   render() {
     const { date, status, meals } = this.state;
     const session = sessions.getSession();
@@ -91,7 +107,7 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
           <Text className={`home-state ${card.state}`}>{card.stateText}</Text></View>
         {card.slot ? <><Text className="home-menu">{card.slot.menuItems.map((item) => item.nameSnapshot).join(" · ")}</Text>
           <View className="home-row"><Text className="strong">{card.priceText}</Text><Text className="meta">{deadlineText(card.slot.orderDeadline)}</Text></View>
-          {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button size="mini" onClick={() => void this.load()}>重新加载</Button></View>
+          {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button size="mini" onClick={() => void this.retryMeal(card.occasion)}>重新加载</Button></View>
             : <><Text className="home-summary">已确认 {card.confirmedQuantity} 份 · 待确认 {card.waitingConfirmation} 笔</Text>
               <Text className="meta">{card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送</Text></>}
         </> : <><Text className="home-menu">今天还没有安排这个餐次</Text>
