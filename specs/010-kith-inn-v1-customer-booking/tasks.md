@@ -112,7 +112,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | M4-A | 顾客数据复制与资料批量软停用 | T091–T092 | FE coverage、headless H5 | M3-G；`<400` |
 | M4-B | 错误/空态/截止/关闭态打磨 | T093–T094 | FE coverage、headless H5、weapp | M4-A；`<400` |
 | M4-C | latest-main 自动化与人工门禁记账 | T095–T096 | 全量 headless/verify；记录但不完成人工门禁 | M4-B；`<400` |
-| M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、五状态、汇总、价格与补单资格 | M5-P；目标 `<300` |
+| M5-P | 商家工作台需求与依赖有序规划 | —（docs-only，不分配 Task ID） | 用户故事/FR/SC/Task 追踪、`git diff --check`、`pnpm verify` | latest `origin/main`；默认 `<400` |
+| M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、截止等于当前时刻、五状态、汇总、价格与补单资格 | M5-P；目标 `<300` |
 | M5-H2 | 真实数据今日工作台与登录落点 | T100–T101 | FE coverage、headless H5、weapp；状态/失败/导航矩阵 | M5-H1；默认 `<400` |
 | M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；未开放/开放/截止/关闭与显式重复处理 | M5-H2；默认 `<400` |
 
@@ -355,9 +356,9 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 **Goal**: 在不注册新页面的前提下，把 US7 的今日日期、午晚餐状态、订单汇总、价格文案和手动加单资格收敛为可测试的纯逻辑。
 
-**Independent Test**: Asia/Shanghai 在 UTC 跨日边界取到正确日期；午餐/晚餐分别覆盖尚未排菜单、已排菜单但未开放、预订中、已截止、已关闭；draft 只汇总为“待确认订单”；已确认订单数/份数、未付和待送数据准确；空价格显示“商家默认价”；只要餐次存在，截止或关闭后仍允许商家手动加单。
+**Independent Test**: Asia/Shanghai 在 UTC 跨日边界取到正确日期；午餐/晚餐分别覆盖尚未排菜单、已排菜单但未开放、预订中、已截止、已关闭，且截止时间等于当前时刻时判为已截止；draft 只汇总为“待确认订单”；已确认订单数/份数、未付和待送数据准确；空价格显示“商家默认价”；只要餐次存在，未开放、开放、截止或关闭时均允许商家手动加单。
 
-- [ ] T098 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
+- [ ] T098 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、截止时间等于当前时刻时判为已截止、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
 - [ ] T099 [US7] 在 `apps/kith-inn-v1-fe/src/logic/merchantHome.ts` 实现无 Taro/React 副作用的首页状态模型，不注册页面、不请求 API、不显示“新订单”
 
 ## Phase 25：M5-H2 真实数据今日工作台页面
