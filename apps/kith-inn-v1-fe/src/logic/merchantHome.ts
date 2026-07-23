@@ -22,6 +22,8 @@ const EMPTY_SUMMARY: OrderSummary = {
   pendingDelivery: 0
 };
 
+const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+
 export type MerchantMealCard = {
   occasion: MealSlot["occasion"];
   slot: MealSlot | null;
@@ -37,19 +39,15 @@ export type MerchantMealCard = {
 };
 
 export function businessDateInShanghai(now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(now);
+  return new Date(now.getTime() + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
 }
 
 export function merchantMealState(slot: MealSlot | null, now: Date): MerchantMealState {
   if (slot === null) return "unplanned";
   if (slot.orderStatus === "draft") return "menu-ready";
   if (slot.orderStatus === "closed") return "closed";
-  if (slot.orderDeadline !== null && Date.parse(slot.orderDeadline) <= now.getTime()) {
+  if (slot.orderDeadline === null) return "menu-ready";
+  if (Date.parse(slot.orderDeadline) <= now.getTime()) {
     return "deadline-passed";
   }
   return "booking-open";
