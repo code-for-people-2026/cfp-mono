@@ -14,7 +14,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 ## 格式
 
 - `[P]`：可与同阶段其他 `[P]` 任务并行，且不会修改同一文件。
-- `[US1]`～`[US6]`：对应 spec.md 用户故事。
+- `[US1]`～`[US7]`：对应 spec.md 用户故事。
 - 每条任务给出预期修改或验证的准确路径。
 
 ## Phase 1：M2-A 商家餐次配置与批次 path（US1）
@@ -112,8 +112,13 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | M4-A | 顾客数据复制与资料批量软停用 | T091–T092 | FE coverage、headless H5 | M3-G；`<400` |
 | M4-B | 错误/空态/截止/关闭态打磨 | T093–T094 | FE coverage、headless H5、weapp | M4-A；`<400` |
 | M4-C | latest-main 自动化与人工门禁记账 | T095–T096 | 全量 headless/verify；记录但不完成人工门禁 | M4-B；`<400` |
+| M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、五状态、汇总、价格与补单资格 | M5-P；目标 `<300` |
+| M5-H2 | 真实数据今日工作台与登录落点 | T100–T101 | FE coverage、headless H5、weapp；状态/失败/导航矩阵 | M5-H1；默认 `<400` |
+| M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；开放/截止/关闭与显式重复处理 | M5-H2；默认 `<400` |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
+
+M5 每片共享完成清单（不分配 Task ID）：相关窄测试、FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check`、精确路径与人工 diff 审计全部通过；ready PR 的 latest-head CI/Codex review、actionable comment、unresolved thread 与 `mergeStateStatus=CLEAN` 闭环后只允许 rebase merge。
 
 ---
 
@@ -348,13 +353,12 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 ## Phase 24：M5-H1 今日工作台纯状态模型
 
-**Goal**: 在不注册新页面的前提下，把今日日期、午晚餐状态、订单汇总、价格文案和手动加单资格收敛为可测试的纯逻辑。
+**Goal**: 在不注册新页面的前提下，把 US7 的今日日期、午晚餐状态、订单汇总、价格文案和手动加单资格收敛为可测试的纯逻辑。
 
 **Independent Test**: Asia/Shanghai 在 UTC 跨日边界取到正确日期；午餐/晚餐分别覆盖尚未排菜单、已排菜单但未开放、预订中、已截止、已关闭；draft 只汇总为“待确认订单”；已确认订单数/份数、未付和待送数据准确；空价格显示“商家默认价”；只要餐次存在，截止或关闭后仍允许商家手动加单。
 
-- [ ] T098 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
-- [ ] T099 [US1] 在 `apps/kith-inn-v1-fe/src/logic/merchantHome.ts` 实现无 Taro/React 副作用的首页状态模型，不注册页面、不请求 API、不显示“新订单”
-- [ ] T100 [US1] 运行 FE 100% coverage、无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check` 与路径/人工 diff 审计；确认只改 H1 精确路径且人工 diff `<300`，闭环 M5-H1 ready PR 后 rebase merge
+- [ ] T098 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
+- [ ] T099 [US7] 在 `apps/kith-inn-v1-fe/src/logic/merchantHome.ts` 实现无 Taro/React 副作用的首页状态模型，不注册页面、不请求 API、不显示“新订单”
 
 ## Phase 25：M5-H2 真实数据今日工作台页面
 
@@ -362,9 +366,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 首页首屏调用一次 `listMealSlots(today,today)`，仅为存在的午/晚餐并行调用 `listOrders`；登录/session 落点、不同餐次状态、待确认汇总、加载/空态/部分失败/整页失败/重试、页面重新显示刷新与菜单/预订/订单/配送快捷入口均可在无头 H5 验证，weapp build 通过。
 
-- [ ] T101 [US1] 先扩展 FE 页面/导航测试与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`，覆盖登录和已有 session 落点、午晚餐真实状态、待确认汇总、空态/部分失败/重试、重新显示刷新、快捷入口与页面内 `MerchantNav`，并确认测试失败
-- [ ] T102 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/home/index.tsx`、`src/app.config.ts`、`src/app.css` 和必要的既有登录/导航文件实现首页；复用 API client/store/H1 模型，不增加全局 tabBar、第二套状态管理或 `/merchant/dashboard`
-- [ ] T103 [US1] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check` 与路径/人工 diff 审计；默认 `<400`，略超时在 PR 说明记录不可再拆原因、额外风险和验证，闭环 M5-H2 ready PR 后 rebase merge
+- [ ] T100 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/login.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖登录和已有 session 落点、午晚餐真实状态、待确认汇总、空态/单餐失败/整页失败/重试、重新显示刷新、快捷入口与页面内 `MerchantNav`，并确认测试失败
+- [ ] T101 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/login.ts,pages/merchant/login/index.tsx,components/MerchantNav.tsx,pages/merchant/home/index.tsx,app.config.ts,app.css}` 实现首页；复用 API client/store/H1 模型，不增加全局 tabBar、第二套状态管理或 `/merchant/dashboard`
 
 ## Phase 26：M5-H3 专用手动加单闭环
 
@@ -372,9 +375,8 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 draft 只在确认后更新，canceled 只在确认后重提；开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
 
-- [ ] T104 [US1] 先扩展 FE service/logic/page 测试与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`，覆盖开放/截止/关闭、已有/新建顾客、数量/备注、重复 draft 显式更新、canceled 显式重提、无餐次与成功去向，并确认测试失败
-- [ ] T105 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/orders/add/index.tsx`、`src/app.config.ts`、`src/app.css` 和必要的既有 service/logic 文件实现专用流程；复用 manual order API，不因顾客截止禁用，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
-- [ ] T106 [US1] 运行 FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check` 与路径/人工 diff 审计；确认人工 diff `<400`，闭环 M5-H3 ready PR 后 rebase merge
+- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖开放/截止/关闭、已有/新建顾客、数量/备注、重复 draft 显式更新、canceled 显式重提、无餐次与成功去向，并确认测试失败
+- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
 
 ### 独立人工发布门禁（不阻塞自动化切片）
 
