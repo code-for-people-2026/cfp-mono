@@ -2,6 +2,7 @@ import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { MealSlot, MealSlotTarget, RelaxedRule } from "@cfp/kith-inn-v1-shared";
+import { MerchantNav } from "@/components/MerchantNav";
 import {
   buildSingleTarget,
   buildMenuRange,
@@ -112,8 +113,6 @@ export default function MerchantMenu() {
   return (
     <View className="page menu-page">
       <Text className="title">菜单计划</Text>
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/offerings/index" })}>菜品池</Button>
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/orders/index" })}>订单</Button>
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
 
       {jielongImportEnabled(process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT) && (
@@ -172,6 +171,7 @@ export default function MerchantMenu() {
           ))}
         </View>
       ))}
+      <MerchantNav active="menu" />
     </View>
   );
 }
