@@ -24,8 +24,8 @@ export default function MerchantLogin() {
   const membershipInactive = Taro.getCurrentInstance().router?.params.reason === "membership-inactive";
 
   useEffect(() => {
-    if (merchantRoute(sessions.getSession()) === "offerings") {
-      void Taro.redirectTo({ url: "/pages/merchant/offerings/index" });
+    if (merchantRoute(sessions.getSession()) === "home") {
+      void Taro.redirectTo({ url: "/pages/merchant/home/index" });
     }
   }, []);
 
@@ -50,7 +50,7 @@ export default function MerchantLogin() {
           sellers: result.sellers
         });
       } else {
-        await Taro.redirectTo({ url: "/pages/merchant/offerings/index" });
+        await Taro.redirectTo({ url: "/pages/merchant/home/index" });
       }
     } catch {
       await Taro.showToast({ title: "登录失败，请稍后重试", icon: "none" });
@@ -61,7 +61,7 @@ export default function MerchantLogin() {
     if (!selection) return;
     try {
       await completeSellerSelection(selection.selectionToken, sellerId, api, sessions);
-      await Taro.redirectTo({ url: "/pages/merchant/offerings/index" });
+      await Taro.redirectTo({ url: "/pages/merchant/home/index" });
     } catch {
       await Taro.showToast({ title: "商家身份已失效", icon: "none" });
     }

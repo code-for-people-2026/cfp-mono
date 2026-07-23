@@ -1,5 +1,6 @@
 const pages = [
   "pages/merchant/login/index",
+  "pages/merchant/home/index",
   "pages/merchant/offerings/index",
   "pages/merchant/menu/index",
   "pages/merchant/batches/index",
