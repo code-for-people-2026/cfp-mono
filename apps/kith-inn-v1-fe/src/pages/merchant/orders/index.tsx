@@ -3,8 +3,6 @@ import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import type {
   BulkMarkDeliveredResult,
-  CustomerProfile,
-  ManualOrderUpdate,
   MealSlot,
   Occasion,
   Order,
@@ -15,18 +13,15 @@ import { MerchantNav } from "@/components/MerchantNav";
 import { merchantRoute } from "@/logic/login";
 import {
   availableOrderActions,
-  buildManualOrderCreate,
   buildOrderEdit,
   bulkDeliveryFeedback,
   copyOrderChecklist,
-  duplicateDraftUpdate,
   merchantOrdersPageNotice,
   orderAddressText,
   orderChecklistText,
   orderResubmitInput,
   orderStateText,
   orderSummaryText,
-  replaceOrder,
   toggleBulkOrderSelection,
   type MerchantOrdersPageStatus
 } from "@/logic/orders";
@@ -82,13 +77,6 @@ export default function MerchantOrders() {
   const [mealSlot, setMealSlot] = useState<MealSlot | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<OrderSummary>(EMPTY_SUMMARY);
-  const [profiles, setProfiles] = useState<CustomerProfile[]>([]);
-  const [customerProfileId, setCustomerProfileId] = useState<string | number | null>(null);
-  const [displayName, setDisplayName] = useState("");
-  const [address, setAddress] = useState("");
-  const [quantity, setQuantity] = useState("1");
-  const [note, setNote] = useState("");
-  const [pendingDuplicate, setPendingDuplicate] = useState<{ id: string | number; patch: ManualOrderUpdate } | null>(null);
   const [editing, setEditing] = useState<Order | null>(null);
   const [editQuantity, setEditQuantity] = useState("");
   const [editDisplayName, setEditDisplayName] = useState("");
@@ -105,10 +93,6 @@ export default function MerchantOrders() {
       void Taro.redirectTo({ url: "/pages/merchant/login/index" });
       return;
     }
-    void api.listCustomerProfiles().then(setProfiles).catch((error: unknown) => {
-      if (handledAuthFailure(error)) return;
-      return Taro.showToast({ title: "顾客资料加载失败", icon: "none" });
-    });
     if (routeDate) void load(routeOccasion);
   }, []);
 
@@ -117,7 +101,6 @@ export default function MerchantOrders() {
     setMealSlot(null);
     setOrders([]);
     setSummary(EMPTY_SUMMARY);
-    setPendingDuplicate(null);
     setEditing(null);
     setConfirmedEditPending(false);
     setPendingAction(null);
@@ -137,7 +120,6 @@ export default function MerchantOrders() {
       setMealSlot(result.mealSlot);
       setOrders(result.docs);
       setSummary(result.summary);
-      setPendingDuplicate(null);
       setPageStatus("loaded");
     } catch (error) {
       if (revision !== loadRevision.current) return;
@@ -149,59 +131,6 @@ export default function MerchantOrders() {
       });
     }
   }
-
-  const save = async () => {
-    if (!mealSlot) {
-      await Taro.showToast({ title: "请先查看一个餐次", icon: "none" });
-      return;
-    }
-    const input = buildManualOrderCreate({
-      mealSlotId: mealSlot.id,
-      customerProfileId,
-      displayName,
-      address,
-      quantity,
-      note
-    });
-    if (!input) {
-      await Taro.showToast({ title: "请填写完整顾客资料和正整数份数", icon: "none" });
-      return;
-    }
-    try {
-      const result = await api.createOrder(input);
-      setOrders((current) => replaceOrder(current, result.doc));
-      setProfiles((current) => current.some((profile) => String(profile.id) === String(result.profile.id))
-        ? current
-        : [...current, result.profile]);
-      setCustomerProfileId(result.profile.id);
-      setPendingDuplicate(null);
-    } catch (error) {
-      const duplicate = duplicateDraftUpdate(error, input);
-      if (duplicate) {
-        setPendingDuplicate(duplicate);
-        return;
-      }
-      if (handledAuthFailure(error)) return;
-      await Taro.showToast({
-        title: error instanceof ApiError && error.code === "canceled-order-exists"
-          ? "已取消订单需在后续明确重提"
-          : "草稿补单失败",
-        icon: "none"
-      });
-    }
-  };
-
-  const confirmDuplicate = async () => {
-    if (!pendingDuplicate) return;
-    try {
-      const doc = await api.updateOrder(pendingDuplicate.id, pendingDuplicate.patch);
-      setOrders((current) => replaceOrder(current, doc));
-      setPendingDuplicate(null);
-    } catch (error) {
-      if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: "更新现有草稿失败", icon: "none" });
-    }
-  };
 
   const beginEdit = (order: Order) => {
     setEditing(order);
@@ -297,6 +226,9 @@ export default function MerchantOrders() {
       </View>
 
       {mealSlot && <Text className="notice">{orderSummaryText(summary)}</Text>}
+      {mealSlot && <Button className="primary manual-add-entry" onClick={() => void Taro.redirectTo({
+        url: `/pages/merchant/orders/add/index?date=${encodeURIComponent(date)}&occasion=${occasion}`
+      })}>手动加单</Button>}
 
       {mealSlot && (
         <View className="card checklist-card">
@@ -314,51 +246,6 @@ export default function MerchantOrders() {
       {bulkDeliveryFeedback(bulkResults).map((feedback) => (
         <Text className="notice" key={feedback}>{feedback}</Text>
       ))}
-
-      <View className="card order-form">
-        <Text className="section-title">顾客资料与草稿补单</Text>
-        <View className="profile-list">
-          {profiles.map((profile) => (
-            <Button
-              key={String(profile.id)}
-              size="mini"
-              className={String(customerProfileId) === String(profile.id) ? "selected" : ""}
-              onClick={() => {
-                setCustomerProfileId(profile.id);
-                setPendingDuplicate(null);
-              }}
-            >选择 {profile.displayName} {profile.address}</Button>
-          ))}
-          <Button size="mini" onClick={() => {
-            setCustomerProfileId(null);
-            setPendingDuplicate(null);
-          }}>新建顾客资料</Button>
-        </View>
-        {customerProfileId === null && (
-          <>
-            <Input placeholder="顾客称呼" value={displayName} onInput={(event) => {
-              setDisplayName(event.detail.value);
-              setPendingDuplicate(null);
-            }} />
-            <Input placeholder="顾客地址" value={address} onInput={(event) => {
-              setAddress(event.detail.value);
-              setPendingDuplicate(null);
-            }} />
-          </>
-        )}
-        <Input placeholder="份数" type="number" value={quantity} onInput={(event) => {
-          setQuantity(event.detail.value);
-          setPendingDuplicate(null);
-        }} />
-        <Input placeholder="备注" value={note} onInput={(event) => {
-          setNote(event.detail.value);
-          setPendingDuplicate(null);
-        }} />
-        <Button className="primary" onClick={() => void save()}>草稿补单</Button>
-        {pendingDuplicate && (
-          <Button className="danger" onClick={() => void confirmDuplicate()}>确认更新现有草稿</Button>
-        )}
-      </View>
 
       {editing && (
         <View className="card order-form edit-order-form">
