@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core").filter({ hasText: text });
+const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 
 test("显式启用后纵向完成接龙预览、确认、重试与无地址订单", async ({ page }) => {
   const suffix = Date.now().toString(36);

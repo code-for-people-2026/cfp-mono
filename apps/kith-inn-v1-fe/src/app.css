@@ -381,7 +381,6 @@ button.danger {
 .merchant-home {
   padding: 48rpx 32rpx 180rpx;
 }
-
 .home-heading,
 .home-card-title,
 .home-row {
@@ -389,7 +388,6 @@ button.danger {
   align-items: center;
   justify-content: space-between;
 }
-
 .home-heading .title,
 .home-heading .subtitle,
 .home-menu,
@@ -397,7 +395,6 @@ button.danger {
 .home-card-title text {
   display: block;
 }
-
 .home-mark {
   display: grid;
   width: 72rpx;
@@ -409,7 +406,6 @@ button.danger {
   font-weight: 800;
   place-items: center;
 }
-
 .home-notice {
   margin: 28rpx 0 20rpx;
   padding: 22rpx 26rpx;

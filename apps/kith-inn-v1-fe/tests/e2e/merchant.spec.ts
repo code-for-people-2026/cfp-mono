@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core").filter({ hasText: text });
+const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 
 const enterOfferings = async (page: Page) => {
   await taroButton(page, /^开发登录$/).click();
@@ -77,8 +77,14 @@ test("登录进入今日工作台，隔离部分失败并通过快捷入口导�
   await expect(page.getByText("订单摘要加载失败", { exact: true })).toHaveCount(0);
   await expect(page.getByText("有 1 笔待确认订单", { exact: true })).toBeVisible();
   await expect(page.getByText("商家默认价", { exact: true })).toBeVisible();
+  await taroButton(page, /^菜品$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/offerings\/index/);
   await page.goto("/");
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await taroButton(page, /^配送清单$/).click();
+  await expect(page).toHaveURL(new RegExp(`date=${today}&occasion=lunch`));
+  await expect(page.getByText("当前餐次：" + today + " 午餐", { exact: true })).toBeVisible();
+  await page.goto("/pages/merchant/home/index");
   const requestsBeforeBack = slotRequests;
   await taroButton(page, /^预订批次$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
