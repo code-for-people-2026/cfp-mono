@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { MealSlot, Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
 import {
   buildMerchantMealCard,
@@ -63,12 +63,23 @@ describe("merchant home state model", () => {
     expect(businessDateInShanghai(new Date("2026-07-23T16:00:00.000Z"))).toBe("2026-07-24");
   });
 
+  it("does not depend on Intl locale or timezone data", () => {
+    const formatter = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+      throw new Error("Intl unavailable");
+    });
+    try {
+      expect(businessDateInShanghai(new Date("2026-07-23T16:00:00.000Z"))).toBe("2026-07-24");
+    } finally {
+      formatter.mockRestore();
+    }
+  });
+
   it("derives all five slot states and treats the exact deadline as passed", () => {
     const now = new Date("2026-07-24T04:00:00.000Z");
     expect(merchantMealState(null, now)).toBe("unplanned");
     expect(merchantMealState(slot({ orderStatus: "draft", orderDeadline: null }), now)).toBe("menu-ready");
     expect(merchantMealState(slot({ orderDeadline: "2026-07-24T04:00:00.001Z" }), now)).toBe("booking-open");
-    expect(merchantMealState(slot({ orderDeadline: null }), now)).toBe("booking-open");
+    expect(merchantMealState(slot({ orderDeadline: null }), now)).toBe("menu-ready");
     expect(merchantMealState(slot({ orderDeadline: now.toISOString() }), now)).toBe("deadline-passed");
     expect(merchantMealState(slot({ orderDeadline: "2026-07-24T03:59:59.999Z" }), now))
       .toBe("deadline-passed");
