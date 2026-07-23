@@ -42,6 +42,7 @@ export default function MerchantManualOrderAdd() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [summary, setSummary] = useState<OrderSummary>(EMPTY_SUMMARY);
   const [profiles, setProfiles] = useState<CustomerProfile[]>([]);
+  const [profileError, setProfileError] = useState(false);
   const [selectedProfile, setSelectedProfile] = useState<CustomerProfile | null>(null);
   const [query, setQuery] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -56,18 +57,23 @@ export default function MerchantManualOrderAdd() {
       void Taro.redirectTo({ url: "/pages/merchant/login/index" });
       return;
     }
-    void Promise.all([api.listOrders(date, occasion), api.listCustomerProfiles("")])
-      .then(([result, customerProfiles]) => {
+    void api.listOrders(date, occasion)
+      .then((result) => {
         setMealSlot(result.mealSlot);
         setOrders(result.docs);
         setSummary(result.summary);
-        setProfiles(customerProfiles);
         setStatus("loaded");
       })
       .catch((error: unknown) => {
         if (handledAuthFailure(error)) return;
         setStatus(error instanceof ApiError && error.code === "meal-slot-not-found" ? "missing" : "error");
       });
+    void api.listCustomerProfiles("").then((customerProfiles) => {
+      setProfiles(customerProfiles);
+      setProfileError(false);
+    }).catch((error: unknown) => {
+      if (!handledAuthFailure(error)) setProfileError(true);
+    });
   }, []);
 
   const ordersUrl = `/pages/merchant/orders/index?date=${encodeURIComponent(date)}&occasion=${occasion}`;
@@ -77,8 +83,10 @@ export default function MerchantManualOrderAdd() {
   const searchProfiles = async () => {
     try {
       setProfiles(await api.listCustomerProfiles(query));
+      setProfileError(false);
     } catch (error) {
       if (handledAuthFailure(error)) return;
+      setProfileError(true);
       await Taro.showToast({ title: "顾客搜索失败", icon: "none" });
     }
   };
@@ -151,6 +159,7 @@ export default function MerchantManualOrderAdd() {
       </View>
       <View className="card manual-customer">
         <Text className="section-title">选择顾客</Text>
+        {profileError && <Text className="notice manual-profile-error">顾客资料加载失败，可直接新建资料或重试搜索。</Text>}
         <View className="manual-search"><Input placeholder="搜索顾客" value={query} onInput={(event) => setQuery(event.detail.value)} />
           <Button size="mini" onClick={() => void searchProfiles()}>搜索</Button></View>
         <View className="profile-list">{profiles.map((profile) => <Button

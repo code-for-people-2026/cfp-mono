@@ -552,6 +552,11 @@ button.manual-add-entry {
   margin-bottom: 20rpx;
 }
 
+.manual-profile-error {
+  display: block;
+  margin-bottom: 20rpx;
+}
+
 .manual-search input,
 .manual-form input {
   box-sizing: border-box;
