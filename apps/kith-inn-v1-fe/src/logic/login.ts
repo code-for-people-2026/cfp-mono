@@ -24,7 +24,7 @@ export function completeLogin(response: AuthResponse, sessions: SessionStore) {
     };
   }
   sessions.setSession({ token: response.token, ...response.session });
-  return { next: "offerings" as const };
+  return { next: "home" as const };
 }
 
 export async function completeSellerSelection(
@@ -36,6 +36,6 @@ export async function completeSellerSelection(
   return completeLogin(await api.selectSeller(selectionToken, sellerId), sessions);
 }
 
-export function merchantRoute(session: unknown): "login" | "offerings" {
-  return session ? "offerings" : "login";
+export function merchantRoute(session: unknown): "login" | "home" {
+  return session ? "home" : "login";
 }

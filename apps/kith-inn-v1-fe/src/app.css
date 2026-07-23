@@ -377,3 +377,135 @@ button.danger {
   display: block;
   white-space: pre-wrap;
 }
+
+.merchant-home {
+  padding: 48rpx 32rpx 180rpx;
+}
+
+.home-heading,
+.home-card-title,
+.home-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.home-heading .title,
+.home-heading .subtitle,
+.home-menu,
+.home-summary,
+.home-card-title text {
+  display: block;
+}
+
+.home-mark {
+  display: grid;
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 50%;
+  background: #f0b08d;
+  color: #6f2b21;
+  font-size: 30rpx;
+  font-weight: 800;
+  place-items: center;
+}
+
+.home-notice {
+  margin: 28rpx 0 20rpx;
+  padding: 22rpx 26rpx;
+  border-radius: 20rpx;
+  background: #f6dfd2;
+  color: #9b382b;
+  font-weight: 700;
+}
+
+.home-meal-card {
+  margin-bottom: 22rpx;
+  padding: 28rpx;
+  box-shadow: 0 12rpx 32rpx rgba(82, 57, 35, 0.08);
+}
+
+.home-card-title {
+  font-size: 32rpx;
+  font-weight: 800;
+}
+
+.home-state {
+  padding: 8rpx 16rpx;
+  border-radius: 999rpx;
+  background: #eee5da;
+  color: #695c50;
+  font-size: 22rpx;
+}
+
+.home-state.booking-open { background: #dcebd7; color: #36653c; }
+.home-state.deadline-passed,
+.home-state.closed { background: #eee5da; color: #6d6053; }
+.home-state.menu-ready { background: #f8e9c6; color: #815b13; }
+
+.home-menu {
+  margin: 24rpx 0;
+  color: #5e5145;
+  line-height: 1.7;
+}
+
+.home-row {
+  margin-bottom: 18rpx;
+}
+
+.home-summary {
+  margin-bottom: 8rpx;
+  color: #6f2b21;
+  font-weight: 800;
+}
+
+.home-order-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #a13d32;
+}
+
+.home-order-error button { margin: 0; }
+
+.home-quick {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+  margin-top: 30rpx;
+}
+
+.home-quick button {
+  width: 100%;
+  margin: 0;
+  border: 1px solid #e2d4c5;
+  background: #fffdf8;
+  color: #4e4237;
+  font-weight: 700;
+}
+
+.merchant-nav {
+  position: fixed;
+  z-index: 5;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  padding: 14rpx 20rpx 26rpx;
+  border-top: 1px solid #eadfd2;
+  background: rgba(255, 253, 249, 0.96);
+}
+
+.merchant-nav button {
+  margin: 0;
+  background: transparent;
+  color: #786b5f;
+  font-size: 24rpx;
+}
+
+.merchant-nav button.active {
+  color: #a93c2e;
+  font-weight: 800;
+  opacity: 1;
+}

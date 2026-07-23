@@ -47,9 +47,9 @@ describe("login platform flow", () => {
 });
 
 describe("login completion", () => {
-  it("stores only authenticated sessions and routes to offerings", () => {
+  it("stores only authenticated sessions and routes to home", () => {
     const store = sessions();
-    expect(completeLogin(authenticated, store)).toEqual({ next: "offerings" });
+    expect(completeLogin(authenticated, store)).toEqual({ next: "home" });
     expect(store.setSession).toHaveBeenCalledWith({ token: authenticated.token, ...authenticated.session });
     expect(JSON.stringify(vi.mocked(store.setSession).mock.calls)).not.toContain("openid");
   });
@@ -67,13 +67,13 @@ describe("login completion", () => {
   it("stores the revalidated selected session", async () => {
     const store = sessions();
     const api = { selectSeller: vi.fn(async () => authenticated) };
-    await expect(completeSellerSelection("selection", 7, api, store)).resolves.toEqual({ next: "offerings" });
+    await expect(completeSellerSelection("selection", 7, api, store)).resolves.toEqual({ next: "home" });
     expect(api.selectSeller).toHaveBeenCalledWith("selection", 7);
     expect(store.setSession).toHaveBeenCalledOnce();
   });
 
   it("guards merchant routes", () => {
     expect(merchantRoute(null)).toBe("login");
-    expect(merchantRoute({ token: "x" } as never)).toBe("offerings");
+    expect(merchantRoute({ token: "x" } as never)).toBe("home");
   });
 });
