@@ -54,6 +54,7 @@ button.primary {
   display: flex;
   flex-direction: column;
   gap: 28rpx;
+  padding-bottom: 180rpx;
 }
 
 .jielong-import-page {

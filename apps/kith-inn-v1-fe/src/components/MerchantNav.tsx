@@ -11,6 +11,6 @@ const items = [
 export function MerchantNav({ active }: { active: typeof items[number][0] }) {
   return <View className="merchant-nav">{items.map(([key, label, url]) => (
     <Button key={key} className={key === active ? "active" : ""} disabled={key === active}
-      onClick={() => void Taro.navigateTo({ url })}>{label}</Button>
+      onClick={() => void Taro.redirectTo({ url })}>{label}</Button>
   ))}</View>;
 }

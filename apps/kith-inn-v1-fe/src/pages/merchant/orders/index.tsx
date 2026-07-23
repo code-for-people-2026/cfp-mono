@@ -11,6 +11,7 @@ import type {
   OrderAction,
   OrderSummary
 } from "@cfp/kith-inn-v1-shared";
+import { MerchantNav } from "@/components/MerchantNav";
 import { merchantRoute } from "@/logic/login";
 import {
   availableOrderActions,
@@ -279,7 +280,6 @@ export default function MerchantOrders() {
   return (
     <View className="page orders-page" data-meal-slot-id={mealSlot ? String(mealSlot.id) : ""}>
       <Text className="title">餐次订单</Text>
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
       {pageNotice && <View className="card page-state"><Text className={pageStatus === "error" ? "notice" : "meta"}>
         {pageNotice}
       </Text></View>}
@@ -436,6 +436,7 @@ export default function MerchantOrders() {
           })}
         </View>
       ))}
+      <MerchantNav active="orders" />
     </View>
   );
 }

@@ -15,6 +15,7 @@ import {
   previewSummaryText,
   setConflictAction
 } from "@/logic/offeringsImport";
+import { MerchantNav } from "@/components/MerchantNav";
 import { merchantRoute } from "@/logic/login";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
@@ -142,7 +143,6 @@ export default function MerchantOfferings() {
   return (
     <View className="page offerings-page">
       <Text className="title">菜品池</Text>
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
 
       <View className="card form-card">
         <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>
@@ -226,6 +226,7 @@ export default function MerchantOfferings() {
           </View>
         )}
       </View>
+      <MerchantNav active="offerings" />
     </View>
   );
 }
