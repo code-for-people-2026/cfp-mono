@@ -114,11 +114,11 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | M4-C | latest-main 自动化与人工门禁记账 | T095–T096 | 全量 headless/verify；记录但不完成人工门禁 | M4-B；`<400` |
 | M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、五状态、汇总、价格与补单资格 | M5-P；目标 `<300` |
 | M5-H2 | 真实数据今日工作台与登录落点 | T100–T101 | FE coverage、headless H5、weapp；状态/失败/导航矩阵 | M5-H1；默认 `<400` |
-| M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；开放/截止/关闭与显式重复处理 | M5-H2；默认 `<400` |
+| M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；未开放/开放/截止/关闭与显式重复处理 | M5-H2；默认 `<400` |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
 
-M5 每片共享完成清单（不分配 Task ID）：相关窄测试、FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check`、精确路径与人工 diff 审计全部通过；ready PR 的 latest-head CI/Codex review、actionable comment、unresolved thread 与 `mergeStateStatus=CLEAN` 闭环后只允许 rebase merge。
+M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100% coverage、`CI=1` 无头 H5 E2E、weapp build、`pnpm verify`、`git diff --check`、精确路径与人工 diff 审计全部通过；ready PR 的 latest-head CI/Codex review、actionable comment、unresolved thread 与 `mergeStateStatus=CLEAN` 闭环后只允许 rebase merge。docs-only M5-P 只执行其切片表所列验证与同一 PR 闭环。
 
 ---
 
@@ -371,11 +371,11 @@ M5 每片共享完成清单（不分配 Task ID）：相关窄测试、FE 100% c
 
 ## Phase 26：M5-H3 专用手动加单闭环
 
-**Goal**: 桃子从今日餐次进入专用页面，为开放、已截止或已关闭餐次补录 manual draft 私信订单，且重复/重提均需显式确认。
+**Goal**: 桃子从今日餐次进入专用页面，为已排菜单但未开放、正在预订、已截止或已关闭餐次补录 manual draft 私信订单，且重复/重提均需显式确认。
 
-**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card/jielong-import 冲突保留 source 并转查看既有订单；开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
+**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card/jielong-import 冲突保留 source 并转查看既有订单；未开放、开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
 
-- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、非 manual 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
+- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖未开放/开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、非 manual 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
 - [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将非 manual 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
 
 ### 独立人工发布门禁（不阻塞自动化切片）
