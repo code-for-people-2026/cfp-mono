@@ -42,6 +42,10 @@ export function businessDateInShanghai(now: Date): string {
   return new Date(now.getTime() + SHANGHAI_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+export function retainMealsForRefresh<T>(currentDate: string, nextDate: string, meals: T[]): T[] {
+  return currentDate === nextDate ? meals : [];
+}
+
 export function merchantMealState(slot: MealSlot | null, now: Date): MerchantMealState {
   if (slot === null) return "unplanned";
   if (slot.orderStatus === "draft") return "menu-ready";

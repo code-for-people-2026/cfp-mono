@@ -4,7 +4,8 @@ import {
   buildMerchantMealCard,
   businessDateInShanghai,
   merchantMealState,
-  merchantPriceText
+  merchantPriceText,
+  retainMealsForRefresh
 } from "./merchantHome";
 
 const menuItems: MealSlot["menuItems"] = [
@@ -72,6 +73,12 @@ describe("merchant home state model", () => {
     } finally {
       formatter.mockRestore();
     }
+  });
+
+  it("keeps visible cards only while refreshing the same business date", () => {
+    const meals = [{ occasion: "lunch" }];
+    expect(retainMealsForRefresh("2026-07-24", "2026-07-24", meals)).toBe(meals);
+    expect(retainMealsForRefresh("2026-07-24", "2026-07-25", meals)).toEqual([]);
   });
 
   it("derives all five slot states and treats the exact deadline as passed", () => {
