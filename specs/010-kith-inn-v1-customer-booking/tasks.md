@@ -373,10 +373,10 @@ M5 每片共享完成清单（不分配 Task ID）：相关窄测试、FE 100% c
 
 **Goal**: 桃子从今日餐次进入专用页面，为开放、已截止或已关闭餐次补录 manual draft 私信订单，且重复/重提均需显式确认。
 
-**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 draft 只在确认后更新，canceled 只在确认后重提；开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
+**Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card/jielong-import 冲突保留 source 并转查看既有订单；开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
 
-- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖开放/截止/关闭、已有/新建顾客、数量/备注、重复 draft 显式更新、canceled 显式重提、无餐次与成功去向，并确认测试失败
-- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
+- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、非 manual 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
+- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将非 manual 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
 
 ### 独立人工发布门禁（不阻塞自动化切片）
 
@@ -398,7 +398,7 @@ M5 每片共享完成清单（不分配 Task ID）：相关窄测试、FE 100% c
 
 - M2 的 T001–T027/T029–T056/T058–T074 已完成；T028 保持未完成真机门禁，T057 因历史 C6 人工 diff 为 479 行保持未完成。
 - M3/M4 PR 不并行、不 stacked；每片从前一片合并后的最新 `main` 开始。
-- M5 同样不并行、不 stacked；M5-P 只改本规格的 `plan.md`/`tasks.md`，H1 只建纯状态模型，H2 才注册首页，H3 才拆出专用手动加单页。
+- M5 同样不并行、不 stacked；M5-P 只改本规格的 `spec.md`/`plan.md`/`tasks.md`，H1 只建纯状态模型，H2 才注册首页，H3 才拆出专用手动加单页。
 - 每片 tests-first；只实现当前层的不变量，不预建下一片 route/page/scaffold。
 - nullable 读模型是导入写入前置；parser contract 是 CMS/BE/FE 共同边界；M4 只在 M3 自动化闭环后开始。
 
