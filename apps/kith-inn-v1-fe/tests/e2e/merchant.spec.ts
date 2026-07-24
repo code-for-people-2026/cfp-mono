@@ -11,7 +11,9 @@ const enterOfferings = async (page: Page) => {
 
 const enterManageOfferings = async (page: Page) => {
   await enterOfferings(page);
-  await taroButton(page, /^管理$/).click();
+  const manageButton = taroButton(page, /^管理$/);
+  await expect(manageButton).not.toHaveAttribute("disabled", "");
+  await manageButton.click();
   await expect(page.getByText("启用中", { exact: true })).toBeVisible();
   await expect(page.getByText("已停用", { exact: true })).toBeVisible();
 };
@@ -315,6 +317,47 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   await expect(page.getByRole("textbox", { name: "主料（可不填）" })).toBeVisible();
   await taroButton(page, /^取消$/).click();
   await expect(page.getByRole("textbox", { name: "菜名" })).toHaveCount(0);
+});
+
+test("首次加载失败时禁止进入管理", async ({ page }) => {
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 500, contentType: "application/json", body: JSON.stringify({ error: "load-failed" })
+  }));
+
+  await page.goto("/");
+  await enterOfferings(page);
+  await expect(page.getByText("菜品加载失败", { exact: true })).toBeVisible();
+  await expect(taroButton(page, /^管理$/)).toHaveAttribute("disabled", "");
+  await expect(taroButton(page, /^新增菜品$/)).toHaveCount(0);
+});
+
+test("保存菜品期间不能退出管理或清空表单", async ({ page }) => {
+  let releaseSave!: () => void;
+  const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings", async (route) => {
+    if (route.request().method() !== "POST") return route.continue();
+    await saveGate;
+    await route.fulfill({
+      status: 500, contentType: "application/json", body: JSON.stringify({ error: "save-failed" })
+    });
+  });
+
+  await page.goto("/");
+  await enterManageOfferings(page);
+  await taroButton(page, /^新增菜品$/).click();
+  const nameInput = page.getByRole("textbox", { name: "菜名" });
+  await nameInput.fill("待保存菜");
+  await taroButton(page, /^新增菜品$/).click();
+  await expect(taroButton(page, /^完成$/)).toHaveAttribute("disabled", "");
+  await expect(nameInput).toHaveValue("待保存菜");
+
+  releaseSave();
+  await expect(page.getByText("菜品保存失败", { exact: true })).toBeVisible();
+  await expect(nameInput).toHaveValue("待保存菜");
+  await expect(taroButton(page, /^完成$/)).not.toHaveAttribute("disabled", "");
 });
 
 test("不同菜品的启停请求独立锁定并按各自响应完成", async ({ page }) => {

@@ -249,6 +249,7 @@ export default function MerchantOfferings() {
   };
 
   const toggleView = () => {
+    if (savePending || loading || loadError) return;
     if (view === "manage") {
       setView("browse");
       setImportOpen(false);
@@ -295,7 +296,11 @@ export default function MerchantOfferings() {
             {view === "browse" ? "常做的菜，随用随选" : "维护启用状态与菜品资料"}
           </Text>
         </View>
-        <Button className="offerings-manage-toggle" onClick={toggleView}>
+        <Button
+          className="offerings-manage-toggle"
+          disabled={savePending || loading || loadError}
+          onClick={toggleView}
+        >
           {view === "manage" ? "完成" : "管理"}
         </Button>
       </View>
@@ -411,7 +416,7 @@ export default function MerchantOfferings() {
         </>
       )}
 
-      {view === "manage" && !formOpen && (
+      {!loading && !loadError && view === "manage" && !formOpen && (
         <Button className="offering-add-fixed primary" onClick={openCreate}>新增菜品</Button>
       )}
 
