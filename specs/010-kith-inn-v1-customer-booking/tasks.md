@@ -9,7 +9,7 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 
 **Tests**: 本功能要求 contract、领域、route、FE logic、H5 E2E 与 weapp smoke；每个实现 PR 先写能失败的窄测试，再实现，再运行 `pnpm verify`。
 
-**Organization**: M2-A/B、C1～C6、D1～D4、D2R 与 M3/M4 十个自动化 PR 切片均已串行完成。新增商家“今日工作台”目标按 M5-P 规划、M5-H1 状态模型、M5-H2 页面、M5-H3 手动加单四片串行推进；每片都从前一片 rebase merge 后的最新 `main` 开始并闭环 ready review、latest-head CI 与 Codex threads。T028/T087/T090/T097 是仍未完成的独立人工发布门禁，T057 仍按历史人工 diff 479 行事实保持未完成。
+**Organization**: M2-A/B、C1～C6、D1～D4、D2R、M3/M4 与商家“今日工作台”M5-P/H1/H2/H3 均已串行完成；每片都从前一片 rebase merge 后的最新 `main` 开始并闭环 ready review、latest-head CI 与 Codex threads。T028/T087/T090/T097 是仍未完成的独立人工发布门禁，T057 仍按历史人工 diff 479 行事实保持未完成。
 
 ## 格式
 
@@ -112,10 +112,10 @@ description: "街坊味 v1 M2 顾客预订登记的依赖有序实施任务"
 | M4-A | 顾客数据复制与资料批量软停用 | T091–T092 | FE coverage、headless H5 | M3-G；`<400` |
 | M4-B | 错误/空态/截止/关闭态打磨 | T093–T094 | FE coverage、headless H5、weapp | M4-A；`<400` |
 | M4-C | latest-main 自动化与人工门禁记账 | T095–T096 | 全量 headless/verify；记录但不完成人工门禁 | M4-B；`<400` |
-| M5-P | 商家工作台需求与依赖有序规划 | —（docs-only，不分配 Task ID） | 用户故事/FR/SC/Task 追踪、`git diff --check`、`pnpm verify` | latest `origin/main`；默认 `<400` |
-| M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、截止等于当前时刻、五状态、汇总、价格与补单资格 | M5-P；目标 `<300` |
-| M5-H2 | 真实数据今日工作台与登录落点 | T100–T101 | FE coverage、headless H5、weapp；状态/失败/导航矩阵 | M5-H1；默认 `<400` |
-| M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；未开放/开放/截止/关闭与显式重复处理 | M5-H2；默认 `<400` |
+| M5-P | 商家工作台需求与依赖有序规划 | —（docs-only，不分配 Task ID） | 用户故事/FR/SC/Task 追踪、`git diff --check`、`pnpm verify` | 已合并 PR #257；121 行 |
+| M5-H1 | 今日工作台纯状态模型 | T098–T099 | FE 100% coverage；跨日、截止等于当前时刻、五状态、汇总、价格与补单资格 | 已合并 PR #258；250 行 |
+| M5-H2 | 真实数据今日工作台与登录落点 | T100–T101 | FE coverage、headless H5、weapp；状态/失败/导航矩阵 | 已合并 PR #259；477 行，PR 已记录不可再拆原因 |
+| M5-H3 | 专用 manual draft 补录 | T102–T103 | FE coverage、headless H5、weapp；未开放/开放/截止/关闭与显式重复处理 | 已合并 PR #260；657 行，PR 已记录不可再拆原因 |
 
 每片开 PR 前按 `origin/main` 统计人工编写 diff。超过 400 行先继续拆；确实不可拆时必须在 PR 说明写明原因、风险和验证。超过 800 行不得开 PR。
 
@@ -358,8 +358,8 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 **Independent Test**: Asia/Shanghai 在 UTC 跨日边界取到正确日期；午餐/晚餐分别覆盖尚未排菜单、已排菜单但未开放、预订中、已截止、已关闭，且截止时间等于当前时刻时判为已截止；draft 只汇总为“待确认订单”；已确认订单数/份数、未付和待送数据准确；空价格显示“商家默认价”；只要餐次存在，未开放、开放、截止或关闭时均允许商家手动加单。
 
-- [ ] T098 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、截止时间等于当前时刻时判为已截止、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
-- [ ] T099 [US7] 在 `apps/kith-inn-v1-fe/src/logic/merchantHome.ts` 实现无 Taro/React 副作用的首页状态模型，不注册页面、不请求 API、不显示“新订单”
+- [x] T098 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/merchantHome.test.ts` 覆盖 Asia/Shanghai UTC 跨日、截止时间等于当前时刻时判为已截止、五种餐次状态、draft/confirmed/未付/待送汇总、金额/默认价文案、餐次存在性与手动加单资格，并确认测试失败
+- [x] T099 [US7] 在 `apps/kith-inn-v1-fe/src/logic/merchantHome.ts` 实现无 Taro/React 副作用的首页状态模型，不注册页面、不请求 API、不显示“新订单”
 
 ## Phase 25：M5-H2 真实数据今日工作台页面
 
@@ -367,8 +367,8 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 **Independent Test**: 首页首屏调用一次 `listMealSlots(today,today)`，仅为存在的午/晚餐并行调用 `listOrders`；登录/session 落点、不同餐次状态、待确认汇总、加载/空态/部分失败/整页失败/重试、页面重新显示刷新与菜单/预订/订单/配送快捷入口均可在无头 H5 验证，weapp build 通过。
 
-- [ ] T100 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/login.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖登录和已有 session 落点、午晚餐真实状态、待确认汇总、空态/单餐失败/整页失败/重试、重新显示刷新、快捷入口与页面内 `MerchantNav`，并确认测试失败
-- [ ] T101 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/login.ts,pages/merchant/login/index.tsx,components/MerchantNav.tsx,pages/merchant/home/index.tsx,app.config.ts,app.css}` 实现首页；复用 API client/store/H1 模型，不增加全局 tabBar、第二套状态管理或 `/merchant/dashboard`
+- [x] T100 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/{login,merchantHome}.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/{merchant,jielong-import}.spec.ts` 覆盖登录和已有 session 落点、午晚餐真实状态、待确认汇总、空态/单餐失败/整页失败/重试、重新显示刷新、快捷入口与页面内 `MerchantNav`，并确认测试失败
+- [x] T101 [US7] 在 `apps/kith-inn-v1-fe/src/{app.config.ts,app.css,components/MerchantNav.tsx,logic/login.ts,logic/merchantHome.ts,pages/merchant/login/index.tsx,pages/merchant/home/index.tsx,pages/merchant/menu/index.tsx,pages/merchant/offerings/index.tsx,pages/merchant/orders/index.tsx}` 实现首页及既有商家页导航适配；复用 API client/store/H1 模型，不增加全局 tabBar、第二套状态管理或 `/merchant/dashboard`
 
 ## Phase 26：M5-H3 专用手动加单闭环
 
@@ -376,8 +376,16 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 **Independent Test**: 页面展示日期、午晚餐和顾客预订状态；可选择已有资料或创建“称呼 + 地址”，填写正整数份数和备注；重复 manual draft 只在确认后更新，manual canceled 只在确认后重提；customer-card 冲突保留 source 并转查看既有订单；未开放、开放、截止和关闭餐次均可保存，无餐次时提示先排菜单；成功后可查看对应餐次订单。
 
-- [ ] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖未开放/开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、customer-card 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
-- [ ] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将 customer-card 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
+- [x] T102 [US7] 先在 `apps/kith-inn-v1-fe/src/logic/orders.test.ts` 与 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 覆盖未开放/开放/截止/关闭、已有/新建顾客、数量/备注、重复 manual draft 显式更新、manual canceled 显式重提、customer-card 冲突保留 source 并转查看既有订单、无餐次与成功去向，并确认测试失败
+- [x] T103 [US7] 在 `apps/kith-inn-v1-fe/src/{logic/orders.ts,pages/merchant/home/index.tsx,pages/merchant/orders/index.tsx,pages/merchant/orders/add/index.tsx,app.config.ts,app.css}` 实现专用流程；复用现有 profile/manual-order API，不因顾客截止禁用，不将 customer-card 冲突改标为 manual，并显示“顾客预订已截止，商家仍可手动补录私信订单。”
+
+### M5 自动化验收记录（2026-07-24）
+
+- **合并事实**：M5-P/H1/H2/H3 分别由 PR #257、#258、#259、#260 从依赖已满足的最新 `main` 串行实施，并均已完成 latest-head CI、Codex review、unresolved=0、`mergeStateStatus=CLEAN` 后 rebase merge；最终受验基线为 `origin/main` `8e9eb24c03f040d7fd660b18573ba214659fdb67`。
+- **FE coverage**：`pnpm --filter @cfp/kith-inn-v1-fe test:coverage` 为 13 files、82 tests，630/630 statements、797/797 branches、217/217 functions、526/526 lines。
+- **纵向与构建门禁**：`CI=1 pnpm --filter @cfp/kith-inn-v1-fe test:e2e` 为 12/12 无头 H5 tests 通过；`pnpm --filter @cfp/kith-inn-v1-fe build:weapp` 通过；以 CI 必需的 `BE_BASE_URL` 运行 `pnpm verify`，lint、typecheck、coverage、build 均为 13/13 workspace tasks 通过，knip 退出 0。
+- **scope 审计**：PR #257～#260 共涉及 20 个唯一路径，全部位于 `apps/kith-inn-v1-fe/**` 或 `specs/010-kith-inn-v1-customer-booking/**`；未修改 BE、CMS、shared、旧 kith-inn apps/packages、`docs/kith-inn/**`、`specs/016-*` 或 `specs/017-*`。
+- **真实发布状态**：T028、T087、T090、T097 继续缺少真机、微信后台或审核证据，保持未完成；H5、weapp build 与自动化不替代这些门禁。T057 也继续按历史 479 行人工 diff 事实保持未完成。
 
 ### 独立人工发布门禁（不阻塞自动化切片）
 
@@ -399,7 +407,7 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 
 - M2 的 T001–T027/T029–T056/T058–T074 已完成；T028 保持未完成真机门禁，T057 因历史 C6 人工 diff 为 479 行保持未完成。
 - M3/M4 PR 不并行、不 stacked；每片从前一片合并后的最新 `main` 开始。
-- M5 同样不并行、不 stacked；M5-P 只改本规格的 `spec.md`/`plan.md`/`tasks.md`，H1 只建纯状态模型，H2 才注册首页，H3 才拆出专用手动加单页。
+- M5 已按不并行、不 stacked 的顺序完成；M5-P 只改本规格的 `spec.md`/`plan.md`/`tasks.md`，H1 只建纯状态模型，H2 注册首页，H3 拆出专用手动加单页。
 - 每片 tests-first；只实现当前层的不变量，不预建下一片 route/page/scaffold。
 - nullable 读模型是导入写入前置；parser contract 是 CMS/BE/FE 共同边界；M4 只在 M3 自动化闭环后开始。
 
@@ -415,4 +423,4 @@ M5-H1～H3 共享完成清单（不分配 Task ID）：相关窄测试、FE 100%
 3. 接龙默认关闭且无 AI；M4 数据删除只做已规定的 profile 软停用，历史订单不改写。
 4. 每轮修复后等待 latest-head CI，再精确 `@codex review`；latest head 无新 comment、unresolved=0、CI 全绿、mergeState=CLEAN 后才 rebase merge。
 5. T028、T087、T090、T097 只能由真实设备/微信后台/审核事实完成；自动化不改变其状态。
-6. M5 保留 API client、store 与可复用逻辑，逐页重写商家呈现层；顾客截止门禁不放宽，merchant manual 补录继续允许截止或关闭餐次。
+6. M5 已保留 API client、store 与可复用逻辑并逐页重写商家呈现层；顾客截止门禁未放宽，merchant manual 补录继续允许截止或关闭餐次。
