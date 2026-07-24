@@ -6,7 +6,7 @@
 
 ## 摘要
 
-在不改变菜品 API、CMS 数据模型、认证和导入协议的前提下，基于仓库现有商家菜品 CRUD 页面，先补齐逐菜品请求协调、导入草稿版本约束和原位编辑，再按本规格定义的页面结构与视觉要求完成移动端重构和跨端验证。
+在不改变菜品 API、CMS 数据模型、认证和导入协议的前提下，基于仓库现有商家菜品 CRUD 页面，先补齐逐菜品请求协调、导入预览版本与提交锁定约束和原位编辑，再按本规格定义的页面结构与视觉要求完成移动端重构和跨端验证。
 
 ## 技术上下文
 
@@ -34,7 +34,7 @@
 - `apps/kith-inn-v1-fe/src/logic/offeringsImport.ts` 已提供分组、冲突选择和结果文案；其中 `partitionOfferings()` 会在启用/停用分组内按菜名排序。后端提交时按当前文本重新预览并按行号解释覆盖选择。
 - 主线 Page 1 已更新 `MerchantNav` 视觉；Page 2 必须基于该版本追加样式。
 - 本规格以仓库中的现有页面、API client、纯逻辑与测试为唯一可执行基线；外部工作树或本地原型只用于前期审计，不是后续 PR 的输入。PR3/PR4 必须分别依据本规格、UI 契约和前序已合并代码完成页面结构与视觉实现。
-- 已知缺口：当前启停请求没有逐项 pending、同项重复提交保护或陈旧响应判定，飞行期间所有开关仍可操作；编辑会把菜品追加到末尾，且页面使用按菜名排序的 `partitionOfferings()` 渲染分组，改名后可见位置会跳动；预览响应可在原文变化后恢复陈旧状态；长文字和 disabled 预览按钮在窄屏下不可读。
+- 已知缺口：当前启停请求没有逐项 pending、同项重复提交保护或陈旧响应判定，飞行期间所有开关仍可操作；编辑会把菜品追加到末尾，且页面使用按菜名排序的 `partitionOfferings()` 渲染分组，改名后可见位置会跳动；预览响应可在原文变化后恢复陈旧状态，commit pending 时原文仍可编辑，客户端隐藏旧响应也无法阻止服务端按已发送的旧文本写入；长文字和 disabled 预览按钮在窄屏下不可读。
 
 ## 宪法检查
 
@@ -51,15 +51,17 @@
 |----|----------------------|---------------|----------|------------|----------|---------------|------|
 | PR1 | 固化 Page 2 行为、竞态约束和可执行任务 | US1-US4、FR-001~015 | `specs/019-kith-inn-v1-merchant-offerings-hifi/**` | 不改运行时代码 | 规格 checklist、任务格式检查 | 约 500 行 | 无 |
 | PR-Assets | 让 Page 2 高保真参考可由仓库独立读取和复核 | US4、FR-012~014 | `docs/kith-inn-v1/design/merchant-offerings-hifi-v0.2.png`、`docs/kith-inn-v1/design/kith-inn-v1-hifi-v1.html` | 不包含任何 `*-prompt.md`；不改产品代码 | 文件可读取、HTML 可打开、PNG 尺寸与内容人工核对 | HTML 约 360 行；PNG 为二进制资产 | PR1 |
-| PR2 | 保证旧响应不能覆盖新意图且编辑保持原位 | US1-US3、FR-003/004/006/008~010/015 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md` | 不做高保真视觉调整 | lint、typecheck、coverage、定向 E2E、长期文档一致性核对 | 约 400 行 | PR1 |
-| PR3 | 在正确行为之上收敛 Page 2 页面结构和真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md` | 不做最终视觉换肤；不改 API/CMS | 定向 E2E、lint、typecheck、双端 build、长期文档一致性核对 | 约 520 行 | PR2 |
+| PR2 | 保证旧响应不能覆盖新意图且编辑保持原位 | US1-US3、FR-003/004/006/008~010/015 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md` | 不做高保真视觉调整 | lint、typecheck、coverage、编辑/导入正确性 E2E、长期文档一致性核对 | 约 520 行 | PR1 |
+| PR3 | 在正确行为之上收敛 Page 2 页面结构和真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md` | 不做最终视觉换肤；不改 API/CMS | 先写入口/分组 E2E，再做 JSX；lint、typecheck、双端 build、长期文档一致性核对 | 约 440 行 | PR2 |
 | PR4 | 完成 Page 2 高保真样式与窄屏可读性验收 | US4、FR-001/002/012~015 | `apps/kith-inn-v1-fe/src/app.css`、`specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md` | 不再改变业务流程；不提交 Prompt | 354×786 对已入库 PNG/HTML 的视觉验收、`pnpm verify`、定向 E2E | 约 460 行 | PR3、PR-Assets |
 
 PR1 超过默认 400 行是因为宪法要求 ≥2 PR 的功能必须提交同一套完整且相互引用的 spec/plan/tasks/design artifacts；继续拆开会使中间 PR 的 Spec Kit 前置检查不可执行。预计仍低于 800 行。
 
 初始实现审计后，原本合并在 PR3 的 JSX、CSS 与 E2E 人工 diff 超过 800 行，因此按可独立构建的边界再拆为 PR3（结构/流程）与 PR4（样式/视觉验收），无需申请超大 PR 例外。
 
-PR3 预计略高于 400 行，但只有一个核心不变量：重排页面结构后，浏览、管理、编辑和导入真实流程仍可从同一入口完整使用。页面 JSX 与验证这些入口的 E2E 必须在同一片出现，拆走测试会使页面改造无法独立验收，按模式拆 JSX 又会产生一版功能入口不完整的中间页面；对应长期产品文档也必须按宪法与行为改动同片更新。该片仍低于 800 行，审查范围只涉及一个页面、两份定向 E2E 和两份对应文档的小幅同步。
+PR2 预计略高于 400 行，但只有一个核心不变量：异步请求和列表合并不能破坏当前用户意图。纯逻辑测试、页面接线、编辑/导入正确性 E2E 与对应长期文档必须同片出现，移走主流程回归会让正确性代码无法独立验收；该片仍低于 800 行。
+
+PR3 预计略高于 400 行，但只有一个核心不变量：重排页面结构后，浏览、管理和导入真实入口仍可从同一页面完整使用。验证新入口/分组的失败 E2E 先于 JSX 编写，并与结构改动同片；对应长期产品文档也按宪法与行为改动同片更新。该片仍低于 800 行，审查范围只涉及一个页面、两份定向 E2E 的结构增量和两份对应文档的小幅同步。
 
 PR4 预计略高于 400 行，但只有一个核心不变量：Page 2 在目标窄屏下形成完整一致、可读且不遮挡的视觉层。共享 token、卡片、弹层、固定按钮、底部导航和安全区选择器集中在同一 `app.css` 并共同决定最终布局；再按选择器拆分会留下无法独立视觉验收的混合样式。除该 CSS 和验收记录外不改变业务行为，该片仍低于 800 行。
 
