@@ -1,0 +1,359 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>街坊味 v1 高保真视觉基准</title>
+  <style>
+    :root {
+      --paper: #fffaf1;
+      --canvas: #eee9df;
+      --ink: #29231e;
+      --muted: #746b61;
+      --line: #eadfce;
+      --red: #b6402f;
+      --red-dark: #913225;
+      --red-soft: #f8e4dc;
+      --green: #2f7c5a;
+      --green-soft: #dff0e7;
+      --gold: #bd7b28;
+      --gold-soft: #f6ead5;
+      --white: #ffffff;
+      --shadow: 0 24px 60px rgba(70, 53, 38, .14), 0 3px 10px rgba(70, 53, 38, .08);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; color: var(--ink); background: var(--canvas); font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    body { min-width: 1980px; }
+    .board { width: 1980px; margin: 0 auto; padding: 64px 56px 80px; background: linear-gradient(180deg, #f7f2e9 0, #ece7dd 100%); }
+    .hero { display: flex; align-items: flex-end; justify-content: space-between; margin: 0 14px 38px; }
+    .eyebrow { color: var(--red); font-size: 17px; font-weight: 800; letter-spacing: .16em; }
+    h1 { margin: 10px 0 12px; font-size: 48px; line-height: 1.08; letter-spacing: -.04em; }
+    .hero p { margin: 0; color: var(--muted); font-size: 20px; }
+    .version { padding: 12px 18px; border: 1px solid #d7cbbb; border-radius: 999px; background: rgba(255,255,255,.65); color: #62584e; font-weight: 700; }
+    .flow-head { display: flex; align-items: center; gap: 18px; margin: 42px 14px 20px; }
+    .flow-head h2 { margin: 0; font-size: 28px; }
+    .flow-head .line { flex: 1; height: 1px; background: #d8cdbc; }
+    .flow-head .summary { color: var(--muted); font-size: 16px; }
+    .screen-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 26px; align-items: start; }
+    .screen-grid.customer { grid-template-columns: repeat(3, 360px); justify-content: center; gap: 66px; }
+    .screen-wrap { position: relative; }
+    .step { display: flex; align-items: center; gap: 9px; margin: 0 0 12px 8px; color: #63594f; font-size: 15px; font-weight: 800; }
+    .step b { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; color: white; background: var(--red); font-size: 13px; }
+    .screen-wrap:not(:last-child) .step::after { content: "→"; position: absolute; right: -20px; color: #b8aa98; font-size: 24px; }
+    .phone { position: relative; width: 100%; height: 748px; overflow: hidden; border: 9px solid #292724; border-radius: 44px; background: var(--paper); box-shadow: var(--shadow); }
+    .phone::before { content: ""; position: absolute; z-index: 10; top: 8px; left: 50%; width: 98px; height: 26px; transform: translateX(-50%); border-radius: 16px; background: #292724; }
+    .status { height: 39px; padding: 12px 20px 0; display: flex; justify-content: space-between; font-size: 12px; font-weight: 800; }
+    .status span:last-child { letter-spacing: .08em; }
+    .topbar { height: 50px; padding: 4px 18px 10px; display: flex; align-items: center; justify-content: space-between; }
+    .brand { font-weight: 900; font-size: 21px; letter-spacing: -.03em; }
+    .mini-menu { padding: 7px 12px; border: 1px solid #ddd2c3; border-radius: 18px; background: rgba(255,255,255,.8); font-weight: 900; letter-spacing: .15em; }
+    .content { height: calc(100% - 148px); overflow: hidden; padding: 10px 16px 18px; }
+    .content.no-tabs { height: calc(100% - 96px); }
+    .title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+    h3 { margin: 0; font-size: 27px; line-height: 1.14; letter-spacing: -.04em; }
+    .sub { color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .title-row .sub { margin-top: 5px; }
+    .text-link { color: var(--red); font-size: 13px; font-weight: 800; }
+    .card { padding: 14px; margin-bottom: 11px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255,255,255,.82); box-shadow: 0 4px 14px rgba(74,55,35,.04); }
+    .card.warm { border-color: #edd0c5; background: #fff3ed; }
+    .card.green { border-color: #cae2d5; background: #eef8f2; }
+    .card-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-weight: 900; font-size: 16px; }
+    .meal-title { display: flex; align-items: center; gap: 9px; }
+    .meal-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 12px; background: var(--gold-soft); font-size: 18px; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+    .meta { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    .strong { font-weight: 900; color: var(--ink); }
+    .chip { display: inline-flex; align-items: center; justify-content: center; min-height: 25px; padding: 4px 9px; border-radius: 999px; background: #eee7dc; color: #61584e; font-size: 11px; font-weight: 800; white-space: nowrap; }
+    .chip.red { color: var(--red-dark); background: var(--red-soft); }
+    .chip.green { color: var(--green); background: var(--green-soft); }
+    .chip.gold { color: #8c5b1c; background: var(--gold-soft); }
+    .button { display: grid; place-items: center; min-height: 44px; padding: 10px 14px; border: 0; border-radius: 14px; background: var(--red); color: white; font-size: 14px; font-weight: 900; text-align: center; box-shadow: 0 6px 14px rgba(182,64,47,.18); }
+    .button.secondary { border: 1px solid #dfd3c3; background: white; color: var(--ink); box-shadow: none; }
+    .button.wechat { background: #27945d; }
+    .button.small { display: inline-grid; min-height: 32px; padding: 7px 10px; border-radius: 10px; font-size: 11px; }
+    .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 11px; }
+    .primary-dock { position: absolute; left: 16px; right: 16px; bottom: 67px; }
+    .tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; display: grid; grid-template-columns: repeat(4, 1fr); align-items: center; border-top: 1px solid #e7dccd; background: rgba(255,250,241,.97); }
+    .tab { display: grid; justify-items: center; gap: 3px; color: #91877b; font-size: 10px; font-weight: 700; }
+    .tab i { font-style: normal; font-size: 18px; filter: grayscale(1); opacity: .62; }
+    .tab.active { color: var(--red); }
+    .tab.active i { filter: none; opacity: 1; }
+    .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 12px; }
+    .quick { min-height: 78px; padding: 13px; border-radius: 16px; background: white; border: 1px solid var(--line); }
+    .quick span { display: block; margin-bottom: 8px; font-size: 20px; }
+    .quick b { font-size: 13px; }
+    .notice { display: flex; align-items: center; gap: 8px; margin: 11px 0; padding: 10px 12px; border-radius: 13px; color: #8a5520; background: #fff0d7; font-size: 12px; font-weight: 700; }
+    .filters { display: flex; gap: 7px; margin-bottom: 13px; }
+    .filters .chip.active { background: var(--ink); color: white; }
+    .food { display: flex; align-items: center; gap: 11px; }
+    .food-photo { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 15px; background: #f0e2ce; font-size: 25px; }
+    .food-info { flex: 1; }
+    .switch { width: 36px; height: 21px; padding: 3px; border-radius: 999px; background: var(--green); }
+    .switch::after { content: ""; display: block; margin-left: auto; width: 15px; height: 15px; border-radius: 50%; background: white; }
+    .week { display: grid; grid-template-columns: repeat(5, 1fr); gap: 5px; margin-bottom: 12px; }
+    .day { padding: 8px 3px; border-radius: 12px; color: var(--muted); background: #eee7dc; text-align: center; font-size: 10px; }
+    .day b { display: block; margin-top: 3px; color: var(--ink); font-size: 13px; }
+    .day.active { color: white; background: var(--red); }
+    .day.active b { color: white; }
+    .dish-list { color: #5f564c; font-size: 12px; line-height: 1.65; }
+    .success-mark { display: grid; place-items: center; width: 54px; height: 54px; margin: 4px auto 10px; border-radius: 50%; color: white; background: var(--green); font-size: 27px; font-weight: 900; }
+    .center { text-align: center; }
+    .share-card { padding: 15px; border-radius: 18px; color: white; background: var(--red); box-shadow: 0 12px 24px rgba(182,64,47,.22); }
+    .share-card .meta { color: #fae8e1; }
+    .share-card .row { border-top: 1px solid rgba(255,255,255,.25); padding-top: 9px; }
+    .segment { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 12px; border-radius: 13px; background: #eee7dc; }
+    .segment span { padding: 8px; border-radius: 10px; text-align: center; color: var(--muted); font-size: 12px; font-weight: 800; }
+    .segment .active { background: white; color: var(--ink); box-shadow: 0 2px 7px rgba(70,50,30,.08); }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 11px; }
+    .stat { padding: 10px 6px; border-radius: 13px; background: white; border: 1px solid var(--line); text-align: center; }
+    .stat b { display: block; font-size: 18px; }
+    .stat span { color: var(--muted); font-size: 10px; }
+    .order-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .order-actions .button { flex: 1; min-width: 82px; }
+    .quiet-banner { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; color: var(--green); font-size: 12px; font-weight: 800; }
+    .hero-meal { padding: 16px; margin-bottom: 12px; border-radius: 20px; color: white; background: linear-gradient(135deg, #a93829, #c96242); }
+    .hero-meal .sub { color: #fbe7dd; }
+    .qty { display: grid; grid-template-columns: 32px 1fr 32px; align-items: center; gap: 8px; margin-top: 11px; }
+    .qty button { width: 32px; height: 32px; border: 0; border-radius: 10px; background: #eee5d8; color: var(--ink); font-size: 19px; }
+    .qty b { text-align: center; }
+    .profile { display: flex; align-items: center; gap: 10px; }
+    .avatar { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 14px; color: #8a4b34; background: #f6d9ca; font-weight: 900; }
+    .summary-row { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px dashed #e2d7c8; font-size: 13px; }
+    .summary-row:last-child { border-bottom: 0; }
+    .policy { margin-top: 9px; color: var(--muted); font-size: 10px; line-height: 1.5; }
+    .order-timeline { display: grid; grid-template-columns: 18px 1fr; gap: 8px; margin-top: 10px; }
+    .dot { width: 10px; height: 10px; margin: 4px; border-radius: 50%; background: #d4c9b9; }
+    .dot.done { background: var(--green); }
+    .timeline-text { padding-bottom: 9px; border-bottom: 1px solid #eee4d6; font-size: 12px; }
+    .principles { display: flex; justify-content: center; gap: 10px; margin-top: 38px; }
+    .principles span { padding: 10px 14px; border: 1px solid #d9cebf; border-radius: 999px; background: rgba(255,255,255,.6); color: #655b51; font-size: 13px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="hero">
+      <div>
+        <div class="eyebrow">WECHAT MINI PROGRAM · HIGH-FIDELITY CONCEPT</div>
+        <h1>街坊味 v1 · 前端重构视觉基准</h1>
+        <p>把复杂后台收成两条清楚主线：桃子经营一周菜单，街坊从分享卡片完成预订。</p>
+      </div>
+      <div class="version">概念稿 v0.2 · 2026-07-24</div>
+    </header>
+
+    <section>
+      <div class="flow-head"><h2>商家端主线</h2><div class="line"></div><div class="summary">今日 → 菜品 → 排餐 → 开放分享 → 订单履约</div></div>
+      <div class="screen-grid">
+        <article class="screen-wrap">
+          <div class="step"><b>1</b> 今日工作台</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">街坊味</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content">
+              <div class="title-row"><div><h3>桃子，早上好</h3><div class="sub">今天的饭，按这三步就能忙清楚</div></div></div>
+              <div class="notice">● 有 3 笔新订单等待确认</div>
+              <div class="card warm">
+                <div class="card-title"><div class="meal-title"><span class="meal-icon">☀️</span><span>今日午餐</span></div><span class="chip green">预订中</span></div>
+                <div class="meta">红烧肉 · 清炒时蔬 · 番茄蛋汤等 4菜1汤</div>
+                <div class="row"><span class="strong">已订 18 份</span><span class="meta">10:30 截止</span></div>
+              </div>
+              <div class="card">
+                <div class="card-title"><div class="meal-title"><span class="meal-icon">🌙</span><span>今日晚餐</span></div><span class="chip gold">待开放</span></div>
+                <div class="meta">菜单已排好，价格与截止时间还未确认</div>
+                <div class="row"><span class="strong">¥30 / 份</span><span class="text-link">去开放 →</span></div>
+              </div>
+              <div class="quick-grid">
+                <div class="quick"><span>📅</span><b>排本周菜单</b></div>
+                <div class="quick"><span>📣</span><b>开放预订</b></div>
+                <div class="quick"><span>🧾</span><b>查看订单</b></div>
+                <div class="quick"><span>🛵</span><b>配送清单</b></div>
+              </div>
+            </div>
+            <nav class="tabs"><div class="tab active"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>2</b> 管理菜品</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">菜品库</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content">
+              <div class="title-row"><div><h3>常做的菜</h3><div class="sub">启用后就能用来排菜单</div></div><span class="text-link">管理</span></div>
+              <div class="filters"><span class="chip active">全部</span><span class="chip">荤菜</span><span class="chip">素菜</span><span class="chip">汤</span></div>
+              <div class="card"><div class="food"><div class="food-photo">🥘</div><div class="food-info"><div class="strong">红烧肉</div><div class="meta">荤菜 · 猪肉</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">🥬</div><div class="food-info"><div class="strong">清炒时蔬</div><div class="meta">素菜 · 当季青菜</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">🍲</div><div class="food-info"><div class="strong">番茄蛋汤</div><div class="meta">汤 · 番茄鸡蛋</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">🐟</div><div class="food-info"><div class="strong">清蒸鲈鱼</div><div class="meta">荤菜 · 鱼</div></div><div class="switch"></div></div></div>
+              <div class="primary-dock"><div class="button">＋ 添加菜品</div></div>
+            </div>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab active"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>3</b> 排本周菜单</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">本周菜单</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content">
+              <div class="title-row"><div><h3>7月27日－31日</h3><div class="sub">先排菜，再统一开放预订</div></div><span class="text-link">重新生成</span></div>
+              <div class="week"><div class="day active">周一<b>27</b></div><div class="day">周二<b>28</b></div><div class="day">周三<b>29</b></div><div class="day">周四<b>30</b></div><div class="day">周五<b>31</b></div></div>
+              <div class="card warm">
+                <div class="card-title"><span>午餐 · 4菜1汤</span><span class="chip green">已排好</span></div>
+                <div class="dish-list">红烧肉 · 香菇滑鸡 · 清炒时蔬<br>蒜蓉茄子 · 番茄蛋汤</div>
+                <div class="button-row"><div class="button secondary small">换一道</div><div class="button secondary small">编辑餐次</div></div>
+                <div class="row"><span class="strong">¥30 / 份</span><span class="meta">10:30 截止</span></div>
+              </div>
+              <div class="card">
+                <div class="card-title"><span>晚餐 · 4菜1汤</span><span class="chip gold">待设置</span></div>
+                <div class="dish-list">清蒸鲈鱼 · 土豆烧牛腩 · 手撕包菜<br>家常豆腐 · 冬瓜汤</div>
+                <div class="button-row"><div class="button secondary small">换一道</div><div class="button secondary small">设置价格与截止时间</div></div>
+              </div>
+              <div class="primary-dock"><div class="button">保存并开放预订</div></div>
+            </div>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab active"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>4</b> 开放并分享</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">分享预订</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content no-tabs">
+              <div class="success-mark">✓</div>
+              <div class="center"><h3>预订已开放</h3><div class="sub">现在可以发给街坊了</div></div>
+              <div style="height:16px"></div>
+              <div class="share-card">
+                <div class="card-title"><span>桃子家常菜</span><span>🍑</span></div>
+                <div style="font-size:20px;font-weight:900;margin:12px 0 5px">本周午晚餐预订</div>
+                <div class="meta">7月27日－31日 · 共 6 个餐次</div>
+                <div class="row"><span>¥30 / 份起</span><span>点击选择餐次 →</span></div>
+              </div>
+              <div class="card" style="margin-top:14px">
+                <div class="card-title"><span>已选择的餐次</span><span class="chip green">6 个</span></div>
+                <div class="summary-row"><span>周一午餐</span><b>10:30 截止</b></div>
+                <div class="summary-row"><span>周一晚餐</span><b>16:00 截止</b></div>
+                <div class="summary-row"><span>周二午餐等</span><b>还有 4 个</b></div>
+              </div>
+              <div class="button wechat" style="margin-top:16px">分享给街坊</div>
+              <div class="button secondary" style="margin-top:8px">复制入口</div>
+              <div class="policy center">分享入口只包含公开批次标识，不包含商家或顾客身份信息</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>5</b> 订单履约</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">今日订单</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content">
+              <div class="segment"><span class="active">午餐 18份</span><span>晚餐 9份</span></div>
+              <div class="stats"><div class="stat"><b>3</b><span>待确认</span></div><div class="stat"><b>12</b><span>已确认</span></div><div class="stat"><b>8</b><span>待送达</span></div></div>
+              <div class="card warm">
+                <div class="card-title"><span>王阿姨 · 2份</span><span class="chip red">待确认</span></div>
+                <div class="meta">幸福里 3 栋 201 · 备注：少辣</div>
+                <div class="order-actions"><div class="button small">确认订单</div><div class="button secondary small">联系顾客</div></div>
+              </div>
+              <div class="card">
+                <div class="card-title"><span>李叔 · 1份</span><span class="chip green">已确认</span></div>
+                <div class="meta">梧桐苑 8 栋门卫 · ¥30</div>
+                <div class="order-actions"><div class="button secondary small">标已付（线下）</div><div class="button secondary small">标记送达</div></div>
+              </div>
+              <div class="card">
+                <div class="card-title"><span>周老师 · 3份</span><span class="chip gold">待送达</span></div>
+                <div class="meta">街坊中心 2 楼 · 已付（线下）</div>
+                <div class="order-actions"><div class="button secondary small">标记送达</div></div>
+              </div>
+              <div class="primary-dock"><div class="button secondary">查看配送清单</div></div>
+            </div>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜单</div><div class="tab active"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section>
+      <div class="flow-head"><h2>顾客端主线</h2><div class="line"></div><div class="summary">点微信群卡片 → 选择餐次与资料 → 确认登记 → 查看/修改订单</div></div>
+      <div class="screen-grid customer">
+        <article class="screen-wrap">
+          <div class="step"><b>6</b> 分享卡片落地页</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">街坊味</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content no-tabs">
+              <div class="quiet-banner">✓ 微信已识别 · 无需注册</div>
+              <div class="hero-meal"><div class="sub">桃子家常菜</div><div style="font-size:25px;font-weight:900;margin:7px 0">本周午晚餐预订</div><div class="sub">7月27日－31日 · 按需选择餐次</div></div>
+              <div class="card">
+                <div class="card-title"><div class="meal-title"><span class="meal-icon">☀️</span><span>周一午餐</span></div><span class="chip green">可预订</span></div>
+                <div class="dish-list">红烧肉 · 香菇滑鸡 · 清炒时蔬<br>蒜蓉茄子 · 番茄蛋汤</div>
+                <div class="row"><span class="strong">¥30 / 份</span><span class="meta">今天 10:30 截止</span></div>
+                <div class="qty"><button>−</button><b>1 份</b><button>＋</button></div>
+              </div>
+              <div class="card">
+                <div class="card-title"><div class="meal-title"><span class="meal-icon">🌙</span><span>周一晚餐</span></div><span class="chip green">可预订</span></div>
+                <div class="dish-list">清蒸鲈鱼 · 土豆烧牛腩 · 手撕包菜<br>家常豆腐 · 冬瓜汤</div>
+                <div class="row"><span class="strong">¥30 / 份</span><span class="meta">今天 16:00 截止</span></div>
+                <div class="qty"><button>−</button><b>0 份</b><button>＋</button></div>
+              </div>
+              <div class="button">下一步 · 填写送餐资料</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>7</b> 确认预订</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">确认预订</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content no-tabs">
+              <div class="title-row"><div><h3>送到哪里？</h3><div class="sub">只用于桃子识别订单和送餐</div></div></div>
+              <div class="card warm">
+                <div class="profile"><div class="avatar">王</div><div style="flex:1"><div class="strong">王阿姨</div><div class="meta">幸福里 3 栋 201</div></div><span class="chip green">已选择</span></div>
+              </div>
+              <div class="button secondary">＋ 使用新称呼和地址</div>
+              <div style="height:18px"></div>
+              <div class="card">
+                <div class="card-title"><span>本次预订</span><span class="text-link">返回修改</span></div>
+                <div class="summary-row"><span>周一午餐 × 1</span><b>¥30</b></div>
+                <div class="summary-row"><span>周二晚餐 × 2</span><b>¥60</b></div>
+                <div class="summary-row"><span class="strong">合计 3 份</span><b style="color:var(--red)">¥90</b></div>
+              </div>
+              <div class="notice">提交后，桃子确认前仍可修改或取消</div>
+              <div class="button">确认登记</div>
+              <div class="policy">本小程序不收取在线付款；付款由你与桃子线下完成。称呼和地址可在“我的订单”中停用。</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="screen-wrap">
+          <div class="step"><b>8</b> 我的订单</div>
+          <div class="phone">
+            <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
+            <div class="topbar"><div class="brand">我的订单</div><div class="mini-menu">••• ◉</div></div>
+            <div class="content no-tabs">
+              <div class="quiet-banner">桃子家常菜 · 仅显示你的订单</div>
+              <div class="card warm">
+                <div class="card-title"><span>周一午餐 · 1份</span><span class="chip red">待桃子确认</span></div>
+                <div class="meta">王阿姨 · 幸福里 3 栋 201 · ¥30</div>
+                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>登记成功</b><div class="meta">今天 09:43</div></div><span class="dot"></span><div class="timeline-text"><b>等待商家确认</b><div class="meta">确认前可以修改或取消</div></div></div>
+                <div class="button-row"><div class="button secondary small">修改订单</div><div class="button secondary small">取消订单</div></div>
+              </div>
+              <div class="card green">
+                <div class="card-title"><span>周二晚餐 · 2份</span><span class="chip green">已确认</span></div>
+                <div class="meta">王阿姨 · 幸福里 3 栋 201 · ¥60</div>
+                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>桃子已确认</b><div class="meta">订单已锁定，不能再修改</div></div><span class="dot"></span><div class="timeline-text"><b>等待送达</b><div class="meta">付款线下完成</div></div></div>
+              </div>
+              <div class="button secondary">停用我的送餐资料</div>
+              <div class="policy center">历史订单会保留，停用后不再用于新的预订</div>
+            </div>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <footer class="principles"><span>一屏一主任务</span><span>大字号与大触控区</span><span>状态必须有文案</span><span>顾客入口不暴露商家功能</span><span>接龙兜底默认隐藏</span><span>无在线支付 / 无 AI 主链路</span></footer>
+  </main>
+</body>
+</html>
