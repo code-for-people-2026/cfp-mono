@@ -124,10 +124,13 @@ describe("merchant home state model", () => {
   it("explains only the settings missing from a menu-ready slot", () => {
     expect(merchantMenuText(null, "unplanned")).toBe("今天还没有安排这个餐次");
     expect(merchantMenuText(slot({ priceCents: null, orderDeadline: null }), "menu-ready"))
-      .toBe("菜单已排好，价格与截止时间还未确认");
-    expect(merchantMenuText(slot({ priceCents: null }), "menu-ready")).toBe("菜单已排好，价格还未确认");
+      .toBe("菜单已排好，价格与截止时间还未确认\n荤一 · 荤二 · 素一等 4菜1汤");
+    expect(merchantMenuText(slot({ priceCents: null }), "menu-ready"))
+      .toBe("菜单已排好，价格还未确认\n荤一 · 荤二 · 素一等 4菜1汤");
     expect(merchantMenuText(slot({ orderDeadline: null }), "menu-ready"))
-      .toBe("菜单已排好，截止时间还未确认");
+      .toBe("菜单已排好，截止时间还未确认\n荤一 · 荤二 · 素一等 4菜1汤");
+    expect(merchantMenuText(slot({ menuItems: [], priceCents: null, orderDeadline: null }), "menu-ready"))
+      .toBe("菜单已排好，价格与截止时间还未确认");
     expect(merchantMenuText(slot(), "menu-ready")).toBe("荤一 · 荤二 · 素一等 4菜1汤");
     expect(merchantMenuText(slot(), "booking-open")).toBe("荤一 · 荤二 · 素一等 4菜1汤");
   });

@@ -89,11 +89,17 @@ export function merchantMenuSummary(items: MealSlot["menuItems"]): string {
 
 export function merchantMenuText(slot: MealSlot | null, state: MerchantMealState): string {
   if (slot === null) return "今天还没有安排这个餐次";
-  if (state !== "menu-ready") return merchantMenuSummary(slot.menuItems);
-  if (slot.priceCents === null && slot.orderDeadline === null) return "菜单已排好，价格与截止时间还未确认";
-  if (slot.priceCents === null) return "菜单已排好，价格还未确认";
-  if (slot.orderDeadline === null) return "菜单已排好，截止时间还未确认";
-  return merchantMenuSummary(slot.menuItems);
+  const menu = merchantMenuSummary(slot.menuItems);
+  if (state !== "menu-ready") return menu;
+  const missing = slot.priceCents === null && slot.orderDeadline === null
+    ? "菜单已排好，价格与截止时间还未确认"
+    : slot.priceCents === null
+      ? "菜单已排好，价格还未确认"
+      : slot.orderDeadline === null
+        ? "菜单已排好，截止时间还未确认"
+        : null;
+  if (missing === null) return menu;
+  return slot.menuItems.length === 0 ? missing : `${missing}\n${menu}`;
 }
 
 export function buildMerchantMealCard(input: {

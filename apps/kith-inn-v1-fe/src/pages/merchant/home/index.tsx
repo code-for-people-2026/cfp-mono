@@ -153,8 +153,9 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
               <Text className="meta">{merchantDeadlineText(card.slot.orderDeadline)}</Text></View>}
             {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button disabled={status === "loading"} onClick={(event) => {
               event.stopPropagation(); void this.retryMeal(card.occasion);
-            }}>重新加载</Button></View> : card.state !== "menu-ready" && <Text className="home-order-meta">
-              {card.priceText} · {card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送
+            }}>重新加载</Button></View> : <Text className="home-order-meta">
+              {card.state === "menu-ready" ? `已订 ${card.confirmedQuantity} 份 · ` : `${card.priceText} · `}
+              {card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送
             </Text>}
             <Button className="manual-add" aria-label={`为今日${card.occasion === "lunch" ? "午餐" : "晚餐"}手动加单`}
               onClick={(event) => { event.stopPropagation(); goDetail(
