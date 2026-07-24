@@ -86,7 +86,7 @@
     .filters { display: flex; gap: 7px; margin-bottom: 13px; }
     .filters .chip.active { background: var(--ink); color: white; }
     .food { display: flex; align-items: center; gap: 11px; }
-    .food-photo { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 15px; background: #f0e2ce; font-size: 25px; }
+    .food-photo { display: grid; place-items: center; flex: 0 0 48px; height: 48px; border-radius: 15px; background: #f0e2ce; color: #8c5b1c; font-size: 14px; font-weight: 900; }
     .food-info { flex: 1; }
     .switch { width: 36px; height: 21px; padding: 3px; border-radius: 999px; background: var(--green); }
     .switch::after { content: ""; display: block; margin-left: auto; width: 15px; height: 15px; border-radius: 50%; background: white; }
@@ -180,13 +180,13 @@
             <div class="content">
               <div class="title-row"><div><h3>常做的菜</h3><div class="sub">启用后就能用来排菜单</div></div><span class="text-link">管理</span></div>
               <div class="filters"><span class="chip active">全部</span><span class="chip">荤菜</span><span class="chip">素菜</span><span class="chip">汤</span></div>
-              <div class="card"><div class="food"><div class="food-photo">🥘</div><div class="food-info"><div class="strong">红烧肉</div><div class="meta">荤菜 · 猪肉</div></div><div class="switch"></div></div></div>
-              <div class="card"><div class="food"><div class="food-photo">🥬</div><div class="food-info"><div class="strong">清炒时蔬</div><div class="meta">素菜 · 当季青菜</div></div><div class="switch"></div></div></div>
-              <div class="card"><div class="food"><div class="food-photo">🍲</div><div class="food-info"><div class="strong">番茄蛋汤</div><div class="meta">汤 · 番茄鸡蛋</div></div><div class="switch"></div></div></div>
-              <div class="card"><div class="food"><div class="food-photo">🐟</div><div class="food-info"><div class="strong">清蒸鲈鱼</div><div class="meta">荤菜 · 鱼</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">荤</div><div class="food-info"><div class="strong">红烧肉</div><div class="meta">荤菜 · 猪肉</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">素</div><div class="food-info"><div class="strong">清炒时蔬</div><div class="meta">素菜 · 当季青菜</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">汤</div><div class="food-info"><div class="strong">番茄蛋汤</div><div class="meta">汤 · 番茄鸡蛋</div></div><div class="switch"></div></div></div>
+              <div class="card"><div class="food"><div class="food-photo">荤</div><div class="food-info"><div class="strong">清蒸鲈鱼</div><div class="meta">荤菜 · 鱼</div></div><div class="switch"></div></div></div>
               <div class="primary-dock"><div class="button">＋ 添加菜品</div></div>
             </div>
-            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab active"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab active"><i>▦</i>菜品</div><div class="tab"><i>▤</i>菜单</div><div class="tab"><i>≣</i>订单</div></nav>
           </div>
         </article>
 
@@ -320,7 +320,7 @@
                 <div class="summary-row"><span>周二晚餐 × 2</span><b>¥60</b></div>
                 <div class="summary-row"><span class="strong">合计 3 份</span><b style="color:var(--red)">¥90</b></div>
               </div>
-              <div class="notice">提交后，桃子确认前仍可修改或取消</div>
+              <div class="notice">提交后，餐次未截止、未关闭且桃子确认前仍可修改或取消</div>
               <div class="button">确认登记</div>
               <div class="policy">本小程序不收取在线付款；付款由你与桃子线下完成。称呼和地址可在“我的订单”中停用。</div>
             </div>
@@ -337,7 +337,7 @@
               <div class="card warm">
                 <div class="card-title"><span>周一午餐 · 1份</span><span class="chip red">待桃子确认</span></div>
                 <div class="meta">王阿姨 · 幸福里 3 栋 201 · ¥30</div>
-                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>登记成功</b><div class="meta">今天 09:43</div></div><span class="dot"></span><div class="timeline-text"><b>等待商家确认</b><div class="meta">确认前可以修改或取消</div></div></div>
+                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>登记成功</b><div class="meta">今天 09:43</div></div><span class="dot"></span><div class="timeline-text"><b>等待商家确认</b><div class="meta">餐次未截止、未关闭且确认前可以修改或取消</div></div></div>
                 <div class="button-row"><div class="button secondary small">修改订单</div><div class="button secondary small">取消订单</div></div>
               </div>
               <div class="card green">
