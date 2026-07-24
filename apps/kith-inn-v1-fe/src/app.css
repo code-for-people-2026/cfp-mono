@@ -546,6 +546,7 @@ button.danger {
   color: #746b61;
   font-size: 26rpx;
   line-height: 1.5;
+  white-space: pre-line;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
