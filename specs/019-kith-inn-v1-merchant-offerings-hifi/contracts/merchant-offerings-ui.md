@@ -16,9 +16,10 @@
 ## 导入契约
 
 - preview 捕获 `{ text, revision }`；响应版本过期时不得恢复预览或冲突选择。
-- 原文变化立即清空 preview、conflicts 和 commit。
+- preview pending 期间仍可编辑原文；原文变化立即清空 preview、conflicts 和 commit。
 - commit 仅在当前预览版本与当前原文版本一致时可触发。
-- commit 捕获当前文本与冲突选择；结果版本过期时不得展示为当前结果。
+- commit 捕获当前文本与冲突选择；请求 pending 期间原文与冲突控件必须禁用，不能生成另一个本地版本。
+- commit 结束后解除输入锁定；只有捕获快照仍属于当前导入会话时才展示结果。仅忽略旧响应不能撤销服务端已经按旧文本完成的写入。
 
 ## 呈现契约
 

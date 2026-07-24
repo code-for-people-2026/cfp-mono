@@ -28,5 +28,6 @@
 - `previewRevision`: 生成当前预览的原文版本
 - `conflicts`: 当前预览的覆盖选择
 - `commit`: 可选提交结果
+- `commitPending`: 提交请求是否正在使用已确认的原文与冲突选择快照
 
-**状态转换**：修改原文 → revision 递增并清空 preview/conflicts/commit；预览成功仅在版本仍匹配时写入；提交仅在 `previewRevision === revision` 时允许，陈旧提交结果不写回当前状态。
+**状态转换**：非提交期间修改原文 → revision 递增并清空 preview/conflicts/commit；预览成功仅在版本仍匹配时写入；提交仅在 `previewRevision === revision` 时允许。提交开始 → `commitPending = true` 并锁定 text/conflicts；请求结束 → 先按捕获快照判断是否展示结果，再解除锁定。客户端不得在 commit pending 期间推进原文版本，避免已发送的旧文本仍在服务端写入。

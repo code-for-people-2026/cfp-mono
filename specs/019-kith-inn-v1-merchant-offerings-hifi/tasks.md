@@ -10,8 +10,8 @@
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | 固化 Page 2 行为、竞态约束和执行计划 | US1-US4、FR-001~015 | T001-T003 | `specs/019-kith-inn-v1-merchant-offerings-hifi/**`；不改运行时代码 | checklist 全通过、Task ID 映射检查 | 约 500 行 | 无 |
 | PR-Assets | 让 Page 2 高保真参考可由仓库独立读取和复核 | US4、FR-012~014 | T018 | `docs/kith-inn-v1/design/merchant-offerings-hifi-v0.2.png`、`docs/kith-inn-v1/design/kith-inn-v1-hifi-v1.html`；排除所有 `*-prompt.md` | 文件可读取、HTML 可打开、PNG 尺寸与内容人工核对 | HTML 约 360 行；PNG 为二进制资产 | PR1 |
-| PR2 | 保证异步响应与编辑合并不破坏当前用户意图 | US1-US3、FR-003/004/006/008~010/015 | T004-T012、T019 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做视觉换肤 | Vitest coverage、lint、typecheck、定向 E2E、长期文档一致性核对 | 约 400 行 | PR1 |
-| PR3 | 收敛 Page 2 页面结构且不回退真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | T013、T015、T020 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做最终视觉换肤，不改 API/CMS | 定向 E2E、lint、typecheck、双端 build、长期文档一致性核对 | 约 520 行；目标单一，页面、行为 E2E 与对应产品文档同片才能独立验收 | PR2 |
+| PR2 | 保证异步响应与编辑合并不破坏当前用户意图 | US1-US3、FR-003/004/006/008~010/015 | T004-T012、T015、T019 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做视觉换肤 | Vitest coverage、lint、typecheck、编辑/导入正确性 E2E、长期文档一致性核对 | 约 520 行；目标单一，正确性实现与对应主流程回归同片才能独立验收 | PR1 |
+| PR3 | 收敛 Page 2 页面结构且不回退真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | T021、T013、T020 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做最终视觉换肤，不改 API/CMS | 先写入口/分组 E2E，再做 JSX；lint、typecheck、双端 build、长期文档一致性核对 | 约 440 行；目标单一，页面、结构 E2E 与对应产品文档同片才能独立验收 | PR2 |
 | PR4 | 完成 Page 2 高保真样式和窄屏验收 | US4、FR-001/002/012~015 | T014、T016-T017 | `apps/kith-inn-v1-fe/src/app.css`、`specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md`；不再改业务流程，不提交 Prompt | 354×786 对已入库 PNG/HTML 的视觉验收、`pnpm verify`、定向 E2E | 约 460 行；共享视觉层与验收记录同片才能完整核对 | PR3、PR-Assets |
 
 每个 Task ID 只在上表出现一次；依赖图为 `PR1 → PR2 → PR3 → PR4` 与 `PR1 → PR-Assets → PR4`，无环。PR2/PR3 不依赖设计资产，PR4 同时依赖 PR3 与 PR-Assets。每片统一完成定义遵循 `AGENTS.md` 与 `pr-review-converge`：`git diff --check`、`pnpm verify`、latest-head CI、Codex review、0 unresolved thread、`mergeStateStatus=CLEAN`、rebase merge。
@@ -33,6 +33,16 @@
 - [ ] T018 [US4] 在独立 PR-Assets 中提交 `docs/kith-inn-v1/design/merchant-offerings-hifi-v0.2.png` 与 `docs/kith-inn-v1/design/kith-inn-v1-hifi-v1.html`，明确排除所有 `*-prompt.md`
 
 **Checkpoint**：PNG/HTML 均可从仓库读取和打开，PR4 的视觉验收具备稳定输入。
+
+---
+
+## Phase 1.6：PR2 跨故事正确性回归守卫
+
+**Goal**：在正确性实现前，用主流程 E2E 锁定编辑顺序和导入写入安全。
+
+- [ ] T015 [US2] [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 与 `jielong-import.spec.ts` 增加编辑后卡片顺序不变、预览原文失效，以及 commit pending 时原文/冲突选择锁定的回归并确认新断言失败
+
+**Checkpoint**：PR2 的用户可见正确性风险已有失败 E2E，不依赖后续结构 PR 才发现回归。
 
 ---
 
@@ -72,7 +82,7 @@
 
 - [ ] T010 [US3] 先在 `apps/kith-inn-v1-fe/src/logic/offeringsView.test.ts` 增加导入草稿版本推进、快照匹配和旧版本拒绝测试并确认新断言失败
 - [ ] T011 [US3] 在 `apps/kith-inn-v1-fe/src/logic/offeringsView.ts` 实现导入草稿 revision/snapshot 协调器，使 T010 通过
-- [ ] T012 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 将 preview/commit 绑定原文版本，文本变化清空旧状态且过期响应不写回
+- [ ] T012 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 将 preview 绑定原文版本，文本变化清空旧状态；commit 发出后锁定原文和冲突选择至请求结束，避免已发送的旧快照仍在服务端写入
 - [ ] T019 [US1] [US2] [US3] 在 `docs/kith-inn-v1/TECH-SPEC.md` 与 `docs/kith-inn-v1/USER-STORIES.md` 同步逐菜品最新响应、原位编辑和导入原文失效的长期产品行为
 
 **Checkpoint**：导入数据风险可由单元测试和接龙 E2E 独立验证。
@@ -85,9 +95,9 @@
 
 **Independent Test**：在 354×786 核对默认、管理、新增/编辑和导入态，再构建两个目标平台。
 
+- [ ] T021 [US4] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 与 `jielong-import.spec.ts` 增加新浏览/管理入口、启用/停用分组和批量导入入口的结构 E2E 并确认新断言失败
 - [ ] T013 [US4] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 依据本规格和 UI 契约实现浏览/管理/弹层 JSX、加载/空/错误状态，并保留仓库现有真实 API、认证和错误处理入口
 - [ ] T014 [US4] 在 `apps/kith-inn-v1-fe/src/app.css` 依据本规格实现完整高保真视觉层，并覆盖长菜名/主料省略、disabled 预览按钮可读性及 Page 1 导航兼容
-- [ ] T015 [US4] 在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 与 `jielong-import.spec.ts` 覆盖新入口、管理分组、编辑顺序和导入失效回归
 - [ ] T020 [US1] [US2] [US4] 在 `docs/kith-inn-v1/TECH-SPEC.md` 与 `docs/kith-inn-v1/USER-STORIES.md` 同步默认启用列表、分类筛选、浏览/管理模式和固定新增入口
 - [ ] T016 [US4] 在 `specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md` 记录 H5/微信小程序 build 与定向 E2E 的实际结果
 - [ ] T017 [US4] 在 `specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md` 记录 354×786 默认态、管理态、批量导入态的人工视觉验收及新增/编辑弹层的 E2E 验收事实
@@ -99,11 +109,10 @@
 ## 依赖与执行顺序
 
 - Phase 1 已完成；T018 的 PR-Assets 可在 PR1 后独立合并，最迟必须在 PR4 前完成，不阻塞 PR2/PR3。
-- T004 → T005 → T006；T007 → T008 → T009；T010 → T011 → T012。
+- T015 必须在 PR2 实现前先写成失败 E2E；随后执行 T004 → T005 → T006、T007 → T008 → T009、T010 → T011 → T012。
 - T019 依赖 T006、T009、T012，并与 PR2 的行为改动同片提交。
-- T013 依赖 T006、T009、T012，避免页面结构改动掩盖正确性问题。
-- T015 依赖 T013 以及 T006、T009、T012，用于验证页面入口和行为回归，不依赖只改变视觉的 T014。
-- T020 依赖 T013/T015，并与 PR3 的页面行为改动同片提交。
+- T021 在 PR2 合并后先写成失败的结构 E2E；T013 依赖 T021，避免先改 JSX 再补入口守卫。
+- T020 依赖 T013/T021，并与 PR3 的页面行为改动同片提交。
 - T014 依赖 T013 与 T018；T016/T017 依赖全部运行时代码、测试任务和已入库视觉基线。
 - 发布必须满足两条依赖链：PR1 → PR2 → PR3 → PR4，以及 PR1 → PR-Assets → PR4。PR2 与 PR-Assets 没有相互依赖，但遵循收口流程一次只推进一个 PR；不得在任一前置片未完成时发布其下游切片。
 
@@ -111,12 +120,12 @@
 
 - T004、T007、T010 都修改同一测试文件，实际按顺序执行以避免冲突。
 - PR2 与 PR-Assets 在依赖图上可交换先后；实际按单 PR 收口纪律依次完成，不同时开放。
-- PR2 合并后，T013 与 T015 可在 PR3 内按页面实现、行为验证的顺序推进；T014 必须等 PR3 合并后再开始，最终视觉验收基于前序完整页面。
+- PR2 合并后，PR3 先完成 T021 的失败结构 E2E，再执行 T013；T014 必须等 PR3 合并后再开始，最终视觉验收基于前序完整页面。
 - 自动化验证中的 lint、typecheck 与文档链接检查可并行；coverage、E2E 和 build 按资源情况串行。
 
 ## 实施策略
 
-1. 先以失败测试锁定逐菜品请求、原位编辑和导入版本三条正确性不变量。
+1. 先以失败的单元测试和主流程 E2E 锁定逐菜品请求、原位编辑、导入版本与提交锁定四条正确性不变量。
 2. 在 `offeringsView.ts` 提供最小纯逻辑/协调器，页面只负责调用 API 和提交视图状态。
 3. 依据仓库内本规格和 UI 契约实现页面骨架与样式，不依赖外部工作树或未入库原型。
 4. 完成定向自动化与视觉验证后再运行仓库统一门禁；本地 commit 是正常实现步骤，未经用户明确授权不得 push、开 PR 或执行其他外发动作。
