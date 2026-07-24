@@ -1,6 +1,6 @@
 import { Button, Input, Switch, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ImportCommitInput,
   ImportCommitResponse,
@@ -259,32 +259,78 @@ export default function MerchantOfferings() {
     }
   };
 
-  const renderOffering = (offering: Offering, manageable: boolean) => (
-    <View
-      className={`offering-row offering-card${offering.active ? "" : " inactive"}`}
-      key={String(offering.id)}
-    >
-      <View className={`offering-icon ${offering.category}`}>
-        <Text>{offering.category === "meat" ? "荤" : offering.category === "veg" ? "素" : "汤"}</Text>
+  const renderForm = () => (
+    <View className="offering-sheet-backdrop">
+      <View className="offering-sheet card form-card">
+        <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>
+        <Input
+          disabled={savePending}
+          placeholder="菜名"
+          value={name}
+          onInput={(event) => setName(event.detail.value)}
+        />
+        <Input
+          disabled={savePending}
+          placeholder="主料（可不填）"
+          value={mainIngredient}
+          onInput={(event) => setMainIngredient(event.detail.value)}
+        />
+        <View className="category-row">
+          {CATEGORIES.map((item) => (
+            <Button
+              key={item.value}
+              className={category === item.value ? "category selected" : "category"}
+              disabled={savePending}
+              onClick={() => setCategory(item.value)}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </View>
+        <View className="offering-form-actions">
+          <Button disabled={savePending} onClick={resetForm}>取消</Button>
+          <Button
+            className="primary"
+            disabled={savePending || !name.trim()}
+            onClick={() => void save()}
+          >
+            {savePending ? "保存中…" : editingId === null ? "新增菜品" : "保存修改"}
+          </Button>
+        </View>
       </View>
-      <View className="offering-copy">
-        <Text className="offering-name">{offering.name}</Text>
-        <Text className="meta">
-          {offering.mainIngredient ? `主料：${offering.mainIngredient}` : "未填写主料"}
-        </Text>
-      </View>
-      {manageable && (
-        <Button size="mini" aria-label={`编辑 ${offering.name}`} onClick={() => edit(offering)}>
-          编辑
-        </Button>
-      )}
-      <Switch
-        aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
-        checked={offering.active}
-        disabled={togglingIds.includes(String(offering.id))}
-        onChange={(event) => void toggleActive(offering, event.detail.value)}
-      />
     </View>
+  );
+
+  const renderOffering = (offering: Offering, manageable: boolean) => (
+    <Fragment key={String(offering.id)}>
+      <View className={`offering-row offering-card${offering.active ? "" : " inactive"}`}>
+        <View className={`offering-icon ${offering.category}`}>
+          <Text>{offering.category === "meat" ? "荤" : offering.category === "veg" ? "素" : "汤"}</Text>
+        </View>
+        <View className="offering-copy">
+          <Text className="offering-name">{offering.name}</Text>
+          <Text className="meta">
+            {offering.mainIngredient ? `主料：${offering.mainIngredient}` : "未填写主料"}
+          </Text>
+        </View>
+        {manageable && (
+          <Button size="mini" aria-label={`编辑 ${offering.name}`} onClick={() => edit(offering)}>
+            编辑
+          </Button>
+        )}
+        <Switch
+          aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
+          checked={offering.active}
+          disabled={togglingIds.includes(String(offering.id))}
+          onChange={(event) => void toggleActive(offering, event.detail.value)}
+        />
+      </View>
+      {manageable
+        && formOpen
+        && editingId !== null
+        && String(editingId) === String(offering.id)
+        && renderForm()}
+    </Fragment>
   );
 
   return (
@@ -406,47 +452,7 @@ export default function MerchantOfferings() {
             </View>
           )}
 
-          {formOpen && (
-            <View className="offering-sheet-backdrop">
-              <View className="offering-sheet card form-card">
-                <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>
-                <Input
-                  disabled={savePending}
-                  placeholder="菜名"
-                  value={name}
-                  onInput={(event) => setName(event.detail.value)}
-                />
-                <Input
-                  disabled={savePending}
-                  placeholder="主料（可不填）"
-                  value={mainIngredient}
-                  onInput={(event) => setMainIngredient(event.detail.value)}
-                />
-                <View className="category-row">
-                  {CATEGORIES.map((item) => (
-                    <Button
-                      key={item.value}
-                      className={category === item.value ? "category selected" : "category"}
-                      disabled={savePending}
-                      onClick={() => setCategory(item.value)}
-                    >
-                      {item.label}
-                    </Button>
-                  ))}
-                </View>
-                <View className="offering-form-actions">
-                  <Button disabled={savePending} onClick={resetForm}>取消</Button>
-                  <Button
-                    className="primary"
-                    disabled={savePending || !name.trim()}
-                    onClick={() => void save()}
-                  >
-                    {savePending ? "保存中…" : editingId === null ? "新增菜品" : "保存修改"}
-                  </Button>
-                </View>
-              </View>
-            </View>
-          )}
+          {formOpen && editingId === null && renderForm()}
 
           <View className="card offerings-manage-group">
             <Text className="section-title">启用中</Text>

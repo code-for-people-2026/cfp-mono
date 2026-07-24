@@ -434,7 +434,10 @@ test("编辑菜品保持原有列表顺序", async ({ page }) => {
 
   await page.goto("/");
   await enterManageOfferings(page);
+  const editedCard = page.locator(".offering-card").filter({ hasText: "顺序菜B" });
   await page.getByLabel("编辑 顺序菜B").click();
+  await expect(editedCard.locator("xpath=following-sibling::*[1]"))
+    .toHaveClass(/offering-sheet-backdrop/);
   await page.getByRole("textbox", { name: "菜名" }).fill("顺序菜B-改");
   await taroButton(page, /^保存修改$/).click();
 
