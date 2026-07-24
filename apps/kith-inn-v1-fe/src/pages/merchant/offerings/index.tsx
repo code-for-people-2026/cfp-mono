@@ -56,6 +56,7 @@ const CATEGORIES: Array<{ value: OfferingCategory; label: string }> = [
 export default function MerchantOfferings() {
   const toggleTracker = useRef(new OfferingToggleTracker());
   const importDraftTracker = useRef(new ImportDraftTracker(""));
+  const previewRequestGeneration = useRef(0);
   const importCommitGeneration = useRef(0);
   const commitBusy = useRef(false);
   const [offerings, setOfferings] = useState<Offering[]>([]);
@@ -138,10 +139,12 @@ export default function MerchantOfferings() {
     const snapshot = importDraftTracker.current.capture();
     const commitGeneration = importCommitGeneration.current;
     if (!snapshot.text.trim() || commitBusy.current) return;
+    const previewGeneration = ++previewRequestGeneration.current;
     try {
       const result = await api.previewOfferingImport(snapshot.text);
       if (
         commitBusy.current
+        || previewGeneration !== previewRequestGeneration.current
         || commitGeneration !== importCommitGeneration.current
         || !importDraftTracker.current.isCurrent(snapshot)
       ) return;
@@ -150,7 +153,12 @@ export default function MerchantOfferings() {
       setConflicts([]);
       setCommit(null);
     } catch (error) {
-      if (importDraftTracker.current.isCurrent(snapshot) && !handledAuthFailure(error)) {
+      if (
+        previewGeneration === previewRequestGeneration.current
+        && commitGeneration === importCommitGeneration.current
+        && importDraftTracker.current.isCurrent(snapshot)
+        && !handledAuthFailure(error)
+      ) {
         await Taro.showToast({ title: "导入预览失败", icon: "none" });
       }
     }
@@ -160,6 +168,7 @@ export default function MerchantOfferings() {
     const snapshot = importDraftTracker.current.capture();
     if (commitBusy.current || previewRevision !== snapshot.revision) return;
     commitBusy.current = true;
+    previewRequestGeneration.current += 1;
     importCommitGeneration.current += 1;
     setPreviewRevision(null);
     setCommitPending(true);
@@ -182,6 +191,7 @@ export default function MerchantOfferings() {
 
   const changeImportText = (value: string) => {
     if (commitBusy.current) return;
+    previewRequestGeneration.current += 1;
     importDraftTracker.current.update(value);
     setImportText(value);
     setPreview(null);

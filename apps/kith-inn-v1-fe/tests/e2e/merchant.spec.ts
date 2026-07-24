@@ -368,6 +368,64 @@ test("修改导入原文后旧预览响应不能覆盖新预览", async ({ page 
   await expect(page.getByText("可新增 1 行，重名 0 行，错误 0 行", { exact: true })).toHaveCount(0);
 });
 
+test("同一原文的旧预览不能清除最新冲突选择", async ({ page }) => {
+  let releaseOldPreview!: () => void;
+  const oldPreviewGate = new Promise<void>((resolve) => { releaseOldPreview = resolve; });
+  let previewRequests = 0;
+  let oldPreviewFinished = false;
+  let commitInput: { text: string; conflicts: Array<{ line: number; action: string }> } | null = null;
+  const conflictPreview = {
+    rows: [{
+      line: 1,
+      raw: "重名菜 素",
+      parsed: { name: "重名菜", mainIngredient: null, category: "veg" },
+      status: "conflict",
+      existingId: 941,
+      defaultAction: "skip"
+    }],
+    summary: { ready: 0, conflict: 1, invalid: 0 }
+  };
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings/import/preview", async (route) => {
+    const current = ++previewRequests;
+    if (current === 1) await oldPreviewGate;
+    await route.fulfill({
+      status: 200, contentType: "application/json", body: JSON.stringify(conflictPreview)
+    });
+    if (current === 1) oldPreviewFinished = true;
+  });
+  await page.route("**/merchant/offerings/import/commit", (route) => {
+    commitInput = route.request().postDataJSON() as typeof commitInput;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ line: 1, status: "overwritten", id: 941 }],
+        summary: { created: 0, overwritten: 1, skipped: 0, failed: 0 }
+      })
+    });
+  });
+
+  await page.goto("/");
+  await enterOfferings(page);
+  await page.getByRole("textbox", { name: "每行一道菜" }).fill("重名菜 素");
+  await taroButton(page, /^预览导入$/).click();
+  await expect.poll(() => previewRequests).toBe(1);
+  await taroButton(page, /^预览导入$/).click();
+  await expect(page.getByLabel("覆盖第 1 行")).toBeVisible();
+  await page.getByLabel("覆盖第 1 行").click();
+
+  releaseOldPreview();
+  await expect.poll(() => oldPreviewFinished).toBe(true);
+  await taroButton(page, /^确认导入$/).click();
+  await expect.poll(() => commitInput).toEqual({
+    text: "重名菜 素",
+    conflicts: [{ line: 1, action: "overwrite" }]
+  });
+});
+
 test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
   let releaseCommit!: () => void;
   const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
