@@ -396,7 +396,7 @@ export default function MerchantOfferings() {
           </View>
 
           {!formOpen && (
-            <Button className="offering-add-fixed primary" onClick={openCreate}>新增菜品</Button>
+            <Button className="offering-add-action primary" onClick={openCreate}>新增菜品</Button>
           )}
 
           {importOpen && (
