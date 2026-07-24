@@ -262,6 +262,170 @@ test("成员资格停用后显示明确提示并回到登录", async ({ page }) 
   await expect(page.getByText("菜品加载失败", { exact: true })).toHaveCount(0);
 });
 
+test("不同菜品的启停请求独立锁定并按各自响应完成", async ({ page }) => {
+  const docs = [
+    { id: 901, sellerId: 1, name: "并发菜A", mainIngredient: "牛肉", category: "meat", active: true },
+    { id: 902, sellerId: 1, name: "并发菜B", mainIngredient: "青菜", category: "veg", active: true }
+  ];
+  let releaseFirst!: () => void;
+  let releaseSecond!: () => void;
+  const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+  const secondGate = new Promise<void>((resolve) => { releaseSecond = resolve; });
+  const patchRequests: number[] = [];
+
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs })
+  }));
+  await page.route("**/merchant/offerings/*", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const id = Number(new URL(route.request().url()).pathname.split("/").at(-1));
+    patchRequests.push(id);
+    await (id === 901 ? firstGate : secondGate);
+    const target = docs.find((item) => item.id === id);
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ doc: { ...target, active: false } })
+    });
+  });
+
+  await page.goto("/");
+  await enterOfferings(page);
+  await page.getByLabel("停用 并发菜A").click();
+  await page.getByLabel("停用 并发菜B").click();
+  await expect.poll(() => patchRequests).toEqual([901, 902]);
+  await expect(page.getByLabel("停用 并发菜A")).toHaveAttribute("disabled", "");
+  await expect(page.getByLabel("停用 并发菜B")).toHaveAttribute("disabled", "");
+
+  releaseFirst();
+  await expect(page.getByLabel("恢复 并发菜A")).toBeVisible();
+  await expect(page.getByLabel("停用 并发菜B")).toHaveAttribute("disabled", "");
+  releaseSecond();
+  await expect(page.getByLabel("恢复 并发菜B")).toBeVisible();
+});
+
+test("编辑菜品保持原有列表顺序", async ({ page }) => {
+  const docs = [
+    { id: 911, sellerId: 1, name: "顺序菜A", mainIngredient: null, category: "meat", active: true },
+    { id: 912, sellerId: 1, name: "顺序菜B", mainIngredient: null, category: "veg", active: true },
+    { id: 913, sellerId: 1, name: "顺序菜C", mainIngredient: null, category: "soup", active: true }
+  ];
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs })
+  }));
+  await page.route("**/merchant/offerings/912", async (route) => {
+    if (route.request().method() !== "PATCH") return route.continue();
+    const body = route.request().postDataJSON() as { name: string };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ doc: { ...docs[1], name: body.name } })
+    });
+  });
+
+  await page.goto("/");
+  await enterOfferings(page);
+  await page.getByLabel("编辑 顺序菜B").click();
+  await page.getByRole("textbox", { name: "菜名" }).fill("顺序菜B-改");
+  await taroButton(page, /^保存修改$/).click();
+
+  const editLabels = await page.locator('[aria-label^="编辑 顺序菜"]').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute("aria-label"))
+  );
+  expect(editLabels).toEqual(["编辑 顺序菜A", "编辑 顺序菜B-改", "编辑 顺序菜C"]);
+});
+
+test("修改导入原文后旧预览响应不能覆盖新预览", async ({ page }) => {
+  let releaseOldPreview!: () => void;
+  const oldPreviewGate = new Promise<void>((resolve) => { releaseOldPreview = resolve; });
+  let previewRequests = 0;
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings/import/preview", async (route) => {
+    previewRequests += 1;
+    const current = previewRequests;
+    if (current === 1) await oldPreviewGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ rows: [], summary: { ready: current, conflict: 0, invalid: 0 } })
+    });
+  });
+
+  await page.goto("/");
+  await enterOfferings(page);
+  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  await input.fill("旧预览菜 素");
+  await taroButton(page, /^预览导入$/).click();
+  await expect.poll(() => previewRequests).toBe(1);
+  await input.fill("当前预览菜 汤");
+  await taroButton(page, /^预览导入$/).click();
+  await expect(page.getByText("可新增 2 行，重名 0 行，错误 0 行", { exact: true })).toBeVisible();
+
+  releaseOldPreview();
+  await expect(page.getByText("可新增 2 行，重名 0 行，错误 0 行", { exact: true })).toBeVisible();
+  await expect(page.getByText("可新增 1 行，重名 0 行，错误 0 行", { exact: true })).toHaveCount(0);
+});
+
+test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
+  let releaseCommit!: () => void;
+  const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
+  let commitInput: { text: string; conflicts: Array<{ line: number; action: string }> } | null = null;
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings/import/preview", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({
+      rows: [{
+        line: 1,
+        raw: "重名菜 素",
+        parsed: { name: "重名菜", mainIngredient: null, category: "veg" },
+        status: "conflict",
+        existingId: 931,
+        defaultAction: "skip"
+      }],
+      summary: { ready: 0, conflict: 1, invalid: 0 }
+    })
+  }));
+  await page.route("**/merchant/offerings/import/commit", async (route) => {
+    commitInput = route.request().postDataJSON() as typeof commitInput;
+    await commitGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        results: [{ line: 1, status: "overwritten", id: 931 }],
+        summary: { created: 0, overwritten: 1, skipped: 0, failed: 0 }
+      })
+    });
+  });
+
+  await page.goto("/");
+  await enterOfferings(page);
+  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  await input.fill("重名菜 素");
+  await taroButton(page, /^预览导入$/).click();
+  const overwrite = page.getByLabel("覆盖第 1 行");
+  await overwrite.click();
+  await taroButton(page, /^确认导入$/).click();
+
+  await expect.poll(() => commitInput).toEqual({
+    text: "重名菜 素",
+    conflicts: [{ line: 1, action: "overwrite" }]
+  });
+  await expect(input).toBeDisabled();
+  await expect(input).toHaveValue("重名菜 素");
+  await expect(overwrite).toHaveAttribute("disabled", "");
+
+  releaseCommit();
+  await expect(page.getByText("新增 0 行，覆盖 1 行，跳过 0 行，失败 0 行", { exact: true })).toBeVisible();
+  await expect(input).toBeEnabled();
+  await expect(overwrite).not.toHaveAttribute("disabled", "");
+});
+
 test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const original = `测试菜-${suffix}`;

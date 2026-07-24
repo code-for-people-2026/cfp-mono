@@ -1,6 +1,6 @@
 import { Button, Input, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ImportCommitInput,
   ImportCommitResponse,
@@ -11,10 +11,15 @@ import type {
 import {
   commitResultText,
   commitSummaryText,
-  partitionOfferings,
   previewSummaryText,
   setConflictAction
 } from "@/logic/offeringsImport";
+import {
+  ImportDraftTracker,
+  OfferingToggleTracker,
+  mergeSavedOffering,
+  partitionOfferingsPreservingOrder
+} from "@/logic/offeringsView";
 import { MerchantNav } from "@/components/MerchantNav";
 import { merchantRoute } from "@/logic/login";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
@@ -49,6 +54,9 @@ const CATEGORIES: Array<{ value: OfferingCategory; label: string }> = [
 ];
 
 export default function MerchantOfferings() {
+  const toggleTracker = useRef(new OfferingToggleTracker());
+  const importDraftTracker = useRef(new ImportDraftTracker(""));
+  const commitBusy = useRef(false);
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [editingId, setEditingId] = useState<string | number | null>(null);
   const [name, setName] = useState("");
@@ -56,9 +64,12 @@ export default function MerchantOfferings() {
   const [category, setCategory] = useState<OfferingCategory>("veg");
   const [importText, setImportText] = useState("");
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null);
+  const [previewRevision, setPreviewRevision] = useState<number | null>(null);
   const [conflicts, setConflicts] = useState<ImportCommitInput["conflicts"]>([]);
   const [commit, setCommit] = useState<ImportCommitResponse | null>(null);
-  const groups = useMemo(() => partitionOfferings(offerings), [offerings]);
+  const [togglingIds, setTogglingIds] = useState<string[]>([]);
+  const [commitPending, setCommitPending] = useState(false);
+  const groups = useMemo(() => partitionOfferingsPreservingOrder(offerings), [offerings]);
 
   const load = async () => setOfferings(await api.listOfferings("all"));
 
@@ -86,7 +97,8 @@ export default function MerchantOfferings() {
       const doc = editingId === null
         ? await api.createOffering(input)
         : await api.updateOffering(editingId, input);
-      setOfferings((current) => [...current.filter((item) => String(item.id) !== String(doc.id)), doc]);
+      const mode = editingId === null ? "create" : "edit";
+      setOfferings((current) => mergeSavedOffering(current, doc, mode));
       resetForm();
     } catch (error) {
       if (handledAuthFailure(error)) return;
@@ -102,40 +114,67 @@ export default function MerchantOfferings() {
   };
 
   const toggleActive = async (offering: Offering, active: boolean) => {
+    const id = String(offering.id);
+    const requestRevision = toggleTracker.current.begin(id);
+    if (requestRevision === null) return;
+    setTogglingIds((current) => current.includes(id) ? current : [...current, id]);
     try {
       const doc = await api.updateOffering(offering.id, { active });
+      if (!toggleTracker.current.isCurrent(id, requestRevision)) return;
       setOfferings((current) => current.map((item) => String(item.id) === String(doc.id) ? doc : item));
     } catch (error) {
-      if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: active ? "恢复失败" : "停用失败", icon: "none" });
+      if (toggleTracker.current.isCurrent(id, requestRevision) && !handledAuthFailure(error)) {
+        await Taro.showToast({ title: active ? "恢复失败" : "停用失败", icon: "none" });
+      }
+    } finally {
+      if (toggleTracker.current.finish(id, requestRevision)) {
+        setTogglingIds((current) => current.filter((item) => item !== id));
+      }
     }
   };
 
   const previewText = async () => {
+    const snapshot = importDraftTracker.current.capture();
+    if (!snapshot.text.trim() || commitBusy.current) return;
     try {
-      setPreview(await api.previewOfferingImport(importText));
+      const result = await api.previewOfferingImport(snapshot.text);
+      if (!importDraftTracker.current.isCurrent(snapshot)) return;
+      setPreview(result);
+      setPreviewRevision(snapshot.revision);
       setConflicts([]);
       setCommit(null);
     } catch (error) {
-      if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: "导入预览失败", icon: "none" });
+      if (importDraftTracker.current.isCurrent(snapshot) && !handledAuthFailure(error)) {
+        await Taro.showToast({ title: "导入预览失败", icon: "none" });
+      }
     }
   };
 
   const commitText = async () => {
+    const snapshot = importDraftTracker.current.capture();
+    if (commitBusy.current || previewRevision !== snapshot.revision) return;
+    commitBusy.current = true;
+    setCommitPending(true);
     try {
-      const result = await api.commitOfferingImport({ text: importText, conflicts });
-      setCommit(result);
+      const result = await api.commitOfferingImport({ text: snapshot.text, conflicts });
+      if (importDraftTracker.current.isCurrent(snapshot)) setCommit(result);
       await load();
     } catch (error) {
-      if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: "导入提交失败", icon: "none" });
+      if (importDraftTracker.current.isCurrent(snapshot) && !handledAuthFailure(error)) {
+        await Taro.showToast({ title: "导入提交失败", icon: "none" });
+      }
+    } finally {
+      commitBusy.current = false;
+      setCommitPending(false);
     }
   };
 
   const changeImportText = (value: string) => {
+    if (commitBusy.current) return;
+    importDraftTracker.current.update(value);
     setImportText(value);
     setPreview(null);
+    setPreviewRevision(null);
     setConflicts([]);
     setCommit(null);
   };
@@ -173,7 +212,12 @@ export default function MerchantOfferings() {
               <Text className="meta">{offering.mainIngredient ?? "无主料"}</Text>
             </View>
             <Button size="mini" aria-label={`编辑 ${offering.name}`} onClick={() => edit(offering)}>编辑</Button>
-            <Button size="mini" aria-label={`停用 ${offering.name}`} onClick={() => void toggleActive(offering, false)}>停用</Button>
+            <Button
+              size="mini"
+              aria-label={`停用 ${offering.name}`}
+              disabled={togglingIds.includes(String(offering.id))}
+              onClick={() => void toggleActive(offering, false)}
+            >停用</Button>
           </View>
         ))}
       </View>
@@ -183,7 +227,12 @@ export default function MerchantOfferings() {
         {groups.inactive.map((offering) => (
           <View className="offering-row" key={String(offering.id)}>
             <Text>{offering.name}</Text>
-            <Button size="mini" aria-label={`恢复 ${offering.name}`} onClick={() => void toggleActive(offering, true)}>恢复</Button>
+            <Button
+              size="mini"
+              aria-label={`恢复 ${offering.name}`}
+              disabled={togglingIds.includes(String(offering.id))}
+              onClick={() => void toggleActive(offering, true)}
+            >恢复</Button>
           </View>
         ))}
       </View>
@@ -191,12 +240,13 @@ export default function MerchantOfferings() {
       <View className="card import-card">
         <Text className="section-title">批量导入</Text>
         <Textarea
+          disabled={commitPending}
           maxlength={20_000}
           placeholder="每行一道菜"
           value={importText}
           onInput={(event) => changeImportText(event.detail.value)}
         />
-        <Button onClick={() => void previewText()}>预览导入</Button>
+        <Button disabled={!importText.trim() || commitPending} onClick={() => void previewText()}>预览导入</Button>
         {preview && (
           <View>
             <Text>{previewSummaryText(preview)}</Text>
@@ -207,12 +257,17 @@ export default function MerchantOfferings() {
                   <Button
                     size="mini"
                     aria-label={`覆盖第 ${row.line} 行`}
+                    disabled={commitPending}
                     onClick={() => setConflicts((current) => setConflictAction(current, row.line, "overwrite"))}
                   >覆盖</Button>
                 )}
               </View>
             ))}
-            <Button className="primary" onClick={() => void commitText()}>确认导入</Button>
+            <Button
+              className="primary"
+              disabled={commitPending || previewRevision !== importDraftTracker.current.currentRevision}
+              onClick={() => void commitText()}
+            >确认导入</Button>
           </View>
         )}
         {commit && (
