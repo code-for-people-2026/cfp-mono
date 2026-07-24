@@ -56,6 +56,7 @@ const CATEGORIES: Array<{ value: OfferingCategory; label: string }> = [
 export default function MerchantOfferings() {
   const toggleTracker = useRef(new OfferingToggleTracker());
   const importDraftTracker = useRef(new ImportDraftTracker(""));
+  const importCommitGeneration = useRef(0);
   const commitBusy = useRef(false);
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [editingId, setEditingId] = useState<string | number | null>(null);
@@ -135,10 +136,15 @@ export default function MerchantOfferings() {
 
   const previewText = async () => {
     const snapshot = importDraftTracker.current.capture();
+    const commitGeneration = importCommitGeneration.current;
     if (!snapshot.text.trim() || commitBusy.current) return;
     try {
       const result = await api.previewOfferingImport(snapshot.text);
-      if (!importDraftTracker.current.isCurrent(snapshot)) return;
+      if (
+        commitBusy.current
+        || commitGeneration !== importCommitGeneration.current
+        || !importDraftTracker.current.isCurrent(snapshot)
+      ) return;
       setPreview(result);
       setPreviewRevision(snapshot.revision);
       setConflicts([]);
@@ -154,6 +160,8 @@ export default function MerchantOfferings() {
     const snapshot = importDraftTracker.current.capture();
     if (commitBusy.current || previewRevision !== snapshot.revision) return;
     commitBusy.current = true;
+    importCommitGeneration.current += 1;
+    setPreviewRevision(null);
     setCommitPending(true);
     try {
       const result = await api.commitOfferingImport({ text: snapshot.text, conflicts });
