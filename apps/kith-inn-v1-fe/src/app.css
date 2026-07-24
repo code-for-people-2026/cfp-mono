@@ -924,7 +924,7 @@ button.offering-filter.selected {
   line-height: 1.45;
 }
 
-.offering-card button[size="mini"] {
+button.offering-edit-action {
   flex: 0 0 auto;
   width: auto;
   min-width: 68rpx;
@@ -1020,8 +1020,8 @@ button.offering-filter.selected {
   color: #746b61;
 }
 
-.offering-add-action,
-.offering-add-action[disabled] {
+button.offering-add-action,
+button.offering-add-action[disabled] {
   position: fixed;
   z-index: 6;
   right: 36rpx;
@@ -1039,7 +1039,7 @@ button.offering-filter.selected {
   line-height: 88rpx;
 }
 
-.offering-add-action::before {
+button.offering-add-action::before {
   content: "+ ";
 }
 
@@ -1119,7 +1119,10 @@ button.offering-filter.selected {
 .offering-sheet-backdrop {
   position: fixed;
   z-index: 20;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   align-items: flex-end;
   justify-content: center;
