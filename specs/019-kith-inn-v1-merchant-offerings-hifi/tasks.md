@@ -10,11 +10,11 @@
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | 固化 Page 2 行为、竞态约束和执行计划 | US1-US4、FR-001~015 | T001-T003 | `specs/019-kith-inn-v1-merchant-offerings-hifi/**`；不改运行时代码 | checklist 全通过、Task ID 映射检查 | 约 500 行 | 无 |
 | PR-Assets | 让 Page 2 高保真参考可由仓库独立读取和复核 | US4、FR-012~014 | T018 | `docs/kith-inn-v1/design/merchant-offerings-hifi-v0.2.png`、`docs/kith-inn-v1/design/kith-inn-v1-hifi-v1.html`；排除所有 `*-prompt.md` | 文件可读取、HTML 可打开、PNG 尺寸与内容人工核对 | HTML 约 360 行；PNG 为二进制资产 | PR1 |
-| PR2 | 保证异步响应与编辑合并不破坏当前用户意图 | US1-US3、FR-003/004/006/008~010/015 | T004-T012、T019 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做视觉换肤 | Vitest coverage、lint、typecheck、定向 E2E、长期文档一致性核对 | 约 400 行 | PR-Assets |
+| PR2 | 保证异步响应与编辑合并不破坏当前用户意图 | US1-US3、FR-003/004/006/008~010/015 | T004-T012、T019 | `apps/kith-inn-v1-fe/src/logic/offeringsView*`、`apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做视觉换肤 | Vitest coverage、lint、typecheck、定向 E2E、长期文档一致性核对 | 约 400 行 | PR1 |
 | PR3 | 收敛 Page 2 页面结构且不回退真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | T013、T015、T020 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md`；不做最终视觉换肤，不改 API/CMS | 定向 E2E、lint、typecheck、双端 build、长期文档一致性核对 | 约 520 行；目标单一，页面、行为 E2E 与对应产品文档同片才能独立验收 | PR2 |
 | PR4 | 完成 Page 2 高保真样式和窄屏验收 | US4、FR-001/002/012~015 | T014、T016-T017 | `apps/kith-inn-v1-fe/src/app.css`、`specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md`；不再改业务流程，不提交 Prompt | 354×786 对已入库 PNG/HTML 的视觉验收、`pnpm verify`、定向 E2E | 约 460 行；共享视觉层与验收记录同片才能完整核对 | PR3、PR-Assets |
 
-每个 Task ID 只在上表出现一次；依赖顺序为 PR1 → PR-Assets → PR2 → PR3 → PR4，无环。每片统一完成定义遵循 `AGENTS.md` 与 `pr-review-converge`：`git diff --check`、`pnpm verify`、latest-head CI、Codex review、0 unresolved thread、`mergeStateStatus=CLEAN`、rebase merge。
+每个 Task ID 只在上表出现一次；依赖图为 `PR1 → PR2 → PR3 → PR4` 与 `PR1 → PR-Assets → PR4`，无环。PR2/PR3 不依赖设计资产，PR4 同时依赖 PR3 与 PR-Assets。每片统一完成定义遵循 `AGENTS.md` 与 `pr-review-converge`：`git diff --check`、`pnpm verify`、latest-head CI、Codex review、0 unresolved thread、`mergeStateStatus=CLEAN`、rebase merge。
 
 ## Phase 1：规格与设计基线
 
@@ -42,9 +42,9 @@
 
 **Independent Test**：对两个菜品交错开始和结束启停请求，验证 pending 集合、revision 和最终列表仅受各自最新请求影响。
 
-- [ ] T004 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/offeringsView.test.ts` 增加逐菜品 pending/revision、乱序完成和筛选测试并确认新断言失败
+- [ ] T004 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/offeringsView.test.ts` 增加逐菜品 pending/revision、同项重复保护、两菜品并发、乱序完成和筛选测试并确认新断言失败
 - [ ] T005 [US1] 在 `apps/kith-inn-v1-fe/src/logic/offeringsView.ts` 实现逐菜品请求协调器和最新响应判定，使 T004 通过
-- [ ] T006 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 接入逐菜品 pending/revision，避免其他请求的 `finally` 提前解锁或陈旧响应写回
+- [ ] T006 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 从零接入逐菜品 pending/revision：只禁用当前菜品、阻止同项重复提交、允许其他菜品并发，且只有最新响应可以写回
 
 **Checkpoint**：启停正确性可独立通过单元测试和现有 CRUD E2E 验证。
 
@@ -56,9 +56,9 @@
 
 **Independent Test**：编辑数组中间元素后比较全部标识顺序，再验证 create 结果只追加一次。
 
-- [ ] T007 [US2] 先在 `apps/kith-inn-v1-fe/src/logic/offeringsView.test.ts` 增加 edit 原位替换、create 追加和未知 edit 防重复测试并确认新断言失败
-- [ ] T008 [US2] 在 `apps/kith-inn-v1-fe/src/logic/offeringsView.ts` 实现按操作模式合并保存结果的纯函数，使 T007 通过
-- [ ] T009 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 接入保存合并函数并保留当前 view/filter
+- [ ] T007 [US2] 先在 `apps/kith-inn-v1-fe/src/logic/offeringsView.test.ts` 增加 edit 原位替换、create 追加、未知 edit 防重复，以及改名后启用/停用分组仍保留输入相对顺序的测试并确认新断言失败
+- [ ] T008 [US2] 在 `apps/kith-inn-v1-fe/src/logic/offeringsView.ts` 实现按操作模式合并保存结果和保序分组的纯函数，使 T007 通过
+- [ ] T009 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx` 接入保存合并与保序分组函数并保留当前 view/filter；Page 2 渲染不得继续使用按菜名排序的 `partitionOfferings()`
 
 **Checkpoint**：编辑顺序与新增行为可独立由纯逻辑测试验证。
 
@@ -98,18 +98,19 @@
 
 ## 依赖与执行顺序
 
-- Phase 1 已完成；T018 的 PR-Assets 随后合并，为运行时切片提供仓库内视觉基线。
+- Phase 1 已完成；T018 的 PR-Assets 可在 PR1 后独立合并，最迟必须在 PR4 前完成，不阻塞 PR2/PR3。
 - T004 → T005 → T006；T007 → T008 → T009；T010 → T011 → T012。
 - T019 依赖 T006、T009、T012，并与 PR2 的行为改动同片提交。
 - T013 依赖 T006、T009、T012，避免页面结构改动掩盖正确性问题。
 - T015 依赖 T013 以及 T006、T009、T012，用于验证页面入口和行为回归，不依赖只改变视觉的 T014。
 - T020 依赖 T013/T015，并与 PR3 的页面行为改动同片提交。
 - T014 依赖 T013 与 T018；T016/T017 依赖全部运行时代码、测试任务和已入库视觉基线。
-- PR 实际合并顺序固定为 PR1 → PR-Assets → PR2 → PR3 → PR4；即使不同 story 的测试可并行编写，也不得绕过该顺序发布。
+- 发布必须满足两条依赖链：PR1 → PR2 → PR3 → PR4，以及 PR1 → PR-Assets → PR4。PR2 与 PR-Assets 没有相互依赖，但遵循收口流程一次只推进一个 PR；不得在任一前置片未完成时发布其下游切片。
 
 ## 并行机会
 
 - T004、T007、T010 都修改同一测试文件，实际按顺序执行以避免冲突。
+- PR2 与 PR-Assets 在依赖图上可交换先后；实际按单 PR 收口纪律依次完成，不同时开放。
 - PR2 合并后，T013 与 T015 可在 PR3 内按页面实现、行为验证的顺序推进；T014 必须等 PR3 合并后再开始，最终视觉验收基于前序完整页面。
 - 自动化验证中的 lint、typecheck 与文档链接检查可并行；coverage、E2E 和 build 按资源情况串行。
 
