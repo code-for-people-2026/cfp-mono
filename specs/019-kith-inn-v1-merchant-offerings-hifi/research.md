@@ -24,8 +24,8 @@
 - **Rationale**：保持服务返回顺序和用户上下文，无需引入排序字段。
 - **Alternatives considered**：保存后整表 reload 会增加延迟且可能丢失局部交互状态。
 
-## 决策 5：不改变接口与设计资产提交边界
+## 决策 5：不改变接口，设计资产先以独立 PR 入库
 
-- **Decision**：沿用现有菜品和导入 API；运行时代码 PR 不包含 Prompt，PNG/HTML 如需入库单独走 docs PR。
-- **Rationale**：本功能风险集中在客户端状态和视觉，不需要扩大跨层范围。
+- **Decision**：沿用现有菜品和导入 API；运行时代码 PR 不包含 Prompt。独立 PR-Assets 只提交 Page 2 PNG 与共享 HTML 设计源，并作为 PR4 的显式前置依赖。
+- **Rationale**：本功能风险集中在客户端状态和视觉，不需要扩大跨层范围；先把非 Prompt 视觉基线入库，后续 agent 才能从仓库独立复核高保真结果。
 - **Alternatives considered**：让后端签发 preview token 会改变 API，超出本次目标。

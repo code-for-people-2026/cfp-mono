@@ -21,6 +21,7 @@
 
 ## 呈现契约
 
+- 高保真验收基线固定为 `docs/kith-inn-v1/design/merchant-offerings-hifi-v0.2.png` 与 `docs/kith-inn-v1/design/kith-inn-v1-hifi-v1.html`；两者必须在视觉切片前通过独立非 Prompt 资产 PR 入库。
 - 354×786 下默认态、管理态、弹层和导入态不横向溢出。
 - 菜名和主料不得挤压编辑按钮与开关；disabled 控件文案仍可读。
 - 固定新增按钮位于底部导航上方，并为长列表保留足够滚动尾部空间。
