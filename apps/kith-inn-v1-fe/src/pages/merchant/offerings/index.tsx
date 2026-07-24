@@ -314,7 +314,12 @@ export default function MerchantOfferings() {
           </Text>
         </View>
         {manageable && (
-          <Button size="mini" aria-label={`编辑 ${offering.name}`} onClick={() => edit(offering)}>
+          <Button
+            className="offering-edit-action"
+            size="mini"
+            aria-label={`编辑 ${offering.name}`}
+            onClick={() => edit(offering)}
+          >
             编辑
           </Button>
         )}
