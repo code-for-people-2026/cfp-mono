@@ -442,6 +442,34 @@ test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
   await expect(page.getByText("新增 0 行，覆盖 1 行，跳过 0 行，失败 0 行", { exact: true })).toBeVisible();
 });
 
+test("导入提交失败后保留原文并要求重新预览", async ({ page }) => {
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings/import/preview", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ rows: [], summary: { ready: 1, conflict: 0, invalid: 0 } })
+  }));
+  await page.route("**/merchant/offerings/import/commit", (route) => route.fulfill({
+    status: 500, contentType: "application/json", body: JSON.stringify({ error: "unavailable" })
+  }));
+
+  await page.goto("/");
+  await enterOfferings(page);
+  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  await input.fill("待重试菜 素");
+  await taroButton(page, /^预览导入$/).click();
+  await expect(taroButton(page, /^确认导入$/)).toBeVisible();
+  await taroButton(page, /^确认导入$/).click();
+
+  await expect(page.getByText("导入提交失败", { exact: true })).toBeVisible();
+  await expect(input).toBeEnabled();
+  await expect(input).toHaveValue("待重试菜 素");
+  await expect(taroButton(page, /^确认导入$/)).toHaveCount(0);
+  await expect(taroButton(page, /^预览导入$/)).not.toHaveAttribute("disabled", "");
+});
+
 test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const original = `测试菜-${suffix}`;

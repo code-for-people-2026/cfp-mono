@@ -169,6 +169,9 @@ export default function MerchantOfferings() {
       await load();
     } catch (error) {
       if (importDraftTracker.current.isCurrent(snapshot) && !handledAuthFailure(error)) {
+        setPreview(null);
+        setPreviewRevision(null);
+        setConflicts([]);
         await Taro.showToast({ title: "导入提交失败", icon: "none" });
       }
     } finally {
