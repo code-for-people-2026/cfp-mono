@@ -9,8 +9,8 @@
 ## 决策 2：逐菜品 pending 集合加逐项 revision
 
 - **Decision**：每道菜独立记录 pending 与 revision，只有最新 revision 可以写入结果和释放自己的 pending 状态。
-- **Rationale**：不同菜品可并行，同一菜品避免重复请求，且不会被其他菜品请求的 `finally` 提前解锁。
-- **Alternatives considered**：单一 `togglingId` 无法表达并发；全局串行会无谓阻塞其他菜品。
+- **Rationale**：当前页面直接发起更新，没有 pending 状态、重复提交保护或陈旧响应判定；逐项协调后，不同菜品可并行，同一菜品避免重复请求，并只接受最新结果。
+- **Alternatives considered**：维持当前无保护请求会产生重复与乱序写回；新增单一 `togglingId` 仍无法表达并发；全局串行会无谓阻塞其他菜品。
 
 ## 决策 3：导入原文采用单调递增版本
 
@@ -18,11 +18,11 @@
 - **Rationale**：冲突选择按行号解释，陈旧预览可能把覆盖选择应用到另一道菜。
 - **Alternatives considered**：仅在输入事件中清空预览不能阻止飞行中的旧响应重新写回。
 
-## 决策 4：编辑原位替换，新增才追加
+## 决策 4：编辑原位替换，页面分组保持输入顺序
 
-- **Decision**：抽取纯函数按操作模式合并保存结果；edit 使用 `map` 原位替换，create 追加。
-- **Rationale**：保持服务返回顺序和用户上下文，无需引入排序字段。
-- **Alternatives considered**：保存后整表 reload 会增加延迟且可能丢失局部交互状态。
+- **Decision**：抽取纯函数按操作模式合并保存结果；edit 使用 `map` 原位替换，create 追加；页面按启用状态分组时过滤原数组而不按菜名二次排序。
+- **Rationale**：保持服务返回顺序和用户上下文，无需引入排序字段；当前 `partitionOfferings()` 会在分组内按名称排序，若继续用于 Page 2 渲染，改名仍会让卡片跳位。
+- **Alternatives considered**：保存后整表 reload 会增加延迟且可能丢失局部交互状态；只修复合并函数但继续使用按名称排序的分组无法满足原位编辑不变量。
 
 ## 决策 5：不改变接口，设计资产先以独立 PR 入库
 
