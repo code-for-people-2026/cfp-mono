@@ -6,6 +6,9 @@ import { MerchantNav } from "@/components/MerchantNav";
 import {
   buildMerchantMealCard,
   businessDateInShanghai,
+  merchantDeadlineText,
+  merchantGreeting,
+  merchantMenuText,
   retainMealsForRefresh,
   type MerchantMealCard
 } from "@/logic/merchantHome";
@@ -33,9 +36,6 @@ type HomeState = { date: string; status: "loading" | "loaded" | "error"; meals: 
 
 const goMain = (url: string) => void Taro.redirectTo({ url });
 const goDetail = (url: string) => void Taro.navigateTo({ url });
-const deadlineText = (value: string | null) => value
-  ? `${new Date(Date.parse(value) + 8 * 60 * 60 * 1000).toISOString().slice(11, 16)} 截止`
-  : "未设置截止时间";
 
 export default class MerchantHome extends Component<Record<string, never>, HomeState> {
   private revision = 0;
@@ -112,36 +112,62 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
     const session = sessions.getSession();
     const waiting = meals.reduce((total, meal) => total + meal.card.waitingConfirmation, 0);
     const partial = meals.some((meal) => meal.orderError);
+    const pendingOccasion = meals.find(({ card }) => card.waitingConfirmation > 0)?.card.occasion;
+    const pendingUrl = pendingOccasion
+      ? `/pages/merchant/orders/index?date=${date}&occasion=${pendingOccasion}`
+      : `/pages/merchant/orders/index?date=${date}`;
     const deliveryOccasion = meals.find(({ card }) => card.slot && card.pendingDelivery > 0)?.card.occasion ?? meals.find(({ card }) => card.slot)?.card.occasion;
     const deliveryUrl = deliveryOccasion
       ? `/pages/merchant/orders/index?date=${date}&occasion=${deliveryOccasion}`
       : "/pages/merchant/orders/index";
 
     return <View className="page merchant-home">
-    <View className="home-heading"><View><Text className="title">{session?.sellerName ?? "商家"}，今天好</Text>
-      <Text className="subtitle">{date} · 今天的饭，一眼看清楚</Text></View><Text className="home-mark">桃</Text></View>
-    {status === "loading" && meals.length === 0 && <View className="page-state">正在加载今日工作台…</View>}
-    {status === "error" ? <View className="page-state error"><Text>今日数据加载失败</Text>
+    <View className="home-brand"><Text>街坊味</Text></View>
+    <View className="home-heading"><Text className="title">{session?.sellerName ?? "商家"}，{merchantGreeting(new Date())}</Text>
+      <Text className="subtitle">今天的饭，按这三步就能忙清楚</Text></View>
+    {status === "loading" && meals.length === 0 && <View className="page-state home-page-state">正在加载今日工作台…</View>}
+    {status === "error" ? <View className="page-state home-page-state error"><Text>今日数据加载失败</Text>
       <Button className="primary" onClick={() => void this.load()}>重试</Button></View> : <>
-      {status === "loading" && meals.length > 0 && <View className="home-notice">正在刷新今日数据…</View>}
-      {status === "loaded" && <View className="home-notice">{partial ? "已知有" : "有"} {waiting} 笔待确认订单</View>}
-      <View className="home-meals">{meals.map(({ card, orderError }) => <View key={card.occasion} className="card home-meal-card">
-        <View className="home-card-title"><Text>{card.occasion === "lunch" ? "☀ 今日午餐" : "☾ 今日晚餐"}</Text>
-          <Text className={`home-state ${card.state}`}>{card.stateText}</Text></View>
-        {card.slot ? <><Text className="home-menu">{card.slot.menuItems.map((item) => item.nameSnapshot).join(" · ")}</Text>
-          <View className="home-row"><Text className="strong">{card.priceText}</Text><Text className="meta">{deadlineText(card.slot.orderDeadline)}</Text></View>
-          {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button size="mini" disabled={status === "loading"} onClick={() => void this.retryMeal(card.occasion)}>重新加载</Button></View>
-            : <><Text className="home-summary">已确认 {card.confirmedQuantity} 份 · 待确认 {card.waitingConfirmation} 笔</Text>
-              <Text className="meta">{card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送</Text></>}
-          <Button className="manual-add" size="mini" onClick={() => goDetail(
-            `/pages/merchant/orders/add/index?date=${date}&occasion=${card.occasion}`
-          )}>手动加单</Button>
-        </> : <><Text className="home-menu">今天还没有安排这个餐次</Text>
-          <Button size="mini" onClick={() => goMain("/pages/merchant/menu/index")}>先排菜单</Button></>}
-      </View>)}</View>
+      {status === "loading" && meals.length > 0 && <View className="home-refresh-notice">正在刷新今日数据…</View>}
+      {waiting > 0 && <View className="home-pending-notice" role="button" aria-label="查看待确认订单"
+        onClick={() => goMain(pendingUrl)}><Text className="home-notice-dot">●</Text>
+        <Text>{partial ? "已知有" : "有"} {waiting} 笔待确认订单</Text></View>}
+      <View className="home-meals">{meals.map(({ card, orderError }) => {
+        const ordersUrl = `/pages/merchant/orders/index?date=${date}&occasion=${card.occasion}`;
+        return <View key={card.occasion}
+          className={`card home-meal-card${card.state === "booking-open" ? " highlighted" : ""}${card.slot ? " interactive" : " empty"}`}
+          role={card.slot ? "button" : undefined}
+          aria-label={card.slot ? `查看今日${card.occasion === "lunch" ? "午餐" : "晚餐"}订单` : undefined}
+          onClick={card.slot ? () => goMain(ordersUrl) : undefined}>
+          <View className="home-card-title"><View className="home-meal-title">
+            <Text className="home-meal-icon">{card.occasion === "lunch" ? "☀" : "☾"}</Text>
+            <Text>今日{card.occasion === "lunch" ? "午餐" : "晚餐"}</Text></View>
+            <Text className={`home-state ${card.state}`}>{card.stateText}</Text></View>
+          <Text className="home-menu">{merchantMenuText(card.slot, card.state)}</Text>
+          {card.slot ? <>
+            {card.state === "menu-ready" ? <View className="home-row home-main-row">
+              <Text className="strong">{card.priceText}</Text><Button className="home-open-action" onClick={(event) => {
+                event.stopPropagation(); goDetail("/pages/merchant/batches/index");
+              }}>去开放 →</Button></View> : <View className="home-row home-main-row">
+              <Text className="home-quantity">已订 {card.confirmedQuantity} 份</Text>
+              <Text className="meta">{merchantDeadlineText(card.slot.orderDeadline)}</Text></View>}
+            {orderError ? <View className="home-order-error"><Text>订单摘要加载失败</Text><Button disabled={status === "loading"} onClick={(event) => {
+              event.stopPropagation(); void this.retryMeal(card.occasion);
+            }}>重新加载</Button></View> : card.state !== "menu-ready" && <Text className="home-order-meta">
+              {card.priceText} · {card.confirmedOrders} 单已确认 · {card.unpaid} 单未付 · {card.pendingDelivery} 单待送
+            </Text>}
+            <Button className="manual-add" aria-label={`为今日${card.occasion === "lunch" ? "午餐" : "晚餐"}手动加单`}
+              onClick={(event) => { event.stopPropagation(); goDetail(
+                `/pages/merchant/orders/add/index?date=${date}&occasion=${card.occasion}`
+              ); }}>手动加单</Button>
+          </> : <Button className="home-empty-action" onClick={(event) => {
+            event.stopPropagation(); goMain("/pages/merchant/menu/index");
+          }}>先排菜单</Button>}
+        </View>;
+      })}</View>
       <View className="home-quick">
         <Button onClick={() => goMain("/pages/merchant/menu/index")}>排本周菜单</Button>
-        <Button onClick={() => goDetail("/pages/merchant/batches/index")}>预订批次</Button>
+        <Button onClick={() => goDetail("/pages/merchant/batches/index")}>开放预订</Button>
         <Button onClick={() => goMain("/pages/merchant/orders/index")}>查看订单</Button>
         <Button onClick={() => goMain(deliveryUrl)}>配送清单</Button>
       </View>

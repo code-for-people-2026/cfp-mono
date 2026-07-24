@@ -3,6 +3,10 @@ import type { MealSlot, Order, OrderSummary } from "@cfp/kith-inn-v1-shared";
 import {
   buildMerchantMealCard,
   businessDateInShanghai,
+  merchantDeadlineText,
+  merchantGreeting,
+  merchantMenuSummary,
+  merchantMenuText,
   merchantMealState,
   merchantPriceText,
   retainMealsForRefresh
@@ -94,9 +98,44 @@ describe("merchant home state model", () => {
   });
 
   it("formats configured and default prices without inventing an amount", () => {
-    expect(merchantPriceText(2800)).toBe("¥28.00");
-    expect(merchantPriceText(0)).toBe("¥0.00");
+    expect(merchantPriceText(2800)).toBe("¥28 / 份");
+    expect(merchantPriceText(2850)).toBe("¥28.50 / 份");
+    expect(merchantPriceText(0)).toBe("¥0 / 份");
     expect(merchantPriceText(null)).toBe("商家默认价");
+  });
+
+  it("builds natural Shanghai greetings at each day-part boundary", () => {
+    expect(merchantGreeting(new Date("2026-07-23T23:00:00.000Z"))).toBe("早上好");
+    expect(merchantGreeting(new Date("2026-07-24T03:00:00.000Z"))).toBe("中午好");
+    expect(merchantGreeting(new Date("2026-07-24T06:00:00.000Z"))).toBe("下午好");
+    expect(merchantGreeting(new Date("2026-07-24T10:00:00.000Z"))).toBe("晚上好");
+  });
+
+  it("summarizes real menu names and category counts without placeholder dishes", () => {
+    expect(merchantMenuSummary(menuItems)).toBe("荤一 · 荤二 · 素一等 4菜1汤");
+    expect(merchantMenuSummary(menuItems.slice(0, 3))).toBe("荤一 · 荤二 · 素一");
+    expect(merchantMenuSummary(menuItems.slice(0, 4))).toBe("荤一 · 荤二 · 素一等 4菜");
+    expect(merchantMenuSummary(menuItems.map((item) => ({ ...item, categorySnapshot: "soup" })))).toBe(
+      "荤一 · 荤二 · 素一等 5汤"
+    );
+    expect(merchantMenuSummary([])).toBe("菜单已排好");
+  });
+
+  it("explains only the settings missing from a menu-ready slot", () => {
+    expect(merchantMenuText(null, "unplanned")).toBe("今天还没有安排这个餐次");
+    expect(merchantMenuText(slot({ priceCents: null, orderDeadline: null }), "menu-ready"))
+      .toBe("菜单已排好，价格与截止时间还未确认");
+    expect(merchantMenuText(slot({ priceCents: null }), "menu-ready")).toBe("菜单已排好，价格还未确认");
+    expect(merchantMenuText(slot({ orderDeadline: null }), "menu-ready"))
+      .toBe("菜单已排好，截止时间还未确认");
+    expect(merchantMenuText(slot(), "menu-ready")).toBe("荤一 · 荤二 · 素一等 4菜1汤");
+    expect(merchantMenuText(slot(), "booking-open")).toBe("荤一 · 荤二 · 素一等 4菜1汤");
+  });
+
+  it("formats Shanghai deadlines and keeps missing or invalid values explicit", () => {
+    expect(merchantDeadlineText("2026-07-24T02:30:00.000Z")).toBe("10:30 截止");
+    expect(merchantDeadlineText(null)).toBe("未设置截止时间");
+    expect(merchantDeadlineText("invalid")).toBe("未设置截止时间");
   });
 
   it("builds an unplanned card with no order metrics or manual-add eligibility", () => {
@@ -110,7 +149,7 @@ describe("merchant home state model", () => {
       occasion: "dinner",
       slot: null,
       state: "unplanned",
-      stateText: "尚未排菜单",
+      stateText: "未排菜单",
       priceText: null,
       canManualAdd: false,
       waitingConfirmation: 0,
@@ -154,7 +193,7 @@ describe("merchant home state model", () => {
   it("labels every existing slot state while keeping manual add available", () => {
     const now = new Date("2026-07-24T04:00:00.000Z");
     const cases: Array<[MealSlot, string]> = [
-      [slot({ orderStatus: "draft", orderDeadline: null }), "已排菜单但未开放"],
+      [slot({ orderStatus: "draft", orderDeadline: null }), "待开放"],
       [slot({ orderDeadline: "2026-07-24T05:00:00.000Z" }), "预订中"],
       [slot({ orderDeadline: now.toISOString() }), "已截止"],
       [slot({ orderStatus: "closed" }), "已关闭"]
