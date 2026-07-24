@@ -278,12 +278,14 @@ export default function MerchantOfferings() {
           编辑
         </Button>
       )}
-      <Switch
-        aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
-        checked={offering.active}
-        disabled={togglingIds.includes(String(offering.id))}
-        onChange={(event) => void toggleActive(offering, event.detail.value)}
-      />
+      {manageable && (
+        <Switch
+          aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
+          checked={offering.active}
+          disabled={togglingIds.includes(String(offering.id))}
+          onChange={(event) => void toggleActive(offering, event.detail.value)}
+        />
+      )}
     </View>
   );
 
@@ -349,6 +351,10 @@ export default function MerchantOfferings() {
             </Button>
           </View>
 
+          {!formOpen && (
+            <Button className="offering-add-fixed primary" onClick={openCreate}>新增菜品</Button>
+          )}
+
           {importOpen && (
             <View className="card import-card">
               <Text className="section-title">批量导入菜品</Text>
@@ -402,6 +408,48 @@ export default function MerchantOfferings() {
             </View>
           )}
 
+          {formOpen && (
+            <View className="offering-sheet-backdrop">
+              <View className="offering-sheet card form-card">
+                <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>
+                <Input
+                  disabled={savePending}
+                  placeholder="菜名"
+                  value={name}
+                  onInput={(event) => setName(event.detail.value)}
+                />
+                <Input
+                  disabled={savePending}
+                  placeholder="主料（可不填）"
+                  value={mainIngredient}
+                  onInput={(event) => setMainIngredient(event.detail.value)}
+                />
+                <View className="category-row">
+                  {CATEGORIES.map((item) => (
+                    <Button
+                      key={item.value}
+                      className={category === item.value ? "category selected" : "category"}
+                      disabled={savePending}
+                      onClick={() => setCategory(item.value)}
+                    >
+                      {item.label}
+                    </Button>
+                  ))}
+                </View>
+                <View className="offering-form-actions">
+                  <Button disabled={savePending} onClick={resetForm}>取消</Button>
+                  <Button
+                    className="primary"
+                    disabled={savePending || !name.trim()}
+                    onClick={() => void save()}
+                  >
+                    {savePending ? "保存中…" : editingId === null ? "新增菜品" : "保存修改"}
+                  </Button>
+                </View>
+              </View>
+            </View>
+          )}
+
           <View className="card offerings-manage-group">
             <Text className="section-title">启用中</Text>
             {groups.active.map((offering) => renderOffering(offering, true))}
@@ -416,51 +464,6 @@ export default function MerchantOfferings() {
         </>
       )}
 
-      {!loading && !loadError && view === "manage" && !formOpen && (
-        <Button className="offering-add-fixed primary" onClick={openCreate}>新增菜品</Button>
-      )}
-
-      {formOpen && (
-        <View className="offering-sheet-backdrop">
-          <View className="offering-sheet card form-card">
-            <Text className="section-title">{editingId === null ? "新增菜品" : "编辑菜品"}</Text>
-            <Input
-              disabled={savePending}
-              placeholder="菜名"
-              value={name}
-              onInput={(event) => setName(event.detail.value)}
-            />
-            <Input
-              disabled={savePending}
-              placeholder="主料（可不填）"
-              value={mainIngredient}
-              onInput={(event) => setMainIngredient(event.detail.value)}
-            />
-            <View className="category-row">
-              {CATEGORIES.map((item) => (
-                <Button
-                  key={item.value}
-                  className={category === item.value ? "category selected" : "category"}
-                  disabled={savePending}
-                  onClick={() => setCategory(item.value)}
-                >
-                  {item.label}
-                </Button>
-              ))}
-            </View>
-            <View className="offering-form-actions">
-              <Button disabled={savePending} onClick={resetForm}>取消</Button>
-              <Button
-                className="primary"
-                disabled={savePending || !name.trim()}
-                onClick={() => void save()}
-              >
-                {savePending ? "保存中…" : editingId === null ? "新增菜品" : "保存修改"}
-              </Button>
-            </View>
-          </View>
-        </View>
-      )}
       <MerchantNav active="offerings" />
     </View>
   );

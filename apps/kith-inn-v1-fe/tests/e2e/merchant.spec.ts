@@ -297,6 +297,7 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   }
   await expect(page.getByText("浏览荤菜", { exact: true })).toBeVisible();
   await expect(page.getByText("停用菜", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("停用 浏览荤菜")).toHaveCount(0);
   await taroButton(page, /^素菜$/).click();
   await expect(page.getByText("浏览素菜", { exact: true })).toBeVisible();
   await expect(page.getByText("浏览荤菜", { exact: true })).toHaveCount(0);
