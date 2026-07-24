@@ -371,25 +371,34 @@ test("修改导入原文后旧预览响应不能覆盖新预览", async ({ page 
 test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
   let releaseCommit!: () => void;
   const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
+  let releaseRepeatedPreview!: () => void;
+  const repeatedPreviewGate = new Promise<void>((resolve) => { releaseRepeatedPreview = resolve; });
+  let previewRequests = 0;
   let commitInput: { text: string; conflicts: Array<{ line: number; action: string }> } | null = null;
   await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
   }));
-  await page.route("**/merchant/offerings/import/preview", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({
-      rows: [{
-        line: 1,
-        raw: "重名菜 素",
-        parsed: { name: "重名菜", mainIngredient: null, category: "veg" },
-        status: "conflict",
-        existingId: 931,
-        defaultAction: "skip"
-      }],
-      summary: { ready: 0, conflict: 1, invalid: 0 }
-    })
-  }));
+  await page.route("**/merchant/offerings/import/preview", async (route) => {
+    previewRequests += 1;
+    if (previewRequests === 2) await repeatedPreviewGate;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(previewRequests === 1 ? {
+        rows: [{
+          line: 1,
+          raw: "重名菜 素",
+          parsed: { name: "重名菜", mainIngredient: null, category: "veg" },
+          status: "conflict",
+          existingId: 931,
+          defaultAction: "skip"
+        }],
+        summary: { ready: 0, conflict: 1, invalid: 0 }
+      } : {
+        rows: [], summary: { ready: 2, conflict: 0, invalid: 0 }
+      })
+    });
+  });
   await page.route("**/merchant/offerings/import/commit", async (route) => {
     commitInput = route.request().postDataJSON() as typeof commitInput;
     await commitGate;
@@ -410,6 +419,8 @@ test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
   await taroButton(page, /^预览导入$/).click();
   const overwrite = page.getByLabel("覆盖第 1 行");
   await overwrite.click();
+  await taroButton(page, /^预览导入$/).click();
+  await expect.poll(() => previewRequests).toBe(2);
   await taroButton(page, /^确认导入$/).click();
 
   await expect.poll(() => commitInput).toEqual({
@@ -424,6 +435,11 @@ test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
   await expect(page.getByText("新增 0 行，覆盖 1 行，跳过 0 行，失败 0 行", { exact: true })).toBeVisible();
   await expect(input).toBeEnabled();
   await expect(overwrite).not.toHaveAttribute("disabled", "");
+  await expect(taroButton(page, /^确认导入$/)).toHaveAttribute("disabled", "");
+
+  releaseRepeatedPreview();
+  await expect(page.getByText("可新增 2 行，重名 0 行，错误 0 行", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("新增 0 行，覆盖 1 行，跳过 0 行，失败 0 行", { exact: true })).toBeVisible();
 });
 
 test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }) => {
