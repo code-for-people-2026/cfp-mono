@@ -48,6 +48,8 @@
     .brand { font-weight: 900; font-size: 21px; letter-spacing: -.03em; }
     .mini-menu { padding: 7px 12px; border: 1px solid #ddd2c3; border-radius: 18px; background: rgba(255,255,255,.8); font-weight: 900; letter-spacing: .15em; }
     .content { height: calc(100% - 148px); overflow: hidden; padding: 10px 16px 18px; }
+    .content.offerings-content { overflow-y: auto; padding-bottom: 92px; scrollbar-width: none; }
+    .content.offerings-content::-webkit-scrollbar { display: none; }
     .content.no-tabs { height: calc(100% - 96px); }
     .title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
     h3 { margin: 0; font-size: 27px; line-height: 1.14; letter-spacing: -.04em; }
@@ -168,7 +170,7 @@
                 <div class="quick"><span>🛵</span><b>配送清单</b></div>
               </div>
             </div>
-            <nav class="tabs"><div class="tab active"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+            <nav class="tabs"><div class="tab active"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜品</div><div class="tab"><i>▤</i>菜单</div><div class="tab"><i>≣</i>订单</div></nav>
           </div>
         </article>
 
@@ -176,8 +178,8 @@
           <div class="step"><b>2</b> 管理菜品</div>
           <div class="phone">
             <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
-            <div class="topbar"><div class="brand">菜品库</div><div class="mini-menu">••• ◉</div></div>
-            <div class="content">
+            <div class="topbar"><div class="brand">菜品库</div></div>
+            <div class="content offerings-content">
               <div class="title-row"><div><h3>常做的菜</h3><div class="sub">启用后就能用来排菜单</div></div><span class="text-link">管理</span></div>
               <div class="filters"><span class="chip active">全部</span><span class="chip">荤菜</span><span class="chip">素菜</span><span class="chip">汤</span></div>
               <div class="card"><div class="food"><div class="food-photo">荤</div><div class="food-info"><div class="strong">红烧肉</div><div class="meta">荤菜 · 猪肉</div></div><div class="switch"></div></div></div>
@@ -211,7 +213,7 @@
               </div>
               <div class="primary-dock"><div class="button">保存并开放预订</div></div>
             </div>
-            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab active"><i>▦</i>菜单</div><div class="tab"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜品</div><div class="tab active"><i>▤</i>菜单</div><div class="tab"><i>≣</i>订单</div></nav>
           </div>
         </article>
 
@@ -268,7 +270,7 @@
               </div>
               <div class="primary-dock"><div class="button secondary">查看配送清单</div></div>
             </div>
-            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜单</div><div class="tab active"><i>▤</i>订单</div><div class="tab"><i>●</i>我的</div></nav>
+            <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜品</div><div class="tab"><i>▤</i>菜单</div><div class="tab active"><i>≣</i>订单</div></nav>
           </div>
         </article>
       </div>
