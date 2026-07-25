@@ -19,7 +19,7 @@
 | `weekday` | 周一至周五 | 从周起点派生 |
 | `lunch` / `dinner` | `MealPosition` | 每日固定两个位置 |
 | `menuCompletion` | `empty/partial/complete` | 只由午、晚餐菜单是否存在派生 |
-| `bookingSignals` | 预订生命周期信号集合 | 独立布尔值 `hasOpen`、`hasDeadlinePassed`、`hasClosed`；可与任意菜单完成度同时存在 |
+| `bookingSignals` | 预订生命周期信号集合 | 独立布尔值：存在尚未截止的 `open` 餐次时 `hasOpen`；存在 `orderStatus=open` 且截止时间已到的餐次时 `hasDeadlinePassed`；存在 `closed` 餐次时 `hasClosed`。`draft` 即使截止时间已过也不产生截止信号；这些信号可与任意菜单完成度同时存在 |
 
 ## MealPosition（餐次位置）
 
@@ -63,6 +63,6 @@ loaded-* → swapping → loaded-* / swap-error
 
 ## 持久化菜单只读不变量
 
-菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈；Payload `MealSlots` collection 的公共写入入口必须进入同一数据库事务，Postgres 对目标餐次执行 `SELECT … FOR UPDATE` 并持锁至提交，SQLite 使用 `BEGIN IMMEDIATE`，随后在该事务内重新读取状态并拒绝非草稿菜单变更，CMS internal route 再把稳定冲突传给 backend。事务或锁会话不可用时必须拒绝写入。只依赖 hook 的 `originalDoc`、在 internal route 做条件更新，或读取后再执行无条件 PATCH，都不满足该不变量。
+菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈；CMS 在 `payload.config.ts` 组合导入的 `MealSlots` collection 时追加 app-local `beforeChange` 保护，使 local API、REST 和 admin 共同进入该边界。保护在 Payload 已建立的同一数据库事务中工作：Postgres 对目标餐次执行 `SELECT … FOR UPDATE` 并持锁至提交，SQLite 复用其即时写事务，随后在该事务内重新读取状态并拒绝非草稿菜单变更，CMS internal route 再把稳定冲突传给 backend。事务或锁会话不可用时必须拒绝写入。Payload 包保持 adapter-neutral，不导入 CMS app-local 模块；只依赖 hook 的 `originalDoc`、在 internal route 做条件更新，或读取后再执行无条件 PATCH，都不满足该不变量。
 
 覆盖确认同时保存原始目标和冲突响应中的已有目标；确认层展示已有目标，确认请求提交原始目标。周切换或刷新后目标不再匹配时确认失效。

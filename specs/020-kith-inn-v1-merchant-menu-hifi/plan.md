@@ -40,7 +40,7 @@
 
 ## 宪法检查
 
-- [x] 功能目录归属 `kith-inn-v1`；源码允许 `apps/kith-inn-v1-fe/**`、`apps/kith-inn-v1-be/src/routes/mealSlots*`、`apps/cms/src/app/api/internal/kiv1/meal-slots/**`、`apps/cms/src/lib/kiv1-internal.ts` 及对应测试，并强制包含 `packages/kith-inn-v1-payload/src/payload/collections/MealSlots.ts` 与直接 Payload 更新测试；长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
+- [x] 功能目录归属 `kith-inn-v1`；源码允许 `apps/kith-inn-v1-fe/**`、`apps/kith-inn-v1-be/src/routes/mealSlots*`、`apps/cms/src/app/api/internal/kiv1/meal-slots/**`、`apps/cms/src/lib/kiv1-meal-slot-menu-guard.ts`、`apps/cms/payload.config.ts` 及对应测试；`packages/kith-inn-v1-payload` 保持 adapter-neutral，不导入 CMS app-local 模块。长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
 - [x] 已记录现有页面、逻辑、API、CMS/Payload 写入边界、配置入口、测试和缺口；不重写生成算法，仅补只读不变量和页面衔接。
 - [x] 含多种异步状态且预计多个 PR，使用全套 spec；每片单一目标并独立验证。
 - [x] 文档主体使用中文，测试先行，合并前使用 `pr-review-converge`。
@@ -52,8 +52,8 @@
 |----|----------------------|---------------|----------|------------|----------|---------------|------|
 | PR1 | 固化 Page 3 产品边界、视图状态和可执行切片 | US1-US4、FR-001~038 | `specs/020-kith-inn-v1-merchant-menu-hifi/**` | 不改运行时代码 | checklist、Spec Kit 前置检查、任务格式 | 约 740 行 | 无 |
 | PR-Assets | 让独立 Page 3 参考图可由仓库读取 | SC-005 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png` | 不提交任何 `*-prompt.md`；不改代码 | PNG 可读、尺寸和内容核对 | 二进制资产 | PR1 |
-| PR-Guard-Store | Payload 菜单写入与预订状态写入串行化，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | Payload `MealSlots` collection、`apps/cms/src/lib/kiv1-internal.ts` 锁辅助、直接 Payload/并发测试 | 不改 CMS route、backend 映射、公开 API、文档或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界测试 | 约 320 行 | PR1 |
-| PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot route 与集成测试、长期文档 | 不改变 collection 策略、公开 API 形状、生成算法或 UI | backend/CMS 锁定冲突与过期草稿测试、coverage、lint、typecheck | 约 300 行 | PR-Guard-Store |
+| PR-Guard-Store | CMS 配置的 Payload 公共写入边界串行化菜单与预订状态写入，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | `apps/cms/payload.config.ts`、`src/lib/kiv1-meal-slot-menu-guard.ts`、`tests/kiv1-meal-slot-menu-guard.test.ts`、长期架构/产品文档 | 不改 CMS internal route、backend 映射、Payload 包、公开 API 或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界测试 | 约 360 行 | PR1 |
+| PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot route 与集成测试、服务错误语义文档 | 不改变 collection 策略、公开 API 形状、生成算法或 UI | backend/CMS 锁定冲突与过期草稿测试、coverage、lint、typecheck | 约 260 行 | PR-Guard-Store |
 | PR2 | 工作周及操作目标在任意时区下确定且可测试 | US1/US2、FR-001~008/013~025/035~036 | `src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*` | 不改页面 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard-Service |
 | PR3 | 页面自动加载并只展示所选日午晚餐的真实只读状态 | US1、FR-001~014/029~033 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、长期文档 | 不接新 mutation；不做最终换肤 | 先写周视图 E2E；lint/typecheck/coverage/build | 约 520 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037~038 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、必要逻辑测试 | 不做换菜/配置衔接/最终样式 | 每目标 revision、部分成功提示与重载、跨周延迟响应 E2E，coverage、双端 build | 约 580 行 | PR3 |
@@ -102,12 +102,14 @@ apps/kith-inn-v1-be/src/routes/
 └── mealSlots.test.ts
 
 apps/cms/
+├── payload.config.ts（在 CMS 配置层组合 collection hook）
 ├── src/app/api/internal/kiv1/meal-slots/[id]/route.ts
-├── src/lib/kiv1-internal.ts（事务与行锁辅助）
+├── src/lib/kiv1-meal-slot-menu-guard.ts（adapter-aware 事务与行锁保护）
+├── tests/kiv1-meal-slot-menu-guard.test.ts
 └── tests/kiv1-meal-slots.test.ts
 
 packages/kith-inn-v1-payload/src/payload/collections/
-└── MealSlots.ts（强制 collection 级菜单只读保护）
+└── MealSlots.ts（保持 adapter-neutral，由 CMS 配置层追加保护）
 
 docs/kith-inn-v1/
 ├── USER-STORIES.md
@@ -115,7 +117,7 @@ docs/kith-inn-v1/
 └── design/merchant-menu-hifi-v0.2.png
 ```
 
-**结构决策**：新增 `menuWeek.ts` 承载不依赖 UI 的工作周视图模型；保留 `menu.ts` 的既有生成响应逻辑。页面只负责任务编排和渲染；API 形状不变，后端路由负责快速预检查。CMS/Payload 复用现有事务辅助：Postgres 行锁持有至提交，SQLite 使用即时事务，并在锁内重读最新状态；锁不可用时 fail closed。
+**结构决策**：新增 `menuWeek.ts` 承载不依赖 UI 的工作周视图模型；保留 `menu.ts` 的既有生成响应逻辑。页面只负责任务编排和渲染；API 形状不变，后端路由负责快速预检查。`@cfp/kith-inn-v1-payload` 不能导入依赖 `@payload-config`、Next.js 和 Postgres adapter 的 app-local helper，因此由 `apps/cms/payload.config.ts` 在组合 `MealSlots` 时追加 `kiv1-meal-slot-menu-guard.ts` hook；该 hook 在当前 Payload 请求事务中持有 Postgres 行锁至提交，SQLite 复用即时写事务，并在锁内重读最新状态，锁不可用时 fail closed。
 
 ## 复杂度跟踪
 
