@@ -80,6 +80,7 @@ export default function MerchantMenu() {
   const firstWeek = useRef(initialView?.weekStart ?? initialWeekStart(new Date())).current;
   const weekStartRef = useRef(firstWeek);
   const loadRevision = useRef(0);
+  const mutationRevision = useRef(0);
   const [currentWeek, setCurrentWeek] = useState(firstWeek);
   const [selectedDate, setSelectedDate] = useState(() =>
     initialView?.selectedDate ?? buildMenuWeek(firstWeek, [], new Date()).selectedDate);
@@ -125,7 +126,10 @@ export default function MerchantMenu() {
       return;
     }
     void loadWeek(firstWeek, false);
-    return () => { loadRevision.current += 1; };
+    return () => {
+      loadRevision.current += 1;
+      mutationRevision.current += 1;
+    };
   }, []);
 
   useEffect(() => {
@@ -140,6 +144,7 @@ export default function MerchantMenu() {
     const target = shiftWeekStart(weekStartRef.current, amount);
     const targetDate = buildMenuWeek(target, [], new Date()).selectedDate;
     weekStartRef.current = target;
+    mutationRevision.current += 1;
     rememberedView = { weekStart: target, selectedDate: targetDate };
     setCurrentWeek(target);
     setSelectedDate(targetDate);
@@ -166,13 +171,16 @@ export default function MerchantMenu() {
       await Taro.showToast({ title: "请输入有效日期", icon: "none" });
       return;
     }
+    const revision = mutationRevision.current;
     try {
       const result = await api.generateMenus({ targets, replaceExisting });
+      if (revision !== mutationRevision.current) return;
       setSlots((current) => mergeSlots(current, result.docs));
       setLegacySlots((current) => mergeSlots(current, result.docs));
       setRelaxed(result.relaxedRules);
       setPendingTargets(null);
     } catch (error) {
+      if (revision !== mutationRevision.current) return;
       if (needsReplaceConfirmation(error)) {
         setPendingTargets(targets);
         return;
@@ -183,12 +191,15 @@ export default function MerchantMenu() {
   };
 
   const swap = async (slot: MealSlot, offeringId: string | number) => {
+    const revision = mutationRevision.current;
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
+      if (revision !== mutationRevision.current) return;
       setSlots((current) => replaceMealSlot(current, result.doc));
       setLegacySlots((current) => replaceMealSlot(current, result.doc));
       setRelaxed(result.relaxedRules);
     } catch (error) {
+      if (revision !== mutationRevision.current) return;
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "换菜失败", icon: "none" });
     }

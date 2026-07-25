@@ -741,6 +741,8 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   const slowWeek = new Promise<void>((resolve) => { releaseSlowWeek = resolve; });
   let releaseRefresh!: () => void;
   const refresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  let releaseConflict!: () => void;
+  const conflict = new Promise<void>((resolve) => { releaseConflict = resolve; });
   let augustRequests = 0;
   await page.route("**/merchant/meal-slots?*", async (route) => {
     const from = new URL(route.request().url()).searchParams.get("from");
@@ -772,6 +774,18 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] }) });
   });
+  await page.route("**/merchant/meal-slots/generate-menus", async (route) => {
+    await conflict;
+    return route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "meal-slots-exist",
+        message: "目标餐次已有菜单，请确认覆盖",
+        existingTargets: [{ date: "2026-07-20", occasion: "lunch" }]
+      })
+    });
+  });
 
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
@@ -780,13 +794,18 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await taroButton(page, /^重试$/).click();
   await expect(page.getByText("7月20日－24日", { exact: true })).toBeVisible();
 
+  await page.getByRole("textbox", { name: "菜单起始日期" }).fill("2026-07-20");
+  await taroButton(page, /^生成午餐$/).click();
+
   await page.getByLabel("下一周").click();
   await page.getByLabel("下一周").click();
   await expect(page.getByText("8月3日－7日", { exact: true })).toBeVisible();
   await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("预订中");
   releaseSlowWeek();
+  releaseConflict();
   await expect(page.getByText("8月3日－7日", { exact: true })).toBeVisible();
   await expect(page.getByText("7月27日－31日", { exact: true })).toHaveCount(0);
+  await expect(taroButton(page, /^确认覆盖已有菜单$/)).toHaveCount(0);
 
   await taroButton(page, /^刷新$/).click();
   await expect(page.getByText("正在刷新菜单", { exact: true })).toBeVisible();
