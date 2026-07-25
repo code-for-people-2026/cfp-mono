@@ -50,6 +50,8 @@ loaded-* → swapping → loaded-* / swap-error
 
 每个 mutation 只锁定关联目标；切周 revision 与 mutation pending 分开维护。
 
+页面从当前工作周所有尚未截止的 `open` 餐次派生 `nextDeadlineAt`；挂载、周数据变化或时钟触发后重新计算。到点只推进本地业务时钟 revision 并重建视图状态，不伪造服务端状态写入；切周和卸载时清理旧计时器。
+
 ## MutationContext（写操作上下文）
 
 | 字段 | 含义 | 规则 |
