@@ -1443,6 +1443,19 @@ button.manual-add-entry {
   font-weight: 900;
 }
 
+.menu-page .menu-day::after {
+  content: "";
+  position: absolute;
+  top: 10rpx;
+  right: 10rpx;
+  width: 12rpx;
+  height: 12rpx;
+  border: 2rpx solid #fffaf1;
+  border-radius: 50%;
+  background: transparent;
+  opacity: 0;
+}
+
 .menu-day[data-completion="partial"] {
   box-shadow: inset 0 -6rpx #d3a354;
 }
@@ -1455,12 +1468,44 @@ button.manual-add-entry {
   border-color: #66a17d;
 }
 
+.menu-day[data-open="true"]::after {
+  background: #3e8a62;
+  opacity: 1;
+}
+
+.menu-day[data-deadline-passed="true"] {
+  border-color: #b88a4a;
+}
+
+.menu-day[data-deadline-passed="true"]::after {
+  background: #a46b26;
+  opacity: 1;
+}
+
 .menu-day.selected,
 .menu-day.selected[disabled] {
   border-color: #b6402f;
   background: #b6402f;
   color: #ffffff;
   box-shadow: none;
+}
+
+.menu-day.selected[data-completion="partial"] {
+  box-shadow: inset 0 -6rpx #ffd084;
+}
+
+.menu-day.selected[data-completion="complete"] {
+  box-shadow: inset 0 -6rpx #a8dfba;
+}
+
+.menu-day.selected[data-open="true"]::after {
+  border-color: #b6402f;
+  background: #b9e7c8;
+}
+
+.menu-day.selected[data-deadline-passed="true"]::after {
+  border-color: #b6402f;
+  background: #ffd084;
 }
 
 .menu-day.selected text:last-child {
@@ -1543,16 +1588,13 @@ button.manual-add-entry {
 }
 
 .menu-meal-names {
-  display: -webkit-box;
+  display: block;
   order: 1;
   margin-top: 22rpx;
-  overflow: hidden;
   overflow-wrap: anywhere;
   color: #5f564c;
   font-size: 27rpx;
   line-height: 1.65;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 .menu-meal-card > .meta {
