@@ -7,10 +7,12 @@ import type {
 } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
+  bookingConfigContext,
   bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
-  selectableBookingSlots
+  selectableBookingSlots,
+  type BookingConfigContext
 } from "@/logic/bookingBatches";
 import { merchantRoute } from "@/logic/login";
 import { buildMenuRange } from "@/logic/menu";
@@ -49,6 +51,12 @@ function initialConfig(slot: MealSlot): SlotConfig {
   };
 }
 
+function bookingWeekEnd(weekStart: string): string {
+  const date = new Date(`${weekStart}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + 4);
+  return date.toISOString().slice(0, 10);
+}
+
 function WeappShareLifecycle() {
   Taro.useShareAppMessage(({ target }) => {
     const dataset = (target as { dataset?: { title?: unknown; path?: unknown } } | undefined)?.dataset;
@@ -60,7 +68,9 @@ function WeappShareLifecycle() {
 }
 
 export default function MerchantBatches() {
-  const [date, setDate] = useState("");
+  const [initialContext] = useState(() =>
+    bookingConfigContext(Taro.getCurrentInstance().router?.params ?? {}));
+  const [date, setDate] = useState(initialContext?.weekStart ?? "");
   const [slots, setSlots] = useState<MealSlot[]>([]);
   const [configs, setConfigs] = useState<Record<string, SlotConfig>>({});
   const [selected, setSelected] = useState<Array<string | number>>([]);
@@ -68,16 +78,10 @@ export default function MerchantBatches() {
   const [batches, setBatches] = useState<BatchEntry[]>([]);
   const [closingId, setClosingId] = useState<string | number | null>(null);
 
-  useEffect(() => {
-    if (merchantRoute(sessions.getSession()) === "login") {
-      void Taro.redirectTo({ url: "/pages/merchant/login/index" });
-      return;
-    }
-    void api.listBookingBatches().then(setBatches).catch(() => undefined);
-  }, []);
-
-  const loadSlots = async () => {
-    const range = buildMenuRange(date);
+  const loadSlots = async (context?: BookingConfigContext) => {
+    const range = context
+      ? { from: context.weekStart, to: bookingWeekEnd(context.weekStart) }
+      : buildMenuRange(date);
     if (!range) {
       await Taro.showToast({ title: "请输入有效日期", icon: "none" });
       return;
@@ -93,6 +97,15 @@ export default function MerchantBatches() {
       await Taro.showToast({ title: "预订配置加载失败", icon: "none" });
     }
   };
+
+  useEffect(() => {
+    if (merchantRoute(sessions.getSession()) === "login") {
+      void Taro.redirectTo({ url: "/pages/merchant/login/index" });
+      return;
+    }
+    if (initialContext) void loadSlots(initialContext);
+    else void api.listBookingBatches().then(setBatches).catch(() => undefined);
+  }, []);
 
   const configure = async (slot: MealSlot, orderStatus: "open" | "closed") => {
     const config = configs[String(slot.id)] ?? initialConfig(slot);
@@ -145,11 +158,21 @@ export default function MerchantBatches() {
     }
   };
 
+  const returnToMenu = () => {
+    if (!initialContext) {
+      void Taro.navigateTo({ url: "/pages/merchant/menu/index" });
+    } else if (process.env.TARO_ENV === "h5") {
+      void Taro.redirectTo({ url: "/pages/merchant/menu/index" });
+    } else {
+      void Taro.navigateBack();
+    }
+  };
+
   return (
     <View className="page batches-page">
       {process.env.TARO_ENV === "weapp" && <WeappShareLifecycle />}
       <Text className="title">预订批次</Text>
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/menu/index" })}>菜单</Button>
+      <Button onClick={returnToMenu}>{initialContext ? "返回菜单" : "菜单"}</Button>
 
       <View className="card batch-controls">
         <Input
@@ -163,11 +186,14 @@ export default function MerchantBatches() {
       {slots.map((slot) => {
         const config = configs[String(slot.id)] ?? initialConfig(slot);
         const label = `${slot.date} ${occasionText(slot.occasion)}`;
+        const isTarget = initialContext?.target?.date === slot.date &&
+          initialContext.target.occasion === slot.occasion;
         const isSelected = selected.some((id) => String(id) === String(slot.id));
         const isSelectable = selectableBookingSlots([slot], new Date().toISOString()).length === 1;
         return (
-          <View className="card batch-slot" key={String(slot.id)}>
+          <View className={`card batch-slot${isTarget ? " target" : ""}`} key={String(slot.id)}>
             <Text className="section-title">{label}</Text>
+            {isTarget && <Text className="notice">当前餐次</Text>}
             <Text className="meta">状态：{slot.orderStatus === "open" ? "开放" : slot.orderStatus === "closed" ? "已关闭" : "草稿"}</Text>
             <Input
               placeholder="价格（元）"

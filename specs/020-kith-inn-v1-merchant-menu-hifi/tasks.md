@@ -118,10 +118,10 @@
 
 **Independent Test**：从指定晚餐进入配置，核对日期预填和自动加载；配置后返回，核对菜单页保持周/日期并显示最新状态。
 
-- [ ] T014 [US4] 先在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts` 增加配置 query 日期/餐次解析与无效参数降级测试，并在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加预填、自动加载和返回刷新 E2E，确认新断言失败
-- [ ] T015 [US4] 在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.ts` 实现最小配置 query 解析纯函数
-- [ ] T016 [US4] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 和 `pages/merchant/batches/index.tsx` 接入当前周/餐次 query、动态底部 CTA、配置页自动加载与返回刷新
-- [ ] T017 [US4] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步换菜选择、菜单/配置职责边界和返回刷新行为
+- [X] T014 [US4] 先在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts` 增加配置 query 日期/餐次解析与无效参数降级测试，并在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加预填、自动加载和返回刷新 E2E，确认新断言失败
+- [X] T015 [US4] 在 `apps/kith-inn-v1-fe/src/logic/bookingBatches.ts` 实现最小配置 query 解析纯函数
+- [X] T016 [US4] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 和 `pages/merchant/batches/index.tsx` 接入当前周/餐次 query、动态底部 CTA、配置页自动加载与返回刷新
+- [X] T017 [US4] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步换菜选择、菜单/配置职责边界和返回刷新行为
 
 **Checkpoint**：菜单安排到开放预订形成真实流程，但没有复制服务端或配置表单。
 

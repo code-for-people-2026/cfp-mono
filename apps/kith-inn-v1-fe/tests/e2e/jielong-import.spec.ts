@@ -34,14 +34,12 @@ test("显式启用后纵向完成接龙预览、确认、重试与无地址订�
   const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
   await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
   await expect(lunchCard.locator(".menu-meal-names")).toBeVisible();
-  await taroButton(page, /^预订批次$/).click();
-  await page.getByRole("textbox", { name: "批次起始日期" }).fill(targetDate);
-  await taroButton(page, /^查看餐次$/).click();
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
   const slot = page.locator(".batch-slot").filter({ hasText: `${targetDate} 午餐` });
   await slot.getByRole("textbox", { name: "价格（元）" }).fill("30");
   await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T09:00`);
   await slot.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();
-  await taroButton(page, /^菜单$/).last().click();
+  await taroButton(page, /^返回菜单$/).click();
 
   const weakEntry = taroButton(page, /^接龙导入（兜底）$/).last();
   await expect(weakEntry).toBeVisible();

@@ -2,11 +2,46 @@ import type {
   BookingBatch,
   BookingBatchMutationResponse,
   MealSlot,
+  MealSlotTarget,
   MealSlotBookingConfig
 } from "@cfp/kith-inn-v1-shared";
 
 const sameId = (left: string | number, right: string | number) => String(left) === String(right);
 const SHANGHAI_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type BookingConfigContext = {
+  weekStart: string;
+  target: MealSlotTarget | null;
+};
+
+function calendarDate(value: unknown): string | null {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const instant = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(instant.getTime()) && instant.toISOString().slice(0, 10) === value ? value : null;
+}
+
+export function bookingConfigContext(params: Record<string, unknown>): BookingConfigContext | null {
+  const weekStart = calendarDate(params.weekStart);
+  if (weekStart === null || new Date(`${weekStart}T00:00:00.000Z`).getUTCDay() !== 1) return null;
+  const date = calendarDate(params.date);
+  const occasion = params.occasion;
+  const offset = date === null
+    ? -1
+    : (Date.parse(`${date}T00:00:00.000Z`) - Date.parse(`${weekStart}T00:00:00.000Z`)) / DAY_MS;
+  const target: MealSlotTarget | null = date !== null && (occasion === "lunch" || occasion === "dinner") &&
+    offset >= 0 && offset <= 4
+    ? { date, occasion }
+    : null;
+  return { weekStart, target };
+}
+
+export function bookingConfigUrl(weekStart: string, target?: MealSlotTarget): string {
+  const base = `/pages/merchant/batches/index?weekStart=${encodeURIComponent(weekStart)}`;
+  return target
+    ? `${base}&date=${encodeURIComponent(target.date)}&occasion=${encodeURIComponent(target.occasion)}`
+    : base;
+}
 
 export function selectableBookingSlots(slots: MealSlot[], now: string): MealSlot[] {
   return slots.filter((slot) => slot.orderStatus === "open" && slot.orderDeadline !== null &&
