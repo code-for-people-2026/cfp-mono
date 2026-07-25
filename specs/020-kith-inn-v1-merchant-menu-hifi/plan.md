@@ -36,11 +36,11 @@
 - `pages/merchant/batches/index.tsx` 已支持价格、截止时间、开放/关闭餐次及分享批次，但仍要求手输日期，尚不读取菜单页上下文。
 - `tests/e2e/merchant.spec.ts` 已覆盖真实单餐/整周生成、覆盖和换菜；需要改造成自动工作周交互并补切周竞态、补齐、只读和预填流程。
 - `MerchantNav` 已固定为“今日 / 菜品 / 菜单 / 订单”；Page 3 不复制概念图中的旧导航。
-- 高保真 Prompt 和独立 PNG 当前只存在于指定 `d097` 工作树。Prompt 永不提交；PNG 必须独立入库后才能作为最终视觉 PR 的仓库基线。
+- 高保真 Prompt 和独立 PNG 当前来自用户指定的 `d097` 工作树。Prompt 永不提交；PNG 源文件为 `/Users/yao/.codex/worktrees/d097/cfp-mono/docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`，大小 155701 bytes、708×1572 RGB、SHA-256 `0ac15d72a2a0818499a2c427b841d9ac6378baea9a9a22b79efe446cb8ce6259`。PR-Assets 必须逐项核对后入库，才能作为最终视觉 PR 的可复现基线。
 
 ## 宪法检查
 
-- [x] 功能目录归属 `kith-inn-v1`；源码允许 `apps/kith-inn-v1-fe/**`、`apps/kith-inn-v1-be/src/routes/mealSlots*`、`apps/cms/src/app/api/internal/kiv1/meal-slots/**` 及对应测试，原子条件若需 collection hook 则限于 `packages/kith-inn-v1-payload/src/payload/collections/MealSlots.ts` 及测试；长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
+- [x] 功能目录归属 `kith-inn-v1`；源码允许 `apps/kith-inn-v1-fe/**`、`apps/kith-inn-v1-be/src/routes/mealSlots*`、`apps/cms/src/app/api/internal/kiv1/meal-slots/**` 及对应测试，并强制包含 `packages/kith-inn-v1-payload/src/payload/collections/MealSlots.ts` 与直接 Payload 更新测试；长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
 - [x] 已记录现有页面、逻辑、API、CMS/Payload 写入边界、配置入口、测试和缺口；不重写生成算法，仅补只读不变量和页面衔接。
 - [x] 含多种异步状态且预计多个 PR，使用全套 spec；每片单一目标并独立验证。
 - [x] 文档主体使用中文，测试先行，合并前使用 `pr-review-converge`。
@@ -52,7 +52,7 @@
 |----|----------------------|---------------|----------|------------|----------|---------------|------|
 | PR1 | 固化 Page 3 产品边界、视图状态和可执行切片 | US1-US4、FR-001~037 | `specs/020-kith-inn-v1-merchant-menu-hifi/**` | 不改运行时代码 | checklist、Spec Kit 前置检查、任务格式 | 约 700 行 | 无 |
 | PR-Assets | 让独立 Page 3 参考图可由仓库读取 | SC-005 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png` | 不提交任何 `*-prompt.md`；不改代码 | PNG 可读、尺寸和内容核对 | 二进制资产 | PR1 |
-| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、必要的 Payload collection hook、长期文档 | 不改公开 API 形状、生成算法或 UI | backend/CMS 并发状态测试、coverage、lint、typecheck | 约 420 行 | PR1 |
+| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、Payload `MealSlots` collection hook 与直接更新测试、长期文档 | 不改公开 API 形状、生成算法或 UI | backend/CMS 并发测试、Payload admin/REST/local 写入边界测试、coverage、lint、typecheck | 约 520 行 | PR1 |
 | PR2 | 工作周及操作目标在任意时区下确定且可测试 | US1/US2、FR-001~008/013~025/035~036 | `src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*` | 不改页面 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard |
 | PR3 | 页面自动加载并只展示所选日午晚餐的真实只读状态 | US1、FR-001~014/029~033 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、长期文档 | 不接新 mutation；不做最终换肤 | 先写周视图 E2E；lint/typecheck/coverage/build | 约 520 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、必要逻辑测试 | 不做换菜/配置衔接/最终样式 | mutation、部分失败重载与跨周延迟响应 E2E，coverage、双端 build | 约 560 行 | PR3 |
@@ -60,7 +60,7 @@
 | PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | 菜单页、`pages/merchant/batches/index.tsx`、booking 纯逻辑/E2E、长期文档 | 不改服务端契约；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
 | PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | `src/app.css`、本功能 `quickstart.md` | 不再改变业务规则；不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5-Booking、PR-Assets |
 
-PR1 超过默认 400 行是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。
+PR1 超过默认 400 行是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。额外风险是跨文件术语或需求映射不一致、以及较长 diff 导致 review 遗漏；对应缓解为 requirements checklist、FR/SC 到 Task/PR 的逐项映射、`speckit-analyze` 跨产物一致性检查、`git diff --check`，以及 Codex review 每轮新增意见清零后再收口。
 
 PR-Guard、PR3、PR4 与 PR6 略高于默认预算，但分别只有原子只读保护、只读周视图、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
 
@@ -105,7 +105,7 @@ apps/cms/
 └── tests/kiv1-meal-slots.test.ts
 
 packages/kith-inn-v1-payload/src/payload/collections/
-└── MealSlots.ts（仅当原子条件需要 collection hook）
+└── MealSlots.ts（强制 collection 级菜单只读保护）
 
 docs/kith-inn-v1/
 ├── USER-STORIES.md
