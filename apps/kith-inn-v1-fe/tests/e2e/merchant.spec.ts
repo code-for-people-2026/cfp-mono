@@ -1060,6 +1060,87 @@ test("部分失败重载与无关餐次成功可同时合并", async ({ page }) 
   await expect(page.getByText("生成未完成，部分目标可能已保存，请核对当前菜单", { exact: true })).toBeVisible();
 });
 
+test("并行覆盖确认按操作排队显示", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  const docs = ["lunch", "dinner"].map((occasion, index) => ({
+    ...slot("2026-07-22", occasion as "lunch" | "dinner"),
+    id: 681 + index,
+    orderStatus: "draft",
+    orderDeadline: null
+  }));
+  let releaseLunch!: () => void;
+  let releaseDinner!: () => void;
+  const lunchResponse = new Promise<void>((resolve) => { releaseLunch = resolve; });
+  const dinnerResponse = new Promise<void>((resolve) => { releaseDinner = resolve; });
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs })
+  }));
+  await page.route("**/merchant/meal-slots/generate-menus", async (route) => {
+    const target = route.request().postDataJSON().targets[0] as { date: string; occasion: "lunch" | "dinner" };
+    await (target.occasion === "lunch" ? lunchResponse : dinnerResponse);
+    return route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "meal-slots-exist",
+        message: "目标餐次已有菜单，请确认覆盖",
+        existingTargets: [target]
+      })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  const lunch = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
+  const dinner = page.locator(".menu-meal-card").filter({ hasText: "晚餐" });
+  await lunch.locator("taro-button-core").filter({ hasText: /^重新生成午餐$/ }).click();
+  await dinner.locator("taro-button-core").filter({ hasText: /^重新生成晚餐$/ }).click();
+  const confirmation = page.locator(".menu-replace-confirmation");
+  releaseDinner();
+  await expect(confirmation).toContainText("2026-07-22 晚餐");
+  releaseLunch();
+  await expect(confirmation).toContainText("2026-07-22 晚餐");
+  await confirmation.locator("taro-button-core").filter({ hasText: /^取消$/ }).click();
+  await expect(confirmation).toContainText("2026-07-22 午餐");
+  await confirmation.locator("taro-button-core").filter({ hasText: /^取消$/ }).click();
+  await expect(confirmation).toHaveCount(0);
+});
+
+test("成功刷新后撤销旧覆盖确认", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  let docs: ReturnType<typeof slot>[] = [];
+  let generationRequests = 0;
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs })
+  }));
+  await page.route("**/merchant/meal-slots/generate-menus", (route) => {
+    generationRequests += 1;
+    return route.fulfill({
+      status: 409,
+      contentType: "application/json",
+      body: JSON.stringify({
+        error: "meal-slots-exist",
+        message: "目标餐次已有菜单，请确认覆盖",
+        existingTargets: [{ date: "2026-07-22", occasion: "lunch" }]
+      })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  await taroButton(page, /^生成本周午晚餐$/).click();
+  const confirmation = page.locator(".menu-replace-confirmation");
+  await expect(confirmation).toContainText("2026-07-22 午餐");
+  docs = [slot("2026-07-22", "lunch"), slot("2026-07-22", "dinner")];
+  await taroButton(page, /^刷新$/).click();
+  await expect(confirmation).toHaveCount(0);
+  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("红烧肉");
+  await expect(page.locator(".menu-meal-card").filter({ hasText: "晚餐" })).toContainText("红烧肉");
+  expect(generationRequests).toBe(1);
+});
+
 test("整周重新生成只覆盖草稿并保留后端原始目标", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   const docs = [
