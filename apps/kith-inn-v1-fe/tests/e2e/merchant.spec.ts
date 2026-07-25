@@ -737,10 +737,14 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
 test("菜单工作周以后发请求为准并在失败刷新时保留数据", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   let currentAttempts = 0;
+  let releaseInitialLoad!: () => void;
+  const initialLoad = new Promise<void>((resolve) => { releaseInitialLoad = resolve; });
   let releaseSlowWeek!: () => void;
   const slowWeek = new Promise<void>((resolve) => { releaseSlowWeek = resolve; });
   let releaseRefresh!: () => void;
   const refresh = new Promise<void>((resolve) => { releaseRefresh = resolve; });
+  let releaseStaleRefresh!: () => void;
+  const staleRefresh = new Promise<void>((resolve) => { releaseStaleRefresh = resolve; });
   let releaseConflict!: () => void;
   const conflict = new Promise<void>((resolve) => { releaseConflict = resolve; });
   let augustRequests = 0;
@@ -748,7 +752,8 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
     const from = new URL(route.request().url()).searchParams.get("from");
     if (from === "2026-07-20") {
       currentAttempts += 1;
-      return route.fulfill(currentAttempts === 1
+      if (currentAttempts === 1) await initialLoad;
+      return route.fulfill(currentAttempts === 2
         ? { status: 500, body: "{}" }
         : { status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] }) });
     }
@@ -766,6 +771,7 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
         await refresh;
         return route.fulfill({ status: 500, body: "{}" });
       }
+      if (augustRequests === 4) await staleRefresh;
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -774,7 +780,23 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
     }
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] }) });
   });
+  let generationRequests = 0;
   await page.route("**/merchant/meal-slots/generate-menus", async (route) => {
+    generationRequests += 1;
+    if (generationRequests > 1) {
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          docs: [{
+            ...slot("2026-08-03", "lunch"),
+            id: 301,
+            menuItems: menuItems.map((item, index) => index === 0 ? { ...item, nameSnapshot: "新菜单" } : item)
+          }],
+          relaxedRules: []
+        })
+      });
+    }
     await conflict;
     return route.fulfill({
       status: 409,
@@ -790,6 +812,10 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await taroButton(page, /^菜单$/).click();
+  await expect(page.getByText("正在加载工作周菜单", { exact: true })).toBeVisible();
+  await taroButton(page, /^刷新$/).click();
+  await expect(page.getByText("菜单加载失败", { exact: true })).toBeVisible();
+  releaseInitialLoad();
   await expect(page.getByText("菜单加载失败", { exact: true })).toBeVisible();
   await taroButton(page, /^重试$/).click();
   await expect(page.getByText("7月20日－24日", { exact: true })).toBeVisible();
@@ -819,6 +845,14 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await page.locator(".batches-page taro-button-core").filter({ hasText: /^菜单$/ }).click();
   await expect(page.locator(".menu-page:visible").getByText("8月3日－7日", { exact: true })).toBeVisible();
   await expect.poll(() => augustRequests).toBeGreaterThan(requestsBeforeBack);
+
+  await page.locator(".menu-page:visible").getByRole("textbox", { name: "菜单起始日期" }).fill("2026-08-03");
+  await page.locator(".menu-page:visible taro-button-core").filter({ hasText: /^刷新$/ }).click();
+  await expect(page.getByText("正在刷新菜单", { exact: true })).toBeVisible();
+  await page.locator(".menu-page:visible taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+  await expect(page.locator(".menu-page:visible .menu-meal-card").filter({ hasText: "午餐" })).toContainText("新菜单");
+  releaseStaleRefresh();
+  await expect(page.locator(".menu-page:visible .menu-meal-card").filter({ hasText: "午餐" })).toContainText("新菜单");
 });
 
 test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ page }) => {
