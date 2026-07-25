@@ -267,16 +267,22 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
 
   const reloadFailedGeneration = async (context: GenerationContext) => {
     const end = buildMenuWeek(context.weekStart, [], new Date()).end;
-    if (!contextMatches(context)) {
-      try {
-        await api.listMealSlots(context.weekStart, end);
-      } catch {
-        // The user is viewing another week; this read only reconciles the failed target context.
+    try {
+      const docs = await api.listMealSlots(context.weekStart, end);
+      if (!contextMatches(context)) return;
+      const currentTargetKeys = context.targetKeys.filter((key) => targetMatches(context, key));
+      if (currentTargetKeys.length === 0) return;
+      const matchingDocs = docs.filter((doc) => currentTargetKeys.includes(targetKey(doc)));
+      setSlots((current) => mergeSlots(current, matchingDocs));
+      setLegacySlots((current) => mergeSlots(current, matchingDocs));
+      setClockNow(Date.now());
+      setPartialSaveNotice(true);
+    } catch {
+      if (contextMatches(context) && context.targetKeys.some((key) => targetMatches(context, key))) {
+        setRefreshFailed(true);
+        setPartialSaveNotice(true);
       }
-      return;
     }
-    await loadWeek(context.weekStart, true);
-    if (contextMatches(context)) setPartialSaveNotice(true);
   };
 
   const generate = async (targets: MealSlotTarget[], replaceExisting = false) => {
