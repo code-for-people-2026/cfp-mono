@@ -1060,6 +1060,90 @@ test("部分失败重载与无关餐次成功可同时合并", async ({ page }) 
   await expect(page.getByText("生成未完成，部分目标可能已保存，请核对当前菜单", { exact: true })).toBeVisible();
 });
 
+test("生成期间请求刷新会在结束后补执行", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  const generated = (firstName: string) => ({
+    ...slot("2026-07-22", "lunch"),
+    id: 671,
+    orderStatus: "draft",
+    orderDeadline: null,
+    menuItems: menuItems.map((item, index) => index === 0 ? { ...item, nameSnapshot: firstName } : item)
+  });
+  let docs: ReturnType<typeof generated>[] = [];
+  let listRequests = 0;
+  let releaseGeneration!: () => void;
+  const generationResponse = new Promise<void>((resolve) => { releaseGeneration = resolve; });
+  await page.route("**/merchant/meal-slots?*", (route) => {
+    listRequests += 1;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ docs }) });
+  });
+  await page.route("**/merchant/meal-slots/generate-menus", async (route) => {
+    await generationResponse;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ docs: [generated("生成响应菜单")], relaxedRules: [] })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  await page.locator(".menu-meal-card").filter({ hasText: "午餐" })
+    .locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+  docs = [generated("返回后刷新菜单")];
+  await taroButton(page, /^刷新$/).click();
+  const requestsBeforeFinish = listRequests;
+  releaseGeneration();
+  await expect.poll(() => listRequests).toBeGreaterThan(requestsBeforeFinish);
+  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("返回后刷新菜单");
+});
+
+test("重新生成淘汰同餐次迟到的换菜响应", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  const generated = (firstName: string) => ({
+    ...slot("2026-07-22", "lunch"),
+    id: 672,
+    orderStatus: "draft",
+    orderDeadline: null,
+    menuItems: menuItems.map((item, index) => index === 0 ? { ...item, nameSnapshot: firstName } : item)
+  });
+  let releaseSwap!: () => void;
+  const swapResponse = new Promise<void>((resolve) => { releaseSwap = resolve; });
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [generated("原菜单")] })
+  }));
+  await page.route("**/merchant/meal-slots/*/swap-menu-item", async (route) => {
+    await swapResponse;
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ doc: generated("迟到换菜菜单"), relaxedRules: ["recent-offering"] })
+    });
+  });
+  await page.route("**/merchant/meal-slots/generate-menus", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ docs: [generated("重新生成菜单")], relaxedRules: [] })
+  }));
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  await page.getByRole("textbox", { name: "菜单起始日期" }).fill("2026-07-22");
+  await taroButton(page, /^查看未来 31 天菜单$/).click();
+  await page.getByLabel("换掉 原菜单", { exact: true }).click();
+  await page.locator(".menu-meal-card").filter({ hasText: "午餐" })
+    .locator("taro-button-core").filter({ hasText: /^重新生成午餐$/ }).click();
+  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("重新生成菜单");
+  const response = page.waitForResponse("**/merchant/meal-slots/*/swap-menu-item");
+  releaseSwap();
+  await response;
+  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("重新生成菜单");
+  await expect(page.locator(".menu-slot").filter({ hasText: "2026-07-22 午餐" })).toContainText("重新生成菜单");
+  await expect(page.getByText("已放宽：近 7 日不重复菜", { exact: true })).toHaveCount(0);
+});
+
 test("并行覆盖确认按操作排队显示", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   const docs = ["lunch", "dinner"].map((occasion, index) => ({
