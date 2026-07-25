@@ -206,6 +206,9 @@ POST   /customer/orders/:id/cancel
 - 生成只从启用菜品选；“近期”固定为目标日期前 7 个日历日，同周同菜、同日同主料和近期同菜/主料按固定优先级尽量避开，放宽时返回明确说明。
 - 菜品池不足时返回明确错误，不发明菜。
 - 日历日保存为合法 `YYYY-MM-DD`，统一按 Asia/Shanghai 解释。
+- 菜单快照只允许在餐次最新 `orderStatus=draft` 时改变；`open`（包括截止后）和 `closed` 均只读，过期截止时间本身不锁定草稿菜单。
+- `apps/cms/payload.config.ts` 在组合 v1 `MealSlots` collection 时追加 app-local `beforeChange` hook，使 local API、REST 和 Admin 共用持久化保护，Payload 包继续保持 adapter-neutral。
+- hook 复用 Payload 已建立的写事务：Postgres 对目标行执行 `SELECT … FOR UPDATE` 后重读，SQLite 复用 `BEGIN IMMEDIATE` 后重读；只信任锁内最新状态，不信任 hook 的旧状态快照，事务或锁会话不可用时拒绝写入。
 
 ### 分享批次
 
@@ -290,6 +293,7 @@ MVP 主链路不使用 AI。
 - draft 可由顾客改份数/取消，confirmed 不可改。
 - batch/meal slot 关闭后不能新增订单。
 - 菜单生成不选停用菜、不发明菜。
+- 菜单写入与开放/关闭写入并发时，持久化边界按串行顺序执行；菜单写入只有在取得锁后重读仍为 `draft` 才能提交，Admin、REST 和 local API 均不能绕过。
 
 所有 milestone 最终通过仓库质量门禁 `pnpm verify`。
 
