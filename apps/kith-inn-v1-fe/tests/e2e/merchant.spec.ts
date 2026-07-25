@@ -732,6 +732,13 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
   await page.clock.fastForward(5_000);
   await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("已截止");
   expect(ranges).toContain("2026-07-20:2026-07-24");
+
+  const requestsBeforeReturn = ranges.length;
+  await taroButton(page, /^预订批次$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
+  await page.goBack();
+  await expect(page).toHaveURL(/pages\/merchant\/menu\/index/);
+  await expect.poll(() => ranges.length).toBeGreaterThan(requestsBeforeReturn);
 });
 
 test("菜单工作周以后发请求为准并在失败刷新时保留数据", async ({ page }) => {
@@ -820,29 +827,37 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await taroButton(page, /^重试$/).click();
   await expect(page.getByText("7月20日－24日", { exact: true })).toBeVisible();
 
-  await page.getByRole("textbox", { name: "菜单起始日期" }).fill("2026-07-20");
-  await taroButton(page, /^生成午餐$/).click();
+  await page.clock.fastForward(2 * 86_400_000);
+  const requestsBeforeDefaultReturn = currentAttempts;
+  await taroButton(page, /^预订批次$/).click();
+  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^菜单$/ }).click();
+  await expect(page.locator(".menu-page:visible").getByText("7月20日－24日", { exact: true })).toBeVisible();
+  await expect.poll(() => currentAttempts).toBeGreaterThan(requestsBeforeDefaultReturn);
 
-  await page.getByLabel("下一周").click();
-  await page.getByLabel("下一周").click();
-  await expect(page.getByText("8月3日－7日", { exact: true })).toBeVisible();
-  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("预订中");
+  const currentMenu = page.locator(".menu-page:visible");
+  await currentMenu.getByRole("textbox", { name: "菜单起始日期" }).fill("2026-07-20");
+  await currentMenu.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+
+  await currentMenu.getByLabel("下一周").click();
+  await currentMenu.getByLabel("下一周").click();
+  await expect(currentMenu.getByText("8月3日－7日", { exact: true })).toBeVisible();
+  await expect(currentMenu.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("预订中");
   releaseSlowWeek();
   releaseConflict();
-  await expect(page.getByText("8月3日－7日", { exact: true })).toBeVisible();
-  await expect(page.getByText("7月27日－31日", { exact: true })).toHaveCount(0);
-  await expect(taroButton(page, /^确认覆盖已有菜单$/)).toHaveCount(0);
+  await expect(currentMenu.getByText("8月3日－7日", { exact: true })).toBeVisible();
+  await expect(currentMenu.getByText("7月27日－31日", { exact: true })).toHaveCount(0);
+  await expect(currentMenu.locator("taro-button-core").filter({ hasText: /^确认覆盖已有菜单$/ })).toHaveCount(0);
 
-  await taroButton(page, /^刷新$/).click();
-  await expect(page.getByText("正在刷新菜单", { exact: true })).toBeVisible();
-  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("红烧肉");
+  await currentMenu.locator("taro-button-core").filter({ hasText: /^刷新$/ }).click();
+  await expect(currentMenu.getByText("正在刷新菜单", { exact: true })).toBeVisible();
+  await expect(currentMenu.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("红烧肉");
   releaseRefresh();
-  await expect(page.getByText("刷新失败，当前菜单仍可查看", { exact: true })).toBeVisible();
+  await expect(currentMenu.getByText("刷新失败，当前菜单仍可查看", { exact: true })).toBeVisible();
 
   const requestsBeforeBack = augustRequests;
   await taroButton(page, /^预订批次$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
-  await page.locator(".batches-page taro-button-core").filter({ hasText: /^菜单$/ }).click();
+  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^菜单$/ }).click();
   await expect(page.locator(".menu-page:visible").getByText("8月3日－7日", { exact: true })).toBeVisible();
   await expect.poll(() => augustRequests).toBeGreaterThan(requestsBeforeBack);
 
