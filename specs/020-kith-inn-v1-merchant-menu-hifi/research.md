@@ -38,9 +38,9 @@
 
 ## 决策 7：菜单只读保护下沉到 CMS/Payload 原子写入边界
 
-- **Decision**：业务服务在生成、覆盖和换菜前执行快速预检查；Payload `MealSlots` 的公共写入入口进入数据库事务，Postgres 以 `SELECT … FOR UPDATE` 锁定目标餐次直至提交，SQLite 复用 `BEGIN IMMEDIATE`，并在同一事务内重新读取最新 `orderStatus`。只有最新状态仍为 `draft` 才允许改变菜单；事务或锁会话不可用时 fail closed。CMS route/backend 稳定传递锁定冲突，前端刷新目标周。
+- **Decision**：业务服务在生成、覆盖和换菜前执行快速预检查。`@cfp/kith-inn-v1-payload` 保持 adapter-neutral；CMS 在 `payload.config.ts` 组合其 `MealSlots` collection 时追加 app-local `beforeChange` hook，让 local API、REST 和 admin 共同经过同一保护。hook 复用当前 Payload 请求的数据库事务：Postgres 以 `SELECT … FOR UPDATE` 锁定目标餐次直至提交，SQLite 复用即时写事务，并在锁内重新读取最新 `orderStatus`。只有最新状态仍为 `draft` 才允许改变菜单；事务或锁会话不可用时 fail closed。CMS route/backend 稳定传递锁定冲突，前端刷新目标周。
 - **Rationale**：两个请求可能都先读到 `draft`，随后开放请求先提交；只有菜单请求取得锁后在同一事务内重读并持锁到自身提交，才能关闭 TOCTOU 窗口并保护顾客已经看到或预订的菜单。并发测试必须显式覆盖“两次更新都曾看到 draft，开放先提交，菜单后取锁重读”的交错顺序。
-- **Alternatives considered**：hook 的 `originalDoc` 只是写入前快照，不能证明提交时状态未变化；只做前端或业务路由预检查仍有竞态；仅在 CMS internal route 保护会被 Payload admin/REST/local API 绕过；CMS 再次普通读取后更新也不是原子保护。
+- **Alternatives considered**：hook 的 `originalDoc` 只是写入前快照，不能证明提交时状态未变化；只做前端或业务路由预检查仍有竞态；仅在 CMS internal route 保护会被 Payload admin/REST/local API 绕过；让 Payload 包导入 `apps/cms/src/lib/kiv1-internal.ts` 会反转包依赖并引入 `@payload-config`/Next.js 循环；CMS 再次普通读取后更新也不是原子保护。
 
 ## 决策 8：行为与视觉分开收口
 

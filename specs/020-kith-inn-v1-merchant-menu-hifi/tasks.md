@@ -10,8 +10,8 @@
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | 固化 Page 3 产品边界、视图模型和执行计划 | US1-US4、FR-001~038 | T001-T003 | `specs/020-kith-inn-v1-merchant-menu-hifi/**`；不改运行时代码 | checklist、Spec Kit 前置检查、Task ID 映射 | 约 740 行 | 无 |
 | PR-Assets | 让 Page 3 独立参考图可由仓库读取 | SC-005 | T004 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`；排除所有 Prompt | PNG 尺寸、大小和 SHA-256 核对 | 二进制 | PR1 |
-| PR-Guard-Store | Payload 菜单写入与预订状态写入串行化，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | Payload collection、CMS 事务/行锁辅助、直接 Payload 与并发测试；不改 service route、公开 API、文档或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界 | 约 320 行 | PR1 |
-| PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | T022-T023 | backend/CMS route 与测试、长期文档；不改变 collection 策略、公开 API 或 UI | 锁定冲突、过期草稿、coverage、lint、typecheck | 约 300 行 | PR-Guard-Store |
+| PR-Guard-Store | CMS 配置的 Payload 公共写入边界串行化菜单与预订状态写入，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | `apps/cms/payload.config.ts`、`src/lib/kiv1-meal-slot-menu-guard.ts`、`tests/kiv1-meal-slot-menu-guard.test.ts`、长期文档；不改 service route、Payload 包、公开 API 或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界 | 约 360 行 | PR1 |
+| PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | T022-T023 | backend/CMS route 与测试、服务错误语义文档；不改变 collection 策略、公开 API 或 UI | 锁定冲突、过期草稿、coverage、lint、typecheck | 约 260 行 | PR-Guard-Store |
 | PR2 | 工作周和操作目标不受设备时区或数据顺序影响 | US1/US2、FR-001~008/013~025/035~036 | T005-T006 | `apps/kith-inn-v1-fe/src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*`；不改 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard-Service |
 | PR3 | 自动周视图只呈现所选日两个真实餐次位置 | US1、FR-001~014/029~033 | T007-T009 | 菜单页、merchant E2E、长期文档；不接新 mutation、不做最终换肤 | 先失败 E2E；coverage、双端 build | 约 520 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037~038 | T010-T011 | 菜单页和 merchant E2E；不做换菜/配置/最终换肤 | 每目标 revision、部分成功提示与重载、跨周延迟响应 E2E 与双端 build | 约 580 行 | PR3 |
@@ -45,8 +45,8 @@
 
 **Goal**：已经进入预订生命周期的餐次不能通过生成、覆盖或换菜改变菜单。
 
-- [ ] T020 先为 Payload 公共写入边界增加 direct local API、admin/REST 等价更新保护测试；增加 Postgres 两事务交错测试，明确让菜单请求与开放请求都先看到 `draft`、开放先提交、菜单随后取得行锁并重读后被拒绝；增加 SQLite 即时事务和事务/锁不可用时 fail-closed 测试，确认失败
-- [ ] T021 在 Payload `MealSlots` collection 与 `apps/cms/src/lib/kiv1-internal.ts` 的共享事务边界实现保护：Postgres `SELECT … FOR UPDATE` 持锁至提交、SQLite `BEGIN IMMEDIATE`，锁内重读最新 `orderStatus`，非 `draft` 或无法取得事务/锁会话时拒绝菜单变更；不依赖 hook `originalDoc`，不修改 service route、公开 API 或长期文档
+- [ ] T020 先新增 `apps/cms/tests/kiv1-meal-slot-menu-guard.test.ts`，覆盖 direct local API、admin/REST 等价更新；增加 Postgres 两事务交错测试，明确让菜单请求与开放请求都先看到 `draft`、开放先提交、菜单随后取得行锁并重读后被拒绝；增加 SQLite 即时事务和事务/锁不可用时 fail-closed 测试，确认失败
+- [ ] T021 新增 `apps/cms/src/lib/kiv1-meal-slot-menu-guard.ts`，并在 `apps/cms/payload.config.ts` 组合导入的 `MealSlots` collection 时追加公共 `beforeChange` hook：Postgres `SELECT … FOR UPDATE` 持锁至提交、SQLite 复用即时写事务，锁内重读最新 `orderStatus`，非 `draft` 或无法取得事务/锁会话时拒绝菜单变更；不依赖 hook `originalDoc`，不让 `packages/kith-inn-v1-payload` 导入 CMS 模块。同时在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 记录开放/关闭菜单只读不变量及配置层事务架构，不修改 service route 或公开 API
 
 **Checkpoint**：直接 Payload 与数据库交错测试证明只读不变量不依赖前端按钮，也不受两个请求都曾读到 `draft` 的 TOCTOU 影响。
 
@@ -55,7 +55,7 @@
 **Goal**：backend 快速预检并稳定透传持久化边界的锁定冲突，不改变存储策略或公开 API。
 
 - [ ] T022 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，并在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加稳定 409 冲突透传测试，确认失败
-- [ ] T023 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现批量目标快速预检查，在 CMS internal meal-slot route 稳定透传存储层冲突；在 `docs/kith-inn-v1/USER-STORIES.md` 与 `TECH-SPEC.md` 明确开放/关闭菜单只读、覆盖仅适用于草稿；保持公开 API 形状与生成算法不变
+- [ ] T023 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现批量目标快速预检查，在 `apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/route.ts` 稳定透传存储层冲突；在 `docs/kith-inn-v1/TECH-SPEC.md` 补充 backend/CMS 409 错误映射语义；保持 collection 策略、公开 API 形状与生成算法不变
 
 **Checkpoint**：backend 与 CMS 集成测试证明锁定冲突语义稳定，截止时间已过的 `draft` 仍可编辑。
 
@@ -67,7 +67,7 @@
 
 **Independent Test**：用固定时间戳覆盖周一至周日、跨月、截止边界、空/部分/完整/开放工作周，比较完整派生结果。
 
-- [ ] T005 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/menuWeek.test.ts` 增加上海默认周、五日范围、默认选择、前后周、日期摘要、餐次状态、可编辑性、缺失/覆盖目标和动态 CTA 测试；菜单完成度与预订信号分别断言，并覆盖“午餐开放、晚餐缺失”同时为部分完成和预订中的组合，确认失败
+- [ ] T005 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/menuWeek.test.ts` 增加上海默认周、五日范围、当前周首个未过去工作日、过去/未来周周一、切周重置默认日、日期摘要、餐次状态、可编辑性、缺失/覆盖目标和动态 CTA 测试；菜单完成度与预订信号分别断言，并覆盖“午餐开放、晚餐缺失”同时为部分完成和预订中，以及截止时间已过的 `draft` 不产生已截止信号，确认失败
 - [ ] T006 [US1] 在 `apps/kith-inn-v1-fe/src/logic/menuWeek.ts` 实现 T005 所需的纯业务日期与周视图函数，并仅在必要时复用 `apps/kith-inn-v1-fe/src/logic/menu.ts`
 
 **Checkpoint**：PR2 可只靠单元测试证明时间、视图和目标计算正确，不含页面改动。
