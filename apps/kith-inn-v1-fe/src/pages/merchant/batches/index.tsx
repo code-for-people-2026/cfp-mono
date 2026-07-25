@@ -1,6 +1,6 @@
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   BookingBatchListResponse,
   MealSlot
@@ -9,6 +9,7 @@ import {
   batchCloseText,
   bookingConfigContext,
   bookingDeadlineInputValue,
+  bookingReturnMode,
   buildBookingConfig,
   copyBookingBatchPath,
   selectableBookingSlots,
@@ -77,8 +78,10 @@ export default function MerchantBatches() {
   const [title, setTitle] = useState("");
   const [batches, setBatches] = useState<BatchEntry[]>([]);
   const [closingId, setClosingId] = useState<string | number | null>(null);
+  const loadRevision = useRef(0);
 
   const loadSlots = async (context?: BookingConfigContext) => {
+    const revision = ++loadRevision.current;
     const range = context
       ? { from: context.weekStart, to: bookingWeekEnd(context.weekStart) }
       : buildMenuRange(date);
@@ -88,12 +91,14 @@ export default function MerchantBatches() {
     }
     try {
       const docs = await api.listMealSlots(range.from, range.to);
+      const loadedBatches = await api.listBookingBatches();
+      if (revision !== loadRevision.current) return;
       setSlots(docs);
       setSelected([]);
       setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot)])));
-      setBatches(await api.listBookingBatches());
+      setBatches(loadedBatches);
     } catch (error) {
-      if (handledAuthFailure(error)) return;
+      if (revision !== loadRevision.current || handledAuthFailure(error)) return;
       await Taro.showToast({ title: "预订配置加载失败", icon: "none" });
     }
   };
@@ -159,9 +164,14 @@ export default function MerchantBatches() {
   };
 
   const returnToMenu = () => {
-    if (!initialContext) {
+    const mode = bookingReturnMode({
+      hasContext: initialContext !== null,
+      platform: process.env.TARO_ENV,
+      pageCount: Taro.getCurrentPages().length
+    });
+    if (mode === "navigate-to") {
       void Taro.navigateTo({ url: "/pages/merchant/menu/index" });
-    } else if (process.env.TARO_ENV === "h5") {
+    } else if (mode === "redirect-to") {
       void Taro.redirectTo({ url: "/pages/merchant/menu/index" });
     } else {
       void Taro.navigateBack();

@@ -1649,6 +1649,48 @@ test("从目标餐次预填配置并在返回后刷新当前工作周", async ({
   await expect(page.getByRole("textbox", { name: "批次起始日期" })).toHaveValue("2026-07-20");
 });
 
+test("预订配置只接受最后一次餐次加载结果", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  let julyRequests = 0;
+  let releaseAutoLoad!: () => void;
+  const autoLoad = new Promise<void>((resolve) => { releaseAutoLoad = resolve; });
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/meal-slots?*", async (route) => {
+    const from = new URL(route.request().url()).searchParams.get("from");
+    if (from === "2026-07-20") {
+      julyRequests += 1;
+      if (julyRequests === 2) await autoLoad;
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ docs: [{ ...slot("2026-07-22", "dinner"), id: 901, orderStatus: "draft" }] })
+      });
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ docs: [{ ...slot("2026-07-27", "lunch"), id: 902, orderStatus: "draft" }] })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  await page.locator(".menu-meal-card").filter({ hasText: "晚餐" })
+    .locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
+  await expect.poll(() => julyRequests).toBe(2);
+
+  const configPage = page.locator(".batches-page:visible");
+  await configPage.getByRole("textbox", { name: "批次起始日期" }).fill("2026-07-27");
+  await configPage.locator("taro-button-core").filter({ hasText: /^查看餐次$/ }).click();
+  await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
+  releaseAutoLoad();
+  await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
+  await expect(configPage.getByText("2026-07-22 晚餐", { exact: true })).toHaveCount(0);
+});
+
 test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const future = new Date(Date.now() + (120 + Date.now() % 100) * 86_400_000);
