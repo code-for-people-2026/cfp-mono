@@ -2,22 +2,23 @@
 
 **Input**：`specs/020-kith-inn-v1-merchant-menu-hifi/` 下的 spec、plan、research、data-model、contracts 和 quickstart
 
-**Tests**：规格 SC-003/004/006/007/009 明确要求纯逻辑、关键流程 E2E、完整门禁和跨端构建；测试任务必须先于对应实现。
+**Tests**：规格 SC-003/004/006/007/009/010 明确要求纯逻辑、关键流程 E2E、并发只读保护、完整门禁和跨端构建；测试任务必须先于对应实现。
 
 ## PR 切片
 
 | PR | 目标 / 核心不变量 | 关联故事/需求 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
-| PR1 | 固化 Page 3 产品边界、视图模型和执行计划 | US1-US4、FR-001~034 | T001-T003 | `specs/020-kith-inn-v1-merchant-menu-hifi/**`；不改运行时代码 | checklist、Spec Kit 前置检查、Task ID 映射 | 约 650 行 | 无 |
+| PR1 | 固化 Page 3 产品边界、视图模型和执行计划 | US1-US4、FR-001~037 | T001-T003 | `specs/020-kith-inn-v1-merchant-menu-hifi/**`；不改运行时代码 | checklist、Spec Kit 前置检查、Task ID 映射 | 约 700 行 | 无 |
 | PR-Assets | 让 Page 3 独立参考图可由仓库读取 | SC-005 | T004 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`；排除所有 Prompt | PNG 可读、尺寸和内容核对 | 二进制 | PR1 |
-| PR-Guard | 已开放或关闭餐次的菜单在服务端不可再变更 | US2/US3、FR-014 | T020-T021 | `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 及测试；不改 API 形状或生成算法 | backend coverage、lint、typecheck | 约 180 行 | PR1 |
+| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、必要的 Payload hook、长期文档；不改公开 API 或生成算法 | 并发状态测试、backend/CMS coverage、lint、typecheck | 约 420 行 | PR1 |
 | PR2 | 工作周和操作目标不受设备时区或数据顺序影响 | US1/US2、FR-001~008/013~025/035~036 | T005-T006 | `apps/kith-inn-v1-fe/src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*`；不改 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard |
 | PR3 | 自动周视图只呈现所选日两个真实餐次位置 | US1、FR-001~014/029~033 | T007-T009 | 菜单页、merchant E2E、长期文档；不接新 mutation、不做最终换肤 | 先失败 E2E；coverage、双端 build | 约 520 行 | PR2 |
-| PR4 | 生成、补齐和覆盖只作用于正确可编辑目标 | US2、FR-015~021/024~026/031 | T010-T011 | 菜单页和 merchant E2E；不做换菜/配置/最终换肤 | mutation E2E、coverage、双端 build | 约 480 行 | PR3 |
-| PR5 | 换菜与预订配置往返保持工作周和餐次上下文 | US3/US4、FR-022~030 | T012-T017 | 菜单页、配置页、booking 纯逻辑/E2E、长期文档；不改服务端、不做最终换肤 | 换菜/预填/返回刷新 E2E、coverage、双端 build | 约 500 行 | PR4 |
-| PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | T018-T019 | `src/app.css`、本功能 quickstart；不改业务规则、不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5、PR-Assets |
+| PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037 | T010-T011 | 菜单页和 merchant E2E；不做换菜/配置/最终换肤 | mutation、部分失败重载、跨周延迟响应 E2E 与双端 build | 约 560 行 | PR3 |
+| PR5-Swap | 换菜只更新目标草稿且旧响应不能污染新工作周 | US3、FR-022~024/030~031/037 | T012-T013 | 菜单页、换菜 E2E、长期文档；不做预订配置或最终换肤 | 局部替换、无候选、只读与延迟响应 E2E | 约 360 行 | PR4 |
+| PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | T014-T017 | 菜单页、配置页、booking 纯逻辑/E2E、长期文档；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
+| PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | T018-T019 | `src/app.css`、本功能 quickstart；不改业务规则、不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5-Booking、PR-Assets |
 
-所有 T001-T021 恰好映射一次；依赖图为 `PR1 → PR-Guard → PR2 → PR3 → PR4 → PR5 → PR6` 与 `PR1 → PR-Assets → PR6`，无环。每片统一完成定义遵循 `AGENTS.md` 与 `pr-review-converge`：独立验证、`git diff --check`、`pnpm verify`、latest-head CI、最新 Codex review、0 unresolved thread、`mergeStateStatus=CLEAN`、rebase merge。
+所有 T001-T021 恰好映射一次；依赖图为 `PR1 → PR-Guard → PR2 → PR3 → PR4 → PR5-Swap → PR5-Booking → PR6` 与 `PR1 → PR-Assets → PR6`，无环。每片统一完成定义遵循 `AGENTS.md` 与 `pr-review-converge`：独立验证、`git diff --check`、`pnpm verify`、latest-head CI、最新 Codex review、0 unresolved thread、`mergeStateStatus=CLEAN`、rebase merge。
 
 ## Phase 1：规格与设计
 
@@ -43,10 +44,10 @@
 
 **Goal**：已经进入预订生命周期的餐次不能通过生成、覆盖或换菜改变菜单。
 
-- [ ] T020 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试并确认失败
-- [ ] T021 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现稳定业务冲突和批量目标预检查，保持 API 形状与生成算法不变
+- [ ] T020 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，并在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加业务层读到 `draft` 后并发开放、菜单 PATCH 按最新状态拒绝的集成测试，确认失败
+- [ ] T021 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现稳定业务冲突和批量目标预检查，在 CMS/Payload 菜单写入边界实现带最新 `orderStatus=draft` 条件的原子保护，并在 `docs/kith-inn-v1/USER-STORIES.md` 与 `TECH-SPEC.md` 明确开放/关闭菜单只读、覆盖仅适用于草稿；保持公开 API 形状与生成算法不变
 
-**Checkpoint**：后端测试证明只读不变量不依赖前端按钮可见性。
+**Checkpoint**：backend 与 CMS 集成测试证明只读不变量不依赖前端按钮，也不受读取后并发开放的 TOCTOU 影响。
 
 ---
 
@@ -83,8 +84,8 @@
 
 **Independent Test**：依次验证空周生成十个目标、部分周只补缺失、单餐独立、覆盖目标列表、取消、菜品池不足和规则放宽。
 
-- [ ] T010 [US2] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 将既有菜单生成流程改成自动周交互，并增加只补缺失、覆盖目标说明、只读餐次排除、分类缺口与放宽规则 E2E，确认新断言失败
-- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；pending 只锁定关联餐次或周主操作
+- [ ] T010 [US2] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 将既有菜单生成流程改成自动周交互，并增加只补缺失、覆盖目标说明、只读餐次排除、分类缺口、放宽规则、部分持久化后失败重载，以及 A 周延迟响应不污染已切换 B 周的 E2E，确认新断言失败
+- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；为生成操作记录目标周和单调 revision，pending 只锁定关联餐次或周主操作，非菜品池失败重载原目标周且不覆盖当前其他周
 
 **Checkpoint**：所有真实生成能力在新周视图中可用，失败不损坏原菜单。
 
@@ -96,8 +97,8 @@
 
 **Independent Test**：对草稿选择一道菜替换并比较其余四道；对无候选和只读餐次核对零写入与入口隐藏。
 
-- [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending 和只读入口隐藏 E2E 并确认新断言失败
-- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、成功合并和无候选菜品库引导
+- [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏，以及换菜延迟响应不污染新工作周的 E2E 并确认新断言失败
+- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与 mutation revision 校验、成功合并和无候选菜品库引导，并在长期文档同步换菜职责
 
 ---
 
@@ -131,14 +132,14 @@
 
 - Phase 1 已完成；T004 可在 PR1 后独立合并，但最迟必须在 PR6 前完成。
 - T020 → T021；服务端保护完成后执行 T005 → T006；PR2 合并后才执行 T007 → T008 → T009。
-- PR3 合并后执行 T010 → T011；PR4 合并后执行 T012 → T013，再执行 T014 → T015 → T016 → T017 并同片收口。
-- T018 依赖 PR5 与 T004；T019 依赖全部运行时代码、自动化和视觉基线。
+- PR3 合并后执行 T010 → T011；PR4 合并后以 PR5-Swap 执行 T012 → T013，再以独立 PR5-Booking 执行 T014 → T015 → T016 → T017。
+- T018 依赖 PR5-Booking 与 T004；T019 依赖全部运行时代码、自动化和视觉基线。
 - 不同时开放多个运行时代码 PR；每片合并后从最新 `origin/main` 开始下一片。
 
 ## 并行机会
 
 - T004 与 PR2 在依赖图上可交换先后，但按单 PR 收口纪律依次推进。
-- T012 与 T014 都修改 merchant E2E，实际串行编写；纯逻辑测试可在页面实现前独立运行。
+- PR5-Swap 与 PR5-Booking 都修改菜单页和 merchant E2E，但属于可独立验收的 user story，必须串行发布为两个 PR；booking 纯逻辑测试可在页面接线前编写。
 - 每片的 lint、typecheck 和文档检查可并行；coverage、E2E 与 build 按资源情况串行。
 
 ## 实施策略

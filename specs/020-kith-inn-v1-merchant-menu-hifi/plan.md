@@ -6,7 +6,7 @@
 
 ## 摘要
 
-在不新增菜单 API、数据模型或改变生成算法的前提下，把现有“日期输入 + 技术按钮 + 31 天列表”改造成自动工作周视图。先在现有生成、覆盖和换菜路由补齐 `open` / `closed` 菜单只读保护，再以纯逻辑建立上海业务日期、五日摘要、可编辑状态、缺失目标和动态 CTA，依次接入周界面、生成与覆盖、换菜和预订配置衔接，最后完成高保真样式和跨端验收。
+在不新增菜单 API、数据模型或改变生成算法的前提下，把现有“日期输入 + 技术按钮 + 31 天列表”改造成自动工作周视图。先在业务路由补充快速预检查，并把 `open` / `closed` 菜单只读保护下沉到 CMS/Payload 原子写入边界，再以纯逻辑建立上海业务日期、五日摘要、可编辑状态、缺失目标和动态 CTA，依次接入周界面、生成与覆盖、换菜和预订配置衔接，最后完成高保真样式和跨端验收。
 
 ## 技术上下文
 
@@ -32,7 +32,7 @@
 
 - `pages/merchant/menu/index.tsx` 当前要求手输日期，查询 31 天并纵向展示所有真实餐次；单餐生成、工作周生成、覆盖确认、换菜、认证失败和接龙兜底已接通。
 - `logic/menu.ts` 已提供合法日期、单餐/工作周目标、分类缺口文案、放宽规则文案和按日期合并餐次；缺少默认周、五日摘要、只补缺失、可编辑状态和 CTA 映射。
-- `services/api.ts` 已严格解析 5 道菜快照、价格、截止时间和 `draft/open/closed`，现有接口足以完成本功能；但后端生成和换菜路由尚未拒绝 `open` / `closed` 写入，必须先补服务端保护。
+- `services/api.ts` 已严格解析 5 道菜快照、价格、截止时间和 `draft/open/closed`，现有接口足以完成本功能；但后端生成和换菜路由尚未拒绝 `open` / `closed` 写入，CMS 的菜单 PATCH 也在读取所有权后无条件更新，必须同时补业务预检查和带最新状态条件的原子持久化保护。
 - `pages/merchant/batches/index.tsx` 已支持价格、截止时间、开放/关闭餐次及分享批次，但仍要求手输日期，尚不读取菜单页上下文。
 - `tests/e2e/merchant.spec.ts` 已覆盖真实单餐/整周生成、覆盖和换菜；需要改造成自动工作周交互并补切周竞态、补齐、只读和预填流程。
 - `MerchantNav` 已固定为“今日 / 菜品 / 菜单 / 订单”；Page 3 不复制概念图中的旧导航。
@@ -40,8 +40,8 @@
 
 ## 宪法检查
 
-- [x] 功能目录归属 `kith-inn-v1`；源码仅允许 `apps/kith-inn-v1-fe/**`，长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
-- [x] 已记录现有页面、逻辑、API、配置入口、测试和缺口；不重写生成算法，仅在现有路由补只读不变量。
+- [x] 功能目录归属 `kith-inn-v1`；源码允许 `apps/kith-inn-v1-fe/**`、`apps/kith-inn-v1-be/src/routes/mealSlots*`、`apps/cms/src/app/api/internal/kiv1/meal-slots/**` 及对应测试，原子条件若需 collection hook 则限于 `packages/kith-inn-v1-payload/src/payload/collections/MealSlots.ts` 及测试；长期文档仅允许 `docs/kith-inn-v1/{USER-STORIES,TECH-SPEC}.md`，设计资产仅允许明确列出的非 Prompt PNG。
+- [x] 已记录现有页面、逻辑、API、CMS/Payload 写入边界、配置入口、测试和缺口；不重写生成算法，仅补只读不变量和页面衔接。
 - [x] 含多种异步状态且预计多个 PR，使用全套 spec；每片单一目标并独立验证。
 - [x] 文档主体使用中文，测试先行，合并前使用 `pr-review-converge`。
 - [x] Phase 1 复核：未新增 API、实体、依赖或平行状态系统，全部 gate 通过。
@@ -50,20 +50,21 @@
 
 | PR | 单一目标 / 核心不变量 | 关联故事/需求 | 主要路径 | 明确非目标 | 独立验证 | 预计人工 diff | 依赖 |
 |----|----------------------|---------------|----------|------------|----------|---------------|------|
-| PR1 | 固化 Page 3 产品边界、视图状态和可执行切片 | US1-US4、FR-001~034 | `specs/020-kith-inn-v1-merchant-menu-hifi/**` | 不改运行时代码 | checklist、Spec Kit 前置检查、任务格式 | 约 650 行 | 无 |
+| PR1 | 固化 Page 3 产品边界、视图状态和可执行切片 | US1-US4、FR-001~037 | `specs/020-kith-inn-v1-merchant-menu-hifi/**` | 不改运行时代码 | checklist、Spec Kit 前置检查、任务格式 | 约 700 行 | 无 |
 | PR-Assets | 让独立 Page 3 参考图可由仓库读取 | SC-005 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png` | 不提交任何 `*-prompt.md`；不改代码 | PNG 可读、尺寸和内容核对 | 二进制资产 | PR1 |
-| PR-Guard | 已开放或关闭餐次的菜单在服务端不可再变更 | US2/US3、FR-014 | `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 及测试 | 不改 API 形状、生成算法或 UI | backend coverage、lint、typecheck | 约 180 行 | PR1 |
+| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、必要的 Payload collection hook、长期文档 | 不改公开 API 形状、生成算法或 UI | backend/CMS 并发状态测试、coverage、lint、typecheck | 约 420 行 | PR1 |
 | PR2 | 工作周及操作目标在任意时区下确定且可测试 | US1/US2、FR-001~008/013~025/035~036 | `src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*` | 不改页面 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard |
 | PR3 | 页面自动加载并只展示所选日午晚餐的真实只读状态 | US1、FR-001~014/029~033 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、长期文档 | 不接新 mutation；不做最终换肤 | 先写周视图 E2E；lint/typecheck/coverage/build | 约 520 行 | PR2 |
-| PR4 | 单餐、整周、补齐和覆盖只作用于正确可编辑目标 | US2、FR-015~021/024~026/031 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、必要逻辑测试 | 不做换菜/配置衔接/最终样式 | mutation E2E、coverage、双端 build | 约 480 行 | PR3 |
-| PR5 | 换菜与预订配置往返保持当前周和餐次上下文 | US3/US4、FR-022~030 | 菜单页、`pages/merchant/batches/index.tsx`、相关逻辑/E2E、长期文档 | 不改服务端契约；不做最终换肤 | 换菜/预填/返回刷新 E2E、coverage、双端 build | 约 500 行 | PR4 |
-| PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | `src/app.css`、本功能 `quickstart.md` | 不再改变业务规则；不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5、PR-Assets |
+| PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、必要逻辑测试 | 不做换菜/配置衔接/最终样式 | mutation、部分失败重载与跨周延迟响应 E2E，coverage、双端 build | 约 560 行 | PR3 |
+| PR5-Swap | 换菜只更新目标草稿且旧响应不能污染新工作周 | US3、FR-022~024/030~031/037 | 菜单页、换菜逻辑与 merchant E2E、长期文档 | 不做预订配置衔接或最终换肤 | 局部替换、无候选、只读与跨周延迟响应 E2E | 约 360 行 | PR4 |
+| PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | 菜单页、`pages/merchant/batches/index.tsx`、booking 纯逻辑/E2E、长期文档 | 不改服务端契约；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
+| PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | `src/app.css`、本功能 `quickstart.md` | 不再改变业务规则；不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5-Booking、PR-Assets |
 
 PR1 超过默认 400 行是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。
 
-PR3~PR6 略高于默认预算，但分别只有只读周视图、生成目标、流程衔接和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。
+PR-Guard、PR3、PR4 与 PR6 略高于默认预算，但分别只有原子只读保护、只读周视图、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
 
-依赖链为 `PR1 → PR-Guard → PR2 → PR3 → PR4 → PR5 → PR6`；资产链为 `PR1 → PR-Assets → PR6`。同一时间只推进一个运行时代码 PR。
+依赖链为 `PR1 → PR-Guard → PR2 → PR3 → PR4 → PR5-Swap → PR5-Booking → PR6`；资产链为 `PR1 → PR-Assets → PR6`。同一时间只推进一个运行时代码 PR。
 
 ## 项目结构
 
@@ -99,13 +100,20 @@ apps/kith-inn-v1-be/src/routes/
 ├── mealSlots.ts
 └── mealSlots.test.ts
 
+apps/cms/
+├── src/app/api/internal/kiv1/meal-slots/[id]/route.ts
+└── tests/kiv1-meal-slots.test.ts
+
+packages/kith-inn-v1-payload/src/payload/collections/
+└── MealSlots.ts（仅当原子条件需要 collection hook）
+
 docs/kith-inn-v1/
 ├── USER-STORIES.md
 ├── TECH-SPEC.md
 └── design/merchant-menu-hifi-v0.2.png
 ```
 
-**结构决策**：新增 `menuWeek.ts` 承载不依赖 UI 的工作周视图模型；保留 `menu.ts` 的既有生成响应逻辑。页面只负责任务编排和渲染；API 形状不变，后端路由补充菜单只读保护。
+**结构决策**：新增 `menuWeek.ts` 承载不依赖 UI 的工作周视图模型；保留 `menu.ts` 的既有生成响应逻辑。页面只负责任务编排和渲染；API 形状不变，后端路由负责快速预检查，CMS/Payload 写入边界负责基于最新状态的原子菜单只读保护。
 
 ## 复杂度跟踪
 
