@@ -2,13 +2,11 @@ import { sql } from "@payloadcms/db-postgres";
 import {
   APIError,
   type CollectionBeforeChangeHook,
-  type CollectionBeforeOperationHook,
   type CollectionConfig,
   type PayloadRequest
 } from "payload";
 
 const COLLECTION = "kiv1_meal_slots";
-const TARGET_CONTEXT_KEY = "kiv1MealSlotMenuGuardTargetId";
 
 type MealSlot = {
   id: number | string;
@@ -58,6 +56,11 @@ function menuChanged(data: Record<string, unknown>, latest: MealSlot): boolean {
     normalizedDate(data.generatedAt) !== normalizedDate(latest.generatedAt);
 }
 
+function statusRegresses(current: unknown, requested: unknown): boolean {
+  return (current === "open" && requested === "draft") ||
+    (current === "closed" && requested !== "closed");
+}
+
 async function transactionSession(req: PayloadRequest): Promise<unknown> {
   const transactionId = await req.transactionID;
   if (transactionId == null) unavailable();
@@ -89,41 +92,31 @@ async function lockedLatest(req: PayloadRequest, id: number | string): Promise<M
 
 /**
  * Persistence boundary shared by local API, Admin and REST writes. Payload starts
- * the transaction before collection hooks; a beforeOperation hook records the
- * target identifier, while all protected state is read only after locking.
+ * the transaction before collection hooks. originalDoc supplies only the row
+ * identifier (including bulk updates); protected state is read after locking.
  */
 export const guardKiv1MealSlotMenuChange: CollectionBeforeChangeHook = async ({
   data,
   operation,
+  originalDoc,
   req
 }) => {
   if (operation !== "update" ||
-      (!Object.hasOwn(data, "menuItems") && !Object.hasOwn(data, "generatedAt"))) {
+      (!Object.hasOwn(data, "menuItems") &&
+       !Object.hasOwn(data, "generatedAt") &&
+       !Object.hasOwn(data, "orderStatus"))) {
     return data;
   }
-  const id = req.context[TARGET_CONTEXT_KEY];
+  const id = originalDoc?.id;
   if (typeof id !== "number" && typeof id !== "string") unavailable();
   const latest = await lockedLatest(req, id);
-  if (!menuChanged(data, latest)) return data;
-  if (latest.orderStatus !== "draft") {
+  if (menuChanged(data, latest) && latest.orderStatus !== "draft") {
     throw new APIError("meal-slot-menu-locked", 409);
   }
-  return data;
-};
-
-export const captureKiv1MealSlotMenuGuardTarget: CollectionBeforeOperationHook = ({
-  args,
-  operation,
-  req
-}) => {
-  const id = operation === "update" && typeof args === "object" && args !== null && "id" in args
-    ? (args as { id?: unknown }).id
-    : undefined;
-  if (typeof id === "number" || typeof id === "string") {
-    req.context[TARGET_CONTEXT_KEY] = id;
-  } else {
-    delete req.context[TARGET_CONTEXT_KEY];
+  if (Object.hasOwn(data, "orderStatus") && statusRegresses(latest.orderStatus, data.orderStatus)) {
+    throw new APIError("meal-slot-order-status-locked", 409);
   }
+  return data;
 };
 
 export function withKiv1MealSlotMenuGuard(collection: CollectionConfig): CollectionConfig {
@@ -132,11 +125,7 @@ export function withKiv1MealSlotMenuGuard(collection: CollectionConfig): Collect
     ...collection,
     hooks: {
       ...collection.hooks,
-      beforeChange: [...(collection.hooks?.beforeChange ?? []), guardKiv1MealSlotMenuChange],
-      beforeOperation: [
-        ...(collection.hooks?.beforeOperation ?? []),
-        captureKiv1MealSlotMenuGuardTarget
-      ]
+      beforeChange: [...(collection.hooks?.beforeChange ?? []), guardKiv1MealSlotMenuChange]
     }
   };
 }
