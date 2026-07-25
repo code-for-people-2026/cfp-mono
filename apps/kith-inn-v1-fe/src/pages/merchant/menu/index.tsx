@@ -118,6 +118,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const contextRevision = useRef(0);
   const viewRevision = useRef(0);
   const targetRevisions = useRef(new Map<string, number>());
+  const pendingTargetKeysRef = useRef<string[]>([]);
+  const refreshAfterGeneration = useRef(false);
   const [currentWeek, setCurrentWeek] = useState(firstWeek);
   const [selectedDate, setSelectedDate] = useState(firstSelectedDate);
   const [slots, setSlots] = useState<MealSlot[]>([]);
@@ -168,12 +170,17 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     }
   };
 
-  useImperativeHandle(pageRef, () => ({
-    refresh: () => {
-      if (merchantRoute(sessions.getSession()) !== "login" && pendingTargetKeys.length === 0) {
-        void loadWeek(weekStartRef.current, true);
-      }
+  const requestWeekRefresh = () => {
+    if (merchantRoute(sessions.getSession()) === "login") return;
+    if (pendingTargetKeysRef.current.length > 0) {
+      refreshAfterGeneration.current = true;
+      return;
     }
+    void loadWeek(weekStartRef.current, true);
+  };
+
+  useImperativeHandle(pageRef, () => ({
+    refresh: requestWeekRefresh
   }));
 
   useEffect(() => {
@@ -187,6 +194,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       mutationRevision.current += 1;
       contextRevision.current += 1;
       viewRevision.current += 1;
+      refreshAfterGeneration.current = false;
     };
   }, []);
 
@@ -210,6 +218,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setCurrentWeek(target);
     setSelectedDate(targetDate);
     setSlots([]);
+    pendingTargetKeysRef.current = [];
+    refreshAfterGeneration.current = false;
     setPendingTargetKeys([]);
     setReplaceConfirmations([]);
     setGenerationIssue(null);
@@ -248,7 +258,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setRelaxed([]);
     setReplaceConfirmations((current) => current.filter((confirmation) =>
       !targetsOverlap(confirmation.originalTargets, targets)));
-    setPendingTargetKeys((current) => [...new Set([...current, ...targetKeys])]);
+    pendingTargetKeysRef.current = [...new Set([...pendingTargetKeysRef.current, ...targetKeys])];
+    setPendingTargetKeys(pendingTargetKeysRef.current);
     return {
       contextRevision: contextRevision.current,
       revisions,
@@ -264,8 +275,13 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const allTargetsMatch = (context: GenerationContext) =>
     context.targetKeys.every((key) => targetMatches(context, key));
   const finishGeneration = (context: GenerationContext) => {
-    setPendingTargetKeys((current) => current.filter((key) =>
-      !context.targetKeys.includes(key) || !targetMatches(context, key)));
+    pendingTargetKeysRef.current = pendingTargetKeysRef.current.filter((key) =>
+      !context.targetKeys.includes(key) || !targetMatches(context, key));
+    setPendingTargetKeys(pendingTargetKeysRef.current);
+    if (pendingTargetKeysRef.current.length === 0 && refreshAfterGeneration.current) {
+      refreshAfterGeneration.current = false;
+      void loadWeek(weekStartRef.current, true);
+    }
   };
 
   const reloadFailedGeneration = async (context: GenerationContext) => {
@@ -328,6 +344,11 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
 
   const swap = async (slot: MealSlot, offeringId: string | number) => {
     const revision = mutationRevision.current;
+    const key = targetKey(slot);
+    const targetRevision = (targetRevisions.current.get(key) ?? 0) + 1;
+    targetRevisions.current.set(key, targetRevision);
+    const isCurrent = () => revision === mutationRevision.current &&
+      targetRevision === targetRevisions.current.get(key);
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
@@ -335,13 +356,13 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       !targetsOverlap(confirmation.originalTargets, [slot])));
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
-      if (revision !== mutationRevision.current) return;
+      if (!isCurrent()) return;
       loadRevision.current += 1;
       setSlots((current) => replaceMealSlot(current, result.doc));
       setLegacySlots((current) => replaceMealSlot(current, result.doc));
       setRelaxed(result.relaxedRules);
     } catch (error) {
-      if (revision !== mutationRevision.current) return;
+      if (!isCurrent()) return;
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "换菜失败", icon: "none" });
     }
@@ -386,8 +407,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     <View className="page menu-page">
       <View className="menu-heading">
         <Text className="title">本周菜单</Text>
-        <Button size="mini" disabled={pendingTargetKeys.length > 0}
-          onClick={() => void loadWeek(currentWeek, true)}>刷新</Button>
+        <Button size="mini" onClick={requestWeekRefresh}>刷新</Button>
       </View>
       <View className="menu-week-heading">
         <Button aria-label="上一周" size="mini" onClick={() => changeWeek(-1)}>‹</Button>
