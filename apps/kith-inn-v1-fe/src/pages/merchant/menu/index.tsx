@@ -12,6 +12,7 @@ import {
 } from "react";
 import type { MealSlot, MealSlotTarget, Occasion, RelaxedRule } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
+import { bookingConfigUrl } from "@/logic/bookingBatches";
 import {
   generationErrorText,
   needsReplaceConfirmation,
@@ -433,11 +434,19 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         {(meal.slot === null || meal.editable) && (
           <View className="menu-meal-actions">
             {meal.slot && (
-              <Button
-                size="mini"
-                disabled={isBusy}
-                onClick={() => setSwapSelection(meal.slot)}
-              >{isSwapping ? "换菜中" : "换一道"}</Button>
+              <>
+                <Button
+                  size="mini"
+                  disabled={isBusy}
+                  onClick={() => setSwapSelection(meal.slot)}
+                >{isSwapping ? "换菜中" : "换一道"}</Button>
+                <Button
+                  size="mini"
+                  onClick={() => void Taro.navigateTo({
+                    url: bookingConfigUrl(currentWeek, { date: meal.date, occasion: meal.occasion })
+                  })}
+                >设置价格与截止时间</Button>
+              </>
             )}
             <Button
               size="mini"
@@ -540,7 +549,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
               if (primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") {
                 void generate(weekMissingTargets);
               } else {
-                void Taro.navigateTo({ url: "/pages/merchant/batches/index" });
+                void Taro.navigateTo({ url: bookingConfigUrl(currentWeek) });
               }
             }}
           >
@@ -582,7 +591,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         </View>
       )}
 
-      <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
       {jielongImportEnabled(process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT) && (
         <View className="card fallback-entry">
           <Text className="meta">仅在顾客预订登记无法上线时使用</Text>

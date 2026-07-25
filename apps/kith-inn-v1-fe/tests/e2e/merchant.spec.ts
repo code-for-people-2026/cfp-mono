@@ -734,9 +734,11 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
   expect(ranges).toContain("2026-07-20:2026-07-24");
 
   const requestsBeforeReturn = ranges.length;
-  await taroButton(page, /^预订批次$/).click();
+  await page.locator(".menu-day").filter({ hasText: "周二" }).click();
+  await page.locator(".menu-meal-card").filter({ hasText: "午餐" })
+    .locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
   await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
-  await page.goBack();
+  await taroButton(page, /^返回菜单$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/menu\/index/);
   await expect.poll(() => ranges.length).toBeGreaterThan(requestsBeforeReturn);
 });
@@ -755,6 +757,9 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   let releaseConflict!: () => void;
   const conflict = new Promise<void>((resolve) => { releaseConflict = resolve; });
   let augustRequests = 0;
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
   await page.route("**/merchant/meal-slots?*", async (route) => {
     const from = new URL(route.request().url()).searchParams.get("from");
     if (from === "2026-07-20") {
@@ -778,7 +783,8 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
         await refresh;
         return route.fulfill({ status: 500, body: "{}" });
       }
-      if (augustRequests === 4) await staleRefresh;
+      // 进入配置页会自动加载一次工作周，返回刷新后下一次手动刷新才是待淘汰旧读取。
+      if (augustRequests === 5) await staleRefresh;
       return route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -831,13 +837,6 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await taroButton(page, /^重试$/).click();
   await expect(page.getByText("7月20日－24日", { exact: true })).toBeVisible();
 
-  await page.clock.fastForward(2 * 86_400_000);
-  const requestsBeforeDefaultReturn = currentAttempts;
-  await taroButton(page, /^预订批次$/).click();
-  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^菜单$/ }).click();
-  await expect(page.locator(".menu-page:visible").getByText("7月20日－24日", { exact: true })).toBeVisible();
-  await expect.poll(() => currentAttempts).toBeGreaterThan(requestsBeforeDefaultReturn);
-
   const currentMenu = page.locator(".menu-page:visible");
   await currentMenu.locator(".menu-meal-card").filter({ hasText: "午餐" })
     .locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
@@ -859,9 +858,10 @@ test("菜单工作周以后发请求为准并在失败刷新时保留数据", as
   await expect(currentMenu.getByText("刷新失败，当前菜单仍可查看", { exact: true })).toBeVisible();
 
   const requestsBeforeBack = augustRequests;
-  await taroButton(page, /^预订批次$/).click();
+  await currentMenu.locator(".menu-meal-card").filter({ hasText: "午餐" })
+    .locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
   await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
-  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^菜单$/ }).click();
+  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^返回菜单$/ }).click();
   await expect(page.locator(".menu-page:visible").getByText("8月3日－7日", { exact: true })).toBeVisible();
   await expect.poll(() => augustRequests).toBeGreaterThan(requestsBeforeBack);
 
@@ -1582,6 +1582,73 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
   await expect(page.locator(".menu-meal-card").filter({ hasText: "晚餐" }).locator(".menu-meal-names")).toBeVisible();
 });
 
+test("从目标餐次预填配置并在返回后刷新当前工作周", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  const dates = ["2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24"];
+  let docs = dates.flatMap((date, dateIndex) => (["lunch", "dinner"] as const).map((occasion, occasionIndex) => ({
+    ...slot(date, occasion),
+    id: 800 + dateIndex * 2 + occasionIndex,
+    orderStatus: date === "2026-07-22" && occasion === "dinner" ? "draft" as const : "open" as const,
+    orderDeadline: date === "2026-07-22" && occasion === "dinner"
+      ? null
+      : "2026-07-24T10:00:00.000Z",
+    priceCents: null
+  })));
+  const ranges: string[] = [];
+  await page.route("**/merchant/meal-slots?*", (route) => {
+    const url = new URL(route.request().url());
+    ranges.push(`${url.searchParams.get("from")}:${url.searchParams.get("to")}`);
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ docs }) });
+  });
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/meal-slots/805/booking-config", (route) => {
+    const input = route.request().postDataJSON();
+    docs = docs.map((doc) => doc.id === 805 ? { ...doc, ...input } : doc);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ doc: docs.find(({ id }) => id === 805) })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  const dinnerCard = page.locator(".menu-meal-card").filter({ hasText: "晚餐" });
+  await expect(dinnerCard).toContainText("待设置");
+  await dinnerCard.locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
+  await expect(page).toHaveURL(/pages\/merchant\/batches\/index\?weekStart=2026-07-20&date=2026-07-22&occasion=dinner$/);
+  await expect(page.getByRole("textbox", { name: "批次起始日期" })).toHaveValue("2026-07-20");
+  await expect.poll(() => ranges.filter((range) => range === "2026-07-20:2026-07-24").length).toBeGreaterThan(1);
+  const target = page.locator(".batch-slot.target");
+  await expect(target).toContainText("2026-07-22 晚餐");
+  await expect(target).toContainText("当前餐次");
+  await target.getByRole("textbox", { name: "截止时间" }).fill("2026-07-22T10:30");
+  const configured = page.waitForRequest("**/merchant/meal-slots/805/booking-config");
+  await target.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();
+  expect((await configured).postDataJSON()).toEqual({
+    priceCents: null,
+    orderDeadline: "2026-07-22T02:30:00.000Z",
+    orderStatus: "open"
+  });
+
+  const requestsBeforeReturn = ranges.length;
+  await taroButton(page, /^返回菜单$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/menu\/index$/);
+  await expect.poll(() => ranges.length).toBeGreaterThan(requestsBeforeReturn);
+  const returnedMenu = page.locator(".menu-page:visible");
+  const returnedDinner = returnedMenu.locator(".menu-meal-card").filter({ hasText: "晚餐" });
+  await expect(returnedMenu.locator(".menu-day.selected")).toContainText("周三");
+  await expect(returnedDinner).toContainText("预订中");
+  await expect(returnedDinner).toContainText("商家默认价");
+  await expect(returnedDinner).toContainText("10:30 截止");
+  await returnedMenu.locator("taro-button-core").filter({ hasText: /^查看预订与分享$/ }).click();
+  expect(new URL(page.url()).search).toBe("?weekStart=2026-07-20");
+  await expect(page.getByRole("textbox", { name: "批次起始日期" })).toHaveValue("2026-07-20");
+});
+
 test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => {
   const suffix = Date.now().toString(36);
   const future = new Date(Date.now() + (120 + Date.now() % 100) * 86_400_000);
@@ -1608,11 +1675,9 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
   await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
   await expect(lunchCard.locator(".menu-meal-names")).toBeVisible();
-  await taroButton(page, /^预订批次$/).click();
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
 
-  await page.getByRole("textbox", { name: "批次起始日期" }).fill(targetDate);
   const startedAt = Date.now();
-  await taroButton(page, /^查看餐次$/).click();
   const slot = page.locator(".batch-slot").filter({ hasText: `${targetDate} 午餐` });
   await slot.getByRole("textbox", { name: "价格（元）" }).fill("28");
   await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T09:00`);

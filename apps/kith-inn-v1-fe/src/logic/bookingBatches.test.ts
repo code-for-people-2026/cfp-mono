@@ -2,6 +2,8 @@ import { expect, it, vi } from "vitest";
 import type { BookingBatch, MealSlot } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
+  bookingConfigContext,
+  bookingConfigUrl,
   bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
@@ -25,6 +27,35 @@ const slot = (overrides: Partial<MealSlot> = {}): MealSlot => ({
   priceCents: null,
   generatedAt: "2026-07-10T01:00:00.000Z",
   ...overrides
+});
+
+it("parses booking context and degrades invalid target parameters", () => {
+  expect(bookingConfigContext({
+    weekStart: "2026-07-20",
+    date: "2026-07-22",
+    occasion: "dinner"
+  })).toEqual({
+    weekStart: "2026-07-20",
+    target: { date: "2026-07-22", occasion: "dinner" }
+  });
+  expect(bookingConfigContext({ weekStart: "2026-07-20" }))
+    .toEqual({ weekStart: "2026-07-20", target: null });
+  expect(bookingConfigContext({ weekStart: "2026-07-20", date: "2026-07-25", occasion: "lunch" }))
+    .toEqual({ weekStart: "2026-07-20", target: null });
+  expect(bookingConfigContext({ weekStart: "2026-07-20", date: "bad", occasion: "supper" }))
+    .toEqual({ weekStart: "2026-07-20", target: null });
+  expect(bookingConfigContext({ weekStart: "2026-07-21" })).toBeNull();
+  expect(bookingConfigContext({ weekStart: "2026-02-31" })).toBeNull();
+  expect(bookingConfigContext({ weekStart: "9999-99-99" })).toBeNull();
+  expect(bookingConfigContext({ weekStart: ["2026-07-20"] })).toBeNull();
+  expect(bookingConfigContext({})).toBeNull();
+});
+
+it("builds booking configuration URLs for a week or meal target", () => {
+  expect(bookingConfigUrl("2026-07-20"))
+    .toBe("/pages/merchant/batches/index?weekStart=2026-07-20");
+  expect(bookingConfigUrl("2026-07-20", { date: "2026-07-22", occasion: "dinner" }))
+    .toBe("/pages/merchant/batches/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
 });
 
 it("selects only open unexpired slots and toggles stable ids", () => {
