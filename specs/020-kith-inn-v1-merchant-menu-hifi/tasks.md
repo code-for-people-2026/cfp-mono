@@ -80,9 +80,9 @@
 
 **Independent Test**：mock 空周、部分周和完整周，验证默认周、日期条、两张卡、截止到点重算、最后请求获胜和保留数据刷新；同时回归现有单餐/整周生成、覆盖确认和换菜入口。
 
-- [ ] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E；使用可控时钟跨过最近 `open` 截止点并断言无需刷新即显示已截止；使用可复现本地 seed 从进入菜单页开始计时，断言工作周与午晚餐状态在 3 秒内可见；同时保留现有单餐/整周生成、覆盖确认和换菜回归断言，并确认新周视图断言失败
-- [ ] T008 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入 `menuWeek` 视图模型，实现认证、自动加载、切周/切日、餐次卡、刷新和错误态；调度到下一个尚未截止的 `open` 截止点，到点推进本地时钟 revision 并重算，周数据变化、切周和卸载时重建或清理计时器；保留现有生成、覆盖确认和换菜兼容入口直到 PR4/PR5-Swap 的对应新流程独立通过后再删除，并保留低优先级接龙入口与 `MerchantNav`
-- [ ] T009 [US1] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步自动工作周、上海日期、截止主动重算、latest-request-wins、所选日双餐次和迁移期间不回退既有写操作
+- [X] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E；使用可控时钟跨过最近 `open` 截止点并断言无需刷新即显示已截止；使用可复现本地 seed 从进入菜单页开始计时，断言工作周与午晚餐状态在 3 秒内可见；同时保留现有单餐/整周生成、覆盖确认和换菜回归断言，并确认新周视图断言失败
+- [X] T008 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入 `menuWeek` 视图模型，实现认证、自动加载、切周/切日、餐次卡、刷新和错误态；调度到下一个尚未截止的 `open` 截止点，到点推进本地时钟 revision 并重算，周数据变化、切周和卸载时重建或清理计时器；保留现有生成、覆盖确认和换菜兼容入口直到 PR4/PR5-Swap 的对应新流程独立通过后再删除，并保留低优先级接龙入口与 `MerchantNav`
+- [X] T009 [US1] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步自动工作周、上海日期、截止主动重算、latest-request-wins、所选日双餐次和迁移期间不回退既有写操作
 
 **Checkpoint**：不执行菜单写入也能独立验收完整周工作区；现有 API 和认证保持不变。
 
