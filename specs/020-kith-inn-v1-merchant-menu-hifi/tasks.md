@@ -46,7 +46,7 @@
 **Goal**：已经进入预订生命周期的餐次不能通过生成、覆盖或换菜改变菜单。
 
 - [X] T020 先新增 `apps/cms/tests/kiv1-meal-slot-menu-guard.test.ts`，覆盖 direct local API、admin/REST 等价更新；增加 Postgres 两事务交错测试，明确让菜单请求与开放请求都先看到 `draft`、开放先提交、菜单随后取得行锁并重读后被拒绝；增加 SQLite 即时事务和事务/锁不可用时 fail-closed 测试，确认失败
-- [X] T021 新增 `apps/cms/src/lib/kiv1-meal-slot-menu-guard.ts`，并在 `apps/cms/payload.config.ts` 组合导入的 `MealSlots` collection 时追加公共 `beforeChange` hook：Postgres `SELECT … FOR UPDATE` 持锁至提交、SQLite 复用即时写事务，锁内重读最新 `orderStatus`，非 `draft` 或无法取得事务/锁会话时拒绝菜单变更；不依赖 hook `originalDoc`，不让 `packages/kith-inn-v1-payload` 导入 CMS 模块。同时在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 记录开放/关闭菜单只读不变量及配置层事务架构，不修改 service route 或公开 API
+- [X] T021 新增 `apps/cms/src/lib/kiv1-meal-slot-menu-guard.ts`，并在 `apps/cms/payload.config.ts` 组合导入的 `MealSlots` collection 时追加公共 `beforeChange` hook：Postgres `SELECT … FOR UPDATE` 持锁至提交、SQLite 复用即时写事务，锁内重读最新 `orderStatus`，非 `draft` 或无法取得事务/锁会话时拒绝菜单变更；只使用 hook `originalDoc.id` 定位当前行，不信任其中的菜单或状态快照，不让 `packages/kith-inn-v1-payload` 导入 CMS 模块。同时在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 记录开放/关闭菜单只读不变量及配置层事务架构，不修改 service route 或公开 API
 
 **Checkpoint**：直接 Payload 与数据库交错测试证明只读不变量不依赖前端按钮，也不受两个请求都曾读到 `draft` 的 TOCTOU 影响。
 
