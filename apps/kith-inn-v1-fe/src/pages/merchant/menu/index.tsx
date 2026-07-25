@@ -1,6 +1,15 @@
 import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  createRef,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import type { MealSlot, MealSlotTarget, Occasion, RelaxedRule } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
 import {
@@ -66,24 +75,19 @@ function priceText(value: number | null): string {
   return value === null ? "商家默认价" : `¥${(value / 100).toFixed(value % 100 === 0 ? 0 : 2)} / 份`;
 }
 
-function WeappMenuLifecycle({ onReturn }: { onReturn: () => void }) {
-  const hasShown = useRef(false);
-  Taro.useDidShow(() => {
-    if (hasShown.current) onReturn();
-    else hasShown.current = true;
-  });
-  return null;
-}
+type MenuPageHandle = { refresh: () => void };
 
-export default function MerchantMenu() {
+const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_props, pageRef) {
   const initialView = useRef(rememberedView).current;
   const firstWeek = useRef(initialView?.weekStart ?? initialWeekStart(new Date())).current;
+  const firstSelectedDate = useRef(initialView?.selectedDate ??
+    buildMenuWeek(firstWeek, [], new Date()).selectedDate).current;
+  if (rememberedView === null) rememberedView = { weekStart: firstWeek, selectedDate: firstSelectedDate };
   const weekStartRef = useRef(firstWeek);
   const loadRevision = useRef(0);
   const mutationRevision = useRef(0);
   const [currentWeek, setCurrentWeek] = useState(firstWeek);
-  const [selectedDate, setSelectedDate] = useState(() =>
-    initialView?.selectedDate ?? buildMenuWeek(firstWeek, [], new Date()).selectedDate);
+  const [selectedDate, setSelectedDate] = useState(firstSelectedDate);
   const [slots, setSlots] = useState<MealSlot[]>([]);
   const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">("loading");
   const [refreshing, setRefreshing] = useState(false);
@@ -120,6 +124,12 @@ export default function MerchantMenu() {
       if (revision === loadRevision.current && targetWeek === weekStartRef.current) setRefreshing(false);
     }
   };
+
+  useImperativeHandle(pageRef, () => ({
+    refresh: () => {
+      if (merchantRoute(sessions.getSession()) !== "login") void loadWeek(weekStartRef.current, true);
+    }
+  }));
 
   useEffect(() => {
     if (merchantRoute(sessions.getSession()) === "login") {
@@ -238,11 +248,6 @@ export default function MerchantMenu() {
 
   return (
     <View className="page menu-page">
-      {process.env.TARO_ENV === "weapp" && (
-        <WeappMenuLifecycle onReturn={() => {
-          if (merchantRoute(sessions.getSession()) !== "login") void loadWeek(weekStartRef.current, true);
-        }} />
-      )}
       <View className="menu-heading">
         <Text className="title">本周菜单</Text>
         <Button size="mini" onClick={() => void loadWeek(currentWeek, true)}>刷新</Button>
@@ -341,6 +346,7 @@ export default function MerchantMenu() {
               </View>
               <Button
                 size="mini"
+                disabled={loadState !== "loaded"}
                 aria-label={`换掉 ${item.nameSnapshot}`}
                 onClick={() => void swap(slot, item.offeringId)}
               >换菜</Button>
@@ -351,4 +357,18 @@ export default function MerchantMenu() {
       <MerchantNav active="menu" />
     </View>
   );
+});
+
+export default class MerchantMenu extends Component {
+  private readonly page = createRef<MenuPageHandle>();
+  private hasShown = false;
+
+  componentDidShow() {
+    if (this.hasShown) this.page.current?.refresh();
+    else this.hasShown = true;
+  }
+
+  render() {
+    return <MerchantMenuView ref={this.page} />;
+  }
 }
