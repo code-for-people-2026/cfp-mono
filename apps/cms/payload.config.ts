@@ -6,6 +6,7 @@ import { collections as kithInnV1Collections } from "@cfp/kith-inn-v1-payload";
 import { assertCmsProductionEnv } from "./src/config/production";
 import { ensureConstraints } from "./src/db/ensureConstraints";
 import { databasePushEnabled } from "./migrations/production";
+import { withKiv1MealSlotMenuGuard } from "./src/lib/kiv1-meal-slot-menu-guard";
 
 // Auto-load .env (Node 24 native process.loadEnvFile — no new dep). next dev
 // loads .env itself, but tsx entry points (seed/run.ts, etc.) don't, so without
@@ -77,7 +78,7 @@ export default buildConfig({
   // @cfp/kith-inn-payload). We hand-write shapes and ship no generated
   // payload-types.ts (mirrors apps/website); `req.user` stays loosely typed and
   // is narrowed at use sites via isOperator/isAuthorizedOperator.
-  collections: [...kithInnCollections, ...kithInnV1Collections],
+  collections: [...kithInnCollections, ...kithInnV1Collections.map(withKiv1MealSlotMenuGuard)],
   typescript: {
     autoGenerate: false,
   },
