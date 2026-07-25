@@ -207,6 +207,7 @@ POST   /customer/orders/:id/cancel
 - 菜品池不足时返回明确错误，不发明菜。
 - 日历日保存为合法 `YYYY-MM-DD`，统一按 Asia/Shanghai 解释。
 - 菜单快照只允许在餐次最新 `orderStatus=draft` 时改变；`open`（包括截止后）和 `closed` 均只读，过期截止时间本身不锁定草稿菜单。
+- 持久化边界拒绝 `open → draft` 及所有 `closed → 非 closed` 回退，防止先降级状态再绕过菜单只读保护。
 - `apps/cms/payload.config.ts` 在组合 v1 `MealSlots` collection 时追加 app-local `beforeChange` hook，使 local API、REST 和 Admin 共用持久化保护，Payload 包继续保持 adapter-neutral。
 - hook 复用 Payload 已建立的写事务：Postgres 对目标行执行 `SELECT … FOR UPDATE` 后重读，SQLite 复用 `BEGIN IMMEDIATE` 后重读；只信任锁内最新状态，不信任 hook 的旧状态快照，事务或锁会话不可用时拒绝写入。
 
