@@ -15,6 +15,8 @@ export type BookingConfigContext = {
   target: MealSlotTarget | null;
 };
 
+export type BookingReturnMode = "navigate-to" | "redirect-to" | "navigate-back";
+
 function calendarDate(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
   const instant = new Date(`${value}T00:00:00.000Z`);
@@ -41,6 +43,15 @@ export function bookingConfigUrl(weekStart: string, target?: MealSlotTarget): st
   return target
     ? `${base}&date=${encodeURIComponent(target.date)}&occasion=${encodeURIComponent(target.occasion)}`
     : base;
+}
+
+export function bookingReturnMode(input: {
+  hasContext: boolean;
+  platform: string | undefined;
+  pageCount: number;
+}): BookingReturnMode {
+  if (!input.hasContext) return "navigate-to";
+  return input.platform === "h5" || input.pageCount <= 1 ? "redirect-to" : "navigate-back";
 }
 
 export function selectableBookingSlots(slots: MealSlot[], now: string): MealSlot[] {

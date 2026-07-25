@@ -3,6 +3,7 @@ import type { BookingBatch, MealSlot } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
   bookingConfigContext,
+  bookingReturnMode,
   bookingConfigUrl,
   bookingDeadlineInputValue,
   buildBookingConfig,
@@ -56,6 +57,13 @@ it("builds booking configuration URLs for a week or meal target", () => {
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20");
   expect(bookingConfigUrl("2026-07-20", { date: "2026-07-22", occasion: "dinner" }))
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
+});
+
+it("chooses a safe menu return mode for platform and page stack", () => {
+  expect(bookingReturnMode({ hasContext: false, platform: "weapp", pageCount: 1 })).toBe("navigate-to");
+  expect(bookingReturnMode({ hasContext: true, platform: "h5", pageCount: 2 })).toBe("redirect-to");
+  expect(bookingReturnMode({ hasContext: true, platform: "weapp", pageCount: 1 })).toBe("redirect-to");
+  expect(bookingReturnMode({ hasContext: true, platform: "weapp", pageCount: 2 })).toBe("navigate-back");
 });
 
 it("selects only open unexpired slots and toggles stable ids", () => {
