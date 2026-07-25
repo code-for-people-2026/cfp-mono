@@ -129,7 +129,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const [legacySlots, setLegacySlots] = useState<MealSlot[]>([]);
   const [relaxed, setRelaxed] = useState<RelaxedRule[]>([]);
   const [pendingTargetKeys, setPendingTargetKeys] = useState<string[]>([]);
-  const [replaceConfirmation, setReplaceConfirmation] = useState<ReplaceConfirmation | null>(null);
+  const [replaceConfirmations, setReplaceConfirmations] = useState<ReplaceConfirmation[]>([]);
   const [generationIssue, setGenerationIssue] = useState<string | null>(null);
   const [partialSaveNotice, setPartialSaveNotice] = useState(false);
 
@@ -140,6 +140,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const primaryCta = weekCta(week);
   const weekMissingTargets = missingTargets(week);
   const weekEditableTargets = editableTargets(week);
+  const replaceConfirmation = replaceConfirmations[0] ?? null;
 
   const loadWeek = async (targetWeek: string, preserveData: boolean) => {
     const revision = ++loadRevision.current;
@@ -155,6 +156,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       setSlots(docs);
       setLoadState("loaded");
       setClockNow(Date.now());
+      setReplaceConfirmations([]);
     } catch (error) {
       if (revision !== loadRevision.current || targetWeek !== weekStartRef.current ||
         capturedViewRevision !== viewRevision.current || handledAuthFailure(error)) return;
@@ -209,7 +211,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setSelectedDate(targetDate);
     setSlots([]);
     setPendingTargetKeys([]);
-    setReplaceConfirmation(null);
+    setReplaceConfirmations([]);
     setGenerationIssue(null);
     setPartialSaveNotice(false);
     setRelaxed([]);
@@ -244,7 +246,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setGenerationIssue(null);
     setPartialSaveNotice(false);
     setRelaxed([]);
-    setReplaceConfirmation((current) => current && targetsOverlap(current.originalTargets, targets) ? null : current);
+    setReplaceConfirmations((current) => current.filter((confirmation) =>
+      !targetsOverlap(confirmation.originalTargets, targets)));
     setPendingTargetKeys((current) => [...new Set([...current, ...targetKeys])]);
     return {
       contextRevision: contextRevision.current,
@@ -302,10 +305,10 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       const isCurrent = contextMatches(context) && allTargetsMatch(context);
       const existingTargets = existingTargetsFrom(error);
       if (isCurrent && needsReplaceConfirmation(error) && existingTargets.length > 0) {
-        setReplaceConfirmation({
-          existingTargets,
-          originalTargets: targets
-        });
+        setReplaceConfirmations((current) => [
+          ...current.filter((confirmation) => !targetsOverlap(confirmation.originalTargets, targets)),
+          { existingTargets, originalTargets: targets }
+        ]);
         return;
       }
       if (handledAuthFailure(error)) return;
@@ -328,7 +331,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
-    setReplaceConfirmation((current) => current && targetsOverlap(current.originalTargets, [slot]) ? null : current);
+    setReplaceConfirmations((current) => current.filter((confirmation) =>
+      !targetsOverlap(confirmation.originalTargets, [slot])));
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
       if (revision !== mutationRevision.current) return;
@@ -473,7 +477,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
             className="danger"
             onClick={() => void generate(replaceConfirmation.originalTargets, true)}
           >确认重新生成</Button>
-          <Button onClick={() => setReplaceConfirmation(null)}>取消</Button>
+          <Button onClick={() => setReplaceConfirmations((current) => current.slice(1))}>取消</Button>
         </View>
       )}
 
