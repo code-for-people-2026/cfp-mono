@@ -54,8 +54,8 @@
 
 **Goal**：backend 快速预检并稳定透传持久化边界的锁定冲突，不改变存储策略或公开 API。
 
-- [ ] T022 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，并在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加稳定 409 冲突透传测试，确认失败
-- [ ] T023 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现批量目标快速预检查，在 `apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/route.ts` 稳定透传存储层冲突；在 `docs/kith-inn-v1/TECH-SPEC.md` 补充 backend/CMS 409 错误映射语义；保持 collection 策略、公开 API 形状与生成算法不变
+- [X] T022 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，并在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加稳定 409 冲突透传测试，确认失败
+- [X] T023 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现批量目标快速预检查，在 `apps/cms/src/app/api/internal/kiv1/meal-slots/[id]/route.ts` 稳定透传存储层冲突；在 `docs/kith-inn-v1/TECH-SPEC.md` 补充 backend/CMS 409 错误映射语义；保持 collection 策略、公开 API 形状与生成算法不变
 
 **Checkpoint**：backend 与 CMS 集成测试证明锁定冲突语义稳定，截止时间已过的 `draft` 仍可编辑。
 

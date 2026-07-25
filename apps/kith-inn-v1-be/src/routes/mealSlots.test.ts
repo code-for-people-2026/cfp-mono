@@ -92,6 +92,48 @@ describe("merchant meal-slot list", () => {
 });
 
 describe("menu generation route", () => {
+  it.each(["open", "closed"] as const)(
+    "rejects a batch containing a slot in %s state before generation or writes",
+    async (orderStatus) => {
+      const locked = { ...existing, orderStatus };
+      const injected = deps({ listMealSlots: vi.fn(async () => [existing, locked]) });
+      const response = await request(mealSlotsRoutes(SECRET, injected), "/generate-menus", {
+        method: "POST",
+        body: JSON.stringify({
+          targets: [
+            { date: existing.date, occasion: "dinner" },
+            { date: locked.date, occasion: locked.occasion }
+          ],
+          replaceExisting: true
+        })
+      });
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toEqual({
+        error: "meal-slot-menu-locked",
+        message: "餐次已开放或关闭，菜单不可修改"
+      });
+      expect(injected.listOfferings).not.toHaveBeenCalled();
+      expect(injected.createMealSlot).not.toHaveBeenCalled();
+      expect(injected.updateMealSlot).not.toHaveBeenCalled();
+    }
+  );
+
+  it("allows replacing an expired slot that is still draft", async () => {
+    const expiredDraft = { ...existing, orderDeadline: "2026-07-09T01:00:00.000Z" };
+    const injected = deps({ listMealSlots: vi.fn(async () => [expiredDraft]) });
+    const response = await request(mealSlotsRoutes(SECRET, injected), "/generate-menus", {
+      method: "POST",
+      body: JSON.stringify({
+        targets: [{ date: expiredDraft.date, occasion: expiredDraft.occasion }],
+        replaceExisting: true
+      })
+    });
+
+    expect(response.status).toBe(200);
+    expect(injected.updateMealSlot).toHaveBeenCalledOnce();
+  });
+
   it("returns every existing target before writes and succeeds when explicitly retried with replace", async () => {
     const incomplete = { ...existing, menuItems: existing.menuItems.slice(0, 1) };
     const injected = deps({ listMealSlots: vi.fn(async () => [incomplete]) });
@@ -242,6 +284,36 @@ describe("menu generation route", () => {
 });
 
 describe("menu item swap route", () => {
+  it.each(["open", "closed"] as const)("rejects swapping a slot in %s state before menu work", async (orderStatus) => {
+    const injected = deps({ getMealSlot: vi.fn(async () => ({ ...existing, orderStatus })) });
+    const response = await request(mealSlotsRoutes(SECRET, injected), "/11/swap-menu-item", {
+      method: "POST",
+      body: JSON.stringify({ offeringId: 5 })
+    });
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "meal-slot-menu-locked",
+      message: "餐次已开放或关闭，菜单不可修改"
+    });
+    expect(injected.listOfferings).not.toHaveBeenCalled();
+    expect(injected.listMealSlots).not.toHaveBeenCalled();
+    expect(injected.updateMealSlot).not.toHaveBeenCalled();
+  });
+
+  it("allows swapping an expired slot that is still draft", async () => {
+    const injected = deps({
+      getMealSlot: vi.fn(async () => ({ ...existing, orderDeadline: "2026-07-09T01:00:00.000Z" }))
+    });
+    const response = await request(mealSlotsRoutes(SECRET, injected), "/11/swap-menu-item", {
+      method: "POST",
+      body: JSON.stringify({ offeringId: 5 })
+    });
+
+    expect(response.status).toBe(200);
+    expect(injected.updateMealSlot).toHaveBeenCalledOnce();
+  });
+
   it("updates only the selected snapshot and keeps the original when no candidate exists", async () => {
     const noCandidate = deps({ listOfferings: vi.fn(async () => offerings.slice(0, 5)) });
     const noCandidateResponse = await request(mealSlotsRoutes(SECRET, noCandidate), "/11/swap-menu-item", {

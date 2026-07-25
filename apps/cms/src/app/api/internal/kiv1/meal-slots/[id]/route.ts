@@ -1,5 +1,6 @@
 import { mealSlotUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
+import { APIError } from "payload";
 import { findOwned, hasSellerField, operatorScope } from "@/lib/kiv1-internal";
 import {
   normalizeMealSlot,
@@ -52,7 +53,13 @@ export async function PATCH(req: Request, { params }: RouteContext) {
       overrideAccess: true
     });
     return NextResponse.json({ doc: normalizeMealSlot(doc as Parameters<typeof normalizeMealSlot>[0]) });
-  } catch {
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.message === "meal-slot-menu-locked") {
+      return NextResponse.json({
+        error: "meal-slot-menu-locked",
+        message: "餐次已开放或关闭，菜单不可修改"
+      }, { status: 409 });
+    }
     return NextResponse.json({ error: "meal-slot-update-failed" }, { status: 500 });
   }
 }
