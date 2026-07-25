@@ -210,6 +210,7 @@ POST   /customer/orders/:id/cancel
 - 持久化边界拒绝 `open → draft` 及所有 `closed → 非 closed` 回退，防止先降级状态再绕过菜单只读保护。
 - `apps/cms/payload.config.ts` 在组合 v1 `MealSlots` collection 时追加 app-local `beforeChange` hook，使 local API、REST 和 Admin 共用持久化保护，Payload 包继续保持 adapter-neutral。
 - hook 复用 Payload 已建立的写事务：Postgres 对目标行执行 `SELECT … FOR UPDATE` 后重读，SQLite 复用 `BEGIN IMMEDIATE` 后重读；只信任锁内最新状态，不信任 hook 的旧状态快照，事务或锁会话不可用时拒绝写入。
+- backend 在批量生成或换菜前对已读取餐次执行 `draft` 快速预检，避免无效生成与部分写入；CMS internal route 将持久化边界的 `meal-slot-menu-locked` 精确映射为 409，backend 保持该错误码和中文消息，其他存储异常仍按 500/502 处理。
 
 ### 分享批次
 

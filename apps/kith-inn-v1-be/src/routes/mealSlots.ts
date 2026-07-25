@@ -81,6 +81,13 @@ function dependencyError(c: Context, error: unknown) {
   return c.json({ error: error.code, message: error.message }, status);
 }
 
+function menuLocked(c: Context) {
+  return c.json({
+    error: "meal-slot-menu-locked",
+    message: "餐次已开放或关闭，菜单不可修改"
+  }, 409);
+}
+
 const keyOf = ({ date, occasion }: MealSlotTarget) => `${date}:${occasion}`;
 
 function generationRanges(targets: MealSlotTarget[]) {
@@ -146,6 +153,7 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
       const slots = [...new Map(slotBatches.flat().map((slot) => [keyOf(slot), slot])).values()];
       const targetKeys = new Set(parsed.data.targets.map(keyOf));
       const existing = slots.filter((slot) => targetKeys.has(keyOf(slot)));
+      if (existing.some(({ orderStatus }) => orderStatus !== "draft")) return menuLocked(c);
       if (existing.length > 0 && !parsed.data.replaceExisting) {
         return c.json({
           error: "meal-slots-exist",
@@ -194,6 +202,7 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
     const token = c.get("operatorToken");
     try {
       const slot = await deps.getMealSlot(token, c.req.param("id"));
+      if (slot.orderStatus !== "draft") return menuLocked(c);
       if (!slot.menuItems.some((item) => String(item.offeringId) === String(parsed.data.offeringId))) {
         return c.json({ error: "menu-item-not-found", message: "目标菜单项不存在" }, 404);
       }

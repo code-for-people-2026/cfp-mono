@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
+import { APIError } from "payload";
 
 const mocks = vi.hoisted(() => ({ getPayload: vi.fn() }));
 vi.mock("payload", async (importOriginal) => ({
@@ -41,6 +42,7 @@ type PayloadOptions = {
   slots?: Array<Record<string, unknown>>;
   ownedOfferingIds?: Array<string | number>;
   createError?: unknown;
+  updateError?: unknown;
 };
 
 function payloadWith(options: PayloadOptions = {}) {
@@ -61,11 +63,13 @@ function payloadWith(options: PayloadOptions = {}) {
     create: options.createError
       ? vi.fn(async () => { throw options.createError; })
       : vi.fn(async ({ data }: { data: Record<string, unknown> }) => ({ id: 12, ...data })),
-    update: vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
-      ...slotDoc,
-      id,
-      ...data
-    }))
+    update: options.updateError
+      ? vi.fn(async () => { throw options.updateError; })
+      : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
+          ...slotDoc,
+          id,
+          ...data
+        }))
   };
 }
 
@@ -206,6 +210,22 @@ describe("GET/PATCH /api/internal/kiv1/meal-slots/:id", () => {
     expect((await detailRoute.PATCH(json("/11", "PATCH", { menuItems, generatedAt }), {
       params: Promise.resolve({ id: "11" })
     })).status).toBe(422);
+  });
+
+  it("preserves the persistence menu-lock conflict as a stable 409", async () => {
+    mocks.getPayload.mockResolvedValue(payloadWith({
+      updateError: new APIError("meal-slot-menu-locked", 409)
+    }));
+    const response = await detailRoute.PATCH(
+      json("/11", "PATCH", { menuItems, generatedAt }),
+      { params: Promise.resolve({ id: "11" }) }
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error: "meal-slot-menu-locked",
+      message: "餐次已开放或关闭，菜单不可修改"
+    });
   });
 });
 
