@@ -102,8 +102,9 @@ export default function MerchantMenu() {
 
   const loadWeek = async (targetWeek: string, preserveData: boolean) => {
     const revision = ++loadRevision.current;
+    const preserving = preserveData && loadState === "loaded";
     setRefreshFailed(false);
-    if (preserveData) setRefreshing(true);
+    if (preserving) setRefreshing(true);
     else setLoadState("loading");
     try {
       const docs = await api.listMealSlots(targetWeek, buildMenuWeek(targetWeek, [], new Date()).end);
@@ -113,7 +114,7 @@ export default function MerchantMenu() {
       setClockNow(Date.now());
     } catch (error) {
       if (revision !== loadRevision.current || targetWeek !== weekStartRef.current || handledAuthFailure(error)) return;
-      if (preserveData) setRefreshFailed(true);
+      if (preserving) setRefreshFailed(true);
       else setLoadState("error");
     } finally {
       if (revision === loadRevision.current && targetWeek === weekStartRef.current) setRefreshing(false);
@@ -172,9 +173,13 @@ export default function MerchantMenu() {
       return;
     }
     const revision = mutationRevision.current;
+    loadRevision.current += 1;
+    setRefreshing(false);
+    setRefreshFailed(false);
     try {
       const result = await api.generateMenus({ targets, replaceExisting });
       if (revision !== mutationRevision.current) return;
+      loadRevision.current += 1;
       setSlots((current) => mergeSlots(current, result.docs));
       setLegacySlots((current) => mergeSlots(current, result.docs));
       setRelaxed(result.relaxedRules);
@@ -192,9 +197,13 @@ export default function MerchantMenu() {
 
   const swap = async (slot: MealSlot, offeringId: string | number) => {
     const revision = mutationRevision.current;
+    loadRevision.current += 1;
+    setRefreshing(false);
+    setRefreshFailed(false);
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
       if (revision !== mutationRevision.current) return;
+      loadRevision.current += 1;
       setSlots((current) => replaceMealSlot(current, result.doc));
       setLegacySlots((current) => replaceMealSlot(current, result.doc));
       setRelaxed(result.relaxedRules);
@@ -305,13 +314,16 @@ export default function MerchantMenu() {
           }}
         />
         <Button onClick={() => void loadLegacy()}>查看未来 31 天菜单</Button>
-        <Button className="primary" onClick={() => void generate(buildSingleTarget(date, "lunch"))}>生成午餐</Button>
-        <Button onClick={() => void generate(buildSingleTarget(date, "dinner"))}>生成晚餐</Button>
-        <Button onClick={() => void generate(buildWorkWeekTargets(date, ["lunch", "dinner"]))}>
+        <Button disabled={loadState !== "loaded"} className="primary"
+          onClick={() => void generate(buildSingleTarget(date, "lunch"))}>生成午餐</Button>
+        <Button disabled={loadState !== "loaded"}
+          onClick={() => void generate(buildSingleTarget(date, "dinner"))}>生成晚餐</Button>
+        <Button disabled={loadState !== "loaded"}
+          onClick={() => void generate(buildWorkWeekTargets(date, ["lunch", "dinner"]))}>
           生成工作周午晚餐
         </Button>
         {pendingTargets && (
-          <Button className="danger" onClick={() => void generate(pendingTargets, true)}>
+          <Button disabled={loadState !== "loaded"} className="danger" onClick={() => void generate(pendingTargets, true)}>
             确认覆盖已有菜单
           </Button>
         )}
