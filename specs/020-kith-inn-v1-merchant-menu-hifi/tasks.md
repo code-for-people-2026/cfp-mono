@@ -67,8 +67,8 @@
 
 **Independent Test**：用固定时间戳覆盖周一至周日、跨月、截止边界、空/部分/完整/开放工作周，比较完整派生结果。
 
-- [ ] T005 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/menuWeek.test.ts` 增加上海默认周、五日范围、当前周首个未过去工作日、过去/未来周周一、切周重置默认日、日期摘要、餐次状态、可编辑性、缺失/覆盖目标和动态 CTA 测试；菜单完成度与预订信号分别断言，并覆盖“午餐开放、晚餐缺失”同时为部分完成和预订中，以及截止时间已过的 `draft` 不产生已截止信号，确认失败
-- [ ] T006 [US1] 在 `apps/kith-inn-v1-fe/src/logic/menuWeek.ts` 实现 T005 所需的纯业务日期与周视图函数，并仅在必要时复用 `apps/kith-inn-v1-fe/src/logic/menu.ts`
+- [X] T005 [US1] 先在 `apps/kith-inn-v1-fe/src/logic/menuWeek.test.ts` 增加上海默认周、五日范围、当前周首个未过去工作日、过去/未来周周一、切周重置默认日、日期摘要、餐次状态、可编辑性、缺失/覆盖目标和动态 CTA 测试；菜单完成度与预订信号分别断言，并覆盖“午餐开放、晚餐缺失”同时为部分完成和预订中，以及截止时间已过的 `draft` 不产生已截止信号，确认失败
+- [X] T006 [US1] 在 `apps/kith-inn-v1-fe/src/logic/menuWeek.ts` 实现 T005 所需的纯业务日期与周视图函数，并仅在必要时复用 `apps/kith-inn-v1-fe/src/logic/menu.ts`
 
 **Checkpoint**：PR2 可只靠单元测试证明时间、视图和目标计算正确，不含页面改动。
 
