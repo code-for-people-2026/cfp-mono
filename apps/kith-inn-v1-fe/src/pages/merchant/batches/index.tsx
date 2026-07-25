@@ -9,6 +9,7 @@ import {
   batchCloseText,
   bookingConfigContext,
   bookingDeadlineInputValue,
+  bookingMenuUrl,
   bookingReturnMode,
   buildBookingConfig,
   copyBookingBatchPath,
@@ -89,17 +90,24 @@ export default function MerchantBatches() {
       await Taro.showToast({ title: "请输入有效日期", icon: "none" });
       return;
     }
+    let docs: MealSlot[];
     try {
-      const docs = await api.listMealSlots(range.from, range.to);
-      const loadedBatches = await api.listBookingBatches();
+      docs = await api.listMealSlots(range.from, range.to);
       if (revision !== loadRevision.current) return;
       setSlots(docs);
       setSelected([]);
       setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot)])));
-      setBatches(loadedBatches);
     } catch (error) {
       if (revision !== loadRevision.current || handledAuthFailure(error)) return;
       await Taro.showToast({ title: "预订配置加载失败", icon: "none" });
+      return;
+    }
+    try {
+      const loadedBatches = await api.listBookingBatches();
+      if (revision === loadRevision.current) setBatches(loadedBatches);
+    } catch (error) {
+      if (revision !== loadRevision.current || handledAuthFailure(error)) return;
+      await Taro.showToast({ title: "批次加载失败，餐次仍可配置", icon: "none" });
     }
   };
 
@@ -169,10 +177,13 @@ export default function MerchantBatches() {
       platform: process.env.TARO_ENV,
       pageCount: Taro.getCurrentPages().length
     });
+    const menuUrl = initialContext
+      ? bookingMenuUrl(initialContext)
+      : "/pages/merchant/menu/index";
     if (mode === "navigate-to") {
-      void Taro.navigateTo({ url: "/pages/merchant/menu/index" });
+      void Taro.navigateTo({ url: menuUrl });
     } else if (mode === "redirect-to") {
-      void Taro.redirectTo({ url: "/pages/merchant/menu/index" });
+      void Taro.redirectTo({ url: menuUrl });
     } else {
       void Taro.navigateBack();
     }
