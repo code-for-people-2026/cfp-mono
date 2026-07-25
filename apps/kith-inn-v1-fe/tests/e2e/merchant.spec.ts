@@ -1003,6 +1003,63 @@ test("不同餐次的并行生成独立合并响应", async ({ page }) => {
   await expect(page.getByText("已放宽：近 7 日不重复菜", { exact: true })).toBeVisible();
 });
 
+test("部分失败重载与无关餐次成功可同时合并", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  const generated = (occasion: "lunch" | "dinner", id: number, firstName: string) => ({
+    ...slot("2026-07-22", occasion),
+    id,
+    orderStatus: "draft",
+    orderDeadline: null,
+    menuItems: menuItems.map((item, index) => index === 0 ? { ...item, nameSnapshot: firstName } : item)
+  });
+  let docs: ReturnType<typeof generated>[] = [];
+  let listRequests = 0;
+  let holdReload = false;
+  let releaseLunch!: () => void;
+  let releaseReload!: () => void;
+  const lunchResponse = new Promise<void>((resolve) => { releaseLunch = resolve; });
+  const reloadResponse = new Promise<void>((resolve) => { releaseReload = resolve; });
+  await page.route("**/merchant/meal-slots?*", async (route) => {
+    listRequests += 1;
+    if (holdReload) await reloadResponse;
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ docs }) });
+  });
+  await page.route("**/merchant/meal-slots/generate-menus", async (route) => {
+    const target = route.request().postDataJSON().targets[0] as { occasion: "lunch" | "dinner" };
+    if (target.occasion === "lunch") {
+      await lunchResponse;
+      const doc = generated("lunch", 651, "并行成功菜单");
+      docs = [...docs, doc];
+      return route.fulfill({
+        status: 200, contentType: "application/json", body: JSON.stringify({ docs: [doc], relaxedRules: [] })
+      });
+    }
+    docs = [...docs, generated("dinner", 652, "部分保存晚餐")];
+    return route.fulfill({ status: 502, contentType: "application/json", body: "{}" });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await taroButton(page, /^菜单$/).click();
+  const lunch = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
+  const dinner = page.locator(".menu-meal-card").filter({ hasText: "晚餐" });
+  const lunchButton = lunch.locator("taro-button-core").filter({ hasText: /^生成午餐$/ });
+  const dinnerButton = dinner.locator("taro-button-core").filter({ hasText: /^生成晚餐$/ });
+  await expect(lunchButton).toBeVisible();
+  await expect(dinnerButton).toBeVisible();
+  const requestsBeforeFailure = listRequests;
+  holdReload = true;
+  await lunchButton.click();
+  await dinnerButton.click();
+  await expect.poll(() => listRequests).toBeGreaterThan(requestsBeforeFailure);
+  releaseLunch();
+  await expect(lunch).toContainText("并行成功菜单");
+  releaseReload();
+  await expect(dinner).toContainText("部分保存晚餐");
+  await expect(lunch).toContainText("并行成功菜单");
+  await expect(page.getByText("生成未完成，部分目标可能已保存，请核对当前菜单", { exact: true })).toBeVisible();
+});
+
 test("整周重新生成只覆盖草稿并保留后端原始目标", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   const docs = [
