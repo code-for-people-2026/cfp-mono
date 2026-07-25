@@ -45,6 +45,13 @@ export function bookingConfigUrl(weekStart: string, target?: MealSlotTarget): st
     : base;
 }
 
+export function bookingMenuUrl(context: BookingConfigContext): string {
+  const base = `/pages/merchant/menu/index?weekStart=${encodeURIComponent(context.weekStart)}`;
+  return context.target
+    ? `${base}&date=${encodeURIComponent(context.target.date)}&occasion=${encodeURIComponent(context.target.occasion)}`
+    : base;
+}
+
 export function bookingReturnMode(input: {
   hasContext: boolean;
   platform: string | undefined;

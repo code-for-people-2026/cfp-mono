@@ -721,6 +721,7 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
   await expect(page.locator(".menu-meal-card")).toHaveCount(2);
   await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("预订中");
   await expect(page.locator(".menu-meal-card").filter({ hasText: "晚餐" })).toContainText("未排菜单");
+  await expect(taroButton(page, /^查看预订与分享$/)).toBeVisible();
 
   const requestCount = ranges.length;
   await page.locator(".menu-day").filter({ hasText: "周二" }).click();
@@ -1637,7 +1638,9 @@ test("从目标餐次预填配置并在返回后刷新当前工作周", async ({
 
   const requestsBeforeReturn = ranges.length;
   await taroButton(page, /^返回菜单$/).click();
-  await expect(page).toHaveURL(/pages\/merchant\/menu\/index$/);
+  await expect(page).toHaveURL(
+    /pages\/merchant\/menu\/index\?weekStart=2026-07-20&date=2026-07-22&occasion=dinner$/
+  );
   await expect.poll(() => ranges.length).toBeGreaterThan(requestsBeforeReturn);
   const returnedMenu = page.locator(".menu-page:visible");
   const returnedDinner = returnedMenu.locator(".menu-meal-card").filter({ hasText: "晚餐" });
@@ -1650,14 +1653,43 @@ test("从目标餐次预填配置并在返回后刷新当前工作周", async ({
   await expect(page.getByRole("textbox", { name: "批次起始日期" })).toHaveValue("2026-07-20");
 });
 
-test("预订配置只接受最后一次餐次加载结果", async ({ page }) => {
+test("配置页冷启动返回时把工作周和目标日期交给菜单页", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-08-12T01:00:00.000Z") });
+  const ranges: string[] = [];
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/meal-slots?*", (route) => {
+    const url = new URL(route.request().url());
+    ranges.push(`${url.searchParams.get("from")}:${url.searchParams.get("to")}`);
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ docs: [{ ...slot("2026-07-29", "dinner"), id: 899, orderStatus: "draft" }] })
+    });
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27&date=2026-07-29&occasion=dinner");
+  await expect(page.locator(".batch-slot.target")).toContainText("2026-07-29 晚餐");
+  await taroButton(page, /^返回菜单$/).click();
+  await expect(page).toHaveURL(
+    /pages\/merchant\/menu\/index\?weekStart=2026-07-27&date=2026-07-29&occasion=dinner$/
+  );
+  const returnedMenu = page.locator(".menu-page:visible");
+  await expect(returnedMenu.getByText("7月27日－31日", { exact: true })).toBeVisible();
+  await expect(returnedMenu.locator(".menu-day.selected")).toContainText("周三");
+  expect(ranges).toContain("2026-07-27:2026-07-31");
+});
+
+test("预订配置只接受最后一次餐次加载且批次失败不阻断餐次", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   let julyRequests = 0;
   let releaseAutoLoad!: () => void;
   const autoLoad = new Promise<void>((resolve) => { releaseAutoLoad = resolve; });
-  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
-    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
-  }));
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill({ status: 500, body: "{}" }));
   await page.route("**/merchant/meal-slots?*", async (route) => {
     const from = new URL(route.request().url()).searchParams.get("from");
     if (from === "2026-07-20") {

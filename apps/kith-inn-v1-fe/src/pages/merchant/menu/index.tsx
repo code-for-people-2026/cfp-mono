@@ -12,7 +12,7 @@ import {
 } from "react";
 import type { MealSlot, MealSlotTarget, Occasion, RelaxedRule } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
-import { bookingConfigUrl } from "@/logic/bookingBatches";
+import { bookingConfigContext, bookingConfigUrl } from "@/logic/bookingBatches";
 import {
   generationErrorText,
   needsReplaceConfirmation,
@@ -105,11 +105,22 @@ function existingTargetsFrom(error: unknown): MealSlotTarget[] {
 }
 
 const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_props, pageRef) {
-  const initialView = useRef(rememberedView).current;
+  const routeContext = useRef(bookingConfigContext(Taro.getCurrentInstance().router?.params ?? {})).current;
+  const initialView = useRef(routeContext
+    ? {
+      weekStart: routeContext.weekStart,
+      selectedDate: routeContext.target?.date ??
+        (rememberedView?.weekStart === routeContext.weekStart ? rememberedView.selectedDate : routeContext.weekStart)
+    }
+    : rememberedView).current;
   const firstWeek = useRef(initialView?.weekStart ?? initialWeekStart(new Date())).current;
   const firstSelectedDate = useRef(initialView?.selectedDate ??
     buildMenuWeek(firstWeek, [], new Date()).selectedDate).current;
-  if (rememberedView === null) rememberedView = { weekStart: firstWeek, selectedDate: firstSelectedDate };
+  const initializedRememberedView = useRef(false);
+  if (!initializedRememberedView.current) {
+    rememberedView = { weekStart: firstWeek, selectedDate: firstSelectedDate };
+    initializedRememberedView.current = true;
+  }
   const weekStartRef = useRef(firstWeek);
   const loadRevision = useRef(0);
   const contextRevision = useRef(0);
@@ -142,6 +153,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const weekMissingTargets = missingTargets(week);
   const weekEditableTargets = editableTargets(week);
   const replaceConfirmation = replaceConfirmations[0] ?? null;
+  const hasOpenBookings = slots.some(({ orderStatus }) => orderStatus === "open");
+  const primaryGeneratesMenus = primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week";
 
   const loadWeek = async (targetWeek: string, preserveData: boolean) => {
     const revision = ++loadRevision.current;
@@ -543,10 +556,9 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           {relaxedRulesText(relaxed) && <Text className="notice">{relaxedRulesText(relaxed)}</Text>}
           <Button
             className="primary menu-primary-action"
-            disabled={(primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") &&
-              busy(weekMissingTargets)}
+            disabled={primaryGeneratesMenus && busy(weekMissingTargets)}
             onClick={() => {
-              if (primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") {
+              if (primaryGeneratesMenus) {
                 void generate(weekMissingTargets);
               } else {
                 void Taro.navigateTo({ url: bookingConfigUrl(currentWeek) });
@@ -555,6 +567,11 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           >
             {generating(weekMissingTargets) ? "正在生成本周菜单" : primaryCta.label}
           </Button>
+          {primaryGeneratesMenus && hasOpenBookings && (
+            <Button onClick={() => void Taro.navigateTo({ url: bookingConfigUrl(currentWeek) })}>
+              查看预订与分享
+            </Button>
+          )}
         </>
       )}
 

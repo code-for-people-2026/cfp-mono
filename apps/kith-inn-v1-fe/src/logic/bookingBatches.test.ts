@@ -3,8 +3,9 @@ import type { BookingBatch, MealSlot } from "@cfp/kith-inn-v1-shared";
 import {
   batchCloseText,
   bookingConfigContext,
-  bookingReturnMode,
   bookingConfigUrl,
+  bookingMenuUrl,
+  bookingReturnMode,
   bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
@@ -57,6 +58,12 @@ it("builds booking configuration URLs for a week or meal target", () => {
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20");
   expect(bookingConfigUrl("2026-07-20", { date: "2026-07-22", occasion: "dinner" }))
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
+  expect(bookingMenuUrl({ weekStart: "2026-07-20", target: null }))
+    .toBe("/pages/merchant/menu/index?weekStart=2026-07-20");
+  expect(bookingMenuUrl({
+    weekStart: "2026-07-20",
+    target: { date: "2026-07-22", occasion: "dinner" }
+  })).toBe("/pages/merchant/menu/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
 });
 
 it("chooses a safe menu return mode for platform and page stack", () => {
