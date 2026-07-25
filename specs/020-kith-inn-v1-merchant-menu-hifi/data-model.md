@@ -18,7 +18,8 @@
 | `date` | 业务日期 | 上海日期 |
 | `weekday` | 周一至周五 | 从周起点派生 |
 | `lunch` / `dinner` | `MealPosition` | 每日固定两个位置 |
-| `completion` | `empty/partial/complete/open` | 由两个位置和开放状态派生 |
+| `menuCompletion` | `empty/partial/complete` | 只由午、晚餐菜单是否存在派生 |
+| `bookingSignals` | 预订生命周期信号集合 | 独立布尔值 `hasOpen`、`hasDeadlinePassed`、`hasClosed`；可与任意菜单完成度同时存在 |
 
 ## MealPosition（餐次位置）
 
@@ -53,15 +54,15 @@ loaded-* → swapping → loaded-* / swap-error
 
 | 字段 | 含义 | 规则 |
 |------|------|------|
-| `mutationRevision` | 单调递增写操作版本 | 每次生成或换菜发出时推进 |
+| `mutationRevisions` | `targetKey → revision` 的单调写操作版本 | 每个生成或换菜目标发出时只推进对应目标；不同目标互不使对方失效 |
 | `viewRevision` | 当前周读写协调版本 | mutation 发出和提交时推进，使此前或提交前发出的同周读取失效 |
 | `weekStart` | 请求目标工作周 | 响应合并、错误提示和刷新都必须匹配 |
 | `targetKeys` | 目标日期与餐次 | 只锁定和合并对应餐次 |
 
-每次周读取捕获 `weekStart`、load revision 与 `viewRevision`；mutation 开始和提交时都推进目标周的 `viewRevision`，因此 mutation 之前或进行中读到旧数据的同周响应不能在提交后回滚菜单。成功写响应只有在 `mutationRevision` 与 `weekStart` 仍匹配时才能合并或清除当前确认；旧响应不得修改新工作周。非菜品池错误按原 `weekStart` 发起新的受版本约束读取，但用户已经切周时只允许缓存或丢弃结果，不能覆盖当前视图。
+每次周读取捕获 `weekStart`、load revision 与 `viewRevision`；mutation 开始和提交时都推进目标周的 `viewRevision`，因此 mutation 之前或进行中读到旧数据的同周响应不能在提交后回滚菜单。成功写响应必须逐一匹配 `weekStart`、`targetKey` 及该目标 revision 后才可合并或清除当前确认；不同目标的并行响应均可独立合并，旧响应不得修改新工作周。非菜品池错误按原 `weekStart` 发起新的受版本约束读取，但用户已经切周时只允许缓存或丢弃结果，不能覆盖当前视图。
 
 ## 持久化菜单只读不变量
 
-菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈；Payload `MealSlots` collection 必须在所有 local API、REST 和 admin 更新共同经过的 hook/事务边界拒绝非草稿菜单变更，CMS internal route 再把该稳定冲突传给 backend。只在 internal route 条件更新，或读取后再执行无条件 PATCH，都不满足该不变量。
+菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈；Payload `MealSlots` collection 的公共写入入口必须进入同一数据库事务，Postgres 对目标餐次执行 `SELECT … FOR UPDATE` 并持锁至提交，SQLite 使用 `BEGIN IMMEDIATE`，随后在该事务内重新读取状态并拒绝非草稿菜单变更，CMS internal route 再把稳定冲突传给 backend。事务或锁会话不可用时必须拒绝写入。只依赖 hook 的 `originalDoc`、在 internal route 做条件更新，或读取后再执行无条件 PATCH，都不满足该不变量。
 
 覆盖确认同时保存原始目标和冲突响应中的已有目标；确认层展示已有目标，确认请求提交原始目标。周切换或刷新后目标不再匹配时确认失效。
