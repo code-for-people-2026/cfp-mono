@@ -13,9 +13,7 @@ import {
 import type { MealSlot, MealSlotTarget, Occasion, RelaxedRule } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
 import {
-  buildSingleTarget,
   buildMenuRange,
-  buildWorkWeekTargets,
   generationErrorText,
   needsReplaceConfirmation,
   relaxedRulesText,
@@ -23,8 +21,10 @@ import {
 } from "@/logic/menu";
 import {
   buildMenuWeek,
+  editableTargets,
   formatWeekRange,
   initialWeekStart,
+  missingTargets,
   nextOpenDeadline,
   shiftWeekStart,
   weekCta,
@@ -58,6 +58,8 @@ const handledAuthFailure = (error: unknown) =>
   error instanceof ApiError && (error.status === 401 || error.status === 403);
 const occasionText = (occasion: Occasion) => occasion === "lunch" ? "午餐" : "晚餐";
 const mergeSlots = (current: MealSlot[], docs: MealSlot[]) => docs.reduce(replaceMealSlot, current);
+const targetKey = ({ date, occasion }: MealSlotTarget) => `${date}:${occasion}`;
+const targetText = ({ date, occasion }: MealSlotTarget) => `${date} ${occasionText(occasion)}`;
 let rememberedView: { weekStart: string; selectedDate: string } | null = null;
 
 function weekStart(value: string): string {
@@ -76,6 +78,29 @@ function priceText(value: number | null): string {
 }
 
 type MenuPageHandle = { refresh: () => void };
+type GenerationContext = {
+  contextRevision: number;
+  revisions: Map<string, number>;
+  targetKeys: string[];
+  weekStart: string;
+};
+type ReplaceConfirmation = {
+  existingTargets: MealSlotTarget[];
+  originalTargets: MealSlotTarget[];
+};
+
+function existingTargetsFrom(error: unknown): MealSlotTarget[] {
+  if (!(error instanceof ApiError) || error.code !== "meal-slots-exist" ||
+    typeof error.data !== "object" || error.data === null || !("existingTargets" in error.data) ||
+    !Array.isArray(error.data.existingTargets)) return [];
+  return error.data.existingTargets.flatMap((value) => {
+    if (typeof value !== "object" || value === null) return [];
+    const target = value as Record<string, unknown>;
+    return typeof target.date === "string" && (target.occasion === "lunch" || target.occasion === "dinner")
+      ? [{ date: target.date, occasion: target.occasion }]
+      : [];
+  });
+}
 
 const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_props, pageRef) {
   const initialView = useRef(rememberedView).current;
@@ -86,6 +111,9 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const weekStartRef = useRef(firstWeek);
   const loadRevision = useRef(0);
   const mutationRevision = useRef(0);
+  const contextRevision = useRef(0);
+  const viewRevision = useRef(0);
+  const targetRevisions = useRef(new Map<string, number>());
   const [currentWeek, setCurrentWeek] = useState(firstWeek);
   const [selectedDate, setSelectedDate] = useState(firstSelectedDate);
   const [slots, setSlots] = useState<MealSlot[]>([]);
@@ -96,38 +124,50 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const [date, setDate] = useState("");
   const [legacySlots, setLegacySlots] = useState<MealSlot[]>([]);
   const [relaxed, setRelaxed] = useState<RelaxedRule[]>([]);
-  const [pendingTargets, setPendingTargets] = useState<MealSlotTarget[] | null>(null);
+  const [pendingTargetKeys, setPendingTargetKeys] = useState<string[]>([]);
+  const [replaceConfirmation, setReplaceConfirmation] = useState<ReplaceConfirmation | null>(null);
+  const [generationIssue, setGenerationIssue] = useState<string | null>(null);
+  const [partialSaveNotice, setPartialSaveNotice] = useState(false);
 
   const week = useMemo(() =>
     buildMenuWeek(currentWeek, slots, new Date(clockNow), selectedDate),
   [clockNow, currentWeek, selectedDate, slots]);
   const selectedDay = week.days.find((day) => day.date === week.selectedDate) ?? week.days[0]!;
   const primaryCta = weekCta(week);
+  const weekMissingTargets = missingTargets(week);
+  const weekEditableTargets = editableTargets(week);
 
   const loadWeek = async (targetWeek: string, preserveData: boolean) => {
     const revision = ++loadRevision.current;
+    const capturedViewRevision = viewRevision.current;
     const preserving = preserveData && loadState === "loaded";
+    setReplaceConfirmation(null);
     setRefreshFailed(false);
     if (preserving) setRefreshing(true);
     else setLoadState("loading");
     try {
       const docs = await api.listMealSlots(targetWeek, buildMenuWeek(targetWeek, [], new Date()).end);
-      if (revision !== loadRevision.current || targetWeek !== weekStartRef.current) return;
+      if (revision !== loadRevision.current || targetWeek !== weekStartRef.current ||
+        capturedViewRevision !== viewRevision.current) return;
       setSlots(docs);
       setLoadState("loaded");
       setClockNow(Date.now());
     } catch (error) {
-      if (revision !== loadRevision.current || targetWeek !== weekStartRef.current || handledAuthFailure(error)) return;
+      if (revision !== loadRevision.current || targetWeek !== weekStartRef.current ||
+        capturedViewRevision !== viewRevision.current || handledAuthFailure(error)) return;
       if (preserving) setRefreshFailed(true);
       else setLoadState("error");
     } finally {
-      if (revision === loadRevision.current && targetWeek === weekStartRef.current) setRefreshing(false);
+      if (revision === loadRevision.current && targetWeek === weekStartRef.current &&
+        capturedViewRevision === viewRevision.current) setRefreshing(false);
     }
   };
 
   useImperativeHandle(pageRef, () => ({
     refresh: () => {
-      if (merchantRoute(sessions.getSession()) !== "login") void loadWeek(weekStartRef.current, true);
+      if (merchantRoute(sessions.getSession()) !== "login" && pendingTargetKeys.length === 0) {
+        void loadWeek(weekStartRef.current, true);
+      }
     }
   }));
 
@@ -140,6 +180,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     return () => {
       loadRevision.current += 1;
       mutationRevision.current += 1;
+      contextRevision.current += 1;
+      viewRevision.current += 1;
     };
   }, []);
 
@@ -156,11 +198,18 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     const targetDate = buildMenuWeek(target, [], new Date()).selectedDate;
     weekStartRef.current = target;
     mutationRevision.current += 1;
+    contextRevision.current += 1;
+    viewRevision.current += 1;
+    targetRevisions.current.forEach((revision, key) => targetRevisions.current.set(key, revision + 1));
     rememberedView = { weekStart: target, selectedDate: targetDate };
     setCurrentWeek(target);
     setSelectedDate(targetDate);
     setSlots([]);
-    setPendingTargets(null);
+    setPendingTargetKeys([]);
+    setReplaceConfirmation(null);
+    setGenerationIssue(null);
+    setPartialSaveNotice(false);
+    setRelaxed([]);
     void loadWeek(target, false);
   };
 
@@ -177,39 +226,101 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     }
   };
 
-  const generate = async (targets: MealSlotTarget[], replaceExisting = false) => {
-    if (targets.length === 0) {
-      await Taro.showToast({ title: "请输入有效日期", icon: "none" });
-      return;
-    }
-    const revision = mutationRevision.current;
+  const beginGeneration = (targets: MealSlotTarget[]): GenerationContext => {
+    const revisions = new Map<string, number>();
+    const targetKeys = targets.map(targetKey);
+    targetKeys.forEach((key) => {
+      const revision = (targetRevisions.current.get(key) ?? 0) + 1;
+      targetRevisions.current.set(key, revision);
+      revisions.set(key, revision);
+    });
+    viewRevision.current += 1;
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
+    setGenerationIssue(null);
+    setPartialSaveNotice(false);
+    setRelaxed([]);
+    setReplaceConfirmation(null);
+    setPendingTargetKeys((current) => [...new Set([...current, ...targetKeys])]);
+    return {
+      contextRevision: contextRevision.current,
+      revisions,
+      targetKeys,
+      weekStart: weekStartRef.current
+    };
+  };
+
+  const contextMatches = (context: GenerationContext) =>
+    context.contextRevision === contextRevision.current && context.weekStart === weekStartRef.current;
+  const targetMatches = (context: GenerationContext, key: string) =>
+    context.revisions.has(key) && context.revisions.get(key) === targetRevisions.current.get(key);
+  const allTargetsMatch = (context: GenerationContext) =>
+    context.targetKeys.every((key) => targetMatches(context, key));
+  const finishGeneration = (context: GenerationContext) => {
+    setPendingTargetKeys((current) => current.filter((key) =>
+      !context.targetKeys.includes(key) || !targetMatches(context, key)));
+  };
+
+  const reloadFailedGeneration = async (context: GenerationContext) => {
+    const end = buildMenuWeek(context.weekStart, [], new Date()).end;
+    if (!contextMatches(context)) {
+      try {
+        await api.listMealSlots(context.weekStart, end);
+      } catch {
+        // The user is viewing another week; this read only reconciles the failed target context.
+      }
+      return;
+    }
+    await loadWeek(context.weekStart, true);
+    if (contextMatches(context)) setPartialSaveNotice(true);
+  };
+
+  const generate = async (targets: MealSlotTarget[], replaceExisting = false) => {
+    if (targets.length === 0) return;
+    const context = beginGeneration(targets);
     try {
       const result = await api.generateMenus({ targets, replaceExisting });
-      if (revision !== mutationRevision.current) return;
+      if (!contextMatches(context)) return;
+      const docs = result.docs.filter((doc) => targetMatches(context, targetKey(doc)));
+      if (docs.length === 0) return;
+      viewRevision.current += 1;
       loadRevision.current += 1;
-      setSlots((current) => mergeSlots(current, result.docs));
-      setLegacySlots((current) => mergeSlots(current, result.docs));
+      setSlots((current) => mergeSlots(current, docs));
+      setLegacySlots((current) => mergeSlots(current, docs));
       setRelaxed(result.relaxedRules);
-      setPendingTargets(null);
+      setReplaceConfirmation(null);
     } catch (error) {
-      if (revision !== mutationRevision.current) return;
-      if (needsReplaceConfirmation(error)) {
-        setPendingTargets(targets);
+      const isCurrent = contextMatches(context) && allTargetsMatch(context);
+      const existingTargets = existingTargetsFrom(error);
+      if (isCurrent && needsReplaceConfirmation(error) && existingTargets.length > 0) {
+        setReplaceConfirmation({
+          existingTargets,
+          originalTargets: targets
+        });
         return;
       }
       if (handledAuthFailure(error)) return;
-      await Taro.showToast({ title: generationErrorText(error), icon: "none" });
+      if (error instanceof ApiError && error.code === "offering-pool-insufficient") {
+        if (isCurrent) setGenerationIssue(generationErrorText(error));
+        return;
+      }
+      if (isCurrent) viewRevision.current += 1;
+      await reloadFailedGeneration(context);
+    } finally {
+      finishGeneration(context);
     }
   };
+
+  const generating = (targets: MealSlotTarget[]) =>
+    targets.some((target) => pendingTargetKeys.includes(targetKey(target)));
 
   const swap = async (slot: MealSlot, offeringId: string | number) => {
     const revision = mutationRevision.current;
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
+    setReplaceConfirmation(null);
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
       if (revision !== mutationRevision.current) return;
@@ -224,33 +335,47 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     }
   };
 
-  const mealCard = (meal: MealPosition) => (
-    <View className={`card menu-meal-card ${meal.status}`} key={meal.occasion}>
-      <View className="menu-meal-heading">
-        <Text className="section-title">
-          {occasionText(meal.occasion)}{meal.slot ? " · 4菜1汤" : ""}
-        </Text>
-        <Text className="menu-status">{meal.statusLabel}</Text>
-      </View>
-      {meal.slot ? (
-        <>
-          <Text className="menu-meal-names">
-            {meal.slot.menuItems.map(({ nameSnapshot }) => nameSnapshot).join(" · ")}
+  const mealCard = (meal: MealPosition) => {
+    const targets = [{ date: meal.date, occasion: meal.occasion }];
+    const isGenerating = generating(targets);
+    return (
+      <View className={`card menu-meal-card ${meal.status}`} key={meal.occasion}>
+        <View className="menu-meal-heading">
+          <Text className="section-title">
+            {occasionText(meal.occasion)}{meal.slot ? " · 4菜1汤" : ""}
           </Text>
-          <View className="menu-meal-meta">
-            <Text>{priceText(meal.slot.priceCents)}</Text>
-            <Text>{deadlineText(meal.slot.orderDeadline)}</Text>
-          </View>
-        </>
-      ) : <Text className="meta">这个餐次还没有安排菜单</Text>}
-    </View>
-  );
+          <Text className="menu-status">{meal.statusLabel}</Text>
+        </View>
+        {meal.slot ? (
+          <>
+            <Text className="menu-meal-names">
+              {meal.slot.menuItems.map(({ nameSnapshot }) => nameSnapshot).join(" · ")}
+            </Text>
+            <View className="menu-meal-meta">
+              <Text>{priceText(meal.slot.priceCents)}</Text>
+              <Text>{deadlineText(meal.slot.orderDeadline)}</Text>
+            </View>
+          </>
+        ) : <Text className="meta">这个餐次还没有安排菜单</Text>}
+        {(meal.slot === null || meal.editable) && (
+          <Button
+            size="mini"
+            disabled={isGenerating}
+            onClick={() => void generate(targets)}
+          >
+            {isGenerating ? "生成中" : `${meal.slot ? "重新生成" : "生成"}${occasionText(meal.occasion)}`}
+          </Button>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View className="page menu-page">
       <View className="menu-heading">
         <Text className="title">本周菜单</Text>
-        <Button size="mini" onClick={() => void loadWeek(currentWeek, true)}>刷新</Button>
+        <Button size="mini" disabled={pendingTargetKeys.length > 0}
+          onClick={() => void loadWeek(currentWeek, true)}>刷新</Button>
       </View>
       <View className="menu-week-heading">
         <Button aria-label="上一周" size="mini" onClick={() => changeWeek(-1)}>‹</Button>
@@ -258,6 +383,13 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           <Text className="section-title">{formatWeekRange(currentWeek)}</Text>
           <Text className="subtitle">先排菜，再统一开放预订</Text>
         </View>
+        {weekEditableTargets.length > 0 && (
+          <Button
+            size="mini"
+            disabled={generating(weekEditableTargets)}
+            onClick={() => void generate(weekEditableTargets)}
+          >重新生成</Button>
+        )}
         <Button aria-label="下一周" size="mini" onClick={() => changeWeek(1)}>›</Button>
       </View>
 
@@ -293,8 +425,48 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           <Text className="menu-selected-date">{selectedDay.date}</Text>
           {mealCard(selectedDay.lunch)}
           {mealCard(selectedDay.dinner)}
-          <Text className="menu-primary-preview">{primaryCta.label}</Text>
+          {partialSaveNotice && (
+            <Text className="notice">生成未完成，部分目标可能已保存，请核对当前菜单</Text>
+          )}
+          {generationIssue && (
+            <View className="card menu-generation-issue">
+              <Text>{generationIssue}</Text>
+              <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/offerings/index" })}>
+                去补充菜品
+              </Button>
+            </View>
+          )}
+          {relaxedRulesText(relaxed) && <Text className="notice">{relaxedRulesText(relaxed)}</Text>}
+          <Button
+            className="primary menu-primary-action"
+            disabled={(primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") &&
+              generating(weekMissingTargets)}
+            onClick={() => {
+              if (primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") {
+                void generate(weekMissingTargets);
+              } else {
+                void Taro.navigateTo({ url: "/pages/merchant/batches/index" });
+              }
+            }}
+          >
+            {generating(weekMissingTargets) ? "正在生成本周菜单" : primaryCta.label}
+          </Button>
         </>
+      )}
+
+      {replaceConfirmation && (
+        <View className="card menu-replace-confirmation">
+          <Text className="section-title">确认重新生成</Text>
+          <Text>以下餐次已有菜单，确认后原菜单会被替换：</Text>
+          {replaceConfirmation.existingTargets.map((target) => (
+            <Text key={targetKey(target)}>{targetText(target)}</Text>
+          ))}
+          <Button
+            className="danger"
+            onClick={() => void generate(replaceConfirmation.originalTargets, true)}
+          >确认重新生成</Button>
+          <Button onClick={() => setReplaceConfirmation(null)}>取消</Button>
+        </View>
       )}
 
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
@@ -308,33 +480,18 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       )}
 
       <View className="card menu-controls">
-        <Text className="section-title">兼容菜单操作</Text>
+        <Text className="section-title">兼容换菜操作</Text>
         <Input
           aria-label="菜单起始日期"
           placeholder="菜单起始日期"
           value={date}
           onInput={(event) => {
             setDate(event.detail.value);
-            setPendingTargets(null);
+            setReplaceConfirmation(null);
           }}
         />
         <Button onClick={() => void loadLegacy()}>查看未来 31 天菜单</Button>
-        <Button disabled={loadState !== "loaded"} className="primary"
-          onClick={() => void generate(buildSingleTarget(date, "lunch"))}>生成午餐</Button>
-        <Button disabled={loadState !== "loaded"}
-          onClick={() => void generate(buildSingleTarget(date, "dinner"))}>生成晚餐</Button>
-        <Button disabled={loadState !== "loaded"}
-          onClick={() => void generate(buildWorkWeekTargets(date, ["lunch", "dinner"]))}>
-          生成工作周午晚餐
-        </Button>
-        {pendingTargets && (
-          <Button disabled={loadState !== "loaded"} className="danger" onClick={() => void generate(pendingTargets, true)}>
-            确认覆盖已有菜单
-          </Button>
-        )}
       </View>
-
-      {relaxedRulesText(relaxed) && <Text className="notice">{relaxedRulesText(relaxed)}</Text>}
       {legacySlots.map((slot) => (
         <View className="card menu-slot" key={String(slot.id)} data-date={slot.date} data-week={weekStart(slot.date)}>
           <Text className="section-title">{slot.date} {occasionText(slot.occasion)}</Text>
@@ -346,7 +503,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
               </View>
               <Button
                 size="mini"
-                disabled={loadState !== "loaded"}
+                disabled={loadState !== "loaded" || generating([{ date: slot.date, occasion: slot.occasion }])}
                 aria-label={`换掉 ${item.nameSnapshot}`}
                 onClick={() => void swap(slot, item.offeringId)}
               >换菜</Button>

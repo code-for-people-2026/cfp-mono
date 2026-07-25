@@ -4,7 +4,9 @@ const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:
 
 test("显式启用后纵向完成接龙预览、确认、重试与无地址订单", async ({ page }) => {
   const suffix = Date.now().toString(36);
-  const target = new Date(Date.now() + (150 + Date.now() % 100) * 86_400_000);
+  const future = new Date(Date.now() + (150 + Date.now() % 100) * 86_400_000);
+  const daysUntilWednesday = (3 - future.getUTCDay() + 7) % 7;
+  const target = new Date(future.getTime() + daysUntilWednesday * 86_400_000);
   const targetDate = target.toISOString().slice(0, 10);
   const deadline = new Date(target.getTime() - 86_400_000).toISOString().slice(0, 10);
   const offerings = [
@@ -15,6 +17,7 @@ test("显式启用后纵向完成接龙预览、确认、重试与无地址订�
     `接龙汤-${suffix} 番茄-${suffix} 汤`
   ];
 
+  await page.clock.setFixedTime(new Date(`${targetDate}T01:00:00.000Z`));
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await taroButton(page, /^菜品$/).click();
@@ -27,9 +30,10 @@ test("显式启用后纵向完成接龙预览、确认、重试与无地址订�
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await taroButton(page, /^菜单$/).last().click();
-  await page.getByRole("textbox", { name: "菜单起始日期" }).fill(targetDate);
-  await taroButton(page, /^生成午餐$/).click();
-  await expect(page.locator(".menu-slot").filter({ hasText: `${targetDate} 午餐` })).toBeVisible();
+  await expect(page.locator(".menu-selected-date")).toContainText(targetDate);
+  const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
+  await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+  await expect(lunchCard.locator(".menu-meal-names")).toBeVisible();
   await taroButton(page, /^预订批次$/).click();
   await page.getByRole("textbox", { name: "批次起始日期" }).fill(targetDate);
   await taroButton(page, /^查看餐次$/).click();
