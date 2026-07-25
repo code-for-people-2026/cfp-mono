@@ -1539,7 +1539,8 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
   const firstName = (await lunchCard.locator(".menu-meal-names").innerText()).split(" · ")[0]!;
   await lunchCard.locator("taro-button-core").filter({ hasText: /^换一道$/ }).click();
   await page.locator(".menu-swap-sheet").getByLabel(`换掉 ${firstName}`, { exact: true }).click();
-  await expect(lunchCard).not.toContainText(firstName);
+  await expect.poll(async () => (await lunchCard.locator(".menu-meal-names").innerText()).split(" · "))
+    .not.toContain(firstName);
 
   await lunchCard.locator("taro-button-core").filter({ hasText: /^重新生成午餐$/ }).click();
   const confirmation = page.locator(".menu-replace-confirmation");
