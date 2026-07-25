@@ -18,11 +18,11 @@
 - **Rationale**：已经开放的菜单可能已有顾客看到或预订，必须保护；尚未开放的草稿需要允许经营者修正菜单和过期配置。
 - **Alternatives considered**：把所有过期截止时间视为只读会让未开放草稿无法修复；只在前端隐藏入口无法阻止陈旧页面或直接请求修改开放菜单。
 
-## 决策 4：切周采用递增 request revision
+## 决策 4：周读取与 mutation 共享 view revision
 
-- **Decision**：每次周加载捕获 revision 和目标周；只有最新 revision 且目标仍为当前周时可写入，刷新保留旧数据。
-- **Rationale**：页面必须防止快速切周的旧响应覆盖新意图，同时返回刷新不应整页闪白。
-- **Alternatives considered**：全局 loading 清空列表会闪白；取消请求依赖跨端能力且不能保证服务端响应不回调。
+- **Decision**：每次周加载捕获 load revision、目标周和该周的 view revision；mutation 发出与提交时都推进 view revision，使更早或提交前发出的同周读取失效。只有三者仍匹配时读取才可写入，刷新期间保留旧数据。
+- **Rationale**：仅比较 load-vs-load 无法阻止“刷新先读旧值、mutation 后提交、刷新最后返回”回滚新菜单；共享协调版本同时覆盖快速切周和同周读写乱序。
+- **Alternatives considered**：全局 loading 清空列表会闪白；取消请求依赖跨端能力且不能保证回调不执行；读取和写入完全分离的 revision 无法处理同周旧快照。
 
 ## 决策 5：mutation 响应必须同时匹配目标周和操作 revision
 
@@ -38,9 +38,9 @@
 
 ## 决策 7：菜单只读保护下沉到 CMS/Payload 原子写入边界
 
-- **Decision**：业务服务在生成、覆盖和换菜前执行快速预检查；CMS/Payload 的菜单写入使用带 `orderStatus=draft` 条件的原子更新或等价事务保护，并在条件不成立时返回稳定锁定冲突。前端收到冲突后刷新目标周。
+- **Decision**：业务服务在生成、覆盖和换菜前执行快速预检查；Payload `MealSlots` collection 在所有 local API、REST 和 admin 写入共同经过的 hook/事务边界比较原文档与提交数据，只有最新 `orderStatus=draft` 才允许改变菜单，并向 CMS route/backend 返回稳定锁定冲突。前端收到冲突后刷新目标周。
 - **Rationale**：读取为 `draft` 后可能并发开放餐次；只有提交菜单变更时依据最新持久化状态判断，才能关闭 TOCTOU 窗口并保护顾客已经看到或预订的菜单。
-- **Alternatives considered**：只做前端保护无法覆盖旧页面或直接 API；只在业务路由读取后预检查仍有竞态；CMS 再次普通读取后更新同样不是原子保护。
+- **Alternatives considered**：只做前端保护无法覆盖旧页面或直接 API；只在业务路由读取后预检查仍有竞态；仅在 CMS internal route 保护会被 Payload admin/REST/local API 绕过；CMS 再次普通读取后更新同样不是原子保护。
 
 ## 决策 8：行为与视觉分开收口
 

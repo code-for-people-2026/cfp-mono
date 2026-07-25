@@ -53,14 +53,15 @@ loaded-* → swapping → loaded-* / swap-error
 
 | 字段 | 含义 | 规则 |
 |------|------|------|
-| `revision` | 单调递增操作版本 | 每次生成或换菜发出时推进 |
+| `mutationRevision` | 单调递增写操作版本 | 每次生成或换菜发出时推进 |
+| `viewRevision` | 当前周读写协调版本 | mutation 发出和提交时推进，使此前或提交前发出的同周读取失效 |
 | `weekStart` | 请求目标工作周 | 响应合并、错误提示和刷新都必须匹配 |
 | `targetKeys` | 目标日期与餐次 | 只锁定和合并对应餐次 |
 
-成功响应只有在 `revision` 与 `weekStart` 都仍匹配时才能合并或清除当前确认；旧响应不得修改新工作周。非菜品池错误按原 `weekStart` 重新读取真实状态，但用户已经切周时只允许缓存或丢弃该结果，不能覆盖当前视图。
+每次周读取捕获 `weekStart`、load revision 与 `viewRevision`；mutation 开始和提交时都推进目标周的 `viewRevision`，因此 mutation 之前或进行中读到旧数据的同周响应不能在提交后回滚菜单。成功写响应只有在 `mutationRevision` 与 `weekStart` 仍匹配时才能合并或清除当前确认；旧响应不得修改新工作周。非菜品池错误按原 `weekStart` 发起新的受版本约束读取，但用户已经切周时只允许缓存或丢弃结果，不能覆盖当前视图。
 
 ## 持久化菜单只读不变量
 
-菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈，CMS/Payload 写入必须通过条件更新或等价事务在同一原子边界验证最新状态；读取后再执行无条件 PATCH 不满足该不变量。
+菜单变更只允许在餐次最新 `orderStatus=draft` 时提交。业务服务的预检查用于尽早反馈；Payload `MealSlots` collection 必须在所有 local API、REST 和 admin 更新共同经过的 hook/事务边界拒绝非草稿菜单变更，CMS internal route 再把该稳定冲突传给 backend。只在 internal route 条件更新，或读取后再执行无条件 PATCH，都不满足该不变量。
 
 覆盖确认同时保存原始目标和冲突响应中的已有目标；确认层展示已有目标，确认请求提交原始目标。周切换或刷新后目标不再匹配时确认失效。

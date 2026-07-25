@@ -24,6 +24,7 @@ BE_BASE_URL=https://codeforpeople.cn pnpm verify
 ## 视觉验收
 
 1. 使用仓库内 Page 3 PNG/HTML，在 354×786 视口核对顶部、周标题、五日日期条、午晚餐卡片、动态 CTA 和底部导航。
+   入库前核对 PNG 为 155701 bytes、708×1572 RGB，SHA-256 为 `0ac15d72a2a0818499a2c427b841d9ac6378baea9a9a22b79efe446cb8ce6259`。
 2. 验证长菜名、空餐次、错误提示、覆盖层、换菜层和菜品池不足状态无横向溢出。
 3. 滚动到底后确认晚餐卡片、固定 CTA 与安全区导航均可访问且互不遮挡。
 4. 浏览器 console 无新增 warning/error；微信小程序构建成功。真机视觉另行记录，不由 H5 自动化替代。

@@ -9,8 +9,8 @@
 | PR | 目标 / 核心不变量 | 关联故事/需求 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | 固化 Page 3 产品边界、视图模型和执行计划 | US1-US4、FR-001~037 | T001-T003 | `specs/020-kith-inn-v1-merchant-menu-hifi/**`；不改运行时代码 | checklist、Spec Kit 前置检查、Task ID 映射 | 约 700 行 | 无 |
-| PR-Assets | 让 Page 3 独立参考图可由仓库读取 | SC-005 | T004 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`；排除所有 Prompt | PNG 可读、尺寸和内容核对 | 二进制 | PR1 |
-| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、必要的 Payload hook、长期文档；不改公开 API 或生成算法 | 并发状态测试、backend/CMS coverage、lint、typecheck | 约 420 行 | PR1 |
+| PR-Assets | 让 Page 3 独立参考图可由仓库读取 | SC-005 | T004 | `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`；排除所有 Prompt | PNG 尺寸、大小和 SHA-256 核对 | 二进制 | PR1 |
+| PR-Guard | 菜单写入只在餐次最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | backend 路由及测试、CMS meal-slot PATCH 与集成测试、Payload `MealSlots` hook 与直接更新测试、长期文档；不改公开 API 或生成算法 | 并发状态、Payload admin/REST/local 边界、coverage、lint、typecheck | 约 520 行 | PR1 |
 | PR2 | 工作周和操作目标不受设备时区或数据顺序影响 | US1/US2、FR-001~008/013~025/035~036 | T005-T006 | `apps/kith-inn-v1-fe/src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*`；不改 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard |
 | PR3 | 自动周视图只呈现所选日两个真实餐次位置 | US1、FR-001~014/029~033 | T007-T009 | 菜单页、merchant E2E、长期文档；不接新 mutation、不做最终换肤 | 先失败 E2E；coverage、双端 build | 约 520 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037 | T010-T011 | 菜单页和 merchant E2E；不做换菜/配置/最终换肤 | mutation、部分失败重载、跨周延迟响应 E2E 与双端 build | 约 560 行 | PR3 |
@@ -34,7 +34,7 @@
 
 **Goal**：最终视觉 PR 只从仓库读取独立 Page 3 参考图。
 
-- [ ] T004 在独立 PR-Assets 中提交 `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png` 并明确排除 `docs/kith-inn-v1/design/merchant-menu-hifi-rebuild-prompt.md` 和所有其他 Prompt
+- [ ] T004 从用户指定的 `d097` 路径取得独立 PNG，在 PR-Assets 中提交 `docs/kith-inn-v1/design/merchant-menu-hifi-v0.2.png`，核对 155701 bytes、708×1572 RGB、SHA-256 `0ac15d72a2a0818499a2c427b841d9ac6378baea9a9a22b79efe446cb8ce6259`，并明确排除 `docs/kith-inn-v1/design/merchant-menu-hifi-rebuild-prompt.md` 和所有其他 Prompt
 
 **Checkpoint**：PNG 可读取、尺寸正确，PR6 不依赖指定工作树继续存在。
 
@@ -44,8 +44,8 @@
 
 **Goal**：已经进入预订生命周期的餐次不能通过生成、覆盖或换菜改变菜单。
 
-- [ ] T020 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，并在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加业务层读到 `draft` 后并发开放、菜单 PATCH 按最新状态拒绝的集成测试，确认失败
-- [ ] T021 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现稳定业务冲突和批量目标预检查，在 CMS/Payload 菜单写入边界实现带最新 `orderStatus=draft` 条件的原子保护，并在 `docs/kith-inn-v1/USER-STORIES.md` 与 `TECH-SPEC.md` 明确开放/关闭菜单只读、覆盖仅适用于草稿；保持公开 API 形状与生成算法不变
+- [ ] T020 先在 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts` 增加 `open` / `closed` 生成覆盖与换菜拒绝、截止时间已过的 `draft` 仍可编辑测试，在 `apps/cms/tests/kiv1-meal-slots.test.ts` 增加业务层读到 `draft` 后并发开放的测试，并为 `packages/kith-inn-v1-payload` 增加 direct local API 以及可绕过 internal route 的 admin/REST 等价更新保护测试，确认失败
+- [ ] T021 在 `apps/kith-inn-v1-be/src/routes/mealSlots.ts` 实现稳定业务冲突和批量目标预检查，在 Payload `MealSlots` collection 的公共 hook/事务边界实现最新 `orderStatus=draft` 保护并由 CMS route 稳定传递冲突；同时在 `docs/kith-inn-v1/USER-STORIES.md` 与 `TECH-SPEC.md` 明确开放/关闭菜单只读、覆盖仅适用于草稿；保持公开 API 形状与生成算法不变
 
 **Checkpoint**：backend 与 CMS 集成测试证明只读不变量不依赖前端按钮，也不受读取后并发开放的 TOCTOU 影响。
 
@@ -70,7 +70,7 @@
 
 **Independent Test**：mock 空周、部分周和完整周，验证默认周、日期条、两张卡、最后请求获胜和保留数据刷新。
 
-- [ ] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E 并确认新断言失败
+- [ ] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E；使用可复现的本地 seed 从进入菜单页开始计时，断言工作周与午晚餐状态在 3 秒内可见，并确认新断言失败
 - [ ] T008 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入 `menuWeek` 视图模型，实现认证、自动加载、切周/切日、只读餐次卡、刷新和错误态，保留低优先级接龙入口与 `MerchantNav`
 - [ ] T009 [US1] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步自动工作周、上海日期、latest-request-wins 和所选日双餐次行为
 
@@ -84,8 +84,8 @@
 
 **Independent Test**：依次验证空周生成十个目标、部分周只补缺失、单餐独立、覆盖目标列表、取消、菜品池不足和规则放宽。
 
-- [ ] T010 [US2] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 将既有菜单生成流程改成自动周交互，并增加只补缺失、覆盖目标说明、只读餐次排除、分类缺口、放宽规则、部分持久化后失败重载，以及 A 周延迟响应不污染已切换 B 周的 E2E，确认新断言失败
-- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；为生成操作记录目标周和单调 revision，pending 只锁定关联餐次或周主操作，非菜品池失败重载原目标周且不覆盖当前其他周
+- [ ] T010 [US2] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 将既有菜单生成流程改成自动周交互，并增加只补缺失、覆盖目标说明、只读餐次排除、分类缺口、放宽规则、部分持久化后失败重载、A 周延迟 mutation 不污染已切换 B 周，以及同周刷新先读旧菜单但晚于生成提交返回时不回滚的 E2E，确认新断言失败
+- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；为生成操作记录目标周和单调 mutation revision，并在发出和提交时推进共享 view revision 使旧同周读取失效；pending 只锁定关联餐次或周主操作，非菜品池失败重载原目标周且不覆盖当前其他周
 
 **Checkpoint**：所有真实生成能力在新周视图中可用，失败不损坏原菜单。
 
@@ -97,8 +97,8 @@
 
 **Independent Test**：对草稿选择一道菜替换并比较其余四道；对无候选和只读餐次核对零写入与入口隐藏。
 
-- [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏，以及换菜延迟响应不污染新工作周的 E2E 并确认新断言失败
-- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与 mutation revision 校验、成功合并和无候选菜品库引导，并在长期文档同步换菜职责
+- [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏、换菜延迟响应不污染新工作周，以及同周旧刷新不回滚换菜结果的 E2E 并确认新断言失败
+- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与 mutation revision 校验，并在换菜发出和提交时推进共享 view revision；成功只合并匹配响应，无候选引导菜品库，并在长期文档同步换菜职责
 
 ---
 
