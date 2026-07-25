@@ -977,7 +977,10 @@ test("不同餐次的并行生成独立合并响应", async ({ page }) => {
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify({ docs: [doc], relaxedRules: [] })
+      body: JSON.stringify({
+        docs: [doc],
+        relaxedRules: target.occasion === "dinner" ? ["recent-offering"] : []
+      })
     });
   });
 
@@ -992,10 +995,12 @@ test("不同餐次的并行生成独立合并响应", async ({ page }) => {
   await expect(dinner.locator("taro-button-core").filter({ hasText: /^生成中$/ })).toHaveAttribute("disabled", "");
   releaseDinner();
   await expect(dinner).toContainText("并行晚餐");
+  await expect(page.getByText("已放宽：近 7 日不重复菜", { exact: true })).toBeVisible();
   await expect(lunch).toContainText("生成中");
   releaseLunch();
   await expect(lunch).toContainText("并行午餐");
   await expect(dinner).toContainText("并行晚餐");
+  await expect(page.getByText("已放宽：近 7 日不重复菜", { exact: true })).toBeVisible();
 });
 
 test("整周重新生成只覆盖草稿并保留后端原始目标", async ({ page }) => {
@@ -1013,6 +1018,10 @@ test("整周重新生成只覆盖草稿并保留后端原始目标", async ({ pa
   await page.route("**/merchant/meal-slots/generate-menus", (route) => {
     const body = route.request().postDataJSON();
     bodies.push(body);
+    if (body.targets.length === 1 && body.targets[0].date === "2026-07-23" &&
+      body.targets[0].occasion === "dinner") {
+      return route.fulfill({ status: 502, contentType: "application/json", body: "{}" });
+    }
     if (!body.replaceExisting) {
       return route.fulfill({
         status: 409,
@@ -1049,9 +1058,14 @@ test("整周重新生成只覆盖草稿并保留后端原始目标", async ({ pa
   const confirmation = page.locator(".menu-replace-confirmation");
   await expect(confirmation).toContainText("2026-07-20 午餐");
   await expect(confirmation).not.toContainText("2026-07-21 晚餐");
+  await page.locator(".menu-day").filter({ hasText: "周四" }).click();
+  await page.locator(".menu-meal-card").filter({ hasText: "晚餐" })
+    .locator("taro-button-core").filter({ hasText: /^生成晚餐$/ }).click();
+  await expect(page.getByText("生成未完成，部分目标可能已保存，请核对当前菜单", { exact: true })).toBeVisible();
+  await expect(confirmation).toBeVisible();
   await confirmation.locator("taro-button-core").filter({ hasText: /^确认重新生成$/ }).click();
-  await expect.poll(() => bodies.length).toBe(2);
-  expect(bodies[1]).toEqual({ ...bodies[0], replaceExisting: true });
+  await expect.poll(() => bodies.length).toBe(3);
+  expect(bodies[2]).toEqual({ ...bodies[0], replaceExisting: true });
   await expect(confirmation).toHaveCount(0);
 });
 

@@ -60,6 +60,10 @@ const occasionText = (occasion: Occasion) => occasion === "lunch" ? "午餐" : "
 const mergeSlots = (current: MealSlot[], docs: MealSlot[]) => docs.reduce(replaceMealSlot, current);
 const targetKey = ({ date, occasion }: MealSlotTarget) => `${date}:${occasion}`;
 const targetText = ({ date, occasion }: MealSlotTarget) => `${date} ${occasionText(occasion)}`;
+const targetsOverlap = (left: MealSlotTarget[], right: MealSlotTarget[]) => {
+  const rightKeys = new Set(right.map(targetKey));
+  return left.some((target) => rightKeys.has(targetKey(target)));
+};
 let rememberedView: { weekStart: string; selectedDate: string } | null = null;
 
 function weekStart(value: string): string {
@@ -141,7 +145,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     const revision = ++loadRevision.current;
     const capturedViewRevision = viewRevision.current;
     const preserving = preserveData && loadState === "loaded";
-    setReplaceConfirmation(null);
     setRefreshFailed(false);
     if (preserving) setRefreshing(true);
     else setLoadState("loading");
@@ -241,7 +244,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setGenerationIssue(null);
     setPartialSaveNotice(false);
     setRelaxed([]);
-    setReplaceConfirmation(null);
+    setReplaceConfirmation((current) => current && targetsOverlap(current.originalTargets, targets) ? null : current);
     setPendingTargetKeys((current) => [...new Set([...current, ...targetKeys])]);
     return {
       contextRevision: contextRevision.current,
@@ -288,8 +291,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       loadRevision.current += 1;
       setSlots((current) => mergeSlots(current, docs));
       setLegacySlots((current) => mergeSlots(current, docs));
-      setRelaxed(result.relaxedRules);
-      setReplaceConfirmation(null);
+      setRelaxed((current) => [...new Set([...current, ...result.relaxedRules])]);
     } catch (error) {
       const isCurrent = contextMatches(context) && allTargetsMatch(context);
       const existingTargets = existingTargetsFrom(error);
@@ -320,7 +322,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
-    setReplaceConfirmation(null);
+    setReplaceConfirmation((current) => current && targetsOverlap(current.originalTargets, [slot]) ? null : current);
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
       if (revision !== mutationRevision.current) return;
@@ -487,7 +489,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           value={date}
           onInput={(event) => {
             setDate(event.detail.value);
-            setReplaceConfirmation(null);
           }}
         />
         <Button onClick={() => void loadLegacy()}>查看未来 31 天菜单</Button>
