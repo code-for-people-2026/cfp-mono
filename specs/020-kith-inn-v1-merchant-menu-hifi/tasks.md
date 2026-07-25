@@ -107,8 +107,8 @@
 
 **Independent Test**：对草稿选择一道菜替换并比较其余四道；对无候选和只读餐次核对零写入与入口隐藏。
 
-- [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏、换菜延迟响应不污染新工作周、不同餐次并行响应均可合并，以及同周旧刷新不回滚换菜结果的 E2E 并确认新断言失败
-- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与目标餐次 revision 校验，并在换菜发出和提交时推进共享 view revision；成功只合并匹配目标响应，不同餐次互不失效，无候选引导菜品库；新流程通过后在同片移除 PR3 保留的旧换菜兼容入口，并在长期文档同步换菜职责
+- [X] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏、换菜延迟响应不污染新工作周、不同餐次并行响应均可合并，以及同周旧刷新不回滚换菜结果的 E2E 并确认新断言失败
+- [X] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与目标餐次 revision 校验，并在换菜发出和提交时推进共享 view revision；成功只合并匹配目标响应，不同餐次互不失效，无候选引导菜品库；新流程通过后在同片移除 PR3 保留的旧换菜兼容入口，并在长期文档同步换菜职责
 
 ---
 

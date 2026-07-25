@@ -1,4 +1,4 @@
-import { Button, Input, Text, View } from "@tarojs/components";
+import { Button, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import {
   Component,
@@ -13,7 +13,6 @@ import {
 import type { MealSlot, MealSlotTarget, Occasion, RelaxedRule } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
 import {
-  buildMenuRange,
   generationErrorText,
   needsReplaceConfirmation,
   relaxedRulesText,
@@ -66,12 +65,6 @@ const targetsOverlap = (left: MealSlotTarget[], right: MealSlotTarget[]) => {
 };
 let rememberedView: { weekStart: string; selectedDate: string } | null = null;
 
-function weekStart(value: string): string {
-  const date = new Date(`${value}T00:00:00.000Z`);
-  date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7);
-  return date.toISOString().slice(0, 10);
-}
-
 function deadlineText(value: string | null): string {
   if (!value) return "未设置截止时间";
   return `${new Date(Date.parse(value) + 8 * 60 * 60 * 1_000).toISOString().slice(11, 16)} 截止`;
@@ -91,6 +84,10 @@ type GenerationContext = {
 type ReplaceConfirmation = {
   existingTargets: MealSlotTarget[];
   originalTargets: MealSlotTarget[];
+};
+type SwapFeedback = {
+  issue: string | null;
+  relaxedRules: RelaxedRule[];
 };
 
 function existingTargetsFrom(error: unknown): MealSlotTarget[] {
@@ -114,12 +111,12 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   if (rememberedView === null) rememberedView = { weekStart: firstWeek, selectedDate: firstSelectedDate };
   const weekStartRef = useRef(firstWeek);
   const loadRevision = useRef(0);
-  const mutationRevision = useRef(0);
   const contextRevision = useRef(0);
   const viewRevision = useRef(0);
   const targetRevisions = useRef(new Map<string, number>());
   const pendingTargetKeysRef = useRef<string[]>([]);
-  const refreshAfterGeneration = useRef(false);
+  const pendingSwapTargetKeysRef = useRef<string[]>([]);
+  const refreshAfterMutation = useRef(false);
   const [currentWeek, setCurrentWeek] = useState(firstWeek);
   const [selectedDate, setSelectedDate] = useState(firstSelectedDate);
   const [slots, setSlots] = useState<MealSlot[]>([]);
@@ -127,13 +124,14 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const [refreshing, setRefreshing] = useState(false);
   const [refreshFailed, setRefreshFailed] = useState(false);
   const [clockNow, setClockNow] = useState(Date.now());
-  const [date, setDate] = useState("");
-  const [legacySlots, setLegacySlots] = useState<MealSlot[]>([]);
   const [relaxed, setRelaxed] = useState<RelaxedRule[]>([]);
   const [pendingTargetKeys, setPendingTargetKeys] = useState<string[]>([]);
+  const [pendingSwapTargetKeys, setPendingSwapTargetKeys] = useState<string[]>([]);
   const [replaceConfirmations, setReplaceConfirmations] = useState<ReplaceConfirmation[]>([]);
   const [generationIssue, setGenerationIssue] = useState<string | null>(null);
   const [partialSaveNotice, setPartialSaveNotice] = useState(false);
+  const [swapSelection, setSwapSelection] = useState<MealSlot | null>(null);
+  const [swapFeedback, setSwapFeedback] = useState<Record<string, SwapFeedback>>({});
 
   const week = useMemo(() =>
     buildMenuWeek(currentWeek, slots, new Date(clockNow), selectedDate),
@@ -159,6 +157,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       setLoadState("loaded");
       setClockNow(Date.now());
       setReplaceConfirmations([]);
+      setSwapSelection(null);
+      setSwapFeedback({});
     } catch (error) {
       if (revision !== loadRevision.current || targetWeek !== weekStartRef.current ||
         capturedViewRevision !== viewRevision.current || handledAuthFailure(error)) return;
@@ -172,8 +172,8 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
 
   const requestWeekRefresh = () => {
     if (merchantRoute(sessions.getSession()) === "login") return;
-    if (pendingTargetKeysRef.current.length > 0) {
-      refreshAfterGeneration.current = true;
+    if (pendingTargetKeysRef.current.length > 0 || pendingSwapTargetKeysRef.current.length > 0) {
+      refreshAfterMutation.current = true;
       return;
     }
     void loadWeek(weekStartRef.current, true);
@@ -191,10 +191,9 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     void loadWeek(firstWeek, false);
     return () => {
       loadRevision.current += 1;
-      mutationRevision.current += 1;
       contextRevision.current += 1;
       viewRevision.current += 1;
-      refreshAfterGeneration.current = false;
+      refreshAfterMutation.current = false;
     };
   }, []);
 
@@ -210,7 +209,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     const target = shiftWeekStart(weekStartRef.current, amount);
     const targetDate = buildMenuWeek(target, [], new Date()).selectedDate;
     weekStartRef.current = target;
-    mutationRevision.current += 1;
     contextRevision.current += 1;
     viewRevision.current += 1;
     targetRevisions.current.forEach((revision, key) => targetRevisions.current.set(key, revision + 1));
@@ -219,26 +217,17 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setSelectedDate(targetDate);
     setSlots([]);
     pendingTargetKeysRef.current = [];
-    refreshAfterGeneration.current = false;
+    pendingSwapTargetKeysRef.current = [];
+    refreshAfterMutation.current = false;
     setPendingTargetKeys([]);
+    setPendingSwapTargetKeys([]);
     setReplaceConfirmations([]);
     setGenerationIssue(null);
     setPartialSaveNotice(false);
     setRelaxed([]);
+    setSwapSelection(null);
+    setSwapFeedback({});
     void loadWeek(target, false);
-  };
-
-  const loadLegacy = async () => {
-    const range = buildMenuRange(date);
-    if (!range) {
-      await Taro.showToast({ title: "请输入有效日期", icon: "none" });
-      return;
-    }
-    try {
-      setLegacySlots(await api.listMealSlots(range.from, range.to));
-    } catch (error) {
-      if (!handledAuthFailure(error)) await Taro.showToast({ title: "菜单加载失败", icon: "none" });
-    }
   };
 
   const beginGeneration = (targets: MealSlotTarget[]): GenerationContext => {
@@ -258,6 +247,12 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     setRelaxed([]);
     setReplaceConfirmations((current) => current.filter((confirmation) =>
       !targetsOverlap(confirmation.originalTargets, targets)));
+    setSwapSelection((current) => current && targetsOverlap([current], targets) ? null : current);
+    setSwapFeedback((current) => {
+      const next = { ...current };
+      targetKeys.forEach((key) => delete next[key]);
+      return next;
+    });
     pendingTargetKeysRef.current = [...new Set([...pendingTargetKeysRef.current, ...targetKeys])];
     setPendingTargetKeys(pendingTargetKeysRef.current);
     return {
@@ -278,8 +273,9 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     pendingTargetKeysRef.current = pendingTargetKeysRef.current.filter((key) =>
       !context.targetKeys.includes(key) || !targetMatches(context, key));
     setPendingTargetKeys(pendingTargetKeysRef.current);
-    if (pendingTargetKeysRef.current.length === 0 && refreshAfterGeneration.current) {
-      refreshAfterGeneration.current = false;
+    if (pendingTargetKeysRef.current.length === 0 && pendingSwapTargetKeysRef.current.length === 0 &&
+      refreshAfterMutation.current) {
+      refreshAfterMutation.current = false;
       void loadWeek(weekStartRef.current, true);
     }
   };
@@ -293,7 +289,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       if (currentTargetKeys.length === 0) return;
       const matchingDocs = docs.filter((doc) => currentTargetKeys.includes(targetKey(doc)));
       setSlots((current) => mergeSlots(current, matchingDocs));
-      setLegacySlots((current) => mergeSlots(current, matchingDocs));
       setClockNow(Date.now());
       setPartialSaveNotice(true);
     } catch {
@@ -315,7 +310,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
       viewRevision.current += 1;
       loadRevision.current += 1;
       setSlots((current) => mergeSlots(current, docs));
-      setLegacySlots((current) => mergeSlots(current, docs));
       setRelaxed((current) => [...new Set([...current, ...result.relaxedRules])]);
     } catch (error) {
       const isCurrent = contextMatches(context) && allTargetsMatch(context);
@@ -342,35 +336,81 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
   const generating = (targets: MealSlotTarget[]) =>
     targets.some((target) => pendingTargetKeys.includes(targetKey(target)));
 
+  const swapping = (target: MealSlotTarget) => pendingSwapTargetKeys.includes(targetKey(target));
+  const busy = (targets: MealSlotTarget[]) => targets.some((target) =>
+    pendingTargetKeys.includes(targetKey(target)) || pendingSwapTargetKeys.includes(targetKey(target)));
+
   const swap = async (slot: MealSlot, offeringId: string | number) => {
-    const revision = mutationRevision.current;
     const key = targetKey(slot);
+    if (pendingTargetKeysRef.current.includes(key) || pendingSwapTargetKeysRef.current.includes(key)) return;
+    const capturedContextRevision = contextRevision.current;
+    const capturedWeek = weekStartRef.current;
     const targetRevision = (targetRevisions.current.get(key) ?? 0) + 1;
     targetRevisions.current.set(key, targetRevision);
-    const isCurrent = () => revision === mutationRevision.current &&
+    const isCurrent = () => capturedContextRevision === contextRevision.current &&
+      capturedWeek === weekStartRef.current &&
       targetRevision === targetRevisions.current.get(key);
+    viewRevision.current += 1;
     loadRevision.current += 1;
     setRefreshing(false);
     setRefreshFailed(false);
+    setSwapSelection(null);
+    setSwapFeedback((current) => {
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
     setReplaceConfirmations((current) => current.filter((confirmation) =>
       !targetsOverlap(confirmation.originalTargets, [slot])));
+    pendingSwapTargetKeysRef.current = [...pendingSwapTargetKeysRef.current, key];
+    setPendingSwapTargetKeys(pendingSwapTargetKeysRef.current);
     try {
       const result = await api.swapMenuItem(slot.id, offeringId);
       if (!isCurrent()) return;
+      viewRevision.current += 1;
       loadRevision.current += 1;
       setSlots((current) => replaceMealSlot(current, result.doc));
-      setLegacySlots((current) => replaceMealSlot(current, result.doc));
-      setRelaxed(result.relaxedRules);
+      setSwapFeedback((current) => ({
+        ...current,
+        [key]: { issue: null, relaxedRules: result.relaxedRules }
+      }));
     } catch (error) {
       if (!isCurrent()) return;
       if (handledAuthFailure(error)) return;
+      if (error instanceof ApiError && error.code === "no-swap-candidate") {
+        setSwapFeedback((current) => ({
+          ...current,
+          [key]: { issue: "没有合适的同类菜品，请先补充菜品库", relaxedRules: [] }
+        }));
+        return;
+      }
+      if (error instanceof ApiError && error.code === "meal-slot-menu-locked") {
+        setSwapFeedback((current) => ({
+          ...current,
+          [key]: { issue: "餐次状态已变化，菜单不可修改", relaxedRules: [] }
+        }));
+        refreshAfterMutation.current = true;
+        return;
+      }
       await Taro.showToast({ title: error instanceof Error ? error.message : "换菜失败", icon: "none" });
+    } finally {
+      pendingSwapTargetKeysRef.current = pendingSwapTargetKeysRef.current.filter((target) =>
+        target !== key || !isCurrent());
+      setPendingSwapTargetKeys(pendingSwapTargetKeysRef.current);
+      if (pendingTargetKeysRef.current.length === 0 && pendingSwapTargetKeysRef.current.length === 0 &&
+        refreshAfterMutation.current) {
+        refreshAfterMutation.current = false;
+        void loadWeek(weekStartRef.current, true);
+      }
     }
   };
 
   const mealCard = (meal: MealPosition) => {
     const targets = [{ date: meal.date, occasion: meal.occasion }];
     const isGenerating = generating(targets);
+    const isSwapping = swapping(targets[0]!);
+    const isBusy = busy(targets);
+    const feedback = swapFeedback[targetKey(targets[0]!)];
     return (
       <View className={`card menu-meal-card ${meal.status}`} key={meal.occasion}>
         <View className="menu-meal-heading">
@@ -391,13 +431,35 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           </>
         ) : <Text className="meta">这个餐次还没有安排菜单</Text>}
         {(meal.slot === null || meal.editable) && (
-          <Button
-            size="mini"
-            disabled={isGenerating}
-            onClick={() => void generate(targets)}
-          >
-            {isGenerating ? "生成中" : `${meal.slot ? "重新生成" : "生成"}${occasionText(meal.occasion)}`}
-          </Button>
+          <View className="menu-meal-actions">
+            {meal.slot && (
+              <Button
+                size="mini"
+                disabled={isBusy}
+                onClick={() => setSwapSelection(meal.slot)}
+              >{isSwapping ? "换菜中" : "换一道"}</Button>
+            )}
+            <Button
+              size="mini"
+              disabled={isBusy}
+              onClick={() => void generate(targets)}
+            >
+              {isGenerating ? "生成中" : `${meal.slot ? "重新生成" : "生成"}${occasionText(meal.occasion)}`}
+            </Button>
+          </View>
+        )}
+        {feedback?.issue && (
+          <View className="menu-swap-feedback">
+            <Text>{feedback.issue}</Text>
+            <Button size="mini" onClick={() => void Taro.navigateTo({ url: "/pages/merchant/offerings/index" })}>
+              去菜品库
+            </Button>
+          </View>
+        )}
+        {feedback && relaxedRulesText(feedback.relaxedRules) && (
+          <Text className="notice">
+            本次{relaxedRulesText(feedback.relaxedRules)}
+          </Text>
         )}
       </View>
     );
@@ -418,7 +480,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         {weekEditableTargets.length > 0 && (
           <Button
             size="mini"
-            disabled={generating(weekEditableTargets)}
+            disabled={busy(weekEditableTargets)}
             onClick={() => void generate(weekEditableTargets)}
           >重新生成</Button>
         )}
@@ -446,6 +508,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
                 key={day.date}
                 onClick={() => {
                   rememberedView = { weekStart: currentWeek, selectedDate: day.date };
+                  setSwapSelection(null);
                   setSelectedDate(day.date);
                 }}
               >
@@ -472,7 +535,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
           <Button
             className="primary menu-primary-action"
             disabled={(primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") &&
-              generating(weekMissingTargets)}
+              busy(weekMissingTargets)}
             onClick={() => {
               if (primaryCta.kind === "generate-week" || primaryCta.kind === "fill-week") {
                 void generate(weekMissingTargets);
@@ -501,6 +564,24 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         </View>
       )}
 
+      {swapSelection && (
+        <View className="card menu-swap-sheet">
+          <Text className="section-title">选择要换掉的菜</Text>
+          <Text className="meta">{swapSelection.date} {occasionText(swapSelection.occasion)}</Text>
+          {swapSelection.menuItems.map((item) => (
+            <Button
+              className="menu-swap-option"
+              key={String(item.offeringId)}
+              aria-label={`换掉 ${item.nameSnapshot}`}
+              onClick={() => void swap(swapSelection, item.offeringId)}
+            >
+              {item.nameSnapshot}
+            </Button>
+          ))}
+          <Button onClick={() => setSwapSelection(null)}>取消</Button>
+        </View>
+      )}
+
       <Button onClick={() => void Taro.navigateTo({ url: "/pages/merchant/batches/index" })}>预订批次</Button>
       {jielongImportEnabled(process.env.KITH_INN_V1_ENABLE_JIELONG_IMPORT) && (
         <View className="card fallback-entry">
@@ -511,37 +592,6 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         </View>
       )}
 
-      <View className="card menu-controls">
-        <Text className="section-title">兼容换菜操作</Text>
-        <Input
-          aria-label="菜单起始日期"
-          placeholder="菜单起始日期"
-          value={date}
-          onInput={(event) => {
-            setDate(event.detail.value);
-          }}
-        />
-        <Button onClick={() => void loadLegacy()}>查看未来 31 天菜单</Button>
-      </View>
-      {legacySlots.map((slot) => (
-        <View className="card menu-slot" key={String(slot.id)} data-date={slot.date} data-week={weekStart(slot.date)}>
-          <Text className="section-title">{slot.date} {occasionText(slot.occasion)}</Text>
-          {slot.menuItems.map((item) => (
-            <View className="menu-item" key={String(item.offeringId)}>
-              <View className="menu-item-copy">
-                <Text className="menu-item-name">{item.nameSnapshot}</Text>
-                <Text className="menu-item-main">{item.mainIngredientSnapshot ?? ""}</Text>
-              </View>
-              <Button
-                size="mini"
-                disabled={loadState !== "loaded" || generating([{ date: slot.date, occasion: slot.occasion }])}
-                aria-label={`换掉 ${item.nameSnapshot}`}
-                onClick={() => void swap(slot, item.offeringId)}
-              >换菜</Button>
-            </View>
-          ))}
-        </View>
-      ))}
       <MerchantNav active="menu" />
     </View>
   );
