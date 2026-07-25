@@ -55,7 +55,7 @@
 | PR-Guard-Store | CMS 配置的 Payload 公共写入边界串行化菜单与预订状态写入，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | `apps/cms/payload.config.ts`、`src/lib/kiv1-meal-slot-menu-guard.ts`、`tests/kiv1-meal-slot-menu-guard.test.ts`、长期架构/产品文档 | 不改 CMS internal route、backend 映射、Payload 包、公开 API 或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界测试 | 约 360 行 | PR1 |
 | PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | backend 路由及测试、CMS meal-slot route 与集成测试、服务错误语义文档 | 不改变 collection 策略、公开 API 形状、生成算法或 UI | backend/CMS 锁定冲突与过期草稿测试、coverage、lint、typecheck | 约 260 行 | PR-Guard-Store |
 | PR2 | 工作周及操作目标在任意时区下确定且可测试 | US1/US2、FR-001~008/013~025/035~036 | `src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*` | 不改页面 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard-Service |
-| PR3 | 页面自动加载并只展示所选日午晚餐的真实只读状态 | US1、FR-001~014/029~033 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、长期文档 | 不接新 mutation；不做最终换肤 | 先写周视图 E2E；lint/typecheck/coverage/build | 约 520 行 | PR2 |
+| PR3 | 页面自动加载并只展示所选日午晚餐的真实状态，同时保持现有写操作可达 | US1、FR-001~014/029~033 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、长期文档 | 不改现有 mutation 契约；不做最终换肤 | 周视图、截止主动重算及既有生成/覆盖/换菜回归 E2E；lint/typecheck/coverage/build | 约 560 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037~038 | `pages/merchant/menu/index.tsx`、`tests/e2e/merchant.spec.ts`、必要逻辑测试 | 不做换菜/配置衔接/最终样式 | 每目标 revision、部分成功提示与重载、跨周延迟响应 E2E，coverage、双端 build | 约 580 行 | PR3 |
 | PR5-Swap | 换菜只更新目标草稿且旧响应不能污染新工作周 | US3、FR-022~024/030~031/037 | 菜单页、换菜逻辑与 merchant E2E、长期文档 | 不做预订配置衔接或最终换肤 | 局部替换、无候选、只读与跨周延迟响应 E2E | 约 360 行 | PR4 |
 | PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | 菜单页、`pages/merchant/batches/index.tsx`、booking 纯逻辑/E2E、长期文档 | 不改服务端契约；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
@@ -63,7 +63,7 @@
 
 PR1 超过默认 400 行是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。额外风险是跨文件术语或需求映射不一致、以及较长 diff 导致 review 遗漏；对应缓解为 requirements checklist、FR/SC 到 Task/PR 的逐项映射、`speckit-analyze` 跨产物一致性检查、`git diff --check`，以及 Codex review 每轮新增意见清零后再收口。
 
-原先约 520 行的 PR-Guard 已按持久化边界与服务集成拆为 PR-Guard-Store、PR-Guard-Service，各自可独立验证且目标单一。PR3、PR4 与 PR6 略高于默认预算，但分别只有只读周视图、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
+原先约 520 行的 PR-Guard 已按持久化边界与服务集成拆为 PR-Guard-Store、PR-Guard-Service，各自可独立验证且目标单一。PR3、PR4 与 PR6 略高于默认预算，但分别只有无功能回退的周视图迁移、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
 
 依赖链为 `PR1 → PR-Guard-Store → PR-Guard-Service → PR2 → PR3 → PR4 → PR5-Swap → PR5-Booking → PR6`；资产链为 `PR1 → PR-Assets → PR6`。同一时间只推进一个运行时代码 PR。
 

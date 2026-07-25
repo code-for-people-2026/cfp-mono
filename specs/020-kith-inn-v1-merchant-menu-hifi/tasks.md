@@ -13,7 +13,7 @@
 | PR-Guard-Store | CMS 配置的 Payload 公共写入边界串行化菜单与预订状态写入，并只在锁内最新状态仍为草稿时提交 | US2/US3、FR-014 | T020-T021 | `apps/cms/payload.config.ts`、`src/lib/kiv1-meal-slot-menu-guard.ts`、`tests/kiv1-meal-slot-menu-guard.test.ts`、长期文档；不改 service route、Payload 包、公开 API 或 UI | Postgres 交错事务、SQLite 即时事务、admin/REST/local 边界 | 约 360 行 | PR1 |
 | PR-Guard-Service | 服务层预检查并稳定透传持久化层的菜单锁定冲突 | US2/US3、FR-014 | T022-T023 | backend/CMS route 与测试、服务错误语义文档；不改变 collection 策略、公开 API 或 UI | 锁定冲突、过期草稿、coverage、lint、typecheck | 约 260 行 | PR-Guard-Store |
 | PR2 | 工作周和操作目标不受设备时区或数据顺序影响 | US1/US2、FR-001~008/013~025/035~036 | T005-T006 | `apps/kith-inn-v1-fe/src/logic/menuWeek.ts`、`menuWeek.test.ts`、必要的 `menu.ts*`；不改 JSX/CSS | coverage、lint、typecheck | 约 380 行 | PR-Guard-Service |
-| PR3 | 自动周视图只呈现所选日两个真实餐次位置 | US1、FR-001~014/029~033 | T007-T009 | 菜单页、merchant E2E、长期文档；不接新 mutation、不做最终换肤 | 先失败 E2E；coverage、双端 build | 约 520 行 | PR2 |
+| PR3 | 自动周视图只呈现所选日两个真实餐次位置，同时保持既有写操作可达 | US1、FR-001~014/029~033 | T007-T009 | 菜单页、merchant E2E、长期文档；不改现有 mutation 契约、不做最终换肤 | 周视图、截止主动重算、既有生成/覆盖/换菜回归；coverage、双端 build | 约 560 行 | PR2 |
 | PR4 | 生成、补齐和覆盖只作用于匹配当前操作上下文的可编辑目标 | US2、FR-015~021/024~026/031/037~038 | T010-T011 | 菜单页和 merchant E2E；不做换菜/配置/最终换肤 | 每目标 revision、部分成功提示与重载、跨周延迟响应 E2E 与双端 build | 约 580 行 | PR3 |
 | PR5-Swap | 换菜只更新目标草稿且旧响应不能污染新工作周 | US3、FR-022~024/030~031/037 | T012-T013 | 菜单页、换菜 E2E、长期文档；不做预订配置或最终换肤 | 局部替换、无候选、只读与延迟响应 E2E | 约 360 行 | PR4 |
 | PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | T014-T017 | 菜单页、配置页、booking 纯逻辑/E2E、长期文档；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
@@ -74,15 +74,15 @@
 
 ---
 
-## Phase 3：User Story 1 - 自动只读周界面（Priority: P1）
+## Phase 3：User Story 1 - 无功能回退的自动周界面（Priority: P1）
 
-**Goal**：进入页面自动加载周一至周五，只显示所选日午晚餐并可安全切周。
+**Goal**：进入页面自动加载周一至周五，只显示所选日午晚餐并可安全切周；在新生成/换菜交互分别落地前，现有写操作始终可达。
 
-**Independent Test**：mock 空周、部分周和完整周，验证默认周、日期条、两张卡、最后请求获胜和保留数据刷新。
+**Independent Test**：mock 空周、部分周和完整周，验证默认周、日期条、两张卡、截止到点重算、最后请求获胜和保留数据刷新；同时回归现有单餐/整周生成、覆盖确认和换菜入口。
 
-- [ ] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E；使用可复现的本地 seed 从进入菜单页开始计时，断言工作周与午晚餐状态在 3 秒内可见，并确认新断言失败
-- [ ] T008 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入 `menuWeek` 视图模型，实现认证、自动加载、切周/切日、只读餐次卡、刷新和错误态，保留低优先级接龙入口与 `MerchantNav`
-- [ ] T009 [US1] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步自动工作周、上海日期、latest-request-wins 和所选日双餐次行为
+- [ ] T007 [US1] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加自动周加载、五日选择、午晚餐缺失位置、切周 latest-request-wins、刷新保留和加载错误重试的 E2E；使用可控时钟跨过最近 `open` 截止点并断言无需刷新即显示已截止；使用可复现本地 seed 从进入菜单页开始计时，断言工作周与午晚餐状态在 3 秒内可见；同时保留现有单餐/整周生成、覆盖确认和换菜回归断言，并确认新周视图断言失败
+- [ ] T008 [US1] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入 `menuWeek` 视图模型，实现认证、自动加载、切周/切日、餐次卡、刷新和错误态；调度到下一个尚未截止的 `open` 截止点，到点推进本地时钟 revision 并重算，周数据变化、切周和卸载时重建或清理计时器；保留现有生成、覆盖确认和换菜兼容入口直到 PR4/PR5-Swap 的对应新流程独立通过后再删除，并保留低优先级接龙入口与 `MerchantNav`
+- [ ] T009 [US1] 在 `docs/kith-inn-v1/USER-STORIES.md` 与 `docs/kith-inn-v1/TECH-SPEC.md` 同步自动工作周、上海日期、截止主动重算、latest-request-wins、所选日双餐次和迁移期间不回退既有写操作
 
 **Checkpoint**：不执行菜单写入也能独立验收完整周工作区；现有 API 和认证保持不变。
 
@@ -95,7 +95,7 @@
 **Independent Test**：依次验证空周生成十个目标、部分周只补缺失、单餐独立、覆盖目标列表、取消、菜品池不足和规则放宽。
 
 - [ ] T010 [US2] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 将既有菜单生成流程改成自动周交互，并增加只补缺失、覆盖目标说明、只读餐次排除、分类缺口、放宽规则、多目标部分持久化后重载并明确提示部分成功、A 周延迟 mutation 不污染已切换 B 周、同周旧刷新不回滚生成结果，以及不同目标并行 mutation 的响应都可合并的 E2E，确认新断言失败
-- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；为生成操作记录目标周与每个 `targetKey` 的 mutation revision，并在发出和提交时推进共享 view revision 使旧同周读取失效；pending 只锁定关联餐次或周主操作，不同目标响应独立校验并合并；非菜品池失败重载原目标周、明确提示部分目标可能已保存，且不覆盖当前其他周
+- [ ] T011 [US2] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 接入单餐/整周/补齐、覆盖确认层、分类缺口引导和放宽说明；为生成操作记录目标周与每个 `targetKey` 的 mutation revision，并在发出和提交时推进共享 view revision 使旧同周读取失效；pending 只锁定关联餐次或周主操作，不同目标响应独立校验并合并；非菜品池失败重载原目标周、明确提示部分目标可能已保存，且不覆盖当前其他周；新流程通过后在同片移除 PR3 保留的旧生成/覆盖兼容入口
 
 **Checkpoint**：所有真实生成能力在新周视图中可用；单目标失败保留原菜单，多目标中途失败保持每个已保存餐次结构完整，并让页面提示与服务端真实状态一致。
 
@@ -108,7 +108,7 @@
 **Independent Test**：对草稿选择一道菜替换并比较其余四道；对无候选和只读餐次核对零写入与入口隐藏。
 
 - [ ] T012 [US3] 先在 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts` 增加“选择要换掉的菜”层、局部替换、无候选保持原菜单、逐餐次 pending、只读入口隐藏、换菜延迟响应不污染新工作周、不同餐次并行响应均可合并，以及同周旧刷新不回滚换菜结果的 E2E 并确认新断言失败
-- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与目标餐次 revision 校验，并在换菜发出和提交时推进共享 view revision；成功只合并匹配目标响应，不同餐次互不失效，无候选引导菜品库，并在长期文档同步换菜职责
+- [ ] T013 [US3] 在 `apps/kith-inn-v1-fe/src/pages/merchant/menu/index.tsx` 实现换菜选择层、逐餐次 pending、目标周与目标餐次 revision 校验，并在换菜发出和提交时推进共享 view revision；成功只合并匹配目标响应，不同餐次互不失效，无候选引导菜品库；新流程通过后在同片移除 PR3 保留的旧换菜兼容入口，并在长期文档同步换菜职责
 
 ---
 
@@ -155,6 +155,6 @@
 ## 实施策略
 
 1. 先让纯周逻辑完整失败并通过，页面不重复实现日历或 CTA 规则。
-2. 只读周视图先独立落地，再逐片恢复现有 mutation，避免一次重写全部行为。
+2. 周视图迁移时保留现有 mutation 兼容入口；PR4 的生成/覆盖和 PR5-Swap 的换菜新流程分别通过后，才在同片移除对应旧入口，确保每个可合并 head 都不回退核心能力。
 3. 预订配置只做 query 预填与返回刷新，不扩大后端或复制表单。
 4. 最终 CSS 只在所有行为稳定后进入；Prompt 始终留在本地，PR 只包含允许的 PNG。
