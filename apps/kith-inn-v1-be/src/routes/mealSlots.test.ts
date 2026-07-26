@@ -491,13 +491,13 @@ describe("bulk meal-slot booking status route", () => {
       getMealSlot: vi.fn(async (_token, id) => ({
         ...ready,
         id,
-        orderStatus: String(id) === "11" ? "open" as const : "closed" as const
+        orderStatus: String(id) === "11" ? "open" as const : String(id) === "12" ? "closed" as const : "draft" as const
       })),
       updateMealSlotBookingConfig
     }));
     const stop = await request(stopApp, "/bulk-booking-status", {
       method: "POST",
-      body: JSON.stringify({ mealSlotIds: [11, 12], action: "stop" })
+      body: JSON.stringify({ mealSlotIds: [11, 12, 13], action: "stop" })
     });
 
     expect(reopen.status).toBe(200);
@@ -506,9 +506,11 @@ describe("bulk meal-slot booking status route", () => {
     await expect(stop.json()).resolves.toMatchObject({
       results: [
         { id: 11, status: "updated", doc: { orderStatus: "closed" } },
-        { id: 12, status: "updated", doc: { orderStatus: "closed" } }
+        { id: 12, status: "updated", doc: { orderStatus: "closed" } },
+        { id: 13, status: "failed", error: "invalid-meal-slot-transition" }
       ]
     });
+    expect(updateMealSlotBookingConfig).toHaveBeenCalledTimes(2);
   });
 
   it("validates JSON and the bounded seller-free input", async () => {
@@ -541,6 +543,20 @@ describe("bulk meal-slot booking status route", () => {
     expect((await response.json() as { results: Array<{ error: string }> }).results.map(({ error }) => error))
       .toEqual(["cms-unavailable", "cms-unavailable", "cms-unavailable"]);
     expect(getMealSlot).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([401, 403])("returns a request-level %i merchant authorization failure", async (status) => {
+    const getMealSlot = vi.fn(async () => {
+      throw new CmsMealSlotError(status, "membership-inactive", "商家身份失效");
+    });
+    const response = await request(mealSlotsRoutes(SECRET, deps({ getMealSlot })), "/bulk-booking-status", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11, 12], action: "open" })
+    });
+
+    expect(response.status).toBe(status);
+    await expect(response.json()).resolves.toMatchObject({ error: "membership-inactive" });
+    expect(getMealSlot).toHaveBeenCalledOnce();
   });
 });
 
