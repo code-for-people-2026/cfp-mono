@@ -50,9 +50,8 @@ const occasionText = (occasion: MealSlot["occasion"]) => occasion === "lunch" ? 
 type BatchEntry = BookingBatchListResponse["docs"][number];
 type SlotConfig = { priceYuan: string; orderDeadline: string };
 
-function priceInputValue(priceCents: number): string {
-  return (priceCents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
-}
+const priceInputValue = (priceCents: number): string =>
+  (priceCents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
 
 function initialConfig(slot: MealSlot, defaultPriceCents?: number): SlotConfig {
   const priceCents = slot.priceCents ?? defaultPriceCents;
@@ -77,21 +76,16 @@ export default function MerchantBatches() {
     bookingConfigContext(Taro.getCurrentInstance().router?.params ?? {}));
   const [date, setDate] = useState(initialContext?.weekStart ?? "");
   const [slots, setSlots] = useState<MealSlot[]>([]);
-  const [weekDays, setWeekDays] = useState<string[]>([]);
-  const [closures, setClosures] = useState<ServiceClosure[]>([]);
-  const [defaultPriceYuan, setDefaultPriceYuan] = useState("");
+  const [weekDays, setWeekDays] = useState<string[]>([]); const [closures, setClosures] = useState<ServiceClosure[]>([]);
+  const [defaultPriceYuan, setDefaultPriceYuan] = useState(""); const [priceOverrides, setPriceOverrides] = useState<Set<string>>(() => new Set());
   const [configs, setConfigs] = useState<Record<string, SlotConfig>>({});
-  const [priceOverrides, setPriceOverrides] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<Array<string | number>>([]);
   const [title, setTitle] = useState("");
   const [batches, setBatches] = useState<BatchEntry[]>([]);
   const [closingId, setClosingId] = useState<string | number | null>(null);
-  const [pending, setPending] = useState<string | null>(initialContext ? null : "settings-load");
-  const [failures, setFailures] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [settingsFailed, setSettingsFailed] = useState(false);
-  const [closuresFailed, setClosuresFailed] = useState(false);
+  const [pending, setPending] = useState<string | null>(initialContext ? null : "settings-load"); const [failures, setFailures] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false); const [loadFailed, setLoadFailed] = useState(false);
+  const [settingsFailed, setSettingsFailed] = useState(false); const [closuresFailed, setClosuresFailed] = useState(false);
   const loadRevision = useRef(0);
 
   const loadSlots = async (context?: BookingConfigContext) => {
@@ -394,6 +388,7 @@ export default function MerchantBatches() {
 
       <View className="card batch-controls">
         <Input
+          disabled={loading || pending !== null}
           placeholder="批次起始日期"
           value={date}
           onInput={(event) => setDate(event.detail.value)}
