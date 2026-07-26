@@ -1,9 +1,11 @@
 import type {
   BookingBatch,
   BookingBatchMutationResponse,
+  BulkMealSlotBookingStatusResult,
   MealSlot,
   MealSlotTarget,
-  MealSlotBookingConfig
+  MealSlotBookingConfig,
+  ServiceClosure
 } from "@cfp/kith-inn-v1-shared";
 
 const sameId = (left: string | number, right: string | number) => String(left) === String(right);
@@ -13,6 +15,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export type BookingConfigContext = {
   weekStart: string;
   target: MealSlotTarget | null;
+  source?: "home";
 };
 
 export type BookingReturnMode = "navigate-to" | "redirect-to" | "navigate-back";
@@ -35,14 +38,15 @@ export function bookingConfigContext(params: Record<string, unknown>): BookingCo
     offset >= 0 && offset <= 4
     ? { date, occasion }
     : null;
-  return { weekStart, target };
+  return { weekStart, target, ...(params.source === "home" ? { source: "home" as const } : {}) };
 }
 
-export function bookingConfigUrl(weekStart: string, target?: MealSlotTarget): string {
+export function bookingConfigUrl(weekStart: string, target?: MealSlotTarget, source?: "home"): string {
   const base = `/pages/merchant/batches/index?weekStart=${encodeURIComponent(weekStart)}`;
-  return target
+  const targetUrl = target
     ? `${base}&date=${encodeURIComponent(target.date)}&occasion=${encodeURIComponent(target.occasion)}`
     : base;
+  return source === "home" ? `${targetUrl}&source=home` : targetUrl;
 }
 
 export function bookingMenuUrl(context: BookingConfigContext): string {
@@ -61,6 +65,38 @@ export function bookingReturnMode(input: {
   return input.platform === "h5" || input.pageCount <= 1 ? "redirect-to" : "navigate-back";
 }
 
+export function bookingWeekStart(value: string): string | null {
+  const date = calendarDate(value);
+  if (date === null) return null;
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  const day = instant.getUTCDay();
+  instant.setUTCDate(instant.getUTCDate() - (day === 0 ? 6 : day - 1));
+  return instant.toISOString().slice(0, 10);
+}
+
+export function bookingWeekDates(weekStart: string): string[] {
+  if (bookingWeekStart(weekStart) !== weekStart) return [];
+  const instant = new Date(`${weekStart}T00:00:00.000Z`);
+  return Array.from({ length: 5 }, (_, offset) => {
+    const date = new Date(instant);
+    date.setUTCDate(date.getUTCDate() + offset);
+    return date.toISOString().slice(0, 10);
+  });
+}
+
+export function toggleOperationalSelection(
+  selected: Array<string | number>,
+  id: string | number,
+  limit = 20
+): { selected: Array<string | number>; limitReached: boolean } {
+  if (selected.some((item) => sameId(item, id))) {
+    return { selected: selected.filter((item) => !sameId(item, id)), limitReached: false };
+  }
+  return selected.length >= limit
+    ? { selected, limitReached: true }
+    : { selected: [...selected, id], limitReached: false };
+}
+
 export function selectableBookingSlots(slots: MealSlot[], now: string): MealSlot[] {
   return slots.filter((slot) => slot.orderStatus === "open" && slot.orderDeadline !== null &&
     Date.parse(slot.orderDeadline) > Date.parse(now));
@@ -75,6 +111,30 @@ export function toggleBookingSlot(
   return selected.some((id) => sameId(id, slot.id))
     ? selected.filter((id) => !sameId(id, slot.id))
     : [...selected, slot.id];
+}
+
+export function applyBulkBookingStatus(
+  slots: MealSlot[],
+  results: BulkMealSlotBookingStatusResult[]
+): { slots: MealSlot[]; failedIds: Array<string | number>; failures: Record<string, string> } {
+  const updated = new Map(results.flatMap((result) => result.status === "updated"
+    ? [[String(result.id), result.doc] as const]
+    : []));
+  const failed = results.filter((result) => result.status === "failed");
+  return {
+    slots: slots.map((slot) => updated.get(String(slot.id)) ?? slot),
+    failedIds: failed.map(({ id }) => id),
+    failures: Object.fromEntries(failed.map(({ id, message }) => [String(id), message]))
+  };
+}
+
+export function effectiveServiceClosure(
+  closures: ServiceClosure[],
+  date: string,
+  occasion: MealSlot["occasion"]
+): ServiceClosure | null {
+  return closures.find((closure) => closure.date === date && closure.occasion === null) ??
+    closures.find((closure) => closure.date === date && closure.occasion === occasion) ?? null;
 }
 
 export function buildBookingConfig(input: {
