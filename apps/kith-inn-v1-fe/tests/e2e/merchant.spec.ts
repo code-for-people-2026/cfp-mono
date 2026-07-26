@@ -770,6 +770,22 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
   await taroButton(page, /^菜单$/).click();
   await expect(page.getByText("本周菜单", { exact: true })).toBeVisible();
   await expect(page.getByText("7月20日－24日", { exact: true })).toBeVisible();
+  for (const label of ["上一周", "下一周"]) {
+    const metrics = await page.getByLabel(label).evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        width: rect.width,
+        height: rect.height,
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: Number.parseInt(style.fontWeight, 10)
+      };
+    });
+    expect(metrics.width).toBeGreaterThanOrEqual(48);
+    expect(metrics.height).toBeGreaterThanOrEqual(48);
+    expect(metrics.fontSize).toBeGreaterThanOrEqual(32);
+    expect(metrics.fontWeight).toBeGreaterThanOrEqual(700);
+  }
   await expect(page.locator(".menu-day")).toHaveCount(5);
   expect(Date.now() - startedAt).toBeLessThan(3_000);
 
