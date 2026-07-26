@@ -791,8 +791,15 @@ test("菜单页自动加载五日工作周并在开放餐次截止时主动重�
 
   await expect(page.locator(".menu-day.selected")).toContainText("周三");
   await expect(page.locator(".menu-meal-card")).toHaveCount(2);
-  await expect(page.locator(".menu-meal-card").filter({ hasText: "午餐" })).toContainText("预订中");
-  await expect(page.locator(".menu-meal-card").filter({ hasText: "晚餐" })).toContainText("未排菜单");
+  const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
+  const dinnerCard = page.locator(".menu-meal-card").filter({ hasText: "晚餐" });
+  await expect(lunchCard).toContainText("预订中");
+  await expect(dinnerCard).toContainText("未排菜单");
+  const cardColors = async (card: typeof lunchCard) => card.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { backgroundColor: style.backgroundColor, borderColor: style.borderColor };
+  });
+  expect(await cardColors(lunchCard)).toEqual(await cardColors(dinnerCard));
   await expect(taroButton(page, /^查看预订与分享$/)).toBeVisible();
 
   const requestCount = ranges.length;

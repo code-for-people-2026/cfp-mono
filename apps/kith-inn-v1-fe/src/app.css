@@ -1577,11 +1577,6 @@ button.manual-add-entry {
   box-shadow: 0 7rpx 22rpx rgba(74, 55, 35, 0.045);
 }
 
-.menu-selected-date + .menu-meal-card {
-  border-color: #edd0c5;
-  background: #fff3ed;
-}
-
 .menu-meal-heading,
 .menu-meal-meta {
   display: flex;
