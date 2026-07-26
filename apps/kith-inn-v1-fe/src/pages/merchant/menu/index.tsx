@@ -491,7 +491,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
     <View className="page menu-page">
       <View className="menu-heading">
         <Text className="title">本周菜单</Text>
-        <Button size="mini" onClick={requestWeekRefresh}>刷新</Button>
+        <Button size="mini" onClick={requestWeekRefresh}>刷新菜单</Button>
       </View>
       <View className="menu-week-heading">
         <Button aria-label="上一周" size="mini" onClick={() => changeWeek(-1)}>‹</Button>
