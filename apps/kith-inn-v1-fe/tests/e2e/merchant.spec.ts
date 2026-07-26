@@ -1796,6 +1796,7 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   await mockBookingOperations(page);
   await page.route("**/merchant/booking-settings", (route) => route.fulfill({ status: 500, body: "{}" }));
+  await page.route("**/merchant/service-closures?*", (route) => route.fulfill(jsonResponse({ docs: [{ id: 81, sellerId: 1, date: "2026-07-27", occasion: "lunch", note: null }] })));
   let julyRequests = 0;
   let failNextWeek = false;
   let releaseAutoLoad!: () => void;
@@ -1835,6 +1836,7 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
   failNextWeek = true;
   await configPage.locator("taro-button-core").filter({ hasText: /^查看餐次$/ }).click();
   await expect(configPage.getByText("经营安排加载失败", { exact: true })).toBeVisible();
+  await expect(configPage.locator(".day-operation").filter({ hasText: "2026-07-27" })).toContainText("取消午餐打烊");
   await configPage.locator("taro-button-core").filter({ hasText: /^重试$/ }).click();
   await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
   await expect(configPage).toContainText("默认价格加载失败");
@@ -1849,16 +1851,16 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> & { orderDeadline: string | null; orderStatus: "draft" | "open" | "closed" };
   let docs: MockSlot[] = [
     { ...slot("2026-07-27", "lunch"), id: 911, orderStatus: "draft" as const, orderDeadline: null, priceCents: null },
-    { ...slot("2026-07-27", "dinner"), id: 912, orderStatus: "closed" as const, orderDeadline: "2026-07-26T02:00:00.000Z", priceCents: 3200 }
+    { ...slot("2026-07-27", "dinner"), id: 912, orderStatus: "closed" as const, orderDeadline: "2026-07-26T02:00:00.000Z", priceCents: null }
   ];
   let closures: Array<{ id: number; sellerId: number; date: string; occasion: "lunch" | "dinner" | null; note: null }> = [];
-  let nextClosureId = 71, lunchConfigRequests = 0, failClosureRead = true;
-  let releaseFirstConfig!: () => void;
-  const firstConfig = new Promise<void>((resolve) => { releaseFirstConfig = resolve; });
-  let firstConfigPending = true;
+  let nextClosureId = 71, failClosureRead = true, delayInitialSettings = true;
+  const configIds: number[] = []; let releaseInitialSettingsRead!: () => void; const initialSettingsRead = new Promise<void>((resolve) => { releaseInitialSettingsRead = resolve; });
+  let releaseFirstConfig!: () => void; const firstConfig = new Promise<void>((resolve) => { releaseFirstConfig = resolve; }); let firstConfigPending = true;
 
-  await page.route("**/merchant/booking-settings", (route) => {
+  await page.route("**/merchant/booking-settings", async (route) => {
     if (route.request().method() === "PATCH") defaultPriceCents = route.request().postDataJSON().defaultPriceCents;
+    else if (delayInitialSettings) { delayInitialSettings = false; await initialSettingsRead; }
     return route.fulfill(jsonResponse({ defaultPriceCents }));
   });
   await page.route("**/merchant/service-closures**", (route) => {
@@ -1881,8 +1883,9 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
   await page.route("**/merchant/meal-slots/*/booking-config", async (route) => {
     const id = Number(new URL(route.request().url()).pathname.split("/").at(-2));
+    configIds.push(id);
     const input = route.request().postDataJSON();
-    if (id === 911 && ++lunchConfigRequests === 2 && firstConfigPending) {
+    if (id === 912 && firstConfigPending) {
       firstConfigPending = false;
       await firstConfig;
     }
@@ -1904,7 +1907,8 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
-  await page.goto("/pages/merchant/batches/index"); await expect(page.locator(".booking-settings-card input")).toHaveValue("30");
+  await page.goto("/pages/merchant/batches/index"); await expect(page.locator(".booking-settings-card input")).toBeDisabled();
+  releaseInitialSettingsRead(); await expect(page.locator(".booking-settings-card input")).toHaveValue("30");
   await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
 
   const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" }); await expect(page.getByText(/打烊安排加载失败/).first()).toBeVisible();
@@ -1917,7 +1921,7 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await taroButton(page, /^保存默认价格$/).click();
   expect((await settingsRequest).postDataJSON()).toEqual({ defaultPriceCents: 3550 });
 
-  const dinner = page.locator(".batch-slot").filter({ hasText: "2026-07-27 晚餐" });
+  const dinner = page.locator(".batch-slot").filter({ hasText: "2026-07-27 晚餐" }); await expect(dinner.getByRole("textbox", { name: "价格（元）" })).toHaveValue("30");
   const lunchPrice = lunch.getByRole("textbox", { name: "价格（元）" });
   await expect(lunchPrice).toHaveValue("35.5");
   await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-26T10:00");
@@ -1935,13 +1939,14 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   const openRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/meal-slots/bulk-booking-status") &&
     request.method() === "POST");
   const firstConfigRequest = page.waitForRequest((request) => request.url()
-    .endsWith("/merchant/meal-slots/911/booking-config"));
+    .endsWith("/merchant/meal-slots/912/booking-config"));
   await page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量开放$/ }).click();
   await firstConfigRequest;
   await expect(dinner.getByRole("textbox", { name: "价格（元）" })).toBeDisabled();
   await expect(dinner.getByRole("textbox", { name: "截止时间" })).toBeDisabled();
   releaseFirstConfig();
   expect((await openRequest).postDataJSON()).toEqual({ mealSlotIds: [911, 912], action: "open" });
+  expect(configIds).toEqual([911, 912]);
   await expect(lunch).toContainText("状态：开放");
   await expect(dinner).toContainText("有生效订单，不能开放");
   await expect(page.locator(".bulk-operation-card")).toContainText("已选择 1 个餐次");
