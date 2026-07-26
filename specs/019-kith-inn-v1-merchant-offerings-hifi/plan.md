@@ -24,7 +24,7 @@
 
 **性能目标**：逐菜品操作互不阻塞；列表状态更新无需整页重载；50 行导入仍可完成预览与提交
 
-**约束**：不改 shared/be/cms 契约；不提交设计 Prompt；保持认证失败跳转；兼容 Page 1 已合并的底部导航；PR 以目标单一、可独立验证且适合 review 为首要边界，400 行是默认审查预算而非硬上限，超过 400 行须说明继续拆分为何会破坏独立审查，超过 800 行必须先获授权
+**约束**：不改 shared/be/cms 契约；不提交设计 Prompt；保持认证失败跳转；兼容 Page 1 已合并的底部导航；PR 以目标单一、改动内聚、验证完整且适合 review 为首要边界，约 400 行人工 diff 仅作宽松参考而非硬上限，明显偏大时说明审查风险和验证，超过约 800 行必须先获授权
 
 **规模/范围**：单个商家菜品页面、3 个分类、浏览/管理/导入 3 组交互状态及相关单元/E2E 测试
 
@@ -55,7 +55,7 @@
 | PR3 | 在正确行为之上收敛 Page 2 页面结构和真实管理流程 | US1/US2/US4、FR-001/002/005/012~015 | `apps/kith-inn-v1-fe/src/pages/merchant/offerings/index.tsx`、`apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`、`apps/kith-inn-v1-fe/tests/e2e/jielong-import.spec.ts`、`docs/kith-inn-v1/TECH-SPEC.md`、`docs/kith-inn-v1/USER-STORIES.md` | 不做最终视觉换肤；不改 API/CMS | 先写入口/分组 E2E，再做 JSX；lint、typecheck、双端 build、长期文档一致性核对 | 约 440 行 | PR2 |
 | PR4 | 完成 Page 2 高保真样式与窄屏可读性验收 | US4、FR-001/002/012~015 | `apps/kith-inn-v1-fe/src/app.css`、`specs/019-kith-inn-v1-merchant-offerings-hifi/quickstart.md` | 不再改变业务流程；不提交 Prompt | 354×786 对已入库 PNG/HTML 的视觉验收、`pnpm verify`、定向 E2E | 约 460 行 | PR3、PR-Assets |
 
-PR1 超过默认 400 行是因为宪法要求 ≥2 PR 的功能必须提交同一套完整且相互引用的 spec/plan/tasks/design artifacts；继续拆开会使中间 PR 的 Spec Kit 前置检查不可执行。预计仍低于 800 行。
+PR1 超过约 400 行宽松参考值，是因为宪法要求 ≥2 PR 的功能必须提交同一套完整且相互引用的 spec/plan/tasks/design artifacts；继续拆开会使中间 PR 的 Spec Kit 前置检查不可执行。预计仍低于 800 行。
 
 初始实现审计后，原本合并在 PR3 的 JSX、CSS 与 E2E 人工 diff 超过 800 行，因此按可独立构建的边界再拆为 PR3（结构/流程）与 PR4（样式/视觉验收），无需申请超大 PR 例外。
 
