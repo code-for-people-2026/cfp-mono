@@ -630,12 +630,19 @@ describe("API client", () => {
       await expect(createApiClient({ request: adapter(200, value), sessions: sessions() })
         .listServiceClosures("2026-07-13", "2026-07-17")).rejects.toMatchObject({ code: "invalid-api-response" });
     }
-    for (const value of [null, {}, { results: [{}] }, { results: [{ id: 11, status: "updated", doc: {} }] },
+    for (const value of [null, {}, { results: [] }, { results: [{}] },
+      { results: [{ id: 11, status: "updated", doc: {} }] },
       { results: [{ id: 11, status: "failed", error: "", message: "失败" }] },
-      { results: [{ id: 11, status: "failed", error: "failed", message: "" }] }]) {
+      { results: [{ id: 11, status: "failed", error: "failed", message: "" }] },
+      { results: [{ id: 12, status: "failed", error: "failed", message: "失败" }] }]) {
       await expect(createApiClient({ request: adapter(200, value), sessions: sessions() })
         .bulkUpdateMealSlotBookingStatus([11], "open")).rejects.toMatchObject({ code: "invalid-api-response" });
     }
+    await expect(createApiClient({ request: adapter(200, { results: [
+      { id: 11, status: "failed", error: "failed", message: "失败" },
+      { id: 11, status: "failed", error: "failed", message: "失败" }
+    ] }), sessions: sessions() }).bulkUpdateMealSlotBookingStatus([11, 12], "open"))
+      .rejects.toMatchObject({ code: "invalid-api-response" });
   });
 
   it("rejects malformed booking-batch envelopes", async () => {

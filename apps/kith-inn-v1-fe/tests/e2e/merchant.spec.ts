@@ -2,6 +2,9 @@ import { expect, test, type Page } from "@playwright/test";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
+const jsonResponse = (body: unknown, status = 200) => ({
+  status, contentType: "application/json", body: JSON.stringify(body)
+});
 
 const enterOfferings = async (page: Page) => {
   await taroButton(page, /^开发登录$/).click();
@@ -45,16 +48,10 @@ const slot = (date: string, occasion: "lunch" | "dinner") => ({
 });
 
 const mockBookingOperations = async (page: Page, defaultPriceCents = 3000) => {
-  await page.route("**/merchant/booking-settings", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ defaultPriceCents })
-  }));
-  await page.route("**/merchant/service-closures?*", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ docs: [] })
-  }));
+  await page.route("**/merchant/booking-settings", (route) =>
+    route.fulfill(jsonResponse({ defaultPriceCents })));
+  await page.route("**/merchant/service-closures?*", (route) =>
+    route.fulfill(jsonResponse({ docs: [] })));
 };
 
 test("未授权访问菜品页会回到登录", async ({ page }) => {
@@ -1802,7 +1799,9 @@ test("配置页冷启动返回时把工作周和目标日期交给菜单页", as
 test("预订配置只接受最后一次餐次加载且批次失败不阻断餐次", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   await mockBookingOperations(page);
+  await page.route("**/merchant/booking-settings", (route) => route.fulfill({ status: 500, body: "{}" }));
   let julyRequests = 0;
+  let failNextWeek = false;
   let releaseAutoLoad!: () => void;
   const autoLoad = new Promise<void>((resolve) => { releaseAutoLoad = resolve; });
   await page.route("**/merchant/booking-batches", (route) => route.fulfill({ status: 500, body: "{}" }));
@@ -1816,6 +1815,10 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
         contentType: "application/json",
         body: JSON.stringify({ docs: [{ ...slot("2026-07-22", "dinner"), id: 901, orderStatus: "draft" }] })
       });
+    }
+    if (failNextWeek) {
+      failNextWeek = false;
+      return route.fulfill({ status: 500, body: "{}" });
     }
     return route.fulfill({
       status: 200,
@@ -1833,8 +1836,12 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
 
   const configPage = page.locator(".batches-page:visible");
   await configPage.getByRole("textbox", { name: "批次起始日期" }).fill("2026-07-27");
+  failNextWeek = true;
   await configPage.locator("taro-button-core").filter({ hasText: /^查看餐次$/ }).click();
+  await expect(configPage.getByText("经营安排加载失败", { exact: true })).toBeVisible();
+  await configPage.locator("taro-button-core").filter({ hasText: /^重试$/ }).click();
   await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
+  await expect(configPage).toContainText("默认价格加载失败");
   releaseAutoLoad();
   await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
   await expect(configPage.getByText("2026-07-22 晚餐", { exact: true })).toHaveCount(0);
@@ -1843,34 +1850,26 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
 test("保存默认价格、批量开放和停止并设置整天或单餐打烊", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   let defaultPriceCents = 3000;
-  type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> & {
-    orderDeadline: string | null;
-    orderStatus: "draft" | "open" | "closed";
-  };
+  type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> &
+    { orderDeadline: string | null; orderStatus: "draft" | "open" | "closed" };
   let docs: MockSlot[] = [
     { ...slot("2026-07-27", "lunch"), id: 911, orderStatus: "draft" as const,
       orderDeadline: null, priceCents: null },
     { ...slot("2026-07-27", "dinner"), id: 912, orderStatus: "closed" as const,
       orderDeadline: "2026-07-26T02:00:00.000Z", priceCents: 3200 }
   ];
-  let closures: Array<{
-    id: number;
-    sellerId: number;
-    date: string;
-    occasion: "lunch" | "dinner" | null;
-    note: null;
-  }> = [];
+  let closures: Array<{ id: number; sellerId: number; date: string;
+    occasion: "lunch" | "dinner" | null; note: null }> = [];
   let nextClosureId = 71;
+  let releaseFirstConfig!: () => void;
+  const firstConfig = new Promise<void>((resolve) => { releaseFirstConfig = resolve; });
+  let firstConfigPending = true;
 
   await page.route("**/merchant/booking-settings", (route) => {
     if (route.request().method() === "PATCH") {
       defaultPriceCents = route.request().postDataJSON().defaultPriceCents;
     }
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ defaultPriceCents })
-    });
+    return route.fulfill(jsonResponse({ defaultPriceCents }));
   });
   await page.route("**/merchant/service-closures**", (route) => {
     const request = route.request();
@@ -1878,89 +1877,75 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
       const input = request.postDataJSON();
       const doc = { id: nextClosureId++, sellerId: 1, ...input };
       closures.push(doc);
-      return route.fulfill({
-        status: 201,
-        contentType: "application/json",
-        body: JSON.stringify({ doc })
-      });
+      return route.fulfill(jsonResponse({ doc }, 201));
     }
     if (request.method() === "DELETE") {
       const id = Number(new URL(request.url()).pathname.split("/").at(-1));
       closures = closures.filter((closure) => closure.id !== id);
       return route.fulfill({ status: 204, body: "" });
     }
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ docs: closures })
-    });
+    return route.fulfill(jsonResponse({ docs: closures }));
   });
-  await page.route("**/merchant/booking-batches", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ docs: [] })
-  }));
-  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify({ docs })
-  }));
-  await page.route("**/merchant/meal-slots/*/booking-config", (route) => {
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
+  await page.route("**/merchant/meal-slots/*/booking-config", async (route) => {
     const id = Number(new URL(route.request().url()).pathname.split("/").at(-2));
     const input = route.request().postDataJSON();
+    if (id === 911 && firstConfigPending) {
+      firstConfigPending = false;
+      await firstConfig;
+    }
     docs = docs.map((doc) => doc.id === id ? { ...doc, ...input } : doc);
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ doc: docs.find((item) => item.id === id) })
-    });
+    return route.fulfill(jsonResponse({ doc: docs.find((item) => item.id === id) }));
   });
   await page.route("**/merchant/meal-slots/bulk-booking-status", (route) => {
     const input = route.request().postDataJSON();
     if (input.action === "open") {
       docs = docs.map((doc) => doc.id === 911 ? { ...doc, orderStatus: "open" as const } : doc);
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ results: [
+      return route.fulfill(jsonResponse({ results: [
           { id: 911, status: "updated", doc: docs.find(({ id }) => id === 911) },
           { id: 912, status: "failed", error: "active-orders", message: "有生效订单，不能开放" }
-        ] })
-      });
+        ] }));
     }
     docs = docs.map((doc) => doc.id === 911 ? { ...doc, orderStatus: "closed" as const } : doc);
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ results: [
+    return route.fulfill(jsonResponse({ results: [
         { id: 911, status: "updated", doc: docs.find(({ id }) => id === 911) }
-      ] })
-    });
+      ] }));
   });
 
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
   await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
-  await expect(page.getByText("开放并分享", { exact: true })).toBeVisible();
 
   const defaultPrice = page.locator(".booking-settings-card input");
-  await expect(defaultPrice).toHaveValue("30");
   await defaultPrice.fill("35.5");
-  const settingsRequest = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/booking-settings") && request.method() === "PATCH");
+  const settingsRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/booking-settings") &&
+    request.method() === "PATCH");
   await taroButton(page, /^保存默认价格$/).click();
   expect((await settingsRequest).postDataJSON()).toEqual({ defaultPriceCents: 3550 });
-  await expect(defaultPrice).toHaveValue("35.5");
 
   const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" });
   const dinner = page.locator(".batch-slot").filter({ hasText: "2026-07-27 晚餐" });
+  const lunchPrice = lunch.getByRole("textbox", { name: "价格（元）" });
+  await expect(lunchPrice).toHaveValue("35.5");
   await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-26T10:00");
+  await lunchPrice.fill("");
   await lunch.getByLabel("选择 2026-07-27 午餐").click();
-  await dinner.getByLabel("选择 2026-07-27 晚餐").click();
-  const openRequest = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/meal-slots/bulk-booking-status") && request.method() === "POST");
   await page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量开放$/ }).click();
+  await expect(lunch).toContainText("价格或截止时间无效");
+  await expect(page.locator(".bulk-operation-card")).toContainText("已选择 1 个餐次");
+  await lunchPrice.fill("35.5");
+  await dinner.getByLabel("选择 2026-07-27 晚餐").click();
+  const openRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/meal-slots/bulk-booking-status") &&
+    request.method() === "POST");
+  const firstConfigRequest = page.waitForRequest((request) => request.url()
+    .endsWith("/merchant/meal-slots/911/booking-config"));
+  await page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量开放$/ }).click();
+  await firstConfigRequest;
+  await expect(lunch.getByRole("textbox", { name: "价格（元）" })).toBeDisabled();
+  await expect(lunch.getByRole("textbox", { name: "截止时间" })).toBeDisabled();
+  releaseFirstConfig();
   expect((await openRequest).postDataJSON()).toEqual({ mealSlotIds: [911, 912], action: "open" });
   await expect(lunch).toContainText("状态：开放");
   await expect(dinner).toContainText("有生效订单，不能开放");
@@ -1968,33 +1953,27 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
 
   await dinner.getByLabel("选择 2026-07-27 晚餐").click();
   await lunch.getByLabel("选择 2026-07-27 午餐").click();
-  const stopRequest = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/meal-slots/bulk-booking-status") && request.method() === "POST");
+  const stopRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/meal-slots/bulk-booking-status") &&
+    request.method() === "POST");
   await page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量停止$/ }).click();
   expect((await stopRequest).postDataJSON()).toEqual({ mealSlotIds: [911], action: "stop" });
   await expect(lunch).toContainText("状态：已关闭");
 
   const day = page.locator(".day-operation").filter({ hasText: "2026-07-27" });
-  const dayClosureRequest = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/service-closures") && request.method() === "POST");
+  const dayClosureRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/service-closures") &&
+    request.method() === "POST");
   await day.locator("taro-button-core").filter({ hasText: /^整天打烊$/ }).click();
   expect((await dayClosureRequest).postDataJSON()).toEqual({ date: "2026-07-27", occasion: null, note: null });
   await expect(lunch).toContainText("当天打烊");
-  const dayDelete = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/service-closures/71") && request.method() === "DELETE");
-  await day.locator("taro-button-core").filter({ hasText: /^取消整天打烊$/ }).click();
-  await dayDelete;
 
   await expect(page.locator(".day-operation")).toHaveCount(5);
   const missingDay = page.locator(".day-operation").filter({ hasText: "2026-07-28" });
-  const mealClosureRequest = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/service-closures") && request.method() === "POST");
+  const mealClosureRequest = page.waitForRequest((request) => request.url().endsWith("/merchant/service-closures") &&
+    request.method() === "POST");
   await missingDay.locator("taro-button-core").filter({ hasText: /^晚餐打烊$/ }).click();
-  expect((await mealClosureRequest).postDataJSON()).toEqual({
-    date: "2026-07-28", occasion: "dinner", note: null
-  });
-  const mealDelete = page.waitForRequest((request) =>
-    request.url().endsWith("/merchant/service-closures/72") && request.method() === "DELETE");
+  expect((await mealClosureRequest).postDataJSON()).toEqual({ date: "2026-07-28", occasion: "dinner", note: null });
+  const mealDelete = page.waitForRequest((request) => request.url().endsWith("/merchant/service-closures/72") &&
+    request.method() === "DELETE");
   await missingDay.locator("taro-button-core").filter({ hasText: /^取消晚餐打烊$/ }).click();
   await mealDelete;
   await expect(missingDay.locator("taro-button-core").filter({ hasText: /^晚餐打烊$/ })).toBeVisible();

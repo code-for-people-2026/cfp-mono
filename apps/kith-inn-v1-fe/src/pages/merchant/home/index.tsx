@@ -13,6 +13,7 @@ import {
   retainMealsForRefresh,
   type MerchantMealCard
 } from "@/logic/merchantHome";
+import { initialWeekStart } from "@/logic/menuWeek";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
 
@@ -118,9 +119,10 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
       ? `/pages/merchant/orders/index?date=${date}&occasion=${pendingOccasion}`
       : `/pages/merchant/orders/index?date=${date}`;
     const deliveryOccasion = meals.find(({ card }) => card.slot && card.pendingDelivery > 0)?.card.occasion ?? meals.find(({ card }) => card.slot)?.card.occasion;
-    const weekStart = bookingWeekStart(date)!;
+    const targetWeekStart = bookingWeekStart(date)!;
+    const operationWeekStart = initialWeekStart(new Date());
     const bookingUrl = (occasion?: Occasion) => bookingConfigUrl(
-      weekStart,
+      occasion ? targetWeekStart : operationWeekStart,
       occasion ? { date, occasion } : undefined,
       "home"
     );

@@ -170,7 +170,6 @@ button.primary {
 
 .batch-controls input,
 .batch-slot input,
-.booking-settings-card input,
 .booking-slot input,
 .batch-create input {
   box-sizing: border-box;
@@ -198,56 +197,6 @@ button.primary {
 .batch-actions button.selected {
   background: #d98965;
   color: #ffffff;
-}
-
-.booking-settings-card .meta,
-.bulk-operation-card .meta {
-  display: block;
-  margin: 12rpx 0 20rpx;
-}
-
-.booking-settings-card button {
-  margin-top: 4rpx;
-}
-
-.day-operation {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 20rpx;
-  padding: 18rpx 22rpx;
-  border: 1px solid #eadbc9;
-  border-radius: 18rpx;
-  background: #fffaf3;
-}
-
-.day-operation-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12rpx;
-}
-
-.day-operation button {
-  flex: 1 1 190rpx;
-  min-width: 0;
-  margin: 0;
-}
-
-.closure-notice,
-.operation-error {
-  display: block;
-  margin-top: 12rpx;
-  color: #a33a2b;
-  font-size: 26rpx;
-}
-
-.error-card {
-  border-color: #d98965;
-  background: #fff5ef;
-}
-
-.error-card button {
-  margin-top: 18rpx;
 }
 
 .share-path {

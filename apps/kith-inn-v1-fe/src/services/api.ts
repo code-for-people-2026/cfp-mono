@@ -258,12 +258,15 @@ function parseServiceClosure(value: unknown): ServiceClosure {
   return closure as ServiceClosure;
 }
 
-function parseBulkBookingStatus(value: unknown): BulkMealSlotBookingStatusResult[] {
+function parseBulkBookingStatus(
+  value: unknown,
+  expectedIds: Array<string | number>
+): BulkMealSlotBookingStatusResult[] {
   const body = record(value);
   if (!body || !Array.isArray(body.results)) {
     throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
   }
-  return body.results.map((value) => {
+  const results = body.results.map<BulkMealSlotBookingStatusResult>((value) => {
     const result = record(value);
     if (!result || !validId(result.id)) throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
     if (result.status === "updated") {
@@ -276,6 +279,13 @@ function parseBulkBookingStatus(value: unknown): BulkMealSlotBookingStatusResult
     }
     throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
   });
+  const expected = new Set(expectedIds.map(String));
+  const actual = results.map(({ id }) => String(id));
+  if (actual.length !== expected.size || new Set(actual).size !== actual.length ||
+    actual.some((id) => !expected.has(id))) {
+    throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
+  }
+  return results;
 }
 
 function parseBookingBatch(value: unknown): BookingBatch {
@@ -701,7 +711,7 @@ export function createApiClient(options: ClientOptions) {
       return parseBulkBookingStatus(await request("/merchant/meal-slots/bulk-booking-status", {
         method: "POST",
         data: { mealSlotIds, action }
-      }));
+      }), mealSlotIds);
     },
     async generateMenus(input: GenerateMenusInput): Promise<GenerateMenusResponse> {
       return parseGeneration(await request("/merchant/meal-slots/generate-menus", {
