@@ -9,6 +9,7 @@ import {
   requireServiceAuth,
   withKiv1Transaction
 } from "@/lib/kiv1-internal";
+import { KIV1_AVAILABILITY_CHECKED } from "@/lib/kiv1-meal-slot-menu-guard";
 import { normalizeMealSlot } from "../../route";
 
 export const dynamic = "force-dynamic";
@@ -37,8 +38,12 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
   try {
-    const update = async (transactionReq?: Parameters<typeof hasServiceClosure>[1]) => scope.payload.update({
-      collection: "kiv1_meal_slots", id, data: parsed.data, overrideAccess: true,
+    const update = async (
+      data = parsed.data,
+      transactionReq?: Parameters<typeof hasServiceClosure>[1]
+    ) => scope.payload.update({
+      collection: "kiv1_meal_slots", id, data, overrideAccess: true,
+      ...(data.orderStatus === "open" ? { context: { [KIV1_AVAILABILITY_CHECKED]: true } } : {}),
       ...(transactionReq ? { req: transactionReq } : {})
     });
     const doc = parsed.data.orderStatus === "open"
@@ -46,7 +51,22 @@ export async function PATCH(req: Request, { params }: RouteContext) {
         await lockSellerDate(scope.payload, transactionReq, scope.sellerId, current.date);
         const latest = await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId, transactionReq) as
           Parameters<typeof normalizeMealSlot>[0] | undefined;
-        const price = Object.hasOwn(parsed.data, "priceCents") ? parsed.data.priceCents : latest?.priceCents;
+        let price = Object.hasOwn(parsed.data, "priceCents")
+          ? parsed.data.priceCents
+          : latest?.priceCents;
+        if (!Number.isSafeInteger(price)) {
+          const sellers = await scope.payload.find({
+            collection: "kiv1_sellers",
+            where: { id: { equals: scope.sellerId } },
+            limit: 1,
+            depth: 0,
+            overrideAccess: true,
+            req: transactionReq
+          });
+          const defaultPrice = (sellers.docs[0] as
+            { defaultPriceCents?: unknown } | undefined)?.defaultPriceCents;
+          price = typeof defaultPrice === "number" ? defaultPrice : undefined;
+        }
         const deadline = Object.hasOwn(parsed.data, "orderDeadline")
           ? parsed.data.orderDeadline
           : latest?.orderDeadline;
@@ -57,9 +77,9 @@ export async function PATCH(req: Request, { params }: RouteContext) {
         if (await hasServiceClosure(scope.payload, transactionReq, scope.sellerId, latest.date, latest.occasion)) {
           return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
         }
-        return update(transactionReq);
+        return update({ ...parsed.data, priceCents: price as number }, transactionReq);
       })
-      : await update();
+      : await update(parsed.data);
     if (doc instanceof NextResponse) return doc;
     return NextResponse.json({ doc: normalizeMealSlot(doc as Parameters<typeof normalizeMealSlot>[0]) });
   } catch (error) {

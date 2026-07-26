@@ -146,15 +146,19 @@ describe("kith-inn-v1 collections", () => {
     expect(collection("kiv1_operators").auth).not.toBe(true);
   });
 
-  it("所有 collection 默认拒绝匿名请求并允许共享 CMS 已认证用户", () => {
+  it("默认拒绝匿名请求，并只向 CMS 已认证用户开放安全的 Admin 操作", () => {
     for (const item of collections) {
       const access = item.access as Record<string, (args: { req: { user?: unknown } }) => unknown>;
       for (const operation of ["read", "create", "update"] as const) {
         expect(access[operation]!({ req: {} }), `${item.slug}.${operation} anonymous`).toBe(false);
-        expect(access[operation]!({ req: { user: { id: 1 } } }), `${item.slug}.${operation} admin`).toBe(true);
+        const controlledWrite = operation !== "read" &&
+          ["kiv1_service_closures", "kiv1_orders"].includes(item.slug);
+        expect(access[operation]!({ req: { user: { id: 1 } } }), `${item.slug}.${operation} admin`).toBe(
+          !controlledWrite
+        );
       }
       expect(access.delete!({ req: { user: { id: 1 } } }), `${item.slug}.delete admin`).toBe(
-        item.slug === "kiv1_sellers" ? false : true
+        ["kiv1_sellers", "kiv1_service_closures"].includes(item.slug) ? false : true
       );
     }
   });

@@ -11,7 +11,14 @@ import {
 export const ServiceClosures: CollectionConfig = {
   slug: "kiv1_service_closures",
   admin: { useAsTitle: "date", group: "街坊味 v1 / 预订" },
-  access: cmsAccess,
+  // 打烊写入必须经过带 seller/date 锁和业务冲突检查的 internal route。
+  // Payload Admin/REST 只保留读取能力，避免绕过受控写路径。
+  access: {
+    ...cmsAccess,
+    create: () => false,
+    update: () => false,
+    delete: () => false
+  },
   hooks: sameSellerHooks,
   fields: [
     sellerField(),

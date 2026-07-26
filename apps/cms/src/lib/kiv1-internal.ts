@@ -215,14 +215,22 @@ export async function withCustomerOrderLock<T>(
   work: (req: PayloadRequest) => Promise<T>
 ): Promise<T> {
   return withKiv1Transaction(payload, async (req) => {
-    const postgres = await postgresTransaction(payload, req);
-    if (postgres && id !== null) {
-      await postgres.database.execute({
-        db: postgres.transaction,
-        sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
-      });
-    }
+    if (id !== null) await lockKiv1Order(payload, req, id);
     return work(req);
+  });
+}
+
+/** Lock one order row after its seller/date availability lock has been acquired. */
+export async function lockKiv1Order(
+  payload: BasePayload,
+  req: PayloadRequest,
+  id: string | number
+): Promise<void> {
+  const postgres = await postgresTransaction(payload, req);
+  if (!postgres) return;
+  await postgres.database.execute({
+    db: postgres.transaction,
+    sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
   });
 }
 

@@ -1,6 +1,7 @@
 import { cmsOrderUpdateSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
-import { findOwned, hasSellerField, jielongMarkerFromNote, operatorScope, requireServiceAuth, withCustomerOrderLock }
+import { findOwned, hasSellerField, hasServiceClosure, jielongMarkerFromNote, lockKiv1Order,
+  lockSellerDate, operatorScope, requireServiceAuth, withKiv1Transaction }
   from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../route";
 
@@ -39,7 +40,24 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
   try {
-    return await withCustomerOrderLock(scope.payload, storedOrderId, async (transactionReq) => {
+    return await withKiv1Transaction(scope.payload, async (transactionReq) => {
+      const preliminary = await scope.payload.find({
+        collection: "kiv1_orders",
+        where: { and: [{ id: { equals: storedOrderId } }, { seller: { equals: scope.sellerId } }] },
+        limit: 1, depth: 0, overrideAccess: true, req: transactionReq
+      });
+      const preliminaryOrder = preliminary.docs[0] as { mealSlot?: unknown } | undefined;
+      const relationId = (value: unknown) => typeof value === "object" && value !== null && "id" in value
+        ? (value as { id: string | number }).id : value as string | number;
+      const slot = preliminaryOrder ? await findOwned(
+        scope.payload, "kiv1_meal_slots", relationId(preliminaryOrder.mealSlot), scope.sellerId, transactionReq
+      ) as { date?: unknown; occasion?: unknown } | undefined : undefined;
+      if (!preliminaryOrder || !slot || typeof slot.date !== "string" ||
+          (slot.occasion !== "lunch" && slot.occasion !== "dinner")) {
+        return NextResponse.json({ error: "not-found" }, { status: 404 });
+      }
+      await lockSellerDate(scope.payload, transactionReq, scope.sellerId, slot.date);
+      await lockKiv1Order(scope.payload, transactionReq, storedOrderId);
       const result = await scope.payload.find({
         collection: "kiv1_orders",
         where: { and: [{ id: { equals: storedOrderId } }, { seller: { equals: scope.sellerId } }] },
@@ -65,6 +83,12 @@ export async function PATCH(req: Request, { params }: RouteContext) {
         || (parsed.data.status === "canceled" && stored.status === "canceled")
         || (parsed.data.status === undefined && stored.status === "canceled")) {
         return NextResponse.json({ error: "order-status-changed", message: "订单状态已变化，请重试" }, { status: 409 });
+      }
+      const resultingStatus = parsed.data.status ?? stored.status;
+      if ((resultingStatus === "draft" || resultingStatus === "confirmed") && await hasServiceClosure(
+        scope.payload, transactionReq, scope.sellerId, slot.date, slot.occasion
+      )) {
+        return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
       }
       const doc = await scope.payload.update({
         collection: "kiv1_orders", id: storedOrderId, data: update, overrideAccess: true, req: transactionReq

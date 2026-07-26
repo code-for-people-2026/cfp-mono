@@ -27,15 +27,15 @@
 - [x] T003 实现 T002 的 schema、types、exports 和纯展示规则于 `packages/kith-inn-v1-shared/src/`
 - [x] T004 [P] 为营业关闭 partial unique indexes、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
 - [x] T005 实现对应 collection、target 字段、partial unique index migration 与可恢复状态持久化门禁于 `packages/kith-inn-v1-payload/`、`apps/cms/src/db/`
-- [x] T006 [P] 为关闭 CRUD、默认价、target 读写及打烊/开放/订单并发冲突补租户隔离 internal route tests 于 `apps/cms/tests/`
-- [x] T007 实现对应 internal routes，并让冲突写入共享 seller/date 级事务锁；target 端到端保存后才启用 targeted create schema
+- [x] T006 [P] 为默认价、target 读写及打烊/开放/订单并发冲突补租户隔离 internal route tests 于 `apps/cms/tests/`
+- [x] T007 实现对应 internal routes 和持久化门禁，并让冲突写入共享 seller/date 级事务锁；target 端到端保存后才启用 targeted create schema
 
 ## Phase 3: User Story 1 - 安排未来营业与预订
 
 **Independent Test**: 单餐及混合批量开放/停止、整天/单餐打烊、默认价固化和已有订单冲突均返回准确逐项结果。
 
-- [ ] T008 [P] [US1] 为设置和营业关闭商家 API 补 route/domain tests 于 `apps/kith-inn-v1-be/src/`
-- [ ] T009 [US1] 实现默认价与营业关闭 API、CMS client 和领域校验于 `apps/kith-inn-v1-be/src/`
+- [ ] T008 [P] [US1] 为 CMS 关闭 CRUD、设置和营业关闭商家 API 补 route/domain tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
+- [ ] T009 [US1] 实现 CMS 关闭 CRUD，以及默认价与营业关闭 API、CMS client 和领域校验于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
 - [ ] T010 [P] [US1] 为批量开放/停止、部分失败和可恢复状态补测试于 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts`
 - [ ] T011 [US1] 实现最多20餐次的逐项批量状态 API 于 `apps/kith-inn-v1-be/src/`
 - [ ] T012 [P] [US1] 为 Page 4 上下文、可见性、选择、pending、部分失败和返回模式补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`

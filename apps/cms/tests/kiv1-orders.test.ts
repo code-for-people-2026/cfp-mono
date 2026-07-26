@@ -63,6 +63,7 @@ type PayloadOptions = {
   orders?: Array<Record<string, unknown>>;
   createError?: unknown;
   updateError?: unknown;
+  serviceClosure?: boolean;
   database?: "postgres" | "sqlite";
 };
 
@@ -85,6 +86,7 @@ function payloadWith(options: PayloadOptions = {}) {
     if (collection === "kiv1_meal_slots") return { docs: matchesOwned(where, slots) };
     if (collection === "kiv1_customer_profiles") return { docs: matchesOwned(where, profiles) };
     if (collection === "kiv1_orders") return { docs: matchesOwned(where, orders) };
+    if (collection === "kiv1_service_closures") return { docs: options.serviceClosure ? [{ id: 41 }] : [] };
     return { docs: [] };
   });
   const create = options.createError
@@ -350,7 +352,8 @@ describe("order persistence boundary", () => {
         canceledAt: null,
         note: "少辣"
       },
-      overrideAccess: true
+      overrideAccess: true,
+      req: expect.anything()
     });
   });
 
@@ -393,7 +396,8 @@ describe("order persistence boundary", () => {
         canceledAt: null,
         note: marker
       },
-      overrideAccess: true
+      overrideAccess: true,
+      req: expect.anything()
     });
     const responseBody = await response.json() as { doc: Record<string, unknown> };
     expect(responseBody).toMatchObject({ doc: { note: null, source: "jielong-import" } });
@@ -531,8 +535,28 @@ describe("order persistence boundary", () => {
       status: "canceled", canceledAt: "2026-07-11T00:02:00.000Z"
     }), { params: Promise.resolve({ id: "31" }) });
     expect(repeatedCancel.status).toBe(409);
-    expect(payload.execute).toHaveBeenCalledTimes(2);
+    expect(payload.execute).toHaveBeenCalledTimes(6);
     expect(payload.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects active order creates and reactivation when the meal is closed", async () => {
+    const createPayload = payloadWith({ orders: [], serviceClosure: true });
+    mocks.getPayload.mockResolvedValue(createPayload);
+    const created = await createOrder(json("/orders", "POST", createInput));
+    expect(created.status).toBe(409);
+    await expect(created.json()).resolves.toMatchObject({ error: "service-closure-conflict" });
+    expect(createPayload.create).not.toHaveBeenCalled();
+
+    const reactivatePayload = payloadWith({ serviceClosure: true, orders: [{
+      ...orderDoc, status: "canceled", canceledAt: "2026-07-11T00:00:00.000Z"
+    }] });
+    mocks.getPayload.mockResolvedValue(reactivatePayload);
+    const reactivated = await orderRoute.PATCH(json("/orders/31", "PATCH", {
+      status: "draft", canceledAt: null
+    }), { params: Promise.resolve({ id: "31" }) });
+    expect(reactivated.status).toBe(409);
+    await expect(reactivated.json()).resolves.toMatchObject({ error: "service-closure-conflict" });
+    expect(reactivatePayload.update).not.toHaveBeenCalled();
   });
 
   it("rejects malformed order ids before taking the PostgreSQL row lock", async () => {
