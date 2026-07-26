@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 import { APIError } from "payload";
 
-const mocks = vi.hoisted(() => ({ getPayload: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getPayload: vi.fn(), createLocalReq: vi.fn(), initTransaction: vi.fn(),
+  commitTransaction: vi.fn(), killTransaction: vi.fn()
+}));
 vi.mock("payload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("payload")>()),
-  getPayload: mocks.getPayload
+  ...mocks
 }));
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
@@ -43,6 +46,7 @@ type PayloadOptions = {
   ownedOfferingIds?: Array<string | number>;
   createError?: unknown;
   updateError?: unknown;
+  serviceClosure?: boolean;
 };
 
 function payloadWith(options: PayloadOptions = {}) {
@@ -56,6 +60,7 @@ function payloadWith(options: PayloadOptions = {}) {
       const id = owned.find((candidate) => serialized.includes(`\"equals\":${JSON.stringify(candidate)}`));
       return { docs: id === undefined ? [] : [{ id, seller: 7 }] };
     }
+    if (collection === "kiv1_service_closures") return { docs: options.serviceClosure ? [{ id: 41 }] : [] };
     return { docs: slots };
   });
   return {
@@ -69,7 +74,8 @@ function payloadWith(options: PayloadOptions = {}) {
           ...slotDoc,
           id,
           ...data
-        }))
+        })),
+    db: { name: "sqlite" }
   };
 }
 
@@ -90,6 +96,8 @@ function json(path: string, method: "POST" | "PATCH", body: unknown) {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.createLocalReq.mockResolvedValue({ transactionID: Promise.resolve("tx") });
+  mocks.initTransaction.mockResolvedValue(true);
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
   process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
@@ -243,7 +251,7 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
       headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
       body: JSON.stringify({
         priceCents: 2800,
-        orderDeadline: "2026-07-12T01:00:00.000Z",
+        orderDeadline: "2099-07-12T01:00:00.000Z",
         orderStatus: "open"
       })
     }), { params: Promise.resolve({ id: "11" }) });
@@ -253,10 +261,11 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
       id: "11",
       data: {
         priceCents: 2800,
-        orderDeadline: "2026-07-12T01:00:00.000Z",
+        orderDeadline: "2099-07-12T01:00:00.000Z",
         orderStatus: "open"
       },
-      overrideAccess: true
+      overrideAccess: true,
+      req: expect.anything()
     });
   });
 
@@ -273,5 +282,37 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
     expect((await call(JSON.stringify({}))).status).toBe(422);
     expect((await call(JSON.stringify({ seller: 7, orderStatus: "closed" }))).status).toBe(422);
     expect((await call(JSON.stringify({ menuItems }))).status).toBe(422);
+  });
+
+  it("revalidates reopen completeness and service closures inside the transaction", async () => {
+    const call = (body: Record<string, unknown> = { orderStatus: "open" }) => bookingConfigRoute.PATCH(request("/11/booking-config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body: JSON.stringify(body)
+    }), { params: Promise.resolve({ id: "11" }) });
+
+    const incomplete = payloadWith({ slots: [{ ...slotDoc, orderStatus: "closed" }] });
+    mocks.getPayload.mockResolvedValue(incomplete);
+    expect((await call()).status).toBe(409);
+    expect(incomplete.update).not.toHaveBeenCalled();
+
+    const configuredSlot = { ...slotDoc, orderStatus: "closed", priceCents: 2800,
+      orderDeadline: "2099-07-12T01:00:00.000Z" };
+    for (const body of [
+      { orderStatus: "open", priceCents: null },
+      { orderStatus: "open", orderDeadline: null }
+    ]) {
+      const cleared = payloadWith({ slots: [configuredSlot] });
+      mocks.getPayload.mockResolvedValue(cleared);
+      expect((await call(body)).status).toBe(409);
+      expect(cleared.update).not.toHaveBeenCalled();
+    }
+
+    const closed = payloadWith({ serviceClosure: true, slots: [{
+      ...configuredSlot
+    }] });
+    mocks.getPayload.mockResolvedValue(closed);
+    expect((await call()).status).toBe(409);
+    expect(closed.update).not.toHaveBeenCalled();
   });
 });

@@ -26,12 +26,13 @@ const v1Slugs = [
   "kiv1_customer_profiles",
   "kiv1_offerings",
   "kiv1_meal_slots",
+  "kiv1_service_closures",
   "kiv1_booking_batches",
   "kiv1_orders",
 ];
 
 describe("shared CMS assembly", () => {
-  it("registers the unchanged old collection list followed by seven v1 collections", async () => {
+  it("registers the unchanged old collection list followed by eight v1 collections", async () => {
     const resolved = await config;
     expect(
       resolved.collections
@@ -424,6 +425,8 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
           SELECT indexname, indexdef FROM pg_indexes
           WHERE schemaname = 'cms' AND indexname IN (
             'service_slots_seller_date_occasion_unique',
+            'kiv1_service_closures_seller_date_day_unique',
+            'kiv1_service_closures_seller_date_occasion_unique',
             'orders_seller_customer_date_occasion_unique',
             'orders_seller_idempotency_key_unique',
             'fulfillments_seller_order_unique'
@@ -439,6 +442,12 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
       );
       expect(byName.get("service_slots_seller_date_occasion_unique")).toMatch(
         /WHERE .*occasion.*IS NOT NULL/i,
+      );
+      expect(byName.get("kiv1_service_closures_seller_date_day_unique")).toMatch(
+        /UNIQUE INDEX .*\(seller_id, date\).*WHERE .*occasion.*IS NULL/i,
+      );
+      expect(byName.get("kiv1_service_closures_seller_date_occasion_unique")).toMatch(
+        /UNIQUE INDEX .*\(seller_id, date, occasion\).*WHERE .*occasion.*IS NOT NULL/i,
       );
       // Postgres rewrites `status IN ('draft','confirmed')` to
       // `status = ANY (ARRAY['draft'::..., 'confirmed'::...])` in indexdef — match

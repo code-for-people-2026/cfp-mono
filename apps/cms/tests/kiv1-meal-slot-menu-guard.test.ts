@@ -158,7 +158,8 @@ describe("kiv1 meal-slot menu persistence guard", () => {
   it.each([
     ["open", "draft", false],
     ["open", "closed", true],
-    ["closed", "open", false],
+    ["closed", "open", true],
+    ["closed", "draft", false],
     ["draft", "open", true]
   ])("guards lifecycle transition %s -> %s", async (current, requested, allowed) => {
     const { req } = harness({ latest: { id: 11, menuItems, orderStatus: current } });

@@ -91,6 +91,7 @@ function payloadWith(options: {
   batchStatus?: "open" | "closed"; slotStatus?: "open" | "closed"; orderDeadline?: string | null;
   slotPrice?: number | null;
   profileActive?: boolean;
+  serviceClosure?: boolean;
   database?: "postgres" | "sqlite";
 } = {}) {
   const currentOrders = orders.map((doc) => doc.id === 31 && options.orderStatus
@@ -109,6 +110,7 @@ function payloadWith(options: {
       publicId: BATCH_PUBLIC_ID, status: options.batchStatus ?? "open", mealSlots: [11] }]) };
     if (collection === "kiv1_meal_slots") return { docs: matching(where, currentSlots) };
     if (collection === "kiv1_customer_profiles") return { docs: matching(where, currentProfiles) };
+    if (collection === "kiv1_service_closures") return { docs: options.serviceClosure ? [{ id: 61 }] : [] };
     if (collection === "kiv1_orders") {
       const docs = matching(where, currentOrders);
       return { docs: depth === 1 ? docs.map((doc) => ({
@@ -395,6 +397,7 @@ describe("customer order persistence boundary", () => {
     for (const [payload, code] of [
       [payloadWith({ batchStatus: "closed" }), "booking-batch-closed"],
       [payloadWith({ slotStatus: "closed" }), "meal-slot-closed"],
+      [payloadWith({ serviceClosure: true }), "service-closure-conflict"],
       [payloadWith({ orderDeadline: "2020-01-01T00:00:00.000Z" }), "order-deadline-passed"]
     ] as const) {
       mocks.getPayload.mockResolvedValue(payload);

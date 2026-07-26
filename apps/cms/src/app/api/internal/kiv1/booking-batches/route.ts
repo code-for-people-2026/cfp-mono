@@ -1,6 +1,7 @@
 import {
+  bookingShareTargetSchema,
   bookingBatchListQuerySchema,
-  cmsBookingBatchCreateSchema
+  cmsBookingBatchTargetedCreateSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type { BookingBatch } from "@cfp/kith-inn-v1-shared";
 import type { Where } from "payload";
@@ -23,6 +24,7 @@ type BookingBatchDoc = {
   status: BookingBatch["status"];
   mealSlots: unknown[];
   createdBy: unknown;
+  target?: unknown;
 };
 
 const relationshipId = (value: unknown): string | number =>
@@ -31,6 +33,7 @@ const relationshipId = (value: unknown): string | number =>
     : value as string | number;
 
 export function normalizeBookingBatch(doc: BookingBatchDoc): BookingBatch {
+  const target = bookingShareTargetSchema.safeParse(doc.target);
   return {
     id: doc.id,
     sellerId: relationshipId(doc.seller),
@@ -38,7 +41,8 @@ export function normalizeBookingBatch(doc: BookingBatchDoc): BookingBatch {
     title: doc.title,
     status: doc.status,
     mealSlotIds: doc.mealSlots.map(relationshipId),
-    createdById: relationshipId(doc.createdBy)
+    createdById: relationshipId(doc.createdBy),
+    target: target.success ? target.data : null
   };
 }
 
@@ -82,7 +86,7 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid-json" }, { status: 400 });
   }
-  const parsed = cmsBookingBatchCreateSchema.safeParse(body);
+  const parsed = cmsBookingBatchTargetedCreateSchema.safeParse(body);
   if (hasSellerField(body) || !parsed.success) {
     return NextResponse.json({ error: "invalid-booking-batch" }, { status: 422 });
   }
@@ -100,7 +104,8 @@ export async function POST(req: Request) {
         title: input.title,
         status: input.status,
         mealSlots: input.mealSlotIds,
-        createdBy: input.createdById
+        createdBy: input.createdById,
+        target: input.target
       },
       overrideAccess: true
     });

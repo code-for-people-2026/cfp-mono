@@ -2,9 +2,12 @@ import { mealSlotBookingConfigSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
 import {
   findOwned,
+  hasServiceClosure,
   hasSellerField,
+  lockSellerDate,
   operatorScope,
-  requireServiceAuth
+  requireServiceAuth,
+  withKiv1Transaction
 } from "@/lib/kiv1-internal";
 import { normalizeMealSlot } from "../../route";
 
@@ -28,18 +31,41 @@ export async function PATCH(req: Request, { params }: RouteContext) {
     return NextResponse.json({ error: "invalid-meal-slot-booking-config" }, { status: 422 });
   }
   const { id } = await params;
-  if (!await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId)) {
+  const current = await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId) as
+    Parameters<typeof normalizeMealSlot>[0] | undefined;
+  if (!current) {
     return NextResponse.json({ error: "not-found" }, { status: 404 });
   }
   try {
-    const doc = await scope.payload.update({
-      collection: "kiv1_meal_slots",
-      id,
-      data: parsed.data,
-      overrideAccess: true
+    const update = async (transactionReq?: Parameters<typeof hasServiceClosure>[1]) => scope.payload.update({
+      collection: "kiv1_meal_slots", id, data: parsed.data, overrideAccess: true,
+      ...(transactionReq ? { req: transactionReq } : {})
     });
+    const doc = parsed.data.orderStatus === "open"
+      ? await withKiv1Transaction(scope.payload, async (transactionReq) => {
+        await lockSellerDate(scope.payload, transactionReq, scope.sellerId, current.date);
+        const latest = await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId, transactionReq) as
+          Parameters<typeof normalizeMealSlot>[0] | undefined;
+        const price = Object.hasOwn(parsed.data, "priceCents") ? parsed.data.priceCents : latest?.priceCents;
+        const deadline = Object.hasOwn(parsed.data, "orderDeadline")
+          ? parsed.data.orderDeadline
+          : latest?.orderDeadline;
+        if (!latest || !Array.isArray(latest.menuItems) || latest.menuItems.length !== 5 || !Number.isSafeInteger(price) ||
+          typeof deadline !== "string" || Date.parse(deadline) <= Date.now()) {
+          return NextResponse.json({ error: "meal-slot-not-openable", message: "餐次菜单、价格或截止时间不完整" }, { status: 409 });
+        }
+        if (await hasServiceClosure(scope.payload, transactionReq, scope.sellerId, latest.date, latest.occasion)) {
+          return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
+        }
+        return update(transactionReq);
+      })
+      : await update();
+    if (doc instanceof NextResponse) return doc;
     return NextResponse.json({ doc: normalizeMealSlot(doc as Parameters<typeof normalizeMealSlot>[0]) });
-  } catch {
+  } catch (error) {
+    if (typeof error === "object" && error !== null && "status" in error && error.status === 409) {
+      return NextResponse.json({ error: "meal-slot-booking-conflict" }, { status: 409 });
+    }
     return NextResponse.json({ error: "meal-slot-booking-config-failed" }, { status: 500 });
   }
 }

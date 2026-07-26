@@ -57,8 +57,7 @@ function menuChanged(data: Record<string, unknown>, latest: MealSlot): boolean {
 }
 
 function statusRegresses(current: unknown, requested: unknown): boolean {
-  return (current === "open" && requested === "draft") ||
-    (current === "closed" && requested !== "closed");
+  return current !== "draft" && requested === "draft";
 }
 
 async function transactionSession(req: PayloadRequest): Promise<unknown> {

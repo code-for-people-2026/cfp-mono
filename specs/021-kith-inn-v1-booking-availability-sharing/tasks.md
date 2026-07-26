@@ -25,10 +25,10 @@
 
 - [x] T002 [P] 为营业关闭、顾客展示状态、默认价设置、批量状态和分享目标补失败契约测试至 `packages/kith-inn-v1-shared/src/api.test.ts` 与新纯逻辑测试
 - [x] T003 实现 T002 的 schema、types、exports 和纯展示规则于 `packages/kith-inn-v1-shared/src/`
-- [ ] T004 [P] 为营业关闭 partial unique indexes、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
-- [ ] T005 实现对应 collection、target 字段、partial unique index migration 与可恢复状态持久化门禁于 `packages/kith-inn-v1-payload/`、`apps/cms/src/db/`
-- [ ] T006 [P] 为关闭 CRUD、默认价、target 读写及打烊/开放/订单并发冲突补租户隔离 internal route tests 于 `apps/cms/tests/`
-- [ ] T007 实现对应 internal routes，并让冲突写入共享 seller/date 级事务锁；target 端到端保存后才启用 targeted create schema
+- [x] T004 [P] 为营业关闭 partial unique indexes、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
+- [x] T005 实现对应 collection、target 字段、partial unique index migration 与可恢复状态持久化门禁于 `packages/kith-inn-v1-payload/`、`apps/cms/src/db/`
+- [x] T006 [P] 为关闭 CRUD、默认价、target 读写及打烊/开放/订单并发冲突补租户隔离 internal route tests 于 `apps/cms/tests/`
+- [x] T007 实现对应 internal routes，并让冲突写入共享 seller/date 级事务锁；target 端到端保存后才启用 targeted create schema
 
 ## Phase 3: User Story 1 - 安排未来营业与预订
 
