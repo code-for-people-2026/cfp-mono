@@ -1,10 +1,12 @@
 import {
+  bulkMealSlotBookingStatusInputSchema,
   generateMenusInputSchema,
   mealSlotBookingConfigSchema,
   mealSlotRangeSchema,
   swapMenuItemInputSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
+  BulkMealSlotBookingStatusResult,
   MealSlot,
   MealSlotBookingConfig,
   MealSlotCreate,
@@ -75,6 +77,9 @@ function dependencyError(c: Context, error: unknown) {
   if (!(error instanceof CmsMealSlotError) && !(error instanceof CmsOfferingError)) {
     return c.json({ error: "cms-unavailable", message: "菜单服务暂不可用" }, 502);
   }
+  if (error.code === "internal-unauthorized") {
+    return c.json({ error: "cms-unavailable", message: "菜单服务暂不可用" }, 502);
+  }
   const status = ([401, 403, 404, 409, 422] as const).includes(error.status as 401)
     ? error.status as 401 | 403 | 404 | 409 | 422
     : 502;
@@ -86,6 +91,23 @@ function menuLocked(c: Context) {
     error: "meal-slot-menu-locked",
     message: "餐次已开放或关闭，菜单不可修改"
   }, 409);
+}
+
+function bookingAvailabilityMessage(error: BookingAvailabilityError): string {
+  return error.code === "meal-slot-not-ready" ? "餐次尚未满足开放预订条件" : "餐次状态不可回退";
+}
+
+function bulkBookingStatusFailure(
+  id: string | number,
+  error: unknown
+): BulkMealSlotBookingStatusResult {
+  if (error instanceof BookingAvailabilityError) {
+    return { id, status: "failed", error: error.code, message: bookingAvailabilityMessage(error) };
+  }
+  if (error instanceof CmsMealSlotError && error.code !== "internal-unauthorized" && error.status < 500) {
+    return { id, status: "failed", error: error.code, message: error.message };
+  }
+  return { id, status: "failed", error: "cms-unavailable", message: "餐次服务暂不可用" };
 }
 
 const keyOf = ({ date, occasion }: MealSlotTarget) => `${date}:${occasion}`;
@@ -194,6 +216,30 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
     }
   });
 
+  app.post("/bulk-booking-status", async (c) => {
+    const body = await bodyOf(c);
+    if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
+    const parsed = bulkMealSlotBookingStatusInputSchema.safeParse(body.value);
+    if (!parsed.success) return c.json({ error: "invalid-bulk-booking-status", message: "批量状态参数无效" }, 422);
+    const token = c.get("operatorToken");
+    const results: BulkMealSlotBookingStatusResult[] = [];
+    for (const id of parsed.data.mealSlotIds) {
+      try {
+        const slot = await deps.getMealSlot(token, id);
+        const input = nextBookingConfig(
+          slot,
+          { orderStatus: parsed.data.action === "open" ? "open" : "closed" },
+          deps.now()
+        );
+        const doc = await deps.updateMealSlotBookingConfig(token, slot.id, input);
+        results.push({ id, status: "updated", doc });
+      } catch (error) {
+        results.push(bulkBookingStatusFailure(id, error));
+      }
+    }
+    return c.json({ results });
+  });
+
   app.post("/:id/swap-menu-item", async (c) => {
     const body = await bodyOf(c);
     if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
@@ -236,8 +282,7 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
       return c.json({ doc: await deps.updateMealSlotBookingConfig(token, slot.id, input) });
     } catch (error) {
       if (error instanceof BookingAvailabilityError) {
-        const message = error.code === "meal-slot-not-ready" ? "餐次尚未满足开放预订条件" : "餐次状态不可回退";
-        return c.json({ error: error.code, message }, error.status);
+        return c.json({ error: error.code, message: bookingAvailabilityMessage(error) }, error.status);
       }
       return dependencyError(c, error);
     }

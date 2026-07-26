@@ -21,10 +21,7 @@ export function nextBookingConfig(
   now: string
 ): MealSlotBookingConfig {
   const nextStatus = input.orderStatus ?? slot.orderStatus;
-  if (slot.orderStatus === "closed" && nextStatus !== "closed") {
-    throw new BookingAvailabilityError("invalid-meal-slot-transition", 409);
-  }
-  if (slot.orderStatus === "open" && nextStatus === "draft") {
+  if (slot.orderStatus !== "draft" && nextStatus === "draft") {
     throw new BookingAvailabilityError("invalid-meal-slot-transition", 409);
   }
   const deadline = input.orderDeadline === undefined ? slot.orderDeadline : input.orderDeadline;

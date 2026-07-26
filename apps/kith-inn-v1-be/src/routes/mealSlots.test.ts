@@ -382,6 +382,20 @@ describe("meal-slot booking config route", () => {
       body: JSON.stringify({ orderStatus: "closed" })
     });
     expect(close.status).toBe(200);
+
+    const reopenDeps = deps({
+      getMealSlot: vi.fn(async () => ({
+        ...existing,
+        orderStatus: "closed" as const,
+        orderDeadline: "2026-07-11T01:00:00.000Z"
+      }))
+    });
+    const reopen = await request(mealSlotsRoutes(SECRET, reopenDeps), "/11/booking-config", {
+      method: "PATCH",
+      body: JSON.stringify({ orderStatus: "open" })
+    });
+    expect(reopen.status).toBe(200);
+    expect(reopenDeps.updateMealSlotBookingConfig).toHaveBeenCalledWith(token, 11, { orderStatus: "open" });
   });
 
   it("rejects incomplete, expired and backward state transitions before CMS writes", async () => {
@@ -396,12 +410,6 @@ describe("meal-slot booking config route", () => {
       {
         slot: { ...existing, orderStatus: "open", orderDeadline: "2026-07-11T01:00:00.000Z" },
         patch: { orderStatus: "draft" },
-        status: 409,
-        error: "invalid-meal-slot-transition"
-      },
-      {
-        slot: { ...existing, orderStatus: "closed" },
-        patch: { orderStatus: "open", orderDeadline: "2026-07-11T01:00:00.000Z" },
         status: 409,
         error: "invalid-meal-slot-transition"
       }
@@ -434,6 +442,108 @@ describe("meal-slot booking config route", () => {
   });
 });
 
+describe("bulk meal-slot booking status route", () => {
+  it("opens each unique slot independently and preserves partial failures", async () => {
+    const ready = { ...existing, orderDeadline: "2026-07-11T01:00:00.000Z" };
+    const getMealSlot = vi.fn(async (_token: string, id: string | number) => (
+      String(id) === "12" ? { ...existing, id } : { ...ready, id }
+    ));
+    const updateMealSlotBookingConfig = vi.fn(async (_token, id, patch) => {
+      if (String(id) === "13") throw new CmsMealSlotError(409, "service-closure-conflict", "该餐次已打烊");
+      return { ...ready, id, ...patch };
+    });
+    const response = await request(mealSlotsRoutes(SECRET, deps({
+      getMealSlot,
+      updateMealSlotBookingConfig
+    })), "/bulk-booking-status", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11, 11, 12, 13], action: "open" })
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      results: [
+        { id: 11, status: "updated", doc: { orderStatus: "open" } },
+        { id: 12, status: "failed", error: "meal-slot-not-ready" },
+        { id: 13, status: "failed", error: "service-closure-conflict", message: "该餐次已打烊" }
+      ]
+    });
+    expect(getMealSlot).toHaveBeenCalledTimes(3);
+    expect(updateMealSlotBookingConfig).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops open slots and reopens valid stopped slots", async () => {
+    const ready = {
+      ...existing,
+      orderStatus: "closed" as const,
+      orderDeadline: "2026-07-11T01:00:00.000Z"
+    };
+    const updateMealSlotBookingConfig = vi.fn(async (_token, id, patch) => ({ ...ready, id, ...patch }));
+    const reopenApp = mealSlotsRoutes(SECRET, deps({
+      getMealSlot: vi.fn(async (_token, id) => ({ ...ready, id })),
+      updateMealSlotBookingConfig
+    }));
+    const reopen = await request(reopenApp, "/bulk-booking-status", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11], action: "open" })
+    });
+    const stopApp = mealSlotsRoutes(SECRET, deps({
+      getMealSlot: vi.fn(async (_token, id) => ({
+        ...ready,
+        id,
+        orderStatus: String(id) === "11" ? "open" as const : "closed" as const
+      })),
+      updateMealSlotBookingConfig
+    }));
+    const stop = await request(stopApp, "/bulk-booking-status", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11, 12], action: "stop" })
+    });
+
+    expect(reopen.status).toBe(200);
+    await expect(reopen.json()).resolves.toMatchObject({ results: [{ status: "updated", doc: { orderStatus: "open" } }] });
+    expect(stop.status).toBe(200);
+    await expect(stop.json()).resolves.toMatchObject({
+      results: [
+        { id: 11, status: "updated", doc: { orderStatus: "closed" } },
+        { id: 12, status: "updated", doc: { orderStatus: "closed" } }
+      ]
+    });
+  });
+
+  it("validates JSON and the bounded seller-free input", async () => {
+    const app = mealSlotsRoutes(SECRET, deps());
+    expect((await request(app, "/bulk-booking-status", { method: "POST", body: "{" })).status).toBe(400);
+    for (const body of [
+      { mealSlotIds: [], action: "open" },
+      { mealSlotIds: Array.from({ length: 21 }, (_, index) => index + 1), action: "stop" },
+      { mealSlotIds: [11], action: "open", sellerId: 99 }
+    ]) {
+      expect((await request(app, "/bulk-booking-status", {
+        method: "POST",
+        body: JSON.stringify(body)
+      })).status).toBe(422);
+    }
+  });
+
+  it("maps unavailable dependencies per item and continues", async () => {
+    const getMealSlot = vi.fn(async (_token: string, id: string | number) => {
+      if (String(id) === "11") throw new CmsMealSlotError(500, "failed", "失败");
+      if (String(id) === "12") throw new CmsMealSlotError(401, "internal-unauthorized", "内部凭据错误");
+      throw new Error("network");
+    });
+    const response = await request(mealSlotsRoutes(SECRET, deps({ getMealSlot })), "/bulk-booking-status", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11, 12, 13], action: "stop" })
+    });
+
+    expect(response.status).toBe(200);
+    expect((await response.json() as { results: Array<{ error: string }> }).results.map(({ error }) => error))
+      .toEqual(["cms-unavailable", "cms-unavailable", "cms-unavailable"]);
+    expect(getMealSlot).toHaveBeenCalledTimes(3);
+  });
+});
+
 describe("meal-slot dependency errors", () => {
   it("preserves actionable CMS statuses and maps unknown failures to 502", async () => {
     for (const status of [401, 403, 404, 409, 422, 500]) {
@@ -444,6 +554,15 @@ describe("meal-slot dependency errors", () => {
       expect(response.status).toBe(status === 500 ? 502 : status);
       await expect(response.json()).resolves.toMatchObject({ error: `cms-${status}` });
     }
+
+    const internalAuth = mealSlotsRoutes(SECRET, deps({
+      listMealSlots: vi.fn(async () => {
+        throw new CmsMealSlotError(401, "internal-unauthorized", "内部凭据错误");
+      })
+    }));
+    const response = await request(internalAuth, "/?from=2026-07-01&to=2026-07-31");
+    expect(response.status).toBe(502);
+    await expect(response.json()).resolves.toMatchObject({ error: "cms-unavailable" });
     const app = mealSlotsRoutes(SECRET, deps({ listMealSlots: vi.fn(async () => { throw new Error("offline"); }) }));
     expect((await request(app, "/?from=2026-07-01&to=2026-07-31")).status).toBe(502);
   });

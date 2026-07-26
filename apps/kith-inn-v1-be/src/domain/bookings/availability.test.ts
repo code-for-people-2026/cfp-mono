@@ -29,6 +29,10 @@ const slot = (overrides: Partial<MealSlot> = {}): MealSlot => ({
 it("derives config, readable titles and a public-only path", () => {
   expect(nextBookingConfig(slot({ orderStatus: "draft" }), { priceCents: 2800 }, "2026-07-10T01:00:00.000Z"))
     .toEqual({ priceCents: 2800 });
+  expect(nextBookingConfig(slot({ orderStatus: "closed" }), { orderStatus: "open" }, "2026-07-10T01:00:00.000Z"))
+    .toEqual({ orderStatus: "open" });
+  expect(() => nextBookingConfig(slot({ orderStatus: "closed" }), { orderStatus: "draft" }, "2026-07-10T01:00:00.000Z"))
+    .toThrow(/invalid-meal-slot-transition/);
   expect(defaultBookingBatchTitle([slot()])).toBe("2026-07-13 午餐预订");
   expect(defaultBookingBatchTitle([slot(), slot({ id: 12, occasion: "dinner" })])).toBe("2026-07-13 午晚餐预订");
   expect(defaultBookingBatchTitle([slot(), slot({ id: 12, date: "2026-07-15" })]))
