@@ -1852,8 +1852,7 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
     { ...slot("2026-07-27", "dinner"), id: 912, orderStatus: "closed" as const, orderDeadline: "2026-07-26T02:00:00.000Z", priceCents: 3200 }
   ];
   let closures: Array<{ id: number; sellerId: number; date: string; occasion: "lunch" | "dinner" | null; note: null }> = [];
-  let nextClosureId = 71, lunchConfigRequests = 0;
-  let failClosureRead = true;
+  let nextClosureId = 71, lunchConfigRequests = 0, failClosureRead = true;
   let releaseFirstConfig!: () => void;
   const firstConfig = new Promise<void>((resolve) => { releaseFirstConfig = resolve; });
   let firstConfigPending = true;
@@ -1905,14 +1904,11 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
-  await page.goto("/pages/merchant/batches/index");
-  await expect(page.locator(".booking-settings-card input")).toHaveValue("30");
+  await page.goto("/pages/merchant/batches/index"); await expect(page.locator(".booking-settings-card input")).toHaveValue("30");
   await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
 
-  const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" });
-  await expect(page.getByText(/打烊安排加载失败/).first()).toBeVisible();
-  await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-26T10:00");
-  await taroButton(page, /^重试打烊安排$/).click();
+  const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" }); await expect(page.getByText(/打烊安排加载失败/).first()).toBeVisible();
+  await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-26T10:00"); await taroButton(page, /^重试打烊安排$/).click();
   await expect(lunch.getByRole("textbox", { name: "截止时间" })).toHaveValue("2026-07-26T10:00");
   const defaultPrice = page.locator(".booking-settings-card input");
   await defaultPrice.fill("35.5");
@@ -1984,7 +1980,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   const daysUntilWednesday = (3 - future.getUTCDay() + 7) % 7;
   const target = new Date(future.getTime() + daysUntilWednesday * 86_400_000);
   const targetDate = target.toISOString().slice(0, 10);
-  const deadline = new Date(target.getTime() - 86_400_000).toISOString().slice(0, 10);
+  const deadline = targetDate;
   const rows = [
     `批次荤一-${suffix} 牛肉-${suffix} 荤`,
     `批次荤二-${suffix} 猪肉-${suffix} 荤`,
@@ -2009,7 +2005,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   const startedAt = Date.now();
   const slot = page.locator(".batch-slot").filter({ hasText: `${targetDate} 午餐` });
   await slot.getByRole("textbox", { name: "价格（元）" }).fill("28");
-  await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T09:00`);
+  await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T18:00`);
   const configResponse = page.waitForResponse((response) =>
     response.url().includes("/booking-config") && response.request().method() === "PATCH");
   await slot.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();
