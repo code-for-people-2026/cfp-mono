@@ -24,7 +24,7 @@
 
 **Performance Goals**: 部署后自动 smoke 在 10 分钟内给出结论；应用失败演练 15 分钟内恢复上一可用版本或进入数据恢复流程
 
-**Constraints**: 生产 FE 只接受显式 HTTPS API URL；不得泄露 secret/OpenID/私钥；不得公开 dev-login；每个实现 PR 必须目标单一、改动内聚、验证完整且可可靠 review，约 400 行人工 diff 仅作宽松参考；不得影响 website 独立部署
+**Constraints**: 生产 FE 只接受显式 HTTPS API URL；不得泄露 secret/OpenID/私钥；不得公开 dev-login；每个实现 PR 默认人工 diff <400 行；不得影响 website 独立部署
 
 **Scale/Scope**: 首轮仅桃子 1 名白名单 operator 与 1 个 seller；旧 kith-inn 全核心链路，不含 #161、kith-inn-v1、客户 UI、支付、正式版发布或新 AI
 
@@ -59,7 +59,7 @@
 | PR8 | 独立手动工作流只在查获并校验同一 main SHA 的持久化 smoke 通过凭据后可重复上传体验版 | `apps/kith-inn-fe/scripts/**`、`apps/kith-inn-fe/project.config.json`、根 `pnpm-lock.yaml`、`.github/workflows/release-kith-inn-weapp.yml` | uploader 单测、凭据/SHA 负例、dry-run、受控测试上传 | PR7-B3 |
 | PR9 | 实际云环境与桃子白名单真机完整通过，并留下脱敏证据 | `specs/017-kith-inn-trial-deployment/evidence/**`、必要 runbook 勘误 | 生产 smoke、版本关联、真机核心链路、回滚演练 | PR8 |
 
-PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4-A 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；评估确认 migration 与 seed 合并会超过 400 行，因此落实为依赖有序的 PR4-A/PR4-B。PR6-B 的 job/编排/入口与三份 runbook 合计会明显超过 400 行，因此拆为先固定可启动拓扑的 PR6-B1，再组装 smoke/回滚证据的 PR6-B2。PR7 先用 PR7-A 固定 target/config 门禁；四镜像、生产写入/回滚、marker/失败演练仍是三个可独立验收的不变量，因此继续拆为 PR7-B1/B2/B3。后续切片仍以目标单一、改动内聚、验证完整和可可靠 review 为门禁；约 400 行人工 diff 只作宽松参考，超过时不自动要求拆分，但必须重新评估审查负担与风险。
+PR1 的全套 Spec Kit 产物预计处于 400–800 行：`spec/plan/tasks` 与 research/contracts/quickstart 必须在同一 PR 原子 review，拆开会使 analyze 缺少输入或留下互相失配的占位；本 PR 仍控制在 800 行以内。PR4-A 的 Payload baseline migration 属明确机器生成文件，不计人工 diff；评估确认 migration 与 seed 合并会超过 400 行，因此落实为依赖有序的 PR4-A/PR4-B。PR6-B 的 job/编排/入口与三份 runbook 合计会明显超过 400 行，因此拆为先固定可启动拓扑的 PR6-B1，再组装 smoke/回滚证据的 PR6-B2。PR7 先用 PR7-A 固定 target/config 门禁；四镜像、生产写入/回滚、marker/失败演练仍是三个可独立验收的不变量，因此继续拆为 PR7-B1/B2/B3。其余每片默认人工 diff <400 行，超过时必须再按表内不变量拆分。
 
 ## Project Structure
 
