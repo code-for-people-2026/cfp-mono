@@ -1,4 +1,9 @@
-import type { CollectionConfig } from "payload";
+import {
+  APIError,
+  type CollectionBeforeChangeHook,
+  type CollectionConfig,
+  type PayloadRequest
+} from "payload";
 import { OCCASIONS } from "@cfp/kith-inn-v1-shared";
 import {
   cmsAccess,
@@ -7,6 +12,19 @@ import {
   trimText,
   validateCalendarDate
 } from "./shared";
+
+export const KIV1_SERVICE_CLOSURE_CHECKED = "kiv1ServiceClosureChecked";
+
+function requireControlledWrite(req: PayloadRequest): void {
+  if (req.context[KIV1_SERVICE_CLOSURE_CHECKED] !== true) {
+    throw new APIError("service-closure-requires-availability-check", 409);
+  }
+}
+
+export const requireCheckedServiceClosureChange: CollectionBeforeChangeHook = ({ data, req }) => {
+  requireControlledWrite(req);
+  return data;
+};
 
 export const ServiceClosures: CollectionConfig = {
   slug: "kiv1_service_closures",
@@ -19,7 +37,10 @@ export const ServiceClosures: CollectionConfig = {
     update: () => false,
     delete: () => false
   },
-  hooks: sameSellerHooks,
+  hooks: {
+    ...sameSellerHooks,
+    beforeChange: [requireCheckedServiceClosureChange, ...sameSellerHooks.beforeChange]
+  },
   fields: [
     sellerField(),
     { name: "date", type: "text", required: true, validate: validateCalendarDate },
