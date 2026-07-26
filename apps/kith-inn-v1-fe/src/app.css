@@ -1796,6 +1796,9 @@ button.manual-add-entry {
 .menu-primary-action {
   position: fixed;
   z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   right: 36rpx;
   bottom: calc(126rpx + env(safe-area-inset-bottom));
   left: 36rpx;
@@ -1803,7 +1806,7 @@ button.manual-add-entry {
   width: auto;
   min-height: 92rpx;
   margin: 0;
-  padding: 16rpx 24rpx;
+  padding: 0 24rpx;
   border: 0;
   border-radius: 28rpx;
   background: #b6402f;

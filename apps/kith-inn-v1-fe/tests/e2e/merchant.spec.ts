@@ -1507,7 +1507,25 @@ test("成功刷新后撤销旧覆盖确认", async ({ page }) => {
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await taroButton(page, /^菜单$/).click();
-  await taroButton(page, /^生成本周午晚餐$/).click();
+  const generateWeekButton = taroButton(page, /^生成本周午晚餐$/);
+  const alignment = await generateWeekButton.evaluate((element) => {
+    const buttonRect = element.getBoundingClientRect();
+    const textRange = document.createRange();
+    textRange.selectNodeContents(element);
+    const textRect = textRange.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return {
+      centerOffset: Math.abs(
+        (textRect.top + textRect.height / 2) - (buttonRect.top + buttonRect.height / 2)
+      ),
+      display: style.display,
+      alignItems: style.alignItems,
+      justifyContent: style.justifyContent
+    };
+  });
+  expect(alignment.centerOffset).toBeLessThanOrEqual(1);
+  expect(alignment).toMatchObject({ display: "flex", alignItems: "center", justifyContent: "center" });
+  await generateWeekButton.click();
   const confirmation = page.locator(".menu-replace-confirmation");
   await expect(confirmation).toContainText("2026-07-22 午餐");
   docs = [slot("2026-07-22", "lunch"), slot("2026-07-22", "dinner")];
