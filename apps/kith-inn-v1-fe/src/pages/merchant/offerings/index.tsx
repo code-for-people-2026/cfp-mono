@@ -410,7 +410,7 @@ export default function MerchantOfferings() {
               <Textarea
                 disabled={commitPending}
                 maxlength={20_000}
-                placeholder="每行一道菜"
+                placeholder={"每行：菜名 [主料] 分类\n例如：\n红烧肉 猪肉 荤\n清炒时蔬 素"}
                 value={importText}
                 onInput={(event) => changeImportText(event.detail.value)}
               />
