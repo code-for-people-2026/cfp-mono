@@ -3,6 +3,7 @@ export const TAOZI_OPERATOR_OPENID = "taozi-v1-dev-openid";
 
 export const RESET_COLLECTIONS = [
   "kiv1_orders",
+  "kiv1_service_closures",
   "kiv1_booking_batches",
   "kiv1_meal_slots",
   "kiv1_customer_profiles",

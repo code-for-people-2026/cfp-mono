@@ -39,47 +39,53 @@ export async function PATCH(req: Request, { params }: RouteContext) {
   }
   try {
     const update = async (
-      data = parsed.data,
-      transactionReq?: Parameters<typeof hasServiceClosure>[1]
+      data: typeof parsed.data,
+      transactionReq: Parameters<typeof hasServiceClosure>[1],
+      availabilityChecked = false
     ) => scope.payload.update({
       collection: "kiv1_meal_slots", id, data, overrideAccess: true,
-      ...(data.orderStatus === "open" ? { context: { [KIV1_AVAILABILITY_CHECKED]: true } } : {}),
-      ...(transactionReq ? { req: transactionReq } : {})
+      ...(availabilityChecked ? { context: { [KIV1_AVAILABILITY_CHECKED]: true } } : {}),
+      req: transactionReq
     });
-    const doc = parsed.data.orderStatus === "open"
-      ? await withKiv1Transaction(scope.payload, async (transactionReq) => {
-        await lockSellerDate(scope.payload, transactionReq, scope.sellerId, current.date);
-        const latest = await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId, transactionReq) as
-          Parameters<typeof normalizeMealSlot>[0] | undefined;
-        let price = Object.hasOwn(parsed.data, "priceCents")
-          ? parsed.data.priceCents
-          : latest?.priceCents;
-        if (!Number.isSafeInteger(price)) {
-          const sellers = await scope.payload.find({
-            collection: "kiv1_sellers",
-            where: { id: { equals: scope.sellerId } },
-            limit: 1,
-            depth: 0,
-            overrideAccess: true,
-            req: transactionReq
-          });
-          const defaultPrice = (sellers.docs[0] as
-            { defaultPriceCents?: unknown } | undefined)?.defaultPriceCents;
-          price = typeof defaultPrice === "number" ? defaultPrice : undefined;
-        }
-        const deadline = Object.hasOwn(parsed.data, "orderDeadline")
-          ? parsed.data.orderDeadline
-          : latest?.orderDeadline;
-        if (!latest || !Array.isArray(latest.menuItems) || latest.menuItems.length !== 5 || !Number.isSafeInteger(price) ||
-          typeof deadline !== "string" || Date.parse(deadline) <= Date.now()) {
-          return NextResponse.json({ error: "meal-slot-not-openable", message: "餐次菜单、价格或截止时间不完整" }, { status: 409 });
-        }
-        if (await hasServiceClosure(scope.payload, transactionReq, scope.sellerId, latest.date, latest.occasion)) {
-          return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
-        }
-        return update({ ...parsed.data, priceCents: price as number }, transactionReq);
-      })
-      : await update(parsed.data);
+    const doc = await withKiv1Transaction(scope.payload, async (transactionReq) => {
+      await lockSellerDate(scope.payload, transactionReq, scope.sellerId, current.date);
+      const latest = await findOwned(scope.payload, "kiv1_meal_slots", id, scope.sellerId, transactionReq) as
+        Parameters<typeof normalizeMealSlot>[0] | undefined;
+      if (!latest) {
+        return NextResponse.json({ error: "not-found" }, { status: 404 });
+      }
+      const nextStatus = parsed.data.orderStatus ?? latest.orderStatus;
+      if (nextStatus !== "open") {
+        return update(parsed.data, transactionReq);
+      }
+      let price = Object.hasOwn(parsed.data, "priceCents")
+        ? parsed.data.priceCents
+        : latest.priceCents;
+      if (!Number.isSafeInteger(price)) {
+        const sellers = await scope.payload.find({
+          collection: "kiv1_sellers",
+          where: { id: { equals: scope.sellerId } },
+          limit: 1,
+          depth: 0,
+          overrideAccess: true,
+          req: transactionReq
+        });
+        const defaultPrice = (sellers.docs[0] as
+          { defaultPriceCents?: unknown } | undefined)?.defaultPriceCents;
+        price = typeof defaultPrice === "number" ? defaultPrice : undefined;
+      }
+      const deadline = Object.hasOwn(parsed.data, "orderDeadline")
+        ? parsed.data.orderDeadline
+        : latest.orderDeadline;
+      if (!Array.isArray(latest.menuItems) || latest.menuItems.length !== 5 || !Number.isSafeInteger(price) ||
+        typeof deadline !== "string" || Date.parse(deadline) <= Date.now()) {
+        return NextResponse.json({ error: "meal-slot-not-openable", message: "餐次菜单、价格或截止时间不完整" }, { status: 409 });
+      }
+      if (await hasServiceClosure(scope.payload, transactionReq, scope.sellerId, latest.date, latest.occasion)) {
+        return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
+      }
+      return update({ ...parsed.data, priceCents: price as number }, transactionReq, true);
+    });
     if (doc instanceof NextResponse) return doc;
     return NextResponse.json({ doc: normalizeMealSlot(doc as Parameters<typeof normalizeMealSlot>[0]) });
   } catch (error) {
