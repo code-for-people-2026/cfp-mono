@@ -7,6 +7,7 @@ import type {
   BookingBatch,
   BookingBatchUpdate,
   CmsBookingBatchCreate,
+  CmsBookingBatchTargetedCreate,
   CmsCustomerBookingBatch
 } from "@cfp/kith-inn-v1-shared";
 import { KIV1_INTERNAL_HEADER } from "./auth";
@@ -85,13 +86,26 @@ export async function listBookingBatches(
 
 export async function createBookingBatch(
   token: string,
-  input: CmsBookingBatchCreate,
+  input: CmsBookingBatchCreate | CmsBookingBatchTargetedCreate,
   deps: CmsBookingBatchDeps = {}
 ): Promise<BookingBatch> {
   return parseDoc(await cmsRequest(
     "/api/internal/kiv1/booking-batches",
     token,
     { method: "POST", data: input },
+    deps
+  ));
+}
+
+export async function getBookingBatch(
+  token: string,
+  id: string | number,
+  deps: CmsBookingBatchDeps = {}
+): Promise<BookingBatch> {
+  return parseDoc(await cmsRequest(
+    `/api/internal/kiv1/booking-batches/${encodeURIComponent(id)}`,
+    token,
+    {},
     deps
   ));
 }

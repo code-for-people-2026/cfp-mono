@@ -385,6 +385,23 @@ export const bookingBatchListResponseSchema = z.object({
   docs: z.array(bookingBatchMutationResponseSchema)
 }).strict();
 
+export const bookingBatchMealSlotSummarySchema = mealSlotSchema.pick({
+  id: true,
+  date: true,
+  occasion: true,
+  orderStatus: true,
+  orderDeadline: true,
+  priceCents: true
+}).strict();
+
+export const bookingBatchDetailResponseSchema = bookingBatchMutationResponseSchema.extend({
+  slots: z.array(bookingBatchMealSlotSummarySchema).min(1).max(20)
+}).strict().refine(({ doc, slots }) => {
+  const ids = new Set(slots.map(({ id }) => String(id)));
+  return ids.size === slots.length && doc.mealSlotIds.length === slots.length &&
+    doc.mealSlotIds.every((id) => ids.has(String(id)));
+}, { path: ["slots"], message: "实时餐次摘要必须完整对应预订批次" });
+
 const uniqueTargets = z.array(mealSlotTargetSchema).min(1).max(100).transform((targets) => [
   ...new Map(targets.map((target) => [`${target.date}:${target.occasion}`, target])).values()
 ]).refine((targets) => targets.length <= 20, { message: "一次最多生成 20 个餐次" });

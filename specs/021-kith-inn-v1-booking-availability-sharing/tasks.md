@@ -52,8 +52,8 @@
 
 **Independent Test**: 日期和餐次卡片各自生成准确公开标题、路径和定位，非微信环境不伪装分享成功。
 
-- [ ] T016 [P] [US2] 为 targeted schema 切换、目标创建、旧批次兼容和实时详情补 route tests 于 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts`
-- [ ] T017 [US2] 在 CMS 已可持久化后切换 targeted create schema，并实现 BookingBatch target 创建、详情和兼容映射于 `apps/kith-inn-v1-be/src/`
+- [x] T016 [P] [US2] 为 targeted schema 切换、目标创建、旧批次兼容和实时详情补 route tests 于 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts`
+- [x] T017 [US2] 在 CMS 已可持久化后切换 targeted create schema，并实现 BookingBatch target 创建、详情和兼容映射于 `apps/kith-inn-v1-be/src/`
 - [ ] T018 [P] [US2] 为日期/餐次目标、摘要和微信 payload 补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
 - [ ] T019 [US2] 实现 Page 4 创建成功态和微信原生卡片分享于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
 - [ ] T020 [US2] 补日期/餐次分享 E2E 于 `apps/kith-inn-v1-e2e/src/merchant.spec.ts`

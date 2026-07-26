@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   BookingBatch,
   CmsBookingBatchCreate,
+  CmsBookingBatchTargetedCreate,
   CmsCustomerBookingBatch,
   MealSlot
 } from "@cfp/kith-inn-v1-shared";
@@ -60,12 +61,11 @@ function deps(overrides: Partial<BookingBatchesDeps> = {}): BookingBatchesDeps {
   let uuidIndex = 0;
   return {
     listBookingBatches: vi.fn(async () => []),
-    createBookingBatch: vi.fn(async (_token: string, input: CmsBookingBatchCreate) => batch({
-      publicId: input.publicId,
-      title: input.title,
-      mealSlotIds: input.mealSlotIds,
-      createdById: input.createdById
-    })),
+    getBookingBatch: vi.fn(async () => batch()),
+    createBookingBatch: vi.fn(async (
+      _token: string,
+      input: CmsBookingBatchCreate | CmsBookingBatchTargetedCreate
+    ) => batch({ ...input })),
     updateBookingBatch: vi.fn(async (_token, id) => batch({ id, status: "closed" })),
     getMealSlot: vi.fn(async (_token: string, id: string | number) => slot({ id })),
     now: () => NOW,
@@ -111,6 +111,73 @@ describe("merchant booking-batch list/create", () => {
       mealSlotIds: [11],
       createdById: 1
     });
+  });
+
+  it("creates day/meal targets only from matching available slots", async () => {
+    const injected = deps({
+      getMealSlot: vi.fn(async (_token, id) => slot({
+        id,
+        occasion: String(id) === "11" ? "lunch" : "dinner"
+      }))
+    });
+    const app = bookingBatchesRoutes(SECRET, injected);
+    const dayTarget = { kind: "day", date: "2026-07-13" } as const;
+    const day = await request(app, "/", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11, 12], target: dayTarget })
+    });
+    expect(day.status).toBe(201);
+    await expect(day.json()).resolves.toMatchObject({
+      doc: { target: dayTarget },
+      share: { path: expect.stringContaining("&date=2026-07-13") }
+    });
+    expect(injected.createBookingBatch).toHaveBeenCalledWith(token, expect.objectContaining({ target: dayTarget }));
+
+    const mealTarget = { kind: "meal", date: "2026-07-13", occasion: "lunch" } as const;
+    expect((await request(app, "/", {
+      method: "POST",
+      body: JSON.stringify({ mealSlotIds: [11], target: mealTarget })
+    })).status).toBe(201);
+    for (const input of [
+      { mealSlotIds: [11, 12], target: mealTarget },
+      { mealSlotIds: [11], target: { kind: "day", date: "2026-07-14" } }
+    ]) {
+      const response = await request(app, "/", { method: "POST", body: JSON.stringify(input) });
+      expect(response.status).toBe(422);
+      await expect(response.json()).resolves.toMatchObject({ error: "booking-share-target-mismatch" });
+    }
+  });
+
+  it("returns batch detail with a live slot summary and supports legacy null targets", async () => {
+    const live = slot({ orderStatus: "closed", priceCents: 3200 });
+    const injected = deps({
+      getBookingBatch: vi.fn(async () => batch({ target: null })),
+      getMealSlot: vi.fn(async () => live)
+    });
+    const response = await request(bookingBatchesRoutes(SECRET, injected), "/31");
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      doc: batch({ target: null }),
+      share: { title: batch().title, path: `/pages/booking/index?batch=${UUIDS[0]}` },
+      slots: [{
+        id: 11,
+        date: "2026-07-13",
+        occasion: "lunch",
+        orderStatus: "closed",
+        orderDeadline: "2026-07-12T01:00:00.000Z",
+        priceCents: 3200
+      }]
+    });
+    expect(injected.getBookingBatch).toHaveBeenCalledWith(token, "31");
+    expect(injected.getMealSlot).toHaveBeenCalledWith(token, 11);
+
+    const missing = deps({
+      getBookingBatch: vi.fn(async () => {
+        throw new CmsBookingBatchError(404, "not-found", "不存在");
+      })
+    });
+    expect((await request(bookingBatchesRoutes(SECRET, missing), "/99")).status).toBe(404);
   });
 
   it("rejects invalid/unavailable slots before writes", async () => {
@@ -216,6 +283,13 @@ describe("merchant booking-batch close", () => {
       const response = await request(app, "/");
       expect(response.status).toBe(status === 500 ? 502 : status);
     }
+
+    const internalAuth = bookingBatchesRoutes(SECRET, deps({
+      getBookingBatch: vi.fn(async () => {
+        throw new CmsBookingBatchError(401, "internal-unauthorized", "内部凭据错误");
+      })
+    }));
+    expect((await request(internalAuth, "/31")).status).toBe(502);
   });
 
   it("wires every real CMS dependency by default", async () => {
@@ -237,6 +311,9 @@ describe("merchant booking-batch close", () => {
       if (url.endsWith("/booking-batches/31") && method === "PATCH") {
         return new Response(JSON.stringify({ doc: batch({ status: "closed" }) }));
       }
+      if (url.endsWith("/booking-batches/31") && method === "GET") {
+        return new Response(JSON.stringify({ doc: batch() }));
+      }
       return new Response("not found", { status: 404 });
     });
     vi.stubGlobal("fetch", fetch);
@@ -250,6 +327,7 @@ describe("merchant booking-batch close", () => {
       method: "PATCH",
       body: JSON.stringify({ status: "closed" })
     })).status).toBe(200);
+    expect((await request(app, "/31")).status).toBe(200);
   });
 });
 

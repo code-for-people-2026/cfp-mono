@@ -50,9 +50,14 @@ export function defaultBookingBatchTitle(slots: MealSlot[]): string {
 }
 
 export function bookingBatchShare(batch: BookingBatch) {
+  const targetQuery = batch.target
+    ? `&date=${encodeURIComponent(batch.target.date)}${batch.target.kind === "meal"
+      ? `&occasion=${encodeURIComponent(batch.target.occasion)}`
+      : ""}`
+    : "";
   return {
     title: batch.title,
-    path: `/pages/booking/index?batch=${encodeURIComponent(batch.publicId)}`
+    path: `/pages/booking/index?batch=${encodeURIComponent(batch.publicId)}${targetQuery}`
   };
 }
 

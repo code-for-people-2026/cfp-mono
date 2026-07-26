@@ -53,6 +53,11 @@ it("derives config, readable titles and a public-only path", () => {
     title: "一周预订",
     path: `/pages/booking/index?batch=${batch.publicId}`
   });
+  expect(bookingBatchShare({ ...batch, target: {
+    kind: "meal",
+    date: "2026-07-13",
+    occasion: "lunch"
+  } }).path).toBe(`/pages/booking/index?batch=${batch.publicId}&date=2026-07-13&occasion=lunch`);
 });
 
 it("accepts only open, unexpired batch slots", () => {

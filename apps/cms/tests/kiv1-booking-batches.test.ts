@@ -30,6 +30,7 @@ type Options = {
   batches?: Array<Record<string, unknown>>;
   slotIds?: Array<string | number>;
   operatorIds?: Array<string | number>;
+  slotStatus?: "draft" | "open" | "closed";
   createError?: unknown;
 };
 
@@ -47,7 +48,13 @@ function payloadWith(options: Options = {}) {
     if (collection === "kiv1_meal_slots") {
       const serialized = JSON.stringify(where);
       const id = slotIds.find((value) => serialized.includes(`\"equals\":${JSON.stringify(value)}`));
-      return { docs: id === undefined ? [] : [{ id, seller: 7 }] };
+      return { docs: id === undefined ? [] : [{
+        id,
+        seller: 7,
+        date: "2026-07-13",
+        occasion: String(id) === "11" ? "lunch" : "dinner",
+        orderStatus: options.slotStatus ?? "open"
+      }] };
     }
     if (collection === "kiv1_booking_batches") {
       const serialized = JSON.stringify(where);
@@ -169,23 +176,57 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     expect((await POST(write("", "POST", input))).status).toBe(409);
   });
 
-  it("keeps targeted creates closed until validated integration while old batches remain readable", async () => {
+  it("persists validated day/meal targets while old batches and creates remain compatible", async () => {
     const payload = payloadWith();
     mocks.getPayload.mockResolvedValue(payload);
     const targeted = await POST(write("", "POST", { ...input, target: {
       kind: "day", date: "2026-07-13"
     } }));
-    expect(targeted.status).toBe(422);
-    await expect(targeted.json()).resolves.toEqual({ error: "targeted-booking-batch-not-enabled" });
+    expect(targeted.status).toBe(201);
+    expect(payload.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ target: { kind: "day", date: "2026-07-13" } })
+    }));
     expect((await POST(write("", "POST", { ...input, target: {
-      kind: "meal", date: "2026-07-13"
+      kind: "meal", date: "2026-07-13", occasion: "lunch"
     } }))).status).toBe(422);
+    expect((await POST(write("", "POST", {
+      ...input,
+      mealSlotIds: [11],
+      target: { kind: "meal", date: "2026-07-13", occasion: "lunch" }
+    }))).status).toBe(201);
+    expect((await POST(write("", "POST", {
+      ...input,
+      target: { kind: "day", date: "2026-07-14" }
+    }))).status).toBe(422);
+    mocks.getPayload.mockResolvedValue(payloadWith({ slotStatus: "closed" }));
+    expect((await POST(write("", "POST", {
+      ...input,
+      target: { kind: "day", date: "2026-07-13" }
+    }))).status).toBe(422);
+    mocks.getPayload.mockResolvedValue(payload);
+    expect((await POST(write("", "POST", input))).status).toBe(201);
 
     mocks.getPayload.mockResolvedValue(payloadWith({ batches: [{ ...batchDoc, target: null }] }));
     const response = await GET(request());
     await expect(response.json()).resolves.toMatchObject({ docs: [{ target: null }] });
   });
 
+});
+
+describe("GET /api/internal/kiv1/booking-batches/:id", () => {
+  it("returns an owned normalized batch and hides foreign ids", async () => {
+    mocks.getPayload.mockResolvedValue(payloadWith());
+    const response = await detailRoute.GET(request("/31"), { params: Promise.resolve({ id: "31" }) });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({ doc: {
+      id: 31,
+      sellerId: 7,
+      target: { kind: "day", date: "2026-07-13" }
+    } });
+
+    mocks.getPayload.mockResolvedValue(payloadWith({ batches: [] }));
+    expect((await detailRoute.GET(request("/99"), { params: Promise.resolve({ id: "99" }) })).status).toBe(404);
+  });
 });
 
 describe("PATCH /api/internal/kiv1/booking-batches/:id", () => {
