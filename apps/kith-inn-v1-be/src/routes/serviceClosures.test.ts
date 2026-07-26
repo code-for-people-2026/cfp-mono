@@ -62,5 +62,17 @@ describe("merchant service closure routes", () => {
       listClosures: vi.fn(async () => { throw new Error("offline"); })
     }));
     expect((await unavailable.request("/?from=2026-07-01&to=2026-07-31", { headers: auth })).status).toBe(502);
+    const internalAuthFailed = serviceClosuresRoutes(SECRET, deps({
+      createClosure: vi.fn(async () => {
+        throw new CmsServiceClosureError(401, "internal-unauthorized", "营业安排服务失败");
+      })
+    }));
+    expect((await internalAuthFailed.request("/", {
+      method: "POST", headers: auth, body: JSON.stringify({ date: "2026-07-27" })
+    })).status).toBe(502);
+    const operatorAuthFailed = serviceClosuresRoutes(SECRET, deps({
+      listClosures: vi.fn(async () => { throw new CmsServiceClosureError(401, "unauthorized", "登录失效"); })
+    }));
+    expect((await operatorAuthFailed.request("/?from=2026-07-01&to=2026-07-31", { headers: auth })).status).toBe(401);
   });
 });

@@ -28,6 +28,9 @@ function payloadWith(options: Options = {}) {
     if (collection === "kiv1_service_closures") {
       const serialized = JSON.stringify(where);
       if (serialized.includes('"id"')) return { docs: closures.filter(({ id }) => serialized.includes(String(id))) };
+      const occasion = serialized.includes('"occasion":{"equals":"lunch"}') ? "lunch"
+        : serialized.includes('"occasion":{"equals":"dinner"}') ? "dinner" : null;
+      if (occasion) return { docs: closures.filter((doc) => doc.occasion == null || doc.occasion === occasion) };
       return { docs: closures };
     }
     if (collection === "kiv1_meal_slots") {
@@ -109,6 +112,23 @@ describe("service closure persistence boundary", () => {
     mocks.getPayload.mockResolvedValue(payloadWith({ closures: [] }));
     expect((await POST(write("", "POST", { date: "2026-07-27", seller: 99 }))).status).toBe(422);
     expect((await POST(request("", { method: "POST" }))).status).toBe(401);
+    expect((await POST(request("", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body: "{"
+    }))).status).toBe(400);
+  });
+
+  it("allows lunch and dinner closures to coexist while preserving whole-day precedence", async () => {
+    const payload = payloadWith({
+      closures: [{ ...closure, occasion: "dinner" }]
+    });
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await POST(write("", "POST", { date: "2026-07-27", occasion: "lunch" }));
+    expect(response.status).toBe(201);
+    expect(payload.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ seller: 7, date: "2026-07-27", occasion: "lunch" })
+    }));
   });
 
   it("deletes only an owned closure under the same date lock", async () => {
