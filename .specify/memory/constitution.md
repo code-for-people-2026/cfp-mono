@@ -1,12 +1,13 @@
 <!--
 Sync Impact Report
-- 版本变更：1.3.0 → 1.3.1
-- 修改原则：IV. 最小可交付与可审查切片（明确人工 diff 行数仅为审查负担参考）
+- 版本变更：1.3.0 → 1.4.0
+- 修改原则：IV. 最小可交付与可审查切片（将人工 diff 行数从硬预算改为审查负担参考）
 - 新增章节：无
 - 删除章节：无
-- 模板同步：✅ .specify/templates/plan-template.md；✅ .specify/templates/tasks-template.md（无需修改）；
+- 模板同步：✅ .specify/templates/plan-template.md；✅ .specify/templates/tasks-template.md；
   ✅ .specify/templates/spec-template.md（已检查，无需修改）；✅ .specify/templates/commands/（目录不存在）
 - 运行时指导同步：✅ AGENTS.md；✅ .agents/skills/pr-review-converge/SKILL.md
+- 活跃功能计划同步：✅ specs/017-kith-inn-trial-deployment/plan.md；✅ tasks.md
 - 后续 TODO：无
 -->
 # cfp-mono Spec Kit 宪法
@@ -92,4 +93,4 @@ typo、注释、单字段重命名、明确的小重构、复制既有模式的�
 
 本宪法只约束 Spec Kit 文档产物。通用仓库工程规则和 PR 规则仍以 `AGENTS.md` 为准。修改这些原则时，必须更新本文件，并在受影响的功能计划中说明原因。
 
-**版本**: 1.3.1 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-26
+**版本**: 1.4.0 | **批准日期**: 2026-07-02 | **最后修订**: 2026-07-26
