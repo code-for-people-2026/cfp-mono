@@ -420,23 +420,25 @@ export default function MerchantOfferings() {
                 预览导入
               </Button>
               {preview && (
-                <View>
-                  <Text>{previewSummaryText(preview)}</Text>
-                  {preview.rows.map((row) => (
-                    <View className="preview-row" key={row.line}>
-                      <Text>第 {row.line} 行：{row.status === "invalid" ? row.error : row.parsed.name}</Text>
-                      {row.status === "conflict" && (
-                        <Button
-                          size="mini"
-                          aria-label={`覆盖第 ${row.line} 行`}
-                          disabled={commitPending}
-                          onClick={() => setConflicts((current) => setConflictAction(current, row.line, "overwrite"))}
-                        >
-                          覆盖
-                        </Button>
-                      )}
-                    </View>
-                  ))}
+                <View className="import-preview">
+                  <Text className="import-preview-summary">{previewSummaryText(preview)}</Text>
+                  <View className="import-preview-list">
+                    {preview.rows.map((row) => (
+                      <View className="preview-row" key={row.line}>
+                        <Text>第 {row.line} 行：{row.status === "invalid" ? row.error : row.parsed.name}</Text>
+                        {row.status === "conflict" && (
+                          <Button
+                            size="mini"
+                            aria-label={`覆盖第 ${row.line} 行`}
+                            disabled={commitPending}
+                            onClick={() => setConflicts((current) => setConflictAction(current, row.line, "overwrite"))}
+                          >
+                            覆盖
+                          </Button>
+                        )}
+                      </View>
+                    ))}
+                  </View>
                   <Button
                     className="primary"
                     disabled={commitPending || previewRevision !== importDraftTracker.current.currentRevision}

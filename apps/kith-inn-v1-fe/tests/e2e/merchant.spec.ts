@@ -354,6 +354,48 @@ test("首次加载失败时禁止进入管理", async ({ page }) => {
   await expect(taroButton(page, /^新增菜品$/)).toHaveCount(0);
 });
 
+test("大量错误行的导入预览保持紧凑并在结果区内滚动", async ({ page }) => {
+  const rows = Array.from({ length: 10 }, (_, index) => ({
+    line: index + 1,
+    raw: `错误菜品 ${index + 1}`,
+    status: "invalid",
+    error: "每行需要菜名和分类"
+  }));
+  await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
+    status: 200, contentType: "application/json", body: JSON.stringify({ docs: [] })
+  }));
+  await page.route("**/merchant/offerings/import/preview", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ rows, summary: { ready: 0, conflict: 0, invalid: rows.length } })
+  }));
+
+  await page.goto("/");
+  await openOfferingImport(page);
+  await offeringImportInput(page).fill(rows.map((row) => row.raw).join("\n"));
+  await taroButton(page, /^预览导入$/).click();
+
+  const previewList = page.locator(".import-preview-list");
+  await expect(previewList).toBeVisible();
+  const previewLayout = await previewList.evaluate((element) => {
+    const rowText = element.querySelector(".preview-row taro-text-core");
+    const sectionTitle = document.querySelector(".import-card .section-title");
+    const listStyle = window.getComputedStyle(element);
+    return {
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      overflowY: listStyle.overflowY,
+      rowFontSize: rowText ? Number.parseFloat(window.getComputedStyle(rowText).fontSize) : 0,
+      titleFontSize: sectionTitle ? Number.parseFloat(window.getComputedStyle(sectionTitle).fontSize) : 0
+    };
+  });
+  expect(previewLayout.scrollHeight).toBeGreaterThan(previewLayout.clientHeight);
+  expect(previewLayout.overflowY).toBe("auto");
+  expect(previewLayout.rowFontSize).toBeGreaterThan(0);
+  expect(previewLayout.rowFontSize).toBeLessThan(previewLayout.titleFontSize);
+  await expect(taroButton(page, /^确认导入$/)).toBeVisible();
+});
+
 test("保存菜品期间不能退出管理或清空表单", async ({ page }) => {
   let releaseSave!: () => void;
   const saveGate = new Promise<void>((resolve) => { releaseSave = resolve; });

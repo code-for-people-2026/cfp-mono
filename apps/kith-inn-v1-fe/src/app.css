@@ -1105,12 +1105,38 @@ button.offering-add-action::before {
 .import-card .preview-row {
   align-items: flex-start;
   flex-wrap: wrap;
-  padding: 18rpx 0;
+  padding: 12rpx 0;
 }
 
 .import-card .preview-row text {
   min-width: 0;
   overflow-wrap: anywhere;
+  color: #61584f;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.import-preview {
+  margin-top: 20rpx;
+}
+
+.import-preview-summary {
+  display: block;
+  color: #4f463e;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.import-preview-list {
+  box-sizing: border-box;
+  max-height: 320rpx;
+  margin-top: 12rpx;
+  padding: 0 16rpx;
+  overflow-y: auto;
+  border: 1rpx solid #eadfce;
+  border-radius: 16rpx;
+  background: #fffdf9;
 }
 
 .import-card .preview-row button {
