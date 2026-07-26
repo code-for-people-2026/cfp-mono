@@ -84,7 +84,8 @@ rebase merge。始终遵守 `AGENTS.md`；本 skill 规定操作顺序，不扩�
 - unresolved thread 数为 0；
 - `mergeStateStatus` 为 `CLEAN`；
 - PR 仍只包含已授权切片，目标单一、改动内聚、验证完整且保持可审查；超过约 800 行人工
-  diff 时已经取得发起人明确同意。
+  diff 时已经取得发起人明确同意；明显偏大的 diff 已在 PR 说明中记录可证伪的不可拆理由，
+  且继续拆分确会破坏独立构建、验证或兼容性。
 
 把通过上述门禁的 head 记录为 `VERIFIED_HEAD_SHA`，并使用
 `gh pr merge <PR> --rebase --match-head-commit "$VERIFIED_HEAD_SHA"`；head 不匹配时返回 review
