@@ -226,14 +226,23 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
     for (const id of parsed.data.mealSlotIds) {
       try {
         const slot = await deps.getMealSlot(token, id);
+        const targetStatus = parsed.data.action === "open" ? "open" : "closed";
+        if (slot.orderStatus === targetStatus) {
+          results.push({ id, status: "updated", doc: slot });
+          continue;
+        }
         const input = nextBookingConfig(
           slot,
-          { orderStatus: parsed.data.action === "open" ? "open" : "closed" },
+          { orderStatus: targetStatus },
           deps.now()
         );
         const doc = await deps.updateMealSlotBookingConfig(token, slot.id, input);
         results.push({ id, status: "updated", doc });
       } catch (error) {
+        if (error instanceof CmsMealSlotError && error.code !== "internal-unauthorized" &&
+          (error.status === 401 || error.status === 403)) {
+          return dependencyError(c, error);
+        }
         results.push(bulkBookingStatusFailure(id, error));
       }
     }
