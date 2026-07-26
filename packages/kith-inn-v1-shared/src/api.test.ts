@@ -7,6 +7,9 @@ import {
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
   bookingBatchUpdateSchema,
+  bookingShareTargetSchema,
+  bulkMealSlotBookingStatusInputSchema,
+  bulkMealSlotBookingStatusResponseSchema,
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
   cmsCustomerBookingBatchSchema,
@@ -65,7 +68,12 @@ import {
   offeringUpdateSchema,
   normalizeCustomerReservationItems,
   selectSellerInputSchema,
+  sellerBookingSettingsSchema,
+  sellerBookingSettingsUpdateSchema,
   sellerSnapshotSchema,
+  serviceClosureCreateSchema,
+  serviceClosureListResponseSchema,
+  serviceClosureSchema,
   swapMenuItemInputSchema,
   swapMenuItemResponseSchema,
   wxLoginInputSchema
@@ -752,6 +760,70 @@ describe("meal-slot API schemas", () => {
     expect(bookingBatchUpdateSchema.safeParse({ status: "open" }).success).toBe(false);
     expect(bookingBatchMutationResponseSchema.safeParse({ doc: batch, share: { ...share, sellerId: 7 } }).success)
       .toBe(false);
+  });
+
+  it("validates booking settings, service closures and share targets", () => {
+    const dayClosure = {
+      id: 41,
+      sellerId: 7,
+      date: "2026-07-14",
+      occasion: null,
+      note: "外出一天"
+    };
+    const mealTarget = { kind: "meal", date: "2026-07-14", occasion: "lunch" };
+
+    expect(sellerBookingSettingsSchema.parse({ defaultPriceCents: 3000 }))
+      .toEqual({ defaultPriceCents: 3000 });
+    expect(sellerBookingSettingsUpdateSchema.parse({ defaultPriceCents: 3200 }))
+      .toEqual({ defaultPriceCents: 3200 });
+    expect(serviceClosureCreateSchema.parse({ date: "2026-07-14" }))
+      .toEqual({ date: "2026-07-14", occasion: null, note: null });
+    expect(serviceClosureSchema.parse(dayClosure)).toEqual(dayClosure);
+    expect(serviceClosureListResponseSchema.parse({ docs: [dayClosure] })).toEqual({ docs: [dayClosure] });
+    expect(bookingShareTargetSchema.parse({ kind: "day", date: "2026-07-14" }))
+      .toEqual({ kind: "day", date: "2026-07-14" });
+    expect(bookingShareTargetSchema.parse(mealTarget)).toEqual(mealTarget);
+
+    expect(sellerBookingSettingsUpdateSchema.safeParse({ defaultPriceCents: -1 }).success).toBe(false);
+    expect(sellerBookingSettingsUpdateSchema.safeParse({ defaultPriceCents: 3000, sellerId: 7 }).success).toBe(false);
+    expect(serviceClosureCreateSchema.safeParse({ date: "bad" }).success).toBe(false);
+    expect(serviceClosureCreateSchema.safeParse({ date: "2026-07-14", occasion: "breakfast" }).success).toBe(false);
+    expect(serviceClosureCreateSchema.safeParse({ date: "2026-07-14", note: "x".repeat(81) }).success).toBe(false);
+    expect(serviceClosureCreateSchema.safeParse({ date: "2026-07-14", sellerId: 7 }).success).toBe(false);
+    expect(bookingShareTargetSchema.safeParse({ kind: "day", date: "2026-07-14", occasion: "lunch" }).success)
+      .toBe(false);
+    expect(bookingShareTargetSchema.safeParse({ kind: "meal", date: "2026-07-14" }).success).toBe(false);
+  });
+
+  it("validates deduplicated per-slot bulk booking results", () => {
+    const updated = {
+      ...slot,
+      orderStatus: "open",
+      orderDeadline: "2026-07-13T01:00:00.000Z",
+      priceCents: 3000
+    };
+    const failed = { id: 12, status: "failed", error: "meal-slot-not-ready", message: "餐次尚未配置完整" };
+
+    expect(bulkMealSlotBookingStatusInputSchema.parse({ mealSlotIds: [11, 11, 12], action: "open" }))
+      .toEqual({ mealSlotIds: [11, 12], action: "open" });
+    expect(bulkMealSlotBookingStatusResponseSchema.parse({
+      results: [{ id: 11, status: "updated", doc: updated }, failed]
+    }).results).toHaveLength(2);
+
+    expect(bulkMealSlotBookingStatusInputSchema.safeParse({ mealSlotIds: [], action: "open" }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusInputSchema.safeParse({ mealSlotIds: [11], action: "close" }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusInputSchema.safeParse({ mealSlotIds: [11], action: "open", sellerId: 7 }).success)
+      .toBe(false);
+    expect(bulkMealSlotBookingStatusInputSchema.safeParse({
+      mealSlotIds: Array.from({ length: 21 }, (_, index) => index + 1),
+      action: "stop"
+    }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusResponseSchema.safeParse({
+      results: [{ id: 11, status: "updated", doc: updated, error: "bad" }]
+    }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusResponseSchema.safeParse({
+      results: [{ ...failed, doc: updated }]
+    }).success).toBe(false);
   });
 });
 
