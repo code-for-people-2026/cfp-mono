@@ -143,7 +143,7 @@
 - PR1 必须先 Ready review、CI 全绿、Codex 无 comment 并 rebase merge；之后 PR2→PR3→PR4-A→PR4-B→PR5→PR6-A→PR6-B1→PR6-B2→PR7-A→PR7-B1→PR7-B2→PR7-B3→PR8→PR9 逐片从最新 main 开始，上一片未合并不得提前实现下一片。
 - PR2/PR3 固定配置边界，PR4-A 生成生产 migration，PR4-B 再实现 seed；PR5 只包装已验证 app。PR6-A 先固定无后门的只读 smoke，PR6-B1 固定可启动 runtime 拓扑，PR6-B2 再组装 smoke/回滚证据；PR7-A 选择 target 并验证配置，PR7-B1 固定候选 digest，PR7-B2 才赋予生产写权限，PR7-B3 持久化通过凭据，PR8 只上传 PR7-B3 已验证 SHA，PR9 才操作真实云与真机。
 - 每片先写会失败的窄测试/负例，再做最小实现；review 发现的当前不变量缺陷本片闭环，无关能力另开 issue。
-- PR4-A baseline migration 是机器生成 diff；人工 diff 仍按 400 行预算。任何 PR 人工 diff >800 必须先取得发起人同意。
+- PR4-A baseline migration 是机器生成 diff。后续切片以目标单一、改动内聚、验证完整和可可靠 review 为门禁；约 400 行人工 diff 只作宽松参考，不自动触发拆分。人工 diff 超过约 800 行仍须先取得发起人同意。
 
 ## Parallel Opportunities
 
