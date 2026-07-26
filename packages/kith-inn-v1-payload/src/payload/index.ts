@@ -8,6 +8,8 @@ import { Orders } from "./collections/Orders";
 import { Sellers } from "./collections/Sellers";
 import { ServiceClosures } from "./collections/ServiceClosures";
 
+export { KIV1_SERVICE_CLOSURE_CHECKED } from "./collections/ServiceClosures";
+
 export const collections: CollectionConfig[] = [
   Sellers,
   Operators,

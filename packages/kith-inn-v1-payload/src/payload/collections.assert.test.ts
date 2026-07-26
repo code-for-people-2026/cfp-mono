@@ -8,6 +8,10 @@ import {
 } from "./collections/shared";
 import { assertSameSellerRefs } from "./hooks/assertSameSellerRefs";
 import { collections } from "./index";
+import {
+  KIV1_SERVICE_CLOSURE_CHECKED,
+  requireCheckedServiceClosureChange
+} from "./collections/ServiceClosures";
 
 const expectedFields: Record<string, string[]> = {
   kiv1_sellers: ["name", "defaultPriceCents", "status"],
@@ -152,7 +156,8 @@ describe("kith-inn-v1 collections", () => {
       for (const operation of ["read", "create", "update"] as const) {
         expect(access[operation]!({ req: {} }), `${item.slug}.${operation} anonymous`).toBe(false);
         const controlledWrite = operation !== "read" &&
-          ["kiv1_service_closures", "kiv1_orders"].includes(item.slug);
+          (["kiv1_service_closures", "kiv1_orders"].includes(item.slug) ||
+           (item.slug === "kiv1_meal_slots" && operation === "create"));
         expect(access[operation]!({ req: { user: { id: 1 } } }), `${item.slug}.${operation} admin`).toBe(
           !controlledWrite
         );
@@ -167,5 +172,14 @@ describe("kith-inn-v1 collections", () => {
     for (const item of collections.slice(1)) {
       expect(item.hooks?.beforeChange).toContain(assertSameSellerRefs);
     }
+  });
+
+  it("打烊新增与更新必须携带受控可用性校验上下文", () => {
+    const req = { context: {} } as never;
+    expect(() => requireCheckedServiceClosureChange({ data: { date: "2026-07-27" }, req } as never))
+      .toThrow(expect.objectContaining({ message: "service-closure-requires-availability-check", status: 409 }));
+    (req as { context: Record<string, unknown> }).context[KIV1_SERVICE_CLOSURE_CHECKED] = true;
+    expect(requireCheckedServiceClosureChange({ data: { date: "2026-07-27" }, req } as never))
+      .toEqual({ date: "2026-07-27" });
   });
 });

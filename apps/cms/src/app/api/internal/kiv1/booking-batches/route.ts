@@ -92,7 +92,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid-json" }, { status: 400 });
   }
   const targeted = cmsBookingBatchTargetedCreateSchema.safeParse(body);
-  const parsed = targeted.success ? targeted : cmsBookingBatchCreateSchema.safeParse(body);
+  if (targeted.success) {
+    return NextResponse.json({ error: "targeted-booking-batch-not-enabled" }, { status: 422 });
+  }
+  const parsed = cmsBookingBatchCreateSchema.safeParse(body);
   if (hasSellerField(body) || !parsed.success) {
     return NextResponse.json({ error: "invalid-booking-batch" }, { status: 422 });
   }
@@ -110,8 +113,7 @@ export async function POST(req: Request) {
         title: input.title,
         status: input.status,
         mealSlots: input.mealSlotIds,
-        createdBy: input.createdById,
-        ...("target" in input ? { target: input.target } : {})
+        createdBy: input.createdById
       },
       overrideAccess: true
     });

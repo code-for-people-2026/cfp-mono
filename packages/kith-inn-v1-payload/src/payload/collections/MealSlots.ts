@@ -16,7 +16,8 @@ import {
 export const MealSlots: CollectionConfig = {
   slug: "kiv1_meal_slots",
   admin: { useAsTitle: "date", group: "街坊味 v1 / 菜单" },
-  access: cmsAccess,
+  // 新建餐次必须经过固定为 draft 的 seller-scoped internal route。
+  access: { ...cmsAccess, create: () => false },
   hooks: sameSellerHooks,
   fields: [
     sellerField(),

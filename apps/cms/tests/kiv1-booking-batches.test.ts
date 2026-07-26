@@ -130,8 +130,7 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     title: "一周预订",
     status: "open",
     mealSlotIds: [11, 12],
-    createdById: 1,
-    target: { kind: "day", date: "2026-07-13" }
+    createdById: 1
   };
 
   it("requires service auth, validates relationships and stamps seller", async () => {
@@ -148,8 +147,7 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
         title: input.title,
         status: "open",
         mealSlots: [11, 12],
-        createdBy: 1,
-        target: { kind: "day", date: "2026-07-13" }
+        createdBy: 1
       },
       overrideAccess: true
     });
@@ -171,17 +169,15 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     expect((await POST(write("", "POST", input))).status).toBe(409);
   });
 
-  it("accepts legacy creates but rejects partial targets while old batches remain readable", async () => {
+  it("keeps targeted creates closed until validated integration while old batches remain readable", async () => {
     const payload = payloadWith();
     mocks.getPayload.mockResolvedValue(payload);
-    const withoutTarget: Partial<typeof input> = { ...input };
-    delete withoutTarget.target;
-    const legacy = await POST(write("", "POST", withoutTarget));
-    expect(legacy.status).toBe(201);
-    expect(payload.create).toHaveBeenLastCalledWith(expect.objectContaining({
-      data: expect.not.objectContaining({ target: expect.anything() })
-    }));
-    expect((await POST(write("", "POST", { ...withoutTarget, target: {
+    const targeted = await POST(write("", "POST", { ...input, target: {
+      kind: "day", date: "2026-07-13"
+    } }));
+    expect(targeted.status).toBe(422);
+    await expect(targeted.json()).resolves.toEqual({ error: "targeted-booking-batch-not-enabled" });
+    expect((await POST(write("", "POST", { ...input, target: {
       kind: "meal", date: "2026-07-13"
     } }))).status).toBe(422);
 
@@ -189,6 +185,7 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     const response = await GET(request());
     await expect(response.json()).resolves.toMatchObject({ docs: [{ target: null }] });
   });
+
 });
 
 describe("PATCH /api/internal/kiv1/booking-batches/:id", () => {
