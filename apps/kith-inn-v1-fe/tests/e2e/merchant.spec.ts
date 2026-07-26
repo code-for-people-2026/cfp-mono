@@ -382,6 +382,7 @@ test("大量错误行的导入预览保持紧凑并在结果区内滚动", async
     const sectionTitle = document.querySelector(".import-card .section-title");
     const listStyle = window.getComputedStyle(element);
     return {
+      tagName: element.tagName,
       clientHeight: element.clientHeight,
       scrollHeight: element.scrollHeight,
       overflowY: listStyle.overflowY,
@@ -389,8 +390,9 @@ test("大量错误行的导入预览保持紧凑并在结果区内滚动", async
       titleFontSize: sectionTitle ? Number.parseFloat(window.getComputedStyle(sectionTitle).fontSize) : 0
     };
   });
+  expect(previewLayout.tagName).toBe("TARO-SCROLL-VIEW-CORE");
   expect(previewLayout.scrollHeight).toBeGreaterThan(previewLayout.clientHeight);
-  expect(previewLayout.overflowY).toBe("auto");
+  expect(previewLayout.overflowY).toBe("scroll");
   expect(previewLayout.rowFontSize).toBeGreaterThan(0);
   expect(previewLayout.rowFontSize).toBeLessThan(previewLayout.titleFontSize);
   await expect(taroButton(page, /^确认导入$/)).toBeVisible();

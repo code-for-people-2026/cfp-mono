@@ -1,4 +1,4 @@
-import { Button, Input, Switch, Text, Textarea, View } from "@tarojs/components";
+import { Button, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -422,7 +422,7 @@ export default function MerchantOfferings() {
               {preview && (
                 <View className="import-preview">
                   <Text className="import-preview-summary">{previewSummaryText(preview)}</Text>
-                  <View className="import-preview-list">
+                  <ScrollView className="import-preview-list" scrollY>
                     {preview.rows.map((row) => (
                       <View className="preview-row" key={row.line}>
                         <Text>第 {row.line} 行：{row.status === "invalid" ? row.error : row.parsed.name}</Text>
@@ -438,7 +438,7 @@ export default function MerchantOfferings() {
                         )}
                       </View>
                     ))}
-                  </View>
+                  </ScrollView>
                   <Button
                     className="primary"
                     disabled={commitPending || previewRevision !== importDraftTracker.current.currentRevision}
