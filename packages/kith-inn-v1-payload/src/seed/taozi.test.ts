@@ -104,9 +104,10 @@ describe("桃子 v1 seed", () => {
 });
 
 describe("v1 reset collection 顺序", () => {
-  it("只包含七个 kiv1_ collection，并按外键安全顺序排列", () => {
+  it("只包含八个 kiv1_ collection，并按外键安全顺序排列", () => {
     expect(RESET_COLLECTIONS).toEqual([
       "kiv1_orders",
+      "kiv1_service_closures",
       "kiv1_booking_batches",
       "kiv1_meal_slots",
       "kiv1_customer_profiles",

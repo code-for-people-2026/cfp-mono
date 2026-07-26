@@ -321,4 +321,28 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
     expect((await call()).status).toBe(409);
     expect(closed.update).not.toHaveBeenCalled();
   });
+
+  it("revalidates partial booking updates when the stored slot remains open", async () => {
+    const call = (body: Record<string, unknown>) => bookingConfigRoute.PATCH(request("/11/booking-config", {
+      method: "PATCH",
+      headers: { "content-type": "application/json", "x-kith-inn-v1-internal": INTERNAL },
+      body: JSON.stringify(body)
+    }), { params: Promise.resolve({ id: "11" }) });
+    const openSlot = { ...slotDoc, orderStatus: "open", priceCents: 2800,
+      orderDeadline: "2099-07-12T01:00:00.000Z" };
+
+    const defaulted = payloadWith({ slots: [openSlot] });
+    mocks.getPayload.mockResolvedValue(defaulted);
+    expect((await call({ priceCents: null })).status).toBe(200);
+    expect(defaulted.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { priceCents: 3000 },
+      context: { kiv1AvailabilityChecked: true },
+      req: expect.anything()
+    }));
+
+    const missingDeadline = payloadWith({ slots: [openSlot] });
+    mocks.getPayload.mockResolvedValue(missingDeadline);
+    expect((await call({ orderDeadline: null })).status).toBe(409);
+    expect(missingDeadline.update).not.toHaveBeenCalled();
+  });
 });
