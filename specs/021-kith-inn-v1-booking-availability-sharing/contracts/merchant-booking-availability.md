@@ -27,13 +27,13 @@
 
 ## 分享目标和详情
 
-创建批次增加：
+创建批次可增加（兼容期旧调用可省略）：
 
 ```json
 { "target": { "kind": "meal", "date": "2026-07-27", "occasion": "lunch" }, "mealSlotIds": [11] }
 ```
 
-日期目标只关联当天已开放餐次；餐次目标只关联该餐。`GET /merchant/booking-batches/:id` 返回 doc、share、target 和实时餐次摘要。公开路径继续使用 `/pages/booking/index?batch=<publicId>`，小程序页面可额外携带非敏感日期/餐次定位参数。
+日期目标只关联当天已开放餐次；餐次目标只关联该餐。`GET /merchant/booking-batches/:id` 在 `doc.target` 返回可空定位，并附带 share 和实时餐次摘要。公开路径继续使用 `/pages/booking/index?batch=<publicId>`，小程序页面可额外携带非敏感日期/餐次定位参数。
 
 ## 兼容约束
 

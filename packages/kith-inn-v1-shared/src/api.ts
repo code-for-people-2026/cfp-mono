@@ -307,12 +307,17 @@ export const bulkMealSlotBookingStatusInputSchema = z.object({
   action: z.enum(["open", "stop"])
 }).strict();
 
-export const bulkMealSlotBookingStatusResultSchema = z.discriminatedUnion("status", [
-  z.object({
+const bulkMealSlotBookingStatusUpdatedSchema = z.object({
     id: relationshipIdSchema,
     status: z.literal("updated"),
     doc: mealSlotSchema
-  }).strict(),
+  }).strict().refine(({ id, doc }) => String(id) === String(doc.id), {
+    path: ["doc", "id"],
+    message: "更新结果餐次 ID 必须一致"
+  });
+
+export const bulkMealSlotBookingStatusResultSchema = z.discriminatedUnion("status", [
+  bulkMealSlotBookingStatusUpdatedSchema,
   z.object({
     id: relationshipIdSchema,
     status: z.literal("failed"),
@@ -323,7 +328,10 @@ export const bulkMealSlotBookingStatusResultSchema = z.discriminatedUnion("statu
 
 export const bulkMealSlotBookingStatusResponseSchema = z.object({
   results: z.array(bulkMealSlotBookingStatusResultSchema).min(1).max(20)
-}).strict();
+}).strict().refine(({ results }) => new Set(results.map(({ id }) => String(id))).size === results.length, {
+  path: ["results"],
+  message: "批量结果餐次 ID 不得重复"
+});
 
 export const bookingBatchSchema = z.object({
   id: relationshipIdSchema,
@@ -332,12 +340,14 @@ export const bookingBatchSchema = z.object({
   title: z.string().trim().min(1).max(120),
   status: bookingBatchStatusSchema,
   mealSlotIds: z.array(relationshipIdSchema).min(1).max(20),
-  createdById: relationshipIdSchema
+  createdById: relationshipIdSchema,
+  target: bookingShareTargetSchema.nullable().optional()
 }).strict();
 
 export const bookingBatchCreateSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
-  mealSlotIds: uniqueMealSlotIds
+  mealSlotIds: uniqueMealSlotIds,
+  target: bookingShareTargetSchema.optional()
 }).strict();
 
 export const cmsBookingBatchCreateSchema = z.object({
@@ -345,7 +355,8 @@ export const cmsBookingBatchCreateSchema = z.object({
   title: z.string().trim().min(1).max(120),
   status: z.literal("open"),
   mealSlotIds: z.array(relationshipIdSchema).min(1).max(20),
-  createdById: relationshipIdSchema
+  createdById: relationshipIdSchema,
+  target: bookingShareTargetSchema.nullable().optional()
 }).strict();
 
 export const bookingBatchUpdateSchema = z.object({ status: z.literal("closed") }).strict();

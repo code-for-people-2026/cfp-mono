@@ -118,11 +118,13 @@ customer JWT 至少包含：
 - `role: customer`
 - `exp`
 
-顾客只能访问：
+当前兼容实现中，顾客只能访问：
 
 - 当前 `sellerId + openid` 下绑定且 active 的 customer profiles。
 - `customerOpenid` 等于当前 openid 的订单。
 - 当前分享批次允许公开的 meal slots 和菜单快照。
+
+Page 4 新契约把 batch target 定义为日期／餐次初始定位，不定义为长期访问白名单。顾客端后续重构后，应按 seller 的实时已发布餐次决定可见范围；本次仍保留 batchPublicId 建立 session 和现有订单权限边界。
 
 顾客不能确认订单、标记到账、标已送，也不能按称呼或地址认领资料/订单。
 
@@ -215,7 +217,7 @@ POST   /customer/orders/:id/cancel
 - 菜单页通过 `weekStart` 和可选的 `date` / `occasion` query 进入既有预订配置页；纯函数只接受合法周一工作周及周一至周五目标，无效目标降级为周级上下文，无效工作周降级为原手动入口。配置页在上下文有效时自动请求该五日范围并标记目标餐次，不复制服务端状态机或新增 API。
 - 配置页返回时，小程序按页面栈唤醒原菜单实例；若配置页是冷启动或直接路由形成的栈根，则以携带工作周/目标日期的 `redirectTo` 兜底。H5 同样以 `redirectTo` 替换配置路由，菜单页优先读取显式 query，并用模块内视图快照补足周级入口的所选日期；两端都会重新读取真实餐次。配置页的自动与手动加载使用单调 revision，只允许最后一次餐次请求更新视图；批次列表独立加载，失败时不阻断餐次配置。底部 CTA 继续使用“缺失目标 → 草稿配置/开放 → 查看预订与分享”的纯逻辑优先级，未补齐工作周中已有开放餐次时额外保留分享入口。
 - 菜单快照只允许在餐次最新 `orderStatus=draft` 时改变；`open`（包括截止后）和 `closed` 均只读，过期截止时间本身不锁定草稿菜单。
-- 持久化边界拒绝 `open → draft` 及所有 `closed → 非 closed` 回退，防止先降级状态再绕过菜单只读保护。
+- 持久化边界拒绝 `open → draft` 和 `closed → draft`；允许配置完整、截止时间未到的 `closed → open` 恢复预订，但菜单仍只读，不能借状态切换绕过保护。
 - `apps/cms/payload.config.ts` 在组合 v1 `MealSlots` collection 时追加 app-local `beforeChange` hook，使 local API、REST 和 Admin 共用持久化保护，Payload 包继续保持 adapter-neutral。
 - hook 复用 Payload 已建立的写事务：Postgres 对目标行执行 `SELECT … FOR UPDATE` 后重读，SQLite 复用 `BEGIN IMMEDIATE` 后重读；只信任锁内最新状态，不信任 hook 的旧状态快照，事务或锁会话不可用时拒绝写入。
 - backend 在批量生成或换菜前对已读取餐次执行 `draft` 快速预检，避免无效生成与部分写入；CMS internal route 将持久化边界的 `meal-slot-menu-locked` 精确映射为 409，backend 保持该错误码和中文消息，其他存储异常仍按 500/502 处理。
@@ -223,10 +225,18 @@ POST   /customer/orders/:id/cancel
 ### 分享批次
 
 - `booking_batch` 直接 has-many 关联多个 meal slots，不建立连接 collection。
+- 新批次可保存 `{ kind: day, date }` 或 `{ kind: meal, date, occasion }` target；旧批次 target 可空并继续兼容读取。
 - publicId 使用不可顺序猜测的随机 id，不暴露数据库 id。
 - 分享 path 由 `/pages/booking/index?batchId=<publicId>` 派生，不落库。
+- target 只决定卡片打开后的初始日期／餐次；后续顾客端实时浏览不能把它当作访问白名单。
 - 关闭 batch 只关闭这张分享入口；关闭 meal slot 会阻止所有批次继续提交该餐次。
 - 关闭不自动取消已有订单。
+
+### 营业关闭
+
+- `kiv1_service_closures` 以日期加可选午／晚餐表达整天或某餐打烊，不要求先创建假餐次。
+- 整天关闭优先于单餐关闭；关闭范围与开放餐次或已有订单冲突时拒绝写入。
+- 取消打烊只移除营业关闭记录，不自动开放对应餐次。
 
 ### 顾客资料
 

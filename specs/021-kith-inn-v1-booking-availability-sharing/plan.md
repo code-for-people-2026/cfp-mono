@@ -38,12 +38,12 @@
 
 | PR | 单一目标 / 核心不变量 | 关联故事/需求 | 主要路径 | 明确非目标 | 独立验证 | 预计人工 diff | 依赖 |
 |----|----------------------|---------------|----------|------------|----------|---------------|------|
-| PR1 | 固化营业、预订可见性和分享定位契约 | US1/US2；FR1-12 | `specs/021-*`、`packages/kith-inn-v1-shared` | 不写数据库和页面 | shared tests + typecheck | 约 750 | 无 |
+| PR1 | 固化营业、预订可见性和分享定位契约 | US1/US2；FR1-12 | `specs/021-*`、`packages/kith-inn-v1-shared`、长期契约文档 | 不写数据库和页面 | shared tests + typecheck | 约 750 | 无 |
 | PR2 | 持久化租户隔离的营业关闭与分享目标 | US1/US2；FR6-9 | `packages/kith-inn-v1-payload`、`apps/cms` | 不开放商家 API | CMS tests | 约 500 | PR1 |
 | PR3 | 提供设置、关闭、批量状态和详情 API | US1-US3；FR1-15 | `apps/kith-inn-v1-be`、CMS internal routes | 不改 Page 4 | route/domain tests | 约 650 | PR2 |
 | PR4 | 重构 Page 4 配置与批量经营操作 | US1；FR1-8、13-16 | `apps/kith-inn-v1-fe/src/logic`、Page 4、API client | 不做分享成功视觉 | unit + merchant E2E | 约 650 | PR3 |
 | PR5 | 实现日期/餐次分享定位和历史详情 | US2/US3；FR9-16 | v1 FE Page 4、API client、E2E | 不重构顾客端全量浏览 | share payload + E2E | 约 500 | PR4 |
-| PR6 | 完成 Page 4 高保真视觉与长期文档 | US3；FR13-16 | Page 4、`app.css`、`docs/kith-inn-v1` | 不扩产品功能 | 375×812 截图 + verify | 约 450 | PR5 |
+| PR6 | 完成 Page 4 高保真视觉与验收证据 | US3；FR13-16 | Page 4、`app.css`、E2E 与 quickstart | 不扩产品功能 | 375×812 截图 + verify | 约 400 | PR5 |
 
 预计值用于 review 负担评估；若实际人工 diff 超过约 800 行，必须停下取得发起人同意。
 

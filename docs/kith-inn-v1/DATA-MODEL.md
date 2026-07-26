@@ -238,7 +238,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 | `menuItems` | array | 可空；菜单快照，结构见下表 |
 | `orderStatus` | select | 必填，默认 draft |
 | `orderDeadline` | datetime | 可空；open 前必须设置且晚于当前时间 |
-| `priceCents` | number | 可空；下单时为空则用 seller 默认价格 |
+| `priceCents` | number | 可空；新开放餐次必须固化最终价格，遗留空值由 seller 默认价兼容兜底 |
 | `generatedAt` | datetime | 可空；生成/重新生成菜单时更新 |
 
 `menuItems` 每项：
@@ -255,12 +255,26 @@ v1 商家侧产品身份，不是 Payload Admin user。
 - unique `(seller, date, occasion)`。
 - menuItems offering 必须与 slot 同 seller；关系守卫必须遍历嵌套数组。
 - open 才接受顾客新增/修改 draft order；closed 保留已有订单。
+- `closed` 表示停止预订；配置完整且截止时间未到时可恢复为 open，但不能借此修改已发布菜单。
 - 被任一 batch 引用后重新生成菜单，业务层必须二次确认。
 
 索引：
 
 - unique `(seller, date, occasion)`
 - `(seller, orderStatus)`
+
+### `kiv1_service_closures`
+
+商家明确不营业的日期或餐次；它与 `meal_slot.orderStatus=closed` 的“停止预订”分开建模。
+
+| 字段 | 类型 | 约束/说明 |
+|---|---|---|
+| `seller` | relationship | 必填 → `kiv1_sellers` |
+| `date` | text | 必填，合法 `YYYY-MM-DD` |
+| `occasion` | select | 可空：lunch / dinner；空表示整天 |
+| `note` | text | 可空，最多 80 字符 |
+
+同商家同目标唯一；整天记录覆盖当日午晚餐，并与单餐记录、开放餐次及已有订单做冲突校验。
 
 ### `kiv1_booking_batches`
 
@@ -274,6 +288,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 | `status` | select | 必填，默认 open |
 | `mealSlots` | relationship hasMany | 必填，至少 1 个 → `kiv1_meal_slots` |
 | `createdBy` | relationship | 必填 → `kiv1_operators` |
+| `target` | group | 可空；`day + date` 或 `meal + date + occasion`，旧批次允许缺失 |
 
 规则：
 
@@ -282,6 +297,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 - batch closed/archived 不取消已有订单。
 - 任意状态的现存 batch 都可为 customer session 解析 seller；closed/archived 只禁止通过该分享入口新增订单，不阻断顾客读取自己的历史订单。
 - 关闭 batch 只关闭该分享入口；关闭 meal slot 会影响引用它的所有 batch。
+- target 只提供顾客端初始定位，不是未来餐次可见性白名单；旧批次可由关联餐次兼容生成摘要。
 
 索引：
 

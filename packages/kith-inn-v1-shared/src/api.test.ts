@@ -12,6 +12,7 @@ import {
   bulkMealSlotBookingStatusResponseSchema,
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
+  cmsBookingBatchCreateSchema,
   cmsCustomerBookingBatchSchema,
   cmsCustomerOrderCreateSchema,
   cmsCustomerOrderUpdateSchema,
@@ -736,6 +737,7 @@ describe("meal-slot API schemas", () => {
       title: batch.title,
       path: `/pages/booking/index?batch=${batch.publicId}`
     };
+    const target = { kind: "meal" as const, date: "2026-07-13", occasion: "lunch" as const };
 
     expect(mealSlotBookingConfigSchema.parse({
       priceCents: null,
@@ -743,8 +745,16 @@ describe("meal-slot API schemas", () => {
       orderStatus: "open"
     })).toEqual({ priceCents: null, orderDeadline: openSlot.orderDeadline, orderStatus: "open" });
     expect(mealSlotSchema.parse(openSlot)).toEqual(openSlot);
-    expect(bookingBatchCreateSchema.parse({ mealSlotIds: [11, 11], title: " 7 月 13 日预订 " }))
-      .toEqual({ mealSlotIds: [11], title: "7 月 13 日预订" });
+    expect(bookingBatchCreateSchema.parse({ mealSlotIds: [11, 11], title: " 7 月 13 日预订 ", target }))
+      .toEqual({ mealSlotIds: [11], title: "7 月 13 日预订", target });
+    expect(cmsBookingBatchCreateSchema.parse({
+      publicId: batch.publicId,
+      title: batch.title,
+      status: "open",
+      mealSlotIds: batch.mealSlotIds,
+      createdById: batch.createdById,
+      target
+    }).target).toEqual(target);
     expect(bookingBatchUpdateSchema.parse({ status: "closed" })).toEqual({ status: "closed" });
     expect(bookingBatchSchema.parse(batch)).toEqual(batch);
     expect(bookingBatchMutationResponseSchema.parse({ doc: batch, share })).toEqual({ doc: batch, share });
@@ -757,6 +767,9 @@ describe("meal-slot API schemas", () => {
     expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: Array.from({ length: 21 }, (_, index) => index + 1) }).success)
       .toBe(false);
     expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: [11], publicId: "leak" }).success).toBe(false);
+    expect(bookingBatchCreateSchema.safeParse({
+      mealSlotIds: [11], target: { kind: "day", date: "2026-07-13", occasion: "lunch" }
+    }).success).toBe(false);
     expect(bookingBatchUpdateSchema.safeParse({ status: "open" }).success).toBe(false);
     expect(bookingBatchMutationResponseSchema.safeParse({ doc: batch, share: { ...share, sellerId: 7 } }).success)
       .toBe(false);
@@ -823,6 +836,12 @@ describe("meal-slot API schemas", () => {
     }).success).toBe(false);
     expect(bulkMealSlotBookingStatusResponseSchema.safeParse({
       results: [{ ...failed, doc: updated }]
+    }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusResponseSchema.safeParse({
+      results: [{ id: 12, status: "updated", doc: updated }]
+    }).success).toBe(false);
+    expect(bulkMealSlotBookingStatusResponseSchema.safeParse({
+      results: [{ id: 11, status: "updated", doc: updated }, { ...failed, id: 11 }]
     }).success).toBe(false);
   });
 });
