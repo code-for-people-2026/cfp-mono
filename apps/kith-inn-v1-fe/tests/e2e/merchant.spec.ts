@@ -1832,7 +1832,9 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
   await expect.poll(() => julyRequests).toBe(2);
 
   const configPage = page.locator(".batches-page:visible");
-  await configPage.getByRole("textbox", { name: "批次起始日期" }).fill("2026-07-27");
+  const weekInput = configPage.getByRole("textbox", { name: "批次起始日期" });
+  await expect(weekInput).toBeDisabled(); releaseAutoLoad(); await expect(weekInput).toBeEnabled();
+  await weekInput.fill("2026-07-27");
   failNextWeek = true;
   await configPage.locator("taro-button-core").filter({ hasText: /^查看餐次$/ }).click();
   await expect(configPage.getByText("经营安排加载失败", { exact: true })).toBeVisible();
@@ -1840,7 +1842,6 @@ test("预订配置只接受最后一次餐次加载且批次失败不阻断餐�
   await configPage.locator("taro-button-core").filter({ hasText: /^重试$/ }).click();
   await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
   await expect(configPage).toContainText("默认价格加载失败");
-  releaseAutoLoad();
   await expect(configPage.locator(".batch-slot")).toContainText("2026-07-27 午餐");
   await expect(configPage.getByText("2026-07-22 晚餐", { exact: true })).toHaveCount(0);
 });
