@@ -115,10 +115,7 @@ export default function MerchantBatches() {
     setFailures({});
     try {
       const [loadedSlots, settings, loadedClosures] = await Promise.allSettled([
-        api.listMealSlots(range.from, range.to),
-        api.getBookingSettings(),
-        api.listServiceClosures(range.from, range.to)
-      ]);
+        api.listMealSlots(range.from, range.to), api.getBookingSettings(), api.listServiceClosures(range.from, range.to)]);
       if (revision !== loadRevision.current) return;
       const authError = [loadedSlots, settings, loadedClosures].find((result) =>
         result.status === "rejected" && handledAuthFailure(result.reason));
@@ -135,9 +132,7 @@ export default function MerchantBatches() {
       setClosures(loadedClosures.status === "fulfilled" ? loadedClosures.value : []);
       setClosuresFailed(loadedClosures.status === "rejected");
       setSettingsFailed(settings.status === "rejected");
-      const defaultYuan = defaultPriceCents === undefined
-        ? ""
-        : priceInputValue(defaultPriceCents);
+      const defaultYuan = defaultPriceCents === undefined ? "" : priceInputValue(defaultPriceCents);
       setDefaultPriceYuan(defaultYuan);
       setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot, defaultPriceCents)])));
     } catch (error) {
@@ -163,7 +158,12 @@ export default function MerchantBatches() {
       return;
     }
     if (initialContext) void loadSlots(initialContext);
-    else void api.listBookingBatches().then(setBatches).catch(() => undefined);
+    else {
+      void api.getBookingSettings()
+        .then(({ defaultPriceCents }) => setDefaultPriceYuan(priceInputValue(defaultPriceCents)))
+        .catch((error: unknown) => { if (!handledAuthFailure(error)) setSettingsFailed(true); });
+      void api.listBookingBatches().then(setBatches).catch(() => undefined);
+    }
   }, []);
 
   const configure = async (slot: MealSlot, orderStatus: "open" | "closed") => {
@@ -180,6 +180,7 @@ export default function MerchantBatches() {
     try {
       const doc = await api.updateMealSlotBookingConfig(slot.id, input);
       setSlots((current) => current.map((item) => String(item.id) === String(doc.id) ? doc : item));
+      setFailures((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== String(doc.id))));
       if (doc.orderStatus !== "open") {
         setSelected((current) => current.filter((id) => String(id) !== String(doc.id)));
       }
@@ -198,9 +199,7 @@ export default function MerchantBatches() {
     }
     setPending("settings");
     try {
-      const settings = await api.updateBookingSettings({
-        defaultPriceCents: Math.round(Number(defaultPriceYuan) * 100)
-      });
+      const settings = await api.updateBookingSettings({ defaultPriceCents: Math.round(Number(defaultPriceYuan) * 100) });
       const nextDefault = priceInputValue(settings.defaultPriceCents);
       setConfigs((current) => Object.fromEntries(Object.entries(current).map(([id, config]) => {
         const slot = slots.find((item) => String(item.id) === id);
@@ -245,28 +244,37 @@ export default function MerchantBatches() {
             setSlots(workingSlots);
             ready.push(id);
           } catch (error) {
+            if (handledAuthFailure(error)) throw error;
             localFailures[String(id)] = error instanceof Error ? error.message : "配置保存失败";
           }
         }
         targetIds = ready;
       }
       if (targetIds.length > 0) {
-        const merged = applyBulkBookingStatus(
-          workingSlots,
-          await api.bulkUpdateMealSlotBookingStatus(targetIds, action)
-        );
+        const merged = applyBulkBookingStatus(workingSlots, await api.bulkUpdateMealSlotBookingStatus(targetIds, action));
         setSlots(merged.slots);
         Object.assign(localFailures, merged.failures);
       }
       const failedIds = selected.filter((id) => Object.hasOwn(localFailures, String(id)));
       setSelected(failedIds);
       setFailures(localFailures);
-      await Taro.showToast({
-        title: failedIds.length ? `${failedIds.length} 个餐次未完成` : action === "open" ? "预订已开放" : "预订已停止",
-        icon: "none"
-      });
+      await Taro.showToast({ title: failedIds.length ? `${failedIds.length} 个餐次未完成` :
+        action === "open" ? "预订已开放" : "预订已停止", icon: "none" });
     } catch (error) {
       if (!handledAuthFailure(error)) await Taro.showToast({ title: "批量操作失败", icon: "none" });
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const reloadClosures = async () => {
+    if (weekDays.length === 0) return;
+    setPending("closures");
+    try {
+      setClosures(await api.listServiceClosures(weekDays[0]!, weekDays.at(-1)!));
+      setClosuresFailed(false);
+    } catch (error) {
+      if (!handledAuthFailure(error)) await Taro.showToast({ title: "打烊安排加载失败", icon: "none" });
     } finally {
       setPending(null);
     }
@@ -283,9 +291,8 @@ export default function MerchantBatches() {
         setClosures((items) => [...items, doc]);
       }
     } catch (error) {
-      if (!handledAuthFailure(error)) {
-        await Taro.showToast({ title: error instanceof Error ? error.message : "打烊设置失败", icon: "none" });
-      }
+      if (!handledAuthFailure(error)) await Taro.showToast({
+        title: error instanceof Error ? error.message : "打烊设置失败", icon: "none" });
     } finally {
       setPending(null);
     }
@@ -347,9 +354,8 @@ export default function MerchantBatches() {
       platform: process.env.TARO_ENV,
       pageCount: Taro.getCurrentPages().length
     });
-    const menuUrl = initialContext?.source === "home"
-      ? "/pages/merchant/home/index"
-      : initialContext ? bookingMenuUrl(initialContext) : "/pages/merchant/menu/index";
+    const menuUrl = initialContext?.source === "home" ? "/pages/merchant/home/index" :
+      initialContext ? bookingMenuUrl(initialContext) : "/pages/merchant/menu/index";
     if (mode === "navigate-to") {
       void Taro.navigateTo({ url: menuUrl });
     } else if (mode === "redirect-to") {
@@ -368,8 +374,7 @@ export default function MerchantBatches() {
       {loading && <View className="card"><Text>正在加载本周经营安排…</Text></View>}
       {loadFailed && (
         <View className="card error-card">
-          <Text>经营安排加载失败</Text>
-          <Button disabled={loading} onClick={() => void loadSlots()}>重试</Button>
+          <Text>经营安排加载失败</Text><Button disabled={loading} onClick={() => void loadSlots()}>重试</Button>
         </View>
       )}
 
@@ -377,22 +382,16 @@ export default function MerchantBatches() {
         <Text className="section-title">默认套餐价</Text>
         <Text className="meta">新餐次开放时会采用此价格，每一餐仍可单独修改。</Text>
         {settingsFailed && <Text className="operation-error">默认价格加载失败，可重新填写并保存。</Text>}
-        <Input
-          aria-label="默认套餐价（元）"
-          disabled={pending !== null || loading}
-          placeholder="例如 30"
-          value={defaultPriceYuan}
-          onInput={(event) => setDefaultPriceYuan(event.detail.value)}
-        />
-        <Button disabled={pending !== null || loading} onClick={() => void saveDefaultPrice()}>
-          {pending === "settings" ? "保存中…" : "保存默认价格"}
-        </Button>
+        <Input aria-label="默认套餐价（元）" disabled={pending !== null || loading} placeholder="例如 30"
+          value={defaultPriceYuan} onInput={(event) => setDefaultPriceYuan(event.detail.value)} />
+        <Button disabled={pending !== null || loading} onClick={() => void saveDefaultPrice()}>{
+          pending === "settings" ? "保存中…" : "保存默认价格"}</Button>
       </View>
 
       {closuresFailed && (
         <View className="card error-card">
-          <Text>打烊安排加载失败；餐次仍可配置或停止，重试后再设置打烊。</Text>
-          <Button disabled={loading || pending !== null} onClick={() => void loadSlots()}>重试打烊安排</Button>
+          <Text>打烊安排加载失败；餐次仍可配置或停止，重试后再设置打烊。</Text><Button
+            disabled={loading || pending !== null} onClick={() => void reloadClosures()}>重试打烊安排</Button>
         </View>
       )}
 
@@ -449,7 +448,7 @@ export default function MerchantBatches() {
             <Text className="meta">状态：{slot.orderStatus === "open" ? "开放" : slot.orderStatus === "closed" ? "已关闭" : "草稿"}</Text>
             {closure && <Text className="closure-notice">{closure.occasion === null ? "当天打烊" : "本餐打烊"}</Text>}
             <Input
-              disabled={pending !== null || loading}
+              disabled={pending !== null || loading || slot.orderStatus === "open"}
               placeholder="价格（元）"
               value={config.priceYuan}
               onInput={(event) => {
@@ -461,7 +460,7 @@ export default function MerchantBatches() {
               }}
             />
             <Input
-              disabled={pending !== null || loading}
+              disabled={pending !== null || loading || slot.orderStatus === "open"}
               placeholder="截止时间"
               value={config.orderDeadline}
               onInput={(event) => setConfigs((current) => ({
