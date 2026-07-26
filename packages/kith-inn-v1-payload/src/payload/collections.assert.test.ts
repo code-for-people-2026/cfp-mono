@@ -156,14 +156,15 @@ describe("kith-inn-v1 collections", () => {
       for (const operation of ["read", "create", "update"] as const) {
         expect(access[operation]!({ req: {} }), `${item.slug}.${operation} anonymous`).toBe(false);
         const controlledWrite = operation !== "read" &&
-          (["kiv1_service_closures", "kiv1_orders"].includes(item.slug) ||
-           (item.slug === "kiv1_meal_slots" && operation === "create"));
+          ["kiv1_meal_slots", "kiv1_service_closures", "kiv1_booking_batches", "kiv1_orders"]
+            .includes(item.slug);
         expect(access[operation]!({ req: { user: { id: 1 } } }), `${item.slug}.${operation} admin`).toBe(
           !controlledWrite
         );
       }
       expect(access.delete!({ req: { user: { id: 1 } } }), `${item.slug}.delete admin`).toBe(
-        ["kiv1_sellers", "kiv1_service_closures", "kiv1_orders"].includes(item.slug) ? false : true
+        ["kiv1_sellers", "kiv1_meal_slots", "kiv1_service_closures", "kiv1_booking_batches", "kiv1_orders"]
+          .includes(item.slug) ? false : true
       );
     }
   });

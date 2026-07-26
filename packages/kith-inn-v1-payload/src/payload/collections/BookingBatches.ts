@@ -18,7 +18,13 @@ const validateTarget = (value: unknown): true | string => {
 export const BookingBatches: CollectionConfig = {
   slug: "kiv1_booking_batches",
   admin: { useAsTitle: "title", group: "街坊味 v1 / 预订" },
-  access: cmsAccess,
+  // 批次与分享 target 只能由校验关联餐次的 internal routes 写入。
+  access: {
+    ...cmsAccess,
+    create: () => false,
+    update: () => false,
+    delete: () => false
+  },
   hooks: sameSellerHooks,
   fields: [
     sellerField(),
