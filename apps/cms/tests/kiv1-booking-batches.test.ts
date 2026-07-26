@@ -171,11 +171,19 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     expect((await POST(write("", "POST", input))).status).toBe(409);
   });
 
-  it("requires a complete target while old batches remain readable with null target", async () => {
-    mocks.getPayload.mockResolvedValue(payloadWith());
+  it("accepts legacy creates but rejects partial targets while old batches remain readable", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
     const withoutTarget: Partial<typeof input> = { ...input };
     delete withoutTarget.target;
-    expect((await POST(write("", "POST", withoutTarget))).status).toBe(422);
+    const legacy = await POST(write("", "POST", withoutTarget));
+    expect(legacy.status).toBe(201);
+    expect(payload.create).toHaveBeenLastCalledWith(expect.objectContaining({
+      data: expect.not.objectContaining({ target: expect.anything() })
+    }));
+    expect((await POST(write("", "POST", { ...withoutTarget, target: {
+      kind: "meal", date: "2026-07-13"
+    } }))).status).toBe(422);
 
     mocks.getPayload.mockResolvedValue(payloadWith({ batches: [{ ...batchDoc, target: null }] }));
     const response = await GET(request());

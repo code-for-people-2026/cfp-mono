@@ -1,6 +1,7 @@
 import {
   bookingShareTargetSchema,
   bookingBatchListQuerySchema,
+  cmsBookingBatchCreateSchema,
   cmsBookingBatchTargetedCreateSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type { BookingBatch } from "@cfp/kith-inn-v1-shared";
@@ -86,7 +87,8 @@ export async function POST(req: Request) {
   } catch {
     return NextResponse.json({ error: "invalid-json" }, { status: 400 });
   }
-  const parsed = cmsBookingBatchTargetedCreateSchema.safeParse(body);
+  const targeted = cmsBookingBatchTargetedCreateSchema.safeParse(body);
+  const parsed = targeted.success ? targeted : cmsBookingBatchCreateSchema.safeParse(body);
   if (hasSellerField(body) || !parsed.success) {
     return NextResponse.json({ error: "invalid-booking-batch" }, { status: 422 });
   }
@@ -105,7 +107,7 @@ export async function POST(req: Request) {
         status: input.status,
         mealSlots: input.mealSlotIds,
         createdBy: input.createdById,
-        target: input.target
+        ...("target" in input ? { target: input.target } : {})
       },
       overrideAccess: true
     });
