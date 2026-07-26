@@ -323,12 +323,14 @@ export default function MerchantOfferings() {
             编辑
           </Button>
         )}
-        <Switch
-          aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
-          checked={offering.active}
-          disabled={togglingIds.includes(String(offering.id))}
-          onChange={(event) => void toggleActive(offering, event.detail.value)}
-        />
+        {manageable && (
+          <Switch
+            aria-label={`${offering.active ? "停用" : "恢复"} ${offering.name}`}
+            checked={offering.active}
+            disabled={togglingIds.includes(String(offering.id))}
+            onChange={(event) => void toggleActive(offering, event.detail.value)}
+          />
+        )}
       </View>
       {manageable
         && formOpen
