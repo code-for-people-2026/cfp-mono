@@ -4,7 +4,12 @@ import {
   sellerBookingSettingsUpdateSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
-import { operatorScope, requireServiceAuth } from "@/lib/kiv1-internal";
+import {
+  lockKiv1Seller,
+  operatorScope,
+  requireServiceAuth,
+  withKiv1Transaction
+} from "@/lib/kiv1-internal";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +54,48 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "invalid-booking-settings" }, { status: 422 });
   }
   try {
-    const doc = await scope.payload.update({
-      collection: "kiv1_sellers",
-      id: scope.sellerId,
-      data: parsed.data,
-      overrideAccess: true
+    const doc = await withKiv1Transaction(scope.payload, async (transactionReq) => {
+      await lockKiv1Seller(scope.payload, transactionReq, scope.sellerId);
+      const sellers = await scope.payload.find({
+        collection: "kiv1_sellers",
+        where: { id: { equals: scope.sellerId } },
+        limit: 1,
+        depth: 0,
+        overrideAccess: true,
+        req: transactionReq
+      });
+      const current = sellers.docs[0] as { defaultPriceCents?: unknown } | undefined;
+      const oldSettings = sellerBookingSettingsSchema.parse({
+        defaultPriceCents: current?.defaultPriceCents
+      });
+      const legacySlots = await scope.payload.find({
+        collection: "kiv1_meal_slots",
+        where: { and: [
+          { seller: { equals: scope.sellerId } },
+          { orderStatus: { equals: "open" } },
+          { priceCents: { equals: null } }
+        ] },
+        limit: 0,
+        depth: 0,
+        overrideAccess: true,
+        req: transactionReq
+      });
+      for (const slot of legacySlots.docs) {
+        await scope.payload.update({
+          collection: "kiv1_meal_slots",
+          id: slot.id,
+          data: { priceCents: oldSettings.defaultPriceCents },
+          overrideAccess: true,
+          req: transactionReq
+        });
+      }
+      return scope.payload.update({
+        collection: "kiv1_sellers",
+        id: scope.sellerId,
+        data: parsed.data,
+        overrideAccess: true,
+        req: transactionReq
+      });
     });
     return NextResponse.json(sellerBookingSettingsSchema.parse({
       defaultPriceCents: doc.defaultPriceCents

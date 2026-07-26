@@ -35,7 +35,7 @@ export function requireServiceAuth(req: Request): NextResponse | null {
   const expected = process.env.KITH_INN_V1_INTERNAL_TOKEN;
   if (!expected) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   if (req.headers.get(KIV1_INTERNAL_HEADER) !== expected) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "internal-unauthorized" }, { status: 401 });
   }
   return null;
 }
@@ -176,13 +176,24 @@ export async function lockSellerDate(
 ): Promise<void> {
   const postgres = await postgresTransaction(payload, req);
   if (!postgres) return;
-  await postgres.database.execute({
-    db: postgres.transaction,
-    sql: sql`SELECT "id" FROM "cms"."kiv1_sellers" WHERE "id" = ${sellerId} FOR UPDATE`
-  });
+  await lockKiv1Seller(payload, req, sellerId);
   await postgres.database.execute({
     db: postgres.transaction,
     sql: sql`SELECT pg_advisory_xact_lock(hashtextextended(${`kiv1:${String(sellerId)}:${date}`}, 0))`
+  });
+}
+
+/** Serialize seller-wide settings with all seller/date availability writes. */
+export async function lockKiv1Seller(
+  payload: BasePayload,
+  req: PayloadRequest,
+  sellerId: string | number
+): Promise<void> {
+  const postgres = await postgresTransaction(payload, req);
+  if (!postgres) return;
+  await postgres.database.execute({
+    db: postgres.transaction,
+    sql: sql`SELECT "id" FROM "cms"."kiv1_sellers" WHERE "id" = ${sellerId} FOR UPDATE`
   });
 }
 
