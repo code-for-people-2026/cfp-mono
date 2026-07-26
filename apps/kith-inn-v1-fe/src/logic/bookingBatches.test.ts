@@ -1,16 +1,21 @@
 import { expect, it, vi } from "vitest";
-import type { BookingBatch, MealSlot } from "@cfp/kith-inn-v1-shared";
+import type { BookingBatch, MealSlot, ServiceClosure } from "@cfp/kith-inn-v1-shared";
 import {
+  applyBulkBookingStatus,
   batchCloseText,
   bookingConfigContext,
   bookingConfigUrl,
   bookingMenuUrl,
   bookingReturnMode,
+  bookingWeekDates,
+  bookingWeekStart,
   bookingDeadlineInputValue,
   buildBookingConfig,
   copyBookingBatchPath,
+  effectiveServiceClosure,
   selectableBookingSlots,
-  toggleBookingSlot
+  toggleBookingSlot,
+  toggleOperationalSelection
 } from "./bookingBatches";
 
 const slot = (overrides: Partial<MealSlot> = {}): MealSlot => ({
@@ -42,6 +47,8 @@ it("parses booking context and degrades invalid target parameters", () => {
   });
   expect(bookingConfigContext({ weekStart: "2026-07-20" }))
     .toEqual({ weekStart: "2026-07-20", target: null });
+  expect(bookingConfigContext({ weekStart: "2026-07-20", source: "home" }))
+    .toEqual({ weekStart: "2026-07-20", target: null, source: "home" });
   expect(bookingConfigContext({ weekStart: "2026-07-20", date: "2026-07-25", occasion: "lunch" }))
     .toEqual({ weekStart: "2026-07-20", target: null });
   expect(bookingConfigContext({ weekStart: "2026-07-20", date: "bad", occasion: "supper" }))
@@ -58,12 +65,24 @@ it("builds booking configuration URLs for a week or meal target", () => {
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20");
   expect(bookingConfigUrl("2026-07-20", { date: "2026-07-22", occasion: "dinner" }))
     .toBe("/pages/merchant/batches/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
+  expect(bookingConfigUrl("2026-07-20", { date: "2026-07-22", occasion: "dinner" }, "home"))
+    .toBe("/pages/merchant/batches/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner&source=home");
   expect(bookingMenuUrl({ weekStart: "2026-07-20", target: null }))
     .toBe("/pages/merchant/menu/index?weekStart=2026-07-20");
   expect(bookingMenuUrl({
     weekStart: "2026-07-20",
     target: { date: "2026-07-22", occasion: "dinner" }
   })).toBe("/pages/merchant/menu/index?weekStart=2026-07-20&date=2026-07-22&occasion=dinner");
+});
+
+it("builds a Monday-to-Friday booking week", () => {
+  expect(bookingWeekStart("2026-07-22")).toBe("2026-07-20");
+  expect(bookingWeekStart("2026-07-26")).toBe("2026-07-20");
+  expect(bookingWeekStart("bad")).toBeNull();
+  expect(bookingWeekDates("2026-07-20")).toEqual([
+    "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24"
+  ]);
+  expect(bookingWeekDates("2026-07-21")).toEqual([]);
 });
 
 it("chooses a safe menu return mode for platform and page stack", () => {
@@ -84,6 +103,34 @@ it("selects only open unexpired slots and toggles stable ids", () => {
   expect(toggleBookingSlot([], slot(), now)).toEqual([11]);
   expect(toggleBookingSlot([11], slot(), now)).toEqual([]);
   expect(toggleBookingSlot([], slot({ orderStatus: "closed" }), now)).toEqual([]);
+});
+
+it("caps operational selection while still allowing deselection", () => {
+  expect(toggleOperationalSelection([1], 2, 2)).toEqual({ selected: [1, 2], limitReached: false });
+  expect(toggleOperationalSelection([1, 2], 3, 2)).toEqual({ selected: [1, 2], limitReached: true });
+  expect(toggleOperationalSelection([1, 2], "1", 2)).toEqual({ selected: [2], limitReached: false });
+});
+
+it("applies partial bulk results and keeps failed rows selected", () => {
+  const updated = slot({ orderStatus: "open" });
+  expect(applyBulkBookingStatus([slot({ orderStatus: "draft" }), slot({ id: 12 })], [
+    { id: 11, status: "updated", doc: updated },
+    { id: 12, status: "failed", error: "meal-slot-not-ready", message: "截止时间无效" }
+  ])).toEqual({
+    slots: [updated, slot({ id: 12 })],
+    failedIds: [12],
+    failures: { "12": "截止时间无效" }
+  });
+});
+
+it("resolves whole-day closure before a meal closure", () => {
+  const closures: ServiceClosure[] = [
+    { id: 21, sellerId: 7, date: "2026-07-13", occasion: "lunch", note: null },
+    { id: 22, sellerId: 7, date: "2026-07-13", occasion: null, note: "休息" }
+  ];
+  expect(effectiveServiceClosure(closures, "2026-07-13", "lunch")?.id).toBe(22);
+  expect(effectiveServiceClosure(closures.slice(0, 1), "2026-07-13", "lunch")?.id).toBe(21);
+  expect(effectiveServiceClosure(closures, "2026-07-14", "dinner")).toBeNull();
 });
 
 it("parses yuan/deadline config without leaking invalid values", () => {

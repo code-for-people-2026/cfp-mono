@@ -1,5 +1,6 @@
 import type {
   BulkMarkDeliveredResult,
+  BulkMealSlotBookingStatusResult,
   BookingBatch,
   BookingBatchCreate,
   BookingBatchListResponse,
@@ -34,6 +35,10 @@ import type {
   OrderAction,
   OrderListResponse,
   OrderResubmit,
+  SellerBookingSettings,
+  SellerBookingSettingsUpdate,
+  ServiceClosure,
+  ServiceClosureCreate,
   SwapMenuItemResponse
 } from "@cfp/kith-inn-v1-shared";
 import type { AuthResponse, SellerSelectionResponse } from "@cfp/kith-inn-v1-shared/api";
@@ -50,7 +55,7 @@ export function resolveBeBaseUrl(value?: string): string {
 
 export type RequestOptions = {
   url: string;
-  method: "GET" | "POST" | "PATCH";
+  method: "GET" | "POST" | "PATCH" | "DELETE";
   data?: unknown;
   header: Record<string, string>;
 };
@@ -231,6 +236,46 @@ function parseMealSlot(value: unknown): MealSlot {
     throw new ApiError(502, "invalid-api-response", "菜单数据无效");
   }
   return slot as MealSlot;
+}
+
+function parseBookingSettings(value: unknown): SellerBookingSettings {
+  const body = record(value);
+  if (!body || Object.keys(body).length !== 1 || typeof body.defaultPriceCents !== "number" ||
+    !Number.isSafeInteger(body.defaultPriceCents) || body.defaultPriceCents < 0) {
+    throw new ApiError(502, "invalid-api-response", "默认价格数据无效");
+  }
+  return { defaultPriceCents: body.defaultPriceCents };
+}
+
+function parseServiceClosure(value: unknown): ServiceClosure {
+  const closure = record(value);
+  if (!closure || !validId(closure.id) || !validId(closure.sellerId) ||
+    typeof closure.date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(closure.date) ||
+    !(closure.occasion === null || closure.occasion === "lunch" || closure.occasion === "dinner") ||
+    !(closure.note === null || typeof closure.note === "string")) {
+    throw new ApiError(502, "invalid-api-response", "打烊安排数据无效");
+  }
+  return closure as ServiceClosure;
+}
+
+function parseBulkBookingStatus(value: unknown): BulkMealSlotBookingStatusResult[] {
+  const body = record(value);
+  if (!body || !Array.isArray(body.results)) {
+    throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
+  }
+  return body.results.map((value) => {
+    const result = record(value);
+    if (!result || !validId(result.id)) throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
+    if (result.status === "updated") {
+      const doc = parseMealSlot(result.doc);
+      if (String(doc.id) === String(result.id)) return { id: result.id, status: "updated", doc };
+    }
+    if (result.status === "failed" && typeof result.error === "string" && result.error !== "" &&
+      typeof result.message === "string" && result.message !== "") {
+      return { id: result.id, status: "failed", error: result.error, message: result.message };
+    }
+    throw new ApiError(502, "invalid-api-response", "批量预订状态结果无效");
+  });
 }
 
 function parseBookingBatch(value: unknown): BookingBatch {
@@ -480,7 +525,7 @@ export function createApiClient(options: ClientOptions) {
   async function request<T>(
     path: string,
     config: {
-      method?: "GET" | "POST" | "PATCH";
+      method?: "GET" | "POST" | "PATCH" | "DELETE";
       data?: unknown;
       authenticated?: boolean;
       clearOperatorSession?: boolean;
@@ -628,6 +673,35 @@ export function createApiClient(options: ClientOptions) {
       const body = record(value);
       if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "菜单数据无效");
       return body.docs.map(parseMealSlot);
+    },
+    async getBookingSettings(): Promise<SellerBookingSettings> {
+      return parseBookingSettings(await request("/merchant/booking-settings"));
+    },
+    async updateBookingSettings(input: SellerBookingSettingsUpdate): Promise<SellerBookingSettings> {
+      return parseBookingSettings(await request("/merchant/booking-settings", { method: "PATCH", data: input }));
+    },
+    async listServiceClosures(from: string, to: string): Promise<ServiceClosure[]> {
+      const body = record(await request(
+        `/merchant/service-closures?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+      ));
+      if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "打烊安排数据无效");
+      return body.docs.map(parseServiceClosure);
+    },
+    async createServiceClosure(input: ServiceClosureCreate): Promise<ServiceClosure> {
+      const body = record(await request("/merchant/service-closures", { method: "POST", data: input }));
+      return parseServiceClosure(body?.doc);
+    },
+    async deleteServiceClosure(id: string | number): Promise<void> {
+      await request(`/merchant/service-closures/${encodeURIComponent(id)}`, { method: "DELETE" });
+    },
+    async bulkUpdateMealSlotBookingStatus(
+      mealSlotIds: Array<string | number>,
+      action: "open" | "stop"
+    ): Promise<BulkMealSlotBookingStatusResult[]> {
+      return parseBulkBookingStatus(await request("/merchant/meal-slots/bulk-booking-status", {
+        method: "POST",
+        data: { mealSlotIds, action }
+      }));
     },
     async generateMenus(input: GenerateMenusInput): Promise<GenerateMenusResponse> {
       return parseGeneration(await request("/merchant/meal-slots/generate-menus", {

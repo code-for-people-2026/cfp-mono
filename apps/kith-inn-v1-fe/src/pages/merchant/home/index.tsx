@@ -3,6 +3,7 @@ import Taro from "@tarojs/taro";
 import { Component } from "react";
 import type { Occasion, OrderSummary } from "@cfp/kith-inn-v1-shared";
 import { MerchantNav } from "@/components/MerchantNav";
+import { bookingConfigUrl, bookingWeekStart } from "@/logic/bookingBatches";
 import {
   buildMerchantMealCard,
   businessDateInShanghai,
@@ -117,6 +118,12 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
       ? `/pages/merchant/orders/index?date=${date}&occasion=${pendingOccasion}`
       : `/pages/merchant/orders/index?date=${date}`;
     const deliveryOccasion = meals.find(({ card }) => card.slot && card.pendingDelivery > 0)?.card.occasion ?? meals.find(({ card }) => card.slot)?.card.occasion;
+    const weekStart = bookingWeekStart(date)!;
+    const bookingUrl = (occasion?: Occasion) => bookingConfigUrl(
+      weekStart,
+      occasion ? { date, occasion } : undefined,
+      "home"
+    );
     const deliveryUrl = deliveryOccasion
       ? `/pages/merchant/orders/index?date=${date}&occasion=${deliveryOccasion}`
       : "/pages/merchant/orders/index";
@@ -147,7 +154,7 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
           {card.slot ? <>
             {card.state === "menu-ready" ? <View className="home-row home-main-row">
               <Text className="strong">{card.priceText}</Text><Button className="home-open-action" onClick={(event) => {
-                event.stopPropagation(); goDetail("/pages/merchant/batches/index");
+                event.stopPropagation(); goDetail(bookingUrl(card.occasion));
               }}>去开放 →</Button></View> : <View className="home-row home-main-row">
               <Text className="home-quantity">已订 {card.confirmedQuantity} 份</Text>
               <Text className="meta">{merchantDeadlineText(card.slot.orderDeadline)}</Text></View>}
@@ -168,7 +175,7 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
       })}</View>
       <View className="home-quick">
         <Button onClick={() => goMain("/pages/merchant/menu/index")}>排本周菜单</Button>
-        <Button onClick={() => goDetail("/pages/merchant/batches/index")}>开放预订</Button>
+        <Button onClick={() => goDetail(bookingUrl())}>开放预订</Button>
         <Button onClick={() => goMain("/pages/merchant/orders/index")}>查看订单</Button>
         <Button onClick={() => goMain(deliveryUrl)}>配送清单</Button>
       </View>

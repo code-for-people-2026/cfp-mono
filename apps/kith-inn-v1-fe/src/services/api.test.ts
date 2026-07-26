@@ -574,6 +574,70 @@ describe("API client", () => {
     }));
   });
 
+  it("manages booking settings, closures and partial bulk status results", async () => {
+    const slot = {
+      id: 11,
+      sellerId: 7,
+      date: "2026-07-13",
+      occasion: "lunch" as const,
+      menuItems: Array.from({ length: 5 }, (_, index) => ({
+        offeringId: index + 1,
+        nameSnapshot: `菜${index + 1}`,
+        mainIngredientSnapshot: null,
+        categorySnapshot: index < 2 ? "meat" as const : index < 4 ? "veg" as const : "soup" as const
+      })),
+      orderStatus: "open" as const,
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      priceCents: 3000,
+      generatedAt: "2026-07-10T01:00:00.000Z"
+    };
+    const closure = { id: 21, sellerId: 7, date: slot.date, occasion: null, note: "休息" };
+    const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
+      if (url.endsWith("/booking-settings")) return { statusCode: 200, data: { defaultPriceCents: 3000 } };
+      if (url.includes("/service-closures?") ) return { statusCode: 200, data: { docs: [closure] } };
+      if (url.endsWith("/service-closures") && method === "POST") return { statusCode: 201, data: { doc: closure } };
+      if (url.includes("/service-closures/21") && method === "DELETE") return { statusCode: 204, data: null };
+      return { statusCode: 200, data: { results: [
+        { id: 11, status: "updated", doc: slot },
+        { id: 12, status: "failed", error: "meal-slot-not-ready", message: "未配置完整" }
+      ] } };
+    });
+    const client = createApiClient({ request, sessions: sessions(), baseUrl: "http://be.test" });
+
+    await expect(client.getBookingSettings()).resolves.toEqual({ defaultPriceCents: 3000 });
+    await expect(client.updateBookingSettings({ defaultPriceCents: 3200 }))
+      .resolves.toEqual({ defaultPriceCents: 3000 });
+    await expect(client.listServiceClosures("2026-07-13", "2026-07-17")).resolves.toEqual([closure]);
+    await expect(client.createServiceClosure({ date: slot.date, occasion: null, note: "休息" })).resolves.toEqual(closure);
+    await expect(client.deleteServiceClosure(21)).resolves.toBeUndefined();
+    await expect(client.bulkUpdateMealSlotBookingStatus([11, 12], "open")).resolves.toEqual([
+      { id: 11, status: "updated", doc: slot },
+      { id: 12, status: "failed", error: "meal-slot-not-ready", message: "未配置完整" }
+    ]);
+    expect(request).toHaveBeenCalledWith(expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("rejects malformed settings, closures and bulk status envelopes", async () => {
+    for (const value of [null, {}, { defaultPriceCents: -1 }, { defaultPriceCents: 1.5 },
+      { defaultPriceCents: 3000, sellerId: 7 }]) {
+      await expect(createApiClient({ request: adapter(200, value), sessions: sessions() }).getBookingSettings())
+        .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    for (const value of [null, {}, { docs: [{}] }, { docs: [{
+      id: 1, sellerId: 7, date: "bad", occasion: null, note: null
+    }] }, { docs: [{ id: 1, sellerId: 7, date: "2026-07-13", occasion: "breakfast", note: null }] },
+    { docs: [{ id: 1, sellerId: 7, date: "2026-07-13", occasion: null, note: 1 }] }]) {
+      await expect(createApiClient({ request: adapter(200, value), sessions: sessions() })
+        .listServiceClosures("2026-07-13", "2026-07-17")).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    for (const value of [null, {}, { results: [{}] }, { results: [{ id: 11, status: "updated", doc: {} }] },
+      { results: [{ id: 11, status: "failed", error: "", message: "失败" }] },
+      { results: [{ id: 11, status: "failed", error: "failed", message: "" }] }]) {
+      await expect(createApiClient({ request: adapter(200, value), sessions: sessions() })
+        .bulkUpdateMealSlotBookingStatus([11], "open")).rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+  });
+
   it("rejects malformed booking-batch envelopes", async () => {
     const valid = {
       id: 31,
