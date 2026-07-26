@@ -145,23 +145,15 @@ async function postgresTransaction(payload: BasePayload, req: PayloadRequest) {
   } };
 }
 
-/** Run a v1 customer write transaction and optionally lock its existing order. */
-export async function withCustomerOrderLock<T>(
+/** Execute a CMS write in one Payload transaction. */
+export async function withKiv1Transaction<T>(
   payload: BasePayload,
-  id: string | number | null,
   work: (req: PayloadRequest) => Promise<T>
 ): Promise<T> {
   const req = await createLocalReq({}, payload);
   const started = await initTransaction(req);
   if (!started) throw new Error("database transactions unavailable");
   try {
-    const postgres = await postgresTransaction(payload, req);
-    if (postgres && id !== null) {
-      await postgres.database.execute({
-        db: postgres.transaction,
-        sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
-      });
-    }
     const result = await work(req);
     await commitTransaction(req);
     return result;
@@ -169,6 +161,69 @@ export async function withCustomerOrderLock<T>(
     await killTransaction(req);
     throw error;
   }
+}
+
+/**
+ * Serialize availability decisions for one seller/calendar day. The seller row
+ * establishes a common lock order before the date-scoped advisory lock; SQLite
+ * already holds an immediate database write lock for the transaction.
+ */
+export async function lockSellerDate(
+  payload: BasePayload,
+  req: PayloadRequest,
+  sellerId: string | number,
+  date: string
+): Promise<void> {
+  const postgres = await postgresTransaction(payload, req);
+  if (!postgres) return;
+  await postgres.database.execute({
+    db: postgres.transaction,
+    sql: sql`SELECT "id" FROM "cms"."kiv1_sellers" WHERE "id" = ${sellerId} FOR UPDATE`
+  });
+  await postgres.database.execute({
+    db: postgres.transaction,
+    sql: sql`SELECT pg_advisory_xact_lock(hashtextextended(${`kiv1:${String(sellerId)}:${date}`}, 0))`
+  });
+}
+
+export async function hasServiceClosure(
+  payload: BasePayload,
+  req: PayloadRequest,
+  sellerId: string | number,
+  date: string,
+  occasion: "lunch" | "dinner"
+): Promise<boolean> {
+  const result = await payload.find({
+    collection: "kiv1_service_closures",
+    where: { and: [
+      { seller: { equals: sellerId } },
+      { date: { equals: date } },
+      { or: [{ occasion: { equals: null } }, { occasion: { equals: occasion } }] }
+    ] },
+    limit: 1,
+    depth: 0,
+    overrideAccess: true,
+    req
+  });
+  return result.docs.length > 0;
+}
+
+/** Run a v1 customer write transaction and optionally lock its existing order. */
+export async function withCustomerOrderLock<T>(
+  payload: BasePayload,
+  id: string | number | null,
+  work: (req: PayloadRequest) => Promise<T>
+): Promise<T> {
+  return withKiv1Transaction(payload, async (req) => {
+    const postgres = await postgresTransaction(payload, req);
+    if (postgres && id !== null) {
+      await postgres.database.execute({
+        db: postgres.transaction,
+        sql: sql`SELECT "id" FROM "cms"."kiv1_orders" WHERE "id" = ${id} FOR UPDATE`
+      });
+    }
+    return work(req);
+  });
 }
 
 /** Lock the exact batch and slot whose availability predicates guard a customer write. */
@@ -193,14 +248,16 @@ export async function findOwned(
   payload: Pick<BasePayload, "find">,
   collection: string,
   id: string | number,
-  sellerId: string | number
+  sellerId: string | number,
+  req?: PayloadRequest
 ): Promise<unknown | undefined> {
   const result = await payload.find({
     collection,
     where: { and: [{ id: { equals: id } }, { seller: { equals: sellerId } }] },
     limit: 1,
     depth: 0,
-    overrideAccess: true
+    overrideAccess: true,
+    ...(req ? { req } : {})
   });
   return result.docs[0];
 }

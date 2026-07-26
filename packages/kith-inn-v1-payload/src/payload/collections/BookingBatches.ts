@@ -1,6 +1,19 @@
 import type { CollectionConfig } from "payload";
-import { BOOKING_BATCH_STATUSES } from "@cfp/kith-inn-v1-shared";
-import { cmsAccess, sameSellerHooks, sellerField, trimText } from "./shared";
+import { BOOKING_BATCH_STATUSES, OCCASIONS } from "@cfp/kith-inn-v1-shared";
+import { bookingShareTargetSchema } from "@cfp/kith-inn-v1-shared/api";
+import {
+  cmsAccess,
+  sameSellerHooks,
+  sellerField,
+  trimText,
+  validateCalendarDate
+} from "./shared";
+
+const validateTarget = (value: unknown): true | string => {
+  if (value == null) return true;
+  if (typeof value === "object" && Object.values(value).every((item) => item == null)) return true;
+  return bookingShareTargetSchema.safeParse(value).success || "分享目标必须是完整的日期或餐次定位";
+};
 
 export const BookingBatches: CollectionConfig = {
   slug: "kiv1_booking_batches",
@@ -44,6 +57,17 @@ export const BookingBatches: CollectionConfig = {
       type: "relationship",
       relationTo: "kiv1_operators",
       required: true
+    },
+    {
+      name: "target",
+      type: "group",
+      required: false,
+      validate: validateTarget,
+      fields: [
+        { name: "kind", type: "select", options: ["day", "meal"] },
+        { name: "date", type: "text", validate: validateCalendarDate },
+        { name: "occasion", type: "select", options: [...OCCASIONS] }
+      ]
     }
   ],
   indexes: [{ fields: ["seller", "status"] }]

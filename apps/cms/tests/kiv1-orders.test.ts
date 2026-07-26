@@ -15,7 +15,7 @@ vi.mock("payload", async (importOriginal) => ({
 }));
 vi.mock("@payload-config", () => ({ default: Promise.resolve({}) }));
 
-import { GET as getSeller } from "../src/app/api/internal/kiv1/seller/route";
+import { GET as getSeller, PATCH as patchSeller } from "../src/app/api/internal/kiv1/seller/route";
 import * as profileRoutes from "../src/app/api/internal/kiv1/customer-profiles/route";
 import { GET as listOrders, POST as createOrder } from "../src/app/api/internal/kiv1/orders/route";
 import * as orderRoute from "../src/app/api/internal/kiv1/orders/[id]/route";
@@ -163,6 +163,23 @@ describe("seller and customer-profile persistence boundary", () => {
       ] },
       sort: ["displayName", "address"]
     }));
+  });
+
+  it("updates only the token seller's default booking price", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    const response = await patchSeller(json("/seller", "PATCH", { defaultPriceCents: 3200 }));
+    expect(response.status).toBe(200);
+    expect(payload.update).toHaveBeenCalledWith({
+      collection: "kiv1_sellers",
+      id: 7,
+      data: { defaultPriceCents: 3200 },
+      overrideAccess: true
+    });
+    await expect(response.json()).resolves.toEqual({ defaultPriceCents: 3200 });
+
+    expect((await patchSeller(json("/seller", "PATCH", { defaultPriceCents: -1 }))).status).toBe(422);
+    expect((await patchSeller(request("/seller", { method: "PATCH", body: "{" }))).status).toBe(400);
   });
 
   it("creates profiles with seller stamp and a forced null openid", async () => {

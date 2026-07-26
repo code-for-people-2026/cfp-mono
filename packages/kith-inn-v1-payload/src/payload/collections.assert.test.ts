@@ -15,7 +15,8 @@ const expectedFields: Record<string, string[]> = {
   kiv1_customer_profiles: ["seller", "openid", "displayName", "address", "lastUsedAt", "active"],
   kiv1_offerings: ["seller", "name", "mainIngredient", "category", "active"],
   kiv1_meal_slots: ["seller", "date", "occasion", "menuItems", "orderStatus", "orderDeadline", "priceCents", "generatedAt"],
-  kiv1_booking_batches: ["seller", "publicId", "title", "status", "mealSlots", "createdBy"],
+  kiv1_service_closures: ["seller", "date", "occasion", "note"],
+  kiv1_booking_batches: ["seller", "publicId", "title", "status", "mealSlots", "createdBy", "target"],
   kiv1_orders: [
     "seller", "mealSlot", "customerProfile", "customerOpenid", "status", "source",
     "displayName", "address", "quantity", "unitPriceCents", "paymentStatus", "paidAt",
@@ -34,6 +35,7 @@ const expectedIndexes: Record<string, Array<{ fields: string[]; unique?: boolean
     { fields: ["seller", "date", "occasion"], unique: true },
     { fields: ["seller", "orderStatus"] }
   ],
+  kiv1_service_closures: [{ fields: ["seller", "date", "occasion"] }],
   kiv1_booking_batches: [{ fields: ["seller", "status"] }],
   kiv1_orders: [
     { fields: ["seller", "mealSlot", "customerProfile"], unique: true },
@@ -66,7 +68,7 @@ function field(slug: string, name: string): Field & { name: string } {
 }
 
 describe("kith-inn-v1 collections", () => {
-  it("按稳定顺序只导出七个 kiv1_ collection/table", () => {
+  it("按稳定顺序只导出八个 kiv1_ collection/table", () => {
     expect(collections.map((item) => item.slug)).toEqual(Object.keys(expectedFields));
     for (const item of collections) {
       expect(item.slug).toMatch(/^kiv1_/);
@@ -111,6 +113,8 @@ describe("kith-inn-v1 collections", () => {
       minRows: 1
     });
     expect(field("kiv1_booking_batches", "createdBy")).toMatchObject({ relationTo: "kiv1_operators", required: true });
+    expect(field("kiv1_booking_batches", "target")).toMatchObject({ type: "group", required: false });
+    expect(field("kiv1_service_closures", "occasion")).toMatchObject({ required: false });
     expect(field("kiv1_orders", "customerProfile")).toMatchObject({ relationTo: "kiv1_customer_profiles", required: false });
 
     const menuItems = field("kiv1_meal_slots", "menuItems");
@@ -128,6 +132,14 @@ describe("kith-inn-v1 collections", () => {
     expect(validateNonNegativeInteger(-1)).toBeTypeOf("string");
     expect(validatePositiveInteger(1)).toBe(true);
     expect(validatePositiveInteger(0)).toBeTypeOf("string");
+
+    const target = field("kiv1_booking_batches", "target") as { validate?: unknown };
+    expect(target.validate).toBeTypeOf("function");
+    const validateTarget = target.validate as (value: unknown) => true | string;
+    expect(validateTarget(null)).toBe(true);
+    expect(validateTarget({ kind: null, date: null, occasion: null })).toBe(true);
+    expect(validateTarget({ kind: "meal", date: "2026-07-27", occasion: "lunch" })).toBe(true);
+    expect(validateTarget("invalid")).toBeTypeOf("string");
   });
 
   it("kiv1_operators 是普通业务 collection，不启用 Payload auth", () => {

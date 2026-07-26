@@ -22,7 +22,8 @@ const batchDoc = {
   title: "7 月 13 日预订",
   status: "open",
   mealSlots: [11, 12],
-  createdBy: 1
+  createdBy: 1,
+  target: { kind: "day", date: "2026-07-13" }
 };
 
 type Options = {
@@ -111,7 +112,8 @@ describe("GET /api/internal/kiv1/booking-batches", () => {
       title: batchDoc.title,
       status: "open",
       mealSlotIds: [11, 12],
-      createdById: 1
+      createdById: 1,
+      target: { kind: "day", date: "2026-07-13" }
     }] });
     expect(payload.find).toHaveBeenLastCalledWith(expect.objectContaining({
       collection: "kiv1_booking_batches",
@@ -128,7 +130,8 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     title: "一周预订",
     status: "open",
     mealSlotIds: [11, 12],
-    createdById: 1
+    createdById: 1,
+    target: { kind: "day", date: "2026-07-13" }
   };
 
   it("requires service auth, validates relationships and stamps seller", async () => {
@@ -145,7 +148,8 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
         title: input.title,
         status: "open",
         mealSlots: [11, 12],
-        createdBy: 1
+        createdBy: 1,
+        target: { kind: "day", date: "2026-07-13" }
       },
       overrideAccess: true
     });
@@ -165,6 +169,17 @@ describe("POST /api/internal/kiv1/booking-batches", () => {
     expect((await POST(write("", "POST", input))).status).toBe(403);
     mocks.getPayload.mockResolvedValue(payloadWith({ createError: new Error("duplicate key unique constraint") }));
     expect((await POST(write("", "POST", input))).status).toBe(409);
+  });
+
+  it("requires a complete target while old batches remain readable with null target", async () => {
+    mocks.getPayload.mockResolvedValue(payloadWith());
+    const withoutTarget: Partial<typeof input> = { ...input };
+    delete withoutTarget.target;
+    expect((await POST(write("", "POST", withoutTarget))).status).toBe(422);
+
+    mocks.getPayload.mockResolvedValue(payloadWith({ batches: [{ ...batchDoc, target: null }] }));
+    const response = await GET(request());
+    await expect(response.json()).resolves.toMatchObject({ docs: [{ target: null }] });
   });
 });
 

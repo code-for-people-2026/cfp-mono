@@ -8,7 +8,8 @@ import {
 import { relationshipIdSchema } from "@cfp/kith-inn-v1-shared/schemas";
 import type { BasePayload, PayloadRequest } from "payload";
 import { NextResponse } from "next/server";
-import { customerScope, customerWriteScope, isUniqueConflict, lockCustomerAvailability, withCustomerOrderLock }
+import { customerScope, customerWriteScope, hasServiceClosure, isUniqueConflict, lockCustomerAvailability,
+  lockSellerDate, withCustomerOrderLock }
   from "@/lib/kiv1-internal";
 import { normalizeMealSlot } from "../../meal-slots/route";
 import { normalizeOrder } from "../../orders/route";
@@ -101,10 +102,17 @@ export async function writeRelationshipsAvailable(payload: BasePayload, transact
     payload.find({ collection: "kiv1_sellers", where: { id: { equals: sellerId } }, ...common })
   ]);
   const batch = batches.docs[0] as { status?: unknown; mealSlots?: unknown } | undefined;
-  const slot = slots.docs[0] as { orderStatus?: unknown; orderDeadline?: unknown; priceCents?: unknown } | undefined;
+  const slot = slots.docs[0] as { date?: unknown; occasion?: unknown; orderStatus?: unknown; orderDeadline?: unknown; priceCents?: unknown } | undefined;
   const seller = sellers.docs[0] as { defaultPriceCents?: unknown } | undefined;
   if (!batch || !slot || !seller || profiles.docs.length === 0) {
     return NextResponse.json({ error: "relationship-owner-mismatch" }, { status: 409 });
+  }
+  if (typeof slot.date !== "string" || (slot.occasion !== "lunch" && slot.occasion !== "dinner")) {
+    return NextResponse.json({ error: "invalid-meal-slot-target" }, { status: 500 });
+  }
+  await lockSellerDate(payload, transactionReq, sellerId, slot.date);
+  if (await hasServiceClosure(payload, transactionReq, sellerId, slot.date, slot.occasion)) {
+    return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
   }
   if (!Array.isArray(batch.mealSlots) || !batch.mealSlots.some((id) => String(relationId(id)) === String(mealSlotId))) {
     return NextResponse.json({ error: "meal-slot-not-in-batch", message: "餐次不属于当前预订批次" }, { status: 409 });

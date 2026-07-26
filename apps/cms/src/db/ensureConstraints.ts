@@ -7,6 +7,9 @@ import { sql } from "@payloadcms/db-postgres";
  * express partial predicates) — the six from the original CMS migration:
  *
  * Partial-unique (WHERE clause):
+ *   - kiv1_service_closures (seller, date) WHERE occasion IS NULL
+ *   - kiv1_service_closures (seller, date, occasion) WHERE occasion IS NOT NULL
+ *       → 整天/单餐打烊目标各自唯一
  *   - service_slots (seller, date, occasion) WHERE occasion IS NOT NULL
  *       → 最近一餐定位 + 首单 upsert 命中键
  *   - orders (seller, customer, date, occasion) WHERE status IN ('draft','confirmed')
@@ -38,6 +41,24 @@ export async function ensureConstraints(payload: Payload): Promise<void> {
   if (payload.db.name !== "postgres") return;
 
   // ── partial-unique constraints (WHERE clause Payload `indexes` can't express) ──
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS "kiv1_service_closures_seller_date_day_unique"
+        ON "cms"."kiv1_service_closures" ("seller_id", "date")
+        WHERE "occasion" IS NULL
+    `,
+  });
+
+  await payload.db.execute({
+    drizzle: payload.db.drizzle,
+    sql: sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS "kiv1_service_closures_seller_date_occasion_unique"
+        ON "cms"."kiv1_service_closures" ("seller_id", "date", "occasion")
+        WHERE "occasion" IS NOT NULL
+    `,
+  });
+
   await payload.db.execute({
     drizzle: payload.db.drizzle,
     sql: sql`
