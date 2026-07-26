@@ -50,10 +50,14 @@ const occasionText = (occasion: MealSlot["occasion"]) => occasion === "lunch" ? 
 type BatchEntry = BookingBatchListResponse["docs"][number];
 type SlotConfig = { priceYuan: string; orderDeadline: string };
 
+function priceInputValue(priceCents: number): string {
+  return (priceCents / 100).toFixed(2).replace(/\.00$/, "").replace(/(\.\d)0$/, "$1");
+}
+
 function initialConfig(slot: MealSlot, defaultPriceCents?: number): SlotConfig {
   const priceCents = slot.priceCents ?? defaultPriceCents;
   return {
-    priceYuan: priceCents === undefined ? "" : (priceCents / 100).toFixed(2).replace(/\.00$/, ""),
+    priceYuan: priceCents === undefined ? "" : priceInputValue(priceCents),
     orderDeadline: bookingDeadlineInputValue(slot.orderDeadline)
   };
 }
@@ -77,6 +81,7 @@ export default function MerchantBatches() {
   const [closures, setClosures] = useState<ServiceClosure[]>([]);
   const [defaultPriceYuan, setDefaultPriceYuan] = useState("");
   const [configs, setConfigs] = useState<Record<string, SlotConfig>>({});
+  const [priceOverrides, setPriceOverrides] = useState<Set<string>>(() => new Set());
   const [selected, setSelected] = useState<Array<string | number>>([]);
   const [title, setTitle] = useState("");
   const [batches, setBatches] = useState<BatchEntry[]>([]);
@@ -85,6 +90,8 @@ export default function MerchantBatches() {
   const [failures, setFailures] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [settingsFailed, setSettingsFailed] = useState(false);
+  const [closuresFailed, setClosuresFailed] = useState(false);
   const loadRevision = useRef(0);
 
   const loadSlots = async (context?: BookingConfigContext) => {
@@ -97,22 +104,42 @@ export default function MerchantBatches() {
     const range = { from: days[0]!, to: days.at(-1)! };
     setLoading(true);
     setLoadFailed(false);
-    let docs: MealSlot[];
+    setSettingsFailed(false);
+    setClosuresFailed(false);
+    setSlots([]);
+    setWeekDays(days);
+    setClosures([]);
+    setConfigs({});
+    setPriceOverrides(new Set());
+    setSelected([]);
+    setFailures({});
     try {
-      const [loadedSlots, settings, loadedClosures] = await Promise.all([
+      const [loadedSlots, settings, loadedClosures] = await Promise.allSettled([
         api.listMealSlots(range.from, range.to),
         api.getBookingSettings(),
         api.listServiceClosures(range.from, range.to)
       ]);
-      docs = loadedSlots;
       if (revision !== loadRevision.current) return;
+      const authError = [loadedSlots, settings, loadedClosures].find((result) =>
+        result.status === "rejected" && handledAuthFailure(result.reason));
+      if (authError || loadedSlots.status === "rejected") {
+        if (!authError) {
+          setLoadFailed(true);
+          await Taro.showToast({ title: "餐次加载失败", icon: "none" });
+        }
+        return;
+      }
+      const docs = loadedSlots.value;
+      const defaultPriceCents = settings.status === "fulfilled" ? settings.value.defaultPriceCents : undefined;
       setSlots(docs);
-      setWeekDays(days);
-      setClosures(loadedClosures);
-      setDefaultPriceYuan((settings.defaultPriceCents / 100).toFixed(2).replace(/\.00$/, ""));
-      setSelected([]);
-      setFailures({});
-      setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot, settings.defaultPriceCents)])));
+      setClosures(loadedClosures.status === "fulfilled" ? loadedClosures.value : []);
+      setClosuresFailed(loadedClosures.status === "rejected");
+      setSettingsFailed(settings.status === "rejected");
+      const defaultYuan = defaultPriceCents === undefined
+        ? ""
+        : priceInputValue(defaultPriceCents);
+      setDefaultPriceYuan(defaultYuan);
+      setConfigs(Object.fromEntries(docs.map((slot) => [String(slot.id), initialConfig(slot, defaultPriceCents)])));
     } catch (error) {
       if (revision !== loadRevision.current || handledAuthFailure(error)) return;
       setLoadFailed(true);
@@ -144,7 +171,8 @@ export default function MerchantBatches() {
     const input = orderStatus === "closed"
       ? { orderStatus } as const
       : buildBookingConfig({ ...config, orderStatus });
-    if (!input) {
+    if (!input || (orderStatus === "open" && (!("priceCents" in input) || input.priceCents == null ||
+      !("orderDeadline" in input) || input.orderDeadline === null))) {
       await Taro.showToast({ title: "价格或截止时间无效", icon: "none" });
       return;
     }
@@ -173,7 +201,15 @@ export default function MerchantBatches() {
       const settings = await api.updateBookingSettings({
         defaultPriceCents: Math.round(Number(defaultPriceYuan) * 100)
       });
-      setDefaultPriceYuan((settings.defaultPriceCents / 100).toFixed(2).replace(/\.00$/, ""));
+      const nextDefault = priceInputValue(settings.defaultPriceCents);
+      setConfigs((current) => Object.fromEntries(Object.entries(current).map(([id, config]) => {
+        const slot = slots.find((item) => String(item.id) === id);
+        return [id, slot?.priceCents === null && !priceOverrides.has(id)
+          ? { ...config, priceYuan: nextDefault }
+          : config];
+      })));
+      setDefaultPriceYuan(nextDefault);
+      setSettingsFailed(false);
       await Taro.showToast({ title: "默认价格已保存", icon: "none" });
     } catch (error) {
       if (!handledAuthFailure(error)) await Taro.showToast({ title: "默认价格保存失败", icon: "none" });
@@ -199,7 +235,7 @@ export default function MerchantBatches() {
           if (!current) continue;
           const config = configs[String(id)] ?? initialConfig(current);
           const input = buildBookingConfig({ ...config, orderStatus: current.orderStatus });
-          if (!input || input.orderDeadline === null) {
+          if (!input || input.priceCents === null || input.orderDeadline === null) {
             localFailures[String(id)] = "价格或截止时间无效";
             continue;
           }
@@ -333,23 +369,32 @@ export default function MerchantBatches() {
       {loadFailed && (
         <View className="card error-card">
           <Text>经营安排加载失败</Text>
-          <Button disabled={loading} onClick={() => void loadSlots(initialContext ?? undefined)}>重试</Button>
+          <Button disabled={loading} onClick={() => void loadSlots()}>重试</Button>
         </View>
       )}
 
       <View className="card booking-settings-card">
         <Text className="section-title">默认套餐价</Text>
         <Text className="meta">新餐次开放时会采用此价格，每一餐仍可单独修改。</Text>
+        {settingsFailed && <Text className="operation-error">默认价格加载失败，可重新填写并保存。</Text>}
         <Input
           aria-label="默认套餐价（元）"
+          disabled={pending !== null || loading}
           placeholder="例如 30"
           value={defaultPriceYuan}
           onInput={(event) => setDefaultPriceYuan(event.detail.value)}
         />
-        <Button disabled={pending !== null} onClick={() => void saveDefaultPrice()}>
+        <Button disabled={pending !== null || loading} onClick={() => void saveDefaultPrice()}>
           {pending === "settings" ? "保存中…" : "保存默认价格"}
         </Button>
       </View>
+
+      {closuresFailed && (
+        <View className="card error-card">
+          <Text>打烊安排加载失败；餐次仍可配置或停止，重试后再设置打烊。</Text>
+          <Button disabled={loading || pending !== null} onClick={() => void loadSlots()}>重试打烊安排</Button>
+        </View>
+      )}
 
       <View className="card batch-controls">
         <Input
@@ -369,7 +414,7 @@ export default function MerchantBatches() {
             <View className="day-operation-actions">
               <Button
                 className={dayClosure ? "selected" : "secondary"}
-                disabled={pending !== null || (!dayClosure && mealClosures.length > 0)}
+                disabled={pending !== null || loading || closuresFailed || (!dayClosure && mealClosures.length > 0)}
                 onClick={() => void toggleClosure(day, null, dayClosure)}
               >{dayClosure ? "取消整天打烊" : "整天打烊"}</Button>
               {dayClosure === undefined && (["lunch", "dinner"] as const).map((occasion) => {
@@ -377,7 +422,7 @@ export default function MerchantBatches() {
                 return <Button
                   key={occasion}
                   className={closure ? "selected" : "secondary"}
-                  disabled={pending !== null}
+                  disabled={pending !== null || loading || closuresFailed}
                   onClick={() => void toggleClosure(day, occasion, closure)}
                 >{closure ? `取消${occasionText(occasion)}打烊` : `${occasionText(occasion)}打烊`}</Button>;
               })}
@@ -404,14 +449,19 @@ export default function MerchantBatches() {
             <Text className="meta">状态：{slot.orderStatus === "open" ? "开放" : slot.orderStatus === "closed" ? "已关闭" : "草稿"}</Text>
             {closure && <Text className="closure-notice">{closure.occasion === null ? "当天打烊" : "本餐打烊"}</Text>}
             <Input
+              disabled={pending !== null || loading}
               placeholder="价格（元）"
               value={config.priceYuan}
-              onInput={(event) => setConfigs((current) => ({
-                ...current,
-                [String(slot.id)]: { ...config, priceYuan: event.detail.value }
-              }))}
+              onInput={(event) => {
+                setPriceOverrides((current) => new Set(current).add(String(slot.id)));
+                setConfigs((current) => ({
+                  ...current,
+                  [String(slot.id)]: { ...config, priceYuan: event.detail.value }
+                }));
+              }}
             />
             <Input
+              disabled={pending !== null || loading}
               placeholder="截止时间"
               value={config.orderDeadline}
               onInput={(event) => setConfigs((current) => ({
@@ -421,15 +471,15 @@ export default function MerchantBatches() {
             />
             <View className="batch-actions">
               {slot.orderStatus !== "open" && (
-                <Button className="primary" disabled={pending !== null || Boolean(closure)} onClick={() => void configure(slot, "open")}>开放预订</Button>
+                <Button className="primary" disabled={pending !== null || loading || Boolean(closure)} onClick={() => void configure(slot, "open")}>开放预订</Button>
               )}
               {slot.orderStatus === "open" && (
-                <Button className="danger" disabled={pending !== null} onClick={() => void configure(slot, "closed")}>停止预订</Button>
+                <Button className="danger" disabled={pending !== null || loading} onClick={() => void configure(slot, "closed")}>停止预订</Button>
               )}
               <Button
                 className={isSelected ? "selected" : ""}
                 aria-label={`选择 ${label}`}
-                disabled={pending !== null}
+                disabled={pending !== null || loading}
                 onClick={() => void toggleSelection(slot.id)}
               >{isSelected ? "已选择" : "选择餐次"}</Button>
             </View>
@@ -443,10 +493,10 @@ export default function MerchantBatches() {
           <Text className="section-title">批量操作</Text>
           <Text className="meta">已选择 {selected.length} 个餐次，单次最多 20 个。</Text>
           <View className="batch-actions">
-            <Button className="primary" disabled={pending !== null || selected.length === 0} onClick={() => void bulkStatus("open")}>
+            <Button className="primary" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("open")}>
               {pending === "bulk:open" ? "开放中…" : "批量开放"}
             </Button>
-            <Button className="danger" disabled={pending !== null || selected.length === 0} onClick={() => void bulkStatus("stop")}>
+            <Button className="danger" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("stop")}>
               {pending === "bulk:stop" ? "停止中…" : "批量停止"}
             </Button>
           </View>
@@ -454,9 +504,9 @@ export default function MerchantBatches() {
       )}
 
       <View className="card batch-create">
-        <Input placeholder="批次标题（可不填）" value={title} onInput={(event) => setTitle(event.detail.value)} />
+        <Input disabled={pending !== null || loading} placeholder="批次标题（可不填）" value={title} onInput={(event) => setTitle(event.detail.value)} />
         <Text className="meta">已选择 {selected.length} 个餐次</Text>
-        <Button className="primary" disabled={pending !== null} onClick={() => void createBatch()}>
+        <Button className="primary" disabled={pending !== null || loading} onClick={() => void createBatch()}>
           {pending === "create" ? "创建中…" : "创建预订批次"}
         </Button>
       </View>
