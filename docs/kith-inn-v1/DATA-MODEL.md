@@ -274,7 +274,7 @@ v1 商家侧产品身份，不是 Payload Admin user。
 | `occasion` | select | 可空：lunch / dinner；空表示整天 |
 | `note` | text | 可空，最多 80 字符 |
 
-同商家同目标唯一；整天记录覆盖当日午晚餐，并与单餐记录、开放餐次及已有订单做冲突校验。
+整天目标使用 `UNIQUE (seller, date) WHERE occasion IS NULL`，单餐目标使用 `UNIQUE (seller, date, occasion) WHERE occasion IS NOT NULL`。整天记录覆盖当日午晚餐；打烊、餐次开放/恢复和顾客订单写入必须共享 seller/date 级事务锁，再校验单餐记录、开放餐次及已有订单冲突。
 
 ### `kiv1_booking_batches`
 

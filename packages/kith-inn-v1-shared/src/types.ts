@@ -14,6 +14,7 @@ import type {
   bookingBatchListResponseSchema,
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
+  bookingBatchTargetedCreateSchema,
   bookingBatchUpdateSchema,
   bookingShareTargetSchema,
   bulkMealSlotBookingStatusInputSchema,
@@ -39,6 +40,7 @@ import type {
   cmsCustomerProfileSchema,
   cmsJielongOrderCreateSchema,
   cmsBookingBatchCreateSchema,
+  cmsBookingBatchTargetedCreateSchema,
   cmsOrderCreateSchema,
   cmsOrderUpdateSchema,
   cmsCustomerBookingBatchSchema,
@@ -118,6 +120,7 @@ export type MealSlotUpdate = z.infer<typeof mealSlotUpdateSchema>;
 export type MealSlotBookingConfig = z.infer<typeof mealSlotBookingConfigSchema>;
 export type BookingBatch = z.infer<typeof bookingBatchSchema>;
 export type BookingBatchCreate = z.infer<typeof bookingBatchCreateSchema>;
+export type BookingBatchTargetedCreate = z.infer<typeof bookingBatchTargetedCreateSchema>;
 export type BookingBatchUpdate = z.infer<typeof bookingBatchUpdateSchema>;
 export type BookingShareTarget = z.infer<typeof bookingShareTargetSchema>;
 export type BulkMealSlotBookingStatusInput = z.infer<typeof bulkMealSlotBookingStatusInputSchema>;
@@ -126,6 +129,7 @@ export type BulkMealSlotBookingStatusResponse = z.infer<typeof bulkMealSlotBooki
 export type BookingBatchMutationResponse = z.infer<typeof bookingBatchMutationResponseSchema>;
 export type BookingBatchListResponse = z.infer<typeof bookingBatchListResponseSchema>;
 export type CmsBookingBatchCreate = z.infer<typeof cmsBookingBatchCreateSchema>;
+export type CmsBookingBatchTargetedCreate = z.infer<typeof cmsBookingBatchTargetedCreateSchema>;
 export type CustomerWxSessionInput = z.infer<typeof customerWxSessionInputSchema>;
 export type CustomerDevSessionInput = z.infer<typeof customerDevSessionInputSchema>;
 export type CustomerSessionResponse = z.infer<typeof customerSessionResponseSchema>;

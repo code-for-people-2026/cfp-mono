@@ -236,6 +236,7 @@ POST   /customer/orders/:id/cancel
 
 - `kiv1_service_closures` 以日期加可选午／晚餐表达整天或某餐打烊，不要求先创建假餐次。
 - 整天关闭优先于单餐关闭；关闭范围与开放餐次或已有订单冲突时拒绝写入。
+- null 与非 null 目标分别使用 partial unique index；打烊、餐次开放/恢复和顾客订单写入共享 seller/date 级事务锁，避免并发先查后写留下冲突状态。
 - 取消打烊只移除营业关闭记录，不自动开放对应餐次。
 
 ### 顾客资料

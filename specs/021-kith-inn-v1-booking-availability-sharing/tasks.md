@@ -25,10 +25,10 @@
 
 - [x] T002 [P] 为营业关闭、顾客展示状态、默认价设置、批量状态和分享目标补失败契约测试至 `packages/kith-inn-v1-shared/src/api.test.ts` 与新纯逻辑测试
 - [x] T003 实现 T002 的 schema、types、exports 和纯展示规则于 `packages/kith-inn-v1-shared/src/`
-- [ ] T004 [P] 为营业关闭 collection、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
-- [ ] T005 实现 `packages/kith-inn-v1-payload/src/payload/collections/` collection、字段配置与可恢复状态持久化门禁
-- [ ] T006 [P] 为租户隔离的关闭记录 CRUD、默认价更新及分享目标读写补 internal route tests 于 `apps/cms/tests/`
-- [ ] T007 实现对应 `apps/cms/src/app/api/internal/kiv1/` routes 和迁移
+- [ ] T004 [P] 为营业关闭 partial unique indexes、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
+- [ ] T005 实现对应 collection、target 字段、partial unique index migration 与可恢复状态持久化门禁于 `packages/kith-inn-v1-payload/`、`apps/cms/src/db/`
+- [ ] T006 [P] 为关闭 CRUD、默认价、target 读写及打烊/开放/订单并发冲突补租户隔离 internal route tests 于 `apps/cms/tests/`
+- [ ] T007 实现对应 internal routes，并让冲突写入共享 seller/date 级事务锁；target 端到端保存后才启用 targeted create schema
 
 ## Phase 3: User Story 1 - 安排未来营业与预订
 
@@ -47,8 +47,8 @@
 
 **Independent Test**: 日期和餐次卡片各自生成准确公开标题、路径和定位，非微信环境不伪装分享成功。
 
-- [ ] T016 [P] [US2] 为目标创建、旧批次兼容和实时详情补 route tests 于 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts`
-- [ ] T017 [US2] 实现 BookingBatch target 创建、详情和兼容映射于 `apps/kith-inn-v1-be/src/`
+- [ ] T016 [P] [US2] 为 targeted schema 切换、目标创建、旧批次兼容和实时详情补 route tests 于 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts`
+- [ ] T017 [US2] 在 CMS 已可持久化后切换 targeted create schema，并实现 BookingBatch target 创建、详情和兼容映射于 `apps/kith-inn-v1-be/src/`
 - [ ] T018 [P] [US2] 为日期/餐次目标、摘要和微信 payload 补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
 - [ ] T019 [US2] 实现 Page 4 创建成功态和微信原生卡片分享于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
 - [ ] T020 [US2] 补日期/餐次分享 E2E 于 `apps/kith-inn-v1-e2e/src/merchant.spec.ts`

@@ -18,7 +18,7 @@
 - `occasion`: `null | lunch | dinner`；null 表示整天
 - `note`: 可选短说明
 
-约束：同商家同目标唯一；整天关闭与当日餐次关闭互斥；与对应开放 MealSlot 互斥；已有订单时不得静默创建。
+约束：整天目标使用 `UNIQUE (seller, date) WHERE occasion IS NULL`，单餐目标使用 `UNIQUE (seller, date, occasion) WHERE occasion IS NOT NULL`；整天与单餐互斥，且与对应开放 MealSlot、已有订单冲突。打烊、开放/恢复餐次和顾客订单写入必须共享 seller/date 级事务锁并做并发测试，不能依赖先查后写。
 
 ## BookingShareTarget
 
