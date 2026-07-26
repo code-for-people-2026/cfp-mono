@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
+const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
 
 const enterOfferings = async (page: Page) => {
   await taroButton(page, /^开发登录$/).click();
@@ -21,7 +22,7 @@ const enterManageOfferings = async (page: Page) => {
 const openOfferingImport = async (page: Page) => {
   await enterManageOfferings(page);
   await taroButton(page, /^批量导入$/).click();
-  await expect(page.getByRole("textbox", { name: "每行一道菜" })).toBeVisible();
+  await expect(offeringImportInput(page)).toBeVisible();
 };
 
 const menuItems = ["红烧肉", "香菇滑鸡", "清炒时蔬", "家常豆腐", "番茄蛋汤"].map((name, index) => ({
@@ -319,9 +320,14 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   await expect(page.getByText("停用菜", { exact: true })).toBeVisible();
   await taroButton(page, /^批量导入$/).click();
   await expect(page.getByText("批量导入菜品", { exact: true })).toBeVisible();
-  await expect(page.getByRole("textbox", { name: "每行一道菜" })).toBeVisible();
+  const importInput = offeringImportInput(page);
+  await expect(importInput).toBeVisible();
+  await expect(importInput).toHaveAttribute(
+    "placeholder",
+    "每行：菜名 [主料] 分类\n例如：\n红烧肉 猪肉 荤\n清炒时蔬 素"
+  );
   await taroButton(page, /^收起导入$/).click();
-  await expect(page.getByRole("textbox", { name: "每行一道菜" })).toHaveCount(0);
+  await expect(offeringImportInput(page)).toHaveCount(0);
 
   await taroButton(page, /^新增菜品$/).click();
   await expect(page.getByRole("textbox", { name: "菜名" })).toBeVisible();
@@ -467,7 +473,7 @@ test("修改导入原文后旧预览响应不能覆盖新预览", async ({ page 
 
   await page.goto("/");
   await openOfferingImport(page);
-  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  const input = offeringImportInput(page);
   await input.fill("旧预览菜 素");
   await taroButton(page, /^预览导入$/).click();
   await expect.poll(() => previewRequests).toBe(1);
@@ -522,7 +528,7 @@ test("同一原文的旧预览不能清除最新冲突选择", async ({ page }) 
 
   await page.goto("/");
   await openOfferingImport(page);
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill("重名菜 素");
+  await offeringImportInput(page).fill("重名菜 素");
   await taroButton(page, /^预览导入$/).click();
   await expect.poll(() => previewRequests).toBe(1);
   await taroButton(page, /^预览导入$/).click();
@@ -584,7 +590,7 @@ test("确认导入期间锁定原文和冲突选择", async ({ page }) => {
 
   await page.goto("/");
   await openOfferingImport(page);
-  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  const input = offeringImportInput(page);
   await input.fill("重名菜 素");
   await taroButton(page, /^预览导入$/).click();
   const overwrite = page.getByLabel("覆盖第 1 行");
@@ -627,7 +633,7 @@ test("导入提交失败后保留原文并要求重新预览", async ({ page }) 
 
   await page.goto("/");
   await openOfferingImport(page);
-  const input = page.getByRole("textbox", { name: "每行一道菜" });
+  const input = offeringImportInput(page);
   await input.fill("待重试菜 素");
   await taroButton(page, /^预览导入$/).click();
   await expect(taroButton(page, /^确认导入$/)).toBeVisible();
@@ -669,7 +675,7 @@ test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }
   await expect(page.getByLabel(`停用 ${renamed}`)).toBeVisible();
 
   await taroButton(page, /^批量导入$/).click();
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(`${renamed} 牛肉 荤\n${imported} 青菜 素\n坏数据`);
+  await offeringImportInput(page).fill(`${renamed} 牛肉 荤\n${imported} 青菜 素\n坏数据`);
   await taroButton(page, /^预览导入$/).click();
   await expect(page.getByText("可新增 1 行，重名 1 行，错误 1 行")).toBeVisible();
   await page.getByLabel("覆盖第 1 行").click();
@@ -681,7 +687,7 @@ test("dev login 后完成菜品 CRUD 与 import preview/commit", async ({ page }
   await expect(page.getByText(imported, { exact: true })).toBeVisible();
 
   const fiftyRows = Array.from({ length: 50 }, (_, index) => `预算菜-${suffix}-${index} 素`).join("\n");
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(fiftyRows);
+  await offeringImportInput(page).fill(fiftyRows);
   await expect(taroButton(page, /^确认导入$/)).toHaveCount(0);
   const previewStartedAt = Date.now();
   await taroButton(page, /^预览导入$/).click();
@@ -1516,7 +1522,7 @@ test("生成单餐与工作周菜单、确认覆盖并换一道菜", async ({ pa
 
   await page.goto("/");
   await openOfferingImport(page);
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(rows.join("\n"));
+  await offeringImportInput(page).fill(rows.join("\n"));
   await taroButton(page, /^预览导入$/).click();
   await expect(page.getByText("可新增 50 行，重名 0 行，错误 0 行")).toBeVisible();
   await taroButton(page, /^确认导入$/).click();
@@ -1741,7 +1747,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   await page.clock.install({ time: new Date(`${targetDate}T01:00:00.000Z`) });
   await page.goto("/");
   await openOfferingImport(page);
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(rows.join("\n"));
+  await offeringImportInput(page).fill(rows.join("\n"));
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
@@ -1795,7 +1801,7 @@ test("专用页面新建和选择顾客、显式更新与重提后继续订单�
   await page.clock.install({ time: new Date("2026-09-21T01:00:00.000Z") });
   await page.goto("/");
   await openOfferingImport(page);
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(rows.join("\n"));
+  await offeringImportInput(page).fill(rows.join("\n"));
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
