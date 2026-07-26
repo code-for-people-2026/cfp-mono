@@ -2,6 +2,7 @@ import { cors } from "hono/cors";
 import { Hono } from "hono";
 import type { AppVars } from "./middleware/operatorAuth";
 import { authRoutes, customerAuthRoutes } from "./routes/auth";
+import { bookingSettingsRoutes } from "./routes/bookingSettings";
 import { bookingBatchesRoutes, publicBookingBatchesRoutes } from "./routes/bookingBatches";
 import { customerOrderManagementRoutes, customerOrderRoutes } from "./routes/customerOrders";
 import { customerProfileRoutes } from "./routes/customerProfiles";
@@ -24,6 +25,7 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.route("/customer/reservations", customerOrderRoutes(jwtSecret));
   app.route("/customer/orders", customerOrderManagementRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));
+  app.route("/merchant/booking-settings", bookingSettingsRoutes(jwtSecret));
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
   app.route("/merchant/booking-batches", bookingBatchesRoutes(jwtSecret));
   app.route("/merchant/customer-profiles", customerProfilesRoutes(jwtSecret));
