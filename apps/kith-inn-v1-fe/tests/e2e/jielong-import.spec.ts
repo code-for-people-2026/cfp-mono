@@ -26,7 +26,7 @@ test("显式启用后纵向完成接龙预览、确认、重试与无地址订�
   await expect(manageButton).not.toHaveAttribute("disabled", "");
   await manageButton.click();
   await taroButton(page, /^批量导入$/).click();
-  await page.getByRole("textbox", { name: "每行一道菜" }).fill(offerings.join("\n"));
+  await page.locator(".import-card textarea").fill(offerings.join("\n"));
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await taroButton(page, /^菜单$/).last().click();
