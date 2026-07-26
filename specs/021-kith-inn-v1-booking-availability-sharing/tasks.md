@@ -8,12 +8,12 @@
 
 | PR | 目标 / 核心不变量 | 关联故事/需求 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
-| PR1 | 固化营业、可见性和分享定位契约 | US1/US2；FR1-12 | T001-T003 | `specs/021-*`、v1 shared；不写数据库/UI | shared test/typecheck | 约750 | 无 |
+| PR1 | 固化营业、可见性和分享定位契约 | US1/US2；FR1-12 | T001-T003、T026 | `specs/021-*`、v1 shared、长期契约文档；不写数据库/UI | shared test/typecheck | 约750 | 无 |
 | PR2 | 持久化租户隔离营业关闭和分享目标 | US1/US2；FR6-9 | T004-T007 | v1 payload、CMS；不开放商家 API | CMS tests | 约500 | PR1 |
 | PR3 | 暴露设置、关闭、批量状态和详情 API | US1-US3；FR1-15 | T008-T011、T016-T017 | v1 BE/CMS routes；不改 FE | route/domain tests | 约650 | PR2 |
 | PR4 | Page 4 配置和批量经营操作 | US1；FR1-8、13-16 | T012-T015 | v1 FE；不做分享详情视觉 | unit + E2E | 约650 | PR3 |
 | PR5 | 日期/餐次分享和历史实时详情 | US2/US3；FR9-16 | T018-T023 | v1 FE/BE client/E2E；不重构顾客浏览 | unit + E2E | 约500 | PR4 |
-| PR6 | 高保真视觉和长期文档 | US3；FR13-16 | T024-T027 | Page 4 CSS/E2E/docs；不扩功能 | screenshot + verify + 真机 | 约450 | PR5 |
+| PR6 | 高保真视觉和验收证据 | US3；FR13-16 | T024-T025、T027 | Page 4 CSS/E2E/验收记录；不扩功能 | screenshot + verify + 真机 | 约400 | PR5 |
 
 每片统一执行独立验证、`git diff --check`、人工 diff 统计、`pnpm verify`，并按 `pr-review-converge` 完成 Ready PR、latest-head CI、review、零 unresolved thread 和 rebase merge。
 
@@ -25,8 +25,8 @@
 
 - [x] T002 [P] 为营业关闭、顾客展示状态、默认价设置、批量状态和分享目标补失败契约测试至 `packages/kith-inn-v1-shared/src/api.test.ts` 与新纯逻辑测试
 - [x] T003 实现 T002 的 schema、types、exports 和纯展示规则于 `packages/kith-inn-v1-shared/src/`
-- [ ] T004 [P] 为营业关闭 collection 与 BookingBatch 定位字段补 Payload/CMS 持久化测试于 `apps/cms/tests/`
-- [ ] T005 实现 `packages/kith-inn-v1-payload/src/payload/collections/` collection 与字段配置
+- [ ] T004 [P] 为营业关闭 collection、BookingBatch 定位字段及 `closed → open` 可恢复门禁补 Payload/CMS 持久化测试于 `apps/cms/tests/`
+- [ ] T005 实现 `packages/kith-inn-v1-payload/src/payload/collections/` collection、字段配置与可恢复状态持久化门禁
 - [ ] T006 [P] 为租户隔离的关闭记录 CRUD、默认价更新及分享目标读写补 internal route tests 于 `apps/cms/tests/`
 - [ ] T007 实现对应 `apps/cms/src/app/api/internal/kiv1/` routes 和迁移
 
@@ -65,7 +65,7 @@
 
 - [ ] T024 实现 375×812 高保真样式于 `apps/kith-inn-v1-fe/src/app.css` 和 Page 4 语义 class
 - [ ] T025 [P] 补固定数据视觉状态与截图验收于 `apps/kith-inn-v1-e2e/`
-- [ ] T026 [P] 更新长期行为和数据文档于 `docs/kith-inn-v1/USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md`
+- [x] T026 [P] 更新长期行为和数据文档于 `docs/kith-inn-v1/USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md`
 - [ ] T027 完成微信真机日期/餐次分享、目标变化和安全区 smoke 并记录于 `specs/021-kith-inn-v1-booking-availability-sharing/quickstart.md`
 
 ## Dependencies & Execution Order
