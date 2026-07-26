@@ -789,7 +789,7 @@ button.danger {
   line-height: 64rpx;
 }
 
-.offerings-manage-toggle[disabled] {
+.offerings-manage-toggle[disabled]:not([disabled="false"]) {
   color: #a99d91;
   opacity: 1;
 }

@@ -293,6 +293,7 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   await enterOfferings(page);
   await expect(page.getByText("常做的菜", { exact: true })).toBeVisible();
   await expect(taroButton(page, /^管理$/)).toBeVisible();
+  await expect(taroButton(page, /^管理$/)).toHaveCSS("color", "rgb(182, 64, 47)");
   for (const label of ["全部", "荤菜", "素菜", "汤"]) {
     await expect(taroButton(page, new RegExp(`^${label}$`))).toBeVisible();
   }
@@ -349,6 +350,7 @@ test("首次加载失败时禁止进入管理", async ({ page }) => {
   await enterOfferings(page);
   await expect(page.getByText("菜品加载失败", { exact: true })).toBeVisible();
   await expect(taroButton(page, /^管理$/)).toHaveAttribute("disabled", "");
+  await expect(taroButton(page, /^管理$/)).toHaveCSS("color", "rgb(169, 157, 145)");
   await expect(taroButton(page, /^新增菜品$/)).toHaveCount(0);
 });
 
