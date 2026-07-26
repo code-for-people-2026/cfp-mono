@@ -54,7 +54,9 @@ function payloadWith(options: PayloadOptions = {}) {
   const owned = options.ownedOfferingIds ?? [1, 2, 3, 4, 5, 6];
   const find = vi.fn(async ({ collection, where }: { collection: string; where?: unknown }) => {
     if (collection === "kiv1_operators") return { docs: [{ id: 1 }] };
-    if (collection === "kiv1_sellers") return { docs: [{ id: 7, status: "active" }] };
+    if (collection === "kiv1_sellers") {
+      return { docs: [{ id: 7, status: "active", defaultPriceCents: 3000 }] };
+    }
     if (collection === "kiv1_offerings") {
       const serialized = JSON.stringify(where);
       const id = owned.find((candidate) => serialized.includes(`\"equals\":${JSON.stringify(candidate)}`));
@@ -264,6 +266,7 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
         orderDeadline: "2099-07-12T01:00:00.000Z",
         orderStatus: "open"
       },
+      context: { kiv1AvailabilityChecked: true },
       overrideAccess: true,
       req: expect.anything()
     });
@@ -298,15 +301,18 @@ describe("PATCH /api/internal/kiv1/meal-slots/:id/booking-config", () => {
 
     const configuredSlot = { ...slotDoc, orderStatus: "closed", priceCents: 2800,
       orderDeadline: "2099-07-12T01:00:00.000Z" };
-    for (const body of [
-      { orderStatus: "open", priceCents: null },
-      { orderStatus: "open", orderDeadline: null }
-    ]) {
-      const cleared = payloadWith({ slots: [configuredSlot] });
-      mocks.getPayload.mockResolvedValue(cleared);
-      expect((await call(body)).status).toBe(409);
-      expect(cleared.update).not.toHaveBeenCalled();
-    }
+    const defaulted = payloadWith({ slots: [configuredSlot] });
+    mocks.getPayload.mockResolvedValue(defaulted);
+    expect((await call({ orderStatus: "open", priceCents: null })).status).toBe(200);
+    expect(defaulted.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { orderStatus: "open", priceCents: 3000 },
+      context: { kiv1AvailabilityChecked: true }
+    }));
+
+    const missingDeadline = payloadWith({ slots: [configuredSlot] });
+    mocks.getPayload.mockResolvedValue(missingDeadline);
+    expect((await call({ orderStatus: "open", orderDeadline: null })).status).toBe(409);
+    expect(missingDeadline.update).not.toHaveBeenCalled();
 
     const closed = payloadWith({ serviceClosure: true, slots: [{
       ...configuredSlot

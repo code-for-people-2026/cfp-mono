@@ -17,7 +17,13 @@ import {
 export const Orders: CollectionConfig = {
   slug: "kiv1_orders",
   admin: { useAsTitle: "displayName", group: "街坊味 v1 / 订单" },
-  access: cmsAccess,
+  // 订单写入必须经过 customer/operator internal routes，才能与打烊写入
+  // 共享 seller/date 锁并校验餐次可用性；Admin/REST 仅用于查询。
+  access: {
+    ...cmsAccess,
+    create: () => false,
+    update: () => false
+  },
   hooks: sameSellerHooks,
   fields: [
     sellerField(),

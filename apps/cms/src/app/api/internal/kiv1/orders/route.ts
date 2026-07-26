@@ -4,14 +4,18 @@ import type { Order } from "@cfp/kith-inn-v1-shared";
 import { NextResponse } from "next/server";
 import {
   findOwned,
+  hasServiceClosure,
   hasSellerField,
   isUniqueConflict,
   jielongMarker,
   jielongMarkerFromNote,
+  lockSellerDate,
   operatorScope,
   requireServiceAuth,
-  stripJielongMarker
+  stripJielongMarker,
+  withKiv1Transaction
 } from "@/lib/kiv1-internal";
+import type { BasePayload, PayloadRequest } from "payload";
 
 export const dynamic = "force-dynamic";
 
@@ -77,10 +81,11 @@ async function requestJson(req: Request): Promise<{ ok: true; value: unknown } |
 }
 
 async function findJielongOrder(
-  payload: Parameters<typeof findOwned>[0],
+  payload: BasePayload,
   sellerId: string | number,
   mealSlotId: string | number,
-  marker: string
+  marker: string,
+  req?: PayloadRequest
 ): Promise<OrderDoc | undefined> {
   const result = await payload.find({
     collection: "kiv1_orders",
@@ -90,7 +95,8 @@ async function findJielongOrder(
       { source: { equals: "jielong-import" } },
       { note: { contains: marker } }
     ] },
-    limit: 0, depth: 0, overrideAccess: true
+    limit: 0, depth: 0, overrideAccess: true,
+    ...(req ? { req } : {})
   });
   return (result.docs as OrderDoc[]).find((doc) => jielongMarkerFromNote(doc.note) === marker);
 }
@@ -155,41 +161,59 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid-order" }, { status: 422 });
   }
   const input = parsed.data;
-  if (!await findOwned(scope.payload, "kiv1_meal_slots", input.mealSlotId, scope.sellerId) ||
-    (input.source === "manual" &&
-      !await findOwned(scope.payload, "kiv1_customer_profiles", input.customerProfileId, scope.sellerId))) {
-    return NextResponse.json({ error: "invalid-order-relationship" }, { status: 422 });
-  }
   const marker = input.source === "jielong-import" ? jielongMarker(input.previewHash, input.lineNumber) : null;
-  if (marker) {
-    const doc = await findJielongOrder(scope.payload, scope.sellerId, input.mealSlotId, marker);
-    if (doc) return NextResponse.json({ doc: normalizeOrder(doc) });
-  }
   try {
-    const doc = await scope.payload.create({
-      collection: "kiv1_orders",
-      data: {
-        seller: scope.sellerId,
-        mealSlot: input.mealSlotId,
-        customerProfile: input.customerProfileId,
-        customerOpenid: input.customerOpenid,
-        status: input.status,
-        source: input.source,
-        displayName: input.displayName,
-        address: input.address,
-        quantity: input.quantity,
-        unitPriceCents: input.unitPriceCents,
-        paymentStatus: input.paymentStatus,
-        paidAt: input.paidAt,
-        deliveryStatus: input.deliveryStatus,
-        deliveredAt: input.deliveredAt,
-        confirmedAt: input.confirmedAt,
-        canceledAt: input.canceledAt,
-        note: marker ? `${marker}${input.note ?? ""}` : input.note
-      },
-      overrideAccess: true
+    return await withKiv1Transaction(scope.payload, async (transactionReq) => {
+      const slot = await findOwned(
+        scope.payload, "kiv1_meal_slots", input.mealSlotId, scope.sellerId, transactionReq
+      ) as { date?: unknown; occasion?: unknown } | undefined;
+      const profile = input.source === "manual"
+        ? await findOwned(
+          scope.payload, "kiv1_customer_profiles", input.customerProfileId, scope.sellerId, transactionReq
+        )
+        : true;
+      if (!slot || !profile || typeof slot.date !== "string" ||
+          (slot.occasion !== "lunch" && slot.occasion !== "dinner")) {
+        return NextResponse.json({ error: "invalid-order-relationship" }, { status: 422 });
+      }
+      await lockSellerDate(scope.payload, transactionReq, scope.sellerId, slot.date);
+      if (await hasServiceClosure(
+        scope.payload, transactionReq, scope.sellerId, slot.date, slot.occasion
+      )) {
+        return NextResponse.json({ error: "service-closure-conflict", message: "该餐次已安排打烊" }, { status: 409 });
+      }
+      if (marker) {
+        const existing = await findJielongOrder(
+          scope.payload, scope.sellerId, input.mealSlotId, marker, transactionReq
+        );
+        if (existing) return NextResponse.json({ doc: normalizeOrder(existing) });
+      }
+      const doc = await scope.payload.create({
+        collection: "kiv1_orders",
+        data: {
+          seller: scope.sellerId,
+          mealSlot: input.mealSlotId,
+          customerProfile: input.customerProfileId,
+          customerOpenid: input.customerOpenid,
+          status: input.status,
+          source: input.source,
+          displayName: input.displayName,
+          address: input.address,
+          quantity: input.quantity,
+          unitPriceCents: input.unitPriceCents,
+          paymentStatus: input.paymentStatus,
+          paidAt: input.paidAt,
+          deliveryStatus: input.deliveryStatus,
+          deliveredAt: input.deliveredAt,
+          confirmedAt: input.confirmedAt,
+          canceledAt: input.canceledAt,
+          note: marker ? `${marker}${input.note ?? ""}` : input.note
+        },
+        overrideAccess: true,
+        req: transactionReq
+      });
+      return NextResponse.json({ doc: normalizeOrder(doc as OrderDoc) }, { status: 201 });
     });
-    return NextResponse.json({ doc: normalizeOrder(doc as OrderDoc) }, { status: 201 });
   } catch (error) {
     return isUniqueConflict(error)
       ? NextResponse.json({ error: "order-conflict" }, { status: 409 })

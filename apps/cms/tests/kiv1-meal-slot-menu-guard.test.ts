@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import config from "../payload.config";
 import {
   guardKiv1MealSlotMenuChange,
+  KIV1_AVAILABILITY_CHECKED,
   withKiv1MealSlotMenuGuard
 } from "../src/lib/kiv1-meal-slot-menu-guard";
 
@@ -158,17 +159,20 @@ describe("kiv1 meal-slot menu persistence guard", () => {
   it.each([
     ["open", "draft", false],
     ["open", "closed", true],
-    ["closed", "open", true],
+    ["closed", "open", false],
     ["closed", "draft", false],
-    ["draft", "open", true]
-  ])("guards lifecycle transition %s -> %s", async (current, requested, allowed) => {
+    ["draft", "open", false]
+  ])("guards uncontrolled lifecycle transition %s -> %s", async (current, requested, allowed) => {
     const { req } = harness({ latest: { id: 11, menuItems, orderStatus: current } });
     const result = invoke(req, { orderStatus: requested });
     if (allowed) await expect(result).resolves.toEqual({ orderStatus: requested });
-    else await expect(result).rejects.toMatchObject({
-      message: "meal-slot-order-status-locked",
-      status: 409
-    });
+    else await expect(result).rejects.toMatchObject({ status: 409 });
+  });
+
+  it.each(["draft", "closed"])("allows a controlled %s -> open transition", async (current) => {
+    const { req } = harness({ latest: { id: 11, menuItems, orderStatus: current } });
+    req.context[KIV1_AVAILABILITY_CHECKED] = true;
+    await expect(invoke(req, { orderStatus: "open" })).resolves.toEqual({ orderStatus: "open" });
   });
 
   it.each([
@@ -287,7 +291,7 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
         await payload.update({
           collection: "kiv1_meal_slots",
           id: slot.id,
-          context: { menuGuardActor: "open" },
+          context: { menuGuardActor: "open", [KIV1_AVAILABILITY_CHECKED]: true },
           data: { orderStatus: "open" },
           overrideAccess: true
         });
@@ -312,7 +316,7 @@ describe.skipIf(!process.env.DATABASE_URL && !process.env.PAYLOAD_DATABASE_URL)(
         const openingWrite = payload.update({
           collection: "kiv1_meal_slots",
           id: heldSlot.id,
-          context: { menuGuardActor: "held-open" },
+          context: { menuGuardActor: "held-open", [KIV1_AVAILABILITY_CHECKED]: true },
           data: { orderStatus: "open" },
           overrideAccess: true
         }).then((value) => {

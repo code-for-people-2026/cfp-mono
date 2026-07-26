@@ -7,6 +7,7 @@ import {
 } from "payload";
 
 const COLLECTION = "kiv1_meal_slots";
+export const KIV1_AVAILABILITY_CHECKED = "kiv1AvailabilityChecked";
 
 type MealSlot = {
   id: number | string;
@@ -58,6 +59,10 @@ function menuChanged(data: Record<string, unknown>, latest: MealSlot): boolean {
 
 function statusRegresses(current: unknown, requested: unknown): boolean {
   return current !== "draft" && requested === "draft";
+}
+
+function opensWithoutAvailabilityCheck(req: PayloadRequest, current: unknown, requested: unknown): boolean {
+  return current !== "open" && requested === "open" && req.context[KIV1_AVAILABILITY_CHECKED] !== true;
 }
 
 async function transactionSession(req: PayloadRequest): Promise<unknown> {
@@ -114,6 +119,10 @@ export const guardKiv1MealSlotMenuChange: CollectionBeforeChangeHook = async ({
   }
   if (Object.hasOwn(data, "orderStatus") && statusRegresses(latest.orderStatus, data.orderStatus)) {
     throw new APIError("meal-slot-order-status-locked", 409);
+  }
+  if (Object.hasOwn(data, "orderStatus") &&
+      opensWithoutAvailabilityCheck(req, latest.orderStatus, data.orderStatus)) {
+    throw new APIError("meal-slot-open-requires-availability-check", 409);
   }
   return data;
 };
