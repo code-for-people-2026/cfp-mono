@@ -51,6 +51,14 @@ export const selectSellerInputSchema = z.object({
   sellerId: relationshipIdSchema
 }).strict();
 
+export const sellerBookingSettingsSchema = z.object({
+  defaultPriceCents: nonNegativeIntegerSchema
+}).strict();
+
+export const sellerBookingSettingsUpdateSchema = z.object({
+  defaultPriceCents: nonNegativeIntegerSchema
+}).strict();
+
 export const apiErrorSchema = z.object({
   error: z.string().min(1),
   message: z.string().min(1)
@@ -171,6 +179,11 @@ export const mealSlotTargetSchema = z.object({
   occasion: occasionSchema
 }).strict();
 
+export const bookingShareTargetSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("day"), date: calendarDateSchema }).strict(),
+  z.object({ kind: z.literal("meal"), date: calendarDateSchema, occasion: occasionSchema }).strict()
+]);
+
 export const jielongTextSchema = z.string().min(1).max(10_000);
 export const previewHashSchema = z.string().regex(/^[0-9a-f]{64}$/);
 export const jielongCanonicalLineSchema = z.object({
@@ -235,6 +248,26 @@ export const mealSlotRangeSchema = z.object({
   to: calendarDateSchema
 }).strict().refine(validRange, { message: "日期范围最多 31 天" });
 
+const closureNoteSchema = z.string().trim().min(1).max(80).nullable();
+
+export const serviceClosureSchema = z.object({
+  id: relationshipIdSchema,
+  sellerId: relationshipIdSchema,
+  date: calendarDateSchema,
+  occasion: occasionSchema.nullable(),
+  note: closureNoteSchema
+}).strict();
+
+export const serviceClosureCreateSchema = z.object({
+  date: calendarDateSchema,
+  occasion: occasionSchema.nullable().default(null),
+  note: closureNoteSchema.default(null)
+}).strict();
+
+export const serviceClosureListResponseSchema = z.object({
+  docs: z.array(serviceClosureSchema)
+}).strict();
+
 export const mealSlotSchema = z.object({
   id: relationshipIdSchema,
   sellerId: relationshipIdSchema,
@@ -268,6 +301,29 @@ export const mealSlotBookingConfigSchema = z.object({
 const uniqueMealSlotIds = z.array(relationshipIdSchema).min(1).transform((ids) => [
   ...new Map(ids.map((id) => [String(id), id])).values()
 ]).refine((ids) => ids.length <= 20, { message: "一个预订批次最多包含 20 个餐次" });
+
+export const bulkMealSlotBookingStatusInputSchema = z.object({
+  mealSlotIds: uniqueMealSlotIds,
+  action: z.enum(["open", "stop"])
+}).strict();
+
+export const bulkMealSlotBookingStatusResultSchema = z.discriminatedUnion("status", [
+  z.object({
+    id: relationshipIdSchema,
+    status: z.literal("updated"),
+    doc: mealSlotSchema
+  }).strict(),
+  z.object({
+    id: relationshipIdSchema,
+    status: z.literal("failed"),
+    error: z.string().min(1),
+    message: z.string().min(1)
+  }).strict()
+]);
+
+export const bulkMealSlotBookingStatusResponseSchema = z.object({
+  results: z.array(bulkMealSlotBookingStatusResultSchema).min(1).max(20)
+}).strict();
 
 export const bookingBatchSchema = z.object({
   id: relationshipIdSchema,

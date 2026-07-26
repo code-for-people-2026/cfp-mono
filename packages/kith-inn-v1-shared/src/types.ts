@@ -15,6 +15,10 @@ import type {
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
   bookingBatchUpdateSchema,
+  bookingShareTargetSchema,
+  bulkMealSlotBookingStatusInputSchema,
+  bulkMealSlotBookingStatusResponseSchema,
+  bulkMealSlotBookingStatusResultSchema,
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResultSchema,
   importCommitInputSchema,
@@ -76,6 +80,11 @@ import type {
   orderSummarySchema,
   relaxedRuleSchema,
   sellerSnapshotSchema,
+  sellerBookingSettingsSchema,
+  sellerBookingSettingsUpdateSchema,
+  serviceClosureCreateSchema,
+  serviceClosureListResponseSchema,
+  serviceClosureSchema,
   swapMenuItemResponseSchema
 } from "./api";
 
@@ -110,6 +119,10 @@ export type MealSlotBookingConfig = z.infer<typeof mealSlotBookingConfigSchema>;
 export type BookingBatch = z.infer<typeof bookingBatchSchema>;
 export type BookingBatchCreate = z.infer<typeof bookingBatchCreateSchema>;
 export type BookingBatchUpdate = z.infer<typeof bookingBatchUpdateSchema>;
+export type BookingShareTarget = z.infer<typeof bookingShareTargetSchema>;
+export type BulkMealSlotBookingStatusInput = z.infer<typeof bulkMealSlotBookingStatusInputSchema>;
+export type BulkMealSlotBookingStatusResult = z.infer<typeof bulkMealSlotBookingStatusResultSchema>;
+export type BulkMealSlotBookingStatusResponse = z.infer<typeof bulkMealSlotBookingStatusResponseSchema>;
 export type BookingBatchMutationResponse = z.infer<typeof bookingBatchMutationResponseSchema>;
 export type BookingBatchListResponse = z.infer<typeof bookingBatchListResponseSchema>;
 export type CmsBookingBatchCreate = z.infer<typeof cmsBookingBatchCreateSchema>;
@@ -125,6 +138,11 @@ export type GenerateMenusResponse = z.infer<typeof generateMenusResponseSchema>;
 export type SwapMenuItemResponse = z.infer<typeof swapMenuItemResponseSchema>;
 export type RelaxedRule = z.infer<typeof relaxedRuleSchema>;
 export type SellerSnapshot = z.infer<typeof sellerSnapshotSchema>;
+export type SellerBookingSettings = z.infer<typeof sellerBookingSettingsSchema>;
+export type SellerBookingSettingsUpdate = z.infer<typeof sellerBookingSettingsUpdateSchema>;
+export type ServiceClosure = z.infer<typeof serviceClosureSchema>;
+export type ServiceClosureCreate = z.infer<typeof serviceClosureCreateSchema>;
+export type ServiceClosureListResponse = z.infer<typeof serviceClosureListResponseSchema>;
 export type CustomerProfile = z.infer<typeof customerProfileSchema>;
 export type CmsCustomerProfile = z.infer<typeof cmsCustomerProfileSchema>;
 export type CustomerProfileCreate = z.infer<typeof customerProfileCreateSchema>;
