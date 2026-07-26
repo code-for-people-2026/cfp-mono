@@ -1,5 +1,10 @@
-import { apiErrorSchema, sellerSnapshotSchema } from "@cfp/kith-inn-v1-shared/api";
-import type { SellerSnapshot } from "@cfp/kith-inn-v1-shared";
+import {
+  apiErrorSchema,
+  sellerBookingSettingsSchema,
+  sellerSnapshotSchema
+} from "@cfp/kith-inn-v1-shared/api";
+import type { SellerBookingSettings, SellerBookingSettingsUpdate, SellerSnapshot } from "@cfp/kith-inn-v1-shared";
+import { KIV1_INTERNAL_HEADER } from "./auth";
 import { KIV1_OPERATOR_HEADER } from "./offerings";
 
 export type CmsSellerDeps = { fetch?: typeof fetch };
@@ -37,6 +42,35 @@ export async function getSeller(token: string, deps: CmsSellerDeps = {}): Promis
   }
   const doc = typeof body === "object" && body !== null ? (body as { doc?: unknown }).doc : undefined;
   const parsed = sellerSnapshotSchema.safeParse(doc);
+  if (!parsed.success) throw new CmsSellerError(502, "invalid-cms-response", "商家服务返回无效数据");
+  return parsed.data;
+}
+
+export async function updateSellerBookingSettings(
+  token: string,
+  input: SellerBookingSettingsUpdate,
+  deps: CmsSellerDeps = {}
+): Promise<SellerBookingSettings> {
+  const response = await (deps.fetch ?? fetch)(`${cmsBaseUrl()}/api/internal/kiv1/seller`, {
+    method: "PATCH",
+    headers: {
+      "content-type": "application/json",
+      [KIV1_INTERNAL_HEADER]: process.env.KITH_INN_V1_INTERNAL_TOKEN ?? "",
+      [KIV1_OPERATOR_HEADER]: token
+    },
+    body: JSON.stringify(input)
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const parsed = apiErrorSchema.safeParse(body);
+    const codeOnly = apiErrorCodeSchema.safeParse(body);
+    throw new CmsSellerError(
+      response.status,
+      parsed.success ? parsed.data.error : codeOnly.success ? codeOnly.data.error : "cms-seller-failed",
+      parsed.success ? parsed.data.message : "商家服务失败"
+    );
+  }
+  const parsed = sellerBookingSettingsSchema.safeParse(body);
   if (!parsed.success) throw new CmsSellerError(502, "invalid-cms-response", "商家服务返回无效数据");
   return parsed.data;
 }

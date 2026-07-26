@@ -10,8 +10,11 @@
 |----|-------------------|---------------|----------|-----------------|----------|-----------|------|
 | PR1 | 固化营业、可见性和分享定位契约 | US1/US2；FR1-12 | T001-T003、T026 | `specs/021-*`、v1 shared、长期契约文档；不写数据库/UI | shared test/typecheck | 约750 | 无 |
 | PR2 | 持久化租户隔离营业关闭和分享目标 | US1/US2；FR6-9 | T004-T007 | v1 payload、CMS；不开放商家 API | CMS tests | 约500 | PR1 |
-| PR3 | 暴露设置、关闭、批量状态和详情 API | US1-US3；FR1-15 | T008-T011、T016-T017 | v1 BE/CMS routes；不改 FE | route/domain tests | 约650 | PR2 |
-| PR4 | Page 4 配置和批量经营操作 | US1；FR1-8、13-16 | T012-T015 | v1 FE；不做分享详情视觉 | unit + E2E | 约650 | PR3 |
+| PR3a | 只通过受控 API 修改商家默认价 | US1；FR1 | T008a-T009a | v1 BE/CMS seller settings；不做打烊、批量状态、分享 target 或 FE | route tests | 约250 | PR2 |
+| PR3b | 只通过 seller/date 锁内受控 API 修改打烊记录 | US1；FR6-8 | T008b-T009b | v1 BE/CMS closure routes；不做批量状态、分享 target 或 FE | route/domain tests | 约650 | PR3a |
+| PR3c | 提供最多 20 餐次的逐项批量状态结果 | US1；FR2-5、FR13-15 | T010-T011 | v1 BE meal-slot routes；不做分享 target 或 FE | route/domain tests | 约350 | PR3b |
+| PR3d | 校验并暴露日期/餐次分享目标与实时详情 | US2/US3；FR9-12、FR15 | T016-T017 | v1 BE/CMS booking-batch routes；不改 FE | route/domain tests | 约450 | PR3c |
+| PR4 | Page 4 配置和批量经营操作 | US1；FR1-8、FR13-16 | T012-T015 | v1 FE；不做分享详情视觉 | unit + E2E | 约650 | PR3d |
 | PR5 | 日期/餐次分享和历史实时详情 | US2/US3；FR9-16 | T018-T023 | v1 FE/BE client/E2E；不重构顾客浏览 | unit + E2E | 约500 | PR4 |
 | PR6 | 高保真视觉和验收证据 | US3；FR13-16 | T024-T025、T027 | Page 4 CSS/E2E/验收记录；不扩功能 | screenshot + verify + 真机 | 约400 | PR5 |
 
@@ -34,8 +37,10 @@
 
 **Independent Test**: 单餐及混合批量开放/停止、整天/单餐打烊、默认价固化和已有订单冲突均返回准确逐项结果。
 
-- [ ] T008 [P] [US1] 为 CMS 关闭 CRUD、设置和营业关闭商家 API 补 route/domain tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
-- [ ] T009 [US1] 实现 CMS 关闭 CRUD，以及默认价与营业关闭 API、CMS client 和领域校验于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
+- [x] T008a [P] [US1] 为 CMS 与商家默认价设置 API 补 route tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
+- [x] T009a [US1] 实现 seller-scoped 默认价 API 与 CMS client 于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
+- [ ] T008b [P] [US1] 为 CMS 关闭 CRUD 与营业关闭商家 API 补 route/domain tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
+- [ ] T009b [US1] 实现 seller/date 锁内的 CMS 关闭 CRUD、商家 API、CMS client 和领域校验于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
 - [ ] T010 [P] [US1] 为批量开放/停止、部分失败和可恢复状态补测试于 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts`
 - [ ] T011 [US1] 实现最多20餐次的逐项批量状态 API 于 `apps/kith-inn-v1-be/src/`
 - [ ] T012 [P] [US1] 为 Page 4 上下文、可见性、选择、pending、部分失败和返回模式补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
@@ -70,7 +75,7 @@
 
 ## Dependencies & Execution Order
 
-`PR1 → PR2 → PR3 → PR4 → PR5 → PR6`。US1 的商家工作流依赖 PR1-3；US2 依赖真实餐次状态；US3 依赖分享详情。每片合并前不开始下一片。T027 只能按真实设备事实勾选。
+`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027 只能按真实设备事实勾选。
 
 ## Implementation Strategy
 
