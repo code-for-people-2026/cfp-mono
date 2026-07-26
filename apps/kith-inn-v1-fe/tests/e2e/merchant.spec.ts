@@ -318,6 +318,18 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
     "placeholder",
     "每行：菜名 [主料] 分类\n例如：\n红烧肉 猪肉 荤\n清炒时蔬 素"
   );
+  const importInputLayout = await importInput.evaluate((element) => {
+    const wrapper = element.parentElement;
+    if (!wrapper) return { inputHeight: 0, wrapperContentHeight: 0 };
+    const wrapperStyle = window.getComputedStyle(wrapper);
+    return {
+      inputHeight: element.getBoundingClientRect().height,
+      wrapperContentHeight: wrapper.clientHeight
+        - Number.parseFloat(wrapperStyle.paddingTop)
+        - Number.parseFloat(wrapperStyle.paddingBottom)
+    };
+  });
+  expect(importInputLayout.inputHeight).toBeGreaterThanOrEqual(importInputLayout.wrapperContentHeight - 1);
   await taroButton(page, /^收起导入$/).click();
   await expect(offeringImportInput(page)).toHaveCount(0);
 

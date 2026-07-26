@@ -1059,6 +1059,7 @@ button.offering-add-action::before {
 }
 
 .import-card textarea {
+  height: 230rpx;
   min-height: 230rpx;
   margin-bottom: 18rpx;
   padding: 20rpx;
@@ -1068,6 +1069,12 @@ button.offering-add-action::before {
   color: #29231e;
   font-size: 25rpx;
   line-height: 1.5;
+}
+
+.import-card .taro-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
 }
 
 .import-card button {
