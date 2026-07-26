@@ -86,7 +86,7 @@ export default function MerchantBatches() {
   const [title, setTitle] = useState("");
   const [batches, setBatches] = useState<BatchEntry[]>([]);
   const [closingId, setClosingId] = useState<string | number | null>(null);
-  const [pending, setPending] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(initialContext ? null : "settings-load");
   const [failures, setFailures] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [loadFailed, setLoadFailed] = useState(false);
@@ -95,12 +95,12 @@ export default function MerchantBatches() {
   const loadRevision = useRef(0);
 
   const loadSlots = async (context?: BookingConfigContext) => {
-    const revision = ++loadRevision.current;
     const days = bookingWeekDates(context?.weekStart ?? date);
     if (days.length === 0) {
       await Taro.showToast({ title: "请输入工作周的周一日期", icon: "none" });
       return;
     }
+    const revision = ++loadRevision.current;
     const range = { from: days[0]!, to: days.at(-1)! };
     setLoading(true);
     setLoadFailed(false);
@@ -119,6 +119,7 @@ export default function MerchantBatches() {
       if (revision !== loadRevision.current) return;
       const authError = [loadedSlots, settings, loadedClosures].find((result) =>
         result.status === "rejected" && handledAuthFailure(result.reason));
+      setClosures(loadedClosures.status === "fulfilled" ? loadedClosures.value : []); setClosuresFailed(loadedClosures.status === "rejected");
       if (authError || loadedSlots.status === "rejected") {
         if (!authError) {
           setLoadFailed(true);
@@ -129,8 +130,6 @@ export default function MerchantBatches() {
       const docs = loadedSlots.value;
       const defaultPriceCents = settings.status === "fulfilled" ? settings.value.defaultPriceCents : undefined;
       setSlots(docs);
-      setClosures(loadedClosures.status === "fulfilled" ? loadedClosures.value : []);
-      setClosuresFailed(loadedClosures.status === "rejected");
       setSettingsFailed(settings.status === "rejected");
       const defaultYuan = defaultPriceCents === undefined ? "" : priceInputValue(defaultPriceCents);
       setDefaultPriceYuan(defaultYuan);
@@ -161,7 +160,8 @@ export default function MerchantBatches() {
     else {
       void api.getBookingSettings()
         .then(({ defaultPriceCents }) => setDefaultPriceYuan(priceInputValue(defaultPriceCents)))
-        .catch((error: unknown) => { if (!handledAuthFailure(error)) setSettingsFailed(true); });
+        .catch((error: unknown) => { if (!handledAuthFailure(error)) setSettingsFailed(true); })
+        .finally(() => setPending(null));
       void api.listBookingBatches().then(setBatches).catch(() => undefined);
     }
   }, []);
@@ -203,7 +203,7 @@ export default function MerchantBatches() {
       const nextDefault = priceInputValue(settings.defaultPriceCents);
       setConfigs((current) => Object.fromEntries(Object.entries(current).map(([id, config]) => {
         const slot = slots.find((item) => String(item.id) === id);
-        return [id, slot?.priceCents === null && !priceOverrides.has(id)
+        return [id, slot?.orderStatus === "draft" && slot.priceCents === null && !priceOverrides.has(id)
           ? { ...config, priceYuan: nextDefault }
           : config];
       })));
@@ -232,6 +232,7 @@ export default function MerchantBatches() {
         for (const id of selected) {
           const current = slots.find((slot) => String(slot.id) === String(id));
           if (!current) continue;
+          if (current.orderStatus === "open") { ready.push(id); continue; }
           const config = configs[String(id)] ?? initialConfig(current);
           const input = buildBookingConfig({ ...config, orderStatus: current.orderStatus });
           if (!input || input.priceCents === null || input.orderDeadline === null) {
@@ -268,16 +269,12 @@ export default function MerchantBatches() {
   };
 
   const reloadClosures = async () => {
-    if (weekDays.length === 0) return;
-    setPending("closures");
+    if (weekDays.length === 0) return; setPending("closures");
     try {
-      setClosures(await api.listServiceClosures(weekDays[0]!, weekDays.at(-1)!));
-      setClosuresFailed(false);
+      setClosures(await api.listServiceClosures(weekDays[0]!, weekDays.at(-1)!)); setClosuresFailed(false);
     } catch (error) {
       if (!handledAuthFailure(error)) await Taro.showToast({ title: "打烊安排加载失败", icon: "none" });
-    } finally {
-      setPending(null);
-    }
+    } finally { setPending(null); }
   };
 
   const toggleClosure = async (date: string, occasion: MealSlot["occasion"] | null, closure?: ServiceClosure) => {
@@ -492,12 +489,10 @@ export default function MerchantBatches() {
           <Text className="section-title">批量操作</Text>
           <Text className="meta">已选择 {selected.length} 个餐次，单次最多 20 个。</Text>
           <View className="batch-actions">
-            <Button className="primary" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("open")}>
-              {pending === "bulk:open" ? "开放中…" : "批量开放"}
-            </Button>
-            <Button className="danger" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("stop")}>
-              {pending === "bulk:stop" ? "停止中…" : "批量停止"}
-            </Button>
+            <Button className="primary" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("open")}>{
+              pending === "bulk:open" ? "开放中…" : "批量开放"}</Button>
+            <Button className="danger" disabled={pending !== null || loading || selected.length === 0} onClick={() => void bulkStatus("stop")}>{
+              pending === "bulk:stop" ? "停止中…" : "批量停止"}</Button>
           </View>
         </View>
       )}
@@ -505,9 +500,8 @@ export default function MerchantBatches() {
       <View className="card batch-create">
         <Input disabled={pending !== null || loading} placeholder="批次标题（可不填）" value={title} onInput={(event) => setTitle(event.detail.value)} />
         <Text className="meta">已选择 {selected.length} 个餐次</Text>
-        <Button className="primary" disabled={pending !== null || loading} onClick={() => void createBatch()}>
-          {pending === "create" ? "创建中…" : "创建预订批次"}
-        </Button>
+        <Button className="primary" disabled={pending !== null || loading} onClick={() => void createBatch()}>{
+          pending === "create" ? "创建中…" : "创建预订批次"}</Button>
       </View>
 
       {batches.map((entry) => (
@@ -533,9 +527,8 @@ export default function MerchantBatches() {
           {String(closingId) === String(entry.doc.id) && (
             <View className="close-confirmation">
               <Text>{batchCloseText(entry.doc)}</Text>
-              <Button className="danger" disabled={pending !== null} onClick={() => void closeBatch(entry.doc.id)}>
-                {pending === `batch:${entry.doc.id}` ? "关闭中…" : "确认关闭批次"}
-              </Button>
+              <Button className="danger" disabled={pending !== null} onClick={() => void closeBatch(entry.doc.id)}>{
+                pending === `batch:${entry.doc.id}` ? "关闭中…" : "确认关闭批次"}</Button>
               <Button disabled={pending !== null} onClick={() => setClosingId(null)}>取消</Button>
             </View>
           )}
