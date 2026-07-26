@@ -41,8 +41,12 @@ describe("servicePayload", () => {
     delete process.env.KITH_INN_V1_INTERNAL_TOKEN;
     expect((await servicePayload(jsonRequest({ openid: "x" })) as Response).status).toBe(500);
     process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
-    expect((await servicePayload(jsonRequest({ openid: "x" })) as Response).status).toBe(401);
-    expect((await servicePayload(jsonRequest({ openid: "x" }, { "x-kith-inn-v1-internal": "wrong" })) as Response).status).toBe(401);
+    const missing = await servicePayload(jsonRequest({ openid: "x" })) as Response;
+    expect(missing.status).toBe(401);
+    await expect(missing.json()).resolves.toEqual({ error: "internal-unauthorized" });
+    const wrong = await servicePayload(jsonRequest({ openid: "x" }, { "x-kith-inn-v1-internal": "wrong" })) as Response;
+    expect(wrong.status).toBe(401);
+    await expect(wrong.json()).resolves.toEqual({ error: "internal-unauthorized" });
     expect(mocks.getPayload).not.toHaveBeenCalled();
   });
 

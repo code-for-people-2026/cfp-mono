@@ -48,5 +48,17 @@ describe("merchant booking settings routes", () => {
       getSeller: vi.fn(async () => { throw new Error("offline"); })
     }));
     expect((await unavailable.request("/", { headers: auth })).status).toBe(502);
+    const internalAuthFailed = bookingSettingsRoutes(SECRET, deps({
+      updateSettings: vi.fn(async () => {
+        throw new CmsSellerError(401, "internal-unauthorized", "商家服务失败");
+      })
+    }));
+    expect((await internalAuthFailed.request("/", {
+      method: "PATCH", headers: auth, body: JSON.stringify({ defaultPriceCents: 3200 })
+    })).status).toBe(502);
+    const operatorAuthFailed = bookingSettingsRoutes(SECRET, deps({
+      getSeller: vi.fn(async () => { throw new CmsSellerError(401, "unauthorized", "登录失效"); })
+    }));
+    expect((await operatorAuthFailed.request("/", { headers: auth })).status).toBe(401);
   });
 });

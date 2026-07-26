@@ -30,8 +30,9 @@ export function bookingSettingsRoutes(secret: string, deps: BookingSettingsDeps 
     if (!(error instanceof CmsSellerError)) {
       return { status: 502 as const, body: { error: "cms-unavailable", message: "商家服务暂不可用" } };
     }
-    const status: 401 | 403 | 404 | 409 | 422 | 502 =
-      ([401, 403, 404, 409, 422] as const).includes(error.status as 401)
+    const status: 401 | 403 | 404 | 409 | 422 | 502 = error.code === "internal-unauthorized"
+      ? 502
+      : ([401, 403, 404, 409, 422] as const).includes(error.status as 401)
       ? error.status as 401 | 403 | 404 | 409 | 422
       : 502;
     return { status, body: { error: error.code, message: error.message } };

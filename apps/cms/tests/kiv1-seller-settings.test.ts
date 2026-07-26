@@ -1,7 +1,10 @@
 import { issueOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({ getPayload: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  getPayload: vi.fn(), createLocalReq: vi.fn(), initTransaction: vi.fn(),
+  commitTransaction: vi.fn(), killTransaction: vi.fn()
+}));
 vi.mock("payload", async (importOriginal) => ({
   ...(await importOriginal<typeof import("payload")>()), ...mocks
 }));
@@ -14,14 +17,19 @@ const INTERNAL = "internal-secret";
 const originalEnv = { ...process.env };
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
 
-function payloadWith() {
+function payloadWith(legacySlots: Array<{ id: number; date: string }> = []) {
   return {
-    find: vi.fn(async ({ collection }: { collection: string }) => collection === "kiv1_operators"
-      ? { docs: [{ id: 1, seller: 7, active: true }] }
-      : { docs: [{ id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" }] }),
-    update: vi.fn(async ({ id, data }: { id: string | number; data: Record<string, unknown> }) => ({
-      id, name: "桃子", status: "active", ...data
-    }))
+    find: vi.fn(async ({ collection }: { collection: string }) => {
+      if (collection === "kiv1_operators") return { docs: [{ id: 1, seller: 7, active: true }] };
+      if (collection === "kiv1_meal_slots") return { docs: legacySlots };
+      return { docs: [{ id: 7, name: "桃子", defaultPriceCents: 3000, status: "active" }] };
+    }),
+    update: vi.fn(async ({ collection, id, data }: {
+      collection: string; id: string | number; data: Record<string, unknown>;
+    }) => collection === "kiv1_sellers"
+      ? { id, name: "桃子", status: "active", ...data }
+      : { id, seller: 7, date: "2026-07-27", ...data }),
+    db: { name: "sqlite" }
   };
 }
 
@@ -32,6 +40,8 @@ const request = (init: RequestInit = {}) => new Request("http://cms.test/api/int
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.createLocalReq.mockResolvedValue({ transactionID: Promise.resolve("tx") });
+  mocks.initTransaction.mockResolvedValue(true);
   process.env.KITH_INN_V1_JWT_SECRET = SECRET;
   process.env.KITH_INN_V1_INTERNAL_TOKEN = INTERNAL;
 });
@@ -47,7 +57,7 @@ describe("seller booking settings", () => {
   });
 
   it("updates only the scoped seller default price through service auth", async () => {
-    const payload = payloadWith();
+    const payload = payloadWith([{ id: 11, date: "2026-07-27" }, { id: 12, date: "2026-07-27" }]);
     mocks.getPayload.mockResolvedValue(payload);
     const response = await PATCH(request({
       method: "PATCH",
@@ -55,9 +65,18 @@ describe("seller booking settings", () => {
       body: JSON.stringify({ defaultPriceCents: 3200 })
     }));
     expect(response.status).toBe(200);
-    expect(payload.update).toHaveBeenCalledWith({
-      collection: "kiv1_sellers", id: 7, data: { defaultPriceCents: 3200 }, overrideAccess: true
-    });
+    expect(payload.update.mock.calls.map(([input]) => input)).toEqual([
+      expect.objectContaining({
+        collection: "kiv1_meal_slots", id: 11, data: { priceCents: 3000 }, req: expect.anything()
+      }),
+      expect.objectContaining({
+        collection: "kiv1_meal_slots", id: 12, data: { priceCents: 3000 }, req: expect.anything()
+      }),
+      expect.objectContaining({
+        collection: "kiv1_sellers", id: 7, data: { defaultPriceCents: 3200 }, req: expect.anything()
+      })
+    ]);
+    expect(mocks.commitTransaction).toHaveBeenCalledOnce();
     await expect(response.json()).resolves.toEqual({ defaultPriceCents: 3200 });
   });
 
@@ -70,7 +89,9 @@ describe("seller booking settings", () => {
     }));
     expect((await call({ defaultPriceCents: -1 })).status).toBe(422);
     expect((await call({ defaultPriceCents: 3200, sellerId: 9 })).status).toBe(422);
-    expect((await call({ defaultPriceCents: 3200 }, "wrong")).status).toBe(401);
+    const internalFailure = await call({ defaultPriceCents: 3200 }, "wrong");
+    expect(internalFailure.status).toBe(401);
+    await expect(internalFailure.json()).resolves.toEqual({ error: "internal-unauthorized" });
     expect((await PATCH(request({ method: "PATCH", body: "{" }))).status).toBe(401);
   });
 });
