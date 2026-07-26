@@ -17,7 +17,7 @@ const INTERNAL = "internal-secret";
 const originalEnv = { ...process.env };
 const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
 
-function payloadWith(legacySlots: Array<{ id: number; date: string }> = []) {
+function payloadWith(legacySlots: Array<{ id: number; date: string; orderStatus: "open" | "closed" }> = []) {
   return {
     find: vi.fn(async ({ collection }: { collection: string }) => {
       if (collection === "kiv1_operators") return { docs: [{ id: 1, seller: 7, active: true }] };
@@ -57,7 +57,10 @@ describe("seller booking settings", () => {
   });
 
   it("updates only the scoped seller default price through service auth", async () => {
-    const payload = payloadWith([{ id: 11, date: "2026-07-27" }, { id: 12, date: "2026-07-27" }]);
+    const payload = payloadWith([
+      { id: 11, date: "2026-07-27", orderStatus: "open" },
+      { id: 12, date: "2026-07-27", orderStatus: "closed" }
+    ]);
     mocks.getPayload.mockResolvedValue(payload);
     const response = await PATCH(request({
       method: "PATCH",
@@ -77,6 +80,14 @@ describe("seller booking settings", () => {
       })
     ]);
     expect(mocks.commitTransaction).toHaveBeenCalledOnce();
+    expect(payload.find).toHaveBeenCalledWith(expect.objectContaining({
+      collection: "kiv1_meal_slots",
+      where: { and: [
+        { seller: { equals: 7 } },
+        { orderStatus: { in: ["open", "closed"] } },
+        { priceCents: { equals: null } }
+      ] }
+    }));
     await expect(response.json()).resolves.toEqual({ defaultPriceCents: 3200 });
   });
 

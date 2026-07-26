@@ -72,7 +72,7 @@ export async function PATCH(req: Request) {
         collection: "kiv1_meal_slots",
         where: { and: [
           { seller: { equals: scope.sellerId } },
-          { orderStatus: { equals: "open" } },
+          { orderStatus: { in: ["open", "closed"] } },
           { priceCents: { equals: null } }
         ] },
         limit: 0,
