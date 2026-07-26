@@ -61,9 +61,9 @@
 | PR5-Booking | 菜单与预订配置往返保持工作周和餐次上下文 | US4、FR-025~030/031 | 菜单页、`pages/merchant/batches/index.tsx`、booking 纯逻辑/E2E、长期文档 | 不改服务端契约；不做换菜或最终换肤 | query 解析、预填、自动加载与返回刷新 E2E | 约 340 行 | PR5-Swap |
 | PR6 | Page 3 在目标窄屏形成完整高保真视觉层 | SC-005/009、FR-006/010~014/025/031~033 | `src/app.css`、本功能 `quickstart.md` | 不再改变业务规则；不提交 Prompt | 354×786 视觉验收、定向 E2E、`pnpm verify` | 约 520 行 | PR5-Booking、PR-Assets |
 
-PR1 超过默认 400 行是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。额外风险是跨文件术语或需求映射不一致、以及较长 diff 导致 review 遗漏；对应缓解为 requirements checklist、FR/SC 到 Task/PR 的逐项映射、`speckit-analyze` 跨产物一致性检查、`git diff --check`，以及 Codex review 每轮新增意见清零后再收口。
+PR1 超过约 400 行宽松参考值，是因为全套 spec 的规格、研究、模型、契约、验收和任务必须相互引用并同时通过 Spec Kit 前置检查；拆开会留下不可执行的规划中间态，预计低于 800 行。额外风险是跨文件术语或需求映射不一致、以及较长 diff 导致 review 遗漏；对应缓解为 requirements checklist、FR/SC 到 Task/PR 的逐项映射、`speckit-analyze` 跨产物一致性检查、`git diff --check`，以及 Codex review 每轮新增意见清零后再收口。
 
-原先约 520 行的 PR-Guard 已按持久化边界与服务集成拆为 PR-Guard-Store、PR-Guard-Service，各自可独立验证且目标单一。PR3、PR4 与 PR6 略高于默认预算，但分别只有无功能回退的周视图迁移、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
+原先约 520 行的 PR-Guard 已按持久化边界与服务集成拆为 PR-Guard-Store、PR-Guard-Service，各自可独立验证且目标单一。PR3、PR4 与 PR6 略高于约 400 行宽松参考值，但分别只有无功能回退的周视图迁移、生成目标一致性和视觉层一个核心不变量；测试与对应实现必须同片才能独立验收，均低于 800 行。换菜与预订衔接已因可独立验收而拆为两个 PR。
 
 依赖链为 `PR1 → PR-Guard-Store → PR-Guard-Service → PR2 → PR3 → PR4 → PR5-Swap → PR5-Booking → PR6`；资产链为 `PR1 → PR-Assets → PR6`。同一时间只推进一个运行时代码 PR。
 
