@@ -494,7 +494,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
         <Button size="mini" onClick={requestWeekRefresh}>刷新菜单</Button>
       </View>
       <View className="menu-week-heading">
-        <Button aria-label="上一周" size="mini" onClick={() => changeWeek(-1)}>‹</Button>
+        <Button className="menu-week-arrow" aria-label="上一周" size="mini" onClick={() => changeWeek(-1)}>‹</Button>
         <View>
           <Text className="section-title">{formatWeekRange(currentWeek)}</Text>
           <Text className="subtitle">先排菜，再统一开放预订</Text>
@@ -506,7 +506,7 @@ const MerchantMenuView = forwardRef<MenuPageHandle>(function MerchantMenuView(_p
             onClick={() => void generate(weekEditableTargets)}
           >重新生成</Button>
         )}
-        <Button aria-label="下一周" size="mini" onClick={() => changeWeek(1)}>›</Button>
+        <Button className="menu-week-arrow" aria-label="下一周" size="mini" onClick={() => changeWeek(1)}>›</Button>
       </View>
 
       {loadState === "loading" && <View className="card page-state"><Text>正在加载工作周菜单</Text></View>}
