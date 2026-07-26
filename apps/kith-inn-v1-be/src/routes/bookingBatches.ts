@@ -1,12 +1,16 @@
 import {
   bookingBatchCreateSchema,
   bookingBatchListQuerySchema,
+  bookingBatchTargetedCreateSchema,
   bookingBatchUpdateSchema
 } from "@cfp/kith-inn-v1-shared/api";
 import type {
   BookingBatch,
+  BookingBatchMealSlotSummary,
+  BookingShareTarget,
   BookingBatchUpdate,
   CmsBookingBatchCreate,
+  CmsBookingBatchTargetedCreate,
   CmsCustomerBookingBatch,
   MealSlot
 } from "@cfp/kith-inn-v1-shared";
@@ -21,6 +25,7 @@ import {
 import {
   CmsBookingBatchError,
   createBookingBatch as createBookingBatchFn,
+  getBookingBatch as getBookingBatchFn,
   getCustomerBookingBatch as getCustomerBookingBatchFn,
   listBookingBatches as listBookingBatchesFn,
   updateBookingBatch as updateBookingBatchFn
@@ -34,7 +39,11 @@ import { customerAuth, type CustomerAppVars } from "../middleware/customerAuth";
 
 export type BookingBatchesDeps = {
   listBookingBatches: (token: string, status?: BookingBatch["status"]) => Promise<BookingBatch[]>;
-  createBookingBatch: (token: string, input: CmsBookingBatchCreate) => Promise<BookingBatch>;
+  getBookingBatch: (token: string, id: string | number) => Promise<BookingBatch>;
+  createBookingBatch: (
+    token: string,
+    input: CmsBookingBatchCreate | CmsBookingBatchTargetedCreate
+  ) => Promise<BookingBatch>;
   updateBookingBatch: (token: string, id: string | number, input: BookingBatchUpdate) => Promise<BookingBatch>;
   getMealSlot: (token: string, id: string | number) => Promise<MealSlot>;
   now: () => string;
@@ -43,6 +52,7 @@ export type BookingBatchesDeps = {
 
 const defaultDeps: BookingBatchesDeps = {
   listBookingBatches: (token, status) => listBookingBatchesFn(token, status),
+  getBookingBatch: (token, id) => getBookingBatchFn(token, id),
   createBookingBatch: (token, input) => createBookingBatchFn(token, input),
   updateBookingBatch: (token, id, input) => updateBookingBatchFn(token, id, input),
   getMealSlot: (token, id) => getMealSlotFn(token, id),
@@ -65,10 +75,23 @@ function dependencyError(c: Context, error: unknown) {
   if (!(error instanceof CmsMealSlotError) && !(error instanceof CmsBookingBatchError)) {
     return c.json({ error: "cms-unavailable", message: "预订批次服务暂不可用" }, 502);
   }
+  if (error.code === "internal-unauthorized") {
+    return c.json({ error: "cms-unavailable", message: "预订批次服务暂不可用" }, 502);
+  }
   const status = ([401, 403, 404, 409, 422] as const).includes(error.status as 401)
     ? error.status as 401 | 403 | 404 | 409 | 422
     : 502;
   return c.json({ error: error.code, message: error.message }, status);
+}
+
+function targetMatchesSlots(target: BookingShareTarget, slots: MealSlot[]): boolean {
+  if (slots.some(({ date }) => date !== target.date)) return false;
+  return target.kind === "day" || (slots.length === 1 && slots[0]?.occasion === target.occasion);
+}
+
+function slotSummary(slot: MealSlot): BookingBatchMealSlotSummary {
+  const { id, date, occasion, orderStatus, orderDeadline, priceCents } = slot;
+  return { id, date, occasion, orderStatus, orderDeadline, priceCents };
 }
 
 export function bookingBatchesRoutes(secret: string, deps: BookingBatchesDeps = defaultDeps) {
@@ -89,17 +112,23 @@ export function bookingBatchesRoutes(secret: string, deps: BookingBatchesDeps = 
   app.post("/", async (c) => {
     const body = await bodyOf(c);
     if (!body.ok) return c.json({ error: "invalid-json", message: "请求不是合法 JSON" }, 400);
-    const parsed = bookingBatchCreateSchema.safeParse(body.value);
-    if (!parsed.success) return c.json({ error: "invalid-booking-batch", message: "预订批次参数无效" }, 422);
+    const targeted = bookingBatchTargetedCreateSchema.safeParse(body.value);
+    const legacy = bookingBatchCreateSchema.safeParse(body.value);
+    const input = targeted.success ? targeted.data : legacy.success ? legacy.data : null;
+    if (input === null) return c.json({ error: "invalid-booking-batch", message: "预订批次参数无效" }, 422);
     const token = c.get("operatorToken");
     try {
-      const slots = await Promise.all(parsed.data.mealSlotIds.map((id) => deps.getMealSlot(token, id)));
+      const slots = await Promise.all(input.mealSlotIds.map((id) => deps.getMealSlot(token, id)));
       assertBatchSlotsAvailable(slots, deps.now());
+      if (targeted.success && !targetMatchesSlots(targeted.data.target, slots)) {
+        return c.json({ error: "booking-share-target-mismatch", message: "分享定位与所选餐次不一致" }, 422);
+      }
       const base = {
-        title: parsed.data.title ?? defaultBookingBatchTitle(slots),
+        title: input.title ?? defaultBookingBatchTitle(slots),
         status: "open" as const,
-        mealSlotIds: parsed.data.mealSlotIds,
-        createdById: c.get("operatorId")
+        mealSlotIds: input.mealSlotIds,
+        createdById: c.get("operatorId"),
+        ...(targeted.success ? { target: targeted.data.target } : {})
       };
       let lastConflict: CmsBookingBatchError | undefined;
       for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -116,6 +145,17 @@ export function bookingBatchesRoutes(secret: string, deps: BookingBatchesDeps = 
       if (error instanceof BookingAvailabilityError) {
         return c.json({ error: error.code, message: "所选餐次不可预订" }, error.status);
       }
+      return dependencyError(c, error);
+    }
+  });
+
+  app.get("/:id", async (c) => {
+    const token = c.get("operatorToken");
+    try {
+      const doc = await deps.getBookingBatch(token, c.req.param("id"));
+      const slots = await Promise.all(doc.mealSlotIds.map((id) => deps.getMealSlot(token, id)));
+      return c.json({ doc, share: bookingBatchShare(doc), slots: slots.map(slotSummary) });
+    } catch (error) {
       return dependencyError(c, error);
     }
   });

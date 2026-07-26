@@ -11,7 +11,9 @@ import type {
 } from "./schemas";
 import type {
   bookingBatchCreateSchema,
+  bookingBatchDetailResponseSchema,
   bookingBatchListResponseSchema,
+  bookingBatchMealSlotSummarySchema,
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
   bookingBatchTargetedCreateSchema,
@@ -123,6 +125,8 @@ export type BookingBatchCreate = z.infer<typeof bookingBatchCreateSchema>;
 export type BookingBatchTargetedCreate = z.infer<typeof bookingBatchTargetedCreateSchema>;
 export type BookingBatchUpdate = z.infer<typeof bookingBatchUpdateSchema>;
 export type BookingShareTarget = z.infer<typeof bookingShareTargetSchema>;
+export type BookingBatchMealSlotSummary = z.infer<typeof bookingBatchMealSlotSummarySchema>;
+export type BookingBatchDetailResponse = z.infer<typeof bookingBatchDetailResponseSchema>;
 export type BulkMealSlotBookingStatusInput = z.infer<typeof bulkMealSlotBookingStatusInputSchema>;
 export type BulkMealSlotBookingStatusResult = z.infer<typeof bulkMealSlotBookingStatusResultSchema>;
 export type BulkMealSlotBookingStatusResponse = z.infer<typeof bulkMealSlotBookingStatusResponseSchema>;

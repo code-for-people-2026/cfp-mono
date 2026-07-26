@@ -1,8 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { BookingBatch, CmsBookingBatchCreate, CmsCustomerBookingBatch } from "@cfp/kith-inn-v1-shared";
+import type {
+  BookingBatch,
+  CmsBookingBatchCreate,
+  CmsCustomerBookingBatch
+} from "@cfp/kith-inn-v1-shared";
 import {
   CmsBookingBatchError,
   createBookingBatch,
+  getBookingBatch,
   getCustomerBookingBatch,
   listBookingBatches,
   updateBookingBatch
@@ -42,6 +47,13 @@ describe("CMS booking-batch client", () => {
     );
     await expect(listBookingBatches("jwt", undefined, response({ docs: [] }))).resolves.toEqual([]);
 
+    const detailDeps = response({ doc: batch });
+    await expect(getBookingBatch("jwt", 31, detailDeps)).resolves.toEqual(batch);
+    expect(detailDeps.fetch).toHaveBeenCalledWith(
+      "http://cms.test/api/internal/kiv1/booking-batches/31",
+      { headers: { "x-kith-inn-v1-operator": "jwt" } }
+    );
+
     const input: CmsBookingBatchCreate = {
       publicId: batch.publicId,
       title: batch.title,
@@ -59,6 +71,10 @@ describe("CMS booking-batch client", () => {
         body: JSON.stringify(input)
       })
     );
+
+    const targeted = { ...input, target: { kind: "day" as const, date: "2026-07-13" } };
+    await expect(createBookingBatch("jwt", targeted, response({ doc: { ...batch, target: targeted.target } }, 201)))
+      .resolves.toMatchObject({ target: targeted.target });
 
     const closed = { ...batch, status: "closed" as const };
     const updateDeps = response({ doc: closed });

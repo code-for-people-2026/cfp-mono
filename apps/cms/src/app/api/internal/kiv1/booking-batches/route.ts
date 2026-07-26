@@ -4,7 +4,7 @@ import {
   cmsBookingBatchCreateSchema,
   cmsBookingBatchTargetedCreateSchema
 } from "@cfp/kith-inn-v1-shared/api";
-import type { BookingBatch } from "@cfp/kith-inn-v1-shared";
+import type { BookingBatch, BookingShareTarget } from "@cfp/kith-inn-v1-shared";
 import type { Where } from "payload";
 import { NextResponse } from "next/server";
 import {
@@ -51,14 +51,26 @@ export function normalizeBookingBatch(doc: BookingBatchDoc): BookingBatch {
   };
 }
 
-async function ownsAll(
+type TargetSlot = { id: string | number; date?: unknown; occasion?: unknown; orderStatus?: unknown };
+
+async function ownedSlots(
   payload: Parameters<typeof findOwned>[0],
   collection: string,
   ids: Array<string | number>,
   sellerId: string | number
-) {
-  for (const id of ids) if (!await findOwned(payload, collection, id, sellerId)) return false;
-  return true;
+): Promise<TargetSlot[] | null> {
+  const docs: TargetSlot[] = [];
+  for (const id of ids) {
+    const doc = await findOwned(payload, collection, id, sellerId);
+    if (!doc) return null;
+    docs.push(doc as TargetSlot);
+  }
+  return docs;
+}
+
+function targetMatchesSlots(target: BookingShareTarget, slots: TargetSlot[]): boolean {
+  if (slots.some(({ date, orderStatus }) => date !== target.date || orderStatus !== "open")) return false;
+  return target.kind === "day" || (slots.length === 1 && slots[0]?.occasion === target.occasion);
 }
 
 export async function GET(req: Request) {
@@ -92,16 +104,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid-json" }, { status: 400 });
   }
   const targeted = cmsBookingBatchTargetedCreateSchema.safeParse(body);
-  if (targeted.success) {
-    return NextResponse.json({ error: "targeted-booking-batch-not-enabled" }, { status: 422 });
-  }
-  const parsed = cmsBookingBatchCreateSchema.safeParse(body);
-  if (hasSellerField(body) || !parsed.success) {
+  const legacy = cmsBookingBatchCreateSchema.safeParse(body);
+  const input = targeted.success ? targeted.data : legacy.success ? legacy.data : null;
+  if (hasSellerField(body) || input === null) {
     return NextResponse.json({ error: "invalid-booking-batch" }, { status: 422 });
   }
-  const input = parsed.data;
-  if (String(input.createdById) !== String(scope.operatorId) ||
-    !await ownsAll(scope.payload, "kiv1_meal_slots", input.mealSlotIds, scope.sellerId)) {
+  const slots = await ownedSlots(scope.payload, "kiv1_meal_slots", input.mealSlotIds, scope.sellerId);
+  if (String(input.createdById) !== String(scope.operatorId) || !slots ||
+    (targeted.success && !targetMatchesSlots(targeted.data.target, slots))) {
     return NextResponse.json({ error: "invalid-booking-batch-relationship" }, { status: 422 });
   }
   try {
@@ -113,7 +123,8 @@ export async function POST(req: Request) {
         title: input.title,
         status: input.status,
         mealSlots: input.mealSlotIds,
-        createdBy: input.createdById
+        createdBy: input.createdById,
+        ...(targeted.success ? { target: targeted.data.target } : {})
       },
       overrideAccess: true
     });

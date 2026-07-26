@@ -3,6 +3,7 @@ import {
   apiErrorSchema,
   authResponseSchema,
   bookingBatchCreateSchema,
+  bookingBatchDetailResponseSchema,
   bookingBatchListResponseSchema,
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
@@ -763,6 +764,14 @@ describe("meal-slot API schemas", () => {
     expect(bookingBatchSchema.parse({ ...batch, target }).target).toEqual(target);
     expect(bookingBatchMutationResponseSchema.parse({ doc: batch, share })).toEqual({ doc: batch, share });
     expect(bookingBatchListResponseSchema.parse({ docs: [{ doc: batch, share }] }).docs).toHaveLength(1);
+    expect(bookingBatchDetailResponseSchema.parse({ doc: batch, share, slots: [{
+      id: 11,
+      date: "2026-07-13",
+      occasion: "lunch",
+      orderStatus: "open",
+      orderDeadline: "2026-07-12T01:00:00.000Z",
+      priceCents: 3000
+    }]}).slots).toHaveLength(1);
 
     expect(mealSlotBookingConfigSchema.safeParse({}).success).toBe(false);
     expect(mealSlotBookingConfigSchema.safeParse({ orderStatus: "archived" }).success).toBe(false);
@@ -786,6 +795,7 @@ describe("meal-slot API schemas", () => {
     expect(bookingBatchUpdateSchema.safeParse({ status: "open" }).success).toBe(false);
     expect(bookingBatchMutationResponseSchema.safeParse({ doc: batch, share: { ...share, sellerId: 7 } }).success)
       .toBe(false);
+    expect(bookingBatchDetailResponseSchema.safeParse({ doc: batch, share, slots: [] }).success).toBe(false);
   });
 
   it("validates booking settings, service closures and share targets", () => {

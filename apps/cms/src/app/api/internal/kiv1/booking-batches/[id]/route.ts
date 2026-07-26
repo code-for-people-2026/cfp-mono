@@ -12,6 +12,20 @@ export const dynamic = "force-dynamic";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
+export async function GET(req: Request, { params }: RouteContext) {
+  const scope = await operatorScope(req);
+  if (scope instanceof NextResponse) return scope;
+  const existing = await findOwned(
+    scope.payload,
+    "kiv1_booking_batches",
+    (await params).id,
+    scope.sellerId
+  );
+  return existing
+    ? NextResponse.json({ doc: normalizeBookingBatch(existing as Parameters<typeof normalizeBookingBatch>[0]) })
+    : NextResponse.json({ error: "not-found" }, { status: 404 });
+}
+
 export async function PATCH(req: Request, { params }: RouteContext) {
   const serviceError = requireServiceAuth(req);
   if (serviceError) return serviceError;
