@@ -445,9 +445,12 @@ describe("meal-slot booking config route", () => {
 describe("bulk meal-slot booking status route", () => {
   it("opens each unique slot independently and preserves partial failures", async () => {
     const ready = { ...existing, orderDeadline: "2026-07-11T01:00:00.000Z" };
-    const getMealSlot = vi.fn(async (_token: string, id: string | number) => (
-      String(id) === "12" ? { ...existing, id } : { ...ready, id }
-    ));
+    const getMealSlot = vi.fn(async (_token: string, id: string | number) => {
+      if (String(id) === "12") return { ...existing, id };
+      if (String(id) === "14") return { ...ready, id, orderStatus: "open" as const, orderDeadline: NOW };
+      if (String(id) === "15") return { ...ready, id, orderStatus: "open" as const };
+      return { ...ready, id };
+    });
     const updateMealSlotBookingConfig = vi.fn(async (_token, id, patch) => {
       if (String(id) === "13") throw new CmsMealSlotError(409, "service-closure-conflict", "该餐次已打烊");
       return { ...ready, id, ...patch };
@@ -457,7 +460,7 @@ describe("bulk meal-slot booking status route", () => {
       updateMealSlotBookingConfig
     })), "/bulk-booking-status", {
       method: "POST",
-      body: JSON.stringify({ mealSlotIds: [11, 11, 12, 13], action: "open" })
+      body: JSON.stringify({ mealSlotIds: [11, 11, 12, 13, 14, 15], action: "open" })
     });
 
     expect(response.status).toBe(200);
@@ -465,10 +468,12 @@ describe("bulk meal-slot booking status route", () => {
       results: [
         { id: 11, status: "updated", doc: { orderStatus: "open" } },
         { id: 12, status: "failed", error: "meal-slot-not-ready" },
-        { id: 13, status: "failed", error: "service-closure-conflict", message: "该餐次已打烊" }
+        { id: 13, status: "failed", error: "service-closure-conflict", message: "该餐次已打烊" },
+        { id: 14, status: "failed", error: "meal-slot-not-ready" },
+        { id: 15, status: "updated", doc: { orderStatus: "open" } }
       ]
     });
-    expect(getMealSlot).toHaveBeenCalledTimes(3);
+    expect(getMealSlot).toHaveBeenCalledTimes(5);
     expect(updateMealSlotBookingConfig).toHaveBeenCalledTimes(2);
   });
 

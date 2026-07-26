@@ -227,15 +227,11 @@ export function mealSlotsRoutes(secret: string, deps: MealSlotsDeps = defaultDep
       try {
         const slot = await deps.getMealSlot(token, id);
         const targetStatus = parsed.data.action === "open" ? "open" : "closed";
+        const input = nextBookingConfig(slot, { orderStatus: targetStatus }, deps.now());
         if (slot.orderStatus === targetStatus) {
           results.push({ id, status: "updated", doc: slot });
           continue;
         }
-        const input = nextBookingConfig(
-          slot,
-          { orderStatus: targetStatus },
-          deps.now()
-        );
         const doc = await deps.updateMealSlotBookingConfig(token, slot.id, input);
         results.push({ id, status: "updated", doc });
       } catch (error) {
