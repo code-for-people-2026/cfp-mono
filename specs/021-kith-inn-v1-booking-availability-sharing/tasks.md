@@ -39,8 +39,8 @@
 
 - [x] T008a [P] [US1] 为 CMS 与商家默认价设置 API 补 route tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
 - [x] T009a [US1] 实现 seller-scoped 默认价 API 与 CMS client 于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
-- [ ] T008b [P] [US1] 为 CMS 关闭 CRUD 与营业关闭商家 API 补 route/domain tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
-- [ ] T009b [US1] 实现 seller/date 锁内的 CMS 关闭 CRUD、商家 API、CMS client 和领域校验于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
+- [x] T008b [P] [US1] 为 CMS 关闭 CRUD 与营业关闭商家 API 补 route/domain tests 于 `apps/cms/tests/`、`apps/kith-inn-v1-be/src/`
+- [x] T009b [US1] 实现 seller/date 锁内的 CMS 关闭 CRUD、商家 API、CMS client 和领域校验于 `apps/cms/src/`、`apps/kith-inn-v1-be/src/`
 - [ ] T010 [P] [US1] 为批量开放/停止、部分失败和可恢复状态补测试于 `apps/kith-inn-v1-be/src/routes/mealSlots.test.ts`
 - [ ] T011 [US1] 实现最多20餐次的逐项批量状态 API 于 `apps/kith-inn-v1-be/src/`
 - [ ] T012 [P] [US1] 为 Page 4 上下文、可见性、选择、pending、部分失败和返回模式补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
