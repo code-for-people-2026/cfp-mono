@@ -22,7 +22,8 @@ export const Orders: CollectionConfig = {
   access: {
     ...cmsAccess,
     create: () => false,
-    update: () => false
+    update: () => false,
+    delete: () => false
   },
   hooks: sameSellerHooks,
   fields: [

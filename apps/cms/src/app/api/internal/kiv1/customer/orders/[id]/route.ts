@@ -1,6 +1,6 @@
 import { cmsCustomerOrderUpdateSchema, customerOrderCancelSchema } from "@cfp/kith-inn-v1-shared/api";
 import { NextResponse } from "next/server";
-import { customerWriteScope, withCustomerOrderLock } from "@/lib/kiv1-internal";
+import { customerWriteScope, lockKiv1Order, withKiv1Transaction } from "@/lib/kiv1-internal";
 import { normalizeOrder } from "../../../orders/route";
 import { batchPublicId, databaseId, writeRelationshipsAvailable } from "../route";
 
@@ -22,8 +22,8 @@ async function persistOwnedOrder(
   const storedOrderId = databaseId(id);
   if (!storedOrderId) return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
   try {
-    return await withCustomerOrderLock(scope.payload, storedOrderId, async (transactionReq) => {
-      const owned = await scope.payload.find({
+    return await withKiv1Transaction(scope.payload, async (transactionReq) => {
+      const findOwnedOrder = () => scope.payload.find({
         collection: "kiv1_orders",
         where: { and: [
           { id: { equals: storedOrderId } }, { seller: { equals: scope.sellerId } },
@@ -31,14 +31,11 @@ async function persistOwnedOrder(
         ] },
         limit: 1, depth: 0, overrideAccess: true, req: transactionReq
       });
-      if (!owned.docs[0]) return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
-      if ((owned.docs[0] as { status?: unknown }).status !== input.expectedStatus) {
-        return NextResponse.json({
-          error: "customer-order-status-changed",
-          message: "订单状态已变化，请重试"
-        }, { status: 409 });
+      const preliminary = await findOwnedOrder();
+      if (!preliminary.docs[0]) {
+        return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
       }
-      const stored = owned.docs[0] as { mealSlot?: unknown; customerProfile?: unknown };
+      const stored = preliminary.docs[0] as { mealSlot?: unknown; customerProfile?: unknown };
       const relationId = (value: unknown) => typeof value === "object" && value !== null && "id" in value
         ? (value as { id: string | number }).id : value as string | number;
       const price = await writeRelationshipsAvailable(scope.payload, transactionReq, {
@@ -47,6 +44,15 @@ async function persistOwnedOrder(
         requireActiveProfile: input.requireActiveProfile
       });
       if (price instanceof NextResponse) return price;
+      await lockKiv1Order(scope.payload, transactionReq, storedOrderId);
+      const locked = await findOwnedOrder();
+      if (!locked.docs[0]) return NextResponse.json({ error: "customer-order-not-found" }, { status: 404 });
+      if ((locked.docs[0] as { status?: unknown }).status !== input.expectedStatus) {
+        return NextResponse.json({
+          error: "customer-order-status-changed",
+          message: "订单状态已变化，请重试"
+        }, { status: 409 });
+      }
       const doc = await scope.payload.update({
         collection: "kiv1_orders", id: storedOrderId,
         data: input.reprice ? { ...input.data, unitPriceCents: price } : input.data,

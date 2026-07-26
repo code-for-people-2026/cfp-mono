@@ -128,7 +128,10 @@ function payloadWith(options: {
     : vi.fn(async ({ id, data }: { id: string; data: Record<string, unknown> }) => ({
       ...currentOrders.find((doc) => String(doc.id) === id), id, ...data
     }));
-  const execute = vi.fn(async () => ({ rows: [] }));
+  const execute = vi.fn(async (args: unknown) => {
+    void args;
+    return { rows: [] };
+  });
   return {
     find, create, update, execute,
     db: { name: options.database ?? "postgres", sessions: { tx: { db: {} } }, execute }
@@ -333,7 +336,8 @@ describe("customer order persistence boundary", () => {
       collection: "kiv1_orders", id: 31, data: { quantity: 3, unitPriceCents: 3000 }, overrideAccess: true,
       req: expect.anything()
     }));
-    expect(payload.execute.mock.invocationCallOrder[0]).toBeLessThan(payload.find.mock.invocationCallOrder.at(-1)!);
+    expect(JSON.stringify(payload.execute.mock.calls[0]?.[0])).toContain("kiv1_sellers");
+    expect(JSON.stringify(payload.execute.mock.calls.at(-1)?.[0])).toContain("kiv1_orders");
     expect(mocks.commitTransaction).toHaveBeenCalledOnce();
     expect(JSON.stringify(await response.json())).not.toContain("openid");
   });
