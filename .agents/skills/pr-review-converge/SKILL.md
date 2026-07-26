@@ -22,7 +22,7 @@ rebase merge。始终遵守 `AGENTS.md`；本 skill 规定操作顺序，不扩�
    - 一句话目标或核心不变量；
    - 精确允许路径和明确非目标；
    - 独立验证；
-   - 依赖和人工 diff 预算。
+   - 依赖、人工 diff 规模与可审查性。
 5. 同一时间只推进一个 PR。当前 PR 合并前，不实现下一片。
 
 用户明确授权“持续推进到某目标”时，把该授权应用于既定范围内的依赖有序 PR 链；不要把它
@@ -36,8 +36,10 @@ rebase merge。始终遵守 `AGENTS.md`；本 skill 规定操作顺序，不扩�
 4. 只修改允许路径。发现正确性、安全性或数据损坏风险时在当前 PR 内闭环；无关改进放入
    后续任务，不顺手扩大范围。
 5. 完成后运行独立验证、文档链接检查（若适用）、`git diff --check`、人工 diff 统计和
-   `pnpm verify`。默认人工 diff `<400`；`>400` 解释不可再拆原因；未经发起人同意不得以
-   `>800` 开 PR。
+   `pnpm verify`。约 400 行人工 diff 只作为宽松的审查负担参考，不是硬门槛；无论行数多少，
+   都要确认目标单一、改动内聚、验证完整且 reviewer 能可靠理解行为和风险。diff 明显偏大时
+   在 PR 说明中交代不能继续拆分的原因、额外审查风险和对应验证；人工 diff 超过约 800 行
+   时，先取得发起人对当前组织方式和审查质量保障的明确同意。
 6. 审计 diff 和 status，仅 stage 当前切片文件，使用 Conventional Commits。
 
 ## 发布 Ready PR
@@ -81,7 +83,8 @@ rebase merge。始终遵守 `AGENTS.md`；本 skill 规定操作顺序，不扩�
 - 最新 Codex review 明确没有新的 actionable comment；
 - unresolved thread 数为 0；
 - `mergeStateStatus` 为 `CLEAN`；
-- PR 仍只包含已授权切片，且人工 diff 未越过门禁。
+- PR 仍只包含已授权切片，目标单一、改动内聚、验证完整且保持可审查；超过约 800 行人工
+  diff 时已经取得发起人明确同意。
 
 把通过上述门禁的 head 记录为 `VERIFIED_HEAD_SHA`，并使用
 `gh pr merge <PR> --rebase --match-head-commit "$VERIFIED_HEAD_SHA"`；head 不匹配时返回 review
@@ -96,7 +99,8 @@ rebase merge。始终遵守 `AGENTS.md`；本 skill 规定操作顺序，不扩�
    自动结束远目标。
 4. 遇到以下情况才暂停并请求用户：
    - 需要扩大路径、产品目标或外部权限；
-   - `>800` 人工 diff 无法继续拆分；
+   - 人工 diff 超过约 800 行且尚未取得发起人同意；
+   - 当前切片已经大到无法可靠 review，且无法在不破坏独立构建、验证或兼容性的前提下拆分；
    - 真实设备、人工验收、凭证、合规或其他外部门禁阻塞；
    - CI/review 指向只能通过超范围改动解决的问题；
    - 现有未提交修改无法安全归属。
