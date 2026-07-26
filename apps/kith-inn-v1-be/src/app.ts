@@ -10,6 +10,7 @@ import { healthRoutes } from "./routes/health";
 import { jielongRoutes } from "./routes/jielong";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
+import { serviceClosuresRoutes } from "./routes/serviceClosures";
 import { customerProfilesRoutes, ordersRoutes } from "./routes/orders";
 
 export function createApp(options: { jwtSecret?: string } = {}) {
@@ -26,6 +27,7 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   app.route("/customer/orders", customerOrderManagementRoutes(jwtSecret));
   app.route("/merchant/offerings", offeringsRoutes(jwtSecret));
   app.route("/merchant/booking-settings", bookingSettingsRoutes(jwtSecret));
+  app.route("/merchant/service-closures", serviceClosuresRoutes(jwtSecret));
   app.route("/merchant/meal-slots", mealSlotsRoutes(jwtSecret));
   app.route("/merchant/booking-batches", bookingBatchesRoutes(jwtSecret));
   app.route("/merchant/customer-profiles", customerProfilesRoutes(jwtSecret));
