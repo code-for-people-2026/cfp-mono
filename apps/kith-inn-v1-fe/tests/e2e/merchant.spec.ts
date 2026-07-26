@@ -288,16 +288,6 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   await page.route("**/merchant/offerings?active=all", (route) => route.fulfill({
     status: 200, contentType: "application/json", body: JSON.stringify({ docs })
   }));
-  await page.route("**/merchant/offerings/*", async (route) => {
-    if (route.request().method() !== "PATCH") return route.continue();
-    const id = Number(new URL(route.request().url()).pathname.split("/").at(-1));
-    const offering = docs.find((item) => item.id === id);
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ doc: { ...offering, active: false } })
-    });
-  });
 
   await page.goto("/");
   await enterOfferings(page);
@@ -308,8 +298,8 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   }
   await expect(page.getByText("浏览荤菜", { exact: true })).toBeVisible();
   await expect(page.getByText("停用菜", { exact: true })).toHaveCount(0);
-  await page.getByLabel("停用 浏览荤菜").click();
-  await expect(page.getByText("浏览荤菜", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("编辑 浏览荤菜")).toHaveCount(0);
+  await expect(page.getByLabel("停用 浏览荤菜")).toHaveCount(0);
   await taroButton(page, /^素菜$/).click();
   await expect(page.getByText("浏览素菜", { exact: true })).toBeVisible();
 
@@ -317,6 +307,8 @@ test("菜品库默认浏览启用菜并可进入管理和批量导入", async ({
   await expect(taroButton(page, /^完成$/)).toBeVisible();
   await expect(page.getByText("启用中", { exact: true })).toBeVisible();
   await expect(page.getByText("已停用", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("编辑 浏览荤菜")).toBeVisible();
+  await expect(page.getByLabel("停用 浏览荤菜")).toBeVisible();
   await expect(page.getByText("停用菜", { exact: true })).toBeVisible();
   await taroButton(page, /^批量导入$/).click();
   await expect(page.getByText("批量导入菜品", { exact: true })).toBeVisible();
