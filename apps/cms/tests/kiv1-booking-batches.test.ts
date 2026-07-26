@@ -23,7 +23,7 @@ const batchDoc = {
   status: "open",
   mealSlots: [11, 12],
   createdBy: 1,
-  target: { kind: "day", date: "2026-07-13" }
+  target: { kind: "day", date: "2026-07-13", occasion: null }
 };
 
 type Options = {

@@ -158,7 +158,7 @@ describe("kith-inn-v1 collections", () => {
         );
       }
       expect(access.delete!({ req: { user: { id: 1 } } }), `${item.slug}.delete admin`).toBe(
-        ["kiv1_sellers", "kiv1_service_closures"].includes(item.slug) ? false : true
+        ["kiv1_sellers", "kiv1_service_closures", "kiv1_orders"].includes(item.slug) ? false : true
       );
     }
   });

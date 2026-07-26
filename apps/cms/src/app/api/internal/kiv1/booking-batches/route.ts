@@ -34,7 +34,11 @@ const relationshipId = (value: unknown): string | number =>
     : value as string | number;
 
 export function normalizeBookingBatch(doc: BookingBatchDoc): BookingBatch {
-  const target = bookingShareTargetSchema.safeParse(doc.target);
+  const rawTarget = typeof doc.target === "object" && doc.target !== null &&
+    (doc.target as { kind?: unknown }).kind === "day"
+    ? { kind: "day", date: (doc.target as { date?: unknown }).date }
+    : doc.target;
+  const target = bookingShareTargetSchema.safeParse(rawTarget);
   return {
     id: doc.id,
     sellerId: relationshipId(doc.seller),
