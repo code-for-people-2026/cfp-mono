@@ -6,6 +6,7 @@ import {
   bookingBatchListResponseSchema,
   bookingBatchMutationResponseSchema,
   bookingBatchSchema,
+  bookingBatchTargetedCreateSchema,
   bookingBatchUpdateSchema,
   bookingShareTargetSchema,
   bulkMealSlotBookingStatusInputSchema,
@@ -13,6 +14,7 @@ import {
   bulkMarkDeliveredInputSchema,
   bulkMarkDeliveredResponseSchema,
   cmsBookingBatchCreateSchema,
+  cmsBookingBatchTargetedCreateSchema,
   cmsCustomerBookingBatchSchema,
   cmsCustomerOrderCreateSchema,
   cmsCustomerOrderUpdateSchema,
@@ -745,9 +747,10 @@ describe("meal-slot API schemas", () => {
       orderStatus: "open"
     })).toEqual({ priceCents: null, orderDeadline: openSlot.orderDeadline, orderStatus: "open" });
     expect(mealSlotSchema.parse(openSlot)).toEqual(openSlot);
-    expect(bookingBatchCreateSchema.parse({ mealSlotIds: [11, 11], title: " 7 月 13 日预订 ", target }))
-      .toEqual({ mealSlotIds: [11], title: "7 月 13 日预订", target });
-    expect(cmsBookingBatchCreateSchema.parse({
+    expect(bookingBatchCreateSchema.parse({ mealSlotIds: [11, 11], title: " 7 月 13 日预订 " }))
+      .toEqual({ mealSlotIds: [11], title: "7 月 13 日预订" });
+    expect(bookingBatchTargetedCreateSchema.parse({ mealSlotIds: [11], target }).target).toEqual(target);
+    expect(cmsBookingBatchTargetedCreateSchema.parse({
       publicId: batch.publicId,
       title: batch.title,
       status: "open",
@@ -757,6 +760,7 @@ describe("meal-slot API schemas", () => {
     }).target).toEqual(target);
     expect(bookingBatchUpdateSchema.parse({ status: "closed" })).toEqual({ status: "closed" });
     expect(bookingBatchSchema.parse(batch)).toEqual(batch);
+    expect(bookingBatchSchema.parse({ ...batch, target }).target).toEqual(target);
     expect(bookingBatchMutationResponseSchema.parse({ doc: batch, share })).toEqual({ doc: batch, share });
     expect(bookingBatchListResponseSchema.parse({ docs: [{ doc: batch, share }] }).docs).toHaveLength(1);
 
@@ -767,6 +771,15 @@ describe("meal-slot API schemas", () => {
     expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: Array.from({ length: 21 }, (_, index) => index + 1) }).success)
       .toBe(false);
     expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: [11], publicId: "leak" }).success).toBe(false);
+    expect(bookingBatchCreateSchema.safeParse({ mealSlotIds: [11], target }).success).toBe(false);
+    expect(cmsBookingBatchCreateSchema.safeParse({
+      publicId: batch.publicId,
+      title: batch.title,
+      status: "open",
+      mealSlotIds: batch.mealSlotIds,
+      createdById: batch.createdById,
+      target
+    }).success).toBe(false);
     expect(bookingBatchCreateSchema.safeParse({
       mealSlotIds: [11], target: { kind: "day", date: "2026-07-13", occasion: "lunch" }
     }).success).toBe(false);

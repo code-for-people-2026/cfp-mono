@@ -346,18 +346,24 @@ export const bookingBatchSchema = z.object({
 
 export const bookingBatchCreateSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
-  mealSlotIds: uniqueMealSlotIds,
-  target: bookingShareTargetSchema.optional()
+  mealSlotIds: uniqueMealSlotIds
 }).strict();
+
+export const bookingBatchTargetedCreateSchema = bookingBatchCreateSchema.extend({
+  target: bookingShareTargetSchema
+});
 
 export const cmsBookingBatchCreateSchema = z.object({
   publicId: z.string().uuid(),
   title: z.string().trim().min(1).max(120),
   status: z.literal("open"),
   mealSlotIds: z.array(relationshipIdSchema).min(1).max(20),
-  createdById: relationshipIdSchema,
-  target: bookingShareTargetSchema.nullable().optional()
+  createdById: relationshipIdSchema
 }).strict();
+
+export const cmsBookingBatchTargetedCreateSchema = cmsBookingBatchCreateSchema.extend({
+  target: bookingShareTargetSchema
+});
 
 export const bookingBatchUpdateSchema = z.object({ status: z.literal("closed") }).strict();
 

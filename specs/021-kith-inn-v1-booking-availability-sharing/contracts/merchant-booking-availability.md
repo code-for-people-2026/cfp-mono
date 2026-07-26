@@ -27,7 +27,7 @@
 
 ## 分享目标和详情
 
-创建批次可增加（兼容期旧调用可省略）：
+targeted 创建契约增加：
 
 ```json
 { "target": { "kind": "meal", "date": "2026-07-27", "occasion": "lunch" }, "mealSlotIds": [11] }
@@ -38,4 +38,5 @@
 ## 兼容约束
 
 - 旧批次缺少 target 时仍可列出、读取和分享。
+- 现行 `bookingBatchCreateSchema` 在持久化与路由接线完成前继续拒绝 target；PR2/PR3 端到端保存后切换到 `bookingBatchTargetedCreateSchema`，不得返回 201 后静默丢弃。
 - 本功能不改变现有顾客 session 和订单端点；“target 不作为未来访问白名单”是后续顾客端重构必须遵循的业务约束。
