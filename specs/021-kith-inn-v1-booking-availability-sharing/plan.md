@@ -50,7 +50,8 @@
 | PR7 | 为延期的顾客打烊投影补组合领域基础 | FR8；SC2 | v1 shared availability 与 tests | 不接顾客 UI/API、不宣称 FR8 完成 | 组合规则 unit tests + verify | 约 180 | PR6 |
 | PR8 | 让 Page 4 写操作在事件层同步互斥 | FR14；SC3 | Page 4、纯逻辑与 E2E | 不改变服务端幂等契约 | rapid-trigger tests + verify | 约 250 | PR7 |
 | PR9 | 让商家成功页准确说明兼容期批次范围 | FR9-13 | Page 4 与商家 E2E | 不把 batch 白名单宣称为 FR11 完成 | 页面文案 E2E + verify | 约 100 | PR8 |
-| PR10 | 补齐剩余仓库内验收场景 | SC1/SC5；FR13-14 | Page 4 E2E、视觉基线与 quickstart | 自动化不冒充真人计时或真机分享 | 一周功能流 + 状态视觉回归 + verify | 约 450 | PR9 |
+| PR10 | 补齐一周经营功能流自动化 | SC1；FR13-14 | Page 4 E2E 与 quickstart | 不以自动化时长冒充真人计时 | 一周 workflow E2E + verify | 约 250 | PR9 |
+| PR11 | 补齐缺失状态的 375×812 视觉证据 | SC5；FR13 | Page 4 E2E、视觉基线与 quickstart | 不改产品行为、不冒充真机安全区 | 状态截图 + 可达性断言 + verify | 约 300 | PR10 |
 
 预计值用于 review 负担评估；若实际人工 diff 超过约 800 行，必须停下取得发起人同意。
 
@@ -82,6 +83,6 @@ docs/kith-inn-v1/                       # 长期行为文档
 
 ## 外部验收门禁
 
-T027 与 T033 不属于代码 PR：前者要求已登录的微信开发者工具、微信聊天会话和真实 iPhone/Android 设备，后者要求真人按固定起止点完成三分钟可用性计时。PR6 交付核心 375×812 视觉回归，PR7–PR9 收敛复审发现的领域、互斥和文案缺口，PR10 补齐其余仓库内场景；外部证据按 [quickstart.md](./quickstart.md) 独立记录，不得以 H5 或 Playwright 执行时长代替。
+T027 与 T033 不属于代码 PR：前者要求已登录的微信开发者工具、微信聊天会话和真实 iPhone/Android 设备，后者要求真人按固定起止点完成三分钟可用性计时。PR6 交付核心 375×812 视觉回归，PR7–PR9 收敛复审发现的领域、互斥和文案缺口，PR10/PR11 分别补一周功能流和缺失视觉状态；外部证据按 [quickstart.md](./quickstart.md) 独立记录，不得以 H5 或 Playwright 执行时长代替。
 
 FR-008 的顾客打烊投影集成与 FR-011 的 seller 范围实时浏览分别记为 D001/D002，按原始产品决策留待顾客端后续规格；在完成前保持需求未完成，不把兼容期 batch 访问边界改写成目标行为。
