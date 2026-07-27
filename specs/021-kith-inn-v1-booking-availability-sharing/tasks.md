@@ -20,7 +20,8 @@
 | PR7 | 为延期顾客打烊投影补组合领域基础 | FR8；SC2 | T028 | v1 shared；不接顾客 UI/API、不宣称 FR8 完成 | unit + verify | 约180 | PR6 |
 | PR8 | Page 4 写操作事件层同步互斥 | FR14；SC3 | T029 | Page 4/纯逻辑/E2E；不改服务端幂等契约 | rapid-trigger tests + verify | 约250 | PR7 |
 | PR9 | 校准商家成功页的兼容批次范围说明 | FR9-13 | T030 | Page 4/E2E；不把 batch 白名单宣称为 FR11 完成 | E2E + verify | 约100 | PR8 |
-| PR10 | 补齐剩余仓库内验收场景 | SC1/SC5；FR13-14 | T031-T032 | Page 4 E2E/视觉基线/验收记录；不改产品行为 | workflow E2E + screenshot + verify | 约450 | PR9 |
+| PR10 | 补齐一周经营功能流自动化 | SC1；FR13-14 | T031 | Page 4 E2E/验收记录；不冒充真人计时 | workflow E2E + verify | 约250 | PR9 |
+| PR11 | 补齐缺失状态视觉证据 | SC5；FR13 | T032 | Page 4 E2E/视觉基线/验收记录；不改产品行为 | screenshot + reachability + verify | 约300 | PR10 |
 
 每片统一执行独立验证、`git diff --check`、人工 diff 统计、`pnpm verify`，并按 `pr-review-converge` 完成 Ready PR、latest-head CI、review、零 unresolved thread 和 rebase merge。
 
@@ -93,7 +94,7 @@
 
 ## Dependencies & Execution Order
 
-`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 → PR10`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027/T033 是代码 PR 之外的外部验收门禁，只能按真实设备或真人操作事实勾选；D001/D002 留给后续顾客端规格。
+`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 → PR10 → PR11`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027/T033 是代码 PR 之外的外部验收门禁，只能按真实设备或真人操作事实勾选；D001/D002 留给后续顾客端规格。
 
 ## Implementation Strategy
 

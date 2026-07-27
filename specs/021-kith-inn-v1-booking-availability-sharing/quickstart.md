@@ -42,9 +42,10 @@ T033 不得用 Playwright 执行时长替代。准备含一周可配置餐次的
 执行前必须：
 
 1. 记录待验收 commit SHA，并确认工作树干净。
-2. 使用真机可访问的 HTTPS 后端执行 `BE_BASE_URL=https://<device-accessible-host> pnpm --filter @cfp/kith-inn-v1-fe build:weapp`。
-3. 在微信开发者工具中加载当前工作树的 `apps/kith-inn-v1-fe/dist`，记录 SHA、构建时间、AppID 和后端地址；不得沿用另一工作树或旧构建。
-4. 完成开发者工具登录和真机调试连接；启用 CLI 工具服务端口仍需发起人明确确认。
+2. 确认后端采用微信云托管/云开发，或其 HTTPS 域名已加入该 AppID 的 request 合法域名；直连域名必须有有效证书并满足 ICP 备案等微信门禁。记录配置与验证结果，域名门禁失败不得归因于分享构建。
+3. 使用上述真机可访问且已获准的 HTTPS 后端执行 `BE_BASE_URL=https://<wechat-approved-host> pnpm --filter @cfp/kith-inn-v1-fe build:weapp`。
+4. 在微信开发者工具中加载当前工作树的 `apps/kith-inn-v1-fe/dist`，记录 SHA、构建时间、AppID 和后端地址；不得沿用另一工作树或旧构建。
+5. 完成开发者工具登录和真机调试连接；启用 CLI 工具服务端口仍需发起人明确确认。
 
 具备真机后需逐项记录：
 
