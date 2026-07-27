@@ -21,6 +21,35 @@ describe("桃子 v1 seed", () => {
       wechatOpenid: "taozi-v1-dev-openid",
       active: true
     });
+    expect(buildOperatorData(1, "production-operator-openid")).toEqual({
+      seller: 1,
+      wechatOpenid: "production-operator-openid",
+      active: true
+    });
+  });
+
+  it("可由生产部署注入商家 OpenID", async () => {
+    const find = vi.fn()
+      .mockResolvedValueOnce({ docs: [{ id: "seller-1" }] })
+      .mockResolvedValueOnce({ docs: [] });
+    const create = vi.fn().mockResolvedValue({ id: "operator-1" });
+
+    await applySeed({ find, create }, { operatorOpenid: "production-operator-openid" });
+
+    expect(find).toHaveBeenLastCalledWith(expect.objectContaining({
+      collection: "kiv1_operators",
+      where: {
+        and: [
+          { seller: { equals: "seller-1" } },
+          { wechatOpenid: { equals: "production-operator-openid" } }
+        ]
+      }
+    }));
+    expect(create).toHaveBeenCalledWith({
+      collection: "kiv1_operators",
+      data: buildOperatorData("seller-1", "production-operator-openid"),
+      overrideAccess: true
+    });
   });
 
   it("首次运行创建一条 seller 和一条 operator", async () => {

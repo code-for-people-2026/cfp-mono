@@ -1,0 +1,45 @@
+# kith-inn-v1 生产与微信体验版手册
+
+本文只记录配置名称和操作边界，不记录任何真实账号、OpenID、主机、域名或 secret。
+
+## 当前结论
+
+- CMS 已包含 kiv1_* collections、迁移、内部 API 和 v1 身份校验；部署无需新增业务 schema。
+- 仓库原有生产 Compose/Actions 只覆盖旧 kith-inn。截至本次审计，历史 Actions 没有 v1 CMS/BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
+- v1 领域模型支持多个 seller；当前产品入口只自动 provision 一个“桃子”seller 和一个 operator，尚无自助开店或运营后台。
+
+## ECS 自动部署
+
+工作流 .github/workflows/deploy-kith-inn-v1-production.yml 仅在相关代码合入 main 后运行，并等待同 SHA 的 ci.yml。缺任一配置时 workflow 必须失败，不能显示为一次成功但实际跳过的发布。
+
+Production Environment 需配置：
+
+- 复用基础设施 Secrets：ALIYUN_ACR_REGISTRY、ALIYUN_ACR_NAMESPACE、ALIYUN_ACR_USERNAME、ALIYUN_ACR_PASSWORD、ALIYUN_ACCESS_KEY_ID、ALIYUN_ACCESS_KEY_SECRET、ECS_HOST、ECS_USER、ECS_SSH_KEY、ECS_SSH_KNOWN_HOSTS、DATABASE_URL。
+- v1 Secrets：KITH_INN_V1_PAYLOAD_SECRET、KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。
+- Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
+
+发布顺序固定为：构建三镜像 → 推送并固定 digest → ECS 候选 Compose preflight → 创建并验证 RDS 恢复点 → 停止旧 v1 runtime 写入口 → migration → 幂等 provision → 启动 CMS/BE → loopback 与真实 HTTPS 只读 smoke → 原子提升 current release → 上传同 SHA smoke marker。v1 CMS 绑定 127.0.0.1:3312，避免和旧 kith-inn 的 3304 冲突；失败只恢复应用 runtime，不自动回滚数据库。
+
+ECS 的 Nginx/证书需人工一次性配置：将 KITH_INN_V1_BE_BASE_URL 对应 host 的 443 反代到 127.0.0.1:3311，只公开 80/443；先验证 DNS、完整证书链和 nginx -t，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
+
+## 三个微信测试账号
+
+建议固定一个账号为商家，另外两个只作为顾客：
+
+1. 在微信公众平台把三人加入该小程序的体验成员；需要调试者再加入开发者。三人必须打开同一个 AppID 构建。
+2. 商家账号在体验版中执行 wx.login，得到一次性 code。只在你控制的受信环境内，用该 AppID/AppSecret 调微信 code2Session 得到该账号针对本 AppID 的 OpenID，并直接保存为 GitHub Production secret KITH_INN_V1_OPERATOR_OPENID。不要把 AppSecret、code 或真实 OpenID 发到聊天、提交、Actions 日志或 shell history。
+3. 部署时幂等 seed 创建/调和唯一一条 kiv1_operators membership：seller=桃子、wechatOpenid=该商家 OpenID、active=true。只有命中 active membership 的 OpenID 能取得商家 JWT。
+4. 两个顾客账号无需预写 membership。顾客从商家分享的 batchPublicId 进入，客户端 wx.login；BE 用 OpenID 加 batchPublicId 解析 seller 并签发顾客 JWT。顾客 profile/order 始终按 sellerId + openid 隔离。
+
+OpenID 是 AppID 作用域内标识，不是微信号、手机号或登录密码；换 AppID 后必须重新取得。若任何旧 AppSecret 曾经出现在聊天、日志或代码中，先在微信公众平台轮换，再更新 GitHub Environment secret，旧值不得继续使用。
+
+## 体验版准备
+
+后续独立切片要把现有 release-kith-inn-weapp.yml 从旧 @cfp/kith-inn-fe 改为 v1：
+
+- checkout 已在 main 且有 kith-inn-v1-smoke-passed-<SHA> 的完整 SHA；
+- 用同一 KITH_INN_V1_BE_BASE_URL 构建 @cfp/kith-inn-v1-fe，生产构建禁止 customer dev OpenID；
+- 使用 v1 AppID 和小程序代码上传私钥，经已校验的固定出口上传体验版；
+- 上传后在微信公众平台选为体验版，由三名体验成员在开启域名校验的真机上验收商家登录、分享 batch、两名顾客分别登录和下单隔离。
+
+在取得明确外发授权前，不 push、不开 PR、不运行生产 workflow，也不上传微信体验版。

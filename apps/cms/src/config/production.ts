@@ -12,6 +12,12 @@ function required(env: Env, name: string): string {
   return value;
 }
 
+function pairConfigured(env: Env, names: [string, string]): boolean {
+  const configured = names.some((name) => Boolean(env[name]?.trim()));
+  if (configured) names.forEach((name) => required(env, name));
+  return configured;
+}
+
 /** Fail closed only at production runtime; local SQLite remains supported. */
 export function assertCmsProductionEnv(env: Env = process.env): void {
   if (env.NODE_ENV !== "production") return;
@@ -35,6 +41,9 @@ export function assertCmsProductionEnv(env: Env = process.env): void {
     throw new Error("PAYLOAD_DATABASE_URL must use non-local PostgreSQL");
   }
   required(env, "PAYLOAD_SECRET");
-  required(env, "JWT_SECRET");
-  required(env, "CMS_INTERNAL_TOKEN");
+  const legacyConfigured = pairConfigured(env, ["JWT_SECRET", "CMS_INTERNAL_TOKEN"]);
+  const v1Configured = pairConfigured(env, ["KITH_INN_V1_JWT_SECRET", "KITH_INN_V1_INTERNAL_TOKEN"]);
+  if (!legacyConfigured && !v1Configured) {
+    required(env, "JWT_SECRET");
+  }
 }

@@ -48,7 +48,10 @@ export async function probeCmsDatabase(): Promise<void> {
 
 export async function readyResponse(
   request: Request,
-  deps: ReadyDeps = { internalToken: process.env.CMS_INTERNAL_TOKEN, probe: probeCmsDatabase },
+  deps: ReadyDeps = {
+    internalToken: process.env.CMS_INTERNAL_TOKEN ?? process.env.KITH_INN_V1_INTERNAL_TOKEN,
+    probe: probeCmsDatabase,
+  },
 ) {
   if (!deps.internalToken || request.headers.get("x-internal-token") !== deps.internalToken) {
     return NextResponse.json({ ok: false, service: "cms", category: "internal_auth_failed" }, { status: 503 });
