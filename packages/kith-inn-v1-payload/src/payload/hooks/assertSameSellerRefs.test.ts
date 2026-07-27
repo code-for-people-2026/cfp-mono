@@ -1,4 +1,4 @@
-import type { Field } from "payload";
+import type { Field, PayloadRequest } from "payload";
 import { describe, expect, it, vi } from "vitest";
 import { assertSameSellerRefs, collectRelationshipRefs } from "./assertSameSellerRefs";
 
@@ -12,6 +12,9 @@ const fields: Field[] = [
     fields: [{ name: "offering", type: "relationship", relationTo: "kiv1_offerings" }]
   }
 ];
+
+const makeReq = (findByID: ReturnType<typeof vi.fn>): PayloadRequest =>
+  ({ payload: { findByID } }) as unknown as PayloadRequest;
 
 describe("collectRelationshipRefs", () => {
   it("收集顶层、has-many 和嵌套 array relationship", () => {
@@ -55,7 +58,7 @@ describe("assertSameSellerRefs", () => {
     await expect(assertSameSellerRefs({
       data,
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID } }
+      req: makeReq(findByID)
     })).resolves.toBe(data);
     expect(findByID).toHaveBeenCalledTimes(5);
   });
@@ -63,17 +66,19 @@ describe("assertSameSellerRefs", () => {
   it("update 从 originalDoc 取 seller，并校验未随 patch 重传的原关系", async () => {
     const findByID = vi.fn(async ({ id }: { id: string | number }) => ({ id, seller: { id: "seller-1" } }));
     const data = { title: "更新标题" };
+    const req = makeReq(findByID);
 
     await expect(assertSameSellerRefs({
       data,
       originalDoc: { seller: "seller-1", createdBy: 10 },
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID } }
+      req
     })).resolves.toBe(data);
     expect(findByID).toHaveBeenCalledWith({
       collection: "kiv1_operators",
       id: 10,
-      overrideAccess: true
+      overrideAccess: true,
+      req
     });
   });
 
@@ -84,7 +89,7 @@ describe("assertSameSellerRefs", () => {
     await expect(assertSameSellerRefs({
       data: { seller: 1, createdBy: 10 },
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID } }
+      req: makeReq(findByID)
     })).rejects.toThrow("跨 seller relationship 被拒绝");
   });
 
@@ -97,7 +102,7 @@ describe("assertSameSellerRefs", () => {
     await expect(assertSameSellerRefs({
       data,
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID } }
+      req: makeReq(findByID)
     })).resolves.toBe(data);
   });
 
@@ -107,7 +112,7 @@ describe("assertSameSellerRefs", () => {
     await expect(assertSameSellerRefs({
       data,
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID } }
+      req: makeReq(findByID)
     })).resolves.toBe(data);
     expect(findByID).not.toHaveBeenCalled();
   });
@@ -116,7 +121,7 @@ describe("assertSameSellerRefs", () => {
     await expect(assertSameSellerRefs({
       data: undefined,
       collection: { slug: "kiv1_booking_batches", fields },
-      req: { payload: { findByID: vi.fn() } }
+      req: makeReq(vi.fn())
     })).resolves.toEqual({});
   });
 });
