@@ -13,7 +13,6 @@ import {
   retainMealsForRefresh,
   type MerchantMealCard
 } from "@/logic/merchantHome";
-import { initialWeekStart } from "@/logic/menuWeek";
 import { ApiError, createApiClient, type RequestAdapter } from "@/services/api";
 import { createSessionStore, type Storage } from "@/store/session";
 
@@ -118,17 +117,12 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
     const pendingUrl = pendingOccasion
       ? `/pages/merchant/orders/index?date=${date}&occasion=${pendingOccasion}`
       : `/pages/merchant/orders/index?date=${date}`;
-    const deliveryOccasion = meals.find(({ card }) => card.slot && card.pendingDelivery > 0)?.card.occasion ?? meals.find(({ card }) => card.slot)?.card.occasion;
     const targetWeekStart = bookingWeekStart(date)!;
-    const operationWeekStart = initialWeekStart(new Date());
-    const bookingUrl = (occasion?: Occasion) => bookingConfigUrl(
-      occasion ? targetWeekStart : operationWeekStart,
-      occasion ? { date, occasion } : undefined,
+    const bookingUrl = (occasion: Occasion) => bookingConfigUrl(
+      targetWeekStart,
+      { date, occasion },
       "home"
     );
-    const deliveryUrl = deliveryOccasion
-      ? `/pages/merchant/orders/index?date=${date}&occasion=${deliveryOccasion}`
-      : "/pages/merchant/orders/index";
 
     return <View className="page merchant-home">
     <View className="home-brand"><Text>街坊味</Text></View>
@@ -175,12 +169,6 @@ export default class MerchantHome extends Component<Record<string, never>, HomeS
           }}>先排菜单</Button>}
         </View>;
       })}</View>
-      <View className="home-quick">
-        <Button onClick={() => goMain("/pages/merchant/menu/index")}>排本周菜单</Button>
-        <Button onClick={() => goDetail(bookingUrl())}>开放预订</Button>
-        <Button onClick={() => goMain("/pages/merchant/orders/index")}>查看订单</Button>
-        <Button onClick={() => goMain(deliveryUrl)}>配送清单</Button>
-      </View>
     </>}
     <MerchantNav active="home" />
     </View>;

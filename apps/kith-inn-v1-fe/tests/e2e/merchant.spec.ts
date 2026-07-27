@@ -110,7 +110,7 @@ test("未授权访问菜品页会回到登录", async ({ page }) => {
   await expect(page).toHaveURL(/pages\/merchant\/login\/index/);
 });
 
-test("登录进入今日工作台，隔离部分失败并通过快捷入口导航", async ({ page }) => {
+test("登录进入今日工作台，隔离部分失败并通过上下文操作导航", async ({ page }) => {
   await mockBookingOperations(page);
   const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const slots = [slot(today, "lunch"), {
@@ -164,10 +164,19 @@ test("登录进入今日工作台，隔离部分失败并通过快捷入口导�
   await expect(dinnerCard).toContainText("红烧肉 · 香菇滑鸡 · 清炒时蔬等 4菜1汤");
   await expect(dinnerCard).toContainText("已订 5 份 · 2 单已确认 · 1 单未付 · 2 单待送");
   await expect(page.getByText("商家默认价", { exact: true })).toBeVisible();
+  await expect(page.locator(".home-quick")).toHaveCount(0);
+  await expect(taroButton(page, /^(排本周菜单|开放预订|查看订单|配送清单)$/)).toHaveCount(0);
   await page.locator(".home-pending-notice").click();
   await expect(page).toHaveURL(new RegExp(`date=${today}&occasion=lunch`));
   await page.goto("/pages/merchant/home/index");
-  await dinnerCard.locator(".home-card-title").click();
+  const requestsBeforeBack = slotRequests;
+  await dinnerCard.locator(".home-open-action").click();
+  await expect(page).toHaveURL(new RegExp(`pages/merchant/batches/index.*date=${today}.*occasion=dinner.*source=home`));
+  await page.locator(".batches-page:visible taro-button-core").filter({ hasText: /^返回今日$/ }).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await expect.poll(() => slotRequests).toBeGreaterThan(requestsBeforeBack);
+  const visibleDinnerCard = page.locator(".home-meal-card:visible").filter({ hasText: "今日晚餐" });
+  await visibleDinnerCard.locator(".home-card-title").click();
   await expect(page).toHaveURL(new RegExp(`date=${today}&occasion=dinner`));
   await page.goto("/pages/merchant/home/index");
   await taroButton(page, /^菜品$/).click();
@@ -180,21 +189,6 @@ test("登录进入今日工作台，隔离部分失败并通过快捷入口导�
   await expect(page).toHaveURL(/pages\/merchant\/orders\/index/);
   await taroButton(page, /^今日$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
-  await taroButton(page, /^排本周菜单$/).click();
-  await expect(page).toHaveURL(/pages\/merchant\/menu\/index/);
-  await taroButton(page, /^今日$/).click();
-  await taroButton(page, /^查看订单$/).click();
-  await expect(page).toHaveURL(/pages\/merchant\/orders\/index$/);
-  await taroButton(page, /^今日$/).click();
-  await taroButton(page, /^配送清单$/).click();
-  await expect(page).toHaveURL(new RegExp(`date=${today}&occasion=lunch`));
-  await expect(page.getByText("当前餐次：" + today + " 午餐", { exact: true })).toBeVisible();
-  await page.goto("/pages/merchant/home/index");
-  const requestsBeforeBack = slotRequests;
-  await taroButton(page, /^开放预订$/).click();
-  await expect(page).toHaveURL(/pages\/merchant\/batches\/index/);
-  await page.goBack();
-  await expect.poll(() => slotRequests).toBeGreaterThan(requestsBeforeBack);
 });
 
 test("今日工作台整页失败后可重试为空餐次", async ({ page }) => {
@@ -209,9 +203,7 @@ test("今日工作台整页失败后可重试为空餐次", async ({ page }) => 
   await expect(page.getByText("未排菜单", { exact: true })).toHaveCount(2);
   await expect(page.locator(".home-pending-notice")).toHaveCount(0);
   await expect(taroButton(page, /^先排菜单$/)).toHaveCount(2);
-  await taroButton(page, /^配送清单$/).click();
-  await expect(page).toHaveURL(/pages\/merchant\/orders\/index$/);
-  expect(new URL(page.url()).search).toBe("");
+  await expect(page.locator(".home-quick")).toHaveCount(0);
 });
 
 test("截止和关闭餐次仍可手动加单，顾客端订单冲突只导向既有订单", async ({ page }) => {
