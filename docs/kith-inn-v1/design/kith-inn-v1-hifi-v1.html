@@ -50,6 +50,8 @@
     .content { height: calc(100% - 148px); overflow: hidden; padding: 10px 16px 18px; }
     .content.offerings-content { overflow-y: auto; padding-bottom: 92px; scrollbar-width: none; }
     .content.offerings-content::-webkit-scrollbar { display: none; }
+    .content.orders-content { overflow-y: auto; scrollbar-width: none; }
+    .content.orders-content::-webkit-scrollbar { display: none; }
     .content.no-tabs { height: calc(100% - 96px); }
     .title-row { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
     h3 { margin: 0; font-size: 27px; line-height: 1.14; letter-spacing: -.04em; }
@@ -119,7 +121,7 @@
     .order-lock-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -3px 0 9px; padding: 7px 9px; border-radius: 10px; color: #8c5b1c; background: var(--gold-soft); font-size: 9px; font-weight: 800; }
     .order-lock-note b { color: #734712; font-size: 9px; }
     .order-tools { display: grid; grid-template-columns: .8fr 1.25fr 1fr; gap: 6px; margin: -2px 0 8px; }
-    .order-tools .button { min-height: 28px; padding: 5px 8px; font-size: 10px; }
+    .order-tools .button { min-height: 44px; padding: 7px 8px; font-size: 10px; }
     .order-hint { margin: -1px 2px 8px; color: var(--muted); font-size: 9px; text-align: center; }
     .order-row { padding: 11px 12px; margin-bottom: 7px; }
     .order-row .card-title { margin-bottom: 4px; font-size: 15px; }
@@ -243,19 +245,18 @@
               <div style="height:16px"></div>
               <div class="share-card">
                 <div class="card-title"><span>桃子家常菜</span><span>🍑</span></div>
-                <div style="font-size:20px;font-weight:900;margin:12px 0 5px">本周午晚餐预订</div>
-                <div class="meta">7月27日－31日 · 共 6 个餐次</div>
-                <div class="row"><span>¥30 / 份起</span><span>点击选择餐次 →</span></div>
+                <div style="font-size:20px;font-weight:900;margin:12px 0 5px">7月27日午晚餐预订</div>
+                <div class="meta">周一 · 午餐、晚餐</div>
+                <div class="row"><span>¥30 / 份起</span><span>点击查看当天菜单 →</span></div>
               </div>
               <div class="card" style="margin-top:14px">
-                <div class="card-title"><span>已选择的餐次</span><span class="chip green">6 个</span></div>
-                <div class="summary-row"><span>周一午餐</span><b>10:30 截止</b></div>
-                <div class="summary-row"><span>周一晚餐</span><b>16:00 截止</b></div>
-                <div class="summary-row"><span>周二午餐等</span><b>还有 4 个</b></div>
+                <div class="card-title"><span>选择分享目标</span><span class="chip green">这一天</span></div>
+                <div class="segment"><span class="active">这一天</span><span>这一餐</span></div>
+                <div class="summary-row"><span>7月27日 · 周一</span><b>午餐、晚餐</b></div>
+                <div class="policy">也可切换“这一餐”；顾客点开卡片后会直接定位到对应日期或餐次。</div>
               </div>
-              <div class="button wechat" style="margin-top:16px">分享给街坊</div>
-              <div class="button secondary" style="margin-top:8px">复制入口</div>
-              <div class="policy center">分享入口只包含公开批次标识，不包含商家或顾客身份信息</div>
+              <div class="button wechat" style="margin-top:16px">分享这一天</div>
+              <div class="policy center">分享小程序卡片只包含公开批次标识，不包含商家或顾客身份信息</div>
             </div>
           </div>
         </article>
@@ -268,16 +269,16 @@
             <div class="content orders-content">
               <div class="order-date"><button aria-label="前一天">‹</button><div><b>7月27日 · 今天</b><span>周一</span></div><button aria-label="后一天">›</button></div>
               <div class="segment"><span class="active">午餐 18份</span><span>晚餐 9份</span></div>
-              <div class="order-lock-note"><span>预订中 · 3单已登记</span><b>10:30 自动锁单</b></div>
-              <div class="order-filters"><div class="order-filter active"><b>15单</b>全部</div><div class="order-filter"><b>3单</b>已登记</div><div class="order-filter"><b>5单</b>待收款</div><div class="order-filter"><b>8单</b>待配送</div></div>
+              <div class="order-lock-note"><span>已锁单 · 15单</span><b>10:30 已截止</b></div>
+              <div class="order-filters"><div class="order-filter active"><b>15单</b>全部</div><div class="order-filter"><b>5单</b>待收款</div><div class="order-filter"><b>8单</b>待配送</div><div class="order-filter"><b>2单</b>已送达</div></div>
               <div class="order-tools"><div class="button small">＋补单</div><div class="button secondary small">多选标记送达</div><div class="button secondary small" aria-label="更多工具，含复制订单清单">更多工具</div></div>
               <div class="order-hint">点击订单展开付款、送达和更多操作</div>
               <div class="card warm order-row">
-                <div class="card-title"><span>王阿姨 · 2份</span><span class="order-row-status"><span class="chip red">已登记</span><span class="order-chevron">›</span></span></div>
-                <div class="meta">幸福里 3 栋 201 · 备注：少辣 · 10:30 前可修改</div>
+                <div class="card-title"><span>王阿姨 · 2份</span><span class="order-row-status"><span class="chip green">已锁单</span><span class="order-chevron">›</span></span></div>
+                <div class="meta">幸福里 3 栋 201 · 备注：少辣 · ¥60 · 未付</div>
               </div>
               <div class="card order-row">
-                <div class="card-title"><span>李叔 · 1份</span><span class="order-row-status"><span class="chip green">已锁单</span><span class="order-chevron">›</span></span></div>
+                <div class="card-title"><span>李叔 · 1份</span><span class="order-row-status"><span class="chip red">待收款</span><span class="order-chevron">›</span></span></div>
                 <div class="meta">梧桐苑 8 栋门卫 · ¥30 · 未付 · 待配送</div>
               </div>
               <div class="card order-row">
@@ -296,7 +297,7 @@
     </section>
 
     <section>
-      <div class="flow-head"><h2>顾客端主线</h2><div class="line"></div><div class="summary">点微信群卡片 → 选择餐次与资料 → 确认登记 → 查看/修改订单</div></div>
+      <div class="flow-head"><h2>顾客端主线</h2><div class="line"></div><div class="summary">点微信群卡片 → 定位分享日期/餐次 → 确认登记 → 查看/修改订单</div></div>
       <div class="screen-grid customer">
         <article class="screen-wrap">
           <div class="step"><b>6</b> 分享卡片落地页</div>
@@ -305,7 +306,7 @@
             <div class="topbar"><div class="brand">街坊味</div><div class="mini-menu">••• ◉</div></div>
             <div class="content no-tabs">
               <div class="quiet-banner">✓ 微信已识别 · 无需注册</div>
-              <div class="hero-meal"><div class="sub">桃子家常菜</div><div style="font-size:25px;font-weight:900;margin:7px 0">本周午晚餐预订</div><div class="sub">7月27日－31日 · 按需选择餐次</div></div>
+              <div class="hero-meal"><div class="sub">桃子家常菜</div><div style="font-size:25px;font-weight:900;margin:7px 0">7月27日午晚餐预订</div><div class="sub">周一 · 按需选择午餐或晚餐</div></div>
               <div class="card">
                 <div class="card-title"><div class="meal-title"><span class="meal-icon">☀️</span><span>周一午餐</span></div><span class="chip green">可预订</span></div>
                 <div class="dish-list">红烧肉 · 香菇滑鸡 · 清炒时蔬<br>蒜蓉茄子 · 番茄蛋汤</div>
@@ -338,10 +339,10 @@
               <div class="card">
                 <div class="card-title"><span>本次预订</span><span class="text-link">返回修改</span></div>
                 <div class="summary-row"><span>周一午餐 × 1</span><b>¥30</b></div>
-                <div class="summary-row"><span>周二晚餐 × 2</span><b>¥60</b></div>
+                <div class="summary-row"><span>周一晚餐 × 2</span><b>¥60</b></div>
                 <div class="summary-row"><span class="strong">合计 3 份</span><b style="color:var(--red)">¥90</b></div>
               </div>
-              <div class="notice">提交后，餐次未截止、未关闭且桃子确认前仍可修改或取消</div>
+              <div class="notice">提交后，餐次截止或商家提前停止预订前仍可修改或取消；截止后订单统一锁定</div>
               <div class="button">确认登记</div>
               <div class="policy">本小程序不收取在线付款；付款由你与桃子线下完成。称呼和地址可在“我的订单”中停用。</div>
             </div>
@@ -356,15 +357,15 @@
             <div class="content no-tabs">
               <div class="quiet-banner">桃子家常菜 · 仅显示你的订单</div>
               <div class="card warm">
-                <div class="card-title"><span>周一午餐 · 1份</span><span class="chip red">待桃子确认</span></div>
+                <div class="card-title"><span>周一午餐 · 1份</span><span class="chip red">已登记</span></div>
                 <div class="meta">王阿姨 · 幸福里 3 栋 201 · ¥30</div>
-                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>登记成功</b><div class="meta">今天 09:43</div></div><span class="dot"></span><div class="timeline-text"><b>等待商家确认</b><div class="meta">餐次未截止、未关闭且确认前可以修改或取消</div></div></div>
+                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>登记成功</b><div class="meta">今天 09:43</div></div><span class="dot"></span><div class="timeline-text"><b>等待餐次锁单</b><div class="meta">10:30 截止或商家提前停止预订前可修改或取消</div></div></div>
                 <div class="button-row"><div class="button secondary small">修改订单</div><div class="button secondary small">取消订单</div></div>
               </div>
               <div class="card green">
-                <div class="card-title"><span>周二晚餐 · 2份</span><span class="chip green">已确认</span></div>
+                <div class="card-title"><span>周二晚餐 · 2份</span><span class="chip green">已锁单</span></div>
                 <div class="meta">王阿姨 · 幸福里 3 栋 201 · ¥60</div>
-                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>桃子已确认</b><div class="meta">订单已锁定，不能再修改</div></div><span class="dot"></span><div class="timeline-text"><b>等待送达</b><div class="meta">付款线下完成</div></div></div>
+                <div class="order-timeline"><span class="dot done"></span><div class="timeline-text"><b>餐次已截止</b><div class="meta">订单已锁定，不能再修改</div></div><span class="dot"></span><div class="timeline-text"><b>等待送达</b><div class="meta">付款线下完成</div></div></div>
               </div>
               <div class="button secondary">停用我的送餐资料</div>
               <div class="policy center">历史订单会保留，停用后不再用于新的预订</div>
