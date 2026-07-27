@@ -330,9 +330,10 @@ const bookingBatchDetailClientSchema = z.strictObject({
   share: bookingBatchShareSchema,
   slots: z.array(bookingBatchMealSlotSummarySchema).check(z.minLength(1), z.maxLength(20))
 }).check(z.refine(({ doc, slots }) => {
+  const docIds = doc.mealSlotIds.map((id) => String(id));
   const ids = new Set(slots.map(({ id }) => String(id)));
-  return ids.size === slots.length && doc.mealSlotIds.length === slots.length &&
-    doc.mealSlotIds.every((id) => ids.has(String(id)));
+  return new Set(docIds).size === docIds.length && ids.size === slots.length &&
+    docIds.length === slots.length && docIds.every((id) => ids.has(id));
 }));
 
 function parseBookingBatchMutation(value: unknown): BookingBatchMutationResponse {

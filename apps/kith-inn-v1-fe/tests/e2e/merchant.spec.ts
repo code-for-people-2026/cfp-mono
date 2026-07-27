@@ -2078,6 +2078,8 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
 });
 
 test("紧凑历史按状态排序并只在查看时加载实时详情", async ({ page }) => {
+  const clockNow = new Date();
+  await page.clock.install({ time: clockNow });
   await mockBookingOperations(page);
   const publicIds = [
     "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
@@ -2093,26 +2095,45 @@ test("紧凑历史按状态排序并只在查看时加载实时详情", async ({
   const open = entry(72, "open", "开放入口");
   const archived = entry(73, "archived", "归档入口");
   let detailRequests = 0;
-  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [closed, open, archived] })));
-  await page.route("**/merchant/booking-batches/71", (route) => {
+  let releaseHistory: () => void = () => {};
+  const historyReady = new Promise<void>((resolve) => { releaseHistory = resolve; });
+  await page.route("**/merchant/booking-batches", async (route) => {
+    await historyReady;
+    return route.fulfill(jsonResponse({ docs: [closed, open, archived] }));
+  });
+  await page.route("**/merchant/booking-batches/*", (route) => {
     detailRequests += 1;
-    return route.fulfill(jsonResponse({ ...closed, slots: [{ id: 951, date: "2026-07-27", occasion: "lunch",
-      orderStatus: "closed", orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 2800 }] }));
+    const entryDetail = route.request().url().endsWith("/71") ? closed : open;
+    return route.fulfill(jsonResponse({ ...entryDetail, slots: [{ id: 951, date: "2026-07-27", occasion: "lunch",
+      orderStatus: entryDetail.doc.status === "open" ? "open" : "closed",
+      orderDeadline: new Date(clockNow.getTime() + 60_000).toISOString(), priceCents: 2800 }] }));
   });
 
   await page.goto("/");
   await taroButton(page, /^开发登录$/).click();
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
   await page.goto("/pages/merchant/batches/index");
+  await expect(page.getByText("正在加载分享历史…", { exact: true })).toBeVisible();
+  await expect(page.getByText("还没有分享入口", { exact: true })).toHaveCount(0);
+  releaseHistory();
   const cards = page.locator(".batch-card.compact");
   await expect(cards).toHaveCount(3);
   expect(await cards.locator(".section-title").allTextContents()).toEqual(["开放入口", "已关闭入口", "归档入口"]);
   expect(detailRequests).toBe(0);
+  await page.getByLabel("查看 开放入口 详情").click();
+  await expect(page.locator(".share-success-state")).toContainText("预订中");
+  await page.getByLabel("停用分享入口").click();
+  await expect(taroButton(page, /^确认停用入口$/)).toBeVisible();
   await page.getByLabel("查看 已关闭入口 详情").click();
   await expect(page.locator(".share-success-state")).toContainText("以下为当前实时餐次信息");
   await expect(page.locator(".share-success-state")).toContainText("已停止");
-  expect(detailRequests).toBe(1);
+  expect(detailRequests).toBe(2);
   await expect(page.getByLabel("停用分享入口")).toHaveCount(0);
+  await page.getByLabel("查看 开放入口 详情").click();
+  await expect(page.getByLabel("停用分享入口")).toBeVisible();
+  await expect(taroButton(page, /^确认停用入口$/)).toHaveCount(0);
+  await page.clock.fastForward(60_001);
+  await expect(page.locator(".share-success-state")).toContainText("已截止");
 });
 
 test("专用页面新建和选择顾客、显式更新与重提后继续订单生命周期", async ({ page }) => {

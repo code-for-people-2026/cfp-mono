@@ -150,6 +150,17 @@ export function bookingSlotLiveStatusText(
     : "已截止";
 }
 
+export function bookingDetailRefreshDelay(
+  slots: Array<Pick<MealSlot, "orderStatus" | "orderDeadline">>,
+  now: string
+): number | null {
+  const nowTime = Date.parse(now);
+  const nextDeadline = slots.flatMap((slot) => slot.orderStatus === "open" && slot.orderDeadline !== null
+    ? [Date.parse(slot.orderDeadline)]
+    : []).filter((deadline) => deadline > nowTime).sort((left, right) => left - right)[0];
+  return nextDeadline === undefined ? null : Math.min(nextDeadline - nowTime + 1, 2_147_483_647);
+}
+
 export function sortBookingBatchHistory(
   entries: BookingBatchListResponse["docs"]
 ): BookingBatchListResponse["docs"] {
