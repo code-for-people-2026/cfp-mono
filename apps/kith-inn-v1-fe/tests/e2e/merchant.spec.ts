@@ -2047,15 +2047,26 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
       orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 3200 }
   ];
   let createBody: unknown;
+  let detailRequests = 0;
+  const createdDoc = { id: 61, sellerId: 1, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+    title: "7月27日预订", status: "open", mealSlotIds: [951, 952], createdById: 1,
+    target: { kind: "day" as const, date: "2026-07-27" } };
   await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
   await page.route("**/merchant/booking-batches", (route) => {
     if (route.request().method() === "GET") return route.fulfill(jsonResponse({ docs: [] }));
     createBody = route.request().postDataJSON();
-    const doc = { id: 61, sellerId: 1, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
-      title: "7月27日预订", status: "open", mealSlotIds: [951, 952], createdById: 1,
-      target: { kind: "day", date: "2026-07-27" } };
-    return route.fulfill(jsonResponse({ doc, share: { title: doc.title,
-      path: `/pages/booking/index?batch=${doc.publicId}&date=2026-07-27` } }, 201));
+    return route.fulfill(jsonResponse({ doc: createdDoc, share: { title: createdDoc.title,
+      path: `/pages/booking/index?batch=${createdDoc.publicId}&date=2026-07-27` } }, 201));
+  });
+  await page.route("**/merchant/booking-batches/61", (route) => {
+    detailRequests += 1;
+    return route.fulfill(jsonResponse({ doc: createdDoc, share: { title: createdDoc.title,
+      path: `/pages/booking/index?batch=${createdDoc.publicId}&date=2026-07-27` }, slots: [
+      { id: 951, date: "2026-07-27", occasion: "lunch", orderStatus: "open",
+        orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 2600 },
+      { id: 952, date: "2026-07-27", occasion: "dinner", orderStatus: "open",
+        orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 3200 }
+    ] }));
   });
 
   await page.goto("/");
@@ -2072,7 +2083,8 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   await expect(success).toContainText("预订已开放");
   await expect(success).toContainText("2026-07-27 当天");
   await expect(success).toContainText("2 个餐次");
-  await expect(success).toContainText("¥28/份起");
+  await expect(success).toContainText("¥26/份起");
+  expect(detailRequests).toBe(1);
   await expect(success.getByLabel("复制入口")).toBeVisible();
   await expect(success.locator("taro-button-core").filter({ hasText: /^分享给街坊$/ })).toHaveCount(0);
 });
@@ -2095,13 +2107,19 @@ test("紧凑历史按状态排序并只在查看时加载实时详情", async ({
   const open = entry(72, "open", "开放入口");
   const archived = entry(73, "archived", "归档入口");
   let detailRequests = 0;
+  let historyRequests = 0;
   let releaseHistory: () => void = () => {};
   const historyReady = new Promise<void>((resolve) => { releaseHistory = resolve; });
   await page.route("**/merchant/booking-batches", async (route) => {
+    historyRequests += 1;
     await historyReady;
+    if (historyRequests > 1) return route.fulfill({ status: 500, body: "{}" });
     return route.fulfill(jsonResponse({ docs: [closed, open, archived] }));
   });
   await page.route("**/merchant/booking-batches/*", (route) => {
+    if (route.request().method() === "PATCH") {
+      return route.fulfill(jsonResponse({ ...open, doc: { ...open.doc, status: "closed" } }));
+    }
     detailRequests += 1;
     const entryDetail = route.request().url().endsWith("/71") ? closed : open;
     return route.fulfill(jsonResponse({ ...entryDetail, slots: [{ id: 951, date: "2026-07-27", occasion: "lunch",
@@ -2134,6 +2152,12 @@ test("紧凑历史按状态排序并只在查看时加载实时详情", async ({
   await expect(taroButton(page, /^确认停用入口$/)).toHaveCount(0);
   await page.clock.fastForward(60_001);
   await expect(page.locator(".share-success-state")).toContainText("已截止");
+  await page.getByLabel("停用分享入口").click();
+  await taroButton(page, /^确认停用入口$/).click();
+  await expect(page.locator(".share-success-state")).toContainText("已关闭");
+  await taroButton(page, /^返回经营设置$/).click();
+  await expect(page.getByText("分享历史加载失败", { exact: true })).toBeVisible();
+  await expect(page.locator(".batch-card.compact").filter({ hasText: "开放入口" })).toContainText("已关闭");
 });
 
 test("专用页面新建和选择顾客、显式更新与重提后继续订单生命周期", async ({ page }) => {

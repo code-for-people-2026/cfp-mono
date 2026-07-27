@@ -331,19 +331,20 @@ export default function MerchantBatches() {
         ...(title.trim() ? { title: title.trim() } : {}),
         ...selection
       });
-      const ids = new Set(selection.mealSlotIds.map(String));
-      const detailSlots = slots.filter(({ id }) => ids.has(String(id))).map((slot) => ({
-        id: slot.id, date: slot.date, occasion: slot.occasion, orderStatus: slot.orderStatus,
-        orderDeadline: slot.orderDeadline, priceCents: slot.priceCents
-      }));
       setBatches((current) => sortBookingBatchHistory([entry, ...current.filter(({ doc }) =>
         String(doc.id) !== String(entry.doc.id))]));
-      setActiveDetail({ ...entry, slots: detailSlots });
-      setDetailNow(new Date().toISOString());
-      setDetailMode("created");
-      setDetailFailedId(null);
       setShareTarget(null);
       setTitle("");
+      try {
+        setActiveDetail(await api.getBookingBatch(entry.doc.id));
+        setDetailNow(new Date().toISOString());
+        setDetailMode("created");
+        setDetailFailedId(null);
+      } catch (error) {
+        if (handledAuthFailure(error)) return;
+        setDetailFailedId(entry.doc.id);
+        await Taro.showToast({ title: "入口已创建，请重试实时详情", icon: "none" });
+      }
     } catch (error) {
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "创建失败", icon: "none" });
@@ -392,8 +393,14 @@ export default function MerchantBatches() {
       setActiveDetail((current) => current && String(current.doc.id) === String(id)
         ? { ...current, ...entry }
         : current);
+      const applyClosedEntry = (current: BatchEntry[]) => sortBookingBatchHistory([
+        entry,
+        ...current.filter(({ doc }) => String(doc.id) !== String(entry.doc.id))
+      ]);
+      setBatches(applyClosedEntry);
       setClosingId(null);
       await loadBatches();
+      setBatches(applyClosedEntry);
     } catch (error) {
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "关闭失败", icon: "none" });
