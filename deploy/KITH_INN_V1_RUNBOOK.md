@@ -18,7 +18,9 @@ Production Environment 需配置：
 - v1 Secrets：KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。前两个还需注入共享 CMS runtime，供 v1 内部 API 校验使用。
 - Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
 
-发布顺序固定为：等待同 SHA 的共享 CMS 生产 workflow 成功 → 构建 CMS ops 与 v1 BE 两个镜像 → 推送并固定 digest → 验证共享 CMS `127.0.0.1:3304` readiness → ECS 候选 preflight → 停止旧 v1 BE 写入口 → 创建并验证 RDS 恢复点 → migration → 幂等 provision → 等待 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA）→ 原子提升 current release → 上传同 SHA smoke marker。共享 CMS 不随 v1 候选停止或恢复；失败只恢复 v1 BE runtime，不自动回滚数据库。
+共享 schema migration 只有现有 `Deploy Production` workflow 可以执行；它负责统一停写、备份和更新共享 CMS。v1 workflow 不重复运行全局 migration。
+
+v1 发布顺序固定为：等待同 SHA 的共享 CMS 生产 workflow 成功 → 构建 CMS ops 与 v1 BE 两个镜像 → 推送并固定 digest → 验证共享 CMS `127.0.0.1:3304` readiness → ECS 候选 preflight → 停止旧 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 事务化幂等 provision → 等待 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA）→ 原子提升 current release → 上传同 SHA smoke marker。共享 CMS 不随 v1 候选停止或恢复；失败只恢复 v1 BE runtime，不自动回滚数据库。
 
 ECS 的 Nginx/证书需人工一次性配置：将 KITH_INN_V1_BE_BASE_URL 对应 host 的 443 反代到 127.0.0.1:3311，只公开 80/443；先验证 DNS、完整证书链和 nginx -t，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
 

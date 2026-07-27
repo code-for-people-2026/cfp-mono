@@ -158,7 +158,7 @@ export async function runProjectSeed(
     : null;
   const seed = await applyV1Seed(
     payload as Parameters<typeof applyV1Seed>[0],
-    { operatorOpenid: options.operatorOpenid },
+    { operatorOpenid: options.operatorOpenid, req: options.req },
   );
   return { project: "kiv1" as const, reset, seed };
 }
@@ -170,7 +170,7 @@ async function main() {
   const operatorOpenid = project === "kith-inn" ? resolveTrialOpenid() : resolveV1OperatorOpenid();
   const payload = await getPayload({ config });
   try {
-    const result = project === "kith-inn" && !resetDev
+    const result = !resetDev
       ? await withSeedTransaction(payload, (req) => runProjectSeed(payload, project, false, { operatorOpenid, req }))
       : await runProjectSeed(payload, project, resetDev, { operatorOpenid });
     if (result.reset) {

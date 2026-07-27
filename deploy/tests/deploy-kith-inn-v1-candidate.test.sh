@@ -32,6 +32,9 @@ candidate next
 run_deploy success preflight | jq -e '.status == "candidate_ready"' >/dev/null
 grep -q 'image rm registry/ops@sha256:old' "$tmp/compose.log"
 ! grep -q 'image rm registry/ops@sha256:current' "$tmp/compose.log"
+if run_deploy gate-fail gate-writes >"$tmp/gate-fail.out" 2>"$tmp/gate-fail.err"; then exit 1; fi
+grep -q '"stage":"write_gate","recovery":"rolled_back"' "$tmp/gate-fail.err"
+[[ ! -e "$tmp/.kith-inn-v1-write-gate" ]]
 run_deploy success gate-writes | jq -e '.status == "writes_gated"' >/dev/null
 grep -q 'stop kith-inn-v1-be' "$tmp/compose.log"
 ! grep -q 'stop kith-inn-v1-cms' "$tmp/compose.log"
@@ -39,4 +42,10 @@ if run_deploy smoke >"$tmp/fail.out" 2>"$tmp/fail.err"; then exit 1; fi
 grep -q '"recovery":"rolled_back"' "$tmp/fail.err"
 [[ "$(cat "$tmp/.kith-inn-v1-current")" == "$current" ]]
 grep -q "$current/env" "$tmp/smoke.log"
+candidate next
+run_deploy success preflight >/dev/null
+run_deploy success gate-writes >/dev/null
+if run_deploy all-smoke >"$tmp/all-smoke.out" 2>"$tmp/all-smoke.err"; then exit 1; fi
+grep -q '"stage":"smoke","recovery":"manual_data_recovery_required"' "$tmp/all-smoke.err"
+grep -q -- "-f $current/compose.yml --env-file $current/env stop kith-inn-v1-be" "$tmp/compose.log"
 echo "kith-inn-v1 candidate deployment tests passed"

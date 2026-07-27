@@ -15,7 +15,7 @@ curl_bin="${CURL_BIN:-curl}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
 runtime=(kith-inn-v1-be)
-all_services=(kith-inn-v1-cms-migrate kith-inn-v1-cms-provision "${runtime[@]}")
+all_services=(kith-inn-v1-cms-provision "${runtime[@]}")
 
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
 value() {
@@ -96,7 +96,11 @@ prune_unused_v1_images() {
 recover() {
   local stage="$1"
   compose "$next_compose" "$next_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
-  if [[ -n "$current_release" ]] && restore_current; then rm -f "$gate_marker"; fail "$stage" rolled_back; fi
+  if [[ -n "$current_release" ]]; then
+    if restore_current; then rm -f "$gate_marker"; fail "$stage" rolled_back; fi
+    compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
+    fail "$stage" manual_data_recovery_required
+  fi
   fail "$stage" candidate_stopped
 }
 
@@ -121,14 +125,21 @@ if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
   current_valid || fail preflight no_change
   if [[ "$action" == "restore-runtime" ]]; then
     [[ -f "$gate_marker" ]] || { echo '{"status":"skipped","reason":"write_gate_not_attempted"}'; exit 0; }
-    restore_current || fail restore manual_data_recovery_required
+    if ! restore_current; then
+      compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
+      fail restore manual_data_recovery_required
+    fi
     rm -f "$gate_marker"
     echo '{"status":"last_good_runtime_restored"}'
     exit 0
   fi
-  compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || fail write_gate no_change
   printf "attempted\n" >"$gate_marker"
   chmod 600 "$gate_marker"
+  if ! compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1; then
+    if restore_current; then rm -f "$gate_marker"; fail write_gate rolled_back; fi
+    compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
+    fail write_gate manual_data_recovery_required
+  fi
   echo '{"status":"writes_gated"}'
   exit 0
 fi
@@ -141,9 +152,6 @@ interrupted() { trap - TERM INT HUP; recover interrupted; }
 trap interrupted TERM INT HUP
 [[ -z "$current_release" || -f "$gate_marker" ]] || fail write_gate no_change
 
-migration_output="$(compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-migrate 2>&1)" || recover migration
-migration_head="$(sed -nE 's/^✓ cms migration head ([A-Za-z0-9_]+)$/\1/p' <<<"$migration_output" | tail -n 1)"
-[[ -n "$migration_head" ]] || recover migration
 provision_output="$(compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-provision 2>&1)" || recover provision
 seller_id="$(tail -n 1 <<<"$provision_output" | jq -er 'select(.project == "kiv1") | .sellerId | tostring')" || recover provision
 
@@ -162,8 +170,15 @@ if [[ -n "$current_release" ]]; then
 fi
 printf "%s\n" "$new_release" >"$current_pointer.next" || recover persist
 chmod 600 "$current_pointer.next" || recover persist
-mv -f "$current_pointer.next" "$current_pointer" || recover persist
+trap '' TERM INT HUP
+if ! mv -f "$current_pointer.next" "$current_pointer"; then
+  trap interrupted TERM INT HUP
+  recover persist
+fi
+current_release="$new_release"
+current_compose="$new_release/compose.yml"
+current_env="$new_release/env"
 trap - TERM INT HUP
 rm -f -- "$next_env" "$next_compose" "$gate_marker"
 
-jq -cn --arg releaseSha "$release_sha" --arg migrationHead "$migration_head" --arg sellerId "$seller_id" --argjson smokeEvidence "$smoke_result" '{releaseSha:$releaseSha,migrationHead:$migrationHead,sellerId:$sellerId,smokeEvidence:$smokeEvidence,status:"passed"}'
+jq -cn --arg releaseSha "$release_sha" --arg sellerId "$seller_id" --argjson smokeEvidence "$smoke_result" '{releaseSha:$releaseSha,sellerId:$sellerId,smokeEvidence:$smokeEvidence,status:"passed"}'
