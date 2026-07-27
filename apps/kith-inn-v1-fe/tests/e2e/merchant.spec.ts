@@ -1,8 +1,13 @@
 import { expect, test, type Page } from "@playwright/test";
+import { resolve } from "node:path";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
 const jsonResponse = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
+const page4Evidence = (name: string) => resolve(process.cwd(), "../../specs/021-kith-inn-v1-booking-availability-sharing/evidence", name);
+const expectNoHorizontalOverflow = async (page: Page) => {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+};
 
 const enterOfferings = async (page: Page) => {
   await taroButton(page, /^开发登录$/).click();
@@ -2039,6 +2044,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
 });
 
 test("按日期生成只定位当天开放餐次的分享卡片", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   await mockBookingOperations(page);
   const docs = [
@@ -2074,7 +2080,11 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
   await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
   const day = page.locator(".day-operation").filter({ hasText: "2026-07-27" });
-  await day.locator("taro-button-core").filter({ hasText: /^分享这一天$/ }).click();
+  const dayShareButton = day.locator("taro-button-core").filter({ hasText: /^分享这一天$/ });
+  await expect(dayShareButton).toBeEnabled();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: page4Evidence("page4-operations-375x812.png"), animations: "disabled" });
+  await dayShareButton.click();
   await taroButton(page, /^生成分享卡片$/).click();
   expect(createBody).toEqual({
     target: { kind: "day", date: "2026-07-27" }, mealSlotIds: [951, 952]
@@ -2086,11 +2096,16 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   await expect(success).toContainText("¥26/份起");
   expect(detailRequests).toBe(1);
   await expect(success.getByLabel("复制入口")).toBeVisible();
+  await expect(success.getByLabel("复制入口")).toHaveAttribute("disabled", "false");
   await expect(success.locator("taro-button-core").filter({ hasText: /^分享给街坊$/ })).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: page4Evidence("page4-success-375x812.png"), animations: "disabled" });
 });
 
 test("紧凑历史按状态排序并只在查看时加载实时详情", async ({ page }) => {
-  const clockNow = new Date();
+  await page.setViewportSize({ width: 375, height: 812 });
+  const clockNow = new Date("2026-07-22T01:00:00.000Z");
   await page.clock.install({ time: clockNow });
   await mockBookingOperations(page);
   const publicIds = [
@@ -2137,6 +2152,9 @@ test("紧凑历史按状态排序并只在查看时加载实时详情", async ({
   const cards = page.locator(".batch-card.compact");
   await expect(cards).toHaveCount(3);
   expect(await cards.locator(".section-title").allTextContents()).toEqual(["开放入口", "已关闭入口", "归档入口"]);
+  await page.locator(".booking-history").scrollIntoViewIfNeeded();
+  await expectNoHorizontalOverflow(page);
+  await page.screenshot({ path: page4Evidence("page4-history-375x812.png"), animations: "disabled" });
   expect(detailRequests).toBe(0);
   await page.getByLabel("查看 开放入口 详情").click();
   await expect(page.locator(".share-success-state")).toContainText("预订中");
