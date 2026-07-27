@@ -108,8 +108,8 @@
     .segment { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 12px; border-radius: 13px; background: #eee7dc; }
     .segment span { padding: 8px; border-radius: 10px; text-align: center; color: var(--muted); font-size: 12px; font-weight: 800; }
     .segment .active { background: white; color: var(--ink); box-shadow: 0 2px 7px rgba(70,50,30,.08); }
-    .order-date { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px; margin-bottom: 10px; }
-    .order-date button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: white; font-size: 17px; }
+    .order-date { display: grid; grid-template-columns: 44px 1fr 44px; align-items: center; gap: 6px; margin-bottom: 10px; }
+    .order-date button { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 13px; color: var(--ink); background: white; font-size: 17px; }
     .order-date div { text-align: center; }
     .order-date b { display: block; font-size: 13px; }
     .order-date span { color: var(--muted); font-size: 10px; }
@@ -118,6 +118,15 @@
     .order-filter b { display: block; margin-bottom: 1px; color: var(--ink); font-size: 15px; }
     .order-filter.active { border-color: var(--red); color: white; background: var(--red); }
     .order-filter.active b { color: white; }
+    .order-lock-note { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -3px 0 9px; padding: 7px 9px; border-radius: 10px; color: #8c5b1c; background: var(--gold-soft); font-size: 9px; font-weight: 800; }
+    .order-lock-note b { color: #734712; font-size: 9px; }
+    .order-tools { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: -2px 0 8px; }
+    .order-tools .button { min-height: 28px; padding: 5px 8px; font-size: 10px; }
+    .order-hint { margin: -1px 2px 8px; color: var(--muted); font-size: 9px; text-align: center; }
+    .order-row { padding: 11px 12px; margin-bottom: 7px; }
+    .order-row .card-title { margin-bottom: 4px; font-size: 15px; }
+    .order-row-status { display: flex; align-items: center; gap: 6px; }
+    .order-chevron { color: #a79b8d; font-size: 18px; font-weight: 500; }
     .order-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .order-actions .button { flex: 1; min-width: 82px; }
     .quiet-banner { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; color: var(--green); font-size: 12px; font-weight: 800; }
@@ -147,7 +156,7 @@
         <h1>街坊味 v1 · 前端重构视觉基准</h1>
         <p>把复杂后台收成两条清楚主线：桃子经营一周菜单，街坊从分享卡片完成预订。</p>
       </div>
-      <div class="version">概念稿 v0.3 · 2026-07-27</div>
+      <div class="version">概念稿 v0.4 · 2026-07-27</div>
     </header>
 
     <section>
@@ -257,25 +266,29 @@
           <div class="step"><b>5</b> 订单履约</div>
           <div class="phone">
             <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
-            <div class="topbar"><div class="brand">今日订单</div><div class="topbar-tools"><span class="order-add-link">＋补单</span><div class="mini-menu">••• ◉</div></div></div>
-            <div class="content">
+            <div class="topbar"><div class="brand">订单</div><div class="topbar-tools"><span class="order-add-link">＋补单</span><div class="mini-menu">••• ◉</div></div></div>
+            <div class="content orders-content">
               <div class="order-date"><button aria-label="前一天">‹</button><div><b>7月27日 · 今天</b><span>周一</span></div><button aria-label="后一天">›</button></div>
               <div class="segment"><span class="active">午餐 18份</span><span>晚餐 9份</span></div>
-              <div class="order-filters"><div class="order-filter active"><b>15</b>全部</div><div class="order-filter"><b>3</b>待确认</div><div class="order-filter"><b>5</b>待收款</div><div class="order-filter"><b>8</b>待配送</div></div>
-              <div class="card warm">
-                <div class="card-title"><span>王阿姨 · 2份</span><span class="chip red">待确认</span></div>
-                <div class="meta">幸福里 3 栋 201 · 备注：少辣</div>
-                <div class="order-actions"><div class="button small">确认订单</div><div class="button secondary small">更多</div></div>
+              <div class="order-lock-note"><span>预订中 · 3单已登记</span><b>10:30 自动锁单</b></div>
+              <div class="order-filters"><div class="order-filter active"><b>15单</b>全部</div><div class="order-filter"><b>3单</b>已登记</div><div class="order-filter"><b>5单</b>待收款</div><div class="order-filter"><b>8单</b>待配送</div></div>
+              <div class="order-tools"><div class="button secondary small">多选标记送达</div><div class="button secondary small" aria-label="更多工具，含复制订单清单">更多工具</div></div>
+              <div class="order-hint">点击订单展开付款、送达和更多操作</div>
+              <div class="card warm order-row">
+                <div class="card-title"><span>王阿姨 · 2份</span><span class="order-row-status"><span class="chip red">已登记</span><span class="order-chevron">›</span></span></div>
+                <div class="meta">幸福里 3 栋 201 · 备注：少辣 · 10:30 前可修改</div>
               </div>
-              <div class="card">
-                <div class="card-title"><span>李叔 · 1份</span><span class="chip green">已确认</span></div>
+              <div class="card order-row">
+                <div class="card-title"><span>李叔 · 1份</span><span class="order-row-status"><span class="chip green">已锁单</span><span class="order-chevron">›</span></span></div>
                 <div class="meta">梧桐苑 8 栋门卫 · ¥30 · 未付 · 待配送</div>
-                <div class="order-actions"><div class="button secondary small">标已付（线下）</div><div class="button secondary small">标记送达</div></div>
               </div>
-              <div class="card">
-                <div class="card-title"><span>周老师 · 3份</span><span class="chip gold">待配送</span></div>
+              <div class="card order-row">
+                <div class="card-title"><span>周老师 · 3份</span><span class="order-row-status"><span class="chip gold">待配送</span><span class="order-chevron">›</span></span></div>
                 <div class="meta">街坊中心 2 楼 · 已付（线下）</div>
-                <div class="order-actions"><div class="button secondary small">标记送达</div></div>
+              </div>
+              <div class="card green order-row">
+                <div class="card-title"><span>陈姐 · 2份</span><span class="order-row-status"><span class="chip green">已送达</span><span class="order-chevron">›</span></span></div>
+                <div class="meta">春晓苑南门 · 已付（线下）</div>
               </div>
             </div>
             <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜品</div><div class="tab"><i>▤</i>菜单</div><div class="tab active"><i>≣</i>订单</div></nav>
