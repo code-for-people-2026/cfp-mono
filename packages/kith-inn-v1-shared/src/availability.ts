@@ -1,6 +1,11 @@
 import type { MealSlot, MealSlotTarget, ServiceClosure } from "./types";
 
-export type CustomerMealSlotPresentation = "hidden" | "bookable" | "deadline-passed" | "stopped";
+export type CustomerMealSlotPresentation =
+  | "hidden"
+  | "bookable"
+  | "deadline-passed"
+  | "stopped"
+  | "service-closed";
 
 export function customerMealSlotPresentation(
   slot: Pick<MealSlot, "orderStatus" | "orderDeadline">,
@@ -18,4 +23,14 @@ export function serviceClosureForTarget(
   const matchingDate = closures.filter(({ date }) => date === target.date);
   return matchingDate.find(({ occasion }) => occasion === null) ??
     matchingDate.find(({ occasion }) => occasion === target.occasion) ?? null;
+}
+
+export function customerMealSlotPresentationForTarget(
+  target: MealSlotTarget,
+  slot: Pick<MealSlot, "orderStatus" | "orderDeadline"> | null,
+  closures: ServiceClosure[],
+  now: string
+): CustomerMealSlotPresentation {
+  if (serviceClosureForTarget(closures, target) !== null) return "service-closed";
+  return slot === null ? "hidden" : customerMealSlotPresentation(slot, now);
 }
