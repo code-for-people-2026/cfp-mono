@@ -68,8 +68,8 @@
 
 ## Phase 6: Polish & Cross-Cutting
 
-- [ ] T024 实现 375×812 高保真样式于 `apps/kith-inn-v1-fe/src/app.css` 和 Page 4 语义 class
-- [ ] T025 [P] 补固定数据视觉状态与截图验收于 `apps/kith-inn-v1-e2e/`
+- [x] T024 实现 375×812 高保真样式于 `apps/kith-inn-v1-fe/src/app.css` 和 Page 4 语义 class
+- [x] T025 [P] 补固定数据视觉状态与截图验收于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 - [x] T026 [P] 更新长期行为和数据文档于 `docs/kith-inn-v1/USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md`
 - [ ] T027 完成微信真机日期/餐次分享、目标变化和安全区 smoke 并记录于 `specs/021-kith-inn-v1-booking-availability-sharing/quickstart.md`
 

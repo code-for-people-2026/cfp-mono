@@ -190,6 +190,12 @@ export default function MerchantBatches() {
     return () => clearTimeout(timer);
   }, [activeDetail, detailNow]);
 
+  useEffect(() => {
+    if (!activeDetail) return;
+    const timer = setTimeout(() => void Taro.pageScrollTo({ scrollTop: 0, duration: 0 }), 0);
+    return () => clearTimeout(timer);
+  }, [activeDetail?.doc.id]);
+
   const configure = async (slot: MealSlot, orderStatus: "open" | "closed") => {
     const config = configs[String(slot.id)] ?? initialConfig(slot);
     const input = orderStatus === "closed"
@@ -433,10 +439,13 @@ export default function MerchantBatches() {
   const sellerName = sessions.getSession()?.sellerName ?? "街坊味商家";
 
   return (
-    <View className="page batches-page">
+    <View className="page batches-page batches-shell">
       {process.env.TARO_ENV === "weapp" && <WeappShareLifecycle />}
-      <Text className="title">开放并分享</Text>
-      <Button onClick={returnToMenu}>{initialContext?.source === "home" ? "返回今日" : initialContext ? "返回菜单" : "菜单"}</Button>
+      <View className="batches-topbar">
+        <Text className="title batches-title">分享预订</Text>
+        <Button className="batches-back-button" onClick={returnToMenu}>{initialContext?.source === "home"
+          ? "返回今日" : initialContext ? "返回菜单" : "菜单"}</Button>
+      </View>
 
       {activeDetail && detailSummary && (
         <View className="share-success-state">
@@ -465,16 +474,18 @@ export default function MerchantBatches() {
               </View>
             ))}
           </View>
-          {process.env.TARO_ENV === "weapp" && (
-            <Button className="primary" openType="share" data-title={activeDetail.share.title}
-              data-path={activeDetail.share.path}>分享给街坊</Button>
-          )}
-          <Button aria-label="复制入口" disabled={pending !== null}
-            onClick={() => void copyShare(activeDetail)}>复制入口</Button>
-          {activeDetail.doc.status === "open" && closingId === null && (
-            <Button className="danger" aria-label="停用分享入口"
-              disabled={pending !== null} onClick={() => setClosingId(activeDetail.doc.id)}>停用入口</Button>
-          )}
+          <View className="share-action-stack">
+            {process.env.TARO_ENV === "weapp" && (
+              <Button className="primary" openType="share" data-title={activeDetail.share.title}
+                data-path={activeDetail.share.path}>分享给街坊</Button>
+            )}
+            <Button className="share-copy-button" aria-label="复制入口" disabled={pending !== null}
+              onClick={() => void copyShare(activeDetail)}>复制入口</Button>
+            {activeDetail.doc.status === "open" && closingId === null && (
+              <Button className="danger share-stop-button" aria-label="停用分享入口"
+                disabled={pending !== null} onClick={() => setClosingId(activeDetail.doc.id)}>停用入口</Button>
+            )}
+          </View>
           {String(closingId) === String(activeDetail.doc.id) && (
             <View className="card close-confirmation">
               <Text>{batchCloseText(activeDetail.doc)}</Text>
@@ -483,12 +494,13 @@ export default function MerchantBatches() {
               <Button disabled={pending !== null} onClick={() => setClosingId(null)}>取消</Button>
             </View>
           )}
-          <Text className="meta">分享卡片只负责定位；顾客看到的是商家当前开放的实时餐次。</Text>
-          <Button disabled={pending !== null} onClick={() => { setActiveDetail(null); setClosingId(null); }}>返回经营设置</Button>
+          <Text className="meta share-privacy-note">分享卡片只负责定位；顾客看到的是商家当前开放的实时餐次。</Text>
+          <Button className="share-return-button" disabled={pending !== null}
+            onClick={() => { setActiveDetail(null); setClosingId(null); }}>返回经营设置</Button>
         </View>
       )}
 
-      {!activeDetail && <>
+      {!activeDetail && <View className="batches-operations">
       {loading && <View className="card"><Text>正在加载本周经营安排…</Text></View>}
       {loadFailed && (
         <View className="card error-card">
@@ -531,7 +543,7 @@ export default function MerchantBatches() {
         const sharingDay = shareTarget?.kind === "day" && shareTarget.date === day;
         return (
           <View className="day-operation" key={day}>
-            <Text>{day}</Text>
+            <Text className="day-operation-date">{day}</Text>
             <View className="day-operation-actions">
               <Button
                 className={dayClosure ? "selected" : "secondary"}
@@ -574,7 +586,8 @@ export default function MerchantBatches() {
           <View className={`card batch-slot${isTarget ? " target" : ""}`} key={String(slot.id)}>
             <Text className="section-title">{label}</Text>
             {isTarget && <Text className="notice">当前餐次</Text>}
-            <Text className="meta">状态：{slot.orderStatus === "open" ? "开放" : slot.orderStatus === "closed" ? "已关闭" : "草稿"}</Text>
+            <Text className={`meta batch-slot-status ${slot.orderStatus}`}>状态：{
+              slot.orderStatus === "open" ? "开放" : slot.orderStatus === "closed" ? "已关闭" : "草稿"}</Text>
             {closure && <Text className="closure-notice">{closure.occasion === null ? "当天打烊" : "本餐打烊"}</Text>}
             <Input
               disabled={pending !== null || loading || slot.orderStatus === "open"}
@@ -641,10 +654,13 @@ export default function MerchantBatches() {
         <Button className="primary" disabled={pending !== null || loading} onClick={() => void createBatch()}>{
           pending === "create" ? "生成中…" : "生成分享卡片"}</Button>
       </View>
-      </>}
+      </View>}
 
       <View className="booking-history">
-        <Text className="section-title">分享历史</Text>
+        <View className="booking-history-heading">
+          <Text className="section-title">分享历史</Text>
+          <Text className="meta">按状态整理 · 点击查看实时详情</Text>
+        </View>
         {historyLoading && <View className="card"><Text>正在加载分享历史…</Text></View>}
         {historyFailed && <View className="card error-card"><Text>分享历史加载失败</Text>
           <Button disabled={pending !== null} onClick={() => void loadBatches()}>重试历史</Button></View>}
