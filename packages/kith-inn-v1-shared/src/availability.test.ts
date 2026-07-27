@@ -59,6 +59,7 @@ describe("customer meal-slot presentation", () => {
 
   it("makes explicit closures visible even without a meal-slot record", () => {
     expect(customerMealSlotPresentationForTarget(
+      7,
       { date: "2026-07-13", occasion: "lunch" },
       null,
       [closure()],
@@ -68,12 +69,14 @@ describe("customer meal-slot presentation", () => {
 
   it("lets full-day and meal closures override every meal-slot state", () => {
     expect(customerMealSlotPresentationForTarget(
+      7,
       { date: "2026-07-13", occasion: "lunch" },
       slot({ orderStatus: "open", orderDeadline: "2026-07-13T01:00:01.000Z" }),
       [closure()],
       NOW
     )).toBe("service-closed");
     expect(customerMealSlotPresentationForTarget(
+      7,
       { date: "2026-07-13", occasion: "dinner" },
       slot({ occasion: "dinner" }),
       [closure({ occasion: "dinner" })],
@@ -83,17 +86,36 @@ describe("customer meal-slot presentation", () => {
 
   it("falls back to meal-slot presentation when no closure matches", () => {
     expect(customerMealSlotPresentationForTarget(
+      7,
       { date: "2026-07-13", occasion: "lunch" },
       slot({ orderStatus: "open", orderDeadline: "2026-07-13T01:00:01.000Z" }),
       [closure({ occasion: "dinner" })],
       NOW
     )).toBe("bookable");
     expect(customerMealSlotPresentationForTarget(
+      7,
       { date: "2026-07-13", occasion: "lunch" },
       null,
       [],
       NOW
     )).toBe("hidden");
+  });
+
+  it("ignores matching closure targets that belong to another seller", () => {
+    expect(customerMealSlotPresentationForTarget(
+      7,
+      { date: "2026-07-13", occasion: "lunch" },
+      slot({ orderStatus: "open", orderDeadline: "2026-07-13T01:00:01.000Z" }),
+      [closure({ sellerId: 8 })],
+      NOW
+    )).toBe("bookable");
+    expect(customerMealSlotPresentationForTarget(
+      "7",
+      { date: "2026-07-13", occasion: "lunch" },
+      null,
+      [closure()],
+      NOW
+    )).toBe("service-closed");
   });
 });
 
