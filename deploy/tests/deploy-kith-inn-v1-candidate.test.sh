@@ -6,6 +6,8 @@ tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/deploy"
 sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+mkdir -p "$tmp/.kith-inn-v1-releases/.release.stale"
+printf "stale\n" >"$tmp/.kith-inn-v1-releases/.release.stale/env"
 candidate() {
   local digest="${1:-current}"
   printf "# candidate\n" >"$tmp/deploy/docker-compose.kith-inn-v1.prod.yml.next"
@@ -28,6 +30,7 @@ grep -q 'up -d --wait --wait-timeout 120 --no-deps kith-inn-v1-be' "$tmp/compose
 current="$(cat "$tmp/.kith-inn-v1-current")"
 [[ -f "$current/env" && -f "$current/compose.yml" ]]
 grep -qx "KITH_INN_V1_RELEASE_SHA='$sha'" "$current/env"
+[[ ! -e "$tmp/.kith-inn-v1-releases/.release.stale" ]]
 candidate next
 run_deploy success preflight | jq -e '.status == "candidate_ready"' >/dev/null
 grep -q 'image rm registry/ops@sha256:old' "$tmp/compose.log"

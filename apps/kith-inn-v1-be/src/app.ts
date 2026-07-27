@@ -6,7 +6,7 @@ import { bookingSettingsRoutes } from "./routes/bookingSettings";
 import { bookingBatchesRoutes, publicBookingBatchesRoutes } from "./routes/bookingBatches";
 import { customerOrderManagementRoutes, customerOrderRoutes } from "./routes/customerOrders";
 import { customerProfileRoutes } from "./routes/customerProfiles";
-import { healthRoutes } from "./routes/health";
+import { healthRoutes, readinessRoutes } from "./routes/health";
 import { jielongRoutes } from "./routes/jielong";
 import { mealSlotsRoutes } from "./routes/mealSlots";
 import { offeringsRoutes } from "./routes/offerings";
@@ -31,6 +31,7 @@ export function createApp(options: { jwtSecret?: string } = {}) {
   const app = new Hono<AppVars>();
   app.use("*", cors({ allowHeaders: ["Content-Type", "Authorization"] }));
   app.route("/health", healthRoutes());
+  app.route("/ready", readinessRoutes());
   app.route("/auth/operator", authRoutes(jwtSecret));
   app.route("/auth/customer", customerAuthRoutes(jwtSecret));
   app.route("/public/booking-batches", publicBookingBatchesRoutes(jwtSecret));

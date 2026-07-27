@@ -38,6 +38,7 @@ if [[ -e "$current_pointer" ]]; then
 fi
 current_compose="${current_release:+$current_release/compose.yml}"
 current_env="${current_release:+$current_release/env}"
+previous_release=""
 compose() {
   local compose_file="$1" env_file="$2"
   shift 2
@@ -164,9 +165,12 @@ new_release="$(mktemp -d "$release_store/.release.XXXXXX")" || recover persist
 install -m 600 "$next_env" "$new_release/env" || recover persist
 install -m 600 "$next_compose" "$new_release/compose.yml" || recover persist
 if [[ -n "$current_release" ]]; then
+  previous_release="$current_release"
   printf "%s\n" "$current_release" >"$previous_pointer.next" || recover persist
   chmod 600 "$previous_pointer.next" || recover persist
   mv -f "$previous_pointer.next" "$previous_pointer" || recover persist
+else
+  rm -f -- "$previous_pointer" || recover persist
 fi
 printf "%s\n" "$new_release" >"$current_pointer.next" || recover persist
 chmod 600 "$current_pointer.next" || recover persist
@@ -180,5 +184,10 @@ current_compose="$new_release/compose.yml"
 current_env="$new_release/env"
 trap - TERM INT HUP
 rm -f -- "$next_env" "$next_compose" "$gate_marker"
+for stored_release in "$release_store"/.release.*; do
+  [[ -d "$stored_release" ]] || continue
+  [[ "$stored_release" == "$current_release" || "$stored_release" == "$previous_release" ]] ||
+    rm -rf -- "$stored_release" || true
+done
 
 jq -cn --arg releaseSha "$release_sha" --arg sellerId "$seller_id" --argjson smokeEvidence "$smoke_result" '{releaseSha:$releaseSha,sellerId:$sellerId,smokeEvidence:$smokeEvidence,status:"passed"}'

@@ -6,9 +6,9 @@ repo="${REPOSITORY_DIR:-$(pwd)}"
 cd "$repo"
 
 write_targets() {
-  local website="$1" kith_inn="$2"
-  printf 'website=%s\nkith_inn=%s\n' "$website" "$kith_inn" >> "$GITHUB_OUTPUT"
-  printf 'affected targets: website=%s kith-inn=%s\n' "$website" "$kith_inn"
+  local website="$1" kith_inn="$2" kith_inn_v1="$3"
+  printf 'website=%s\nkith_inn=%s\nkith_inn_v1=%s\n' "$website" "$kith_inn" "$kith_inn_v1" >> "$GITHUB_OUTPUT"
+  printf 'affected targets: website=%s kith-inn=%s kith-inn-v1=%s\n' "$website" "$kith_inn" "$kith_inn_v1"
 }
 
 [[ "${GITHUB_EVENT_NAME:-}" == push ]] || { echo "production deploy only supports push" >&2; exit 1; }
@@ -18,7 +18,7 @@ head="${GITHUB_SHA:-}"
 if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]] ||
   ! git cat-file -e "$base^{commit}" 2>/dev/null ||
   ! git cat-file -e "$head^{commit}" 2>/dev/null; then
-  write_targets true true
+  write_targets true true true
   exit 0
 fi
 
@@ -27,28 +27,35 @@ printf '%s\n' "$changed_files"
 
 website_deploy=false
 kith_inn_deploy=false
+kith_inn_v1_deploy=false
 while IFS= read -r path; do
   case "$path" in
     .github/workflows/deploy-production.yml | package.json | pnpm-lock.yaml | pnpm-workspace.yaml | turbo.json)
-      write_targets true true
+      write_targets true true true
       exit 0
+      ;;
+    .github/workflows/deploy-kith-inn-v1-production.yml)
+      kith_inn_v1_deploy=true
       ;;
     deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/* | deploy/nginx.example.conf | \
       deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
     deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/create-rds-backup.sh)
-      write_targets true true
+      write_targets true true true
       exit 0
       ;;
     deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
       website_deploy=true
+      ;;
+    deploy/*kith-inn-v1*)
+      kith_inn_v1_deploy=true
       ;;
     deploy/.env.verify.example | deploy/*kith-inn*)
       kith_inn_deploy=true
       ;;
     deploy/*)
       # 新增且尚未分类的部署文件按共享契约处理，避免漏发生产目标。
-      write_targets true true
+      write_targets true true true
       exit 0
       ;;
   esac
@@ -79,8 +86,13 @@ kith_inn_affected="$(turbo_has_tasks \
   "@cfp/cms...[$base]" \
   "@cfp/kith-inn-be...[$base]" \
   "@cfp/kith-inn-fe...[$base]")"
+kith_inn_v1_affected="$(turbo_has_tasks \
+  "@cfp/cms...[$base]" \
+  "@cfp/kith-inn-v1-be...[$base]")"
 website=false
 kith_inn=false
+kith_inn_v1=false
 if [[ "$website_deploy" == true || "$website_affected" == true ]]; then website=true; fi
 if [[ "$kith_inn_deploy" == true || "$kith_inn_affected" == true ]]; then kith_inn=true; fi
-write_targets "$website" "$kith_inn"
+if [[ "$kith_inn_v1_deploy" == true || "$kith_inn_v1_affected" == true ]]; then kith_inn_v1=true; fi
+write_targets "$website" "$kith_inn" "$kith_inn_v1"

@@ -61,4 +61,14 @@ describe("assertCmsProductionEnv", () => {
     "rejects an incomplete v1-only secret pair missing %s",
     (name) => expect(() => assertCmsProductionEnv({ ...validV1ProductionEnv, [name]: "" })).toThrow(name),
   );
+
+  it.each(["KITH_INN_V1_PREVIOUS_JWT_SECRET", "KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN"])(
+    "rejects an incomplete previous v1 secret pair missing %s",
+    (name) => expect(() => assertCmsProductionEnv({
+      ...validV1ProductionEnv,
+      KITH_INN_V1_PREVIOUS_JWT_SECRET: "previous-jwt-production-value",
+      KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN: "previous-internal-production-value",
+      [name]: "",
+    })).toThrow(name),
+  );
 });

@@ -7,10 +7,12 @@ keys=(KITH_INN_RELEASE_SHA KITH_INN_CMS_IMAGE KITH_INN_CMS_OPS_IMAGE KITH_INN_BE
 values=(); for key in "${keys[@]}"; do values+=("$key=value-$key"); done
 tricky='literal${UNEXPANDED}'"'"'slash\end'
 printf '%s\n' 'services:' '  test:' '    image: busybox' '    environment:' '      VALUE: ${KITH_INN_JWT_SECRET}' >"$tmp/compose.yml"
-env "${values[@]}" KITH_INN_JWT_SECRET="$tricky" COMPOSE_ENV_OUTPUT="$tmp/env" bash "$script"
+env "${values[@]}" KITH_INN_JWT_SECRET="$tricky" KITH_INN_V1_PREVIOUS_JWT_SECRET="previous-jwt" \
+  KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN="previous-internal" COMPOSE_ENV_OUTPUT="$tmp/env" bash "$script"
 [[ "$(stat -c '%a' "$tmp/env" 2>/dev/null || stat -f '%Lp' "$tmp/env")" == 600 ]]
 docker compose -f "$tmp/compose.yml" --env-file "$tmp/env" config --format json |
   jq -e --arg value "$tricky" '(.services.test.environment.VALUE | gsub("\\$\\$"; "$")) == $value' >/dev/null
+grep -qx "KITH_INN_V1_PREVIOUS_JWT_SECRET='previous-jwt'" "$tmp/env"
 rm "$tmp/env"
 if env "${values[@]}" KITH_INN_JWT_SECRET=$'bad\nvalue' COMPOSE_ENV_OUTPUT="$tmp/env" bash "$script" 2>/dev/null; then exit 1; fi
 [[ ! -e "$tmp/env" ]]

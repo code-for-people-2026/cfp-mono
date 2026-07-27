@@ -16,6 +16,11 @@ for name in "${required[@]}"; do
   [[ -n "${value//[[:space:]]/}" ]] || missing+=("$name")
 done
 
+previous_jwt="${KITH_INN_V1_PREVIOUS_JWT_SECRET:-}"
+previous_internal="${KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN:-}"
+if [[ -n "$previous_jwt" && -z "$previous_internal" ]]; then missing+=(KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN); fi
+if [[ -n "$previous_internal" && -z "$previous_jwt" ]]; then missing+=(KITH_INN_V1_PREVIOUS_JWT_SECRET); fi
+
 if (( ${#missing[@]} == 0 )); then
   echo 'configured=true' >> "$GITHUB_OUTPUT"
   echo 'kith-inn production deployment is configured.'
