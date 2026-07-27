@@ -1,26 +1,11 @@
 name: Deploy kith-inn-v1 Production
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "turbo.json"
-      - "apps/cms/**"
-      - "apps/kith-inn-v1-be/**"
-      - "packages/**"
-      - "deploy/*kith-inn-v1*"
-      - ".github/workflows/deploy-kith-inn-v1-production.yml"
+  workflow_call:
 
 permissions:
   actions: read
   contents: read
-
-concurrency:
-  group: kith-inn-v1-production
-  cancel-in-progress: false
 
 jobs:
   deploy:
@@ -66,20 +51,6 @@ jobs:
         run: |
           run_id="$(gh run list --workflow=ci.yml --commit="$RELEASE_SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
           [[ -n "$run_id" ]] || { echo "No ci.yml run found for release SHA." >&2; exit 1; }
-          gh run watch "$run_id" --exit-status
-
-      - name: Wait for the shared CMS production rollout
-        if: steps.check.outputs.configured == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          run_id=""
-          for _ in $(seq 1 60); do
-            run_id="$(gh run list --workflow=deploy-production.yml --commit="$RELEASE_SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
-            [[ -z "$run_id" ]] || break
-            sleep 10
-          done
-          [[ -n "$run_id" ]] || { echo "No shared production workflow found for release SHA." >&2; exit 1; }
           gh run watch "$run_id" --exit-status
 
       - name: Free disk space

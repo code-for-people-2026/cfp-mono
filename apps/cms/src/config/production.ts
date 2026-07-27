@@ -43,6 +43,7 @@ export function assertCmsProductionEnv(env: Env = process.env): void {
   required(env, "PAYLOAD_SECRET");
   const legacyConfigured = pairConfigured(env, ["JWT_SECRET", "CMS_INTERNAL_TOKEN"]);
   const v1Configured = pairConfigured(env, ["KITH_INN_V1_JWT_SECRET", "KITH_INN_V1_INTERNAL_TOKEN"]);
+  pairConfigured(env, ["KITH_INN_V1_PREVIOUS_JWT_SECRET", "KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN"]);
   if (!legacyConfigured && !v1Configured) {
     required(env, "JWT_SECRET");
   }

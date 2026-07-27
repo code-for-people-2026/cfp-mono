@@ -31,10 +31,32 @@ type Kiv1CustomerScope = {
   payload: BasePayload;
 };
 
+function configuredValues(...values: Array<string | undefined>): string[] {
+  return values.filter((value): value is string => Boolean(value));
+}
+
+async function verifyWithConfiguredSecrets<T>(
+  token: string,
+  verify: (value: string, secret: string) => Promise<T | null>
+): Promise<T | null> {
+  const secrets = configuredValues(
+    process.env.KITH_INN_V1_JWT_SECRET,
+    process.env.KITH_INN_V1_PREVIOUS_JWT_SECRET
+  );
+  for (const secret of secrets) {
+    const claims = await verify(token, secret);
+    if (claims) return claims;
+  }
+  return null;
+}
+
 export function requireServiceAuth(req: Request): NextResponse | null {
-  const expected = process.env.KITH_INN_V1_INTERNAL_TOKEN;
-  if (!expected) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
-  if (req.headers.get(KIV1_INTERNAL_HEADER) !== expected) {
+  const expected = configuredValues(
+    process.env.KITH_INN_V1_INTERNAL_TOKEN,
+    process.env.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN
+  );
+  if (expected.length === 0) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
+  if (!expected.includes(req.headers.get(KIV1_INTERNAL_HEADER) ?? "")) {
     return NextResponse.json({ error: "internal-unauthorized" }, { status: 401 });
   }
   return null;
@@ -65,7 +87,7 @@ export async function operatorScope(req: Request): Promise<Kiv1OperatorScope | N
   if (!secret) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   const token = req.headers.get(KIV1_OPERATOR_HEADER);
   if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const claims = await verifyOperatorToken(token, secret);
+  const claims = await verifyWithConfiguredSecrets(token, verifyOperatorToken);
   if (!claims) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const payload = await getPayload({ config: configPromise });
@@ -109,7 +131,7 @@ export async function customerScope(req: Request): Promise<Kiv1CustomerScope | N
   if (!secret) return NextResponse.json({ error: "misconfigured" }, { status: 500 });
   const token = req.headers.get(KIV1_CUSTOMER_HEADER);
   if (!token) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const claims = await verifyCustomerToken(token, secret);
+  const claims = await verifyWithConfiguredSecrets(token, verifyCustomerToken);
   if (!claims) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const payload = await getPayload({ config: configPromise });

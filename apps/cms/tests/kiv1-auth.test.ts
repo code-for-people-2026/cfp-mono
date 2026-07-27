@@ -58,6 +58,16 @@ describe("servicePayload", () => {
       { "x-kith-inn-v1-internal": INTERNAL }
     ))).resolves.toBe(payload);
   });
+
+  it("accepts the previous internal token during an explicit rotation window", async () => {
+    const payload = { find: vi.fn() };
+    mocks.getPayload.mockResolvedValue(payload);
+    process.env.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN = "previous-internal";
+    await expect(servicePayload(jsonRequest(
+      { openid: "x" },
+      { "x-kith-inn-v1-internal": "previous-internal" }
+    ))).resolves.toBe(payload);
+  });
 });
 
 describe("membership lookup route", () => {
@@ -130,6 +140,16 @@ describe("operatorScope", () => {
       collection: "kiv1_sellers",
       where: { and: [{ id: { equals: 7 } }, { status: { equals: "active" } }] }
     }));
+  });
+
+  it("accepts an operator JWT signed before an explicit rotation", async () => {
+    const payload = payloadWith();
+    mocks.getPayload.mockResolvedValue(payload);
+    process.env.KITH_INN_V1_PREVIOUS_JWT_SECRET = "previous-jwt";
+    const token = await issueOperatorToken({ operatorId: 3, sellerId: 7 }, "previous-jwt");
+    await expect(operatorScope(new Request("http://cms.test", {
+      headers: { "x-kith-inn-v1-operator": token }
+    }))).resolves.toMatchObject({ operatorId: 3, sellerId: 7, payload });
   });
 
   it("rejects missing secret/header, wrong kind and expiry", async () => {

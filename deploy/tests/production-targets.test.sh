@@ -16,9 +16,10 @@ worktree=""
 trap 'if [[ -n "$worktree" ]]; then git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true; fi; rm -rf "$tmp"' EXIT
 
 assert_output() {
-  local file="$1" website="$2" kith_inn="$3"
+  local file="$1" website="$2" kith_inn="$3" kith_inn_v1="$4"
   grep -qx "website=$website" "$file"
   grep -qx "kith_inn=$kith_inn" "$file"
+  grep -qx "kith_inn_v1=$kith_inn_v1" "$file"
 }
 
 run_selector() {
@@ -43,52 +44,60 @@ if run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse
 fi
 
 run_selector "$root" push "" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
-assert_output "$tmp/missing-base" true true
+assert_output "$tmp/missing-base" true true true
 run_selector "$root" push "" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$(git -C "$root" rev-parse HEAD)" "$tmp/unknown-base"
-assert_output "$tmp/unknown-base" true true
+assert_output "$tmp/unknown-base" true true true
 
 worktree="$tmp/worktree"
 git -C "$root" worktree add --detach "$worktree" HEAD >/dev/null
 base="$(git -C "$worktree" rev-parse HEAD)"
 head="$(synthetic_commit apps/website/.production-target-test 'test: website range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-range"
-assert_output "$tmp/website-range" true false
+assert_output "$tmp/website-range" true false false
 base="$head"
 head="$(synthetic_commit apps/kith-inn-be/.production-target-test 'test: kith range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-range"
-assert_output "$tmp/kith-range" false true
+assert_output "$tmp/kith-range" false true false
+base="$head"
+head="$(synthetic_commit apps/kith-inn-v1-be/.production-target-test 'test: kith v1 range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-range"
+assert_output "$tmp/kith-v1-range" false false true
 base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-deploy-range"
-assert_output "$tmp/website-deploy-range" true false
+assert_output "$tmp/website-deploy-range" true false false
 base="$head"
 head="$(synthetic_commit deploy/kith-inn-candidate.fixture 'test: kith deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-deploy-range"
-assert_output "$tmp/kith-deploy-range" false true
+assert_output "$tmp/kith-deploy-range" false true false
+base="$head"
+head="$(synthetic_commit deploy/kith-inn-v1-candidate.fixture 'test: kith v1 deploy range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-deploy-range"
+assert_output "$tmp/kith-v1-deploy-range" false false true
 base="$head"
 head="$(synthetic_commit deploy/create-rds-backup.sh 'test: shared backup contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-backup-range"
-assert_output "$tmp/shared-backup-range" true true
+assert_output "$tmp/shared-backup-range" true true true
 base="$head"
 head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
-assert_output "$tmp/shared-contract-range" true true
+assert_output "$tmp/shared-contract-range" true true true
 base="$head"
 head="$(synthetic_commit deploy/nginx.example.conf 'test: external ingress contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/ingress-contract-range"
-assert_output "$tmp/ingress-contract-range" false false
+assert_output "$tmp/ingress-contract-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/RUNBOOK.md 'test: deploy documentation range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/deploy-docs-range"
-assert_output "$tmp/deploy-docs-range" false false
+assert_output "$tmp/deploy-docs-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/tests/.production-target-test 'test: deploy test range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/deploy-test-range"
-assert_output "$tmp/deploy-test-range" false false
+assert_output "$tmp/deploy-test-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/.production-target-test 'test: unknown deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
-assert_output "$tmp/shared-range" true true
+assert_output "$tmp/shared-range" true true true
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
 
@@ -140,16 +149,24 @@ grep -q 'preflight-candidate' <<<"$kith_job"
 grep -A2 'Restore the last-good runtime' <<<"$kith_job" | grep -q 'timeout-minutes: 30'
 grep -q 'GITHUB_STEP_SUMMARY' <<<"$kith_job"
 grep -q 'KITH_INN_V1_INTERNAL_TOKEN' <<<"$kith_job"
+grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' <<<"$kith_job"
 grep -q '^    name: kith-inn-shared$' "$shared_compose"
 grep -q 'aliases: \[kith-inn-cms\]' "$shared_compose"
 ! grep -q '^  kith-inn-v1-cms:$' "$v1_compose"
 ! grep -q 'kith-inn-v1-cms-migrate' "$v1_compose"
 ! grep -q 'kith-inn-v1-cms-migrate' "$root/deploy/deploy-kith-inn-v1-candidate.sh"
 grep -q 'CMS_BASE_URL: http://kith-inn-cms:3304' "$v1_compose"
+grep -A3 '^  kith-inn-v1-be:$' "$v1_compose" | grep -q 'read_only: true'
 grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
-grep -q 'group: kith-inn-v1-production' "$v1_workflow"
-grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
-grep -q -- '--workflow=deploy-production.yml' "$v1_workflow"
+grep -q '^  workflow_call:' "$v1_workflow"
+! grep -q '^  push:' "$v1_workflow"
+! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
+v1_call_job="$(sed -n '/^  deploy_kith_inn_v1:/,$p' "$workflow")"
+grep -q 'needs: \[affected, prepare_kith_inn\]' <<<"$v1_call_job"
+grep -q "needs.affected.outputs.kith_inn_v1 == 'true'" <<<"$v1_call_job"
+grep -q "needs.prepare_kith_inn.result == 'success'" <<<"$v1_call_job"
+grep -q 'uses: ./.github/workflows/deploy-kith-inn-v1-production.yml' <<<"$v1_call_job"
+grep -q 'secrets: inherit' <<<"$v1_call_job"
 grep -q 'docker build --target jobs' "$v1_workflow"
 grep -q 'apps/kith-inn-v1-be/Dockerfile' "$v1_workflow"
 ! grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
@@ -172,6 +189,13 @@ if grep -q 'secret-sentinel' "$tmp/configured.log"; then
   echo "配置检查不得回显值" >&2
   exit 1
 fi
+
+: > "$tmp/incomplete-previous"
+env "${all_values[@]}" KITH_INN_V1_PREVIOUS_JWT_SECRET=previous-value \
+  GITHUB_OUTPUT="$tmp/incomplete-previous" bash "$config_check" >"$tmp/incomplete-previous.log"
+grep -qx 'configured=false' "$tmp/incomplete-previous"
+grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' "$tmp/incomplete-previous.log"
+! grep -q 'previous-value' "$tmp/incomplete-previous.log"
 
 missing_values=()
 for entry in "${all_values[@]}"; do

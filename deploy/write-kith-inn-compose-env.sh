@@ -7,11 +7,20 @@ keys=(
   KITH_INN_V1_JWT_SECRET KITH_INN_V1_INTERNAL_TOKEN
   KITH_INN_TRIAL_OPENID KITH_INN_WX_APPID KITH_INN_WX_SECRET KITH_INN_DEEPSEEK_API_KEY KITH_INN_BE_BASE_URL
 )
+optional_keys=(KITH_INN_V1_PREVIOUS_JWT_SECRET KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN)
 [[ -n "$output" ]] || { echo 'compose env output is required' >&2; exit 1; }
 content=""
 for key in "${keys[@]}"; do
   value="${!key:-}"
   [[ -n "$value" && "$value" != *$'\n'* && "$value" != *$'\r'* ]] || {
+    echo "compose env value is invalid: $key" >&2; exit 1;
+  }
+  value=${value//\'/\\\'}
+  content+="$key='$value'"$'\n'
+done
+for key in "${optional_keys[@]}"; do
+  value="${!key:-}"
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || {
     echo "compose env value is invalid: $key" >&2; exit 1;
   }
   value=${value//\'/\\\'}

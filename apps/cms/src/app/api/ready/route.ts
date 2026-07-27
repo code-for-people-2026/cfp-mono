@@ -49,7 +49,11 @@ export async function probeCmsDatabase(): Promise<void> {
 export async function readyResponse(
   request: Request,
   deps: ReadyDeps = {
-    internalToken: [process.env.CMS_INTERNAL_TOKEN, process.env.KITH_INN_V1_INTERNAL_TOKEN]
+    internalToken: [
+      process.env.CMS_INTERNAL_TOKEN,
+      process.env.KITH_INN_V1_INTERNAL_TOKEN,
+      process.env.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN,
+    ]
       .filter((value): value is string => Boolean(value)),
     probe: probeCmsDatabase,
   },

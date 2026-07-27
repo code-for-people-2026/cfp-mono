@@ -16,6 +16,7 @@ services:
   kith-inn-v1-be:
     image: ${KITH_INN_V1_BE_IMAGE:?KITH_INN_V1_BE_IMAGE is required}
     restart: unless-stopped
+    read_only: true
     environment:
       NODE_ENV: production
       BE_PORT: "3311"

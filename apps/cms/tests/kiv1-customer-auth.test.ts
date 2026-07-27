@@ -126,6 +126,13 @@ describe("GET /api/internal/kiv1/customer/booking-batches/:publicId", () => {
     });
   });
 
+  it("accepts a customer JWT signed before an explicit rotation", async () => {
+    mocks.getPayload.mockResolvedValue(payloadWith());
+    process.env.KITH_INN_V1_PREVIOUS_JWT_SECRET = "previous-jwt";
+    const token = await issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, "previous-jwt");
+    expect((await customerRequest(token)).status).toBe(200);
+  });
+
   it("rejects operator/expired tokens and hides cross-seller batches", async () => {
     mocks.getPayload.mockResolvedValue(payloadWith());
     const operator = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, SECRET);
