@@ -2059,7 +2059,7 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
     await expect(card.getByRole("textbox", { name: "价格（元）" }))
       .toHaveValue(doc.id === 1006 ? "38.5" : "42");
     const deadlineInput = `${doc.date}T09:30`;
-    expectedDeadlines.set(doc.id, await page.evaluate((value) => new Date(value).toISOString(), deadlineInput));
+    expectedDeadlines.set(doc.id, new Date(`${deadlineInput}:00.000+08:00`).toISOString());
     await card.getByRole("textbox", { name: "截止时间" }).fill(deadlineInput);
     await card.getByLabel(`选择 ${doc.date} ${occasionText}`).click();
   }
