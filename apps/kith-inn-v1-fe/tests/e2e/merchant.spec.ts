@@ -2012,7 +2012,9 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
   })));
   let defaultPriceCents = 3000;
   const configWrites: Array<{ id: number; input: BookingInput }> = [];
+  const completedConfigIds: number[] = [];
   const bulkWrites: Array<{ mealSlotIds: number[]; action: "open" | "stop" }> = [];
+  const bulkConfigSnapshots: number[][] = [];
   const expectedDeadlines = new Map<number, string>();
 
   await page.route("**/merchant/booking-settings", (route) => {
@@ -2024,20 +2026,26 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
   await page.route("**/merchant/service-closures?*", (route) => route.fulfill(jsonResponse({ docs: [] })));
   await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
   await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
-  await page.route("**/merchant/meal-slots/*/booking-config", (route) => {
+  await page.route("**/merchant/meal-slots/*/booking-config", async (route) => {
     const id = Number(new URL(route.request().url()).pathname.split("/").at(-2));
     const input = route.request().postDataJSON() as BookingInput;
     configWrites.push({ id, input });
     docs = docs.map((doc) => doc.id === id ? { ...doc, ...input } : doc);
-    return route.fulfill(jsonResponse({ doc: docs.find((doc) => doc.id === id) }));
+    await route.fulfill(jsonResponse({ doc: docs.find((doc) => doc.id === id) }));
+    completedConfigIds.push(id);
   });
   await page.route("**/merchant/meal-slots/bulk-booking-status", (route) => {
     const input = route.request().postDataJSON() as { mealSlotIds: number[]; action: "open" | "stop" };
     bulkWrites.push(input);
+    bulkConfigSnapshots.push([...completedConfigIds]);
     const ids = new Set(input.mealSlotIds);
-    docs = docs.map((doc) => ids.has(doc.id) ? { ...doc, orderStatus: "open" as const } : doc);
-    return route.fulfill(jsonResponse({ results: docs.filter((doc) => ids.has(doc.id))
-      .map((doc) => ({ id: doc.id, status: "updated", doc })) }));
+    const completed = new Set(completedConfigIds);
+    docs = docs.map((doc) => ids.has(doc.id) && completed.has(doc.id)
+      ? { ...doc, orderStatus: "open" as const }
+      : doc);
+    return route.fulfill(jsonResponse({ results: input.mealSlotIds.map((id) => completed.has(id)
+      ? { id, status: "updated", doc: docs.find((doc) => doc.id === id) }
+      : { id, status: "failed", error: "meal-slot-not-ready", message: "价格或截止时间未设置" }) }));
   });
 
   await page.goto("/");
@@ -2079,6 +2087,7 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
     });
   }
   expect(bulkWrites).toEqual([{ mealSlotIds: docs.map(({ id }) => id), action: "open" }]);
+  expect(bulkConfigSnapshots).toEqual([docs.map(({ id }) => id)]);
 });
 
 test("同一提交窗口连续触发 Page 4 写操作只发送一次请求", async ({ page }) => {

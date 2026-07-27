@@ -8,7 +8,7 @@ pnpm --filter @cfp/kith-inn-v1-be test
 pnpm --filter @cfp/cms test
 pnpm --filter @cfp/kith-inn-v1-fe test
 pnpm verify
-pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|紧凑历史'
+pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|紧凑历史|默认价应用、个别改价并批量开放完整工作周'
 ```
 
 ## 关键场景
