@@ -13,6 +13,7 @@ import {
   batchCloseText,
   bookingBatchSharePayload,
   bookingBatchStatusText,
+  bookingSlotLiveStatusText,
   bookingConfigContext,
   bookingDeadlineInputValue,
   bookingMenuUrl,
@@ -372,12 +373,11 @@ export default function MerchantBatches() {
     setPending(`batch:${id}`);
     try {
       const entry = await api.closeBookingBatch(id);
-      setBatches((current) => sortBookingBatchHistory(current.map((item) =>
-        String(item.doc.id) === String(id) ? entry : item)));
       setActiveDetail((current) => current && String(current.doc.id) === String(id)
         ? { ...current, ...entry }
         : current);
       setClosingId(null);
+      await loadBatches();
     } catch (error) {
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "关闭失败", icon: "none" });
@@ -408,6 +408,7 @@ export default function MerchantBatches() {
     : null;
   const detailSummary = activeDetail ? summarizeBookingBatch(activeDetail.slots) : null;
   const sellerName = sessions.getSession()?.sellerName ?? "街坊味商家";
+  const detailNow = new Date().toISOString();
 
   return (
     <View className="page batches-page">
@@ -438,11 +439,11 @@ export default function MerchantBatches() {
             {activeDetail.slots.map((slot, index) => (
               <View className="share-detail-slot" key={String(slot.id)}>
                 <Text>{detailSummary.deadlineLines[index]}</Text>
-                <Text className="meta">{slot.orderStatus === "open" ? "预订中" : slot.orderStatus === "closed" ? "已停止" : "未开放"}</Text>
+                <Text className="meta">{bookingSlotLiveStatusText(slot, detailNow)}</Text>
               </View>
             ))}
           </View>
-          {process.env.TARO_ENV === "weapp" && activeDetail.doc.status === "open" && (
+          {process.env.TARO_ENV === "weapp" && (
             <Button className="primary" openType="share" data-title={activeDetail.share.title}
               data-path={activeDetail.share.path}>分享给街坊</Button>
           )}

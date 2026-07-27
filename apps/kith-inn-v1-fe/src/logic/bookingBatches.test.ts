@@ -5,6 +5,7 @@ import {
   batchCloseText,
   bookingBatchSharePayload,
   bookingBatchStatusText,
+  bookingSlotLiveStatusText,
   bookingConfigContext,
   bookingConfigUrl,
   bookingMenuUrl,
@@ -153,6 +154,10 @@ it("builds live detail summaries and validated native share payloads", () => {
   expect(summarizeBookingBatch([{ ...slots[0]!, priceCents: null }])).toMatchObject({
     dateText: "2026-07-13", priceText: "价格待确认"
   });
+  expect(summarizeBookingBatch([
+    slots[0]!,
+    { ...slots[1]!, priceCents: null }
+  ])).toMatchObject({ priceText: "价格待确认" });
   expect(bookingBatchSharePayload(null)).toEqual({
     title: "街坊味预订", path: "/pages/merchant/batches/index"
   });
@@ -162,6 +167,16 @@ it("builds live detail summaries and validated native share payloads", () => {
   expect(bookingBatchSharePayload({ title: "入口", path: 2 })).toEqual({
     title: "街坊味预订", path: "/pages/merchant/batches/index"
   });
+});
+
+it("reports realtime slot availability from status and deadline", () => {
+  const now = "2026-07-12T01:00:00.000Z";
+  expect(bookingSlotLiveStatusText({ orderStatus: "open", orderDeadline: "2026-07-12T01:00:01.000Z" }, now))
+    .toBe("预订中");
+  expect(bookingSlotLiveStatusText({ orderStatus: "open", orderDeadline: now }, now)).toBe("已截止");
+  expect(bookingSlotLiveStatusText({ orderStatus: "open", orderDeadline: null }, now)).toBe("已截止");
+  expect(bookingSlotLiveStatusText({ orderStatus: "closed", orderDeadline: null }, now)).toBe("已停止");
+  expect(bookingSlotLiveStatusText({ orderStatus: "draft", orderDeadline: null }, now)).toBe("未开放");
 });
 
 it("keeps newest API order within open, closed and archived history groups", () => {
