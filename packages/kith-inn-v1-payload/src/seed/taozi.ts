@@ -43,6 +43,12 @@ type SeedPayload = {
     data: Record<string, unknown>;
     overrideAccess: boolean;
   }) => Promise<{ id: string | number }>;
+  update?: (args: {
+    collection: string;
+    id: string | number;
+    data: Record<string, unknown>;
+    overrideAccess: boolean;
+  }) => Promise<{ id: string | number }>;
   delete?: (args: {
     collection: string;
     id: string | number;
@@ -102,16 +108,27 @@ export async function applySeed(
 
   const operators = await payload.find({
     collection: "kiv1_operators",
-    where: {
-      and: [
-        { seller: { equals: seller.id } },
-        { wechatOpenid: { equals: operatorOpenid } }
-      ]
-    },
-    limit: 1,
+    where: { seller: { equals: seller.id } },
+    limit: 0,
     overrideAccess: true
   });
-  const operatorCreated = operators.docs.length === 0;
+  const docs = operators.docs as Array<{ id: string | number; wechatOpenid?: string; active?: boolean }>;
+  const selected = docs.find((operator) => operator.wechatOpenid === operatorOpenid);
+  const changes = [
+    ...docs.filter((operator) => operator !== selected && operator.active !== false)
+      .map((operator) => ({ id: operator.id, active: false })),
+    ...(selected?.active === false ? [{ id: selected.id, active: true }] : [])
+  ];
+  if (changes.length > 0 && !payload.update) throw new Error("operator membership reconciliation requires update");
+  for (const change of changes) {
+    await payload.update!({
+      collection: "kiv1_operators",
+      id: change.id,
+      data: { active: change.active },
+      overrideAccess: true
+    });
+  }
+  const operatorCreated = selected === undefined;
   if (operatorCreated) {
     await payload.create({
       collection: "kiv1_operators",
@@ -121,7 +138,7 @@ export async function applySeed(
   }
 
   return {
-    seeded: sellerCreated || operatorCreated,
+    seeded: sellerCreated || operatorCreated || changes.length > 0,
     sellerId: seller.id,
     sellerCreated,
     operatorCreated

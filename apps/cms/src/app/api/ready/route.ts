@@ -11,7 +11,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-type ReadyDeps = { internalToken?: string; probe: () => Promise<void>; timeoutMs?: number };
+type ReadyDeps = { internalToken?: string | string[]; probe: () => Promise<void>; timeoutMs?: number };
 type DatabaseReadyDeps = {
   dbName: string;
   pushEnabled: boolean;
@@ -49,11 +49,13 @@ export async function probeCmsDatabase(): Promise<void> {
 export async function readyResponse(
   request: Request,
   deps: ReadyDeps = {
-    internalToken: process.env.CMS_INTERNAL_TOKEN ?? process.env.KITH_INN_V1_INTERNAL_TOKEN,
+    internalToken: [process.env.CMS_INTERNAL_TOKEN, process.env.KITH_INN_V1_INTERNAL_TOKEN]
+      .filter((value): value is string => Boolean(value)),
     probe: probeCmsDatabase,
   },
 ) {
-  if (!deps.internalToken || request.headers.get("x-internal-token") !== deps.internalToken) {
+  const tokens = Array.isArray(deps.internalToken) ? deps.internalToken : [deps.internalToken].filter(Boolean);
+  if (!tokens.includes(request.headers.get("x-internal-token") ?? "")) {
     return NextResponse.json({ ok: false, service: "cms", category: "internal_auth_failed" }, { status: 503 });
   }
   const timeout = timeoutAfter(deps.timeoutMs ?? 5_000);

@@ -8,6 +8,7 @@ next_env="$root/.env.kith-inn-v1.next"
 release_store="$root/.kith-inn-v1-releases"
 current_pointer="$root/.kith-inn-v1-current"
 previous_pointer="$root/.kith-inn-v1-previous"
+gate_marker="$root/.kith-inn-v1-write-gate"
 compose_bin="${COMPOSE_BIN:-docker}"
 smoke_bin="${SMOKE_BIN:-$project_dir/smoke-kith-inn-v1.sh}"
 release_sha="${RELEASE_SHA:-}"
@@ -61,10 +62,40 @@ restore_current() {
   compose "$current_compose" "$current_env" up -d --no-deps "${runtime[@]}" >/dev/null 2>&1 &&
     smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1
 }
+prune_unused_v1_images() {
+  local image repo ref preserve_images=() repositories=()
+  contains() {
+    local needle="$1" item
+    shift
+    for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
+    return 1
+  }
+  for image in KITH_INN_V1_CMS_IMAGE KITH_INN_V1_CMS_OPS_IMAGE KITH_INN_V1_BE_IMAGE; do
+    ref="$(value "$next_env" "$image")"
+    [[ -z "$ref" ]] || preserve_images+=("$ref")
+    if [[ -n "$current_release" ]]; then
+      ref="$(value "$current_env" "$image")"
+      [[ -z "$ref" ]] || preserve_images+=("$ref")
+    fi
+  done
+  for ref in "${preserve_images[@]}"; do
+    repo="${ref%@*}"
+    if (( ${#repositories[@]} == 0 )) || ! contains "$repo" "${repositories[@]}"; then repositories+=("$repo"); fi
+  done
+  if (( ${#repositories[@]} > 0 )); then
+    for repo in "${repositories[@]}"; do
+      while IFS= read -r ref; do
+        [[ -n "$ref" && "$ref" != *"@<none>" ]] || continue
+        contains "$ref" "${preserve_images[@]}" || "$compose_bin" image rm "$ref" >/dev/null 2>&1 || true
+      done < <("$compose_bin" image ls --digests --format '{{.Repository}}@{{.Digest}}' "$repo" 2>/dev/null)
+    done
+  fi
+  "$compose_bin" image prune -f >/dev/null 2>&1 || true
+}
 recover() {
   local stage="$1"
   compose "$next_compose" "$next_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
-  if [[ -n "$current_release" ]] && restore_current; then fail "$stage" rolled_back; fi
+  if [[ -n "$current_release" ]] && restore_current; then rm -f "$gate_marker"; fail "$stage" rolled_back; fi
   fail "$stage" candidate_stopped
 }
 
@@ -76,8 +107,26 @@ command -v curl >/dev/null || fail preflight no_change
 if [[ "$action" == "preflight" ]]; then
   candidate_valid || fail preflight no_change
   [[ -z "$current_release" ]] || current_valid || fail preflight no_change
+  prune_unused_v1_images
   compose "$next_compose" "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || fail preflight no_change
   echo '{"status":"candidate_ready"}'
+  exit 0
+fi
+
+if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
+  if [[ -z "$current_release" ]]; then echo '{"status":"skipped","reason":"active_runtime_unavailable"}'; exit 0; fi
+  current_valid || fail preflight no_change
+  if [[ "$action" == "restore-runtime" ]]; then
+    [[ -f "$gate_marker" ]] || { echo '{"status":"skipped","reason":"write_gate_not_attempted"}'; exit 0; }
+    restore_current || fail restore manual_data_recovery_required
+    rm -f "$gate_marker"
+    echo '{"status":"last_good_runtime_restored"}'
+    exit 0
+  fi
+  compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || fail write_gate no_change
+  printf "attempted\n" >"$gate_marker"
+  chmod 600 "$gate_marker"
+  echo '{"status":"writes_gated"}'
   exit 0
 fi
 
@@ -88,9 +137,7 @@ compose "$next_compose" "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 ||
 
 interrupted() { trap - TERM INT HUP; recover interrupted; }
 trap interrupted TERM INT HUP
-if [[ -n "$current_release" ]]; then
-  compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || recover write_gate
-fi
+[[ -z "$current_release" || -f "$gate_marker" ]] || fail write_gate no_change
 
 migration_output="$(compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-migrate 2>&1)" || recover migration
 migration_head="$(sed -nE 's/^✓ cms migration head ([A-Za-z0-9_]+)$/\1/p' <<<"$migration_output" | tail -n 1)"
@@ -115,6 +162,6 @@ printf "%s\n" "$new_release" >"$current_pointer.next" || recover persist
 chmod 600 "$current_pointer.next" || recover persist
 mv -f "$current_pointer.next" "$current_pointer" || recover persist
 trap - TERM INT HUP
-rm -f -- "$next_env" "$next_compose"
+rm -f -- "$next_env" "$next_compose" "$gate_marker"
 
 jq -cn --arg releaseSha "$release_sha" --arg migrationHead "$migration_head" --arg sellerId "$seller_id" --argjson smokeEvidence "$smoke_result" '{releaseSha:$releaseSha,migrationHead:$migrationHead,sellerId:$sellerId,smokeEvidence:$smokeEvidence,status:"passed"}'

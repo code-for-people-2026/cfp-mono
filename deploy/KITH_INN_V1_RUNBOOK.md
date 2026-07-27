@@ -18,7 +18,7 @@ Production Environment 需配置：
 - v1 Secrets：KITH_INN_V1_PAYLOAD_SECRET、KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。
 - Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
 
-发布顺序固定为：构建三镜像 → 推送并固定 digest → ECS 候选 Compose preflight → 创建并验证 RDS 恢复点 → 停止旧 v1 runtime 写入口 → migration → 幂等 provision → 启动 CMS/BE → loopback 与真实 HTTPS 只读 smoke → 原子提升 current release → 上传同 SHA smoke marker。v1 CMS 绑定 127.0.0.1:3312，避免和旧 kith-inn 的 3304 冲突；失败只恢复应用 runtime，不自动回滚数据库。
+发布顺序固定为：构建三镜像 → 推送并固定 digest → ECS 候选 Compose preflight → 停止旧 v1 runtime 写入口 → 创建并验证 RDS 恢复点 → migration → 幂等 provision → 启动 CMS/BE → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA）→ 原子提升 current release → 上传同 SHA smoke marker。v1 CMS 绑定 127.0.0.1:3312，避免和旧 kith-inn 的 3304 冲突；失败只恢复应用 runtime，不自动回滚数据库。
 
 ECS 的 Nginx/证书需人工一次性配置：将 KITH_INN_V1_BE_BASE_URL 对应 host 的 443 反代到 127.0.0.1:3311，只公开 80/443；先验证 DNS、完整证书链和 nginx -t，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
 

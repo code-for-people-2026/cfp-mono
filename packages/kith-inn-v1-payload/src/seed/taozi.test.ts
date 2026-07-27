@@ -38,12 +38,8 @@ describe("桃子 v1 seed", () => {
 
     expect(find).toHaveBeenLastCalledWith(expect.objectContaining({
       collection: "kiv1_operators",
-      where: {
-        and: [
-          { seller: { equals: "seller-1" } },
-          { wechatOpenid: { equals: "production-operator-openid" } }
-        ]
-      }
+      where: { seller: { equals: "seller-1" } },
+      limit: 0,
     }));
     expect(create).toHaveBeenCalledWith({
       collection: "kiv1_operators",
@@ -105,6 +101,34 @@ describe("桃子 v1 seed", () => {
       data: buildOperatorData("seller-1"),
       overrideAccess: true
     });
+  });
+
+  it("轮换商家 OpenID 时停用旧 membership", async () => {
+    const find = vi.fn()
+      .mockResolvedValueOnce({ docs: [{ id: "seller-1" }] })
+      .mockResolvedValueOnce({ docs: [
+        { id: "old", wechatOpenid: "old-openid", active: true },
+        { id: "new", wechatOpenid: "new-openid", active: false },
+      ] });
+    const update = vi.fn().mockResolvedValue({ id: "operator" });
+    const create = vi.fn();
+
+    await expect(applySeed({ find, create, update }, { operatorOpenid: "new-openid" }))
+      .resolves.toMatchObject({ seeded: true, operatorCreated: false });
+    expect(update.mock.calls.map(([args]) => args)).toEqual([
+      { collection: "kiv1_operators", id: "old", data: { active: false }, overrideAccess: true },
+      { collection: "kiv1_operators", id: "new", data: { active: true }, overrideAccess: true },
+    ]);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("membership 需要调整但调用方不支持 update 时拒绝继续", async () => {
+    const find = vi.fn()
+      .mockResolvedValueOnce({ docs: [{ id: "seller-1" }] })
+      .mockResolvedValueOnce({ docs: [{ id: "old", wechatOpenid: "old-openid", active: true }] });
+
+    await expect(applySeed({ find, create: vi.fn() }, { operatorOpenid: "new-openid" }))
+      .rejects.toThrow("operator membership reconciliation requires update");
   });
 
   it("operator 创建失败后可从已创建 seller 重试恢复", async () => {
