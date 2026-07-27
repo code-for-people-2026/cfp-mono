@@ -1,11 +1,15 @@
 import { defineConfig } from "@playwright/test";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const reuseExistingServer = !process.env.CI;
 const sharedEnv = {
   JWT_SECRET: "adaptive-swap-e2e-jwt-secret",
   CMS_INTERNAL_TOKEN: "adaptive-swap-e2e-internal-token",
 };
-const resetCmsDatabase = "node --input-type=module -e \"import{rmSync}from'node:fs';for(const suffix of ['','-shm','-wal'])rmSync('../cms/payload-adaptive-swap-e2e.db'+suffix,{force:true})\"";
+const cmsDatabaseUri = pathToFileURL(join(tmpdir(), "cfp-cms-kith-inn-e2e.db")).href;
+const resetCmsDatabase = "node --input-type=module -e \"import{rmSync}from'node:fs';import{fileURLToPath}from'node:url';const p=fileURLToPath(process.env.DATABASE_URI);for(const suffix of ['','-shm','-wal'])rmSync(p+suffix,{force:true})\"";
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -30,7 +34,8 @@ export default defineConfig({
         DATABASE_URL_UNPOOLED: "",
         POSTGRES_URL_NON_POOLING: "",
         POSTGRES_URL: "",
-        DATABASE_URI: "file:./payload-adaptive-swap-e2e.db",
+        DATABASE_URI: cmsDatabaseUri,
+        CFP_CMS_E2E_DIST_DIR: ".next-kith-inn-e2e",
         PAYLOAD_SECRET: "adaptive-swap-e2e-payload-secret",
       },
     },

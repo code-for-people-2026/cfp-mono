@@ -3,7 +3,7 @@ import nextTypescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   // Build/coverage artifacts are generated, not source.
-  { ignores: ["coverage/**", ".next/**"] },
+  { ignores: ["coverage/**", ".next/**", ".next-*-e2e/**"] },
   ...nextVitals,
   ...nextTypescript,
 ];
