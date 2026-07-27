@@ -2,22 +2,29 @@ import { Button, Input, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
 import type {
+  BookingBatchDetailResponse,
   BookingBatchListResponse,
+  BookingShareTarget,
   MealSlot,
   ServiceClosure
 } from "@cfp/kith-inn-v1-shared";
 import {
   applyBulkBookingStatus,
   batchCloseText,
+  bookingBatchSharePayload,
+  bookingBatchStatusText,
   bookingConfigContext,
   bookingDeadlineInputValue,
   bookingMenuUrl,
   bookingReturnMode,
+  bookingShareSelection,
+  bookingShareTargetText,
   bookingWeekDates,
   buildBookingConfig,
   copyBookingBatchPath,
   effectiveServiceClosure,
-  selectableBookingSlots,
+  sortBookingBatchHistory,
+  summarizeBookingBatch,
   toggleOperationalSelection,
   type BookingConfigContext
 } from "@/logic/bookingBatches";
@@ -64,9 +71,7 @@ function initialConfig(slot: MealSlot, defaultPriceCents?: number): SlotConfig {
 function WeappShareLifecycle() {
   Taro.useShareAppMessage(({ target }) => {
     const dataset = (target as { dataset?: { title?: unknown; path?: unknown } } | undefined)?.dataset;
-    return typeof dataset?.title === "string" && typeof dataset.path === "string"
-      ? { title: dataset.title, path: dataset.path }
-      : { title: "街坊味预订", path: "/pages/merchant/batches/index" };
+    return bookingBatchSharePayload(dataset);
   });
   return null;
 }
@@ -80,13 +85,29 @@ export default function MerchantBatches() {
   const [defaultPriceYuan, setDefaultPriceYuan] = useState(""); const [priceOverrides, setPriceOverrides] = useState<Set<string>>(() => new Set());
   const [configs, setConfigs] = useState<Record<string, SlotConfig>>({});
   const [selected, setSelected] = useState<Array<string | number>>([]);
+  const [shareTarget, setShareTarget] = useState<BookingShareTarget | null>(() => initialContext?.target
+    ? { kind: "meal", ...initialContext.target }
+    : null);
   const [title, setTitle] = useState("");
   const [batches, setBatches] = useState<BatchEntry[]>([]);
+  const [activeDetail, setActiveDetail] = useState<BookingBatchDetailResponse | null>(null);
+  const [detailMode, setDetailMode] = useState<"created" | "history">("history");
+  const [detailFailedId, setDetailFailedId] = useState<string | number | null>(null);
   const [closingId, setClosingId] = useState<string | number | null>(null);
   const [pending, setPending] = useState<string | null>(initialContext ? null : "settings-load"); const [failures, setFailures] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false); const [loadFailed, setLoadFailed] = useState(false);
   const [settingsFailed, setSettingsFailed] = useState(false); const [closuresFailed, setClosuresFailed] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
   const loadRevision = useRef(0);
+
+  const loadBatches = async () => {
+    setHistoryFailed(false);
+    try {
+      setBatches(sortBookingBatchHistory(await api.listBookingBatches()));
+    } catch (error) {
+      if (!handledAuthFailure(error)) setHistoryFailed(true);
+    }
+  };
 
   const loadSlots = async (context?: BookingConfigContext) => {
     const days = bookingWeekDates(context?.weekStart ?? date);
@@ -106,6 +127,7 @@ export default function MerchantBatches() {
     setConfigs({});
     setPriceOverrides(new Set());
     setSelected([]);
+    setShareTarget(context?.target ? { kind: "meal", ...context.target } : null);
     setFailures({});
     try {
       const [loadedSlots, settings, loadedClosures] = await Promise.allSettled([
@@ -136,13 +158,7 @@ export default function MerchantBatches() {
     } finally {
       if (revision === loadRevision.current) setLoading(false);
     }
-    try {
-      const loadedBatches = await api.listBookingBatches();
-      if (revision === loadRevision.current) setBatches(loadedBatches);
-    } catch (error) {
-      if (revision !== loadRevision.current || handledAuthFailure(error)) return;
-      await Taro.showToast({ title: "批次加载失败，餐次仍可配置", icon: "none" });
-    }
+    if (revision === loadRevision.current) await loadBatches();
   };
 
   useEffect(() => {
@@ -156,7 +172,7 @@ export default function MerchantBatches() {
         .then(({ defaultPriceCents }) => setDefaultPriceYuan(priceInputValue(defaultPriceCents)))
         .catch((error: unknown) => { if (!handledAuthFailure(error)) setSettingsFailed(true); })
         .finally(() => setPending(null));
-      void api.listBookingBatches().then(setBatches).catch(() => undefined);
+      void loadBatches();
     }
   }, []);
 
@@ -290,29 +306,56 @@ export default function MerchantBatches() {
   };
 
   const createBatch = async () => {
-    if (selected.length === 0) {
-      await Taro.showToast({ title: "请先选择开放餐次", icon: "none" });
-      return;
-    }
-    const shareable = new Set(selectableBookingSlots(slots, new Date().toISOString()).map(({ id }) => String(id)));
-    if (selected.some((id) => !shareable.has(String(id)))) {
-      await Taro.showToast({ title: "请仅选择仍在预订中的餐次", icon: "none" });
+    const selection = shareTarget ? bookingShareSelection(shareTarget, slots, new Date().toISOString()) : null;
+    if (!selection) {
+      await Taro.showToast({ title: "请先选择仍在预订中的一天或一餐", icon: "none" });
       return;
     }
     setPending("create");
     try {
       const entry = await api.createBookingBatch({
         ...(title.trim() ? { title: title.trim() } : {}),
-        mealSlotIds: selected
+        ...selection
       });
-      setBatches((current) => [entry, ...current]);
-      setSelected([]);
+      const ids = new Set(selection.mealSlotIds.map(String));
+      const detailSlots = slots.filter(({ id }) => ids.has(String(id))).map((slot) => ({
+        id: slot.id, date: slot.date, occasion: slot.occasion, orderStatus: slot.orderStatus,
+        orderDeadline: slot.orderDeadline, priceCents: slot.priceCents
+      }));
+      setBatches((current) => sortBookingBatchHistory([entry, ...current.filter(({ doc }) =>
+        String(doc.id) !== String(entry.doc.id))]));
+      setActiveDetail({ ...entry, slots: detailSlots });
+      setDetailMode("created");
+      setDetailFailedId(null);
+      setShareTarget(null);
       setTitle("");
     } catch (error) {
       if (handledAuthFailure(error)) return;
       await Taro.showToast({ title: error instanceof Error ? error.message : "创建失败", icon: "none" });
     } finally {
       setPending(null);
+    }
+  };
+
+  const openDetail = async (id: string | number) => {
+    setPending(`detail:${id}`);
+    setDetailFailedId(null);
+    try {
+      setActiveDetail(await api.getBookingBatch(id));
+      setDetailMode("history");
+    } catch (error) {
+      if (!handledAuthFailure(error)) setDetailFailedId(id);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const copyShare = async (entry: BatchEntry) => {
+    try {
+      await copyBookingBatchPath(entry.share, (options) => Taro.setClipboardData(options));
+      await Taro.showToast({ title: "入口已复制", icon: "none" });
+    } catch {
+      await Taro.showToast({ title: "复制失败，请重试", icon: "none" });
     }
   };
 
@@ -329,7 +372,11 @@ export default function MerchantBatches() {
     setPending(`batch:${id}`);
     try {
       const entry = await api.closeBookingBatch(id);
-      setBatches((current) => current.map((item) => String(item.doc.id) === String(id) ? entry : item));
+      setBatches((current) => sortBookingBatchHistory(current.map((item) =>
+        String(item.doc.id) === String(id) ? entry : item)));
+      setActiveDetail((current) => current && String(current.doc.id) === String(id)
+        ? { ...current, ...entry }
+        : current);
       setClosingId(null);
     } catch (error) {
       if (handledAuthFailure(error)) return;
@@ -356,12 +403,69 @@ export default function MerchantBatches() {
     }
   };
 
+  const shareSelection = shareTarget
+    ? bookingShareSelection(shareTarget, slots, new Date().toISOString())
+    : null;
+  const detailSummary = activeDetail ? summarizeBookingBatch(activeDetail.slots) : null;
+  const sellerName = sessions.getSession()?.sellerName ?? "街坊味商家";
+
   return (
     <View className="page batches-page">
       {process.env.TARO_ENV === "weapp" && <WeappShareLifecycle />}
       <Text className="title">开放并分享</Text>
       <Button onClick={returnToMenu}>{initialContext?.source === "home" ? "返回今日" : initialContext ? "返回菜单" : "菜单"}</Button>
 
+      {activeDetail && detailSummary && (
+        <View className="share-success-state">
+          <View className="share-success-heading">
+            <Text className="share-success-icon">✓</Text>
+            <Text className="section-title">{detailMode === "created" && activeDetail.doc.status === "open"
+              ? "预订已开放"
+              : bookingBatchStatusText(activeDetail.doc.status)}</Text>
+            <Text>{detailMode === "created" && activeDetail.doc.status === "open"
+              ? "现在可以发给街坊了"
+              : "以下为当前实时餐次信息"}</Text>
+          </View>
+          <View className="card share-preview-card">
+            <Text className="meta">{sellerName}</Text>
+            <Text className="section-title">{activeDetail.share.title}</Text>
+            <Text>{bookingShareTargetText(activeDetail.doc.target)}</Text>
+            <Text>{detailSummary.dateText} · {detailSummary.slotCountText} · {detailSummary.priceText}</Text>
+          </View>
+          <View className="card share-detail-card">
+            <Text className="section-title">已选择的餐次</Text>
+            <Text className="meta">{detailSummary.slotCountText}</Text>
+            {activeDetail.slots.map((slot, index) => (
+              <View className="share-detail-slot" key={String(slot.id)}>
+                <Text>{detailSummary.deadlineLines[index]}</Text>
+                <Text className="meta">{slot.orderStatus === "open" ? "预订中" : slot.orderStatus === "closed" ? "已停止" : "未开放"}</Text>
+              </View>
+            ))}
+          </View>
+          {process.env.TARO_ENV === "weapp" && activeDetail.doc.status === "open" && (
+            <Button className="primary" openType="share" data-title={activeDetail.share.title}
+              data-path={activeDetail.share.path}>分享给街坊</Button>
+          )}
+          <Button aria-label="复制入口" disabled={pending !== null}
+            onClick={() => void copyShare(activeDetail)}>复制入口</Button>
+          {activeDetail.doc.status === "open" && closingId === null && (
+            <Button className="danger" aria-label="停用分享入口"
+              disabled={pending !== null} onClick={() => setClosingId(activeDetail.doc.id)}>停用入口</Button>
+          )}
+          {String(closingId) === String(activeDetail.doc.id) && (
+            <View className="card close-confirmation">
+              <Text>{batchCloseText(activeDetail.doc)}</Text>
+              <Button className="danger" disabled={pending !== null} onClick={() => void closeBatch(activeDetail.doc.id)}>{
+                pending === `batch:${activeDetail.doc.id}` ? "停用中…" : "确认停用入口"}</Button>
+              <Button disabled={pending !== null} onClick={() => setClosingId(null)}>取消</Button>
+            </View>
+          )}
+          <Text className="meta">分享卡片只负责定位；顾客看到的是商家当前开放的实时餐次。</Text>
+          <Button disabled={pending !== null} onClick={() => { setActiveDetail(null); setClosingId(null); }}>返回经营设置</Button>
+        </View>
+      )}
+
+      {!activeDetail && <>
       {loading && <View className="card"><Text>正在加载本周经营安排…</Text></View>}
       {loadFailed && (
         <View className="card error-card">
@@ -399,6 +503,9 @@ export default function MerchantBatches() {
       {weekDays.map((day) => {
         const dayClosure = closures.find((closure) => closure.date === day && closure.occasion === null);
         const mealClosures = closures.filter((closure) => closure.date === day && closure.occasion !== null);
+        const dayTarget = { kind: "day" as const, date: day };
+        const canShareDay = bookingShareSelection(dayTarget, slots, new Date().toISOString()) !== null;
+        const sharingDay = shareTarget?.kind === "day" && shareTarget.date === day;
         return (
           <View className="day-operation" key={day}>
             <Text>{day}</Text>
@@ -417,6 +524,9 @@ export default function MerchantBatches() {
                   onClick={() => void toggleClosure(day, occasion, closure)}
                 >{closure ? `取消${occasionText(occasion)}打烊` : `${occasionText(occasion)}打烊`}</Button>;
               })}
+              <Button className={sharingDay ? "selected" : "secondary"}
+                disabled={pending !== null || loading || !canShareDay}
+                onClick={() => setShareTarget(dayTarget)}>{sharingDay ? "已选当天" : "分享这一天"}</Button>
             </View>
           </View>
         );
@@ -433,6 +543,10 @@ export default function MerchantBatches() {
           initialContext.target.occasion === slot.occasion;
         const isSelected = selected.some((id) => String(id) === String(slot.id));
         const closure = effectiveServiceClosure(closures, slot.date, slot.occasion);
+        const mealTarget = { kind: "meal" as const, date: slot.date, occasion: slot.occasion };
+        const canShareMeal = bookingShareSelection(mealTarget, slots, new Date().toISOString()) !== null;
+        const sharingMeal = shareTarget?.kind === "meal" && shareTarget.date === slot.date &&
+          shareTarget.occasion === slot.occasion;
         return (
           <View className={`card batch-slot${isTarget ? " target" : ""}`} key={String(slot.id)}>
             <Text className="section-title">{label}</Text>
@@ -473,6 +587,9 @@ export default function MerchantBatches() {
                 disabled={pending !== null || loading}
                 onClick={() => void toggleSelection(slot.id)}
               >{isSelected ? "已选择" : "选择餐次"}</Button>
+              <Button className={sharingMeal ? "selected" : "secondary"}
+                disabled={pending !== null || loading || !canShareMeal}
+                onClick={() => setShareTarget(mealTarget)}>{sharingMeal ? "已选本餐" : "分享这一餐"}</Button>
             </View>
             {failures[String(slot.id)] && <Text className="operation-error">{failures[String(slot.id)]}</Text>}
           </View>
@@ -493,42 +610,33 @@ export default function MerchantBatches() {
       )}
 
       <View className="card batch-create">
-        <Input disabled={pending !== null || loading} placeholder="批次标题（可不填）" value={title} onInput={(event) => setTitle(event.detail.value)} />
-        <Text className="meta">已选择 {selected.length} 个餐次</Text>
+        <Text className="section-title">分享预订</Text>
+        <Text className="meta">先在上方选择“分享这一天”或“分享这一餐”。</Text>
+        <Input disabled={pending !== null || loading} placeholder="分享标题（可不填）" value={title} onInput={(event) => setTitle(event.detail.value)} />
+        <Text>{shareTarget ? bookingShareTargetText(shareTarget) : "尚未选择分享目标"}</Text>
+        <Text className="meta">{shareSelection ? `将定位 ${shareSelection.mealSlotIds.length} 个正在预订的餐次` : "只有仍在预订中的餐次可以生成入口"}</Text>
         <Button className="primary" disabled={pending !== null || loading} onClick={() => void createBatch()}>{
-          pending === "create" ? "创建中…" : "创建预订批次"}</Button>
+          pending === "create" ? "生成中…" : "生成分享卡片"}</Button>
       </View>
+      </>}
 
-      {batches.map((entry) => (
-        <View className="card batch-card" key={String(entry.doc.id)}>
-          <Text className="section-title">{entry.share.title}</Text>
-          <Text className="meta">{entry.doc.status === "open" ? "开放中" : "已关闭"}</Text>
-          <Text className="share-path">{entry.share.path}</Text>
-          <Button
-            aria-label="复制分享 path"
-            onClick={() => void copyBookingBatchPath(entry.share, (options) => Taro.setClipboardData(options))
-              .then(() => Taro.showToast({ title: "path 已复制", icon: "none" }))}
-          >复制 path</Button>
-          {process.env.TARO_ENV === "weapp" && (
-            <Button
-              openType="share"
-              data-title={entry.share.title}
-              data-path={entry.share.path}
-            >分享给朋友</Button>
-          )}
-          {entry.doc.status === "open" && closingId === null && (
-            <Button className="danger" aria-label="关闭预订批次" onClick={() => setClosingId(entry.doc.id)}>关闭批次</Button>
-          )}
-          {String(closingId) === String(entry.doc.id) && (
-            <View className="close-confirmation">
-              <Text>{batchCloseText(entry.doc)}</Text>
-              <Button className="danger" disabled={pending !== null} onClick={() => void closeBatch(entry.doc.id)}>{
-                pending === `batch:${entry.doc.id}` ? "关闭中…" : "确认关闭批次"}</Button>
-              <Button disabled={pending !== null} onClick={() => setClosingId(null)}>取消</Button>
-            </View>
-          )}
-        </View>
-      ))}
+      <View className="booking-history">
+        <Text className="section-title">分享历史</Text>
+        {historyFailed && <View className="card error-card"><Text>分享历史加载失败</Text>
+          <Button disabled={pending !== null} onClick={() => void loadBatches()}>重试历史</Button></View>}
+        {!historyFailed && batches.length === 0 && <View className="card"><Text>还没有分享入口</Text></View>}
+        {detailFailedId !== null && <View className="card error-card"><Text>实时详情加载失败</Text>
+          <Button disabled={pending !== null} onClick={() => void openDetail(detailFailedId)}>重试详情</Button></View>}
+        {batches.map((entry) => (
+          <View className="card batch-card compact" key={String(entry.doc.id)}>
+            <Text className="section-title">{entry.share.title}</Text>
+            <Text>{bookingShareTargetText(entry.doc.target)}</Text>
+            <Text className="meta">{bookingBatchStatusText(entry.doc.status)}</Text>
+            <Button aria-label={`查看 ${entry.share.title} 详情`} disabled={pending !== null}
+              onClick={() => void openDetail(entry.doc.id)}>{pending === `detail:${entry.doc.id}` ? "加载中…" : "查看详情"}</Button>
+          </View>
+        ))}
+      </View>
     </View>
   );
 }

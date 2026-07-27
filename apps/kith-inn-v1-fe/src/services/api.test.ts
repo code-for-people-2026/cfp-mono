@@ -539,14 +539,20 @@ describe("API client", () => {
       title: "午餐预订",
       status: "open" as const,
       mealSlotIds: [11],
-      createdById: 1
+      createdById: 1,
+      target: { kind: "meal" as const, date: "2026-07-13", occasion: "lunch" as const }
     };
-    const share = { title: batch.title, path: `/pages/booking/index?batch=${batch.publicId}` };
+    const share = { title: batch.title, path: `/pages/booking/index?batch=${batch.publicId}&date=2026-07-13&occasion=lunch` };
     const request = vi.fn<RequestAdapter>(async ({ url, method }) => {
       if (url.includes("booking-config")) return { statusCode: 200, data: { doc: slot } };
       if (url.endsWith("/booking-batches") && method === "POST") return { statusCode: 201, data: { doc: batch, share } };
       if (url.endsWith("/booking-batches/31")) {
-        return { statusCode: 200, data: { doc: { ...batch, status: "closed" }, share } };
+        return method === "PATCH"
+          ? { statusCode: 200, data: { doc: { ...batch, status: "closed" }, share } }
+          : { statusCode: 200, data: { doc: batch, share, slots: [{
+            id: 11, date: slot.date, occasion: slot.occasion, orderStatus: slot.orderStatus,
+            orderDeadline: slot.orderDeadline, priceCents: slot.priceCents
+          }] } };
       }
       return { statusCode: 200, data: { docs: [{ doc: batch, share }] } };
     });
@@ -555,8 +561,10 @@ describe("API client", () => {
     await expect(client.updateMealSlotBookingConfig(11, config)).resolves.toEqual(slot);
     await expect(client.listBookingBatches("open")).resolves.toEqual([{ doc: batch, share }]);
     await expect(client.listBookingBatches()).resolves.toEqual([{ doc: batch, share }]);
-    await expect(client.createBookingBatch({ title: "午餐预订", mealSlotIds: [11] }))
+    const target = { kind: "meal" as const, date: "2026-07-13", occasion: "lunch" as const };
+    await expect(client.createBookingBatch({ title: "午餐预订", mealSlotIds: [11], target }))
       .resolves.toEqual({ doc: batch, share });
+    await expect(client.getBookingBatch(31)).resolves.toMatchObject({ doc: batch, slots: [{ id: 11 }] });
     await expect(client.closeBookingBatch(31)).resolves.toMatchObject({ doc: { status: "closed" }, share });
     expect(request).toHaveBeenNthCalledWith(1, expect.objectContaining({
       method: "PATCH",
@@ -567,8 +575,13 @@ describe("API client", () => {
       url: "http://be.test/merchant/booking-batches?status=open"
     }));
     expect(request).toHaveBeenNthCalledWith(3, expect.objectContaining({ url: "http://be.test/merchant/booking-batches" }));
-    expect(request).toHaveBeenNthCalledWith(4, expect.objectContaining({ method: "POST" }));
+    expect(request).toHaveBeenNthCalledWith(4, expect.objectContaining({ method: "POST", data: {
+      title: "午餐预订", mealSlotIds: [11], target
+    } }));
     expect(request).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      method: "GET", url: "http://be.test/merchant/booking-batches/31"
+    }));
+    expect(request).toHaveBeenNthCalledWith(6, expect.objectContaining({
       method: "PATCH",
       data: { status: "closed" }
     }));
@@ -656,6 +669,8 @@ describe("API client", () => {
       createdById: 1
     };
     const share = { title: valid.title, path: `/pages/booking/index?batch=${valid.publicId}` };
+    await expect(createApiClient({ request: adapter(201, { doc: valid, share: null }), sessions: sessions() })
+      .createBookingBatch({ mealSlotIds: [11] })).rejects.toMatchObject({ code: "invalid-api-response" });
     const invalidDocs = [
       null,
       { ...valid, id: "" },
@@ -668,7 +683,12 @@ describe("API client", () => {
       { ...valid, mealSlotIds: "bad" },
       { ...valid, mealSlotIds: [] },
       { ...valid, mealSlotIds: [null] },
-      { ...valid, createdById: null }
+      { ...valid, createdById: null },
+      { ...valid, target: { kind: "meal", date: "bad", occasion: "lunch" } },
+      { ...valid, target: { kind: "meal", date: "2026-02-31", occasion: "lunch" } },
+      { ...valid, target: { kind: "meal", date: "2026-07-13", occasion: "breakfast" } },
+      { ...valid, target: { kind: "day", date: "2026-07-13", occasion: "lunch" } },
+      { ...valid, internal: "leak" }
     ];
     for (const doc of invalidDocs) {
       await expect(createApiClient({
@@ -685,10 +705,26 @@ describe("API client", () => {
       { docs: [{ doc: valid, share: { ...share, title: 1 } }] },
       { docs: [{ doc: valid, share: { ...share, title: "" } }] },
       { docs: [{ doc: valid, share: { ...share, path: 1 } }] },
-      { docs: [{ doc: valid, share: { ...share, path: "/wrong" } }] }
+      { docs: [{ doc: valid, share: { ...share, path: "/wrong" } }] },
+      { docs: [{ doc: valid, share, internal: "leak" }] }
     ]) {
       await expect(createApiClient({ request: adapter(200, data), sessions: sessions() }).listBookingBatches())
         .rejects.toMatchObject({ code: "invalid-api-response" });
+    }
+    await expect(createApiClient({ request: adapter(200, {
+      doc: valid, share, slots: [{ id: 12, date: "2026-07-13", occasion: "lunch", orderStatus: "open",
+        orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 }]
+    }), sessions: sessions() }).getBookingBatch(31)).rejects.toMatchObject({ code: "invalid-api-response" });
+    for (const slots of [[], [{ id: 11, date: "2026-02-31", occasion: "lunch", orderStatus: "open",
+      orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 }],
+    [{ id: 11, date: "2026-07-13", occasion: "breakfast", orderStatus: "open",
+      orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 }],
+    [{ id: 11, date: "2026-07-13", occasion: "lunch", orderStatus: "open",
+      orderDeadline: "not-an-instant", priceCents: 2800 }],
+    [{ id: 11, date: "2026-07-13", occasion: "lunch", orderStatus: "open",
+      orderDeadline: null, priceCents: -1 }]]) {
+      await expect(createApiClient({ request: adapter(200, { doc: valid, share, slots }), sessions: sessions() })
+        .getBookingBatch(31)).rejects.toMatchObject({ code: "invalid-api-response" });
     }
   });
 

@@ -1,6 +1,10 @@
 import type {
   BookingBatch,
+  BookingBatchDetailResponse,
+  BookingBatchListResponse,
   BookingBatchMutationResponse,
+  BookingBatchTargetedCreate,
+  BookingShareTarget,
   BulkMealSlotBookingStatusResult,
   MealSlot,
   MealSlotTarget,
@@ -19,6 +23,17 @@ export type BookingConfigContext = {
 };
 
 export type BookingReturnMode = "navigate-to" | "redirect-to" | "navigate-back";
+export type BookingBatchLiveSummary = {
+  dateText: string;
+  slotCountText: string;
+  priceText: string;
+  deadlineLines: string[];
+};
+
+export const BOOKING_SHARE_FALLBACK = {
+  title: "街坊味预订",
+  path: "/pages/merchant/batches/index"
+};
 
 function calendarDate(value: unknown): string | null {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
@@ -100,6 +115,57 @@ export function toggleOperationalSelection(
 export function selectableBookingSlots(slots: MealSlot[], now: string): MealSlot[] {
   return slots.filter((slot) => slot.orderStatus === "open" && slot.orderDeadline !== null &&
     Date.parse(slot.orderDeadline) > Date.parse(now));
+}
+
+export function bookingShareSelection(
+  target: BookingShareTarget,
+  slots: MealSlot[],
+  now: string
+): BookingBatchTargetedCreate | null {
+  const matching = selectableBookingSlots(slots, now).filter((slot) => slot.date === target.date &&
+    (target.kind === "day" || slot.occasion === target.occasion));
+  if (matching.length === 0 || (target.kind === "meal" && matching.length !== 1)) return null;
+  return { target, mealSlotIds: matching.map(({ id }) => id) };
+}
+
+export function bookingShareTargetText(target: BookingShareTarget | null | undefined): string {
+  if (!target) return "历史分享入口";
+  return target.kind === "day"
+    ? `${target.date} 当天`
+    : `${target.date} ${target.occasion === "lunch" ? "午餐" : "晚餐"}`;
+}
+
+export function bookingBatchStatusText(status: BookingBatch["status"]): string {
+  return status === "open" ? "开放中" : status === "closed" ? "已关闭" : "已归档";
+}
+
+export function sortBookingBatchHistory(
+  entries: BookingBatchListResponse["docs"]
+): BookingBatchListResponse["docs"] {
+  const rank: Record<BookingBatch["status"], number> = { open: 0, closed: 1, archived: 2 };
+  return entries.map((entry, index) => ({ entry, index })).sort((left, right) =>
+    rank[left.entry.doc.status] - rank[right.entry.doc.status] || left.index - right.index).map(({ entry }) => entry);
+}
+
+export function summarizeBookingBatch(slots: BookingBatchDetailResponse["slots"]): BookingBatchLiveSummary {
+  const dates = [...new Set(slots.map(({ date }) => date))].sort();
+  const prices = slots.flatMap(({ priceCents }) => priceCents === null ? [] : [priceCents]);
+  const minimum = prices.length === 0 ? null : Math.min(...prices);
+  const allSamePrice = prices.length === slots.length && new Set(prices).size === 1;
+  return {
+    dateText: dates.length === 1 ? dates[0]! : `${dates[0]} 至 ${dates.at(-1)}`,
+    slotCountText: `${slots.length} 个餐次`,
+    priceText: minimum === null ? "价格待确认" : `¥${(minimum / 100).toFixed(2).replace(/\.00$/, "")}/份${allSamePrice ? "" : "起"}`,
+    deadlineLines: slots.map((slot) => `${slot.date} ${slot.occasion === "lunch" ? "午餐" : "晚餐"} ${
+      slot.orderDeadline === null ? "未设置截止" : `${bookingDeadlineInputValue(slot.orderDeadline).slice(11)} 截止`}`)
+  };
+}
+
+export function bookingBatchSharePayload(dataset: unknown): { title: string; path: string } {
+  if (typeof dataset !== "object" || dataset === null) return BOOKING_SHARE_FALLBACK;
+  const { title, path } = dataset as { title?: unknown; path?: unknown };
+  return typeof title === "string" && title.trim() !== "" && typeof path === "string" &&
+    path.startsWith("/pages/booking/index?batch=") ? { title, path } : BOOKING_SHARE_FALLBACK;
 }
 
 export function toggleBookingSlot(

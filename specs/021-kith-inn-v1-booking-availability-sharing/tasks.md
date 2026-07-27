@@ -54,17 +54,17 @@
 
 - [x] T016 [P] [US2] 为 targeted schema 切换、目标创建、旧批次兼容和实时详情补 route tests 于 `apps/kith-inn-v1-be/src/routes/bookingBatches.test.ts`
 - [x] T017 [US2] 在 CMS 已可持久化后切换 targeted create schema，并实现 BookingBatch target 创建、详情和兼容映射于 `apps/kith-inn-v1-be/src/`
-- [ ] T018 [P] [US2] 为日期/餐次目标、摘要和微信 payload 补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
-- [ ] T019 [US2] 实现 Page 4 创建成功态和微信原生卡片分享于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
-- [ ] T020 [US2] 补日期/餐次分享 E2E 于 `apps/kith-inn-v1-e2e/src/merchant.spec.ts`
+- [x] T018 [P] [US2] 为日期/餐次目标、摘要和微信 payload 补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
+- [x] T019 [US2] 实现 Page 4 创建成功态和微信原生卡片分享于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
+- [x] T020 [US2] 补日期/餐次分享 E2E 于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ## Phase 5: User Story 3 - 查看和管理分享入口
 
 **Independent Test**: 紧凑历史可打开开放、关闭和归档实时详情，并安全再次分享或停用入口。
 
-- [ ] T021 [P] [US3] 为历史排序、三态、实时摘要和复制失败补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
-- [ ] T022 [US3] 实现紧凑历史、按需详情和入口管理于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
-- [ ] T023 [US3] 补历史和详情 E2E 于 `apps/kith-inn-v1-e2e/src/merchant.spec.ts`
+- [x] T021 [P] [US3] 为历史排序、三态、实时摘要和复制失败补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
+- [x] T022 [US3] 实现紧凑历史、按需详情和入口管理于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
+- [x] T023 [US3] 补历史和详情 E2E 于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ## Phase 6: Polish & Cross-Cutting
 

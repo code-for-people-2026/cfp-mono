@@ -1,8 +1,10 @@
 import { expect, it, vi } from "vitest";
-import type { BookingBatch, MealSlot, ServiceClosure } from "@cfp/kith-inn-v1-shared";
+import type { BookingBatch, BookingBatchDetailResponse, BookingBatchListResponse, MealSlot, ServiceClosure } from "@cfp/kith-inn-v1-shared";
 import {
   applyBulkBookingStatus,
   batchCloseText,
+  bookingBatchSharePayload,
+  bookingBatchStatusText,
   bookingConfigContext,
   bookingConfigUrl,
   bookingMenuUrl,
@@ -10,10 +12,14 @@ import {
   bookingWeekDates,
   bookingWeekStart,
   bookingDeadlineInputValue,
+  bookingShareSelection,
+  bookingShareTargetText,
   buildBookingConfig,
   copyBookingBatchPath,
   effectiveServiceClosure,
   selectableBookingSlots,
+  sortBookingBatchHistory,
+  summarizeBookingBatch,
   toggleBookingSlot,
   toggleOperationalSelection
 } from "./bookingBatches";
@@ -105,6 +111,82 @@ it("selects only open unexpired slots and toggles stable ids", () => {
   expect(toggleBookingSlot([], slot({ orderStatus: "closed" }), now)).toEqual([]);
 });
 
+it("maps a day or meal share target to only its currently shareable slots", () => {
+  const now = "2026-07-10T01:00:00.000Z";
+  const slots = [slot(), slot({ id: 12, occasion: "dinner", priceCents: 3200 }),
+    slot({ id: 13, date: "2026-07-14" }), slot({ id: 14, orderStatus: "closed" })];
+  expect(bookingShareSelection({ kind: "day", date: "2026-07-13" }, slots, now)).toEqual({
+    target: { kind: "day", date: "2026-07-13" }, mealSlotIds: [11, 12]
+  });
+  expect(bookingShareSelection({ kind: "meal", date: "2026-07-13", occasion: "dinner" }, slots, now))
+    .toEqual({ target: { kind: "meal", date: "2026-07-13", occasion: "dinner" }, mealSlotIds: [12] });
+  expect(bookingShareSelection({ kind: "meal", date: "2026-07-13", occasion: "lunch" }, [
+    slot({ orderDeadline: now })
+  ], now)).toBeNull();
+  expect(bookingShareSelection({ kind: "meal", date: "2026-07-13", occasion: "lunch" }, [
+    slot(), slot({ id: 15 })
+  ], now)).toBeNull();
+});
+
+it("builds live detail summaries and validated native share payloads", () => {
+  const slots: BookingBatchDetailResponse["slots"] = [
+    { id: 11, date: "2026-07-13", occasion: "lunch", orderStatus: "open", orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 },
+    { id: 12, date: "2026-07-13", occasion: "dinner", orderStatus: "closed", orderDeadline: null, priceCents: 3200 }
+  ];
+  expect(summarizeBookingBatch(slots)).toEqual({
+    dateText: "2026-07-13",
+    slotCountText: "2 个餐次",
+    priceText: "¥28/份起",
+    deadlineLines: ["2026-07-13 午餐 09:00 截止", "2026-07-13 晚餐 未设置截止"]
+  });
+  expect(bookingBatchSharePayload({
+    title: "周一预订",
+    path: "/pages/booking/index?batch=72b8b5fc-84d2-4c70-a35b-0a42742fcd11&date=2026-07-13&occasion=lunch"
+  })).toMatchObject({ title: "周一预订", path: expect.stringContaining("occasion=lunch") });
+  expect(bookingBatchSharePayload({ title: "", path: "/wrong" })).toEqual({
+    title: "街坊味预订", path: "/pages/merchant/batches/index"
+  });
+  expect(summarizeBookingBatch([
+    { ...slots[0]!, id: 13 },
+    { ...slots[0]!, id: 14, date: "2026-07-14" }
+  ])).toMatchObject({ dateText: "2026-07-13 至 2026-07-14", priceText: "¥28/份" });
+  expect(summarizeBookingBatch([{ ...slots[0]!, priceCents: null }])).toMatchObject({
+    dateText: "2026-07-13", priceText: "价格待确认"
+  });
+  expect(bookingBatchSharePayload(null)).toEqual({
+    title: "街坊味预订", path: "/pages/merchant/batches/index"
+  });
+  expect(bookingBatchSharePayload({ title: 1, path: 2 })).toEqual({
+    title: "街坊味预订", path: "/pages/merchant/batches/index"
+  });
+  expect(bookingBatchSharePayload({ title: "入口", path: 2 })).toEqual({
+    title: "街坊味预订", path: "/pages/merchant/batches/index"
+  });
+});
+
+it("keeps newest API order within open, closed and archived history groups", () => {
+  const base: BookingBatchListResponse["docs"][number] = {
+    doc: { id: 31, sellerId: 7, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11", title: "入口",
+      status: "open", mealSlotIds: [11], createdById: 1, target: { kind: "day", date: "2026-07-13" } },
+    share: { title: "入口", path: "/pages/booking/index?batch=72b8b5fc-84d2-4c70-a35b-0a42742fcd11" }
+  };
+  expect(sortBookingBatchHistory([
+    { ...base, doc: { ...base.doc, id: 32, status: "closed" } },
+    { ...base, doc: { ...base.doc, id: 33, status: "open" } },
+    { ...base, doc: { ...base.doc, id: 34, status: "archived" } },
+    base
+  ]).map(({ doc }) => doc.id)).toEqual([33, 31, 32, 34]);
+  expect(bookingBatchStatusText("open")).toBe("开放中");
+  expect(bookingBatchStatusText("closed")).toBe("已关闭");
+  expect(bookingBatchStatusText("archived")).toBe("已归档");
+  expect(bookingShareTargetText(base.doc.target)).toBe("2026-07-13 当天");
+  expect(bookingShareTargetText({ kind: "meal", date: "2026-07-13", occasion: "lunch" }))
+    .toBe("2026-07-13 午餐");
+  expect(bookingShareTargetText({ kind: "meal", date: "2026-07-13", occasion: "dinner" }))
+    .toBe("2026-07-13 晚餐");
+  expect(bookingShareTargetText(null)).toBe("历史分享入口");
+});
+
 it("caps operational selection while still allowing deselection", () => {
   expect(toggleOperationalSelection([1], 2, 2)).toEqual({ selected: [1, 2], limitReached: false });
   expect(toggleOperationalSelection([1, 2], 3, 2)).toEqual({ selected: [1, 2], limitReached: true });
@@ -163,4 +245,7 @@ it("copies the deterministic public path and describes close impact", async () =
   expect(setClipboardData).toHaveBeenCalledWith({ data: `/pages/booking/index?batch=${batch.publicId}` });
   expect(batchCloseText(batch)).toBe("关闭批次只会停用此分享入口，不会关闭其中餐次。确认关闭？");
   expect(batchCloseText({ ...batch, status: "closed" })).toBe("该批次已关闭");
+  await expect(copyBookingBatchPath({ title: batch.title, path: "/path" }, vi.fn(async () => {
+    throw new Error("clipboard denied");
+  }))).rejects.toThrow("clipboard denied");
 });
