@@ -47,6 +47,8 @@
     .topbar { height: 50px; padding: 4px 18px 10px; display: flex; align-items: center; justify-content: space-between; }
     .brand { font-weight: 900; font-size: 21px; letter-spacing: -.03em; }
     .mini-menu { padding: 7px 12px; border: 1px solid #ddd2c3; border-radius: 18px; background: rgba(255,255,255,.8); font-weight: 900; letter-spacing: .15em; }
+    .topbar-tools { display: flex; align-items: center; gap: 8px; }
+    .order-add-link { color: var(--red); font-size: 11px; font-weight: 900; white-space: nowrap; }
     .content { height: calc(100% - 148px); overflow: hidden; padding: 10px 16px 18px; }
     .content.offerings-content { overflow-y: auto; padding-bottom: 92px; scrollbar-width: none; }
     .content.offerings-content::-webkit-scrollbar { display: none; }
@@ -106,10 +108,16 @@
     .segment { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; margin-bottom: 12px; border-radius: 13px; background: #eee7dc; }
     .segment span { padding: 8px; border-radius: 10px; text-align: center; color: var(--muted); font-size: 12px; font-weight: 800; }
     .segment .active { background: white; color: var(--ink); box-shadow: 0 2px 7px rgba(70,50,30,.08); }
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin-bottom: 11px; }
-    .stat { padding: 10px 6px; border-radius: 13px; background: white; border: 1px solid var(--line); text-align: center; }
-    .stat b { display: block; font-size: 18px; }
-    .stat span { color: var(--muted); font-size: 10px; }
+    .order-date { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px; margin-bottom: 10px; }
+    .order-date button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: white; font-size: 17px; }
+    .order-date div { text-align: center; }
+    .order-date b { display: block; font-size: 13px; }
+    .order-date span { color: var(--muted); font-size: 10px; }
+    .order-filters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 11px; }
+    .order-filter { padding: 7px 2px; border: 1px solid var(--line); border-radius: 11px; color: var(--muted); background: white; text-align: center; font-size: 9px; font-weight: 800; }
+    .order-filter b { display: block; margin-bottom: 1px; color: var(--ink); font-size: 15px; }
+    .order-filter.active { border-color: var(--red); color: white; background: var(--red); }
+    .order-filter.active b { color: white; }
     .order-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
     .order-actions .button { flex: 1; min-width: 82px; }
     .quiet-banner { display: flex; align-items: center; gap: 7px; margin-bottom: 12px; color: var(--green); font-size: 12px; font-weight: 800; }
@@ -139,7 +147,7 @@
         <h1>街坊味 v1 · 前端重构视觉基准</h1>
         <p>把复杂后台收成两条清楚主线：桃子经营一周菜单，街坊从分享卡片完成预订。</p>
       </div>
-      <div class="version">概念稿 v0.2 · 2026-07-24</div>
+      <div class="version">概念稿 v0.3 · 2026-07-27</div>
     </header>
 
     <section>
@@ -249,26 +257,26 @@
           <div class="step"><b>5</b> 订单履约</div>
           <div class="phone">
             <div class="status"><span>9:41</span><span>● ●● 100%</span></div>
-            <div class="topbar"><div class="brand">今日订单</div><div class="mini-menu">••• ◉</div></div>
+            <div class="topbar"><div class="brand">今日订单</div><div class="topbar-tools"><span class="order-add-link">＋补单</span><div class="mini-menu">••• ◉</div></div></div>
             <div class="content">
+              <div class="order-date"><button aria-label="前一天">‹</button><div><b>7月27日 · 今天</b><span>周一</span></div><button aria-label="后一天">›</button></div>
               <div class="segment"><span class="active">午餐 18份</span><span>晚餐 9份</span></div>
-              <div class="stats"><div class="stat"><b>3</b><span>待确认</span></div><div class="stat"><b>12</b><span>已确认</span></div><div class="stat"><b>8</b><span>待送达</span></div></div>
+              <div class="order-filters"><div class="order-filter active"><b>15</b>全部</div><div class="order-filter"><b>3</b>待确认</div><div class="order-filter"><b>5</b>待收款</div><div class="order-filter"><b>8</b>待配送</div></div>
               <div class="card warm">
                 <div class="card-title"><span>王阿姨 · 2份</span><span class="chip red">待确认</span></div>
                 <div class="meta">幸福里 3 栋 201 · 备注：少辣</div>
-                <div class="order-actions"><div class="button small">确认订单</div><div class="button secondary small">联系顾客</div></div>
+                <div class="order-actions"><div class="button small">确认订单</div><div class="button secondary small">更多</div></div>
               </div>
               <div class="card">
                 <div class="card-title"><span>李叔 · 1份</span><span class="chip green">已确认</span></div>
-                <div class="meta">梧桐苑 8 栋门卫 · ¥30</div>
+                <div class="meta">梧桐苑 8 栋门卫 · ¥30 · 未付 · 待配送</div>
                 <div class="order-actions"><div class="button secondary small">标已付（线下）</div><div class="button secondary small">标记送达</div></div>
               </div>
               <div class="card">
-                <div class="card-title"><span>周老师 · 3份</span><span class="chip gold">待送达</span></div>
+                <div class="card-title"><span>周老师 · 3份</span><span class="chip gold">待配送</span></div>
                 <div class="meta">街坊中心 2 楼 · 已付（线下）</div>
                 <div class="order-actions"><div class="button secondary small">标记送达</div></div>
               </div>
-              <div class="primary-dock"><div class="button secondary">查看配送清单</div></div>
             </div>
             <nav class="tabs"><div class="tab"><i>⌂</i>今日</div><div class="tab"><i>▦</i>菜品</div><div class="tab"><i>▤</i>菜单</div><div class="tab active"><i>≣</i>订单</div></nav>
           </div>
@@ -355,7 +363,7 @@
       </div>
     </section>
 
-    <footer class="principles"><span>一屏一主任务</span><span>大字号与大触控区</span><span>状态必须有文案</span><span>顾客入口不暴露商家功能</span><span>接龙兜底默认隐藏</span><span>无在线支付 / 无 AI 主链路</span></footer>
+    <footer class="principles"><span>一屏一主任务</span><span>大字号与大触控区</span><span>状态必须有文案</span><span>订单工作筛选可重叠</span><span>顾客入口不暴露商家功能</span><span>接龙兜底默认隐藏</span><span>无在线支付 / 无 AI 主链路</span></footer>
   </main>
 </body>
 </html>
