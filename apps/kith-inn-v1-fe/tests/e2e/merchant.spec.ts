@@ -1,6 +1,8 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
+const BE_BASE_URL = "http://127.0.0.1:3311";
+const DAY_MS = 86_400_000;
 const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
 const jsonResponse = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
 const expectNoHorizontalOverflow = async (page: Page) => {
@@ -56,6 +58,22 @@ const openOfferingImport = async (page: Page) => {
   await enterManageOfferings(page);
   await taroButton(page, /^批量导入$/).click();
   await expect(offeringImportInput(page)).toBeVisible();
+};
+
+const findUnscheduledLunch = async (page: Page, initialTarget: Date) => {
+  let target = initialTarget;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const targetDate = target.toISOString().slice(0, 10);
+    const weekStart = new Date(target.getTime() - 2 * DAY_MS).toISOString().slice(0, 10);
+    await page.goto(`/pages/merchant/menu/index?weekStart=${weekStart}&date=${targetDate}&occasion=lunch`);
+    await expect(page.locator(".menu-selected-date")).toContainText(targetDate);
+    const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
+    await expect(lunchCard).toBeVisible();
+    const generateButton = lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ });
+    if (await generateButton.isVisible()) return { targetDate, lunchCard, generateButton };
+    target = new Date(target.getTime() + 7 * DAY_MS);
+  }
+  throw new Error("连续 20 个周三午餐均已有菜单，无法隔离 Page 4 真实后端 E2E 数据");
 };
 
 const menuItems = ["红烧肉", "香菇滑鸡", "清炒时蔬", "家常豆腐", "番茄蛋汤"].map((name, index) => ({
@@ -2225,14 +2243,13 @@ test("同一提交窗口连续触发 Page 4 写操作只发送一次请求", asy
   await expect(page.locator(".share-success-state")).toContainText("已关闭");
 });
 
-test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => {
+test("餐次日期碰撞时跳过并完成创建、复制和关闭预订批次", async ({ page, request }) => {
   const suffix = Date.now().toString(36);
-  const future = new Date(Date.now() + (120 + Date.now() % 100) * 86_400_000);
+  const now = Date.now();
+  const future = new Date(now + (120 + now % 100) * DAY_MS);
   const daysUntilWednesday = (3 - future.getUTCDay() + 7) % 7;
-  const target = new Date(future.getTime() + daysUntilWednesday * 86_400_000);
-  const targetDate = target.toISOString().slice(0, 10);
-  const weekStart = new Date(target.getTime() - 2 * 86_400_000).toISOString().slice(0, 10);
-  const deadline = targetDate;
+  const initialTarget = new Date(future.getTime() + daysUntilWednesday * DAY_MS);
+  const initialTargetDate = initialTarget.toISOString().slice(0, 10);
   const rows = [
     `批次荤一-${suffix} 牛肉-${suffix} 荤`,
     `批次荤二-${suffix} 猪肉-${suffix} 荤`,
@@ -2246,17 +2263,28 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
-  await page.goto(`/pages/merchant/menu/index?weekStart=${weekStart}&date=${targetDate}&occasion=lunch`);
-  await expect(page.locator(".menu-selected-date")).toContainText(targetDate);
-  const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
-  await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
+
+  const login = await request.post(`${BE_BASE_URL}/auth/operator/dev-login`, {
+    data: { openid: "taozi-v1-dev-openid" }
+  });
+  expect(login.ok()).toBe(true);
+  const { token } = await login.json() as { token: string };
+  const collision = await request.post(`${BE_BASE_URL}/merchant/meal-slots/generate-menus`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { targets: [{ date: initialTargetDate, occasion: "lunch" }], replaceExisting: false }
+  });
+  expect([200, 409]).toContain(collision.status());
+
+  const { targetDate, lunchCard, generateButton } = await findUnscheduledLunch(page, initialTarget);
+  expect(targetDate).not.toBe(initialTargetDate);
+  await generateButton.click();
   await expect(lunchCard.locator(".menu-meal-names")).toBeVisible();
   await lunchCard.locator("taro-button-core").filter({ hasText: /^设置价格与截止时间$/ }).click();
 
   const startedAt = Date.now();
   const slot = page.locator(".batch-slot").filter({ hasText: `${targetDate} 午餐` });
   await slot.getByRole("textbox", { name: "价格（元）" }).fill("28");
-  await slot.getByRole("textbox", { name: "截止时间" }).fill(`${deadline}T18:00`);
+  await slot.getByRole("textbox", { name: "截止时间" }).fill(`${targetDate}T18:00`);
   const configResponse = page.waitForResponse((response) =>
     response.url().includes("/booking-config") && response.request().method() === "PATCH");
   await slot.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();

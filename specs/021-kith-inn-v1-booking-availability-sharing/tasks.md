@@ -22,6 +22,7 @@
 | PR9 | 校准商家成功页的兼容批次范围说明 | FR9-13 | T030 | Page 4/E2E；不把 batch 白名单宣称为 FR11 完成 | E2E + verify | 约100 | PR8 |
 | PR10 | 补齐一周经营功能流自动化 | SC1；FR13-14 | T031 | Page 4 E2E/验收记录；不冒充真人计时 | workflow E2E + verify | 约250 | PR9 |
 | PR11 | 补齐缺失状态视觉证据 | SC5；FR13 | T032 | Page 4 E2E/视觉基线/验收记录；不改产品行为 | screenshot + reachability + verify | 约300 | PR10 |
+| PR12 | 隔离真实后端 Page 4 E2E 的餐次日期 | SC1/SC4 验收可靠性 | T034 | Page 4 E2E/验收台账；不改产品行为、不治理其他测试文件 | 主动制造日期碰撞后自动选择空餐次 + verify | 约100 | PR11 |
 
 每片统一执行独立验证、`git diff --check`、人工 diff 统计、`pnpm verify`，并按 `pr-review-converge` 完成 Ready PR、latest-head CI、review、零 unresolved thread 和 rebase merge。
 
@@ -81,6 +82,7 @@
 - [x] T030 把商家成功页“商家当前开放的实时餐次”改为“本公开批次关联餐次按最新状态展示”的兼容期语义并补 E2E
 - [x] T031 新增默认价应用、个别改价和一周批量开放的完整功能 E2E；自动化运行时长不作为 SC-001 真人计时证据
 - [x] T032 为加载、局部失败、空态和批量处理中状态补 375×812 无溢出、无遮挡、主操作可达证据
+- [x] T034 在真实后端主流程中主动占用初始餐次，并自动跳过已有菜单的周三午餐，避免共享 E2E 数据碰撞造成误报
 
 ## 外部验收
 
@@ -94,7 +96,7 @@
 
 ## Dependencies & Execution Order
 
-`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 → PR10 → PR11`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027/T033 是代码 PR 之外的外部验收门禁，只能按真实设备或真人操作事实勾选；D001/D002 留给后续顾客端规格。
+`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 → PR10 → PR11 → PR12`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027/T033 是代码 PR 之外的外部验收门禁，只能按真实设备或真人操作事实勾选；D001/D002 留给后续顾客端规格。
 
 ## Implementation Strategy
 

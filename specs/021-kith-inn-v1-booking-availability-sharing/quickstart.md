@@ -8,8 +8,10 @@ pnpm --filter @cfp/kith-inn-v1-be test
 pnpm --filter @cfp/cms test
 pnpm --filter @cfp/kith-inn-v1-fe test
 pnpm verify
-pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|紧凑历史|默认价应用、个别改价并批量开放完整工作周|Page 4 (加载态|局部失败态|空态|批量处理中态)'
+pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '餐次日期碰撞|按日期生成|紧凑历史|默认价应用、个别改价并批量开放完整工作周|Page 4 (加载态|局部失败态|空态|批量处理中态)'
 ```
+
+“餐次日期碰撞”场景会先主动占用初始周三午餐，再确认真实后端主流程选择后续空餐次并完成开放、创建、复制和关闭，防止共享 E2E 数据碰撞被误判为 Page 4 回归。
 
 ## 关键场景
 
