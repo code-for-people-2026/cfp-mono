@@ -1986,6 +1986,7 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   const daysUntilWednesday = (3 - future.getUTCDay() + 7) % 7;
   const target = new Date(future.getTime() + daysUntilWednesday * 86_400_000);
   const targetDate = target.toISOString().slice(0, 10);
+  const weekStart = new Date(target.getTime() - 2 * 86_400_000).toISOString().slice(0, 10);
   const deadline = targetDate;
   const rows = [
     `批次荤一-${suffix} 牛肉-${suffix} 荤`,
@@ -1994,14 +1995,13 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
     `批次素二-${suffix} 豆腐-${suffix} 素`,
     `批次汤-${suffix} 番茄-${suffix} 汤`
   ];
-  await page.clock.install({ time: new Date(`${targetDate}T01:00:00.000Z`) });
   await page.goto("/");
   await openOfferingImport(page);
   await offeringImportInput(page).fill(rows.join("\n"));
   await taroButton(page, /^预览导入$/).click();
   await taroButton(page, /^确认导入$/).click();
   await expect(page.getByText("新增 5 行，覆盖 0 行，跳过 0 行，失败 0 行")).toBeVisible();
-  await taroButton(page, /^菜单$/).click();
+  await page.goto(`/pages/merchant/menu/index?weekStart=${weekStart}&date=${targetDate}&occasion=lunch`);
   await expect(page.locator(".menu-selected-date")).toContainText(targetDate);
   const lunchCard = page.locator(".menu-meal-card").filter({ hasText: "午餐" });
   await lunchCard.locator("taro-button-core").filter({ hasText: /^生成午餐$/ }).click();
@@ -2016,24 +2016,103 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
     response.url().includes("/booking-config") && response.request().method() === "PATCH");
   await slot.locator("taro-button-core").filter({ hasText: /^开放预订$/ }).click();
   expect((await configResponse).status()).toBe(200);
-  const selectSlot = slot.getByLabel(`选择 ${targetDate} 午餐`);
-  await expect(selectSlot).toBeEnabled();
-  await selectSlot.click();
-  await expect(page.getByText("已选择 1 个餐次", { exact: true })).toBeVisible();
+  await expect(slot.locator("taro-button-core").filter({ hasText: /^已选本餐$/ })).toBeVisible();
   const createResponse = page.waitForResponse((response) =>
     response.url().endsWith("/merchant/booking-batches") && response.request().method() === "POST");
-  await taroButton(page, /^创建预订批次$/).click();
-  expect((await createResponse).status()).toBe(201);
-  const batch = page.locator(".batch-card").filter({ hasText: `${targetDate} 午餐预订` });
-  await expect(batch).toContainText("/pages/booking/index?batch=");
-  await batch.getByLabel("复制分享 path").click();
-  await expect(page.getByText("path 已复制", { exact: true })).toBeVisible();
-  await batch.getByLabel("关闭预订批次").click();
-  await taroButton(page, /^确认关闭批次$/).click();
-  await expect(batch).toContainText("已关闭");
+  await taroButton(page, /^生成分享卡片$/).click();
+  const created = await createResponse;
+  expect(created.status()).toBe(201);
+  expect(created.request().postDataJSON()).toMatchObject({
+    target: { kind: "meal", date: targetDate, occasion: "lunch" }
+  });
+  const detail = page.locator(".share-success-state");
+  await expect(detail).toContainText("预订已开放");
+  await expect(detail).toContainText(`${targetDate} 午餐`);
+  await detail.getByLabel("复制入口").click();
+  await expect(page.getByText("入口已复制", { exact: true })).toBeVisible();
+  await detail.getByLabel("停用分享入口").click();
+  await taroButton(page, /^确认停用入口$/).click();
+  await expect(detail).toContainText("已关闭");
   expect(Date.now() - startedAt).toBeLessThan(60_000);
   await expect(page.getByText(/operator-token|sellerId|createdById/)).toHaveCount(0);
-  await expect(page.getByLabel(/分享给朋友|原生分享/)).toHaveCount(0);
+  await expect(page.getByLabel(/分享给街坊|原生分享/)).toHaveCount(0);
+});
+
+test("按日期生成只定位当天开放餐次的分享卡片", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  await mockBookingOperations(page);
+  const docs = [
+    { ...slot("2026-07-27", "lunch"), id: 951, orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 2800 },
+    { ...slot("2026-07-27", "dinner"), id: 952, orderStatus: "open" as const,
+      orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 3200 }
+  ];
+  let createBody: unknown;
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
+  await page.route("**/merchant/booking-batches", (route) => {
+    if (route.request().method() === "GET") return route.fulfill(jsonResponse({ docs: [] }));
+    createBody = route.request().postDataJSON();
+    const doc = { id: 61, sellerId: 1, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "7月27日预订", status: "open", mealSlotIds: [951, 952], createdById: 1,
+      target: { kind: "day", date: "2026-07-27" } };
+    return route.fulfill(jsonResponse({ doc, share: { title: doc.title,
+      path: `/pages/booking/index?batch=${doc.publicId}&date=2026-07-27` } }, 201));
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  const day = page.locator(".day-operation").filter({ hasText: "2026-07-27" });
+  await day.locator("taro-button-core").filter({ hasText: /^分享这一天$/ }).click();
+  await taroButton(page, /^生成分享卡片$/).click();
+  expect(createBody).toEqual({
+    target: { kind: "day", date: "2026-07-27" }, mealSlotIds: [951, 952]
+  });
+  const success = page.locator(".share-success-state");
+  await expect(success).toContainText("预订已开放");
+  await expect(success).toContainText("2026-07-27 当天");
+  await expect(success).toContainText("2 个餐次");
+  await expect(success).toContainText("¥28/份起");
+  await expect(success.getByLabel("复制入口")).toBeVisible();
+  await expect(success.locator("taro-button-core").filter({ hasText: /^分享给街坊$/ })).toHaveCount(0);
+});
+
+test("紧凑历史按状态排序并只在查看时加载实时详情", async ({ page }) => {
+  await mockBookingOperations(page);
+  const publicIds = [
+    "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+    "82b8b5fc-84d2-4c70-a35b-0a42742fcd12",
+    "92b8b5fc-84d2-4c70-a35b-0a42742fcd13"
+  ];
+  const entry = (id: number, status: "open" | "closed" | "archived", title: string) => {
+    const doc = { id, sellerId: 1, publicId: publicIds[id - 71]!, title, status, mealSlotIds: [951],
+      createdById: 1, target: { kind: "meal" as const, date: "2026-07-27", occasion: "lunch" as const } };
+    return { doc, share: { title, path: `/pages/booking/index?batch=${doc.publicId}&date=2026-07-27&occasion=lunch` } };
+  };
+  const closed = entry(71, "closed", "已关闭入口");
+  const open = entry(72, "open", "开放入口");
+  const archived = entry(73, "archived", "归档入口");
+  let detailRequests = 0;
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [closed, open, archived] })));
+  await page.route("**/merchant/booking-batches/71", (route) => {
+    detailRequests += 1;
+    return route.fulfill(jsonResponse({ ...closed, slots: [{ id: 951, date: "2026-07-27", occasion: "lunch",
+      orderStatus: "closed", orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 2800 }] }));
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index");
+  const cards = page.locator(".batch-card.compact");
+  await expect(cards).toHaveCount(3);
+  expect(await cards.locator(".section-title").allTextContents()).toEqual(["开放入口", "已关闭入口", "归档入口"]);
+  expect(detailRequests).toBe(0);
+  await page.getByLabel("查看 已关闭入口 详情").click();
+  await expect(page.locator(".share-success-state")).toContainText("以下为当前实时餐次信息");
+  await expect(page.locator(".share-success-state")).toContainText("已停止");
+  expect(detailRequests).toBe(1);
+  await expect(page.getByLabel("停用分享入口")).toHaveCount(0);
 });
 
 test("专用页面新建和选择顾客、显式更新与重提后继续订单生命周期", async ({ page }) => {

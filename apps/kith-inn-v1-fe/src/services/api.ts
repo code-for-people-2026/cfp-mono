@@ -3,8 +3,10 @@ import type {
   BulkMealSlotBookingStatusResult,
   BookingBatch,
   BookingBatchCreate,
+  BookingBatchDetailResponse,
   BookingBatchListResponse,
   BookingBatchMutationResponse,
+  BookingBatchTargetedCreate,
   CustomerProfile,
   CustomerProfileCreate,
   CustomerBookingBatchView,
@@ -161,14 +163,15 @@ function parseCommit(value: unknown): ImportCommitResponse {
 
 const jielongHashSchema = z.string().check(z.regex(/^[0-9a-f]{64}$/));
 const jielongLineNumberSchema = z.int().check(z.positive());
+const calendarDateSchema = z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/), z.refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
+}));
 const jielongLinesAreOrdered = (lines: { lineNumber: number }[]) =>
   lines.every((entry, index) => index === 0 || entry.lineNumber > lines[index - 1]!.lineNumber);
 const jielongTargetSchema = z.strictObject({
-  date: z.string().check(z.regex(/^\d{4}-\d{2}-\d{2}$/), z.refine((value) => {
-    const [year, month, day] = value.split("-").map(Number);
-    const date = new Date(Date.UTC(year!, month! - 1, day));
-    return date.getUTCFullYear() === year && date.getUTCMonth() === month! - 1 && date.getUTCDate() === day;
-  })),
+  date: calendarDateSchema,
   occasion: z.enum(["lunch", "dinner"])
 });
 const jielongPreviewLineSchema = z.strictObject({
@@ -288,33 +291,66 @@ function parseBulkBookingStatus(
   return results;
 }
 
-function parseBookingBatch(value: unknown): BookingBatch {
-  const batch = record(value);
-  if (!batch || !validId(batch.id) || !validId(batch.sellerId) ||
-    typeof batch.publicId !== "string" || batch.publicId === "" ||
-    typeof batch.title !== "string" || batch.title === "" ||
-    !(batch.status === "open" || batch.status === "closed" || batch.status === "archived") ||
-    !Array.isArray(batch.mealSlotIds) || batch.mealSlotIds.length === 0 || !batch.mealSlotIds.every(validId) ||
-    !validId(batch.createdById)) {
-    throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
-  }
-  return batch as BookingBatch;
-}
+const relationshipIdSchema = z.union([z.string().check(z.minLength(1)), z.int()]);
+const bookingShareTargetSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("day"), date: calendarDateSchema }),
+  z.strictObject({ kind: z.literal("meal"), date: calendarDateSchema, occasion: z.enum(["lunch", "dinner"]) })
+]);
+const bookingBatchClientSchema = z.strictObject({
+  id: relationshipIdSchema,
+  sellerId: relationshipIdSchema,
+  publicId: z.uuid(),
+  title: z.string().check(z.trim(), z.minLength(1), z.maxLength(120)),
+  status: z.enum(["open", "closed", "archived"]),
+  mealSlotIds: z.array(relationshipIdSchema).check(z.minLength(1), z.maxLength(20)),
+  createdById: relationshipIdSchema,
+  target: z.optional(z.nullable(bookingShareTargetSchema))
+});
+const bookingBatchShareSchema = z.strictObject({
+  title: z.string().check(z.trim(), z.minLength(1), z.maxLength(120)),
+  path: z.string().check(z.startsWith("/pages/booking/index?batch="))
+});
+const bookingBatchMutationClientSchema = z.strictObject({
+  doc: bookingBatchClientSchema,
+  share: bookingBatchShareSchema
+});
+const bookingBatchListClientSchema = z.strictObject({
+  docs: z.array(bookingBatchMutationClientSchema)
+});
+const bookingBatchMealSlotSummarySchema = z.strictObject({
+  id: relationshipIdSchema,
+  date: calendarDateSchema,
+  occasion: z.enum(["lunch", "dinner"]),
+  orderStatus: z.enum(["draft", "open", "closed"]),
+  orderDeadline: z.nullable(z.iso.datetime({ offset: true })),
+  priceCents: z.nullable(z.int().check(z.nonnegative()))
+});
+const bookingBatchDetailClientSchema = z.strictObject({
+  doc: bookingBatchClientSchema,
+  share: bookingBatchShareSchema,
+  slots: z.array(bookingBatchMealSlotSummarySchema).check(z.minLength(1), z.maxLength(20))
+}).check(z.refine(({ doc, slots }) => {
+  const ids = new Set(slots.map(({ id }) => String(id)));
+  return ids.size === slots.length && doc.mealSlotIds.length === slots.length &&
+    doc.mealSlotIds.every((id) => ids.has(String(id)));
+}));
 
 function parseBookingBatchMutation(value: unknown): BookingBatchMutationResponse {
-  const body = record(value);
-  const share = record(body?.share);
-  if (!body || !share || typeof share.title !== "string" || share.title === "" ||
-    typeof share.path !== "string" || !share.path.startsWith("/pages/booking/index?batch=")) {
-    throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
-  }
-  return { doc: parseBookingBatch(body.doc), share: { title: share.title, path: share.path } };
+  const parsed = bookingBatchMutationClientSchema.safeParse(value);
+  if (!parsed.success) throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
+  return parsed.data;
 }
 
 function parseBookingBatchList(value: unknown): BookingBatchListResponse {
-  const body = record(value);
-  if (!body || !Array.isArray(body.docs)) throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
-  return { docs: body.docs.map(parseBookingBatchMutation) };
+  const parsed = bookingBatchListClientSchema.safeParse(value);
+  if (!parsed.success) throw new ApiError(502, "invalid-api-response", "预订批次数据无效");
+  return parsed.data;
+}
+
+function parseBookingBatchDetail(value: unknown): BookingBatchDetailResponse {
+  const parsed = bookingBatchDetailClientSchema.safeParse(value);
+  if (!parsed.success) throw new ApiError(502, "invalid-api-response", "预订批次详情数据无效");
+  return parsed.data;
 }
 
 function parseCustomerBookingBatchView(value: unknown): CustomerBookingBatchView {
@@ -739,8 +775,11 @@ export function createApiClient(options: ClientOptions) {
       const query = status ? `?status=${encodeURIComponent(status)}` : "";
       return parseBookingBatchList(await request(`/merchant/booking-batches${query}`)).docs;
     },
-    async createBookingBatch(input: BookingBatchCreate): Promise<BookingBatchMutationResponse> {
+    async createBookingBatch(input: BookingBatchCreate | BookingBatchTargetedCreate): Promise<BookingBatchMutationResponse> {
       return parseBookingBatchMutation(await request("/merchant/booking-batches", { method: "POST", data: input }));
+    },
+    async getBookingBatch(id: string | number): Promise<BookingBatchDetailResponse> {
+      return parseBookingBatchDetail(await request(`/merchant/booking-batches/${encodeURIComponent(id)}`));
     },
     async closeBookingBatch(id: string | number): Promise<BookingBatchMutationResponse> {
       return parseBookingBatchMutation(await request(`/merchant/booking-batches/${encodeURIComponent(id)}`, {
