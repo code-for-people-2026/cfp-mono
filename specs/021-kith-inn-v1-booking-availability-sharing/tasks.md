@@ -16,7 +16,7 @@
 | PR3d | 校验并暴露日期/餐次分享目标与实时详情 | US2/US3；FR9-12、FR15 | T016-T017 | v1 BE/CMS booking-batch routes；不改 FE | route/domain tests | 约450 | PR3c |
 | PR4 | Page 4 配置和批量经营操作 | US1；FR1-8、FR13-16 | T012-T015 | v1 FE；不做分享详情视觉 | unit + E2E | 约650 | PR3d |
 | PR5 | 日期/餐次分享和历史实时详情 | US2/US3；FR9-16 | T018-T023 | v1 FE/BE client/E2E；不重构顾客浏览 | unit + E2E | 约500 | PR4 |
-| PR6 | 高保真视觉和验收证据 | US3；FR13-16 | T024-T025、T027 | Page 4 CSS/E2E/验收记录；不扩功能 | screenshot + verify + 真机 | 约400 | PR5 |
+| PR6 | 高保真视觉和自动化证据 | US3；FR13-16 | T024-T025 | Page 4 CSS/E2E/验收记录；不扩功能 | screenshot + verify | 约400 | PR5 |
 
 每片统一执行独立验证、`git diff --check`、人工 diff 统计、`pnpm verify`，并按 `pr-review-converge` 完成 Ready PR、latest-head CI、review、零 unresolved thread 和 rebase merge。
 
@@ -46,7 +46,7 @@
 - [x] T012 [P] [US1] 为 Page 4 上下文、可见性、选择、pending、部分失败和返回模式补纯逻辑测试于 `apps/kith-inn-v1-fe/src/logic/bookingBatches.test.ts`
 - [x] T013 [US1] 扩展严格 API client 于 `apps/kith-inn-v1-fe/src/services/api.ts` 和 `api.test.ts`
 - [x] T014 [US1] 实现默认价、周餐次、单餐/批量开放停止和打烊交互于 `apps/kith-inn-v1-fe/src/pages/merchant/batches/index.tsx`
-- [x] T015 [US1] 补商家经营操作 E2E 于 `apps/kith-inn-v1-e2e/src/merchant.spec.ts`
+- [x] T015 [US1] 补商家经营操作 E2E 于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 
 ## Phase 4: User Story 2 - 分享某天或某餐
 
@@ -71,11 +71,14 @@
 - [x] T024 实现 375×812 高保真样式于 `apps/kith-inn-v1-fe/src/app.css` 和 Page 4 语义 class
 - [x] T025 [P] 补固定数据视觉状态与截图验收于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 - [x] T026 [P] 更新长期行为和数据文档于 `docs/kith-inn-v1/USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md`
+
+## 外部验收
+
 - [ ] T027 完成微信真机日期/餐次分享、目标变化和安全区 smoke 并记录于 `specs/021-kith-inn-v1-booking-availability-sharing/quickstart.md`
 
 ## Dependencies & Execution Order
 
-`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027 只能按真实设备事实勾选。
+`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027 是代码 PR 之外的外部验收门禁，只能按真实设备事实勾选。
 
 ## Implementation Strategy
 
