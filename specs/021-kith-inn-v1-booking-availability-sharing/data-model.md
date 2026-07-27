@@ -9,7 +9,7 @@
 
 沿用 `date + occasion`、五项菜单、`priceCents`、`orderDeadline`、`orderStatus`。开放必须有明确价格和未来截止时间；停止不取消已有订单；停止后在截止前允许重新开放。
 
-顾客展示派生状态：`hidden | bookable | deadline-passed | stopped`。`draft` 为 hidden；`open` 按截止时间派生；`closed` 为 stopped。
+顾客展示派生状态：`hidden | bookable | deadline-passed | stopped | service-closed`。`draft` 为 hidden；`open` 按截止时间派生；`closed` 为 stopped；匹配到独立营业关闭记录时，无论餐次是否存在或处于何种状态，均优先派生为可见但不可订的 `service-closed`。
 
 ## ServiceClosure
 

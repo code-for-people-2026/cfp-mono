@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { MealSlot, ServiceClosure } from "./types";
-import { customerMealSlotPresentation, serviceClosureForTarget } from "./availability";
+import {
+  customerMealSlotPresentation,
+  customerMealSlotPresentationForTarget,
+  serviceClosureForTarget
+} from "./availability";
 
 const NOW = "2026-07-13T01:00:00.000Z";
 const slot = (over: Partial<MealSlot> = {}): MealSlot => ({
@@ -51,6 +55,45 @@ describe("customer meal-slot presentation", () => {
       orderStatus: "open", orderDeadline: "2026-07-13T00:59:59.000Z", priceCents: 3000
     }), NOW)).toBe("deadline-passed");
     expect(customerMealSlotPresentation(slot({ orderStatus: "closed" }), NOW)).toBe("stopped");
+  });
+
+  it("makes explicit closures visible even without a meal-slot record", () => {
+    expect(customerMealSlotPresentationForTarget(
+      { date: "2026-07-13", occasion: "lunch" },
+      null,
+      [closure()],
+      NOW
+    )).toBe("service-closed");
+  });
+
+  it("lets full-day and meal closures override every meal-slot state", () => {
+    expect(customerMealSlotPresentationForTarget(
+      { date: "2026-07-13", occasion: "lunch" },
+      slot({ orderStatus: "open", orderDeadline: "2026-07-13T01:00:01.000Z" }),
+      [closure()],
+      NOW
+    )).toBe("service-closed");
+    expect(customerMealSlotPresentationForTarget(
+      { date: "2026-07-13", occasion: "dinner" },
+      slot({ occasion: "dinner" }),
+      [closure({ occasion: "dinner" })],
+      NOW
+    )).toBe("service-closed");
+  });
+
+  it("falls back to meal-slot presentation when no closure matches", () => {
+    expect(customerMealSlotPresentationForTarget(
+      { date: "2026-07-13", occasion: "lunch" },
+      slot({ orderStatus: "open", orderDeadline: "2026-07-13T01:00:01.000Z" }),
+      [closure({ occasion: "dinner" })],
+      NOW
+    )).toBe("bookable");
+    expect(customerMealSlotPresentationForTarget(
+      { date: "2026-07-13", occasion: "lunch" },
+      null,
+      [],
+      NOW
+    )).toBe("hidden");
   });
 });
 
