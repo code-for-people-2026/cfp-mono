@@ -1982,7 +1982,7 @@ button.manual-add-entry {
   line-height: 1.25;
 }
 
-.batches-page button[disabled] {
+.batches-page button[disabled]:not([disabled="false"]) {
   opacity: 0.45;
 }
 
@@ -2323,6 +2323,7 @@ button.manual-add-entry {
 .batches-page .share-preview-card .section-title {
   margin: 18rpx 0 12rpx;
   font-size: 38rpx;
+  overflow-wrap: anywhere;
 }
 
 .batches-page .share-detail-card {

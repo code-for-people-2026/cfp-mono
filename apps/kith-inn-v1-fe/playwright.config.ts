@@ -11,7 +11,14 @@ export default defineConfig({
   testDir: "./tests/e2e",
   workers: 1,
   timeout: 60_000,
-  expect: { timeout: 10_000 },
+  expect: {
+    timeout: 10_000,
+    toHaveScreenshot: {
+      pathTemplate: "../../specs/021-kith-inn-v1-booking-availability-sharing/evidence/{arg}{ext}",
+      animations: "disabled",
+      maxDiffPixelRatio: 0.05
+    }
+  },
   use: {
     baseURL: "http://127.0.0.1:10087",
     trace: "retain-on-failure"

@@ -1,10 +1,8 @@
 import { expect, test, type Page } from "@playwright/test";
-import { resolve } from "node:path";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
 const jsonResponse = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
-const page4Evidence = (name: string) => resolve(process.cwd(), "../../specs/021-kith-inn-v1-booking-availability-sharing/evidence", name);
 const expectNoHorizontalOverflow = async (page: Page) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 };
@@ -2083,7 +2081,7 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   const dayShareButton = day.locator("taro-button-core").filter({ hasText: /^分享这一天$/ });
   await expect(dayShareButton).toBeEnabled();
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: page4Evidence("page4-operations-375x812.png"), animations: "disabled" });
+  await expect(page).toHaveScreenshot("page4-operations-375x812.png");
   await dayShareButton.click();
   await taroButton(page, /^生成分享卡片$/).click();
   expect(createBody).toEqual({
@@ -2097,10 +2095,12 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   expect(detailRequests).toBe(1);
   await expect(success.getByLabel("复制入口")).toBeVisible();
   await expect(success.getByLabel("复制入口")).toHaveAttribute("disabled", "false");
+  await expect(success.getByLabel("复制入口")).toHaveCSS("opacity", "1");
+  await expect(success.locator(".share-preview-card .section-title")).toHaveCSS("overflow-wrap", "anywhere");
   await expect(success.locator("taro-button-core").filter({ hasText: /^分享给街坊$/ })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: page4Evidence("page4-success-375x812.png"), animations: "disabled" });
+  await expect(page).toHaveScreenshot("page4-success-375x812.png");
 });
 
 test("紧凑历史按状态排序并只在查看时加载实时详情", async ({ page }) => {
@@ -2154,7 +2154,7 @@ test("紧凑历史按状态排序并只在查看时加载实时详情", async ({
   expect(await cards.locator(".section-title").allTextContents()).toEqual(["开放入口", "已关闭入口", "归档入口"]);
   await page.locator(".booking-history").scrollIntoViewIfNeeded();
   await expectNoHorizontalOverflow(page);
-  await page.screenshot({ path: page4Evidence("page4-history-375x812.png"), animations: "disabled" });
+  await expect(page).toHaveScreenshot("page4-history-375x812.png");
   expect(detailRequests).toBe(0);
   await page.getByLabel("查看 开放入口 详情").click();
   await expect(page.locator(".share-success-state")).toContainText("预订中");
