@@ -66,7 +66,7 @@ packages/kith-inn-v1-payload/src/       # collection 配置
 apps/cms/src/app/api/internal/kiv1/     # 租户隔离持久化接口
 apps/kith-inn-v1-be/src/                # 商家 API 与领域校验
 apps/kith-inn-v1-fe/src/                # Page 4、API client、纯页面逻辑
-apps/kith-inn-v1-e2e/src/               # 商家主线 E2E
+apps/kith-inn-v1-fe/tests/e2e/           # 商家主线 E2E 与视觉回归
 docs/kith-inn-v1/                       # 长期行为文档
 ```
 
@@ -75,3 +75,7 @@ docs/kith-inn-v1/                       # 长期行为文档
 ## Complexity Tracking
 
 无宪法违反项。
+
+## 外部验收门禁
+
+T027 不属于任何代码 PR：它要求已登录的微信开发者工具、微信聊天会话和真实 iPhone/Android 设备。PR6 只交付可在仓库内复现的 375×812 视觉回归与 `pnpm verify`；真机证据按 [quickstart.md](./quickstart.md) 独立记录，不阻塞已实现代码的合并，也不得以 H5 截图代替。
