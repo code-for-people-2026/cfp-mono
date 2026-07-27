@@ -26,11 +26,13 @@ export function serviceClosureForTarget(
 }
 
 export function customerMealSlotPresentationForTarget(
+  sellerId: MealSlot["sellerId"],
   target: MealSlotTarget,
   slot: Pick<MealSlot, "orderStatus" | "orderDeadline"> | null,
   closures: ServiceClosure[],
   now: string
 ): CustomerMealSlotPresentation {
-  if (serviceClosureForTarget(closures, target) !== null) return "service-closed";
+  const sellerClosures = closures.filter((closure) => String(closure.sellerId) === String(sellerId));
+  if (serviceClosureForTarget(sellerClosures, target) !== null) return "service-closed";
   return slot === null ? "hidden" : customerMealSlotPresentation(slot, now);
 }
