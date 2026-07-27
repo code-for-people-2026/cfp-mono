@@ -13,6 +13,7 @@ import {
   batchCloseText,
   bookingBatchSharePayload,
   bookingBatchStatusText,
+  bookingDetailRefreshDelay,
   bookingSlotLiveStatusText,
   bookingConfigContext,
   bookingDeadlineInputValue,
@@ -95,18 +96,23 @@ export default function MerchantBatches() {
   const [detailMode, setDetailMode] = useState<"created" | "history">("history");
   const [detailFailedId, setDetailFailedId] = useState<string | number | null>(null);
   const [closingId, setClosingId] = useState<string | number | null>(null);
+  const [detailNow, setDetailNow] = useState(() => new Date().toISOString());
   const [pending, setPending] = useState<string | null>(initialContext ? null : "settings-load"); const [failures, setFailures] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false); const [loadFailed, setLoadFailed] = useState(false);
   const [settingsFailed, setSettingsFailed] = useState(false); const [closuresFailed, setClosuresFailed] = useState(false);
   const [historyFailed, setHistoryFailed] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const loadRevision = useRef(0);
 
   const loadBatches = async () => {
+    setHistoryLoading(true);
     setHistoryFailed(false);
     try {
       setBatches(sortBookingBatchHistory(await api.listBookingBatches()));
     } catch (error) {
       if (!handledAuthFailure(error)) setHistoryFailed(true);
+    } finally {
+      setHistoryLoading(false);
     }
   };
 
@@ -159,7 +165,6 @@ export default function MerchantBatches() {
     } finally {
       if (revision === loadRevision.current) setLoading(false);
     }
-    if (revision === loadRevision.current) await loadBatches();
   };
 
   useEffect(() => {
@@ -173,9 +178,17 @@ export default function MerchantBatches() {
         .then(({ defaultPriceCents }) => setDefaultPriceYuan(priceInputValue(defaultPriceCents)))
         .catch((error: unknown) => { if (!handledAuthFailure(error)) setSettingsFailed(true); })
         .finally(() => setPending(null));
-      void loadBatches();
     }
+    void loadBatches();
   }, []);
+
+  useEffect(() => {
+    if (!activeDetail) return;
+    const delay = bookingDetailRefreshDelay(activeDetail.slots, new Date().toISOString());
+    if (delay === null) return;
+    const timer = setTimeout(() => setDetailNow(new Date().toISOString()), delay);
+    return () => clearTimeout(timer);
+  }, [activeDetail, detailNow]);
 
   const configure = async (slot: MealSlot, orderStatus: "open" | "closed") => {
     const config = configs[String(slot.id)] ?? initialConfig(slot);
@@ -326,6 +339,7 @@ export default function MerchantBatches() {
       setBatches((current) => sortBookingBatchHistory([entry, ...current.filter(({ doc }) =>
         String(doc.id) !== String(entry.doc.id))]));
       setActiveDetail({ ...entry, slots: detailSlots });
+      setDetailNow(new Date().toISOString());
       setDetailMode("created");
       setDetailFailedId(null);
       setShareTarget(null);
@@ -343,6 +357,8 @@ export default function MerchantBatches() {
     setDetailFailedId(null);
     try {
       setActiveDetail(await api.getBookingBatch(id));
+      setClosingId(null);
+      setDetailNow(new Date().toISOString());
       setDetailMode("history");
     } catch (error) {
       if (!handledAuthFailure(error)) setDetailFailedId(id);
@@ -408,7 +424,6 @@ export default function MerchantBatches() {
     : null;
   const detailSummary = activeDetail ? summarizeBookingBatch(activeDetail.slots) : null;
   const sellerName = sessions.getSession()?.sellerName ?? "街坊味商家";
-  const detailNow = new Date().toISOString();
 
   return (
     <View className="page batches-page">
@@ -623,9 +638,10 @@ export default function MerchantBatches() {
 
       <View className="booking-history">
         <Text className="section-title">分享历史</Text>
+        {historyLoading && <View className="card"><Text>正在加载分享历史…</Text></View>}
         {historyFailed && <View className="card error-card"><Text>分享历史加载失败</Text>
           <Button disabled={pending !== null} onClick={() => void loadBatches()}>重试历史</Button></View>}
-        {!historyFailed && batches.length === 0 && <View className="card"><Text>还没有分享入口</Text></View>}
+        {!historyLoading && !historyFailed && batches.length === 0 && <View className="card"><Text>还没有分享入口</Text></View>}
         {detailFailedId !== null && <View className="card error-card"><Text>实时详情加载失败</Text>
           <Button disabled={pending !== null} onClick={() => void openDetail(detailFailedId)}>重试详情</Button></View>}
         {batches.map((entry) => (

@@ -715,6 +715,14 @@ describe("API client", () => {
       doc: valid, share, slots: [{ id: 12, date: "2026-07-13", occasion: "lunch", orderStatus: "open",
         orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 }]
     }), sessions: sessions() }).getBookingBatch(31)).rejects.toMatchObject({ code: "invalid-api-response" });
+    await expect(createApiClient({ request: adapter(200, {
+      doc: { ...valid, mealSlotIds: [11, 11] }, share, slots: [
+        { id: 11, date: "2026-07-13", occasion: "lunch", orderStatus: "open",
+          orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 },
+        { id: 12, date: "2026-07-13", occasion: "dinner", orderStatus: "open",
+          orderDeadline: "2026-07-12T08:00:00.000Z", priceCents: 2800 }
+      ]
+    }), sessions: sessions() }).getBookingBatch(31)).rejects.toMatchObject({ code: "invalid-api-response" });
     for (const slots of [[], [{ id: 11, date: "2026-02-31", occasion: "lunch", orderStatus: "open",
       orderDeadline: "2026-07-12T01:00:00.000Z", priceCents: 2800 }],
     [{ id: 11, date: "2026-07-13", occasion: "breakfast", orderStatus: "open",

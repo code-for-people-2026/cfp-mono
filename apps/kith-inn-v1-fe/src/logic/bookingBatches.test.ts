@@ -5,6 +5,7 @@ import {
   batchCloseText,
   bookingBatchSharePayload,
   bookingBatchStatusText,
+  bookingDetailRefreshDelay,
   bookingSlotLiveStatusText,
   bookingConfigContext,
   bookingConfigUrl,
@@ -177,6 +178,18 @@ it("reports realtime slot availability from status and deadline", () => {
   expect(bookingSlotLiveStatusText({ orderStatus: "open", orderDeadline: null }, now)).toBe("已截止");
   expect(bookingSlotLiveStatusText({ orderStatus: "closed", orderDeadline: null }, now)).toBe("已停止");
   expect(bookingSlotLiveStatusText({ orderStatus: "draft", orderDeadline: null }, now)).toBe("未开放");
+  expect(bookingDetailRefreshDelay([
+    { orderStatus: "open", orderDeadline: "2026-07-12T01:00:02.000Z" },
+    { orderStatus: "open", orderDeadline: "2026-07-12T01:00:01.000Z" },
+    { orderStatus: "closed", orderDeadline: "2026-07-12T01:00:00.500Z" }
+  ], now)).toBe(1001);
+  expect(bookingDetailRefreshDelay([
+    { orderStatus: "open", orderDeadline: now },
+    { orderStatus: "open", orderDeadline: null }
+  ], now)).toBeNull();
+  expect(bookingDetailRefreshDelay([
+    { orderStatus: "open", orderDeadline: "2026-09-12T01:00:00.000Z" }
+  ], now)).toBe(2_147_483_647);
 });
 
 it("keeps newest API order within open, closed and archived history groups", () => {
