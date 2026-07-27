@@ -2054,12 +2054,17 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
   await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
   await expect(page.locator(".batch-slot")).toHaveCount(10);
 
-  const overridden = page.locator(".batch-slot").filter({ hasText: "2026-07-29 晚餐" });
-  await overridden.getByRole("textbox", { name: "价格（元）" }).fill("38.5");
   await page.locator(".booking-settings-card input").fill("42");
   await taroButton(page, /^保存默认价格$/).click();
   await expect(page.getByText("默认价格已保存", { exact: true })).toBeVisible();
   expect(defaultPriceCents).toBe(4200);
+  for (const priceInput of await page.getByRole("textbox", { name: "价格（元）" }).all()) {
+    await expect(priceInput).toHaveValue("42");
+  }
+
+  const overridden = page.locator(".batch-slot").filter({ hasText: "2026-07-29 晚餐" });
+  await overridden.getByRole("textbox", { name: "价格（元）" }).fill("38.5");
+  await expect(overridden.getByRole("textbox", { name: "价格（元）" })).toHaveValue("38.5");
 
   for (const doc of docs) {
     const occasionText = doc.occasion === "lunch" ? "午餐" : "晚餐";
