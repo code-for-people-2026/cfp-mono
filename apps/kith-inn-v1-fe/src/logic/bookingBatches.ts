@@ -139,6 +139,17 @@ export function bookingBatchStatusText(status: BookingBatch["status"]): string {
   return status === "open" ? "开放中" : status === "closed" ? "已关闭" : "已归档";
 }
 
+export function bookingSlotLiveStatusText(
+  slot: Pick<MealSlot, "orderStatus" | "orderDeadline">,
+  now: string
+): string {
+  if (slot.orderStatus === "closed") return "已停止";
+  if (slot.orderStatus === "draft") return "未开放";
+  return slot.orderDeadline !== null && Date.parse(slot.orderDeadline) > Date.parse(now)
+    ? "预订中"
+    : "已截止";
+}
+
 export function sortBookingBatchHistory(
   entries: BookingBatchListResponse["docs"]
 ): BookingBatchListResponse["docs"] {
@@ -150,8 +161,9 @@ export function sortBookingBatchHistory(
 export function summarizeBookingBatch(slots: BookingBatchDetailResponse["slots"]): BookingBatchLiveSummary {
   const dates = [...new Set(slots.map(({ date }) => date))].sort();
   const prices = slots.flatMap(({ priceCents }) => priceCents === null ? [] : [priceCents]);
-  const minimum = prices.length === 0 ? null : Math.min(...prices);
-  const allSamePrice = prices.length === slots.length && new Set(prices).size === 1;
+  const pricesComplete = prices.length === slots.length;
+  const minimum = pricesComplete ? Math.min(...prices) : null;
+  const allSamePrice = pricesComplete && new Set(prices).size === 1;
   return {
     dateText: dates.length === 1 ? dates[0]! : `${dates[0]} 至 ${dates.at(-1)}`,
     slotCountText: `${slots.length} 个餐次`,
