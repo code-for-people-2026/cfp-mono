@@ -2011,8 +2011,9 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
     priceCents: null
   })));
   let defaultPriceCents = 3000;
-  const configBodies = new Map<number, BookingInput>();
-  let bulkBody: { mealSlotIds: number[]; action: "open" | "stop" } | null = null;
+  const configWrites: Array<{ id: number; input: BookingInput }> = [];
+  const bulkWrites: Array<{ mealSlotIds: number[]; action: "open" | "stop" }> = [];
+  const expectedDeadlines = new Map<number, string>();
 
   await page.route("**/merchant/booking-settings", (route) => {
     if (route.request().method() === "PATCH") {
@@ -2026,13 +2027,14 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
   await page.route("**/merchant/meal-slots/*/booking-config", (route) => {
     const id = Number(new URL(route.request().url()).pathname.split("/").at(-2));
     const input = route.request().postDataJSON() as BookingInput;
-    configBodies.set(id, input);
+    configWrites.push({ id, input });
     docs = docs.map((doc) => doc.id === id ? { ...doc, ...input } : doc);
     return route.fulfill(jsonResponse({ doc: docs.find((doc) => doc.id === id) }));
   });
   await page.route("**/merchant/meal-slots/bulk-booking-status", (route) => {
-    bulkBody = route.request().postDataJSON();
-    const ids = new Set(bulkBody!.mealSlotIds);
+    const input = route.request().postDataJSON() as { mealSlotIds: number[]; action: "open" | "stop" };
+    bulkWrites.push(input);
+    const ids = new Set(input.mealSlotIds);
     docs = docs.map((doc) => ids.has(doc.id) ? { ...doc, orderStatus: "open" as const } : doc);
     return route.fulfill(jsonResponse({ results: docs.filter((doc) => ids.has(doc.id))
       .map((doc) => ({ id: doc.id, status: "updated", doc })) }));
@@ -2056,7 +2058,9 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
     const card = page.locator(".batch-slot").filter({ hasText: `${doc.date} ${occasionText}` });
     await expect(card.getByRole("textbox", { name: "价格（元）" }))
       .toHaveValue(doc.id === 1006 ? "38.5" : "42");
-    await card.getByRole("textbox", { name: "截止时间" }).fill(`${doc.date}T09:30`);
+    const deadlineInput = `${doc.date}T09:30`;
+    expectedDeadlines.set(doc.id, await page.evaluate((value) => new Date(value).toISOString(), deadlineInput));
+    await card.getByRole("textbox", { name: "截止时间" }).fill(deadlineInput);
     await card.getByLabel(`选择 ${doc.date} ${occasionText}`).click();
   }
   await expect(page.locator(".bulk-operation-card")).toContainText("已选择 10 个餐次");
@@ -2064,16 +2068,17 @@ test("默认价应用、个别改价并批量开放完整工作周", async ({ pa
   await expect(page.locator(".batch-slot-status.open")).toHaveCount(10);
   await expect(page.locator(".bulk-operation-card")).toContainText("已选择 0 个餐次");
 
-  expect(configBodies.size).toBe(10);
+  expect(configWrites).toHaveLength(10);
   for (const doc of docs) {
-    expect(configBodies.get(doc.id)).toMatchObject({
+    const writes = configWrites.filter(({ id }) => id === doc.id);
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.input).toEqual({
       orderStatus: "draft",
+      orderDeadline: expectedDeadlines.get(doc.id),
       priceCents: doc.id === 1006 ? 3850 : 4200
     });
-    expect(Date.parse(configBodies.get(doc.id)!.orderDeadline!))
-      .toBeGreaterThan(Date.parse("2026-07-22T01:00:00.000Z"));
   }
-  expect(bulkBody).toEqual({ mealSlotIds: docs.map(({ id }) => id), action: "open" });
+  expect(bulkWrites).toEqual([{ mealSlotIds: docs.map(({ id }) => id), action: "open" }]);
 });
 
 test("同一提交窗口连续触发 Page 4 写操作只发送一次请求", async ({ page }) => {
