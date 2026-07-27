@@ -1990,6 +1990,92 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await expect(missingDay.locator("taro-button-core").filter({ hasText: /^晚餐打烊$/ })).toBeVisible();
 });
 
+test("默认价应用、个别改价并批量开放完整工作周", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> & {
+    orderDeadline: string | null;
+    orderStatus: "draft" | "open" | "closed";
+  };
+  type BookingInput = {
+    orderStatus: "draft" | "open" | "closed";
+    orderDeadline: string | null;
+    priceCents: number | null;
+  };
+  const days = ["2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31"];
+  const occasions = ["lunch", "dinner"] as const;
+  let docs: MockSlot[] = days.flatMap((date, dayIndex) => occasions.map((occasion, occasionIndex) => ({
+    ...slot(date, occasion),
+    id: 1001 + dayIndex * 2 + occasionIndex,
+    orderStatus: "draft" as const,
+    orderDeadline: null,
+    priceCents: null
+  })));
+  let defaultPriceCents = 3000;
+  const configBodies = new Map<number, BookingInput>();
+  let bulkBody: { mealSlotIds: number[]; action: "open" | "stop" } | null = null;
+
+  await page.route("**/merchant/booking-settings", (route) => {
+    if (route.request().method() === "PATCH") {
+      defaultPriceCents = route.request().postDataJSON().defaultPriceCents;
+    }
+    return route.fulfill(jsonResponse({ defaultPriceCents }));
+  });
+  await page.route("**/merchant/service-closures?*", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
+  await page.route("**/merchant/meal-slots/*/booking-config", (route) => {
+    const id = Number(new URL(route.request().url()).pathname.split("/").at(-2));
+    const input = route.request().postDataJSON() as BookingInput;
+    configBodies.set(id, input);
+    docs = docs.map((doc) => doc.id === id ? { ...doc, ...input } : doc);
+    return route.fulfill(jsonResponse({ doc: docs.find((doc) => doc.id === id) }));
+  });
+  await page.route("**/merchant/meal-slots/bulk-booking-status", (route) => {
+    bulkBody = route.request().postDataJSON();
+    const ids = new Set(bulkBody!.mealSlotIds);
+    docs = docs.map((doc) => ids.has(doc.id) ? { ...doc, orderStatus: "open" as const } : doc);
+    return route.fulfill(jsonResponse({ results: docs.filter((doc) => ids.has(doc.id))
+      .map((doc) => ({ id: doc.id, status: "updated", doc })) }));
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  await expect(page.locator(".batch-slot")).toHaveCount(10);
+
+  const overridden = page.locator(".batch-slot").filter({ hasText: "2026-07-29 晚餐" });
+  await overridden.getByRole("textbox", { name: "价格（元）" }).fill("38.5");
+  await page.locator(".booking-settings-card input").fill("42");
+  await taroButton(page, /^保存默认价格$/).click();
+  await expect(page.getByText("默认价格已保存", { exact: true })).toBeVisible();
+  expect(defaultPriceCents).toBe(4200);
+
+  for (const doc of docs) {
+    const occasionText = doc.occasion === "lunch" ? "午餐" : "晚餐";
+    const card = page.locator(".batch-slot").filter({ hasText: `${doc.date} ${occasionText}` });
+    await expect(card.getByRole("textbox", { name: "价格（元）" }))
+      .toHaveValue(doc.id === 1006 ? "38.5" : "42");
+    await card.getByRole("textbox", { name: "截止时间" }).fill(`${doc.date}T09:30`);
+    await card.getByLabel(`选择 ${doc.date} ${occasionText}`).click();
+  }
+  await expect(page.locator(".bulk-operation-card")).toContainText("已选择 10 个餐次");
+  await page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量开放$/ }).click();
+  await expect(page.locator(".batch-slot-status.open")).toHaveCount(10);
+  await expect(page.locator(".bulk-operation-card")).toContainText("已选择 0 个餐次");
+
+  expect(configBodies.size).toBe(10);
+  for (const doc of docs) {
+    expect(configBodies.get(doc.id)).toMatchObject({
+      orderStatus: "draft",
+      priceCents: doc.id === 1006 ? 3850 : 4200
+    });
+    expect(Date.parse(configBodies.get(doc.id)!.orderDeadline!))
+      .toBeGreaterThan(Date.parse("2026-07-22T01:00:00.000Z"));
+  }
+  expect(bulkBody).toEqual({ mealSlotIds: docs.map(({ id }) => id), action: "open" });
+});
+
 test("同一提交窗口连续触发 Page 4 写操作只发送一次请求", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
   type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> & {
