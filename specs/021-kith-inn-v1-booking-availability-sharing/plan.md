@@ -47,9 +47,10 @@
 | PR4 | 重构 Page 4 配置与批量经营操作 | US1；FR1-8、FR13-16 | `apps/kith-inn-v1-fe/src/logic`、Page 4、API client | 不做分享成功视觉 | unit + merchant E2E | 约 650 | PR3d |
 | PR5 | 实现日期/餐次分享定位和历史详情 | US2/US3；FR9-16 | v1 FE Page 4、API client、E2E | 不重构顾客端全量浏览 | share payload + E2E | 约 500 | PR4 |
 | PR6 | 完成 Page 4 高保真视觉与验收证据 | US3；FR13-16 | Page 4、`app.css`、E2E 与 quickstart | 不扩产品功能 | 375×812 截图 + verify | 约 400 | PR5 |
-| PR7 | 把独立打烊记录组合进顾客可见性领域规则 | FR8；SC2 | v1 shared availability 与 tests | 不接顾客 UI/API | 组合规则 unit tests + verify | 约 180 | PR6 |
-| PR8 | 让商家成功页准确说明兼容期批次范围 | FR9-12、FR13 | Page 4 与商家 E2E | 不接 seller 范围顾客浏览 | 页面文案 E2E + verify | 约 100 | PR7 |
-| PR9 | 让剩余可测量验收可在仓库内复现 | SC1/SC5；FR13-14 | Page 4 E2E、视觉基线与 quickstart | 不改产品行为、不冒充真机分享 | 完整计时工作流 + 状态视觉回归 + verify | 约 400 | PR8 |
+| PR7 | 为延期的顾客打烊投影补组合领域基础 | FR8；SC2 | v1 shared availability 与 tests | 不接顾客 UI/API、不宣称 FR8 完成 | 组合规则 unit tests + verify | 约 180 | PR6 |
+| PR8 | 让 Page 4 写操作在事件层同步互斥 | FR14；SC3 | Page 4、纯逻辑与 E2E | 不改变服务端幂等契约 | rapid-trigger tests + verify | 约 250 | PR7 |
+| PR9 | 让商家成功页准确说明兼容期批次范围 | FR9-13 | Page 4 与商家 E2E | 不把 batch 白名单宣称为 FR11 完成 | 页面文案 E2E + verify | 约 100 | PR8 |
+| PR10 | 补齐剩余仓库内验收场景 | SC1/SC5；FR13-14 | Page 4 E2E、视觉基线与 quickstart | 自动化不冒充真人计时或真机分享 | 一周功能流 + 状态视觉回归 + verify | 约 450 | PR9 |
 
 预计值用于 review 负担评估；若实际人工 diff 超过约 800 行，必须停下取得发起人同意。
 
@@ -81,4 +82,6 @@ docs/kith-inn-v1/                       # 长期行为文档
 
 ## 外部验收门禁
 
-T027 不属于任何代码 PR：它要求已登录的微信开发者工具、微信聊天会话和真实 iPhone/Android 设备。PR6 交付核心 375×812 视觉回归，PR7/PR8 收敛复审发现的语义缺口，PR9 补齐其余可自动化状态与 SC-001 完整计时工作流；真机证据按 [quickstart.md](./quickstart.md) 独立记录，不得以 H5 截图代替。
+T027 与 T033 不属于代码 PR：前者要求已登录的微信开发者工具、微信聊天会话和真实 iPhone/Android 设备，后者要求真人按固定起止点完成三分钟可用性计时。PR6 交付核心 375×812 视觉回归，PR7–PR9 收敛复审发现的领域、互斥和文案缺口，PR10 补齐其余仓库内场景；外部证据按 [quickstart.md](./quickstart.md) 独立记录，不得以 H5 或 Playwright 执行时长代替。
+
+FR-008 的顾客打烊投影集成与 FR-011 的 seller 范围实时浏览分别记为 D001/D002，按原始产品决策留待顾客端后续规格；在完成前保持需求未完成，不把兼容期 batch 访问边界改写成目标行为。

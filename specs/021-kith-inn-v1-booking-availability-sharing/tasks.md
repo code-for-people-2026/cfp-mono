@@ -17,9 +17,10 @@
 | PR4 | Page 4 配置和批量经营操作 | US1；FR1-8、FR13-16 | T012-T015 | v1 FE；不做分享详情视觉 | unit + E2E | 约650 | PR3d |
 | PR5 | 日期/餐次分享和历史实时详情 | US2/US3；FR9-16 | T018-T023 | v1 FE/BE client/E2E；不重构顾客浏览 | unit + E2E | 约500 | PR4 |
 | PR6 | 高保真视觉和自动化证据 | US3；FR13-16 | T024-T025 | Page 4 CSS/E2E/验收记录；不扩功能 | screenshot + verify | 约400 | PR5 |
-| PR7 | 组合打烊记录与顾客可见性领域规则 | FR8；SC2 | T028 | v1 shared；不接顾客 UI/API | unit + verify | 约180 | PR6 |
-| PR8 | 校准商家成功页的兼容批次范围说明 | FR9-12、FR13 | T029 | Page 4/E2E；不接 seller 范围顾客浏览 | E2E + verify | 约100 | PR7 |
-| PR9 | 补齐剩余可测量验收证据 | SC1/SC5；FR13-14 | T030-T031 | Page 4 E2E/视觉基线/验收记录；不改产品行为 | timed E2E + screenshot + verify | 约400 | PR8 |
+| PR7 | 为延期顾客打烊投影补组合领域基础 | FR8；SC2 | T028 | v1 shared；不接顾客 UI/API、不宣称 FR8 完成 | unit + verify | 约180 | PR6 |
+| PR8 | Page 4 写操作事件层同步互斥 | FR14；SC3 | T029 | Page 4/纯逻辑/E2E；不改服务端幂等契约 | rapid-trigger tests + verify | 约250 | PR7 |
+| PR9 | 校准商家成功页的兼容批次范围说明 | FR9-13 | T030 | Page 4/E2E；不把 batch 白名单宣称为 FR11 完成 | E2E + verify | 约100 | PR8 |
+| PR10 | 补齐剩余仓库内验收场景 | SC1/SC5；FR13-14 | T031-T032 | Page 4 E2E/视觉基线/验收记录；不改产品行为 | workflow E2E + screenshot + verify | 约450 | PR9 |
 
 每片统一执行独立验证、`git diff --check`、人工 diff 统计、`pnpm verify`，并按 `pr-review-converge` 完成 Ready PR、latest-head CI、review、零 unresolved thread 和 rebase merge。
 
@@ -74,18 +75,25 @@
 - [x] T024 实现 375×812 高保真样式于 `apps/kith-inn-v1-fe/src/app.css` 和 Page 4 语义 class
 - [x] T025 [P] 补固定数据视觉状态与截图验收于 `apps/kith-inn-v1-fe/tests/e2e/merchant.spec.ts`
 - [x] T026 [P] 更新长期行为和数据文档于 `docs/kith-inn-v1/USER-STORIES.md`、`DATA-MODEL.md`、`TECH-SPEC.md`
-- [ ] T028 在 v1 shared 中组合独立打烊记录与餐次状态，产出明确打烊可见但不可订的顾客展示结果并补领域样例
-- [ ] T029 把商家成功页“商家当前开放的实时餐次”改为兼容期公开批次范围语义并补 E2E
-- [ ] T030 新增默认价应用、个别改价和一周批量开放的完整工作流，并证明在 3 分钟内完成
-- [ ] T031 为加载、局部失败、空态和批量处理中状态补 375×812 无溢出、无遮挡、主操作可达证据
+- [ ] T028 在 v1 shared 中组合独立打烊记录与餐次状态，产出明确打烊可见但不可订的顾客展示结果并补领域样例；不以此替代 D001 集成
+- [ ] T029 为 Page 4 的配置、批量状态、创建和关闭入口增加同步互斥，并补同一事件提交窗口内连续触发只产生一次有效写入的测试
+- [ ] T030 把商家成功页“商家当前开放的实时餐次”改为“本公开批次关联餐次按最新状态展示”的兼容期语义并补 E2E
+- [ ] T031 新增默认价应用、个别改价和一周批量开放的完整功能 E2E；自动化运行时长不作为 SC-001 真人计时证据
+- [ ] T032 为加载、局部失败、空态和批量处理中状态补 375×812 无溢出、无遮挡、主操作可达证据
 
 ## 外部验收
 
 - [ ] T027 完成微信真机日期/餐次分享、目标变化和安全区 smoke 并记录于 `specs/021-kith-inn-v1-booking-availability-sharing/quickstart.md`
+- [ ] T033 由真人按 quickstart 固定起止点完成一周默认价、个别改价和批量开放，并记录 3 分钟可用性计时证据
+
+## 顾客端延期项
+
+- [ ] D001 把独立整天/单餐打烊记录投影到顾客 API 与 UI，使明确打烊可见但不可预订
+- [ ] D002 让日期/餐次分享只作初始定位，顾客仍可访问同商家其他实时可见餐次
 
 ## Dependencies & Execution Order
 
-`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027 是代码 PR 之外的外部验收门禁，只能按真实设备事实勾选。
+`PR1 → PR2 → PR3a → PR3b → PR3c → PR3d → PR4 → PR5 → PR6 → PR7 → PR8 → PR9 → PR10`。US1 的商家工作流依赖 PR1-3c；US2 依赖 PR3d 的真实餐次状态与目标校验；US3 依赖分享详情。每片合并前不开始下一片。T027/T033 是代码 PR 之外的外部验收门禁，只能按真实设备或真人操作事实勾选；D001/D002 留给后续顾客端规格。
 
 ## Implementation Strategy
 
