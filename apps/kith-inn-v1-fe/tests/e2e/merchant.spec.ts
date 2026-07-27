@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const taroButton = (page: Page, text: RegExp) => page.locator("taro-button-core:visible").filter({ hasText: text });
 const offeringImportInput = (page: Page) => page.locator(".import-card textarea");
@@ -6,6 +6,13 @@ const jsonResponse = (body: unknown, status = 200) => ({ status, contentType: "a
 const expectNoHorizontalOverflow = async (page: Page) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 };
+const rapidTrigger = (button: Locator) => button.evaluate((element) => {
+  const target = element as HTMLElement & { disabled?: boolean };
+  target.click();
+  target.removeAttribute("disabled");
+  target.disabled = false;
+  target.click();
+});
 
 const enterOfferings = async (page: Page) => {
   await taroButton(page, /^开发登录$/).click();
@@ -1981,6 +1988,114 @@ test("保存默认价格、批量开放和停止并设置整天或单餐打烊",
   await missingDay.locator("taro-button-core").filter({ hasText: /^取消晚餐打烊$/ }).click();
   await mealDelete;
   await expect(missingDay.locator("taro-button-core").filter({ hasText: /^晚餐打烊$/ })).toBeVisible();
+});
+
+test("同一提交窗口连续触发 Page 4 写操作只发送一次请求", async ({ page }) => {
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  type MockSlot = Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus"> & {
+    orderDeadline: string | null;
+    orderStatus: "draft" | "open" | "closed";
+  };
+  let docs: MockSlot[] = [
+    { ...slot("2026-07-27", "lunch"), id: 991, orderStatus: "draft", orderDeadline: null, priceCents: null },
+    { ...slot("2026-07-27", "dinner"), id: 992, orderStatus: "open",
+      orderDeadline: "2026-07-27T10:00:00.000Z", priceCents: 3200 }
+  ];
+  const gate = () => {
+    let release!: () => void;
+    return { wait: new Promise<void>((resolve) => { release = resolve; }), release: () => release() };
+  };
+  const settingsGate = gate(), configGate = gate(), bulkGate = gate(), createGate = gate(), closeGate = gate();
+  let settingsWrites = 0, configWrites = 0, bulkWrites = 0, createWrites = 0, closeWrites = 0;
+  let entry: {
+    doc: { id: number; sellerId: number; publicId: string; title: string; status: "open" | "closed";
+      mealSlotIds: number[]; createdById: number; target: { kind: "meal"; date: string; occasion: "dinner" } };
+    share: { title: string; path: string };
+  } | null = null;
+
+  await page.route("**/merchant/booking-settings", async (route) => {
+    if (route.request().method() === "GET") return route.fulfill(jsonResponse({ defaultPriceCents: 3000 }));
+    settingsWrites += 1;
+    await settingsGate.wait;
+    return route.fulfill(jsonResponse({ defaultPriceCents: route.request().postDataJSON().defaultPriceCents }));
+  });
+  await page.route("**/merchant/service-closures?*", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs })));
+  await page.route("**/merchant/meal-slots/*/booking-config", async (route) => {
+    configWrites += 1;
+    await configGate.wait;
+    const input = route.request().postDataJSON();
+    docs = docs.map((doc) => doc.id === 991 ? { ...doc, ...input } : doc);
+    return route.fulfill(jsonResponse({ doc: docs[0] }));
+  });
+  await page.route("**/merchant/meal-slots/bulk-booking-status", async (route) => {
+    bulkWrites += 1;
+    await bulkGate.wait;
+    docs = docs.map((doc) => doc.id === 991 ? { ...doc, orderStatus: "closed" } : doc);
+    return route.fulfill(jsonResponse({ results: [{ id: 991, status: "updated", doc: docs[0] }] }));
+  });
+  await page.route("**/merchant/booking-batches", async (route) => {
+    if (route.request().method() === "GET") {
+      return route.fulfill(jsonResponse({ docs: entry === null ? [] : [entry] }));
+    }
+    createWrites += 1;
+    await createGate.wait;
+    const doc = { id: 81, sellerId: 1, publicId: "72b8b5fc-84d2-4c70-a35b-0a42742fcd11",
+      title: "晚餐预订", status: "open" as const, mealSlotIds: [992], createdById: 1,
+      target: { kind: "meal" as const, date: "2026-07-27", occasion: "dinner" as const } };
+    entry = { doc, share: { title: doc.title,
+      path: `/pages/booking/index?batch=${doc.publicId}&date=2026-07-27&occasion=dinner` } };
+    return route.fulfill(jsonResponse(entry, 201));
+  });
+  await page.route("**/merchant/booking-batches/81", async (route) => {
+    if (route.request().method() === "PATCH") {
+      closeWrites += 1;
+      await closeGate.wait;
+      entry = { ...entry!, doc: { ...entry!.doc, status: "closed" } };
+      return route.fulfill(jsonResponse(entry));
+    }
+    return route.fulfill(jsonResponse({ ...entry!, slots: [{ id: 992, date: "2026-07-27", occasion: "dinner",
+      orderStatus: docs[1]!.orderStatus, orderDeadline: docs[1]!.orderDeadline, priceCents: docs[1]!.priceCents }] }));
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+
+  const defaultPrice = page.locator(".booking-settings-card input");
+  await defaultPrice.fill("31");
+  await rapidTrigger(taroButton(page, /^保存默认价格$/));
+  await expect.poll(() => settingsWrites).toBe(1);
+  settingsGate.release();
+  await expect(taroButton(page, /^保存默认价格$/)).toBeEnabled();
+
+  const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" });
+  await lunch.getByRole("textbox", { name: "价格（元）" }).fill("31");
+  await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-27T18:00");
+  await rapidTrigger(lunch.locator("taro-button-core").filter({ hasText: /^开放预订$/ }));
+  await expect.poll(() => configWrites).toBe(1);
+  configGate.release();
+  await expect(lunch).toContainText("状态：开放");
+
+  await lunch.getByLabel("选择 2026-07-27 午餐").click();
+  await rapidTrigger(page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量停止$/ }));
+  await expect.poll(() => bulkWrites).toBe(1);
+  bulkGate.release();
+  await expect(lunch).toContainText("状态：已关闭");
+
+  const dinner = page.locator(".batch-slot").filter({ hasText: "2026-07-27 晚餐" });
+  await dinner.locator("taro-button-core").filter({ hasText: /^分享这一餐$/ }).click();
+  await rapidTrigger(taroButton(page, /^生成分享卡片$/));
+  await expect.poll(() => createWrites).toBe(1);
+  createGate.release();
+  await expect(page.locator(".share-success-state")).toContainText("预订已开放");
+
+  await page.getByLabel("停用分享入口").click();
+  await rapidTrigger(taroButton(page, /^确认停用入口$/));
+  await expect.poll(() => closeWrites).toBe(1);
+  closeGate.release();
+  await expect(page.locator(".share-success-state")).toContainText("已关闭");
 });
 
 test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => {

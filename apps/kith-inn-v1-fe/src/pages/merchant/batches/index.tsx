@@ -24,6 +24,7 @@ import {
   bookingWeekDates,
   buildBookingConfig,
   copyBookingBatchPath,
+  createBookingWriteGuard,
   effectiveServiceClosure,
   sortBookingBatchHistory,
   summarizeBookingBatch,
@@ -103,6 +104,7 @@ export default function MerchantBatches() {
   const [historyFailed, setHistoryFailed] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const loadRevision = useRef(0);
+  const [writeGuard] = useState(createBookingWriteGuard);
 
   const loadBatches = async () => {
     setHistoryLoading(true);
@@ -196,7 +198,7 @@ export default function MerchantBatches() {
     return () => clearTimeout(timer);
   }, [activeDetail?.doc.id]);
 
-  const configure = async (slot: MealSlot, orderStatus: "open" | "closed") => {
+  const configure = (slot: MealSlot, orderStatus: "open" | "closed") => writeGuard.run(async () => {
     const config = configs[String(slot.id)] ?? initialConfig(slot);
     const input = orderStatus === "closed"
       ? { orderStatus } as const
@@ -220,9 +222,9 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
-  const saveDefaultPrice = async () => {
+  const saveDefaultPrice = () => writeGuard.run(async () => {
     if (!/^\d+(?:\.\d{1,2})?$/.test(defaultPriceYuan.trim())) {
       await Taro.showToast({ title: "请输入有效默认价格", icon: "none" });
       return;
@@ -245,9 +247,9 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
-  const bulkStatus = async (action: "open" | "stop") => {
+  const bulkStatus = (action: "open" | "stop") => writeGuard.run(async () => {
     if (selected.length === 0) {
       await Taro.showToast({ title: "请先选择餐次", icon: "none" });
       return;
@@ -296,7 +298,7 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
   const reloadClosures = async () => {
     if (weekDays.length === 0) return; setPending("closures");
@@ -307,7 +309,11 @@ export default function MerchantBatches() {
     } finally { setPending(null); }
   };
 
-  const toggleClosure = async (date: string, occasion: MealSlot["occasion"] | null, closure?: ServiceClosure) => {
+  const toggleClosure = (
+    date: string,
+    occasion: MealSlot["occasion"] | null,
+    closure?: ServiceClosure
+  ) => writeGuard.run(async () => {
     setPending(`closure:${date}:${occasion ?? "day"}`);
     try {
       if (closure) {
@@ -323,9 +329,9 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
-  const createBatch = async () => {
+  const createBatch = () => writeGuard.run(async () => {
     const selection = shareTarget ? bookingShareSelection(shareTarget, slots, new Date().toISOString()) : null;
     if (!selection) {
       await Taro.showToast({ title: "请先选择仍在预订中的一天或一餐", icon: "none" });
@@ -357,7 +363,7 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
   const openDetail = async (id: string | number) => {
     setPending(`detail:${id}`);
@@ -392,7 +398,7 @@ export default function MerchantBatches() {
     setSelected(next.selected);
   };
 
-  const closeBatch = async (id: string | number) => {
+  const closeBatch = (id: string | number) => writeGuard.run(async () => {
     setPending(`batch:${id}`);
     try {
       const entry = await api.closeBookingBatch(id);
@@ -413,7 +419,7 @@ export default function MerchantBatches() {
     } finally {
       setPending(null);
     }
-  };
+  });
 
   const returnToMenu = () => {
     const mode = bookingReturnMode({

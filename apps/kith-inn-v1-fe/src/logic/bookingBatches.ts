@@ -30,6 +30,26 @@ export type BookingBatchLiveSummary = {
   deadlineLines: string[];
 };
 
+export type BookingWriteGuard = {
+  run: (write: () => Promise<void>) => Promise<boolean>;
+};
+
+export function createBookingWriteGuard(): BookingWriteGuard {
+  let active = false;
+  return {
+    async run(write) {
+      if (active) return false;
+      active = true;
+      try {
+        await write();
+        return true;
+      } finally {
+        active = false;
+      }
+    }
+  };
+}
+
 export const BOOKING_SHARE_FALLBACK = {
   title: "街坊味预订",
   path: "/pages/merchant/batches/index"

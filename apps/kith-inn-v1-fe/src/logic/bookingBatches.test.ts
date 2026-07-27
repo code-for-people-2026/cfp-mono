@@ -18,6 +18,7 @@ import {
   bookingShareTargetText,
   buildBookingConfig,
   copyBookingBatchPath,
+  createBookingWriteGuard,
   effectiveServiceClosure,
   selectableBookingSlots,
   sortBookingBatchHistory,
@@ -219,6 +220,29 @@ it("caps operational selection while still allowing deselection", () => {
   expect(toggleOperationalSelection([1], 2, 2)).toEqual({ selected: [1, 2], limitReached: false });
   expect(toggleOperationalSelection([1, 2], 3, 2)).toEqual({ selected: [1, 2], limitReached: true });
   expect(toggleOperationalSelection([1, 2], "1", 2)).toEqual({ selected: [2], limitReached: false });
+});
+
+it("synchronously rejects overlapping writes and unlocks after settlement", async () => {
+  const guard = createBookingWriteGuard();
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => { release = resolve; });
+  const write = vi.fn(async () => pending);
+
+  const first = guard.run(write);
+  const overlapping = guard.run(write);
+
+  expect(write).toHaveBeenCalledTimes(1);
+  await expect(overlapping).resolves.toBe(false);
+  release();
+  await expect(first).resolves.toBe(true);
+  await expect(guard.run(write)).resolves.toBe(true);
+  expect(write).toHaveBeenCalledTimes(2);
+});
+
+it("releases the synchronous write guard when an action rejects", async () => {
+  const guard = createBookingWriteGuard();
+  await expect(guard.run(async () => { throw new Error("failed"); })).rejects.toThrow("failed");
+  await expect(guard.run(async () => undefined)).resolves.toBe(true);
 });
 
 it("applies partial bulk results and keeps failed rows selected", () => {
