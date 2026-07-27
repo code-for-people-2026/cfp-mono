@@ -6,6 +6,28 @@ const jsonResponse = (body: unknown, status = 200) => ({ status, contentType: "a
 const expectNoHorizontalOverflow = async (page: Page) => {
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 };
+const expectActionReachable = async (page: Page, action: Locator, enabled = true) => {
+  await action.scrollIntoViewIfNeeded();
+  await expect(action).toBeVisible();
+  const box = await action.boundingBox();
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+  expect(await action.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+    return hit !== null && (hit === element || element.contains(hit));
+  })).toBe(true);
+  if (enabled) {
+    await expect(action).toBeEnabled();
+    await action.click({ trial: true });
+  } else {
+    await expect(action).toHaveAttribute("disabled", "");
+  }
+};
 const rapidTrigger = (button: Locator) => button.evaluate((element) => {
   const target = element as HTMLElement & { disabled?: boolean };
   target.click();
@@ -2259,6 +2281,117 @@ test("配置餐次后创建、复制并关闭预订批次", async ({ page }) => 
   expect(Date.now() - startedAt).toBeLessThan(60_000);
   await expect(page.getByText(/operator-token|sellerId|createdById/)).toHaveCount(0);
   await expect(page.getByLabel(/分享给街坊|原生分享/)).toHaveCount(0);
+});
+
+test("Page 4 加载态在 375×812 下无溢出且返回操作可达", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  let releaseSlots!: () => void;
+  const slotsReady = new Promise<void>((resolve) => { releaseSlots = resolve; });
+  await mockBookingOperations(page);
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/meal-slots?*", async (route) => {
+    await slotsReady;
+    return route.fulfill(jsonResponse({ docs: [] }));
+  });
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  await expect(page.getByText("正在加载本周经营安排…", { exact: true })).toBeVisible();
+  await expect(page.locator(".booking-settings-card input")).toBeDisabled();
+  await expectActionReachable(page, taroButton(page, /^(菜单|返回菜单)$/));
+  await expectNoHorizontalOverflow(page);
+  await expect(page).toHaveScreenshot("page4-loading-375x812.png");
+
+  releaseSlots();
+  await expect(page.getByText("正在加载本周经营安排…", { exact: true })).toHaveCount(0);
+});
+
+test("Page 4 局部失败态在 375×812 下保留可达重试操作", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  await page.route("**/merchant/booking-settings", (route) => route.fulfill(jsonResponse({}, 500)));
+  await page.route("**/merchant/service-closures?*", (route) => route.fulfill(jsonResponse({}, 500)));
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs: [
+    { ...slot("2026-07-27", "lunch"), id: 961, orderStatus: "draft", orderDeadline: null, priceCents: null }
+  ] })));
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  await expect(page.getByText("默认价格加载失败，可重新填写并保存。", { exact: true })).toBeVisible();
+  await expect(page.getByText(/打烊安排加载失败；餐次仍可配置或停止/)).toBeVisible();
+  await expectActionReachable(page, taroButton(page, /^重试打烊安排$/));
+  await expectNoHorizontalOverflow(page);
+  await expect(page).toHaveScreenshot("page4-partial-failure-375x812.png");
+});
+
+test("Page 4 空态在 375×812 下无溢出且菜单操作可达", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  await mockBookingOperations(page);
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs: [] })));
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  const emptyState = page.getByText("本周还没有已生成的餐次，请先到菜单页生成菜单。", { exact: true });
+  await emptyState.scrollIntoViewIfNeeded();
+  await expect(emptyState).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await expect(page).toHaveScreenshot("page4-empty-375x812.png");
+  await expectActionReachable(page, taroButton(page, /^(菜单|返回菜单)$/));
+});
+
+test("Page 4 批量处理中态在 375×812 下无溢出且进度操作可见", async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.clock.install({ time: new Date("2026-07-22T01:00:00.000Z") });
+  let draftSlot: Omit<ReturnType<typeof slot>, "orderDeadline" | "orderStatus" | "priceCents"> & {
+    orderDeadline: string | null;
+    orderStatus: "draft" | "open" | "closed";
+    priceCents: number | null;
+  } = {
+    ...slot("2026-07-27", "lunch"), id: 971, orderStatus: "draft",
+    orderDeadline: null, priceCents: null
+  };
+  let releaseBulk!: () => void;
+  const bulkReady = new Promise<void>((resolve) => { releaseBulk = resolve; });
+  await mockBookingOperations(page);
+  await page.route("**/merchant/meal-slots?*", (route) => route.fulfill(jsonResponse({ docs: [draftSlot] })));
+  await page.route("**/merchant/meal-slots/*/booking-config", (route) => {
+    draftSlot = { ...draftSlot, ...route.request().postDataJSON() };
+    return route.fulfill(jsonResponse({ doc: draftSlot }));
+  });
+  await page.route("**/merchant/meal-slots/bulk-booking-status", async (route) => {
+    await bulkReady;
+    draftSlot = { ...draftSlot, orderStatus: "open" };
+    return route.fulfill(jsonResponse({ results: [{ id: draftSlot.id, status: "updated", doc: draftSlot }] }));
+  });
+  await page.route("**/merchant/booking-batches", (route) => route.fulfill(jsonResponse({ docs: [] })));
+
+  await page.goto("/");
+  await taroButton(page, /^开发登录$/).click();
+  await expect(page).toHaveURL(/pages\/merchant\/home\/index/);
+  await page.goto("/pages/merchant/batches/index?weekStart=2026-07-27");
+  const lunch = page.locator(".batch-slot").filter({ hasText: "2026-07-27 午餐" });
+  await lunch.getByRole("textbox", { name: "截止时间" }).fill("2026-07-27T09:30");
+  await lunch.getByLabel("选择 2026-07-27 午餐").click();
+  const openButton = page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^批量开放$/ });
+  await expectActionReachable(page, openButton);
+  await openButton.click();
+  const pendingButton = page.locator(".bulk-operation-card taro-button-core").filter({ hasText: /^开放中…$/ });
+  await expectActionReachable(page, pendingButton, false);
+  await expectNoHorizontalOverflow(page);
+  await expect(page).toHaveScreenshot("page4-bulk-processing-375x812.png");
+
+  releaseBulk();
+  await expect(lunch).toContainText("状态：开放");
 });
 
 test("按日期生成只定位当天开放餐次的分享卡片", async ({ page }) => {

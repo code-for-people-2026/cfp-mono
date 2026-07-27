@@ -8,7 +8,7 @@ pnpm --filter @cfp/kith-inn-v1-be test
 pnpm --filter @cfp/cms test
 pnpm --filter @cfp/kith-inn-v1-fe test
 pnpm verify
-pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|紧凑历史|默认价应用、个别改价并批量开放完整工作周'
+pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|紧凑历史|默认价应用、个别改价并批量开放完整工作周|Page 4 (加载态|局部失败态|空态|批量处理中态)'
 ```
 
 ## 关键场景
@@ -17,7 +17,7 @@ pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|�
 2. 混合选择有效和无效餐次批量开放，确认逐项结果及重复点击防重。
 3. 标记整天/单餐打烊并取消；确认未设置隐藏、打烊可见，已有订单时写入被阻止。
 4. 分别分享某天和某餐，确认微信卡片 payload 及公开 `batch` 路径。
-5. 375×812 检查配置、部分失败、成功详情、历史、停止和归档状态；H5 自动化不得冒充真机分享验收。
+5. 375×812 检查加载、配置、局部失败、空、批量处理中、成功详情、历史、停止和归档状态；H5 自动化不得冒充真机分享验收。
 
 ## 375×812 视觉证据
 
@@ -26,10 +26,14 @@ pnpm --filter @cfp/kith-inn-v1-fe exec playwright test --grep '按日期生成|�
 - [经营操作态](./evidence/page4-operations-375x812.png)：默认价、日期范围与整天/单餐营业操作。
 - [分享成功态](./evidence/page4-success-375x812.png)：目标日期、实时餐次摘要、复制/停用动作与隐私说明。
 - [紧凑历史态](./evidence/page4-history-375x812.png)：开放、关闭、归档三态入口及按需详情动作。
+- [加载态](./evidence/page4-loading-375x812.png)：经营安排读取中，配置禁用且返回菜单操作保持可达。
+- [局部失败态](./evidence/page4-partial-failure-375x812.png)：默认价与打烊安排读取失败，保留重新填写和重试动作。
+- [空态](./evidence/page4-empty-375x812.png)：当前周没有已生成餐次，并明确提示先到菜单页生成。
+- [批量处理中态](./evidence/page4-bulk-processing-375x812.png)：单餐已选、批量开放进行中且进度按钮未被遮挡。
 
-截图于 2026-07-27 在隔离的 CMS/BE/H5 环境中由固定数据场景生成；两条场景均通过。
+截图于 2026-07-27 在隔离的 CMS/BE/H5 环境中由六个固定数据场景生成；七张截图均通过视觉回归。
 
-这些基线覆盖核心经营、成功详情和历史状态，但尚不能单独证明 SC-005 的“所有要求状态”。T032 还需补加载、局部失败、空态和批量处理中状态的 375×812 溢出、遮挡和主操作可达证据。T031 已以固定一周 10 个餐次的 E2E 覆盖默认价应用、个别改价和一次批量开放；其自动化运行时长不作为 T033 的真人计时证据。
+这些基线已覆盖 SC-005 要求的 H5 状态：所有视觉场景都断言页面无横向溢出；新增四态的主操作完整落在视口内、中心命中自身而非被覆盖，可用操作另以 trial click 验证可交互。真实 iPhone/Android 安全区仍只能由 T027 真机验收。T031 已以固定一周 10 个餐次的 E2E 覆盖默认价应用、个别改价和一次批量开放；其自动化运行时长不作为 T033 的真人计时证据。
 
 ## 三分钟真人可用性计时
 
