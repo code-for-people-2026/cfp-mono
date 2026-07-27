@@ -8,7 +8,7 @@ services:
       NODE_ENV: production
       PAYLOAD_DB_PUSH: "false"
       PAYLOAD_DATABASE_URL: ${PAYLOAD_DATABASE_URL:?PAYLOAD_DATABASE_URL is required}
-      PAYLOAD_SECRET: ${KITH_INN_V1_PAYLOAD_SECRET:?KITH_INN_V1_PAYLOAD_SECRET is required}
+      PAYLOAD_SECRET: ${KITH_INN_PAYLOAD_SECRET:?KITH_INN_PAYLOAD_SECRET is required}
       KITH_INN_V1_JWT_SECRET: ${KITH_INN_V1_JWT_SECRET:?KITH_INN_V1_JWT_SECRET is required}
       KITH_INN_V1_INTERNAL_TOKEN: ${KITH_INN_V1_INTERNAL_TOKEN:?KITH_INN_V1_INTERNAL_TOKEN is required}
 
@@ -21,19 +21,6 @@ services:
       <<: *cms-environment
       KITH_INN_V1_OPERATOR_OPENID: ${KITH_INN_V1_OPERATOR_OPENID:?KITH_INN_V1_OPERATOR_OPENID is required}
 
-  kith-inn-v1-cms:
-    image: ${KITH_INN_V1_CMS_IMAGE:?KITH_INN_V1_CMS_IMAGE is required}
-    restart: unless-stopped
-    environment: *cms-environment
-    ports:
-      - "127.0.0.1:3312:3304"
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3304/api/ready',{headers:{'x-internal-token':process.env.KITH_INN_V1_INTERNAL_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
-      interval: 5s
-      timeout: 5s
-      retries: 12
-      start_period: 10s
-
   kith-inn-v1-be:
     image: ${KITH_INN_V1_BE_IMAGE:?KITH_INN_V1_BE_IMAGE is required}
     restart: unless-stopped
@@ -41,18 +28,21 @@ services:
       NODE_ENV: production
       BE_PORT: "3311"
       KITH_INN_V1_JWT_SECRET: ${KITH_INN_V1_JWT_SECRET:?KITH_INN_V1_JWT_SECRET is required}
-      CMS_BASE_URL: http://kith-inn-v1-cms:3304
+      CMS_BASE_URL: http://kith-inn-cms:3304
       KITH_INN_V1_INTERNAL_TOKEN: ${KITH_INN_V1_INTERNAL_TOKEN:?KITH_INN_V1_INTERNAL_TOKEN is required}
       WX_APPID: ${KITH_INN_V1_WX_APPID:?KITH_INN_V1_WX_APPID is required}
       WX_SECRET: ${KITH_INN_V1_WX_SECRET:?KITH_INN_V1_WX_SECRET is required}
     ports:
       - "127.0.0.1:${KITH_INN_V1_BE_LOOPBACK_PORT:-3311}:3311"
-    depends_on:
-      kith-inn-v1-cms:
-        condition: service_healthy
+    networks: [kith-inn-shared]
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3311/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 5s
       timeout: 5s
       retries: 12
       start_period: 10s
+
+networks:
+  kith-inn-shared:
+    name: kith-inn-shared
+    external: true

@@ -11,9 +11,10 @@ previous_pointer="$root/.kith-inn-v1-previous"
 gate_marker="$root/.kith-inn-v1-write-gate"
 compose_bin="${COMPOSE_BIN:-docker}"
 smoke_bin="${SMOKE_BIN:-$project_dir/smoke-kith-inn-v1.sh}"
+curl_bin="${CURL_BIN:-curl}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
-runtime=(kith-inn-v1-cms kith-inn-v1-be)
+runtime=(kith-inn-v1-be)
 all_services=(kith-inn-v1-cms-migrate kith-inn-v1-cms-provision "${runtime[@]}")
 
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
@@ -59,7 +60,7 @@ smoke() {
 }
 restore_current() {
   current_valid || return 1
-  compose "$current_compose" "$current_env" up -d --no-deps "${runtime[@]}" >/dev/null 2>&1 &&
+  compose "$current_compose" "$current_env" up -d --wait --wait-timeout 120 --no-deps "${runtime[@]}" >/dev/null 2>&1 &&
     smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1
 }
 prune_unused_v1_images() {
@@ -70,7 +71,7 @@ prune_unused_v1_images() {
     for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
     return 1
   }
-  for image in KITH_INN_V1_CMS_IMAGE KITH_INN_V1_CMS_OPS_IMAGE KITH_INN_V1_BE_IMAGE; do
+  for image in KITH_INN_V1_CMS_OPS_IMAGE KITH_INN_V1_BE_IMAGE; do
     ref="$(value "$next_env" "$image")"
     [[ -z "$ref" ]] || preserve_images+=("$ref")
     if [[ -n "$current_release" ]]; then
@@ -102,11 +103,13 @@ recover() {
 command -v "$compose_bin" >/dev/null || fail preflight no_change
 command -v "$smoke_bin" >/dev/null || fail preflight no_change
 command -v jq >/dev/null || fail preflight no_change
-command -v curl >/dev/null || fail preflight no_change
+command -v "$curl_bin" >/dev/null || fail preflight no_change
 
 if [[ "$action" == "preflight" ]]; then
   candidate_valid || fail preflight no_change
   [[ -z "$current_release" ]] || current_valid || fail preflight no_change
+  token="$(value "$next_env" KITH_INN_V1_INTERNAL_TOKEN)"
+  "$curl_bin" -fsS --max-time 15 -H "x-internal-token: $token" http://127.0.0.1:3304/api/ready >/dev/null || fail shared_cms no_change
   prune_unused_v1_images
   compose "$next_compose" "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || fail preflight no_change
   echo '{"status":"candidate_ready"}'
@@ -133,7 +136,6 @@ fi
 [[ "$action" == "deploy" ]] || fail preflight unsupported_action
 candidate_valid || fail preflight no_change
 [[ -z "$current_release" ]] || current_valid || fail preflight no_change
-compose "$next_compose" "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || recover pull
 
 interrupted() { trap - TERM INT HUP; recover interrupted; }
 trap interrupted TERM INT HUP
@@ -145,7 +147,7 @@ migration_head="$(sed -nE 's/^✓ cms migration head ([A-Za-z0-9_]+)$/\1/p' <<<"
 provision_output="$(compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-provision 2>&1)" || recover provision
 seller_id="$(tail -n 1 <<<"$provision_output" | jq -er 'select(.project == "kiv1") | .sellerId | tostring')" || recover provision
 
-compose "$next_compose" "$next_env" up -d --no-deps "${runtime[@]}" >/dev/null 2>&1 || recover rollout
+compose "$next_compose" "$next_env" up -d --wait --wait-timeout 120 --no-deps "${runtime[@]}" >/dev/null 2>&1 || recover rollout
 smoke_result="$(smoke "$next_compose" "$next_env" "$release_sha" 2>/dev/null)" || recover smoke
 
 mkdir -p "$release_store" || recover persist

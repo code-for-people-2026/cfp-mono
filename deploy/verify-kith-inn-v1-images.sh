@@ -2,10 +2,10 @@
 set -euo pipefail
 
 release_sha="${RELEASE_SHA:-}"
-images=("${KITH_INN_V1_CMS_IMAGE:-}" "${KITH_INN_V1_CMS_OPS_IMAGE:-}" "${KITH_INN_V1_BE_IMAGE:-}")
+images=("${KITH_INN_V1_CMS_OPS_IMAGE:-}" "${KITH_INN_V1_BE_IMAGE:-}")
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "invalid RELEASE_SHA" >&2; exit 1; }
 for image in "${images[@]}"; do
-  [[ -n "$image" ]] || { echo "all three image names are required" >&2; exit 1; }
+  [[ -n "$image" ]] || { echo "both image names are required" >&2; exit 1; }
   revision="$(docker image inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$image")"
   user="$(docker image inspect --format '{{ .Config.User }}' "$image")"
   [[ "$revision" == "$release_sha" ]] || { echo "image revision mismatch" >&2; exit 1; }
@@ -38,4 +38,4 @@ for _ in $(seq 1 30); do
 done
 [[ "$health_state" == healthy ]] || { docker logs "$container" >&2; echo "BE image healthcheck failed" >&2; exit 1; }
 [[ "$(docker exec "$container" id -u)" != 0 ]] || { echo "BE image process runs as root" >&2; exit 1; }
-echo "verified three kith-inn-v1 image contracts"
+echo "verified two kith-inn-v1 image contracts"

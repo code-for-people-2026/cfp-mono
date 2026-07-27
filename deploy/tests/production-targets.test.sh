@@ -7,6 +7,9 @@ config_check="$root/deploy/check-kith-inn-production-config.sh"
 website_config_check="$root/deploy/check-website-production-config.sh"
 workflow="$root/.github/workflows/deploy-production.yml"
 preview_workflow="$root/.github/workflows/deploy-preview.yml"
+v1_workflow="$root/.github/workflows/deploy-kith-inn-v1-production.yml"
+shared_compose="$root/deploy/docker-compose.kith-inn.prod.yml"
+v1_compose="$root/deploy/docker-compose.kith-inn-v1.prod.yml"
 tmp="$(mktemp -d)"
 worktree=""
 trap 'if [[ -n "$worktree" ]]; then git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true; fi; rm -rf "$tmp"' EXIT
@@ -135,12 +138,25 @@ grep -q 'failure() || cancelled()' <<<"$kith_job"
 grep -q 'preflight-candidate' <<<"$kith_job"
 grep -A2 'Restore the last-good runtime' <<<"$kith_job" | grep -q 'timeout-minutes: 30'
 grep -q 'GITHUB_STEP_SUMMARY' <<<"$kith_job"
+grep -q 'KITH_INN_V1_INTERNAL_TOKEN' <<<"$kith_job"
+grep -q '^    name: kith-inn-shared$' "$shared_compose"
+grep -q 'aliases: \[kith-inn-cms\]' "$shared_compose"
+! grep -q '^  kith-inn-v1-cms:$' "$v1_compose"
+grep -q 'CMS_BASE_URL: http://kith-inn-cms:3304' "$v1_compose"
+grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
+grep -q 'group: kith-inn-v1-production' "$v1_workflow"
+grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
+grep -q -- '--workflow=deploy-production.yml' "$v1_workflow"
+grep -q 'docker build --target jobs' "$v1_workflow"
+grep -q 'apps/kith-inn-v1-be/Dockerfile' "$v1_workflow"
+! grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
 
 required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
   ALIYUN_ACCESS_KEY_ID ALIYUN_ACCESS_KEY_SECRET ALIYUN_REGION_ID ALIYUN_RDS_INSTANCE_ID
   ECS_SSH_KEY ECS_SSH_KNOWN_HOSTS ECS_HOST ECS_USER PAYLOAD_DATABASE_URL KITH_INN_PAYLOAD_SECRET
   KITH_INN_JWT_SECRET KITH_INN_CMS_INTERNAL_TOKEN KITH_INN_TRIAL_OPENID
+  KITH_INN_V1_JWT_SECRET KITH_INN_V1_INTERNAL_TOKEN
   KITH_INN_WX_APPID KITH_INN_WX_SECRET KITH_INN_DEEPSEEK_API_KEY KITH_INN_BE_BASE_URL
 )
 all_values=()

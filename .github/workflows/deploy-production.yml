@@ -114,6 +114,8 @@ jobs:
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
           KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
+          KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
+          KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
           KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
           KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
           KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}
@@ -196,6 +198,8 @@ jobs:
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
           KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
+          KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
+          KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
           KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
           KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
           KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}

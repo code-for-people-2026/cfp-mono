@@ -18,8 +18,8 @@ assert_be_health() {
   curl -fsS --max-time 15 "$1" | jq -e --arg sha "$release_sha" '.status == "ok" and .releaseSha == $sha' >/dev/null
 }
 
-curl -fsS --max-time 10 http://127.0.0.1:3312/api/health >/dev/null
-curl -fsS --max-time 10 -H "x-internal-token: $token" http://127.0.0.1:3312/api/ready >/dev/null
+curl -fsS --max-time 10 http://127.0.0.1:3304/api/health >/dev/null
+curl -fsS --max-time 10 -H "x-internal-token: $token" http://127.0.0.1:3304/api/ready >/dev/null
 assert_be_health http://127.0.0.1:3311/health
 assert_be_health "$public_base/health"
 status="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 "$public_base/merchant/offerings")"
