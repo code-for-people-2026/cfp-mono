@@ -4,8 +4,8 @@
 
 ## 当前结论
 
-- CMS 已包含 kiv1_* collections、迁移、内部 API 和 v1 身份校验；部署无需新增业务 schema。
-- 仓库原有生产 Compose/Actions 只覆盖旧 kith-inn。截至本次审计，历史 Actions 没有 v1 CMS/BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
+- `kith-inn` 与 `kith-inn-v1` 共用唯一的 `apps/cms` 常驻进程；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。v1 不启动第二个 Payload/Next 进程。
+- 现有 `Deploy Production` 先更新共享 CMS，并将它加入 `kith-inn-shared` Docker network；v1 workflow 只构建 CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
 - v1 领域模型支持多个 seller；当前产品入口只自动 provision 一个“桃子”seller 和一个 operator，尚无自助开店或运营后台。
 
 ## ECS 自动部署
@@ -14,11 +14,11 @@
 
 Production Environment 需配置：
 
-- 复用基础设施 Secrets：ALIYUN_ACR_REGISTRY、ALIYUN_ACR_NAMESPACE、ALIYUN_ACR_USERNAME、ALIYUN_ACR_PASSWORD、ALIYUN_ACCESS_KEY_ID、ALIYUN_ACCESS_KEY_SECRET、ECS_HOST、ECS_USER、ECS_SSH_KEY、ECS_SSH_KNOWN_HOSTS、DATABASE_URL。
-- v1 Secrets：KITH_INN_V1_PAYLOAD_SECRET、KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。
+- 复用基础设施/共享 CMS Secrets：ALIYUN_ACR_REGISTRY、ALIYUN_ACR_NAMESPACE、ALIYUN_ACR_USERNAME、ALIYUN_ACR_PASSWORD、ALIYUN_ACCESS_KEY_ID、ALIYUN_ACCESS_KEY_SECRET、ECS_HOST、ECS_USER、ECS_SSH_KEY、ECS_SSH_KNOWN_HOSTS、DATABASE_URL、KITH_INN_PAYLOAD_SECRET。
+- v1 Secrets：KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。前两个还需注入共享 CMS runtime，供 v1 内部 API 校验使用。
 - Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
 
-发布顺序固定为：构建三镜像 → 推送并固定 digest → ECS 候选 Compose preflight → 停止旧 v1 runtime 写入口 → 创建并验证 RDS 恢复点 → migration → 幂等 provision → 启动 CMS/BE → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA）→ 原子提升 current release → 上传同 SHA smoke marker。v1 CMS 绑定 127.0.0.1:3312，避免和旧 kith-inn 的 3304 冲突；失败只恢复应用 runtime，不自动回滚数据库。
+发布顺序固定为：等待同 SHA 的共享 CMS 生产 workflow 成功 → 构建 CMS ops 与 v1 BE 两个镜像 → 推送并固定 digest → 验证共享 CMS `127.0.0.1:3304` readiness → ECS 候选 preflight → 停止旧 v1 BE 写入口 → 创建并验证 RDS 恢复点 → migration → 幂等 provision → 等待 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA）→ 原子提升 current release → 上传同 SHA smoke marker。共享 CMS 不随 v1 候选停止或恢复；失败只恢复 v1 BE runtime，不自动回滚数据库。
 
 ECS 的 Nginx/证书需人工一次性配置：将 KITH_INN_V1_BE_BASE_URL 对应 host 的 443 反代到 127.0.0.1:3311，只公开 80/443；先验证 DNS、完整证书链和 nginx -t，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
 

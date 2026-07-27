@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production
+  group: kith-inn-v1-production
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +29,6 @@ jobs:
     environment: Production
     env:
       RELEASE_SHA: ${{ github.sha }}
-      KITH_INN_V1_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms:${{ github.sha }}
       KITH_INN_V1_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms-ops:${{ github.sha }}
       KITH_INN_V1_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-be:${{ github.sha }}
     steps:
@@ -51,7 +50,7 @@ jobs:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}
           PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          KITH_INN_V1_PAYLOAD_SECRET: ${{ secrets.KITH_INN_V1_PAYLOAD_SECRET }}
+          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
           KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
           KITH_INN_V1_OPERATOR_OPENID: ${{ secrets.KITH_INN_V1_OPERATOR_OPENID }}
@@ -69,6 +68,20 @@ jobs:
           [[ -n "$run_id" ]] || { echo "No ci.yml run found for release SHA." >&2; exit 1; }
           gh run watch "$run_id" --exit-status
 
+      - name: Wait for the shared CMS production rollout
+        if: steps.check.outputs.configured == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_id=""
+          for _ in $(seq 1 60); do
+            run_id="$(gh run list --workflow=deploy-production.yml --commit="$RELEASE_SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
+            [[ -z "$run_id" ]] || break
+            sleep 10
+          done
+          [[ -n "$run_id" ]] || { echo "No shared production workflow found for release SHA." >&2; exit 1; }
+          gh run watch "$run_id" --exit-status
+
       - name: Free disk space
         if: steps.check.outputs.configured == 'true'
         run: |
@@ -81,10 +94,9 @@ jobs:
           bash -n deploy/*kith-inn-v1*.sh deploy/tests/*kith-v1*.sh deploy/tests/deploy-kith-inn-v1-candidate.test.sh
           bash deploy/tests/deploy-kith-inn-v1-candidate.test.sh
 
-      - name: Build and verify three images
+      - name: Build and verify CMS ops and v1 BE images
         if: steps.check.outputs.configured == 'true'
         run: |
-          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_IMAGE" .
           docker build --target jobs --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_OPS_IMAGE" .
           docker build --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/kith-inn-v1-be/Dockerfile -t "$KITH_INN_V1_BE_IMAGE" .
           bash deploy/verify-kith-inn-v1-images.sh
@@ -119,11 +131,10 @@ jobs:
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
           KITH_INN_V1_RELEASE_SHA: ${{ github.sha }}
-          KITH_INN_V1_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms@${{ steps.push.outputs.cms_digest }}
           KITH_INN_V1_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms-ops@${{ steps.push.outputs.cms_ops_digest }}
           KITH_INN_V1_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-be@${{ steps.push.outputs.be_digest }}
           PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          KITH_INN_V1_PAYLOAD_SECRET: ${{ secrets.KITH_INN_V1_PAYLOAD_SECRET }}
+          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
           KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
           KITH_INN_V1_OPERATOR_OPENID: ${{ secrets.KITH_INN_V1_OPERATOR_OPENID }}
