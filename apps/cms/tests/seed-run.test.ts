@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   assertDevResetAllowed,
   configuredPostgresUrl,
+  formatV1SeedSummary,
   parseSeedProject,
+  resolveV1OperatorOpenid,
   runProjectSeed,
 } from "../seed/run";
 
@@ -80,6 +82,18 @@ describe("project-scoped seed orchestration", () => {
     expect(() => parseSeedProject(["all"])).toThrow(/project/);
   });
 
+  it("injects only the configured v1 merchant membership", async () => {
+    const { payload, state } = fakePayload({});
+
+    await runProjectSeed(payload, "kiv1", false, {
+      operatorOpenid: "production-operator-openid",
+    });
+
+    expect(state.kiv1_operators).toEqual([
+      expect.objectContaining({ wechatOpenid: "production-operator-openid", active: true }),
+    ]);
+  });
+
   it("exposes only the four explicit project scripts", () => {
     const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> };
     expect(Object.keys(pkg.scripts).filter((name) => name.startsWith("seed"))).toEqual([
@@ -88,6 +102,39 @@ describe("project-scoped seed orchestration", () => {
       "seed:kiv1",
       "seed:kiv1:reset:dev",
     ]);
+  });
+});
+
+describe("resolveV1OperatorOpenid", () => {
+  it("requires a non-placeholder merchant OpenID in production", () => {
+    expect(() => resolveV1OperatorOpenid({ NODE_ENV: "production" })).toThrow(
+      /KITH_INN_V1_OPERATOR_OPENID/,
+    );
+    expect(() => resolveV1OperatorOpenid({
+      NODE_ENV: "production",
+      KITH_INN_V1_OPERATOR_OPENID: "taozi-v1-dev-openid",
+    })).toThrow(/KITH_INN_V1_OPERATOR_OPENID/);
+  });
+
+  it("uses the controlled value in production and the dev identity locally", () => {
+    expect(resolveV1OperatorOpenid({
+      NODE_ENV: "production",
+      KITH_INN_V1_OPERATOR_OPENID: "production-operator-openid",
+    })).toBe("production-operator-openid");
+    expect(resolveV1OperatorOpenid({ NODE_ENV: "development" })).toBe("taozi-v1-dev-openid");
+  });
+});
+
+describe("formatV1SeedSummary", () => {
+  it("emits machine-readable deployment evidence without the OpenID", () => {
+    const summary = formatV1SeedSummary({
+      seeded: true,
+      sellerId: 17,
+      sellerCreated: false,
+      operatorCreated: true,
+    });
+    expect(JSON.parse(summary)).toEqual({ project: "kiv1", status: "provisioned", sellerId: 17 });
+    expect(summary).not.toContain("openid");
   });
 });
 

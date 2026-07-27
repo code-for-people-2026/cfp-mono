@@ -3,6 +3,7 @@ import { sql } from "@payloadcms/db-postgres";
 import type { BasePayload, PayloadRequest } from "payload";
 import { commitTransaction, createLocalReq, getPayload, initTransaction, killTransaction } from "payload";
 import type { SeedResult } from "@cfp/kith-inn-payload/seed";
+import type { SeedResult as V1SeedResult } from "@cfp/kith-inn-v1-payload/seed";
 import {
   applySeed as applyOldSeed,
   resetSeedData as resetOldSeedData,
@@ -11,6 +12,7 @@ import {
 import {
   applySeed as applyV1Seed,
   resetSeedData as resetV1SeedData,
+  TAOZI_OPERATOR_OPENID,
 } from "@cfp/kith-inn-v1-payload/seed";
 import config from "../payload.config";
 
@@ -43,6 +45,15 @@ export function resolveTrialOpenid(env: Env = process.env): string {
   return "taozi-dev-openid";
 }
 
+export function resolveV1OperatorOpenid(env: Env = process.env): string {
+  const configured = env.KITH_INN_V1_OPERATOR_OPENID?.trim();
+  if (configured && !DEV_OPENID.test(configured) && !OPENID_PLACEHOLDER.test(configured)) return configured;
+  if (env.NODE_ENV === "production") {
+    throw new Error("KITH_INN_V1_OPERATOR_OPENID is required and cannot be a placeholder");
+  }
+  return TAOZI_OPERATOR_OPENID;
+}
+
 export async function withSeedTransaction<T>(payload: BasePayload, work: (req: PayloadRequest) => Promise<T>): Promise<T> {
   const req = await createLocalReq({}, payload);
   if (!await initTransaction(req)) throw new Error("database transactions unavailable");
@@ -72,6 +83,14 @@ export function formatKithInnSeedSummary(result: SeedResult): string {
     status: result.seeded ? "provisioned" : "reconciled",
     sellerId: result.sellerId,
     offeringCount: result.offeringCount,
+  });
+}
+
+export function formatV1SeedSummary(result: V1SeedResult): string {
+  return JSON.stringify({
+    project: "kiv1",
+    status: result.seeded ? "provisioned" : "reconciled",
+    sellerId: result.sellerId,
   });
 }
 
@@ -137,7 +156,10 @@ export async function runProjectSeed(
   const reset = resetDev
     ? await resetV1SeedData(payload as Parameters<typeof resetV1SeedData>[0])
     : null;
-  const seed = await applyV1Seed(payload as Parameters<typeof applyV1Seed>[0]);
+  const seed = await applyV1Seed(
+    payload as Parameters<typeof applyV1Seed>[0],
+    { operatorOpenid: options.operatorOpenid },
+  );
   return { project: "kiv1" as const, reset, seed };
 }
 
@@ -145,7 +167,7 @@ async function main() {
   const project = parseSeedProject(process.argv.slice(2));
   const resetDev = process.argv.includes(RESET_ARG);
   if (resetDev) assertDevResetAllowed();
-  const operatorOpenid = project === "kith-inn" ? resolveTrialOpenid() : undefined;
+  const operatorOpenid = project === "kith-inn" ? resolveTrialOpenid() : resolveV1OperatorOpenid();
   const payload = await getPayload({ config });
   try {
     const result = project === "kith-inn" && !resetDev
@@ -156,10 +178,8 @@ async function main() {
     }
     if (result.project === "kith-inn") {
       console.log(formatKithInnSeedSummary(result.seed));
-    } else if (result.seed.seeded) {
-      console.log(`✓ seeded kiv1 桃子 seller/operator (seller ${result.seed.sellerId})`);
     } else {
-      console.log("✓ kiv1 seed skipped: 桃子 seller/operator already exist");
+      console.log(formatV1SeedSummary(result.seed));
     }
   } finally {
     await payload.destroy();

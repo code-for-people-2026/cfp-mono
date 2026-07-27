@@ -20,10 +20,13 @@ export function buildSellerData(): Record<string, unknown> {
   };
 }
 
-export function buildOperatorData(sellerId: string | number): Record<string, unknown> {
+export function buildOperatorData(
+  sellerId: string | number,
+  operatorOpenid = TAOZI_OPERATOR_OPENID
+): Record<string, unknown> {
   return {
     seller: sellerId,
-    wechatOpenid: TAOZI_OPERATOR_OPENID,
+    wechatOpenid: operatorOpenid,
     active: true
   };
 }
@@ -77,7 +80,11 @@ export async function resetSeedData(
   return { deleted };
 }
 
-export async function applySeed(payload: SeedPayload): Promise<SeedResult> {
+export async function applySeed(
+  payload: SeedPayload,
+  options: { operatorOpenid?: string } = {}
+): Promise<SeedResult> {
+  const operatorOpenid = options.operatorOpenid ?? TAOZI_OPERATOR_OPENID;
   const sellers = await payload.find({
     collection: "kiv1_sellers",
     where: { name: { equals: TAOZI_SELLER_NAME } },
@@ -98,7 +105,7 @@ export async function applySeed(payload: SeedPayload): Promise<SeedResult> {
     where: {
       and: [
         { seller: { equals: seller.id } },
-        { wechatOpenid: { equals: TAOZI_OPERATOR_OPENID } }
+        { wechatOpenid: { equals: operatorOpenid } }
       ]
     },
     limit: 1,
@@ -108,7 +115,7 @@ export async function applySeed(payload: SeedPayload): Promise<SeedResult> {
   if (operatorCreated) {
     await payload.create({
       collection: "kiv1_operators",
-      data: buildOperatorData(seller.id),
+      data: buildOperatorData(seller.id, operatorOpenid),
       overrideAccess: true
     });
   }

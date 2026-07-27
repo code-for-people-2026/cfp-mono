@@ -9,6 +9,14 @@ const validProductionEnv = {
   CMS_INTERNAL_TOKEN: "internal-production-value",
 };
 
+const validV1ProductionEnv = {
+  NODE_ENV: "production",
+  PAYLOAD_DATABASE_URL: "postgres://cms:secret@postgres/cfp",
+  PAYLOAD_SECRET: "payload-production-value",
+  KITH_INN_V1_JWT_SECRET: "v1-jwt-production-value",
+  KITH_INN_V1_INTERNAL_TOKEN: "v1-internal-production-value",
+};
+
 describe("assertCmsProductionEnv", () => {
   it.each(["PAYLOAD_DATABASE_URL", "PAYLOAD_SECRET", "JWT_SECRET", "CMS_INTERNAL_TOKEN"])(
     "rejects missing %s in production",
@@ -43,8 +51,14 @@ describe("assertCmsProductionEnv", () => {
 
   it("accepts complete production config and non-production SQLite", () => {
     expect(() => assertCmsProductionEnv(validProductionEnv)).not.toThrow();
+    expect(() => assertCmsProductionEnv(validV1ProductionEnv)).not.toThrow();
     expect(() =>
       assertCmsProductionEnv({ NODE_ENV: "development", DATABASE_URI: "file:./payload.db" }),
     ).not.toThrow();
   });
+
+  it.each(["KITH_INN_V1_JWT_SECRET", "KITH_INN_V1_INTERNAL_TOKEN"])(
+    "rejects an incomplete v1-only secret pair missing %s",
+    (name) => expect(() => assertCmsProductionEnv({ ...validV1ProductionEnv, [name]: "" })).toThrow(name),
+  );
 });
