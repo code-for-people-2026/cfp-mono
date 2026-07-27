@@ -1,4 +1,4 @@
-import type { Field } from "payload";
+import type { Field, PayloadRequest } from "payload";
 
 type RelationshipRef = { relationTo: string; id: string | number };
 
@@ -44,15 +44,7 @@ type BeforeChangeArgs = {
   data: Record<string, unknown> | undefined;
   originalDoc?: Record<string, unknown>;
   collection: { slug: string; fields?: Field[] };
-  req: {
-    payload: {
-      findByID: (args: {
-        collection: string;
-        id: string | number;
-        overrideAccess: boolean;
-      }) => Promise<unknown>;
-    };
-  };
+  req: PayloadRequest;
 };
 
 export async function assertSameSellerRefs({
@@ -70,7 +62,8 @@ export async function assertSameSellerRefs({
     const target = await req.payload.findByID({
       collection: ref.relationTo,
       id: ref.id,
-      overrideAccess: true
+      overrideAccess: true,
+      req
     }) as Record<string, unknown> | null;
     if (!target || !("seller" in target)) continue;
     if (idOf(target.seller) !== sellerId) {
