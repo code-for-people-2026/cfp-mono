@@ -500,7 +500,7 @@ export default function MerchantBatches() {
               <Button disabled={pending !== null} onClick={() => setClosingId(null)}>取消</Button>
             </View>
           )}
-          <Text className="meta share-privacy-note">分享卡片只负责定位；顾客看到的是商家当前开放的实时餐次。</Text>
+          <Text className="meta share-privacy-note">分享卡片只负责定位；兼容期内，本公开批次关联餐次按最新状态展示。</Text>
           <Button className="share-return-button" disabled={pending !== null}
             onClick={() => { setActiveDetail(null); setClosingId(null); }}>返回经营设置</Button>
         </View>
