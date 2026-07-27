@@ -2212,6 +2212,10 @@ test("按日期生成只定位当天开放餐次的分享卡片", async ({ page 
   await expect(success.getByLabel("复制入口")).toHaveAttribute("disabled", "false");
   await expect(success.getByLabel("复制入口")).toHaveCSS("opacity", "1");
   await expect(success.locator(".share-preview-card .section-title")).toHaveCSS("overflow-wrap", "anywhere");
+  await expect(success.locator(".share-privacy-note")).toHaveText(
+    "分享卡片只负责定位；兼容期内，本公开批次关联餐次按最新状态展示。"
+  );
+  await expect(success).not.toContainText("顾客看到的是商家当前开放的实时餐次");
   await expect(success.locator("taro-button-core").filter({ hasText: /^分享给街坊$/ })).toHaveCount(0);
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expectNoHorizontalOverflow(page);
