@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { PayloadRequest } from "payload";
 import {
   applySeed,
   buildOperatorData,
@@ -113,12 +114,14 @@ describe("桃子 v1 seed", () => {
     const update = vi.fn().mockResolvedValue({ id: "operator" });
     const create = vi.fn();
 
-    await expect(applySeed({ find, create, update }, { operatorOpenid: "new-openid" }))
+    const req = { transactionID: Promise.resolve("seed") } as PayloadRequest;
+    await expect(applySeed({ find, create, update }, { operatorOpenid: "new-openid", req }))
       .resolves.toMatchObject({ seeded: true, operatorCreated: false });
     expect(update.mock.calls.map(([args]) => args)).toEqual([
-      { collection: "kiv1_operators", id: "old", data: { active: false }, overrideAccess: true },
-      { collection: "kiv1_operators", id: "new", data: { active: true }, overrideAccess: true },
+      { collection: "kiv1_operators", id: "old", data: { active: false }, overrideAccess: true, req },
+      { collection: "kiv1_operators", id: "new", data: { active: true }, overrideAccess: true, req },
     ]);
+    for (const call of find.mock.calls) expect(call[0]).toMatchObject({ req });
     expect(create).not.toHaveBeenCalled();
   });
 

@@ -181,7 +181,7 @@ jobs:
           echo "backup_created_at=$(jq -er .backupCreatedAt <<<"$backup")" >>"$GITHUB_OUTPUT"
 
       - id: rollout
-        name: Migrate, provision, deploy and smoke
+        name: Provision, deploy and smoke
         if: steps.check.outputs.configured == 'true'
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
@@ -207,7 +207,7 @@ jobs:
           retention-days: 30
 
       - name: Restore last-good runtime after gated failure
-        if: ${{ (failure() || cancelled()) && steps.gate.outcome == 'success' }}
+        if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
         env:
           ECS_HOST: ${{ secrets.ECS_HOST }}
           ECS_USER: ${{ secrets.ECS_USER }}

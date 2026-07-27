@@ -4,6 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 selector="$root/deploy/resolve-production-targets.sh"
 config_check="$root/deploy/check-kith-inn-production-config.sh"
+v1_config_check="$root/deploy/check-kith-inn-v1-production-config.sh"
 website_config_check="$root/deploy/check-website-production-config.sh"
 workflow="$root/.github/workflows/deploy-production.yml"
 preview_workflow="$root/.github/workflows/deploy-preview.yml"
@@ -142,6 +143,8 @@ grep -q 'KITH_INN_V1_INTERNAL_TOKEN' <<<"$kith_job"
 grep -q '^    name: kith-inn-shared$' "$shared_compose"
 grep -q 'aliases: \[kith-inn-cms\]' "$shared_compose"
 ! grep -q '^  kith-inn-v1-cms:$' "$v1_compose"
+! grep -q 'kith-inn-v1-cms-migrate' "$v1_compose"
+! grep -q 'kith-inn-v1-cms-migrate' "$root/deploy/deploy-kith-inn-v1-candidate.sh"
 grep -q 'CMS_BASE_URL: http://kith-inn-cms:3304' "$v1_compose"
 grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
 grep -q 'group: kith-inn-v1-production' "$v1_workflow"
@@ -187,6 +190,26 @@ fi
 env "${all_values[@]}" KITH_INN_BE_BASE_URL='   ' GITHUB_OUTPUT="$tmp/blank" bash "$config_check" > "$tmp/blank.log"
 grep -qx 'configured=false' "$tmp/blank"
 grep -q 'KITH_INN_BE_BASE_URL' "$tmp/blank.log"
+
+v1_required=(
+  ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
+  ALIYUN_ACCESS_KEY_ID ALIYUN_ACCESS_KEY_SECRET ALIYUN_REGION_ID ALIYUN_RDS_INSTANCE_ID
+  ECS_SSH_KEY ECS_SSH_KNOWN_HOSTS ECS_HOST ECS_USER PAYLOAD_DATABASE_URL KITH_INN_PAYLOAD_SECRET
+  KITH_INN_V1_JWT_SECRET KITH_INN_V1_INTERNAL_TOKEN KITH_INN_V1_OPERATOR_OPENID
+  KITH_INN_V1_WX_APPID KITH_INN_V1_WX_SECRET KITH_INN_V1_BE_BASE_URL
+)
+v1_values=()
+for name in "${v1_required[@]}"; do v1_values+=("$name=production-value-$name"); done
+v1_values+=("KITH_INN_V1_BE_BASE_URL=https://v1.codeforpeople.cn")
+: > "$tmp/v1-configured"
+env "${v1_values[@]}" GITHUB_OUTPUT="$tmp/v1-configured" bash "$v1_config_check" >"$tmp/v1-configured.log"
+grep -qx 'configured=true' "$tmp/v1-configured"
+: > "$tmp/v1-dev-openid"
+if env "${v1_values[@]}" KITH_INN_V1_OPERATOR_OPENID=TAOZI-V1-DEV-OPENID GITHUB_OUTPUT="$tmp/v1-dev-openid" \
+  bash "$v1_config_check" >"$tmp/v1-dev-openid.log" 2>&1; then exit 1; fi
+grep -qx 'configured=false' "$tmp/v1-dev-openid"
+grep -q 'KITH_INN_V1_OPERATOR_OPENID' "$tmp/v1-dev-openid.log"
+! grep -q 'TAOZI-V1-DEV-OPENID' "$tmp/v1-dev-openid.log"
 
 website_required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD

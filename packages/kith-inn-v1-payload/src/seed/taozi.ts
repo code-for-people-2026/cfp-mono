@@ -1,3 +1,5 @@
+import type { PayloadRequest } from "payload";
+
 export const TAOZI_SELLER_NAME = "桃子";
 export const TAOZI_OPERATOR_OPENID = "taozi-v1-dev-openid";
 
@@ -37,17 +39,20 @@ type SeedPayload = {
     where: Record<string, unknown>;
     limit: number;
     overrideAccess: boolean;
+    req?: PayloadRequest;
   }) => Promise<{ docs: Array<{ id: string | number }> }>;
   create: (args: {
     collection: string;
     data: Record<string, unknown>;
     overrideAccess: boolean;
+    req?: PayloadRequest;
   }) => Promise<{ id: string | number }>;
   update?: (args: {
     collection: string;
     id: string | number;
     data: Record<string, unknown>;
     overrideAccess: boolean;
+    req?: PayloadRequest;
   }) => Promise<{ id: string | number }>;
   delete?: (args: {
     collection: string;
@@ -88,21 +93,24 @@ export async function resetSeedData(
 
 export async function applySeed(
   payload: SeedPayload,
-  options: { operatorOpenid?: string } = {}
+  options: { operatorOpenid?: string; req?: PayloadRequest } = {}
 ): Promise<SeedResult> {
   const operatorOpenid = options.operatorOpenid ?? TAOZI_OPERATOR_OPENID;
+  const request = options.req ? { req: options.req } : {};
   const sellers = await payload.find({
     collection: "kiv1_sellers",
     where: { name: { equals: TAOZI_SELLER_NAME } },
     limit: 1,
-    overrideAccess: true
+    overrideAccess: true,
+    ...request
   });
   const sellerCreated = sellers.docs.length === 0;
   const seller = sellerCreated
     ? await payload.create({
       collection: "kiv1_sellers",
       data: buildSellerData(),
-      overrideAccess: true
+      overrideAccess: true,
+      ...request
     })
     : sellers.docs[0]!;
 
@@ -110,7 +118,8 @@ export async function applySeed(
     collection: "kiv1_operators",
     where: { seller: { equals: seller.id } },
     limit: 0,
-    overrideAccess: true
+    overrideAccess: true,
+    ...request
   });
   const docs = operators.docs as Array<{ id: string | number; wechatOpenid?: string; active?: boolean }>;
   const selected = docs.find((operator) => operator.wechatOpenid === operatorOpenid);
@@ -125,7 +134,8 @@ export async function applySeed(
       collection: "kiv1_operators",
       id: change.id,
       data: { active: change.active },
-      overrideAccess: true
+      overrideAccess: true,
+      ...request
     });
   }
   const operatorCreated = selected === undefined;
@@ -133,7 +143,8 @@ export async function applySeed(
     await payload.create({
       collection: "kiv1_operators",
       data: buildOperatorData(seller.id, operatorOpenid),
-      overrideAccess: true
+      overrideAccess: true,
+      ...request
     });
   }
 
