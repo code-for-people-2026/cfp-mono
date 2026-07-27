@@ -20,7 +20,11 @@ done
 container="kith-inn-v1-image-verify-$$"
 cleanup() { docker rm -f "$container" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
-docker run -d --name "$container" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m -e KITH_INN_V1_JWT_SECRET=fake-image-contract-value "${KITH_INN_V1_BE_IMAGE}" >/dev/null
+docker run -d --name "$container" --read-only --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+  -e KITH_INN_V1_JWT_SECRET=jwt-image-contract-value \
+  -e KITH_INN_V1_INTERNAL_TOKEN=internal-image-contract-value \
+  -e CMS_BASE_URL=http://cms:3304 -e WX_APPID=wx-image-contract-value \
+  -e WX_SECRET=wx-image-contract-value "${KITH_INN_V1_BE_IMAGE}" >/dev/null
 health_state=starting
 for _ in $(seq 1 30); do
   health_state="$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container")"

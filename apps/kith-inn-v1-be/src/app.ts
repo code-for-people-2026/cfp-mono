@@ -13,7 +13,19 @@ import { offeringsRoutes } from "./routes/offerings";
 import { serviceClosuresRoutes } from "./routes/serviceClosures";
 import { customerProfilesRoutes, ordersRoutes } from "./routes/orders";
 
+type Env = Record<string, string | undefined>;
+const PLACEHOLDER = /(change[-_ ]?me|replace[-_ ]?me|placeholder|example|test[-_ ]?secret|dev[-_ ]?secret)/i;
+
+export function assertV1ProductionEnv(env: Env = process.env): void {
+  if (env.NODE_ENV !== "production") return;
+  for (const name of ["KITH_INN_V1_JWT_SECRET", "KITH_INN_V1_INTERNAL_TOKEN", "CMS_BASE_URL", "WX_APPID", "WX_SECRET"]) {
+    const value = env[name]?.trim();
+    if (!value || PLACEHOLDER.test(value)) throw new Error(`${name} is required and cannot be a placeholder`);
+  }
+}
+
 export function createApp(options: { jwtSecret?: string } = {}) {
+  assertV1ProductionEnv();
   const jwtSecret = options.jwtSecret ?? process.env.KITH_INN_V1_JWT_SECRET;
   if (!jwtSecret) throw new Error("KITH_INN_V1_JWT_SECRET is required");
   const app = new Hono<AppVars>();

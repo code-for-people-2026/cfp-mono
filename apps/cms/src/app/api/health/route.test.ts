@@ -30,6 +30,16 @@ describe("CMS probes", () => {
     expect(await response.json()).toEqual({ ok: true, service: "cms" });
   });
 
+  it("accepts either configured readiness token", async () => {
+    for (const token of ["legacy-token", "v1-token"]) {
+      const response = await readyResponse(request(token), {
+        internalToken: ["legacy-token", "v1-token"],
+        probe: vi.fn().mockResolvedValue(undefined),
+      });
+      expect(response.status).toBe(200);
+    }
+  });
+
   it("requires the exact committed migration head when schema push is disabled", async () => {
     const findSeller = vi.fn();
     const missingHead = vi.fn()

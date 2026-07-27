@@ -4,10 +4,13 @@ on:
   push:
     branches: [main]
     paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
       - "apps/cms/**"
       - "apps/kith-inn-v1-be/**"
-      - "packages/kith-inn-v1-payload/**"
-      - "packages/kith-inn-v1-shared/**"
+      - "packages/**"
       - "deploy/*kith-inn-v1*"
       - ".github/workflows/deploy-kith-inn-v1-production.yml"
 
@@ -141,6 +144,16 @@ jobs:
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'" >/dev/null
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" "chmod 700 ~/cfp-mono/deploy/*kith-inn-v1*.sh && chmod 600 ~/cfp-mono/.env.kith-inn-v1.next ~/cfp-mono/deploy/docker-compose.kith-inn-v1.prod.yml.next && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-v1-candidate.sh preflight"
 
+      - id: gate
+        name: Gate v1 writes before recovery point
+        if: steps.check.outputs.configured == 'true'
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" "bash ~/cfp-mono/deploy/deploy-kith-inn-v1-candidate.sh gate-writes"
+
       - id: backup
         name: Create and verify RDS recovery point
         if: steps.check.outputs.configured == 'true'
@@ -181,6 +194,15 @@ jobs:
           path: smoke-passed.json
           if-no-files-found: error
           retention-days: 30
+
+      - name: Restore last-good runtime after gated failure
+        if: ${{ (failure() || cancelled()) && steps.gate.outcome == 'success' }}
+        env:
+          ECS_HOST: ${{ secrets.ECS_HOST }}
+          ECS_USER: ${{ secrets.ECS_USER }}
+        run: |
+          remote="$ECS_USER@$ECS_HOST"
+          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" "bash ~/cfp-mono/deploy/deploy-kith-inn-v1-candidate.sh restore-runtime"
 
       - name: Remove local deployment credentials
         if: always()
