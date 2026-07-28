@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: production
+  group: production-website
   cancel-in-progress: false
 
 jobs:
