@@ -79,4 +79,7 @@ run_deploy success gate-writes >/dev/null
 if run_deploy all-smoke >"$tmp/all-smoke.out" 2>"$tmp/all-smoke.err"; then exit 1; fi
 grep -q '"stage":"smoke","recovery":"manual_data_recovery_required"' "$tmp/all-smoke.err"
 grep -q -- "-f $current/compose.yml --env-file $current/env stop kith-inn-v1-cms kith-inn-v1-be" "$tmp/compose.log"
+rm -f "$tmp/.kith-inn-v1-current"; run_deploy orphan-v1 gate-writes | jq -e '.status == "writes_gated"' >/dev/null
+grep -q 'stop dddddddddddd eeeeeeeeeeee' "$tmp/compose.log"
+run_deploy orphan-v1 restore-runtime | jq -e '.status == "candidate_stopped"' >/dev/null
 echo "kith-inn-v1 candidate deployment tests passed"

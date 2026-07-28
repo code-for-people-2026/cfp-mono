@@ -77,6 +77,15 @@ gate_legacy_runtime() {
   mv -f "$legacy_gate_marker.next" "$legacy_gate_marker" || return 1
   "$compose_bin" stop "${ids[@]}" >/dev/null 2>&1 || return 1
 }
+gate_untracked_v1_runtime() {
+  local id output service ids=()
+  for service in "${runtime[@]}"; do
+    output="$("$compose_bin" ps --filter "label=com.docker.compose.service=$service" --format '{{.ID}}')" || return 1
+    while IFS= read -r id; do [[ -z "$id" ]] || ids+=("$id"); done <<<"$output"
+  done
+  (( ${#ids[@]} > 0 )) || return 2
+  "$compose_bin" stop "${ids[@]}" >/dev/null 2>&1 || return 1
+}
 load_legacy_ids() {
   local id ids=()
   [[ -f "$legacy_gate_marker" ]] || return 1
@@ -212,11 +221,11 @@ if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
         compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
         fail restore manual_data_recovery_required
       fi
-    elif restore_legacy_runtime; then
+    elif [[ -f "$legacy_gate_marker" ]]; then
+      restore_legacy_runtime || { stop_legacy_runtime || true; fail restore manual_data_recovery_required; }
       rm -f "$legacy_gate_marker"
     else
-      stop_legacy_runtime || true
-      fail restore manual_data_recovery_required
+      rm -f "$gate_marker"; echo '{"status":"candidate_stopped"}'; exit 0
     fi
     rm -f "$gate_marker"
     echo '{"status":"last_good_runtime_restored"}'
@@ -225,6 +234,12 @@ if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
   [[ -z "$current_release" ]] || current_valid || fail preflight no_change
   printf "attempted\n" >"$gate_marker"
   chmod 600 "$gate_marker"
+  untracked_status=2
+  if [[ -z "$current_release" ]]; then
+    untracked_status=0
+    gate_untracked_v1_runtime || untracked_status=$?
+    if [[ "$untracked_status" -eq 1 ]]; then rm -f "$gate_marker"; fail write_gate no_change; fi
+  fi
   legacy_status=0
   if [[ -z "$current_release" ]] || ! release_has_cms "$current_compose" "$current_env"; then
     gate_legacy_runtime || legacy_status=$?
@@ -235,7 +250,7 @@ if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
     fi
   fi
   if [[ -z "$current_release" ]]; then
-    if [[ "$legacy_status" -eq 2 ]]; then
+    if [[ "$legacy_status" -eq 2 && "$untracked_status" -eq 2 ]]; then
       rm -f "$gate_marker"
       echo '{"status":"skipped","reason":"active_runtime_unavailable"}'
       exit 0

@@ -16,6 +16,10 @@ elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-be
   printf 'bbbbbbbbbbbb\n'
 elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-h5 "* && "${FAKE_DEPLOY_MODE:-success}" =~ ^legacy-(v1|recovery-fail)$ ]]; then
   printf 'cccccccccccc\n'
+elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-v1-cms "* && "${FAKE_DEPLOY_MODE:-success}" == orphan-v1 ]]; then
+  printf 'dddddddddddd\n'
+elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-v1-be "* && "${FAKE_DEPLOY_MODE:-success}" == orphan-v1 ]]; then
+  printf 'eeeeeeeeeeee\n'
 elif [[ "$joined" == *" inspect --format "* ]]; then
   [[ "${FAKE_DEPLOY_MODE:-success}" != legacy-recovery-fail ]] && printf 'healthy\n' || printf 'starting\n'
 elif [[ "$joined" == *" image ls --digests "* ]]; then

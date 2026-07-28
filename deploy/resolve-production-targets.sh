@@ -11,7 +11,11 @@ write_targets() {
   printf 'affected targets: website=%s kith-inn=%s kith-inn-v1=%s\n' "$website" "$kith_inn" "$kith_inn_v1"
 }
 
-[[ "${GITHUB_EVENT_NAME:-}" == push ]] || { echo "production deploy only supports push" >&2; exit 1; }
+if [[ "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]]; then
+  write_targets true false false
+  exit 0
+fi
+[[ "${GITHUB_EVENT_NAME:-}" == push ]] || { echo "production deploy only supports push or workflow_dispatch" >&2; exit 1; }
 
 base="${DEPLOY_BASE:-}"
 head="${GITHUB_SHA:-}"
