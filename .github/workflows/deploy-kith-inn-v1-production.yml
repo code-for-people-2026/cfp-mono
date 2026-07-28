@@ -39,6 +39,8 @@ jobs:
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
           KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
+          KITH_INN_V1_PREVIOUS_JWT_SECRET: ${{ secrets.KITH_INN_V1_PREVIOUS_JWT_SECRET }}
+          KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN }}
           KITH_INN_V1_OPERATOR_OPENID: ${{ secrets.KITH_INN_V1_OPERATOR_OPENID }}
           KITH_INN_V1_WX_APPID: ${{ secrets.KITH_INN_V1_WX_APPID }}
           KITH_INN_V1_WX_SECRET: ${{ secrets.KITH_INN_V1_WX_SECRET }}
@@ -66,6 +68,7 @@ jobs:
           bash -n deploy/*kith-inn-v1*.sh deploy/tests/*kith-v1*.sh deploy/tests/deploy-kith-inn-v1-candidate.test.sh
           bash deploy/tests/deploy-kith-inn-v1-candidate.test.sh
           bash deploy/tests/push-kith-inn-v1-images.test.sh
+          bash deploy/tests/write-kith-inn-v1-compose-env.test.sh
 
       - name: Build and verify shared CMS, CMS ops and v1 BE images
         if: steps.check.outputs.configured == 'true'
@@ -112,6 +115,8 @@ jobs:
           KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
           KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
           KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
+          KITH_INN_V1_PREVIOUS_JWT_SECRET: ${{ secrets.KITH_INN_V1_PREVIOUS_JWT_SECRET }}
+          KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN }}
           KITH_INN_V1_OPERATOR_OPENID: ${{ secrets.KITH_INN_V1_OPERATOR_OPENID }}
           KITH_INN_V1_WX_APPID: ${{ secrets.KITH_INN_V1_WX_APPID }}
           KITH_INN_V1_WX_SECRET: ${{ secrets.KITH_INN_V1_WX_SECRET }}

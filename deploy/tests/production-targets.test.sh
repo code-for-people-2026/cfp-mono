@@ -166,8 +166,8 @@ grep -q '^  workflow_call:' "$v1_workflow"
 ! grep -q '^  push:' "$v1_workflow"
 ! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
 v1_call_job="$(sed -n '/^  deploy_kith_inn_v1:/,$p' "$workflow")"
-grep -q 'needs: \[affected\]' <<<"$v1_call_job"
-! grep -q 'needs.prepare_kith_inn' <<<"$v1_call_job"
+grep -q 'needs: \[affected, prepare_kith_inn\]' <<<"$v1_call_job"
+grep -q "needs.prepare_kith_inn.result == 'success'" <<<"$v1_call_job"
 grep -q "needs.affected.outputs.kith_inn_v1 == 'true'" <<<"$v1_call_job"
 grep -q 'uses: ./.github/workflows/deploy-kith-inn-v1-production.yml' <<<"$v1_call_job"
 grep -q 'secrets: inherit' <<<"$v1_call_job"
@@ -175,6 +175,9 @@ grep -q 'docker build --target jobs' "$v1_workflow"
 grep -q 'apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_IMAGE"' "$v1_workflow"
 grep -q 'apps/kith-inn-v1-be/Dockerfile' "$v1_workflow"
 grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
+grep -q 'KITH_INN_V1_PREVIOUS_JWT_SECRET' "$v1_workflow"
+grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' "$v1_workflow"
+grep -q 'KITH_INN_V1_PREVIOUS_JWT_SECRET: ${KITH_INN_V1_PREVIOUS_JWT_SECRET:-}' "$v1_compose"
 grep -A16 'server_name v1.codeforpeople.cn;' "$root/deploy/nginx.example.conf" | grep -q 'proxy_pass http://127.0.0.1:3311;'
 
 required=(
@@ -234,6 +237,14 @@ v1_values+=("KITH_INN_V1_BE_BASE_URL=https://v1.codeforpeople.cn")
 : > "$tmp/v1-configured"
 env "${v1_values[@]}" GITHUB_OUTPUT="$tmp/v1-configured" bash "$v1_config_check" >"$tmp/v1-configured.log"
 grep -qx 'configured=true' "$tmp/v1-configured"
+: > "$tmp/v1-incomplete-previous"
+if env "${v1_values[@]}" KITH_INN_V1_PREVIOUS_JWT_SECRET=previous-value \
+  GITHUB_OUTPUT="$tmp/v1-incomplete-previous" bash "$v1_config_check" >"$tmp/v1-incomplete-previous.log" 2>&1; then
+  exit 1
+fi
+grep -qx 'configured=false' "$tmp/v1-incomplete-previous"
+grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' "$tmp/v1-incomplete-previous.log"
+! grep -q 'previous-value' "$tmp/v1-incomplete-previous.log"
 : > "$tmp/v1-dev-openid"
 if env "${v1_values[@]}" KITH_INN_V1_OPERATOR_OPENID=TAOZI-V1-DEV-OPENID GITHUB_OUTPUT="$tmp/v1-dev-openid" \
   bash "$v1_config_check" >"$tmp/v1-dev-openid.log" 2>&1; then exit 1; fi

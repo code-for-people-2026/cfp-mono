@@ -8,6 +8,12 @@ mkdir -p "$tmp/deploy"
 sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 mkdir -p "$tmp/.kith-inn-v1-releases/.release.stale"
 printf "stale\n" >"$tmp/.kith-inn-v1-releases/.release.stale/env"
+legacy_release="$tmp/.kith-inn-v1-releases/.release.legacy"
+mkdir -p "$legacy_release"
+printf "# legacy-v1\n" >"$legacy_release/compose.yml"
+printf "KITH_INN_V1_RELEASE_SHA='%s'\nKITH_INN_V1_INTERNAL_TOKEN='legacy-internal'\n" \
+  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb >"$legacy_release/env"
+printf '%s\n' "$legacy_release" >"$tmp/.kith-inn-v1-current"
 candidate() {
   local digest="${1:-current}"
   printf "# candidate\n" >"$tmp/deploy/docker-compose.kith-inn-v1.prod.yml.next"
@@ -25,8 +31,17 @@ candidate
 if run_deploy shared-network preflight >"$tmp/shared-network.out" 2>"$tmp/shared-network.err"; then exit 1; fi
 grep -q '"stage":"shared_network"' "$tmp/shared-network.err"
 ! grep -q ' pull ' "$tmp/compose.log"
-run_deploy success preflight | jq -e '.status == "candidate_ready"' >/dev/null
-run_deploy success | jq -e '.status == "passed" and .sellerId == "1" and .smokeEvidence.writeCount == 0' >/dev/null
+run_deploy legacy-v1 preflight | jq -e '.status == "candidate_ready"' >/dev/null
+run_deploy legacy-v1 gate-writes | jq -e '.status == "writes_gated"' >/dev/null
+grep -q 'stop aaaaaaaaaaaa bbbbbbbbbbbb cccccccccccc' "$tmp/compose.log"
+grep -q -- "-f $legacy_release/compose.yml --env-file $legacy_release/env stop kith-inn-v1-be" "$tmp/compose.log"
+if run_deploy migration >"$tmp/legacy-migration.out" 2>"$tmp/legacy-migration.err"; then exit 1; fi
+grep -q '"stage":"migration","recovery":"rolled_back"' "$tmp/legacy-migration.err"
+grep -q 'start aaaaaaaaaaaa bbbbbbbbbbbb cccccccccccc' "$tmp/compose.log"
+[[ ! -e "$tmp/.kith-inn-v1-legacy-runtime" ]]
+run_deploy legacy-v1 gate-writes | jq -e '.status == "writes_gated"' >/dev/null
+run_deploy legacy-v1 | jq -e '.status == "passed" and .sellerId == "1" and .smokeEvidence.writeCount == 0' >/dev/null
+[[ ! -e "$tmp/.kith-inn-v1-legacy-runtime" ]]
 grep -q 'run --rm --no-deps kith-inn-v1-cms-migrate' "$tmp/compose.log"
 grep -q 'run --rm --no-deps kith-inn-v1-cms-provision' "$tmp/compose.log"
 grep -q 'up -d --wait --wait-timeout 120 --no-deps kith-inn-v1-cms kith-inn-v1-be' "$tmp/compose.log"

@@ -9,12 +9,14 @@ release_store="$root/.kith-inn-v1-releases"
 current_pointer="$root/.kith-inn-v1-current"
 previous_pointer="$root/.kith-inn-v1-previous"
 gate_marker="$root/.kith-inn-v1-write-gate"
+legacy_gate_marker="$root/.kith-inn-v1-legacy-runtime"
 compose_bin="${COMPOSE_BIN:-docker}"
 smoke_bin="${SMOKE_BIN:-$project_dir/smoke-kith-inn-v1.sh}"
 curl_bin="${CURL_BIN:-curl}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
 runtime=(kith-inn-v1-cms kith-inn-v1-be)
+legacy_runtime=(kith-inn-cms kith-inn-be kith-inn-h5)
 all_services=(kith-inn-v1-cms-migrate kith-inn-v1-cms-provision "${runtime[@]}")
 
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
@@ -54,14 +56,51 @@ current_valid() {
     [[ "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" =~ ^[0-9a-f]{40}$ ]] &&
     compose "$current_compose" "$current_env" config --quiet >/dev/null 2>&1
 }
+release_has_cms() {
+  compose "$1" "$2" config --services 2>/dev/null | grep -qx kith-inn-v1-cms
+}
+select_release_runtime() {
+  selected_runtime=(kith-inn-v1-be)
+  release_has_cms "$1" "$2" && selected_runtime=("${runtime[@]}")
+  return 0
+}
+legacy_running_ids() {
+  local service
+  for service in "${legacy_runtime[@]}"; do
+    "$compose_bin" ps --filter "label=com.docker.compose.service=$service" --format '{{.ID}}'
+  done | awk 'NF && !seen[$0]++'
+}
+gate_legacy_runtime() {
+  local id ids=()
+  while IFS= read -r id; do ids+=("$id"); done < <(legacy_running_ids)
+  (( ${#ids[@]} > 0 )) || return 2
+  printf '%s\n' "${ids[@]}" >"$legacy_gate_marker.next" || return 1
+  chmod 600 "$legacy_gate_marker.next" || return 1
+  mv -f "$legacy_gate_marker.next" "$legacy_gate_marker" || return 1
+  "$compose_bin" stop "${ids[@]}" >/dev/null 2>&1 || return 1
+}
+restore_legacy_runtime() {
+  local id ids=()
+  [[ -f "$legacy_gate_marker" ]] || return 0
+  while IFS= read -r id; do
+    [[ "$id" =~ ^[0-9a-f]{12,64}$ ]] || return 1
+    ids+=("$id")
+  done <"$legacy_gate_marker"
+  (( ${#ids[@]} > 0 )) || return 1
+  "$compose_bin" start "${ids[@]}" >/dev/null 2>&1 || return 1
+  rm -f "$legacy_gate_marker"
+}
 smoke() {
   local compose_file="$1" env_file="$2" sha="$3"
-  compose "$compose_file" "$env_file" ps --status running "${runtime[@]}" >/dev/null
+  select_release_runtime "$compose_file" "$env_file"
+  compose "$compose_file" "$env_file" ps --status running "${selected_runtime[@]}" >/dev/null
   KITH_INN_V1_ENV_FILE="$env_file" RELEASE_SHA="$sha" "$smoke_bin"
 }
 restore_current() {
   current_valid || return 1
-  compose "$current_compose" "$current_env" up -d --wait --wait-timeout 120 --no-deps "${runtime[@]}" >/dev/null 2>&1 &&
+  select_release_runtime "$current_compose" "$current_env"
+  release_has_cms "$current_compose" "$current_env" || restore_legacy_runtime || return 1
+  compose "$current_compose" "$current_env" up -d --wait --wait-timeout 120 --no-deps "${selected_runtime[@]}" >/dev/null 2>&1 &&
     smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1
 }
 prune_unused_v1_images() {
@@ -99,8 +138,13 @@ recover() {
   compose "$next_compose" "$next_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
   if [[ -n "$current_release" ]]; then
     if restore_current; then rm -f "$gate_marker"; fail "$stage" rolled_back; fi
-    compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
+    select_release_runtime "$current_compose" "$current_env"
+    compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
     fail "$stage" manual_data_recovery_required
+  fi
+  if [[ -f "$legacy_gate_marker" ]] && restore_legacy_runtime; then
+    rm -f "$gate_marker"
+    fail "$stage" rolled_back
   fi
   fail "$stage" candidate_stopped
 }
@@ -126,24 +170,47 @@ if [[ "$action" == "preflight" ]]; then
 fi
 
 if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
-  if [[ -z "$current_release" ]]; then echo '{"status":"skipped","reason":"active_runtime_unavailable"}'; exit 0; fi
-  current_valid || fail preflight no_change
   if [[ "$action" == "restore-runtime" ]]; then
-    [[ -f "$gate_marker" ]] || { echo '{"status":"skipped","reason":"write_gate_not_attempted"}'; exit 0; }
-    if ! restore_current; then
-      compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
+    [[ -f "$gate_marker" || -f "$legacy_gate_marker" ]] || { echo '{"status":"skipped","reason":"write_gate_not_attempted"}'; exit 0; }
+    if [[ -n "$current_release" ]]; then
+      current_valid || fail preflight no_change
+      if ! restore_current; then
+        select_release_runtime "$current_compose" "$current_env"
+        compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
+        fail restore manual_data_recovery_required
+      fi
+    elif ! restore_legacy_runtime; then
       fail restore manual_data_recovery_required
     fi
     rm -f "$gate_marker"
     echo '{"status":"last_good_runtime_restored"}'
     exit 0
   fi
+  [[ -z "$current_release" ]] || current_valid || fail preflight no_change
   printf "attempted\n" >"$gate_marker"
   chmod 600 "$gate_marker"
-  if ! compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1; then
-    if restore_current; then rm -f "$gate_marker"; fail write_gate rolled_back; fi
-    compose "$current_compose" "$current_env" stop "${runtime[@]}" >/dev/null 2>&1 || true
-    fail write_gate manual_data_recovery_required
+  legacy_status=0
+  if [[ -z "$current_release" ]] || ! release_has_cms "$current_compose" "$current_env"; then
+    gate_legacy_runtime || legacy_status=$?
+    if [[ "$legacy_status" -eq 1 ]]; then
+      restore_legacy_runtime || true
+      rm -f "$gate_marker"
+      fail write_gate no_change
+    fi
+  fi
+  if [[ -z "$current_release" ]]; then
+    if [[ "$legacy_status" -eq 2 ]]; then
+      rm -f "$gate_marker"
+      echo '{"status":"skipped","reason":"active_runtime_unavailable"}'
+      exit 0
+    fi
+  else
+    select_release_runtime "$current_compose" "$current_env"
+    if ! compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1; then
+      if restore_current; then rm -f "$gate_marker"; fail write_gate rolled_back; fi
+      compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
+      fail write_gate manual_data_recovery_required
+    fi
   fi
   echo '{"status":"writes_gated"}'
   exit 0
@@ -188,7 +255,7 @@ current_release="$new_release"
 current_compose="$new_release/compose.yml"
 current_env="$new_release/env"
 trap - TERM INT HUP
-rm -f -- "$next_env" "$next_compose" "$gate_marker"
+rm -f -- "$next_env" "$next_compose" "$gate_marker" "$legacy_gate_marker"
 for stored_release in "$release_store"/.release.*; do
   [[ -d "$stored_release" ]] || continue
   [[ "$stored_release" == "$current_release" || "$stored_release" == "$previous_release" ]] ||

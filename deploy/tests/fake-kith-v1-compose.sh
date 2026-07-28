@@ -2,7 +2,19 @@
 set -euo pipefail
 printf "%s\n" "$*" >>"$FAKE_COMPOSE_LOG"
 joined=" $* "
-if [[ "$joined" == *" image ls --digests "* ]]; then
+if [[ "$joined" == *" config --services "* ]]; then
+  if [[ "$joined" == *".release.legacy/compose.yml"* ]]; then
+    printf 'kith-inn-v1-be\n'
+  else
+    printf 'kith-inn-v1-cms\nkith-inn-v1-be\n'
+  fi
+elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-cms "* && "${FAKE_DEPLOY_MODE:-success}" == legacy-v1 ]]; then
+  printf 'aaaaaaaaaaaa\n'
+elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-be "* && "${FAKE_DEPLOY_MODE:-success}" == legacy-v1 ]]; then
+  printf 'bbbbbbbbbbbb\n'
+elif [[ "$joined" == *" ps --filter label=com.docker.compose.service=kith-inn-h5 "* && "${FAKE_DEPLOY_MODE:-success}" == legacy-v1 ]]; then
+  printf 'cccccccccccc\n'
+elif [[ "$joined" == *" image ls --digests "* ]]; then
   repo="${*: -1}"
   printf '%s\n' "$repo@sha256:current" "$repo@sha256:next" "$repo@sha256:old"
 elif [[ "$joined" == *" network inspect kith-inn-shared "* && "${FAKE_DEPLOY_MODE:-success}" == shared-network ]]; then
