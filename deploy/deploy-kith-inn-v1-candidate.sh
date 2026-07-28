@@ -13,6 +13,7 @@ legacy_gate_marker="$root/.kith-inn-v1-legacy-runtime"
 compose_bin="${COMPOSE_BIN:-docker}"
 smoke_bin="${SMOKE_BIN:-$project_dir/smoke-kith-inn-v1.sh}"
 curl_bin="${CURL_BIN:-curl}"
+sleep_bin="${SLEEP_BIN:-sleep}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
 runtime=(kith-inn-v1-cms kith-inn-v1-be)
@@ -64,31 +65,49 @@ select_release_runtime() {
   release_has_cms "$1" "$2" && selected_runtime=("${runtime[@]}")
   return 0
 }
-legacy_running_ids() {
-  local service
-  for service in "${legacy_runtime[@]}"; do
-    "$compose_bin" ps --filter "label=com.docker.compose.service=$service" --format '{{.ID}}'
-  done | awk 'NF && !seen[$0]++'
-}
 gate_legacy_runtime() {
-  local id ids=()
-  while IFS= read -r id; do ids+=("$id"); done < <(legacy_running_ids)
+  local id output service ids=()
+  for service in "${legacy_runtime[@]}"; do
+    output="$("$compose_bin" ps --filter "label=com.docker.compose.service=$service" --format '{{.ID}}')" || return 1
+    while IFS= read -r id; do [[ -z "$id" ]] || ids+=("$id"); done <<<"$output"
+  done
   (( ${#ids[@]} > 0 )) || return 2
   printf '%s\n' "${ids[@]}" >"$legacy_gate_marker.next" || return 1
   chmod 600 "$legacy_gate_marker.next" || return 1
   mv -f "$legacy_gate_marker.next" "$legacy_gate_marker" || return 1
   "$compose_bin" stop "${ids[@]}" >/dev/null 2>&1 || return 1
 }
-restore_legacy_runtime() {
+load_legacy_ids() {
   local id ids=()
-  [[ -f "$legacy_gate_marker" ]] || return 0
+  [[ -f "$legacy_gate_marker" ]] || return 1
   while IFS= read -r id; do
     [[ "$id" =~ ^[0-9a-f]{12,64}$ ]] || return 1
     ids+=("$id")
   done <"$legacy_gate_marker"
   (( ${#ids[@]} > 0 )) || return 1
-  "$compose_bin" start "${ids[@]}" >/dev/null 2>&1 || return 1
-  rm -f "$legacy_gate_marker"
+  selected_legacy_ids=("${ids[@]}")
+}
+stop_legacy_runtime() {
+  load_legacy_ids || return 1
+  "$compose_bin" stop "${selected_legacy_ids[@]}" >/dev/null 2>&1
+}
+legacy_runtime_healthy() {
+  local id state
+  for id in "${selected_legacy_ids[@]}"; do
+    state="$("$compose_bin" inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$id")" || return 1
+    [[ "$state" == healthy || "$state" == running ]] || return 1
+  done
+}
+restore_legacy_runtime() {
+  local attempt
+  load_legacy_ids || return 1
+  "$compose_bin" start "${selected_legacy_ids[@]}" >/dev/null 2>&1 || return 1
+  for attempt in $(seq 1 24); do
+    legacy_runtime_healthy && return 0
+    "$sleep_bin" 5
+  done
+  "$compose_bin" stop "${selected_legacy_ids[@]}" >/dev/null 2>&1 || true
+  return 1
 }
 smoke() {
   local compose_file="$1" env_file="$2" sha="$3"
@@ -97,11 +116,20 @@ smoke() {
   KITH_INN_V1_ENV_FILE="$env_file" RELEASE_SHA="$sha" "$smoke_bin"
 }
 restore_current() {
+  local legacy_restored=false
   current_valid || return 1
   select_release_runtime "$current_compose" "$current_env"
-  release_has_cms "$current_compose" "$current_env" || restore_legacy_runtime || return 1
-  compose "$current_compose" "$current_env" up -d --wait --wait-timeout 120 --no-deps "${selected_runtime[@]}" >/dev/null 2>&1 &&
-    smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1
+  if ! release_has_cms "$current_compose" "$current_env" && [[ -f "$legacy_gate_marker" ]]; then
+    restore_legacy_runtime || return 1
+    legacy_restored=true
+  fi
+  if compose "$current_compose" "$current_env" up -d --wait --wait-timeout 120 --no-deps "${selected_runtime[@]}" >/dev/null 2>&1 &&
+    smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1; then
+    [[ "$legacy_restored" == false ]] || rm -f "$legacy_gate_marker"
+    return 0
+  fi
+  [[ "$legacy_restored" == false ]] || stop_legacy_runtime || true
+  return 1
 }
 prune_unused_v1_images() {
   local image repo ref preserve_images=() repositories=()
@@ -142,9 +170,13 @@ recover() {
     compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
     fail "$stage" manual_data_recovery_required
   fi
-  if [[ -f "$legacy_gate_marker" ]] && restore_legacy_runtime; then
-    rm -f "$gate_marker"
-    fail "$stage" rolled_back
+  if [[ -f "$legacy_gate_marker" ]]; then
+    if restore_legacy_runtime; then
+      rm -f "$gate_marker" "$legacy_gate_marker"
+      fail "$stage" rolled_back
+    fi
+    stop_legacy_runtime || true
+    fail "$stage" manual_data_recovery_required
   fi
   fail "$stage" candidate_stopped
 }
@@ -153,6 +185,7 @@ command -v "$compose_bin" >/dev/null || fail preflight no_change
 command -v "$smoke_bin" >/dev/null || fail preflight no_change
 command -v jq >/dev/null || fail preflight no_change
 command -v "$curl_bin" >/dev/null || fail preflight no_change
+command -v "$sleep_bin" >/dev/null || fail preflight no_change
 
 if [[ "$action" == "preflight" ]]; then
   candidate_valid || fail preflight no_change
@@ -179,7 +212,10 @@ if [[ "$action" == "gate-writes" || "$action" == "restore-runtime" ]]; then
         compose "$current_compose" "$current_env" stop "${selected_runtime[@]}" >/dev/null 2>&1 || true
         fail restore manual_data_recovery_required
       fi
-    elif ! restore_legacy_runtime; then
+    elif restore_legacy_runtime; then
+      rm -f "$legacy_gate_marker"
+    else
+      stop_legacy_runtime || true
       fail restore manual_data_recovery_required
     fi
     rm -f "$gate_marker"

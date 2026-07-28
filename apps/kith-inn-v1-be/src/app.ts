@@ -22,6 +22,10 @@ export function assertV1ProductionEnv(env: Env = process.env): void {
     const value = env[name]?.trim();
     if (!value || PLACEHOLDER.test(value)) throw new Error(`${name} is required and cannot be a placeholder`);
   }
+  const previousJwt = env.KITH_INN_V1_PREVIOUS_JWT_SECRET;
+  if (previousJwt !== undefined && (!previousJwt.trim() || PLACEHOLDER.test(previousJwt))) {
+    throw new Error("KITH_INN_V1_PREVIOUS_JWT_SECRET cannot be blank or a placeholder");
+  }
 }
 
 export function createApp(options: { jwtSecret?: string } = {}) {

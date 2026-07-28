@@ -18,7 +18,7 @@ head="${GITHUB_SHA:-}"
 if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]] ||
   ! git cat-file -e "$base^{commit}" 2>/dev/null ||
   ! git cat-file -e "$head^{commit}" 2>/dev/null; then
-  write_targets true true true
+  write_targets true false true
   exit 0
 fi
 
@@ -26,12 +26,11 @@ changed_files="$(git diff --name-only "$base" "$head")"
 printf '%s\n' "$changed_files"
 
 website_deploy=false
-kith_inn_deploy=false
 kith_inn_v1_deploy=false
 while IFS= read -r path; do
   case "$path" in
     .github/workflows/deploy-production.yml | package.json | pnpm-lock.yaml | pnpm-workspace.yaml | turbo.json)
-      write_targets true true true
+      write_targets true false true
       exit 0
       ;;
     .github/workflows/deploy-kith-inn-v1-production.yml)
@@ -41,7 +40,7 @@ while IFS= read -r path; do
       deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
     deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/create-rds-backup.sh)
-      write_targets true true true
+      write_targets true false true
       exit 0
       ;;
     deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
@@ -51,11 +50,11 @@ while IFS= read -r path; do
       kith_inn_v1_deploy=true
       ;;
     deploy/.env.verify.example | deploy/*kith-inn*)
-      kith_inn_deploy=true
+      # 旧版 production target 已停用；保留文件仅供未来显式重新开通时迁移。
       ;;
     deploy/*)
       # 新增且尚未分类的部署文件按共享契约处理，避免漏发生产目标。
-      write_targets true true true
+      write_targets true false true
       exit 0
       ;;
   esac
@@ -82,9 +81,6 @@ turbo_has_tasks() {
 }
 
 website_affected="$(turbo_has_tasks "@cfp/website...[$base]")"
-kith_inn_affected="$(turbo_has_tasks \
-  "@cfp/kith-inn-be...[$base]" \
-  "@cfp/kith-inn-fe...[$base]")"
 kith_inn_v1_affected="$(turbo_has_tasks \
   "@cfp/cms...[$base]" \
   "@cfp/kith-inn-v1-be...[$base]")"
@@ -92,6 +88,6 @@ website=false
 kith_inn=false
 kith_inn_v1=false
 if [[ "$website_deploy" == true || "$website_affected" == true ]]; then website=true; fi
-if [[ "$kith_inn_deploy" == true || "$kith_inn_affected" == true ]]; then kith_inn=true; fi
+# 旧版尚未发布，production target 保持关闭，避免与 v1 管理的唯一 CMS 竞争 3304。
 if [[ "$kith_inn_v1_deploy" == true || "$kith_inn_v1_affected" == true ]]; then kith_inn_v1=true; fi
 write_targets "$website" "$kith_inn" "$kith_inn_v1"

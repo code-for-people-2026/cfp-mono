@@ -137,7 +137,7 @@ export function authRoutes(secret: string, deps: AuthDeps = defaultDeps) {
       typeof body.selectionToken !== "string" || !validId(body.sellerId)) {
       return c.json({ error: "invalid-selection-input", message: "商家选择参数无效" }, 422);
     }
-    const claims = await verifyOperatorSelectionToken(body.selectionToken, secret, deps.now());
+    const claims = await verifySelectionToken(body.selectionToken, secret, deps.now());
     const choice = claims?.choices.find(({ sellerId }) => sameId(sellerId, body.sellerId as string | number));
     if (!choice) return c.json({ error: "invalid-seller-selection", message: "商家选择已失效" }, 401);
     try {
@@ -170,6 +170,15 @@ async function customerSession(
       expiresAt: new Date((now + CUSTOMER_TOKEN_TTL_SECONDS) * 1000).toISOString()
     }
   };
+}
+
+async function verifySelectionToken(token: string, secret: string, now: number) {
+  const primary = await verifyOperatorSelectionToken(token, secret, now);
+  if (primary) return primary;
+  const previous = process.env.KITH_INN_V1_PREVIOUS_JWT_SECRET?.trim();
+  return previous && previous !== secret
+    ? verifyOperatorSelectionToken(token, previous, now)
+    : null;
 }
 
 function customerBootstrapError(c: Context, error: unknown) {

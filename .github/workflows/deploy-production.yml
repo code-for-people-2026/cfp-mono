@@ -513,12 +513,8 @@ jobs:
           rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.production.remote .env.images.remote
 
   deploy_kith_inn_v1:
-    needs: [affected, prepare_kith_inn]
+    needs: [affected]
     if: >-
-      ${{ always() && needs.affected.result == 'success' &&
-          needs.affected.outputs.kith_inn_v1 == 'true' &&
-          (needs.affected.outputs.kith_inn != 'true' ||
-           (needs.prepare_kith_inn.result == 'success' &&
-            needs.prepare_kith_inn.outputs.configured == 'true')) }}
+      ${{ needs.affected.result == 'success' && needs.affected.outputs.kith_inn_v1 == 'true' }}
     uses: ./.github/workflows/deploy-kith-inn-v1-production.yml
     secrets: inherit

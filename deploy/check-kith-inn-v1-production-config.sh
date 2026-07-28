@@ -18,8 +18,12 @@ for name in "${required[@]}"; do
 done
 previous_jwt="${KITH_INN_V1_PREVIOUS_JWT_SECRET:-}"
 previous_internal="${KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN:-}"
-if [[ -n "$previous_jwt" && -z "$previous_internal" ]]; then missing+=(KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN); fi
-if [[ -n "$previous_internal" && -z "$previous_jwt" ]]; then missing+=(KITH_INN_V1_PREVIOUS_JWT_SECRET); fi
+previous_jwt_present="${previous_jwt//[[:space:]]/}"
+previous_internal_present="${previous_internal//[[:space:]]/}"
+if [[ -n "$previous_jwt_present" && -z "$previous_internal_present" ]]; then missing+=(KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN); fi
+if [[ -n "$previous_internal_present" && -z "$previous_jwt_present" ]]; then missing+=(KITH_INN_V1_PREVIOUS_JWT_SECRET); fi
+if [[ -n "$previous_jwt" && -z "$previous_jwt_present" ]]; then invalid+=(KITH_INN_V1_PREVIOUS_JWT_SECRET); fi
+if [[ -n "$previous_internal" && -z "$previous_internal_present" ]]; then invalid+=(KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN); fi
 for name in KITH_INN_PAYLOAD_SECRET KITH_INN_V1_JWT_SECRET KITH_INN_V1_INTERNAL_TOKEN KITH_INN_V1_PREVIOUS_JWT_SECRET KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN KITH_INN_V1_OPERATOR_OPENID KITH_INN_V1_WX_APPID KITH_INN_V1_WX_SECRET; do
   value="${!name:-}"
   [[ ! "$value" =~ (change[-_]?(me)|replace[-_]?(me)|placeholder|example|test[-_]secret|dev[-_]secret) ]] || invalid+=("$name")

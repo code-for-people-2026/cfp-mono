@@ -5,9 +5,9 @@ import { customerAuth, type CustomerAppVars } from "./customerAuth";
 
 const SECRET = "v1-secret";
 
-function protectedApp() {
+function protectedApp(previousSecret?: string) {
   const app = new Hono<CustomerAppVars>();
-  app.use("*", customerAuth(SECRET));
+  app.use("*", customerAuth(SECRET, previousSecret));
   app.get("/", (c) => c.json({
     sellerId: c.get("sellerId"),
     openid: c.get("customerOpenid"),
@@ -22,6 +22,14 @@ describe("customerAuth", () => {
     const response = await protectedApp().request("/", { headers: { Authorization: `Bearer ${token}` } });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ sellerId: 7, openid: "wx-customer", token });
+  });
+
+  it("accepts an existing session signed by the previous rotation secret", async () => {
+    const token = await issueCustomerToken({ sellerId: 7, openid: "wx-customer" }, "previous-secret");
+    expect((await protectedApp("previous-secret").request("/", {
+      headers: { Authorization: `Bearer ${token}` }
+    })).status).toBe(200);
+    expect((await protectedApp().request("/", { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401);
   });
 
   it("rejects missing, operator and expired tokens", async () => {
