@@ -45,19 +45,19 @@ command -v openssl >/dev/null || fail "openssl is required"
 [[ -r "$config" ]] || fail "nginx config is missing"
 config_text="$(<"$config")"
 trap 'rm -rf "$work_dir"' EXIT
-mkdir -p "$work_dir/ssl"/{website,kith-inn,kith-inn-v1}
+mkdir -p "$work_dir/ssl"/{website,kith-inn,api-codeforpeople}
 openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
   -subj '/CN=kith-inn.example.invalid' \
   -keyout "$work_dir/ssl/kith-inn/privkey.pem" \
   -out "$work_dir/ssl/kith-inn/fullchain.pem" >/dev/null 2>&1
 cp "$work_dir/ssl/kith-inn/privkey.pem" "$work_dir/ssl/website/privkey.pem"
 cp "$work_dir/ssl/kith-inn/fullchain.pem" "$work_dir/ssl/website/fullchain.pem"
-cp "$work_dir/ssl/kith-inn/privkey.pem" "$work_dir/ssl/kith-inn-v1/privkey.pem"
-cp "$work_dir/ssl/kith-inn/fullchain.pem" "$work_dir/ssl/kith-inn-v1/fullchain.pem"
+cp "$work_dir/ssl/kith-inn/privkey.pem" "$work_dir/ssl/api-codeforpeople/privkey.pem"
+cp "$work_dir/ssl/kith-inn/fullchain.pem" "$work_dir/ssl/api-codeforpeople/fullchain.pem"
 
 for expected in \
   'proxy_pass http://127.0.0.1:3302;' \
-  'proxy_pass http://127.0.0.1:3311;' \
+  'proxy_pass http://127.0.0.1:3311/;' \
   'proxy_pass http://127.0.0.1:3310;' \
   'proxy_pass http://127.0.0.1:3304;' \
   'proxy_pass http://127.0.0.1:3305;' \
@@ -79,10 +79,12 @@ assert_server_contains 'codeforpeople.cn' '443 ssl http2' \
   'return 308 https://www.codeforpeople.cn$request_uri;'
 assert_server_contains 'www.codeforpeople.cn' '443 ssl http2' \
   'proxy_pass http://127.0.0.1:3302;'
-assert_server_contains 'v1.codeforpeople.cn' '80' \
-  'return 308 https://v1.codeforpeople.cn$request_uri;'
-assert_server_contains 'v1.codeforpeople.cn' '443 ssl http2' \
-  'proxy_pass http://127.0.0.1:3311;'
+assert_server_contains 'api.codeforpeople.cn' '80' \
+  'return 308 https://api.codeforpeople.cn$request_uri;'
+assert_server_contains 'api.codeforpeople.cn' '443 ssl http2' \
+  'location /kith-inn-v1/ {'
+assert_server_contains 'api.codeforpeople.cn' '443 ssl http2' \
+  'proxy_pass http://127.0.0.1:3311/;'
 [[ "$(grep -Fc 'allow 192.0.2.0/24;' <<<"$config_text")" == "1" ]] ||
   fail "CMS allowlist must appear exactly once"
 [[ "$(grep -Fc 'allow 198.51.100.0/24;' <<<"$config_text")" == "1" ]] ||

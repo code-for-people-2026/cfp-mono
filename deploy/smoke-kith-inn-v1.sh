@@ -14,7 +14,10 @@ public_base="$(value "$env_file" KITH_INN_V1_BE_BASE_URL)"
 release_sha="${RELEASE_SHA:?RELEASE_SHA is required}"
 curl_bin="${CURL_BIN:-curl}"
 sleep_bin="${SLEEP_BIN:-sleep}"
-[[ "$public_base" =~ ^https://[^/]+$ ]] || { echo "invalid public HTTPS BE origin" >&2; exit 1; }
+[[ "$public_base" =~ ^https://[^/?#]+(/[A-Za-z0-9._~-]+)*$ ]] || {
+  echo "invalid public HTTPS BE base URL" >&2
+  exit 1
+}
 
 assert_be_health() {
   local url="$1"

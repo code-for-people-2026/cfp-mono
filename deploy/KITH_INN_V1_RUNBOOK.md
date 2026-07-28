@@ -17,11 +17,11 @@ Production Environment 需配置：
 - 复用基础设施/共享 CMS Secrets：ALIYUN_ACR_REGISTRY、ALIYUN_ACR_NAMESPACE、ALIYUN_ACR_USERNAME、ALIYUN_ACR_PASSWORD、ALIYUN_ACCESS_KEY_ID、ALIYUN_ACCESS_KEY_SECRET、ECS_HOST、ECS_USER、ECS_SSH_KEY、ECS_SSH_KNOWN_HOSTS、DATABASE_URL、KITH_INN_PAYLOAD_SECRET。
 - v1 Secrets：KITH_INN_V1_JWT_SECRET、KITH_INN_V1_INTERNAL_TOKEN、KITH_INN_V1_OPERATOR_OPENID、KITH_INN_V1_WX_APPID、KITH_INN_V1_WX_SECRET。前两个还需注入共享 CMS runtime，供 v1 内部 API 校验使用。
 - 仅轮换 v1 JWT/internal token 时，额外暂存旧值到成对的 KITH_INN_V1_PREVIOUS_JWT_SECRET、KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN。先发布“新值为 primary、旧值为 previous”，等共享 CMS 与 v1 BE 都切到新值后，下一次发布清空 previous。两项必须同时设置或同时清空；不得在日志或 PR 中记录值。
-- Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
+- Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；生产值固定为 `https://api.codeforpeople.cn/kith-inn-v1`。它是小程序请求使用的完整 HTTPS base URL，不得带尾斜杠、query 或 fragment。
 
 v1 发布顺序固定为：构建共享 CMS runtime、CMS ops 与 v1 BE 三个镜像 → 推送并固定 digest → ECS 候选 preflight → 停止旧共享 CMS 与 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 执行 schema migration → 事务化幂等 provision → 同时等待共享 CMS 与 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA，并由 BE `/ready` 从容器网络验证共享 CMS/service auth）→ 原子提升 current release → 仅保留 current/previous 敏感快照 → 上传同 SHA smoke marker。首次接管会按 Compose service label 记录并停止旧 `kith-inn` runtime；旧 v1 快照即使只有 BE 也可识别。候选失败时用记录的容器 ID 恢复接管前 runtime；数据库只通过发布前恢复点人工恢复，不自动回滚。
 
-ECS 的 Nginx/证书需一次性配置：`deploy/nginx.example.conf` 已包含 `v1.codeforpeople.cn` 到 `127.0.0.1:3311` 的反代示例，只公开 80/443；先验证 DNS、完整证书链和 `nginx -t`，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
+ECS 的 Nginx/证书需一次性配置：`deploy/nginx.example.conf` 已包含 `api.codeforpeople.cn` 的 `/kith-inn-v1/` 路径到 `127.0.0.1:3311/` 的去前缀反代示例，其他路径不交给 v1 BE；公网只开放 80/443。先验证 DNS、完整证书链和 `nginx -t`，再 reload。微信小程序后台的 request 合法域名只填写 origin `https://api.codeforpeople.cn`，不填写 `/kith-inn-v1` 路径。
 
 ## 三个微信测试账号
 
