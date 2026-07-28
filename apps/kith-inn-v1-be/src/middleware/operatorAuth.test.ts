@@ -5,9 +5,9 @@ import { operatorAuth, type AppVars } from "./operatorAuth";
 
 const SECRET = "v1-secret";
 
-function protectedApp() {
+function protectedApp(previousSecret?: string) {
   const app = new Hono<AppVars>();
-  app.use("*", operatorAuth(SECRET));
+  app.use("*", operatorAuth(SECRET, previousSecret));
   app.get("/", (c) => c.json({
     operatorId: c.get("operatorId"),
     sellerId: c.get("sellerId"),
@@ -22,6 +22,14 @@ describe("operatorAuth", () => {
     const response = await protectedApp().request("/", { headers: { Authorization: `Bearer ${token}` } });
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ operatorId: 1, sellerId: 7, token });
+  });
+
+  it("accepts an existing session signed by the previous rotation secret", async () => {
+    const token = await issueOperatorToken({ operatorId: 1, sellerId: 7 }, "previous-secret");
+    expect((await protectedApp("previous-secret").request("/", {
+      headers: { Authorization: `Bearer ${token}` }
+    })).status).toBe(200);
+    expect((await protectedApp().request("/", { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401);
   });
 
   it("rejects missing/non-bearer/invalid/selection/expired tokens", async () => {

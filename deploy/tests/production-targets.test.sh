@@ -44,9 +44,9 @@ if run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse
 fi
 
 run_selector "$root" push "" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
-assert_output "$tmp/missing-base" true true true
+assert_output "$tmp/missing-base" true false true
 run_selector "$root" push "" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$(git -C "$root" rev-parse HEAD)" "$tmp/unknown-base"
-assert_output "$tmp/unknown-base" true true true
+assert_output "$tmp/unknown-base" true false true
 
 worktree="$tmp/worktree"
 git -C "$root" worktree add --detach "$worktree" HEAD >/dev/null
@@ -57,7 +57,7 @@ assert_output "$tmp/website-range" true false false
 base="$head"
 head="$(synthetic_commit apps/kith-inn-be/.production-target-test 'test: kith range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-range"
-assert_output "$tmp/kith-range" false true false
+assert_output "$tmp/kith-range" false false false
 base="$head"
 head="$(synthetic_commit apps/kith-inn-v1-be/.production-target-test 'test: kith v1 range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-range"
@@ -73,7 +73,7 @@ assert_output "$tmp/website-deploy-range" true false false
 base="$head"
 head="$(synthetic_commit deploy/kith-inn-candidate.fixture 'test: kith deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-deploy-range"
-assert_output "$tmp/kith-deploy-range" false true false
+assert_output "$tmp/kith-deploy-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/kith-inn-v1-candidate.fixture 'test: kith v1 deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-deploy-range"
@@ -81,11 +81,11 @@ assert_output "$tmp/kith-v1-deploy-range" false false true
 base="$head"
 head="$(synthetic_commit deploy/create-rds-backup.sh 'test: shared backup contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-backup-range"
-assert_output "$tmp/shared-backup-range" true true true
+assert_output "$tmp/shared-backup-range" true false true
 base="$head"
 head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
-assert_output "$tmp/shared-contract-range" true true true
+assert_output "$tmp/shared-contract-range" true false true
 base="$head"
 head="$(synthetic_commit deploy/nginx.example.conf 'test: external ingress contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/ingress-contract-range"
@@ -101,7 +101,7 @@ assert_output "$tmp/deploy-test-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/.production-target-test 'test: unknown deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
-assert_output "$tmp/shared-range" true true true
+assert_output "$tmp/shared-range" true false true
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
 
@@ -166,8 +166,8 @@ grep -q '^  workflow_call:' "$v1_workflow"
 ! grep -q '^  push:' "$v1_workflow"
 ! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
 v1_call_job="$(sed -n '/^  deploy_kith_inn_v1:/,$p' "$workflow")"
-grep -q 'needs: \[affected, prepare_kith_inn\]' <<<"$v1_call_job"
-grep -q "needs.prepare_kith_inn.result == 'success'" <<<"$v1_call_job"
+grep -q 'needs: \[affected\]' <<<"$v1_call_job"
+! grep -q 'needs.prepare_kith_inn' <<<"$v1_call_job"
 grep -q "needs.affected.outputs.kith_inn_v1 == 'true'" <<<"$v1_call_job"
 grep -q 'uses: ./.github/workflows/deploy-kith-inn-v1-production.yml' <<<"$v1_call_job"
 grep -q 'secrets: inherit' <<<"$v1_call_job"
@@ -245,6 +245,13 @@ fi
 grep -qx 'configured=false' "$tmp/v1-incomplete-previous"
 grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' "$tmp/v1-incomplete-previous.log"
 ! grep -q 'previous-value' "$tmp/v1-incomplete-previous.log"
+: > "$tmp/v1-blank-previous"
+if env "${v1_values[@]}" KITH_INN_V1_PREVIOUS_JWT_SECRET='   ' \
+  KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN=previous-value GITHUB_OUTPUT="$tmp/v1-blank-previous" \
+  bash "$v1_config_check" >"$tmp/v1-blank-previous.log" 2>&1; then exit 1; fi
+grep -qx 'configured=false' "$tmp/v1-blank-previous"
+grep -q 'KITH_INN_V1_PREVIOUS_JWT_SECRET' "$tmp/v1-blank-previous.log"
+! grep -q 'previous-value' "$tmp/v1-blank-previous.log"
 : > "$tmp/v1-dev-openid"
 if env "${v1_values[@]}" KITH_INN_V1_OPERATOR_OPENID=TAOZI-V1-DEV-OPENID GITHUB_OUTPUT="$tmp/v1-dev-openid" \
   bash "$v1_config_check" >"$tmp/v1-dev-openid.log" 2>&1; then exit 1; fi

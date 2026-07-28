@@ -5,12 +5,12 @@
 ## 当前结论
 
 - `kith-inn` 与 `kith-inn-v1` 共用唯一的 `apps/cms` 常驻进程；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。当前只发布 v1，因此由 v1 workflow 部署这一个共享 CMS，不要求旧版 `kith-inn` 先部署，也不会再启动第二个 Payload/Next 进程。
-- `Deploy Production` 在同一个 `production` 发布锁内调用 v1 workflow；v1 构建共享 CMS runtime、CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
+- `Deploy Production` 在同一个 `production` 发布锁内调用 v1 workflow；旧版 `kith-inn` production target 已关闭，旧 BE/FE 或全仓依赖变更都不会再启动第二个 CMS。v1 构建共享 CMS runtime、CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
 - v1 领域模型支持多个 seller；当前产品入口只自动 provision 一个“桃子”seller 和一个 operator，尚无自助开店或运营后台。
 
 ## ECS 自动部署
 
-相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 选择 v1 目标并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。`apps/cms` 变更只选择 v1，不会要求旧版 `kith-inn` 的配置或触发其部署；若其他共享 workflow 变更同时选择两者，则 v1 必须等待旧发布成功，禁止两个共享 CMS 发布并发。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
+相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 只选择 website 与 v1 生产目标，并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。旧版 `kith_inn` 输出固定为 `false`，不要求其微信或部署配置。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
 
 Production Environment 需配置：
 

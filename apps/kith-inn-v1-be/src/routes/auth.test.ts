@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { verifyCustomerToken, verifyOperatorSelectionToken, verifyOperatorToken } from "@cfp/kith-inn-v1-shared/auth";
+import {
+  issueOperatorSelectionToken,
+  verifyCustomerToken,
+  verifyOperatorSelectionToken,
+  verifyOperatorToken
+} from "@cfp/kith-inn-v1-shared/auth";
 import { CmsAuthError } from "../lib/cms/auth";
 import { Code2SessionError } from "../lib/wx/code2session";
 import { authRoutes, customerAuthRoutes, type AuthDeps, type CustomerAuthDeps } from "./auth";
@@ -145,6 +150,19 @@ describe("seller selection", () => {
     const body = await selected.json() as { token: string };
     await expect(verifyOperatorToken(body.token, SECRET, NOW)).resolves.toMatchObject({ operatorId: 2, sellerId: 8 });
     expect(lookup).toHaveBeenLastCalledWith({ operatorId: 2 });
+  });
+
+  it("accepts a still-valid selection token signed before secret rotation", async () => {
+    process.env.KITH_INN_V1_PREVIOUS_JWT_SECRET = "previous-secret";
+    const selectionToken = await issueOperatorSelectionToken(
+      memberships.map(({ operatorId, sellerId }) => ({ operatorId, sellerId })),
+      "previous-secret",
+      NOW
+    );
+    const response = await post(authRoutes(SECRET, deps()), "/select-seller", { selectionToken, sellerId: 7 });
+    expect(response.status).toBe(200);
+    const body = await response.json() as { token: string };
+    await expect(verifyOperatorToken(body.token, SECRET, NOW)).resolves.toMatchObject({ sellerId: 7 });
   });
 
   it("rejects forged seller, wrong token kind, expiry and stopped membership", async () => {

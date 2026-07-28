@@ -57,6 +57,8 @@ describe("createApp", () => {
       WX_APPID: "wx-production-appid", WX_SECRET: "wx-production-value",
     };
     expect(() => assertV1ProductionEnv(valid)).not.toThrow();
+    expect(() => assertV1ProductionEnv({ ...valid, KITH_INN_V1_PREVIOUS_JWT_SECRET: "previous-value" })).not.toThrow();
+    expect(() => assertV1ProductionEnv({ ...valid, KITH_INN_V1_PREVIOUS_JWT_SECRET: "   " })).toThrow(/PREVIOUS/);
     expect(() => assertV1ProductionEnv({ ...valid, WX_SECRET: "change-me" })).toThrow(/WX_SECRET/);
     expect(() => assertV1ProductionEnv({ ...valid, WX_APPID: "" })).toThrow(/WX_APPID/);
   });
