@@ -10,7 +10,7 @@
 
 ## ECS 自动部署
 
-相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 只选择 website 与 v1 生产目标，并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。旧版 `kith_inn` 输出固定为 `false`，不要求其微信或部署配置。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
+相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 只选择 website 与 v1 生产目标，并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁，同时选择时先完成 website，再开始 v1，禁止并发创建同一 RDS 的物理恢复点。旧版 `kith_inn` 输出固定为 `false`，不要求其微信或部署配置。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
 
 Production Environment 需配置：
 
