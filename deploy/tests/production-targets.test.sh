@@ -179,7 +179,8 @@ grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
 grep -q 'KITH_INN_V1_PREVIOUS_JWT_SECRET' "$v1_workflow"
 grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' "$v1_workflow"
 grep -q 'KITH_INN_V1_PREVIOUS_JWT_SECRET: ${KITH_INN_V1_PREVIOUS_JWT_SECRET:-}' "$v1_compose"
-grep -A16 'server_name v1.codeforpeople.cn;' "$root/deploy/nginx.example.conf" | grep -q 'proxy_pass http://127.0.0.1:3311;'
+grep -A20 'server_name api.codeforpeople.cn;' "$root/deploy/nginx.example.conf" | grep -q 'location /kith-inn-v1/'
+grep -A20 'server_name api.codeforpeople.cn;' "$root/deploy/nginx.example.conf" | grep -q 'proxy_pass http://127.0.0.1:3311/;'
 
 required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
@@ -234,10 +235,22 @@ v1_required=(
 )
 v1_values=()
 for name in "${v1_required[@]}"; do v1_values+=("$name=production-value-$name"); done
-v1_values+=("KITH_INN_V1_BE_BASE_URL=https://v1.codeforpeople.cn")
+v1_values+=("KITH_INN_V1_BE_BASE_URL=https://api.codeforpeople.cn/kith-inn-v1")
 : > "$tmp/v1-configured"
 env "${v1_values[@]}" GITHUB_OUTPUT="$tmp/v1-configured" bash "$v1_config_check" >"$tmp/v1-configured.log"
 grep -qx 'configured=true' "$tmp/v1-configured"
+for invalid_base in \
+  'https://api.codeforpeople.cn/kith-inn-v1/' \
+  'https://api.codeforpeople.cn/kith-inn-v1?debug=1' \
+  'https://api.codeforpeople.cn/kith-inn-v1#fragment'; do
+  : > "$tmp/v1-invalid-base"
+  if env "${v1_values[@]}" KITH_INN_V1_BE_BASE_URL="$invalid_base" \
+    GITHUB_OUTPUT="$tmp/v1-invalid-base" bash "$v1_config_check" >"$tmp/v1-invalid-base.log" 2>&1; then
+    exit 1
+  fi
+  grep -qx 'configured=false' "$tmp/v1-invalid-base"
+  grep -q 'KITH_INN_V1_BE_BASE_URL' "$tmp/v1-invalid-base.log"
+done
 : > "$tmp/v1-incomplete-previous"
 if env "${v1_values[@]}" KITH_INN_V1_PREVIOUS_JWT_SECRET=previous-value \
   GITHUB_OUTPUT="$tmp/v1-incomplete-previous" bash "$v1_config_check" >"$tmp/v1-incomplete-previous.log" 2>&1; then

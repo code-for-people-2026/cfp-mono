@@ -30,7 +30,7 @@ for name in KITH_INN_PAYLOAD_SECRET KITH_INN_V1_JWT_SECRET KITH_INN_V1_INTERNAL_
 done
 operator_openid="$(printf '%s' "${KITH_INN_V1_OPERATOR_OPENID:-}" | tr '[:upper:]' '[:lower:]')"
 [[ ! "$operator_openid" =~ (^|[-_])dev[-_]?openid$ ]] || invalid+=(KITH_INN_V1_OPERATOR_OPENID)
-[[ "${KITH_INN_V1_BE_BASE_URL:-}" =~ ^https://[^/]+$ ]] || invalid+=(KITH_INN_V1_BE_BASE_URL)
+[[ "${KITH_INN_V1_BE_BASE_URL:-}" =~ ^https://[^/?#]+(/[A-Za-z0-9._~-]+)*$ ]] || invalid+=(KITH_INN_V1_BE_BASE_URL)
 
 if (( ${#missing[@]} == 0 && ${#invalid[@]} == 0 )); then
   echo "configured=true" >>"$GITHUB_OUTPUT"
