@@ -1329,7 +1329,7 @@ button.manual-add-entry {
   margin: 0 -12rpx 28rpx;
 }
 
-.menu-week-heading > :nth-child(2) {
+.menu-week-copy {
   min-width: 0;
 }
 
