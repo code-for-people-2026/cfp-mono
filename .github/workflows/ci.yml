@@ -16,9 +16,6 @@ jobs:
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
-      KITH_INN_ALLOW_DEV_SEED_RESET: "1"
-      # Build-only origin; release workflows must inject the approved kith-inn API host.
-      BE_BASE_URL: https://codeforpeople.cn
     services:
       postgres:
         image: postgres:17-alpine
@@ -58,45 +55,7 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Run affected E2E
-        run: |
-          e2e_filters=('--filter=...[origin/main]')
-          if ! git diff --quiet origin/main...HEAD -- \
-            apps/cms/package.json \
-            apps/cms/next.config.ts \
-            apps/cms/payload.config.ts \
-            apps/cms/seed/run.ts \
-            apps/cms/src/app/api/health/route.ts \
-            apps/cms/src/app/api/internal/chat_messages \
-            apps/cms/src/app/api/internal/customers \
-            apps/cms/src/app/api/internal/fulfillments \
-            apps/cms/src/app/api/internal/menu-plans \
-            apps/cms/src/app/api/internal/offerings \
-            apps/cms/src/app/api/internal/operator-by-openid \
-            apps/cms/src/app/api/internal/orders \
-            apps/cms/src/app/api/internal/seller \
-            apps/cms/src/app/api/internal/service-slots \
-            apps/cms/src/lib/internal.ts \
-            apps/cms/src/lib/orderLifecycle.ts \
-            apps/cms/src/lib/serviceSlotDate.ts \
-            apps/cms/tests/helpers/kithInnMainline.ts \
-            apps/kith-inn-be \
-            packages/kith-inn-payload \
-            packages/kith-inn-shared; then
-            e2e_filters+=(--filter=@cfp/kith-inn-fe)
-          fi
-          if ! git diff --quiet origin/main...HEAD -- \
-            apps/cms/package.json \
-            apps/cms/next.config.ts \
-            apps/cms/payload.config.ts \
-            apps/cms/seed/run.ts \
-            apps/cms/src/app/api/health/route.ts \
-            apps/cms/src/app/api/internal/kiv1 \
-            apps/cms/src/lib/kiv1-internal.ts \
-            apps/kith-inn-v1-be \
-            packages/kith-inn-v1-payload; then
-            e2e_filters+=(--filter=@cfp/kith-inn-v1-fe)
-          fi
-          pnpm turbo run test:e2e --concurrency=1 "${e2e_filters[@]}"
+        run: pnpm turbo run test:e2e --concurrency=1 --filter=...[origin/main]
         if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4
@@ -107,4 +66,3 @@ jobs:
             apps/*/coverage
             apps/*/playwright-report
             apps/*/test-results
-            apps/kith-inn-fe/test-results/mainline-services

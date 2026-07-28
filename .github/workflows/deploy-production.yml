@@ -3,14 +3,13 @@ name: Deploy Production
 on:
   push:
     branches: [main]
-  workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
 
 concurrency:
-  group: production-website
+  group: production
   cancel-in-progress: false
 
 jobs:
@@ -18,7 +17,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       website: ${{ steps.check.outputs.website }}
-      kith_inn: ${{ steps.check.outputs.kith_inn }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -40,23 +38,9 @@ jobs:
           DEPLOY_BASE: ${{ github.event.before }}
         run: bash deploy/resolve-production-targets.sh
 
-  # website、旧 kith-inn 与 kith-inn-v1 的触发范围相互独立，但生产数据位于同一个
-  # RDS 实例。较新的 run 在任何 gate/backup/migration/rollout 前等待较旧的 v1 run。
-  serialize_shared_rds:
-    needs: affected
-    if: needs.affected.outputs.website == 'true' || needs.affected.outputs.kith_inn == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 240
-    steps:
-      - uses: actions/checkout@v4
-      - name: Wait for older kith-inn-v1 production run
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: bash deploy/wait-for-older-production-run.sh deploy-kith-inn-v1-production.yml
-
   prepare:
-    needs: [affected, serialize_shared_rds]
-    if: needs.affected.outputs.website == 'true' && needs.serialize_shared_rds.result == 'success'
+    needs: affected
+    if: needs.affected.outputs.website == 'true'
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -85,257 +69,9 @@ jobs:
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
         run: bash deploy/check-website-production-config.sh
 
-  prepare_kith_inn:
-    needs: [affected, serialize_shared_rds]
-    if: needs.affected.outputs.kith_inn == 'true' && needs.serialize_shared_rds.result == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 120
-    environment: Production
-    outputs:
-      configured: ${{ steps.check.outputs.configured }}
-      cms_digest: ${{ steps.push.outputs.cms_digest }}
-      cms_ops_digest: ${{ steps.push.outputs.cms_ops_digest }}
-      be_digest: ${{ steps.push.outputs.be_digest }}
-      h5_digest: ${{ steps.push.outputs.h5_digest }}
-      backup_id: ${{ steps.backup.outputs.backup_id }}
-      backup_created_at: ${{ steps.backup.outputs.backup_created_at }}
-      migration_head: ${{ steps.deploy.outputs.migration_head }}
-      seller_id: ${{ steps.deploy.outputs.seller_id }}
-    env:
-      KITH_INN_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms:${{ github.sha }}
-      KITH_INN_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms-ops:${{ github.sha }}
-      KITH_INN_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-be:${{ github.sha }}
-      KITH_INN_H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-h5:${{ github.sha }}
-      RELEASE_SHA: ${{ github.sha }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - id: check
-        name: Check kith-inn production configuration
-        env:
-          ALIYUN_ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-          ALIYUN_ACR_NAMESPACE: ${{ secrets.ALIYUN_ACR_NAMESPACE }}
-          ALIYUN_ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          ALIYUN_ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-          ALIYUN_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIYUN_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
-          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
-          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
-          ECS_SSH_KNOWN_HOSTS: ${{ secrets.ECS_SSH_KNOWN_HOSTS }}
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
-          KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
-          KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
-          KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
-          KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
-          KITH_INN_V1_PREVIOUS_JWT_SECRET: ${{ secrets.KITH_INN_V1_PREVIOUS_JWT_SECRET }}
-          KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN }}
-          KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
-          KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
-          KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}
-          KITH_INN_DEEPSEEK_API_KEY: ${{ secrets.KITH_INN_DEEPSEEK_API_KEY }}
-          KITH_INN_BE_BASE_URL: ${{ vars.KITH_INN_BE_BASE_URL }}
-        run: bash deploy/check-kith-inn-production-config.sh
-
-      - name: Wait for CI (verify) to pass
-        if: steps.check.outputs.configured == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          run_id="$(gh run list --workflow=ci.yml --commit="$RELEASE_SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)"
-          [[ -n "$run_id" ]] || { echo "No ci.yml run found for release SHA." >&2; exit 1; }
-          gh run watch "$run_id" --exit-status
-
-      - name: Free disk space
-        if: steps.check.outputs.configured == 'true'
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
-                      /usr/local/.ghcup /opt/az /usr/local/share /opt/hostedtoolcache 2>/dev/null || true
-          sudo apt-get clean
-
-      - name: Build four kith-inn images
-        if: steps.check.outputs.configured == 'true'
-        env:
-          KITH_INN_BE_BASE_URL: ${{ vars.KITH_INN_BE_BASE_URL }}
-        run: |
-          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" \
-            -f apps/cms/Dockerfile -t "$KITH_INN_CMS_IMAGE" .
-          docker build --target jobs --build-arg RELEASE_SHA="$RELEASE_SHA" \
-            -f apps/cms/Dockerfile -t "$KITH_INN_CMS_OPS_IMAGE" .
-          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" \
-            -f apps/kith-inn-be/Dockerfile -t "$KITH_INN_BE_IMAGE" .
-          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" \
-            --build-arg BE_BASE_URL="$KITH_INN_BE_BASE_URL" \
-            -f apps/kith-inn-fe/Dockerfile -t "$KITH_INN_H5_IMAGE" .
-
-      - name: Verify four kith-inn images
-        if: steps.check.outputs.configured == 'true'
-        run: bash deploy/verify-kith-inn-images.sh
-
-      - name: Login to Alibaba Cloud ACR
-        if: steps.check.outputs.configured == 'true'
-        uses: aliyun/acr-login@v1
-        with:
-          login-server: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-
-      - id: push
-        name: Push immutable kith-inn images
-        if: steps.check.outputs.configured == 'true'
-        run: bash deploy/push-kith-inn-images.sh
-
-      - name: Install Alibaba Cloud CLI
-        if: steps.check.outputs.configured == 'true'
-        uses: aliyun/setup-aliyun-cli-action@09a5f86915bb556e27bf050e9a5e339aeb073df5
-        with:
-          version: 3.3.18
-
-      - id: stage
-        name: Stage kith-inn candidate without changing the active runtime
-        if: steps.check.outputs.configured == 'true'
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER }}
-          ECS_SSH_KEY: ${{ secrets.ECS_SSH_KEY }}
-          ECS_SSH_KNOWN_HOSTS: ${{ secrets.ECS_SSH_KNOWN_HOSTS }}
-          ACR_REGISTRY: ${{ secrets.ALIYUN_ACR_REGISTRY }}
-          ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-          KITH_INN_RELEASE_SHA: ${{ github.sha }}
-          KITH_INN_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms@${{ steps.push.outputs.cms_digest }}
-          KITH_INN_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-cms-ops@${{ steps.push.outputs.cms_ops_digest }}
-          KITH_INN_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-be@${{ steps.push.outputs.be_digest }}
-          KITH_INN_H5_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-h5@${{ steps.push.outputs.h5_digest }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-          KITH_INN_PAYLOAD_SECRET: ${{ secrets.KITH_INN_PAYLOAD_SECRET }}
-          KITH_INN_JWT_SECRET: ${{ secrets.KITH_INN_JWT_SECRET }}
-          KITH_INN_CMS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_CMS_INTERNAL_TOKEN }}
-          KITH_INN_V1_JWT_SECRET: ${{ secrets.KITH_INN_V1_JWT_SECRET }}
-          KITH_INN_V1_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_INTERNAL_TOKEN }}
-          KITH_INN_V1_PREVIOUS_JWT_SECRET: ${{ secrets.KITH_INN_V1_PREVIOUS_JWT_SECRET }}
-          KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN: ${{ secrets.KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN }}
-          KITH_INN_TRIAL_OPENID: ${{ secrets.KITH_INN_TRIAL_OPENID }}
-          KITH_INN_WX_APPID: ${{ secrets.KITH_INN_WX_APPID }}
-          KITH_INN_WX_SECRET: ${{ secrets.KITH_INN_WX_SECRET }}
-          KITH_INN_DEEPSEEK_API_KEY: ${{ secrets.KITH_INN_DEEPSEEK_API_KEY }}
-          KITH_INN_BE_BASE_URL: ${{ vars.KITH_INN_BE_BASE_URL }}
-        run: |
-          set -euo pipefail
-          remote="$ECS_USER@$ECS_HOST"
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$ECS_SSH_KEY" > ~/.ssh/cfp-ecs
-          printf '%s\n' "$ECS_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/cfp-ecs ~/.ssh/known_hosts
-          trap 'rm -f .env.kith-inn.remote' EXIT
-          COMPOSE_ENV_OUTPUT=.env.kith-inn.remote bash deploy/write-kith-inn-compose-env.sh
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" 'mkdir -p ~/cfp-mono/deploy'
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes deploy/docker-compose.kith-inn.prod.yml \
-            "$remote:~/cfp-mono/deploy/docker-compose.kith-inn.prod.yml.next"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes \
-            deploy/smoke-test.sh deploy/deploy-kith-inn-candidate.sh "$remote:~/cfp-mono/deploy/"
-          scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes .env.kith-inn.remote \
-            "$remote:~/cfp-mono/.env.kith-inn.next"
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            'chmod 600 ~/cfp-mono/.env.kith-inn.next ~/cfp-mono/deploy/docker-compose.kith-inn.prod.yml.next'
-          printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'" >/dev/null
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh preflight-candidate"
-
-      - id: gate
-        name: Gate kith-inn writes before creating the recovery point
-        if: steps.check.outputs.configured == 'true'
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER }}
-        run: |
-          remote="$ECS_USER@$ECS_HOST"
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            'bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh gate-writes'
-
-      - id: backup
-        name: Create and verify recoverable RDS backup
-        if: steps.check.outputs.configured == 'true'
-        env:
-          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_ACCESS_KEY_ID }}
-          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_ACCESS_KEY_SECRET }}
-          ALIBABA_CLOUD_CLI_PLUGIN_AUTO_INSTALL: "true"
-          ALIYUN_REGION_ID: ${{ vars.ALIYUN_REGION_ID }}
-          ALIYUN_RDS_INSTANCE_ID: ${{ vars.ALIYUN_RDS_INSTANCE_ID }}
-          PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          backup="$(bash deploy/create-rds-backup.sh)"
-          backup_id="$(jq -er .backupId <<<"$backup")"
-          backup_created_at="$(jq -er .backupCreatedAt <<<"$backup")"
-          printf '### kith-inn recovery point\n\n- Backup ID: `%s`\n- Created at: `%s`\n' \
-            "$backup_id" "$backup_created_at" >> "$GITHUB_STEP_SUMMARY"
-
-      - id: deploy
-        name: Deploy and smoke kith-inn candidate
-        if: steps.check.outputs.configured == 'true'
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER }}
-        run: |
-          set -euo pipefail
-          remote="$ECS_USER@$ECS_HOST"
-          result="$(ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            "RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh deploy")"
-          migration_head="$(jq -er '.migrationHead' <<<"$result")"
-          seller_id="$(jq -er '.sellerId' <<<"$result")"
-          smoke_evidence="$(jq -cer '.smokeEvidence' <<<"$result")"
-          printf 'migration_head=%s\nseller_id=%s\nsmoke_evidence=%s\n' \
-            "$migration_head" "$seller_id" "$smoke_evidence" >> "$GITHUB_OUTPUT"
-
-      - name: Write kith-inn smoke marker
-        if: success() && steps.check.outputs.configured == 'true' && github.ref == 'refs/heads/main'
-        env:
-          DEPLOY_RUN_ID: ${{ github.run_id }}
-          KITH_INN_CMS_DIGEST: ${{ steps.push.outputs.cms_digest }}
-          KITH_INN_CMS_OPS_DIGEST: ${{ steps.push.outputs.cms_ops_digest }}
-          KITH_INN_BE_DIGEST: ${{ steps.push.outputs.be_digest }}
-          KITH_INN_H5_DIGEST: ${{ steps.push.outputs.h5_digest }}
-          KITH_INN_MIGRATION_HEAD: ${{ steps.deploy.outputs.migration_head }}
-          KITH_INN_BACKUP_ID: ${{ steps.backup.outputs.backup_id }}
-          KITH_INN_BACKUP_CREATED_AT: ${{ steps.backup.outputs.backup_created_at }}
-          KITH_INN_SMOKE_EVIDENCE_JSON: ${{ steps.deploy.outputs.smoke_evidence }}
-        run: bash deploy/write-kith-inn-smoke-marker.sh
-
-      - name: Upload kith-inn smoke marker
-        if: success() && steps.check.outputs.configured == 'true' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: kith-inn-smoke-passed-${{ github.sha }}
-          path: smoke-passed.json
-          if-no-files-found: error
-          retention-days: 30
-
-      - name: Restore the last-good runtime when the gated deployment fails
-        if: ${{ (failure() || cancelled()) && steps.gate.outcome != 'skipped' }}
-        timeout-minutes: 30
-        env:
-          ECS_HOST: ${{ secrets.ECS_HOST }}
-          ECS_USER: ${{ secrets.ECS_USER }}
-        run: |
-          remote="$ECS_USER@$ECS_HOST"
-          ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            'bash ~/cfp-mono/deploy/deploy-kith-inn-candidate.sh restore-runtime'
-
-      - name: Remove local deployment credentials
-        if: always()
-        run: rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.kith-inn.remote
-
   deploy:
-    needs: [affected, serialize_shared_rds, prepare, prepare_kith_inn]
+    needs: [affected, prepare]
     if: >-
-      always() && needs.affected.result == 'success' && needs.prepare.result == 'success' &&
-      needs.serialize_shared_rds.result == 'success' &&
-      (needs.prepare_kith_inn.result == 'success' || needs.prepare_kith_inn.result == 'skipped') &&
       needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120

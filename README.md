@@ -35,5 +35,3 @@ pnpm dev:website
 pnpm verify
 pnpm test:e2e
 ```
-
-部署说明见 [DEPLOYMENT.md](./DEPLOYMENT.md)。
