@@ -5,24 +5,23 @@ set -euo pipefail
 repo="${REPOSITORY_DIR:-$(pwd)}"
 cd "$repo"
 
-write_targets() {
-  local website="$1" kith_inn="$2" kith_inn_v1="$3"
-  printf 'website=%s\nkith_inn=%s\nkith_inn_v1=%s\n' "$website" "$kith_inn" "$kith_inn_v1" >> "$GITHUB_OUTPUT"
-  printf 'affected targets: website=%s kith-inn=%s kith-inn-v1=%s\n' "$website" "$kith_inn" "$kith_inn_v1"
+write_target() {
+  local website="$1"
+  printf 'website=%s\n' "$website" >> "$GITHUB_OUTPUT"
+  printf 'affected target: website=%s\n' "$website"
 }
 
-if [[ "${GITHUB_EVENT_NAME:-}" == workflow_dispatch ]]; then
-  write_targets true false false
-  exit 0
-fi
-[[ "${GITHUB_EVENT_NAME:-}" == push ]] || { echo "production deploy only supports push or workflow_dispatch" >&2; exit 1; }
+[[ "${GITHUB_EVENT_NAME:-}" == push ]] || {
+  echo "production deploy only supports push" >&2
+  exit 1
+}
 
 base="${DEPLOY_BASE:-}"
 head="${GITHUB_SHA:-}"
 if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]] ||
   ! git cat-file -e "$base^{commit}" 2>/dev/null ||
   ! git cat-file -e "$head^{commit}" 2>/dev/null; then
-  write_targets true false false
+  write_target true
   exit 0
 fi
 
@@ -32,29 +31,20 @@ printf '%s\n' "$changed_files"
 website_deploy=false
 while IFS= read -r path; do
   case "$path" in
-    package.json | pnpm-lock.yaml | pnpm-workspace.yaml | turbo.json)
-      write_targets true false false
+    .github/workflows/deploy-production.yml | package.json | pnpm-lock.yaml | pnpm-workspace.yaml | turbo.json)
+      write_target true
       exit 0
       ;;
-    .github/workflows/deploy-production.yml | .github/workflows/deploy-kith-inn-v1-production.yml | \
-      deploy/resolve-production-targets.sh | deploy/resolve-kith-inn-v1-production-target.sh | \
-      deploy/RUNBOOK.md | deploy/KITH_INN_V1_RUNBOOK.md | deploy/.gitignore | deploy/tests/* | \
-      deploy/nginx.example.conf | deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh | \
-      deploy/*kith-inn-v1*)
+    deploy/RUNBOOK.md | deploy/.gitignore | deploy/tests/* | deploy/nginx.example.conf | \
+      deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
-    deploy/smoke-test.sh | deploy/create-rds-backup.sh)
-      write_targets true false false
-      exit 0
-      ;;
-    deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
+    deploy/resolve-production-targets.sh | deploy/smoke-test.sh | deploy/create-rds-backup.sh | \
+      deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
       website_deploy=true
       ;;
-    deploy/.env.verify.example | deploy/*kith-inn*)
-      # 旧版 production target 已停用；保留文件仅供未来显式重新开通时迁移。
-      ;;
     deploy/*)
-      # 新增且尚未分类的部署文件按共享契约处理，避免漏发生产目标。
-      write_targets true false false
+      # 未分类的部署文件按 website 发布契约处理，避免漏发生产目标。
+      write_target true
       exit 0
       ;;
   esac
@@ -66,24 +56,18 @@ else
   turbo=(pnpm dlx turbo@2.9.18)
 fi
 
-turbo_has_tasks() {
-  local filters=() filter output
-  for filter in "$@"; do filters+=("--filter=$filter"); done
-  output="$("${turbo[@]}" run build "${filters[@]}" --dry-run=json)"
-  printf '%s' "$output" | node -e '
-    let text = "";
-    process.stdin.on("data", chunk => text += chunk).on("end", () => {
-      const start = text.indexOf("{");
-      if (start < 0) throw new Error("Turbo dry run did not emit JSON.");
-      process.stdout.write(JSON.parse(text.slice(start)).tasks.length > 0 ? "true" : "false");
-    });
-  '
-}
+output="$("${turbo[@]}" run build --filter="@cfp/website...[$base]" --dry-run=json)"
+website_affected="$(printf '%s' "$output" | node -e '
+  let text = "";
+  process.stdin.on("data", chunk => text += chunk).on("end", () => {
+    const start = text.indexOf("{");
+    if (start < 0) throw new Error("Turbo dry run did not emit JSON.");
+    process.stdout.write(JSON.parse(text.slice(start)).tasks.length > 0 ? "true" : "false");
+  });
+')"
 
-website_affected="$(turbo_has_tasks "@cfp/website...[$base]")"
 website=false
-kith_inn=false
-kith_inn_v1=false
-if [[ "$website_deploy" == true || "$website_affected" == true ]]; then website=true; fi
-# 旧版尚未发布，production target 保持关闭，避免与 v1 管理的唯一 CMS 竞争 3304。
-write_targets "$website" "$kith_inn" "$kith_inn_v1"
+if [[ "$website_deploy" == true || "$website_affected" == true ]]; then
+  website=true
+fi
+write_target "$website"
