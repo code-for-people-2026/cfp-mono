@@ -1,14 +1,48 @@
 name: Deploy kith-inn-v1 Production
 
 on:
-  workflow_call:
+  push:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   actions: read
   contents: read
 
+concurrency:
+  # 与 website 共享的只是 ECS/RDS 高风险操作锁；两个 workflow 不互相触发部署。
+  group: production
+  cancel-in-progress: false
+
 jobs:
+  affected:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        if: github.event_name == 'push'
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        if: github.event_name == 'push'
+        with:
+          node-version: 22
+
+      - id: check
+        name: Check whether kith-inn-v1 production is affected
+        env:
+          DEPLOY_BASE: ${{ github.event.before }}
+        run: bash deploy/resolve-kith-inn-v1-production-target.sh
+
   deploy:
+    needs: affected
+    if: needs.affected.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: Production

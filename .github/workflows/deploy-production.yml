@@ -18,7 +18,6 @@ jobs:
     outputs:
       website: ${{ steps.check.outputs.website }}
       kith_inn: ${{ steps.check.outputs.kith_inn }}
-      kith_inn_v1: ${{ steps.check.outputs.kith_inn_v1 }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -511,12 +510,3 @@ jobs:
         run: |
           docker logout "$ACR_REGISTRY" >/dev/null 2>&1 || true
           rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.production.remote .env.images.remote
-
-  deploy_kith_inn_v1:
-    needs: [affected, deploy]
-    if: >-
-      ${{ always() && needs.affected.result == 'success' &&
-          needs.affected.outputs.kith_inn_v1 == 'true' &&
-          (needs.affected.outputs.website != 'true' || needs.deploy.result == 'success') }}
-    uses: ./.github/workflows/deploy-kith-inn-v1-production.yml
-    secrets: inherit
