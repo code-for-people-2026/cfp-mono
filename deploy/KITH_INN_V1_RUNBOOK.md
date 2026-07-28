@@ -10,7 +10,7 @@
 
 ## ECS 自动部署
 
-相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 选择 v1 目标并直接调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。`apps/cms` 变更只选择 v1，不会要求旧版 `kith-inn` 的配置或触发其部署。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时所有外部发布步骤都会跳过，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
+相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 选择 v1 目标并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。`apps/cms` 变更只选择 v1，不会要求旧版 `kith-inn` 的配置或触发其部署；若其他共享 workflow 变更同时选择两者，则 v1 必须等待旧发布成功，禁止两个共享 CMS 发布并发。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
 
 Production Environment 需配置：
 
@@ -19,7 +19,7 @@ Production Environment 需配置：
 - 仅轮换 v1 JWT/internal token 时，额外暂存旧值到成对的 KITH_INN_V1_PREVIOUS_JWT_SECRET、KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN。先发布“新值为 primary、旧值为 previous”，等共享 CMS 与 v1 BE 都切到新值后，下一次发布清空 previous。两项必须同时设置或同时清空；不得在日志或 PR 中记录值。
 - Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
 
-v1 发布顺序固定为：构建共享 CMS runtime、CMS ops 与 v1 BE 三个镜像 → 推送并固定 digest → ECS 候选 preflight → 停止旧共享 CMS 与 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 执行 schema migration → 事务化幂等 provision → 同时等待共享 CMS 与 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA，并由 BE `/ready` 从容器网络验证共享 CMS/service auth）→ 原子提升 current release → 仅保留 current/previous 敏感快照 → 上传同 SHA smoke marker。候选失败时恢复上一版共享 CMS 与 v1 BE runtime；数据库只通过发布前恢复点人工恢复，不自动回滚。
+v1 发布顺序固定为：构建共享 CMS runtime、CMS ops 与 v1 BE 三个镜像 → 推送并固定 digest → ECS 候选 preflight → 停止旧共享 CMS 与 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 执行 schema migration → 事务化幂等 provision → 同时等待共享 CMS 与 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA，并由 BE `/ready` 从容器网络验证共享 CMS/service auth）→ 原子提升 current release → 仅保留 current/previous 敏感快照 → 上传同 SHA smoke marker。首次接管会按 Compose service label 记录并停止旧 `kith-inn` runtime；旧 v1 快照即使只有 BE 也可识别。候选失败时用记录的容器 ID 恢复接管前 runtime；数据库只通过发布前恢复点人工恢复，不自动回滚。
 
 ECS 的 Nginx/证书需一次性配置：`deploy/nginx.example.conf` 已包含 `v1.codeforpeople.cn` 到 `127.0.0.1:3311` 的反代示例，只公开 80/443；先验证 DNS、完整证书链和 `nginx -t`，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
 
@@ -43,4 +43,4 @@ OpenID 是 AppID 作用域内标识，不是微信号、手机号或登录密码
 - 使用 v1 AppID 和小程序代码上传私钥，经已校验的固定出口上传体验版；
 - 上传后在微信公众平台选为体验版，由三名体验成员在开启域名校验的真机上验收商家登录、分享 batch、两名顾客分别登录和下单隔离。
 
-在取得明确外发授权前，不 push、不开 PR、不运行生产 workflow，也不上传微信体验版。
+真实运行生产 workflow 或上传微信体验版前，必须另行取得明确外发授权。
