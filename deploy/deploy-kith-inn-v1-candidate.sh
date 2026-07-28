@@ -14,8 +14,8 @@ smoke_bin="${SMOKE_BIN:-$project_dir/smoke-kith-inn-v1.sh}"
 curl_bin="${CURL_BIN:-curl}"
 release_sha="${RELEASE_SHA:-}"
 action="${1:-deploy}"
-runtime=(kith-inn-v1-be)
-all_services=(kith-inn-v1-cms-provision "${runtime[@]}")
+runtime=(kith-inn-v1-cms kith-inn-v1-be)
+all_services=(kith-inn-v1-cms-migrate kith-inn-v1-cms-provision "${runtime[@]}")
 
 fail() { printf '{"status":"failed","stage":"%s","recovery":"%s"}\n' "$1" "$2" >&2; exit 1; }
 value() {
@@ -72,7 +72,7 @@ prune_unused_v1_images() {
     for item in "$@"; do [[ "$item" == "$needle" ]] && return 0; done
     return 1
   }
-  for image in KITH_INN_V1_CMS_OPS_IMAGE KITH_INN_V1_BE_IMAGE; do
+  for image in KITH_INN_V1_CMS_IMAGE KITH_INN_V1_CMS_OPS_IMAGE KITH_INN_V1_BE_IMAGE; do
     ref="$(value "$next_env" "$image")"
     [[ -z "$ref" ]] || preserve_images+=("$ref")
     if [[ -n "$current_release" ]]; then
@@ -113,8 +113,12 @@ command -v "$curl_bin" >/dev/null || fail preflight no_change
 if [[ "$action" == "preflight" ]]; then
   candidate_valid || fail preflight no_change
   [[ -z "$current_release" ]] || current_valid || fail preflight no_change
-  token="$(value "$next_env" KITH_INN_V1_INTERNAL_TOKEN)"
-  "$curl_bin" -fsS --max-time 15 -H "x-internal-token: $token" http://127.0.0.1:3304/api/ready >/dev/null || fail shared_cms no_change
+  if [[ -n "$current_release" ]]; then
+    smoke "$current_compose" "$current_env" "$(value "$current_env" KITH_INN_V1_RELEASE_SHA)" >/dev/null 2>&1 ||
+      fail current_runtime no_change
+  fi
+  "$compose_bin" network inspect kith-inn-shared >/dev/null 2>&1 ||
+    "$compose_bin" network create kith-inn-shared >/dev/null 2>&1 || fail shared_network no_change
   prune_unused_v1_images
   compose "$next_compose" "$next_env" pull "${all_services[@]}" >/dev/null 2>&1 || fail preflight no_change
   echo '{"status":"candidate_ready"}'
@@ -153,6 +157,7 @@ interrupted() { trap - TERM INT HUP; recover interrupted; }
 trap interrupted TERM INT HUP
 [[ -z "$current_release" || -f "$gate_marker" ]] || fail write_gate no_change
 
+compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-migrate >/dev/null 2>&1 || recover migration
 provision_output="$(compose "$next_compose" "$next_env" run --rm --no-deps kith-inn-v1-cms-provision 2>&1)" || recover provision
 seller_id="$(tail -n 1 <<<"$provision_output" | jq -er 'select(.project == "kiv1") | .sellerId | tostring')" || recover provision
 

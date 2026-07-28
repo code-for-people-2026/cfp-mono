@@ -63,6 +63,10 @@ head="$(synthetic_commit apps/kith-inn-v1-be/.production-target-test 'test: kith
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-range"
 assert_output "$tmp/kith-v1-range" false false true
 base="$head"
+head="$(synthetic_commit apps/cms/.production-target-test 'test: shared cms range')"
+run_selector "$worktree" push "" "$base" "$head" "$tmp/cms-range"
+assert_output "$tmp/cms-range" false false true
+base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-deploy-range"
 assert_output "$tmp/website-deploy-range" true false false
@@ -152,9 +156,9 @@ grep -q 'KITH_INN_V1_INTERNAL_TOKEN' <<<"$kith_job"
 grep -q 'KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN' <<<"$kith_job"
 grep -q '^    name: kith-inn-shared$' "$shared_compose"
 grep -q 'aliases: \[kith-inn-cms\]' "$shared_compose"
-! grep -q '^  kith-inn-v1-cms:$' "$v1_compose"
-! grep -q 'kith-inn-v1-cms-migrate' "$v1_compose"
-! grep -q 'kith-inn-v1-cms-migrate' "$root/deploy/deploy-kith-inn-v1-candidate.sh"
+grep -q '^  kith-inn-v1-cms:$' "$v1_compose"
+grep -q 'kith-inn-v1-cms-migrate' "$v1_compose"
+grep -q 'run --rm --no-deps kith-inn-v1-cms-migrate' "$root/deploy/deploy-kith-inn-v1-candidate.sh"
 grep -q 'CMS_BASE_URL: http://kith-inn-cms:3304' "$v1_compose"
 grep -A3 '^  kith-inn-v1-be:$' "$v1_compose" | grep -q 'read_only: true'
 grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
@@ -162,14 +166,16 @@ grep -q '^  workflow_call:' "$v1_workflow"
 ! grep -q '^  push:' "$v1_workflow"
 ! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
 v1_call_job="$(sed -n '/^  deploy_kith_inn_v1:/,$p' "$workflow")"
-grep -q 'needs: \[affected, prepare_kith_inn\]' <<<"$v1_call_job"
+grep -q 'needs: \[affected\]' <<<"$v1_call_job"
+! grep -q 'needs.prepare_kith_inn' <<<"$v1_call_job"
 grep -q "needs.affected.outputs.kith_inn_v1 == 'true'" <<<"$v1_call_job"
-grep -q "needs.prepare_kith_inn.result == 'success'" <<<"$v1_call_job"
 grep -q 'uses: ./.github/workflows/deploy-kith-inn-v1-production.yml' <<<"$v1_call_job"
 grep -q 'secrets: inherit' <<<"$v1_call_job"
 grep -q 'docker build --target jobs' "$v1_workflow"
+grep -q 'apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_IMAGE"' "$v1_workflow"
 grep -q 'apps/kith-inn-v1-be/Dockerfile' "$v1_workflow"
-! grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
+grep -q 'KITH_INN_V1_CMS_IMAGE' "$v1_workflow"
+grep -A16 'server_name v1.codeforpeople.cn;' "$root/deploy/nginx.example.conf" | grep -q 'proxy_pass http://127.0.0.1:3311;'
 
 required=(
   ALIYUN_ACR_REGISTRY ALIYUN_ACR_NAMESPACE ALIYUN_ACR_USERNAME ALIYUN_ACR_PASSWORD
