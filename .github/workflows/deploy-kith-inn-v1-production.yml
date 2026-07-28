@@ -39,9 +39,24 @@ jobs:
           DEPLOY_BASE: ${{ github.event.before }}
         run: bash deploy/resolve-kith-inn-v1-production-target.sh
 
-  deploy:
+  # 两套生产 workflow 保持独立触发，但共享同一个 RDS 实例。用全局递增的 run ID
+  # 让较新的 run 等待较旧的另一套 workflow，避免 gate/backup/migration/rollout 重叠，
+  # 同时不使用会自动淘汰旧 pending run 的共享 concurrency group。
+  serialize_shared_rds:
     needs: affected
     if: needs.affected.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for older website production run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash deploy/wait-for-older-production-run.sh deploy-production.yml
+
+  deploy:
+    needs: [affected, serialize_shared_rds]
+    if: needs.affected.outputs.deploy == 'true' && needs.serialize_shared_rds.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: Production
@@ -99,6 +114,7 @@ jobs:
         if: steps.check.outputs.configured == 'true'
         run: |
           bash -n deploy/*kith-inn-v1*.sh deploy/tests/*kith-v1*.sh deploy/tests/deploy-kith-inn-v1-candidate.test.sh
+          bash deploy/tests/wait-for-older-production-run.test.sh
           bash deploy/tests/deploy-kith-inn-v1-candidate.test.sh
           bash deploy/tests/push-kith-inn-v1-images.test.sh
           bash deploy/tests/write-kith-inn-v1-compose-env.test.sh
