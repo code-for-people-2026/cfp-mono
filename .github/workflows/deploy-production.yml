@@ -40,9 +40,23 @@ jobs:
           DEPLOY_BASE: ${{ github.event.before }}
         run: bash deploy/resolve-production-targets.sh
 
-  prepare:
+  # website、旧 kith-inn 与 kith-inn-v1 的触发范围相互独立，但生产数据位于同一个
+  # RDS 实例。较新的 run 在任何 gate/backup/migration/rollout 前等待较旧的 v1 run。
+  serialize_shared_rds:
     needs: affected
-    if: needs.affected.outputs.website == 'true'
+    if: needs.affected.outputs.website == 'true' || needs.affected.outputs.kith_inn == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait for older kith-inn-v1 production run
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash deploy/wait-for-older-production-run.sh deploy-kith-inn-v1-production.yml
+
+  prepare:
+    needs: [affected, serialize_shared_rds]
+    if: needs.affected.outputs.website == 'true' && needs.serialize_shared_rds.result == 'success'
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -72,8 +86,8 @@ jobs:
         run: bash deploy/check-website-production-config.sh
 
   prepare_kith_inn:
-    needs: affected
-    if: needs.affected.outputs.kith_inn == 'true'
+    needs: [affected, serialize_shared_rds]
+    if: needs.affected.outputs.kith_inn == 'true' && needs.serialize_shared_rds.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: Production
@@ -317,9 +331,10 @@ jobs:
         run: rm -f ~/.ssh/cfp-ecs ~/.ssh/known_hosts .env.kith-inn.remote
 
   deploy:
-    needs: [affected, prepare, prepare_kith_inn]
+    needs: [affected, serialize_shared_rds, prepare, prepare_kith_inn]
     if: >-
       always() && needs.affected.result == 'success' && needs.prepare.result == 'success' &&
+      needs.serialize_shared_rds.result == 'success' &&
       (needs.prepare_kith_inn.result == 'success' || needs.prepare_kith_inn.result == 'skipped') &&
       needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
