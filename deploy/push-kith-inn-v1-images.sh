@@ -5,6 +5,7 @@ release_sha="${RELEASE_SHA:-}"
 github_output="${GITHUB_OUTPUT:-}"
 docker_bin="${DOCKER_BIN:-docker}"
 images=(
+  "cms_digest:${KITH_INN_V1_CMS_IMAGE:-}"
   "cms_ops_digest:${KITH_INN_V1_CMS_OPS_IMAGE:-}"
   "be_digest:${KITH_INN_V1_BE_IMAGE:-}"
 )
@@ -27,4 +28,4 @@ for entry in "${images[@]}"; do
   [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail "$key registry digest is missing or ambiguous"
   echo "$key=$digest" >>"$github_output"
 done
-echo "pushed two immutable kith-inn-v1 image digests"
+echo "pushed three immutable kith-inn-v1 image digests"

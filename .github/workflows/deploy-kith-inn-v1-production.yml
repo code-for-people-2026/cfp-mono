@@ -14,6 +14,7 @@ jobs:
     environment: Production
     env:
       RELEASE_SHA: ${{ github.sha }}
+      KITH_INN_V1_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms:${{ github.sha }}
       KITH_INN_V1_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms-ops:${{ github.sha }}
       KITH_INN_V1_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-be:${{ github.sha }}
     steps:
@@ -64,10 +65,12 @@ jobs:
         run: |
           bash -n deploy/*kith-inn-v1*.sh deploy/tests/*kith-v1*.sh deploy/tests/deploy-kith-inn-v1-candidate.test.sh
           bash deploy/tests/deploy-kith-inn-v1-candidate.test.sh
+          bash deploy/tests/push-kith-inn-v1-images.test.sh
 
-      - name: Build and verify CMS ops and v1 BE images
+      - name: Build and verify shared CMS, CMS ops and v1 BE images
         if: steps.check.outputs.configured == 'true'
         run: |
+          docker build --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_IMAGE" .
           docker build --target jobs --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_OPS_IMAGE" .
           docker build --build-arg RELEASE_SHA="$RELEASE_SHA" -f apps/kith-inn-v1-be/Dockerfile -t "$KITH_INN_V1_BE_IMAGE" .
           bash deploy/verify-kith-inn-v1-images.sh
@@ -102,6 +105,7 @@ jobs:
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ALIYUN_ACR_PASSWORD }}
           KITH_INN_V1_RELEASE_SHA: ${{ github.sha }}
+          KITH_INN_V1_CMS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms@${{ steps.push.outputs.cms_digest }}
           KITH_INN_V1_CMS_OPS_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-cms-ops@${{ steps.push.outputs.cms_ops_digest }}
           KITH_INN_V1_BE_IMAGE: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/kith-inn-v1-be@${{ steps.push.outputs.be_digest }}
           PAYLOAD_DATABASE_URL: ${{ secrets.DATABASE_URL }}

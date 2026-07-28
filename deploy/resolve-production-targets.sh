@@ -83,7 +83,6 @@ turbo_has_tasks() {
 
 website_affected="$(turbo_has_tasks "@cfp/website...[$base]")"
 kith_inn_affected="$(turbo_has_tasks \
-  "@cfp/cms...[$base]" \
   "@cfp/kith-inn-be...[$base]" \
   "@cfp/kith-inn-fe...[$base]")"
 kith_inn_v1_affected="$(turbo_has_tasks \

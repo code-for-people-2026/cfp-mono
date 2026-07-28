@@ -4,13 +4,13 @@
 
 ## 当前结论
 
-- `kith-inn` 与 `kith-inn-v1` 共用唯一的 `apps/cms` 常驻进程；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。v1 不启动第二个 Payload/Next 进程。
-- 现有 `Deploy Production` 在同一个 `production` 发布锁内先更新共享 CMS，并将它加入 `kith-inn-shared` Docker network，再调用 v1 workflow；v1 只构建 CMS provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
+- `kith-inn` 与 `kith-inn-v1` 共用唯一的 `apps/cms` 常驻进程；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。当前只发布 v1，因此由 v1 workflow 部署这一个共享 CMS，不要求旧版 `kith-inn` 先部署，也不会再启动第二个 Payload/Next 进程。
+- `Deploy Production` 在同一个 `production` 发布锁内调用 v1 workflow；v1 构建共享 CMS runtime、CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
 - v1 领域模型支持多个 seller；当前产品入口只自动 provision 一个“桃子”seller 和一个 operator，尚无自助开店或运营后台。
 
 ## ECS 自动部署
 
-相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 选择 v1 目标，并在共享 CMS 发布成功后调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时所有外部发布步骤都会跳过，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
+相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 选择 v1 目标并直接调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁。`apps/cms` 变更只选择 v1，不会要求旧版 `kith-inn` 的配置或触发其部署。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时所有外部发布步骤都会跳过，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
 
 Production Environment 需配置：
 
@@ -19,11 +19,9 @@ Production Environment 需配置：
 - 仅轮换 v1 JWT/internal token 时，额外暂存旧值到成对的 KITH_INN_V1_PREVIOUS_JWT_SECRET、KITH_INN_V1_PREVIOUS_INTERNAL_TOKEN。先发布“新值为 primary、旧值为 previous”，等共享 CMS 与 v1 BE 都切到新值后，下一次发布清空 previous。两项必须同时设置或同时清空；不得在日志或 PR 中记录值。
 - Variables：ALIYUN_REGION_ID、ALIYUN_RDS_INSTANCE_ID、KITH_INN_V1_BE_BASE_URL；BE URL 必须是无 path 的真实 HTTPS origin。
 
-共享 schema migration 只有现有 `Deploy Production` workflow 可以执行；它负责统一停写、备份和更新共享 CMS。v1 workflow 不重复运行全局 migration。
+v1 发布顺序固定为：构建共享 CMS runtime、CMS ops 与 v1 BE 三个镜像 → 推送并固定 digest → ECS 候选 preflight → 停止旧共享 CMS 与 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 执行 schema migration → 事务化幂等 provision → 同时等待共享 CMS 与 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA，并由 BE `/ready` 从容器网络验证共享 CMS/service auth）→ 原子提升 current release → 仅保留 current/previous 敏感快照 → 上传同 SHA smoke marker。候选失败时恢复上一版共享 CMS 与 v1 BE runtime；数据库只通过发布前恢复点人工恢复，不自动回滚。
 
-v1 发布顺序固定为：同一生产 workflow 内等待共享 CMS job 成功 → 构建 CMS ops 与 v1 BE 两个镜像 → 推送并固定 digest → 验证共享 CMS `127.0.0.1:3304` readiness → ECS 候选 preflight → 停止旧 v1 BE 写入口 → 创建并验证 RDS 恢复点 → 事务化幂等 provision → 等待 v1 BE healthcheck → loopback 与真实 HTTPS 只读 smoke（精确核对 release SHA，并由 BE `/ready` 从容器网络验证共享 CMS/service auth）→ 原子提升 current release → 仅保留 current/previous 敏感快照 → 上传同 SHA smoke marker。共享 CMS 不随 v1 候选停止或恢复；失败只恢复 v1 BE runtime，不自动回滚数据库。
-
-ECS 的 Nginx/证书需人工一次性配置：将 KITH_INN_V1_BE_BASE_URL 对应 host 的 443 反代到 127.0.0.1:3311，只公开 80/443；先验证 DNS、完整证书链和 nginx -t，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
+ECS 的 Nginx/证书需一次性配置：`deploy/nginx.example.conf` 已包含 `v1.codeforpeople.cn` 到 `127.0.0.1:3311` 的反代示例，只公开 80/443；先验证 DNS、完整证书链和 `nginx -t`，再 reload。该 HTTPS host 还要加入微信小程序的 request 合法域名。
 
 ## 三个微信测试账号
 
@@ -38,7 +36,7 @@ OpenID 是 AppID 作用域内标识，不是微信号、手机号或登录密码
 
 ## 体验版准备
 
-后续独立切片要把现有 release-kith-inn-weapp.yml 从旧 @cfp/kith-inn-fe 改为 v1：
+后续独立切片要把现有 `release-kith-inn-weapp.yml` 从旧 `@cfp/kith-inn-fe` 改为 v1：
 
 - checkout 已在 main 且有 kith-inn-v1-smoke-passed-<SHA> 的完整 SHA；
 - 用同一 KITH_INN_V1_BE_BASE_URL 构建 @cfp/kith-inn-v1-fe，生产构建禁止 customer dev OpenID；
