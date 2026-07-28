@@ -31,17 +31,12 @@ run_selector() {
     bash "$selector"
 }
 
-run_v1_selector() {
-  local repo="$1" event="$2" base="$3" head="$4" output="$5"
+assert_v1_target() {
+  local repo="$1" base="$2" head="$3" expected="$4" output="$5"
   : > "$output"
-  GITHUB_EVENT_NAME="$event" DEPLOY_BASE="$base" GITHUB_SHA="$head" \
-    GITHUB_OUTPUT="$output" REPOSITORY_DIR="$repo" TURBO_BIN="$root/node_modules/.bin/turbo" \
-    bash "$v1_selector"
-}
-
-assert_v1_output() {
-  local file="$1" expected="$2"
-  grep -qx "deploy=$expected" "$file"
+  GITHUB_EVENT_NAME=push DEPLOY_BASE="$base" GITHUB_SHA="$head" \
+    GITHUB_OUTPUT="$output" REPOSITORY_DIR="$repo" TURBO_BIN="$root/node_modules/.bin/turbo" bash "$v1_selector"
+  grep -qx "deploy=$expected" "$output"
 }
 
 synthetic_commit() {
@@ -53,9 +48,7 @@ synthetic_commit() {
   git -C "$worktree" rev-parse HEAD
 }
 
-if run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual" 2>/dev/null; then
-  echo "生产 selector 必须拒绝非 push 事件" >&2; exit 1
-fi
+run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse HEAD)" "$tmp/manual"; assert_output "$tmp/manual" true false false
 
 run_selector "$root" push "" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
 assert_output "$tmp/missing-base" true false false
@@ -67,8 +60,7 @@ base="$(git -C "$worktree" rev-parse HEAD)"
 head="$(synthetic_commit apps/website/.production-target-test 'test: website range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-range"
 assert_output "$tmp/website-range" true false false
-run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-website-range"
-assert_v1_output "$tmp/v1-website-range" false
+assert_v1_target "$worktree" "$base" "$head" false "$tmp/v1-website-range"
 base="$head"
 head="$(synthetic_commit apps/kith-inn-be/.production-target-test 'test: kith range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-range"
@@ -77,14 +69,12 @@ base="$head"
 head="$(synthetic_commit apps/kith-inn-v1-be/.production-target-test 'test: kith v1 range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-range"
 assert_output "$tmp/kith-v1-range" false false false
-run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-kith-v1-range"
-assert_v1_output "$tmp/v1-kith-v1-range" true
+assert_v1_target "$worktree" "$base" "$head" true "$tmp/v1-kith-v1-range"
 base="$head"
 head="$(synthetic_commit apps/cms/.production-target-test 'test: shared cms range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/cms-range"
 assert_output "$tmp/cms-range" false false false
-run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-cms-range"
-assert_v1_output "$tmp/v1-cms-range" true
+assert_v1_target "$worktree" "$base" "$head" true "$tmp/v1-cms-range"
 base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-deploy-range"
@@ -97,8 +87,6 @@ base="$head"
 head="$(synthetic_commit deploy/kith-inn-v1-candidate.fixture 'test: kith v1 deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-deploy-range"
 assert_output "$tmp/kith-v1-deploy-range" false false false
-run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-kith-v1-deploy-range"
-assert_v1_output "$tmp/v1-kith-v1-deploy-range" true
 base="$head"
 head="$(synthetic_commit deploy/create-rds-backup.sh 'test: shared backup contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-backup-range"
@@ -128,7 +116,8 @@ worktree=""
 
 deploy_job="$(sed -n '/^  deploy:/,$p' "$workflow")"
 website_prepare_job="$(sed -n '/^  prepare:/,/^  prepare_kith_inn:/p' "$workflow")"
-! grep -q 'workflow_dispatch' "$workflow"
+grep -q '^  workflow_dispatch:' "$workflow"
+grep -q 'group: production-website' "$workflow"
 grep -q '^permissions:' "$workflow"
 grep -q 'actions: read' "$workflow"
 ! grep -q 'StrictHostKeyChecking=no' "$workflow"
@@ -186,7 +175,7 @@ grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
 grep -q '^  push:' "$v1_workflow"
 grep -q '^  workflow_dispatch:' "$v1_workflow"
 ! grep -q '^  workflow_call:' "$v1_workflow"
-grep -q 'group: production' "$v1_workflow"
+grep -q 'group: production-kith-inn-v1' "$v1_workflow"
 grep -q 'resolve-kith-inn-v1-production-target.sh' "$v1_workflow"
 grep -q '^    needs: affected$' "$v1_workflow"
 ! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"

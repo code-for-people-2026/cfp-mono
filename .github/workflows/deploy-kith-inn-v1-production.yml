@@ -10,8 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  # 与 website 共享的只是 ECS/RDS 高风险操作锁；两个 workflow 不互相触发部署。
-  group: production
+  group: production-kith-inn-v1
   cancel-in-progress: false
 
 jobs:
