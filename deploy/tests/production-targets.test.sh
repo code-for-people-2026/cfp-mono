@@ -3,6 +3,7 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 selector="$root/deploy/resolve-production-targets.sh"
+v1_selector="$root/deploy/resolve-kith-inn-v1-production-target.sh"
 config_check="$root/deploy/check-kith-inn-production-config.sh"
 v1_config_check="$root/deploy/check-kith-inn-v1-production-config.sh"
 website_config_check="$root/deploy/check-website-production-config.sh"
@@ -30,6 +31,19 @@ run_selector() {
     bash "$selector"
 }
 
+run_v1_selector() {
+  local repo="$1" event="$2" base="$3" head="$4" output="$5"
+  : > "$output"
+  GITHUB_EVENT_NAME="$event" DEPLOY_BASE="$base" GITHUB_SHA="$head" \
+    GITHUB_OUTPUT="$output" REPOSITORY_DIR="$repo" TURBO_BIN="$root/node_modules/.bin/turbo" \
+    bash "$v1_selector"
+}
+
+assert_v1_output() {
+  local file="$1" expected="$2"
+  grep -qx "deploy=$expected" "$file"
+}
+
 synthetic_commit() {
   local path="$1" message="$2"
   printf 'production target fixture\n' > "$worktree/$path"
@@ -44,16 +58,17 @@ if run_selector "$root" workflow_dispatch website "" "$(git -C "$root" rev-parse
 fi
 
 run_selector "$root" push "" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
-assert_output "$tmp/missing-base" true false true
+assert_output "$tmp/missing-base" true false false
 run_selector "$root" push "" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef "$(git -C "$root" rev-parse HEAD)" "$tmp/unknown-base"
-assert_output "$tmp/unknown-base" true false true
-
+assert_output "$tmp/unknown-base" true false false
 worktree="$tmp/worktree"
 git -C "$root" worktree add --detach "$worktree" HEAD >/dev/null
 base="$(git -C "$worktree" rev-parse HEAD)"
 head="$(synthetic_commit apps/website/.production-target-test 'test: website range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-range"
 assert_output "$tmp/website-range" true false false
+run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-website-range"
+assert_v1_output "$tmp/v1-website-range" false
 base="$head"
 head="$(synthetic_commit apps/kith-inn-be/.production-target-test 'test: kith range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-range"
@@ -61,11 +76,15 @@ assert_output "$tmp/kith-range" false false false
 base="$head"
 head="$(synthetic_commit apps/kith-inn-v1-be/.production-target-test 'test: kith v1 range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-range"
-assert_output "$tmp/kith-v1-range" false false true
+assert_output "$tmp/kith-v1-range" false false false
+run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-kith-v1-range"
+assert_v1_output "$tmp/v1-kith-v1-range" true
 base="$head"
 head="$(synthetic_commit apps/cms/.production-target-test 'test: shared cms range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/cms-range"
-assert_output "$tmp/cms-range" false false true
+assert_output "$tmp/cms-range" false false false
+run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-cms-range"
+assert_v1_output "$tmp/v1-cms-range" true
 base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/website-deploy-range"
@@ -77,15 +96,17 @@ assert_output "$tmp/kith-deploy-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/kith-inn-v1-candidate.fixture 'test: kith v1 deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/kith-v1-deploy-range"
-assert_output "$tmp/kith-v1-deploy-range" false false true
+assert_output "$tmp/kith-v1-deploy-range" false false false
+run_v1_selector "$worktree" push "$base" "$head" "$tmp/v1-kith-v1-deploy-range"
+assert_v1_output "$tmp/v1-kith-v1-deploy-range" true
 base="$head"
 head="$(synthetic_commit deploy/create-rds-backup.sh 'test: shared backup contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-backup-range"
-assert_output "$tmp/shared-backup-range" true false true
+assert_output "$tmp/shared-backup-range" true false false
 base="$head"
 head="$(synthetic_commit deploy/smoke-test.sh 'test: shared deploy contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-contract-range"
-assert_output "$tmp/shared-contract-range" true false true
+assert_output "$tmp/shared-contract-range" true false false
 base="$head"
 head="$(synthetic_commit deploy/nginx.example.conf 'test: external ingress contract range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/ingress-contract-range"
@@ -101,7 +122,7 @@ assert_output "$tmp/deploy-test-range" false false false
 base="$head"
 head="$(synthetic_commit deploy/.production-target-test 'test: unknown deploy range')"
 run_selector "$worktree" push "" "$base" "$head" "$tmp/shared-range"
-assert_output "$tmp/shared-range" true false true
+assert_output "$tmp/shared-range" true false false
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""
 
@@ -162,16 +183,15 @@ grep -q 'run --rm --no-deps kith-inn-v1-cms-migrate' "$root/deploy/deploy-kith-i
 grep -q 'CMS_BASE_URL: http://kith-inn-cms:3304' "$v1_compose"
 grep -A3 '^  kith-inn-v1-be:$' "$v1_compose" | grep -q 'read_only: true'
 grep -A3 '^  kith-inn-shared:$' "$v1_compose" | grep -q 'external: true'
-grep -q '^  workflow_call:' "$v1_workflow"
-! grep -q '^  push:' "$v1_workflow"
+grep -q '^  push:' "$v1_workflow"
+grep -q '^  workflow_dispatch:' "$v1_workflow"
+! grep -q '^  workflow_call:' "$v1_workflow"
+grep -q 'group: production' "$v1_workflow"
+grep -q 'resolve-kith-inn-v1-production-target.sh' "$v1_workflow"
+grep -q '^    needs: affected$' "$v1_workflow"
 ! grep -q 'Wait for the shared CMS production rollout' "$v1_workflow"
-v1_call_job="$(sed -n '/^  deploy_kith_inn_v1:/,$p' "$workflow")"
-grep -q 'needs: \[affected, deploy\]' <<<"$v1_call_job"
-! grep -q 'needs.prepare_kith_inn' <<<"$v1_call_job"
-grep -q "needs.deploy.result == 'success'" <<<"$v1_call_job"
-grep -q "needs.affected.outputs.kith_inn_v1 == 'true'" <<<"$v1_call_job"
-grep -q 'uses: ./.github/workflows/deploy-kith-inn-v1-production.yml' <<<"$v1_call_job"
-grep -q 'secrets: inherit' <<<"$v1_call_job"
+! grep -q '^  deploy_kith_inn_v1:' "$workflow"
+! grep -q 'deploy-kith-inn-v1-production.yml' "$workflow"
 grep -q 'docker build --target jobs' "$v1_workflow"
 grep -q 'apps/cms/Dockerfile -t "$KITH_INN_V1_CMS_IMAGE"' "$v1_workflow"
 grep -q 'apps/kith-inn-v1-be/Dockerfile' "$v1_workflow"

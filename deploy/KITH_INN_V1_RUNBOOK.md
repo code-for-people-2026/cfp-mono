@@ -4,13 +4,13 @@
 
 ## 当前结论
 
-- `kith-inn` 与 `kith-inn-v1` 共用唯一的 `apps/cms` 常驻进程；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。当前只发布 v1，因此由 v1 workflow 部署这一个共享 CMS，不要求旧版 `kith-inn` 先部署，也不会再启动第二个 Payload/Next 进程。
-- `Deploy Production` 在同一个 `production` 发布锁内调用 v1 workflow；旧版 `kith-inn` production target 已关闭，旧 BE/FE 或全仓依赖变更都不会再启动第二个 CMS。v1 构建共享 CMS runtime、CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
+- website 的 CMS 内建于 `apps/website`（生产端口 3302、Postgres schema `website`），不属于本发布链。`kith-inn` 与 `kith-inn-v1` 另行共用唯一的 `apps/cms` 常驻进程（生产端口 3304、schema `cms`）；该 CMS 已包含 `kiv1_*` collections、迁移、内部 API 和 v1 身份校验。当前只发布 v1，因此由 v1 workflow 部署这一个 kith CMS，不要求旧版 `kith-inn` 先部署。
+- `Deploy kith-inn-v1 Production` 是独立 workflow；website workflow 不调用、不等待 v1，website-only 变更不会部署 v1，v1/CMS-only 变更也不会部署 website。两者只复用同名 `production` concurrency 锁，防止同一 ECS/RDS 上的高风险操作并发。旧版 `kith-inn` production target 已关闭，旧 BE/FE 变更不会再启动第二个 CMS。v1 构建共享 CMS runtime、CMS migration/provision job 和 v1 BE。截至本次审计，历史 Actions 没有 v1 BE smoke artifact；因此只能确认“当前 CI 未部署 v1”，不能据此排除人工部署。
 - v1 领域模型支持多个 seller；当前产品入口只自动 provision 一个“桃子”seller 和一个 operator，尚无自助开店或运营后台。
 
 ## ECS 自动部署
 
-相关代码合入 main 后，`.github/workflows/deploy-production.yml` 的 target resolver 只选择 website 与 v1 生产目标，并调用 `.github/workflows/deploy-kith-inn-v1-production.yml`；两者属于同一次 workflow run 和同一个 `production` 并发锁，同时选择时先完成 website，再开始 v1，禁止并发创建同一 RDS 的物理恢复点。旧版 `kith_inn` 输出固定为 `false`，不要求其微信或部署配置。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
+相关代码合入 main 后，`.github/workflows/deploy-kith-inn-v1-production.yml` 独立监听 push，并由 `deploy/resolve-kith-inn-v1-production-target.sh` 只判断共享 kith CMS、v1 BE、它们的 workspace 依赖和 v1 部署契约；也可通过 `workflow_dispatch` 显式重发。`.github/workflows/deploy-production.yml` 只负责 website 和已关闭的旧版 target，不再调用 v1。两个 workflow 共享 `production` 并发锁以串行化同一 ECS/RDS 的发布，但一个项目的变更不会触发另一个项目的部署。旧版 `kith_inn` 输出固定为 `false`，不要求其微信或部署配置。v1 workflow 还会等待同 SHA 的 `ci.yml`。缺任一 v1 配置时发布失败关闭，且不会产生 smoke marker；这不算一次已验证发布，必须补齐配置后重新触发。
 
 Production Environment 需配置：
 
