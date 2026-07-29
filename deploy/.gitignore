@@ -1,2 +1,2 @@
-.env.verify
-.env.website.verify
+.env*
+!.env*.example

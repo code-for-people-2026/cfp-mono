@@ -1,11 +1,14 @@
-name: Deploy Production
+name: Deploy Website Production
 
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      release_sha:
+        description: Immutable commit SHA to build and deploy
+        required: true
+        type: string
 
 permissions:
-  actions: read
   contents: read
 
 concurrency:
@@ -13,34 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  affected:
-    runs-on: ubuntu-latest
-    outputs:
-      website: ${{ steps.check.outputs.website }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-        if: github.event_name == 'push'
-        with:
-          version: 10.2.0
-
-      - uses: actions/setup-node@v4
-        if: github.event_name == 'push'
-        with:
-          node-version: 22
-
-      - id: check
-        name: Check affected deploy targets
-        env:
-          DEPLOY_BASE: ${{ github.event.before }}
-        run: bash deploy/resolve-production-targets.sh
-
   prepare:
-    needs: affected
-    if: needs.affected.outputs.website == 'true'
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -70,35 +46,16 @@ jobs:
         run: bash deploy/check-website-production-config.sh
 
   deploy:
-    needs: [affected, prepare]
-    if: >-
-      needs.affected.outputs.website == 'true' && needs.prepare.outputs.configured == 'true'
+    needs: prepare
+    if: needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
     environment: Production
     env:
-      RELEASE_SHA: ${{ github.sha }}
-      WEBSITE_IMAGE_TAG: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ github.sha }}
+      RELEASE_SHA: ${{ inputs.release_sha }}
+      WEBSITE_IMAGE_TAG: ${{ secrets.ALIYUN_ACR_REGISTRY }}/${{ secrets.ALIYUN_ACR_NAMESPACE }}/cfp-website:${{ inputs.release_sha }}
     steps:
       - uses: actions/checkout@v4
-
-      # 先等 ci.yml 的 verify 通过再 build/部署。merge 路径已由 branch protection 的
-      # required check 把关；这里再等 main push 的 CI 结论，避免绕过 PR 的直推提交提前发布。
-      # 不在 host 重跑测试，只等 CI 结论，所以不重新占磁盘。
-      - name: Wait for CI (verify) to pass
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          SHA="${{ github.sha }}"
-          RUN_ID=$(gh run list --workflow=ci.yml --commit="$SHA" --limit=1 --json databaseId -q '.[0].databaseId' 2>/dev/null || true)
-          if [ -z "$RUN_ID" ]; then
-            echo "No ci.yml run found for $SHA — aborting deploy (CI must pass first)."
-            exit 1
-          fi
-          echo "Waiting for ci.yml run #$RUN_ID (commit $SHA) to finish..."
-          gh run watch "$RUN_ID" --exit-status
-          echo "CI passed, proceeding to build & deploy."
 
       # deploy job 只负责「build 镜像 + 发货」:不在 host 装 node_modules、不跑测试。
       # 测试由 ci.yml 在 PR/push 时守,这里再跑 pnpm verify 只会让 host 与 docker 各占一份
