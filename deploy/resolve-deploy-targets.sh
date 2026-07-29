@@ -40,7 +40,7 @@ printf '%s\n' "$changed_files"
 website_deploy=false
 while IFS= read -r path; do
   case "$path" in
-    .github/workflows/ci.yml | .github/workflows/deploy-preview.yml | \
+    .dockerignore | .github/workflows/ci.yml | .github/workflows/deploy-preview.yml | \
       .github/workflows/deploy-production.yml | package.json | pnpm-lock.yaml | \
       pnpm-workspace.yaml | turbo.json)
       write_targets true

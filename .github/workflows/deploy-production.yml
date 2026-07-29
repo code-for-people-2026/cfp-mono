@@ -45,6 +45,8 @@ jobs:
         run: |
           set -euo pipefail
           main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          git fetch --no-tags origin "$main_sha"
+          git cat-file -e "$main_sha^{commit}"
           if [[ "$RELEASE_SHA" == "$main_sha" ]]; then
             echo 'should_deploy=true' >> "$GITHUB_OUTPUT"
             exit 0

@@ -63,6 +63,11 @@ run_selector "$worktree" "$base" "$head" "$tmp/unrelated-range"
 assert_output "$tmp/unrelated-range" false
 
 base="$head"
+head="$(synthetic_commit .dockerignore 'test: docker context range')"
+run_selector "$worktree" "$base" "$head" "$tmp/docker-context-range"
+assert_output "$tmp/docker-context-range" true
+
+base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
 run_selector "$worktree" "$base" "$head" "$tmp/website-deploy-range"
 assert_output "$tmp/website-deploy-range" true
@@ -89,6 +94,8 @@ grep -q '^permissions:' "$workflow"
 ! grep -q 'StrictHostKeyChecking=no' "$workflow"
 grep -q 'group: production-website' "$workflow"
 grep -q 'git/ref/heads/main' <<<"$current_job"
+grep -Fq 'git fetch --no-tags origin "$main_sha"' <<<"$current_job"
+grep -Fq 'git cat-file -e "$main_sha^{commit}"' <<<"$current_job"
 grep -q 'resolve-deploy-targets.sh' <<<"$current_job"
 grep -q 'DEPLOY_BASE="$RELEASE_SHA" DEPLOY_HEAD="$main_sha"' <<<"$current_job"
 grep -q "should_deploy=false" <<<"$current_job"
