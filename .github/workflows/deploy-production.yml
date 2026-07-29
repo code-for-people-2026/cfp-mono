@@ -16,7 +16,59 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  current:
+    runs-on: ubuntu-latest
+    outputs:
+      should_deploy: ${{ steps.release.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.release_sha }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - id: release
+        name: Reject a superseded website release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ inputs.release_sha }}
+        run: |
+          set -euo pipefail
+          main_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq '.object.sha')"
+          if [[ "$RELEASE_SHA" == "$main_sha" ]]; then
+            echo 'should_deploy=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          targets_output="$(mktemp)"
+          trap 'rm -f "$targets_output"' EXIT
+          GITHUB_OUTPUT="$targets_output" DEPLOY_BASE="$RELEASE_SHA" DEPLOY_HEAD="$main_sha" \
+            bash deploy/resolve-deploy-targets.sh
+
+          if grep -qx 'website=true' "$targets_output"; then
+            echo 'should_deploy=false' >> "$GITHUB_OUTPUT"
+            printf 'Skipping website release `%s`; current main `%s` contains newer website changes.\n' \
+              "$RELEASE_SHA" "$main_sha" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          echo 'should_deploy=true' >> "$GITHUB_OUTPUT"
+          printf 'Current main `%s` only adds changes unrelated to website; continuing verified release `%s`.\n' \
+            "$main_sha" "$RELEASE_SHA" >> "$GITHUB_STEP_SUMMARY"
+
   prepare:
+    needs: current
+    if: needs.current.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     environment: Production
     outputs:
@@ -46,7 +98,7 @@ jobs:
         run: bash deploy/check-website-production-config.sh
 
   deploy:
-    needs: prepare
+    needs: [current, prepare]
     if: needs.prepare.outputs.configured == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120
