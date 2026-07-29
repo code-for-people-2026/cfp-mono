@@ -82,16 +82,13 @@ GitHub Actions 参考 `sunmer-home` 的“受影响应用”思路。
 - `.github/workflows/ci.yml`
   - 在 PR 和 `main` 分支推送时运行。
   - 安装依赖，运行 lint、typecheck、knip、100% 覆盖率单测、e2e 和构建。
+  - 统一计算 affected deploy targets；PR 只构建受影响服务的预览镜像。
+  - `main` 上 CI 通过后，只调用受影响服务的生产部署 workflow。
   - 上传 coverage 与 Playwright 产物。
-- `.github/workflows/deploy-preview.yml`
-  - 在 PR 上运行。
-  - 构建可部署应用。
-  - 后续可按需要部署到阿里云预览环境。
-  - 后续可把预览地址和测试摘要评论回 PR。
 - `.github/workflows/deploy-production.yml`
-  - 在 `main` 分支推送或手动触发时运行。
-  - 构建生产镜像并推送到阿里云容器镜像服务 ACR。
-  - 部署 `site` 和 `miniapp-fe` H5。
+  - website 专属 reusable workflow，仅由 `ci.yml` 在 `main` 上按 affected 结果调用。
+  - 构建 website 生产镜像并推送到阿里云容器镜像服务 ACR。
+  - 部署 `apps/website`。
   - 部署后执行冒烟测试。
 
 ## 部署目标

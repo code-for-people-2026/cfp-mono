@@ -6,10 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  actions: read
+  contents: read
+
 jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      website_affected: ${{ steps.deploy_targets.outputs.website }}
+      deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
+      preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
@@ -46,6 +54,13 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - id: deploy_targets
+        name: Resolve affected deploy targets
+        env:
+          DEPLOY_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          DEPLOY_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: bash deploy/resolve-deploy-targets.sh
+
       - run: pnpm verify
 
       # e2e 只在 PR 时跑。merge 进 main(push)时省掉(playwright install 浏览器 + e2e 较慢),
@@ -66,3 +81,52 @@ jobs:
             apps/*/coverage
             apps/*/playwright-report
             apps/*/test-results
+
+  preview-images:
+    name: Preview image (${{ matrix.target }})
+    needs: verify
+    if: github.event_name == 'pull_request' && needs.verify.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.verify.outputs.preview_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No deployable target affected
+        if: matrix.skip
+        run: echo 'No deployable target was affected by this pull request.'
+
+      - name: Build affected deployable image
+        if: ${{ !matrix.skip }}
+        env:
+          DOCKERFILE: ${{ matrix.dockerfile }}
+          IMAGE: ${{ matrix.image }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: docker build --build-arg RELEASE_SHA="$RELEASE_SHA" -f "$DOCKERFILE" -t "$IMAGE:preview" .
+
+  preview-build:
+    name: preview-build
+    needs: [verify, preview-images]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require verification and affected image builds
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PREVIEW_RESULT: ${{ needs.preview-images.result }}
+        run: |
+          [[ "$VERIFY_RESULT" == success ]]
+          [[ "$PREVIEW_RESULT" == success ]]
+
+  deploy-website:
+    name: Deploy website production
+    needs: verify
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/main' &&
+      needs.verify.result == 'success' && needs.verify.outputs.website_affected == 'true'
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      release_sha: ${{ github.sha }}
+    secrets: inherit
