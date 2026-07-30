@@ -1,0 +1,788 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>街坊味 · 菜品池管理原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202124;
+        --muted: #687076;
+        --line: #e6e2da;
+        --paper: #fffaf1;
+        --surface: #ffffff;
+        --wash: #f4f6f3;
+        --red: #d7462f;
+        --red-soft: #fff0ec;
+        --green: #1f8a61;
+        --green-soft: #eaf7ef;
+        --blue: #2864a5;
+        --blue-soft: #edf5ff;
+        --amber: #b96d12;
+        --amber-soft: #fff5df;
+        --shadow: 0 18px 50px rgb(26 24 20 / 12%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(90deg, rgb(255 255 255 / 72%) 1px, transparent 1px),
+          linear-gradient(rgb(255 255 255 / 72%) 1px, transparent 1px),
+          #eef2ec;
+        background-size: 28px 28px;
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .wrap {
+        display: grid;
+        grid-template-columns: 390px minmax(300px, 440px);
+        gap: 28px;
+        align-items: start;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      .phone {
+        overflow: hidden;
+        width: 390px;
+        min-height: 844px;
+        border: 1px solid rgb(32 33 36 / 12%);
+        border-radius: 30px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 34px;
+        padding: 8px 22px 0;
+        background: var(--surface);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .battery {
+        position: relative;
+        width: 25px;
+        height: 12px;
+        border: 1.5px solid var(--ink);
+        border-radius: 3px;
+      }
+
+      .battery::after {
+        position: absolute;
+        top: 3px;
+        right: -4px;
+        width: 2px;
+        height: 5px;
+        border-radius: 2px;
+        background: var(--ink);
+        content: "";
+      }
+
+      .battery span {
+        display: block;
+        width: 17px;
+        height: 6px;
+        margin: 2px;
+        border-radius: 2px;
+        background: var(--ink);
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 44px 1fr 68px;
+        align-items: center;
+        height: 56px;
+        padding: 0 16px 10px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .top-title {
+        min-width: 0;
+        text-align: center;
+      }
+
+      .top-title strong,
+      .top-title span {
+        display: block;
+      }
+
+      .top-title strong {
+        font-size: 17px;
+        line-height: 1.15;
+      }
+
+      .top-title span {
+        margin-top: 3px;
+        color: #8a7f70;
+        font-size: 11px;
+      }
+
+      .icon-button,
+      .manage-button {
+        display: grid;
+        place-items: center;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .icon-button {
+        width: 36px;
+      }
+
+      .manage-button {
+        padding: 0 10px;
+        color: var(--red);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .manage-button.active {
+        background: var(--red);
+        color: #fff;
+      }
+
+      .icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .app {
+        position: relative;
+        min-height: 754px;
+        padding: 16px 16px 116px;
+        background: linear-gradient(#fffaf1 0, #f6f8f4 58%, #ffffff 100%);
+      }
+
+      .screen-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .screen-head h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.15;
+      }
+
+      .screen-head p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .date-pill {
+        flex: 0 0 auto;
+        height: 34px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .metric,
+      .search-card,
+      .pool-section,
+      .side-panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .metric {
+        min-height: 60px;
+        padding: 10px;
+      }
+
+      .metric strong,
+      .metric span {
+        display: block;
+      }
+
+      .metric strong {
+        font-size: 20px;
+        line-height: 1.1;
+      }
+
+      .metric span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .search-card {
+        padding: 12px;
+      }
+
+      .search-line {
+        display: grid;
+        grid-template-columns: 32px 1fr;
+        gap: 8px;
+        align-items: center;
+        min-height: 40px;
+        padding: 4px 8px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fffdf8;
+      }
+
+      .search-line input {
+        width: 100%;
+        min-width: 0;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 14px;
+      }
+
+      .chips,
+      .pill-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: var(--wash);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .chip.green {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .chip.blue {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .chip.amber {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .chip.red {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .pool-section {
+        margin-top: 12px;
+        padding: 12px;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .section-title strong {
+        font-size: 16px;
+      }
+
+      .dish-pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 34px;
+        padding: 7px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fffdf8;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .dish-pill.meat {
+        border-color: #f3c7ba;
+        background: var(--red-soft);
+      }
+
+      .dish-pill.veg {
+        border-color: #b9dfc8;
+        background: var(--green-soft);
+      }
+
+      .dish-pill.soup {
+        border-color: #c5daf3;
+        background: var(--blue-soft);
+      }
+
+      .dish-pill.off {
+        border-style: dashed;
+        background: #f4f1ec;
+        color: #958b7e;
+        text-decoration: line-through;
+      }
+
+      .dish-pill.active {
+        outline: 2px solid var(--red);
+        outline-offset: 2px;
+      }
+
+      .dish-pill.dragging {
+        opacity: 0.72;
+        transform: rotate(-2deg);
+      }
+
+      .manage-hint {
+        display: none;
+        margin-top: 10px;
+        padding: 9px 10px;
+        border: 1px solid #f3d397;
+        border-radius: 8px;
+        background: var(--amber-soft);
+        color: var(--amber);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.45;
+      }
+
+      .managing .manage-hint {
+        display: block;
+      }
+
+      .delete-zone {
+        position: absolute;
+        right: 16px;
+        bottom: 14px;
+        left: 16px;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        min-height: 54px;
+        border: 1px dashed #f0b0a2;
+        border-radius: 8px;
+        background: var(--red-soft);
+        color: var(--red);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .managing .delete-zone {
+        display: flex;
+      }
+
+      .bottom-sheet {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        z-index: 8;
+        display: none;
+        padding: 12px 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px 18px 0 0;
+        background: #fffdf8;
+        box-shadow: 0 -18px 44px rgb(26 24 20 / 16%);
+      }
+
+      .bottom-sheet.open {
+        display: block;
+      }
+
+      .sheet-handle {
+        width: 38px;
+        height: 4px;
+        margin: 0 auto 12px;
+        border-radius: 999px;
+        background: #d9d1c4;
+      }
+
+      .sheet-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: start;
+      }
+
+      .sheet-head h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .sheet-head p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .detail-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .detail-item {
+        min-height: 52px;
+        padding: 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .detail-item strong,
+      .detail-item span {
+        display: block;
+      }
+
+      .detail-item strong {
+        font-size: 13px;
+      }
+
+      .detail-item span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        display: none;
+        max-width: min(320px, calc(100vw - 32px));
+        padding: 11px 14px;
+        border-radius: 8px;
+        background: #202124;
+        color: #fff;
+        font-size: 13px;
+        transform: translateX(-50%);
+      }
+
+      .toast.show {
+        display: block;
+      }
+
+      .side-panel {
+        position: sticky;
+        top: 28px;
+        padding: 20px;
+        box-shadow: 0 14px 36px rgb(26 24 20 / 8%);
+      }
+
+      .side-panel h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .side-panel h3 {
+        margin: 18px 0 8px;
+        font-size: 15px;
+      }
+
+      .side-panel p,
+      .side-panel li {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .side-panel ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      @media (max-width: 860px) {
+        .wrap {
+          display: block;
+          padding: 0;
+        }
+
+        .phone {
+          width: 100%;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .app {
+          min-height: calc(100vh - 90px);
+        }
+
+        .side-panel {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="phone" aria-label="菜品池管理手机原型">
+        <div class="status">
+          <span>9:41</span>
+          <span>5G</span>
+          <div class="battery" aria-hidden="true"><span></span></div>
+        </div>
+        <header class="topbar">
+          <a class="icon-button" href="./menu-brain.html" title="返回菜单脑" aria-label="返回菜单脑">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+          </a>
+          <div class="top-title">
+            <strong>菜品池</strong>
+            <span>点菜看详情 · 管理启停</span>
+          </div>
+          <button class="manage-button" type="button" id="manage-toggle">管理</button>
+        </header>
+
+        <div class="app" id="pool-app">
+          <div class="screen-head">
+            <div>
+              <h1>现有菜品</h1>
+              <p>普通模式看详情；管理模式点一下启用/停用。</p>
+            </div>
+            <div class="date-pill">43 道</div>
+          </div>
+
+          <div class="summary">
+            <div class="metric"><strong id="active-count">38</strong><span>启用</span></div>
+            <div class="metric"><strong>5</strong><span>停用</span></div>
+            <div class="metric"><strong>7</strong><span>很久没做</span></div>
+          </div>
+
+          <section class="search-card">
+            <div class="search-line">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="11" cy="11" r="8"></circle>
+                <path d="m21 21-4.3-4.3"></path>
+              </svg>
+              <input aria-label="搜索菜名或主料" placeholder="搜菜名 / 主料，比如 牛肉、汤" />
+            </div>
+            <div class="chips">
+              <span class="chip red">荤菜</span>
+              <span class="chip green">素菜</span>
+              <span class="chip blue">汤</span>
+              <span class="chip amber">费工菜</span>
+              <span class="chip">停用</span>
+            </div>
+          </section>
+
+          <section class="pool-section">
+            <div class="section-title">
+              <strong>荤菜</strong>
+              <span class="chip red">18 道</span>
+            </div>
+            <div class="pill-list">
+              <button class="dish-pill meat active" type="button" data-name="香菇滑鸡" data-kind="荤菜" data-main="鸡肉" data-work="中" data-used="5 天前" data-count="18">香菇滑鸡</button>
+              <button class="dish-pill meat" type="button" data-name="土豆烧牛腩" data-kind="荤菜" data-main="牛肉" data-work="高" data-used="今天" data-count="9">土豆烧牛腩</button>
+              <button class="dish-pill meat" type="button" data-name="红烧带鱼" data-kind="荤菜" data-main="鱼" data-work="中" data-used="新入池" data-count="0">红烧带鱼</button>
+              <button class="dish-pill meat" type="button" data-name="青椒肉丝" data-kind="荤菜" data-main="猪肉" data-work="低" data-used="8 天前" data-count="22">青椒肉丝</button>
+              <button class="dish-pill meat off" type="button" data-name="粉蒸排骨" data-kind="荤菜" data-main="排骨" data-work="高" data-used="2 个月前" data-count="3">粉蒸排骨</button>
+            </div>
+          </section>
+
+          <section class="pool-section">
+            <div class="section-title">
+              <strong>素菜</strong>
+              <span class="chip green">17 道</span>
+            </div>
+            <div class="pill-list">
+              <button class="dish-pill veg" type="button" data-name="清炒油麦菜" data-kind="素菜" data-main="青菜" data-work="低" data-used="9 天前" data-count="16">清炒油麦菜</button>
+              <button class="dish-pill veg" type="button" data-name="手撕包菜" data-kind="素菜" data-main="包菜" data-work="低" data-used="5 天前" data-count="21">手撕包菜</button>
+              <button class="dish-pill veg" type="button" data-name="蒜蓉空心菜" data-kind="素菜" data-main="青菜" data-work="低" data-used="6 天前" data-count="14">蒜蓉空心菜</button>
+              <button class="dish-pill veg" type="button" data-name="凉拌黄瓜" data-kind="素菜" data-main="黄瓜" data-work="低" data-used="3 天前" data-count="11">凉拌黄瓜</button>
+              <button class="dish-pill veg off" type="button" data-name="干煸四季豆" data-kind="素菜" data-main="四季豆" data-work="中" data-used="1 个月前" data-count="6">干煸四季豆</button>
+            </div>
+          </section>
+
+          <section class="pool-section">
+            <div class="section-title">
+              <strong>汤</strong>
+              <span class="chip blue">8 道</span>
+            </div>
+            <div class="pill-list">
+              <button class="dish-pill soup" type="button" data-name="冬瓜丸子汤" data-kind="汤" data-main="冬瓜" data-work="低" data-used="10 天前" data-count="8">冬瓜丸子汤</button>
+              <button class="dish-pill soup" type="button" data-name="莲藕排骨汤" data-kind="汤" data-main="排骨" data-work="高" data-used="新入池" data-count="0">莲藕排骨汤</button>
+              <button class="dish-pill soup" type="button" data-name="紫菜蛋花汤" data-kind="汤" data-main="紫菜 / 鸡蛋" data-work="低" data-used="7 天前" data-count="13">紫菜蛋花汤</button>
+              <button class="dish-pill soup off" type="button" data-name="老火鸡汤" data-kind="汤" data-main="鸡肉" data-work="高" data-used="3 个月前" data-count="2">老火鸡汤</button>
+            </div>
+          </section>
+
+          <p class="manage-hint">管理中：点一个菜就启用/停用。长按已停用的菜，拖到下方删除区，才会彻底删掉。</p>
+          <div class="delete-zone" id="delete-zone">拖到这里删除已停用菜品</div>
+
+          <section class="bottom-sheet open" id="detail-sheet" aria-label="菜品详情">
+            <div class="sheet-handle" aria-hidden="true"></div>
+            <div class="sheet-head">
+              <div>
+                <h2 id="detail-name">香菇滑鸡</h2>
+                <p id="detail-summary">荤菜 · 主料：鸡肉 · 费工度：中</p>
+              </div>
+              <button class="icon-button" type="button" id="close-sheet" title="收起" aria-label="收起详情">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 6 6 18"></path>
+                  <path d="m6 6 12 12"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="detail-grid">
+              <div class="detail-item"><strong id="detail-main">鸡肉</strong><span>主料</span></div>
+              <div class="detail-item"><strong id="detail-work">中</strong><span>费工度</span></div>
+              <div class="detail-item"><strong id="detail-used">5 天前</strong><span>上次使用</span></div>
+              <div class="detail-item"><strong id="detail-count">18 次</strong><span>历史次数</span></div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="side-panel" aria-label="页面说明">
+        <h2>菜品池 · Pill List</h2>
+        <p>这个版本把现有菜品做成轻量 pill list。详情是无 mask 的悬浮 bottom sheet，所以可以直接点别的 pill 切换，不打断浏览。</p>
+        <h3>管理规则</h3>
+        <ul>
+          <li>普通模式：点 pill 只看详情。</li>
+          <li>管理模式：点 pill 启用 / 停用，不提供修改字段。</li>
+          <li>长按已停用 pill 后进入拖拽删除状态，拖到删除区才彻底删除。</li>
+        </ul>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script>
+      const app = document.querySelector("#pool-app");
+      const manageToggle = document.querySelector("#manage-toggle");
+      const detailSheet = document.querySelector("#detail-sheet");
+      const toast = document.querySelector("#toast");
+      let toastTimer;
+      let managing = false;
+      let pressTimer;
+      let draggingPill;
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+      }
+
+      function showDetail(pill) {
+        document.querySelectorAll(".dish-pill").forEach((item) => item.classList.remove("active"));
+        pill.classList.add("active");
+        document.querySelector("#detail-name").textContent = pill.dataset.name;
+        document.querySelector("#detail-summary").textContent = `${pill.dataset.kind} · 主料：${pill.dataset.main} · 费工度：${pill.dataset.work}`;
+        document.querySelector("#detail-main").textContent = pill.dataset.main;
+        document.querySelector("#detail-work").textContent = pill.dataset.work;
+        document.querySelector("#detail-used").textContent = pill.dataset.used;
+        document.querySelector("#detail-count").textContent = `${pill.dataset.count} 次`;
+        detailSheet.classList.add("open");
+      }
+
+      function toggleDish(pill) {
+        pill.classList.toggle("off");
+        showToast(pill.classList.contains("off") ? `${pill.dataset.name} 已停用` : `${pill.dataset.name} 已启用`);
+      }
+
+      manageToggle.addEventListener("click", () => {
+        managing = !managing;
+        app.classList.toggle("managing", managing);
+        manageToggle.classList.toggle("active", managing);
+        manageToggle.textContent = managing ? "完成" : "管理";
+        if (managing) detailSheet.classList.remove("open");
+        showToast(managing ? "管理模式：点菜启用/停用" : "已退出管理模式");
+      });
+
+      document.querySelectorAll(".dish-pill").forEach((pill) => {
+        pill.addEventListener("click", () => {
+          if (draggingPill) return;
+          if (managing) {
+            toggleDish(pill);
+            return;
+          }
+          showDetail(pill);
+        });
+
+        pill.addEventListener("pointerdown", () => {
+          if (!managing || !pill.classList.contains("off")) return;
+          clearTimeout(pressTimer);
+          pressTimer = setTimeout(() => {
+            draggingPill = pill;
+            pill.classList.add("dragging");
+            showToast(`拖动 ${pill.dataset.name} 到删除区`);
+          }, 520);
+        });
+
+        pill.addEventListener("pointerup", () => clearTimeout(pressTimer));
+        pill.addEventListener("pointerleave", () => clearTimeout(pressTimer));
+      });
+
+      document.querySelector("#delete-zone").addEventListener("click", () => {
+        if (!draggingPill) {
+          showToast("先长按一个已停用菜品");
+          return;
+        }
+        const name = draggingPill.dataset.name;
+        draggingPill.remove();
+        draggingPill = undefined;
+        showToast(`${name} 已删除`);
+      });
+
+      document.querySelector("#close-sheet").addEventListener("click", () => {
+        detailSheet.classList.remove("open");
+      });
+    </script>
+  </body>
+</html>
