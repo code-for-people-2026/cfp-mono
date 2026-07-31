@@ -5,8 +5,7 @@ import DishCard from "@/components/DishCard";
 import "./index.css";
 
 // 骨架占位数据，仅用于展示页面结构。
-// TODO: 接 CMS —— 从 createRecipesUrl() 拉菜谱库，再交给菜单生成逻辑。
-//       生成逻辑放哪、在哪端跑（小程序 or 后端）的决策定了之后再补。
+// TODO(#317): 改由 Weekly Menu API adapter 提供数据；小程序不得直连 website Payload。
 const PLACEHOLDER_MEALS: { name: string; category: RecipeCategory }[] = [
   { name: "红烧肉", category: "big-meat" },
   { name: "青椒土豆丝", category: "small-meat" },
