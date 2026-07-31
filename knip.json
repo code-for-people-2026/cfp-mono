@@ -56,7 +56,6 @@
     "@tarojs/vite-runner",
     "@types/react-dom",
     "@vitejs/plugin-react",
-    "pg",
     "react-dom",
     "serve",
     "sharp",
