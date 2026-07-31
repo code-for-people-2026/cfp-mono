@@ -22,7 +22,28 @@ pnpm --filter @cfp/weekly-menu-be start
   openid、session_key、token、AppSecret、连接串或上游错误详情。
 - 请求体上限为 16 KiB。错误响应统一包含稳定 code 与 `x-request-id`。
 
-菜单生成、计划读写等 `/api/v1/weekly-menu/*` 业务路由不属于本阶段。
+## API v1
+
+所有业务路由都要求当前 Bearer 会话，且 owner 只取会话中的 Weekly Menu identity。
+计划不存在与跨用户访问统一返回 `404 PLAN_NOT_FOUND`，日志只记录路由模板，不记录计划 ID。
+
+| 方法 | 路径 | 用途 |
+| --- | --- | --- |
+| `GET` | `/api/v1/weekly-menu/bootstrap` | 返回契约版本与当前最新 draft |
+| `POST` | `/api/v1/weekly-menu/plans/generate` | 按 `weekStart` 生成并立即保存 draft |
+| `GET` | `/api/v1/weekly-menu/plans?limit=20&offset=0` | 分页列出当前用户计划 |
+| `GET` / `PUT` / `DELETE` | `/api/v1/weekly-menu/plans/:id` | 详情、保存 draft、删除 draft |
+| `PATCH` | `/api/v1/weekly-menu/plans/:id/dish` | 按共享坐标换菜并保存 |
+| `POST` | `/api/v1/weekly-menu/plans/:id/confirm` | 确认 draft |
+| `POST` | `/api/v1/weekly-menu/plans/:id/copy` | 无业务 body；服务端生成 ID 并复制到下一周 draft |
+| `GET` | `/api/v1/weekly-menu/plans/:id/dish-checklist` | 返回 confirmed 计划去重菜名 |
+
+请求与响应使用 `@cfp/weekly-menu-shared` 的严格 schema；分页上限为 50，生成和复制按
+当前 identity 做每分钟 10 次的进程内基础限流。`dish-checklist` 不包含 `checked`、食材或用量。
+
+> `ponytail:` MVP 刻意让 generate 立即创建并持久化 draft，避免临时计划签名或服务端
+> ephemeral 状态；save 只是 owner-scoped update。#317 的真实 adapter/UI 按此契约接入，
+> 当前 Mock 的“保存后进入历史”仅用于 API 稳定前的页面验证。
 
 ## 数据所有权
 

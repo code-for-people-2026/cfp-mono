@@ -19,6 +19,11 @@ export type ActiveSession = Readonly<{
   expiresAt: string;
 }>;
 
+export type PlanPage = Readonly<{
+  items: WeeklyMenuPlanDto[];
+  hasMore: boolean;
+}>;
+
 function assertIdentifier(value: string, label: string): void {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new TypeError(`${label} is required`);
@@ -177,6 +182,40 @@ export class WeeklyMenuStore {
       [planId]
     );
     return planFromRows(planRow, itemsResult.rows);
+  }
+
+  async findLatestDraft(ownerId: string): Promise<DraftPlanDto | null> {
+    assertIdentifier(ownerId, "ownerId");
+    const result = await this.pool.query(
+      `SELECT id FROM weekly_menu_plans
+       WHERE owner_identity_id = $1 AND status = 'draft'
+       ORDER BY updated_at DESC, id DESC LIMIT 1`,
+      [ownerId]
+    );
+    const id = result.rows[0]?.id;
+    if (typeof id !== "string") return null;
+    const plan = await this.findPlan(ownerId, id);
+    return plan?.status === "draft" ? plan : null;
+  }
+
+  async listPlans(
+    ownerId: string,
+    input: Readonly<{ limit: number; offset: number }>
+  ): Promise<PlanPage> {
+    assertIdentifier(ownerId, "ownerId");
+    const result = await this.pool.query(
+      `SELECT id FROM weekly_menu_plans
+       WHERE owner_identity_id = $1
+       ORDER BY week_start DESC, created_at DESC, id DESC
+       LIMIT $2 OFFSET $3`,
+      [ownerId, input.limit + 1, input.offset]
+    );
+    const ids = result.rows.slice(0, input.limit).map((row) => String(row.id));
+    const items = await Promise.all(ids.map((id) => this.findPlan(ownerId, id)));
+    return {
+      items: items.filter((plan): plan is WeeklyMenuPlanDto => plan !== null),
+      hasMore: result.rows.length > input.limit
+    };
   }
 
   async replaceDraftPlan(ownerId: string, input: DraftPlanDto): Promise<boolean> {

@@ -6,6 +6,7 @@ import { createWeeklyMenuPool } from "./database";
 import { createWeeklyMenuHttpServer, type SafeLogger } from "./http";
 import { fetchRecipePools } from "./recipes-client";
 import { WeeklyMenuStore } from "./store";
+import { WeeklyMenuService } from "./weekly-menu-service";
 
 const READINESS_TIMEOUT_MS = 2_000;
 const SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -143,11 +144,20 @@ export async function startWeeklyMenuRuntime(input: Readonly<{
         })
       )
   });
+  const weeklyMenu = new WeeklyMenuService(store, async () =>
+    fetchRecipePools(config.recipesBaseUrl, (request, init) =>
+      fetcher(request, {
+        ...init,
+        signal: AbortSignal.timeout(READINESS_TIMEOUT_MS)
+      })
+    )
+  );
   const server = createWeeklyMenuHttpServer({
     auth,
     readiness,
     release: config.release,
-    logger: input.logger
+    logger: input.logger,
+    weeklyMenu
   });
 
   try {
