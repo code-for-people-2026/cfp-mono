@@ -32,6 +32,9 @@
     "packages/menu-core": {
       "entry": ["src/index.ts"]
     },
+    "packages/weekly-menu-shared": {
+      "entry": ["src/index.ts"]
+    },
     "packages/typescript-config": {
       "entry": ["*.json"]
     },

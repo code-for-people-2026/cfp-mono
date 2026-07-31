@@ -30,5 +30,5 @@ components/
 ## 边界
 
 - 不在组件里直接发网络请求 —— 数据从页面（`pages/`）传入 props，组件只负责展示。
-- 菜单生成算法不属于组件，也不属于这里 —— 它是纯逻辑，去向待定（见仓库根的迁移说明：
-  `packages/menu-core` 还是放后端，取决于「生成在小程序端还是后端跑」的决策）。
+- Weekly Menu 规则、类型和纯函数统一从 `packages/weekly-menu-shared` 消费；
+  菜单生成算法由该包内部复用 `packages/menu-core`。

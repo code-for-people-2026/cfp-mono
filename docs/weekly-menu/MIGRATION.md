@@ -48,8 +48,7 @@ Weekly Menu 是 `apps/community-cooking` 内的个人一周菜单、历史与本
 
 ```text
 apps/community-cooking
-  ├─ workspace:* -> packages/weekly-menu-shared
-  └─ workspace:* -> packages/menu-core
+  └─ workspace:* -> packages/weekly-menu-shared
 
 apps/weekly-menu-be
   ├─ workspace:* -> packages/weekly-menu-shared
