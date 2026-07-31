@@ -1,0 +1,24 @@
+.plan-day {
+  margin-top: 36px;
+}
+
+.plan-day-label {
+  display: block;
+  color: #171717;
+  font-size: 34px;
+  font-weight: 800;
+}
+
+.plan-meal {
+  margin-top: 24px;
+  padding: 20px;
+  border-radius: 16px;
+  background: #f8f3e9;
+}
+
+.plan-meal-label {
+  display: block;
+  color: #525252;
+  font-size: 28px;
+  font-weight: 700;
+}

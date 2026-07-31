@@ -1,0 +1,13 @@
+.detail-title {
+  display: block;
+  color: #171717;
+  font-size: 42px;
+  font-weight: 800;
+}
+
+.detail-status {
+  display: block;
+  margin-top: 12px;
+  color: #2f855a;
+  font-size: 26px;
+}

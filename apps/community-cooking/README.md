@@ -4,10 +4,10 @@
 
 ## 当前状态
 
-- `@cfp/weekly-menu-shared` 提供版本化 DTO、验证和纯领域规则，底层继续调用 `@cfp/menu-core` 的菜单生成与换菜算法。
-- `apps/website` 已有官网私有的 Payload `recipes` collection。
-- `src/lib/api.ts` 仅封装了历史 `recipes` URL 构造器及测试；菜单页仍是占位数据，尚未发起真实请求。
-- 首页、菜单页和基础组件已存在，其余 Happy Path 尚未实现。
+- `@cfp/weekly-menu-shared` 提供版本化 DTO、验证和纯领域规则。
+- 可替换的 `WeeklyMenuClient` 能力接口与本地 Mock 已覆盖登录、生成、换菜、保存、确认、历史、复制、删除和菜品勾选清单。
+- 当前页面不发网络请求、不调用 `wx.login`，也不读取 Payload；真实 adapter 等 #315/#316 契约稳定后再实现。
+- 菜品勾选状态只写入客户端本地缓存，不进入计划 DTO 或 Mock 计划 store。
 
 ## 已确定边界
 
@@ -26,10 +26,13 @@
 src/
 ├── app.config.ts        页面与窗口配置
 ├── components/          app 内 Taro 组件
-├── lib/api.ts           历史 URL helper；#317 由 API adapter 取代
+├── lib/                  可替换客户端接口、Mock 与本地 checklist 状态
 └── pages/
-    ├── index/           首页
-    └── menu/            本周菜单（当前为占位骨架）
+    ├── index/           Mock 登录与首页
+    ├── menu/            7 天 × 2 餐菜单编辑、保存和确认
+    ├── history/         当前 Mock 用户的菜单历史
+    ├── history-detail/  详情、复制与草稿删除
+    └── checklist/       confirmed 菜名去重的本周菜品勾选清单
 ```
 
 ## 本地开发
@@ -40,6 +43,9 @@ pnpm --filter @cfp/community-cooking build:weapp
 pnpm --filter @cfp/community-cooking lint
 pnpm --filter @cfp/community-cooking typecheck
 pnpm --filter @cfp/community-cooking test
+pnpm --filter @cfp/community-cooking test:e2e
 ```
+
+当前构建固定使用 Mock adapter，不需要 API 地址、AppID 或 Secret。真实 HTTPS adapter、token 生命周期、超时与 `401` 恢复留给 #315/#316 契约稳定后的同一 Issue 后续切片；页面只依赖 `WeeklyMenuClient`，无需改写领域流程。
 
 真实 AppID 和微信公众平台配置不得提交。`project.config.json` 的 `touristappid` 仅用于本地骨架；被精确忽略的 `project.private.config.json` 在本地覆盖真实 AppID，且必须与 #318 注入后端的 AppID 一致。AppSecret 永远只存在于服务端专属环境，不进入私有项目配置、小程序包或客户端构建变量。#318 先交付健康的 HTTPS API 与真实登录凭据交接，#317 再由用户登录微信开发者工具手工上传体验版，并完成合法 request 域名和真机验收。本期不引入 `miniprogram-ci`、上传私钥或上传 CI secret。

@@ -1,0 +1,53 @@
+.history-title {
+  display: block;
+  color: #171717;
+  font-size: 44px;
+  font-weight: 800;
+}
+
+.history-card {
+  display: block;
+  width: 100%;
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid #dfd7c8;
+  border-radius: 14px;
+  background: #ffffff;
+  text-align: left;
+  line-height: 1.4;
+}
+
+.history-card::after {
+  border: 0;
+}
+
+.history-week,
+.history-status,
+.history-link {
+  display: block;
+}
+
+.history-week {
+  color: #171717;
+  font-size: 30px;
+  font-weight: 700;
+}
+
+.history-status {
+  margin-top: 12px;
+  font-size: 24px;
+}
+
+.history-status--confirmed,
+.history-link {
+  color: #2f855a;
+}
+
+.history-status--draft {
+  color: #a15c00;
+}
+
+.history-link {
+  margin-top: 16px;
+  font-size: 26px;
+}

@@ -1,0 +1,44 @@
+.checklist-title {
+  display: block;
+  color: #171717;
+  font-size: 42px;
+  font-weight: 800;
+}
+
+.checklist-hint {
+  display: block;
+  margin-top: 16px;
+  color: #756c5e;
+  font-size: 26px;
+  line-height: 1.6;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-top: 16px;
+  padding: 22px;
+  border: 1px solid #dfd7c8;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #171717;
+  font-size: 28px;
+}
+
+.is-checked {
+  color: #8a8173;
+  text-decoration: line-through;
+}
+
+.checklist-progress {
+  display: block;
+  margin-top: 28px;
+  color: #2f855a;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.checklist-actions {
+  margin-top: 28px;
+}
