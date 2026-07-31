@@ -1,0 +1,990 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>街坊味 · 菜单脑原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #202124;
+        --muted: #687076;
+        --line: #e6e2da;
+        --paper: #fffaf1;
+        --surface: #ffffff;
+        --wash: #f4f6f3;
+        --red: #d7462f;
+        --red-soft: #fff0ec;
+        --green: #1f8a61;
+        --green-soft: #eaf7ef;
+        --blue: #2864a5;
+        --blue-soft: #edf5ff;
+        --amber: #b96d12;
+        --amber-soft: #fff5df;
+        --shadow: 0 18px 50px rgb(26 24 20 / 12%);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(90deg, rgb(255 255 255 / 72%) 1px, transparent 1px),
+          linear-gradient(rgb(255 255 255 / 72%) 1px, transparent 1px),
+          #eef2ec;
+        background-size: 28px 28px;
+        color: var(--ink);
+        font-family:
+          -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei",
+          "Helvetica Neue", Arial, sans-serif;
+        letter-spacing: 0;
+      }
+
+      button {
+        border: 0;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      textarea {
+        font: inherit;
+      }
+
+      .wrap {
+        display: grid;
+        grid-template-columns: 390px minmax(300px, 440px);
+        gap: 28px;
+        align-items: start;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      .phone {
+        overflow: hidden;
+        width: 390px;
+        min-height: 844px;
+        border: 1px solid rgb(32 33 36 / 12%);
+        border-radius: 30px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 34px;
+        padding: 8px 22px 0;
+        background: var(--surface);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .battery {
+        position: relative;
+        width: 25px;
+        height: 12px;
+        border: 1.5px solid var(--ink);
+        border-radius: 3px;
+      }
+
+      .battery::after {
+        position: absolute;
+        top: 3px;
+        right: -4px;
+        width: 2px;
+        height: 5px;
+        border-radius: 2px;
+        background: var(--ink);
+        content: "";
+      }
+
+      .battery span {
+        display: block;
+        width: 17px;
+        height: 6px;
+        margin: 2px;
+        border-radius: 2px;
+        background: var(--ink);
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 44px 1fr 44px;
+        align-items: center;
+        height: 56px;
+        padding: 0 16px 10px;
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+
+      .brand-mark {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: var(--red);
+        color: #fff;
+        font-size: 16px;
+        font-weight: 800;
+      }
+
+      .top-title {
+        min-width: 0;
+        text-align: center;
+      }
+
+      .top-title strong,
+      .top-title span {
+        display: block;
+      }
+
+      .top-title strong {
+        font-size: 17px;
+        line-height: 1.15;
+      }
+
+      .top-title span {
+        margin-top: 3px;
+        color: #8a7f70;
+        font-size: 11px;
+      }
+
+      .icon-button {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        color: var(--ink);
+      }
+
+      .icon {
+        width: 18px;
+        height: 18px;
+      }
+
+      .app {
+        min-height: 754px;
+        padding: 16px 16px 20px;
+        background: linear-gradient(#fffaf1 0, #f6f8f4 58%, #ffffff 100%);
+      }
+
+      .screen-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .screen-head h1 {
+        margin: 0;
+        font-size: 22px;
+        line-height: 1.15;
+      }
+
+      .screen-head p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .date-pill {
+        flex: 0 0 auto;
+        height: 34px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .control,
+      .meal-card,
+      .notice,
+      .side-panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .control {
+        padding: 12px;
+      }
+
+      .control-title,
+      .card-title {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .control-title strong,
+      .card-title strong {
+        font-size: 16px;
+      }
+
+      .control p,
+      .notice p {
+        margin: 8px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 10px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        background: var(--wash);
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .chip.green {
+        background: var(--green-soft);
+        color: var(--green);
+      }
+
+      .chip.blue {
+        background: var(--blue-soft);
+        color: var(--blue);
+      }
+
+      .chip.amber {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .chip.red {
+        background: var(--red-soft);
+        color: var(--red);
+      }
+
+      .actions {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .primary,
+      .secondary,
+      .tiny-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        min-height: 38px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .primary {
+        flex: 1;
+        background: var(--red);
+        color: #fff;
+      }
+
+      .secondary {
+        flex: 1;
+        border: 1px solid var(--red);
+        background: #fff;
+        color: var(--red);
+      }
+
+      .tiny-action {
+        min-height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font-size: 12px;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin: 12px 0;
+      }
+
+      .metric {
+        min-height: 60px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .metric strong,
+      .metric span {
+        display: block;
+      }
+
+      .metric strong {
+        font-size: 20px;
+        line-height: 1.1;
+      }
+
+      .metric span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .meal-card {
+        margin-top: 12px;
+        padding: 12px;
+      }
+
+      .pool-input {
+        display: grid;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .pool-input textarea {
+        width: 100%;
+        min-height: 74px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        outline: 0;
+        resize: none;
+        background: #fff;
+        color: var(--ink);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .pool-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 58px;
+        border-top: 1px solid var(--line);
+      }
+
+      .pool-row:first-of-type {
+        margin-top: 8px;
+      }
+
+      .pool-row strong,
+      .pool-row span {
+        display: block;
+      }
+
+      .pool-row strong {
+        font-size: 13px;
+      }
+
+      .pool-row span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .pool-added {
+        border-color: #b9dfc8;
+        background: var(--green-soft);
+      }
+
+      .modal-layer {
+        position: absolute;
+        inset: 0;
+        z-index: 10;
+        display: none;
+        align-items: end;
+        background: rgb(32 33 36 / 36%);
+      }
+
+      .modal-layer.open {
+        display: flex;
+      }
+
+      .sheet {
+        width: 100%;
+        max-height: 82%;
+        overflow: auto;
+        padding: 12px 16px 18px;
+        border: 1px solid var(--line);
+        border-radius: 18px 18px 0 0;
+        background: #fffdf8;
+        box-shadow: 0 -18px 44px rgb(26 24 20 / 18%);
+      }
+
+      .sheet-handle {
+        width: 38px;
+        height: 4px;
+        margin: 0 auto 12px;
+        border-radius: 999px;
+        background: #d9d1c4;
+      }
+
+      .sheet-head {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: start;
+      }
+
+      .sheet-head h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .sheet-head p {
+        margin: 6px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .dish-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+        align-items: center;
+        min-height: 54px;
+        border-top: 1px solid var(--line);
+      }
+
+      .dish-row:first-of-type {
+        margin-top: 8px;
+      }
+
+      .dish-row strong,
+      .dish-row span {
+        display: block;
+      }
+
+      .dish-row strong {
+        font-size: 13px;
+      }
+
+      .dish-row span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .week-card {
+        margin-top: 12px;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .week-table {
+        display: grid;
+        grid-template-columns: 24px repeat(5, minmax(0, 1fr));
+        gap: 4px;
+        margin-top: 10px;
+      }
+
+      .week-head,
+      .day-cell {
+        display: grid;
+        place-items: center;
+        min-height: 30px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .day-cell {
+        color: var(--ink);
+      }
+
+      .dish-tag {
+        display: grid;
+        place-items: center;
+        min-height: 42px;
+        padding: 4px 3px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fffdf8;
+        color: var(--ink);
+        font-size: 10px;
+        font-weight: 800;
+        line-height: 1.18;
+        text-align: center;
+        word-break: keep-all;
+      }
+
+      .dish-tag.meat {
+        border-color: #f3c7ba;
+        background: var(--red-soft);
+      }
+
+      .dish-tag.veg {
+        border-color: #b9dfc8;
+        background: var(--green-soft);
+      }
+
+      .dish-tag.soup {
+        border-color: #c5daf3;
+        background: var(--blue-soft);
+      }
+
+      .dish-tag.active {
+        outline: 2px solid var(--red);
+        outline-offset: 1px;
+      }
+
+      .dish-detail {
+        margin-top: 12px;
+        padding: 10px;
+        border: 1px solid #dccfbf;
+        border-radius: 8px;
+        background: #fffdf8;
+      }
+
+      .dish-detail strong,
+      .dish-detail span {
+        display: block;
+      }
+
+      .dish-detail strong {
+        font-size: 15px;
+      }
+
+      .dish-detail span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      .notice {
+        margin-top: 12px;
+        padding: 12px;
+        background: #fffdf8;
+      }
+
+      .notice h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .notice .copy {
+        margin-top: 8px;
+        padding: 10px;
+        border: 1px dashed #dccfbf;
+        border-radius: 8px;
+        background: #fff;
+        color: #3d352c;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+
+      .side-panel {
+        position: sticky;
+        top: 28px;
+        padding: 20px;
+        box-shadow: 0 14px 36px rgb(26 24 20 / 8%);
+      }
+
+      .side-panel h2 {
+        margin: 0;
+        font-size: 20px;
+      }
+
+      .side-panel h3 {
+        margin: 18px 0 8px;
+        font-size: 15px;
+      }
+
+      .side-panel p,
+      .side-panel li {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .side-panel ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: 28px;
+        display: none;
+        max-width: min(320px, calc(100vw - 32px));
+        padding: 11px 14px;
+        border-radius: 8px;
+        background: #202124;
+        color: #fff;
+        font-size: 13px;
+        transform: translateX(-50%);
+      }
+
+      .toast.show {
+        display: block;
+      }
+
+      @media (max-width: 860px) {
+        .wrap {
+          display: block;
+          padding: 0;
+        }
+
+        .phone {
+          width: 100%;
+          min-height: 100vh;
+          border: 0;
+          border-radius: 0;
+          box-shadow: none;
+        }
+
+        .app {
+          min-height: calc(100vh - 90px);
+        }
+
+        .side-panel {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <section class="phone" aria-label="菜单脑手机原型">
+        <div class="status">
+          <span>9:41</span>
+          <span>5G</span>
+          <div class="battery" aria-hidden="true"><span></span></div>
+        </div>
+        <header class="topbar">
+          <div class="brand-mark">味</div>
+          <div class="top-title">
+            <strong>菜单脑</strong>
+            <span>从桃子的菜里排一周</span>
+          </div>
+          <a class="icon-button" href="./dish-pool.html" title="菜品池" aria-label="菜品池">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"></path>
+            </svg>
+          </a>
+        </header>
+        <div class="app">
+          <div class="screen-head">
+            <div>
+              <h1>这一周吃什么，不用硬想</h1>
+              <p>五天一次排好，点菜名再看主料和替换理由。</p>
+            </div>
+            <div class="date-pill">下周</div>
+          </div>
+
+          <section class="control">
+            <div class="control-title">
+              <strong>生成规则</strong>
+              <span class="chip green">不用池外菜</span>
+            </div>
+            <p>默认 2 荤 2 素 1 汤；主料近 2 天不重复；费工菜每天最多 1 道。</p>
+            <div class="chips">
+              <span class="chip red">牛肉今天用过</span>
+              <span class="chip amber">排骨近 2 天避开</span>
+              <span class="chip blue">汤每天 1 道</span>
+              <span class="chip green">常做优先</span>
+            </div>
+            <div class="actions">
+              <button class="primary" type="button" id="generate">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 3v18"></path>
+                  <path d="M3 12h18"></path>
+                </svg>
+                生成一周菜单
+              </button>
+              <button class="secondary" type="button" id="jump-pool">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 20h9"></path>
+                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path>
+                </svg>
+                补菜品池
+              </button>
+            </div>
+          </section>
+
+          <div class="summary">
+            <div class="metric"><strong id="pool-count">43</strong><span>池内菜</span></div>
+            <div class="metric"><strong id="repeat-count">0</strong><span>主料冲突</span></div>
+            <div class="metric"><strong>5</strong><span>待发布天数</span></div>
+          </div>
+
+          <article class="week-card">
+            <div class="card-title">
+              <strong>下周午餐菜单</strong>
+              <span class="chip green">5 天通过</span>
+            </div>
+            <div class="week-table" aria-label="下周午餐菜单表">
+              <div class="week-head">天</div>
+              <div class="week-head">荤1</div>
+              <div class="week-head">荤2</div>
+              <div class="week-head">素1</div>
+              <div class="week-head">素2</div>
+              <div class="week-head">汤</div>
+
+              <div class="day-cell">一</div>
+              <button class="dish-tag meat active" type="button" data-name="香菇滑鸡" data-meta="荤菜 · 主料：鸡肉 · 常做 · 近 5 天未用 · 费工度：中">香菇滑鸡</button>
+              <button class="dish-tag meat" type="button" data-name="虾仁西葫芦" data-meta="荤菜 · 主料：虾仁 · 清淡 · 避开昨天牛肉 · 费工度：低">虾仁西葫芦</button>
+              <button class="dish-tag veg" type="button" data-name="手撕包菜" data-meta="素菜 · 主料：包菜 · 快手 · 费工度：低">手撕包菜</button>
+              <button class="dish-tag veg" type="button" data-name="蒜蓉空心菜" data-meta="素菜 · 主料：青菜 · 清爽 · 费工度：低">蒜蓉空心菜</button>
+              <button class="dish-tag soup" type="button" data-name="冬瓜丸子汤" data-meta="汤 · 主料：冬瓜 · 近两天未重复 · 费工度：低">冬瓜丸子汤</button>
+
+              <div class="day-cell">二</div>
+              <button class="dish-tag meat" type="button" data-name="红烧带鱼" data-meta="荤菜 · 主料：鱼 · 新入池候选 · 费工度：中">红烧带鱼</button>
+              <button class="dish-tag meat" type="button" data-name="青椒肉丝" data-meta="荤菜 · 主料：猪肉 · 常做 · 费工度：低">青椒肉丝</button>
+              <button class="dish-tag veg" type="button" data-name="西红柿炒蛋" data-meta="素/蛋 · 主料：鸡蛋 · 快手 · 费工度：低">西红柿炒蛋</button>
+              <button class="dish-tag veg" type="button" data-name="清炒油麦菜" data-meta="素菜 · 主料：青菜 · 清淡 · 费工度：低">清炒油麦菜</button>
+              <button class="dish-tag soup" type="button" data-name="紫菜蛋花汤" data-meta="汤 · 主料：紫菜 / 鸡蛋 · 快手 · 费工度：低">紫菜蛋花汤</button>
+
+              <div class="day-cell">三</div>
+              <button class="dish-tag meat" type="button" data-name="土豆烧牛腩" data-meta="荤菜 · 主料：牛肉 · 距离今天已隔 2 天 · 费工度：高">土豆烧牛腩</button>
+              <button class="dish-tag meat" type="button" data-name="豆腐蒸蛋" data-meta="荤/蛋 · 主料：豆腐 / 鸡蛋 · 快手替换 · 费工度：低">豆腐蒸蛋</button>
+              <button class="dish-tag veg" type="button" data-name="蒜蓉西兰花" data-meta="素菜 · 主料：西兰花 · 清淡 · 费工度：低">蒜蓉西兰花</button>
+              <button class="dish-tag veg" type="button" data-name="酸辣土豆丝" data-meta="素菜 · 主料：土豆 · 常做 · 费工度：低">酸辣土豆丝</button>
+              <button class="dish-tag soup" type="button" data-name="番茄豆腐汤" data-meta="汤 · 主料：番茄 / 豆腐 · 清爽 · 费工度：低">番茄豆腐汤</button>
+
+              <div class="day-cell">四</div>
+              <button class="dish-tag meat" type="button" data-name="香煎鸡腿" data-meta="荤菜 · 主料：鸡肉 · 与周一间隔 3 天 · 费工度：中">香煎鸡腿</button>
+              <button class="dish-tag meat" type="button" data-name="肉末茄子" data-meta="荤菜 · 主料：猪肉 / 茄子 · 下饭 · 费工度：中">肉末茄子</button>
+              <button class="dish-tag veg" type="button" data-name="清炒小白菜" data-meta="素菜 · 主料：青菜 · 清淡 · 费工度：低">清炒小白菜</button>
+              <button class="dish-tag veg" type="button" data-name="凉拌黄瓜" data-meta="素菜 · 主料：黄瓜 · 夏天清爽 · 费工度：低">凉拌黄瓜</button>
+              <button class="dish-tag soup" type="button" data-name="莲藕排骨汤" data-meta="汤 · 主料：排骨 · 新入池候选 · 费工度：高，每日仅此一道费工菜">莲藕排骨汤</button>
+
+              <div class="day-cell">五</div>
+              <button class="dish-tag meat" type="button" data-name="清蒸鲈鱼" data-meta="荤菜 · 主料：鱼 · 与周二间隔 3 天 · 费工度：中">清蒸鲈鱼</button>
+              <button class="dish-tag meat" type="button" data-name="肉末蒸蛋" data-meta="荤/蛋 · 主料：猪肉 / 鸡蛋 · 新入池候选 · 费工度：低">肉末蒸蛋</button>
+              <button class="dish-tag veg" type="button" data-name="干煸四季豆" data-meta="素菜 · 主料：四季豆 · 常做 · 费工度：中">干煸四季豆</button>
+              <button class="dish-tag veg" type="button" data-name="蚝油生菜" data-meta="素菜 · 主料：生菜 · 快手 · 费工度：低">蚝油生菜</button>
+              <button class="dish-tag soup" type="button" data-name="玉米萝卜汤" data-meta="汤 · 主料：玉米 / 萝卜 · 清甜 · 费工度：低">玉米萝卜汤</button>
+            </div>
+            <div class="dish-detail" id="dish-detail">
+              <strong>香菇滑鸡</strong>
+              <span>荤菜 · 主料：鸡肉 · 常做 · 近 5 天未用 · 费工度：中</span>
+              <div class="actions">
+                <button class="secondary" type="button" data-toast="候选：豆腐蒸蛋、青椒肉丝、肉末蒸蛋">换这道</button>
+              </div>
+            </div>
+          </article>
+
+          <section class="notice">
+            <h2>群通知文案</h2>
+            <p>AI 只润色，不改变菜单。</p>
+            <div class="copy" id="copy">
+              下周午餐菜单先排好啦：每天 2 荤 2 素 1 汤，还是 30 元一份。需要的街坊按日期接龙，我照着做。
+            </div>
+            <div class="actions">
+              <button class="primary" type="button" data-toast="已复制文案，可以粘到微信群">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect width="14" height="14" x="8" y="8" rx="2"></rect>
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
+                </svg>
+                复制发群
+              </button>
+            </div>
+          </section>
+
+          <section class="modal-layer" id="pool-modal" aria-label="补菜品池弹窗" aria-hidden="true">
+            <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="pool-title">
+              <div class="sheet-handle" aria-hidden="true"></div>
+              <div class="sheet-head">
+                <div>
+                  <h2 id="pool-title">补菜品池</h2>
+                  <p>随口说几道自己会做的菜，系统帮你整理分类、主料和费工度。确认后才入池，菜单才会用。</p>
+                </div>
+                <button class="icon-button" type="button" id="close-pool" title="关闭" aria-label="关闭补菜弹窗">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 6 6 18"></path>
+                    <path d="m6 6 12 12"></path>
+                  </svg>
+                </button>
+              </div>
+              <div class="chips">
+                <span class="chip amber">AI 只帮整理</span>
+                <span class="chip green">确认后入池</span>
+                <span class="chip blue">不改已发菜单</span>
+              </div>
+              <div class="pool-input">
+                <textarea aria-label="补充菜品">我还会做：红烧带鱼、莲藕排骨汤、肉末蒸蛋。带鱼算鱼，排骨汤比较费工。</textarea>
+                <div class="actions">
+                  <button class="primary" type="button" id="parse-dishes">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 3v18"></path>
+                      <path d="M3 12h18"></path>
+                    </svg>
+                    识别菜品
+                  </button>
+                  <button class="secondary" type="button" data-toast="MVP 用手机输入法语音键录菜名，不自建 ASR">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                    </svg>
+                    语音说菜
+                  </button>
+                </div>
+              </div>
+
+              <div class="pool-row">
+                <div>
+                  <strong>红烧带鱼</strong>
+                  <span>分类：荤菜 · 主料：鱼 · 费工度：中 · 近 7 天未用</span>
+                </div>
+                <button class="tiny-action add-dish" type="button">入池</button>
+              </div>
+              <div class="pool-row">
+                <div>
+                  <strong>莲藕排骨汤</strong>
+                  <span>分类：汤 · 主料：排骨 · 费工度：高 · 每日最多 1 道费工菜</span>
+                </div>
+                <button class="tiny-action add-dish" type="button">入池</button>
+              </div>
+              <div class="pool-row">
+                <div>
+                  <strong>肉末蒸蛋</strong>
+                  <span>分类：荤菜 · 主料：猪肉 / 鸡蛋 · 费工度：低 · 可作快手替换</span>
+                </div>
+                <button class="tiny-action add-dish" type="button">入池</button>
+              </div>
+              <div class="actions">
+                <button class="primary" type="button" id="add-all-dishes">
+                  <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="m20 6-11 11-5-5"></path>
+                  </svg>
+                  全部确认入池
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <aside class="side-panel" aria-label="原型说明">
+        <h2>原型 3：菜单脑</h2>
+        <p>这是中难度、AI 轻辅助的原型，专注验证“系统能不能替桃子承担想菜单的负担”。关键是让她相信菜单都来自自己会做的菜。</p>
+        <h3>要验证的判断</h3>
+        <ul>
+          <li>菜品池 + 规则约束是否比纯聊天 AI 更可信。</li>
+          <li>补菜是否能在做菜单时顺手完成，而不是变成后台维护负担。</li>
+          <li>一键换菜是否能减少“我不想做这道”的摩擦。</li>
+          <li>群通知文案是否足够像她本人语气。</li>
+        </ul>
+        <h3>AI 接入程度</h3>
+        <p>选菜是确定性算法；AI 做菜名整理、主料/分类初判和通知文案润色。菜品必须经桃子确认入池，系统才会在菜单里使用。</p>
+      </aside>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script>
+      const toast = document.querySelector("#toast");
+      let toastTimer;
+
+      function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+      }
+
+      document.querySelectorAll("[data-toast]").forEach((el) => {
+        el.addEventListener("click", () => showToast(el.dataset.toast));
+      });
+
+      document.querySelector("#generate").addEventListener("click", () => {
+        document.querySelector("#repeat-count").textContent = "0";
+        showToast("已按主料避重生成下周 5 天菜单");
+      });
+
+      const poolModal = document.querySelector("#pool-modal");
+
+      function openPoolModal() {
+        poolModal.classList.add("open");
+        poolModal.setAttribute("aria-hidden", "false");
+      }
+
+      function closePoolModal() {
+        poolModal.classList.remove("open");
+        poolModal.setAttribute("aria-hidden", "true");
+      }
+
+      document.querySelector("#jump-pool").addEventListener("click", () => {
+        openPoolModal();
+      });
+
+      document.querySelector("#close-pool").addEventListener("click", closePoolModal);
+
+      poolModal.addEventListener("click", (event) => {
+        if (event.target === poolModal) closePoolModal();
+      });
+
+      document.querySelector("#parse-dishes").addEventListener("click", () => {
+        showToast("已识别 3 道菜：分类和主料可点开修改");
+      });
+
+      document.querySelectorAll(".add-dish").forEach((button) => {
+        button.addEventListener("click", () => {
+          button.textContent = "已入池";
+          button.classList.add("pool-added");
+          document.querySelector("#pool-count").textContent = "44";
+          showToast("已入池，之后生成菜单会纳入候选");
+        });
+      });
+
+      document.querySelector("#add-all-dishes").addEventListener("click", () => {
+        document.querySelectorAll(".add-dish").forEach((button) => {
+          button.textContent = "已入池";
+          button.classList.add("pool-added");
+        });
+        document.querySelector("#pool-count").textContent = "46";
+        closePoolModal();
+        showToast("3 道菜已确认入池，仍不会自动改变已发布菜单");
+      });
+
+      const dishDetail = document.querySelector("#dish-detail");
+
+      document.querySelectorAll(".dish-tag").forEach((button) => {
+        button.addEventListener("click", () => {
+          document.querySelectorAll(".dish-tag").forEach((tag) => tag.classList.remove("active"));
+          button.classList.add("active");
+          dishDetail.querySelector("strong").textContent = button.dataset.name;
+          dishDetail.querySelector("span").textContent = button.dataset.meta;
+          showToast(`正在看：${button.dataset.name}`);
+        });
+      });
+    </script>
+  </body>
+</html>
