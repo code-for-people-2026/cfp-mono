@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resolveWeeklyMenuDatabaseUrl } from "./database";
+import { createWeeklyMenuPool, resolveWeeklyMenuDatabaseUrl } from "./database";
 
 describe("resolveWeeklyMenuDatabaseUrl", () => {
   it("only accepts the dedicated PostgreSQL variable", () => {
@@ -24,4 +24,16 @@ describe("resolveWeeklyMenuDatabaseUrl", () => {
       ).toThrow("WEEKLY_MENU_DATABASE_URL must be a PostgreSQL database URL");
     }
   );
+
+  it("passes finite connection and server statement timeouts to PostgreSQL", async () => {
+    const pool = createWeeklyMenuPool(
+      { WEEKLY_MENU_DATABASE_URL: "postgresql://weekly@example.test/weekly_menu" },
+      { connectionTimeoutMillis: 2_000, statement_timeout: 2_000 }
+    );
+    expect(pool.options).toMatchObject({
+      connectionTimeoutMillis: 2_000,
+      statement_timeout: 2_000
+    });
+    await pool.end();
+  });
 });

@@ -1,7 +1,28 @@
 # @cfp/weekly-menu-be
 
-Weekly Menu 的独立后端边界。本 Issue 只包含 PostgreSQL 持久化和 website recipes
-匿名只读客户端；HTTP、微信登录及业务 API 由后续 Issue 组合。
+Weekly Menu 的独立后端边界。它使用 Node 标准库 HTTP 提供健康检查和微信会话，
+并组合本应用自己的 PostgreSQL 持久化与 website recipes 匿名只读客户端。
+
+## 运行时
+
+```bash
+WEEKLY_MENU_DATABASE_URL='postgresql://…/weekly_menu' \
+WEEKLY_MENU_RECIPES_BASE_URL='https://website.example.test' \
+WEEKLY_MENU_WECHAT_APP_ID='由服务端安全注入' \
+WEEKLY_MENU_WECHAT_APP_SECRET='由服务端安全注入' \
+pnpm --filter @cfp/weekly-menu-be start
+```
+
+- 默认监听容器内 `0.0.0.0:3304`；生产宿主机只将端口映射到 loopback。
+- `GET /api/health` 只返回进程状态和截短的 `RELEASE_SHA`。
+- `GET /api/ready` 在限时内检查 Weekly Menu 专库和三个非空菜谱分类，不调用微信。
+- `POST /api/v1/auth/wechat` 用一次性 code 换取应用会话。
+- `DELETE /api/v1/auth/session` 撤销当前 Bearer 会话。
+- token 只向客户端返回一次；数据库只保存 SHA-256 哈希。日志不会记录 code、
+  openid、session_key、token、AppSecret、连接串或上游错误详情。
+- 请求体上限为 16 KiB。错误响应统一包含稳定 code 与 `x-request-id`。
+
+菜单生成、计划读写等 `/api/v1/weekly-menu/*` 业务路由不属于本阶段。
 
 ## 数据所有权
 
