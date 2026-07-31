@@ -4,6 +4,7 @@ import { Button, Text } from "@tarojs/components";
 import type { WeeklyMenuPlanDto } from "@cfp/weekly-menu-shared";
 import PlanOverview from "@/components/PlanOverview";
 import ScreenContainer from "@/components/ScreenContainer";
+import { clientFeedback } from "@/lib/client-feedback";
 import { weeklyMenuClient } from "@/lib/weekly-menu-client";
 import "./index.css";
 
@@ -11,6 +12,15 @@ export default function HistoryDetailPage() {
   const { params } = useRouter<{ id?: string }>();
   const planId = params.id;
   const [plan, setPlan] = useState<WeeklyMenuPlanDto | null>(null);
+
+  async function handleError(error: unknown, fallbackTitle: string) {
+    const feedback = clientFeedback(error, fallbackTitle);
+    await Taro.showToast({ title: feedback.title, icon: "none" });
+    if (feedback.returnHome) {
+      await Taro.reLaunch({ url: "/pages/index/index" });
+    }
+    return feedback.returnHome;
+  }
 
   useEffect(() => {
     if (!planId) {
@@ -20,15 +30,23 @@ export default function HistoryDetailPage() {
     void weeklyMenuClient
       .getPlan(planId)
       .then(setPlan)
-      .catch(() => Taro.navigateBack());
+      .catch(async (error: unknown) => {
+        if (!(await handleError(error, "菜单详情读取失败，请重试"))) {
+          await Taro.navigateBack();
+        }
+      });
   }, [planId]);
 
   async function copyPlan() {
     if (!plan) return;
-    const copied = await weeklyMenuClient.copyConfirmed(plan.id);
-    await Taro.redirectTo({
-      url: `/pages/menu/index?id=${encodeURIComponent(copied.id)}`
-    });
+    try {
+      const copied = await weeklyMenuClient.copyConfirmed(plan.id);
+      await Taro.redirectTo({
+        url: `/pages/menu/index?id=${encodeURIComponent(copied.id)}`
+      });
+    } catch (error) {
+      await handleError(error, "菜单复制失败，请重试");
+    }
   }
 
   async function deletePlan() {
@@ -38,8 +56,12 @@ export default function HistoryDetailPage() {
       content: "删除后无法恢复。"
     });
     if (!result.confirm) return;
-    await weeklyMenuClient.deleteDraft(plan.id);
-    await Taro.navigateBack();
+    try {
+      await weeklyMenuClient.deleteDraft(plan.id);
+      await Taro.navigateBack();
+    } catch (error) {
+      await handleError(error, "草稿删除失败，请重试");
+    }
   }
 
   if (!plan) {

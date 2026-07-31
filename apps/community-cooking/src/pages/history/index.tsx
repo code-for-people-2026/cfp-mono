@@ -3,6 +3,7 @@ import Taro, { useDidShow } from "@tarojs/taro";
 import { Button, Text } from "@tarojs/components";
 import type { WeeklyMenuPlanDto } from "@cfp/weekly-menu-shared";
 import ScreenContainer from "@/components/ScreenContainer";
+import { clientFeedback } from "@/lib/client-feedback";
 import { weeklyMenuClient } from "@/lib/weekly-menu-client";
 import "./index.css";
 
@@ -13,7 +14,13 @@ export default function HistoryPage() {
     void weeklyMenuClient
       .listPlans()
       .then(setPlans)
-      .catch(() => Taro.reLaunch({ url: "/pages/index/index" }));
+      .catch(async (error: unknown) => {
+        const feedback = clientFeedback(error, "历史菜单读取失败，请重试");
+        await Taro.showToast({ title: feedback.title, icon: "none" });
+        if (feedback.returnHome) {
+          await Taro.reLaunch({ url: "/pages/index/index" });
+        }
+      });
   });
 
   return (

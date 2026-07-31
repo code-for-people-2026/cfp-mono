@@ -10,6 +10,7 @@ import {
 } from "@tarojs/components";
 import type { DishChecklistDto } from "@cfp/weekly-menu-shared";
 import ScreenContainer from "@/components/ScreenContainer";
+import { clientFeedback } from "@/lib/client-feedback";
 import {
   readCheckedDishNames,
   writeCheckedDishNames,
@@ -40,9 +41,14 @@ export default function ChecklistPage() {
         const names = loaded.items.map(({ name }) => name);
         setChecklist(loaded);
         setChecked(readCheckedDishNames(loaded.planId, names, localStorage));
-      } catch {
-        await Taro.showToast({ title: "请先确认一份菜单", icon: "none" });
-        await Taro.navigateBack();
+      } catch (error) {
+        const feedback = clientFeedback(error, "菜品清单读取失败，请重试");
+        await Taro.showToast({ title: feedback.title, icon: "none" });
+        if (feedback.returnHome) {
+          await Taro.reLaunch({ url: "/pages/index/index" });
+        } else {
+          await Taro.navigateBack();
+        }
       }
     }
     void loadChecklist();

@@ -7,7 +7,11 @@ import type {
 } from "@cfp/weekly-menu-shared";
 import ScreenContainer from "@/components/ScreenContainer";
 import PlanOverview from "@/components/PlanOverview";
-import { weeklyMenuClient } from "@/lib/weekly-menu-client";
+import { clientFeedback } from "@/lib/client-feedback";
+import {
+  weeklyMenuClient,
+  weeklyMenuClientMode
+} from "@/lib/weekly-menu-client";
 import "./index.css";
 
 export default function MenuPage() {
@@ -16,6 +20,15 @@ export default function MenuPage() {
   const [plan, setPlan] = useState<DraftPlanDto | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function handleError(error: unknown, fallbackTitle: string) {
+    const feedback = clientFeedback(error, fallbackTitle);
+    await Taro.showToast({ title: feedback.title, icon: "none" });
+    if (feedback.returnHome) {
+      await Taro.reLaunch({ url: "/pages/index/index" });
+    }
+    return feedback.returnHome;
+  }
 
   useEffect(() => {
     async function loadPlan() {
@@ -27,9 +40,10 @@ export default function MenuPage() {
           throw new Error("NOT_DRAFT");
         }
         setPlan(loaded);
-      } catch {
-        await Taro.showToast({ title: "请从首页重新进入", icon: "none" });
-        await Taro.reLaunch({ url: "/pages/index/index" });
+      } catch (error) {
+        if (!(await handleError(error, "菜单读取失败，请从首页重试"))) {
+          await Taro.reLaunch({ url: "/pages/index/index" });
+        }
       }
     }
     void loadPlan();
@@ -40,7 +54,9 @@ export default function MenuPage() {
     setBusy(true);
     try {
       setPlan(await weeklyMenuClient.replaceDraftDish(plan, input));
-      setNotice("已换一道，保存后会出现在历史中");
+      setNotice("已换一道并自动保存");
+    } catch (error) {
+      await handleError(error, "换菜失败，请重试");
     } finally {
       setBusy(false);
     }
@@ -52,6 +68,8 @@ export default function MenuPage() {
     try {
       setPlan(await weeklyMenuClient.saveDraft(plan));
       setNotice("草稿已保存");
+    } catch (error) {
+      await handleError(error, "草稿保存失败，请重试");
     } finally {
       setBusy(false);
     }
@@ -65,6 +83,8 @@ export default function MenuPage() {
       await Taro.redirectTo({
         url: `/pages/checklist/index?id=${encodeURIComponent(confirmed.id)}`
       });
+    } catch (error) {
+      await handleError(error, "菜单确认失败，请重试");
     } finally {
       setBusy(false);
     }
@@ -74,7 +94,8 @@ export default function MenuPage() {
     <ScreenContainer>
       <Text className="menu-title">本周菜单</Text>
       <Text className="menu-hint">
-        Mock 草稿 · 7 天 × 2 餐 · 每餐三道菜
+        {weeklyMenuClientMode === "real" ? "真实 API" : "Mock 模式"} ·
+        生成和换菜会立即保存
       </Text>
       {plan ? (
         <>
