@@ -8,8 +8,8 @@
 | --- | --- | --- |
 | Weekly Menu 契约与规则 | 小程序消费 `@cfp/weekly-menu-shared`；其内部复用已测试的 `@cfp/menu-core` | `packages/weekly-menu-shared` |
 | 菜谱内容 | Payload `recipes` 已存在 | 官网私有 `apps/website` |
-| Taro app | 首页、菜单占位页和基础组件已存在 | `apps/community-cooking` |
-| 菜谱请求 | 只有 `createRecipesUrl()` 与单测，尚无真实请求 | 历史过渡 helper |
+| Taro app | Mock 登录、首页、菜单、历史详情和菜品勾选清单已实现 | `apps/community-cooking` |
+| 客户端数据源 | `WeeklyMenuClient` 接口下的本地 Mock；不发真实请求 | `apps/community-cooking` |
 
 网页 React/Next 页面不能直接迁到 Taro；只复用产品流程、TypeScript 契约和纯函数。
 
@@ -22,7 +22,7 @@ apps/community-cooking
   -> GET website /api/recipes（服务端匿名只读）
 ```
 
-- 小程序绝不调用 `createRecipesUrl()` 或 raw Payload REST/GraphQL。
+- 小程序没有 raw Payload URL helper，绝不调用 Payload REST/GraphQL。
 - Weekly Menu API 只返回客户端 Happy Path 所需的最小 DTO，不透传 Payload collection、分页或管理模型。
 - `/admin`、website 数据库、migration/seed、写接口和权限全部保持官网私有。
 - 不新增 CMS internal route/token；未来写 CMS 必须另开 Issue 并重新授权。
@@ -35,7 +35,9 @@ apps/community-cooking
 4. #318 先交付 Weekly Menu API 的公网 HTTPS、readiness 与 smoke。
 5. #317 再完成真实 adapter、合法 request 域名、体验版与真机 Happy Path。
 
-Mock adapter 只调用 `@cfp/weekly-menu-shared`；真实 adapter 只调用 Weekly Menu API。菜单算法仍由 shared 内部的 `@cfp/menu-core` 提供。
+Mock adapter 只调用 `@cfp/weekly-menu-shared`；真实 adapter 只调用 Weekly Menu API。页面不直接导入 `@cfp/menu-core`，也不预设 #315/#316 尚未稳定的 HTTP、token 或分页格式。
+
+当前 Mock Happy Path 包含：本地 Mock 登录、生成 7 天 × 2 餐、换菜、保存草稿、确认、历史详情、从 confirmed 复制新草稿、删除 draft，以及从 confirmed 菜名去重生成勾选清单。Mock 计划只保存在进程内；刷新丢失符合当前测试桩定位，不把它冒充离线业务存储。
 
 MVP 只提供“本周菜品勾选清单”：服务端响应仅包含 confirmed plan 中去重后的菜名，`checked` 状态只留在客户端本地，不进入业务库。它不包含食材或用量，不能称作食材购物清单。真正的食材购物清单明确 deferred；只有 website recipes 的所有者通过独立 Issue 增加结构化食材/用量并重新完成架构与安全评审后，Weekly Menu 才能另行实现，不能在 Weekly Menu 侧臆造 schema。
 

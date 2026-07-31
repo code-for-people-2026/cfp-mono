@@ -1,4 +1,4 @@
-import { Text, View } from "@tarojs/components";
+import { Button, Text, View } from "@tarojs/components";
 import type { RecipeCategory } from "@cfp/weekly-menu-shared";
 import "./index.css";
 
@@ -25,9 +25,9 @@ export default function DishCard({ name, category, onRotate }: DishCardProps) {
       </Text>
       <Text className="dish-name">{name}</Text>
       {onRotate ? (
-        <Text className="dish-rotate" onClick={onRotate}>
+        <Button className="dish-rotate" onClick={onRotate}>
           换一道
-        </Text>
+        </Button>
       ) : null}
     </View>
   );

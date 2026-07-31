@@ -12,14 +12,9 @@
   font-size: 24px;
 }
 
-.menu-day {
-  margin-top: 32px;
-}
-
-.menu-day-label {
+.menu-source {
   display: block;
-  margin-bottom: 8px;
-  color: #525252;
-  font-size: 28px;
-  font-weight: 700;
+  margin-top: 20px;
+  color: #2f855a;
+  font-size: 24px;
 }

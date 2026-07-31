@@ -20,16 +20,33 @@
   line-height: 1.7;
 }
 
-.cta {
+.login-card,
+.home-actions {
   margin-top: 48px;
   padding: 28px;
   border-radius: 12px;
-  background: #2f855a;
-  text-align: center;
+  background: #ffffff;
 }
 
-.cta-text {
-  color: #ffffff;
-  font-size: 32px;
+.mock-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: #f3eee4;
+  color: #756c5e;
+  font-size: 22px;
+}
+
+.login-hint,
+.welcome {
+  display: block;
+  margin-top: 20px;
+  color: #525252;
+  font-size: 28px;
+  line-height: 1.6;
+}
+
+.welcome {
+  color: #171717;
   font-weight: 700;
 }
