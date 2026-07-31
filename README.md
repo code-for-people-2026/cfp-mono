@@ -6,7 +6,8 @@
 
 ## 应用
 
-- `apps/website`：Next.js + Payload CMS 官方网站，面向外部访问者介绍宣言、协议和 7×7 方向地图（含 `/map` 互动矩阵）。**当前唯一在维护、且为阿里云部署目标的应用。**
+- `apps/website`：Next.js + Payload CMS 官方网站，面向外部访问者介绍宣言、协议和 7×7 方向地图（含 `/map` 互动矩阵）。**当前唯一阿里云部署目标。**
+- `apps/community-cooking`：Taro 微信小程序与 H5，已承接一周菜单骨架，后续 Weekly Menu 功能继续在此扩展。
 
 ### 已退役 / 已归档
 
@@ -20,6 +21,11 @@
 - `packages/tailwind-config`：共享 Tailwind 配置。
 - `packages/typescript-config`：共享 TypeScript 配置。
 - `packages/eslint-config`：共享 ESLint 配置。
+- `packages/menu-core`：菜单生成与换菜算法的唯一事实源。
+
+## Weekly Menu
+
+迁移边界、运行拓扑和旧仓库收口见 [Weekly Menu 迁移决策](./docs/weekly-menu/MIGRATION.md)。
 
 ## 本地启动
 
