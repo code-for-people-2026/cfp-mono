@@ -39,8 +39,11 @@ export const mealLabelSchema = z.enum(MEAL_LABELS);
 export const planStatusSchema = z.enum(["draft", "confirmed"]);
 
 const dishNameSchema = z.string().trim().min(1);
-const planIdSchema = z.string().trim().min(1);
-const weekStartSchema = z.iso.date();
+export const planIdSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/);
+export const weekStartSchema = z.iso.date().refine(
+  (value) => new Date(`${value}T00:00:00Z`).getUTCDay() === 1,
+  "weekStart 必须是周一"
+);
 const timestampSchema = z.iso.datetime({ offset: true });
 
 export const plannedMealSchema = z
@@ -123,6 +126,40 @@ export const copyPlanInputSchema = z
   })
   .strict();
 
+export const generatePlanInputSchema = z
+  .object({
+    weekStart: weekStartSchema
+  })
+  .strict();
+
+export const planListQuerySchema = z
+  .object({
+    limit: z.number().int().min(1).max(50).default(20),
+    offset: z.number().int().min(0).max(10_000).default(0)
+  })
+  .strict();
+
+export const planListDtoSchema = z
+  .object({
+    contractVersion: z.literal(WEEKLY_MENU_CONTRACT_VERSION),
+    items: z.array(weeklyMenuPlanDtoSchema),
+    page: z
+      .object({
+        limit: z.number().int().min(1).max(50),
+        offset: z.number().int().min(0),
+        hasMore: z.boolean()
+      })
+      .strict()
+  })
+  .strict();
+
+export const bootstrapDtoSchema = z
+  .object({
+    contractVersion: z.literal(WEEKLY_MENU_CONTRACT_VERSION),
+    latestDraft: draftPlanDtoSchema.nullable()
+  })
+  .strict();
+
 export const dishChecklistDtoSchema = z
   .object({
     contractVersion: z.literal(WEEKLY_MENU_CONTRACT_VERSION),
@@ -153,6 +190,10 @@ export type ConfirmedPlanDto = z.infer<typeof confirmedPlanDtoSchema>;
 export type WeeklyMenuPlanDto = z.infer<typeof weeklyMenuPlanDtoSchema>;
 export type ReplaceDishInput = z.infer<typeof replaceDishInputSchema>;
 export type CopyPlanInput = z.infer<typeof copyPlanInputSchema>;
+export type GeneratePlanInput = z.infer<typeof generatePlanInputSchema>;
+export type PlanListQuery = z.infer<typeof planListQuerySchema>;
+export type PlanListDto = z.infer<typeof planListDtoSchema>;
+export type BootstrapDto = z.infer<typeof bootstrapDtoSchema>;
 export type DishChecklistDto = z.infer<typeof dishChecklistDtoSchema>;
 
 export const WEEKLY_MENU_ERROR_CODES = [

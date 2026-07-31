@@ -6,10 +6,15 @@ import {
   assertPlanCanDelete,
   confirmDraftPlan,
   copyConfirmedPlan,
+  copyPlanInputSchema,
+  bootstrapDtoSchema,
   createDishChecklist,
   dishChecklistDtoSchema,
   draftPlanDtoSchema,
   generateDraftPlan,
+  generatePlanInputSchema,
+  planListDtoSchema,
+  planListQuerySchema,
   recipeCategorySchema,
   replaceDishInputSchema,
   replaceDraftPlanDish,
@@ -60,6 +65,39 @@ describe("共享契约", () => {
       mealIndex: 1,
       slot: "vegetable"
     });
+  });
+
+  it("固定生成、bootstrap 与分页的最小传输契约", () => {
+    const draft = makeDraft();
+    expect(generatePlanInputSchema.parse({ weekStart: draft.weekStart })).toEqual({
+      weekStart: draft.weekStart
+    });
+    expect(planListQuerySchema.parse({})).toEqual({ limit: 20, offset: 0 });
+    expect(
+      planListDtoSchema.parse({
+        contractVersion: WEEKLY_MENU_CONTRACT_VERSION,
+        items: [draft],
+        page: { limit: 20, offset: 0, hasMore: false }
+      })
+    ).toMatchObject({ items: [draft] });
+    expect(
+      bootstrapDtoSchema.parse({
+        contractVersion: WEEKLY_MENU_CONTRACT_VERSION,
+        latestDraft: draft
+      })
+    ).toMatchObject({ latestDraft: draft });
+
+    expect(() => planListQuerySchema.parse({ limit: 51, offset: 0 })).toThrow();
+    expect(() => generatePlanInputSchema.parse({ weekStart: "2026/08/03" })).toThrow();
+    expect(() => generatePlanInputSchema.parse({ weekStart: "2026-08-04" })).toThrow(
+      "weekStart 必须是周一"
+    );
+    expect(() =>
+      draftPlanDtoSchema.parse({ ...draft, weekStart: "2026-08-04" })
+    ).toThrow("weekStart 必须是周一");
+    expect(() =>
+      copyPlanInputSchema.parse({ id: "copy-1", weekStart: "2026-08-04" })
+    ).toThrow("weekStart 必须是周一");
   });
 
   it("拒绝数据库字段、越界或混用的坐标和错误的星期/餐次顺序", () => {

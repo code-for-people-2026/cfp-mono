@@ -23,5 +23,12 @@ export {
 export {
   WeeklyMenuStore,
   type ActiveSession,
+  type PlanPage,
   type WeeklyMenuIdentity
 } from "./store";
+export {
+  WeeklyMenuApiError,
+  WeeklyMenuService,
+  type WeeklyMenuApiErrorCode,
+  type WeeklyMenuPlanStore
+} from "./weekly-menu-service";

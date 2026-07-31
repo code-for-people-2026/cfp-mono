@@ -130,6 +130,26 @@ describeWithDatabase("weekly-menu PostgreSQL persistence", () => {
     await expect(store!.findPlan("owner-1", draft.id)).resolves.toEqual(draft);
   });
 
+  it("lists only owner plans and returns the latest draft for bootstrap", async () => {
+    await store!.upsertWechatIdentity({ id: "owner-1", wechatOpenId: "openid-1" });
+    await store!.upsertWechatIdentity({ id: "owner-2", wechatOpenId: "openid-2" });
+    await store!.createDraftPlan("owner-1", makeDraft("plan-1"));
+    await store!.createDraftPlan("owner-1", makeDraft("plan-2"));
+    await store!.createDraftPlan("owner-2", makeDraft("foreign-plan"));
+
+    await expect(store!.findLatestDraft("owner-1")).resolves.toMatchObject({
+      id: "plan-2",
+      status: "draft"
+    });
+    await expect(store!.listPlans("owner-1", { limit: 1, offset: 0 })).resolves.toMatchObject({
+      items: [{ id: expect.any(String) }],
+      hasMore: true
+    });
+    const all = await store!.listPlans("owner-1", { limit: 10, offset: 0 });
+    expect(all.items.map((plan) => plan.id).sort()).toEqual(["plan-1", "plan-2"]);
+    expect(all.items.map((plan) => plan.id)).not.toContain("foreign-plan");
+  });
+
   it("makes confirmed plans immutable in both the DAL and database", async () => {
     await store!.upsertWechatIdentity({ id: "owner-1", wechatOpenId: "openid-1" });
     const draft = makeDraft("plan-1");
