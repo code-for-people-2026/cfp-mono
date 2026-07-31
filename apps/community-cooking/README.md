@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-- `@cfp/menu-core` 已提供菜单生成与换菜算法。
+- `@cfp/weekly-menu-shared` 提供版本化 DTO、验证和纯领域规则，底层继续调用 `@cfp/menu-core` 的菜单生成与换菜算法。
 - `apps/website` 已有官网私有的 Payload `recipes` collection。
 - `src/lib/api.ts` 仅封装了历史 `recipes` URL 构造器及测试；菜单页仍是占位数据，尚未发起真实请求。
 - 首页、菜单页和基础组件已存在，其余 Happy Path 尚未实现。
@@ -15,7 +15,7 @@
 - `weekly-menu-be` 是现有匿名只读 `GET /api/recipes` 的唯一 Weekly Menu 消费者，并向小程序返回最小 DTO。
 - 官网 `/admin`、Payload 配置、数据库、migration/seed、写接口和管理权限保持 website 私有且权限不变。
 - 不新增 CMS internal route/token；未来如需写 CMS，必须另开 Issue 并重新取得架构与安全授权。
-- Mock adapter 可以复用 `@cfp/menu-core`，真实 adapter 只调用 Weekly Menu API。
+- Mock adapter 可以复用 `@cfp/weekly-menu-shared`，真实 adapter 只调用 Weekly Menu API。
 - MVP 的“本周菜品勾选清单”仅来自 confirmed plan 的去重菜名；`checked` 状态只留在客户端本地，不进入业务库。真正的食材购物清单不在当前范围。
 
 完整决策、数据与部署所有权见 [Weekly Menu 迁移决策](../../docs/weekly-menu/MIGRATION.md)。

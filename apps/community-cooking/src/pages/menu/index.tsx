@@ -1,5 +1,5 @@
 import { Text, View } from "@tarojs/components";
-import type { RecipeCategory } from "@cfp/menu-core";
+import type { RecipeCategory } from "@cfp/weekly-menu-shared";
 import ScreenContainer from "@/components/ScreenContainer";
 import DishCard from "@/components/DishCard";
 import "./index.css";

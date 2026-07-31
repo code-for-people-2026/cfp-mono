@@ -1,8 +1,8 @@
 import { Text, View } from "@tarojs/components";
-import type { RecipeCategory } from "@cfp/menu-core";
+import type { RecipeCategory } from "@cfp/weekly-menu-shared";
 import "./index.css";
 
-// 分类取值直接复用 menu-core 的契约（与 CMS recipes 集合的 category 一致）。
+// 分类取值复用 Weekly Menu 共享契约；底层唯一来源仍是 menu-core。
 const CATEGORY_LABELS: Record<RecipeCategory, string> = {
   "big-meat": "大荤",
   "small-meat": "小荤",

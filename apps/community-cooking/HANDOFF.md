@@ -6,7 +6,7 @@
 
 | 资产 | 当前状态 | 所有者 |
 | --- | --- | --- |
-| 菜单生成与换菜算法 | `@cfp/menu-core` 已实现并有测试 | `packages/menu-core` |
+| Weekly Menu 契约与规则 | 小程序消费 `@cfp/weekly-menu-shared`；其内部复用已测试的 `@cfp/menu-core` | `packages/weekly-menu-shared` |
 | 菜谱内容 | Payload `recipes` 已存在 | 官网私有 `apps/website` |
 | Taro app | 首页、菜单占位页和基础组件已存在 | `apps/community-cooking` |
 | 菜谱请求 | 只有 `createRecipesUrl()` 与单测，尚无真实请求 | 历史过渡 helper |
@@ -35,7 +35,7 @@ apps/community-cooking
 4. #318 先交付 Weekly Menu API 的公网 HTTPS、readiness 与 smoke。
 5. #317 再完成真实 adapter、合法 request 域名、体验版与真机 Happy Path。
 
-Mock adapter 可直接调用 `@cfp/menu-core`；真实 adapter 只调用 Weekly Menu API。
+Mock adapter 只调用 `@cfp/weekly-menu-shared`；真实 adapter 只调用 Weekly Menu API。菜单算法仍由 shared 内部的 `@cfp/menu-core` 提供。
 
 MVP 只提供“本周菜品勾选清单”：服务端响应仅包含 confirmed plan 中去重后的菜名，`checked` 状态只留在客户端本地，不进入业务库。它不包含食材或用量，不能称作食材购物清单。真正的食材购物清单明确 deferred；只有 website recipes 的所有者通过独立 Issue 增加结构化食材/用量并重新完成架构与安全评审后，Weekly Menu 才能另行实现，不能在 Weekly Menu 侧臆造 schema。
 
