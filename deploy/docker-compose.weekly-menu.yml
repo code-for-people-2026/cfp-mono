@@ -1,0 +1,14 @@
+name: cfp-weekly-menu
+
+services:
+  weekly-menu-be:
+    image: ${WEEKLY_MENU_IMAGE:?WEEKLY_MENU_IMAGE is required}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${WEEKLY_MENU_ENV_FILE:-./.env.production}
+    environment:
+      PORT: "3304"
+    ports:
+      - "127.0.0.1:3304:3304"
+    stop_grace_period: 15s

@@ -3,6 +3,8 @@ set -euo pipefail
 
 SITE_URL="${SITE_URL:-http://127.0.0.1:3302}"
 SITE_URL="${SITE_URL%/}"
+WEEKLY_MENU_URL="${WEEKLY_MENU_URL:-http://127.0.0.1:3304}"
+WEEKLY_MENU_URL="${WEEKLY_MENU_URL%/}"
 target="${1:-website}"
 RETRIES="${SMOKE_RETRIES:-30}"
 SLEEP="${SMOKE_SLEEP:-2}"
@@ -26,7 +28,7 @@ retry() {
   done
 }
 
-[[ "$target" == website ]] || fail "invalid_target"
+[[ "$target" == website || "$target" == weekly-menu ]] || fail "invalid_target"
 release_sha="${RELEASE_SHA:-}"
 [[ "$release_sha" =~ ^[0-9a-f]{40}$ ]] || fail "invalid_configuration"
 for command in curl jq; do
@@ -44,7 +46,45 @@ website_release() {
     jq -e --arg releaseSha "$release_sha" ".releaseSha == \$releaseSha and ($contract)"
 }
 
-retry website "${website_curl[@]}" "$SITE_URL/"
-retry website_health website_release /api/health '.status == "ok"'
-retry website_readiness website_release /api/ready '.ok == true and .service == "website"'
+weekly_menu_curl=(curl -sS -m 10)
+if [[ -n "${WEEKLY_MENU_CONNECT_TO:-}" ]]; then
+  weekly_menu_curl+=(--connect-to "$WEEKLY_MENU_CONNECT_TO")
+fi
+
+weekly_menu_release() {
+  local endpoint="$1" contract="$2"
+  "${weekly_menu_curl[@]}" -f "$WEEKLY_MENU_URL$endpoint" |
+    jq -e --arg release "${release_sha:0:12}" ".release == \$release and ($contract)"
+}
+
+weekly_menu_ready() {
+  "${weekly_menu_curl[@]}" -f "$WEEKLY_MENU_URL/api/ready" |
+    jq -e '.status == "ready"'
+}
+
+weekly_menu_unauthorized() {
+  local body_file status
+  body_file="$(mktemp)"
+  status="$("${weekly_menu_curl[@]}" -o "$body_file" -w '%{http_code}' \
+    "$WEEKLY_MENU_URL/api/v1/weekly-menu/bootstrap")" || {
+      rm -f "$body_file"
+      return 1
+    }
+  if [[ "$status" == 401 ]] && jq -e '.error.code == "UNAUTHORIZED"' "$body_file" >/dev/null; then
+    rm -f "$body_file"
+    return 0
+  fi
+  rm -f "$body_file"
+  return 1
+}
+
+if [[ "$target" == website ]]; then
+  retry website "${website_curl[@]}" "$SITE_URL/"
+  retry website_health website_release /api/health '.status == "ok"'
+  retry website_readiness website_release /api/ready '.ok == true and .service == "website"'
+else
+  retry weekly_menu_health weekly_menu_release /api/health '.status == "ok"'
+  retry weekly_menu_readiness weekly_menu_ready
+  retry weekly_menu_auth weekly_menu_unauthorized
+fi
 echo "Smoke tests passed"

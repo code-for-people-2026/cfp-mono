@@ -16,6 +16,7 @@ jobs:
     timeout-minutes: 45
     outputs:
       website_affected: ${{ steps.deploy_targets.outputs.website }}
+      weekly_menu_affected: ${{ steps.deploy_targets.outputs.weekly_menu }}
       deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
       preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
@@ -67,6 +68,12 @@ jobs:
           DEPLOY_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
           DEPLOY_HEAD: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: bash deploy/resolve-deploy-targets.sh
+
+      - name: Run deployment contract tests
+        run: |
+          bash deploy/tests/production-targets.test.sh
+          bash deploy/tests/weekly-menu-deploy.test.sh
+          bash deploy/tests/website-smoke.test.sh
 
       - run: pnpm verify
 
