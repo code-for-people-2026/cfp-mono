@@ -6,7 +6,7 @@
 
 - **创建 Issue**：`gh issue create --title "..." --body "..."`。多行正文使用 heredoc。
 - **读取 Issue**：`gh issue view <number> --comments`，同时获取并检查评论和标签。
-- **列出 Issues**：`gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`，根据任务添加适当的 `--label` 和 `--state` 过滤条件。
+- **列出 Issues**：`gh issue list --state open --limit 1000 --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'`，根据任务添加适当的 `--label` 和 `--state` 过滤条件。
 - **评论 Issue**：`gh issue comment <number> --body "..."`
 - **添加或移除标签**：`gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **关闭 Issue**：`gh issue close <number> --comment "..."`
@@ -20,7 +20,7 @@
 如果以后将其改为 `yes`，外部 PR 将与 Issues 使用相同的标签和状态：
 
 - **读取 PR**：使用 `gh pr view <number> --comments`，并通过 `gh pr diff <number>` 读取 diff。
-- **列出待分诊的外部 PR**：使用 `gh pr list --state open --json number,title,body,labels,author,authorAssociation,comments`，仅保留 `authorAssociation` 为 `CONTRIBUTOR`、`FIRST_TIME_CONTRIBUTOR` 或 `NONE` 的 PR。
+- **列出待分诊的外部 PR**：使用 `gh pr list --state open --limit 1000 --json number,title,body,labels,author,authorAssociation,comments`，仅保留 `authorAssociation` 为 `CONTRIBUTOR`、`FIRST_TIME_CONTRIBUTOR`、`FIRST_TIMER` 或 `NONE` 的 PR。
 - **评论、添加标签或关闭**：使用 `gh pr comment`、`gh pr edit --add-label`/`--remove-label` 和 `gh pr close`。
 
 GitHub 的 Issues 和 PR 共用编号空间。遇到单独的 `#42` 时，先运行 `gh pr view 42`；如果不是 PR，再运行 `gh issue view 42`。
