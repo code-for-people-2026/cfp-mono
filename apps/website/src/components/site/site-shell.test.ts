@@ -20,6 +20,14 @@ describe("shared site shells", () => {
     expect(markup).toContain("正文");
   });
 
+  it("does not render an empty hierarchy separator at the brand root", () => {
+    const markup = renderToStaticMarkup(
+      createElement(FullSiteShell, null, createElement("p", null, "首页正文")),
+    );
+
+    expect(markup).not.toContain("data-site-hierarchy-separator");
+  });
+
   it("renders the compact shell with its current object and stable return path", () => {
     const markup = renderToStaticMarkup(
       createElement(

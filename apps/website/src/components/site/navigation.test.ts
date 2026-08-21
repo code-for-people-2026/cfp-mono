@@ -4,7 +4,7 @@ import { getSiteNavigationArea, getSiteShellDensity, siteNavigation } from "./na
 describe("public site navigation", () => {
   it("keeps the four canonical destinations in their decided order", () => {
     expect(siteNavigation.map(({ label, href }) => ({ label, href }))).toEqual([
-      { label: "近邻互助组", href: "https://www.codeforpeople.cn/neighbors" },
+      { label: "近邻互助组", href: "/neighbors" },
       { label: "为什么做", href: "/manifesto" },
       { label: "如何选题", href: "/wam" },
       { label: "如何约束", href: "/license" },

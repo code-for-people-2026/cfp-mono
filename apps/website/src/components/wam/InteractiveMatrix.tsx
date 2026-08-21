@@ -4,13 +4,16 @@ import { MessageSquarePlus, RefreshCcw } from 'lucide-react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   getMatrixBrowseCells,
   getMatrixBrowseHref,
   getMatrixCellHref,
   MATRIX_RETURN_STORAGE_KEY,
+  MATRIX_SCROLL_STORAGE_KEY,
+  parseMatrixScrollPosition,
   resolveMatrixBrowseState,
+  serializeMatrixScrollPosition,
   type MatrixBrowseState,
 } from '@/lib/wam/matrix-browser'
 import type { MatrixCell, MatrixColumn, MatrixRow, MatrixTagTone } from '@/lib/wam/matrix'
@@ -51,10 +54,10 @@ type MatrixTableProps = {
   columns: MatrixColumn[]
   cells: MatrixCell[]
   submissions: PublicSubmissionsByCell
-  rememberReturnHref: () => void
+  rememberReturnState: () => void
 }
 
-function MatrixTable({ rows, columns, cells, submissions, rememberReturnHref }: MatrixTableProps) {
+function MatrixTable({ rows, columns, cells, submissions, rememberReturnState }: MatrixTableProps) {
   const cellsByCoordinate = useMemo(
     () => new Map(cells.map((cell) => [`${cell.rowId}:${cell.columnId}`, cell])),
     [cells]
@@ -96,7 +99,7 @@ function MatrixTable({ rows, columns, cells, submissions, rememberReturnHref }: 
                     className="matrix-cell-link"
                     href={getMatrixCellHref(cell.id)}
                     aria-label={`${cell.id} ${column.title} × ${row.title}`}
-                    onClick={rememberReturnHref}
+                    onClick={rememberReturnState}
                   >
                     <span className="cell-id">{cell.id}</span>
                     <span className="cell-tags">
@@ -137,6 +140,8 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
   const [dataOffline, setDataOffline] = useState(false)
   const [loading, setLoading] = useState(true)
   const [browseState, setBrowseState] = useState(initialBrowseState)
+  const matrixScrollRef = useRef<HTMLDivElement>(null)
+  const restoredMatrixScrollRef = useRef(false)
   const supplementFormUrl =
     process.env.NEXT_PUBLIC_EXTERNAL_FORM_URL || DEFAULT_EXTERNAL_FORM_URL
 
@@ -152,8 +157,16 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
     browseState.axis === 'people' ? '能力' : '人群'
   }格子`
 
-  const rememberReturnHref = () => {
-    window.sessionStorage.setItem(MATRIX_RETURN_STORAGE_KEY, getMatrixBrowseHref(browseState))
+  const rememberReturnState = () => {
+    const href = getMatrixBrowseHref(browseState)
+    window.sessionStorage.setItem(MATRIX_RETURN_STORAGE_KEY, href)
+    window.sessionStorage.setItem(
+      MATRIX_SCROLL_STORAGE_KEY,
+      serializeMatrixScrollPosition({
+        href,
+        scrollLeft: matrixScrollRef.current?.scrollLeft ?? 0,
+      })
+    )
   }
 
   const updateBrowseState = (input: Partial<MatrixBrowseState>) => {
@@ -217,6 +230,23 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
 
   useEffect(() => {
     window.sessionStorage.setItem(MATRIX_RETURN_STORAGE_KEY, getMatrixBrowseHref(browseState))
+  }, [browseState])
+
+  useLayoutEffect(() => {
+    if (restoredMatrixScrollRef.current) return
+    restoredMatrixScrollRef.current = true
+
+    const scrollContainer = matrixScrollRef.current
+    if (!scrollContainer || browseState.view !== 'matrix') return
+
+    const href = getMatrixBrowseHref(browseState)
+    const position = parseMatrixScrollPosition(
+      window.sessionStorage.getItem(MATRIX_SCROLL_STORAGE_KEY)
+    )
+    if (!position || position.href !== href) return
+
+    const maximumScrollLeft = Math.max(0, scrollContainer.scrollWidth - scrollContainer.clientWidth)
+    scrollContainer.scrollLeft = Math.min(position.scrollLeft, maximumScrollLeft)
   }, [browseState])
 
   return (
@@ -347,7 +377,7 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
                           className="matrix-mobile-detail-link"
                           href={getMatrixCellHref(cell.id)}
                           aria-label={`${cell.id} ${cell.columnTitle} × ${cell.rowTitle}，查看详情`}
-                          onClick={rememberReturnHref}
+                          onClick={rememberReturnState}
                         >
                           查看详情
                         </Link>
@@ -362,13 +392,18 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
           )}
         </section>
 
-        <div className="matrix-scroll" tabIndex={0} aria-label="横向滚动浏览完整矩阵">
+        <div
+          ref={matrixScrollRef}
+          className="matrix-scroll"
+          tabIndex={0}
+          aria-label="横向滚动浏览完整矩阵"
+        >
           <MatrixTable
             rows={rows}
             columns={columns}
             cells={cells}
             submissions={submissions}
-            rememberReturnHref={rememberReturnHref}
+            rememberReturnState={rememberReturnState}
           />
         </div>
       </section>

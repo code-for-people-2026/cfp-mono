@@ -158,19 +158,15 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer).toBeVisible();
   await expect(footer.getByText("为“工友”敲键盘", { exact: true })).toBeVisible();
   await expect(footer).toHaveAttribute("id", "follow");
-  await expect(footer.getByRole("link", { name: "首页", exact: true })).toHaveAttribute("href", "/");
-  await expect(footer.getByRole("link", { name: "数据平权宣言", exact: true })).toHaveAttribute(
+  const canonicalFooterLinks = footer.getByRole("navigation", { name: "页脚导航" }).getByRole("link");
+  await expect(canonicalFooterLinks).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
+  await expect(canonicalFooterLinks.nth(0)).toHaveAttribute(
     "href",
-    "/manifesto",
+    "/neighbors",
   );
-  await expect(footer.getByRole("link", { name: "牛马能力剥夺矩阵", exact: true })).toHaveAttribute(
-    "href",
-    "/wam",
-  );
-  await expect(footer.getByRole("link", { name: "牛马互助协议", exact: true })).toHaveAttribute(
-    "href",
-    "/license",
-  );
+  await expect(canonicalFooterLinks.nth(1)).toHaveAttribute("href", "/manifesto");
+  await expect(canonicalFooterLinks.nth(2)).toHaveAttribute("href", "/wam");
+  await expect(canonicalFooterLinks.nth(3)).toHaveAttribute("href", "/license");
   await expect(footer.getByRole("link", { name: "关注后续", exact: true })).toHaveCount(0);
   await expect(footer.getByText("长期账号更新公开进展")).toHaveCount(0);
   await expect(footer.getByText("临时群二维码不放在官网")).toHaveCount(0);
@@ -622,6 +618,7 @@ test("public shells keep canonical navigation order and route current state", as
     { path: "/manifesto", density: "full", current: "为什么做" },
     { path: "/license", density: "full", current: "如何约束" },
     { path: "/chat", density: "compact", current: undefined },
+    { path: "/neighbors", density: "compact", current: "近邻互助组" },
     { path: "/wam", density: "compact", current: "如何选题" },
     { path: "/wam/guide", density: "compact", current: "如何选题" },
     { path: "/wam/cell/A1", density: "compact", current: "如何选题" },
@@ -637,7 +634,7 @@ test("public shells keep canonical navigation order and route current state", as
     await expect(links).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
     await expect(links.nth(0)).toHaveAttribute(
       "href",
-      "https://www.codeforpeople.cn/neighbors",
+      "/neighbors",
     );
     if (route.current) {
       await expect(navigation.getByRole("link", { name: route.current })).toHaveAttribute(
@@ -646,6 +643,86 @@ test("public shells keep canonical navigation order and route current state", as
       );
     } else {
       await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
+    }
+  }
+});
+
+test("public shell hierarchy and full footer use the canonical navigation contract", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  await expect(page.locator('header[data-density="full"] [data-site-hierarchy-separator]')).toHaveCount(
+    0,
+  );
+
+  const footerNavigation = page.getByRole("contentinfo").getByRole("navigation", {
+    name: "页脚导航",
+  });
+  const footerLinks = footerNavigation.getByRole("link");
+  await expect(footerLinks).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
+  for (const [index, href] of [
+    "/neighbors",
+    "/manifesto",
+    "/wam",
+    "/license",
+  ].entries()) {
+    await expect(footerLinks.nth(index)).toHaveAttribute("href", href);
+  }
+
+  await page.goto("/manifesto");
+  await expect(page.locator('header[data-density="full"] [data-site-hierarchy-separator]')).toHaveCount(
+    1,
+  );
+});
+
+test("compact mobile menus expose one return path with 44px interaction targets", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+
+  for (const route of [
+    { path: "/chat", returnLabel: "返回问答首页" },
+    { path: "/neighbors", returnLabel: "返回官网首页" },
+    { path: "/wam/guide", returnLabel: "返回矩阵" },
+    { path: "/wam/cell/A1", returnLabel: "返回矩阵" },
+  ]) {
+    await page.goto(route.path);
+    const header = page.locator('header[data-density="compact"]');
+    await header.locator("button[aria-controls]").click();
+
+    const actions = header.getByRole("group", { name: "移动上下文操作" });
+    const returnLinks = actions.getByRole("link", { name: route.returnLabel });
+    await expect(returnLinks).toHaveCount(1);
+
+    const targets = header.locator('nav[aria-label="移动主导航"] a, [aria-label="移动上下文操作"] a');
+    const sizes = await targets.evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      }),
+    );
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) {
+      expect(size.width).toBeGreaterThanOrEqual(44);
+      expect(size.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
+test("mobile footer interaction targets remain at least 44px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+
+  for (const path of ["/", "/manifesto", "/chat", "/neighbors", "/wam"]) {
+    await page.goto(path);
+    const sizes = await page.getByRole("contentinfo").locator("a, button").evaluateAll((elements) =>
+      elements
+        .map((element) => element.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .map((rect) => ({ width: rect.width, height: rect.height })),
+    );
+
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) {
+      expect(size.width, `${path} footer target width`).toBeGreaterThanOrEqual(44);
+      expect(size.height, `${path} footer target height`).toBeGreaterThanOrEqual(44);
     }
   }
 });
@@ -671,7 +748,7 @@ test("mobile navigation restores focus and full pages fit their footers at 320px
   await expect(menuButton).toHaveAttribute("aria-expanded", "false");
   await expect(menuButton).toBeFocused();
 
-  for (const path of ["/", "/chat", "/manifesto", "/license"]) {
+  for (const path of ["/", "/chat", "/neighbors", "/manifesto", "/license"]) {
     await page.goto(path);
     const dimensions = await page.evaluate(() => ({
       clientWidth: document.documentElement.clientWidth,
@@ -704,10 +781,93 @@ test("full and compact shells render their matching header and footer", async ({
     await expect(page.getByRole("contentinfo")).toHaveAttribute("id", "follow");
   }
 
-  for (const path of ["/chat", "/wam"]) {
+  for (const path of ["/chat", "/neighbors", "/wam"]) {
     await page.goto(path);
     await expect(page.locator('header[data-density="compact"]')).toBeVisible();
     await expect(page.getByRole("contentinfo")).toBeVisible();
     await expect(page.getByRole("contentinfo")).not.toHaveAttribute("id", "follow");
+  }
+});
+
+test("neighbors is the formal single-product record with truthful canonical actions", async ({ page }) => {
+  const response = await page.goto("/neighbors");
+  expect(response?.status()).toBe(200);
+
+  await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+  await expect(page.getByRole("heading", { level: 1, name: "近邻互助组", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("contentinfo").getByRole("link", { name: "近邻互助组", exact: true }),
+  ).toHaveAttribute("href", "/neighbors");
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://www.codeforpeople.cn/neighbors",
+  );
+
+  const hero = page.locator('[data-neighbors-section="affiliation"]');
+  await expect(hero).toContainText("码成仝是组织与母品牌");
+  await expect(hero).toContainText("码成仝当前唯一的旗舰产品");
+  await expect(hero).toContainText("交互原型");
+  await expect(hero).toContainText("不接真实业务数据");
+  await expect(hero).toContainText("不代表服务已经上线");
+
+  const heroActions = page.locator('[data-neighbors-actions="hero"]');
+  await expect(heroActions.getByRole("link", { name: /体验近邻互助组/ })).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+  );
+  await expect(heroActions.getByRole("link", { name: /查看实施对照/ })).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/neighbors/prototype-implementation/",
+  );
+
+  const header = page.getByRole("banner");
+  const headerPrototypeAction = header.getByRole("link", { name: "体验原型" });
+  if (!(await headerPrototypeAction.isVisible())) {
+    await header.locator("button[aria-controls]").click();
+  }
+  await expect(headerPrototypeAction).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+  );
+
+  const order = await page.locator("[data-neighbors-section]").evaluateAll((sections) =>
+    sections.map((section) => section.getAttribute("data-neighbors-section")),
+  );
+  expect(order).toEqual(["affiliation", "what", "why", "prototype", "boundary", "next"]);
+
+  await expect(page.getByRole("heading", { name: "延伸阅读" })).toBeVisible();
+  for (const path of ["/manifesto", "/wam", "/license"]) {
+    await expect(page.locator(`a[href="${path}"]`).last()).toBeVisible();
+  }
+  await expect(page.getByText("场景探索，不是新产品", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /街坊味/ })).toBeVisible();
+  await expect(page.getByRole("link", { name: /楼道收一收/ })).toBeVisible();
+  await expect(page.locator("main")).not.toContainText("立即预约");
+  await expect(page.locator("main")).not.toContainText("完成付款");
+});
+
+test("neighbors remains usable at 320px, 390px, and desktop widths", async ({ page }) => {
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/neighbors");
+
+    const metrics = await page.getByRole("main").evaluate((main) => ({
+      clientWidth: main.clientWidth,
+      scrollWidth: main.scrollWidth,
+      clippedText: Array.from(main.querySelectorAll("h1, h2, h3, p, li")).filter((element) => {
+        const rect = element.getBoundingClientRect();
+        return rect.left < -0.5 || rect.right > document.documentElement.clientWidth + 0.5;
+      }).length,
+      actionHeights: Array.from(main.querySelectorAll<HTMLElement>("[data-neighbors-actions] a")).map(
+        (element) => element.getBoundingClientRect().height,
+      ),
+    }));
+
+    expect(metrics.scrollWidth, `${width}px page width`).toBeLessThanOrEqual(metrics.clientWidth);
+    expect(metrics.clippedText, `${width}px clipped text`).toBe(0);
+    expect(metrics.actionHeights.length).toBeGreaterThan(0);
+    for (const height of metrics.actionHeights) {
+      expect(height, `${width}px CTA height`).toBeGreaterThanOrEqual(44);
+    }
   }
 });

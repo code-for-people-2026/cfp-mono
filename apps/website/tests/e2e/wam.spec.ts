@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openMatrix(page: Page, width: number) {
   await page.setViewportSize({ width, height: 900 });
@@ -9,6 +9,13 @@ async function openMatrix(page: Page, width: number) {
     });
   });
   await page.goto("/wam");
+}
+
+async function expectMinimumTouchTarget(locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
 }
 
 test("desktop keeps the native high-density matrix and written legend", async ({ page }) => {
@@ -43,10 +50,16 @@ test("mobile defaults to a written axis list and keeps the same cell paths", asy
   );
   await expect(page.getByRole("table", { name: "牛马能力剥夺矩阵完整表格" })).toBeHidden();
 
+  await expectMinimumTouchTarget(browser.getByRole("button", { name: "列表浏览" }));
+  await expectMinimumTouchTarget(browser.getByRole("button", { name: "完整矩阵" }));
+  await expectMinimumTouchTarget(browser.getByRole("button", { name: "按人群" }));
+  await expectMinimumTouchTarget(page.getByRole("button", { name: "刷新投稿" }));
+
   const peopleList = browser.getByRole("list", { name: "一产的能力格子" });
   await expect(peopleList.getByRole("listitem")).toHaveCount(7);
   const mobileA1 = peopleList.getByRole("link", { name: /A1 一产 × 劳动议价/ });
   await expect(mobileA1).toHaveAttribute("href", "/wam/cell/A1");
+  await expectMinimumTouchTarget(mobileA1);
 
   await browser.getByRole("button", { name: "按能力" }).click();
   await browser.getByRole("combobox", { name: "选择能力" }).selectOption("time-sovereignty");
@@ -72,6 +85,33 @@ test("mobile defaults to a written axis list and keeps the same cell paths", asy
   expect(scrollMetrics.scrollWidth).toBeGreaterThan(scrollMetrics.clientWidth);
 });
 
+test("mobile segmented controls expose pointer, keyboard, and selected states", async ({ page }) => {
+  await openMatrix(page, 390);
+
+  const matrixViewButton = page.getByRole("button", { name: "完整矩阵" });
+  const restingBackground = await matrixViewButton.evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+
+  await matrixViewButton.hover();
+  await expect
+    .poll(() =>
+      matrixViewButton.evaluate((element) => getComputedStyle(element).backgroundColor),
+    )
+    .not.toBe(restingBackground);
+
+  await matrixViewButton.focus();
+  await expect
+    .poll(() => matrixViewButton.evaluate((element) => getComputedStyle(element).outlineStyle))
+    .toBe("solid");
+
+  await page.keyboard.press("Enter");
+  await expect(matrixViewButton).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .poll(() => matrixViewButton.evaluate((element) => getComputedStyle(element).boxShadow))
+    .not.toBe("none");
+});
+
 test("cell pages show position, explicit neighbors, and restore matrix browse state", async ({ page }) => {
   await openMatrix(page, 390);
 
@@ -90,6 +130,7 @@ test("cell pages show position, explicit neighbors, and restore matrix browse st
     "href",
     "/wam/cell/A1",
   );
+  await expectMinimumTouchTarget(page.getByRole("link", { name: "上一人群：一产" }));
   await expect(page.locator(".cell-detail-slide.active .detail-submit-link")).toHaveAttribute(
     "target",
     "_blank",
@@ -106,6 +147,44 @@ test("cell pages show position, explicit neighbors, and restore matrix browse st
   await expect(browser.getByRole("combobox", { name: "选择人群" })).toHaveValue(
     "secondary-sector",
   );
+});
+
+test("full matrix restores its internal scroll position after viewing a cell", async ({ page }) => {
+  await openMatrix(page, 390);
+
+  const browser = page.getByRole("region", { name: "移动矩阵浏览" });
+  await browser.getByRole("button", { name: "完整矩阵" }).click();
+
+  const matrixScroll = page.locator(".matrix-scroll");
+  const expectedScrollLeft = await matrixScroll.evaluate((element) => {
+    element.scrollLeft = 520;
+    return element.scrollLeft;
+  });
+  expect(expectedScrollLeft).toBeGreaterThan(0);
+
+  await page
+    .getByRole("table", { name: "牛马能力剥夺矩阵完整表格" })
+    .getByRole("link", { name: "D1 个体经营 × 劳动议价" })
+    .evaluate((element: HTMLElement) => element.click());
+
+  await expect(page).toHaveURL(/\/wam\/cell\/D1$/);
+  await page.getByRole("main").getByRole("link", { name: "返回矩阵" }).click();
+
+  await expect(page).toHaveURL(
+    /\/wam\?view=matrix&axis=people&item=primary-sector$/,
+  );
+  await expect
+    .poll(() => matrixScroll.evaluate((element) => element.scrollLeft))
+    .toBe(expectedScrollLeft);
+  expect(
+    await page.evaluate(() => document.activeElement?.classList.contains("matrix-scroll")),
+  ).toBe(false);
+
+  const dimensions = await page.evaluate(() => ({
+    clientWidth: document.documentElement.clientWidth,
+    scrollWidth: document.documentElement.scrollWidth,
+  }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 });
 
 test("matrix routes do not cause page-level horizontal overflow", async ({ page }) => {

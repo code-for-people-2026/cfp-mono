@@ -21,9 +21,13 @@ function sameLink(left?: SiteLink, right?: SiteLink) {
   return left?.href === right?.href && left?.label === right?.label;
 }
 
+function hasHierarchyObject(value: SiteObject) {
+  return isSiteLink(value) ? value.href !== "/" : value !== "公共官网";
+}
+
 function CurrentObject({ value, compact = false }: { value: SiteObject; compact?: boolean }) {
   const className = cn(
-    "min-w-0 break-words text-xs font-semibold leading-4 text-[var(--muted-foreground)]",
+    "inline-flex min-h-11 min-w-11 items-center break-words text-xs font-semibold leading-4 text-[var(--muted-foreground)]",
     compact && "text-sm text-[var(--foreground)]",
   );
 
@@ -88,7 +92,9 @@ export function SiteHeader({
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = useId();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
-  const secondaryMobileLink = sameLink(contextAction, returnLink) ? undefined : returnLink;
+  const showHierarchyObject = hasHierarchyObject(currentObject);
+  const secondaryMobileLink =
+    contextAction && returnLink && !sameLink(contextAction, returnLink) ? returnLink : undefined;
 
   const closeMenuAndRestoreFocus = useCallback(() => {
     setMenuOpen(false);
@@ -126,12 +132,20 @@ export function SiteHeader({
       >
         <div className="flex min-w-0 items-center gap-2.5">
           <BrandLockup density={density} />
-          <span className="text-[var(--border-strong)]" aria-hidden="true">
-            /
-          </span>
-          <span className={cn(density === "full" && "md:hidden")}>
-            <CurrentObject value={currentObject} compact={density === "compact"} />
-          </span>
+          {showHierarchyObject ? (
+            <>
+              <span
+                data-site-hierarchy-separator=""
+                className="text-[var(--border-strong)]"
+                aria-hidden="true"
+              >
+                /
+              </span>
+              <span className={cn("min-w-0", density === "full" && "md:hidden")}>
+                <CurrentObject value={currentObject} compact={density === "compact"} />
+              </span>
+            </>
+          ) : null}
         </div>
 
         <nav aria-label="主导航" className="hidden min-w-0 items-center justify-end gap-5 md:flex">
@@ -167,16 +181,20 @@ export function SiteHeader({
           <NavigationLinks currentArea={currentArea} mobile onNavigate={closeMenuAndRestoreFocus} />
         </nav>
         {action || secondaryMobileLink ? (
-          <div className="mx-auto mt-3 flex max-w-[1280px] flex-col gap-2 border-t border-[var(--border)] pt-3">
+          <div
+            role="group"
+            aria-label="移动上下文操作"
+            className="mx-auto mt-3 flex max-w-[1280px] flex-col gap-2 border-t border-[var(--border)] pt-3"
+          >
             {action ? (
-              <Button asChild size="sm" variant="secondary" className="w-full">
+              <Button asChild size="sm" variant="secondary" className="min-h-11 w-full">
                 <Link href={action.href} onClick={closeMenuAndRestoreFocus}>
                   {action.label}
                 </Link>
               </Button>
             ) : null}
             {secondaryMobileLink ? (
-              <Button asChild size="sm" variant="ghost" className="w-full">
+              <Button asChild size="sm" variant="ghost" className="min-h-11 w-full">
                 <Link href={secondaryMobileLink.href} onClick={closeMenuAndRestoreFocus}>
                   {secondaryMobileLink.label}
                 </Link>

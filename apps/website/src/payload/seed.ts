@@ -1,4 +1,5 @@
 import type { Payload } from "payload";
+import { neighborsProduct } from "@/content/neighbors";
 import {
   brandAssets,
   continueReads,
@@ -95,6 +96,7 @@ export async function seedSiteContent(payload: Payload) {
           target: item.href === "/manifesto" ? "manifesto" : item.href === "/license" ? "license" : "map",
         })),
       },
+      neighborsProduct,
       // 页脚
       description:
         "软件也是一种服务。我们把理念、协议和方向公开出来，继续学习如何把技术能力还给真实生活。",

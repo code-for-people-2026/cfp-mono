@@ -3,11 +3,12 @@ import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
 import { SITE_CONTENT_CACHE_KEY, siteDocumentCacheKey } from "./cache-keys";
-import type { ChatPageContent, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
+import type { ChatPageContent, FeaturedProduct, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
 import {
   chatFallback,
   documentFallback,
   footerFallback,
+  featuredProductFallback,
   homepageFallback,
   settingsFallback,
   uiFallback,
@@ -16,6 +17,7 @@ import {
   mapChatPage,
   mapDocument,
   mapFooter,
+  resolveFeaturedProduct,
   mapHomepage,
   mapSettings,
   mapUiStrings,
@@ -54,6 +56,11 @@ export async function getHomepage(): Promise<HomepageContent> {
 export async function getChatPage(): Promise<ChatPageContent> {
   const mapped = mapChatPage((await getCachedSiteContent()) ?? EMPTY);
   return pick(mapped, Boolean(mapped.heading), chatFallback);
+}
+
+export async function getFeaturedProduct(): Promise<FeaturedProduct> {
+  const data = (await getCachedSiteContent()) ?? EMPTY;
+  return resolveFeaturedProduct(data.neighborsProduct, featuredProductFallback);
 }
 
 export async function getUiStrings(): Promise<UiStrings> {

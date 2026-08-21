@@ -9,6 +9,11 @@ export type MatrixBrowseState = {
   itemId: string
 }
 
+export type MatrixScrollPosition = {
+  href: string
+  scrollLeft: number
+}
+
 type MatrixBrowseStateInput = {
   view?: string | null
   axis?: string | null
@@ -16,6 +21,7 @@ type MatrixBrowseStateInput = {
 }
 
 export const MATRIX_RETURN_STORAGE_KEY = 'wam:return-href'
+export const MATRIX_SCROLL_STORAGE_KEY = 'wam:return-scroll'
 
 export function resolveMatrixBrowseState(
   input: MatrixBrowseStateInput,
@@ -57,4 +63,33 @@ export function getMatrixCellHref(cellId: string) {
 
 export function isMatrixReturnHref(value: string | null): value is string {
   return value === '/wam' || Boolean(value?.startsWith('/wam?'))
+}
+
+export function serializeMatrixScrollPosition(position: MatrixScrollPosition) {
+  return JSON.stringify({
+    href: position.href,
+    scrollLeft: Math.max(0, position.scrollLeft),
+  })
+}
+
+export function parseMatrixScrollPosition(value: string | null): MatrixScrollPosition | null {
+  if (!value) return null
+
+  try {
+    const position = JSON.parse(value) as Partial<MatrixScrollPosition>
+    const href = typeof position.href === 'string' ? position.href : null
+    const scrollLeft = position.scrollLeft
+    if (
+      !isMatrixReturnHref(href) ||
+      typeof scrollLeft !== 'number' ||
+      !Number.isFinite(scrollLeft) ||
+      scrollLeft < 0
+    ) {
+      return null
+    }
+
+    return { href, scrollLeft }
+  } catch {
+    return null
+  }
 }

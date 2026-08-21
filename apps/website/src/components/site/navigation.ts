@@ -2,7 +2,7 @@ export const siteNavigation = [
   {
     area: "neighbors",
     label: "近邻互助组",
-    href: "https://www.codeforpeople.cn/neighbors",
+    href: "/neighbors",
   },
   { area: "why", label: "为什么做", href: "/manifesto" },
   { area: "topics", label: "如何选题", href: "/wam" },

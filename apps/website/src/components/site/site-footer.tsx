@@ -29,7 +29,10 @@ function FooterNavigation() {
         <Link
           key={item.area}
           href={item.href}
-          className={cn(linkVariants({ variant: "foreground" }), "min-h-9 px-0 text-sm no-underline")}
+          className={cn(
+            linkVariants({ variant: "foreground" }),
+            "min-w-11 px-0 text-sm no-underline",
+          )}
         >
           {item.label}
         </Link>
@@ -42,7 +45,7 @@ function ObjectLink({ value }: { value: SiteObject }) {
   return isSiteLink(value) ? (
     <Link
       href={value.href}
-      className={cn(linkVariants({ variant: "foreground", density: "compact" }), "no-underline")}
+      className={cn(linkVariants({ variant: "foreground" }), "min-w-11 px-0 no-underline")}
     >
       {value.label}
     </Link>
@@ -86,7 +89,7 @@ export function FullSiteFooter({
                 rel="noreferrer"
                 className={cn(
                   linkVariants({ variant: "foreground" }),
-                  "min-h-9 px-0 text-sm no-underline",
+                  "min-w-11 px-0 text-sm no-underline",
                 )}
               >
                 {link.label}
@@ -101,7 +104,7 @@ export function FullSiteFooter({
             href={filing.href}
             target="_blank"
             rel="noreferrer"
-            className="rounded-sm text-inherit no-underline hover:text-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="inline-flex min-h-11 min-w-11 items-center rounded-sm text-inherit no-underline hover:text-[var(--primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
           >
             {filing.label}
           </a>

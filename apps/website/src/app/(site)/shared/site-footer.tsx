@@ -2,8 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { siBilibili, siGithub, siKuaishou, siTiktok } from "simple-icons";
 import { MonitorPlay } from "lucide-react";
+import { siteNavigation } from "@/components/site/navigation";
 import { getFooter, getSiteSettings } from "@/lib/content";
 import type { FooterContent, SocialChannelIcon } from "@/lib/content/types";
+import { isLegacyPublicNavigationLink } from "./footer-navigation";
 
 const iconByKey: Record<SocialChannelIcon, { path: string }> = {
   douyin: siTiktok,
@@ -77,13 +79,19 @@ export async function SiteFooter() {
   const [footer, settings] = await Promise.all([getFooter(), getSiteSettings()]);
   const { brand } = settings;
   const icpFiling = footer.beian || defaultIcpFiling;
+  const policyLinks = footer.footerLinks.filter(
+    (link) => !isLegacyPublicNavigationLink(link.href),
+  );
 
   return (
     <footer id="follow" className="overflow-x-clip border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.7fr_1fr]">
           <div>
-            <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
+            <Link
+              href="/"
+              className="flex min-h-11 min-w-11 items-center gap-3 text-[var(--ink)] no-underline"
+            >
               <Image
                 src={brand.logoPath}
                 alt="码成仝页脚标识"
@@ -101,29 +109,45 @@ export async function SiteFooter() {
 
           <nav aria-label="页脚导航">
             <h2 className="text-sm font-black text-[var(--ink)]">{footer.linksHeading}</h2>
-            <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted-foreground)]">
-              {footer.footerLinks.map((link) =>
-                isExternalHref(link.href) ? (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="no-underline transition-colors hover:text-[var(--accent)]"
-                  >
-                    {link.label}
-                  </a>
-                ) : (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="no-underline transition-colors hover:text-[var(--accent)]"
-                  >
-                    {link.label}
-                  </Link>
-                ),
-              )}
+            <div className="mt-4 flex flex-col items-start gap-1 text-sm font-semibold text-[var(--muted-foreground)]">
+              {siteNavigation.map((link) => (
+                <Link
+                  key={link.area}
+                  href={link.href}
+                  className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
+            {policyLinks.length > 0 ? (
+              <div className="mt-5 border-t border-[var(--border)] pt-4">
+                <h3 className="text-xs font-black text-[var(--ink)]">政策与信息</h3>
+                <div className="mt-2 flex flex-col items-start gap-1 text-sm font-semibold text-[var(--muted-foreground)]">
+                  {policyLinks.map((link) =>
+                    isExternalHref(link.href) ? (
+                      <a
+                        key={`${link.href}-${link.label}`}
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        key={`${link.href}-${link.label}`}
+                        href={link.href}
+                        className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                      >
+                        {link.label}
+                      </Link>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : null}
           </nav>
 
           <div>
@@ -151,7 +175,7 @@ export async function SiteFooter() {
             href="https://beian.miit.gov.cn/"
             target="_blank"
             rel="noreferrer"
-            className="no-underline transition-colors hover:text-[var(--accent)]"
+            className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
           >
             {icpFiling}
           </a>{" "}

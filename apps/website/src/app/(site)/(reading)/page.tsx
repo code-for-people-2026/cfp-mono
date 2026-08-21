@@ -1,8 +1,7 @@
 import type { Metadata, ResolvingMetadata } from "next";
 import Link from "next/link";
 import { ArrowRight, Factory, FileText, HeartHandshake, Map, Route, ShieldCheck, Store } from "lucide-react";
-import { neighborsProduct } from "@/content/neighbors";
-import { getHomepage, getSiteSettings } from "@/lib/content";
+import { getFeaturedProduct, getHomepage, getSiteSettings } from "@/lib/content";
 import { DialogueEntry } from "../shared/dialogue-entry";
 
 const sceneIcons = [Route, Factory, Store, HeartHandshake];
@@ -22,7 +21,11 @@ export async function generateMetadata(_: object, parent: ResolvingMetadata): Pr
 }
 
 export default async function HomePage() {
-  const [home, settings] = await Promise.all([getHomepage(), getSiteSettings()]);
+  const [home, settings, featuredProduct] = await Promise.all([
+    getHomepage(),
+    getSiteSettings(),
+    getFeaturedProduct(),
+  ]);
   const { hero } = home;
 
   return (
@@ -55,7 +58,7 @@ export default async function HomePage() {
             <DialogueEntry
               entry={home.dialogueEntry}
               suggestions={home.dialogueSuggestions}
-              featuredProduct={neighborsProduct}
+              featuredProduct={featuredProduct}
             />
 
             <div className="mx-auto mt-14 grid w-full max-w-4xl gap-3 md:grid-cols-3">
