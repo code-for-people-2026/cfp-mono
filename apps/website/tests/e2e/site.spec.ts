@@ -467,6 +467,138 @@ test("neighbors answer renders canonical structured actions without model links"
   ).toBeVisible();
 });
 
+test("public documents expose reading navigation and one product context bridge", async ({ page }) => {
+  const documents = [
+    {
+      path: "/manifesto",
+      intent: "为什么做",
+      firstSummary: "平台曾经创造连接，也把连接变成租金。",
+      firstFullSection: "v0.4 · 端午摆摊公开版",
+    },
+    {
+      path: "/license",
+      intent: "如何约束",
+      firstSummary: "为什么叫协议。",
+      firstFullSection: "仿 GPL 的传染性互助协议。",
+    },
+  ] as const;
+
+  for (const document of documents) {
+    await page.goto(document.path);
+
+    const main = page.getByRole("main");
+    if ((page.viewportSize()?.width ?? 0) < 1280) {
+      await main.locator("details > summary").click();
+    }
+    const readingNavigation = main.getByRole("navigation", { name: "文档目录" });
+
+    await expect(main.getByText(document.intent, { exact: true })).toBeVisible();
+    await expect(readingNavigation.getByRole("link", { name: "导读", exact: true })).toHaveAttribute(
+      "href",
+      "#reading-guide",
+    );
+    await expect(
+      readingNavigation.getByRole("link", { name: document.firstSummary, exact: true }),
+    ).toHaveAttribute("href", "#summary-1");
+    await expect(
+      readingNavigation.getByRole("link", { name: document.firstFullSection, exact: true }),
+    ).toHaveAttribute("href", "#full-1");
+    await expect(readingNavigation.getByRole("link", { name: "阅读全文", exact: true })).toHaveAttribute(
+      "href",
+      "#full-text",
+    );
+    await expect(main.getByRole("link", { name: "了解近邻互助组", exact: true })).toHaveAttribute(
+      "href",
+      "/neighbors",
+    );
+  }
+});
+
+test("the read-full anchor focuses its offset target and respects reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const nativeScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
+      (window as typeof window & { documentScrollBehavior?: ScrollBehavior }).documentScrollBehavior =
+        typeof options === "object" ? options.behavior : undefined;
+      nativeScrollIntoView.call(this, options);
+    };
+  });
+
+  await page.goto("/manifesto");
+  await page.getByRole("main").getByRole("link", { name: "阅读全文", exact: true }).first().click();
+
+  const fullText = page.locator("#full-text");
+  await expect(page).toHaveURL(/#full-text$/);
+  await expect(fullText).toBeFocused();
+  expect(await fullText.evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBeGreaterThanOrEqual(
+    80,
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { documentScrollBehavior?: ScrollBehavior })
+          .documentScrollBehavior,
+    ),
+  ).toBe("auto");
+});
+
+test("long-form text follows the public reading measure and rhythm", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/manifesto");
+
+  const metrics = await page.evaluate(() => {
+    const firstSection = document.querySelector<HTMLElement>("#full-1");
+    const secondSection = document.querySelector<HTMLElement>("#full-2");
+    const paragraphs = firstSection?.querySelectorAll<HTMLElement>(":scope > div > p");
+    const firstParagraph = paragraphs?.item(0);
+    const secondParagraph = paragraphs?.item(1);
+
+    if (!firstSection || !secondSection || !firstParagraph || !secondParagraph) {
+      throw new Error("Missing full-text reading structure");
+    }
+
+    const paragraphStyle = getComputedStyle(firstParagraph);
+    return {
+      measure: firstSection.getBoundingClientRect().width,
+      fontSize: Number.parseFloat(paragraphStyle.fontSize),
+      lineHeight: Number.parseFloat(paragraphStyle.lineHeight),
+      paragraphGap: secondParagraph.getBoundingClientRect().top - firstParagraph.getBoundingClientRect().bottom,
+      sectionGap: secondSection.getBoundingClientRect().top - firstSection.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(metrics.measure).toBeLessThanOrEqual(720);
+  expect(metrics.fontSize).toBe(16);
+  expect(metrics.lineHeight).toBe(28);
+  expect(metrics.paragraphGap).toBe(24);
+  expect(metrics.sectionGap).toBeGreaterThanOrEqual(64);
+});
+
+test("document bodies fit 320px and 390px without clipping or horizontal overflow", async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+
+    for (const path of ["/manifesto", "/license"]) {
+      await page.goto(path);
+
+      const metrics = await page.getByRole("main").evaluate((main) => ({
+        clientWidth: main.clientWidth,
+        scrollWidth: main.scrollWidth,
+        clippedText: Array.from(main.querySelectorAll("h1, h2, h3, p, li")).filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.left < -0.5 || rect.right > document.documentElement.clientWidth + 0.5;
+        }).length,
+        tocSummaryHeight: main.querySelector("details > summary")?.getBoundingClientRect().height,
+      }));
+
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+      expect(metrics.clippedText).toBe(0);
+      expect(metrics.tocSummaryHeight).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
 test("chat route opens from the homepage question entry and carries it over", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("textbox", { name: "想了解的问题" }).fill("想了解方向地图");
