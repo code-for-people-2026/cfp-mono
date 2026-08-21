@@ -63,7 +63,8 @@ while IFS= read -r path; do
       deploy/nginx.example.conf | deploy/nginx.weekly-menu.example.conf | \
       deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
-    .github/workflows/deploy-production.yml | deploy/create-rds-backup.sh | \
+    .github/workflows/deploy-production.yml | .github/workflows/website-preview-cleanup.yml | \
+      deploy/create-rds-backup.sh | \
       deploy/docker-compose.prod.yml | deploy/.env.website.verify.example | deploy/*website*)
       website_deploy=true
       ;;
