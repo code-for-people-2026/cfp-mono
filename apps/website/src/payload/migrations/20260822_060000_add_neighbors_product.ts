@@ -1,5 +1,5 @@
 import { MigrateDownArgs, MigrateUpArgs, sql } from "@payloadcms/db-postgres";
-import { neighborsProduct } from "@/content/neighbors";
+import { neighborsProduct } from "../../content/neighbors";
 
 // Keep the formal product page, homepage discovery answer, and chat on one Payload row.
 // Existing installations receive the complete approved record instead of an empty json

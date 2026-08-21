@@ -1,5 +1,5 @@
 import type { GlobalConfig } from "payload";
-import { neighborsProduct } from "@/content/neighbors";
+import { neighborsProduct } from "../../content/neighbors";
 import { isAdmin } from "../access/isAdmin";
 import { cardsField, sectionHeaderFields } from "../fields/shared";
 import { revalidateGlobal } from "../hooks/revalidate";
