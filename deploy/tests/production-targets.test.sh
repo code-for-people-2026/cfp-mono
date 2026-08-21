@@ -129,6 +129,8 @@ grep -q 'matrix: \${{ fromJSON(needs.verify.outputs.preview_matrix) }}' "$ci_wor
 grep -q 'uses: ./\.github/workflows/deploy-production.yml' "$ci_workflow"
 grep -q "needs.verify.outputs.website_affected == 'true'" "$ci_workflow"
 grep -q 'docker build --build-arg RELEASE_SHA="$RELEASE_SHA"' "$ci_workflow"
+grep -q 'E2E_BASE_SHA: \${{ github.event.pull_request.base.sha }}' "$ci_workflow"
+grep -q -- '--filter="\.\.\.\[$E2E_BASE_SHA\]"' "$ci_workflow"
 [[ "$(grep -Ec '^[[:space:]]*- run: pnpm verify$' "$ci_workflow")" == 1 ]]
 [[ ! -e "$root/.github/workflows/deploy-preview.yml" ]]
 

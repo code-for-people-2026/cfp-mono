@@ -72,6 +72,7 @@ jobs:
       - name: Run deployment contract tests
         run: |
           bash deploy/tests/production-targets.test.sh
+          bash deploy/tests/website-preview.test.sh
           bash deploy/tests/weekly-menu-deploy.test.sh
           bash deploy/tests/website-smoke.test.sh
 
@@ -84,7 +85,9 @@ jobs:
         if: github.event_name == 'pull_request'
 
       - name: Run affected E2E
-        run: pnpm turbo run test:e2e --concurrency=1 --filter=...[origin/main]
+        env:
+          E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: pnpm turbo run test:e2e --concurrency=1 --filter="...[$E2E_BASE_SHA]"
         if: github.event_name == 'pull_request'
 
       - uses: actions/upload-artifact@v4
@@ -133,6 +136,208 @@ jobs:
         run: |
           [[ "$VERIFY_RESULT" == success ]]
           [[ "$PREVIEW_RESULT" == success ]]
+
+  website-preview:
+    name: website-preview
+    needs: [verify, preview-build]
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: website-preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - id: gate
+        name: Require a verified trusted website change
+        env:
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          PREVIEW_BUILD_RESULT: ${{ needs.preview-build.result }}
+          WEBSITE_AFFECTED: ${{ needs.verify.outputs.website_affected }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ "$VERIFY_RESULT" != success || "$PREVIEW_BUILD_RESULT" != success ]]; then
+            echo 'Website Preview requires verify and preview-build to succeed.' >&2
+            exit 1
+          fi
+          if [[ "$WEBSITE_AFFECTED" != true ]]; then
+            echo 'No website change requires a Vercel Preview.'
+            echo 'should_deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" ]]; then
+            echo 'Website Preview is limited to trusted branches in the base repository.' >&2
+            echo 'Move the reviewed commits to a base-repository branch before merging.' >&2
+            exit 1
+          fi
+          echo 'should_deploy=true' >> "$GITHUB_OUTPUT"
+
+      - id: previous
+        name: Find the previous Preview deployment
+        if: steps.gate.outputs.should_deploy == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- cfp-website-preview -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const comment = comments.find(
+              ({ body, user }) => body?.startsWith(marker) && user?.type === 'Bot',
+            );
+            const match = comment?.body?.match(/https:\/\/[a-z0-9.-]+\.vercel\.app\b/i);
+            core.setOutput('url', match?.[0] ?? '');
+
+      - name: Check out the exact PR head
+        if: steps.gate.outputs.should_deploy == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up pnpm
+        if: steps.gate.outputs.should_deploy == 'true'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - name: Set up Node.js
+        if: steps.gate.outputs.should_deploy == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the pinned Vercel CLI
+        if: steps.gate.outputs.should_deploy == 'true'
+        run: pnpm add --global vercel@56.3.2
+
+      - name: Validate Vercel Preview credentials
+        if: steps.gate.outputs.should_deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+        run: |
+          [[ -n "$VERCEL_TOKEN" ]]
+          [[ "$VERCEL_ORG_ID" == team_* ]]
+          [[ "$VERCEL_PROJECT_ID" == prj_* ]]
+
+      - name: Pull Vercel Preview settings
+        if: steps.gate.outputs.should_deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+        run: vercel pull --yes --environment=preview
+
+      - id: deploy
+        name: Deploy the website Preview
+        if: steps.gate.outputs.should_deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          deployment_url="$(vercel deploy --yes --archive=tgz \
+            --env RELEASE_SHA="$PR_HEAD_SHA" \
+            --meta cfpPrNumber="$PR_NUMBER" \
+            --meta cfpCommitSha="$PR_HEAD_SHA")"
+          deployment_url="${deployment_url%/}"
+          if [[ ! "$deployment_url" =~ ^https://[A-Za-z0-9.-]+\.vercel\.app$ ]]; then
+            echo 'Vercel did not return a valid Preview URL.' >&2
+            exit 1
+          fi
+          echo "url=$deployment_url" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the website Preview
+        if: steps.gate.outputs.should_deploy == 'true'
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash deploy/verify-website-preview.sh
+
+      - name: Remove an unsuccessful Preview deployment
+        if: failure() && steps.deploy.outputs.url != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+        run: bash deploy/remove-vercel-preview.sh
+
+      - name: Publish the Preview URL
+        if: steps.gate.outputs.should_deploy == 'true'
+        uses: actions/github-script@v7
+        env:
+          DEPLOYMENT_URL: ${{ steps.deploy.outputs.url }}
+          RELEASE_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- cfp-website-preview -->';
+            const body = [
+              marker,
+              '### Website Preview',
+              '',
+              `- [Open the Vercel Preview](${process.env.DEPLOYMENT_URL})`,
+              `- Commit: \`${process.env.RELEASE_SHA}\``,
+              '- Checks: `/api/health` and `/api/ready` passed',
+              '',
+              'This deployment uses Preview-only credentials and an isolated Neon database branch.',
+            ].join('\n');
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const previous = comments.find(
+              ({ body, user }) => body?.startsWith(marker) && user?.type === 'Bot',
+            );
+            if (previous) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: previous.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+            core.summary
+              .addHeading('Website Preview')
+              .addLink('Open deployment', process.env.DEPLOYMENT_URL)
+              .addCodeBlock(process.env.RELEASE_SHA)
+              .write();
+
+      - name: Remove the superseded Preview deployment
+        if: >-
+          steps.gate.outputs.should_deploy == 'true' &&
+          steps.previous.outputs.url != '' &&
+          steps.previous.outputs.url != steps.deploy.outputs.url
+        continue-on-error: true
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.previous.outputs.url }}
+        run: bash deploy/remove-vercel-preview.sh
 
   deploy-website:
     name: Deploy website production

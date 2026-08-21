@@ -1,0 +1,67 @@
+name: Website Preview cleanup
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: read
+
+jobs:
+  cleanup:
+    name: website-preview-cleanup
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - id: preview
+        name: Find the Preview deployment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const marker = '<!-- cfp-website-preview -->';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const comment = comments.find(
+              ({ body, user }) => body?.startsWith(marker) && user?.type === 'Bot',
+            );
+            const match = comment?.body?.match(/https:\/\/[a-z0-9.-]+\.vercel\.app\b/i);
+            core.setOutput('url', match?.[0] ?? '');
+
+      - name: Check out trusted cleanup scripts
+        if: steps.preview.outputs.url != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Set up pnpm
+        if: steps.preview.outputs.url != ''
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - name: Set up Node.js
+        if: steps.preview.outputs.url != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the pinned Vercel CLI
+        if: steps.preview.outputs.url != ''
+        run: pnpm add --global vercel@56.3.2
+
+      - name: Remove the closed PR Preview deployment
+        if: steps.preview.outputs.url != ''
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
+          VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          DEPLOYMENT_URL: ${{ steps.preview.outputs.url }}
+        run: bash deploy/remove-vercel-preview.sh
