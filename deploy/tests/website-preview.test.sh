@@ -5,6 +5,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 verify="$root/deploy/verify-website-preview.sh"
 remove="$root/deploy/remove-vercel-preview.sh"
 fake="$root/deploy/tests/fake-vercel.sh"
+fake_api="$root/deploy/tests/fake-vercel-api.sh"
 ci_workflow="$root/.github/workflows/ci.yml"
 cleanup_workflow="$root/.github/workflows/website-preview-cleanup.yml"
 tmp="$(mktemp -d)"
@@ -30,14 +31,17 @@ grep -q 'website_preview_unavailable' "$tmp/mismatch.err"
 
 : >"$tmp/vercel.log"
 FAKE_VERCEL_LOG="$tmp/vercel.log" FAKE_VERCEL_PROJECT_ID=prj_expected \
-  FAKE_VERCEL_DEPLOYMENT_ID=dpl_expected VERCEL_BIN="$fake" DEPLOYMENT_URL="$url" \
+  FAKE_VERCEL_DEPLOYMENT_ID=dpl_expected VERCEL_BIN="$fake" CURL_BIN="$fake_api" \
+  DEPLOYMENT_URL="$url" VERCEL_TOKEN=token_fixture VERCEL_ORG_ID=team_expected \
   VERCEL_PROJECT_ID=prj_expected bash "$remove" >"$tmp/remove.out"
 grep -q 'inspect https://cfp-website-preview-fixture.vercel.app --format=json' "$tmp/vercel.log"
+grep -q 'v9/projects/prj_expected' "$tmp/vercel.log"
 grep -q 'remove dpl_expected --yes' "$tmp/vercel.log"
 
 : >"$tmp/vercel.log"
 if FAKE_VERCEL_LOG="$tmp/vercel.log" FAKE_VERCEL_PROJECT_ID=prj_other \
-  VERCEL_BIN="$fake" DEPLOYMENT_URL="$url" VERCEL_PROJECT_ID=prj_expected \
+  VERCEL_BIN="$fake" CURL_BIN="$fake_api" DEPLOYMENT_URL="$url" \
+  VERCEL_TOKEN=token_fixture VERCEL_ORG_ID=team_expected VERCEL_PROJECT_ID=prj_expected \
   bash "$remove" >/dev/null 2>"$tmp/project.err"; then
   exit 1
 fi

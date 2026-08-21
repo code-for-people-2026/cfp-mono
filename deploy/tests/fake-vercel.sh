@@ -21,9 +21,9 @@ case "${1:-}" in
     esac
     ;;
   inspect)
-    printf '{"id":"%s","projectId":"%s"}\n' \
+    printf '{"id":"%s","name":"%s"}\n' \
       "${FAKE_VERCEL_DEPLOYMENT_ID:-dpl_fixture}" \
-      "${FAKE_VERCEL_PROJECT_ID:-prj_fixture}"
+      "${FAKE_VERCEL_DEPLOYMENT_PROJECT_NAME:-cfp-website-preview-fixture}"
     ;;
   remove)
     ;;
