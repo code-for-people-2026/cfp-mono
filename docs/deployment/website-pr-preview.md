@@ -14,6 +14,7 @@ GitHub Actions 使用 Vercel CLI 部署精确的 PR head commit。
   本仓库分支后再部署。
 - 部署固定到 `github.event.pull_request.head.sha`，`/api/health` 和 `/api/ready` 必须返回相同
   的 40 位 commit SHA，数据库探针也必须成功。
+- CLI 部署显式使用 `--target=preview`，避免无 Git 连接的空项目把首次部署判为 Production。
 
 ## Vercel 与 Neon
 

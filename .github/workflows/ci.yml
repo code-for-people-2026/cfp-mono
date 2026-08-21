@@ -247,7 +247,8 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          deployment_url="$(vercel deploy --yes --archive=tgz \
+          deployment_url="$(vercel deploy --yes --target=preview --archive=tgz \
+            --build-env RELEASE_SHA="$PR_HEAD_SHA" \
             --env RELEASE_SHA="$PR_HEAD_SHA" \
             --meta cfpPrNumber="$PR_NUMBER" \
             --meta cfpCommitSha="$PR_HEAD_SHA")"
