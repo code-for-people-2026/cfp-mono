@@ -4,14 +4,18 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] disabled:pointer-events-none disabled:opacity-50",
+  "inline-flex min-w-0 items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-control)] text-sm font-semibold transition-[background-color,border-color,color,box-shadow,transform] duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--background)] active:translate-y-px disabled:pointer-events-none disabled:opacity-45 motion-reduce:transform-none motion-reduce:transition-none",
   {
     variants: {
       variant: {
-        default: "bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)]",
+        default:
+          "bg-[var(--primary)] text-[var(--primary-foreground)] shadow-[var(--shadow-primary)] hover:bg-[var(--primary-hover)] active:bg-[var(--primary-active)] active:shadow-none",
         secondary:
-          "border border-[var(--border)] bg-[var(--paper)] text-[var(--ink)] hover:bg-[var(--soft)]",
-        ghost: "text-[var(--ink)] hover:bg-[var(--soft)]",
+          "border border-[var(--border-strong)] bg-[var(--surface)] text-[var(--foreground)] shadow-[var(--shadow-e1)] hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] active:bg-[var(--muted)]",
+        outline:
+          "border border-[var(--border)] bg-transparent text-[var(--foreground)] hover:border-[var(--border-strong)] hover:bg-[var(--muted)] active:bg-[var(--border)]",
+        ghost:
+          "text-[var(--foreground)] hover:bg-[var(--muted)] hover:text-[var(--primary)] active:bg-[var(--border)]",
       },
       size: {
         default: "h-11 px-5 py-2",
@@ -47,4 +51,3 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 Button.displayName = "Button";
 
 export { Button, buttonVariants };
-

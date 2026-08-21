@@ -2,80 +2,100 @@
 
 :root {
   color-scheme: light;
-  --bg: #f7f9fc;
-  --paper: #fffefa;
-  --soft: #eef3f7;
-  --ink: #101417;
-  --carbon: #0b0f14;
-  --carbon-2: #15191f;
-  --on-carbon: #f8f7f1;
-  --muted: #5f6874;
-  --dim: #7a8490;
-  --accent: #b92e3c;
-  --accent-strong: #8f1d2c;
-  --gold: #a7822d;
-  --gold-bright: #c2a45a;
-  --green: #2d6a56;
-  --blue: #2f6e9d;
-  --cyan: #43aeca;
-  --violet: #7569b7;
-  --border: rgba(16, 20, 23, 0.13);
-  --ring: rgba(185, 46, 60, 0.34);
-  --ring-soft: rgba(185, 46, 60, 0.12);
-  --chip: rgba(255, 255, 255, 0.72);
-  --composer: rgba(255, 255, 255, 0.82);
-  --composer-footer: rgba(235, 240, 245, 0.82);
-  --tag-bg: rgba(67, 174, 202, 0.09);
-  --tag-border: rgba(67, 174, 202, 0.32);
-  --glow-cyan: rgba(67, 174, 202, 0.2);
-  --glow-red: rgba(185, 46, 60, 0.16);
-  --glow-gold: rgba(194, 164, 90, 0.13);
-  --grid-line: rgba(16, 20, 23, 0.035);
-  --shadow-soft: 0 18px 50px rgba(16, 20, 23, 0.07);
-  --shadow-large: 0 36px 96px rgba(30, 42, 58, 0.13);
-  --font-system: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Noto Sans SC", sans-serif;
-}
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    color-scheme: dark;
-    --bg: #07090d;
-    --paper: #101722;
-    --soft: #0d131b;
-    --ink: #f6f7f2;
-    --carbon: #050608;
-    --carbon-2: #10141b;
-    --on-carbon: #f6f7f2;
-    --muted: #aeb8c5;
-    --dim: #7e8996;
-    --accent: #e34a55;
-    --accent-strong: #ff6570;
-    --gold: #b89242;
-    --gold-bright: #d6b267;
-    --green: #66b689;
-    --blue: #5f9ed1;
-    --cyan: #5dc7e8;
-    --violet: #9b91e4;
-    --border: rgba(218, 228, 240, 0.15);
-    --ring: rgba(227, 74, 85, 0.42);
-    --ring-soft: rgba(227, 74, 85, 0.15);
-    --chip: rgba(255, 255, 255, 0.06);
-    --composer: rgba(17, 23, 32, 0.86);
-    --composer-footer: rgba(255, 255, 255, 0.045);
-    --tag-bg: rgba(93, 199, 232, 0.1);
-    --tag-border: rgba(93, 199, 232, 0.34);
-    --glow-cyan: rgba(85, 170, 220, 0.2);
-    --glow-red: rgba(227, 74, 85, 0.18);
-    --glow-gold: rgba(214, 178, 103, 0.11);
-    --grid-line: rgba(246, 247, 242, 0.046);
-    --shadow-soft: 0 18px 50px rgba(0, 0, 0, 0.28);
-    --shadow-large: 0 36px 96px rgba(0, 0, 0, 0.48);
-  }
+  /* Public semantic contract. */
+  --background: #f4f7fa;
+  --foreground: #081628;
+  --surface: #ffffff;
+  --surface-foreground: #081628;
+  --primary: #d20d18;
+  --primary-hover: #b80b14;
+  --primary-active: #980a12;
+  --primary-foreground: #ffffff;
+  --primary-soft: #fff0f1;
+  --muted: #eef2f6;
+  --muted-foreground: #5c6877;
+  --border: #d7dfe8;
+  --border-strong: #bbc7d3;
+  --ring: rgba(210, 13, 24, 0.32);
+  --confirm: #2aa79d;
+  --confirm-soft: #e8f8f5;
+  --confirm-foreground: #176d67;
+  --prototype-stage: #071321;
+  --prototype-stage-foreground: #f8fafc;
+  --success: #247a52;
+  --success-soft: #eaf7ef;
+  --warning: #8a5b00;
+  --warning-soft: #fff7dd;
+  --destructive: #b42318;
+  --destructive-soft: rgba(180, 35, 24, 0.16);
+  --disabled: #e4e9ef;
+  --disabled-foreground: #7d8794;
+
+  --radius: 12px;
+  --radius-control: 9px;
+  --radius-card: 14px;
+  --radius-container: 20px;
+  --shadow-e1: 0 2px 8px rgba(8, 22, 40, 0.05);
+  --shadow-e2: 0 12px 36px rgba(8, 22, 40, 0.08);
+  --shadow-e3: 0 24px 64px rgba(8, 22, 40, 0.12);
+  --shadow-primary: 0 8px 20px rgba(210, 13, 24, 0.18);
+  --font-system: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-monospace: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* Temporary aliases for routes that will adopt the shared shell in integration work. */
+  --bg: var(--background);
+  --paper: var(--surface);
+  --soft: #eef2f6;
+  --ink: var(--foreground);
+  --carbon: #071321;
+  --carbon-2: #111d2a;
+  --on-carbon: #f8fafc;
+  --dim: #7d8794;
+  --accent: var(--primary);
+  --accent-strong: var(--primary-hover);
+  --gold: #8a6a24;
+  --gold-bright: #a88438;
+  --green: var(--confirm);
+  --blue: #2f6e9d;
+  --cyan: #3288a1;
+  --violet: #7569b7;
+  --ring-soft: rgba(210, 13, 24, 0.12);
+  --chip: rgba(255, 255, 255, 0.8);
+  --composer: rgba(255, 255, 255, 0.9);
+  --composer-footer: rgba(238, 242, 246, 0.88);
+  --tag-bg: rgba(210, 13, 24, 0.06);
+  --tag-border: rgba(210, 13, 24, 0.24);
+  --glow-cyan: rgba(50, 136, 161, 0.16);
+  --glow-red: rgba(210, 13, 24, 0.13);
+  --glow-gold: rgba(168, 132, 56, 0.12);
+  --grid-line: rgba(8, 22, 40, 0.035);
+  --shadow-soft: var(--shadow-e2);
+  --shadow-large: var(--shadow-e3);
 }
 
 @theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-confirm: var(--confirm);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-destructive: var(--destructive);
   --font-sans: var(--font-system);
+  --font-mono: var(--font-monospace);
+  --radius-sm: var(--radius-control);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius-card);
+  --shadow-sm: var(--shadow-e1);
+  --shadow-md: var(--shadow-e2);
+  --shadow-lg: var(--shadow-e3);
 }
 
 * {
@@ -84,54 +104,119 @@
 
 html {
   scroll-behavior: smooth;
+  scroll-padding-top: 80px;
 }
 
 body {
   margin: 0;
-  background:
-    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px),
-    linear-gradient(var(--grid-line) 1px, transparent 1px),
-    var(--bg);
-  background-size: 36px 36px;
-  color: var(--ink);
+  background: var(--background);
+  color: var(--foreground);
   font-family: var(--font-system);
+  overflow-wrap: anywhere;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keep pre-shell routes readable while their JSX still uses --muted as a text color. */
+body > main,
+body > footer {
+  --muted: var(--muted-foreground);
+}
+
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
 }
 
 a:not([class]) {
-  color: inherit;
+  color: var(--primary);
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  transition: color 200ms ease, text-decoration-color 200ms ease;
 }
 
-/* Links the assistant emits inside chat replies render without a class, so the rule above
-   would leave them the same color as body text. Give chat links the accent color + an
-   underline so they read as clickable. */
+a:not([class]):hover {
+  color: var(--primary-hover);
+  text-decoration-color: currentColor;
+}
+
+a:not([class]):active {
+  color: var(--primary-active);
+}
+
+:where(a, button, input, textarea, select, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+}
+
+:where(a, button, input, textarea, select, [role="menuitem"])[aria-disabled="true"] {
+  color: var(--disabled-foreground);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+summary {
+  cursor: pointer;
+}
+
+:where(button, input, textarea, select):disabled {
+  cursor: not-allowed;
+}
+
+[role="menu"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  color: var(--surface-foreground);
+  box-shadow: var(--shadow-e2);
+}
+
+[role="menuitem"] {
+  border-radius: var(--radius-control);
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+[role="menuitem"]:hover,
+[role="menuitem"]:focus-visible {
+  background: var(--muted);
+  color: var(--primary);
+}
+
+[role="menuitem"]:active {
+  background: var(--border);
+  color: var(--primary-active);
+}
+
+::selection {
+  background: var(--primary-soft);
+  color: var(--foreground);
+}
+
 .dialogue-prose a {
-  color: var(--accent);
+  color: var(--primary);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
 
 .dialogue-prose a:hover {
-  color: var(--accent-strong);
+  color: var(--primary-hover);
 }
 
-/* Tailwind v4 preflight leaves interactive elements at the default cursor; restore the
-   pointer so buttons/role-buttons (composer send, suggestion chips, footer chips) read
-   as clickable on hover. */
-button:not(:disabled),
-[role="button"]:not(:disabled),
-summary {
-  cursor: pointer;
-}
-
-::selection {
-  background: rgba(139, 30, 45, 0.16);
+.dialogue-prose a:active {
+  color: var(--primary-active);
 }
 
 .footer-social-popover {
   opacity: 0;
   pointer-events: none;
   transform: translateY(4px);
+  transition: opacity 200ms ease, transform 200ms ease, visibility 200ms ease;
   visibility: hidden;
 }
 
@@ -141,4 +226,19 @@ summary {
   pointer-events: auto;
   transform: translateY(0);
   visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
 }
