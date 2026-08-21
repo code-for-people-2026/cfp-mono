@@ -410,9 +410,15 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await page.goto("/wam");
   await expect(page.getByRole("heading", { name: "牛马能力剥夺矩阵" })).toBeVisible();
   await expect(page.getByText("7 类工友 × 7 样能力")).toBeVisible();
-  // 矩阵左上角的「矩阵说明」入口与表头行列。
-  await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) <= 980) {
+    const mobileBrowser = page.getByRole("region", { name: "移动矩阵浏览" });
+    await expect(mobileBrowser.getByRole("button", { name: "完整矩阵" })).toBeVisible();
+    await expect(mobileBrowser.getByRole("link", { name: /A1 一产 × 劳动议价/ })).toBeVisible();
+  } else {
+    // 桌面矩阵保留左上角的「矩阵说明」入口与完整表头行列。
+    await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
+  }
 });
 
 test("featured homepage question submits immediately and enters the conversation", async ({

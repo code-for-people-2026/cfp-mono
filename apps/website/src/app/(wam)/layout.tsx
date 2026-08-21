@@ -5,7 +5,7 @@ import "./wam.css";
 // 不与 (site) 的 Tailwind 主题互相污染，因此这里渲染自己的 <html>/<body> 根布局。
 export const metadata: Metadata = {
   title: "牛马能力剥夺矩阵 · 互动矩阵",
-  description: "为 7×7 矩阵补充你的痛点、观察和实践点子。",
+  description: "浏览 7×7 核心矩阵与 H 未细分补充列，并补充你的痛点、观察和实践点子。",
 };
 
 export const viewport: Viewport = {

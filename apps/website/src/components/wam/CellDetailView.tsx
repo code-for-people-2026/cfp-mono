@@ -3,7 +3,20 @@
 import { MessageSquarePlus } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useCallback, useEffect, useMemo, useRef, useState, type TouchEvent } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type TouchEvent,
+} from 'react'
+import {
+  getMatrixCellHref,
+  isMatrixReturnHref,
+  MATRIX_RETURN_STORAGE_KEY,
+} from '@/lib/wam/matrix-browser'
 import type { MatrixCell, MatrixColumn, MatrixRow, MatrixTagTone } from '@/lib/wam/matrix'
 import { getAdjacentCellId, resolveSwipeDirection } from '@/lib/wam/matrix-navigation'
 import type { PublicSubmissionsByCell } from '@/lib/wam/public-submissions'
@@ -28,6 +41,14 @@ type SwipePoint = {
 
 const SWIPE_NAVIGATION_COOLDOWN_MS = 320
 let lastSwipeNavigationAt = 0
+
+const subscribeToMatrixReturnHref = () => () => undefined
+const getServerMatrixReturnHref = () => '/wam'
+
+function getClientMatrixReturnHref() {
+  const storedReturnHref = window.sessionStorage.getItem(MATRIX_RETURN_STORAGE_KEY)
+  return isMatrixReturnHref(storedReturnHref) ? storedReturnHref : '/wam'
+}
 
 const tagClass: Record<MatrixTagTone, string> = {
   red: 'tag tag-red',
@@ -61,6 +82,11 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
   const swipeStartRef = useRef<SwipePoint | null>(null)
   const [submissions, setSubmissions] = useState<PublicSubmissionsByCell>({})
   const [activeCellId, setActiveCellId] = useState(initialCellId)
+  const returnHref = useSyncExternalStore(
+    subscribeToMatrixReturnHref,
+    getClientMatrixReturnHref,
+    getServerMatrixReturnHref
+  )
 
   const initialCell = useMemo(
     () => cells.find((cell) => cell.id === initialCellId) ?? cells[0],
@@ -71,6 +97,20 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
     () => cells.find((cell) => cell.id === activeCellId) ?? initialCell,
     [activeCellId, cells, initialCell]
   )
+
+  const adjacentCells = useMemo(() => {
+    const findAdjacentCell = (direction: 'up' | 'right' | 'down' | 'left') => {
+      const cellId = getAdjacentCellId(activeCellId, direction, rows, columns, cells)
+      return cellId ? cells.find((cell) => cell.id === cellId) : undefined
+    }
+
+    return {
+      previousAbility: findAdjacentCell('up'),
+      nextAbility: findAdjacentCell('down'),
+      previousPeople: findAdjacentCell('left'),
+      nextPeople: findAdjacentCell('right'),
+    }
+  }, [activeCellId, cells, columns, rows])
 
   useEffect(() => {
     void fetchSubmissions().then(setSubmissions)
@@ -86,7 +126,7 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
 
       lastSwipeNavigationAt = now
       setActiveCellId(nextCellId)
-      router.replace(`/wam/cell/${nextCellId}`, { scroll: false })
+      router.replace(getMatrixCellHref(nextCellId), { scroll: false })
     },
     [activeCellId, cells, columns, rows, router]
   )
@@ -131,8 +171,8 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
   return (
     <main className="cell-page">
       <header className="cell-page-topbar">
-        <Link href="/wam" className="back-link">
-          矩阵
+        <Link href={returnHref} className="back-link">
+          返回矩阵
         </Link>
         <div>
           <div className="kicker">上下翻能力项，左右切人群</div>
@@ -142,22 +182,48 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
 
       <div className="cell-position-strip" aria-label="当前位置">
         <span>
-          {activeCell?.id} / {activeCell?.columnTitle} × {activeCell?.rowTitle}
+          矩阵 / {activeCell?.columnTitle} × {activeCell?.rowTitle}
         </span>
-        <div className="cell-position-map" aria-hidden="true">
-          {rows.map((row) =>
-            columns.map((column) => {
-              const cell = cells.find((item) => item.rowId === row.id && item.columnId === column.id)
-              return (
-                <i
-                  key={`${row.id}-${column.id}`}
-                  className={cell?.id === activeCell?.id ? 'active' : ''}
-                />
-              )
-            })
-          )}
+        <div className="cell-position-summary">
+          <span className="cell-position-id">{activeCell?.id}</span>
+          <div className="cell-position-map" aria-hidden="true">
+            {rows.map((row) =>
+              columns.map((column) => {
+                const cell = cells.find((item) => item.rowId === row.id && item.columnId === column.id)
+                return (
+                  <i
+                    key={`${row.id}-${column.id}`}
+                    className={cell?.id === activeCell?.id ? 'active' : ''}
+                  />
+                )
+              })
+            )}
+          </div>
         </div>
       </div>
+
+      <nav className="cell-adjacent-nav" aria-label="相邻格子导航">
+        {adjacentCells.previousPeople ? (
+          <Link href={getMatrixCellHref(adjacentCells.previousPeople.id)}>
+            上一人群：{adjacentCells.previousPeople.columnTitle}
+          </Link>
+        ) : null}
+        {adjacentCells.nextPeople ? (
+          <Link href={getMatrixCellHref(adjacentCells.nextPeople.id)}>
+            下一人群：{adjacentCells.nextPeople.columnTitle}
+          </Link>
+        ) : null}
+        {adjacentCells.previousAbility ? (
+          <Link href={getMatrixCellHref(adjacentCells.previousAbility.id)}>
+            上一能力：{adjacentCells.previousAbility.rowTitle}
+          </Link>
+        ) : null}
+        {adjacentCells.nextAbility ? (
+          <Link href={getMatrixCellHref(adjacentCells.nextAbility.id)}>
+            下一能力：{adjacentCells.nextAbility.rowTitle}
+          </Link>
+        ) : null}
+      </nav>
 
       <div
         className="cell-detail-carousel"
@@ -227,11 +293,15 @@ export function CellDetailView({ rows, columns, cells, initialCellId }: Props) {
                 <a
                   href={externalFormUrl}
                   className="detail-submit-link"
+                  target="_blank"
                   rel="noreferrer"
                 >
                   补一条
                   <MessageSquarePlus size={16} />
                 </a>
+                <p className="detail-submit-note">
+                  将在新标签页离开官网。提交内容和可选联系方式在审核前仅供码成仝审核人员查看；联系方式不会公开，审核通过后内容与可选署名会显示在这个格子中。
+                </p>
               </div>
             </article>
           )
