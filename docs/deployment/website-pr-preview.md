@@ -33,9 +33,10 @@ Neon 的 Vercel 集成会为部署提供隔离的 Preview 数据库分支。新�
 
 仓库 Actions secrets：
 
-- `VERCEL_WEBSITE_PREVIEW_TOKEN`：专供该 workflow 使用、范围只包含 `cfp-website-preview`
-  项目的 Vercel token。它必须与本机管理 token 分开创建；workflow 还会通过固定 project ID 和
-  删除前校验，防止误操作其他项目。
+- `VERCEL_WEBSITE_PREVIEW_TOKEN`：专供该 workflow 使用、与本机管理 token 分开创建的
+  Vercel token。Vercel CLI 读取 CI 项目设置需要账号或 Team 范围，因此个人账号中选择
+  `All Projects`；workflow 通过固定 project ID 和删除前校验，把实际操作限定到官网 Preview
+  项目。
 
 仓库 Actions variables：
 
