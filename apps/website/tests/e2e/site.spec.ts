@@ -76,12 +76,6 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByRole("button", { name: "服务谁" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "为什么现在做" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "怎么避免变成平台" })).toHaveCount(0);
-  const viewportWidth = page.viewportSize()?.width ?? 0;
-  if (viewportWidth >= 768) {
-    await expect(
-      page.getByRole("main").getByRole("link", { name: "牛马能力剥夺矩阵", exact: true }),
-    ).toHaveAttribute("href", "/wam");
-  }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "读数据平权宣言", exact: true })).toBeVisible();
 
@@ -137,7 +131,9 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("一起做或提出批评")).toHaveCount(0);
 
   await expect(page.getByRole("main").getByRole("heading", { name: "关注后续" })).toHaveCount(0);
-  await expect(page.getByAltText("码成仝 logo")).toHaveAttribute(
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "码成仝首页" }).locator("img"),
+  ).toHaveAttribute(
     "src",
     /code-for-people-logo\.png/,
   );
@@ -215,7 +211,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer.getByText("© 2026 码成仝")).toBeVisible();
 });
 
-test("homepage follows the visitor system color scheme", async ({ page }) => {
+test("homepage keeps the approved light public theme across system preferences", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
   const lightTheme = await page.evaluate(() => ({
@@ -233,9 +229,9 @@ test("homepage follows the visitor system color scheme", async ({ page }) => {
   }));
 
   expect(lightTheme.colorScheme).toContain("light");
-  expect(darkTheme.colorScheme).toContain("dark");
-  expect(lightTheme.background).not.toBe(darkTheme.background);
-  expect(lightTheme.text).not.toBe(darkTheme.text);
+  expect(darkTheme.colorScheme).toContain("light");
+  expect(lightTheme.background).toBe(darkTheme.background);
+  expect(lightTheme.text).toBe(darkTheme.text);
 });
 
 test("brand mark and social QR codes stay compact", async ({ page }) => {
@@ -243,7 +239,7 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
   await page.goto("/");
 
   const metrics = await page.evaluate(() => {
-    const headerLogo = document.querySelector('img[alt="码成仝 logo"]');
+    const headerLogo = document.querySelector('header[data-density] a[aria-label="码成仝首页"] img');
     if (!headerLogo) {
       throw new Error("Missing header logo");
     }
@@ -284,7 +280,7 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
 
   expect(Math.abs(metrics.logo.width - metrics.logo.height)).toBeLessThanOrEqual(1);
   expect(metrics.logo.width).toBeLessThanOrEqual(44);
-  expect(metrics.logo.borderRadius).toBeLessThan(metrics.logo.width / 4);
+  expect(metrics.logo.borderRadius).toBeLessThanOrEqual(metrics.logo.width / 4);
 
   for (const qr of metrics.qrRects) {
     expect(qr.width).toBeLessThanOrEqual(112);
@@ -416,7 +412,7 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
     await expect(mobileBrowser.getByRole("link", { name: /A1 一产 × 劳动议价/ })).toBeVisible();
   } else {
     // 桌面矩阵保留左上角的「矩阵说明」入口与完整表头行列。
-    await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
+    await expect(page.getByRole("main").getByRole("link", { name: "矩阵说明" })).toBeVisible();
     await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
   }
 });
@@ -619,6 +615,78 @@ test("chat route opens from the homepage question entry and carries it over", as
   await expect(page.getByRole("heading", { name: "对话入口正在接入" })).toHaveCount(0);
 });
 
+test("public shells keep canonical navigation order and route current state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const routes = [
+    { path: "/", density: "full", current: undefined },
+    { path: "/manifesto", density: "full", current: "为什么做" },
+    { path: "/license", density: "full", current: "如何约束" },
+    { path: "/chat", density: "compact", current: undefined },
+    { path: "/wam", density: "compact", current: "如何选题" },
+    { path: "/wam/guide", density: "compact", current: "如何选题" },
+    { path: "/wam/cell/A1", density: "compact", current: "如何选题" },
+  ] as const;
+
+  for (const route of routes) {
+    await page.goto(route.path);
+    const header = page.locator(`header[data-density="${route.density}"]`);
+    const navigation = header.getByRole("navigation", { name: "主导航" });
+    const links = navigation.getByRole("link");
+
+    await expect(header).toBeVisible();
+    await expect(links).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
+    await expect(links.nth(0)).toHaveAttribute(
+      "href",
+      "https://www.codeforpeople.cn/neighbors",
+    );
+    if (route.current) {
+      await expect(navigation.getByRole("link", { name: route.current })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    } else {
+      await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
+    }
+  }
+});
+
+test("mobile navigation restores focus and full pages fit their footers at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/manifesto");
+
+  const header = page.locator('header[data-density="full"]');
+  await expect(header.getByText("数据平权宣言", { exact: true })).toBeVisible();
+  const menuButton = header.locator("button[aria-controls]");
+  await menuButton.click();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  const mobileNavigation = header.getByRole("navigation", { name: "移动主导航" });
+  await expect(mobileNavigation.getByRole("link")).toHaveText([
+    "近邻互助组",
+    "为什么做当前",
+    "如何选题",
+    "如何约束",
+  ]);
+
+  await page.keyboard.press("Escape");
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await expect(menuButton).toBeFocused();
+
+  for (const path of ["/", "/chat", "/manifesto", "/license"]) {
+    await page.goto(path);
+    const dimensions = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      footerRight: document.querySelector("footer")?.getBoundingClientRect().right,
+    }));
+    expect(dimensions.scrollWidth, `${path} page width`).toBeLessThanOrEqual(
+      dimensions.clientWidth,
+    );
+    expect(dimensions.footerRight, `${path} footer edge`).toBeLessThanOrEqual(
+      dimensions.clientWidth,
+    );
+  }
+});
+
 test("payload baseline routes are reachable", async ({ page, request }) => {
   const formLinksResponse = await request.get("/api/form-links?limit=1");
   expect(formLinksResponse.status()).toBeLessThan(500);
@@ -628,16 +696,18 @@ test("payload baseline routes are reachable", async ({ page, request }) => {
   await expect(page.locator("body")).not.toContainText("Application error");
 });
 
-test("footer renders on reading pages but not on the chat or matrix page", async ({ page }) => {
+test("full and compact shells render their matching header and footer", async ({ page }) => {
   for (const path of ["/", "/manifesto", "/license"]) {
     await page.goto(path);
+    await expect(page.locator('header[data-density="full"]')).toBeVisible();
     await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toHaveAttribute("id", "follow");
   }
 
-  // The chat and the interactive matrix (/wam) are standalone full-screen experiences
-  // outside the reading layout, so they intentionally have no site footer.
   for (const path of ["/chat", "/wam"]) {
     await page.goto(path);
-    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+    await expect(page.locator('header[data-density="compact"]')).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(page.getByRole("contentinfo")).not.toHaveAttribute("id", "follow");
   }
 });

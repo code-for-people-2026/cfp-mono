@@ -12,6 +12,7 @@ export {
   type FullSiteFooterProps,
 } from "./site-footer";
 export { SiteHeader, type SiteHeaderProps } from "./site-header";
+export { RouteSiteShell } from "./route-site-shell";
 export {
   CompactSiteShell,
   FullSiteShell,

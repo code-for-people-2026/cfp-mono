@@ -43,7 +43,7 @@
   --font-system: "PingFang SC", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
   --font-monospace: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
 
-  /* Temporary aliases for routes that will adopt the shared shell in integration work. */
+  /* Scene aliases retained for the homepage, dialogue, and long-form reading canvases. */
   --bg: var(--background);
   --paper: var(--surface);
   --soft: #eef2f6;
@@ -115,12 +115,6 @@ body {
   overflow-wrap: anywhere;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
-}
-
-/* Keep pre-shell routes readable while their JSX still uses --muted as a text color. */
-body > main,
-body > footer {
-  --muted: var(--muted-foreground);
 }
 
 img,

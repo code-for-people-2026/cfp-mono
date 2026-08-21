@@ -1,5 +1,4 @@
 import type { Metadata, ResolvingMetadata } from "next";
-import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Factory, FileText, HeartHandshake, Map, Route, ShieldCheck, Store } from "lucide-react";
 import { neighborsProduct } from "@/content/neighbors";
@@ -24,44 +23,13 @@ export async function generateMetadata(_: object, parent: ResolvingMetadata): Pr
 
 export default async function HomePage() {
   const [home, settings] = await Promise.all([getHomepage(), getSiteSettings()]);
-  const { brand } = settings;
   const { hero } = home;
 
   return (
     <main className="min-h-screen bg-[var(--bg)] text-[var(--ink)]">
       <section className="relative isolate overflow-hidden">
         <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_50%_22%,var(--glow-cyan),transparent_30%),radial-gradient(circle_at_18%_74%,var(--glow-red),transparent_24%),radial-gradient(circle_at_84%_76%,var(--glow-gold),transparent_25%)]" />
-        <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 py-6 sm:px-8 lg:px-10">
-          <header className="flex h-12 items-center justify-between gap-4 text-sm text-[var(--muted)]">
-            <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
-              <Image
-                src={brand.logoPath}
-                alt={brand.logoAlt}
-                width={38}
-                height={38}
-                priority
-                className="h-9 w-9 object-contain"
-              />
-              <span className="flex flex-col">
-                <span className="text-lg font-black leading-none">{brand.wordmark}</span>
-                <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
-              </span>
-            </Link>
-            <nav className="hidden items-center gap-7 font-semibold md:flex">
-              {settings.headerNav.map((item) =>
-                item.href.startsWith("http") ? (
-                  <a key={item.href} href={item.href} target="_blank" rel="noreferrer" className="no-underline">
-                    {item.label}
-                  </a>
-                ) : (
-                  <Link key={item.href} href={item.href} className="no-underline">
-                    {item.label}
-                  </Link>
-                ),
-              )}
-            </nav>
-          </header>
-
+        <div className="relative mx-auto flex min-h-screen w-full max-w-7xl flex-col px-5 sm:px-8 lg:px-10">
           <div className="flex flex-1 flex-col justify-center py-20 text-center">
             <p className="mx-auto w-fit rounded-full border border-[var(--border)] bg-[var(--chip)] px-3 py-1 text-xs font-black tracking-[0.18em] text-[var(--accent)] uppercase">
               {hero.kicker}
@@ -79,7 +47,7 @@ export default async function HomePage() {
               {hero.manifestoLine}
             </p>
             {hero.body ? (
-              <p className="mx-auto mt-5 max-w-3xl text-base leading-8 text-[var(--muted)] sm:text-lg">
+              <p className="mx-auto mt-5 max-w-3xl text-base leading-8 text-[var(--muted-foreground)] sm:text-lg">
                 {hero.body}
               </p>
             ) : null}
@@ -97,7 +65,7 @@ export default async function HomePage() {
                   className="border border-[var(--border)] bg-[var(--paper)] p-5 text-left shadow-[var(--shadow-soft)]"
                 >
                   <h2 className="text-lg font-black leading-tight">{item.title}</h2>
-                  <p className="mt-3 text-sm leading-7 text-[var(--muted)]">{item.body}</p>
+                  <p className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
                 </section>
               ))}
             </div>
@@ -111,7 +79,7 @@ export default async function HomePage() {
             <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
               {home.identity.heading}
             </h2>
-            <p className="text-base leading-8 text-[var(--muted)]">{home.identity.intro}</p>
+            <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.identity.intro}</p>
           </div>
           <div className="mt-14 grid gap-5 lg:grid-cols-3">
             {home.identity.items.map((item, index) => (
@@ -121,7 +89,7 @@ export default async function HomePage() {
               >
                 <p className="font-mono text-xs font-bold text-[var(--accent)]">WHO / 0{index + 1}</p>
                 <h3 className="mt-8 text-2xl font-black leading-tight">{item.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{item.body}</p>
+                <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
               </section>
             ))}
           </div>
@@ -134,7 +102,7 @@ export default async function HomePage() {
             <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
               {home.whyNow.heading}
             </h2>
-            <p className="text-base leading-8 text-[var(--muted)]">{home.whyNow.intro}</p>
+            <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.whyNow.intro}</p>
           </div>
           <div className="mt-14 grid gap-5 lg:grid-cols-3">
             {home.whyNow.items.map((point, index) => (
@@ -145,7 +113,7 @@ export default async function HomePage() {
                 <div className="absolute inset-x-0 top-0 h-1 bg-[linear-gradient(90deg,var(--accent),var(--gold-bright),var(--cyan))]" />
                 <p className="font-mono text-xs font-bold text-[var(--accent)]">WHY / 0{index + 1}</p>
                 <h3 className="mt-10 text-2xl font-black leading-tight">{point.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{point.body}</p>
+                <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{point.body}</p>
               </section>
             ))}
           </div>
@@ -157,7 +125,7 @@ export default async function HomePage() {
           <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
             {home.lifeScenes.heading}
           </h2>
-          <p className="text-base leading-8 text-[var(--muted)]">{home.lifeScenes.intro}</p>
+          <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.lifeScenes.intro}</p>
         </div>
         <div className="mt-14 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
           {home.lifeScenes.items.map((scene, index) => {
@@ -169,10 +137,10 @@ export default async function HomePage() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <Icon aria-hidden="true" className="h-6 w-6 text-[var(--accent)]" />
-                  <span className="font-mono text-xs font-bold text-[var(--muted)]">0{index + 1}</span>
+                  <span className="font-mono text-xs font-bold text-[var(--muted-foreground)]">0{index + 1}</span>
                 </div>
                 <h3 className="mt-8 text-2xl font-black">{scene.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{scene.body}</p>
+                <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{scene.body}</p>
                 <div className="mt-auto flex flex-wrap gap-2 pt-6">
                   {scene.tags.map((tag) => (
                     <span
@@ -195,7 +163,7 @@ export default async function HomePage() {
             <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
               {home.direction.heading}
             </h2>
-            <p className="text-base leading-8 text-[var(--muted)]">{home.direction.intro}</p>
+            <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.direction.intro}</p>
           </div>
           <div className="mt-14 grid gap-5 lg:grid-cols-3">
             {home.direction.items.map((item) => (
@@ -204,7 +172,7 @@ export default async function HomePage() {
                 className="border border-[var(--border)] bg-[var(--paper)] p-6 shadow-[var(--shadow-soft)] lg:min-h-60"
               >
                 <h3 className="text-2xl font-black leading-tight">{item.title}</h3>
-                <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{item.body}</p>
+                <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
               </section>
             ))}
           </div>
@@ -216,7 +184,7 @@ export default async function HomePage() {
           <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
             {home.selfRestraint.heading}
           </h2>
-          <p className="text-base leading-8 text-[var(--muted)]">{home.selfRestraint.intro}</p>
+          <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.selfRestraint.intro}</p>
         </div>
         <div className="mt-14 grid gap-5 lg:grid-cols-3">
           {home.selfRestraint.items.map((item, index) => (
@@ -226,10 +194,10 @@ export default async function HomePage() {
             >
               <div className="flex items-start justify-between gap-4">
                 <ShieldCheck aria-hidden="true" className="h-6 w-6 text-[var(--gold-bright)]" />
-                <span className="font-mono text-xs font-bold text-[var(--muted)]">LOCK / 0{index + 1}</span>
+                <span className="font-mono text-xs font-bold text-[var(--muted-foreground)]">LOCK / 0{index + 1}</span>
               </div>
               <h3 className="mt-8 text-2xl font-black leading-tight">{item.title}</h3>
-              <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{item.body}</p>
+              <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
             </section>
           ))}
         </div>
@@ -241,7 +209,7 @@ export default async function HomePage() {
             <h2 className="max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
               {home.continueReads.heading}
             </h2>
-            <p className="text-base leading-8 text-[var(--muted)]">{home.continueReads.intro}</p>
+            <p className="text-base leading-8 text-[var(--muted-foreground)]">{home.continueReads.intro}</p>
           </div>
           <div className="mt-14 grid gap-5 md:grid-cols-3">
             {home.continueReads.items.map((item, index) => {
@@ -266,11 +234,11 @@ export default async function HomePage() {
                     <Icon aria-hidden="true" className="h-6 w-6 text-[var(--accent)]" />
                     <ArrowRight
                       aria-hidden="true"
-                      className="h-5 w-5 text-[var(--muted)] transition-transform group-hover:translate-x-1"
+                      className="h-5 w-5 text-[var(--muted-foreground)] transition-transform group-hover:translate-x-1"
                     />
                   </div>
                   <h3 className="mt-8 text-2xl font-black leading-tight">{item.label}</h3>
-                  <p className="mt-4 text-sm leading-7 text-[var(--muted)]">{item.description}</p>
+                  <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.description}</p>
                 </Link>
               );
             })}

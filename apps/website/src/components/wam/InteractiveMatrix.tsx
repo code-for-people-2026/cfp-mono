@@ -418,13 +418,13 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
         </a>
       </section>
 
-      <footer className="matrix-foot">
+      <div className="matrix-foot" aria-label="矩阵版本信息">
         <div>
           <b>码成仝</b>
           <span>一个为工友敲键盘的组织</span>
         </div>
         <span>WAM · Worker Ability Matrix</span>
-      </footer>
+      </div>
     </main>
   )
 }

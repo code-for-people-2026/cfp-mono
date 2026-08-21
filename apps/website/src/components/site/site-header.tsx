@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -90,18 +90,22 @@ export function SiteHeader({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const secondaryMobileLink = sameLink(contextAction, returnLink) ? undefined : returnLink;
 
+  const closeMenuAndRestoreFocus = useCallback(() => {
+    setMenuOpen(false);
+    menuButtonRef.current?.focus();
+  }, []);
+
   useEffect(() => {
     if (!menuOpen) return;
 
     function closeOnEscape(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
-      setMenuOpen(false);
-      menuButtonRef.current?.focus();
+      closeMenuAndRestoreFocus();
     }
 
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [menuOpen]);
+  }, [closeMenuAndRestoreFocus, menuOpen]);
 
   const action = contextAction ?? returnLink;
 
@@ -160,20 +164,20 @@ export function SiteHeader({
         className="border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3 md:hidden"
       >
         <nav aria-label="移动主导航" className="mx-auto flex max-w-[1280px] flex-col gap-1">
-          <NavigationLinks currentArea={currentArea} mobile onNavigate={() => setMenuOpen(false)} />
+          <NavigationLinks currentArea={currentArea} mobile onNavigate={closeMenuAndRestoreFocus} />
         </nav>
         {action || secondaryMobileLink ? (
           <div className="mx-auto mt-3 flex max-w-[1280px] flex-col gap-2 border-t border-[var(--border)] pt-3">
             {action ? (
               <Button asChild size="sm" variant="secondary" className="w-full">
-                <Link href={action.href} onClick={() => setMenuOpen(false)}>
+                <Link href={action.href} onClick={closeMenuAndRestoreFocus}>
                   {action.label}
                 </Link>
               </Button>
             ) : null}
             {secondaryMobileLink ? (
               <Button asChild size="sm" variant="ghost" className="w-full">
-                <Link href={secondaryMobileLink.href} onClick={() => setMenuOpen(false)}>
+                <Link href={secondaryMobileLink.href} onClick={closeMenuAndRestoreFocus}>
                   {secondaryMobileLink.label}
                 </Link>
               </Button>

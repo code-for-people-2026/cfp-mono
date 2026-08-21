@@ -15,6 +15,7 @@ type SharedShellProps = {
 type FullSiteShellProps = SharedShellProps & {
   currentObject?: SiteObject;
   footer?: FullSiteFooterProps;
+  footerSlot?: ReactNode;
 };
 
 type CompactSiteShellProps = SharedShellProps & {
@@ -61,6 +62,7 @@ export function FullSiteShell({
   currentArea,
   currentObject = "公共官网",
   footer,
+  footerSlot,
   className,
   contentClassName,
 }: FullSiteShellProps) {
@@ -71,7 +73,7 @@ export function FullSiteShell({
       header={
         <SiteHeader density="full" currentArea={currentArea} currentObject={currentObject} />
       }
-      footer={<FullSiteFooter {...footer} />}
+      footer={footerSlot ?? <FullSiteFooter {...footer} />}
     >
       {children}
     </ShellFrame>

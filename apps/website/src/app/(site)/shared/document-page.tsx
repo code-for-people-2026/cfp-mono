@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DocSection, SiteDocument } from "@/lib/content/types";
 import { DocumentAnchorLink } from "./document-anchor-link";
@@ -24,7 +24,7 @@ const anchorTargetClass =
   "scroll-mt-28 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-[var(--accent)]";
 const bodyTextClass = "space-y-6 text-base leading-7 text-[var(--ink)]";
 const anchorLinkClass =
-  "rounded-sm text-[var(--muted)] no-underline transition-colors hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]";
+  "rounded-sm text-[var(--muted-foreground)] no-underline transition-colors hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]";
 
 function DocumentPoints({ points }: { points: string[] }) {
   return (
@@ -144,10 +144,8 @@ function FullTextSection({ section, index }: { section: DocSection; index: numbe
 
 export function DocumentPage({
   document,
-  backToHome,
 }: {
   document: SiteDocument;
-  backToHome: string;
 }) {
   const presentation = documentPresentation[document.slug];
 
@@ -156,14 +154,6 @@ export function DocumentPage({
       <article className="min-w-0">
         <header className="border-b border-[var(--border)] bg-[var(--carbon)] text-[var(--on-carbon)]">
           <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-            <Link
-              href="/"
-              className="inline-flex min-h-11 items-center gap-2 rounded-sm text-sm font-semibold text-[var(--dim)] no-underline transition-colors hover:text-[var(--on-carbon)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--on-carbon)]"
-            >
-              <ArrowLeft aria-hidden="true" className="h-4 w-4" />
-              {backToHome}
-            </Link>
-
             <div className="grid min-w-0 gap-10 py-14 sm:py-16 lg:grid-cols-[12rem_minmax(0,45rem)] lg:justify-center lg:gap-16 lg:py-20">
               <div className="min-w-0">
                 <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--gold-bright)] [overflow-wrap:anywhere]">
@@ -296,7 +286,7 @@ export function DocumentPage({
               <h2 className="mt-3 text-2xl font-bold leading-8 tracking-[-0.015em] text-[var(--ink)]">
                 {presentation.bridgeHeading}
               </h2>
-              <p className="mt-4 text-base leading-7 text-[var(--muted)]">
+              <p className="mt-4 text-base leading-7 text-[var(--muted-foreground)]">
                 从这份文档回到近邻互助组的正式介绍，了解它在当前产品探索中的位置。
               </p>
               <Link

@@ -60,7 +60,7 @@ export function FullSiteFooter({
   return (
     <footer
       className={cn(
-        "border-t border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
+        "overflow-x-clip border-t border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]",
         className,
       )}
     >
@@ -117,7 +117,7 @@ export function CompactSiteFooter({ currentObject, returnLink, className }: Comp
   return (
     <footer
       className={cn(
-        "border-t border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]",
+        "overflow-x-clip border-t border-[var(--border)] bg-[var(--surface)] text-[var(--foreground)]",
         className,
       )}
     >
@@ -126,7 +126,13 @@ export function CompactSiteFooter({ currentObject, returnLink, className }: Comp
         <p className="min-w-0 text-sm text-[var(--muted-foreground)]">
           当前对象：<ObjectLink value={currentObject} />
         </p>
-        <Link href={returnLink.href} className={cn(linkVariants(), "justify-self-start md:justify-self-end")}>
+        <Link
+          href={returnLink.href}
+          className={cn(
+            linkVariants(),
+            "max-w-full whitespace-normal break-words justify-self-start md:justify-self-end",
+          )}
+        >
           {returnLink.label}
         </Link>
       </div>

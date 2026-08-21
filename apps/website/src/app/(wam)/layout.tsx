@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from "next";
+import { RouteSiteShell } from "@/components/site";
+import "../globals.css";
 import "./wam.css";
 
 // 互动版「牛马能力剥夺矩阵」(WAM) 自带整屏体验，用独立 route group 隔离它的纯 CSS 调色板，
@@ -11,13 +13,16 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  themeColor: "#fbfaf6",
 };
 
 export default function WamLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
-      <body>{children}</body>
+    <html lang="zh-CN" data-scroll-behavior="smooth">
+      <body>
+        <RouteSiteShell>
+          <div className="wam-theme">{children}</div>
+        </RouteSiteShell>
+      </body>
     </html>
   );
 }

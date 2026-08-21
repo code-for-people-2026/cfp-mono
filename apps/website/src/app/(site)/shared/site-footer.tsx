@@ -26,14 +26,14 @@ function BrandIcon({ path, testId }: { path: string; testId?: string }) {
 }
 
 const socialChipClass =
-  "flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]";
+  "flex min-h-11 w-full items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] sm:w-auto";
 const defaultIcpFiling = "粤ICP备2026098322号-1";
 
 function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][number] }) {
   const icon = iconByKey[channel.iconKey];
 
   return (
-    <div className="footer-social-entry group relative">
+    <div className="footer-social-entry group relative w-full sm:w-auto">
       <button
         type="button"
         aria-label={`${channel.label}二维码`}
@@ -67,7 +67,7 @@ function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][nu
           )}
         </div>
         <p className="mt-3 text-xs font-bold text-[var(--accent)]">{channel.status}</p>
-        <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{channel.description}</p>
+        <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{channel.description}</p>
       </div>
     </div>
   );
@@ -79,7 +79,7 @@ export async function SiteFooter() {
   const icpFiling = footer.beian || defaultIcpFiling;
 
   return (
-    <footer id="follow" className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
+    <footer id="follow" className="overflow-x-clip border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.7fr_1fr]">
           <div>
@@ -93,15 +93,15 @@ export async function SiteFooter() {
               />
               <span className="flex flex-col">
                 <span className="text-lg font-black leading-none">{brand.wordmark}</span>
-                <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
+                <span className="mt-1 text-xs font-semibold text-[var(--muted-foreground)]">{brand.tagline}</span>
               </span>
             </Link>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted)]">{footer.description}</p>
+            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted-foreground)]">{footer.description}</p>
           </div>
 
           <nav aria-label="页脚导航">
             <h2 className="text-sm font-black text-[var(--ink)]">{footer.linksHeading}</h2>
-            <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted)]">
+            <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted-foreground)]">
               {footer.footerLinks.map((link) =>
                 isExternalHref(link.href) ? (
                   <a
@@ -128,7 +128,7 @@ export async function SiteFooter() {
 
           <div>
             <h2 className="text-sm font-black text-[var(--ink)]">{footer.channelsHeading}</h2>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--muted)]">
+            <div className="mt-4 grid grid-cols-1 items-center gap-2 text-sm font-semibold text-[var(--muted-foreground)] sm:flex sm:flex-wrap">
               {footer.channels.map((channel) => (
                 <SocialChannelEntry key={channel.label} channel={channel} />
               ))}
@@ -146,7 +146,7 @@ export async function SiteFooter() {
           </div>
         </div>
 
-        <p className="mt-10 border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted)]">
+        <p className="mt-10 break-words border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted-foreground)]">
           <a
             href="https://beian.miit.gov.cn/"
             target="_blank"

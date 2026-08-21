@@ -81,7 +81,8 @@ test("cell pages show position, explicit neighbors, and restore matrix browse st
 
   await expect(page).toHaveURL(/\/wam\/cell\/B1$/);
   await expect(page.getByText("矩阵 / 二产 × 劳动议价", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "返回矩阵" })).toHaveAttribute(
+  const main = page.getByRole("main");
+  await expect(main.getByRole("link", { name: "返回矩阵" })).toHaveAttribute(
     "href",
     "/wam?view=list&axis=people&item=secondary-sector",
   );
@@ -100,7 +101,7 @@ test("cell pages show position, explicit neighbors, and restore matrix browse st
   await expect(page).toHaveURL(/\/wam\/cell\/B2$/);
   await expect(page.getByText("矩阵 / 二产 × 时间主权", { exact: true })).toBeVisible();
 
-  await page.getByRole("link", { name: "返回矩阵" }).click();
+  await main.getByRole("link", { name: "返回矩阵" }).click();
   await expect(page).toHaveURL(/\/wam\?view=list&axis=people&item=secondary-sector$/);
   await expect(browser.getByRole("combobox", { name: "选择人群" })).toHaveValue(
     "secondary-sector",
@@ -120,9 +121,9 @@ test("matrix routes do not cause page-level horizontal overflow", async ({ page 
   }
 
   await page.goto("/wam/guide");
-  const guideReturn = page.getByRole("link", { name: "返回矩阵" });
+  const guideReturn = page.getByRole("main").getByRole("link", { name: "返回矩阵" });
   await expect(guideReturn).toBeVisible();
   await expect(guideReturn).toContainText("返回矩阵");
   await page.goto("/wam/cell/A1");
-  await expect(page.getByRole("link", { name: "返回矩阵" })).toBeVisible();
+  await expect(page.getByRole("main").getByRole("link", { name: "返回矩阵" })).toBeVisible();
 });
