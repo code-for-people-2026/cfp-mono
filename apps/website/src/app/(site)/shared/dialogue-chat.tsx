@@ -27,7 +27,12 @@ import {
   loadStoredConversation,
   saveStoredConversation,
 } from "@/lib/chat/localConversation";
+import {
+  dialogueSuggestionsWithFeaturedProduct,
+  featuredProductAnswer,
+} from "@/lib/content/featured-product";
 import type { DialogueChatContent } from "@/lib/content/types";
+import { FeaturedProductActions } from "./featured-product-actions";
 
 const MODE = "free" as const;
 
@@ -82,6 +87,16 @@ export function DialogueChat({
 
   const started = messages.length > 0;
   const trimmedComposer = composerValue.trim();
+  const visibleSuggestions = dialogueSuggestionsWithFeaturedProduct(
+    content.suggestions,
+    content.featuredProduct,
+  );
+  const featuredAnswerId =
+    messages[0]?.role === "user" &&
+    messages[0].content === content.featuredProduct.discoveryQuestion.value &&
+    messages[1]?.role === "assistant"
+      ? messages[1].id
+      : null;
 
   const summarizeIfNeeded = useCallback(
     async (nextMessages: ChatMessageType[]) => {
@@ -120,8 +135,8 @@ export function DialogueChat({
   );
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      const trimmed = content.trim();
+    async (question: string) => {
+      const trimmed = question.trim();
       if (!trimmed) return;
 
       const userMessage = createMessage("user", trimmed);
@@ -130,6 +145,18 @@ export function DialogueChat({
       setMessages(nextMessages);
       setLoading(true);
       setNotice("");
+
+      const canonicalAnswer = featuredProductAnswer(trimmed, content.featuredProduct);
+      if (canonicalAnswer) {
+        queueMicrotask(() => {
+          setMessages((current) => [
+            ...current,
+            createMessage("assistant", canonicalAnswer),
+          ]);
+          setLoading(false);
+        });
+        return;
+      }
 
       try {
         const compacted = await summarizeIfNeeded(nextMessages);
@@ -160,7 +187,7 @@ export function DialogueChat({
         setLoading(false);
       }
     },
-    [messages, summarizeIfNeeded],
+    [content.featuredProduct, messages, summarizeIfNeeded],
   );
 
   // Restore stored conversation, or auto-send the question carried from the home page.
@@ -285,7 +312,7 @@ export function DialogueChat({
               {content.intro}
             </p>
             <div className="mx-auto mt-8 flex max-w-xl flex-wrap justify-center gap-2">
-              {content.suggestions.map((suggestion) => (
+              {visibleSuggestions.map((suggestion) => (
                 <button
                   key={suggestion.label}
                   type="button"
@@ -332,6 +359,9 @@ export function DialogueChat({
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
+                {message.id === featuredAnswerId ? (
+                  <FeaturedProductActions product={content.featuredProduct} />
+                ) : null}
               </article>
             ))}
             {loading ? (

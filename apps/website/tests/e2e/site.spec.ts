@@ -65,7 +65,9 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByRole("button", { name: "开始了解" })).toBeVisible();
   await expect(page.getByText("回答基于已经公开的文本")).toBeVisible();
   await expect(page.getByText("知识库即将接入")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "你们是谁" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "近邻互助组是什么？", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "为什么还给人民" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马互助协议怎么约束" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马能力剥夺矩阵怎么回事" })).toBeVisible();
@@ -411,6 +413,58 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   // 矩阵左上角的「矩阵说明」入口与表头行列。
   await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
   await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
+});
+
+test("featured homepage question submits immediately and enters the conversation", async ({
+  page,
+}) => {
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "近邻互助组是什么？", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByText("近邻互助组是什么？", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "体验近邻互助组（原型）", exact: true }),
+  ).toBeVisible();
+
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "重新开始", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "从一个问题开始了解码成仝" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "近邻互助组是什么？", exact: true }),
+  ).toBeVisible();
+});
+
+test("neighbors answer renders canonical structured actions without model links", async ({
+  page,
+}) => {
+  await page.route("**/api/chat", async (route) => {
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({ answer: "这是一段不包含任何链接的纯文本回答。" }),
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "近邻互助组是什么？", exact: true }).click();
+
+  await expect(
+    page.getByText(/近邻互助组是码成仝当前唯一的旗舰产品/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "体验近邻互助组（原型）", exact: true }),
+  ).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+  );
+  await expect(
+    page.getByRole("link", { name: "查看正式介绍", exact: true }),
+  ).toHaveAttribute("href", "/neighbors");
+  await expect(
+    page.getByText("交互原型 · 不接真实业务数据 · 不代表服务已经上线", { exact: true }),
+  ).toBeVisible();
 });
 
 test("chat route opens from the homepage question entry and carries it over", async ({ page }) => {

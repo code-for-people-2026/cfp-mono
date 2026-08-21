@@ -3,19 +3,30 @@
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { type FormEvent, useEffect, useState, useTransition } from "react";
-import type { DialogueEntry as DialogueEntryContent, DialogueSuggestion } from "@/lib/content/types";
+import { dialogueSuggestionsWithFeaturedProduct } from "@/lib/content/featured-product";
+import type {
+  DialogueEntry as DialogueEntryContent,
+  DialogueSuggestion,
+  FeaturedProduct,
+} from "@/lib/content/types";
 
 export function DialogueEntry({
   entry,
   suggestions,
+  featuredProduct,
 }: {
   entry: DialogueEntryContent;
   suggestions: DialogueSuggestion[];
+  featuredProduct: FeaturedProduct;
 }) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [isPending, startTransition] = useTransition();
   const trimmed = value.trim();
+  const visibleSuggestions = dialogueSuggestionsWithFeaturedProduct(
+    suggestions,
+    featuredProduct,
+  );
 
   // Prefetch the chat route so the first navigation doesn't pay for the route
   // chunk + RSC round-trip on click.
@@ -23,14 +34,19 @@ export function DialogueEntry({
     router.prefetch("/chat");
   }, [router]);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!trimmed) return;
+  function openConversation(question: string) {
+    const normalizedQuestion = question.trim();
+    if (!normalizedQuestion) return;
 
-    const params = new URLSearchParams({ question: trimmed });
+    const params = new URLSearchParams({ question: normalizedQuestion });
     startTransition(() => {
       router.push(`/chat?${params.toString()}`);
     });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    openConversation(trimmed);
   }
 
   return (
@@ -71,13 +87,18 @@ export function DialogueEntry({
         </div>
 
         <div className="border-t border-[var(--border)] bg-[var(--composer-footer)] px-4 py-4">
-          <div className="flex flex-wrap justify-center gap-2">
-            {suggestions.map((suggestion) => (
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-center">
+            {visibleSuggestions.map((suggestion, index) => (
               <button
                 key={suggestion.label}
                 type="button"
-                className="min-h-10 rounded-full border border-[var(--border)] bg-[var(--chip)] px-4 text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                onClick={() => setValue(suggestion.value)}
+                className={
+                  index === 0
+                    ? "min-h-11 w-full rounded-lg border border-[var(--accent)] bg-[var(--ring-soft)] px-4 text-sm font-bold text-[var(--accent-strong)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[var(--chip)] sm:w-auto"
+                    : "min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--chip)] px-4 text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] sm:w-auto"
+                }
+                disabled={isPending}
+                onClick={() => openConversation(suggestion.value)}
               >
                 {suggestion.label}
               </button>

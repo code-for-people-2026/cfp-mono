@@ -2,6 +2,7 @@ import type { Metadata, ResolvingMetadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { ArrowRight, Factory, FileText, HeartHandshake, Map, Route, ShieldCheck, Store } from "lucide-react";
+import { neighborsProduct } from "@/content/neighbors";
 import { getHomepage, getSiteSettings } from "@/lib/content";
 import { DialogueEntry } from "../shared/dialogue-entry";
 
@@ -83,7 +84,11 @@ export default async function HomePage() {
               </p>
             ) : null}
 
-            <DialogueEntry entry={home.dialogueEntry} suggestions={home.dialogueSuggestions} />
+            <DialogueEntry
+              entry={home.dialogueEntry}
+              suggestions={home.dialogueSuggestions}
+              featuredProduct={neighborsProduct}
+            />
 
             <div className="mx-auto mt-14 grid w-full max-w-4xl gap-3 md:grid-cols-3">
               {home.heroFlow.map((item) => (

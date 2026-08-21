@@ -1,3 +1,4 @@
+import { neighborsProduct } from "@/content/neighbors";
 import { getChatPage, getHomepage, getSiteSettings, getUiStrings } from "@/lib/content";
 import { DialogueChat } from "../shared/dialogue-chat";
 
@@ -28,6 +29,7 @@ export default async function DialoguePage({
           heading: chat.heading,
           intro: chat.intro,
           suggestions: home.dialogueSuggestions,
+          featuredProduct: neighborsProduct,
           brand: settings.brand,
           ui,
         }}

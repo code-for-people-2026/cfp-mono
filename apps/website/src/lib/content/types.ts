@@ -28,6 +28,22 @@ export type DialogueEntry = {
 
 export type DialogueSuggestion = { label: string; value: string };
 
+export type FeaturedProduct = {
+  slug: "neighbors";
+  name: string;
+  brandRelationship: string;
+  exploration: string;
+  humanResponsibility: string;
+  discoveryQuestion: DialogueSuggestion;
+  stage: {
+    label: string;
+    dataBoundary: string;
+    serviceBoundary: string;
+  };
+  primaryAction: { label: string; href: string };
+  secondaryAction: { label: string; href: string };
+};
+
 export type SectionBlock<Item> = { heading: string; intro: string; items: Item[] };
 
 export type LifeScene = Card & { tags: string[] };
@@ -59,6 +75,7 @@ export type DialogueChatContent = {
   heading: string;
   intro: string;
   suggestions: DialogueSuggestion[];
+  featuredProduct: FeaturedProduct;
   brand: Brand;
   ui: UiStrings;
 };
