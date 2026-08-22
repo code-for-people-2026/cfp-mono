@@ -455,7 +455,7 @@ test("neighbors answer renders canonical structured actions without model links"
     page.getByRole("link", { name: "体验近邻互助组（原型）", exact: true }),
   ).toHaveAttribute(
     "href",
-    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+    "https://ideal.codeforpeople.cn/",
   );
   await expect(
     page.getByRole("link", { name: "查看正式介绍", exact: true }),
@@ -813,7 +813,7 @@ test("neighbors is the formal single-product record with truthful canonical acti
   const heroActions = page.locator('[data-neighbors-actions="hero"]');
   await expect(heroActions.getByRole("link", { name: /体验近邻互助组/ })).toHaveAttribute(
     "href",
-    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+    "https://ideal.codeforpeople.cn/",
   );
   await expect(heroActions.getByRole("link", { name: /查看实施对照/ })).toHaveAttribute(
     "href",
@@ -827,7 +827,7 @@ test("neighbors is the formal single-product record with truthful canonical acti
   }
   await expect(headerPrototypeAction).toHaveAttribute(
     "href",
-    "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
+    "https://ideal.codeforpeople.cn/",
   );
 
   const order = await page.locator("[data-neighbors-section]").evaluateAll((sections) =>

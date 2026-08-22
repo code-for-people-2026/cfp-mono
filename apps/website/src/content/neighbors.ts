@@ -24,8 +24,8 @@ export const neighborsProduct = {
   },
   primaryAction: {
     label: "体验近邻互助组（原型）",
-    href: "https://ideal.codeforpeople.cn/neighbors/prototype-customer/",
-    description: "面向公众的客户体验原型；在新标签页打开。",
+    href: "https://ideal.codeforpeople.cn/",
+    description: "进入公开原型地图；在新标签页打开。",
   },
   secondaryAction: {
     label: "查看正式介绍",
