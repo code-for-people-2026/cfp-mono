@@ -1,4 +1,4 @@
-import { getChatPage, getFeaturedProduct, getHomepage, getSiteSettings, getUiStrings } from "@/lib/content";
+import { getChatPage, getHomepage, getSiteSettings, getUiStrings } from "@/lib/content";
 import { DialogueChat } from "../shared/dialogue-chat";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +12,11 @@ export default async function DialoguePage({
   const raw = Array.isArray(params.question) ? params.question[0] : params.question;
   const initialQuestion = raw?.slice(0, 1000);
 
-  const [chat, ui, home, settings, featuredProduct] = await Promise.all([
+  const [chat, ui, home, settings] = await Promise.all([
     getChatPage(),
     getUiStrings(),
     getHomepage(),
     getSiteSettings(),
-    getFeaturedProduct(),
   ]);
 
   return (
@@ -29,7 +28,6 @@ export default async function DialoguePage({
           heading: chat.heading,
           intro: chat.intro,
           suggestions: home.dialogueSuggestions,
-          featuredProduct,
           brand: settings.brand,
           ui,
         }}

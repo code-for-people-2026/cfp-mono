@@ -14,8 +14,8 @@ describe("shared site shells", () => {
     );
 
     expect(markup).toContain("码成仝");
-    expect(markup).toContain("近邻互助组");
     expect(markup).toContain("为什么做");
+    expect(markup).not.toContain('/neighbors');
     expect(markup).toContain('aria-current="page"');
     expect(markup).toContain("正文");
   });

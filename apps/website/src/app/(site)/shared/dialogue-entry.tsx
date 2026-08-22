@@ -3,30 +3,19 @@
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
 import { type FormEvent, useEffect, useState, useTransition } from "react";
-import { dialogueSuggestionsWithFeaturedProduct } from "@/lib/content/featured-product";
-import type {
-  DialogueEntry as DialogueEntryContent,
-  DialogueSuggestion,
-  FeaturedProduct,
-} from "@/lib/content/types";
+import type { DialogueEntry as DialogueEntryContent, DialogueSuggestion } from "@/lib/content/types";
 
 export function DialogueEntry({
   entry,
   suggestions,
-  featuredProduct,
 }: {
   entry: DialogueEntryContent;
   suggestions: DialogueSuggestion[];
-  featuredProduct: FeaturedProduct;
 }) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [isPending, startTransition] = useTransition();
   const trimmed = value.trim();
-  const visibleSuggestions = dialogueSuggestionsWithFeaturedProduct(
-    suggestions,
-    featuredProduct,
-  );
 
   // Prefetch the chat route so the first navigation doesn't pay for the route
   // chunk + RSC round-trip on click.
@@ -88,7 +77,7 @@ export function DialogueEntry({
 
         <div className="border-t border-[var(--border)] bg-[var(--composer-footer)] px-4 py-4">
           <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-center">
-            {visibleSuggestions.map((suggestion, index) => (
+            {suggestions.map((suggestion, index) => (
               <button
                 key={suggestion.label}
                 type="button"

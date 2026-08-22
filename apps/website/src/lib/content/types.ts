@@ -107,7 +107,6 @@ export type DialogueChatContent = {
   heading: string;
   intro: string;
   suggestions: DialogueSuggestion[];
-  featuredProduct: FeaturedProduct;
   brand: Brand;
   ui: UiStrings;
 };

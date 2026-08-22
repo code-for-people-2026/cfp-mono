@@ -47,10 +47,21 @@ const getCachedSiteContent = unstable_cache(
 );
 
 const EMPTY = {} as Record<string, unknown>;
+const UNPUBLISHED_NEIGHBORS_QUESTION = "近邻互助组是什么？";
 
 export async function getHomepage(): Promise<HomepageContent> {
   const mapped = mapHomepage((await getCachedSiteContent()) ?? EMPTY);
-  return pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+  const homepage = pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+
+  // TODO(neighbors): Remove this release gate when the separately reviewed
+  // /neighbors page and its public discovery entry are ready to ship together.
+  return {
+    ...homepage,
+    dialogueSuggestions: homepage.dialogueSuggestions.filter(
+      ({ label, value }) =>
+        label !== UNPUBLISHED_NEIGHBORS_QUESTION && value !== UNPUBLISHED_NEIGHBORS_QUESTION,
+    ),
+  };
 }
 
 export async function getChatPage(): Promise<ChatPageContent> {

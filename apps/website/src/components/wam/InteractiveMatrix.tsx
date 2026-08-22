@@ -281,11 +281,10 @@ export function InteractiveMatrix({ rows, columns, cells, initialBrowseState }: 
 
       <section className="matrix-context" aria-label="矩阵用途与上下文">
         <p>
-          这是一份发现能力缺口的方向检查表与公共教材，不等同于产品路线图。近邻互助组是码成仝当前的旗舰产品，但矩阵中的每个格子并不都已进入产品计划。
+          这是一份发现能力缺口的方向检查表与公共教材，不等同于产品路线图；矩阵中的每个格子并不都已进入产品计划。
         </p>
         <nav aria-label="矩阵上下文入口">
           <Link href="/wam/guide">为什么是这个矩阵</Link>
-          <Link href="/neighbors">近邻互助组如何使用这套选题框架</Link>
         </nav>
       </section>
 

@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { neighborsProduct } from "@/content/neighbors";
 import { getSiteNavigationArea, getSiteShellDensity } from "./navigation";
 import { CompactSiteShell, FullSiteShell } from "./site-shell";
 import type { SiteLink, SiteObject } from "./types";
@@ -16,9 +15,6 @@ function getCurrentObject(pathname: string): SiteObject {
   }
   if (pathname === "/chat") {
     return { label: "问答对话", href: "/chat" };
-  }
-  if (pathname === "/neighbors" || pathname.startsWith("/neighbors/")) {
-    return { label: "近邻互助组", href: "/neighbors" };
   }
   if (pathname === "/wam" || pathname.startsWith("/wam/")) {
     return { label: "牛马能力剥夺矩阵", href: "/wam" };
@@ -37,9 +33,6 @@ function getCompactReturnLink(pathname: string): SiteLink {
 }
 
 function getContextAction(pathname: string): SiteLink | undefined {
-  if (pathname === "/neighbors" || pathname.startsWith("/neighbors/")) {
-    return { label: "体验原型", href: neighborsProduct.primaryAction.href };
-  }
   if (pathname === "/wam") {
     return { label: "矩阵说明", href: "/wam/guide" };
   }

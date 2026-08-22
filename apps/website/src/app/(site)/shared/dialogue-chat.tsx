@@ -25,12 +25,7 @@ import {
   loadStoredConversation,
   saveStoredConversation,
 } from "@/lib/chat/localConversation";
-import {
-  dialogueSuggestionsWithFeaturedProduct,
-  featuredProductAnswer,
-} from "@/lib/content/featured-product";
 import type { DialogueChatContent } from "@/lib/content/types";
-import { FeaturedProductActions } from "./featured-product-actions";
 
 const MODE = "free" as const;
 
@@ -85,16 +80,7 @@ export function DialogueChat({
 
   const started = messages.length > 0;
   const trimmedComposer = composerValue.trim();
-  const visibleSuggestions = dialogueSuggestionsWithFeaturedProduct(
-    content.suggestions,
-    content.featuredProduct,
-  );
-  const featuredAnswerId =
-    messages[0]?.role === "user" &&
-    messages[0].content === content.featuredProduct.discoveryQuestion.value &&
-    messages[1]?.role === "assistant"
-      ? messages[1].id
-      : null;
+  const visibleSuggestions = content.suggestions;
 
   const summarizeIfNeeded = useCallback(
     async (nextMessages: ChatMessageType[]) => {
@@ -144,18 +130,6 @@ export function DialogueChat({
       setLoading(true);
       setNotice("");
 
-      const canonicalAnswer = featuredProductAnswer(trimmed, content.featuredProduct);
-      if (canonicalAnswer) {
-        queueMicrotask(() => {
-          setMessages((current) => [
-            ...current,
-            createMessage("assistant", canonicalAnswer),
-          ]);
-          setLoading(false);
-        });
-        return;
-      }
-
       try {
         const compacted = await summarizeIfNeeded(nextMessages);
         const contextMessages = compacted.messages.filter(
@@ -185,7 +159,7 @@ export function DialogueChat({
         setLoading(false);
       }
     },
-    [content.featuredProduct, messages, summarizeIfNeeded],
+    [messages, summarizeIfNeeded],
   );
 
   // Restore stored conversation, or auto-send the question carried from the home page.
@@ -343,9 +317,6 @@ export function DialogueChat({
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
-                {message.id === featuredAnswerId ? (
-                  <FeaturedProductActions product={content.featuredProduct} />
-                ) : null}
               </article>
             ))}
             {loading ? (

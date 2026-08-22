@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DocSection, SiteDocument } from "@/lib/content/types";
@@ -8,16 +7,14 @@ const documentPresentation = {
   manifesto: {
     intent: "为什么做",
     role: "立场文件",
-    bridgeHeading: "从立场回到产品探索",
   },
   license: {
     intent: "如何约束",
     role: "公开协议草案",
-    bridgeHeading: "从约束回到产品探索",
   },
 } satisfies Record<
   SiteDocument["slug"],
-  { intent: string; role: string; bridgeHeading: string }
+  { intent: string; role: string }
 >;
 
 const anchorTargetClass =
@@ -279,24 +276,6 @@ export function DocumentPage({
               </section>
             ) : null}
 
-            <aside className="mt-20 border-t border-[var(--border)] pt-8 md:mt-24">
-              <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
-                当前产品
-              </p>
-              <h2 className="mt-3 text-2xl font-bold leading-8 tracking-[-0.015em] text-[var(--ink)]">
-                {presentation.bridgeHeading}
-              </h2>
-              <p className="mt-4 text-base leading-7 text-[var(--muted-foreground)]">
-                从这份文档回到近邻互助组的正式介绍，了解它在当前产品探索中的位置。
-              </p>
-              <Link
-                href="/neighbors"
-                className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-sm font-semibold text-[var(--accent)] underline decoration-[var(--border)] underline-offset-4 transition-colors hover:text-[var(--accent-strong)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
-              >
-                了解近邻互助组
-                <ArrowRight aria-hidden="true" className="h-4 w-4" />
-              </Link>
-            </aside>
           </div>
         </div>
       </article>
