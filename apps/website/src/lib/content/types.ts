@@ -28,6 +28,54 @@ export type DialogueEntry = {
 
 export type DialogueSuggestion = { label: string; value: string };
 
+export type FeaturedProductAction = {
+  label: string;
+  href: string;
+  description: string;
+};
+
+export type FeaturedProductLink = FeaturedProductAction;
+
+export type FeaturedProductStep = Card & {
+  responsibility: "neighbor" | "ai" | "human";
+};
+
+export type FeaturedProduct = {
+  slug: "neighbors";
+  canonicalUrl: string;
+  name: string;
+  organizationRole: string;
+  brandRelationship: string;
+  audience: string;
+  exploration: string;
+  humanResponsibility: string;
+  discoveryQuestion: DialogueSuggestion;
+  stage: {
+    label: string;
+    dataBoundary: string;
+    serviceBoundary: string;
+  };
+  primaryAction: FeaturedProductAction;
+  secondaryAction: FeaturedProductAction;
+  implementationAction: FeaturedProductAction;
+  motivation: {
+    heading: string;
+    summary: string;
+  };
+  prototype: {
+    heading: string;
+    summary: string;
+    steps: FeaturedProductStep[];
+  };
+  boundaries: {
+    heading: string;
+    summary: string;
+    points: string[];
+  };
+  relatedReading: FeaturedProductLink[];
+  sceneExplorations: FeaturedProductLink[];
+};
+
 export type SectionBlock<Item> = { heading: string; intro: string; items: Item[] };
 
 export type LifeScene = Card & { tags: string[] };

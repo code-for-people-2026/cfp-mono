@@ -3,11 +3,12 @@ import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
 import { SITE_CONTENT_CACHE_KEY, siteDocumentCacheKey } from "./cache-keys";
-import type { ChatPageContent, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
+import type { ChatPageContent, FeaturedProduct, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
 import {
   chatFallback,
   documentFallback,
   footerFallback,
+  featuredProductFallback,
   homepageFallback,
   settingsFallback,
   uiFallback,
@@ -16,6 +17,7 @@ import {
   mapChatPage,
   mapDocument,
   mapFooter,
+  resolveFeaturedProduct,
   mapHomepage,
   mapSettings,
   mapUiStrings,
@@ -45,15 +47,31 @@ const getCachedSiteContent = unstable_cache(
 );
 
 const EMPTY = {} as Record<string, unknown>;
+const UNPUBLISHED_NEIGHBORS_QUESTION = "近邻互助组是什么？";
 
 export async function getHomepage(): Promise<HomepageContent> {
   const mapped = mapHomepage((await getCachedSiteContent()) ?? EMPTY);
-  return pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+  const homepage = pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+
+  // TODO(neighbors): Remove this release gate when the separately reviewed
+  // /neighbors page and its public discovery entry are ready to ship together.
+  return {
+    ...homepage,
+    dialogueSuggestions: homepage.dialogueSuggestions.filter(
+      ({ label, value }) =>
+        label !== UNPUBLISHED_NEIGHBORS_QUESTION && value !== UNPUBLISHED_NEIGHBORS_QUESTION,
+    ),
+  };
 }
 
 export async function getChatPage(): Promise<ChatPageContent> {
   const mapped = mapChatPage((await getCachedSiteContent()) ?? EMPTY);
   return pick(mapped, Boolean(mapped.heading), chatFallback);
+}
+
+export async function getFeaturedProduct(): Promise<FeaturedProduct> {
+  const data = (await getCachedSiteContent()) ?? EMPTY;
+  return resolveFeaturedProduct(data.neighborsProduct, featuredProductFallback);
 }
 
 export async function getUiStrings(): Promise<UiStrings> {

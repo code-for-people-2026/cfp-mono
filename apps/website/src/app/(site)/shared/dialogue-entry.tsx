@@ -23,14 +23,19 @@ export function DialogueEntry({
     router.prefetch("/chat");
   }, [router]);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!trimmed) return;
+  function openConversation(question: string) {
+    const normalizedQuestion = question.trim();
+    if (!normalizedQuestion) return;
 
-    const params = new URLSearchParams({ question: trimmed });
+    const params = new URLSearchParams({ question: normalizedQuestion });
     startTransition(() => {
       router.push(`/chat?${params.toString()}`);
     });
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    openConversation(trimmed);
   }
 
   return (
@@ -41,12 +46,12 @@ export function DialogueEntry({
       >
         <div className="grid min-h-[148px] grid-cols-[minmax(0,1fr)_48px] gap-4 p-5 sm:p-6">
           <div>
-            <p className="mb-3 text-sm font-semibold text-[var(--muted)]">
+            <p className="mb-3 text-sm font-semibold text-[var(--muted-foreground)]">
               {entry.prompt}
             </p>
             <textarea
               aria-label="想了解的问题"
-              className="min-h-[72px] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75"
+              className="min-h-[72px] w-full resize-none border-0 bg-transparent p-0 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted-foreground)]/75"
               maxLength={400}
               onChange={(event) => setValue(event.target.value)}
               placeholder={entry.placeholder}
@@ -71,19 +76,24 @@ export function DialogueEntry({
         </div>
 
         <div className="border-t border-[var(--border)] bg-[var(--composer-footer)] px-4 py-4">
-          <div className="flex flex-wrap justify-center gap-2">
-            {suggestions.map((suggestion) => (
+          <div className="grid gap-2 sm:flex sm:flex-wrap sm:justify-center">
+            {suggestions.map((suggestion, index) => (
               <button
                 key={suggestion.label}
                 type="button"
-                className="min-h-10 rounded-full border border-[var(--border)] bg-[var(--chip)] px-4 text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]"
-                onClick={() => setValue(suggestion.value)}
+                className={
+                  index === 0
+                    ? "min-h-11 w-full rounded-lg border border-[var(--accent)] bg-[var(--ring-soft)] px-4 text-sm font-bold text-[var(--accent-strong)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[var(--chip)] sm:w-auto"
+                    : "min-h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--chip)] px-4 text-sm font-semibold text-[var(--ink)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] sm:w-auto"
+                }
+                disabled={isPending}
+                onClick={() => openConversation(suggestion.value)}
               >
                 {suggestion.label}
               </button>
             ))}
           </div>
-          <p className="mx-auto mt-3 max-w-xl text-center text-xs leading-5 text-[var(--muted)]">
+          <p className="mx-auto mt-3 max-w-xl text-center text-xs leading-5 text-[var(--muted-foreground)]">
             {entry.note}
           </p>
         </div>

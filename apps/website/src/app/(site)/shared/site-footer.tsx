@@ -2,8 +2,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { siBilibili, siGithub, siKuaishou, siTiktok } from "simple-icons";
 import { MonitorPlay } from "lucide-react";
+import { siteNavigation } from "@/components/site/navigation";
 import { getFooter, getSiteSettings } from "@/lib/content";
 import type { FooterContent, SocialChannelIcon } from "@/lib/content/types";
+import { isLegacyPublicNavigationLink } from "./footer-navigation";
 
 const iconByKey: Record<SocialChannelIcon, { path: string }> = {
   douyin: siTiktok,
@@ -26,14 +28,14 @@ function BrandIcon({ path, testId }: { path: string; testId?: string }) {
 }
 
 const socialChipClass =
-  "flex items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)]";
+  "flex min-h-11 w-full items-center gap-2 border border-[var(--border)] bg-[var(--paper)] px-3 py-2 text-sm font-black text-[var(--ink)] no-underline transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] sm:w-auto";
 const defaultIcpFiling = "粤ICP备2026098322号-1";
 
 function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][number] }) {
   const icon = iconByKey[channel.iconKey];
 
   return (
-    <div className="footer-social-entry group relative">
+    <div className="footer-social-entry group relative w-full sm:w-auto">
       <button
         type="button"
         aria-label={`${channel.label}二维码`}
@@ -67,7 +69,7 @@ function SocialChannelEntry({ channel }: { channel: FooterContent["channels"][nu
           )}
         </div>
         <p className="mt-3 text-xs font-bold text-[var(--accent)]">{channel.status}</p>
-        <p className="mt-2 text-xs leading-5 text-[var(--muted)]">{channel.description}</p>
+        <p className="mt-2 text-xs leading-5 text-[var(--muted-foreground)]">{channel.description}</p>
       </div>
     </div>
   );
@@ -77,13 +79,19 @@ export async function SiteFooter() {
   const [footer, settings] = await Promise.all([getFooter(), getSiteSettings()]);
   const { brand } = settings;
   const icpFiling = footer.beian || defaultIcpFiling;
+  const policyLinks = footer.footerLinks.filter(
+    (link) => !isLegacyPublicNavigationLink(link.href),
+  );
 
   return (
-    <footer id="follow" className="border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
+    <footer id="follow" className="overflow-x-clip border-t border-[var(--border)] bg-[var(--soft)] text-[var(--ink)]">
       <div className="mx-auto max-w-7xl px-5 py-10 sm:px-8 lg:px-10">
         <div className="grid gap-10 lg:grid-cols-[1.2fr_0.7fr_1fr]">
           <div>
-            <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
+            <Link
+              href="/"
+              className="flex min-h-11 min-w-11 items-center gap-3 text-[var(--ink)] no-underline"
+            >
               <Image
                 src={brand.logoPath}
                 alt="码成仝页脚标识"
@@ -93,42 +101,58 @@ export async function SiteFooter() {
               />
               <span className="flex flex-col">
                 <span className="text-lg font-black leading-none">{brand.wordmark}</span>
-                <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
+                <span className="mt-1 text-xs font-semibold text-[var(--muted-foreground)]">{brand.tagline}</span>
               </span>
             </Link>
-            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted)]">{footer.description}</p>
+            <p className="mt-5 max-w-sm text-sm leading-7 text-[var(--muted-foreground)]">{footer.description}</p>
           </div>
 
           <nav aria-label="页脚导航">
             <h2 className="text-sm font-black text-[var(--ink)]">{footer.linksHeading}</h2>
-            <div className="mt-4 flex flex-col items-start gap-3 text-sm font-semibold text-[var(--muted)]">
-              {footer.footerLinks.map((link) =>
-                isExternalHref(link.href) ? (
-                  <a
-                    key={link.href}
-                    href={link.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="no-underline transition-colors hover:text-[var(--accent)]"
-                  >
-                    {link.label}
-                  </a>
-                ) : (
-                  <Link
-                    key={link.href}
-                    href={link.href}
-                    className="no-underline transition-colors hover:text-[var(--accent)]"
-                  >
-                    {link.label}
-                  </Link>
-                ),
-              )}
+            <div className="mt-4 flex flex-col items-start gap-1 text-sm font-semibold text-[var(--muted-foreground)]">
+              {siteNavigation.map((link) => (
+                <Link
+                  key={link.area}
+                  href={link.href}
+                  className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                >
+                  {link.label}
+                </Link>
+              ))}
             </div>
+            {policyLinks.length > 0 ? (
+              <div className="mt-5 border-t border-[var(--border)] pt-4">
+                <h3 className="text-xs font-black text-[var(--ink)]">政策与信息</h3>
+                <div className="mt-2 flex flex-col items-start gap-1 text-sm font-semibold text-[var(--muted-foreground)]">
+                  {policyLinks.map((link) =>
+                    isExternalHref(link.href) ? (
+                      <a
+                        key={`${link.href}-${link.label}`}
+                        href={link.href}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                      >
+                        {link.label}
+                      </a>
+                    ) : (
+                      <Link
+                        key={`${link.href}-${link.label}`}
+                        href={link.href}
+                        className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
+                      >
+                        {link.label}
+                      </Link>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : null}
           </nav>
 
           <div>
             <h2 className="text-sm font-black text-[var(--ink)]">{footer.channelsHeading}</h2>
-            <div className="mt-4 flex flex-wrap items-center gap-2 text-sm font-semibold text-[var(--muted)]">
+            <div className="mt-4 grid grid-cols-1 items-center gap-2 text-sm font-semibold text-[var(--muted-foreground)] sm:flex sm:flex-wrap">
               {footer.channels.map((channel) => (
                 <SocialChannelEntry key={channel.label} channel={channel} />
               ))}
@@ -146,12 +170,12 @@ export async function SiteFooter() {
           </div>
         </div>
 
-        <p className="mt-10 border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted)]">
+        <p className="mt-10 break-words border-t border-[var(--border)] pt-6 text-sm font-semibold text-[var(--muted-foreground)]">
           <a
             href="https://beian.miit.gov.cn/"
             target="_blank"
             rel="noreferrer"
-            className="no-underline transition-colors hover:text-[var(--accent)]"
+            className="inline-flex min-h-11 min-w-11 items-center no-underline transition-colors hover:text-[var(--accent)]"
           >
             {icpFiling}
           </a>{" "}

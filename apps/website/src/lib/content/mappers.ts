@@ -5,6 +5,10 @@ import type {
   ChatPageContent,
   ContinueRead,
   DocSection,
+  FeaturedProduct,
+  FeaturedProductAction,
+  FeaturedProductLink,
+  FeaturedProductStep,
   FooterContent,
   HomepageContent,
   SiteDocument,
@@ -13,6 +17,162 @@ import type {
 } from "./types";
 
 type Raw = Record<string, unknown>;
+
+function raw(value: unknown): Raw {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Raw) : {};
+}
+
+function productAction(value: unknown): FeaturedProductAction {
+  const action = raw(value);
+  return {
+    label: String(action.label ?? ""),
+    href: String(action.href ?? ""),
+    description: String(action.description ?? ""),
+  };
+}
+
+function productLinks(value: unknown): FeaturedProductLink[] {
+  return Array.isArray(value) ? value.map(productAction) : [];
+}
+
+function productSteps(value: unknown): FeaturedProductStep[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const step = raw(item);
+    const responsibility = String(step.responsibility ?? "neighbor");
+    return {
+      title: String(step.title ?? ""),
+      body: String(step.body ?? ""),
+      responsibility:
+        responsibility === "ai" || responsibility === "human" ? responsibility : "neighbor",
+    };
+  });
+}
+
+export function mapFeaturedProduct(value: unknown): FeaturedProduct {
+  const product = raw(value);
+  const discoveryQuestion = raw(product.discoveryQuestion);
+  const stage = raw(product.stage);
+  const motivation = raw(product.motivation);
+  const prototype = raw(product.prototype);
+  const boundaries = raw(product.boundaries);
+
+  return {
+    slug: "neighbors",
+    canonicalUrl: String(product.canonicalUrl ?? ""),
+    name: String(product.name ?? ""),
+    organizationRole: String(product.organizationRole ?? ""),
+    brandRelationship: String(product.brandRelationship ?? ""),
+    audience: String(product.audience ?? ""),
+    exploration: String(product.exploration ?? ""),
+    humanResponsibility: String(product.humanResponsibility ?? ""),
+    discoveryQuestion: {
+      label: String(discoveryQuestion.label ?? ""),
+      value: String(discoveryQuestion.value ?? ""),
+    },
+    stage: {
+      label: String(stage.label ?? ""),
+      dataBoundary: String(stage.dataBoundary ?? ""),
+      serviceBoundary: String(stage.serviceBoundary ?? ""),
+    },
+    primaryAction: productAction(product.primaryAction),
+    secondaryAction: productAction(product.secondaryAction),
+    implementationAction: productAction(product.implementationAction),
+    motivation: {
+      heading: String(motivation.heading ?? ""),
+      summary: String(motivation.summary ?? ""),
+    },
+    prototype: {
+      heading: String(prototype.heading ?? ""),
+      summary: String(prototype.summary ?? ""),
+      steps: productSteps(prototype.steps),
+    },
+    boundaries: {
+      heading: String(boundaries.heading ?? ""),
+      summary: String(boundaries.summary ?? ""),
+      points: strList(boundaries.points),
+    },
+    relatedReading: productLinks(product.relatedReading),
+    sceneExplorations: productLinks(product.sceneExplorations),
+  };
+}
+
+function mergeStableAction(
+  mapped: FeaturedProductAction,
+  fallback: FeaturedProductAction,
+): FeaturedProductAction {
+  if (mapped.href !== fallback.href) return fallback;
+  return {
+    ...fallback,
+    description: mapped.description || fallback.description,
+  };
+}
+
+function mergeStableLinks(
+  mapped: FeaturedProductLink[],
+  fallback: FeaturedProductLink[],
+): FeaturedProductLink[] {
+  return fallback.map((fallbackItem) => {
+    const matches = mapped.filter((item) => item.href === fallbackItem.href);
+    if (matches.length !== 1) return fallbackItem;
+    return {
+      ...fallbackItem,
+      description: matches[0].description || fallbackItem.description,
+    };
+  });
+}
+
+// Narrative CMS edits either satisfy the public contract or use the complete fallback.
+// Canonical link identities remain code-owned and are merged independently, so a missing,
+// reordered, or tampered link cannot attach CMS copy to the wrong destination.
+export function resolveFeaturedProduct(value: unknown, fallback: FeaturedProduct): FeaturedProduct {
+  const mapped = mapFeaturedProduct(value);
+  const complete = Boolean(
+    mapped.name &&
+      mapped.organizationRole &&
+      mapped.brandRelationship &&
+      mapped.audience &&
+      mapped.exploration &&
+      mapped.humanResponsibility &&
+      mapped.discoveryQuestion.label &&
+      mapped.discoveryQuestion.value &&
+      mapped.stage.label &&
+      mapped.stage.dataBoundary &&
+      mapped.stage.serviceBoundary &&
+      mapped.motivation.heading &&
+      mapped.motivation.summary &&
+      mapped.prototype.heading &&
+      mapped.prototype.summary &&
+      mapped.prototype.steps.length === 4 &&
+      mapped.prototype.steps.every((step) => step.title && step.body) &&
+      mapped.prototype.steps.map((step) => step.responsibility).join(",") ===
+        "neighbor,neighbor,ai,human" &&
+      mapped.boundaries.heading &&
+      mapped.boundaries.summary &&
+      mapped.boundaries.points.length >= 3,
+  );
+
+  if (!complete) return fallback;
+
+  return {
+    ...mapped,
+    slug: fallback.slug,
+    canonicalUrl: fallback.canonicalUrl,
+    name: fallback.name,
+    organizationRole: fallback.organizationRole,
+    brandRelationship: fallback.brandRelationship,
+    discoveryQuestion: fallback.discoveryQuestion,
+    stage: fallback.stage,
+    primaryAction: mergeStableAction(mapped.primaryAction, fallback.primaryAction),
+    secondaryAction: mergeStableAction(mapped.secondaryAction, fallback.secondaryAction),
+    implementationAction: mergeStableAction(
+      mapped.implementationAction,
+      fallback.implementationAction,
+    ),
+    relatedReading: mergeStableLinks(mapped.relatedReading, fallback.relatedReading),
+    sceneExplorations: mergeStableLinks(mapped.sceneExplorations, fallback.sceneExplorations),
+  };
+}
 
 // Tolerant string-list reader: accepts `string[]` (the json shape) as well as legacy
 // `[{ text }]` / `[{ tag }]` (defensive against hand-edited JSON in the admin).

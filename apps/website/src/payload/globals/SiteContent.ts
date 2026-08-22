@@ -1,4 +1,5 @@
 import type { GlobalConfig } from "payload";
+import { neighborsProduct } from "../../content/neighbors";
 import { isAdmin } from "../access/isAdmin";
 import { cardsField, sectionHeaderFields } from "../fields/shared";
 import { revalidateGlobal } from "../hooks/revalidate";
@@ -111,6 +112,22 @@ export const SiteContent: GlobalConfig = {
                   },
                 },
               ],
+            },
+          ],
+        },
+        {
+          label: "近邻互助组",
+          fields: [
+            {
+              name: "neighborsProduct",
+              label: "单记录产品内容",
+              type: "json",
+              required: true,
+              defaultValue: neighborsProduct,
+              admin: {
+                description:
+                  "主站正式介绍、首页问答与对话页共享这一份记录。必须保留完整结构；产品身份与 canonical 路径由代码契约固定。",
+              },
             },
           ],
         },
