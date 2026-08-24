@@ -1,8 +1,15 @@
-import type { GlobalConfig } from "payload";
-import { neighborsProduct } from "../../content/neighbors";
+import type { Field, GlobalConfig } from "payload";
+import { neighborsPage } from "../../content/neighbors";
 import { isAdmin } from "../access/isAdmin";
 import { cardsField, sectionHeaderFields } from "../fields/shared";
 import { revalidateGlobal } from "../hooks/revalidate";
+
+const neighborsSectionField = (name: string, label: string): Field => ({
+  name,
+  label,
+  type: "group",
+  fields: [...sectionHeaderFields(), cardsField("items", "逐句内容")],
+});
 
 // Single global holding all site copy (homepage / footer / settings / chat / ui strings),
 // replacing five separate globals. Lists are `json` (jsonb) columns — not `array` child
@@ -119,15 +126,73 @@ export const SiteContent: GlobalConfig = {
           label: "近邻互助组",
           fields: [
             {
-              name: "neighborsProduct",
-              label: "单记录产品内容",
-              type: "json",
-              required: true,
-              defaultValue: neighborsProduct,
+              name: "neighborsPage",
+              label: "产品介绍页",
+              type: "group",
+              defaultValue: neighborsPage,
               admin: {
                 description:
-                  "主站正式介绍、首页问答与对话页共享这一份记录。必须保留完整结构；产品身份与 canonical 路径由代码契约固定。",
+                  "面向普通访客的 /neighbors 页面文案。保存前请保持每个区块完整；产品名、canonical 和原型地址由代码固定。",
               },
+              fields: [
+                {
+                  name: "hero",
+                  label: "首屏",
+                  type: "group",
+                  fields: [
+                    { name: "stageLabel", label: "阶段标签", type: "text", required: true },
+                    { name: "eyebrow", label: "品牌上标签", type: "text", required: true },
+                    { name: "tagline", label: "主标语", type: "text", required: true },
+                    { name: "summary", label: "产品定义", type: "textarea", required: true },
+                    { name: "distinction", label: "区别说明", type: "textarea", required: true },
+                    { name: "affiliation", label: "品牌归属", type: "text", required: true },
+                  ],
+                },
+                {
+                  name: "cta",
+                  label: "原型行动",
+                  type: "group",
+                  fields: [
+                    { name: "label", label: "按钮文字", type: "text", required: true },
+                    { name: "description", label: "按钮说明", type: "textarea", required: true },
+                  ],
+                },
+                neighborsSectionField("howItWorks", "怎样帮助人"),
+                neighborsSectionField("evidence", "什么叫亲历"),
+                neighborsSectionField("nonGoals", "它不是什么"),
+                neighborsSectionField("responsibility", "工具与真人责任"),
+                neighborsSectionField("dataPrinciples", "数据与运行原则"),
+                neighborsSectionField("network", "互助怎样积累"),
+                {
+                  name: "prototype",
+                  label: "原型说明",
+                  type: "group",
+                  fields: [
+                    { name: "eyebrow", label: "上标签", type: "text", required: true },
+                    { name: "heading", label: "标题", type: "text", required: true },
+                    { name: "intro", label: "介绍", type: "textarea", required: true },
+                    { name: "notice", label: "公开边界", type: "textarea", required: true },
+                  ],
+                },
+                {
+                  name: "relatedReading",
+                  label: "延伸阅读",
+                  type: "group",
+                  fields: [
+                    ...sectionHeaderFields(),
+                    {
+                      name: "items",
+                      label: "阅读入口",
+                      type: "json",
+                      defaultValue: [],
+                      admin: {
+                        description:
+                          'JSON 数组，每项 { "label": "...", "description": "...", "target": "manifesto | map | license" }；目标路径由代码固定。',
+                      },
+                    },
+                  ],
+                },
+              ],
             },
           ],
         },

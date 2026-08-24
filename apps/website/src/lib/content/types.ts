@@ -28,52 +28,38 @@ export type DialogueEntry = {
 
 export type DialogueSuggestion = { label: string; value: string };
 
-export type FeaturedProductAction = {
+export type NeighborsPageAction = {
   label: string;
-  href: string;
   description: string;
 };
 
-export type FeaturedProductLink = FeaturedProductAction;
-
-export type FeaturedProductStep = Card & {
-  responsibility: "neighbor" | "ai" | "human";
-};
-
-export type FeaturedProduct = {
-  slug: "neighbors";
-  canonicalUrl: string;
-  name: string;
-  organizationRole: string;
-  brandRelationship: string;
-  audience: string;
-  exploration: string;
-  humanResponsibility: string;
-  discoveryQuestion: DialogueSuggestion;
-  stage: {
-    label: string;
-    dataBoundary: string;
-    serviceBoundary: string;
-  };
-  primaryAction: FeaturedProductAction;
-  secondaryAction: FeaturedProductAction;
-  implementationAction: FeaturedProductAction;
-  motivation: {
-    heading: string;
+export type NeighborsPageContent = {
+  hero: {
+    stageLabel: string;
+    eyebrow: string;
+    tagline: string;
     summary: string;
+    distinction: string;
+    affiliation: string;
   };
+  cta: NeighborsPageAction;
+  howItWorks: SectionBlock<Card>;
+  evidence: SectionBlock<Card>;
+  nonGoals: SectionBlock<Card>;
+  responsibility: SectionBlock<Card>;
+  dataPrinciples: SectionBlock<Card>;
+  network: SectionBlock<Card>;
   prototype: {
+    eyebrow: string;
     heading: string;
-    summary: string;
-    steps: FeaturedProductStep[];
+    intro: string;
+    notice: string;
   };
-  boundaries: {
+  relatedReading: {
     heading: string;
-    summary: string;
-    points: string[];
+    intro: string;
+    items: ContinueRead[];
   };
-  relatedReading: FeaturedProductLink[];
-  sceneExplorations: FeaturedProductLink[];
 };
 
 export type SectionBlock<Item> = { heading: string; intro: string; items: Item[] };

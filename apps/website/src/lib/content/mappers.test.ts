@@ -1,137 +1,72 @@
 import { describe, expect, it } from "vitest";
-import { neighborsProduct } from "@/content/neighbors";
+import { neighborsPage } from "@/content/neighbors";
 import {
   cards,
   mapChatPage,
   mapDocument,
   mapFooter,
-  mapFeaturedProduct,
   mapHomepage,
+  mapNeighborsPage,
   mapSettings,
   mapUiStrings,
   pick,
   points,
   sections,
   strList,
-  resolveFeaturedProduct,
+  resolveNeighborsPage,
 } from "./mappers";
 
-describe("featured product content contract", () => {
-  it("maps the complete CMS-shaped singleton record", () => {
-    const mapped = mapFeaturedProduct(neighborsProduct);
+describe("neighbors page content contract", () => {
+  it("maps the complete structured Payload group", () => {
+    const mapped = mapNeighborsPage(neighborsPage);
 
-    expect(mapped.name).toBe("近邻互助组");
-    expect(mapped.prototype.steps).toHaveLength(4);
-    expect(mapped.prototype.steps[2].responsibility).toBe("ai");
-    expect(mapped.relatedReading.map((item) => item.href)).toEqual([
-      "/manifesto",
-      "/wam",
-      "/license",
+    expect(mapped.hero.tagline).toBe("找靠谱的人，先问亲自用过的人。");
+    expect(mapped.howItWorks.items).toHaveLength(4);
+    expect(mapped.dataPrinciples.items).toHaveLength(5);
+    expect(mapped.relatedReading.items.map((item) => item.target)).toEqual([
+      "manifesto",
+      "map",
+      "license",
     ]);
   });
 
-  it("falls back as one record when CMS content is incomplete", () => {
-    const incomplete = { ...neighborsProduct, boundaries: { heading: "", summary: "", points: [] } };
+  it("falls back as one page when any CMS section is incomplete", () => {
+    const incomplete = structuredClone(neighborsPage);
+    incomplete.evidence.items = [];
 
-    expect(resolveFeaturedProduct(incomplete, neighborsProduct)).toBe(neighborsProduct);
+    expect(resolveNeighborsPage(incomplete, neighborsPage)).toBe(neighborsPage);
   });
 
-  it("keeps canonical identity and CTA routes stable across CMS edits", () => {
-    const edited = structuredClone(neighborsProduct);
-    edited.name = "漂移名称";
-    edited.organizationRole = "漂移母品牌";
-    edited.brandRelationship = "漂移产品关系";
-    edited.canonicalUrl = "https://example.com/wrong";
-    edited.discoveryQuestion.value = "漂移问题";
-    edited.stage.label = "已经上线";
-    edited.primaryAction.href = "https://example.com/customer";
-    edited.secondaryAction.href = "/wrong";
-    edited.implementationAction.href = "https://example.com/implementation";
-    edited.relatedReading[0].href = "/wrong-reading";
-    edited.sceneExplorations[0].href = "https://example.com/scene";
-    edited.motivation.summary = "一段经过 CMS 更新、但仍满足完整契约的说明。";
+  it("accepts complete sentence-level CMS edits", () => {
+    const edited = structuredClone(neighborsPage);
+    edited.hero.tagline = "CMS 更新的主标语。";
+    edited.howItWorks.items[0].body = "CMS 更新的第一步。";
+    edited.prototype.notice = "CMS 更新的原型边界。";
 
-    const resolved = resolveFeaturedProduct(edited, neighborsProduct);
+    const resolved = resolveNeighborsPage(edited, neighborsPage);
 
-    expect(resolved.motivation.summary).toContain("CMS 更新");
-    expect(resolved.name).toBe(neighborsProduct.name);
-    expect(resolved.organizationRole).toBe(neighborsProduct.organizationRole);
-    expect(resolved.brandRelationship).toBe(neighborsProduct.brandRelationship);
-    expect(resolved.discoveryQuestion).toBe(neighborsProduct.discoveryQuestion);
-    expect(resolved.stage).toBe(neighborsProduct.stage);
-    expect(resolved.canonicalUrl).toBe(neighborsProduct.canonicalUrl);
-    expect(resolved.primaryAction.href).toBe(neighborsProduct.primaryAction.href);
-    expect(resolved.secondaryAction.href).toBe(neighborsProduct.secondaryAction.href);
-    expect(resolved.implementationAction.href).toBe(neighborsProduct.implementationAction.href);
-    expect(resolved.relatedReading.map((item) => item.href)).toEqual(
-      neighborsProduct.relatedReading.map((item) => item.href),
-    );
-    expect(resolved.sceneExplorations.map((item) => item.href)).toEqual(
-      neighborsProduct.sceneExplorations.map((item) => item.href),
-    );
+    expect(resolved.hero.tagline).toBe("CMS 更新的主标语。");
+    expect(resolved.howItWorks.items[0].body).toBe("CMS 更新的第一步。");
+    expect(resolved.prototype.notice).toBe("CMS 更新的原型边界。");
   });
 
-  it("matches reordered CMS links by canonical href and keeps their public identity", () => {
-    const edited = structuredClone(neighborsProduct);
-    edited.primaryAction.label = "漂移的客户入口";
-    edited.primaryAction.description = "CMS 更新的客户入口说明。";
-    edited.relatedReading = edited.relatedReading
-      .map((item) => ({ ...item, description: `CMS 更新：${item.href}` }))
-      .reverse();
-    edited.sceneExplorations = edited.sceneExplorations
-      .map((item) => ({ ...item, description: `CMS 更新：${item.href}` }))
+  it("keeps related-reading destinations stable while accepting reordered copy", () => {
+    const edited = structuredClone(neighborsPage);
+    edited.relatedReading.items = edited.relatedReading.items
+      .map((item) => ({ ...item, label: `CMS：${item.target}` }))
       .reverse();
 
-    const resolved = resolveFeaturedProduct(edited, neighborsProduct);
+    const resolved = resolveNeighborsPage(edited, neighborsPage);
 
-    expect(resolved.primaryAction).toEqual({
-      ...neighborsProduct.primaryAction,
-      description: "CMS 更新的客户入口说明。",
-    });
-    expect(resolved.relatedReading).toEqual(
-      neighborsProduct.relatedReading.map((item) => ({
-        ...item,
-        description: `CMS 更新：${item.href}`,
-      })),
-    );
-    expect(resolved.sceneExplorations).toEqual(
-      neighborsProduct.sceneExplorations.map((item) => ({
-        ...item,
-        description: `CMS 更新：${item.href}`,
-      })),
-    );
-  });
-
-  it("uses each fallback link when its canonical URL is tampered with or missing", () => {
-    const edited = structuredClone(neighborsProduct);
-    edited.primaryAction.href = "https://example.com/customer";
-    edited.primaryAction.description = "不应采用的篡改入口说明。";
-    edited.secondaryAction.href = "";
-    edited.secondaryAction.description = "不应采用的缺失入口说明。";
-    edited.implementationAction.label = "漂移的实施入口";
-    edited.implementationAction.description = "CMS 更新的实施入口说明。";
-    edited.relatedReading[0].description = "CMS 更新的宣言说明。";
-    edited.relatedReading[1].href = "/wrong-reading";
-    edited.relatedReading[1].description = "不应采用的篡改阅读说明。";
-    edited.sceneExplorations[0].description = "CMS 更新的街坊味说明。";
-    edited.sceneExplorations = [edited.sceneExplorations[0]];
-
-    const resolved = resolveFeaturedProduct(edited, neighborsProduct);
-
-    expect(resolved.primaryAction).toEqual(neighborsProduct.primaryAction);
-    expect(resolved.secondaryAction).toEqual(neighborsProduct.secondaryAction);
-    expect(resolved.implementationAction).toEqual({
-      ...neighborsProduct.implementationAction,
-      description: "CMS 更新的实施入口说明。",
-    });
-    expect(resolved.relatedReading).toEqual([
-      { ...neighborsProduct.relatedReading[0], description: "CMS 更新的宣言说明。" },
-      neighborsProduct.relatedReading[1],
-      neighborsProduct.relatedReading[2],
+    expect(resolved.relatedReading.items.map((item) => item.target)).toEqual([
+      "manifesto",
+      "map",
+      "license",
     ]);
-    expect(resolved.sceneExplorations).toEqual([
-      { ...neighborsProduct.sceneExplorations[0], description: "CMS 更新的街坊味说明。" },
-      neighborsProduct.sceneExplorations[1],
+    expect(resolved.relatedReading.items.map((item) => item.label)).toEqual([
+      "CMS：manifesto",
+      "CMS：map",
+      "CMS：license",
     ]);
   });
 });

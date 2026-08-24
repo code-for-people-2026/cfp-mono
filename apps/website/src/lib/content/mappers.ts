@@ -5,12 +5,9 @@ import type {
   ChatPageContent,
   ContinueRead,
   DocSection,
-  FeaturedProduct,
-  FeaturedProductAction,
-  FeaturedProductLink,
-  FeaturedProductStep,
   FooterContent,
   HomepageContent,
+  NeighborsPageContent,
   SiteDocument,
   SiteSettings,
   UiStrings,
@@ -22,155 +19,130 @@ function raw(value: unknown): Raw {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Raw) : {};
 }
 
-function productAction(value: unknown): FeaturedProductAction {
-  const action = raw(value);
+function mapNeighborsSection(value: unknown) {
+  const section = raw(value);
   return {
-    label: String(action.label ?? ""),
-    href: String(action.href ?? ""),
-    description: String(action.description ?? ""),
+    heading: String(section.heading ?? ""),
+    intro: String(section.intro ?? ""),
+    items: cards(section.items),
   };
 }
 
-function productLinks(value: unknown): FeaturedProductLink[] {
-  return Array.isArray(value) ? value.map(productAction) : [];
-}
-
-function productSteps(value: unknown): FeaturedProductStep[] {
+function mapRelatedReading(value: unknown): ContinueRead[] {
   if (!Array.isArray(value)) return [];
   return value.map((item) => {
-    const step = raw(item);
-    const responsibility = String(step.responsibility ?? "neighbor");
+    const link = raw(item);
+    const target = String(link.target ?? "manifesto");
     return {
-      title: String(step.title ?? ""),
-      body: String(step.body ?? ""),
-      responsibility:
-        responsibility === "ai" || responsibility === "human" ? responsibility : "neighbor",
+      label: String(link.label ?? ""),
+      description: String(link.description ?? ""),
+      target: (target === "map" || target === "license" ? target : "manifesto") as ContinueRead["target"],
     };
   });
 }
 
-export function mapFeaturedProduct(value: unknown): FeaturedProduct {
-  const product = raw(value);
-  const discoveryQuestion = raw(product.discoveryQuestion);
-  const stage = raw(product.stage);
-  const motivation = raw(product.motivation);
-  const prototype = raw(product.prototype);
-  const boundaries = raw(product.boundaries);
+export function mapNeighborsPage(value: unknown): NeighborsPageContent {
+  const page = raw(value);
+  const hero = raw(page.hero);
+  const cta = raw(page.cta);
+  const prototype = raw(page.prototype);
+  const relatedReading = raw(page.relatedReading);
 
   return {
-    slug: "neighbors",
-    canonicalUrl: String(product.canonicalUrl ?? ""),
-    name: String(product.name ?? ""),
-    organizationRole: String(product.organizationRole ?? ""),
-    brandRelationship: String(product.brandRelationship ?? ""),
-    audience: String(product.audience ?? ""),
-    exploration: String(product.exploration ?? ""),
-    humanResponsibility: String(product.humanResponsibility ?? ""),
-    discoveryQuestion: {
-      label: String(discoveryQuestion.label ?? ""),
-      value: String(discoveryQuestion.value ?? ""),
+    hero: {
+      stageLabel: String(hero.stageLabel ?? ""),
+      eyebrow: String(hero.eyebrow ?? ""),
+      tagline: String(hero.tagline ?? ""),
+      summary: String(hero.summary ?? ""),
+      distinction: String(hero.distinction ?? ""),
+      affiliation: String(hero.affiliation ?? ""),
     },
-    stage: {
-      label: String(stage.label ?? ""),
-      dataBoundary: String(stage.dataBoundary ?? ""),
-      serviceBoundary: String(stage.serviceBoundary ?? ""),
+    cta: {
+      label: String(cta.label ?? ""),
+      description: String(cta.description ?? ""),
     },
-    primaryAction: productAction(product.primaryAction),
-    secondaryAction: productAction(product.secondaryAction),
-    implementationAction: productAction(product.implementationAction),
-    motivation: {
-      heading: String(motivation.heading ?? ""),
-      summary: String(motivation.summary ?? ""),
-    },
+    howItWorks: mapNeighborsSection(page.howItWorks),
+    evidence: mapNeighborsSection(page.evidence),
+    nonGoals: mapNeighborsSection(page.nonGoals),
+    responsibility: mapNeighborsSection(page.responsibility),
+    dataPrinciples: mapNeighborsSection(page.dataPrinciples),
+    network: mapNeighborsSection(page.network),
     prototype: {
+      eyebrow: String(prototype.eyebrow ?? ""),
       heading: String(prototype.heading ?? ""),
-      summary: String(prototype.summary ?? ""),
-      steps: productSteps(prototype.steps),
+      intro: String(prototype.intro ?? ""),
+      notice: String(prototype.notice ?? ""),
     },
-    boundaries: {
-      heading: String(boundaries.heading ?? ""),
-      summary: String(boundaries.summary ?? ""),
-      points: strList(boundaries.points),
+    relatedReading: {
+      heading: String(relatedReading.heading ?? ""),
+      intro: String(relatedReading.intro ?? ""),
+      items: mapRelatedReading(relatedReading.items),
     },
-    relatedReading: productLinks(product.relatedReading),
-    sceneExplorations: productLinks(product.sceneExplorations),
   };
 }
 
-function mergeStableAction(
-  mapped: FeaturedProductAction,
-  fallback: FeaturedProductAction,
-): FeaturedProductAction {
-  if (mapped.href !== fallback.href) return fallback;
-  return {
-    ...fallback,
-    description: mapped.description || fallback.description,
-  };
+function completeNeighborsSection(
+  mapped: NeighborsPageContent["howItWorks"],
+  fallback: NeighborsPageContent["howItWorks"],
+) {
+  return Boolean(
+    mapped.heading &&
+      mapped.intro &&
+      mapped.items.length === fallback.items.length &&
+      mapped.items.every((item) => item.title && item.body),
+  );
 }
 
-function mergeStableLinks(
-  mapped: FeaturedProductLink[],
-  fallback: FeaturedProductLink[],
-): FeaturedProductLink[] {
-  return fallback.map((fallbackItem) => {
-    const matches = mapped.filter((item) => item.href === fallbackItem.href);
-    if (matches.length !== 1) return fallbackItem;
-    return {
-      ...fallbackItem,
-      description: matches[0].description || fallbackItem.description,
-    };
-  });
-}
-
-// Narrative CMS edits either satisfy the public contract or use the complete fallback.
-// Canonical link identities remain code-owned and are merged independently, so a missing,
-// reordered, or tampered link cannot attach CMS copy to the wrong destination.
-export function resolveFeaturedProduct(value: unknown, fallback: FeaturedProduct): FeaturedProduct {
-  const mapped = mapFeaturedProduct(value);
+// Visitor copy is accepted only as one complete page. A half-edited CMS group falls back
+// to the approved static record, so a publish can never leave a public section blank.
+export function resolveNeighborsPage(
+  value: unknown,
+  fallback: NeighborsPageContent,
+): NeighborsPageContent {
+  const mapped = mapNeighborsPage(value);
+  const sections = [
+    [mapped.howItWorks, fallback.howItWorks],
+    [mapped.evidence, fallback.evidence],
+    [mapped.nonGoals, fallback.nonGoals],
+    [mapped.responsibility, fallback.responsibility],
+    [mapped.dataPrinciples, fallback.dataPrinciples],
+    [mapped.network, fallback.network],
+  ] as const;
   const complete = Boolean(
-    mapped.name &&
-      mapped.organizationRole &&
-      mapped.brandRelationship &&
-      mapped.audience &&
-      mapped.exploration &&
-      mapped.humanResponsibility &&
-      mapped.discoveryQuestion.label &&
-      mapped.discoveryQuestion.value &&
-      mapped.stage.label &&
-      mapped.stage.dataBoundary &&
-      mapped.stage.serviceBoundary &&
-      mapped.motivation.heading &&
-      mapped.motivation.summary &&
+    mapped.hero.stageLabel &&
+      mapped.hero.eyebrow &&
+      mapped.hero.tagline &&
+      mapped.hero.summary &&
+      mapped.hero.distinction &&
+      mapped.hero.affiliation &&
+      mapped.cta.label &&
+      mapped.cta.description &&
+      sections.every(([section, fallbackSection]) =>
+        completeNeighborsSection(section, fallbackSection),
+      ) &&
+      mapped.prototype.eyebrow &&
       mapped.prototype.heading &&
-      mapped.prototype.summary &&
-      mapped.prototype.steps.length === 4 &&
-      mapped.prototype.steps.every((step) => step.title && step.body) &&
-      mapped.prototype.steps.map((step) => step.responsibility).join(",") ===
-        "neighbor,neighbor,ai,human" &&
-      mapped.boundaries.heading &&
-      mapped.boundaries.summary &&
-      mapped.boundaries.points.length >= 3,
+      mapped.prototype.intro &&
+      mapped.prototype.notice &&
+      mapped.relatedReading.heading &&
+      mapped.relatedReading.intro &&
+      mapped.relatedReading.items.length === fallback.relatedReading.items.length &&
+      mapped.relatedReading.items.every((item) => item.label && item.description),
   );
 
   if (!complete) return fallback;
 
   return {
     ...mapped,
-    slug: fallback.slug,
-    canonicalUrl: fallback.canonicalUrl,
-    name: fallback.name,
-    organizationRole: fallback.organizationRole,
-    brandRelationship: fallback.brandRelationship,
-    discoveryQuestion: fallback.discoveryQuestion,
-    stage: fallback.stage,
-    primaryAction: mergeStableAction(mapped.primaryAction, fallback.primaryAction),
-    secondaryAction: mergeStableAction(mapped.secondaryAction, fallback.secondaryAction),
-    implementationAction: mergeStableAction(
-      mapped.implementationAction,
-      fallback.implementationAction,
-    ),
-    relatedReading: mergeStableLinks(mapped.relatedReading, fallback.relatedReading),
-    sceneExplorations: mergeStableLinks(mapped.sceneExplorations, fallback.sceneExplorations),
+    relatedReading: {
+      ...mapped.relatedReading,
+      items: fallback.relatedReading.items.map((fallbackItem) => {
+        const match = mapped.relatedReading.items.find(
+          (item) => item.target === fallbackItem.target,
+        );
+        return match ? { ...match, target: fallbackItem.target } : fallbackItem;
+      }),
+    },
   };
 }
 

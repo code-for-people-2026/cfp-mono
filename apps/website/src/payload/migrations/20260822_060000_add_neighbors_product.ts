@@ -1,11 +1,12 @@
 import { MigrateDownArgs, MigrateUpArgs, sql } from "@payloadcms/db-postgres";
-import { neighborsProduct } from "../../content/neighbors";
+import { neighborsPage } from "../../content/neighbors";
 
-// Keep the formal product page, homepage discovery answer, and chat on one Payload row.
-// Existing installations receive the complete approved record instead of an empty json
-// object, so the first CMS edit starts from the same contract as a fresh seed.
+// Historical additive step kept reproducible for databases that have not run it yet.
+// The next migration replaces this temporary jsonb column with structured page fields.
 export async function up({ db }: MigrateUpArgs): Promise<void> {
-  const product = JSON.stringify(neighborsProduct);
+  // This temporary jsonb column is replaced by structured fields in the next
+  // migration. Reusing the current approved record keeps fresh databases reproducible.
+  const product = JSON.stringify(neighborsPage);
   await db.execute(sql`
     ALTER TABLE "website"."site_content"
       ADD COLUMN "neighbors_product" jsonb DEFAULT '{}'::jsonb NOT NULL;

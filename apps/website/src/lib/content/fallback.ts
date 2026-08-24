@@ -23,18 +23,18 @@ import {
   whyNowPoints,
   type DocumentContent,
 } from "@/content/site";
-import { neighborsProduct } from "@/content/neighbors";
+import { neighborsPage } from "@/content/neighbors";
 import type {
   ChatPageContent,
   FooterContent,
-  FeaturedProduct,
   HomepageContent,
+  NeighborsPageContent,
   SiteDocument,
   SiteSettings,
   UiStrings,
 } from "./types";
 
-export const featuredProductFallback: FeaturedProduct = neighborsProduct;
+export const neighborsPageFallback: NeighborsPageContent = neighborsPage;
 
 const card = (c: { title: string; body: string }) => ({ title: c.title, body: c.body });
 

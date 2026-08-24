@@ -1,0 +1,153 @@
+import { MigrateDownArgs, MigrateUpArgs, sql } from "@payloadcms/db-postgres";
+import { neighborsPage } from "../../content/neighbors";
+
+// Replace the former all-in-one json editor with section-level Payload groups while
+// keeping repeated card lists in jsonb (the site-content global remains a single table).
+export async function up({ db }: MigrateUpArgs): Promise<void> {
+  await db.execute(sql`
+    ALTER TABLE "website"."site_content"
+      ADD COLUMN "neighbors_page_hero_stage_label" varchar,
+      ADD COLUMN "neighbors_page_hero_eyebrow" varchar,
+      ADD COLUMN "neighbors_page_hero_tagline" varchar,
+      ADD COLUMN "neighbors_page_hero_summary" varchar,
+      ADD COLUMN "neighbors_page_hero_distinction" varchar,
+      ADD COLUMN "neighbors_page_hero_affiliation" varchar,
+      ADD COLUMN "neighbors_page_cta_label" varchar,
+      ADD COLUMN "neighbors_page_cta_description" varchar,
+      ADD COLUMN "neighbors_page_how_it_works_heading" varchar,
+      ADD COLUMN "neighbors_page_how_it_works_intro" varchar,
+      ADD COLUMN "neighbors_page_how_it_works_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_evidence_heading" varchar,
+      ADD COLUMN "neighbors_page_evidence_intro" varchar,
+      ADD COLUMN "neighbors_page_evidence_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_non_goals_heading" varchar,
+      ADD COLUMN "neighbors_page_non_goals_intro" varchar,
+      ADD COLUMN "neighbors_page_non_goals_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_responsibility_heading" varchar,
+      ADD COLUMN "neighbors_page_responsibility_intro" varchar,
+      ADD COLUMN "neighbors_page_responsibility_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_data_principles_heading" varchar,
+      ADD COLUMN "neighbors_page_data_principles_intro" varchar,
+      ADD COLUMN "neighbors_page_data_principles_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_network_heading" varchar,
+      ADD COLUMN "neighbors_page_network_intro" varchar,
+      ADD COLUMN "neighbors_page_network_items" jsonb DEFAULT '[]'::jsonb,
+      ADD COLUMN "neighbors_page_prototype_eyebrow" varchar,
+      ADD COLUMN "neighbors_page_prototype_heading" varchar,
+      ADD COLUMN "neighbors_page_prototype_intro" varchar,
+      ADD COLUMN "neighbors_page_prototype_notice" varchar,
+      ADD COLUMN "neighbors_page_related_reading_heading" varchar,
+      ADD COLUMN "neighbors_page_related_reading_intro" varchar,
+      ADD COLUMN "neighbors_page_related_reading_items" jsonb DEFAULT '[]'::jsonb;
+  `);
+
+  await db.execute(sql`
+    UPDATE "website"."site_content"
+    SET
+      "neighbors_page_hero_stage_label" = ${neighborsPage.hero.stageLabel},
+      "neighbors_page_hero_eyebrow" = ${neighborsPage.hero.eyebrow},
+      "neighbors_page_hero_tagline" = ${neighborsPage.hero.tagline},
+      "neighbors_page_hero_summary" = ${neighborsPage.hero.summary},
+      "neighbors_page_hero_distinction" = ${neighborsPage.hero.distinction},
+      "neighbors_page_hero_affiliation" = ${neighborsPage.hero.affiliation},
+      "neighbors_page_cta_label" = ${neighborsPage.cta.label},
+      "neighbors_page_cta_description" = ${neighborsPage.cta.description},
+      "neighbors_page_how_it_works_heading" = ${neighborsPage.howItWorks.heading},
+      "neighbors_page_how_it_works_intro" = ${neighborsPage.howItWorks.intro},
+      "neighbors_page_how_it_works_items" = ${JSON.stringify(neighborsPage.howItWorks.items)}::jsonb,
+      "neighbors_page_evidence_heading" = ${neighborsPage.evidence.heading},
+      "neighbors_page_evidence_intro" = ${neighborsPage.evidence.intro},
+      "neighbors_page_evidence_items" = ${JSON.stringify(neighborsPage.evidence.items)}::jsonb,
+      "neighbors_page_non_goals_heading" = ${neighborsPage.nonGoals.heading},
+      "neighbors_page_non_goals_intro" = ${neighborsPage.nonGoals.intro},
+      "neighbors_page_non_goals_items" = ${JSON.stringify(neighborsPage.nonGoals.items)}::jsonb,
+      "neighbors_page_responsibility_heading" = ${neighborsPage.responsibility.heading},
+      "neighbors_page_responsibility_intro" = ${neighborsPage.responsibility.intro},
+      "neighbors_page_responsibility_items" = ${JSON.stringify(neighborsPage.responsibility.items)}::jsonb,
+      "neighbors_page_data_principles_heading" = ${neighborsPage.dataPrinciples.heading},
+      "neighbors_page_data_principles_intro" = ${neighborsPage.dataPrinciples.intro},
+      "neighbors_page_data_principles_items" = ${JSON.stringify(neighborsPage.dataPrinciples.items)}::jsonb,
+      "neighbors_page_network_heading" = ${neighborsPage.network.heading},
+      "neighbors_page_network_intro" = ${neighborsPage.network.intro},
+      "neighbors_page_network_items" = ${JSON.stringify(neighborsPage.network.items)}::jsonb,
+      "neighbors_page_prototype_eyebrow" = ${neighborsPage.prototype.eyebrow},
+      "neighbors_page_prototype_heading" = ${neighborsPage.prototype.heading},
+      "neighbors_page_prototype_intro" = ${neighborsPage.prototype.intro},
+      "neighbors_page_prototype_notice" = ${neighborsPage.prototype.notice},
+      "neighbors_page_related_reading_heading" = ${neighborsPage.relatedReading.heading},
+      "neighbors_page_related_reading_intro" = ${neighborsPage.relatedReading.intro},
+      "neighbors_page_related_reading_items" = ${JSON.stringify(neighborsPage.relatedReading.items)}::jsonb,
+      "updated_at" = NOW();
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE "website"."site_content"
+      ALTER COLUMN "neighbors_page_hero_stage_label" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_hero_eyebrow" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_hero_tagline" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_hero_summary" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_hero_distinction" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_hero_affiliation" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_cta_label" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_cta_description" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_how_it_works_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_how_it_works_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_evidence_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_evidence_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_non_goals_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_non_goals_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_responsibility_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_responsibility_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_data_principles_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_data_principles_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_network_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_network_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_prototype_eyebrow" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_prototype_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_prototype_intro" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_prototype_notice" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_related_reading_heading" SET NOT NULL,
+      ALTER COLUMN "neighbors_page_related_reading_intro" SET NOT NULL,
+      DROP COLUMN "neighbors_product";
+  `);
+}
+
+export async function down({ db }: MigrateDownArgs): Promise<void> {
+  await db.execute(sql`
+    ALTER TABLE "website"."site_content"
+      ADD COLUMN "neighbors_product" jsonb DEFAULT '{}'::jsonb NOT NULL,
+      DROP COLUMN "neighbors_page_hero_stage_label",
+      DROP COLUMN "neighbors_page_hero_eyebrow",
+      DROP COLUMN "neighbors_page_hero_tagline",
+      DROP COLUMN "neighbors_page_hero_summary",
+      DROP COLUMN "neighbors_page_hero_distinction",
+      DROP COLUMN "neighbors_page_hero_affiliation",
+      DROP COLUMN "neighbors_page_cta_label",
+      DROP COLUMN "neighbors_page_cta_description",
+      DROP COLUMN "neighbors_page_how_it_works_heading",
+      DROP COLUMN "neighbors_page_how_it_works_intro",
+      DROP COLUMN "neighbors_page_how_it_works_items",
+      DROP COLUMN "neighbors_page_evidence_heading",
+      DROP COLUMN "neighbors_page_evidence_intro",
+      DROP COLUMN "neighbors_page_evidence_items",
+      DROP COLUMN "neighbors_page_non_goals_heading",
+      DROP COLUMN "neighbors_page_non_goals_intro",
+      DROP COLUMN "neighbors_page_non_goals_items",
+      DROP COLUMN "neighbors_page_responsibility_heading",
+      DROP COLUMN "neighbors_page_responsibility_intro",
+      DROP COLUMN "neighbors_page_responsibility_items",
+      DROP COLUMN "neighbors_page_data_principles_heading",
+      DROP COLUMN "neighbors_page_data_principles_intro",
+      DROP COLUMN "neighbors_page_data_principles_items",
+      DROP COLUMN "neighbors_page_network_heading",
+      DROP COLUMN "neighbors_page_network_intro",
+      DROP COLUMN "neighbors_page_network_items",
+      DROP COLUMN "neighbors_page_prototype_eyebrow",
+      DROP COLUMN "neighbors_page_prototype_heading",
+      DROP COLUMN "neighbors_page_prototype_intro",
+      DROP COLUMN "neighbors_page_prototype_notice",
+      DROP COLUMN "neighbors_page_related_reading_heading",
+      DROP COLUMN "neighbors_page_related_reading_intro",
+      DROP COLUMN "neighbors_page_related_reading_items";
+  `);
+}

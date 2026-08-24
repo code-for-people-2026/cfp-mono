@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
+import { neighborsIdentity } from "@/content/neighbors";
 import { getSiteNavigationArea, getSiteShellDensity } from "./navigation";
 import { CompactSiteShell, FullSiteShell } from "./site-shell";
 import type { SiteLink, SiteObject } from "./types";
@@ -15,6 +16,9 @@ function getCurrentObject(pathname: string): SiteObject {
   }
   if (pathname === "/chat") {
     return { label: "问答对话", href: "/chat" };
+  }
+  if (pathname === "/neighbors" || pathname.startsWith("/neighbors/")) {
+    return { label: neighborsIdentity.name, href: "/neighbors" };
   }
   if (pathname === "/wam" || pathname.startsWith("/wam/")) {
     return { label: "牛马能力剥夺矩阵", href: "/wam" };
