@@ -27,6 +27,7 @@ const explicitSourceMatchers: Array<{ sourceId: string; pattern: RegExp }> = [
   { sourceId: "source-data-equality-manifesto", pattern: /数据平权宣言|宣言/ },
   { sourceId: "source-cattle-license", pattern: /牛马互助协议|互助协议|工友价|传染条款|协议|cattle\s*license/i },
   { sourceId: "source-direction-map-handout", pattern: /7x7|7×7|七乘七|方向地图|能力剥夺|矩阵|表格/i },
+  { sourceId: "source-neighbors-product-decision", pattern: /近邻互助组|亲历卡|亲历推荐/i },
 ];
 
 function findExplicitSourceIds(message: string) {

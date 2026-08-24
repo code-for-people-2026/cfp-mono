@@ -4,19 +4,14 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   BadgeCheck,
-  Ban,
   Bot,
   Check,
   CircleUserRound,
-  Database,
   ExternalLink,
   HeartHandshake,
   MessageCircleMore,
-  RotateCcw,
   ShieldCheck,
   UserRoundCheck,
-  UsersRound,
-  WalletCards,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,12 +21,10 @@ import type { Card, ContinueRead, SectionBlock } from "@/lib/content/types";
 
 export const dynamic = "force-dynamic";
 
-const howIcons = [MessageCircleMore, CircleUserRound, BadgeCheck, UserRoundCheck];
-const evidenceIcons = [CircleUserRound, BadgeCheck, ShieldCheck, WalletCards];
-const boundaryIcons = [Ban, WalletCards, UsersRound, ShieldCheck];
-const responsibilityIcons = [Bot, CircleUserRound, UserRoundCheck, BadgeCheck];
-const dataIcons = [ShieldCheck, Check, Database, Ban, WalletCards];
-const networkIcons = [Database, HeartHandshake, RotateCcw, UsersRound];
+const howIcons = [MessageCircleMore, CircleUserRound, UserRoundCheck];
+const evidenceIcons = [CircleUserRound, MessageCircleMore, BadgeCheck, ShieldCheck];
+const responsibilityIcons = [BadgeCheck, Bot, ShieldCheck];
+const sourceExampleIcons = [CircleUserRound, UserRoundCheck, Bot];
 const readingIcons = [HeartHandshake, BadgeCheck, ShieldCheck];
 
 const readingHrefs: Record<ContinueRead["target"], string> = {
@@ -97,13 +90,13 @@ function NumberedCards({
   icons: LucideIcon[];
 }) {
   return (
-    <ol className="mt-12 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+    <ol className="mt-12 grid gap-4 md:grid-cols-3">
       {items.map((item, index) => {
         const Icon = icons[index % icons.length];
         return (
           <li
             key={item.title}
-            className="flex min-h-64 flex-col rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-e1)]"
+            className="flex min-h-56 flex-col rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-e1)]"
           >
             <div className="flex items-center justify-between gap-4">
               <Icon aria-hidden="true" className="size-6 text-[var(--primary)]" />
@@ -112,7 +105,7 @@ function NumberedCards({
               </span>
             </div>
             <h3 className="mt-10 text-xl font-black leading-tight">{item.title}</h3>
-            <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
+            <p className="mt-4 text-base leading-7 text-[var(--muted-foreground)]">{item.body}</p>
           </li>
         );
       })}
@@ -135,7 +128,7 @@ function ReadingCard({ item, index }: { item: ContinueRead; index: number }) {
         />
       </div>
       <h3 className="mt-8 text-xl font-black">{item.label}</h3>
-      <p className="mt-3 text-sm leading-7 text-[var(--muted-foreground)]">{item.description}</p>
+      <p className="mt-3 text-base leading-7 text-[var(--muted-foreground)]">{item.description}</p>
     </Link>
   );
 }
@@ -177,6 +170,7 @@ export default async function NeighborsPage() {
                   href={neighborsIdentity.prototypeUrl}
                   target="_blank"
                   rel="noreferrer"
+                  aria-label={`${content.cta.label}（新窗口打开）`}
                 >
                   {content.cta.label}
                   <ExternalLink aria-hidden="true" className="size-4" />
@@ -238,58 +232,20 @@ export default async function NeighborsPage() {
       </section>
 
       <section
-        data-neighbors-section="non-goals"
-        className="border-b border-[var(--border)] bg-[var(--muted)]"
-      >
-        <div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-          <SectionIntro index="03" section={content.nonGoals} />
-          <div className="mt-12 grid gap-4 md:grid-cols-2">
-            {content.nonGoals.items.map((item, index) => {
-              const Icon = boundaryIcons[index % boundaryIcons.length];
-              return (
-                <article
-                  key={item.title}
-                  className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-e1)] sm:p-8"
-                >
-                  <div className="flex items-center gap-4">
-                    <span className="grid size-11 shrink-0 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
-                      <Icon aria-hidden="true" className="size-5" />
-                    </span>
-                    <h3 className="text-xl font-black">{item.title}</h3>
-                  </div>
-                  <p className="mt-5 text-sm leading-7 text-[var(--muted-foreground)] sm:text-base">
-                    {item.body}
-                  </p>
-                </article>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section
         data-neighbors-section="responsibility"
         className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28"
       >
-        <SectionIntro index="04" section={content.responsibility} />
-        <div className="mt-12 grid gap-4 lg:grid-cols-2">
+        <SectionIntro index="03" section={content.responsibility} />
+        <div className="mt-12 grid gap-4 lg:grid-cols-3">
           {content.responsibility.items.map((item, index) => {
             const Icon = responsibilityIcons[index % responsibilityIcons.length];
-            const human = index >= 2;
             return (
               <article
                 key={item.title}
-                className={`rounded-[var(--radius-card)] border p-7 sm:p-9 ${
-                  human
-                    ? "border-[var(--confirm)]/35 bg-[var(--confirm-soft)]"
-                    : "border-[var(--border)] bg-[var(--surface)]"
-                }`}
+                className="rounded-[var(--radius-card)] border border-[var(--border)] bg-[var(--surface)] p-7 shadow-[var(--shadow-e1)] sm:p-8"
               >
                 <div className="flex items-center justify-between gap-4">
-                  <Icon
-                    aria-hidden="true"
-                    className={`size-7 ${human ? "text-[var(--confirm-foreground)]" : "text-[var(--primary)]"}`}
-                  />
+                  <Icon aria-hidden="true" className="size-7 text-[var(--primary)]" />
                   <span className="font-mono text-xs font-bold text-[var(--muted-foreground)]">
                     {String(index + 1).padStart(2, "0")}
                   </span>
@@ -300,57 +256,28 @@ export default async function NeighborsPage() {
             );
           })}
         </div>
-      </section>
 
-      <section
-        data-neighbors-section="data-principles"
-        className="border-y border-[var(--border)] bg-[var(--surface)]"
-      >
-        <div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-          <SectionIntro index="05" section={content.dataPrinciples} />
-          <ol className="mt-12 divide-y divide-[var(--border)] border-y border-[var(--border)]">
-            {content.dataPrinciples.items.map((item, index) => {
-              const Icon = dataIcons[index % dataIcons.length];
+        <div className="mt-12 overflow-hidden rounded-[var(--radius-container)] border border-[var(--border-strong)] bg-[var(--prototype-stage)] text-[var(--prototype-stage-foreground)] shadow-[var(--shadow-e2)]">
+          <div className="border-b border-white/15 px-6 py-7 sm:px-9">
+            <h3 className="text-2xl font-black leading-tight">
+              {content.responsibility.example.heading}
+            </h3>
+            <p className="mt-4 text-base leading-7 text-white/70">
+              {content.responsibility.example.request}
+            </p>
+          </div>
+          <div className="grid gap-px bg-white/15 md:grid-cols-3">
+            {content.responsibility.example.items.map((item, index) => {
+              const Icon = sourceExampleIcons[index % sourceExampleIcons.length];
               return (
-                <li key={item.title} className="grid gap-5 py-7 sm:grid-cols-[3rem_14rem_minmax(0,1fr)] sm:items-start">
-                  <span className="grid size-11 place-items-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
-                    <Icon aria-hidden="true" className="size-5" />
-                  </span>
-                  <h3 className="text-xl font-black leading-tight">{item.title}</h3>
-                  <p className="text-sm leading-7 text-[var(--muted-foreground)] sm:text-base">
-                    {item.body}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        </div>
-      </section>
-
-      <section
-        data-neighbors-section="network"
-        className="relative isolate overflow-hidden bg-[var(--primary-soft)]"
-      >
-        <div className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_82%_18%,var(--confirm-soft),transparent_30%),radial-gradient(circle_at_12%_86%,white,transparent_32%)]" />
-        <div className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28">
-          <SectionIntro index="06" section={content.network} />
-          <div className="mt-12 grid gap-4 lg:grid-cols-4">
-            {content.network.items.map((item, index) => {
-              const Icon = networkIcons[index % networkIcons.length];
-              return (
-                <article
-                  key={item.title}
-                  className="relative rounded-[var(--radius-card)] border border-[var(--border)] bg-white/85 p-6 shadow-[var(--shadow-e1)] backdrop-blur"
-                >
-                  <Icon aria-hidden="true" className="size-7 text-[var(--primary)]" />
-                  <h3 className="mt-8 text-xl font-black">{item.title}</h3>
-                  <p className="mt-4 text-sm leading-7 text-[var(--muted-foreground)]">{item.body}</p>
-                  {index < content.network.items.length - 1 ? (
-                    <ArrowRight
-                      aria-hidden="true"
-                      className="absolute -right-3 top-1/2 z-10 hidden size-6 -translate-y-1/2 rounded-full bg-[var(--surface)] p-1 text-[var(--primary)] shadow-[var(--shadow-e1)] lg:block"
-                    />
-                  ) : null}
+                <article key={item.title} className="bg-[var(--prototype-stage)] p-6 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <Icon aria-hidden="true" className="size-5 text-[var(--primary)]" />
+                    <h4 className="font-mono text-xs font-bold tracking-[0.12em] text-white/70 uppercase">
+                      {item.title}
+                    </h4>
+                  </div>
+                  <p className="mt-5 text-base leading-8 text-white/78">{item.body}</p>
                 </article>
               );
             })}
@@ -365,7 +292,7 @@ export default async function NeighborsPage() {
         <div className="mx-auto grid max-w-[1180px] gap-10 px-4 py-20 sm:px-6 lg:grid-cols-[minmax(0,0.7fr)_minmax(18rem,0.4fr)] lg:items-center lg:px-8 lg:py-28">
           <div>
             <p className="font-mono text-xs font-bold tracking-[0.16em] text-[var(--primary)] uppercase">
-              {content.prototype.eyebrow}
+              04 · {content.prototype.eyebrow}
             </p>
             <h2 className="mt-4 text-4xl font-black leading-tight tracking-[-0.035em] sm:text-5xl">
               {content.prototype.heading}
@@ -375,13 +302,14 @@ export default async function NeighborsPage() {
             </p>
           </div>
           <div className="rounded-[var(--radius-container)] border border-white/15 bg-white/5 p-6 sm:p-8">
-            <p className="text-sm leading-7 text-white/65">{content.prototype.notice}</p>
+            <p className="text-base leading-7 text-white/65">{content.prototype.notice}</p>
             <Button asChild size="lg" className="mt-7 min-h-12 w-full">
               <a
                 data-neighbors-primary-action=""
                 href={neighborsIdentity.prototypeUrl}
                 target="_blank"
                 rel="noreferrer"
+                aria-label={`${content.cta.label}（新窗口打开）`}
               >
                 {content.cta.label}
                 <ExternalLink aria-hidden="true" className="size-4" />
@@ -395,7 +323,7 @@ export default async function NeighborsPage() {
         data-neighbors-section="related-reading"
         className="mx-auto max-w-[1180px] px-4 py-20 sm:px-6 lg:px-8 lg:py-28"
       >
-        <SectionIntro index="07" section={content.relatedReading} />
+        <SectionIntro index="05" section={content.relatedReading} />
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {content.relatedReading.items.map((item, index) => (
             <ReadingCard key={item.target} item={item} index={index} />

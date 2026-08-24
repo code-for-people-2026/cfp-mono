@@ -158,11 +158,26 @@ export const SiteContent: GlobalConfig = {
                   ],
                 },
                 neighborsSectionField("howItWorks", "怎样帮助人"),
-                neighborsSectionField("evidence", "什么叫亲历"),
-                neighborsSectionField("nonGoals", "它不是什么"),
-                neighborsSectionField("responsibility", "工具与真人责任"),
-                neighborsSectionField("dataPrinciples", "数据与运行原则"),
-                neighborsSectionField("network", "互助怎样积累"),
+                neighborsSectionField("evidence", "亲历卡里有什么"),
+                {
+                  name: "responsibility",
+                  label: "可信边界与来源示例",
+                  type: "group",
+                  fields: [
+                    ...sectionHeaderFields(),
+                    cardsField("items", "三条可信边界"),
+                    {
+                      name: "example",
+                      label: "亲历卡来源示例",
+                      type: "group",
+                      fields: [
+                        { name: "heading", label: "示例标题", type: "text", required: true },
+                        { name: "request", label: "示例求助", type: "textarea", required: true },
+                        cardsField("items", "来源分段"),
+                      ],
+                    },
+                  ],
+                },
                 {
                   name: "prototype",
                   label: "原型说明",

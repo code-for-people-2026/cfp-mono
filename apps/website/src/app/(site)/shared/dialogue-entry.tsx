@@ -81,6 +81,7 @@ export function DialogueEntry({
               <button
                 key={suggestion.label}
                 type="button"
+                data-dialogue-suggestion-featured={index === 0 ? "" : undefined}
                 className={
                   index === 0
                     ? "min-h-11 w-full rounded-lg border border-[var(--accent)] bg-[var(--ring-soft)] px-4 text-sm font-bold text-[var(--accent-strong)] shadow-[var(--shadow-soft)] transition-colors hover:bg-[var(--chip)] sm:w-auto"

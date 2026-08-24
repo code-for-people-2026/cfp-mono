@@ -1,4 +1,10 @@
-import { getChatPage, getHomepage, getSiteSettings, getUiStrings } from "@/lib/content";
+import {
+  getChatPage,
+  getHomepage,
+  getNeighborsDiscovery,
+  getSiteSettings,
+  getUiStrings,
+} from "@/lib/content";
 import { DialogueChat } from "../shared/dialogue-chat";
 
 export const dynamic = "force-dynamic";
@@ -12,11 +18,12 @@ export default async function DialoguePage({
   const raw = Array.isArray(params.question) ? params.question[0] : params.question;
   const initialQuestion = raw?.slice(0, 1000);
 
-  const [chat, ui, home, settings] = await Promise.all([
+  const [chat, ui, home, settings, neighborsDiscovery] = await Promise.all([
     getChatPage(),
     getUiStrings(),
     getHomepage(),
     getSiteSettings(),
+    getNeighborsDiscovery(),
   ]);
 
   return (
@@ -30,6 +37,7 @@ export default async function DialoguePage({
           suggestions: home.dialogueSuggestions,
           brand: settings.brand,
           ui,
+          neighborsDiscovery,
         }}
       />
     </main>

@@ -20,9 +20,14 @@ describe("neighbors page content contract", () => {
   it("maps the complete structured Payload group", () => {
     const mapped = mapNeighborsPage(neighborsPage);
 
-    expect(mapped.hero.tagline).toBe("找靠谱的人，先问亲自用过的人。");
-    expect(mapped.howItWorks.items).toHaveLength(4);
-    expect(mapped.dataPrinciples.items).toHaveLength(5);
+    expect(mapped.hero.tagline).toBe("想找靠谱的服务，先问问真正用过的人。");
+    expect(mapped.howItWorks.items).toHaveLength(3);
+    expect(mapped.responsibility.items).toHaveLength(3);
+    expect(mapped.responsibility.example.items.map((item) => item.title)).toEqual([
+      "用户分享",
+      "服务者确认",
+      "AI 整理",
+    ]);
     expect(mapped.relatedReading.items.map((item) => item.target)).toEqual([
       "manifesto",
       "map",
@@ -41,12 +46,16 @@ describe("neighbors page content contract", () => {
     const edited = structuredClone(neighborsPage);
     edited.hero.tagline = "CMS 更新的主标语。";
     edited.howItWorks.items[0].body = "CMS 更新的第一步。";
+    edited.responsibility.example.items[0].body = "CMS 更新的来源示例。";
     edited.prototype.notice = "CMS 更新的原型边界。";
 
     const resolved = resolveNeighborsPage(edited, neighborsPage);
 
     expect(resolved.hero.tagline).toBe("CMS 更新的主标语。");
     expect(resolved.howItWorks.items[0].body).toBe("CMS 更新的第一步。");
+    expect(resolved.responsibility.example.items[0].body).toBe(
+      "CMS 更新的来源示例。",
+    );
     expect(resolved.prototype.notice).toBe("CMS 更新的原型边界。");
   });
 

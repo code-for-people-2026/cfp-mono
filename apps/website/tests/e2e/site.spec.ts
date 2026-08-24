@@ -66,11 +66,14 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("回答基于已经公开的文本")).toBeVisible();
   await expect(page.getByText("知识库即将接入")).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "你们是谁", exact: true }),
+    page.getByRole("button", { name: "近邻互助组是什么？", exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("button", { name: "为什么还给人民" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马互助协议怎么约束" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马能力剥夺矩阵怎么回事" })).toBeVisible();
+  await expect(page.locator('[data-dialogue-suggestion-featured]')).toHaveText(
+    "近邻互助组是什么？",
+  );
   await expect(page.getByRole("button", { name: "我有具体麻烦" })).toHaveCount(0);
   await expect(page.getByText("今天有什么具体麻烦，想让软件帮帮忙？")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "服务谁" })).toHaveCount(0);
@@ -557,6 +560,39 @@ test("chat route opens from the homepage question entry and carries it over", as
   await expect(page.getByRole("heading", { name: "对话入口正在接入" })).toHaveCount(0);
 });
 
+test("the highlighted neighbors question gets an AI answer with structured actions", async ({
+  page,
+}) => {
+  let chatRequests = 0;
+  await page.route("**/api/chat", async (route) => {
+    chatRequests += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        answer:
+          "近邻互助组帮助人们分享自己真正用过服务的经历，让身边人在找服务者时少踩坑。",
+      }),
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "近邻互助组是什么？", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByText("近邻互助组是什么？", { exact: true })).toBeVisible();
+  await expect(page.getByText(/分享自己真正用过服务的经历/)).toBeVisible();
+
+  const actions = page.locator('[data-neighbors-discovery-actions]');
+  await expect(actions.getByRole("link", { name: /看看体验原型/ })).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/",
+  );
+  await expect(
+    actions.getByRole("link", { name: "进一步了解近邻互助组" }),
+  ).toHaveAttribute("href", "/neighbors");
+  expect(chatRequests).toBe(1);
+});
+
 test("public shells keep canonical navigation order and route current state", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const routes = [
@@ -743,19 +779,25 @@ test("neighbors route publishes the approved product introduction and prototype 
     "href",
     "https://www.codeforpeople.cn/neighbors",
   );
-  await expect(page.getByText("找靠谱的人，先问亲自用过的人。", { exact: true })).toBeVisible();
-  await expect(page.getByText(/消费者分享自己亲自购买或使用服务的经历/)).toBeVisible();
+  await expect(page.getByText("想找靠谱的服务，先问问真正用过的人。", { exact: true })).toBeVisible();
+  await expect(page.getByText(/把自己实际用过服务的经历分享给身边人/)).toBeVisible();
 
   for (const heading of [
-    "求助留在熟悉的地方，亲历回到原来的关系里",
-    "不是一句“靠谱”，而是足够你自己判断的信息",
-    "不把互助重新做成广告平台",
-    "工具可以帮忙，责任不能交出去",
-    "你的经历，仍然由你决定怎样分享",
-    "一次经历，也可以成为下一次互助",
-    "先看看一次邻里互助怎样发生",
+    "不用换平台，在原来的群里就能互相帮忙",
+    "亲历卡不只说“靠谱”，还告诉你为什么",
+    "三件事，让这份参考更可信",
+    "现在可以走一遍完整流程",
+    "还想知道我们为什么这样做？",
   ]) {
     await expect(page.getByRole("heading", { level: 2, name: heading, exact: true })).toBeVisible();
+  }
+
+  for (const source of ["用户分享", "服务者确认", "AI 整理"]) {
+    await expect(page.getByRole("heading", { level: 4, name: source, exact: true })).toBeVisible();
+  }
+
+  for (const removedSection of ["non-goals", "data-principles", "network"]) {
+    await expect(page.locator(`[data-neighbors-section="${removedSection}"]`)).toHaveCount(0);
   }
 
   for (const phrase of [
@@ -776,7 +818,7 @@ test("neighbors route publishes the approved product introduction and prototype 
       "https://ideal.codeforpeople.cn/",
     );
   }
-  await expect(page.getByText(/原型不会产生真实预约、付款或服务承诺/)).toBeVisible();
+  await expect(page.getByText(/请不要填写真实姓名、电话等个人信息/)).toHaveCount(2);
 
   const relatedReading = page.locator('[data-neighbors-section="related-reading"]');
   await expect(relatedReading.locator('a[href="/manifesto"]')).toHaveCount(1);

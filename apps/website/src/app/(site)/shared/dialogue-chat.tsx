@@ -1,6 +1,7 @@
 "use client";
 
-import { Send } from "lucide-react";
+import { ExternalLink, Send } from "lucide-react";
+import Link from "next/link";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -19,6 +20,7 @@ import {
   type ChatMessage as ChatMessageType,
 } from "@/lib/chat/conversation";
 import { linkifyAssistantMarkdown } from "@/lib/chat/linkify";
+import { Button } from "@/components/ui/button";
 import {
   clearStoredConversation,
   getBrowserStorage,
@@ -81,6 +83,12 @@ export function DialogueChat({
   const started = messages.length > 0;
   const trimmedComposer = composerValue.trim();
   const visibleSuggestions = content.suggestions;
+  const neighborsAnswerId =
+    messages[0]?.role === "user" &&
+    messages[0].content === content.neighborsDiscovery.question.value &&
+    messages[1]?.role === "assistant"
+      ? messages[1].id
+      : null;
 
   const summarizeIfNeeded = useCallback(
     async (nextMessages: ChatMessageType[]) => {
@@ -317,6 +325,40 @@ export function DialogueChat({
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
+                {message.id === neighborsAnswerId ? (
+                  <section
+                    data-neighbors-discovery-actions=""
+                    aria-label="近邻互助组体验入口"
+                    className="mt-5 border-t border-[var(--border)] pt-4"
+                  >
+                    <p className="text-xs font-semibold leading-5 text-[var(--muted-foreground)]">
+                      {content.neighborsDiscovery.primaryAction.description}
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                      <Button asChild size="lg" className="min-h-11 w-full sm:w-auto">
+                        <a
+                          href={content.neighborsDiscovery.primaryAction.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`${content.neighborsDiscovery.primaryAction.label}（新窗口打开）`}
+                        >
+                          {content.neighborsDiscovery.primaryAction.label}
+                          <ExternalLink aria-hidden="true" className="size-4" />
+                        </a>
+                      </Button>
+                      <Button
+                        asChild
+                        size="lg"
+                        variant="secondary"
+                        className="min-h-11 w-full sm:w-auto"
+                      >
+                        <Link href={content.neighborsDiscovery.secondaryAction.href}>
+                          {content.neighborsDiscovery.secondaryAction.label}
+                        </Link>
+                      </Button>
+                    </div>
+                  </section>
+                ) : null}
               </article>
             ))}
             {loading ? (

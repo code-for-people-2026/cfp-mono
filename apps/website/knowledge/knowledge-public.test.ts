@@ -31,6 +31,7 @@ describe("website knowledge base", () => {
       "self-restraint",
       "direction-map",
       "hard-questions",
+      "neighbors",
       "boundaries",
       "how-to-continue",
     ]);
@@ -50,6 +51,10 @@ describe("website knowledge base", () => {
     expect(docs.find((doc) => doc.id === "direction-map")?.sources).toContain(
       "source-7x7-capability-theory",
     );
+    expect(docs.find((doc) => doc.id === "neighbors")?.sources).toEqual([
+      "source-neighbors-product-decision",
+      "source-neighbors-mvp-boundaries",
+    ]);
   });
 
   it("contains no booth or event language in user-facing material (title, tags, body)", async () => {
@@ -110,5 +115,19 @@ describe("website knowledge base", () => {
     expect(retrieve("给我完整版数据平权宣言", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe(
       "source-data-equality-manifesto",
     );
+    expect(retrieve("近邻互助组是什么", chunks, { limit: 1 })[0]?.chunk.sourceId).toBe(
+      "neighbors",
+    );
+    expect(
+      retrieve("近邻互助组的 AI 能替师傅报价吗", chunks, { limit: 1 })[0]?.chunk
+        .sourceId,
+    ).toBe("neighbors");
+
+    const neighborsBoundarySource = chunks
+      .filter((chunk) => chunk.sourceId === "source-neighbors-mvp-boundaries")
+      .map((chunk) => chunk.text)
+      .join("\n");
+    expect(neighborsBoundarySource).toContain("不能越权替真人承诺");
+    expect(neighborsBoundarySource).toContain("数据不出售");
   });
 });

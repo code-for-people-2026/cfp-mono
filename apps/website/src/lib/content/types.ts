@@ -45,10 +45,13 @@ export type NeighborsPageContent = {
   cta: NeighborsPageAction;
   howItWorks: SectionBlock<Card>;
   evidence: SectionBlock<Card>;
-  nonGoals: SectionBlock<Card>;
-  responsibility: SectionBlock<Card>;
-  dataPrinciples: SectionBlock<Card>;
-  network: SectionBlock<Card>;
+  responsibility: SectionBlock<Card> & {
+    example: {
+      heading: string;
+      request: string;
+      items: Card[];
+    };
+  };
   prototype: {
     eyebrow: string;
     heading: string;
@@ -60,6 +63,12 @@ export type NeighborsPageContent = {
     intro: string;
     items: ContinueRead[];
   };
+};
+
+export type NeighborsDiscoveryContent = {
+  question: DialogueSuggestion;
+  primaryAction: NeighborsPageAction & { href: string };
+  secondaryAction: { label: string; href: string };
 };
 
 export type SectionBlock<Item> = { heading: string; intro: string; items: Item[] };
@@ -95,6 +104,7 @@ export type DialogueChatContent = {
   suggestions: DialogueSuggestion[];
   brand: Brand;
   ui: UiStrings;
+  neighborsDiscovery: NeighborsDiscoveryContent;
 };
 
 export type UiStrings = {

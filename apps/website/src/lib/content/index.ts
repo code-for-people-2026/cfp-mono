@@ -23,6 +23,10 @@ import {
   mapUiStrings,
   pick,
 } from "./mappers";
+import {
+  buildNeighborsDiscovery,
+  withNeighborsDiscoveryQuestion,
+} from "./neighbors-discovery";
 
 async function client() {
   return getPayload({ config });
@@ -47,20 +51,14 @@ const getCachedSiteContent = unstable_cache(
 );
 
 const EMPTY = {} as Record<string, unknown>;
-const UNPUBLISHED_NEIGHBORS_QUESTION = "近邻互助组是什么？";
 
 export async function getHomepage(): Promise<HomepageContent> {
   const mapped = mapHomepage((await getCachedSiteContent()) ?? EMPTY);
   const homepage = pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
 
-  // TODO(neighbors): Remove this release gate when the separately reviewed
-  // /neighbors page and its public discovery entry are ready to ship together.
   return {
     ...homepage,
-    dialogueSuggestions: homepage.dialogueSuggestions.filter(
-      ({ label, value }) =>
-        label !== UNPUBLISHED_NEIGHBORS_QUESTION && value !== UNPUBLISHED_NEIGHBORS_QUESTION,
-    ),
+    dialogueSuggestions: withNeighborsDiscoveryQuestion(homepage.dialogueSuggestions),
   };
 }
 
@@ -72,6 +70,10 @@ export async function getChatPage(): Promise<ChatPageContent> {
 export async function getNeighborsPage(): Promise<NeighborsPageContent> {
   const data = (await getCachedSiteContent()) ?? EMPTY;
   return resolveNeighborsPage(data.neighborsPage, neighborsPageFallback);
+}
+
+export async function getNeighborsDiscovery() {
+  return buildNeighborsDiscovery(await getNeighborsPage());
 }
 
 export async function getUiStrings(): Promise<UiStrings> {

@@ -45,6 +45,8 @@ export function mapNeighborsPage(value: unknown): NeighborsPageContent {
   const page = raw(value);
   const hero = raw(page.hero);
   const cta = raw(page.cta);
+  const responsibility = raw(page.responsibility);
+  const responsibilityExample = raw(responsibility.example);
   const prototype = raw(page.prototype);
   const relatedReading = raw(page.relatedReading);
 
@@ -63,10 +65,14 @@ export function mapNeighborsPage(value: unknown): NeighborsPageContent {
     },
     howItWorks: mapNeighborsSection(page.howItWorks),
     evidence: mapNeighborsSection(page.evidence),
-    nonGoals: mapNeighborsSection(page.nonGoals),
-    responsibility: mapNeighborsSection(page.responsibility),
-    dataPrinciples: mapNeighborsSection(page.dataPrinciples),
-    network: mapNeighborsSection(page.network),
+    responsibility: {
+      ...mapNeighborsSection(responsibility),
+      example: {
+        heading: String(responsibilityExample.heading ?? ""),
+        request: String(responsibilityExample.request ?? ""),
+        items: cards(responsibilityExample.items),
+      },
+    },
     prototype: {
       eyebrow: String(prototype.eyebrow ?? ""),
       heading: String(prototype.heading ?? ""),
@@ -103,10 +109,7 @@ export function resolveNeighborsPage(
   const sections = [
     [mapped.howItWorks, fallback.howItWorks],
     [mapped.evidence, fallback.evidence],
-    [mapped.nonGoals, fallback.nonGoals],
     [mapped.responsibility, fallback.responsibility],
-    [mapped.dataPrinciples, fallback.dataPrinciples],
-    [mapped.network, fallback.network],
   ] as const;
   const complete = Boolean(
     mapped.hero.stageLabel &&
@@ -120,6 +123,11 @@ export function resolveNeighborsPage(
       sections.every(([section, fallbackSection]) =>
         completeNeighborsSection(section, fallbackSection),
       ) &&
+      mapped.responsibility.example.heading &&
+      mapped.responsibility.example.request &&
+      mapped.responsibility.example.items.length ===
+        fallback.responsibility.example.items.length &&
+      mapped.responsibility.example.items.every((item) => item.title && item.body) &&
       mapped.prototype.eyebrow &&
       mapped.prototype.heading &&
       mapped.prototype.intro &&
