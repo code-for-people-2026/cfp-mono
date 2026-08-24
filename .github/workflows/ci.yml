@@ -244,11 +244,14 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_WEBSITE_PREVIEW_TOKEN }}
           VERCEL_ORG_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ vars.VERCEL_WEBSITE_PREVIEW_PROJECT_ID }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          [[ -n "$DEEPSEEK_API_KEY" ]]
           deployment_url="$(vercel deploy --yes --target=preview --archive=tgz \
             --build-env RELEASE_SHA="$PR_HEAD_SHA" \
+            --env DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
             --env RELEASE_SHA="$PR_HEAD_SHA" \
             --meta cfpPrNumber="$PR_NUMBER" \
             --meta cfpCommitSha="$PR_HEAD_SHA")"
