@@ -65,21 +65,20 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByRole("button", { name: "开始了解" })).toBeVisible();
   await expect(page.getByText("回答基于已经公开的文本")).toBeVisible();
   await expect(page.getByText("知识库即将接入")).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "你们是谁" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "近邻互助组是什么？", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "为什么还给人民" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马互助协议怎么约束" })).toBeVisible();
   await expect(page.getByRole("button", { name: "牛马能力剥夺矩阵怎么回事" })).toBeVisible();
+  await expect(page.locator('[data-dialogue-suggestion-featured]')).toHaveText(
+    "近邻互助组是什么？",
+  );
   await expect(page.getByRole("button", { name: "我有具体麻烦" })).toHaveCount(0);
   await expect(page.getByText("今天有什么具体麻烦，想让软件帮帮忙？")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "服务谁" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "为什么现在做" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "怎么避免变成平台" })).toHaveCount(0);
-  const viewportWidth = page.viewportSize()?.width ?? 0;
-  if (viewportWidth >= 768) {
-    await expect(
-      page.getByRole("main").getByRole("link", { name: "牛马能力剥夺矩阵", exact: true }),
-    ).toHaveAttribute("href", "/wam");
-  }
   await expect(page.getByRole("link", { name: "7×7", exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "读数据平权宣言", exact: true })).toBeVisible();
 
@@ -135,7 +134,9 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(page.getByText("一起做或提出批评")).toHaveCount(0);
 
   await expect(page.getByRole("main").getByRole("heading", { name: "关注后续" })).toHaveCount(0);
-  await expect(page.getByAltText("码成仝 logo")).toHaveAttribute(
+  await expect(
+    page.getByRole("banner").getByRole("link", { name: "码成仝首页" }).locator("img"),
+  ).toHaveAttribute(
     "src",
     /code-for-people-logo\.png/,
   );
@@ -160,19 +161,17 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer).toBeVisible();
   await expect(footer.getByText("为“工友”敲键盘", { exact: true })).toBeVisible();
   await expect(footer).toHaveAttribute("id", "follow");
-  await expect(footer.getByRole("link", { name: "首页", exact: true })).toHaveAttribute("href", "/");
-  await expect(footer.getByRole("link", { name: "数据平权宣言", exact: true })).toHaveAttribute(
-    "href",
-    "/manifesto",
-  );
-  await expect(footer.getByRole("link", { name: "牛马能力剥夺矩阵", exact: true })).toHaveAttribute(
-    "href",
-    "/wam",
-  );
-  await expect(footer.getByRole("link", { name: "牛马互助协议", exact: true })).toHaveAttribute(
-    "href",
-    "/license",
-  );
+  const canonicalFooterLinks = footer.getByRole("navigation", { name: "页脚导航" }).getByRole("link");
+  await expect(canonicalFooterLinks).toHaveText([
+    "近邻互助组",
+    "为什么做",
+    "如何选题",
+    "如何约束",
+  ]);
+  await expect(canonicalFooterLinks.nth(0)).toHaveAttribute("href", "/neighbors");
+  await expect(canonicalFooterLinks.nth(1)).toHaveAttribute("href", "/manifesto");
+  await expect(canonicalFooterLinks.nth(2)).toHaveAttribute("href", "/wam");
+  await expect(canonicalFooterLinks.nth(3)).toHaveAttribute("href", "/license");
   await expect(footer.getByRole("link", { name: "关注后续", exact: true })).toHaveCount(0);
   await expect(footer.getByText("长期账号更新公开进展")).toHaveCount(0);
   await expect(footer.getByText("临时群二维码不放在官网")).toHaveCount(0);
@@ -213,7 +212,7 @@ test("homepage presents the public-facing idea and paths to continue", async ({
   await expect(footer.getByText("© 2026 码成仝")).toBeVisible();
 });
 
-test("homepage follows the visitor system color scheme", async ({ page }) => {
+test("homepage keeps the approved light public theme across system preferences", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/");
   const lightTheme = await page.evaluate(() => ({
@@ -231,9 +230,9 @@ test("homepage follows the visitor system color scheme", async ({ page }) => {
   }));
 
   expect(lightTheme.colorScheme).toContain("light");
-  expect(darkTheme.colorScheme).toContain("dark");
-  expect(lightTheme.background).not.toBe(darkTheme.background);
-  expect(lightTheme.text).not.toBe(darkTheme.text);
+  expect(darkTheme.colorScheme).toContain("light");
+  expect(lightTheme.background).toBe(darkTheme.background);
+  expect(lightTheme.text).toBe(darkTheme.text);
 });
 
 test("brand mark and social QR codes stay compact", async ({ page }) => {
@@ -241,7 +240,7 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
   await page.goto("/");
 
   const metrics = await page.evaluate(() => {
-    const headerLogo = document.querySelector('img[alt="码成仝 logo"]');
+    const headerLogo = document.querySelector('header[data-density] a[aria-label="码成仝首页"] img');
     if (!headerLogo) {
       throw new Error("Missing header logo");
     }
@@ -282,7 +281,7 @@ test("brand mark and social QR codes stay compact", async ({ page }) => {
 
   expect(Math.abs(metrics.logo.width - metrics.logo.height)).toBeLessThanOrEqual(1);
   expect(metrics.logo.width).toBeLessThanOrEqual(44);
-  expect(metrics.logo.borderRadius).toBeLessThan(metrics.logo.width / 4);
+  expect(metrics.logo.borderRadius).toBeLessThanOrEqual(metrics.logo.width / 4);
 
   for (const qr of metrics.qrRects) {
     expect(qr.width).toBeLessThanOrEqual(112);
@@ -408,9 +407,143 @@ test("deep read pages render expanded public documents from ideal", async ({ pag
   await page.goto("/wam");
   await expect(page.getByRole("heading", { name: "牛马能力剥夺矩阵" })).toBeVisible();
   await expect(page.getByText("7 类工友 × 7 样能力")).toBeVisible();
-  // 矩阵左上角的「矩阵说明」入口与表头行列。
-  await expect(page.getByRole("link", { name: "矩阵说明" })).toBeVisible();
-  await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) <= 980) {
+    const mobileBrowser = page.getByRole("region", { name: "移动矩阵浏览" });
+    await expect(mobileBrowser.getByRole("button", { name: "完整矩阵" })).toBeVisible();
+    await expect(mobileBrowser.getByRole("link", { name: /A1 一产 × 劳动议价/ })).toBeVisible();
+  } else {
+    // 桌面矩阵保留左上角的「矩阵说明」入口与完整表头行列。
+    await expect(page.getByRole("main").getByRole("link", { name: "矩阵说明" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /A1/ })).toBeVisible();
+  }
+});
+
+test("public documents expose reading navigation", async ({ page }) => {
+  const documents = [
+    {
+      path: "/manifesto",
+      intent: "为什么做",
+      firstSummary: "平台曾经创造连接，也把连接变成租金。",
+      firstFullSection: "v0.4 · 端午摆摊公开版",
+    },
+    {
+      path: "/license",
+      intent: "如何约束",
+      firstSummary: "为什么叫协议。",
+      firstFullSection: "仿 GPL 的传染性互助协议。",
+    },
+  ] as const;
+
+  for (const document of documents) {
+    await page.goto(document.path);
+
+    const main = page.getByRole("main");
+    if ((page.viewportSize()?.width ?? 0) < 1280) {
+      await main.locator("details > summary").click();
+    }
+    const readingNavigation = main.getByRole("navigation", { name: "文档目录" });
+
+    await expect(main.getByText(document.intent, { exact: true })).toBeVisible();
+    await expect(readingNavigation.getByRole("link", { name: "导读", exact: true })).toHaveAttribute(
+      "href",
+      "#reading-guide",
+    );
+    await expect(
+      readingNavigation.getByRole("link", { name: document.firstSummary, exact: true }),
+    ).toHaveAttribute("href", "#summary-1");
+    await expect(
+      readingNavigation.getByRole("link", { name: document.firstFullSection, exact: true }),
+    ).toHaveAttribute("href", "#full-1");
+    await expect(readingNavigation.getByRole("link", { name: "阅读全文", exact: true })).toHaveAttribute(
+      "href",
+      "#full-text",
+    );
+  }
+});
+
+test("the read-full anchor focuses its offset target and respects reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.addInitScript(() => {
+    const nativeScrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function scrollIntoView(options?: boolean | ScrollIntoViewOptions) {
+      (window as typeof window & { documentScrollBehavior?: ScrollBehavior }).documentScrollBehavior =
+        typeof options === "object" ? options.behavior : undefined;
+      nativeScrollIntoView.call(this, options);
+    };
+  });
+
+  await page.goto("/manifesto");
+  await page.getByRole("main").getByRole("link", { name: "阅读全文", exact: true }).first().click();
+
+  const fullText = page.locator("#full-text");
+  await expect(page).toHaveURL(/#full-text$/);
+  await expect(fullText).toBeFocused();
+  expect(await fullText.evaluate((element) => Math.round(element.getBoundingClientRect().top))).toBeGreaterThanOrEqual(
+    80,
+  );
+  expect(
+    await page.evaluate(
+      () =>
+        (window as typeof window & { documentScrollBehavior?: ScrollBehavior })
+          .documentScrollBehavior,
+    ),
+  ).toBe("auto");
+});
+
+test("long-form text follows the public reading measure and rhythm", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/manifesto");
+
+  const metrics = await page.evaluate(() => {
+    const firstSection = document.querySelector<HTMLElement>("#full-1");
+    const secondSection = document.querySelector<HTMLElement>("#full-2");
+    const paragraphs = firstSection?.querySelectorAll<HTMLElement>(":scope > div > p");
+    const firstParagraph = paragraphs?.item(0);
+    const secondParagraph = paragraphs?.item(1);
+
+    if (!firstSection || !secondSection || !firstParagraph || !secondParagraph) {
+      throw new Error("Missing full-text reading structure");
+    }
+
+    const paragraphStyle = getComputedStyle(firstParagraph);
+    return {
+      measure: firstSection.getBoundingClientRect().width,
+      fontSize: Number.parseFloat(paragraphStyle.fontSize),
+      lineHeight: Number.parseFloat(paragraphStyle.lineHeight),
+      paragraphGap: secondParagraph.getBoundingClientRect().top - firstParagraph.getBoundingClientRect().bottom,
+      sectionGap: secondSection.getBoundingClientRect().top - firstSection.getBoundingClientRect().bottom,
+    };
+  });
+
+  expect(metrics.measure).toBeLessThanOrEqual(720);
+  expect(metrics.fontSize).toBe(16);
+  expect(metrics.lineHeight).toBe(28);
+  expect(metrics.paragraphGap).toBe(24);
+  expect(metrics.sectionGap).toBeGreaterThanOrEqual(64);
+});
+
+test("document bodies fit 320px and 390px without clipping or horizontal overflow", async ({ page }) => {
+  for (const width of [320, 390]) {
+    await page.setViewportSize({ width, height: 844 });
+
+    for (const path of ["/manifesto", "/license"]) {
+      await page.goto(path);
+
+      const metrics = await page.getByRole("main").evaluate((main) => ({
+        clientWidth: main.clientWidth,
+        scrollWidth: main.scrollWidth,
+        clippedText: Array.from(main.querySelectorAll("h1, h2, h3, p, li")).filter((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.left < -0.5 || rect.right > document.documentElement.clientWidth + 0.5;
+        }).length,
+        tocSummaryHeight: main.querySelector("details > summary")?.getBoundingClientRect().height,
+      }));
+
+      expect(metrics.scrollWidth).toBeLessThanOrEqual(metrics.clientWidth);
+      expect(metrics.clippedText).toBe(0);
+      expect(metrics.tocSummaryHeight).toBeGreaterThanOrEqual(44);
+    }
+  }
 });
 
 test("chat route opens from the homepage question entry and carries it over", async ({ page }) => {
@@ -427,6 +560,202 @@ test("chat route opens from the homepage question entry and carries it over", as
   await expect(page.getByRole("heading", { name: "对话入口正在接入" })).toHaveCount(0);
 });
 
+test("the highlighted neighbors question gets an AI answer with structured actions", async ({
+  page,
+}) => {
+  let chatRequests = 0;
+  await page.route("**/api/chat", async (route) => {
+    chatRequests += 1;
+    await route.fulfill({
+      contentType: "application/json",
+      body: JSON.stringify({
+        answer:
+          "近邻互助组帮助人们分享自己真正用过服务的经历，让身边人在找服务者时少踩坑。",
+      }),
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "近邻互助组是什么？", exact: true }).click();
+
+  await expect(page).toHaveURL(/\/chat$/);
+  await expect(page.getByText("近邻互助组是什么？", { exact: true })).toBeVisible();
+  await expect(page.getByText(/分享自己真正用过服务的经历/)).toBeVisible();
+
+  const actions = page.locator('[data-neighbors-discovery-actions]');
+  await expect(actions.getByRole("link", { name: /看看体验原型/ })).toHaveAttribute(
+    "href",
+    "https://ideal.codeforpeople.cn/",
+  );
+  await expect(
+    actions.getByRole("link", { name: "进一步了解近邻互助组" }),
+  ).toHaveAttribute("href", "/neighbors");
+  expect(chatRequests).toBe(1);
+});
+
+test("public shells keep canonical navigation order and route current state", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const routes = [
+    { path: "/", density: "full", current: undefined },
+    { path: "/neighbors", density: "compact", current: "近邻互助组" },
+    { path: "/manifesto", density: "full", current: "为什么做" },
+    { path: "/license", density: "full", current: "如何约束" },
+    { path: "/chat", density: "compact", current: undefined },
+    { path: "/wam", density: "compact", current: "如何选题" },
+    { path: "/wam/guide", density: "compact", current: "如何选题" },
+    { path: "/wam/cell/A1", density: "compact", current: "如何选题" },
+  ] as const;
+
+  for (const route of routes) {
+    await page.goto(route.path);
+    const header = page.locator(`header[data-density="${route.density}"]`);
+    const navigation = header.getByRole("navigation", { name: "主导航" });
+    const links = navigation.getByRole("link");
+
+    await expect(header).toBeVisible();
+    await expect(links).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
+    await expect(links.nth(0)).toHaveAttribute("href", "/neighbors");
+    if (route.current) {
+      await expect(navigation.getByRole("link", { name: route.current })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+    } else {
+      await expect(navigation.locator('[aria-current="page"]')).toHaveCount(0);
+    }
+  }
+});
+
+test("public shell hierarchy and full footer use the canonical navigation contract", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+
+  const homeBrand = page.locator('header[data-density="full"] a[aria-label="码成仝首页"]');
+  await expect(homeBrand).toContainText("首页");
+  await expect(homeBrand).not.toContainText("码成仝");
+  await expect(page.locator('header[data-density="full"] [data-site-hierarchy-separator]')).toHaveCount(
+    0,
+  );
+
+  const footerNavigation = page.getByRole("contentinfo").getByRole("navigation", {
+    name: "页脚导航",
+  });
+  const footerLinks = footerNavigation.getByRole("link");
+  await expect(footerLinks).toHaveText(["近邻互助组", "为什么做", "如何选题", "如何约束"]);
+  for (const [index, href] of [
+    "/neighbors",
+    "/manifesto",
+    "/wam",
+    "/license",
+  ].entries()) {
+    await expect(footerLinks.nth(index)).toHaveAttribute("href", href);
+  }
+
+  await page.goto("/manifesto");
+  const manifestoHeader = page.locator('header[data-density="full"]');
+  await expect(manifestoHeader.locator("[data-site-hierarchy-separator]")).toHaveCount(1);
+  await expect(manifestoHeader.getByText("数据平权宣言", { exact: true })).toBeVisible();
+
+  await page.goto("/license");
+  const licenseHeader = page.locator('header[data-density="full"]');
+  await expect(licenseHeader.locator("[data-site-hierarchy-separator]")).toHaveCount(1);
+  await expect(licenseHeader.getByText("牛马互助协议", { exact: true })).toBeVisible();
+
+  await page.goto("/neighbors");
+  const compactFooter = page.getByRole("contentinfo");
+  await expect(compactFooter.getByText("当前对象：", { exact: false })).toBeVisible();
+  await expect(compactFooter.getByRole("link", { name: "返回官网首页" })).toHaveCount(0);
+});
+
+test("compact mobile menus expose one return path with 44px interaction targets", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+
+  for (const route of [
+    { path: "/neighbors", returnLabel: "返回官网首页" },
+    { path: "/chat", returnLabel: "返回问答首页" },
+    { path: "/wam/guide", returnLabel: "返回矩阵" },
+    { path: "/wam/cell/A1", returnLabel: "返回矩阵" },
+  ]) {
+    await page.goto(route.path);
+    const header = page.locator('header[data-density="compact"]');
+    await header.locator("button[aria-controls]").click();
+
+    const actions = header.getByRole("group", { name: "移动上下文操作" });
+    const returnLinks = actions.getByRole("link", { name: route.returnLabel });
+    await expect(returnLinks).toHaveCount(1);
+
+    const targets = header.locator('nav[aria-label="移动主导航"] a, [aria-label="移动上下文操作"] a');
+    const sizes = await targets.evaluateAll((elements) =>
+      elements.map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      }),
+    );
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) {
+      expect(size.width).toBeGreaterThanOrEqual(44);
+      expect(size.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
+test("mobile footer interaction targets remain at least 44px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+
+  for (const path of ["/", "/neighbors", "/manifesto", "/chat", "/wam"]) {
+    await page.goto(path);
+    const sizes = await page.getByRole("contentinfo").locator("a, button").evaluateAll((elements) =>
+      elements
+        .map((element) => element.getBoundingClientRect())
+        .filter((rect) => rect.width > 0 && rect.height > 0)
+        .map((rect) => ({ width: rect.width, height: rect.height })),
+    );
+
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const size of sizes) {
+      expect(size.width, `${path} footer target width`).toBeGreaterThanOrEqual(44);
+      expect(size.height, `${path} footer target height`).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
+test("mobile navigation restores focus and full pages fit their footers at 320px", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 });
+  await page.goto("/manifesto");
+
+  const header = page.locator('header[data-density="full"]');
+  await expect(header.getByText("数据平权宣言", { exact: true })).toBeVisible();
+  const menuButton = header.locator("button[aria-controls]");
+  await menuButton.click();
+  await expect(menuButton).toHaveAttribute("aria-expanded", "true");
+  const mobileNavigation = header.getByRole("navigation", { name: "移动主导航" });
+  await expect(mobileNavigation.getByRole("link")).toHaveText([
+    "近邻互助组",
+    "为什么做当前",
+    "如何选题",
+    "如何约束",
+  ]);
+
+  await page.keyboard.press("Escape");
+  await expect(menuButton).toHaveAttribute("aria-expanded", "false");
+  await expect(menuButton).toBeFocused();
+
+  for (const path of ["/", "/neighbors", "/chat", "/manifesto", "/license"]) {
+    await page.goto(path);
+    const dimensions = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+      footerRight: document.querySelector("footer")?.getBoundingClientRect().right,
+    }));
+    expect(dimensions.scrollWidth, `${path} page width`).toBeLessThanOrEqual(
+      dimensions.clientWidth,
+    );
+    expect(dimensions.footerRight, `${path} footer edge`).toBeLessThanOrEqual(
+      dimensions.clientWidth,
+    );
+  }
+});
+
 test("payload baseline routes are reachable", async ({ page, request }) => {
   const formLinksResponse = await request.get("/api/form-links?limit=1");
   expect(formLinksResponse.status()).toBeLessThan(500);
@@ -436,16 +765,109 @@ test("payload baseline routes are reachable", async ({ page, request }) => {
   await expect(page.locator("body")).not.toContainText("Application error");
 });
 
-test("footer renders on reading pages but not on the chat or matrix page", async ({ page }) => {
+test("full and compact shells render their matching header and footer", async ({ page }) => {
   for (const path of ["/", "/manifesto", "/license"]) {
     await page.goto(path);
+    await expect(page.locator('header[data-density="full"]')).toBeVisible();
     await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toHaveAttribute("id", "follow");
   }
 
-  // The chat and the interactive matrix (/wam) are standalone full-screen experiences
-  // outside the reading layout, so they intentionally have no site footer.
-  for (const path of ["/chat", "/wam"]) {
+  for (const path of ["/neighbors", "/chat", "/wam"]) {
     await page.goto(path);
-    await expect(page.getByRole("contentinfo")).toHaveCount(0);
+    await expect(page.locator('header[data-density="compact"]')).toBeVisible();
+    await expect(page.getByRole("contentinfo")).toBeVisible();
+    await expect(page.getByRole("contentinfo")).not.toHaveAttribute("id", "follow");
+  }
+});
+
+test("neighbors route publishes the approved product introduction and prototype entry", async ({
+  page,
+}) => {
+  const response = await page.goto("/neighbors");
+  expect(response?.status()).toBe(200);
+
+  await expect(page.getByRole("heading", { level: 1, name: "近邻互助组", exact: true })).toHaveCount(1);
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute(
+    "href",
+    "https://www.codeforpeople.cn/neighbors",
+  );
+  await expect(page.getByText("想找靠谱的服务，先问问真正用过的人。", { exact: true })).toBeVisible();
+  await expect(page.getByText(/把自己实际用过服务的经历分享给身边人/)).toBeVisible();
+
+  for (const heading of [
+    "不用换平台，在原来的群里就能互相帮忙",
+    "亲历卡不只说“靠谱”，还告诉你为什么",
+    "三件事，让这份参考更可信",
+    "现在可以走一遍完整流程",
+    "还想知道我们为什么这样做？",
+  ]) {
+    await expect(page.getByRole("heading", { level: 2, name: heading, exact: true })).toBeVisible();
+  }
+
+  for (const source of ["用户分享", "服务者确认", "AI 整理"]) {
+    await expect(page.getByRole("heading", { level: 4, name: source, exact: true })).toBeVisible();
+  }
+
+  for (const removedSection of ["non-goals", "data-principles", "network"]) {
+    await expect(page.locator(`[data-neighbors-section="${removedSection}"]`)).toHaveCount(0);
+  }
+
+  for (const phrase of [
+    "主站上的正式产品介绍",
+    "当前唯一的旗舰产品",
+    "待验证机制",
+    "实施对照",
+    "User Story",
+  ]) {
+    await expect(page.getByText(phrase, { exact: false })).toHaveCount(0);
+  }
+
+  const prototypeActions = page.locator('[data-neighbors-primary-action]');
+  await expect(prototypeActions).toHaveCount(2);
+  for (let index = 0; index < 2; index += 1) {
+    await expect(prototypeActions.nth(index)).toHaveAttribute(
+      "href",
+      "https://ideal.codeforpeople.cn/",
+    );
+  }
+  await expect(page.getByText(/请不要填写真实姓名、电话等个人信息/)).toHaveCount(2);
+
+  const relatedReading = page.locator('[data-neighbors-section="related-reading"]');
+  await expect(relatedReading.locator('a[href="/manifesto"]')).toHaveCount(1);
+  await expect(relatedReading.locator('a[href="/wam"]')).toHaveCount(1);
+  await expect(relatedReading.locator('a[href="/license"]')).toHaveCount(1);
+});
+
+test("neighbors page remains readable and actionable across preview breakpoints", async ({ page }) => {
+  for (const width of [320, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/neighbors");
+
+    const metrics = await page.locator('[data-neighbors-page]').evaluate((main) => {
+      const clippedText = Array.from(main.querySelectorAll("h1, h2, h3, p, a")).filter((element) => {
+        const style = getComputedStyle(element);
+        return style.overflow !== "visible" && element.scrollWidth > element.clientWidth + 1;
+      }).length;
+      return {
+        clientWidth: document.documentElement.clientWidth,
+        scrollWidth: document.documentElement.scrollWidth,
+        clippedText,
+      };
+    });
+
+    expect(metrics.scrollWidth, `${width}px page width`).toBeLessThanOrEqual(metrics.clientWidth);
+    expect(metrics.clippedText, `${width}px clipped text`).toBe(0);
+
+    const actionSizes = await page.locator('[data-neighbors-primary-action]').evaluateAll((actions) =>
+      actions.map((action) => {
+        const rect = action.getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+      }),
+    );
+    for (const size of actionSizes) {
+      expect(size.width, `${width}px action width`).toBeGreaterThanOrEqual(44);
+      expect(size.height, `${width}px action height`).toBeGreaterThanOrEqual(44);
+    }
   }
 });

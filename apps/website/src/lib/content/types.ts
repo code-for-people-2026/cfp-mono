@@ -28,6 +28,49 @@ export type DialogueEntry = {
 
 export type DialogueSuggestion = { label: string; value: string };
 
+export type NeighborsPageAction = {
+  label: string;
+  description: string;
+};
+
+export type NeighborsPageContent = {
+  hero: {
+    stageLabel: string;
+    eyebrow: string;
+    tagline: string;
+    summary: string;
+    distinction: string;
+    affiliation: string;
+  };
+  cta: NeighborsPageAction;
+  howItWorks: SectionBlock<Card>;
+  evidence: SectionBlock<Card>;
+  responsibility: SectionBlock<Card> & {
+    example: {
+      heading: string;
+      request: string;
+      items: Card[];
+    };
+  };
+  prototype: {
+    eyebrow: string;
+    heading: string;
+    intro: string;
+    notice: string;
+  };
+  relatedReading: {
+    heading: string;
+    intro: string;
+    items: ContinueRead[];
+  };
+};
+
+export type NeighborsDiscoveryContent = {
+  question: DialogueSuggestion;
+  primaryAction: NeighborsPageAction & { href: string };
+  secondaryAction: { label: string; href: string };
+};
+
 export type SectionBlock<Item> = { heading: string; intro: string; items: Item[] };
 
 export type LifeScene = Card & { tags: string[] };
@@ -61,6 +104,7 @@ export type DialogueChatContent = {
   suggestions: DialogueSuggestion[];
   brand: Brand;
   ui: UiStrings;
+  neighborsDiscovery: NeighborsDiscoveryContent;
 };
 
 export type UiStrings = {

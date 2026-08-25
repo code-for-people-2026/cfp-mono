@@ -7,12 +7,152 @@ import type {
   DocSection,
   FooterContent,
   HomepageContent,
+  NeighborsPageContent,
   SiteDocument,
   SiteSettings,
   UiStrings,
 } from "./types";
 
 type Raw = Record<string, unknown>;
+
+function raw(value: unknown): Raw {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Raw) : {};
+}
+
+function mapNeighborsSection(value: unknown) {
+  const section = raw(value);
+  return {
+    heading: String(section.heading ?? ""),
+    intro: String(section.intro ?? ""),
+    items: cards(section.items),
+  };
+}
+
+function mapRelatedReading(value: unknown): ContinueRead[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => {
+    const link = raw(item);
+    const target = String(link.target ?? "manifesto");
+    return {
+      label: String(link.label ?? ""),
+      description: String(link.description ?? ""),
+      target: (target === "map" || target === "license" ? target : "manifesto") as ContinueRead["target"],
+    };
+  });
+}
+
+export function mapNeighborsPage(value: unknown): NeighborsPageContent {
+  const page = raw(value);
+  const hero = raw(page.hero);
+  const cta = raw(page.cta);
+  const responsibility = raw(page.responsibility);
+  const responsibilityExample = raw(responsibility.example);
+  const prototype = raw(page.prototype);
+  const relatedReading = raw(page.relatedReading);
+
+  return {
+    hero: {
+      stageLabel: String(hero.stageLabel ?? ""),
+      eyebrow: String(hero.eyebrow ?? ""),
+      tagline: String(hero.tagline ?? ""),
+      summary: String(hero.summary ?? ""),
+      distinction: String(hero.distinction ?? ""),
+      affiliation: String(hero.affiliation ?? ""),
+    },
+    cta: {
+      label: String(cta.label ?? ""),
+      description: String(cta.description ?? ""),
+    },
+    howItWorks: mapNeighborsSection(page.howItWorks),
+    evidence: mapNeighborsSection(page.evidence),
+    responsibility: {
+      ...mapNeighborsSection(responsibility),
+      example: {
+        heading: String(responsibilityExample.heading ?? ""),
+        request: String(responsibilityExample.request ?? ""),
+        items: cards(responsibilityExample.items),
+      },
+    },
+    prototype: {
+      eyebrow: String(prototype.eyebrow ?? ""),
+      heading: String(prototype.heading ?? ""),
+      intro: String(prototype.intro ?? ""),
+      notice: String(prototype.notice ?? ""),
+    },
+    relatedReading: {
+      heading: String(relatedReading.heading ?? ""),
+      intro: String(relatedReading.intro ?? ""),
+      items: mapRelatedReading(relatedReading.items),
+    },
+  };
+}
+
+function completeNeighborsSection(
+  mapped: NeighborsPageContent["howItWorks"],
+  fallback: NeighborsPageContent["howItWorks"],
+) {
+  return Boolean(
+    mapped.heading &&
+      mapped.intro &&
+      mapped.items.length === fallback.items.length &&
+      mapped.items.every((item) => item.title && item.body),
+  );
+}
+
+// Visitor copy is accepted only as one complete page. A half-edited CMS group falls back
+// to the approved static record, so a publish can never leave a public section blank.
+export function resolveNeighborsPage(
+  value: unknown,
+  fallback: NeighborsPageContent,
+): NeighborsPageContent {
+  const mapped = mapNeighborsPage(value);
+  const sections = [
+    [mapped.howItWorks, fallback.howItWorks],
+    [mapped.evidence, fallback.evidence],
+    [mapped.responsibility, fallback.responsibility],
+  ] as const;
+  const complete = Boolean(
+    mapped.hero.stageLabel &&
+      mapped.hero.eyebrow &&
+      mapped.hero.tagline &&
+      mapped.hero.summary &&
+      mapped.hero.distinction &&
+      mapped.hero.affiliation &&
+      mapped.cta.label &&
+      mapped.cta.description &&
+      sections.every(([section, fallbackSection]) =>
+        completeNeighborsSection(section, fallbackSection),
+      ) &&
+      mapped.responsibility.example.heading &&
+      mapped.responsibility.example.request &&
+      mapped.responsibility.example.items.length ===
+        fallback.responsibility.example.items.length &&
+      mapped.responsibility.example.items.every((item) => item.title && item.body) &&
+      mapped.prototype.eyebrow &&
+      mapped.prototype.heading &&
+      mapped.prototype.intro &&
+      mapped.prototype.notice &&
+      mapped.relatedReading.heading &&
+      mapped.relatedReading.intro &&
+      mapped.relatedReading.items.length === fallback.relatedReading.items.length &&
+      mapped.relatedReading.items.every((item) => item.label && item.description),
+  );
+
+  if (!complete) return fallback;
+
+  return {
+    ...mapped,
+    relatedReading: {
+      ...mapped.relatedReading,
+      items: fallback.relatedReading.items.map((fallbackItem) => {
+        const match = mapped.relatedReading.items.find(
+          (item) => item.target === fallbackItem.target,
+        );
+        return match ? { ...match, target: fallbackItem.target } : fallbackItem;
+      }),
+    },
+  };
+}
 
 // Tolerant string-list reader: accepts `string[]` (the json shape) as well as legacy
 // `[{ text }]` / `[{ tag }]` (defensive against hand-edited JSON in the admin).

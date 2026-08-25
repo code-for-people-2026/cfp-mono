@@ -1,17 +1,84 @@
 import { describe, expect, it } from "vitest";
+import { neighborsPage } from "@/content/neighbors";
 import {
   cards,
   mapChatPage,
   mapDocument,
   mapFooter,
   mapHomepage,
+  mapNeighborsPage,
   mapSettings,
   mapUiStrings,
   pick,
   points,
   sections,
   strList,
+  resolveNeighborsPage,
 } from "./mappers";
+
+describe("neighbors page content contract", () => {
+  it("maps the complete structured Payload group", () => {
+    const mapped = mapNeighborsPage(neighborsPage);
+
+    expect(mapped.hero.tagline).toBe("想找靠谱的服务，先问问真正用过的人。");
+    expect(mapped.howItWorks.items).toHaveLength(3);
+    expect(mapped.responsibility.items).toHaveLength(3);
+    expect(mapped.responsibility.example.items.map((item) => item.title)).toEqual([
+      "用户分享",
+      "服务者确认",
+      "AI 整理",
+    ]);
+    expect(mapped.relatedReading.items.map((item) => item.target)).toEqual([
+      "manifesto",
+      "map",
+      "license",
+    ]);
+  });
+
+  it("falls back as one page when any CMS section is incomplete", () => {
+    const incomplete = structuredClone(neighborsPage);
+    incomplete.evidence.items = [];
+
+    expect(resolveNeighborsPage(incomplete, neighborsPage)).toBe(neighborsPage);
+  });
+
+  it("accepts complete sentence-level CMS edits", () => {
+    const edited = structuredClone(neighborsPage);
+    edited.hero.tagline = "CMS 更新的主标语。";
+    edited.howItWorks.items[0].body = "CMS 更新的第一步。";
+    edited.responsibility.example.items[0].body = "CMS 更新的来源示例。";
+    edited.prototype.notice = "CMS 更新的原型边界。";
+
+    const resolved = resolveNeighborsPage(edited, neighborsPage);
+
+    expect(resolved.hero.tagline).toBe("CMS 更新的主标语。");
+    expect(resolved.howItWorks.items[0].body).toBe("CMS 更新的第一步。");
+    expect(resolved.responsibility.example.items[0].body).toBe(
+      "CMS 更新的来源示例。",
+    );
+    expect(resolved.prototype.notice).toBe("CMS 更新的原型边界。");
+  });
+
+  it("keeps related-reading destinations stable while accepting reordered copy", () => {
+    const edited = structuredClone(neighborsPage);
+    edited.relatedReading.items = edited.relatedReading.items
+      .map((item) => ({ ...item, label: `CMS：${item.target}` }))
+      .reverse();
+
+    const resolved = resolveNeighborsPage(edited, neighborsPage);
+
+    expect(resolved.relatedReading.items.map((item) => item.target)).toEqual([
+      "manifesto",
+      "map",
+      "license",
+    ]);
+    expect(resolved.relatedReading.items.map((item) => item.label)).toEqual([
+      "CMS：manifesto",
+      "CMS：map",
+      "CMS：license",
+    ]);
+  });
+});
 
 describe("strList", () => {
   it("reads a plain string[] (the json shape)", () => {

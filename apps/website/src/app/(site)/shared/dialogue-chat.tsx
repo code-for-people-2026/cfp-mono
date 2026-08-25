@@ -1,8 +1,7 @@
 "use client";
 
-import Image from "next/image";
+import { ExternalLink, Send } from "lucide-react";
 import Link from "next/link";
-import { Send } from "lucide-react";
 import {
   type FormEvent,
   type KeyboardEvent,
@@ -21,6 +20,7 @@ import {
   type ChatMessage as ChatMessageType,
 } from "@/lib/chat/conversation";
 import { linkifyAssistantMarkdown } from "@/lib/chat/linkify";
+import { Button } from "@/components/ui/button";
 import {
   clearStoredConversation,
   getBrowserStorage,
@@ -70,7 +70,7 @@ export function DialogueChat({
   initialQuestion?: string;
   content: DialogueChatContent;
 }) {
-  const { brand, ui } = content;
+  const { ui } = content;
   const [messages, setMessages] = useState<ChatMessageType[]>([]);
   const [conversationSummary, setConversationSummary] = useState("");
   const [loading, setLoading] = useState(false);
@@ -82,6 +82,13 @@ export function DialogueChat({
 
   const started = messages.length > 0;
   const trimmedComposer = composerValue.trim();
+  const visibleSuggestions = content.suggestions;
+  const neighborsAnswerId =
+    messages[0]?.role === "user" &&
+    messages[0].content === content.neighborsDiscovery.question.value &&
+    messages[1]?.role === "assistant"
+      ? messages[1].id
+      : null;
 
   const summarizeIfNeeded = useCallback(
     async (nextMessages: ChatMessageType[]) => {
@@ -120,8 +127,8 @@ export function DialogueChat({
   );
 
   const sendMessage = useCallback(
-    async (content: string) => {
-      const trimmed = content.trim();
+    async (question: string) => {
+      const trimmed = question.trim();
       if (!trimmed) return;
 
       const userMessage = createMessage("user", trimmed);
@@ -247,33 +254,19 @@ export function DialogueChat({
   }
 
   return (
-    <div className="mx-auto flex h-[100dvh] w-full max-w-3xl flex-col px-5 sm:px-8 lg:px-10">
-      <header className="flex h-16 shrink-0 items-center justify-between gap-4">
-        <Link href="/" className="flex items-center gap-3 text-[var(--ink)] no-underline">
-          <Image
-            src={brand.logoPath}
-            alt={brand.logoAlt}
-            width={38}
-            height={38}
-            priority
-            className="h-9 w-9 object-contain"
-          />
-          <span className="flex flex-col">
-            <span className="text-lg font-black leading-none">{brand.wordmark}</span>
-            <span className="mt-1 text-xs font-semibold text-[var(--muted)]">{brand.tagline}</span>
-          </span>
-        </Link>
+    <div className="mx-auto flex h-[calc(100dvh-3.5rem)] w-full max-w-3xl flex-col px-5 sm:px-8 md:h-[calc(100dvh-4rem)] lg:px-10">
+      <div className="flex h-14 shrink-0 items-center justify-end gap-4" aria-label="对话操作">
         {started ? (
           <button
             type="button"
             onClick={resetConversation}
             disabled={loading}
-            className="rounded-full border border-[var(--border)] bg-[var(--chip)] px-3 py-1.5 text-xs font-bold text-[var(--muted)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-full border border-[var(--border)] bg-[var(--chip)] px-3 py-1.5 text-xs font-bold text-[var(--muted-foreground)] transition-colors hover:border-[var(--accent)] hover:text-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {ui.chatRestart}
           </button>
         ) : null}
-      </header>
+      </div>
 
       <div ref={scrollRef} className="mt-2 flex-1 overflow-y-auto" aria-label="对话">
         {!started && !loading ? (
@@ -281,11 +274,11 @@ export function DialogueChat({
             <h1 className="text-3xl font-black leading-tight tracking-normal sm:text-4xl">
               {content.heading}
             </h1>
-            <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[var(--muted)]">
+            <p className="mx-auto mt-5 max-w-xl text-sm leading-7 text-[var(--muted-foreground)]">
               {content.intro}
             </p>
             <div className="mx-auto mt-8 flex max-w-xl flex-wrap justify-center gap-2">
-              {content.suggestions.map((suggestion) => (
+              {visibleSuggestions.map((suggestion) => (
                 <button
                   key={suggestion.label}
                   type="button"
@@ -332,13 +325,47 @@ export function DialogueChat({
                     <p className="whitespace-pre-wrap">{message.content}</p>
                   )}
                 </div>
+                {message.id === neighborsAnswerId ? (
+                  <section
+                    data-neighbors-discovery-actions=""
+                    aria-label="近邻互助组体验入口"
+                    className="mt-5 border-t border-[var(--border)] pt-4"
+                  >
+                    <p className="text-xs font-semibold leading-5 text-[var(--muted-foreground)]">
+                      {content.neighborsDiscovery.primaryAction.description}
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                      <Button asChild size="lg" className="min-h-11 w-full sm:w-auto">
+                        <a
+                          href={content.neighborsDiscovery.primaryAction.href}
+                          target="_blank"
+                          rel="noreferrer"
+                          aria-label={`${content.neighborsDiscovery.primaryAction.label}（新窗口打开）`}
+                        >
+                          {content.neighborsDiscovery.primaryAction.label}
+                          <ExternalLink aria-hidden="true" className="size-4" />
+                        </a>
+                      </Button>
+                      <Button
+                        asChild
+                        size="lg"
+                        variant="secondary"
+                        className="min-h-11 w-full sm:w-auto"
+                      >
+                        <Link href={content.neighborsDiscovery.secondaryAction.href}>
+                          {content.neighborsDiscovery.secondaryAction.label}
+                        </Link>
+                      </Button>
+                    </div>
+                  </section>
+                ) : null}
               </article>
             ))}
             {loading ? (
-              <p className="mr-auto text-sm font-semibold text-[var(--muted)]">{ui.chatLoading}</p>
+              <p className="mr-auto text-sm font-semibold text-[var(--muted-foreground)]">{ui.chatLoading}</p>
             ) : null}
             {notice ? (
-              <p className="mr-auto max-w-[90%] rounded-2xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3 text-sm leading-6 text-[var(--muted)]">
+              <p className="mr-auto max-w-[90%] rounded-2xl border border-[var(--border)] bg-[var(--soft)] px-4 py-3 text-sm leading-6 text-[var(--muted-foreground)]">
                 {notice}
               </p>
             ) : null}
@@ -354,7 +381,7 @@ export function DialogueChat({
           <div className="grid grid-cols-[minmax(0,1fr)_48px] items-end gap-3 p-4">
             <textarea
               aria-label="想了解的问题"
-              className="max-h-[160px] min-h-[68px] w-full resize-none border-0 bg-transparent p-1 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted)]/75 sm:min-h-[44px]"
+              className="max-h-[160px] min-h-[68px] w-full resize-none border-0 bg-transparent p-1 text-base leading-7 text-[var(--ink)] outline-none placeholder:text-[var(--muted-foreground)]/75 sm:min-h-[44px]"
               maxLength={1000}
               rows={1}
               placeholder={ui.chatPlaceholder}
@@ -372,7 +399,7 @@ export function DialogueChat({
               <Send aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
-          <p className="px-4 pb-3 text-center text-xs leading-5 text-[var(--muted)]">
+          <p className="px-4 pb-3 text-center text-xs leading-5 text-[var(--muted-foreground)]">
             {ui.chatDisclaimer}
           </p>
         </form>

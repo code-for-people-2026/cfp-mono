@@ -31,13 +31,14 @@ export default function MatrixGuidePage() {
   return (
     <main className="app-shell guide-shell">
       <header className="guide-topbar">
-        <Link className="guide-back-icon" href="/wam" aria-label="返回矩阵" title="返回矩阵">
+        <Link className="guide-back-icon" href="/wam" aria-label="返回矩阵">
           <ArrowLeft size={22} strokeWidth={2.4} />
+          <span>返回矩阵</span>
         </Link>
         <div>
           <div className="kicker">WAM · Worker Ability Matrix</div>
           <h1>为什么是这个矩阵？</h1>
-          <p className="matrix-subtitle">7 类工友 × 7 样能力 = 49 个方向。</p>
+          <p className="matrix-subtitle">7×7 核心矩阵 + H 未细分补充列</p>
         </div>
       </header>
 
@@ -45,6 +46,7 @@ export default function MatrixGuidePage() {
         <p>
           这个矩阵不是用来宣布“哪个产品最好”，而是用来检查：哪些人、哪些被剥夺的能力，还没有被认真看见。
           横轴问的是人在生产关系里的位置，纵轴问的是人被平台、资本和制度拿走了哪些行动能力。
+          A–G 七类人群与七样能力组成核心矩阵；H 列保留尚未按人群细分的公共能力问题，不把这些内容从工具中删掉。
         </p>
       </section>
 

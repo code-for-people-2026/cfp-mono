@@ -3,12 +3,13 @@ import { unstable_cache } from "next/cache";
 import { getPayload } from "payload";
 import config from "@payload-config";
 import { SITE_CONTENT_CACHE_KEY, siteDocumentCacheKey } from "./cache-keys";
-import type { ChatPageContent, FooterContent, HomepageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
+import type { ChatPageContent, FooterContent, HomepageContent, NeighborsPageContent, SiteDocument, SiteSettings, UiStrings } from "./types";
 import {
   chatFallback,
   documentFallback,
   footerFallback,
   homepageFallback,
+  neighborsPageFallback,
   settingsFallback,
   uiFallback,
 } from "./fallback";
@@ -17,10 +18,15 @@ import {
   mapDocument,
   mapFooter,
   mapHomepage,
+  resolveNeighborsPage,
   mapSettings,
   mapUiStrings,
   pick,
 } from "./mappers";
+import {
+  buildNeighborsDiscovery,
+  withNeighborsDiscoveryQuestion,
+} from "./neighbors-discovery";
 
 async function client() {
   return getPayload({ config });
@@ -48,12 +54,26 @@ const EMPTY = {} as Record<string, unknown>;
 
 export async function getHomepage(): Promise<HomepageContent> {
   const mapped = mapHomepage((await getCachedSiteContent()) ?? EMPTY);
-  return pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+  const homepage = pick(mapped, Boolean(mapped.hero?.title), homepageFallback);
+
+  return {
+    ...homepage,
+    dialogueSuggestions: withNeighborsDiscoveryQuestion(homepage.dialogueSuggestions),
+  };
 }
 
 export async function getChatPage(): Promise<ChatPageContent> {
   const mapped = mapChatPage((await getCachedSiteContent()) ?? EMPTY);
   return pick(mapped, Boolean(mapped.heading), chatFallback);
+}
+
+export async function getNeighborsPage(): Promise<NeighborsPageContent> {
+  const data = (await getCachedSiteContent()) ?? EMPTY;
+  return resolveNeighborsPage(data.neighborsPage, neighborsPageFallback);
+}
+
+export async function getNeighborsDiscovery() {
+  return buildNeighborsDiscovery(await getNeighborsPage());
 }
 
 export async function getUiStrings(): Promise<UiStrings> {

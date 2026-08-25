@@ -1,151 +1,283 @@
-import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { SiteDocument } from "@/lib/content/types";
+import type { DocSection, SiteDocument } from "@/lib/content/types";
+import { DocumentAnchorLink } from "./document-anchor-link";
+
+const documentPresentation = {
+  manifesto: {
+    intent: "为什么做",
+    role: "立场文件",
+  },
+  license: {
+    intent: "如何约束",
+    role: "公开协议草案",
+  },
+} satisfies Record<
+  SiteDocument["slug"],
+  { intent: string; role: string }
+>;
+
+const anchorTargetClass =
+  "scroll-mt-28 focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-8 focus-visible:outline-[var(--accent)]";
+const bodyTextClass = "space-y-6 text-base leading-7 text-[var(--ink)]";
+const anchorLinkClass =
+  "rounded-sm text-[var(--muted-foreground)] no-underline transition-colors hover:text-[var(--accent)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]";
+
+function DocumentPoints({ points }: { points: string[] }) {
+  return (
+    <ul className="mt-6 list-disc space-y-3 border-l border-[var(--border)] py-1 pl-8 pr-2 text-base leading-7 text-[var(--ink)] marker:text-[var(--accent)]">
+      {points.map((point) => (
+        <li key={point} className="pl-1">
+          {point}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function DocumentTableOfContents({ document }: { document: SiteDocument }) {
+  return (
+    <nav aria-label="文档目录" className="min-w-0">
+      <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
+        阅读导航
+      </p>
+      <div className="mt-5 space-y-6">
+        <div>
+          <p className="text-xs font-semibold text-[var(--dim)]">摘要</p>
+          <ol className="mt-3 space-y-2.5 text-sm leading-6">
+            {document.guide ? (
+              <li>
+                <DocumentAnchorLink className={anchorLinkClass} href="#reading-guide">
+                  导读
+                </DocumentAnchorLink>
+              </li>
+            ) : null}
+            {document.sections.map((section, index) => (
+              <li key={`summary-${section.label}-${section.heading}`} className="min-w-0">
+                <DocumentAnchorLink
+                  className={`${anchorLinkClass} block [overflow-wrap:anywhere]`}
+                  href={`#summary-${index + 1}`}
+                >
+                  {section.heading}
+                </DocumentAnchorLink>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        {document.fullSections ? (
+          <div className="border-t border-[var(--border)] pt-5">
+            <DocumentAnchorLink
+              className="inline-flex items-center gap-2 rounded-sm text-sm font-semibold text-[var(--accent)] no-underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]"
+              href="#full-text"
+            >
+              阅读全文
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </DocumentAnchorLink>
+            <ol className="mt-3 space-y-2.5 text-sm leading-6">
+              {document.fullSections.map((section, index) => (
+                <li key={`full-${section.label}-${section.heading}`} className="min-w-0">
+                  <DocumentAnchorLink
+                    className={`${anchorLinkClass} block [overflow-wrap:anywhere]`}
+                    href={`#full-${index + 1}`}
+                  >
+                    {section.heading}
+                  </DocumentAnchorLink>
+                </li>
+              ))}
+            </ol>
+          </div>
+        ) : null}
+      </div>
+    </nav>
+  );
+}
+
+function SummarySection({ section, index }: { section: DocSection; index: number }) {
+  return (
+    <section
+      id={`summary-${index + 1}`}
+      tabIndex={-1}
+      className={`${anchorTargetClass} border-t border-[var(--border)] pt-8 md:pt-10`}
+    >
+      <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
+        {section.label}
+      </p>
+      <h2 className="mt-4 text-[1.75rem] font-bold leading-9 tracking-[-0.025em] text-[var(--ink)] md:text-4xl md:leading-[2.75rem]">
+        {section.heading}
+      </h2>
+      <div className={`mt-6 ${bodyTextClass}`}>
+        {section.paragraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+      </div>
+      {section.points ? <DocumentPoints points={section.points} /> : null}
+    </section>
+  );
+}
+
+function FullTextSection({ section, index }: { section: DocSection; index: number }) {
+  return (
+    <section
+      id={`full-${index + 1}`}
+      tabIndex={-1}
+      className={`${anchorTargetClass} max-w-[45rem]`}
+    >
+      <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
+        {section.label}
+      </p>
+      <h3 className="mt-3 text-2xl font-bold leading-8 tracking-[-0.015em] text-[var(--ink)]">
+        {section.heading}
+      </h3>
+      <div className={`mt-6 ${bodyTextClass}`}>
+        {section.paragraphs.map((paragraph) => (
+          <p key={paragraph}>{paragraph}</p>
+        ))}
+      </div>
+      {section.points ? <DocumentPoints points={section.points} /> : null}
+    </section>
+  );
+}
 
 export function DocumentPage({
   document,
-  backToHome,
 }: {
   document: SiteDocument;
-  backToHome: string;
 }) {
-  return (
-    <main className="min-h-screen bg-[var(--bg)]">
-      <article>
-        <section className="border-b border-[rgba(255,253,248,0.14)] bg-[var(--carbon)] text-[var(--on-carbon)]">
-          <div className="mx-auto max-w-5xl px-5 py-7 sm:px-8 lg:px-10">
-            <Button
-              asChild
-              variant="ghost"
-              size="sm"
-              className="-ml-3 text-[rgba(255,253,248,0.82)] hover:bg-[rgba(255,253,248,0.08)] hover:text-[var(--on-carbon)]"
-            >
-              <Link href="/">
-                <ArrowLeft className="h-4 w-4" />
-                {backToHome}
-              </Link>
-            </Button>
+  const presentation = documentPresentation[document.slug];
 
-            <div className="py-16">
-              <div>
-                <p className="text-sm font-semibold tracking-[0.2em] text-[var(--gold-bright)]">
+  return (
+    <main className="min-h-screen min-w-0 bg-[var(--bg)] text-[var(--ink)]">
+      <article className="min-w-0">
+        <header className="border-b border-[var(--border)] bg-[var(--carbon)] text-[var(--on-carbon)]">
+          <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+            <div className="grid min-w-0 gap-10 py-14 sm:py-16 lg:grid-cols-[12rem_minmax(0,45rem)] lg:justify-center lg:gap-16 lg:py-20">
+              <div className="min-w-0">
+                <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--gold-bright)] [overflow-wrap:anywhere]">
                   {document.eyebrow}
                 </p>
-                <h1 className="mt-5 max-w-3xl text-4xl font-black leading-tight tracking-normal sm:text-5xl">
-                  {document.title}
-                </h1>
-                <p className="mt-7 max-w-2xl text-base leading-8 text-[rgba(255,253,248,0.72)] sm:text-lg">
-                  {document.summary}
+                <p className="mt-5 text-sm font-semibold text-[var(--on-carbon)]">
+                  {presentation.intent}
                 </p>
+                <p className="mt-1 text-xs leading-[1.125rem] text-[var(--dim)]">{presentation.role}</p>
                 {document.meta ? (
-                  <p className="mt-5 w-fit border border-[rgba(255,253,248,0.16)] bg-[rgba(255,253,248,0.06)] px-3 py-2 text-sm font-semibold text-[rgba(255,253,248,0.78)]">
+                  <p className="mt-6 border-t border-[var(--border)] pt-4 font-mono text-xs leading-[1.125rem] text-[var(--dim)]">
                     {document.meta}
                   </p>
                 ) : null}
+              </div>
+
+              <div className="min-w-0">
+                <h1 className="max-w-[45rem] text-4xl font-bold leading-[2.75rem] tracking-[-0.035em] text-[var(--on-carbon)] sm:text-5xl sm:leading-[3.5rem]">
+                  {document.title}
+                </h1>
+                <p className="mt-6 max-w-[45rem] text-lg leading-[1.875rem] text-[var(--dim)]">
+                  {document.summary}
+                </p>
                 {document.fullSections ? (
                   <Button
                     asChild
-                    size="sm"
-                    className="mt-8 bg-[var(--on-carbon)] text-[var(--carbon)] hover:bg-[rgba(255,253,248,0.88)]"
+                    className="mt-8 bg-[var(--on-carbon)] text-[var(--carbon)] shadow-none hover:bg-[var(--paper)]"
                   >
-                    <Link href="#full-text">
+                    <DocumentAnchorLink href="#full-text">
                       阅读全文
-                      <ArrowRight className="h-4 w-4" />
-                    </Link>
+                      <ArrowRight aria-hidden="true" className="h-4 w-4" />
+                    </DocumentAnchorLink>
                   </Button>
                 ) : null}
               </div>
             </div>
           </div>
-        </section>
+        </header>
 
-        <section className="mx-auto max-w-5xl px-5 py-16 sm:px-8 lg:px-10">
-          {document.guide ? (
-            <section className="mb-14 border-l-4 border-[var(--accent)] bg-[rgba(139,30,45,0.06)] px-5 py-5">
-              <h2 className="text-2xl font-black leading-tight tracking-normal">先读这一段</h2>
-              <div className="mt-5 space-y-4 text-base leading-8 text-[var(--ink)]">
-                {document.guide.map((paragraph) => (
-                  <p key={paragraph}>{paragraph}</p>
-                ))}
-              </div>
-            </section>
-          ) : null}
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 xl:grid xl:grid-cols-[14rem_minmax(0,45rem)] xl:justify-center xl:gap-20 xl:py-24">
+          <details className="mb-14 min-w-0 border-y border-[var(--border)] py-1 xl:hidden">
+            <summary className="flex min-h-11 items-center justify-between gap-4 py-2 text-sm font-semibold text-[var(--ink)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--accent)]">
+              文档目录
+              <span aria-hidden="true" className="font-mono text-xs text-[var(--accent)]">
+                INDEX
+              </span>
+            </summary>
+            <div className="border-t border-[var(--border)] py-5">
+              <DocumentTableOfContents document={document} />
+            </div>
+          </details>
 
-          <div className="space-y-8">
-            {document.sections.map((section) => (
+          <aside className="hidden min-w-0 xl:block">
+            <div className="sticky top-28 max-h-[calc(100vh-8rem)] overflow-y-auto border-t border-[var(--border)] pt-5 pr-3">
+              <DocumentTableOfContents document={document} />
+            </div>
+          </aside>
+
+          <div className="min-w-0 max-w-[45rem]">
+            {document.guide ? (
               <section
-                key={section.label}
-                className="grid gap-5 border-t border-[var(--border)] pt-10 lg:grid-cols-[120px_1fr]"
+                id="reading-guide"
+                tabIndex={-1}
+                className={`${anchorTargetClass} border-l-2 border-[var(--accent)] pl-5 sm:pl-6`}
               >
-                <div className="font-mono text-sm font-semibold text-[var(--accent)]">
-                  {section.label}
-                </div>
-                <div>
-                  <h2 className="max-w-3xl text-2xl font-black leading-tight tracking-normal sm:text-3xl">
-                    {section.heading}
-                  </h2>
-                  <div className="mt-6 space-y-5 text-base leading-8 text-[var(--ink)] sm:text-lg">
-                    {section.paragraphs.map((paragraph) => (
-                      <p key={paragraph}>{paragraph}</p>
-                    ))}
-                  </div>
-                  {section.points ? (
-                    <ul className="mt-6 grid gap-3 sm:grid-cols-2">
-                      {section.points.map((point) => (
-                        <li
-                          key={point}
-                          className="border border-[var(--border)] bg-[var(--paper)] px-4 py-3 text-sm leading-6 text-[var(--muted)]"
-                        >
-                          {point}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
+                  导读
+                </p>
+                <h2 className="mt-3 text-2xl font-bold leading-8 tracking-[-0.015em] text-[var(--ink)]">
+                  先读这一段
+                </h2>
+                <div className="mt-5 space-y-6 text-lg leading-[1.875rem] text-[var(--ink)]">
+                  {document.guide.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
                 </div>
               </section>
-            ))}
+            ) : null}
+
+            <div
+              className={
+                document.guide
+                  ? "mt-16 space-y-16 md:mt-20 md:space-y-20"
+                  : "space-y-16 md:space-y-20"
+              }
+            >
+              {document.sections.map((section, index) => (
+                <SummarySection
+                  key={`${section.label}-${section.heading}`}
+                  section={section}
+                  index={index}
+                />
+              ))}
+            </div>
+
+            {document.closing ? (
+              <p className="mt-16 border-y border-[var(--border)] py-8 text-2xl font-semibold leading-9 tracking-[-0.015em] text-[var(--ink)] md:mt-20">
+                {document.closing}
+              </p>
+            ) : null}
+
+            {document.fullSections ? (
+              <section
+                id="full-text"
+                tabIndex={-1}
+                className={`${anchorTargetClass} mt-20 border-t border-[var(--border)] pt-14 md:mt-24 md:pt-16`}
+              >
+                <p className="font-mono text-xs font-semibold tracking-[0.12em] text-[var(--accent)]">
+                  完整文本
+                </p>
+                <h2 className="mt-4 text-[1.75rem] font-bold leading-9 tracking-[-0.025em] text-[var(--ink)] md:text-4xl md:leading-[2.75rem]">
+                  {document.fullTitle ?? "全文"}
+                </h2>
+                <div className="mt-12 space-y-16 md:mt-16 md:space-y-20">
+                  {document.fullSections.map((section, index) => (
+                    <FullTextSection
+                      key={`${section.label}-${section.heading}`}
+                      section={section}
+                      index={index}
+                    />
+                  ))}
+                </div>
+              </section>
+            ) : null}
+
           </div>
-
-          {document.closing ? (
-            <p className="mt-12 border-l-4 border-[var(--accent)] bg-[rgba(139,30,45,0.06)] px-5 py-4 text-lg font-semibold leading-8">
-              {document.closing}
-            </p>
-          ) : null}
-
-          {document.fullSections ? (
-            <section id="full-text" className="mt-20 border-t border-[var(--border)] pt-14">
-              <p className="font-mono text-sm font-bold text-[var(--accent)]">完整文本</p>
-              <h2 className="mt-4 text-3xl font-black leading-tight tracking-normal sm:text-4xl">
-                {document.fullTitle ?? "全文"}
-              </h2>
-              <div className="mt-10 space-y-12">
-                {document.fullSections.map((section) => (
-                  <section key={section.label} className="max-w-3xl">
-                    <p className="font-mono text-sm font-semibold text-[var(--accent)]">
-                      {section.label}
-                    </p>
-                    <h3 className="mt-3 text-2xl font-black leading-tight tracking-normal">
-                      {section.heading}
-                    </h3>
-                    <div className="mt-5 space-y-5 text-base leading-8 text-[var(--ink)] sm:text-lg">
-                      {section.paragraphs.map((paragraph) => (
-                        <p key={paragraph}>{paragraph}</p>
-                      ))}
-                    </div>
-                    {section.points ? (
-                      <ul className="mt-6 space-y-3 text-base leading-8 text-[var(--ink)] sm:text-lg">
-                        {section.points.map((point) => (
-                          <li key={point}>{point}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </section>
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </section>
+        </div>
       </article>
     </main>
   );
