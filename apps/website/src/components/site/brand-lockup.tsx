@@ -4,10 +4,11 @@ import { cn } from "@/lib/utils";
 
 type BrandLockupProps = {
   density: "full" | "compact";
+  label?: string;
   className?: string;
 };
 
-export function BrandLockup({ density, className }: BrandLockupProps) {
+export function BrandLockup({ density, label = "码成仝", className }: BrandLockupProps) {
   return (
     <Link
       href="/"
@@ -29,7 +30,7 @@ export function BrandLockup({ density, className }: BrandLockupProps) {
         )}
       />
       <span className="flex min-w-0 flex-col">
-        <span className="text-base font-bold leading-5 tracking-[-0.01em]">码成仝</span>
+        <span className="text-base font-bold leading-5 tracking-[-0.01em]">{label}</span>
         {density === "full" ? (
           <span className="hidden text-xs font-medium leading-4 text-[var(--muted-foreground)] sm:block">
             为“工友”敲键盘

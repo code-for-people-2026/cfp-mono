@@ -1,6 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { CompactSiteFooter } from "./site-footer";
 import { CompactSiteShell, FullSiteShell } from "./site-shell";
 
 describe("shared site shells", () => {
@@ -14,6 +15,7 @@ describe("shared site shells", () => {
     );
 
     expect(markup).toContain("码成仝");
+    expect(markup).toContain(">首页</span>");
     expect(markup).toContain("近邻互助组");
     expect(markup).toContain("为什么做");
     expect(markup).toContain('href="/neighbors"');
@@ -45,5 +47,17 @@ describe("shared site shells", () => {
     expect(markup).toContain("牛马能力剥夺矩阵");
     expect(markup).toContain("返回矩阵");
     expect(markup).toContain("工具内容");
+  });
+
+  it("keeps compact footer context without repeating the return action", () => {
+    const markup = renderToStaticMarkup(
+      createElement(CompactSiteFooter, {
+        currentObject: { label: "近邻互助组", href: "/neighbors" },
+      }),
+    );
+
+    expect(markup).toContain("当前对象：");
+    expect(markup).toContain("近邻互助组");
+    expect(markup).not.toContain("返回官网首页");
   });
 });

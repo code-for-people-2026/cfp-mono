@@ -630,6 +630,9 @@ test("public shell hierarchy and full footer use the canonical navigation contra
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
 
+  const homeBrand = page.locator('header[data-density="full"] a[aria-label="码成仝首页"]');
+  await expect(homeBrand).toContainText("首页");
+  await expect(homeBrand).not.toContainText("码成仝");
   await expect(page.locator('header[data-density="full"] [data-site-hierarchy-separator]')).toHaveCount(
     0,
   );
@@ -649,9 +652,19 @@ test("public shell hierarchy and full footer use the canonical navigation contra
   }
 
   await page.goto("/manifesto");
-  await expect(page.locator('header[data-density="full"] [data-site-hierarchy-separator]')).toHaveCount(
-    1,
-  );
+  const manifestoHeader = page.locator('header[data-density="full"]');
+  await expect(manifestoHeader.locator("[data-site-hierarchy-separator]")).toHaveCount(1);
+  await expect(manifestoHeader.getByText("数据平权宣言", { exact: true })).toBeVisible();
+
+  await page.goto("/license");
+  const licenseHeader = page.locator('header[data-density="full"]');
+  await expect(licenseHeader.locator("[data-site-hierarchy-separator]")).toHaveCount(1);
+  await expect(licenseHeader.getByText("牛马互助协议", { exact: true })).toBeVisible();
+
+  await page.goto("/neighbors");
+  const compactFooter = page.getByRole("contentinfo");
+  await expect(compactFooter.getByText("当前对象：", { exact: false })).toBeVisible();
+  await expect(compactFooter.getByRole("link", { name: "返回官网首页" })).toHaveCount(0);
 });
 
 test("compact mobile menus expose one return path with 44px interaction targets", async ({ page }) => {

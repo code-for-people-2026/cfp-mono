@@ -131,7 +131,7 @@ export function SiteHeader({
         )}
       >
         <div className="flex min-w-0 items-center gap-2.5">
-          <BrandLockup density={density} />
+          <BrandLockup density={density} label="首页" />
           {showHierarchyObject ? (
             <>
               <span
@@ -141,7 +141,7 @@ export function SiteHeader({
               >
                 /
               </span>
-              <span className={cn("min-w-0", density === "full" && "md:hidden")}>
+              <span className="min-w-0">
                 <CurrentObject value={currentObject} compact={density === "compact"} />
               </span>
             </>

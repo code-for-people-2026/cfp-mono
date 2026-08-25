@@ -102,7 +102,7 @@ export function CompactSiteShell({
           returnLink={returnLink}
         />
       }
-      footer={<CompactSiteFooter currentObject={currentObject} returnLink={returnLink} />}
+      footer={<CompactSiteFooter currentObject={currentObject} />}
     >
       {children}
     </ShellFrame>

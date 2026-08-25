@@ -18,7 +18,6 @@ type FullSiteFooterProps = {
 
 type CompactSiteFooterProps = {
   currentObject: SiteObject;
-  returnLink: SiteLink;
   className?: string;
 };
 
@@ -116,7 +115,7 @@ export function FullSiteFooter({
   );
 }
 
-export function CompactSiteFooter({ currentObject, returnLink, className }: CompactSiteFooterProps) {
+export function CompactSiteFooter({ currentObject, className }: CompactSiteFooterProps) {
   return (
     <footer
       className={cn(
@@ -124,20 +123,11 @@ export function CompactSiteFooter({ currentObject, returnLink, className }: Comp
         className,
       )}
     >
-      <div className="mx-auto grid w-full max-w-[1280px] gap-6 px-4 py-6 sm:px-6 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center lg:px-8">
+      <div className="mx-auto grid w-full max-w-[1280px] gap-6 px-4 py-6 sm:px-6 md:grid-cols-[auto_minmax(0,1fr)] md:items-center lg:px-8">
         <BrandLockup density="compact" />
         <p className="min-w-0 text-sm text-[var(--muted-foreground)]">
           当前对象：<ObjectLink value={currentObject} />
         </p>
-        <Link
-          href={returnLink.href}
-          className={cn(
-            linkVariants(),
-            "max-w-full whitespace-normal break-words justify-self-start md:justify-self-end",
-          )}
-        >
-          {returnLink.label}
-        </Link>
       </div>
     </footer>
   );
