@@ -516,6 +516,8 @@ describe("Real Weekly Menu API adapter", () => {
   });
 
   it("adapts the real Taro primitives without exposing them to page code", async () => {
+    // 本用例覆盖默认时钟，过期时间随运行日期生成。
+    const expiresAt = new Date(Date.now() + 86_400_000).toISOString();
     vi.clearAllMocks();
     vi.mocked(Taro.getStorageSync).mockReturnValue({ token, expiresAt });
     vi.mocked(Taro.login).mockResolvedValue({ code: "wx-code", errMsg: "login:ok" });
