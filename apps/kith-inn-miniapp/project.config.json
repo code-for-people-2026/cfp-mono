@@ -1,0 +1,7 @@
+{
+  "appid": "touristappid",
+  "projectname": "kith-inn",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "dist/",
+  "setting": { "urlCheck": true, "es6": false, "minified": true }
+}
