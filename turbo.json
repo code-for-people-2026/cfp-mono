@@ -32,6 +32,11 @@
       "dependsOn": ["^build"],
       "outputs": [".next/**", "dist/**", "build/**"]
     },
+    "@cfp/kith-inn-miniapp#build": {
+      "dependsOn": ["^build"],
+      "env": ["TARO_APP_ID", "TARO_APP_KITH_INN_API_BASE_URL"],
+      "outputs": ["dist/**"]
+    },
     "@cfp/kith-inn-api#build": {
       "dependsOn": ["^build"],
       "outputs": []

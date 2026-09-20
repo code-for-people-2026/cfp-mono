@@ -26,6 +26,10 @@
       ],
       "ignoreDependencies": ["react"]
     },
+    "apps/kith-inn-miniapp": {
+      "entry": ["config/**/*.ts", "src/**/*.{ts,tsx}", "vitest.config.ts", "eslint.config.mjs"],
+      "ignoreDependencies": ["react"]
+    },
     "packages/ui": {
       "entry": ["src/index.ts"]
     },
