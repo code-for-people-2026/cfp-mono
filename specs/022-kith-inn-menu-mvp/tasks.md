@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发任务
 
-日期：2026-09-20 · 状态：#357 契约、持久化与会话已实现，待合并 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
+日期：2026-09-20 · 状态：#357 契约、持久化、会话与菜池API已实现，待合并 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
 
-GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过37个测试及独立审查；T003～T005 已实现并通过26个含真实PG17的测试及独立审查。T006/T007 会话与原生HTTP已实现，API累计54个测试（真实PG17及socket）及独立审查通过。三片尚未合并，暂不勾选完成；T008/T009 菜池事务在后续分支实施，其他任务未开始。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
+GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过37个测试及独立审查；T003～T005 已实现并通过26个含真实PG17的测试及独立审查。T006/T007 会话与原生HTTP已实现，API累计54个测试（真实PG17及socket）及独立审查通过。T008/T009 菜池API已实现，累计67个API测试及独立审查通过。各片尚未合并，暂不勾选完成；T013/T014客户端基础正在实施，T015页面待接入，其他任务未开始。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
 
 ## 1. 实现 PR 与唯一任务映射
 
@@ -11,11 +11,12 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 | PR1 | 建立唯一可执行契约 | 全部首版故事；AC-01～05、24、25 | T001、T002 | packages/kith-inn-contracts/；knip.json；pnpm-lock.yaml；不实现服务或页面 | 合法/非法 DTO 与 OpenAPI 示例一致 | 350～500 | 无 |
 | PR2 | 建立独立、可迁移的持久化基础 | US-01、03c；AC-25 | T003、T004、T005 | apps/kith-inn-api/ 配置、数据库、migration；turbo.json；.github/workflows/ci.yml；pnpm-lock.yaml；不开放业务 HTTP | 真实 PG17 上重复 migration、约束与事务回滚 | 350～500 | PR1 |
 | PR3 | 只有桃子可取得和使用会话 | 全部首版故事；AC-25 | T006、T007 | apps/kith-inn-api/ 会话、HTTP、运行入口、测试及包配置；turbo.json；pnpm-lock.yaml；不自动注册经营者或接入其他产品账户 | 非白名单拒绝、过期/撤销拒绝、日志无凭据 | 400～650 | PR2 |
-| PR4 | 菜池写入原子且安全重试 | US-01；AC-01 | T008、T009 | apps/kith-inn-api/src/ 菜池、幂等及路由测试；不在服务端分类，不实现菜单生成 | 重名整批回滚、版本冲突、同键重放与异体拒绝 | 300～450 | PR3 |
+| PR4 | 菜池写入原子且安全重试 | US-01；AC-01 | T008、T009 | apps/kith-inn-api/src/ 菜池、幂等及路由测试；不在服务端分类，不实现菜单生成 | 重名整批回滚、版本冲突、同键重放与异体拒绝 | 400～600 | PR3 |
 | PR5 | 生成仅返回符合约束的预览 | US-02；AC-02、04 | T010 | apps/kith-inn-api/src/generate.ts、generate.test.ts；不保存，不调用 AI 或外部菜谱库 | 固定随机源检查同餐不重复、跨餐复用、跳过餐 | 250～400 | PR2 |
 | PR6 | 周菜单原子保存、确认并可回看 | US-02、03a、03b、03c；AC-02～05 | T011、T012 | apps/kith-inn-api/src/ 周菜单存储、服务、路由和测试；不增加 confirm/share/candidates 接口 | 并发覆盖拒绝、响应丢失重试、快照稳定及重开读取 | 450～600 | PR4、PR5 |
-| PR7 | 桃子可在小程序维护菜池 | US-01；AC-01、25 | T013、T014、T015 | apps/kith-inn-miniapp/ 工程、客户端、菜池页面；knip.json；turbo.json；.gitignore；pnpm-lock.yaml；不建设顾客端或订单 | 分类循环纠正、未确认不写入、鉴权失败可恢复 | 450～600 | PR4 |
-| PR8 | 一周排菜调整与保存回看可用 | US-02、03a、03b、03c；AC-02～05 | T016、T017 | apps/kith-inn-miniapp/src/ 周编辑状态、菜单及历史页面；不将内存状态或缓存当作已保存 | 指定位置换菜、逐餐去汤、保存失败保留编辑、冲突提示 | 450～600 | PR6、PR7 |
+| PR7a | 小程序工程和安全重试客户端可用 | US-01；AC-01、25 | T013、T014 | apps/kith-inn-miniapp/ 工程、客户端和入口占位；knip.json；turbo.json；.gitignore；pnpm-lock.yaml；不实现菜池编辑页面 | H5/weapp 构建、会话恢复、未知结果重试保持原键及请求体 | 450～650 | PR3 |
+| PR7b | 桃子可在小程序维护菜池 | US-01；AC-01、25 | T015 | apps/kith-inn-miniapp/src/ 分类、菜池页面及测试；不建设顾客端或订单 | 分类循环纠正、未确认不写入、失败保留输入、改名/改类/停用/恢复 | 350～550 | PR4、PR7a |
+| PR8 | 一周排菜调整与保存回看可用 | US-02、03a、03b、03c；AC-02～05 | T016、T017 | apps/kith-inn-miniapp/src/ 周编辑状态、菜单及历史页面；不将内存状态或缓存当作已保存 | 指定位置换菜、逐餐去汤、保存失败保留编辑、冲突提示 | 450～600 | PR6、PR7b |
 | PR9 | 复制文字与已保存的一餐一致 | US-12；AC-24；联合路径 | T018、T019 | apps/kith-inn-miniapp/src/ 菜单文字；tests/e2e/；playwright.config.ts；不代发微信，不提供公开订单入口 | 固定日期/午晚餐/菜名快照、复制失败及重开链路 | 250～400 | PR8 |
 | PR10 | 具备可验证的独立运行和交接条件 | 全部首版故事；AC-25 | T020、T021、T022、T023、T024 | apps/kith-inn-api/Dockerfile；deploy/ 专用配置与运行手册；CI；本规格验证证据；不自动部署或恢复其他产品，不预建运营后台 | 容器启动/就绪、目标识别、隔离恢复、退出删除和微信真机证据 | 450～600 | PR9 |
 
@@ -44,9 +45,9 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 
 ## 5. 小程序入口、排菜与菜单分享
 
-- [ ] T013 [PR7] 建立 `apps/kith-inn-miniapp/package.json`、`config/index.ts`、`project.config.json`、`tsconfig.json`、`eslint.config.mjs`、`vitest.config.ts`、`src/app.tsx`、`src/app.config.ts`、`src/app.css`，提供 H5/weapp 构建和测试脚本；同步 `knip.json`、`turbo.json`、`.gitignore`、`pnpm-lock.yaml`。用户确认微信小程序已创建，沿用该现有小程序；核对后以构建环境变量 `TARO_APP_ID` 注入真实 AppID，再导入 `apps/kith-inn-miniapp/dist`，示例 touristappid 不能作为联调证据。
-- [ ] T014 [PR7] 在 `apps/kith-inn-miniapp/src/lib/api.ts`、`src/lib/api.test.ts` 实现 Taro 平台适配、登录/退出、会话恢复、共享响应校验、稳定写入幂等键、超时与版本冲突错误。重试同一保存重用原键；成功后清除待发请求；真实模式无服务地址应明确报错，不静默进入 Mock。
-- [ ] T015 [PR7] 在 `apps/kith-inn-miniapp/src/lib/classify.ts`、`src/lib/classify.test.ts`、`src/pages/dishes/index.tsx`、`src/pages/dishes/index.config.ts` 实现每行录入、关键词建议、荤素汤循环纠正、返回修改、确认新增及改名/改分类/停用/恢复；未确认不提交，重名错误保留可编辑输入，不补做 AI 分类。
+- [ ] T013 [PR7a] 建立 `apps/kith-inn-miniapp/package.json`、`config/index.ts`、`project.config.json`、`tsconfig.json`、`eslint.config.mjs`、`vitest.config.ts`、`src/app.tsx`、`src/app.config.ts`、`src/app.css` 及菜池路由占位页，提供 H5/weapp 构建和测试脚本；同步 `knip.json`、`turbo.json`、`.gitignore`、`pnpm-lock.yaml`。用户确认微信小程序已创建，沿用该现有小程序；核对后以构建环境变量 `TARO_APP_ID` 注入真实 AppID，再导入 `apps/kith-inn-miniapp/dist`，示例 touristappid 不能作为联调证据。
+- [ ] T014 [PR7a] 在 `apps/kith-inn-miniapp/src/lib/api.ts`、`src/lib/api.test.ts` 实现 Taro 平台适配、登录/退出、会话恢复、共享响应校验、稳定写入幂等键、超时与版本冲突错误。重试同一保存重用原键；成功后清除待发请求；真实模式无服务地址应明确报错，不静默进入 Mock。
+- [ ] T015 [PR7b] 在 `apps/kith-inn-miniapp/src/lib/classify.ts`、`src/lib/classify.test.ts`、`src/pages/dishes/index.tsx`、`src/pages/dishes/index.config.ts` 实现每行录入、关键词建议、荤素汤循环纠正、返回修改、确认新增及改名/改分类/停用/恢复；未确认不提交，重名错误保留可编辑输入，不补做 AI 分类。
 - [ ] T016 [PR8] 在 `apps/kith-inn-miniapp/src/lib/week-editor.ts`、`src/lib/week-editor.test.ts` 实现周结构、跳过餐、随机/手选换菜、去汤/恢复和编辑/保存版本分离。候选从完整菜池过滤同类可用且本餐不重复；无候选明确返回结果；重生成先提示会覆盖换菜和去汤，确认才执行，取消/失败保留旧编辑，成功仅替换预览；缺菜不返回部分结果；恢复汤按规格验证。
 - [ ] T017 [PR8] 在 `apps/kith-inn-miniapp/src/pages/week/index.tsx`、`src/pages/week/index.config.ts`、`src/pages/history/index.tsx`、`src/pages/history/index.config.ts`、`src/app.config.ts` 接入按日期组织午晚餐的周编辑、确认总览、按周回看与再次编辑。保存失败保留本地调整并标未保存；冲突时保留调整供核对，不能直接覆盖服务端；新设备从 API 恢复。
 - [ ] T018 [PR9] 在 `apps/kith-inn-miniapp/src/lib/menu-text.ts`、`src/lib/menu-text.test.ts`、`src/pages/week/index.tsx` 实现重新读取保存周后的单餐文字预览、主动复制和失败重试；读取失败不使用旧缓存宣称最新；文字含日期、午晚餐、菜名，遵守去汤快照；复制不改菜单、不等于已发送，复制或发群后允许编辑保存并重新复制；再次编辑已保存菜单时提醒如已发群需自行通知，旧文字不会更新；不加公布或解锁动作。
