@@ -1,7 +1,7 @@
-import type { ErrorCode } from "@cfp/kith-inn-contracts";
+import type { ErrorCode, ErrorDetails } from "@cfp/kith-inn-contracts";
 
 export class ApiError extends Error {
-  constructor(readonly status: number, readonly code: ErrorCode, readonly message: string) {
+  constructor(readonly status: number, readonly code: ErrorCode, readonly message: string, readonly details?: ErrorDetails) {
     super(message);
   }
 }
