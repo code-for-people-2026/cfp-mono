@@ -1787,6 +1787,91 @@
                     }
                   }
                 }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "DUPLICATE_DISH_NAME"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "names"
+                      ],
+                      "properties": {
+                        "names": {
+                          "minItems": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "VERSION_CONFLICT"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "currentVersion"
+                      ],
+                      "properties": {
+                        "currentVersion": {}
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "LIMIT_EXCEEDED"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "field"
+                      ],
+                      "properties": {
+                        "field": {
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                }
               }
             ]
           }

@@ -136,3 +136,22 @@ it("validates shortages, safe errors, session shape and parsed pagination", () =
   expect(contracts.WeekListQuerySchema.parse({})).toEqual({ limit: 12 });
   for (const value of [{ limit: 0 }, { limit: 53 }, { limit: "12" }, { before: "2026-09-22" }, { ownerId: id }]) expect(contracts.WeekListQuerySchema.safeParse(value).success).toBe(false);
 });
+
+it("compares UUID identity case-insensitively for writes and snapshots", () => {
+  const dishId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const value = write(); value.structure.meat = 2;
+  for (const meal of value.meals) meal.meat = [dishId, dishId.toUpperCase()];
+  expect(contracts.WeekWriteInputSchema.safeParse(value).success).toBe(false);
+  const response = preview(); response.structure.meat = 2;
+  for (const meal of response.meals) meal.meat = value.meals[0]!.meat.map((dishId) => ({ dishId, name: "红烧肉" }));
+  expect(contracts.MenuPreviewSchema.safeParse(response).success).toBe(false);
+});
+it.each([
+  ["DUPLICATE_DISH_NAME", { names: ["红烧肉"] }, { names: [] }],
+  ["VERSION_CONFLICT", { currentVersion: 0 }, { field: "version" }],
+  ["LIMIT_EXCEEDED", { field: "items" }, { field: "" }],
+])("requires actionable details for %s", (code, valid, invalid) => {
+  const error = { code, message: "请检查", requestId: id };
+  for (const details of [undefined, {}, invalid]) expect(contracts.ErrorResponseSchema.safeParse({ error: { ...error, details } }).success).toBe(false);
+  expect(contracts.ErrorResponseSchema.safeParse({ error: { ...error, details: valid } }).success).toBe(true);
+});
