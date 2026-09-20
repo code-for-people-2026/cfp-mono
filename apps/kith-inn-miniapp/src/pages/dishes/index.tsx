@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Taro from "@tarojs/taro";
-import { Button as TaroButton, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
+import { Button as TaroButton, Image, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
 import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-contracts";
 import { ClientError, createKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
+import refreshIcon from "../../assets/refresh-cw.svg";
 
 function Button(props: { children: ReactNode; onClick: () => void; disabled?: boolean; className?: string; ariaLabel?: string }) {
   // H5's Taro button custom element lacks native keyboard and disabled semantics.
@@ -86,6 +87,7 @@ export default function DishesPage() {
   }
   async function saved(result: WriteResult) {
     clearDraft();
+    setLoaded(false);
     setNotice(result.kind === "batch" ? `已新增 ${result.items.length} 道菜` : "菜品修改已保存");
     // The write is confirmed even if refreshing the latest list subsequently fails.
     try { await read(); }
@@ -111,19 +113,15 @@ export default function DishesPage() {
   }
   const activeCount = items.filter((dish) => dish.active).length;
 
-  return <View className="dish-page">
-    <View className="brand"><Text className="brand-mark">味</Text><Text>街坊味</Text><Text className="merchant-label">桃子的厨房</Text></View>
-    <View className="page-heading"><Text className="eyebrow">从熟悉的拿手菜开始</Text><Text className="title">我的菜品池</Text>
-      <Text className="muted">先存好菜名，排一周的饭就轻松些。</Text></View>
+  const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
+
+  return <View className="dish-app">
+    {process.env.TARO_ENV === "h5" && <View className="app-heading"><Text>菜品池</Text></View>}
+    <View className="dish-page">
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
-      <View className="toolbar">
-        <Text className="muted">{loaded && signedIn ? `${activeCount} 道已启用 · 共 ${items.length} 道` : "菜品和分类由桃子确认"}</Text>
-        {signedIn && <Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => {
-          if (await confirmDiscard()) { await client.logout(); clearDraft(); setItems([]); setLoaded(false); }
-        })}>退出登录</Button>}
-      </View>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
-      {notice && <View className="success" ariaRole="status">{notice}</View>}
+      {notice && <View className="success" ariaRole="status"><Text className="success-title">{notice}</Text>
+        <Text className="success-description">菜名和荤、素、汤分类已经保存。以后想到新菜，可以随时继续添加。</Text></View>}
       {cooling && <View className="hint">请等待 {Math.ceil((retryAt - now) / 1000)} 秒后重试。</View>}
       {blocked && <View className="recovery">
         <Text className="section-title">保存结果尚未确认</Text>
@@ -138,50 +136,65 @@ export default function DishesPage() {
           {needsReview && <Button disabled={busy || !reviewed} onClick={() => void acknowledge()}>已核对，继续编辑</Button>}
         </View>
       </View>}
-      {!signedIn && <View className="panel login-panel">
-        <Text className="section-title">欢迎回到自己的厨房</Text>
+      {!signedIn && <View className="login-panel">
+        <View className="detail-head"><View><Text className="detail-kicker">街坊味 · 桃子的厨房</Text><Text className="detail-title">欢迎回到自己的厨房</Text></View></View>
         <Text className="muted">仅桃子绑定的微信账号可使用。登录后可找回已保存的菜品。</Text>
         {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
-      {signedIn && stage === "list" && !edit && <>
-        <View className="list-actions"><Button className="primary" disabled={disabled || cooling} onClick={() => {
+      {signedIn && stage === "list" && !edit && !showInput && <>
+        <View className="detail-head"><View><Text className="detail-kicker">基础菜品 · 随时可改</Text><Text className="detail-title">我的菜品池</Text></View>
+          <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
+        {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "还未读取到菜品池，请重新读取。"}</View> :
+          <View className="dish-list">{items.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
+            <View className="dish-info"><Text className="dish-name">{dish.name}</Text><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
+            <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
+              <Button className="tiny-action" disabled={disabled || cooling} onClick={() => {
+                setEdit({ ...dish }); setOriginal(dish); setNotice(""); setError(""); setConflict(false);
+              }}>编辑</Button></View></View>)}</View>}
+        <Button className="primary" disabled={disabled || cooling} onClick={() => {
           setStage("input"); setNotice(""); setError("");
-        }}>批量添加</Button><Button disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button></View>
-        {!loaded ? <View className="empty">{busy ? "正在读取菜品池…" : "还未读取到菜品池，请重新读取。"}</View> : !items.length ?
-          <View className="empty"><Text className="empty-icon">一菜一味</Text><Text className="section-title">把拿手菜收进来</Text>
-            <Text className="muted">从微信或备忘录复制菜名，每行一道；确认分类后就能保存。</Text></View> :
-          <View className="dish-list">{items.map((dish) => <View className={`dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
-            <View className="dish-info"><Text className="dish-name">{dish.name}</Text><View className="dish-meta">
-              <Text className={`category ${dish.category}`}>{labels[dish.category]}</Text><Text>{dish.active ? "已启用" : "已停用"}</Text></View></View>
-            <Button className="text-button" disabled={disabled || cooling} onClick={() => {
-              setEdit({ ...dish }); setOriginal(dish); setNotice(""); setError(""); setConflict(false);
-            }}>编辑</Button></View>)}</View>}
+        }}>批量添加</Button>
+        <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
       </>}
-      {stage !== "list" && <View className="panel">
-        <View className="section-heading"><Text className="section-title">{stage === "input" ? "批量添加菜名" : `${preview.length} 道菜待加入`}</Text><Text className="unsaved">未保存</Text></View>
-        {stage === "input" ? <><Text className="muted">每行一道菜，最多 200 道。先看看建议分类，确认后才会保存。</Text>
-          <Textarea className="dish-source" placeholder="每行一道菜，例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
+      {(showInput || stage === "preview") && <View className="import-panel">
+        <View className="detail-head"><View>
+          <Text className="detail-kicker">{stage === "preview" ? "从菜名自动判断" : items.length ? "日常维护 · 随时添加" : "首次使用 · 约 2 分钟"}</Text>
+          <Text className="detail-title">{stage === "preview" ? `${preview.length} 道菜待加入` : items.length ? "添加我的拿手菜" : "建立我的菜品池"}</Text></View>
+          <Text className="detail-meta">{stage === "preview" ? "未写入" : `${items.length} 道`}</Text></View>
+        {stage !== "preview" ? <>
+          <View className="menu-rule"><Text className="rule-title">每行一道菜，整段粘贴</Text>
+            <Text>可以从微信、备忘录或旧菜单复制；不用填写复杂配方。</Text></View>
+          <Text className="input-label">菜名清单</Text>
+          <Textarea className="prototype-textarea" placeholder="每行一道菜，例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
             value={source} disabled={disabled} onInput={(event) => setSource(event.detail.value)} />
-          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>预览分类</Button></> : <>
-          <Text className="muted">分类只是建议，点击右侧按钮按 荤 → 素 → 汤 循环纠正。</Text>
-          <View className="preview-list">{preview.map((dish, index) => <View className="preview-row" key={dish.name}>
-            <Text>{dish.name}</Text><Button className={`category-button ${dish.category}`} disabled={disabled}
-              ariaLabel={`更改${dish.name}分类，当前${labels[dish.category]}`} onClick={() => setPreview(preview.map((value, at) =>
-                at === index ? { ...value, category: cycleCategory(value.category) } : value))}>{labels[dish.category]} ↻</Button></View>)}</View>
+          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>自动分成荤 / 素 / 汤</Button>
+          <Text className="evidence-note">按菜名给出分类候选；确认后保存，日后仍可改名、停用或改分类。每次最多 200 道。</Text>
+        </> : <>
+          <View className="menu-rule"><Text className="rule-title">请确认荤、素、汤分类</Text>
+            <Text>系统先判断；分类不对就点右侧更换图标，按“荤 → 素 → 汤”循环。</Text></View>
+          <View className="import-list">{preview.map((dish, index) => <View className="import-row" key={dish.name}>
+            <Text className="import-name">{dish.name}</Text><View className="category-switch"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
+              <Button className="rotate-dish" disabled={disabled} ariaLabel={`更改${dish.name}分类，当前${labels[dish.category]}`}
+                onClick={() => setPreview(preview.map((value, at) => at === index ? { ...value, category: cycleCategory(value.category) } : value))}>
+                <Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>)}</View>
           <Button className="primary" disabled={disabled || cooling || !signedIn} onClick={() => void run(async () => saved(await client.addDishes({ items: preview })))}>确认加入菜品池</Button>
-          <Button disabled={disabled} onClick={() => setStage("input")}>返回修改菜名</Button></>}
+          <Button className="secondary" disabled={disabled} onClick={() => setStage("input")}>返回修改菜名</Button>
+          <Text className="evidence-note">系统先判断，最终以桃子确认的分类为准。</Text>
+        </>}
         <Button className="text-button cancel" disabled={disabled} onClick={() => void cancel()}>取消添加</Button>
       </View>}
-      {edit && <View className="panel">
-        <View className="section-heading"><Text className="section-title">编辑菜品</Text><Text className="unsaved">{dirty ? "未保存" : "修改后请保存"}</Text></View>
-        <Text className="field-label">菜名</Text><Input className="dish-input" placeholder="菜名" ariaLabel="菜名" maxlength={-1}
+      {edit && <View className="edit-panel">
+        <View className="detail-head"><View><Text className="detail-kicker">菜品维护</Text><Text className="detail-title">编辑菜品</Text></View>
+          <Text className="detail-meta">{dirty ? "未保存" : "修改后请保存"}</Text></View>
+        <Text className="input-label">菜名</Text><Input className="dish-input" placeholder="菜名" ariaLabel="菜名" maxlength={-1}
           disabled={disabled} value={edit.name} onInput={(event) => setEdit({ ...edit, name: event.detail.value })} />
-        <View className="setting-row"><Text>分类</Text><Button className={`category-button ${edit.category}`} ariaLabel="更改单菜分类"
-          disabled={disabled} onClick={() => setEdit({ ...edit, category: cycleCategory(edit.category) })}>{labels[edit.category]} ↻</Button></View>
+        <View className="setting-row"><Text>分类</Text><View className="category-switch"><Text className={`kind ${edit.category}`}>{labels[edit.category]}</Text>
+          <Button className="rotate-dish" ariaLabel="更改单菜分类" disabled={disabled}
+            onClick={() => setEdit({ ...edit, category: cycleCategory(edit.category) })}><Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>
         <View className="setting-row"><Text>用于新菜单</Text><Switch checked={edit.active} disabled={disabled} color="#287557"
           ariaLabel="用于新菜单" onChange={(event) => setEdit({ ...edit, active: event.detail.value })} /></View>
-        <Text className="muted">停用后仍保留菜名，随时可以恢复；已保存的菜单不受影响。</Text>
+        <Text className="evidence-note">停用后仍保留菜名，随时可以恢复；已保存的菜单不受影响。</Text>
         {conflict && <View className="recovery"><Text>草稿已保留。请重新读取，再核对当前菜品。</Text>
           <Button disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
           {reviewed && latest && <><Text>服务器最新：{latest.name} · {labels[latest.category]} · {latest.active ? "已启用" : "已停用"}</Text>
@@ -191,9 +204,13 @@ export default function DishesPage() {
           if (!DishUpdateInputSchema.safeParse(body).success) throw new Error("请填写 1～60 个字的菜名，不含控制字符");
           await saved(await client.updateDish(edit.id, body));
         })}>保存修改</Button>
-        <Button disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
+        <Button className="secondary" disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
       </View>}
-      {(dirty || blocked) && <Text className="footer-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
+      {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
+      {signedIn && <View className="account-actions"><Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => {
+        if (await confirmDiscard()) { await client.logout(); clearDraft(); setItems([]); setLoaded(false); }
+      })}>退出登录</Button></View>}
     </>}
+    </View>
   </View>;
 }

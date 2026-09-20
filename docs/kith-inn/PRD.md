@@ -160,11 +160,11 @@ Q3 已明确不沿用旧版公布锁，原型与旧版 AC-11 不作为本版验�
 
 ## 附录 A：依据与来源
 
-产品依据仍是用户指定的 `ideal/docs/kith-inn/yao/`，本轮明确的 MVP 范围优先于原型的全部功能。`cfp-mono` 旧产品方案已废弃，仅可参考经验；不恢复其业务范围或实现。原型的模拟状态不代表真实持久化、鉴权或自动分类已经实现。
+产品依据仍是用户指定的 `ideal/docs/kith-inn/yao/`，其页面同时作为视觉与交互的实现依据，不能只借用流程而自行重做样式。2026-09-20 用户明确要求按原型落实界面：同尺寸、同状态对照布局、字号、间距、配色、控件与文案；未覆盖的真实数据和异常状态沿用原型的组件样式。手机外的讲解页、设备外壳和系统状态栏不属于小程序业务页面。本轮明确的 MVP 范围优先于原型的全部功能。`cfp-mono` 旧产品方案已废弃，仅可参考经验；不恢复其业务范围或实现。原型的模拟状态不代表真实持久化、鉴权或自动分类已经实现。
 
 | 来源 | 本版用途 |
 | --- | --- |
-| [桃子端角色原型](https://github.com/code-for-people-2026/ideal/blob/cb71b2e84ac0665a288b1634096438c19b743918/docs/kith-inn/yao/prototype-implementation/prototype-taozi/index.html) | 菜品录入、周菜单生成与调整的交互参考；订餐对账等页面不纳入本版 |
+| [桃子端角色原型](https://github.com/code-for-people-2026/ideal/blob/cb71b2e84ac0665a288b1634096438c19b743918/docs/kith-inn/yao/prototype-implementation/prototype-taozi/index.html) | 菜品录入、周菜单生成与调整的视觉及交互依据；订餐对账等页面不纳入本版 |
 | [客户体验原型](https://github.com/code-for-people-2026/ideal/blob/cb71b2e84ac0665a288b1634096438c19b743918/docs/kith-inn/yao/prototype-customer/index.html) | 修改菜单、确认与周总览；历史订餐入口不沿用 |
 | [原型说明](https://github.com/code-for-people-2026/ideal/blob/cb71b2e84ac0665a288b1634096438c19b743918/docs/kith-inn/yao/prototype-implementation/README.md) | 原型结构与背景，历史取舍不覆盖本轮范围决定 |
 | [旧方案菜品池](archive/dish-pool.html)、[菜单脑](archive/menu-brain.html)、[接龙导入](archive/order-import.html) | 仅保留三个历史 HTML 供参考，不作为首版需求 |

@@ -2,7 +2,7 @@
 
 日期：2026-09-20 · 状态：菜池代码、自动化与真实PG联调可验证；未合并，真机待验收
 
-`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；API已提供 dev/start、微信登录/退出、health/ready、请求校验和脱敏日志，菜池 GET/POST/PATCH、账号锁、版本检查和24小时安全重放已实现，累计67个API测试通过；`@cfp/kith-inn-miniapp` 菜池页面已接入，33个前端单测、5条H5浏览器回归及H5/weapp双构建通过。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
+`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；API已提供 dev/start、微信登录/退出、health/ready、请求校验和脱敏日志，菜池 GET/POST/PATCH、账号锁、版本检查和24小时安全重放已实现，累计67个API测试通过；`@cfp/kith-inn-miniapp` 菜池页面已接入，33个前端单测、6条H5浏览器回归及H5/weapp双构建通过。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
 
 ## 1. 开始条件
 
@@ -140,3 +140,10 @@ PR10 才提供专用 `deploy/docker-compose.kith-inn.yml`、`deploy/.env.kith-in
 另在全新 `cfp_kith_inn_ui_test` 库执行浏览器联调：注入测试微信身份取得真实业务会话，通过H5测试传输适配访问实际HTTP/API和PG；先成功提交批量新增再故意丢弃201响应，页面保持未知状态，重试使用相同key/body，库内仍只有3道菜；改名、改类、停用后恢复达到version3；刷新及第二个独立会话读回相同结果。页面脚本错误0，390px无横向溢出，手机录入/预览/列表及1280px桌面截图已检查。测试仅适配微信身份与本地HTTP传输，未替换菜品服务或数据库。
 
 浏览器实测修复了三个构建/平台问题：显式注入公开API源站、H5原生按钮与输入区样式、H5 hash路由配合静态验证服务后可刷新重开。微信沿用原小程序入口；尚未获取真实AppID、合法request域名和桃子身份绑定，未进行真机或跨真实设备验收。上述H5第二会话不能作为微信跨设备证据，T023/T024仍未执行。
+
+
+## 8. 原型视觉验收
+
+菜池页面以 PRD 固定引用的桃子端原型为视觉和交互依据，不能用“功能验证版”自行替换样式。比较手机内业务内容区，不把原型外的讲解排版、手机外壳、系统状态栏和微信胶囊搬进业务页面。输入、分类预览用相同菜名、相同宽度逐项核对字体、间距、颜色、控件、图标与文案；列表、编辑、保存成功和异常恢复沿用同一组件样式。分类更换图标复用原型的 RefreshCw 文件。
+
+视觉证据和差异说明见 [菜池视觉验收](../../apps/kith-inn-miniapp/design-qa.md)。功能回归与视觉对照分别检查；新截图未通过前，不因为旧 CI 或功能用例通过就宣称界面符合原型。周菜单与复制后续实施遵循相同规则，已确认的 MVP 业务边界仍优先于原型的完整功能。
