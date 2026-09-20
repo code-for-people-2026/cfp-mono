@@ -7,12 +7,15 @@
   "scripts": {
     "build": "tsc --noEmit",
     "db:migrate": "node --import tsx scripts/migrate.mjs",
+    "dev": "tsx watch src/main.ts",
     "lint": "eslint .",
+    "start": "tsx src/main.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cfp/kith-inn-contracts": "workspace:*",
     "pg": "^8.20.0",
     "tsx": "^4.22.4"
   },
