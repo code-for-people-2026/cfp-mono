@@ -1,0 +1,12 @@
+{
+  "extends": "@cfp/typescript-config/base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "noEmit": true
+  },
+  "include": ["src", "scripts"]
+}
