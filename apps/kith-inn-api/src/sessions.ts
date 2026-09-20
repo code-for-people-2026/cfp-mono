@@ -3,7 +3,7 @@ import { LoginInputSchema, SessionSchema } from "@cfp/kith-inn-contracts";
 import type { Pool, PoolClient } from "pg";
 import { ApiError } from "./auth";
 
-type ActiveSession = { merchantId: string; tokenHash: Buffer };
+export type ActiveSession = { merchantId: string; tokenHash: Buffer };
 const unauthorized = () => new ApiError(401, "UNAUTHORIZED", "请重新登录");
 const forbidden = () => new ApiError(403, "FORBIDDEN", "当前账号没有经营权限");
 const digest = (token: string) => createHash("sha256").update(token).digest();
@@ -61,15 +61,22 @@ export class Sessions {
     return { merchantId: session.id, tokenHash };
   }
 
-  async revoke(session: ActiveSession): Promise<void> {
-    await this.transaction(async (client) => {
+  async withSession<T>(session: ActiveSession, work: (client: PoolClient) => Promise<T>): Promise<T> {
+    return this.transaction(async (client) => {
       const { rows: [merchant] } = await client.query("SELECT * FROM merchants WHERE id = $1 FOR UPDATE", [session.merchantId]);
       if (!merchant?.active || merchant.app_id !== this.owner.appId ||
           merchant.openid !== this.owner.ownerOpenId) throw forbidden();
-      const result = await client.query(`UPDATE sessions SET revoked_at = $3
+      const result = await client.query(`SELECT 1 FROM sessions
         WHERE token_hash = $1 AND merchant_id = $2 AND revoked_at IS NULL AND expires_at > $3`,
       [session.tokenHash, session.merchantId, this.clock()]);
       if (!result.rowCount) throw unauthorized();
+      return work(client);
+    });
+  }
+
+  async revoke(session: ActiveSession): Promise<void> {
+    await this.withSession(session, async (client) => {
+      await client.query("UPDATE sessions SET revoked_at = $2 WHERE token_hash = $1", [session.tokenHash, this.clock()]);
     });
   }
 }
