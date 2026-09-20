@@ -53,7 +53,9 @@ export function createKithInnHttpServer(input: {
       response.end(value === undefined ? undefined : JSON.stringify(value));
     };
     try {
-      const url = new URL(request.url ?? "/", "http://localhost");
+      let url: URL;
+      try { url = new URL(request.url ?? "/", "http://localhost"); }
+      catch { throw invalid(); }
       route = routes.find((path) => url.pathname === prefix + path) ?? "unmatched";
       if (request.method === "POST" && route === "/sessions/wechat") {
         limit(`ip:${request.socket.remoteAddress}`, 20); // Ignore spoofable forwarded headers.

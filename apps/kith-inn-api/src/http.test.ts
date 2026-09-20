@@ -30,7 +30,8 @@ describe("HTTP boundary on a real socket", () => {
     headers: Record<string, string | string[]> = {}) => new Promise<{
       status: number; headers: Record<string, unknown>; body: unknown;
     }>((resolve, reject) => {
-    const request = httpRequest({ hostname: "127.0.0.1", port, path: `/api/kith-inn${path}`, method,
+    const request = httpRequest({ hostname: "127.0.0.1", port,
+      path: path.startsWith("http:") ? path : `/api/kith-inn${path}`, method,
       headers: { ...(body === undefined ? {} : { "content-length": Buffer.byteLength(body) }), ...headers }
     }, (response) => {
       const chunks: Buffer[] = [];
@@ -71,6 +72,11 @@ describe("HTTP boundary on a real socket", () => {
     expect((await call("/sessions/wechat", "POST", Buffer.from([0xff]), { "content-type": "application/json" })).status).toBe(400);
     expect((await call("/sessions/wechat", "POST", "x".repeat(128 * 1024 + 1))).status).toBe(413);
     expect((await call("/sessions/current", "DELETE", undefined, { authorization: [authorization, authorization] })).status).toBe(400);
+  });
+  it("returns a contract validation error for a malformed absolute request target", async () => {
+    const response = await call("http://[");
+    expect(response.status).toBe(400);
+    expect(ErrorResponseSchema.parse(response.body).error.code).toBe("INVALID_REQUEST");
   });
   it("guards unknown business requests and masks dependency failures and paths in logs", async () => {
     expect((await call("/dishes")).status).toBe(401);
