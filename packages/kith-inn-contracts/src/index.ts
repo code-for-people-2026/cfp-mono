@@ -59,7 +59,7 @@ function completeMeals({ structure, meals }: MenuShape) {
   return meals.every((meal) => {
     const all = [...meal.meat, ...meal.vegetable, ...meal.soup];
     if (!meal.enabled) return all.length === 0 && !meal.soupOmitted;
-    const ids = all.map((item) => typeof item === "string" ? item : item.dishId);
+    const ids = all.map((item) => (typeof item === "string" ? item : item.dishId).toLowerCase());
     return CategorySchema.options.every((category) => meal[category].length === structure[category])
       && new Set(ids).size === ids.length && (!meal.soupOmitted || structure.soup > 0);
   });
@@ -96,7 +96,13 @@ export const ErrorCodeSchema = z.enum([
 ]);
 export const ErrorResponseSchema = z.strictObject({
   error: z.strictObject({ code: ErrorCodeSchema, message: z.string().min(1), requestId: IdSchema, details: ErrorDetailsSchema.optional() })
-    .refine((value) => value.code !== "INSUFFICIENT_DISHES" || value.details?.shortages !== undefined),
+    .refine(({ code, details }) => {
+      if (code === "INSUFFICIENT_DISHES") return details?.shortages !== undefined;
+      if (code === "DUPLICATE_DISH_NAME") return !!details?.names?.length;
+      if (code === "VERSION_CONFLICT") return details?.currentVersion !== undefined;
+      if (code === "LIMIT_EXCEEDED") return !!details?.field?.length;
+      return true;
+    }),
 });
 export const HealthSchema = z.strictObject({ status: z.enum(["ok", "ready"]) });
 

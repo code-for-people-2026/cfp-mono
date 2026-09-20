@@ -8,7 +8,7 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 
 | PR | 单一目标 | 关联故事 / 验收 | 包含任务 | 允许路径 / 非目标 | 独立验证 | 人工 diff | 依赖 |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| PR1 | 建立唯一可执行契约 | 全部首版故事；AC-01～05、24、25 | T001、T002 | packages/kith-inn-contracts/；knip.json；pnpm-lock.yaml；不实现服务或页面 | 合法/非法 DTO 与 OpenAPI 示例一致 | 250～400 | 无 |
+| PR1 | 建立唯一可执行契约 | 全部首版故事；AC-01～05、24、25 | T001、T002 | packages/kith-inn-contracts/；knip.json；pnpm-lock.yaml；不实现服务或页面 | 合法/非法 DTO 与 OpenAPI 示例一致 | 350～500 | 无 |
 | PR2 | 建立独立、可迁移的持久化基础 | US-01、03c；AC-25 | T003、T004、T005 | apps/kith-inn-api/ 配置、数据库、migration；turbo.json；.github/workflows/ci.yml；pnpm-lock.yaml；不开放业务 HTTP | 真实 PG17 上重复 migration、约束与事务回滚 | 350～500 | PR1 |
 | PR3 | 只有桃子可取得和使用会话 | 全部首版故事；AC-25 | T006、T007 | apps/kith-inn-api/src/ 会话、HTTP、运行入口及测试；不自动注册经营者或接入其他产品账户 | 非白名单拒绝、过期/撤销拒绝、日志无凭据 | 400～550 | PR2 |
 | PR4 | 菜池写入原子且安全重试 | US-01；AC-01 | T008、T009 | apps/kith-inn-api/src/ 菜池、幂等及路由测试；不在服务端分类，不实现菜单生成 | 重名整批回滚、版本冲突、同键重放与异体拒绝 | 300～450 | PR3 |
