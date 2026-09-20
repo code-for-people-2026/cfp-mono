@@ -3,7 +3,7 @@ import { LoginInputSchema, SessionSchema } from "@cfp/kith-inn-contracts";
 import type { Pool, PoolClient } from "pg";
 import { ApiError } from "./auth";
 
-export type ActiveSession = { merchantId: string; tokenHash: Buffer };
+type ActiveSession = { merchantId: string; tokenHash: Buffer };
 const unauthorized = () => new ApiError(401, "UNAUTHORIZED", "请重新登录");
 const forbidden = () => new ApiError(403, "FORBIDDEN", "当前账号没有经营权限");
 const digest = (token: string) => createHash("sha256").update(token).digest();
