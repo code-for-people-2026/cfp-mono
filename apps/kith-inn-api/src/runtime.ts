@@ -59,6 +59,14 @@ export async function startKithInnRuntime(input: Readonly<{
   const pool = input.pool ?? createKithInnPool({ KITH_INN_DATABASE_URL: config.databaseUrl }, {
     connectionTimeoutMillis: 2_000, statement_timeout: 2_000
   });
+  // pg removes failed idle clients before this event; readiness reports availability.
+  // Never propagate the original connection error, which may contain credentials.
+  const onPoolError = () => {};
+  pool.on("error", onPoolError);
+  const closePool = async () => {
+    try { await pool.end(); }
+    finally { pool.off("error", onPoolError); }
+  };
   try {
     const sessions = new Sessions(pool, { appId: config.wechatAppId, ownerOpenId: config.wechatOwnerOpenId },
       createWechatExchanger({ appId: config.wechatAppId, appSecret: config.wechatAppSecret, fetcher: input.fetcher }));
@@ -67,9 +75,9 @@ export async function startKithInnRuntime(input: Readonly<{
       server.once("error", reject);
       server.listen(config.port, "0.0.0.0", () => { server.off("error", reject); resolve(); });
     });
-    return { server, close: installGracefulShutdown(server, pool) };
+    return { server, close: installGracefulShutdown(server, { end: closePool }) };
   } catch (error) {
-    await pool.end();
+    await closePool();
     throw error;
   }
 }

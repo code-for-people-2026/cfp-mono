@@ -54,15 +54,25 @@ it("serves readiness independently, closes once and releases the pool after a li
     KITH_INN_WECHAT_APP_ID: "test-app", KITH_INN_WECHAT_APP_SECRET: "secret", KITH_INN_WECHAT_OWNER_OPEN_ID: "owner"
   };
   const end = vi.fn().mockResolvedValue(undefined);
-  const pool = { query: vi.fn().mockResolvedValue({ rows: [{ ready: true }] }), end } as unknown as Pool;
+  const query = vi.fn().mockResolvedValue({ rows: [{ ready: true }] });
+  const pool = Object.assign(new EventEmitter(), { query, end }) as unknown as Pool;
   try {
     await expect(startKithInnRuntime({ environment, pool })).rejects.toMatchObject({ code: "EADDRINUSE" });
     expect(end).toHaveBeenCalledOnce();
+    expect(pool.listenerCount("error")).toBe(0);
   } finally { await new Promise<void>((resolve) => reserved.close(() => resolve())); }
   end.mockClear();
-  const runtime = await startKithInnRuntime({ environment, pool, logger: vi.fn() });
+  const logger = vi.fn();
+  const runtime = await startKithInnRuntime({ environment, pool, logger });
   try {
     expect((await fetch(`http://127.0.0.1:${address.port}/api/kith-inn/ready`)).status).toBe(200);
+    const failure = new Error("secret database connection details");
+    expect(() => pool.emit("error", failure)).not.toThrow();
+    query.mockRejectedValue(failure);
+    expect((await fetch(`http://127.0.0.1:${address.port}/api/kith-inn/health`)).status).toBe(200);
+    expect((await fetch(`http://127.0.0.1:${address.port}/api/kith-inn/ready`)).status).toBe(503);
+    expect(JSON.stringify(logger.mock.calls)).not.toContain(failure.message);
   } finally { await Promise.all([runtime.close(), runtime.close()]); }
   expect(end).toHaveBeenCalledOnce();
+  expect(pool.listenerCount("error")).toBe(0);
 });
