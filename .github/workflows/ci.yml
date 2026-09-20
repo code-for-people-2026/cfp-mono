@@ -22,6 +22,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       WEEKLY_MENU_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_weekly_menu_test
+      KITH_INN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_kith_inn_test
       PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
@@ -61,6 +62,12 @@ jobs:
           pnpm --dir apps/weekly-menu-be exec node --input-type=module -e
           "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect(); await client.query('CREATE DATABASE cfp_weekly_menu_test'); await client.end();"
+
+      - name: Create isolated Kith Inn test database
+        run: >-
+          pnpm --dir apps/kith-inn-api exec node --input-type=module -e
+          "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect(); await client.query('CREATE DATABASE cfp_kith_inn_test'); await client.end();"
 
       - id: deploy_targets
         name: Resolve affected deploy targets
