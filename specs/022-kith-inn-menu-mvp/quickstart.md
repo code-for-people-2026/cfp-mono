@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发与验证指引
 
-日期：2026-09-20 · 状态：契约及持久化验证可执行；HTTP服务和小程序待实现
+日期：2026-09-20 · 状态：契约、持久化及登录HTTP可验证；菜池业务与小程序待实现
 
-`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；HTTP运行入口及 `@cfp/kith-inn-miniapp` 尚未交付。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
+`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；API已提供 dev/start、微信登录/退出、health/ready、请求校验和脱敏日志，累计54个测试通过；菜池业务及 `@cfp/kith-inn-miniapp` 尚未交付。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
 
 ## 1. 开始条件
 
@@ -56,6 +56,7 @@ KITH_INN_DATABASE_URL='postgresql://kith_inn_local:kith-inn-local-only@127.0.0.1
 | `KITH_INN_WECHAT_OWNER_OPEN_ID` | API | 桃子在该 AppID 下的 OpenID，部署时核对绑定，不开放自助注册 |
 | `PORT` | API | 本产品默认 3305，可显式配置 |
 | `RELEASE_SHA` | API、镜像 | 实际构建提交，用于定位验证版本 |
+| `TARO_APP_ID` | 小程序构建 | 现有街坊味 AppID，写入生成的 dist/project.config.json |
 | `TARO_APP_KITH_INN_API_BASE_URL` | 小程序构建 | HTTPS API 入口；配置错误应明确失败，不静默回退 Mock |
 
 服务端微信返回的 `session_key` 不作为自己的登录凭据，不发给客户端。客户端只保存服务端签发的会话令牌和到期信息；菜品和菜单仍以服务端保存版本为准。每次菜品或周菜单写操作生成 UUID 幂等键；同一次网络重试保留原键和原请求体，不因重试生成第二次业务操作。
@@ -98,7 +99,7 @@ git diff --check
 
 ## 5. 联调与可观察结果
 
-完成会话和全部 API 后，由维护者在服务端安全配置表内真实值；本指引不提供会把密钥打印到终端的读取命令。启动 API 和前端开发服务分别运行：
+会话与健康接口已可启动，菜池和周菜单接口须等后续实现。由维护者在服务端安全配置表内真实值；本指引不提供会把密钥打印到终端的读取命令。启动 API 和前端开发服务分别运行：
 
 ```sh
 pnpm --filter @cfp/kith-inn-api dev
@@ -108,7 +109,7 @@ pnpm --filter @cfp/kith-inn-api dev
 pnpm --filter @cfp/kith-inn-miniapp dev:h5
 ```
 
-H5 适合检查界面和受控测试会话，不声称浏览器可直接完成 `wx.login`。微信开发者工具导入 `apps/kith-inn-miniapp`，使用被忽略的 `project.private.config.json` 填入真实 AppID；真机通过已配置的合法 HTTPS 请求域名访问 API，不能用关闭域名校验代替交付条件。
+H5 适合检查界面和受控测试会话，不声称浏览器可直接完成 `wx.login`。设置 `TARO_APP_ID` 为现有街坊味 AppID 后运行 `build:weapp`，微信开发者工具导入 `apps/kith-inn-miniapp/dist`（生成配置的 `miniprogramRoot` 为 `./`）；Taro 不会把根目录的 `project.private.config.json` 自动合并到产物。真机通过已配置的合法 HTTPS 请求域名访问 API，不能用关闭域名校验代替交付条件。
 
 主路径检查：
 

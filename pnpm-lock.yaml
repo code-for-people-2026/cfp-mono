@@ -212,6 +212,9 @@ importers:
 
   apps/kith-inn-api:
     dependencies:
+      '@cfp/kith-inn-contracts':
+        specifier: workspace:*
+        version: link:../../packages/kith-inn-contracts
       pg:
         specifier: ^8.20.0
         version: 8.20.0
