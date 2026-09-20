@@ -1,8 +1,8 @@
 # 接口契约与行为校验
 
-版本：0.2 · 2026-09-20 · 状态：Q1～Q3 已按用户选择 1A、2A、3A 确定；接口及数据规则已更新，服务和共享代码包尚未实现。保留 Q 编号用于决策追溯。
+版本：0.2 · 2026-09-20 · 状态：Q1～Q3 已按用户选择 1A、2A、3A 确定；接口及数据规则已更新，共享契约已实现并自检，待评审；服务尚未实现。保留 Q 编号用于决策追溯。
 
-机器可读契约：[openapi.json](openapi.json)（OpenAPI 3.1 / JSON Schema 2020-12）；示例：[examples.json](examples.json)；字段存储映射：[data-model.md](../data-model.md)。实现时 `packages/kith-inn-contracts` 承载 Zod schema 与推导类型，前后端共同使用。OpenAPI 描述对外协议；Zod 代码尚未创建，不能将 JSON 文件等同于契约层已接入应用。
+机器可读契约：[openapi.json](openapi.json)（OpenAPI 3.1 / JSON Schema 2020-12）；示例：[examples.json](examples.json)；字段存储映射：[data-model.md](../data-model.md)。`packages/kith-inn-contracts` 已承载 Zod schema 与推导类型，前后端共同使用。OpenAPI 描述对外协议；Zod 对22个命名组件及解析后的分页参数提供严格校验；日期/周一、14餐顺序、数量/去汤/重复 ID 等静态跨字段规则已校验。HTTP 层仍须匹配路径周一和首餐日期、解析并拒绝重复 query 参数；权限、菜品当前可用性、历史快照继承、结构变更和版本冲突仍由后续事务实现。共享包通过不等于真实 API 已接通。
 
 ## 1. 接口范围
 

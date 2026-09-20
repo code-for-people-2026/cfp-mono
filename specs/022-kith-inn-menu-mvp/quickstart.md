@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发与验证指引
 
-日期：2026-09-20 · 状态：未来实现脚本约定，当前尚不可执行
+日期：2026-09-20 · 状态：契约包可执行；API 与小程序命令仍待实现
 
-本轮提供规格文件，没有创建 `@cfp/kith-inn-api`、`@cfp/kith-inn-miniapp` 或 `@cfp/kith-inn-contracts`。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
+`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 和 `@cfp/kith-inn-miniapp` 尚未创建。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
 
 ## 1. 开始条件
 
