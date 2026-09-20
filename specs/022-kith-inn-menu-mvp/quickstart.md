@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发与验证指引
 
-日期：2026-09-20 · 状态：菜池API及小程序客户端基础可验证；菜池页面待接入
+日期：2026-09-20 · 状态：菜池代码、自动化与真实PG联调可验证；未合并，真机待验收
 
-`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；API已提供 dev/start、微信登录/退出、health/ready、请求校验和脱敏日志，菜池 GET/POST/PATCH、账号锁、版本检查和24小时安全重放已实现，累计67个API测试通过；`@cfp/kith-inn-miniapp` 工程及客户端基础已有24个测试，H5/weapp双构建通过，当前菜池路由仅为占位，T015页面待接入。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
+`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；API已提供 dev/start、微信登录/退出、health/ready、请求校验和脱敏日志，菜池 GET/POST/PATCH、账号锁、版本检查和24小时安全重放已实现，累计67个API测试通过；`@cfp/kith-inn-miniapp` 菜池页面已接入，33个前端单测、5条H5浏览器回归及H5/weapp双构建通过。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
 
 ## 1. 开始条件
 
@@ -76,7 +76,7 @@ pnpm --filter @cfp/kith-inn-miniapp build:weapp
 
 前三项分别验证契约、服务与数据库、前端状态和文字。API 测试使用上一节测试库；微信响应和时钟采用依赖注入，不请求真实账户。生成函数应证明只返回预览，保存测试应证明版本冲突不覆盖、同键重试不重复，以及菜池改名/停用不改变已保存快照。
 
-完成 PR9 后运行 H5 联合流程：
+当前可运行菜池 H5 回归；完成 PR9 后同一脚本再包含完整周菜单联合流程：
 
 ```sh
 pnpm --filter @cfp/kith-inn-miniapp exec playwright install chromium
@@ -132,3 +132,11 @@ PR10 才提供专用 `deploy/docker-compose.kith-inn.yml`、`deploy/.env.kith-in
 上线验收至少包含：镜像在专用配置下启动，health/ready 有效；数据库角色受限；迁移前生成可读取的专库备份；在隔离目标恢复后，应用可读取同一批菜品和菜单；退出删除流程同时处理主数据、会话及备份中的残留，遵守最终确认的数据承诺。不可只做 `pg_restore --list` 就认定业务数据可恢复，也不在共享数据库实例上原地覆盖恢复。
 
 真实 AppID/域名/经营身份、真机菜单与复制、恢复演练、数据保留/退出删除由 T023/T024 在 `checklists/release-evidence.md` 记录实际日期、构建、操作者与脱敏证据。文件尚未产生或事项未执行时保持未完成；试用后再记录桃子是否能直接按菜单供餐、无需另抄。
+
+## 7. 本轮菜池实现的验证记录
+
+2026-09-20，菜池页面源码 `10b56b5`，Node22.23.2、TZ=UTC、隔离PG17下根 `pnpm verify` 通过：契约37、API67、前端33项测试；另有5条受控HTTP的H5浏览器回归通过，覆盖分类往返、维护、失败留稿、未知结果同请求重试、过期重新读取核对、键盘操作及刷新重开。独立审查问题已收敛。
+
+另在全新 `cfp_kith_inn_ui_test` 库执行浏览器联调：注入测试微信身份取得真实业务会话，通过H5测试传输适配访问实际HTTP/API和PG；先成功提交批量新增再故意丢弃201响应，页面保持未知状态，重试使用相同key/body，库内仍只有3道菜；改名、改类、停用后恢复达到version3；刷新及第二个独立会话读回相同结果。页面脚本错误0，390px无横向溢出，手机录入/预览/列表及1280px桌面截图已检查。测试仅适配微信身份与本地HTTP传输，未替换菜品服务或数据库。
+
+浏览器实测修复了三个构建/平台问题：显式注入公开API源站、H5原生按钮与输入区样式、H5 hash路由配合静态验证服务后可刷新重开。微信沿用原小程序入口；尚未获取真实AppID、合法request域名和桃子身份绑定，未进行真机或跨真实设备验收。上述H5第二会话不能作为微信跨设备证据，T023/T024仍未执行。
