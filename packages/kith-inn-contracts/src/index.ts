@@ -12,7 +12,7 @@ const timestamp = z.iso.datetime({ offset: true });
 const version = z.int().min(1);
 export const DishNameSchema = z.string().refine(
   (value) => value === value.trim().normalize("NFC") &&
-    [...value].length >= 1 && [...value].length <= 60 && !/\p{Cc}/u.test(value),
+    [...value].length >= 1 && [...value].length <= 60 && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value),
   "Expected a normalized name of 1–60 Unicode code points without control characters",
 );
 export const StructureSchema = z.strictObject({

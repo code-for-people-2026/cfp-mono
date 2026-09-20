@@ -61,7 +61,7 @@ it("rejects unknown fields on every DTO, including nested trust boundaries", () 
 });
 
 it("counts Unicode code points and rejects non-normalized names without transforming input", () => {
-  for (const name of [" 红烧肉", "汤 ", "", "e\u0301", "汤\n菜", "汤\u0085菜", "😀".repeat(61)]) {
+  for (const name of [" 红烧肉", "汤 ", "", "e\u0301", "汤\n菜", "汤\u0085菜", "汤\u2028菜", "汤\u2029菜", "😀".repeat(61)]) {
     expect(contracts.DishNameSchema.safeParse(name).success).toBe(false);
   }
   for (const name of ["😀".repeat(60), "é", "A  B", "红烧肉"]) expect(contracts.DishNameSchema.parse(name)).toBe(name);
