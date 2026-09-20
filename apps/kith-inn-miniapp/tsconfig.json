@@ -1,5 +1,5 @@
 {
   "extends": "@cfp/typescript-config/react-library.json",
   "compilerOptions": { "baseUrl": ".", "noEmit": true, "paths": { "@/*": ["./src/*"] } },
-  "include": ["src", "config"]
+  "include": ["src", "config", "tests", "playwright.config.ts"]
 }
