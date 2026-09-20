@@ -207,10 +207,11 @@ export function createKithInnClient(options: {
       finally { clearSession(); }
     }),
     getDishes: () => exclusive(async () => {
+      const readAt = now();
       const response = await request("GET", "/dishes");
       const parsed = DishListSchema.safeParse(response.data);
       if (response.statusCode !== 200 || !parsed.success) throw new ClientError("REQUEST_UNKNOWN");
-      reviewedKey = pending?.key ?? null;
+      reviewedKey = pending && (pending.state !== "unknown" || readAt - pending.createdAt >= receiptLifetime) ? pending.key : null;
       return parsed.data.items;
     }),
     addDishes: (input: DishBatchInput) => exclusive(() => {
@@ -226,9 +227,9 @@ export function createKithInnClient(options: {
     retryPendingWrite: () => exclusive(attempt),
     discardPendingAfterReview: () => {
       if (busy) throw new ClientError("BUSY");
-      if (!pending || reviewedKey !== pending.key) throw new ClientError("REVIEW_REQUIRED");
       // A read can finish before a timed-out write commits; it cannot unlock a new key.
-      if (pending.state === "unknown" && now() - pending.createdAt < receiptLifetime) throw new ClientError("PENDING_WRITE");
+      if (pending?.state === "unknown" && now() - pending.createdAt < receiptLifetime) throw new ClientError("PENDING_WRITE");
+      if (!pending || reviewedKey !== pending.key) throw new ClientError("REVIEW_REQUIRED");
       pending = null;
       reviewedKey = null;
     }

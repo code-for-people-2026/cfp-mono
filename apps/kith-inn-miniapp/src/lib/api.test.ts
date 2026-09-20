@@ -176,6 +176,19 @@ describe("write outcomes and safe retries", () => {
     expect(() => client.discardPendingAfterReview()).toThrow(expect.objectContaining({ code: "PENDING_WRITE" }));
     await expect(client.addDishes({ items: [{ name: "新菜", category: "meat" }] })).rejects.toMatchObject({ code: "PENDING_WRITE" });
   });
+  it("requires a read begun after the receipt expires instead of reusing an earlier empty read", async () => {
+    const { client, platform, advance } = fixture();
+    platform.request.mockRejectedValueOnce(Error("timeout"))
+      .mockResolvedValueOnce({ statusCode: 200, data: { items: [] } })
+      .mockResolvedValueOnce({ statusCode: 200, data: { items: [dish] } });
+    await expect(client.addDishes(batch())).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    await client.getDishes();
+    advance(86400000);
+    expect(() => client.discardPendingAfterReview()).toThrow(expect.objectContaining({ code: "REVIEW_REQUIRED" }));
+    await client.getDishes();
+    client.discardPendingAfterReview();
+    expect(client.pendingWrite()).toBeNull();
+  });
   it("reauthenticates the server's sole allowed owner before replaying the original key", async () => {
     const { client, platform } = fixture();
     platform.request.mockResolvedValueOnce(failure(401, "UNAUTHORIZED"))
