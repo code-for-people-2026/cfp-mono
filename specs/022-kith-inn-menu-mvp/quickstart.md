@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发与验证指引
 
-日期：2026-09-20 · 状态：契约包可执行；API 与小程序命令仍待实现
+日期：2026-09-20 · 状态：契约及持久化验证可执行；HTTP服务和小程序待实现
 
-`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 和 `@cfp/kith-inn-miniapp` 尚未创建。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
+`@cfp/kith-inn-contracts` 已提供 build/lint/typecheck/test/test:coverage 脚本；`@cfp/kith-inn-api` 已提供配置校验、五表迁移及真实PG17验证；HTTP运行入口及 `@cfp/kith-inn-miniapp` 尚未交付。下面命令供 [tasks.md](tasks.md) 中对应 PR 实施后使用；不能因为命令写在这里，就把应用、数据迁移或验证标为完成。业务范围和规则见 [spec.md](spec.md)，请求响应以 [OpenAPI](contracts/openapi.json) 为准。
 
 ## 1. 开始条件
 
@@ -44,7 +44,7 @@ KITH_INN_DATABASE_URL='postgresql://kith_inn_local:kith-inn-local-only@127.0.0.1
   pnpm --filter @cfp/kith-inn-api test
 ```
 
-数据库测试要实际验证迁移、约束和事务回滚。没有数据库或配置时应报告失败，目标库名不以 `_test` 结尾时拒绝测试清理，不能以跳过通过表示持久化完成。角色在生产环境还应核对最小权限、独立数据库和迁移权限，具体步骤由 PR10 的运行手册承载。
+数据库测试要实际验证迁移、约束和事务回滚。API 的数据库测试禁用 Turbo 缓存，每次执行都访问专用测试库；URL 的连接目标覆盖参数会被拒绝，连接后再次核对实际数据库名。没有数据库或配置时应报告失败，目标库名不以 `_test` 结尾时拒绝测试清理，不能以跳过通过表示持久化完成。角色在生产环境还应核对最小权限、独立数据库和迁移权限，具体步骤由 PR10 的运行手册承载。
 
 ## 3. 约定的运行配置
 
@@ -91,6 +91,8 @@ KITH_INN_DATABASE_URL='postgresql://kith_inn_local:kith-inn-local-only@127.0.0.1
   pnpm verify
 git diff --check
 ```
+
+本地复现 CI 时使用 Node22、`TZ=UTC` 并提供各产品独立数据库。此次本机 Asia/Shanghai 下旧 Weekly Menu 的日期读取测试出现日期偏移，切换为 CI 的 UTC 环境后重新验证；没有为本片修改另一产品。
 
 根门禁包含整个仓库已有产品要求；这里的单个环境变量不是 website、weekly-menu 测试配置的替代品。完整本地环境沿用仓库说明，CI 同时提供各产品独立数据库。
 

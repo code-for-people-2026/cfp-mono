@@ -1,8 +1,8 @@
 # 街坊味菜单 MVP 开发任务
 
-日期：2026-09-20 · 状态：#357 首片已实现，待评审 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
+日期：2026-09-20 · 状态：#357 契约与持久化已实现，待合并 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
 
-GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过契约自检，待 PR 审查与合并，暂不勾选完成；其余任务未开始。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
+GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过37个测试及独立审查；T003～T005 已实现并通过26个含真实PG17的测试及独立审查。两片尚未合并，暂不勾选完成；T006/T007 在后续分支实施，其他任务未开始。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
 
 ## 1. 实现 PR 与唯一任务映射
 
