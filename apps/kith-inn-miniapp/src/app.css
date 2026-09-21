@@ -197,6 +197,8 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .flow-icon { display: block; flex: 0 0 17PX; width: 17PX; height: 17PX; }
 .flow-heading .action-button { display: flex; justify-content: center; align-items: center; }
 .screen-swap .flow-scroll, .screen-pick .flow-scroll, .screen-review .flow-scroll { padding: 15PX; }
+.meal-adjustment .copy-preview { font-size: 15PX; line-height: 1.8; }
+.meal-adjustment > .action-button { margin-top: 12PX; }
 .screen-swap .flow-dock, .screen-pick .flow-dock, .screen-review .flow-dock { padding-right: 15PX; padding-left: 15PX; }
 .swap-heading .selection-label { color: #8f2d22; font-weight: 900; }
 .candidate-list .action-button { text-align: left; }
@@ -220,3 +222,5 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .flow-heading .flow-icon { width: 22PX; height: 22PX; flex-basis: 22PX; }
 .readonly-board .board-title { font-size: 16PX; }
 .readonly-board .board-count { font-weight: 750; }
+
+.meal-soup-switch { width: 24PX; height: 24PX; accent-color: #1e5d45; }
