@@ -16,7 +16,6 @@ import { labels } from "../../lib/classify";
 import { formatMealText } from "../../lib/menu-text";
 import { MainNav } from "../../lib/main-nav";
 import { weekRange, WeekBoard, firstPosition, type DishPosition } from "../../lib/week-board";
-import logo from "../../assets/kith-inn-logo.png";
 
 const categories = CategorySchema.options;
 const dayNames = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -260,10 +259,7 @@ export default function WeekPage() {
           })}>核对完成，载入服务器版本</Button></>}
       </View>}
       {sharing && <View className="copy-screen">
-        <View className="detail-head"><View><Text className="detail-kicker">确认与分享</Text><Text className="detail-title">复制一餐菜单</Text></View><Text className="detail-meta">本周已安排</Text></View>
-        <View className="menu-rule"><Text className="rule-title">选一餐，核对后复制到微信</Text>复制已保存的菜单文字，请到微信粘贴发送。</View>
         {menu?.meals.some((meal) => meal.enabled) ? <View className="share-card"><View className="share-card-main">
-          <View className="share-card-brand"><Image src={logo} className="mini-logo" mode="aspectFill" />街坊味 · 桃子的家常饭</View>
           <MealPicker menu={menu} index={copyMeal ?? 0} disabled={busy || blocked || cooling} onChange={(index) => void run(() => openCopy(index))} />
           <View className="copy-panel">
             {(dirty || settingsDirty) && !copyText ? <><Text className="muted">{settingsDirty ? "餐次或数量尚未重新生成，请返回周设置生成菜单，或明确放弃修改。" : "还有未保存修改，请先保存或明确放弃，再读取已保存菜单。"}</Text>
@@ -273,7 +269,7 @@ export default function WeekPage() {
               : !copyText && <Button className="secondary" disabled={busy || blocked || cooling} onClick={() => void run(() => previewCopy(copyMeal!))}>{busy ? "正在读取保存菜单" : "重新读取本餐文字"}</Button>}
             {copyText && <View className="copy-preview"><Text selectable>{copyText}</Text></View>}
           </View>
-        </View><View className="share-card-foot"><Text>{copyText ? "已保存的一餐" : "保存后可复制"}</Text><Text>复制后仍可修改</Text></View></View>
+        </View></View>
           : <View className="hint">本周没有已安排的餐次，请返回周菜单调整。</View>}
         {copyText && <Button className="primary" disabled={busy || blocked} onClick={() => void run(copy)}>复制菜单文字</Button>}
         {copyStatus && <View className="muted" role="status">{copyStatus}</View>}

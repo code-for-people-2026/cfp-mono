@@ -91,11 +91,8 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 
 .share-card { overflow: hidden; margin-top: 10PX; border: 1PX solid #e6dccd; border-radius: 16PX; background: #fff; box-shadow: 0 8PX 22PX rgba(52, 41, 31, .07); }
 .share-card-main { padding: 14PX; }
-.share-card-brand { display: flex; align-items: center; gap: 7PX; color: #675d53; font-size: 9PX; font-weight: 800; }
-.mini-logo { width: 24PX; height: 24PX; border-radius: 7PX; }
 .copy-date { display: flex; align-items: center; justify-content: space-between; gap: 8PX; margin: 10PX 0 5PX; font-size: 17PX; font-weight: 700; }
 .copy-date > :last-child { color: #1e5d45; font-size: 9PX; }
-.share-card-foot { display: flex; align-items: center; justify-content: space-between; padding: 9PX 14PX; border-top: 1PX solid #eee8df; color: #1e5d45; font-size: 9PX; font-weight: 850; }
 .menu-detail-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6PX; margin-top: 10PX; }
 .action-button.menu-detail-button { min-height: 32PX; padding: 7PX 8PX; border-radius: 9PX; color: #1e5d45; font-size: 9PX; }
 .menu-detail-button[aria-expanded="true"] { border-color: rgba(40, 117, 87, .38); background: #e7f3ec; }
