@@ -68,6 +68,11 @@ export default function WeekPage() {
   const [copyMeal, setCopyMeal] = useState<number | null>(null), [copyText, setCopyText] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
+  useEffect(() => {
+    if (copyStatus !== "已复制") return;
+    const timer = setTimeout(() => setCopyStatus(""), 2000);
+    return () => clearTimeout(timer);
+  }, [copyStatus]);
   const blocked = !!pending && pending.state !== "rejected", disabled = busy || blocked || sharing;
   const dirty = !!draft && (rebuild || JSON.stringify({ structure: draft.structure, meals: draft.meals }) !== JSON.stringify(saved && { structure: saved.structure, meals: saved.meals }));
   const needsReview = !!pending && (pending.state === "review" || now - pending.createdAt >= 86400000);
@@ -185,7 +190,7 @@ export default function WeekPage() {
       // Taro 4.2 H5 ignores execCommand's false result; the native Promise reports failures.
       if (process.env.TARO_ENV === "h5") await navigator.clipboard.writeText(copyText);
       else await Taro.setClipboardData({ data: copyText });
-      setCopyStatus("已复制，请到微信粘贴发送");
+      setCopyStatus("已复制");
     }
     catch { setCopyStatus("复制失败，文字已保留，请重试复制。"); }
   }
@@ -271,8 +276,8 @@ export default function WeekPage() {
           </View>
         </View></View>
           : <View className="hint">本周没有已安排的餐次，请返回周菜单调整。</View>}
-        {copyText && <Button className="primary" disabled={busy || blocked} onClick={() => void run(copy)}>复制菜单文字</Button>}
-        {copyStatus && <View className="muted" role="status">{copyStatus}</View>}
+        {copyText && <Button className="primary" ariaLabel="复制菜单文字" disabled={busy || blocked} onClick={() => void run(copy)}><View role="status">{copyStatus === "已复制" ? "✓ 已复制" : "复制菜单文字"}</View></Button>}
+        {copyStatus && copyStatus !== "已复制" && <View className="muted" role="status">{copyStatus}</View>}
         <Button className="secondary" ariaLabel="关闭菜单文字" disabled={busy} onClick={closeCopy}>返回周菜单</Button>
       </View>}
       {loaded && !sharing && <>

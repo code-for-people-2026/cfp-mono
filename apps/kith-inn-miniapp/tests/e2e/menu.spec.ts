@@ -162,7 +162,7 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   await expect(page.getByText("复制失败，文字已保留，请重试复制。", { exact: true })).toBeVisible();
   const text = await page.locator(".copy-preview").textContent();
   await clipboard(page); await button(page, "复制菜单文字").click();
-  await expect(page.getByText("已复制，请到微信粘贴发送", { exact: true })).toBeVisible();
+  await expect(button(page, "复制菜单文字")).toHaveText("✓ 已复制");
   expect(await page.locator("html").getAttribute("data-copied")).toBe(text);
   expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(2);
   await closeCopy(page);
@@ -359,7 +359,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
     expect(state.reads).toBe(reads + 1);
     await expect(button(page, "复制菜单文字")).toBeInViewport({ ratio: 1 });
     await clipboard(page); await button(page, "复制菜单文字").click();
-    await expect(page.getByText("已复制，请到微信粘贴发送", { exact: true })).toBeVisible();
+    await expect(button(page, "复制菜单文字")).toHaveText("✓ 已复制");
+    await expect(page.getByText("已复制，请到微信粘贴发送", { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("copy-success-button.png") });
+    await expect(button(page, "复制菜单文字")).toHaveText("复制菜单文字", { timeout: 4000 });
     expect(JSON.stringify(state.saved)).toBe(saved); expect(state.writes).toHaveLength(1);
     await closeCopy(page);
     await expect(page.locator(".copy-screen")).toHaveCount(0);
