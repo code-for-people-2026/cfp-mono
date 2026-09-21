@@ -151,7 +151,7 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   await expect(page.locator(".history-app")).toBeVisible();
   await expect(lunchDishes(page)).toContainText("荤菜3");
   await expect(lunchDishes(page)).not.toContainText("汤菜1");
-  await button(page, "调整这一周").click();
+  await button(page, "排菜单").click(); await enterEdit(page);
   await expect(button(page, "返回本周菜单")).toBeVisible();
   await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
   const reads = state.reads;
@@ -471,7 +471,7 @@ test("两列七天表按选中菜位换菜，导航取消保留调整，重新�
   expect(state.saved!.meals.slice(0, 13)).toEqual(state.generated!.meals.slice(0, 13));
   expect(state.saved!.meals[13]!.meat[0]).toEqual(state.generated!.meals[13]!.meat[0]);
   await button(page, "历史").click();
-  await expect(page.locator(".history-app .week-range")).toContainText("已确认");
+  await expect(page.locator(".history-app .week-range")).toContainText("本周 · 已保存");
   await button(page, "排菜单").click(); await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
   await replaceLunch(page); await saveDraft(page);
   await expect(button(page, "确认周菜单")).toBeVisible();
@@ -593,15 +593,15 @@ test("历史在本入口切已保存周并分页，失败保留当前周，重�
   });
   await button(page, "历史").click();
   await expect(button(page, "历史")).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".history-app .week-range")).toContainText(monday);
+  await expect(page.locator(".history-app .week-range")).toContainText("9月21日—27日");
   await expect(button(page, "下一保存周")).toBeDisabled();
-  await button(page, "上一保存周").click(); await expect(page.locator(".week-range")).toContainText("2026-09-14");
+  await button(page, "上一保存周").click(); await expect(page.locator(".week-range")).toContainText("9月14日—20日");
   await button(page, "上一保存周").click(); await expect(page.locator(".alert")).toBeVisible();
-  await expect(page.locator(".week-range")).toContainText("2026-09-14");
-  await button(page, "上一保存周").click(); await expect(page.locator(".week-range")).toContainText("2026-09-07");
+  await expect(page.locator(".week-range")).toContainText("9月14日—20日");
+  await button(page, "上一保存周").click(); await expect(page.locator(".week-range")).toContainText("9月7日—13日");
   await expect(button(page, "上一保存周")).toBeDisabled(); expect(pages).toBe(2);
   await button(page, "排菜单").click(); await button(page, "历史").click();
-  await expect(page.locator(".history-app .week-range")).toContainText(monday); expect(pages).toBe(3);
+  await expect(page.locator(".history-app .week-range")).toContainText("9月21日—27日"); expect(pages).toBe(3);
 });
 
 test("修改周设置后复制不静默覆盖，取消与读取失败保留设置草稿", async ({ page }) => {
@@ -656,7 +656,7 @@ test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾�
   const weekend = async () => { await scroll.hover(); await page.mouse.wheel(2500, 0); await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(700); await aligned(true); };
   await weekend(); await button(page, "确认周菜单").click(); await weekend();
   await button(page, "保存本周菜单").click(); await button(page, "历史").click(); await weekend();
-  await button(page, "调整这一周").click(); await expect(button(page, "返回本周菜单")).toBeVisible();
+  await button(page, "排菜单").click(); await enterEdit(page); await expect(button(page, "返回本周菜单")).toBeVisible();
   await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
   await openPreview(page); await expect(page.getByText(/微信消息不会自动更新|自行通知邻居/)).toHaveCount(0);
 });
@@ -828,4 +828,35 @@ test("首页没有保存操作，草稿返回编辑保存，查看或还原原�
   await home(page); await expect(button(page, "保存调整")).toHaveCount(0);
   await expect(page.locator(".state-badge")).toHaveText("已确认");
   expect(state.writes).toHaveLength(2); expect(state.saved!.confirmedAt).not.toBeNull();
+});
+
+
+test("历史复用需确认，取消不写入，复制为下周草稿后确认保存", async ({ page }) => {
+  const state = await openWeek(page); await generate(page); await confirmWeek(page);
+  const original = structuredClone(state.saved!);
+  let next: WeekPlan | null = null, writes = 0;
+  await page.route("**/api/kith-inn/weeks/2026-09-28", async (route) => {
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,PUT,OPTIONS" };
+    if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers });
+    if (route.request().method() === "GET") return next ? route.fulfill({ headers, json: next }) : route.fulfill({ status: 404, headers, json: { error: { code: "NOT_FOUND", message: "未保存", requestId: id(999) } } });
+    const input = WeekWriteInputSchema.parse(route.request().postDataJSON());
+    writes++;
+    expect(input.baseVersion).toBe(next?.version ?? 0);
+    next = WeekPlanSchema.parse({ ...original, weekStart: "2026-09-28", version: input.baseVersion + 1,
+      meals: original.meals.map((meal, i) => ({ ...meal, date: input.meals[i]!.date })) });
+    return route.fulfill({ headers, json: next });
+  });
+  await button(page, "历史").click();
+  await expect(button(page, "调整这一周")).toHaveCount(0);
+  await expect(button(page, "重新读取")).toHaveCount(0);
+  await button(page, "复制这周到下周").click(); await page.locator(".taro-model__cancel").click();
+  await expect(page.locator(".history-app")).toBeVisible(); expect(writes).toBe(0);
+  await button(page, "复制这周到下周").click(); await page.locator(".taro-model__confirm").click();
+  await expect(button(page, "返回本周菜单")).toBeVisible();
+  await expect(page.locator(".board-head")).toContainText("9月28日—10月4日");
+  expect(writes).toBe(0); expect(state.saved).toEqual(original);
+  await confirmWeek(page); expect(writes).toBe(1);
+  await button(page, "历史").click(); await button(page, "复制这周到下周").click();
+  await expect(page.locator(".taro-model__content")).toContainText("下周已有菜单");
+  await page.locator(".taro-model__cancel").click(); expect(writes).toBe(1);
 });
