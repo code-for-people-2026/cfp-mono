@@ -5,6 +5,10 @@ import { Button } from "./button";
 
 export type DishPosition = { meal: number; category: Category; index: number };
 export const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
+export function weekRange(menu: MenuPreview): string {
+  const start = menu.weekStart, end = menu.meals[13]!.date;
+  return `${Number(start.slice(5, 7))}月${Number(start.slice(8))}日—${start.slice(0, 7) === end.slice(0, 7) ? "" : `${Number(end.slice(5, 7))}月`}${Number(end.slice(8))}日`;
+}
 export function firstPosition(menu: MenuPreview): DishPosition | null {
   for (const [meal, value] of menu.meals.entries()) {
     if (!value.enabled) continue;
@@ -63,13 +67,13 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
     ? Math.max(48, ...menu.meals.map((meal) => Math.ceil((meal[category][index]?.name.length ?? 0) / 6) * 17 + 8)) : 48));
   const height = rowHeights.reduce((sum, row) => sum + row, 0) + (rows - 1) * 7 || 48;
   return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
-    <View className="board-head"><View>{!readonly && <Text className="board-date">{menu.weekStart}—{menu.meals[13]!.date.slice(5)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{!readonly && <View className="board-filter">
+    <View className="board-head"><View>{!readonly && <Text className="board-date">{weekRange(menu)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{!readonly && <View className="board-filter">
       <Button ariaPressed={!showAll} className={!showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(false)}>荤菜</Button>
       <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
     </View>}{readonly && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>
     <View className="weekly-menu-grid">
       <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
-      <ScrollView id={scrollId} scrollX enhanced scrollLeft={process.env.TARO_ENV === "h5" ? undefined : scrollLeft} className="day-scroll"
+      <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} scrollLeft={process.env.TARO_ENV === "h5" ? undefined : scrollLeft} className="day-scroll"
         onTouchStart={() => { touching.current = true; clearTimeout(settling.current); }} onTouchEnd={endTouch} onTouchCancel={endTouch}
         onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; lastScroll.current = event.detail; setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
         <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
