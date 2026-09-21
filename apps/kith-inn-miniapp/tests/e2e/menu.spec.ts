@@ -857,6 +857,6 @@ test("历史复用需确认，取消不写入，复制为下周草稿后确认�
   expect(writes).toBe(0); expect(state.saved).toEqual(original);
   await confirmWeek(page); expect(writes).toBe(1);
   await button(page, "历史").click(); await button(page, "复制这周到下周").click();
-  await expect(page.locator(".taro-model__content")).toContainText("下周已有菜单");
+  await expect(page.getByText("下周已有菜单，复制后会进入新草稿，确认保存才会替换下周菜单。", { exact: true })).toBeVisible();
   await page.locator(".taro-model__cancel").click(); expect(writes).toBe(1);
 });
