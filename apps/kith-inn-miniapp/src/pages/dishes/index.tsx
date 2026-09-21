@@ -5,6 +5,7 @@ import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
+import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
 
@@ -204,11 +205,14 @@ export default function DishesPage() {
         <Button className="secondary" disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
       </View>}
       {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
-      {signedIn && !dirty && <View className="week-navigation"><Button disabled={disabled} onClick={() => void Taro.navigateTo({ url: "/pages/week/index" })}>排周菜单</Button><Button disabled={disabled} onClick={() => void Taro.navigateTo({ url: "/pages/history/index" })}>历史菜单</Button></View>}
+      {signedIn && notice && !dirty && <Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/week/index" })}>下一步：安排本周菜单</Button>}
       {signedIn && <View className="account-actions"><Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => {
         if (await confirmDiscard()) { await client.logout(); clearDraft(); setItems([]); setLoaded(false); }
       })}>退出登录</Button></View>}
     </>}
     </View>
+    <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {
+      if (await confirmDiscard()) await Taro.reLaunch({ url: `/pages/${page}/index` });
+    })} />
   </View>;
 }

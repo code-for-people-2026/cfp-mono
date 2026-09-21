@@ -40,7 +40,7 @@ async function openPool(page: Page, initial: Dish[] = []) {
     state.items[index] = { ...state.items[index]!, ...changes, version: baseVersion + 1 };
     return route.fulfill({ json: state.items[index], headers });
   });
-  await page.goto("/");
+  await page.goto("/#/pages/dishes/index");
   await expect(page.getByText(initial.length ? "我的菜品池" : "建立我的菜品池", { exact: true })).toBeVisible();
   const action = button(page, initial.length ? "批量添加" : "自动分成荤 / 素 / 汤");
   await expect(action).toHaveJSProperty("tagName", "BUTTON");
@@ -134,6 +134,8 @@ test("响应中断冻结草稿，原请求重试保留幂等键和请求正文",
   state.failure = "abort";
   await button(page, "确认加入菜品池").click();
   await expect(page.getByText("保存结果尚未确认", { exact: true })).toBeVisible();
+  await expect(button(page, "排菜单")).toBeDisabled();
+  await expect(button(page, "历史")).toBeDisabled();
   await expect(button(page, "返回修改菜名")).toBeDisabled();
   await expect(button(page, "取消添加")).toBeDisabled();
   await expect(button(page, "更改番茄蛋汤分类，当前汤")).toBeDisabled();
@@ -169,4 +171,19 @@ test("重试期限过后必须重新读取并核对实际菜池才能继续编�
   await expect(page.getByText("保存结果尚未确认", { exact: true })).toHaveCount(0);
   await expect(button(page, "返回修改菜名")).toBeEnabled();
   expect(state.writes).toHaveLength(1);
+});
+
+
+test("固定导航离开未确认批量输入前提醒，取消保留菜名和分类", async ({ page }) => {
+  const state = await openPool(page);
+  await preview(page, "红烧排骨\n清炒青菜");
+  await button(page, "更改清炒青菜分类，当前素").click();
+  await button(page, "排菜单").click();
+  await page.locator(".taro-model__cancel").click();
+  await expect(button(page, "更改清炒青菜分类，当前汤")).toBeVisible();
+  await button(page, "返回修改菜名").click();
+  await button(page, "历史").click();
+  await page.locator(".taro-model__cancel").click();
+  await expect(page.locator("textarea")).toHaveValue("红烧排骨\n清炒青菜");
+  expect(state.writes).toHaveLength(0);
 });

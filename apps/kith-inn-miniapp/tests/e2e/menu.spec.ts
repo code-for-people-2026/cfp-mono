@@ -6,10 +6,11 @@ const monday = "2026-09-21", timestamp = "2026-09-21T00:00:00Z";
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const button = (page: Page, name: string) => page.getByRole("button", { name, exact: true });
 const lunch = (page: Page) => page.locator(".meal-block:visible").first();
+const lunchDishes = (page: Page) => page.locator(".day-column").first().locator(".meal-cells").first();
 
 // Controlled API transport and stored H5 session, not real WeChat or PostgreSQL evidence.
-async function openWeek(page: Page, viaPool = false) {
-  const items: Dish[] = CategorySchema.options.flatMap((category, c) => Array.from({ length: 4 }, (_, i) => ({
+async function openWeek(page: Page, viaPool = false, dishCount = 4) {
+  const items: Dish[] = CategorySchema.options.flatMap((category, c) => Array.from({ length: dishCount }, (_, i) => ({
     id: id(c * 10 + i + 1), name: `${{ meat: "荤", vegetable: "素", soup: "汤" }[category]}菜${i + 1}`,
     category, active: true, version: 1, createdAt: timestamp, updatedAt: timestamp,
   })));
@@ -70,6 +71,7 @@ async function openWeek(page: Page, viaPool = false) {
   if (viaPool) {
     await page.clock.setFixedTime(new Date(timestamp));
     await page.goto("/");
+    await button(page, "建立我的菜品池").click();
     await page.locator('textarea[placeholder="每行一道菜，例如：红烧排骨"]').fill(items.map((dish) => dish.name).join("\n"));
     await button(page, "自动分成荤 / 素 / 汤").click();
     for (const dish of items.filter((dish) => dish.category === "meat")) {
@@ -78,18 +80,18 @@ async function openWeek(page: Page, viaPool = false) {
     }
     await button(page, "确认加入菜品池").click();
     await expect(page.locator(".dish-card")).toHaveCount(12);
-    await button(page, "排周菜单").click();
+    await button(page, "下一步：安排本周菜单").click();
   } else await page.goto(`/#/pages/week/index?weekStart=${monday}`);
   await expect(button(page, "生成本周菜单")).toBeVisible();
   return state;
 }
 async function generate(page: Page) {
   await button(page, "生成本周菜单").click();
-  await expect(page.locator(".day-plan")).toHaveCount(7);
-  await page.locator(".week-app .day-toggle:visible").first().click();
+  await expect(page.locator(".day-column")).toHaveCount(7);
 }
 async function replaceLunch(page: Page) {
-  await lunch(page).getByRole("button", { name: "选择其他菜：荤菜1", exact: true }).click();
+  await button(page, "周一午餐：荤菜1").click();
+  await button(page, "自己选").click();
   await button(page, "荤菜3").click();
 }
 
@@ -102,7 +104,7 @@ async function clipboard(page: Page, fail = false) {
     }
   } }); }, fail);
 }
-const preview = (page: Page) => lunch(page).getByRole("button", { name: "预览本餐文字", exact: true });
+const preview = (page: Page) => page.getByRole("button", { name: /^(预览本餐文字|周一午餐文字)$/ });
 const closeCopy = (page: Page) => button(page, "关闭菜单文字").click();
 
 test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制重试及改菜再复制", async ({ page }) => {
@@ -120,12 +122,11 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   expect(saved.meals[0]!.meat[0]!.name).toBe("荤菜3");
   expect(saved.meals[0]!.soupOmitted).toBe(true);
   expect(saved.meals.slice(1)).toEqual(state.generated!.meals.slice(1));
-  await button(page, "历史菜单").click();
+  await button(page, "历史").click();
   await page.getByRole("button", { name: /2026-09-21 这一周/ }).click();
   await expect(page.getByText("周菜单已确认", { exact: true })).toBeVisible();
-  await page.locator(".week-app .day-toggle:visible").first().click();
-  await expect(lunch(page)).toContainText("荤菜3");
-  await expect(lunch(page)).not.toContainText("汤菜1");
+  await expect(page.locator(".overview-meal").first()).toContainText("荤菜3");
+  await expect(page.locator(".overview-meal").first()).not.toContainText("汤菜1");
   const reads = state.reads;
   await preview(page).click();
   await expect(page.locator(".copy-preview")).toHaveText("2026年9月21日（周一）午餐\n荤：荤菜3、荤菜2\n素：素菜1、素菜2");
@@ -140,18 +141,19 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   expect(await page.locator("html").getAttribute("data-copied")).toBe(text);
   expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(1);
   await closeCopy(page);
-  await expect(page.locator(".week-app .day-toggle:visible").first()).toBeEnabled();
+  await expect(button(page, "去复制菜单")).toBeEnabled();
   await button(page, "继续编辑").click();
-  await lunch(page).getByRole("button", { name: "选择其他菜：荤菜3", exact: true }).click();
+  await button(page, "周一午餐：荤菜3").click();
+  await button(page, "自己选").click();
   await button(page, "荤菜4").click(); await preview(page).click();
   await button(page, "保存后预览").click();
   await expect(page.locator(".copy-preview")).toContainText("荤菜4");
   await button(page, "复制菜单文字").click();
   await expect(page.locator("html")).toHaveAttribute("data-copied", /荤菜4/);
   expect(state.writes).toHaveLength(2);
-  await closeCopy(page); await page.locator(".week-app .day-toggle:visible").last().click();
-  await expect(page.locator(".meal-block:visible").last()).toContainText("不安排");
-  await expect(page.locator(".meal-block:visible").last().getByRole("button", { name: "预览本餐文字" })).toHaveCount(0);
+  await closeCopy(page);
+  await expect(page.locator(".overview-meal").last()).toContainText("不安排");
+  await expect(page.locator(".overview-meal").last().getByRole("button")).toHaveCount(0);
 });
 
 test("修改结构取消与缺菜失败都保留换菜去汤草稿", async ({ page }) => {
@@ -184,8 +186,8 @@ test("保存已提交但响应丢失时冻结草稿，并使用原键原正文�
   await expect(button(page, "重试原保存请求")).toBeVisible();
   await expect(button(page, "保存调整")).toBeDisabled();
   await expect(button(page, "取消编辑")).toBeDisabled();
-  await expect(button(page, "历史菜单")).toBeDisabled();
-  await expect(lunch(page).getByRole("button", { name: "选择其他菜：荤菜3", exact: true })).toBeDisabled();
+  await expect(button(page, "历史")).toBeDisabled();
+  await expect(button(page, "周一午餐：荤菜3")).toBeDisabled();
   await button(page, "重试原保存请求").click();
   await expect(page.getByText("周菜单已保存并确认", { exact: true })).toBeVisible();
   expect(state.writes).toHaveLength(2);
@@ -212,8 +214,8 @@ test("409冲突保留草稿，读取只供核对，明确确认后载入服务�
   await expect(lunch(page)).toContainText("荤菜3");
   await button(page, "核对完成，载入服务器版本").click();
   await page.getByText("确定", { exact: true }).click();
-  await expect(lunch(page)).toContainText("荤菜1");
-  await expect(lunch(page)).not.toContainText("荤菜3");
+  await expect(page.locator(".overview-meal").first()).toContainText("荤菜1");
+  await expect(page.locator(".overview-meal").first()).not.toContainText("荤菜3");
   expect(state.writes).toHaveLength(2);
 });
 
@@ -234,8 +236,9 @@ test("原汤停用后须选齐全部汤才恢复，取消和未选齐不改变�
   await expect(button(page, "选齐并恢复汤")).toBeDisabled();
   await button(page, "汤菜3").click();
   await button(page, "选齐并恢复汤").click();
-  await expect(lunch(page)).toContainText("汤菜2");
-  await expect(lunch(page)).toContainText("汤菜3");
+  await button(page, "全部").click();
+  await expect(lunchDishes(page)).toContainText("汤菜2");
+  await expect(lunchDishes(page)).toContainText("汤菜3");
   await button(page, "保存调整").click();
   await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
   expect(state.saved!.meals[0]).toMatchObject({ soupOmitted: false, soup: [{ name: "汤菜2" }, { name: "汤菜3" }] });
@@ -389,4 +392,80 @@ test("最新快照停餐后移到剩余日期等待重读，整周停餐仍能�
   await expect(page.locator(".copy-screen")).toHaveCount(0);
   await expect(button(page, "修改周设置")).toBeVisible();
   expect(state.reads).toBe(reads + 3); expect(state.writes).toHaveLength(1);
+});
+
+test("三列七天表按选中菜位换菜，导航取消保留调整，重新进入历史刷新", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await openWeek(page); await generate(page);
+  const carousel = page.locator(".day-carousel"), columns = page.locator(".day-column");
+  const dimensions = await carousel.evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth, column: node.firstElementChild!.getBoundingClientRect().width }));
+  expect(Math.abs(dimensions.column * 3 + 12 - dimensions.width)).toBeLessThan(2);
+  expect(dimensions.scroll).toBeGreaterThan(dimensions.width * 2);
+  await columns.last().getByRole("button", { name: "周日晚餐：荤菜2", exact: true }).click();
+  await button(page, "自己选").click(); await button(page, "荤菜3").click();
+  await expect(lunch(page)).toContainText("当前选择 · 周日 晚餐 · 荤菜");
+  await expect(button(page, "周日晚餐：荤菜3")).toHaveAttribute("aria-pressed", "true");
+  await button(page, "换一道").click();
+  await expect(lunch(page)).toContainText("周日 晚餐");
+  await button(page, "历史").click(); await page.locator(".taro-model__cancel").click();
+  await expect(page.locator(".day-column")).toHaveCount(7);
+  await button(page, "确认周菜单").click();
+  await expect(button(page, "去复制菜单")).toBeVisible();
+  expect(state.saved!.meals.slice(0, 13)).toEqual(state.generated!.meals.slice(0, 13));
+  expect(state.saved!.meals[13]!.meat[0]).toEqual(state.generated!.meals[13]!.meat[0]);
+  await button(page, "历史").click();
+  await expect(page.getByRole("button", { name: /这一周.*已确认/ })).toBeVisible();
+  await button(page, "排菜单").click(); await button(page, "继续编辑").click();
+  await button(page, "保存调整").click();
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await button(page, "历史").click();
+  await expect(page.getByRole("button", { name: /这一周.*已保存/ })).toBeVisible();
+});
+
+test("零荤菜默认全部，停餐仍可选择且不出现替换按钮", async ({ page }) => {
+  await openWeek(page);
+  await page.locator(".structure-fields input").first().fill("0");
+  await page.locator(".setting-row").first().getByRole("checkbox").last().uncheck();
+  await generate(page);
+  await expect(button(page, "全部")).toHaveAttribute("aria-pressed", "true");
+  await button(page, "荤菜").click();
+  await expect(page.getByRole("button", { name: "无荤菜 · 查看全部", exact: true })).toHaveCount(13);
+  await page.getByRole("button", { name: "无荤菜 · 查看全部", exact: true }).first().click();
+  await button(page, "周一晚餐：不安排").click();
+  await expect(lunch(page)).toContainText("本餐不安排");
+  await expect(button(page, "换一道")).toHaveCount(0);
+  await expect(preview(page)).toHaveCount(0);
+});
+
+test("每餐20道与60字菜名不撑破三列，完整菜名可在选中区和总览读取", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await openWeek(page, false, 10);
+  const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
+  state.items[0]!.name = longName;
+  for (const [i, count] of [10, 10, 0].entries()) await page.locator(".structure-fields input").nth(i).fill(String(count));
+  await generate(page); await button(page, "全部").click();
+  await expect(lunchDishes(page).locator(".dish-cell")).toHaveCount(20);
+  await expect(page.locator(".selected-name")).toHaveText(longName);
+  const geometry = await page.locator(".week-app").evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth }));
+  expect(geometry.scroll).toBe(geometry.width);
+  await button(page, "确认周菜单").click();
+  await expect(page.locator(".overview-meal").first()).toContainText(longName);
+  expect(state.saved!.meals[0]!.meat).toHaveLength(10);
+  expect(state.saved!.meals[0]!.vegetable).toHaveLength(10);
+  await button(page, "继续编辑").click(); await button(page, "全部").click();
+  await button(page, "取消编辑").click();
+  await expect(button(page, "去复制菜单")).toBeInViewport({ ratio: 1 });
+});
+
+
+test("候选面板打开后切换菜位，不会把新选择写回旧餐次", async ({ page }) => {
+  const state = await openWeek(page); await generate(page);
+  await button(page, "自己选").click();
+  await button(page, "周二午餐：荤菜2").click();
+  await expect(page.locator(".candidate-sheet")).toHaveCount(0);
+  await button(page, "自己选").click(); await button(page, "荤菜3").click();
+  await button(page, "保存调整").click();
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  expect(state.saved!.meals[0]).toEqual(state.generated!.meals[0]);
+  expect(state.saved!.meals[2]!.meat.map((dish) => dish.name)).toEqual(["荤菜1", "荤菜3"]);
 });

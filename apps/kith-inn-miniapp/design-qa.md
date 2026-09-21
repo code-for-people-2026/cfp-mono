@@ -1,66 +1,54 @@
-# 街坊味菜池原型对照验收
+# 街坊味：排好菜界面对照验收
 
-日期：2026-09-20。范围：#357 / PR #367 的菜池页面。最终结果仅表示本轮 H5 可见内容和交互对照通过，不代替用户验收、微信真机或完整 MVP。
+2026-09-21，#358 / #359 增量迭代，基线 `b385ec1`。本轮 H5 可见界面与交互通过；不代表用户验收、微信真机验收或上线。
 
-## 依据与尺寸
+## 依据、状态与尺寸
 
-- 原型：`ideal/docs/kith-inn/yao/prototype-implementation/prototype-taozi/index.html?step=dishes`，固定提交 `cb71b2e84ac0665a288b1634096438c19b743918`；本地原文件与该提交无差异，文件 blob 为 `3bf6fd4bbcf0202befbedd6cf1bd4a8acc47b170`。
-- 来源完整画面：Codex 内置浏览器，1280×1100 CSS px，DPR 1。手机内业务 `.screen-body` 位于 x=760.640625、y=221，大小376×648；取顶部376×620排除外壳底部圆角。未修改原型文件或原型已有本地改动。
-- 实现：同一内置浏览器，376×706 CSS px、DPR 1；裁掉58px H5标题栏，取376×620内容。使用同样8道菜、相同分类与未提交状态。输入页346px内宽；溢出的预览页由滚动条占15px，两侧实际内宽均331px。
-- 原始截屏与各轮比较在本机 `~/.codex/visualizations/2026/09/20/01a0be10-fd82-72e0-bf62-477f83d19536/prototype-alignment/`。最终成对图随代码保存，左原型、右实现；不是用两个不同视口的单图推断一致。
-- source visual truth path：该目录 `reference-input.png`、`reference-preview.png`；implementation screenshot path：`implementation-input-final-full.png`、`implementation-preview-final-full.png`。原始全截图保存为JPEG字节（工具返回），裁切及合成统一导出PNG，不做内容修图。
+- source visual truth：`ideal-worktrees/paihaocai-prototype`，提交 `ab27256`，`排好菜/prototype-customer/src/App.jsx` / `styles.css` 的菜单与总览；`prototype-implementation` 的日常入口和固定导航。只读源码，在自行新开的浏览器页交互，未修改原型文件。
+- 实现：本工作树 `apps/kith-inn-miniapp`，临时 H5 `3348` → 真实 API `3350` → 独立 PG17 `cfp_kith_pai_browser_test`。本地测试身份和传输桥接，业务读写没有 mock。
+- 同一菜单状态：2026-09-07 周一午餐第一道“土豆烧牛肉”选中，2荤2素1汤，前五天逐道采用客户原型数据；MVP另保留周六、周日。荤菜、全部、已确认总览分别成对捕获。
+- 手机双方 CSS viewport 为390×844。浏览器截图 API 输出均390×844像素，原型屏幕在DPR2下由工具归一到CSS像素，实现DPR1；原始返回为JPEG，合成时统一转PNG，无内容修图。桌面双方 CSS viewport 为1280×900，原型输出1265×889（工具去除滚动边缘），实现1280×900；全图并排保持原像素，不据桌面设备外壳的缩放判字体差异。
+- 原始 source / implementation screenshot path：本机 `/tmp/pai-ui-qa/reference-{menu,all,overview}-mobile.png`、`implementation-{menu,all,overview}-mobile.png`；桌面 `reference-menu-desktop.png` / `implementation-menu-desktop.png`。以下随代码保存的成对图包含全部原始可见内容。
 
-## 成对证据
+## 成对视觉证据
 
-![录入页：左原型，右实现](docs/visual-qa/input-comparison.png)
+![手机菜单：左客户原型，右实现](docs/visual-qa/pai-menu-mobile-comparison.png)
+![全部菜品：左客户原型，右实现](docs/visual-qa/pai-all-mobile-comparison.png)
+![菜单总览：左客户原型，右实现](docs/visual-qa/pai-overview-mobile-comparison.png)
+![桌面同状态：左展示原型，右业务页面](docs/visual-qa/pai-menu-desktop-comparison.png)
+![表格局部：均366px宽、CSS像素1:1](docs/visual-qa/pai-table-detail-comparison.png)
+![固定导航：左工程原型，右MVP](docs/visual-qa/pai-navigation-comparison.png)
 
-![分类确认：左原型，右实现](docs/visual-qa/preview-comparison.png)
+## 检查与修复历史
 
-![分类标签和原始图标的放大对照](docs/visual-qa/icon-detail-comparison.png)
+1. 初次真实生成的浏览器截图发现 P2：设置页滚动位置带入菜单，标题被裁在首屏之外；长表取消编辑也会停留在下方。生成和载入保存快照后回到顶部；最终23条回归包含20道长表取消后“去复制菜单”完全在视口内。上述最终手机图重新捕获，标题、表格和固定操作均可见。
+2. 初次手机截图发现 P2：运行时15px滚动槽让表格比原型窄，固定按钮右边缘与内容不齐。保留纵向滚动能力并隐藏滚动槽；复捕表格双方366px宽，三列、6px列间距、25px餐次轴对齐。上方最终局部成对图可逐行核对。
+3. 协调者独立静态审查发现 P2：候选未关闭时切换菜位，旧target可能替换旧餐次。选择新菜位同时关闭候选与旧餐次的汤重选；反例验证周一面板→周二菜位→候选只改周二，周一保持原样。
+4. 最终比较包含字体、布局、颜色、资产和文案，无未收敛 P0/P1/P2。早期CDP截图出现截断/缩放，已丢弃；验收使用浏览器标准截图并核对实际图像尺寸，不拿缩放错误当产品缺陷。
 
-## 比较与修复历史
+## 五项视觉结论与允许的差异
 
-1. 初始版本 `1158f0e`：P1，自行设计的大品牌区、绿色按钮、外层面板和字号布局取代了原型。`input-comparison-before.png` 已按相同菜名捕获；重排为原型 detail-head、menu-rule、输入框、红色CTA和白色分类行，移除额外品牌区。
-2. 第一轮实现：P2，Taro运行时把背景覆盖为白色；图标aspectFit横向偏移，只剩半个图标；输入框多出内层边框及拖动角；固定滚动槽使输入内容窄15px。证据 `input-comparison-v1.png`、`preview-comparison-v1.png`。明确业务容器背景，正方形原始SVG使用scaleToFill，规范H5原生textarea的边框/内距/resize，滚动改为auto。
-3. 第二轮：背景、图标与输入框修复通过，但Taro后插入的同权重规则仍覆盖overflow-y；证据 `input-comparison-v2.png`、`preview-comparison-v2.png`。用页面现有双类选择器提高局部优先级，未使用全局!important。
-4. 最终重新构建并捕获上述两张成对图：输入页宽度回到376/346，预览保持与原型相同滚动密度；两名独立于UI作者的审查者分别打开成对图复核，无未收敛P0/P1/P2。
-5. 行为审查另发现P2：首次保存成功后的GET失败会隐藏重读按钮。已在确认写入后设loaded=false；新增回归覆盖POST201→GET503→人工重读成功，并断言只有一次POST。
-
-## 五项视觉检查
-
-| 项目 | 检查结论 |
+| 项目 | 结论 |
 | --- | --- |
-| 字体 | 原系统字体栈；标题21px/700、副字11px、规则10px/15px行高、输入11px/17.6px、主按钮16px/850；标题区51.5px和按钮46.5px与原型实测相同 |
-| 布局 | 内容15px内距、规则区50px、textarea128px；分类行、圆角、间距及同状态折行一致。另检查390×844和1280×900，均无横向溢出，桌面业务区最大480px |
-| 配色 | 原型#fbf8f1背景、#b64131主按钮、#fff2d5规则区及荤素汤色组；成功/错误/维护沿用同一套颜色 |
-| 资产 | 原始RefreshCw SVG逐字复用，完整显示且尺寸14px；放大检查无裁切或占位图标；未复制设备外壳/系统图标 |
-| 文案 | 录入、预览、纠正顺序和主要文案匹配；移除“原型/weekly-menu”的工程说明，增加生产所需限制和状态提示，详见下方差异 |
+| 字体 | 系统中文字体栈、表头15px、菜名11px/850、43px菜格、绿色选择标签；局部图显示行列、菜名密度相近。长菜名最多两行，选中区和总览显示完整名称 |
+| 布局 | 手机第一屏三天，横向七天；午晚餐等高行对齐。桌面业务区最大480px。所有数量均可纵向滚动，固定确认和导航预留底部空间；全部模式下下方餐次需滚动，属于额外导航与真实状态提示的明确差异 |
+| 配色 | 背景#fbf8f1、主操作#b64131、选择#1e5d45、荤/素/汤左色条及白底边框沿用来源；原生键盘焦点可见、禁用按钮不可触发 |
+| 资产 | 导航逐字复用原型Radix Calendar/Archive/Clock SVG，保留MIT许可；三个图标完整清晰。复制页继续使用街坊味现有logo，不绘制手机外壳、状态栏或系统胶囊 |
+| 文案 | 街坊味/桃子、七天十四餐；明确荤菜/全部、换一道/自己选、去汤/恢复、未保存与错误。无家庭人数、推荐库、跨周复制或“我的”空页面 |
 
-## 范围允许的差异
+确认是现有的一次原子保存，总览展示已保存结果；“去复制菜单”在首屏、继续编辑次之，所以不复制原型总览底部再次保存。每餐独立卡片保留原型绿色标题/日期/完整菜名，新增单餐复制入口。首用只引导建立自有菜池→餐次与结构；已建菜池直接进入排菜单。菜池批量录入/维护沿用已验收流程，导航离开须处理未保存输入。
 
-- 原型示例菜不预填到真实输入框，避免误保存；截图比较时人工填入相同8道菜。
-- 增加200道限额、取消/退出和未保存提醒，保留未知写入保护、失败留稿和冲突处理；这些文字不替换原型主内容。
-- 原型未提供本版全部维护/异常状态，列表、编辑、成功和错误使用原有dish、kind、tiny-action、success等组件语言；不恢复配送、订单、公布锁。
-- 不绘制原型展示页、手机外壳、状态栏、微信胶囊；WeApp使用原生导航，H5提供普通标题栏。
-- 来源截图存在亚像素x坐标与JPEG编码，字符抗锯齿可能有轻微像素差；验收不是逐像素完全相等的承诺。
+## 验证与边界
 
-## 功能与运行验证
+- Node22.23.2 / TZ=UTC 根 `pnpm verify` 通过：API93、前端51、契约37条，其他工作区门禁也通过。隔离数据库 `cfp_kith_pai_ui_test`、`cfp_weekly_pai_ui_test`、`cfp_website_pai_ui_test`；日志 `/tmp/pai-ui-verify.log`。
+- 最后视觉/选择修复后重跑小程序 lint、typecheck、WeApp构建和全部23条H5浏览器回归；日志 `/tmp/pai-ui-weapp-final.log`、`/tmp/pai-ui-e2e-final.log`。覆盖导航取消留稿与未知写入冻结、原键原正文重试、历史重新进入刷新、换菜定位、跨菜位关闭旧面板、多汤恢复、零类别、停餐、20道/60字、复制每次读最新/失败无旧文字/保存后复制。
+- 浏览器真实API联调：9月21日生成14餐→随机与手选换菜→周一去汤→一次确认→历史返回→单餐复制成功。SQL核对该周version1、confirmed=true、14餐、周一“白切鸡/豉汁蒸鱼”、soupOmitted=true；复制未增写。对照周9月7日另有独立固定数据。
+- 最终浏览器 Runtime/Log 事件无异常或console error；390与1280 DOM检查业务区无横向溢出，横向滚动仅发生在七天表格内。
+- 本轮自建3346/3348/3350临时服务在交付前停止；不修改共享3317/3319、用户九道菜或其他工作树。真实微信登录、微信剪贴板与双设备真机仍交由后续既有验收，不以H5代替。
 
-- Node22.23.2、TZ=UTC下根 `pnpm verify` 通过，含33个前端测试、67个真实PG API测试、37个契约测试及H5/WeApp构建；未变更的包按现有Turbo规则复用缓存，数据库测试实际执行。
-- 最终6条H5交互回归通过，包含新增保存后重读失败用例；日志 `/tmp/kith-prototype-e2e-final.log`，根门禁日志 `/tmp/kith-prototype-verify.log`。
-- 内置浏览器连接真实API和独立PG17，验证分类纠正返回保留、批量保存8道菜、刷新读回、改名/停用/恢复；数据库核对8道全部启用。只注入本地测试微信身份和传输，未替换业务API或数据库。无浏览器console error。
-- 已检查列表和编辑截图 `implementation-list-final.png`、`implementation-edit-final.png`，以及390px/1280px截图。额外控件可滚动访问；导航与编辑逻辑有效。
-- 微信真机样式、真实登录/双设备仍需既有小程序配置后验收，不能用H5代替。
-
-## 实施检查单
-
-- [x] 指定原型视觉约束写入PRD、handoff、spec及T015。
-- [x] 按源还原录入/预览并复用图标。
-- [x] 修复运行时视觉覆盖与保存后重读回归。
-- [x] 相同状态成对截图及独立复核。
-- [x] 本地根门禁、6条浏览器回归、真实API/PG联调。
+- [x] 三列七天菜单、定点换菜、去汤、设置、确认总览和复制连续可用。
+- [x] 三入口固定导航、首次准备和历史刷新，草稿及未知写入保护回归通过。
+- [x] 手机/桌面同状态成对图、局部字体/色条/图标比较、真实API/PG验证。
 - [ ] 用户视觉验收与微信真机验收。
-
-无需要阻止本轮交付的P3事项。
 
 final result: passed
