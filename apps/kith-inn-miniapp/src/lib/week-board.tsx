@@ -1,4 +1,4 @@
-import { Text, View } from "@tarojs/components";
+import { ScrollView, Text, View } from "@tarojs/components";
 import type { Category, MenuPreview } from "@cfp/kith-inn-contracts";
 import { Button } from "./button";
 
@@ -13,38 +13,42 @@ export function firstPosition(menu: MenuPreview): DishPosition | null {
   }
   return null;
 }
-export function WeekBoard({ menu, selected, showAll, disabled, onSelect, onFilter }: {
-  menu: MenuPreview; selected: DishPosition | null; showAll: boolean; disabled: boolean;
-  onSelect: (position: DishPosition) => void; onFilter: (all: boolean) => void;
+export function WeekBoard({ menu, selected = null, showAll = true, disabled = false, onSelect, onFilter, readonly = false }: {
+  menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean;
+  onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
   const categories: Category[] = showAll ? ["meat", "vegetable", "soup"] : ["meat"];
   const rows = Math.max(1, categories.reduce((count, category) => count + menu.structure[category], 0));
-  const height = rows * 43 + (rows - 1) * 7;
-  return <View className="weekly-menu-board week-plans">
-    <View className="board-head"><Text>一周菜单</Text><View className="board-filter"><Text>筛选</Text>
-      <Button ariaPressed={!showAll} className={!showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter(false)}>荤菜</Button>
-      <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter(true)}>全部</Button>
-    </View></View>
+  // Keep readonly long names complete and align the same slot across all seven days.
+  const rowHeights = categories.flatMap((category) => Array.from({ length: menu.structure[category] }, (_, index) => readonly
+    ? Math.max(48, ...menu.meals.map((meal) => Math.ceil((meal[category][index]?.name.length ?? 0) / 6) * 17 + 8)) : 48));
+  const height = rowHeights.reduce((sum, row) => sum + row, 0) + (rows - 1) * 7 || 48;
+  return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
+    <View className="board-head"><View>{!readonly && <Text className="board-date">{menu.weekStart}—{menu.meals[13]!.date.slice(5)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{!readonly && <View className="board-filter">
+      <Button ariaPressed={!showAll} className={!showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(false)}>荤菜</Button>
+      <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
+    </View>}{readonly && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>
     <View className="weekly-menu-grid">
       <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
-      <View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
+      <ScrollView scrollX className="day-scroll"><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
         <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
         {[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
           const meal = menu.meals[mealIndex]!;
-          return <View className="meal-cells" key={mealIndex} style={{ height: `${height}px` }}>
-            {!meal.enabled ? <Button className="empty-meal" disabled={disabled} ariaLabel={`${day}${mealIndex % 2 ? "晚餐" : "午餐"}：不安排`} onClick={() => onSelect({ meal: mealIndex, category: "meat", index: 0 })}>不安排</Button>
+          return <View className="meal-cells" key={mealIndex} style={{ height: `${height}px`, gridTemplateRows: rowHeights.map((row) => `${row}px`).join(" ") }}>
+            {!meal.enabled ? <Button className="empty-meal" disabled={disabled || readonly} ariaLabel={`${day}${mealIndex % 2 ? "晚餐" : "午餐"}：不安排`} onClick={() => onSelect?.({ meal: mealIndex, category: "meat", index: 0 })}>不安排</Button>
               : categories.flatMap((category) => Array.from({ length: menu.structure[category] }, (_, index) => {
                 const dish = meal[category][index];
                 const omitted = category === "soup" && meal.soupOmitted;
                 const active = selected?.meal === mealIndex && selected.category === category && selected.index === index;
+                if (readonly) return <View key={`${category}-${index}`} className={`dish-cell ${category} ${omitted ? "omitted" : ""}`}><Text selectable>{omitted ? "本餐去汤" : dish?.name}</Text></View>;
                 return <Button key={`${category}-${index}`} className={`dish-cell ${category} ${active ? "selected" : ""} ${omitted ? "omitted" : ""}`}
                   ariaLabel={`${day}${mealIndex % 2 ? "晚餐" : "午餐"}：${omitted ? "本餐去汤" : dish?.name}`} ariaPressed={active} disabled={disabled}
-                  onClick={() => onSelect({ meal: mealIndex, category, index })}><Text>{omitted ? "本餐去汤" : dish?.name}</Text></Button>;
+                  onClick={() => onSelect?.({ meal: mealIndex, category, index })}><Text>{omitted ? "本餐去汤" : dish?.name}</Text></Button>;
               }))}
-            {meal.enabled && !showAll && !menu.structure.meat && <Button className="empty-meal" disabled={disabled} onClick={() => onFilter(true)}>无荤菜 · 查看全部</Button>}
+            {meal.enabled && !showAll && !menu.structure.meat && <Button className="empty-meal" disabled={disabled} onClick={() => onFilter?.(true)}>无荤菜 · 查看全部</Button>}
           </View>;
         })}
-      </View>)}</View>
-    </View><Text className="board-hint">左右滑动查看七天 · 点一道菜再调整</Text>
+      </View>)}</View></ScrollView>
+    </View>
   </View>;
 }
