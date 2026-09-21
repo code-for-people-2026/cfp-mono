@@ -145,9 +145,6 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .meal-options { display: flex; gap: 16PX; margin-top: 4PX; }
 .week-app .plan-action { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(72PX + env(safe-area-inset-bottom)); width: calc(100% - 24PX); max-width: 456PX; margin: 0; padding: 10PX 0; }
 .week-app .candidate-sheet { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(72PX + env(safe-area-inset-bottom)); width: 100%; max-width: 480PX; margin: 0; padding: 13PX 15PX 17PX; }
-.overview-status { padding: 14PX; border-radius: 16PX; color: #fff; background: #1e5d45; font-size: 10PX; line-height: 1.5; }
-.overview-status > * { display: block; }
-.overview-title { margin: 4PX 0; font-size: 21PX; font-weight: 750; }
 .overview-list { display: grid; gap: 8PX; margin-top: 14PX; }
 .overview-day { padding: 12PX 13PX; border: 1PX solid #e6dccd; border-radius: 12PX; background: #fff; }
 .overview-day .day-head { color: #1e5d45; font-size: 14PX; }

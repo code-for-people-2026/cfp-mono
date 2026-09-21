@@ -178,11 +178,11 @@ export default function WeekPage() {
     {process.env.TARO_ENV === "h5" && <View className="app-heading">{sharing ? "复制菜单" : "街坊味 · 本周菜单"}</View>}
     <View className="dish-page">
       {!sharing && <View className="week-toolbar"><Button ariaLabel="上一周" disabled={disabled} onClick={() => void move(addDays(week, -7))}>‹</Button>
-        <View className="week-range"><Text className="range-title">{week}—{WeekStartSchema.safeParse(week).success ? addDays(week, 6).slice(5) : "日期无效"}</Text><Text>桃子的家常饭 · 为街坊安排一周</Text></View>
+        <View className="week-range"><Text className="range-title">{week}—{WeekStartSchema.safeParse(week).success ? addDays(week, 6).slice(5) : "日期无效"}</Text></View>
         <Button ariaLabel="下一周" disabled={disabled} onClick={() => void move(addDays(week, 7))}>›</Button></View>}
       {error && <View className="alert" role="alert">{error}</View>}{notice && <View className="hint">{notice}</View>}
       {!client && <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View>}
-      {client && !client.restoreSession() && <View className="login-panel"><Text className="detail-title">欢迎回到自己的厨房</Text><Text className="muted">街坊味 · 桃子为邻居安排家常饭</Text>{process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}<Button className="primary" disabled={busy} onClick={() => void run(async () => { await client!.login(); if (!draft) await read(); else setDishes(await client!.getDishes()); })}>微信登录</Button></View>}
+      {client && !client.restoreSession() && <View className="login-panel">{process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}<Button className="primary" disabled={busy} onClick={() => void run(async () => { await client!.login(); if (!draft) await read(); else setDishes(await client!.getDishes()); })}>微信登录</Button></View>}
       {!loaded && client?.restoreSession() && <Button disabled={busy} onClick={() => void run(read)}>读取本周菜单</Button>}
       {blocked && pending?.kind !== "week" && <View className="recovery"><Text>菜品池有待核对的保存，请先返回处理。</Text><Button disabled={busy} onClick={() => void Taro.reLaunch({ url: "/pages/dishes/index" })}>返回核对菜品保存</Button></View>}
       {(blocked && pending?.kind === "week" || conflict) && <View className="recovery"><Text>{conflict ? "另一处已保存新版本，当前草稿仍保留。请读取并核对，不能直接覆盖。" : "上次保存结果未确认，草稿仍保留。请先重试同一请求。"}</Text>
@@ -235,7 +235,7 @@ export default function WeekPage() {
           <Button className="primary" disabled={disabled || cooling} onClick={() => void run(generate)}>{menu ? "按新设置重新生成" : "生成本周菜单"}</Button>
           {menu && <Button className="text-button" disabled={disabled} onClick={() => setSettings(false)}>取消设置，保留原菜单</Button>}
         </View>}
-        {menu && !editing && <><View className="overview-status"><Text>街坊味 · 桃子的家常饭</Text><Text className="overview-title">{saved?.confirmedAt ? "这一周，安排好了" : "菜单已保存"}</Text><Text>{menu.meals.filter((meal) => meal.enabled).length} 餐已安排 · 随时可以回来调整</Text></View>
+        {menu && !editing && <>
           <Button className="primary" disabled={disabled || cooling} onClick={() => void run(() => openCopy())}>去复制菜单</Button>
           <Button className="secondary" disabled={disabled} onClick={() => void run(edit)}>继续编辑</Button>
           <View className="overview-list week-plans">{menu.meals.map((meal, mealIndex) => <View className="overview-day" key={mealIndex}>
