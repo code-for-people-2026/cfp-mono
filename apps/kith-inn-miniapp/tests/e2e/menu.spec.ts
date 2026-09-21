@@ -631,6 +631,7 @@ test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾�
   const weekend = async () => { await scroll.hover(); await page.mouse.wheel(2500, 0); await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(700); await aligned(true); };
   await weekend(); await button(page, "确认周菜单").click(); await weekend();
   await button(page, "保存本周菜单").click(); await button(page, "历史").click(); await weekend();
-  await button(page, "调整这一周").click(); await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
+  await button(page, "调整这一周").click(); await expect(button(page, "返回本周菜单")).toBeVisible();
+  await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
   await openPreview(page); await expect(page.getByText(/微信消息不会自动更新|自行通知邻居/)).toHaveCount(0);
 });
