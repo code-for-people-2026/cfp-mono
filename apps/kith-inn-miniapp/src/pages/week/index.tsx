@@ -73,7 +73,7 @@ export default function WeekPage() {
     const timer = setTimeout(() => setCopyStatus(""), 2000);
     return () => clearTimeout(timer);
   }, [copyStatus]);
-  const blocked = !!pending && pending.state !== "rejected", disabled = busy || blocked || sharing;
+  const blocked = !!pending && pending.state !== "rejected", disabled = busy || blocked;
   const dirty = !!draft && (rebuild || JSON.stringify({ structure: draft.structure, meals: draft.meals }) !== JSON.stringify(saved && { structure: saved.structure, meals: saved.meals }));
   const needsReview = !!pending && (pending.state === "review" || now - pending.createdAt >= 86400000);
   const cooling = now < retryAt;
@@ -116,6 +116,7 @@ export default function WeekPage() {
     } finally { setPending(client.pendingWrite()); setBusy(false); }
   }
   function adopt(value: WeekPlan | null) {
+    setCopyText(null);
     setNotice(""); void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
     setSaved(value); setDraft(value); setRebuild(false); setEditing(false); setSettings(!value);
     setStructure(value?.structure ?? { meat: 2, vegetable: 2, soup: 1 });
@@ -147,7 +148,7 @@ export default function WeekPage() {
   function acceptWrite(result: WriteResult) {
     if (result.kind !== "week") throw new Error("请回到菜品池核对上次写入");
     if (result.week.weekStart !== week) { setWeek(result.week.weekStart); setLoaded(false); return; }
-    adopt(result.week); setScreen(screen === "meal" ? "meal" : result.week.confirmedAt ? "home" : "edit"); setNotice(screen === "meal" ? "本餐调整已保存" : result.week.confirmedAt ? "周菜单已保存并确认" : "菜单已保存，可继续调整或确认");
+    adopt(result.week); if (screen === "meal") setCopyText(formatMealText(result.week.meals[mealIndex]!)); setScreen(screen === "meal" ? "meal" : result.week.confirmedAt ? "home" : "edit"); setNotice(screen === "meal" ? "本餐调整已保存" : result.week.confirmedAt ? "周菜单已保存并确认" : "菜单已保存，可继续调整或确认");
   }
   async function save(confirm: boolean) {
     if (!draft) return;
@@ -171,20 +172,24 @@ export default function WeekPage() {
         setCopyStatus("这餐已改为不安排，请选择其他餐次后重新预览。");
         return;
       }
-      setCopyText(text);
+      setCopyText(text); setMealIndex(mealIndex); setScreen("meal");
     } catch (value) {
       setCopyStatus("读取已保存菜单失败，请重试；未生成可复制文字。");
       throw value;
     }
   }
-  async function openCopy(mealIndex = menu?.meals.findIndex((meal) => meal.enabled) ?? -1) {
-    setSharing(true); setNotice("");
+  async function openCopy(mealIndex = menu?.meals.findIndex((meal) => meal.enabled && meal.date === todayInChina()) ?? -1) {
+    if (mealIndex < 0) mealIndex = menu?.meals.findIndex((meal) => meal.enabled) ?? -1;
+    const changingMeal = sharing && screen === "meal" && dirty && mealIndex !== copyMeal;
+    if (changingMeal && !await discard()) return;
+    setSharing(true); setNotice(""); setSoupSelection(null);
     if (mealIndex < 0) { setCopyMeal(null); setCopyText(null); return; }
     setCopyMeal(mealIndex); setCopyText(null); setCopyStatus("");
-    await previewCopy(mealIndex);
+    try { await previewCopy(mealIndex, changingMeal); }
+    catch (error) { if (changingMeal) setCopyMeal(copyMeal); throw error; }
   }
   async function copy() {
-    if (copyText === null) return;
+    if (copyText === null || dirty || settingsDirty || blocked) return;
     setCopyStatus("");
     try {
       // Taro 4.2 H5 ignores execCommand's false result; the native Promise reports failures.
@@ -211,25 +216,13 @@ export default function WeekPage() {
     setDraft(replaceDish(menu, target.meal, target.category, target.index, candidate, pool));
     setSelected(target); setTarget(null); setScreen("edit");
   }
-  async function openMeal() {
-    if (!saved || dirty || settingsDirty) return;
-    const latest = await client!.getWeek(week), pool = await client!.getDishes();
-    if (!latest) throw new Error("这一周尚未保存，请先保存菜单。");
-    const today = latest.meals.findIndex((meal) => meal.date === todayInChina() && meal.enabled);
-    adopt(latest); setDishes(pool); setMealIndex(today >= 0 ? today : latest.meals.findIndex((meal) => meal.enabled)); setScreen("meal");
-  }
-  async function chooseMeal(index: number) {
-    if (index === mealIndex || !await discard()) return;
-    setDraft(saved); setMealIndex(index); setSoupSelection(null); setNotice("");
-  }
   function back() {
-    if (screen === "meal") { void run(async () => { if (await discard()) adopt(saved); }); return; }
     setTarget(null); setSoupSelection(null);
     setScreen(screen === "edit" ? "home" : "edit");
   }
   async function soup(mealIndex: number) {
     if (!draft) return;
-    setNotice("");
+    setNotice(""); setCopyStatus("");
     const pool = await client!.getDishes(); setDishes(pool);
     try { setDraft(setSoupOmitted(draft, mealIndex, !draft.meals[mealIndex]!.soupOmitted, pool)); }
     catch (value) {
@@ -267,18 +260,22 @@ export default function WeekPage() {
         {menu?.meals.some((meal) => meal.enabled) ? <View className="share-card"><View className="share-card-main">
           <MealPicker menu={menu} index={copyMeal ?? 0} disabled={busy || blocked || cooling} onChange={(index) => void run(() => openCopy(index))} />
           <View className="copy-panel">
-            {(dirty || settingsDirty) && !copyText ? <><Text className="muted">{settingsDirty ? "餐次或数量尚未重新生成，请返回周设置生成菜单，或明确放弃修改。" : "还有未保存修改，请先保存或明确放弃，再读取已保存菜单。"}</Text>
+            {(dirty || settingsDirty) && screen !== "meal" && !copyText ? <><Text className="muted">{settingsDirty ? "餐次或数量尚未重新生成，请返回周设置生成菜单，或明确放弃修改。" : "还有未保存修改，请先保存或明确放弃，再读取已保存菜单。"}</Text>
               {settingsDirty ? <Button className="secondary" disabled={busy || blocked} onClick={() => { closeCopy(); setEditing(false); setSettings(true); }}>返回周设置</Button>
                 : <Button className="secondary" disabled={busy || blocked || cooling || conflict} onClick={() => void run(async () => { await save(false); await previewCopy(copyMeal!, true); })}>保存后预览</Button>}
               <Button className="text-button" disabled={busy || blocked || cooling || conflict} onClick={() => void run(async () => { if (await discard()) await previewCopy(copyMeal!, true); })}>放弃修改后预览</Button></>
               : !copyText && <Button className="secondary" disabled={busy || blocked || cooling} onClick={() => void run(() => previewCopy(copyMeal!))}>{busy ? "正在读取保存菜单" : "重新读取本餐文字"}</Button>}
-            {copyText && <View className="copy-preview"><Text selectable>{copyText}</Text></View>}
+            {(copyText || screen === "meal" && dirty) && <View className="copy-preview"><Text selectable>{screen === "meal" && dirty ? formatMealText(menu.meals[mealIndex]!) : copyText}</Text></View>}
           </View>
         </View></View>
           : <View className="hint">本周没有已安排的餐次，请返回周菜单调整。</View>}
-        {copyText && <Button className="primary" ariaLabel="复制菜单文字" disabled={busy || blocked} onClick={() => void run(copy)}><View role="status">{copyStatus === "已复制" ? "✓ 已复制" : "复制菜单文字"}</View></Button>}
+        {menu && screen === "meal" && (copyText || dirty) && <View className="meal-adjustment">
+          {menu.structure.soup > 0 ? <View className="setting-row"><Text>本餐做汤</Text>{process.env.TARO_ENV === "h5" ? <input className="meal-soup-switch" type="checkbox" aria-label="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} /> : <Switch ariaLabel="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} />}</View> : <Text className="muted">本餐未安排汤</Text>}
+          {dirty && <Button className="secondary" disabled={disabled || cooling || conflict || !!soupSelection} onClick={() => void run(() => save(false))}>保存本餐调整</Button>}
+        </View>}
+        {copyText && <Button className="primary" ariaLabel="复制菜单文字" disabled={busy || blocked || dirty || settingsDirty || !!soupSelection} onClick={() => void run(copy)}><View role="status">{copyStatus === "已复制" ? "✓ 已复制" : "复制菜单文字"}</View></Button>}
         {copyStatus && copyStatus !== "已复制" && <View className="muted" role="status">{copyStatus}</View>}
-        <Button className="secondary" ariaLabel="关闭菜单文字" disabled={busy} onClick={closeCopy}>返回周菜单</Button>
+        <Button className="secondary" ariaLabel="关闭菜单文字" disabled={busy} onClick={() => void run(async () => { if (screen === "meal" && dirty && !blocked) { if (!await discard()) return; adopt(saved); } closeCopy(); })}>返回周菜单</Button>
       </View>}
       {loaded && !sharing && <>
         {screen === "home" && <View className="plan-state"><Text>7 天 · {(menu?.meals ?? meals).filter((meal) => meal.enabled).length} 餐{menu ? ` · ${menu.meals.reduce((count, meal) => count + meal.meat.length + meal.vegetable.length + (meal.soupOmitted ? 0 : meal.soup.length), 0)} 道菜` : "待安排"}</Text><Text className="state-badge">{dirty || settingsDirty ? "未保存" : saved ? saved.confirmedAt ? "已确认" : "已保存" : "待生成"}</Text></View>}
@@ -298,19 +295,7 @@ export default function WeekPage() {
           <Button className="secondary" disabled={disabled} onClick={() => { setStructure(menu.structure); setMeals(menu.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled }))); setSettings(true); }}>修改周设置</Button>
           <Button className="secondary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(false))}>保存调整</Button>
           {dirty && <Button className="secondary" disabled={disabled} onClick={() => void run(async () => { if (await discard()) adopt(saved); })}>放弃本次调整</Button>}</>}
-          <Button className="secondary" disabled={disabled || cooling || conflict || !saved || dirty || settingsDirty} onClick={() => void run(openMeal)}>调整某一餐</Button>
           <Button className="secondary" disabled={disabled || cooling} onClick={() => void run(() => openCopy())}>去复制菜单</Button>
-        </View>}
-        {menu && screen === "meal" && <View className="meal-adjustment">
-          {mealIndex >= 0 && menu.meals[mealIndex]?.enabled ? <>
-            <View className="share-card"><View className="share-card-main">
-              <MealPicker menu={menu} index={mealIndex} disabled={disabled || cooling} onChange={(index) => void run(() => chooseMeal(index))} />
-              <View className="copy-preview"><Text>{formatMealText(menu.meals[mealIndex]!)}</Text></View>
-            </View></View>
-            {menu.structure.soup > 0 ? <View className="setting-row"><Text>本餐做汤</Text>{process.env.TARO_ENV === "h5" ? <input className="meal-soup-switch" type="checkbox" aria-label="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} /> : <Switch ariaLabel="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} />}</View> : <Text className="muted">本餐未安排汤</Text>}
-            <Button className="secondary" disabled={disabled || cooling || dirty || !!soupSelection} onClick={() => void run(() => openCopy(mealIndex))}>复制本餐菜单</Button>
-          </> : <Text className="muted">本周没有已安排的餐次</Text>}
-          <Button className="text-button" disabled={disabled} onClick={back}>取消本餐调整</Button>
         </View>}
         {menu && screen === "review" && <View className="review-screen"><View className="review-hero"><Text>{weekRange(menu)}</Text><Text>确认后保存本周菜单</Text></View><WeekBoard menu={menu} readonly /></View>}
         {menu && editing && <><WeekBoard menu={menu} selected={selected} showAll={showAll} disabled={disabled} onSelect={(position) => { setSelected(position); setTarget(null); setSoupSelection(null); }} onFilter={setShowAll} />
@@ -331,13 +316,13 @@ export default function WeekPage() {
           {!candidates.length && <Text className="muted">{query ? "没有匹配的菜名" : "没有其他同类可用菜，请先补充菜品池。"}</Text>}
           {screen === "swap" && <Button className="browse-library" disabled={disabled} onClick={() => { setScreen("pick"); setQuery(""); }}><Image src={archiveIcon} className="flow-icon" /><Text>在菜品池里自己选</Text><Image src={nextIcon} className="flow-icon" /></Button>}
         </View>}
+
+      </>}
         {soupSelection && menu && <View className="candidate-sheet"><View className="sheet-head"><Text>重新选齐 {menu.structure.soup} 道汤</Text><Button disabled={disabled} onClick={() => { setSoupSelection(null); setNotice(""); }}>取消</Button></View><View className="candidate-list">
           {dishes.filter((dish) => dish.active && dish.category === "soup" && ![...menu.meals[soupSelection.meal]!.meat, ...menu.meals[soupSelection.meal]!.vegetable].some((item) => item.dishId === dish.id)).map((dish) => <Button key={dish.id} disabled={disabled} onClick={() => setSoupSelection({ ...soupSelection, ids: soupSelection.ids.includes(dish.id) ? soupSelection.ids.filter((id) => id !== dish.id) : [...soupSelection.ids, dish.id] })}>{soupSelection.ids.includes(dish.id) ? "✓ " : ""}{dish.name}</Button>)}
           <Button className="primary" disabled={disabled || soupSelection.ids.length !== menu.structure.soup} onClick={() => void run(async () => { const pool = await client!.getDishes(); setDishes(pool); setDraft(restoreSoup(menu, soupSelection.meal, soupSelection.ids, pool)); setSoupSelection(null); setNotice(""); })}>选齐并恢复汤</Button></View></View>}
-      </>}
     </ScrollView>
       {!sharing && menu && screen !== "home" && <View className="flow-dock">
-        {screen === "meal" && <Button className="primary" disabled={disabled || cooling || conflict || !dirty || !!soupSelection || mealIndex < 0} onClick={() => void run(() => save(false))}>保存本餐调整<Image src={checkIcon} className="flow-icon" /></Button>}
         {editing && <Button className="primary" disabled={disabled || cooling || conflict || settings} onClick={() => setScreen("review")}>确认 {menu.meals.filter((meal) => meal.enabled).length} 餐菜单<Image src={checkIcon} className="flow-icon" /></Button>}
         {screen === "review" && <Button className="primary green" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(true))}>保存本周菜单<Image src={checkIcon} className="flow-icon" /></Button>}
         {(screen === "swap" || screen === "pick") && <Button className="primary" disabled={disabled || !candidate || !candidates.some((dish) => dish.id === candidate)} onClick={() => void run(applyCandidate)}>保存这次替换<Image src={checkIcon} className="flow-icon" /></Button>}

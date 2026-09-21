@@ -112,7 +112,7 @@ async function clipboard(page: Page, fail = false) {
   } }); }, fail);
 }
 const preview = (page: Page) => button(page, "去复制菜单");
-async function home(page: Page) { await expect(page.locator(".main-nav button").first()).toBeEnabled(); if (await button(page, "返回编辑").count()) await expect(button(page, "返回本周菜单")).toBeVisible(); if (await button(page, "返回本周菜单").count()) await button(page, "返回本周菜单").click(); }
+async function home(page: Page) { if (await page.locator(".copy-screen").count()) await closeCopy(page); await expect(page.locator(".main-nav button").first()).toBeEnabled(); if (await button(page, "返回编辑").count()) await expect(button(page, "返回本周菜单")).toBeVisible(); if (await button(page, "返回本周菜单").count()) await button(page, "返回本周菜单").click(); }
 async function enterEdit(page: Page) { await page.getByRole("button", { name: /^(继续调整菜单|查看并调整这一周)$/ }).click(); }
 async function openPreview(page: Page) { await home(page); await preview(page).click(); }
 async function settings(page: Page) { await home(page); await button(page, "修改周设置").click(); }
@@ -123,8 +123,8 @@ async function saveDraft(page: Page) {
 }
 const soupToggle = (page: Page) => page.getByRole("checkbox", { name: "本餐做汤", exact: true });
 async function openMondayMeal(page: Page) {
-  await home(page); await button(page, "调整某一餐").click();
-  await page.locator(".meal-adjustment select").selectOption("0"); await button(page, "午餐").click();
+  await home(page); await button(page, "去复制菜单").click();
+  await page.locator(".copy-screen select").selectOption("0"); await button(page, "午餐").click();
 }
 const closeCopy = (page: Page) => button(page, "关闭菜单文字").click();
 
@@ -263,14 +263,14 @@ test("原汤停用后须选齐全部汤才恢复，取消和未选齐不改变�
   await soupToggle(page).click();
   await expect(page.getByText("重新选齐 2 道汤", { exact: true })).toBeVisible();
   await page.locator(".candidate-sheet").getByRole("button", { name: "取消", exact: true }).click();
-  await expect(page.locator(".meal-adjustment .copy-preview")).not.toContainText("汤菜2");
+  await expect(page.locator(".copy-screen .copy-preview")).not.toContainText("汤菜2");
   await soupToggle(page).click();
   await button(page, "汤菜2").click();
   await expect(button(page, "选齐并恢复汤")).toBeDisabled();
   await button(page, "汤菜3").click();
   await button(page, "选齐并恢复汤").click();
-  await expect(page.locator(".meal-adjustment .copy-preview")).toContainText("汤菜2");
-  await expect(page.locator(".meal-adjustment .copy-preview")).toContainText("汤菜3");
+  await expect(page.locator(".copy-screen .copy-preview")).toContainText("汤菜2");
+  await expect(page.locator(".copy-screen .copy-preview")).toContainText("汤菜3");
   await button(page, "保存本餐调整").click();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
   expect(state.saved!.meals[0]).toMatchObject({ soupOmitted: false, soup: [{ name: "汤菜2" }, { name: "汤菜3" }] });
@@ -431,6 +431,7 @@ test("最新快照停餐后移到剩余日期等待重读，整周停餐仍能�
   await expect(page.locator(".copy-screen")).toContainText("本周没有已安排的餐次，请返回周菜单调整。");
   await expect(page.locator(".copy-preview")).toHaveCount(0);
   await expect(button(page, "复制菜单文字")).toHaveCount(0);
+  await closeCopy(page);
   await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
   await expect(page.locator(".copy-screen")).toHaveCount(0);
   await expect(button(page, "返回本周菜单")).toBeVisible();
@@ -661,16 +662,16 @@ test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾�
 test("单餐从今天的保存快照去汤，显式保存只改该餐，回看复制及恢复无需整周确认", async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date("2026-09-23T08:00:00Z"));
   const state = await openWeek(page); await generate(page); await confirmWeek(page);
-  await expect(button(page, "调整某一餐")).toBeEnabled();
+  await expect(button(page, "去复制菜单")).toBeEnabled();
   const before = structuredClone(state.saved!);
-  await button(page, "调整某一餐").click();
-  await expect(page.locator(".meal-adjustment select")).toHaveValue("2");
+  await button(page, "去复制菜单").click();
+  await expect(page.locator(".copy-screen select")).toHaveValue("2");
   await button(page, "晚餐").click();
-  await expect(page.locator(".meal-adjustment .copy-preview")).toContainText("2026年9月23日（周三）晚餐");
-  await expect(button(page, "保存本餐调整")).toBeDisabled();
+  await expect(page.locator(".copy-screen .copy-preview")).toContainText("2026年9月23日（周三）晚餐");
+  await expect(button(page, "保存本餐调整")).toHaveCount(0);
   await soupToggle(page).click();
-  await expect(page.locator(".meal-adjustment .copy-preview")).not.toContainText("汤菜1");
-  await expect(button(page, "复制本餐菜单")).toBeDisabled();
+  await expect(page.locator(".copy-screen .copy-preview")).not.toContainText("汤菜1");
+  await expect(button(page, "复制菜单文字")).toBeDisabled();
   expect(state.writes).toHaveLength(1); expect(state.saved).toEqual(before);
   await button(page, "保存本餐调整").click();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
@@ -681,11 +682,10 @@ test("单餐从今天的保存快照去汤，显式保存只改该餐，回看�
   expect(JSON.parse(state.writes[1]!.body)).toMatchObject({ confirm: false, rebuild: false, baseVersion: before.version });
   await page.setViewportSize({ width: 393, height: 852 });
   await page.screenshot({ path: testInfo.outputPath("single-meal-saved.png") });
-  await button(page, "复制本餐菜单").click();
   await expect(page.locator(".copy-preview")).toHaveText("2026年9月23日（周三）晚餐\n荤：荤菜1、荤菜2\n素：素菜1、素菜2");
   await clipboard(page); await button(page, "复制菜单文字").click();
   await expect(page.locator("html")).toHaveAttribute("data-copied", /周三）晚餐\n荤：荤菜1、荤菜2\n素：素菜1、素菜2$/);
-  await closeCopy(page); await button(page, "调整某一餐").click(); await button(page, "晚餐").click();
+  await closeCopy(page); await button(page, "去复制菜单").click(); await button(page, "晚餐").click();
   await expect(soupToggle(page)).not.toBeChecked();
   await soupToggle(page).click(); await button(page, "保存本餐调整").click();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
@@ -695,31 +695,39 @@ test("单餐从今天的保存快照去汤，显式保存只改该餐，回看�
 test("单餐阻止混入未保存周和整周设置草稿，切餐取消与退出都不写入", async ({ page }) => {
   await page.clock.setFixedTime(new Date(timestamp));
   const state = await openWeek(page); await generate(page); await home(page);
-  await expect(button(page, "调整某一餐")).toBeDisabled();
+  await button(page, "去复制菜单").click();
+  await expect(soupToggle(page)).toHaveCount(0); await closeCopy(page);
   await saveDraft(page); await replaceLunch(page); await home(page);
-  await expect(button(page, "调整某一餐")).toBeDisabled();
+  await button(page, "去复制菜单").click();
+  await expect(soupToggle(page)).toHaveCount(0); await closeCopy(page);
   await button(page, "放弃本次调整").click(); await page.getByText("放弃修改", { exact: true }).click();
   await settings(page); await page.locator(".structure-fields input").first().fill("3");
-  await expect(button(page, "调整某一餐")).toBeDisabled();
+  await button(page, "去复制菜单").click();
+  await expect(soupToggle(page)).toHaveCount(0); await closeCopy(page);
   await button(page, "取消设置，保留原菜单").click();
-  await button(page, "调整某一餐").click(); await soupToggle(page).click();
+  await button(page, "去复制菜单").click(); await soupToggle(page).click();
   await button(page, "晚餐").click(); await page.getByText("继续编辑", { exact: true }).click();
   await expect(button(page, "午餐")).toHaveAttribute("aria-expanded", "true");
   await expect(soupToggle(page)).not.toBeChecked();
-  await button(page, "取消本餐调整").click(); await page.getByText("继续编辑", { exact: true }).click();
+  state.failure = "read";
+  await button(page, "晚餐").click(); await page.getByText("放弃修改", { exact: true }).click();
+  await expect(page.locator(".copy-screen")).toContainText("读取已保存菜单失败");
+  await expect(button(page, "午餐")).toHaveAttribute("aria-expanded", "true");
+  await expect(soupToggle(page)).not.toBeChecked();
+  await button(page, "关闭菜单文字").click(); await page.getByText("继续编辑", { exact: true }).click();
   await expect(page.locator(".meal-adjustment")).toBeVisible();
-  await button(page, "取消本餐调整").click(); await page.getByText("放弃修改", { exact: true }).click();
-  await button(page, "调整某一餐").click(); await expect(soupToggle(page)).toBeChecked();
+  await button(page, "关闭菜单文字").click(); await page.getByText("放弃修改", { exact: true }).click();
+  await button(page, "去复制菜单").click(); await expect(soupToggle(page)).toBeChecked();
   await soupToggle(page).click(); await button(page, "晚餐").click(); await page.getByText("放弃修改", { exact: true }).click();
   await expect(button(page, "晚餐")).toHaveAttribute("aria-expanded", "true");
-  await expect(button(page, "保存本餐调整")).toBeDisabled();
+  await expect(button(page, "保存本餐调整")).toHaveCount(0);
   expect(state.writes).toHaveLength(1); expect(state.saved!.meals).toEqual(state.generated!.meals);
 });
 
 for (const failure of ["lost", "conflict"]) test(`单餐保存${failure}不冒充成功，保护草稿及原请求`, async ({ page }) => {
   await page.clock.setFixedTime(new Date(timestamp));
   const state = await openWeek(page); await generate(page); await confirmWeek(page);
-  await button(page, "调整某一餐").click(); await soupToggle(page).click(); await button(page, "保存本餐调整").click();
+  await button(page, "去复制菜单").click(); await soupToggle(page).click(); await button(page, "保存本餐调整").click();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
   const before = structuredClone(state.saved!);
   await soupToggle(page).click();
@@ -728,9 +736,9 @@ for (const failure of ["lost", "conflict"]) test(`单餐保存${failure}不冒�
   await expect(page.locator(".recovery")).toBeVisible();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toHaveCount(0);
   await expect(button(page, "保存本餐调整")).toBeDisabled();
-  await expect(page.locator(".meal-adjustment .copy-preview")).toContainText("汤菜1");
+  await expect(page.locator(".copy-screen .copy-preview")).toContainText("汤菜1");
   if (failure === "lost") {
-    await expect(button(page, "取消本餐调整")).toBeDisabled(); await expect(button(page, "晚餐")).toBeDisabled();
+    await expect(button(page, "历史")).toBeDisabled(); await expect(button(page, "晚餐")).toBeDisabled();
     await button(page, "重试原保存请求").click();
     await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
     expect(state.writes[3]).toEqual(state.writes[2]); expect(state.saved!.version).toBe(before.version + 1);
@@ -743,7 +751,7 @@ for (const failure of ["lost", "conflict"]) test(`单餐保存${failure}不冒�
     await button(page, "核对完成，载入服务器版本").click(); await page.getByText("取消", { exact: true }).click();
     await expect(soupToggle(page)).toBeChecked();
     await button(page, "核对完成，载入服务器版本").click(); await page.getByText("确定", { exact: true }).click();
-    await button(page, "调整某一餐").click(); await expect(soupToggle(page)).not.toBeChecked();
+    await closeCopy(page); await button(page, "去复制菜单").click(); await expect(soupToggle(page)).not.toBeChecked();
     expect(state.writes).toHaveLength(3);
   }
   expect(state.generations).toBe(1);
@@ -756,26 +764,26 @@ test("单餐过滤停餐并回退首个启用餐，失效汤须选齐后显式�
   await page.locator(".setting-row").nth(1).getByRole("checkbox").first().uncheck();
   await page.locator(".setting-row").nth(1).getByRole("checkbox").last().uncheck();
   await generate(page); await confirmWeek(page); const before = structuredClone(state.saved!);
-  await button(page, "调整某一餐").click();
-  await expect(page.locator(".meal-adjustment select")).toHaveValue("0");
-  await expect(page.locator(".meal-adjustment option")).toHaveCount(6); await expect(button(page, "午餐")).toHaveCount(0);
+  await button(page, "去复制菜单").click();
+  await expect(page.locator(".copy-screen select")).toHaveValue("0");
+  await expect(page.locator(".copy-screen option")).toHaveCount(6); await expect(button(page, "午餐")).toHaveCount(0);
   await expect(button(page, "晚餐")).toHaveAttribute("aria-expanded", "true");
   await soupToggle(page).click(); await button(page, "保存本餐调整").click();
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
   state.items.find((dish) => dish.name === "汤菜1")!.active = false;
   await soupToggle(page).click(); await button(page, "汤菜2").click();
-  await expect(button(page, "选齐并恢复汤")).toBeDisabled(); await expect(button(page, "保存本餐调整")).toBeDisabled();
+  await expect(button(page, "选齐并恢复汤")).toBeDisabled(); await expect(button(page, "保存本餐调整")).toHaveCount(0);
   await page.locator(".candidate-sheet").getByRole("button", { name: "取消", exact: true }).click();
-  await expect(page.locator(".meal-adjustment .copy-preview")).not.toContainText("汤菜2");
+  await expect(page.locator(".copy-screen .copy-preview")).not.toContainText("汤菜2");
   await soupToggle(page).click(); await button(page, "汤菜2").click(); await button(page, "汤菜3").click();
   let release!: () => void;
   const response = new Promise<void>((resolve) => { release = resolve; });
   await page.route("**/api/kith-inn/dishes", async (route) => { await response; await route.fallback(); });
   await button(page, "选齐并恢复汤").click();
   await expect(page.locator(".candidate-sheet").getByRole("button", { name: "取消", exact: true })).toBeDisabled();
-  await expect(button(page, "取消本餐调整")).toBeDisabled();
+  await expect(button(page, "关闭菜单文字")).toBeDisabled();
   release(); await expect(page.locator(".candidate-sheet")).toHaveCount(0);
-  await expect(page.locator(".meal-adjustment .copy-preview")).toContainText("汤菜3");
+  await expect(page.locator(".copy-screen .copy-preview")).toContainText("汤菜3");
   expect(state.writes).toHaveLength(2);
   await button(page, "保存本餐调整").click(); await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
   expect(state.saved!.meals).toEqual(before.meals.map((meal, i) => i === 1 ? { ...meal, soup: [{ dishId: id(22), name: "汤菜2" }, { dishId: id(23), name: "汤菜3" }] } : meal));
@@ -784,14 +792,14 @@ test("单餐过滤停餐并回退首个启用餐，失效汤须选齐后显式�
 
 test("单餐无汤和整周停餐没有无效去汤或保存入口", async ({ page }) => {
   const state = await openWeek(page); await page.locator(".structure-fields input").last().fill("0");
-  await generate(page); await confirmWeek(page); await button(page, "调整某一餐").click();
+  await generate(page); await confirmWeek(page); await button(page, "去复制菜单").click();
   await expect(page.getByText("本餐未安排汤", { exact: true })).toBeVisible();
-  await expect(soupToggle(page)).toHaveCount(0); await expect(button(page, "保存本餐调整")).toBeDisabled();
-  await button(page, "取消本餐调整").click();
+  await expect(soupToggle(page)).toHaveCount(0); await expect(button(page, "保存本餐调整")).toHaveCount(0);
+  await button(page, "关闭菜单文字").click();
   state.saved = { ...state.saved!, meals: state.saved!.meals.map((meal) => ({ ...meal, enabled: false, meat: [], vegetable: [], soup: [] })) };
-  await button(page, "调整某一餐").click();
-  await expect(page.getByText("本周没有已安排的餐次", { exact: true })).toBeVisible();
-  await expect(page.locator(".meal-adjustment select")).toHaveCount(0); await expect(button(page, "保存本餐调整")).toBeDisabled();
-  await button(page, "取消本餐调整").click(); await expect(button(page, "调整某一餐")).toBeEnabled();
+  await button(page, "去复制菜单").click();
+  await expect(page.getByText("本周没有已安排的餐次，请返回周菜单调整。", { exact: true })).toBeVisible();
+  await expect(page.locator(".copy-screen select")).toHaveCount(0); await expect(button(page, "保存本餐调整")).toHaveCount(0);
+  await button(page, "关闭菜单文字").click(); await expect(button(page, "去复制菜单")).toBeEnabled();
   expect(state.writes).toHaveLength(1); expect(state.generations).toBe(1);
 });
