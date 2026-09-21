@@ -588,11 +588,13 @@ test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾�
       return pair.length === 2 && Math.abs(pair[0]!.getBoundingClientRect().left - bounds.left) < 1 && Math.abs(pair[1]!.getBoundingClientRect().right - bounds.right) < 1;
     }, last)).toBe(true);
   };
-  const drag = async () => { const box = (await scroll.boundingBox())!; await page.mouse.move(box.x + 240, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + 130, box.y + 20, { steps: 12 }); await page.mouse.up(); };
+  const drag = async () => { const box = (await scroll.boundingBox())!; await page.mouse.move(box.x + 240, box.y + 80); await page.mouse.down(); await page.mouse.move(box.x + 130, box.y + 80, { steps: 12 }); await page.mouse.up(); };
   const edge = (await scroll.boundingBox())!;
   await page.mouse.move(edge.x + 2, edge.y + 20); await page.mouse.down(); await page.mouse.move(edge.x - 1, edge.y + 20); await page.mouse.up();
   await page.mouse.move(edge.x + 150, edge.y + 20); await expect(scroll).not.toHaveClass(/dragging/); await aligned();
   await drag(); await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(100); await aligned();
+  await expect(button(page, "周一午餐：荤菜1")).toHaveAttribute("aria-pressed", "true");
+  await expect(button(page, "周二午餐：荤菜1")).toHaveAttribute("aria-pressed", "false");
   const cdp = await context.newCDPSession(page); await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
   const box = (await scroll.boundingBox())!;
   await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 240, y: box.y + 20 }] });
