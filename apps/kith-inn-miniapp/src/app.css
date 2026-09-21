@@ -99,3 +99,7 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .week-settings .setting-row { font-size: 10PX; padding: 8PX; gap: 4PX; }
 .week-settings .setting-row > view, .week-settings .setting-row > taro-view-core { display: flex; align-items: center; gap: 3PX; }
 .week-navigation { display: flex; gap: 18PX; justify-content: center; margin-top: 12PX; }
+
+.copy-panel { margin-top: 10PX; }
+.copy-preview { margin-top: 10PX; padding: 12PX; border: 1PX dashed #c9a665; border-radius: 12PX; background: #fffaf0; color: #675d53; font-size: 10PX; line-height: 1.6; white-space: pre-line; overflow-wrap: anywhere; }
+.copy-panel .evidence-note { display: block; }

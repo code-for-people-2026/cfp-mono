@@ -6,6 +6,7 @@ import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { WeekEditError, randomReplaceDish, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
 import { Button } from "../../lib/button";
 import { labels } from "../../lib/classify";
+import { formatMealText } from "../../lib/menu-text";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
 const categories = CategorySchema.options;
@@ -38,7 +39,9 @@ export default function WeekPage() {
   const [busy, setBusy] = useState(false), [error, setError] = useState(""), [notice, setNotice] = useState("");
   const [pending, setPending] = useState(() => client?.pendingWrite() ?? null), [review, setReview] = useState<WeekPlan | null | undefined>();
   const [conflict, setConflict] = useState(false), [retryAt, setRetryAt] = useState(0), [now, setNow] = useState(Date.now);
-  const blocked = !!pending && pending.state !== "rejected", disabled = busy || blocked;
+  const [copyMeal, setCopyMeal] = useState<number | null>(null), [copyText, setCopyText] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState("");
+  const blocked = !!pending && pending.state !== "rejected", disabled = busy || blocked || copyMeal !== null;
   const dirty = !!draft && (rebuild || JSON.stringify({ structure: draft.structure, meals: draft.meals }) !== JSON.stringify(saved && { structure: saved.structure, meals: saved.meals }));
   const needsReview = !!pending && (pending.state === "review" || now - pending.createdAt >= 86400000);
   const cooling = now < retryAt;
@@ -106,6 +109,36 @@ export default function WeekPage() {
     if (!draft) return;
     acceptWrite(await client!.saveWeek(week, toWeekWriteInput(draft, saved?.version ?? 0, rebuild, confirm)));
   }
+  async function previewCopy(mealIndex: number, discardDraft = false) {
+    setCopyText(null); setCopyStatus("");
+    if (dirty && !discardDraft) return;
+    try {
+      const latest = await client!.getWeek(week);
+      if (!latest) throw new Error("这一周尚未保存，请先保存菜单。");
+      const text = formatMealText(latest.meals[mealIndex]!);
+      adopt(latest);
+      if (text === null) { setCopyMeal(null); throw new Error("这餐已改为不安排，不能复制。已读取最新菜单。"); }
+      setCopyText(text);
+    } catch (value) {
+      setCopyStatus("读取已保存菜单失败，请重试；未生成可复制文字。");
+      throw value;
+    }
+  }
+  async function openCopy(mealIndex: number) {
+    setCopyMeal(mealIndex); setCopyText(null); setCopyStatus("");
+    await previewCopy(mealIndex);
+  }
+  async function copy() {
+    if (copyText === null) return;
+    setCopyStatus("");
+    try {
+      // Taro 4.2 H5 ignores execCommand's false result; the native Promise reports failures.
+      if (process.env.TARO_ENV === "h5") await navigator.clipboard.writeText(copyText);
+      else await Taro.setClipboardData({ data: copyText });
+      setCopyStatus("已复制，请到微信粘贴发送");
+    }
+    catch { setCopyStatus("复制失败，文字已保留，请重试复制。"); }
+  }
   async function edit() {
     setDishes(await client!.getDishes()); setEditing(true);
     setNotice("如之前已发到微信，请自行通知邻居，旧消息不会自动更新。");
@@ -152,7 +185,7 @@ export default function WeekPage() {
           {menu && <Button className="text-button" disabled={disabled} onClick={() => setSettings(false)}>取消设置，保留原菜单</Button>}
         </View>}
         {menu && <View className="week-plans">{dayNames.map((day, dayIndex) => <View className={`day-plan ${expanded === dayIndex ? "open" : ""}`} key={day}>
-          <Button className="day-toggle" ariaExpanded={expanded === dayIndex} onClick={() => setExpanded(expanded === dayIndex ? null : dayIndex)}>
+          <Button className="day-toggle" disabled={busy || copyMeal !== null} ariaExpanded={expanded === dayIndex} onClick={() => setExpanded(expanded === dayIndex ? null : dayIndex)}>
             <View className="day-head"><Text>{day} · {menu.meals[dayIndex * 2]!.date.slice(5).replace("-", "月")}日</Text><Text>{expanded === dayIndex ? "收起" : "展开"}</Text></View>
             <View className="day-summary"><Text>午：{summary(menu.meals[dayIndex * 2]!)}</Text><Text>晚：{summary(menu.meals[dayIndex * 2 + 1]!)}</Text></View></Button>
           {expanded === dayIndex && <View className="day-detail">{[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
@@ -162,11 +195,22 @@ export default function WeekPage() {
                 <Button className="dish-choice" disabled={!editing || disabled} ariaLabel={`选择其他菜：${dish.name}`} onClick={() => void run(async () => { setDishes(await client!.getDishes()); setTarget({ meal: mealIndex, category, index }); })}>{dish.name}</Button><Text className={`mini-kind ${category}`}>{labels[category]}</Text>
                 {editing && <Button className="rotate-dish" disabled={disabled} ariaLabel={`随机换菜：${dish.name}`} onClick={() => void run(async () => { const pool = await client!.getDishes(); setDishes(pool); setDraft(randomReplaceDish(menu, mealIndex, category, index, pool)); })}><Image src={refreshIcon} mode="scaleToFill" className="refresh-icon" /></Button>}
               </View>))}</View>
+              {meal.enabled && <Button className="text-button" disabled={disabled || cooling || conflict || settings} onClick={() => void run(() => openCopy(mealIndex))}>预览本餐文字</Button>}
+              {copyMeal === mealIndex && <View className="copy-panel">
+                <View className="sheet-head"><Text>复制本餐菜单</Text><Button ariaLabel="关闭菜单文字" disabled={busy} onClick={() => { setCopyMeal(null); setCopyText(null); setCopyStatus(""); }}>×</Button></View>
+                {dirty && !copyText ? <><Text className="muted">还有未保存修改，请先保存或明确放弃，再读取已保存菜单。</Text>
+                  <Button className="secondary" disabled={busy || blocked || cooling || conflict} onClick={() => void run(async () => { await save(false); await previewCopy(mealIndex, true); })}>保存后预览</Button>
+                  <Button className="text-button" disabled={busy || blocked || cooling || conflict} onClick={() => void run(async () => { if (await discard()) await previewCopy(mealIndex, true); })}>放弃修改后预览</Button></>
+                  : !copyText && <Button className="secondary" disabled={busy || blocked || cooling} onClick={() => void run(() => previewCopy(mealIndex))}>{busy ? "正在读取保存菜单" : "重新读取本餐文字"}</Button>}
+                {copyText && <><View className="copy-preview"><Text selectable>{copyText}</Text></View><Button className="secondary" disabled={busy || blocked} onClick={() => void run(copy)}>复制菜单文字</Button></>}
+                {copyStatus && <View className="muted" role="status">{copyStatus}</View>}
+                <Text className="evidence-note">之前发出的微信消息不会自动更新，请自行通知邻居。</Text>
+              </View>}
               {editing && meal.enabled && menu.structure.soup > 0 && <Button className="text-button" disabled={disabled} onClick={() => void run(() => soup(mealIndex))}>{meal.soupOmitted ? "恢复本餐汤" : "去掉本餐汤"}</Button>}
             </View>;
           })}</View>}
         </View>)}</View>}
-        {menu && <>{editing ? <><View className="plan-action"><Button className="primary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(true))}>确认周菜单</Button></View>
+        {menu && copyMeal === null && <>{editing ? <><View className="plan-action"><Button className="primary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(true))}>确认周菜单</Button></View>
           <Button className="secondary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(false))}>保存调整</Button>
           <Button className="text-button" disabled={disabled} onClick={() => { setStructure(menu.structure); setMeals(menu.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled }))); setSettings(true); }}>修改周设置</Button>
           <Button className="text-button" disabled={disabled} onClick={() => void run(async () => { if (await discard()) adopt(saved); })}>取消编辑</Button>

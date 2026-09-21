@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { CategorySchema, GenerateInputSchema, MenuPreviewSchema, WeekPlanSchema, WeekWriteInputSchema,
+import { CategorySchema, DishBatchInputSchema, GenerateInputSchema, MenuPreviewSchema, WeekPlanSchema, WeekWriteInputSchema,
   type Dish, type MenuPreview, type WeekPlan } from "@cfp/kith-inn-contracts";
 
 const monday = "2026-09-21", timestamp = "2026-09-21T00:00:00Z";
@@ -8,13 +8,13 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 const lunch = (page: Page) => page.locator(".meal-block:visible").first();
 
 // Controlled API transport and stored H5 session, not real WeChat or PostgreSQL evidence.
-async function openWeek(page: Page) {
+async function openWeek(page: Page, viaPool = false) {
   const items: Dish[] = CategorySchema.options.flatMap((category, c) => Array.from({ length: 4 }, (_, i) => ({
     id: id(c * 10 + i + 1), name: `${{ meat: "荤", vegetable: "素", soup: "汤" }[category]}菜${i + 1}`,
     category, active: true, version: 1, createdAt: timestamp, updatedAt: timestamp,
   })));
-  const state = { items, saved: null as WeekPlan | null, generated: null as MenuPreview | null,
-    writes: [] as { body: string; key: string }[], generations: 0, failure: "" };
+  const state = { items: viaPool ? [] as Dish[] : items, saved: null as WeekPlan | null, generated: null as MenuPreview | null,
+    writes: [] as { body: string; key: string }[], generations: 0, reads: 0, failure: "" };
   const receipts = new Map<string, WeekPlan>();
   await page.addInitScript(() => localStorage.setItem("kith-inn:session:v1:https://kith-inn.test", JSON.stringify({
     data: { token: "t".repeat(43), expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() }
@@ -25,11 +25,22 @@ async function openWeek(page: Page) {
     const error = (status: number, code: string, details?: unknown) => route.fulfill({ status, headers,
       json: { error: { code, message: "受控错误", requestId: id(999), ...(details ? { details } : {}) } } });
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers });
-    if (url.pathname.endsWith("/dishes")) return route.fulfill({ headers, json: { items: state.items } });
+    if (url.pathname.endsWith("/dishes")) {
+      if (method === "POST") {
+        const input = DishBatchInputSchema.parse(request.postDataJSON());
+        state.items = input.items.map((dish) => ({ ...items.find((item) => item.name === dish.name)!, ...dish }));
+      }
+      return route.fulfill({ status: method === "POST" ? 201 : 200, headers, json: { items: state.items } });
+    }
     if (url.pathname.endsWith("/weeks")) return route.fulfill({ headers, json: { items: state.saved ? [{
       weekStart: monday, version: state.saved.version, confirmedAt: state.saved.confirmedAt, updatedAt: state.saved.updatedAt
     }] : [], nextBefore: null } });
-    if (method === "GET") return state.saved ? route.fulfill({ headers, json: state.saved }) : error(404, "NOT_FOUND");
+    if (method === "GET") {
+      state.reads++;
+      if (state.failure === "read") { state.failure = ""; return error(503, "INTERNAL_ERROR"); }
+      if (state.failure === "invalid") { state.failure = ""; return route.fulfill({ headers, json: { ...state.saved, meals: [] } }); }
+      return state.saved ? route.fulfill({ headers, json: state.saved }) : error(404, "NOT_FOUND");
+    }
     if (url.pathname.endsWith("/generate")) {
       state.generations++;
       const input = GenerateInputSchema.parse(request.postDataJSON());
@@ -56,22 +67,46 @@ async function openWeek(page: Page) {
     if (state.failure === "lost") { state.failure = ""; return route.abort("failed"); }
     return route.fulfill({ headers, json: state.saved });
   });
-  await page.goto(`/#/pages/week/index?weekStart=${monday}`);
+  if (viaPool) {
+    await page.clock.setFixedTime(new Date(timestamp));
+    await page.goto("/");
+    await page.locator('textarea[placeholder="每行一道菜，例如：红烧排骨"]').fill(items.map((dish) => dish.name).join("\n"));
+    await button(page, "自动分成荤 / 素 / 汤").click();
+    for (const dish of items.filter((dish) => dish.category === "meat")) {
+      await button(page, `更改${dish.name}分类，当前素`).click();
+      await button(page, `更改${dish.name}分类，当前汤`).click();
+    }
+    await button(page, "确认加入菜品池").click();
+    await expect(page.locator(".dish-card")).toHaveCount(12);
+    await button(page, "排周菜单").click();
+  } else await page.goto(`/#/pages/week/index?weekStart=${monday}`);
   await expect(button(page, "生成本周菜单")).toBeVisible();
   return state;
 }
 async function generate(page: Page) {
   await button(page, "生成本周菜单").click();
   await expect(page.locator(".day-plan")).toHaveCount(7);
-  await page.locator(".day-toggle:visible").first().click();
+  await page.locator(".week-app .day-toggle:visible").first().click();
 }
 async function replaceLunch(page: Page) {
   await lunch(page).getByRole("button", { name: "选择其他菜：荤菜1", exact: true }).click();
   await button(page, "荤菜3").click();
 }
 
-test("生成14餐位置并跳过指定餐，局部换菜去汤后确认，从历史重开保留结果", async ({ page }) => {
-  const state = await openWeek(page);
+// Intercept only the browser clipboard boundary; this is not WeChat clipboard evidence.
+async function clipboard(page: Page, fail = false) {
+  await page.evaluate((fail) => { Object.defineProperty(navigator, "clipboard", { configurable: true, value: {
+    writeText: async (text: string) => {
+      if (fail) throw new Error("controlled clipboard failure");
+      document.documentElement.dataset.copied = text;
+    }
+  } }); }, fail);
+}
+const preview = (page: Page) => lunch(page).getByRole("button", { name: "预览本餐文字", exact: true });
+const closeCopy = (page: Page) => button(page, "关闭菜单文字").click();
+
+test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制重试及改菜再复制", async ({ page }) => {
+  const state = await openWeek(page, true);
   await page.locator(".setting-row").last().getByRole("checkbox").last().uncheck();
   await generate(page);
   expect(state.generated!.meals).toHaveLength(14);
@@ -88,15 +123,40 @@ test("生成14餐位置并跳过指定餐，局部换菜去汤后确认，从历
   await button(page, "历史菜单").click();
   await page.getByRole("button", { name: /2026-09-21 这一周/ }).click();
   await expect(page.getByText("周菜单已确认", { exact: true })).toBeVisible();
-  await page.locator(".day-toggle:visible").first().click();
+  await page.locator(".week-app .day-toggle:visible").first().click();
   await expect(lunch(page)).toContainText("荤菜3");
   await expect(lunch(page)).not.toContainText("汤菜1");
-  expect(state.writes).toHaveLength(1);
+  const reads = state.reads;
+  await preview(page).click();
+  await expect(page.locator(".copy-preview")).toHaveText("2026年9月21日（周一）午餐\n荤：荤菜3、荤菜2\n素：素菜1、素菜2");
+  expect(state.reads).toBe(reads + 1);
+  await expect(page.locator(".week-app .day-toggle:visible").first()).toBeDisabled();
+  await clipboard(page, true); await button(page, "复制菜单文字").click();
+  await expect(page.getByText("复制失败，文字已保留，请重试复制。", { exact: true })).toBeVisible();
+  const text = await page.locator(".copy-preview").textContent();
+  await clipboard(page); await button(page, "复制菜单文字").click();
+  await expect(page.getByText("已复制，请到微信粘贴发送", { exact: true })).toBeVisible();
+  expect(await page.locator("html").getAttribute("data-copied")).toBe(text);
+  expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(1);
+  await closeCopy(page);
+  await expect(page.locator(".week-app .day-toggle:visible").first()).toBeEnabled();
+  await button(page, "继续编辑").click();
+  await lunch(page).getByRole("button", { name: "选择其他菜：荤菜3", exact: true }).click();
+  await button(page, "荤菜4").click(); await preview(page).click();
+  await button(page, "保存后预览").click();
+  await expect(page.locator(".copy-preview")).toContainText("荤菜4");
+  await button(page, "复制菜单文字").click();
+  await expect(page.locator("html")).toHaveAttribute("data-copied", /荤菜4/);
+  expect(state.writes).toHaveLength(2);
+  await closeCopy(page); await page.locator(".week-app .day-toggle:visible").last().click();
+  await expect(page.locator(".meal-block:visible").last()).toContainText("不安排");
+  await expect(page.locator(".meal-block:visible").last().getByRole("button", { name: "预览本餐文字" })).toHaveCount(0);
 });
 
 test("修改结构取消与缺菜失败都保留换菜去汤草稿", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await replaceLunch(page);
   await lunch(page).getByRole("button", { name: "去掉本餐汤", exact: true }).click();
+  await expect(lunch(page).getByRole("button", { name: "恢复本餐汤", exact: true })).toBeVisible();
   const previous = await page.locator(".week-plans").textContent();
   await button(page, "修改周设置").click();
   await page.locator(".structure-fields input").first().fill("3");
@@ -179,4 +239,56 @@ test("原汤停用后须选齐全部汤才恢复，取消和未选齐不改变�
   await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
   expect(state.saved!.meals[0]).toMatchObject({ soupOmitted: false, soup: [{ name: "汤菜2" }, { name: "汤菜3" }] });
   expect(state.saved!.meals.slice(1)).toEqual(state.generated!.meals.slice(1));
+});
+
+
+test("无本地修改仍重新读保存快照，读取异常不提供旧文字，重试后获取新版本", async ({ page }) => {
+  const state = await openWeek(page); await generate(page); await button(page, "保存调整").click();
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  state.saved!.meals[0]!.meat[0]!.name = "另一会话保存的菜";
+  state.saved!.version++;
+  for (const failure of ["", "read", "invalid"]) {
+    state.failure = failure; const reads = state.reads;
+    await preview(page).click();
+    if (failure) {
+      await expect(page.locator(".copy-panel")).toContainText("读取已保存菜单失败");
+      await expect(page.locator(".copy-preview")).toHaveCount(0);
+      await expect(button(page, "复制菜单文字")).toHaveCount(0);
+      await button(page, "重新读取本餐文字").click();
+    }
+    await expect(page.locator(".copy-preview")).toContainText("另一会话保存的菜");
+    expect(state.reads).toBe(reads + (failure ? 2 : 1));
+    await closeCopy(page);
+  }
+  expect(state.writes).toHaveLength(1); expect(state.saved!.version).toBe(2);
+});
+
+test("未保存复制须保存或明确放弃，取消和读取失败保留草稿", async ({ page }) => {
+  const state = await openWeek(page); await generate(page); await button(page, "保存调整").click();
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await replaceLunch(page); const reads = state.reads;
+  await preview(page).click();
+  await expect(button(page, "保存后预览")).toBeVisible(); expect(state.reads).toBe(reads);
+  await button(page, "放弃修改后预览").click(); await page.getByText("继续编辑", { exact: true }).click();
+  expect(state.reads).toBe(reads); await expect(lunch(page)).toContainText("荤菜3");
+  state.failure = "read";
+  await button(page, "放弃修改后预览").click(); await page.getByText("放弃修改", { exact: true }).click();
+  await expect(page.locator(".copy-panel")).toContainText("读取已保存菜单失败");
+  await expect(lunch(page)).toContainText("荤菜3"); await expect(button(page, "复制菜单文字")).toHaveCount(0);
+  await button(page, "放弃修改后预览").click(); await page.getByText("放弃修改", { exact: true }).click();
+  await expect(page.locator(".copy-preview")).toContainText("荤菜1");
+  await expect(page.locator(".copy-preview")).not.toContainText("荤菜3"); expect(state.writes).toHaveLength(1);
+});
+
+test("保存后预览响应丢失不复制草稿，原请求重试成功后才重新读取", async ({ page }) => {
+  const state = await openWeek(page); await generate(page); await preview(page).click();
+  state.failure = "lost"; await button(page, "保存后预览").click();
+  await expect(button(page, "重试原保存请求")).toBeVisible();
+  await expect(button(page, "复制菜单文字")).toHaveCount(0);
+  await expect(lunch(page)).toContainText("荤菜1");
+  await closeCopy(page); await button(page, "重试原保存请求").click();
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await preview(page).click(); await expect(page.locator(".copy-preview")).toContainText("荤菜1");
+  expect(state.writes).toHaveLength(2); expect(state.writes[0]).toEqual(state.writes[1]);
+  expect(state.saved!.version).toBe(1);
 });
