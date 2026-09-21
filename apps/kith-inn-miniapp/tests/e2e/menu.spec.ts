@@ -803,3 +803,25 @@ test("单餐无汤和整周停餐没有无效去汤或保存入口", async ({ pa
   await button(page, "关闭菜单文字").click(); await expect(button(page, "去复制菜单")).toBeEnabled();
   expect(state.writes).toHaveLength(1); expect(state.generations).toBe(1);
 });
+
+
+test("首页保存只在有未保存改动时出现，查看或还原原菜不改变确认", async ({ page }) => {
+  const state = await openWeek(page); await generate(page); await confirmWeek(page);
+  await expect(page.locator(".state-badge")).toHaveText("已确认");
+  await expect(button(page, "保存调整")).toHaveCount(0);
+  const saved = structuredClone(state.saved);
+  await enterEdit(page); await home(page);
+  await expect(button(page, "保存调整")).toHaveCount(0);
+  await enterEdit(page); await replaceLunch(page); await home(page);
+  await expect(button(page, "保存调整")).toBeEnabled();
+  await enterEdit(page); await button(page, "自己选").click(); await button(page, "荤菜1").click();
+  await button(page, "保存这次替换").click(); await home(page);
+  await expect(button(page, "保存调整")).toHaveCount(0);
+  await expect(page.locator(".state-badge")).toHaveText("已确认");
+  expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(1);
+  await enterEdit(page); await replaceLunch(page); await saveDraft(page);
+  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await home(page); await expect(button(page, "保存调整")).toHaveCount(0);
+  await expect(page.locator(".state-badge")).toHaveText("已保存");
+  expect(state.writes).toHaveLength(2); expect(state.saved!.confirmedAt).toBeNull();
+});

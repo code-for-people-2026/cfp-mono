@@ -151,7 +151,7 @@ export default function WeekPage() {
     adopt(result.week); if (screen === "meal") setCopyText(formatMealText(result.week.meals[mealIndex]!)); setScreen(screen === "meal" ? "meal" : result.week.confirmedAt ? "home" : "edit"); setNotice(screen === "meal" ? "本餐调整已保存" : result.week.confirmedAt ? "周菜单已保存并确认" : "菜单已保存，可继续调整或确认");
   }
   async function save(confirm: boolean) {
-    if (!draft) return;
+    if (!draft || !confirm && !dirty) return;
     setNotice("");
     // Single-meal writes are assembled from the saved snapshot; only this meal's soup can change.
     const input = screen === "meal" && saved ? { ...saved, meals: saved.meals.map((meal, i) => i === mealIndex
@@ -293,7 +293,7 @@ export default function WeekPage() {
           {!settings && <><View className="rule-card"><Text className="home-structure">每餐 {menu.structure.meat} 荤 {menu.structure.vegetable} 素 {menu.structure.soup} 汤</Text></View>
           <Button className="primary" disabled={disabled} onClick={() => void run(edit)}>{dirty ? "继续调整菜单" : "查看并调整这一周"}</Button>
           <Button className="secondary" disabled={disabled} onClick={() => { setStructure(menu.structure); setMeals(menu.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled }))); setSettings(true); }}>修改周设置</Button>
-          <Button className="secondary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(false))}>保存调整</Button>
+          {dirty && <Button className="secondary" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(false))}>保存调整</Button>}
           {dirty && <Button className="secondary" disabled={disabled} onClick={() => void run(async () => { if (await discard()) adopt(saved); })}>放弃本次调整</Button>}</>}
           <Button className="secondary" disabled={disabled || cooling} onClick={() => void run(() => openCopy())}>去复制菜单</Button>
         </View>}
