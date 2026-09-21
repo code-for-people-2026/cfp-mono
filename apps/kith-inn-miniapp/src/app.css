@@ -221,6 +221,6 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 
 .meal-soup-switch { width: 24PX; height: 24PX; accent-color: #1e5d45; }
 
-.history-app .week-toolbar { flex: 0 0 auto; margin: 12PX 15PX 0; }
+.history-app .week-toolbar { flex: 0 0 auto; margin: 12PX 15PX 10PX; }
 .history-app .flow-scroll { padding: 0 15PX 12PX; }
 .history-app .flow-dock .flow-icon { filter: brightness(0) invert(1); }
