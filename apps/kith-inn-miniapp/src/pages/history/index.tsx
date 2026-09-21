@@ -9,8 +9,9 @@ import { Button } from "../../lib/button";
 export default function HistoryPage() {
   const [items, setItems] = useState<WeekSummary[]>([]), [before, setBefore] = useState<string | null>(null);
   const [busy, setBusy] = useState(false), [loaded, setLoaded] = useState(false), [error, setError] = useState("");
-  const [pending, setPending] = useState(() => getKithInnClient().pendingWrite());
-  useDidShow(() => setPending(getKithInnClient().pendingWrite()));
+  const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
+  const [pending, setPending] = useState(() => client?.pendingWrite() ?? null);
+  useDidShow(() => setPending(client?.pendingWrite() ?? null));
   const blocked = !!pending && pending.state !== "rejected";
   async function load(more = false) {
     setBusy(true); setError("");
