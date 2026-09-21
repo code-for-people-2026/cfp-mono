@@ -9,7 +9,8 @@ const lunch = (page: Page) => page.locator(".meal-block:visible").first();
 const lunchDishes = (page: Page) => page.locator(".day-column").first().locator(".meal-cells").first();
 
 // Controlled API transport and stored H5 session, not real WeChat or PostgreSQL evidence.
-async function openWeek(page: Page, viaPool = false, dishCount = 4) {
+async function openWeek(page: Page, viaPool = false, dishCount = 4, today = timestamp) {
+  await page.clock.setFixedTime(new Date(today));
   const items: Dish[] = CategorySchema.options.flatMap((category, c) => Array.from({ length: dishCount }, (_, i) => ({
     id: id(c * 10 + i + 1), name: `${{ meat: "荤", vegetable: "素", soup: "汤" }[category]}菜${i + 1}`,
     category, active: true, version: 1, createdAt: timestamp, updatedAt: timestamp,
@@ -117,10 +118,11 @@ async function enterEdit(page: Page) { await page.getByRole("button", { name: /^
 async function openPreview(page: Page) { await home(page); await preview(page).click(); }
 async function settings(page: Page) { await home(page); await button(page, "修改周设置").click(); }
 async function saveDraft(page: Page) {
-  await home(page); await button(page, "保存调整").click();
-  await expect.poll(async () => await page.locator(".alert").count() + await button(page, "返回本周菜单").count()).toBeGreaterThan(0);
-  if (!await button(page, "返回本周菜单").count()) await enterEdit(page);
+  await openPreview(page); await button(page, "保存后预览").click();
+  await expect.poll(async () => await page.locator(".alert").count() + await page.locator(".copy-preview").count()).toBeGreaterThan(0);
+  await closeCopy(page); await enterEdit(page);
 }
+
 const soupToggle = (page: Page) => page.getByRole("checkbox", { name: "本餐做汤", exact: true });
 async function openMondayMeal(page: Page) {
   await home(page); await button(page, "去复制菜单").click();
@@ -206,7 +208,7 @@ test("修改结构取消与缺菜失败都保留换菜去汤草稿", async ({ pa
 
   await button(page, "取消设置，保留原菜单").click();
   await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   expect(state.saved!.structure.meat).toBe(2);
   expect(state.saved!.meals[0]).toMatchObject({ soupOmitted: true, meat: [{ name: "荤菜3" }, { name: "荤菜2" }] });
 });
@@ -230,7 +232,7 @@ test("保存已提交但响应丢失时冻结草稿，并使用原键原正文�
 test("409冲突保留草稿，读取只供核对，明确确认后载入服务器内容", async ({ page }) => {
   const state = await openWeek(page); await generate(page);
   await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   await replaceLunch(page);
   state.saved = { ...state.saved!, version: 2 };
   state.failure = "conflict";
@@ -257,7 +259,7 @@ test("原汤停用后须选齐全部汤才恢复，取消和未选齐不改变�
   await page.locator(".structure-fields input").last().fill("2");
   await generate(page);
   await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   await openMondayMeal(page); await soupToggle(page).click();
   state.items.find((dish) => dish.name === "汤菜1")!.active = false;
   await soupToggle(page).click();
@@ -280,7 +282,7 @@ test("原汤停用后须选齐全部汤才恢复，取消和未选齐不改变�
 
 test("无本地修改仍重新读保存快照，读取异常不提供旧文字，重试后获取新版本", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   state.saved!.meals[0]!.meat[0]!.name = "另一会话保存的菜";
   state.saved!.version++;
   for (const failure of ["", "read", "invalid"]) {
@@ -301,7 +303,7 @@ test("无本地修改仍重新读保存快照，读取异常不提供旧文字�
 
 test("未保存复制须保存或明确放弃，取消和读取失败保留草稿", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   await replaceLunch(page); const reads = state.reads;
   await openPreview(page);
   await expect(button(page, "保存后预览")).toBeVisible(); expect(state.reads).toBe(reads);
@@ -471,8 +473,8 @@ test("两列七天表按选中菜位换菜，导航取消保留调整，重新�
   await button(page, "历史").click();
   await expect(page.locator(".history-app .week-range")).toContainText("已确认");
   await button(page, "排菜单").click(); await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
-  await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await replaceLunch(page); await saveDraft(page);
+  await expect(button(page, "确认周菜单")).toBeVisible();
   await button(page, "历史").click();
   await expect(page.locator(".history-app .week-range")).toContainText("已保存");
 });
@@ -528,7 +530,7 @@ test("候选面板打开后切换菜位，不会把新选择写回旧餐次", as
   await expect(page.locator(".swap-screen")).toHaveCount(0);
   await button(page, "自己选").click(); await button(page, "荤菜3").click(); await button(page, "保存这次替换").click();
   await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(button(page, "确认周菜单")).toBeVisible();
   expect(state.saved!.meals[0]).toEqual(state.generated!.meals[0]);
   expect(state.saved!.meals[2]!.meat.map((dish) => dish.name)).toEqual(["荤菜1", "荤菜3"]);
 });
@@ -661,7 +663,7 @@ test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾�
 
 test("单餐从今天的保存快照去汤，显式保存只改该餐，回看复制及恢复无需整周确认", async ({ page }, testInfo) => {
   await page.clock.setFixedTime(new Date("2026-09-23T08:00:00Z"));
-  const state = await openWeek(page); await generate(page); await confirmWeek(page);
+  const state = await openWeek(page, false, 4, "2026-09-23T08:00:00Z"); await generate(page); await confirmWeek(page);
   await expect(button(page, "去复制菜单")).toBeEnabled();
   const before = structuredClone(state.saved!);
   await button(page, "去复制菜单").click();
@@ -759,7 +761,7 @@ for (const failure of ["lost", "conflict"]) test(`单餐保存${failure}不冒�
 
 test("单餐过滤停餐并回退首个启用餐，失效汤须选齐后显式保存且不改其他餐", async ({ page }) => {
   await page.clock.setFixedTime(new Date("2026-10-01T08:00:00Z"));
-  const state = await openWeek(page); await page.locator(".structure-fields input").last().fill("2");
+  const state = await openWeek(page, false, 4, "2026-10-01T08:00:00Z"); await page.locator(".structure-fields input").last().fill("2");
   await page.locator(".setting-row").first().getByRole("checkbox").first().uncheck();
   await page.locator(".setting-row").nth(1).getByRole("checkbox").first().uncheck();
   await page.locator(".setting-row").nth(1).getByRole("checkbox").last().uncheck();
@@ -805,7 +807,7 @@ test("单餐无汤和整周停餐没有无效去汤或保存入口", async ({ pa
 });
 
 
-test("首页保存只在有未保存改动时出现，查看或还原原菜不改变确认", async ({ page }) => {
+test("首页没有保存操作，草稿返回编辑保存，查看或还原原菜不改变确认", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await confirmWeek(page);
   await expect(page.locator(".state-badge")).toHaveText("已确认");
   await expect(button(page, "保存调整")).toHaveCount(0);
@@ -813,15 +815,17 @@ test("首页保存只在有未保存改动时出现，查看或还原原菜不�
   await enterEdit(page); await home(page);
   await expect(button(page, "保存调整")).toHaveCount(0);
   await enterEdit(page); await replaceLunch(page); await home(page);
-  await expect(button(page, "保存调整")).toBeEnabled();
+  await expect(button(page, "保存调整")).toHaveCount(0);
+  await expect(button(page, "继续调整菜单")).toBeEnabled();
   await enterEdit(page); await button(page, "自己选").click(); await button(page, "荤菜1").click();
   await button(page, "保存这次替换").click(); await home(page);
   await expect(button(page, "保存调整")).toHaveCount(0);
   await expect(page.locator(".state-badge")).toHaveText("已确认");
   expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(1);
-  await enterEdit(page); await replaceLunch(page); await saveDraft(page);
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await enterEdit(page); await replaceLunch(page); await home(page);
+  await button(page, "继续调整菜单").click(); await confirmWeek(page);
+  await expect(page.getByText("周菜单已保存并确认", { exact: true })).toBeVisible();
   await home(page); await expect(button(page, "保存调整")).toHaveCount(0);
-  await expect(page.locator(".state-badge")).toHaveText("已保存");
-  expect(state.writes).toHaveLength(2); expect(state.saved!.confirmedAt).toBeNull();
+  await expect(page.locator(".state-badge")).toHaveText("已确认");
+  expect(state.writes).toHaveLength(2); expect(state.saved!.confirmedAt).not.toBeNull();
 });
