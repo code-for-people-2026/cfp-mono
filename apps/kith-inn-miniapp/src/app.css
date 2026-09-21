@@ -142,9 +142,10 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .meal-axis > :not(.axis-spacer) { display: flex; justify-content: center; align-items: center; border-radius: 6PX; background: #f6f1e8; color: #6b655d; font-size: 13PX; }
 .meal-axis > :not(.axis-spacer) > * { width: 13PX; overflow-wrap: anywhere; }
 .axis-spacer { height: 42PX; border-bottom: 1PX solid #eee6da; }
-.day-scroll { min-width: 0; width: 100%; }
+.day-scroll { min-width: 0; width: 100%; scroll-snap-type: x mandatory; }
+.day-scroll.dragging { scroll-snap-type: none; user-select: none; cursor: grabbing; }
 .day-carousel { display: grid; min-width: 0; grid-auto-flow: column; grid-auto-columns: calc((100% - 8PX) / 2); gap: 8PX; }
-.day-column { min-width: 0; }
+.day-column { min-width: 0; scroll-snap-align: start; }
 .column-head { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2PX; height: 42PX; border-bottom: 1PX solid #eee6da; font-size: 15PX; font-weight: 700; }
 .column-head > :last-child { color: #675d53; font-size: 13PX; font-weight: 400; }
 .meal-cells { display: grid; grid-auto-rows: 48PX; gap: 7PX; margin-top: 9PX; }

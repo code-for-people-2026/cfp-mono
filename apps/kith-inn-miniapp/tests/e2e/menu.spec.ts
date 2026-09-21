@@ -135,7 +135,7 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   await expect(lunchDishes(page)).not.toContainText("汤菜1");
   await button(page, "调整这一周").click();
   await expect(preview(page)).toBeVisible();
-  await expect(page.getByText("如之前已发到微信，请自行通知邻居，旧消息不会自动更新。", { exact: true })).toBeVisible();
+  await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
   const reads = state.reads;
   await preview(page).click();
   await expect(page.locator(".copy-preview")).toHaveText("2026年9月21日（周一）午餐\n荤：荤菜3、荤菜2\n素：素菜1、素菜2");
@@ -339,7 +339,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
     await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
     await expect(page.locator(".copy-screen")).toHaveCount(0);
     await expect(button(page, "确认周菜单")).toBeVisible();
-    await expect(page.getByText("如之前已发到微信，请自行通知邻居，旧消息不会自动更新。", { exact: true })).toBeVisible();
+    await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
   });
 }
 
@@ -576,4 +576,36 @@ test("修改周设置后复制不静默覆盖，取消与读取失败保留设�
   await expect(page.locator(".copy-screen")).toContainText("读取已保存菜单失败");
   await button(page, "返回周设置").click(); await expect(page.locator(".structure-fields input").first()).toHaveValue("3");
   expect(state.writes).toHaveLength(1); expect(state.saved!.structure.meat).toBe(2);
+});
+
+test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾周末完整可达", async ({ page, context }) => {
+  await page.setViewportSize({ width: 390, height: 844 }); await openWeek(page); await generate(page);
+  const scroll = page.locator(".day-scroll");
+  const aligned = async (last = false) => {
+    await expect.poll(() => scroll.evaluate((node, end) => {
+      const columns = [...node.querySelectorAll(".day-column")], bounds = node.getBoundingClientRect();
+      const pair = end ? columns.slice(-2) : columns.filter((column) => Math.abs(column.getBoundingClientRect().left - bounds.left) < 1).flatMap((column) => [column, column.nextElementSibling!]);
+      return pair.length === 2 && Math.abs(pair[0]!.getBoundingClientRect().left - bounds.left) < 1 && Math.abs(pair[1]!.getBoundingClientRect().right - bounds.right) < 1;
+    }, last)).toBe(true);
+  };
+  const drag = async () => { const box = (await scroll.boundingBox())!; await page.mouse.move(box.x + 240, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + 130, box.y + 20, { steps: 12 }); await page.mouse.up(); };
+  const edge = (await scroll.boundingBox())!;
+  await page.mouse.move(edge.x + 2, edge.y + 20); await page.mouse.down(); await page.mouse.move(edge.x - 1, edge.y + 20); await page.mouse.up();
+  await page.mouse.move(edge.x + 150, edge.y + 20); await expect(scroll).not.toHaveClass(/dragging/); await aligned();
+  await drag(); await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(100); await aligned();
+  const cdp = await context.newCDPSession(page); await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: true });
+  const box = (await scroll.boundingBox())!;
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 240, y: box.y + 20 }] });
+  for (let step = 1; step <= 8; step++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + 240 - step * 20, y: box.y + 20 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(250); await aligned();
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: box.x + 200, y: box.y + 20 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: box.x + 90, y: box.y + 20 }] });
+  await cdp.send("Input.dispatchTouchEvent", { type: "touchCancel", touchPoints: [] }); await aligned();
+  await cdp.send("Emulation.setTouchEmulationEnabled", { enabled: false }); await cdp.detach();
+  const weekend = async () => { await scroll.hover(); await page.mouse.wheel(2500, 0); await expect.poll(() => scroll.evaluate((node) => node.scrollLeft)).toBeGreaterThan(700); await aligned(true); };
+  await weekend(); await button(page, "确认周菜单").click(); await weekend();
+  await button(page, "保存本周菜单").click(); await button(page, "历史").click(); await weekend();
+  await button(page, "调整这一周").click(); await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
+  await button(page, "预览本餐文字").click(); await expect(page.getByText(/微信消息不会自动更新|自行通知邻居/)).toHaveCount(0);
 });

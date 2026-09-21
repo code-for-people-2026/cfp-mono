@@ -1,3 +1,4 @@
+import { useEffect, useId, useRef, useState } from "react";
 import { ScrollView, Text, View } from "@tarojs/components";
 import type { Category, MenuPreview } from "@cfp/kith-inn-contracts";
 import { Button } from "./button";
@@ -17,6 +18,44 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
   menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean;
   onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
+  const scrollId = useId(), [scrollLeft, setScrollLeft] = useState(0);
+  const settling = useRef<ReturnType<typeof setTimeout>>(), touching = useRef(false);
+  const lastScroll = useRef({ scrollLeft: 0, scrollWidth: 0 });
+  function settle() {
+    clearTimeout(settling.current);
+    if (process.env.TARO_ENV === "h5" || touching.current) return;
+    // Native scroll-view has no CSS snap. Seven equal columns include six 8px gaps.
+    const { scrollLeft: left, scrollWidth: width } = lastScroll.current;
+    if (width) setScrollLeft(Math.min(5, Math.max(0, Math.round(left / ((width + 8) / 7)))) * ((width + 8) / 7));
+  }
+  function endTouch() { touching.current = false; clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }
+  useEffect(() => {
+    if (process.env.TARO_ENV !== "h5") return () => clearTimeout(settling.current);
+    const element = document.getElementById(scrollId)!;
+    let start: { x: number; left: number; pointer: number } | null = null, moved = false;
+    const down = (event: PointerEvent) => {
+      if (event.pointerType === "mouse" && event.button === 0) { start = { x: event.clientX, left: element.scrollLeft, pointer: event.pointerId }; moved = false; }
+    };
+    const move = (event: PointerEvent) => {
+      if (!start) return;
+      if (!event.buttons) { finish(); return; }
+      const distance = event.clientX - start.x;
+      if (!moved && Math.abs(distance) < 5) return;
+      moved = true; element.setPointerCapture(start.pointer); element.classList.add("dragging");
+      event.preventDefault(); element.scrollLeft = start.left - distance;
+    };
+    const finish = () => {
+      if (start && element.hasPointerCapture(start.pointer)) element.releasePointerCapture(start.pointer);
+      start = null; element.classList.remove("dragging");
+    };
+    const click = (event: MouseEvent) => { if (moved) { event.preventDefault(); event.stopPropagation(); moved = false; } };
+    element.addEventListener("pointerdown", down); element.addEventListener("pointermove", move);
+    element.addEventListener("pointerup", finish); element.addEventListener("pointercancel", finish); element.addEventListener("click", click, true);
+    return () => {
+      element.removeEventListener("pointerdown", down); element.removeEventListener("pointermove", move);
+      element.removeEventListener("pointerup", finish); element.removeEventListener("pointercancel", finish); element.removeEventListener("click", click, true);
+    };
+  }, [scrollId]);
   const categories: Category[] = showAll ? ["meat", "vegetable", "soup"] : ["meat"];
   const rows = Math.max(1, categories.reduce((count, category) => count + menu.structure[category], 0));
   // Keep readonly long names complete and align the same slot across all seven days.
@@ -30,7 +69,9 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
     </View>}{readonly && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>
     <View className="weekly-menu-grid">
       <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
-      <ScrollView scrollX className="day-scroll"><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
+      <ScrollView id={scrollId} scrollX enhanced scrollLeft={process.env.TARO_ENV === "h5" ? undefined : scrollLeft} className="day-scroll"
+        onTouchStart={() => { touching.current = true; clearTimeout(settling.current); }} onTouchEnd={endTouch} onTouchCancel={endTouch}
+        onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; lastScroll.current = event.detail; setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
         <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
         {[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
           const meal = menu.meals[mealIndex]!;

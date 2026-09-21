@@ -161,7 +161,7 @@ export default function WeekPage() {
     catch { setCopyStatus("复制失败，文字已保留，请重试复制。"); }
   }
   function beginEditing() {
-    setEditing(true); setNotice("如之前已发到微信，请自行通知邻居，旧消息不会自动更新。");
+    setEditing(true); setNotice("");
   }
   async function edit() { setDishes(await client!.getDishes()); beginEditing(); }
   async function openCandidates(mode: "swap" | "pick") {
@@ -245,7 +245,6 @@ export default function WeekPage() {
           : <View className="hint">本周没有已安排的餐次，请返回周菜单调整。</View>}
         {copyText && <Button className="primary" disabled={busy || blocked} onClick={() => void run(copy)}>复制菜单文字</Button>}
         {copyStatus && <View className="muted" role="status">{copyStatus}</View>}
-        <Text className="evidence-note">之前发出的微信消息不会自动更新，请自行通知邻居。</Text>
         <Button className="secondary" ariaLabel="关闭菜单文字" disabled={busy} onClick={closeCopy}>返回周菜单</Button>
         <Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => { await edit(); closeCopy(); })}>继续编辑</Button>
       </View>}
