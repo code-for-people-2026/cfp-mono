@@ -2,12 +2,14 @@ import Taro from "@tarojs/taro";
 import {
   DishBatchInputSchema, DishBatchResultSchema, DishListSchema, DishSchema, DishUpdateInputSchema,
   ErrorResponseSchema, IdSchema, LoginInputSchema, SessionSchema,
-  type Dish, type DishBatchInput, type DishUpdateInput, type ErrorDetails, type Session
+  GenerateInputSchema, MenuPreviewSchema, WeekListQuerySchema, WeekListSchema, WeekPlanSchema, WeekStartSchema, WeekWriteInputSchema,
+  type Dish, type DishBatchInput, type DishUpdateInput, type ErrorDetails, type Session,
+  type GenerateInput, type WeekListQuery, type WeekPlan, type WeekWriteInput
 } from "@cfp/kith-inn-contracts";
 
 const timeout = 10_000;
 const receiptLifetime = 24 * 60 * 60 * 1000;
-type Method = "GET" | "POST" | "PATCH" | "DELETE";
+type Method = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 type Response = { statusCode: number; data: unknown; header?: Record<string, unknown> };
 type Task = Promise<Response> & { abort?: () => void };
 export type ApiPlatform = {
@@ -25,12 +27,14 @@ export class ClientError extends Error {
       CONFIG_REQUIRED: "请先配置街坊味服务地址", UNAUTHORIZED: "请重新登录", FORBIDDEN: "当前微信账号没有经营权限",
       LOGIN_FAILED: "微信登录失败，请重试", WECHAT_REQUIRED: "请在微信小程序中登录", STORAGE_FAILED: "无法保存本机会话，请重试",
       INVALID_REQUEST: "请检查输入内容", DUPLICATE_DISH_NAME: "菜名重复，请修改清单或恢复已停用菜品",
-      VERSION_CONFLICT: "菜品已在另一处更新，请重新读取后再调整", BUSY: "正在处理，请稍候",
-      PENDING_WRITE: "上次保存结果尚未确认，请先重试原请求或读取核对", REVIEW_REQUIRED: "请先读取菜品池并核对上次保存结果",
+      VERSION_CONFLICT: "内容已在另一处更新，请重新读取后再调整", BUSY: "正在处理，请稍候",
+      PENDING_WRITE: "上次保存结果尚未确认，请先重试原请求或读取核对", REVIEW_REQUIRED: "请先读取对应内容并核对上次保存结果",
       REQUEST_UNKNOWN: "请求结果未确认，可能已保存，请重试原请求", RANDOM_UNAVAILABLE: "无法生成安全请求标识，请更新微信后重试",
       RATE_LIMITED: "操作太频繁，请稍后重试原请求", IDEMPOTENCY_KEY_REUSED: "请求标识有冲突，请读取核对后再提交",
       LIMIT_EXCEEDED: "已达到数量限制，请调整后重试", PAYLOAD_TOO_LARGE: "本次内容过多，请减少菜品后重试",
-      WECHAT_LOGIN_FAILED: "微信登录失败，请重新登录"
+      WECHAT_LOGIN_FAILED: "微信登录失败，请重新登录",
+      DISH_UNAVAILABLE: "所选菜品已停用或改类，请重新选择", INSUFFICIENT_DISHES: "可用菜品不足，请补菜或调整每餐数量",
+      NOT_FOUND: "未找到已保存的菜单"
     };
     super(messages[code] ?? "操作未完成，请稍后重试");
     this.name = "ClientError";
@@ -74,8 +78,8 @@ async function deadline<T>(task: Promise<T> & { abort?: () => void }): Promise<T
   } finally { clearTimeout(timer!); }
 }
 
-type Pending = { kind: "batch" | "update"; path: string; body: string; key: string; createdAt: number; state: "unknown" | "rejected" | "review" };
-export type WriteResult = { kind: "batch"; items: Dish[] } | { kind: "update"; dish: Dish };
+type Pending = { kind: "batch" | "update" | "week"; path: string; body: string; key: string; createdAt: number; state: "unknown" | "rejected" | "review" };
+export type WriteResult = { kind: "batch"; items: Dish[] } | { kind: "update"; dish: Dish } | { kind: "week"; week: WeekPlan };
 const rejectionStatuses: Record<string, number> = {
   INVALID_REQUEST: 400, NOT_FOUND: 404, DUPLICATE_DISH_NAME: 409, VERSION_CONFLICT: 409,
   DISH_UNAVAILABLE: 409, LIMIT_EXCEEDED: 422, PAYLOAD_TOO_LARGE: 413
@@ -150,10 +154,12 @@ export function createKithInnClient(options: {
     operation.state = "unknown";
     reviewedKey = null;
     try {
-      const response = await request(operation.kind === "batch" ? "POST" : "PATCH", operation.path, operation.body, operation.key);
+      const response = await request(operation.kind === "batch" ? "POST" : operation.kind === "week" ? "PUT" : "PATCH", operation.path, operation.body, operation.key);
       const result: WriteResult = operation.kind === "batch"
         ? { kind: "batch", items: DishBatchResultSchema.parse(response.data).items }
-        : { kind: "update", dish: DishSchema.parse(response.data) };
+        : operation.kind === "week" ? { kind: "week", week: WeekPlanSchema.parse(response.data) }
+          : { kind: "update", dish: DishSchema.parse(response.data) };
+      if (result.kind === "week" && operation.path !== `/weeks/${result.week.weekStart}`) throw new ClientError("REQUEST_UNKNOWN");
       if (response.statusCode !== (operation.kind === "batch" ? 201 : 200)) throw new ClientError("REQUEST_UNKNOWN");
       pending = null;
       return result;
@@ -184,7 +190,7 @@ export function createKithInnClient(options: {
 
   return {
     restoreSession,
-    pendingWrite: () => pending ? { kind: pending.kind, createdAt: pending.createdAt, state: pending.state } : null,
+    pendingWrite: () => pending ? { kind: pending.kind, createdAt: pending.createdAt, state: pending.state, ...(pending.kind === "week" ? { weekStart: pending.path.slice(7) } : {}) } : null,
     login: () => exclusive(async () => {
       clearSession();
       let code: string;
@@ -211,8 +217,46 @@ export function createKithInnClient(options: {
       const response = await request("GET", "/dishes");
       const parsed = DishListSchema.safeParse(response.data);
       if (response.statusCode !== 200 || !parsed.success) throw new ClientError("REQUEST_UNKNOWN");
-      reviewedKey = pending && (pending.state !== "unknown" || readAt - pending.createdAt >= receiptLifetime) ? pending.key : null;
+      reviewedKey = pending && pending.kind !== "week" && (pending.state !== "unknown" || readAt - pending.createdAt >= receiptLifetime) ? pending.key : null;
       return parsed.data.items;
+    }),
+    getWeek: (weekStart: string) => exclusive(async () => {
+      if (!WeekStartSchema.safeParse(weekStart).success) throw new ClientError("INVALID_REQUEST");
+      const readAt = now();
+      let week: WeekPlan | null;
+      try {
+        const response = await request("GET", `/weeks/${weekStart}`);
+        const parsed = WeekPlanSchema.safeParse(response.data);
+        if (response.statusCode !== 200 || !parsed.success || parsed.data.weekStart !== weekStart) throw new ClientError("REQUEST_UNKNOWN");
+        week = parsed.data;
+      } catch (error) {
+        if (!(error instanceof ClientError && error.code === "NOT_FOUND" && error.status === 404)) throw error;
+        week = null;
+      }
+      reviewedKey = pending?.kind === "week" && pending.path === `/weeks/${weekStart}` &&
+        (pending.state !== "unknown" || readAt - pending.createdAt >= receiptLifetime) ? pending.key : null;
+      return week;
+    }),
+    listWeeks: (query: Partial<WeekListQuery> = {}) => exclusive(async () => {
+      const parsed = WeekListQuerySchema.safeParse(query);
+      if (!parsed.success) throw new ClientError("INVALID_REQUEST");
+      const response = await request("GET", `/weeks?limit=${parsed.data.limit}${parsed.data.before ? `&before=${parsed.data.before}` : ""}`);
+      const result = WeekListSchema.safeParse(response.data);
+      if (response.statusCode !== 200 || !result.success) throw new ClientError("REQUEST_UNKNOWN");
+      return result.data;
+    }),
+    generateWeek: (weekStart: string, input: GenerateInput) => exclusive(async () => {
+      const parsed = GenerateInputSchema.safeParse(input);
+      if (!WeekStartSchema.safeParse(weekStart).success || !parsed.success || parsed.data.meals[0]?.date !== weekStart) throw new ClientError("INVALID_REQUEST");
+      const response = await request("POST", `/weeks/${weekStart}/generate`, JSON.stringify(parsed.data));
+      const result = MenuPreviewSchema.safeParse(response.data);
+      if (response.statusCode !== 200 || !result.success || result.data.weekStart !== weekStart) throw new ClientError("REQUEST_UNKNOWN");
+      return result.data;
+    }),
+    saveWeek: (weekStart: string, input: WeekWriteInput) => exclusive(() => {
+      const parsed = WeekWriteInputSchema.safeParse(input);
+      if (!WeekStartSchema.safeParse(weekStart).success || !parsed.success || parsed.data.meals[0]?.date !== weekStart) throw new ClientError("INVALID_REQUEST");
+      return write("week", `/weeks/${weekStart}`, parsed.data);
     }),
     addDishes: (input: DishBatchInput) => exclusive(() => {
       const parsed = DishBatchInputSchema.safeParse(input);
@@ -234,4 +278,10 @@ export function createKithInnClient(options: {
       reviewedKey = null;
     }
   };
+}
+
+// Pages share one in-memory pending request so navigation cannot bypass an unknown write.
+let sharedClient: ReturnType<typeof createKithInnClient> | undefined;
+export function getKithInnClient() {
+  return sharedClient ??= createKithInnClient();
 }
