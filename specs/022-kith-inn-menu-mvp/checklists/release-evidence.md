@@ -6,7 +6,7 @@
 
 | 项目 | 状态与实际证据 |
 | --- | --- |
-| T020 独立镜像、配置 | 已实现，初次本地镜像/受限PG启动通过；正式提交镜像复验待补。Node22、非root、3305 loopback、只读根文件系统 |
+| T020 独立镜像、配置 | 已实现，ca5b275干净提交镜像、受限PG及实际只读compose复验通过。Node22、非root、3305 loopback、只读根文件系统 |
 | T021 目标识别、CI | 已实现且目标识别/compose回归通过：API/契约独立镜像，菜单小程序/文档不选其他产品；共享配置保留原有全目标兜底 |
 | T022 运行手册 | 已编写 [KITH_INN_RUNBOOK](../../../../deploy/KITH_INN_RUNBOOK.md)，已按菜池演练核对；补齐失败停止和干净提交检查 |
 | T023 AppID/现有权限 | **未核验**：源码示例不能证明真实现有小程序配置；维护者安全环境核对 |
@@ -61,3 +61,24 @@ week_plans仅人工占位JSON用于删除约束检查，不能当成完整菜单
 源样本与自有Docker卷保留供验证，未做物理擦除或托管快照删除。
 复现遵循运行手册；本机临时脚本 `/tmp/kith-release-drill.py`（每次新建唯一资源）、
 脱敏结果 `/tmp/kith-release-drill-initial-result.json`；不把含凭据wrapper或真实数据纳入仓库。
+
+## 干净提交镜像复验与审查
+
+2026-09-21 00:44:01–00:44:14 UTC，提交 `ca5b275c256dc37d292b53b0e948d3b171084938`，
+镜像 ID `sha256:3ce954f8d58ae25a6edf104cf3f05467468925fad2a16c4dcabb8188ba2a34e2`。
+新隔离资源前缀 `kith-release-drill-20260921084401-af9d`，PG17端口60251，
+源/恢复API端口60260/60296，实际compose端口60367；未占用共享PG或3317/3319预览。
+完整重复上述24项检查通过；备份16,302字节/0.110秒，隔离restore0.688秒，五表退出删除0.340秒。
+实际compose的非root、只读根、ALL能力移除、no-new-privileges已检查；根目录写拒绝、tmpfs可写、ready200，
+通过compose重复迁移0.602/0.619秒。仅本机PG与人工菜池；不推导RPO/RTO承诺。
+
+修正记录：初版只读容器通过pnpm启动时Corepack试图写缓存失败，ca5b275改为直接Node启动与迁移后通过。
+一次演练脚本把PG临时Unix socket就绪误作最终就绪，改TCP检测后重跑；没有修改业务代码。
+脱敏证据为 `/tmp/kith-release-drill-result.json`、`/tmp/kith-release-drill-compose-result.json`；
+运行步骤见手册，本机复现使用 `KITH_DRILL_IMAGE=cfp-kith-inn-release:verified python3 /tmp/kith-release-drill.py`，
+再运行 `/tmp/kith-release-drill-compose.py`。脚本仅创建唯一新资源，测试身份不可用于真实登录。
+演练后只停止已核对归属的自有容器，保留假数据卷；不声称物理擦除，临时私密文件不进仓库。
+
+独立审查 `aacfdcb..ca5b275` 无待修问题。PR #368 为取得仓库既有CI而以main为目标，
+包含未合并依赖 #361～#367；本片审查范围仍为 `aacfdcb..HEAD`，约450行，未重拆任务。
+CI以本证据提交的最新head为准，结果留在PR/Issue执行记录；不引用旧依赖绿灯充数。
