@@ -64,7 +64,7 @@ sha256sum "$KITH_BACKUP" > "$KITH_BACKUP.sha256"
 # list/hash 仅检查归档结构；第4节应用读回成功才证明可恢复。
 KITH_INN_ENV_FILE=/secure/kith-inn/migration.env \
   docker compose -f deploy/docker-compose.kith-inn.yml run --rm --no-deps kith-inn-api \
-  pnpm --filter @cfp/kith-inn-api db:migrate
+  node --import tsx scripts/migrate.mjs
 # 原命令再次执行应成功，已应用 migration 不重复且校验 checksum。
 ```
 

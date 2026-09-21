@@ -21,8 +21,9 @@ COPY --chown=node:node apps/kith-inn-api/scripts apps/kith-inn-api/scripts
 COPY --chown=node:node apps/kith-inn-api/migrations apps/kith-inn-api/migrations
 COPY --chown=node:node packages/kith-inn-contracts/src packages/kith-inn-contracts/src
 
+WORKDIR /app/apps/kith-inn-api
 USER node
 EXPOSE 3305
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e 'fetch("http://127.0.0.1:3305/api/kith-inn/health").then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'
-CMD ["pnpm", "--filter", "@cfp/kith-inn-api", "start"]
+CMD ["node", "--import", "tsx", "src/main.ts"]

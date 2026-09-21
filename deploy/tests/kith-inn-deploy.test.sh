@@ -38,3 +38,6 @@ grep -Fq '/api/kith-inn/health' "$root/apps/kith-inn-api/Dockerfile"
 grep -Fq 'proxy_pass http://127.0.0.1:3305;' "$root/deploy/nginx.kith-inn.example.conf"
 grep -Fq 'location /api/kith-inn/' "$root/deploy/nginx.kith-inn.example.conf"
 echo 'kith inn deploy config tests passed (no deployment performed)'
+# Read-only runtime must not invoke Corepack or download a package manager at startup.
+grep -Fqx 'WORKDIR /app/apps/kith-inn-api' "$root/apps/kith-inn-api/Dockerfile"
+grep -Fqx 'CMD ["node", "--import", "tsx", "src/main.ts"]' "$root/apps/kith-inn-api/Dockerfile"
