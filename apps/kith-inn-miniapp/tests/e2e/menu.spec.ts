@@ -307,6 +307,8 @@ test("未保存复制须保存或明确放弃，取消和读取失败保留草�
   await expect(button(page, "保存后预览")).toBeVisible(); expect(state.reads).toBe(reads);
   await button(page, "晚餐").click(); await button(page, "午餐").click();
   expect(state.reads).toBe(reads); await expect(page.locator(".copy-preview")).toHaveCount(0);
+  await button(page, "历史").click(); await page.getByText("继续编辑", { exact: true }).click();
+  await expect(page.locator(".copy-screen")).toBeVisible(); expect(state.writes).toHaveLength(1);
   await button(page, "放弃修改后预览").click(); await page.locator(".taro-model__cancel").filter({ hasText: /^继续编辑$/ }).click();
   expect(state.reads).toBe(reads);
   await closeCopy(page); await enterEdit(page); await expect(lunch(page)).toContainText("荤菜3"); await openPreview(page);
@@ -324,6 +326,7 @@ test("保存后预览响应丢失不复制草稿，原请求重试成功后才�
   const state = await openWeek(page); await generate(page); await openPreview(page);
   state.failure = "lost"; await button(page, "保存后预览").click();
   await expect(button(page, "重试原保存请求")).toBeVisible();
+  await expect(button(page, "历史")).toBeDisabled();
   await expect(button(page, "复制菜单文字")).toHaveCount(0);
   await closeCopy(page); await expect(button(page, "继续调整菜单")).toBeDisabled();
   await button(page, "重试原保存请求").click();
@@ -334,7 +337,7 @@ test("保存后预览响应丢失不复制草稿，原请求重试成功后才�
 });
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 }]) {
-  test(`确认后可见下一步、独立复制并返回编辑 ${viewport.width}px`, async ({ page }) => {
+  test(`确认后可见下一步、独立复制并返回编辑 ${viewport.width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize(viewport);
     const state = await openWeek(page); await generate(page);
     await confirmWeek(page);
@@ -347,6 +350,10 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
     await next.click();
     await expect(page.locator(".copy-screen")).toBeVisible();
     await expect(page.locator(".app-heading")).toHaveText("复制菜单");
+    await expect(button(page, "继续编辑")).toHaveCount(0);
+    await expect(page.locator(".main-nav")).toBeInViewport({ ratio: 1 });
+    await expect(page.locator(".main-nav button")).toHaveText(["排菜单", "菜品池", "历史"]);
+    await page.screenshot({ path: testInfo.outputPath("copy-navigation.png") });
     await expect(page.locator(".week-plans:visible")).toHaveCount(0);
     await expect(page.locator(".copy-preview")).toContainText("2026年9月21日（周一）午餐");
     expect(state.reads).toBe(reads + 1);
@@ -358,6 +365,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
     await expect(page.locator(".copy-screen")).toHaveCount(0);
     await expect(next).toBeInViewport({ ratio: 1 });
     await next.click(); await expect(page.locator(".copy-preview")).toBeVisible();
+    await closeCopy(page);
     await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
     await expect(page.locator(".copy-screen")).toHaveCount(0);
     await expect(button(page, "确认周菜单")).toBeVisible();

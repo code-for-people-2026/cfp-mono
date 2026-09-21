@@ -274,7 +274,6 @@ export default function WeekPage() {
         {copyText && <Button className="primary" disabled={busy || blocked} onClick={() => void run(copy)}>复制菜单文字</Button>}
         {copyStatus && <View className="muted" role="status">{copyStatus}</View>}
         <Button className="secondary" ariaLabel="关闭菜单文字" disabled={busy} onClick={closeCopy}>返回周菜单</Button>
-        <Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => { closeCopy(); await edit(); })}>继续编辑</Button>
       </View>}
       {loaded && !sharing && <>
         {screen === "home" && <View className="plan-state"><Text>7 天 · {(menu?.meals ?? meals).filter((meal) => meal.enabled).length} 餐{menu ? ` · ${menu.meals.reduce((count, meal) => count + meal.meat.length + meal.vegetable.length + (meal.soupOmitted ? 0 : meal.soup.length), 0)} 道菜` : "待安排"}</Text><Text className="state-badge">{dirty || settingsDirty ? "未保存" : saved ? saved.confirmedAt ? "已确认" : "已保存" : "待生成"}</Text></View>}
@@ -339,6 +338,6 @@ export default function WeekPage() {
         {(screen === "swap" || screen === "pick") && <Button className="primary" disabled={disabled || !candidate || !candidates.some((dish) => dish.id === candidate)} onClick={() => void run(applyCandidate)}>保存这次替换<Image src={checkIcon} className="flow-icon" /></Button>}
       </View>}
     </View>
-    {!sharing && <MainNav active="week" disabled={!client || disabled} onNavigate={(page) => void run(async () => { if (await discard()) await Taro.reLaunch({ url: `/pages/${page}/index` }); })} />}
+    <MainNav active="week" disabled={!client || busy || blocked} onNavigate={(page) => void run(async () => { if (await discard()) await Taro.reLaunch({ url: `/pages/${page}/index` }); })} />
   </View>;
 }
