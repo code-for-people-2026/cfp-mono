@@ -17,6 +17,7 @@ jobs:
     outputs:
       website_affected: ${{ steps.deploy_targets.outputs.website }}
       weekly_menu_affected: ${{ steps.deploy_targets.outputs.weekly_menu }}
+      kith_inn_affected: ${{ steps.deploy_targets.outputs.kith_inn }}
       deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
       preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
@@ -81,6 +82,7 @@ jobs:
           bash deploy/tests/production-targets.test.sh
           bash deploy/tests/website-preview.test.sh
           bash deploy/tests/weekly-menu-deploy.test.sh
+          bash deploy/tests/kith-inn-deploy.test.sh
           bash deploy/tests/website-smoke.test.sh
 
       - run: pnpm verify
