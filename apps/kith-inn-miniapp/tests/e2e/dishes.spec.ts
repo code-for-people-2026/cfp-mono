@@ -116,7 +116,7 @@ test("400 和 409 保留草稿，冲突读取后仍须明确确认载入", async
   state.failure = "VERSION_CONFLICT";
   state.items[0] = { ...seed, name: "别处已改名", version: 2 };
   await button(page, "保存修改").click();
-  await expect(page.getByText("菜品已在另一处更新，请重新读取后再调整", { exact: true })).toBeVisible();
+  await expect(page.getByText("内容已在另一处更新，请重新读取后再调整", { exact: true })).toBeVisible();
   await button(page, "重新读取").click();
   await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("我的改名");
   await button(page, "载入最新版本").click();

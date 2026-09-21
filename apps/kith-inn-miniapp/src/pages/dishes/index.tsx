@@ -1,21 +1,15 @@
-import { useEffect, useState, type ReactNode } from "react";
-import Taro from "@tarojs/taro";
-import { Button as TaroButton, Image, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
+import { useEffect, useState } from "react";
+import Taro, { useDidShow } from "@tarojs/taro";
+import { Image, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
 import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-contracts";
-import { ClientError, createKithInnClient, type WriteResult } from "../../lib/api";
+import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
+import { Button } from "../../lib/button";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
-function Button(props: { children: ReactNode; onClick: () => void; disabled?: boolean; className?: string; ariaLabel?: string }) {
-  // H5's Taro button custom element lacks native keyboard and disabled semantics.
-  const className = `action-button ${props.className ?? ""}`;
-  return process.env.TARO_ENV === "h5"
-    ? <button type="button" className={className} disabled={props.disabled} aria-label={props.ariaLabel} onClick={props.onClick}>{props.children}</button>
-    : <TaroButton {...props} className={className} />;
-}
 
 export default function DishesPage() {
-  const [client] = useState(() => { try { return createKithInnClient(); } catch { return null; } });
+  const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [items, setItems] = useState<Dish[]>([]), [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(() => client?.restoreSession() ?? false);
   const [stage, setStage] = useState<"list" | "input" | "preview">("list");
@@ -32,6 +26,7 @@ export default function DishesPage() {
     (edit.name !== original?.name || edit.category !== original?.category || edit.active !== original?.active);
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
 
+  useDidShow(() => setPending(client?.pendingWrite() ?? null));
   useEffect(() => {
     if (blocked || cooling) {
       const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -86,6 +81,7 @@ export default function DishesPage() {
     if (await confirmDiscard()) { clearDraft(); setError(""); }
   }
   async function saved(result: WriteResult) {
+    if (result.kind === "week") { await Taro.navigateTo({ url: `/pages/week/index?weekStart=${result.week.weekStart}` }); return; }
     clearDraft();
     setLoaded(false);
     setNotice(result.kind === "batch" ? `已新增 ${result.items.length} 道菜` : "菜品修改已保存");
@@ -123,7 +119,8 @@ export default function DishesPage() {
       {notice && <View className="success" ariaRole="status"><Text className="success-title">{notice}</Text>
         <Text className="success-description">菜名和荤、素、汤分类已经保存。以后想到新菜，可以随时继续添加。</Text></View>}
       {cooling && <View className="hint">请等待 {Math.ceil((retryAt - now) / 1000)} 秒后重试。</View>}
-      {blocked && <View className="recovery">
+      {blocked && pending?.kind === "week" && <View className="recovery"><Text>周菜单保存结果尚未确认，请回到对应周核对。</Text><Button disabled={busy} onClick={() => void Taro.navigateTo({ url: `/pages/week/index?weekStart=${pending.weekStart}` })}>核对周菜单保存</Button></View>}
+      {blocked && pending?.kind !== "week" && <View className="recovery">
         <Text className="section-title">保存结果尚未确认</Text>
         <Text>{needsReview ? "安全重试期限已过或请求标识需核对。请重新读取菜品池，核对本次草稿。" : "可能已经保存。请重试原请求，结果确认前暂不能修改或放弃。"}</Text>
         {needsReview && reviewed && <ScrollView className="review-list" scrollY><Text className="section-title">本次读取的菜品池</Text>
@@ -207,6 +204,7 @@ export default function DishesPage() {
         <Button className="secondary" disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
       </View>}
       {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
+      {signedIn && !dirty && <View className="week-navigation"><Button disabled={disabled} onClick={() => void Taro.navigateTo({ url: "/pages/week/index" })}>排周菜单</Button><Button disabled={disabled} onClick={() => void Taro.navigateTo({ url: "/pages/history/index" })}>历史菜单</Button></View>}
       {signedIn && <View className="account-actions"><Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => {
         if (await confirmDiscard()) { await client.logout(); clearDraft(); setItems([]); setLoaded(false); }
       })}>退出登录</Button></View>}

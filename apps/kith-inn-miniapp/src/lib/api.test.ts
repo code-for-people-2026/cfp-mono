@@ -281,3 +281,85 @@ it("adapts real Taro primitives and keeps H5 login separate from safe H5 randomn
   vi.stubGlobal("crypto", undefined);
   await expect(platform.randomBytes()).rejects.toMatchObject({ code: "RANDOM_UNAVAILABLE" });
 });
+
+const weekStart = "2026-09-21";
+const preview = { weekStart, structure: { meat: 0, vegetable: 1, soup: 0 }, meals: Array.from({ length: 14 }, (_, i) => ({
+  date: `2026-09-${21 + Math.floor(i / 2)}`, mealType: i % 2 ? "dinner" as const : "lunch" as const,
+  enabled: true, soupOmitted: false, meat: [], soup: [], vegetable: [{ dishId: dish.id, name: dish.name }]
+})) };
+const week = { ...preview, id: dish.id, version: 1, confirmedAt: null, createdAt: dish.createdAt, updatedAt: dish.updatedAt };
+const weekInput = () => ({ baseVersion: 0, rebuild: true, confirm: false, structure: { ...preview.structure },
+  meals: preview.meals.map((meal) => ({ ...meal, vegetable: [dish.id] })) });
+
+describe("week transport", () => {
+  it("validates dates, inputs and preview without creating a pending write", async () => {
+    const { client, platform } = fixture();
+    await expect(client.getWeek("2026-09-22")).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(client.listWeeks({ limit: 53 })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(client.saveWeek("2026-09-28", weekInput())).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    const input = { structure: preview.structure, meals: preview.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled })) };
+    await expect(client.generateWeek("2026-09-28", input)).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    expect(platform.request).not.toHaveBeenCalled();
+    platform.request.mockResolvedValueOnce({ statusCode: 200, data: preview });
+    expect(await client.generateWeek(weekStart, input)).toEqual(preview);
+    expect(platform.request.mock.calls[0]![0]).toMatchObject({ method: "POST", url: `${origin}/api/kith-inn/weeks/${weekStart}/generate` });
+    expect(platform.request.mock.calls[0]![0].header["Idempotency-Key"]).toBeUndefined();
+    expect(client.pendingWrite()).toBeNull();
+    platform.request.mockResolvedValueOnce({ statusCode: 200, data: { ...preview, meals: [] } });
+    await expect(client.generateWeek(weekStart, input)).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+  });
+  it("reads complete weeks and paginated summaries, rejecting malformed results", async () => {
+    const { client, platform } = fixture();
+    platform.request.mockResolvedValueOnce({ statusCode: 200, data: week })
+      .mockResolvedValueOnce({ statusCode: 200, data: { items: [], nextBefore: null } })
+      .mockResolvedValueOnce(failure(404, "NOT_FOUND"))
+      .mockResolvedValueOnce({ statusCode: 200, data: { ...week, weekStart: "2026-09-28" } })
+      .mockResolvedValueOnce({ statusCode: 200, data: { items: [] } });
+    expect(await client.getWeek(weekStart)).toEqual(week);
+    expect(await client.listWeeks({ before: weekStart, limit: 4 })).toEqual({ items: [], nextBefore: null });
+    expect(platform.request.mock.calls[1]![0].url).toBe(`${origin}/api/kith-inn/weeks?limit=4&before=${weekStart}`);
+    expect(await client.getWeek("2026-09-28")).toBeNull();
+    await expect(client.getWeek(weekStart)).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    await expect(client.listWeeks()).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+  });
+  it("retries PUT with its original key and immutable body across cross-page reads", async () => {
+    const { client, platform } = fixture();
+    platform.request.mockRejectedValueOnce(Error("timeout"))
+      .mockResolvedValueOnce({ statusCode: 200, data: { items: [dish] } })
+      .mockResolvedValueOnce({ statusCode: 200, data: week });
+    const input = weekInput();
+    await expect(client.saveWeek(weekStart, input)).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    input.confirm = true; input.meals[0]!.vegetable = [];
+    expect(client.pendingWrite()).toMatchObject({ kind: "week", weekStart, state: "unknown" });
+    await client.getDishes();
+    await expect(client.addDishes(batch())).rejects.toMatchObject({ code: "PENDING_WRITE" });
+    expect(await client.retryPendingWrite()).toEqual({ kind: "week", week });
+    expect(platform.request.mock.calls[2]![0]).toEqual(platform.request.mock.calls[0]![0]);
+    expect(platform.request.mock.calls[0]![0].method).toBe("PUT");
+  });
+  it.each([true, false])("only a fresh corresponding week read unlocks expired writes (exists=%s)", async (exists) => {
+    const { client, platform, advance } = fixture();
+    platform.request.mockRejectedValueOnce(Error("timeout"));
+    await expect(client.saveWeek(weekStart, weekInput())).rejects.toBeDefined();
+    advance(86400000);
+    platform.request.mockResolvedValueOnce({ statusCode: 200, data: { items: [dish] } })
+      .mockResolvedValueOnce(failure(404, "NOT_FOUND"))
+      .mockResolvedValueOnce(exists ? { statusCode: 200, data: week } : failure(404, "NOT_FOUND"));
+    await client.getDishes();
+    expect(() => client.discardPendingAfterReview()).toThrow();
+    await client.getWeek("2026-09-28");
+    expect(() => client.discardPendingAfterReview()).toThrow();
+    await client.getWeek(weekStart);
+    client.discardPendingAfterReview();
+    expect(client.pendingWrite()).toBeNull();
+  });
+  it("rejects malformed successful writes and preserves version conflicts for caller review", async () => {
+    const { client, platform } = fixture();
+    platform.request.mockResolvedValueOnce({ statusCode: 201, data: week })
+      .mockResolvedValueOnce(failure(409, "VERSION_CONFLICT", { currentVersion: 2 }));
+    await expect(client.saveWeek(weekStart, weekInput())).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    expect(client.pendingWrite()?.state).toBe("unknown");
+    await expect(client.retryPendingWrite()).rejects.toMatchObject({ code: "VERSION_CONFLICT", details: { currentVersion: 2 } });
+    expect(client.pendingWrite()?.state).toBe("rejected");
+  });
+});

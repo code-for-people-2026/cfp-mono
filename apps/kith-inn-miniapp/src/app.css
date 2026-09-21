@@ -62,3 +62,40 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .login-panel .hint { margin-top: 10PX; }
 .account-actions { display: flex; justify-content: flex-end; margin-top: 9PX; }
 @media (prefers-reduced-motion: reduce) { .action-button.rotate-dish { transition: none; } }
+.week-toolbar { display: grid; grid-template-columns: 35PX 1fr 35PX; align-items: center; gap: 7PX; margin-bottom: 10PX; }
+.week-toolbar .action-button { width: 35PX; height: 35PX; padding: 0; border-radius: 11PX; font-size: 20PX; font-weight: 400; }
+.week-range { text-align: center; color: #675d53; font-size: 9PX; }
+.range-title { display: block; color: #29231d; font-size: 15PX; font-weight: 700; }
+.plan-state { display: flex; align-items: center; justify-content: space-between; gap: 10PX; margin-bottom: 10PX; padding: 10PX 11PX; border-radius: 12PX; background: #e7f3ec; font-size: 12PX; font-weight: 700; }
+.state-badge { padding: 5PX 7PX; border-radius: 999PX; background: #fff; color: #1e5d45; font-size: 9PX; font-weight: 850; }
+.week-plans { display: grid; gap: 7PX; padding-bottom: 4PX; }
+.day-plan { overflow: hidden; border: 1PX solid #e6dccd; border-radius: 13PX; background: #fff; }
+.day-plan.open { border-color: rgba(182, 65, 49, .5); box-shadow: 0 6PX 18PX rgba(52, 41, 31, .06); }
+.action-button.day-toggle { width: 100%; padding: 10PX 11PX; border: 0; background: #fff; text-align: left; }
+.day-head { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8PX; font-size: 12PX; font-weight: 700; }
+.day-head > :last-child { color: #1e5d45; font-size: 9PX; }
+.day-summary { display: grid; gap: 2PX; margin-top: 5PX; color: #675d53; font-size: 9PX; line-height: 1.4; font-weight: 400; }
+.day-summary > * { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.day-detail { padding: 0 10PX 10PX; border-top: 1PX solid #f0e9df; }
+.meal-block { padding-top: 9PX; }
+.meal-title { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5PX; color: #675d53; font-size: 9PX; font-weight: 800; }
+.meal-title > :last-child { color: #1e5d45; }
+.mini-dishes { display: grid; gap: 4PX; }
+.mini-dish { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 6PX; min-height: 31PX; padding: 5PX 6PX 5PX 9PX; border-radius: 9PX; background: #f8f5ef; }
+.action-button.dish-choice { min-width: 0; padding: 0; overflow: hidden; border: 0; border-radius: 0; background: transparent; font-size: 10PX; font-weight: 700; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.action-button.dish-choice[disabled] { opacity: 1; color: #29231d; }
+.mini-kind { padding: 3PX 5PX; border-radius: 999PX; background: #fbe9e4; color: #8f2d22; font-size: 8PX; font-weight: 850; }
+.mini-kind.vegetable { background: #e7f3ec; color: #1e5d45; }
+.mini-kind.soup { background: #fff2d5; color: #80580e; }
+.plan-action { position: sticky; z-index: 3; bottom: -15PX; margin-top: 9PX; padding: 8PX 0 2PX; background: linear-gradient(transparent, #fbf8f1 25%); }
+.plan-action .primary { margin-top: 0; box-shadow: 0 8PX 20PX rgba(182, 65, 49, .16); }
+.candidate-sheet { position: sticky; z-index: 8; bottom: -15PX; margin: 10PX -15PX -15PX; padding: 13PX 15PX 17PX; border-top: 1PX solid #e6dccd; border-radius: 18PX 18PX 0 0; background: #fff; box-shadow: 0 -18PX 40PX rgba(41, 35, 29, .18); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8PX; font-size: 13PX; font-weight: 700; }
+.sheet-head .action-button { padding: 6PX 10PX; border: 0; border-radius: 10PX; background: #f3eee5; color: #675d53; }
+.candidate-list { display: grid; gap: 5PX; max-height: 240PX; overflow: auto; }
+.candidate-list .action-button { min-height: 40PX; padding: 8PX 10PX; border-radius: 10PX; font-size: 11PX; text-align: left; }
+.structure-fields { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8PX; }
+.week-settings { margin-bottom: 10PX; }
+.week-settings .setting-row { font-size: 10PX; padding: 8PX; gap: 4PX; }
+.week-settings .setting-row > view, .week-settings .setting-row > taro-view-core { display: flex; align-items: center; gap: 3PX; }
+.week-navigation { display: flex; gap: 18PX; justify-content: center; margin-top: 12PX; }

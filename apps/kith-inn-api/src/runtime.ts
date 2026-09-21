@@ -9,6 +9,7 @@ import { createKithInnPool } from "./database";
 import { createKithInnHttpServer, type SafeLogger } from "./http";
 import { Sessions } from "./sessions";
 import { Dishes } from "./dishes";
+import { Weeks } from "./weeks";
 
 export async function createReadinessProbe(pool: Pick<Pool, "query">) {
   const name = "0001_initial.sql";
@@ -71,7 +72,7 @@ export async function startKithInnRuntime(input: Readonly<{
   try {
     const sessions = new Sessions(pool, { appId: config.wechatAppId, ownerOpenId: config.wechatOwnerOpenId },
       createWechatExchanger({ appId: config.wechatAppId, appSecret: config.wechatAppSecret, fetcher: input.fetcher }));
-    const server = createKithInnHttpServer({ sessions, dishes: new Dishes(pool, sessions),
+    const server = createKithInnHttpServer({ sessions, dishes: new Dishes(pool, sessions), weeks: new Weeks(pool, sessions),
       readiness: await createReadinessProbe(pool), logger: input.logger });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);

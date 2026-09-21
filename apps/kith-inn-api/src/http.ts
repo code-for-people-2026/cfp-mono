@@ -4,10 +4,11 @@ import { ErrorResponseSchema, LoginInputSchema } from "@cfp/kith-inn-contracts";
 import { ApiError } from "./auth";
 import type { Sessions } from "./sessions";
 import type { Dishes } from "./dishes";
+import type { Weeks } from "./weeks";
 
 export type SafeLogger = (event: { requestId: string; method: string; route: string; status: number; durationMs: number }) => void;
 const prefix = "/api/kith-inn";
-const routes = ["/health", "/ready", "/sessions/wechat", "/sessions/current", "/dishes"];
+const routes = ["/health", "/ready", "/sessions/wechat", "/sessions/current", "/dishes", "/weeks"];
 const invalid = () => new ApiError(400, "INVALID_REQUEST", "请求格式不正确");
 
 async function readBody(request: IncomingMessage): Promise<string> {
@@ -32,6 +33,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
 export function createKithInnHttpServer(input: {
   sessions: Pick<Sessions, "login" | "authenticate" | "revoke">;
   dishes?: Pick<Dishes, "list" | "create" | "update">;
+  weeks?: Pick<Weeks, "list" | "read" | "generate" | "save">;
   readiness: () => Promise<void>; logger?: SafeLogger; clock?: () => number;
 }) {
   const clock = input.clock ?? Date.now;
@@ -61,11 +63,13 @@ export function createKithInnHttpServer(input: {
       route = routes.find((path) => url.pathname === prefix + path) ?? "unmatched";
       const dishId = /^\/api\/kith-inn\/dishes\/([^/]+)$/.exec(url.pathname)?.[1];
       if (dishId) route = "/dishes/{dishId}";
+      const weekMatch = /^\/api\/kith-inn\/weeks\/([^/]+)(\/generate)?$/.exec(url.pathname);
+      if (weekMatch) route = weekMatch[2] ? "/weeks/{weekStart}/generate" : "/weeks/{weekStart}";
       if (request.method === "POST" && route === "/sessions/wechat") {
         limit(`ip:${request.socket.remoteAddress}`, 20); // Ignore spoofable forwarded headers.
       }
       const body = await readBody(request);
-      if (url.search || (request.headersDistinct.authorization?.length ?? 0) > 1 ||
+      if ((url.search && !(route === "/weeks" && request.method === "GET")) || (request.headersDistinct.authorization?.length ?? 0) > 1 ||
           (request.headersDistinct["idempotency-key"]?.length ?? 0) > 1 ||
           (request.headersDistinct["content-type"]?.length ?? 0) > 1 || (request.headers["content-type"] &&
           !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers["content-type"]))) throw invalid();
@@ -89,7 +93,26 @@ export function createKithInnHttpServer(input: {
         if (!token) throw new ApiError(401, "UNAUTHORIZED", "请重新登录");
         const session = await input.sessions.authenticate(token);
         limit(`merchant:${session.merchantId}`, 120);
-        if (input.dishes && route === "/dishes" && request.method === "GET") {
+        if (input.weeks && route === "/weeks" && request.method === "GET") {
+          if (body) throw invalid();
+          const query: Record<string, unknown> = {};
+          for (const [key, value] of url.searchParams) {
+            if ((key !== "limit" && key !== "before") || Object.hasOwn(query, key)) throw invalid();
+            if (key === "limit" && !/^[1-9]\d*$/.test(value)) throw invalid();
+            query[key] = key === "limit" ? Number(value) : value;
+          }
+          send(200, await input.weeks.list(session, query));
+        } else if (input.weeks && weekMatch && request.method === "GET" && !weekMatch[2]) {
+          if (body) throw invalid();
+          send(200, await input.weeks.read(session, weekMatch[1]!));
+        } else if (input.weeks && weekMatch && request.method === "POST" && weekMatch[2]) {
+          send(200, await input.weeks.generate(session, weekMatch[1]!, json()));
+        } else if (input.weeks && weekMatch && request.method === "PUT" && !weekMatch[2]) {
+          const key = request.headers["idempotency-key"];
+          if (typeof key !== "string") throw invalid();
+          const result = await input.weeks.save(session, key, weekMatch[1]!, json());
+          send(result.status, result.body);
+        } else if (input.dishes && route === "/dishes" && request.method === "GET") {
           if (body) throw invalid();
           send(200, await input.dishes.list(session));
         } else if (input.dishes && ((route === "/dishes" && request.method === "POST") ||
