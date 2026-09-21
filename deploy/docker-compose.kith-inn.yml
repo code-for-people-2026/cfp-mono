@@ -1,0 +1,21 @@
+name: cfp-kith-inn
+
+services:
+  kith-inn-api:
+    image: ${KITH_INN_IMAGE:?KITH_INN_IMAGE must be an immutable SHA tag or digest}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - ${KITH_INN_ENV_FILE:?KITH_INN_ENV_FILE must name a private absolute path}
+    environment:
+      PORT: "3305"
+    ports:
+      - "127.0.0.1:${KITH_INN_HOST_PORT:-3305}:3305"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 15s

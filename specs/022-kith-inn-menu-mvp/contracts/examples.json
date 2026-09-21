@@ -1,0 +1,1416 @@
+{
+  "valid": [
+    {
+      "name": "单道新增",
+      "schema": "DishBatchInput",
+      "value": {
+        "items": [
+          {
+            "name": "红烧肉",
+            "category": "meat"
+          }
+        ]
+      }
+    },
+    {
+      "name": "菜池读取",
+      "schema": "DishList",
+      "value": {
+        "items": [
+          {
+            "id": "11111111-1111-4111-8111-000000000001",
+            "name": "红烧肉",
+            "category": "meat",
+            "active": true,
+            "version": 1,
+            "createdAt": "2026-09-20T10:00:00Z",
+            "updatedAt": "2026-09-20T10:00:00Z"
+          },
+          {
+            "id": "11111111-1111-4111-8111-000000000002",
+            "name": "清蒸鱼",
+            "category": "meat",
+            "active": true,
+            "version": 1,
+            "createdAt": "2026-09-20T10:00:00Z",
+            "updatedAt": "2026-09-20T10:00:00Z"
+          },
+          {
+            "id": "11111111-1111-4111-8111-000000000003",
+            "name": "清炒时蔬",
+            "category": "vegetable",
+            "active": true,
+            "version": 1,
+            "createdAt": "2026-09-20T10:00:00Z",
+            "updatedAt": "2026-09-20T10:00:00Z"
+          },
+          {
+            "id": "11111111-1111-4111-8111-000000000004",
+            "name": "紫菜蛋花汤",
+            "category": "soup",
+            "active": true,
+            "version": 1,
+            "createdAt": "2026-09-20T10:00:00Z",
+            "updatedAt": "2026-09-20T10:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "name": "首次保存并确认",
+      "schema": "WeekWriteInput",
+      "value": {
+        "baseVersion": 0,
+        "rebuild": true,
+        "confirm": true,
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              "11111111-1111-4111-8111-000000000001",
+              "11111111-1111-4111-8111-000000000002"
+            ],
+            "vegetable": [
+              "11111111-1111-4111-8111-000000000003"
+            ],
+            "soup": [
+              "11111111-1111-4111-8111-000000000004"
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "保存结果",
+      "schema": "WeekPlan",
+      "value": {
+        "id": "11111111-1111-4111-8111-000000000005",
+        "weekStart": "2026-09-21",
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000001",
+                "name": "红烧肉"
+              },
+              {
+                "dishId": "11111111-1111-4111-8111-000000000002",
+                "name": "清蒸鱼"
+              }
+            ],
+            "vegetable": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000003",
+                "name": "清炒时蔬"
+              }
+            ],
+            "soup": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000004",
+                "name": "紫菜蛋花汤"
+              }
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ],
+        "version": 1,
+        "confirmedAt": "2026-09-20T10:00:00Z",
+        "createdAt": "2026-09-20T10:00:00Z",
+        "updatedAt": "2026-09-20T10:00:00Z"
+      }
+    },
+    {
+      "name": "仅生成预览",
+      "schema": "MenuPreview",
+      "value": {
+        "weekStart": "2026-09-21",
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000001",
+                "name": "红烧肉"
+              },
+              {
+                "dishId": "11111111-1111-4111-8111-000000000002",
+                "name": "清蒸鱼"
+              }
+            ],
+            "vegetable": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000003",
+                "name": "清炒时蔬"
+              }
+            ],
+            "soup": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000004",
+                "name": "紫菜蛋花汤"
+              }
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "生成请求",
+      "schema": "GenerateInput",
+      "value": {
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "版本冲突",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "VERSION_CONFLICT",
+          "message": "菜单已更新，请重新读取",
+          "requestId": "11111111-1111-4111-8111-000000000005",
+          "details": {
+            "currentVersion": 2
+          }
+        }
+      }
+    },
+    {
+      "name": "缺菜",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "INSUFFICIENT_DISHES",
+          "message": "荤菜不足，请补充菜品或调整结构",
+          "requestId": "11111111-1111-4111-8111-000000000005",
+          "details": {
+            "shortages": [
+              {
+                "category": "meat",
+                "required": 2,
+                "available": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "回看列表",
+      "schema": "WeekList",
+      "value": {
+        "items": [
+          {
+            "weekStart": "2026-09-21",
+            "version": 1,
+            "confirmedAt": "2026-09-20T10:00:00Z",
+            "updatedAt": "2026-09-20T10:00:00Z"
+          }
+        ],
+        "nextBefore": null
+      }
+    },
+    {
+      "name": "去汤后仍保留隐藏快照",
+      "schema": "WeekPlan",
+      "value": {
+        "id": "11111111-1111-4111-8111-000000000005",
+        "weekStart": "2026-09-21",
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": true,
+            "meat": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000001",
+                "name": "红烧肉"
+              },
+              {
+                "dishId": "11111111-1111-4111-8111-000000000002",
+                "name": "清蒸鱼"
+              }
+            ],
+            "vegetable": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000003",
+                "name": "清炒时蔬"
+              }
+            ],
+            "soup": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000004",
+                "name": "紫菜蛋花汤"
+              }
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ],
+        "version": 1,
+        "confirmedAt": "2026-09-20T10:00:00Z",
+        "createdAt": "2026-09-20T10:00:00Z",
+        "updatedAt": "2026-09-20T10:00:00Z"
+      }
+    },
+    {
+      "name": "荤和汤同时不足全部列出",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "INSUFFICIENT_DISHES",
+          "message": "荤菜和汤不足，请补充菜品或调整结构",
+          "requestId": "11111111-1111-4111-8111-000000000005",
+          "details": {
+            "shortages": [
+              {
+                "category": "meat",
+                "required": 2,
+                "available": 1
+              },
+              {
+                "category": "soup",
+                "required": 1,
+                "available": 0
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "name": "普通保存后周摘要未确认",
+      "schema": "WeekSummary",
+      "value": {
+        "weekStart": "2026-09-21",
+        "version": 2,
+        "confirmedAt": null,
+        "updatedAt": "2026-09-20T11:00:00Z"
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "空批次",
+      "schema": "DishBatchInput",
+      "value": {
+        "items": []
+      }
+    },
+    {
+      "name": "未知分类",
+      "schema": "DishInput",
+      "value": {
+        "name": "红烧肉",
+        "category": "bigMeat"
+      }
+    },
+    {
+      "name": "伪造所属账号",
+      "schema": "DishInput",
+      "value": {
+        "name": "红烧肉",
+        "category": "meat",
+        "ownerId": "11111111-1111-4111-8111-000000000005"
+      }
+    },
+    {
+      "name": "负结构",
+      "schema": "Structure",
+      "value": {
+        "meat": -1,
+        "vegetable": 1,
+        "soup": 0
+      }
+    },
+    {
+      "name": "少于14餐",
+      "schema": "WeekWriteInput",
+      "value": {
+        "baseVersion": 0,
+        "rebuild": true,
+        "confirm": true,
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              "11111111-1111-4111-8111-000000000001",
+              "11111111-1111-4111-8111-000000000002"
+            ],
+            "vegetable": [
+              "11111111-1111-4111-8111-000000000003"
+            ],
+            "soup": [
+              "11111111-1111-4111-8111-000000000004"
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "无效日期",
+      "schema": "WeekPlan",
+      "value": {
+        "id": "11111111-1111-4111-8111-000000000005",
+        "weekStart": "2026-02-30",
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000001",
+                "name": "红烧肉"
+              },
+              {
+                "dishId": "11111111-1111-4111-8111-000000000002",
+                "name": "清蒸鱼"
+              }
+            ],
+            "vegetable": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000003",
+                "name": "清炒时蔬"
+              }
+            ],
+            "soup": [
+              {
+                "dishId": "11111111-1111-4111-8111-000000000004",
+                "name": "紫菜蛋花汤"
+              }
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ],
+        "version": 1,
+        "confirmedAt": "2026-09-20T10:00:00Z",
+        "createdAt": "2026-09-20T10:00:00Z",
+        "updatedAt": "2026-09-20T10:00:00Z"
+      }
+    },
+    {
+      "name": "首次版本负数",
+      "schema": "WeekWriteInput",
+      "value": {
+        "baseVersion": -1,
+        "rebuild": true,
+        "confirm": true,
+        "structure": {
+          "meat": 2,
+          "vegetable": 1,
+          "soup": 1
+        },
+        "meals": [
+          {
+            "date": "2026-09-21",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-21",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-22",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "lunch",
+            "enabled": true,
+            "soupOmitted": false,
+            "meat": [
+              "11111111-1111-4111-8111-000000000001",
+              "11111111-1111-4111-8111-000000000002"
+            ],
+            "vegetable": [
+              "11111111-1111-4111-8111-000000000003"
+            ],
+            "soup": [
+              "11111111-1111-4111-8111-000000000004"
+            ]
+          },
+          {
+            "date": "2026-09-23",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-24",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-25",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-26",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "lunch",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          },
+          {
+            "date": "2026-09-27",
+            "mealType": "dinner",
+            "enabled": false,
+            "soupOmitted": false,
+            "meat": [],
+            "vegetable": [],
+            "soup": []
+          }
+        ]
+      }
+    },
+    {
+      "name": "空菜名",
+      "schema": "DishInput",
+      "value": {
+        "name": "",
+        "category": "meat"
+      }
+    },
+    {
+      "name": "缺菜错误必须包含所需和可用数量",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "INSUFFICIENT_DISHES",
+          "message": "荤菜不足，请补充菜品或调整结构",
+          "requestId": "11111111-1111-4111-8111-000000000005"
+        }
+      }
+    },
+    {
+      "name": "缺菜错误不允许空shortages",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "INSUFFICIENT_DISHES",
+          "message": "荤菜不足，请补充菜品或调整结构",
+          "requestId": "11111111-1111-4111-8111-000000000005",
+          "details": {
+            "shortages": []
+          }
+        }
+      }
+    },
+    {
+      "name": "缺菜错误不夹带部分菜单",
+      "schema": "ErrorResponse",
+      "value": {
+        "error": {
+          "code": "INSUFFICIENT_DISHES",
+          "message": "荤菜不足，请补充菜品或调整结构",
+          "requestId": "11111111-1111-4111-8111-000000000005",
+          "details": {
+            "shortages": [
+              {
+                "category": "meat",
+                "required": 2,
+                "available": 1
+              }
+            ]
+          }
+        },
+        "meals": []
+      }
+    },
+    {
+      "name": "周摘要不接受公布状态",
+      "schema": "WeekSummary",
+      "value": {
+        "weekStart": "2026-09-21",
+        "version": 2,
+        "confirmedAt": null,
+        "updatedAt": "2026-09-20T11:00:00Z",
+        "published": true
+      }
+    }
+  ]
+}

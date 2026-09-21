@@ -17,11 +17,13 @@ jobs:
     outputs:
       website_affected: ${{ steps.deploy_targets.outputs.website }}
       weekly_menu_affected: ${{ steps.deploy_targets.outputs.weekly_menu }}
+      kith_inn_affected: ${{ steps.deploy_targets.outputs.kith_inn }}
       deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
       preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
       DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       WEEKLY_MENU_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_weekly_menu_test
+      KITH_INN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_kith_inn_test
       PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
@@ -62,6 +64,12 @@ jobs:
           "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
           await client.connect(); await client.query('CREATE DATABASE cfp_weekly_menu_test'); await client.end();"
 
+      - name: Create isolated Kith Inn test database
+        run: >-
+          pnpm --dir apps/kith-inn-api exec node --input-type=module -e
+          "import pg from 'pg'; const client = new pg.Client({ connectionString: process.env.DATABASE_URL });
+          await client.connect(); await client.query('CREATE DATABASE cfp_kith_inn_test'); await client.end();"
+
       - id: deploy_targets
         name: Resolve affected deploy targets
         env:
@@ -74,6 +82,7 @@ jobs:
           bash deploy/tests/production-targets.test.sh
           bash deploy/tests/website-preview.test.sh
           bash deploy/tests/weekly-menu-deploy.test.sh
+          bash deploy/tests/kith-inn-deploy.test.sh
           bash deploy/tests/website-smoke.test.sh
 
       - run: pnpm verify

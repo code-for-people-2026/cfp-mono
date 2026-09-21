@@ -6,30 +6,21 @@ repo="${REPOSITORY_DIR:-$(pwd)}"
 cd "$repo"
 
 write_targets() {
-  local website="$1" weekly_menu="$2" targets preview_matrix
-
-  case "$website:$weekly_menu" in
-    true:true)
-      targets='["website","weekly-menu"]'
-      preview_matrix='{"include":[{"target":"website","dockerfile":"apps/website/Dockerfile","image":"cfp-website","skip":false},{"target":"weekly-menu","dockerfile":"apps/weekly-menu-be/Dockerfile","image":"cfp-weekly-menu-be","skip":false}]}'
-      ;;
-    true:false)
-      targets='["website"]'
-      preview_matrix='{"include":[{"target":"website","dockerfile":"apps/website/Dockerfile","image":"cfp-website","skip":false}]}'
-      ;;
-    false:true)
-      targets='["weekly-menu"]'
-      preview_matrix='{"include":[{"target":"weekly-menu","dockerfile":"apps/weekly-menu-be/Dockerfile","image":"cfp-weekly-menu-be","skip":false}]}'
-      ;;
-    *)
-      targets='[]'
-      # GitHub Actions 不接受空 matrix；保留一个明确的 no-op 项，确保 required check 稳定存在。
-      preview_matrix='{"include":[{"target":"none","dockerfile":"","image":"","skip":true}]}'
-      ;;
-  esac
+  local website="$1" weekly_menu="$2" kith_inn="$3" targets preview_matrix
+  read -r targets preview_matrix < <(node -e '
+const entries = [
+  { target: "website", dockerfile: "apps/website/Dockerfile", image: "cfp-website", skip: false },
+  { target: "weekly-menu", dockerfile: "apps/weekly-menu-be/Dockerfile", image: "cfp-weekly-menu-be", skip: false },
+  { target: "kith-inn", dockerfile: "apps/kith-inn-api/Dockerfile", image: "cfp-kith-inn-api", skip: false },
+].filter((_, index) => process.argv[index + 1] === "true");
+// GitHub Actions 不接受空 matrix；保留 no-op 项，使 required check 稳定存在。
+console.log(JSON.stringify(entries.map(entry => entry.target)), JSON.stringify({ include: entries.length
+  ? entries : [{ target: "none", dockerfile: "", image: "", skip: true }] }));
+' "$website" "$weekly_menu" "$kith_inn")
 
   printf 'website=%s\n' "$website" >> "$GITHUB_OUTPUT"
   printf 'weekly_menu=%s\n' "$weekly_menu" >> "$GITHUB_OUTPUT"
+  printf 'kith_inn=%s\n' "$kith_inn" >> "$GITHUB_OUTPUT"
   printf 'targets=%s\n' "$targets" >> "$GITHUB_OUTPUT"
   printf 'preview_matrix=%s\n' "$preview_matrix" >> "$GITHUB_OUTPUT"
   printf 'affected deploy targets: %s\n' "$targets"
@@ -42,7 +33,7 @@ if [[ -z "$base" || "$base" == 0000000000000000000000000000000000000000 ]] ||
   ! git cat-file -e "$base^{commit}" 2>/dev/null ||
   ! git cat-file -e "$head^{commit}" 2>/dev/null; then
   # 无法可靠计算 diff 时宁可多构建/部署，也不能漏掉受影响服务。
-  write_targets true true
+  write_targets true true true
   exit 0
 fi
 
@@ -51,16 +42,17 @@ printf '%s\n' "$changed_files"
 
 website_deploy=false
 weekly_menu_deploy=false
+kith_inn_deploy=false
 while IFS= read -r path; do
   case "$path" in
     .dockerignore | .github/workflows/ci.yml | .github/workflows/deploy-preview.yml | \
       package.json | pnpm-lock.yaml | \
       pnpm-workspace.yaml | turbo.json)
-      write_targets true true
+      write_targets true true true
       exit 0
       ;;
-    deploy/RUNBOOK.md | deploy/WEEKLY_MENU_RUNBOOK.md | deploy/.gitignore | deploy/tests/* | \
-      deploy/nginx.example.conf | deploy/nginx.weekly-menu.example.conf | \
+    deploy/RUNBOOK.md | deploy/WEEKLY_MENU_RUNBOOK.md | deploy/KITH_INN_RUNBOOK.md | deploy/.gitignore | deploy/tests/* | \
+      deploy/nginx.example.conf | deploy/nginx.weekly-menu.example.conf | deploy/nginx.kith-inn.example.conf | \
       deploy/verify-nginx-example.sh | deploy/verify-website-cutover.sh)
       ;;
     .github/workflows/deploy-production.yml | .github/workflows/website-preview-cleanup.yml | \
@@ -71,13 +63,16 @@ while IFS= read -r path; do
     deploy/docker-compose.weekly-menu.yml | deploy/.env.weekly-menu.example | deploy/*weekly-menu*)
       weekly_menu_deploy=true
       ;;
+    deploy/docker-compose.kith-inn.yml | deploy/.env.kith-inn.example | deploy/*kith-inn*)
+      kith_inn_deploy=true
+      ;;
     deploy/resolve-deploy-targets.sh | deploy/smoke-test.sh)
-      write_targets true true
+      write_targets true true true
       exit 0
       ;;
     deploy/*)
       # 未分类的部署文件按当前全部部署目标处理，避免新增契约文件后漏发。
-      write_targets true true
+      write_targets true true true
       exit 0
       ;;
   esac
@@ -94,23 +89,27 @@ fi
 
 output="$(TURBO_SCM_BASE="$base" TURBO_SCM_HEAD="$head" \
   "${turbo[@]}" run build --affected --dry-run=json)"
-read -r website_affected weekly_menu_affected < <(printf '%s' "$output" | node -e '
+read -r website_affected weekly_menu_affected kith_inn_affected < <(printf '%s' "$output" | node -e '
   let text = "";
   process.stdin.on("data", chunk => text += chunk).on("end", () => {
     const start = text.indexOf("{");
     if (start < 0) throw new Error("Turbo dry run did not emit JSON.");
     const tasks = JSON.parse(text.slice(start)).tasks ?? [];
     const affected = id => tasks.some(task => task.taskId === id) ? "true" : "false";
-    process.stdout.write(`${affected("@cfp/website#build")} ${affected("@cfp/weekly-menu-be#build")}\n`);
+    process.stdout.write(`${affected("@cfp/website#build")} ${affected("@cfp/weekly-menu-be#build")} ${affected("@cfp/kith-inn-api#build")}\n`);
   });
 ')
 
 website=false
 weekly_menu=false
+kith_inn=false
 if [[ "$website_deploy" == true || "$website_affected" == true ]]; then
   website=true
 fi
 if [[ "$weekly_menu_deploy" == true || "$weekly_menu_affected" == true ]]; then
   weekly_menu=true
 fi
-write_targets "$website" "$weekly_menu"
+if [[ "$kith_inn_deploy" == true || "$kith_inn_affected" == true ]]; then
+  kith_inn=true
+fi
+write_targets "$website" "$weekly_menu" "$kith_inn"

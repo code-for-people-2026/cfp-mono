@@ -11,10 +11,11 @@ worktree=""
 trap 'if [[ -n "$worktree" ]]; then git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true; fi; rm -rf "$tmp"' EXIT
 
 assert_output() {
-  local file="$1" website="$2" weekly_menu="$3"
+  local file="$1" website="$2" weekly_menu="$3" kith_inn="${4:-false}"
   grep -qx "website=$website" "$file"
   grep -qx "weekly_menu=$weekly_menu" "$file"
-  if [[ "$website" == false && "$weekly_menu" == false ]]; then
+  grep -qx "kith_inn=$kith_inn" "$file"
+  if [[ "$website" == false && "$weekly_menu" == false && "$kith_inn" == false ]]; then
     grep -Fqx 'targets=[]' "$file"
     grep -Fq '"target":"none"' "$file"
     grep -Fq '"skip":true' "$file"
@@ -22,6 +23,7 @@ assert_output() {
   fi
   [[ "$website" == false ]] || grep -Fq '"target":"website"' "$file"
   [[ "$weekly_menu" == false ]] || grep -Fq '"target":"weekly-menu"' "$file"
+  [[ "$kith_inn" == false ]] || grep -Fq '"target":"kith-inn"' "$file"
   grep -Fq '"skip":false' "$file"
 }
 
@@ -44,12 +46,12 @@ synthetic_commit() {
 }
 
 run_selector "$root" "" "$(git -C "$root" rev-parse HEAD)" "$tmp/missing-base"
-assert_output "$tmp/missing-base" true true
+assert_output "$tmp/missing-base" true true true
 run_selector "$root" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef \
   "$(git -C "$root" rev-parse HEAD)" "$tmp/unknown-base"
-assert_output "$tmp/unknown-base" true true
+assert_output "$tmp/unknown-base" true true true
 run_selector "$root" "$(git -C "$root" rev-parse HEAD)" "" "$tmp/missing-head"
-assert_output "$tmp/missing-head" true true
+assert_output "$tmp/missing-head" true true true
 
 worktree="$tmp/worktree"
 git -C "$root" worktree add --detach "$worktree" HEAD >/dev/null
@@ -72,7 +74,7 @@ assert_output "$tmp/unrelated-range" false false
 base="$head"
 head="$(synthetic_commit .dockerignore 'test: docker context range')"
 run_selector "$worktree" "$base" "$head" "$tmp/docker-context-range"
-assert_output "$tmp/docker-context-range" true true
+assert_output "$tmp/docker-context-range" true true true
 
 base="$head"
 head="$(synthetic_commit deploy/website-candidate.fixture 'test: website deploy range')"
@@ -92,7 +94,26 @@ assert_output "$tmp/deploy-docs-range" false false
 base="$head"
 head="$(synthetic_commit deploy/.production-target-test 'test: unknown deploy range')"
 run_selector "$worktree" "$base" "$head" "$tmp/shared-range"
-assert_output "$tmp/shared-range" true true
+assert_output "$tmp/shared-range" true true true
+
+# Real Turbo dependency graph: contracts affect the API; frontend/docs do not.
+for path in apps/kith-inn-api/.production-target-test packages/kith-inn-contracts/.production-target-test \
+  deploy/docker-compose.kith-inn.yml deploy/.env.kith-inn.example; do
+  base="$head"
+  head="$(synthetic_commit "$path" 'test: kith image range')"
+  run_selector "$worktree" "$base" "$head" "$tmp/kith-range"
+  assert_output "$tmp/kith-range" false false true
+  grep -Fqx 'targets=["kith-inn"]' "$tmp/kith-range"
+  grep -Fqx 'preview_matrix={"include":[{"target":"kith-inn","dockerfile":"apps/kith-inn-api/Dockerfile","image":"cfp-kith-inn-api","skip":false}]}' "$tmp/kith-range"
+done
+for path in apps/kith-inn-miniapp/.production-target-test docs/kith-inn/.production-target-test \
+  specs/022-kith-inn-menu-mvp/.production-target-test deploy/KITH_INN_RUNBOOK.md \
+  deploy/nginx.kith-inn.example.conf; do
+  base="$head"
+  head="$(synthetic_commit "$path" 'test: kith non-image range')"
+  run_selector "$worktree" "$base" "$head" "$tmp/kith-no-image-range"
+  assert_output "$tmp/kith-no-image-range" false false false
+done
 
 git -C "$root" worktree remove --force "$worktree" >/dev/null
 worktree=""

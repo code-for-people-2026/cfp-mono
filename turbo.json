@@ -3,6 +3,11 @@
   "globalEnv": [
     "DATABASE_URL",
     "WEEKLY_MENU_DATABASE_URL",
+    "KITH_INN_DATABASE_URL",
+    "KITH_INN_WECHAT_APP_ID",
+    "KITH_INN_WECHAT_APP_SECRET",
+    "KITH_INN_WECHAT_OWNER_OPEN_ID",
+    "PORT",
     "PAYLOAD_DATABASE_URL",
     "PAYLOAD_SECRET",
     "PAYLOAD_DB_PUSH",
@@ -26,6 +31,24 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": [".next/**", "dist/**", "build/**"]
+    },
+    "@cfp/kith-inn-miniapp#build": {
+      "dependsOn": ["^build"],
+      "env": ["TARO_APP_ID", "TARO_APP_KITH_INN_API_BASE_URL"],
+      "outputs": ["dist/**"]
+    },
+    "@cfp/kith-inn-api#build": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@cfp/kith-inn-api#test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "@cfp/kith-inn-api#test:coverage": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "outputs": ["coverage/**"]
     },
     "@cfp/ui#build": {
       "dependsOn": ["^build"],
