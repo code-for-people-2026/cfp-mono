@@ -18,11 +18,12 @@ export function firstPosition(menu: MenuPreview): DishPosition | null {
   }
   return null;
 }
-export function WeekBoard({ menu, selected = null, showAll = true, disabled = false, onSelect, onFilter, readonly = false }: {
-  menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean;
+export function WeekBoard({ menu, selected = null, showAll = true, disabled = false, onSelect, onFilter, readonly = false, compact = false }: {
+  menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean; compact?: boolean;
   onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
   const scrollId = useId(), [scrollLeft, setScrollLeft] = useState(0);
+  const [atEnd, setAtEnd] = useState(false);
   const settling = useRef<ReturnType<typeof setTimeout>>(), touching = useRef(false);
   const lastScroll = useRef({ scrollLeft: 0, scrollWidth: 0 });
   function settle() {
@@ -36,6 +37,9 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
   useEffect(() => {
     if (process.env.TARO_ENV !== "h5") return () => clearTimeout(settling.current);
     const element = document.getElementById(scrollId)!;
+    const updateEdge = () => { if (compact) element.closest(".weekly-menu-board")?.classList.toggle("scroll-at-end", element.scrollLeft + element.clientWidth >= element.scrollWidth - 2); };
+    element.addEventListener("scroll", updateEdge);
+    updateEdge();
     let start: { x: number; left: number; pointer: number } | null = null, moved = false;
     const down = (event: PointerEvent) => {
       if (event.pointerType === "mouse" && event.button === 0) { start = { x: event.clientX, left: element.scrollLeft, pointer: event.pointerId }; moved = false; }
@@ -56,17 +60,18 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
     element.addEventListener("pointerdown", down); element.addEventListener("pointermove", move);
     element.addEventListener("pointerup", finish); element.addEventListener("pointercancel", finish); element.addEventListener("click", click, true);
     return () => {
+      element.removeEventListener("scroll", updateEdge);
       element.removeEventListener("pointerdown", down); element.removeEventListener("pointermove", move);
       element.removeEventListener("pointerup", finish); element.removeEventListener("pointercancel", finish); element.removeEventListener("click", click, true);
     };
-  }, [scrollId]);
+  }, [scrollId, compact]);
   const categories: Category[] = showAll ? ["meat", "vegetable", "soup"] : ["meat"];
   const rows = Math.max(1, categories.reduce((count, category) => count + menu.structure[category], 0));
   // Keep readonly long names complete and align the same slot across all seven days.
   const rowHeights = categories.flatMap((category) => Array.from({ length: menu.structure[category] }, (_, index) => readonly
-    ? Math.max(48, ...menu.meals.map((meal) => Math.ceil((meal[category][index]?.name.length ?? 0) / 6) * 17 + 8)) : 48));
+    ? Math.max(compact ? 40 : 48, ...menu.meals.map((meal) => Math.ceil((meal[category][index]?.name.length ?? 0) / (compact ? 4 : 6)) * 17 + (compact ? 6 : 8))) : 48));
   const height = rowHeights.reduce((sum, row) => sum + row, 0) + (rows - 1) * 7 || 48;
-  return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
+  return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""} ${compact ? "compact-board" : ""} ${atEnd ? "scroll-at-end" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
     <View className="board-head"><View>{!readonly && <Text className="board-date">{weekRange(menu)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{!readonly && <View className="board-filter">
       <Button ariaPressed={!showAll} className={!showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(false)}>荤菜</Button>
       <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
@@ -75,7 +80,7 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
       <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
       <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} scrollLeft={process.env.TARO_ENV === "h5" ? undefined : scrollLeft} className="day-scroll"
         onTouchStart={() => { touching.current = true; clearTimeout(settling.current); }} onTouchEnd={endTouch} onTouchCancel={endTouch}
-        onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; lastScroll.current = event.detail; setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
+        onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; lastScroll.current = event.detail; if (compact) setAtEnd(event.detail.scrollLeft + (event.detail.scrollWidth - 48) / 7 * 2.5 + 16 >= event.detail.scrollWidth - 2); setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
         <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
         {[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
           const meal = menu.meals[mealIndex]!;

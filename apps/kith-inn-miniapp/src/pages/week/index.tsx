@@ -134,13 +134,13 @@ export default function WeekPage() {
     const pool = await client!.getDishes();
     setDishes(pool); adopt(value);
     const source = Taro.getCurrentInstance().router?.params.copyFrom;
-    if (!copiedFrom.current && !blocked && WeekStartSchema.safeParse(source).success && addDays(source!, 7) === week) {
+    if (!copiedFrom.current && !blocked && WeekStartSchema.safeParse(source).success && source !== week) {
       const original = await client!.getWeek(source!);
       if (!original) throw new Error("原菜单暂时无法读取，请重试。");
-      const answer = await Taro.showModal({ title: "复制这周到下周？", content: value ? "下周已有菜单，复制后会进入新草稿，确认保存才会替换下周菜单。" : "复制后可继续调整，确认保存后生效。", confirmText: "复制菜单", cancelText: "取消" });
+      const answer = await Taro.showModal({ title: "复制到所选周？", content: `${week} 起的一周。${value ? "目标周已有菜单，复制后会进入新草稿，确认保存才会替换目标周菜单。" : "复制后可继续调整，确认保存后生效。"}`, confirmText: "复制菜单", cancelText: "取消" });
       copiedFrom.current = true;
       if (!answer.confirm) { await Taro.reLaunch({ url: "/pages/history/index" }); return; }
-      const next = { weekStart: week, structure: original.structure, meals: original.meals.map((meal) => ({ ...meal, date: addDays(meal.date, 7) })) };
+      const next = { weekStart: week, structure: original.structure, meals: original.meals.map((meal) => ({ ...meal, date: addDays(meal.date, Math.round((Date.parse(week) - Date.parse(source!)) / 86400000)) })) };
       setDraft(next); setStructure(next.structure); setMeals(next.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled })));
       setSelected(firstPosition(next)); setShowAll(next.structure.meat === 0); setRebuild(true); setSettings(false); setEditing(true);
     } else if (value && Taro.getCurrentInstance().router?.params.view === "edit") beginEditing();
