@@ -141,7 +141,7 @@ export default function DishesPage() {
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
       {signedIn && stage === "list" && !edit && !showInput && <>
-        <View className="detail-head"><View><Text className="detail-kicker">基础菜品 · 随时可改</Text><Text className="detail-title">我的菜品池</Text></View>
+        <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
           <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
         {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "还未读取到菜品池，请重新读取。"}</View> :
           <View className="dish-list">{items.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
@@ -206,9 +206,7 @@ export default function DishesPage() {
       </View>}
       {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
       {signedIn && notice && !dirty && <Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/week/index" })}>下一步：安排本周菜单</Button>}
-      {signedIn && <View className="account-actions"><Button className="text-button" disabled={busy || blocked} onClick={() => void run(async () => {
-        if (await confirmDiscard()) { await client.logout(); clearDraft(); setItems([]); setLoaded(false); }
-      })}>退出登录</Button></View>}
+
     </>}
     </View>
     <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {

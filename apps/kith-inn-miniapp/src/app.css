@@ -60,7 +60,6 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .hint { background: #f0ebe3; color: #675d53; }
 .muted { display: block; color: #675d53; font-size: 11PX; line-height: 1.5; }
 .login-panel .hint { margin-top: 10PX; }
-.account-actions { display: flex; justify-content: flex-end; margin-top: 9PX; }
 @media (prefers-reduced-motion: reduce) { .action-button.rotate-dish { transition: none; } }
 .week-toolbar { display: grid; grid-template-columns: 35PX 1fr 35PX; align-items: center; gap: 7PX; margin-bottom: 10PX; }
 .week-toolbar .action-button { width: 35PX; height: 35PX; padding: 0; border-radius: 11PX; font-size: 20PX; font-weight: 400; }
