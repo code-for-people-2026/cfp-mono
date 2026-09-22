@@ -224,3 +224,14 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .history-app .week-toolbar { flex: 0 0 auto; margin: 12PX 15PX 10PX; }
 .history-app .flow-scroll { padding: 0 15PX 12PX; }
 .history-app .flow-dock .flow-icon { filter: brightness(0) invert(1); }
+
+.compact-settings { margin-top: 16PX; }
+.settings-section { margin-bottom: 12PX; border: 1PX solid #e5d9ca; border-radius: 16PX; background: #fff; overflow: hidden; }
+.settings-summary { display: flex; align-items: center; justify-content: space-between; gap: 12PX; padding: 18PX 16PX; }
+.settings-summary > :first-child { min-width: 0; }
+.settings-label, .settings-value { display: block; }
+.settings-label { color: #6b655d; font-size: 14PX; margin-bottom: 8PX; }
+.settings-value { font-size: 17PX; font-weight: 650; line-height: 1.5; }
+.settings-summary .text-button { flex: 0 0 auto; margin: 0; min-width: 44PX; min-height: 44PX; color: #1e5d45; }
+.settings-details, .compact-settings .structure-fields { padding: 0 12PX 12PX; }
+.compact-settings .setting-row { padding: 10PX 4PX; margin: 0; border: 0; border-top: 1PX solid #eee6da; border-radius: 0; }

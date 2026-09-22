@@ -5,7 +5,7 @@ import { Button } from "./button";
 
 export type DishPosition = { meal: number; category: Category; index: number };
 export const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
-export function weekRange(menu: MenuPreview): string {
+export function weekRange(menu: { weekStart: string; meals: { date: string }[] }): string {
   const start = menu.weekStart, end = menu.meals[13]!.date;
   return `${Number(start.slice(5, 7))}月${Number(start.slice(8))}日—${start.slice(0, 7) === end.slice(0, 7) ? "" : `${Number(end.slice(5, 7))}月`}${Number(end.slice(8))}日`;
 }
