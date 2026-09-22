@@ -629,6 +629,8 @@ test("周设置属于编辑流程，首页单一入口，取消设置保留换�
   await expect(button(page, "确认周菜单")).toBeEnabled();
   await button(page, "修改餐次和菜量").click();
   await expect(page.locator(".structure-fields input").first()).toHaveValue("2");
+  await expect(button(page, "修改安排餐次")).toHaveAttribute("aria-expanded", "false");
+  await button(page, "修改安排餐次").click();
   await expect(page.locator(".setting-row").first().getByRole("checkbox").last()).toBeChecked();
   await expandSettings(page); await page.locator(".structure-fields input").first().fill("3");
   await button(page, "返回编辑").click(); await page.locator(".taro-model__confirm").click();
