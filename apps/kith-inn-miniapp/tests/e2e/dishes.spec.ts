@@ -90,18 +90,20 @@ test("编辑菜名分类，停用后仍可找到并恢复", async ({ page }) => 
   expect(JSON.parse(state.writes[1]!.body)).toMatchObject({ baseVersion: 2, active: true });
 });
 
-test("首次保存成功后读取失败，保留保存确认和重新读取入口", async ({ page }) => {
+test("首次保存成功后读取失败，保留保存确认和重试入口", async ({ page }) => {
   const state = await openPool(page);
   await preview(page, "红烧排骨");
   state.failNextRead = true;
   await button(page, "确认加入菜品池").click();
   await expect(page.getByText("已新增 1 道菜", { exact: true })).toBeVisible();
-  await expect(page.getByText("保存已确认，但菜品池暂时读取失败。请重新读取查看最新内容。", { exact: true })).toBeVisible();
+  await expect(page.getByText("保存已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
   await expect(page.getByText("建立我的菜品池", { exact: true })).toHaveCount(0);
-  await expect(button(page, "重新读取")).toBeEnabled();
-  await button(page, "重新读取").click();
+  await expect(button(page, "重试")).toBeEnabled();
+  await button(page, "重试").click();
   await expect(page.locator(".dish-card")).toHaveCount(1);
   await expect(page.locator(".dish-card")).toContainText("红烧排骨");
+  await expect(button(page, "重试")).toHaveCount(0);
+  await expect(button(page, "重新读取")).toHaveCount(0);
   expect(state.writes).toHaveLength(1);
 });
 

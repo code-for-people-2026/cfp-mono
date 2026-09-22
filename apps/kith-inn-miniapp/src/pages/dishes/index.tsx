@@ -88,7 +88,7 @@ export default function DishesPage() {
     setNotice(result.kind === "batch" ? `已新增 ${result.items.length} 道菜` : "菜品修改已保存");
     // The write is confirmed even if refreshing the latest list subsequently fails.
     try { await read(); }
-    catch { throw new Error("保存已确认，但菜品池暂时读取失败。请重新读取查看最新内容。"); }
+    catch { throw new Error("保存已确认，但菜品池暂时读取失败，请重试。"); }
   }
   function previewInput() {
     try { setPreview(previewDishes(source, preview)); setStage("preview"); setError(""); }
@@ -143,7 +143,7 @@ export default function DishesPage() {
       {signedIn && stage === "list" && !edit && !showInput && <>
         <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
           <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
-        {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "还未读取到菜品池，请重新读取。"}</View> :
+        {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
           <View className="dish-list">{items.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
             <View className="dish-info"><Text className="dish-name">{dish.name}</Text><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
@@ -153,7 +153,7 @@ export default function DishesPage() {
         <Button className="primary" disabled={disabled || cooling} onClick={() => {
           setStage("input"); setNotice(""); setError("");
         }}>批量添加</Button>
-        <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
+        {!loaded && error && !blocked && <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重试</Button>}
       </>}
       {(showInput || stage === "preview") && <View className="import-panel">
         <View className="detail-head"><View>
