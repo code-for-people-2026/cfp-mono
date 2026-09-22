@@ -42,15 +42,18 @@ async function openPool(page: Page, initial: Dish[] = []) {
   });
   await page.goto("/#/pages/dishes/index");
   await expect(page.getByText(initial.length ? "我的菜品池" : "建立我的菜品池", { exact: true })).toBeVisible();
-  const action = button(page, initial.length ? "批量添加" : "自动分成荤 / 素 / 汤");
+  const action = button(page, initial.length ? "添加菜品" : "自动分成荤 / 素 / 汤");
   await expect(action).toHaveJSProperty("tagName", "BUTTON");
   return state;
 }
 async function preview(page: Page, names: string) {
+  await expect(button(page, "添加菜品")).toHaveCount(0);
   await page.locator('textarea[placeholder="每行一道菜，例如：红烧排骨"]').fill(names);
   await button(page, "自动分成荤 / 素 / 汤").focus();
   await expect(button(page, "自动分成荤 / 素 / 汤")).toBeFocused();
   await page.keyboard.press("Enter");
+  await expect(button(page, "确认加入菜品池")).toBeVisible();
+  await expect(button(page, "添加菜品")).toHaveCount(0);
 }
 
 test("批量录入经手动分类和返回修改，确认前不写入，成功后显示菜池", async ({ page }) => {
@@ -73,9 +76,34 @@ test("批量录入经手动分类和返回修改，确认前不写入，成功�
   await expect(page.locator(".dish-card").last()).toContainText("清炒青菜");
 });
 
+test("长菜品列表首屏与末尾均可添加，末菜不被遮挡，取消返回列表", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const dishes = Array.from({ length: 24 }, (_, i) => ({ ...seed, id: id(i + 1), name: `家常菜${String(i + 1).padStart(2, "0")}` }));
+  const state = await openPool(page, dishes);
+  const add = button(page, "添加菜品"), scroll = page.locator(".flow-scroll"), dock = page.locator(".flow-dock");
+  await expect(add).toHaveCount(1); await expect(add).toBeInViewport({ ratio: 1 });
+  await expect(dock.getByRole("button", { name: "添加菜品", exact: true })).toBeVisible();
+  const initialPosition = (await add.boundingBox())!, dockBox = (await dock.boundingBox())!;
+  expect(dockBox.y + dockBox.height).toBeLessThanOrEqual((await page.locator(".main-nav").boundingBox())!.y + 1);
+  expect(await scroll.evaluate((node) => node.scrollHeight > node.clientHeight)).toBe(true);
+  await scroll.hover(); await page.mouse.wheel(0, 10000);
+  await expect(page.locator(".dish-card").last()).toBeInViewport({ ratio: 1 });
+  await expect(add).toBeInViewport({ ratio: 1 });
+  const last = (await page.locator(".dish-card").last().boundingBox())!;
+  expect(last.y + last.height).toBeLessThanOrEqual((await dock.boundingBox())!.y + 1);
+  expect(Math.abs((await add.boundingBox())!.y - initialPosition.y)).toBeLessThan(1);
+  await add.click();
+  await expect(page.locator("textarea")).toBeVisible(); await expect(add).toHaveCount(0);
+  await button(page, "取消添加").click();
+  await expect(page.locator(".dish-card")).toHaveCount(dishes.length);
+  await expect(add).toHaveCount(1); await expect(add).toBeInViewport({ ratio: 1 });
+  expect(state.writes).toHaveLength(0); expect(state.items).toEqual(dishes);
+});
+
 test("编辑菜名分类，停用后仍可找到并恢复", async ({ page }) => {
   const state = await openPool(page, [seed]);
   await button(page, "编辑").click();
+  await expect(button(page, "添加菜品")).toHaveCount(0);
   await page.locator('input[placeholder="菜名"]').fill("糖醋排骨");
   await button(page, "更改单菜分类").click();
   await page.getByRole("checkbox").uncheck();

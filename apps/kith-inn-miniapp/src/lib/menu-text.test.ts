@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MealSnapshotSchema, type MealSnapshot } from "@cfp/kith-inn-contracts";
-import { formatMealText } from "./menu-text";
+import { formatMealExample, formatMealText } from "./menu-text";
 
 const item = (name: string, index: number) => ({ dishId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`, name });
 function meal(overrides: Partial<MealSnapshot> = {}): MealSnapshot {
@@ -11,33 +11,49 @@ function meal(overrides: Partial<MealSnapshot> = {}): MealSnapshot {
   });
 }
 
-describe("保存餐次文字", () => {
-  it("按契约完整输出快照名称，分类和菜位顺序不变，不附加内部字段或价格链接", () => {
+describe("保存餐次的接龙说明与填写示例", () => {
+  it("默认30元，快照名称按荤素汤连续编号，不附加内部字段或已有报名", () => {
     const saved = meal();
     const before = structuredClone(saved);
-    expect(formatMealText(saved)).toBe("2026年9月23日（周三）午餐\n荤：红烧肉、清蒸鱼\n素：清炒时蔬\n汤：紫菜蛋花汤");
+    expect(formatMealText(saved)).toBe("9.23号星期三午餐预定接龙（30元）\n1.红烧肉\n2.清蒸鱼\n3.清炒时蔬\n4.紫菜蛋花汤");
+    expect(saved).toEqual(before);
+  });
+
+  it("接龙说明只生成日期餐次价格与菜品，不混入填写示例", () => {
+    expect(formatMealText(meal({ date: "2026-09-22", mealType: "dinner",
+      meat: [item("煎鸡中翅", 1), item("红烧肉", 2)], vegetable: [item("焗小土豆", 3), item("炒青菜", 4)], soup: []
+    }))).toBe("9.22号星期二晚餐预定接龙（30元）\n1.煎鸡中翅\n2.红烧肉\n3.焗小土豆\n4.炒青菜");
+  });
+
+  it("填写示例跟随午晚餐，独立输出且不带接龙标记、示例前缀或已有报名", () => {
+    const saved = meal();
+    const before = structuredClone(saved);
+    expect(formatMealExample(saved)).toBe("1份午餐");
+    expect(formatMealExample(meal({ mealType: "dinner" }))).toBe("1份晚餐");
     expect(saved).toEqual(before);
   });
 
   it.each([
-    ["2026-12-31", "2026年12月31日（周四）"],
-    ["2027-01-01", "2027年1月1日（周五）"],
-    ["2028-02-29", "2028年2月29日（周二）"],
-    ["2026-09-27", "2026年9月27日（周日）"]
-  ])("日历日期 %s 不受本机时区影响，晚餐保留完整年份", (date, title) => {
-    expect(formatMealText(meal({ date, mealType: "dinner" }))?.split("\n")[0]).toBe(`${title}晚餐`);
+    ["2026-09-30", "9.30号星期三"],
+    ["2026-10-01", "10.1号星期四"],
+    ["2026-12-31", "12.31号星期四"],
+    ["2027-01-01", "1.1号星期五"],
+    ["2028-02-29", "2.29号星期二"],
+    ["2026-09-27", "9.27号星期日"]
+  ])("日历日期 %s 的星期按真实日期计算，短日期不受本机时区影响", (date, title) => {
+    expect(formatMealText(meal({ date, mealType: "dinner" }))?.split("\n")[0]).toBe(`${title}晚餐预定接龙（30元）`);
   });
 
-  it("逐餐去汤不输出隐藏汤，也不清除可恢复的汤快照", () => {
+  it("逐餐去汤不输出隐藏汤或空编号，也不清除可恢复的汤快照", () => {
     const saved = meal({ soupOmitted: true });
     const before = structuredClone(saved);
-    expect(formatMealText(saved)).toBe("2026年9月23日（周三）午餐\n荤：红烧肉、清蒸鱼\n素：清炒时蔬");
+    expect(formatMealText(saved)).toBe("9.23号星期三午餐预定接龙（30元）\n1.红烧肉\n2.清蒸鱼\n3.清炒时蔬");
     expect(saved).toEqual(before);
   });
 
-  it("零数量分类不输出空行，支持仅汤的一餐", () => {
-    expect(formatMealText(meal({ meat: [], vegetable: [] }))).toBe("2026年9月23日（周三）午餐\n汤：紫菜蛋花汤");
-    expect(formatMealText(meal({ vegetable: [], soup: [] }))).toBe("2026年9月23日（周三）午餐\n荤：红烧肉、清蒸鱼");
+  it("零数量分类不输出空行且编号从1开始，支持仅汤的一餐", () => {
+    expect(formatMealText(meal({ meat: [], vegetable: [] }))).toBe("9.23号星期三午餐预定接龙（30元）\n1.紫菜蛋花汤");
+    expect(formatMealText(meal({ vegetable: [], soup: [] }))).toBe("9.23号星期三午餐预定接龙（30元）\n1.红烧肉\n2.清蒸鱼");
   });
 
   it("停餐没有可复制文字", () => {
@@ -49,8 +65,8 @@ describe("保存餐次文字", () => {
     const oldText = formatMealText(saved);
     const name = "🍲".repeat(60);
     const updated = meal({ meat: [item(name, 5), saved.meat[1]!] });
-    expect(formatMealText(updated)).toContain(`荤：${name}、清蒸鱼`);
-    expect(oldText).toContain("荤：红烧肉、清蒸鱼");
+    expect(formatMealText(updated)).toContain(`1.${name}\n2.清蒸鱼`);
+    expect(oldText).toContain("1.红烧肉\n2.清蒸鱼");
     expect(oldText).not.toContain(name);
   });
 });

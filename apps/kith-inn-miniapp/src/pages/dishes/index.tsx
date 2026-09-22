@@ -111,10 +111,12 @@ export default function DishesPage() {
   const activeCount = items.filter((dish) => dish.active).length;
 
   const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
+  const showList = signedIn && stage === "list" && !edit && !showInput;
 
-  return <View className="dish-app">
+  return <View className="dish-app dishes-app flow-page">
     {process.env.TARO_ENV === "h5" && <View className="app-heading"><Text>菜品池</Text></View>}
     <View className="dish-page">
+    <ScrollView scrollY className="flow-scroll">
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
       {notice && <View className="success" ariaRole="status"><Text className="success-title">{notice}</Text>
@@ -140,7 +142,7 @@ export default function DishesPage() {
         {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
-      {signedIn && stage === "list" && !edit && !showInput && <>
+      {showList && <>
         <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
           <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
         {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
@@ -150,9 +152,6 @@ export default function DishesPage() {
               <Button className="tiny-action" disabled={disabled || cooling} onClick={() => {
                 setEdit({ ...dish }); setOriginal(dish); setNotice(""); setError(""); setConflict(false);
               }}>编辑</Button></View></View>)}</View>}
-        <Button className="primary" disabled={disabled || cooling} onClick={() => {
-          setStage("input"); setNotice(""); setError("");
-        }}>批量添加</Button>
         {!loaded && error && !blocked && <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重试</Button>}
       </>}
       {(showInput || stage === "preview") && <View className="import-panel">
@@ -208,6 +207,12 @@ export default function DishesPage() {
       {signedIn && notice && !dirty && <Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/week/index" })}>下一步：安排本周菜单</Button>}
 
     </>}
+    </ScrollView>
+    {client && showList && <View className="flow-dock">
+      <Button className="primary" disabled={disabled || cooling} onClick={() => {
+        setStage("input"); setNotice(""); setError("");
+      }}>添加菜品</Button>
+    </View>}
     </View>
     <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {
       if (await confirmDiscard()) await Taro.reLaunch({ url: `/pages/${page}/index` });
