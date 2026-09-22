@@ -1,6 +1,8 @@
 # 街坊味菜单 MVP 开发任务
 
-日期：2026-09-21 · 状态：#357～#359 核心闭环已可本地试用，当前按排好菜原型调整界面；待评审/合并及真机验收 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
+日期：2026-09-22 · 状态：#357～#359 核心闭环与用户反馈已可本地试用，由 PR #376 集成；真实微信与最终验收仍待完成 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
+
+当前合并安排：用户已授权 PR #376 集成本地 H5 MVP，覆盖前序 #361～#367、#369～#375；独立 PR #368 不包含在内。保持下列任务 ID 和验收边界，历史切片及测试数量仅对应当时版本；最终验证以 PR #376 和 [合并核查记录](checklists/merge-review.md) 为准。任务勾选不冒充用户或微信真机验收。
 
 GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过37个测试及独立审查；T003～T005 已实现并通过26个含真实PG17的测试及独立审查。T006/T007 会话与原生HTTP已实现，API累计54个测试（真实PG17及socket）及独立审查通过。T008/T009 菜池API已实现，累计67个API测试及独立审查通过。各片尚未合并，暂不勾选完成；T013/T014客户端基础已实现，24个测试、H5/weapp构建和独立审查通过；T015菜池页面已实现，累计33个前端单测、6条H5浏览器回归及双构建通过，真实API/PG17联调通过；按指定原型修正录入/预览视觉，同尺寸成对截图及独立复核通过（见小程序 design-qa.md），待用户视觉验收。T010～T012、T016～T019 已实现，完整基线 b385ec1 通过前端51、API93、契约37测试、18条H5回归及 H5/weapp 构建；当前界面反馈迭代见文末。#360 已有运行准备 PR，真实微信及最终交付证据仍待补齐。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
 
