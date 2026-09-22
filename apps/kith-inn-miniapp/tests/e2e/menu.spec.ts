@@ -113,10 +113,10 @@ async function clipboard(page: Page, fail = false) {
   } }); }, fail);
 }
 const preview = (page: Page) => button(page, "去复制菜单");
-async function home(page: Page) { if (await page.locator(".copy-screen").count()) await closeCopy(page); await expect(page.locator(".main-nav button").first()).toBeEnabled(); if (await button(page, "返回编辑").count()) await expect(button(page, "返回本周菜单")).toBeVisible(); if (await button(page, "返回本周菜单").count()) await button(page, "返回本周菜单").click(); }
+async function home(page: Page) { if (await page.locator(".copy-screen").count()) await closeCopy(page); await expect(page.locator(".main-nav button").first()).toBeEnabled(); if (await button(page, "返回编辑").count()) await button(page, "返回编辑").click(); if (await button(page, "返回本周菜单").count()) await button(page, "返回本周菜单").click(); }
 async function enterEdit(page: Page) { await page.getByRole("button", { name: /^(继续调整菜单|查看并调整这一周)$/ }).click(); }
 async function openPreview(page: Page) { await home(page); await preview(page).click(); }
-async function settings(page: Page) { await home(page); await button(page, "修改周设置").click(); }
+async function settings(page: Page) { await home(page); await enterEdit(page); await button(page, "修改餐次和菜量").click(); }
 async function saveDraft(page: Page) {
   await openPreview(page); await button(page, "保存后预览").click();
   await expect.poll(async () => await page.locator(".alert").count() + await page.locator(".copy-preview").count()).toBeGreaterThan(0);
@@ -604,26 +604,29 @@ test("历史在本入口切已保存周并分页，失败保留当前周，重�
   await expect(page.locator(".history-app .week-range")).toContainText("9月21日—27日"); expect(pages).toBe(3);
 });
 
-test("修改周设置后复制不静默覆盖，取消与读取失败保留设置草稿", async ({ page }) => {
+test("周设置属于编辑流程，首页单一入口，取消设置保留换菜", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await confirmWeek(page);
-  await button(page, "查看并调整这一周").click(); await settings(page);
+  await expect(button(page, "修改周设置")).toHaveCount(0);
+  await expect(button(page, "修改餐次和菜量")).toHaveCount(0);
+  await enterEdit(page); await replaceLunch(page);
+  await button(page, "修改餐次和菜量").click();
+  await expect(page.locator(".week-settings")).toBeVisible();
+  await expect(button(page, "去复制菜单")).toHaveCount(0);
   await page.locator(".structure-fields input").first().fill("3");
   await page.locator(".setting-row").first().getByRole("checkbox").last().uncheck();
-  const reads = state.reads;
-  await button(page, "去复制菜单").click();
-  await expect(button(page, "返回周设置")).toBeVisible();
-  await expect(button(page, "保存后预览")).toHaveCount(0);
-  await expect(page.locator(".copy-preview")).toHaveCount(0); expect(state.reads).toBe(reads);
-  await button(page, "放弃修改后预览").click(); await page.locator(".taro-model__cancel").click();
-  await button(page, "返回周设置").click();
+  await button(page, "返回编辑").click(); await page.locator(".taro-model__cancel").click();
   await expect(page.locator(".structure-fields input").first()).toHaveValue("3");
   await expect(page.locator(".setting-row").first().getByRole("checkbox").last()).not.toBeChecked();
-  await button(page, "去复制菜单").click();
-  state.failure = "read";
-  await button(page, "放弃修改后预览").click(); await page.getByText("放弃修改", { exact: true }).click();
-  await expect(page.locator(".copy-screen")).toContainText("读取已保存菜单失败");
-  await button(page, "返回周设置").click(); await expect(page.locator(".structure-fields input").first()).toHaveValue("3");
-  expect(state.writes).toHaveLength(1); expect(state.saved!.structure.meat).toBe(2);
+  await button(page, "取消设置，保留原菜单").click();
+  await expect(page.locator(".selected-name")).toHaveText("荤菜3");
+  await expect(button(page, "确认周菜单")).toBeEnabled();
+  await button(page, "修改餐次和菜量").click();
+  await expect(page.locator(".structure-fields input").first()).toHaveValue("2");
+  await expect(page.locator(".setting-row").first().getByRole("checkbox").last()).toBeChecked();
+  await page.locator(".structure-fields input").first().fill("3");
+  await button(page, "返回编辑").click(); await page.locator(".taro-model__confirm").click();
+  await expect(page.locator(".selected-name")).toHaveText("荤菜3");
+  expect(state.writes).toHaveLength(1); expect(state.generations).toBe(1);
 });
 
 test("编辑检查历史的鼠标与触摸滑动停稳后对齐两天，末尾周末完整可达", async ({ page, context }) => {
@@ -704,10 +707,9 @@ test("单餐阻止混入未保存周和整周设置草稿，切餐取消与退�
   await expect(soupToggle(page)).toHaveCount(0); await closeCopy(page);
   await button(page, "放弃本次调整").click(); await page.getByText("放弃修改", { exact: true }).click();
   await settings(page); await page.locator(".structure-fields input").first().fill("3");
-  await button(page, "去复制菜单").click();
-  await expect(soupToggle(page)).toHaveCount(0); await closeCopy(page);
+  await expect(button(page, "去复制菜单")).toHaveCount(0);
   await button(page, "取消设置，保留原菜单").click();
-  await button(page, "去复制菜单").click(); await soupToggle(page).click();
+  await openPreview(page); await soupToggle(page).click();
   await button(page, "晚餐").click(); await page.getByText("继续编辑", { exact: true }).click();
   await expect(button(page, "午餐")).toHaveAttribute("aria-expanded", "true");
   await expect(soupToggle(page)).not.toBeChecked();
