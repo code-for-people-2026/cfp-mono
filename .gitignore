@@ -11,6 +11,7 @@ test-results
 .env.*.local
 !.env.example
 /apps/community-cooking/project.private.config.json
+/apps/kith-inn-miniapp/project.private.config.json
 .DS_Store
 *.log
 *.tsbuildinfo

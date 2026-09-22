@@ -1,0 +1,32 @@
+{
+  "name": "@cfp/kith-inn-api",
+  "version": "0.0.0",
+  "private": true,
+  "license": "LicenseRef-Cattle",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "db:migrate": "node --import tsx scripts/migrate.mjs",
+    "dev": "tsx watch src/main.ts",
+    "lint": "eslint .",
+    "start": "tsx src/main.ts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cfp/kith-inn-contracts": "workspace:*",
+    "pg": "^8.20.0",
+    "tsx": "^4.22.4"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@cfp/typescript-config": "workspace:*",
+    "@types/node": "^20.19.30",
+    "@types/pg": "^8.20.0",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

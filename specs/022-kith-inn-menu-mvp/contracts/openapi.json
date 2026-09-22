@@ -1,0 +1,1901 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "街坊味排菜 MVP API",
+    "version": "0.2.0",
+    "description": "设计契约，服务及共享代码包尚未实现。仅桃子菜池与周菜单。Q1/Q2/Q3已按用户选择1A/2A/3A确定：改结构经提醒确认后整周重生成，菜不足一餐时整个生成失败，确认或分享后仍可编辑。所有接口响应schema稳定字段拒绝未知项；跨字段、所有权与状态约束详见README.md/data-model.md。"
+  },
+  "servers": [
+    {
+      "url": "/api/kith-inn",
+      "description": "部署域名由环境配置；此处不表示已上线"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/sessions/wechat": {
+      "post": {
+        "operationId": "createSession",
+        "summary": "桃子微信登录",
+        "description": "微信换码后核对预先配置的桃子身份；没有首个访问者自动绑定。登录不缓存幂等响应；code不能复用。",
+        "responses": {
+          "201": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "502": {
+            "$ref": "#/components/responses/502"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginInput"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/sessions/current": {
+      "delete": {
+        "operationId": "revokeSession",
+        "summary": "退出当前设备",
+        "description": "撤销当前会话；其他设备不受影响。重复撤销可能返回401，客户端均清除本地令牌。",
+        "responses": {
+          "204": {
+            "description": "已撤销会话，无响应体",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        }
+      }
+    },
+    "/dishes": {
+      "get": {
+        "operationId": "listDishes",
+        "summary": "读取全部菜池（含停用）",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DishList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        }
+      },
+      "post": {
+        "operationId": "addDishes",
+        "summary": "确认新增一批菜品",
+        "description": "单道新增也用本接口。批内或既有菜名重复返回409及names，整批不保存；不静默合并、覆盖或恢复停用菜。",
+        "responses": {
+          "201": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DishBatchResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DishBatchInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/dishes/{dishId}": {
+      "patch": {
+        "operationId": "updateDish",
+        "summary": "改名、改分类、停用或恢复",
+        "description": "提交三个完整可编辑字段和baseVersion，禁止通过该接口改动历史菜单快照。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Dish"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DishUpdateInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "dishId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/weeks": {
+      "get": {
+        "operationId": "listWeeks",
+        "summary": "按周倒序回看已保存菜单",
+        "description": "按weekStart倒序；只返回已保存周摘要，不自动创建空周。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekList"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 52,
+              "default": 12
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "排他周一游标；省略从最新已保存周开始。"
+          }
+        ]
+      }
+    },
+    "/weeks/{weekStart}": {
+      "get": {
+        "operationId": "getWeek",
+        "summary": "读取已保存周菜单",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "parameters": [
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Asia/Shanghai 目标周周一的YYYY-MM-DD；非周一返回400。"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "saveWeek",
+        "summary": "原子保存或确认整周",
+        "description": "无记录时baseVersion必须0，新建返回version=1；有记录时CAS更新并version+1。Q1允许改结构但必须rebuild=true，客户端先做覆盖提醒和确认，再整周生成预览并显式保存。所有安排餐次必须完整，普通保存和确认均拒绝缺位（400 INVALID_REQUEST）。Q3允许确认或分享后编辑；进入编辑不写服务器，confirm=false成功保存才清空confirmedAt，confirm=true保存并确认。内容未变且已确认的再次确认保留原确认时间。保存与确认共用事务；相同键重试返回原成功响应及原版本。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WeekPlan"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeekWriteInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Asia/Shanghai 目标周周一的YYYY-MM-DD；非周一返回400。"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
+      }
+    },
+    "/weeks/{weekStart}/generate": {
+      "post": {
+        "operationId": "generateWeek",
+        "summary": "生成未保存的周菜单预览",
+        "description": "读取当前可用菜池，日期由路径确定；不保存或覆盖旧菜单，不消耗业务幂等键。Q1改结构须由客户端提醒会覆盖换菜和逐餐去汤等调整，桃子确认后才请求；取消或失败保留原编辑和保存记录，成功只替换本地预览。Q2任一所需分类不足填满一餐时，整个生成返回422 INSUFFICIENT_DISHES并列出全部不足分类的required/available，不返回部分预览；跨餐可复用，同餐不可重复。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MenuPreview"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "422": {
+            "$ref": "#/components/responses/422",
+            "description": "任一所需分类不足填满一餐时返回INSUFFICIENT_DISHES及非空shortages；不返回部分菜单，不修改已保存记录。其他限额错误返回LIMIT_EXCEEDED。"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "weekStart",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            },
+            "description": "Asia/Shanghai 目标周周一的YYYY-MM-DD；非周一返回400。"
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "summary": "进程存活探针",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "security": []
+      }
+    },
+    "/ready": {
+      "get": {
+        "operationId": "readiness",
+        "summary": "数据库与迁移就绪探针",
+        "description": "",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            }
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          }
+        },
+        "security": []
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "32随机字节的base64url会话令牌，非JWT；只经HTTPS传输。"
+      }
+    },
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "description": "每次明确写入生成新UUID；超时重试复用原键和原请求体。有效回执24小时。"
+      }
+    },
+    "responses": {
+      "400": {
+        "description": "格式、未知字段或日期/餐次规则不合法",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "401": {
+        "description": "会话缺失、无效或过期；重新登录",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "403": {
+        "description": "非桃子经营身份；不自动开户",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "404": {
+        "description": "资源不存在或不属于当前账号",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "409": {
+        "description": "版本、重复菜名、菜品状态或幂等键冲突；不写入",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "413": {
+        "description": "请求体超过128KiB；不写入",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "422": {
+        "description": "菜池不足或达到限额；不写入",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "429": {
+        "description": "操作过快；按Retry-After重试",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          },
+          "Retry-After": {
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "至少等待的秒数。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "502": {
+        "description": "微信换码失败；获取新的code再试",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "503": {
+        "description": "存储或依赖不可用；不声称保存成功",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "500": {
+        "description": "意外失败；以requestId诊断，不返回内部细节",
+        "headers": {
+          "Cache-Control": {
+            "schema": {
+              "type": "string",
+              "const": "no-store"
+            },
+            "description": "所有响应禁止缓存。"
+          },
+          "X-Request-Id": {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "服务端生成的诊断ID，不包含凭据。"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Structure": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "meat": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "vegetable": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "soup": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "meat",
+          "vegetable",
+          "soup"
+        ],
+        "description": "总数量 1..20，由业务校验补充；允许汤为0。限额为初始工程保护值。"
+      },
+      "DishInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "API仅接受客户端已trim并NFC规范化的名称；1..60个Unicode码点，拒绝换行/控制字符及非规范值。服务端另做规范化一致性校验，禁止截断。"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "meat",
+              "vegetable",
+              "soup"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "category"
+        ]
+      },
+      "Dish": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "API仅接受客户端已trim并NFC规范化的名称；1..60个Unicode码点，拒绝换行/控制字符及非规范值。服务端另做规范化一致性校验，禁止截断。"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "meat",
+              "vegetable",
+              "soup"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "active",
+          "version",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "DishList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dish"
+            },
+            "minItems": 0,
+            "maxItems": 1000
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "DishBatchInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DishInput"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "DishBatchResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Dish"
+            },
+            "minItems": 1,
+            "maxItems": 200
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "DishUpdateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "API仅接受客户端已trim并NFC规范化的名称；1..60个Unicode码点，拒绝换行/控制字符及非规范值。服务端另做规范化一致性校验，禁止截断。"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "meat",
+              "vegetable",
+              "soup"
+            ]
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "baseVersion",
+          "name",
+          "category",
+          "active"
+        ]
+      },
+      "SnapshotItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "dishId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 60,
+            "description": "API仅接受客户端已trim并NFC规范化的名称；1..60个Unicode码点，拒绝换行/控制字符及非规范值。服务端另做规范化一致性校验，禁止截断。"
+          }
+        },
+        "required": [
+          "dishId",
+          "name"
+        ],
+        "description": "菜名由服务端取自菜池或保留原菜单快照；分类由所属数组保存。"
+      },
+      "MealSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "mealType": {
+            "type": "string",
+            "enum": [
+              "lunch",
+              "dinner"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "soupOmitted": {
+            "type": "boolean"
+          },
+          "meat": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotItem"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          },
+          "vegetable": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotItem"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          },
+          "soup": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotItem"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "date",
+          "mealType",
+          "enabled",
+          "soupOmitted",
+          "meat",
+          "vegetable",
+          "soup"
+        ],
+        "description": "所有成功预览和保存结果中，启用餐次每类数量均须等于周结构，由跨字段业务校验保证。去汤保留完整soup快照数组，显示/复制时隐藏；未安排餐次三数组为空且soupOmitted=false。"
+      },
+      "MealInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "mealType": {
+            "type": "string",
+            "enum": [
+              "lunch",
+              "dinner"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "soupOmitted": {
+            "type": "boolean"
+          },
+          "meat": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          },
+          "vegetable": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          },
+          "soup": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "minItems": 0,
+            "maxItems": 10
+          }
+        },
+        "required": [
+          "date",
+          "mealType",
+          "enabled",
+          "soupOmitted",
+          "meat",
+          "vegetable",
+          "soup"
+        ],
+        "description": "写入只提交菜品ID，不接受客户端菜名快照；顺序对应同分类的菜位。普通保存和保存并确认均须验证启用餐次数量与周结构相等，缺位返回400 INVALID_REQUEST；保留同位置未修改的历史菜位时不要求该菜当前仍active。"
+      },
+      "MealSelection": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "mealType": {
+            "type": "string",
+            "enum": [
+              "lunch",
+              "dinner"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "date",
+          "mealType",
+          "enabled"
+        ]
+      },
+      "GenerateInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "structure": {
+            "$ref": "#/components/schemas/Structure"
+          },
+          "meals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MealSelection"
+            },
+            "minItems": 14,
+            "maxItems": 14
+          }
+        },
+        "required": [
+          "structure",
+          "meals"
+        ]
+      },
+      "MenuPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "weekStart": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "structure": {
+            "$ref": "#/components/schemas/Structure"
+          },
+          "meals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MealSnapshot"
+            },
+            "minItems": 14,
+            "maxItems": 14
+          }
+        },
+        "required": [
+          "weekStart",
+          "structure",
+          "meals"
+        ],
+        "description": "仅包含完整预览，没有持久化ID、版本或确认时间；生成不修改保存记录。任何所需分类不足填满一餐时不返回本结构，只返回422 INSUFFICIENT_DISHES。"
+      },
+      "WeekPlan": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "weekStart": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "structure": {
+            "$ref": "#/components/schemas/Structure"
+          },
+          "meals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MealSnapshot"
+            },
+            "minItems": 14,
+            "maxItems": 14
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "confirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time",
+            "description": "成功普通保存（confirm=false）清空；保存并确认设为服务端时间，内容未变且原已确认则保留原时间。进入编辑、取消、生成或复制不改变此字段。"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "weekStart",
+          "structure",
+          "meals",
+          "version",
+          "confirmedAt",
+          "createdAt",
+          "updatedAt"
+        ],
+        "description": "一个账号一周的一份当前保存记录；confirmedAt仅表示该版本已确认。确认或分享后可继续编辑，不存在公布、解锁或分享历史字段；复制文字不改变菜单版本。"
+      },
+      "WeekWriteInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "baseVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "rebuild": {
+            "type": "boolean",
+            "description": "整周重建快照的验证方式；不是持久状态，也不能替代客户端的覆盖提醒与确认。"
+          },
+          "confirm": {
+            "type": "boolean",
+            "description": "false普通保存并清空confirmedAt；true保存并确认。进入编辑或复制不调用写入接口。"
+          },
+          "structure": {
+            "$ref": "#/components/schemas/Structure"
+          },
+          "meals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MealInput"
+            },
+            "minItems": 14,
+            "maxItems": 14
+          }
+        },
+        "required": [
+          "baseVersion",
+          "rebuild",
+          "confirm",
+          "structure",
+          "meals"
+        ],
+        "description": "首次baseVersion=0,rebuild=true；整周重生成rebuild=true，所有菜重新验可用。已有周改结构而rebuild=false时400 INVALID_REQUEST。普通编辑false保留未改动菜位快照，允许确认或分享后再编辑；普通保存和确认均拒绝缺位。confirm=false成功保存清空confirmedAt，confirm=true与保存同事务确认；不接受公布、解锁或已分享状态。"
+      },
+      "WeekSummary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "weekStart": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "confirmedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "weekStart",
+          "version",
+          "confirmedAt",
+          "updatedAt"
+        ]
+      },
+      "WeekList": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WeekSummary"
+            },
+            "minItems": 0,
+            "maxItems": 52
+          },
+          "nextBefore": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date"
+          }
+        },
+        "required": [
+          "items",
+          "nextBefore"
+        ]
+      },
+      "LoginInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "Session": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "token": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{43}$"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "token",
+          "expiresAt"
+        ],
+        "description": "仅返回本服务会话，不返回openid/appSecret/session_key。令牌不得写入日志。"
+      },
+      "ErrorDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "currentVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 60,
+              "description": "按 Unicode 码点计数；trim 后 NFC；拒绝换行和控制字符。规范化后不得为空。"
+            },
+            "minItems": 0,
+            "maxItems": 200
+          },
+          "shortages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "category": {
+                  "type": "string",
+                  "enum": [
+                    "meat",
+                    "vegetable",
+                    "soup"
+                  ]
+                },
+                "required": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "available": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "category",
+                "required",
+                "available"
+              ],
+              "description": "一个不足分类；required为填满一餐所需数量，available为当前可用的不同菜品数。available必须小于required，类别不重复，均由业务校验保证。"
+            },
+            "minItems": 1,
+            "maxItems": 3
+          }
+        },
+        "required": [],
+        "description": "按错误返回需要的字段；INSUFFICIENT_DISHES必须提供非空shortages并列出全部不足分类，不包含部分菜单；版本冲突只返回当前版本号。"
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "INVALID_REQUEST",
+                  "UNAUTHORIZED",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "DUPLICATE_DISH_NAME",
+                  "VERSION_CONFLICT",
+                  "IDEMPOTENCY_KEY_REUSED",
+                  "DISH_UNAVAILABLE",
+                  "INSUFFICIENT_DISHES",
+                  "LIMIT_EXCEEDED",
+                  "PAYLOAD_TOO_LARGE",
+                  "RATE_LIMITED",
+                  "WECHAT_LOGIN_FAILED",
+                  "SERVICE_UNAVAILABLE",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1
+              },
+              "requestId": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "details": {
+                "$ref": "#/components/schemas/ErrorDetails"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "INSUFFICIENT_DISHES"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "shortages"
+                      ]
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "DUPLICATE_DISH_NAME"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "names"
+                      ],
+                      "properties": {
+                        "names": {
+                          "minItems": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "VERSION_CONFLICT"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "currentVersion"
+                      ],
+                      "properties": {
+                        "currentVersion": {}
+                      }
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "LIMIT_EXCEEDED"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "details"
+                  ],
+                  "properties": {
+                    "details": {
+                      "required": [
+                        "field"
+                      ],
+                      "properties": {
+                        "field": {
+                          "minLength": 1
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      },
+      "Health": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "ready"
+            ]
+          }
+        },
+        "required": [
+          "status"
+        ]
+      }
+    }
+  }
+}
