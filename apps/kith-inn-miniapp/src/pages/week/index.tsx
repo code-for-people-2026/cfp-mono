@@ -55,7 +55,7 @@ export default function WeekPage() {
   const editing = screen === "edit";
   function setEditing(value: boolean) { setScreen(value ? "edit" : "home"); }
   const [dishes, setDishes] = useState<Dish[]>([]), [settings, setSettings] = useState(false);
-  const [mealsExpanded, setMealsExpanded] = useState(false), [structureExpanded, setStructureExpanded] = useState(false);
+  const [mealsExpanded, setMealsExpanded] = useState(false), [structureExpanded, setStructureExpanded] = useState(true);
   const [structure, setStructure] = useState({ meat: 2, vegetable: 2, soup: 1 });
   const [meals, setMeals] = useState(() => selections(WeekStartSchema.safeParse(week).success ? week : thisMonday()));
   const [selected, setSelected] = useState<DishPosition | null>(null);
@@ -120,7 +120,7 @@ export default function WeekPage() {
     } finally { setPending(client.pendingWrite()); setBusy(false); }
   }
   function adopt(value: WeekPlan | null) {
-    setCopyText(null); setMealsExpanded(false); setStructureExpanded(false);
+    setCopyText(null); setMealsExpanded(false); setStructureExpanded(true);
     setNotice(""); void Taro.pageScrollTo({ scrollTop: 0, duration: 0 });
     setSaved(value); setDraft(value); setRebuild(false); setEditing(false); setSettings(!value);
     setStructure(value?.structure ?? { meat: 2, vegetable: 2, soup: 1 });
@@ -325,7 +325,7 @@ export default function WeekPage() {
           <Button className="secondary" disabled={disabled || cooling} onClick={() => void run(() => openCopy())}>去复制菜单</Button>
         </View>}
         {menu && screen === "review" && <View className="review-screen"><View className="review-hero"><Text>{weekRange(menu)}</Text><Text>确认后保存本周菜单</Text></View><WeekBoard menu={menu} readonly /></View>}
-        {menu && editing && <><Button className="text-button" disabled={disabled} onClick={() => { if (!settings) { setStructure(menu.structure); setMeals(menu.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled }))); } setSettings(true); setScreen("settings"); }}>修改餐次和菜量</Button><WeekBoard menu={menu} selected={selected} showAll={showAll} disabled={disabled} onSelect={(position) => { setSelected(position); setTarget(null); setSoupSelection(null); }} onFilter={setShowAll} />
+        {menu && editing && <><Button className="text-button" disabled={disabled} onClick={() => { if (!settings) { setStructure(menu.structure); setMeals(menu.meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled }))); } setSettings(true); setMealsExpanded(false); setStructureExpanded(true); setScreen("settings"); }}>修改餐次和菜量</Button><WeekBoard menu={menu} selected={selected} showAll={showAll} disabled={disabled} onSelect={(position) => { setSelected(position); setTarget(null); setSoupSelection(null); }} onFilter={setShowAll} />
           {selected && selectedMeal && <View className="selected-dish meal-block"><View className="selected-target"><View><Text className="selection-label">{dayNames[Math.floor(selected.meal / 2)]}{selected.meal % 2 ? "晚饭" : "午饭"}{selectedDish ? ` · ${selected.category === "soup" ? "汤" : `${labels[selected.category]}菜`}` : ""}</Text><Text className="selected-name">{selectedDish?.name ?? (selectedMeal.enabled ? "本餐不做汤" : "本餐不安排")}</Text></View>
             {selectedDish && <View className="replacement-actions"><Button disabled={disabled} onClick={() => void run(() => openCandidates("swap"))}>换一道</Button>
               <Button disabled={disabled} onClick={() => void run(() => openCandidates("pick"))}>自己选</Button></View>}</View>

@@ -871,11 +871,11 @@ test("历史复用需确认，取消不写入，复制为下周草稿后确认�
 });
 
 
-test("生成前只显示摘要，展开修改后摘要同步且生成按钮固定可见", async ({ page }) => {
+test("生成前餐次收起搭配展开，修改后摘要同步且生成按钮固定可见", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await openWeek(page);
   await expect(page.locator(".setting-row")).toHaveCount(0);
-  await expect(page.locator(".structure-fields")).toHaveCount(0);
+  await expect(page.locator(".structure-fields")).toBeVisible();
   await expect(page.locator(".plan-state")).toHaveCount(0);
   await expect(page.locator(".settings-summary").first()).toContainText("每天午餐、晚餐，共 14 餐");
   const generateButton = button(page, "生成本周菜单");
@@ -885,7 +885,6 @@ test("生成前只显示摘要，展开修改后摘要同步且生成按钮固�
   await page.locator(".setting-row").last().getByRole("checkbox").last().uncheck();
   await button(page, "修改安排餐次").click();
   await expect(page.locator(".settings-summary").first()).toContainText("共 13 餐");
-  await button(page, "修改每餐搭配").click();
   await page.locator(".structure-fields input").first().fill("3");
   await button(page, "修改每餐搭配").click();
   await expect(page.locator(".settings-summary").last()).toContainText("3 荤 · 2 素 · 1 汤");
