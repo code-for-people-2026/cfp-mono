@@ -26,18 +26,17 @@ export async function idempotent<T>(
   const hash = createHash("sha256").update(canonical({
     method: request.method, path: request.path, body: request.body
   })).digest();
+  await client.query("DELETE FROM mutation_receipts WHERE merchant_id = $1 AND expires_at <= $2", [merchantId, now]);
   const { rows: [receipt] } = await client.query<{
-    request_hash: Buffer; response_status: number; response_body: T; expires_at: Date;
-  }>(`SELECT request_hash, response_status, response_body, expires_at FROM mutation_receipts
+    request_hash: Buffer; response_status: number; response_body: T;
+  }>(`SELECT request_hash, response_status, response_body FROM mutation_receipts
     WHERE merchant_id = $1 AND idempotency_key = $2`, [merchantId, idempotencyKey]);
-  if (receipt && receipt.expires_at > now) {
+  if (receipt) {
     if (!receipt.request_hash.equals(hash)) {
       throw new ApiError(409, "IDEMPOTENCY_KEY_REUSED", "该写入请求标识已用于其他操作");
     }
     return { status: receipt.response_status, body: receipt.response_body };
   }
-  if (receipt) await client.query("DELETE FROM mutation_receipts WHERE merchant_id = $1 AND idempotency_key = $2",
-    [merchantId, idempotencyKey]);
   const result = await work();
   if (!(result.status >= 200 && result.status < 300)) throw new Error("Mutation must return a successful response");
   await client.query(`INSERT INTO mutation_receipts

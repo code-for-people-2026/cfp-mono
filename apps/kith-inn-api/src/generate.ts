@@ -22,7 +22,7 @@ export function generateMenu(
   )) as Record<typeof categories[number], Dish[]>;
   const shortages = categories.filter((category) => available[category].length < structure[category])
     .map((category) => ({ category, required: structure[category], available: available[category].length }));
-  if (shortages.length) {
+  if (meals.some((meal) => meal.enabled) && shortages.length) {
     throw new ApiError(422, "INSUFFICIENT_DISHES", "菜品不足以安排一餐，请补菜或调整结构", { shortages });
   }
 

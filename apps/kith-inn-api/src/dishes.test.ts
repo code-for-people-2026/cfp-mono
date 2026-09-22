@@ -99,6 +99,19 @@ describe("PostgreSQL dish mutations and HTTP", () => {
     expect(receipt.expires_at.getTime() - now.getTime()).toBe(86_400_000);
   });
 
+  it("cleans old receipts on a new UUID while live receipts still replay", async () => {
+    await add("旧菜");
+    now = new Date(now.getTime() + 1);
+    const liveKey = randomUUID(), live = await add("保留菜", liveKey);
+    now = new Date(now.getTime() + 86_400_000 - 1);
+    await expect(add("保留菜")).rejects.toMatchObject({ code: "DUPLICATE_DISH_NAME" });
+    expect(await count("mutation_receipts")).toBe(2); // Failed mutations roll cleanup back too.
+    await add("新菜");
+    expect(await count("mutation_receipts")).toBe(2);
+    expect(await add("保留菜", liveKey)).toEqual(live);
+    expect(await count("dishes")).toBe(3);
+  });
+
   it("rolls back dish inserts when writing the success receipt fails", async () => {
     await pool.query(`CREATE FUNCTION reject_test_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
       BEGIN RAISE EXCEPTION 'injected receipt failure'; END $$;

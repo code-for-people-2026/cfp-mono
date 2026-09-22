@@ -98,11 +98,20 @@ describe("generateMenu pure preview", () => {
     expect(randomCalls).toBe(0);
   });
 
-  it("allows an entirely skipped week when category requirements are met", () => {
+  it("allows an entirely skipped week with an empty pool but still validates inputs and enabled meals", () => {
     const input = settings();
     input.meals.forEach((meal) => { meal.enabled = false; });
-    const preview = generateMenu("2026-09-21", input, pool(2), () => { throw Error("must not draw"); });
-    expect(preview.meals.every((meal) => !meal.enabled && meal.meat.length === 0)).toBe(true);
+    const preview = generateMenu("2026-09-21", input, [], () => { throw Error("must not draw"); });
+    expect(MenuPreviewSchema.safeParse(preview).success).toBe(true);
+    expect(preview.meals).toEqual(input.meals.map((meal) => ({
+      ...meal, soupOmitted: false, meat: [], vegetable: [], soup: [],
+    })));
+    expect(() => generateMenu("2026-09-22", input, [])).toThrowError(expect.objectContaining({ status: 400 }));
+    expect(() => generateMenu("2026-09-21", { ...input, structure: { meat: 0, vegetable: 0, soup: 0 } }, []))
+      .toThrowError(expect.objectContaining({ status: 400 }));
+    input.meals[13]!.enabled = true;
+    expect(() => generateMenu("2026-09-21", input, []))
+      .toThrowError(expect.objectContaining({ status: 422, code: "INSUFFICIENT_DISHES" }));
   });
 
   it("uses the injected source deterministically and never mutates or aliases its inputs", () => {
