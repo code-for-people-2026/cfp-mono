@@ -9,7 +9,7 @@ import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
-const pageSize = 30;
+const pageSize = 10;
 const filters = [{ value: "all", label: "全部" }, { value: "meat", label: "荤菜" },
   { value: "vegetable", label: "素菜" }, { value: "soup", label: "汤" }] as const;
 
