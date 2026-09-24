@@ -714,7 +714,7 @@ test("零荤菜默认全部，停餐仍可选择且不出现替换按钮", async
   expect(state.writes).toHaveLength(1);
 });
 
-test("每餐20道与60字菜名不撑破两天半，完整菜名可在选中区和总览读取", async ({ page }) => {
+test("每餐20道与60字菜名单行省略，编辑及检查页通过title保留完整名称", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await openWeek(page, false, 10);
   const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
@@ -724,12 +724,20 @@ test("每餐20道与60字菜名不撑破两天半，完整菜名可在选中区�
   await generate(page); await button(page, "全部").click();
   await expect(lunchDishes(page).locator(".dish-cell")).toHaveCount(20);
   await expect(page.locator(".selected-name")).toHaveText(longName);
+  await expect(page.locator(".selected-name")).toHaveAttribute("title", longName);
+  const label = lunchDishes(page).locator(".dish-label").first();
+  await expect(label).toHaveAttribute("title", longName);
+  await expect(label).toHaveCSS("white-space", "nowrap");
+  await expect(label).toHaveCSS("text-overflow", "ellipsis");
+  expect(await label.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
   const geometry = await page.locator(".week-app").evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth }));
   expect(geometry.scroll).toBe(geometry.width);
   await button(page, "确认菜单").click();
   await expect(page.locator(".readonly-board")).toContainText(longName);
-  const fullName = await page.locator(".readonly-board .dish-cell").first().evaluate((node) => ({ height: node.clientHeight, textHeight: node.firstElementChild!.getBoundingClientRect().height }));
-  expect(fullName.textHeight).toBeLessThanOrEqual(fullName.height);
+  const readonlyLabel = page.locator(".readonly-board .dish-label").first();
+  await expect(readonlyLabel).toHaveAttribute("title", longName);
+  await expect(readonlyLabel).toHaveCSS("white-space", "nowrap");
+  expect((await page.locator(".readonly-board .dish-cell").first().boundingBox())!.height).toBe(48);
   const frame = await page.locator(".flow-scroll").boundingBox(), dock = await page.locator(".flow-dock").boundingBox();
   expect(frame!.y + frame!.height).toBeLessThanOrEqual(dock!.y + 1);
   await button(page, "保存本周菜单").click();

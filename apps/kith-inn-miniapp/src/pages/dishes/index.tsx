@@ -5,6 +5,7 @@ import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
+import { DishName } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
@@ -127,8 +128,7 @@ export default function DishesPage() {
         <Text className="section-title">保存结果尚未确认</Text>
         <Text>{needsReview ? "安全重试期限已过或请求标识需核对。请重新读取菜品池，核对本次草稿。" : "可能已经保存。请重试原请求，结果确认前暂不能修改或放弃。"}</Text>
         {needsReview && reviewed && <ScrollView className="review-list" scrollY><Text className="section-title">本次读取的菜品池</Text>
-          {!items.length ? <Text>当前没有已保存菜品。</Text> : items.map((dish) => <Text key={dish.id}>
-            {dish.name} · {labels[dish.category]} · {dish.active ? "已启用" : "已停用"}</Text>)}
+          {!items.length ? <Text>当前没有已保存菜品。</Text> : items.map((dish) => <DishName key={dish.id} name={`${dish.name} · ${labels[dish.category]} · ${dish.active ? "已启用" : "已停用"}`} />)}
           <Text>请与下方保留的草稿对照，确认是否已经保存。</Text></ScrollView>}
         <View className="actions">
           {!needsReview && <Button disabled={busy || cooling || !signedIn} onClick={() => void run(async () => saved(await client.retryPendingWrite()))}>重试原请求</Button>}
@@ -147,7 +147,7 @@ export default function DishesPage() {
           <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
         {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
           <View className="dish-list">{items.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
-            <View className="dish-info"><Text className="dish-name">{dish.name}</Text><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
+            <View className="dish-info"><DishName className="dish-name" name={dish.name} /><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="tiny-action" disabled={disabled || cooling} onClick={() => {
                 setEdit({ ...dish }); setOriginal(dish); setNotice(""); setError(""); setConflict(false);
@@ -171,7 +171,7 @@ export default function DishesPage() {
           <View className="menu-rule"><Text className="rule-title">请确认荤、素、汤分类</Text>
             <Text>系统先判断；分类不对就点右侧更换图标，按“荤 → 素 → 汤”循环。</Text></View>
           <View className="import-list">{preview.map((dish, index) => <View className="import-row" key={dish.name}>
-            <Text className="import-name">{dish.name}</Text><View className="category-switch"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
+            <DishName className="import-name" name={dish.name} /><View className="category-switch"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="rotate-dish" disabled={disabled} ariaLabel={`更改${dish.name}分类，当前${labels[dish.category]}`}
                 onClick={() => setPreview(preview.map((value, at) => at === index ? { ...value, category: cycleCategory(value.category) } : value))}>
                 <Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>)}</View>
@@ -194,7 +194,7 @@ export default function DishesPage() {
         <Text className="evidence-note">停用后仍保留菜名，随时可以恢复；已保存的菜单不受影响。</Text>
         {conflict && <View className="recovery"><Text>草稿已保留。请重新读取，再核对当前菜品。</Text>
           <Button disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
-          {reviewed && latest && <><Text>服务器最新：{latest.name} · {labels[latest.category]} · {latest.active ? "已启用" : "已停用"}</Text>
+          {reviewed && latest && <><DishName name={`服务器最新：${latest.name} · ${labels[latest.category]} · ${latest.active ? "已启用" : "已停用"}`} />
             <Button disabled={disabled} onClick={() => void loadLatest()}>载入最新版本</Button></>}</View>}
         <Button className="primary" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const body = { name: edit.name.trim().normalize("NFC"), category: edit.category, active: edit.active, baseVersion: edit.version };
