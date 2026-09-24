@@ -12,7 +12,7 @@ import { CategorySchema, StructureSchema, WeekStartSchema, type Category, type D
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { WeekEditError, randomReplaceDish, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
 import { Button } from "../../lib/button";
-import { DishName, DishNameProvider } from "../../lib/dish-name";
+import { DishName, DishNameProvider, DishChoiceRow } from "../../lib/dish-name";
 import { labels } from "../../lib/classify";
 import { formatMealExample, formatMealText } from "../../lib/menu-text";
 import { MainNav } from "../../lib/main-nav";
@@ -402,17 +402,17 @@ export default function WeekPage() {
             <View className="locked-week"><Image src={greenCheckIcon} className="flow-icon" /><Text>其他 {menu.meals.reduce((count, meal) => count + meal.meat.length + meal.vegetable.length + (meal.soupOmitted ? 0 : meal.soup.length), 0) - 1} 道菜保持不变</Text></View></>}
           {screen === "pick" && <View className="picking-banner"><Image src={mixerIcon} className="flow-icon" /><Text>手选一道{target.category === "soup" ? "汤" : `${labels[target.category]}菜`}</Text></View>}
           {screen === "pick" && <View className="candidate-search"><Image src={searchIcon} className="flow-icon" /><Input ariaLabel="搜索候选菜名" placeholder="搜索菜名" value={query} disabled={disabled} onInput={(event) => setQuery(event.detail.value)} /></View>}
-          <View className={screen === "pick" ? "candidate-pick-list" : "candidate-list"}>{candidates.map((dish) => <View className="dish-choice-row" key={dish.id}><Button ariaLabel={dish.name} className={candidate === dish.id ? "selected" : ""} ariaPressed={candidate === dish.id} disabled={disabled} onClick={() => setCandidate(dish.id)}>
+          <View className={screen === "pick" ? "candidate-pick-list" : "candidate-list"}>{candidates.map((dish) => <DishChoiceRow name={dish.name} key={dish.id}><Button ariaLabel={dish.name} className={candidate === dish.id ? "selected" : ""} ariaPressed={candidate === dish.id} disabled={disabled} onClick={() => setCandidate(dish.id)}>
             {screen === "pick" ? <><View className={`kind-dot ${dish.category}`} /><View><DishName className="pick-name" name={dish.name} interactive={false} /><Text className="pick-kind">{dish.category === "soup" ? "汤羹" : `${labels[dish.category]}菜`}</Text></View><Image src={nextIcon} className="flow-icon" /></>
               : <><View className="candidate-radio">{candidate === dish.id && <Image src={checkIcon} className="flow-icon" />}</View><DishName name={dish.name} interactive={false} /></>}
-          </Button><DishName name={dish.name} icon /></View>)}</View>
+          </Button></DishChoiceRow>)}</View>
           {!candidates.length && <Text className="muted">{query ? "没有匹配的菜名" : "没有其他同类可用菜，请先补充菜品池。"}</Text>}
           {screen === "swap" && <Button className="browse-library" disabled={disabled} onClick={() => { setScreen("pick"); setQuery(""); }}><Image src={archiveIcon} className="flow-icon" /><Text>在菜品池里自己选</Text><Image src={nextIcon} className="flow-icon" /></Button>}
         </View>}
 
       </>}
         {soupSelection && menu && <View className="candidate-sheet"><View className="sheet-head"><Text>重新选齐 {menu.structure.soup} 道汤</Text><Button disabled={disabled} onClick={() => { setSoupSelection(null); setNotice(""); }}>取消</Button></View><View className="candidate-list">
-          {dishes.filter((dish) => dish.active && dish.category === "soup" && ![...menu.meals[soupSelection.meal]!.meat, ...menu.meals[soupSelection.meal]!.vegetable].some((item) => item.dishId === dish.id)).map((dish) => <View className="dish-choice-row" key={dish.id}><Button className="soup-choice" disabled={disabled} onClick={() => setSoupSelection({ ...soupSelection, ids: soupSelection.ids.includes(dish.id) ? soupSelection.ids.filter((id) => id !== dish.id) : [...soupSelection.ids, dish.id] })}><Text>{soupSelection.ids.includes(dish.id) ? "✓" : ""}</Text><DishName name={dish.name} interactive={false} /></Button><DishName name={dish.name} icon /></View>)}
+          {dishes.filter((dish) => dish.active && dish.category === "soup" && ![...menu.meals[soupSelection.meal]!.meat, ...menu.meals[soupSelection.meal]!.vegetable].some((item) => item.dishId === dish.id)).map((dish) => <DishChoiceRow name={dish.name} key={dish.id}><Button className="soup-choice" disabled={disabled} onClick={() => setSoupSelection({ ...soupSelection, ids: soupSelection.ids.includes(dish.id) ? soupSelection.ids.filter((id) => id !== dish.id) : [...soupSelection.ids, dish.id] })}><Text>{soupSelection.ids.includes(dish.id) ? "✓" : ""}</Text><DishName name={dish.name} interactive={false} /></Button></DishChoiceRow>)}
           <Button className="primary" disabled={disabled || soupSelection.ids.length !== menu.structure.soup} onClick={() => void run(async () => { const pool = await client!.getDishes(); setDishes(pool); setDraft(restoreSoup(menu, soupSelection.meal, soupSelection.ids, pool)); setCopyDraft(null); setExampleDraft(null); setSoupSelection(null); setNotice(""); })}>选齐并恢复汤</Button></View></View>}
     </ScrollView>
       {arranging && <View className="flow-dock"><Button className="primary" disabled={disabled || cooling || !enabledMeals.length} onClick={() => menu && !settingsDirty ? cancelSettings() : void run(generate)}>{menu ? settingsDirty ? "重新生成菜单" : "继续调整菜单" : "生成本周菜单"}</Button></View>}

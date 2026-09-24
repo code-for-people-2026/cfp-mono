@@ -219,6 +219,28 @@ test("固定导航离开未确认批量输入前提醒，取消保留菜名和�
 });
 
 
+test("只为实际溢出的菜名提供气泡，宽度变化后自动恢复普通文字", async ({ page }) => {
+  const middleName = "香菇土豆炖牛肉配家常时蔬及米饭";
+  await page.setViewportSize({ width: 520, height: 844 });
+  const state = await openPool(page, [seed, { ...seed, id: id(2), name: middleName }]);
+  const short = page.locator(".dish-name").first(), middle = page.locator(".dish-name").last();
+  await expect(page.locator(".dish-name[aria-haspopup]")).toHaveCount(0);
+  await short.click(); await middle.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(short).not.toHaveAttribute("title");
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(middle).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(short).not.toHaveAttribute("aria-haspopup");
+  await middle.click();
+  await expect(page.getByRole("dialog", { name: "完整菜名" })).toContainText(middleName);
+  await page.setViewportSize({ width: 520, height: 844 });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(middle).not.toHaveAttribute("aria-haspopup");
+  await middle.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(state.writes).toHaveLength(0);
+});
+
 test.describe("触屏菜池气泡", () => {
   test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
   test("单行长菜名可点击读全，气泡不越界，外部关闭不误触编辑或写入", async ({ page }) => {
@@ -247,8 +269,9 @@ test.describe("触屏菜池气泡", () => {
     expect(state.writes).toHaveLength(0);
     await name.focus(); await page.keyboard.press("Enter");
     await expect(popover).toBeVisible();
+    await expect(button(page, "关闭完整菜名")).toBeFocused();
     await page.keyboard.press("Tab");
-    expect(await popover.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    await expect.poll(() => popover.evaluate((node) => node.contains(document.activeElement))).toBe(true);
     await page.keyboard.press("Escape");
     await expect(popover).toHaveCount(0);
     await expect(name).toBeFocused();

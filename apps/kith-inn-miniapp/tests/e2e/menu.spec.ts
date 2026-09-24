@@ -1223,6 +1223,7 @@ test.describe("触屏菜名气泡", () => {
     await button(page, "自己选").click();
     const select = button(page, longName);
     const before = await select.getAttribute("aria-pressed");
+    await expect(button(page, "查看完整菜名：荤菜4")).toHaveCount(0);
     const inspect = button(page, `查看完整菜名：${longName}`);
     await inspect.tap();
     await expect(page.getByRole("dialog", { name: "完整菜名" })).toContainText(longName);

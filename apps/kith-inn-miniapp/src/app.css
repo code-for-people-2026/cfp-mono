@@ -31,7 +31,9 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .dish-label::after, .dish-name-info::after { border: 0; }
 .dish-label:focus-visible, .dish-name-info:focus-visible { outline: 2PX solid #1e5d45; outline-offset: 2PX; }
-.dish-choice-row { display: grid; grid-template-columns: minmax(0,1fr) 40PX; align-items: center; gap: 4PX; }
+.dish-name-text { display: inline-block; white-space: nowrap; }
+.dish-choice-row { display: grid; grid-template-columns: minmax(0,1fr); align-items: center; }
+.dish-choice-row.has-overflow { grid-template-columns: minmax(0,1fr) 40PX; gap: 4PX; }
 .dish-name-info { display: block; width: 40PX; height: 44PX; margin: 0; padding: 0; border: 0; border-radius: 8PX; background: transparent; color: #1e5d45; font-size: 20PX; line-height: 44PX; text-align: center; cursor: pointer; }
 .dish-name-popover-layer, .dish-name-popover-backdrop { position: fixed; inset: 0; }
 .dish-name-popover-layer { z-index: 1000; }
