@@ -32,7 +32,7 @@ async function readBody(request: IncomingMessage): Promise<string> {
 
 export function createKithInnHttpServer(input: {
   sessions: Pick<Sessions, "login" | "authenticate" | "revoke">;
-  dishes?: Pick<Dishes, "list" | "create" | "update">;
+  dishes?: Pick<Dishes, "list" | "create" | "update" | "delete">;
   weeks?: Pick<Weeks, "list" | "read" | "generate" | "save">;
   readiness: () => Promise<void>; logger?: SafeLogger; clock?: () => number;
 }) {
@@ -116,10 +116,11 @@ export function createKithInnHttpServer(input: {
           if (body) throw invalid();
           send(200, await input.dishes.list(session));
         } else if (input.dishes && ((route === "/dishes" && request.method === "POST") ||
-            (dishId && request.method === "PATCH"))) {
+            (dishId && (request.method === "PATCH" || request.method === "DELETE")))) {
           const key = request.headers["idempotency-key"];
           if (typeof key !== "string") throw invalid();
-          const result = dishId ? await input.dishes.update(session, key, dishId, json()) :
+          const result = dishId ? request.method === "DELETE" ? await input.dishes.delete(session, key, dishId, json()) :
+            await input.dishes.update(session, key, dishId, json()) :
             await input.dishes.create(session, key, json());
           send(result.status, result.body);
         } else if (request.method === "DELETE" && route === "/sessions/current") {

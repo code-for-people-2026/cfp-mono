@@ -78,7 +78,7 @@ export class Weeks {
             if (!data.rebuild && !restoring && saved?.dishId.toLowerCase() === dishId) return saved;
             const dish = byId.get(dishId);
             if (!dish?.active || dish.category !== category) throw new ApiError(409, "DISH_UNAVAILABLE",
-              "有菜品已停用或改变分类，请重新选择", { field: `meals.${mealIndex}.${category}.${slot}` });
+              "有菜品已删除、停用或改变分类，请重新选择", { field: `meals.${mealIndex}.${category}.${slot}` });
             return { dishId, name: dish.name };
           });
           return result;

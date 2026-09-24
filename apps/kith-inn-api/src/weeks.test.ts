@@ -103,6 +103,25 @@ describe("PostgreSQL week snapshots and HTTP", () => {
     expect(saved.meals[1]!.soup[0]!.name).toBe("蛋花汤");
   });
 
+  it("retains deleted dish snapshots while rejecting new uses and restored soup", async () => {
+    const saved = (await save({ ...initial(), confirm: true })).body;
+    await dishes.delete(session, randomUUID(), meat, { baseVersion: 1 });
+    await dishes.delete(session, randomUUID(), soup, { baseVersion: 1 });
+    expect(await weeks.read(session, monday)).toEqual(saved);
+    const draft = input(saved); draft.meals[0]!.soupOmitted = true; draft.meals[1]!.meat = [otherMeat];
+    const changed = (await save(draft)).body;
+    expect(changed.meals[0]!.meat).toEqual(saved.meals[0]!.meat);
+    expect(changed.meals[0]!.soup).toEqual(saved.meals[0]!.soup);
+    expect(changed.meals[1]!.meat[0]!.name).toBe("清蒸鱼");
+    const restore = input(changed); restore.meals[0]!.soupOmitted = false;
+    await expect(save(restore)).rejects.toMatchObject({ code: "DISH_UNAVAILABLE" });
+    const reuse = input(changed); reuse.meals[1]!.meat = [meat];
+    await expect(save(reuse)).rejects.toMatchObject({ code: "DISH_UNAVAILABLE" });
+    await expect(save({ ...input(changed), rebuild: true })).rejects.toMatchObject({ code: "DISH_UNAVAILABLE" });
+    const generated = await weeks.generate(session, monday, { structure: { meat: 1, vegetable: 0, soup: 0 }, meals: initial().meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled })) });
+    expect(generated.meals.every((meal) => meal.meat[0]?.dishId === otherMeat)).toBe(true);
+  });
+
   it("rejects moved snapshots, foreign or missing dishes, wrong class, changed structure and forged names", async () => {
     const first = initial(); first.structure.meat = 2; first.meals.forEach((meal) => meal.meat.push(otherMeat));
     const saved = (await save(first)).body;

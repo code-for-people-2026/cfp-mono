@@ -24,6 +24,7 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .action-button.secondary { width: 100%; margin-top: 8PX; }
 .action-button.text-button { width: auto; padding: 8PX 0; border: 0; background: transparent; color: #675d53; font-size: 11PX; font-weight: 400; }
 .action-button.cancel { margin-top: 8PX; }
+.action-button.delete-dish { margin-top: 16PX; min-height: 44PX; color: #b64131; }
 .evidence-note { display: block; margin-top: 9PX; color: #675d53; font-size: 9PX; line-height: 1.5; }
 .import-list { display: grid; gap: 5PX; margin-top: 10PX; }
 .import-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8PX; min-height: 37PX; padding: 7PX 9PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; }

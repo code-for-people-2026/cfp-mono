@@ -9,12 +9,13 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 // Controlled H5 transport and stored session; this does not exercise real WeChat or a database.
 async function openPool(page: Page, initial: Dish[] = []) {
   const state = { items: [...initial], writes: [] as { method: string; body: string; key: string }[], failure: "", failNextRead: false };
+  const deletions = new Map<string, { id: string }>();
   await page.addInitScript(() => localStorage.setItem("kith-inn:session:v1:https://kith-inn.test", JSON.stringify({
     data: { token: "t".repeat(43), expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() }
   })));
   await page.route("**/api/kith-inn/dishes**", async (route) => {
     const request = route.request(), method = request.method();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PATCH,OPTIONS" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS" };
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers });
     if (method === "GET") {
       if (state.failNextRead) {
@@ -27,8 +28,17 @@ async function openPool(page: Page, initial: Dish[] = []) {
     state.writes.push({ method, body: request.postData()!, key: request.headers()["idempotency-key"]! });
     const failure = state.failure; state.failure = "";
     if (failure === "abort") return route.abort("failed");
-    if (failure) return route.fulfill({ status: failure === "INVALID_REQUEST" ? 400 : 409, headers,
+    if (failure && failure !== "lost-delete") return route.fulfill({ status: failure === "INVALID_REQUEST" ? 400 : failure === "NOT_FOUND" ? 404 : 409, headers,
       json: { error: { code: failure, message: "受控错误", requestId: id(999), ...(failure === "VERSION_CONFLICT" ? { details: { currentVersion: 2 } } : {}) } } });
+    if (method === "DELETE") {
+      const key = request.headers()["idempotency-key"]!;
+      if (deletions.has(key)) return route.fulfill({ headers, json: deletions.get(key) });
+      const target = state.items.find((dish) => request.url().endsWith(dish.id))!;
+      state.items = state.items.filter((dish) => dish.id !== target.id);
+      const result = { id: target.id }; deletions.set(key, result);
+      if (failure === "lost-delete") return route.abort("failed");
+      return route.fulfill({ headers, json: result });
+    }
     if (method === "POST") {
       const { items } = request.postDataJSON() as DishBatchInput;
       const added = items.map((dish, i) => ({ ...seed, ...dish, id: id(state.items.length + i + 1) }));
@@ -116,6 +126,80 @@ test("编辑菜名分类，停用后仍可找到并恢复", async ({ page }) => 
   await button(page, "保存修改").click();
   await expect(page.locator(".dish-card")).toContainText("已启用");
   expect(JSON.parse(state.writes[1]!.body)).toMatchObject({ baseVersion: 2, active: true });
+});
+
+test("删除须确认，取消保留草稿，删除后刷新仍移除并能重新添加同名菜", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click();
+  await page.locator('input[placeholder="菜名"]').fill("未保存的新名字");
+  await button(page, "删除菜品").click();
+  await expect(page.getByText("“红烧排骨”删除后不可恢复，已保存的菜单不受影响。", { exact: true })).toBeVisible();
+  await page.getByText("取消", { exact: true }).click();
+  await expect(page.getByText("删除菜品？", { exact: true })).not.toBeVisible();
+  await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("未保存的新名字");
+  expect(state.writes).toHaveLength(0);
+  await page.screenshot({ path: "/tmp/kith-delete-edit-mobile.png" });
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  expect(state.items).toEqual([]);
+  expect(state.writes[0]).toMatchObject({ method: "DELETE", body: JSON.stringify({ baseVersion: 1 }) });
+  await page.reload(); await expect(page.locator(".dish-card")).toHaveCount(0);
+  await preview(page, "红烧排骨"); await button(page, "确认加入菜品池").click();
+  await expect(page.locator(".dish-card")).toHaveCount(1);
+});
+
+test("删除响应丢失时冻结编辑并重试原请求，读取失败仍保留删除成功", async ({ page }) => {
+  const state = await openPool(page, [seed, { ...seed, id: id(2), name: "保留菜" }]);
+  await button(page, "编辑").first().click();
+  state.failure = "lost-delete";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("删除结果尚未确认", { exact: true })).toBeVisible();
+  await expect(button(page, "删除菜品")).toBeDisabled();
+  await expect(button(page, "取消编辑")).toBeDisabled();
+  await button(page, "重新读取").click();
+  await expect(button(page, "保存修改")).toBeDisabled();
+  state.failNextRead = true;
+  await button(page, "重试原请求").click();
+  await expect(page.getByText("删除已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
+  await button(page, "重试").click();
+  await expect(page.locator(".dish-card")).toHaveCount(1);
+  await expect(page.locator(".dish-card")).toContainText("保留菜");
+  expect(state.writes[1]).toEqual(state.writes[0]);
+});
+
+test("删除旧版本先核对，已被其他设备删除时可退出编辑", async ({ page }) => {
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click(); state.failure = "VERSION_CONFLICT";
+  state.items[0] = { ...seed, name: "另一处的新名字", version: 2 };
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(button(page, "删除菜品")).toBeDisabled();
+  await button(page, "重新读取").click();
+  await button(page, "载入最新版本").click(); await page.getByText("确定", { exact: true }).click();
+  state.items = []; state.failure = "NOT_FOUND";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await button(page, "重新读取").click();
+  await expect(page.getByText("该菜品已删除，请取消编辑返回菜品池。", { exact: true })).toBeVisible();
+  await button(page, "取消编辑").click();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  expect(state.writes).toHaveLength(2);
+  expect(JSON.parse(state.writes[1]!.body)).toEqual({ baseVersion: 2 });
+});
+
+test("删除结果未知超过重试期限，读取核对后回到菜品池且不再删除", async ({ page }) => {
+  await page.clock.install();
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click(); state.failure = "lost-delete";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("删除结果尚未确认", { exact: true })).toBeVisible();
+  await page.clock.fastForward(86_401_000);
+  await expect(button(page, "已核对，继续编辑")).toBeDisabled();
+  await button(page, "重新读取").click(); await button(page, "已核对，继续编辑").click();
+  await page.getByText("确定", { exact: true }).click();
+  await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  expect(state.writes).toHaveLength(1);
 });
 
 test("首次保存成功后读取失败，保留保存确认和重试入口", async ({ page }) => {
