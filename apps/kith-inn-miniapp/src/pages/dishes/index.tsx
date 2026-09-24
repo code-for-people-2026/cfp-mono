@@ -136,7 +136,7 @@ export default function DishesPage() {
     {client && showList && <View className="dish-pool-tools">
       <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
         <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
-      <View className="board-filter dish-filters" ariaLabel="菜品分类">
+      <View className="dish-filters" ariaLabel="菜品分类">
         {filters.map(({ value, label }) => <Button key={value} className={filter === value ? "active" : ""}
           ariaPressed={filter === value} disabled={disabled || !loaded} onClick={() => { setFilter(value); setPage(0); }}>{label}</Button>)}
       </View>

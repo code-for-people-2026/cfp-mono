@@ -139,8 +139,10 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .flow-dock { flex: 0 0 auto; padding: 10PX 12PX 11PX; border-top: 1PX solid #e1d9cd; background: rgba(255,255,255,.98); box-shadow: 0 -10PX 22PX rgba(52,41,31,.08); }
 .flow-dock .action-button { margin: 0; min-height: 50PX; }
 .dish-pool-tools { flex: 0 0 auto; padding: 12PX 15PX 0; }
-.dish-filters.board-filter { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.dish-filters.board-filter .action-button { min-height: 40PX; }
+.dish-filters { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1PX solid #e6dccd; }
+.dish-filters .action-button { position: relative; min-height: 44PX; padding: 10PX 0 12PX; border: 0; border-radius: 0; background: transparent; color: #675d53; font-size: 15PX; line-height: 22PX; font-weight: 400; }
+.dish-filters .active { color: #1e5d45; font-weight: 700; }
+.dish-filters .active::before { content: ""; position: absolute; bottom: -1PX; left: 50%; width: 24PX; height: 3PX; border-radius: 2PX; background: currentColor; transform: translateX(-50%); }
 .dish-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8PX; margin-bottom: 8PX; font-size: 11PX; color: #675d53; }
 .dish-pagination .action-button { min-height: 40PX; padding: 8PX; border: 0; color: #1e5d45; background: transparent; font-size: 13PX; }
 .action-button.primary.green { background: #1e5d45; }
