@@ -8,6 +8,7 @@ import { Button } from "../../lib/button";
 import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
+import backIcon from "../../assets/back.svg";
 
 const pageSize = 10;
 const filters = [{ value: "all", label: "全部" }, { value: "meat", label: "荤菜" },
@@ -32,10 +33,12 @@ export default function DishesPage() {
     (edit.name !== original?.name || edit.category !== original?.category || edit.active !== original?.active);
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
   const deleting = pending?.kind === "delete";
+  const editing = edit !== null;
   const filtered = filter === "all" ? items : items.filter((dish) => dish.category === filter);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize)), currentPage = Math.min(page, pageCount - 1);
   const visibleItems = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
   useEffect(() => setPage((value) => Math.min(value, pageCount - 1)), [pageCount]);
+  useEffect(() => { void Taro.setNavigationBarTitle({ title: editing ? "编辑菜品" : "菜品池" }); }, [editing]);
 
   useDidShow(() => setPending(client?.pendingWrite() ?? null));
   useEffect(() => {
@@ -131,7 +134,10 @@ export default function DishesPage() {
   const showList = signedIn && stage === "list" && !edit && !showInput;
 
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
-    {process.env.TARO_ENV === "h5" && <View className="app-heading"><Text>菜品池</Text></View>}
+    {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">
+      {editing && <Button className="flow-back-label dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
+      <Text>{editing ? "编辑菜品" : "菜品池"}</Text></View>
+      : editing && <Button className="flow-return dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
     <View className="dish-page">
     {client && showList && <View className="dish-pool-tools">
       <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
@@ -205,27 +211,28 @@ export default function DishesPage() {
         <Button className="text-button cancel" disabled={disabled} onClick={() => void cancel()}>取消添加</Button>
       </View>}
       {edit && <View className="edit-panel">
-        <View className="detail-head"><View><Text className="detail-kicker">菜品维护</Text><Text className="detail-title">编辑菜品</Text></View>
-          <Text className="detail-meta">{dirty ? "未保存" : "修改后请保存"}</Text></View>
+        <View className="dish-edit-fields">
+        <View className="dish-edit-name">
         <Text className="input-label">菜名</Text><Input className="dish-input" placeholder="菜名" ariaLabel="菜名" maxlength={-1}
           disabled={disabled} value={edit.name} onInput={(event) => setEdit({ ...edit, name: event.detail.value })} />
+        </View>
         <View className="setting-row"><Text>分类</Text><View className="category-switch"><Text className={`kind ${edit.category}`}>{labels[edit.category]}</Text>
           <Button className="rotate-dish" ariaLabel="更改单菜分类" disabled={disabled}
             onClick={() => setEdit({ ...edit, category: cycleCategory(edit.category) })}><Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>
         <View className="setting-row"><Text>用于新菜单</Text><Switch checked={edit.active} disabled={disabled} color="#287557"
           ariaLabel="用于新菜单" onChange={(event) => setEdit({ ...edit, active: event.detail.value })} /></View>
+        </View>
         <Text className="evidence-note">停用后仍保留菜名，随时可以恢复；已保存的菜单不受影响。</Text>
         {conflict && <View className="recovery"><Text>草稿已保留。请重新读取，再核对当前菜品。</Text>
           <Button disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
           {reviewed && latest && <><DishName name={`服务器最新：${latest.name} · ${labels[latest.category]} · ${latest.active ? "已启用" : "已停用"}`} />
             <Button disabled={disabled} onClick={() => void loadLatest()}>载入最新版本</Button></>}
-          {reviewed && !latest && <Text>该菜品已删除，请取消编辑返回菜品池。</Text>}</View>}
+          {reviewed && !latest && <Text>该菜品已删除，请返回菜品池。</Text>}</View>}
         <Button className="primary" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const body = { name: edit.name.trim().normalize("NFC"), category: edit.category, active: edit.active, baseVersion: edit.version };
           if (!DishUpdateInputSchema.safeParse(body).success) throw new Error("请填写 1～60 个字的菜名，不含控制字符");
           await saved(await client.updateDish(edit.id, body));
         })}>保存修改</Button>
-        <Button className="secondary" disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
         <Button className="delete-dish" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const target = original ?? edit;
           const answer = await Taro.showModal({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });

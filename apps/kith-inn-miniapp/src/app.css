@@ -24,7 +24,13 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .action-button.secondary { width: 100%; margin-top: 8PX; }
 .action-button.text-button { width: auto; padding: 8PX 0; border: 0; background: transparent; color: #675d53; font-size: 11PX; font-weight: 400; }
 .action-button.cancel { margin-top: 8PX; }
-.action-button.delete-dish { width: 100%; margin-top: 24PX; min-height: 48PX; border-color: #d9a299; color: #b64131; font-weight: 600; }
+.action-button.delete-dish { width: 100%; margin-top: 12PX; min-height: 48PX; border-color: #d9a299; color: #b64131; font-weight: 600; }
+.dish-edit-fields { overflow: hidden; border: 1PX solid #e6dccd; border-radius: 13PX; background: #fff; }
+.dish-edit-name { padding: 12PX; }
+.dish-edit-name .input-label { margin: 0 0 8PX; font-size: 13PX; font-weight: 400; }
+.dish-edit-name .dish-input { height: 32PX; padding: 0; border: 0; border-radius: 4PX; font-size: 15PX; }
+.dish-edit-fields .setting-row { min-height: 56PX; margin: 0; padding: 12PX; border: 0; border-top: 1PX solid #eee6da; border-radius: 0; font-size: 14PX; }
+.edit-panel > .primary { min-height: 48PX; margin-top: 24PX; }
 .evidence-note { display: block; margin-top: 9PX; color: #675d53; font-size: 9PX; line-height: 1.5; }
 .import-list { display: grid; gap: 5PX; margin-top: 10PX; }
 .import-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8PX; min-height: 37PX; padding: 7PX 9PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; }
@@ -254,6 +260,7 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .flow-heading .action-button { left: 14PX; top: 7PX; width: 42PX; height: 42PX; }
 .flow-heading .flow-icon { width: 22PX; height: 22PX; flex-basis: 22PX; }
 .flow-heading .flow-back-label { width: auto; gap: 2PX; font-size: 13PX; }
+.action-button.dish-edit-back { display: flex; align-items: center; justify-content: center; gap: 2PX; min-width: 44PX; min-height: 44PX; border: 0; background: transparent; }
 .readonly-board .board-title { font-size: 16PX; }
 .readonly-board .board-count { font-weight: 750; }
 
