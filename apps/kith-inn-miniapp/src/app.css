@@ -183,7 +183,7 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .dish-cell.omitted { color: #655d55; background: #f6f1e8; border-style: dashed; }
 .action-button.empty-meal { min-height: 48PX; padding: 4PX; border: 1PX dashed #e1d9cd; background: #f8f5ef; color: #655d55; font-size: 14PX; font-weight: 400; }
 .action-button.empty-meal[disabled] { opacity: 1; }
-.selected-dish { margin-top: 10PX; padding: 10PX; border: 1PX solid #d4dfd8; border-left: 3PX solid #1e5d45; border-radius: 10PX; background: #fff; }
+.selected-dish { flex: 0 0 auto; margin: 0 12PX 10PX; padding: 10PX; border: 1PX solid #d4dfd8; border-left: 3PX solid #1e5d45; border-radius: 10PX; background: #fff; }
 .selected-target { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 9PX; align-items: center; }
 .selection-label { display: block; color: #1e5d45; font-size: 13PX; font-weight: 850; }
 .selected-target > :first-child, .candidate-pick-list .action-button > :nth-child(2) { min-width: 0; }

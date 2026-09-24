@@ -714,6 +714,45 @@ test("零荤菜默认全部，停餐仍可选择且不出现替换按钮", async
   expect(state.writes).toHaveLength(1);
 });
 
+for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
+  test(`选菜卡固定在确认按钮上方，滚动末行和换菜不遮挡 ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const state = await openWeek(page, false, 10);
+    await expandSettings(page);
+    for (const [i, count] of [8, 10, 2].entries()) await page.locator(".structure-fields input").nth(i).fill(String(count));
+    await generate(page); await button(page, "全部").click();
+    const card = page.locator(".selected-dish"), scroll = page.locator(".flow-scroll");
+    const initial = (await card.boundingBox())!;
+    await expect(card).toBeInViewport({ ratio: 1 });
+    await button(page, "周一晚餐：汤菜2").click();
+    await expect(card).toContainText("周一晚饭 · 汤");
+    await expect(card.locator(".selected-name")).toHaveText("汤菜2");
+    await expect(button(page, "周一晚餐：汤菜2")).toBeInViewport({ ratio: 1 });
+    const offset = await scroll.evaluate((node) => node.scrollTop);
+    expect(offset).toBeGreaterThan(100);
+    expect((await card.boundingBox())!.y).toBeCloseTo(initial.y, 0);
+    const frame = (await scroll.boundingBox())!, confirm = (await page.locator(".flow-dock").boundingBox())!;
+    const nav = (await page.locator(".main-nav").boundingBox())!;
+    expect(frame.y + frame.height).toBeLessThanOrEqual(initial.y + 1);
+    expect(initial.y + initial.height).toBeLessThanOrEqual(confirm.y);
+    expect(confirm.y + confirm.height).toBeLessThanOrEqual(nav.y + 1);
+    await scroll.hover(); await page.mouse.wheel(0, -500);
+    await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeLessThan(offset);
+    expect((await card.boundingBox())!.y).toBeCloseTo(initial.y, 0);
+    await expect(button(page, "换一道")).toBeInViewport({ ratio: 1 });
+    await expect(button(page, "自己选")).toBeInViewport({ ratio: 1 });
+    await page.screenshot({ path: `/tmp/kith-inn-selected-dock-${viewport.width}.png` });
+    await button(page, "自己选").click();
+    await expect(card).toHaveCount(0);
+    await button(page, "汤菜3").click(); await button(page, "保存这次替换").click();
+    await expect(card.locator(".selected-name")).toHaveText("汤菜3");
+    await button(page, "换一道").click(); await expect(card).toHaveCount(0);
+    await button(page, "返回编辑").click(); await expect(card).toBeInViewport({ ratio: 1 });
+    await button(page, "确认菜单").click(); await expect(card).toHaveCount(0);
+    expect(state.writes).toHaveLength(0);
+  });
+}
+
 test("每餐20道与60字菜名单行省略，编辑、检查及历史气泡展示全文且不修改菜单", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await openWeek(page, false, 10);
