@@ -226,7 +226,7 @@ export default function DishesPage() {
           await saved(await client.updateDish(edit.id, body));
         })}>保存修改</Button>
         <Button className="secondary" disabled={disabled} onClick={() => void cancel()}>取消编辑</Button>
-        <Button className="text-button delete-dish" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
+        <Button className="delete-dish" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const target = original ?? edit;
           const answer = await Taro.showModal({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });
           if (answer.confirm) await saved(await client.deleteDish(target.id, { baseVersion: target.version }));
