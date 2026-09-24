@@ -138,6 +138,11 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .dishes-app .flow-scroll { padding: 15PX; }
 .flow-dock { flex: 0 0 auto; padding: 10PX 12PX 11PX; border-top: 1PX solid #e1d9cd; background: rgba(255,255,255,.98); box-shadow: 0 -10PX 22PX rgba(52,41,31,.08); }
 .flow-dock .action-button { margin: 0; min-height: 50PX; }
+.dish-pool-tools { flex: 0 0 auto; padding: 12PX 15PX 0; }
+.dish-filters.board-filter { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dish-filters.board-filter .action-button { min-height: 40PX; }
+.dish-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8PX; margin-bottom: 8PX; font-size: 11PX; color: #675d53; }
+.dish-pagination .action-button { min-height: 40PX; padding: 8PX; border: 0; color: #1e5d45; background: transparent; font-size: 13PX; }
 .action-button.primary.green { background: #1e5d45; }
 .flow-page .week-toolbar { grid-template-columns: 38PX 1fr 38PX; gap: 8PX; margin: 3PX 3PX 11PX; }
 .flow-page .week-toolbar .action-button { width: 38PX; height: 38PX; }

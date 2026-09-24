@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { Image, Input, ScrollView, Switch, Text, Textarea, View } from "@tarojs/components";
-import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-contracts";
+import { DishUpdateInputSchema, type Category, type Dish, type DishInput } from "@cfp/kith-inn-contracts";
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
@@ -9,6 +9,9 @@ import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
+const pageSize = 30;
+const filters = [{ value: "all", label: "全部" }, { value: "meat", label: "荤菜" },
+  { value: "vegetable", label: "素菜" }, { value: "soup", label: "汤" }] as const;
 
 export default function DishesPage() {
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
@@ -20,6 +23,7 @@ export default function DishesPage() {
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [notice, setNotice] = useState(""), [conflict, setConflict] = useState(false), [reviewed, setReviewed] = useState(false);
   const [pending, setPending] = useState(() => client?.pendingWrite() ?? null);
+  const [filter, setFilter] = useState<Category | "all">("all"), [page, setPage] = useState(0);
   const [now, setNow] = useState(Date.now), [retryAt, setRetryAt] = useState(0);
   const blocked = !!pending && pending.state !== "rejected";
   const needsReview = !!pending && (pending.state === "review" || now - pending.createdAt >= 86_400_000);
@@ -28,6 +32,10 @@ export default function DishesPage() {
     (edit.name !== original?.name || edit.category !== original?.category || edit.active !== original?.active);
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
   const deleting = pending?.kind === "delete";
+  const filtered = filter === "all" ? items : items.filter((dish) => dish.category === filter);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize)), currentPage = Math.min(page, pageCount - 1);
+  const visibleItems = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  useEffect(() => setPage((value) => Math.min(value, pageCount - 1)), [pageCount]);
 
   useDidShow(() => setPending(client?.pendingWrite() ?? null));
   useEffect(() => {
@@ -86,6 +94,7 @@ export default function DishesPage() {
   async function saved(result: WriteResult) {
     if (result.kind === "week") { await Taro.navigateTo({ url: `/pages/week/index?weekStart=${result.week.weekStart}` }); return; }
     clearDraft();
+    if (result.kind === "batch") { setFilter("all"); setPage(0); }
     setLoaded(false);
     setNotice(result.kind === "batch" ? `已新增 ${result.items.length} 道菜` : result.kind === "delete" ? "菜品已删除" : "菜品修改已保存");
     // The write is confirmed even if refreshing the latest list subsequently fails.
@@ -116,7 +125,7 @@ export default function DishesPage() {
       catch (value) { failure(value); }
     }
   }
-  const activeCount = items.filter((dish) => dish.active).length;
+  const activeCount = filtered.filter((dish) => dish.active).length;
 
   const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
   const showList = signedIn && stage === "list" && !edit && !showInput;
@@ -124,7 +133,15 @@ export default function DishesPage() {
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
     {process.env.TARO_ENV === "h5" && <View className="app-heading"><Text>菜品池</Text></View>}
     <View className="dish-page">
-    <ScrollView scrollY className="flow-scroll">
+    {client && showList && <View className="dish-pool-tools">
+      <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
+        <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
+      <View className="board-filter dish-filters" ariaLabel="菜品分类">
+        {filters.map(({ value, label }) => <Button key={value} className={filter === value ? "active" : ""}
+          ariaPressed={filter === value} disabled={disabled || !loaded} onClick={() => { setFilter(value); setPage(0); }}>{label}</Button>)}
+      </View>
+    </View>}
+    <ScrollView scrollY className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}>
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
       {notice && <View className="success" ariaRole="status"><Text className="success-title">{notice}</Text>
@@ -150,10 +167,9 @@ export default function DishesPage() {
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
       {showList && <>
-        <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
-          <Text className="detail-meta">{loaded ? `${activeCount} 道已启用` : busy ? "读取中" : "尚未读取"}</Text></View>
         {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
-          <View className="dish-list">{items.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
+          !filtered.length ? <View className="muted">暂无{filters.find(({ value }) => value === filter)!.label}</View> :
+          <View className="dish-list">{visibleItems.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
             <View className="dish-info"><DishName className="dish-name" name={dish.name} /><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="tiny-action" disabled={disabled || cooling} onClick={() => {
@@ -222,6 +238,11 @@ export default function DishesPage() {
     </>}
     </ScrollView>
     {client && showList && <View className="flow-dock">
+      {loaded && pageCount > 1 && <View className="dish-pagination">
+        <Button disabled={disabled || currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</Button>
+        <View role="status">第 {currentPage + 1} / {pageCount} 页 · 共 {filtered.length} 道</View>
+        <Button disabled={disabled || currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}>下一页</Button>
+      </View>}
       <Button className="primary" disabled={disabled || cooling} onClick={() => {
         setStage("input"); setNotice(""); setError("");
       }}>添加菜品</Button>
