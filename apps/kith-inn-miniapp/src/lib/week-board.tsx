@@ -92,10 +92,10 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
                 const omitted = category === "soup" && meal.soupOmitted;
                 const active = selected?.meal === mealIndex && selected.category === category && selected.index === index;
                 const name = omitted ? "本餐不做汤" : dish?.name ?? "";
-                if (readonly) return <View key={`${category}-${index}`} className={`dish-cell ${category} ${omitted ? "omitted" : ""}`}><DishName name={name} selectable /></View>;
+                if (readonly) return <View key={`${category}-${index}`} className={`dish-cell ${category} ${omitted ? "omitted" : ""}`}><DishName name={name} interactive={!omitted && Boolean(dish)} /></View>;
                 return <Button key={`${category}-${index}`} className={`dish-cell ${category} ${active ? "selected" : ""} ${omitted ? "omitted" : ""}`}
                   ariaLabel={`${day}${mealIndex % 2 ? "晚餐" : "午餐"}：${omitted ? "本餐不做汤" : dish?.name}`} ariaPressed={active} disabled={disabled}
-                  onClick={() => onSelect?.({ meal: mealIndex, category, index })}><DishName name={name} /></Button>;
+                  onClick={() => onSelect?.({ meal: mealIndex, category, index })}><DishName name={name} interactive={false} /></Button>;
               }))}
             {meal.enabled && !showAll && !menu.structure.meat && <Button className="empty-meal" disabled={disabled} onClick={() => onFilter?.(true)}>无荤菜 · 查看全部</Button>}
           </View>;

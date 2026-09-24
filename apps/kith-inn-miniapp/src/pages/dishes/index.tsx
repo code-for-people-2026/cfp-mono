@@ -5,7 +5,7 @@ import { DishUpdateInputSchema, type Dish, type DishInput } from "@cfp/kith-inn-
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
-import { DishName } from "../../lib/dish-name";
+import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
 
@@ -114,7 +114,7 @@ export default function DishesPage() {
   const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
   const showList = signedIn && stage === "list" && !edit && !showInput;
 
-  return <View className="dish-app dishes-app flow-page">
+  return <DishNameProvider><View className="dish-app dishes-app flow-page">
     {process.env.TARO_ENV === "h5" && <View className="app-heading"><Text>菜品池</Text></View>}
     <View className="dish-page">
     <ScrollView scrollY className="flow-scroll">
@@ -217,5 +217,5 @@ export default function DishesPage() {
     <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {
       if (await confirmDiscard()) await Taro.reLaunch({ url: `/pages/${page}/index` });
     })} />
-  </View>;
+  </View></DishNameProvider>;
 }

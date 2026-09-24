@@ -101,7 +101,7 @@ async function replaceLunch(page: Page) {
 async function confirmWeek(page: Page) {
   await button(page, "确认菜单").click();
   await expect(page.locator(".readonly-board")).toBeVisible();
-  await expect(page.locator(".readonly-board .dish-cell button")).toHaveCount(0);
+  await expect(page.locator(".readonly-board .dish-cell button[aria-pressed]")).toHaveCount(0);
   await button(page, "保存本周菜单").click();
 }
 
@@ -714,7 +714,7 @@ test("零荤菜默认全部，停餐仍可选择且不出现替换按钮", async
   expect(state.writes).toHaveLength(1);
 });
 
-test("每餐20道与60字菜名单行省略，编辑及检查页通过title保留完整名称", async ({ page }) => {
+test("每餐20道与60字菜名单行省略，编辑、检查及历史气泡展示全文且不修改菜单", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await openWeek(page, false, 10);
   const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
@@ -725,6 +725,15 @@ test("每餐20道与60字菜名单行省略，编辑及检查页通过title保�
   await expect(lunchDishes(page).locator(".dish-cell")).toHaveCount(20);
   await expect(page.locator(".selected-name")).toHaveText(longName);
   await expect(page.locator(".selected-name")).toHaveAttribute("title", longName);
+  const popover = page.getByRole("dialog", { name: "完整菜名" });
+  await lunchDishes(page).locator(".dish-cell").first().click();
+  await expect(popover).toHaveCount(0); // Selecting a cell must not open a second action.
+  await page.locator(".selected-name").click();
+  await expect(popover).toContainText(longName);
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(page.locator(".selected-name")).toBeFocused();
+  expect(state.writes).toHaveLength(0);
   const label = lunchDishes(page).locator(".dish-label").first();
   await expect(label).toHaveAttribute("title", longName);
   await expect(label).toHaveCSS("white-space", "nowrap");
@@ -737,6 +746,11 @@ test("每餐20道与60字菜名单行省略，编辑及检查页通过title保�
   const readonlyLabel = page.locator(".readonly-board .dish-label").first();
   await expect(readonlyLabel).toHaveAttribute("title", longName);
   await expect(readonlyLabel).toHaveCSS("white-space", "nowrap");
+  await readonlyLabel.click();
+  await expect(popover).toContainText(longName);
+  await page.locator(".dish-name-popover-backdrop").click({ position: { x: 2, y: 2 } });
+  await expect(popover).toHaveCount(0);
+  expect(state.writes).toHaveLength(0);
   expect((await page.locator(".readonly-board .dish-cell").first().boundingBox())!.height).toBe(48);
   const frame = await page.locator(".flow-scroll").boundingBox(), dock = await page.locator(".flow-dock").boundingBox();
   expect(frame!.y + frame!.height).toBeLessThanOrEqual(dock!.y + 1);
@@ -747,6 +761,14 @@ test("每餐20道与60字菜名单行省略，编辑及检查页通过title保�
   await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click(); await button(page, "全部").click();
   await home(page);
   await expect(preview(page)).toBeInViewport({ ratio: 1 });
+  await button(page, "历史").click();
+  await page.locator(".readonly-board .dish-label").first().click();
+  await expect(popover).toContainText(longName);
+  const bubble = (await popover.boundingBox())!;
+  expect(bubble.x).toBeGreaterThanOrEqual(0);
+  expect(bubble.x + bubble.width).toBeLessThanOrEqual(390);
+  await button(page, "关闭完整菜名").click();
+  expect(state.saved!.meals[0]!.meat[0]!.name).toBe(longName);
 });
 
 
@@ -1187,4 +1209,34 @@ test("生成前餐次收起搭配展开，修改后摘要同步且生成按钮�
   await generate(page);
   expect(state.generated!.structure.meat).toBe(3);
   expect(state.generated!.meals[13]!.enabled).toBe(false);
+});
+
+
+test.describe("触屏菜名气泡", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test("查看候选全文不选用、不换菜，关闭后原选择流程仍可用", async ({ page }) => {
+    const state = await openWeek(page);
+    const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
+    state.items.find((dish) => dish.name === "荤菜3")!.name = longName;
+    await generate(page);
+    const original = await page.locator(".selected-name").textContent();
+    await button(page, "自己选").click();
+    const select = button(page, longName);
+    const before = await select.getAttribute("aria-pressed");
+    const inspect = button(page, `查看完整菜名：${longName}`);
+    await inspect.tap();
+    await expect(page.getByRole("dialog", { name: "完整菜名" })).toContainText(longName);
+    await expect(select).toHaveAttribute("aria-pressed", before!);
+    expect(state.writes).toHaveLength(0);
+    await page.touchscreen.tap(2, 2);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await button(page, "返回编辑").click();
+    await expect(page.locator(".selected-name")).toHaveText(original!);
+    await button(page, "自己选").click();
+    await select.tap();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await button(page, "保存这次替换").click();
+    await expect(page.locator(".selected-name")).toHaveText(longName);
+    expect(state.writes).toHaveLength(0);
+  });
 });

@@ -27,7 +27,20 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .evidence-note { display: block; margin-top: 9PX; color: #675d53; font-size: 9PX; line-height: 1.5; }
 .import-list { display: grid; gap: 5PX; margin-top: 10PX; }
 .import-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8PX; min-height: 37PX; padding: 7PX 9PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; }
-.dish-label { display: block; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dish-label { display: block; min-width: 0; max-width: 100%; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+button.dish-label, taro-button-core.dish-label { cursor: pointer; }
+.dish-label::after, .dish-name-info::after { border: 0; }
+.dish-label:focus-visible, .dish-name-info:focus-visible { outline: 2PX solid #1e5d45; outline-offset: 2PX; }
+.dish-choice-row { display: grid; grid-template-columns: minmax(0,1fr) 40PX; align-items: center; gap: 4PX; }
+.dish-name-info { display: block; width: 40PX; height: 44PX; margin: 0; padding: 0; border: 0; border-radius: 8PX; background: transparent; color: #1e5d45; font-size: 20PX; line-height: 44PX; text-align: center; cursor: pointer; }
+.dish-name-popover-layer, .dish-name-popover-backdrop { position: fixed; inset: 0; }
+.dish-name-popover-layer { z-index: 1000; }
+.dish-name-popover-backdrop { background: transparent; }
+.dish-name-popover { position: fixed; padding: 14PX 42PX 14PX 14PX; border: 1PX solid #d4dfd8; border-radius: 12PX; background: #fff; color: #29231d; box-shadow: 0 5PX 22PX rgba(41,35,29,.2); font-size: 15PX; line-height: 24PX; text-align: left; }
+.dish-name-popover-scroll { display: block; min-height: 24PX; overscroll-behavior: contain; scrollbar-width: none; }
+.dish-name-popover-scroll::-webkit-scrollbar { display: none; }
+.dish-name-popover-text { white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.action-button.dish-name-popover-close { position: absolute; top: 2PX; right: 2PX; width: 38PX; height: 38PX; padding: 0; border: 0; background: transparent; color: #675d53; font-size: 24PX; font-weight: 400; }
 .import-name { font-size: 10PX; font-weight: 700; }
 .category-switch { display: flex; align-items: center; gap: 3PX; }
 .kind { display: inline-block; padding: 5PX 8PX; border-radius: 999PX; background: #fbe9e4; color: #8f2d22; font-size: 10PX; font-weight: 850; }

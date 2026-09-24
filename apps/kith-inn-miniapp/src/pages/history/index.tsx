@@ -7,6 +7,7 @@ import { MainNav } from "../../lib/main-nav";
 import archiveIcon from "../../assets/archive.svg";
 import { weekRange, WeekBoard } from "../../lib/week-board";
 import { Button } from "../../lib/button";
+import { DishNameProvider } from "../../lib/dish-name";
 
 export default function HistoryPage() {
   const [items, setItems] = useState<WeekSummary[]>([]), [before, setBefore] = useState<string | null>(null);
@@ -44,7 +45,7 @@ export default function HistoryPage() {
     const next = [...items, ...result.items]; setItems(next); setBefore(result.nextBefore);
     if (result.items.length) await show(next, at);
   }
-  return <View className="dish-app history-app flow-page">
+  return <DishNameProvider><View className="dish-app history-app flow-page">
     {process.env.TARO_ENV === "h5" && <View className="app-heading">历史</View>}
     <View className="dish-page">
       {error && <View className="alert" role="alert">{error}<Button className="text-button" disabled={busy || blocked} onClick={() => void run(load)}>重试</Button></View>}
@@ -64,5 +65,5 @@ export default function HistoryPage() {
       <Button className="primary green" disabled={busy || blocked || copyTarget === week.weekStart} onClick={() => void Taro.reLaunch({ url: `/pages/week/index?weekStart=${copyTarget}&copyFrom=${week.weekStart}` })}>复制到所选周</Button>
     </> : <Button className="primary green" disabled={busy || blocked} onClick={() => setCopyTarget(shiftWeek(week.weekStart, 7))}>复制这周菜单<Image className="flow-icon" src={archiveIcon} /></Button>}</View>}</View>
     <MainNav active="history" disabled={busy || blocked} onNavigate={(page) => void Taro.reLaunch({ url: `/pages/${page}/index` })} />
-  </View>;
+  </View></DishNameProvider>;
 }

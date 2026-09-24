@@ -217,3 +217,43 @@ test("固定导航离开未确认批量输入前提醒，取消保留菜名和�
   await expect(page.locator("textarea")).toHaveValue("红烧排骨\n清炒青菜");
   expect(state.writes).toHaveLength(0);
 });
+
+
+test.describe("触屏菜池气泡", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test("单行长菜名可点击读全，气泡不越界，外部关闭不误触编辑或写入", async ({ page }) => {
+    const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
+    const state = await openPool(page, [{ ...seed, name: longName }]);
+    const name = page.locator(".dish-name");
+    const before = await page.locator(".dish-card").boundingBox();
+    await expect(name).toHaveCSS("white-space", "nowrap");
+    expect(await name.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    await name.tap();
+    const popover = page.getByRole("dialog", { name: "完整菜名" });
+    await expect(popover).toContainText(longName);
+    await expect(page.locator(".dish-name-popover-scroll")).toHaveCSS("height", /px$/);
+    const bubble = (await popover.boundingBox())!;
+    expect(bubble.x).toBeGreaterThanOrEqual(0);
+    expect(bubble.x + bubble.width).toBeLessThanOrEqual(390);
+    expect(bubble.y).toBeGreaterThanOrEqual(0);
+    expect(bubble.y + bubble.height).toBeLessThanOrEqual(844);
+    await popover.locator(".dish-name-popover-text").tap();
+    await expect(popover).toBeVisible();
+    const editBox = (await button(page, "编辑").boundingBox())!;
+    await page.touchscreen.tap(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+    await expect(popover).toHaveCount(0);
+    await expect(page.locator(".edit-panel")).toHaveCount(0);
+    expect((await page.locator(".dish-card").boundingBox())!.height).toBe(before!.height);
+    expect(state.writes).toHaveLength(0);
+    await name.focus(); await page.keyboard.press("Enter");
+    await expect(popover).toBeVisible();
+    await page.keyboard.press("Tab");
+    expect(await popover.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+    await expect(name).toBeFocused();
+    await button(page, "编辑").click();
+    await expect(page.locator('input[placeholder="菜名"]')).toHaveValue(longName);
+    expect(state.writes).toHaveLength(0);
+  });
+});
