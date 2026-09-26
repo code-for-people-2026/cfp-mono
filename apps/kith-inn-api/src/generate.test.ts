@@ -20,6 +20,49 @@ function pool(count = 30): Dish[] {
 }
 
 describe("generateMenu pure preview", () => {
+  it.each([0, 13])("avoids the saved neighbor at boundary slot %i without altering its snapshots", (target) => {
+    const input = settings({ meat: 1, vegetable: 1, soup: 1 }), dishes = pool(2);
+    input.meals.forEach((meal, i) => { meal.enabled = i === target; });
+    const adjacent = generateMenu(target === 0 ? "2026-09-14" : "2026-09-28",
+      settings(input.structure, target === 0 ? "2026-09-14" : "2026-09-28"), dishes, () => 0);
+    // The nearest neighbor contains dish0 for each category, irrespective of randomness.
+    for (const meal of adjacent.meals) for (const category of CategorySchema.options) {
+      const dish = dishes.find((d) => d.category === category)!;
+      meal[category] = [{ dishId: dish.id, name: dish.name }];
+    }
+    const before = structuredClone(adjacent);
+    for (const random of [() => 0, () => 0.99]) {
+      const result = generateMenu("2026-09-21", input, dishes, random, adjacent.meals);
+      for (const category of CategorySchema.options) expect(result.meals[target]![category][0]!.name).toBe(`${category}1`);
+    }
+    expect(adjacent).toEqual(before);
+  });
+
+  it("balances both neighbors, ignores skipped meals/omitted soup, and permits unavoidable repeats", () => {
+    const input = settings({ meat: 1, vegetable: 1, soup: 1 }), dishes = pool(3);
+    input.meals.forEach((meal, i) => { meal.enabled = i === 0; });
+    const neighbors = ["2026-09-14", "2026-09-28"].flatMap((week) =>
+      generateMenu(week, settings(input.structure, week), dishes, () => 0).meals);
+    neighbors.forEach((meal) => { meal.enabled = false; });
+    for (const [at, number] of [[13, 0], [14, 1]] as const) {
+      const meal = neighbors[at]!; meal.enabled = true;
+      for (const category of CategorySchema.options) {
+        const dish = dishes.filter((d) => d.category === category)[number]!;
+        meal[category] = [{ dishId: dish.id, name: dish.name }];
+      }
+    }
+    const result = generateMenu("2026-09-21", input, dishes, () => 0, neighbors);
+    for (const category of CategorySchema.options) expect(result.meals[0]![category][0]!.name).toBe(`${category}2`);
+    neighbors[13]!.soupOmitted = true;
+    expect(generateMenu("2026-09-21", input, dishes, () => 0, neighbors).meals[0]!.soup[0]!.name).toBe("soup0");
+    // Cross-meal repetition stays legal when the pool has only enough for one meal.
+    const scarce = generateMenu("2026-09-21", settings({ meat: 2, vegetable: 2, soup: 2 }), pool(2), () => 0, neighbors);
+    expect(MenuPreviewSchema.safeParse(scarce).success).toBe(true);
+    for (const meal of scarce.meals) for (const category of CategorySchema.options) {
+      expect(new Set(meal[category].map((dish) => dish.dishId)).size).toBe(2);
+    }
+  });
+
   it("fills fourteen ordered positions without any reuse when the pool is sufficient", () => {
     const preview = generateMenu("2026-09-21", settings(), pool(), () => 0.4);
     expect(MenuPreviewSchema.safeParse(preview).success).toBe(true);

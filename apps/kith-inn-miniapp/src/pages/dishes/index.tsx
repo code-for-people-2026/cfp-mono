@@ -22,7 +22,7 @@ export default function DishesPage() {
   const [source, setSource] = useState(""), [preview, setPreview] = useState<DishInput[]>([]);
   const [edit, setEdit] = useState<Dish | null>(null), [original, setOriginal] = useState<Dish | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const [notice, setNotice] = useState(""), [conflict, setConflict] = useState(false), [reviewed, setReviewed] = useState(false);
+  const [conflict, setConflict] = useState(false), [reviewed, setReviewed] = useState(false);
   const [pending, setPending] = useState(() => client?.pendingWrite() ?? null);
   const [filter, setFilter] = useState<Category | "all">("all"), [page, setPage] = useState(0);
   const [now, setNow] = useState(Date.now), [retryAt, setRetryAt] = useState(0);
@@ -68,6 +68,7 @@ export default function DishesPage() {
   }
   async function run(action: () => Promise<void>) {
     if (busy || !client) return;
+    void Taro.hideToast();
     setBusy(true); setError(""); setReviewed(false);
     try { await action(); } catch (value) { failure(value); }
     finally {
@@ -94,12 +95,15 @@ export default function DishesPage() {
     if (disabled) return;
     if (await confirmDiscard()) { clearDraft(); setError(""); }
   }
+  function notifySuccess(title: string) {
+    void Taro.showToast({ title, icon: "success", duration: 2000, mask: false });
+  }
   async function saved(result: WriteResult) {
     if (result.kind === "week") { await Taro.navigateTo({ url: `/pages/week/index?weekStart=${result.week.weekStart}` }); return; }
     clearDraft();
     if (result.kind === "batch") { setFilter("all"); setPage(0); }
     setLoaded(false);
-    setNotice(result.kind === "batch" ? `已新增 ${result.items.length} 道菜` : result.kind === "delete" ? "菜品已删除" : "菜品修改已保存");
+    notifySuccess(result.kind === "batch" ? `已新增${result.items.length}道菜` : result.kind === "delete" ? "菜品已删除" : "修改已保存");
     // The write is confirmed even if refreshing the latest list subsequently fails.
     try { await read(); }
     catch { throw new Error(`${result.kind === "delete" ? "删除" : "保存"}已确认，但菜品池暂时读取失败，请重试。`); }
@@ -121,7 +125,7 @@ export default function DishesPage() {
       try {
         client!.discardPendingAfterReview(); setPending(null); setReviewed(false); setError("");
         if (deleting) {
-          if (!latest) { clearDraft(); setNotice("菜品已删除"); }
+          if (!latest) { clearDraft(); notifySuccess("菜品已删除"); }
           else { setEdit({ ...latest }); setOriginal(latest); setConflict(false); }
         }
       }
@@ -150,8 +154,6 @@ export default function DishesPage() {
     <ScrollView scrollY className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}>
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
-      {notice && <View className="success" ariaRole="status"><Text className="success-title">{notice}</Text>
-        {notice !== "菜品已删除" && <Text className="success-description">菜名和荤、素、汤分类已经保存。以后想到新菜，可以随时继续添加。</Text>}</View>}
       {cooling && <View className="hint">请等待 {Math.ceil((retryAt - now) / 1000)} 秒后重试。</View>}
       {blocked && pending?.kind === "week" && <View className="recovery"><Text>周菜单保存结果尚未确认，请回到对应周核对。</Text><Button disabled={busy} onClick={() => void Taro.navigateTo({ url: `/pages/week/index?weekStart=${pending.weekStart}` })}>核对周菜单保存</Button></View>}
       {blocked && pending?.kind !== "week" && <View className="recovery">
@@ -179,7 +181,7 @@ export default function DishesPage() {
             <View className="dish-info"><DishName className="dish-name" name={dish.name} /><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="tiny-action" disabled={disabled || cooling} onClick={() => {
-                setEdit({ ...dish }); setOriginal(dish); setNotice(""); setError(""); setConflict(false);
+                setEdit({ ...dish }); setOriginal(dish); setError(""); setConflict(false);
               }}>编辑</Button></View></View>)}</View>}
         {!loaded && error && !blocked && <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重试</Button>}
       </>}
@@ -222,7 +224,6 @@ export default function DishesPage() {
         <View className="setting-row"><Text>用于新菜单</Text><Switch checked={edit.active} disabled={disabled} color="#287557"
           ariaLabel="用于新菜单" onChange={(event) => setEdit({ ...edit, active: event.detail.value })} /></View>
         </View>
-        <Text className="evidence-note">停用后仍保留菜名，随时可以恢复；已保存的菜单不受影响。</Text>
         {conflict && <View className="recovery"><Text>草稿已保留。请重新读取，再核对当前菜品。</Text>
           <Button disabled={busy || cooling} onClick={() => void run(read)}>重新读取</Button>
           {reviewed && latest && <><DishName name={`服务器最新：${latest.name} · ${labels[latest.category]} · ${latest.active ? "已启用" : "已停用"}`} />
@@ -240,7 +241,6 @@ export default function DishesPage() {
         })}>删除菜品</Button>
       </View>}
       {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
-      {signedIn && notice && notice !== "菜品已删除" && !dirty && <Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/week/index" })}>下一步：安排本周菜单</Button>}
 
     </>}
     </ScrollView>
@@ -251,7 +251,7 @@ export default function DishesPage() {
         <Button disabled={disabled || currentPage + 1 === pageCount} onClick={() => setPage(currentPage + 1)}>下一页</Button>
       </View>}
       <Button className="primary" disabled={disabled || cooling} onClick={() => {
-        setStage("input"); setNotice(""); setError("");
+        setStage("input"); setError("");
       }}>添加菜品</Button>
     </View>}
     </View>

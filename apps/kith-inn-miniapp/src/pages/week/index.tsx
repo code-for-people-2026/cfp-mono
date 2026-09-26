@@ -1,6 +1,5 @@
 import mixerIcon from "../../assets/mixer.svg";
 import searchIcon from "../../assets/search.svg";
-import greenCheckIcon from "../../assets/check-green.svg";
 import checkIcon from "../../assets/check.svg";
 import backIcon from "../../assets/back.svg";
 import nextIcon from "../../assets/next.svg";
@@ -8,9 +7,9 @@ import archiveIcon from "../../assets/archive.svg";
 import { useEffect, useRef, useState } from "react";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { Image, Input, Picker, Switch, ScrollView, Text, Textarea, View } from "@tarojs/components";
-import { CategorySchema, StructureSchema, WeekStartSchema, type Category, type Dish, type GenerateInput, type MenuPreview, type WeekPlan } from "@cfp/kith-inn-contracts";
+import { CategorySchema, StructureSchema, WeekStartSchema, adjacentWeekStarts, type Category, type Dish, type GenerateInput, type MenuPreview, type WeekPlan } from "@cfp/kith-inn-contracts";
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
-import { WeekEditError, randomReplaceDish, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
+import { WeekEditError, recommendedReplacements, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
 import { Button } from "../../lib/button";
 import { DishName, DishNameProvider, DishChoiceRow } from "../../lib/dish-name";
 import { labels } from "../../lib/classify";
@@ -254,9 +253,14 @@ export default function WeekPage() {
   async function openCandidates(mode: "swap" | "pick") {
     if (!menu || !selected || !selectedDish) return;
     const pool = await client!.getDishes(); setDishes(pool);
-    const candidates = replacementCandidates(menu.meals[selected.meal]!, selected.category, selected.index, pool);
-    const chosen = candidates.length ? randomReplaceDish(menu, selected.meal, selected.category, selected.index, pool).meals[selected.meal]![selected.category][selected.index]!.dishId : "";
-    setTarget(selected); setCandidate(mode === "swap" ? chosen : ""); setSuggested([chosen, ...candidates.map((dish) => dish.id).filter((id) => id !== chosen)].slice(0, 4)); setQuery(""); setScreen(mode);
+    const neighbors: WeekPlan[] = [];
+    if (mode === "swap") for (const date of adjacentWeekStarts(menu.weekStart)) {
+      const neighbor = await client!.getWeek(date);
+      if (neighbor) neighbors.push(neighbor);
+    }
+    const recommendations = mode === "swap" ? recommendedReplacements(menu, selected.meal, selected.category, selected.index, pool,
+      Math.random, neighbors.flatMap((neighbor) => neighbor.meals)).slice(0, 4) : [];
+    setTarget(selected); setCandidate(recommendations[0]?.id ?? ""); setSuggested(recommendations.map((dish) => dish.id)); setQuery(""); setScreen(mode);
   }
   async function applyCandidate() {
     if (!menu || !target || !candidate) return;
@@ -297,7 +301,9 @@ export default function WeekPage() {
     }
     setSettings(true); setMealsExpanded(false); setStructureExpanded(true); setScreen("settings");
   }
-  const candidates = target && menu ? replacementCandidates(menu.meals[target.meal]!, target.category, target.index, dishes).filter((dish) => screen === "swap" ? suggested.includes(dish.id) : dish.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) : [];
+  const eligibleCandidates = target && menu ? replacementCandidates(menu.meals[target.meal]!, target.category, target.index, dishes) : [];
+  const candidates = screen === "swap" ? suggested.flatMap((id) => eligibleCandidates.filter((dish) => dish.id === id))
+    : eligibleCandidates.filter((dish) => dish.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <DishNameProvider><View className={`dish-app week-app flow-page screen-${screen} ${sharing ? "sharing" : ""}`}>
     {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">{!sharing && screen !== "home" && <Button className={editing ? "flow-back-label" : ""} ariaLabel={backLabel} disabled={disabled} onClick={back}><Image src={backIcon} className="flow-icon" />{editing && <Text>返回安排</Text>}</Button>}<Text>{title}</Text></View>
       : !sharing && screen !== "home" && <Button className="flow-return" disabled={disabled} onClick={back}>{backLabel}</Button>}
@@ -390,11 +396,10 @@ export default function WeekPage() {
           <Button className={saved ? "secondary" : "primary"} disabled={disabled} onClick={() => void run(edit)}>{dirty || settingsDirty ? "继续调整菜单" : "查看并调整这一周"}</Button>
           {dirty && <Button className="secondary" disabled={disabled} onClick={() => void run(async () => { if (await discard()) adopt(saved); })}>放弃本次调整</Button>}
         </View>}
-        {menu && screen === "review" && <View className="review-screen"><View className="review-hero"><Text>{weekRange(menu)}</Text><Text>确认后保存本周菜单</Text></View><WeekBoard menu={menu} readonly /></View>}
+        {menu && screen === "review" && <View className="review-screen"><WeekBoard menu={menu} readonly showDate /></View>}
         {menu && editing && <WeekBoard menu={menu} selected={selected} showAll={showAll} disabled={disabled} onSelect={(position) => { setSelected(position); setTarget(null); setSoupSelection(null); }} onFilter={setShowAll} />}
         {target && menu && (screen === "swap" || screen === "pick") && <View className="swap-screen">
-          {screen === "swap" && <><View className="swap-heading"><Text className="selection-label">只换这一道</Text><DishName className="swap-name" name={menu.meals[target.meal]![target.category][target.index]!.name} /></View>
-            <View className="locked-week"><Image src={greenCheckIcon} className="flow-icon" /><Text>其他 {menu.meals.reduce((count, meal) => count + meal.meat.length + meal.vegetable.length + (meal.soupOmitted ? 0 : meal.soup.length), 0) - 1} 道菜保持不变</Text></View></>}
+          {screen === "swap" && <View className="swap-heading"><DishName className="swap-name" name={menu.meals[target.meal]![target.category][target.index]!.name} /></View>}
           {screen === "pick" && <View className="picking-banner"><Image src={mixerIcon} className="flow-icon" /><Text>手选一道{target.category === "soup" ? "汤" : `${labels[target.category]}菜`}</Text></View>}
           {screen === "pick" && <View className="candidate-search"><Image src={searchIcon} className="flow-icon" /><Input ariaLabel="搜索候选菜名" placeholder="搜索菜名" value={query} disabled={disabled} onInput={(event) => setQuery(event.detail.value)} /></View>}
           <View className={screen === "pick" ? "candidate-pick-list" : "candidate-list"}>{candidates.map((dish) => <DishChoiceRow name={dish.name} key={dish.id}><Button ariaLabel={dish.name} className={candidate === dish.id ? "selected" : ""} ariaPressed={candidate === dish.id} disabled={disabled} onClick={() => setCandidate(dish.id)}>

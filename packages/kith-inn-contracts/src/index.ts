@@ -135,3 +135,5 @@ export type ErrorDetails = z.infer<typeof ErrorDetailsSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type Health = z.infer<typeof HealthSchema>;
+
+export { adjacentWeekStarts, dishDistances } from "./menu-spacing";

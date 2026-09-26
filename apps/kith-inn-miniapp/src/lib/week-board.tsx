@@ -20,8 +20,8 @@ export function firstPosition(menu: MenuPreview): DishPosition | null {
   }
   return null;
 }
-export function WeekBoard({ menu, selected = null, showAll = true, disabled = false, onSelect, onFilter, readonly = false, showMealCount = true }: {
-  menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean; showMealCount?: boolean;
+export function WeekBoard({ menu, selected = null, showAll = true, disabled = false, onSelect, onFilter, readonly = false, showMealCount = true, showDate = !readonly }: {
+  menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean; showMealCount?: boolean; showDate?: boolean;
   onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
   const scrollId = useId(), [scrollLeft, setScrollLeft] = useState(0);
@@ -73,7 +73,7 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
   const rows = Math.max(1, categories.reduce((count, category) => count + menu.structure[category], 0));
   const height = rows * 48 + (rows - 1) * 7;
   return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""} ${atEnd ? "scroll-at-end" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
-    <View className="board-head"><View>{!readonly && <Text className="board-date">{weekRange(menu)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{onFilter && <View className="board-filter">
+    <View className="board-head"><View>{showDate && <Text className="board-date">{weekRange(menu)}</Text>}<Text className="board-title">{readonly ? "菜单明细" : `7 天 ${menu.meals.filter((meal) => meal.enabled).length} 餐菜单`}</Text></View>{onFilter && <View className="board-filter">
       <Button ariaPressed={!showAll} className={!showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(false)}>荤菜</Button>
       <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
     </View>}{readonly && showMealCount && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>

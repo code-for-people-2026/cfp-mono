@@ -59,6 +59,29 @@ describe("PostgreSQL week snapshots and HTTP", () => {
     await expect(weeks.generate(session, monday, {})).rejects.toMatchObject({ code: "INVALID_REQUEST" });
   });
 
+  it("reads adjacent saved weeks afresh, ignores the current saved week when regenerating, and does not write", async () => {
+    for (const week of ["2026-09-14", "2026-09-28", monday]) {
+      const data = initial(week);
+      if (week === monday) data.meals.forEach((meal) => { meal.meat = [otherMeat]; });
+      await save(data, randomUUID(), week);
+    }
+    const neighbor = await weeks.read(session, "2026-09-28");
+    const snapshot = async () => (await pool.query("SELECT * FROM week_plans ORDER BY id")).rows;
+    const before = await snapshot(), receipts = (await pool.query("SELECT count(*) FROM mutation_receipts")).rows;
+    const data = initial();
+    const request = { structure: data.structure, meals: data.meals.map(({ date, mealType }, i) => ({ date, mealType, enabled: i === 0 || i === 13 })) };
+    const random = vi.spyOn(Math, "random").mockReturnValue(0.99);
+    try {
+      const generated = await weeks.generate(session, monday, request);
+      expect([generated.meals[0]!.meat[0]!.dishId, generated.meals[13]!.meat[0]!.dishId]).toEqual([otherMeat, otherMeat]);
+      expect(await snapshot()).toEqual(before);
+      expect((await pool.query("SELECT count(*) FROM mutation_receipts")).rows).toEqual(receipts);
+      const changed = input(neighbor); changed.meals.forEach((meal) => { meal.meat = [otherMeat]; });
+      await save(changed, randomUUID(), neighbor.weekStart);
+      expect((await weeks.generate(session, monday, request)).meals[13]!.meat[0]!.dishId).toBe(meat);
+    } finally { random.mockRestore(); }
+  });
+
   it("serializes first saves and stale edits, while replaying lost responses before version checks", async () => {
     const key = randomUUID(), data = initial();
     const another = await sessions.authenticate((await sessions.login("device-two")).token);

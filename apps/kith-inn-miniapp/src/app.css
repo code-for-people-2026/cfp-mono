@@ -70,9 +70,6 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .inactive .dish-name { color: #675d53; }
 .dish-input { display: block; width: 100%; height: 42PX; padding: 11PX; border: 1PX solid #e6dccd; border-radius: 12PX; background: #fff; color: #29231d; font-size: 13PX; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 12PX; min-height: 48PX; margin-top: 8PX; padding: 8PX 12PX; border: 1PX solid #e6dccd; border-radius: 13PX; background: #fff; font-size: 13PX; }
-.success { margin-bottom: 12PX; padding: 20PX; border-radius: 20PX; background: #287557; color: #fff; }
-.success-title { display: block; margin-bottom: 8PX; font-size: 22PX; font-weight: 700; }
-.success-description { display: block; font-size: 13PX; line-height: 1.6; }
 .alert, .recovery, .hint { margin-bottom: 12PX; padding: 10PX 11PX; border-radius: 12PX; overflow-wrap: anywhere; font-size: 11PX; line-height: 1.5; }
 .alert { border: 1PX solid #e6c3b9; background: #fbe9e4; color: #8f2d22; }
 .recovery { border: 1PX solid #e6dccd; background: #fff2d5; color: #765313; }
@@ -215,9 +212,6 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .selected .candidate-radio { border-color: #287557; background: #287557; }
 .candidate-search { display: flex; align-items: center; gap: 7PX; min-height: 42PX; padding: 0 11PX; border: 1PX solid #e1d9cd; border-radius: 11PX; background: white; }
 .candidate-search input, .candidate-search taro-input-core { width: 100%; color: #1e1b16; font-size: 14PX; }
-.review-hero { margin-bottom: 10PX; padding: 14PX; border-radius: 16PX; color: #fff; background: #1e5d45; }
-.review-hero > * { display: block; font-size: 13PX; }
-.review-hero > :last-child { margin-top: 4PX; font-size: 20PX; font-weight: 700; }
 .first-preparation { padding: 18PX 14PX; border: 1PX solid #e1d9cd; border-radius: 16PX; background: #fff; }
 .first-preparation .muted { margin-top: 10PX; }
 .empty-history { margin: 30PX 0; font-size: 15PX; text-align: center; }
@@ -239,11 +233,9 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .meal-adjustment .copy-preview { font-size: 15PX; line-height: 1.8; }
 .meal-adjustment > .action-button { margin-top: 12PX; }
 .screen-swap .flow-dock, .screen-pick .flow-dock, .screen-review .flow-dock { padding-right: 15PX; padding-left: 15PX; }
-.swap-heading .selection-label { color: #8f2d22; font-weight: 900; }
 .candidate-list .action-button { text-align: left; }
 .browse-library { width: 100%; margin-top: 10PX; padding: 11PX; display: grid; grid-template-columns: 28PX 1fr 16PX; gap: 8PX; align-items: center; border-radius: 13PX; text-align: left; font-size: 14PX; }
 
-.locked-week { margin-top: 13PX; padding: 10PX 11PX; display: flex; align-items: center; gap: 7PX; border-radius: 12PX; color: #1e5d45; background: #e7f3ec; font-size: 13PX; font-weight: 750; }
 .candidate-pick-list { display: grid; gap: 7PX; margin-top: 10PX; }
 .candidate-pick-list .action-button { display: grid; grid-template-columns: 9PX minmax(0,1fr) 16PX; gap: 9PX; align-items: center; min-height: 63PX; padding: 10PX 11PX; border-radius: 12PX; border-color: #e1d9cd; text-align: left; }
 .candidate-pick-list .selected { border-color: #1e5d45; background: #f5fbf7; }
@@ -252,7 +244,6 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .kind-dot.soup { background: #7fa7cf; }
 .pick-name { font-size: 16PX; font-weight: 700; }
 .pick-kind { display: block; margin-top: 3PX; font-size: 13PX; font-weight: 400; color: #655d55; }
-.review-hero > :first-child { opacity: .84; }
 
 .picking-banner { display: flex; align-items: center; gap: 8PX; margin-bottom: 10PX; padding: 10PX 11PX; border-radius: 12PX; color: #1e5d45; background: #e7f3ec; font-size: 14PX; font-weight: 700; }
 
