@@ -34,6 +34,21 @@ function fixture() {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("Kith Inn session and transport", () => {
+  it("retries deletion with the same body/key and rejects a success for a different dish", async () => {
+    const { client, platform } = fixture();
+    platform.request.mockRejectedValueOnce(new Error("lost response"))
+      .mockResolvedValueOnce({ statusCode: 200, data: { id: "22222222-2222-4222-8222-222222222222" } })
+      .mockResolvedValueOnce({ statusCode: 200, data: { id: dish.id } });
+    await expect(client.deleteDish(dish.id, { baseVersion: 1 })).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    expect(client.pendingWrite()).toMatchObject({ kind: "delete", state: "unknown" });
+    await expect(client.updateDish(dish.id, update)).rejects.toMatchObject({ code: "PENDING_WRITE" });
+    await expect(client.retryPendingWrite()).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    expect(await client.retryPendingWrite()).toEqual({ kind: "delete", id: dish.id });
+    expect(platform.request.mock.calls[0]![0]).toMatchObject({ method: "DELETE", url: `${origin}/api/kith-inn/dishes/${dish.id}`, data: JSON.stringify({ baseVersion: 1 }) });
+    expect(platform.request.mock.calls[1]).toEqual(platform.request.mock.calls[0]);
+    expect(platform.request.mock.calls[2]).toEqual(platform.request.mock.calls[0]);
+    expect(client.pendingWrite()).toBeNull();
+  });
   it("requires an HTTPS origin without credentials, paths, queries or invalid ports", () => {
     vi.stubEnv("TARO_APP_KITH_INN_API_BASE_URL", "");
     delete process.env.TARO_APP_KITH_INN_API_BASE_URL;

@@ -8,15 +8,17 @@ const button = (page: Page, name: string) => page.getByRole("button", { name, ex
 
 // Controlled H5 transport and stored session; this does not exercise real WeChat or a database.
 async function openPool(page: Page, initial: Dish[] = []) {
-  const state = { items: [...initial], writes: [] as { method: string; body: string; key: string }[], failure: "", failNextRead: false };
+  const state = { items: [...initial], reads: 0, writes: [] as { method: string; body: string; key: string }[], failure: "", failNextRead: false };
+  const deletions = new Map<string, { id: string }>();
   await page.addInitScript(() => localStorage.setItem("kith-inn:session:v1:https://kith-inn.test", JSON.stringify({
     data: { token: "t".repeat(43), expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() }
   })));
   await page.route("**/api/kith-inn/dishes**", async (route) => {
     const request = route.request(), method = request.method();
-    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PATCH,OPTIONS" };
+    const headers = { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS" };
     if (method === "OPTIONS") return route.fulfill({ status: 204, headers });
     if (method === "GET") {
+      state.reads++;
       if (state.failNextRead) {
         state.failNextRead = false;
         return route.fulfill({ status: 503, headers,
@@ -27,8 +29,17 @@ async function openPool(page: Page, initial: Dish[] = []) {
     state.writes.push({ method, body: request.postData()!, key: request.headers()["idempotency-key"]! });
     const failure = state.failure; state.failure = "";
     if (failure === "abort") return route.abort("failed");
-    if (failure) return route.fulfill({ status: failure === "INVALID_REQUEST" ? 400 : 409, headers,
+    if (failure && failure !== "lost-delete") return route.fulfill({ status: failure === "INVALID_REQUEST" ? 400 : failure === "NOT_FOUND" ? 404 : 409, headers,
       json: { error: { code: failure, message: "受控错误", requestId: id(999), ...(failure === "VERSION_CONFLICT" ? { details: { currentVersion: 2 } } : {}) } } });
+    if (method === "DELETE") {
+      const key = request.headers()["idempotency-key"]!;
+      if (deletions.has(key)) return route.fulfill({ headers, json: deletions.get(key) });
+      const target = state.items.find((dish) => request.url().endsWith(dish.id))!;
+      state.items = state.items.filter((dish) => dish.id !== target.id);
+      const result = { id: target.id }; deletions.set(key, result);
+      if (failure === "lost-delete") return route.abort("failed");
+      return route.fulfill({ headers, json: result });
+    }
     if (method === "POST") {
       const { items } = request.postDataJSON() as DishBatchInput;
       const added = items.map((dish, i) => ({ ...seed, ...dish, id: id(state.items.length + i + 1) }));
@@ -68,12 +79,31 @@ test("批量录入经手动分类和返回修改，确认前不写入，成功�
   await page.getByText("继续编辑", { exact: true }).click();
   expect(state.writes).toHaveLength(0);
   await button(page, "确认加入菜品池").click();
-  await expect(page.getByText("已新增 2 道菜", { exact: true })).toBeVisible();
+  await expect(page.getByText("已新增2道菜", { exact: true })).toBeVisible();
   await expect(page.locator(".dish-card")).toHaveCount(2);
+  await expect(page.locator(".success")).toHaveCount(0);
+  await expect(button(page, "下一步：安排本周菜单")).toHaveCount(0);
+  await expect(page.getByText("已新增2道菜", { exact: true })).not.toBeVisible({ timeout: 3000 });
   expect(JSON.parse(state.writes[0]!.body)).toEqual({ items: [{ name: "红烧排骨", category: "meat" }, { name: "清炒青菜", category: "soup" }] });
   await page.reload();
   await expect(page.locator(".dish-card")).toHaveCount(2);
   await expect(page.locator(".dish-card").last()).toContainText("清炒青菜");
+});
+
+test("200道批量新增的短暂提示保留完整数量，消失后仍可排菜单", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  const state = await openPool(page);
+  await preview(page, Array.from({ length: 200 }, (_, i) => `青菜${i + 1}`).join("\n"));
+  await button(page, "确认加入菜品池").click();
+  const toast = page.getByText("已新增200道菜", { exact: true });
+  await expect(toast).toBeVisible();
+  await expect(toast).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".dish-card")).toHaveCount(10);
+  await expect(page.locator(".success")).toHaveCount(0);
+  await expect(button(page, "排菜单")).toBeEnabled();
+  await expect(toast).not.toBeVisible({ timeout: 3000 });
+  await expect(button(page, "排菜单")).toBeInViewport({ ratio: 1 });
+  expect(state.items).toHaveLength(200); expect(state.writes).toHaveLength(1);
 });
 
 test("长菜品列表首屏与末尾均可添加，末菜不被遮挡，取消返回列表", async ({ page }) => {
@@ -95,12 +125,70 @@ test("长菜品列表首屏与末尾均可添加，末菜不被遮挡，取消�
   await add.click();
   await expect(page.locator("textarea")).toBeVisible(); await expect(add).toHaveCount(0);
   await button(page, "取消添加").click();
-  await expect(page.locator(".dish-card")).toHaveCount(dishes.length);
+  await expect(page.locator(".dish-card")).toHaveCount(10);
+  await expect(page.locator(".dish-pagination")).toContainText("第 1 / 3 页 · 共 24 道");
   await expect(add).toHaveCount(1); await expect(add).toBeInViewport({ ratio: 1 });
   expect(state.writes).toHaveLength(0); expect(state.items).toEqual(dishes);
 });
 
+test("千道菜按完整菜池筛选，每页至多10道，筛选翻页固定且不写入", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const dishes: Dish[] = Array.from({ length: 1000 }, (_, i) => ({ ...seed, id: id(i + 1), name: `家常菜${String(i + 1).padStart(4, "0")}`,
+    category: i < 400 ? "meat" : i < 850 ? "vegetable" : "soup", active: i !== 999 }));
+  const state = await openPool(page, dishes);
+  await expect(page.locator(".dish-card")).toHaveCount(10);
+  await expect(button(page, "全部")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".dish-pagination")).toContainText("第 1 / 100 页 · 共 1000 道");
+  await button(page, "汤").click();
+  await expect(page.locator(".dish-card").first()).toContainText("家常菜0851");
+  await expect(page.locator(".dish-pagination")).toContainText("第 1 / 15 页 · 共 150 道");
+  for (let i = 0; i < 14; i++) await button(page, "下一页").click();
+  await expect(button(page, "下一页")).toBeDisabled();
+  await expect(page.locator(".dish-card")).toHaveCount(10);
+  await page.locator(".flow-scroll").hover(); await page.mouse.wheel(0, 10000);
+  await expect(page.locator(".dish-card").last()).toBeInViewport({ ratio: 1 });
+  for (const name of ["全部", "荤菜", "素菜", "汤", "上一页", "下一页", "添加菜品"]) await expect(button(page, name)).toBeInViewport({ ratio: 1 });
+  const last = (await page.locator(".dish-card").last().boundingBox())!, dock = (await page.locator(".flow-dock").boundingBox())!;
+  expect(last.y + last.height).toBeLessThanOrEqual(dock.y);
+  await page.locator(".dish-card").last().getByRole("button", { name: "编辑", exact: true }).click();
+  await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("家常菜1000");
+  await expect(page.getByRole("checkbox")).not.toBeChecked();
+  await button(page, "返回菜品池").click();
+  await expect(button(page, "汤")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".dish-pagination")).toContainText("第 15 / 15 页");
+  await button(page, "荤菜").click();
+  await expect(page.locator(".dish-pagination")).toContainText("第 1 / 40 页 · 共 400 道");
+  await expect(page.locator(".dish-card").first()).toContainText("家常菜0001");
+  await expect(page.locator(".dish-card").first()).toBeInViewport({ ratio: 1 });
+  await button(page, "全部").click();
+  expect(state.reads).toBe(1); expect(state.writes).toHaveLength(0); expect(state.items).toEqual(dishes);
+});
+
+test("改类或删除最后一页菜品后页码回退，空分类仍可切换并添加", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  const state = await openPool(page, Array.from({ length: 21 }, (_, i) => ({ ...seed, id: id(i + 1), name: `家常菜${i + 1}` })));
+  await button(page, "荤菜").click(); await button(page, "下一页").click(); await button(page, "下一页").click();
+  await expect(page.locator(".dish-card")).toHaveCount(1);
+  await button(page, "编辑").click(); await button(page, "更改单菜分类").click(); await button(page, "保存修改").click();
+  await expect(button(page, "荤菜")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".dish-pagination")).toContainText("第 2 / 2 页 · 共 20 道");
+  await expect(page.locator(".dish-card")).toHaveCount(10);
+  await button(page, "素菜").click(); await expect(page.locator(".dish-card")).toHaveCount(1);
+  await button(page, "编辑").click(); await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("暂无素菜", { exact: true })).toBeVisible();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toHaveCount(0);
+  await expect(button(page, "添加菜品")).toBeInViewport({ ratio: 1 });
+  await expect(page.locator(".dish-pagination")).toHaveCount(0);
+  await button(page, "全部").click();
+  await expect(page.locator(".dish-pagination")).toContainText("第 1 / 2 页 · 共 20 道");
+  await button(page, "素菜").click(); await button(page, "添加菜品").click();
+  await preview(page, "紫菜蛋汤"); await button(page, "确认加入菜品池").click();
+  await expect(button(page, "全部")).toHaveAttribute("aria-pressed", "true");
+  expect(state.items).toHaveLength(21); expect(state.writes).toHaveLength(3);
+});
+
 test("编辑菜名分类，停用后仍可找到并恢复", async ({ page }) => {
+  await page.clock.install();
   const state = await openPool(page, [seed]);
   await button(page, "编辑").click();
   await expect(button(page, "添加菜品")).toHaveCount(0);
@@ -108,22 +196,166 @@ test("编辑菜名分类，停用后仍可找到并恢复", async ({ page }) => 
   await button(page, "更改单菜分类").click();
   await page.getByRole("checkbox").uncheck();
   await button(page, "保存修改").click();
+  await expect(page.getByText("修改已保存", { exact: true })).toBeVisible();
+  await expect(page.locator(".success")).toHaveCount(0);
+  await expect(button(page, "下一步：安排本周菜单")).toHaveCount(0);
   await expect(page.locator(".dish-card")).toContainText("糖醋排骨");
   await expect(page.locator(".dish-card")).toContainText("已停用");
   expect(state.items[0]).toMatchObject({ name: "糖醋排骨", category: "vegetable", active: false, version: 2 });
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
   await button(page, "编辑").click();
   await page.getByRole("checkbox").check();
   await button(page, "保存修改").click();
   await expect(page.locator(".dish-card")).toContainText("已启用");
+  await expect(page.getByText("修改已保存", { exact: true })).toBeVisible();
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
   expect(JSON.parse(state.writes[1]!.body)).toMatchObject({ baseVersion: 2, active: true });
 });
 
-test("首次保存成功后读取失败，保留保存确认和重试入口", async ({ page }) => {
+test("编辑页顶部返回保护草稿并保留菜品池分类页码", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  const state = await openPool(page, Array.from({ length: 11 }, (_, i) => ({ ...seed, id: id(i + 1), name: `家常菜${i + 1}` })));
+  await button(page, "荤菜").click(); await button(page, "下一页").click();
+  await button(page, "编辑").click();
+  await expect(page.locator(".app-heading")).toContainText("编辑菜品");
+  await expect(button(page, "取消编辑")).toHaveCount(0);
+  await page.locator('input[placeholder="菜名"]').fill("未保存的新名字");
+  await button(page, "返回菜品池").click();
+  await expect(page.getByText("放弃未保存修改？", { exact: true })).toBeVisible();
+  await page.getByText("继续编辑", { exact: true }).click();
+  await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("未保存的新名字");
+  await expect(button(page, "返回菜品池")).toBeInViewport({ ratio: 1 });
+  await page.screenshot({ path: "/tmp/kith-dish-edit-grouped-small.png" });
+  await button(page, "返回菜品池").click(); await page.getByText("放弃修改", { exact: true }).click();
+  await expect(button(page, "荤菜")).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".dish-pagination")).toContainText("第 2 / 2 页");
+  await expect(page.locator(".dish-card")).toContainText("家常菜11");
+  expect(state.writes).toHaveLength(0);
+});
+
+test("修改失败和结果未知不报成功，重试确认后提示消失仍可重读菜品池", async ({ page }) => {
+  await page.clock.install();
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click();
+  await page.locator('input[placeholder="菜名"]').fill("糖醋排骨");
+  state.failure = "abort";
+  await button(page, "保存修改").click();
+  await expect(page.getByText("保存结果尚未确认", { exact: true })).toBeVisible();
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
+  await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("糖醋排骨");
+  await expect(button(page, "保存修改")).toBeDisabled();
+  state.failNextRead = true;
+  await button(page, "重试原请求").click();
+  await expect(page.getByText("修改已保存", { exact: true })).toBeVisible();
+  await expect(page.getByText("保存已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
+  await expect(button(page, "重试")).toBeEnabled();
+  await button(page, "重试").click();
+  await expect(page.locator(".dish-card")).toContainText("糖醋排骨");
+  expect(state.writes[1]).toEqual(state.writes[0]);
+  await button(page, "编辑").click(); await button(page, "保存修改").click();
+  await expect(page.getByText("修改已保存", { exact: true })).toBeVisible();
+  await button(page, "编辑").click(); state.failure = "INVALID_REQUEST";
+  await button(page, "保存修改").click();
+  await expect(page.getByText("请检查输入内容", { exact: true })).toBeVisible();
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
+});
+
+test("删除须确认，成功提示自动消失，刷新仍移除并能重新添加同名菜", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click();
+  await page.locator('input[placeholder="菜名"]').fill("未保存的新名字");
+  await button(page, "删除菜品").click();
+  await expect(page.getByText("“红烧排骨”删除后不可恢复，已保存的菜单不受影响。", { exact: true })).toBeVisible();
+  await page.getByText("取消", { exact: true }).click();
+  await expect(page.getByText("删除菜品？", { exact: true })).not.toBeVisible();
+  await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("未保存的新名字");
+  expect(state.writes).toHaveLength(0);
+  await page.screenshot({ path: "/tmp/kith-delete-edit-mobile.png" });
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  await expect(page.locator(".success")).toHaveCount(0);
+  await expect(button(page, "下一步：安排本周菜单")).toHaveCount(0);
+  await page.screenshot({ path: "/tmp/kith-delete-success-toast.png" });
+  await expect(page.getByText("菜品已删除", { exact: true })).not.toBeVisible({ timeout: 3000 });
+  expect(state.items).toEqual([]);
+  expect(state.writes[0]).toMatchObject({ method: "DELETE", body: JSON.stringify({ baseVersion: 1 }) });
+  await page.reload(); await expect(page.locator(".dish-card")).toHaveCount(0);
+  await preview(page, "红烧排骨"); await button(page, "确认加入菜品池").click();
+  await expect(page.locator(".dish-card")).toHaveCount(1);
+});
+
+test("删除响应丢失时冻结编辑并重试原请求，读取失败仍保留删除成功", async ({ page }) => {
+  const state = await openPool(page, [seed, { ...seed, id: id(2), name: "保留菜" }]);
+  await button(page, "编辑").first().click();
+  state.failure = "lost-delete";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("删除结果尚未确认", { exact: true })).toBeVisible();
+  await expect(page.getByText("菜品已删除", { exact: true })).not.toBeVisible();
+  await expect(button(page, "删除菜品")).toBeDisabled();
+  await expect(button(page, "返回菜品池")).toBeDisabled();
+  await button(page, "重新读取").click();
+  await expect(button(page, "保存修改")).toBeDisabled();
+  state.failNextRead = true;
+  await button(page, "重试原请求").click();
+  await expect(page.getByText("删除已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
+  await button(page, "重试").click();
+  await expect(page.locator(".dish-card")).toHaveCount(1);
+  await expect(page.locator(".dish-card")).toContainText("保留菜");
+  expect(state.writes[1]).toEqual(state.writes[0]);
+});
+
+test("删除旧版本先核对，已被其他设备删除时可退出编辑", async ({ page }) => {
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click(); state.failure = "VERSION_CONFLICT";
+  state.items[0] = { ...seed, name: "另一处的新名字", version: 2 };
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(button(page, "删除菜品")).toBeDisabled();
+  await button(page, "重新读取").click();
+  await button(page, "载入最新版本").click(); await page.getByText("确定", { exact: true }).click();
+  state.items = []; state.failure = "NOT_FOUND";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await button(page, "重新读取").click();
+  await expect(page.getByText("该菜品已删除，请返回菜品池。", { exact: true })).toBeVisible();
+  await button(page, "返回菜品池").click();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  expect(state.writes).toHaveLength(2);
+  expect(JSON.parse(state.writes[1]!.body)).toEqual({ baseVersion: 2 });
+});
+
+test("删除结果未知超过重试期限，读取核对后回到菜品池且不再删除", async ({ page }) => {
+  await page.clock.install();
+  const state = await openPool(page, [seed]);
+  await button(page, "编辑").click(); state.failure = "lost-delete";
+  await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
+  await expect(page.getByText("删除结果尚未确认", { exact: true })).toBeVisible();
+  await page.clock.fastForward(86_401_000);
+  await expect(button(page, "已核对，继续编辑")).toBeDisabled();
+  await button(page, "重新读取").click(); await button(page, "已核对，继续编辑").click();
+  await page.getByText("确定", { exact: true }).click();
+  await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
+  await expect(page.getByText("建立我的菜品池", { exact: true })).toBeVisible();
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("菜品已删除", { exact: true })).not.toBeVisible();
+  await expect(page.locator(".success")).toHaveCount(0);
+  expect(state.writes).toHaveLength(1);
+});
+
+test("首次保存成功后读取失败，短暂提示消失仍保留保存确认和重试入口", async ({ page }) => {
+  await page.clock.install();
   const state = await openPool(page);
   await preview(page, "红烧排骨");
   state.failNextRead = true;
   await button(page, "确认加入菜品池").click();
-  await expect(page.getByText("已新增 1 道菜", { exact: true })).toBeVisible();
+  await expect(page.getByText("已新增1道菜", { exact: true })).toBeVisible();
+  await expect(page.getByText("保存已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("已新增1道菜", { exact: true })).not.toBeVisible();
   await expect(page.getByText("保存已确认，但菜品池暂时读取失败，请重试。", { exact: true })).toBeVisible();
   await expect(page.getByText("建立我的菜品池", { exact: true })).toHaveCount(0);
   await expect(button(page, "重试")).toBeEnabled();
@@ -142,11 +374,13 @@ test("400 和 409 保留草稿，冲突读取后仍须明确确认载入", async
   state.failure = "INVALID_REQUEST";
   await button(page, "保存修改").click();
   await expect(page.getByText("请检查输入内容", { exact: true })).toBeVisible();
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
   await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("我的改名");
   state.failure = "VERSION_CONFLICT";
   state.items[0] = { ...seed, name: "别处已改名", version: 2 };
   await button(page, "保存修改").click();
   await expect(page.getByText("内容已在另一处更新，请重新读取后再调整", { exact: true })).toBeVisible();
+  await expect(page.getByText("修改已保存", { exact: true })).not.toBeVisible();
   await button(page, "重新读取").click();
   await expect(page.locator('input[placeholder="菜名"]')).toHaveValue("我的改名");
   await button(page, "载入最新版本").click();
@@ -159,11 +393,13 @@ test("400 和 409 保留草稿，冲突读取后仍须明确确认载入", async
 });
 
 test("响应中断冻结草稿，原请求重试保留幂等键和请求正文", async ({ page }) => {
+  await page.clock.install();
   const state = await openPool(page);
   await preview(page, "番茄蛋汤");
   state.failure = "abort";
   await button(page, "确认加入菜品池").click();
   await expect(page.getByText("保存结果尚未确认", { exact: true })).toBeVisible();
+  await expect(page.getByText("已新增1道菜", { exact: true })).not.toBeVisible();
   await expect(button(page, "排菜单")).toBeDisabled();
   await expect(button(page, "历史")).toBeDisabled();
   await expect(button(page, "返回修改菜名")).toBeDisabled();
@@ -174,7 +410,9 @@ test("响应中断冻结草稿，原请求重试保留幂等键和请求正文",
   await expect(page.getByText("保存结果尚未确认", { exact: true })).toBeVisible();
   await expect(button(page, "返回修改菜名")).toBeDisabled();
   await button(page, "重试原请求").click();
-  await expect(page.getByText("已新增 1 道菜", { exact: true })).toBeVisible();
+  await expect(page.getByText("已新增1道菜", { exact: true })).toBeVisible();
+  await page.clock.fastForward(2200);
+  await expect(page.getByText("已新增1道菜", { exact: true })).not.toBeVisible();
   expect(state.writes).toHaveLength(2);
   expect(state.writes[1]).toEqual(state.writes[0]);
   expect(state.writes[0]!.key).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
@@ -216,4 +454,67 @@ test("固定导航离开未确认批量输入前提醒，取消保留菜名和�
   await page.locator(".taro-model__cancel").click();
   await expect(page.locator("textarea")).toHaveValue("红烧排骨\n清炒青菜");
   expect(state.writes).toHaveLength(0);
+});
+
+
+test("只为实际溢出的菜名提供气泡，宽度变化后自动恢复普通文字", async ({ page }) => {
+  const middleName = "香菇土豆炖牛肉配家常时蔬及米饭";
+  await page.setViewportSize({ width: 520, height: 844 });
+  const state = await openPool(page, [seed, { ...seed, id: id(2), name: middleName }]);
+  const short = page.locator(".dish-name").first(), middle = page.locator(".dish-name").last();
+  await expect(page.locator(".dish-name[aria-haspopup]")).toHaveCount(0);
+  await short.click(); await middle.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(short).not.toHaveAttribute("title");
+  await page.setViewportSize({ width: 320, height: 844 });
+  await expect(middle).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(short).not.toHaveAttribute("aria-haspopup");
+  await middle.click();
+  await expect(page.getByRole("dialog", { name: "完整菜名" })).toContainText(middleName);
+  await page.setViewportSize({ width: 520, height: 844 });
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(middle).not.toHaveAttribute("aria-haspopup");
+  await middle.click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(state.writes).toHaveLength(0);
+});
+
+test.describe("触屏菜池气泡", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test("单行长菜名可点击读全，气泡不越界，外部关闭不误触编辑或写入", async ({ page }) => {
+    const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
+    const state = await openPool(page, [{ ...seed, name: longName }]);
+    const name = page.locator(".dish-name");
+    const before = await page.locator(".dish-card").boundingBox();
+    await expect(name).toHaveCSS("white-space", "nowrap");
+    expect(await name.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
+    await name.tap();
+    const popover = page.getByRole("dialog", { name: "完整菜名" });
+    await expect(popover).toContainText(longName);
+    await expect(page.locator(".dish-name-popover-scroll")).toHaveCSS("height", /px$/);
+    const bubble = (await popover.boundingBox())!;
+    expect(bubble.x).toBeGreaterThanOrEqual(0);
+    expect(bubble.x + bubble.width).toBeLessThanOrEqual(390);
+    expect(bubble.y).toBeGreaterThanOrEqual(0);
+    expect(bubble.y + bubble.height).toBeLessThanOrEqual(844);
+    await popover.locator(".dish-name-popover-text").tap();
+    await expect(popover).toBeVisible();
+    const editBox = (await button(page, "编辑").boundingBox())!;
+    await page.touchscreen.tap(editBox.x + editBox.width / 2, editBox.y + editBox.height / 2);
+    await expect(popover).toHaveCount(0);
+    await expect(page.locator(".edit-panel")).toHaveCount(0);
+    expect((await page.locator(".dish-card").boundingBox())!.height).toBe(before!.height);
+    expect(state.writes).toHaveLength(0);
+    await name.focus(); await page.keyboard.press("Enter");
+    await expect(popover).toBeVisible();
+    await expect(button(page, "关闭完整菜名")).toBeFocused();
+    await page.keyboard.press("Tab");
+    await expect.poll(() => popover.evaluate((node) => node.contains(document.activeElement))).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(popover).toHaveCount(0);
+    await expect(name).toBeFocused();
+    await button(page, "编辑").click();
+    await expect(page.locator('input[placeholder="菜名"]')).toHaveValue(longName);
+    expect(state.writes).toHaveLength(0);
+  });
 });

@@ -1,9 +1,9 @@
 import Taro from "@tarojs/taro";
 import {
-  DishBatchInputSchema, DishBatchResultSchema, DishListSchema, DishSchema, DishUpdateInputSchema,
+  DishBatchInputSchema, DishBatchResultSchema, DishListSchema, DishSchema, DishUpdateInputSchema, DishDeleteInputSchema, DishDeleteResultSchema,
   ErrorResponseSchema, IdSchema, LoginInputSchema, SessionSchema,
   GenerateInputSchema, MenuPreviewSchema, WeekListQuerySchema, WeekListSchema, WeekPlanSchema, WeekStartSchema, WeekWriteInputSchema,
-  type Dish, type DishBatchInput, type DishUpdateInput, type ErrorDetails, type Session,
+  type Dish, type DishBatchInput, type DishUpdateInput, type DishDeleteInput, type ErrorDetails, type Session,
   type GenerateInput, type WeekListQuery, type WeekPlan, type WeekWriteInput
 } from "@cfp/kith-inn-contracts";
 
@@ -29,12 +29,12 @@ export class ClientError extends Error {
       INVALID_REQUEST: "请检查输入内容", DUPLICATE_DISH_NAME: "菜名重复，请修改清单或恢复已停用菜品",
       VERSION_CONFLICT: "内容已在另一处更新，请重新读取后再调整", BUSY: "正在处理，请稍候",
       PENDING_WRITE: "上次保存结果尚未确认，请先重试原请求或读取核对", REVIEW_REQUIRED: "请先读取对应内容并核对上次保存结果",
-      REQUEST_UNKNOWN: "请求结果未确认，可能已保存，请重试原请求", RANDOM_UNAVAILABLE: "无法生成安全请求标识，请更新微信后重试",
+      REQUEST_UNKNOWN: "请求结果未确认，请重试原请求", RANDOM_UNAVAILABLE: "无法生成安全请求标识，请更新微信后重试",
       RATE_LIMITED: "操作太频繁，请稍后重试原请求", IDEMPOTENCY_KEY_REUSED: "请求标识有冲突，请读取核对后再提交",
       LIMIT_EXCEEDED: "已达到数量限制，请调整后重试", PAYLOAD_TOO_LARGE: "本次内容过多，请减少菜品后重试",
       WECHAT_LOGIN_FAILED: "微信登录失败，请重新登录",
-      DISH_UNAVAILABLE: "所选菜品已停用或改类，请重新选择", INSUFFICIENT_DISHES: "可用菜品不足，请补菜或调整每餐数量",
-      NOT_FOUND: "未找到已保存的菜单"
+      DISH_UNAVAILABLE: "所选菜品已删除、停用或改类，请重新选择", INSUFFICIENT_DISHES: "可用菜品不足，请补菜或调整每餐数量",
+      NOT_FOUND: "未找到对应记录，请重新读取"
     };
     super(messages[code] ?? "操作未完成，请稍后重试");
     this.name = "ClientError";
@@ -78,8 +78,8 @@ async function deadline<T>(task: Promise<T> & { abort?: () => void }): Promise<T
   } finally { clearTimeout(timer!); }
 }
 
-type Pending = { kind: "batch" | "update" | "week"; path: string; body: string; key: string; createdAt: number; state: "unknown" | "rejected" | "review" };
-export type WriteResult = { kind: "batch"; items: Dish[] } | { kind: "update"; dish: Dish } | { kind: "week"; week: WeekPlan };
+type Pending = { kind: "batch" | "update" | "delete" | "week"; path: string; body: string; key: string; createdAt: number; state: "unknown" | "rejected" | "review" };
+export type WriteResult = { kind: "batch"; items: Dish[] } | { kind: "update"; dish: Dish } | { kind: "delete"; id: string } | { kind: "week"; week: WeekPlan };
 const rejectionStatuses: Record<string, number> = {
   INVALID_REQUEST: 400, NOT_FOUND: 404, DUPLICATE_DISH_NAME: 409, VERSION_CONFLICT: 409,
   DISH_UNAVAILABLE: 409, LIMIT_EXCEEDED: 422, PAYLOAD_TOO_LARGE: 413
@@ -154,12 +154,14 @@ export function createKithInnClient(options: {
     operation.state = "unknown";
     reviewedKey = null;
     try {
-      const response = await request(operation.kind === "batch" ? "POST" : operation.kind === "week" ? "PUT" : "PATCH", operation.path, operation.body, operation.key);
+      const response = await request(operation.kind === "batch" ? "POST" : operation.kind === "week" ? "PUT" : operation.kind === "delete" ? "DELETE" : "PATCH", operation.path, operation.body, operation.key);
       const result: WriteResult = operation.kind === "batch"
         ? { kind: "batch", items: DishBatchResultSchema.parse(response.data).items }
         : operation.kind === "week" ? { kind: "week", week: WeekPlanSchema.parse(response.data) }
-          : { kind: "update", dish: DishSchema.parse(response.data) };
+          : operation.kind === "delete" ? { kind: "delete", id: DishDeleteResultSchema.parse(response.data).id }
+            : { kind: "update", dish: DishSchema.parse(response.data) };
       if (result.kind === "week" && operation.path !== `/weeks/${result.week.weekStart}`) throw new ClientError("REQUEST_UNKNOWN");
+      if (result.kind === "delete" && operation.path !== `/dishes/${result.id.toLowerCase()}`) throw new ClientError("REQUEST_UNKNOWN");
       if (response.statusCode !== (operation.kind === "batch" ? 201 : 200)) throw new ClientError("REQUEST_UNKNOWN");
       pending = null;
       return result;
@@ -267,6 +269,11 @@ export function createKithInnClient(options: {
       const parsed = DishUpdateInputSchema.safeParse(input);
       if (!IdSchema.safeParse(id).success || !parsed.success) throw new ClientError("INVALID_REQUEST");
       return write("update", `/dishes/${id.toLowerCase()}`, parsed.data);
+    }),
+    deleteDish: (id: string, input: DishDeleteInput) => exclusive(() => {
+      const parsed = DishDeleteInputSchema.safeParse(input);
+      if (!IdSchema.safeParse(id).success || !parsed.success) throw new ClientError("INVALID_REQUEST");
+      return write("delete", `/dishes/${id.toLowerCase()}`, parsed.data);
     }),
     retryPendingWrite: () => exclusive(attempt),
     discardPendingAfterReview: () => {

@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import {
-  CategorySchema, GenerateInputSchema, WeekListQuerySchema, WeekListSchema,
+  CategorySchema, GenerateInputSchema, WeekListQuerySchema, WeekListSchema, adjacentWeekStarts,
   WeekPlanSchema, WeekStartSchema, WeekWriteInputSchema,
   type Dish, type MealSnapshot, type WeekPlan
 } from "@cfp/kith-inn-contracts";
@@ -51,7 +51,10 @@ export class Weeks {
     validWeek(weekStart);
     const parsed = GenerateInputSchema.safeParse(body);
     if (!parsed.success || parsed.data.meals[0]?.date !== weekStart) throw invalid();
-    return generateMenu(weekStart, parsed.data, (await new Dishes(this.pool, this.sessions).list(session)).items);
+    const { rows } = await this.pool.query<Row>(`SELECT ${columns} FROM week_plans
+      WHERE merchant_id = $1 AND week_start = ANY($2::date[])`, [session.merchantId, adjacentWeekStarts(weekStart)]);
+    return generateMenu(weekStart, parsed.data, (await new Dishes(this.pool, this.sessions).list(session)).items,
+      Math.random, rows.flatMap((row) => toWeek(row).meals));
   }
 
   async save(session: ActiveSession, key: string, weekStart: string, body: unknown) {
@@ -78,7 +81,7 @@ export class Weeks {
             if (!data.rebuild && !restoring && saved?.dishId.toLowerCase() === dishId) return saved;
             const dish = byId.get(dishId);
             if (!dish?.active || dish.category !== category) throw new ApiError(409, "DISH_UNAVAILABLE",
-              "有菜品已停用或改变分类，请重新选择", { field: `meals.${mealIndex}.${category}.${slot}` });
+              "有菜品已删除、停用或改变分类，请重新选择", { field: `meals.${mealIndex}.${category}.${slot}` });
             return { dishId, name: dish.name };
           });
           return result;

@@ -1,4 +1,4 @@
-import { type Category, type Dish, type MealSnapshot, type MenuPreview, type WeekWriteInput } from "@cfp/kith-inn-contracts";
+import { dishDistances, type Category, type Dish, type MealSnapshot, type MenuPreview, type WeekWriteInput } from "@cfp/kith-inn-contracts";
 
 export class WeekEditError extends Error {
   constructor(readonly code: "INVALID_POSITION" | "NO_REPLACEMENT" | "SOUP_RESELECTION_REQUIRED") {
@@ -29,12 +29,17 @@ export function replaceDish(menu: MenuPreview, mealIndex: number, category: Cate
   if (!dish) throw new WeekEditError("NO_REPLACEMENT");
   return withMeal(menu, mealIndex, { ...meal, [category]: meal[category].map((item, i) => i === index ? { dishId: dish.id, name: dish.name } : item) });
 }
-export function randomReplaceDish(menu: MenuPreview, mealIndex: number, category: Category, index: number, dishes: Dish[], random = Math.random): MenuPreview {
-  const candidates = replacementCandidates(mealAt(menu, mealIndex), category, index, dishes);
-  if (!candidates.length) throw new WeekEditError("NO_REPLACEMENT");
-  const value = random();
-  if (!Number.isFinite(value) || value < 0 || value >= 1) throw new WeekEditError("NO_REPLACEMENT");
-  return replaceDish(menu, mealIndex, category, index, candidates[Math.floor(value * candidates.length)]!.id, dishes);
+export function recommendedReplacements(menu: MenuPreview, mealIndex: number, category: Category, index: number, dishes: Dish[],
+  random = Math.random, adjacentMeals: readonly MealSnapshot[] = []): Dish[] {
+  const meal = mealAt(menu, mealIndex), candidates = replacementCandidates(meal, category, index, dishes);
+  const nearest = dishDistances(meal, [...adjacentMeals, ...menu.meals]);
+  // Use the same spacing rule as generation, including the current draft and saved neighbors.
+  return candidates.map((dish) => {
+    const tie = random();
+    if (!Number.isFinite(tie) || tie < 0 || tie >= 1) throw new WeekEditError("NO_REPLACEMENT");
+    return { dish, distance: nearest.get(dish.id.toLowerCase()) ?? Infinity, tie };
+  }).sort((a, b) => a.distance === b.distance ? a.tie - b.tie : b.distance - a.distance)
+    .map(({ dish }) => dish);
 }
 export function restoreSoup(menu: MenuPreview, mealIndex: number, dishIds: string[], dishes: Dish[]): MenuPreview {
   const meal = mealAt(menu, mealIndex);

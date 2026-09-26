@@ -99,6 +99,34 @@ describe("PostgreSQL dish mutations and HTTP", () => {
     expect(receipt.expires_at.getTime() - now.getTime()).toBe(86_400_000);
   });
 
+  it("deletes by version, replays the receipt, and permits a new dish with the same name", async () => {
+    const dish = (await add("误加菜")).body.items[0]!, key = randomUUID();
+    await expect(dishes.delete(session, key, dish.id, { baseVersion: 2 })).rejects.toMatchObject({ code: "VERSION_CONFLICT" });
+    await expect(dishes.delete(session, key, dish.id, { baseVersion: 1, merchantId: session.merchantId })).rejects.toMatchObject({ code: "INVALID_REQUEST" });
+    await expect(dishes.delete({ ...session, merchantId: randomUUID() }, key, dish.id, { baseVersion: 1 })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const deleted = await dishes.delete(session, key, dish.id, { baseVersion: 1 });
+    expect(deleted).toEqual({ status: 200, body: { id: dish.id } });
+    expect((await dishes.list(session)).items).toEqual([]);
+    const replacement = (await add("误加菜")).body.items[0]!;
+    expect(replacement.id).not.toBe(dish.id);
+    expect(await dishes.delete(session, key.toUpperCase(), dish.id.toUpperCase(), { baseVersion: 1 })).toEqual(deleted);
+    expect((await dishes.list(session)).items).toEqual([replacement]);
+    await expect(dishes.delete(session, randomUUID(), dish.id, { baseVersion: 1 })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(dishes.delete(session, key, replacement.id, { baseVersion: 1 })).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+  });
+
+  it("rolls back deletion when its success receipt cannot be stored", async () => {
+    const dish = (await add("保留菜")).body.items[0]!;
+    await pool.query(`CREATE FUNCTION reject_delete_receipt() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'injected receipt failure'; END $$;
+      CREATE TRIGGER reject_delete_receipt BEFORE INSERT ON mutation_receipts
+      FOR EACH ROW EXECUTE FUNCTION reject_delete_receipt()`);
+    try {
+      await expect(dishes.delete(session, randomUUID(), dish.id, { baseVersion: 1 })).rejects.toMatchObject({ code: "P0001" });
+      expect((await dishes.list(session)).items).toEqual([dish]);
+    } finally { await pool.query("DROP TRIGGER reject_delete_receipt ON mutation_receipts; DROP FUNCTION reject_delete_receipt()"); }
+  });
+
   it("cleans old receipts on a new UUID while live receipts still replay", async () => {
     await add("旧菜");
     now = new Date(now.getTime() + 1);
@@ -181,6 +209,12 @@ describe("PostgreSQL dish mutations and HTTP", () => {
       expect(ErrorResponseSchema.parse(await duplicate.json()).error).toMatchObject({
         code: "DUPLICATE_DISH_NAME", details: { names: ["新菜名"] }
       });
+      const deletion = { method: "DELETE", headers: { ...headers, "idempotency-key": randomUUID() }, body: JSON.stringify({ baseVersion: 2 }) };
+      expect((await fetch(`${base}/${dish.id}`, { ...deletion, headers: { "content-type": "application/json" } })).status).toBe(401);
+      expect((await fetch(`${base}/${dish.id}`, { ...deletion, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" } })).status).toBe(400);
+      const deleted = await fetch(`${base}/${dish.id}`, deletion);
+      expect(deleted.status).toBe(200); expect(await deleted.json()).toEqual({ id: dish.id });
+      expect(await (await fetch(`${base}/${dish.id}`, deletion)).json()).toEqual({ id: dish.id });
       expect((await fetch(base, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
         body: JSON.stringify(batch("无请求标识")) })).status).toBe(400);
       for (const [url, body] of [[base, { items: [{ name: "菜", category: "invalid" }] }], [base, { ...batch("菜"), merchantId: "forged" }],

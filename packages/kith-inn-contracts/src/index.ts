@@ -29,6 +29,8 @@ export const DishBatchResultSchema = z.strictObject({ items: z.array(DishSchema)
 export const DishUpdateInputSchema = z.strictObject({
   ...DishInputSchema.shape, baseVersion: version, active: z.boolean(),
 });
+export const DishDeleteInputSchema = z.strictObject({ baseVersion: version });
+export const DishDeleteResultSchema = z.strictObject({ id: IdSchema });
 export const SnapshotItemSchema = z.strictObject({ dishId: IdSchema, name: DishNameSchema });
 export const MealSelectionSchema = z.strictObject({ date: DateSchema, mealType: MealTypeSchema, enabled: z.boolean() });
 export const MealInputSchema = z.strictObject({
@@ -115,6 +117,7 @@ export type DishList = z.infer<typeof DishListSchema>;
 export type DishBatchInput = z.infer<typeof DishBatchInputSchema>;
 export type DishBatchResult = z.infer<typeof DishBatchResultSchema>;
 export type DishUpdateInput = z.infer<typeof DishUpdateInputSchema>;
+export type DishDeleteInput = z.infer<typeof DishDeleteInputSchema>;
 export type SnapshotItem = z.infer<typeof SnapshotItemSchema>;
 export type MealSelection = z.infer<typeof MealSelectionSchema>;
 export type MealInput = z.infer<typeof MealInputSchema>;
@@ -132,3 +135,5 @@ export type ErrorDetails = z.infer<typeof ErrorDetailsSchema>;
 export type ErrorCode = z.infer<typeof ErrorCodeSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
 export type Health = z.infer<typeof HealthSchema>;
+
+export { adjacentWeekStarts, dishDistances } from "./menu-spacing";

@@ -18,6 +18,7 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
     category, active: true, version: 1, createdAt: timestamp, updatedAt: timestamp,
   })));
   const state = { items: viaPool ? [] as Dish[] : items, saved: null as WeekPlan | null, generated: null as MenuPreview | null,
+    neighbors: {} as Record<string, WeekPlan>, neighborReads: [] as string[], neighborFailure: false,
     writes: [] as { body: string; key: string }[], generations: 0, reads: 0, failure: "" };
   const receipts = new Map<string, WeekPlan>();
   await page.addInitScript(() => localStorage.setItem("kith-inn:session:v1:https://kith-inn.test", JSON.stringify({
@@ -40,6 +41,12 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
       weekStart: monday, version: state.saved.version, confirmedAt: state.saved.confirmedAt, updatedAt: state.saved.updatedAt
     }] : [], nextBefore: null } });
     if (method === "GET") {
+      const requestedWeek = url.pathname.split("/").at(-1)!;
+      if (requestedWeek !== monday) {
+        state.neighborReads.push(requestedWeek);
+        if (state.neighborFailure) return error(503, "INTERNAL_ERROR");
+        return state.neighbors[requestedWeek] ? route.fulfill({ headers, json: state.neighbors[requestedWeek] }) : error(404, "NOT_FOUND");
+      }
       state.reads++;
       if (state.failure === "read") { state.failure = ""; return error(503, "INTERNAL_ERROR"); }
       if (state.failure === "invalid") { state.failure = ""; return route.fulfill({ headers, json: { ...state.saved, meals: [] } }); }
@@ -82,8 +89,8 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
       await button(page, `更改${dish.name}分类，当前汤`).click();
     }
     await button(page, "确认加入菜品池").click();
-    await expect(page.locator(".dish-card")).toHaveCount(12);
-    await button(page, "下一步：安排本周菜单").click();
+    await expect(page.locator(".dish-card")).toHaveCount(10);
+    await button(page, "排菜单").click();
   } else await page.goto(`/#/pages/week/index?weekStart=${monday}`);
   await expect(button(page, "生成本周菜单")).toBeVisible();
   return state;
@@ -101,7 +108,7 @@ async function replaceLunch(page: Page) {
 async function confirmWeek(page: Page) {
   await button(page, "确认菜单").click();
   await expect(page.locator(".readonly-board")).toBeVisible();
-  await expect(page.locator(".readonly-board .dish-cell button")).toHaveCount(0);
+  await expect(page.locator(".readonly-board .dish-cell button[aria-pressed]")).toHaveCount(0);
   await button(page, "保存本周菜单").click();
 }
 
@@ -714,7 +721,46 @@ test("零荤菜默认全部，停餐仍可选择且不出现替换按钮", async
   expect(state.writes).toHaveLength(1);
 });
 
-test("每餐20道与60字菜名不撑破两天半，完整菜名可在选中区和总览读取", async ({ page }) => {
+for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
+  test(`选菜卡固定在确认按钮上方，滚动末行和换菜不遮挡 ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const state = await openWeek(page, false, 10);
+    await expandSettings(page);
+    for (const [i, count] of [8, 10, 2].entries()) await page.locator(".structure-fields input").nth(i).fill(String(count));
+    await generate(page); await button(page, "全部").click();
+    const card = page.locator(".selected-dish"), scroll = page.locator(".flow-scroll");
+    const initial = (await card.boundingBox())!;
+    await expect(card).toBeInViewport({ ratio: 1 });
+    await button(page, "周一晚餐：汤菜2").click();
+    await expect(card).toContainText("周一晚饭 · 汤");
+    await expect(card.locator(".selected-name")).toHaveText("汤菜2");
+    await expect(button(page, "周一晚餐：汤菜2")).toBeInViewport({ ratio: 1 });
+    const offset = await scroll.evaluate((node) => node.scrollTop);
+    expect(offset).toBeGreaterThan(100);
+    expect((await card.boundingBox())!.y).toBeCloseTo(initial.y, 0);
+    const frame = (await scroll.boundingBox())!, confirm = (await page.locator(".flow-dock").boundingBox())!;
+    const nav = (await page.locator(".main-nav").boundingBox())!;
+    expect(frame.y + frame.height).toBeLessThanOrEqual(initial.y + 1);
+    expect(initial.y + initial.height).toBeLessThanOrEqual(confirm.y);
+    expect(confirm.y + confirm.height).toBeLessThanOrEqual(nav.y + 1);
+    await scroll.hover(); await page.mouse.wheel(0, -500);
+    await expect.poll(() => scroll.evaluate((node) => node.scrollTop)).toBeLessThan(offset);
+    expect((await card.boundingBox())!.y).toBeCloseTo(initial.y, 0);
+    await expect(button(page, "换一道")).toBeInViewport({ ratio: 1 });
+    await expect(button(page, "自己选")).toBeInViewport({ ratio: 1 });
+    await page.screenshot({ path: `/tmp/kith-inn-selected-dock-${viewport.width}.png` });
+    await button(page, "自己选").click();
+    await expect(card).toHaveCount(0);
+    await button(page, "汤菜3").click(); await button(page, "保存这次替换").click();
+    await expect(card.locator(".selected-name")).toHaveText("汤菜3");
+    await button(page, "换一道").click(); await expect(card).toHaveCount(0);
+    await button(page, "返回编辑").click(); await expect(card).toBeInViewport({ ratio: 1 });
+    await button(page, "确认菜单").click(); await expect(card).toHaveCount(0);
+    expect(state.writes).toHaveLength(0);
+  });
+}
+
+test("每餐20道与60字菜名单行省略，编辑、检查及历史气泡展示全文且不修改菜单", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   const state = await openWeek(page, false, 10);
   const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
@@ -724,12 +770,34 @@ test("每餐20道与60字菜名不撑破两天半，完整菜名可在选中区�
   await generate(page); await button(page, "全部").click();
   await expect(lunchDishes(page).locator(".dish-cell")).toHaveCount(20);
   await expect(page.locator(".selected-name")).toHaveText(longName);
+  await expect(page.locator(".selected-name")).toHaveAttribute("title", longName);
+  const popover = page.getByRole("dialog", { name: "完整菜名" });
+  await lunchDishes(page).locator(".dish-cell").first().click();
+  await expect(popover).toHaveCount(0); // Selecting a cell must not open a second action.
+  await page.locator(".selected-name").click();
+  await expect(popover).toContainText(longName);
+  await page.keyboard.press("Escape");
+  await expect(popover).toHaveCount(0);
+  await expect(page.locator(".selected-name")).toBeFocused();
+  expect(state.writes).toHaveLength(0);
+  const label = lunchDishes(page).locator(".dish-label").first();
+  await expect(label).toHaveAttribute("title", longName);
+  await expect(label).toHaveCSS("white-space", "nowrap");
+  await expect(label).toHaveCSS("text-overflow", "ellipsis");
+  expect(await label.evaluate((node) => node.scrollWidth > node.clientWidth)).toBe(true);
   const geometry = await page.locator(".week-app").evaluate((node) => ({ width: node.clientWidth, scroll: node.scrollWidth }));
   expect(geometry.scroll).toBe(geometry.width);
   await button(page, "确认菜单").click();
   await expect(page.locator(".readonly-board")).toContainText(longName);
-  const fullName = await page.locator(".readonly-board .dish-cell").first().evaluate((node) => ({ height: node.clientHeight, textHeight: node.firstElementChild!.getBoundingClientRect().height }));
-  expect(fullName.textHeight).toBeLessThanOrEqual(fullName.height);
+  const readonlyLabel = page.locator(".readonly-board .dish-label").first();
+  await expect(readonlyLabel).toHaveAttribute("title", longName);
+  await expect(readonlyLabel).toHaveCSS("white-space", "nowrap");
+  await readonlyLabel.click();
+  await expect(popover).toContainText(longName);
+  await page.locator(".dish-name-popover-backdrop").click({ position: { x: 2, y: 2 } });
+  await expect(popover).toHaveCount(0);
+  expect(state.writes).toHaveLength(0);
+  expect((await page.locator(".readonly-board .dish-cell").first().boundingBox())!.height).toBe(48);
   const frame = await page.locator(".flow-scroll").boundingBox(), dock = await page.locator(".flow-dock").boundingBox();
   expect(frame!.y + frame!.height).toBeLessThanOrEqual(dock!.y + 1);
   await button(page, "保存本周菜单").click();
@@ -739,6 +807,14 @@ test("每餐20道与60字菜名不撑破两天半，完整菜名可在选中区�
   await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click(); await button(page, "全部").click();
   await home(page);
   await expect(preview(page)).toBeInViewport({ ratio: 1 });
+  await button(page, "历史").click();
+  await page.locator(".readonly-board .dish-label").first().click();
+  await expect(popover).toContainText(longName);
+  const bubble = (await popover.boundingBox())!;
+  expect(bubble.x).toBeGreaterThanOrEqual(0);
+  expect(bubble.x + bubble.width).toBeLessThanOrEqual(390);
+  await button(page, "关闭完整菜名").click();
+  expect(state.saved!.meals[0]!.meat[0]!.name).toBe(longName);
 });
 
 
@@ -759,7 +835,7 @@ test("候选面板打开后切换菜位，不会把新选择写回旧餐次", as
 test("检查页只读且未写入，返回首页或编辑保留草稿，最终保存只有一次PUT", async ({ page }) => {
   const state = await openWeek(page); await generate(page); await replaceLunch(page);
   await button(page, "确认菜单").click();
-  await expect(page.locator(".review-hero")).toContainText("确认后保存本周菜单");
+  await expect(page.locator(".review-screen .board-date")).toHaveText("9月21日—27日");
   await expect(page.locator(".readonly-board .action-button.dish-cell")).toHaveCount(0);
   expect(state.writes).toHaveLength(0);
   await button(page, "返回编辑").click(); await expect(lunch(page)).toContainText("荤菜3");
@@ -771,10 +847,80 @@ test("检查页只读且未写入，返回首页或编辑保留草稿，最终�
   expect(state.writes).toHaveLength(1); expect(JSON.parse(state.writes[0]!.body).confirm).toBe(true);
 });
 
+test("换菜按未用及间隔排序，首项默认选中，自己选仍能选择推荐外的合法菜", async ({ page }) => {
+  const state = await openWeek(page, false, 8);
+  await page.route("**/weeks/2026-09-21/generate", async (route) => {
+    if (route.request().method() !== "POST") return route.fallback();
+    const input = GenerateInputSchema.parse(route.request().postDataJSON());
+    state.generated = MenuPreviewSchema.parse({ weekStart: monday, structure: input.structure,
+      meals: input.meals.map((meal) => ({ ...meal, soupOmitted: false, ...Object.fromEntries(CategorySchema.options.map((category) =>
+        [category, state.items.filter((dish) => dish.category === category).slice(0, input.structure[category])
+          .map((dish) => ({ dishId: dish.id, name: dish.name }))])) })) });
+    for (const [at, number] of [[1, 3], [5, 4], [10, 5], [2, 7], [3, 8]] as const) {
+      state.generated.meals[at]!.meat[0] = { dishId: id(number), name: `荤菜${number}` };
+    }
+    await route.fulfill({ headers: { "access-control-allow-origin": "*" }, json: state.generated });
+  });
+  await generate(page); await button(page, "换一道").click();
+  const recommended = page.locator(".candidate-list button");
+  await expect(recommended).toHaveText(["荤菜6", "荤菜5", "荤菜4", "荤菜8"]);
+  await expect(button(page, "荤菜6")).toHaveAttribute("aria-pressed", "true");
+  await button(page, "在菜品池里自己选").click();
+  await expect(button(page, "荤菜3")).toBeVisible();
+  await expect(button(page, "荤菜7")).toBeVisible();
+  await button(page, "返回编辑").click(); await button(page, "换一道").click();
+  await expect(recommended).toHaveText(["荤菜6", "荤菜5", "荤菜4", "荤菜8"]);
+  await button(page, "保存这次替换").click();
+  await expect(lunch(page)).toContainText("荤菜6"); expect(state.writes).toHaveLength(0);
+  await confirmWeek(page);
+  const written = WeekWriteInputSchema.parse(JSON.parse(state.writes[0]!.body));
+  const expected = state.generated!.meals.map((meal) => ({ ...meal, meat: meal.meat.map((dish) => dish.dishId),
+    vegetable: meal.vegetable.map((dish) => dish.dishId), soup: meal.soup.map((dish) => dish.dishId) }));
+  expected[0]!.meat[0] = id(6);
+  expect(written.meals).toEqual(expected);
+});
+
+test("换菜读取上下周，重新进入获取最新菜单，读取失败保留草稿且不展示降级推荐", async ({ page }) => {
+  const state = await openWeek(page); await generate(page);
+  const neighbor = (weekStart: string, number: number): WeekPlan => WeekPlanSchema.parse({
+    ...state.generated, weekStart, id: id(501), version: 1, confirmedAt: timestamp, createdAt: timestamp, updatedAt: timestamp,
+    meals: state.generated!.meals.map((meal, i) => ({ ...meal,
+      date: new Date(Date.parse(`${weekStart}T00:00:00Z`) + Math.floor(i / 2) * 86_400_000).toISOString().slice(0, 10),
+      meat: [{ dishId: id(number), name: `荤菜${number}` }, { dishId: id(2), name: "荤菜2" }],
+    })) });
+  state.neighbors["2026-09-14"] = neighbor("2026-09-14", 3);
+  state.neighbors["2026-09-28"] = neighbor("2026-09-28", 4);
+  const snapshots = structuredClone(state.neighbors);
+  await button(page, "换一道").click();
+  await expect(page.locator(".candidate-list button")).toHaveText(["荤菜4", "荤菜3"]);
+  expect(state.neighborReads).toEqual(["2026-09-14", "2026-09-28"]);
+  await button(page, "返回编辑").click();
+  // At the other boundary, next Monday must influence this Sunday's recommendation.
+  await button(page, "周日晚餐：荤菜1").click(); await button(page, "换一道").click();
+  await expect(page.locator(".candidate-list button")).toHaveText(["荤菜3", "荤菜4"]);
+  await button(page, "返回编辑").click();
+  state.neighbors["2026-09-28"] = neighbor("2026-09-28", 3);
+  await button(page, "换一道").click();
+  await expect(page.locator(".candidate-list button")).toHaveText(["荤菜4", "荤菜3"]);
+  await button(page, "返回编辑").click();
+  state.neighborFailure = true;
+  await button(page, "换一道").click();
+  await expect(page.locator(".alert")).toBeVisible();
+  await expect(page.locator(".candidate-list")).toHaveCount(0);
+  await expect(button(page, "周日晚餐：荤菜1")).toBeVisible();
+  expect(state.writes).toHaveLength(0);
+  expect(state.neighbors["2026-09-14"]).toEqual(snapshots["2026-09-14"]);
+  state.neighborFailure = false; delete state.neighbors["2026-09-28"];
+  await button(page, "换一道").click();
+  await expect(page.locator(".candidate-list button")).toHaveText(["荤菜4", "荤菜3"]);
+});
+
 test("独立候选搜索与取消不改菜单，应用时重新校验停用或改类菜", async ({ page }) => {
   const state = await openWeek(page); await generate(page);
   await button(page, "换一道").click();
-  await expect(page.locator(".swap-heading")).toContainText("只换这一道");
+  await expect(page.locator(".swap-heading")).toHaveText("荤菜1");
+  await expect(page.getByText("只换这一道", { exact: true })).toHaveCount(0);
+  await expect(page.locator(".locked-week")).toHaveCount(0);
   await expect(page.locator(".swap-name")).toHaveText("荤菜1");
   await expect(page.locator(".weekly-menu-board")).toHaveCount(0);
   await button(page, "返回编辑").click(); await expect(lunch(page)).toContainText("荤菜1");
@@ -1179,4 +1325,35 @@ test("生成前餐次收起搭配展开，修改后摘要同步且生成按钮�
   await generate(page);
   expect(state.generated!.structure.meat).toBe(3);
   expect(state.generated!.meals[13]!.enabled).toBe(false);
+});
+
+
+test.describe("触屏菜名气泡", () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test("查看候选全文不选用、不换菜，关闭后原选择流程仍可用", async ({ page }) => {
+    const state = await openWeek(page);
+    const longName = "家常香菇土豆炖牛肉".repeat(6).slice(0, 60);
+    state.items.find((dish) => dish.name === "荤菜3")!.name = longName;
+    await generate(page);
+    const original = await page.locator(".selected-name").textContent();
+    await button(page, "自己选").click();
+    const select = button(page, longName);
+    const before = await select.getAttribute("aria-pressed");
+    await expect(button(page, "查看完整菜名：荤菜4")).toHaveCount(0);
+    const inspect = button(page, `查看完整菜名：${longName}`);
+    await inspect.tap();
+    await expect(page.getByRole("dialog", { name: "完整菜名" })).toContainText(longName);
+    await expect(select).toHaveAttribute("aria-pressed", before!);
+    expect(state.writes).toHaveLength(0);
+    await page.touchscreen.tap(2, 2);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await button(page, "返回编辑").click();
+    await expect(page.locator(".selected-name")).toHaveText(original!);
+    await button(page, "自己选").click();
+    await select.tap();
+    await expect(select).toHaveAttribute("aria-pressed", "true");
+    await button(page, "保存这次替换").click();
+    await expect(page.locator(".selected-name")).toHaveText(longName);
+    expect(state.writes).toHaveLength(0);
+  });
 });
