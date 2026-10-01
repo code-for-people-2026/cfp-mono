@@ -1,3 +1,36 @@
+# 2026-10-01 部署接手记录（当前）
+
+本节优先于下方2026-09-21历史演练。主线业务为已合并PR #377的 `9cd1987`，
+PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲突。
+主要执行聊天：推进街坊味部署与联调，`01a0f660-ee39-7c60-a89f-72db44ff5da8`。
+原 #360 任务 `01a0c162-2567-7be2-ada0-62daeed2c709` 已结束，本聊天接手；未另建Issue或派发任务。
+
+| 状态 | 事实与证据 |
+| --- | --- |
+| 云数据库已验证（上一轮报告） | `kith_inn_staging`、两账号、五业务表与迁移记录已存在；psql内网读取成功；SSL=false；本轮未重建或更改 |
+| 部署准备已实现 | 实现提交 `c618e0e`：pool.max=5；Compose单副本0.5CPU/512MiB/128PID；日志10MiB×3；只读非root；ready健康检查；raw私密env文件 |
+| 代理准备已实现 | 默认忽略转发来源；仅信任指定socket peer的合法X-Real-IP，Nginx覆盖客户端输入。实际云代理地址与HTTPS仍待核验 |
+| 独立发布已核验 | 配置迁入 `apps/kith-inn-api/deploy`；共享CI/部署识别文件与main一致。实际main..HEAD识别 website=false、weekly_menu=false；专用工作流仅构建街坊味镜像，无部署步骤 |
+| 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
+| 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
+| 镜像本地构建未完成 | Docker Hub拉取 `node:22-alpine` 两次EOF；不是代码成功构建证据。专用CI的最新结果另记，不能复用旧PR绿灯 |
+| 云端API未部署 | 本聊天阿里云页面停在登录页；运行密码需轮换、私密配置需安全填入、微信三项仍缺。缺微信配置会拒绝启动；未向staging写入假身份 |
+| 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调；正式库、共享SSL评估、跨库权限、备份恢复及审核路径仍待办 |
+
+本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
+未改业务行为。两轮假数据只在本次新建PG容器中；未清理旧学习库和用户试用数据。
+本机复核材料：`/tmp/kith-deployment-check-state.json`定位私密测试目录；`verify.log`与
+`runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
+只能在新的专属本地PG容器运行，不能重跑到已有云库。
+
+下一步：阿里云登录→只读核对ECS资源/端口/既有服务→运行密码轮换及私密配置→验证镜像/架构→
+独立测试API启动及负向检查→真实微信绑定与API写读/重启→体验版联调。
+管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
+
+---
+
+以下为历史证据，不代表当前云端状态。
+
 # 街坊味运行与试用证据（#360 / PR10）
 
 记录日期：2026-09-21。执行环境：专属 `codex/kith-inn-release` worktree，起点
@@ -8,7 +41,7 @@
 | --- | --- |
 | T020 独立镜像、配置 | 已实现，ca5b275干净提交镜像、受限PG及实际只读compose复验通过。Node22、非root、3305 loopback、只读根文件系统 |
 | T021 目标识别、CI | 已实现且目标识别/compose回归通过：API/契约独立镜像，菜单小程序/文档不选其他产品；共享配置保留原有全目标兜底 |
-| T022 运行手册 | 已编写 [KITH_INN_RUNBOOK](../../../deploy/KITH_INN_RUNBOOK.md)，已按菜池演练核对；补齐失败停止和干净提交检查 |
+| T022 运行手册 | 已编写 [KITH_INN_RUNBOOK](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)，已按菜池演练核对；补齐失败停止和干净提交检查 |
 | T023 AppID/现有权限 | **未核验**：源码示例不能证明真实现有小程序配置；维护者安全环境核对 |
 | T023 HTTPS request域名/证书 | **未核验**：Nginx使用保留示例域名，无生产配置来源 |
 | T023 AppSecret/桃子身份绑定 | **未核验**：仅服务端安全配置，未索取或输出密钥；没有真实绑定证据 |

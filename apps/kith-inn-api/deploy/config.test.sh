@@ -21,7 +21,7 @@ jq -e --arg image "$KITH_INN_IMAGE" '
   .name == "cfp-kith-inn-staging" and (.services | keys) == ["kith-inn-api"] and
   (.services["kith-inn-api"] |
     .image == $image and .environment.PORT == "3305" and
-    .environment.KITH_INN_WECHAT_APP_SECRET == "fixture$literal#raw" and
+    .environment.KITH_INN_WECHAT_APP_SECRET == "fixture$$literal#raw" and
     .environment.RELEASE_SHA == null and .read_only == true and
     .cpus == 0.5 and .mem_limit == "536870912" and .memswap_limit == "536870912" and
     .pids_limit == 128 and .logging.options == {"max-size":"10m","max-file":"3"} and
