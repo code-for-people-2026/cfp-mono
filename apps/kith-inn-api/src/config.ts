@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export function resolveKithInnDatabaseUrl(environment: NodeJS.ProcessEnv = process.env): string {
   const value = environment.KITH_INN_DATABASE_URL?.trim();
   if (!value) throw new Error("KITH_INN_DATABASE_URL is required");
@@ -30,9 +32,12 @@ export function loadKithInnRuntimeConfig(environment: NodeJS.ProcessEnv = proces
     throw new Error("PORT must be an integer between 1 and 65535");
   }
   const release = environment.RELEASE_SHA?.trim();
+  const trustedProxyIp = environment.KITH_INN_TRUSTED_PROXY_IP?.trim() || undefined;
+  if (trustedProxyIp && !isIP(trustedProxyIp)) throw new Error("KITH_INN_TRUSTED_PROXY_IP must be one IP address");
   return {
     databaseUrl: resolveKithInnDatabaseUrl(environment),
     port,
+    trustedProxyIp,
     release: !release ? "development" : /^[0-9a-f]{7,64}$/i.test(release) ? release.slice(0, 12).toLowerCase() : "unknown",
     wechatAppId: required("KITH_INN_WECHAT_APP_ID"),
     wechatAppSecret: required("KITH_INN_WECHAT_APP_SECRET"),

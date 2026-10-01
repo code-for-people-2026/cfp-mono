@@ -6,6 +6,7 @@ export function createKithInnPool(
   options: Pick<PoolConfig, "connectionTimeoutMillis" | "statement_timeout"> = {}
 ): Pool {
   return new Pool({
+    max: 5,
     connectionTimeoutMillis: 5_000,
     statement_timeout: 10_000,
     ...options,

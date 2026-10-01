@@ -1,0 +1,23 @@
+name: Kith Inn image
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/kith-inn-api/**'
+      - 'packages/kith-inn-contracts/**'
+      - '.github/workflows/kith-inn-image.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check isolated deployment configuration
+        run: bash apps/kith-inn-api/deploy/config.test.sh
+      - name: Build Kith Inn only
+        run: docker build --build-arg RELEASE_SHA="$GITHUB_SHA" -f apps/kith-inn-api/Dockerfile -t kith-inn-api:check .

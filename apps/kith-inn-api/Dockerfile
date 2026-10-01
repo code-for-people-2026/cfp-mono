@@ -25,5 +25,5 @@ WORKDIR /app/apps/kith-inn-api
 USER node
 EXPOSE 3305
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e 'fetch("http://127.0.0.1:3305/api/kith-inn/health").then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'
+  CMD node -e 'fetch("http://127.0.0.1:3305/api/kith-inn/ready", { signal: AbortSignal.timeout(3000) }).then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))'
 CMD ["node", "--import", "tsx", "src/main.ts"]
