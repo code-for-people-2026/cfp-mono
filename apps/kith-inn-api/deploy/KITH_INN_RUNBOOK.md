@@ -29,6 +29,10 @@ Compose >= 2.30 的 raw env_file 避免 `$` 插值：值不加引号，URL 中�
 AppSecret 和完整连接串只在后端文件中；AppID 可用于小程序构建，OpenID 不进入前端或报告。
 禁止输出 `docker inspect` 的完整 Env、非 quiet 的真实 compose config、shell `set -x`。
 
+2026-10-01实测ECS原Compose为2.27.0，已在`/opt/kith-inn/tools/docker-compose-v5.5.1`
+单独安装并核验官方5.5.1二进制，未替换共享工具。**这台ECS执行下文部署命令时，必须把
+`docker compose`替换为该绝对路径**。空值示例的配置格式检查已通过；真实凭据仍待安全填写。
+
 | 对象 | kith_inn_staging_app 现有权限 |
 | --- | --- |
 | 本库 / public schema | CONNECT / USAGE |
@@ -40,12 +44,16 @@ AppSecret 和完整连接串只在后端文件中；AppID 可用于小程序构�
 连接账号不得使用 migrator。当前应用不启动自动迁移；已有 checksum 相同可直接核对 ready。
 未来迁移先备份，用 migrator 的另一份私密配置手动执行 `node --import tsx scripts/migrate.mjs`。
 运行账号没有 sessions DELETE，运维清理不得偷偷给它加权。
-跨库有效权限、备份策略及隔离恢复仍待单独核验，不调整其他库 PUBLIC 权限或共享白名单。
+跨库有效权限、最新PITR范围及隔离恢复仍待单独核验，不调整其他库 PUBLIC 权限或共享白名单。
+2026-10-01已只读核对共享快照每天备份、快照与日志均保留7天，以及当天成功快照；具体时间见发布证据。
+这不等于街坊味恢复演练通过，也不代表已确认业务的RPO/RTO。
 
 ## 3. 构建、启动与检查
 
 先完成本地验证、提交并记录 SHA，按 ECS 实际架构构建；镜像 tag 使用完整提交或 digest，不用 latest。
 专用 image CI 只构建，不推送、不部署官网。部署文件位于 API 工程内，未改共享发布识别逻辑。
+以下Git命令适用于有干净checkout的构建端。本次ECS未安装Git，使用已核验SHA-256的固定提交
+归档，路径和对应提交见发布证据；不得在归档目录把`git rev-parse`的失败当作有效版本。
 
 ```sh
 set -eu

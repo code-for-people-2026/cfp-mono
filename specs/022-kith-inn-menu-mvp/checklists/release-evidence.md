@@ -14,7 +14,7 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。API全量105项通过，配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
 | 镜像构建已验证（CI） | `cc26e24`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36831840432)已成功（Compose配置及完整Docker build）。本机Docker Hub两次EOF，不能声称本机镜像已运行；云端尚未推送/安装。后续文档提交的CI结果维护在PR/#360 |
-| 云端API未部署 | 本聊天阿里云页面停在登录页；运行密码需轮换、私密配置需安全填入、微信三项仍缺。缺微信配置会拒绝启动；未向staging写入假身份 |
+| 云端API未部署 | 已登录阿里云并取得ECS只读检查结果；源码和专用Compose已准备，运行密码需轮换、私密配置需安全填入、微信三项仍缺。缺微信配置会拒绝启动；未向staging写入假身份 |
 | 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调；正式库、共享SSL评估、跨库权限、备份恢复及审核路径仍待办 |
 
 本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
@@ -23,9 +23,23 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：阿里云登录→只读核对ECS资源/端口/既有服务→运行密码轮换及私密配置→验证镜像/架构→
+下一步：完成云端镜像准备→运行密码轮换及私密配置→
 独立测试API启动及负向检查→真实微信绑定与API写读/重启→体验版联调。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
+
+## 2026-10-01 ECS 与共享备份只读核验
+
+- 17:49（北京时间）ECS：x86_64；内存总量3563 MiB、available2391 MiB；无swap；根盘40 GiB、可用25 GiB。Docker26.1.3、原Compose2.27.0，3306未监听。
+- 既有服务基线：官网容器启动于2026-08-25T01:03:04.139905313Z，hello-agent容器启动于2026-09-30T12:50:38.76646164Z，restartCount均为0。Nginx主进程PID80536；本次未操作这些服务。
+- **云端准备已完成**：提交`2bb0e14982722e884f235fed53de2c187cc82fde`归档放在`/opt/kith-inn/releases/2bb0e14982722e884f235fed53de2c187cc82fde`；归档SHA-256为`3b3cada9726a9a73e2675793566243c38fcf0fc97181853dd2a5e4cd1d4d4e30`，云端校验通过，迁移文件校验仍与已有库一致。没有执行迁移。
+- **工具已安装且格式已验证**：原Compose不支持`env_file.format: raw`。官方Compose5.5.1单独放在`/opt/kith-inn/tools/docker-compose-v5.5.1`，SHA-256为`db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576`，传输前后均核对。ECS直连GitHub Release返回空响应后，改由本机下载官方文件并通过Workbench上传；原Compose仍为2.27.0。使用空值示例文件的`config --quiet`成功，不能当作真实凭据或数据库连接验证。
+- **应用镜像已在ECS构建，服务未启动**：ECS拉取`node:22-alpine`成功，digest为`sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402`。在固定提交归档目录使用原Dockerfile，构建过程限定0.5CPU/768MiB，退出码0；镜像`kith-inn-api:2bb0e14982722e884f235fed53de2c187cc82fde`，ID`sha256:d3d4496e0a973640698e3658d956bafdd207a6d594a7a12f948a50ed7b8e2c42`，linux/amd64、USER=node、revision对应源提交。日志位于ECS的`/opt/kith-inn/releases/2bb0e14-build.log`。未推镜像仓库、未开放API端口。
+- **云端镜像负向启动检查已通过**：临时容器禁用网络、无数据库或微信配置，使用只读/0.5CPU/512MiB/128PID等限制启动实际入口，返回`server_start_failed`、退出码1，符合缺配置拒绝启动的预期。临时容器自动移除，无卷、无身份种子、未连接RDS；不能当作API健康或鉴权验收。
+- **私密配置位置已准备，值未填写**：`/etc/kith-inn`、`/etc/kith-inn/staging`为root所有、700；`runtime.env`为root所有、600，只复制了空值模板，没有真实凭据。该文件的`config --quiet`及专用Compose连接Docker读取项目状态成功，尚无街坊味服务容器。
+- **既有服务未受影响（本次检查范围）**：镜像准备后官网和hello-agent容器的StartedAt、restartCount与前述基线完全一致；Nginx主/worker PID及启动时间不变。官网loopback根路径HTTP200，hello-agent根路径HTTP307、容器healthy。未把307冒充其业务全流程验收；本轮没有执行官网发布、Nginx reload或重启。
+- **共享备份策略已核验，恢复未验证**：控制台显示每天07:00–08:00备份，快照保留7天；日志备份开启、保留7天；秒级备份关闭；实例释放后不保留备份。最新全量快照2026-10-01 07:20:18开始、07:22:55完成，恢复时间点07:20:19（控制台显示时间）。未核验最新PITR终点，未启动恢复或创建新实例。备份用量38.62GB，页面免费额度40GB；不据此承诺后续费用或恢复目标。
+- 备份页弹出的DBS服务关联角色授权已取消；未新增权限，未更改SSL、白名单或其他数据库。运行密码尚未轮换，RDS账号管理页持续显示加载占位，刷新和新标签均未取得账号列表。
+- 用户确认可联系现有小程序管理员稍后配合；尚未收到/核验真实微信配置，没有上传小程序。
 
 ---
 
