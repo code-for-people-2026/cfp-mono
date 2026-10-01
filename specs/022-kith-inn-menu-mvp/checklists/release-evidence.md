@@ -11,9 +11,9 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 部署准备已实现 | 实现提交 `c618e0e`：pool.max=5；Compose单副本0.5CPU/512MiB/128PID；日志10MiB×3；只读非root；ready健康检查；raw私密env文件 |
 | 代理准备已实现 | 默认忽略转发来源；仅信任指定socket peer的合法X-Real-IP，Nginx覆盖客户端输入。实际云代理地址与HTTPS仍待核验 |
 | 独立发布已核验 | 配置迁入 `apps/kith-inn-api/deploy`；共享CI/部署识别文件与main一致。实际main..HEAD识别 website=false、weekly_menu=false；专用工作流仅构建街坊味镜像，无部署步骤 |
-| 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
+| 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。API全量105项通过，配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
-| 镜像本地构建未完成 | Docker Hub拉取 `node:22-alpine` 两次EOF；不是代码成功构建证据。专用CI的最新结果另记，不能复用旧PR绿灯 |
+| 镜像构建已验证（CI） | `cc26e24`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36831840432)已成功（Compose配置及完整Docker build）。本机Docker Hub两次EOF，不能声称本机镜像已运行；云端尚未推送/安装。后续文档提交的CI结果维护在PR/#360 |
 | 云端API未部署 | 本聊天阿里云页面停在登录页；运行密码需轮换、私密配置需安全填入、微信三项仍缺。缺微信配置会拒绝启动；未向staging写入假身份 |
 | 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调；正式库、共享SSL评估、跨库权限、备份恢复及审核路径仍待办 |
 

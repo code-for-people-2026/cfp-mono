@@ -1,7 +1,7 @@
 # 街坊味 API 部署与联调手册
 
 适用现有「桃子的摆摊助手」、Issue #360、PR #368。代码已整合 main 的业务实现；
-准备、部署、验证分别记录在[发布证据](../../../../specs/022-kith-inn-menu-mvp/checklists/release-evidence.md)。
+准备、部署、验证分别记录在[发布证据](../../../specs/022-kith-inn-menu-mvp/checklists/release-evidence.md)。
 以下命令从仓库根执行，仅使用本应用 compose。不得执行官网发布、全局 prune 或重启 ECS/RDS。
 
 ## 1. 当前云端事实与启动门槛
