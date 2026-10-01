@@ -14,8 +14,9 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。API全量105项通过，配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
 | 镜像构建已验证（CI/ECS） | `2bb0e14`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36832046777)成功；同一提交已在ECS完成构建及缺配置拒绝启动检查，详见下节。镜像未推仓库，运行服务未启动。后续文档提交的CI结果维护在PR/#360 |
-| 云端API未部署 | 已登录阿里云并取得ECS只读检查结果；源码、镜像和专用Compose已准备，用户已决定暂缓密码轮换，现有凭据需安全填入，微信三项仍缺。缺微信配置会拒绝启动；未向staging写入假身份 |
-| 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调；正式库、共享SSL评估、跨库权限、备份恢复及审核路径仍待办 |
+| 镜像连接云库已验证 | 现有运行凭据已受控写入ECS；实际镜像复用createKithInnPool/createReadinessProbe连接测试库通过，pool.max=5、schema_ready=true、ssl=false，五张业务表仍为0行。只读临时容器，未启动HTTP服务 |
+| 云端API未部署 | 源码、镜像、专用Compose和数据库配置已准备；用户决定暂缓密码轮换。微信三项仍缺，运行入口会拒绝启动；未向staging写入假身份 |
+| 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调。运行角色跨库权限已部分只读核验，仍未完全隔离；正式库、共享SSL评估、备份恢复及审核路径待办 |
 
 本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
 未改业务行为。两轮假数据只在本次新建PG容器中；未清理旧学习库和用户试用数据。
@@ -23,8 +24,8 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：现有凭据安全填入私密配置→
-独立测试API启动及负向检查→真实微信绑定与API写读/重启→体验版联调。
+下一步：核验现有AppID/AppSecret并取得桃子真实OpenID→
+独立测试API启动及负向检查→专用HTTPS入口及真实登录→API写读/重启→体验版联调。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
 
 ## 2026-10-01 ECS 与共享备份只读核验
@@ -35,11 +36,20 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 - **工具已安装且格式已验证**：原Compose不支持`env_file.format: raw`。官方Compose5.5.1单独放在`/opt/kith-inn/tools/docker-compose-v5.5.1`，SHA-256为`db1889184726840f75c4f9c001048430d4f25b3be3cb084d3ddd762bc0aed576`，传输前后均核对。ECS直连GitHub Release返回空响应后，改由本机下载官方文件并通过Workbench上传；原Compose仍为2.27.0。使用空值示例文件的`config --quiet`成功，不能当作真实凭据或数据库连接验证。
 - **应用镜像已在ECS构建，服务未启动**：ECS拉取`node:22-alpine`成功，digest为`sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402`。在固定提交归档目录使用原Dockerfile，构建过程限定0.5CPU/768MiB，退出码0；镜像`kith-inn-api:2bb0e14982722e884f235fed53de2c187cc82fde`，ID`sha256:d3d4496e0a973640698e3658d956bafdd207a6d594a7a12f948a50ed7b8e2c42`，linux/amd64、USER=node、revision对应源提交。日志位于ECS的`/opt/kith-inn/releases/2bb0e14-build.log`。未推镜像仓库、未开放API端口。
 - **云端镜像负向启动检查已通过**：临时容器禁用网络、无数据库或微信配置，使用只读/0.5CPU/512MiB/128PID等限制启动实际入口，返回`server_start_failed`、退出码1，符合缺配置拒绝启动的预期。临时容器自动移除，无卷、无身份种子、未连接RDS；不能当作API健康或鉴权验收。
-- **私密配置位置已准备，值未填写**：`/etc/kith-inn`、`/etc/kith-inn/staging`为root所有、700；`runtime.env`为root所有、600，只复制了空值模板，没有真实凭据。该文件的`config --quiet`及专用Compose连接Docker读取项目状态成功，尚无街坊味服务容器。
+- **私密配置位置已准备**：`/etc/kith-inn`、`/etc/kith-inn/staging`为root所有、700；`runtime.env`为root所有、600。初始只复制空值模板，格式及专用Compose连接Docker检查成功；随后已安全填入数据库连接，结果见下节，微信配置仍为空。
 - **既有服务未受影响（本次检查范围）**：镜像准备后官网和hello-agent容器的StartedAt、restartCount与前述基线完全一致；Nginx主/worker PID及启动时间不变。官网loopback根路径HTTP200，hello-agent根路径HTTP307、容器healthy。未把307冒充其业务全流程验收；本轮没有执行官网发布、Nginx reload或重启。
 - **共享备份策略已核验，恢复未验证**：控制台显示每天07:00–08:00备份，快照保留7天；日志备份开启、保留7天；秒级备份关闭；实例释放后不保留备份。最新全量快照2026-10-01 07:20:18开始、07:22:55完成，恢复时间点07:20:19（控制台显示时间）。未核验最新PITR终点，未启动恢复或创建新实例。备份用量38.62GB，页面免费额度40GB；不据此承诺后续费用或恢复目标。
-- 备份页弹出的DBS服务关联角色授权已取消；未新增权限，未更改SSL、白名单或其他数据库。原账号页加载异常已通过用户可见的新标签解决，已看到运行账号处于激活状态并打开其空白重置窗口；随后用户明确决定本轮暂不轮换，已取消重置窗口，密码未更改。轮换记录为后续待办，不继续阻塞本轮部署；现有凭据尚待安全填入并验证连接。
+- 备份页弹出的DBS服务关联角色授权已取消；未新增权限，未更改SSL、白名单或其他数据库。原账号页加载异常已通过用户可见的新标签解决，已看到运行账号处于激活状态并打开其空白重置窗口；随后用户明确决定本轮暂不轮换，已取消重置窗口，密码未更改。轮换记录为后续待办，不继续阻塞本轮部署；现有凭据已填写并验证，见下节。
 - 用户确认可联系现有小程序管理员稍后配合；尚未收到/核验真实微信配置，没有上传小程序。
+
+## 2026-10-01 约18:15 运行配置与镜像连接验证
+
+- **私密配置已填写并验证**：首次使用终端中已保存的配置返回PostgreSQL `28P01`。用户随后授权输入现有密码，使用无回显输入、URL编码、600临时文件和原子替换更新`runtime.env`后复验通过；没有更改RDS密码。只记录文件元数据和字段是否存在，不输出字段值。数据库字段非空，AppID/AppSecret/OwnerOpenID和可信代理字段仍为空；root/600及目录700复核通过；专用Compose读取这份实际私密文件执行`config --quiet`成功，未输出展开内容。
+- **实际镜像到RDS已通过**：固定镜像`2bb0e14`在只读/0.5CPU/512MiB/128PID临时容器中运行现有`createKithInnPool`和`createReadinessProbe`。只读事务检查确认库名和角色匹配、pool.max=5、schema_ready=true、ssl=false；五张业务表均0行，随后ROLLBACK并退出。不是HTTP ready、API业务写读、微信身份或重启持久化验收。
+- **跨库只读核验（仅运行角色）**：`study_platform`、`study_weekly_menu`、`rdsadmin`的有效CONNECT为false；`cfp`、`postgres`为true。实际连接后只查系统目录和权限函数，未读取其他应用业务行。`cfp`共21个用户表/视图等关系，拥有schema USAGE且具备SELECT/INSERT/UPDATE/DELETE的对象数均为0；`postgres`用户关系为0。两库均无数据库CREATE和用户schema CREATE，但均有TEMP权限。因此不能宣称连接级完全隔离；迁移角色、反向跨应用访问、函数/default privileges仍未全面审计，没有执行REVOKE/GRANT。
+- **代理/证书只读核验**：现有Nginx配置检测通过，只有官网和hello-agent对应站点，没有街坊味入口；未reload。官网证书SAN仅覆盖`codeforpeople.cn`、`www.codeforpeople.cn`，hello-agent证书仅覆盖其已有子域名，均不能直接覆盖街坊味新子域名。专用DNS、证书和代理仍需准备，不复用错误证书。
+- **服务状态**：临时检查容器已自动退出，`docker ps`仅有既有官网和hello-agent，后者healthy；街坊味HTTP服务未启动。本轮只读检查没有业务写入或共享权限变更。
+- 文档提交`e5b4c27`的[仓库CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36847158523)与[镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36847158038)成功；后续证据提交的检查另以PR页为准。
 
 ---
 
