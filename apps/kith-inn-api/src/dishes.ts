@@ -1,6 +1,6 @@
 import {
   DishBatchInputSchema, DishBatchResultSchema, DishListSchema, DishSchema,
-  DishUpdateInputSchema, IdSchema, type Dish
+  DishUpdateInputSchema, DishDeleteInputSchema, IdSchema, type Dish
 } from "@cfp/kith-inn-contracts";
 import type { Pool } from "pg";
 import { ApiError } from "./auth";
@@ -44,6 +44,21 @@ export class Dishes {
           SELECT $1, name, category FROM jsonb_to_recordset($2::jsonb) AS input(name text, category text)
           RETURNING ${columns}`, [session.merchantId, JSON.stringify(data.items)]);
         return { status: 201, body: DishBatchResultSchema.parse({ items: saved.rows.map(toDish) }) };
+      }, this.clock()));
+  }
+
+  async delete(session: ActiveSession, key: string, id: string, body: unknown) {
+    const parsed = DishDeleteInputSchema.safeParse(body), parsedId = IdSchema.safeParse(id);
+    if (!parsed.success || !parsedId.success) throw invalid();
+    const data = parsed.data, dishId = parsedId.data.toLowerCase();
+    return this.sessions.withSession(session, (client) => idempotent(client, session.merchantId, key,
+      { method: "DELETE", path: `/api/kith-inn/dishes/${dishId}`, body: data }, async () => {
+        const current = await client.query("SELECT version FROM dishes WHERE merchant_id = $1 AND id = $2", [session.merchantId, dishId]);
+        if (!current.rowCount) throw new ApiError(404, "NOT_FOUND", "没有找到该菜品");
+        if (current.rows[0].version !== data.baseVersion) throw conflict(current.rows[0].version);
+        // Saved weeks own their snapshots; deleting a pool entry must not rewrite them.
+        await client.query("DELETE FROM dishes WHERE merchant_id = $1 AND id = $2", [session.merchantId, dishId]);
+        return { status: 200, body: { id: dishId } };
       }, this.clock()));
   }
 

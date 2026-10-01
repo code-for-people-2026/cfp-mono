@@ -42,6 +42,7 @@ it("rejects unknown fields on every DTO, including nested trust boundaries", () 
     Structure: write().structure, DishInput: { name: "汤", category: "soup" }, Dish: dish,
     DishList: { items: [dish] }, DishBatchInput: { items: [{ name: "汤", category: "soup" }] },
     DishBatchResult: { items: [dish] }, DishUpdateInput: { baseVersion: 1, name: "汤", category: "soup", active: true },
+    DishDeleteInput: { baseVersion: 1 }, DishDeleteResult: { id },
     SnapshotItem: { dishId: id, name: "汤" }, MealSnapshot: preview().meals[0], MealInput: write().meals[0],
     MealSelection: { date, mealType: "lunch", enabled: true },
     GenerateInput: { structure: write().structure, meals: write().meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled })) },

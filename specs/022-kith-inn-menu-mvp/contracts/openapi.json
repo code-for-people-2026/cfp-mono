@@ -349,6 +349,90 @@
             "$ref": "#/components/parameters/IdempotencyKey"
           }
         ]
+      },
+      "delete": {
+        "operationId": "deleteDish",
+        "summary": "删除单道菜品",
+        "description": "按baseVersion删除菜品池记录并保留已保存周菜单快照；需幂等键，同键重试重放成功结果。删除后可重新添加同名菜品。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store"
+                },
+                "description": "所有响应禁止缓存。"
+              },
+              "X-Request-Id": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "description": "服务端生成的诊断ID，不包含凭据。"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DishDeleteResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/400"
+          },
+          "401": {
+            "$ref": "#/components/responses/401"
+          },
+          "403": {
+            "$ref": "#/components/responses/403"
+          },
+          "404": {
+            "$ref": "#/components/responses/404"
+          },
+          "409": {
+            "$ref": "#/components/responses/409"
+          },
+          "413": {
+            "$ref": "#/components/responses/413"
+          },
+          "429": {
+            "$ref": "#/components/responses/429"
+          },
+          "500": {
+            "$ref": "#/components/responses/500"
+          },
+          "503": {
+            "$ref": "#/components/responses/503"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DishDeleteInput"
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "dishId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ]
       }
     },
     "/weeks": {
@@ -1895,6 +1979,32 @@
         "required": [
           "status"
         ]
+      },
+      "DishDeleteInput": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "baseVersion"
+        ],
+        "properties": {
+          "baseVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "DishDeleteResult": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
       }
     }
   }

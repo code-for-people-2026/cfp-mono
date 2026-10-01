@@ -858,6 +858,20 @@
         "confirmedAt": null,
         "updatedAt": "2026-09-20T11:00:00Z"
       }
+    },
+    {
+      "name": "删除菜品请求",
+      "schema": "DishDeleteInput",
+      "value": {
+        "baseVersion": 1
+      }
+    },
+    {
+      "name": "删除菜品成功",
+      "schema": "DishDeleteResult",
+      "value": {
+        "id": "11111111-1111-4111-8111-000000000001"
+      }
     }
   ],
   "invalid": [
@@ -1410,6 +1424,21 @@
         "confirmedAt": null,
         "updatedAt": "2026-09-20T11:00:00Z",
         "published": true
+      }
+    },
+    {
+      "name": "删除必须有有效版本",
+      "schema": "DishDeleteInput",
+      "value": {
+        "baseVersion": 0
+      }
+    },
+    {
+      "name": "删除不接受账号覆盖",
+      "schema": "DishDeleteInput",
+      "value": {
+        "baseVersion": 1,
+        "merchantId": "forged"
       }
     }
   ]
