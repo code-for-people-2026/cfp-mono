@@ -1,0 +1,5 @@
+dist/
+.taro/
+coverage/
+project.private.config.json
+.env*
