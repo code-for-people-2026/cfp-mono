@@ -1,4 +1,4 @@
-# 2026-10-01 部署接手记录（当前）
+# 2026-10-02 部署接手记录（当前）
 
 本节优先于下方2026-09-21历史演练。主线业务为已合并PR #377的 `9cd1987`，
 PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲突。
@@ -15,8 +15,8 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
 | 镜像构建已验证（CI/ECS） | `2bb0e14`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36832046777)成功；同一提交已在ECS完成构建及缺配置拒绝启动检查，详见下节。镜像未推仓库，运行服务未启动。后续文档提交的CI结果维护在PR/#360 |
 | 镜像连接云库已验证 | 现有运行凭据已受控写入ECS；实际镜像复用createKithInnPool/createReadinessProbe连接测试库通过，pool.max=5、schema_ready=true、ssl=false，五张业务表仍为0行。只读临时容器，未启动HTTP服务 |
-| 云端API未部署 | 源码、镜像、专用Compose和数据库配置已准备；用户决定暂缓密码轮换。微信三项仍缺，运行入口会拒绝启动；未向staging写入假身份 |
-| 微信/正式环境未验证 | 未核验AppID、AppSecret、桃子OpenID、域名、成员权限；未上传/真机联调。运行角色跨库权限已部分只读核验，仍未完全隔离；正式库、共享SSL评估、备份恢复及审核路径待办 |
+| 云端API未部署 | 源码、镜像、专用Compose和数据库配置已准备；用户决定暂缓密码轮换。用户提供的AppID已配置，仍缺AppSecret和桃子OpenID，运行入口会拒绝启动；未向staging写入假身份 |
+| 微信/正式环境未验证 | AppID来自用户提供，后端配置与微信构建产物已核对；后台账号名称/主体/成员权限未独立核验。AppSecret、桃子OpenID、域名和真机联调待办；未上传。运行角色跨库权限已部分只读核验，仍未完全隔离；正式库、共享SSL评估、备份恢复及审核路径待办 |
 
 本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
 未改业务行为。两轮假数据只在本次新建PG容器中；未清理旧学习库和用户试用数据。
@@ -24,7 +24,7 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：核验现有AppID/AppSecret并取得桃子真实OpenID→
+下一步：取得现有AppSecret并核对桃子真实OpenID→
 独立测试API启动及负向检查→专用HTTPS入口及真实登录→API写读/重启→体验版联调。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
 
@@ -50,6 +50,15 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 - **代理/证书只读核验**：现有Nginx配置检测通过，只有官网和hello-agent对应站点，没有街坊味入口；未reload。官网证书SAN仅覆盖`codeforpeople.cn`、`www.codeforpeople.cn`，hello-agent证书仅覆盖其已有子域名，均不能直接覆盖街坊味新子域名。专用DNS、证书和代理仍需准备，不复用错误证书。
 - **服务状态**：临时检查容器已自动退出，`docker ps`仅有既有官网和hello-agent，后者healthy；街坊味HTTP服务未启动。本轮只读检查没有业务写入或共享权限变更。
 - 文档提交`e5b4c27`的[仓库CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36847158523)与[镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36847158038)成功；后续证据提交的检查另以PR页为准。
+
+## 2026-10-02 AppID 接入准备
+
+- 用户从现有小程序后台提供AppID；通过已恢复的ECS免密会话，仅更新`runtime.env`中的`KITH_INN_WECHAT_APP_ID`，保留其余配置。复查数据库/AppID字段非空、AppSecret/OwnerOpenID仍为空；root所有者、文件600及目录700不变。没有重置任何凭据。
+- 在`7dd7d67`源码上使用Node22.23.3/pnpm10.2及现有`TARO_APP_ID`构建参数执行`build:weapp`，退出码0。生成的`dist/project.config.json`中AppID与用户提供值一致，`compileType=miniprogram`、`miniprogramRoot=./`、`urlCheck=true`；源代码的默认配置未改。本次没有构建网页或变更前端业务。
+- 本次构建未配置API源站，仅用于检查AppID注入，不能当作可上传的联调包；后续填入已验证HTTPS地址后必须重新构建。尚未导入开发者工具、上传小程序或真实登录。
+- 浏览器工具的站点安全策略直接阻止访问微信公众平台后台，未绕过限制。因此账号名称/主体/线上用途/成员权限仍需用户或管理员手动核对；AppID目前是用户提供的接入信息，不冒充平台实测证明。
+- `main`仍为`9cd1987`；PR #368仍为draft且可合并，`7dd7d67`的[仓库CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36848363634)和[镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36848363283)均成功。该文档后续提交的检查另以PR页为准；ECS实际镜像仍是固定源提交`2bb0e14`。
+- 当前API仍未启动；继续取得同一小程序的现有AppSecret，再由桃子真实微信登录换码确认OpenID。合法请求域名、专用证书及真实API/体验版联调尚未完成。
 
 ---
 
