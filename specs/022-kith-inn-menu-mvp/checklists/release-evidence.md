@@ -70,7 +70,7 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 
 - **用户报告已重置，服务器已保存**：用户告知自行完成AppSecret重置，随后通过Workbench终端的无回显输入填写。保存脚本仅替换`KITH_INN_WECHAT_APP_SECRET`，采用同目录600临时文件和原子替换；没有从聊天或旧记录复制密钥，没有调用微信后台重置操作。
 - **保存及配置格式已验证**：只读元数据检查确认AppSecret非空、长度32、文件root/600、目录700；数据库/AppID字段仍非空，OwnerOpenID仍为空。专用Compose5.5.1读取实际私密配置执行`config --quiet`成功；未输出配置内容。
-- 用户因输出中的`wechat_login_verified: false`询问是否输入错误。已核对该次`configured: true`的成功保存结果，并解释前者仅表示尚未进行微信登录验证。没有再次覆盖成功保存的值，也没有将密钥明文显示。
+- 用户询问是否输入错误并请求重试或明文查看。已核对最近一次`configured: true`的成功保存结果，并解释`wechat_login_verified: false`仅表示尚未进行微信登录验证。没有再次覆盖成功保存的值，也没有将密钥明文显示。
 - **真实接入未验证**：没有真实`wx.login`换码结果，不能证明AppSecret与AppID匹配或有效；没有绑定OpenID、创建会话、启动API或上传小程序。下一步由真实测试微信身份取得一次性code，复用现有服务端换码函数验证。
 
 ---
