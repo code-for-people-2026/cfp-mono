@@ -90,14 +90,16 @@ export class GreetingService {
     if (existing) {
       if (existing.fingerprint !== hash)
         throw new AppError(409, "同一个请求标识不能用于不同内容");
-      if (existing.status === "running")
+      // 外部产物已经由客户端生成；持锁且指纹相同的重试可补完上次失败的保存。
+      // 平台/BYOK 的模型执行不能因此重复启动，仍保留原来的执行中限制。
+      if (existing.status === "running" && mode !== "external")
         throw new AppError(
           409,
           "本轮仍在执行；若进程曾中断，请使用新的请求标识重试",
         );
       if (existing.status === "failed")
         throw new AppError(409, "该请求此前失败，请使用新的请求标识重试");
-      return { row: existing, duplicate: true };
+      return { row: existing, duplicate: existing.status === "completed" };
     }
     await new ContextService(this.repo).ensureRoom(sessionId);
     const row = await this.repo.create("greetings", {

@@ -16,6 +16,8 @@ const origin = native ? HELLO_API_ORIGIN.replace(/\/$/, "") : "";
 const storageKey = `hello-miniapp-identity:${origin}`;
 let deviceToken = "";
 let identityPromise: Promise<void> | undefined;
+let activeDownloads = 0;
+const waitingDownloads: (() => void)[] = [];
 
 async function request<T>(
   path: string,
@@ -116,12 +118,26 @@ export const revokeMcpTokens = () => request("token/revoke", "POST");
 export async function imageSource(id: number): Promise<string> {
   const url = `${origin}/api/hello/media/${id}`;
   if (!native) return url;
-  const result = await Taro.downloadFile({
-    url,
-    header: { Authorization: `Bearer ${deviceToken}` },
+  // 与新上传预览共用三个下载位，为聊天及血条请求保留连接；失败也必须释放。
+  await new Promise<void>((resolve) => {
+    const start = () => {
+      activeDownloads++;
+      resolve();
+    };
+    if (activeDownloads < 3) start();
+    else waitingDownloads.push(start);
   });
-  if (result.statusCode !== 200) throw new Error("图片读取失败");
-  return result.tempFilePath;
+  try {
+    const result = await Taro.downloadFile({
+      url,
+      header: { Authorization: `Bearer ${deviceToken}` },
+    });
+    if (result.statusCode !== 200) throw new Error("图片读取失败");
+    return result.tempFilePath;
+  } finally {
+    activeDownloads--;
+    waitingDownloads.shift()?.();
+  }
 }
 
 export async function addImage(): Promise<Attachment> {

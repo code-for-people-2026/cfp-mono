@@ -48,7 +48,7 @@ export default function Chat() {
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [sessionId, setSessionId] = useState<number>();
   const [history, setHistory] = useState<Turn[]>([]);
-  const [images, setImages] = useState<Record<number, string>>({});
+  const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [mode, setMode] = useState<Mode>("platform");
@@ -90,16 +90,18 @@ export default function Chat() {
       api.getHistory(id),
       api.getMemory(id),
     ]);
-    const media = [...new Set(rows.flatMap((row) => row.input.mediaIds))];
-    const entries = await Promise.all(
-      media.map(
-        async (mediaId) => [mediaId, await api.imageSource(mediaId)] as const,
-      ),
-    );
     if (version !== historyVersion.current) return;
     setHistory(rows);
     setMemory(nextMemory);
-    setImages(Object.fromEntries(entries));
+    // 文字与记忆先恢复；图片单独加载，失败只影响对应占位，不影响发送结果。
+    const media = [...new Set(rows.flatMap((row) => row.input.mediaIds))];
+    for (const mediaId of media) {
+      const update = (source: string | null) => {
+        if (version === historyVersion.current)
+          setImages((current) => ({ ...current, [mediaId]: source }));
+      };
+      void api.imageSource(mediaId).then(update, () => update(null));
+    }
   }
   async function boot() {
     setLoading(true);
@@ -124,6 +126,9 @@ export default function Chat() {
   }
   useEffect(() => {
     void boot();
+    return () => {
+      historyVersion.current++;
+    };
   }, []);
   useEffect(() => {
     // 消息和输入区先完成布局，再更新滚动锚点，避免末条回复被输入框遮住。
@@ -163,25 +168,38 @@ export default function Chat() {
     setAttachments([]);
     setError("");
     let id = sessionId;
+    let saved = false;
     try {
       if (!id) {
         const session = await api.newSession();
         id = session.id;
         setSessionId(id);
       }
-      await api.generate(
+      const result = await api.generate(
         id,
         requestId(),
         mode,
         { text: draft.text, mediaIds: draft.images.map((item) => item.id) },
         key,
       );
+      saved = true;
+      // 保存成功与刷新成功是两件事，不能因随后读取失败诱导用户重复发送。
+      setHistory((current) => [
+        ...current.filter((row) => row.id !== result.id),
+        result,
+      ]);
       await readHistory(id);
     } catch (value) {
-      problem(value);
-      setText(draft.text);
-      setAttachments(draft.images);
-      if (id) await readHistory(id).catch(() => undefined);
+      if (saved) {
+        setError(
+          "回复已保存，记录暂时刷新失败，请稍后重新打开；无需再次发送。",
+        );
+      } else {
+        problem(value);
+        setText(draft.text);
+        setAttachments(draft.images);
+        if (id) await readHistory(id).catch(() => undefined);
+      }
     } finally {
       setPending(undefined);
       setBusy(false);
@@ -305,24 +323,37 @@ export default function Chat() {
                     {row.input.text && <Text>{row.input.text}</Text>}
                     {row.input.mediaIds.length > 0 && (
                       <View className="bubble-images">
-                        {row.input.mediaIds.map(
-                          (id) =>
-                            images[id] && (
-                              <Image
-                                key={id}
-                                className="message-image"
-                                src={images[id]}
-                                mode="aspectFill"
-                                onClick={() =>
-                                  Taro.previewImage({
-                                    urls: row.input.mediaIds
-                                      .map((value) => images[value])
-                                      .filter(Boolean),
-                                    current: images[id],
-                                  })
-                                }
-                              />
-                            ),
+                        {row.input.mediaIds.map((id) =>
+                          images[id] ? (
+                            <Image
+                              key={id}
+                              className="message-image"
+                              src={images[id]!}
+                              mode="aspectFill"
+                              onError={() =>
+                                setImages((current) => ({
+                                  ...current,
+                                  [id]: null,
+                                }))
+                              }
+                              onClick={() =>
+                                Taro.previewImage({
+                                  urls: row.input.mediaIds
+                                    .map((value) => images[value])
+                                    .filter(
+                                      (source): source is string => !!source,
+                                    ),
+                                  current: images[id]!,
+                                })
+                              }
+                            />
+                          ) : (
+                            <Text key={id} className="image-placeholder">
+                              {images[id] === null
+                                ? "图片暂不可用"
+                                : "图片加载中…"}
+                            </Text>
+                          ),
                         )}
                       </View>
                     )}

@@ -50,6 +50,8 @@ pnpm --filter @cfp/hello-agent cms:admin
 
 三种模式共享用户、祝福会话及吉祥话产物。外部模型生成是客户端的来源声明，平台无法仅凭 MCP 参数证明它真的调用过某个模型，CMS 和 UI 均明确标注。
 
+聊天页先恢复文字历史和记忆血条，再独立加载每张图片；图片失败只显示对应占位。小程序图片下载共用最多三个并发位，给其他业务请求留出连接。生成接口已返回保存成功后，即使随后刷新历史失败，也保留刚收到的回复，不把已发送内容退回草稿。
+
 ## 前后端模块
 
 ```mermaid
@@ -130,6 +132,8 @@ pnpm --filter @cfp/hello-agent exec tsx scripts/oss-storage-check.ts
 
 前者使用真实 SQLite 故障触发器和独立进程验证中途失败、回滚、重试与迁移去重；后者使用真实 Payload 写入与公开钩子注入失败，仅模拟 OSS。测试使用临时数据库，不需要云端凭证。
 
+外部 MCP 保存使用 `requestId` 和输入、输出内容指纹保持幂等。若完成写入在钩子中失败并回滚，相同请求可重新取得会话锁，补完原来的 `running` 记录；成功后重试返回同一产物，不同内容不能覆盖。`scripts/external-retry-check.ts` 通过真实 MCP 客户端与 Payload 写入后故障验证这个边界。该恢复规则只适用于已经由外部客户端生成的产物，不自动重启平台或 BYOK 的模型执行。
+
 产品历史是来源事实，ADK 事件是执行轨迹，二者用途不同。每个内置生成轮次有自己的 ADK 执行会话，加载当前摘要与尚未压缩的已完成对话；达到记忆预算时停止新生成，等待用户整理。历史读取按 ID 分页，不再局限于早期 100 轮；执行会话列表最多 1000 条仍是本地限制。
 
 ## 记忆血条与看广告整理
@@ -148,7 +152,7 @@ pnpm --filter @cfp/hello-agent exec tsx scripts/oss-storage-check.ts
 
 不需要 Redis、向量记忆库或独立 ADK DatabaseSessionService。若以后有长时间暂停、多执行器、跨服务恢复，再引入专用任务编排器；业务产物仍归 Payload，不能用聊天记录替代。
 
-数据库在 `.data/hello.db`，本地自动生成的 CMS 密钥在 `.data/secret`，均被 Git 忽略。数据在重启后保留。停止进程的未完成轮次保留 running 记录；不会假装已经恢复模型执行。锁过期后使用新请求 ID 重试；完成过的请求仍幂等。
+数据库在 `.data/hello.db`，本地自动生成的 CMS 密钥在 `.data/secret`，均被 Git 忽略。数据在重启后保留。停止进程的未完成轮次保留 running 记录；不会假装已经恢复模型执行。平台和 BYOK 在锁过期后使用新请求 ID 重试；外部保存按上述同指纹规则恢复，完成过的请求仍幂等。
 
 ## 自带 Agent / MCP
 
@@ -230,6 +234,7 @@ pnpm --filter @cfp/hello-agent eval:promptfoo
 本机迁移验收：`NODE_ENV=production pnpm --filter @cfp/hello-agent exec tsx scripts/verify-preview-db.ts`。
 新迁移生成：`pnpm --filter @cfp/hello-agent db:migration <英文变更名>`。
 归档必须用明确白名单，不能把整个工作目录或 `.data` 打进镜像。
+根 `.dockerignore` 同时排除所有 `.data`，保护直接从本地工作目录构建镜像的路径。`scripts/image-context-check.mjs` 检查实际排除规则；CI 以 `--docker` 使用无敏感内容的临时夹具执行真实 Docker COPY，确认私密路径未进入构建而必需源码仍保留。此测试不读取或传送真实凭证。
 当前预览采用手动发布，不会因为 Git push 或官网部署而自动更新。
 
 再次部署前，为独立 SQLite 创建一致性备份，保留旧镜像和配置；变更数据库后不能只切旧镜像冒充完整回滚。

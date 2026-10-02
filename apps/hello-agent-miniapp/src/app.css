@@ -186,6 +186,16 @@ input {
   border-radius: 9px;
   margin-top: 5px;
 }
+.image-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 94px;
+  min-height: 94px;
+  padding: 8px;
+  color: #637568;
+  font-size: 12px;
+}
 .suggestions {
   margin: 8px 0 28px 37px;
 }
