@@ -1,0 +1,53 @@
+{
+  "name": "@cfp/hello-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/sync-miniapp.mjs && next dev -H 127.0.0.1 -p 3310",
+    "build": "node scripts/sync-miniapp.mjs && next build",
+    "start": "node scripts/sync-miniapp.mjs && tsx scripts/init-db.ts && next start -H 127.0.0.1 -p 3310",
+    "db:init": "tsx scripts/init-db.ts",
+    "db:memory": "node scripts/migrate-memory.mjs",
+    "db:migration": "tsx scripts/create-migration.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage && pnpm test:integration",
+    "test:e2e": "tsx scripts/e2e.ts",
+    "test:http": "tsx scripts/http-smoke.ts",
+    "test:integration": "tsx scripts/integration.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts",
+    "db:images": "tsx scripts/migrate-images.ts",
+    "test:external": "tsx scripts/external-smoke.ts",
+    "eval": "tsx scripts/evaluate.ts",
+    "eval:promptfoo": "pnpm dlx promptfoo@0.123.1 eval --config promptfooconfig.yaml --no-cache --max-concurrency 1",
+    "external-agent": "tsx scripts/external-agent.ts",
+    "cms:admin": "tsx scripts/create-admin.ts"
+  },
+  "dependencies": {
+    "@google/adk": "2.1.0",
+    "@google/genai": "^2.9.0",
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@payloadcms/db-sqlite": "3.85.1",
+    "@payloadcms/next": "3.85.1",
+    "ali-oss": "6.23.0",
+    "next": "16.2.9",
+    "payload": "3.85.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "sharp": "0.34.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/ali-oss": "6.23.3",
+    "@types/node": "^20.19.26",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "16.2.9",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

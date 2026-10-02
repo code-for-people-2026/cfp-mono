@@ -1,0 +1,70 @@
+# 替换 __HOSTNAME__ 与 __ADMIN_ALLOW_RULES__ 后先执行 nginx -t。
+# 仅公开产品入口；其余路径（后台、Payload API 等）继承管理员网络白名单。
+map $request_method $aj_preview_write_key {
+  default "";
+  POST $binary_remote_addr;
+}
+limit_req_zone $aj_preview_write_key zone=aj_preview_writes:10m rate=30r/m;
+limit_conn_zone $binary_remote_addr zone=aj_preview_connections:10m;
+
+server {
+  listen 80;
+  server_name __HOSTNAME__;
+  return 308 https://__HOSTNAME__$request_uri;
+}
+server {
+  listen 443 ssl http2;
+  server_name __HOSTNAME__;
+  ssl_certificate /opt/cfp-hello-agent/private/fullchain.pem;
+  ssl_certificate_key /opt/cfp-hello-agent/private/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  __ADMIN_ALLOW_RULES__
+  allow 127.0.0.1;
+  deny all;
+  client_max_body_size 8m;
+  access_log /var/log/nginx/aj-preview.access.log;
+  error_log /var/log/nginx/aj-preview.error.log;
+  add_header X-Robots-Tag "noindex, nofollow, noarchive" always;
+  add_header X-Content-Type-Options nosniff always;
+  proxy_http_version 1.1;
+  proxy_set_header Host $host;
+  proxy_set_header X-Real-IP $remote_addr;
+  proxy_set_header X-Forwarded-For $remote_addr;
+  proxy_set_header X-Forwarded-Proto https;
+  proxy_read_timeout 120s;
+  limit_req_status 429;
+  limit_conn_status 429;
+  error_page 429 = @busy;
+
+  location = / {
+    return 302 /chat/index.html;
+  }
+  location ^~ /chat/ {
+    allow all;
+    proxy_pass http://127.0.0.1:3310;
+  }
+  location = /api/ready {
+    allow all;
+    proxy_pass http://127.0.0.1:3310;
+  }
+  location ^~ /api/hello/ {
+    allow all;
+    limit_req zone=aj_preview_writes burst=20 nodelay;
+    limit_conn aj_preview_connections 5;
+    proxy_pass http://127.0.0.1:3310;
+  }
+  location = /api/mcp {
+    allow all;
+    limit_req zone=aj_preview_writes burst=20 nodelay;
+    limit_conn aj_preview_connections 5;
+    proxy_buffering off;
+    proxy_pass http://127.0.0.1:3310;
+  }
+  location @busy {
+    default_type application/json;
+    return 429 '{"error":"操作较频繁，请稍后再试"}';
+  }
+  location / {
+    proxy_pass http://127.0.0.1:3310;
+  }
+}

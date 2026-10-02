@@ -1,0 +1,30 @@
+name: cfp-hello-agent
+services:
+  app:
+    image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/cfp-hello-agent/private/runtime.env
+      - /opt/cfp-hello-agent/private/oss.env
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - /opt/cfp-hello-agent/data:/data
+    mem_limit: 1g
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3310/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3

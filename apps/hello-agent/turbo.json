@@ -1,0 +1,15 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build", "@cfp/hello-agent-miniapp#build"],
+      "outputs": [".next/**", "public/chat/**"]
+    },
+    "dev": {
+      "passThroughEnv": ["DEEPSEEK_API_KEY", "HELLO_*"]
+    },
+    "test:coverage": {
+      "cache": false
+    }
+  }
+}
