@@ -24,7 +24,7 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：用户扫码已生成的开发版预览码，验证手机登录与业务→核对体验成员/版本上传权限→
+下一步：用已修复真机启动错误的新开发版预览码复验手机登录与业务→核对体验成员/版本上传权限→
 上传并设为体验版，完成真机全流程。测试身份为用户本人，正式环境另绑定桃子。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
 
@@ -133,6 +133,14 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 - **开发版预览包已上传生成**：00:18左右使用工具“预览”，显示“上传代码完成”、约450.3KB并生成手机二维码，本次码提示00:43失效。实际包对应实现`fa585b5`、证据HEAD`b107aa8`，真实AppID/HTTPS源站一致。仅为开发版预览，没有点击版本“上传”、设为体验版或正式发布；已请用户用同一微信扫码验证登录、已确认周与新菜，手机结果待回报。
 - **当前CI通过**：`b107aa8d5a7df98230a359785822902872ce9080`的[verify](https://github.com/code-for-people-2026/cfp-mono/actions/runs/37031691481/job/110919818386)和[image](https://github.com/code-for-people-2026/cfp-mono/actions/runs/37031690418/job/110919815893)均SUCCESS；Preview image目标none，官网生产部署SKIPPED。后续仅文档提交的检查另以PR为准。
 - **尚未验证**：手机登录/完整排菜保存重开复制、另一真实非经营者拒绝、双设备、体验版版本上传与成员验收；正式环境及隔离恢复等后续事项不因本次原生工具成功自动完成。
+- **首轮手机反馈未通过**：用户明确区分电脑模拟器可看、手机进入后业务区域白屏。独立复查公网health/ready200、未登录业务401且TLS验证成功，不能据此断言手机网络正常。用户另提出与本地界面不同，源码与旧工作树对比仅有已记录的原生兼容改动；实际同状态视觉对照尚未完成，未擅自改版。
+
+## 2026-10-03 Android 真机白屏定位与修复准备
+
+- **实际故障已定位**：HUAWEI-JAD-AL00、系统31、微信8.0.78、基础库3.17.3 [1652]，真机调试通道显示正常连接，但业务页空白。Console第一条为 `SyntaxError: Invalid regular expression: /[\p{Cc}\p{Zl}\p{Zp}]/u: Invalid property name in character class`，第二条为 `rootCompPath=pages/week/index not found`。共享契约中的正则字面量在该手机引擎解析时失败，页面未注册；此时尚未发起真实登录，不能归为AppSecret或API故障。
+- **修复已实现**：将菜名校验中的Unicode属性转义替换为相同字符集合的显式范围（Cc的65个控制字符及U+2028/U+2029）。依据[Unicode字符分类](https://www.unicode.org/Public/UCD/latest/ucd/extracted/DerivedGeneralCategory.txt)核对集合；保留NFC规范化、1–60码点、控制字符拒绝和全部业务规则，不增加依赖。Zod未使用的emoji函数中仍有字符串形式的属性表达式，不在本业务初始化时执行；本次真实报错的common.js字面量已消除。
+- **本地已验证**：新增回归核对全部67个禁止字符及相邻允许字符；契约44项、小程序62项通过。独立本地PG测试容器运行根 `pnpm verify` 成功（含API105项、lint/typecheck/coverage/knip/build），随后停止自有容器并保留数据。日志 `verify-weapp-phone-regex.log` 位于既有私密测试目录。检查后恢复真实AppID、HTTPS源站的weapp产物和原私有项目配置，urlCheck=true；未部署或重启云端服务。
+- **新预览包已上传，手机复验待回报**：约00:45完成正常“预览”上传，450.3KB，二维码当次01:10失效。已结束旧真机调试并请用户退出旧页、扫描新预览码。首轮真机调试面板默认勾选了“不校验合法域名”和“使用工具端Storage”；只使用其错误栈定位问题，不能把该会话当作正常手机登录验收。以正常预览的页面、真实登录和业务结果为后续证据。
 
 ---
 
