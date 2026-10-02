@@ -13,10 +13,10 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 独立发布已核验 | 配置迁入 `apps/kith-inn-api/deploy`；共享CI/部署识别文件与main一致。实际main..HEAD识别 website=false、weekly_menu=false；专用工作流仅构建街坊味镜像，无部署步骤 |
 | 本地已验证 | Node22.23.3、pnpm10.2、独立Docker PG17，全新三个 `_test` 库；根pnpm verify成功（lint/typecheck/coverage/knip/build）。API全量105项通过，配置/HTTP/runtime定向37项通过；配置渲染检查通过 |
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
-| 镜像构建已验证（CI/ECS） | `2bb0e14`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36832046777)成功；同一提交已在ECS完成构建及缺配置拒绝启动检查，详见下节。镜像未推仓库，运行服务未启动。后续文档提交的CI结果维护在PR/#360 |
+| 镜像构建已验证（CI/ECS） | `2bb0e14`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36832046777)成功；同一提交已在ECS完成构建及缺配置拒绝启动检查，详见下节。镜像未推仓库；同一镜像现已启动测试服务，见10月2日部署记录。后续提交CI结果维护在PR/#360 |
 | 镜像连接云库已验证 | 现有运行凭据已受控写入ECS；实际镜像复用createKithInnPool/createReadinessProbe连接测试库通过，pool.max=5、schema_ready=true、ssl=false，五张业务表仍为0行。只读临时容器，未启动HTTP服务 |
-| 云端API未部署 | 源码、镜像、专用Compose和数据库配置已准备；用户决定暂缓数据库密码轮换。AppID及用户自行重置的AppSecret已配置；AppSecret仅验证保存和格式，仍缺测试经营者的真实OpenID，运行入口会拒绝启动；测试可用用户本人，不必等桃子。未向staging写入假身份 |
-| 微信/正式环境未验证 | AppID来自用户提供，后端配置与微信构建产物已核对；后台账号名称/主体/成员权限未独立核验。AppSecret已保存但尚未微信换码验证；测试经营者OpenID、域名和真机联调待办，未上传。正式环境另需桃子身份绑定。运行角色跨库权限已部分只读核验，仍未完全隔离；正式库、共享SSL评估、备份恢复及审核路径待办 |
+| 云端API已部署、基础检查已验证 | 2026-10-02 23:01:43（北京时间）固定镜像`2bb0e14`启动；仅`127.0.0.1:3306`，Docker healthy，health/ready均200，缺少/无效会话401、三类非法登录请求400；容器资源与私密配置限制已实测。真实业务写读与重启验证待办 |
+| 微信换码已验证，API登录与正式环境未验证 | 用户扫码账号真实wx.login凭证经现有后端换码成功，AppSecret已验证，真实OpenID仅保存在测试私密配置；换码没有创建数据库身份/会话。下一项为真实API登录，随后业务读写。HTTPS/request域名、成员/上传权限、真机、正式库及桃子身份、共享SSL评估、完整权限隔离、恢复和审核路径待办 |
 
 本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
 未改业务行为。两轮假数据只在本次新建PG容器中；未清理旧学习库和用户试用数据。
@@ -24,8 +24,8 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：用测试经营者（可用用户本人）的真实微信登录code换码，验证AppSecret并核对OpenID→
-独立测试API启动及负向检查→专用HTTPS入口及真实登录→API写读/重启→体验版联调。
+下一步：以新微信code建立真实API会话→云端API写读/重启验证→专用HTTPS/request域名→
+微信开发版/体验版真机联调。测试身份为用户本人，正式环境另绑定桃子。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
 
 ## 2026-10-01 ECS 与共享备份只读核验
@@ -80,6 +80,19 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 - **原生编译问题已修复**：微信编译器报告`app-origin.wxss(1:8090)`的裸伪类选择器解析错误；将现用的直接子元素裸伪类改为对应元素的显式class，删除已无组件使用的旧`day-head`裸伪类规则。只调整CSS选择器及对应className，保留样式属性、布局、文案、业务逻辑和Q1～Q3。
 - **已验证**：Node22.23.3、Taro4.2.0重新执行`build:weapp`通过，215模块；小程序包lint/typecheck通过。开发者工具原生WXSS错误消失，模拟器正常显示本周入口及既有“尚未配置街坊味服务”提示。API源站仍为空，这不是业务联调包或云API验收；未以假会话填充页面。
 - **真实登录凭证已生成，换码待完成**：当前扫码账号在该AppID运行`wx.login`成功；凭证只进入系统剪贴板，不输出到控制台、报告或命令参数。自动剪贴板转送校验未通过，已准备服务器无回显输入，请用户粘贴一次；此时尚无服务端换码结果，不宣称AppSecret有效、OpenID绑定或API启动。
+
+
+## 2026-10-02 真实微信换码与云端 API 首次启动
+
+- **真实换码已验证**：用户在现有AppID的微信开发者工具内扫码，以该账号生成的真实`wx.login`凭证经服务器镜像中的`createWechatExchanger`成功换码。结果为`app_secret_verified=true`、`owner_configured=true`；真实OpenID原子写入root/600私密文件，未输出凭证或OpenID。该操作没有创建数据库经营者或会话，不能替代API登录验收。
+- **执行问题已修正并复核**：首次一次性验证容器遗漏tmpfs，`tsx`在创建`/tmp/tsx-1000`时失败，未执行微信换码。补齐与Compose相同的64MiB tmpfs后，模块加载和真实换码均成功；正式Compose本来已包含tmpfs，未改业务代码。浏览器自动粘贴曾拿到旧辅助命令，误进入旧AppSecret输入提示；已空输入取消，返回`configuration unchanged`，随后恢复正确输入，由用户完成粘贴。
+- **启动前实际检查通过**：可用内存2245MiB、根盘可用23357MiB，loopback3306空闲；库名/运行角色、四项必需配置、root/600及目录700均核对。云端Compose文件SHA-256与当前仓库一致，真实配置`config --quiet`通过。未重建数据库、未执行迁移或更改RDS配置。
+- **云端API已部署**：使用独立Compose5.5.1，仅执行`up -d --wait --wait-timeout 60 kith-inn-api`。容器`cfp-kith-inn-staging-kith-inn-api-1`启动于2026-10-02T15:01:43.461499877Z（北京时间23:01:43）；源提交`2bb0e14982722e884f235fed53de2c187cc82fde`，镜像ID仍为`sha256:d3d4496e0a973640698e3658d956bafdd207a6d594a7a12f948a50ed7b8e2c42`，约30.7秒后Docker healthy。只绑定127.0.0.1:3306，没有公网API入口。
+- **云端基础HTTP已验证**：health200、ready200；缺少会话401、未知会话401；非法JSON、空登录code、错误Content-Type均400。各响应含no-store和requestId，错误体requestId与响应头一致；检查响应及容器日志未出现数据库连接串、AppSecret或OwnerOpenID。
+- **运行限制已实测**：USER=node、根文件系统只读、0.5CPU、512MiB内存且同额memory-swap、128PID、ALL能力移除、no-new-privileges、64MiB tmpfs及loopback端口绑定均与Compose一致。
+- **本次部署没有重启其他容器**：官网StartedAt仍为2026-08-25T01:03:04.139905313Z；hello-agent在本次启动前已是2026-10-02T01:55:45.205213883Z，与10月1日旧记录不同，本轮不推测原因。两者在本次启动前后ID/StartedAt/restartCount完全一致，restartCount均0；未执行Nginx reload或其他应用部署。
+- **待验证**：真实API会话正在准备（须使用新的微信code），菜品/周菜单写读、业务错误处理、重启持久化、非经营者真实拒绝、HTTPS/request域名与真机体验版尚未完成。
+- **当前代码CI**：前端兼容修复`0b873735aa815a77a7371fc5194ec2deffd6d004`的verify和专用image检查均SUCCESS；PR #368仍OPEN/draft且MERGEABLE，未合并。服务运行版本仍为上述固定后端镜像。
 
 ---
 
