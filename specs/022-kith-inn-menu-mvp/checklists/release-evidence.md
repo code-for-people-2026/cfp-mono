@@ -15,8 +15,8 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 | 本地API已验证 | 全新独立库、受限runtime角色、显式人工测试会话。12项检查：未登录401、菜品写读、幂等重放、批量回滚、周菜单保存、旧版本409、完整进程重启后菜品及周菜单一致、停用403、撤销401、health200/ready503结构故障及恢复 |
 | 镜像构建已验证（CI/ECS） | `2bb0e14`的[专用镜像CI](https://github.com/code-for-people-2026/cfp-mono/actions/runs/36832046777)成功；同一提交已在ECS完成构建及缺配置拒绝启动检查，详见下节。镜像未推仓库；同一镜像现已启动测试服务，见10月2日部署记录。后续提交CI结果维护在PR/#360 |
 | 镜像连接云库已验证 | 现有运行凭据已受控写入ECS；实际镜像复用createKithInnPool/createReadinessProbe连接测试库通过，pool.max=5、schema_ready=true、ssl=false，五张业务表仍为0行。只读临时容器，未启动HTTP服务 |
-| 云端API已部署、基础检查已验证 | 2026-10-02 23:01:43（北京时间）固定镜像`2bb0e14`启动；仅`127.0.0.1:3306`，Docker healthy，health/ready均200，缺少/无效会话401、三类非法登录请求400；容器资源与私密配置限制已实测。真实业务写读与重启验证待办 |
-| 微信换码已验证，API登录与正式环境未验证 | 用户扫码账号真实wx.login凭证经现有后端换码成功，AppSecret已验证，真实OpenID仅保存在测试私密配置；换码没有创建数据库身份/会话。下一项为真实API登录，随后业务读写。HTTPS/request域名、成员/上传权限、真机、正式库及桃子身份、共享SSL评估、完整权限隔离、恢复和审核路径待办 |
+| 云端API已部署、基础检查已验证 | 2026-10-02 23:01:43（北京时间）固定镜像`2bb0e14`启动；仅`127.0.0.1:3306`，Docker healthy，health/ready均200，缺少/无效会话401、三类非法登录请求400；容器资源与私密配置限制已实测。真实业务写读及单容器重启持久化也已通过，详见后续记录 |
+| 微信换码与真实API登录已验证，真机/正式环境未验证 | 用户扫码账号的真实wx.login换码成功，AppSecret有效；新的code经实际HTTP登录201，首次真实经营者/会话已入库，认证读取200。业务17项检查及重启后API/数据库完整比对通过。HTTPS/request域名、成员/上传权限、非经营者真实拒绝、真机、正式库及桃子身份、共享SSL评估、完整权限隔离、恢复和审核路径待办 |
 
 本地重启演练第一轮脚本误把周PUT预期写为201（契约实际200）；修正测试断言后在新库重跑通过，
 未改业务行为。两轮假数据只在本次新建PG容器中；未清理旧学习库和用户试用数据。
@@ -24,7 +24,7 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 `runtime-result.txt`为本地结果，测试凭据文件不能分享。临时执行脚本为 `/tmp/kith-runtime-smoke.mts`，
 只能在新的专属本地PG容器运行，不能重跑到已有云库。
 
-下一步：以新微信code建立真实API会话→云端API写读/重启验证→专用HTTPS/request域名→
+下一步：启用已准备的专用测试HTTPS入口并核验来源限流→管理员配置request域名和成员权限→
 微信开发版/体验版真机联调。测试身份为用户本人，正式环境另绑定桃子。
 管理员协作事项和每步命令见[当前手册](../../../apps/kith-inn-api/deploy/KITH_INN_RUNBOOK.md)。
 
@@ -93,6 +93,25 @@ PR #368继续使用 `codex/kith-inn-release`，已在本地合入main解决冲�
 - **本次部署没有重启其他容器**：官网StartedAt仍为2026-08-25T01:03:04.139905313Z；hello-agent在本次启动前已是2026-10-02T01:55:45.205213883Z，与10月1日旧记录不同，本轮不推测原因。两者在本次启动前后ID/StartedAt/restartCount完全一致，restartCount均0；未执行Nginx reload或其他应用部署。
 - **待验证**：真实API会话正在准备（须使用新的微信code），菜品/周菜单写读、业务错误处理、重启持久化、非经营者真实拒绝、HTTPS/request域名与真机体验版尚未完成。
 - **当前代码CI**：前端兼容修复`0b873735aa815a77a7371fc5194ec2deffd6d004`的verify和专用image检查均SUCCESS；PR #368仍OPEN/draft且MERGEABLE，未合并。服务运行版本仍为上述固定后端镜像。
+
+
+## 2026-10-02 真实 API 业务与重启持久化
+
+- **真实API登录已验证**：新的wx.login凭证经`POST /api/kith-inn/sessions/wechat`返回201，随后带真实会话读取菜品返回200、初始0项。该步骤创建真实经营者及会话，没有直接种身份或会话；token仅保存在ECS root/600的验证文件，未输出到参数、日志或报告。
+- **云端业务17项检查通过**：初始空菜池、目标周不存在404、缺菜生成422；新增3道带“部署验证-2026-10-02”前缀的荤/素/汤菜；同幂等键重放返回相同结果，不同请求复用键409；包含重名项的批次409且没有留下新菜；有效修改提升版本，旧版本409；生成14餐，保存2026-09-28周并确认，周三午餐保留候选汤但标记不做汤；周保存幂等重放一致，旧周版本409；完整周读取、历史列表与最终3菜读取均200。
+- **只重启街坊味容器**：`docker restart --time 15 cfp-kith-inn-staging-kith-inn-api-1`完成；新StartedAt为2026-10-02T15:15:15.180010876Z，随后Docker healthy，health/ready均200。原真实会话继续有效，菜品全部字段、14餐菜单/汤开关/版本/确认时间与重启前完全一致。
+- **数据库对应记录已核对**：重启后在实际容器中用既有受限连接池执行BEGIN READ ONLY，核对唯一经营者与配置匹配、该会话有效，并直接查询对应菜品和周菜单的全部API字段；与重启前快照及重启后API结果严格一致。确认3菜、1周，pool.max=5、SSL=false，随后ROLLBACK；不是只用行数判断持久化。
+- **影响范围已复核**：官网及hello-agent的ID/StartedAt/restartCount与本次部署前基线一致；运行日志未出现token、数据库连接串、AppSecret或OwnerOpenID。测试菜品和菜单保留，未清理任何既有用户/学习数据，也未更改业务代码。
+- 仍未完成：另一真实微信账号被拒绝、HTTPS代理来源/限流、微信手机上的登录与完整业务流程、体验版上传/验收；以上API验证在ECS loopback进行，不冒充真机或公网验收。
+
+## 2026-10-02 HTTPS 入口准备（尚未启用）
+
+- 建议测试域名`kith-inn-api-staging.codeforpeople.cn`，按原方案在测试域名中保留staging。阿里云DNS控制台精确查找返回0条，ECS真实DNS解析也为空；本机dig受代理fake-IP影响，不作为公网记录证据。已从ECS详情核对公网IP为47.107.114.112。
+- 现有Nginx配置通过检查，没有街坊味vhost。服务器已有`/usr/bin/certbot`、Let’s Encrypt正式ACME账号、webroot`/var/www/certbot`及启用的`certbot-renew.timer`，可以复用；未安装新工具、未改已有证书或续期配置。
+- 三份独立候选配置已保存在ECS `/opt/kith-inn/https-staging`：`bootstrap.conf.prepared`仅为目标域名开放ACME验证；`https.conf.prepared`复用现有街坊味代理示例，转到loopback3306；`reload-kith-nginx.sh.prepared`只在该域名证书续期后校验并平滑reload Nginx。文件不在Nginx生效目录。
+- Bootstrap合并现有站点做`nginx -t`通过；最终HTTPS候选用现有证书替换路径进行离线语法检查通过，目标域名证书尚未签发，不能宣称TLS有效。未新增DNS记录、未启用vhost、未reload Nginx。
+- 实际保持Host→API连接并查看容器socket，确认可信代理候选peer为172.23.0.1；尚未写入私密配置，来源限流和伪造头验证须在代理启用后执行。
+- 下一动作会把当前仅本机访问的测试API变成公网HTTPS入口；准备完成后集中确认这一步的域名与公开访问范围，再执行DNS、独立证书及新vhost启用。其他站点配置、数据库和3306公网暴露范围不变。
 
 ---
 

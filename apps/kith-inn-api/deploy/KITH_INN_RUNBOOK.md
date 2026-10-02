@@ -38,8 +38,9 @@ AppSecret 和完整连接串只在后端文件中；AppID 可用于小程序构�
 已核对字段非空、文件root/600、目录700，以及真实配置的Compose quiet格式检查通过。
 同日已由用户扫码账号的真实`wx.login`凭证完成服务端换码，AppSecret通过微信验证；返回的真实
 OwnerOpenID已原子保存到root/600配置。固定镜像已独立启动，health/ready均200，
-未登录/无效会话401，非法请求400；目前仅宿主机loopback可访问。真实API会话、业务写读和
-重启持久化仍须分别验证，换码本身不创建数据库身份或会话。
+未登录/无效会话401，非法请求400；随后新code通过真实API登录返回201，并完成菜品/周菜单
+写读、失败批次无部分数据、幂等、409版本冲突及单容器重启持久化验证。原会话重启后仍有效，
+API完整结果与只读数据库查询一致。目前仅宿主机loopback可访问，HTTPS和微信真机尚未验证。
 
 | 对象 | kith_inn_staging_app 现有权限 |
 | --- | --- |
@@ -91,6 +92,20 @@ health 只表示进程活着；ready 校验数据库、迁移 checksum 和五表
 Nginx 覆盖 X-Real-IP，API 仅在 socket peer 严格匹配 `KITH_INN_TRUSTED_PROXY_IP` 时信任它。
 该值必须现场确认（容器 bridge gateway 不一定是127.0.0.1），不能填网段或通配符。
 核验两来源各自20次登录预算、伪造 X-Real-IP 无法改变来源；不盲信 X-Forwarded-For。
+
+2026-10-02已准备但未启用的测试入口：`kith-inn-api-staging.codeforpeople.cn`，DNS拟指向
+现有ECS公网IP。阿里云查无该主机记录；服务器有Certbot、现有ACME账号、webroot
+`/var/www/certbot`和`certbot-renew.timer`，不重复安装。候选文件位于ECS
+`/opt/kith-inn/https-staging/{bootstrap.conf.prepared,https.conf.prepared,reload-kith-nginx.sh.prepared}`。
+Bootstrap合并现有配置的`nginx -t`通过；最终HTTPS只用现有证书做了离线语法检查，
+目标域名证书尚未签发，不能当作TLS或续期验证。实际Host→API连接的socket peer为
+`172.23.0.1`，尚未写入可信代理配置。
+
+启用时：确认公网HTTPS范围→新增该子域名A记录→安装仅开放ACME校验的bootstrap并
+`nginx -t`后平滑reload→复用现有Certbot webroot申请独立证书→仅为该证书配置续期后
+`nginx -t && nginx -s reload`钩子→安装最终vhost并做真实证书/域名校验→仅更新本应用
+可信代理IP并重建其容器→核验两来源限流、伪造头、鉴权及现有站点。不得修改原站点文件，
+不得将3306开放到公网；共享Nginx的reload仍须记录结果。
 
 真实登录后经 API 做：新增/读回菜品→批量失败不留部分数据→同幂等键重试不重复→
 旧版本冲突409→保存周菜单→只重启街坊味容器→同会话重新读取菜品/周菜单。
