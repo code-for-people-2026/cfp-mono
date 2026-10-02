@@ -40,7 +40,8 @@ AppSecret 和完整连接串只在后端文件中；AppID 可用于小程序构�
 OwnerOpenID已原子保存到root/600配置。固定镜像已独立启动，health/ready均200，
 未登录/无效会话401，非法请求400；随后新code通过真实API登录返回201，并完成菜品/周菜单
 写读、失败批次无部分数据、幂等、409版本冲突及单容器重启持久化验证。原会话重启后仍有效，
-API完整结果与只读数据库查询一致。目前仅宿主机loopback可访问，HTTPS和微信真机尚未验证。
+API完整结果与只读数据库查询一致。公网专用HTTPS、来源限流和证书续期现已验证；
+微信开发者工具仍因request合法域名缺失被阻止，尚未完成手机端联调。
 
 | 对象 | kith_inn_staging_app 现有权限 |
 | --- | --- |
@@ -93,19 +94,24 @@ Nginx 覆盖 X-Real-IP，API 仅在 socket peer 严格匹配 `KITH_INN_TRUSTED_P
 该值必须现场确认（容器 bridge gateway 不一定是127.0.0.1），不能填网段或通配符。
 核验两来源各自20次登录预算、伪造 X-Real-IP 无法改变来源；不盲信 X-Forwarded-For。
 
-2026-10-02已准备但未启用的测试入口：`kith-inn-api-staging.codeforpeople.cn`，DNS拟指向
-现有ECS公网IP。阿里云查无该主机记录；服务器有Certbot、现有ACME账号、webroot
-`/var/www/certbot`和`certbot-renew.timer`，不重复安装。候选文件位于ECS
-`/opt/kith-inn/https-staging/{bootstrap.conf.prepared,https.conf.prepared,reload-kith-nginx.sh.prepared}`。
-Bootstrap合并现有配置的`nginx -t`通过；最终HTTPS只用现有证书做了离线语法检查，
-目标域名证书尚未签发，不能当作TLS或续期验证。实际Host→API连接的socket peer为
-`172.23.0.1`，尚未写入可信代理配置。
+2026-10-02已启用测试入口：`https://kith-inn-api-staging.codeforpeople.cn`，A记录指向
+现有ECS公网47.107.114.112。独立Let’s Encrypt证书位于
+`/etc/letsencrypt/live/kith-inn-api-staging.codeforpeople.cn`，新vhost为
+`/etc/nginx/conf.d/kith-inn-staging.conf`，只代理街坊味API；现有站点文件未改。
+Nginx覆盖X-Real-IP/清空X-Forwarded-For，实际socket peer `172.23.0.1`已配置到私密env；
+只重建本应用容器使配置生效。`nginx -t`后平滑reload，Nginx主进程及其他应用容器保持原样。
+公网证书链/域名校验、health/ready200、未登录401、两来源各20次预算/第21次429、
+伪造头拒绝及认证HTTPS完整数据读回均通过。3306仍仅loopback，不开放安全组。
 
-启用时：确认公网HTTPS范围→新增该子域名A记录→安装仅开放ACME校验的bootstrap并
-`nginx -t`后平滑reload→复用现有Certbot webroot申请独立证书→仅为该证书配置续期后
-`nginx -t && nginx -s reload`钩子→安装最终vhost并做真实证书/域名校验→仅更新本应用
-可信代理IP并重建其容器→核验两来源限流、伪造头、鉴权及现有站点。不得修改原站点文件，
-不得将3306开放到公网；共享Nginx的reload仍须记录结果。
+复用`/var/www/certbot`及现有`certbot-renew.timer`。该证书专用续期hook为
+`/opt/kith-inn/https-staging/reload-kith-nginx.sh`（先nginx -t再平滑reload），已持久化。
+只针对该证书的dry-run成功，timer active/enabled；正常续期由timer执行，不安装重复任务。
+
+```sh
+# 必要时仅演练街坊味证书，不对其他证书手动续期。
+certbot renew --cert-name kith-inn-api-staging.codeforpeople.cn \
+  --dry-run --no-random-sleep-on-renew
+```
 
 真实登录后经 API 做：新增/读回菜品→批量失败不留部分数据→同幂等键重试不重复→
 旧版本冲突409→保存周菜单→只重启街坊味容器→同会话重新读取菜品/周菜单。
@@ -192,11 +198,15 @@ SELECT (SELECT count(*) FROM merchants) + (SELECT count(*) FROM sessions)
 | --- | --- | --- |
 | 核对现有小程序 | 名称、AppID、主体与当前线上用途；确认本次可上传该账号 | 是 |
 | 成员权限 | 把实际开发者加入项目成员并授予开发/上传所需权限；实际测试者加入体验成员，桃子参加验收时也需加入 | 是 |
-| 私密配置 | 由授权者把现有 AppSecret 安全配置到服务器；不要为方便直接重置共享密钥 | 是 |
+| 私密配置 | 本轮已由用户填写并完成真实换码验证，当前无需再次提供 | 已完成 |
 | 本环境经营者身份 | 测试可用用户本人，正式使用绑定桃子；同一 AppID 的真实 wx.login code 仅交后端换码，安全核对 OpenID 后绑定；不自动认领首位访客 | 是，测试不必等桃子 |
-| request 合法域名 | 添加最终测试 HTTPS 域名；实际证书、域名校验必须开启后验收 | 是 |
+| request 合法域名 | 保留旧条目，添加 `https://kith-inn-api-staging.codeforpeople.cn`；工具实测当前名单缺失 | 是，当前阻塞 |
 | 选为体验版 | 开发者上传已核验 AppID/API 地址的包，授权者在后台设置体验版并安排实际测试者扫码 | 是 |
 | 正式发布准备 | 按当前后台核对备案/认证/服务类目/隐私要求、审核体验路径及现有用途替换影响 | 正式上线前 |
+
+当前包已带上述HTTPS源站，urlCheck=true；管理员保存域名后，在开发者工具刷新域名配置再点微信登录。
+Zod在微信中须禁用动态代码生成：小程序入口在页面schema初始化前调用专用runtime设置；
+后端解析规则、API默认JIT配置及鉴权不变。不能关闭域名校验或用手动API成功代替小程序成功。
 
 首次取得本环境经营者OpenID在HTTP服务启动前完成，避免与启动必填配置互相等待：
 
