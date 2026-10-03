@@ -2,8 +2,10 @@
 page, body, .taro_page { margin: 0; color: #29231d; background: #fbf8f1; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
 .taro_page.taro_navigation_page { overflow-y: auto; }
 * { box-sizing: border-box; }
-/* WXSS omits the universal selector; keep the same box model on native components. */
-view, scroll-view, text, image, input, textarea, button, picker { box-sizing: border-box; }
+/* WXSS omits * and Taro rewrites HTML control selectors; use shared classes for controls. */
+view, scroll-view, text, image, picker,
+.dish-input, .prototype-textarea, .copy-textarea, .copy-example-input,
+.action-button, .dish-label, .dish-name-info { box-sizing: border-box; }
 .dish-app { max-width: 480PX; min-height: 100vh; margin: 0 auto; background: #fbf8f1; font-size: 16PX; line-height: normal; }
 .app-heading { display: flex; justify-content: center; align-items: center; height: 58PX; padding: 0 15PX; border-bottom: 1PX solid rgba(0, 0, 0, .06); background: #fff; font-size: 17PX; font-weight: 850; }
 .dish-page { padding: 15PX; }
@@ -20,11 +22,11 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .prototype-textarea:focus-within, .dish-input:focus-within { border-color: rgba(40, 117, 87, .65); box-shadow: 0 0 0 3PX rgba(40, 117, 87, .1); }
 .action-button { display: block; margin: 0; padding: 12PX; border: 1PX solid #e6dccd; border-radius: 11PX; background: #fff; color: #29231d; font-family: inherit; font-size: 16PX; line-height: normal; font-weight: 850; cursor: pointer; }
 .action-button::after { border: 0; }
-.action-button[disabled] { cursor: default; opacity: .48; }
+.action-button[disabled] { cursor: default; color: inherit; opacity: .48; }
 .action-button:focus-visible { outline: 2PX solid #1e5d45; outline-offset: 3PX; }
 .action-button.primary { width: 100%; margin-top: 12PX; border: 0; background: #b64131; color: #fff; }
 .action-button.secondary { width: 100%; margin-top: 8PX; }
-.action-button.text-button { width: auto; padding: 8PX 0; border: 0; background: transparent; color: #675d53; font-size: 11PX; font-weight: 400; }
+.action-button.text-button { width: auto; padding: 8PX 0; border: 0; background: transparent; color: #675d53; font-size: 11PX; font-weight: 400; text-align: left; }
 .action-button.cancel { margin-top: 8PX; }
 .action-button.delete-dish { width: 100%; margin-top: 12PX; min-height: 48PX; border-color: #d9a299; color: #b64131; font-weight: 600; }
 .dish-edit-fields { overflow: hidden; border: 1PX solid #e6dccd; border-radius: 13PX; background: #fff; }
@@ -70,7 +72,7 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .dish-controls { display: flex; align-items: center; gap: 8PX; }
 .action-button.tiny-action { padding: 8PX 10PX; border-radius: 9PX; color: #1e5d45; font-size: 10PX; }
 .inactive .dish-name { color: #675d53; }
-.dish-input { display: block; width: 100%; height: 42PX; padding: 11PX; border: 1PX solid #e6dccd; border-radius: 12PX; background: #fff; color: #29231d; font-size: 13PX; }
+.dish-input { display: flex; align-items: center; width: 100%; height: 42PX; padding: 0 11PX; border: 1PX solid #e6dccd; border-radius: 12PX; background: #fff; color: #29231d; font-size: 13PX; }
 .setting-row { display: flex; justify-content: space-between; align-items: center; gap: 12PX; min-height: 48PX; margin-top: 8PX; padding: 8PX 12PX; border: 1PX solid #e6dccd; border-radius: 13PX; background: #fff; font-size: 13PX; }
 .alert, .recovery, .hint { margin-bottom: 12PX; padding: 10PX 11PX; border-radius: 12PX; overflow-wrap: anywhere; font-size: 11PX; line-height: 1.5; }
 .alert { border: 1PX solid #e6c3b9; background: #fbe9e4; color: #8f2d22; }
@@ -109,7 +111,7 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .copy-preview:focus-within { border-color: #287557; }
 .copy-textarea { display: block; width: 100%; min-height: 146PX; padding: 0; border: 0; outline: 0; background: transparent; color: inherit; font: inherit; line-height: inherit; resize: vertical; }
 .copy-example { display: flex; align-items: center; gap: 8PX; }
-.copy-example-input { flex: 1; width: 0; min-width: 0; height: 44PX; padding: 10PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; color: #29231d; font-family: inherit; font-size: 13PX; }
+.copy-example-input { flex: 1; width: 0; min-width: 0; height: 44PX; padding: 0 10PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; color: #29231d; font-family: inherit; font-size: 13PX; }
 .copy-example-input:focus-visible { outline: 2PX solid #1e5d45; outline-offset: 2PX; }
 .copy-example .action-button { flex-shrink: 0; min-height: 44PX; padding: 10PX; color: #1e5d45; font-size: 12PX; }
 .copy-panel .evidence-note { display: block; }
@@ -213,7 +215,7 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .candidate-radio { display: flex; align-items: center; justify-content: center; width: 24PX; height: 24PX; border: 1PX solid #d8d0c4; border-radius: 50%; background: #fff; color: #fff; }
 .selected .candidate-radio { border-color: #287557; background: #287557; }
 .candidate-search { display: flex; align-items: center; gap: 7PX; min-height: 42PX; padding: 0 11PX; border: 1PX solid #e1d9cd; border-radius: 11PX; background: white; }
-.candidate-search input, .candidate-search taro-input-core { width: 100%; color: #1e1b16; font-size: 14PX; }
+.candidate-search-input { width: 100%; min-width: 0; color: #1e1b16; font-size: 14PX; }
 .first-preparation { padding: 18PX 14PX; border: 1PX solid #e1d9cd; border-radius: 16PX; background: #fff; }
 .first-preparation .muted { margin-top: 10PX; }
 .empty-history { margin: 30PX 0; font-size: 15PX; text-align: center; }
@@ -256,8 +258,6 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .action-button.dish-edit-back { display: flex; align-items: center; justify-content: center; gap: 2PX; min-width: 44PX; min-height: 44PX; border: 0; background: transparent; }
 .readonly-board .board-title { font-size: 16PX; }
 .readonly-board .board-count { font-weight: 750; }
-
-.meal-soup-switch { width: 24PX; height: 24PX; accent-color: #1e5d45; }
 
 .history-app .week-toolbar { flex: 0 0 auto; margin: 12PX 15PX 10PX; }
 .history-app .flow-content { padding: 0 15PX 12PX; }
