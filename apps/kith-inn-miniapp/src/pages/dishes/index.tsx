@@ -151,7 +151,7 @@ export default function DishesPage() {
           ariaPressed={filter === value} disabled={disabled || !loaded} onClick={() => { setFilter(value); setPage(0); }}>{label}</Button>)}
       </View>
     </View>}
-    <ScrollView scrollY className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}>
+    <ScrollView scrollY enhanced showScrollbar={false} className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}><View className="flow-content">
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
       {cooling && <View className="hint">请等待 {Math.ceil((retryAt - now) / 1000)} 秒后重试。</View>}
@@ -243,7 +243,7 @@ export default function DishesPage() {
       {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
 
     </>}
-    </ScrollView>
+    </View></ScrollView>
     {client && showList && <View className="flow-dock">
       {loaded && pageCount > 1 && <View className="dish-pagination">
         <Button disabled={disabled || currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</Button>

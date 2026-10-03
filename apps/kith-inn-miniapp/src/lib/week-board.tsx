@@ -78,11 +78,11 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
       <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
     </View>}{readonly && showMealCount && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>
     <View className="weekly-menu-grid">
-      <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
-      <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} {...scrollPosition} className="day-scroll"
+      <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View className="axis-label" key={name} style={{ height: `${height}px` }}><Text className="axis-label-text">{name}</Text></View>)}</View>
+      <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} {...scrollPosition} className="day-scroll" style={{ height: `${32 + 2 * (height + 9)}px` }}
         onTouchStart={() => { touching.current = true; clearTimeout(settling.current); }} onTouchEnd={endTouch} onTouchCancel={endTouch}
         onScrollToLower={() => { if (process.env.TARO_ENV !== "h5") setAtEnd(true); }} onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; if (event.detail.scrollLeft < lastScroll.current.scrollLeft) setAtEnd(false); lastScroll.current = event.detail; setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
-        <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
+        <View className="column-head"><Text>{day}</Text><Text className="column-date">{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
         {[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
           const meal = menu.meals[mealIndex]!;
           return <View className="meal-cells" key={mealIndex} style={{ height: `${height}px`, gridTemplateRows: `repeat(${rows}, 48px)` }}>

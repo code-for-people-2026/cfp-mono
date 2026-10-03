@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type IncomingMessage } from "node:http";
+import { isIP } from "node:net";
 import { ErrorResponseSchema, LoginInputSchema } from "@cfp/kith-inn-contracts";
 import { ApiError } from "./auth";
 import type { Sessions } from "./sessions";
@@ -35,6 +36,7 @@ export function createKithInnHttpServer(input: {
   dishes?: Pick<Dishes, "list" | "create" | "update" | "delete">;
   weeks?: Pick<Weeks, "list" | "read" | "generate" | "save">;
   readiness: () => Promise<void>; logger?: SafeLogger; clock?: () => number;
+  trustedProxyIp?: string;
 }) {
   const clock = input.clock ?? Date.now;
   const windows = new Map<string, { count: number; expires: number }>();
@@ -66,7 +68,11 @@ export function createKithInnHttpServer(input: {
       const weekMatch = /^\/api\/kith-inn\/weeks\/([^/]+)(\/generate)?$/.exec(url.pathname);
       if (weekMatch) route = weekMatch[2] ? "/weeks/{weekStart}/generate" : "/weeks/{weekStart}";
       if (request.method === "POST" && route === "/sessions/wechat") {
-        limit(`ip:${request.socket.remoteAddress}`, 20); // Ignore spoofable forwarded headers.
+        const peer = request.socket.remoteAddress?.replace(/^::ffff:/, "");
+        const forwarded = request.headers["x-real-ip"];
+        const source = input.trustedProxyIp && peer === input.trustedProxyIp.replace(/^::ffff:/, "") &&
+          typeof forwarded === "string" && isIP(forwarded) ? forwarded.replace(/^::ffff:/, "") : peer;
+        limit(`ip:${source}`, 20);
       }
       const body = await readBody(request);
       if ((url.search && !(route === "/weeks" && request.method === "GET")) || (request.headersDistinct.authorization?.length ?? 0) > 1 ||

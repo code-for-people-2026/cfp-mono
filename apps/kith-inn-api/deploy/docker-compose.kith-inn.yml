@@ -1,0 +1,32 @@
+name: cfp-kith-inn-staging
+
+services:
+  kith-inn-api:
+    image: ${KITH_INN_IMAGE:?KITH_INN_IMAGE must be an immutable SHA tag or digest}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ${KITH_INN_ENV_FILE:?KITH_INN_ENV_FILE must name a private absolute path}
+        format: raw
+    environment:
+      PORT: "3305"
+      NODE_OPTIONS: "--max-old-space-size=384"
+    ports:
+      - "127.0.0.1:${KITH_INN_HOST_PORT:-3306}:3305"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 0.5
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    stop_grace_period: 15s
