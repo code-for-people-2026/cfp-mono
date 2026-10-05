@@ -1,8 +1,10 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import Taro from "@tarojs/taro";
 import { ScrollView, Text, View } from "@tarojs/components";
 import type { Category, MenuPreview } from "@cfp/kith-inn-contracts";
 import { Button } from "./button";
 import { DishName } from "./dish-name";
+import { createWeekScrollSnap } from "./week-scroll";
 
 export type DishPosition = { meal: number; category: Category; index: number };
 export const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -24,20 +26,17 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
   menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean; showMealCount?: boolean; showDate?: boolean;
   onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
-  const scrollId = useId(), [scrollLeft, setScrollLeft] = useState(0);
+  const scrollId = `week-scroll-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const [atEnd, setAtEnd] = useState(false);
-  const settling = useRef<ReturnType<typeof setTimeout>>(), touching = useRef(false);
-  const lastScroll = useRef({ scrollLeft: 0, scrollWidth: 0 });
-  function settle() {
-    clearTimeout(settling.current);
-    if (process.env.TARO_ENV === "h5" || touching.current) return;
-    // Native scroll-view has no CSS snap. Seven equal columns include six 8px gaps.
-    const { scrollLeft: left, scrollWidth: width } = lastScroll.current;
-    if (width) setScrollLeft(Math.min(5, Math.max(0, Math.round(left / ((width + 8) / 7)))) * ((width + 8) / 7));
-  }
-  function endTouch() { touching.current = false; clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }
+  const lastLeft = useRef(0);
+  const nativeSnap = useMemo(() => createWeekScrollSnap((receive) => {
+    Taro.createSelectorQuery().select(`#${scrollId}`).boundingClientRect().select(`#${scrollId}`).node().exec((results) => {
+      const rect = results[0], node: Taro.ScrollViewContext | undefined = results[1]?.node;
+      if (rect?.width && node) receive({ width: rect.width, scrollTo: (left) => node.scrollTo({ left, animated: true, duration: 160 }) });
+    });
+  }), [scrollId]);
   useEffect(() => {
-    if (process.env.TARO_ENV !== "h5") return () => clearTimeout(settling.current);
+    if (process.env.TARO_ENV !== "h5") return () => nativeSnap.dispose();
     const element = document.getElementById(scrollId)!;
     const updateEdge = () => { element.closest(".weekly-menu-board")?.classList.toggle("scroll-at-end", element.scrollLeft + element.clientWidth >= element.scrollWidth - 2); };
     element.addEventListener("scroll", updateEdge);
@@ -66,10 +65,12 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
       element.removeEventListener("pointerdown", down); element.removeEventListener("pointermove", move);
       element.removeEventListener("pointerup", finish); element.removeEventListener("pointercancel", finish); element.removeEventListener("click", click, true);
     };
-  }, [scrollId]);
+  }, [scrollId, nativeSnap]);
   const categories: Category[] = showAll ? ["meat", "vegetable", "soup"] : ["meat"];
-  // Taro's H5 adapter assigns even undefined props to the DOM; scrollLeft = undefined resets to 0.
-  const scrollPosition = process.env.TARO_ENV === "h5" ? {} : { scrollLeft, scrollWithAnimation: true };
+  const nativeEvents = process.env.TARO_ENV === "h5" ? {} : {
+    onTouchStart: nativeSnap.start, onTouchEnd: nativeSnap.end, onTouchCancel: nativeSnap.end,
+    onScrollEnd: nativeSnap.settle
+  };
   const rows = Math.max(1, categories.reduce((count, category) => count + menu.structure[category], 0));
   const height = rows * 48 + (rows - 1) * 7;
   return <View className={`weekly-menu-board week-plans ${readonly ? "readonly-board" : ""} ${atEnd ? "scroll-at-end" : ""}`} ariaLabel={readonly ? "只读菜单表格" : "编辑菜单表格"}>
@@ -78,11 +79,10 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
       <Button ariaPressed={showAll} className={showAll ? "active" : ""} disabled={disabled} onClick={() => onFilter?.(true)}>全部</Button>
     </View>}{readonly && showMealCount && <Text className="board-count">7 天 · {menu.meals.filter((meal) => meal.enabled).length} 餐</Text>}</View>
     <View className="weekly-menu-grid">
-      <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View key={name} style={{ height: `${height}px` }}><Text>{name}</Text></View>)}</View>
-      <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} {...scrollPosition} className="day-scroll"
-        onTouchStart={() => { touching.current = true; clearTimeout(settling.current); }} onTouchEnd={endTouch} onTouchCancel={endTouch}
-        onScrollToLower={() => { if (process.env.TARO_ENV !== "h5") setAtEnd(true); }} onScrollEnd={settle} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; if (event.detail.scrollLeft < lastScroll.current.scrollLeft) setAtEnd(false); lastScroll.current = event.detail; setScrollLeft(event.detail.scrollLeft); clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
-        <View className="column-head"><Text>{day}</Text><Text>{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
+      <View className="meal-axis"><View className="axis-spacer" />{["午饭", "晚饭"].map((name) => <View className="axis-label" key={name} style={{ height: `${height}px` }}><Text className="axis-label-text">{name}</Text></View>)}</View>
+      <ScrollView id={scrollId} scrollX enhanced showScrollbar={false} {...nativeEvents} className="day-scroll" style={{ height: `${32 + 2 * (height + 9)}px` }}
+        onScrollToLower={() => { if (process.env.TARO_ENV !== "h5") setAtEnd(true); }} onScroll={(event) => { if (process.env.TARO_ENV === "h5") return; if (event.detail.scrollLeft < lastLeft.current) setAtEnd(false); lastLeft.current = event.detail.scrollLeft; nativeSnap.scroll(event.detail); }}><View className="day-carousel" ariaLabel="周一至周日菜单，左右滑动查看更多日期">{weekdays.map((day, dayIndex) => <View className="day-column" key={day}>
+        <View className="column-head"><Text>{day}</Text><Text className="column-date">{Number(menu.meals[dayIndex * 2]!.date.slice(5, 7))}/{Number(menu.meals[dayIndex * 2]!.date.slice(8))}</Text></View>
         {[dayIndex * 2, dayIndex * 2 + 1].map((mealIndex) => {
           const meal = menu.meals[mealIndex]!;
           return <View className="meal-cells" key={mealIndex} style={{ height: `${height}px`, gridTemplateRows: `repeat(${rows}, 48px)` }}>

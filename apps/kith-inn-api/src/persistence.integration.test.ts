@@ -39,6 +39,23 @@ describe("kith-inn PostgreSQL 17 persistence", () => {
   });
   afterAll(async () => { await pool.end(); });
 
+  it("caps connections at five and releases queued requests after a slot is freed", async () => {
+    const bounded = createKithInnPool({ KITH_INN_DATABASE_URL: databaseUrl }, { connectionTimeoutMillis: 100 });
+    const clients = await Promise.all(Array.from({ length: 5 }, () => bounded.connect()));
+    try {
+      await expect(bounded.connect()).rejects.toThrow();
+      expect(bounded.totalCount).toBe(5);
+      clients.pop()!.release();
+      const next = await bounded.connect();
+      expect((await next.query("SELECT 1 AS value")).rows[0].value).toBe(1);
+      next.release();
+      expect(bounded.totalCount).toBe(5);
+    } finally {
+      clients.forEach((client) => client.release());
+      await bounded.end();
+    }
+  });
+
   it("records one checksum after concurrent and repeated migrations and creates only the intended tables", async () => {
     const { rows } = await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name");
     expect(rows.map((row) => row.table_name)).toEqual(["dishes", "kith_inn_migrations", "merchants", "mutation_receipts", "sessions", "week_plans"]);
