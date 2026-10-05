@@ -81,7 +81,7 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
   if (viaPool) {
     await page.clock.setFixedTime(new Date(timestamp));
     await page.goto("/");
-    await button(page, "建立我的菜品池").click();
+    await button(page, "添加菜品").click();
     await page.locator('textarea[placeholder="例如：红烧排骨"]').fill(items.map((dish) => dish.name).join("\n"));
     await button(page, "下一步").click();
     for (const dish of items.filter((dish) => dish.category === "meat")) {
@@ -102,7 +102,7 @@ async function generate(page: Page) {
 async function replaceLunch(page: Page) {
   await button(page, "周一午餐：荤菜1").click();
   await button(page, "自己选").click();
-  await button(page, "荤菜3").click(); await button(page, "保存这次替换").click();
+  await button(page, "荤菜3").click(); await button(page, "替换").click();
 }
 
 async function confirmWeek(page: Page) {
@@ -129,7 +129,7 @@ async function home(page: Page) {
   if (await button(page, "返回安排").count()) await button(page, "返回安排").click();
   if (await button(page, "返回本周菜单").count()) await button(page, "返回本周菜单").click();
 }
-async function enterEdit(page: Page) { await page.getByRole("button", { name: /^(继续调整菜单|查看并调整这一周)$/ }).click(); }
+async function enterEdit(page: Page) { await page.getByRole("button", { name: /^(继续调整菜单|调整菜单)$/ }).click(); }
 async function openPreview(page: Page) { await home(page); await preview(page).click(); }
 async function expandSettings(page: Page) {
   for (const name of ["修改安排餐次", "修改每餐搭配"]) {
@@ -194,17 +194,17 @@ test("从空菜池建立到排周菜单、换菜去汤、保存回看、复制�
   expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(2);
   await closeCopy(page);
   await expect(preview(page)).toBeEnabled();
-  await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
+  await page.getByRole("button", { name: /^(继续编辑|调整菜单)$/ }).click();
   await button(page, "周一午餐：荤菜3").click();
   await button(page, "自己选").click();
-  await button(page, "荤菜4").click(); await button(page, "保存这次替换").click(); await openPreview(page);
+  await button(page, "荤菜4").click(); await button(page, "替换").click(); await openPreview(page);
   await button(page, "保存后预览").click();
   await expect(copyText(page)).toHaveValue(/荤菜4/);
   await button(page, "复制接龙说明").click();
   await expect(page.locator("html")).toHaveAttribute("data-copied", /荤菜4/);
   expect(state.writes).toHaveLength(3);
   await closeCopy(page);
-  await page.getByRole("button", { name: "查看并调整这一周", exact: true }).click();
+  await page.getByRole("button", { name: "调整菜单", exact: true }).click();
   await expect(page.locator(".day-column").last().locator(".meal-cells").last()).toContainText("不安排");
 });
 
@@ -273,7 +273,7 @@ test("409冲突保留草稿，读取只供核对，明确确认后载入服务�
   await expect(lunch(page)).toContainText("荤菜3");
   await button(page, "核对完成，载入服务器版本").click();
   await page.getByText("确定", { exact: true }).click();
-  await button(page, "查看并调整这一周").click();
+  await button(page, "调整菜单").click();
   await expect(lunchDishes(page)).toContainText("荤菜1");
   await expect(lunchDishes(page)).not.toContainText("荤菜3");
   expect(state.writes).toHaveLength(2);
@@ -358,7 +358,7 @@ test("保存后预览响应丢失不复制草稿，原请求重试成功后才�
   await expect(button(page, "复制接龙说明")).toHaveCount(0);
   await closeCopy(page); await expect(button(page, "继续调整菜单")).toBeDisabled();
   await button(page, "重试原保存请求").click();
-  await expect(page.getByText("菜单已保存，可继续调整或确认", { exact: true })).toBeVisible();
+  await expect(page.getByText("菜单已保存", { exact: true })).toBeVisible();
   await openPreview(page); await expect(copyText(page)).toHaveValue(/荤菜3/);
   expect(state.writes).toHaveLength(3); expect(state.writes[1]).toEqual(state.writes[2]);
   expect(state.saved!.version).toBe(2);
@@ -483,7 +483,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 900 
     await expect(next).toBeInViewport({ ratio: 1 });
     await next.click(); await expect(copyText(page)).toBeVisible();
     await closeCopy(page);
-    await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
+    await page.getByRole("button", { name: /^(继续编辑|调整菜单)$/ }).click();
     await expect(page.locator(".copy-screen")).toHaveCount(0);
     await expect(button(page, "确认菜单")).toBeVisible();
     await expect(page.getByText(/旧消息不会自动更新|自行通知邻居/)).toHaveCount(0);
@@ -578,7 +578,7 @@ test("最新快照停餐后移到剩余日期等待重读，整周停餐仍能�
   await expect(copyText(page)).toHaveCount(0);
   await expect(button(page, "复制接龙说明")).toHaveCount(0);
   await closeCopy(page);
-  await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
+  await page.getByRole("button", { name: /^(继续编辑|调整菜单)$/ }).click();
   await expect(page.locator(".copy-screen")).toHaveCount(0);
   await expect(button(page, "返回安排")).toBeVisible();
   expect(state.reads).toBe(reads + 3); expect(state.writes).toHaveLength(1);
@@ -603,10 +603,10 @@ test("两天半七天表按选中菜位换菜，导航取消保留调整，重�
   expect(Math.abs(dimensions.column * 2.5 + 16 - dimensions.width)).toBeLessThan(2);
   expect(dimensions.scroll).toBeGreaterThan(dimensions.width * 2);
   await columns.last().getByRole("button", { name: "周日晚餐：荤菜2", exact: true }).click();
-  await button(page, "自己选").click(); await button(page, "荤菜3").click(); await button(page, "保存这次替换").click();
+  await button(page, "自己选").click(); await button(page, "荤菜3").click(); await button(page, "替换").click();
   await expect(lunch(page)).toContainText("周日晚饭 · 荤菜");
   await expect(button(page, "周日晚餐：荤菜3")).toHaveAttribute("aria-pressed", "true");
-  await button(page, "换一道").click(); await button(page, "保存这次替换").click();
+  await button(page, "换一道").click(); await button(page, "替换").click();
   await expect(lunch(page)).toContainText("周日晚饭");
   await button(page, "历史").click(); await page.locator(".taro-model__cancel").click();
   await expect(page.locator(".day-column")).toHaveCount(7);
@@ -616,7 +616,7 @@ test("两天半七天表按选中菜位换菜，导航取消保留调整，重�
   expect(state.saved!.meals[13]!.meat[0]).toEqual(state.generated!.meals[13]!.meat[0]);
   await button(page, "历史").click();
   await expect(page.locator(".history-app .week-range")).toHaveText("9月21日—27日");
-  await button(page, "排菜单").click(); await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click();
+  await button(page, "排菜单").click(); await page.getByRole("button", { name: /^(继续编辑|调整菜单)$/ }).click();
   await replaceLunch(page); await saveDraft(page);
   await expect(button(page, "确认菜单")).toBeVisible();
   await button(page, "历史").click();
@@ -751,7 +751,7 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
     await page.screenshot({ path: `/tmp/kith-inn-selected-dock-${viewport.width}.png` });
     await button(page, "自己选").click();
     await expect(card).toHaveCount(0);
-    await button(page, "汤菜3").click(); await button(page, "保存这次替换").click();
+    await button(page, "汤菜3").click(); await button(page, "替换").click();
     await expect(card.locator(".selected-name")).toHaveText("汤菜3");
     await button(page, "换一道").click(); await expect(card).toHaveCount(0);
     await button(page, "返回编辑").click(); await expect(card).toBeInViewport({ ratio: 1 });
@@ -804,7 +804,7 @@ test("每餐20道与60字菜名单行省略，编辑、检查及历史气泡展�
   await expect(preview(page)).toBeVisible();
   expect(state.saved!.meals[0]!.meat).toHaveLength(10);
   expect(state.saved!.meals[0]!.vegetable).toHaveLength(10);
-  await page.getByRole("button", { name: /^(继续编辑|查看并调整这一周)$/ }).click(); await button(page, "全部").click();
+  await page.getByRole("button", { name: /^(继续编辑|调整菜单)$/ }).click(); await button(page, "全部").click();
   await home(page);
   await expect(preview(page)).toBeInViewport({ ratio: 1 });
   await button(page, "历史").click();
@@ -825,7 +825,7 @@ test("候选面板打开后切换菜位，不会把新选择写回旧餐次", as
   await button(page, "返回编辑").click();
   await button(page, "周二午餐：荤菜2").click();
   await expect(page.locator(".swap-screen")).toHaveCount(0);
-  await button(page, "自己选").click(); await button(page, "荤菜3").click(); await button(page, "保存这次替换").click();
+  await button(page, "自己选").click(); await button(page, "荤菜3").click(); await button(page, "替换").click();
   await saveDraft(page);
   await expect(button(page, "确认菜单")).toBeVisible();
   expect(state.saved!.meals[0]).toEqual(state.generated!.meals[0]);
@@ -870,7 +870,7 @@ test("换菜按未用及间隔排序，首项默认选中，自己选仍能选�
   await expect(button(page, "荤菜7")).toBeVisible();
   await button(page, "返回编辑").click(); await button(page, "换一道").click();
   await expect(recommended).toHaveText(["荤菜6", "荤菜5", "荤菜4", "荤菜8"]);
-  await button(page, "保存这次替换").click();
+  await button(page, "替换").click();
   await expect(lunch(page)).toContainText("荤菜6"); expect(state.writes).toHaveLength(0);
   await confirmWeek(page);
   const written = WeekWriteInputSchema.parse(JSON.parse(state.writes[0]!.body));
@@ -931,7 +931,7 @@ test("独立候选搜索与取消不改菜单，应用时重新校验停用或�
     await button(page, "荤菜3").click();
     state.items.find((dish) => dish.name === "荤菜3")!.category = category;
     state.items.find((dish) => dish.name === "荤菜3")!.active = category !== "meat";
-    await button(page, "保存这次替换").click();
+    await button(page, "替换").click();
     await expect(page.locator(".alert")).toContainText("没有其他可用的同类菜");
     await button(page, "返回编辑").click(); await expect(lunch(page)).toContainText("荤菜1");
     state.items.find((dish) => dish.name === "荤菜3")!.category = "meat";
@@ -1250,7 +1250,7 @@ test("首页没有保存操作，草稿返回编辑保存，查看或还原原�
   await expect(page.locator(".home-meal-dishes")).not.toContainText("荤菜3");
   await expect(button(page, "继续调整菜单")).toBeEnabled();
   await enterEdit(page); await button(page, "自己选").click(); await button(page, "荤菜1").click();
-  await button(page, "保存这次替换").click(); await home(page);
+  await button(page, "替换").click(); await home(page);
   await expect(button(page, "保存调整")).toHaveCount(0);
   await expect(page.locator(".state-badge")).toHaveText("已确认");
   expect(state.saved).toEqual(saved); expect(state.writes).toHaveLength(1);
@@ -1352,7 +1352,7 @@ test.describe("触屏菜名气泡", () => {
     await button(page, "自己选").click();
     await select.tap();
     await expect(select).toHaveAttribute("aria-pressed", "true");
-    await button(page, "保存这次替换").click();
+    await button(page, "替换").click();
     await expect(page.locator(".selected-name")).toHaveText(longName);
     expect(state.writes).toHaveLength(0);
   });

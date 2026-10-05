@@ -21,7 +21,7 @@ export default function DishesPage() {
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [items, setItems] = useState<Dish[]>([]), [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(() => client?.restoreSession() ?? false);
-  const [stage, setStage] = useState<"list" | "input" | "preview">("list");
+  const [stage, setStage] = useState<"list" | "input" | "preview">(() => Taro.getCurrentInstance().router?.params.add === "1" ? "input" : "list");
   const [source, setSource] = useState(""), [preview, setPreview] = useState<DishInput[]>([]);
   const [edit, setEdit] = useState<Dish | null>(null), [original, setOriginal] = useState<Dish | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -37,7 +37,7 @@ export default function DishesPage() {
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
   const deleting = pending?.kind === "delete";
   const editing = edit !== null;
-  const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
+  const showInput = stage === "input";
   const adding = showInput || stage === "preview";
   const title = editing ? "编辑菜品" : stage === "preview" ? "确认分类" : showInput ? "添加菜品" : "菜品池";
   const filtered = filter === "all" ? items : items.filter((dish) => dish.category === filter);
@@ -145,7 +145,7 @@ export default function DishesPage() {
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
     <PageHeading title={title}>
       {editing && <Button className="flow-back-label dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
-      {adding && stage !== "list" && <Button className="flow-back-label dish-edit-back" ariaLabel="取消添加" disabled={disabled} onClick={() => void cancel()}>取消</Button>}
+      {adding && <Button className="flow-back-label dish-edit-back" ariaLabel={stage === "preview" ? "返回修改菜名" : "返回菜品池"} disabled={disabled} onClick={() => stage === "preview" ? setStage("input") : void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
     </PageHeading>
     <View className="dish-page">
     {client && showList && <View className="dish-pool-tools">
@@ -174,14 +174,13 @@ export default function DishesPage() {
         </View>
       </View>}
       {!signedIn && <View className="login-panel">
-        <View className="detail-head"><View><Text className="detail-kicker">街坊味 · 桃子的厨房</Text><Text className="detail-title">欢迎回到自己的厨房</Text></View></View>
-        <Text className="muted">仅桃子绑定的微信账号可使用。登录后可找回已保存的菜品。</Text>
-        {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}
+        <Text className="muted">请使用已授权的微信账号登录</Text>
+        {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录</Text>}
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
       {showList && <>
-        {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
-          !filtered.length ? <View className="muted">暂无{filters.find(({ value }) => value === filter)!.label}</View> :
+        {!loaded ? !error && <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
+          !filtered.length ? <View className="muted">暂无{filter === "all" ? "菜品" : filters.find(({ value }) => value === filter)!.label}</View> :
           <View className="dish-list">{visibleItems.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
             <View className="dish-info"><DishName className="dish-name" name={dish.name} /><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
@@ -206,7 +205,6 @@ export default function DishesPage() {
                 onClick={() => setPreview(preview.map((value, at) => at === index ? { ...value, category: cycleCategory(value.category) } : value))}>
                 <Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>)}</View>
           <Button className="primary" disabled={disabled || cooling || !signedIn} onClick={() => void run(async () => saved(await client.addDishes({ items: preview })))}>确认加入菜品池</Button>
-          <Button className="secondary" disabled={disabled} onClick={() => setStage("input")}>返回修改菜名</Button>
         </>}
       </View>}
       {edit && <View className="edit-panel">
@@ -237,7 +235,6 @@ export default function DishesPage() {
           if (answer.confirm) await saved(await client.deleteDish(target.id, { baseVersion: target.version }));
         })}>删除菜品</Button>
       </View>}
-      {(dirty || blocked) && !adding && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
 
     </>}
     </View></ScrollView>

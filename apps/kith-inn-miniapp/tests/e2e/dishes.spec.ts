@@ -52,7 +52,8 @@ async function openPool(page: Page, initial: Dish[] = []) {
     return route.fulfill({ json: state.items[index], headers });
   });
   await page.goto("/#/pages/dishes/index");
-  await expect(page.getByText(initial.length ? "我的菜品池" : "添加菜品", { exact: true })).toBeVisible();
+  await expect(page.getByText("我的菜品池", { exact: true })).toBeVisible();
+  if (!initial.length) await button(page, "添加菜品").click();
   const action = button(page, initial.length ? "添加菜品" : "下一步");
   await expect(action).toHaveJSProperty("tagName", "BUTTON");
   return state;
@@ -75,9 +76,11 @@ test("批量录入经手动分类和返回修改，确认前不写入，成功�
   await expect(page.locator('textarea[placeholder="例如：红烧排骨"]')).toHaveValue("红烧排骨\n清炒青菜");
   await button(page, "下一步").click();
   await expect(button(page, "更改清炒青菜分类，当前汤")).toBeVisible();
-  await button(page, "取消添加").click();
+  await button(page, "返回修改菜名").click();
+  await button(page, "返回菜品池").click();
   await page.getByText("继续编辑", { exact: true }).click();
   expect(state.writes).toHaveLength(0);
+  await button(page, "下一步").click();
   await button(page, "确认加入菜品池").click();
   await expect(page.getByText("已新增2道菜", { exact: true })).toBeVisible();
   await expect(page.locator(".dish-card")).toHaveCount(2);
@@ -124,7 +127,7 @@ test("长菜品列表首屏与末尾均可添加，末菜不被遮挡，取消�
   expect(Math.abs((await add.boundingBox())!.y - initialPosition.y)).toBeLessThan(1);
   await add.click();
   await expect(page.locator("textarea")).toBeVisible(); await expect(add).toHaveCount(0);
-  await button(page, "取消添加").click();
+  await button(page, "返回菜品池").click();
   await expect(page.locator(".dish-card")).toHaveCount(10);
   await expect(page.locator(".dish-pagination")).toContainText("第 1 / 3 页 · 共 24 道");
   await expect(add).toHaveCount(1); await expect(add).toBeInViewport({ ratio: 1 });
@@ -278,7 +281,7 @@ test("删除须确认，成功提示自动消失，刷新仍移除并能重新�
   await page.screenshot({ path: "/tmp/kith-delete-edit-mobile.png" });
   await button(page, "删除菜品").click(); await page.getByText("删除", { exact: true }).click();
   await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
-  await expect(page.getByText("添加菜品", { exact: true })).toBeVisible();
+  await expect(page.getByText("暂无菜品", { exact: true })).toBeVisible();
   await expect(page.locator(".success")).toHaveCount(0);
   await expect(button(page, "下一步：安排本周菜单")).toHaveCount(0);
   await page.screenshot({ path: "/tmp/kith-delete-success-toast.png" });
@@ -323,7 +326,7 @@ test("删除旧版本先核对，已被其他设备删除时可退出编辑", as
   await button(page, "重新读取").click();
   await expect(page.getByText("该菜品已删除，请返回菜品池。", { exact: true })).toBeVisible();
   await button(page, "返回菜品池").click();
-  await expect(page.getByText("添加菜品", { exact: true })).toBeVisible();
+  await expect(page.getByText("暂无菜品", { exact: true })).toBeVisible();
   expect(state.writes).toHaveLength(2);
   expect(JSON.parse(state.writes[1]!.body)).toEqual({ baseVersion: 2 });
 });
@@ -339,7 +342,7 @@ test("删除结果未知超过重试期限，读取核对后回到菜品池且�
   await button(page, "重新读取").click(); await button(page, "已核对，继续编辑").click();
   await page.getByText("确定", { exact: true }).click();
   await expect(page.getByText("菜品已删除", { exact: true })).toBeVisible();
-  await expect(page.getByText("添加菜品", { exact: true })).toBeVisible();
+  await expect(page.getByText("暂无菜品", { exact: true })).toBeVisible();
   await page.clock.fastForward(2200);
   await expect(page.getByText("菜品已删除", { exact: true })).not.toBeVisible();
   await expect(page.locator(".success")).toHaveCount(0);
@@ -403,7 +406,6 @@ test("响应中断冻结草稿，原请求重试保留幂等键和请求正文",
   await expect(button(page, "排菜单")).toBeDisabled();
   await expect(button(page, "历史")).toBeDisabled();
   await expect(button(page, "返回修改菜名")).toBeDisabled();
-  await expect(button(page, "取消添加")).toBeDisabled();
   await expect(button(page, "更改番茄蛋汤分类，当前汤")).toBeDisabled();
   await expect(button(page, "确认加入菜品池")).toBeDisabled();
   await button(page, "重新读取").click();
