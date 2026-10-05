@@ -41,6 +41,8 @@ taro-textarea-core.prototype-textarea { padding: 0; overflow: hidden; }
 .edit-panel > .primary { min-height: 48PX; margin-top: 24PX; }
 .evidence-note { display: block; margin-top: 9PX; color: #675d53; font-size: 9PX; line-height: 1.5; }
 .import-list { display: grid; gap: 5PX; margin-top: 10PX; }
+.import-panel .input-label { margin: 4PX 0 6PX; font-size: 13PX; font-weight: 500; }
+.import-guidance { margin-bottom: 10PX; font-size: 12PX; }
 .import-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 8PX; min-height: 37PX; padding: 7PX 9PX; border: 1PX solid #e6dccd; border-radius: 10PX; background: #fff; }
 .dish-label { display: block; min-width: 0; max-width: 100%; width: 100%; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; font: inherit; text-align: inherit; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 button.dish-label, taro-button-core.dish-label { cursor: pointer; }

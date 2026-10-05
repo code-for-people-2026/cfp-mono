@@ -82,8 +82,8 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
     await page.clock.setFixedTime(new Date(timestamp));
     await page.goto("/");
     await button(page, "建立我的菜品池").click();
-    await page.locator('textarea[placeholder="每行一道菜，例如：红烧排骨"]').fill(items.map((dish) => dish.name).join("\n"));
-    await button(page, "自动分成荤 / 素 / 汤").click();
+    await page.locator('textarea[placeholder="例如：红烧排骨"]').fill(items.map((dish) => dish.name).join("\n"));
+    await button(page, "下一步").click();
     for (const dish of items.filter((dish) => dish.category === "meat")) {
       await button(page, `更改${dish.name}分类，当前素`).click();
       await button(page, `更改${dish.name}分类，当前汤`).click();

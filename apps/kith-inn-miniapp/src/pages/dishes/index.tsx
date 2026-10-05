@@ -37,11 +37,14 @@ export default function DishesPage() {
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
   const deleting = pending?.kind === "delete";
   const editing = edit !== null;
+  const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
+  const adding = showInput || stage === "preview";
+  const title = editing ? "编辑菜品" : stage === "preview" ? "确认分类" : showInput ? "添加菜品" : "菜品池";
   const filtered = filter === "all" ? items : items.filter((dish) => dish.category === filter);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize)), currentPage = Math.min(page, pageCount - 1);
   const visibleItems = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
   useEffect(() => setPage((value) => Math.min(value, pageCount - 1)), [pageCount]);
-  useEffect(() => { void Taro.setNavigationBarTitle({ title: editing ? "编辑菜品" : "菜品池" }); }, [editing]);
+  useEffect(() => { void Taro.setNavigationBarTitle({ title }); }, [title]);
 
   useDidShow(() => setPending(client?.pendingWrite() ?? null));
   useEffect(() => {
@@ -137,12 +140,12 @@ export default function DishesPage() {
   }
   const activeCount = filtered.filter((dish) => dish.active).length;
 
-  const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
   const showList = signedIn && stage === "list" && !edit && !showInput;
 
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
-    <PageHeading title={editing ? "编辑菜品" : "菜品池"}>
+    <PageHeading title={title}>
       {editing && <Button className="flow-back-label dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
+      {adding && stage !== "list" && <Button className="flow-back-label dish-edit-back" ariaLabel="取消添加" disabled={disabled} onClick={() => void cancel()}>取消</Button>}
     </PageHeading>
     <View className="dish-page">
     {client && showList && <View className="dish-pool-tools">
@@ -187,22 +190,16 @@ export default function DishesPage() {
               }}>编辑</Button></View></View>)}</View>}
         {!loaded && error && !blocked && <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重试</Button>}
       </>}
-      {(showInput || stage === "preview") && <View className="import-panel">
-        <View className="detail-head"><View>
-          <Text className="detail-kicker">{stage === "preview" ? "从菜名自动判断" : items.length ? "日常维护 · 随时添加" : "首次使用 · 约 2 分钟"}</Text>
-          <Text className="detail-title">{stage === "preview" ? `${preview.length} 道菜待加入` : items.length ? "添加我的拿手菜" : "建立我的菜品池"}</Text></View>
-          <Text className="detail-meta">{stage === "preview" ? "未写入" : `${items.length} 道`}</Text></View>
+      {adding && <View className="import-panel">
         {stage !== "preview" ? <>
-          <View className="menu-rule"><Text className="rule-title">每行一道菜，整段粘贴</Text>
-            <Text>可以从微信、备忘录或旧菜单复制；不用填写复杂配方。</Text></View>
           <Text className="input-label">菜名清单</Text>
-          <Textarea className="prototype-textarea" placeholder="每行一道菜，例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
+          <Text className="muted import-guidance">每行一道，最多 200 道</Text>
+          <Textarea className="prototype-textarea" placeholder="例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
             value={source} disabled={disabled} onInput={(event) => setSource(event.detail.value)} />
-          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>自动分成荤 / 素 / 汤</Button>
-          <Text className="evidence-note">按菜名给出分类候选；确认后保存，日后仍可改名、停用或改分类。每次最多 200 道。</Text>
+          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>下一步</Button>
         </> : <>
-          <View className="menu-rule"><Text className="rule-title">请确认荤、素、汤分类</Text>
-            <Text>系统先判断；分类不对就点右侧更换图标，按“荤 → 素 → 汤”循环。</Text></View>
+          <Text className="input-label">待添加 · {preview.length} 道菜</Text>
+          <Text className="muted import-guidance">点击右侧图标可更改分类</Text>
           <View className="import-list">{preview.map((dish, index) => <View className="import-row" key={dish.name}>
             <DishName className="import-name" name={dish.name} /><View className="category-switch"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="rotate-dish" disabled={disabled} ariaLabel={`更改${dish.name}分类，当前${labels[dish.category]}`}
@@ -210,9 +207,7 @@ export default function DishesPage() {
                 <Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>)}</View>
           <Button className="primary" disabled={disabled || cooling || !signedIn} onClick={() => void run(async () => saved(await client.addDishes({ items: preview })))}>确认加入菜品池</Button>
           <Button className="secondary" disabled={disabled} onClick={() => setStage("input")}>返回修改菜名</Button>
-          <Text className="evidence-note">系统先判断，最终以桃子确认的分类为准。</Text>
         </>}
-        <Button className="text-button cancel" disabled={disabled} onClick={() => void cancel()}>取消添加</Button>
       </View>}
       {edit && <View className="edit-panel">
         <View className="dish-edit-fields">
@@ -242,7 +237,7 @@ export default function DishesPage() {
           if (answer.confirm) await saved(await client.deleteDish(target.id, { baseVersion: target.version }));
         })}>删除菜品</Button>
       </View>}
-      {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
+      {(dirty || blocked) && !adding && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
 
     </>}
     </View></ScrollView>
