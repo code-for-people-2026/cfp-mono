@@ -275,7 +275,9 @@ button.dish-label, taro-button-core.dish-label { cursor: pointer; }
 .settings-label, .settings-value { display: block; }
 .settings-label { color: #6b655d; font-size: 14PX; margin-bottom: 8PX; }
 .settings-value { font-size: 17PX; font-weight: 650; line-height: 1.5; }
-.settings-summary .text-button { flex: 0 0 auto; margin: 0; min-width: 44PX; min-height: 44PX; color: #1e5d45; }
+.settings-summary .settings-toggle { display: flex; align-items: center; justify-content: center; flex: 0 0 44PX; width: 44PX; height: 44PX; padding: 0; border: 0; background: transparent; }
+.settings-chevron { transform: rotate(90deg); }
+.settings-chevron.expanded { transform: rotate(-90deg); }
 .settings-details, .compact-settings .structure-fields { padding: 0 12PX 12PX; }
 .compact-settings .setting-row { padding: 10PX 4PX; margin: 0; border: 0; border-top: 1PX solid #eee6da; border-radius: 0; }
 

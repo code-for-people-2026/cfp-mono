@@ -132,9 +132,9 @@ async function home(page: Page) {
 async function enterEdit(page: Page) { await page.getByRole("button", { name: /^(继续调整菜单|调整菜单)$/ }).click(); }
 async function openPreview(page: Page) { await home(page); await preview(page).click(); }
 async function expandSettings(page: Page) {
-  for (const name of ["修改安排餐次", "修改每餐搭配"]) {
+  for (const name of ["展开安排餐次", "展开每餐搭配"]) {
     const toggle = button(page, name);
-    if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+    if (await toggle.count()) await toggle.click();
   }
 }
 async function settings(page: Page) { await home(page); await enterEdit(page); await button(page, "返回安排").click(); await expandSettings(page); }
@@ -1315,12 +1315,12 @@ test("生成前餐次收起搭配展开，修改后摘要同步且生成按钮�
   const generateButton = button(page, "生成本周菜单");
   const box = await generateButton.boundingBox(), nav = await page.locator(".main-nav").boundingBox();
   expect(box!.y).toBeGreaterThan(0); expect(box!.y + box!.height).toBeLessThanOrEqual(nav!.y);
-  await button(page, "修改安排餐次").click();
+  await button(page, "展开安排餐次").click();
   await page.locator(".setting-row").last().getByRole("checkbox").last().uncheck();
-  await button(page, "修改安排餐次").click();
+  await button(page, "收起安排餐次").click();
   await expect(page.locator(".settings-summary").first()).toContainText("共 13 餐");
   await page.locator(".structure-fields input").first().fill("3");
-  await button(page, "修改每餐搭配").click();
+  await button(page, "收起每餐搭配").click();
   await expect(page.locator(".settings-summary").last()).toContainText("3 荤 · 2 素 · 1 汤");
   await generate(page);
   expect(state.generated!.structure.meat).toBe(3);
