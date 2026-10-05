@@ -1160,10 +1160,11 @@ for (const failure of ["lost", "conflict"]) test(`单餐保存${failure}不冒�
   await expect(page.getByText("本餐调整已保存", { exact: true })).toBeVisible();
   const before = structuredClone(state.saved!);
   await soupToggle(page).click();
-  await expect(page.getByText("本餐调整已保存", { exact: true })).toHaveCount(0);
+  // Taro hides and reuses its H5 toast node; users must not see stale success text.
+  await expect(page.getByText("本餐调整已保存", { exact: true })).not.toBeVisible();
   state.failure = failure; await button(page, "保存本餐调整").click();
   await expect(page.locator(".recovery")).toBeVisible();
-  await expect(page.getByText("本餐调整已保存", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("本餐调整已保存", { exact: true })).not.toBeVisible();
   await expect(button(page, "保存本餐调整")).toBeDisabled();
   await expect(copyText(page)).toHaveValue(/汤菜1/);
   if (failure === "lost") {

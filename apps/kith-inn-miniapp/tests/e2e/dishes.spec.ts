@@ -289,6 +289,8 @@ test("删除须确认，成功提示自动消失，刷新仍移除并能重新�
   expect(state.items).toEqual([]);
   expect(state.writes[0]).toMatchObject({ method: "DELETE", body: JSON.stringify({ baseVersion: 1 }) });
   await page.reload(); await expect(page.locator(".dish-card")).toHaveCount(0);
+  await expect(page.getByText("暂无菜品", { exact: true })).toBeVisible();
+  await button(page, "添加菜品").click();
   await preview(page, "红烧排骨"); await button(page, "确认加入菜品池").click();
   await expect(page.locator(".dish-card")).toHaveCount(1);
 });
