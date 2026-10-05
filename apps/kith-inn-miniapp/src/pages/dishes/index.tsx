@@ -5,6 +5,8 @@ import { DishUpdateInputSchema, type Category, type Dish, type DishInput } from 
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
+import { useConfirmation } from "../../lib/confirmation";
 import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
@@ -15,6 +17,7 @@ const filters = [{ value: "all", label: "全部" }, { value: "meat", label: "荤
   { value: "vegetable", label: "素菜" }, { value: "soup", label: "汤" }] as const;
 
 export default function DishesPage() {
+  const [confirm, confirmation] = useConfirmation();
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [items, setItems] = useState<Dish[]>([]), [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(() => client?.restoreSession() ?? false);
@@ -88,7 +91,7 @@ export default function DishesPage() {
     setConflict(false); setReviewed(false);
   }
   async function confirmDiscard() {
-    return !dirty || (await Taro.showModal({ title: "放弃未保存修改？",
+    return !dirty || (await confirm({ title: "放弃未保存修改？",
       content: "当前草稿还没有保存，放弃后需要重新填写。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function cancel() {
@@ -114,12 +117,12 @@ export default function DishesPage() {
   }
   async function loadLatest() {
     if (!latest || !reviewed || disabled) return;
-    const answer = await Taro.showModal({ title: "载入最新版本？", content: "这会替换当前未保存修改，请先核对服务器最新内容。" });
+    const answer = await confirm({ title: "载入最新版本？", content: "这会替换当前未保存修改，请先核对服务器最新内容。" });
     if (answer.confirm) { setEdit({ ...latest }); setOriginal(latest); setConflict(false); setError(""); }
   }
   async function acknowledge() {
     if (!reviewed || !needsReview) return;
-    const answer = await Taro.showModal({ title: deleting ? "已核对删除结果？" : "已核对保存结果？",
+    const answer = await confirm({ title: deleting ? "已核对删除结果？" : "已核对保存结果？",
       content: "请对照当前菜品池与保留的草稿确认实际结果。继续后不会自动再次提交。" });
     if (answer.confirm) {
       try {
@@ -138,10 +141,9 @@ export default function DishesPage() {
   const showList = signedIn && stage === "list" && !edit && !showInput;
 
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
-    {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">
+    <PageHeading title={editing ? "编辑菜品" : "菜品池"}>
       {editing && <Button className="flow-back-label dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
-      <Text>{editing ? "编辑菜品" : "菜品池"}</Text></View>
-      : editing && <Button className="flow-return dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
+    </PageHeading>
     <View className="dish-page">
     {client && showList && <View className="dish-pool-tools">
       <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
@@ -236,7 +238,7 @@ export default function DishesPage() {
         })}>保存修改</Button>
         <Button className="delete-dish" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const target = original ?? edit;
-          const answer = await Taro.showModal({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });
+          const answer = await confirm({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });
           if (answer.confirm) await saved(await client.deleteDish(target.id, { baseVersion: target.version }));
         })}>删除菜品</Button>
       </View>}
@@ -258,5 +260,5 @@ export default function DishesPage() {
     <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {
       if (await confirmDiscard()) await Taro.reLaunch({ url: `/pages/${page}/index` });
     })} />
-  </View></DishNameProvider>;
+  </View>{confirmation}</DishNameProvider>;
 }

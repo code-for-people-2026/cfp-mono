@@ -7,6 +7,7 @@ import { MainNav } from "../../lib/main-nav";
 import archiveIcon from "../../assets/archive.svg";
 import { weekRange, WeekBoard } from "../../lib/week-board";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
 import { DishNameProvider } from "../../lib/dish-name";
 
 export default function HistoryPage() {
@@ -46,7 +47,7 @@ export default function HistoryPage() {
     if (result.items.length) await show(next, at);
   }
   return <DishNameProvider><View className="dish-app history-app flow-page">
-    {process.env.TARO_ENV === "h5" && <View className="app-heading">历史</View>}
+    <PageHeading title="历史" />
     <View className="dish-page">
       {error && <View className="alert" role="alert">{error}<Button className="text-button" disabled={busy || blocked} onClick={() => void run(load)}>重试</Button></View>}
       {week && <><View className="week-toolbar"><Button ariaLabel="上一保存周" disabled={busy || blocked || index + 1 >= items.length && !before} onClick={() => void run(() => move(true))}>‹</Button>

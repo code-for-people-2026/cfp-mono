@@ -11,6 +11,8 @@ import { CategorySchema, StructureSchema, WeekStartSchema, adjacentWeekStarts, t
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { WeekEditError, recommendedReplacements, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
+import { useConfirmation } from "../../lib/confirmation";
 import { DishName, DishNameProvider, DishChoiceRow } from "../../lib/dish-name";
 import { labels } from "../../lib/classify";
 import { formatMealExample, formatMealText } from "../../lib/menu-text";
@@ -46,7 +48,7 @@ function MealPicker({ menu, index, disabled, onChange, compactDates = false }: {
       {days.map((day) => <option key={day.index} value={day.index}>{day.label}</option>)}
     </select> : <Picker mode="selector" range={days.map((day) => day.label)} value={Math.max(0, days.findIndex((day) => day.index === selectedDay))} disabled={disabled}
       onChange={(event) => chooseDay(days[Number(event.detail.value)]!.index)}>
-      <View className="copy-date">{days.find((day) => day.index === selectedDay)?.label ?? "选择日期"}<Text className="copy-date-hint">选择日期 ▾</Text></View>
+      <View className="copy-date">{days.find((day) => day.index === selectedDay)?.label ?? "选择日期"}<Image className="copy-date-chevron" src={nextIcon} /></View>
     </Picker>}
     <View className="menu-detail-actions">{[selectedDay * 2, selectedDay * 2 + 1].filter((i) => menu.meals[i]?.enabled).map((i) =>
       <Button key={i} className="menu-detail-button" ariaPressed={index === i} disabled={disabled} onClick={() => onChange(i)}>{i % 2 ? "晚餐" : "午餐"}</Button>)}</View>
@@ -54,6 +56,7 @@ function MealPicker({ menu, index, disabled, onChange, compactDates = false }: {
 }
 
 export default function WeekPage() {
+  const [confirm, confirmation] = useConfirmation();
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [week, setWeek] = useState(() => { const value = client?.pendingWrite()?.weekStart ?? Taro.getCurrentInstance().router?.params.weekStart; return WeekStartSchema.safeParse(value).success ? value! : thisMonday(); });
   const [saved, setSaved] = useState<WeekPlan | null>(null), [draft, setDraft] = useState<MenuPreview | null>(null);
@@ -155,7 +158,7 @@ export default function WeekPage() {
     if (!copiedFrom.current && !blocked && WeekStartSchema.safeParse(source).success && source !== week) {
       const original = await client!.getWeek(source!);
       if (!original) throw new Error("原菜单暂时无法读取，请重试。");
-      const answer = await Taro.showModal({ title: "复制到所选周？", content: `${week} 起的一周。${value ? "目标周已有菜单，复制后会进入新草稿，确认保存才会替换目标周菜单。" : "复制后可继续调整，确认保存后生效。"}`, confirmText: "复制菜单", cancelText: "取消" });
+      const answer = await confirm({ title: "复制到所选周？", content: `${week} 起的一周。${value ? "目标周已有菜单，复制后会进入新草稿，确认保存才会替换目标周菜单。" : "复制后可继续调整，确认保存后生效。"}`, confirmText: "复制菜单", cancelText: "取消" });
       copiedFrom.current = true;
       if (!answer.confirm) { await Taro.reLaunch({ url: "/pages/history/index" }); return; }
       const next = { weekStart: week, structure: original.structure, meals: original.meals.map((meal) => ({ ...meal, date: addDays(meal.date, Math.round((Date.parse(week) - Date.parse(source!)) / 86400000)) })) };
@@ -165,11 +168,11 @@ export default function WeekPage() {
   }
   useEffect(() => { if (client?.restoreSession()) void run(read); }, [week, client]);
   async function discardCopyDraft() {
-    return !copyDraftDirty || (await Taro.showModal({ title: "放弃文案修改？", content: "当前修改还没有复制，放弃后将恢复默认文案。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
+    return !copyDraftDirty || (await confirm({ title: "放弃文案修改？", content: "当前修改还没有复制，放弃后将恢复默认文案。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function discard() {
     if (!await discardCopyDraft()) return false;
-    return !(dirty || settingsDirty) || (await Taro.showModal({ title: "放弃未保存菜单？", content: "当前调整还没有保存，离开后只保留上次成功保存的内容。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
+    return !(dirty || settingsDirty) || (await confirm({ title: "放弃未保存菜单？", content: "当前调整还没有保存，离开后只保留上次成功保存的内容。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function move(date: string) {
     if (disabled || !await discard()) return;
@@ -177,7 +180,7 @@ export default function WeekPage() {
   }
   async function generate() {
     if (!StructureSchema.safeParse(structure).success) throw new Error("每类请填0～10，总数需为1～20道");
-    if (draft && !(await Taro.showModal({ title: "重新安排整周？", content: "这会覆盖整周的换菜和去汤调整。取消或生成失败会保留原菜单；生成后仍需保存。", confirmText: "确认重排" })).confirm) return;
+    if (draft && !(await confirm({ title: "重新安排整周？", content: "这会覆盖整周的换菜和去汤调整。取消或生成失败会保留原菜单；生成后仍需保存。", confirmText: "确认重排" })).confirm) return;
     const result = await client!.generateWeek(week, { structure, meals });
     setSelected(firstPosition(result)); setShowAll(result.structure.meat === 0);
     setDraft(result); void Taro.pageScrollTo({ scrollTop: 0, duration: 0 }); setRebuild(true); setEditing(true); setSettings(false); setTarget(null); setSoupSelection(null); setNotice("");
@@ -305,8 +308,7 @@ export default function WeekPage() {
   const candidates = screen === "swap" ? suggested.flatMap((id) => eligibleCandidates.filter((dish) => dish.id === id))
     : eligibleCandidates.filter((dish) => dish.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <DishNameProvider><View className={`dish-app week-app flow-page screen-${screen} ${sharing ? "sharing" : ""}`}>
-    {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">{!sharing && screen !== "home" && <Button className={editing ? "flow-back-label" : ""} ariaLabel={backLabel} disabled={disabled} onClick={back}><Image src={backIcon} className="flow-icon" />{editing && <Text>返回安排</Text>}</Button>}<Text>{title}</Text></View>
-      : !sharing && screen !== "home" && <Button className="flow-return" disabled={disabled} onClick={back}>{backLabel}</Button>}
+    <PageHeading title={title}>{!sharing && screen !== "home" && <Button className={editing ? "flow-back-label" : ""} ariaLabel={backLabel} disabled={disabled} onClick={back}><Image src={backIcon} className="flow-icon" />{editing ? <Text>返回安排</Text> : process.env.TARO_ENV === "weapp" && <Text className="sr-only">{backLabel}</Text>}</Button>}</PageHeading>
     <View className="dish-page"><ScrollView scrollY enhanced showScrollbar={false} className="flow-scroll" key={`${sharing ? "copy" : screen}-${settings}`}><View className="flow-content">
 
       {!sharing && (screen === "home" || screen === "settings") && <View className="week-toolbar"><Button ariaLabel="上一周" disabled={disabled} onClick={() => void move(addDays(week, -7))}>‹</Button>
@@ -324,7 +326,7 @@ export default function WeekPage() {
         {review !== undefined && <><Text>服务器：{review ? `版本${review.version}，${review.confirmedAt ? "已确认" : "未确认"}` : "尚未保存"}</Text>
           {review?.meals.map((meal, i) => <Text key={i}>{meal.date} {meal.mealType === "lunch" ? "午" : "晚"}：{[...meal.meat, ...meal.vegetable, ...(meal.soupOmitted ? [] : meal.soup)].map((d) => d.name).join("、") || "不安排"}</Text>)}
           <Button disabled={busy} onClick={() => void run(async () => {
-            if (!(await Taro.showModal({ title: "载入核对后的服务器菜单？", content: "这会放弃当前未保存草稿，请确认已核对保存结果。" })).confirm) return;
+            if (!(await confirm({ title: "载入核对后的服务器菜单？", content: "这会放弃当前未保存草稿，请确认已核对保存结果。" })).confirm) return;
             if (blocked) client!.discardPendingAfterReview(); adopt(review ?? null);
           })}>核对完成，载入服务器版本</Button></>}
       </View>}
@@ -427,5 +429,5 @@ export default function WeekPage() {
       </View>}
     </View>
     <MainNav active="week" disabled={!client || busy || blocked} onNavigate={(page) => void run(async () => { if (await discard()) await Taro.reLaunch({ url: `/pages/${page}/index` }); })} />
-  </View></DishNameProvider>;
+  </View>{confirmation}</DishNameProvider>;
 }
