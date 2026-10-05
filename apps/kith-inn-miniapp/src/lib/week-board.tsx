@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
+import Taro from "@tarojs/taro";
 import { ScrollView, Text, View } from "@tarojs/components";
 import type { Category, MenuPreview } from "@cfp/kith-inn-contracts";
 import { Button } from "./button";
 import { DishName } from "./dish-name";
+import { snapWeekScroll } from "./week-scroll";
 
 export type DishPosition = { meal: number; category: Category; index: number };
 export const weekdays = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -24,16 +26,19 @@ export function WeekBoard({ menu, selected = null, showAll = true, disabled = fa
   menu: MenuPreview; selected?: DishPosition | null; showAll?: boolean; disabled?: boolean; readonly?: boolean; showMealCount?: boolean; showDate?: boolean;
   onSelect?: (position: DishPosition) => void; onFilter?: (all: boolean) => void;
 }) {
-  const scrollId = useId(), [scrollLeft, setScrollLeft] = useState(0);
+  const scrollId = `week-scroll-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`, [scrollLeft, setScrollLeft] = useState(0);
   const [atEnd, setAtEnd] = useState(false);
   const settling = useRef<ReturnType<typeof setTimeout>>(), touching = useRef(false);
   const lastScroll = useRef({ scrollLeft: 0, scrollWidth: 0 });
   function settle() {
     clearTimeout(settling.current);
     if (process.env.TARO_ENV === "h5" || touching.current) return;
-    // Native scroll-view has no CSS snap. Seven equal columns include six 8px gaps.
-    const { scrollLeft: left, scrollWidth: width } = lastScroll.current;
-    if (width) setScrollLeft(Math.min(5, Math.max(0, Math.round(left / ((width + 8) / 7)))) * ((width + 8) / 7));
+    // Include the actual right edge, which is not a day-column start in a 2.5-day viewport.
+    Taro.createSelectorQuery().select(`#${scrollId}`).boundingClientRect((rect) => {
+      if (!rect || Array.isArray(rect) || !rect.width || touching.current) return;
+      const { scrollLeft: left, scrollWidth: width } = lastScroll.current;
+      if (width) setScrollLeft(snapWeekScroll(left, width, rect.width));
+    }).exec();
   }
   function endTouch() { touching.current = false; clearTimeout(settling.current); settling.current = setTimeout(settle, 180); }
   useEffect(() => {
