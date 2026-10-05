@@ -208,3 +208,14 @@ H5实测两项展开收起、7天餐次显示及44×44按钮尺寸；小程序�
 ![确认末尾](docs/visual-qa/review-scroll-end-2026-10-05.png)
 
 验证：新增1个Vitest回归测试、8个断言，覆盖末尾、邻近末尾、普通列、左右越界、无溢出和小数宽度；miniapp typecheck/lint、H5和WeApp构建通过。H5横向滑到末尾仍可显示完整周日。本轮未重跑全量E2E，未更新手机预览包；上述原生证据来自微信开发者工具模拟器，不等同于真机验收。
+
+
+### 同日追查：中间日期无法稳定停靠（原生手势待复验）
+
+用户补充中段也停不住，所以上一节末尾验证不能视为横向滑动完整验收。代码检查发现原生 onScroll 每次把上报位置写回 scrollLeft，并启用 scrollWithAnimation；用户滚动和吸附动画的反馈事件因此都会产生新的程序滚动指令。此前纯位置计算测试没有覆盖事件反馈这一层。
+
+本次删除 scrollLeft 受控回写，复用微信增强 ScrollView 的 ScrollViewContext.scrollTo，仅在一次触摸结束且滚动停止后发送一次吸附指令。滚动事件只记录位置；该次吸附的反馈不再触发下一次吸附。新手势、后续滚动和卸载都会使旧的异步测量失效。实际宽度和末尾停靠计算沿用前次修正。参考 [Taro ScrollViewContext](https://docs.taro.zone/en/docs/apis/ui/scroll/ScrollViewContext) 与 [ScrollView](https://docs.taro.zone/docs/components/viewContainer/scroll-view)。
+
+验证：week-scroll.test.ts 的3个测试通过，含前次末尾计算及本次新增的两项事件序列测试：按住不回写、惯性未结束不吸附、动画事件不循环、反向滑动、连续回到同一目标、末尾、过期测量与卸载。typecheck、lint、H5及WeApp构建通过。H5在390px宽度以实际拖动验证周三252px→周四378px→反向周三252px停靠，未打开菜名气泡。
+
+限制：本次微信开发者工具可读取截图、通过无障碍点击导航，但拖动/滚动工具报 noWindowsAvailable；未完成新版本原生中段及末尾手势复验，不能把上一提交的原生末尾截图当作本次新版本已通过的证明。未上传手机预览包、未保存云端菜单。
