@@ -1,5 +1,7 @@
 import sharp from "sharp";
-import { Repository, fingerprint, type Row } from "../cms/repository";
+import { Repository, fingerprint } from "../cms/repository";
+import type { Greeting as GreetingRecord } from "../payload-types";
+import type { Turn, Session } from "@cfp/hello-agent-contracts";
 import {
   AppError,
   externalSchema,
@@ -29,17 +31,34 @@ export class GreetingService {
     readonly media = new MediaService(repo),
   ) {}
 
-  async sessions() {
+  async sessions(): Promise<Session[]> {
     return (await this.repo.all("sessions")).map(
       ({ id, title, createdAt }) => ({ id, title, createdAt }),
     );
   }
-  async createSession(title = "与阿J的日常") {
+  async createSession(title = "与阿J的日常"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });
   }
-  async history(sessionId: number) {
+  async history(sessionId: number): Promise<Turn[]> {
     await this.repo.get("sessions", sessionId);
     return this.repo.all("greetings", { sessionId: { equals: sessionId } });
+  }
+  async submission(
+    sessionId: number,
+    requestId: string,
+  ): Promise<{ turn: Turn | null }> {
+    await this.repo.get("sessions", sessionId);
+    const rows = await this.repo.list(
+      "greetings",
+      {
+        and: [
+          { sessionId: { equals: sessionId } },
+          { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } },
+        ],
+      },
+      1,
+    );
+    return { turn: rows[0] || null };
   }
   async upload(data: Uint8Array) {
     if (data.length > 5 * 1024 * 1024)
@@ -74,7 +93,7 @@ export class GreetingService {
     mode: Mode,
     input: Inspiration,
     model: string,
-    extra?: unknown,
+    extra?: Greeting,
   ) {
     await this.repo.get("sessions", sessionId);
     await Promise.all(input.mediaIds.map((id) => this.repo.get("media", id)));
@@ -144,7 +163,7 @@ export class GreetingService {
       );
     const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
     const release = await this.repo.acquire(args.sessionId);
-    let row: Row | undefined;
+    let row: GreetingRecord | undefined;
     const started = Date.now();
     try {
       const result = await this.begin(

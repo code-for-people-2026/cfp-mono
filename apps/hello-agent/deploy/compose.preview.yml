@@ -7,6 +7,9 @@ services:
     env_file:
       - /opt/cfp-hello-agent/private/runtime.env
       - /opt/cfp-hello-agent/private/oss.env
+    environment:
+      # 本文件只用于测试部署；与广告能力分开，不声称验证了广告回执。
+      HELLO_MEMORY_RECOVERY: preview
     ports:
       - "127.0.0.1:3310:3310"
     volumes:

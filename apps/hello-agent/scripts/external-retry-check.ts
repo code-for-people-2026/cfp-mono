@@ -5,6 +5,8 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { sessionSchema, historySchema, turnResultSchema, errorSchema } from "@cfp/hello-agent-contracts";
+import { readToolResult } from "./mcp-result";
 
 const dir = await mkdtemp(path.join(tmpdir(), "hello-external-retry-"));
 process.env.HELLO_DATABASE_URI = `file:${dir}/test.db`;
@@ -48,14 +50,10 @@ const client = new Client({
 const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 await server.connect(serverTransport);
 await client.connect(clientTransport);
-function value(result: Awaited<ReturnType<typeof client.callTool>>) {
-  const content = result.content as { type: string; text?: string }[];
-  assert.equal(content[0].type, "text");
-  return JSON.parse(content[0].text!);
-}
 try {
-  const session = value(
+  const session = readToolResult(
     await client.callTool({ name: "hello_create_session", arguments: {} }),
+    sessionSchema,
   );
   const args = {
     sessionId: session.id,
@@ -80,7 +78,7 @@ try {
       name: "hello_get_history",
       arguments: { sessionId: session.id },
     });
-  const failed = value(await history());
+  const failed = readToolResult(await history(), historySchema);
   assert.equal(failed.length, 1);
   assert.equal(failed[0].status, "running");
   assert.equal(failed[0].greeting, null, "完成写入失败后不能留下部分产物");
@@ -92,18 +90,18 @@ try {
     true,
     "恢复存储后，相同请求必须能够重试完成",
   );
-  const saved = value(retried);
+  const saved = readToolResult(retried, turnResultSchema);
   assert.equal(saved.id, failed[0].id);
   assert.equal(saved.status, "completed");
   assert.equal(saved.greeting, args.output.greeting);
-  assert.equal(value(await save()).id, saved.id);
-  assert.equal(value(await history()).length, 1, "重试不得创建第二个产物");
+  assert.equal(readToolResult(await save(), turnResultSchema).id, saved.id);
+  assert.equal(readToolResult(await history(), historySchema).length, 1, "重试不得创建第二个产物");
   const conflict = await save({
     ...args,
     output: { ...args.output, greeting: "不能覆盖原产物" },
   });
   assert.equal(conflict.isError, true);
-  assert.match(value(conflict).error, /不同内容/);
+  assert.match(readToolResult(conflict, errorSchema).error, /不同内容/);
   console.log(
     "✓ MCP 外部保存写入后失败可用原请求恢复，重复提交不新增，变更内容仍被拒绝",
   );

@@ -6,12 +6,13 @@ import {
   Input as TextInput,
   ScrollView,
   Text,
-  Textarea,
   View,
 } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { MemoryMeter, MemoryPanel } from "../../chat/memory";
+import { ChatComposer, type ImageSource } from "../../chat/composer";
+import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
   modes,
@@ -21,6 +22,7 @@ import {
   type Settings,
   type Turn,
   type MemoryStatus,
+  type Input,
 } from "../../chat/model";
 
 const h5 = process.env.TARO_ENV === "h5";
@@ -34,12 +36,12 @@ function Button(props: ButtonProps) {
     />
   );
 }
+type Panel = "modes" | "connection" | null;
 const suggestions = [
   "窗台上的小番茄红了",
   "明天要开始一份新工作",
   "最近有些累，想慢一点",
 ];
-type Panel = "modes" | "connection" | null;
 
 export default function Chat() {
   const [settings, setSettings] = useState<Settings>();
@@ -50,6 +52,7 @@ export default function Chat() {
   const [history, setHistory] = useState<Turn[]>([]);
   const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
+  const [inputMode, setInputMode] = useState<"voice" | "keyboard">("voice");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [mode, setMode] = useState<Mode>("platform");
   const [apiKey, setApiKey] = useState("");
@@ -58,6 +61,7 @@ export default function Chat() {
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [identityExpired, setIdentityExpired] = useState(false);
   const [pending, setPending] = useState<{
     text: string;
     images: Attachment[];
@@ -67,8 +71,16 @@ export default function Chat() {
   const [tokenBusy, setTokenBusy] = useState(false);
   const [anchor, setAnchor] = useState(0);
   const historyVersion = useRef(0);
-  const currentMode = modes.find((entry) => entry.id === mode)!;
-  const disabled = busy || uploading || loading || memoryBusy;
+  const sendLock = useRef(false);
+  // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
+  const submission = useRef<{
+    sessionId: number;
+    requestId: string;
+    mode: Exclude<Mode, "external">;
+    input: Input;
+  }>();
+  const disabled =
+    busy || uploading || loading || memoryBusy || identityExpired;
   const ready = canSend(
     text,
     attachments,
@@ -80,9 +92,14 @@ export default function Chat() {
   const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
 
   function problem(value: unknown) {
+    if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
     setError(
       value instanceof Error ? value.message : "暂时没有完成，请稍后重试",
     );
+  }
+  function recoveryFailed(value: unknown) {
+    if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
+    return undefined;
   }
   async function readHistory(id: number) {
     const version = ++historyVersion.current;
@@ -100,7 +117,14 @@ export default function Chat() {
         if (version === historyVersion.current)
           setImages((current) => ({ ...current, [mediaId]: source }));
       };
-      void api.imageSource(mediaId).then(update, () => update(null));
+      void api.imageSource(mediaId).then(update, (value) => {
+        update(null);
+        if (
+          version === historyVersion.current &&
+          value instanceof api.IdentityExpiredError
+        )
+          problem(value);
+      });
     }
   }
   async function boot() {
@@ -124,6 +148,91 @@ export default function Chat() {
       setLoading(false);
     }
   }
+  async function restartIdentity() {
+    if (loading || busy || uploading || memoryBusy || sendLock.current) return;
+    sendLock.current = true;
+    try {
+      const decision = await Taro.showModal({
+        title: "以新身份重新开始？",
+        content:
+          "旧聊天记录不会删除，但新身份无法访问旧记录。当前草稿和图片也会清空。这不是微信登录或账号找回。",
+        confirmText: "重新开始",
+        cancelText: "保留现状",
+      });
+      if (!decision.confirm) return;
+      setLoading(true);
+      await api.restartIdentity();
+      // 防止旧身份的图片异步结果混入新页面。
+      historyVersion.current++;
+      submission.current = undefined;
+      setSessionId(undefined);
+      setSettings(undefined);
+      setHistory([]);
+      setImages({});
+      setText("");
+      setInputMode("voice");
+      setAttachments([]);
+      setPending(undefined);
+      setMemory(undefined);
+      setMemoryOpen(false);
+      setPanel(null);
+      setToken("");
+      setApiKey("");
+      setIdentityExpired(false);
+      await boot();
+    } catch (value) {
+      problem(value);
+    } finally {
+      setLoading(false);
+      sendLock.current = false;
+    }
+  }
+  async function checkSubmission() {
+    const current = submission.current;
+    if (!current || disabled || sendLock.current) return;
+    sendLock.current = true;
+    setBusy(true);
+    try {
+      const { turn } = await api.getSubmission(
+        current.sessionId,
+        current.requestId,
+      );
+      if (turn?.status === "completed") {
+        submission.current = undefined;
+        if (
+          current.mode === mode &&
+          JSON.stringify(current.input) ===
+            JSON.stringify({
+              text: text.trim(),
+              mediaIds: attachments.map((item) => item.id),
+            })
+        ) {
+          setText("");
+          setAttachments([]);
+        }
+        setHistory((rows) => [
+          ...rows.filter((row) => row.id !== turn.id),
+          turn,
+        ]);
+        setError("已确认上次回复保存成功，无需再次发送。");
+        await readHistory(current.sessionId);
+      } else if (turn?.status === "failed") {
+        submission.current = undefined;
+        setError("上次生成已确认失败，草稿保留；可以重新发送。");
+      } else {
+        setError(
+          turn
+            ? "上次提交仍在处理，请稍后再确认；不会重复生成。"
+            : "尚未找到上次提交，可用原请求重试发送。",
+        );
+      }
+    } catch (value) {
+      problem(value);
+    } finally {
+      setBusy(false);
+      sendLock.current = false;
+    }
+  }
   useEffect(() => {
     void boot();
     return () => {
@@ -135,13 +244,14 @@ export default function Chat() {
     Taro.nextTick(() => setAnchor((value) => value + 1));
   }, [history, pending, attachments]);
 
-  async function chooseImage() {
-    if (attachments.length >= 3) return;
+  async function chooseImage(source?: ImageSource) {
+    if (disabled || attachments.length >= 3) return;
     setUploading(true);
     setError("");
     try {
-      const image = await api.addImage();
+      const image = await api.addImage(source);
       setAttachments((items) => [...items, image]);
+      setInputMode("keyboard");
     } catch (value) {
       // 用户关闭图片选择器不当成服务故障；其他失败明确显示。
       if (
@@ -158,8 +268,13 @@ export default function Chat() {
     }
   }
   async function send() {
-    if (!ready) return;
+    if (!ready || mode === "external" || sendLock.current) return;
+    sendLock.current = true;
     const draft = { text: text.trim(), images: attachments };
+    const input = {
+      text: draft.text,
+      mediaIds: draft.images.map((item) => item.id),
+    };
     const key = apiKey;
     setApiKey("");
     setBusy(true);
@@ -175,14 +290,27 @@ export default function Chat() {
         id = session.id;
         setSessionId(id);
       }
-      const result = await api.generate(
-        id,
-        requestId(),
-        mode,
-        { text: draft.text, mediaIds: draft.images.map((item) => item.id) },
-        key,
-      );
+      const previous = submission.current;
+      const retry =
+        previous?.sessionId === id &&
+        previous.mode === mode &&
+        JSON.stringify(previous.input) === JSON.stringify(input);
+      const current = retry
+        ? previous
+        : { sessionId: id, requestId: requestId(), mode, input };
+      submission.current = current;
+      let result: Turn | undefined;
+      if (retry) {
+        const status = await api.getSubmission(id, current.requestId);
+        if (status.turn?.status === "completed") result = status.turn;
+        if (status.turn?.status === "running")
+          throw new Error("上次提交仍在处理，请稍后再确认；不会重复生成。");
+        // 只有服务端明确失败才允许新的一轮；查询失败或暂未找到都不能随意换编号。
+        if (status.turn?.status === "failed") current.requestId = requestId();
+      }
+      result ||= await api.generate(id, current.requestId, mode, input, key);
       saved = true;
+      submission.current = undefined;
       // 保存成功与刷新成功是两件事，不能因随后读取失败诱导用户重复发送。
       setHistory((current) => [
         ...current.filter((row) => row.id !== result.id),
@@ -190,19 +318,38 @@ export default function Chat() {
       ]);
       await readHistory(id);
     } catch (value) {
+      if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
       if (saved) {
         setError(
           "回复已保存，记录暂时刷新失败，请稍后重新打开；无需再次发送。",
         );
       } else {
-        problem(value);
-        setText(draft.text);
-        setAttachments(draft.images);
-        if (id) await readHistory(id).catch(() => undefined);
+        const current = submission.current;
+        const status =
+          current &&
+          (await api
+            .getSubmission(current.sessionId, current.requestId)
+            .catch(recoveryFailed));
+        if (status?.turn?.status === "completed") {
+          const turn = status.turn;
+          submission.current = undefined;
+          setHistory((rows) => [
+            ...rows.filter((row) => row.id !== turn.id),
+            turn,
+          ]);
+          setError("已确认上次回复保存成功，无需再次发送。");
+        } else {
+          if (status?.turn?.status === "failed") submission.current = undefined;
+          problem(value);
+          setText(draft.text);
+          setAttachments(draft.images);
+        }
+        if (id) await readHistory(id).catch(recoveryFailed);
       }
     } finally {
       setPending(undefined);
       setBusy(false);
+      sendLock.current = false;
       setAnchor((value) => value + 1);
     }
   }
@@ -247,15 +394,25 @@ export default function Chat() {
       <View className="chat-app">
         <View className="chat-header">
           <View className="identity">
-            <View className="avatar hero-avatar">J</View>
+            <Image
+              className="avatar hero-avatar"
+              src={mascot}
+              mode="aspectFill"
+            />
             <View>
               <Text className="agent-name">好人阿 J</Text>
-              <Text className="agent-status">
-                <Text className="online-dot">●</Text> a jOKer · 往好处想一点
-              </Text>
+              <Text className="agent-status">AI 乐观搭子</Text>
             </View>
           </View>
           <View className="header-actions">
+            <Button
+              className={`icon-button memory-shortcut ${memory?.level === "empty" ? "memory-alert" : ""}`}
+              ariaLabel="查看阿 J 的记忆"
+              disabled={disabled}
+              onClick={() => setMemoryOpen(true)}
+            >
+              ♥{memory?.level === "empty" ? " 满了" : ""}
+            </Button>
             <Button
               className="icon-button"
               disabled={disabled}
@@ -265,56 +422,60 @@ export default function Chat() {
             </Button>
           </View>
         </View>
-        <MemoryMeter
-          memory={memory}
-          disabled={disabled}
-          onOpen={() => setMemoryOpen(true)}
-        />
         <ScrollView
           className="conversation"
           scrollY
           scrollWithAnimation
           scrollIntoViewAlignment="end"
-          scrollIntoView={`chat-end-${anchor}`}
+          scrollIntoView={
+            history.length || pending ? `chat-end-${anchor}` : undefined
+          }
         >
           <View className="chat-content">
-            <Text className="date-divider">
-              不必事事顺利，也能给自己一点好意
-            </Text>
-            <View className="message assistant-message">
-              <View className="avatar small-avatar">✦</View>
-              <View className="message-main">
-                <View className="bubble assistant-bubble">
-                  <Text className="welcome-title">
-                    我是阿J，你的 AI 乐观搭子。
-                  </Text>
+            {!history.length && !pending && (
+              <View className="welcome-home">
+                <View className="mascot-halo">
+                  <Image
+                    className="welcome-mascot"
+                    src={mascot}
+                    mode="aspectFit"
+                    ariaLabel="挥手打招呼的阿 J"
+                  />
+                </View>
+                <Text className="welcome-title">嗨，我是阿 J。</Text>
+                <View className="welcome-copy">
+                  <Text>从鲁迅笔下的阿 Q 先生那儿，“蒸馏”来一点乐观。</Text>
                   <Text>
-                    顺心的事，咱们乐一乐；不顺的事，也不急着硬夸。发句话或一张照片，我陪你换个角度，再讨一句好彩头。
+                    不自欺，不欺软怕硬，也不把委屈硬说成胜利。留下的，是跌一跤还能拍拍灰、继续往前走的劲儿。
+                  </Text>
+                  <Text className="welcome-invitation">
+                    有什么烦心事，跟我说说吧。
+                    <Text>咱们换个角度，再讨一句好彩头。</Text>
                   </Text>
                 </View>
-                <Text className="message-meta">好意，不是对未来的保证</Text>
-              </View>
-            </View>
-            {!history.length && !pending && (
-              <View className="suggestions">
-                <Text className="suggestion-caption">不如从这里开始</Text>
-                {suggestions.map((item, index) => (
-                  <Button
-                    key={item}
-                    className="suggestion"
-                    disabled={disabled}
-                    onClick={() => setText(item)}
-                  >
-                    <Text>
-                      {["🌱", "☀", "☕"][index]} {item}
-                    </Text>
-                    <Text className="suggestion-arrow">↗</Text>
-                  </Button>
-                ))}
+                {mode !== "external" && (
+                  <View className="suggestions">
+                    <Text className="suggestion-caption">不如从这里开始</Text>
+                    {suggestions.map((item) => (
+                      <Button
+                        key={item}
+                        className="suggestion"
+                        disabled={disabled}
+                        onClick={() => {
+                          setText(item);
+                          setInputMode("keyboard");
+                        }}
+                      >
+                        <Text>{item}</Text>
+                        <Text className="suggestion-arrow">↗</Text>
+                      </Button>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
             {loading && (
-              <Text className="loading-note">阿J正在翻看我们聊过的日常…</Text>
+              <Text className="loading-note">阿 J 正在翻看我们聊过的日常…</Text>
             )}
             {history.map((row) => (
               <View className="turn" key={row.id}>
@@ -360,7 +521,11 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <View className="avatar small-avatar">✦</View>
+                  <Image
+                    className="avatar small-avatar"
+                    src={mascot}
+                    mode="aspectFill"
+                  />
                   <View className="message-main">
                     <View
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
@@ -370,7 +535,7 @@ export default function Chat() {
                           ? row.greeting
                           : row.status === "failed"
                             ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
-                            : "这一轮还没有完成；若服务曾中断，请重新发送。"}
+                            : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
                       </Text>
                       {row.status === "completed" && row.association && (
                         <View className="association">
@@ -391,6 +556,14 @@ export default function Chat() {
                           {expanded.includes(row.id) && (
                             <Text className="association-text">
                               {row.association}
+                              {"\n"}
+                              {
+                                modes.find((item) => item.id === row.mode)
+                                  ?.label
+                              }
+                              {row.mode === "external"
+                                ? " · 来源由客户端声明"
+                                : ` · ${row.model}`}
                             </Text>
                           )}
                         </View>
@@ -398,12 +571,8 @@ export default function Chat() {
                     </View>
                     <Text className="message-meta">
                       {row.status === "completed"
-                        ? "✓ 已保存到 CMS"
-                        : "未生成产物"}{" "}
-                      · {modes.find((item) => item.id === row.mode)?.label}
-                      {row.mode === "external"
-                        ? " · 来源由客户端声明"
-                        : ` · ${row.model}`}
+                        ? "AI 生成 · 已保存"
+                        : "这一轮尚未完成"}
                     </Text>
                   </View>
                 </View>
@@ -427,11 +596,15 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <View className="avatar small-avatar">✦</View>
+                  <Image
+                    className="avatar small-avatar"
+                    src={mascot}
+                    mode="aspectFill"
+                  />
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
-                      <Text>阿J正在换个角度想…</Text>
+                      <Text>阿 J 正在换个角度想…</Text>
                     </View>
                   </View>
                 </View>
@@ -442,31 +615,36 @@ export default function Chat() {
         </ScrollView>
         {error && (
           <View className="error-banner">
-            <Text>{error}</Text>
-            {!settings && (
-              <Button className="text-button" onClick={boot}>
-                重试
+            <Text>
+              {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
+            </Text>
+            {!identityExpired && submission.current && (
+              <Button
+                className="text-button check-submission"
+                disabled={disabled}
+                onClick={checkSubmission}
+              >
+                确认上次发送
               </Button>
+            )}
+            {identityExpired ? (
+              <Button
+                className="text-button restart-identity"
+                disabled={loading || busy || uploading || memoryBusy}
+                onClick={restartIdentity}
+              >
+                重新开始
+              </Button>
+            ) : (
+              !settings && (
+                <Button className="text-button" onClick={boot}>
+                  重试
+                </Button>
+              )
             )}
           </View>
         )}
         <View className="composer-area">
-          <View className="composer-toolbar">
-            <Button
-              className="mode-chip"
-              disabled={disabled}
-              onClick={() => setPanel("modes")}
-            >
-              <Text>
-                {currentMode.icon} {currentMode.label} ⌄
-              </Text>
-            </Button>
-            <Text className="model-note">
-              {mode === "external"
-                ? "模型由你选择"
-                : settings?.model || "连接中"}
-            </Text>
-          </View>
           {mode === "byok" && (
             <View className="key-row">
               <TextInput
@@ -505,62 +683,39 @@ export default function Chat() {
               </View>
             </View>
           ) : (
-            <>
-              {attachments.length > 0 && (
-                <View className="attachments">
-                  {attachments.map((item) => (
-                    <View className="attachment" key={item.id}>
-                      <Image
-                        src={item.src}
-                        className="attachment-image"
-                        mode="aspectFill"
-                      />
-                      <Button
-                        className="remove-image"
-                        disabled={busy}
-                        onClick={() =>
-                          setAttachments((items) =>
-                            items.filter((image) => image.id !== item.id),
-                          )
-                        }
-                      >
-                        ×
-                      </Button>
-                    </View>
-                  ))}
-                </View>
-              )}
-              <View className="composer">
-                <Button
-                  className="attach-button"
-                  disabled={disabled || attachments.length >= 3}
-                  onClick={chooseImage}
-                >
-                  {uploading ? "…" : "＋"}
-                </Button>
-                <Textarea
-                  className="text-input"
-                  value={text}
-                  onInput={(event) => setText(event.detail.value)}
-                  placeholder="说点什么，或发一张照片…"
-                  maxlength={4000}
-                  autoHeight
-                  disabled={disabled}
-                />
-                <Button
-                  className="send-button"
-                  disabled={!ready}
-                  onClick={send}
-                >
-                  {busy ? "…" : "发送 ↑"}
-                </Button>
-              </View>
-            </>
+            <ChatComposer
+              inputMode={inputMode}
+              text={text}
+              attachments={attachments}
+              disabled={disabled}
+              voiceDisabled={
+                disabled || memory?.level === "empty" || !!panel || memoryOpen
+              }
+              ready={ready}
+              busy={busy}
+              uploading={uploading}
+              onMode={setInputMode}
+              onText={setText}
+              onVoiceText={(value) => {
+                const combined = text ? `${text}\n${value}` : value;
+                setText(combined);
+                setInputMode("keyboard");
+                if (combined.length > 4000)
+                  setError("文字超过 4000 字，请编辑后再发送。");
+              }}
+              onImage={chooseImage}
+              onRemoveImage={(id) =>
+                setAttachments((items) =>
+                  items.filter((item) => item.id !== id),
+                )
+              }
+              onSend={send}
+            />
           )}
           <Text className="composer-footnote">
             {mode === "external"
               ? "对话仍留在这里 · 支持撤销连接"
-              : "文字 / 图片 · 最多 3 张 · 真实模型生成"}
+              : "阿 J 是 AI，好意不是对未来的保证"}
           </Text>
         </View>
         {memoryOpen && (
@@ -577,6 +732,7 @@ export default function Chat() {
               setMemoryBusy(false);
             }}
             onBusy={setMemoryBusy}
+            onError={problem}
           />
         )}
         {panel && (
@@ -586,7 +742,7 @@ export default function Chat() {
               <View className="sheet-handle" />
               <View className="sheet-heading">
                 <Text>
-                  {panel === "modes" ? "阿J的设置" : "连接你自己的 Agent"}
+                  {panel === "modes" ? "阿 J 的设置" : "连接你自己的 Agent"}
                 </Text>
                 <Button
                   className="icon-button"
@@ -598,8 +754,22 @@ export default function Chat() {
               </View>
               {panel === "modes" && (
                 <>
+                  <MemoryMeter
+                    memory={memory}
+                    disabled={disabled}
+                    onOpen={() => {
+                      setPanel(null);
+                      setMemoryOpen(true);
+                    }}
+                  />
                   <Text className="sheet-description">
-                    换一种连接方式，接着聊，不用重新开始。
+                    a jOKer · 换一种连接方式，接着聊，不用重新开始。
+                  </Text>
+                  <Text className="sheet-note">
+                    当前模型：
+                    {mode === "external"
+                      ? "由你自己的 Agent 选择"
+                      : settings?.model || "连接中"}
                   </Text>
                   {modes.map((item) => (
                     <Button

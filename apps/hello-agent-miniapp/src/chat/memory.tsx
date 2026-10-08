@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import * as api from "./api";
 import type { AdTicket, MemoryStatus, Mode } from "./model";
+import { requestId } from "./model";
 import { watchWechatAd } from "./rewarded-ad";
 
 export function MemoryMeter({
@@ -21,7 +22,7 @@ export function MemoryMeter({
       disabled={disabled || undefined}
     >
       <View className="memory-caption">
-        <Text>♥ 阿J的记忆</Text>
+        <Text>♥ 阿 J 的记忆</Text>
         <Text>
           {percent}% <Text className="memory-estimate">估算</Text>
         </Text>
@@ -35,11 +36,13 @@ export function MemoryMeter({
         ))}
       </View>
       <Text className="memory-action">
-        {percent === 0
-          ? "记忆满了 · 看广告回血"
-          : percent <= 25
-            ? "有点满了 · 整理一下 ↗"
-            : "看广告，整理记忆 ↗"}
+        {memory?.recoveryMode === "preview"
+          ? "测试版免费整理记忆 ↗"
+          : percent === 0
+            ? "记忆满了 · 看广告回血"
+            : percent <= 25
+              ? "有点满了 · 整理一下 ↗"
+              : "看广告，整理记忆 ↗"}
       </Text>
     </Button>
   );
@@ -55,6 +58,7 @@ export function MemoryPanel(props: {
   onChange: (memory: MemoryStatus) => void;
   onClose: () => void;
   onBusy: (busy: boolean) => void;
+  onError?: (error: unknown) => void;
 }) {
   const [phase, setPhase] = useState<
     "idle" | "loading" | "watching" | "compacting"
@@ -65,6 +69,8 @@ export function MemoryPanel(props: {
   const [message, setMessage] = useState("");
   const startLock = useRef(false);
   const finishLock = useRef(false);
+  const previewRequest = useRef<{ id: string; revision: number }>();
+  const preview = props.memory?.recoveryMode === "preview";
   useEffect(() => {
     props.onBusy(phase !== "idle");
   }, [phase]);
@@ -77,6 +83,7 @@ export function MemoryPanel(props: {
     return () => clearInterval(timer);
   }, [phase]);
   async function failed(value: unknown) {
+    if (value instanceof api.IdentityExpiredError) props.onError?.(value);
     setError(value instanceof Error ? value.message : "整理未完成，请重试");
     setPhase("idle");
     if (props.sessionId)
@@ -85,20 +92,29 @@ export function MemoryPanel(props: {
         .then(props.onChange)
         .catch(() => undefined);
   }
-  async function compact(ad: AdTicket) {
+  async function compact(ad?: AdTicket) {
     if (!props.sessionId) return;
     setPhase("compacting");
     const key = props.apiKey;
     props.onKeyUsed();
     try {
-      const next = await api.compactMemory(
-        props.sessionId,
-        ad.rewardId,
-        props.mode,
-        key,
-      );
+      if (!ad)
+        previewRequest.current ||= {
+          id: requestId(),
+          revision: props.memory?.revision ?? 0,
+        };
+      const next = ad
+        ? await api.compactMemory(props.sessionId, ad.rewardId, props.mode, key)
+        : await api.compactPreview(
+            props.sessionId,
+            previewRequest.current!.id,
+            previewRequest.current!.revision,
+            props.mode,
+            key,
+          );
       props.onChange(next);
       setTicket(undefined);
+      previewRequest.current = undefined;
       setMessage(
         `记忆已整理，可用空间 ${next.remainingPercent}%。原聊天记录都还在。`,
       );
@@ -135,6 +151,7 @@ export function MemoryPanel(props: {
     setError("");
     setMessage("");
     try {
+      if (preview) return await compact();
       const ad = await api.startAd(props.sessionId);
       setTicket(ad);
       if (ad.completed) return await compact(ad);
@@ -152,9 +169,9 @@ export function MemoryPanel(props: {
     }
   }
   const active = phase !== "idle";
-  const canWatch =
+  const canRecover =
     !!props.memory?.canCompact &&
-    props.memory.advertisement.mode !== "disabled";
+    (preview || props.memory.advertisement.mode !== "disabled");
   return (
     <View className="sheet-overlay memory-overlay">
       <View
@@ -176,7 +193,8 @@ export function MemoryPanel(props: {
           </Button>
         </View>
         <Text className="sheet-description">
-          把较早的聊天整理成摘要，保留最近两轮原文。不会删除聊天记录，也不会把阿J变成另一个人；摘要可能遗漏细节。
+          把较早的聊天整理成摘要，保留最近两轮原文。不会删除聊天记录，也不会把阿
+          J 变成另一个人；摘要可能遗漏细节。
         </Text>
         <View className="memory-stats">
           <Text className="memory-percent">
@@ -193,7 +211,7 @@ export function MemoryPanel(props: {
         {phase === "watching" && (
           <View className="demo-ad">
             <Text className="demo-label">开发演示 · 非真实商业广告</Text>
-            <Text className="demo-title">阿J补给站</Text>
+            <Text className="demo-title">阿 J 补给站</Text>
             <Text className="demo-copy">
               让脑袋伸个懒腰，给下一句好话留点地方。
             </Text>
@@ -223,11 +241,13 @@ export function MemoryPanel(props: {
         )}
         {phase === "compacting" && (
           <Text className="memory-progress">
-            阿J正在收拾记忆… 原记录安全保留，请稍等。
+            阿 J 正在收拾记忆… 原记录安全保留，请稍等。
           </Text>
         )}
         {phase === "loading" && (
-          <Text className="memory-progress">正在准备广告或确认观看…</Text>
+          <Text className="memory-progress">
+            {preview ? "正在准备测试版整理…" : "正在准备广告或确认观看…"}
+          </Text>
         )}
         {error && <Text className="memory-error">{error}</Text>}
         {message && <Text className="memory-success">{message}</Text>}
@@ -235,31 +255,39 @@ export function MemoryPanel(props: {
           <>
             <Button
               className="control primary-button full-button memory-recover"
-              disabled={!canWatch || undefined}
+              disabled={!canRecover || undefined}
               onClick={start}
             >
-              {props.memory?.rewardReady
-                ? "重试整理，不用重看广告"
-                : "看广告，整理一次记忆"}
+              {preview
+                ? "测试版免费整理"
+                : props.memory?.rewardReady
+                  ? "重试整理，不用重看广告"
+                  : "看广告，整理一次记忆"}
             </Button>
             {!props.memory?.canCompact && (
               <Text className="sheet-note">
                 再聊几句才需要整理；最近两轮始终保留原文。
               </Text>
             )}
-            {props.memory?.advertisement.mode === "disabled" && (
+            {preview && (
+              <Text className="sheet-note">
+                测试版免费整理，无需观看广告，不产生广告奖励。原聊天记录完整保留。
+              </Text>
+            )}
+            {!preview && props.memory?.advertisement.mode === "disabled" && (
               <Text className="sheet-note">
                 广告尚未配置，暂时不能整理；已有聊天仍可查看。
               </Text>
             )}
-            {props.memory?.advertisement.mode === "demo" && (
+            {!preview && props.memory?.advertisement.mode === "demo" && (
               <Text className="sheet-note">
                 当前是本地演示广告，没有接入广告平台、不产生广告收入。正式小程序需配置激励视频广告位并完成验证。
               </Text>
             )}
             <Text className="sheet-note">
-              每次成功压缩需完整观看一次。压缩失败可在观看后 15
-              分钟有效期内重试，不必重复看广告。
+              {preview
+                ? "整理失败可以重试，不会丢失历史。"
+                : "每次成功压缩需完整观看一次。压缩失败可在观看后 15 分钟有效期内重试，不必重复看广告。"}
               {props.mode === "byok"
                 ? "本次摘要使用你填写的密钥，完成请求后清空。"
                 : "摘要由平台模型生成。"}

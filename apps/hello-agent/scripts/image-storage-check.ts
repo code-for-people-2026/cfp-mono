@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
+import { ValidationError } from "payload";
 
 // 独立临时数据库：不接触本机或线上用户数据。
 const dir = await mkdtemp(path.join(tmpdir(), "hello-image-regression-"));
@@ -38,8 +39,10 @@ try {
     } catch (error) {
       failed = true;
       // 不输出原始错误、SQL、图片或请求，只显示字段验证摘要。
-      const safe = error as { name?: string; data?: { errors?: { path?: string; message?: string }[] } };
-      console.log(`${width}px / ${image.length} 字节：${safe.name}，${JSON.stringify(safe.data?.errors?.map(({ path, message }) => ({ path, message })))}`);
+      const fields = error instanceof ValidationError
+        ? error.data.errors.map(({ path, message }) => ({ path, message }))
+        : [];
+      console.log(`${width}px / ${image.length} 字节：${error instanceof Error ? error.name : "未知错误"}，${JSON.stringify(fields)}`);
     }
   }
   assert.equal(failed, false, "正常手机照片必须能经过真实 Payload 保存并读取");

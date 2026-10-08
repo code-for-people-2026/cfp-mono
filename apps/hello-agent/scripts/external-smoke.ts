@@ -6,6 +6,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
+import { sessionSchema, credentialSchema, historySchema, turnResultSchema } from "@cfp/hello-agent-contracts";
 
 // 使用独立测试身份和真实模型，不访问浏览器中已有用户的令牌或会话。
 if (!process.env.DEEPSEEK_API_KEY) {
@@ -31,13 +32,13 @@ const sessionResponse = await fetch(`${origin}/api/hello/sessions`, {
   body: JSON.stringify({ title: "独立 DeepSeek 客户端真实验证" }),
 });
 assert.equal(sessionResponse.status, 200);
-const session = await sessionResponse.json();
+const session = sessionSchema.parse(await sessionResponse.json());
 const tokenResponse = await fetch(`${origin}/api/hello/token`, {
   method: "POST",
   headers,
 });
 assert.equal(tokenResponse.status, 200);
-const credential = await tokenResponse.json();
+const credential = credentialSchema.parse(await tokenResponse.json());
 const directory = await mkdtemp(path.join(tmpdir(), "hello-external-live-"));
 const imagePath = path.join(directory, "orange.png");
 await sharp({
@@ -64,18 +65,19 @@ try {
       timeout: 90_000,
     },
   );
-  const saved = JSON.parse(result.stdout);
+  const saved = turnResultSchema.pick({ id: true, status: true, greeting: true }).parse(JSON.parse(result.stdout));
   assert.equal(saved.status, "completed");
   const response = await fetch(`${origin}/api/hello/sessions/${session.id}`, {
     headers,
   });
   assert.equal(response.status, 200);
-  const history = await response.json();
+  const rawHistory: unknown = await response.json();
+  const history = historySchema.parse(rawHistory);
   assert.equal(history.length, 1);
   assert.equal(history[0].mode, "external");
   assert.equal(history[0].greeting, saved.greeting);
   assert.equal(history[0].input.mediaIds.length, 1);
-  assert.ok(!JSON.stringify(history).includes(process.env.DEEPSEEK_API_KEY));
+  assert.ok(!JSON.stringify(rawHistory).includes(process.env.DEEPSEEK_API_KEY));
   console.log(
     "✓ 外部客户端：真实 DeepSeek 图文生成 → MCP → Payload → HTTP 历史读取",
   );

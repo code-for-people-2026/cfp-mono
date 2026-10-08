@@ -88,7 +88,7 @@ try {
   });
   assert.equal(receivedKey, "private-byok-secret");
   assert.equal(process.env.DEEPSEEK_API_KEY, "platform-test-secret");
-  for (const collection of ["greetings", "adk-sessions"]) {
+  for (const collection of ["greetings", "adk-sessions"] as const) {
     const data = JSON.stringify(await repo.list(collection));
     assert.ok(
       !data.includes("private-byok-secret") &&

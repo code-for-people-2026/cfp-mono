@@ -10,9 +10,11 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "test:wxss": "node scripts/check-wxss.mjs",
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@cfp/hello-agent-contracts": "workspace:*",
     "@tarojs/components": "4.2.0",
     "@tarojs/helper": "4.2.0",
     "@tarojs/plugin-framework-react": "4.2.0",
@@ -39,6 +41,7 @@
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "^1.6.1",
     "eslint": "^9.39.2",
+    "lucide-static": "1.52.0",
     "react-test-renderer": "18.2.0",
     "typescript": "^5.9.3",
     "vite": "^4.5.14",

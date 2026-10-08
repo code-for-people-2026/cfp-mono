@@ -8,7 +8,7 @@ describe("对话式输入", () => {
     const page = readFileSync("src/pages/chat/index.tsx", "utf8");
     expect(page).toContain("好人阿 J");
     expect(page).toContain("a jOKer");
-    expect(page).toContain("我是阿J");
+    expect(page).toContain("我是阿 J");
     expect(page).not.toMatch(/会话|startSession|selectSession|session-list/);
     expect(page).toContain("const latest = rows[rows.length - 1]");
     expect(page).toContain("await readHistory(latest.id)");
@@ -32,6 +32,7 @@ describe("对话式输入", () => {
     ).toBe(true);
     expect(canSend("  ", [], "platform", "", true, false)).toBe(false);
     expect(canSend("输入", [], "platform", "", true, true)).toBe(false);
+    expect(canSend("字".repeat(4001), [], "platform", "", true, false)).toBe(false);
   });
   it("BYOK 不借用平台凭证，外部 Agent 不触发内置生成", () => {
     expect(canSend("输入", [], "byok", "", true, false)).toBe(false);

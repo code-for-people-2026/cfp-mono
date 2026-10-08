@@ -1,41 +1,14 @@
-export type Mode = "platform" | "byok" | "external";
-export type Session = { id: number; title: string };
-export type Input = { text: string; mediaIds: number[] };
-export type Turn = {
-  id: number;
-  input: Input;
-  status: "running" | "completed" | "failed";
-  mode: Mode;
-  greeting?: string;
-  association?: string;
-  model: string;
-  createdAt: string;
-};
-export type Settings = {
-  platformConfigured: boolean;
-  model: string;
-  origin: string;
-  advertisement: Advertisement;
-};
-export type Advertisement = {
-  mode: "demo" | "wechat" | "disabled";
-  adUnitId: string;
-  demoSeconds: number;
-};
-export type MemoryStatus = {
-  usedTokens: number;
-  budgetTokens: number;
-  remainingPercent: number;
-  level: string;
-  canCompact: boolean;
-  candidateCount: number;
-  recentTurns: number;
-  compressions: number;
-  summary: string;
-  rewardReady: boolean;
-  advertisement: Advertisement;
-};
-export type AdTicket = Advertisement & { rewardId: string; completed: boolean };
+import type { Mode } from "@cfp/hello-agent-contracts";
+export type {
+  Mode,
+  Session,
+  Inspiration as Input,
+  Turn,
+  Settings,
+  MemoryStatus,
+  Advertisement,
+  AdTicket,
+} from "@cfp/hello-agent-contracts";
 export type Attachment = { id: number; src: string };
 export const modes: {
   id: Mode;
@@ -72,6 +45,7 @@ export function canSend(
 ) {
   return (
     !busy &&
+    text.trim().length <= 4000 &&
     !!(text.trim() || attachments.length) &&
     mode !== "external" &&
     (mode === "platform" ? configured : key.trim().length >= 10)

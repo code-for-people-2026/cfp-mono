@@ -47,6 +47,10 @@ const required = [
   "apps/hello-agent/src/cms/migrations/index.ts",
   "apps/hello-agent/public/chat/index.html",
   "apps/hello-agent/.env.example",
+  "packages/hello-agent-contracts/package.json",
+  "packages/hello-agent-contracts/src/index.ts",
+  "packages/eslint-config/package.json",
+  "packages/typescript-config/package.json",
 ];
 assert.deepEqual(
   filter.filter(required),

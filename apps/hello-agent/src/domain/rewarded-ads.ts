@@ -3,6 +3,10 @@ import { AppError } from "./contracts";
 import type { Reward } from "./context-policy";
 
 const DEMO_WATCH_MS = 5000;
+export function previewRecoveryEnabled() {
+  // 这是开发者显式开放的测试版权益，不是广告完成证明。
+  return process.env.HELLO_MEMORY_RECOVERY === "preview";
+}
 export function adConfiguration() {
   const origin = new URL(process.env.HELLO_ORIGIN || "http://127.0.0.1:3310");
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(origin.hostname);

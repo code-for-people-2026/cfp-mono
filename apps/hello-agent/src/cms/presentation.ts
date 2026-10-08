@@ -50,10 +50,11 @@ export const collectionViews: Record<
   },
 };
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 function record(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
+  return isRecord(value) ? value : {};
 }
 
 export function inputSummary(value: unknown): string {
@@ -76,10 +77,11 @@ export function inputSummary(value: unknown): string {
 
 export function executionSummary(value: unknown): string {
   const snapshot = record(value);
-  const events = Array.isArray(snapshot.events) ? snapshot.events : [];
+  const events: unknown[] = Array.isArray(snapshot.events) ? snapshot.events : [];
   const calls = events.flatMap((event) => {
-    const parts = record(record(event).content).parts;
-    return Array.isArray(parts)
+    const rawParts = record(record(event).content).parts;
+    const parts: unknown[] = Array.isArray(rawParts) ? rawParts : [];
+    return parts.length
       ? parts
           .map((part) => record(record(part).functionCall).name)
           .filter((name): name is string => typeof name === "string")

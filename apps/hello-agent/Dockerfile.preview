@@ -3,8 +3,12 @@ WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.2.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/hello-agent/package.json apps/hello-agent/package.json
-RUN pnpm install --frozen-lockfile --filter @cfp/hello-agent --ignore-scripts
+COPY packages/hello-agent-contracts/package.json packages/hello-agent-contracts/package.json
+COPY packages/eslint-config packages/eslint-config
+COPY packages/typescript-config packages/typescript-config
+RUN pnpm install --frozen-lockfile --filter @cfp/hello-agent... --ignore-scripts
 COPY apps/hello-agent apps/hello-agent
+COPY packages/hello-agent-contracts packages/hello-agent-contracts
 # H5 在开发机编译，并随经过白名单筛选的源码包传入；不在 ECS 重装 Taro。
 RUN test -f apps/hello-agent/public/chat/index.html
 RUN HELLO_BUILD_PREVIEW=true NODE_OPTIONS=--max-old-space-size=1536 pnpm --filter @cfp/hello-agent exec next build

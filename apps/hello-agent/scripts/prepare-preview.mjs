@@ -27,7 +27,7 @@ write("runtime.env", [
   "NODE_ENV=production", "HELLO_DEPLOYED=true", "HELLO_DATABASE_URI=file:/data/hello.db",
   `PAYLOAD_SECRET=${randomBytes(48).toString("hex")}`, `HELLO_ORIGIN=${origin.origin}`,
   `DEEPSEEK_API_KEY=${process.env.DEEPSEEK_API_KEY}`, `HELLO_MODEL=${process.env.HELLO_MODEL || "deepseek-flash"}`,
-  "HELLO_ADMIN_BOOTSTRAP=false", "HELLO_AD_MODE=disabled", `HELLO_RELEASE=${release}`, "",
+  "HELLO_ADMIN_BOOTSTRAP=false", "HELLO_AD_MODE=disabled", "HELLO_MEMORY_RECOVERY=preview", `HELLO_RELEASE=${release}`, "",
 ].join("\n"));
 write("admin.env", `HELLO_ADMIN_EMAIL=${email}\nHELLO_ADMIN_PASSWORD=${password}\n`);
 const certDir = process.env.HELLO_PREVIEW_CERT_DIR;

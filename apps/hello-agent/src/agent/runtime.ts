@@ -11,6 +11,7 @@ import { GREETING_INSTRUCTION } from "./instruction";
 import { PayloadSessionService } from "./payload-session-service";
 import { DeepSeekModel } from "./deepseek-model";
 import { ContextService } from "../domain/context";
+import type { Greeting as GreetingRecord } from "../payload-types";
 
 export type GenerationRequest = {
   repo: Repository;
@@ -20,7 +21,7 @@ export type GenerationRequest = {
   apiKey: string;
   model: string;
   readImage: (id: number) => Promise<{ bytes: Buffer; mimeType: string }>;
-  save: (greeting: Greeting) => Promise<unknown>;
+  save: (greeting: Greeting) => Promise<GreetingRecord>;
 };
 export type Generator = (request: GenerationRequest) => Promise<void>;
 

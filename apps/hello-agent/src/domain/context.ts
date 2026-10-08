@@ -1,4 +1,9 @@
 import { Repository } from "../cms/repository";
+import type {
+  MemoryStatus,
+  ModelContext,
+  AdTicket,
+} from "@cfp/hello-agent-contracts";
 import { SUMMARY_PROMPT_VERSION } from "../agent/summary-instruction";
 import { summarizeContext, type Summarizer } from "../agent/summarize";
 import { AppError } from "./contracts";
@@ -17,6 +22,7 @@ import {
   issueReward,
   assertReward,
   finishReward,
+  previewRecoveryEnabled,
 } from "./rewarded-ads";
 
 export class ContextService {
@@ -43,7 +49,9 @@ export class ContextService {
   private save(sessionId: number, memory: Memory) {
     return this.repo.update("sessions", sessionId, { memory });
   }
-  async view(sessionId: number) {
+  async view(
+    sessionId: number,
+  ): Promise<MemoryStatus & { lastCompaction?: Memory["lastCompaction"] }> {
     const { memory, turns } = await this.read(sessionId);
     return {
       ...describeMemory(memory, turns),
@@ -51,9 +59,14 @@ export class ContextService {
         memory.reward?.completedAt !== undefined &&
         memory.reward.expiresAt > this.now(),
       advertisement: adConfiguration(),
+      recoveryMode: previewRecoveryEnabled()
+        ? "preview"
+        : adConfiguration().mode === "disabled"
+          ? "disabled"
+          : "advertisement",
     };
   }
-  async modelContext(sessionId: number) {
+  async modelContext(sessionId: number): Promise<ModelContext> {
     const { memory, turns } = await this.read(sessionId);
     return {
       memory: memory.summary,
@@ -65,10 +78,12 @@ export class ContextService {
     if (memoryTokens(memory.summary, turns) >= MEMORY_BUDGET)
       throw new AppError(
         409,
-        "记忆空间已满，请在阿J页面看广告、整理记忆后继续；原聊天记录仍保留",
+        previewRecoveryEnabled()
+          ? "记忆空间已满，请在阿J页面使用测试版免费整理后继续；原聊天记录仍保留"
+          : "记忆空间已满，请在阿J页面整理记忆后继续；原聊天记录仍保留",
       );
   }
-  async startAd(sessionId: number) {
+  async startAd(sessionId: number): Promise<AdTicket> {
     if (this.repo.owner.auth === "bearer")
       throw new AppError(403, "广告必须由用户在阿J页面观看");
     const release = await this.repo.acquire(sessionId);
@@ -123,33 +138,77 @@ export class ContextService {
     }
   }
   async compact(sessionId: number, rewardId: string, apiKey?: string) {
+    return this.compactWithAccess(
+      sessionId,
+      { kind: "advertisement", id: rewardId },
+      apiKey,
+    );
+  }
+  async compactPreview(
+    sessionId: number,
+    requestId: string,
+    revision: number,
+    apiKey?: string,
+  ) {
+    if (!previewRecoveryEnabled())
+      throw new AppError(403, "测试版免费整理尚未开启");
+    if (this.repo.owner.auth === "bearer")
+      throw new AppError(403, "请由用户在阿J页面发起测试版整理");
+    return this.compactWithAccess(
+      sessionId,
+      { kind: "preview", id: requestId, revision },
+      apiKey,
+    );
+  }
+  private async compactWithAccess(
+    sessionId: number,
+    access:
+      | { kind: "advertisement"; id: string }
+      | { kind: "preview"; id: string; revision: number },
+    apiKey?: string,
+  ) {
     const release = await this.repo.acquire(sessionId);
     try {
       const { memory, turns } = await this.read(sessionId);
       // 网络重试返回上次结果，不重复扣资格或调用模型。
-      if (memory.lastCompaction?.rewardId === rewardId)
+      const previous = memory.lastCompaction;
+      if (
+        previous &&
+        (access.kind === "preview"
+          ? "requestId" in previous && previous.requestId === access.id
+          : "rewardId" in previous && previous.rewardId === access.id)
+      )
         return await this.view(sessionId);
-      const reward = assertReward(
-        memory.reward,
-        rewardId,
-        memory.revision,
-        this.now(),
-      );
-      if (reward.completedAt === undefined)
-        throw new AppError(403, "广告尚未完整观看");
+      if (access.kind === "preview" && access.revision !== memory.revision)
+        throw new AppError(
+          409,
+          "记忆已在别处整理，请关闭面板并重新打开；本次未重复调用模型",
+        );
+      if (access.kind === "advertisement") {
+        const reward = assertReward(
+          memory.reward,
+          access.id,
+          memory.revision,
+          this.now(),
+        );
+        if (reward.completedAt === undefined)
+          throw new AppError(403, "广告尚未完整观看");
+      }
       const candidates = turns.slice(0, -RECENT_TURNS);
       if (!candidates.length) throw new AppError(409, "暂无可整理的较早内容");
       const key = apiKey || process.env.DEEPSEEK_API_KEY;
       if (!key)
         throw new AppError(
           503,
-          "压缩需要模型密钥；观看资格仍保留，可配置后重试",
+          access.kind === "preview"
+            ? "整理需要模型密钥，请配置后重试；原记录保留"
+            : "压缩需要模型密钥；观看资格仍保留，可配置后重试",
         );
       // 历史异常积压时明确报错，不静默截断或超长调用。正常预算内不会触及此界限。
       if (memoryTokens(memory.summary, candidates) > 24_000)
         throw new AppError(
           409,
-          "较早记录超过本版单次整理上限，观看资格保留，请联系开发者处理",
+          "较早记录超过本版单次整理上限，原记录与整理资格保留，请联系开发者处理",
         );
       let summary: string;
       try {
@@ -163,7 +222,9 @@ export class ContextService {
       } catch {
         throw new AppError(
           502,
-          "记忆整理失败，原记录和观看资格均保留，可直接重试",
+          access.kind === "preview"
+            ? "测试版记忆整理失败，原记录保留，可直接重试"
+            : "记忆整理失败，原记录和观看资格均保留，可直接重试",
         );
       }
       const beforeTokens = memoryTokens(memory.summary, turns);
@@ -179,7 +240,9 @@ export class ContextService {
         throughId: candidates[candidates.length - 1].id,
         compressions: memory.compressions + 1,
         lastCompaction: {
-          rewardId,
+          ...(access.kind === "preview"
+            ? { source: "preview" as const, requestId: access.id }
+            : { rewardId: access.id }),
           beforeTokens,
           afterTokens,
           compressedAt: new Date(this.now()).toISOString(),

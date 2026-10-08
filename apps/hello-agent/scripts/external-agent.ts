@@ -4,12 +4,18 @@ import "./load-local-env";
 import {
   completeDeepSeek,
   DEFAULT_MODEL,
+  jsonObjectSchema,
   type ModelContent,
 } from "../src/models/deepseek";
 import { z } from "zod";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { greetingSchema } from "../src/domain/contracts";
+import {
+  greetingSchema, uploadResultSchema, sessionSchema, sessionsSchema,
+  turnResultSchema, agentContextSchema, type Decoder,
+} from "@cfp/hello-agent-contracts";
+import { CallToolResultSchema } from "@modelcontextprotocol/sdk/types.js";
+import { readToolResult } from "./mcp-result";
 
 // 独立外部客户端：不导入我们的 ADK、Payload 或后端业务模块。
 const key = process.env.DEEPSEEK_API_KEY;
@@ -30,13 +36,10 @@ const transport = new StreamableHTTPClientTransport(
     requestInit: { headers: { Authorization: `Bearer ${token}` } },
   },
 );
-async function tool(name: string, args: Record<string, unknown>) {
+async function tool<T>(name: string, args: Record<string, unknown>, decoder: Decoder<T>) {
   const response = await client.callTool({ name, arguments: args });
   if (response.isError) throw new Error("MCP 工具调用失败，请检查连接和授权");
-  const content = response.content as Array<{ type: string; text?: string }>;
-  return JSON.parse(
-    content.find((c) => c.type === "text")?.text || "{}",
-  ) as Record<string, unknown>;
+  return readToolResult(response, decoder);
 }
 await client.connect(transport);
 try {
@@ -49,18 +52,14 @@ try {
       throw new Error("图片过大");
     const uploaded = await tool("hello_upload_image", {
       base64: (await readFile(imagePath)).toString("base64"),
-    });
-    mediaIds.push(Number(uploaded.id));
+    }, uploadResultSchema);
+    mediaIds.push(uploaded.id);
     const image = await client.callTool({
       name: "hello_get_image",
       arguments: { mediaId: uploaded.id },
     });
     if (image.isError) throw new Error("图片读取失败");
-    for (const c of image.content as Array<{
-      type: string;
-      data?: string;
-      mimeType?: string;
-    }>) {
+    for (const c of CallToolResultSchema.parse(image).content) {
       if (c.type === "image" && c.data && c.mimeType)
         parts.push({
           type: "image_url",
@@ -69,21 +68,19 @@ try {
     }
   }
   // 与小程序一样自动续接最近记录；显式环境变量仅供开发者定位测试数据。
-  const sessions = await tool("hello_list_sessions", {});
-  const latest = Array.isArray(sessions) ? sessions.at(-1) : undefined;
+  const sessions = await tool("hello_list_sessions", {}, sessionsSchema);
+  const latest = sessions.at(-1);
   const sessionId = process.env.HELLO_SESSION_ID
     ? Number(process.env.HELLO_SESSION_ID)
     : typeof latest?.id === "number"
       ? latest.id
       : Number(
-          (await tool("hello_create_session", { title: "与阿J的日常" })).id,
+          (await tool("hello_create_session", { title: "与阿J的日常" }, sessionSchema)).id,
         );
-  const memory = z
-    .object({ status: z.object({ level: z.string() }), context: z.unknown() })
-    .parse(await tool("hello_get_context", { sessionId }));
+  const memory = await tool("hello_get_context", { sessionId }, agentContextSchema);
   if (memory.status?.level === "empty")
     throw new Error(
-      "记忆空间已满，请在阿J页面看广告整理后再继续；外部 Agent 不能代看广告",
+      "记忆空间已满，请在阿J页面整理后再继续；使用页面提供的测试版或广告入口，外部 Agent 不能代为确认",
     );
   parts.unshift({
     type: "text",
@@ -109,7 +106,7 @@ try {
           function: {
             name: "save_greeting",
             description: "保存生成的吉祥话和关联说明",
-            parameters: z.toJSONSchema(greetingSchema),
+            parameters: jsonObjectSchema.parse(z.toJSONSchema(greetingSchema)),
           },
         },
       ],
@@ -132,7 +129,7 @@ try {
     input: { text, mediaIds },
     output,
     model,
-  });
+  }, turnResultSchema);
   console.log(
     JSON.stringify(
       {

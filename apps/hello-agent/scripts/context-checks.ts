@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
-import { Repository, type Row } from "../src/cms/repository";
+import { Repository } from "../src/cms/repository";
+import type { Greeting } from "../src/payload-types";
 import { ContextService } from "../src/domain/context";
 import { GreetingService } from "../src/domain/greetings";
 
 export async function verifyContext(repo: Repository) {
   const session = await repo.create("sessions", { title: "记忆血条测试" });
-  const rows: Row[] = [];
+  const rows: Greeting[] = [];
   for (let i = 0; i < 8; i++)
     rows.push(
       await repo.create("greetings", {
@@ -92,7 +93,7 @@ export async function verifyContext(repo: Repository) {
   assert.equal(model.previous.length, 2);
   assert.equal(
     model.previous[0].input.text,
-    (rows[6].input as { text: string }).text,
+    rows[6].input.text,
   );
   await context.ensureRoom(session.id);
   await assert.rejects(

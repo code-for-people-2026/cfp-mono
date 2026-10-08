@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import sharp from "sharp";
+import { sessionSchema, uploadResultSchema, credentialSchema, historySchema, memoryStatusSchema, submissionResultSchema } from "@cfp/hello-agent-contracts";
 
 const origin = process.env.HELLO_ORIGIN || "http://127.0.0.1:3310";
 // 只在脚本自己建立的隔离实例尝试注册，避免在用户已开放注册的本地库创建测试管理员。
@@ -38,24 +39,24 @@ async function post(path: string, body: unknown) {
     body: JSON.stringify(body),
   });
 }
-const session = await (
+const session = sessionSchema.parse(await (
   await post("sessions", { title: "HTTP 集成验证（测试数据）" })
-).json();
+).json());
 assert.ok(session.id);
 const image = await sharp({
   create: { width: 16, height: 16, channels: 3, background: "#eeaa44" },
 })
   .png()
   .toBuffer();
-const media = await (
+const media = uploadResultSchema.parse(await (
   await post("upload", { base64: image.toString("base64") })
-).json();
+).json());
 assert.ok(media.id);
 const nativeIdentity = await fetch(`${origin}/api/hello/miniapp-identity`, {
   method: "POST",
 });
 assert.equal(nativeIdentity.status, 200);
-const device = await nativeIdentity.json();
+const device = credentialSchema.parse(await nativeIdentity.json());
 const nativeHeaders = {
   Authorization: `Bearer ${device.token}`,
   "Content-Type": "application/json",
@@ -66,7 +67,7 @@ const nativeSession = await fetch(`${origin}/api/hello/sessions`, {
   body: JSON.stringify({ title: "小程序请求验证（测试数据）" }),
 });
 assert.equal(nativeSession.status, 200);
-const nativeId = (await nativeSession.json()).id;
+const nativeId = sessionSchema.parse(await nativeSession.json()).id;
 assert.equal(
   (
     await fetch(`${origin}/api/hello/sessions/${nativeId}`, {
@@ -115,13 +116,13 @@ const nativeImage = await fetch(`${origin}/api/hello/upload`, {
 assert.equal(nativeImage.status, 200);
 assert.equal(
   (
-    await fetch(`${origin}/api/hello/media/${(await nativeImage.json()).id}`, {
+    await fetch(`${origin}/api/hello/media/${uploadResultSchema.parse(await nativeImage.json()).id}`, {
       headers: nativeHeaders,
     })
   ).status,
   200,
 );
-const credential = await (await post("token", {})).json();
+const credential = credentialSchema.parse(await (await post("token", {})).json());
 const client = new Client({ name: "hello-http-test", version: "1.0.0" });
 const transport = new StreamableHTTPClientTransport(
   new URL(`${origin}/api/mcp`),
@@ -148,18 +149,27 @@ try {
   });
   assert.ok(!result.isError, JSON.stringify(result));
   await client.callTool({ name: "hello_save_greeting", arguments: args });
-  const history = await (
+  const history = historySchema.parse(await (
     await fetch(`${origin}/api/hello/sessions/${session.id}`, {
       headers: { Cookie: cookie },
     })
-  ).json();
+  ).json());
   assert.equal(history.length, 1);
   assert.equal(history[0].greeting, args.output.greeting);
-  const memory = await (await fetch(`${origin}/api/hello/context/${session.id}`, { headers: { Cookie: cookie } })).json();
+  const statusPath = `${origin}/api/hello/sessions/${session.id}/requests/${args.requestId}`;
+  const status = await fetch(statusPath, { headers: { Cookie: cookie } });
+  assert.equal(status.status, 200);
+  assert.equal(submissionResultSchema.parse(await status.json()).turn?.id, history[0].id);
+  assert.equal((await fetch(statusPath)).status, 401);
+  const missing = await fetch(`${origin}/api/hello/sessions/${session.id}/requests/${randomUUID()}`, { headers: { Cookie: cookie } });
+  assert.deepEqual(submissionResultSchema.parse(await missing.json()), { turn: null });
+  assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}/requests/invalid`, { headers: { Cookie: cookie } })).status, 400);
+  const memory = memoryStatusSchema.parse(await (await fetch(`${origin}/api/hello/context/${session.id}`, { headers: { Cookie: cookie } })).json());
   assert.equal(memory.canCompact, false);
   assert.ok(memory.remainingPercent < 100);
   assert.equal((await post("context/ad-start", { sessionId: session.id })).status, 409);
   assert.equal((await post("context/compact", { sessionId: session.id, rewardId: randomUUID() })).status, 403);
+  assert.equal((await post("context/preview-compact", { sessionId: session.id, requestId: randomUUID(), revision: 0 })).status, 403);
   const modelContext = await client.callTool({ name: "hello_get_context", arguments: { sessionId: session.id } });
   assert.ok(!modelContext.isError);
   assert.equal(
@@ -186,6 +196,7 @@ try {
     headers: { Origin: origin },
   });
   const otherCookie = wrongOwner.headers.get("set-cookie")!.split(";")[0];
+  assert.equal((await fetch(statusPath, { headers: { Cookie: otherCookie } })).status, 404);
   assert.equal((await fetch(`${origin}/api/hello/context/${session.id}`, { headers: { Cookie: otherCookie } })).status, 404);
   assert.equal(
     (

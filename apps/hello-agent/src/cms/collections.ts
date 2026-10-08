@@ -6,6 +6,7 @@ import {
 } from "payload";
 import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
+import type { OwnedCollection } from "./repository";
 
 const admin: Access = ({ req }) => req.user?.collection === "admins";
 const ownerRead: Access = ({ req }) => {
@@ -25,7 +26,7 @@ const ownedFields: Field[] = [
   },
 ];
 const owned = (
-  slug: string,
+  slug: OwnedCollection,
   label: string,
   fields: Field[],
 ): CollectionConfig => ({
@@ -135,6 +136,12 @@ export const collections: CollectionConfig[] = [
       name: "memory",
       label: "对话记忆与压缩凭据",
       type: "json",
+      typescriptSchema: [
+        () => ({
+          type: "object",
+          tsType: 'import("./domain/context-policy").Memory | null',
+        }),
+      ],
       admin: {
         description:
           "保存摘要、已覆盖的轮次和最近一次压缩计数。原聊天记录仍在生成轮次中；广告凭据仅供本地开发联调，不代表经过广告服务端验签。",
@@ -184,6 +191,13 @@ export const collections: CollectionConfig[] = [
       label: "灵感输入",
       type: "json",
       required: true,
+      // JSON 的存储类型沿用运行时 Zod 校验推导的契约，避免生成另一套手写字段。
+      typescriptSchema: [
+        () => ({
+          type: "object",
+          tsType: 'import("@cfp/hello-agent-contracts").Inspiration',
+        }),
+      ],
       admin: { components: { Cell: "/src/cms/admin-cells#InputCell" } },
     },
     {
@@ -211,6 +225,10 @@ export const collections: CollectionConfig[] = [
       label: "状态与事件",
       type: "json",
       required: true,
+      // SDK 执行快照只由内部 SessionService 写入，复用 SDK 类型，不手写副本或强转读取结果。
+      typescriptSchema: [
+        () => ({ type: "object", tsType: 'import("@google/adk").Session' }),
+      ],
       admin: { components: { Cell: "/src/cms/admin-cells#ExecutionCell" } },
     },
   ]),
@@ -244,7 +262,16 @@ export const collections: CollectionConfig[] = [
       name: "object",
       label: "OSS 存储引用",
       type: "json",
-      admin: { readOnly: true, description: "保存私有对象的位置、大小和校验值，不是公开下载地址。" },
+      typescriptSchema: [
+        () => ({
+          type: "object",
+          tsType: 'import("./domain/media-policy").ImageReference | null',
+        }),
+      ],
+      admin: {
+        readOnly: true,
+        description: "保存私有对象的位置、大小和校验值，不是公开下载地址。",
+      },
     },
   ]),
 ];

@@ -44,5 +44,5 @@ export default buildConfig({
   collections,
   i18n: { supportedLanguages: { zh }, fallbackLanguage: "zh" },
   admin: { user: "admins", importMap: { autoGenerate: false } },
-  typescript: { autoGenerate: false },
+  typescript: { outputFile: path.resolve(dataDir, "../src/payload-types.ts") },
 });

@@ -117,6 +117,18 @@ skills/hello-greeting/ 外部 Agent 使用说明
 
 先备份 SQLite 并验证完整性，再在新版本配置下执行 `HELLO_IMAGE_MIGRATION_BACKUP_CONFIRMED=true pnpm db:images`。逐张上传、回读检查 SHA-256 与字节数后，才以一次数据库更新保存引用并清空旧字段；可重复执行，中途失败的记录保持原样。数据库提交结果不明时保留对象，宁可留下可清理的孤立对象也不误删已引用的图片。迁移后的回退需要兼容对象引用的代码，或在停止写入时恢复迁移前的数据库备份，不能只切回旧镜像。
 
+### 类型与跨端协议
+
+Payload 集合配置生成 `src/payload-types.ts`，通过 `GeneratedTypes` 增强 Local API。修改集合后运行 `pnpm generate:types`，将生成文件一并提交；`pnpm typecheck` 会先检查生成文件是否过期。生成命令不初始化数据库，也不使用运行环境的密钥。
+
+- Repository 的集合名、创建字段、更新字段与读取结果相互关联，访客仓库不能操作凭证或管理员集合，也不能传入其他 owner。`repository.typecheck.ts` 是只编译、不执行的反例检查；退回宽泛类型会令这些检查失败。
+- JSON 字段不退化为任意对象：灵感输入、记忆、OSS 引用复用 Zod 推导的类型，ADK 快照复用 SDK `Session`。JSON 的运行时校验仍在原业务入口执行；类型声明不能替代数据验证。
+- `packages/hello-agent-contracts` 是 H5、小程序、HTTP 和外部 Agent 共用的协议，不依赖 Payload、ADK 或 Node。前端保留本地展示类型，网络响应先校验再使用；服务端业务返回类型与相同契约对齐。可空字段按 Payload 的实际结果处理。客户端解析时丢弃未声明字段，不等于服务端已从网络响应中移除这些字段。
+- 保留 `unknown` 的地方是尚未校验的 HTTP/MCP/JSON 输入、异常对象和后台兼容旧数据的展示入口；它们必须经过校验或收窄。不能用 `as Session`、宽泛 `Row` 或 `request<T>` 代替验证。
+- Repository 仅在注入 owner 后保留两处具体的 SDK 参数断言：TypeScript 无法证明泛型 `Omit` 再补字段等于原类型。这两处不扩大调用者权限、不强转返回结果，由反例类型检查和真实数据库集成测试共同保护。通用 Payload 迁移回调到 SQLite 的适配也仍保留明确的 SDK 类型转换。
+
+构建与部署源码包需包含 `packages/hello-agent-contracts` 及其共享配置 `packages/eslint-config`、`packages/typescript-config`；预览 Dockerfile 已同步复制并安装这些工作区依赖。本次仅增强类型与协议校验，不改变数据库列，也不需要数据迁移。
+
 ### 事务与失败重试
 
 SQLite 适配器显式设置 `transactionOptions: {}`，不依赖默认值。结构迁移必须经过 Payload 的迁移执行入口，每个迁移文件的 SQL 与成功记录在同一事务内完成；单次 Local API 写入及其钩子失败也会回滚。不是整个迁移批次共用一个事务：之前已经成功的迁移仍保留。已发布迁移不改名、不另建副本强制重跑。
@@ -145,6 +157,20 @@ pnpm --filter @cfp/hello-agent exec tsx scripts/oss-storage-check.ts
 - 平台模式和自带 Agent 在页面触发的整理使用平台密钥；BYOK 整理使用当次填写的密钥，发送请求后清空。外部 Agent 通过 `hello_get_context` 获取同一摘要与血条，但不能替用户看广告。平台无法控制外部客户端自行保留的上下文或压缩行为。
 
 本地默认是清楚标注的 5 秒「演示广告」，不是商业广告、不产生收入。`HELLO_AD_MODE=disabled` 关闭；配置 `HELLO_AD_MODE=wechat` 和自己的 `WECHAT_REWARDED_AD_UNIT_ID` 后可在微信端联调 `createRewardedVideoAd`，仅 `isEnded === true` 视为完整播放。H5 不伪装支持微信广告。
+
+### 测试版恢复出口
+
+正式广告回执未接入服务端验证前，远端仍禁用广告奖励。测试部署可由开发者显式设置 `HELLO_MEMORY_RECOVERY=preview`，页面显示「测试版免费整理」，通过独立的 `context/preview-compact` 入口整理记忆，不调用广告完成接口、不生成观看资格。预览 Compose 和配置生成脚本已开启该设置；其他环境默认关闭，客户端不能自行开启。免费指无需观看广告，摘要仍会使用平台或 BYOK 的模型额度。
+
+测试版整理沿用原有归属检查、数据库执行锁、摘要校验和历史保留规则；请求编号与记忆版本绑定，同次重试不重复摘要，旧版本请求重放被拒绝。外部 Agent 不能代用户发起此入口，但用户整理后，三种方式都能继续原对话。失败保留原记忆；最近两轮仍保留原文。新的 JSON 记忆记录兼容读取旧广告记录，不改变 SQL 列；启用新入口后若回退旧程序，应恢复发布前数据库备份，不能假定旧版本能读新记录。
+
+### 断网与身份失效
+
+- 回复请求与状态查询分开：`GET /api/hello/sessions/:sessionId/requests/:requestId` 只读当前用户的提交状态，不调用模型。成功响应丢失后先确认结果；仍未确认的同内容重试沿用原编号，已完成的不再生成，执行中的只等待，明确失败后才允许新一轮。
+- 「确认上次发送」不要求重新填写 BYOK 密钥；不会重复扣模型额度。待确认编号只在当前页面保留，没有新增离线发送队列；退出后仍通过已保存的聊天历史恢复，不自动重发。
+- 小程序遇到身份接口的 `401` 会显示明确提示，并提供「重新开始」确认框。取消不改变本机身份；确认后才申请新凭证，成功后清空旧页面状态。申请失败不覆盖原凭证。旧聊天不删除，但新身份没有访问权，这不是账号找回或正式微信登录。
+
+定向回归：`pnpm exec tsx scripts/preview-recovery-check.ts`，以及小程序的 `tests/history-recovery.test.ts`、`tests/identity.test.ts`。所有模型和云资源在测试边界模拟。
 
 **尚未生产接入广告：** 本地演示完成声明、微信客户端回调都不构成可信的服务端观看证明；没有广告服务端验签、正式广告位或真机广告验收。因此非本地 `HELLO_ORIGIN` 一律禁用此奖励入口，不能直接上线此商业机制。此限制不能靠开启一个生产假回调开关绕过。
 

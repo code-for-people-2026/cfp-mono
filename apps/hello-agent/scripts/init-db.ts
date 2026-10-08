@@ -14,7 +14,7 @@ let exists = false;
 try {
   exists = (await stat(uri.slice(5))).size > 0;
 } catch (error) {
-  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
 }
 if (exists) {
   console.log("已有本地数据库，不自动改写其结构。");

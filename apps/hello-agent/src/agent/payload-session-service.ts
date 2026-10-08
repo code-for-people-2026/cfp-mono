@@ -42,7 +42,7 @@ export class PayloadSessionService extends BaseSessionService {
       await this.repo.list("adk-sessions", { key: { equals: key } }, 1)
     )[0];
     if (!row) return undefined;
-    const session = structuredClone(row.snapshot) as Session;
+    const session = structuredClone(row.snapshot);
     if (request.config?.afterTimestamp)
       session.events = session.events.filter(
         (e) => e.timestamp >= request.config!.afterTimestamp!,
@@ -62,7 +62,7 @@ export class PayloadSessionService extends BaseSessionService {
       throw new AppError(403, "无权读取执行会话");
     const rows = await this.repo.list("adk-sessions", {}, 1000);
     const all = rows
-      .map((row) => row.snapshot as Session)
+      .map((row) => row.snapshot)
       .sort(
         (a, b) =>
           (request.order === "asc" ? 1 : -1) *

@@ -15,6 +15,8 @@ const env: NodeJS.ProcessEnv = {
   HELLO_HTTP_ISOLATED: "true",
   PAYLOAD_SECRET: "isolated-http-test-secret-not-for-deployment",
   DEEPSEEK_API_KEY: "",
+  HELLO_MEMORY_RECOVERY: "disabled",
+  HELLO_DEPLOYED: "false",
   NODE_ENV: "production",
 };
 // CI 中自行启动生产构建，不要求另有开发进程，也不写入开发数据库。

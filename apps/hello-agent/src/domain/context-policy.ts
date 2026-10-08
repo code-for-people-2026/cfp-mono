@@ -1,5 +1,6 @@
 import { z } from "zod";
-import type { Row } from "../cms/repository";
+import type { Greeting } from "../payload-types";
+import type { MemoryStatus } from "@cfp/hello-agent-contracts";
 import { inputSchema } from "./contracts";
 
 // 这是产品的对话记忆预算，不是供应商上下文窗口，也不是计费 token。
@@ -16,20 +17,27 @@ export const rewardSchema = z.object({
   expiresAt: z.number(),
   completedAt: z.number().optional(),
 });
+const compactionResult = z.object({
+  compressedAt: z.string(),
+  beforeTokens: z.number(),
+  afterTokens: z.number(),
+  promptVersion: z.string(),
+});
 export const memorySchema = z.object({
   revision: z.number().int().nonnegative().default(0),
   summary: z.string().default(""),
   throughId: z.number().int().nonnegative().default(0),
   compressions: z.number().int().nonnegative().default(0),
   reward: rewardSchema.optional(),
+  // 兼容已存在的广告整理记录；测试版记录不带 rewardId，也不生成观看资格。
   lastCompaction: z
-    .object({
-      rewardId: z.string(),
-      compressedAt: z.string(),
-      beforeTokens: z.number(),
-      afterTokens: z.number(),
-      promptVersion: z.string(),
-    })
+    .union([
+      compactionResult.extend({ rewardId: z.string() }),
+      compactionResult.extend({
+        source: z.literal("preview"),
+        requestId: z.string().uuid(),
+      }),
+    ])
     .optional(),
 });
 export type Memory = z.infer<typeof memorySchema>;
@@ -49,7 +57,7 @@ export function estimateTokens(text: string) {
   }
   return Math.ceil(ascii / 4 + wide * 1.5);
 }
-export function toMemoryTurn(row: Row): MemoryTurn {
+export function toMemoryTurn(row: Greeting): MemoryTurn {
   return {
     id: row.id,
     input: inputSchema.parse(row.input),
@@ -71,7 +79,12 @@ export function memoryTokens(summary: string, turns: MemoryTurn[]) {
     )
   );
 }
-export function describeMemory(memory: Memory, turns: MemoryTurn[]) {
+export function describeMemory(
+  memory: Memory,
+  turns: MemoryTurn[],
+): Omit<MemoryStatus, "rewardReady" | "advertisement" | "recoveryMode"> & {
+  lastCompaction?: Memory["lastCompaction"];
+} {
   const usedTokens = memoryTokens(memory.summary, turns);
   const remainingPercent = Math.max(
     0,
@@ -79,6 +92,7 @@ export function describeMemory(memory: Memory, turns: MemoryTurn[]) {
   );
   const candidates = turns.slice(0, -RECENT_TURNS);
   return {
+    revision: memory.revision,
     usedTokens,
     budgetTokens: MEMORY_BUDGET,
     remainingPercent,

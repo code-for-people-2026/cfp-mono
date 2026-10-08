@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { PROMPT_VERSION } from "../src/agent/instruction";
+import type { Greeting } from "../src/payload-types";
+import type { Inspiration } from "@cfp/hello-agent-contracts";
 
 if (!process.env.DEEPSEEK_API_KEY) {
   console.error(
@@ -22,7 +24,7 @@ const payload = await cms();
 const service = new GreetingService(
   new Repository(payload, { id: randomUUID(), auth: "cookie" }),
 );
-const results: unknown[] = [];
+const results: (Pick<Greeting, "promptVersion" | "greeting" | "association" | "model" | "durationMs"> & { case: string; input: Partial<Inspiration> })[] = [];
 try {
   const session = await service.createSession("真实模型评测");
   const image = await service.upload(
@@ -104,7 +106,7 @@ try {
     });
     console.log(`✓ ${item.name}：真实模型已调用工具并保存`);
   }
-  for (const collection of ["greetings", "adk-sessions"]) {
+  for (const collection of ["greetings", "adk-sessions"] as const) {
     assert.ok(
       !JSON.stringify(await service.repo.list(collection)).includes(
         process.env.DEEPSEEK_API_KEY!,

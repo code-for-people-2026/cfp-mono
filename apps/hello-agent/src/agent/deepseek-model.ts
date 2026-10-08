@@ -3,6 +3,8 @@ import type { Part } from "@google/genai";
 import { z } from "zod";
 import {
   completeDeepSeek,
+  jsonObjectSchema,
+  type JsonObject,
   type ModelContent,
   type ModelMessage,
   type ModelRequest,
@@ -11,7 +13,7 @@ import {
 
 // ADK 使用 Google 的内容类型，但这些类型不决定模型供应商。
 // 此适配器只支持本例需要的文本、内联图片和函数调用；不支持实时连接或隐藏推理。
-function jsonSchema(value: unknown): unknown {
+function jsonSchema(value: JsonObject[string]): JsonObject[string] {
   if (Array.isArray(value)) return value.map(jsonSchema);
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
@@ -108,9 +110,18 @@ export function toDeepSeekRequest(
         function: {
           name: declaration.name,
           description: declaration.description,
-          parameters: jsonSchema(
-            declaration.parametersJsonSchema ||
-              declaration.parameters || { type: "object", properties: {} },
+          parameters: jsonObjectSchema.parse(
+            jsonSchema(
+              z
+                .json()
+                .parse(
+                  declaration.parametersJsonSchema ||
+                    declaration.parameters || {
+                      type: "object",
+                      properties: {},
+                    },
+                ),
+            ),
           ),
         },
       });
@@ -165,11 +176,9 @@ export class DeepSeekModel extends BaseLlm {
         !input.tools.some((tool) => tool.function.name === call.function.name)
       )
         throw new Error("模型选择了未授权工具");
-      let args: Record<string, unknown>;
+      let args: JsonObject;
       try {
-        args = z
-          .record(z.string(), z.unknown())
-          .parse(JSON.parse(call.function.arguments));
+        args = jsonObjectSchema.parse(JSON.parse(call.function.arguments));
       } catch {
         throw new Error("模型工具参数无效");
       }

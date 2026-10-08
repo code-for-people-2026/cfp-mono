@@ -1,14 +1,22 @@
 import Taro from "@tarojs/taro";
-import type {
-  Attachment,
-  Input,
-  Mode,
-  Session,
-  Settings,
-  Turn,
-  MemoryStatus,
-  AdTicket,
-} from "./model";
+import type { Attachment, Input, Mode } from "./model";
+import {
+  settingsSchema,
+  sessionsSchema,
+  sessionSchema,
+  historySchema,
+  submissionResultSchema,
+  memoryStatusSchema,
+  adTicketSchema,
+  completedSchema,
+  turnResultSchema,
+  credentialSchema,
+  revokedSchema,
+  identitySchema,
+  uploadResultSchema,
+  errorSchema,
+  type Decoder,
+} from "@cfp/hello-agent-contracts";
 
 const native = process.env.TARO_ENV === "weapp";
 const origin = native ? HELLO_API_ORIGIN.replace(/\/$/, "") : "";
@@ -19,34 +27,62 @@ let identityPromise: Promise<void> | undefined;
 let activeDownloads = 0;
 const waitingDownloads: (() => void)[] = [];
 
+export const IDENTITY_EXPIRED_MESSAGE =
+  "设备凭证无效或已过期。旧聊天记录不会删除，但新身份无法访问旧记录。请确认后重新开始。";
+export class IdentityExpiredError extends Error {
+  constructor() {
+    super(IDENTITY_EXPIRED_MESSAGE);
+  }
+}
+
 async function request<T>(
   path: string,
+  decoder: Decoder<T>,
   method: "GET" | "POST" = "GET",
   data?: unknown,
 ): Promise<T> {
-  const response = await Taro.request<T & { error?: string }>({
+  const response = await Taro.request<unknown>({
     url: `${origin}/api/hello/${path}`,
     method,
     data,
     timeout: 90_000,
     header: {
       "Content-Type": "application/json",
-      ...(native && deviceToken
+      ...(native && deviceToken && path !== "miniapp-identity"
         ? { Authorization: `Bearer ${deviceToken}` }
         : {}),
     },
   });
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    throw new Error(response.data?.error || "暂时连接不上，请稍后重试");
+    if (native && response.statusCode === 401) throw new IdentityExpiredError();
+    const failure = errorSchema.safeParse(response.data, { jitless: native });
+    throw new Error(
+      failure.success ? failure.data.error : "暂时连接不上，请稍后重试",
+    );
   }
-  return response.data;
+  try {
+    // 微信的 Function 构造器可能返回不可调用的对象，不能依赖 Zod 的动态编译探测。
+    // 只关闭微信端的编译优化，仍完整校验成功响应、嵌套字段与错误响应。
+    return decoder.parse(response.data, { jitless: native });
+  } catch {
+    throw new Error("服务返回的数据格式不符合约定，请稍后重试");
+  }
+}
+
+// 只在用户确认影响后调用；新凭证成功获得并写入本机后才替换内存身份。
+export async function restartIdentity() {
+  if (!native) throw new Error("此入口仅用于小程序设备身份");
+  const identity = await request("miniapp-identity", credentialSchema, "POST");
+  Taro.setStorageSync(storageKey, identity.token);
+  deviceToken = identity.token;
+  identityPromise = Promise.resolve();
 }
 
 export function establishIdentity(): Promise<void> {
   if (identityPromise) return identityPromise;
   identityPromise = (async () => {
     if (!native) {
-      await request("identity", "POST");
+      await request("identity", identitySchema, "POST");
       return;
     }
     deviceToken = Taro.getStorageSync<string>(storageKey) || "";
@@ -56,8 +92,9 @@ export function establishIdentity(): Promise<void> {
       if (deviceToken) Taro.setStorageSync(storageKey, deviceToken);
     }
     if (!deviceToken) {
-      const identity = await request<{ token: string }>(
+      const identity = await request(
         "miniapp-identity",
+        credentialSchema,
         "POST",
       );
       deviceToken = identity.token;
@@ -69,18 +106,25 @@ export function establishIdentity(): Promise<void> {
   });
   return identityPromise;
 }
-export const getSettings = () => request<Settings>("config");
-export const getSessions = () => request<Session[]>("sessions");
+export const getSettings = () => request("config", settingsSchema);
+export const getSessions = () => request("sessions", sessionsSchema);
 export const newSession = () =>
-  request<Session>("sessions", "POST", {
-    title: "与阿J的日常",
+  request("sessions", sessionSchema, "POST", {
+    title: "与阿 J 的日常",
   });
-export const getHistory = (id: number) => request<Turn[]>(`sessions/${id}`);
-export const getMemory = (id: number) => request<MemoryStatus>(`context/${id}`);
+export const getHistory = (id: number) =>
+  request(`sessions/${id}`, historySchema);
+export const getSubmission = (sessionId: number, requestId: string) =>
+  request(
+    `sessions/${sessionId}/requests/${requestId}`,
+    submissionResultSchema,
+  );
+export const getMemory = (id: number) =>
+  request(`context/${id}`, memoryStatusSchema);
 export const startAd = (sessionId: number) =>
-  request<AdTicket>("context/ad-start", "POST", { sessionId });
+  request("context/ad-start", adTicketSchema, "POST", { sessionId });
 export const completeAd = (sessionId: number, rewardId: string) =>
-  request("context/ad-complete", "POST", {
+  request("context/ad-complete", completedSchema, "POST", {
     sessionId,
     rewardId,
     completed: true,
@@ -91,29 +135,43 @@ export const compactMemory = (
   mode: Mode,
   apiKey?: string,
 ) =>
-  request<MemoryStatus>("context/compact", "POST", {
+  request("context/compact", memoryStatusSchema, "POST", {
     sessionId,
     rewardId,
+    mode: mode === "byok" ? "byok" : "platform",
+    ...(mode === "byok" ? { apiKey } : {}),
+  });
+export const compactPreview = (
+  sessionId: number,
+  requestId: string,
+  revision: number,
+  mode: Mode,
+  apiKey?: string,
+) =>
+  request("context/preview-compact", memoryStatusSchema, "POST", {
+    sessionId,
+    requestId,
+    revision,
     mode: mode === "byok" ? "byok" : "platform",
     ...(mode === "byok" ? { apiKey } : {}),
   });
 export const generate = (
   sessionId: number,
   id: string,
-  mode: Mode,
+  mode: Exclude<Mode, "external">,
   input: Input,
   apiKey?: string,
 ) =>
-  request<Turn>("greet", "POST", {
+  request("greet", turnResultSchema, "POST", {
     sessionId,
     requestId: id,
     mode,
     input,
     ...(mode === "byok" ? { apiKey } : {}),
   });
-export const mintMcpToken = () =>
-  request<{ token: string; expiresAt: string }>("token", "POST");
-export const revokeMcpTokens = () => request("token/revoke", "POST");
+export const mintMcpToken = () => request("token", credentialSchema, "POST");
+export const revokeMcpTokens = () =>
+  request("token/revoke", revokedSchema, "POST");
 
 export async function imageSource(id: number): Promise<string> {
   const url = `${origin}/api/hello/media/${id}`;
@@ -132,6 +190,7 @@ export async function imageSource(id: number): Promise<string> {
       url,
       header: { Authorization: `Bearer ${deviceToken}` },
     });
+    if (result.statusCode === 401) throw new IdentityExpiredError();
     if (result.statusCode !== 200) throw new Error("图片读取失败");
     return result.tempFilePath;
   } finally {
@@ -140,11 +199,13 @@ export async function imageSource(id: number): Promise<string> {
   }
 }
 
-export async function addImage(): Promise<Attachment> {
+export async function addImage(
+  source?: "camera" | "album",
+): Promise<Attachment> {
   const selected = await Taro.chooseImage({
     count: 1,
     sizeType: ["compressed"],
-    sourceType: ["album", "camera"],
+    sourceType: source ? [source] : ["album", "camera"],
   });
   const file = selected.tempFilePaths[0];
   let base64: string;
@@ -168,7 +229,9 @@ export async function addImage(): Promise<Attachment> {
     });
   }
   if (base64.length > 7_000_000) throw new Error("单张图片不能超过 5 MB");
-  const result = await request<{ id: number }>("upload", "POST", { base64 });
+  const result = await request("upload", uploadResultSchema, "POST", {
+    base64,
+  });
   return { id: result.id, src: await imageSource(result.id) };
 }
 

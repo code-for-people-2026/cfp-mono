@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Settings } from "@cfp/hello-agent-contracts";
 import { cms } from "../../../../cms/client";
 import { Repository } from "../../../../cms/repository";
 import { AppError } from "../../../../domain/contracts";
@@ -32,7 +33,7 @@ export async function GET(request: Request, context: Context) {
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
         origin: process.env.HELLO_ORIGIN || "http://127.0.0.1:3310",
         advertisement: adConfiguration(),
-      });
+      } satisfies Settings);
     const payload = await cms();
     const owner = await authenticate(payload, request);
     const service = new GreetingService(new Repository(payload, owner));
@@ -44,6 +45,13 @@ export async function GET(request: Request, context: Context) {
       );
     if (path[0] === "sessions" && !path[1])
       return json(await service.sessions());
+    if (path[0] === "sessions" && path[2] === "requests" && path.length === 4)
+      return json(
+        await service.submission(
+          z.coerce.number().int().positive().parse(path[1]),
+          z.string().uuid().parse(path[3]),
+        ),
+      );
     if (path[0] === "sessions" && path[1])
       return json(
         await service.history(
@@ -116,6 +124,8 @@ export async function POST(request: Request, context: Context) {
         .object({
           sessionId: z.number().int().positive(),
           rewardId: z.string().uuid().optional(),
+          requestId: z.string().uuid().optional(),
+          revision: z.number().int().nonnegative().optional(),
           completed: z.boolean().optional(),
           mode: z.enum(["platform", "byok"]).default("platform"),
           apiKey: z.string().min(10).max(256).optional(),
@@ -124,6 +134,18 @@ export async function POST(request: Request, context: Context) {
       const memory = new ContextService(service.repo);
       if (path[1] === "ad-start")
         return json(await memory.startAd(args.sessionId));
+      if (path[1] === "preview-compact") {
+        if (args.mode === "byok" && !args.apiKey)
+          throw new AppError(400, "请填写本次用于整理记忆的 DeepSeek 密钥");
+        return json(
+          await memory.compactPreview(
+            args.sessionId,
+            z.string().uuid().parse(args.requestId),
+            z.number().int().nonnegative().parse(args.revision),
+            args.mode === "byok" ? args.apiKey : undefined,
+          ),
+        );
+      }
       const rewardId = z.string().uuid().parse(args.rewardId);
       if (path[1] === "ad-complete")
         return json(

@@ -1,13 +1,15 @@
 import { z } from "zod";
 
 export const DEFAULT_MODEL = "deepseek-flash";
+export const jsonObjectSchema = z.record(z.string(), z.json());
+export type JsonObject = z.output<typeof jsonObjectSchema>;
 
 export type ModelContent =
   | { type: "text"; text: string }
   | { type: "image_url"; image_url: { url: string } };
 export type ModelTool = {
   type: "function";
-  function: { name: string; description?: string; parameters: unknown };
+  function: { name: string; description?: string; parameters: JsonObject };
 };
 export type ModelMessage = {
   role: "system" | "user" | "assistant" | "tool";

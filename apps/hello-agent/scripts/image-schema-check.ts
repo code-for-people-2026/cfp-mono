@@ -146,7 +146,7 @@ try {
     assert.equal(record.object, null);
     assert.equal(
       (
-        await db.get<Record<string, unknown>>(
+        await db.get<{ media_id: number }>(
           sql`SELECT media_id FROM payload_locked_documents_rels WHERE id=1;`,
         )
       ).media_id,

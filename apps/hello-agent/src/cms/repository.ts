@@ -1,8 +1,23 @@
 import { createHash } from "node:crypto";
-import type { Payload, Where } from "payload";
+import type {
+  Payload,
+  Where,
+  DataFromCollectionSlug,
+  RequiredDataFromCollectionSlug,
+} from "payload";
+import type { Config, SessionLock } from "../payload-types";
 import { AppError, type Owner } from "../domain/contracts";
 
-export type Row = { id: number; owner: string; [key: string]: unknown };
+// 认证凭证、管理员与 Payload 内部集合不能通过访客仓库操作。
+export type OwnedCollection = Extract<
+  keyof Config["collections"],
+  "sessions" | "greetings" | "media" | "adk-sessions" | "session-locks"
+>;
+type CreateData<C extends OwnedCollection> = Omit<
+  RequiredDataFromCollectionSlug<C>,
+  "owner"
+> & { owner?: never };
+type UpdateData<C extends OwnedCollection> = Partial<CreateData<C>>;
 
 export class Repository {
   constructor(
@@ -15,8 +30,8 @@ export class Repository {
       context: { helloOwner: this.owner.id, helloWrite: true },
     };
   }
-  async list(
-    collection: string,
+  async list<C extends OwnedCollection>(
+    collection: C,
     where: Where = {},
     limit = 100,
     sort = "createdAt",
@@ -29,10 +44,10 @@ export class Repository {
       sort,
       depth: 0,
     });
-    return result.docs as Row[];
+    return result.docs;
   }
-  async all(collection: string, where: Where = {}) {
-    const rows: Row[] = [];
+  async all<C extends OwnedCollection>(collection: C, where: Where = {}) {
+    const rows: DataFromCollectionSlug<C>[] = [];
     let cursor = 0;
     while (true) {
       const page = await this.list(
@@ -46,28 +61,43 @@ export class Repository {
       cursor = page[page.length - 1].id;
     }
   }
-  async get(collection: string, id: number) {
+  async get<C extends OwnedCollection>(collection: C, id: number) {
     const rows = await this.list(collection, { id: { equals: id } }, 1);
     if (!rows[0]) throw new AppError(404, "记录不存在或无权访问");
     return rows[0];
   }
-  async create(collection: string, data: Record<string, unknown>) {
-    return (await this.payload.create({
+  async create<C extends OwnedCollection>(
+    collection: C,
+    data: CreateData<NoInfer<C>>,
+  ) {
+    return this.payload.create({
       collection,
       ...this.options,
-      data: { ...data, owner: this.owner.id },
-    })) as Row;
+      // TS 无法证明泛型 Omit 再补回 owner 等于原类型。唯一补回的字段由仓库提供；调用者仍受生成类型约束。
+      data: {
+        ...data,
+        owner: this.owner.id,
+      } as RequiredDataFromCollectionSlug<C>,
+    });
   }
-  async update(collection: string, id: number, data: Record<string, unknown>) {
+  async update<C extends OwnedCollection>(
+    collection: C,
+    id: number,
+    data: UpdateData<NoInfer<C>>,
+  ) {
     await this.get(collection, id);
-    return (await this.payload.update({
+    const updateById = this.payload.update<C, Config["collectionsSelect"][C]>;
+    return updateById.call(this.payload, {
       collection,
       id,
       ...this.options,
-      data: { ...data, owner: this.owner.id },
-    })) as Row;
+      // 与 create 相同，仅在注入 owner 的 SDK 适配点补足泛型证明；不对读取结果强转。
+      data: { ...data, owner: this.owner.id } as Parameters<
+        typeof updateById
+      >[0]["data"],
+    });
   }
-  async remove(collection: string, id: number) {
+  async remove<C extends OwnedCollection>(collection: C, id: number) {
     await this.get(collection, id);
     await this.payload.delete({ collection, id, ...this.options });
   }
@@ -86,7 +116,7 @@ export class Repository {
         ],
       },
     });
-    let lock: Row;
+    let lock: SessionLock;
     try {
       lock = await this.create("session-locks", {
         sessionKey,

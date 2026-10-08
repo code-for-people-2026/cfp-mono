@@ -50,11 +50,38 @@ HELLO_API_ORIGIN=https://aj-preview.codeforpeople.cn pnpm --filter @cfp/hello-ag
 
 - 消息气泡展示原始输入、真实生成的吉祥话、保存状态与联想依据。
 - 首版自动续接最近记录，没有会话列表、新建对话或编号。设置面板保留连接方式与后台入口；旧数据没有删除。
-- 底部输入文字或图片；助手选择面板保留平台、BYOK、自带 Agent 三条路径。
+- 底部默认按住说话，点键盘图标切换文字／图片输入；切换保留草稿。助手选择面板保留平台、BYOK、自带 Agent 三条路径。
+- 输入栏采用同排布局：图片、文字／按住说话、输入方式切换、更多／发送。有文字或图片草稿时最右侧显示发送；“＋”展开相册与拍照，左侧图片按钮在有草稿时仍可选图，选图后切到键盘确认。语音转换仍不自动发送，快捷建议不变。
+- 图标统一使用 [Lucide Static](https://lucide.dev/guide/static) `1.52.0` 的 7 个按需 SVG，以 Taro Image 呈现；不加载远程图标字体，也不把整套图标打进小程序。语音处理说明保留在工具区与录音状态提示，默认底部只保留一行 AI 声明。
 - 当前 BYOK 仅接入 DeepSeek，不把“选择助手”伪装成已经完成的多供应商选择。
 - 微信端使用专用匿名设备令牌，浏览器使用 HttpOnly Cookie。微信端可保存自己的设备令牌，但不保存模型 API Key；设备令牌不能直接作为 MCP 令牌使用。
 - **尚未接入 `wx.login` 或跨设备账号绑定。** 两端访客身份独立；只有同一身份授权的 MCP 客户端共享其会话。清除本机缓存或凭证过期后不能自动恢复身份。
 - 用户模型密钥只在输入状态及当次请求中存在；发送或切换模式时清空。外部客户端通过专门授权的 MCP 令牌连接，模型调用仍不经过平台 ADK。
+
+## 欢迎页与语音输入
+
+首页使用原创[阿 J 形象](assets/branding/aj-mascot-v1.md)、简短欢迎词和三条快捷建议。点击建议会切换到键盘并填入草稿，不自动发送。模型名称和完整记忆条放在设置里，记忆入口保留在右上角的心形按钮。界面静态文案中，英文字母与汉字之间留空格；不改写历史消息或用户输入。聊天中仍显式标记 AI 生成；没有改变大模型系统提示词、会话数据结构或模型付费方式。
+
+语音只是一种输入方式：按住开始、松开识别，结果追加到文字草稿，用户确认后才走现有生成接口。不会自动提交识别结果，也不会把录音文件传给本项目后端、OSS 或 CMS。识别服务可能在服务商云端处理语音，不能宣称全程本地或零第三方传输。
+
+- **微信端**：使用微信自研的 `WechatSI` 插件（[腾讯接入示例](https://github.com/Tencent/Face2FaceTranslator)）。需要先在本小程序后台添加插件 `wx069ba97219f66d99`，并完善涉及录音及第三方语音处理的隐私声明。首次按住时才请求麦克风权限。
+- **H5**：使用浏览器的 [Web Speech API](https://developer.mozilla.org/en-US/docs/Web/API/SpeechRecognition)，不是所有浏览器都支持，识别也可能依赖浏览器厂商的网络服务。要求 HTTPS 或 localhost；失败时明确提示键盘兜底，不假装录音成功。
+- 最长录音 60 秒，松开后最多等待识别 15 秒；取消、切换键盘、退出页面或应用进入后台会停止录音并忽略迟到结果。
+- 文字上限仍为 4000 字。识别追加超长时不截断草稿，要求编辑后再发送。
+
+用户已通过微信后台截图确认「微信同声传译」授权通过，可用版本为 `0.3.10`。当前构建默认使用这个固定版本，插件声明与界面开关共用 `config/speech.ts`；换成其他 AppID 时须重新申请授权。**插件授权与代码启用不代表真机录音识别已经验收**，仍需在手机上检查隐私授权、麦克风许可及识别结果。
+
+微信后台使用入口是「左下角小程序名称 → 账号设置 → 顶部第三方设置 → 插件管理」，不是「基础功能 → 小程序插件」的开发入口。需核对用户隐私保护指引中的录音用途和第三方处理说明；本地代码不能代替后台隐私配置。`scope.record` 通过运行时请求授权，不能填在 `app.json` 的 `permission` 中（该字段仅支持指定的位置权限）。
+
+如需覆盖版本，把后台已授权的可用版本写入构建变量：
+
+```sh
+HELLO_WECHAT_SI_VERSION=<后台已授权的版本号> HELLO_API_ORIGIN=https://aj-preview.codeforpeople.cn pnpm --filter @cfp/hello-agent-miniapp build:weapp
+```
+
+不要把示例仓库中的历史版本误当成当前后台版本。显式设置 `HELLO_WECHAT_SI_VERSION=''` 会禁用插件，点击语音提示“尚未开通”，键盘和图片仍可用。此开关和插件 AppID 都是公开配置，不需要 AppSecret 或模型密钥。
+
+微信端 API 响应校验显式传入 `jitless: true`，不依赖 `Function` 动态编译；H5 与服务端保持原方式。成功响应、嵌套对象和错误响应仍完整校验，不能用类型断言或跳过校验修复微信兼容性。回归测试模拟微信返回不可调用对象的动态函数构造器，覆盖真实 API 客户端边界。
 
 ## 验证
 
@@ -63,8 +90,11 @@ pnpm --filter @cfp/hello-agent-miniapp typecheck
 pnpm --filter @cfp/hello-agent-miniapp lint
 pnpm --filter @cfp/hello-agent-miniapp test
 pnpm --filter @cfp/hello-agent-miniapp build
+pnpm --filter @cfp/hello-agent-miniapp test:wxss
 pnpm --filter @cfp/hello-agent test:integration
 pnpm --filter @cfp/hello-agent test:e2e
 ```
+
+`test:wxss` 使用本机微信开发者工具自带的 `wcsc` 编译实际微信产物，覆盖 Taro 构建不能发现的样式语法问题。默认查找 macOS 安装路径；其他路径通过 `HELLO_WXSS_COMPILER` 指定。缺少工具时明确失败，不静默跳过。该检查应在构建后、预览或上传前执行，不依赖微信账号授权。
 
 两端编译通过不等于微信真机验收。H5 和开发者工具模拟器已验证真实文字生成；微信端认证 / 图片接口另有隔离 HTTP 测试。真机键盘行为、域名配置与相册权限仍需进一步检查。

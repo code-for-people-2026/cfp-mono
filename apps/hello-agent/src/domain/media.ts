@@ -1,23 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
-import { z } from "zod";
-import type { Repository, Row } from "../cms/repository";
+import type { Repository } from "../cms/repository";
+import type { Media } from "../payload-types";
 import { configuredImageStore, type ImageObjectStore } from "../storage/oss";
 import { AppError } from "./contracts";
-import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
-
-const referenceSchema = z.object({
-  provider: z.literal("oss"), bucket: z.string().min(1), region: z.string().min(1),
-  key: z.string().regex(/^hello-agent\/[a-f0-9]{32}\/[a-f0-9-]+\.jpg$/),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  byteLength: z.number().int().positive().max(MAX_STORED_IMAGE_BYTES),
-});
+import { MAX_STORED_IMAGE_BYTES, referenceSchema, type ImageReference } from "./media-policy";
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 const ownerPrefix = (owner: string) => `hello-agent/${createHash("sha256").update(owner).digest("hex").slice(0, 32)}/`;
 
 export class MediaService {
   constructor(readonly repo: Repository, private readonly storeFactory = configuredImageStore) {}
 
-  private async writeObject(store: ImageObjectStore, bytes: Buffer, name: string = randomUUID()) {
+  private async writeObject(store: ImageObjectStore, bytes: Buffer, name: string = randomUUID()): Promise<ImageReference> {
     const reference = referenceSchema.parse({
       provider: "oss", bucket: store.bucket, region: store.region,
       key: `${ownerPrefix(this.repo.owner.id)}${name}.jpg`,
@@ -38,7 +31,7 @@ export class MediaService {
     return this.repo.create("media", { mimeType: "image/jpeg", ...data });
   }
 
-  private async readRow(row: Row) {
+  private async readRow(row: Media) {
     if (row.mimeType !== "image/jpeg" && row.mimeType !== "image/png" && row.mimeType !== "image/webp")
       throw new AppError(500, "图片格式记录无效");
     let bytes: Buffer;
