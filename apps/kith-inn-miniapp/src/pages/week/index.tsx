@@ -11,6 +11,8 @@ import { CategorySchema, StructureSchema, WeekStartSchema, adjacentWeekStarts, t
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { WeekEditError, recommendedReplacements, replacementCandidates, replaceDish, restoreSoup, setSoupOmitted, toWeekWriteInput } from "../../lib/week-editor";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
+import { useConfirmation } from "../../lib/confirmation";
 import { DishName, DishNameProvider, DishChoiceRow } from "../../lib/dish-name";
 import { labels } from "../../lib/classify";
 import { formatMealExample, formatMealText } from "../../lib/menu-text";
@@ -46,7 +48,7 @@ function MealPicker({ menu, index, disabled, onChange, compactDates = false }: {
       {days.map((day) => <option key={day.index} value={day.index}>{day.label}</option>)}
     </select> : <Picker mode="selector" range={days.map((day) => day.label)} value={Math.max(0, days.findIndex((day) => day.index === selectedDay))} disabled={disabled}
       onChange={(event) => chooseDay(days[Number(event.detail.value)]!.index)}>
-      <View className="copy-date">{days.find((day) => day.index === selectedDay)?.label ?? "选择日期"}<Text>选择日期 ▾</Text></View>
+      <View className="copy-date">{days.find((day) => day.index === selectedDay)?.label ?? "选择日期"}<Image className="copy-date-chevron" src={nextIcon} /></View>
     </Picker>}
     <View className="menu-detail-actions">{[selectedDay * 2, selectedDay * 2 + 1].filter((i) => menu.meals[i]?.enabled).map((i) =>
       <Button key={i} className="menu-detail-button" ariaPressed={index === i} disabled={disabled} onClick={() => onChange(i)}>{i % 2 ? "晚餐" : "午餐"}</Button>)}</View>
@@ -54,6 +56,7 @@ function MealPicker({ menu, index, disabled, onChange, compactDates = false }: {
 }
 
 export default function WeekPage() {
+  const [confirm, confirmation] = useConfirmation();
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [week, setWeek] = useState(() => { const value = client?.pendingWrite()?.weekStart ?? Taro.getCurrentInstance().router?.params.weekStart; return WeekStartSchema.safeParse(value).success ? value! : thisMonday(); });
   const [saved, setSaved] = useState<WeekPlan | null>(null), [draft, setDraft] = useState<MenuPreview | null>(null);
@@ -103,7 +106,7 @@ export default function WeekPage() {
   const arranging = loaded && !sharing && settings && (screen === "settings" || screen === "home" && !menu) && (!!menu || dishes.some((dish) => dish.active));
   const enabledMeals = meals.filter((meal) => meal.enabled);
   const mealSummary = enabledMeals.length === 14 ? "每天午餐、晚餐，共 14 餐" : enabledMeals.length === 0 ? "尚未选择餐次" : `已选 ${enabledMeals.filter((meal) => meal.mealType === "lunch").length} 顿午餐、${enabledMeals.filter((meal) => meal.mealType === "dinner").length} 顿晚餐，共 ${enabledMeals.length} 餐`;
-  const title = sharing ? "复制菜单" : arranging ? "安排本周菜单" : ({ home: "本周菜单", edit: "调整菜单", swap: "替换菜品", pick: "手选替换菜", review: "确认菜单", meal: "调整某一餐", settings: "安排本周菜单" })[screen];
+  const title = sharing ? "复制菜单" : arranging ? "安排本周菜单" : ({ home: "本周菜单", edit: "调整菜单", swap: "替换菜品", pick: "选择菜品", review: "确认菜单", meal: "调整某一餐", settings: "安排本周菜单" })[screen];
   const backLabel = editing ? "返回安排" : screen === "settings" || screen === "meal" ? "返回本周菜单" : "返回编辑";
   useEffect(() => {
     void Taro.setNavigationBarTitle({ title });
@@ -125,6 +128,7 @@ export default function WeekPage() {
   }, [dirty, settingsDirty, copyDraftDirty, blocked]);
   async function run(action: () => Promise<void> | void) {
     if (!client || busy) return;
+    void Taro.hideToast();
     setBusy(true); setError("");
     try { await action(); }
     catch (value) {
@@ -155,7 +159,7 @@ export default function WeekPage() {
     if (!copiedFrom.current && !blocked && WeekStartSchema.safeParse(source).success && source !== week) {
       const original = await client!.getWeek(source!);
       if (!original) throw new Error("原菜单暂时无法读取，请重试。");
-      const answer = await Taro.showModal({ title: "复制到所选周？", content: `${week} 起的一周。${value ? "目标周已有菜单，复制后会进入新草稿，确认保存才会替换目标周菜单。" : "复制后可继续调整，确认保存后生效。"}`, confirmText: "复制菜单", cancelText: "取消" });
+      const answer = await confirm({ title: "复制到所选周？", content: `${week} 起的一周。${value ? "目标周已有菜单，复制后会进入新草稿，确认保存才会替换目标周菜单。" : "复制后可继续调整，确认保存后生效。"}`, confirmText: "复制菜单", cancelText: "取消" });
       copiedFrom.current = true;
       if (!answer.confirm) { await Taro.reLaunch({ url: "/pages/history/index" }); return; }
       const next = { weekStart: week, structure: original.structure, meals: original.meals.map((meal) => ({ ...meal, date: addDays(meal.date, Math.round((Date.parse(week) - Date.parse(source!)) / 86400000)) })) };
@@ -165,11 +169,11 @@ export default function WeekPage() {
   }
   useEffect(() => { if (client?.restoreSession()) void run(read); }, [week, client]);
   async function discardCopyDraft() {
-    return !copyDraftDirty || (await Taro.showModal({ title: "放弃文案修改？", content: "当前修改还没有复制，放弃后将恢复默认文案。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
+    return !copyDraftDirty || (await confirm({ title: "放弃文案修改？", content: "当前修改还没有复制，放弃后将恢复默认文案。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function discard() {
     if (!await discardCopyDraft()) return false;
-    return !(dirty || settingsDirty) || (await Taro.showModal({ title: "放弃未保存菜单？", content: "当前调整还没有保存，离开后只保留上次成功保存的内容。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
+    return !(dirty || settingsDirty) || (await confirm({ title: "放弃未保存菜单？", content: "当前调整还没有保存，离开后只保留上次成功保存的内容。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function move(date: string) {
     if (disabled || !await discard()) return;
@@ -177,7 +181,7 @@ export default function WeekPage() {
   }
   async function generate() {
     if (!StructureSchema.safeParse(structure).success) throw new Error("每类请填0～10，总数需为1～20道");
-    if (draft && !(await Taro.showModal({ title: "重新安排整周？", content: "这会覆盖整周的换菜和去汤调整。取消或生成失败会保留原菜单；生成后仍需保存。", confirmText: "确认重排" })).confirm) return;
+    if (draft && !(await confirm({ title: "重新安排整周？", content: "这会覆盖整周的换菜和去汤调整。取消或生成失败会保留原菜单；生成后仍需保存。", confirmText: "确认重排" })).confirm) return;
     const result = await client!.generateWeek(week, { structure, meals });
     setSelected(firstPosition(result)); setShowAll(result.structure.meat === 0);
     setDraft(result); void Taro.pageScrollTo({ scrollTop: 0, duration: 0 }); setRebuild(true); setEditing(true); setSettings(false); setTarget(null); setSoupSelection(null); setNotice("");
@@ -188,8 +192,7 @@ export default function WeekPage() {
     adopt(result.week);
     if (screen === "meal") { setCopyText(formatMealText(result.week.meals[mealIndex]!)); setCopyExample(formatMealExample(result.week.meals[mealIndex]!)); }
     setScreen(screen === "meal" ? "meal" : result.week.confirmedAt ? "home" : "edit");
-    if (screen !== "meal" && result.week.confirmedAt) void Taro.showToast({ title: "菜单已保存", icon: "none", duration: 1800 });
-    else setNotice(screen === "meal" ? "本餐调整已保存" : "菜单已保存，可继续调整或确认");
+    void Taro.showToast({ title: screen === "meal" ? "本餐调整已保存" : "菜单已保存", icon: "success", duration: 2000, mask: false });
   }
   async function save(confirm: boolean) {
     if (!draft || !confirm && !dirty) return;
@@ -305,9 +308,8 @@ export default function WeekPage() {
   const candidates = screen === "swap" ? suggested.flatMap((id) => eligibleCandidates.filter((dish) => dish.id === id))
     : eligibleCandidates.filter((dish) => dish.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   return <DishNameProvider><View className={`dish-app week-app flow-page screen-${screen} ${sharing ? "sharing" : ""}`}>
-    {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">{!sharing && screen !== "home" && <Button className={editing ? "flow-back-label" : ""} ariaLabel={backLabel} disabled={disabled} onClick={back}><Image src={backIcon} className="flow-icon" />{editing && <Text>返回安排</Text>}</Button>}<Text>{title}</Text></View>
-      : !sharing && screen !== "home" && <Button className="flow-return" disabled={disabled} onClick={back}>{backLabel}</Button>}
-    <View className="dish-page"><ScrollView scrollY className="flow-scroll" key={`${sharing ? "copy" : screen}-${settings}`}>
+    <PageHeading title={title}>{!sharing && screen !== "home" && <Button className={editing ? "flow-back-label" : ""} ariaLabel={backLabel} disabled={disabled} onClick={back}><Image src={backIcon} className="flow-icon" />{editing ? <Text>返回安排</Text> : process.env.TARO_ENV === "weapp" && <Text className="sr-only">{backLabel}</Text>}</Button>}</PageHeading>
+    <View className="dish-page"><ScrollView scrollY enhanced showScrollbar={false} className="flow-scroll" key={`${sharing ? "copy" : screen}-${settings}`}><View className="flow-content">
 
       {!sharing && (screen === "home" || screen === "settings") && <View className="week-toolbar"><Button ariaLabel="上一周" disabled={disabled} onClick={() => void move(addDays(week, -7))}>‹</Button>
         <View className="week-range"><View className="week-range-line"><Text className="range-title">{weekRange({ weekStart: week, meals: selections(week) })}</Text>
@@ -315,7 +317,7 @@ export default function WeekPage() {
         <Button ariaLabel="下一周" disabled={disabled} onClick={() => void move(addDays(week, 7))}>›</Button></View>}
       {error && <View className="alert" role="alert">{error}</View>}{notice && <View className="hint">{notice}</View>}
       {!client && <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View>}
-      {client && !client.restoreSession() && <View className="login-panel">{process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}<Button className="primary" disabled={busy} onClick={() => void run(async () => { await client!.login(); if (!draft) await read(); else setDishes(await client!.getDishes()); })}>微信登录</Button></View>}
+      {client && !client.restoreSession() && <View className="login-panel">{process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录</Text>}<Button className="primary" disabled={busy} onClick={() => void run(async () => { await client!.login(); if (!draft) await read(); else setDishes(await client!.getDishes()); })}>微信登录</Button></View>}
       {!loaded && client?.restoreSession() && <Button disabled={busy} onClick={() => void run(read)}>读取本周菜单</Button>}
       {blocked && pending?.kind !== "week" && <View className="recovery"><Text>菜品池有待核对的保存，请先返回处理。</Text><Button disabled={busy} onClick={() => void Taro.reLaunch({ url: "/pages/dishes/index" })}>返回核对菜品保存</Button></View>}
       {(blocked && pending?.kind === "week" || conflict) && <View className="recovery"><Text>{conflict ? "另一处已保存新版本，当前草稿仍保留。请读取并核对，不能直接覆盖。" : "上次保存结果未确认，草稿仍保留。请先重试同一请求。"}</Text>
@@ -324,7 +326,7 @@ export default function WeekPage() {
         {review !== undefined && <><Text>服务器：{review ? `版本${review.version}，${review.confirmedAt ? "已确认" : "未确认"}` : "尚未保存"}</Text>
           {review?.meals.map((meal, i) => <Text key={i}>{meal.date} {meal.mealType === "lunch" ? "午" : "晚"}：{[...meal.meat, ...meal.vegetable, ...(meal.soupOmitted ? [] : meal.soup)].map((d) => d.name).join("、") || "不安排"}</Text>)}
           <Button disabled={busy} onClick={() => void run(async () => {
-            if (!(await Taro.showModal({ title: "载入核对后的服务器菜单？", content: "这会放弃当前未保存草稿，请确认已核对保存结果。" })).confirm) return;
+            if (!(await confirm({ title: "载入核对后的服务器菜单？", content: "这会放弃当前未保存草稿，请确认已核对保存结果。" })).confirm) return;
             if (blocked) client!.discardPendingAfterReview(); adopt(review ?? null);
           })}>核对完成，载入服务器版本</Button></>}
       </View>}
@@ -338,7 +340,7 @@ export default function WeekPage() {
               <Button className="text-button" disabled={busy || blocked || cooling || conflict} onClick={() => void run(async () => { if (await discard()) await previewCopy(copyMeal!, true); })}>放弃修改后预览</Button></>
               : !copyText && <Button className="secondary" disabled={busy || blocked || cooling} onClick={() => void run(() => previewCopy(copyMeal!))}>{busy ? "正在读取保存菜单" : "重新读取本餐文字"}</Button>}
             {(copyText || screen === "meal" && dirty) && <>
-              <Text className="input-label">接龙说明（可修改）</Text>
+              <Text className="input-label">接龙说明</Text>
               <View className="copy-preview">{process.env.TARO_ENV === "h5" ? <textarea className="copy-textarea" aria-label="接龙说明"
                 rows={Math.max(7, (visibleCopyText ?? "").split("\n").length)} value={visibleCopyText ?? ""} disabled={disabled || dirty || settingsDirty || !!soupSelection}
                 onInput={(event) => { setCopyDraft(event.currentTarget.value); setCopyStatus(""); }} />
@@ -359,7 +361,7 @@ export default function WeekPage() {
         </View></View>
           : <View className="hint">本周没有已安排的餐次，请返回周菜单调整。</View>}
         {menu && screen === "meal" && (copyText || dirty) && <View className="meal-adjustment">
-          {menu.structure.soup > 0 ? <View className="setting-row"><Text>本餐做汤</Text>{process.env.TARO_ENV === "h5" ? <input className="meal-soup-switch" type="checkbox" aria-label="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} /> : <Switch ariaLabel="本餐做汤" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} />}</View> : <Text className="muted">本餐未安排汤</Text>}
+          {menu.structure.soup > 0 ? <View className="setting-row"><Text>本餐做汤</Text><Switch ariaLabel="本餐做汤" nativeProps={{ "aria-label": "本餐做汤" }} color="#287557" checked={!menu.meals[mealIndex]!.soupOmitted} disabled={disabled || cooling || !!soupSelection} onChange={() => void run(() => soup(mealIndex))} /></View> : <Text className="muted">本餐未安排汤</Text>}
           {dirty && <Button className="secondary" disabled={disabled || cooling || conflict || !!soupSelection} onClick={() => void run(() => save(false))}>保存本餐调整</Button>}
         </View>}
         {copyText && <Button className="primary" ariaLabel="复制接龙说明" disabled={busy || blocked || dirty || settingsDirty || !!soupSelection || !copyPayload?.trim()} onClick={() => void run(() => copy("description"))}><View role="status">{copyStatus === "已复制" && copiedPart === "description" ? "✓ 已复制" : "复制接龙说明"}</View></Button>}
@@ -371,15 +373,15 @@ export default function WeekPage() {
         })}>返回周菜单</Button>
       </View>}
       {loaded && !sharing && <>
-        {!menu && !dishes.some((dish) => dish.active) && <View className="first-preparation"><Text className="detail-kicker">首次准备 · 1 / 2</Text><Text className="detail-title">先把拿手菜放进来</Text><Text className="muted">建立自己的菜品池，再选择本周餐次和荤素汤搭配。</Text><Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/dishes/index" })}>建立我的菜品池</Button></View>}
+        {!menu && !dishes.some((dish) => dish.active) && <View className="first-preparation"><Text className="muted">菜品池暂无启用菜品</Text><Button className="primary" disabled={disabled} onClick={() => void Taro.reLaunch({ url: "/pages/dishes/index?add=1" })}>添加菜品</Button></View>}
         {arranging && <View className="week-settings compact-settings">
-          <View className="settings-section"><View className="settings-summary"><View><Text className="settings-label">安排餐次</Text><Text className="settings-value">{mealSummary}</Text></View><Button className="text-button" ariaLabel="修改安排餐次" ariaExpanded={mealsExpanded} disabled={disabled} onClick={() => setMealsExpanded(!mealsExpanded)}>{mealsExpanded ? "收起" : "修改"}</Button></View>
+          <View className="settings-section"><View className="settings-summary"><View className="settings-summary-text"><Text className="settings-label">安排餐次</Text><Text className="settings-value">{mealSummary}</Text></View><Button className="settings-toggle" ariaLabel={`${mealsExpanded ? "收起" : "展开"}安排餐次`} ariaExpanded={mealsExpanded} disabled={disabled} onClick={() => setMealsExpanded(!mealsExpanded)}><Image src={nextIcon} className={`flow-icon settings-chevron ${mealsExpanded ? "expanded" : ""}`} /><Text className="sr-only">{mealsExpanded ? "收起安排餐次" : "展开安排餐次"}</Text></Button></View>
           {mealsExpanded && <View className="settings-details">{dayNames.map((day, i) => <View key={day} className="setting-row"><Text>{day} · {meals[i * 2]?.date.slice(5)}</Text>
             {[0, 1].map((offset) => <View key={offset}><Text>{offset ? "晚餐" : "午餐"}</Text><Switch ariaLabel={`${day}${offset ? "晚餐" : "午餐"}`} color="#1e5d45" checked={meals[i * 2 + offset]!.enabled} disabled={disabled}
               onChange={(event) => setMeals(meals.map((meal, index) => index === i * 2 + offset ? { ...meal, enabled: event.detail.value } : meal))} /></View>)}</View>)}</View>}
           </View>
-          <View className="settings-section"><View className="settings-summary"><View><Text className="settings-label">每餐搭配</Text><Text className="settings-value">{structure.meat} 荤 · {structure.vegetable} 素 · {structure.soup} 汤</Text></View><Button className="text-button" ariaLabel="修改每餐搭配" ariaExpanded={structureExpanded} disabled={disabled} onClick={() => setStructureExpanded(!structureExpanded)}>{structureExpanded ? "收起" : "修改"}</Button></View>
-          {structureExpanded && <View className="structure-fields">{categories.map((category) => <View key={category}><Text className="input-label">{labels[category]}菜数量</Text><Input className="dish-input" type="number" ariaLabel={`${labels[category]}菜数量`} value={String(structure[category])} disabled={disabled}
+          <View className="settings-section"><View className="settings-summary"><View className="settings-summary-text"><Text className="settings-label">每餐搭配</Text><Text className="settings-value">{structure.meat} 荤 · {structure.vegetable} 素 · {structure.soup} 汤</Text></View><Button className="settings-toggle" ariaLabel={`${structureExpanded ? "收起" : "展开"}每餐搭配`} ariaExpanded={structureExpanded} disabled={disabled} onClick={() => setStructureExpanded(!structureExpanded)}><Image src={nextIcon} className={`flow-icon settings-chevron ${structureExpanded ? "expanded" : ""}`} /><Text className="sr-only">{structureExpanded ? "收起每餐搭配" : "展开每餐搭配"}</Text></Button></View>
+          {structureExpanded && <View className="structure-fields">{categories.map((category) => <View key={category}><Text className="input-label">{category === "soup" ? "汤数量" : `${labels[category]}菜数量`}</Text><Input className="dish-input" type="number" ariaLabel={category === "soup" ? "汤数量" : `${labels[category]}菜数量`} value={String(structure[category])} disabled={disabled}
             onInput={(event) => setStructure({ ...structure, [category]: Number(event.detail.value) })} /></View>)}</View>
           }</View>
           {menu && settingsDirty && <Button className="text-button" disabled={disabled} onClick={cancelSettings}>取消修改，继续调整</Button>}
@@ -393,17 +395,17 @@ export default function WeekPage() {
               : homeMeal[category].length > 0 && <View className="home-meal-row" key={category}><Text className="home-meal-category">{labels[category]}</Text><DishName name={homeMeal[category].map((dish) => dish.name).join("、")} /></View>)}</View>
             <Button className="primary" disabled={disabled || cooling} onClick={() => void run(() => openCopy(homePreviewIndex))}>复制{homeMeal.mealType === "lunch" ? "午餐" : "晚餐"}菜单</Button>
           </View> : <View className="muted">{saved ? "本周没有已安排的餐次" : "菜单尚未保存"}</View>}
-          <Button className={saved ? "secondary" : "primary"} disabled={disabled} onClick={() => void run(edit)}>{dirty || settingsDirty ? "继续调整菜单" : "查看并调整这一周"}</Button>
+          <Button className={saved ? "secondary" : "primary"} disabled={disabled} onClick={() => void run(edit)}>{dirty || settingsDirty ? "继续调整菜单" : "调整菜单"}</Button>
           {dirty && <Button className="secondary" disabled={disabled} onClick={() => void run(async () => { if (await discard()) adopt(saved); })}>放弃本次调整</Button>}
         </View>}
         {menu && screen === "review" && <View className="review-screen"><WeekBoard menu={menu} readonly showDate /></View>}
         {menu && editing && <WeekBoard menu={menu} selected={selected} showAll={showAll} disabled={disabled} onSelect={(position) => { setSelected(position); setTarget(null); setSoupSelection(null); }} onFilter={setShowAll} />}
         {target && menu && (screen === "swap" || screen === "pick") && <View className="swap-screen">
           {screen === "swap" && <View className="swap-heading"><DishName className="swap-name" name={menu.meals[target.meal]![target.category][target.index]!.name} /></View>}
-          {screen === "pick" && <View className="picking-banner"><Image src={mixerIcon} className="flow-icon" /><Text>手选一道{target.category === "soup" ? "汤" : `${labels[target.category]}菜`}</Text></View>}
-          {screen === "pick" && <View className="candidate-search"><Image src={searchIcon} className="flow-icon" /><Input ariaLabel="搜索候选菜名" placeholder="搜索菜名" value={query} disabled={disabled} onInput={(event) => setQuery(event.detail.value)} /></View>}
+          {screen === "pick" && <View className="picking-banner"><Image src={mixerIcon} className="flow-icon" /><Text>{target.category === "soup" ? "汤" : `${labels[target.category]}菜`}</Text></View>}
+          {screen === "pick" && <View className="candidate-search"><Image src={searchIcon} className="flow-icon" /><Input className="candidate-search-input" ariaLabel="搜索候选菜名" placeholder="搜索菜名" value={query} disabled={disabled} onInput={(event) => setQuery(event.detail.value)} /></View>}
           <View className={screen === "pick" ? "candidate-pick-list" : "candidate-list"}>{candidates.map((dish) => <DishChoiceRow name={dish.name} key={dish.id}><Button ariaLabel={dish.name} className={candidate === dish.id ? "selected" : ""} ariaPressed={candidate === dish.id} disabled={disabled} onClick={() => setCandidate(dish.id)}>
-            {screen === "pick" ? <><View className={`kind-dot ${dish.category}`} /><View><DishName className="pick-name" name={dish.name} interactive={false} /><Text className="pick-kind">{dish.category === "soup" ? "汤羹" : `${labels[dish.category]}菜`}</Text></View><Image src={nextIcon} className="flow-icon" /></>
+            {screen === "pick" ? <><View className={`kind-dot ${dish.category}`} /><View className="pick-summary"><DishName className="pick-name" name={dish.name} interactive={false} /><Text className="pick-kind">{dish.category === "soup" ? "汤羹" : `${labels[dish.category]}菜`}</Text></View><Image src={nextIcon} className="flow-icon" /></>
               : <><View className="candidate-radio">{candidate === dish.id && <Image src={checkIcon} className="flow-icon" />}</View><DishName name={dish.name} interactive={false} /></>}
           </Button></DishChoiceRow>)}</View>
           {!candidates.length && <Text className="muted">{query ? "没有匹配的菜名" : "没有其他同类可用菜，请先补充菜品池。"}</Text>}
@@ -414,8 +416,8 @@ export default function WeekPage() {
         {soupSelection && menu && <View className="candidate-sheet"><View className="sheet-head"><Text>重新选齐 {menu.structure.soup} 道汤</Text><Button disabled={disabled} onClick={() => { setSoupSelection(null); setNotice(""); }}>取消</Button></View><View className="candidate-list">
           {dishes.filter((dish) => dish.active && dish.category === "soup" && ![...menu.meals[soupSelection.meal]!.meat, ...menu.meals[soupSelection.meal]!.vegetable].some((item) => item.dishId === dish.id)).map((dish) => <DishChoiceRow name={dish.name} key={dish.id}><Button className="soup-choice" disabled={disabled} onClick={() => setSoupSelection({ ...soupSelection, ids: soupSelection.ids.includes(dish.id) ? soupSelection.ids.filter((id) => id !== dish.id) : [...soupSelection.ids, dish.id] })}><Text>{soupSelection.ids.includes(dish.id) ? "✓" : ""}</Text><DishName name={dish.name} interactive={false} /></Button></DishChoiceRow>)}
           <Button className="primary" disabled={disabled || soupSelection.ids.length !== menu.structure.soup} onClick={() => void run(async () => { const pool = await client!.getDishes(); setDishes(pool); setDraft(restoreSoup(menu, soupSelection.meal, soupSelection.ids, pool)); setCopyDraft(null); setExampleDraft(null); setSoupSelection(null); setNotice(""); })}>选齐并恢复汤</Button></View></View>}
-    </ScrollView>
-      {menu && editing && selected && selectedMeal && <View className="selected-dish meal-block"><View className="selected-target"><View><Text className="selection-label">{dayNames[Math.floor(selected.meal / 2)]}{selected.meal % 2 ? "晚饭" : "午饭"}{selectedDish ? ` · ${selected.category === "soup" ? "汤" : `${labels[selected.category]}菜`}` : ""}</Text><DishName className="selected-name" interactive={Boolean(selectedDish)} name={selectedDish?.name ?? (selectedMeal.enabled ? "本餐不做汤" : "本餐不安排")} /></View>
+    </View></ScrollView>
+      {menu && editing && selected && selectedMeal && <View className="selected-dish meal-block"><View className="selected-target"><View className="selected-summary"><Text className="selection-label">{dayNames[Math.floor(selected.meal / 2)]}{selected.meal % 2 ? "晚饭" : "午饭"}{selectedDish ? ` · ${selected.category === "soup" ? "汤" : `${labels[selected.category]}菜`}` : ""}</Text><DishName className="selected-name" interactive={Boolean(selectedDish)} name={selectedDish?.name ?? (selectedMeal.enabled ? "本餐不做汤" : "本餐不安排")} /></View>
         {selectedDish && <View className="replacement-actions"><Button disabled={disabled} onClick={() => void run(() => openCandidates("swap"))}>换一道</Button>
           <Button disabled={disabled} onClick={() => void run(() => openCandidates("pick"))}>自己选</Button></View>}</View>
       </View>}
@@ -423,9 +425,9 @@ export default function WeekPage() {
       {!sharing && menu && screen !== "home" && screen !== "settings" && <View className="flow-dock">
         {editing && <Button className="primary" disabled={disabled || cooling || conflict || settings} onClick={() => setScreen("review")}>确认菜单</Button>}
         {screen === "review" && <Button className="primary green" disabled={disabled || cooling || conflict} onClick={() => void run(() => save(true))}>保存本周菜单<Image src={checkIcon} className="flow-icon" /></Button>}
-        {(screen === "swap" || screen === "pick") && <Button className="primary" disabled={disabled || !candidate || !candidates.some((dish) => dish.id === candidate)} onClick={() => void run(applyCandidate)}>保存这次替换<Image src={checkIcon} className="flow-icon" /></Button>}
+        {(screen === "swap" || screen === "pick") && <Button className="primary" disabled={disabled || !candidate || !candidates.some((dish) => dish.id === candidate)} onClick={() => void run(applyCandidate)}>替换<Image src={checkIcon} className="flow-icon" /></Button>}
       </View>}
     </View>
     <MainNav active="week" disabled={!client || busy || blocked} onNavigate={(page) => void run(async () => { if (await discard()) await Taro.reLaunch({ url: `/pages/${page}/index` }); })} />
-  </View></DishNameProvider>;
+  </View>{confirmation}</DishNameProvider>;
 }

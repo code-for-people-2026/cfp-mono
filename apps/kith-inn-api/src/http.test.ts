@@ -91,7 +91,7 @@ describe("HTTP boundary on a real socket", () => {
   it("limits login by socket IP despite spoofed forwarding and resets after one minute", async () => {
     for (let index = 0; index < 20; index++) {
       expect((await call("/sessions/wechat", "POST", "{}", {
-        "content-type": "application/json", "x-forwarded-for": `192.0.2.${index}`
+        "content-type": "application/json", "x-forwarded-for": `192.0.2.${index}`, "x-real-ip": `192.0.2.${index}`
       })).status).toBe(400);
     }
     const limited = await call("/sessions/wechat", "POST", "{}");
@@ -99,6 +99,23 @@ describe("HTTP boundary on a real socket", () => {
     expect(limited.headers["retry-after"]).toBe("60");
     now += 60_000;
     expect((await call("/sessions/wechat", "POST", "{}")).status).toBe(400);
+  });
+  it("separates login budgets only for valid addresses from the configured proxy", async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    server = createKithInnHttpServer({ sessions, readiness, logger, trustedProxyIp: "127.0.0.1" });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    port = (server.address() as AddressInfo).port;
+    const login = (ip: string) => call("/sessions/wechat", "POST", "{}", {
+      "content-type": "application/json", "x-real-ip": ip
+    });
+    for (let index = 0; index < 20; index++) expect((await login("192.0.2.1")).status).toBe(400);
+    expect((await login("192.0.2.1")).status).toBe(429);
+    expect((await login("::ffff:192.0.2.1")).status).toBe(429);
+    expect((await login("192.0.2.2")).status).toBe(400);
+    // Invalid chains share the socket budget instead of becoming attacker-controlled keys.
+    for (let index = 0; index < 20; index++) expect((await login(`invalid-${index}`)).status).toBe(400);
+    expect((await login("192.0.2.3,192.0.2.4")).status).toBe(429);
   });
   it("shares the 120/minute budget between sessions of one merchant", async () => {
     for (let index = 0; index < 120; index++) {

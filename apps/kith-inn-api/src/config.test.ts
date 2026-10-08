@@ -12,7 +12,7 @@ const environment = {
 describe("kith-inn configuration", () => {
   it("uses dedicated credentials, port 3305 and a bounded release identifier", () => {
     expect(loadKithInnRuntimeConfig({ ...environment, DATABASE_URL: "ignored", RELEASE_SHA: "ABCDEF1234567890" })).toEqual({
-      databaseUrl: environment.KITH_INN_DATABASE_URL, port: 3305, release: "abcdef123456",
+      databaseUrl: environment.KITH_INN_DATABASE_URL, port: 3305, release: "abcdef123456", trustedProxyIp: undefined,
       wechatAppId: "test-app-id", wechatAppSecret: "test-app-secret", wechatOwnerOpenId: "test-owner"
     });
     expect(loadKithInnRuntimeConfig(environment).release).toBe("development");
@@ -37,9 +37,16 @@ describe("kith-inn configuration", () => {
     expect(() => resolveKithInnTestDatabaseUrl({ KITH_INN_DATABASE_URL: "postgresql://example.test/kith_inn" })).toThrow("ending in _test");
   });
 
+  it("only accepts a single verified proxy address without echoing invalid values", () => {
+    expect(loadKithInnRuntimeConfig({ ...environment, KITH_INN_TRUSTED_PROXY_IP: "172.20.0.1" }).trustedProxyIp).toBe("172.20.0.1");
+    for (const value of ["*", "172.20.0.0/16", "localhost", "secret,127.0.0.1"]) {
+      expect(() => loadKithInnRuntimeConfig({ ...environment, KITH_INN_TRUSTED_PROXY_IP: value })).toThrow("KITH_INN_TRUSTED_PROXY_IP must be one IP address");
+    }
+  });
+
   it("sets bounded connection and statement timeouts", async () => {
     const pool = createKithInnPool(environment, { statement_timeout: 2_000 });
-    expect(pool.options).toMatchObject({ connectionTimeoutMillis: 5_000, statement_timeout: 2_000 });
+    expect(pool.options).toMatchObject({ max: 5, connectionTimeoutMillis: 5_000, statement_timeout: 2_000 });
     await pool.end();
   });
 });

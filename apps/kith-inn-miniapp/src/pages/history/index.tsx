@@ -7,6 +7,7 @@ import { MainNav } from "../../lib/main-nav";
 import archiveIcon from "../../assets/archive.svg";
 import { weekRange, WeekBoard } from "../../lib/week-board";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
 import { DishNameProvider } from "../../lib/dish-name";
 
 export default function HistoryPage() {
@@ -46,18 +47,18 @@ export default function HistoryPage() {
     if (result.items.length) await show(next, at);
   }
   return <DishNameProvider><View className="dish-app history-app flow-page">
-    {process.env.TARO_ENV === "h5" && <View className="app-heading">历史</View>}
+    <PageHeading title="历史" />
     <View className="dish-page">
       {error && <View className="alert" role="alert">{error}<Button className="text-button" disabled={busy || blocked} onClick={() => void run(load)}>重试</Button></View>}
       {week && <><View className="week-toolbar"><Button ariaLabel="上一保存周" disabled={busy || blocked || index + 1 >= items.length && !before} onClick={() => void run(() => move(true))}>‹</Button>
         <View className="week-range"><Text className="range-title">{weekRange(week, week.weekStart.slice(0, 4) !== String(new Date(Date.now() + 8 * 3600000).getUTCFullYear()))}</Text></View>
         <Button ariaLabel="下一保存周" disabled={busy || blocked || index === 0} onClick={() => void run(() => move(false))}>›</Button></View>
         </>}
-      <ScrollView scrollY className="flow-scroll">{week && <WeekBoard menu={week} readonly showMealCount={false} showAll={showAll} onFilter={setShowAll} disabled={busy || blocked} />}
+      <ScrollView scrollY enhanced showScrollbar={false} className="flow-scroll"><View className="flow-content">{week && <WeekBoard menu={week} readonly showMealCount={false} showAll={showAll} onFilter={setShowAll} disabled={busy || blocked} />}
       {loaded && !items.length && <View className="empty-history"><Text>还没有保存过菜单</Text><Button className="secondary" disabled={busy || blocked} onClick={() => void Taro.reLaunch({ url: "/pages/week/index" })}>去安排本周菜单</Button></View>}
       {blocked && <View className="recovery"><Text>上次保存尚待核对，请先返回处理。</Text><Button disabled={busy}
         onClick={() => void Taro.reLaunch({ url: pending.kind === "week" ? `/pages/week/index?weekStart=${pending.weekStart}` : "/pages/dishes/index" })}>返回核对保存</Button></View>}
-    </ScrollView>{week && <View className="flow-dock">{copyTarget ? <>
+    </View></ScrollView>{week && <View className="flow-dock">{copyTarget ? <>
       <View className="sheet-head"><Text>复制到哪一周？</Text><Button onClick={() => setCopyTarget(null)}>取消</Button></View>
       <View className="week-toolbar"><Button ariaLabel="上一个目标周" onClick={() => setCopyTarget(shiftWeek(copyTarget, -7))}>‹</Button>
         <Text>{copyTarget} — {shiftWeek(copyTarget, 6).slice(5)}</Text>

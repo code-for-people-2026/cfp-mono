@@ -5,6 +5,8 @@ import { DishUpdateInputSchema, type Category, type Dish, type DishInput } from 
 import { ClientError, getKithInnClient, type WriteResult } from "../../lib/api";
 import { cycleCategory, labels, previewDishes } from "../../lib/classify";
 import { Button } from "../../lib/button";
+import { PageHeading } from "../../lib/page-heading";
+import { useConfirmation } from "../../lib/confirmation";
 import { DishName, DishNameProvider } from "../../lib/dish-name";
 import { MainNav } from "../../lib/main-nav";
 import refreshIcon from "../../assets/refresh-cw.svg";
@@ -15,10 +17,11 @@ const filters = [{ value: "all", label: "全部" }, { value: "meat", label: "荤
   { value: "vegetable", label: "素菜" }, { value: "soup", label: "汤" }] as const;
 
 export default function DishesPage() {
+  const [confirm, confirmation] = useConfirmation();
   const [client] = useState(() => { try { return getKithInnClient(); } catch { return null; } });
   const [items, setItems] = useState<Dish[]>([]), [loaded, setLoaded] = useState(false);
   const [signedIn, setSignedIn] = useState(() => client?.restoreSession() ?? false);
-  const [stage, setStage] = useState<"list" | "input" | "preview">("list");
+  const [stage, setStage] = useState<"list" | "input" | "preview">(() => Taro.getCurrentInstance().router?.params.add === "1" ? "input" : "list");
   const [source, setSource] = useState(""), [preview, setPreview] = useState<DishInput[]>([]);
   const [edit, setEdit] = useState<Dish | null>(null), [original, setOriginal] = useState<Dish | null>(null);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
@@ -34,11 +37,14 @@ export default function DishesPage() {
   const latest = edit ? items.find((dish) => dish.id === edit.id) : undefined;
   const deleting = pending?.kind === "delete";
   const editing = edit !== null;
+  const showInput = stage === "input";
+  const adding = showInput || stage === "preview";
+  const title = editing ? "编辑菜品" : stage === "preview" ? "确认分类" : showInput ? "添加菜品" : "菜品池";
   const filtered = filter === "all" ? items : items.filter((dish) => dish.category === filter);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize)), currentPage = Math.min(page, pageCount - 1);
   const visibleItems = filtered.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
   useEffect(() => setPage((value) => Math.min(value, pageCount - 1)), [pageCount]);
-  useEffect(() => { void Taro.setNavigationBarTitle({ title: editing ? "编辑菜品" : "菜品池" }); }, [editing]);
+  useEffect(() => { void Taro.setNavigationBarTitle({ title }); }, [title]);
 
   useDidShow(() => setPending(client?.pendingWrite() ?? null));
   useEffect(() => {
@@ -88,7 +94,7 @@ export default function DishesPage() {
     setConflict(false); setReviewed(false);
   }
   async function confirmDiscard() {
-    return !dirty || (await Taro.showModal({ title: "放弃未保存修改？",
+    return !dirty || (await confirm({ title: "放弃未保存修改？",
       content: "当前草稿还没有保存，放弃后需要重新填写。", confirmText: "放弃修改", cancelText: "继续编辑" })).confirm;
   }
   async function cancel() {
@@ -114,12 +120,12 @@ export default function DishesPage() {
   }
   async function loadLatest() {
     if (!latest || !reviewed || disabled) return;
-    const answer = await Taro.showModal({ title: "载入最新版本？", content: "这会替换当前未保存修改，请先核对服务器最新内容。" });
+    const answer = await confirm({ title: "载入最新版本？", content: "这会替换当前未保存修改，请先核对服务器最新内容。" });
     if (answer.confirm) { setEdit({ ...latest }); setOriginal(latest); setConflict(false); setError(""); }
   }
   async function acknowledge() {
     if (!reviewed || !needsReview) return;
-    const answer = await Taro.showModal({ title: deleting ? "已核对删除结果？" : "已核对保存结果？",
+    const answer = await confirm({ title: deleting ? "已核对删除结果？" : "已核对保存结果？",
       content: "请对照当前菜品池与保留的草稿确认实际结果。继续后不会自动再次提交。" });
     if (answer.confirm) {
       try {
@@ -134,14 +140,13 @@ export default function DishesPage() {
   }
   const activeCount = filtered.filter((dish) => dish.active).length;
 
-  const showInput = stage === "input" || signedIn && loaded && !items.length && stage === "list" && !edit;
   const showList = signedIn && stage === "list" && !edit && !showInput;
 
   return <DishNameProvider><View className="dish-app dishes-app flow-page">
-    {process.env.TARO_ENV === "h5" ? <View className="app-heading flow-heading">
+    <PageHeading title={title}>
       {editing && <Button className="flow-back-label dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
-      <Text>{editing ? "编辑菜品" : "菜品池"}</Text></View>
-      : editing && <Button className="flow-return dish-edit-back" ariaLabel="返回菜品池" disabled={disabled} onClick={() => void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
+      {adding && <Button className="flow-back-label dish-edit-back" ariaLabel={stage === "preview" ? "返回修改菜名" : "返回菜品池"} disabled={disabled} onClick={() => stage === "preview" ? setStage("input") : void cancel()}><Image src={backIcon} className="flow-icon" /><Text>返回</Text></Button>}
+    </PageHeading>
     <View className="dish-page">
     {client && showList && <View className="dish-pool-tools">
       <View className="detail-head"><View><Text className="detail-title">我的菜品池</Text></View>
@@ -151,7 +156,7 @@ export default function DishesPage() {
           ariaPressed={filter === value} disabled={disabled || !loaded} onClick={() => { setFilter(value); setPage(0); }}>{label}</Button>)}
       </View>
     </View>}
-    <ScrollView scrollY className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}>
+    <ScrollView scrollY enhanced showScrollbar={false} className="flow-scroll" key={showList ? `list-${filter}-${currentPage}` : edit ? "edit" : stage}><View className="flow-content">
     {!client ? <View className="alert">尚未配置街坊味服务，请联系维护者配置后再使用。</View> : <>
       {error && <View className="alert" ariaRole="alert">{error}</View>}
       {cooling && <View className="hint">请等待 {Math.ceil((retryAt - now) / 1000)} 秒后重试。</View>}
@@ -169,14 +174,13 @@ export default function DishesPage() {
         </View>
       </View>}
       {!signedIn && <View className="login-panel">
-        <View className="detail-head"><View><Text className="detail-kicker">街坊味 · 桃子的厨房</Text><Text className="detail-title">欢迎回到自己的厨房</Text></View></View>
-        <Text className="muted">仅桃子绑定的微信账号可使用。登录后可找回已保存的菜品。</Text>
-        {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录，浏览器不能完成微信登录。</Text>}
+        <Text className="muted">请使用已授权的微信账号登录</Text>
+        {process.env.TARO_ENV === "h5" && <Text className="hint">请在微信小程序中登录</Text>}
         <Button className="primary" disabled={busy || cooling} onClick={() => void run(async () => { await client.login(); await read(); })}>微信登录</Button>
       </View>}
       {showList && <>
-        {!loaded ? <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
-          !filtered.length ? <View className="muted">暂无{filters.find(({ value }) => value === filter)!.label}</View> :
+        {!loaded ? !error && <View className="hint">{busy ? "正在读取菜品池…" : "暂未读取到菜品池。"}</View> :
+          !filtered.length ? <View className="muted">暂无{filter === "all" ? "菜品" : filters.find(({ value }) => value === filter)!.label}</View> :
           <View className="dish-list">{visibleItems.map((dish) => <View className={`dish dish-card ${dish.active ? "" : "inactive"}`} key={dish.id}>
             <View className="dish-info"><DishName className="dish-name" name={dish.name} /><Text className="dish-status">{dish.active ? "已启用" : "已停用"}</Text></View>
             <View className="dish-controls"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
@@ -185,32 +189,23 @@ export default function DishesPage() {
               }}>编辑</Button></View></View>)}</View>}
         {!loaded && error && !blocked && <Button className="secondary" disabled={busy || cooling} onClick={() => void run(read)}>重试</Button>}
       </>}
-      {(showInput || stage === "preview") && <View className="import-panel">
-        <View className="detail-head"><View>
-          <Text className="detail-kicker">{stage === "preview" ? "从菜名自动判断" : items.length ? "日常维护 · 随时添加" : "首次使用 · 约 2 分钟"}</Text>
-          <Text className="detail-title">{stage === "preview" ? `${preview.length} 道菜待加入` : items.length ? "添加我的拿手菜" : "建立我的菜品池"}</Text></View>
-          <Text className="detail-meta">{stage === "preview" ? "未写入" : `${items.length} 道`}</Text></View>
+      {adding && <View className="import-panel">
         {stage !== "preview" ? <>
-          <View className="menu-rule"><Text className="rule-title">每行一道菜，整段粘贴</Text>
-            <Text>可以从微信、备忘录或旧菜单复制；不用填写复杂配方。</Text></View>
           <Text className="input-label">菜名清单</Text>
-          <Textarea className="prototype-textarea" placeholder="每行一道菜，例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
+          <Text className="muted import-guidance">每行一道，最多 200 道</Text>
+          <Textarea className="prototype-textarea" placeholder="例如：红烧排骨" ariaLabel="菜名清单" maxlength={-1}
             value={source} disabled={disabled} onInput={(event) => setSource(event.detail.value)} />
-          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>自动分成荤 / 素 / 汤</Button>
-          <Text className="evidence-note">按菜名给出分类候选；确认后保存，日后仍可改名、停用或改分类。每次最多 200 道。</Text>
+          <Button className="primary" disabled={disabled || !source.trim()} onClick={previewInput}>下一步</Button>
         </> : <>
-          <View className="menu-rule"><Text className="rule-title">请确认荤、素、汤分类</Text>
-            <Text>系统先判断；分类不对就点右侧更换图标，按“荤 → 素 → 汤”循环。</Text></View>
+          <Text className="input-label">待添加 · {preview.length} 道菜</Text>
+          <Text className="muted import-guidance">点击右侧图标可更改分类</Text>
           <View className="import-list">{preview.map((dish, index) => <View className="import-row" key={dish.name}>
             <DishName className="import-name" name={dish.name} /><View className="category-switch"><Text className={`kind ${dish.category}`}>{labels[dish.category]}</Text>
               <Button className="rotate-dish" disabled={disabled} ariaLabel={`更改${dish.name}分类，当前${labels[dish.category]}`}
                 onClick={() => setPreview(preview.map((value, at) => at === index ? { ...value, category: cycleCategory(value.category) } : value))}>
                 <Image className="refresh-icon" src={refreshIcon} mode="scaleToFill" /></Button></View></View>)}</View>
           <Button className="primary" disabled={disabled || cooling || !signedIn} onClick={() => void run(async () => saved(await client.addDishes({ items: preview })))}>确认加入菜品池</Button>
-          <Button className="secondary" disabled={disabled} onClick={() => setStage("input")}>返回修改菜名</Button>
-          <Text className="evidence-note">系统先判断，最终以桃子确认的分类为准。</Text>
         </>}
-        <Button className="text-button cancel" disabled={disabled} onClick={() => void cancel()}>取消添加</Button>
       </View>}
       {edit && <View className="edit-panel">
         <View className="dish-edit-fields">
@@ -236,14 +231,13 @@ export default function DishesPage() {
         })}>保存修改</Button>
         <Button className="delete-dish" disabled={disabled || cooling || conflict || !signedIn} onClick={() => void run(async () => {
           const target = original ?? edit;
-          const answer = await Taro.showModal({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });
+          const answer = await confirm({ title: "删除菜品？", content: `“${target.name}”删除后不可恢复，已保存的菜单不受影响。`, confirmText: "删除", confirmColor: "#b64131", cancelText: "取消" });
           if (answer.confirm) await saved(await client.deleteDish(target.id, { baseVersion: target.version }));
         })}>删除菜品</Button>
       </View>}
-      {(dirty || blocked) && <Text className="evidence-note">草稿只保留在当前页面。离开或关闭前，请先确认保存结果。</Text>}
 
     </>}
-    </ScrollView>
+    </View></ScrollView>
     {client && showList && <View className="flow-dock">
       {loaded && pageCount > 1 && <View className="dish-pagination">
         <Button disabled={disabled || currentPage === 0} onClick={() => setPage(currentPage - 1)}>上一页</Button>
@@ -258,5 +252,5 @@ export default function DishesPage() {
     <MainNav active="dishes" disabled={!client || disabled} onNavigate={(page) => void run(async () => {
       if (await confirmDiscard()) await Taro.reLaunch({ url: `/pages/${page}/index` });
     })} />
-  </View></DishNameProvider>;
+  </View>{confirmation}</DishNameProvider>;
 }

@@ -68,6 +68,18 @@ it("counts Unicode code points and rejects non-normalized names without transfor
   for (const name of ["😀".repeat(60), "é", "A  B", "红烧肉"]) expect(contracts.DishNameSchema.parse(name)).toBe(name);
 });
 
+it("keeps the Unicode control and separator exclusions on WeChat-compatible character ranges", () => {
+  const forbidden = Array.from({ length: 0x10000 }, (_, code) => String.fromCharCode(code))
+    .filter((character) => /[\p{Cc}\p{Zl}\p{Zp}]/u.test(character));
+  expect(forbidden).toHaveLength(67);
+  for (const character of forbidden) {
+    expect(contracts.DishNameSchema.safeParse(`汤${character}菜`).success).toBe(false);
+  }
+  for (const character of [" ", "~", "\u00a0", "\u2027", "\u202a", "😀"]) {
+    expect(contracts.DishNameSchema.parse(`汤${character}菜`)).toBe(`汤${character}菜`);
+  }
+});
+
 it("validates calendar dates, Monday boundaries, leap days and year transitions", () => {
   for (const day of ["2026-02-29", "2026-13-01", "2026-9-21", "2026-09-22"]) {
     expect(contracts.WeekStartSchema.safeParse(day).success).toBe(false);

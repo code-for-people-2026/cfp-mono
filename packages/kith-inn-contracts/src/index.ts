@@ -10,9 +10,12 @@ export const WeekStartSchema = DateSchema.refine(
 );
 const timestamp = z.iso.datetime({ offset: true });
 const version = z.int().min(1);
+// Unicode Cc, Zl and Zp, without property escapes unsupported by some WeChat engines.
+// eslint-disable-next-line no-control-regex -- These control characters are intentionally rejected.
+const forbiddenNameCharacters = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 export const DishNameSchema = z.string().refine(
   (value) => value === value.trim().normalize("NFC") &&
-    [...value].length >= 1 && [...value].length <= 60 && !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(value),
+    [...value].length >= 1 && [...value].length <= 60 && !forbiddenNameCharacters.test(value),
   "Expected a normalized name of 1–60 Unicode code points without control characters",
 );
 export const StructureSchema = z.strictObject({

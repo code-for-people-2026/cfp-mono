@@ -73,7 +73,7 @@ export async function startKithInnRuntime(input: Readonly<{
     const sessions = new Sessions(pool, { appId: config.wechatAppId, ownerOpenId: config.wechatOwnerOpenId },
       createWechatExchanger({ appId: config.wechatAppId, appSecret: config.wechatAppSecret, fetcher: input.fetcher }));
     const server = createKithInnHttpServer({ sessions, dishes: new Dishes(pool, sessions), weeks: new Weeks(pool, sessions),
-      readiness: await createReadinessProbe(pool), logger: input.logger });
+      readiness: await createReadinessProbe(pool), logger: input.logger, trustedProxyIp: config.trustedProxyIp });
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(config.port, "0.0.0.0", () => { server.off("error", reject); resolve(); });
