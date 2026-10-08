@@ -54,7 +54,7 @@ async function request<T>(
     },
   });
   if (response.statusCode < 200 || response.statusCode >= 300) {
-    if (native && response.statusCode === 401) throw new IdentityExpiredError();
+    if (response.statusCode === 401) throw new IdentityExpiredError();
     const failure = errorSchema.safeParse(response.data, { jitless: native });
     throw new Error(
       failure.success ? failure.data.error : "暂时连接不上，请稍后重试",
@@ -69,12 +69,16 @@ async function request<T>(
   }
 }
 
-// 只在用户确认影响后调用；新凭证成功获得并写入本机后才替换内存身份。
+// 只在用户确认影响后调用；普通重试保留原身份，不能静默跳过确认换发 Cookie。
 export async function restartIdentity() {
-  if (!native) throw new Error("此入口仅用于小程序设备身份");
-  const identity = await request("miniapp-identity", credentialSchema, "POST");
-  Taro.setStorageSync(storageKey, identity.token);
-  deviceToken = identity.token;
+  if (native) {
+    const identity = await request("miniapp-identity", credentialSchema, "POST");
+    Taro.setStorageSync(storageKey, identity.token);
+    deviceToken = identity.token;
+  } else {
+    // 浏览器接收服务端的 HttpOnly Cookie，不把凭证写入脚本可读的存储。
+    await request("identity", identitySchema, "POST");
+  }
   identityPromise = Promise.resolve();
 }
 

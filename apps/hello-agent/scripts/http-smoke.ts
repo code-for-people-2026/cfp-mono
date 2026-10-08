@@ -43,6 +43,19 @@ const session = sessionSchema.parse(await (
   await post("sessions", { title: "HTTP 集成验证（测试数据）" })
 ).json());
 assert.ok(session.id);
+// 页面保持打开但 Cookie 被清除时，恢复入口应签发新身份，不能读到旧身份的聊天。
+assert.equal((await fetch(`${origin}/api/hello/sessions`)).status, 401);
+const recovered = await fetch(`${origin}/api/hello/identity`, {
+  method: "POST",
+  headers: { Origin: origin },
+});
+assert.equal(recovered.status, 200);
+assert.match(recovered.headers.get("set-cookie")!, /HttpOnly/);
+const recoveredCookie = recovered.headers.get("set-cookie")!.split(";")[0];
+assert.notEqual(recoveredCookie, cookie);
+assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: recoveredCookie } })).status, 200);
+assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers: { Cookie: recoveredCookie } })).status, 404);
+assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers: { Cookie: cookie } })).status, 200);
 const image = await sharp({
   create: { width: 16, height: 16, channels: 3, background: "#eeaa44" },
 })

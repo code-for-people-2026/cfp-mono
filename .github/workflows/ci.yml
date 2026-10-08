@@ -60,6 +60,9 @@ jobs:
       - name: Verify Hello Agent Docker context excludes private data
         run: pnpm --filter @cfp/hello-agent exec node scripts/image-context-check.mjs --docker
 
+      - name: Verify Hello Agent preview data permissions
+        run: pnpm --filter @cfp/hello-agent exec node scripts/preview-data-check.mjs --docker
+
       - name: Create isolated Weekly Menu test database
         run: >-
           pnpm --dir apps/weekly-menu-be exec node --input-type=module -e

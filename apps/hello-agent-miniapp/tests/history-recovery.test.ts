@@ -464,6 +464,49 @@ describe("聊天历史与图片失败隔离", () => {
       ),
     ).toHaveLength(1);
   });
+  it("H5 页面保持打开时 Cookie 失效，取消保留草稿与历史，确认后恢复输入", async () => {
+    vi.stubEnv("TARO_ENV", "h5");
+    const originalRequest = platform.request.getMockImplementation()!;
+    let expired = false;
+    let identities = 0;
+    platform.request.mockImplementation(async (options: { url: string }) => {
+      if (options.url.endsWith("/identity")) {
+        identities++;
+        expired = false;
+        return { statusCode: 200, data: { owner: `visitor-${identities}` } };
+      }
+      if (expired) return { statusCode: 401, data: { error: "访客身份已失效" } };
+      if (identities === 2 && options.url.endsWith("/sessions"))
+        return { statusCode: 200, data: [] };
+      return originalRequest(options);
+    });
+    await mount();
+    act(() => renderer!.root.findByType("textarea").props.onInput({ detail: { value: "还没发出的草稿" } }));
+    expired = true;
+    await act(async () => {
+      await renderer!.root.findAllByType("button")
+        .find((button) => button.props.className.includes("send-button"))!.props.onClick();
+    });
+    expect(text()).toContain("旧聊天记录不会删除");
+    expect(identities).toBe(1);
+    const restart = () => renderer!.root.findAllByType("button")
+      .find((button) => button.props.className.includes("restart-identity"))!;
+    platform.showModal.mockResolvedValueOnce({ confirm: false, cancel: true });
+    await act(async () => { await restart().props.onClick(); });
+    expect(identities).toBe(1);
+    expect(renderer!.root.findByType("textarea").props.value).toBe("还没发出的草稿");
+    expect(text()).toContain("仍能看见的好彩头");
+    platform.showModal.mockResolvedValueOnce({ confirm: true, cancel: false });
+    await act(async () => { await restart().props.onClick(); });
+    expect(identities).toBe(2);
+    expect(text()).not.toContain("旧聊天记录不会删除");
+    expect(text()).not.toContain("仍能看见的好彩头");
+    act(() => renderer!.root.findAllByType("button")
+      .find((button) => button.props.className.includes("keyboard-toggle"))!.props.onClick());
+    expect(renderer!.root.findByType("textarea").props.value).toBe("");
+    expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
+    expect(platform.setStorageSync).not.toHaveBeenCalled();
+  });
   it("设备凭证过期时不静默换身份，取消保留现场，确认后才能重新开始", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let renewed = false;

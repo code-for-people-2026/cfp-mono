@@ -15,6 +15,40 @@ afterEach(() => {
 });
 
 describe("不同后端的设备身份隔离", () => {
+  it("H5 身份过期后需要明确恢复，普通重试不能静默换身份", async () => {
+    vi.stubEnv("TARO_ENV", "h5");
+    mocks.request.mockResolvedValueOnce({
+      statusCode: 200,
+      data: { owner: "old-owner" },
+    });
+    const api = await import("../src/chat/api");
+    await api.establishIdentity();
+    mocks.request.mockResolvedValueOnce({ statusCode: 401, data: {} });
+    await expect(api.getSessions()).rejects.toBeInstanceOf(api.IdentityExpiredError);
+    await api.establishIdentity();
+    expect(mocks.request).toHaveBeenCalledTimes(2);
+
+    mocks.request.mockResolvedValueOnce({
+      statusCode: 503,
+      data: { error: "暂不能建立身份" },
+    });
+    await expect(api.restartIdentity()).rejects.toThrow("暂不能建立身份");
+    await api.establishIdentity();
+    expect(mocks.request).toHaveBeenCalledTimes(3);
+
+    mocks.request.mockResolvedValueOnce({ statusCode: 200, data: { owner: "new-owner" } });
+    await api.restartIdentity();
+    expect(mocks.request).toHaveBeenLastCalledWith(expect.objectContaining({
+      url: "/api/hello/identity",
+      method: "POST",
+      header: { "Content-Type": "application/json" },
+    }));
+    await api.establishIdentity();
+    expect(mocks.request).toHaveBeenCalledTimes(4);
+    expect(mocks.setStorageSync).not.toHaveBeenCalled();
+    mocks.request.mockResolvedValueOnce({ statusCode: 200, data: [] });
+    await expect(api.getSessions()).resolves.toEqual([]);
+  });
   it("重新建立身份失败时不覆盖原凭证，也不静默丢弃原身份", async () => {
     vi.stubEnv("TARO_ENV", "weapp");
     vi.stubGlobal("HELLO_API_ORIGIN", "https://preview.example.test");

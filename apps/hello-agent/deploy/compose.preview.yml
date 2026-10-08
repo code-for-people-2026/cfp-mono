@@ -1,7 +1,28 @@
 name: cfp-hello-agent
 services:
+  # bind mount 在全新主机上由 Docker 创建为 root，先准备目录，再启动非特权应用。
+  # 不挂载密钥、不接入网络、不递归改写已有数据库文件。
+  data-init:
+    image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    user: "0:0"
+    command: ["sh", "-ec", "chmod 0700 /data && chown node:node /data"]
+    restart: "no"
+    network_mode: none
+    read_only: true
+    volumes:
+      - /opt/cfp-hello-agent/data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
   app:
     image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
     restart: unless-stopped
     init: true
     env_file:
