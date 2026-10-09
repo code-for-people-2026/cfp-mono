@@ -4,9 +4,24 @@
 
 当前增量支持测试者各有独立店铺，正式环境仍只预置桃子店铺。云端尚未执行 `0002_merchant_members.sql`，不得把本地测试当作已授权真实同事。
 
-升级顺序：记录现有镜像与数据库版本 → 专库备份 → 停止本应用写入 → migrator 执行增量迁移 → 管理员授予运行角色 `merchant_members` 的 SELECT → 部署新 API → 核对 ready/原数据/原身份 → 构建并分发匹配的新小程序包。旧迁移不可改；新迁移移除旧身份列，旧 API 不兼容，回退须恢复到备份的独立目标并核对后切换，不能直接启动旧镜像连接新结构。
+升级顺序：记录现有镜像与数据库版本 → 停止本应用写入 → 专库备份并确认成功 → migrator 执行增量迁移 → 管理员核对并收紧运行角色权限 → 部署新 API → 核对 ready/原数据/原身份 → 构建并分发匹配的新小程序包。停止写入后再备份，避免回退漏掉备份后新写入的数据。旧迁移不可改；新迁移移除旧身份列，旧 API 不兼容，回退须恢复到备份的独立目标并核对后切换，不能直接启动旧镜像连接新结构。
 
 运行角色对 `merchant_members` 只有 SELECT；对 `merchants` 保留 SELECT、UPDATE（现有事务用 `SELECT … FOR UPDATE` 锁定店铺，需要 UPDATE 权限），移除 INSERT、DELETE。登录仅向 `sessions` 写入，运行角色不能建店或增改成员。新增迁移后须实际验证权限。维护授权使用专用高权限连接，经负责人确认后操作；不是应用公开接口。不要调整其他产品库的 PUBLIC 权限。
+
+目标为现有测试库及角色时，权限变更如下；执行前核对连接，执行后以运行角色验证实际权限，不能只看 GRANT 返回成功。如果继承权限仍允许写成员表，停止升级并核查来源，不修改共享角色或 PUBLIC 授权。
+
+```sql
+BEGIN;
+DO $$ BEGIN
+  IF current_database() <> 'kith_inn_staging' THEN
+    RAISE EXCEPTION 'Wrong database for Kith Inn staging grants';
+  END IF;
+END $$;
+REVOKE ALL PRIVILEGES ON TABLE merchant_members, merchants FROM kith_inn_staging_app;
+GRANT SELECT ON TABLE merchant_members TO kith_inn_staging_app;
+GRANT SELECT, UPDATE ON TABLE merchants TO kith_inn_staging_app;
+COMMIT;
+```
 
 `node --import tsx scripts/members.mjs` 从 stdin 读取私密 JSON 文件；运行配置含维护数据库连接、当前 AppID/AppSecret。`database` 必须与实际目标数据库完全一致；`code` 为该同事在本 AppID 下取得的全新微信登录码。脚本通过微信换码取得身份，禁止手填或猜测 OpenID，不输出登录码、OpenID、AppSecret 或 token。
 
