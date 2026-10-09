@@ -1,4 +1,4 @@
-import { Pool, type PoolConfig } from "pg";
+import { Pool, type PoolClient, type PoolConfig } from "pg";
 import { resolveKithInnDatabaseUrl } from "./config";
 
 export function createKithInnPool(
@@ -12,4 +12,17 @@ export function createKithInnPool(
     ...options,
     connectionString: resolveKithInnDatabaseUrl(environment)
   });
+}
+
+export async function inTransaction<T>(pool: Pool, work: (client: PoolClient) => Promise<T>): Promise<T> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally { client.release(); }
 }

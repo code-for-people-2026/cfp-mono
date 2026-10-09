@@ -3,8 +3,8 @@
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
     "title": "街坊味排菜 MVP API",
-    "version": "0.2.0",
-    "description": "设计契约，服务及共享代码包尚未实现。仅桃子菜池与周菜单。Q1/Q2/Q3已按用户选择1A/2A/3A确定：改结构经提醒确认后整周重生成，菜不足一餐时整个生成失败，确认或分享后仍可编辑。所有接口响应schema稳定字段拒绝未知项；跨字段、所有权与状态约束详见README.md/data-model.md。"
+    "version": "0.4.0",
+    "description": "独立测试店与授权成员契约；测试者各有自己的店铺，正式环境仅预置桃子店铺。登录不注册或建店，按已有有效成员关系授权。Session 含 memberId/merchantId。顾客端和公开商户入驻在范围外。云端仍为旧版，待迁移及配套发布。"
   },
   "servers": [
     {
@@ -21,8 +21,8 @@
     "/sessions/wechat": {
       "post": {
         "operationId": "createSession",
-        "summary": "桃子微信登录",
-        "description": "微信换码后核对预先配置的桃子身份；没有首个访问者自动绑定。登录不缓存幂等响应；code不能复用。",
+        "summary": "经营成员微信登录",
+        "description": "微信换码后查找有效成员关系，取得该成员所属店铺的会话；测试者默认各自独立店铺，仅显式授权同店才共享数据。登录不建店或授予权限；登录码不复用。",
         "responses": {
           "201": {
             "description": "成功",
@@ -919,7 +919,7 @@
         }
       },
       "403": {
-        "description": "非桃子经营身份；不自动开户",
+        "description": "未获本店经营授权、成员已撤权或店铺停用；不自动授权或建店",
         "headers": {
           "Cache-Control": {
             "schema": {
@@ -1735,11 +1735,21 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "merchantId": {
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
           "token",
-          "expiresAt"
+          "expiresAt",
+          "memberId",
+          "merchantId"
         ],
         "description": "仅返回本服务会话，不返回openid/appSecret/session_key。令牌不得写入日志。"
       },
