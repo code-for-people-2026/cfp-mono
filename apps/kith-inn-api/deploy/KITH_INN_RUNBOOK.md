@@ -1,5 +1,42 @@
 # 街坊味 API 部署与联调手册
 
+## 2026-10-09 独立测试店升级（待部署）
+
+当前增量支持测试者各有独立店铺，正式环境仍只预置桃子店铺。云端尚未执行 `0002_merchant_members.sql`，不得把本地测试当作已授权真实同事。
+
+升级顺序：记录现有镜像与数据库版本 → 停止本应用写入 → 专库备份并确认成功 → migrator 执行增量迁移 → 管理员核对并收紧运行角色权限 → 部署新 API → 核对 ready/原数据/原身份 → 构建并分发匹配的新小程序包。停止写入后再备份，避免回退漏掉备份后新写入的数据。旧迁移不可改；新迁移移除旧身份列，旧 API 不兼容，回退须恢复到备份的独立目标并核对后切换，不能直接启动旧镜像连接新结构。
+
+运行角色对 `merchant_members` 只有 SELECT；对 `merchants` 保留 SELECT、UPDATE（现有事务用 `SELECT … FOR UPDATE` 锁定店铺，需要 UPDATE 权限），移除 INSERT、DELETE。登录仅向 `sessions` 写入，运行角色不能建店或增改成员。新增迁移后须实际验证权限。维护授权使用专用高权限连接，经负责人确认后操作；不是应用公开接口。不要调整其他产品库的 PUBLIC 权限。
+
+目标为现有测试库及角色时，权限变更如下；执行前核对连接，执行后以运行角色验证实际权限，不能只看 GRANT 返回成功。如果继承权限仍允许写成员表，停止升级并核查来源，不修改共享角色或 PUBLIC 授权。
+
+```sql
+BEGIN;
+DO $$ BEGIN
+  IF current_database() <> 'kith_inn_staging' THEN
+    RAISE EXCEPTION 'Wrong database for Kith Inn staging grants';
+  END IF;
+END $$;
+REVOKE ALL PRIVILEGES ON TABLE merchant_members, merchants FROM kith_inn_staging_app;
+GRANT SELECT ON TABLE merchant_members TO kith_inn_staging_app;
+GRANT SELECT, UPDATE ON TABLE merchants TO kith_inn_staging_app;
+COMMIT;
+```
+
+`node --import tsx scripts/members.mjs` 从 stdin 读取私密 JSON 文件；运行配置含维护数据库连接、当前 AppID/AppSecret。`database` 必须与实际目标数据库完全一致；`code` 为该同事在本 AppID 下取得的全新微信登录码。脚本通过微信换码取得身份，禁止手填或猜测 OpenID，不输出登录码、OpenID、AppSecret 或 token。
+
+- 独立测试店：`{"action":"create-store","database":"kith_inn_staging","code":"通过私密输入提供的新登录码"}`。重复授权同一身份复用原店，不重复建店。
+- 明确加入已有店：`{"action":"grant","database":"目标库名","merchantId":"已核对的店铺UUID","code":"通过私密输入提供的新登录码"}`。已有另一店归属时拒绝改绑，不自动搬数据。
+- 撤权：`{"action":"revoke","database":"目标库名","memberId":"已核对的成员UUID"}`。撤销该成员所有会话，不删除店铺菜品和菜单；重新授权也不复活旧 token。
+
+命令返回成员/店铺 UUID，由维护者记录对应人员，凭据文件保持600并在使用后按凭据流程处理。当前不加成员管理页面；首批三个真实身份须分别核验并授权，不能用姓名直接生成业务身份。
+
+新版登录响应必含 `memberId`/`merchantId`，小程序使用 v2 会话缓存。旧包不兼容新响应，必须与后端升级配套分发；首次打开新版重新登录。同进程内如果微信身份改变，客户端拒绝启用新会话并保留旧草稿和未知写入，提示先处理原账号内容或退出小程序重开；不自动向另一店重放。正式包须独立配置正式 API，绝不可直接用 staging 配置提交正式版。
+
+以下为旧单身份版本的历史部署记录，若与本节冲突，以本节的升级步骤为准。
+
+2026-10-06 目标范围修订：桃子单店支持多个经授权经营成员，顾客端以后默认本店；[规格与增量计划](../../../specs/022-kith-inn-menu-mvp/plan.md)已同步，代码和云端尚未升级。以下命令及 owner OpenID 配置描述当前可运行的旧单身份版本，不能直接作为多成员上线步骤。成员升级须新增迁移保留原店铺和数据、引入成员授权与会话关联；不可仅修改环境变量或删除鉴权检查放行同事。测试/正式须分别配置 API 和数据库；撤销成员不得执行本手册的整店退出删除流程。
+
 适用现有「桃子的摆摊助手」、Issue #360、PR #368。代码已整合 main 的业务实现；
 准备、部署、验证分别记录在[发布证据](../../../specs/022-kith-inn-menu-mvp/checklists/release-evidence.md)。
 以下命令从仓库根执行，仅使用本应用 compose。不得执行官网发布、全局 prune 或重启 ECS/RDS。

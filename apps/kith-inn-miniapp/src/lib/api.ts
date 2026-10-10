@@ -24,6 +24,7 @@ export type ApiPlatform = {
 export class ClientError extends Error {
   constructor(readonly code: string, readonly details?: ErrorDetails, readonly status?: number, readonly retryAt?: number) {
     const messages: Record<string, string> = {
+      ACCOUNT_CHANGED: "微信账号已变更，请切回原账号处理草稿，或退出小程序后重新打开",
       CONFIG_REQUIRED: "请先配置街坊味服务地址", UNAUTHORIZED: "请重新登录", FORBIDDEN: "当前微信账号没有经营权限",
       LOGIN_FAILED: "微信登录失败，请重试", WECHAT_REQUIRED: "请在微信小程序中登录", STORAGE_FAILED: "无法保存本机会话，请重试",
       INVALID_REQUEST: "请检查输入内容", DUPLICATE_DISH_NAME: "菜名重复，请修改清单或恢复已停用菜品",
@@ -91,10 +92,12 @@ export function createKithInnClient(options: {
   const baseUrl = (options.baseUrl ?? process.env.TARO_APP_KITH_INN_API_BASE_URL ?? "").trim().replace(/\/+$/, "");
   const address = /^https:\/\/((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)(?::([0-9]{1,5}))?$/i.exec(baseUrl);
   if (!address || (address[2] && (+address[2] < 1 || +address[2] > 65535))) throw new ClientError("CONFIG_REQUIRED");
-  const storageKey = `kith-inn:session:v1:${baseUrl}`;
+  const storageKey = `kith-inn:session:v2:${baseUrl}`;
   const platform = options.platform ?? taroPlatform(), now = options.now ?? Date.now;
   let session: Session | null = null, restored = false, busy = false, retryAt = 0;
   let pending: Pending | null = null, reviewedKey: string | null = null;
+  let identity: string | null = null;
+  const scope = (value: Session) => `${value.memberId}:${value.merchantId}`;
 
   function clearSession() {
     session = null;
@@ -108,6 +111,7 @@ export function createKithInnClient(options: {
       try {
         const parsed = SessionSchema.safeParse(platform.getStorageSync(storageKey));
         session = parsed.success ? parsed.data : null;
+        if (session) identity = scope(session);
       } catch { session = null; }
     }
     if (!session || Date.parse(session.expiresAt) <= now()) clearSession();
@@ -194,6 +198,7 @@ export function createKithInnClient(options: {
     restoreSession,
     pendingWrite: () => pending ? { kind: pending.kind, createdAt: pending.createdAt, state: pending.state, ...(pending.kind === "week" ? { weekStart: pending.path.slice(7) } : {}) } : null,
     login: () => exclusive(async () => {
+      restoreSession();
       clearSession();
       let code: string;
       try { code = LoginInputSchema.parse({ code: (await deadline(platform.login())).code }).code; }
@@ -201,9 +206,16 @@ export function createKithInnClient(options: {
       const response = await request("POST", "/sessions/wechat", JSON.stringify({ code }), undefined, false);
       const parsed = SessionSchema.safeParse(response.data);
       if (response.statusCode !== 201 || !parsed.success || Date.parse(parsed.data.expiresAt) <= now()) throw new ClientError("LOGIN_FAILED");
+      if (identity !== null && identity !== scope(parsed.data)) {
+        // Do not activate a different account in a process retaining old pages or writes.
+        try { await deadline(platform.request({ url: `${baseUrl}/api/kith-inn/sessions/current`, method: "DELETE", timeout,
+          header: { authorization: `Bearer ${parsed.data.token}` } })); } catch { /* Unused token expires server-side. */ }
+        throw new ClientError("ACCOUNT_CHANGED");
+      }
+      identity = scope(parsed.data);
       try { platform.setStorageSync(storageKey, parsed.data); }
       catch { clearSession(); throw new ClientError("STORAGE_FAILED"); }
-      // The API's immutable singleton binding permits only the same configured owner.
+      // A client instance remains bound to the same member and store across reauthentication.
       // Pending writes stay in this client instance and origin, never in shared storage.
       session = parsed.data;
     }),

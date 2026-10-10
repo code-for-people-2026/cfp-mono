@@ -5,15 +5,14 @@ import { createKithInnPool } from "./database";
 const environment = {
   KITH_INN_DATABASE_URL: "postgresql://owner:secret@example.test/kith_inn_test",
   KITH_INN_WECHAT_APP_ID: "test-app-id",
-  KITH_INN_WECHAT_APP_SECRET: "test-app-secret",
-  KITH_INN_WECHAT_OWNER_OPEN_ID: "test-owner"
+  KITH_INN_WECHAT_APP_SECRET: "test-app-secret"
 };
 
 describe("kith-inn configuration", () => {
   it("uses dedicated credentials, port 3305 and a bounded release identifier", () => {
     expect(loadKithInnRuntimeConfig({ ...environment, DATABASE_URL: "ignored", RELEASE_SHA: "ABCDEF1234567890" })).toEqual({
       databaseUrl: environment.KITH_INN_DATABASE_URL, port: 3305, release: "abcdef123456", trustedProxyIp: undefined,
-      wechatAppId: "test-app-id", wechatAppSecret: "test-app-secret", wechatOwnerOpenId: "test-owner"
+      wechatAppId: "test-app-id", wechatAppSecret: "test-app-secret"
     });
     expect(loadKithInnRuntimeConfig(environment).release).toBe("development");
     expect(loadKithInnRuntimeConfig({ ...environment, RELEASE_SHA: "arbitrary secret" }).release).toBe("unknown");

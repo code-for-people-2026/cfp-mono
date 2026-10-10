@@ -40,7 +40,6 @@ export function loadKithInnRuntimeConfig(environment: NodeJS.ProcessEnv = proces
     trustedProxyIp,
     release: !release ? "development" : /^[0-9a-f]{7,64}$/i.test(release) ? release.slice(0, 12).toLowerCase() : "unknown",
     wechatAppId: required("KITH_INN_WECHAT_APP_ID"),
-    wechatAppSecret: required("KITH_INN_WECHAT_APP_SECRET"),
-    wechatOwnerOpenId: required("KITH_INN_WECHAT_OWNER_OPEN_ID")
+    wechatAppSecret: required("KITH_INN_WECHAT_APP_SECRET")
   };
 }

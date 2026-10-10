@@ -48,7 +48,7 @@ it("rejects unknown fields on every DTO, including nested trust boundaries", () 
     GenerateInput: { structure: write().structure, meals: write().meals.map(({ date, mealType, enabled }) => ({ date, mealType, enabled })) },
     MenuPreview: preview(), WeekPlan: { ...preview(), id, version: 1, confirmedAt: null, createdAt: time, updatedAt: time },
     WeekWriteInput: write(), WeekSummary: { weekStart: date, version: 1, confirmedAt: time, updatedAt: time },
-    WeekList: { items: [], nextBefore: null }, LoginInput: { code: "wx-code" }, Session: { token: "a".repeat(43), expiresAt: time },
+    WeekList: { items: [], nextBefore: null }, LoginInput: { code: "wx-code" }, Session: { token: "a".repeat(43), memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: time },
     ErrorDetails: {}, ErrorResponse: { error: { code: "UNAUTHORIZED", message: "请登录", requestId: id } }, Health: { status: "ready" },
   };
   expect(Object.keys(fixtures).sort()).toEqual(Object.keys(openapi.components.schemas).sort());
@@ -144,8 +144,8 @@ it("validates shortages, safe errors, session shape and parsed pagination", () =
   const item = { category: "meat", required: 2, available: 1 };
   for (const shortages of [[], [item, item], [{ ...item, available: 2 }]]) expect(contracts.ErrorDetailsSchema.safeParse({ shortages }).success).toBe(false);
   expect(contracts.ErrorResponseSchema.safeParse({ error: { ...error, details: { shortages: [item] } } }).success).toBe(true);
-  expect(contracts.SessionSchema.safeParse({ token: "secret", expiresAt: time }).success).toBe(false);
-  expect(contracts.SessionSchema.safeParse({ token: "a".repeat(43), expiresAt: "2026-09-20T10:00:00" }).success).toBe(false);
+  expect(contracts.SessionSchema.safeParse({ token: "secret", memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: time }).success).toBe(false);
+  expect(contracts.SessionSchema.safeParse({ token: "a".repeat(43), memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: "2026-09-20T10:00:00" }).success).toBe(false);
   expect(contracts.WeekListQuerySchema.parse({})).toEqual({ limit: 12 });
   for (const value of [{ limit: 0 }, { limit: 53 }, { limit: "12" }, { before: "2026-09-22" }, { ownerId: id }]) expect(contracts.WeekListQuerySchema.safeParse(value).success).toBe(false);
 });
