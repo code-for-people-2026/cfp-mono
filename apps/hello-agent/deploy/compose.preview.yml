@@ -1,0 +1,54 @@
+name: cfp-hello-agent
+services:
+  # bind mount 在全新主机上由 Docker 创建为 root，先准备目录，再启动非特权应用。
+  # 不挂载密钥、不接入网络、不递归改写已有数据库文件。
+  data-init:
+    image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    user: "0:0"
+    command: ["sh", "-ec", "chmod 0700 /data && chown node:node /data"]
+    restart: "no"
+    network_mode: none
+    read_only: true
+    volumes:
+      - /opt/cfp-hello-agent/data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+  app:
+    image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/cfp-hello-agent/private/runtime.env
+      - /opt/cfp-hello-agent/private/oss.env
+    environment:
+      # 本文件只用于测试部署；与广告能力分开，不声称验证了广告回执。
+      HELLO_MEMORY_RECOVERY: preview
+    ports:
+      - "127.0.0.1:3310:3310"
+    volumes:
+      - /opt/cfp-hello-agent/data:/data
+    mem_limit: 1g
+    cpus: 1.0
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3310/api/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3

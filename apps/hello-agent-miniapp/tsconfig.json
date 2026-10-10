@@ -1,0 +1,5 @@
+{
+  "extends": "@cfp/typescript-config/react-library.json",
+  "compilerOptions": { "noEmit": true, "types": ["node", "@tarojs/taro"] },
+  "include": ["src", "config", "types", "tests", "vitest.config.ts"]
+}

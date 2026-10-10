@@ -30,6 +30,29 @@
       "entry": ["config/**/*.ts", "src/**/*.{ts,tsx}", "vitest.config.ts", "eslint.config.mjs"],
       "ignoreDependencies": ["react"]
     },
+    "apps/hello-agent-miniapp": {
+      "entry": [
+        "config/**/*.ts",
+        "src/**/*.{ts,tsx}",
+        "scripts/**/*.mjs",
+        "tests/**/*.ts",
+        "vitest.config.ts",
+        "eslint.config.mjs"
+      ],
+      "ignoreDependencies": ["react"]
+    },
+    "apps/hello-agent": {
+      "entry": [
+        "next.config.ts",
+        "payload.config.ts",
+        "eslint.config.mjs",
+        "vitest.config.ts",
+        "src/app/**/*.{ts,tsx}",
+        "scripts/**/*.{ts,mjs}",
+        "src/**/*.test.ts",
+        "src/**/*.typecheck.ts"
+      ]
+    },
     "packages/ui": {
       "entry": ["src/index.ts"]
     },
@@ -37,6 +60,9 @@
       "entry": ["src/index.ts"]
     },
     "packages/kith-inn-contracts": {
+      "entry": ["src/index.ts"]
+    },
+    "packages/hello-agent-contracts": {
       "entry": ["src/index.ts"]
     },
     "packages/weekly-menu-shared": {
