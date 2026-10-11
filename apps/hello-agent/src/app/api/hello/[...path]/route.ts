@@ -1,5 +1,4 @@
 import { z } from "zod";
-import type { Settings } from "@cfp/hello-agent-contracts";
 import { cms } from "../../../../cms/client";
 import { Repository } from "../../../../cms/repository";
 import { AppError } from "../../../../domain/contracts";
@@ -16,6 +15,17 @@ import {
   revokeTokens,
 } from "../../../../server/auth";
 import { failure, readJson, rateLimit } from "../../../../server/http";
+import { agentStream, readAgentInput } from "../../../../server/ag-ui";
+import {
+  illustrationPng,
+  pageHtml,
+  readArtifact,
+} from "../../../../domain/artifact-rendering";
+import {
+  A2UI_VERSION,
+  CATALOG_ID,
+  a2uiCatalog,
+} from "@cfp/hello-agent-protocol";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,16 +37,54 @@ const json = (value: unknown) =>
 export async function GET(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
+    if (path[0] === "a2ui-catalog" && path.length === 1)
+      return json(a2uiCatalog());
     if (path[0] === "config")
       return json({
         platformConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
         origin: process.env.HELLO_ORIGIN || "http://127.0.0.1:3310",
         advertisement: adConfiguration(),
-      } satisfies Settings);
+        protocols: { agUi: "1.0", a2ui: A2UI_VERSION, catalogId: CATALOG_ID },
+      });
     const payload = await cms();
     const owner = await authenticate(payload, request);
     const service = new GreetingService(new Repository(payload, owner));
+    if (
+      ["artifact-image", "artifact-page"].includes(path[0]) &&
+      path.length === 3
+    ) {
+      const artifact = await readArtifact(
+        service.repo,
+        z.coerce.number().int().positive().parse(path[1]),
+        path[2],
+      );
+      if (path[0] === "artifact-image" && artifact.kind === "image") {
+        const result =
+          artifact.source.type === "media"
+            ? await service.media.read(artifact.source.mediaId)
+            : { bytes: await illustrationPng(artifact), mimeType: "image/png" };
+        return new Response(new Uint8Array(result.bytes), {
+          headers: {
+            "Content-Type": result.mimeType,
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+          },
+        });
+      }
+      if (path[0] === "artifact-page" && artifact.kind === "page")
+        return new Response(pageHtml(artifact), {
+          headers: {
+            "Content-Type": "text/html; charset=utf-8",
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy":
+              "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox",
+            "Referrer-Policy": "no-referrer",
+          },
+        });
+      throw new AppError(404, "作品类型不匹配");
+    }
     if (path[0] === "context" && path.length === 2)
       return json(
         await new ContextService(service.repo).view(
@@ -118,7 +166,12 @@ export async function POST(request: Request, context: Context) {
       const credential = await mintCredential(payload, "bearer", owner.id);
       return json({ token: credential.token, expiresAt: credential.expiresAt });
     }
-    const body = await readJson(request);
+    const body = await readJson(
+      request,
+      path[0] === "ag-ui" ? 64 * 1024 : undefined,
+    );
+    if (path[0] === "ag-ui" && path.length === 1)
+      return agentStream(service, readAgentInput(body));
     if (path[0] === "context") {
       const args = z
         .object({

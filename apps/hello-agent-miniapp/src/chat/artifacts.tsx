@@ -1,0 +1,337 @@
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  Button,
+  Image,
+  Input,
+  ScrollView,
+  Text,
+  Textarea,
+  View,
+} from "@tarojs/components";
+import Taro from "@tarojs/taro";
+import {
+  applyA2ui,
+  artifactsSchema,
+  formAction,
+  toA2ui,
+  validateForm,
+  type ClientEvent,
+  type Component,
+  type FormValues,
+  type Surface,
+  type Surfaces,
+} from "@cfp/hello-agent-protocol";
+import { privateImageSource } from "./api";
+
+function ArtifactImage({ url, alt }: { url: string; alt: string }) {
+  const [source, setSource] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let active = true;
+    setFailed(false);
+    privateImageSource(url)
+      .then((value) => {
+        if (active) setSource(value);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [url]);
+  return (
+    <View>
+      {source && !failed ? (
+        <Image
+          className="artifact-image"
+          src={source}
+          mode="widthFix"
+          onError={() => setFailed(true)}
+          onClick={() => Taro.previewImage({ urls: [source], current: source })}
+        />
+      ) : (
+        <Text className="artifact-caption">
+          {failed ? "图片暂时无法读取" : "正在取图片…"}
+        </Text>
+      )}
+      <Text className="artifact-caption">{alt}</Text>
+    </View>
+  );
+}
+
+type Props = {
+  disabled?: boolean;
+  onAction?: (action: ClientEvent) => Promise<void>;
+  submitted?: boolean;
+  initialValues?: FormValues;
+};
+function SurfaceView({
+  surface,
+  disabled,
+  onAction,
+  submitted,
+  initialValues,
+}: Props & { surface: Surface }) {
+  const [values, setValues] = useState<FormValues>(
+    initialValues || surface.values,
+  );
+  const [error, setError] = useState("");
+  const [sending, setSending] = useState(false);
+  const inFlight = useRef(false);
+  useEffect(() => {
+    setValues(initialValues || surface.values);
+  }, [surface.values, initialValues]);
+  const locked = disabled || sending || submitted;
+  async function submit() {
+    if (locked || inFlight.current || !onAction) return;
+    const fields = Object.values(surface.components).flatMap((component) =>
+      component.component === "FormField" ? [component.field] : [],
+    );
+    const problem = validateForm(
+      {
+        kind: "form",
+        id: "form",
+        title: "",
+        description: "",
+        submitLabel: "",
+        fields,
+      },
+      values,
+    );
+    setError(problem || "");
+    if (problem) return;
+    inFlight.current = true;
+    setSending(true);
+    try {
+      await onAction(formAction(surface, values));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "提交失败，请重试");
+    } finally {
+      inFlight.current = false;
+      setSending(false);
+    }
+  }
+  function render(id: string, ancestors: string[] = []): ReactNode {
+    if (ancestors.includes(id) || ancestors.length > 8)
+      return <Text key={id}>这部分作品无法显示</Text>;
+    const component = surface.components[id];
+    if (!component) return null;
+    const next = [...ancestors, id];
+    const child = (id: string) => render(id, next);
+    switch (component.component) {
+      case "Column":
+        return (
+          <View key={id} className="artifact-column">
+            {component.children.map(child)}
+          </View>
+        );
+      case "Card":
+        return (
+          <View key={id} className="artifact-card">
+            {child(component.child)}
+          </View>
+        );
+      case "Text":
+        return (
+          <Text
+            key={id}
+            className={`artifact-text artifact-${component.variant || "body"}`}
+            selectable
+          >
+            {component.text}
+          </Text>
+        );
+      case "Image":
+        return (
+          <ArtifactImage key={id} url={component.url} alt={component.alt} />
+        );
+      case "Table":
+        return (
+          <ScrollView key={id} scrollX className="artifact-table-scroll">
+            <View className="artifact-table">
+              {[component.columns, ...component.rows].map((row, rowIndex) => (
+                <View
+                  key={rowIndex}
+                  className={`artifact-table-row ${rowIndex === 0 ? "artifact-table-head" : ""}`}
+                >
+                  {row.map((cell, cellIndex) => (
+                    <Text
+                      key={cellIndex}
+                      className="artifact-table-cell"
+                      selectable
+                    >
+                      {cell}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        );
+      case "Page":
+        return <PageView key={id} component={component} />;
+      case "FormField": {
+        const field = component.field;
+        const fieldId = component.value.path.slice("/values/".length);
+        const update = (value: string) =>
+          setValues((current) => ({
+            ...current,
+            [fieldId]:
+              field.type === "number" &&
+              value.trim() !== "" &&
+              Number.isFinite(Number(value))
+                ? Number(value)
+                : value,
+          }));
+        return (
+          <View key={id} className="artifact-field">
+            <Text className="artifact-label">
+              {field.label}
+              {field.required ? " *" : "（选填）"}
+            </Text>
+            {field.type === "longText" ? (
+              <Textarea
+                className="artifact-input artifact-textarea"
+                value={String(values[fieldId] ?? "")}
+                placeholder={field.placeholder || "写下你愿意分享的部分"}
+                maxlength={1200}
+                disabled={locked}
+                onInput={(event) => update(event.detail.value)}
+              />
+            ) : (
+              <Input
+                className="artifact-input"
+                type={field.type === "number" ? "digit" : "text"}
+                value={String(values[fieldId] ?? "")}
+                placeholder={
+                  field.placeholder ||
+                  (field.type === "number"
+                    ? `${field.min ?? ""} ～ ${field.max ?? ""}`
+                    : "在这里填写")
+                }
+                maxlength={1200}
+                disabled={locked}
+                onInput={(event) => update(event.detail.value)}
+              />
+            )}
+          </View>
+        );
+      }
+      case "Button":
+        return (
+          <View key={id}>
+            {error && <Text className="artifact-error">{error}</Text>}
+            <Button
+              className="control artifact-submit"
+              disabled={locked || !onAction || undefined}
+              onClick={() => void submit()}
+            >
+              {submitted
+                ? "已提交，阿J已接着回应"
+                : sending
+                  ? "正在提交…"
+                  : child(component.child)}
+            </Button>
+            <Text className="artifact-caption">
+              {submitted
+                ? "填写内容已保存到这段对话"
+                : "只在点击提交后发送，也可以跳过这份练习"}
+            </Text>
+          </View>
+        );
+    }
+  }
+  return <View className="artifact-surface">{render("root")}</View>;
+}
+
+function PageView({
+  component,
+}: {
+  component: Extract<Component, { component: "Page" }>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const sections = expanded
+    ? component.page.sections
+    : component.page.sections.slice(0, 1);
+  return (
+    <View className="artifact-page">
+      {component.page.subtitle && (
+        <Text className="artifact-caption">{component.page.subtitle}</Text>
+      )}
+      {sections.map((section, index) => (
+        <View key={index} className="artifact-section">
+          <Text className="artifact-heading">{section.heading}</Text>
+          <Text className="artifact-text">{section.body}</Text>
+          {section.items?.map((item, i) => (
+            <Text key={i} className="artifact-text">
+              • {item}
+            </Text>
+          ))}
+        </View>
+      ))}
+      {component.page.sections.length > 1 && (
+        <Button
+          className="control artifact-link"
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "收起页面" : "展开整页"}
+        </Button>
+      )}
+      {process.env.TARO_ENV === "h5" && (
+        <Button
+          className="control artifact-link"
+          onClick={() => window.location.assign(component.url)}
+        >
+          打开独立页面 ↗
+        </Button>
+      )}
+    </View>
+  );
+}
+
+export function LiveArtifacts({ surfaces }: { surfaces: Surfaces }) {
+  return (
+    <View>
+      {Object.values(surfaces).map((surface) => (
+        <SurfaceView key={surface.id} surface={surface} disabled />
+      ))}
+    </View>
+  );
+}
+
+export function Artifacts({
+  turnId,
+  artifacts,
+  responses,
+  ...props
+}: Props & {
+  turnId: number;
+  artifacts: unknown;
+  responses: Record<string, FormValues>;
+}) {
+  const parsed = useMemo(() => {
+    const result = artifactsSchema.safeParse(artifacts ?? [], {
+      jitless: true,
+    });
+    if (!result.success) return undefined;
+    return toA2ui(turnId, result.data).reduce<Surfaces>(applyA2ui, {});
+  }, [turnId, artifacts]);
+  if (!parsed)
+    return (
+      <Text className="artifact-error">作品格式暂不支持，文字回复仍可阅读</Text>
+    );
+  return (
+    <View>
+      {Object.values(parsed).map((surface) => (
+        <SurfaceView
+          key={surface.id}
+          surface={surface}
+          {...props}
+          submitted={!!responses[surface.id]}
+          initialValues={responses[surface.id]}
+        />
+      ))}
+    </View>
+  );
+}

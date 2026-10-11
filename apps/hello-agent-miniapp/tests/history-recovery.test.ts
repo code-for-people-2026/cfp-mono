@@ -27,6 +27,23 @@ vi.mock("@tarojs/components", () => ({
   ScrollView: "scroll-view",
 }));
 
+type AgentBody = {
+  runId: string;
+  messages: { content: string }[];
+  forwardedProps: { mediaIds: number[] };
+};
+const inputOf = (body: AgentBody) => ({
+  text: body.messages[0].content,
+  mediaIds: body.forwardedProps.mediaIds,
+});
+const wire = (runId: string) =>
+  [
+    { type: "RUN_STARTED", runId },
+    { type: "RUN_FINISHED", runId },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
+
 let renderer: ReactTestRenderer | undefined;
 let history: Turn[];
 const initial: Turn = {
@@ -127,7 +144,7 @@ describe("聊天历史与图片失败隔离", () => {
     );
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
   });
@@ -181,7 +198,7 @@ describe("聊天历史与图片失败隔离", () => {
     );
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
   });
@@ -226,7 +243,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("小程序语音尚未开通");
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
     act(() =>
@@ -240,12 +257,12 @@ describe("聊天历史与图片失败隔离", () => {
   it("服务端仍在处理时只查状态，不启动第二次生成", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     platform.request.mockImplementation(
-      async (options: { url: string; data?: { input: Turn["input"] } }) => {
-        if (options.url.endsWith("/greet")) {
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             status: "running",
             greeting: null,
           });
@@ -275,7 +292,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("上次提交仍在处理");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -283,12 +300,12 @@ describe("聊天历史与图片失败隔离", () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let checks = 0;
     platform.request.mockImplementation(
-      async (options: { url: string; data?: { input: Turn["input"] } }) => {
-        if (options.url.endsWith("/greet")) {
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             mode: "byok",
             greeting: "自带密钥生成过的回复",
           });
@@ -339,7 +356,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -350,31 +367,30 @@ describe("聊天历史与图片失败隔离", () => {
       const ids: string[] = [];
       let statusChecks = 0;
       platform.request.mockImplementation(
-        async (options: {
-          url: string;
-          data?: { requestId: string; input: Turn["input"] };
-        }) => {
+        async (options: { url: string; data?: AgentBody }) => {
           if (options.url.includes("/requests/")) {
             if (++statusChecks === 1) throw new Error("状态查询也断网");
             return {
               statusCode: 200,
-              data: { turn: savedOnServer ? history.at(-1) : null },
+              data: {
+                turn: savedOnServer || ids.length > 1 ? history.at(-1) : null,
+              },
             };
           }
-          if (options.url.endsWith("/greet")) {
+          if (options.url.endsWith("/ag-ui")) {
             const args = options.data!;
-            ids.push(args.requestId);
+            ids.push(args.runId);
             if (ids.length === 1 && !savedOnServer)
               throw new Error("请求尚未送达");
             const row = {
               ...initial,
               id: 2,
-              input: args.input,
+              input: inputOf(args),
               greeting: "只保存一份的回复",
             };
             history.push(row);
             if (ids.length === 1) throw new Error("成功响应丢失");
-            return { statusCode: 200, data: row };
+            return { statusCode: 200, data: wire(args.runId) };
           }
           return originalRequest(options);
         },
@@ -475,34 +491,53 @@ describe("聊天历史与图片失败隔离", () => {
         expired = false;
         return { statusCode: 200, data: { owner: `visitor-${identities}` } };
       }
-      if (expired) return { statusCode: 401, data: { error: "访客身份已失效" } };
+      if (expired)
+        return { statusCode: 401, data: { error: "访客身份已失效" } };
       if (identities === 2 && options.url.endsWith("/sessions"))
         return { statusCode: 200, data: [] };
       return originalRequest(options);
     });
     await mount();
-    act(() => renderer!.root.findByType("textarea").props.onInput({ detail: { value: "还没发出的草稿" } }));
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "还没发出的草稿" } }),
+    );
     expired = true;
     await act(async () => {
-      await renderer!.root.findAllByType("button")
-        .find((button) => button.props.className.includes("send-button"))!.props.onClick();
+      await renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("send-button"))!
+        .props.onClick();
     });
     expect(text()).toContain("旧聊天记录不会删除");
     expect(identities).toBe(1);
-    const restart = () => renderer!.root.findAllByType("button")
-      .find((button) => button.props.className.includes("restart-identity"))!;
+    const restart = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("restart-identity"))!;
     platform.showModal.mockResolvedValueOnce({ confirm: false, cancel: true });
-    await act(async () => { await restart().props.onClick(); });
+    await act(async () => {
+      await restart().props.onClick();
+    });
     expect(identities).toBe(1);
-    expect(renderer!.root.findByType("textarea").props.value).toBe("还没发出的草稿");
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "还没发出的草稿",
+    );
     expect(text()).toContain("仍能看见的好彩头");
     platform.showModal.mockResolvedValueOnce({ confirm: true, cancel: false });
-    await act(async () => { await restart().props.onClick(); });
+    await act(async () => {
+      await restart().props.onClick();
+    });
     expect(identities).toBe(2);
     expect(text()).not.toContain("旧聊天记录不会删除");
     expect(text()).not.toContain("仍能看见的好彩头");
-    act(() => renderer!.root.findAllByType("button")
-      .find((button) => button.props.className.includes("keyboard-toggle"))!.props.onClick());
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("keyboard-toggle"))!
+        .props.onClick(),
+    );
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
     expect(platform.setStorageSync).not.toHaveBeenCalled();
@@ -563,16 +598,13 @@ describe("聊天历史与图片失败隔离", () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let submittedId = "";
     platform.request.mockImplementation(
-      async (options: {
-        url: string;
-        data?: { requestId: string; input: Turn["input"] };
-      }) => {
-        if (options.url.endsWith("/greet")) {
-          submittedId = options.data!.requestId;
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
+          submittedId = options.data!.runId;
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             greeting: "响应虽丢失但已经保存",
           });
           throw new Error("合成故障：保存后连接中断");
@@ -601,7 +633,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -660,23 +692,25 @@ describe("聊天历史与图片失败隔离", () => {
   it("回复已保存但历史刷新失败时，不把已发送输入放回草稿", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let saved = false;
-    platform.request.mockImplementation(async (options: { url: string }) => {
-      if (options.url.endsWith("/greet")) {
-        saved = true;
-        return {
-          statusCode: 200,
-          data: {
+    platform.request.mockImplementation(
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
+          saved = true;
+          history.push({
             ...initial,
             id: 2,
             input: { text: "今天要加油", mediaIds: [] },
             greeting: "已经保存的新回复",
-          },
-        };
-      }
-      if (saved && options.url.endsWith("/sessions/1"))
-        throw new Error("历史暂不可用");
-      return originalRequest(options);
-    });
+          });
+          return { statusCode: 200, data: wire(options.data!.runId) };
+        }
+        if (options.url.includes("/requests/"))
+          return { statusCode: 200, data: { turn: history.at(-1) } };
+        if (saved && options.url.endsWith("/sessions/1"))
+          throw new Error("历史暂不可用");
+        return originalRequest(options);
+      },
+    );
     await mount();
     act(() =>
       renderer!.root
@@ -694,7 +728,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("回复已保存");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -713,7 +747,7 @@ describe("聊天历史与图片失败隔离", () => {
   it("真正发送失败时仍保留原草稿，允许用户重试", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     platform.request.mockImplementation(async (options: { url: string }) =>
-      options.url.endsWith("/greet")
+      options.url.endsWith("/ag-ui")
         ? { statusCode: 503, data: { error: "生成暂不可用" } }
         : originalRequest(options),
     );

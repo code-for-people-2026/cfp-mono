@@ -8,3 +8,5 @@ declare module "*.svg?raw" {
   const source: string;
   export default source;
 }
+
+declare const HELLO_BUILD_LABEL: string;

@@ -20,7 +20,7 @@ export function failure(error: unknown) {
   );
 }
 
-export async function readJson(request: Request, maximum = 8 * 1024 * 1024): Promise<unknown> {
+export async function readJson(request: Request, maximum = 8 * 1024 * 1024) {
   const reader = request.body?.getReader();
   if (!reader) throw new AppError(400, "缺少请求内容");
   const chunks: Uint8Array[] = [];
@@ -36,7 +36,7 @@ export async function readJson(request: Request, maximum = 8 * 1024 * 1024): Pro
     chunks.push(value);
   }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   } catch {
     throw new AppError(400, "请求不是有效 JSON");
   }

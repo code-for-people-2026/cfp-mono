@@ -1,13 +1,22 @@
 import { z } from "zod";
+import {
+  formResponseSchema,
+  replySchema,
+  artifactsSchema,
+} from "@cfp/hello-agent-protocol";
 
 // 只含跨端协议与校验；不能依赖 Payload、ADK 或 Node 运行时。
 export const inputSchema = z
   .object({
     text: z.string().trim().max(4000).default(""),
     mediaIds: z.array(z.number().int().positive()).max(3).default([]),
+    formResponse: formResponseSchema.optional(),
   })
   .refine(
-    (value) => value.text.length > 0 || value.mediaIds.length > 0,
+    (value) =>
+      value.text.length > 0 ||
+      value.mediaIds.length > 0 ||
+      !!value.formResponse,
     "请输入文字或上传图片",
   );
 export const modeSchema = z.enum(["platform", "byok", "external"]);
@@ -18,10 +27,7 @@ export const turnSchema = z.object({
   mode: z.enum(["platform", "byok"]),
   apiKey: z.string().min(10).max(256).optional(),
 });
-export const greetingSchema = z.object({
-  greeting: z.string().trim().min(2).max(1000),
-  association: z.string().trim().min(1).max(500),
-});
+export const greetingSchema = replySchema;
 export const externalSchema = z.object({
   sessionId: z.number().int().positive(),
   requestId: z.string().uuid(),
@@ -41,6 +47,8 @@ export const turnResultSchema = z.object({
   mode: modeSchema,
   greeting: z.string().nullish(),
   association: z.string().nullish(),
+  approach: z.string().nullish(),
+  artifacts: artifactsSchema.nullish(),
   model: z.string().nullish(),
   createdAt: z.string(),
 });

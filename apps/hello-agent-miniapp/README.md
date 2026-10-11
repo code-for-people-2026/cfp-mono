@@ -81,7 +81,7 @@ HELLO_WECHAT_SI_VERSION=<后台已授权的版本号> HELLO_API_ORIGIN=https://a
 
 不要把示例仓库中的历史版本误当成当前后台版本。显式设置 `HELLO_WECHAT_SI_VERSION=''` 会禁用插件，点击语音提示“尚未开通”，键盘和图片仍可用。此开关和插件 AppID 都是公开配置，不需要 AppSecret 或模型密钥。
 
-微信端 API 响应校验显式传入 `jitless: true`，不依赖 `Function` 动态编译；H5 与服务端保持原方式。成功响应、嵌套对象和错误响应仍完整校验，不能用类型断言或跳过校验修复微信兼容性。回归测试模拟微信返回不可调用对象的动态函数构造器，覆盖真实 API 客户端边界。
+微信端 API 响应校验显式传入 `jitless: true`，不依赖 `Function` 动态编译；A2UI 与 AG-UI 的跨端解析同样不依赖动态编译。成功响应、嵌套对象和错误响应仍完整校验，不能用类型断言或跳过校验修复微信兼容性。回归测试模拟微信返回不可调用对象的动态函数构造器，覆盖真实 API 客户端边界。
 
 ## 验证
 
@@ -98,3 +98,16 @@ pnpm --filter @cfp/hello-agent test:e2e
 `test:wxss` 使用本机微信开发者工具自带的 `wcsc` 编译实际微信产物，覆盖 Taro 构建不能发现的样式语法问题。默认查找 macOS 安装路径；其他路径通过 `HELLO_WXSS_COMPILER` 指定。缺少工具时明确失败，不静默跳过。该检查应在构建后、预览或上传前执行，不依赖微信账号授权。
 
 两端编译通过不等于微信真机验收。H5 和开发者工具模拟器已验证真实文字生成；微信端认证 / 图片接口另有隔离 HTTP 测试。真机键盘行为、域名配置与相册权限仍需进一步检查。
+
+## 可追溯的测试发布
+
+先提交通过检查的源码，再运行：
+
+```sh
+HELLO_RELEASE_VERSION=0.3.3 HELLO_API_ORIGIN=https://aj-preview.codeforpeople.cn pnpm --filter @cfp/hello-agent-miniapp release:build
+pnpm --filter @cfp/hello-agent-miniapp test:wxss
+```
+
+发布入口取回最新 `origin/main`，拒绝未包含该主分支或相关源码未提交的目录；构建两端后检查真实产物中的新版输入栏、语音插件、作品与 AG-UI。两份产物均写入 `build-info.json`（版本、提交、主分支基线、构建时间），设置显示版本号。部署后运行 `node scripts/check-release.mjs https://aj-preview.codeforpeople.cn` 核对实际线上资源，不能以“上传成功”代替 UI 验收。微信上传记录与体验版指向必须分别核对。
+
+聊天作品支持卡片、表格、插画、结构化网页和表单。表单不自动发送；只有提交才生成下一轮，沿用普通发送的请求编号、失联恢复和防重复机制，历史加载后恢复已提交答案。

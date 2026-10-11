@@ -207,6 +207,18 @@ export const collections: CollectionConfig[] = [
       admin: { components: { Cell: "/src/cms/admin-cells#GreetingCell" } },
     },
     { name: "association", label: "联想依据", type: "textarea" },
+    { name: "approach", label: "回应视角", type: "text" },
+    {
+      name: "artifacts",
+      label: "回应作品",
+      type: "json",
+      typescriptSchema: [
+        () => ({
+          type: "object",
+          tsType: 'import("@cfp/hello-agent-protocol").Artifact[] | null',
+        }),
+      ],
+    },
     { name: "model", label: "模型或外部声明", type: "text" },
     { name: "promptVersion", label: "提示词版本", type: "text" },
     { name: "error", label: "安全错误信息", type: "text" },

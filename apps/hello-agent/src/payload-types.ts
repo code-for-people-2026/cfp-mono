@@ -198,6 +198,8 @@ export interface Greeting {
   input: import('@cfp/hello-agent-contracts').Inspiration;
   greeting?: string | null;
   association?: string | null;
+  approach?: string | null;
+  artifacts?: import('@cfp/hello-agent-protocol').Artifact[] | null;
   model?: string | null;
   promptVersion?: string | null;
   error?: string | null;
@@ -401,6 +403,8 @@ export interface GreetingsSelect<T extends boolean = true> {
   input?: T;
   greeting?: T;
   association?: T;
+  approach?: T;
+  artifacts?: T;
   model?: T;
   promptVersion?: T;
   error?: T;

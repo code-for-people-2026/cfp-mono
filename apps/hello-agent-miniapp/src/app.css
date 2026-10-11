@@ -858,3 +858,129 @@ input {
   background: #fff1e7;
   color: #ac724e;
 }
+
+.artifact-surface {
+  margin-top: 12px;
+  white-space: normal;
+}
+.artifact-card {
+  border: 1px solid #dce5d9;
+  border-radius: 16px;
+  padding: 16px 13px;
+  background: #fcfdf8;
+  overflow: hidden;
+}
+.artifact-column {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.artifact-text {
+  display: block;
+  font-size: 13px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.artifact-h3 {
+  font-size: 16px;
+  font-weight: 650;
+  color: #395943;
+}
+.artifact-caption {
+  display: block;
+  font-size: 11px;
+  line-height: 1.7;
+  color: #7b8f7c;
+  margin: 5px 0;
+  white-space: pre-wrap;
+}
+.artifact-image {
+  display: block;
+  width: 100%;
+  border-radius: 10px;
+}
+.artifact-table-scroll {
+  width: 100%;
+  border: 1px solid #dce5d9;
+  border-radius: 8px;
+}
+.artifact-table {
+  display: table;
+  min-width: 100%;
+}
+.artifact-table-row {
+  display: table-row;
+}
+.artifact-table-cell {
+  display: table-cell;
+  min-width: 95px;
+  max-width: 220px;
+  padding: 9px 10px;
+  font-size: 12px;
+  line-height: 1.7;
+  border-bottom: 1px solid #e6ece1;
+  border-right: 1px solid #e6ece1;
+  white-space: pre-wrap;
+}
+.artifact-table-head {
+  background: #eaf0e3;
+  font-weight: 600;
+}
+.artifact-field {
+  display: block;
+}
+.artifact-label {
+  display: block;
+  font-size: 12px;
+  line-height: 1.7;
+  font-weight: 550;
+  margin-bottom: 5px;
+}
+.artifact-input {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid #d4dfd0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.7;
+  background: white;
+  box-sizing: border-box;
+}
+.artifact-textarea {
+  min-height: 85px;
+  height: 95px;
+}
+.artifact-submit {
+  width: 100%;
+  padding: 10px;
+  background: #56765d;
+  border-radius: 9px;
+  color: white;
+  font-size: 13px;
+  margin-top: 5px;
+}
+.artifact-submit[disabled] {
+  opacity: 0.6;
+}
+.artifact-link {
+  display: inline-block;
+  color: #527459;
+  padding: 8px 4px;
+  font-size: 12px;
+}
+.artifact-heading {
+  display: block;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 12px 0 6px;
+}
+.artifact-error {
+  display: block;
+  color: #a46448;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 5px 0;
+}

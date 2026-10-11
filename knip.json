@@ -62,6 +62,9 @@
     "packages/kith-inn-contracts": {
       "entry": ["src/index.ts"]
     },
+    "packages/hello-agent-protocol": {
+      "entry": ["src/index.ts", "test/**/*.ts"]
+    },
     "packages/hello-agent-contracts": {
       "entry": ["src/index.ts"]
     },

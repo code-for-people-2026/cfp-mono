@@ -22,6 +22,9 @@ export default defineConfig(async () => ({
   framework: "react",
   compiler: "vite",
   defineConstants: {
+    HELLO_BUILD_LABEL: JSON.stringify(
+      process.env.HELLO_RELEASE_VERSION || "开发版",
+    ),
     HELLO_API_ORIGIN: JSON.stringify(
       process.env.HELLO_API_ORIGIN || "http://127.0.0.1:3310",
     ),

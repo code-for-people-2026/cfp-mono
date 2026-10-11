@@ -30,6 +30,12 @@ describe("阿J人设与提示词变更门槛", () => {
         "42649e8be2e6f838b7bd18264e074f25ecbff511fc82a6264676016ac725bb26",
       "aj-v2.1":
         "7d92c045ddacfee698672f258e1610ade686d0cacf7184c2605f5000a368c943",
+      "aj-v3.0":
+        "ce4f1d51344e78b8808445401e93eecf45ecd93cf0419ae200c117397b230fb2",
+      "aj-v3.1":
+        "fd10b91e88754bd921e426a794c19f9bec994ce627dad4622d85376081b591d6",
+      "aj-v3.2":
+        "36331056237208efbac3c61e877e536e0411f885143dbf6cfadfe6bc292d2952",
     };
     expect(
       createHash("sha256").update(GREETING_INSTRUCTION).digest("hex"),

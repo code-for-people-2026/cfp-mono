@@ -12,6 +12,12 @@ import Taro from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { MemoryMeter, MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
+import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
+import {
+  type ClientEvent,
+  type FormValues,
+  type RunProgress,
+} from "@cfp/hello-agent-protocol";
 import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
@@ -58,6 +64,7 @@ export default function Chat() {
   const [apiKey, setApiKey] = useState("");
   const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<RunProgress>();
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -267,20 +274,38 @@ export default function Chat() {
       setUploading(false);
     }
   }
-  async function send() {
-    if (!ready || mode === "external" || sendLock.current) return;
+  async function send(formInput?: Input) {
+    const formReady =
+      !!formInput &&
+      canSend(
+        "表单",
+        [],
+        mode,
+        apiKey,
+        !!settings?.platformConfigured,
+        disabled || memory?.level === "empty",
+      );
+    if (
+      !(formInput ? formReady : ready) ||
+      mode === "external" ||
+      sendLock.current
+    )
+      return;
     sendLock.current = true;
     const draft = { text: text.trim(), images: attachments };
-    const input = {
+    const input = formInput || {
       text: draft.text,
       mediaIds: draft.images.map((item) => item.id),
     };
     const key = apiKey;
     setApiKey("");
     setBusy(true);
-    setPending(draft);
-    setText("");
-    setAttachments([]);
+    setPending(formInput ? { text: formInput.text, images: [] } : draft);
+    setProgress(undefined);
+    if (!formInput) {
+      setText("");
+      setAttachments([]);
+    }
     setError("");
     let id = sessionId;
     let saved = false;
@@ -308,7 +333,14 @@ export default function Chat() {
         // 只有服务端明确失败才允许新的一轮；查询失败或暂未找到都不能随意换编号。
         if (status.turn?.status === "failed") current.requestId = requestId();
       }
-      result ||= await api.generate(id, current.requestId, mode, input, key);
+      result ||= await api.generate(
+        id,
+        current.requestId,
+        mode,
+        input,
+        key,
+        setProgress,
+      );
       saved = true;
       submission.current = undefined;
       // 保存成功与刷新成功是两件事，不能因随后读取失败诱导用户重复发送。
@@ -341,18 +373,46 @@ export default function Chat() {
         } else {
           if (status?.turn?.status === "failed") submission.current = undefined;
           problem(value);
-          setText(draft.text);
-          setAttachments(draft.images);
+          if (!formInput) {
+            setText(draft.text);
+            setAttachments(draft.images);
+          }
         }
         if (id) await readHistory(id).catch(recoveryFailed);
       }
     } finally {
       setPending(undefined);
+      setProgress(undefined);
       setBusy(false);
       sendLock.current = false;
       setAnchor((value) => value + 1);
     }
   }
+  const formResponses = Object.fromEntries(
+    history
+      .filter((row) => row.status === "completed" && row.input.formResponse)
+      .map((row) => {
+        const response = row.input.formResponse!;
+        return [
+          `turn_${response.turnId}_${response.artifactId}`,
+          response.values,
+        ];
+      }),
+  ) as Record<string, FormValues>;
+  async function submitForm(event: ClientEvent) {
+    const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
+    if (!match) throw new Error("表单来源无效");
+    await send({
+      text: "提交练习表单",
+      mediaIds: [],
+      formResponse: {
+        turnId: Number(match[1]),
+        artifactId: match[2],
+        values: event.action.context.values,
+      },
+    });
+  }
+
   function closePanel() {
     if (!tokenBusy) {
       setPanel(null);
@@ -537,6 +597,20 @@ export default function Chat() {
                             ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
                             : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
                       </Text>
+                      {row.status === "completed" && (
+                        <Artifacts
+                          turnId={row.id}
+                          artifacts={row.artifacts}
+                          responses={formResponses}
+                          disabled={
+                            disabled ||
+                            mode === "external" ||
+                            memory?.level === "empty" ||
+                            (mode === "byok" && apiKey.length < 10)
+                          }
+                          onAction={submitForm}
+                        />
+                      )}
                       {row.status === "completed" && row.association && (
                         <View className="association">
                           <Button
@@ -556,6 +630,7 @@ export default function Chat() {
                           {expanded.includes(row.id) && (
                             <Text className="association-text">
                               {row.association}
+                              {row.approach ? ` · ${row.approach}` : ""}
                               {"\n"}
                               {
                                 modes.find((item) => item.id === row.mode)
@@ -604,7 +679,14 @@ export default function Chat() {
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
-                      <Text>阿 J 正在换个角度想…</Text>
+                      <Text>
+                        {progress?.text ||
+                          progress?.step ||
+                          "阿 J 正在换个角度想…"}
+                      </Text>
+                      {progress && (
+                        <LiveArtifacts surfaces={progress.surfaces} />
+                      )}
                     </View>
                   </View>
                 </View>
@@ -709,7 +791,7 @@ export default function Chat() {
                   items.filter((item) => item.id !== id),
                 )
               }
-              onSend={send}
+              onSend={() => send()}
             />
           )}
           <Text className="composer-footnote">
@@ -764,6 +846,12 @@ export default function Chat() {
                   />
                   <Text className="sheet-description">
                     a jOKer · 换一种连接方式，接着聊，不用重新开始。
+                  </Text>
+                  <Text className="sheet-note">
+                    测试版{" "}
+                    {typeof HELLO_BUILD_LABEL === "string"
+                      ? HELLO_BUILD_LABEL
+                      : "开发版"}
                   </Text>
                   <Text className="sheet-note">
                     当前模型：

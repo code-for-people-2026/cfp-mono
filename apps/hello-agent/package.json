@@ -17,7 +17,7 @@
     "test:coverage": "vitest run --coverage && pnpm test:integration",
     "test:e2e": "tsx scripts/e2e.ts",
     "test:http": "tsx scripts/http-smoke.ts",
-    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts",
+    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts && tsx scripts/artifact-check.ts",
     "db:images": "tsx scripts/migrate-images.ts",
     "test:external": "tsx scripts/external-smoke.ts",
     "eval": "tsx scripts/evaluate.ts",
@@ -38,7 +38,10 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "sharp": "0.34.5",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@cfp/hello-agent-protocol": "workspace:*",
+    "@ag-ui/core": "1.0.2",
+    "@ag-ui/encoder": "1.0.2"
   },
   "devDependencies": {
     "@balena/dockerignore": "1.0.2",
