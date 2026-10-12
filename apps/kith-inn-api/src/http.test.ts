@@ -7,10 +7,10 @@ import { createKithInnHttpServer } from "./http";
 
 describe("HTTP boundary on a real socket", () => {
   const token = "a".repeat(43), authorization = `Bearer ${token}`;
-  const session = { merchantId: "owner", tokenHash: Buffer.alloc(32) };
+  const session = { merchantId: "owner", memberId: "member", tokenHash: Buffer.alloc(32) };
   const logger = vi.fn(), readiness = vi.fn(async () => {});
   const sessions = {
-    login: vi.fn(async () => ({ token, expiresAt: new Date(Date.now() + 60_000).toISOString() })),
+    login: vi.fn(async () => ({ token, memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: new Date(Date.now() + 60_000).toISOString() })),
     authenticate: vi.fn(async () => session), revoke: vi.fn(async () => {})
   };
   let server: Server, port: number, now: number;

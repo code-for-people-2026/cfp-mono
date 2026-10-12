@@ -1,10 +1,23 @@
 # 街坊味菜单 MVP 开发任务
 
+2026-10-09 最新范围：三位测试者各有独立测试店，菜品、周菜单、历史和生成参考互不混用；正式环境单独部署，只预置桃子店铺。只有明确授权加入同店的成员才共享数据。无公开入驻、选店或顾客端。本地成员迁移与隔离自动化已通过；云端仍是旧单身份版本，真实同事授权及手机验收尚未执行。
+
 日期：2026-09-22 · 状态：#357～#359 核心闭环与用户反馈已可本地试用，由 PR #376 集成；真实微信与最终验收仍待完成 · 依据：[spec.md](spec.md)、[plan.md](plan.md)、[data-model.md](data-model.md)、[接口契约](contracts/openapi.json)
 
 当前合并安排：用户已授权 PR #376 集成本地 H5 MVP，覆盖前序 #361～#367、#369～#375；独立 PR #368 不包含在内。保持下列任务 ID 和验收边界，历史切片及测试数量仅对应当时版本；最终验证以 PR #376 和 [合并核查记录](checklists/merge-review.md) 为准。任务勾选不冒充用户或微信真机验收。
 
 GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/cfp-mono/issues/357) → [#358 周菜单](https://github.com/code-for-people-2026/cfp-mono/issues/358) → [#359 复制](https://github.com/code-for-people-2026/cfp-mono/issues/359) → [#360 运行交接](https://github.com/code-for-people-2026/cfp-mono/issues/360)。复用下表，不新增任务拆分。T001/T002 已实现并通过37个测试及独立审查；T003～T005 已实现并通过26个含真实PG17的测试及独立审查。T006/T007 会话与原生HTTP已实现，API累计54个测试（真实PG17及socket）及独立审查通过。T008/T009 菜池API已实现，累计67个API测试及独立审查通过。各片尚未合并，暂不勾选完成；T013/T014客户端基础已实现，24个测试、H5/weapp构建和独立审查通过；T015菜池页面已实现，累计33个前端单测、6条H5浏览器回归及双构建通过，真实API/PG17联调通过；按指定原型修正录入/预览视觉，同尺寸成对截图及独立复核通过（见小程序 design-qa.md），待用户视觉验收。T010～T012、T016～T019 已实现，完整基线 b385ec1 通过前端51、API93、契约37测试、18条H5回归及 H5/weapp 构建；当前界面反馈迭代见文末。#360 已有运行准备 PR，真实微信及最终交付证据仍待补齐。Q1～Q3 已按用户选择 1A、2A、3A 写入功能规格；以下任务执行已确认的重排、缺菜失败和分享后编辑规则。
+
+## 0. 2026-10-09 当前增量：独立测试店与经营成员
+
+云端仍是单一指定微信身份，本地已新增迁移、成员授权和店铺隔离。以下新目标复用原任务位置；旧版本通过记录不计为本次完成，不重开全部历史切片。
+
+- [x] T003～T007 本地实现与自动化：保留旧店铺与数据，新增经营成员/会话关联；受控维护授权，验证共享、撤权及未授权拒绝。真实授权待下项云端验收。
+- [x] T008～T019 本地自动化：三店菜池/菜单/历史/相邻周/幂等隔离，显式同店共享与并发冲突；客户端拒绝在旧草稿/待确认写入仍在内存时启用其他身份；原 58 项页面回归通过。
+- [ ] T020～T024：独立测试/正式环境、两真实授权成员和未授权身份、同成员跨设备、迁移与撤权验收；成员退出不删店铺数据。
+
+不开发顾客下单、公开商户入驻或选店，不新增成员管理界面；本地自动化结果见发布证据；云端与真实成员仍待实施。
+
 
 ## 1. 实现 PR 与唯一任务映射
 
@@ -12,7 +25,7 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | PR1 | 建立唯一可执行契约 | 全部首版故事；AC-01～05、24、25 | T001、T002 | packages/kith-inn-contracts/；knip.json；pnpm-lock.yaml；不实现服务或页面 | 合法/非法 DTO 与 OpenAPI 示例一致 | 350～500 | 无 |
 | PR2 | 建立独立、可迁移的持久化基础 | US-01、03c；AC-25 | T003、T004、T005 | apps/kith-inn-api/ 配置、数据库、migration；turbo.json；.github/workflows/ci.yml；pnpm-lock.yaml；不开放业务 HTTP | 真实 PG17 上重复 migration、约束与事务回滚 | 350～500 | PR1 |
-| PR3 | 只有桃子可取得和使用会话 | 全部首版故事；AC-25 | T006、T007 | apps/kith-inn-api/ 会话、HTTP、运行入口、测试及包配置；turbo.json；pnpm-lock.yaml；不自动注册经营者或接入其他产品账户 | 非白名单拒绝、过期/撤销拒绝、日志无凭据 | 400～650 | PR2 |
+| PR3 | 获授权经营成员取得本店会话 | 全部首版故事；AC-25 | T006、T007 | apps/kith-inn-api/ 会话、HTTP、运行入口、测试及包配置；turbo.json；pnpm-lock.yaml；不自助入驻、不向项目成员自动授予经营权限 | 双成员共享、未授权/撤权拒绝、同成员跨设备、日志无凭据 | 400～650 | PR2 |
 | PR4 | 菜池写入原子且安全重试 | US-01；AC-01 | T008、T009 | apps/kith-inn-api/src/ 菜池、幂等及路由测试；不在服务端分类，不实现菜单生成 | 重名整批回滚、版本冲突、同键重放与异体拒绝 | 400～600 | PR3 |
 | PR5 | 生成仅返回符合约束的预览 | US-02；AC-02、04 | T010 | apps/kith-inn-api/src/generate.ts、generate.test.ts；不保存，不调用 AI 或外部菜谱库 | 固定随机源检查同餐不重复、跨餐复用、跳过餐 | 250～400 | PR2 |
 | PR6 | 周菜单原子保存、确认并可回看 | US-02、03a、03b、03c；AC-02～05 | T011、T012 | apps/kith-inn-api/src/ 周菜单存储、服务、路由和测试；不增加 confirm/share/candidates 接口 | 并发覆盖拒绝、响应丢失重试、快照稳定及重开读取 | 450～600 | PR4、PR5 |
@@ -30,9 +43,9 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 - [ ] T001 [PR1] 建立 `packages/kith-inn-contracts/package.json`、`tsconfig.json`、`eslint.config.mjs`、`vitest.config.ts`，依赖已有公共配置和 Zod；同步根 `knip.json`、`pnpm-lock.yaml`，提供 build/lint/typecheck/test/test:coverage 脚本。
 - [ ] T002 [PR1] 在 `packages/kith-inn-contracts/src/index.ts`、`src/index.test.ts` 实现本版请求、响应、错误 schema 和类型；以 `specs/022-kith-inn-menu-mvp/contracts/openapi.json` 和 `contracts/examples.json` 为一致性样本，覆盖日期、14 餐位置唯一、数量、版本及非法额外字段；跨字段服务规则明确留在服务端，不假装都由基础 JSON Schema 保证。
 - [ ] T003 [PR2] 建立 `apps/kith-inn-api/package.json`、`tsconfig.json`、`eslint.config.mjs`、`vitest.config.ts`、`src/config.ts`、`src/config.test.ts`，提供与 quickstart 对应的脚本，使用独立 `KITH_INN_DATABASE_URL`，校验必需配置而不输出密钥；同步 `pnpm-lock.yaml`。
-- [ ] T004 [PR2] 按数据模型编写 `apps/kith-inn-api/migrations/0001_initial.sql`、`scripts/migrate.mjs`、`src/database.ts`；建立经营账号、菜品、周菜单、会话及幂等记录，事务、唯一约束和索引保持同一迁移；专用 migration 记录与 advisory lock 不与另一个产品冲突，数据库已有成功迁移不得被静默改写。
+- [ ] T004 [PR2] 保留已执行的 `apps/kith-inn-api/migrations/0001_initial.sql`，新增成员授权及会话关联的增量迁移；复用 `scripts/migrate.mjs`、`src/database.ts`，保留原店铺 ID、菜品、周菜单及原合法身份，补齐约束与索引。专用 migration 记录与 advisory lock 不与另一个产品冲突；验证升级、重复执行和失败回滚，数据库已有成功迁移不得被改写。
 - [ ] T005 [PR2] 在 `apps/kith-inn-api/src/persistence.integration.test.ts` 用隔离 PG17 数据库验证重复 migration、同周唯一、异常事务回滚及约束；调整 `.github/workflows/ci.yml` 创建独立 `cfp_kith_inn_test` 数据库，调整 `turbo.json` 传递本产品测试配置。真实数据库测试缺配置或目标库名不以 `_test` 结尾时明确失败，不对开发/生产库执行测试清理，也不能跳过后声称持久化通过。
-- [ ] T006 [PR3] 在 `apps/kith-inn-api/src/auth.ts`、`src/sessions.ts`、`src/auth.test.ts` 实现微信 code 交换、唯一桃子 OpenID 白名单、随机会话与哈希存储、到期/撤销、跨设备同一经营者映射。测试使用注入的时钟和微信响应，接受合法的缺省错误码或 `errcode: 0`，拒绝非零错误码；不靠固定日历日期避免测试日后过期。
+- [ ] T006 [PR3] 在 `apps/kith-inn-api/src/auth.ts`、`src/sessions.ts`、`src/auth.test.ts` 实现微信 code 交换、店铺经营成员授权、随机会话与哈希存储、成员撤权和会话到期/撤销、同成员跨设备及不同成员共享本店映射。测试使用注入的时钟和微信响应，接受合法的缺省错误码或 `errcode: 0`，拒绝非零错误码；不靠固定日历日期避免测试日后过期。
 - [ ] T007 [PR3] 在 `apps/kith-inn-api/src/http.ts`、`src/http.test.ts`、`src/runtime.ts`、`src/runtime.test.ts`、`src/main.ts` 提供原生 HTTP 外壳、`POST /sessions/wechat`、`DELETE /sessions/current`、health/ready、请求限制、统一错误、脱敏日志和优雅关闭；所有业务路由继承服务端鉴权，未知身份不得查到内部内容。
 
 ## 3. 菜池与纯生成能力
@@ -60,8 +73,8 @@ GitHub 成果入口：[#357 菜品池](https://github.com/code-for-people-2026/c
 
 - [ ] T020 [PR10] 编写 `apps/kith-inn-api/Dockerfile`、`deploy/docker-compose.kith-inn.yml`、`deploy/.env.kith-inn.example`、`deploy/nginx.kith-inn.example.conf`：不可变版本镜像、非 root 运行、专用端口 3305、HTTPS 反向代理、health/ready、独立数据库与受限角色，真实密钥不进仓库。
 - [ ] T021 [PR10] 调整 `deploy/resolve-deploy-targets.sh`、`deploy/tests/production-targets.test.sh`、`.github/workflows/ci.yml`，补充 `deploy/tests/kith-inn-deploy.test.sh`；新后端/契约变更能进入独立镜像构建，单纯菜单小程序与文档变更按实际依赖判断；未知部署文件保留可靠兜底，回归确保其他产品的现有目标识别不被破坏。
-- [ ] T022 [PR10] 编写 `deploy/KITH_INN_RUNBOOK.md`：首次数据库和桃子身份绑定、环境配置、迁移前专库备份、重复 migration、隔离恢复、应用版本回退、失败停止点、数据保留与退出删除流程。提供可检查的 pg_dump/pg_restore 步骤，不假设列出备份目录等于恢复成功，不提前建设运营后台。
-- [ ] T023 [PR10] 在 `specs/022-kith-inn-menu-mvp/checklists/release-evidence.md` 记录真实 AppID、合法 HTTPS request 域名、经营身份绑定和微信真机登录、拒绝另一身份、保存/重开、跨设备读取、剪贴板复制证据；记录构建提交、日期、设备和脱敏结果。未提供凭据或未测试的项标未完成，不以 touristappid 或 H5 替代。
+- [ ] T022 [PR10] 编写 `deploy/KITH_INN_RUNBOOK.md`：店铺初始化与既有身份增量迁移、经营成员授权和撤权、测试/正式环境配置、迁移前专库备份、重复 migration、隔离恢复、应用版本回退、失败停止点、数据保留与退出删除流程。提供可检查的 pg_dump/pg_restore 步骤，不假设列出备份目录等于恢复成功，不提前建设运营后台。
+- [ ] T023 [PR10] 在 `specs/022-kith-inn-menu-mvp/checklists/release-evidence.md` 记录真实 AppID、合法 HTTPS request 域名、两个获授权经营成员微信真机登录、未授权/撤权拒绝、共享保存/重开与并发冲突、同成员跨设备读取、剪贴板复制证据；记录构建提交、日期、设备和脱敏结果。未提供凭据或未测试的项标未完成，不以 touristappid 或 H5 替代。
 - [ ] T024 [PR10] 在 `specs/022-kith-inn-menu-mvp/checklists/release-evidence.md` 记录专库备份→隔离库恢复→应用读取同一菜单的演练，以及退出删除后主库、会话和备份处置的验证、失败修正和责任人；依据最终确认的数据保留/删除承诺执行。使用隔离样本检验，涉及真实资料时按已确认操作范围执行，不恢复共享实例覆盖其他产品。
 
 ## 7. 每片统一完成定义与检查

@@ -4,6 +4,7 @@ import { migrate } from "../scripts/migrate.mjs";
 import { createWechatExchanger } from "./auth";
 import { resolveKithInnTestDatabaseUrl } from "./config";
 import { createKithInnPool } from "./database";
+import { grantMember } from "./members";
 import { Sessions } from "./sessions";
 import { createReadinessProbe } from "./runtime";
 
@@ -37,7 +38,7 @@ describe("PostgreSQL owner sessions", () => {
   const pool = createKithInnPool({ KITH_INN_DATABASE_URL: resolveKithInnTestDatabaseUrl() });
   let now = new Date();
   const exchange = vi.fn(async () => "owner");
-  const sessions = new Sessions(pool, { appId: "app", ownerOpenId: "owner" }, exchange, () => now);
+  const sessions = new Sessions(pool, { appId: "app" }, exchange, () => now);
   beforeAll(async () => {
     const { rows: [target] } = await pool.query("SELECT current_database() AS name");
     if (!target.name.endsWith("_test")) throw new Error("Test database required");
@@ -46,7 +47,7 @@ describe("PostgreSQL owner sessions", () => {
   beforeEach(async () => {
     now = new Date();
     exchange.mockResolvedValue("owner");
-    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchants");
+    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchant_members, merchants");
   });
   afterAll(async () => { await pool.end(); });
 
@@ -73,6 +74,7 @@ describe("PostgreSQL owner sessions", () => {
     await expect(sessions.authenticate("forged")).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
   it("creates independent 32-byte tokens for one merchant and stores only SHA256 hashes", async () => {
+    await grantMember(pool, { appId: "app", openid: "owner" });
     const [first, second] = await Promise.all([sessions.login("one"), sessions.login("two")]);
     expect(first.token).not.toBe(second.token);
     expect(Buffer.from(first.token, "base64url")).toHaveLength(32);
@@ -90,14 +92,15 @@ describe("PostgreSQL owner sessions", () => {
     await expect(sessions.authenticate(second.token)).rejects.toMatchObject({ code: "UNAUTHORIZED" });
   });
   it("rejects disabled and reconfigured identities without reactivating or replacing them", async () => {
+    await grantMember(pool, { appId: "app", openid: "owner" });
     const { token } = await sessions.login("code");
     await pool.query("UPDATE merchants SET active = false");
     await expect(sessions.login("code")).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(sessions.authenticate(token)).rejects.toMatchObject({ code: "FORBIDDEN" });
     await pool.query("UPDATE merchants SET active = true");
-    const other = new Sessions(pool, { appId: "new-app", ownerOpenId: "owner" }, exchange);
+    const other = new Sessions(pool, { appId: "new-app" }, exchange);
     await expect(other.login("code")).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(other.authenticate(token)).rejects.toMatchObject({ code: "FORBIDDEN" });
-    expect((await pool.query("SELECT app_id FROM merchants")).rows[0].app_id).toBe("app");
+    expect((await pool.query("SELECT app_id FROM merchant_members")).rows[0].app_id).toBe("app");
   });
 });

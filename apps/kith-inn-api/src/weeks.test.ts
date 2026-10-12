@@ -8,6 +8,7 @@ import { createKithInnPool } from "./database";
 import { Dishes } from "./dishes";
 import { Weeks } from "./weeks";
 import { createKithInnHttpServer } from "./http";
+import { grantMember } from "./members";
 import { Sessions, type ActiveSession } from "./sessions";
 
 const monday = "2026-09-21";
@@ -19,7 +20,7 @@ function input(week: WeekPlan): WeekWriteInput {
 describe("PostgreSQL week snapshots and HTTP", () => {
   const pool = createKithInnPool({ KITH_INN_DATABASE_URL: resolveKithInnTestDatabaseUrl() });
   let now: Date, session: ActiveSession, token: string, meat: string, otherMeat: string, soup: string;
-  const sessions = new Sessions(pool, { appId: "app", ownerOpenId: "owner" }, async () => "owner", () => now);
+  const sessions = new Sessions(pool, { appId: "app" }, async () => "owner", () => now);
   const dishes = new Dishes(pool, sessions, () => now), weeks = new Weeks(pool, sessions, () => now);
   const initial = (weekStart = monday): WeekWriteInput => ({ baseVersion: 0, rebuild: true, confirm: false,
     structure: { meat: 1, vegetable: 0, soup: 1 }, meals: Array.from({ length: 14 }, (_, i) => ({
@@ -35,7 +36,8 @@ describe("PostgreSQL week snapshots and HTTP", () => {
   });
   beforeEach(async () => {
     now = new Date();
-    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchants");
+    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchant_members, merchants");
+    await grantMember(pool, { appId: "app", openid: "owner" });
     token = (await sessions.login("code")).token; session = await sessions.authenticate(token);
     const result = await dishes.create(session, randomUUID(), { items: [
       { name: "红烧肉", category: "meat" }, { name: "清蒸鱼", category: "meat" }, { name: "蛋花汤", category: "soup" }

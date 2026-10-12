@@ -7,9 +7,9 @@ vi.mock("@tarojs/taro", () => ({ default: {
   getStorageSync: vi.fn(), setStorageSync: vi.fn(), removeStorageSync: vi.fn()
 } }));
 const origin = "https://kith.example.test";
-const storageKey = `kith-inn:session:v1:${origin}`;
+const storageKey = `kith-inn:session:v2:${origin}`;
 const now = Date.parse("2026-09-21T00:00:00Z");
-const session = { token: "t".repeat(43), expiresAt: new Date(now + 30 * 86400000).toISOString() };
+const session = { token: "t".repeat(43), memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: new Date(now + 30 * 86400000).toISOString() };
 const dish = { id: "11111111-1111-4111-8111-111111111111", name: "菜心", category: "vegetable" as const,
   active: true, version: 1, createdAt: new Date(now).toISOString(), updatedAt: new Date(now).toISOString() };
 const batch = () => ({ items: [{ name: dish.name, category: dish.category }] });
@@ -34,6 +34,48 @@ function fixture() {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); vi.clearAllMocks(); });
 
 describe("Kith Inn session and transport", () => {
+  it("never activates a different member/store while old pages and pending writes remain in memory", async () => {
+    const { client, platform, storage } = fixture();
+    platform.request.mockRejectedValueOnce(new Error("lost response"));
+    await expect(client.addDishes(batch())).rejects.toMatchObject({ code: "REQUEST_UNKNOWN" });
+    const pending = client.pendingWrite();
+    const other = { ...session, memberId: "33333333-3333-4333-8333-333333333333", merchantId: "44444444-4444-4444-8444-444444444444" };
+    platform.request.mockResolvedValueOnce({ statusCode: 201, data: other }).mockResolvedValueOnce({ statusCode: 204, data: null });
+    await expect(client.login()).rejects.toMatchObject({ code: "ACCOUNT_CHANGED" });
+    expect(client.restoreSession()).toBe(false);
+    expect(storage.size).toBe(0);
+    expect(client.pendingWrite()).toEqual(pending);
+    const count = platform.request.mock.calls.length;
+    await expect(client.retryPendingWrite()).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    expect(platform.request).toHaveBeenCalledTimes(count);
+    platform.request.mockResolvedValueOnce({ statusCode: 201, data: session })
+      .mockResolvedValueOnce({ statusCode: 201, data: { items: [dish] } });
+    await client.login();
+    await client.retryPendingWrite();
+    expect(platform.request.mock.calls.at(-1)?.[0].data).toBe(platform.request.mock.calls[0]?.[0].data);
+    expect(platform.request.mock.calls.at(-1)?.[0].header["Idempotency-Key"]).toBe(platform.request.mock.calls[0]?.[0].header["Idempotency-Key"]);
+    expect(client.pendingWrite()).toBeNull();
+    const reopened = createKithInnClient({ baseUrl: origin, platform, now: () => now });
+    storage.clear();
+    platform.request.mockResolvedValueOnce({ statusCode: 201, data: other });
+    await reopened.login();
+    expect(reopened.restoreSession()).toBe(true);
+    expect(reopened.pendingWrite()).toBeNull();
+  });
+
+  it("keeps identity binding when an expired session is refreshed and refuses legacy sessions without scope", async () => {
+    const { client, platform, advance } = fixture();
+    expect(client.restoreSession()).toBe(true);
+    advance(31 * 86400000);
+    const fresh = { ...session, expiresAt: new Date(now + 60 * 86400000).toISOString() };
+    platform.request.mockResolvedValueOnce({ statusCode: 201, data: { ...fresh, memberId: "33333333-3333-4333-8333-333333333333" } })
+      .mockResolvedValueOnce({ statusCode: 204, data: null });
+    await expect(client.login()).rejects.toMatchObject({ code: "ACCOUNT_CHANGED" });
+    const legacy = fixture();
+    legacy.storage.set(storageKey, { token: session.token, expiresAt: session.expiresAt });
+    expect(legacy.client.restoreSession()).toBe(false);
+  });
+
   it("retries deletion with the same body/key and rejects a success for a different dish", async () => {
     const { client, platform } = fixture();
     platform.request.mockRejectedValueOnce(new Error("lost response"))
