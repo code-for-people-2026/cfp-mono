@@ -21,8 +21,8 @@ async function openWeek(page: Page, viaPool = false, dishCount = 4, today = time
     neighbors: {} as Record<string, WeekPlan>, neighborReads: [] as string[], neighborFailure: false,
     writes: [] as { body: string; key: string }[], generations: 0, reads: 0, failure: "" };
   const receipts = new Map<string, WeekPlan>();
-  await page.addInitScript(() => localStorage.setItem("kith-inn:session:v1:https://kith-inn.test", JSON.stringify({
-    data: { token: "t".repeat(43), expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() }
+  await page.addInitScript(() => localStorage.setItem("kith-inn:session:v2:https://kith-inn.test", JSON.stringify({
+    data: { token: "t".repeat(43), memberId: "11111111-1111-4111-8111-111111111111", merchantId: "22222222-2222-4222-8222-222222222222", expiresAt: new Date(Date.now() + 30 * 86_400_000).toISOString() }
   })));
   await page.route("**/api/kith-inn/**", async (route) => {
     const request = route.request(), method = request.method(), url = new URL(request.url());

@@ -8,13 +8,14 @@ import { createReadinessProbe, installGracefulShutdown, startKithInnRuntime } fr
 
 afterEach(() => vi.useRealTimers());
 
-it("requires the shipped migration checksum and all five tables", async () => {
+it("requires the shipped migration checksum and all six tables", async () => {
   const query = vi.fn().mockResolvedValue({ rows: [{ ready: true }] });
   const probe = await createReadinessProbe({ query });
   await expect(probe()).resolves.toBeUndefined();
-  const checksum = createHash("sha256").update(await readFile(new URL("../migrations/0001_initial.sql", import.meta.url))).digest("hex");
-  expect(query).toHaveBeenCalledWith(expect.objectContaining({ values: ["0001_initial.sql", checksum], query_timeout: 2_000 }));
-  for (const table of ["merchants", "sessions", "dishes", "week_plans", "mutation_receipts"]) {
+  const names = ["0001_initial.sql", "0002_merchant_members.sql"];
+  const checksums = await Promise.all(names.map(async (name) => createHash("sha256").update(await readFile(new URL(`../migrations/${name}`, import.meta.url))).digest("hex")));
+  expect(query).toHaveBeenCalledWith(expect.objectContaining({ values: [names, checksums], query_timeout: 2_000 }));
+  for (const table of ["merchants", "merchant_members", "sessions", "dishes", "week_plans", "mutation_receipts"]) {
     expect(query.mock.calls[0]?.[0].text).toContain(`to_regclass('${table}') IS NOT NULL`);
   }
   query.mockResolvedValue({ rows: [{ ready: false }] });
@@ -51,7 +52,7 @@ it("serves readiness independently, closes once and releases the pool after a li
   if (!address || typeof address === "string") throw new Error("missing test address");
   const environment = {
     KITH_INN_DATABASE_URL: "postgres://test@localhost/kith_inn_test", PORT: String(address.port),
-    KITH_INN_WECHAT_APP_ID: "test-app", KITH_INN_WECHAT_APP_SECRET: "secret", KITH_INN_WECHAT_OWNER_OPEN_ID: "owner"
+    KITH_INN_WECHAT_APP_ID: "test-app", KITH_INN_WECHAT_APP_SECRET: "secret"
   };
   const end = vi.fn().mockResolvedValue(undefined);
   const query = vi.fn().mockResolvedValue({ rows: [{ ready: true }] });

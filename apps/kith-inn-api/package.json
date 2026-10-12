@@ -12,7 +12,8 @@
     "start": "tsx src/main.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "members": "node --import tsx scripts/members.mjs"
   },
   "dependencies": {
     "@cfp/kith-inn-contracts": "workspace:*",

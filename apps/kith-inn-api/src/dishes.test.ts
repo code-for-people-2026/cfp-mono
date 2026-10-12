@@ -8,12 +8,13 @@ import { resolveKithInnTestDatabaseUrl } from "./config";
 import { createKithInnPool } from "./database";
 import { Dishes } from "./dishes";
 import { createKithInnHttpServer } from "./http";
+import { grantMember } from "./members";
 import { Sessions, type ActiveSession } from "./sessions";
 
 describe("PostgreSQL dish mutations and HTTP", () => {
   const pool = createKithInnPool({ KITH_INN_DATABASE_URL: resolveKithInnTestDatabaseUrl() });
   let now: Date, session: ActiveSession, token: string;
-  const sessions = new Sessions(pool, { appId: "app", ownerOpenId: "owner" }, async () => "owner", () => now);
+  const sessions = new Sessions(pool, { appId: "app" }, async () => "owner", () => now);
   const dishes = new Dishes(pool, sessions, () => now);
   const batch = (name: string) => ({ items: [{ name, category: "meat" }] });
   const add = (name: string, key = randomUUID()) => dishes.create(session, key, batch(name));
@@ -27,7 +28,8 @@ describe("PostgreSQL dish mutations and HTTP", () => {
   });
   beforeEach(async () => {
     now = new Date();
-    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchants");
+    await pool.query("TRUNCATE mutation_receipts, week_plans, dishes, sessions, merchant_members, merchants");
+    await grantMember(pool, { appId: "app", openid: "owner" });
     token = (await sessions.login("code")).token;
     session = await sessions.authenticate(token);
   });
