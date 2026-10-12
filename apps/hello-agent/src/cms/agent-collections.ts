@@ -216,6 +216,7 @@ export const agentCollections: CollectionConfig[] = [
             virtual: true,
             maxLength: 2048,
             admin: {
+              readOnly: false,
               autoComplete: "off",
               description: "保存时加密。保存后不回显；留空保留已有密钥。",
             },
@@ -232,6 +233,7 @@ export const agentCollections: CollectionConfig[] = [
             label: "清除已有 API Key",
             type: "checkbox",
             virtual: true,
+            admin: { readOnly: false },
           },
         ],
       },
