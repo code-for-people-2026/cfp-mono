@@ -331,7 +331,32 @@ export async function addImage(
 }
 
 export async function copy(value: string) {
-  await Taro.setClipboardData({ data: value });
+  if (native) {
+    await Taro.setClipboardData({ data: value });
+    return;
+  }
+  // Taro H5 忽略 execCommand 的 false 返回值；使用浏览器实际写入结果。
+  // 不额外把聊天原文存入 Taro 的剪贴板 localStorage 缓存。
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const field = document.createElement("textarea");
+  const previous = document.activeElement;
+  field.value = value;
+  field.readOnly = true;
+  field.style.position = "fixed";
+  field.style.left = "-10000px";
+  document.body.appendChild(field);
+  try {
+    field.select();
+    field.setSelectionRange(0, value.length);
+    if (!document.execCommand("copy"))
+      throw new Error("复制失败，请长按文字复制");
+  } finally {
+    field.remove();
+    if (previous instanceof HTMLElement) previous.focus();
+  }
 }
 export function openCms() {
   if (native) Taro.setClipboardData({ data: `${HELLO_API_ORIGIN}/admin` });
