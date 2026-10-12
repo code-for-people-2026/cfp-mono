@@ -20,13 +20,13 @@ const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { runGreeting } = await import("../src/agent/runtime");
-const { PayloadSessionService } = await import(
-  "../src/agent/payload-session-service"
-);
+const { PayloadSessionService } =
+  await import("../src/agent/payload-session-service");
 const { createMcpServer } = await import("../src/server/mcp");
 const { mintCredential, authenticate, revokeTokens, checkClientRequest } =
   await import("../src/server/auth");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 let checks = 0;
 let persistedFixture: string[] = [];
 function pass(name: string) {
@@ -58,7 +58,9 @@ try {
   const greeting = await service.generateGreeting(first);
   assert.equal(greeting.status, "completed");
   assert.equal(model.requests.length, 1);
-  assert.deepEqual(Object.keys(model.requests[0].toolsDict), ["save_greeting"]);
+  assert.ok(model.requests[0].toolsDict.save_greeting);
+  assert.ok(model.requests[0].toolsDict.cbt_agent);
+  assert.equal(Object.keys(model.requests[0].toolsDict).length, 9);
   assert.ok(
     model.requests[0].contents.some((c) =>
       c.parts?.some((p) => p.inlineData?.mimeType === "image/jpeg"),
@@ -190,7 +192,9 @@ try {
   await client.close();
   await server.close();
   await verifyContext(repo);
-  pass("记忆血条、广告完成门槛、失败重试、消费幂等、隔离与超过 100 条历史的分页恢复");
+  pass(
+    "记忆血条、广告完成门槛、失败重试、消费幂等、隔离与超过 100 条历史的分页恢复",
+  );
   pass("标准 MCP 客户端握手、发现工具、保存外部产物，幂等且完全绕过平台模型");
 
   const credential = await mintCredential(payload, "bearer", owner.id);

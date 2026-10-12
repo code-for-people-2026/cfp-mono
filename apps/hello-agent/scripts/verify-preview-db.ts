@@ -14,6 +14,9 @@ Object.assign(process.env, { NODE_ENV: "production" });
 try {
   const { cms } = await import("../src/cms/client");
   const payload = await cms();
+  const { seedAgents } = await import("../src/cms/seed");
+  assert.deepEqual(await seedAgents(payload), { created: 9, preserved: 0 });
+  assert.deepEqual(await seedAgents(payload), { created: 0, preserved: 9 });
   assert.equal((await payload.count({ collection: "sessions", overrideAccess: true })).totalDocs, 0);
   const row = await payload.create({
     collection: "sessions", overrideAccess: true,

@@ -21,6 +21,7 @@ const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 const service = new GreetingService(
   new Repository(payload, { id: randomUUID(), auth: "cookie" }),
 );

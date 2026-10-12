@@ -36,6 +36,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { createMcpServer } = await import("../src/server/mcp");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 const service = new GreetingService(
   new Repository(payload, { id: randomUUID(), auth: "bearer" }),
   async () => {

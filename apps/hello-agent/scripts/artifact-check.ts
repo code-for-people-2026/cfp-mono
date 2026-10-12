@@ -25,6 +25,7 @@ const { readAgentInput, agentStream } = await import("../src/server/ag-ui");
 const { mintCredential, COOKIE } = await import("../src/server/auth");
 const { GET } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
@@ -48,7 +49,23 @@ try {
   assert.deepEqual(saved.artifacts, artifacts);
   assert.deepEqual((await service.history(session.id))[0].artifacts, artifacts);
   assert.equal((await service.generateGreeting(input)).id, saved.id);
-  assert.equal(model.requests.length, 1);
+  assert.equal(model.requests.length, 3);
+  const executionSessions = await repo.list("adk-sessions");
+  const specialistSession = executionSessions.find(
+    (row) => row.snapshot.id === `${saved.id}:cbt`,
+  );
+  assert.ok(specialistSession, "心理 subagent 的独立执行会话写入 Payload");
+  assert.ok(
+    specialistSession.snapshot.events.some(
+      (event) => event.author === "cbt_agent",
+    ),
+  );
+  assert.ok(
+    !specialistSession.snapshot.events.some(
+      (event) => event.author === "greeting_agent",
+    ),
+  );
+
   await assert.rejects(
     () =>
       service.complete(saved.id, {
@@ -86,16 +103,16 @@ try {
   const history = await service.history(session.id);
   assert.equal(history.length, 2);
   assert.match(
-    JSON.stringify(model.requests[1].contents),
+    JSON.stringify(model.requests[3].contents),
     /发生了什么.*会议中说错/,
   );
   assert.ok(
-    !JSON.stringify(model.requests[1].contents).includes(
+    !JSON.stringify(model.requests[3].contents).includes(
       "客户端不能伪造字段说明",
     ),
   );
   assert.equal((await service.generateGreeting(args)).id, history[1].id);
-  assert.equal(model.requests.length, 2);
+  assert.equal(model.requests.length, 6);
   const otherSession = await service.createSession("另一个会话");
   await assert.rejects(
     () =>
@@ -149,7 +166,7 @@ try {
       }),
     /无权访问/,
   );
-  assert.equal(model.requests.length, 2);
+  assert.equal(model.requests.length, 6);
   const external = await service.acceptExternal({
     sessionId: session.id,
     requestId: randomUUID(),

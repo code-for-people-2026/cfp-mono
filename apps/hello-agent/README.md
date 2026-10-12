@@ -4,6 +4,16 @@
 
 人设在 `src/agent/persona.ts`，回复任务和工具契约在 `src/agent/instruction.ts`，当前版本 `aj-v2.1`。指纹测试防止无意改写；真实评测检查身份、日常、挫折、悲伤、危险、注入和图片，不能用静态测试替代内容评阅。
 
+## 心理 subagent 协作（aj-v4.0）
+
+平台和 BYOK 共用主 Agent 协调流程：普通分享可直接回应；需要心理方法时，主 Agent 通过 AgentTool 咨询独立的心理 subagent，取回结构化方案，统一使用阿J口吻生成最终回复。支持性回应、CBT、ACT、DBT、行为、焦点解决、自我关怀、积极心理学各有一个 LlmAgent、独立提示词与本轮执行会话。所有角色当前使用当次请求的同一个 DeepSeek 模型与密钥配置，执行上下文相互隔离。
+
+专家只能调用 `submit_psychology_plan`，主 Agent 才能调用 `save_greeting`。每轮最多两种流派，相同专家复用结果；主 Agent 最多五次模型调用，专家各最多两次，整轮 75 秒取消。常见咨询路径是「主 Agent 选择 → 专家提方案 → 主 Agent 整合保存」，通常三次模型调用。专家错误会回传给主 Agent，允许退回支持性回应，不把未执行的流派标成已采用。
+
+原始文字、图片、历史和表单填写由程序交给专家，专家请求不替代真实用户输入；各执行会话仍存入 Payload。AG-UI/A2UI 和客户端无需更改协议。自带 Agent 的 MCP 保存路径保持独立，领取可单独执行的完整提示词，不会启动平台心理专家。设计取舍见 [ADR-0004](docs/adr/0004-coordinated-psychology-agents.md)。
+
+`pnpm --filter @cfp/hello-agent eval:psychology` 使用虚构输入和隔离数据库检查真实路由、专家执行、表单及危机直接回应，会消耗已配置模型账户的调用额度；单元与集成测试使用脚本模型，不能代替真实模型质量评价。
+
 ## 启动
 
 要求 Node.js 20.19+（已在 Node 24 验证）、pnpm 10.2；下方已有数据库增量迁移脚本使用 Node 24 内置 SQLite。
@@ -211,6 +221,21 @@ pnpm --filter @cfp/hello-agent test:external
 
 外部客户端默认查询并续接最新记录，无记录时才创建。`HELLO_SESSION_ID` 仅供开发者显式定位测试记录，不要求普通用户填写。外部客户端读取自己的图片后直接发给自己的模型，再调用 MCP 保存产物；模型费用归调用方，服务端仅处理业务与存储。
 
+## 管理 Agent 与知识库
+
+在 `/admin` 的「助手管理」中维护「Agent 配置」和「知识库」。每个心理流派对应一个独立 subagent；主 Agent 选择最多两个专家、整合方案并唯一保存最终回复。管理员可以编辑主 Agent / subagent 的完整提示词、停用流派、绑定最多两个知识库。已开始的轮次使用自己的配置快照，修改从下一轮生效。通用安全和工具权限由程序固定执行。
+
+```sh
+# 先执行正式数据库迁移，再初始化默认配置；可安全重复，不覆盖管理员编辑。
+pnpm --filter @cfp/hello-agent db:seed
+```
+
+seed 创建一个主 Agent 和八个心理 subagent，不创建管理员、聊天或假知识库。新本地库 db:init 会调用相同 seed；已有库和正式发布显式执行 db:seed。删除默认流派后再次 seed 会补回，需要持续关闭时使用「启用」开关。遗漏 seed 时就绪检查与生成会明确报错。
+
+知识库可直接填写参考资料，或选择「腾讯 ima 知识库」，填写知识库 ID、Client ID 和 API Key，保存后点击「测试已保存的连接」，再在对应 subagent 中选择这个知识库。凭证来自 [ima OpenAPI 配置页](https://ima.qq.com/agent-interface)，必须具备目标知识库读取权限。API Key 加密保存、不会回显；留空保留，勾选清除才删除。服务器的 Payload secret 变更后需迁移密钥或重新填写。
+
+ima 使用官方关键词搜索，最多取三个结果的正文片段，不自动下载全文；仅有标题时明确不把它作为正文证据。连接失败、权限不足或未命中不会伪造来源。外部 MCP 的自带 Agent 不读取这些内部配置。详见 [配置与知识库决策](./docs/adr/0005-managed-agents-and-knowledge.md)。
+
 ## 验证
 
 首次运行的通过项、凭证阻塞项及测试数据边界见 [验证记录](./docs/verification.md)。
@@ -279,5 +304,5 @@ Compose 的 `data-init` 使用同一镜像内的 `node` 用户准备 `/opt/cfp-h
 ## 参考
 
 - [Google ADK TypeScript](https://github.com/google/adk-js)：本项目实际检查并使用 `@google/adk@2.1.0` 的类型和接口。
-- [Payload Local API 访问控制](https://payloadcms.com/docs/local-api/access-control)：普通业务读写显式关闭权限绕过；只有私有凭证仓库和管理员初始化提升权限。
+- [Payload Local API 访问控制](https://payloadcms.com/docs/local-api/access-control)：普通业务读写显式关闭权限绕过；私有凭证仓库、管理员初始化和只读 Agent 配置加载在各自服务端边界提升权限。
 - [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)：此项目使用官方 SDK 的 Web Standard Streamable HTTP 适配，不另外暴露通用 CMS CRUD。

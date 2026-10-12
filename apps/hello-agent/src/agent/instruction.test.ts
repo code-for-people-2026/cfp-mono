@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AJ_PERSONA } from "./persona";
-import { GREETING_INSTRUCTION, PROMPT_VERSION } from "./instruction";
+import {
+  GREETING_INSTRUCTION,
+  COORDINATOR_INSTRUCTION,
+  PROMPT_VERSION,
+} from "./instruction";
+import { SPECIALIST_INSTRUCTIONS } from "./psychology-agents";
 
 describe("阿J人设与提示词变更门槛", () => {
   it("人设与工具协议分开，组合指令只引入一次人设", () => {
@@ -26,6 +31,8 @@ describe("阿J人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      "aj-v4.0":
+        "8bec5695e7e36981ad790b439dbdf5b641efc4f0bce52ee04101f6f147d1875d",
       "aj-v2":
         "42649e8be2e6f838b7bd18264e074f25ecbff511fc82a6264676016ac725bb26",
       "aj-v2.1":
@@ -38,7 +45,15 @@ describe("阿J人设与提示词变更门槛", () => {
         "36331056237208efbac3c61e877e536e0411f885143dbf6cfadfe6bc292d2952",
     };
     expect(
-      createHash("sha256").update(GREETING_INSTRUCTION).digest("hex"),
+      createHash("sha256")
+        .update(
+          JSON.stringify({
+            greeting: GREETING_INSTRUCTION,
+            coordinator: COORDINATOR_INSTRUCTION,
+            specialists: SPECIALIST_INSTRUCTIONS,
+          }),
+        )
+        .digest("hex"),
     ).toBe(approved[PROMPT_VERSION]);
   });
 });

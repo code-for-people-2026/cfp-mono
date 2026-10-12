@@ -6,7 +6,9 @@ import {
   MediaCell,
   RecommendedColumns,
 } from "../../../cms/admin-cells";
+import { KnowledgeConnectionTest } from "../../../cms/knowledge-fields";
 export const importMap = {
+  "/src/cms/knowledge-fields#KnowledgeConnectionTest": KnowledgeConnectionTest,
   "@payloadcms/next/rsc#CollectionCards": CollectionCards,
   "/src/cms/admin-cells#InputCell": InputCell,
   "/src/cms/admin-cells#GreetingCell": GreetingCell,

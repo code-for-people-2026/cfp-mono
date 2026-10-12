@@ -17,13 +17,16 @@
     "test:coverage": "vitest run --coverage && pnpm test:integration",
     "test:e2e": "tsx scripts/e2e.ts",
     "test:http": "tsx scripts/http-smoke.ts",
-    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts && tsx scripts/artifact-check.ts",
+    "test:integration": "node scripts/image-context-check.mjs && node scripts/preview-data-check.mjs && tsx scripts/integration.ts && tsx scripts/preview-recovery-check.ts && tsx scripts/external-retry-check.ts && tsx scripts/image-storage-check.ts && tsx scripts/oss-storage-check.ts && tsx scripts/image-schema-check.ts && tsx scripts/artifact-check.ts && pnpm test:configuration",
     "db:images": "tsx scripts/migrate-images.ts",
     "test:external": "tsx scripts/external-smoke.ts",
     "eval": "tsx scripts/evaluate.ts",
     "eval:promptfoo": "pnpm dlx promptfoo@0.123.1 eval --config promptfooconfig.yaml --no-cache --max-concurrency 1",
     "external-agent": "tsx scripts/external-agent.ts",
-    "cms:admin": "tsx scripts/create-admin.ts"
+    "cms:admin": "tsx scripts/create-admin.ts",
+    "eval:psychology": "tsx scripts/evaluate-psychology-agents.ts",
+    "db:seed": "tsx scripts/seed.ts",
+    "test:configuration": "tsx scripts/agent-configuration-check.ts"
   },
   "dependencies": {
     "@cfp/hello-agent-contracts": "workspace:*",

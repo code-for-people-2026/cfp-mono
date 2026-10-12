@@ -4,6 +4,7 @@ import {
   type CollectionConfig,
   type Field,
 } from "payload";
+import { agentCollections } from "./agent-collections";
 import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
 import type { OwnedCollection } from "./repository";
@@ -49,6 +50,7 @@ const owned = (
 });
 
 export const collections: CollectionConfig[] = [
+  ...agentCollections,
   {
     slug: "admins",
     labels: { singular: "管理员", plural: "管理员" },
