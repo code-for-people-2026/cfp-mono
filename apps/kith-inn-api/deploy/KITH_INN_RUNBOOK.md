@@ -33,7 +33,7 @@ COMMIT;
 
 新版登录响应必含 `memberId`/`merchantId`，小程序使用 v2 会话缓存。旧包不兼容新响应，必须与后端升级配套分发；首次打开新版重新登录。同进程内如果微信身份改变，客户端拒绝启用新会话并保留旧草稿和未知写入，提示先处理原账号内容或退出小程序重开；不自动向另一店重放。正式包须独立配置正式 API，绝不可直接用 staging 配置提交正式版。
 
-以下为旧单身份版本的历史部署记录，若与本节冲突，以本节的升级步骤为准。
+以下为旧单身份版本的历史部署记录，若与本节冲突，以本节的升级步骤为准。第6节整店退出流程已更新，适用于完成0002迁移的版本。
 
 2026-10-06 目标范围修订：桃子单店支持多个经授权经营成员，顾客端以后默认本店；[规格与增量计划](../../../specs/022-kith-inn-menu-mvp/plan.md)已同步，代码和云端尚未升级。以下命令及 owner OpenID 配置描述当前可运行的旧单身份版本，不能直接作为多成员上线步骤。成员升级须新增迁移保留原店铺和数据、引入成员授权与会话关联；不可仅修改环境变量或删除鉴权检查放行同事。测试/正式须分别配置 API 和数据库；撤销成员不得执行本手册的整店退出删除流程。
 
@@ -210,24 +210,32 @@ COMMIT;
 
 退出操作涉及真实删除，需核实请求者、授权范围、目标资源及操作者。只有得到针对目标数据的明确授权后执行；本轮不执行退出删除。
 
-1. 停止专用 API、备份任务和入口，防止写入/重新登录；在安全配置中撤去经营身份绑定。单纯删 merchant 后仍开着原白名单会重新创建账号。
-2. 管理员确认连接的专库名与账号，使用事务锁定唯一 merchant；以下 SQL 仅用于已核对的单账号专库。禁止在其他产品库运行。
+1. 暂停本应用写入和成员授权操作；核对目标店铺及其所有成员，避免把单个成员撤权误作整店删除。新版登录不会自动建店，退出后也不得重新授权已退出的身份。
+2. 管理员确认已完成0002迁移、连接的专库名及维护账号。以下脚本只删除明确指定的一家店；将库名和店铺UUID替换为已核对且获准删除的目标。占位UUID未替换会报错；目标不存在也报错。不得去掉范围条件或在其他产品库运行。
 
 ```sql
-BEGIN;
-SELECT id FROM merchants FOR UPDATE;
-DELETE FROM mutation_receipts;
-DELETE FROM sessions;
-DELETE FROM week_plans;
-DELETE FROM dishes;
-DELETE FROM merchants;
-COMMIT;
-SELECT (SELECT count(*) FROM merchants) + (SELECT count(*) FROM sessions)
-     + (SELECT count(*) FROM dishes) + (SELECT count(*) FROM week_plans)
-     + (SELECT count(*) FROM mutation_receipts) AS remaining_rows;
+DO $kith_store_exit$
+DECLARE
+  target_merchant uuid := 'REPLACE_WITH_APPROVED_MERCHANT_UUID';
+BEGIN
+  IF current_database() <> 'kith_inn_staging' THEN
+    RAISE EXCEPTION 'Wrong database for approved store deletion';
+  END IF;
+  PERFORM id FROM merchants WHERE id = target_merchant FOR UPDATE;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Approved store does not exist';
+  END IF;
+  DELETE FROM mutation_receipts WHERE merchant_id = target_merchant;
+  DELETE FROM sessions WHERE merchant_id = target_merchant;
+  DELETE FROM merchant_members WHERE merchant_id = target_merchant;
+  DELETE FROM week_plans WHERE merchant_id = target_merchant;
+  DELETE FROM dishes WHERE merchant_id = target_merchant;
+  DELETE FROM merchants WHERE id = target_merchant;
+END;
+$kith_store_exit$;
 ```
 
-3. 验证 remaining_rows=0、旧 token拒绝、入口停止。清除自己控制的备份、恢复库、下载件、测试副本、日志、环境凭据和客户端缓存；逐项记录对象与删除结果，不保留菜名/身份正文。
+3. 在上述六张表逐一验证目标店铺记录为0、其旧token拒绝；对照操作前记录确认其他店铺未变，再恢复本应用服务。按目标店铺范围核查自己控制的备份、恢复库、下载件、测试副本、日志和客户端缓存；共享备份或凭据不得直接整份删除，先处理其他店铺的保留与访问需求。逐项记录对象与删除结果，不保留菜名/身份正文。
 4. SQL DELETE 不是介质擦除：WAL、PG卷、云盘快照、对象版本、异地副本、PITR与宿主备份都需核查。优先采用独立存储/加密密钥可撤销方案，由存储管理员完成对应销毁和证明；不要对共享实例执行整库/整卷删除。
 5. 托管服务无法立即删除时，标记阻塞并解决存储安排或取得明确重新约定；不能用自然到期替代退出即删除。退出记录也须约定最少信息与保留期限。
 6. 恢复旧归档前核对退出处置记录，已退出数据不得重新出现；未能证明备份与托管残留处置完毕，不宣布退出删除完成。
