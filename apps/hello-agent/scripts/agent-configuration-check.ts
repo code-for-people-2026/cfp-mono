@@ -10,6 +10,7 @@ process.env.PAYLOAD_SECRET = "configuration-check-only-secret";
 process.env.HELLO_ADMIN_BOOTSTRAP = "false";
 const { cms } = await import("../src/cms/client");
 const { seedAgents } = await import("../src/cms/seed");
+const { renameAgentBrand } = await import("../src/cms/rename-brand");
 const { loadAgentConfiguration } = await import("../src/agent/configuration");
 const { decryptKnowledgeSecret } = await import("../src/cms/secret");
 const { Repository } = await import("../src/cms/repository");
@@ -309,6 +310,104 @@ try {
       (spec) => spec.approach === "cbt",
     )?.knowledge,
     undefined,
+  );
+  // Simulate an existing installation with administrator edits and bindings.
+  await payload.update({
+    collection: "agent-configs",
+    id: cbt.id,
+    ...adminOptions,
+    data: {
+      name: "阿J · 管理员的 CBT",
+      prompt: "你是阿 J 的 CBT 助手。管理员定制：优先承接用户已填的记录。",
+      enabled: false,
+    },
+  });
+  await payload.update({
+    collection: "agent-configs",
+    id: main.id,
+    ...adminOptions,
+    data: {
+      name: "阿J · 主 Agent",
+      prompt:
+        "你是「好人阿 J」（英文名 a jOKer）的 AI 搭子，自称「阿J」。管理员规则保留。",
+    },
+  });
+  const snapshot = async () => ({
+    agents: (
+      await payload.find({
+        collection: "agent-configs",
+        pagination: false,
+        depth: 0,
+      })
+    ).docs,
+    libraries: (
+      await payload.find({
+        collection: "knowledge-bases",
+        pagination: false,
+        depth: 0,
+        context: { helloKnowledgeSecrets: true },
+      })
+    ).docs,
+    greetings: (
+      await payload.find({
+        collection: "greetings",
+        pagination: false,
+        depth: 0,
+      })
+    ).docs,
+    sessions: (
+      await payload.find({
+        collection: "adk-sessions",
+        pagination: false,
+        depth: 0,
+      })
+    ).docs,
+  });
+  const beforeRename = await snapshot();
+  assert.deepEqual(await renameAgentBrand(payload), {
+    updated: 2,
+    preserved: 7,
+  });
+  const afterRename = await snapshot();
+  assert.deepEqual(afterRename.libraries, beforeRename.libraries);
+  assert.deepEqual(afterRename.greetings, beforeRename.greetings);
+  assert.deepEqual(afterRename.sessions, beforeRename.sessions);
+  for (const previous of beforeRename.agents) {
+    const current = afterRename.agents.find(
+      (agent) => agent.id === previous.id,
+    )!;
+    if (previous.id === cbt.id || previous.id === main.id) {
+      const expected =
+        previous.id === cbt.id
+          ? {
+              name: "阿 Q + · 管理员的 CBT",
+              prompt:
+                "你是阿 Q + 的 CBT 助手。管理员定制：优先承接用户已填的记录。",
+            }
+          : {
+              name: "阿 Q + · 主 Agent",
+              prompt:
+                "你是「阿 Q +」的 AI 搭子，自称「阿 Q +」。管理员规则保留。",
+            };
+      assert.deepEqual(current, {
+        ...previous,
+        ...expected,
+        updatedAt: current.updatedAt,
+      });
+    } else assert.deepEqual(current, previous);
+  }
+  assert.deepEqual(await renameAgentBrand(payload), {
+    updated: 0,
+    preserved: 9,
+  });
+  await seedAgents(payload);
+  assert.deepEqual(
+    await snapshot(),
+    afterRename,
+    "重复改名和 seed 不再写入配置或重置管理员编辑",
+  );
+  console.log(
+    "✓ 改名只更新配置中的品牌文字，保留定制提示词、停用状态、知识绑定、密钥和历史；重复执行无写入。",
   );
   console.log(
     "✓ seed 幂等保留配置；管理员权限；主 Agent 防停用；提示词与知识绑定实际进入 ADK；停用下一轮生效；ima 密钥加密、隐藏、空白保留、更新与清除通过。",

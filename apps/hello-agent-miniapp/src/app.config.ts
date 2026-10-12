@@ -14,7 +14,7 @@ export default defineAppConfig({
     : {},
   // 录音在用户按住时通过 scope.record 请求授权，不属于 app.json 的 permission 字段。
   window: {
-    navigationBarTitleText: "好人阿 J",
+    navigationBarTitleText: "阿 Q +",
     navigationBarBackgroundColor: "#f6f8f7",
     navigationBarTextStyle: "black",
     backgroundColor: "#f6f8f7",

@@ -20,7 +20,7 @@ export function a2uiCatalog() {
   return {
     $schema: "https://json-schema.org/draft/2020-12/schema",
     $id: CATALOG_ID,
-    title: "阿J · 回应作品目录 v1",
+    title: "阿 Q + · 回应作品目录 v1",
     $defs: {
       anyComponent,
       theme: { type: "object", properties: {}, additionalProperties: false },

@@ -26,6 +26,7 @@
     "cms:admin": "tsx scripts/create-admin.ts",
     "eval:psychology": "tsx scripts/evaluate-psychology-agents.ts",
     "db:seed": "tsx scripts/seed.ts",
+    "db:rename-brand": "tsx scripts/rename-brand.ts",
     "test:configuration": "tsx scripts/agent-configuration-check.ts"
   },
   "dependencies": {

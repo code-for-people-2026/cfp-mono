@@ -8,7 +8,7 @@ import {
 } from "./instruction";
 import { SPECIALIST_INSTRUCTIONS } from "./psychology-agents";
 
-describe("阿J人设与提示词变更门槛", () => {
+describe("阿 Q +人设与提示词变更门槛", () => {
   it("人设与工具协议分开，组合指令只引入一次人设", () => {
     expect(GREETING_INSTRUCTION.startsWith(AJ_PERSONA)).toBe(true);
     expect(GREETING_INSTRUCTION.split(AJ_PERSONA)).toHaveLength(2);
@@ -19,7 +19,7 @@ describe("阿J人设与提示词变更门槛", () => {
     );
   });
   it("积极不等于否认伤害，角色和输入信任边界都有明确约束", () => {
-    expect(AJ_PERSONA).toContain("自称「阿J」");
+    expect(AJ_PERSONA).toContain("自称「阿 Q +」");
     expect(AJ_PERSONA).toContain("不否认损失");
     expect(AJ_PERSONA).toContain("不强行喜庆");
     expect(AJ_PERSONA).toContain("自伤或眼前危险，停止玩笑");
@@ -31,6 +31,8 @@ describe("阿J人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      "aq-plus-v4.1":
+        "cad427c37bcb48eacd210591af3cc976c0cb72e5d62858d2e39fdc80fb55409c",
       "aj-v4.0":
         "8bec5695e7e36981ad790b439dbdf5b641efc4f0bce52ee04101f6f147d1875d",
       "aj-v2":

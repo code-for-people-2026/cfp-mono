@@ -488,14 +488,14 @@ export default function Chat() {
               mode="aspectFill"
             />
             <View>
-              <Text className="agent-name">好人阿 J</Text>
+              <Text className="agent-name">阿 Q +</Text>
               <Text className="agent-status">AI 乐观搭子</Text>
             </View>
           </View>
           <View className="header-actions">
             <Button
               className={`icon-button memory-shortcut ${memory?.level === "empty" ? "memory-alert" : ""}`}
-              ariaLabel="查看阿 J 的记忆"
+              ariaLabel="查看阿 Q + 的记忆"
               disabled={disabled}
               onClick={() => setMemoryOpen(true)}
             >
@@ -519,10 +519,10 @@ export default function Chat() {
                     className="welcome-mascot"
                     src={mascot}
                     mode="aspectFit"
-                    ariaLabel="挥手打招呼的阿 J"
+                    ariaLabel="挥手打招呼的阿 Q +"
                   />
                 </View>
-                <Text className="welcome-title">嗨，我是阿 J。</Text>
+                <Text className="welcome-title">嗨，我是阿 Q +。</Text>
                 <View className="welcome-copy">
                   <Text>从鲁迅笔下的阿 Q 先生那儿，“蒸馏”来一点乐观。</Text>
                   <Text>
@@ -555,7 +555,7 @@ export default function Chat() {
               </View>
             )}
             {loading && (
-              <Text className="loading-note">阿 J 正在翻看我们聊过的日常…</Text>
+              <Text className="loading-note">阿 Q + 正在翻看我们聊过的日常…</Text>
             )}
             {history.map((row) => (
               <View className="turn" key={row.id}>
@@ -677,7 +677,7 @@ export default function Chat() {
                       {row.status === "completed" && row.greeting && (
                         <CopyMessage
                           value={row.greeting}
-                          label="复制阿 J 的回复"
+                          label="复制阿 Q + 的回复"
                         />
                       )}
                     </View>
@@ -714,7 +714,7 @@ export default function Chat() {
                       <MessageText>
                         {progress?.text ||
                           progress?.step ||
-                          "阿 J 正在换个角度想…"}
+                          "阿 Q + 正在换个角度想…"}
                       </MessageText>
                       {progress && (
                         <LiveArtifacts surfaces={progress.surfaces} />
@@ -832,7 +832,7 @@ export default function Chat() {
             <Text className="composer-footnote">
               {mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
-                : "阿 J 是 AI，好意不是对未来的保证"}
+                : "阿 Q + 是 AI，好意不是对未来的保证"}
             </Text>
           </View>
         </View>
@@ -860,7 +860,7 @@ export default function Chat() {
               <View className="sheet-handle" />
               <View className="sheet-heading">
                 <Text>
-                  {panel === "modes" ? "阿 J 的设置" : "连接你自己的 Agent"}
+                  {panel === "modes" ? "阿 Q + 的设置" : "连接你自己的 Agent"}
                 </Text>
                 <Button
                   className="icon-button"
@@ -881,7 +881,7 @@ export default function Chat() {
                     }}
                   />
                   <Text className="sheet-description">
-                    a jOKer · 换一种连接方式，接着聊，不用重新开始。
+                    阿 Q + · 换一种连接方式，接着聊，不用重新开始。
                   </Text>
                   <Text className="sheet-note">
                     测试版{" "}

@@ -1,4 +1,4 @@
-# 好人阿 J · a jOKer · Taro 小程序
+# 阿 Q + · Taro 小程序
 
 真正的 Taro 4.2 / React 18 客户端，同一份代码编译微信小程序与 H5。沿用仓库 `community-cooking` 的 Taro 工具链；不修改或复用它的业务代码、数据库或 AppID。
 

@@ -55,7 +55,7 @@ export function createRunReader(
   let progress: RunProgress = {
     text: "",
     surfaces: {},
-    step: "阿J正在想一想…",
+    step: "阿 Q +正在想一想…",
   };
   const decoder = createSseDecoder((value) => {
     const event = eventSchema.parse(value, { jitless: true });

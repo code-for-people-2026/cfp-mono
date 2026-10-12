@@ -22,7 +22,7 @@ export function MemoryMeter({
       disabled={disabled || undefined}
     >
       <View className="memory-caption">
-        <Text>♥ 阿 J 的记忆</Text>
+        <Text>♥ 阿 Q + 的记忆</Text>
         <Text>
           {percent}% <Text className="memory-estimate">估算</Text>
         </Text>
@@ -211,7 +211,7 @@ export function MemoryPanel(props: {
         {phase === "watching" && (
           <View className="demo-ad">
             <Text className="demo-label">开发演示 · 非真实商业广告</Text>
-            <Text className="demo-title">阿 J 补给站</Text>
+            <Text className="demo-title">阿 Q + 补给站</Text>
             <Text className="demo-copy">
               让脑袋伸个懒腰，给下一句好话留点地方。
             </Text>
@@ -241,7 +241,7 @@ export function MemoryPanel(props: {
         )}
         {phase === "compacting" && (
           <Text className="memory-progress">
-            阿 J 正在收拾记忆… 原记录安全保留，请稍等。
+            阿 Q + 正在收拾记忆… 原记录安全保留，请稍等。
           </Text>
         )}
         {phase === "loading" && (
