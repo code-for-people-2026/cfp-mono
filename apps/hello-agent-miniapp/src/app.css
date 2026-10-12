@@ -349,9 +349,6 @@ input {
 .user-message-main .user-bubble {
   max-width: 100%;
 }
-.user-message-footer {
-  justify-content: flex-end;
-}
 .user-message {
   justify-content: flex-end;
   margin-top: 22px;

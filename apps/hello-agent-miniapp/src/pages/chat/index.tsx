@@ -602,14 +602,6 @@ export default function Chat() {
                         </View>
                       )}
                     </View>
-                    {row.input.text && (
-                      <View className="message-footer user-message-footer">
-                        <CopyMessage
-                          value={row.input.text}
-                          label="复制我的消息"
-                        />
-                      </View>
-                    )}
                   </View>
                 </View>
                 <View className="message assistant-message">

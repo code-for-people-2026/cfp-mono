@@ -216,21 +216,16 @@ describe("聊天历史与图片失败隔离", () => {
       expect(node.props.userSelect).toBe(true);
     }
     const requests = platform.request.mock.calls.length;
-    for (const [label, value] of [
-      ["复制我的消息", initial.input.text],
-      ["复制阿 J 的回复", history[0].greeting],
-    ]) {
-      const button = renderer!.root
-        .findAllByType("button")
-        .find((item) => item.props["aria-label"] === label)!;
-      await act(async () => {
-        await button.props.onClick();
-      });
-      expect(platform.setClipboardData).toHaveBeenLastCalledWith({
-        data: value,
-      });
-      expect(button.findByType("text").children.join("")).toBe("已复制");
-    }
+    const button = renderer!.root
+      .findAllByType("button")
+      .find((item) => item.props["aria-label"] === "复制阿 J 的回复")!;
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(platform.setClipboardData).toHaveBeenLastCalledWith({
+      data: history[0].greeting,
+    });
+    expect(button.findByType("text").children.join("")).toBe("已复制");
     expect(platform.request.mock.calls).toHaveLength(requests);
     expect(text()).toContain("按住说话");
   });
