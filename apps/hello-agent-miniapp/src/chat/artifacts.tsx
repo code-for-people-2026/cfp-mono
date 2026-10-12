@@ -22,6 +22,7 @@ import {
   type Surfaces,
 } from "@cfp/hello-agent-protocol";
 import { privateImageSource } from "./api";
+import { MessageText } from "./message-text";
 
 function ArtifactImage({ url, alt }: { url: string; alt: string }) {
   const [source, setSource] = useState("");
@@ -51,11 +52,11 @@ function ArtifactImage({ url, alt }: { url: string; alt: string }) {
           onClick={() => Taro.previewImage({ urls: [source], current: source })}
         />
       ) : (
-        <Text className="artifact-caption">
+        <MessageText className="artifact-caption">
           {failed ? "图片暂时无法读取" : "正在取图片…"}
-        </Text>
+        </MessageText>
       )}
-      <Text className="artifact-caption">{alt}</Text>
+      <MessageText className="artifact-caption">{alt}</MessageText>
     </View>
   );
 }
@@ -134,13 +135,12 @@ function SurfaceView({
         );
       case "Text":
         return (
-          <Text
+          <MessageText
             key={id}
             className={`artifact-text artifact-${component.variant || "body"}`}
-            selectable
           >
             {component.text}
-          </Text>
+          </MessageText>
         );
       case "Image":
         return (
@@ -156,13 +156,12 @@ function SurfaceView({
                   className={`artifact-table-row ${rowIndex === 0 ? "artifact-table-head" : ""}`}
                 >
                   {row.map((cell, cellIndex) => (
-                    <Text
+                    <MessageText
                       key={cellIndex}
                       className="artifact-table-cell"
-                      selectable
                     >
                       {cell}
-                    </Text>
+                    </MessageText>
                   ))}
                 </View>
               ))}
@@ -186,10 +185,10 @@ function SurfaceView({
           }));
         return (
           <View key={id} className="artifact-field">
-            <Text className="artifact-label">
+            <MessageText className="artifact-label">
               {field.label}
               {field.required ? " *" : "（选填）"}
-            </Text>
+            </MessageText>
             {field.type === "longText" ? (
               <Textarea
                 className="artifact-input artifact-textarea"
@@ -233,11 +232,11 @@ function SurfaceView({
                   ? "正在提交…"
                   : child(component.child)}
             </Button>
-            <Text className="artifact-caption">
+            <MessageText className="artifact-caption">
               {submitted
                 ? "填写内容已保存到这段对话"
                 : "只在点击提交后发送，也可以跳过这份练习"}
-            </Text>
+            </MessageText>
           </View>
         );
     }
@@ -257,16 +256,20 @@ function PageView({
   return (
     <View className="artifact-page">
       {component.page.subtitle && (
-        <Text className="artifact-caption">{component.page.subtitle}</Text>
+        <MessageText className="artifact-caption">
+          {component.page.subtitle}
+        </MessageText>
       )}
       {sections.map((section, index) => (
         <View key={index} className="artifact-section">
-          <Text className="artifact-heading">{section.heading}</Text>
-          <Text className="artifact-text">{section.body}</Text>
+          <MessageText className="artifact-heading">
+            {section.heading}
+          </MessageText>
+          <MessageText className="artifact-text">{section.body}</MessageText>
           {section.items?.map((item, i) => (
-            <Text key={i} className="artifact-text">
+            <MessageText key={i} className="artifact-text">
               • {item}
-            </Text>
+            </MessageText>
           ))}
         </View>
       ))}

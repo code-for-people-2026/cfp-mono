@@ -6,8 +6,18 @@ import circlePlus from "lucide-static/icons/circle-plus.svg?raw";
 import arrowUp from "lucide-static/icons/arrow-up.svg?raw";
 import image from "lucide-static/icons/image.svg?raw";
 import x from "lucide-static/icons/x.svg?raw";
+import copy from "lucide-static/icons/copy.svg?raw";
 
-const icons = { camera, keyboard, audioLines, circlePlus, arrowUp, image, x };
+const icons = {
+  camera,
+  keyboard,
+  audioLines,
+  circlePlus,
+  arrowUp,
+  image,
+  x,
+  copy,
+};
 type IconName = keyof typeof icons;
 
 // 按需打包 Lucide 的原始图标，用图片组件兼容 H5 和微信；不依赖远程字体或内联 SVG 标签。

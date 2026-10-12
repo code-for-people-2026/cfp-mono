@@ -13,6 +13,7 @@ import * as api from "../../chat/api";
 import { MemoryMeter, MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
+import { CopyMessage, MessageText } from "../../chat/message-text";
 import {
   type ClientEvent,
   type FormValues,
@@ -540,42 +541,54 @@ export default function Chat() {
             {history.map((row) => (
               <View className="turn" key={row.id}>
                 <View className="message user-message">
-                  <View className="bubble user-bubble">
-                    {row.input.text && <Text>{row.input.text}</Text>}
-                    {row.input.mediaIds.length > 0 && (
-                      <View className="bubble-images">
-                        {row.input.mediaIds.map((id) =>
-                          images[id] ? (
-                            <Image
-                              key={id}
-                              className="message-image"
-                              src={images[id]!}
-                              mode="aspectFill"
-                              onError={() =>
-                                setImages((current) => ({
-                                  ...current,
-                                  [id]: null,
-                                }))
-                              }
-                              onClick={() =>
-                                Taro.previewImage({
-                                  urls: row.input.mediaIds
-                                    .map((value) => images[value])
-                                    .filter(
-                                      (source): source is string => !!source,
-                                    ),
-                                  current: images[id]!,
-                                })
-                              }
-                            />
-                          ) : (
-                            <Text key={id} className="image-placeholder">
-                              {images[id] === null
-                                ? "图片暂不可用"
-                                : "图片加载中…"}
-                            </Text>
-                          ),
-                        )}
+                  <View className="user-message-main">
+                    <View className="bubble user-bubble">
+                      {row.input.text && (
+                        <MessageText>{row.input.text}</MessageText>
+                      )}
+                      {row.input.mediaIds.length > 0 && (
+                        <View className="bubble-images">
+                          {row.input.mediaIds.map((id) =>
+                            images[id] ? (
+                              <Image
+                                key={id}
+                                className="message-image"
+                                src={images[id]!}
+                                mode="aspectFill"
+                                onError={() =>
+                                  setImages((current) => ({
+                                    ...current,
+                                    [id]: null,
+                                  }))
+                                }
+                                onClick={() =>
+                                  Taro.previewImage({
+                                    urls: row.input.mediaIds
+                                      .map((value) => images[value])
+                                      .filter(
+                                        (source): source is string => !!source,
+                                      ),
+                                    current: images[id]!,
+                                  })
+                                }
+                              />
+                            ) : (
+                              <Text key={id} className="image-placeholder">
+                                {images[id] === null
+                                  ? "图片暂不可用"
+                                  : "图片加载中…"}
+                              </Text>
+                            ),
+                          )}
+                        </View>
+                      )}
+                    </View>
+                    {row.input.text && (
+                      <View className="message-footer user-message-footer">
+                        <CopyMessage
+                          value={row.input.text}
+                          label="复制我的消息"
+                        />
                       </View>
                     )}
                   </View>
@@ -590,13 +603,13 @@ export default function Chat() {
                     <View
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <Text>
+                      <MessageText>
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
                             ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
                             : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                      </Text>
+                      </MessageText>
                       {row.status === "completed" && (
                         <Artifacts
                           turnId={row.id}
@@ -628,7 +641,7 @@ export default function Chat() {
                               : "看看为什么这样说 ＋"}
                           </Button>
                           {expanded.includes(row.id) && (
-                            <Text className="association-text">
+                            <MessageText className="association-text">
                               {row.association}
                               {row.approach ? ` · ${row.approach}` : ""}
                               {"\n"}
@@ -639,16 +652,24 @@ export default function Chat() {
                               {row.mode === "external"
                                 ? " · 来源由客户端声明"
                                 : ` · ${row.model}`}
-                            </Text>
+                            </MessageText>
                           )}
                         </View>
                       )}
                     </View>
-                    <Text className="message-meta">
-                      {row.status === "completed"
-                        ? "AI 生成 · 已保存"
-                        : "这一轮尚未完成"}
-                    </Text>
+                    <View className="message-footer">
+                      <Text className="message-meta">
+                        {row.status === "completed"
+                          ? "AI 生成 · 已保存"
+                          : "这一轮尚未完成"}
+                      </Text>
+                      {row.status === "completed" && row.greeting && (
+                        <CopyMessage
+                          value={row.greeting}
+                          label="复制阿 J 的回复"
+                        />
+                      )}
+                    </View>
                   </View>
                 </View>
               </View>
@@ -657,7 +678,7 @@ export default function Chat() {
               <View className="turn">
                 <View className="message user-message">
                   <View className="bubble user-bubble">
-                    {pending.text && <Text>{pending.text}</Text>}
+                    {pending.text && <MessageText>{pending.text}</MessageText>}
                     <View className="bubble-images">
                       {pending.images.map((item) => (
                         <Image
@@ -679,11 +700,11 @@ export default function Chat() {
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
-                      <Text>
+                      <MessageText>
                         {progress?.text ||
                           progress?.step ||
                           "阿 J 正在换个角度想…"}
-                      </Text>
+                      </MessageText>
                       {progress && (
                         <LiveArtifacts surfaces={progress.surfaces} />
                       )}

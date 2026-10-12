@@ -315,10 +315,41 @@ input {
 }
 .message-meta {
   display: block;
-  margin-top: 7px;
   font-size: 9px;
   color: #93a297;
   line-height: 1.5;
+}
+.message-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.message-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 36px;
+  padding: 6px 8px;
+  color: #637568;
+  font-size: 11px;
+  border-radius: 8px;
+}
+.message-copy .chat-icon {
+  width: 14px;
+  height: 14px;
+}
+.user-message-main {
+  max-width: 84%;
+  min-width: 0;
+}
+.user-message-main .user-bubble {
+  max-width: 100%;
+}
+.user-message-footer {
+  justify-content: flex-end;
 }
 .user-message {
   justify-content: flex-end;

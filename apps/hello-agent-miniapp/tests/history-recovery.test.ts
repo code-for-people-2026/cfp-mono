@@ -14,6 +14,7 @@ const platform = vi.hoisted(() => ({
   offAppHide: vi.fn(),
   authorize: vi.fn(),
   requirePlugin: vi.fn(),
+  setClipboardData: vi.fn(),
 }));
 // 仅替换平台组件与网络边界；渲染真实聊天页、真实 api 和记忆组件。
 vi.mock("@tarojs/taro", () => ({ default: platform }));
@@ -58,6 +59,7 @@ const initial: Turn = {
 const advertisement = { mode: "disabled", adUnitId: "", demoSeconds: 5 };
 
 beforeEach(() => {
+  platform.setClipboardData.mockResolvedValue({});
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   vi.stubGlobal("HELLO_WECHAT_SI_ENABLED", false);
@@ -126,6 +128,53 @@ async function mount(keyboard = true) {
 const text = () => JSON.stringify(renderer?.toJSON());
 
 describe("聊天历史与图片失败隔离", () => {
+  it("对话正文可以选择；复制保留换行且不混入按钮、模型或状态文字", async () => {
+    history[0].greeting = "先慢一点。\n今天也可以重新来过。";
+    history[0].association = "从日常里找一个可信的角度";
+    await mount(false);
+    for (const value of [initial.input.text, history[0].greeting]) {
+      const node = renderer!.root
+        .findAllByType("text")
+        .find((item) => item.children.join("") === value)!;
+      expect(node.props.selectable).toBe(true);
+      expect(node.props.userSelect).toBe(true);
+    }
+    const requests = platform.request.mock.calls.length;
+    for (const [label, value] of [
+      ["复制我的消息", initial.input.text],
+      ["复制阿 J 的回复", history[0].greeting],
+    ]) {
+      const button = renderer!.root
+        .findAllByType("button")
+        .find((item) => item.props["aria-label"] === label)!;
+      await act(async () => {
+        await button.props.onClick();
+      });
+      expect(platform.setClipboardData).toHaveBeenLastCalledWith({
+        data: value,
+      });
+      expect(button.findByType("text").children.join("")).toBe("已复制");
+    }
+    expect(platform.request.mock.calls).toHaveLength(requests);
+    expect(text()).toContain("按住说话");
+  });
+  it("剪贴板失败可以重试，不把复制失败当成发送失败", async () => {
+    platform.setClipboardData.mockRejectedValueOnce(new Error("denied"));
+    await mount(false);
+    const button = renderer!.root
+      .findAllByType("button")
+      .find((item) => item.props["aria-label"] === "复制阿 J 的回复")!;
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(text()).toContain("复制失败，重试");
+    expect(text()).not.toContain("error-banner");
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(text()).toContain("已复制");
+    expect(platform.setClipboardData).toHaveBeenCalledTimes(2);
+  });
   it("首页恢复三条快捷建议，点击后切到键盘填入草稿但不自动发送", async () => {
     history = [];
     await mount(false);
