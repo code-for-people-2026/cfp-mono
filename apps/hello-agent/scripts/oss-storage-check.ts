@@ -44,6 +44,7 @@ mediaCollection.hooks.afterChange.push(async ({ doc, operation, req }) => {
   return doc;
 });
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 const objects = new Map<string, Buffer>();
 let reads = 0,
   failPut = false,
