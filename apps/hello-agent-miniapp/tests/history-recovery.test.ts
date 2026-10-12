@@ -15,9 +15,16 @@ const platform = vi.hoisted(() => ({
   authorize: vi.fn(),
   requirePlugin: vi.fn(),
   setClipboardData: vi.fn(),
+  pageScrollTo: vi.fn(),
+  usePageScroll: vi.fn(),
+  getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+  createSelectorQuery: vi.fn(),
 }));
 // 仅替换平台组件与网络边界；渲染真实聊天页、真实 api 和记忆组件。
-vi.mock("@tarojs/taro", () => ({ default: platform }));
+vi.mock("@tarojs/taro", () => ({
+  default: platform,
+  usePageScroll: platform.usePageScroll,
+}));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
   View: "view",
@@ -59,6 +66,7 @@ const initial: Turn = {
 const advertisement = { mode: "disabled", adUnitId: "", demoSeconds: 5 };
 
 beforeEach(() => {
+  platform.pageScrollTo.mockResolvedValue({});
   platform.setClipboardData.mockResolvedValue({});
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
@@ -128,6 +136,74 @@ async function mount(keyboard = true) {
 const text = () => JSON.stringify(renderer?.toJSON());
 
 describe("聊天历史与图片失败隔离", () => {
+  it("整页承载聊天滚动；翻看前文时收到回复不会被拉到底部", async () => {
+    let finish: (() => void) | undefined;
+    const original = platform.request.getMockImplementation()!;
+    platform.request.mockImplementation(async (options) => {
+      if (
+        !options.url.endsWith("/ag-ui") &&
+        !options.url.includes("/requests/")
+      )
+        return original(options);
+      if (options.url.includes("/requests/"))
+        return { statusCode: 200, data: { turn: history.at(-1) } };
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      history.push({
+        ...initial,
+        id: 2,
+        input: { text: "新消息", mediaIds: [] },
+        greeting: "新回复",
+      });
+      return { statusCode: 200, data: wire(options.data.runId) };
+    });
+    let endBottom = 600;
+    platform.createSelectorQuery.mockImplementation(() => {
+      let read: (rect: { bottom: number }) => void;
+      const query = {
+        select: () => query,
+        boundingClientRect: (callback: typeof read) => {
+          read = callback;
+          return query;
+        },
+        exec: () => read({ bottom: endBottom }),
+      };
+      return query;
+    });
+    await mount();
+    expect(
+      renderer!.root.findAll(
+        (node) => String(node.type) === "scroll-view" && node.props.scrollY,
+      ),
+    ).toHaveLength(0);
+    expect(platform.pageScrollTo).toHaveBeenCalledWith({
+      selector: "#chat-end",
+      duration: 0,
+    });
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "新消息" } }),
+    );
+    let sending: Promise<void>;
+    await act(async () => {
+      sending = renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className.includes("send-button"))!
+        .props.onClick();
+    });
+    act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 1000 }));
+    endBottom = 1300;
+    act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 400 }));
+    platform.pageScrollTo.mockClear();
+    await act(async () => {
+      finish!();
+      await sending;
+    });
+    expect(text()).toContain("新回复");
+    expect(platform.pageScrollTo).not.toHaveBeenCalled();
+  });
   it("对话正文可以选择；复制保留换行且不混入按钮、模型或状态文字", async () => {
     history[0].greeting = "先慢一点。\n今天也可以重新来过。";
     history[0].association = "从日常里找一个可信的角度";

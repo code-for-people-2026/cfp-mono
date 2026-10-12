@@ -4,11 +4,10 @@ import {
   type ButtonProps,
   Image,
   Input as TextInput,
-  ScrollView,
   Text,
   View,
 } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { usePageScroll } from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { MemoryMeter, MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
@@ -77,7 +76,9 @@ export default function Chat() {
   const [expanded, setExpanded] = useState<number[]>([]);
   const [token, setToken] = useState("");
   const [tokenBusy, setTokenBusy] = useState(false);
-  const [anchor, setAnchor] = useState(0);
+  const followLatest = useRef(true);
+  const pageTop = useRef(0);
+  const scrollRevision = useRef(0);
   const historyVersion = useRef(0);
   const sendLock = useRef(false);
   // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
@@ -98,6 +99,23 @@ export default function Chat() {
     disabled || memory?.level === "empty",
   );
   const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
+
+  usePageScroll(({ scrollTop }) => {
+    // 用户向前翻页时立即暂停跟随，截图过程中收到回复也不抢回滚动位置。
+    if (scrollTop < pageTop.current - 2) followLatest.current = false;
+    pageTop.current = scrollTop;
+    const revision = ++scrollRevision.current;
+    const height = Taro.getWindowInfo().windowHeight;
+    Taro.createSelectorQuery()
+      .select("#chat-end")
+      .boundingClientRect((rect) => {
+        if (revision !== scrollRevision.current || !rect || Array.isArray(rect))
+          return;
+        // 手动回到末尾后恢复跟随；过期的布局查询不能覆盖新的滚动意图。
+        followLatest.current = rect.bottom <= height + 40;
+      })
+      .exec();
+  });
 
   function problem(value: unknown) {
     if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
@@ -176,6 +194,8 @@ export default function Chat() {
       setSessionId(undefined);
       setSettings(undefined);
       setHistory([]);
+      followLatest.current = true;
+      scrollRevision.current++;
       setImages({});
       setText("");
       setInputMode("voice");
@@ -245,12 +265,18 @@ export default function Chat() {
     void boot();
     return () => {
       historyVersion.current++;
+      scrollRevision.current++;
     };
   }, []);
   useEffect(() => {
-    // 消息和输入区先完成布局，再更新滚动锚点，避免末条回复被输入框遮住。
-    Taro.nextTick(() => setAnchor((value) => value + 1));
-  }, [history, pending, attachments]);
+    if (!history.length && !pending) return;
+    Taro.nextTick(() => {
+      if (followLatest.current)
+        void Taro.pageScrollTo({ selector: "#chat-end", duration: 0 }).catch(
+          () => {},
+        );
+    });
+  }, [history, pending, attachments, progress]);
 
   async function chooseImage(source?: ImageSource) {
     if (disabled || attachments.length >= 3) return;
@@ -293,6 +319,8 @@ export default function Chat() {
     )
       return;
     sendLock.current = true;
+    followLatest.current = true;
+    scrollRevision.current++;
     const draft = { text: text.trim(), images: attachments };
     const input = formInput || {
       text: draft.text,
@@ -386,7 +414,6 @@ export default function Chat() {
       setProgress(undefined);
       setBusy(false);
       sendLock.current = false;
-      setAnchor((value) => value + 1);
     }
   }
   const formResponses = Object.fromEntries(
@@ -483,15 +510,7 @@ export default function Chat() {
             </Button>
           </View>
         </View>
-        <ScrollView
-          className="conversation"
-          scrollY
-          scrollWithAnimation
-          scrollIntoViewAlignment="end"
-          scrollIntoView={
-            history.length || pending ? `chat-end-${anchor}` : undefined
-          }
-        >
+        <View className="conversation">
           <View className="chat-content">
             {!history.length && !pending && (
               <View className="welcome-home">
@@ -713,113 +732,117 @@ export default function Chat() {
                 </View>
               </View>
             )}
-            <View id={`chat-end-${anchor}`} className="chat-end" />
+            <View id="chat-end" className="chat-end" />
           </View>
-        </ScrollView>
-        {error && (
-          <View className="error-banner">
-            <Text>
-              {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
-            </Text>
-            {!identityExpired && submission.current && (
-              <Button
-                className="text-button check-submission"
-                disabled={disabled}
-                onClick={checkSubmission}
-              >
-                确认上次发送
-              </Button>
-            )}
-            {identityExpired ? (
-              <Button
-                className="text-button restart-identity"
-                disabled={loading || busy || uploading || memoryBusy}
-                onClick={restartIdentity}
-              >
-                重新开始
-              </Button>
-            ) : (
-              !settings && (
-                <Button className="text-button" onClick={boot}>
-                  重试
-                </Button>
-              )
-            )}
-          </View>
-        )}
-        <View className="composer-area">
-          {mode === "byok" && (
-            <View className="key-row">
-              <TextInput
-                className="key-input"
-                password
-                value={apiKey}
-                onInput={(event) => setApiKey(event.detail.value)}
-                placeholder="填写本次 DeepSeek API Key"
-                disabled={busy}
-              />
-              <Text className="key-hint">仅用于本次生成，发送后清空</Text>
-            </View>
-          )}
-          {mode === "platform" && settings && !settings.platformConfigured && (
-            <Text className="config-warning">
-              平台尚未配置模型账户，请切换到“我的密钥”。
-            </Text>
-          )}
-          {mode === "external" ? (
-            <View className="external-composer">
-              <Text>让你自己的 Agent 生成，祝福仍留在这里。</Text>
-              <View className="external-actions">
+        </View>
+        <View className="chat-dock">
+          {error && (
+            <View className="error-banner">
+              <Text>
+                {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
+              </Text>
+              {!identityExpired && submission.current && (
                 <Button
-                  className="primary-button"
-                  onClick={() => setPanel("connection")}
-                >
-                  连接我的 Agent ↗
-                </Button>
-                <Button
-                  className="quiet-button"
+                  className="text-button check-submission"
                   disabled={disabled}
-                  onClick={boot}
+                  onClick={checkSubmission}
                 >
-                  刷新对话
+                  确认上次发送
                 </Button>
-              </View>
-            </View>
-          ) : (
-            <ChatComposer
-              inputMode={inputMode}
-              text={text}
-              attachments={attachments}
-              disabled={disabled}
-              voiceDisabled={
-                disabled || memory?.level === "empty" || !!panel || memoryOpen
-              }
-              ready={ready}
-              busy={busy}
-              uploading={uploading}
-              onMode={setInputMode}
-              onText={setText}
-              onVoiceText={(value) => {
-                const combined = text ? `${text}\n${value}` : value;
-                setText(combined);
-                setInputMode("keyboard");
-                if (combined.length > 4000)
-                  setError("文字超过 4000 字，请编辑后再发送。");
-              }}
-              onImage={chooseImage}
-              onRemoveImage={(id) =>
-                setAttachments((items) =>
-                  items.filter((item) => item.id !== id),
+              )}
+              {identityExpired ? (
+                <Button
+                  className="text-button restart-identity"
+                  disabled={loading || busy || uploading || memoryBusy}
+                  onClick={restartIdentity}
+                >
+                  重新开始
+                </Button>
+              ) : (
+                !settings && (
+                  <Button className="text-button" onClick={boot}>
+                    重试
+                  </Button>
                 )
-              }
-              onSend={() => send()}
-            />
+              )}
+            </View>
           )}
-          <Text className="composer-footnote">
-            {mode === "external"
-              ? "对话仍留在这里 · 支持撤销连接"
-              : "阿 J 是 AI，好意不是对未来的保证"}
-          </Text>
+          <View className="composer-area">
+            {mode === "byok" && (
+              <View className="key-row">
+                <TextInput
+                  className="key-input"
+                  password
+                  value={apiKey}
+                  onInput={(event) => setApiKey(event.detail.value)}
+                  placeholder="填写本次 DeepSeek API Key"
+                  disabled={busy}
+                />
+                <Text className="key-hint">仅用于本次生成，发送后清空</Text>
+              </View>
+            )}
+            {mode === "platform" &&
+              settings &&
+              !settings.platformConfigured && (
+                <Text className="config-warning">
+                  平台尚未配置模型账户，请切换到“我的密钥”。
+                </Text>
+              )}
+            {mode === "external" ? (
+              <View className="external-composer">
+                <Text>让你自己的 Agent 生成，祝福仍留在这里。</Text>
+                <View className="external-actions">
+                  <Button
+                    className="primary-button"
+                    onClick={() => setPanel("connection")}
+                  >
+                    连接我的 Agent ↗
+                  </Button>
+                  <Button
+                    className="quiet-button"
+                    disabled={disabled}
+                    onClick={boot}
+                  >
+                    刷新对话
+                  </Button>
+                </View>
+              </View>
+            ) : (
+              <ChatComposer
+                inputMode={inputMode}
+                text={text}
+                attachments={attachments}
+                disabled={disabled}
+                voiceDisabled={
+                  disabled || memory?.level === "empty" || !!panel || memoryOpen
+                }
+                ready={ready}
+                busy={busy}
+                uploading={uploading}
+                onMode={setInputMode}
+                onText={setText}
+                onVoiceText={(value) => {
+                  const combined = text ? `${text}\n${value}` : value;
+                  setText(combined);
+                  setInputMode("keyboard");
+                  if (combined.length > 4000)
+                    setError("文字超过 4000 字，请编辑后再发送。");
+                }}
+                onImage={chooseImage}
+                onRemoveImage={(id) =>
+                  setAttachments((items) =>
+                    items.filter((item) => item.id !== id),
+                  )
+                }
+                onSend={() => send()}
+              />
+            )}
+            <Text className="composer-footnote">
+              {mode === "external"
+                ? "对话仍留在这里 · 支持撤销连接"
+                : "阿 J 是 AI，好意不是对未来的保证"}
+            </Text>
+          </View>
         </View>
         {memoryOpen && (
           <MemoryPanel
