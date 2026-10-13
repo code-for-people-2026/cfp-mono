@@ -31,6 +31,8 @@ services:
     environment:
       # 本文件只用于测试部署；与广告能力分开，不声称验证了广告回执。
       HELLO_MEMORY_RECOVERY: preview
+      # nginx-public.conf.template 覆盖 X-Real-IP；下方端口仅监听回环。
+      HELLO_TRUST_PROXY: "true"
     ports:
       - "127.0.0.1:3310:3310"
     volumes:

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Payload } from "payload";
 import type { Owner } from "../domain/contracts";
 import { AppError } from "../domain/contracts";
@@ -5,8 +6,9 @@ import { privacyService, recoverOwner } from "./service";
 import { privacyPolicy } from "./policy";
 import { escapeHtml } from "../labeling/metadata";
 import { checkOrigin, COOKIE, mintCredential } from "../server/auth";
-import { rateLimit, readJson } from "../server/http";
+import { readJson } from "../server/http";
 import { beginPrivacyExport } from "./export-limits";
+import { limitRecoveryCaller, limitRecoveryLookup } from "./recovery-limits";
 
 const json = (value: unknown) => Response.json(value, { headers: { "Cache-Control": "no-store" } });
 export function legalPage() {
@@ -15,11 +17,12 @@ export function legalPage() {
 }
 export async function recoveryResponse(payload: Payload, request: Request) {
   if (request.headers.has("origin")) checkOrigin(request);
-  rateLimit("privacy-recover");
-  const body = await readJson(request, 2048) as { code?: unknown; native?: unknown };
+  limitRecoveryCaller(request);
+  const body = z.object({ code: z.string().regex(/^[A-Za-z0-9_-]{43}$/), native: z.boolean().optional() }).strict().parse(await readJson(request, 2048));
   const native = body.native === true;
   if (native && request.headers.has("origin")) throw new AppError(403, "浏览器请使用访客 Cookie 入口");
   if (!native) checkOrigin(request);
+  limitRecoveryLookup();
   const owner = await recoverOwner(payload, body.code);
   const credential = await mintCredential(payload, native ? "miniapp" : "cookie", owner);
   const response = json(native ? credential : { owner });

@@ -22,6 +22,6 @@ it("隐私操作与恢复的异步拒绝也保留可恢复的错误状态", asyn
   const withdrawn = await POST(new Request("http://localhost/api/hello/privacy/withdraw", { method: "POST" }), { params: Promise.resolve({ path: ["privacy", "withdraw"] }) });
   expect(withdrawn.status).toBe(409);
   service.recoverOwner.mockRejectedValue(new AppError(401, "invalid recovery code"));
-  const recovered = await POST(new Request("http://localhost/api/hello/privacy-recover", { method: "POST", body: JSON.stringify({ code: "invalid" }) }), { params: Promise.resolve({ path: ["privacy-recover"] }) });
+  const recovered = await POST(new Request("http://localhost/api/hello/privacy-recover", { method: "POST", body: JSON.stringify({ code: "a".repeat(43) }) }), { params: Promise.resolve({ path: ["privacy-recover"] }) });
   expect(recovered.status).toBe(401);
 });
