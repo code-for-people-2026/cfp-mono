@@ -9,6 +9,7 @@ import { checkOrigin, COOKIE, mintCredential } from "../server/auth";
 import { readJson } from "../server/http";
 import { beginPrivacyExport } from "./export-limits";
 import { limitRecoveryCaller, limitRecoveryLookup } from "./recovery-limits";
+import { withRecovery } from "./recovery-lock";
 
 const json = (value: unknown) => Response.json(value, { headers: { "Cache-Control": "no-store" } });
 export function legalPage() {
@@ -23,11 +24,13 @@ export async function recoveryResponse(payload: Payload, request: Request) {
   if (native && request.headers.has("origin")) throw new AppError(403, "浏览器请使用访客 Cookie 入口");
   if (!native) checkOrigin(request);
   limitRecoveryLookup();
-  const owner = await recoverOwner(payload, body.code);
-  const credential = await mintCredential(payload, native ? "miniapp" : "cookie", owner);
-  const response = json(native ? credential : { owner });
-  if (!native) response.headers.set("Set-Cookie", `${COOKIE}=${credential.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000${(process.env.HELLO_ORIGIN || "").startsWith("https:") ? "; Secure" : ""}`);
-  return response;
+  return withRecovery(body.code, async () => {
+    const owner = await recoverOwner(payload, body.code);
+    const credential = await mintCredential(payload, native ? "miniapp" : "cookie", owner);
+    const response = json(native ? credential : { owner });
+    if (!native) response.headers.set("Set-Cookie", `${COOKIE}=${credential.token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000${(process.env.HELLO_ORIGIN || "").startsWith("https:") ? "; Secure" : ""}`);
+    return response;
+  });
 }
 export async function privacyGet(payload: Payload, owner: Owner, action: string | undefined) {
   if (owner.auth === "bearer") throw new AppError(403, "请本人打开隐私与数据页面");

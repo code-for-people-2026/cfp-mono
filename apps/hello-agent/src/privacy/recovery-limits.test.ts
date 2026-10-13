@@ -13,7 +13,7 @@ beforeEach(() => {
   stubs.recover.mockReset().mockResolvedValue("recovered");
   stubs.mint.mockReset().mockResolvedValue({ owner: "recovered", token: "new-credential" });
 });
-afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+afterEach(() => { now = Date.now(); vi.useRealTimers(); vi.unstubAllEnvs(); });
 async function recover(ip: string | undefined, body = JSON.stringify({ native: true, code: "a".repeat(43) }), extraHeaders = {}) {
   const headers = { ...extraHeaders, ...(ip ? { "x-real-ip": ip } : {}) };
   try { return await recoveryResponse({} as Payload, new Request("http://localhost/api/hello/privacy-recover", { method: "POST", headers, body })); }
@@ -48,4 +48,39 @@ it("有效请求另受较大的全局上限保护，窗口到期后恢复", asyn
   expect(stubs.recover).toHaveBeenCalledTimes(200);
   vi.advanceTimersByTime(60_001);
   expect((await recover("203.0.113.1")).status).toBe(200);
+});
+
+it("同码并发恢复不会撤销第一个刚签发的凭证，冲突方明确重试", async () => {
+  const mintStarted = Promise.withResolvers<void>(), finishMint = Promise.withResolvers<void>();
+  const credentials = new Set<string>();
+  stubs.recover.mockImplementation(async () => { credentials.clear(); return "recovered"; });
+  stubs.mint.mockImplementation(async () => {
+    credentials.add("issued-once"); mintStarted.resolve(); await finishMint.promise;
+    return { token: "issued-once", owner: "recovered" };
+  });
+  const first = recover("192.0.2.10");
+  try {
+    await mintStarted.promise;
+    const second = await recover("192.0.2.11");
+    expect(second.status).toBe(409);
+    expect(stubs.recover).toHaveBeenCalledTimes(1);
+    expect(stubs.mint).toHaveBeenCalledTimes(1);
+    finishMint.resolve();
+    const response = await first;
+    expect(response.status).toBe(200);
+    expect(credentials.has((await response.json()).token)).toBe(true);
+  } finally { finishMint.resolve(); await first; }
+});
+it("查找阶段就阻止同码并发，失败后释放保护允许重试", async () => {
+  const lookupStarted = Promise.withResolvers<void>(), finishLookup = Promise.withResolvers<void>();
+  stubs.recover.mockImplementationOnce(async () => {
+    lookupStarted.resolve(); await finishLookup.promise; throw new AppError(401, "恢复码无效");
+  });
+  const first = recover("192.0.2.12");
+  try {
+    await lookupStarted.promise;
+    expect((await recover("192.0.2.13")).status).toBe(409);
+    finishLookup.resolve(); expect((await first).status).toBe(401);
+    expect((await recover("192.0.2.13")).status).toBe(200);
+  } finally { finishLookup.resolve(); await first; }
 });
