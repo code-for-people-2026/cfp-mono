@@ -80,7 +80,13 @@ export class PrivacyService {
     const parsed = consentSchema.safeParse(profile?.consent);
     if (profile?.state !== "active" || !parsed.success || parsed.data.version !== privacyPolicy().version || (profile.expiresAt && Date.parse(String(profile.expiresAt)) <= Date.now()))
       throw new AppError(403, "请先在隐私与数据中阅读并同意当前政策；撤回或到期后仅可查阅、导出和删除");
-    if (!parsed.data[scope]) throw new AppError(403, scope === "sensitive" ? "图片、情绪练习或敏感内容需要单独同意；可在隐私与数据中设置" : "请先本人确认外部 Agent 可读取全部对话和图片");
+    if (!parsed.data[scope]) throw new AppError(403, scope === "sensitive" ? "图片、情绪练习、外部历史访问或敏感内容需要单独同意；可在隐私与数据中设置" : "请先本人确认外部 Agent 可读取全部对话和图片");
+  }
+  async requireExternalAccess() {
+    await this.require("external");
+    // External connections can read arbitrary input, replies, artifacts and
+    // summaries. Neither a keyword miss nor a cached scan proves those safe.
+    await this.require("sensitive");
   }
   async requireImageInput() {
     await this.require("sensitive");

@@ -82,7 +82,7 @@ export function PrivacyAuthorization() {
     { key: "core", title: "对话存储", tag: "基础服务", description: "我已阅读隐私政策、服务协议与第三方说明，同意保存对话以提供服务。" },
     { key: "model", title: "模型生成与安全审核", tag: "基础服务", description: "我同意将必要输入、历史、摘要与作品发送 DeepSeek 生成及安全审核；BYOK 和外部提交也适用所列说明。" },
     { key: "sensitive", title: "敏感信息处理", tag: "可选", description: "单独同意处理我主动提供的敏感信息，用于图片、情绪练习、回应及安全审核。可能涉及健康或人脸，泄露会影响个人权益；可不选并只发送不含此类信息的普通文字。" },
-    { key: "external", title: "外部 Agent 访问", tag: "可选", description: "单独授权我选择并提供令牌的外部 Agent 读取全部历史、摘要和图片。我会先核查其接收方、地域与留存说明；可不选并使用平台或 BYOK。" },
+    { key: "external", title: "外部 Agent 访问", tag: "可选", description: "单独授权我选择并提供令牌的外部 Agent 读取全部历史、摘要和图片。历史可能含敏感信息，使用外部连接还需单独开启敏感信息处理。我会先核查其接收方、地域与留存说明；可不选并使用平台或 BYOK。" },
   ];
   async function save() {
     if (!policy || inFlight.current) return;

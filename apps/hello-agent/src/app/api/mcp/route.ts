@@ -15,8 +15,7 @@ export async function POST(request: Request) {
     rateLimit(owner.id);
     const body = await readJson(request);
     return await withAuthenticatedExecution(payload, request, owner, async (current) => {
-      await privacyService(payload, current).require("external");
-      await privacyService(payload, current).requireInput({});
+      await privacyService(payload, current).requireExternalAccess();
       // JSON transport resolves after the tool response, keeping the execution
       // lease through history/image reads and writes, not just dispatch.
       return await handleMcp(request, body, new GreetingService(new Repository(payload, current)));

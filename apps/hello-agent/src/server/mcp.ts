@@ -17,8 +17,7 @@ export function createMcpServer(service: GreetingService) {
     async (args: T) => {
       try {
         const privacy = new PrivacyService(service.repo);
-        await privacy.require("external");
-        await privacy.requireInput({});
+        await privacy.requireExternalAccess();
         return result(await handler(args));
       } catch (error) {
         return {
@@ -92,8 +91,7 @@ export function createMcpServer(service: GreetingService) {
     async (args) => {
       try {
         const privacy = new PrivacyService(service.repo);
-        await privacy.require("external");
-        await privacy.require("sensitive");
+        await privacy.requireExternalAccess();
         const media = await service.media.read(args.mediaId);
         return {
           content: [

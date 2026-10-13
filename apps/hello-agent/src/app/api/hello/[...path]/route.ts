@@ -58,8 +58,7 @@ export async function GET(request: Request, context: Context) {
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
       if (path[0] === "privacy") return await privacyGet(payload, owner, path[1], request);
       if (owner.auth === "bearer") {
-        await privacyService(payload, owner).require("external");
-        await privacyService(payload, owner).requireInput({});
+        await privacyService(payload, owner).requireExternalAccess();
       }
       const service = new GreetingService(new Repository(payload, owner));
       if (
@@ -189,8 +188,7 @@ export async function POST(request: Request, context: Context) {
           return json({ revoked: true });
         }
         const currentPrivacy = privacyService(payload, current);
-        await currentPrivacy.require("external");
-        await currentPrivacy.requireInput({});
+        await currentPrivacy.requireExternalAccess();
         const credential = await mintCredential(payload, "bearer", current.id);
         return json({ token: credential.token, expiresAt: credential.expiresAt });
       });
@@ -204,6 +202,7 @@ export async function POST(request: Request, context: Context) {
       const privacy = privacyService(payload, owner);
       const service = new GreetingService(new Repository(payload, owner));
       await privacy.require();
+      if (owner.auth === "bearer") await privacy.requireExternalAccess();
       if (path[0] === "ag-ui" && path.length === 1) {
         const input = readAgentInput(body);
         await privacy.requireInput(input);
