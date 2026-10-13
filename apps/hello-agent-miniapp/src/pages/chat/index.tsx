@@ -739,7 +739,7 @@ export default function Chat() {
                       data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <MessageText aiGenerated external={row.mode === "external"}>
+                      <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"

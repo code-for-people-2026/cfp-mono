@@ -4,6 +4,14 @@ import { Repository } from "../cms/repository";
 import { PrivacyService } from "./service";
 import { deletionLedgerPath, readDeletionLedger } from "./deletion-ledger";
 
+type MaintenanceResult = { dryRun: boolean; eligibleIdentities: number; deleted: number };
+export class PrivacyMaintenanceError extends AggregateError {
+  constructor(readonly result: MaintenanceResult, failures: Error[]) {
+    super(failures, `隐私维护未完成：${failures.length} 项失败，已完成 ${result.deleted}/${result.eligibleIdentities} 个身份；修复后重试，禁止恢复开放`);
+    this.name = "PrivacyMaintenanceError";
+  }
+}
+
 // Restore mode MUST run with application traffic stopped, using the independent
 // ledger retained outside the restored database. Default behavior is dry-run.
 export async function maintainPrivacy(payload: Payload, options: { apply: boolean; restoreLedger?: string }) {
@@ -34,11 +42,25 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
     }
   }
   let deleted = 0;
+  const failures: Error[] = [];
   for (const id of owners) {
     if (!options.apply) continue;
-    const service = new PrivacyService(new Repository(payload, { id, auth: "cookie" }));
-    await service.deleteData(); deleted++;
+    try {
+      const service = new PrivacyService(new Repository(payload, { id, auth: "cookie" }));
+      await service.deleteData(); deleted++;
+    } catch {
+      // Independent identities must still be attempted. Identify the failed
+      // ledger entry without logging raw identity IDs, object keys or content.
+      failures.push(new Error(`身份清理失败，ownerDigest=${createHash("sha256").update(id).digest("hex")}`));
+    }
   }
-  if (options.apply) await payload.delete({ collection: "credentials", overrideAccess: true, where: { expiresAt: { less_than: new Date().toISOString() } } });
-  return { dryRun: !options.apply, eligibleIdentities: owners.size, deleted };
+  if (options.apply) {
+    try {
+      const expired = await payload.delete({ collection: "credentials", overrideAccess: true, where: { expiresAt: { less_than: new Date().toISOString() } } });
+      if (expired.errors.length) throw new Error("partial deletion");
+    } catch { failures.push(new Error("过期凭证清理失败")); }
+  }
+  const result = { dryRun: !options.apply, eligibleIdentities: owners.size, deleted };
+  if (failures.length) throw new PrivacyMaintenanceError(result, failures);
+  return result;
 }

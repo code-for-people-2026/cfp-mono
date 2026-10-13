@@ -142,3 +142,21 @@ it.each([false, true])("图片说明原生长按复制保留 AI 和来源声明�
     expect(mocks.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 Q 先生\n${images[0].alt}` });
   } finally { act(() => renderer!.unmount()); }
 });
+
+it("H5 图片加载及失败保留系统来源，图片说明保留生成来源", async () => {
+  vi.stubEnv("TARO_ENV", "h5");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+  const { Artifacts } = await import("../src/chat/artifacts");
+  const images = artifacts.filter((item) => item.kind === "image");
+  let renderer: ReturnType<typeof create>;
+  act(() => { renderer = create(createElement(Artifacts, { turnId: 1, artifacts: images, responses: {}, external: true })); });
+  try {
+    const text = (value: string) => renderer!.root.findAllByType("text").find((item) => item.children.join("") === value)!;
+    expect(text("正在取图片…").props["data-ai-generated"]).toBe("false");
+    expect(text(images[0].alt).props["data-ai-generated"]).toBe("true");
+    expect(text(images[0].alt).props["data-ai-external"]).toBe("true");
+    await act(async () => {}); // Let the URL resolve, then simulate the image load failure.
+    act(() => { renderer!.root.findByType("image").props.onError(); });
+    expect(text("图片暂时无法读取").props["data-ai-generated"]).toBe("false");
+  } finally { act(() => renderer!.unmount()); }
+});

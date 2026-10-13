@@ -191,9 +191,8 @@ function SurfaceView({
           }));
         return (
           <View key={id} className="artifact-field">
-            <MessageText className="artifact-label">
-              {field.label}
-              {field.required ? " *" : "（选填）"}
+            <MessageText aiGenerated external={external} className="artifact-label">
+              {`${field.label}${field.required ? " *" : "（选填）"}`}
             </MessageText>
             {field.type === "longText" ? (
               <Textarea

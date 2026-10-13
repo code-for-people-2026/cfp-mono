@@ -7,7 +7,7 @@ import { ChatIcon } from "./icon";
 // Taro 的 Text 默认禁止选择；两个属性兼容 H5 和微信不同基础库。
 export function MessageText({ aiGenerated = false, external = false, ...props }: TextProps & { aiGenerated?: boolean; external?: boolean }) {
   const nativeAi = aiGenerated && process.env.TARO_ENV === "weapp";
-  return <Text {...props} selectable={!nativeAi} userSelect={!nativeAi} onLongPress={nativeAi ? () => {
+  return <Text {...props} data-ai-generated={aiGenerated ? "true" : "false"} data-ai-external={external ? "true" : "false"} selectable={!nativeAi} userSelect={!nativeAi} onLongPress={nativeAi ? () => {
     if (typeof props.children === "string") void copyAiReply(props.children, external).catch(() => Taro.showToast({ title: "复制失败，请重试", icon: "none" }));
   } : props.onLongPress} />;
 }
