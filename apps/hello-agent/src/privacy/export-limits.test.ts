@@ -7,7 +7,7 @@ const data = vi.hoisted(() => ({ exportData: vi.fn() }));
 vi.mock("./service", () => ({ privacyService: () => data, recoverOwner: vi.fn() }));
 let now = Date.now();
 beforeEach(() => { vi.useFakeTimers(); now += 60_001; vi.setSystemTime(now); data.exportData.mockReset(); });
-afterEach(() => vi.useRealTimers());
+afterEach(() => { now = Date.now(); vi.useRealTimers(); });
 it("每个身份每分钟最多两次导出", () => {
   beginPrivacyExport("owner")(); beginPrivacyExport("owner")();
   expect(() => beginPrivacyExport("owner")).toThrow("一分钟");
@@ -33,4 +33,25 @@ it("GET 导出失败会释放并发名额，成功才返回附件", async () => 
   const response = await privacyGet(payload, { id: "success", auth: "cookie" }, "export");
   expect(response.headers.get("Content-Disposition")).toContain("attachment");
   expect(await response.json()).toEqual({ format: "test" });
+});
+
+it("单个已限流身份反复重试，不消耗其他人的全局额度", () => {
+  beginPrivacyExport("noisy-owner")(); beginPrivacyExport("noisy-owner")();
+  for (let attempt = 0; attempt < 50; attempt++) expect(() => beginPrivacyExport("noisy-owner")).toThrow("一分钟");
+  for (let index = 0; index < 18; index++) beginPrivacyExport(`other-owner-${index}`)();
+  expect(() => beginPrivacyExport("global-is-now-full")).toThrow("一分钟");
+});
+it("全局拒绝也不扣身份额度，下一窗口仍可正常导出", () => {
+  for (let index = 0; index < 20; index++) beginPrivacyExport(`fill-${index}`)();
+  vi.advanceTimersByTime(30_000);
+  for (let attempt = 0; attempt < 2; attempt++) expect(() => beginPrivacyExport("waiting-owner")).toThrow("一分钟");
+  vi.advanceTimersByTime(30_001);
+  beginPrivacyExport("waiting-owner")(); beginPrivacyExport("waiting-owner")();
+});
+it("并发已满的重试不扣身份或全局额度", () => {
+  const first = beginPrivacyExport("busy-one"), second = beginPrivacyExport("busy-two");
+  try {
+    for (let attempt = 0; attempt < 30; attempt++) expect(() => beginPrivacyExport("waiting-for-slot")).toThrow("稍后重试");
+  } finally { first(); second(); }
+  beginPrivacyExport("waiting-for-slot")(); beginPrivacyExport("waiting-for-slot")();
 });

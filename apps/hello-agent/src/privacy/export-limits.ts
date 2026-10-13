@@ -1,5 +1,5 @@
 import { AppError } from "../domain/contracts";
-import { rateLimit } from "../server/http";
+import { rateLimitGroup } from "../server/http";
 
 const MAX_EXPORT_BYTES = 8 * 1024 * 1024;
 const MAX_EXPORT_RECORDS = 1000;
@@ -25,9 +25,11 @@ let activeExports = 0;
 export function beginPrivacyExport(owner: string) {
   // Single-process limits also cover fresh identities. A multi-instance rollout
   // must move this gate to the shared limiter before increasing replica count.
-  rateLimit("privacy-export:global");
-  rateLimit(`privacy-export:owner:${owner}`, 2);
   if (activeExports >= 2) throw new AppError(429, "导出正在排队，请稍后重试");
+  rateLimitGroup([
+    { key: `privacy-export:owner:${owner}`, maximum: 2 },
+    { key: "privacy-export:global", maximum: 20 },
+  ]);
   activeExports++;
   let released = false;
   return () => { if (!released) { activeExports--; released = true; } };
