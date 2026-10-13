@@ -137,6 +137,43 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+it.each([false, true])(
+  "已有表单的可用状态与平台密钥配置一致（configured=%s）",
+  async (configured) => {
+    const { artifacts } = await import(
+      "../../../packages/hello-agent-protocol/test/fixtures"
+    );
+    history = [
+      {
+        ...initial,
+        input: { text: "请给我一份练习", mediaIds: [] },
+        artifacts: artifacts.filter((item) => item.kind === "form"),
+      },
+    ];
+    const original = platform.request.getMockImplementation()!;
+    platform.request.mockImplementation(async (options) => {
+      const response = await original(options);
+      return options.url.endsWith("/config")
+        ? {
+            ...response,
+            data: { ...response.data, platformConfigured: configured },
+          }
+        : response;
+    });
+    await mount();
+    const submit = renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-submit"))!;
+    expect(!!submit.props.disabled).toBe(!configured);
+    for (const field of renderer!.root.findAll(
+      (node) =>
+        ["input", "textarea"].includes(String(node.type)) &&
+        node.props.className?.includes("artifact-input"),
+    ))
+      expect(!!field.props.disabled).toBe(!configured);
+  },
+);
+
 it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
   const { artifacts } = await import(
     "../../../packages/hello-agent-protocol/test/fixtures"

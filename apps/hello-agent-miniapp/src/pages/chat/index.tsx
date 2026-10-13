@@ -112,6 +112,14 @@ export default function Chat() {
     !!settings?.platformConfigured,
     disabled || historyFailed || memory?.level === "empty",
   );
+  const formReady = canSend(
+    "表单",
+    [],
+    mode,
+    apiKey,
+    !!settings?.platformConfigured,
+    disabled || historyFailed || memory?.level === "empty",
+  );
   const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
 
   usePageScroll(({ scrollTop }) => {
@@ -433,16 +441,6 @@ export default function Chat() {
     }
   }
   async function send(formInput?: Input) {
-    const formReady =
-      !!formInput &&
-      canSend(
-        "表单",
-        [],
-        mode,
-        apiKey,
-        !!settings?.platformConfigured,
-        disabled || historyFailed || memory?.level === "empty",
-      );
     if (
       !(formInput ? formReady : ready) ||
       mode === "external" ||
@@ -750,12 +748,7 @@ export default function Chat() {
                           turnId={row.id}
                           artifacts={row.artifacts}
                           responses={formResponses}
-                          disabled={
-                            disabled ||
-                            mode === "external" ||
-                            memory?.level === "empty" ||
-                            (mode === "byok" && apiKey.length < 10)
-                          }
+                          disabled={!formReady}
                           onAction={submitForm}
                         />
                       )}
