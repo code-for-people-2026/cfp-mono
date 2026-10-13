@@ -125,7 +125,7 @@ export const getSettings = () => request("config", settingsSchema);
 export const getSessions = () => request("sessions", sessionsSchema);
 export const newSession = () =>
   request("sessions", sessionSchema, "POST", {
-    title: "与阿 Q + 的日常",
+    title: "与阿 Q 先生的日常",
   });
 export const getHistory = (id: number) =>
   request(`sessions/${id}`, historySchema);

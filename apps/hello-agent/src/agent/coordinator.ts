@@ -69,7 +69,7 @@ export function createGreetingAgent(options: {
     {
       name: "save_greeting",
       description:
-        "主 Agent 保存整合后的阿 Q +回复及作品。非 supportive 流派必须已咨询对应专家。只有此工具能写入本轮产物。",
+        "主 Agent 保存整合后的阿 Q 先生回复及作品。非 supportive 流派必须已咨询对应专家。只有此工具能写入本轮产物。",
       parameters: greetingSchema,
       execute: async (output, context) => {
         if (options.signal.aborted) throw new AppError(408, "生成已超时");

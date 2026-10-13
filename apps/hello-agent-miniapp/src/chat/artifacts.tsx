@@ -227,7 +227,7 @@ function SurfaceView({
               onClick={() => void submit()}
             >
               {submitted
-                ? "已提交，阿 Q +已接着回应"
+                ? "已提交，阿 Q 先生已接着回应"
                 : sending
                   ? "正在提交…"
                   : child(component.child)}

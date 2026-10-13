@@ -37,7 +37,7 @@ try {
   );
   const cases = [
     {
-      name: "阿 Q +身份",
+      name: "阿 Q 先生身份",
       mode: "platform",
       input: { text: "你叫什么名字？你是个什么样的助手？" },
     },
@@ -94,8 +94,8 @@ try {
       typeof result.greeting === "string" && result.greeting.length >= 2,
     );
     assert.equal(result.promptVersion, PROMPT_VERSION);
-    if (item.name === "阿 Q +身份")
-      assert.match(String(result.greeting), /阿\s*Q\s*\+/i);
+    if (item.name === "阿 Q 先生身份")
+      assert.match(String(result.greeting), /阿\s*Q\s*先生/i);
     results.push({
       case: item.name,
       input: item.input,

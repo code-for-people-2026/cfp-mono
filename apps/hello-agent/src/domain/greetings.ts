@@ -37,7 +37,7 @@ export class GreetingService {
       ({ id, title, createdAt }) => ({ id, title, createdAt }),
     );
   }
-  async createSession(title = "与阿 Q +的日常"): Promise<Session> {
+  async createSession(title = "与阿 Q 先生的日常"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });
   }
   async history(sessionId: number): Promise<Turn[]> {

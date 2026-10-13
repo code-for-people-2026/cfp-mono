@@ -4,10 +4,12 @@ import type { Payload } from "payload";
  * administrator's prompt, enabled state or knowledge bindings to defaults. */
 function renameLegacyBrand(text: string): string {
   return text
-    .replaceAll("「好人阿 J」（英文名 a jOKer）", "「阿 Q +」")
-    .replaceAll("好人阿 J · a jOKer", "阿 Q +")
-    .replaceAll("好人阿 J / a jOKer", "阿 Q +")
-    .replace(/好人阿 ?J|阿 ?J|a jOKer/g, "阿 Q +");
+    .replaceAll("阿 Q +", "阿 Q 先生")
+    .replaceAll("「好人阿 J」（英文名 a jOKer）", "「阿 Q 先生」")
+    .replaceAll("好人阿 J · a jOKer", "阿 Q 先生")
+    .replaceAll("好人阿 J / a jOKer", "阿 Q 先生")
+    .replace(/好人阿 ?J|阿 ?J|a jOKer/g, "阿 Q 先生")
+    .replace(/阿 Q 先生 (?=[\u4e00-\u9fff])/g, "阿 Q 先生");
 }
 
 export async function renameAgentBrand(payload: Payload) {

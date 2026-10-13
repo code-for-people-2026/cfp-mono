@@ -327,9 +327,9 @@ try {
     id: main.id,
     ...adminOptions,
     data: {
-      name: "阿J · 主 Agent",
+      name: "阿 Q + · 主 Agent",
       prompt:
-        "你是「好人阿 J」（英文名 a jOKer）的 AI 搭子，自称「阿J」。管理员规则保留。",
+        "你是「阿 Q +」的 AI 搭子，自称「阿 Q +」。管理员规则保留。",
     },
   });
   const snapshot = async () => ({
@@ -380,14 +380,14 @@ try {
       const expected =
         previous.id === cbt.id
           ? {
-              name: "阿 Q + · 管理员的 CBT",
+              name: "阿 Q 先生 · 管理员的 CBT",
               prompt:
-                "你是阿 Q + 的 CBT 助手。管理员定制：优先承接用户已填的记录。",
+                "你是阿 Q 先生的 CBT 助手。管理员定制：优先承接用户已填的记录。",
             }
           : {
-              name: "阿 Q + · 主 Agent",
+              name: "阿 Q 先生 · 主 Agent",
               prompt:
-                "你是「阿 Q +」的 AI 搭子，自称「阿 Q +」。管理员规则保留。",
+                "你是「阿 Q 先生」的 AI 搭子，自称「阿 Q 先生」。管理员规则保留。",
             };
       assert.deepEqual(current, {
         ...previous,

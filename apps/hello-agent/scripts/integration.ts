@@ -165,7 +165,7 @@ try {
       message.content.type === "text" ? message.content.text : "",
     )
     .join("\n");
-  assert.ok(promptText.includes("自称「阿 Q +」"));
+  assert.ok(promptText.includes("自称「阿 Q 先生」"));
   assert.ok(promptText.includes("hello_save_greeting 工具一次"));
   assert.ok(promptText.includes("不要让用户选择会话或填写 sessionId"));
   const external = {

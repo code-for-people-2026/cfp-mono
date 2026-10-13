@@ -125,7 +125,7 @@ export class Repository {
     } catch {
       throw new AppError(
         409,
-        "阿 Q +正在回复，请稍后重试；若刚才意外中断，请三分钟后再试",
+        "阿 Q 先生正在回复，请稍后重试；若刚才意外中断，请三分钟后再试",
       );
     }
     return async () => {

@@ -75,12 +75,12 @@ try {
     : typeof latest?.id === "number"
       ? latest.id
       : Number(
-          (await tool("hello_create_session", { title: "与阿 Q +的日常" }, sessionSchema)).id,
+          (await tool("hello_create_session", { title: "与阿 Q 先生的日常" }, sessionSchema)).id,
         );
   const memory = await tool("hello_get_context", { sessionId }, agentContextSchema);
   if (memory.status?.level === "empty")
     throw new Error(
-      "记忆空间已满，请在阿 Q +页面整理后再继续；使用页面提供的测试版或广告入口，外部 Agent 不能代为确认",
+      "记忆空间已满，请在阿 Q 先生页面整理后再继续；使用页面提供的测试版或广告入口，外部 Agent 不能代为确认",
     );
   parts.unshift({
     type: "text",

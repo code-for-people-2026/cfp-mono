@@ -6,8 +6,8 @@ import { canSend, requestId } from "../src/chat/model";
 describe("对话式输入", () => {
   it("首版自动续接记录，不向用户展示会话管理或编号", () => {
     const page = readFileSync("src/pages/chat/index.tsx", "utf8");
-    expect(page).toContain("阿 Q +");
-    expect(page).toContain("我是阿 Q +");
+    expect(page).toContain("阿 Q 先生");
+    expect(page).toContain("我是阿 Q 先生");
     expect(page).not.toMatch(/会话|startSession|selectSession|session-list/);
     expect(page).toContain("const latest = rows[rows.length - 1]");
     expect(page).toContain("await readHistory(latest.id)");

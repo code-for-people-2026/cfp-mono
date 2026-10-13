@@ -4,7 +4,7 @@ import { RootPage } from "@payloadcms/next/views";
 import { importMap } from "../importMap";
 import { cms } from "../../../../cms/client";
 
-export const metadata = { title: "管理后台 · 阿 Q +" };
+export const metadata = { title: "管理后台 · 阿 Q 先生" };
 
 export default async function Page(props: {
   params: Promise<{ segments: string[] }>;
@@ -38,7 +38,7 @@ export default async function Page(props: {
           初始化后刷新此页即可登录。密钥与数据库配置须与当前应用相同；完整说明见项目
           README。不要把真实密码粘贴到聊天或提交进仓库。
         </p>
-        <Link href="/">返回阿 Q +</Link>
+        <Link href="/">返回阿 Q 先生</Link>
       </section>
     );
   }
