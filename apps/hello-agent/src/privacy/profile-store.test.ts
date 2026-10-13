@@ -182,3 +182,53 @@ it("恢复遇到批量撤销部分失败时不签发新凭证，可重试", asyn
     await expect(authenticate(payload, request)).rejects.toMatchObject({ status: 401 });
   } finally { erase.mockRestore(); }
 });
+
+const mutationCases = (["cookie", "miniapp"] as const).flatMap((kind) => ["delete", "consent", "withdraw", "recovery-code", "logout"].map((action) => ({ kind, action })));
+it.each(mutationCases)("$kind 的旧 $action 请求跨过恢复后不能修改资料或撤销新凭证", async ({ kind, action }) => {
+  const service = await setup(`stale-${kind}-${action}`);
+  const { code } = await service.recoveryCode();
+  const originalProfile = await profileFor(payload, service.repo.owner.id);
+  const old = await mintCredential(payload, kind, service.repo.owner.id);
+  const paused = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const hasBody = action === "consent" || action === "delete";
+  const body = action === "delete" ? { confirmation: "删除我的全部在线数据" } : { ...consent(), sensitive: true };
+  const stream = hasBody ? new ReadableStream<Uint8Array>({ async pull(controller) {
+    paused.resolve(); await resume.promise;
+    controller.enqueue(new TextEncoder().encode(JSON.stringify(body))); controller.close();
+  } }, { highWaterMark: 0 }) : undefined;
+  const originalFind = payload.find.bind(payload);
+  const find = !hasBody ? vi.spyOn(payload, "find").mockImplementationOnce(async (options) => {
+    const result = await originalFind(options); paused.resolve(); await resume.promise; return result;
+  }) : undefined;
+  vi.stubEnv("HELLO_ORIGIN", "http://localhost");
+  const init: RequestInit & { duplex?: "half" } = { method: "POST", headers: kind === "cookie" ? { origin: "http://localhost", cookie: `hello_identity=${old.token}` } : { authorization: `Bearer ${old.token}` }, ...(stream ? { body: stream, duplex: "half" } : {}) };
+  const pending = POST(new Request(`http://localhost/api/hello/privacy/${action}`, init), { params: Promise.resolve({ path: ["privacy", action] }) });
+  try {
+    await paused.promise;
+    const recovered = await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
+    resume.resolve(); const response = await pending;
+    expect(response.status).toBe(401);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(await profileFor(payload, service.repo.owner.id)).toEqual(originalProfile);
+    await expect(authenticate(payload, new Request("http://localhost", { headers: { cookie: `hello_identity=${recovered.token}` } }))).resolves.toMatchObject({ id: service.repo.owner.id });
+    expect((await payload.find({ collection: "credentials", overrideAccess: true, where: { owner: { equals: service.repo.owner.id } } })).docs.map((row) => row.kind)).toEqual(["cookie"]);
+  } finally { resume.resolve(); await pending; find?.mockRestore(); vi.unstubAllEnvs(); }
+});
+it("接收方变更前旧 bearer 撤销失败，授权与历史保持原样，重试成功后旧凭证失效", async () => {
+  const service = await setup("recipient-change");
+  const recipient = { name: "原接收方", contact: "old@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" };
+  await updateProfile(payload, (await profileFor(payload, service.repo.owner.id))!, { consent: { ...consent(), external: true, externalRecipient: recipient }, expiresAt: "2099-01-01T00:00:00.000Z" });
+  const before = (await profileFor(payload, service.repo.owner.id))!;
+  const old = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const next = { ...consent(), external: true, externalRecipient: { ...recipient, name: "新接收方", contact: "new@example.invalid" } };
+  const erase = vi.spyOn(payload, "delete").mockResolvedValueOnce({ docs: [], errors: [{ id: 1, isPublic: false, message: "simulated partial failure" }] });
+  try {
+    await expect(service.consent(next)).rejects.toMatchObject({ status: 503 });
+    expect(await profileFor(payload, service.repo.owner.id)).toEqual(before);
+    const request = new Request("http://localhost", { headers: { authorization: `Bearer ${old.token}` } });
+    await expect(authenticate(payload, request)).resolves.toMatchObject({ id: service.repo.owner.id });
+    await service.consent(next);
+    expect(await profileFor(payload, service.repo.owner.id)).toMatchObject({ revision: before.revision + 1, consent: next });
+    await expect(authenticate(payload, request)).rejects.toMatchObject({ status: 401 });
+  } finally { erase.mockRestore(); }
+});

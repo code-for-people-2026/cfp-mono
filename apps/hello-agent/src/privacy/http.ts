@@ -5,11 +5,12 @@ import { AppError } from "../domain/contracts";
 import { privacyService, withRecoveredOwner } from "./service";
 import { privacyPolicy } from "./policy";
 import { escapeHtml } from "../labeling/metadata";
-import { checkOrigin, COOKIE, mintCredential } from "../server/auth";
+import { authenticate, checkOrigin, COOKIE, mintCredential } from "../server/auth";
 import { readJson } from "../server/http";
 import { beginPrivacyExport } from "./export-limits";
 import { limitRecoveryCaller, limitRecoveryLookup } from "./recovery-limits";
 import { withRecovery } from "./recovery-lock";
+import { withCredentialLock } from "../server/credential-lock";
 
 const json = (value: unknown) => Response.json(value, { headers: { "Cache-Control": "no-store" } });
 export function legalPage() {
@@ -48,22 +49,29 @@ export async function privacyGet(payload: Payload, owner: Owner, action: string 
 }
 export async function privacyPost(payload: Payload, owner: Owner, action: string | undefined, request: Request) {
   if (owner.auth === "bearer") throw new AppError(403, "外部连接不能代替你管理隐私授权或删除数据");
-  const service = privacyService(payload, owner);
-  if (action === "consent") return json(await service.consent(await readJson(request, 4096)));
-  if (action === "withdraw") return json(await service.withdraw());
-  if (action === "recovery-code") return json(await service.recoveryCode());
-  if (action === "delete") {
-    const body = await readJson(request, 1024) as { confirmation?: unknown };
-    if (body.confirmation !== "删除我的全部在线数据") throw new AppError(400, "请明确确认删除全部在线数据");
-    const response = json(await service.deleteData());
-    response.headers.set("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
-    return response;
-  }
-  if (action === "logout") {
-    await service.revoke();
-    const response = json({ loggedOut: true, notice: "已撤销该身份的全部连接；数据仍保留，找回需要恢复码" });
-    response.headers.set("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
-    return response;
-  }
-  throw new AppError(404, "接口不存在");
+  // Read potentially slow bodies before taking the owner gate. The credential
+  // can be revoked while reading, so only the in-gate authentication authorizes
+  // the mutation. Internal maintenance uses the service directly, without HTTP.
+  const body = action === "consent" ? await readJson(request, 4096) : action === "delete" ? await readJson(request, 1024) : undefined;
+  return withCredentialLock(owner.id, async () => {
+    const current = await authenticate(payload, request);
+    if (current.id !== owner.id || current.auth === "bearer") throw new AppError(401, "连接身份已失效，请重新连接");
+    const service = privacyService(payload, current);
+    if (action === "consent") return json(await service.consent(body));
+    if (action === "withdraw") return json(await service.withdraw());
+    if (action === "recovery-code") return json(await service.recoveryCode());
+    if (action === "delete") {
+      if (!body || typeof body !== "object" || !("confirmation" in body) || body.confirmation !== "删除我的全部在线数据") throw new AppError(400, "请明确确认删除全部在线数据");
+      const response = json(await service.deleteData());
+      response.headers.set("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+      return response;
+    }
+    if (action === "logout") {
+      await service.revoke();
+      const response = json({ loggedOut: true, notice: "已撤销该身份的全部连接；数据仍保留，找回需要恢复码" });
+      response.headers.set("Set-Cookie", `${COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`);
+      return response;
+    }
+    throw new AppError(404, "接口不存在");
+  });
 }

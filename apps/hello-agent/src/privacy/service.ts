@@ -66,9 +66,11 @@ export class PrivacyService {
     const unexpired = profile?.expiresAt ? Date.parse(profile.expiresAt) > Date.now() : !policy.retentionDays;
     if (profile?.state === "active" && unexpired && previous.success && JSON.stringify(previous.data) === JSON.stringify(consent)) return this.status();
     await withCredentialLock(this.repo.owner.id, async () => {
-      await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent", profile);
-      // Every choice update revokes old scopes and old recipient authorizations.
+      // Revoke before recording new scopes/recipients. Partial cleanup must
+      // leave the prior consent intact, so surviving tokens never inherit a
+      // recipient authorization the user has not granted to them.
       await this.revoke("bearer");
+      await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent", profile);
     });
     return this.status();
   }
@@ -146,9 +148,11 @@ export class PrivacyService {
     const media: { id: number; createdAt?: string; mimeType?: string; source?: string; base64?: string; withheld?: boolean; notice?: string }[] = [];
     const credentials: { kind: string; expiresAt: string; createdAt: string }[] = [];
     const safetyCases: unknown[] = [];
-    const result = { retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。执行轨迹中模型输出为 AI 生成。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    const result = { retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
     budget.add(result, false);
-    for (const collection of contentCollections.filter((name) => name !== "session-locks")) {
+    // ADK snapshots mix visitor input with admin-only knowledgeContext and
+    // tool state. The visitor-facing conversation is exported below instead.
+    for (const collection of ["sessions", "greetings"] as const) {
       records[collection] = [];
       for await (const row of this.exportRows(collection)) {
         if (collection === "greetings" && "status" in row && row.status === "completed") {

@@ -64,10 +64,24 @@ export class MediaService {
     return this.readRow(await this.repo.get("media", id));
   }
 
+  private async *deletionPages() {
+    let cursor = 0;
+    while (true) {
+      // Erasure includes isolated media. The owner comes from the authenticated
+      // repository (or trusted maintenance), never from request parameters.
+      const { docs } = await this.repo.payload.find({ collection: "media", overrideAccess: true, depth: 0, pagination: false, limit: 100, sort: "id", select: { id: true, object: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } });
+      if (!docs.length) return;
+      yield docs;
+      cursor = docs[docs.length - 1].id;
+      if (docs.length < 100) return;
+    }
+  }
+
   async deleteAll() {
-    const rows = await this.repo.all("media");
     const store = this.storeFactory();
-    for (const row of rows) {
+    // Validate every reference before removing any object, without retaining
+    // image bodies or an unbounded list of IDs. Deletion freezes new uploads.
+    for await (const rows of this.deletionPages()) for (const row of rows) {
       if (!row.object) continue;
       const reference = referenceSchema.parse(row.object);
       if (!reference.key.startsWith(ownerPrefix(this.repo.owner.id))) throw new AppError(500, "图片归属异常，删除已暂停");
@@ -77,7 +91,10 @@ export class MediaService {
       if (!store.removePrefix) throw new AppError(503, "对象清理功能尚未配置");
       await store.removePrefix(ownerPrefix(this.repo.owner.id));
     }
-    for (const row of rows) await this.repo.remove("media", row.id);
+    for await (const rows of this.deletionPages()) {
+      const result = await this.repo.payload.delete({ collection: "media", overrideAccess: true, depth: 0, select: { owner: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { in: rows.map((row) => row.id) } }] } });
+      if (result.errors.length) throw new AppError(503, "部分图片记录尚未删除，请稍后重试");
+    }
   }
 
   async migrate(id: number) {
