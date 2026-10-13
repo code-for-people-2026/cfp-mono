@@ -34,6 +34,56 @@ export function relevantPassage(text: string, query: string, limit = 2800) {
   return `${start ? "…" : ""}${clean.slice(start, start + limit)}${start + limit < clean.length ? "…" : ""}`;
 }
 
+async function extractPdf(bytes: Uint8Array, signal: AbortSignal) {
+  let destroy: (() => Promise<void>) | undefined;
+  const cleanup = () => {
+    const release = destroy;
+    destroy = undefined;
+    // PDF.js cleanup can itself wait for unfinished parsing; never extend the deadline.
+    if (release) void release().catch(() => {});
+  };
+  let onAbort = () => {};
+  const aborted = new Promise<never>((_, reject) => {
+    onAbort = () => {
+      cleanup();
+      reject(signal.reason);
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  const parse = async () => {
+    const { getResolvedPDFJS } = await import("unpdf");
+    signal.throwIfAborted();
+    const { getDocument } = await getResolvedPDFJS();
+    signal.throwIfAborted();
+    const task = getDocument({
+      data: bytes,
+      useSystemFonts: false,
+      disableFontFace: true,
+    });
+    destroy = () => task.destroy();
+    const document = await task.promise;
+    signal.throwIfAborted();
+    const parts: string[] = [];
+    for (let page = 1; page <= Math.min(document.numPages, 40); page++) {
+      const current = await document.getPage(page);
+      signal.throwIfAborted();
+      const content = await current.getTextContent();
+      signal.throwIfAborted();
+      parts.push(
+        content.items.map((item) => ("str" in item ? item.str : "")).join(" "),
+      );
+      if (parts.join("\n").length >= 100_000) break;
+    }
+    return parts.join("\n").slice(0, 100_000);
+  };
+  try {
+    return await Promise.race([parse(), aborted]);
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    cleanup();
+  }
+}
+
 export async function extractDocument(
   bytes: Uint8Array,
   contentType: string,
@@ -42,27 +92,7 @@ export async function extractDocument(
 ): Promise<string> {
   signal.throwIfAborted();
   if (Buffer.from(bytes.subarray(0, 5)).toString() === "%PDF-") {
-    const { getDocumentProxy } = await import("unpdf");
-    const document = await getDocumentProxy(bytes, {
-      useSystemFonts: false,
-      disableFontFace: true,
-    });
-    try {
-      const parts: string[] = [];
-      for (let page = 1; page <= Math.min(document.numPages, 40); page++) {
-        signal.throwIfAborted();
-        const content = await (await document.getPage(page)).getTextContent();
-        parts.push(
-          content.items
-            .map((item) => ("str" in item ? item.str : ""))
-            .join(" "),
-        );
-        if (parts.join("\n").length >= 100_000) break;
-      }
-      return parts.join("\n").slice(0, 100_000);
-    } finally {
-      await document.loadingTask.destroy();
-    }
+    return extractPdf(bytes, signal);
   }
   if (mediaType === 3 && bytes[0] === 0x50 && bytes[1] === 0x4b) {
     // Only decompress the document XML, with an explicit expanded-size bound.

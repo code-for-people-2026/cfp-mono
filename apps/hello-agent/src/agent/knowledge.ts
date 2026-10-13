@@ -247,6 +247,7 @@ export async function searchIma(
           bounded,
           fetcher,
         );
+        bounded.throwIfAborted();
         source.excerpt = relevantPassage(text, phrase);
         source.readStatus = source.excerpt ? "document" : "title_only";
         if (!source.excerpt)
