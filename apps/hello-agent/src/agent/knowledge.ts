@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { methodQuery } from "./knowledge-query";
 import {
   extractDocument,
   plainText,
@@ -197,7 +198,7 @@ export async function searchIma(
   fetcher: typeof fetch = fetch,
 ) {
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(16000)]);
-  const phrase = query.trim().slice(0, 80);
+  const phrase = methodQuery(query);
   // ima 搜索偏向标题匹配；长组合词无结果时，最多再试一个词和其短前缀。
   const firstTerm = phrase.split(/[\s，、,；;]+/)[0];
   const shortTerm = /^[\p{Script=Han}]{5,}/u.test(firstTerm)

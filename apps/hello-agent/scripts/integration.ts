@@ -168,6 +168,10 @@ try {
   assert.ok(promptText.includes("自称「阿 Q 先生」"));
   assert.ok(promptText.includes("hello_save_greeting 工具一次"));
   assert.ok(promptText.includes("不要让用户选择会话或填写 sessionId"));
+  const newerSession = await service.createSession("较新创建但较早活动");
+  await repo.update("sessions", newerSession.id, {
+    updatedAt: "2000-01-01T00:00:00.000Z",
+  });
   const external = {
     sessionId: session.id,
     requestId: randomUUID(),
@@ -189,6 +193,15 @@ try {
   );
   assert.equal(externalRows.length, 1);
   assert.equal(externalRows[0].greeting, external.output.greeting);
+  const { readToolResult } = await import("./mcp-result");
+  const { sessionsSchema } = await import("@cfp/hello-agent-contracts");
+  const listed = readToolResult(
+    await client.callTool({ name: "hello_list_sessions", arguments: {} }),
+    sessionsSchema,
+  );
+  assert.equal(listed.at(-1)?.id, session.id);
+  assert.ok(listed.some((row) => row.id === newerSession.id));
+  pass("外部 MCP 会话按最近活动排序，续聊旧会话后不会误选新建会话");
   await client.close();
   await server.close();
   await verifyContext(repo);

@@ -16,6 +16,7 @@ import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
 
 import type { AgentConfiguration } from "./configuration";
 import type { KnowledgeContext } from "./knowledge";
+import { KNOWLEDGE_METHODS, methodQuery } from "./knowledge-query";
 
 const consultationSchema = z
   .object({
@@ -124,8 +125,9 @@ export function createPsychologyTeam(options: {
           },
           knowledgeQuery: {
             type: Type.STRING,
+            enum: KNOWLEDGE_METHODS[approach],
             description:
-              "仅填写方法关键词，例如认知重构，不要包括用户姓名、联系方式、聊天原话。绑定知识库时必填，最多 80 字。",
+              "选择列出的方法关键词；不得增加姓名、联系方式或聊天原话。绑定知识库时必填。",
           },
           urgency: {
             type: Type.STRING,
@@ -227,6 +229,17 @@ export function createPsychologyTeam(options: {
         return {
           error: "请提供 knowledgeQuery 方法关键词，不包含个人信息或聊天原话。",
         };
+      let query: string | undefined;
+      if (spec.knowledge) {
+        try {
+          query = methodQuery(parsed.data.knowledgeQuery!, approach);
+        } catch {
+          return {
+            error:
+              "knowledgeQuery 只能选择工具列出的方法关键词，不允许自由文本；请修改后重试。",
+          };
+        }
+      }
       const existing = consultations.get(approach);
       if (existing) return existing;
       if (consultations.size >= 2)
@@ -236,7 +249,7 @@ export function createPsychologyTeam(options: {
       // Reserve before starting async work, including parallel calls in one reply.
       active++;
       const result = Promise.resolve().then(() =>
-        execute(parsed.data.request, parsed.data.knowledgeQuery),
+        execute(parsed.data.request, query),
       );
       consultations.set(approach, result);
       return result;

@@ -33,14 +33,18 @@ export class GreetingService {
   ) {}
 
   async sessions(): Promise<Session[]> {
-    return (await this.repo.all("sessions")).map(
-      ({ id, title, createdAt, updatedAt }) => ({
+    return (await this.repo.all("sessions"))
+      .map(({ id, title, createdAt, updatedAt }) => ({
         id,
         title,
         createdAt,
         updatedAt,
-      }),
-    );
+      }))
+      .sort(
+        (a, b) =>
+          (a.updatedAt || a.createdAt).localeCompare(b.updatedAt || b.createdAt) ||
+          a.id - b.id,
+      );
   }
   async createSession(title = "新对话"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });

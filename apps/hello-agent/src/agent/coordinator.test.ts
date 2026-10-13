@@ -76,6 +76,7 @@ function fixture(
   const sessionService = new InMemorySessionService();
   const controller = new AbortController();
   const save = vi.fn(async (value: unknown) => ({ id: 11, output: value }));
+  const knowledgeRead = vi.fn(async () => knowledge!);
   const agent = createGreetingAgent({
     configuration: {
       coordinator: DEFAULT_AGENT_CONFIGS[0].prompt,
@@ -86,7 +87,7 @@ function fixture(
         prompt: spec.prompt,
         revision: "fixture",
         knowledge:
-          knowledge && spec.key === "cbt" ? async () => knowledge : undefined,
+          knowledge && spec.key === "cbt" ? knowledgeRead : undefined,
       })),
     },
     model,
@@ -118,7 +119,7 @@ function fixture(
       if (event.errorCode) throw new Error(event.errorCode);
     }
   };
-  return { model, sessionService, controller, save, agent, run };
+  return { model, sessionService, controller, save, agent, run, knowledgeRead };
 }
 const consult = (approach: string) =>
   call(`${approach}_agent`, {
@@ -377,4 +378,30 @@ it("专家不能引用仅有标题或不存在的资料，纠正后才返回正�
   expect(main).toContain(
     '"references":[{"library":"测试库","title":"可读资料"',
   );
+});
+
+it("模型的自由文本检索被拒绝，纠正为固定方法词后才读取知识库", async () => {
+  const consultWith = (query: string) =>
+    call("cbt_agent", {
+      request: "请帮助这位用户",
+      urgency: "routine",
+      knowledgeQuery: query,
+    });
+  const f = fixture(
+    [
+      [consultWith("张三 13800138000 自动思维")],
+      [consultWith("自动思维")],
+      [saveReply("cbt")],
+    ],
+    () => [call("submit_psychology_plan", plan)],
+    { sources: [], notices: [] },
+  );
+  await f.run();
+  expect(f.knowledgeRead).toHaveBeenCalledExactlyOnceWith(
+    "自动思维", f.controller.signal,
+  );
+  expect(JSON.stringify(f.model.requests[1].contents)).toContain(
+    "不允许自由文本",
+  );
+  expect(f.save).toHaveBeenCalledOnce();
 });

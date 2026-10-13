@@ -38,7 +38,10 @@ export function createMcpServer(service: GreetingService) {
   );
   server.registerTool(
     "hello_list_sessions",
-    { description: "查看当前连接用户自己的祝福会话。", inputSchema: {} },
+    {
+      description: "查看当前连接用户自己的祝福会话，最近活动的会话排在最后。",
+      inputSchema: {},
+    },
     protect(async () => service.sessions()),
   );
   server.registerTool(
