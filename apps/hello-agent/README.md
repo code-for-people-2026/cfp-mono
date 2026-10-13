@@ -30,6 +30,8 @@ pnpm --filter @cfp/hello-agent dev
 
 平台模式需要在 `apps/hello-agent/.env.local` 设置 `DEEPSEEK_API_KEY`；参考 [.env.example](./.env.example)。默认模型为 `deepseek-flash`，可用 `HELLO_MODEL` 更换为支持图片和工具调用的模型。没有凭证会明确拒绝，不会返回固定吉祥话冒充真实模型。
 
+平台模型使用数据库持久化的全站共享调用预算 `HELLO_PLATFORM_DAILY_CALL_LIMIT`（默认 900，0 暂停平台调用，非法配置拒绝生成），按 UTC 日恢复。生成开始前原子预扣最坏情况 9 次（主 Agent 5 次 + 两位专家各 2 次），记忆整理预扣 1 次；额度不足返回 429，配置或存储异常返回 503，不启动模型或专家。成功请求的幂等重试不重复预扣；失败、取消、进程重启不退款，以防供应商已计费。所有访客和连接同一 Payload 数据库的进程共享计数，换 Cookie、设备或来源 IP 不会得到新额度。BYOK 和外部 Agent 不使用平台额度。调用预算结合各模型请求的输出上限控制用量，不是精确金额账单，也不提供匿名访客之间的公平分配；如需按人付费与防止共享额度被提前占用，仍需正式身份与个人权益。
+
 2026-09-29 核对了 DeepSeek 官方的[图片输入](https://api-docs.deepseek.com/guides/vision/)与[工具调用](https://api-docs.deepseek.com/guides/tool_calls/)文档，默认使用支持图文的 `deepseek-flash`。模型请求仅发往 `https://api.deepseek.com/chat/completions`，关闭思考模式，不接入 Gemini。Google ADK 是运行框架，不限定模型供应商；本例通过 `BaseLlm` 适配器连接 DeepSeek。
 
 BYOK 无需平台密钥：选择「我的密钥」，输入自己的 DeepSeek API Key。密钥经本应用服务端发往 DeepSeek，仅存于当前请求内存；提交后页面清空，不写入 Cookie、localStorage、Payload 或提示词。运行在可信的本机环境，上线必须 HTTPS。
@@ -296,7 +298,7 @@ Compose 的 `data-init` 使用同一镜像内的 `node` 用户准备 `/opt/cfp-h
 证书续期必须重新传输并验证 Nginx reload；本次没有修改服务器的证书自动续期任务。
 
 - 本地开发示例，不是已加固的公开 SaaS：浏览器是访客 Cookie，小程序是设备访客令牌，没有伪装成已完成微信登录；清缓存或凭证过期后不能自动找回。两端访客账号独立，正式使用需微信登录、跨端绑定和数据删除策略。
-- 公网测试已有 HTTPS、Nginx 按来源限流、应用单进程限流、记录式迁移、私有 OSS 和手动备份，但仍没有微信身份验证、用户消费配额或全局金额熔断；扩大开放范围前需补足正式认证、共享配额和自动备份。
+- 本分支支持 HTTPS、Nginx 按来源限流、应用单进程限流、记录式迁移、私有 OSS、手动备份及持久化共享模型调用预算，但仍没有微信身份验证、个人消费权益或精确金额熔断；扩大开放范围前需补足正式认证、个人配额和自动备份。
 - SQLite 自动同步 schema 仅限这个独立示例，不能用于已有生产库。没有改动 `apps/website` 的 Payload 配置或库。
 - 真实生成依赖用户配置模型账户；未配置时页面明确提示。CMS 管理员也由用户初始化，不预置默认密码。
 - 未实现跨设备 OAuth、通用长任务恢复或任意模型网关；BYOK 仅支持 DeepSeek。外部 Agent 可用自己的其他模型，但平台仅记录来源声明。

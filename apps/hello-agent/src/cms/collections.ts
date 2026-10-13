@@ -52,6 +52,22 @@ const owned = (
 export const collections: CollectionConfig[] = [
   ...agentCollections,
   {
+    slug: "platform-model-quotas",
+    admin: { hidden: true },
+    timestamps: false,
+    lockDocuments: false,
+    access: {
+      read: () => false,
+      create: () => false,
+      update: () => false,
+      delete: () => false,
+    },
+    fields: [
+      { name: "day", type: "text", unique: true, required: true },
+      { name: "reservedCalls", type: "number", required: true, min: 0 },
+    ],
+  },
+  {
     slug: "admins",
     labels: { singular: "管理员", plural: "管理员" },
     auth: true,

@@ -43,7 +43,7 @@ export async function readJson(request: Request, maximum = 8 * 1024 * 1024) {
 }
 
 const buckets = new Map<string, { count: number; expires: number }>();
-// 本地单进程演示的成本护栏；上线前需换成共享限流和注册身份。
+// 单进程按访客限频；平台模型成本另由 Payload 的全站共享额度限制。
 export function rateLimit(owner: string) {
   const now = Date.now();
   for (const [key, value] of buckets)

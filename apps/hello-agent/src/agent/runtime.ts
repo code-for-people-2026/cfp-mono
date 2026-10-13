@@ -7,6 +7,7 @@ import { createGreetingAgent } from "./coordinator";
 import { PayloadSessionService } from "./payload-session-service";
 import { DeepSeekModel } from "./deepseek-model";
 import { ContextService } from "../domain/context";
+import { COORDINATOR_MAX_CALLS } from "./limits";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
 
@@ -83,7 +84,7 @@ export async function runGreeting(
       sessionId: String(request.turnId),
       newMessage: { role: "user", parts },
       abortSignal: controller.signal,
-      runConfig: { maxLlmCalls: 5 },
+      runConfig: { maxLlmCalls: COORDINATOR_MAX_CALLS },
     })) {
       if (event.errorCode) throw new AppError(502, "模型未能完成本轮生成");
     }

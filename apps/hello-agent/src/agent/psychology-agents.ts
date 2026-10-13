@@ -17,6 +17,7 @@ import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
 import type { AgentConfiguration } from "./configuration";
 import type { KnowledgeContext } from "./knowledge";
 import { KNOWLEDGE_METHODS, methodQuery } from "./knowledge-query";
+import { MAX_SPECIALISTS, SPECIALIST_MAX_CALLS } from "./limits";
 
 const consultationSchema = z
   .object({
@@ -184,7 +185,7 @@ export function createPsychologyTeam(options: {
             ],
           },
           abortSignal: options.signal,
-          runConfig: { maxLlmCalls: 2 },
+          runConfig: { maxLlmCalls: SPECIALIST_MAX_CALLS },
         })) {
           if (event.errorCode) throw new Error("Specialist execution failed");
         }
@@ -242,7 +243,7 @@ export function createPsychologyTeam(options: {
       }
       const existing = consultations.get(approach);
       if (existing) return existing;
-      if (consultations.size >= 2)
+      if (consultations.size >= MAX_SPECIALISTS)
         return {
           error: "本轮最多咨询两种流派，请整合已有方案或给予支持性回应。",
         };

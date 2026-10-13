@@ -69,6 +69,7 @@ export interface Config {
   collections: {
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
+    'platform-model-quotas': PlatformModelQuota;
     admins: Admin;
     credentials: Credential;
     sessions: Session;
@@ -85,6 +86,7 @@ export interface Config {
   collectionsSelect: {
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
+    'platform-model-quotas': PlatformModelQuotasSelect<false> | PlatformModelQuotasSelect<true>;
     admins: AdminsSelect<false> | AdminsSelect<true>;
     credentials: CredentialsSelect<false> | CredentialsSelect<true>;
     sessions: SessionsSelect<false> | SessionsSelect<true>;
@@ -197,6 +199,15 @@ export interface KnowledgeBase {
   encryptedApiKey?: string | null;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "platform-model-quotas".
+ */
+export interface PlatformModelQuota {
+  id: number;
+  day: string;
+  reservedCalls: number;
 }
 /**
  * 用于登录此管理后台的管理员，不是聊天访客，也不是微信用户账号。
@@ -453,6 +464,14 @@ export interface KnowledgeBasesSelect<T extends boolean = true> {
   encryptedApiKey?: T;
   updatedAt?: T;
   createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "platform-model-quotas_select".
+ */
+export interface PlatformModelQuotasSelect<T extends boolean = true> {
+  day?: T;
+  reservedCalls?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
