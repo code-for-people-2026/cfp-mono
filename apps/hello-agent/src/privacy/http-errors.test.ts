@@ -4,7 +4,7 @@ import { GET, POST } from "../app/api/hello/[...path]/route";
 
 const service = vi.hoisted(() => ({ exportData: vi.fn(), withdraw: vi.fn(), recoverOwner: vi.fn() }));
 vi.mock("../cms/client", () => ({ cms: vi.fn(async () => ({})) }));
-vi.mock("./service", () => ({ privacyService: () => service, recoverOwner: service.recoverOwner }));
+vi.mock("./service", () => ({ privacyService: () => service, withRecoveredOwner: service.recoverOwner }));
 vi.mock("../domain/greetings", () => ({ GreetingService: class {} }));
 vi.mock("../domain/context", () => ({ ContextService: class {} }));
 vi.mock("../server/ag-ui", () => ({ agentStream: vi.fn(), readAgentInput: vi.fn() }));

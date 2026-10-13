@@ -4,7 +4,7 @@ import { privacyGet } from "./http";
 import type { Payload } from "payload";
 
 const data = vi.hoisted(() => ({ exportData: vi.fn() }));
-vi.mock("./service", () => ({ privacyService: () => data, recoverOwner: vi.fn() }));
+vi.mock("./service", () => ({ privacyService: () => data, withRecoveredOwner: vi.fn() }));
 let now = Date.now();
 beforeEach(() => { vi.useFakeTimers(); now += 60_001; vi.setSystemTime(now); data.exportData.mockReset(); });
 afterEach(() => { now = Date.now(); vi.useRealTimers(); });

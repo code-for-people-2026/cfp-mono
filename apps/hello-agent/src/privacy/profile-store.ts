@@ -8,6 +8,7 @@ type ProfilePatch = Partial<Pick<PrivacyProfile, "state" | "consent" | "events" 
 // Payload's update(where) first selects IDs, then updates by ID. Use the
 // configured SQLite adapter for a single atomic compare-and-swap instead.
 export async function updateProfile(payload: Payload, profile: PrivacyProfile, data: ProfilePatch) {
+  if (profile.state === "deleted" && data.state && data.state !== "deleted") throw new AppError(409, "已删除状态不可回退");
   if (["deleting", "deleted"].includes(profile.state) && data.state && !["deleting", "deleted"].includes(data.state))
     throw new AppError(409, "删除状态不能恢复为处理状态");
   const columns = { state: "state", consent: "consent", events: "events", expiresAt: "expires_at", recoveryDigest: "recovery_digest", sensitiveHistory: "sensitive_history", historyInspected: "history_inspected", deletedAt: "deleted_at" } as const;

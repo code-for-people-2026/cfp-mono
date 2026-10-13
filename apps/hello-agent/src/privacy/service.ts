@@ -11,6 +11,8 @@ import { writeDeletionLedger } from "./deletion-ledger";
 import { aiMetadata } from "../labeling/metadata";
 import { ExportBudget } from "./export-limits";
 import { updateProfile } from "./profile-store";
+import { withCredentialLock } from "../server/credential-lock";
+import { revokeCredentials } from "../server/auth";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
@@ -63,9 +65,11 @@ export class PrivacyService {
     const previous = consentSchema.safeParse(profile?.consent);
     const unexpired = profile?.expiresAt ? Date.parse(profile.expiresAt) > Date.now() : !policy.retentionDays;
     if (profile?.state === "active" && unexpired && previous.success && JSON.stringify(previous.data) === JSON.stringify(consent)) return this.status();
-    await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent", profile);
-    // Every choice update revokes old scopes and old recipient authorizations.
-    await this.revoke("bearer");
+    await withCredentialLock(this.repo.owner.id, async () => {
+      await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent", profile);
+      // Every choice update revokes old scopes and old recipient authorizations.
+      await this.revoke("bearer");
+    });
     return this.status();
   }
   async require(scope: "core" | "sensitive" | "external" = "core") {
@@ -107,21 +111,23 @@ export class PrivacyService {
       await updateProfile(this.repo.payload, profile!, { historyInspected: true });
     }
   }
-  async revoke(kind?: string) {
-    await this.repo.payload.delete({ collection: "credentials", overrideAccess: true, where: { and: [{ owner: { equals: this.repo.owner.id } }, ...(kind ? [{ kind: { equals: kind } }] : [])] } });
+  async revoke(kind?: Owner["auth"]) {
+    await revokeCredentials(this.repo.payload, this.repo.owner.id, kind);
   }
   async withdraw() {
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "删除已开始，请继续删除流程");
-    await this.save({ state: "withdrawn", expiresAt: new Date().toISOString() }, "withdraw", profile);
-    await this.revoke("bearer");
+    await withCredentialLock(this.repo.owner.id, async () => {
+      await this.save({ state: "withdrawn", expiresAt: new Date().toISOString() }, "withdraw", profile);
+      await this.revoke("bearer");
+    });
     return this.status();
   }
   async recoveryCode() {
     const current = await profileFor(this.repo.payload, this.repo.owner.id);
     if (!current || current.state === "deleted" || current.state === "deleting") throw new AppError(409, "请先完成隐私设置");
     const code = randomBytes(32).toString("base64url");
-    await this.save({ recoveryDigest: digest(code) }, "rotate-recovery", current);
+    await withCredentialLock(this.repo.owner.id, () => this.save({ recoveryDigest: digest(code) }, "rotate-recovery", current));
     return { code };
   }
   private async *exportRows<C extends OwnedCollection>(collection: C) {
@@ -181,8 +187,11 @@ export class PrivacyService {
     return result;
   }
   async deleteData() {
+    return withCredentialLock(this.repo.owner.id, () => this.eraseData());
+  }
+  private async eraseData() {
     let profile = await profileFor(this.repo.payload, this.repo.owner.id);
-    if (profile?.state !== "deleting") {
+    if (profile?.state !== "deleting" && profile?.state !== "deleted") {
       await this.save({ state: "deleting" }, "delete-requested", profile);
       profile = await profileFor(this.repo.payload, this.repo.owner.id);
     }
@@ -194,22 +203,34 @@ export class PrivacyService {
     await writeDeletionLedger(this.repo.owner.id);
     const operations = await eraseOperationsEvidence(this.repo.payload, this.repo.owner.id);
     await this.media.deleteAll();
-    for (const collection of contentCollections)
-      await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
-    // Do not erase the freeze tombstone: a late model response must stay blocked.
-    await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, historyInspected: null, expiresAt: null });
+    for (const collection of contentCollections) {
+      const result = await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
+      if (result.errors.length) throw new AppError(503, "部分数据尚未删除，请稍后重试");
+    }
+    // Credential cleanup must succeed before committing the terminal state.
     await this.revoke();
+    // Replays preserve an existing deleted tombstone while clearing leftovers.
+    await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: profile!.deletedAt || new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, historyInspected: null, expiresAt: null });
     return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
   }
 }
-export async function recoverOwner(payload: Payload, code: unknown): Promise<string> {
+export async function withRecoveredOwner<T>(payload: Payload, code: unknown, issue: (owner: string) => Promise<T>): Promise<T> {
   const value = z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(code);
-  const rows = await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { and: [{ recoveryDigest: { equals: digest(value) } }, { state: { not_equals: "deleted" } }] } });
-  if (!rows.docs[0]) throw new AppError(401, "恢复码无效或对应数据已删除");
-  const owner = String(rows.docs[0].owner);
-  // All old connections are revoked; the code remains usable until the user
-  // deliberately rotates it, so a lost HTTP response cannot lose the identity.
-  await new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" })).revoke();
-  return owner;
+  const lookup = async () => {
+    const rows = await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { and: [{ recoveryDigest: { equals: digest(value) } }, { state: { in: ["active", "withdrawn"] } }] } });
+    if (!rows.docs[0]) throw new AppError(401, "恢复码无效或对应数据正在删除、已删除");
+    return String(rows.docs[0].owner);
+  };
+  const owner = await lookup();
+  return withCredentialLock(owner, async () => {
+    // Recheck after acquiring the owner gate: deletion or code rotation may
+    // have completed while the first lookup was in flight.
+    if (await lookup() !== owner) throw new AppError(401, "恢复码已变更，请重新确认");
+    await revokeCredentials(payload, owner);
+    return issue(owner);
+  });
+}
+export async function recoverOwner(payload: Payload, code: unknown): Promise<string> {
+  return withRecoveredOwner(payload, code, async (owner) => owner);
 }
 export function privacyService(payload: Payload, owner: Owner) { return new PrivacyService(new Repository(payload, owner)); }

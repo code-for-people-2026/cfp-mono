@@ -33,7 +33,7 @@ function fixture(priorInputs: unknown[] = []) {
       return { docs: collection === "privacy-profiles" ? [profile] : priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) };
     }),
     update,
-    delete: vi.fn(async () => ({})),
+    delete: vi.fn(async () => ({ docs: [], errors: [] })),
   } as unknown as Payload;
   return { service: new PrivacyService(new Repository(payload, { id: "isolated", auth: "cookie" })), profile: () => profile, update };
 }
@@ -167,4 +167,43 @@ it("大量普通旧历史按页扫描且仅检查一次，不进行逐条查询"
   vi.mocked(service.repo.payload.find).mockClear();
   await service.requireInput({ text: "再次你好" });
   expect(vi.mocked(service.repo.payload.find).mock.calls.some(([options]) => options.collection === "greetings")).toBe(false);
+});
+
+it("最终凭证撤销失败时保留 deleting，可重试完成删除", async () => {
+  const { service, profile } = fixture();
+  vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
+  const revoke = service.revoke.bind(service);
+  vi.spyOn(service, "revoke").mockImplementationOnce(revoke).mockRejectedValueOnce(new Error("credential cleanup failed"));
+  await expect(service.deleteData()).rejects.toThrow("credential cleanup failed");
+  expect(profile().state).toBe("deleting");
+  await expect(service.deleteData()).resolves.toMatchObject({ deleted: true });
+  expect(profile().state).toBe("deleted");
+});
+it("已删除墓碑重复清理残留，不回退状态或改写首次删除时间", async () => {
+  const { service, profile, update } = fixture();
+  const deletedAt = "2026-10-01T00:00:00.000Z";
+  await update({ data: { state: "deleted", deletedAt } });
+  update.mockClear();
+  const media = vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
+  await service.deleteData(); await service.deleteData();
+  expect(profile()).toMatchObject({ state: "deleted", deletedAt });
+  expect(update.mock.calls.every(([options]) => options.data.state === "deleted")).toBe(true);
+  expect(media).toHaveBeenCalledTimes(2);
+});
+
+it.each(["credentials", "greetings"] as const)("批量删除 %s 返回部分失败时保留冻结状态，重试可完成", async (collection) => {
+  const { service, profile } = fixture();
+  vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
+  let injected = false;
+  vi.mocked(service.repo.payload.delete).mockImplementation(async (options) => {
+    const finalCredentialCleanup = !("where" in options && JSON.stringify(options.where).includes("bearer"));
+    if (!injected && options.collection === collection && finalCredentialCleanup) {
+      injected = true;
+      return { docs: [], errors: [{ id: 1, isPublic: false, message: "simulated partial failure" }] };
+    }
+    return { docs: [], errors: [] };
+  });
+  await expect(service.deleteData()).rejects.toMatchObject({ status: 503 });
+  expect(profile().state).toBe("deleting");
+  await expect(service.deleteData()).resolves.toMatchObject({ deleted: true });
 });

@@ -5,6 +5,7 @@ export const privacyCollections: CollectionConfig[] = [{
   slug: "privacy-profiles", lockDocuments: false, admin: { hidden: true },
   access: { read: () => false, create: () => false, update: () => false, delete: () => false },
   hooks: { beforeChange: [({ originalDoc, data }) => {
+    if (originalDoc?.state === "deleted" && data.state && data.state !== "deleted") throw new AppError(409, "已删除状态不可回退");
     if (["deleting", "deleted"].includes(originalDoc?.state) && !["deleting", "deleted"].includes(data.state || originalDoc.state)) throw new AppError(409, "删除状态不能恢复为处理状态");
     return data;
   }] },

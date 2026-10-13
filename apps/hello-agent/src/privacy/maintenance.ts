@@ -20,14 +20,25 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
     }
   }
   const owners = new Set<string>();
-  const profiles = await payload.find({ collection: "privacy-profiles", overrideAccess: true, pagination: false });
-  for (const row of profiles.docs)
-    if (row.state === "withdrawn" || row.state === "deleting" || (row.state !== "deleted" && row.expiresAt && Date.parse(String(row.expiresAt)) <= Date.now())) owners.add(String(row.owner));
+  const pageSize = 100;
+  let cursor = 0;
+  while (true) {
+    const profiles = await payload.find({ collection: "privacy-profiles", overrideAccess: true, pagination: false, depth: 0, limit: pageSize, sort: "id", select: { id: true, owner: true, state: true, expiresAt: true }, where: { id: { greater_than: cursor } } });
+    for (const row of profiles.docs)
+      if (row.state === "withdrawn" || row.state === "deleting" || (row.state !== "deleted" && row.expiresAt && Date.parse(String(row.expiresAt)) <= Date.now())) owners.add(String(row.owner));
+    if (profiles.docs.length < pageSize) break;
+    cursor = profiles.docs[profiles.docs.length - 1].id;
+  }
   if (restoreLedger) {
     // Older snapshots may predate the privacy collection contents entirely.
     for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "privacy-profiles"] as const) {
-      const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0 });
-      for (const row of rows.docs) if (revoked.has(createHash("sha256").update(String(row.owner)).digest("hex"))) owners.add(String(row.owner));
+      cursor = 0;
+      while (true) {
+        const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0, limit: pageSize, sort: "id", select: { id: true, owner: true }, where: { id: { greater_than: cursor } } });
+        for (const row of rows.docs) if (revoked.has(createHash("sha256").update(String(row.owner)).digest("hex"))) owners.add(String(row.owner));
+        if (rows.docs.length < pageSize) break;
+        cursor = rows.docs[rows.docs.length - 1].id;
+      }
     }
   }
   let deleted = 0;

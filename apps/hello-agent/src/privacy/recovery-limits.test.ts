@@ -4,7 +4,7 @@ import { AppError } from "../domain/contracts";
 import { recoveryResponse } from "./http";
 import { failure } from "../server/http";
 const stubs = vi.hoisted(() => ({ recover: vi.fn(), mint: vi.fn() }));
-vi.mock("./service", () => ({ recoverOwner: stubs.recover }));
+vi.mock("./service", () => ({ withRecoveredOwner: async (_payload: Payload, code: string, issue: (owner: string) => Promise<unknown>) => issue(await stubs.recover(code)) }));
 vi.mock("../server/auth", async (original) => ({ ...await original<typeof import("../server/auth")>(), mintCredential: stubs.mint }));
 let now = Date.now();
 beforeEach(() => {

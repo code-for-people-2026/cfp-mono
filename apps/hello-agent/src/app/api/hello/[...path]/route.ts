@@ -17,6 +17,7 @@ import {
   mintCredential,
   revokeTokens,
 } from "../../../../server/auth";
+import { withCredentialLock } from "../../../../server/credential-lock";
 import { failure, readJson, rateLimit } from "../../../../server/http";
 import { agentStream, readAgentInput } from "../../../../server/ag-ui";
 import {
@@ -174,14 +175,21 @@ export async function POST(request: Request, context: Context) {
     const privacy = privacyService(payload, owner);
     const service = new GreetingService(new Repository(payload, owner));
     if (path[0] === "token") {
-      if (path[1] === "revoke") {
-        await revokeTokens(payload, owner);
-        return json({ revoked: true });
-      }
-      await privacy.require("external");
-      await privacy.requireInput({});
-      const credential = await mintCredential(payload, "bearer", owner.id);
-      return json({ token: credential.token, expiresAt: credential.expiresAt });
+      return await withCredentialLock(owner.id, async () => {
+        // Cached authentication can predate recovery. Validate it again inside
+        // the same gate that protects revocation and credential insertion.
+        const current = await authenticate(payload, request);
+        if (current.id !== owner.id) throw new AppError(401, "连接身份已变更，请重新连接");
+        if (path[1] === "revoke") {
+          await revokeTokens(payload, current);
+          return json({ revoked: true });
+        }
+        const currentPrivacy = privacyService(payload, current);
+        await currentPrivacy.require("external");
+        await currentPrivacy.requireInput({});
+        const credential = await mintCredential(payload, "bearer", current.id);
+        return json({ token: credential.token, expiresAt: credential.expiresAt });
+      });
     }
     await privacy.require();
     const body = await readJson(
