@@ -70,7 +70,13 @@ export async function runGreeting(
     turnSessionId: String(request.turnId),
     inputParts: parts,
     signal: controller.signal,
-    save: request.save,
+    save: async (value) => {
+      try { return await request.save(value); }
+      catch (error) {
+        if (error instanceof AppError && error.status === 403) controller.abort();
+        throw error;
+      }
+    },
   });
   const runner = new Runner({ appName: "hello_agent", agent, sessionService });
   try {

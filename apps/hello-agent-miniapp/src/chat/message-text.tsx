@@ -1,11 +1,15 @@
+import Taro from "@tarojs/taro";
 import { useState } from "react";
 import { Button, Text, type TextProps } from "@tarojs/components";
-import { copy } from "./api";
+import { copyAiReply } from "./api";
 import { ChatIcon } from "./icon";
 
 // Taro 的 Text 默认禁止选择；两个属性兼容 H5 和微信不同基础库。
-export function MessageText(props: TextProps) {
-  return <Text {...props} selectable userSelect />;
+export function MessageText({ aiGenerated = false, ...props }: TextProps & { aiGenerated?: boolean }) {
+  const nativeAi = aiGenerated && process.env.TARO_ENV === "weapp";
+  return <Text {...props} selectable={!nativeAi} userSelect={!nativeAi} onLongPress={nativeAi ? () => {
+    if (typeof props.children === "string") void copyAiReply(props.children).catch(() => Taro.showToast({ title: "复制失败，请重试", icon: "none" }));
+  } : props.onLongPress} />;
 }
 
 export function CopyMessage({
@@ -22,7 +26,7 @@ export function CopyMessage({
       aria-label={label}
       onClick={async () => {
         try {
-          await copy(value);
+          await copyAiReply(value);
           setState("copied");
         } catch {
           setState("failed");

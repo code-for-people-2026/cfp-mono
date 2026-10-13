@@ -1,0 +1,150 @@
+import { eraseOperationsEvidence } from "../operations/retention";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, open } from "node:fs/promises";
+import path from "node:path";
+import { z } from "zod";
+import type { PrivacyProfile } from "../payload-types";
+import type { Payload } from "payload";
+import { Repository } from "../cms/repository";
+import { AppError, type Owner } from "../domain/contracts";
+import { MediaService } from "../domain/media";
+import { privacyPolicy } from "./policy";
+import { aiMetadata } from "../labeling/metadata";
+
+const digest = (value: string) => createHash("sha256").update(value).digest("hex");
+const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
+const contentCollections = ["adk-sessions", "greetings", "sessions", "session-locks"] as const;
+/** @public Privacy state lookup shared with identity integrations. */
+export async function profileFor(payload: Payload, owner: string) {
+  return (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: owner } } })).docs[0];
+}
+export class PrivacyService {
+  constructor(readonly repo: Repository, readonly media = new MediaService(repo)) {}
+  async status() {
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    return { policy: privacyPolicy(), state: profile?.state || "unaccepted", consent: profile?.consent || null, expiresAt: profile?.expiresAt || null, hasRecoveryCode: !!profile?.recoveryDigest };
+  }
+  private async save(data: Partial<Pick<PrivacyProfile, "state" | "consent" | "expiresAt" | "recoveryDigest">>, event: string) {
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    const events = Array.isArray(profile?.events) ? profile.events : [];
+    if (!profile && !data.state) throw new AppError(409, "请先完成隐私设置");
+    const next = { ...data, state: data.state || profile!.state, owner: this.repo.owner.id, events: [...events, { action: event, at: new Date().toISOString(), ...(data.consent ? { consent: data.consent, policySnapshot: privacyPolicy().documents } : {}) }] };
+    return profile
+      ? this.repo.payload.update({ collection: "privacy-profiles", id: profile.id, overrideAccess: true, data: next })
+      : this.repo.payload.create({ collection: "privacy-profiles", overrideAccess: true, data: next });
+  }
+  async consent(value: unknown) {
+    if (this.repo.owner.auth === "bearer") throw new AppError(403, "请本人在隐私与数据页面确认授权");
+    const consent = consentSchema.parse(value);
+    const policy = privacyPolicy();
+    if (consent.version !== policy.version) throw new AppError(409, "政策已更新，请重新阅读当前版本");
+    if (process.env.HELLO_DEPLOYED === "true" && !policy.ready) throw new AppError(503, "隐私运营资料尚未确认，暂不开放新的处理授权");
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "此身份正在删除或已删除，不能重新授权");
+    await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent");
+    // Every choice update revokes old scopes and old recipient authorizations.
+    await this.revoke("bearer");
+    return this.status();
+  }
+  async require(scope: "core" | "sensitive" | "external" = "core") {
+    if (process.env.HELLO_DEPLOYED === "true" && !privacyPolicy().ready) throw new AppError(503, "隐私运营配置尚未核实，暂不开放新的数据处理");
+    if (scope === "sensitive" && !privacyPolicy().imageReviewDisclosed) throw new AppError(503, "图片审核接收方告知尚未配置完整，请稍后重试");
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    const parsed = consentSchema.safeParse(profile?.consent);
+    if (profile?.state !== "active" || !parsed.success || parsed.data.version !== privacyPolicy().version || (profile.expiresAt && Date.parse(String(profile.expiresAt)) <= Date.now()))
+      throw new AppError(403, "请先在隐私与数据中阅读并同意当前政策；撤回或到期后仅可查阅、导出和删除");
+    if (!parsed.data[scope]) throw new AppError(403, scope === "sensitive" ? "图片、情绪练习或敏感内容需要单独同意；可在隐私与数据中设置" : "请先本人确认外部 Agent 可读取全部对话和图片");
+  }
+  async requireInput(input: unknown) {
+    await this.require();
+    // Conservative guard, not a claim to classify all sensitive information.
+    if (/formResponse|clientEvent|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(input))) await this.require("sensitive");
+    // Once prior records may contain sensitive material, even an ordinary new
+    // prompt/summary can disclose that history. Withdrawal stops that reuse.
+    const prior = await this.repo.all("greetings");
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    if (profile?.sensitiveHistory === true || prior.some((row) => /formResponse|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(row.input)))) await this.require("sensitive");
+    const consent = consentSchema.parse(profile?.consent);
+    if (consent.sensitive && !profile?.sensitiveHistory) await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { sensitiveHistory: true } });
+  }
+  async revoke(kind?: string) {
+    await this.repo.payload.delete({ collection: "credentials", overrideAccess: true, where: { and: [{ owner: { equals: this.repo.owner.id } }, ...(kind ? [{ kind: { equals: kind } }] : [])] } });
+  }
+  async withdraw() {
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "删除已开始，请继续删除流程");
+    await this.save({ state: "withdrawn", expiresAt: new Date().toISOString() }, "withdraw");
+    await this.revoke("bearer");
+    return this.status();
+  }
+  async recoveryCode() {
+    const current = await profileFor(this.repo.payload, this.repo.owner.id);
+    if (!current || current.state === "deleted") throw new AppError(409, "请先完成隐私设置");
+    const code = randomBytes(32).toString("base64url");
+    await this.save({ recoveryDigest: digest(code) }, "rotate-recovery");
+    return { code };
+  }
+  async exportData() {
+    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    const records: Record<string, unknown> = {};
+    for (const collection of contentCollections.filter((name) => name !== "session-locks")) {
+      if (collection === "greetings") {
+        const rows = await this.repo.all("greetings");
+        records[collection] = rows.map((row) => row.status === "completed" ? { ...row, aiLabel: row.mode === "external" ? "AI 生成（外部客户端声明）" : "AI 生成", metadata: aiMetadata(`${this.repo.owner.id}:${row.id}:${row.fingerprint}`, row.mode === "external") } : row);
+      } else records[collection] = await this.repo.all(collection);
+    }
+    const media = [];
+    for (const row of await this.repo.all("media")) {
+      try {
+        const image = await this.media.read(row.id);
+        media.push({ id: row.id, createdAt: row.createdAt, mimeType: image.mimeType, source: "用户上传，来源未核验，不声明由平台生成", base64: image.bytes.toString("base64") });
+      } catch (error) {
+        if (!(error instanceof AppError) || error.status !== 404) throw error;
+        media.push({ id: row.id, createdAt: row.createdAt, withheld: true, notice: "图片已隔离或内容缺失；其余数据继续导出，可通过权利请求申请复核。" });
+      }
+    }
+    const credentials = (await this.repo.payload.find({ collection: "credentials", overrideAccess: true, pagination: false, where: { owner: { equals: this.repo.owner.id } } })).docs.map(({ kind, expiresAt, createdAt }) => ({ kind, expiresAt, createdAt }));
+    const safetyCases = (await this.repo.payload.find({ collection: "safety-cases", overrideAccess: true, pagination: false, where: { owner: { equals: this.repo.owner.id } } })).docs.map(({ receipt, source, category, status, createdAt, reply, feedbackAt, retainUntil, retentionBasis }) => ({ receipt, source, category, status, createdAt, reply: feedbackAt ? reply : undefined, retainUntil, retentionBasis }));
+    return { retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。执行轨迹中模型输出为 AI 生成。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+  }
+  async deleteData() {
+    let profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    if (profile?.state !== "deleting") {
+      await this.save({ state: "deleting" }, "delete-requested");
+      profile = await profileFor(this.repo.payload, this.repo.owner.id);
+    }
+    await this.revoke("bearer");
+    // Existing requests may finish their network operation but their later writes
+    // are denied by collection hooks. Keep references until all leases finish.
+    const active = await this.repo.list("session-locks", { expiresAt: { greater_than: new Date().toISOString() } }, 1);
+    if (active.length) throw new AppError(409, "已停止新处理，正在等待本轮结束；请稍后再次点击删除");
+    await writeDeletionLedger(this.repo.owner.id);
+    const operations = await eraseOperationsEvidence(this.repo.payload, this.repo.owner.id);
+    await this.media.deleteAll();
+    for (const collection of contentCollections)
+      await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
+    // Do not erase the freeze tombstone: a late model response must stay blocked.
+    await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null } });
+    await this.revoke();
+    return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
+  }
+}
+export async function recoverOwner(payload: Payload, code: unknown): Promise<string> {
+  const value = z.string().regex(/^[A-Za-z0-9_-]{43}$/).parse(code);
+  const rows = await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { and: [{ recoveryDigest: { equals: digest(value) } }, { state: { not_equals: "deleted" } }] } });
+  if (!rows.docs[0]) throw new AppError(401, "恢复码无效或对应数据已删除");
+  const owner = String(rows.docs[0].owner);
+  // All old connections are revoked; the code remains usable until the user
+  // deliberately rotates it, so a lost HTTP response cannot lose the identity.
+  await new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" })).revoke();
+  return owner;
+}
+async function writeDeletionLedger(owner: string) {
+  const file = process.env.HELLO_PRIVACY_DELETION_LEDGER;
+  if (!file) throw new AppError(503, "删除清单存储尚未配置，数据已冻结，请联系管理员完成删除");
+  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  const handle = await open(file, "a", 0o600);
+  try { await handle.writeFile(JSON.stringify({ ownerDigest: digest(owner), requestedAt: new Date().toISOString() }) + "\n"); await handle.sync(); }
+  finally { await handle.close(); }
+}
+export function privacyService(payload: Payload, owner: Owner) { return new PrivacyService(new Repository(payload, owner)); }

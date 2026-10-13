@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { sql, type MigrateUpArgs, type MigrateDownArgs } from "@payloadcms/db-sqlite";
+
+const directory = await mkdtemp(path.join(tmpdir(), "aj-privacy-migration-"));
+process.env.HELLO_DATABASE_URI = `file:${directory}/migration.db`;
+process.env.PAYLOAD_SECRET = "isolated-migration-only";
+process.env.HELLO_DEPLOYED = "true";
+process.env.HELLO_MEDIA_STORAGE = "database";
+process.env.HELLO_PRIVACY_DELETION_LEDGER = `${directory}/ledger.ndjson`;
+Object.assign(process.env, { NODE_ENV: "test" });
+const { cms } = await import("../src/cms/client");
+const { migrations } = await import("../src/cms/migrations");
+const { maintainPrivacy } = await import("../src/privacy/maintenance");
+const payload = await cms();
+const suite = migrations.map((migration) => ({ name: migration.name, up: (args: unknown) => migration.up(args as MigrateUpArgs), down: (args: unknown) => migration.down(args as MigrateDownArgs) }));
+try {
+  await payload.db.migrate({ migrations: suite.slice(0, 3) });
+  const db = payload.db.drizzle;
+  await db.run(sql`INSERT INTO sessions (owner, title, memory) VALUES ('restore-test', '合成旧记录', '{"summary":"合成旧摘要"}')`);
+  const before = await db.all(sql`SELECT * FROM sessions`);
+  await payload.db.migrate({ migrations: suite.slice(3) });
+  await payload.db.migrate({ migrations: suite.slice(3) });
+  assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
+  const saved = await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner: "expiry-test", state: "withdrawn", consent: null, expiresAt: new Date(Date.now() - 1000).toISOString() } });
+  assert.equal(saved.state, "withdrawn");
+  const ownerDigest = createHash("sha256").update("restore-test").digest("hex");
+  await writeFile(`${directory}/external-ledger.ndjson`, JSON.stringify({ ownerDigest }) + "\n");
+  const dry = await maintainPrivacy(payload, { apply: false, restoreLedger: `${directory}/external-ledger.ndjson` });
+  assert.equal(dry.eligibleIdentities, 2);
+  assert.equal((await db.all(sql`SELECT * FROM sessions`)).length, 1);
+  const applied = await maintainPrivacy(payload, { apply: true, restoreLedger: `${directory}/external-ledger.ndjson` });
+  assert.equal(applied.deleted, 2);
+  assert.equal((await db.all(sql`SELECT * FROM sessions`)).length, 0);
+  assert.equal((await db.all(sql`PRAGMA foreign_key_check`)).length, 0);
+  console.log("✓ 显式迁移（无schema push）：保留旧记录、幂等、过期/撤回清理、外置删除清单重放及外键检查通过");
+} finally { await payload.destroy(); await rm(directory, { recursive: true, force: true }); }

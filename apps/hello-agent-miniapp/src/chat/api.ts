@@ -1,3 +1,4 @@
+import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, safetyInboxSchema, safetyReceiptSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
 import Taro from "@tarojs/taro";
 import {
   CATALOG_ID,
@@ -27,6 +28,13 @@ const native = process.env.TARO_ENV === "weapp";
 const origin = native ? HELLO_API_ORIGIN.replace(/\/$/, "") : "";
 // 调试与远程环境有独立数据库，不能把本机设备凭证误发到另一个服务。
 const storageKey = `hello-miniapp-identity:${origin}`;
+const temporaryFilesKey = `hello-private-files:${origin}`;
+function rememberTemporaryFile(file: string) {
+  if (!native) return;
+  const saved: unknown = Taro.getStorageSync(temporaryFilesKey);
+  const files = Array.isArray(saved) ? saved.filter((value): value is string => typeof value === "string") : [];
+  Taro.setStorageSync(temporaryFilesKey, [...new Set([...files, file])]);
+}
 let deviceToken = "";
 let identityPromise: Promise<void> | undefined;
 let activeDownloads = 0;
@@ -287,6 +295,7 @@ export async function privateImageSource(path: string): Promise<string> {
     });
     if (result.statusCode === 401) throw new IdentityExpiredError();
     if (result.statusCode !== 200) throw new Error("图片读取失败");
+    rememberTemporaryFile(result.tempFilePath);
     return result.tempFilePath;
   } finally {
     activeDownloads--;
@@ -362,3 +371,53 @@ export function openCms() {
   if (native) Taro.setClipboardData({ data: `${HELLO_API_ORIGIN}/admin` });
   else window.open("/admin", "_blank", "noopener,noreferrer");
 }
+
+export const getLegal = () => request("legal", privacyPolicySchema);
+export const getPrivacy = () => request("privacy", privacyStatusSchema);
+export const updateConsent = (value: NonNullable<PrivacyStatus["consent"]>) => request("privacy/consent", privacyStatusSchema, "POST", value);
+export const withdrawConsent = () => request("privacy/withdraw", privacyStatusSchema, "POST");
+export const createRecoveryCode = () => request("privacy/recovery-code", recoveryCodeSchema, "POST");
+async function forgetIdentity() {
+  if (native) {
+    const paths: unknown = Taro.getStorageSync(temporaryFilesKey);
+    if (Array.isArray(paths)) await Promise.all(paths.filter((file): file is string => typeof file === "string").map((filePath) => new Promise<void>((resolve) => { Taro.getFileSystemManager().unlink({ filePath, complete: () => resolve() }); })));
+    Taro.removeStorageSync(temporaryFilesKey);
+  }
+  deviceToken = ""; identityPromise = undefined;
+  if (native) { Taro.removeStorageSync(storageKey); Taro.removeStorageSync("hello-miniapp-identity"); }
+}
+export async function recoverIdentity(code: string) {
+  const result = await request("privacy-recover", recoveredIdentitySchema, "POST", { code, native });
+  await forgetIdentity();
+  if (native && result.token) { deviceToken = result.token; Taro.setStorageSync(storageKey, result.token); }
+}
+export async function logoutIdentity() { await request("privacy/logout", logoutSchema, "POST"); await forgetIdentity(); }
+export async function deletePersonalData(confirmation: string) {
+  const result = await request("privacy/delete", deletionSchema, "POST", { confirmation });
+  await forgetIdentity(); return result;
+}
+export async function exportPersonalData() {
+  if (!native) {
+    const response = await fetch("/api/hello/privacy/export", { credentials: "same-origin", cache: "no-store" });
+    if (response.status === 401) throw new IdentityExpiredError();
+    if (!response.ok) {
+      const failure = errorSchema.safeParse(await response.json());
+      throw new Error(failure.success ? failure.data.error : "导出未完成，请稍后重试");
+    }
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url; link.download = "hello-personal-data.json";
+    document.body.appendChild(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    return;
+  }
+  const result = await Taro.downloadFile({ url: `${origin}/api/hello/privacy/export`, header: { Authorization: `Bearer ${deviceToken}` } });
+  if (result.statusCode !== 200) throw new Error("导出未完成，请确认当前身份有效");
+  rememberTemporaryFile(result.tempFilePath);
+  await Taro.shareFileMessage({ filePath: result.tempFilePath, fileName: "hello-personal-data.json" });
+}
+export async function copyAiReply(value: string) { return copy(`AI 生成 · 阿 J 先生\n${value}`); }
+
+
+export const getSafety = () => request("safety", safetyInboxSchema);
+export const submitSafety = (body: unknown) => request("safety", safetyReceiptSchema, "POST", body);

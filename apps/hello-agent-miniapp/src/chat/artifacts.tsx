@@ -139,6 +139,7 @@ function SurfaceView({
         return (
           <MessageText
             key={id}
+            aiGenerated
             className={`artifact-text artifact-${component.variant || "body"}`}
           >
             {component.text}
@@ -160,6 +161,7 @@ function SurfaceView({
                   {row.map((cell, cellIndex) => (
                     <MessageText
                       key={cellIndex}
+                      aiGenerated
                       className="artifact-table-cell"
                     >
                       {cell}
@@ -243,7 +245,7 @@ function SurfaceView({
         );
     }
   }
-  return <View className="artifact-surface">{render("root")}</View>;
+  return <View className="artifact-surface"><Text className="artifact-caption">AI 生成作品 · 用户填写和原图除外</Text>{render("root")}</View>;
 }
 
 function PageView({

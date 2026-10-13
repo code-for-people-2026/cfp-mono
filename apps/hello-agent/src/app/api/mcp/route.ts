@@ -1,3 +1,4 @@
+import { privacyService } from "../../../privacy/service";
 import { cms } from "../../../cms/client";
 import { Repository } from "../../../cms/repository";
 import { GreetingService } from "../../../domain/greetings";
@@ -12,6 +13,8 @@ export async function POST(request: Request) {
     const payload = await cms();
     const owner = await authenticate(payload, request, true);
     rateLimit(owner.id);
+    await privacyService(payload, owner).require("external");
+    await privacyService(payload, owner).requireInput({});
     return await handleMcp(
       request,
       await readJson(request),

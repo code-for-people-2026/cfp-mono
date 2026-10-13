@@ -19,6 +19,7 @@ export default defineConfig(async () => ({
       },
     ],
   },
+  alias: { "@tarojs/plugin-framework-react/dist/runtime": require.resolve("@tarojs/plugin-framework-react/dist/runtime") },
   framework: "react",
   compiler: "vite",
   defineConstants: {

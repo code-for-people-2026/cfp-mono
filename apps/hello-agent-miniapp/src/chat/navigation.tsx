@@ -11,6 +11,7 @@ type Props = {
   sessions: Session[];
   activeId?: number;
   disabled: boolean;
+  settingsDisabled?: boolean;
   memoryFull: boolean;
   memory?: MemoryStatus;
   onOpen: () => void;
@@ -191,7 +192,7 @@ export function ChatNavigation(props: Props) {
               />
               <Button
                 className="control drawer-footer-action"
-                disabled={props.disabled || undefined}
+                disabled={(props.settingsDisabled ?? props.disabled) || undefined}
                 onClick={props.onSettings}
               >
                 <ChatIcon name="settings" />

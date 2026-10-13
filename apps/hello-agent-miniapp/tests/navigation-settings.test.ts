@@ -10,6 +10,7 @@ const platform = vi.hoisted(() => ({
   offWindowResize: vi.fn(),
   useDidHide: vi.fn(),
   useDidShow: vi.fn(),
+  navigateTo: vi.fn().mockResolvedValue({}),
   getCurrentPages: vi.fn(() => [{}, {}]),
   navigateBack: vi.fn().mockResolvedValue({}),
   reLaunch: vi.fn().mockResolvedValue({}),
@@ -23,6 +24,7 @@ const api = vi.hoisted(() => ({
       origin: "https://example.test",
       platformConfigured: true,
     }),
+  getPrivacy: vi.fn().mockResolvedValue({ policy: { version: "test" }, state: "active", consent: { version: "test", external: true }, expiresAt: null }),
   mintMcpToken: vi.fn(),
   copy: vi.fn().mockResolvedValue(undefined),
   openCms: vi.fn(),
@@ -143,7 +145,7 @@ it("胶囊冷启动返回空矩形时，仍预留状态栏和右侧位置", asyn
 });
 
 async function mountSettings() {
-  const { default: SettingsPage } = await import("../src/pages/settings/index");
+  const { default: SettingsPage } = await import("../src/pages/connection/index");
   await act(async () => {
     page = create(createElement(SettingsPage));
   });
@@ -159,7 +161,7 @@ function button(label: string) {
     .find((node) => node.children.includes(label))!;
 }
 
-it("设置页原地选择连接方式，供仍在页面栈内的聊天读取，不再渲染弹窗", async () => {
+it("连接方式子页面原地选择方式，供仍在页面栈内的聊天读取，不再渲染弹窗", async () => {
   await mountSettings();
   const { useChatMode } = await import("../src/chat/preferences");
   function ModeConsumer() {
@@ -177,7 +179,7 @@ it("设置页原地选择连接方式，供仍在页面栈内的聊天读取，�
   act(() => consumer!.unmount());
 });
 
-it("离开设置后，迟到的 MCP 令牌不能重新出现在返回后的页面", async () => {
+it("离开连接方式后，迟到的 MCP 令牌不能重新出现在返回后的页面", async () => {
   await mountSettings();
   act(() => modeButton(2).props.onClick());
   let resolve!: (value: { token: string }) => void;
@@ -187,8 +189,9 @@ it("离开设置后，迟到的 MCP 令牌不能重新出现在返回后的页�
     }),
   );
   let pending: Promise<void>;
-  act(() => {
+  await act(async () => {
     pending = button("生成专用连接令牌").props.onClick();
+    await Promise.resolve();
   });
   act(() => platform.useDidHide.mock.calls.at(-1)![0]());
   act(() => platform.useDidShow.mock.calls.at(-1)![0]());
@@ -212,7 +215,7 @@ it("离开设置后，迟到的 MCP 令牌不能重新出现在返回后的页�
   expect(button("复制 MCP 连接配置")).toBeUndefined();
 });
 
-it.each([1, 2])("网页设置的返回支持页面栈深度 %s", async (depth) => {
+it.each([1, 2])("网页连接方式的返回支持页面栈深度 %s", async (depth) => {
   vi.stubEnv("TARO_ENV", "h5");
   platform.getCurrentPages.mockReturnValue(
     Array.from({ length: depth }, () => ({})),
@@ -221,7 +224,7 @@ it.each([1, 2])("网页设置的返回支持页面栈深度 %s", async (depth) =
   await act(async () => {
     await page!.root
       .findAllByType("button")
-      .find((node) => node.props.ariaLabel === "返回聊天")!
+      .find((node) => node.props.ariaLabel === "返回设置")!
       .props.onClick();
   });
   if (depth > 1) expect(platform.navigateBack).toHaveBeenCalledOnce();

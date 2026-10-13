@@ -1,3 +1,4 @@
+import { uploadedAiXmp } from "../labeling/upload-provenance";
 import sharp from "sharp";
 import { Repository, fingerprint } from "../cms/repository";
 import type { Greeting as GreetingRecord } from "../payload-types";
@@ -83,12 +84,15 @@ export class GreetingService {
       }).metadata();
       if (!["jpeg", "png", "webp"].includes(metadata.format || ""))
         throw new Error("unsupported");
-      buffer = await sharp(data, { limitInputPixels: 20_000_000 })
+      const provenance = await uploadedAiXmp(data);
+      let normalized = sharp(data, { limitInputPixels: 20_000_000 })
         .rotate()
         .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-    } catch {
+        .jpeg({ quality: 80 });
+      if (provenance) normalized = normalized.withXmp(provenance);
+      buffer = await normalized.toBuffer();
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(400, "请上传有效的 JPEG、PNG 或 WebP 图片");
     }
     if (buffer.length > MAX_STORED_IMAGE_BYTES)

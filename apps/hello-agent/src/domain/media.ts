@@ -23,12 +23,15 @@ export class MediaService {
   async save(bytes: Buffer) {
     if (!bytes.length || bytes.length > MAX_STORED_IMAGE_BYTES)
       throw new AppError(413, "处理后的图片大小无效");
+    const lease = await this.repo.create("session-locks", { sessionKey: `upload:${this.repo.owner.id}:${randomUUID()}`, expiresAt: new Date(Date.now() + 180_000).toISOString() });
+    try {
     const store = this.storeFactory();
     const data = store
       ? { object: await this.writeObject(store, bytes), base64: null }
       : { base64: bytes.toString("base64") };
     // OSS 与数据库没有跨服务事务；数据库提交结果不明时保留对象，避免误删已引用的图片。
-    return this.repo.create("media", { mimeType: "image/jpeg", ...data });
+    return await this.repo.create("media", { mimeType: "image/jpeg", ...data });
+    } finally { await this.repo.remove("session-locks", lease.id); }
   }
 
   private async readRow(row: Media) {
@@ -59,6 +62,22 @@ export class MediaService {
   async read(id: number) {
     // 必须先做 Payload 归属校验，再访问 OSS；对象名不能充当访问凭据。
     return this.readRow(await this.repo.get("media", id));
+  }
+
+  async deleteAll() {
+    const rows = await this.repo.all("media");
+    const store = this.storeFactory();
+    for (const row of rows) {
+      if (!row.object) continue;
+      const reference = referenceSchema.parse(row.object);
+      if (!reference.key.startsWith(ownerPrefix(this.repo.owner.id))) throw new AppError(500, "图片归属异常，删除已暂停");
+      if (!store || store.bucket !== reference.bucket || store.region !== reference.region || !store.removePrefix) throw new AppError(503, "图片删除配置不完整，记录已保留供重试");
+    }
+    if (store) {
+      if (!store.removePrefix) throw new AppError(503, "对象清理功能尚未配置");
+      await store.removePrefix(ownerPrefix(this.repo.owner.id));
+    }
+    for (const row of rows) await this.repo.remove("media", row.id);
   }
 
   async migrate(id: number) {

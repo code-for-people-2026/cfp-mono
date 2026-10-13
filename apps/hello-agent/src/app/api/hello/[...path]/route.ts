@@ -1,3 +1,6 @@
+import { legalPage, privacyGet, privacyPost, recoveryResponse } from "../../../../privacy/http";
+import { privacyPolicy } from "../../../../privacy/policy";
+import { privacyService } from "../../../../privacy/service";
 import { z } from "zod";
 import { cms } from "../../../../cms/client";
 import { Repository } from "../../../../cms/repository";
@@ -37,6 +40,7 @@ const json = (value: unknown) =>
 export async function GET(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
+    if (path[0] === "legal") return path[1] === "page" ? legalPage() : json(privacyPolicy());
     if (path[0] === "a2ui-catalog" && path.length === 1)
       return json(a2uiCatalog());
     if (path[0] === "config")
@@ -49,6 +53,11 @@ export async function GET(request: Request, context: Context) {
       });
     const payload = await cms();
     const owner = await authenticate(payload, request);
+    if (path[0] === "privacy") return privacyGet(payload, owner, path[1]);
+    if (owner.auth === "bearer") {
+      await privacyService(payload, owner).require("external");
+      await privacyService(payload, owner).requireInput({});
+    }
     const service = new GreetingService(new Repository(payload, owner));
     if (
       ["artifact-image", "artifact-page"].includes(path[0]) &&
@@ -59,11 +68,14 @@ export async function GET(request: Request, context: Context) {
         z.coerce.number().int().positive().parse(path[1]),
         path[2],
       );
+      const turn = await service.repo.get("greetings", Number(path[1]));
+      const contentId = `${owner.id}:${turn.id}:${turn.fingerprint}:${artifact.id}`;
+      const external = turn.mode === "external";
       if (path[0] === "artifact-image" && artifact.kind === "image") {
         const result =
           artifact.source.type === "media"
             ? await service.media.read(artifact.source.mediaId)
-            : { bytes: await illustrationPng(artifact), mimeType: "image/png" };
+            : { bytes: await illustrationPng(artifact, contentId, external), mimeType: "image/png" };
         return new Response(new Uint8Array(result.bytes), {
           headers: {
             "Content-Type": result.mimeType,
@@ -73,7 +85,7 @@ export async function GET(request: Request, context: Context) {
         });
       }
       if (path[0] === "artifact-page" && artifact.kind === "page")
-        return new Response(pageHtml(artifact), {
+        return new Response(pageHtml(artifact, contentId, external), {
           headers: {
             "Content-Type": "text/html; charset=utf-8",
             "Cache-Control": "private, no-store",
@@ -128,6 +140,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
     const payload = await cms();
+    if (path[0] === "privacy-recover") return recoveryResponse(payload, request);
     if (path[0] === "miniapp-identity") {
       if (request.headers.has("origin"))
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
@@ -157,21 +170,29 @@ export async function POST(request: Request, context: Context) {
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
     rateLimit(owner.id);
+    if (path[0] === "privacy") return privacyPost(payload, owner, path[1], request);
+    const privacy = privacyService(payload, owner);
     const service = new GreetingService(new Repository(payload, owner));
     if (path[0] === "token") {
       if (path[1] === "revoke") {
         await revokeTokens(payload, owner);
         return json({ revoked: true });
       }
+      await privacy.require("external");
+      await privacy.requireInput({});
       const credential = await mintCredential(payload, "bearer", owner.id);
       return json({ token: credential.token, expiresAt: credential.expiresAt });
     }
+    await privacy.require();
     const body = await readJson(
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
     );
-    if (path[0] === "ag-ui" && path.length === 1)
-      return agentStream(service, readAgentInput(body));
+    if (path[0] === "ag-ui" && path.length === 1) {
+      const input = readAgentInput(body);
+      await privacy.requireInput(input);
+      return agentStream(service, input);
+    }
     if (path[0] === "context") {
       const args = z
         .object({
@@ -184,6 +205,7 @@ export async function POST(request: Request, context: Context) {
           apiKey: z.string().min(10).max(256).optional(),
         })
         .parse(body);
+      await privacy.requireInput({});
       const memory = new ContextService(service.repo);
       if (path[1] === "ad-start")
         return json(await memory.startAd(args.sessionId));
@@ -226,8 +248,12 @@ export async function POST(request: Request, context: Context) {
         .parse(body);
       return json(await service.createSession(title));
     }
-    if (path[0] === "greet") return json(await service.generateGreeting(body));
+    if (path[0] === "greet") {
+      await privacy.requireInput(body);
+      return json(await service.generateGreeting(body));
+    }
     if (path[0] === "upload") {
+      await privacy.require("sensitive");
       const { base64 } = z
         .object({ base64: z.string().min(1).max(7_000_000) })
         .parse(body);
