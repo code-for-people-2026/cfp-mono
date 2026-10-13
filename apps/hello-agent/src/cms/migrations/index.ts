@@ -1,3 +1,4 @@
+import * as privacyRevision from "./20261013_174000_privacy_revision";
 import * as privacy from './20261013_151000_privacy_lifecycle';
 import * as migration_20260930_123608_initial_preview from './20260930_123608_initial_preview';
 import * as migration_20261002_014226_private_image_objects from './20261002_014226_private_image_objects';
@@ -32,4 +33,5 @@ export const migrations = [
     name: '20261013_125923_platform_model_quota'
   },
   { up: privacy.up, down: privacy.down, name: "20261013_151000_privacy_lifecycle" },
+  { up: privacyRevision.up, down: privacyRevision.down, name: "20261013_174000_privacy_revision" },
 ];

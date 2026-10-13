@@ -1,5 +1,6 @@
 import type { Payload } from "payload";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { AppError } from "../domain/contracts";
 import { Repository } from "../cms/repository";
 import type { PrivacyProfile } from "../payload-types";
 import { PrivacyService } from "./service";
@@ -10,6 +11,11 @@ import { writeDeletionLedger } from "./deletion-ledger";
 // #383 is not submitted yet. Repository and retention are unit-test doubles;
 // ledger durability and actual file writes are covered in separate tests.
 vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn(async () => ({ held: 0 })) }));
+vi.mock("./profile-store", () => ({ updateProfile: async (payload: Payload, expected: PrivacyProfile, data: Partial<PrivacyProfile>) => {
+  const latest = (await payload.find({ collection: "privacy-profiles" })).docs[0];
+  if (latest.revision !== expected.revision || latest.state !== expected.state) throw new AppError(409, "隐私设置已变更");
+  await payload.update({ collection: "privacy-profiles", id: expected.id, data: { ...data, revision: expected.revision + 1 } });
+} }));
 vi.mock("./deletion-ledger", async (original) => ({ ...await original<typeof import("./deletion-ledger")>(), writeDeletionLedger: vi.fn(async () => {}) }));
 beforeEach(() => {
   for (const [key, value] of Object.entries({
@@ -19,7 +25,7 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllEnvs());
 function fixture(priorInputs: unknown[] = []) {
-  let profile: PrivacyProfile = { id: 1, owner: "isolated", state: "active", sensitiveHistory: false, createdAt: "2026-10-13", updatedAt: "2026-10-13", consent: { version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false } };
+  let profile: PrivacyProfile = { id: 1, owner: "isolated", state: "active", revision: 0, sensitiveHistory: false, createdAt: "2026-10-13", updatedAt: "2026-10-13", consent: { version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false } };
   const update = vi.fn(async ({ data }: { data: Partial<PrivacyProfile> }) => (profile = { ...profile, ...data }));
   const payload = {
     find: vi.fn(async ({ collection }: { collection: string }) => ({ docs: collection === "privacy-profiles" ? [profile] : priorInputs.map((input, index) => ({ id: index + 1, input })) })),

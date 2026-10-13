@@ -210,6 +210,7 @@ export interface PrivacyProfile {
   id: number;
   owner: string;
   state: 'active' | 'withdrawn' | 'deleting' | 'deleted';
+  revision: number;
   consent?:
     | {
         [k: string]: unknown;
@@ -507,6 +508,7 @@ export interface KnowledgeBasesSelect<T extends boolean = true> {
 export interface PrivacyProfilesSelect<T extends boolean = true> {
   owner?: T;
   state?: T;
+  revision?: T;
   consent?: T;
   sensitiveHistory?: T;
   events?: T;

@@ -10,6 +10,7 @@ import { privacyPolicy } from "./policy";
 import { writeDeletionLedger } from "./deletion-ledger";
 import { aiMetadata } from "../labeling/metadata";
 import { ExportBudget } from "./export-limits";
+import { updateProfile } from "./profile-store";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
@@ -44,13 +45,12 @@ export class PrivacyService {
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     return { policy: privacyPolicy(), state: profile?.state || "unaccepted", consent: profile?.consent || null, expiresAt: profile?.expiresAt || null, hasRecoveryCode: !!profile?.recoveryDigest };
   }
-  private async save(data: Partial<Pick<PrivacyProfile, "state" | "consent" | "expiresAt" | "recoveryDigest">>, event: string) {
-    const profile = await profileFor(this.repo.payload, this.repo.owner.id);
+  private async save(data: Partial<Pick<PrivacyProfile, "state" | "consent" | "expiresAt" | "recoveryDigest">>, event: string, profile: PrivacyProfile | undefined) {
     if (!profile && !data.state) throw new AppError(409, "请先完成隐私设置");
     const next = { ...data, state: data.state || profile!.state, owner: this.repo.owner.id, events: consentEvents(profile?.events, { action: event, at: new Date().toISOString(), ...(data.consent ? { consent: data.consent, policySnapshot: privacyPolicy().documents } : {}) }) };
     return profile
-      ? this.repo.payload.update({ collection: "privacy-profiles", id: profile.id, overrideAccess: true, data: next })
-      : this.repo.payload.create({ collection: "privacy-profiles", overrideAccess: true, data: next });
+      ? updateProfile(this.repo.payload, profile, next)
+      : this.repo.payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { ...next, revision: 0 } });
   }
   async consent(value: unknown) {
     if (this.repo.owner.auth === "bearer") throw new AppError(403, "请本人在隐私与数据页面确认授权");
@@ -63,7 +63,7 @@ export class PrivacyService {
     const previous = consentSchema.safeParse(profile?.consent);
     const unexpired = profile?.expiresAt ? Date.parse(profile.expiresAt) > Date.now() : !policy.retentionDays;
     if (profile?.state === "active" && unexpired && previous.success && JSON.stringify(previous.data) === JSON.stringify(consent)) return this.status();
-    await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent");
+    await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent", profile);
     // Every choice update revokes old scopes and old recipient authorizations.
     await this.revoke("bearer");
     return this.status();
@@ -91,7 +91,7 @@ export class PrivacyService {
     const usesSensitiveContent = hasSensitiveContent(input) || profile?.sensitiveHistory === true || prior.some((row) => hasSensitiveContent(row.input));
     if (usesSensitiveContent) {
       await this.require("sensitive");
-      if (!profile?.sensitiveHistory) await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { sensitiveHistory: true } });
+      if (!profile?.sensitiveHistory) await updateProfile(this.repo.payload, profile!, { sensitiveHistory: true });
     }
   }
   async revoke(kind?: string) {
@@ -100,15 +100,15 @@ export class PrivacyService {
   async withdraw() {
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "删除已开始，请继续删除流程");
-    await this.save({ state: "withdrawn", expiresAt: new Date().toISOString() }, "withdraw");
+    await this.save({ state: "withdrawn", expiresAt: new Date().toISOString() }, "withdraw", profile);
     await this.revoke("bearer");
     return this.status();
   }
   async recoveryCode() {
     const current = await profileFor(this.repo.payload, this.repo.owner.id);
-    if (!current || current.state === "deleted") throw new AppError(409, "请先完成隐私设置");
+    if (!current || current.state === "deleted" || current.state === "deleting") throw new AppError(409, "请先完成隐私设置");
     const code = randomBytes(32).toString("base64url");
-    await this.save({ recoveryDigest: digest(code) }, "rotate-recovery");
+    await this.save({ recoveryDigest: digest(code) }, "rotate-recovery", current);
     return { code };
   }
   private async *exportRows<C extends OwnedCollection>(collection: C) {
@@ -170,7 +170,7 @@ export class PrivacyService {
   async deleteData() {
     let profile = await profileFor(this.repo.payload, this.repo.owner.id);
     if (profile?.state !== "deleting") {
-      await this.save({ state: "deleting" }, "delete-requested");
+      await this.save({ state: "deleting" }, "delete-requested", profile);
       profile = await profileFor(this.repo.payload, this.repo.owner.id);
     }
     await this.revoke("bearer");
@@ -184,7 +184,7 @@ export class PrivacyService {
     for (const collection of contentCollections)
       await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
     // Do not erase the freeze tombstone: a late model response must stay blocked.
-    await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, expiresAt: null } });
+    await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, expiresAt: null });
     await this.revoke();
     return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
   }

@@ -7,12 +7,15 @@ export function labeledAiText(value: string, external = false) {
 export function installAiCopyLabels(root: Document = document) {
   const handler = (event: ClipboardEvent) => {
     const selection = root.getSelection();
-    if (!selection || selection.isCollapsed || !event.clipboardData) return;
+    if (!selection || selection.isCollapsed || selection.rangeCount !== 1 || !event.clipboardData) return;
     const range = selection.getRangeAt(0);
-    const nodes = root.querySelectorAll('[data-ai-generated="true"], .artifact-surface, .assistant-bubble');
-    const selected = [...nodes].filter((node) => range.intersectsNode(node));
-    if (!selected.length) return;
-    const external = selected.some((node) => node.closest('[data-ai-external="true"]'));
+    // Only override a selection wholly inside one AI source container. A
+    // multi-message selection must keep the browser's original mixed content.
+    const common = range.commonAncestorContainer;
+    const element = common.nodeType === 1 ? common as Element : common.parentElement;
+    const source = element?.closest('[data-ai-generated="true"], .artifact-surface, .assistant-bubble');
+    if (!source || element?.closest('input, textarea, [contenteditable="true"]')) return;
+    const external = !!source.closest('[data-ai-external="true"]');
     event.clipboardData.setData("text/plain", labeledAiText(selection.toString(), external));
     event.preventDefault();
   };

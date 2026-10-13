@@ -25,7 +25,7 @@ try {
   await payload.db.migrate({ migrations: suite.slice(3) });
   await payload.db.migrate({ migrations: suite.slice(3) });
   assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
-  const saved = await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner: "expiry-test", state: "withdrawn", consent: null, expiresAt: new Date(Date.now() - 1000).toISOString() } });
+  const saved = await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner: "expiry-test", revision: 0, state: "withdrawn", consent: null, expiresAt: new Date(Date.now() - 1000).toISOString() } });
   assert.equal(saved.state, "withdrawn");
   const ownerDigest = createHash("sha256").update("restore-test").digest("hex");
   await writeFile(`${directory}/external-ledger.ndjson`, JSON.stringify({ ownerDigest }) + "\n");

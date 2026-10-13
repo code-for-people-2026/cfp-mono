@@ -11,6 +11,7 @@ export const privacyCollections: CollectionConfig[] = [{
   fields: [
     { name: "owner", type: "text", required: true, unique: true },
     { name: "state", type: "select", options: ["active", "withdrawn", "deleting", "deleted"], required: true },
+    { name: "revision", type: "number", required: true, defaultValue: 0, min: 0 },
     { name: "consent", type: "json" },
     { name: "sensitiveHistory", type: "checkbox", defaultValue: false },
     { name: "events", type: "json" },
