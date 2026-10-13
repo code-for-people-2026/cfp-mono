@@ -17,6 +17,21 @@ const html = await read("index.html");
 const bootstrapPath = html.match(/src="\/chat\/(js\/app\.[^"\s]+\.js)"/)?.[1];
 assert.ok(bootstrapPath, "缺少 H5 入口");
 const bootstrap = await read(bootstrapPath);
+const settingsPath = bootstrap.match(
+  /path:"pages\/settings\/index",load:[\s\S]*?import\("\.\/([^"\s]+\.js)"\)/,
+)?.[1];
+assert.ok(settingsPath, "发布版本缺少独立设置路由");
+const settings = await read(`js/${settingsPath}`);
+for (const marker of ["settings-page", "settings-header", "mode-option"])
+  assert.ok(settings.includes(marker), `发布版本遗漏设置页：${marker}`);
+if (process.env.HELLO_EXPECTED_COMMIT) {
+  const info = JSON.parse(await read("build-info.json"));
+  assert.equal(
+    info.commit,
+    process.env.HELLO_EXPECTED_COMMIT,
+    "发布提交不匹配",
+  );
+}
 const chatPath = bootstrap.match(/import\("\.\/(index\.[^"\s]+\.js)"\)/)?.[1];
 assert.ok(chatPath, "缺少聊天页面模块");
 const chat = await read(`js/${chatPath}`);
@@ -66,4 +81,6 @@ if (!base) {
   );
   assert.ok((await readdir(path.join(app, "dist/weapp"))).length > 0);
 }
-console.log("✓ 实际发布包包含新版输入栏、语音切换、作品与 AG-UI 请求");
+console.log(
+  "✓ 实际发布包包含独立设置页、新版输入栏、语音切换、作品与 AG-UI 请求",
+);
