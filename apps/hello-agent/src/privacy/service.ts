@@ -86,12 +86,24 @@ export class PrivacyService {
     const hasSensitiveContent = (value: unknown) => /formResponse|clientEvent|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(value));
     // Once prior records may contain sensitive material, even an ordinary new
     // prompt/summary can disclose that history. Withdrawal stops that reuse.
-    const prior = await this.repo.all("greetings");
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
-    const usesSensitiveContent = hasSensitiveContent(input) || profile?.sensitiveHistory === true || prior.some((row) => hasSensitiveContent(row.input));
+    let usesSensitiveContent = hasSensitiveContent(input) || profile?.sensitiveHistory === true;
+    // Legacy history has not necessarily passed through this marker. Read only
+    // one input at a time, never responses/artifacts, and stop at the first hit.
+    let cursor = 0;
+    while (!usesSensitiveContent && !profile?.historyInspected) {
+      const [row] = (await this.repo.payload.find({ collection: "greetings", overrideAccess: false, context: { helloOwner: this.repo.owner.id }, depth: 0, limit: 1, sort: "id", select: { id: true, input: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
+      if (!row) break;
+      usesSensitiveContent = hasSensitiveContent(row.input);
+      cursor = row.id;
+    }
     if (usesSensitiveContent) {
       await this.require("sensitive");
-      if (!profile?.sensitiveHistory) await updateProfile(this.repo.payload, profile!, { sensitiveHistory: true });
+      if (!profile?.sensitiveHistory) await updateProfile(this.repo.payload, profile!, { sensitiveHistory: true, historyInspected: true });
+    } else if (!profile?.historyInspected) {
+      // Ordinary legacy history is also cached, so later requests do not
+      // repeatedly scan it. New inputs are still checked on every request.
+      await updateProfile(this.repo.payload, profile!, { historyInspected: true });
     }
   }
   async revoke(kind?: string) {
@@ -184,7 +196,7 @@ export class PrivacyService {
     for (const collection of contentCollections)
       await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
     // Do not erase the freeze tombstone: a late model response must stay blocked.
-    await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, expiresAt: null });
+    await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, historyInspected: null, expiresAt: null });
     await this.revoke();
     return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
   }

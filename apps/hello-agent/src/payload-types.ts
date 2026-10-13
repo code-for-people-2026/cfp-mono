@@ -221,6 +221,7 @@ export interface PrivacyProfile {
     | boolean
     | null;
   sensitiveHistory?: boolean | null;
+  historyInspected?: boolean | null;
   events?:
     | {
         [k: string]: unknown;
@@ -511,6 +512,7 @@ export interface PrivacyProfilesSelect<T extends boolean = true> {
   revision?: T;
   consent?: T;
   sensitiveHistory?: T;
+  historyInspected?: T;
   events?: T;
   recoveryDigest?: T;
   expiresAt?: T;

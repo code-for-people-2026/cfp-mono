@@ -11,6 +11,7 @@ import { Repository } from "../cms/repository";
 import { privacyPolicy } from "./policy";
 import { up as initialPreview } from "../cms/migrations/20260930_123608_initial_preview";
 import { up as initial } from "../cms/migrations/20261013_151000_privacy_lifecycle";
+import { up as historyInspection } from "../cms/migrations/20261013_175000_privacy_history_inspection";
 import { up as revision } from "../cms/migrations/20261013_174000_privacy_revision";
 
 // No operations collections or production database: this exercises the real
@@ -29,6 +30,7 @@ beforeAll(async () => {
   await initial(args);
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
+  await historyInspection(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });
@@ -37,7 +39,10 @@ async function setup(owner: string) {
   return new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" }));
 }
 it("增量迁移保留已有授权，版本从零开始", async () => {
-  expect(await profileFor(payload, "legacy")).toMatchObject({ state: "withdrawn", revision: 0, consent: { core: true } });
+  const legacy = (await profileFor(payload, "legacy"))!;
+  expect(legacy).toMatchObject({ state: "withdrawn", revision: 0, historyInspected: false, consent: { core: true } });
+  await updateProfile(payload, legacy, { historyInspected: true });
+  expect(await profileFor(payload, "legacy")).toMatchObject({ revision: 1, historyInspected: true, consent: { core: true } });
 });
 it("迟到的授权请求不能撤销已完成的撤回；重新读取后可主动再授权", async () => {
   const service = await setup("delayed-consent");

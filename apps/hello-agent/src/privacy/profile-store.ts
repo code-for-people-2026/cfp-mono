@@ -3,14 +3,14 @@ import type { Payload } from "payload";
 import type { PrivacyProfile } from "../payload-types";
 import { AppError } from "../domain/contracts";
 
-type ProfilePatch = Partial<Pick<PrivacyProfile, "state" | "consent" | "events" | "expiresAt" | "recoveryDigest" | "sensitiveHistory" | "deletedAt">>;
+type ProfilePatch = Partial<Pick<PrivacyProfile, "state" | "consent" | "events" | "expiresAt" | "recoveryDigest" | "sensitiveHistory" | "historyInspected" | "deletedAt">>;
 
 // Payload's update(where) first selects IDs, then updates by ID. Use the
 // configured SQLite adapter for a single atomic compare-and-swap instead.
 export async function updateProfile(payload: Payload, profile: PrivacyProfile, data: ProfilePatch) {
   if (["deleting", "deleted"].includes(profile.state) && data.state && !["deleting", "deleted"].includes(data.state))
     throw new AppError(409, "删除状态不能恢复为处理状态");
-  const columns = { state: "state", consent: "consent", events: "events", expiresAt: "expires_at", recoveryDigest: "recovery_digest", sensitiveHistory: "sensitive_history", deletedAt: "deleted_at" } as const;
+  const columns = { state: "state", consent: "consent", events: "events", expiresAt: "expires_at", recoveryDigest: "recovery_digest", sensitiveHistory: "sensitive_history", historyInspected: "history_inspected", deletedAt: "deleted_at" } as const;
   const changes = (Object.keys(columns) as (keyof ProfilePatch)[]).filter((key) => data[key] !== undefined).map((key) => {
     const value = data[key];
     const encoded = value == null ? null : key === "consent" || key === "events" ? JSON.stringify(value) : typeof value === "boolean" ? Number(value) : value;

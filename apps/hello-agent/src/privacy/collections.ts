@@ -14,6 +14,7 @@ export const privacyCollections: CollectionConfig[] = [{
     { name: "revision", type: "number", required: true, defaultValue: 0, min: 0 },
     { name: "consent", type: "json" },
     { name: "sensitiveHistory", type: "checkbox", defaultValue: false },
+    { name: "historyInspected", type: "checkbox", defaultValue: false },
     { name: "events", type: "json" },
     { name: "recoveryDigest", type: "text", unique: true },
     { name: "expiresAt", type: "date" },
