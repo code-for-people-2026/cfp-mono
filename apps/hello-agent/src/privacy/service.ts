@@ -1,7 +1,5 @@
 import { eraseOperationsEvidence } from "../operations/retention";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, open } from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
 import type { PrivacyProfile } from "../payload-types";
 import type { Payload } from "payload";
@@ -9,11 +7,32 @@ import { Repository } from "../cms/repository";
 import { AppError, type Owner } from "../domain/contracts";
 import { MediaService } from "../domain/media";
 import { privacyPolicy } from "./policy";
+import { writeDeletionLedger } from "./deletion-ledger";
 import { aiMetadata } from "../labeling/metadata";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
 const contentCollections = ["adk-sessions", "greetings", "sessions", "session-locks"] as const;
+// Keep the latest consent evidence plus bounded recent lifecycle events. This
+// is a local account history, not an unlimited content-safety audit archive.
+function consentEvents(previous: PrivacyProfile["events"], next: { action: string; at: string; consent?: PrivacyProfile["consent"]; policySnapshot?: ReturnType<typeof privacyPolicy>["documents"] }) {
+  const events = Array.isArray(previous) ? previous : [];
+  const latestConsent = events.findLast((event) => event && typeof event === "object" && "action" in event && event.action === "consent");
+  const recent = events.slice(-63);
+  if (latestConsent && !recent.includes(latestConsent)) recent.unshift(latestConsent);
+  const candidates = [...recent, next];
+  const pinned = next.consent ? candidates.length - 1 : latestConsent ? candidates.indexOf(latestConsent) : -1;
+  const kept = new Set([candidates.length - 1, ...(pinned >= 0 ? [pinned] : [])]);
+  const size = (event: unknown) => Buffer.byteLength(JSON.stringify(event), "utf8") + 1;
+  let bytes = 2 + [...kept].reduce((sum, index) => sum + size(candidates[index]), 0);
+  if (bytes > 128 * 1024) throw new AppError(503, "隐私授权凭据超出存储上限，请联系管理员核实政策配置");
+  for (let index = candidates.length - 2; index >= 0 && kept.size < 64; index--) {
+    if (kept.has(index)) continue;
+    const added = size(candidates[index]);
+    if (bytes + added <= 128 * 1024) { kept.add(index); bytes += added; }
+  }
+  return candidates.filter((_, index) => kept.has(index));
+}
 /** @public Privacy state lookup shared with identity integrations. */
 export async function profileFor(payload: Payload, owner: string) {
   return (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: owner } } })).docs[0];
@@ -26,9 +45,8 @@ export class PrivacyService {
   }
   private async save(data: Partial<Pick<PrivacyProfile, "state" | "consent" | "expiresAt" | "recoveryDigest">>, event: string) {
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
-    const events = Array.isArray(profile?.events) ? profile.events : [];
     if (!profile && !data.state) throw new AppError(409, "请先完成隐私设置");
-    const next = { ...data, state: data.state || profile!.state, owner: this.repo.owner.id, events: [...events, { action: event, at: new Date().toISOString(), ...(data.consent ? { consent: data.consent, policySnapshot: privacyPolicy().documents } : {}) }] };
+    const next = { ...data, state: data.state || profile!.state, owner: this.repo.owner.id, events: consentEvents(profile?.events, { action: event, at: new Date().toISOString(), ...(data.consent ? { consent: data.consent, policySnapshot: privacyPolicy().documents } : {}) }) };
     return profile
       ? this.repo.payload.update({ collection: "privacy-profiles", id: profile.id, overrideAccess: true, data: next })
       : this.repo.payload.create({ collection: "privacy-profiles", overrideAccess: true, data: next });
@@ -41,6 +59,9 @@ export class PrivacyService {
     if (process.env.HELLO_DEPLOYED === "true" && !policy.ready) throw new AppError(503, "隐私运营资料尚未确认，暂不开放新的处理授权");
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "此身份正在删除或已删除，不能重新授权");
+    const previous = consentSchema.safeParse(profile?.consent);
+    const unexpired = profile?.expiresAt ? Date.parse(profile.expiresAt) > Date.now() : !policy.retentionDays;
+    if (profile?.state === "active" && unexpired && previous.success && JSON.stringify(previous.data) === JSON.stringify(consent)) return this.status();
     await this.save({ state: "active", consent, expiresAt: policy.retentionDays ? new Date(Date.now() + policy.retentionDays * 86400_000).toISOString() : null }, "consent");
     // Every choice update revokes old scopes and old recipient authorizations.
     await this.revoke("bearer");
@@ -143,13 +164,5 @@ export async function recoverOwner(payload: Payload, code: unknown): Promise<str
   // deliberately rotates it, so a lost HTTP response cannot lose the identity.
   await new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" })).revoke();
   return owner;
-}
-async function writeDeletionLedger(owner: string) {
-  const file = process.env.HELLO_PRIVACY_DELETION_LEDGER;
-  if (!file) throw new AppError(503, "删除清单存储尚未配置，数据已冻结，请联系管理员完成删除");
-  await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  const handle = await open(file, "a", 0o600);
-  try { await handle.writeFile(JSON.stringify({ ownerDigest: digest(owner), requestedAt: new Date().toISOString() }) + "\n"); await handle.sync(); }
-  finally { await handle.close(); }
 }
 export function privacyService(payload: Payload, owner: Owner) { return new PrivacyService(new Repository(payload, owner)); }

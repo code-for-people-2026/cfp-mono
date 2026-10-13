@@ -52,7 +52,8 @@ export async function illustrationPng(value: ImageArtifact, contentId?: string, 
       }
     })
     .join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="448" viewBox="0 0 640 448"><rect width="640" height="400" fill="${artifact.source.background}"/>${shapes}<rect x="0" y="400" width="640" height="48" fill="#fff"/><text x="620" y="435" text-anchor="end" fill="#111" font-size="32" font-weight="bold" font-family="sans-serif">AI 生成</text></svg>`;
+  const visibleLabel = external ? "AI 生成（外部客户端声明）" : "AI 生成";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="640" height="448" viewBox="0 0 640 448"><rect width="640" height="400" fill="${artifact.source.background}"/>${shapes}<rect x="0" y="400" width="640" height="48" fill="#fff"/><text x="620" y="435" text-anchor="end" fill="#111" font-size="32" font-weight="bold" font-family="sans-serif">${visibleLabel}</text></svg>`;
   const bytes = await sharp(Buffer.from(svg)).png().toBuffer();
   return labelPng(bytes, aiMetadata(contentId || JSON.stringify(artifact), external));
 }

@@ -4,6 +4,7 @@ import { Repository } from "../cms/repository";
 import type { PrivacyProfile } from "../payload-types";
 import { PrivacyService } from "./service";
 import { privacyPolicy } from "./policy";
+import { maintainPrivacy } from "./maintenance";
 
 // #383 is not submitted yet. No deletion path is exercised by this unit test.
 vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn() }));
@@ -60,4 +61,38 @@ it("已有敏感历史即使没有标记也要授权，拒绝请求不写入标�
   await service.consent({ ...profile().consent as object, sensitive: true });
   await service.requireInput({});
   expect(profile().sensitiveHistory).toBe(true);
+});
+
+it.each(["", "  ", "relative-ledger.ndjson"])("恢复入口拒绝无效清单路径并且不访问数据：%j", async (restoreLedger) => {
+  const find = vi.fn();
+  await expect(maintainPrivacy({ find } as unknown as Payload, { apply: false, restoreLedger })).rejects.toThrow("绝对路径");
+  expect(find).not.toHaveBeenCalled();
+});
+
+it("重复确认相同授权不重写记录、不延长有效期；过期后可以重新同意", async () => {
+  const { service, profile, update } = fixture();
+  await service.consent(profile().consent);
+  const expiresAt = profile().expiresAt;
+  const events = profile().events;
+  update.mockClear();
+  for (let count = 0; count < 25; count++) await service.consent(profile().consent);
+  expect(update).not.toHaveBeenCalled();
+  expect(profile()).toMatchObject({ expiresAt, events });
+  await update({ data: { expiresAt: "2020-01-01T00:00:00.000Z" } });
+  update.mockClear();
+  await service.consent(profile().consent);
+  expect(update).toHaveBeenCalledTimes(1);
+  expect(Date.parse(profile().expiresAt!)).toBeGreaterThan(Date.now());
+});
+it("反复变更授权和恢复码仍限制历史体积，保留最近一次同意快照", async () => {
+  const { service, profile } = fixture();
+  for (let count = 0; count < 100; count++) await service.consent({ ...profile().consent as object, sensitive: count % 2 === 0 });
+  expect(Buffer.byteLength(JSON.stringify(profile().events))).toBeLessThanOrEqual(128 * 1024);
+  for (let count = 0; count < 100; count++) await service.recoveryCode();
+  const events = profile().events;
+  if (!Array.isArray(events)) throw new Error("expected event history");
+  expect(events.length).toBeLessThanOrEqual(64);
+  expect(Buffer.byteLength(JSON.stringify(events))).toBeLessThanOrEqual(128 * 1024);
+  expect(events).toContainEqual(expect.objectContaining({ action: "consent", consent: profile().consent, policySnapshot: privacyPolicy().documents }));
+  expect(events.at(-1)).toMatchObject({ action: "rotate-recovery" });
 });

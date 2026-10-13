@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { deletionLedgerPath } from "./deletion-ledger";
 
 export const COMPANY = "码成仝软件（深圳）有限公司";
 const positiveDays = (value: string | undefined) => value && /^[1-9]\d{0,3}$/.test(value) ? Number(value) : undefined;
@@ -15,11 +16,11 @@ export function privacyPolicy() {
     policy: process.env.HELLO_IMAGE_REVIEW_PRIVACY_URL,
   } : undefined;
   const imageReviewDisclosed = !!imageReview && Object.values(imageReview).every((value) => !!value?.trim());
-  const ready = !!(process.env.HELLO_PRIVACY_CONTACT?.trim() && retentionDays && backupDays && responseDays && deployment && process.env.HELLO_PRIVACY_DELETION_LEDGER && process.env.HELLO_PRIVACY_OPERATIONS_APPROVED === "true");
+  const ready = !!(process.env.HELLO_PRIVACY_CONTACT?.trim() && retentionDays && backupDays && responseDays && deployment && deletionLedgerPath() && process.env.HELLO_PRIVACY_OPERATIONS_APPROVED === "true");
   const documents = [
     { title: "隐私政策", paragraphs: [
       `运营者：${COMPANY}（深圳龙岗）。隐私权利联系渠道：${contact}。${responseDays ? `将在 ${responseDays} 日内答复权利请求。` : "权利请求答复期限待公司确认。"}`,
-      "打开页面可先阅读政策。继续使用前由你主动同意；拒绝不影响阅读政策。我们仅建立随机访客身份，不获取微信 OpenID、手机号、通讯录或定位。浏览器 Cookie / 小程序本地凭证有效期 30 天，外部连接令牌 7 天。服务器保存凭证摘要，不保存令牌明文。这里的匿名身份只是随机设备标识，含对话内容的记录并不等于法律意义上的匿名化数据。设备权限许可不能代替本页授权。",
+      "打开页面可先阅读政策。继续使用前由你主动同意；拒绝不影响阅读政策。我们仅建立随机访客身份，不获取微信 OpenID、手机号、通讯录或定位。浏览器 Cookie / 小程序本地凭证有效期 30 天，外部连接令牌 7 天。服务器保存凭证摘要，不保存令牌明文。这里的匿名身份只是随机设备标识，含对话内容的记录并不等于法律意义上的匿名化数据。设备权限许可不能代替本页授权。同意与近期操作历史最多保存 64 条且总量不超过 128 KiB，并保留最近一次同意的政策快照；较旧记录会压缩清理。重复提交相同有效授权不延长有效期。",
       "文字、你选择的图片和练习回传用于生成回应、内容安全检查、保存及恢复祝福会话；历史、摘要和近期输入会参与后续生成与记忆整理。图片压缩为 JPEG、移除原始 EXIF 和定位信息后保存在私有存储中；已有有效 AIGC 来源标识会保留；未点发送但已上传的图片也会保存，随删除一起清理。我们不将这些内容用于训练模型或广告画像。反向代理访问日志可能记录 IP、时间、请求路径和状态，用于安全与故障排查；日志保存与轮转期限由公司另行核实，不承诺由聊天删除按钮逐条擦除。",
       "情绪练习、健康经历、照片中的人脸及其他可识别敏感信息可能对个人权益产生较大影响。只有你另行选择敏感信息处理，才可上传图片、提交练习或继续将包含此类信息的历史交给模型。文字检测只是辅助，不能识别所有敏感信息；未单独同意时请只发送普通文字。用途限你要求的回应和安全审核；可不用这些功能，普通文字功能仍可使用。请勿提交身份证、金融账户、精确行踪、他人隐私或不必要的病历。单独同意不代表允许无限收集。",
       `当前数据保存位置：${deployment || "待公司核实数据库、OSS 及供应商实际地域"}。${retentionDays ? `在线记录在当前身份最后一次同意后最多保留 ${retentionDays} 天，到期由维护任务删除；续用需要重新告知和同意。` : "在线记录自动到期期限尚未配置，当前不会宣称自动到期删除；正式开放前必须配置并启用维护任务。"} 生成轮次、摘要、执行轨迹、练习、上传图片、凭证及同意记录均在这一身份范围管理。执行轨迹可能含输入和工具输出，不是匿名统计。`,

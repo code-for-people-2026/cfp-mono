@@ -3,13 +3,16 @@ import { readFile } from "node:fs/promises";
 import type { Payload } from "payload";
 import { Repository } from "../cms/repository";
 import { PrivacyService } from "./service";
+import { deletionLedgerPath } from "./deletion-ledger";
 
 // Restore mode MUST run with application traffic stopped, using the independent
 // ledger retained outside the restored database. Default behavior is dry-run.
 export async function maintainPrivacy(payload: Payload, options: { apply: boolean; restoreLedger?: string }) {
+  const restoreLedger = options.restoreLedger === undefined ? undefined : deletionLedgerPath(options.restoreLedger);
+  if (options.restoreLedger !== undefined && !restoreLedger) throw new Error("恢复必须使用独立删除清单的绝对路径");
   const revoked = new Set<string>();
-  if (options.restoreLedger) {
-    const lines = (await readFile(options.restoreLedger, "utf8")).trim().split("\n").filter(Boolean);
+  if (restoreLedger) {
+    const lines = (await readFile(restoreLedger, "utf8")).trim().split("\n").filter(Boolean);
     for (const line of lines) {
       const record = JSON.parse(line) as { ownerDigest?: unknown };
       if (typeof record.ownerDigest !== "string" || !/^[a-f0-9]{64}$/.test(record.ownerDigest)) throw new Error("删除清单格式无效，禁止恢复开放");
@@ -20,7 +23,7 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
   const profiles = await payload.find({ collection: "privacy-profiles", overrideAccess: true, pagination: false });
   for (const row of profiles.docs)
     if (row.state === "withdrawn" || row.state === "deleting" || (row.state !== "deleted" && row.expiresAt && Date.parse(String(row.expiresAt)) <= Date.now())) owners.add(String(row.owner));
-  if (options.restoreLedger) {
+  if (restoreLedger) {
     // Older snapshots may predate the privacy collection contents entirely.
     for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "privacy-profiles"] as const) {
       const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0 });

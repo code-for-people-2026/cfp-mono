@@ -55,3 +55,17 @@ it("上传含损坏AI标识的文件不会去掉标识后悄悄保存", async ()
   const jpeg = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#fff" } }).withXmp('<x:xmpmeta xmlns:x="adobe:ns:meta/">AIGC invalid</x:xmpmeta>').jpeg().toBuffer();
   await expect(uploadedAiXmp(jpeg)).rejects.toThrow("来源标识无法完整保留");
 });
+
+it("外部插画下载后，来源声明同时保留在可见底栏和元数据中", async () => {
+  const artifact = artifacts.find((item) => item.kind === "image")!;
+  if (artifact.kind !== "image") throw new Error("fixture");
+  const platform = await illustrationPng(artifact, "same-illustration");
+  const external = await illustrationPng(artifact, "same-illustration", true);
+  const canvas = (bytes: Buffer) => sharp(bytes).extract({ left: 0, top: 0, width: 640, height: 400 }).raw().toBuffer();
+  expect(await canvas(external)).toEqual(await canvas(platform));
+  const sourceStrip = (bytes: Buffer) => sharp(bytes).extract({ left: 160, top: 402, width: 320, height: 46 }).removeAlpha().raw().toBuffer();
+  expect([...(await sourceStrip(platform))].every((pixel) => pixel === 255)).toBe(true);
+  expect([...(await sourceStrip(external))].filter((pixel) => pixel < 50).length).toBeGreaterThan(100);
+  const { uploadedAiXmp } = await import("./upload-provenance");
+  expect(await uploadedAiXmp(external)).toContain("external-client-declared;platform-rendered");
+});
