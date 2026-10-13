@@ -88,14 +88,15 @@ export class PrivacyService {
     // prompt/summary can disclose that history. Withdrawal stops that reuse.
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     let usesSensitiveContent = hasSensitiveContent(input) || profile?.sensitiveHistory === true;
-    // Legacy history has not necessarily passed through this marker. Read only
-    // one input at a time, never responses/artifacts, and stop at the first hit.
+    // Legacy history has not necessarily passed through this marker. Bounded
+    // input-only pages avoid both full materialization and one query per turn.
+    const historyPageSize = 32;
     let cursor = 0;
     while (!usesSensitiveContent && !profile?.historyInspected) {
-      const [row] = (await this.repo.payload.find({ collection: "greetings", overrideAccess: false, context: { helloOwner: this.repo.owner.id }, depth: 0, limit: 1, sort: "id", select: { id: true, input: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
-      if (!row) break;
-      usesSensitiveContent = hasSensitiveContent(row.input);
-      cursor = row.id;
+      const rows = (await this.repo.payload.find({ collection: "greetings", overrideAccess: false, context: { helloOwner: this.repo.owner.id }, depth: 0, limit: historyPageSize, pagination: false, sort: "id", select: { id: true, input: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
+      usesSensitiveContent = rows.some((row) => hasSensitiveContent(row.input));
+      if (usesSensitiveContent || rows.length < historyPageSize) break;
+      cursor = rows[rows.length - 1].id;
     }
     if (usesSensitiveContent) {
       await this.require("sensitive");
