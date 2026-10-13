@@ -53,7 +53,7 @@ export async function GET(request: Request, context: Context) {
       });
     const payload = await cms();
     const owner = await authenticate(payload, request);
-    if (path[0] === "privacy") return privacyGet(payload, owner, path[1]);
+    if (path[0] === "privacy") return await privacyGet(payload, owner, path[1]);
     if (owner.auth === "bearer") {
       await privacyService(payload, owner).require("external");
       await privacyService(payload, owner).requireInput({});
@@ -140,7 +140,7 @@ export async function POST(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
     const payload = await cms();
-    if (path[0] === "privacy-recover") return recoveryResponse(payload, request);
+    if (path[0] === "privacy-recover") return await recoveryResponse(payload, request);
     if (path[0] === "miniapp-identity") {
       if (request.headers.has("origin"))
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
@@ -170,7 +170,7 @@ export async function POST(request: Request, context: Context) {
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
     rateLimit(owner.id);
-    if (path[0] === "privacy") return privacyPost(payload, owner, path[1], request);
+    if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
     const privacy = privacyService(payload, owner);
     const service = new GreetingService(new Repository(payload, owner));
     if (path[0] === "token") {

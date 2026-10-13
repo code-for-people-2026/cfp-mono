@@ -18,4 +18,11 @@ export async function writeDeletionLedger(owner: string) {
     await handle.writeFile(JSON.stringify({ ownerDigest: createHash("sha256").update(owner).digest("hex"), requestedAt: new Date().toISOString() }) + "\n");
     await handle.sync();
   } finally { await handle.close(); }
+  // Persist the file entry and all ancestor entries, including directories
+  // concurrently created by another deletion, before database erasure starts.
+  for (let directory = path.dirname(file); ; directory = path.dirname(directory)) {
+    const parent = await open(directory, "r");
+    try { await parent.sync(); } finally { await parent.close(); }
+    if (path.dirname(directory) === directory) break;
+  }
 }

@@ -154,7 +154,7 @@ export function PrivacyData() {
     {!loading && !status && !done && action !== "recovery" && <Text className="page-result">当前没有有效身份。可以先在“身份恢复与旧记录”中找回，再管理原有数据。</Text>}
     {action === "export" && <>
       <Text className="page-intro">将属于你的记录保存一份，方便查阅和备份。</Text>
-      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">对话输入与回应作品、对话摘要、执行轨迹，以及上传的图片。</Text><Text className="page-caption">被隔离的图片可能仅保留说明，具体以导出文件为准。</Text></View>
+      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">对话输入与回应作品、对话摘要、执行轨迹，以及上传的图片。</Text><Text className="page-caption">被隔离的图片可能仅保留说明。自助导出上限为 8 MB 或 1000 条记录，超限可通过隐私政策中的联系渠道申请完整副本。</Text></View>
       <Text className="page-caption">文件可能含有私密信息，请妥善保管，分享前先检查内容。导出不会删除在线记录。</Text>
       <PageButton className="page-primary" disabled={unavailable} onClick={() => void act(async () => { await api.exportPersonalData(); setMessage("已发起导出，请保存文件并妥善保管其中的私密信息。"); })}>{busy ? "正在导出…" : "导出我的数据与图片"}</PageButton>
     </>}

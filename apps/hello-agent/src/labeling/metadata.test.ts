@@ -62,7 +62,7 @@ it("外部插画下载后，来源声明同时保留在可见底栏和元数据�
   const platform = await illustrationPng(artifact, "same-illustration");
   const external = await illustrationPng(artifact, "same-illustration", true);
   const canvas = (bytes: Buffer) => sharp(bytes).extract({ left: 0, top: 0, width: 640, height: 400 }).raw().toBuffer();
-  expect(await canvas(external)).toEqual(await canvas(platform));
+  expect((await canvas(external)).equals(await canvas(platform))).toBe(true);
   const sourceStrip = (bytes: Buffer) => sharp(bytes).extract({ left: 160, top: 402, width: 320, height: 46 }).removeAlpha().raw().toBuffer();
   expect([...(await sourceStrip(platform))].every((pixel) => pixel === 255)).toBe(true);
   expect([...(await sourceStrip(external))].filter((pixel) => pixel < 50).length).toBeGreaterThan(100);

@@ -5,9 +5,12 @@ import type { PrivacyProfile } from "../payload-types";
 import { PrivacyService } from "./service";
 import { privacyPolicy } from "./policy";
 import { maintainPrivacy } from "./maintenance";
+import { writeDeletionLedger } from "./deletion-ledger";
 
-// #383 is not submitted yet. No deletion path is exercised by this unit test.
-vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn() }));
+// #383 is not submitted yet. Repository and retention are unit-test doubles;
+// ledger durability and actual file writes are covered in separate tests.
+vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn(async () => ({ held: 0 })) }));
+vi.mock("./deletion-ledger", async (original) => ({ ...await original<typeof import("./deletion-ledger")>(), writeDeletionLedger: vi.fn(async () => {}) }));
 beforeEach(() => {
   for (const [key, value] of Object.entries({
     HELLO_DEPLOYED: "true", HELLO_PRIVACY_CONTACT: "test@example.invalid", HELLO_PRIVACY_RESPONSE_DAYS: "7", HELLO_PRIVACY_STORAGE_LOCATION: "隔离测试", HELLO_PRIVACY_RETENTION_DAYS: "30", HELLO_PRIVACY_BACKUP_DAYS: "7", HELLO_PRIVACY_DELETION_LEDGER: "/test-only/deletions.ndjson", HELLO_PRIVACY_OPERATIONS_APPROVED: "true",
@@ -95,4 +98,22 @@ it("反复变更授权和恢复码仍限制历史体积，保留最近一次同�
   expect(Buffer.byteLength(JSON.stringify(events))).toBeLessThanOrEqual(128 * 1024);
   expect(events).toContainEqual(expect.objectContaining({ action: "consent", consent: profile().consent, policySnapshot: privacyPolicy().documents }));
   expect(events.at(-1)).toMatchObject({ action: "rotate-recovery" });
+});
+
+it("删除敏感身份后只保留冻结墓碑，不保留敏感标记或到期时间", async () => {
+  const { service, profile, update } = fixture();
+  await update({ data: { sensitiveHistory: true, expiresAt: "2030-01-01T00:00:00.000Z" } });
+  vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
+  await expect(service.deleteData()).resolves.toMatchObject({ deleted: true });
+  expect(profile()).toMatchObject({ state: "deleted", sensitiveHistory: null, expiresAt: null, consent: null, events: null, recoveryDigest: null });
+});
+
+it("清单落盘失败时保留冻结状态，不能删除图片或会话", async () => {
+  const { service, profile } = fixture();
+  vi.mocked(writeDeletionLedger).mockRejectedValueOnce(new Error("directory sync failed"));
+  const deleteMedia = vi.spyOn(service.media, "deleteAll");
+  await expect(service.deleteData()).rejects.toThrow("directory sync failed");
+  expect(profile().state).toBe("deleting");
+  expect(deleteMedia).not.toHaveBeenCalled();
+  expect(vi.mocked(service.repo.payload.delete).mock.calls.every(([options]) => options.collection === "credentials")).toBe(true);
 });

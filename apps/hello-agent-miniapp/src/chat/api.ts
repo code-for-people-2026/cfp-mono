@@ -413,7 +413,10 @@ export async function exportPersonalData() {
     return;
   }
   const result = await Taro.downloadFile({ url: `${origin}/api/hello/privacy/export`, header: { Authorization: `Bearer ${deviceToken}` } });
-  if (result.statusCode !== 200) throw new Error("导出未完成，请确认当前身份有效");
+  if (result.statusCode === 401) throw new IdentityExpiredError();
+  if (result.statusCode === 413) throw new Error("数据超过自助导出上限（8 MB 或 1000 条），请通过隐私政策中的联系渠道申请完整副本");
+  if (result.statusCode === 429) throw new Error("导出较频繁或服务正忙，请一分钟后再试");
+  if (result.statusCode !== 200) throw new Error("导出未完成，请稍后重试");
   rememberTemporaryFile(result.tempFilePath);
   await Taro.shareFileMessage({ filePath: result.tempFilePath, fileName: "hello-personal-data.json" });
 }

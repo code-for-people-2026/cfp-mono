@@ -6,6 +6,7 @@ import { privacyPolicy } from "./policy";
 import { escapeHtml } from "../labeling/metadata";
 import { checkOrigin, COOKIE, mintCredential } from "../server/auth";
 import { rateLimit, readJson } from "../server/http";
+import { beginPrivacyExport } from "./export-limits";
 
 const json = (value: unknown) => Response.json(value, { headers: { "Cache-Control": "no-store" } });
 export function legalPage() {
@@ -30,10 +31,13 @@ export async function privacyGet(payload: Payload, owner: Owner, action: string 
   const service = privacyService(payload, owner);
   if (!action) return json(await service.status());
   if (action === "export") {
-    const response = json(await service.exportData());
-    response.headers.set("Content-Disposition", 'attachment; filename="aj-personal-data.json"');
-    response.headers.set("X-Content-Type-Options", "nosniff");
-    return response;
+    const release = beginPrivacyExport(owner.id);
+    try {
+      const response = json(await service.exportData());
+      response.headers.set("Content-Disposition", 'attachment; filename="aj-personal-data.json"');
+      response.headers.set("X-Content-Type-Options", "nosniff");
+      return response;
+    } finally { release(); }
   }
   throw new AppError(404, "接口不存在");
 }

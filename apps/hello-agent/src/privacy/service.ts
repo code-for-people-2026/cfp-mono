@@ -3,12 +3,13 @@ import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { PrivacyProfile } from "../payload-types";
 import type { Payload } from "payload";
-import { Repository } from "../cms/repository";
+import { Repository, type OwnedCollection } from "../cms/repository";
 import { AppError, type Owner } from "../domain/contracts";
 import { MediaService } from "../domain/media";
 import { privacyPolicy } from "./policy";
 import { writeDeletionLedger } from "./deletion-ledger";
 import { aiMetadata } from "../labeling/metadata";
+import { ExportBudget } from "./export-limits";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
@@ -110,28 +111,61 @@ export class PrivacyService {
     await this.save({ recoveryDigest: digest(code) }, "rotate-recovery");
     return { code };
   }
+  private async *exportRows<C extends OwnedCollection>(collection: C) {
+    let cursor = 0;
+    while (true) {
+      const [row] = await this.repo.list(collection, { id: { greater_than: cursor } }, 1, "id");
+      if (!row) return;
+      yield row;
+      cursor = row.id;
+    }
+  }
   async exportData() {
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
-    const records: Record<string, unknown> = {};
+    const budget = new ExportBudget();
+    const records: Record<string, unknown[]> = {};
+    const media: { id: number; createdAt?: string; mimeType?: string; source?: string; base64?: string; withheld?: boolean; notice?: string }[] = [];
+    const credentials: { kind: string; expiresAt: string; createdAt: string }[] = [];
+    const safetyCases: unknown[] = [];
+    const result = { retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。执行轨迹中模型输出为 AI 生成。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    budget.add(result, false);
     for (const collection of contentCollections.filter((name) => name !== "session-locks")) {
-      if (collection === "greetings") {
-        const rows = await this.repo.all("greetings");
-        records[collection] = rows.map((row) => row.status === "completed" ? { ...row, aiLabel: row.mode === "external" ? "AI 生成（外部客户端声明）" : "AI 生成", metadata: aiMetadata(`${this.repo.owner.id}:${row.id}:${row.fingerprint}`, row.mode === "external") } : row);
-      } else records[collection] = await this.repo.all(collection);
-    }
-    const media = [];
-    for (const row of await this.repo.all("media")) {
-      try {
-        const image = await this.media.read(row.id);
-        media.push({ id: row.id, createdAt: row.createdAt, mimeType: image.mimeType, source: "用户上传，来源未核验，不声明由平台生成", base64: image.bytes.toString("base64") });
-      } catch (error) {
-        if (!(error instanceof AppError) || error.status !== 404) throw error;
-        media.push({ id: row.id, createdAt: row.createdAt, withheld: true, notice: "图片已隔离或内容缺失；其余数据继续导出，可通过权利请求申请复核。" });
+      records[collection] = [];
+      for await (const row of this.exportRows(collection)) {
+        if (collection === "greetings" && "status" in row && row.status === "completed") {
+          records[collection].push(budget.add({ ...row, aiLabel: row.mode === "external" ? "AI 生成（外部客户端声明）" : "AI 生成", metadata: aiMetadata(`${this.repo.owner.id}:${row.id}:${row.fingerprint}`, row.mode === "external") }));
+        } else records[collection].push(budget.add(row));
       }
     }
-    const credentials = (await this.repo.payload.find({ collection: "credentials", overrideAccess: true, pagination: false, where: { owner: { equals: this.repo.owner.id } } })).docs.map(({ kind, expiresAt, createdAt }) => ({ kind, expiresAt, createdAt }));
-    const safetyCases = (await this.repo.payload.find({ collection: "safety-cases", overrideAccess: true, pagination: false, where: { owner: { equals: this.repo.owner.id } } })).docs.map(({ receipt, source, category, status, createdAt, reply, feedbackAt, retainUntil, retentionBasis }) => ({ receipt, source, category, status, createdAt, reply: feedbackAt ? reply : undefined, retainUntil, retentionBasis }));
-    return { retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。执行轨迹中模型输出为 AI 生成。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    for await (const row of this.exportRows("media")) {
+      try {
+        const image = await this.media.read(row.id);
+        // Check the base64 expansion before allocating that string.
+        budget.requireRoom(4 * Math.ceil(image.bytes.length / 3));
+        media.push(budget.add({ id: row.id, createdAt: row.createdAt, mimeType: image.mimeType, source: "用户上传，来源未核验，不声明由平台生成", base64: image.bytes.toString("base64") }));
+      } catch (error) {
+        if (!(error instanceof AppError) || error.status !== 404) throw error;
+        media.push(budget.add({ id: row.id, createdAt: row.createdAt, withheld: true, notice: "图片已隔离或内容缺失；其余数据继续导出，可通过权利请求申请复核。" }));
+      }
+    }
+    let cursor = 0;
+    while (true) {
+      const [row] = (await this.repo.payload.find({ collection: "credentials", overrideAccess: true, limit: 1, sort: "id", depth: 0, select: { id: true, kind: true, expiresAt: true, createdAt: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
+      if (!row) break;
+      const { kind, expiresAt, createdAt } = row;
+      credentials.push(budget.add({ kind, expiresAt, createdAt }));
+      cursor = row.id;
+    }
+    cursor = 0;
+    while (true) {
+      const [row] = (await this.repo.payload.find({ collection: "safety-cases", overrideAccess: true, limit: 1, sort: "id", depth: 0, select: { id: true, receipt: true, source: true, category: true, status: true, createdAt: true, reply: true, feedbackAt: true, retainUntil: true, retentionBasis: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
+      if (!row) break;
+      const { receipt, source, category, status, createdAt, reply, feedbackAt, retainUntil, retentionBasis } = row;
+      safetyCases.push(budget.add({ receipt, source, category, status, createdAt, reply: feedbackAt ? reply : undefined, retainUntil, retentionBasis }));
+      cursor = row.id;
+    }
+    budget.verify(result);
+    return result;
   }
   async deleteData() {
     let profile = await profileFor(this.repo.payload, this.repo.owner.id);
@@ -150,7 +184,7 @@ export class PrivacyService {
     for (const collection of contentCollections)
       await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
     // Do not erase the freeze tombstone: a late model response must stay blocked.
-    await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null } });
+    await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { state: "deleted", deletedAt: new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, expiresAt: null } });
     await this.revoke();
     return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
   }
