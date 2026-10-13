@@ -393,7 +393,7 @@ describe("聊天历史与图片失败隔离", () => {
     const requests = platform.request.mock.calls.length;
     const button = renderer!.root
       .findAllByType("button")
-      .find((item) => item.props["aria-label"] === "复制阿 Q 先生的回复")!;
+      .find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!;
     await act(async () => {
       await button.props.onClick();
     });
@@ -409,7 +409,7 @@ describe("聊天历史与图片失败隔离", () => {
     await mount(false);
     const button = renderer!.root
       .findAllByType("button")
-      .find((item) => item.props["aria-label"] === "复制阿 Q 先生的回复")!;
+      .find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!;
     await act(async () => {
       await button.props.onClick();
     });
@@ -446,8 +446,8 @@ describe("聊天历史与图片失败隔离", () => {
   it("欢迎词和静态界面中的中文与英文字母之间保留空格", async () => {
     history = [];
     await mount(false);
-    expect(text()).toContain("我是阿 Q 先生");
-    expect(text()).toContain("阿 Q 先生");
+    expect(text()).toContain("我是阿 J 先生");
+    expect(text()).toContain("阿 J 先生");
     expect(text()).not.toMatch(
       /[\p{Script=Han}][A-Za-z]|[A-Za-z][\p{Script=Han}]/u,
     );
@@ -497,10 +497,10 @@ describe("聊天历史与图片失败隔离", () => {
       ),
     ).toBe(false);
   });
-  it("首屏展示阿 Q 先生和欢迎词，默认语音，键盘来回切换保留草稿", async () => {
+  it("首屏展示阿 J 先生和欢迎词，默认语音，键盘来回切换保留草稿", async () => {
     history = [];
     await mount(false);
-    expect(text()).toContain("嗨，我是阿 Q 先生");
+    expect(text()).toContain("嗨，我是阿 J 先生");
     expect(text()).toContain("不自欺，不欺软怕硬");
     expect(text()).toContain("按住说话");
     expect(renderer!.root.findAllByType("textarea")).toHaveLength(0);
@@ -763,7 +763,7 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.props.ariaLabel === "查看阿 Q 先生的记忆")!
+        .find((button) => button.props.ariaLabel === "查看阿 J 先生的记忆")!
         .props.onClick(),
     );
     const recover = renderer!.root
@@ -969,7 +969,7 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.props.ariaLabel === "查看阿 Q 先生的记忆")!
+        .find((button) => button.props.ariaLabel === "查看阿 J 先生的记忆")!
         .props.onClick(),
     );
     expect(text()).toContain("87");

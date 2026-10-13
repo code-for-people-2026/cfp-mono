@@ -613,12 +613,12 @@ export default function Chat() {
                     className="welcome-mascot"
                     src={mascot}
                     mode="aspectFit"
-                    ariaLabel="挥手打招呼的阿 Q 先生"
+                    ariaLabel="挥手打招呼的阿 J 先生"
                   />
                 </View>
-                <Text className="welcome-title">嗨，我是阿 Q 先生。</Text>
+                <Text className="welcome-title">嗨，我是阿 J 先生。</Text>
                 <View className="welcome-copy">
-                  <Text>从鲁迅笔下的阿 Q 先生那儿，“蒸馏”来一点乐观。</Text>
+                  <Text>从鲁迅笔下的阿 Q 那儿，“蒸馏”来一点乐观。</Text>
                   <Text>
                     不自欺，不欺软怕硬，也不把委屈硬说成胜利。留下的，是跌一跤还能拍拍灰、继续往前走的劲儿。
                   </Text>
@@ -650,7 +650,7 @@ export default function Chat() {
             )}
             {loading && (
               <Text className="loading-note">
-                阿 Q 先生正在翻看我们聊过的日常…
+                阿 J 先生正在翻看我们聊过的日常…
               </Text>
             )}
             {history.map((row) => (
@@ -768,7 +768,7 @@ export default function Chat() {
                       {row.status === "completed" && row.greeting && (
                         <CopyMessage
                           value={row.greeting}
-                          label="复制阿 Q 先生的回复"
+                          label="复制阿 J 先生的回复"
                         />
                       )}
                     </View>
@@ -805,7 +805,7 @@ export default function Chat() {
                       <MessageText>
                         {progress?.text ||
                           progress?.step ||
-                          "阿 Q 先生正在换个角度想…"}
+                          "阿 J 先生正在换个角度想…"}
                       </MessageText>
                       {progress && (
                         <LiveArtifacts surfaces={progress.surfaces} />
@@ -928,7 +928,7 @@ export default function Chat() {
             <Text className="composer-footnote">
               {mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
-                : "阿 Q 先生是 AI，好意不是对未来的保证"}
+                : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>
           </View>
         </View>

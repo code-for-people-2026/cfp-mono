@@ -135,7 +135,7 @@ export default function SettingsPage() {
           <View className="settings-section">
             <Text className="settings-section-title">对话方式</Text>
             <Text className="sheet-description">
-              阿 Q 先生 · 换一种连接方式，接着聊，不用重新开始。
+              阿 J 先生 · 换一种连接方式，接着聊，不用重新开始。
             </Text>
             <Text className="sheet-note">
               测试版{" "}

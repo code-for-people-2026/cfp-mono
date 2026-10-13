@@ -42,8 +42,9 @@ export class GreetingService {
       }))
       .sort(
         (a, b) =>
-          (a.updatedAt || a.createdAt).localeCompare(b.updatedAt || b.createdAt) ||
-          a.id - b.id,
+          (a.updatedAt || a.createdAt).localeCompare(
+            b.updatedAt || b.createdAt,
+          ) || a.id - b.id,
       );
   }
   async createSession(title = "新对话"): Promise<Session> {
@@ -155,9 +156,12 @@ export class GreetingService {
     await new ContextService(this.repo).ensureRoom(sessionId);
     // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
     await this.repo.update("sessions", sessionId, {
-      title: ["新对话", "与阿 Q 先生的日常", "与好阿 J 的日常"].includes(
-        session.title,
-      )
+      title: [
+        "新对话",
+        "与阿 J 先生的日常",
+        "与阿 Q 先生的日常",
+        "与好阿 J 的日常",
+      ].includes(session.title)
         ? input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话"
         : session.title,
     });

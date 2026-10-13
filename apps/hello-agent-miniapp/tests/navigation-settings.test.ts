@@ -104,7 +104,7 @@ it("聊天只用自定义标题，设置是原生返回的子页面，胶囊区�
   expect(
     page!.root
       .findAllByType("text")
-      .filter((node) => node.children.includes("阿 Q 先生")),
+      .filter((node) => node.children.includes("阿 J 先生")),
   ).toHaveLength(1);
   act(() =>
     page!.root

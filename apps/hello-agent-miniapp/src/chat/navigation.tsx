@@ -99,7 +99,7 @@ export function ChatNavigation(props: Props) {
                 : undefined
             }
           >
-            <Text className="agent-name">阿 Q 先生</Text>
+            <Text className="agent-name">阿 J 先生</Text>
             {!layout && (
               <Text className="agent-status">陪你换个角度，慢慢聊</Text>
             )}
@@ -108,7 +108,7 @@ export function ChatNavigation(props: Props) {
             <View
               className={`header-actions nav-right ${props.memoryFull ? "memory-alert" : ""}`}
             >
-              {button(props.onMemory, "heart", "查看阿 Q 先生的记忆")}
+              {button(props.onMemory, "heart", "查看阿 J 先生的记忆")}
             </View>
           )}
         </View>
@@ -130,7 +130,7 @@ export function ChatNavigation(props: Props) {
           >
             <View className="drawer-heading">
               <View>
-                <Text className="drawer-brand">阿 Q 先生</Text>
+                <Text className="drawer-brand">阿 J 先生</Text>
                 <Text className="drawer-caption">每件心事，都有地方安放</Text>
               </View>
               <Button

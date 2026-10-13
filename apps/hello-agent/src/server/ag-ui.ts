@@ -32,7 +32,7 @@ export function readAgentInput(value: unknown) {
     props.a2uiClientCapabilities &&
     !props.a2uiClientCapabilities.supportedCatalogIds.includes(CATALOG_ID)
   )
-    throw new AppError(400, "客户端不支持阿 Q 先生的界面目录，请升级后重试");
+    throw new AppError(400, "客户端不支持阿 J 先生的界面目录，请升级后重试");
   const message = run.messages.at(-1);
   if (
     !message ||
@@ -98,12 +98,12 @@ export function agentStream(
         });
         emit({
           type: EventType.STEP_STARTED,
-          stepName: "阿 Q 先生正在构思回应与作品",
+          stepName: "阿 J 先生正在构思回应与作品",
         });
         const row = await service.generateGreeting(args);
         emit({
           type: EventType.STEP_FINISHED,
-          stepName: "阿 Q 先生正在构思回应与作品",
+          stepName: "阿 J 先生正在构思回应与作品",
         });
         const messageId = `greeting_${row.id}`;
         emit({

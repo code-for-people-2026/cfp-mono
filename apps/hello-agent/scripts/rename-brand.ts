@@ -6,7 +6,7 @@ const payload = await cms();
 try {
   const result = await renameAgentBrand(payload);
   console.log(
-    `阿 Q 先生改名完成：更新 ${result.updated}，无需改动 ${result.preserved}。`,
+    `阿 J 先生改名完成：更新 ${result.updated}，无需改动 ${result.preserved}。`,
   );
 } finally {
   await payload.destroy();
