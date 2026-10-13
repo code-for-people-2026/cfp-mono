@@ -24,7 +24,7 @@ const api = vi.hoisted(() => ({
       origin: "https://example.test",
       platformConfigured: true,
     }),
-  getPrivacy: vi.fn().mockResolvedValue({ policy: { version: "test" }, state: "active", consent: { version: "test", external: true }, expiresAt: null }),
+  getPrivacy: vi.fn().mockResolvedValue({ policy: { version: "test" }, state: "active", consent: { version: "test", external: true, sensitive: true }, expiresAt: null }),
   mintMcpToken: vi.fn(),
   copy: vi.fn().mockResolvedValue(undefined),
   openCms: vi.fn(),
@@ -213,6 +213,24 @@ it("离开连接方式后，迟到的 MCP 令牌不能重新出现在返回后�
   ).toBe("Bearer visible-test-token");
   act(() => platform.useDidHide.mock.calls.at(-1)![0]());
   expect(button("复制 MCP 连接配置")).toBeUndefined();
+});
+
+it.each(["h5", "weapp"])("%s 连接缺少敏感授权时先打开授权页，返回后重新检查并签发", async (environment) => {
+  vi.stubEnv("TARO_ENV", environment);
+  await mountSettings();
+  act(() => modeButton(2).props.onClick());
+  api.getPrivacy.mockResolvedValueOnce({ policy: { version: "test" }, state: "active", consent: { version: "test", external: true, sensitive: false }, expiresAt: null });
+  await act(async () => { await button("生成专用连接令牌").props.onClick(); });
+  expect(platform.navigateTo).toHaveBeenCalledWith({ url: "/pages/privacy/authorization/index" });
+  expect(api.mintMcpToken).not.toHaveBeenCalled();
+  expect(button("复制 MCP 连接配置")).toBeUndefined();
+  act(() => platform.useDidHide.mock.calls.at(-1)![0]());
+  act(() => platform.useDidShow.mock.calls.at(-1)![0]());
+  api.mintMcpToken.mockResolvedValueOnce({ token: "newly-authorized-token" });
+  await act(async () => { await button("生成专用连接令牌").props.onClick(); });
+  expect(api.getPrivacy).toHaveBeenCalledTimes(2);
+  expect(api.mintMcpToken).toHaveBeenCalledOnce();
+  expect(button("复制 MCP 连接配置")).toBeDefined();
 });
 
 it.each([1, 2])("网页连接方式的返回支持页面栈深度 %s", async (depth) => {

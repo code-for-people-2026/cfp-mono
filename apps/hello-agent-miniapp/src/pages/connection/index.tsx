@@ -70,7 +70,7 @@ export default function ConnectionPage() {
     try {
       const privacy = await api.getPrivacy();
       if (!visible.current || version !== tokenVersion.current) return;
-      if (!consentCurrent(privacy) || !privacy.consent?.external) { await openPrivacy("authorization"); return; }
+      if (!consentCurrent(privacy) || !privacy.consent?.external || !privacy.consent?.sensitive) { await openPrivacy("authorization"); return; }
       const result = await api.mintMcpToken();
       if (visible.current && version === tokenVersion.current)
         setToken(result.token);
