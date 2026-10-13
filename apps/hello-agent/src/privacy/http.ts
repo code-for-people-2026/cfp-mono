@@ -6,7 +6,7 @@ import { privacyService, withRecoveredOwner } from "./service";
 import { privacyPolicy } from "./policy";
 import { escapeHtml } from "../labeling/metadata";
 import { authenticate, checkOrigin, COOKIE, mintCredential } from "../server/auth";
-import { readJson } from "../server/http";
+import { rateLimit, readJson } from "../server/http";
 import { beginPrivacyExport } from "./export-limits";
 import { limitRecoveryCaller, limitRecoveryLookup } from "./recovery-limits";
 import { withRecovery } from "./recovery-lock";
@@ -49,6 +49,7 @@ export async function privacyGet(payload: Payload, owner: Owner, action: string 
 }
 export async function privacyPost(payload: Payload, owner: Owner, action: string | undefined, request: Request) {
   if (owner.auth === "bearer") throw new AppError(403, "外部连接不能代替你管理隐私授权或删除数据");
+  rateLimit(`privacy-control:${owner.id}`);
   // Read potentially slow bodies before taking the owner gate. The credential
   // can be revoked while reading, so only the in-gate authentication authorizes
   // the mutation. Internal maintenance uses the service directly, without HTTP.

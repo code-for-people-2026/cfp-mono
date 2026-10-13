@@ -75,6 +75,7 @@ export async function GET(request: Request, context: Context) {
         const contentId = `${owner.id}:${turn.id}:${turn.fingerprint}:${artifact.id}`;
         const external = turn.mode === "external";
         if (path[0] === "artifact-image" && artifact.kind === "image") {
+          if (owner.auth === "bearer" && artifact.source.type === "media") await privacyService(payload, owner).require("sensitive");
           const result =
             artifact.source.type === "media"
               ? await service.media.read(artifact.source.mediaId)
@@ -122,6 +123,7 @@ export async function GET(request: Request, context: Context) {
           ),
         );
       if (path[0] === "media" && path[1]) {
+        if (owner.auth === "bearer") await privacyService(payload, owner).require("sensitive");
         const media = await service.media.read(
           z.coerce.number().int().positive().parse(path[1]),
         );
@@ -173,8 +175,9 @@ export async function POST(request: Request, context: Context) {
     }
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
-    rateLimit(owner.id);
     if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
+    // External business traffic cannot spend the person's privacy-control quota.
+    rateLimit(path[0] === "token" && owner.auth !== "bearer" ? `privacy-control:${owner.id}` : owner.id);
     if (path[0] === "token") {
       return await withCredentialLock(owner.id, async () => {
         // Cached authentication can predate recovery. Validate it again inside

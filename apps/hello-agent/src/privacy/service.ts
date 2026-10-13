@@ -106,12 +106,31 @@ export class PrivacyService {
     }
     if (usesSensitiveContent) {
       await this.require("sensitive");
-      if (!profile?.sensitiveHistory) await updateProfile(this.repo.payload, profile!, { sensitiveHistory: true, historyInspected: true });
+      if (!profile?.sensitiveHistory) await this.markHistory(profile!, true);
     } else if (!profile?.historyInspected) {
       // Ordinary legacy history is also cached, so later requests do not
       // repeatedly scan it. New inputs are still checked on every request.
-      await updateProfile(this.repo.payload, profile!, { historyInspected: true });
+      await this.markHistory(profile!, false);
     }
+  }
+  private async markHistory(profile: PrivacyProfile, sensitive: boolean) {
+    let expected = profile;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await updateProfile(this.repo.payload, expected, { historyInspected: true, ...(sensitive ? { sensitiveHistory: true } : {}) });
+        return;
+      } catch (error) {
+        if (!(error instanceof AppError && error.status === 409)) throw error;
+        const current = await profileFor(this.repo.payload, this.repo.owner.id);
+        // Only merge monotonic inspection markers under the same authorization.
+        // Never turn a withdrawal, deletion or changed consent into success.
+        if (!current || current.state !== "active" || current.state !== profile.state || current.expiresAt !== profile.expiresAt || JSON.stringify(current.consent) !== JSON.stringify(profile.consent)) throw error;
+        await this.require(sensitive || current.sensitiveHistory ? "sensitive" : "core");
+        if (current.historyInspected && (!sensitive || current.sensitiveHistory)) return;
+        expected = current;
+      }
+    }
+    throw new AppError(409, "隐私设置已在其他页面变更，请刷新后重新确认");
   }
   async revoke(kind?: Owner["auth"]) {
     await revokeCredentials(this.repo.payload, this.repo.owner.id, kind);
