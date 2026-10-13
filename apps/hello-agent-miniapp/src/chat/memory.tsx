@@ -18,6 +18,7 @@ export function MemoryMeter({
   return (
     <Button
       className={`control memory-meter memory-${memory?.level || "healthy"}`}
+      ariaLabel="查看阿 Q 先生的记忆"
       onClick={onOpen}
       disabled={disabled || undefined}
     >

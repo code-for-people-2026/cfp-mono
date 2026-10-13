@@ -14,8 +14,10 @@ import messageCircle from "lucide-static/icons/message-circle.svg?raw";
 import search from "lucide-static/icons/search.svg?raw";
 import settings from "lucide-static/icons/settings.svg?raw";
 import heart from "lucide-static/icons/heart.svg?raw";
+import chevronLeft from "lucide-static/icons/chevron-left.svg?raw";
 
 const icons = {
+  chevronLeft,
   menu,
   squarePen,
   messageCircle,

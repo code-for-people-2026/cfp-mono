@@ -44,6 +44,26 @@ if (!base) {
     await readFile(path.join(app, "dist/weapp/app.json"), "utf8"),
   );
   assert.ok(config.plugins?.WechatSI, "小程序遗漏语音插件");
+  assert.ok(config.pages.includes("pages/settings/index"), "遗漏独立设置页");
+  const chatNavigation = JSON.parse(
+    await readFile(path.join(app, "dist/weapp/pages/chat/index.json"), "utf8"),
+  );
+  const settingsNavigation = JSON.parse(
+    await readFile(
+      path.join(app, "dist/weapp/pages/settings/index.json"),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    chatNavigation.navigationStyle,
+    "custom",
+    "聊天页应仅使用自定义导航",
+  );
+  assert.equal(
+    settingsNavigation.navigationStyle,
+    "default",
+    "微信设置页应使用原生返回导航",
+  );
   assert.ok((await readdir(path.join(app, "dist/weapp"))).length > 0);
 }
 console.log("✓ 实际发布包包含新版输入栏、语音切换、作品与 AG-UI 请求");

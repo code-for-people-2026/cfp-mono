@@ -21,11 +21,23 @@ const platform = vi.hoisted(() => ({
   usePageScroll: vi.fn(),
   getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
   createSelectorQuery: vi.fn(),
+  navigateTo: vi.fn(),
+  onWindowResize: vi.fn(),
+  offWindowResize: vi.fn(),
+  getMenuButtonBoundingClientRect: vi.fn(() => ({
+    top: 32,
+    height: 32,
+    left: 281,
+  })),
+  useDidHide: vi.fn(),
+  useDidShow: vi.fn(),
 }));
 // 仅替换平台组件与网络边界；渲染真实聊天页、真实 api 和记忆组件。
 vi.mock("@tarojs/taro", () => ({
   default: platform,
   usePageScroll: platform.usePageScroll,
+  useDidHide: platform.useDidHide,
+  useDidShow: platform.useDidShow,
 }));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
@@ -68,6 +80,7 @@ const initial: Turn = {
 const advertisement = { mode: "disabled", adUnitId: "", demoSeconds: 5 };
 
 beforeEach(() => {
+  platform.navigateTo.mockResolvedValue({});
   platform.pageScrollTo.mockResolvedValue({});
   platform.setClipboardData.mockResolvedValue({});
   vi.stubEnv("TARO_ENV", "weapp");
@@ -137,12 +150,58 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+async function chooseModeInSettings(index: number) {
+  const { default: SettingsPage } = await import("../src/pages/settings/index");
+  let settingsPage: ReactTestRenderer;
+  await act(async () => {
+    settingsPage = create(createElement(SettingsPage));
+  });
+  act(() => {
+    const options = settingsPage.root
+      .findAllByType("button")
+      .filter((button) => button.props.className.includes("mode-option"));
+    options[index].props.onClick();
+  });
+  act(() => settingsPage.unmount());
+}
+
+it("设置通过页面栈打开，聊天草稿保留且不弹出设置面板", async () => {
+  await mount();
+  act(() =>
+    renderer!.root.findByType("textarea").props.onInput({
+      detail: { value: "暂时没发出的心事" },
+    }),
+  );
+  act(() =>
+    renderer!.root
+      .findAllByType("button")
+      .find((button) => button.props.ariaLabel === "打开会话导航")!
+      .props.onClick(),
+  );
+  await act(async () => {
+    await renderer!.root
+      .findAllByType("button")
+      .find((button) =>
+        button
+          .findAllByType("text")
+          .some((node) => node.children.includes("设置")),
+      )!
+      .props.onClick();
+  });
+  expect(platform.navigateTo).toHaveBeenCalledWith({
+    url: "/pages/settings/index",
+  });
+  expect(text()).not.toContain("mode-option");
+  expect(renderer!.root.findByType("textarea").props.value).toBe(
+    "暂时没发出的心事",
+  );
+});
+
 it.each([false, true])(
   "已有表单的可用状态与平台密钥配置一致（configured=%s）",
   async (configured) => {
-    const { artifacts } = await import(
-      "../../../packages/hello-agent-protocol/test/fixtures"
-    );
+    const { artifacts } =
+      await import("../../../packages/hello-agent-protocol/test/fixtures");
     history = [
       {
         ...initial,
@@ -175,9 +234,8 @@ it.each([false, true])(
 );
 
 it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
-  const { artifacts } = await import(
-    "../../../packages/hello-agent-protocol/test/fixtures"
-  );
+  const { artifacts } =
+    await import("../../../packages/hello-agent-protocol/test/fixtures");
   history = [
     {
       ...initial,
@@ -562,24 +620,20 @@ describe("聊天历史与图片失败隔离", () => {
         .find((button) => button.props.ariaLabel === "打开会话导航")!
         .props.onClick(),
     );
-    act(() =>
-      renderer!.root
-        .findAllByType("button")
-        .find(
-          (button) =>
-            button.props.className.includes("drawer-footer-action") &&
-            button
-              .findAllByType("text")
-              .some((node) => node.children.includes("设置")),
-        )!
-        .props.onClick(),
+    await act(
+      async () =>
+        await renderer!.root
+          .findAllByType("button")
+          .find(
+            (button) =>
+              button.props.className.includes("drawer-footer-action") &&
+              button
+                .findAllByType("text")
+                .some((node) => node.children.includes("设置")),
+          )!
+          .props.onClick(),
     );
-    act(() =>
-      renderer!.root
-        .findAllByType("button")
-        .filter((button) => button.props.className.includes("mode-option"))[1]
-        .props.onClick(),
-    );
+    await chooseModeInSettings(1);
     act(() => {
       renderer!.root
         .findByType("input")
@@ -700,6 +754,12 @@ describe("聊天历史与图片失败隔离", () => {
       return originalRequest(options);
     });
     await mount();
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
     act(() =>
       renderer!.root
         .findAllByType("button")
@@ -909,13 +969,7 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find(
-          (button) =>
-            button.props.className.includes("drawer-footer-action") &&
-            button
-              .findAllByType("text")
-              .some((node) => node.children.includes("设置")),
-        )!
+        .find((button) => button.props.ariaLabel === "查看阿 Q 先生的记忆")!
         .props.onClick(),
     );
     expect(text()).toContain("87");

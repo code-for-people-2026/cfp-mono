@@ -10,7 +10,8 @@ import {
 import Taro, { usePageScroll } from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { ChatNavigation } from "../../chat/navigation";
-import { MemoryMeter, MemoryPanel } from "../../chat/memory";
+import { useChatMode } from "../../chat/preferences";
+import { MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
@@ -56,7 +57,6 @@ function Button(props: ButtonProps) {
     />
   );
 }
-type Panel = "modes" | "connection" | null;
 const suggestions = [
   "窗台上的小番茄红了",
   "明天要开始一份新工作",
@@ -79,9 +79,9 @@ export default function Chat() {
   const [text, setText] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "keyboard">("voice");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [mode, setMode] = useState<Mode>("platform");
+  const mode = useChatMode();
+  const settingsNavigation = useRef(false);
   const [apiKey, setApiKey] = useState("");
-  const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<RunProgress>();
   const [uploading, setUploading] = useState(false);
@@ -93,8 +93,6 @@ export default function Chat() {
     images: Attachment[];
   }>();
   const [expanded, setExpanded] = useState<number[]>([]);
-  const [token, setToken] = useState("");
-  const [tokenBusy, setTokenBusy] = useState(false);
   const followLatest = useRef(true);
   const pageTop = useRef(0);
   const scrollRevision = useRef(0);
@@ -120,7 +118,6 @@ export default function Chat() {
     !!settings?.platformConfigured,
     disabled || historyFailed || memory?.level === "empty",
   );
-  const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
 
   usePageScroll(({ scrollTop }) => {
     // 用户向前翻页时立即暂停跟随，截图过程中收到回复也不抢回滚动位置。
@@ -341,8 +338,6 @@ export default function Chat() {
       setPending(undefined);
       setMemory(undefined);
       setMemoryOpen(false);
-      setPanel(null);
-      setToken("");
       setApiKey("");
       setIdentityExpired(false);
       await boot();
@@ -572,41 +567,22 @@ export default function Chat() {
     });
   }
 
-  function closePanel() {
-    if (!tokenBusy) {
-      setPanel(null);
-      setToken("");
-    }
-  }
-  function selectMode(value: Mode) {
-    setMode(value);
+  async function openSettings() {
+    if (disabled || sendLock.current || settingsNavigation.current) return;
+    settingsNavigation.current = true;
+    setNavigationOpen(false);
     setApiKey("");
-    setError("");
-    setToken("");
-    setPanel(value === "external" ? "connection" : null);
-  }
-  async function connectAgent() {
-    setTokenBusy(true);
     try {
-      setToken((await api.mintMcpToken()).token);
+      await Taro.navigateTo({ url: "/pages/settings/index" });
     } catch (value) {
       problem(value);
     } finally {
-      setTokenBusy(false);
+      settingsNavigation.current = false;
     }
   }
-  async function revoke() {
-    setTokenBusy(true);
-    try {
-      await api.revokeMcpTokens();
-      setToken("");
-      await Taro.showToast({ title: "连接令牌已撤销", icon: "none" });
-    } catch (value) {
-      problem(value);
-    } finally {
-      setTokenBusy(false);
-    }
-  }
+  useEffect(() => {
+    setApiKey("");
+  }, [mode]);
 
   return (
     <View className={h5 ? "h5-shell" : "native-shell"}>
@@ -617,6 +593,7 @@ export default function Chat() {
           activeId={sessionId}
           disabled={disabled}
           memoryFull={memory?.level === "empty"}
+          memory={memory}
           onOpen={() => setNavigationOpen(true)}
           onClose={() => setNavigationOpen(false)}
           onNew={startConversation}
@@ -625,10 +602,7 @@ export default function Chat() {
             setNavigationOpen(false);
             setMemoryOpen(true);
           }}
-          onSettings={() => {
-            setNavigationOpen(false);
-            setPanel("modes");
-          }}
+          onSettings={openSettings}
         />
         <View className="conversation">
           <View className="chat-content">
@@ -903,7 +877,8 @@ export default function Chat() {
                 <View className="external-actions">
                   <Button
                     className="primary-button"
-                    onClick={() => setPanel("connection")}
+                    disabled={disabled}
+                    onClick={openSettings}
                   >
                     连接我的 Agent ↗
                   </Button>
@@ -927,7 +902,6 @@ export default function Chat() {
                   historyFailed ||
                   navigationOpen ||
                   memory?.level === "empty" ||
-                  !!panel ||
                   memoryOpen
                 }
                 ready={ready}
@@ -974,140 +948,6 @@ export default function Chat() {
             onBusy={setMemoryBusy}
             onError={problem}
           />
-        )}
-        {panel && (
-          <View className="sheet-overlay">
-            <View className="sheet-backdrop" onClick={closePanel} />
-            <View className="sheet">
-              <View className="sheet-handle" />
-              <View className="sheet-heading">
-                <Text>
-                  {panel === "modes" ? "阿 Q 先生的设置" : "连接你自己的 Agent"}
-                </Text>
-                <Button
-                  className="icon-button"
-                  disabled={tokenBusy}
-                  onClick={closePanel}
-                >
-                  关闭
-                </Button>
-              </View>
-              {panel === "modes" && (
-                <>
-                  <MemoryMeter
-                    memory={memory}
-                    disabled={disabled}
-                    onOpen={() => {
-                      setPanel(null);
-                      setMemoryOpen(true);
-                    }}
-                  />
-                  <Text className="sheet-description">
-                    阿 Q 先生 · 换一种连接方式，接着聊，不用重新开始。
-                  </Text>
-                  <Text className="sheet-note">
-                    测试版{" "}
-                    {typeof HELLO_BUILD_LABEL === "string"
-                      ? HELLO_BUILD_LABEL
-                      : "开发版"}
-                  </Text>
-                  <Text className="sheet-note">
-                    当前模型：
-                    {mode === "external"
-                      ? "由你自己的 Agent 选择"
-                      : settings?.model || "连接中"}
-                  </Text>
-                  {modes.map((item) => (
-                    <Button
-                      key={item.id}
-                      className={`mode-option ${mode === item.id ? "selected" : ""}`}
-                      onClick={() => selectMode(item.id)}
-                    >
-                      <View className="option-icon">{item.icon}</View>
-                      <View className="option-copy">
-                        <Text className="option-label">{item.label}</Text>
-                        <Text className="option-detail">{item.detail}</Text>
-                      </View>
-                      <Text>{mode === item.id ? "✓" : ""}</Text>
-                    </Button>
-                  ))}
-                  <Text className="sheet-note">
-                    当前内置 BYOK 接入 DeepSeek；其他平台尚未开放。外部 Agent
-                    可使用自己的模型。
-                  </Text>
-                  <Text className="sheet-note">
-                    {h5
-                      ? "此浏览器以访客 Cookie 保存身份。清除 Cookie 会失去访问，不是正式账号。"
-                      : "当前为本机访客身份，不是微信登录。清除小程序缓存或凭证过期后，不能自动找回。"}
-                  </Text>
-                  <Button className="quiet-button" onClick={api.openCms}>
-                    {h5 ? "打开 Payload 管理后台 ↗" : "复制管理后台地址"}
-                  </Button>
-                </>
-              )}
-              {panel === "connection" && (
-                <>
-                  <Text className="sheet-description">
-                    你的客户端运行 Agent、支付模型费用，通过 MCP
-                    将回复保存到这里。让它先读取 hello_greeting
-                    指引，自动接着最近的记录聊。
-                  </Text>
-                  <Text className="endpoint-label">MCP 地址</Text>
-                  <Text className="endpoint" selectable>
-                    {endpoint}
-                  </Text>
-                  {token ? (
-                    <>
-                      <Text className="token-ready">
-                        ✓ 令牌已生成 · 七天有效，仅此刻可复制
-                      </Text>
-                      <Button
-                        className="primary-button full-button"
-                        onClick={() =>
-                          api.copy(
-                            JSON.stringify(
-                              {
-                                mcpServers: {
-                                  "hello-agent": {
-                                    url: endpoint,
-                                    headers: {
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                  },
-                                },
-                              },
-                              null,
-                              2,
-                            ),
-                          )
-                        }
-                      >
-                        复制 MCP 连接配置
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      className="primary-button full-button"
-                      disabled={tokenBusy}
-                      onClick={connectAgent}
-                    >
-                      {tokenBusy ? "正在处理…" : "生成专用连接令牌"}
-                    </Button>
-                  )}
-                  <Button
-                    className="quiet-button full-button"
-                    disabled={tokenBusy}
-                    onClick={revoke}
-                  >
-                    撤销我的全部 MCP 令牌
-                  </Button>
-                  <Text className="sheet-note">
-                    本机地址只能由能访问此电脑的客户端连接。关闭面板会清除页面中的令牌；不会自动撤销已授权连接。
-                  </Text>
-                </>
-              )}
-            </View>
-          </View>
         )}
       </View>
     </View>

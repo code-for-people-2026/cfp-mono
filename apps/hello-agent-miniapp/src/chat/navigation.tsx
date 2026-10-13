@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button, Input, ScrollView, Text, View } from "@tarojs/components";
+import Taro from "@tarojs/taro";
 import { ChatIcon } from "./icon";
-import type { Session } from "./model";
+import { readNavigationLayout } from "./navigation-layout";
+import type { MemoryStatus, Session } from "./model";
+import { MemoryMeter } from "./memory";
 
 type Props = {
   open: boolean;
@@ -9,6 +12,7 @@ type Props = {
   activeId?: number;
   disabled: boolean;
   memoryFull: boolean;
+  memory?: MemoryStatus;
   onOpen: () => void;
   onClose: () => void;
   onNew: () => void;
@@ -18,6 +22,14 @@ type Props = {
 };
 export function ChatNavigation(props: Props) {
   const [query, setQuery] = useState("");
+  const [layout, setLayout] = useState(readNavigationLayout);
+  useEffect(() => {
+    if (process.env.TARO_ENV !== "weapp") return;
+    const update = () => setLayout(readNavigationLayout());
+    Taro.nextTick(update);
+    Taro.onWindowResize(update);
+    return () => Taro.offWindowResize(update);
+  }, []);
   useEffect(() => {
     if (!props.open) return;
     setQuery("");
@@ -61,25 +73,61 @@ export function ChatNavigation(props: Props) {
   );
   return (
     <>
-      <View className="chat-header">
-        <View className="header-actions">
-          {button(props.onOpen, "menu", "打开会话导航", false)}
-          {button(props.onNew, "squarePen", "新建对话")}
-        </View>
-        <View className="nav-identity">
-          <Text className="agent-name">阿 Q 先生</Text>
-          <Text className="agent-status">陪你换个角度，慢慢聊</Text>
-        </View>
+      <View
+        className={`chat-header ${layout ? "custom-navigation" : ""}`}
+        style={
+          layout ? { paddingTop: `${layout.statusBarHeight}px` } : undefined
+        }
+      >
         <View
-          className={`header-actions nav-right ${props.memoryFull ? "memory-alert" : ""}`}
+          className="navigation-row"
+          style={layout ? { height: `${layout.height}px` } : undefined}
         >
-          {button(props.onMemory, "heart", "查看阿 Q 先生的记忆")}
+          <View className="header-actions">
+            {button(props.onOpen, "menu", "打开会话导航", false)}
+            {button(props.onNew, "squarePen", "新建对话")}
+          </View>
+          <View
+            className="nav-identity"
+            style={
+              layout
+                ? {
+                    left: `${layout.side}px`,
+                    right: `${layout.side}px`,
+                    transform: "none",
+                  }
+                : undefined
+            }
+          >
+            <Text className="agent-name">阿 Q 先生</Text>
+            {!layout && (
+              <Text className="agent-status">陪你换个角度，慢慢聊</Text>
+            )}
+          </View>
+          {!layout && (
+            <View
+              className={`header-actions nav-right ${props.memoryFull ? "memory-alert" : ""}`}
+            >
+              {button(props.onMemory, "heart", "查看阿 Q 先生的记忆")}
+            </View>
+          )}
         </View>
       </View>
       {props.open && (
         <View className="nav-overlay" catchMove>
           <View className="nav-backdrop" onClick={props.onClose} />
-          <View className="session-drawer" role="dialog" ariaLabel="会话导航">
+          <View
+            className="session-drawer"
+            role="dialog"
+            ariaLabel="会话导航"
+            style={
+              layout
+                ? {
+                    paddingTop: `${layout.statusBarHeight + layout.height + 16}px`,
+                  }
+                : undefined
+            }
+          >
             <View className="drawer-heading">
               <View>
                 <Text className="drawer-brand">阿 Q 先生</Text>
@@ -136,14 +184,11 @@ export function ChatNavigation(props: Props) {
               )}
             </ScrollView>
             <View className="drawer-footer">
-              <Button
-                className="control drawer-footer-action"
-                disabled={props.disabled || undefined}
-                onClick={props.onMemory}
-              >
-                <ChatIcon name="heart" />
-                <Text>当前对话记忆</Text>
-              </Button>
+              <MemoryMeter
+                memory={props.memory}
+                disabled={props.disabled}
+                onOpen={props.onMemory}
+              />
               <Button
                 className="control drawer-footer-action"
                 disabled={props.disabled || undefined}

@@ -1027,6 +1027,26 @@ input {
 }
 
 /* 顶部导航与会话抽屉；正文保持原生页面滚动。 */
+.navigation-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+}
+.chat-header.custom-navigation {
+  padding: 0 8px;
+  min-height: 0;
+}
+.custom-navigation .nav-identity {
+  overflow: hidden;
+  white-space: nowrap;
+}
+.custom-navigation .agent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .chat-header {
   padding: 10px 8px;
   min-height: 68px;
@@ -1212,4 +1232,80 @@ input {
 }
 .drawer-footer .drawer-caption {
   padding-left: 10px;
+}
+.drawer-footer .memory-meter {
+  width: calc(100% - 20px);
+  margin: 4px 10px 16px;
+}
+
+/* 设置使用独立页面；微信显示原生标题和返回，网页显示自己的返回栏。 */
+.settings-page {
+  max-width: 420px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 10px 8px;
+  background: #f6f8f7;
+  border-bottom: 1px solid #e6ece7;
+  font-size: 17px;
+  font-weight: 600;
+}
+.settings-header-spacer {
+  width: 42px;
+}
+.settings-content {
+  padding: 20px 16px;
+}
+.settings-intro {
+  padding: 8px 6px 22px;
+}
+.settings-title {
+  display: block;
+  font-size: 22px;
+  font-weight: 600;
+}
+.settings-description {
+  display: block;
+  margin-top: 10px;
+  line-height: 1.8;
+  font-size: 13px;
+  color: #7b8a80;
+}
+.settings-section {
+  padding: 18px 16px;
+  margin-bottom: 16px;
+  border: 1px solid #e6ece3;
+  border-radius: 18px;
+  background: #fcfdfb;
+}
+.settings-section-title {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+.settings-section .mode-option {
+  width: 100%;
+}
+.settings-section .sheet-note {
+  font-size: 11px;
+}
+.settings-section .option-detail {
+  font-size: 11px;
+  line-height: 1.6;
+}
+.settings-error {
+  display: block;
+  margin-bottom: 16px;
+}
+.settings-section button[disabled] {
+  opacity: 0.45;
 }
