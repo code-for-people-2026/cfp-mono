@@ -81,8 +81,10 @@ function SurfaceView({
   const [sending, setSending] = useState(false);
   const inFlight = useRef(false);
   useEffect(() => {
-    setValues(initialValues || surface.values);
-  }, [surface.values, initialValues]);
+    // 历史刷新会重建同一表单的空 values，不能覆盖失败提交的本地答案。
+    // 已保存的回应可恢复字段；没有交互入口的实时预览仍跟随数据模型。
+    if (initialValues || !onAction) setValues(initialValues || surface.values);
+  }, [surface.values, initialValues, onAction]);
   const locked = disabled || sending || submitted;
   async function submit() {
     if (locked || inFlight.current || !onAction) return;

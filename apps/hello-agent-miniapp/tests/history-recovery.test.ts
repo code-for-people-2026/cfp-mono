@@ -137,6 +137,79 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
+  const { artifacts } = await import(
+    "../../../packages/hello-agent-protocol/test/fixtures"
+  );
+  history = [
+    {
+      ...initial,
+      input: { text: "请给我一份练习", mediaIds: [] },
+      artifacts: artifacts.filter((item) => item.kind === "form"),
+    },
+  ];
+  const original = platform.request.getMockImplementation()!;
+  const submitted: unknown[] = [];
+  let result: Turn | undefined;
+  platform.request.mockImplementation(async (options) => {
+    if (options.url.endsWith("/ag-ui")) {
+      const values =
+        options.data.forwardedProps.clientEvent.action.context.values;
+      submitted.push(structuredClone(values));
+      result = {
+        ...initial,
+        id: submitted.length + 1,
+        input: {
+          text: "提交练习表单",
+          mediaIds: [],
+          formResponse: { turnId: 1, artifactId: "thought_record", values },
+        },
+        status: submitted.length === 1 ? "failed" : "completed",
+      };
+      history.push(result);
+      return submitted.length === 1
+        ? { statusCode: 503, data: { error: "模型暂时失败" } }
+        : { statusCode: 200, data: wire(options.data.runId) };
+    }
+    if (options.url.includes("/requests/"))
+      return { statusCode: 200, data: { turn: result } };
+    if (options.url.endsWith("/sessions/1"))
+      return { statusCode: 200, data: structuredClone(history) };
+    return original(options);
+  });
+  await mount();
+  const fields = () =>
+    renderer!.root.findAll(
+      (node) =>
+        ["input", "textarea"].includes(String(node.type)) &&
+        node.props.className?.includes("artifact-input"),
+    );
+  const button = () =>
+    renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-submit"))!;
+  const answers = ["会议数字已更正", "担心大家不信任我", "紧张", "0"];
+  act(() =>
+    fields().forEach((field, index) => {
+      field.props.onInput({ detail: { value: answers[index] } });
+    }),
+  );
+  await act(async () => {
+    button().props.onClick();
+  });
+  expect(submitted).toHaveLength(1);
+  expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(button().props.disabled).toBeFalsy();
+  await act(async () => {
+    button().props.onClick();
+  });
+  expect(submitted).toHaveLength(2);
+  expect(submitted[1]).toEqual(submitted[0]);
+  expect(submitted[1]).toMatchObject({ intensity: 0 });
+  expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(button().props.disabled).toBe(true);
+});
+
 describe("聊天历史与图片失败隔离", () => {
   it("整页承载聊天滚动；翻看前文时收到回复不会被拉到底部", async () => {
     let finish: (() => void) | undefined;
