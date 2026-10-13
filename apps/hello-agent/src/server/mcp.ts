@@ -79,7 +79,7 @@ export function createMcpServer(service: GreetingService) {
       inputSchema: { base64: z.string().min(1).max(7_000_000) },
     },
     protect(async (args) => {
-      await new PrivacyService(service.repo).require("sensitive");
+      await new PrivacyService(service.repo).requireImageInput();
       return service.upload(Buffer.from(args.base64, "base64"));
     }),
   );

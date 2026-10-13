@@ -48,24 +48,29 @@ export class PrivacyService {
   }
   async require(scope: "core" | "sensitive" | "external" = "core") {
     if (process.env.HELLO_DEPLOYED === "true" && !privacyPolicy().ready) throw new AppError(503, "隐私运营配置尚未核实，暂不开放新的数据处理");
-    if (scope === "sensitive" && !privacyPolicy().imageReviewDisclosed) throw new AppError(503, "图片审核接收方告知尚未配置完整，请稍后重试");
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
     const parsed = consentSchema.safeParse(profile?.consent);
     if (profile?.state !== "active" || !parsed.success || parsed.data.version !== privacyPolicy().version || (profile.expiresAt && Date.parse(String(profile.expiresAt)) <= Date.now()))
       throw new AppError(403, "请先在隐私与数据中阅读并同意当前政策；撤回或到期后仅可查阅、导出和删除");
     if (!parsed.data[scope]) throw new AppError(403, scope === "sensitive" ? "图片、情绪练习或敏感内容需要单独同意；可在隐私与数据中设置" : "请先本人确认外部 Agent 可读取全部对话和图片");
   }
+  async requireImageInput() {
+    await this.require("sensitive");
+    if (!privacyPolicy().imageReviewDisclosed) throw new AppError(503, "图片审核接收方告知尚未配置完整，请稍后重试");
+  }
   async requireInput(input: unknown) {
     await this.require();
     // Conservative guard, not a claim to classify all sensitive information.
-    if (/formResponse|clientEvent|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(input))) await this.require("sensitive");
+    const hasSensitiveContent = (value: unknown) => /formResponse|clientEvent|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(value));
     // Once prior records may contain sensitive material, even an ordinary new
     // prompt/summary can disclose that history. Withdrawal stops that reuse.
     const prior = await this.repo.all("greetings");
     const profile = await profileFor(this.repo.payload, this.repo.owner.id);
-    if (profile?.sensitiveHistory === true || prior.some((row) => /formResponse|mediaIds":\[[^\]]+|抑郁|焦虑|病历|诊断|药物|自杀|自伤|身份证|银行卡|健康|心理|情绪/.test(JSON.stringify(row.input)))) await this.require("sensitive");
-    const consent = consentSchema.parse(profile?.consent);
-    if (consent.sensitive && !profile?.sensitiveHistory) await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { sensitiveHistory: true } });
+    const usesSensitiveContent = hasSensitiveContent(input) || profile?.sensitiveHistory === true || prior.some((row) => hasSensitiveContent(row.input));
+    if (usesSensitiveContent) {
+      await this.require("sensitive");
+      if (!profile?.sensitiveHistory) await this.repo.payload.update({ collection: "privacy-profiles", id: profile!.id, overrideAccess: true, data: { sensitiveHistory: true } });
+    }
   }
   async revoke(kind?: string) {
     await this.repo.payload.delete({ collection: "credentials", overrideAccess: true, where: { and: [{ owner: { equals: this.repo.owner.id } }, ...(kind ? [{ kind: { equals: kind } }] : [])] } });

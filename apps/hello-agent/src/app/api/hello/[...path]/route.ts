@@ -253,7 +253,7 @@ export async function POST(request: Request, context: Context) {
       return json(await service.generateGreeting(body));
     }
     if (path[0] === "upload") {
-      await privacy.require("sensitive");
+      await privacy.requireImageInput();
       const { base64 } = z
         .object({ base64: z.string().min(1).max(7_000_000) })
         .parse(body);

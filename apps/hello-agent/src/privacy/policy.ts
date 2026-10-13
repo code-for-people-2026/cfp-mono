@@ -15,7 +15,7 @@ export function privacyPolicy() {
     policy: process.env.HELLO_IMAGE_REVIEW_PRIVACY_URL,
   } : undefined;
   const imageReviewDisclosed = !!imageReview && Object.values(imageReview).every((value) => !!value?.trim());
-  const ready = !!(imageReviewDisclosed && process.env.HELLO_PRIVACY_CONTACT?.trim() && retentionDays && backupDays && responseDays && deployment && process.env.HELLO_PRIVACY_DELETION_LEDGER && process.env.HELLO_PRIVACY_OPERATIONS_APPROVED === "true");
+  const ready = !!(process.env.HELLO_PRIVACY_CONTACT?.trim() && retentionDays && backupDays && responseDays && deployment && process.env.HELLO_PRIVACY_DELETION_LEDGER && process.env.HELLO_PRIVACY_OPERATIONS_APPROVED === "true");
   const documents = [
     { title: "隐私政策", paragraphs: [
       `运营者：${COMPANY}（深圳龙岗）。隐私权利联系渠道：${contact}。${responseDays ? `将在 ${responseDays} 日内答复权利请求。` : "权利请求答复期限待公司确认。"}`,
