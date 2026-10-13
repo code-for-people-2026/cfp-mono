@@ -231,7 +231,7 @@ try {
     });
     searches++;
     return Response.json({
-      retcode: 0,
+      code: 0,
       data: {
         info_list: [
           {
@@ -328,8 +328,7 @@ try {
     ...adminOptions,
     data: {
       name: "阿 Q + · 主 Agent",
-      prompt:
-        "你是「阿 Q +」的 AI 搭子，自称「阿 Q +」。管理员规则保留。",
+      prompt: "你是「阿 Q +」的 AI 搭子，自称「阿 Q +」。管理员规则保留。",
     },
   });
   const snapshot = async () => ({

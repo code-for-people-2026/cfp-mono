@@ -9,6 +9,7 @@ import {
 } from "@tarojs/components";
 import Taro, { usePageScroll } from "@tarojs/taro";
 import * as api from "../../chat/api";
+import { ChatNavigation } from "../../chat/navigation";
 import { MemoryMeter, MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
@@ -26,11 +27,24 @@ import {
   type Attachment,
   type Mode,
   type Settings,
+  type Session,
   type Turn,
   type MemoryStatus,
   type Input,
 } from "../../chat/model";
 
+const selectionKey = `hello-active-session:${HELLO_API_ORIGIN}`;
+type PendingSubmission = {
+  sessionId: number;
+  requestId: string;
+  mode: Exclude<Mode, "external">;
+  input: Input;
+};
+type Draft = {
+  text: string;
+  attachments: Attachment[];
+  submission?: PendingSubmission;
+};
 const h5 = process.env.TARO_ENV === "h5";
 function Button(props: ButtonProps) {
   return (
@@ -55,6 +69,11 @@ export default function Chat() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [sessionId, setSessionId] = useState<number>();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const activeSession = useRef<number>();
+  const drafts = useRef(new Map<number, Draft>());
   const [history, setHistory] = useState<Turn[]>([]);
   const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
@@ -82,12 +101,7 @@ export default function Chat() {
   const historyVersion = useRef(0);
   const sendLock = useRef(false);
   // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
-  const submission = useRef<{
-    sessionId: number;
-    requestId: string;
-    mode: Exclude<Mode, "external">;
-    input: Input;
-  }>();
+  const submission = useRef<PendingSubmission>();
   const disabled =
     busy || uploading || loading || memoryBusy || identityExpired;
   const ready = canSend(
@@ -96,7 +110,7 @@ export default function Chat() {
     mode,
     apiKey,
     !!settings?.platformConfigured,
-    disabled || memory?.level === "empty",
+    disabled || historyFailed || memory?.level === "empty",
   );
   const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
 
@@ -153,6 +167,102 @@ export default function Chat() {
       });
     }
   }
+  function rememberSelection(id: number | undefined) {
+    activeSession.current = id;
+    setSessionId(id);
+    try {
+      Taro.setStorageSync(selectionKey, id || 0);
+    } catch {
+      /* 存储不可用时仍可切换 */
+    }
+  }
+  function stashDraft() {
+    drafts.current.set(activeSession.current || 0, {
+      text,
+      attachments,
+      submission: submission.current,
+    });
+  }
+  async function switchSession(id: number, fresh = false) {
+    stashDraft();
+    historyVersion.current++;
+    rememberSelection(id);
+    const draft = drafts.current.get(id);
+    setText(draft?.text || "");
+    setAttachments(draft?.attachments || []);
+    submission.current = draft?.submission;
+    setHistory([]);
+    setImages({});
+    setMemory(undefined);
+    setExpanded([]);
+    setProgress(undefined);
+    setPending(undefined);
+    setMemoryOpen(false);
+    setNavigationOpen(false);
+    setError(
+      draft?.submission
+        ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+        : "",
+    );
+    setHistoryFailed(false);
+    setInputMode("keyboard");
+    followLatest.current = true;
+    scrollRevision.current++;
+    if (fresh) {
+      void Taro.pageScrollTo({ scrollTop: 0, duration: 0 }).catch(() => {});
+      return;
+    }
+    setLoading(true);
+    try {
+      await readHistory(id);
+    } catch (value) {
+      setHistoryFailed(true);
+      problem(value);
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function selectSession(id: number) {
+    if (disabled || sendLock.current) return;
+    if (id === activeSession.current) {
+      setNavigationOpen(false);
+      return;
+    }
+    sendLock.current = true;
+    try {
+      await switchSession(id);
+    } finally {
+      sendLock.current = false;
+    }
+  }
+  async function startConversation() {
+    if (disabled || sendLock.current) return;
+    sendLock.current = true;
+    setLoading(true);
+    try {
+      const session = await api.newSession();
+      setSessions((rows) => [...rows, session]);
+      if (!activeSession.current)
+        drafts.current.set(session.id, {
+          text,
+          attachments,
+          submission: submission.current,
+        });
+      await switchSession(session.id, true);
+    } catch (value) {
+      problem(value);
+    } finally {
+      setLoading(false);
+      sendLock.current = false;
+    }
+  }
+  async function refreshSessions() {
+    try {
+      setSessions(await api.getSessions());
+    } catch {
+      /* 不把已保存的回复误报成失败 */
+    }
+  }
   async function boot() {
     setLoading(true);
     setError("");
@@ -163,12 +273,30 @@ export default function Chat() {
         api.getSessions(),
       ]);
       setSettings(config);
+      setSessions(rows);
       if (rows.length) {
-        const latest = rows[rows.length - 1];
-        setSessionId(latest.id);
-        await readHistory(latest.id);
+        let remembered = activeSession.current;
+        if (!remembered) {
+          try {
+            remembered = Number(Taro.getStorageSync(selectionKey)) || undefined;
+          } catch {
+            /* 无本地存储 */
+          }
+        }
+        const selected =
+          rows.find((row) => row.id === remembered) ||
+          [...rows].sort(
+            (a, b) =>
+              (b.updatedAt || b.createdAt || "").localeCompare(
+                a.updatedAt || a.createdAt || "",
+              ) || b.id - a.id,
+          )[0];
+        rememberSelection(selected.id);
+        await readHistory(selected.id);
       }
+      setHistoryFailed(false);
     } catch (value) {
+      setHistoryFailed(true);
       problem(value);
     } finally {
       setLoading(false);
@@ -191,7 +319,9 @@ export default function Chat() {
       // 防止旧身份的图片异步结果混入新页面。
       historyVersion.current++;
       submission.current = undefined;
-      setSessionId(undefined);
+      rememberSelection(undefined);
+      drafts.current.clear();
+      setSessions([]);
       setSettings(undefined);
       setHistory([]);
       followLatest.current = true;
@@ -244,6 +374,7 @@ export default function Chat() {
         ]);
         setError("已确认上次回复保存成功，无需再次发送。");
         await readHistory(current.sessionId);
+        await refreshSessions();
       } else if (turn?.status === "failed") {
         submission.current = undefined;
         setError("上次生成已确认失败，草稿保留；可以重新发送。");
@@ -310,7 +441,7 @@ export default function Chat() {
         mode,
         apiKey,
         !!settings?.platformConfigured,
-        disabled || memory?.level === "empty",
+        disabled || historyFailed || memory?.level === "empty",
       );
     if (
       !(formInput ? formReady : ready) ||
@@ -342,7 +473,8 @@ export default function Chat() {
       if (!id) {
         const session = await api.newSession();
         id = session.id;
-        setSessionId(id);
+        rememberSelection(id);
+        setSessions((rows) => [...rows, session]);
       }
       const previous = submission.current;
       const retry =
@@ -410,6 +542,7 @@ export default function Chat() {
         if (id) await readHistory(id).catch(recoveryFailed);
       }
     } finally {
+      await refreshSessions();
       setPending(undefined);
       setProgress(undefined);
       setBusy(false);
@@ -480,39 +613,28 @@ export default function Chat() {
   return (
     <View className={h5 ? "h5-shell" : "native-shell"}>
       <View className="chat-app">
-        <View className="chat-header">
-          <View className="identity">
-            <Image
-              className="avatar hero-avatar"
-              src={mascot}
-              mode="aspectFill"
-            />
-            <View>
-              <Text className="agent-name">阿 Q 先生</Text>
-              <Text className="agent-status">AI 乐观搭子</Text>
-            </View>
-          </View>
-          <View className="header-actions">
-            <Button
-              className={`icon-button memory-shortcut ${memory?.level === "empty" ? "memory-alert" : ""}`}
-              ariaLabel="查看阿 Q 先生的记忆"
-              disabled={disabled}
-              onClick={() => setMemoryOpen(true)}
-            >
-              ♥{memory?.level === "empty" ? " 满了" : ""}
-            </Button>
-            <Button
-              className="icon-button"
-              disabled={disabled}
-              onClick={() => setPanel("modes")}
-            >
-              设置
-            </Button>
-          </View>
-        </View>
+        <ChatNavigation
+          open={navigationOpen}
+          sessions={sessions}
+          activeId={sessionId}
+          disabled={disabled}
+          memoryFull={memory?.level === "empty"}
+          onOpen={() => setNavigationOpen(true)}
+          onClose={() => setNavigationOpen(false)}
+          onNew={startConversation}
+          onSelect={selectSession}
+          onMemory={() => {
+            setNavigationOpen(false);
+            setMemoryOpen(true);
+          }}
+          onSettings={() => {
+            setNavigationOpen(false);
+            setPanel("modes");
+          }}
+        />
         <View className="conversation">
           <View className="chat-content">
-            {!history.length && !pending && (
+            {!history.length && !pending && !loading && !historyFailed && (
               <View className="welcome-home">
                 <View className="mascot-halo">
                   <Image
@@ -555,7 +677,9 @@ export default function Chat() {
               </View>
             )}
             {loading && (
-              <Text className="loading-note">阿 Q 先生正在翻看我们聊过的日常…</Text>
+              <Text className="loading-note">
+                阿 Q 先生正在翻看我们聊过的日常…
+              </Text>
             )}
             {history.map((row) => (
               <View className="turn" key={row.id}>
@@ -751,7 +875,7 @@ export default function Chat() {
                   重新开始
                 </Button>
               ) : (
-                !settings && (
+                (!settings || historyFailed) && (
                   <Button className="text-button" onClick={boot}>
                     重试
                   </Button>
@@ -804,9 +928,14 @@ export default function Chat() {
                 inputMode={inputMode}
                 text={text}
                 attachments={attachments}
-                disabled={disabled}
+                disabled={disabled || historyFailed || navigationOpen}
                 voiceDisabled={
-                  disabled || memory?.level === "empty" || !!panel || memoryOpen
+                  disabled ||
+                  historyFailed ||
+                  navigationOpen ||
+                  memory?.level === "empty" ||
+                  !!panel ||
+                  memoryOpen
                 }
                 ready={ready}
                 busy={busy}

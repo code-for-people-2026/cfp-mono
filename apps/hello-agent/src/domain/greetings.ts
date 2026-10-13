@@ -34,10 +34,15 @@ export class GreetingService {
 
   async sessions(): Promise<Session[]> {
     return (await this.repo.all("sessions")).map(
-      ({ id, title, createdAt }) => ({ id, title, createdAt }),
+      ({ id, title, createdAt, updatedAt }) => ({
+        id,
+        title,
+        createdAt,
+        updatedAt,
+      }),
     );
   }
-  async createSession(title = "与阿 Q 先生的日常"): Promise<Session> {
+  async createSession(title = "新对话"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });
   }
   async history(sessionId: number): Promise<Turn[]> {
@@ -96,7 +101,7 @@ export class GreetingService {
     model: string,
     extra?: Greeting,
   ) {
-    await this.repo.get("sessions", sessionId);
+    const session = await this.repo.get("sessions", sessionId);
     await Promise.all(input.mediaIds.map((id) => this.repo.get("media", id)));
     if (input.formResponse) {
       const response = input.formResponse;
@@ -144,6 +149,14 @@ export class GreetingService {
       return { row: existing, duplicate: existing.status === "completed" };
     }
     await new ContextService(this.repo).ensureRoom(sessionId);
+    // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
+    await this.repo.update("sessions", sessionId, {
+      title: ["新对话", "与阿 Q 先生的日常", "与好阿 J 的日常"].includes(
+        session.title,
+      )
+        ? input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话"
+        : session.title,
+    });
     const row = await this.repo.create("greetings", {
       sessionId,
       requestKey,

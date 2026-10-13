@@ -38,6 +38,8 @@ export const externalSchema = z.object({
 export const sessionSchema = z.object({
   id: z.number().int().positive(),
   title: z.string(),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
 });
 export const sessionsSchema = z.array(sessionSchema);
 export const turnResultSchema = z.object({

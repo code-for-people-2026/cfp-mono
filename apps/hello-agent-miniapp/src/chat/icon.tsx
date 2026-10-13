@@ -8,7 +8,20 @@ import image from "lucide-static/icons/image.svg?raw";
 import x from "lucide-static/icons/x.svg?raw";
 import copy from "lucide-static/icons/copy.svg?raw";
 
+import menu from "lucide-static/icons/menu.svg?raw";
+import squarePen from "lucide-static/icons/square-pen.svg?raw";
+import messageCircle from "lucide-static/icons/message-circle.svg?raw";
+import search from "lucide-static/icons/search.svg?raw";
+import settings from "lucide-static/icons/settings.svg?raw";
+import heart from "lucide-static/icons/heart.svg?raw";
+
 const icons = {
+  menu,
+  squarePen,
+  messageCircle,
+  search,
+  settings,
+  heart,
   camera,
   keyboard,
   audioLines,

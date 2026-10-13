@@ -11,27 +11,37 @@ const signal = new AbortController().signal;
 const json = (data: unknown) => new Response(JSON.stringify(data));
 describe("ima 官方 OpenAPI 适配", () => {
   it("固定官方地址、带认证、禁止重定向，只送关键词并读取官方 envelope", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        json({
-          retcode: 0,
-          data: {
-            info_list: [
-              {
-                media_id: "ref1",
-                title: "认知记录",
-                highlight_content: "<em>想法</em>不等于事实",
-              },
-              { title: "只有标题" },
-            ],
-          },
-        }),
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      json({
+        code: 0,
+        data: {
+          info_list: [
+            {
+              media_id: "ref1",
+              title: "认知记录",
+              highlight_content: "<em>想法</em>不等于事实",
+            },
+            { title: "只有标题" },
+          ],
+        },
+      }),
+    );
     const result = await searchIma(connection, "认知重构", signal, fetcher);
     expect(result).toEqual([
-      { sourceId: "ref1", title: "认知记录", excerpt: "想法不等于事实" },
-      { title: "只有标题", sourceId: undefined, excerpt: "" },
+      {
+        searchQuery: "认知重构",
+        sourceId: "ref1",
+        title: "认知记录",
+        excerpt: "想法不等于事实",
+        readStatus: "snippet",
+      },
+      {
+        searchQuery: "认知重构",
+        title: "只有标题",
+        sourceId: undefined,
+        excerpt: "",
+        readStatus: "title_only",
+      },
     ]);
     const [url, options] = fetcher.mock.calls[0];
     expect(url).toBe("https://ima.qq.com/openapi/wiki/v1/search_knowledge");
@@ -52,14 +62,12 @@ describe("ima 官方 OpenAPI 适配", () => {
       await checkImaConnection(
         connection,
         signal,
-        vi
-          .fn<typeof fetch>()
-          .mockResolvedValue(
-            json({
-              retcode: 0,
-              data: { infos: { "fixture-kb": { name: "方法库" } } },
-            }),
-          ),
+        vi.fn<typeof fetch>().mockResolvedValue(
+          json({
+            code: 0,
+            data: { infos: { "fixture-kb": { name: "方法库" } } },
+          }),
+        ),
       ),
     ).toBe("方法库");
     await expect(
@@ -68,7 +76,7 @@ describe("ima 官方 OpenAPI 适配", () => {
         signal,
         vi
           .fn<typeof fetch>()
-          .mockResolvedValue(json({ retcode: 0, data: { infos: {} } })),
+          .mockResolvedValue(json({ code: 0, data: { infos: {} } })),
       ),
     ).rejects.toThrow("权限");
   });
@@ -80,9 +88,7 @@ describe("ima 官方 OpenAPI 适配", () => {
         signal,
         vi
           .fn<typeof fetch>()
-          .mockResolvedValue(
-            json({ retcode: 110030, errmsg: connection.apiKey }),
-          ),
+          .mockResolvedValue(json({ code: 110030, msg: connection.apiKey })),
       ),
     ).rejects.toThrow("检查凭证");
   });
@@ -101,19 +107,17 @@ describe("ima 官方 OpenAPI 适配", () => {
       connection,
       "CBT",
       signal,
-      vi
-        .fn<typeof fetch>()
-        .mockResolvedValue(
-          json({
-            retcode: 0,
-            data: {
-              info_list: Array.from({ length: 10 }, () => ({
-                title: "t",
-                highlight_content: "x".repeat(3000),
-              })),
-            },
-          }),
-        ),
+      vi.fn<typeof fetch>().mockResolvedValue(
+        json({
+          code: 0,
+          data: {
+            info_list: Array.from({ length: 10 }, () => ({
+              title: "t",
+              highlight_content: "x".repeat(3000),
+            })),
+          },
+        }),
+      ),
     );
     expect(result).toHaveLength(3);
     expect(result[0].excerpt).toHaveLength(1500);

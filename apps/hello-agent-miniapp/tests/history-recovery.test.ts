@@ -6,7 +6,9 @@ import type { Turn } from "../src/chat/model";
 const platform = vi.hoisted(() => ({
   request: vi.fn(),
   downloadFile: vi.fn(),
-  getStorageSync: vi.fn(() => "fixture-device-token"),
+  getStorageSync: vi.fn(
+    (_key?: string): string | number => "fixture-device-token",
+  ),
   setStorageSync: vi.fn(),
   showModal: vi.fn(),
   nextTick: vi.fn((fn: () => void) => fn()),
@@ -193,6 +195,11 @@ describe("聊天历史与图片失败隔离", () => {
         .find((node) => node.props.className.includes("send-button"))!
         .props.onClick();
     });
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "新建对话")!.props.disabled,
+    ).toBe(true);
     act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 1000 }));
     endBottom = 1300;
     act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 400 }));
@@ -442,7 +449,19 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.children.includes("设置"))!
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find(
+          (button) =>
+            button.props.className.includes("drawer-footer-action") &&
+            button
+              .findAllByType("text")
+              .some((node) => node.children.includes("设置")),
+        )!
         .props.onClick(),
     );
     act(() =>
@@ -574,7 +593,7 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.props.className.includes("memory-shortcut"))!
+        .find((button) => button.props.ariaLabel === "查看阿 Q 先生的记忆")!
         .props.onClick(),
     );
     const recover = renderer!.root
@@ -660,7 +679,11 @@ describe("聊天历史与图片失败隔离", () => {
     );
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
-    expect(platform.setStorageSync).not.toHaveBeenCalled();
+    expect(
+      platform.setStorageSync.mock.calls.every(([key]) =>
+        key.startsWith("hello-active-session:"),
+      ),
+    ).toBe(true);
   });
   it("设备凭证过期时不静默换身份，取消保留现场，确认后才能重新开始", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
@@ -699,7 +722,11 @@ describe("聊天历史与图片失败隔离", () => {
       await restart().props.onClick();
     });
     expect(renewed).toBe(false);
-    expect(platform.setStorageSync).not.toHaveBeenCalled();
+    expect(
+      platform.setStorageSync.mock.calls.every(([key]) =>
+        key.startsWith("hello-active-session:"),
+      ),
+    ).toBe(true);
     platform.showModal.mockResolvedValueOnce({ confirm: true, cancel: false });
     await act(async () => {
       await restart().props.onClick();
@@ -766,7 +793,19 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.children.includes("设置"))!
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find(
+          (button) =>
+            button.props.className.includes("drawer-footer-action") &&
+            button
+              .findAllByType("text")
+              .some((node) => node.children.includes("设置")),
+        )!
         .props.onClick(),
     );
     expect(text()).toContain("87");
@@ -887,5 +926,124 @@ describe("聊天历史与图片失败隔离", () => {
       "请保留草稿",
     );
     expect(text()).toContain("生成暂不可用");
+  });
+});
+
+describe("新会话与历史导航", () => {
+  it("新会话保留身份与旧记录，切回恢复草稿并隔离记忆", async () => {
+    const original = platform.request.getMockImplementation()!;
+    let created = false;
+    platform.request.mockImplementation(async (options) => {
+      if (options.url.endsWith("/sessions") && options.method === "POST") {
+        created = true;
+        return { statusCode: 200, data: { id: 2, title: "新对话" } };
+      }
+      if (options.url.endsWith("/sessions") && created)
+        return {
+          statusCode: 200,
+          data: [
+            { id: 1, title: "日常" },
+            { id: 2, title: "新对话" },
+          ],
+        };
+      if (options.url.endsWith("/sessions/2"))
+        return { statusCode: 200, data: [] };
+      if (options.url.endsWith("/context/2")) {
+        const response = await original({
+          ...options,
+          url: options.url.replace("context/2", "context/1"),
+        });
+        return {
+          ...response,
+          data: {
+            ...response.data,
+            usedTokens: 0,
+            summary: "",
+            recentTurns: 0,
+          },
+        };
+      }
+      return original(options);
+    });
+    await mount();
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "还没发送的草稿" } }),
+    );
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "新建对话")!
+        .props.onClick();
+    });
+    expect(text()).not.toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.value).toBe("");
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    expect(text()).toContain("最近对话");
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find(
+          (node) =>
+            node.props.className.includes("session-link") &&
+            node
+              .findAllByType("text")
+              .some((item) => item.children.includes("日常")),
+        )!
+        .props.onClick();
+    });
+    expect(text()).toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "还没发送的草稿",
+    );
+    expect(platform.setStorageSync).toHaveBeenLastCalledWith(
+      "hello-active-session:https://example.test",
+      1,
+    );
+    expect(platform.showModal).not.toHaveBeenCalled();
+    expect(
+      platform.request.mock.calls.some(([options]) =>
+        options.url.endsWith("/miniapp-identity"),
+      ),
+    ).toBe(false);
+  });
+  it("记住所选旧会话；读取失败时提供重试，不展示另一段历史", async () => {
+    const original = platform.request.getMockImplementation()!;
+    platform.getStorageSync.mockImplementation((...args) =>
+      args[0]?.startsWith("hello-active-session:") ? 1 : "fixture-device-token",
+    );
+    let failed = true;
+    platform.request.mockImplementation(async (options) => {
+      if (options.url.endsWith("/sessions"))
+        return {
+          statusCode: 200,
+          data: [
+            { id: 1, title: "旧对话" },
+            { id: 2, title: "最新" },
+          ],
+        };
+      if (options.url.endsWith("/sessions/1") && failed)
+        throw Error("记录暂时无法读取");
+      return original(options);
+    });
+    await mount();
+    expect(text()).toContain("重试");
+    expect(renderer!.root.findByType("textarea").props.disabled).toBe(true);
+    failed = false;
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find((node) => node.children.includes("重试"))!
+        .props.onClick();
+    });
+    expect(text()).toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
+    platform.getStorageSync.mockImplementation(() => "fixture-device-token");
   });
 });

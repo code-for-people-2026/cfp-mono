@@ -14,6 +14,7 @@ const config: NextConfig = {
   serverExternalPackages: [
     // OSS SDK 包含可选代理依赖，按 Node 服务端包加载，不交给前端构建器展开。
     "ali-oss",
+    "unpdf",
     "@google/adk",
     "@google/genai",
     "@modelcontextprotocol/sdk",

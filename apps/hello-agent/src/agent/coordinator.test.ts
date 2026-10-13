@@ -8,6 +8,7 @@ import {
   type LlmResponse,
 } from "@google/adk";
 import type { Part } from "@google/genai";
+import type { KnowledgeContext } from "./knowledge";
 import { DEFAULT_AGENT_CONFIGS } from "./default-prompts";
 import { createGreetingAgent } from "./coordinator";
 import { PSYCHOLOGY_APPROACHES, type PsychologyApproach } from "./psychology";
@@ -64,6 +65,7 @@ class WorkflowModel extends BaseLlm {
 function fixture(
   steps: Call[][],
   specialist = () => [call("submit_psychology_plan", plan)],
+  knowledge?: KnowledgeContext,
 ) {
   let step = 0;
   const model = new WorkflowModel((request) =>
@@ -83,6 +85,8 @@ function fixture(
         label: spec.name,
         prompt: spec.prompt,
         revision: "fixture",
+        knowledge:
+          knowledge && spec.key === "cbt" ? async () => knowledge : undefined,
       })),
     },
     model,
@@ -322,4 +326,55 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(f.save).not.toHaveBeenCalled();
     expect(f.model.requests.length).toBeLessThanOrEqual(6);
   });
+});
+
+it("专家不能引用仅有标题或不存在的资料，纠正后才返回正文依据", async () => {
+  let attempt = 0;
+  const f = fixture(
+    [
+      [
+        call("cbt_agent", {
+          request: "测试依据",
+          urgency: "routine",
+          knowledgeQuery: "自动思维",
+        }),
+      ],
+      [saveReply("cbt")],
+    ],
+    () => [
+      call("submit_psychology_plan", {
+        ...plan,
+        usedSourceIds: attempt++ ? ["ref_1"] : ["ref_2", "invented"],
+      }),
+    ],
+    {
+      query: "自动思维",
+      notices: [],
+      sources: [
+        {
+          library: "测试库",
+          title: "可读资料",
+          excerpt: "可读正文",
+          referenceId: "ref_1",
+          readStatus: "document",
+        },
+        {
+          library: "测试库",
+          title: "仅标题资料",
+          excerpt: "",
+          referenceId: "ref_2",
+          readStatus: "restricted",
+        },
+      ],
+    },
+  );
+  await f.run();
+  expect(attempt).toBe(2);
+  expect(f.save).toHaveBeenCalledOnce();
+  const expertRetry = JSON.stringify(f.model.requests[2].contents);
+  expect(expertRetry).toContain("只能选择本轮提供且有正文");
+  const main = JSON.stringify(f.model.requests.at(-1)!.contents);
+  expect(main).toContain(
+    '"references":[{"library":"测试库","title":"可读资料"',
+  );
 });

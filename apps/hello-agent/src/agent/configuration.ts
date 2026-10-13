@@ -101,6 +101,7 @@ export async function loadAgentConfiguration(
                       library: library.name,
                       title: library.name,
                       excerpt: library.content.slice(0, 6000),
+                      readStatus: "document",
                     });
                   continue;
                 }
@@ -129,7 +130,14 @@ export async function loadAgentConfiguration(
                   );
                 }
               }
-              return { sources, notices };
+              return {
+                sources: sources.map((source, index) => ({
+                  ...source,
+                  referenceId: `ref_${index + 1}`,
+                })),
+                notices,
+                query,
+              };
             }
           : undefined,
       };

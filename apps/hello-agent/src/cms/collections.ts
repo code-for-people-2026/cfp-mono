@@ -211,6 +211,15 @@ export const collections: CollectionConfig[] = [
     { name: "association", label: "联想依据", type: "textarea" },
     { name: "approach", label: "回应视角", type: "text" },
     {
+      name: "knowledgeEvidence",
+      type: "ui",
+      admin: {
+        components: {
+          Field: "/src/cms/knowledge-fields#TurnKnowledgeEvidence",
+        },
+      },
+    },
+    {
       name: "artifacts",
       label: "回应作品",
       type: "json",
