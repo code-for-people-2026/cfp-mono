@@ -30,7 +30,7 @@ pnpm --filter @cfp/hello-agent dev
 
 平台模式需要在 `apps/hello-agent/.env.local` 设置 `DEEPSEEK_API_KEY`；参考 [.env.example](./.env.example)。默认模型为 `deepseek-flash`，可用 `HELLO_MODEL` 更换为支持图片和工具调用的模型。没有凭证会明确拒绝，不会返回固定吉祥话冒充真实模型。
 
-平台模型使用数据库持久化的全站共享调用预算 `HELLO_PLATFORM_DAILY_CALL_LIMIT`（默认 900，0 暂停平台调用，非法配置拒绝生成），按 UTC 日恢复。生成开始前原子预扣最坏情况 9 次（主 Agent 5 次 + 两位专家各 2 次），记忆整理预扣 1 次；额度不足返回 429，配置或存储异常返回 503，不启动模型或专家。成功请求的幂等重试不重复预扣；失败、取消、进程重启不退款，以防供应商已计费。所有访客和连接同一 Payload 数据库的进程共享计数，换 Cookie、设备或来源 IP 不会得到新额度。BYOK 和外部 Agent 不使用平台额度。调用预算结合各模型请求的输出上限控制用量，不是精确金额账单，也不提供匿名访客之间的公平分配；如需按人付费与防止共享额度被提前占用，仍需正式身份与个人权益。
+平台模型使用数据库持久化的全站共享调用预算 `HELLO_PLATFORM_DAILY_CALL_LIMIT`（默认 900，0 暂停平台调用，非法配置拒绝生成），按 UTC 日恢复。生成开始前原子预扣最坏情况 9 次（主 Agent 5 次 + 两位专家各 2 次），记忆整理预扣 1 次；额度不足返回 429，配置或存储异常返回 503，不启动模型或专家。成功请求的幂等重试不重复预扣；失败、取消、进程重启不退款，以防供应商已计费。所有访客和连接同一 Payload 数据库的进程共享计数，换 Cookie、设备或来源 IP 不会得到新额度。BYOK 和外部 Agent 不使用平台额度。`/api/ready` 使用相同规则校验额度配置并只读探测账本，不创建记录或扣额度；配置非法、表不可读时返回 503，额度用尽或显式设为 0 仍保持健康。调用预算结合各模型请求的输出上限控制用量，不是精确金额账单，也不提供匿名访客之间的公平分配；如需按人付费与防止共享额度被提前占用，仍需正式身份与个人权益。
 
 2026-09-29 核对了 DeepSeek 官方的[图片输入](https://api-docs.deepseek.com/guides/vision/)与[工具调用](https://api-docs.deepseek.com/guides/tool_calls/)文档，默认使用支持图文的 `deepseek-flash`。模型请求仅发往 `https://api.deepseek.com/chat/completions`，关闭思考模式，不接入 Gemini。Google ADK 是运行框架，不限定模型供应商；本例通过 `BaseLlm` 适配器连接 DeepSeek。
 

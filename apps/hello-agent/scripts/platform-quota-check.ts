@@ -32,6 +32,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { ContextService } = await import("../src/domain/context");
 const { runGreeting } = await import("../src/agent/runtime");
+const { GET: readiness } = await import("../src/app/api/ready/route");
 const payload = await cms();
 const db = payload.db.drizzle;
 // Payload's generic migration API erases the adapter-specific argument type.
@@ -91,6 +92,12 @@ try {
     );
     await (await import("../src/cms/seed")).seedAgents(payload);
     process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "18";
+    for (let i = 0; i < 3; i++) assert.equal((await readiness()).status, 200);
+    assert.equal(
+      (await payload.count({ collection: "platform-model-quotas" })).totalDocs,
+      0,
+      "readiness must not create or charge a ledger entry",
+    );
 
     const makeRepo = () =>
       new Repository(payload, { id: randomUUID(), auth: "cookie" });
@@ -138,6 +145,12 @@ try {
       18,
       "failures must not refund possibly billed work",
     );
+    assert.equal(
+      (await readiness()).status,
+      200,
+      "exhaustion is not a deployment failure",
+    );
+    assert.equal(await used(), 18);
     const byokModel = new ScriptedModel();
     const third = new GreetingService(makeRepo(), (args) =>
       runGreeting(args, byokModel),
@@ -197,6 +210,11 @@ try {
     );
     await external();
     process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "0";
+    assert.equal(
+      (await readiness()).status,
+      200,
+      "explicit platform pause remains healthy",
+    );
     await context.compactPreview(
       session.id,
       randomUUID(),
@@ -219,8 +237,20 @@ try {
     ]) {
       process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = invalid;
       await assert.rejects(reservePlatformCalls(payload, 1), { status: 503 });
+      const response = await readiness();
+      assert.equal(
+        response.status,
+        503,
+        "malformed quota must make readiness fail",
+      );
+      assert.deepEqual(await response.json(), {
+        ok: false,
+        service: "hello-agent",
+      });
     }
     delete process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT;
+    assert.equal((await readiness()).status, 200);
+    assert.equal(await used(), 19, "health probes must not consume quota");
     await reservePlatformCalls(payload, 1);
     assert.equal(
       await used(),
@@ -290,6 +320,11 @@ try {
     await db.run(
       sql`ALTER TABLE platform_model_quotas RENAME TO unavailable_quota`,
     );
+    assert.equal(
+      (await readiness()).status,
+      503,
+      "missing ledger must make readiness fail",
+    );
     await assert.rejects(third.generateGreeting(request(thirdSession.id)), {
       status: 503,
     });
@@ -300,6 +335,17 @@ try {
     );
     await db.run(
       sql`ALTER TABLE unavailable_quota RENAME TO platform_model_quotas`,
+    );
+    assert.equal(
+      (await readiness()).status,
+      200,
+      "readiness recovers with the ledger",
+    );
+    assert.deepEqual(
+      (await payload.find({ collection: "platform-model-quotas", sort: "day" }))
+        .docs,
+      rows.docs,
+      "health probes and failed storage access leave the ledger unchanged",
     );
     console.log(
       "✓ new UTC day; 36 concurrent-process attempts admit only 10 runs; restart and unavailable ledger stay blocked",

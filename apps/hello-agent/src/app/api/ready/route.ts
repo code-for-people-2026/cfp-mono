@@ -1,4 +1,5 @@
 import { cms } from "../../../cms/client";
+import { checkPlatformQuota } from "../../../cms/platform-quota";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +10,7 @@ export async function GET() {
     await payload.count({ collection: "sessions", overrideAccess: true });
     const configured = await payload.count({ collection: "agent-configs", overrideAccess: true, where: { and: [{ key: { equals: "coordinator" } }, { enabled: { equals: true } }] } });
     if (configured.totalDocs !== 1) throw new Error("Agent seed missing");
+    await checkPlatformQuota(payload);
     return Response.json(
       { ok: true, service: "hello-agent", release: process.env.HELLO_RELEASE || "local" },
       { headers: { "Cache-Control": "no-store" } },
