@@ -773,17 +773,8 @@ export default function Chat() {
                               : "看看为什么这样说 ＋"}
                           </Button>
                           {expanded.includes(row.id) && (
-                            <MessageText className="association-text">
-                              {row.association}
-                              {row.approach ? ` · ${row.approach}` : ""}
-                              {"\n"}
-                              {
-                                modes.find((item) => item.id === row.mode)
-                                  ?.label
-                              }
-                              {row.mode === "external"
-                                ? " · 来源由客户端声明"
-                                : ` · ${row.model}`}
+                            <MessageText aiGenerated external={row.mode === "external"} className="association-text">
+                              {`${row.association}${row.approach ? ` · ${row.approach}` : ""}\n${modes.find((item) => item.id === row.mode)?.label || ""}${row.mode === "external" ? " · 来源由客户端声明" : ` · ${row.model}`}`}
                             </MessageText>
                           )}
                         </View>

@@ -1,5 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
-import { AppError } from "../domain/contracts";
+import { AppError, type Owner } from "../domain/contracts";
 import { GET, POST } from "../app/api/hello/[...path]/route";
 
 const service = vi.hoisted(() => ({ exportData: vi.fn(), withdraw: vi.fn(), recoverOwner: vi.fn() }));
@@ -8,7 +8,7 @@ vi.mock("./service", () => ({ privacyService: () => service, withRecoveredOwner:
 vi.mock("../domain/greetings", () => ({ GreetingService: class {} }));
 vi.mock("../domain/context", () => ({ ContextService: class {} }));
 vi.mock("../server/ag-ui", () => ({ agentStream: vi.fn(), readAgentInput: vi.fn() }));
-vi.mock("../server/auth", () => ({ authenticate: vi.fn(async () => ({ id: "test-owner", auth: "cookie" })), checkOrigin: vi.fn(), checkClientRequest: vi.fn(), mintCredential: vi.fn(), revokeTokens: vi.fn(), COOKIE: "hello_identity" }));
+vi.mock("../server/auth", () => ({ withAuthenticatedExecution: async (_payload: unknown, _request: Request, owner: Owner, action: (owner: Owner) => Promise<Response>) => action(owner), authenticate: vi.fn(async () => ({ id: "test-owner", auth: "cookie" })), checkOrigin: vi.fn(), checkClientRequest: vi.fn(), mintCredential: vi.fn(), revokeTokens: vi.fn(), COOKIE: "hello_identity" }));
 beforeEach(() => vi.clearAllMocks());
 it.each([413, 429])("导出异步错误 %s 返回真实状态与 JSON 原因，而不是未捕获的 500", async (status) => {
   service.exportData.mockRejectedValue(new AppError(status, "export was not created"));

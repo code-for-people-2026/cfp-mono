@@ -1,5 +1,5 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { withCredentialLock } from "./credential-lock";
+import { withCredentialExecution, withCredentialLock } from "./credential-lock";
 import type { Payload } from "payload";
 import { AppError, type Owner } from "../domain/contracts";
 
@@ -91,4 +91,12 @@ export async function revokeCredentials(payload: Payload, owner: string, kind?: 
 }
 export async function revokeTokens(payload: Payload, owner: Owner) {
   await revokeCredentials(payload, owner.id, "bearer");
+}
+
+export async function withAuthenticatedExecution<T>(payload: Payload, request: Request, expected: Owner, action: (owner: Owner) => Promise<T>, bearerOnly = false): Promise<T> {
+  return withCredentialExecution(expected.id, async () => {
+    const current = await authenticate(payload, request, bearerOnly);
+    if (current.id !== expected.id) throw new AppError(401, "连接身份已变更，请重新连接");
+    return action(current);
+  });
 }

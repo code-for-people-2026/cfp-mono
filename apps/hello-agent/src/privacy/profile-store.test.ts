@@ -3,12 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { BasePayload, buildConfig, type Payload } from "payload";
 import { sqliteAdapter, sql, type MigrateUpArgs } from "@payloadcms/db-sqlite";
-import { afterAll, beforeAll, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { privacyCollections } from "./collections";
 import { updateProfile } from "./profile-store";
 import { PrivacyService, profileFor, recoverOwner, withRecoveredOwner } from "./service";
 import { authenticate, mintCredential } from "../server/auth";
 import { POST } from "../app/api/hello/[...path]/route";
+import { POST as mcpPost } from "../app/api/mcp/route";
 import { Repository } from "../cms/repository";
 import { privacyPolicy } from "./policy";
 import { up as initialPreview } from "../cms/migrations/20260930_123608_initial_preview";
@@ -21,9 +22,21 @@ import { up as revision } from "../cms/migrations/20261013_174000_privacy_revisi
 vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn() }));
 const holder = vi.hoisted(() => ({ payload: undefined as Payload | undefined }));
 vi.mock("../cms/client", () => ({ cms: () => holder.payload }));
-vi.mock("../domain/greetings", () => ({ GreetingService: class {} }));
+const business = vi.hoisted(() => ({ createSession: vi.fn(), generate: vi.fn(), history: vi.fn(), image: vi.fn() }));
+vi.mock("../domain/greetings", () => ({ GreetingService: class {
+  constructor(readonly repo: Repository) {}
+  createSession() { return business.createSession(); }
+  generateGreeting() { return business.generate(); }
+  history() { return business.history(); }
+  media = { read: () => business.image() };
+} }));
+beforeEach(() => {
+  business.createSession.mockReset().mockResolvedValue({ id: 7 });
+  business.generate.mockReset().mockResolvedValue({ id: 1, greeting: "synthetic reply", artifacts: [], status: "completed" });
+  business.history.mockReset().mockResolvedValue([{ id: 1, greeting: "synthetic history" }]);
+  business.image.mockReset().mockResolvedValue({ bytes: Buffer.from("synthetic-image"), mimeType: "image/jpeg" });
+});
 vi.mock("../domain/context", () => ({ ContextService: class {} }));
-vi.mock("../server/ag-ui", () => ({ agentStream: vi.fn(), readAgentInput: vi.fn() }));
 vi.mock("./deletion-ledger", () => ({ writeDeletionLedger: vi.fn() }));
 let payload: Payload, directory: string;
 beforeAll(async () => {
@@ -231,4 +244,93 @@ it("接收方变更前旧 bearer 撤销失败，授权与历史保持原样，�
     expect(await profileFor(payload, service.repo.owner.id)).toMatchObject({ revision: before.revision + 1, consent: next });
     await expect(authenticate(payload, request)).rejects.toMatchObject({ status: 401 });
   } finally { erase.mockRestore(); }
+});
+
+async function authorized(owner: string) {
+  const service = await setup(owner);
+  await updateProfile(payload, (await profileFor(payload, owner))!, { consent: { ...consent(), sensitive: true, external: true, externalRecipient: { name: "接收方 A", contact: "a@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } }, expiresAt: "2099-01-01T00:00:00.000Z", historyInspected: true });
+  return service;
+}
+const agentBody = () => ({ protocolVersion: "1.0", threadId: "7", runId: crypto.randomUUID(), tools: [], context: [], messages: [{ id: "u", role: "user", content: "test" }], forwardedProps: { mode: "platform", mediaIds: [] } });
+function delayedRequest(url: string, headers: Record<string, string>, body: unknown) {
+  const paused = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
+  const stream = new ReadableStream<Uint8Array>({ async pull(controller) {
+    paused.resolve(); await resume.promise;
+    controller.enqueue(new TextEncoder().encode(JSON.stringify(body))); controller.close();
+  } }, { highWaterMark: 0 });
+  const init: RequestInit & { duplex: "half" } = { method: "POST", headers, body: stream, duplex: "half" };
+  return { paused, resume, request: new Request(url, init) };
+}
+it.each((["cookie", "miniapp"] as const).flatMap((kind) => ["sessions", "greet", "ag-ui"].map((route) => ({ kind, route }))))("$kind 延迟 $route 正文跨过恢复后拒绝执行业务", async ({ kind, route }) => {
+  const service = await authorized(`business-${kind}-${route}`);
+  const { code } = await service.recoveryCode();
+  const old = await mintCredential(payload, kind, service.repo.owner.id);
+  const headers: Record<string, string> = kind === "cookie" ? { origin: "http://localhost", cookie: `hello_identity=${old.token}` } : { authorization: `Bearer ${old.token}` };
+  const body = route === "ag-ui" ? agentBody() : route === "sessions" ? { title: "new" } : { sessionId: 7, requestId: crypto.randomUUID(), mode: "platform", input: { text: "表单回应", formResponse: { turnId: 1, artifactId: "form", values: { answer: "yes" } } } };
+  const delayed = delayedRequest(`http://localhost/api/hello/${route}`, headers, body);
+  vi.stubEnv("HELLO_ORIGIN", "http://localhost");
+  const pending = POST(delayed.request, { params: Promise.resolve({ path: [route] }) });
+  try {
+    await delayed.paused.promise;
+    await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
+    delayed.resume.resolve(); expect((await pending).status).toBe(401);
+    expect(business.createSession).not.toHaveBeenCalled(); expect(business.generate).not.toHaveBeenCalled();
+  } finally { delayed.resume.resolve(); await pending; vi.unstubAllEnvs(); }
+});
+const rpcHeaders = (token: string) => ({ authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" });
+it.each(["recovery", "recipient"].flatMap((change) => ["hello_get_history", "hello_get_image"].map((tool) => ({ change, tool }))))("MCP $tool 延迟正文跨过 $change 后旧 token 失效，新连接仍可执行真实传输", async ({ change, tool }) => {
+  const service = await authorized(`mcp-${change}-${tool}`);
+  const { code } = await service.recoveryCode();
+  const old = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: tool === "hello_get_image" ? { mediaId: 1 } : { sessionId: 7 } } };
+  const delayed = delayedRequest("http://localhost/api/mcp", rpcHeaders(old.token), body);
+  const pending = mcpPost(delayed.request);
+  try {
+    await delayed.paused.promise;
+    if (change === "recovery") await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
+    else await service.consent({ ...consent(), sensitive: true, external: true, externalRecipient: { name: "接收方 B", contact: "b@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } });
+    delayed.resume.resolve(); expect((await pending).status).toBe(401);
+    expect(business.history).not.toHaveBeenCalled(); expect(business.image).not.toHaveBeenCalled();
+    const current = await mintCredential(payload, "bearer", service.repo.owner.id);
+    const response = await mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(current.token), body: JSON.stringify(body) }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.isError).not.toBe(true);
+    expect(tool === "hello_get_image" ? business.image : business.history).toHaveBeenCalledTimes(1);
+  } finally { delayed.resume.resolve(); await pending; }
+});
+it.each(["success", "failure", "disconnect"])("AG-UI %s 在后台生成结束前持续保护凭证，之后可恢复", async (mode) => {
+  const service = await authorized(`stream-${mode}`);
+  const { code } = await service.recoveryCode();
+  const credential = await mintCredential(payload, "cookie", service.repo.owner.id);
+  const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+  business.generate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; if (mode === "failure") throw new Error("injected provider error"); return { id: 1, greeting: "ok", artifacts: [], status: "completed" }; });
+  vi.stubEnv("HELLO_ORIGIN", "http://localhost");
+  const response = await POST(new Request("http://localhost/api/hello/ag-ui", { method: "POST", headers: { origin: "http://localhost", cookie: `hello_identity=${credential.token}` }, body: JSON.stringify(agentBody()) }), { params: Promise.resolve({ path: ["ag-ui"] }) });
+  try {
+    expect(response.status).toBe(200); await started.promise;
+    const consumed = mode === "disconnect" ? response.body!.cancel() : response.text();
+    await expect(recoverOwner(payload, code)).rejects.toMatchObject({ status: 409 });
+    finish.resolve(); await consumed;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await expect(recoverOwner(payload, code)).resolves.toBe(service.repo.owner.id);
+  } finally { finish.resolve(); vi.unstubAllEnvs(); }
+});
+
+it("MCP 工具执行结束前不能恢复身份，真实 JSON 传输完成后释放保护", async () => {
+  const service = await authorized("mcp-active-execution");
+  const { code } = await service.recoveryCode();
+  const credential = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
+  business.history.mockImplementationOnce(async () => { started.resolve(); await finish.promise; return [{ id: 1, greeting: "synthetic history" }]; });
+  const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hello_get_history", arguments: { sessionId: 7 } } };
+  const pending = mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(credential.token), body: JSON.stringify(body) }));
+  try {
+    await started.promise;
+    await expect(recoverOwner(payload, code)).rejects.toMatchObject({ status: 409 });
+    finish.resolve();
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json()).result.isError).not.toBe(true);
+    await expect(recoverOwner(payload, code)).resolves.toBe(service.repo.owner.id);
+  } finally { finish.resolve(); await pending; }
 });

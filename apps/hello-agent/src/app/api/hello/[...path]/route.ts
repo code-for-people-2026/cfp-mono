@@ -11,13 +11,14 @@ import { adConfiguration } from "../../../../domain/rewarded-ads";
 import { DEFAULT_MODEL } from "../../../../models/deepseek";
 import {
   authenticate,
+  withAuthenticatedExecution,
   checkOrigin,
   checkClientRequest,
   COOKIE,
   mintCredential,
   revokeTokens,
 } from "../../../../server/auth";
-import { withCredentialLock } from "../../../../server/credential-lock";
+import { withCredentialExecution, withCredentialLock } from "../../../../server/credential-lock";
 import { failure, readJson, rateLimit } from "../../../../server/http";
 import { agentStream, readAgentInput } from "../../../../server/ag-ui";
 import {
@@ -54,84 +55,86 @@ export async function GET(request: Request, context: Context) {
       });
     const payload = await cms();
     const owner = await authenticate(payload, request);
-    if (path[0] === "privacy") return await privacyGet(payload, owner, path[1]);
-    if (owner.auth === "bearer") {
-      await privacyService(payload, owner).require("external");
-      await privacyService(payload, owner).requireInput({});
-    }
-    const service = new GreetingService(new Repository(payload, owner));
-    if (
-      ["artifact-image", "artifact-page"].includes(path[0]) &&
-      path.length === 3
-    ) {
-      const artifact = await readArtifact(
-        service.repo,
-        z.coerce.number().int().positive().parse(path[1]),
-        path[2],
-      );
-      const turn = await service.repo.get("greetings", Number(path[1]));
-      const contentId = `${owner.id}:${turn.id}:${turn.fingerprint}:${artifact.id}`;
-      const external = turn.mode === "external";
-      if (path[0] === "artifact-image" && artifact.kind === "image") {
-        const result =
-          artifact.source.type === "media"
-            ? await service.media.read(artifact.source.mediaId)
-            : { bytes: await illustrationPng(artifact, contentId, external), mimeType: "image/png" };
-        return new Response(new Uint8Array(result.bytes), {
+    return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
+      if (path[0] === "privacy") return await privacyGet(payload, owner, path[1]);
+      if (owner.auth === "bearer") {
+        await privacyService(payload, owner).require("external");
+        await privacyService(payload, owner).requireInput({});
+      }
+      const service = new GreetingService(new Repository(payload, owner));
+      if (
+        ["artifact-image", "artifact-page"].includes(path[0]) &&
+        path.length === 3
+      ) {
+        const artifact = await readArtifact(
+          service.repo,
+          z.coerce.number().int().positive().parse(path[1]),
+          path[2],
+        );
+        const turn = await service.repo.get("greetings", Number(path[1]));
+        const contentId = `${owner.id}:${turn.id}:${turn.fingerprint}:${artifact.id}`;
+        const external = turn.mode === "external";
+        if (path[0] === "artifact-image" && artifact.kind === "image") {
+          const result =
+            artifact.source.type === "media"
+              ? await service.media.read(artifact.source.mediaId)
+              : { bytes: await illustrationPng(artifact, contentId, external), mimeType: "image/png" };
+          return new Response(new Uint8Array(result.bytes), {
+            headers: {
+              "Content-Type": result.mimeType,
+              "Cache-Control": "private, no-store",
+              "X-Content-Type-Options": "nosniff",
+            },
+          });
+        }
+        if (path[0] === "artifact-page" && artifact.kind === "page")
+          return new Response(pageHtml(artifact, contentId, external), {
+            headers: {
+              "Content-Type": "text/html; charset=utf-8",
+              "Cache-Control": "private, no-store",
+              "X-Content-Type-Options": "nosniff",
+              "Content-Security-Policy":
+                "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox",
+              "Referrer-Policy": "no-referrer",
+            },
+          });
+        throw new AppError(404, "作品类型不匹配");
+      }
+      if (path[0] === "context" && path.length === 2)
+        return json(
+          await new ContextService(service.repo).view(
+            z.coerce.number().int().positive().parse(path[1]),
+          ),
+        );
+      if (path[0] === "sessions" && !path[1])
+        return json(await service.sessions());
+      if (path[0] === "sessions" && path[2] === "requests" && path.length === 4)
+        return json(
+          await service.submission(
+            z.coerce.number().int().positive().parse(path[1]),
+            z.string().uuid().parse(path[3]),
+          ),
+        );
+      if (path[0] === "sessions" && path[1])
+        return json(
+          await service.history(
+            z.coerce.number().int().positive().parse(path[1]),
+          ),
+        );
+      if (path[0] === "media" && path[1]) {
+        const media = await service.media.read(
+          z.coerce.number().int().positive().parse(path[1]),
+        );
+        return new Response(new Uint8Array(media.bytes), {
           headers: {
-            "Content-Type": result.mimeType,
+            "Content-Type": media.mimeType,
             "Cache-Control": "private, no-store",
             "X-Content-Type-Options": "nosniff",
           },
         });
       }
-      if (path[0] === "artifact-page" && artifact.kind === "page")
-        return new Response(pageHtml(artifact, contentId, external), {
-          headers: {
-            "Content-Type": "text/html; charset=utf-8",
-            "Cache-Control": "private, no-store",
-            "X-Content-Type-Options": "nosniff",
-            "Content-Security-Policy":
-              "default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; sandbox",
-            "Referrer-Policy": "no-referrer",
-          },
-        });
-      throw new AppError(404, "作品类型不匹配");
-    }
-    if (path[0] === "context" && path.length === 2)
-      return json(
-        await new ContextService(service.repo).view(
-          z.coerce.number().int().positive().parse(path[1]),
-        ),
-      );
-    if (path[0] === "sessions" && !path[1])
-      return json(await service.sessions());
-    if (path[0] === "sessions" && path[2] === "requests" && path.length === 4)
-      return json(
-        await service.submission(
-          z.coerce.number().int().positive().parse(path[1]),
-          z.string().uuid().parse(path[3]),
-        ),
-      );
-    if (path[0] === "sessions" && path[1])
-      return json(
-        await service.history(
-          z.coerce.number().int().positive().parse(path[1]),
-        ),
-      );
-    if (path[0] === "media" && path[1]) {
-      const media = await service.media.read(
-        z.coerce.number().int().positive().parse(path[1]),
-      );
-      return new Response(new Uint8Array(media.bytes), {
-        headers: {
-          "Content-Type": media.mimeType,
-          "Cache-Control": "private, no-store",
-          "X-Content-Type-Options": "nosniff",
-        },
-      });
-    }
-    throw new AppError(404, "接口不存在");
+      throw new AppError(404, "接口不存在");
+    });
   } catch (error) {
     return failure(error);
   }
@@ -172,8 +175,6 @@ export async function POST(request: Request, context: Context) {
     checkClientRequest(request, owner);
     rateLimit(owner.id);
     if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
-    const privacy = privacyService(payload, owner);
-    const service = new GreetingService(new Repository(payload, owner));
     if (path[0] === "token") {
       return await withCredentialLock(owner.id, async () => {
         // Cached authentication can predate recovery. Validate it again inside
@@ -191,83 +192,91 @@ export async function POST(request: Request, context: Context) {
         return json({ token: credential.token, expiresAt: credential.expiresAt });
       });
     }
-    await privacy.require();
     const body = await readJson(
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
     );
-    if (path[0] === "ag-ui" && path.length === 1) {
-      const input = readAgentInput(body);
-      await privacy.requireInput(input);
-      return agentStream(service, input);
-    }
-    if (path[0] === "context") {
-      const args = z
-        .object({
-          sessionId: z.number().int().positive(),
-          rewardId: z.string().uuid().optional(),
-          requestId: z.string().uuid().optional(),
-          revision: z.number().int().nonnegative().optional(),
-          completed: z.boolean().optional(),
-          mode: z.enum(["platform", "byok"]).default("platform"),
-          apiKey: z.string().min(10).max(256).optional(),
-        })
-        .parse(body);
-      await privacy.requireInput({});
-      const memory = new ContextService(service.repo);
-      if (path[1] === "ad-start")
-        return json(await memory.startAd(args.sessionId));
-      if (path[1] === "preview-compact") {
-        if (args.mode === "byok" && !args.apiKey)
-          throw new AppError(400, "请填写本次用于整理记忆的 DeepSeek 密钥");
-        return json(
-          await memory.compactPreview(
-            args.sessionId,
-            z.string().uuid().parse(args.requestId),
-            z.number().int().nonnegative().parse(args.revision),
-            args.mode === "byok" ? args.apiKey : undefined,
-          ),
-        );
+    return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
+      checkClientRequest(request, owner);
+      const privacy = privacyService(payload, owner);
+      const service = new GreetingService(new Repository(payload, owner));
+      await privacy.require();
+      if (path[0] === "ag-ui" && path.length === 1) {
+        const input = readAgentInput(body);
+        await privacy.requireInput(input);
+        // The stream starts generation before returning its Response. A nested
+        // lease keeps revocation excluded until that work finishes or fails,
+        // including when the client disconnects.
+        return agentStream({ generateGreeting: (args) => withCredentialExecution(owner.id, () => service.generateGreeting(args)) }, input);
       }
-      const rewardId = z.string().uuid().parse(args.rewardId);
-      if (path[1] === "ad-complete")
-        return json(
-          await memory.finishAd(
-            args.sessionId,
-            rewardId,
-            args.completed === true,
-          ),
-        );
-      if (path[1] === "compact") {
-        if (args.mode === "byok" && !args.apiKey)
-          throw new AppError(400, "请填写本次用于整理记忆的 DeepSeek 密钥");
-        return json(
-          await memory.compact(
-            args.sessionId,
-            rewardId,
-            args.mode === "byok" ? args.apiKey : undefined,
-          ),
-        );
+      if (path[0] === "context") {
+        const args = z
+          .object({
+            sessionId: z.number().int().positive(),
+            rewardId: z.string().uuid().optional(),
+            requestId: z.string().uuid().optional(),
+            revision: z.number().int().nonnegative().optional(),
+            completed: z.boolean().optional(),
+            mode: z.enum(["platform", "byok"]).default("platform"),
+            apiKey: z.string().min(10).max(256).optional(),
+          })
+          .parse(body);
+        await privacy.requireInput({});
+        const memory = new ContextService(service.repo);
+        if (path[1] === "ad-start")
+          return json(await memory.startAd(args.sessionId));
+        if (path[1] === "preview-compact") {
+          if (args.mode === "byok" && !args.apiKey)
+            throw new AppError(400, "请填写本次用于整理记忆的 DeepSeek 密钥");
+          return json(
+            await memory.compactPreview(
+              args.sessionId,
+              z.string().uuid().parse(args.requestId),
+              z.number().int().nonnegative().parse(args.revision),
+              args.mode === "byok" ? args.apiKey : undefined,
+            ),
+          );
+        }
+        const rewardId = z.string().uuid().parse(args.rewardId);
+        if (path[1] === "ad-complete")
+          return json(
+            await memory.finishAd(
+              args.sessionId,
+              rewardId,
+              args.completed === true,
+            ),
+          );
+        if (path[1] === "compact") {
+          if (args.mode === "byok" && !args.apiKey)
+            throw new AppError(400, "请填写本次用于整理记忆的 DeepSeek 密钥");
+          return json(
+            await memory.compact(
+              args.sessionId,
+              rewardId,
+              args.mode === "byok" ? args.apiKey : undefined,
+            ),
+          );
+        }
       }
-    }
-    if (path[0] === "sessions") {
-      const { title } = z
-        .object({ title: z.string().trim().min(1).max(80).optional() })
-        .parse(body);
-      return json(await service.createSession(title));
-    }
-    if (path[0] === "greet") {
-      await privacy.requireInput(body);
-      return json(await service.generateGreeting(body));
-    }
-    if (path[0] === "upload") {
-      await privacy.requireImageInput();
-      const { base64 } = z
-        .object({ base64: z.string().min(1).max(7_000_000) })
-        .parse(body);
-      return json(await service.upload(Buffer.from(base64, "base64")));
-    }
-    throw new AppError(404, "接口不存在");
+      if (path[0] === "sessions") {
+        const { title } = z
+          .object({ title: z.string().trim().min(1).max(80).optional() })
+          .parse(body);
+        return json(await service.createSession(title));
+      }
+      if (path[0] === "greet") {
+        await privacy.requireInput(body);
+        return json(await service.generateGreeting(body));
+      }
+      if (path[0] === "upload") {
+        await privacy.requireImageInput();
+        const { base64 } = z
+          .object({ base64: z.string().min(1).max(7_000_000) })
+          .parse(body);
+        return json(await service.upload(Buffer.from(base64, "base64")));
+      }
+      throw new AppError(404, "接口不存在");
+    });
   } catch (error) {
     return failure(error);
   }
