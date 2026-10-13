@@ -16,7 +16,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
   const directory = await mkdtemp(path.join(tmpdir(), "hello-ledger-pages-"));
   try {
     const ledger = path.join(directory, "ledger.ndjson");
-    await writeFile(ledger, ["already-deleted", "remaining"].map((owner) => JSON.stringify({ ownerDigest: createHash("sha256").update(owner).digest("hex") })).join("\n"));
+    await writeFile(ledger, [...Array<string>(5000).fill("already-deleted"), "remaining"].map((owner) => JSON.stringify({ ownerDigest: createHash("sha256").update(owner).digest("hex") })).join("\n"));
     const source = Array.from({ length: 215 }, (_, index) => ({ id: index + 1, owner: index === 0 ? "already-deleted" : index === 214 ? "remaining" : `other-${index}`, state: index === 0 ? "deleted" : "active", expiresAt: null }));
     const find = vi.fn(async ({ collection, where, select, limit, pagination, sort, depth }) => {
       expect({ limit, pagination, sort, depth }).toEqual({ limit: 100, pagination: false, sort: "id", depth: 0 });
@@ -29,5 +29,16 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
     expect(find).toHaveBeenCalledTimes(24); // profile metadata + seven owner scans, three pages each
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+it("流式清单末尾损坏时不开始数据库扫描或删除", async () => {
+  cleanup.mockClear();
+  const directory = await mkdtemp(path.join(tmpdir(), "hello-ledger-invalid-tail-"));
+  try {
+    const ledger = path.join(directory, "ledger.ndjson");
+    await writeFile(ledger, JSON.stringify({ ownerDigest: "a".repeat(64) }) + "\n{broken");
+    const find = vi.fn(), erase = vi.fn();
+    await expect(maintainPrivacy({ find, delete: erase } as unknown as Payload, { apply: true, restoreLedger: ledger })).rejects.toThrow("禁止恢复开放");
+    expect(find).not.toHaveBeenCalled(); expect(erase).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

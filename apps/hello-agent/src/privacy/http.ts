@@ -32,12 +32,12 @@ export async function recoveryResponse(payload: Payload, request: Request) {
     return response;
   }));
 }
-export async function privacyGet(payload: Payload, owner: Owner, action: string | undefined) {
+export async function privacyGet(payload: Payload, owner: Owner, action: string | undefined, request: Request) {
   if (owner.auth === "bearer") throw new AppError(403, "请本人打开隐私与数据页面");
   const service = privacyService(payload, owner);
   if (!action) return json(await service.status());
   if (action === "export") {
-    const release = beginPrivacyExport(owner.id);
+    const release = beginPrivacyExport(owner.id, request);
     try {
       const response = json(await service.exportData());
       response.headers.set("Content-Disposition", 'attachment; filename="aj-personal-data.json"');

@@ -54,3 +54,25 @@ it("等待中的变更失败后释放排他状态，其他变更可以重试", a
   finish.resolve(); await request; await rejected;
   await expect(withCredentialLock("failed-writer", async () => "retried")).resolves.toBe("retried");
 });
+
+it("业务一直不结束时，撤权等待有界失败并释放等待状态，不迟到执行旧变更", async () => {
+  vi.useFakeTimers();
+  const finish = Promise.withResolvers<void>();
+  const request = withCredentialExecution("wedged", () => finish.promise);
+  const change = vi.fn(async () => {});
+  const pending = withCredentialLock("wedged", change);
+  const rejected = expect(pending).rejects.toMatchObject({ status: 503 });
+  try {
+    await vi.advanceTimersByTimeAsync(79_999);
+    expect(change).not.toHaveBeenCalled();
+    await expect(withCredentialExecution("wedged", async () => {})).rejects.toMatchObject({ status: 409 });
+    await vi.advanceTimersByTimeAsync(1); await rejected;
+    await expect(withCredentialExecution("wedged", async () => "readable")).resolves.toBe("readable");
+    expect(vi.getTimerCount()).toBe(0);
+    const retry = withCredentialLock("wedged", async () => "changed-on-retry");
+    finish.resolve(); await request;
+    await expect(retry).resolves.toBe("changed-on-retry");
+    expect(change).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { finish.resolve(); await Promise.allSettled([request, pending]); vi.useRealTimers(); }
+});

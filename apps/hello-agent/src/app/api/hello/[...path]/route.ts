@@ -56,7 +56,7 @@ export async function GET(request: Request, context: Context) {
     const payload = await cms();
     const owner = await authenticate(payload, request);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
-      if (path[0] === "privacy") return await privacyGet(payload, owner, path[1]);
+      if (path[0] === "privacy") return await privacyGet(payload, owner, path[1], request);
       if (owner.auth === "bearer") {
         await privacyService(payload, owner).require("external");
         await privacyService(payload, owner).requireInput({});

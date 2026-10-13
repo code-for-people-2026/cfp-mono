@@ -24,7 +24,7 @@ import {
 import { privateImageSource } from "./api";
 import { MessageText } from "./message-text";
 
-function ArtifactImage({ url, alt }: { url: string; alt: string }) {
+function ArtifactImage({ url, alt, external }: { url: string; alt: string; external: boolean }) {
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -56,7 +56,7 @@ function ArtifactImage({ url, alt }: { url: string; alt: string }) {
           {failed ? "图片暂时无法读取" : "正在取图片…"}
         </MessageText>
       )}
-      <MessageText className="artifact-caption">{alt}</MessageText>
+      <MessageText aiGenerated external={external} className="artifact-caption">{alt}</MessageText>
     </View>
   );
 }
@@ -149,7 +149,7 @@ function SurfaceView({
         );
       case "Image":
         return (
-          <ArtifactImage key={id} url={component.url} alt={component.alt} />
+          <ArtifactImage key={id} url={component.url} alt={component.alt} external={external} />
         );
       case "Table":
         return (

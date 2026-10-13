@@ -31,3 +31,32 @@ it("绝对路径去除配置空白后用于实际持久写入，清单只含身�
 it("显式恢复路径中的空字节被拒绝", () => {
   expect(deletionLedgerPath("/persistent/ledger\0.ndjson")).toBeUndefined();
 });
+
+it.each(["{", "null", '{"ownerDigest":"bad"}', "x".repeat(4097)])("流式恢复拒绝损坏或超长记录（case %#）", async (record) => {
+  const { writeFile } = await import("node:fs/promises");
+  const { readDeletionLedger } = await import("./deletion-ledger");
+  const directory = await mkdtemp(path.join(os.tmpdir(), "privacy-ledger-invalid-"));
+  try {
+    const file = path.join(directory, "ledger.ndjson"); await writeFile(file, record);
+    await expect((async () => { for await (const digest of readDeletionLedger(file)) void digest; })()).rejects.toThrow("禁止恢复开放");
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+it("流式读取支持跨块记录、CRLF、空行和没有末尾换行的大量重复项", async () => {
+  const { open } = await import("node:fs/promises");
+  const { readDeletionLedger } = await import("./deletion-ledger");
+  const directory = await mkdtemp(path.join(os.tmpdir(), "privacy-ledger-stream-"));
+  try {
+    const file = path.join(directory, "ledger.ndjson");
+    const a = "a".repeat(64), b = "b".repeat(64);
+    const row = JSON.stringify({ ownerDigest: a, requestedAt: "2026-10-13" }) + "\r\n\n";
+    const handle = await open(file, "w");
+    try {
+      for (let chunk = 0; chunk < 500; chunk++) await handle.write(row.repeat(100));
+      await handle.write(JSON.stringify({ ownerDigest: b }));
+    } finally { await handle.close(); }
+    const unique = new Set<string>(); let count = 0;
+    for await (const digest of readDeletionLedger(file)) { count++; unique.add(digest); }
+    expect(count).toBe(50_001);
+    expect([...unique]).toEqual([a, b]);
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
