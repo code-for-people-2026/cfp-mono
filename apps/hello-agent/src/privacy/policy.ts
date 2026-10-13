@@ -8,13 +8,13 @@ export function privacyPolicy() {
   const backupDays = positiveDays(process.env.HELLO_PRIVACY_BACKUP_DAYS);
   const responseDays = positiveDays(process.env.HELLO_PRIVACY_RESPONSE_DAYS);
   const deployment = process.env.HELLO_PRIVACY_STORAGE_LOCATION?.trim();
-  const imageReview = process.env.HELLO_IMAGE_REVIEW_URL ? {
+  const imageReview = process.env.HELLO_IMAGE_REVIEW_URL?.trim() ? {
     name: process.env.HELLO_IMAGE_REVIEW_PROVIDER,
     contact: process.env.HELLO_IMAGE_REVIEW_CONTACT,
     region: process.env.HELLO_IMAGE_REVIEW_REGION,
     policy: process.env.HELLO_IMAGE_REVIEW_PRIVACY_URL,
   } : undefined;
-  const imageReviewDisclosed = !imageReview || Object.values(imageReview).every((value) => !!value?.trim());
+  const imageReviewDisclosed = !!imageReview && Object.values(imageReview).every((value) => !!value?.trim());
   const ready = !!(imageReviewDisclosed && process.env.HELLO_PRIVACY_CONTACT?.trim() && retentionDays && backupDays && responseDays && deployment && process.env.HELLO_PRIVACY_DELETION_LEDGER && process.env.HELLO_PRIVACY_OPERATIONS_APPROVED === "true");
   const documents = [
     { title: "隐私政策", paragraphs: [

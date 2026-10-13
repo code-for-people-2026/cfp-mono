@@ -1,3 +1,4 @@
+import { labeledAiText } from "./ai-copy";
 import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, safetyInboxSchema, safetyReceiptSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
 import Taro from "@tarojs/taro";
 import {
@@ -416,7 +417,7 @@ export async function exportPersonalData() {
   rememberTemporaryFile(result.tempFilePath);
   await Taro.shareFileMessage({ filePath: result.tempFilePath, fileName: "hello-personal-data.json" });
 }
-export async function copyAiReply(value: string) { return copy(`AI 生成 · 阿 J 先生\n${value}`); }
+export async function copyAiReply(value: string, external = false) { return copy(labeledAiText(value, external)); }
 
 
 export const getSafety = () => request("safety", safetyInboxSchema);

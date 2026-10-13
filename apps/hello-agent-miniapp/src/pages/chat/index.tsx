@@ -736,9 +736,10 @@ export default function Chat() {
                   />
                   <View className="message-main">
                     <View
+                      data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <MessageText aiGenerated>
+                      <MessageText aiGenerated external={row.mode === "external"}>
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
@@ -747,6 +748,7 @@ export default function Chat() {
                       </MessageText>
                       {row.status === "completed" && (
                         <Artifacts
+                          external={row.mode === "external"}
                           turnId={row.id}
                           artifacts={row.artifacts}
                           responses={formResponses}
@@ -796,6 +798,7 @@ export default function Chat() {
                       </Text>
                       {row.status === "completed" && row.greeting && (
                         <CopyMessage
+                          external={row.mode === "external"}
                           value={row.greeting}
                           label="复制阿 J 先生的回复"
                         />

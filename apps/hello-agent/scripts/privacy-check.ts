@@ -14,6 +14,7 @@ process.env.PAYLOAD_SECRET = "privacy-isolated-test-only";
 process.env.HELLO_PRIVACY_DELETION_LEDGER = `${dir}/deletions.ndjson`;
 process.env.HELLO_MEDIA_STORAGE = "database";
 process.env.HELLO_DEPLOYED = "false";
+Object.assign(process.env, { HELLO_IMAGE_REVIEW_URL: "https://review.example.invalid", HELLO_IMAGE_REVIEW_PROVIDER: "合成审核器", HELLO_IMAGE_REVIEW_CONTACT: "test@example.invalid", HELLO_IMAGE_REVIEW_REGION: "隔离本地测试", HELLO_IMAGE_REVIEW_PRIVACY_URL: "https://example.invalid/privacy" });
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { PrivacyService, recoverOwner } = await import("../src/privacy/service");

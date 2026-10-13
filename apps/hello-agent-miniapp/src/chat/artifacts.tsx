@@ -62,6 +62,7 @@ function ArtifactImage({ url, alt }: { url: string; alt: string }) {
 }
 
 type Props = {
+  external?: boolean;
   disabled?: boolean;
   onAction?: (action: ClientEvent) => Promise<void>;
   submitted?: boolean;
@@ -73,6 +74,7 @@ function SurfaceView({
   onAction,
   submitted,
   initialValues,
+  external = false,
 }: Props & { surface: Surface }) {
   const [values, setValues] = useState<FormValues>(
     initialValues || surface.values,
@@ -139,7 +141,7 @@ function SurfaceView({
         return (
           <MessageText
             key={id}
-            aiGenerated
+            aiGenerated external={external}
             className={`artifact-text artifact-${component.variant || "body"}`}
           >
             {component.text}
@@ -161,7 +163,7 @@ function SurfaceView({
                   {row.map((cell, cellIndex) => (
                     <MessageText
                       key={cellIndex}
-                      aiGenerated
+                      aiGenerated external={external}
                       className="artifact-table-cell"
                     >
                       {cell}
@@ -173,7 +175,7 @@ function SurfaceView({
           </ScrollView>
         );
       case "Page":
-        return <PageView key={id} component={component} />;
+        return <PageView key={id} component={component} external={external} />;
       case "FormField": {
         const field = component.field;
         const fieldId = component.value.path.slice("/values/".length);
@@ -245,13 +247,15 @@ function SurfaceView({
         );
     }
   }
-  return <View className="artifact-surface"><Text className="artifact-caption">AI 生成作品 · 用户填写和原图除外</Text>{render("root")}</View>;
+  return <View className="artifact-surface" data-ai-external={external ? "true" : "false"}><Text className="artifact-caption">AI 生成作品{external ? "（外部客户端声明）" : ""} · 用户填写和原图除外</Text>{render("root")}</View>;
 }
 
 function PageView({
   component,
+  external,
 }: {
   component: Extract<Component, { component: "Page" }>;
+  external: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const sections = expanded
@@ -260,19 +264,19 @@ function PageView({
   return (
     <View className="artifact-page">
       {component.page.subtitle && (
-        <MessageText className="artifact-caption">
+        <MessageText aiGenerated external={external} className="artifact-caption">
           {component.page.subtitle}
         </MessageText>
       )}
       {sections.map((section, index) => (
         <View key={index} className="artifact-section">
-          <MessageText className="artifact-heading">
+          <MessageText aiGenerated external={external} className="artifact-heading">
             {section.heading}
           </MessageText>
-          <MessageText className="artifact-text">{section.body}</MessageText>
+          <MessageText aiGenerated external={external} className="artifact-text">{section.body}</MessageText>
           {section.items?.map((item, i) => (
-            <MessageText key={i} className="artifact-text">
-              • {item}
+            <MessageText aiGenerated external={external} key={i} className="artifact-text">
+              {`• ${item}`}
             </MessageText>
           ))}
         </View>
