@@ -154,7 +154,7 @@ export function PrivacyData() {
     {!loading && !status && !done && action !== "recovery" && <Text className="page-result">当前没有有效身份。可以先在“身份恢复与旧记录”中找回，再管理原有数据。</Text>}
     {action === "export" && <>
       <Text className="page-intro">将属于你的记录保存一份，方便查阅和备份。</Text>
-      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">对话输入与回应作品、对话摘要、上传图片和授权信息。</Text><Text className="page-caption">被隔离的图片可能仅保留说明。自助导出上限为 8 MB 或 1000 条记录，超限可通过隐私政策中的联系渠道申请完整副本。</Text></View>
+      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">昵称头像、年龄申报、对话输入与回应作品、上传图片和授权信息。</Text><Text className="page-caption">被隔离的图片可能仅保留说明。自助导出上限为 8 MB 或 1000 条记录，超限可通过隐私政策中的联系渠道申请完整副本。</Text></View>
       <Text className="page-caption">文件可能含有私密信息，请妥善保管，分享前先检查内容。导出不会删除在线记录。</Text>
       <PageButton className="page-primary" disabled={unavailable} onClick={() => void act(async () => { await api.exportPersonalData(); setMessage("已发起导出，请保存文件并妥善保管其中的私密信息。"); })}>{busy ? "正在导出…" : "导出我的数据与图片"}</PageButton>
     </>}
@@ -170,21 +170,21 @@ export function PrivacyData() {
       <PageButton className="page-primary page-danger" disabled={unavailable} onClick={() => void act(async () => { const next = await api.withdrawConsent(); setStatus(next); notifyPrivacyChange({ status: next }); setDone(true); setMessage("全部授权已撤回，数据停止新处理并等待清理。你也可以进入删除数据立即执行删除。"); })}>{busy ? "正在撤回…" : "确认撤回全部授权"}</PageButton>
     </>}
     {action === "recovery" && <>
-      <Text className="page-intro">退出或清除缓存前，请保存恢复码。恢复码可以找回原有记录，请像密码一样妥善保管。</Text>
+      <Text className="page-intro">微信账号可再次登录恢复资料。旧访客记录可通过恢复码导出和删除，请像密码一样妥善保管。</Text>
       <View className="page-card page-card-padded"><Text className="page-heading">保管当前记录的恢复码</Text><Text className="page-copy">访客记录在凭证到期或清缓存后不能自动找回。请保存恢复码；重新生成会使旧恢复码失效。</Text>
         <PageButton className="page-secondary" disabled={unavailable} onClick={() => void act(async () => { setCode((await api.createRecoveryCode()).code); setStatus((current) => current ? { ...current, hasRecoveryCode: true } : current); })}>{status?.hasRecoveryCode ? "更换恢复码（旧码失效）" : "生成恢复码"}</PageButton>
         {code && <><Text className="privacy-code" selectable>{code}</Text><PageButton className="page-link" onClick={() => void act(async () => { await api.copy(code); setMessage("恢复码已复制，请自行妥善保管。"); })}>复制恢复码</PageButton></>}
       </View>
       <Text className="page-section-title">恢复原有记录</Text><View className="page-card page-card-padded"><Text className="page-copy">填入此前保存的恢复码。恢复成功后，原有连接将被撤销。</Text>
         <Input className="page-input" password value={recovery} maxlength={60} disabled={busy} placeholder="填写此前保存的恢复码" onInput={(event) => setRecovery(event.detail.value)} />
-        <PageButton className="page-primary" disabled={busy || !recovery.trim()} onClick={() => void act(async () => { await api.recoverIdentity(recovery); setRecovery(""); setCode(""); notifyPrivacyChange({ clearIdentity: true }); await refresh(); setMessage("记录已恢复，旧连接已撤销。返回聊天后将更新记录。"); })}>恢复记录</PageButton>
+        <PageButton className="page-primary" disabled={busy || !recovery.trim()} onClick={() => void act(async () => { await api.recoverIdentity(recovery); setRecovery(""); setCode(""); notifyPrivacyChange({ clearIdentity: true }); await refresh(); setMessage("已恢复数据管理权限，旧连接已撤销。使用聊天仍需微信登录。"); })}>恢复记录</PageButton>
       </View>
       <Text className="page-caption">没有任何有效凭证时，请通过隐私权利请求联系运营方核验归属。不要在反馈中发送完整恢复码。</Text>
       <PageButton className="page-link" onClick={() => void openHelp(undefined, "privacy")}>申请隐私权利协助 ›</PageButton>
       {status && <PageButton className="page-secondary" onClick={() => dataPage("logout")}>退出并撤销所有连接</PageButton>}
     </>}
     {action === "logout" && <>
-      <View className="page-card page-card-padded"><Text className="page-heading">退出前请保存恢复方式</Text><Text className="page-copy">退出会撤销全部设备及 MCP 连接，数据仍按政策保留。旧记录需要恢复码才能自行找回。</Text></View>
+      <View className="page-card page-card-padded"><Text className="page-heading">退出登录？</Text><Text className="page-copy">退出会撤销全部设备及外部连接，数据仍按政策保留。同一微信可再次登录；未绑定的旧访客记录需保管恢复码。</Text></View>
       <PageButton className="page-primary" disabled={unavailable} onClick={() => void act(async () => { await api.logoutIdentity(); notifyPrivacyChange({ clearIdentity: true }); setStatus(undefined); setCode(""); setDone(true); setMessage("已退出，全部连接已撤销，数据仍按政策保留。"); })}>确认退出并撤销连接</PageButton>
     </>}
   </SettingsPage>;
