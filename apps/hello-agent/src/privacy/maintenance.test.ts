@@ -3,9 +3,12 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { Payload } from "payload";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+import { configuredImageStore, type ImageObjectStore } from "../storage/oss";
 import { maintainPrivacy, PrivacyMaintenanceError } from "./maintenance";
 
+vi.mock("../storage/oss", () => ({ configuredImageStore: vi.fn() }));
+beforeEach(() => { vi.mocked(configuredImageStore).mockReset(); });
 const cleanup = vi.hoisted(() => vi.fn<(owner: string) => Promise<{ deleted: boolean }>>().mockResolvedValue({ deleted: true }));
 vi.mock("./service", () => ({ PrivacyService: class {
   constructor(readonly repo: { owner: { id: string } }) {}
@@ -96,5 +99,55 @@ it("流式清单末尾损坏时不开始数据库扫描或删除", async () => {
     const find = vi.fn(), erase = vi.fn();
     await expect(maintainPrivacy({ find, delete: erase } as unknown as Payload, { apply: true, restoreLedger: ledger })).rejects.toThrow("禁止恢复开放");
     expect(find).not.toHaveBeenCalled(); expect(erase).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("恢复没有数据库归属记录的图片，预览无写入，重放幂等且保留他人对象", async () => {
+  cleanup.mockClear();
+  const directory = await mkdtemp(path.join(tmpdir(), "hello-ledger-objects-"));
+  try {
+    const ledger = path.join(directory, "ledger.ndjson");
+    const ownerDigest = createHash("sha256").update("object-only").digest("hex");
+    const prefix = `hello-agent/${ownerDigest.slice(0, 32)}/`;
+    const otherKey = `hello-agent/${"b".repeat(32)}/other.jpg`;
+    const objects = new Set([`${prefix}orphan.jpg`, `${prefix}uncommitted.jpg`, otherKey]);
+    const removePrefix = vi.fn(async (value: string) => {
+      for (const key of objects) if (key.startsWith(value)) objects.delete(key);
+    });
+    vi.mocked(configuredImageStore).mockReturnValue({ bucket: "synthetic", region: "isolated", put: vi.fn(), get: vi.fn(), removePrefix });
+    await writeFile(ledger, Array<string>(3).fill(JSON.stringify({ ownerDigest })).join("\n"));
+    const payload = { find: vi.fn().mockResolvedValue({ docs: [] }), delete: vi.fn().mockResolvedValue({ errors: [] }) };
+    const options = { restoreLedger: ledger };
+    await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
+    expect(objects.size).toBe(3);
+    expect(configuredImageStore).not.toHaveBeenCalled(); expect(payload.delete).not.toHaveBeenCalled();
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: true })).resolves.toEqual({ dryRun: false, eligibleIdentities: 1, deleted: 1 });
+      expect([...objects]).toEqual([otherKey]);
+    }
+    expect(removePrefix.mock.calls).toEqual([[prefix], [prefix]]);
+    expect(cleanup).not.toHaveBeenCalled();
+  } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时重新清理", async () => {
+  cleanup.mockClear();
+  const directory = await mkdtemp(path.join(tmpdir(), "hello-ledger-objects-failure-"));
+  try {
+    const ledger = path.join(directory, "ledger.ndjson");
+    const digests = ["broken-object", "other-object"].map((owner) => createHash("sha256").update(owner).digest("hex"));
+    await writeFile(ledger, digests.map((ownerDigest) => JSON.stringify({ ownerDigest })).join("\n"));
+    const removePrefix = vi.fn<NonNullable<ImageObjectStore["removePrefix"]>>().mockResolvedValue(undefined).mockRejectedValueOnce(new Error("private object key"));
+    vi.mocked(configuredImageStore).mockReturnValue({ bucket: "synthetic", region: "isolated", put: vi.fn(), get: vi.fn(), removePrefix });
+    const payload = { find: vi.fn().mockResolvedValue({ docs: [] }), delete: vi.fn().mockResolvedValue({ errors: [] }) };
+    const options = { restoreLedger: ledger, apply: true };
+    const failure = await maintainPrivacy(payload as unknown as Payload, options).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(PrivacyMaintenanceError);
+    expect((failure as PrivacyMaintenanceError).result).toEqual({ dryRun: false, eligibleIdentities: 2, deleted: 1 });
+    expect((failure as PrivacyMaintenanceError).errors.map(String)).toEqual([`Error: 对象清理失败，ownerDigest=${digests[0]}`]);
+    expect(removePrefix).toHaveBeenCalledTimes(2); expect(payload.delete).toHaveBeenCalledOnce();
+    await expect(maintainPrivacy(payload as unknown as Payload, options)).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
+    expect(removePrefix.mock.calls).toEqual([...digests, ...digests].map((value) => [`hello-agent/${value.slice(0, 32)}/`]));
+    expect(cleanup).not.toHaveBeenCalled();
   } finally { await rm(directory, { recursive: true, force: true }); }
 });

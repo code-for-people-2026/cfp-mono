@@ -5,7 +5,21 @@ import { configuredImageStore, type ImageObjectStore } from "../storage/oss";
 import { AppError } from "./contracts";
 import { MAX_STORED_IMAGE_BYTES, referenceSchema, type ImageReference } from "./media-policy";
 const digest = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
-const ownerPrefix = (owner: string) => `hello-agent/${createHash("sha256").update(owner).digest("hex").slice(0, 32)}/`;
+const ownerPrefixFromDigest = (ownerDigest: string) => {
+  if (!/^[a-f0-9]{64}$/.test(ownerDigest)) throw new AppError(500, "图片归属摘要无效");
+  return `hello-agent/${ownerDigest.slice(0, 32)}/`;
+};
+const ownerPrefix = (owner: string) => ownerPrefixFromDigest(createHash("sha256").update(owner).digest("hex"));
+
+// Trusted restore maintenance can only recover the digest, not the original
+// identity. Purge its prefix even when the database snapshot has no owner row.
+export async function deleteMediaObjectsByOwnerDigest(ownerDigest: string, storeFactory = configuredImageStore) {
+  const prefix = ownerPrefixFromDigest(ownerDigest);
+  const store = storeFactory();
+  if (!store) return;
+  if (!store.removePrefix) throw new AppError(503, "对象清理功能尚未配置");
+  await store.removePrefix(prefix);
+}
 
 export class MediaService {
   constructor(readonly repo: Repository, private readonly storeFactory = configuredImageStore) {}
@@ -87,10 +101,7 @@ export class MediaService {
       if (!reference.key.startsWith(ownerPrefix(this.repo.owner.id))) throw new AppError(500, "图片归属异常，删除已暂停");
       if (!store || store.bucket !== reference.bucket || store.region !== reference.region || !store.removePrefix) throw new AppError(503, "图片删除配置不完整，记录已保留供重试");
     }
-    if (store) {
-      if (!store.removePrefix) throw new AppError(503, "对象清理功能尚未配置");
-      await store.removePrefix(ownerPrefix(this.repo.owner.id));
-    }
+    await deleteMediaObjectsByOwnerDigest(createHash("sha256").update(this.repo.owner.id).digest("hex"), () => store);
     for await (const rows of this.deletionPages()) {
       const result = await this.repo.payload.delete({ collection: "media", overrideAccess: true, depth: 0, select: { owner: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { in: rows.map((row) => row.id) } }] } });
       if (result.errors.length) throw new AppError(503, "部分图片记录尚未删除，请稍后重试");
