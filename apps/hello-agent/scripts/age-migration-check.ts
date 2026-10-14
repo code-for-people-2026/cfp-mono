@@ -22,6 +22,8 @@ try {
   await migration.up({ db, payload, req }); await migration.up({ db, payload, req });
   const profileMigration = migrations.find((m) => m.name.includes("wechat_profile"))!;
   await profileMigration.up({ db, payload, req }); await profileMigration.up({ db, payload, req });
+  const correction = migrations.find((m) => m.name.includes("age_correction"))!;
+  await correction.up({ db, payload, req }); await correction.up({ db, payload, req });
   assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
   const credential = (await payload.find({ collection: "credentials", overrideAccess: true })).docs[0];
   assert.equal(credential.owner, "synthetic-old"); assert.equal(credential.wechatKey, null);

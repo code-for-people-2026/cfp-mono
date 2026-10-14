@@ -2,8 +2,9 @@ import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { AgeStatus } from "@cfp/hello-agent-protocol";
+import { CheckboxGroup, Picker } from "@tarojs/components";
 
-const api = vi.hoisted(() => ({ loginWechat: vi.fn(), cancelAge: vi.fn(), beginAge: vi.fn() }));
+const api = vi.hoisted(() => ({ loginWechat: vi.fn(), cancelAge: vi.fn(), beginAge: vi.fn(), submitAge: vi.fn() }));
 vi.mock("../src/chat/api", () => api);
 vi.mock("@tarojs/components", () => ({ Button: "button", View: "view", Text: "text", Image: "image", Input: "input", Checkbox: "checkbox", CheckboxGroup: "checkbox-group", Label: "label", Picker: "picker", ScrollView: "scroll-view" }));
 import { AgeGate } from "../src/chat/age";
@@ -85,4 +86,38 @@ it("清空建议昵称后仍可登录，由服务端补全资料", async () => {
   act(() => { renderer.root.findByType("input").props.onInput({ detail: { value: "" } }); });
   await act(async () => { await button("age-primary").props.onClick(); });
   expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname: "", avatarPath: "" });
+});
+
+it("误填生日被拦截后明确说明无法对话，并允许通过身份证重新核验", () => {
+  act(() => { renderer = create(createElement(AgeGate, { ...props, status: { ...status, loggedIn: true, state: "minor", declaration: "under14", configuration: { ...status.configuration, provider: true } } })); });
+  expect(JSON.stringify(renderer.toJSON())).toContain("暂时无法开始对话");
+  const correct = button("age-correct");
+  expect(correct).toBeDefined();
+  act(() => { correct.props.onClick(); });
+  expect(JSON.stringify(renderer.toJSON())).toContain("身份证");
+  expect(renderer.root.findAllByType(Picker)).toHaveLength(0);
+  expect(button("age-primary").props.disabled).toBe(true);
+});
+
+it("更正生日提交单独同意和身份证，核验失败保留更正入口且清除敏感表单", async () => {
+  const minor: AgeStatus = { ...status, loggedIn: true, state: "minor", declaration: "under14", configuration: { ...status.configuration, provider: true, providerName: "aliyun" } };
+  api.beginAge.mockResolvedValue({ status: minor, challenge: "synthetic-challenge" });
+  api.submitAge.mockResolvedValue({ ...minor, state: "failed" });
+  act(() => { renderer = create(createElement(AgeGate, { ...props, status: minor })); });
+  act(() => { button("age-correct").props.onClick(); });
+  const inputs = renderer.root.findAllByType("input");
+  act(() => { inputs[0].props.onInput({ detail: { value: "隔离测试" } }); inputs[1].props.onInput({ detail: { value: "000000200001010000" } }); });
+  expect(button("age-primary").props.disabled).toBe(true);
+  act(() => { renderer.root.findByType(CheckboxGroup).props.onChange({ detail: { value: ["age"] } }); });
+  await act(async () => { await button("age-primary").props.onClick(); });
+  expect(api.beginAge).toHaveBeenCalledWith({ declaration: "unknown", correction: true, consent: true, noticeVersion: "test" });
+  expect(api.submitAge).toHaveBeenCalledWith({ challenge: "synthetic-challenge", name: "隔离测试", idCard: "000000200001010000" });
+  expect(renderer.root.findAllByType("input").every((input) => input.props.value === "")).toBe(true);
+});
+
+it("真实核验为未成年或被要求复核时不能用生日更正入口绕过", () => {
+  act(() => { renderer = create(createElement(AgeGate, { ...props, status: { ...status, loggedIn: true, state: "minor", assurance: "identity_details_match" } })); });
+  expect(button("age-correct")).toBeUndefined();
+  act(() => { renderer.update(createElement(AgeGate, { ...props, status: { ...status, loggedIn: true, state: "needs_review", additionalVerification: "required" } })); });
+  expect(button("age-correct")).toBeUndefined();
 });

@@ -44,8 +44,12 @@ describe("逐步显示的小窗口", () => {
   });
   it("未成年、待复核和处理中状态优先于生日选择", () => {
     expect(ageGateStep(loggedIn, "under14")).toBe("blocked");
+    expect(ageGateStep({ ...loggedIn, declaration: "14to17" })).toBe("blocked");
     expect(ageGateStep({ ...loggedIn, state: "minor" }, "adult")).toBe("blocked");
     expect(ageGateStep({ ...loggedIn, state: "needs_review" }, "adult")).toBe("blocked");
     expect(ageGateStep({ ...loggedIn, state: "pending" }, "adult")).toBe("pending");
+  });
+  it("预览核验成年后显示完成提示，不开放对话", () => {
+    expect(ageGateStep({ ...loggedIn, state: "adult", declaration: "adult", configuration: { ...loggedIn.configuration, previewOnly: true } })).toBe("preview-ready");
   });
 });

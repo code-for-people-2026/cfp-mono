@@ -7,7 +7,7 @@ export const ageStatusSchema = z.object({
   assurance: z.literal("identity_details_match").nullable(),
   additionalVerification: z.enum(["not_requested", "required"]),
   notice: z.object({ version: z.string(), paragraphs: z.array(z.string()) }),
-  configuration: z.object({ wechat: z.boolean(), provider: z.boolean(), previewOnly: z.boolean().optional() }),
+  configuration: z.object({ wechat: z.boolean(), provider: z.boolean(), providerName: z.enum(["aliyun", "tencent"]).optional(), previewOnly: z.boolean().optional() }),
 });
 export const ageChallengeResultSchema = z.object({ status: ageStatusSchema, challenge: z.string().nullable() });
 export const wechatLoginResultSchema = z.object({

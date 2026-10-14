@@ -2,6 +2,7 @@ import { ageCollections } from "../age/collections";
 import { ageNotice } from "../age/policy";
 import { up as ageMigration } from "../cms/migrations/20261013_181500_wechat_age_verification";
 import { up as accountMigration } from "../cms/migrations/20261014_080000_wechat_profile";
+import { up as correctionMigration } from "../cms/migrations/20261014_103000_wechat_age_correction";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -68,7 +69,7 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
-  await ageMigration(args); await accountMigration(args);
+  await ageMigration(args); await accountMigration(args); await correctionMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });

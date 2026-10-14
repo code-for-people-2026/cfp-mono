@@ -12,6 +12,6 @@ RUN node -e "const fs=require('node:fs'),c=require('node:crypto');if(c.createHas
 WORKDIR /release/apps/hello-agent
 USER node
 ENV NODE_ENV=production
-HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=4 CMD node -e "fetch('http://127.0.0.1:3310/api/ready').then(async r=>{if(!r.ok||(await r.json()).scope!=='login-and-birthday')process.exit(1)}).catch(()=>process.exit(1))"
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=4 CMD node -e "fetch('http://127.0.0.1:3310/api/ready').then(async r=>{if(!r.ok||!['login-and-birthday','login-and-age'].includes((await r.json()).scope))process.exit(1)}).catch(()=>process.exit(1))"
 ENTRYPOINT ["node"]
 CMD ["node_modules/tsx/dist/cli.mjs", "scripts/onboarding-preview.ts"]

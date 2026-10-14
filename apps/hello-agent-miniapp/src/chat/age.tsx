@@ -24,6 +24,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   const [avatarPath, setAvatarPath] = useState("");
   const [migrate, setMigrate] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
   const [birthday, setBirthday] = useState("");
   const [declaration, setDeclaration] = useState<AgeDeclaration>();
   const [name, setName] = useState("");
@@ -33,7 +34,10 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   const [message, setMessage] = useState("");
   const inFlight = useRef(false);
   const native = process.env.TARO_ENV === "weapp";
-  const step = ageGateStep(status, declaration);
+  const baseStep = ageGateStep(status, declaration);
+  const step = correcting && baseStep !== "pending" ? "verify" : baseStep;
+  const canCorrect = status?.loggedIn && !status.assurance && status.additionalVerification !== "required";
+  const providerName = status?.configuration.providerName === "aliyun" ? "阿里云" : "腾讯云";
   const birthdayDeclaration = declarationForBirthday(birthday);
 
   async function act(action: () => Promise<void>) {
@@ -60,15 +64,19 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   }
   async function submit() {
     const selected = declaration || status?.declaration;
-    if (!status || !selected || !consent) return;
+    if (!status || (!selected && !correcting) || !consent) return;
     try {
-      const result = await api.beginAge({ declaration: selected, noticeVersion: status.notice.version, consent: true });
+      const result = await api.beginAge({ declaration: correcting ? "unknown" : selected!, noticeVersion: status.notice.version, consent: true, ...(correcting ? { correction: true } : {}) });
       onChange(result.status);
-      if (result.challenge) onChange(await api.submitAge({ challenge: result.challenge, name, idCard }));
+      if (result.challenge) {
+        const verified = await api.submitAge({ challenge: result.challenge, name, idCard });
+        onChange(verified);
+        if (["adult", "minor", "needs_review"].includes(verified.state)) { setCorrecting(false); setDeclaration(undefined); }
+      }
     } finally { setName(""); setIdCard(""); setConsent(false); }
   }
   async function cancel() {
-    setBirthday(""); setName(""); setIdCard(""); setConsent(false);
+    setBirthday(""); setName(""); setIdCard(""); setConsent(false); setCorrecting(false);
     if (status?.loggedIn) { try { onChange(await api.cancelAge()); } catch { /* Closing never grants access. */ } }
     onClose();
   }
@@ -137,19 +145,20 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
           {explanation("birthday", "为什么需要生日？")}
         </>}
         {step === "verify" && <>
-          <Text className="age-title">{status?.configuration.previewOnly ? "已完成体验" : status?.configuration.provider ? "确认一下年龄" : "暂时无法核验年龄"}</Text>
+          <Text className="age-title">{correcting ? "重新核验年龄" : status?.configuration.provider ? "确认一下年龄" : status?.configuration.previewOnly ? "已完成体验" : "暂时无法核验年龄"}</Text>
           {!status?.configuration.provider ? <>
-            <Text className="age-copy">{status?.configuration.previewOnly ? "已完成本次登录和生日体验，年龄核验与聊天稍后开放。" : "服务暂不可用，请稍后再来。"}</Text>
+            <Text className="age-copy">{correcting ? "身份核验服务暂不可用，请稍后再试。更正需通过本人身份证核验。" : status?.configuration.previewOnly ? "已完成本次登录和生日体验，年龄核验与聊天稍后开放。" : "服务暂不可用，请稍后再来。"}</Text>
             <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>
           </> : <>
-            <Text className="age-copy">需要本人姓名和身份证，由腾讯云核验。</Text>
+            <Text className="age-copy">{correcting ? `生日填错了？用本人姓名和身份证，经${providerName}核验后更正。` : `需要本人姓名和身份证，由${providerName}核验。`}</Text>
             <Input className="age-input" value={name} maxlength={50} placeholder="本人姓名" disabled={busy} onInput={(event) => setName(event.detail.value)} />
             <Input className="age-input" password value={idCard} maxlength={18} placeholder="本人18位大陆居民身份证号码" disabled={busy} onInput={(event) => setIdCard(event.detail.value)} />
-            <CheckboxGroup onChange={(event) => setConsent(event.detail.value.includes("age"))}><Label className="age-choice"><Checkbox value="age" checked={consent} /><Text>我已阅读核验说明，单独同意处理本人姓名和身份证用于年龄核验。</Text></Label></CheckboxGroup>
+            <CheckboxGroup onChange={(event) => setConsent(event.detail.value.includes("age"))}><Label className="age-choice"><Checkbox value="age" checked={consent} /><Text>{correcting ? "我确认本人已满14周岁，" : ""}已阅读核验说明，单独同意将本人姓名和身份证交由{providerName}核验。</Text></Label></CheckboxGroup>
             <Button className="age-primary" disabled={busy || !consent || name.trim().length < 2 || !/^\d{17}[\dXx]$/.test(idCard)} onClick={() => void act(submit)}>{busy ? "正在核验…" : "同意并核验"}</Button>
             {status && ["failed", "unknown", "expired", "unavailable"].includes(status.state) && <Text className="age-hint">{ageStateText[status.state]}</Text>}
           </>}
           {explanation("verification", "年龄核验说明")}
+          {correcting && <Button className="age-link" disabled={busy} onClick={() => { setCorrecting(false); setName(""); setIdCard(""); setConsent(false); }}>返回</Button>}
         </>}
         {step === "pending" && <>
           <Text className="age-title">正在确认年龄</Text><Text className="age-copy">稍等一下，可以查询本次结果。</Text>
@@ -157,9 +166,14 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
           {explanation("verification", "年龄核验说明")}
         </>}
         {step === "blocked" && <>
-          <Text className="age-title">还需要一点帮助</Text><Text className="age-copy">{status?.state === "minor" || declaration === "under14" ? "请由监护人联系我们，确认适合你的使用方式。" : "年龄信息需要进一步确认，请联系我们。"}</Text>
+          <Text className="age-title">暂时无法开始对话</Text><Text className="age-copy">{status?.state === "minor" || ["under14", "14to17"].includes(declaration || status?.declaration || "") ? "当前年龄信息显示你未满18周岁，暂时不能与阿J对话。需要帮助可由监护人联系我们。" : "年龄信息需要进一步核实，确认前暂时不能与阿J对话。"}</Text>
           <Button className="age-primary" onClick={onHelp}>联系与反馈</Button>
+          {canCorrect && <Button className="age-link age-correct" onClick={() => { setCorrecting(true); setConsent(false); setMessage(""); }}>生日填错了？重新核验</Button>}
           {explanation("verification", "查看详细说明")}
+        </>}
+        {step === "preview-ready" && <>
+          <Text className="age-title">年龄已核验</Text><Text className="age-copy">已确认成年。本次预览的聊天功能尚未开放。</Text>
+          <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>
         </>}
         {step === "ready" && <>
           <Text className="age-title">{privacyReady ? "已经准备好啦" : "最后，确认使用授权"}</Text><Text className="age-copy">{privacyReady ? "可以继续和阿J聊聊了。" : "你可以选择允许阿J使用的信息。"}</Text>

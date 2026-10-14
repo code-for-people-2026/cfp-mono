@@ -133,7 +133,7 @@ export function establishIdentity(): Promise<void> {
   return identityPromise;
 }
 export const getAge = () => request("age", ageStatusSchema);
-export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
+export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true; correction?: boolean }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
 export const submitAge = (body: { challenge: string; name: string; idCard: string }) => request("age/submit", ageStatusSchema, "POST", body);
 export const cancelAge = () => request("age/cancel", ageStatusSchema, "POST", {});
 export const getProfile = () => request("profile", userProfileSchema);

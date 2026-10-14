@@ -17,6 +17,7 @@ export const ageCollections: CollectionConfig[] = [
     { name: "noticeVersion", type: "text" },
     { name: "consentedAt", type: "date" },
     { name: "challenge", type: "text" },
+    { name: "challengePurpose", type: "text" },
     { name: "challengeExpiresAt", type: "date" },
     { name: "verifiedAt", type: "date" },
     { name: "expiresAt", type: "date" },

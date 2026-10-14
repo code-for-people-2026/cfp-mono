@@ -277,6 +277,7 @@ export interface AgeProfile {
   noticeVersion?: string | null;
   consentedAt?: string | null;
   challenge?: string | null;
+  challengePurpose?: string | null;
   challengeExpiresAt?: string | null;
   verifiedAt?: string | null;
   expiresAt?: string | null;
@@ -610,6 +611,7 @@ export interface AgeProfilesSelect<T extends boolean = true> {
   noticeVersion?: T;
   consentedAt?: T;
   challenge?: T;
+  challengePurpose?: T;
   challengeExpiresAt?: T;
   verifiedAt?: T;
   expiresAt?: T;

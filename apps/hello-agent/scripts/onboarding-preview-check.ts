@@ -30,6 +30,25 @@ try {
   assert.equal((await minor.json()).status.allowed, false);
   const exported = await (await call("/api/hello/privacy/export", login.token)).json();
   assert.equal(exported.ageDeclaration, "under14");
+  Object.assign(process.env, { HELLO_PREVIEW_SCOPE: "login-and-age", HELLO_AGE_PROVIDER: "aliyun", HELLO_AGE_SECRET_ID: "synthetic", HELLO_AGE_SECRET_KEY: "synthetic", HELLO_AGE_PROVIDER_APPROVED: "true", HELLO_AGE_PROVIDER_DISCLOSURE: "隔离测试" });
+  const correction = await (await call("/api/hello/age/challenge", login.token, { declaration: "unknown", correction: true, consent: true, noticeVersion: ageNotice().version })).json();
+  assert.ok(correction.challenge); assert.equal(correction.status.allowed, false);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.equal(url, "https://cloudauth.cn-shanghai.aliyuncs.com/");
+    return Response.json({ Code: "200", RequestId: "synthetic-reference", ResultObject: { BizCode: "1" } });
+  };
+  try {
+    const prefix = "99000020000101001", weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+    const idCard = prefix + "10X98765432"[weights.reduce((sum, weight, index) => sum + Number(prefix[index]) * weight, 0) % 11];
+    const result = await (await call("/api/hello/age/submit", login.token, { challenge: correction.challenge, name: "隔离测试", idCard })).json();
+    assert.equal(result.state, "adult"); assert.equal(result.declaration, "adult"); assert.equal(result.allowed, false);
+    assert.equal((await (await call("/api/hello/age", login.token)).json()).allowed, false);
+    assert.equal((await call("/api/hello/greet", login.token, {})).status, 503);
+    const data = await (await call("/api/hello/privacy/export", login.token)).json();
+    assert.equal(data.ageVerification.source, "aliyun_id2_meta_name_id");
+    assert.ok(!JSON.stringify(data).includes(idCard));
+  } finally { globalThis.fetch = realFetch; }
   assert.equal((await call("/api/hello/privacy/delete", login.token, { confirmation: "删除我的全部在线数据" })).status, 200);
   await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { Authorization: `Bearer ${login.token}` } })));
   assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true })).totalDocs, 0);
@@ -40,5 +59,5 @@ try {
   await cleanOnboardingPreview(payload);
   assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true })).totalDocs, 0);
   assert.equal((await payload.count({ collection: "age-profiles", overrideAccess: true })).totalDocs, 0);
-  console.log("Preview checks passed: login state, no chat/ID submission, age declaration, export/deletion and expiry cleanup.");
+  console.log("Preview checks passed: login, explicitly scoped identity correction, no chat after verification, export/deletion and expiry cleanup.");
 } finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

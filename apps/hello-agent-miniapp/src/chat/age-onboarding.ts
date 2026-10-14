@@ -16,9 +16,10 @@ export function declarationForBirthday(birthday: string, today = todayInChina())
 export function ageGateStep(status?: AgeStatus, declaration?: AgeDeclaration) {
   if (!status) return "loading";
   if (!status.loggedIn) return "login";
+  if (status.configuration.previewOnly && status.state === "adult") return "preview-ready";
   if (status.allowed) return "ready";
-  if (status.state === "minor" || status.state === "needs_review" || declaration === "under14") return "blocked";
   if (status.state === "pending") return "pending";
+  if (status.state === "minor" || status.state === "needs_review" || ["under14", "14to17"].includes(declaration || status.declaration || "")) return "blocked";
   const selected = declaration || status.declaration;
   return selected && selected !== "unknown" ? "verify" : "birthday";
 }

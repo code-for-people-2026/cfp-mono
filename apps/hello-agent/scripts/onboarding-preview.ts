@@ -2,8 +2,8 @@ import { createServer } from "node:http";
 import { cms } from "../src/cms/client";
 import { onboardingPreview, cleanOnboardingPreview } from "../src/age/preview";
 
-if (process.env.HELLO_PREVIEW_SCOPE !== "login-and-birthday" || !process.env.HELLO_DATABASE_URI?.includes("onboarding-preview")) throw new Error("An explicit preview scope and separate preview database are required");
-if (process.env.DEEPSEEK_API_KEY || process.env.HELLO_AGE_SECRET_KEY) throw new Error("Do not mount model or age-provider credentials in this preview");
+if (!["login-and-birthday", "login-and-age"].includes(process.env.HELLO_PREVIEW_SCOPE || "") || !process.env.HELLO_DATABASE_URI?.includes("onboarding-preview")) throw new Error("An explicit preview scope and separate preview database are required");
+if (process.env.DEEPSEEK_API_KEY || (process.env.HELLO_PREVIEW_SCOPE !== "login-and-age" && process.env.HELLO_AGE_SECRET_KEY)) throw new Error("Credentials do not match the preview scope");
 const payload = await cms();
 await cleanOnboardingPreview(payload);
 let cleaning = false;

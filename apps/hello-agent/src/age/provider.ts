@@ -1,9 +1,11 @@
 import { createHash, createHmac } from "node:crypto";
-import { providerConfigured } from "./policy";
+import { ageProvider, providerConfigured } from "./policy";
+import { verifyAliyunAge } from "./aliyun";
 
 export type AgeEvidence = {
   state: "adult" | "minor" | "unknown" | "failed" | "unavailable" | "needs_review";
   reference?: string;
+  ageBand?: "under14" | "14to17" | "adult";
 };
 export type AgeVerifier = (input: { name: string; idCard: string }) => Promise<AgeEvidence>;
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
@@ -40,7 +42,7 @@ export function tencentRequest(input: { name: string; idCard: string }, secretId
   } };
 }
 export const verifyTencentAge: AgeVerifier = async (input) => {
-  if (!providerConfigured()) return { state: "unavailable" };
+  if (ageProvider() !== "tencent" || !providerConfigured()) return { state: "unavailable" };
   try {
     const signed = tencentRequest(input, process.env.HELLO_AGE_SECRET_ID!, process.env.HELLO_AGE_SECRET_KEY!, Date.now());
     const response = await fetch("https://faceid.tencentcloudapi.com/", { method: "POST", ...signed, signal: AbortSignal.timeout(12_000), redirect: "error" });
@@ -51,3 +53,4 @@ export const verifyTencentAge: AgeVerifier = async (input) => {
     return { state: "unavailable" };
   }
 };
+export const verifyAge: AgeVerifier = (input) => ageProvider() === "aliyun" ? verifyAliyunAge(input) : verifyTencentAge(input);

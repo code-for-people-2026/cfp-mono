@@ -1084,8 +1084,8 @@ input {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 84%;
-  max-width: 360px;
+  width: 100%;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   background: #fcfdfb;
@@ -1099,12 +1099,9 @@ input {
   justify-content: space-between;
   margin-bottom: 26px;
 }
-.drawer-brand {
-  display: block;
-  font-size: 24px;
-  font-weight: 650;
-  letter-spacing: 1px;
-}
+.drawer-heading .account-profile { flex: 1; min-width: 0; margin: 0; }
+.drawer-heading .nav-icon { flex-shrink: 0; }
+.drawer-guest { font-size: 16px; color: #315743; }
 .drawer-caption {
   display: block;
   font-size: 11px;

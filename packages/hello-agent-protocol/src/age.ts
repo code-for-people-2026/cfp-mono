@@ -6,6 +6,7 @@ export const ageChallengeSchema = z.object({
   declaration: ageDeclarationSchema,
   noticeVersion: z.string().min(1).max(100),
   consent: z.literal(true),
+  correction: z.boolean().optional(),
 }).strict();
 export const ageSubmissionSchema = z.object({
   challenge: z.string().uuid(),
@@ -25,7 +26,7 @@ export type AgeStatus = {
   assurance: "identity_details_match" | null;
   additionalVerification: "not_requested" | "required";
   notice: { version: string; paragraphs: string[] };
-  configuration: { wechat: boolean; provider: boolean; previewOnly?: boolean };
+  configuration: { wechat: boolean; provider: boolean; providerName?: "aliyun" | "tencent"; previewOnly?: boolean };
 };
 export const ageStateText: Record<AgeState, string> = {
   unverified: "尚未核验年龄", cancelled: "已取消，可随时继续", pending: "正在核验，请稍候再查询",

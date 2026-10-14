@@ -134,10 +134,7 @@ export function ChatNavigation(props: Props) {
             }
           >
             <View className="drawer-heading">
-              <View>
-                <Text className="drawer-brand">阿 J 先生</Text>
-                <Text className="drawer-caption">每件心事，都有地方安放</Text>
-              </View>
+              {props.profile ? <AccountProfile profile={props.profile} source={props.avatarSource} /> : <Text className="drawer-guest">请先登录</Text>}
               <Button
                 className="control nav-icon"
                 ariaLabel="关闭会话导航"
@@ -146,7 +143,6 @@ export function ChatNavigation(props: Props) {
                 <ChatIcon name="x" />
               </Button>
             </View>
-            {props.profile && <AccountProfile profile={props.profile} source={props.avatarSource} />}
             <Button
               className="control drawer-new"
               disabled={props.disabled || undefined}
