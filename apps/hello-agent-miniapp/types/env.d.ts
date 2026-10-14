@@ -10,3 +10,8 @@ declare module "*.svg?raw" {
 }
 
 declare const HELLO_BUILD_LABEL: string;
+
+declare module "*.webp" {
+  const source: string;
+  export default source;
+}
