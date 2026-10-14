@@ -23,6 +23,16 @@ process.env.PAYLOAD_SECRET = "quota-test-only-not-for-deployment";
 process.env.HELLO_DEPLOYED = "true";
 process.env.DEEPSEEK_API_KEY = "platform-test-only";
 process.env.HELLO_MEMORY_RECOVERY = "preview";
+// Synthetic deployment prerequisites, isolated from real operations and data.
+Object.assign(process.env, {
+  HELLO_PRIVACY_CONTACT: "quota-test@example.invalid",
+  HELLO_PRIVACY_RESPONSE_DAYS: "7",
+  HELLO_PRIVACY_STORAGE_LOCATION: "isolated quota test",
+  HELLO_PRIVACY_RETENTION_DAYS: "30",
+  HELLO_PRIVACY_BACKUP_DAYS: "7",
+  HELLO_PRIVACY_DELETION_LEDGER: path.join(dir, "deletions.ndjson"),
+  HELLO_PRIVACY_OPERATIONS_APPROVED: "true",
+});
 // Use the real deployment schema, with migrations explicitly controlled below.
 Object.assign(process.env, { NODE_ENV: "test" });
 const { cms } = await import("../src/cms/client");
@@ -77,7 +87,9 @@ try {
     console.log(`RESERVED=${accepted}`);
   } else {
     // Upgrade an existing database and prove that an old record survives.
-    await payload.db.migrate({ migrations: schemaMigrations.slice(0, -1) });
+    const quotaMigration = schemaMigrations.findIndex((migration) => migration.name === "20261013_125923_platform_model_quota");
+    assert.ok(quotaMigration >= 0, "platform quota migration must be registered");
+    await payload.db.migrate({ migrations: schemaMigrations.slice(0, quotaMigration) });
     await db.run(
       sql`INSERT INTO sessions (owner, title) VALUES ('old-owner', 'preserved')`,
     );
@@ -92,6 +104,9 @@ try {
     );
     await (await import("../src/cms/seed")).seedAgents(payload);
     process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "18";
+    delete process.env.HELLO_PRIVACY_CONTACT;
+    assert.equal((await readiness()).status, 503, "missing privacy configuration must block readiness");
+    process.env.HELLO_PRIVACY_CONTACT = "quota-test@example.invalid";
     for (let i = 0; i < 3; i++) assert.equal((await readiness()).status, 200);
     assert.equal(
       (await payload.count({ collection: "platform-model-quotas" })).totalDocs,

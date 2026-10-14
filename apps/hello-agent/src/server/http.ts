@@ -44,12 +44,22 @@ export async function readJson(request: Request, maximum = 8 * 1024 * 1024) {
 
 const buckets = new Map<string, { count: number; expires: number }>();
 // 单进程按访客限频；平台模型成本另由 Payload 的全站共享额度限制。
-export function rateLimit(owner: string) {
+export function rateLimit(owner: string, maximum = 20) {
+  rateLimitGroup([{ key: owner, maximum }]);
+}
+export function rateLimitGroup(limits: { key: string; maximum: number }[]) {
   const now = Date.now();
   for (const [key, value] of buckets)
     if (value.expires < now) buckets.delete(key);
-  const bucket = buckets.get(owner) || { count: 0, expires: now + 60_000 };
-  if (++bucket.count > 20)
-    throw new AppError(429, "操作较频繁，请一分钟后再试");
-  buckets.set(owner, bucket);
+  // No awaits between checking and committing: a rejection consumes no quota
+  // at either level and does not create a bucket for a rejected new identity.
+  const admitted = limits.map(({ key, maximum }) => {
+    const bucket = buckets.get(key) || { count: 0, expires: now + 60_000 };
+    if (bucket.count >= maximum) throw new AppError(429, "操作较频繁，请一分钟后再试");
+    return { key, bucket };
+  });
+  for (const { key, bucket } of admitted) {
+    bucket.count++;
+    buckets.set(key, bucket);
+  }
 }

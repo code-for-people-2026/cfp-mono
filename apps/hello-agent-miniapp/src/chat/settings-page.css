@@ -1,0 +1,42 @@
+.privacy-settings-page { width: 100%; max-width: 420px; height: 100vh; height: 100dvh; margin: 0 auto; display: flex; flex-direction: column; overflow: hidden; background: #f6f8f7; color: #243b35; }
+.page-header { box-sizing: border-box; display: flex; flex-shrink: 0; align-items: center; min-height: 76px; padding: 14px 16px 12px 22px; border-bottom: 1px solid #e7ece8; }
+.page-title { font-size: 21px; font-weight: 650; letter-spacing: .3px; }
+.page-header-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.page-button[disabled] { opacity: .45; }
+.page-icon-button { width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; border-radius: 50%; color: #62796b; }
+.page-icon-button:active { background: #e8eee9; }
+.page-back { margin-left: -12px; margin-right: 2px; }
+.page-icon { position: relative; display: block; flex-shrink: 0; width: 20px; height: 20px; box-sizing: border-box; }
+.page-icon-close::before, .page-icon-close::after { content: ""; position: absolute; left: 9px; top: 1px; width: 1.7px; height: 18px; background: currentColor; border-radius: 2px; transform: rotate(45deg); }
+.page-icon-close::after { transform: rotate(-45deg); }
+.page-icon-refresh { width: 17px; height: 17px; border: 1.7px solid currentColor; border-right-color: transparent; border-radius: 50%; transform: rotate(-35deg); }
+.page-icon-refresh::after { content: ""; position: absolute; right: -2px; top: -2px; width: 6px; height: 6px; border-right: 1.7px solid currentColor; border-bottom: 1.7px solid currentColor; transform: rotate(8deg); }
+.page-icon-arrow, .page-icon-back { width: 8px; height: 8px; border-top: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg); color: #93a299; margin: 0 3px 0 10px; }
+.page-icon-back { width: 10px; height: 10px; margin: 0; transform: rotate(-135deg); color: inherit; }
+.is-refreshing .page-icon-refresh { opacity: .5; }
+.page-scroll { flex: 1; min-height: 0; height: 0; }
+.page-content { padding: 22px 20px calc(32px + env(safe-area-inset-bottom)); }
+.page-intro { display: block; margin: 0 0 24px; color: #74867a; font-size: 13px; line-height: 1.8; }
+.page-section-title { display: block; margin: 26px 2px 10px; font-size: 12px; font-weight: 500; color: #819186; letter-spacing: .6px; }
+.page-section-title:first-child { margin-top: 0; }
+.page-card { background: #fff; border: 1px solid #e6ece7; border-radius: 16px; overflow: hidden; }
+.page-card-padded { padding: 18px; }
+.page-row { display: flex; align-items: center; width: 100%; padding: 18px 16px; text-align: left; gap: 8px; }
+.page-row + .page-row { border-top: 1px solid #eef1ee; }
+.page-row:active { background: #f7faf6; }
+.page-row-copy { flex: 1; min-width: 0; }
+.page-row-title { display: block; font-size: 15px; font-weight: 500; }
+.page-row-description { display: block; font-size: 11px; color: #8a988f; margin-top: 6px; line-height: 1.6; }
+.page-row-detail { color: #7c927e; font-size: 11px; white-space: nowrap; }
+.page-row-danger .page-row-title { color: #a76154; }
+.page-copy { display: block; font-size: 13px; line-height: 1.9; color: #63796b; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0 0 16px; }
+.page-caption { display: block; font-size: 11px; line-height: 1.8; color: #87968c; margin: 14px 2px; overflow-wrap: anywhere; }
+.page-heading { display: block; font-size: 16px; font-weight: 600; margin: 0 0 16px; }
+.page-primary { width: 100%; background: #56765d; color: #fff; padding: 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; margin-top: 20px; }
+.page-secondary { width: 100%; border: 1px solid #dfe7de; background: #fff; color: #607965; padding: 13px; border-radius: 12px; font-size: 13px; line-height: 1.5; margin-top: 12px; }
+.page-danger { background: #a56154; }
+.page-link { display: inline; color: #587b60; text-align: left; font-size: 12px; line-height: 1.8; padding: 4px 0; }
+.page-input { width: 100%; box-sizing: border-box; height: 46px; border: 1px solid #dde6dd; padding: 10px 12px; background: #fff; border-radius: 10px; margin-top: 10px; font-size: 13px; }
+.page-result { display: block; background: #eaf2e7; color: #526e51; padding: 14px; border-radius: 12px; font-size: 12px; line-height: 1.8; margin-bottom: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.page-error { background: #fcf0ea; color: #a3634e; }
+.page-empty { padding: 27px 15px; text-align: center; color: #92a096; font-size: 12px; line-height: 1.8; }

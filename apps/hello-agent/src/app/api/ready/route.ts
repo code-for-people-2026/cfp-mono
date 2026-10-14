@@ -1,10 +1,13 @@
 import { cms } from "../../../cms/client";
 import { checkPlatformQuota } from "../../../cms/platform-quota";
+import { privacyPolicy } from "../../../privacy/policy";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
+    if (process.env.HELLO_DEPLOYED === "true" && !privacyPolicy().ready)
+      throw new Error("Privacy prerequisites missing");
     const payload = await cms();
     // 只确认业务表可读，不向健康检查返回访客、内容或管理员信息。
     await payload.count({ collection: "sessions", overrideAccess: true });

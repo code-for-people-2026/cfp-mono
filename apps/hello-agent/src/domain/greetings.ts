@@ -1,3 +1,4 @@
+import { uploadedAiXmp } from "../labeling/upload-provenance";
 import sharp from "sharp";
 import { Repository, fingerprint } from "../cms/repository";
 import type { Greeting as GreetingRecord } from "../payload-types";
@@ -32,6 +33,9 @@ export class GreetingService {
     readonly repo: Repository,
     private generate: Generator = platformGenerator,
     readonly media = new MediaService(repo),
+    // No production reviewer is wired until #383 lands. Configuration alone
+    // must never enable storage; the reviewer must explicitly allow the bytes.
+    private readonly reviewUpload?: (bytes: Buffer) => Promise<"allow" | "reject">,
   ) {}
 
   async sessions(): Promise<Session[]> {
@@ -74,25 +78,33 @@ export class GreetingService {
     return { turn: rows[0] || null };
   }
   async upload(data: Uint8Array) {
+    if (!this.reviewUpload)
+      throw new AppError(503, "图片审核暂不可用，请稍后重试或使用文字");
     if (data.length > 5 * 1024 * 1024)
       throw new AppError(413, "单张图片不能超过 5 MB");
     let buffer: Buffer;
     try {
+      // Bound PNG text metadata before libvips can decompress it as well.
+      const provenance = await uploadedAiXmp(data);
       const metadata = await sharp(data, {
         limitInputPixels: 20_000_000,
       }).metadata();
       if (!["jpeg", "png", "webp"].includes(metadata.format || ""))
         throw new Error("unsupported");
-      buffer = await sharp(data, { limitInputPixels: 20_000_000 })
+      let normalized = sharp(data, { limitInputPixels: 20_000_000 })
         .rotate()
         .resize(1280, 1280, { fit: "inside", withoutEnlargement: true })
-        .jpeg({ quality: 80 })
-        .toBuffer();
-    } catch {
+        .jpeg({ quality: 80 });
+      if (provenance) normalized = normalized.withXmp(provenance);
+      buffer = await normalized.toBuffer();
+    } catch (error) {
+      if (error instanceof AppError) throw error;
       throw new AppError(400, "请上传有效的 JPEG、PNG 或 WebP 图片");
     }
     if (buffer.length > MAX_STORED_IMAGE_BYTES)
       throw new AppError(413, "处理后的图片仍过大");
+    if (await this.reviewUpload(buffer) !== "allow")
+      throw new AppError(422, "这张图片未通过审核，请更换图片或使用文字");
     const row = await this.media.save(buffer);
     return {
       id: row.id,

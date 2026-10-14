@@ -1,3 +1,6 @@
+import { installAiCopyLabels } from "../../chat/ai-copy";
+import { consentCurrent, type PrivacyStatus } from "../../chat/privacy";
+import { openPrivacy, openHelp, privacyChangedEvent, type PrivacyChange } from "../../chat/settings-navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   Button as TaroButton,
@@ -7,7 +10,7 @@ import {
   Text,
   View,
 } from "@tarojs/components";
-import Taro, { usePageScroll } from "@tarojs/taro";
+import Taro, { usePageScroll, useDidShow } from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { ChatNavigation } from "../../chat/navigation";
 import { useChatMode } from "../../chat/preferences";
@@ -64,6 +67,8 @@ const suggestions = [
 ];
 
 export default function Chat() {
+  const [privacy, setPrivacy] = useState<PrivacyStatus>();
+  const privacyDirty = useRef(false);
   const [settings, setSettings] = useState<Settings>();
   const [memory, setMemory] = useState<MemoryStatus>();
   const [memoryOpen, setMemoryOpen] = useState(false);
@@ -108,7 +113,7 @@ export default function Chat() {
     mode,
     apiKey,
     !!settings?.platformConfigured,
-    disabled || historyFailed || memory?.level === "empty",
+    disabled || historyFailed || !consentCurrent(privacy) || memory?.level === "empty",
   );
   const formReady = canSend(
     "表单",
@@ -116,7 +121,7 @@ export default function Chat() {
     mode,
     apiKey,
     !!settings?.platformConfigured,
-    disabled || historyFailed || memory?.level === "empty",
+    disabled || historyFailed || !consentCurrent(privacy) || memory?.level === "empty",
   );
 
   usePageScroll(({ scrollTop }) => {
@@ -273,10 +278,12 @@ export default function Chat() {
     setError("");
     try {
       await api.establishIdentity();
-      const [config, rows] = await Promise.all([
+      const [config, rows, nextPrivacy] = await Promise.all([
         api.getSettings(),
         api.getSessions(),
+        api.getPrivacy(),
       ]);
+      setPrivacy(nextPrivacy);
       setSettings(config);
       setSessions(rows);
       if (rows.length) {
@@ -307,6 +314,28 @@ export default function Chat() {
       setLoading(false);
     }
   }
+  function clearIdentityView() {
+    // 防止旧身份的图片异步结果混入新页面。
+    historyVersion.current++;
+    submission.current = undefined;
+    rememberSelection(undefined);
+    drafts.current.clear();
+    setSessions([]);
+    setSettings(undefined);
+    setHistory([]);
+    followLatest.current = true;
+    scrollRevision.current++;
+    setImages({});
+    setText("");
+    setInputMode("voice");
+    setAttachments([]);
+    setPending(undefined);
+    setMemory(undefined);
+    setMemoryOpen(false);
+    setApiKey("");
+    setIdentityExpired(false);
+    setPrivacy(undefined);
+  }
   async function restartIdentity() {
     if (loading || busy || uploading || memoryBusy || sendLock.current) return;
     sendLock.current = true;
@@ -321,25 +350,7 @@ export default function Chat() {
       if (!decision.confirm) return;
       setLoading(true);
       await api.restartIdentity();
-      // 防止旧身份的图片异步结果混入新页面。
-      historyVersion.current++;
-      submission.current = undefined;
-      rememberSelection(undefined);
-      drafts.current.clear();
-      setSessions([]);
-      setSettings(undefined);
-      setHistory([]);
-      followLatest.current = true;
-      scrollRevision.current++;
-      setImages({});
-      setText("");
-      setInputMode("voice");
-      setAttachments([]);
-      setPending(undefined);
-      setMemory(undefined);
-      setMemoryOpen(false);
-      setApiKey("");
-      setIdentityExpired(false);
+      clearIdentityView();
       await boot();
     } catch (value) {
       problem(value);
@@ -412,8 +423,23 @@ export default function Chat() {
     });
   }, [history, pending, attachments, progress]);
 
+  useEffect(() => {
+    const changed = (change: PrivacyChange) => {
+      privacyDirty.current = true;
+      if (change.status) setPrivacy(change.status);
+      if (change.clearIdentity) clearIdentityView();
+    };
+    Taro.eventCenter.on(privacyChangedEvent, changed);
+    const cleanupCopy = h5 ? installAiCopyLabels() : undefined;
+    return () => { Taro.eventCenter.off(privacyChangedEvent, changed); cleanupCopy?.(); };
+  }, []);
+  useDidShow(() => {
+    if (privacyDirty.current) { privacyDirty.current = false; void boot(); }
+  });
+
   async function chooseImage(source?: ImageSource) {
     if (disabled || attachments.length >= 3) return;
+    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); return; }
     setUploading(true);
     setError("");
     try {
@@ -554,6 +580,7 @@ export default function Chat() {
       }),
   ) as Record<string, FormValues>;
   async function submitForm(event: ClientEvent) {
+    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); throw new Error("请先单独同意情绪练习的敏感信息处理"); }
     const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
     if (!match) throw new Error("表单来源无效");
     await send({
@@ -568,7 +595,7 @@ export default function Chat() {
   }
 
   async function openSettings() {
-    if (disabled || sendLock.current || settingsNavigation.current) return;
+    if (busy || uploading || memoryBusy || sendLock.current || settingsNavigation.current) return;
     settingsNavigation.current = true;
     setNavigationOpen(false);
     setApiKey("");
@@ -592,6 +619,7 @@ export default function Chat() {
           sessions={sessions}
           activeId={sessionId}
           disabled={disabled}
+          settingsDisabled={busy || uploading || memoryBusy}
           memoryFull={memory?.level === "empty"}
           memory={memory}
           onOpen={() => setNavigationOpen(true)}
@@ -708,9 +736,10 @@ export default function Chat() {
                   />
                   <View className="message-main">
                     <View
+                      data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <MessageText>
+                      <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
@@ -719,6 +748,7 @@ export default function Chat() {
                       </MessageText>
                       {row.status === "completed" && (
                         <Artifacts
+                          external={row.mode === "external"}
                           turnId={row.id}
                           artifacts={row.artifacts}
                           responses={formResponses}
@@ -743,23 +773,15 @@ export default function Chat() {
                               : "看看为什么这样说 ＋"}
                           </Button>
                           {expanded.includes(row.id) && (
-                            <MessageText className="association-text">
-                              {row.association}
-                              {row.approach ? ` · ${row.approach}` : ""}
-                              {"\n"}
-                              {
-                                modes.find((item) => item.id === row.mode)
-                                  ?.label
-                              }
-                              {row.mode === "external"
-                                ? " · 来源由客户端声明"
-                                : ` · ${row.model}`}
+                            <MessageText aiGenerated external={row.mode === "external"} className="association-text">
+                              {`${row.association}${row.approach ? ` · ${row.approach}` : ""}\n${modes.find((item) => item.id === row.mode)?.label || ""}${row.mode === "external" ? " · 来源由客户端声明" : ` · ${row.model}`}`}
                             </MessageText>
                           )}
                         </View>
                       )}
                     </View>
                     <View className="message-footer">
+                      <Button className="text-button" onClick={() => void openHelp(row.id)}>举报或反馈</Button>
                       <Text className="message-meta">
                         {row.status === "completed"
                           ? "AI 生成 · 已保存"
@@ -767,6 +789,7 @@ export default function Chat() {
                       </Text>
                       {row.status === "completed" && row.greeting && (
                         <CopyMessage
+                          external={row.mode === "external"}
                           value={row.greeting}
                           label="复制阿 J 先生的回复"
                         />
@@ -899,6 +922,7 @@ export default function Chat() {
                 disabled={disabled || historyFailed || navigationOpen}
                 voiceDisabled={
                   disabled ||
+                  !consentCurrent(privacy) ||
                   historyFailed ||
                   navigationOpen ||
                   memory?.level === "empty" ||
@@ -926,7 +950,7 @@ export default function Chat() {
               />
             )}
             <Text className="composer-footnote">
-              {mode === "external"
+              {!loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
                 : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>

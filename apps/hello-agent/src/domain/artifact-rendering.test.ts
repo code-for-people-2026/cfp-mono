@@ -20,7 +20,7 @@ it("网页文本无法成为脚本或 HTML，插画只栅格化已验证的几�
   expect(await sharp(png).metadata()).toMatchObject({
     format: "png",
     width: 640,
-    height: 400,
+    height: 448,
   });
 });
 

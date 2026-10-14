@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Turn } from "../src/chat/model";
 
 const platform = vi.hoisted(() => ({
+  eventCenter: { on: vi.fn(), off: vi.fn() },
   request: vi.fn(),
   downloadFile: vi.fn(),
   getStorageSync: vi.fn(
@@ -81,6 +82,7 @@ const advertisement = { mode: "disabled", adUnitId: "", demoSeconds: 5 };
 
 beforeEach(() => {
   platform.navigateTo.mockResolvedValue({});
+  vi.stubGlobal("document", { addEventListener: vi.fn(), removeEventListener: vi.fn() });
   platform.pageScrollTo.mockResolvedValue({});
   platform.setClipboardData.mockResolvedValue({});
   vi.stubEnv("TARO_ENV", "weapp");
@@ -89,6 +91,7 @@ beforeEach(() => {
   history = [structuredClone(initial)];
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     const route = url.split("/api/hello/")[1];
+    if (route === "privacy") return { statusCode: 200, data: { policy: { version: "test", ready: true, contact: "test", documents: [] }, state: "active", consent: { version: "test", core: true, model: true, sensitive: true, external: true }, expiresAt: null, hasRecoveryCode: false } };
     const data =
       route === "config"
         ? {
@@ -151,7 +154,7 @@ async function mount(keyboard = true) {
 const text = () => JSON.stringify(renderer?.toJSON());
 
 async function chooseModeInSettings(index: number) {
-  const { default: SettingsPage } = await import("../src/pages/settings/index");
+  const { default: SettingsPage } = await import("../src/pages/connection/index");
   let settingsPage: ReactTestRenderer;
   await act(async () => {
     settingsPage = create(createElement(SettingsPage));
@@ -379,7 +382,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("新回复");
     expect(platform.pageScrollTo).not.toHaveBeenCalled();
   });
-  it("对话正文可以选择；复制保留换行且不混入按钮、模型或状态文字", async () => {
+  it("原文可选择，AI回应长按或按钮复制保留标识和换行", async () => {
     history[0].greeting = "先慢一点。\n今天也可以重新来过。";
     history[0].association = "从日常里找一个可信的角度";
     await mount(false);
@@ -387,8 +390,9 @@ describe("聊天历史与图片失败隔离", () => {
       const node = renderer!.root
         .findAllByType("text")
         .find((item) => item.children.join("") === value)!;
-      expect(node.props.selectable).toBe(true);
-      expect(node.props.userSelect).toBe(true);
+      expect(node.props.selectable).toBe(value === initial.input.text);
+      expect(node.props.userSelect).toBe(value === initial.input.text);
+      if (value === history[0].greeting) expect(node.props.onLongPress).toBeTypeOf("function");
     }
     const requests = platform.request.mock.calls.length;
     const button = renderer!.root
@@ -398,7 +402,7 @@ describe("聊天历史与图片失败隔离", () => {
       await button.props.onClick();
     });
     expect(platform.setClipboardData).toHaveBeenLastCalledWith({
-      data: history[0].greeting,
+      data: `AI 生成 · 阿 J 先生\n${history[0].greeting}`,
     });
     expect(button.findByType("text").children.join("")).toBe("已复制");
     expect(platform.request.mock.calls).toHaveLength(requests);
@@ -1210,4 +1214,40 @@ describe("新会话与历史导航", () => {
     expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
     platform.getStorageSync.mockImplementation(() => "fixture-device-token");
   });
+});
+
+it("身份过期后仍可进入设置，访问隐私权利和反馈入口", async () => {
+  const original = platform.request.getMockImplementation()!;
+  platform.request.mockImplementation(async (options) => options.url.endsWith("/sessions") ? { statusCode: 401, data: { error: "expired" } } : original(options));
+  await mount(false);
+  act(() => renderer!.root.findAllByType("button").find((item) => item.props.ariaLabel === "打开会话导航")!.props.onClick());
+  const settings = renderer!.root.findAllByType("button").find((item) => item.props.className.includes("drawer-footer-action"))!;
+  expect(settings.props.disabled).toBeUndefined();
+  await act(async () => { await settings.props.onClick(); });
+  expect(platform.navigateTo).toHaveBeenCalledWith({ url: "/pages/settings/index" });
+});
+
+it("外部 Agent 回复的按钮与原生长按复制均保留来源声明", async () => {
+  history[0].mode = "external";
+  await mount(false);
+  await act(async () => { await renderer!.root.findAllByType("button").find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!.props.onClick(); });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
+  platform.setClipboardData.mockClear();
+  await act(async () => { renderer!.root.findAllByType("text").find((item) => item.children.join("") === history[0].greeting)!.props.onLongPress(); });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
+});
+
+it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生长按复制完整正文与来源标识", async (mode) => {
+  history[0].mode = mode;
+  history[0].association = "第一行联想\n第二行依据";
+  history[0].approach = "认知视角";
+  await mount(false);
+  expect(text()).toContain("association-toggle");
+  await act(async () => { renderer!.root.findAllByType("button").find((item) => item.props.className?.split(" ").includes("association-toggle"))!.props.onClick(); });
+  const details = renderer!.root.findAllByType("text").find((item) => item.props.className === "association-text")!;
+  const value = details.children.join("");
+  expect(value).toContain("第一行联想\n第二行依据 · 认知视角");
+  expect(details.props.selectable).toBe(false);
+  await act(async () => { details.props.onLongPress(); });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 J 先生\n${value}` });
 });

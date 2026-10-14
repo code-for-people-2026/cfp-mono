@@ -17,6 +17,12 @@ const env: NodeJS.ProcessEnv = {
   DEEPSEEK_API_KEY: "",
   HELLO_MEMORY_RECOVERY: "disabled",
   HELLO_DEPLOYED: "false",
+  HELLO_PRIVACY_DELETION_LEDGER: path.join(directory, "deletions.ndjson"),
+  HELLO_IMAGE_REVIEW_URL: "https://review.example.invalid",
+  HELLO_IMAGE_REVIEW_PROVIDER: "合成测试审核方",
+  HELLO_IMAGE_REVIEW_CONTACT: "test@example.invalid",
+  HELLO_IMAGE_REVIEW_REGION: "隔离测试",
+  HELLO_IMAGE_REVIEW_PRIVACY_URL: "https://example.invalid/privacy",
   NODE_ENV: "production",
 };
 // CI 中自行启动生产构建，不要求另有开发进程，也不写入开发数据库。

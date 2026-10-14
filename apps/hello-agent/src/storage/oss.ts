@@ -6,6 +6,8 @@ export interface ImageObjectStore {
   readonly region: string;
   put(key: string, bytes: Buffer): Promise<void>;
   get(key: string): Promise<Buffer>;
+  remove?(key: string): Promise<void>;
+  removePrefix?(prefix: string): Promise<void>;
 }
 
 // 只在服务端初始化；不生成公共 URL，不把供应商错误或凭证写入日志。
@@ -34,6 +36,21 @@ export function configuredImageStore(): ImageObjectStore | undefined {
           headers: { "x-oss-object-acl": "private", "x-oss-server-side-encryption": "AES256" },
         });
       } catch { throw new AppError(503, "图片存储暂不可用，请稍后重试"); }
+    },
+    async remove(key) {
+      try { await client.delete(key); }
+      catch { throw new AppError(503, "图片删除未完成，请稍后重试"); }
+    },
+    async removePrefix(prefix) {
+      try {
+        // Repeat first page because deleting it changes pagination. Include
+        // unreferenced objects left after uncertain database commits.
+        while (true) {
+          const result = await client.list({ prefix, "max-keys": 100 }, {});
+          if (!result.objects?.length) break;
+          for (const object of result.objects) await client.delete(object.name);
+        }
+      } catch { throw new AppError(503, "图片删除未完成，请保留当前身份并重试"); }
     },
     async get(key) {
       try {
