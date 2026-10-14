@@ -646,7 +646,7 @@ export default function Chat() {
                 </View>
                 <Text className="welcome-title">嗨，我是阿 J 先生。</Text>
                 <View className="welcome-copy">
-                  <Text>从鲁迅笔下的阿 J 先生那儿，“蒸馏”来一点乐观。</Text>
+                  <Text>从鲁迅笔下的阿 Q 那儿，“蒸馏”来一点乐观。</Text>
                   <Text>
                     不自欺，不欺软怕硬，也不把委屈硬说成胜利。留下的，是跌一跤还能拍拍灰、继续往前走的劲儿。
                   </Text>

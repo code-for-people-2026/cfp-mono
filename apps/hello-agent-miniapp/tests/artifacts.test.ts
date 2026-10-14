@@ -139,7 +139,7 @@ it.each([false, true])("图片说明原生长按复制保留 AI 和来源声明�
     const caption = renderer!.root.findAllByType("text").find((item) => item.children.join("") === images[0].alt)!;
     expect(caption.props.selectable).toBe(false);
     await act(async () => { caption.props.onLongPress(); });
-    expect(mocks.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 Q 先生\n${images[0].alt}` });
+    expect(mocks.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 J 先生\n${images[0].alt}` });
   } finally { act(() => renderer!.unmount()); }
 });
 

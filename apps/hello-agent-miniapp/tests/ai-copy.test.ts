@@ -16,7 +16,7 @@ it.each([true, false, null])("网页选择复制保留 AI 来源，用户原文�
   addEventListener.mock.calls[0][1]({ clipboardData: { setData }, preventDefault });
   if (external === null) { expect(setData).not.toHaveBeenCalled(); expect(preventDefault).not.toHaveBeenCalled(); }
   else {
-    expect(setData).toHaveBeenCalledWith("text/plain", `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 Q 先生\n选择的文字`);
+    expect(setData).toHaveBeenCalledWith("text/plain", `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 J 先生\n选择的文字`);
     expect(preventDefault).toHaveBeenCalledOnce();
   }
   cleanup(); expect(removeEventListener).toHaveBeenCalledWith("copy", addEventListener.mock.calls[0][1]);

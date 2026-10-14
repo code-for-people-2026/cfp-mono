@@ -1230,11 +1230,11 @@ it("身份过期后仍可进入设置，访问隐私权利和反馈入口", asyn
 it("外部 Agent 回复的按钮与原生长按复制均保留来源声明", async () => {
   history[0].mode = "external";
   await mount(false);
-  await act(async () => { await renderer!.root.findAllByType("button").find((item) => item.props["aria-label"] === "复制阿 Q 先生的回复")!.props.onClick(); });
-  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 Q 先生\n${history[0].greeting}` });
+  await act(async () => { await renderer!.root.findAllByType("button").find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!.props.onClick(); });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
   platform.setClipboardData.mockClear();
   await act(async () => { renderer!.root.findAllByType("text").find((item) => item.children.join("") === history[0].greeting)!.props.onLongPress(); });
-  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 Q 先生\n${history[0].greeting}` });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成（外部客户端声明） · 阿 J 先生\n${history[0].greeting}` });
 });
 
 it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生长按复制完整正文与来源标识", async (mode) => {
@@ -1249,5 +1249,5 @@ it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生�
   expect(value).toContain("第一行联想\n第二行依据 · 认知视角");
   expect(details.props.selectable).toBe(false);
   await act(async () => { details.props.onLongPress(); });
-  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 Q 先生\n${value}` });
+  expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 J 先生\n${value}` });
 });

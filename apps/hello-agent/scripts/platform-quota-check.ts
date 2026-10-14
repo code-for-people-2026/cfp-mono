@@ -87,7 +87,9 @@ try {
     console.log(`RESERVED=${accepted}`);
   } else {
     // Upgrade an existing database and prove that an old record survives.
-    await payload.db.migrate({ migrations: schemaMigrations.slice(0, -1) });
+    const quotaMigration = schemaMigrations.findIndex((migration) => migration.name === "20261013_125923_platform_model_quota");
+    assert.ok(quotaMigration >= 0, "platform quota migration must be registered");
+    await payload.db.migrate({ migrations: schemaMigrations.slice(0, quotaMigration) });
     await db.run(
       sql`INSERT INTO sessions (owner, title) VALUES ('old-owner', 'preserved')`,
     );
