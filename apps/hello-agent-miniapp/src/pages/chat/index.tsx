@@ -905,7 +905,7 @@ export default function Chat() {
             )}
             {mode === "platform" &&
               settings &&
-              !settings.platformConfigured && (
+              !settings.platformConfigured && !age?.configuration.previewOnly && (
                 <Text className="config-warning">
                   平台尚未配置模型账户，请切换到“我的密钥”。
                 </Text>
@@ -965,9 +965,9 @@ export default function Chat() {
                 onSend={() => send()}
               />
             )}
-            {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>继续登录与年龄确认</Button>}
+            {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
             <Text className="composer-footnote">
-              {!loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
+              {age?.configuration.previewOnly ? "本次预览只体验登录与生日" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
                 : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>
