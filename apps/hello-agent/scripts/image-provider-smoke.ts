@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto";
 import { seedSyntheticAge } from "./synthetic-age";
 if (process.env.HELLO_IMAGE_LIVE_CHECK !== "true") throw new Error("Set HELLO_IMAGE_LIVE_CHECK=true to run one billable image test with the configured providers");
 const folder=fs.mkdtempSync(path.join(process.env.HELLO_IMAGE_CHECK_DIRECTORY || os.tmpdir(),"aj-image-live-"));
-Object.assign(process.env, { HELLO_DEPLOYED: "false", HELLO_DATABASE_URI: `file:${folder}/test.db`, PAYLOAD_SECRET: "isolated-live-image-test", HELLO_PRIVACY_DELETION_LEDGER: `${folder}/deletions.ndjson` });
+Object.assign(process.env, { NODE_ENV: "test", HELLO_DEPLOYED: "false", HELLO_DATABASE_URI: `file:${folder}/test.db`, PAYLOAD_SECRET: "isolated-live-image-test", HELLO_PRIVACY_DELETION_LEDGER: `${folder}/deletions.ndjson` });
 const {cms}=await import("../src/cms/client");
 const {Repository}=await import("../src/cms/repository");
 const {GreetingService}=await import("../src/domain/greetings");

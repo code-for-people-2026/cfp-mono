@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   devIndicators: false,
+  // 内存受限的预览构建可在独立 typecheck 通过后避免重复启动类型检查进程。
+  typescript: {
+    ignoreBuildErrors: process.env.HELLO_BUILD_TYPES_VERIFIED === "true",
+  },
   transpilePackages: [
     "@cfp/hello-agent-contracts",
     "@cfp/hello-agent-protocol",

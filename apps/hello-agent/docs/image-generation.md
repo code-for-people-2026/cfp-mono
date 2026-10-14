@@ -18,6 +18,8 @@ DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 �
 3. 复用现有私有 OSS 配置。备份 SQLite 后通过正式部署启动迁移（不要对现有部署库运行本地 db:init），新增 `greetings.image_generation`、`media.generation`、`media.generation_key` 及唯一索引，不修改旧图片。
 4. 配置好云服务后，在隔离预览实例实测一张无敏感信息的图片、鉴权下载、刷新/恢复、OSS 对象以及删除。验证通过再发布。配置值不得写入代码、提交、命令日志或 Issue。
 
+小型 ECS 使用 `Dockerfile.preview` 时，将 `typecheck` 与 Next webpack 构建分成独立步骤，避免两个编译进程同时占用内存。`HELLO_BUILD_TYPES_VERIFIED=true` 仅在前一步类型检查成功后设置；普通构建仍执行 Next 内置类型检查。不要以这个构建参数跳过独立检查。长期叠加的预览镜像若达到 Docker 层数上限，可导出已编译镜像的文件系统并重新导入为独立镜像，再恢复运行用户、工作目录和启动命令；保留旧服务及其镜像以便核对。
+
 ## 2026-10-14 云端检查
 
 - 管理员已补充百炼管理权限。成功列出北京默认业务空间，并创建本应用专用密钥；列表回读确认 `Custom`、`allowAllModels=false`、仅可访问 `wan2.6-t2i`。密钥只保存在本机被忽略的私密目录，未写入仓库或日志。
@@ -28,9 +30,14 @@ DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 �
 - 已移植到 `codex/hello-image-generation`：保留新版主 Agent 与八个专家、会话导航、微信登录/年龄核验、隐私设置，并合并隐私分支的独立删除清单重放修正。2026-10-14 16:36 新版同样通过实际 DeepSeek、万相任务恢复、Green、OSS、鉴权、导出与删除验证。
 - 图片额度使用现有原子计数账本的独立 `image:YYYY-MM-DD` 项；`HELLO_IMAGE_DAILY_LIMIT` 默认 30，每次提交前预留一张，失败不退还，恢复不重复预留。DeepSeek BYOK 不会绕过平台图片额度。
 - 发布目标是隔离验收实例。原 `name052` 与 `login053` 入口保留，后者仍只开放真实登录和生日窗口。新实例的年龄与隐私门禁保留；年龄供应商和隐私运营配置未齐全时，不开放普通聊天。
+- 2026-10-14 17:13（北京时间），已部署 `preview-20261014-image054p1` 到 ECS 的独立容器 `cfp-hello-agent-image-preview`，仅绑定 `127.0.0.1:3313`。从一致性备份迁移数据库副本后，逐列比较原有会话、轮次、媒体、9 条 Agent 配置及执行快照，数量和内容未变，完整性与外键检查通过。`name052`、`login053` 的就绪检查均为 200。新实例 `/api/hello/config` 确认生图和审核已配置；匿名图片与会话请求均为 401；法律告知包含万相和内容安全接收方；公开聊天就绪检查仍按未完成的运营条件返回 503。
+- 上述 ECS 容器内的真实新任务验收通过：`deepseek-flash` 调用 `wan2.6-t2i` 生成 269,435 字节 JPEG，Green 返回 `allow`，私有 OSS 写入与回读一致；本人读取 200、他人 404、匿名 401、OSS 匿名 403，导出和实际对象删除成功。隔离测试身份及 OSS 前缀已清理。这是服务器业务链路验收，不表示已开放手机端普通聊天或完成微信发布。
+- 本次完整检查：后端 319 项单元测试、客户端 160 项单元测试、全部后端集成检查、生图/迁移/恢复专项、年龄与登录预览专项、类型检查、lint、微信和 H5 构建、Next 生产构建均通过。ECS 另独立完成类型检查；webpack 运行时要求 `libsql` 可从应用目录解析，因此显式声明已锁定的同版本 `libsql@0.4.7`，实际 HTTP 接口验收通过。
 
 ## 验证入口
 
 `pnpm --filter @cfp/hello-agent test:images` 使用真实 Payload、ADK、图片编码及迁移，以明确标注的合成供应商和对象存储覆盖工具调用、单次提交、下载/存储中断恢复、未知回执、审核拒绝、跨用户鉴权、导出与删除。`test` 覆盖万相 HTTP 契约、URL 白名单、体积限制、标识及 Green 风险映射。合成测试不能作为云服务已开通或真实模型评测证据。
+
+`HELLO_IMAGE_LIVE_CHECK=true node --import tsx scripts/image-provider-smoke.ts` 明确提交一张付费新图，使用独立临时数据库和合成身份，调用实际 DeepSeek、万相、Green、OSS，验证读取权限、导出和对象删除。它通过源码调用业务入口，不等于手机端 UI 或公开聊天已验收。脚本在临时数据库中准备年龄与授权夹具，不向运行中的业务数据库写入测试身份。可用 `HELLO_IMAGE_CHECK_DIRECTORY` 指向运行用户可写的临时目录；若清理失败，保留目录供重试。
 
 参考：[万相 2.6 API](https://help.aliyun.com/zh/model-studio/text-to-image-v2-api-reference)、[图片审核增强版](https://help.aliyun.com/zh/document_detail/467829.html)、[上传令牌权限](https://help.aliyun.com/zh/document_detail/2926827.html)、[图片审核权限](https://help.aliyun.com/zh/document_detail/2528742.html)、[调研记录](image-generation-research.md)。
