@@ -963,7 +963,7 @@ export default function Chat() {
             )}
             {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
             <Text className="composer-footnote">
-              {age?.configuration.previewOnly ? "本次预览只体验登录与生日" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
+              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
                 : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>

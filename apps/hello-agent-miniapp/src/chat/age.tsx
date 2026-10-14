@@ -93,7 +93,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
             <Text className="age-note">微信用于识别你的账号、恢复对话。我们保存账号标识的摘要，不获取手机号。点击“同意并微信登录”表示同意登录所需的身份信息处理。</Text>
             <Text className="age-note">登录后会询问生日，再根据年龄申报引导核验；使用授权可在隐私设置中管理。</Text>
             {!status?.configuration.previewOnly && <CheckboxGroup onChange={(event) => setMigrate(event.detail.value.includes("migrate"))}><Label className="age-choice"><Checkbox value="migrate" checked={migrate} /><Text>保留当前设备的旧记录（可选）</Text></Label></CheckboxGroup>}
-            <Text className="age-note">{status?.configuration.previewOnly ? "本预览只体验登录和生日，不读取或迁移现有聊天。" : "仅首次绑定且能验证旧记录归属时保留；微信已有记录时恢复原账号，不自动合并其他历史。"}</Text>
+            <Text className="age-note">{status?.configuration.previewOnly ? "本预览用于体验登录和年龄确认，不读取或迁移现有聊天。" : "仅首次绑定且能验证旧记录归属时保留；微信已有记录时恢复原账号，不自动合并其他历史。"}</Text>
             {!native && <Text className="age-note">当前为网页预览，请在微信小程序中登录。网页可查看隐私说明和帮助。</Text>}
             {!status?.configuration.wechat && <Text className="age-note">微信登录服务尚未配置，暂时无法完成真实登录。</Text>}
           </>}
