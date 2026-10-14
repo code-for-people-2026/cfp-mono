@@ -1,3 +1,7 @@
+import { ageCollections } from "../age/collections";
+import { ageNotice } from "../age/policy";
+import { up as ageMigration } from "../cms/migrations/20261013_181500_wechat_age_verification";
+import { up as accountMigration } from "../cms/migrations/20261014_080000_wechat_profile";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -7,7 +11,7 @@ import { afterAll, beforeAll, beforeEach, expect, it, vi } from "vitest";
 import { privacyCollections } from "./collections";
 import { updateProfile } from "./profile-store";
 import { PrivacyService, profileFor, recoverOwner, withRecoveredOwner } from "./service";
-import { authenticate, mintCredential } from "../server/auth";
+import { authenticate, mintCredential as issueCredential } from "../server/auth";
 import { GET, POST } from "../app/api/hello/[...path]/route";
 import { POST as mcpPost } from "../app/api/mcp/route";
 import { handleMcp } from "../server/mcp";
@@ -54,7 +58,7 @@ beforeAll(async () => {
   payload = await new BasePayload().init({ config: buildConfig({
     secret: "isolated-profile-test", telemetry: false,
     db: sqliteAdapter({ client: { url: `file:${directory}/profiles.db` }, push: false, transactionOptions: {} }),
-    collections: [...privacyCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "expiresAt", type: "date" }] }],
+    collections: [...privacyCollections, ...ageCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "wechatKey", type: "text" }, { name: "expiresAt", type: "date" }] }],
   }) });
   holder.payload = payload;
   const args = { db: payload.db.drizzle } as MigrateUpArgs;
@@ -64,9 +68,13 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
+  await ageMigration(args); await accountMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });
+// Business tests start from a synthetic completed WeChat/age prerequisite.
+// Cookie/recovery credentials still never acquire a WeChat binding.
+const mintCredential: typeof issueCredential = (db, kind, owner, wechatKey) => issueCredential(db, kind, owner, wechatKey ?? (kind !== "cookie" && owner ? `fixture:${owner}` : undefined));
 async function setup(owner: string) {
   await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner, revision: 0, state: "active", consent: consent(), expiresAt: "2020-01-01T00:00:00.000Z" } });
   return new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" }));
@@ -259,6 +267,8 @@ it("接收方变更前旧 bearer 撤销失败，授权与历史保持原样，�
 
 async function authorized(owner: string) {
   const service = await setup(owner);
+  await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner, key: `fixture:${owner}` } });
+  await payload.create({ collection: "age-profiles", overrideAccess: true, data: { owner, state: "adult", assurance: "identity_details_match", noticeVersion: ageNotice().version, expiresAt: "2099-01-01T00:00:00Z" } });
   await updateProfile(payload, (await profileFor(payload, owner))!, { consent: { ...consent(), sensitive: true, external: true, externalRecipient: { name: "接收方 A", contact: "a@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } }, expiresAt: "2099-01-01T00:00:00.000Z", historyInspected: true });
   return service;
 }
@@ -354,7 +364,7 @@ it.each(["greet", "ag-ui", "context"])("外部 bearer 不能经 REST %s 绕过�
   } finally { vi.unstubAllEnvs(); }
 });
 
-it.each(["cookie", "miniapp"] as const)("%s 本人未开敏感授权仍可查阅，但不签发外部连接", async (kind) => {
+it.each(["cookie", "miniapp"] as const)("%s 未开敏感授权时，仅微信本人可查阅，均不签发外部连接", async (kind) => {
   const service = await authorized(`external-token-${kind}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
   const own = await mintCredential(payload, kind, service.repo.owner.id);
@@ -362,7 +372,7 @@ it.each(["cookie", "miniapp"] as const)("%s 本人未开敏感授权仍可查阅
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
   try {
     const history = await GET(new Request("http://localhost/api/hello/sessions/7", { headers }), { params: Promise.resolve({ path: ["sessions", "7"] }) });
-    expect(history.status).toBe(200);
+    expect(history.status).toBe(kind === "cookie" ? 403 : 200);
     const token = await POST(new Request("http://localhost/api/hello/token", { method: "POST", headers: { ...headers, origin: "http://localhost" } }), { params: Promise.resolve({ path: ["token"] }) });
     expect(token.status).toBe(403);
     expect((await payload.find({ collection: "credentials", overrideAccess: true, where: { owner: { equals: service.repo.owner.id } } })).docs.map((row) => row.kind)).toEqual([kind]);
@@ -391,19 +401,19 @@ it.each(["recovery", "recipient"].flatMap((change) => ["hello_get_history", "hel
 it.each(["success", "failure", "disconnect"])("AG-UI %s 在后台生成结束前持续保护凭证，之后可恢复", async (mode) => {
   const service = await authorized(`stream-${mode}`);
   const { code } = await service.recoveryCode();
-  const credential = await mintCredential(payload, "cookie", service.repo.owner.id);
+  const credential = await mintCredential(payload, "miniapp", service.repo.owner.id);
   const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
   business.generate.mockImplementationOnce(async () => { started.resolve(); await finish.promise; if (mode === "failure") throw new Error("injected provider error"); return { id: 1, greeting: "ok", artifacts: [], status: "completed" }; });
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
-  const response = await POST(new Request("http://localhost/api/hello/ag-ui", { method: "POST", headers: { origin: "http://localhost", cookie: `hello_identity=${credential.token}` }, body: JSON.stringify(agentBody()) }), { params: Promise.resolve({ path: ["ag-ui"] }) });
+  const response = await POST(new Request("http://localhost/api/hello/ag-ui", { method: "POST", headers: { origin: "http://localhost", authorization: `Bearer ${credential.token}` }, body: JSON.stringify(agentBody()) }), { params: Promise.resolve({ path: ["ag-ui"] }) });
   try {
     expect(response.status).toBe(200); await started.promise;
     const consumed = mode === "disconnect" ? response.body!.cancel() : response.text();
     const recovery = recoverOwner(payload, code);
-    await vi.waitFor(async () => expect((await GET(new Request("http://localhost/api/hello/sessions/7", { headers: { cookie: `hello_identity=${credential.token}` } }), { params: Promise.resolve({ path: ["sessions", "7"] }) })).status).toBe(409));
+    await vi.waitFor(async () => expect((await GET(new Request("http://localhost/api/hello/sessions/7", { headers: { authorization: `Bearer ${credential.token}` } }), { params: Promise.resolve({ path: ["sessions", "7"] }) })).status).toBe(409));
     finish.resolve(); await consumed;
     await expect(recovery).resolves.toBe(service.repo.owner.id);
-    await expect(authenticate(payload, new Request("http://localhost", { headers: { cookie: `hello_identity=${credential.token}` } }))).rejects.toMatchObject({ status: 401 });
+    await expect(authenticate(payload, new Request("http://localhost", { headers: { authorization: `Bearer ${credential.token}` } }))).rejects.toMatchObject({ status: 401 });
   } finally { finish.resolve(); vi.unstubAllEnvs(); }
 });
 
@@ -431,7 +441,7 @@ it.each(["media", "artifact-image"])("关闭敏感授权后，REST %s 拒绝外�
   const service = await authorized(`image-scope-${route}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
   const bearer = await mintCredential(payload, "bearer", service.repo.owner.id);
-  const cookie = await mintCredential(payload, "cookie", service.repo.owner.id);
+  const personal = await mintCredential(payload, "miniapp", service.repo.owner.id);
   if (route === "artifact-image") {
     const artifact = { kind: "image", id: "uploaded", title: "用户图片", alt: "合成图片", source: { type: "media", mediaId: 1 } };
     await payload.db.drizzle.run(sql`INSERT INTO greetings (id, owner, session_id, request_key, fingerprint, mode, status, input, artifacts) VALUES (900, ${service.repo.owner.id}, 7, 'image-scope', 'fixture', 'external', 'completed', '{"text":"普通输入","mediaIds":[]}', ${JSON.stringify([artifact])})`);
@@ -441,7 +451,7 @@ it.each(["media", "artifact-image"])("关闭敏感授权后，REST %s 拒绝外�
   const denied = await read(rpcHeaders(bearer.token));
   expect(denied.status).toBe(403);
   expect(business.image).not.toHaveBeenCalled();
-  const own = await read({ cookie: `hello_identity=${cookie.token}` });
+  const own = await read({ authorization: `Bearer ${personal.token}` });
   expect(own.status).toBe(200); expect(await own.text()).toBe("synthetic-image");
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: true });
   const current = await mintCredential(payload, "bearer", service.repo.owner.id);

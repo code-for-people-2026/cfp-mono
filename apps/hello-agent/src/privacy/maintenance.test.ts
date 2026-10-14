@@ -24,6 +24,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const find = vi.fn(async ({ collection, where, select, limit, pagination, sort, depth }) => {
       expect({ limit, pagination, sort, depth }).toEqual({ limit: 100, pagination: false, sort: "id", depth: 0 });
       expect(Object.keys(select).sort()).toEqual((collection === "privacy-profiles" && select.state ? ["id", "owner", "state", "expiresAt"] : ["id", "owner"]).sort());
+      if (where.and) return { docs: [] }; // No expired onboarding records in this fixture.
       const rows = source.filter((row) => row.id > where.id.greater_than).slice(0, limit);
       return { docs: rows.map((row) => Object.fromEntries(Object.entries(row).filter(([key]) => select[key]))) };
     });
@@ -31,7 +32,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const result = await maintainPrivacy(payload, { apply: true, restoreLedger: ledger });
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
-    expect(find).toHaveBeenCalledTimes(24); // profile metadata + seven owner scans, three pages each
+    expect(find).toHaveBeenCalledTimes(32); // ten paginated scans plus two empty onboarding-expiry scans
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -42,11 +43,11 @@ it("一个身份失败仍尝试其余身份及凭证清理，汇总失败并允�
     return { deleted: true };
   });
   const payload = {
-    find: vi.fn().mockResolvedValue({ docs: [
+    find: vi.fn().mockImplementation(async ({ collection }) => ({ docs: collection === "privacy-profiles" ? [
       { id: 1, owner: "broken", state: "deleting" },
       { id: 2, owner: "withdrawn", state: "withdrawn" },
       { id: 3, owner: "expired", state: "active", expiresAt: "2000-01-01" },
-    ] }),
+    ] : [] })),
     delete: vi.fn().mockResolvedValue({ errors: [] }),
   };
   try {
@@ -59,7 +60,7 @@ it("一个身份失败仍尝试其余身份及凭证清理，汇总失败并允�
     expect(summary.errors[0].message).toContain(createHash("sha256").update("broken").digest("hex"));
     expect(String(summary.errors[0])).not.toContain(firstError.message);
     expect(cleanup.mock.calls).toEqual([["broken"], ["withdrawn"], ["expired"]]);
-    expect(payload.delete).toHaveBeenCalledOnce();
+    expect(payload.delete).toHaveBeenCalledTimes(2);
 
     cleanup.mockReset().mockResolvedValue({ deleted: true });
     await expect(maintainPrivacy(payload as unknown as Payload, { apply: true })).resolves.toMatchObject({ deleted: 3 });
@@ -70,23 +71,23 @@ it("一个身份失败仍尝试其余身份及凭证清理，汇总失败并允�
 it.each(["throw", "partial"])("身份和全局凭证失败一并报告（%s），不伪报成功", async (kind) => {
   cleanup.mockReset().mockRejectedValue(new Error("private error"));
   const erase = kind === "throw" ? vi.fn().mockRejectedValue(new Error("private db error")) : vi.fn().mockResolvedValue({ errors: [{ id: 7 }] });
-  const payload = { find: vi.fn().mockResolvedValue({ docs: [
+  const payload = { find: vi.fn().mockImplementation(async ({ collection }) => ({ docs: collection === "privacy-profiles" ? [
     { id: 1, owner: "first", state: "withdrawn" }, { id: 2, owner: "second", state: "deleting" },
-  ] }), delete: erase };
+  ] : [] })), delete: erase };
   try {
     const failure = await maintainPrivacy(payload as unknown as Payload, { apply: true }).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(PrivacyMaintenanceError);
-    expect((failure as PrivacyMaintenanceError).errors).toHaveLength(3);
+    expect((failure as PrivacyMaintenanceError).errors).toHaveLength(4);
     expect((failure as PrivacyMaintenanceError).result).toMatchObject({ deleted: 0 });
     expect(cleanup.mock.calls).toEqual([["first"], ["second"]]);
-    expect(erase).toHaveBeenCalledOnce();
+    expect(erase).toHaveBeenCalledTimes(2);
   } finally { cleanup.mockReset().mockResolvedValue({ deleted: true }); }
 });
 
 it("预览只返回待清理身份数，不执行或记录删除失败", async () => {
   cleanup.mockClear();
   const erase = vi.fn();
-  const payload = { find: vi.fn().mockResolvedValue({ docs: [{ id: 1, owner: "withdrawn", state: "withdrawn" }] }), delete: erase };
+  const payload = { find: vi.fn().mockImplementation(async ({ collection }) => ({ docs: collection === "privacy-profiles" ? [{ id: 1, owner: "withdrawn", state: "withdrawn" }] : [] })), delete: erase };
   await expect(maintainPrivacy(payload as unknown as Payload, { apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
   expect(erase).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
 });
@@ -145,7 +146,7 @@ it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时�
     expect(failure).toBeInstanceOf(PrivacyMaintenanceError);
     expect((failure as PrivacyMaintenanceError).result).toEqual({ dryRun: false, eligibleIdentities: 2, deleted: 1 });
     expect((failure as PrivacyMaintenanceError).errors.map(String)).toEqual([`Error: 对象清理失败，ownerDigest=${digests[0]}`]);
-    expect(removePrefix).toHaveBeenCalledTimes(2); expect(payload.delete).toHaveBeenCalledOnce();
+    expect(removePrefix).toHaveBeenCalledTimes(2); expect(payload.delete).toHaveBeenCalledTimes(2);
     await expect(maintainPrivacy(payload as unknown as Payload, options)).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(removePrefix.mock.calls).toEqual([...digests, ...digests].map((value) => [`hello-agent/${value.slice(0, 32)}/`]));
     expect(cleanup).not.toHaveBeenCalled();

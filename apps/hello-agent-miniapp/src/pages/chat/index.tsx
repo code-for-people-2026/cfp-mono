@@ -1,3 +1,4 @@
+import type { UserProfile } from "@cfp/hello-agent-contracts";
 import { AgeGate } from "../../chat/age";
 import type { AgeStatus } from "@cfp/hello-agent-protocol";
 import { installAiCopyLabels } from "../../chat/ai-copy";
@@ -69,6 +70,8 @@ const suggestions = [
 ];
 
 export default function Chat() {
+  const [profile, setProfile] = useState<UserProfile>();
+  const [avatarSource, setAvatarSource] = useState<string>();
   const [age, setAge] = useState<AgeStatus>();
   const [ageOpen, setAgeOpen] = useState(true);
   const bootVersion = useRef(0);
@@ -282,9 +285,8 @@ export default function Chat() {
     setError("");
     try {
       await api.establishIdentity();
-      const [config, rows, nextPrivacy, nextAge] = await Promise.all([
+      const [config, nextPrivacy, nextAge] = await Promise.all([
         api.getSettings(),
-        api.getSessions(),
         api.getPrivacy(),
         api.getAge(),
       ]);
@@ -293,6 +295,10 @@ export default function Chat() {
       setAgeOpen(!nextAge.allowed || !consentCurrent(nextPrivacy));
       setPrivacy(nextPrivacy);
       setSettings(config);
+      const [rows, nextProfile] = nextAge.loggedIn ? await Promise.all([api.getSessions(), api.getProfile()]) : [[], undefined];
+      if (version !== bootVersion.current) return;
+      setProfile(nextProfile); setAvatarSource(undefined);
+      if (nextProfile?.avatar.image) void api.profileAvatarSource().then((source) => { if (version === bootVersion.current) setAvatarSource(source); }).catch(() => { /* Generated avatar remains visible when the photo cannot load. */ });
       setSessions(rows);
       if (rows.length) {
         let remembered = activeSession.current;
@@ -326,6 +332,7 @@ export default function Chat() {
   function clearIdentityView() {
     bootVersion.current++;
     setAge(undefined);
+    setProfile(undefined); setAvatarSource(undefined);
     setAgeOpen(true);
     // 防止旧身份的图片异步结果混入新页面。
     historyVersion.current++;
@@ -638,6 +645,8 @@ export default function Chat() {
     <View className={h5 ? "h5-shell" : "native-shell"}>
       <View className="chat-app">
         <ChatNavigation
+          profile={profile}
+          avatarSource={avatarSource}
           open={navigationOpen}
           sessions={sessions}
           activeId={sessionId}
@@ -978,7 +987,7 @@ export default function Chat() {
           />
         )}
       </View>
-      {ageOpen && !identityExpired && <AgeGate status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
+      {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
         onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
         onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}
         onHelp={() => void openHelp()} onClose={() => setAgeOpen(false)} />}

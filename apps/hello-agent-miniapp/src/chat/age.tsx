@@ -1,3 +1,5 @@
+import type { UserProfile } from "@cfp/hello-agent-contracts";
+import { AccountAvatar, AccountProfile } from "./profile";
 import { useRef, useState } from "react";
 import { Button as TaroButton, type ButtonProps, Checkbox, CheckboxGroup, Input, Label, Picker, ScrollView, Text, View } from "@tarojs/components";
 import { ageStateText, type AgeDeclaration, type AgeStatus } from "@cfp/hello-agent-protocol";
@@ -11,10 +13,13 @@ function Button(props: ButtonProps) {
 type Detail = "login" | "birthday" | "verification";
 const detailTitle: Record<Detail, string> = { login: "登录与使用说明", birthday: "为什么需要生日？", verification: "年龄核验说明" };
 
-export function AgeGate({ status, loadingError, privacyReady, onChange, onRefresh, onLogin, onPrivacy, onHelp, onClose }: {
+export function AgeGate({ profile, avatarSource, status, loadingError, privacyReady, onChange, onRefresh, onLogin, onPrivacy, onHelp, onClose }: {
+  profile?: UserProfile; avatarSource?: string;
   status?: AgeStatus; loadingError?: string; privacyReady: boolean; onChange: (status: AgeStatus) => void;
   onRefresh: () => Promise<void>; onLogin: () => Promise<void>; onPrivacy: () => void; onHelp: () => void; onClose: () => void;
 }) {
+  const [nickname, setNickname] = useState("");
+  const [avatarPath, setAvatarPath] = useState("");
   const [migrate, setMigrate] = useState(false);
   const [consent, setConsent] = useState(false);
   const [birthday, setBirthday] = useState("");
@@ -38,7 +43,8 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
   }
   async function login() {
     if (!status) return;
-    await api.loginWechat(migrate, status.notice.version);
+    await api.loginWechat(migrate, status.notice.version, { nickname, avatarPath });
+    setNickname(""); setAvatarPath("");
     setMigrate(false); setDetail(null); setDeclaration(undefined); setBirthday(""); setName(""); setIdCard(""); setConsent(false); await onLogin();
   }
   async function confirmBirthday() {
@@ -78,7 +84,7 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
             <Text className="age-note">登录后会询问生日，再根据年龄申报引导核验；使用授权可在隐私设置中管理。</Text>
             {!status?.configuration.previewOnly && <CheckboxGroup onChange={(event) => setMigrate(event.detail.value.includes("migrate"))}><Label className="age-choice"><Checkbox value="migrate" checked={migrate} /><Text>保留当前设备的旧记录（可选）</Text></Label></CheckboxGroup>}
             <Text className="age-note">{status?.configuration.previewOnly ? "本预览只体验登录和生日，不读取或迁移现有聊天。" : "仅首次绑定且能验证旧记录归属时保留；微信已有记录时恢复原账号，不自动合并其他历史。"}</Text>
-            {!native && <Text className="age-note">当前为网页预览，请在微信小程序中登录。网页可查看已有记录、隐私说明和帮助。</Text>}
+            {!native && <Text className="age-note">当前为网页预览，请在微信小程序中登录。网页可查看隐私说明和帮助。</Text>}
             {!status?.configuration.wechat && <Text className="age-note">微信登录服务尚未配置，暂时无法完成真实登录。</Text>}
           </>}
           {detail === "birthday" ? <>
@@ -90,7 +96,7 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
           <View className="age-detail-links"><Button className="age-link" onClick={onPrivacy}>隐私政策与数据权利</Button><Button className="age-link" onClick={onHelp}>帮助与反馈</Button></View>
         </ScrollView>
       </> : <>
-        <Button className="age-close" ariaLabel="稍后再说，关闭窗口" disabled={busy} onClick={() => void act(cancel)}>×</Button>
+        {status?.loggedIn && <Button className="age-close" ariaLabel="稍后再说，关闭窗口" disabled={busy} onClick={() => void act(cancel)}>×</Button>}
         {step === "loading" && <>
           <Text className="age-title">{loadingError ? "暂时没连上" : "稍等一下"}</Text>
           <Text className="age-copy">{loadingError ? "请重试，或稍后再来。" : "正在读取登录状态…"}</Text>
@@ -99,11 +105,21 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
         {step === "login" && <>
           <Text className="age-title">先登录一下吧</Text>
           <Text className="age-copy">{status?.configuration.previewOnly ? "用微信登录，体验新的开始方式。" : "用微信登录，留住和阿J的对话。"}</Text>
+          <View className="age-profile-fields">
+            <Button className="age-avatar-picker" openType={native ? "chooseAvatar" : undefined} disabled={busy || !native} onChooseAvatar={(event) => setAvatarPath(event.detail.avatarUrl)} ariaLabel="选择头像，可使用微信头像">
+              <AccountAvatar source={avatarPath} /><Text className="age-avatar-caption">选头像</Text>
+            </Button>
+            <View className="age-nickname-field">
+              <Input className="age-nickname" type={native ? "nickname" : "text"} value={nickname} maxlength={24} placeholder="怎么称呼你？" disabled={busy || !native} ariaLabel="昵称，可使用微信昵称" onInput={(event) => setNickname(event.detail.value)} onBlur={(event) => setNickname(event.detail.value)} onNickNameReview={(event) => { if (!event.detail.pass) { setNickname(""); setMessage("这个昵称暂时不能使用，请换一个。"); } }} />
+              <Text className="age-profile-hint">可用微信昵称和头像 · 留空随机生成</Text>
+            </View>
+          </View>
           <Button className="age-primary" disabled={busy || !native || !status?.configuration.wechat} onClick={() => void act(login)}>{busy ? "正在登录…" : "同意并微信登录"}</Button>
           {(!native || !status?.configuration.wechat) && <Text className="age-hint">{!native ? "请在微信小程序中登录" : "登录暂不可用，请稍后再试"}</Text>}
           {explanation("login", "登录与使用说明")}
         </>}
         {step === "birthday" && <>
+          {profile && <AccountProfile profile={profile} source={avatarSource} />}
           <Text className="age-title">你的生日是？</Text>
           <Text className="age-copy">方便我们确认适合你的使用方式。</Text>
           <Picker mode="date" start="1900-01-01" end={todayInChina()} value={birthday} disabled={busy} onChange={(event) => setBirthday(event.detail.value)}>

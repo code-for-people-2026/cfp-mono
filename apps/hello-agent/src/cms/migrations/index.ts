@@ -1,3 +1,4 @@
+import * as profile from "./20261014_080000_wechat_profile";
 import * as age from "./20261013_181500_wechat_age_verification";
 import * as privacyHistory from "./20261013_175000_privacy_history_inspection";
 import * as privacyRevision from "./20261013_174000_privacy_revision";
@@ -38,4 +39,5 @@ export const migrations = [
   { up: privacyRevision.up, down: privacyRevision.down, name: "20261013_174000_privacy_revision" },
   { up: privacyHistory.up, down: privacyHistory.down, name: "20261013_175000_privacy_history_inspection" },
   { up: age.up, down: age.down, name: "20261013_181500_wechat_age_verification" },
+  { up: profile.up, down: profile.down, name: "20261014_080000_wechat_profile" },
 ];

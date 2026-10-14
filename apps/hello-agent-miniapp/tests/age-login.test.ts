@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-const calls = vi.hoisted(() => ({ request: vi.fn(), getStorageSync: vi.fn(), setStorageSync: vi.fn(), removeStorageSync: vi.fn(), requirePrivacyAuthorize: vi.fn(), login: vi.fn() }));
+const calls = vi.hoisted(() => ({ request: vi.fn(), getStorageSync: vi.fn(), setStorageSync: vi.fn(), removeStorageSync: vi.fn(), requirePrivacyAuthorize: vi.fn(), login: vi.fn(), compressImage: vi.fn(), getFileSystemManager: vi.fn() }));
 vi.mock("@tarojs/taro", () => ({ default: calls }));
 beforeEach(() => { vi.resetModules(); Object.values(calls).forEach((fn) => fn.mockReset()); vi.stubEnv("TARO_ENV", "weapp"); vi.stubGlobal("HELLO_API_ORIGIN", "http://127.0.0.1:3347"); });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
@@ -46,4 +46,24 @@ describe("统一登录与年龄引导的请求边界", () => {
     await expect(api.loginWechat(false, "notice-test")).rejects.toThrow("微信小程序");
     expect(calls.request).not.toHaveBeenCalled();
   });
+});
+
+it("选择头像后只发送压缩图片与昵称，不发送本地路径或远端头像 URL", async () => {
+  calls.requirePrivacyAuthorize.mockImplementation(({ success }) => success());
+  calls.compressImage.mockResolvedValue({ tempFilePath: "wxfile://small.jpg" });
+  calls.getFileSystemManager.mockReturnValue({ readFile: ({ success }: { success: (value: { data: string }) => void }) => success({ data: "cGl4ZWxz" }) });
+  calls.login.mockResolvedValue({ code: "one-use-code" });
+  calls.request.mockResolvedValue({ statusCode: 200, data: { token: "verified", owner: "owner", history: "new", expiresAt: "2030-01-01" } });
+  const api = await import("../src/chat/api"); await api.loginWechat(false, "test", { nickname: "  小确幸  ", avatarPath: "wxfile://large.jpg" });
+  expect(calls.compressImage).toHaveBeenCalledWith({ src: "wxfile://large.jpg", quality: 80, compressedWidth: 256, compressedHeight: 256 });
+  expect(calls.request.mock.calls[0][0].data).toMatchObject({ nickname: "小确幸", avatarBase64: "cGl4ZWxz" });
+  expect(JSON.stringify(calls.request.mock.calls)).not.toContain("wxfile://");
+});
+it("头像超过上限时不消耗微信登录 code，也不发送请求", async () => {
+  calls.requirePrivacyAuthorize.mockImplementation(({ success }) => success());
+  calls.compressImage.mockResolvedValue({ tempFilePath: "wxfile://small.jpg" });
+  calls.getFileSystemManager.mockReturnValue({ readFile: ({ success }: { success: (value: { data: string }) => void }) => success({ data: "A".repeat(200000) }) });
+  const api = await import("../src/chat/api");
+  await expect(api.loginWechat(false, "test", { avatarPath: "wxfile://large.jpg" })).rejects.toThrow("有点大");
+  expect(calls.login).not.toHaveBeenCalled(); expect(calls.request).not.toHaveBeenCalled();
 });

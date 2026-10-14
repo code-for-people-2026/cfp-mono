@@ -19,7 +19,7 @@ const server = createServer(async (incoming, outgoing) => {
     const chunks: Buffer[] = []; let size = 0;
     for await (const chunk of incoming) {
       size += chunk.length;
-      if (size > 4096) { outgoing.writeHead(413); outgoing.end(); return; }
+      if (size > 192 * 1024) { outgoing.writeHead(413); outgoing.end(); return; }
       chunks.push(Buffer.from(chunk));
     }
     const headers = new Headers();

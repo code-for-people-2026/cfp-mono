@@ -1,3 +1,4 @@
+import { generatedProfile, loginProfileSchema, saveLoginProfile } from "../profile/service";
 import { withCredentialLock } from "../server/credential-lock";
 import { createHash, randomUUID } from "node:crypto";
 import type { Payload } from "payload";
@@ -20,7 +21,7 @@ export const exchangeWechat: WechatExchange = async (code) => {
     return createHash("sha256").update(`${process.env.HELLO_WECHAT_APP_ID}:${data.openid}`).digest("hex");
   } catch { throw new AppError(502, "微信登录未完成，请重新点击登录；请勿提供他人身份信息"); }
 };
-const loginSchema = z.object({ code: z.string().min(1).max(256), consent: z.literal(true), noticeVersion: z.string().max(100), migrateCurrent: z.boolean() }).strict();
+const loginSchema = z.object({ code: z.string().min(1).max(256), consent: z.literal(true), noticeVersion: z.string().max(100), migrateCurrent: z.boolean() }).extend(loginProfileSchema.shape).strict();
 export async function wechatLogin(payload: Payload, request: Request, body: unknown, exchange: WechatExchange = exchangeWechat) {
   if (request.headers.has("origin")) throw new AppError(403, "请在微信小程序中完成微信登录");
   const input = loginSchema.parse(body);
@@ -38,6 +39,8 @@ export async function wechatLogin(payload: Payload, request: Request, body: unkn
     const existing = (await payload.find({ collection: "wechat-identities", overrideAccess: true, limit: 1, where: { key: { equals: key } } })).docs[0];
     if (existing) return withCredentialLock(existing.owner, async () => {
       await assertLease();
+      await saveLoginProfile(payload, existing, input, undefined, assertLease);
+      await assertLease();
       await payload.update({ collection: "wechat-identities", overrideAccess: true, id: existing.id, data: { noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString() } });
       return { ...(await mintCredential(payload, "miniapp", String(existing.owner), key)), history: current?.id === existing.owner ? "kept" : "wechat_restored" };
     });
@@ -52,7 +55,9 @@ export async function wechatLogin(payload: Payload, request: Request, body: unkn
       const adopt = current && input.migrateCurrent && !bound && !["deleting", "deleted"].includes(String(profile?.state));
       const owner = adopt && current ? current.id : randomUUID();
       await assertLease();
-      await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner, key, noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString() } });
+      const identity = await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner, key, profile: generatedProfile(owner), noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString() } });
+      await saveLoginProfile(payload, identity, input, undefined, assertLease);
+      await assertLease();
       // Anonymous credentials cannot be used later to silently act as WeChat.
       if (adopt) await revokeCredentials(payload, owner);
       return { ...(await mintCredential(payload, "miniapp", owner, key)), history: adopt ? "kept" : "new" };

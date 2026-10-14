@@ -14,12 +14,14 @@ const { migrations } = await import("../src/cms/migrations");
 const payload = await cms();
 try {
   const db = payload.db.drizzle, req = await createLocalReq({}, payload);
-  for (const migration of migrations.filter((m) => !m.name.includes("wechat_age"))) await migration.up({ db, payload, req });
+  for (const migration of migrations.filter((m) => !m.name.includes("wechat_"))) await migration.up({ db, payload, req });
   await db.run(sql`INSERT INTO sessions (owner, title) VALUES ('synthetic-old', '旧会话保留')`);
   await db.run(sql`INSERT INTO credentials (owner, digest, kind, expires_at) VALUES ('synthetic-old', 'synthetic-digest', 'miniapp', '2027-01-01')`);
   const before = await db.all(sql`SELECT * FROM sessions`);
   const migration = migrations.find((m) => m.name.includes("wechat_age"))!;
   await migration.up({ db, payload, req }); await migration.up({ db, payload, req });
+  const profileMigration = migrations.find((m) => m.name.includes("wechat_profile"))!;
+  await profileMigration.up({ db, payload, req }); await profileMigration.up({ db, payload, req });
   assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
   const credential = (await payload.find({ collection: "credentials", overrideAccess: true })).docs[0];
   assert.equal(credential.owner, "synthetic-old"); assert.equal(credential.wechatKey, null);

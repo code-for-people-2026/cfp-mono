@@ -1,3 +1,4 @@
+import { avatarResponse, readProfile, PROFILE_BODY_LIMIT } from "../../../../profile/service";
 import { AgeService } from "../../../../age/service";
 import { agePost } from "../../../../age/http";
 import { wechatLogin } from "../../../../age/wechat";
@@ -64,6 +65,12 @@ export async function GET(request: Request, context: Context) {
       if (owner.auth === "bearer") {
         await new AgeService(payload, owner).requireCapability();
         await privacyService(payload, owner).requireExternalAccess();
+      }
+      await new AgeService(payload, owner).requireLogin();
+      if (path[0] === "profile") {
+        if (owner.auth !== "miniapp") throw new AppError(403, "请本人在小程序中查看资料");
+        if (path.length === 1) return json(await readProfile(payload, owner.id));
+        if (path.length === 2 && path[1] === "avatar") return avatarResponse(payload, owner.id);
       }
       const service = new GreetingService(new Repository(payload, owner));
       if (
@@ -152,13 +159,13 @@ export async function POST(request: Request, context: Context) {
     const payload = await cms();
     if (path[0] === "wechat-login" && path.length === 1) {
       rateLimit("wechat-login");
-      return json(await wechatLogin(payload, request, await readJson(request, 2048)));
+      return json(await wechatLogin(payload, request, await readJson(request, PROFILE_BODY_LIMIT)));
     }
     if (path[0] === "privacy-recover") return await recoveryResponse(payload, request);
     if (path[0] === "miniapp-identity") {
       if (request.headers.has("origin"))
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
-      // 访客身份只供查看旧记录与行使数据权利；生成须另行完成微信登录和年龄核验。
+      // 访客凭证仅用于登录前状态和数据权利；业务读取也必须完成微信登录。
       rateLimit("miniapp-identity");
       return json(await mintCredential(payload, "miniapp"));
     }

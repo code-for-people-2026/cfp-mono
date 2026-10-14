@@ -49,6 +49,9 @@ export class AgeService {
       notice: ageNotice(), configuration: { wechat: wechatConfigured(), provider: providerConfigured() },
     };
   }
+  async requireLogin() {
+    if (!await this.bound()) throw new AppError(403, "请先微信登录");
+  }
   async requireCapability() {
     const status = await this.status();
     if (!status.allowed) throw new AppError(403, "请先完成微信登录与有效年龄核验；未成年、未知或需复核时暂不开放生成、上传、广告整理和外部连接。仍可使用隐私与反馈入口。");

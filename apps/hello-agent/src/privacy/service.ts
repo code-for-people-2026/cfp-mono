@@ -1,3 +1,4 @@
+import { exportProfile, deleteProfileImages } from "../profile/service";
 import { ageProfile } from "../age/service";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -174,7 +175,7 @@ export class PrivacyService {
     const credentials: { kind: string; expiresAt: string; createdAt: string }[] = [];
     const age = await ageProfile(this.repo.payload, this.repo.owner.id);
     const ageVerification = age ? { state: age.state, declaration: age.declaration, source: age.source, assurance: age.assurance, verifiedAt: age.verifiedAt, expiresAt: age.expiresAt, noticeVersion: age.noticeVersion, consentedAt: age.consentedAt, reference: age.reference, additionalVerification: age.additionalVerification } : null;
-    const result = { ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    const result = { userProfile: await exportProfile(this.repo.payload, this.repo.owner.id), ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
     budget.add(result, false);
     // ADK snapshots mix visitor input with admin-only knowledgeContext and
     // tool state. The visitor-facing conversation is exported below instead.
@@ -224,6 +225,7 @@ export class PrivacyService {
     const ageActive = await this.repo.payload.count({ collection: "age-locks", overrideAccess: true, where: { and: [{ key: { equals: `owner:${this.repo.owner.id}` } }, { expiresAt: { greater_than: new Date().toISOString() } }] } });
     if (active.length || ageActive.totalDocs) throw new AppError(409, "已停止新处理，正在等待本轮结束；请稍后再次点击删除");
     await writeDeletionLedger(this.repo.owner.id);
+    await deleteProfileImages(this.repo.payload, this.repo.owner.id);
     await this.media.deleteAll();
     for (const collection of [...contentCollections, "age-profiles", "wechat-identities"] as const) {
       const result = await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });

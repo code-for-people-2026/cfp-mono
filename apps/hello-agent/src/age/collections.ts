@@ -7,6 +7,7 @@ export const ageCollections: CollectionConfig[] = [
     { name: "key", type: "text", required: true, unique: true },
     { name: "noticeVersion", type: "text" },
     { name: "consentedAt", type: "date" },
+    { name: "profile", type: "json" },
     { name: "owner", type: "text", required: true, unique: true },
   ] },
   { slug: "age-profiles", lockDocuments: false, admin: { hidden: true }, access, fields: [

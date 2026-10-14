@@ -1,3 +1,5 @@
+import type { UserProfile } from "@cfp/hello-agent-contracts";
+import { AccountProfile } from "./profile";
 import { useEffect, useState } from "react";
 import { Button, Input, ScrollView, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
@@ -7,6 +9,8 @@ import type { MemoryStatus, Session } from "./model";
 import { MemoryMeter } from "./memory";
 
 type Props = {
+  profile?: UserProfile;
+  avatarSource?: string;
   open: boolean;
   sessions: Session[];
   activeId?: number;
@@ -142,6 +146,7 @@ export function ChatNavigation(props: Props) {
                 <ChatIcon name="x" />
               </Button>
             </View>
+            {props.profile && <AccountProfile profile={props.profile} source={props.avatarSource} />}
             <Button
               className="control drawer-new"
               disabled={props.disabled || undefined}

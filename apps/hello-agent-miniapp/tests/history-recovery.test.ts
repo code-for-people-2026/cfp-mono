@@ -92,6 +92,7 @@ beforeEach(() => {
   history = [structuredClone(initial)];
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     const route = url.split("/api/hello/")[1];
+    if (route === "profile") return { statusCode: 200, data: { nickname: "正念小水豚", avatar: { emoji: "🦦", color: "#e4eee5", image: false } } };
     if (route === "age") return { statusCode: 200, data: { loggedIn: true, state: "adult", allowed: true, verifiedAt: "2026-10-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z", source: "isolated-test", assurance: "identity_details_match", additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true } } };
     if (route === "privacy") return { statusCode: 200, data: { policy: { version: "test", ready: true, contact: "test", documents: [] }, state: "active", consent: { version: "test", core: true, model: true, sensitive: true, external: true }, expiresAt: null, hasRecoveryCode: false } };
     const data =
@@ -1269,4 +1270,14 @@ it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生�
   expect(details.props.selectable).toBe(false);
   await act(async () => { details.props.onLongPress(); });
   expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 J 先生\n${value}` });
+});
+
+it("未完成微信登录时不请求历史或个人资料，业务输入禁用且登录窗口不能关闭", async () => {
+  const original = platform.request.getMockImplementation()!;
+  platform.request.mockImplementation(async (options) => options.url.endsWith("/age") ? { statusCode: 200, data: { loggedIn: false, state: "unverified", allowed: false, verifiedAt: null, expiresAt: null, source: null, assurance: null, additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: false } } } : original(options));
+  await mount(false);
+  expect(platform.request.mock.calls.some(([options]) => /\/(sessions|profile)(\/|$)/.test(options.url))).toBe(false);
+  expect(text()).toContain("先登录一下吧");
+  expect(text()).not.toContain("已经保存的日常");
+  expect(renderer!.root.findAllByType("button").some((button) => button.props.className?.includes("age-close"))).toBe(false);
 });

@@ -252,6 +252,15 @@ export interface WechatIdentity {
   key: string;
   noticeVersion?: string | null;
   consentedAt?: string | null;
+  profile?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   owner: string;
   updatedAt: string;
   createdAt: string;
@@ -585,6 +594,7 @@ export interface WechatIdentitiesSelect<T extends boolean = true> {
   key?: T;
   noticeVersion?: T;
   consentedAt?: T;
+  profile?: T;
   owner?: T;
   updatedAt?: T;
   createdAt?: T;

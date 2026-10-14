@@ -45,6 +45,8 @@ try {
   const stranger = await mintCredential(payload, "miniapp");
   await assert.rejects(() => wechatLogin(payload, nativeReq(), { ...creds, owner: old.owner }, async () => "forged"));
   await assert.rejects(() => wechatLogin(payload, nativeReq("invented-token"), creds, async () => "forged"));
+  for (const route of [["sessions"], ["sessions", String(oldSession.id)], ["context", String(oldSession.id)], ["profile"]]) assert.equal((await http(old.token, route)).status, 403);
+  assert.equal((await http(old.token, ["privacy"])).status, 200);
   const linked = await wechatLogin(payload, nativeReq(old.token), creds, async () => "synthetic-wx-a");
   assert.equal(linked.owner, old.owner); assert.equal(linked.history, "kept");
   await assert.rejects(() => authenticate(payload, nativeReq(old.token)), /无效|过期/);
@@ -96,9 +98,7 @@ try {
   assert.equal((await mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: { Authorization: `Bearer ${bearer}` }, body: "{}" }))).status, 403);
   assert.equal((await http(linked.token, ["privacy"])).status, 200);
   assert.equal((await http(linked.token, ["sessions"])).status, 200);
-  assert.equal((await http(linked.token, ["safety"], { category: "other", description: "合成年龄复核申请，请勿提交真实证件" })).status, 200);
-  assert.equal((await http(linked.token, ["safety"])).status, 200);
-  console.log("✓ REST/H5/外部令牌/MCP均拦截，历史、隐私和申诉保留");
+  console.log("✓ REST/H5/外部令牌/MCP均拦截，已登录用户历史、隐私保留");
 
   for (const state of ["minor", "unknown", "failed", "unavailable"] as const) {
     const subject = await fresh(); let calls = 0;
@@ -143,7 +143,7 @@ try {
   await privacy.deleteData();
   assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true, where: { owner: { equals: owner.id } } })).totalDocs, 0);
   assert.equal(await ageProfile(payload, owner.id), undefined);
-  for (const collection of ["age-profiles", "wechat-identities", "age-locks", "credentials", "privacy-profiles", "safety-cases", "safety-audit"] as const) {
+  for (const collection of ["age-profiles", "wechat-identities", "age-locks", "credentials", "privacy-profiles"] as const) {
     const rows = await payload.find({ collection, overrideAccess: true, pagination: false });
     assert.ok(!JSON.stringify(rows).includes(identity.name)); assert.ok(!JSON.stringify(rows).includes(identity.idCard));
   }

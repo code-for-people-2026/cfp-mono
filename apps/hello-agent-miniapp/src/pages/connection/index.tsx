@@ -175,12 +175,9 @@ export default function ConnectionPage() {
             </Text>
             <Text className="sheet-note">
               {h5
-                ? "此浏览器以访客 Cookie 保存身份。清除 Cookie 会失去访问，不是正式账号。"
-                : "当前为本机访客身份，不是微信登录。清除小程序缓存或凭证过期后，不能自动找回。"}
+                ? "请在微信小程序中登录后使用。"
+                : "使用微信账号登录；再次登录同一微信可恢复账号资料。"}
             </Text>
-            <Button className="control quiet-button" onClick={api.openCms}>
-              {h5 ? "打开 Payload 管理后台 ↗" : "复制管理后台地址"}
-            </Button>
           </View>
           {mode === "external" && (
             <View className="settings-section">
