@@ -43,6 +43,7 @@ const service = new GreetingService(
     throw new Error("外部保存不应调用模型");
   },
 );
+await (await import("./privacy-test-fixture")).consentForFixture(service.repo);
 const server = createMcpServer(service);
 const client = new Client({
   name: "external-retry-regression",

@@ -65,12 +65,14 @@ const store: ImageObjectStore = {
 };
 try {
   const repo = new Repository(payload, { id: randomUUID(), auth: "miniapp" });
+  await (await import("./privacy-test-fixture")).consentForFixture(repo);
   const media = new MediaService(repo, () => store);
   const model = new ScriptedModel();
   const service = new GreetingService(
     repo,
     (args) => runGreeting(args, model),
     media,
+    async () => "allow", // Synthetic reviewer; this suite checks storage.
   );
   const original = await sharp({
     create: { width: 256, height: 256, channels: 3, background: "#df573e" },
@@ -138,7 +140,7 @@ try {
   await server.close();
   console.log("✓ 自带 Agent 的 MCP 图片读取兼容新存储");
 
-  const legacy = await new GreetingService(repo).upload(original);
+  const legacy = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
   const old = await repo.get("media", legacy.id);
   corrupt = true;
   await assert.rejects(() => media.migrate(legacy.id), /完整性/);
@@ -153,7 +155,7 @@ try {
   assert.equal((await repo.get("media", legacy.id)).base64, null);
   console.log("✓ 迁移校验失败保留原图；成功后清空旧内容且可安全重试");
 
-  const interrupted = await new GreetingService(repo).upload(original);
+  const interrupted = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
   const previous = await repo.get("media", interrupted.id);
   const recordsBefore = (await repo.all("media")).length;
   const objectsBefore = objects.size;
@@ -251,7 +253,7 @@ try {
     ).status,
     401,
   );
-  const adminImage = await new GreetingService(repo).upload(original);
+  const adminImage = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
   const password = randomUUID();
   await payload.create({
     collection: "admins",

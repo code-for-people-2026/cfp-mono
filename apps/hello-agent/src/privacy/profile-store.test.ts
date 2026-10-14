@@ -22,7 +22,6 @@ import { up as revision } from "../cms/migrations/20261013_174000_privacy_revisi
 
 // No operations collections or production database: this exercises the real
 // Payload profile reads, SQLite CAS and additive migration in isolation.
-vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn() }));
 const holder = vi.hoisted(() => ({ payload: undefined as Payload | undefined }));
 vi.mock("../cms/client", () => ({ cms: () => holder.payload }));
 const business = vi.hoisted(() => ({ createSession: vi.fn(), generate: vi.fn(), history: vi.fn(), image: vi.fn(), sessions: vi.fn(), submission: vi.fn(), context: vi.fn() }));

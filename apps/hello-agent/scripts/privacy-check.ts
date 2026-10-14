@@ -27,6 +27,7 @@ const { GreetingService } = await import("../src/domain/greetings");
 const { createMcpServer } = await import("../src/server/mcp");
 const { GET, POST } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const stranger = { id: randomUUID(), auth: "cookie" as const };
@@ -74,9 +75,6 @@ try {
   assert.ok(!JSON.stringify(exported).includes(credential.token));
   assert.ok(!JSON.stringify(exported).includes("recoveryDigest"));
   assert.equal((await (await request(["privacy", "export"], undefined, outsider.token)).json()).records.greetings.length, 0);
-  const restriction = await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: { key: `test:${owner.id}`, owner: owner.id, targetType: "media", targetId: original.id, caseId: 1, active: true, reason: "合成隔离测试" } });
-  assert.equal((await service.exportData()).media[0].withheld, true);
-  await payload.update({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, id: restriction.id, data: { active: false } });
   const { code } = await service.recoveryCode();
   await payload.update({ collection: "credentials", overrideAccess: true, where: { owner: { equals: owner.id } }, data: { expiresAt: new Date(Date.now() - 1000).toISOString() } });
   assert.equal((await request(["privacy", "export"])).status, 401);

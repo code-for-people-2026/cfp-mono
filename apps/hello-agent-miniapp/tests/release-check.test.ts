@@ -62,7 +62,7 @@ it.each(scenarios)(
         "chat-composer input-toggle artifact-surface /api/hello/ag-ui",
       "/chat/js/index.settings.js": `settings-page settings-header 连接方式 帮助与反馈 ${scenario === "missing-privacy-entry" ? "" : "隐私与数据"}`,
       "/chat/js/index.connection.js": `生成专用连接令牌 ${scenario === "missing-connection-options" ? "" : "mode-option"}`,
-      "/chat/js/index.help.js": "提交反馈 刷新受理记录",
+      "/chat/js/index.help.js": "在线反馈暂未开放 联系渠道",
       "/chat/js/index.privacy.js": scenario === "empty-privacy-module" ? "export{}" : scenario === "all-privacy-home" ? 'export{home as default}from"./common.privacy.js";' :
         `import{${privacyPages.map(([, name], i) => `${name} as f${i}`).join(",")}}from"./common.privacy.js";` +
         privacyPages.map(([, name], i) => `const p${i}=Object.freeze(Object.defineProperty({__proto__:null,default:f${i}},Symbol.toStringTag,{value:"Module"}));export{p${i} as ${name}};`).join(""),

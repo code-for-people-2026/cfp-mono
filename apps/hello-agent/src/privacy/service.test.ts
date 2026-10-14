@@ -8,9 +8,8 @@ import { privacyPolicy } from "./policy";
 import { maintainPrivacy } from "./maintenance";
 import { writeDeletionLedger } from "./deletion-ledger";
 
-// #383 is not submitted yet. Repository and retention are unit-test doubles;
+// Repository calls are unit-test doubles;
 // ledger durability and actual file writes are covered in separate tests.
-vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn(async () => ({ held: 0 })) }));
 vi.mock("./profile-store", () => ({ updateProfile: async (payload: Payload, expected: PrivacyProfile, data: Partial<PrivacyProfile>) => {
   const latest = (await payload.find({ collection: "privacy-profiles" })).docs[0];
   if (latest.revision !== expected.revision || latest.state !== expected.state) throw new AppError(409, "隐私设置已变更");

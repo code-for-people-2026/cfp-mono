@@ -21,7 +21,7 @@ const bootstrap = await read(bootstrapPath);
 const settingsPages = [
   ["pages/settings/index", "设置", ["settings-page", "settings-header", "连接方式", "隐私与数据", "帮助与反馈"]],
   ["pages/connection/index", "连接方式", ["mode-option", "生成专用连接令牌"]],
-  ["pages/help/index", "帮助与反馈", ["提交反馈", "受理记录"]],
+  ["pages/help/index", "帮助与反馈", ["在线反馈暂未开放", "联系渠道"]],
   ["pages/privacy/index", "隐私与数据", ["授权管理", "导出数据", "删除数据", "政策与协议"]],
   ["pages/privacy/authorization/index", "授权管理", ["保存授权选择"]],
   ["pages/privacy/data/index", "数据管理", ["导出我的数据与图片", "确认删除在线数据"]],
