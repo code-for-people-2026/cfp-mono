@@ -1,3 +1,4 @@
+import { ageCollections, guardAgeWrite } from "../age/collections";
 import { privacyCollections, guardPrivacyWrite } from "../privacy/collections";
 import {
   APIError,
@@ -47,13 +48,14 @@ const owned = (
     update: internalWrite,
     delete: internalWrite,
   },
-  hooks: { beforeChange: [guardPrivacyWrite] },
+  hooks: { beforeChange: [guardPrivacyWrite, guardAgeWrite] },
   fields: [...ownedFields, ...fields],
 });
 
 export const collections: CollectionConfig[] = [
   ...agentCollections,
   ...privacyCollections,
+  ...ageCollections,
   {
     slug: "platform-model-quotas",
     admin: { hidden: true },
@@ -142,6 +144,7 @@ export const collections: CollectionConfig[] = [
     fields: [
       ...ownedFields,
       { name: "digest", type: "text", unique: true, required: true },
+      { name: "wechatKey", type: "text", index: true },
       {
         name: "kind",
         type: "select",

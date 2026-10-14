@@ -23,6 +23,7 @@ export async function mintCredential(
   payload: Payload,
   kind: Owner["auth"],
   owner: string = randomUUID(),
+  wechatKey?: string,
 ) {
   return withCredentialLock(owner, async () => {
     const [profile] = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, select: { state: true }, where: { owner: { equals: owner } } })).docs;
@@ -35,7 +36,7 @@ export async function mintCredential(
     await payload.create({
       collection: "credentials",
       overrideAccess: true,
-      data: { owner, digest: digest(token), kind, expiresAt },
+      data: { owner, digest: digest(token), kind, expiresAt, wechatKey },
     });
     return { token, owner, expiresAt };
   });
@@ -80,7 +81,7 @@ export async function authenticate(
   const kind = result.docs[0].kind;
   if (kind !== "cookie" && kind !== "bearer" && kind !== "miniapp")
     throw new AppError(401, "凭证类型无效");
-  return { id: String(result.docs[0].owner), auth: kind };
+  return { id: String(result.docs[0].owner), auth: kind, ...(result.docs[0].wechatKey ? { wechatKey: result.docs[0].wechatKey } : {}) };
 }
 
 export async function revokeCredentials(payload: Payload, owner: string, kind?: Owner["auth"]) {

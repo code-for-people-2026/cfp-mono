@@ -1,3 +1,4 @@
+export * from "./age";
 import { z } from "zod";
 import {
   formResponseSchema,

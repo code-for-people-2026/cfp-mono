@@ -1,0 +1,33 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { sql } from "@payloadcms/db-sqlite";
+import { createLocalReq } from "payload";
+const dir = await mkdtemp(path.join(tmpdir(), "aj-age-migration-"));
+process.env.HELLO_DATABASE_URI = `file:${dir}/migration.db`;
+process.env.PAYLOAD_SECRET = "isolated-age-migration-test";
+process.env.HELLO_DEPLOYED = "true";
+Object.assign(process.env, { NODE_ENV: "test" });
+const { cms } = await import("../src/cms/client");
+const { migrations } = await import("../src/cms/migrations");
+const payload = await cms();
+try {
+  const db = payload.db.drizzle, req = await createLocalReq({}, payload);
+  for (const migration of migrations.filter((m) => !m.name.includes("wechat_age"))) await migration.up({ db, payload, req });
+  await db.run(sql`INSERT INTO sessions (owner, title) VALUES ('synthetic-old', '旧会话保留')`);
+  await db.run(sql`INSERT INTO credentials (owner, digest, kind, expires_at) VALUES ('synthetic-old', 'synthetic-digest', 'miniapp', '2027-01-01')`);
+  const before = await db.all(sql`SELECT * FROM sessions`);
+  const migration = migrations.find((m) => m.name.includes("wechat_age"))!;
+  await migration.up({ db, payload, req }); await migration.up({ db, payload, req });
+  assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
+  const credential = (await payload.find({ collection: "credentials", overrideAccess: true })).docs[0];
+  assert.equal(credential.owner, "synthetic-old"); assert.equal(credential.wechatKey, null);
+  await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { key: "synthetic-key", owner: "synthetic-old" } });
+  await payload.create({ collection: "age-profiles", overrideAccess: true, data: { owner: "synthetic-old", state: "unknown" } });
+  const { AgeService } = await import("../src/age/service");
+  assert.equal((await new AgeService(payload, { id: "synthetic-old", auth: "miniapp" }).status()).allowed, false);
+  assert.equal((await db.all(sql`PRAGMA foreign_key_check`)).length, 0);
+  assert.equal((await db.all<{ integrity_check: string }>(sql`PRAGMA integrity_check`))[0].integrity_check, "ok");
+  console.log("✓ 旧迁移→合成旧会话/凭证→年龄迁移两次；记录保留、旧凭证不自动升级、完整性与外键通过");
+} finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }
