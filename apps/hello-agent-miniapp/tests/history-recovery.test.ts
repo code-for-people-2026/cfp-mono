@@ -6,7 +6,9 @@ import type { Turn } from "../src/chat/model";
 const platform = vi.hoisted(() => ({
   request: vi.fn(),
   downloadFile: vi.fn(),
-  getStorageSync: vi.fn(() => "fixture-device-token"),
+  getStorageSync: vi.fn(
+    (_key?: string): string | number => "fixture-device-token",
+  ),
   setStorageSync: vi.fn(),
   showModal: vi.fn(),
   nextTick: vi.fn((fn: () => void) => fn()),
@@ -14,9 +16,29 @@ const platform = vi.hoisted(() => ({
   offAppHide: vi.fn(),
   authorize: vi.fn(),
   requirePlugin: vi.fn(),
+  setClipboardData: vi.fn(),
+  pageScrollTo: vi.fn(),
+  usePageScroll: vi.fn(),
+  getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+  createSelectorQuery: vi.fn(),
+  navigateTo: vi.fn(),
+  onWindowResize: vi.fn(),
+  offWindowResize: vi.fn(),
+  getMenuButtonBoundingClientRect: vi.fn(() => ({
+    top: 32,
+    height: 32,
+    left: 281,
+  })),
+  useDidHide: vi.fn(),
+  useDidShow: vi.fn(),
 }));
 // 仅替换平台组件与网络边界；渲染真实聊天页、真实 api 和记忆组件。
-vi.mock("@tarojs/taro", () => ({ default: platform }));
+vi.mock("@tarojs/taro", () => ({
+  default: platform,
+  usePageScroll: platform.usePageScroll,
+  useDidHide: platform.useDidHide,
+  useDidShow: platform.useDidShow,
+}));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
   View: "view",
@@ -26,6 +48,23 @@ vi.mock("@tarojs/components", () => ({
   Textarea: "textarea",
   ScrollView: "scroll-view",
 }));
+
+type AgentBody = {
+  runId: string;
+  messages: { content: string }[];
+  forwardedProps: { mediaIds: number[] };
+};
+const inputOf = (body: AgentBody) => ({
+  text: body.messages[0].content,
+  mediaIds: body.forwardedProps.mediaIds,
+});
+const wire = (runId: string) =>
+  [
+    { type: "RUN_STARTED", runId },
+    { type: "RUN_FINISHED", runId },
+  ]
+    .map((event) => `data: ${JSON.stringify(event)}\n\n`)
+    .join("");
 
 let renderer: ReactTestRenderer | undefined;
 let history: Turn[];
@@ -41,6 +80,9 @@ const initial: Turn = {
 const advertisement = { mode: "disabled", adUnitId: "", demoSeconds: 5 };
 
 beforeEach(() => {
+  platform.navigateTo.mockResolvedValue({});
+  platform.pageScrollTo.mockResolvedValue({});
+  platform.setClipboardData.mockResolvedValue({});
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   vi.stubGlobal("HELLO_WECHAT_SI_ENABLED", false);
@@ -108,7 +150,277 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+async function chooseModeInSettings(index: number) {
+  const { default: SettingsPage } = await import("../src/pages/settings/index");
+  let settingsPage: ReactTestRenderer;
+  await act(async () => {
+    settingsPage = create(createElement(SettingsPage));
+  });
+  act(() => {
+    const options = settingsPage.root
+      .findAllByType("button")
+      .filter((button) => button.props.className.includes("mode-option"));
+    options[index].props.onClick();
+  });
+  act(() => settingsPage.unmount());
+}
+
+it("设置通过页面栈打开，聊天草稿保留且不弹出设置面板", async () => {
+  await mount();
+  act(() =>
+    renderer!.root.findByType("textarea").props.onInput({
+      detail: { value: "暂时没发出的心事" },
+    }),
+  );
+  act(() =>
+    renderer!.root
+      .findAllByType("button")
+      .find((button) => button.props.ariaLabel === "打开会话导航")!
+      .props.onClick(),
+  );
+  await act(async () => {
+    await renderer!.root
+      .findAllByType("button")
+      .find((button) =>
+        button
+          .findAllByType("text")
+          .some((node) => node.children.includes("设置")),
+      )!
+      .props.onClick();
+  });
+  expect(platform.navigateTo).toHaveBeenCalledWith({
+    url: "/pages/settings/index",
+  });
+  expect(text()).not.toContain("mode-option");
+  expect(renderer!.root.findByType("textarea").props.value).toBe(
+    "暂时没发出的心事",
+  );
+});
+
+it.each([false, true])(
+  "已有表单的可用状态与平台密钥配置一致（configured=%s）",
+  async (configured) => {
+    const { artifacts } =
+      await import("../../../packages/hello-agent-protocol/test/fixtures");
+    history = [
+      {
+        ...initial,
+        input: { text: "请给我一份练习", mediaIds: [] },
+        artifacts: artifacts.filter((item) => item.kind === "form"),
+      },
+    ];
+    const original = platform.request.getMockImplementation()!;
+    platform.request.mockImplementation(async (options) => {
+      const response = await original(options);
+      return options.url.endsWith("/config")
+        ? {
+            ...response,
+            data: { ...response.data, platformConfigured: configured },
+          }
+        : response;
+    });
+    await mount();
+    const submit = renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-submit"))!;
+    expect(!!submit.props.disabled).toBe(!configured);
+    for (const field of renderer!.root.findAll(
+      (node) =>
+        ["input", "textarea"].includes(String(node.type)) &&
+        node.props.className?.includes("artifact-input"),
+    ))
+      expect(!!field.props.disabled).toBe(!configured);
+  },
+);
+
+it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
+  const { artifacts } =
+    await import("../../../packages/hello-agent-protocol/test/fixtures");
+  history = [
+    {
+      ...initial,
+      input: { text: "请给我一份练习", mediaIds: [] },
+      artifacts: artifacts.filter((item) => item.kind === "form"),
+    },
+  ];
+  const original = platform.request.getMockImplementation()!;
+  const submitted: unknown[] = [];
+  let result: Turn | undefined;
+  platform.request.mockImplementation(async (options) => {
+    if (options.url.endsWith("/ag-ui")) {
+      const values =
+        options.data.forwardedProps.clientEvent.action.context.values;
+      submitted.push(structuredClone(values));
+      result = {
+        ...initial,
+        id: submitted.length + 1,
+        input: {
+          text: "提交练习表单",
+          mediaIds: [],
+          formResponse: { turnId: 1, artifactId: "thought_record", values },
+        },
+        status: submitted.length === 1 ? "failed" : "completed",
+      };
+      history.push(result);
+      return submitted.length === 1
+        ? { statusCode: 503, data: { error: "模型暂时失败" } }
+        : { statusCode: 200, data: wire(options.data.runId) };
+    }
+    if (options.url.includes("/requests/"))
+      return { statusCode: 200, data: { turn: result } };
+    if (options.url.endsWith("/sessions/1"))
+      return { statusCode: 200, data: structuredClone(history) };
+    return original(options);
+  });
+  await mount();
+  const fields = () =>
+    renderer!.root.findAll(
+      (node) =>
+        ["input", "textarea"].includes(String(node.type)) &&
+        node.props.className?.includes("artifact-input"),
+    );
+  const button = () =>
+    renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-submit"))!;
+  const answers = ["会议数字已更正", "担心大家不信任我", "紧张", "0"];
+  act(() =>
+    fields().forEach((field, index) => {
+      field.props.onInput({ detail: { value: answers[index] } });
+    }),
+  );
+  await act(async () => {
+    button().props.onClick();
+  });
+  expect(submitted).toHaveLength(1);
+  expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(button().props.disabled).toBeFalsy();
+  await act(async () => {
+    button().props.onClick();
+  });
+  expect(submitted).toHaveLength(2);
+  expect(submitted[1]).toEqual(submitted[0]);
+  expect(submitted[1]).toMatchObject({ intensity: 0 });
+  expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(button().props.disabled).toBe(true);
+});
+
 describe("聊天历史与图片失败隔离", () => {
+  it("整页承载聊天滚动；翻看前文时收到回复不会被拉到底部", async () => {
+    let finish: (() => void) | undefined;
+    const original = platform.request.getMockImplementation()!;
+    platform.request.mockImplementation(async (options) => {
+      if (
+        !options.url.endsWith("/ag-ui") &&
+        !options.url.includes("/requests/")
+      )
+        return original(options);
+      if (options.url.includes("/requests/"))
+        return { statusCode: 200, data: { turn: history.at(-1) } };
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      history.push({
+        ...initial,
+        id: 2,
+        input: { text: "新消息", mediaIds: [] },
+        greeting: "新回复",
+      });
+      return { statusCode: 200, data: wire(options.data.runId) };
+    });
+    let endBottom = 600;
+    platform.createSelectorQuery.mockImplementation(() => {
+      let read: (rect: { bottom: number }) => void;
+      const query = {
+        select: () => query,
+        boundingClientRect: (callback: typeof read) => {
+          read = callback;
+          return query;
+        },
+        exec: () => read({ bottom: endBottom }),
+      };
+      return query;
+    });
+    await mount();
+    expect(
+      renderer!.root.findAll(
+        (node) => String(node.type) === "scroll-view" && node.props.scrollY,
+      ),
+    ).toHaveLength(0);
+    expect(platform.pageScrollTo).toHaveBeenCalledWith({
+      selector: "#chat-end",
+      duration: 0,
+    });
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "新消息" } }),
+    );
+    let sending: Promise<void>;
+    await act(async () => {
+      sending = renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className.includes("send-button"))!
+        .props.onClick();
+    });
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "新建对话")!.props.disabled,
+    ).toBe(true);
+    act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 1000 }));
+    endBottom = 1300;
+    act(() => platform.usePageScroll.mock.lastCall![0]({ scrollTop: 400 }));
+    platform.pageScrollTo.mockClear();
+    await act(async () => {
+      finish!();
+      await sending;
+    });
+    expect(text()).toContain("新回复");
+    expect(platform.pageScrollTo).not.toHaveBeenCalled();
+  });
+  it("对话正文可以选择；复制保留换行且不混入按钮、模型或状态文字", async () => {
+    history[0].greeting = "先慢一点。\n今天也可以重新来过。";
+    history[0].association = "从日常里找一个可信的角度";
+    await mount(false);
+    for (const value of [initial.input.text, history[0].greeting]) {
+      const node = renderer!.root
+        .findAllByType("text")
+        .find((item) => item.children.join("") === value)!;
+      expect(node.props.selectable).toBe(true);
+      expect(node.props.userSelect).toBe(true);
+    }
+    const requests = platform.request.mock.calls.length;
+    const button = renderer!.root
+      .findAllByType("button")
+      .find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!;
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(platform.setClipboardData).toHaveBeenLastCalledWith({
+      data: history[0].greeting,
+    });
+    expect(button.findByType("text").children.join("")).toBe("已复制");
+    expect(platform.request.mock.calls).toHaveLength(requests);
+    expect(text()).toContain("按住说话");
+  });
+  it("剪贴板失败可以重试，不把复制失败当成发送失败", async () => {
+    platform.setClipboardData.mockRejectedValueOnce(new Error("denied"));
+    await mount(false);
+    const button = renderer!.root
+      .findAllByType("button")
+      .find((item) => item.props["aria-label"] === "复制阿 J 先生的回复")!;
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(text()).toContain("复制失败，重试");
+    expect(text()).not.toContain("error-banner");
+    await act(async () => {
+      await button.props.onClick();
+    });
+    expect(text()).toContain("已复制");
+    expect(platform.setClipboardData).toHaveBeenCalledTimes(2);
+  });
   it("首页恢复三条快捷建议，点击后切到键盘填入草稿但不自动发送", async () => {
     history = [];
     await mount(false);
@@ -127,15 +439,15 @@ describe("聊天历史与图片失败隔离", () => {
     );
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
   });
   it("欢迎词和静态界面中的中文与英文字母之间保留空格", async () => {
     history = [];
     await mount(false);
-    expect(text()).toContain("我是阿 J");
-    expect(text()).toContain("阿 Q 先生");
+    expect(text()).toContain("我是阿 J 先生");
+    expect(text()).toContain("阿 J 先生");
     expect(text()).not.toMatch(
       /[\p{Script=Han}][A-Za-z]|[A-Za-z][\p{Script=Han}]/u,
     );
@@ -181,14 +493,14 @@ describe("聊天历史与图片失败隔离", () => {
     );
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
   });
-  it("首屏展示阿 J 和欢迎词，默认语音，键盘来回切换保留草稿", async () => {
+  it("首屏展示阿 J 先生和欢迎词，默认语音，键盘来回切换保留草稿", async () => {
     history = [];
     await mount(false);
-    expect(text()).toContain("嗨，我是阿 J");
+    expect(text()).toContain("嗨，我是阿 J 先生");
     expect(text()).toContain("不自欺，不欺软怕硬");
     expect(text()).toContain("按住说话");
     expect(renderer!.root.findAllByType("textarea")).toHaveLength(0);
@@ -226,7 +538,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("小程序语音尚未开通");
     expect(
       platform.request.mock.calls.some(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toBe(false);
     act(() =>
@@ -240,12 +552,12 @@ describe("聊天历史与图片失败隔离", () => {
   it("服务端仍在处理时只查状态，不启动第二次生成", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     platform.request.mockImplementation(
-      async (options: { url: string; data?: { input: Turn["input"] } }) => {
-        if (options.url.endsWith("/greet")) {
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             status: "running",
             greeting: null,
           });
@@ -275,7 +587,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("上次提交仍在处理");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -283,12 +595,12 @@ describe("聊天历史与图片失败隔离", () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let checks = 0;
     platform.request.mockImplementation(
-      async (options: { url: string; data?: { input: Turn["input"] } }) => {
-        if (options.url.endsWith("/greet")) {
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             mode: "byok",
             greeting: "自带密钥生成过的回复",
           });
@@ -305,15 +617,23 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.children.includes("设置"))!
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
         .props.onClick(),
     );
-    act(() =>
-      renderer!.root
-        .findAllByType("button")
-        .filter((button) => button.props.className.includes("mode-option"))[1]
-        .props.onClick(),
+    await act(
+      async () =>
+        await renderer!.root
+          .findAllByType("button")
+          .find(
+            (button) =>
+              button.props.className.includes("drawer-footer-action") &&
+              button
+                .findAllByType("text")
+                .some((node) => node.children.includes("设置")),
+          )!
+          .props.onClick(),
     );
+    await chooseModeInSettings(1);
     act(() => {
       renderer!.root
         .findByType("input")
@@ -339,7 +659,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -350,31 +670,30 @@ describe("聊天历史与图片失败隔离", () => {
       const ids: string[] = [];
       let statusChecks = 0;
       platform.request.mockImplementation(
-        async (options: {
-          url: string;
-          data?: { requestId: string; input: Turn["input"] };
-        }) => {
+        async (options: { url: string; data?: AgentBody }) => {
           if (options.url.includes("/requests/")) {
             if (++statusChecks === 1) throw new Error("状态查询也断网");
             return {
               statusCode: 200,
-              data: { turn: savedOnServer ? history.at(-1) : null },
+              data: {
+                turn: savedOnServer || ids.length > 1 ? history.at(-1) : null,
+              },
             };
           }
-          if (options.url.endsWith("/greet")) {
+          if (options.url.endsWith("/ag-ui")) {
             const args = options.data!;
-            ids.push(args.requestId);
+            ids.push(args.runId);
             if (ids.length === 1 && !savedOnServer)
               throw new Error("请求尚未送达");
             const row = {
               ...initial,
               id: 2,
-              input: args.input,
+              input: inputOf(args),
               greeting: "只保存一份的回复",
             };
             history.push(row);
             if (ids.length === 1) throw new Error("成功响应丢失");
-            return { statusCode: 200, data: row };
+            return { statusCode: 200, data: wire(args.runId) };
           }
           return originalRequest(options);
         },
@@ -438,7 +757,13 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.props.className.includes("memory-shortcut"))!
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.ariaLabel === "查看阿 J 先生的记忆")!
         .props.onClick(),
     );
     const recover = renderer!.root
@@ -475,37 +800,60 @@ describe("聊天历史与图片失败隔离", () => {
         expired = false;
         return { statusCode: 200, data: { owner: `visitor-${identities}` } };
       }
-      if (expired) return { statusCode: 401, data: { error: "访客身份已失效" } };
+      if (expired)
+        return { statusCode: 401, data: { error: "访客身份已失效" } };
       if (identities === 2 && options.url.endsWith("/sessions"))
         return { statusCode: 200, data: [] };
       return originalRequest(options);
     });
     await mount();
-    act(() => renderer!.root.findByType("textarea").props.onInput({ detail: { value: "还没发出的草稿" } }));
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "还没发出的草稿" } }),
+    );
     expired = true;
     await act(async () => {
-      await renderer!.root.findAllByType("button")
-        .find((button) => button.props.className.includes("send-button"))!.props.onClick();
+      await renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("send-button"))!
+        .props.onClick();
     });
     expect(text()).toContain("旧聊天记录不会删除");
     expect(identities).toBe(1);
-    const restart = () => renderer!.root.findAllByType("button")
-      .find((button) => button.props.className.includes("restart-identity"))!;
+    const restart = () =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("restart-identity"))!;
     platform.showModal.mockResolvedValueOnce({ confirm: false, cancel: true });
-    await act(async () => { await restart().props.onClick(); });
+    await act(async () => {
+      await restart().props.onClick();
+    });
     expect(identities).toBe(1);
-    expect(renderer!.root.findByType("textarea").props.value).toBe("还没发出的草稿");
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "还没发出的草稿",
+    );
     expect(text()).toContain("仍能看见的好彩头");
     platform.showModal.mockResolvedValueOnce({ confirm: true, cancel: false });
-    await act(async () => { await restart().props.onClick(); });
+    await act(async () => {
+      await restart().props.onClick();
+    });
     expect(identities).toBe(2);
     expect(text()).not.toContain("旧聊天记录不会删除");
     expect(text()).not.toContain("仍能看见的好彩头");
-    act(() => renderer!.root.findAllByType("button")
-      .find((button) => button.props.className.includes("keyboard-toggle"))!.props.onClick());
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.className.includes("keyboard-toggle"))!
+        .props.onClick(),
+    );
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
-    expect(platform.setStorageSync).not.toHaveBeenCalled();
+    expect(
+      platform.setStorageSync.mock.calls.every(([key]) =>
+        key.startsWith("hello-active-session:"),
+      ),
+    ).toBe(true);
   });
   it("设备凭证过期时不静默换身份，取消保留现场，确认后才能重新开始", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
@@ -544,7 +892,11 @@ describe("聊天历史与图片失败隔离", () => {
       await restart().props.onClick();
     });
     expect(renewed).toBe(false);
-    expect(platform.setStorageSync).not.toHaveBeenCalled();
+    expect(
+      platform.setStorageSync.mock.calls.every(([key]) =>
+        key.startsWith("hello-active-session:"),
+      ),
+    ).toBe(true);
     platform.showModal.mockResolvedValueOnce({ confirm: true, cancel: false });
     await act(async () => {
       await restart().props.onClick();
@@ -563,16 +915,13 @@ describe("聊天历史与图片失败隔离", () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let submittedId = "";
     platform.request.mockImplementation(
-      async (options: {
-        url: string;
-        data?: { requestId: string; input: Turn["input"] };
-      }) => {
-        if (options.url.endsWith("/greet")) {
-          submittedId = options.data!.requestId;
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
+          submittedId = options.data!.runId;
           history.push({
             ...initial,
             id: 2,
-            input: options.data!.input,
+            input: inputOf(options.data!),
             greeting: "响应虽丢失但已经保存",
           });
           throw new Error("合成故障：保存后连接中断");
@@ -601,7 +950,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(renderer!.root.findByType("textarea").props.value).toBe("");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -614,7 +963,13 @@ describe("聊天历史与图片失败隔离", () => {
     act(() =>
       renderer!.root
         .findAllByType("button")
-        .find((button) => button.children.includes("设置"))!
+        .find((button) => button.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((button) => button.props.ariaLabel === "查看阿 J 先生的记忆")!
         .props.onClick(),
     );
     expect(text()).toContain("87");
@@ -660,23 +1015,25 @@ describe("聊天历史与图片失败隔离", () => {
   it("回复已保存但历史刷新失败时，不把已发送输入放回草稿", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     let saved = false;
-    platform.request.mockImplementation(async (options: { url: string }) => {
-      if (options.url.endsWith("/greet")) {
-        saved = true;
-        return {
-          statusCode: 200,
-          data: {
+    platform.request.mockImplementation(
+      async (options: { url: string; data?: AgentBody }) => {
+        if (options.url.endsWith("/ag-ui")) {
+          saved = true;
+          history.push({
             ...initial,
             id: 2,
             input: { text: "今天要加油", mediaIds: [] },
             greeting: "已经保存的新回复",
-          },
-        };
-      }
-      if (saved && options.url.endsWith("/sessions/1"))
-        throw new Error("历史暂不可用");
-      return originalRequest(options);
-    });
+          });
+          return { statusCode: 200, data: wire(options.data!.runId) };
+        }
+        if (options.url.includes("/requests/"))
+          return { statusCode: 200, data: { turn: history.at(-1) } };
+        if (saved && options.url.endsWith("/sessions/1"))
+          throw new Error("历史暂不可用");
+        return originalRequest(options);
+      },
+    );
     await mount();
     act(() =>
       renderer!.root
@@ -694,7 +1051,7 @@ describe("聊天历史与图片失败隔离", () => {
     expect(text()).toContain("回复已保存");
     expect(
       platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/greet"),
+        options.url.endsWith("/ag-ui"),
       ),
     ).toHaveLength(1);
   });
@@ -713,7 +1070,7 @@ describe("聊天历史与图片失败隔离", () => {
   it("真正发送失败时仍保留原草稿，允许用户重试", async () => {
     const originalRequest = platform.request.getMockImplementation()!;
     platform.request.mockImplementation(async (options: { url: string }) =>
-      options.url.endsWith("/greet")
+      options.url.endsWith("/ag-ui")
         ? { statusCode: 503, data: { error: "生成暂不可用" } }
         : originalRequest(options),
     );
@@ -733,5 +1090,124 @@ describe("聊天历史与图片失败隔离", () => {
       "请保留草稿",
     );
     expect(text()).toContain("生成暂不可用");
+  });
+});
+
+describe("新会话与历史导航", () => {
+  it("新会话保留身份与旧记录，切回恢复草稿并隔离记忆", async () => {
+    const original = platform.request.getMockImplementation()!;
+    let created = false;
+    platform.request.mockImplementation(async (options) => {
+      if (options.url.endsWith("/sessions") && options.method === "POST") {
+        created = true;
+        return { statusCode: 200, data: { id: 2, title: "新对话" } };
+      }
+      if (options.url.endsWith("/sessions") && created)
+        return {
+          statusCode: 200,
+          data: [
+            { id: 1, title: "日常" },
+            { id: 2, title: "新对话" },
+          ],
+        };
+      if (options.url.endsWith("/sessions/2"))
+        return { statusCode: 200, data: [] };
+      if (options.url.endsWith("/context/2")) {
+        const response = await original({
+          ...options,
+          url: options.url.replace("context/2", "context/1"),
+        });
+        return {
+          ...response,
+          data: {
+            ...response.data,
+            usedTokens: 0,
+            summary: "",
+            recentTurns: 0,
+          },
+        };
+      }
+      return original(options);
+    });
+    await mount();
+    act(() =>
+      renderer!.root
+        .findByType("textarea")
+        .props.onInput({ detail: { value: "还没发送的草稿" } }),
+    );
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "新建对话")!
+        .props.onClick();
+    });
+    expect(text()).not.toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.value).toBe("");
+    act(() =>
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.ariaLabel === "打开会话导航")!
+        .props.onClick(),
+    );
+    expect(text()).toContain("最近对话");
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find(
+          (node) =>
+            node.props.className.includes("session-link") &&
+            node
+              .findAllByType("text")
+              .some((item) => item.children.includes("日常")),
+        )!
+        .props.onClick();
+    });
+    expect(text()).toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.value).toBe(
+      "还没发送的草稿",
+    );
+    expect(platform.setStorageSync).toHaveBeenLastCalledWith(
+      "hello-active-session:https://example.test",
+      1,
+    );
+    expect(platform.showModal).not.toHaveBeenCalled();
+    expect(
+      platform.request.mock.calls.some(([options]) =>
+        options.url.endsWith("/miniapp-identity"),
+      ),
+    ).toBe(false);
+  });
+  it("记住所选旧会话；读取失败时提供重试，不展示另一段历史", async () => {
+    const original = platform.request.getMockImplementation()!;
+    platform.getStorageSync.mockImplementation((...args) =>
+      args[0]?.startsWith("hello-active-session:") ? 1 : "fixture-device-token",
+    );
+    let failed = true;
+    platform.request.mockImplementation(async (options) => {
+      if (options.url.endsWith("/sessions"))
+        return {
+          statusCode: 200,
+          data: [
+            { id: 1, title: "旧对话" },
+            { id: 2, title: "最新" },
+          ],
+        };
+      if (options.url.endsWith("/sessions/1") && failed)
+        throw Error("记录暂时无法读取");
+      return original(options);
+    });
+    await mount();
+    expect(text()).toContain("重试");
+    expect(renderer!.root.findByType("textarea").props.disabled).toBe(true);
+    failed = false;
+    await act(async () => {
+      await renderer!.root
+        .findAllByType("button")
+        .find((node) => node.children.includes("重试"))!
+        .props.onClick();
+    });
+    expect(text()).toContain(initial.greeting);
+    expect(renderer!.root.findByType("textarea").props.disabled).toBe(false);
+    platform.getStorageSync.mockImplementation(() => "fixture-device-token");
   });
 });

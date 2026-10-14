@@ -4,14 +4,22 @@ import {
   type ButtonProps,
   Image,
   Input as TextInput,
-  ScrollView,
   Text,
   View,
 } from "@tarojs/components";
-import Taro from "@tarojs/taro";
+import Taro, { usePageScroll } from "@tarojs/taro";
 import * as api from "../../chat/api";
-import { MemoryMeter, MemoryPanel } from "../../chat/memory";
+import { ChatNavigation } from "../../chat/navigation";
+import { useChatMode } from "../../chat/preferences";
+import { MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
+import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
+import { CopyMessage, MessageText } from "../../chat/message-text";
+import {
+  type ClientEvent,
+  type FormValues,
+  type RunProgress,
+} from "@cfp/hello-agent-protocol";
 import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
@@ -20,11 +28,24 @@ import {
   type Attachment,
   type Mode,
   type Settings,
+  type Session,
   type Turn,
   type MemoryStatus,
   type Input,
 } from "../../chat/model";
 
+const selectionKey = `hello-active-session:${HELLO_API_ORIGIN}`;
+type PendingSubmission = {
+  sessionId: number;
+  requestId: string;
+  mode: Exclude<Mode, "external">;
+  input: Input;
+};
+type Draft = {
+  text: string;
+  attachments: Attachment[];
+  submission?: PendingSubmission;
+};
 const h5 = process.env.TARO_ENV === "h5";
 function Button(props: ButtonProps) {
   return (
@@ -36,7 +57,6 @@ function Button(props: ButtonProps) {
     />
   );
 }
-type Panel = "modes" | "connection" | null;
 const suggestions = [
   "窗台上的小番茄红了",
   "明天要开始一份新工作",
@@ -49,15 +69,21 @@ export default function Chat() {
   const [memoryOpen, setMemoryOpen] = useState(false);
   const [memoryBusy, setMemoryBusy] = useState(false);
   const [sessionId, setSessionId] = useState<number>();
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [historyFailed, setHistoryFailed] = useState(false);
+  const activeSession = useRef<number>();
+  const drafts = useRef(new Map<number, Draft>());
   const [history, setHistory] = useState<Turn[]>([]);
   const [images, setImages] = useState<Record<number, string | null>>({});
   const [text, setText] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "keyboard">("voice");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
-  const [mode, setMode] = useState<Mode>("platform");
+  const mode = useChatMode();
+  const settingsNavigation = useRef(false);
   const [apiKey, setApiKey] = useState("");
-  const [panel, setPanel] = useState<Panel>(null);
   const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<RunProgress>();
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -67,18 +93,13 @@ export default function Chat() {
     images: Attachment[];
   }>();
   const [expanded, setExpanded] = useState<number[]>([]);
-  const [token, setToken] = useState("");
-  const [tokenBusy, setTokenBusy] = useState(false);
-  const [anchor, setAnchor] = useState(0);
+  const followLatest = useRef(true);
+  const pageTop = useRef(0);
+  const scrollRevision = useRef(0);
   const historyVersion = useRef(0);
   const sendLock = useRef(false);
   // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
-  const submission = useRef<{
-    sessionId: number;
-    requestId: string;
-    mode: Exclude<Mode, "external">;
-    input: Input;
-  }>();
+  const submission = useRef<PendingSubmission>();
   const disabled =
     busy || uploading || loading || memoryBusy || identityExpired;
   const ready = canSend(
@@ -87,9 +108,33 @@ export default function Chat() {
     mode,
     apiKey,
     !!settings?.platformConfigured,
-    disabled || memory?.level === "empty",
+    disabled || historyFailed || memory?.level === "empty",
   );
-  const endpoint = `${settings?.origin || HELLO_API_ORIGIN}/api/mcp`;
+  const formReady = canSend(
+    "表单",
+    [],
+    mode,
+    apiKey,
+    !!settings?.platformConfigured,
+    disabled || historyFailed || memory?.level === "empty",
+  );
+
+  usePageScroll(({ scrollTop }) => {
+    // 用户向前翻页时立即暂停跟随，截图过程中收到回复也不抢回滚动位置。
+    if (scrollTop < pageTop.current - 2) followLatest.current = false;
+    pageTop.current = scrollTop;
+    const revision = ++scrollRevision.current;
+    const height = Taro.getWindowInfo().windowHeight;
+    Taro.createSelectorQuery()
+      .select("#chat-end")
+      .boundingClientRect((rect) => {
+        if (revision !== scrollRevision.current || !rect || Array.isArray(rect))
+          return;
+        // 手动回到末尾后恢复跟随；过期的布局查询不能覆盖新的滚动意图。
+        followLatest.current = rect.bottom <= height + 40;
+      })
+      .exec();
+  });
 
   function problem(value: unknown) {
     if (value instanceof api.IdentityExpiredError) setIdentityExpired(true);
@@ -127,6 +172,102 @@ export default function Chat() {
       });
     }
   }
+  function rememberSelection(id: number | undefined) {
+    activeSession.current = id;
+    setSessionId(id);
+    try {
+      Taro.setStorageSync(selectionKey, id || 0);
+    } catch {
+      /* 存储不可用时仍可切换 */
+    }
+  }
+  function stashDraft() {
+    drafts.current.set(activeSession.current || 0, {
+      text,
+      attachments,
+      submission: submission.current,
+    });
+  }
+  async function switchSession(id: number, fresh = false) {
+    stashDraft();
+    historyVersion.current++;
+    rememberSelection(id);
+    const draft = drafts.current.get(id);
+    setText(draft?.text || "");
+    setAttachments(draft?.attachments || []);
+    submission.current = draft?.submission;
+    setHistory([]);
+    setImages({});
+    setMemory(undefined);
+    setExpanded([]);
+    setProgress(undefined);
+    setPending(undefined);
+    setMemoryOpen(false);
+    setNavigationOpen(false);
+    setError(
+      draft?.submission
+        ? "这段对话还有一次发送等待确认，可以先确认上次发送。"
+        : "",
+    );
+    setHistoryFailed(false);
+    setInputMode("keyboard");
+    followLatest.current = true;
+    scrollRevision.current++;
+    if (fresh) {
+      void Taro.pageScrollTo({ scrollTop: 0, duration: 0 }).catch(() => {});
+      return;
+    }
+    setLoading(true);
+    try {
+      await readHistory(id);
+    } catch (value) {
+      setHistoryFailed(true);
+      problem(value);
+    } finally {
+      setLoading(false);
+    }
+  }
+  async function selectSession(id: number) {
+    if (disabled || sendLock.current) return;
+    if (id === activeSession.current) {
+      setNavigationOpen(false);
+      return;
+    }
+    sendLock.current = true;
+    try {
+      await switchSession(id);
+    } finally {
+      sendLock.current = false;
+    }
+  }
+  async function startConversation() {
+    if (disabled || sendLock.current) return;
+    sendLock.current = true;
+    setLoading(true);
+    try {
+      const session = await api.newSession();
+      setSessions((rows) => [...rows, session]);
+      if (!activeSession.current)
+        drafts.current.set(session.id, {
+          text,
+          attachments,
+          submission: submission.current,
+        });
+      await switchSession(session.id, true);
+    } catch (value) {
+      problem(value);
+    } finally {
+      setLoading(false);
+      sendLock.current = false;
+    }
+  }
+  async function refreshSessions() {
+    try {
+      setSessions(await api.getSessions());
+    } catch {
+      /* 不把已保存的回复误报成失败 */
+    }
+  }
   async function boot() {
     setLoading(true);
     setError("");
@@ -137,12 +278,30 @@ export default function Chat() {
         api.getSessions(),
       ]);
       setSettings(config);
+      setSessions(rows);
       if (rows.length) {
-        const latest = rows[rows.length - 1];
-        setSessionId(latest.id);
-        await readHistory(latest.id);
+        let remembered = activeSession.current;
+        if (!remembered) {
+          try {
+            remembered = Number(Taro.getStorageSync(selectionKey)) || undefined;
+          } catch {
+            /* 无本地存储 */
+          }
+        }
+        const selected =
+          rows.find((row) => row.id === remembered) ||
+          [...rows].sort(
+            (a, b) =>
+              (b.updatedAt || b.createdAt || "").localeCompare(
+                a.updatedAt || a.createdAt || "",
+              ) || b.id - a.id,
+          )[0];
+        rememberSelection(selected.id);
+        await readHistory(selected.id);
       }
+      setHistoryFailed(false);
     } catch (value) {
+      setHistoryFailed(true);
       problem(value);
     } finally {
       setLoading(false);
@@ -165,9 +324,13 @@ export default function Chat() {
       // 防止旧身份的图片异步结果混入新页面。
       historyVersion.current++;
       submission.current = undefined;
-      setSessionId(undefined);
+      rememberSelection(undefined);
+      drafts.current.clear();
+      setSessions([]);
       setSettings(undefined);
       setHistory([]);
+      followLatest.current = true;
+      scrollRevision.current++;
       setImages({});
       setText("");
       setInputMode("voice");
@@ -175,8 +338,6 @@ export default function Chat() {
       setPending(undefined);
       setMemory(undefined);
       setMemoryOpen(false);
-      setPanel(null);
-      setToken("");
       setApiKey("");
       setIdentityExpired(false);
       await boot();
@@ -216,6 +377,7 @@ export default function Chat() {
         ]);
         setError("已确认上次回复保存成功，无需再次发送。");
         await readHistory(current.sessionId);
+        await refreshSessions();
       } else if (turn?.status === "failed") {
         submission.current = undefined;
         setError("上次生成已确认失败，草稿保留；可以重新发送。");
@@ -237,12 +399,18 @@ export default function Chat() {
     void boot();
     return () => {
       historyVersion.current++;
+      scrollRevision.current++;
     };
   }, []);
   useEffect(() => {
-    // 消息和输入区先完成布局，再更新滚动锚点，避免末条回复被输入框遮住。
-    Taro.nextTick(() => setAnchor((value) => value + 1));
-  }, [history, pending, attachments]);
+    if (!history.length && !pending) return;
+    Taro.nextTick(() => {
+      if (followLatest.current)
+        void Taro.pageScrollTo({ selector: "#chat-end", duration: 0 }).catch(
+          () => {},
+        );
+    });
+  }, [history, pending, attachments, progress]);
 
   async function chooseImage(source?: ImageSource) {
     if (disabled || attachments.length >= 3) return;
@@ -267,20 +435,30 @@ export default function Chat() {
       setUploading(false);
     }
   }
-  async function send() {
-    if (!ready || mode === "external" || sendLock.current) return;
+  async function send(formInput?: Input) {
+    if (
+      !(formInput ? formReady : ready) ||
+      mode === "external" ||
+      sendLock.current
+    )
+      return;
     sendLock.current = true;
+    followLatest.current = true;
+    scrollRevision.current++;
     const draft = { text: text.trim(), images: attachments };
-    const input = {
+    const input = formInput || {
       text: draft.text,
       mediaIds: draft.images.map((item) => item.id),
     };
     const key = apiKey;
     setApiKey("");
     setBusy(true);
-    setPending(draft);
-    setText("");
-    setAttachments([]);
+    setPending(formInput ? { text: formInput.text, images: [] } : draft);
+    setProgress(undefined);
+    if (!formInput) {
+      setText("");
+      setAttachments([]);
+    }
     setError("");
     let id = sessionId;
     let saved = false;
@@ -288,7 +466,8 @@ export default function Chat() {
       if (!id) {
         const session = await api.newSession();
         id = session.id;
-        setSessionId(id);
+        rememberSelection(id);
+        setSessions((rows) => [...rows, session]);
       }
       const previous = submission.current;
       const retry =
@@ -308,7 +487,14 @@ export default function Chat() {
         // 只有服务端明确失败才允许新的一轮；查询失败或暂未找到都不能随意换编号。
         if (status.turn?.status === "failed") current.requestId = requestId();
       }
-      result ||= await api.generate(id, current.requestId, mode, input, key);
+      result ||= await api.generate(
+        id,
+        current.requestId,
+        mode,
+        input,
+        key,
+        setProgress,
+      );
       saved = true;
       submission.current = undefined;
       // 保存成功与刷新成功是两件事，不能因随后读取失败诱导用户重复发送。
@@ -341,110 +527,98 @@ export default function Chat() {
         } else {
           if (status?.turn?.status === "failed") submission.current = undefined;
           problem(value);
-          setText(draft.text);
-          setAttachments(draft.images);
+          if (!formInput) {
+            setText(draft.text);
+            setAttachments(draft.images);
+          }
         }
         if (id) await readHistory(id).catch(recoveryFailed);
       }
     } finally {
+      await refreshSessions();
       setPending(undefined);
+      setProgress(undefined);
       setBusy(false);
       sendLock.current = false;
-      setAnchor((value) => value + 1);
     }
   }
-  function closePanel() {
-    if (!tokenBusy) {
-      setPanel(null);
-      setToken("");
-    }
+  const formResponses = Object.fromEntries(
+    history
+      .filter((row) => row.status === "completed" && row.input.formResponse)
+      .map((row) => {
+        const response = row.input.formResponse!;
+        return [
+          `turn_${response.turnId}_${response.artifactId}`,
+          response.values,
+        ];
+      }),
+  ) as Record<string, FormValues>;
+  async function submitForm(event: ClientEvent) {
+    const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
+    if (!match) throw new Error("表单来源无效");
+    await send({
+      text: "提交练习表单",
+      mediaIds: [],
+      formResponse: {
+        turnId: Number(match[1]),
+        artifactId: match[2],
+        values: event.action.context.values,
+      },
+    });
   }
-  function selectMode(value: Mode) {
-    setMode(value);
+
+  async function openSettings() {
+    if (disabled || sendLock.current || settingsNavigation.current) return;
+    settingsNavigation.current = true;
+    setNavigationOpen(false);
     setApiKey("");
-    setError("");
-    setToken("");
-    setPanel(value === "external" ? "connection" : null);
-  }
-  async function connectAgent() {
-    setTokenBusy(true);
     try {
-      setToken((await api.mintMcpToken()).token);
+      await Taro.navigateTo({ url: "/pages/settings/index" });
     } catch (value) {
       problem(value);
     } finally {
-      setTokenBusy(false);
+      settingsNavigation.current = false;
     }
   }
-  async function revoke() {
-    setTokenBusy(true);
-    try {
-      await api.revokeMcpTokens();
-      setToken("");
-      await Taro.showToast({ title: "连接令牌已撤销", icon: "none" });
-    } catch (value) {
-      problem(value);
-    } finally {
-      setTokenBusy(false);
-    }
-  }
+  useEffect(() => {
+    setApiKey("");
+  }, [mode]);
 
   return (
     <View className={h5 ? "h5-shell" : "native-shell"}>
       <View className="chat-app">
-        <View className="chat-header">
-          <View className="identity">
-            <Image
-              className="avatar hero-avatar"
-              src={mascot}
-              mode="aspectFill"
-            />
-            <View>
-              <Text className="agent-name">好人阿 J</Text>
-              <Text className="agent-status">AI 乐观搭子</Text>
-            </View>
-          </View>
-          <View className="header-actions">
-            <Button
-              className={`icon-button memory-shortcut ${memory?.level === "empty" ? "memory-alert" : ""}`}
-              ariaLabel="查看阿 J 的记忆"
-              disabled={disabled}
-              onClick={() => setMemoryOpen(true)}
-            >
-              ♥{memory?.level === "empty" ? " 满了" : ""}
-            </Button>
-            <Button
-              className="icon-button"
-              disabled={disabled}
-              onClick={() => setPanel("modes")}
-            >
-              设置
-            </Button>
-          </View>
-        </View>
-        <ScrollView
-          className="conversation"
-          scrollY
-          scrollWithAnimation
-          scrollIntoViewAlignment="end"
-          scrollIntoView={
-            history.length || pending ? `chat-end-${anchor}` : undefined
-          }
-        >
+        <ChatNavigation
+          open={navigationOpen}
+          sessions={sessions}
+          activeId={sessionId}
+          disabled={disabled}
+          memoryFull={memory?.level === "empty"}
+          memory={memory}
+          onOpen={() => setNavigationOpen(true)}
+          onClose={() => setNavigationOpen(false)}
+          onNew={startConversation}
+          onSelect={selectSession}
+          onMemory={() => {
+            setNavigationOpen(false);
+            setMemoryOpen(true);
+          }}
+          onSettings={openSettings}
+        />
+        <View className="conversation">
           <View className="chat-content">
-            {!history.length && !pending && (
+            {!history.length && !pending && !loading && !historyFailed && (
               <View className="welcome-home">
                 <View className="mascot-halo">
                   <Image
                     className="welcome-mascot"
                     src={mascot}
                     mode="aspectFit"
-                    ariaLabel="挥手打招呼的阿 J"
+                    ariaLabel="挥手打招呼的阿 J 先生"
                   />
                 </View>
-                <Text className="welcome-title">嗨，我是阿 J。</Text>
+                <Text className="welcome-title">嗨，我是阿 J 先生。</Text>
                 <View className="welcome-copy">
-                  <Text>从鲁迅笔下的阿 Q 先生那儿，“蒸馏”来一点乐观。</Text>
+                  <Text>从鲁迅笔下的阿 Q 那儿，“蒸馏”来一点乐观。</Text>
                   <Text>
                     不自欺，不欺软怕硬，也不把委屈硬说成胜利。留下的，是跌一跤还能拍拍灰、继续往前走的劲儿。
                   </Text>
@@ -475,49 +649,55 @@ export default function Chat() {
               </View>
             )}
             {loading && (
-              <Text className="loading-note">阿 J 正在翻看我们聊过的日常…</Text>
+              <Text className="loading-note">
+                阿 J 先生正在翻看我们聊过的日常…
+              </Text>
             )}
             {history.map((row) => (
               <View className="turn" key={row.id}>
                 <View className="message user-message">
-                  <View className="bubble user-bubble">
-                    {row.input.text && <Text>{row.input.text}</Text>}
-                    {row.input.mediaIds.length > 0 && (
-                      <View className="bubble-images">
-                        {row.input.mediaIds.map((id) =>
-                          images[id] ? (
-                            <Image
-                              key={id}
-                              className="message-image"
-                              src={images[id]!}
-                              mode="aspectFill"
-                              onError={() =>
-                                setImages((current) => ({
-                                  ...current,
-                                  [id]: null,
-                                }))
-                              }
-                              onClick={() =>
-                                Taro.previewImage({
-                                  urls: row.input.mediaIds
-                                    .map((value) => images[value])
-                                    .filter(
-                                      (source): source is string => !!source,
-                                    ),
-                                  current: images[id]!,
-                                })
-                              }
-                            />
-                          ) : (
-                            <Text key={id} className="image-placeholder">
-                              {images[id] === null
-                                ? "图片暂不可用"
-                                : "图片加载中…"}
-                            </Text>
-                          ),
-                        )}
-                      </View>
-                    )}
+                  <View className="user-message-main">
+                    <View className="bubble user-bubble">
+                      {row.input.text && (
+                        <MessageText>{row.input.text}</MessageText>
+                      )}
+                      {row.input.mediaIds.length > 0 && (
+                        <View className="bubble-images">
+                          {row.input.mediaIds.map((id) =>
+                            images[id] ? (
+                              <Image
+                                key={id}
+                                className="message-image"
+                                src={images[id]!}
+                                mode="aspectFill"
+                                onError={() =>
+                                  setImages((current) => ({
+                                    ...current,
+                                    [id]: null,
+                                  }))
+                                }
+                                onClick={() =>
+                                  Taro.previewImage({
+                                    urls: row.input.mediaIds
+                                      .map((value) => images[value])
+                                      .filter(
+                                        (source): source is string => !!source,
+                                      ),
+                                    current: images[id]!,
+                                  })
+                                }
+                              />
+                            ) : (
+                              <Text key={id} className="image-placeholder">
+                                {images[id] === null
+                                  ? "图片暂不可用"
+                                  : "图片加载中…"}
+                              </Text>
+                            ),
+                          )}
+                        </View>
+                      )}
+                    </View>
                   </View>
                 </View>
                 <View className="message assistant-message">
@@ -530,13 +710,22 @@ export default function Chat() {
                     <View
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <Text>
+                      <MessageText>
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
                             ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
                             : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                      </Text>
+                      </MessageText>
+                      {row.status === "completed" && (
+                        <Artifacts
+                          turnId={row.id}
+                          artifacts={row.artifacts}
+                          responses={formResponses}
+                          disabled={!formReady}
+                          onAction={submitForm}
+                        />
+                      )}
                       {row.status === "completed" && row.association && (
                         <View className="association">
                           <Button
@@ -554,8 +743,9 @@ export default function Chat() {
                               : "看看为什么这样说 ＋"}
                           </Button>
                           {expanded.includes(row.id) && (
-                            <Text className="association-text">
+                            <MessageText className="association-text">
                               {row.association}
+                              {row.approach ? ` · ${row.approach}` : ""}
                               {"\n"}
                               {
                                 modes.find((item) => item.id === row.mode)
@@ -564,16 +754,24 @@ export default function Chat() {
                               {row.mode === "external"
                                 ? " · 来源由客户端声明"
                                 : ` · ${row.model}`}
-                            </Text>
+                            </MessageText>
                           )}
                         </View>
                       )}
                     </View>
-                    <Text className="message-meta">
-                      {row.status === "completed"
-                        ? "AI 生成 · 已保存"
-                        : "这一轮尚未完成"}
-                    </Text>
+                    <View className="message-footer">
+                      <Text className="message-meta">
+                        {row.status === "completed"
+                          ? "AI 生成 · 已保存"
+                          : "这一轮尚未完成"}
+                      </Text>
+                      {row.status === "completed" && row.greeting && (
+                        <CopyMessage
+                          value={row.greeting}
+                          label="复制阿 J 先生的回复"
+                        />
+                      )}
+                    </View>
                   </View>
                 </View>
               </View>
@@ -582,7 +780,7 @@ export default function Chat() {
               <View className="turn">
                 <View className="message user-message">
                   <View className="bubble user-bubble">
-                    {pending.text && <Text>{pending.text}</Text>}
+                    {pending.text && <MessageText>{pending.text}</MessageText>}
                     <View className="bubble-images">
                       {pending.images.map((item) => (
                         <Image
@@ -604,119 +802,135 @@ export default function Chat() {
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
-                      <Text>阿 J 正在换个角度想…</Text>
+                      <MessageText>
+                        {progress?.text ||
+                          progress?.step ||
+                          "阿 J 先生正在换个角度想…"}
+                      </MessageText>
+                      {progress && (
+                        <LiveArtifacts surfaces={progress.surfaces} />
+                      )}
                     </View>
                   </View>
                 </View>
               </View>
             )}
-            <View id={`chat-end-${anchor}`} className="chat-end" />
+            <View id="chat-end" className="chat-end" />
           </View>
-        </ScrollView>
-        {error && (
-          <View className="error-banner">
-            <Text>
-              {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
-            </Text>
-            {!identityExpired && submission.current && (
-              <Button
-                className="text-button check-submission"
-                disabled={disabled}
-                onClick={checkSubmission}
-              >
-                确认上次发送
-              </Button>
-            )}
-            {identityExpired ? (
-              <Button
-                className="text-button restart-identity"
-                disabled={loading || busy || uploading || memoryBusy}
-                onClick={restartIdentity}
-              >
-                重新开始
-              </Button>
-            ) : (
-              !settings && (
-                <Button className="text-button" onClick={boot}>
-                  重试
-                </Button>
-              )
-            )}
-          </View>
-        )}
-        <View className="composer-area">
-          {mode === "byok" && (
-            <View className="key-row">
-              <TextInput
-                className="key-input"
-                password
-                value={apiKey}
-                onInput={(event) => setApiKey(event.detail.value)}
-                placeholder="填写本次 DeepSeek API Key"
-                disabled={busy}
-              />
-              <Text className="key-hint">仅用于本次生成，发送后清空</Text>
-            </View>
-          )}
-          {mode === "platform" && settings && !settings.platformConfigured && (
-            <Text className="config-warning">
-              平台尚未配置模型账户，请切换到“我的密钥”。
-            </Text>
-          )}
-          {mode === "external" ? (
-            <View className="external-composer">
-              <Text>让你自己的 Agent 生成，祝福仍留在这里。</Text>
-              <View className="external-actions">
+        </View>
+        <View className="chat-dock">
+          {error && (
+            <View className="error-banner">
+              <Text>
+                {identityExpired ? api.IDENTITY_EXPIRED_MESSAGE : error}
+              </Text>
+              {!identityExpired && submission.current && (
                 <Button
-                  className="primary-button"
-                  onClick={() => setPanel("connection")}
-                >
-                  连接我的 Agent ↗
-                </Button>
-                <Button
-                  className="quiet-button"
+                  className="text-button check-submission"
                   disabled={disabled}
-                  onClick={boot}
+                  onClick={checkSubmission}
                 >
-                  刷新对话
+                  确认上次发送
                 </Button>
-              </View>
-            </View>
-          ) : (
-            <ChatComposer
-              inputMode={inputMode}
-              text={text}
-              attachments={attachments}
-              disabled={disabled}
-              voiceDisabled={
-                disabled || memory?.level === "empty" || !!panel || memoryOpen
-              }
-              ready={ready}
-              busy={busy}
-              uploading={uploading}
-              onMode={setInputMode}
-              onText={setText}
-              onVoiceText={(value) => {
-                const combined = text ? `${text}\n${value}` : value;
-                setText(combined);
-                setInputMode("keyboard");
-                if (combined.length > 4000)
-                  setError("文字超过 4000 字，请编辑后再发送。");
-              }}
-              onImage={chooseImage}
-              onRemoveImage={(id) =>
-                setAttachments((items) =>
-                  items.filter((item) => item.id !== id),
+              )}
+              {identityExpired ? (
+                <Button
+                  className="text-button restart-identity"
+                  disabled={loading || busy || uploading || memoryBusy}
+                  onClick={restartIdentity}
+                >
+                  重新开始
+                </Button>
+              ) : (
+                (!settings || historyFailed) && (
+                  <Button className="text-button" onClick={boot}>
+                    重试
+                  </Button>
                 )
-              }
-              onSend={send}
-            />
+              )}
+            </View>
           )}
-          <Text className="composer-footnote">
-            {mode === "external"
-              ? "对话仍留在这里 · 支持撤销连接"
-              : "阿 J 是 AI，好意不是对未来的保证"}
-          </Text>
+          <View className="composer-area">
+            {mode === "byok" && (
+              <View className="key-row">
+                <TextInput
+                  className="key-input"
+                  password
+                  value={apiKey}
+                  onInput={(event) => setApiKey(event.detail.value)}
+                  placeholder="填写本次 DeepSeek API Key"
+                  disabled={busy}
+                />
+                <Text className="key-hint">仅用于本次生成，发送后清空</Text>
+              </View>
+            )}
+            {mode === "platform" &&
+              settings &&
+              !settings.platformConfigured && (
+                <Text className="config-warning">
+                  平台尚未配置模型账户，请切换到“我的密钥”。
+                </Text>
+              )}
+            {mode === "external" ? (
+              <View className="external-composer">
+                <Text>让你自己的 Agent 生成，祝福仍留在这里。</Text>
+                <View className="external-actions">
+                  <Button
+                    className="primary-button"
+                    disabled={disabled}
+                    onClick={openSettings}
+                  >
+                    连接我的 Agent ↗
+                  </Button>
+                  <Button
+                    className="quiet-button"
+                    disabled={disabled}
+                    onClick={boot}
+                  >
+                    刷新对话
+                  </Button>
+                </View>
+              </View>
+            ) : (
+              <ChatComposer
+                inputMode={inputMode}
+                text={text}
+                attachments={attachments}
+                disabled={disabled || historyFailed || navigationOpen}
+                voiceDisabled={
+                  disabled ||
+                  historyFailed ||
+                  navigationOpen ||
+                  memory?.level === "empty" ||
+                  memoryOpen
+                }
+                ready={ready}
+                busy={busy}
+                uploading={uploading}
+                onMode={setInputMode}
+                onText={setText}
+                onVoiceText={(value) => {
+                  const combined = text ? `${text}\n${value}` : value;
+                  setText(combined);
+                  setInputMode("keyboard");
+                  if (combined.length > 4000)
+                    setError("文字超过 4000 字，请编辑后再发送。");
+                }}
+                onImage={chooseImage}
+                onRemoveImage={(id) =>
+                  setAttachments((items) =>
+                    items.filter((item) => item.id !== id),
+                  )
+                }
+                onSend={() => send()}
+              />
+            )}
+            <Text className="composer-footnote">
+              {mode === "external"
+                ? "对话仍留在这里 · 支持撤销连接"
+                : "阿 J 先生是 AI，好意不是对未来的保证"}
+            </Text>
+          </View>
         </View>
         {memoryOpen && (
           <MemoryPanel
@@ -734,134 +948,6 @@ export default function Chat() {
             onBusy={setMemoryBusy}
             onError={problem}
           />
-        )}
-        {panel && (
-          <View className="sheet-overlay">
-            <View className="sheet-backdrop" onClick={closePanel} />
-            <View className="sheet">
-              <View className="sheet-handle" />
-              <View className="sheet-heading">
-                <Text>
-                  {panel === "modes" ? "阿 J 的设置" : "连接你自己的 Agent"}
-                </Text>
-                <Button
-                  className="icon-button"
-                  disabled={tokenBusy}
-                  onClick={closePanel}
-                >
-                  关闭
-                </Button>
-              </View>
-              {panel === "modes" && (
-                <>
-                  <MemoryMeter
-                    memory={memory}
-                    disabled={disabled}
-                    onOpen={() => {
-                      setPanel(null);
-                      setMemoryOpen(true);
-                    }}
-                  />
-                  <Text className="sheet-description">
-                    a jOKer · 换一种连接方式，接着聊，不用重新开始。
-                  </Text>
-                  <Text className="sheet-note">
-                    当前模型：
-                    {mode === "external"
-                      ? "由你自己的 Agent 选择"
-                      : settings?.model || "连接中"}
-                  </Text>
-                  {modes.map((item) => (
-                    <Button
-                      key={item.id}
-                      className={`mode-option ${mode === item.id ? "selected" : ""}`}
-                      onClick={() => selectMode(item.id)}
-                    >
-                      <View className="option-icon">{item.icon}</View>
-                      <View className="option-copy">
-                        <Text className="option-label">{item.label}</Text>
-                        <Text className="option-detail">{item.detail}</Text>
-                      </View>
-                      <Text>{mode === item.id ? "✓" : ""}</Text>
-                    </Button>
-                  ))}
-                  <Text className="sheet-note">
-                    当前内置 BYOK 接入 DeepSeek；其他平台尚未开放。外部 Agent
-                    可使用自己的模型。
-                  </Text>
-                  <Text className="sheet-note">
-                    {h5
-                      ? "此浏览器以访客 Cookie 保存身份。清除 Cookie 会失去访问，不是正式账号。"
-                      : "当前为本机访客身份，不是微信登录。清除小程序缓存或凭证过期后，不能自动找回。"}
-                  </Text>
-                  <Button className="quiet-button" onClick={api.openCms}>
-                    {h5 ? "打开 Payload 管理后台 ↗" : "复制管理后台地址"}
-                  </Button>
-                </>
-              )}
-              {panel === "connection" && (
-                <>
-                  <Text className="sheet-description">
-                    你的客户端运行 Agent、支付模型费用，通过 MCP
-                    将回复保存到这里。让它先读取 hello_greeting
-                    指引，自动接着最近的记录聊。
-                  </Text>
-                  <Text className="endpoint-label">MCP 地址</Text>
-                  <Text className="endpoint" selectable>
-                    {endpoint}
-                  </Text>
-                  {token ? (
-                    <>
-                      <Text className="token-ready">
-                        ✓ 令牌已生成 · 七天有效，仅此刻可复制
-                      </Text>
-                      <Button
-                        className="primary-button full-button"
-                        onClick={() =>
-                          api.copy(
-                            JSON.stringify(
-                              {
-                                mcpServers: {
-                                  "hello-agent": {
-                                    url: endpoint,
-                                    headers: {
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                  },
-                                },
-                              },
-                              null,
-                              2,
-                            ),
-                          )
-                        }
-                      >
-                        复制 MCP 连接配置
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      className="primary-button full-button"
-                      disabled={tokenBusy}
-                      onClick={connectAgent}
-                    >
-                      {tokenBusy ? "正在处理…" : "生成专用连接令牌"}
-                    </Button>
-                  )}
-                  <Button
-                    className="quiet-button full-button"
-                    disabled={tokenBusy}
-                    onClick={revoke}
-                  >
-                    撤销我的全部 MCP 令牌
-                  </Button>
-                  <Text className="sheet-note">
-                    本机地址只能由能访问此电脑的客户端连接。关闭面板会清除页面中的令牌；不会自动撤销已授权连接。
-                  </Text>
-                </>
-              )}
-            </View>
-          </View>
         )}
       </View>
     </View>

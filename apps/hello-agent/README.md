@@ -1,8 +1,18 @@
-# Hello Agent · 好人阿 J / a jOKer
+# Hello Agent · 阿 J 先生
 
-输入文字、图片或组合材料，阿J陪用户换一个可信的积极角度，顺带一句吉祥话，通过同一业务模块保存到 Payload CMS。首版只呈现一条连续对话，不暴露会话管理。此项目是独立、可本地运行的架构学习应用，不修改官网数据，也不连接真实微信群。
+输入文字、图片或组合材料，阿 J 先生陪用户换一个可信的积极角度，顺带一句吉祥话，通过同一业务模块保存到 Payload CMS。用户可新建、搜索和切换自己的对话，各会话记忆独立。此项目是独立、可本地运行的架构学习应用，不修改官网数据，也不连接真实微信群。
 
-人设在 `src/agent/persona.ts`，回复任务和工具契约在 `src/agent/instruction.ts`，当前版本 `aj-v2.1`。指纹测试防止无意改写；真实评测检查身份、日常、挫折、悲伤、危险、注入和图片，不能用静态测试替代内容评阅。
+人设在 `src/agent/persona.ts`，回复任务和工具契约在 `src/agent/instruction.ts`，当前版本 `aj-v4.3`。指纹测试防止无意改写；真实评测检查身份、日常、挫折、悲伤、危险、注入和图片，不能用静态测试替代内容评阅。
+
+## 心理 subagent 协作（aj-v4.3）
+
+平台和 BYOK 共用主 Agent 协调流程：普通分享可直接回应；需要心理方法时，主 Agent 通过 AgentTool 咨询独立的心理 subagent，取回结构化方案，统一使用阿 J 先生口吻生成最终回复。支持性回应、CBT、ACT、DBT、行为、焦点解决、自我关怀、积极心理学各有一个 LlmAgent、独立提示词与本轮执行会话。所有角色当前使用当次请求的同一个 DeepSeek 模型与密钥配置，执行上下文相互隔离。
+
+专家只能调用 `submit_psychology_plan`，主 Agent 才能调用 `save_greeting`。每轮最多两种流派，相同专家复用结果；主 Agent 最多五次模型调用，专家各最多两次，整轮 75 秒取消。常见咨询路径是「主 Agent 选择 → 专家提方案 → 主 Agent 整合保存」，通常三次模型调用。专家错误会回传给主 Agent，允许退回支持性回应，不把未执行的流派标成已采用。
+
+原始文字、图片、历史和表单填写由程序交给专家，专家请求不替代真实用户输入；各执行会话仍存入 Payload。AG-UI/A2UI 和客户端无需更改协议。自带 Agent 的 MCP 保存路径保持独立，领取可单独执行的完整提示词，不会启动平台心理专家。设计取舍见 [ADR-0004](docs/adr/0004-coordinated-psychology-agents.md)。
+
+`pnpm --filter @cfp/hello-agent eval:psychology` 使用虚构输入和隔离数据库检查真实路由、专家执行、表单及危机直接回应，会消耗已配置模型账户的调用额度；单元与集成测试使用脚本模型，不能代替真实模型质量评价。
 
 ## 启动
 
@@ -19,6 +29,8 @@ pnpm --filter @cfp/hello-agent dev
 也可 `pnpm --filter @cfp/hello-agent build` 后运行 `pnpm --filter @cfp/hello-agent start`。后者只在本地数据库尚未建立时显式建表，再启动生产构建；已有本地数据库不会被这个初始化命令改写结构。开发时使用 `dev` 的结构同步；ECS 部署禁用结构同步，使用 `src/cms/migrations` 中的版本化迁移，变更前必须备份。
 
 平台模式需要在 `apps/hello-agent/.env.local` 设置 `DEEPSEEK_API_KEY`；参考 [.env.example](./.env.example)。默认模型为 `deepseek-flash`，可用 `HELLO_MODEL` 更换为支持图片和工具调用的模型。没有凭证会明确拒绝，不会返回固定吉祥话冒充真实模型。
+
+平台模型使用数据库持久化的全站共享调用预算 `HELLO_PLATFORM_DAILY_CALL_LIMIT`（默认 900，0 暂停平台调用，非法配置拒绝生成），按 UTC 日恢复。生成开始前原子预扣最坏情况 9 次（主 Agent 5 次 + 两位专家各 2 次），记忆整理预扣 1 次；额度不足返回 429，配置或存储异常返回 503，不启动模型或专家。成功请求的幂等重试不重复预扣；失败、取消、进程重启不退款，以防供应商已计费。所有访客和连接同一 Payload 数据库的进程共享计数，换 Cookie、设备或来源 IP 不会得到新额度。BYOK 和外部 Agent 不使用平台额度。`/api/ready` 使用相同规则校验额度配置并只读探测账本，不创建记录或扣额度；配置非法、表不可读时返回 503，额度用尽或显式设为 0 仍保持健康。调用预算结合各模型请求的输出上限控制用量，不是精确金额账单，也不提供匿名访客之间的公平分配；如需按人付费与防止共享额度被提前占用，仍需正式身份与个人权益。
 
 2026-09-29 核对了 DeepSeek 官方的[图片输入](https://api-docs.deepseek.com/guides/vision/)与[工具调用](https://api-docs.deepseek.com/guides/tool_calls/)文档，默认使用支持图文的 `deepseek-flash`。模型请求仅发往 `https://api.deepseek.com/chat/completions`，关闭思考模式，不接入 Gemini。Google ADK 是运行框架，不限定模型供应商；本例通过 `BaseLlm` 适配器连接 DeepSeek。
 
@@ -102,7 +114,7 @@ skills/hello-greeting/ 外部 Agent 使用说明
 
 ## 会话与产物为什么直接存 Payload？
 
-- `sessions`：后台的祝福会话容器，兼容已有多条记录；首版客户端自动续接最近一条，不向用户展示新建、列表或编号。
+- `sessions`：后台的祝福会话容器，兼容已有多条记录；客户端提供新建与历史侧栏。本机优先恢复上次选中的会话；REST/MCP 列表按最近活动时间升序返回，外部 Agent 默认续接末项。
 - `greetings`：一轮原始输入、使用方式、执行状态和最终吉祥话；失败也保留记录，但没有伪造产物。
 - `adk-sessions`：ADK 每轮运行的状态和事件，通过自定义 `BaseSessionService` 适配到 Payload。不是把 ADK 内存服务当持久化。
 - `media`：校验、缩放并清除元信息后的输入图片；最多 3 张。配置 OSS 后只保存归属、格式和私有对象引用，旧 base64 图片仍可读取，迁移回读校验后才清空旧字段。本地未配置 OSS 时保留数据库演示模式。
@@ -153,7 +165,7 @@ pnpm --filter @cfp/hello-agent exec tsx scripts/oss-storage-check.ts
 - 血条表示对话记忆预算的剩余比例，预算为 18,000 个估算 tokens（中文与 ASCII 使用不同权重）；不是模型的精确上下文上限或计费余额。当前输入图片、系统指令和模型内部开销不包含在这个历史预算里。预算保留了最长两轮与摘要的空间，避免空间耗尽却无可整理记录的死路。
 - 点击血条打开「给记忆回回血」。至少三轮已完成对话后，可以完整观看一次广告，将更早内容整理成摘要，保留最近两轮原文。原始 `greetings`、图片和历史不会删除。
 - 摘要与覆盖位置、压缩次数、观看资格统一存在 Payload 的 `sessions.memory`。并发生成与压缩使用同一数据库锁；完整摘要校验、确认节省空间后一次更新记忆并消耗资格。失败保留旧上下文与观看资格，15 分钟有效期内重试不用重看。网络重试使用同一资格 ID，不重复调用模型。
-- 压缩提示词独立为 `src/agent/summary-instruction.ts`（`memory-v1`），不混入阿J人设；摘要仍作为不可信素材传给回复模型。摘要可能遗漏细节；没有把单元测试当作语义质量保证。
+- 压缩提示词独立为 `src/agent/summary-instruction.ts`（`memory-v1`），不混入阿 J 先生人设；摘要仍作为不可信素材传给回复模型。摘要可能遗漏细节；没有把单元测试当作语义质量保证。
 - 平台模式和自带 Agent 在页面触发的整理使用平台密钥；BYOK 整理使用当次填写的密钥，发送请求后清空。外部 Agent 通过 `hello_get_context` 获取同一摘要与血条，但不能替用户看广告。平台无法控制外部客户端自行保留的上下文或压缩行为。
 
 本地默认是清楚标注的 5 秒「演示广告」，不是商业广告、不产生收入。`HELLO_AD_MODE=disabled` 关闭；配置 `HELLO_AD_MODE=wechat` 和自己的 `WECHAT_REWARDED_AD_UNIT_ID` 后可在微信端联调 `createRewardedVideoAd`，仅 `isEnded === true` 视为完整播放。H5 不伪装支持微信广告。
@@ -210,6 +222,21 @@ pnpm --filter @cfp/hello-agent test:external
 ```
 
 外部客户端默认查询并续接最新记录，无记录时才创建。`HELLO_SESSION_ID` 仅供开发者显式定位测试记录，不要求普通用户填写。外部客户端读取自己的图片后直接发给自己的模型，再调用 MCP 保存产物；模型费用归调用方，服务端仅处理业务与存储。
+
+## 管理 Agent 与知识库
+
+在 `/admin` 的「助手管理」中维护「Agent 配置」和「知识库」。每个心理流派对应一个独立 subagent；主 Agent 选择最多两个专家、整合方案并唯一保存最终回复。管理员可以编辑主 Agent / subagent 的完整提示词、停用流派、绑定最多两个知识库。已开始的轮次使用自己的配置快照，修改从下一轮生效。通用安全和工具权限由程序固定执行。
+
+```sh
+# 先执行正式数据库迁移，再初始化默认配置；可安全重复，不覆盖管理员编辑。
+pnpm --filter @cfp/hello-agent db:seed
+```
+
+seed 创建一个主 Agent 和八个心理 subagent，不创建管理员、聊天或假知识库。新本地库 db:init 会调用相同 seed；已有库和正式发布显式执行 db:seed。删除默认流派后再次 seed 会补回，需要持续关闭时使用「启用」开关。遗漏 seed 时就绪检查与生成会明确报错。
+
+知识库可直接填写参考资料，或选择「腾讯 ima 知识库」，填写知识库 ID、Client ID 和 API Key，保存后点击「测试已保存的连接」，再在对应 subagent 中选择这个知识库。凭证来自 [ima OpenAPI 配置页](https://ima.qq.com/agent-interface)，必须具备目标知识库读取权限。API Key 加密保存、不会回显；留空保留，勾选清除才删除。服务器的 Payload secret 变更后需迁移密钥或重新填写。
+
+ima 使用官方关键词搜索，最多取三个结果的正文片段，不自动下载全文；仅有标题时明确不把它作为正文证据。连接失败、权限不足或未命中不会伪造来源。外部 MCP 的自带 Agent 不读取这些内部配置。详见 [配置与知识库决策](./docs/adr/0005-managed-agents-and-knowledge.md)。
 
 ## 验证
 
@@ -271,7 +298,7 @@ Compose 的 `data-init` 使用同一镜像内的 `node` 用户准备 `/opt/cfp-h
 证书续期必须重新传输并验证 Nginx reload；本次没有修改服务器的证书自动续期任务。
 
 - 本地开发示例，不是已加固的公开 SaaS：浏览器是访客 Cookie，小程序是设备访客令牌，没有伪装成已完成微信登录；清缓存或凭证过期后不能自动找回。两端访客账号独立，正式使用需微信登录、跨端绑定和数据删除策略。
-- 公网测试已有 HTTPS、Nginx 按来源限流、应用单进程限流、记录式迁移、私有 OSS 和手动备份，但仍没有微信身份验证、用户消费配额或全局金额熔断；扩大开放范围前需补足正式认证、共享配额和自动备份。
+- 本分支支持 HTTPS、Nginx 按来源限流、应用单进程限流、记录式迁移、私有 OSS、手动备份及持久化共享模型调用预算，但仍没有微信身份验证、个人消费权益或精确金额熔断；扩大开放范围前需补足正式认证、个人配额和自动备份。
 - SQLite 自动同步 schema 仅限这个独立示例，不能用于已有生产库。没有改动 `apps/website` 的 Payload 配置或库。
 - 真实生成依赖用户配置模型账户；未配置时页面明确提示。CMS 管理员也由用户初始化，不预置默认密码。
 - 未实现跨设备 OAuth、通用长任务恢复或任意模型网关；BYOK 仅支持 DeepSeek。外部 Agent 可用自己的其他模型，但平台仅记录来源声明。
@@ -279,5 +306,9 @@ Compose 的 `data-init` 使用同一镜像内的 `node` 用户准备 `/opt/cfp-h
 ## 参考
 
 - [Google ADK TypeScript](https://github.com/google/adk-js)：本项目实际检查并使用 `@google/adk@2.1.0` 的类型和接口。
-- [Payload Local API 访问控制](https://payloadcms.com/docs/local-api/access-control)：普通业务读写显式关闭权限绕过；只有私有凭证仓库和管理员初始化提升权限。
+- [Payload Local API 访问控制](https://payloadcms.com/docs/local-api/access-control)：普通业务读写显式关闭权限绕过；私有凭证仓库、管理员初始化和只读 Agent 配置加载在各自服务端边界提升权限。
 - [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk)：此项目使用官方 SDK 的 Web Standard Streamable HTTP 适配，不另外暴露通用 CMS CRUD。
+
+## 产品改名（2026-10-13）
+
+界面、助手自称与新建会话统一使用「阿 J 先生」。现有部署先备份并停止写入，再运行 `pnpm db:rename-brand`：仅替换 Agent 配置名称和提示词里的「阿 Q 先生」「阿 Q +」及更早旧品牌文字；保留《阿Q正传》及阿 Q 文学风格引用，保留管理员定制内容、启停与知识库绑定；可重复执行。`db:seed` 仍只补缺。历史对话、知识库资料、域名、AppID 和内部协议标识不改写；微信平台登记名称需要在平台独立管理。

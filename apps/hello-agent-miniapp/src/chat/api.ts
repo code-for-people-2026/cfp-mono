@@ -1,4 +1,10 @@
 import Taro from "@tarojs/taro";
+import {
+  CATALOG_ID,
+  createRunReader,
+  textResponseSchema,
+  type RunProgress,
+} from "@cfp/hello-agent-protocol";
 import type { Attachment, Input, Mode } from "./model";
 import {
   settingsSchema,
@@ -9,7 +15,6 @@ import {
   memoryStatusSchema,
   adTicketSchema,
   completedSchema,
-  turnResultSchema,
   credentialSchema,
   revokedSchema,
   identitySchema,
@@ -40,11 +45,13 @@ async function request<T>(
   decoder: Decoder<T>,
   method: "GET" | "POST" = "GET",
   data?: unknown,
+  dataType: "json" | "text" = "json",
 ): Promise<T> {
   const response = await Taro.request<unknown>({
     url: `${origin}/api/hello/${path}`,
     method,
     data,
+    dataType,
     timeout: 90_000,
     header: {
       "Content-Type": "application/json",
@@ -72,7 +79,11 @@ async function request<T>(
 // 只在用户确认影响后调用；普通重试保留原身份，不能静默跳过确认换发 Cookie。
 export async function restartIdentity() {
   if (native) {
-    const identity = await request("miniapp-identity", credentialSchema, "POST");
+    const identity = await request(
+      "miniapp-identity",
+      credentialSchema,
+      "POST",
+    );
     Taro.setStorageSync(storageKey, identity.token);
     deviceToken = identity.token;
   } else {
@@ -114,7 +125,7 @@ export const getSettings = () => request("config", settingsSchema);
 export const getSessions = () => request("sessions", sessionsSchema);
 export const newSession = () =>
   request("sessions", sessionSchema, "POST", {
-    title: "与阿 J 的日常",
+    title: "新对话",
   });
 export const getHistory = (id: number) =>
   request(`sessions/${id}`, historySchema);
@@ -159,26 +170,106 @@ export const compactPreview = (
     mode: mode === "byok" ? "byok" : "platform",
     ...(mode === "byok" ? { apiKey } : {}),
   });
-export const generate = (
+export async function generate(
   sessionId: number,
   id: string,
   mode: Exclude<Mode, "external">,
   input: Input,
   apiKey?: string,
-) =>
-  request("greet", turnResultSchema, "POST", {
-    sessionId,
-    requestId: id,
-    mode,
-    input,
-    ...(mode === "byok" ? { apiKey } : {}),
-  });
+  onProgress?: (progress: RunProgress) => void,
+) {
+  const body = {
+    protocolVersion: "1.0",
+    threadId: String(sessionId),
+    runId: id,
+    tools: [],
+    context: [],
+    messages: [{ id: `user_${id}`, role: "user", content: input.text }],
+    forwardedProps: {
+      mode,
+      mediaIds: input.mediaIds,
+      ...(mode === "byok" ? { apiKey } : {}),
+      clientEvent: input.formResponse
+        ? {
+            version: "v0.9.1",
+            action: {
+              name: "submit_form",
+              surfaceId: `turn_${input.formResponse.turnId}_${input.formResponse.artifactId}`,
+              sourceComponentId: "submit",
+              timestamp: new Date().toISOString(),
+              context: { values: input.formResponse.values },
+            },
+          }
+        : undefined,
+      a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] },
+    },
+  };
+  const reader = createRunReader(id, onProgress);
+  if (native) {
+    // Native Taro buffers SSE; it consumes exactly the same AG-UI/A2UI events as H5.
+    reader.push(
+      await request("ag-ui", textResponseSchema, "POST", body, "text"),
+    );
+  } else {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90_000);
+    try {
+      const response = await fetch("/api/hello/ag-ui", {
+        method: "POST",
+        credentials: "same-origin",
+        signal: controller.signal,
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        if (response.status === 401) throw new IdentityExpiredError();
+        const failure = errorSchema.safeParse(await response.json());
+        throw new Error(
+          failure.success ? failure.data.error : "暂时连接不上，请稍后重试",
+        );
+      }
+      if (!response.body) throw new Error("回复没有内容");
+      const stream = response.body.getReader();
+      const decoder = new TextDecoder();
+      try {
+        while (true) {
+          const chunk = await stream.read();
+          if (chunk.done) break;
+          reader.push(decoder.decode(chunk.value, { stream: true }));
+        }
+        reader.push(decoder.decode());
+      } finally {
+        await stream.cancel();
+      }
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  reader.finish();
+  const { turn } = await getSubmission(sessionId, id);
+  if (!turn || turn.status !== "completed")
+    throw new Error("回复尚未确认保存，请稍后确认上次发送");
+  return turn;
+}
 export const mintMcpToken = () => request("token", credentialSchema, "POST");
 export const revokeMcpTokens = () =>
   request("token/revoke", revokedSchema, "POST");
 
 export async function imageSource(id: number): Promise<string> {
-  const url = `${origin}/api/hello/media/${id}`;
+  return privateImageSource(`/api/hello/media/${id}`);
+}
+
+export async function privateImageSource(path: string): Promise<string> {
+  if (
+    !/^\/api\/hello\/(media\/[1-9]\d*|artifact-image\/[1-9]\d*\/[a-z][a-z0-9_]{0,39})$/.test(
+      path,
+    )
+  )
+    throw new Error("图片地址不受支持");
+  const url = `${origin}${path}`;
   if (!native) return url;
   // 与新上传预览共用三个下载位，为聊天及血条请求保留连接；失败也必须释放。
   await new Promise<void>((resolve) => {
@@ -240,7 +331,32 @@ export async function addImage(
 }
 
 export async function copy(value: string) {
-  await Taro.setClipboardData({ data: value });
+  if (native) {
+    await Taro.setClipboardData({ data: value });
+    return;
+  }
+  // Taro H5 忽略 execCommand 的 false 返回值；使用浏览器实际写入结果。
+  // 不额外把聊天原文存入 Taro 的剪贴板 localStorage 缓存。
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const field = document.createElement("textarea");
+  const previous = document.activeElement;
+  field.value = value;
+  field.readOnly = true;
+  field.style.position = "fixed";
+  field.style.left = "-10000px";
+  document.body.appendChild(field);
+  try {
+    field.select();
+    field.setSelectionRange(0, value.length);
+    if (!document.execCommand("copy"))
+      throw new Error("复制失败，请长按文字复制");
+  } finally {
+    field.remove();
+    if (previous instanceof HTMLElement) previous.focus();
+  }
 }
 export function openCms() {
   if (native) Taro.setClipboardData({ data: `${HELLO_API_ORIGIN}/admin` });

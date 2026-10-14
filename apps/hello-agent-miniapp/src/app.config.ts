@@ -3,7 +3,9 @@ import { getWechatSpeechPlugin } from "../config/speech";
 const speechPlugin = getWechatSpeechPlugin();
 
 export default defineAppConfig({
-  pages: ["pages/chat/index"],
+  pages: ["pages/chat/index", "pages/settings/index"],
+  // H5 路由动画会锁住 body 并绝对定位页面，妨碍系统识别整页长截图。
+  ...(process.env.TARO_ENV === "h5" ? { animation: false } : {}),
   // 插件声明与界面开关共用一份配置，避免显示语音入口却没有打包插件。
   plugins: speechPlugin
     ? {
@@ -12,7 +14,7 @@ export default defineAppConfig({
     : {},
   // 录音在用户按住时通过 scope.record 请求授权，不属于 app.json 的 permission 字段。
   window: {
-    navigationBarTitleText: "好人阿 J",
+    navigationBarTitleText: "阿 J 先生",
     navigationBarBackgroundColor: "#f6f8f7",
     navigationBarTextStyle: "black",
     backgroundColor: "#f6f8f7",

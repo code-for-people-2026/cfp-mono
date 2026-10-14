@@ -14,9 +14,12 @@ import {
 import { PROMPT_VERSION } from "../agent/instruction";
 import type { Generator } from "../agent/runtime";
 import { DEFAULT_MODEL } from "../models/deepseek";
+import { reservePlatformCalls } from "../cms/platform-quota";
+import { GREETING_MAX_CALLS } from "../agent/limits";
 import { ContextService } from "./context";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
+import { artifactsSchema, validateForm } from "@cfp/hello-agent-protocol";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
@@ -32,11 +35,21 @@ export class GreetingService {
   ) {}
 
   async sessions(): Promise<Session[]> {
-    return (await this.repo.all("sessions")).map(
-      ({ id, title, createdAt }) => ({ id, title, createdAt }),
-    );
+    return (await this.repo.all("sessions"))
+      .map(({ id, title, createdAt, updatedAt }) => ({
+        id,
+        title,
+        createdAt,
+        updatedAt,
+      }))
+      .sort(
+        (a, b) =>
+          (a.updatedAt || a.createdAt).localeCompare(
+            b.updatedAt || b.createdAt,
+          ) || a.id - b.id,
+      );
   }
-  async createSession(title = "与阿J的日常"): Promise<Session> {
+  async createSession(title = "新对话"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });
   }
   async history(sessionId: number): Promise<Turn[]> {
@@ -95,8 +108,32 @@ export class GreetingService {
     model: string,
     extra?: Greeting,
   ) {
-    await this.repo.get("sessions", sessionId);
+    const session = await this.repo.get("sessions", sessionId);
     await Promise.all(input.mediaIds.map((id) => this.repo.get("media", id)));
+    if (input.formResponse) {
+      const response = input.formResponse;
+      const source = await this.repo.get("greetings", response.turnId);
+      if (source.sessionId !== sessionId || source.status !== "completed")
+        throw new AppError(400, "表单不属于当前对话或尚未完成");
+      const form = artifactsSchema
+        .parse(source.artifacts ?? [])
+        .find((item) => item.id === response.artifactId);
+      if (!form || form.kind !== "form")
+        throw new AppError(400, "原表单不存在");
+      const problem = validateForm(form, response.values);
+      if (problem) throw new AppError(400, problem);
+      const text =
+        `填写「${form.title}」\n` +
+        form.fields
+          .map(
+            (field) =>
+              `${field.label}：${response.values[field.id] ?? "（未填写）"}`,
+          )
+          .join("\n");
+      if (text.length > 4000)
+        throw new AppError(400, "填写内容过长，请精简后再提交");
+      input = { ...input, text };
+    }
     const requestKey = `${this.repo.owner.id}:${requestId}`;
     const hash = fingerprint({ sessionId, mode, input, model, extra });
     const existing = (
@@ -109,8 +146,6 @@ export class GreetingService {
     if (existing) {
       if (existing.fingerprint !== hash)
         throw new AppError(409, "同一个请求标识不能用于不同内容");
-      // 外部产物已经由客户端生成；持锁且指纹相同的重试可补完上次失败的保存。
-      // 平台/BYOK 的模型执行不能因此重复启动，仍保留原来的执行中限制。
       if (existing.status === "running" && mode !== "external")
         throw new AppError(
           409,
@@ -121,6 +156,17 @@ export class GreetingService {
       return { row: existing, duplicate: existing.status === "completed" };
     }
     await new ContextService(this.repo).ensureRoom(sessionId);
+    // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
+    await this.repo.update("sessions", sessionId, {
+      title: [
+        "新对话",
+        "与阿 J 先生的日常",
+        "与阿 Q 先生的日常",
+        "与好阿 J 的日常",
+      ].includes(session.title)
+        ? input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话"
+        : session.title,
+    });
     const row = await this.repo.create("greetings", {
       sessionId,
       requestKey,
@@ -139,12 +185,18 @@ export class GreetingService {
     if (row.status === "completed") {
       if (
         row.greeting !== output.greeting ||
-        row.association !== output.association
+        row.association !== output.association ||
+        fingerprint(row.artifacts ?? []) !==
+          fingerprint(output.artifacts ?? []) ||
+        (row.approach ?? undefined) !== output.approach
       )
         throw new AppError(409, "本轮产物已保存，不能覆盖");
       return row;
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
+    for (const artifact of output.artifacts ?? [])
+      if (artifact.kind === "image" && artifact.source.type === "media")
+        await this.repo.get("media", artifact.source.mediaId);
     return this.repo.update("greetings", id, {
       ...output,
       status: "completed",
@@ -175,11 +227,13 @@ export class GreetingService {
       );
       row = result.row;
       if (result.duplicate) return row;
+      if (args.mode === "platform")
+        await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
       await this.generate({
         repo: this.repo,
         turnId: row.id,
         sessionId: args.sessionId,
-        input: args.input,
+        input: row.input,
         apiKey: key,
         model,
         readImage: (id) => this.media.read(id),
@@ -198,7 +252,10 @@ export class GreetingService {
         if (saved.status === "completed") return saved;
         await this.repo.update("greetings", row.id, {
           status: "failed",
-          error: "模型调用或保存失败，请检查配置后重试",
+          error:
+            error instanceof AppError && error.status === 429
+              ? error.message
+              : "模型调用或保存失败，请检查配置后重试",
           durationMs: Date.now() - started,
         });
       }
@@ -215,6 +272,7 @@ export class GreetingService {
   async acceptExternal(value: unknown) {
     const args = externalSchema.parse(value);
     const release = await this.repo.acquire(args.sessionId);
+    let pending: GreetingRecord | undefined;
     try {
       const { row, duplicate } = await this.begin(
         args.sessionId,
@@ -225,7 +283,19 @@ export class GreetingService {
         args.output,
       );
       if (duplicate) return row;
+      pending = row;
       return await this.complete(row.id, args.output);
+    } catch (error) {
+      // Validation failures are terminal; transient storage failures keep the request retryable.
+      if (pending && error instanceof AppError) {
+        const row = await this.repo.get("greetings", pending.id);
+        if (row.status === "running")
+          await this.repo.update("greetings", row.id, {
+            status: "failed",
+            error: "外部回应作品未能通过校验或保存",
+          });
+      }
+      throw error;
     } finally {
       await release();
     }

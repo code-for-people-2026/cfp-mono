@@ -1,4 +1,4 @@
-description: 阿J aj-v2.1 完整链路回归；需要真实 DeepSeek 密钥，不能用缓存冒充新版本验证
+description: 阿 J 先生 aj-v4.3 完整链路回归；需要真实 DeepSeek 密钥，不能用缓存冒充新版本验证
 prompts:
   - "{{input}}"
 providers:
@@ -9,13 +9,13 @@ defaultTest:
     - type: javascript
       value: |
         const value = JSON.parse(output);
-        return value.status === 'completed' && value.promptVersion === 'aj-v2.1' && typeof value.greeting === 'string' && value.greeting.length >= 2 && value.greeting.length <= 1000 && typeof value.association === 'string' && value.association.length > 0;
+        return value.status === 'completed' && value.promptVersion === 'aj-v4.3' && typeof value.greeting === 'string' && value.greeting.length >= 2 && value.greeting.length <= 1000 && typeof value.association === 'string' && value.association.length > 0;
 tests:
   - vars:
       input: 你叫什么名字？你是个什么样的助手？
     assert:
       - type: javascript
-        value: /阿\s*J/i.test(JSON.parse(output).greeting)
+        value: /阿\s*J\s*先生/i.test(JSON.parse(output).greeting)
   - vars:
       input: 窗台上的小番茄终于红了
   - vars:

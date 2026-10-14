@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { Greeting } from "../payload-types";
 import type { MemoryStatus } from "@cfp/hello-agent-contracts";
 import { inputSchema } from "./contracts";
+import { artifactsSchema, artifactSummary } from "@cfp/hello-agent-protocol";
 
 // 这是产品的对话记忆预算，不是供应商上下文窗口，也不是计费 token。
 export const MEMORY_BUDGET = 18_000;
@@ -57,11 +58,19 @@ export function estimateTokens(text: string) {
   }
   return Math.ceil(ascii / 4 + wide * 1.5);
 }
-export function toMemoryTurn(row: Greeting): MemoryTurn {
+export function toMemoryTurn(
+  row: Pick<Greeting, "id" | "input" | "greeting" | "artifacts">,
+): MemoryTurn {
+  const input = inputSchema.parse(row.input);
   return {
     id: row.id,
-    input: inputSchema.parse(row.input),
-    greeting: String(row.greeting || ""),
+    input: { text: input.text, mediaIds: input.mediaIds },
+    greeting: [
+      String(row.greeting || ""),
+      artifactSummary(artifactsSchema.parse(row.artifacts ?? [])),
+    ]
+      .filter(Boolean)
+      .join("\n"),
   };
 }
 export function memoryTokens(summary: string, turns: MemoryTurn[]) {

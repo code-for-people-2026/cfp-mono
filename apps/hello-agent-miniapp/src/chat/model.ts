@@ -19,19 +19,19 @@ export const modes: {
   {
     id: "platform",
     label: "平台助手",
-    detail: "我们的 ADK · 平台模型账户",
+    detail: "直接开始聊天，由平台提供模型",
     icon: "✦",
   },
   {
     id: "byok",
     label: "我的密钥",
-    detail: "我们的 ADK · 你的 DeepSeek 账户",
+    detail: "使用你自己的 DeepSeek API 密钥",
     icon: "⌘",
   },
   {
     id: "external",
     label: "自带 Agent",
-    detail: "你的助手 · 通过 MCP 保存",
+    detail: "连接自己的助手，沿用这里的对话",
     icon: "↗",
   },
 ];

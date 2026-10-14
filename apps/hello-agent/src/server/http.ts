@@ -20,7 +20,7 @@ export function failure(error: unknown) {
   );
 }
 
-export async function readJson(request: Request, maximum = 8 * 1024 * 1024): Promise<unknown> {
+export async function readJson(request: Request, maximum = 8 * 1024 * 1024) {
   const reader = request.body?.getReader();
   if (!reader) throw new AppError(400, "缺少请求内容");
   const chunks: Uint8Array[] = [];
@@ -36,14 +36,14 @@ export async function readJson(request: Request, maximum = 8 * 1024 * 1024): Pro
     chunks.push(value);
   }
   try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return JSON.parse(Buffer.concat(chunks).toString("utf8")) as unknown;
   } catch {
     throw new AppError(400, "请求不是有效 JSON");
   }
 }
 
 const buckets = new Map<string, { count: number; expires: number }>();
-// 本地单进程演示的成本护栏；上线前需换成共享限流和注册身份。
+// 单进程按访客限频；平台模型成本另由 Payload 的全站共享额度限制。
 export function rateLimit(owner: string) {
   const now = Date.now();
   for (const [key, value] of buckets)

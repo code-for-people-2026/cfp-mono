@@ -4,6 +4,7 @@ import {
   type CollectionConfig,
   type Field,
 } from "payload";
+import { agentCollections } from "./agent-collections";
 import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
 import type { OwnedCollection } from "./repository";
@@ -49,6 +50,23 @@ const owned = (
 });
 
 export const collections: CollectionConfig[] = [
+  ...agentCollections,
+  {
+    slug: "platform-model-quotas",
+    admin: { hidden: true },
+    timestamps: false,
+    lockDocuments: false,
+    access: {
+      read: () => false,
+      create: () => false,
+      update: () => false,
+      delete: () => false,
+    },
+    fields: [
+      { name: "day", type: "text", unique: true, required: true },
+      { name: "reservedCalls", type: "number", required: true, min: 0 },
+    ],
+  },
   {
     slug: "admins",
     labels: { singular: "管理员", plural: "管理员" },
@@ -207,6 +225,27 @@ export const collections: CollectionConfig[] = [
       admin: { components: { Cell: "/src/cms/admin-cells#GreetingCell" } },
     },
     { name: "association", label: "联想依据", type: "textarea" },
+    { name: "approach", label: "回应视角", type: "text" },
+    {
+      name: "knowledgeEvidence",
+      type: "ui",
+      admin: {
+        components: {
+          Field: "/src/cms/knowledge-fields#TurnKnowledgeEvidence",
+        },
+      },
+    },
+    {
+      name: "artifacts",
+      label: "回应作品",
+      type: "json",
+      typescriptSchema: [
+        () => ({
+          type: "object",
+          tsType: 'import("@cfp/hello-agent-protocol").Artifact[] | null',
+        }),
+      ],
+    },
     { name: "model", label: "模型或外部声明", type: "text" },
     { name: "promptVersion", label: "提示词版本", type: "text" },
     { name: "error", label: "安全错误信息", type: "text" },

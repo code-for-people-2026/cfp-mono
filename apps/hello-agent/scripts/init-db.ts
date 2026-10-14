@@ -27,7 +27,8 @@ if (exists) {
   }
   const { cms } = await import("../src/cms/client");
   const payload = await cms();
+  await (await import("../src/cms/seed")).seedAgents(payload);
   await payload.destroy();
-  console.log("已初始化独立的本地演示数据库；未创建管理员或业务数据。");
+  console.log("已初始化本地数据库并 seed 主 Agent 和八个心理 subagent；未创建管理员或聊天数据。");
 }
 import "./load-local-env";

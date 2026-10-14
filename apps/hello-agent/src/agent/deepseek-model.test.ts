@@ -89,6 +89,9 @@ describe("DeepSeek 协议适配", () => {
       type: "function",
       function: { name: "save_greeting" },
     });
+    const schema = JSON.stringify(input.tools[0].function.parameters);
+    expect(schema).toContain('"exclusiveMinimum":0');
+    expect(schema).not.toMatch(/"exclusive(?:Minimum|Maximum)":(?:true|false)/);
   });
 
   it("保留工具调用 ID 与工具结果的对应关系", () => {

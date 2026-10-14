@@ -1,7 +1,7 @@
 {
   "miniprogramRoot": "dist/weapp/",
   "projectname": "hello-agent-miniapp",
-  "description": "好人阿 J · a jOKer · 积极思考的 AI 搭子",
+  "description": "阿 J 先生 · 积极思考的 AI 搭子",
   "appid": "wx692320cdac058519",
   "setting": {
     "urlCheck": true,

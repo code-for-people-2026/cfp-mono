@@ -6,9 +6,10 @@ import { fileURLToPath } from "node:url";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { getPayload } from "payload";
-import { sql, type MigrateUpArgs } from "@payloadcms/db-sqlite";
+import { sql, type MigrateUpArgs, type MigrateDownArgs } from "@payloadcms/db-sqlite";
 import * as initial from "../src/cms/migrations/20260930_123608_initial_preview";
 import * as images from "../src/cms/migrations/20261002_014226_private_image_objects";
+import { migrations } from "../src/cms/migrations";
 
 const worker = process.argv[2] === "--migrate-worker";
 const dir = worker
@@ -152,6 +153,15 @@ try {
       ).media_id,
       17,
     );
+    // Current Local API writes also inspect every collection's document-lock
+    // relation. Bring the isolated legacy fixture to the current schema first.
+    await payload.db.migrate({
+      migrations: migrations.map(({ name, up, down }) => ({
+        name,
+        up: (args) => up(args as MigrateUpArgs),
+        down: (args) => down(args as MigrateDownArgs),
+      })),
+    });
     await payload.update({
       collection: "media",
       id: 17,

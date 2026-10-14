@@ -7,6 +7,7 @@ import type {
 import { SUMMARY_PROMPT_VERSION } from "../agent/summary-instruction";
 import { summarizeContext, type Summarizer } from "../agent/summarize";
 import { AppError } from "./contracts";
+import { reservePlatformCalls } from "../cms/platform-quota";
 import {
   memorySchema,
   describeMemory,
@@ -79,13 +80,13 @@ export class ContextService {
       throw new AppError(
         409,
         previewRecoveryEnabled()
-          ? "记忆空间已满，请在阿J页面使用测试版免费整理后继续；原聊天记录仍保留"
-          : "记忆空间已满，请在阿J页面整理记忆后继续；原聊天记录仍保留",
+          ? "记忆空间已满，请在阿 J 先生页面使用测试版免费整理后继续；原聊天记录仍保留"
+          : "记忆空间已满，请在阿 J 先生页面整理记忆后继续；原聊天记录仍保留",
       );
   }
   async startAd(sessionId: number): Promise<AdTicket> {
     if (this.repo.owner.auth === "bearer")
-      throw new AppError(403, "广告必须由用户在阿J页面观看");
+      throw new AppError(403, "广告必须由用户在阿 J 先生页面观看");
     const release = await this.repo.acquire(sessionId);
     try {
       const { memory, turns } = await this.read(sessionId);
@@ -153,7 +154,7 @@ export class ContextService {
     if (!previewRecoveryEnabled())
       throw new AppError(403, "测试版免费整理尚未开启");
     if (this.repo.owner.auth === "bearer")
-      throw new AppError(403, "请由用户在阿J页面发起测试版整理");
+      throw new AppError(403, "请由用户在阿 J 先生页面发起测试版整理");
     return this.compactWithAccess(
       sessionId,
       { kind: "preview", id: requestId, revision },
@@ -210,6 +211,7 @@ export class ContextService {
           409,
           "较早记录超过本版单次整理上限，原记录与整理资格保留，请联系开发者处理",
         );
+      if (!apiKey) await reservePlatformCalls(this.repo.payload, 1);
       let summary: string;
       try {
         summary = summarySchema.parse({

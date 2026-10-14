@@ -11,6 +11,9 @@ const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 
+const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
+
 export default class HelloProvider {
   id() {
     return "hello-agent-full-pipeline";
@@ -18,7 +21,7 @@ export default class HelloProvider {
   async callApi(prompt: string) {
     try {
       const service = new GreetingService(
-        new Repository(await cms(), { id: randomUUID(), auth: "cookie" }),
+        new Repository(payload, { id: randomUUID(), auth: "cookie" }),
       );
       const session = await service.createSession("Promptfoo 评测");
       const result = await service.generateGreeting({

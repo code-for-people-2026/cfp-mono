@@ -16,7 +16,7 @@ import {
 function jsonSchema(value: JsonObject[string]): JsonObject[string] {
   if (Array.isArray(value)) return value.map(jsonSchema);
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(
+  const converted: JsonObject = Object.fromEntries(
     Object.entries(value).map(([key, child]) => [
       key,
       key === "type" && typeof child === "string"
@@ -35,6 +35,20 @@ function jsonSchema(value: JsonObject[string]): JsonObject[string] {
           : jsonSchema(child),
     ]),
   );
+  // ADK uses OpenAPI boolean bounds; DeepSeek expects numeric JSON Schema bounds.
+  for (const [exclusive, inclusive] of [
+    ["exclusiveMinimum", "minimum"],
+    ["exclusiveMaximum", "maximum"],
+  ]) {
+    if (typeof value[exclusive] === "boolean") {
+      delete converted[exclusive];
+      if (value[exclusive] === true && typeof value[inclusive] === "number") {
+        converted[exclusive] = value[inclusive];
+        delete converted[inclusive];
+      }
+    }
+  }
+  return converted;
 }
 
 export function toDeepSeekRequest(
@@ -112,15 +126,13 @@ export function toDeepSeekRequest(
           description: declaration.description,
           parameters: jsonObjectSchema.parse(
             jsonSchema(
-              z
-                .json()
-                .parse(
-                  declaration.parametersJsonSchema ||
-                    declaration.parameters || {
-                      type: "object",
-                      properties: {},
-                    },
-                ),
+              z.json().parse(
+                declaration.parametersJsonSchema ||
+                  declaration.parameters || {
+                    type: "object",
+                    properties: {},
+                  },
+              ),
             ),
           ),
         },

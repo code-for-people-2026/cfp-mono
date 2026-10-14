@@ -21,6 +21,7 @@ const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 const service = new GreetingService(
   new Repository(payload, { id: randomUUID(), auth: "cookie" }),
 );
@@ -36,7 +37,7 @@ try {
   );
   const cases = [
     {
-      name: "阿J身份",
+      name: "阿 J 先生身份",
       mode: "platform",
       input: { text: "你叫什么名字？你是个什么样的助手？" },
     },
@@ -93,8 +94,8 @@ try {
       typeof result.greeting === "string" && result.greeting.length >= 2,
     );
     assert.equal(result.promptVersion, PROMPT_VERSION);
-    if (item.name === "阿J身份")
-      assert.match(String(result.greeting), /阿\s*J/i);
+    if (item.name === "阿 J 先生身份")
+      assert.match(String(result.greeting), /阿\s*J\s*先生/i);
     results.push({
       case: item.name,
       input: item.input,

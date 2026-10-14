@@ -17,6 +17,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { ContextService } = await import("../src/domain/context");
 const payload = await cms();
+await (await import("../src/cms/seed")).seedAgents(payload);
 try {
   const repo = new Repository(payload, { id: randomUUID(), auth: "miniapp" });
   let generations = 0;

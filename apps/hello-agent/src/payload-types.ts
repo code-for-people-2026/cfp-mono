@@ -67,6 +67,9 @@ export interface Config {
   };
   blocks: {};
   collections: {
+    'agent-configs': AgentConfig;
+    'knowledge-bases': KnowledgeBase;
+    'platform-model-quotas': PlatformModelQuota;
     admins: Admin;
     credentials: Credential;
     sessions: Session;
@@ -81,6 +84,9 @@ export interface Config {
   };
   collectionsJoins: {};
   collectionsSelect: {
+    'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
+    'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
+    'platform-model-quotas': PlatformModelQuotasSelect<false> | PlatformModelQuotasSelect<true>;
     admins: AdminsSelect<false> | AdminsSelect<true>;
     credentials: CredentialsSelect<false> | CredentialsSelect<true>;
     sessions: SessionsSelect<false> | SessionsSelect<true>;
@@ -126,6 +132,82 @@ export interface AdminAuthOperations {
     email: string;
     password: string;
   };
+}
+/**
+ * 一个心理流派对应一个 subagent；主 Agent 选择专家并整合回复。保存后下一轮对话生效。停用流派不会删除已有聊天。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-configs".
+ */
+export interface AgentConfig {
+  id: number;
+  name: string;
+  /**
+   * 每个流派只允许一个 Agent，创建后不能更改。新增流派需先扩展应用的回应协议。
+   */
+  key:
+    | 'coordinator'
+    | 'supportive'
+    | 'cbt'
+    | 'act'
+    | 'dbt'
+    | 'behavioral'
+    | 'solution_focused'
+    | 'self_compassion'
+    | 'positive_psychology';
+  enabled: boolean;
+  /**
+   * 可调整语气、方法和表单指导。系统仍固定执行权限、危机回应和工具约束。修改不会覆盖历史轮次。
+   */
+  prompt: string;
+  /**
+   * 最多绑定两个。仅咨询这个 subagent 时读取，停用的知识库不会参与。
+   */
+  knowledgeBases?: (number | KnowledgeBase)[] | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 支持直接维护参考资料，或连接 ima。ima 仅接收方法关键词用于搜索，不上传整段聊天或图片；返回片段供专家参考，不作为系统指令。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-bases".
+ */
+export interface KnowledgeBase {
+  id: number;
+  name: string;
+  enabled: boolean;
+  provider: 'inline' | 'ima';
+  /**
+   * 填写可引用的方法、注意事项和来源。最多 6000 字；随咨询提供给关联的 subagent。
+   */
+  content?: string | null;
+  /**
+   * 填写 ima 中这个知识库的 ID。凭证需有该知识库的读取权限。
+   */
+  knowledgeBaseId?: string | null;
+  /**
+   * 在 ima 的 OpenAPI 配置页（ima.qq.com/agent-interface）获取。
+   */
+  clientId?: string | null;
+  /**
+   * 保存时加密。保存后不回显；留空保留已有密钥。
+   */
+  apiKey?: string | null;
+  hasApiKey?: boolean | null;
+  clearApiKey?: boolean | null;
+  encryptedApiKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "platform-model-quotas".
+ */
+export interface PlatformModelQuota {
+  id: number;
+  day: string;
+  reservedCalls: number;
 }
 /**
  * 用于登录此管理后台的管理员，不是聊天访客，也不是微信用户账号。
@@ -198,6 +280,8 @@ export interface Greeting {
   input: import('@cfp/hello-agent-contracts').Inspiration;
   greeting?: string | null;
   association?: string | null;
+  approach?: string | null;
+  artifacts?: import('@cfp/hello-agent-protocol').Artifact[] | null;
   model?: string | null;
   promptVersion?: string | null;
   error?: string | null;
@@ -273,6 +357,14 @@ export interface PayloadLockedDocument {
   id: number;
   document?:
     | ({
+        relationTo: 'agent-configs';
+        value: number | AgentConfig;
+      } | null)
+    | ({
+        relationTo: 'knowledge-bases';
+        value: number | KnowledgeBase;
+      } | null)
+    | ({
         relationTo: 'admins';
         value: number | Admin;
       } | null)
@@ -344,6 +436,45 @@ export interface PayloadMigration {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "agent-configs_select".
+ */
+export interface AgentConfigsSelect<T extends boolean = true> {
+  name?: T;
+  key?: T;
+  enabled?: T;
+  prompt?: T;
+  knowledgeBases?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "knowledge-bases_select".
+ */
+export interface KnowledgeBasesSelect<T extends boolean = true> {
+  name?: T;
+  enabled?: T;
+  provider?: T;
+  content?: T;
+  knowledgeBaseId?: T;
+  clientId?: T;
+  apiKey?: T;
+  hasApiKey?: T;
+  clearApiKey?: T;
+  encryptedApiKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "platform-model-quotas_select".
+ */
+export interface PlatformModelQuotasSelect<T extends boolean = true> {
+  day?: T;
+  reservedCalls?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "admins_select".
  */
 export interface AdminsSelect<T extends boolean = true> {
@@ -401,6 +532,8 @@ export interface GreetingsSelect<T extends boolean = true> {
   input?: T;
   greeting?: T;
   association?: T;
+  approach?: T;
+  artifacts?: T;
   model?: T;
   promptVersion?: T;
   error?: T;
