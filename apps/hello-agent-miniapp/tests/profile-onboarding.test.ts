@@ -16,13 +16,16 @@ const button = (className: string) => renderer.root.findAllByType("button").find
 beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("TARO_ENV", "weapp"); api.loginWechat.mockResolvedValue({}); });
 afterEach(() => { act(() => renderer?.unmount()); vi.unstubAllEnvs(); });
 
-it("未登录窗口不能关闭，空昵称头像也能继续，详细说明默认收起", async () => {
+it("未登录窗口默认填好昵称，直接登录提交所见昵称，详细说明默认收起", async () => {
   act(() => { renderer = create(createElement(AgeGate, props)); });
+  const nickname = renderer.root.findByType("input").props.value;
+  expect(nickname.length).toBeGreaterThan(0);
+  expect(nickname.length).toBeLessThanOrEqual(24);
   expect(button("age-close")).toBeUndefined();
   expect(JSON.stringify(renderer.toJSON())).not.toContain("很长的说明");
   expect(button("age-primary").props.disabled).toBeUndefined();
   await act(async () => { await button("age-primary").props.onClick(); });
-  expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname: "", avatarPath: "" });
+  expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname, avatarPath: "" });
   expect(onLogin).toHaveBeenCalledOnce();
   expect(onClose).not.toHaveBeenCalled();
 });
@@ -30,8 +33,12 @@ it("微信昵称自动填充的失焦事件与原生头像选择进入同一次�
   act(() => { renderer = create(createElement(AgeGate, props)); });
   const input = renderer.root.findByType("input");
   expect(input.props.type).toBe("nickname");
+  expect(input.props.focus).toBe(false);
+  act(() => { button("age-wechat-nickname").props.onClick(); });
+  expect(input.props.focus).toBe(true);
   expect(button("age-avatar-picker").props.openType).toBe("chooseAvatar");
   act(() => { input.props.onBlur({ detail: { value: "微信昵称" } }); button("age-avatar-picker").props.onChooseAvatar({ detail: { avatarUrl: "wxfile://avatar.jpg" } }); });
+  expect(input.props.focus).toBe(false);
   expect(renderer.root.findByType("image").props.src).toBe("wxfile://avatar.jpg");
   await act(async () => { await button("age-primary").props.onClick(); });
   expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname: "微信昵称", avatarPath: "wxfile://avatar.jpg" });
@@ -49,9 +56,33 @@ it("平台拒绝的昵称被清空，不提交该昵称；登录后生日窗口�
 
 it("已选头像可以清除并改用随机头像", async () => {
   act(() => { renderer = create(createElement(AgeGate, props)); });
+  const nickname = renderer.root.findByType("input").props.value;
   act(() => { button("age-avatar-picker").props.onChooseAvatar({ detail: { avatarUrl: "wxfile://avatar.jpg" } }); });
   act(() => { button("age-avatar-reset").props.onClick(); });
   expect(renderer.root.findAllByType("image")).toHaveLength(0);
+  await act(async () => { await button("age-primary").props.onClick(); });
+  expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname, avatarPath: "" });
+});
+
+it("重新生成每次换一个昵称，查看说明不重置选择，登录提交最后一个", async () => {
+  act(() => { renderer = create(createElement(AgeGate, props)); });
+  let nickname = renderer.root.findByType("input").props.value;
+  for (let index = 0; index < 5; index++) {
+    act(() => { button("age-regenerate-nickname").props.onClick(); });
+    const next = renderer.root.findByType("input").props.value;
+    expect(next).not.toBe(nickname);
+    nickname = next;
+  }
+  act(() => { button("age-link").props.onClick(); });
+  act(() => { button("age-link").props.onClick(); });
+  expect(renderer.root.findByType("input").props.value).toBe(nickname);
+  await act(async () => { await button("age-primary").props.onClick(); });
+  expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname, avatarPath: "" });
+});
+
+it("清空建议昵称后仍可登录，由服务端补全资料", async () => {
+  act(() => { renderer = create(createElement(AgeGate, props)); });
+  act(() => { renderer.root.findByType("input").props.onInput({ detail: { value: "" } }); });
   await act(async () => { await button("age-primary").props.onClick(); });
   expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname: "", avatarPath: "" });
 });

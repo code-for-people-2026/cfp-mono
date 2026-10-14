@@ -260,6 +260,9 @@ importers:
       react-dom:
         specifier: 18.2.0
         version: 18.2.0(react@18.2.0)
+      unique-names-generator:
+        specifier: 4.7.1
+        version: 4.7.1
       zod:
         specifier: ^3.25.76
         version: 3.25.76

@@ -1,5 +1,6 @@
 import type { UserProfile } from "@cfp/hello-agent-contracts";
 import { AccountAvatar, AccountProfile } from "./profile";
+import { randomNickname } from "./nickname";
 import { useRef, useState } from "react";
 import { Button as TaroButton, type ButtonProps, Checkbox, CheckboxGroup, Input, Label, Picker, ScrollView, Text, View } from "@tarojs/components";
 import { ageStateText, type AgeDeclaration, type AgeStatus } from "@cfp/hello-agent-protocol";
@@ -18,7 +19,8 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   status?: AgeStatus; loadingError?: string; privacyReady: boolean; onChange: (status: AgeStatus) => void;
   onRefresh: () => Promise<void>; onLogin: () => Promise<void>; onPrivacy: () => void; onHelp: () => void; onClose: () => void;
 }) {
-  const [nickname, setNickname] = useState("");
+  const [nickname, setNickname] = useState(() => randomNickname());
+  const [nicknameFocused, setNicknameFocused] = useState(false);
   const [avatarPath, setAvatarPath] = useState("");
   const [migrate, setMigrate] = useState(false);
   const [consent, setConsent] = useState(false);
@@ -44,7 +46,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   async function login() {
     if (!status) return;
     await api.loginWechat(migrate, status.notice.version, { nickname, avatarPath });
-    setNickname(""); setAvatarPath("");
+    setNickname(randomNickname()); setNicknameFocused(false); setAvatarPath("");
     setMigrate(false); setDetail(null); setDeclaration(undefined); setBirthday(""); setName(""); setIdCard(""); setConsent(false); await onLogin();
   }
   async function confirmBirthday() {
@@ -113,8 +115,11 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
             {avatarPath && <Button className="age-avatar-reset" ariaLabel="改用随机头像" disabled={busy} onClick={() => setAvatarPath("")}>×</Button>}
             </View>
             <View className="age-nickname-field">
-              <Input className="age-nickname" type={native ? "nickname" : "text"} value={nickname} maxlength={24} placeholder="怎么称呼你？" disabled={busy || !native} ariaLabel="昵称，可使用微信昵称" onInput={(event) => setNickname(event.detail.value)} onBlur={(event) => setNickname(event.detail.value)} onNickNameReview={(event) => { if (!event.detail.pass) { setNickname(""); setMessage("这个昵称暂时不能使用，请换一个。"); } }} />
-              <Text className="age-profile-hint">可用微信昵称和头像 · 留空随机生成</Text>
+              <Input className="age-nickname" type={native ? "nickname" : "text"} value={nickname} focus={nicknameFocused} maxlength={24} placeholder="怎么称呼你？" disabled={busy || !native} ariaLabel="昵称，可使用微信昵称" onInput={(event) => setNickname(event.detail.value)} onFocus={() => setNicknameFocused(true)} onBlur={(event) => { setNicknameFocused(false); setNickname(event.detail.value); }} onNickNameReview={(event) => { if (!event.detail.pass) { setNickname(""); setMessage("这个昵称暂时不能使用，请换一个。"); } }} />
+              <View className="age-profile-actions">
+                <Button className="age-profile-link age-wechat-nickname" disabled={busy || !native} onClick={() => setNicknameFocused(true)}>使用微信昵称</Button>
+                <Button className="age-profile-link age-regenerate-nickname" disabled={busy} onClick={() => { setNicknameFocused(false); setNickname(randomNickname); }}>重新生成</Button>
+              </View>
             </View>
           </View>
           <Button className="age-primary" disabled={busy || !native || !status?.configuration.wechat} onClick={() => void act(login)}>{busy ? "正在登录…" : "同意并微信登录"}</Button>
