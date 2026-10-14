@@ -22,7 +22,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     await writeFile(ledger, [...Array<string>(5000).fill("already-deleted"), "remaining"].map((owner) => JSON.stringify({ ownerDigest: createHash("sha256").update(owner).digest("hex") })).join("\n"));
     const source = Array.from({ length: 215 }, (_, index) => ({ id: index + 1, owner: index === 0 ? "already-deleted" : index === 214 ? "remaining" : `other-${index}`, state: index === 0 ? "deleted" : "active", expiresAt: null }));
     const find = vi.fn(async ({ collection, where, select, limit, pagination, sort, depth }) => {
-      if (collection === "wechat-identities" || collection === "age-profiles") return { docs: [] };
+      if (where.and || collection === "wechat-identities" || collection === "age-profiles") return { docs: [] };
       expect({ limit, pagination, sort, depth }).toEqual({ limit: 100, pagination: false, sort: "id", depth: 0 });
       expect(Object.keys(select).sort()).toEqual((collection === "privacy-profiles" && select.state ? ["id", "owner", "state", "expiresAt"] : ["id", "owner"]).sort());
       const rows = source.filter((row) => row.id > where.id.greater_than).slice(0, limit);
@@ -32,7 +32,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const result = await maintainPrivacy(payload, { apply: true, restoreLedger: ledger });
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
-    expect(find).toHaveBeenCalledTimes(28); // Original owner scans plus four empty age/binding scans
+    expect(find).toHaveBeenCalledTimes(34); // Bounded restore scans plus empty legacy scans
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -43,7 +43,7 @@ it("一个身份失败仍尝试其余身份及凭证清理，汇总失败并允�
     return { deleted: true };
   });
   const payload = {
-    find: vi.fn(async ({ collection }) => ({ docs: ["wechat-identities", "age-profiles"].includes(collection) ? [] : [
+    find: vi.fn(async ({ collection, where }) => ({ docs: where.and || ["wechat-identities", "age-profiles"].includes(collection) ? [] : [
       { id: 1, owner: "broken", state: "deleting" },
       { id: 2, owner: "withdrawn", state: "withdrawn" },
       { id: 3, owner: "expired", state: "active", expiresAt: "2000-01-01" },
@@ -71,7 +71,7 @@ it("一个身份失败仍尝试其余身份及凭证清理，汇总失败并允�
 it.each(["throw", "partial"])("身份和全局凭证失败一并报告（%s），不伪报成功", async (kind) => {
   cleanup.mockReset().mockRejectedValue(new Error("private error"));
   const erase = kind === "throw" ? vi.fn().mockRejectedValue(new Error("private db error")) : vi.fn().mockResolvedValue({ errors: [{ id: 7 }] });
-  const payload = { find: vi.fn(async ({ collection }) => ({ docs: ["wechat-identities", "age-profiles"].includes(collection) ? [] : [
+  const payload = { find: vi.fn(async ({ collection, where }) => ({ docs: where.and || ["wechat-identities", "age-profiles"].includes(collection) ? [] : [
     { id: 1, owner: "first", state: "withdrawn" }, { id: 2, owner: "second", state: "deleting" },
   ] })), delete: erase };
   try {
@@ -87,7 +87,7 @@ it.each(["throw", "partial"])("身份和全局凭证失败一并报告（%s）�
 it("预览只返回待清理身份数，不执行或记录删除失败", async () => {
   cleanup.mockClear();
   const erase = vi.fn();
-  const payload = { find: vi.fn(async ({ collection }) => ({ docs: ["wechat-identities", "age-profiles"].includes(collection) ? [] : [{ id: 1, owner: "withdrawn", state: "withdrawn" }] })), delete: erase };
+  const payload = { find: vi.fn(async ({ collection, where }) => ({ docs: where.and || ["wechat-identities", "age-profiles"].includes(collection) ? [] : [{ id: 1, owner: "withdrawn", state: "withdrawn" }] })), delete: erase };
   await expect(maintainPrivacy(payload as unknown as Payload, { apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
   expect(erase).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
 });
@@ -117,7 +117,7 @@ it("恢复没有数据库归属记录的图片，预览无写入，重放幂等�
     });
     vi.mocked(configuredImageStore).mockReturnValue({ bucket: "synthetic", region: "isolated", put: vi.fn(), get: vi.fn(), removePrefix });
     await writeFile(ledger, Array<string>(3).fill(JSON.stringify({ ownerDigest })).join("\n"));
-    const payload = { find: vi.fn(async ({ collection }) => ({ docs: ["wechat-identities", "age-profiles"].includes(collection) ? [] : [] })), delete: vi.fn().mockResolvedValue({ errors: [] }) };
+    const payload = { find: vi.fn(async ({ collection, where }) => ({ docs: where.and || ["wechat-identities", "age-profiles"].includes(collection) ? [] : [] })), delete: vi.fn().mockResolvedValue({ errors: [] }) };
     const options = { restoreLedger: ledger };
     await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
     expect(objects.size).toBe(3);
@@ -140,7 +140,7 @@ it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时�
     await writeFile(ledger, digests.map((ownerDigest) => JSON.stringify({ ownerDigest })).join("\n"));
     const removePrefix = vi.fn<NonNullable<ImageObjectStore["removePrefix"]>>().mockResolvedValue(undefined).mockRejectedValueOnce(new Error("private object key"));
     vi.mocked(configuredImageStore).mockReturnValue({ bucket: "synthetic", region: "isolated", put: vi.fn(), get: vi.fn(), removePrefix });
-    const payload = { find: vi.fn(async ({ collection }) => ({ docs: ["wechat-identities", "age-profiles"].includes(collection) ? [] : [] })), delete: vi.fn().mockResolvedValue({ errors: [] }) };
+    const payload = { find: vi.fn(async ({ collection, where }) => ({ docs: where.and || ["wechat-identities", "age-profiles"].includes(collection) ? [] : [] })), delete: vi.fn().mockResolvedValue({ errors: [] }) };
     const options = { restoreLedger: ledger, apply: true };
     const failure = await maintainPrivacy(payload as unknown as Payload, options).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(PrivacyMaintenanceError);
@@ -151,4 +151,21 @@ it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时�
     expect(removePrefix.mock.calls).toEqual([...digests, ...digests].map((value) => [`hello-agent/${value.slice(0, 32)}/`]));
     expect(cleanup).not.toHaveBeenCalled();
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("旧匿名会话和图片按配置到期；近期关联记录与已授权身份不会被误删", async () => {
+  cleanup.mockReset().mockResolvedValue({ deleted: true });
+  const find = vi.fn(async ({ collection, where }) => {
+    if (collection === "privacy-profiles") return { docs: [] };
+    if (collection === "sessions") return { docs: [{ id: 1, owner: "old" }, { id: 2, owner: "recent-media" }, { id: 3, owner: "consented" }] };
+    if (collection === "media") return { docs: [{ id: 4, owner: "old" }, { id: 5, owner: "orphan-image" }] };
+    expect(where.and[1].updatedAt.less_than).toBeTypeOf("string");
+    return { docs: [] };
+  });
+  const count = vi.fn(async ({ collection, where }) => ({ totalDocs:
+    collection === "privacy-profiles" ? Number(where.owner.equals === "consented") :
+      Number(collection === "media" && where.and[0].owner.equals === "recent-media") }));
+  const payload = { find, count, delete: vi.fn().mockResolvedValue({ errors: [] }) } as unknown as Payload;
+  await expect(maintainPrivacy(payload, { apply: true })).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
+  expect(cleanup.mock.calls).toEqual([["old"], ["orphan-image"]]);
 });

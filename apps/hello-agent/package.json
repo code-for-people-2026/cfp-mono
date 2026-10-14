@@ -29,6 +29,7 @@
     "db:rename-brand": "tsx scripts/rename-brand.ts",
     "test:configuration": "tsx scripts/agent-configuration-check.ts",
     "eval:knowledge": "tsx scripts/evaluate-knowledge.ts",
+    "test:privacy-operations": "python3 scripts/privacy-operations-check.py && node scripts/privacy-snapshot-check.mjs && tsx scripts/privacy-restore-check.ts",
     "test:images": "tsx scripts/image-generation-check.ts && tsx scripts/image-generation-migration-check.ts"
   },
   "dependencies": {
