@@ -70,6 +70,9 @@ export interface Config {
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
     'privacy-profiles': PrivacyProfile;
+    'wechat-identities': WechatIdentity;
+    'age-profiles': AgeProfile;
+    'age-locks': AgeLock;
     'platform-model-quotas': PlatformModelQuota;
     admins: Admin;
     credentials: Credential;
@@ -88,6 +91,9 @@ export interface Config {
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
     'privacy-profiles': PrivacyProfilesSelect<false> | PrivacyProfilesSelect<true>;
+    'wechat-identities': WechatIdentitiesSelect<false> | WechatIdentitiesSelect<true>;
+    'age-profiles': AgeProfilesSelect<false> | AgeProfilesSelect<true>;
+    'age-locks': AgeLocksSelect<false> | AgeLocksSelect<true>;
     'platform-model-quotas': PlatformModelQuotasSelect<false> | PlatformModelQuotasSelect<true>;
     admins: AdminsSelect<false> | AdminsSelect<true>;
     credentials: CredentialsSelect<false> | CredentialsSelect<true>;
@@ -239,6 +245,56 @@ export interface PrivacyProfile {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechat-identities".
+ */
+export interface WechatIdentity {
+  id: number;
+  key: string;
+  noticeVersion?: string | null;
+  consentedAt?: string | null;
+  owner: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "age-profiles".
+ */
+export interface AgeProfile {
+  id: number;
+  owner: string;
+  state: string;
+  declaration?: string | null;
+  noticeVersion?: string | null;
+  consentedAt?: string | null;
+  challenge?: string | null;
+  challengeExpiresAt?: string | null;
+  verifiedAt?: string | null;
+  expiresAt?: string | null;
+  source?: string | null;
+  reference?: string | null;
+  assurance?: string | null;
+  additionalVerification?: string | null;
+  lastAttemptAt?: string | null;
+  day?: string | null;
+  attempts?: number | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "age-locks".
+ */
+export interface AgeLock {
+  id: number;
+  key: string;
+  nonce: string;
+  expiresAt: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "platform-model-quotas".
  */
 export interface PlatformModelQuota {
@@ -281,6 +337,7 @@ export interface Credential {
   id: number;
   owner: string;
   digest: string;
+  wechatKey?: string | null;
   kind: 'cookie' | 'bearer' | 'miniapp';
   expiresAt: string;
   updatedAt: string;
@@ -522,6 +579,53 @@ export interface PrivacyProfilesSelect<T extends boolean = true> {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "wechat-identities_select".
+ */
+export interface WechatIdentitiesSelect<T extends boolean = true> {
+  key?: T;
+  noticeVersion?: T;
+  consentedAt?: T;
+  owner?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "age-profiles_select".
+ */
+export interface AgeProfilesSelect<T extends boolean = true> {
+  owner?: T;
+  state?: T;
+  declaration?: T;
+  noticeVersion?: T;
+  consentedAt?: T;
+  challenge?: T;
+  challengeExpiresAt?: T;
+  verifiedAt?: T;
+  expiresAt?: T;
+  source?: T;
+  reference?: T;
+  assurance?: T;
+  additionalVerification?: T;
+  lastAttemptAt?: T;
+  day?: T;
+  attempts?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "age-locks_select".
+ */
+export interface AgeLocksSelect<T extends boolean = true> {
+  key?: T;
+  nonce?: T;
+  expiresAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "platform-model-quotas_select".
  */
 export interface PlatformModelQuotasSelect<T extends boolean = true> {
@@ -557,6 +661,7 @@ export interface AdminsSelect<T extends boolean = true> {
 export interface CredentialsSelect<T extends boolean = true> {
   owner?: T;
   digest?: T;
+  wechatKey?: T;
   kind?: T;
   expiresAt?: T;
   updatedAt?: T;

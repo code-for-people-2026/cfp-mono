@@ -1,3 +1,4 @@
+import { AgeService } from "../../../age/service";
 import { privacyService } from "../../../privacy/service";
 import { cms } from "../../../cms/client";
 import { Repository } from "../../../cms/repository";
@@ -15,6 +16,7 @@ export async function POST(request: Request) {
     rateLimit(owner.id);
     const body = await readJson(request);
     return await withAuthenticatedExecution(payload, request, owner, async (current) => {
+      await new AgeService(payload, current).requireCapability();
       await privacyService(payload, current).requireExternalAccess();
       // JSON transport resolves after the tool response, keeping the execution
       // lease through history/image reads and writes, not just dispatch.

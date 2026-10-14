@@ -1,3 +1,6 @@
+import { AgeService } from "../../../../age/service";
+import { agePost } from "../../../../age/http";
+import { wechatLogin } from "../../../../age/wechat";
 import { legalPage, privacyGet, privacyPost, recoveryResponse } from "../../../../privacy/http";
 import { privacyPolicy } from "../../../../privacy/policy";
 import { privacyService } from "../../../../privacy/service";
@@ -56,8 +59,10 @@ export async function GET(request: Request, context: Context) {
     const payload = await cms();
     const owner = await authenticate(payload, request);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
+      if (path[0] === "age" && path.length === 1) return json(await new AgeService(payload, owner).status());
       if (path[0] === "privacy") return await privacyGet(payload, owner, path[1], request);
       if (owner.auth === "bearer") {
+        await new AgeService(payload, owner).requireCapability();
         await privacyService(payload, owner).requireExternalAccess();
       }
       const service = new GreetingService(new Repository(payload, owner));
@@ -145,11 +150,15 @@ export async function POST(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
     const payload = await cms();
+    if (path[0] === "wechat-login" && path.length === 1) {
+      rateLimit("wechat-login");
+      return json(await wechatLogin(payload, request, await readJson(request, 2048)));
+    }
     if (path[0] === "privacy-recover") return await recoveryResponse(payload, request);
     if (path[0] === "miniapp-identity") {
       if (request.headers.has("origin"))
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
-      // 本地架构示例的匿名设备身份，不冒充 wx.login。上线需接入正式微信登录。
+      // 访客身份只供查看旧记录与行使数据权利；生成须另行完成微信登录和年龄核验。
       rateLimit("miniapp-identity");
       return json(await mintCredential(payload, "miniapp"));
     }
@@ -187,12 +196,14 @@ export async function POST(request: Request, context: Context) {
           await revokeTokens(payload, current);
           return json({ revoked: true });
         }
+        await new AgeService(payload, current).requireCapability();
         const currentPrivacy = privacyService(payload, current);
         await currentPrivacy.requireExternalAccess();
-        const credential = await mintCredential(payload, "bearer", current.id);
+        const credential = await mintCredential(payload, "bearer", current.id, current.wechatKey);
         return json({ token: credential.token, expiresAt: credential.expiresAt });
       });
     }
+    if (path[0] === "age") return await withAuthenticatedExecution(payload, request, owner, (current) => agePost(payload, current, path[1], request));
     const body = await readJson(
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
@@ -201,6 +212,7 @@ export async function POST(request: Request, context: Context) {
       checkClientRequest(request, owner);
       const privacy = privacyService(payload, owner);
       const service = new GreetingService(new Repository(payload, owner));
+      await new AgeService(payload, owner).requireCapability();
       await privacy.require();
       if (owner.auth === "bearer") await privacy.requireExternalAccess();
       if (path[0] === "ag-ui" && path.length === 1) {

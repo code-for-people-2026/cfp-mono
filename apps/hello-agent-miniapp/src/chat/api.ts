@@ -1,3 +1,5 @@
+import { ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/hello-agent-contracts";
+import type { AgeDeclaration } from "@cfp/hello-agent-protocol";
 import { labeledAiText } from "./ai-copy";
 import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, safetyInboxSchema, safetyReceiptSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
 import Taro from "@tarojs/taro";
@@ -129,6 +131,22 @@ export function establishIdentity(): Promise<void> {
     throw error;
   });
   return identityPromise;
+}
+export const getAge = () => request("age", ageStatusSchema);
+export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
+export const submitAge = (body: { challenge: string; name: string; idCard: string }) => request("age/submit", ageStatusSchema, "POST", body);
+export const cancelAge = () => request("age/cancel", ageStatusSchema, "POST", {});
+export async function loginWechat(migrateCurrent: boolean, noticeVersion: string) {
+  if (!native) throw new Error("请在微信小程序中完成微信登录");
+  if (typeof Taro.requirePrivacyAuthorize !== "function") throw new Error("请更新微信后再试，当前版本不支持所需隐私授权交互");
+  await new Promise<void>((resolve, reject) => Taro.requirePrivacyAuthorize({ success: () => resolve(), fail: () => reject(new Error("已取消或拒绝微信隐私授权，可以阅读政策后再次尝试")) }));
+  const login = await Taro.login();
+  if (!login.code) throw new Error("微信登录未完成，请重新点击登录");
+  const result = await request("wechat-login", wechatLoginResultSchema, "POST", { code: login.code, consent: true, noticeVersion, migrateCurrent });
+  await forgetIdentity();
+  deviceToken = result.token; Taro.setStorageSync(storageKey, result.token);
+  identityPromise = undefined;
+  return result;
 }
 export const getSettings = () => request("config", settingsSchema);
 export const getSessions = () => request("sessions", sessionsSchema);

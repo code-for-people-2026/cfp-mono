@@ -91,6 +91,7 @@ beforeEach(() => {
   history = [structuredClone(initial)];
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     const route = url.split("/api/hello/")[1];
+    if (route === "age") return { statusCode: 200, data: { loggedIn: true, state: "adult", allowed: true, verifiedAt: "2026-10-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z", source: "isolated-test", assurance: "identity_details_match", additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true } } };
     if (route === "privacy") return { statusCode: 200, data: { policy: { version: "test", ready: true, contact: "test", documents: [] }, state: "active", consent: { version: "test", core: true, model: true, sensitive: true, external: true }, expiresAt: null, hasRecoveryCode: false } };
     const data =
       route === "config"

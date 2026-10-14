@@ -7,7 +7,7 @@ export {
   type Greeting,
   type Mode,
 } from "@cfp/hello-agent-contracts";
-export type Owner = { id: string; auth: "cookie" | "bearer" | "miniapp" };
+export type Owner = { id: string; auth: "cookie" | "bearer" | "miniapp"; wechatKey?: string };
 
 export class AppError extends Error {
   constructor(
