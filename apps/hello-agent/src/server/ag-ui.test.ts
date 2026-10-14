@@ -53,7 +53,9 @@ describe("AG-UI 协议适配", () => {
     expect(wire).not.toMatch(/private-request-key|private-owner|apiKey/);
     const reader = createRunReader(body.runId);
     reader.push(wire);
-    expect(Object.keys(reader.finish().surfaces)).toHaveLength(5);
+    expect(
+      reader.finish().messages.filter((message) => "createSurface" in message),
+    ).toHaveLength(5);
   });
   it("失败只发 RUN_ERROR，不发布成功事件或供应商错误原文", async () => {
     const wire = await agentStream(

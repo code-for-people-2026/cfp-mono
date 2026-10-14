@@ -6,8 +6,6 @@ import {
   pageSchema,
   tableSchema,
   type Artifact,
-  type ClientEvent,
-  type FormValues,
 } from "./artifacts";
 
 export const A2UI_VERSION = "v0.9.1" as const;
@@ -15,7 +13,11 @@ export const CATALOG_ID = "urn:cfp:hello-agent:catalog:1";
 export const A2UI_EVENT = "a2ui";
 const id = z.string().regex(/^[a-z][a-z0-9_]{0,79}$/);
 const binding = z
-  .object({ path: z.string().regex(/^\/values\/[a-z][a-z0-9_]{0,39}$/) })
+  .object({
+    path: z
+      .string()
+      .regex(/^\/values\/(?!constructor$|prototype$)[a-z][a-z0-9_]{0,39}$/),
+  })
   .strict();
 // An intentionally bounded catalog, shared by the H5 and Taro adapters.
 export const componentSchema = z.discriminatedUnion("component", [
@@ -128,7 +130,9 @@ export const a2uiMessageSchema = z.union([
           surfaceId,
           path: z
             .string()
-            .regex(/^(\/|\/values|\/values\/[a-z][a-z0-9_]{0,39})$/)
+            .regex(
+              /^(\/|\/values|\/values\/(?!constructor$|prototype$)[a-z][a-z0-9_]{0,39})$/,
+            )
             .optional(),
           value: z
             .union([
@@ -147,12 +151,6 @@ export const a2uiMessageSchema = z.union([
     .strict(),
 ]);
 export type A2uiMessage = z.infer<typeof a2uiMessageSchema>;
-export type Surface = {
-  id: string;
-  components: Record<string, Component>;
-  values: FormValues;
-};
-export type Surfaces = Record<string, Surface>;
 export const surfaceName = (turnId: number, artifactId: string) =>
   `turn_${turnId}_${artifactId}`;
 
@@ -254,67 +252,71 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
   });
 }
 
-export function applyA2ui(state: Surfaces, value: unknown): Surfaces {
-  const message = a2uiMessageSchema.parse(value, { jitless: true });
-  if ("createSurface" in message) {
-    const id = message.createSurface.surfaceId;
-    if (state[id]) throw new Error("界面已存在");
-    if (Object.keys(state).length >= 10) throw new Error("界面数量过多");
-    return { ...state, [id]: { id, components: {}, values: {} } };
+// Keep the product allowlist and resource limits here; the official A2UI core owns
+// component/data state. This guard never applies data updates or resolves bindings.
+export function validateA2uiMessages(
+  values: readonly unknown[],
+): A2uiMessage[] {
+  if (values.length > 128) throw new Error("界面消息过多");
+  const messages = values.map((value) =>
+    a2uiMessageSchema.parse(value, { jitless: true }),
+  );
+  const surfaces = new Map<string, Map<string, Component>>();
+  for (const message of messages) {
+    if ("createSurface" in message) {
+      const key = message.createSurface.surfaceId;
+      if (surfaces.has(key)) throw new Error("界面已存在");
+      if (surfaces.size >= 10) throw new Error("界面数量过多");
+      surfaces.set(key, new Map());
+    } else if ("deleteSurface" in message) {
+      surfaces.delete(message.deleteSurface.surfaceId);
+    } else {
+      const update =
+        "updateComponents" in message
+          ? message.updateComponents
+          : message.updateDataModel;
+      const components = surfaces.get(update.surfaceId);
+      if (!components) throw new Error("界面尚未创建");
+      if ("components" in update) {
+        for (const component of update.components)
+          components.set(component.id, component);
+        if (components.size > 64) throw new Error("界面内容过多");
+        // Official web renderers assume an acyclic tree. Bound depth and expansion
+        // before handing even partially streamed component graphs to them.
+        for (const id of components.keys()) {
+          let count = 0;
+          function visit(key: string, ancestors: string[]) {
+            if (
+              ancestors.includes(key) ||
+              ancestors.length > 8 ||
+              ++count > 256
+            )
+              throw new Error("界面结构过深或循环引用");
+            const item = components!.get(key);
+            const children =
+              item?.component === "Column"
+                ? item.children
+                : item?.component === "Card" || item?.component === "Button"
+                  ? [item.child]
+                  : [];
+            for (const child of children) visit(child, [...ancestors, key]);
+          }
+          visit(id, []);
+        }
+      } else if (update.value !== undefined) {
+        if (!update.path || update.path === "/")
+          dataModel.parse(update.value, { jitless: true });
+        else if (update.path === "/values")
+          formValuesSchema.parse(update.value, { jitless: true });
+        else
+          z.union([z.string().max(1200), z.number().finite()]).parse(
+            update.value,
+            { jitless: true },
+          );
+      }
+    }
   }
-  if ("deleteSurface" in message) {
-    const next = { ...state };
-    delete next[message.deleteSurface.surfaceId];
-    return next;
-  }
-  const update =
-    "updateComponents" in message
-      ? message.updateComponents
-      : message.updateDataModel;
-  const current = state[update.surfaceId];
-  if (!current) throw new Error("界面尚未创建");
-  if ("components" in update) {
-    const components = {
-      ...current.components,
-      ...Object.fromEntries(update.components.map((item) => [item.id, item])),
-    };
-    if (Object.keys(components).length > 64) throw new Error("界面内容过多");
-    return { ...state, [current.id]: { ...current, components } };
-  }
-  let values: FormValues;
-  if (!update.path || update.path === "/")
-    values =
-      update.value === undefined
-        ? {}
-        : dataModel.parse(update.value, { jitless: true }).values;
-  else if (update.path === "/values")
-    values =
-      update.value === undefined
-        ? {}
-        : formValuesSchema.parse(update.value, { jitless: true });
-  else {
-    values = { ...current.values };
-    const key = update.path.slice("/values/".length);
-    if (update.value === undefined) delete values[key];
-    else
-      values[key] = z
-        .union([z.string().max(1200), z.number().finite()])
-        .parse(update.value, { jitless: true });
-  }
-  return { ...state, [current.id]: { ...current, values } };
-}
-
-export function formAction(surface: Surface, values: FormValues): ClientEvent {
-  return {
-    version: A2UI_VERSION,
-    action: {
-      name: "submit_form",
-      surfaceId: surface.id,
-      sourceComponentId: "submit",
-      timestamp: new Date().toISOString(),
-      context: { values },
-    },
-  };
+  return messages;
 }
 
 export function artifactSummary(artifacts: Artifact[]): string {

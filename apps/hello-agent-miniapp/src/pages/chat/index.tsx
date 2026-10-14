@@ -808,7 +808,7 @@ export default function Chat() {
                           "阿 J 先生正在换个角度想…"}
                       </MessageText>
                       {progress && (
-                        <LiveArtifacts surfaces={progress.surfaces} />
+                        <LiveArtifacts messages={progress.messages} />
                       )}
                     </View>
                   </View>

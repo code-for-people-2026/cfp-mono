@@ -64,7 +64,11 @@ it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保
   await expect(
     generate(1, id, "platform", input, undefined, progress),
   ).resolves.toEqual(turn);
-  expect(Object.keys(progress.mock.lastCall![0].surfaces)).toHaveLength(5);
+  expect(
+    progress.mock.lastCall![0].messages.filter(
+      (message: object) => "createSurface" in message,
+    ),
+  ).toHaveLength(5);
   const request = mocks.request.mock.calls[0][0];
   expect(request.dataType).toBe("text");
   expect(

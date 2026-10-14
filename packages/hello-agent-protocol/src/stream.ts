@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { A2UI_EVENT, applyA2ui, type Surfaces } from "./a2ui";
+import { A2UI_EVENT, validateA2uiMessages, type A2uiMessage } from "./a2ui";
 
 // SSE framing is independent of the browser's UTF-8 decoder and works with buffered native responses.
 export function createSseDecoder(onEvent: (event: unknown) => void) {
@@ -32,7 +32,11 @@ export function createSseDecoder(onEvent: (event: unknown) => void) {
 
 export const textResponseSchema = z.string();
 
-export type RunProgress = { text: string; surfaces: Surfaces; step: string };
+export type RunProgress = {
+  text: string;
+  messages: A2uiMessage[];
+  step: string;
+};
 const eventSchema = z.object({
   type: z.string(),
   messageId: z.string().optional(),
@@ -54,7 +58,7 @@ export function createRunReader(
   let count = 0;
   let progress: RunProgress = {
     text: "",
-    surfaces: {},
+    messages: [],
     step: "阿 J 先生正在想一想…",
   };
   const decoder = createSseDecoder((value) => {
@@ -86,7 +90,7 @@ export function createRunReader(
       if (event.type === "CUSTOM" && event.name === A2UI_EVENT)
         progress = {
           ...progress,
-          surfaces: applyA2ui(progress.surfaces, event.value),
+          messages: validateA2uiMessages([...progress.messages, event.value]),
         };
       if (event.type === "RUN_FINISHED") {
         if (event.runId !== runId || textMessage)

@@ -16,7 +16,10 @@
     "test:release": "node scripts/check-release.mjs"
   },
   "dependencies": {
+    "@a2ui/web_core": "0.10.4",
     "@cfp/hello-agent-contracts": "workspace:*",
+    "@cfp/hello-agent-protocol": "workspace:*",
+    "@copilotkit/a2ui-renderer": "1.79.0",
     "@tarojs/components": "4.2.0",
     "@tarojs/helper": "4.2.0",
     "@tarojs/plugin-framework-react": "4.2.0",
@@ -28,7 +31,7 @@
     "@tarojs/taro": "4.2.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "@cfp/hello-agent-protocol": "workspace:*"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@babel/plugin-proposal-decorators": "^7.29.7",

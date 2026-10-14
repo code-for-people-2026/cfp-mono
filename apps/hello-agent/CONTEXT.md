@@ -36,4 +36,4 @@
 
 **表单回应**：用户主动提交已保存表单的答案。服务端核对归属、重新读取题目并校验字段，再作为下一轮灵感输入；数值零是有效答案。
 
-共享边界：`packages/hello-agent-contracts` 定义完整业务请求与响应，`packages/hello-agent-protocol` 定义受限作品、AG-UI 事件读取和 A2UI 目录。客户端保留新版语音输入栏，作品渲染器只消费已校验的目录组件。
+共享边界：`packages/hello-agent-contracts` 定义完整业务请求与响应，`packages/hello-agent-protocol` 定义受限作品、AG-UI 事件读取和 A2UI 目录。客户端保留新版语音输入栏；H5 采用 CopilotKit A2UI Provider/Renderer，微信通过轻量 Taro 渲染适配共用官方 A2UI 核心。两端共享经过校验的组件目录和表单交互，不维护自研 A2UI 数据更新器。

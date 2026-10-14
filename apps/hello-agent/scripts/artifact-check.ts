@@ -6,10 +6,10 @@ import path from "node:path";
 import { artifacts } from "../../../packages/hello-agent-protocol/test/fixtures";
 import {
   createRunReader,
-  formAction,
+  A2UI_VERSION,
+  clientEventSchema,
   toA2ui,
-  applyA2ui,
-  type Surfaces,
+  validateA2uiMessages,
 } from "@cfp/hello-agent-protocol";
 import { ScriptedModel } from "./scripted-model";
 
@@ -75,15 +75,31 @@ try {
       }),
     /不能覆盖/,
   );
-  const surfaces = toA2ui(saved.id, saved.artifacts).reduce<Surfaces>(
-    applyA2ui,
-    {},
+  const messages = validateA2uiMessages(toA2ui(saved.id, saved.artifacts));
+  const formId = `turn_${saved.id}_thought_record`;
+  assert.ok(
+    messages.some(
+      (message) =>
+        "createSurface" in message &&
+        message.createSurface.surfaceId === formId,
+    ),
   );
-  const form = surfaces[`turn_${saved.id}_thought_record`];
-  const action = formAction(form, {
-    situation: "会议中说错一个数字，已经更正",
-    thought: "怕被否定",
-    intensity: 0,
+  // Same public event contract as the real CopilotKit/native round trips in the client tests.
+  const action = clientEventSchema.parse({
+    version: A2UI_VERSION,
+    action: {
+      name: "submit_form",
+      surfaceId: formId,
+      sourceComponentId: "submit",
+      timestamp: new Date().toISOString(),
+      context: {
+        values: {
+          situation: "会议中说错一个数字，已经更正",
+          thought: "怕被否定",
+          intensity: 0,
+        },
+      },
+    },
   });
   const body = {
     protocolVersion: "1.0",
