@@ -4,6 +4,7 @@ import path from "node:path";
 import process from "node:process";
 import console from "node:console";
 import { fileURLToPath, URL } from "node:url";
+import { createPageReader } from "./release-page-module.mjs";
 
 const base = process.argv[2];
 const app = fileURLToPath(new URL("..", import.meta.url));
@@ -24,25 +25,10 @@ const settingsPages = [
   ["pages/privacy/index", "隐私与数据", ["授权管理", "导出数据", "删除数据", "政策与协议"]],
   ["pages/privacy/authorization/index", "授权管理", ["保存授权选择"]],
   ["pages/privacy/data/index", "数据管理", ["导出我的数据与图片", "确认删除在线数据"]],
-  ["pages/privacy/policies/index", "政策与协议", ["政策与协议"]],
-  ["pages/privacy/document/index", "政策正文", ["政策正文"]],
+  ["pages/privacy/policies/index", "政策与协议", ["了解服务如何使用、保存和保护你的信息。"]],
+  ["pages/privacy/document/index", "政策正文", ["未找到这份文件，请返回重新选择。"]],
 ];
-async function readPage(route, title) {
-  // Limit lookup to this route; a missing loader must not match the next page.
-  const entry = bootstrap.split(/(?=path:")/).find((value) => value.startsWith(`path:"${route}",load:`));
-  assert.ok(entry, `发布版本缺少独立${title}路由`);
-  const modulePath = entry.match(/import\("\.\/([^"\s]+\.js)"\)/)?.[1];
-  assert.ok(modulePath, `发布版本缺少${title}页面模块`);
-  let code = await read(`js/${modulePath}`);
-  // Taro puts the shared privacy components in a common chunk; route modules
-  // only re-export them. Settings entry labels must still live on that page.
-  if (route.startsWith("pages/privacy/")) {
-    const imports = [...code.matchAll(/from"\.\/([^"\s]+\.js)"/g)].map((match) => match[1]);
-    const dependencies = await Promise.all([...new Set(imports)].map((name) => read(`js/${name}`)));
-    code = [code, ...dependencies].join("\n");
-  }
-  return code.replace(/\\u([0-9a-f]{4})/gi, (_, digits) => String.fromCharCode(Number.parseInt(digits, 16)));
-}
+const readPage = createPageReader(bootstrap, read);
 for (const [route, title, markers] of settingsPages) {
   const page = await readPage(route, title);
   for (const marker of markers)
