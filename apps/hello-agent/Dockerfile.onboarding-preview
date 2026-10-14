@@ -1,6 +1,9 @@
 # Build context: a tracked-source archive under overlay/ (never .env or .data).
 ARG BASE_IMAGE=cfp-hello-agent:preview-20261013-name052
-FROM ${BASE_IMAGE}
+FROM ${BASE_IMAGE} AS runtime
+# Start a fresh layer chain; the long-lived preview base is near Docker’s layer limit.
+FROM scratch
+COPY --from=runtime / /
 USER root
 COPY --chown=node:node overlay/ /release/
 # One dependency added to the inherited runtime; verify the exact lockfile archive.
