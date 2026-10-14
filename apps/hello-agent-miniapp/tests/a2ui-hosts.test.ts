@@ -20,6 +20,7 @@ vi.mock("@tarojs/components", () => ({
   Input: "input",
   Textarea: "textarea",
   ScrollView: "scroll-view",
+  RootPortal: "root-portal",
 }));
 vi.mock("../src/chat/api", () => ({
   privateImageSource: vi.fn().mockResolvedValue("/private/fixture.png"),
@@ -27,6 +28,7 @@ vi.mock("../src/chat/api", () => ({
 import { A2uiHost as NativeHost } from "../src/chat/a2ui-host";
 import { A2uiHost as WebHost } from "../src/chat/a2ui-host.h5";
 import { ArtifactState } from "../src/chat/artifact-components";
+import { ArtifactPreview } from "../src/chat/artifact-preview";
 
 let renderer: ReactTestRenderer | undefined;
 afterEach(() => {
@@ -55,6 +57,7 @@ function view(
   messages: A2uiMessage[],
   onAction?: (event: ClientEvent) => Promise<void>,
   answers?: FormValues,
+  compact = false,
 ) {
   return createElement(Host, {
     messages: validateA2uiMessages(messages),
@@ -65,7 +68,9 @@ function view(
         onAction,
         initialValues: answers,
         submitted: !!answers,
-        children: content,
+        children: compact
+          ? createElement(ArtifactPreview, { surface, children: content })
+          : content,
       }),
   });
 }
@@ -74,6 +79,79 @@ for (const [platform, Host] of [
   ["h5", WebHost],
 ] as const) {
   describe(`${platform} 官方 A2UI 集成`, () => {
+    it("紧凑表单点开填写，关闭/重开保留草稿和失败提示，确认后收起", async () => {
+      const onAction = vi
+        .fn()
+        .mockRejectedValueOnce(new Error("网络暂时失败"))
+        .mockResolvedValue(undefined);
+      const open = async () => {
+        await act(async () => {
+          renderer!.root
+            .findAllByType("button")
+            .find((button) =>
+              button.props.className?.includes("artifact-preview"),
+            )!
+            .props.onClick();
+        });
+      };
+      const close = async () => {
+        await act(async () => {
+          renderer!.root
+            .findAllByType("button")
+            .find((button) => button.props.ariaLabel === "关闭详情")!
+            .props.onClick();
+        });
+      };
+      await act(async () => {
+        renderer = create(
+          view(Host, formMessages(), onAction, undefined, true),
+        );
+      });
+      expect(fields()).toHaveLength(0);
+      expect(text()).toContain("4 个问题");
+      await open();
+      expect(fields()).toHaveLength(4);
+      for (const field of fields())
+        act(() =>
+          field.props.onInput({
+            detail: {
+              value: field.props.type === "digit" ? "0" : "保留我的草稿",
+            },
+          }),
+        );
+      await close();
+      expect(fields()).toHaveLength(0);
+      expect(text()).toContain("已填 4 项");
+      await act(async () => {
+        renderer!.update(view(Host, formMessages(), onAction, undefined, true));
+      });
+      await open();
+      expect(fields().map((field) => field.props.value)).toEqual([
+        "保留我的草稿",
+        "保留我的草稿",
+        "保留我的草稿",
+        "0",
+      ]);
+      expect(onAction).not.toHaveBeenCalled();
+      await act(async () => {
+        submit().props.onClick();
+      });
+      expect(text()).toContain("网络暂时失败");
+      await close();
+      await open();
+      expect(text()).toContain("网络暂时失败");
+      await act(async () => {
+        submit().props.onClick();
+      });
+      const answers = onAction.mock.calls[1]![0].action.context.values;
+      await act(async () => {
+        renderer!.update(view(Host, formMessages(), onAction, answers, true));
+      });
+      expect(fields()).toHaveLength(0);
+      expect(text()).toContain("已完成");
+      await open();
+      expect(fields().every((field) => field.props.disabled)).toBe(true);
+    });
     it("五种作品使用真实核心渲染；小程序无需 DOM 和动态函数", async () => {
       vi.stubEnv("TARO_ENV", platform);
       if (platform === "weapp") {

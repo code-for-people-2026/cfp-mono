@@ -47,6 +47,7 @@ vi.mock("@tarojs/components", () => ({
   Input: "input",
   Textarea: "textarea",
   ScrollView: "scroll-view",
+  RootPortal: "root-portal",
 }));
 
 type AgentBody = {
@@ -150,6 +151,15 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+async function openArtifact() {
+  await act(async () => {
+    renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-preview"))!
+      .props.onClick();
+  });
+}
+
 async function chooseModeInSettings(index: number) {
   const { default: SettingsPage } = await import("../src/pages/settings/index");
   let settingsPage: ReactTestRenderer;
@@ -220,6 +230,7 @@ it.each([false, true])(
         : response;
     });
     await mount();
+    await openArtifact();
     const submit = renderer!.root
       .findAllByType("button")
       .find((node) => node.props.className?.includes("artifact-submit"))!;
@@ -273,6 +284,7 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     return original(options);
   });
   await mount();
+  await openArtifact();
   const fields = () =>
     renderer!.root.findAll(
       (node) =>
@@ -293,12 +305,18 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     button().props.onClick();
   });
   expect(submitted).toHaveLength(1);
+  expect(
+    renderer!.root
+      .findAll((node) => node.props.className === "artifact-error")
+      .some((node) => node.children.includes("模型暂时失败")),
+  ).toBe(true);
   expect(fields().map((field) => field.props.value)).toEqual(answers);
   expect(button().props.disabled).toBeFalsy();
   await act(async () => {
     button().props.onClick();
   });
   expect(submitted).toHaveLength(2);
+  await openArtifact();
   expect(submitted[1]).toEqual(submitted[0]);
   expect(submitted[1]).toMatchObject({ intensity: 0 });
   expect(fields().map((field) => field.props.value)).toEqual(answers);

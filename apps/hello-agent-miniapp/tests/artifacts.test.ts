@@ -12,6 +12,7 @@ vi.mock("@tarojs/components", () => ({
   Input: "input",
   Textarea: "textarea",
   ScrollView: "scroll-view",
+  RootPortal: "root-portal",
 }));
 afterEach(() => {
   vi.resetModules();
@@ -95,6 +96,9 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
     );
   });
   try {
+    await act(async () => {
+      renderer!.root.findByType("button").props.onClick();
+    });
     for (const field of renderer!.root.findAll((node) =>
       ["input", "textarea"].includes(String(node.type)),
     ))
@@ -107,7 +111,10 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
       );
     expect(onAction).not.toHaveBeenCalled();
     await act(async () => {
-      renderer!.root.findByType("button").props.onClick();
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className?.includes("artifact-submit"))!
+        .props.onClick();
     });
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0].action.context.values.intensity).toBe(0);
@@ -124,7 +131,15 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
         }),
       );
     });
-    expect(renderer!.root.findByType("button").props.disabled).toBe(true);
+    await act(async () => {
+      renderer!.root.findByType("button").props.onClick();
+    });
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className?.includes("artifact-submit"))!
+        .props.disabled,
+    ).toBe(true);
   } finally {
     act(() => renderer!.unmount());
   }

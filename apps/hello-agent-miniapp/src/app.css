@@ -381,23 +381,6 @@ input {
   color: #637568;
   font-size: 12px;
 }
-.association {
-  border-top: 1px solid #edf1ee;
-  margin-top: 11px;
-  padding-top: 8px;
-}
-.association-toggle {
-  font-size: 10px;
-  color: #88a08e;
-  text-align: left;
-}
-.association-text {
-  display: block;
-  font-size: 11px;
-  color: #839488;
-  line-height: 1.7;
-  margin-top: 8px;
-}
 .thinking {
   font-size: 12px;
   color: #8e9e93;
@@ -1308,4 +1291,196 @@ input {
 }
 .settings-section button[disabled] {
   opacity: 0.45;
+}
+
+/* Compact response previews keep conversation scrolling at page level. */
+.artifact-preview {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 70px;
+  gap: 10px;
+  margin-top: 10px;
+  padding: 11px;
+  background: #f7f9f4;
+  border: 1px solid #e4eade;
+  border-radius: 12px;
+  text-align: left;
+  white-space: normal;
+}
+.artifact-preview-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  background: #eaf0e5;
+  border-radius: 9px;
+}
+.artifact-preview-icon .chat-icon {
+  width: 19px;
+  height: 19px;
+}
+.artifact-preview-copy {
+  flex: 1;
+  min-width: 0;
+}
+.artifact-preview-title,
+.artifact-preview-summary,
+.artifact-preview-meta {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.artifact-preview-title {
+  color: #314d3b;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.artifact-preview-summary {
+  color: #758577;
+  font-size: 11px;
+  line-height: 1.7;
+  margin-top: 2px;
+}
+.artifact-preview-meta {
+  color: #7c8f7e;
+  font-size: 10px;
+  line-height: 1.6;
+  margin-top: 3px;
+}
+.artifact-preview-arrow {
+  color: #819584;
+  font-size: 23px;
+  flex-shrink: 0;
+}
+.artifact-thumbnail {
+  flex-shrink: 0;
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #eaf0e5;
+}
+.artifact-thumbnail-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.artifact-thumbnail .artifact-caption {
+  padding: 5px;
+  font-size: 10px;
+}
+.artifact-thumbnail-stack {
+  display: flex;
+  flex-shrink: 0;
+  padding-right: 10px;
+}
+.artifact-thumbnail-stack .artifact-thumbnail {
+  width: 36px;
+  height: 48px;
+  margin-right: -10px;
+  border: 2px solid #f7f9f4;
+}
+.evidence-card .artifact-preview {
+  background: #fafbf9;
+  border-color: #eef1eb;
+}
+.evidence-card .artifact-preview-icon {
+  background: transparent;
+}
+
+.detail-overlay {
+  z-index: 80;
+  white-space: normal;
+}
+.detail-sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 10px 0 0;
+  border-radius: 23px 23px 0 0;
+  background: #fcfdfb;
+  overflow: hidden;
+  box-sizing: border-box;
+  color: #243b35;
+}
+.detail-sheet .sheet-handle {
+  flex-shrink: 0;
+  margin-bottom: 8px;
+}
+.detail-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  padding: 0 14px 10px 20px;
+  border-bottom: 1px solid #ecf0e8;
+}
+.detail-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.5;
+}
+.detail-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #f0f3ec;
+}
+.detail-close .chat-icon {
+  width: 20px;
+  height: 20px;
+}
+.detail-scroll {
+  flex: 1;
+  height: 0;
+  min-height: 0;
+  width: 100%;
+  overscroll-behavior: contain;
+}
+.detail-body {
+  padding: 18px 20px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+}
+.detail-body .artifact-surface {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+.detail-body .artifact-card {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  overflow: visible;
+}
+.detail-body .artifact-text {
+  font-size: 14px;
+}
+.detail-body .artifact-field {
+  margin-bottom: 5px;
+}
+.detail-body .artifact-input {
+  font-size: 16px;
+}
+.detail-body .artifact-section {
+  margin-bottom: 20px;
+}
+.artifact-detail-single .artifact-h3 {
+  display: none;
+}
+.detail-body .artifact-image {
+  margin-top: 8px;
 }

@@ -29,12 +29,22 @@ import {
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { privateImageSource } from "./api";
 import { MessageText } from "./message-text";
+import { useSheetFieldFocus } from "./bottom-sheet";
 
-function ArtifactImage({ url, alt }: { url: string; alt: string }) {
+export function ArtifactImage({
+  url,
+  alt,
+  thumbnail = false,
+}: {
+  url: string;
+  alt: string;
+  thumbnail?: boolean;
+}) {
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let active = true;
+    setSource("");
     setFailed(false);
     privateImageSource(url)
       .then((value) => {
@@ -48,21 +58,27 @@ function ArtifactImage({ url, alt }: { url: string; alt: string }) {
     };
   }, [url]);
   return (
-    <View>
+    <View className={thumbnail ? "artifact-thumbnail" : "artifact-image-full"}>
       {source && !failed ? (
         <Image
-          className="artifact-image"
+          className={thumbnail ? "artifact-thumbnail-image" : "artifact-image"}
           src={source}
-          mode="widthFix"
+          mode={thumbnail ? "aspectFill" : "widthFix"}
           onError={() => setFailed(true)}
-          onClick={() => Taro.previewImage({ urls: [source], current: source })}
+          onClick={
+            thumbnail
+              ? undefined
+              : () => Taro.previewImage({ urls: [source], current: source })
+          }
         />
       ) : (
         <MessageText className="artifact-caption">
-          {failed ? "图片暂时无法读取" : "正在取图片…"}
+          {failed ? "图片暂不可用" : "加载中…"}
         </MessageText>
       )}
-      <MessageText className="artifact-caption">{alt}</MessageText>
+      {!thumbnail && (
+        <MessageText className="artifact-caption">{alt}</MessageText>
+      )}
     </View>
   );
 }
@@ -86,6 +102,11 @@ const ArtifactContext = createContext<{
   error: string;
   submit: (dispatch: Dispatch) => Promise<void>;
 } | null>(null);
+export function useArtifactState() {
+  const context = useContext(ArtifactContext);
+  if (!context) throw new Error("作品未初始化");
+  return context;
+}
 
 // Drafts and confirmed answers are product state, independent of renderer choice.
 export function ArtifactState({
@@ -214,8 +235,8 @@ export function ArtifactComponent({
   child: (id: string) => ReactNode;
   dispatch: Dispatch;
 }) {
-  const context = useContext(ArtifactContext);
-  if (!context) throw new Error("作品未初始化");
+  const context = useArtifactState();
+  const focusField = useSheetFieldFocus();
   const { values, locked, canSubmit, submitted, sending, error, submit } =
     context;
   const id = component.id;
@@ -277,7 +298,11 @@ export function ArtifactComponent({
             : value,
         );
       return (
-        <View key={id} className="artifact-field">
+        <View
+          key={id}
+          id={`artifact_field_${fieldId}`}
+          className="artifact-field"
+        >
           <MessageText className="artifact-label">
             {field.label}
             {field.required ? " *" : "（选填）"}
@@ -289,6 +314,8 @@ export function ArtifactComponent({
               placeholder={field.placeholder || "写下你愿意分享的部分"}
               maxlength={1200}
               disabled={locked}
+              adjustPosition={false}
+              onFocus={() => focusField(`artifact_field_${fieldId}`)}
               onInput={(event) => update(event.detail.value)}
             />
           ) : (
@@ -304,6 +331,8 @@ export function ArtifactComponent({
               }
               maxlength={1200}
               disabled={locked}
+              adjustPosition={false}
+              onFocus={() => focusField(`artifact_field_${fieldId}`)}
               onInput={(event) => update(event.detail.value)}
             />
           )}
@@ -340,10 +369,6 @@ function PageView({
 }: {
   component: Extract<Component, { component: "Page" }>;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const sections = expanded
-    ? component.page.sections
-    : component.page.sections.slice(0, 1);
   return (
     <View className="artifact-page">
       {component.page.subtitle && (
@@ -351,7 +376,7 @@ function PageView({
           {component.page.subtitle}
         </MessageText>
       )}
-      {sections.map((section, index) => (
+      {component.page.sections.map((section, index) => (
         <View key={index} className="artifact-section">
           <MessageText className="artifact-heading">
             {section.heading}
@@ -364,14 +389,6 @@ function PageView({
           ))}
         </View>
       ))}
-      {component.page.sections.length > 1 && (
-        <Button
-          className="control artifact-link"
-          onClick={() => setExpanded(!expanded)}
-        >
-          {expanded ? "收起页面" : "展开整页"}
-        </Button>
-      )}
       {process.env.TARO_ENV === "h5" && (
         <Button
           className="control artifact-link"
