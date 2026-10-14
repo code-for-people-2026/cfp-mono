@@ -69,6 +69,7 @@ export function agentStream(
   service: {
     generateGreeting: (
       args: z.infer<typeof turnSchema>,
+      progress?: (message: string) => void,
     ) => Promise<
       Pick<
         Awaited<ReturnType<GreetingService["generateGreeting"]>>,
@@ -87,6 +88,13 @@ export function agentStream(
         if (connected)
           controller.enqueue(utf8.encode(encoder.encodeSSE(event)));
       };
+      const heartbeat = setInterval(() => { if (connected) controller.enqueue(utf8.encode(": heartbeat\n\n")); }, 15_000);
+      let stepName = "阿 J 先生正在构思回应与作品";
+      const progress = (message: string) => {
+        emit({ type: EventType.STEP_FINISHED, stepName });
+        stepName = message;
+        emit({ type: EventType.STEP_STARTED, stepName });
+      };
       const threadId = String(args.sessionId);
       const runId = args.requestId;
       try {
@@ -98,12 +106,12 @@ export function agentStream(
         });
         emit({
           type: EventType.STEP_STARTED,
-          stepName: "阿 J 先生正在构思回应与作品",
+          stepName,
         });
-        const row = await service.generateGreeting(args);
+        const row = await service.generateGreeting(args, progress);
         emit({
           type: EventType.STEP_FINISHED,
-          stepName: "阿 J 先生正在构思回应与作品",
+          stepName,
         });
         const messageId = `greeting_${row.id}`;
         emit({
@@ -134,6 +142,7 @@ export function agentStream(
           code: "GENERATION_FAILED",
         });
       } finally {
+        clearInterval(heartbeat);
         if (connected) controller.close();
       }
     },

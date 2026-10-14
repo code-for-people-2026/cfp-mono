@@ -1,3 +1,4 @@
+import { publicImageState } from "../images/service";
 import { AgeService } from "../age/service";
 import { PrivacyService } from "../privacy/service";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -119,7 +120,7 @@ export function createMcpServer(service: GreetingService) {
     },
     protect(async (args) => {
       await new PrivacyService(service.repo).requireInput(args.input);
-      return service.acceptExternal(args);
+      return publicImageState(await service.acceptExternal(args));
     }),
   );
   server.registerPrompt(

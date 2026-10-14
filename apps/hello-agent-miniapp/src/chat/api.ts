@@ -1,7 +1,7 @@
 import { ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/hello-agent-contracts";
 import type { AgeDeclaration } from "@cfp/hello-agent-protocol";
 import { labeledAiText } from "./ai-copy";
-import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, safetyInboxSchema, safetyReceiptSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
+import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
 import Taro from "@tarojs/taro";
 import {
   CATALOG_ID,
@@ -63,7 +63,7 @@ async function request<T>(
     method,
     data,
     dataType,
-    timeout: 90_000,
+    timeout: path === "ag-ui" || path === "image-resume" ? 240_000 : 90_000,
     header: {
       "Content-Type": "application/json",
       ...(native && deviceToken && path !== "miniapp-identity"
@@ -231,17 +231,27 @@ export async function generate(
       a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] },
     },
   };
+  await consumeRun("ag-ui", body, id, onProgress);
+  const { turn } = await getSubmission(sessionId, id);
+  if (!turn || turn.status !== "completed")
+    throw new Error("回复尚未确认保存，请稍后确认上次发送");
+  return turn;
+}
+export function resumeImage(turnId: number, id: string, apiKey?: string, onProgress?: (progress: RunProgress) => void) {
+  return consumeRun("image-resume", { turnId, requestId: id, ...(apiKey ? { apiKey } : {}) }, id, onProgress);
+}
+async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: string, onProgress?: (progress: RunProgress) => void) {
   const reader = createRunReader(id, onProgress);
   if (native) {
     // Native Taro buffers SSE; it consumes exactly the same AG-UI/A2UI events as H5.
     reader.push(
-      await request("ag-ui", textResponseSchema, "POST", body, "text"),
+      await request(path, textResponseSchema, "POST", body, "text"),
     );
   } else {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90_000);
+    const timeout = setTimeout(() => controller.abort(), 240_000);
     try {
-      const response = await fetch("/api/hello/ag-ui", {
+      const response = await fetch(`/api/hello/${path}`, {
         method: "POST",
         credentials: "same-origin",
         signal: controller.signal,
@@ -276,10 +286,6 @@ export async function generate(
     }
   }
   reader.finish();
-  const { turn } = await getSubmission(sessionId, id);
-  if (!turn || turn.status !== "completed")
-    throw new Error("回复尚未确认保存，请稍后确认上次发送");
-  return turn;
 }
 export const mintMcpToken = () => request("token", credentialSchema, "POST");
 export const revokeMcpTokens = () =>
@@ -439,7 +445,3 @@ export async function exportPersonalData() {
   await Taro.shareFileMessage({ filePath: result.tempFilePath, fileName: "hello-personal-data.json" });
 }
 export async function copyAiReply(value: string, external = false) { return copy(labeledAiText(value, external)); }
-
-
-export const getSafety = () => request("safety", safetyInboxSchema);
-export const submitSafety = (body: unknown) => request("safety", safetyReceiptSchema, "POST", body);

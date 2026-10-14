@@ -120,12 +120,12 @@ export class Repository {
     try {
       lock = await this.create("session-locks", {
         sessionKey,
-        expiresAt: new Date(Date.now() + 180_000).toISOString(),
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
       });
     } catch {
       throw new AppError(
         409,
-        "阿 J 先生正在回复，请稍后重试；若刚才意外中断，请三分钟后再试",
+        "阿 J 先生正在回复，请稍后重试；若刚才意外中断，请五分钟后再试",
       );
     }
     return async () => {

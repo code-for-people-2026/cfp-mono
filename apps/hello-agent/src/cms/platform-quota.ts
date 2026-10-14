@@ -3,8 +3,8 @@ import { setTimeout } from "node:timers/promises";
 import type { Payload } from "payload";
 import { AppError } from "../domain/contracts";
 
-function dailyCallLimit() {
-  const configured = process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT ?? "900";
+function dailyCallLimit(kind: "text" | "image" = "text") {
+  const configured = kind === "image" ? process.env.HELLO_IMAGE_DAILY_LIMIT ?? "30" : process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT ?? "900";
   const limit = Number(configured);
   if (!/^\d+$/.test(configured) || !Number.isSafeInteger(limit))
     throw new AppError(503, "平台模型额度配置无效，请联系管理员");
@@ -23,17 +23,17 @@ export async function checkPlatformQuota(payload: Payload) {
 // One ledger for every platform visitor/worker using this Payload database.
 // Reserve the entire operation before any provider work. Never refund failures:
 // a timeout or crash cannot prove that the provider did not already bill us.
-export async function reservePlatformCalls(payload: Payload, calls: number) {
-  const limit = dailyCallLimit();
+export async function reservePlatformCalls(payload: Payload, calls: number, kind: "text" | "image" = "text") {
+  const limit = dailyCallLimit(kind);
   if (!Number.isSafeInteger(calls) || calls < 1)
     throw new Error("Invalid platform call reservation");
   const exhausted = () =>
     new AppError(
       429,
-      "平台今日共享模型额度不足，请稍后再试，或在设置中使用自己的密钥或外部 Agent",
+      kind === "image" ? "平台今日图片额度已用完，请明天再试" : "平台今日共享模型额度不足，请稍后再试，或在设置中使用自己的密钥或外部 Agent",
     );
   if (calls > limit) throw exhausted();
-  const day = new Date().toISOString().slice(0, 10);
+  const day = `${kind === "image" ? "image:" : ""}${new Date().toISOString().slice(0, 10)}`;
   // A single conditional UPSERT makes checking and charging atomic, including
   // the first request of the UTC day, across processes and fresh identities.
   for (let attempt = 0; ; attempt++) {

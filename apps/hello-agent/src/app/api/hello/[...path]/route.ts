@@ -1,3 +1,6 @@
+import { imageGenerationConfigured } from "../../../../images/wan";
+import { imageReviewConfigured } from "../../../../images/image-review";
+import { publicImageState } from "../../../../images/service";
 import { AgeService } from "../../../../age/service";
 import { agePost } from "../../../../age/http";
 import { wechatLogin } from "../../../../age/wechat";
@@ -37,7 +40,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 90;
+export const maxDuration = 210;
 type Context = { params: Promise<{ path: string[] }> };
 const json = (value: unknown) =>
   Response.json(value, { headers: { "Cache-Control": "no-store" } });
@@ -51,6 +54,7 @@ export async function GET(request: Request, context: Context) {
     if (path[0] === "config")
       return json({
         platformConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+        imageGenerationConfigured: imageGenerationConfigured() && imageReviewConfigured(),
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
         origin: process.env.HELLO_ORIGIN || "http://127.0.0.1:3310",
         advertisement: adConfiguration(),
@@ -221,7 +225,16 @@ export async function POST(request: Request, context: Context) {
         // The stream starts generation before returning its Response. A nested
         // lease keeps revocation excluded until that work finishes or fails,
         // including when the client disconnects.
-        return agentStream({ generateGreeting: (args) => withCredentialExecution(owner.id, () => service.generateGreeting(args)) }, input);
+        return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)) }, input);
+      }
+      if (path[0] === "image-resume" && path.length === 1) {
+        const args = z.object({ turnId: z.number().int().positive(), requestId: z.string().uuid(), apiKey: z.string().min(10).max(256).optional() }).parse(body);
+        const turn = await service.repo.get("greetings", args.turnId);
+        await privacy.requireInput({ input: turn.input });
+        if (turn.mode === "external") throw new AppError(409, "外部生成不能继续平台生图任务");
+        return agentStream({ generateGreeting: (_, progress) => withCredentialExecution(owner.id, () => service.resumeImage(turn.id, args.apiKey, progress)) }, {
+          sessionId: turn.sessionId, requestId: args.requestId, input: turn.input, mode: turn.mode, apiKey: args.apiKey,
+        });
       }
       if (path[0] === "context") {
         const args = z
@@ -280,7 +293,7 @@ export async function POST(request: Request, context: Context) {
       }
       if (path[0] === "greet") {
         await privacy.requireInput(body);
-        return json(await service.generateGreeting(body));
+        return json(publicImageState(await service.generateGreeting(body)));
       }
       if (path[0] === "upload") {
         await privacy.requireImageInput();

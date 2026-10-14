@@ -13,11 +13,6 @@ export const privacyStatusSchema = z.object({
 export const recoveryCodeSchema = z.object({ code: z.string() });
 export const recoveredIdentitySchema = z.object({ token: z.string().optional(), owner: z.string().optional() });
 export const logoutSchema = z.object({ loggedOut: z.literal(true) });
-export const deletionSchema = z.object({ deleted: z.literal(true), backupNotice: z.string(), operations: z.object({ held: z.number(), notice: z.string() }).optional() });
-export const safetyReceiptSchema = z.object({
-  receipt: z.string(), kind: z.string(), status: z.string(), createdAt: z.string(), reply: z.string().nullish(), acceptBy: z.string().nullish(), resolveBy: z.string().nullish(), canAppeal: z.boolean(), turnId: z.number().nullish(),
-});
-export const safetyInboxSchema = z.object({ configuration: z.object({ configured: z.boolean(), acceptanceHours: z.number().optional(), resolutionHours: z.number().optional(), feedbackHours: z.number().optional() }), cases: z.array(safetyReceiptSchema) });
+export const deletionSchema = z.object({ deleted: z.literal(true), backupNotice: z.string() });
 export type PrivacyPolicy = z.infer<typeof privacyPolicySchema>;
 export type PrivacyStatus = z.infer<typeof privacyStatusSchema>;
-export type SafetyReceipt = z.infer<typeof safetyReceiptSchema>;

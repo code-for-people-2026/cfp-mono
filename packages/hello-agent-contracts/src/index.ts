@@ -44,6 +44,8 @@ export const sessionSchema = z.object({
 });
 export const sessionsSchema = z.array(sessionSchema);
 export const turnResultSchema = z.object({
+  imageGeneration: z.object({ status: z.enum(["submitting", "pending", "stored", "failed", "blocked"]), canResume: z.boolean() }).optional(),
+  error: z.string().nullish(),
   id: z.number().int().positive(),
   input: inputSchema,
   status: z.enum(["running", "completed", "failed"]),

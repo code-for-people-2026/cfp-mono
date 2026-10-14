@@ -96,9 +96,9 @@ try {
   assert.equal((await mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: { Authorization: `Bearer ${bearer}` }, body: "{}" }))).status, 403);
   assert.equal((await http(linked.token, ["privacy"])).status, 200);
   assert.equal((await http(linked.token, ["sessions"])).status, 200);
-  assert.equal((await http(linked.token, ["safety"], { category: "other", description: "合成年龄复核申请，请勿提交真实证件" })).status, 200);
-  assert.equal((await http(linked.token, ["safety"])).status, 200);
-  console.log("✓ REST/H5/外部令牌/MCP均拦截，历史、隐私和申诉保留");
+  // Feedback currently uses the disclosed contact page; #383 owns the future case API.
+  assert.equal((await http(linked.token, ["legal"])).status, 200);
+  console.log("✓ REST/H5/外部令牌/MCP均拦截，历史、隐私和联系说明保留");
 
   for (const state of ["minor", "unknown", "failed", "unavailable"] as const) {
     const subject = await fresh(); let calls = 0;
@@ -143,7 +143,7 @@ try {
   await privacy.deleteData();
   assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true, where: { owner: { equals: owner.id } } })).totalDocs, 0);
   assert.equal(await ageProfile(payload, owner.id), undefined);
-  for (const collection of ["age-profiles", "wechat-identities", "age-locks", "credentials", "privacy-profiles", "safety-cases", "safety-audit"] as const) {
+  for (const collection of ["age-profiles", "wechat-identities", "age-locks", "credentials", "privacy-profiles"] as const) {
     const rows = await payload.find({ collection, overrideAccess: true, pagination: false });
     assert.ok(!JSON.stringify(rows).includes(identity.name)); assert.ok(!JSON.stringify(rows).includes(identity.idCard));
   }

@@ -38,7 +38,10 @@ try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
   const model = new ScriptedModel();
-  const service = new GreetingService(repo, (args) => runGreeting(args, model));
+  await (await import("./privacy-test-fixture")).consentForFixture(repo);
+  await assert.rejects(() => new GreetingService(repo).upload(Buffer.from("no reviewer")), { status: 503 });
+  // Synthetic allow decision exercises image storage, not a real reviewer.
+  const service = new GreetingService(repo, (args) => runGreeting(args, model), undefined, async () => "allow");
   const session = await service.createSession("集成测试");
   const media = await service.upload(
     await sharp({
@@ -60,7 +63,8 @@ try {
   assert.equal(model.requests.length, 1);
   assert.ok(model.requests[0].toolsDict.save_greeting);
   assert.ok(model.requests[0].toolsDict.cbt_agent);
-  assert.equal(Object.keys(model.requests[0].toolsDict).length, 9);
+  assert.ok(model.requests[0].toolsDict.generate_image);
+  assert.equal(Object.keys(model.requests[0].toolsDict).length, 10);
   assert.ok(
     model.requests[0].contents.some((c) =>
       c.parts?.some((p) => p.inlineData?.mimeType === "image/jpeg"),

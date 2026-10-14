@@ -140,6 +140,7 @@ try {
     const record = await payload.findByID({
       collection: "media",
       id: 17,
+      select: { owner: true, base64: true, object: true },
       depth: 0,
     });
     assert.equal(record.base64, "b2xkLWltYWdl");

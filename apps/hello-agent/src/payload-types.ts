@@ -366,6 +366,15 @@ export interface Session {
 export interface Greeting {
   id: number;
   owner: string;
+  imageGeneration?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   sessionId: number;
   requestKey: string;
   fingerprint: string;
@@ -420,6 +429,16 @@ export interface SessionLock {
 export interface Media {
   id: number;
   owner: string;
+  generation?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  generationKey?: string | null;
   mimeType: string;
   base64?: string | null;
   object?: import('./domain/media-policy').ImageReference | null;
@@ -684,6 +703,7 @@ export interface SessionsSelect<T extends boolean = true> {
  */
 export interface GreetingsSelect<T extends boolean = true> {
   owner?: T;
+  imageGeneration?: T;
   sessionId?: T;
   requestKey?: T;
   fingerprint?: T;
@@ -729,6 +749,8 @@ export interface SessionLocksSelect<T extends boolean = true> {
  */
 export interface MediaSelect<T extends boolean = true> {
   owner?: T;
+  generation?: T;
+  generationKey?: T;
   mimeType?: T;
   base64?: T;
   object?: T;

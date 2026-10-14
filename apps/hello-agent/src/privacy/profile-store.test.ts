@@ -1,3 +1,5 @@
+import { ageCollections } from "../age/collections";
+import { up as ageMigration } from "../cms/migrations/20261013_181500_wechat_age_verification";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -22,8 +24,9 @@ import { up as revision } from "../cms/migrations/20261013_174000_privacy_revisi
 
 // No operations collections or production database: this exercises the real
 // Payload profile reads, SQLite CAS and additive migration in isolation.
-vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn() }));
 const holder = vi.hoisted(() => ({ payload: undefined as Payload | undefined }));
+// Age capability itself is covered by age-verification-check; these cases isolate privacy gates.
+vi.mock("../age/service", async (original) => ({ ...await original<typeof import("../age/service")>(), AgeService: class { async requireCapability() {} } }));
 vi.mock("../cms/client", () => ({ cms: () => holder.payload }));
 const business = vi.hoisted(() => ({ createSession: vi.fn(), generate: vi.fn(), history: vi.fn(), image: vi.fn(), sessions: vi.fn(), submission: vi.fn(), context: vi.fn() }));
 vi.mock("../domain/greetings", () => ({ GreetingService: class {
@@ -55,7 +58,7 @@ beforeAll(async () => {
   payload = await new BasePayload().init({ config: buildConfig({
     secret: "isolated-profile-test", telemetry: false,
     db: sqliteAdapter({ client: { url: `file:${directory}/profiles.db` }, push: false, transactionOptions: {} }),
-    collections: [...privacyCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "expiresAt", type: "date" }] }],
+    collections: [...privacyCollections, ...ageCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "expiresAt", type: "date" }] }],
   }) });
   holder.payload = payload;
   const args = { db: payload.db.drizzle } as MigrateUpArgs;
@@ -65,6 +68,7 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
+  await ageMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });

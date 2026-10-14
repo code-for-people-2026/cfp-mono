@@ -8,9 +8,8 @@ import { privacyPolicy } from "./policy";
 import { maintainPrivacy } from "./maintenance";
 import { writeDeletionLedger } from "./deletion-ledger";
 
-// #383 is not submitted yet. Repository and retention are unit-test doubles;
+// Repository calls are unit-test doubles;
 // ledger durability and actual file writes are covered in separate tests.
-vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn(async () => ({ held: 0 })) }));
 vi.mock("./profile-store", () => ({ updateProfile: async (payload: Payload, expected: PrivacyProfile, data: Partial<PrivacyProfile>) => {
   const latest = (await payload.find({ collection: "privacy-profiles" })).docs[0];
   if (latest.revision !== expected.revision || latest.state !== expected.state) throw new AppError(409, "隐私设置已变更");
@@ -28,6 +27,7 @@ function fixture(priorInputs: unknown[] = []) {
   let profile: PrivacyProfile = { id: 1, owner: "isolated", state: "active", revision: 0, historyInspected: priorInputs.length === 0, sensitiveHistory: false, createdAt: "2026-10-13", updatedAt: "2026-10-13", consent: { version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false } };
   const update = vi.fn(async ({ data }: { data: Partial<PrivacyProfile> }) => (profile = { ...profile, ...data }));
   const payload = {
+    count: vi.fn().mockResolvedValue({ totalDocs: 0 }),
     find: vi.fn(async ({ collection, where, limit = 1 }: { collection: string; limit?: number; where?: { and?: { id?: { greater_than?: number } }[] } }) => {
       const cursor = where?.and?.find((clause) => clause.id)?.id?.greater_than || 0;
       return { docs: collection === "privacy-profiles" ? [profile] : priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) };

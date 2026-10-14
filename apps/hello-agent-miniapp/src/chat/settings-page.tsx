@@ -26,7 +26,7 @@ export function SettingsPage({ title, children, back = false, onRefresh, refresh
       {back && <PageButton className="page-icon-button page-back" aria-label="返回上一级" onClick={leavePage}><PageIcon kind="back" /></PageButton>}
       <Text className="page-title">{title}</Text>
       <View className="page-header-actions">
-        {onRefresh && <PageButton className={`page-icon-button ${refreshing ? "is-refreshing" : ""}`} aria-label="刷新受理记录" disabled={refreshing} onClick={onRefresh}><PageIcon kind="refresh" /></PageButton>}
+        {onRefresh && <PageButton className={`page-icon-button ${refreshing ? "is-refreshing" : ""}`} aria-label={`刷新${title}`} disabled={refreshing} onClick={onRefresh}><PageIcon kind="refresh" /></PageButton>}
         {!back && <PageButton className="page-icon-button" aria-label={`关闭${title}`} onClick={leavePage}><PageIcon kind="close" /></PageButton>}
       </View>
     </View>

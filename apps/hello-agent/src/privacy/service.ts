@@ -1,5 +1,4 @@
 import { ageProfile } from "../age/service";
-import { eraseOperationsEvidence } from "../operations/retention";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
 import type { PrivacyProfile } from "../payload-types";
@@ -173,10 +172,9 @@ export class PrivacyService {
     const records: Record<string, unknown[]> = {};
     const media: { id: number; createdAt?: string; mimeType?: string; source?: string; base64?: string; withheld?: boolean; notice?: string }[] = [];
     const credentials: { kind: string; expiresAt: string; createdAt: string }[] = [];
-    const safetyCases: unknown[] = [];
     const age = await ageProfile(this.repo.payload, this.repo.owner.id);
     const ageVerification = age ? { state: age.state, declaration: age.declaration, source: age.source, assurance: age.assurance, verifiedAt: age.verifiedAt, expiresAt: age.expiresAt, noticeVersion: age.noticeVersion, consentedAt: age.consentedAt, reference: age.reference, additionalVerification: age.additionalVerification } : null;
-    const result = { ageVerification, retainedSafetyRecords: safetyCases, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "已隔离内容不通过自动导出重新传播，可通过隐私权利请求申请复核；用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    const result = { ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
     budget.add(result, false);
     // ADK snapshots mix visitor input with admin-only knowledgeContext and
     // tool state. The visitor-facing conversation is exported below instead.
@@ -193,10 +191,10 @@ export class PrivacyService {
         const image = await this.media.read(row.id);
         // Check the base64 expansion before allocating that string.
         budget.requireRoom(4 * Math.ceil(image.bytes.length / 3));
-        media.push(budget.add({ id: row.id, createdAt: row.createdAt, mimeType: image.mimeType, source: "用户上传，来源未核验，不声明由平台生成", base64: image.bytes.toString("base64") }));
+        media.push(budget.add({ id: row.id, createdAt: row.createdAt, mimeType: image.mimeType, source: row.generation ? "AI 生成（百炼万相）" : "用户上传，来源未核验，不声明由平台生成", ...(row.generation ? { generation: row.generation } : {}), base64: image.bytes.toString("base64") }));
       } catch (error) {
         if (!(error instanceof AppError) || error.status !== 404) throw error;
-        media.push(budget.add({ id: row.id, createdAt: row.createdAt, withheld: true, notice: "图片已隔离或内容缺失；其余数据继续导出，可通过权利请求申请复核。" }));
+        media.push(budget.add({ id: row.id, createdAt: row.createdAt, withheld: true, notice: "图片内容缺失；其余数据继续导出，可通过政策中的联系渠道申请核实。" }));
       }
     }
     let cursor = 0;
@@ -205,14 +203,6 @@ export class PrivacyService {
       if (!row) break;
       const { kind, expiresAt, createdAt } = row;
       credentials.push(budget.add({ kind, expiresAt, createdAt }));
-      cursor = row.id;
-    }
-    cursor = 0;
-    while (true) {
-      const [row] = (await this.repo.payload.find({ collection: "safety-cases", overrideAccess: true, limit: 1, sort: "id", depth: 0, select: { id: true, receipt: true, source: true, category: true, status: true, createdAt: true, reply: true, feedbackAt: true, retainUntil: true, retentionBasis: true }, where: { and: [{ owner: { equals: this.repo.owner.id } }, { id: { greater_than: cursor } }] } })).docs;
-      if (!row) break;
-      const { receipt, source, category, status, createdAt, reply, feedbackAt, retainUntil, retentionBasis } = row;
-      safetyCases.push(budget.add({ receipt, source, category, status, createdAt, reply: feedbackAt ? reply : undefined, retainUntil, retentionBasis }));
       cursor = row.id;
     }
     budget.verify(result);
@@ -234,7 +224,6 @@ export class PrivacyService {
     const ageActive = await this.repo.payload.count({ collection: "age-locks", overrideAccess: true, where: { and: [{ key: { equals: `owner:${this.repo.owner.id}` } }, { expiresAt: { greater_than: new Date().toISOString() } }] } });
     if (active.length || ageActive.totalDocs) throw new AppError(409, "已停止新处理，正在等待本轮结束；请稍后再次点击删除");
     await writeDeletionLedger(this.repo.owner.id);
-    const operations = await eraseOperationsEvidence(this.repo.payload, this.repo.owner.id);
     await this.media.deleteAll();
     for (const collection of [...contentCollections, "age-profiles", "wechat-identities"] as const) {
       const result = await this.repo.payload.delete({ collection, overrideAccess: true, where: { owner: { equals: this.repo.owner.id } } });
@@ -244,7 +233,7 @@ export class PrivacyService {
     await this.revoke();
     // Replays preserve an existing deleted tombstone while clearing leftovers.
     await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: profile!.deletedAt || new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, historyInspected: null, expiresAt: null });
-    return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
+    return { deleted: true, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
   }
 }
 export async function withRecoveredOwner<T>(payload: Payload, code: unknown, issue: (owner: string) => Promise<T>): Promise<T> {

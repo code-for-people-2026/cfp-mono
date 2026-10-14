@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Payload } from "payload";
 import { expect, it, vi } from "vitest";
 import { Repository } from "../cms/repository";
-import { MediaService } from "./media";
+import { deleteMediaObjectsByOwnerDigest, MediaService } from "./media";
 import type { ImageObjectStore } from "../storage/oss";
 
 const prefix = (owner: string) => `hello-agent/${createHash("sha256").update(owner).digest("hex").slice(0, 32)}/`;
@@ -59,4 +59,13 @@ it("数据库部分删除失败不伪报成功，保留失败记录供重试", a
   await expect(service.deleteAll()).rejects.toMatchObject({ status: 503 });
   expect(rows.size).toBe(216);
   await service.deleteAll(); expect([...rows.keys()]).toEqual([216]);
+});
+
+it("摘要清理拒绝无效归属及缺少删除能力的对象存储", async () => {
+  const { store } = fixture(true);
+  for (const value of ["", "../", "a".repeat(32), "g".repeat(64)])
+    await expect(deleteMediaObjectsByOwnerDigest(value, () => store)).rejects.toMatchObject({ status: 500 });
+  expect(store.removePrefix).not.toHaveBeenCalled();
+  await expect(deleteMediaObjectsByOwnerDigest("a".repeat(64), () => ({ ...store, removePrefix: undefined }))).rejects.toMatchObject({ status: 503 });
+  await expect(deleteMediaObjectsByOwnerDigest("a".repeat(64), () => undefined)).resolves.toBeUndefined();
 });

@@ -1,3 +1,7 @@
+import { randomUUID } from "node:crypto";
+import { ImageGenerationService, canResumeImage, publicImageState, readImageState } from "../images/service";
+import { configuredImageProvider, type ImageProvider } from "../images/wan";
+import { configuredImageReviewer, imageReviewConfigured, reviewUpload as configuredUploadReview, type ImageReviewer } from "../images/image-review";
 import { uploadedAiXmp } from "../labeling/upload-provenance";
 import sharp from "sharp";
 import { Repository, fingerprint } from "../cms/repository";
@@ -33,9 +37,9 @@ export class GreetingService {
     readonly repo: Repository,
     private generate: Generator = platformGenerator,
     readonly media = new MediaService(repo),
-    // No production reviewer is wired until #383 lands. Configuration alone
-    // must never enable storage; the reviewer must explicitly allow the bytes.
-    private readonly reviewUpload?: (bytes: Buffer) => Promise<"allow" | "reject">,
+    private readonly reviewUpload: ((bytes: Buffer) => Promise<"allow" | "reject">) | undefined = configuredUploadReview,
+    private readonly imageReviewer: ImageReviewer = configuredImageReviewer,
+    private readonly imageProvider: () => ImageProvider = configuredImageProvider,
   ) {}
 
   async sessions(): Promise<Session[]> {
@@ -58,7 +62,7 @@ export class GreetingService {
   }
   async history(sessionId: number): Promise<Turn[]> {
     await this.repo.get("sessions", sessionId);
-    return this.repo.all("greetings", { sessionId: { equals: sessionId } });
+    return (await this.repo.all("greetings", { sessionId: { equals: sessionId } })).map(publicImageState);
   }
   async submission(
     sessionId: number,
@@ -75,10 +79,10 @@ export class GreetingService {
       },
       1,
     );
-    return { turn: rows[0] || null };
+    return { turn: rows[0] ? publicImageState(rows[0]) : null };
   }
   async upload(data: Uint8Array) {
-    if (!this.reviewUpload)
+    if (!this.reviewUpload || (this.reviewUpload === configuredUploadReview && !imageReviewConfigured()))
       throw new AppError(503, "图片审核暂不可用，请稍后重试或使用文字");
     if (data.length > 5 * 1024 * 1024)
       throw new AppError(413, "单张图片不能超过 5 MB");
@@ -119,6 +123,7 @@ export class GreetingService {
     input: Inspiration,
     model: string,
     extra?: Greeting,
+    resumeTurnId?: number,
   ) {
     const session = await this.repo.get("sessions", sessionId);
     await Promise.all(input.mediaIds.map((id) => this.repo.get("media", id)));
@@ -158,6 +163,10 @@ export class GreetingService {
     if (existing) {
       if (existing.fingerprint !== hash)
         throw new AppError(409, "同一个请求标识不能用于不同内容");
+      if (resumeTurnId === existing.id && canResumeImage(existing)) {
+        const row = await this.repo.update("greetings", existing.id, { status: "running", error: null });
+        return { row, duplicate: false };
+      }
       if (existing.status === "running" && mode !== "external")
         throw new AppError(
           409,
@@ -206,6 +215,9 @@ export class GreetingService {
       return row;
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
+    const image = readImageState(row);
+    if (image && (image.status !== "stored" || !(output.artifacts ?? []).some((item) => item.kind === "image" && item.source.type === "media" && item.source.mediaId === image.mediaId)))
+      throw new AppError(409, "生成图片尚未完成或未被引用，请使用已生成图片保存回应");
     for (const artifact of output.artifacts ?? [])
       if (artifact.kind === "image" && artifact.source.type === "media")
         await this.repo.get("media", artifact.source.mediaId);
@@ -214,7 +226,13 @@ export class GreetingService {
       status: "completed",
     });
   }
-  async generateGreeting(value: unknown) {
+  async resumeImage(turnId: number, apiKey?: string, progress?: (message: string) => void) {
+    const row = await this.repo.get("greetings", turnId);
+    if (row.status === "completed") return row;
+    if (!canResumeImage(row) || row.mode === "external") throw new AppError(409, "这次图片任务不能继续，请查看本轮状态");
+    return this.generateGreeting({ sessionId: row.sessionId, requestId: String(row.requestKey).slice(this.repo.owner.id.length + 1), input: row.input, mode: row.mode, apiKey }, progress, row.id);
+  }
+  async generateGreeting(value: unknown, progress?: (message: string) => void, resumeTurnId?: number) {
     const args = turnSchema.parse(value);
     const key =
       args.mode === "byok" ? args.apiKey : process.env.DEEPSEEK_API_KEY;
@@ -236,11 +254,15 @@ export class GreetingService {
         args.mode,
         args.input,
         model,
+        undefined,
+        resumeTurnId,
       );
       row = result.row;
       if (result.duplicate) return row;
       if (args.mode === "platform")
         await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
+      const images = new ImageGenerationService(this.repo, this.media, this.imageReviewer, this.imageProvider);
+      const imageState = readImageState(row);
       await this.generate({
         repo: this.repo,
         turnId: row.id,
@@ -249,6 +271,10 @@ export class GreetingService {
         apiKey: key,
         model,
         readImage: (id) => this.media.read(id),
+        generateImage: (input, signal) => images.generate(row!.id, input, signal, progress),
+        existingImage: imageState?.status === "stored" && imageState.mediaId ? { mediaId: imageState.mediaId, title: imageState.input.title, alt: imageState.input.alt } : undefined,
+        resumingImage: !!resumeTurnId,
+        executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
         save: (output) => this.complete(row!.id, output),
       });
       const saved = await this.repo.get("greetings", row.id);
@@ -265,7 +291,7 @@ export class GreetingService {
         await this.repo.update("greetings", row.id, {
           status: "failed",
           error:
-            error instanceof AppError && error.status === 429
+            error instanceof AppError
               ? error.message
               : "模型调用或保存失败，请检查配置后重试",
           durationMs: Date.now() - started,

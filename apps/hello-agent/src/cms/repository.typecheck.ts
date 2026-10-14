@@ -1,13 +1,14 @@
 import type { Payload } from "payload";
 import type { Inspiration, Turn } from "@cfp/hello-agent-contracts";
 import type { Session as AdkSession } from "@google/adk";
+import { publicImageState } from "../images/service";
 import type { Repository } from "./repository";
 
 // 只由 tsc 检查，绝不执行。若接口退化为 any/unknown，预期错误消失也会使检查失败。
 async function checkTypes(repo: Repository, payload: Payload) {
   const row = await repo.get("greetings", 1);
   const input: Inspiration = row.input;
-  const turn: Turn = row;
+  const turn: Turn = publicImageState(row);
   const snapshot: AdkSession = (await repo.get("adk-sessions", 1)).snapshot;
   await repo.create("sessions", { title: "有效输入" });
   await repo.update("greetings", 1, { status: "completed" });

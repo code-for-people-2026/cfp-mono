@@ -11,7 +11,7 @@ const platform = vi.hoisted(() => ({
 }));
 const api = vi.hoisted(() => ({
   getLegal: vi.fn(), getPrivacy: vi.fn(), establishIdentity: vi.fn(),
-  getSafety: vi.fn(), submitSafety: vi.fn(), updateConsent: vi.fn(),
+  updateConsent: vi.fn(),
   deletePersonalData: vi.fn(),
 }));
 vi.mock("@tarojs/taro", () => ({ default: platform, useRouter: () => ({ params: platform.params }), useDidShow: vi.fn() }));
@@ -30,7 +30,6 @@ beforeEach(() => {
   api.getLegal.mockResolvedValue(policy);
   api.establishIdentity.mockResolvedValue(undefined);
   api.getPrivacy.mockResolvedValue({ policy, state: "unaccepted", consent: null, expiresAt: null, hasRecoveryCode: false });
-  api.getSafety.mockResolvedValue({ configuration: { configured: false }, cases: [] });
 });
 afterEach(() => { act(() => renderer?.unmount()); });
 
@@ -57,27 +56,32 @@ it("删除需要完整确认短语，打开页面不会删除数据", async () =
   expect(button("确认删除在线数据").props.disabled).toBe(true);
   expect(api.deletePersonalData).not.toHaveBeenCalled();
 });
-it("帮助右侧图标可刷新，刷新保留正在填写的反馈", async () => {
+it("帮助只读取公开联系渠道，右侧图标刷新且不建立身份", async () => {
   await mount(HelpPage);
-  act(() => renderer.root.findByType("textarea").props.onInput({ detail: { value: "这是一条合成反馈" } }));
-  const refresh = renderer.root.findAllByType("button").find((item) => item.props["aria-label"] === "刷新受理记录")!;
+  const refresh = renderer.root.findAllByType("button").find((item) => item.props["aria-label"] === "刷新帮助与反馈")!;
+  api.getLegal.mockResolvedValueOnce({ ...policy, contact: "updated@example.invalid" });
   await act(async () => { refresh.props.onClick(); });
-  expect(api.getSafety).toHaveBeenCalledTimes(2);
-  expect(renderer.root.findByType("textarea").props.value).toBe("这是一条合成反馈");
+  expect(api.getLegal).toHaveBeenCalledTimes(2);
+  expect(view()).toContain("updated@example.invalid");
+  expect(api.establishIdentity).not.toHaveBeenCalled();
   expect(renderer.root.findAllByType("button").some((item) => item.props["aria-label"] === "关闭帮助与反馈")).toBe(true);
 });
-it("反馈通过现有接口提交，只有成功返回才显示受理编号", async () => {
-  api.submitSafety.mockRejectedValueOnce(new Error("后台暂未就绪"));
+it("反馈未开放时没有可提交表单或虚构受理记录", async () => {
+  platform.params = { turnId: "42" };
   await mount(HelpPage);
-  act(() => renderer.root.findByType("textarea").props.onInput({ detail: { value: "这是一条合成反馈" } }));
-  await act(async () => { button("提交反馈").props.onClick(); });
-  expect(view()).toContain("后台暂未就绪"); expect(view()).not.toContain("已提交，受理编号");
-  expect(renderer.root.findByType("textarea").props.value).toBe("这是一条合成反馈");
-  api.submitSafety.mockResolvedValueOnce({ receipt: "synthetic-receipt" });
-  await act(async () => { button("提交反馈").props.onClick(); });
-  expect(api.submitSafety).toHaveBeenLastCalledWith({ kind: "complaint", category: "other", description: "这是一条合成反馈" });
-  expect(view()).toContain("synthetic-receipt");
-  expect(renderer.root.findByType("textarea").props.value).toBe("");
+  expect(button("在线反馈暂未开放").props.disabled).toBe(true);
+  expect(renderer.root.findAllByType("textarea")).toHaveLength(0);
+  expect(view()).toContain("回应编号 #");
+  expect(view()).not.toContain("已提交，受理编号");
+});
+it("帮助联系渠道读取失败显示错误，刷新后恢复", async () => {
+  api.getLegal.mockRejectedValueOnce(new Error("联系渠道读取失败"));
+  await mount(HelpPage);
+  expect(view()).toContain("联系渠道读取失败");
+  const refresh = renderer.root.findAllByType("button").find((item) => item.props["aria-label"] === "刷新帮助与反馈")!;
+  await act(async () => { refresh.props.onClick(); });
+  expect(view()).not.toContain("联系渠道读取失败");
+  expect(view()).toContain(policy.contact);
 });
 it("独立设置页只保留三个入口，连接方式进入子页面", async () => {
   const { default: Settings } = await import("../src/pages/settings/index");

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Payload } from "payload";
 import { Repository } from "../cms/repository";
+import { deleteMediaObjectsByOwnerDigest } from "../domain/media";
 import { PrivacyService } from "./service";
 import { deletionLedgerPath, readDeletionLedger } from "./deletion-ledger";
 
@@ -58,6 +59,8 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
       }
     }
   }
+  const objectOnlyDigests = new Set(revoked);
+  for (const id of owners) objectOnlyDigests.delete(createHash("sha256").update(id).digest("hex"));
   let deleted = 0;
   const failures: Error[] = [];
   for (const id of owners) {
@@ -71,6 +74,16 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
       failures.push(new Error(`身份清理失败，ownerDigest=${createHash("sha256").update(id).digest("hex")}`));
     }
   }
+  // Database and object snapshots may have different cutoffs. A missing owner
+  // row must not prevent replaying that identity's independent deletion entry.
+  for (const ownerDigest of objectOnlyDigests) {
+    if (!options.apply) continue;
+    try {
+      await deleteMediaObjectsByOwnerDigest(ownerDigest); deleted++;
+    } catch {
+      failures.push(new Error(`对象清理失败，ownerDigest=${ownerDigest}`));
+    }
+  }
   if (options.apply) {
     try {
       const locks = await payload.delete({ collection: "age-locks", overrideAccess: true, where: { expiresAt: { less_than: new Date().toISOString() } } });
@@ -81,7 +94,7 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
       if (expired.errors.length) throw new Error("partial deletion");
     } catch { failures.push(new Error("过期凭证清理失败")); }
   }
-  const result = { dryRun: !options.apply, eligibleIdentities: owners.size, deleted };
+  const result = { dryRun: !options.apply, eligibleIdentities: owners.size + objectOnlyDigests.size, deleted };
   if (failures.length) throw new PrivacyMaintenanceError(result, failures);
   return result;
 }

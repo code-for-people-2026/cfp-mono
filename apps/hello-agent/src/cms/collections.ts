@@ -173,6 +173,7 @@ export const collections: CollectionConfig[] = [
     },
   ]),
   owned("greetings", "生成轮次与吉祥话", [
+    { name: "imageGeneration", label: "生图任务", type: "json", admin: { readOnly: true } },
     {
       name: "sessionId",
       label: "会话 ID",
@@ -288,6 +289,8 @@ export const collections: CollectionConfig[] = [
     { name: "expiresAt", label: "失效时间", type: "date", required: true },
   ]),
   owned("media", "灵感图片", [
+    { name: "generation", label: "生图来源", type: "json" },
+    { name: "generationKey", type: "text", unique: true, admin: { hidden: true } },
     {
       name: "mimeType",
       label: "图片与格式",

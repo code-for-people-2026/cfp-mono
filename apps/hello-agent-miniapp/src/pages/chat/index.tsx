@@ -271,6 +271,19 @@ export default function Chat() {
       sendLock.current = false;
     }
   }
+  async function resumeImage(row: Turn) {
+    if (disabled || sendLock.current) return;
+    sendLock.current = true;
+    setLoading(true);
+    setError("");
+    try {
+      await api.resumeImage(row.id, requestId(), row.mode === "byok" ? apiKey : undefined, setProgress);
+      if (activeSession.current) await readHistory(activeSession.current);
+    } catch (value) {
+      problem(value);
+      if (activeSession.current) await readHistory(activeSession.current).catch(() => {});
+    } finally { setLoading(false); setProgress(undefined); sendLock.current = false; }
+  }
   async function refreshSessions() {
     try {
       setSessions(await api.getSessions());
@@ -759,9 +772,10 @@ export default function Chat() {
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
-                            ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
+                            ? row.error || "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
                             : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
                       </MessageText>
+                      {row.imageGeneration?.canResume && <Button className="text-button" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
                       {row.status === "completed" && (
                         <Artifacts
                           external={row.mode === "external"}
