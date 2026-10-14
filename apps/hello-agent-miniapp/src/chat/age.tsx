@@ -106,9 +106,12 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
           <Text className="age-title">先登录一下吧</Text>
           <Text className="age-copy">{status?.configuration.previewOnly ? "用微信登录，体验新的开始方式。" : "用微信登录，留住和阿J的对话。"}</Text>
           <View className="age-profile-fields">
+            <View className="age-avatar-option">
             <Button className="age-avatar-picker" openType={native ? "chooseAvatar" : undefined} disabled={busy || !native} onChooseAvatar={(event) => setAvatarPath(event.detail.avatarUrl)} ariaLabel="选择头像，可使用微信头像">
               <AccountAvatar source={avatarPath} /><Text className="age-avatar-caption">选头像</Text>
             </Button>
+            {avatarPath && <Button className="age-avatar-reset" ariaLabel="改用随机头像" disabled={busy} onClick={() => setAvatarPath("")}>×</Button>}
+            </View>
             <View className="age-nickname-field">
               <Input className="age-nickname" type={native ? "nickname" : "text"} value={nickname} maxlength={24} placeholder="怎么称呼你？" disabled={busy || !native} ariaLabel="昵称，可使用微信昵称" onInput={(event) => setNickname(event.detail.value)} onBlur={(event) => setNickname(event.detail.value)} onNickNameReview={(event) => { if (!event.detail.pass) { setNickname(""); setMessage("这个昵称暂时不能使用，请换一个。"); } }} />
               <Text className="age-profile-hint">可用微信昵称和头像 · 留空随机生成</Text>

@@ -46,3 +46,12 @@ it("平台拒绝的昵称被清空，不提交该昵称；登录后生日窗口�
   expect(JSON.stringify(renderer.toJSON())).toContain("你的生日是？");
   expect(button("age-close")).toBeDefined();
 });
+
+it("已选头像可以清除并改用随机头像", async () => {
+  act(() => { renderer = create(createElement(AgeGate, props)); });
+  act(() => { button("age-avatar-picker").props.onChooseAvatar({ detail: { avatarUrl: "wxfile://avatar.jpg" } }); });
+  act(() => { button("age-avatar-reset").props.onClick(); });
+  expect(renderer.root.findAllByType("image")).toHaveLength(0);
+  await act(async () => { await button("age-primary").props.onClick(); });
+  expect(api.loginWechat).toHaveBeenCalledWith(false, "test", { nickname: "", avatarPath: "" });
+});
