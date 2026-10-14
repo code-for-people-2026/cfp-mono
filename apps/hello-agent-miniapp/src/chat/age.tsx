@@ -44,7 +44,7 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
   async function confirmBirthday() {
     if (!status || !birthdayDeclaration) return;
     // Only the age band leaves this form; a birthday never becomes verified evidence.
-    if (birthdayDeclaration === "under14") {
+    if (birthdayDeclaration === "under14" || status.configuration.previewOnly) {
       const result = await api.beginAge({ declaration: birthdayDeclaration, noticeVersion: status.notice.version, consent: true });
       onChange(result.status);
     }
@@ -76,8 +76,8 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
           {detail === "login" && <>
             <Text className="age-note">微信用于识别你的账号、恢复对话。我们保存账号标识的摘要，不获取手机号。点击“同意并微信登录”表示同意登录所需的身份信息处理。</Text>
             <Text className="age-note">登录后会询问生日，再根据年龄申报引导核验；使用授权可在隐私设置中管理。</Text>
-            <CheckboxGroup onChange={(event) => setMigrate(event.detail.value.includes("migrate"))}><Label className="age-choice"><Checkbox value="migrate" checked={migrate} /><Text>保留当前设备的旧记录（可选）</Text></Label></CheckboxGroup>
-            <Text className="age-note">仅首次绑定且能验证旧记录归属时保留；微信已有记录时恢复原账号，不自动合并其他历史。</Text>
+            {!status?.configuration.previewOnly && <CheckboxGroup onChange={(event) => setMigrate(event.detail.value.includes("migrate"))}><Label className="age-choice"><Checkbox value="migrate" checked={migrate} /><Text>保留当前设备的旧记录（可选）</Text></Label></CheckboxGroup>}
+            <Text className="age-note">{status?.configuration.previewOnly ? "本预览只体验登录和生日，不读取或迁移现有聊天。" : "仅首次绑定且能验证旧记录归属时保留；微信已有记录时恢复原账号，不自动合并其他历史。"}</Text>
             {!native && <Text className="age-note">当前为网页预览，请在微信小程序中登录。网页可查看已有记录、隐私说明和帮助。</Text>}
             {!status?.configuration.wechat && <Text className="age-note">微信登录服务尚未配置，暂时无法完成真实登录。</Text>}
           </>}
@@ -98,7 +98,7 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
         </>}
         {step === "login" && <>
           <Text className="age-title">先登录一下吧</Text>
-          <Text className="age-copy">用微信登录，留住和阿J的对话。</Text>
+          <Text className="age-copy">{status?.configuration.previewOnly ? "用微信登录，体验新的开始方式。" : "用微信登录，留住和阿J的对话。"}</Text>
           <Button className="age-primary" disabled={busy || !native || !status?.configuration.wechat} onClick={() => void act(login)}>{busy ? "正在登录…" : "同意并微信登录"}</Button>
           {(!native || !status?.configuration.wechat) && <Text className="age-hint">{!native ? "请在微信小程序中登录" : "登录暂不可用，请稍后再试"}</Text>}
           {explanation("login", "登录与使用说明")}
@@ -113,9 +113,9 @@ export function AgeGate({ status, loadingError, privacyReady, onChange, onRefres
           {explanation("birthday", "为什么需要生日？")}
         </>}
         {step === "verify" && <>
-          <Text className="age-title">{status?.configuration.provider ? "确认一下年龄" : "暂时无法核验年龄"}</Text>
+          <Text className="age-title">{status?.configuration.previewOnly ? "已完成体验" : status?.configuration.provider ? "确认一下年龄" : "暂时无法核验年龄"}</Text>
           {!status?.configuration.provider ? <>
-            <Text className="age-copy">服务暂不可用，请稍后再来。</Text>
+            <Text className="age-copy">{status?.configuration.previewOnly ? "已完成本次登录和生日体验，年龄核验与聊天稍后开放。" : "服务暂不可用，请稍后再来。"}</Text>
             <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>
           </> : <>
             <Text className="age-copy">需要本人姓名和身份证，由腾讯云核验。</Text>
