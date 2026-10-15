@@ -1390,12 +1390,18 @@ input {
   margin-right: -10px;
   border: 2px solid #f7f9f4;
 }
-.evidence-card .artifact-preview {
-  background: #fafbf9;
-  border-color: #eef1eb;
+.evidence-note {
+  border-top: 1px solid #edf1ee;
+  margin-top: 10px;
+  padding-top: 6px;
 }
-.evidence-card .artifact-preview-icon {
-  background: transparent;
+.evidence-toggle {
+  padding: 4px 0;
+  color: #839488;
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: nowrap;
 }
 
 .detail-overlay {

@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Text, View } from "@tarojs/components";
+import { Button, Text, View } from "@tarojs/components";
 import type { Turn } from "./model";
 import { modes } from "./model";
-import { CompactCard } from "./artifact-preview";
 import { BottomSheet } from "./bottom-sheet";
 import { MessageText } from "./message-text";
 
@@ -19,15 +18,14 @@ const approaches: Record<string, string> = {
 export function EvidenceCard({ turn }: { turn: Turn }) {
   const [open, setOpen] = useState(false);
   return (
-    <View className="evidence-card">
-      <CompactCard
-        external={turn.mode === "external"}
-        title="为什么这样说"
-        summary={turn.association || undefined}
-        meta={approaches[turn.approach || ""] || "回应思路"}
-        icon="search"
+    <View className="evidence-note">
+      <Button
+        className="control evidence-toggle"
+        ariaLabel="查看为什么这样说"
         onClick={() => setOpen(true)}
-      />
+      >
+        看看为什么这样说 ＋
+      </Button>
       {open && (
         <BottomSheet title="回应依据" onClose={() => setOpen(false)}>
           <MessageText
