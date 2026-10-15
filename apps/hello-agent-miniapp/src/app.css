@@ -131,11 +131,7 @@ input {
   word-break: break-word;
 }
 .assistant-bubble {
-  padding: 14px 15px;
-  background: #fff;
-  border: 1px solid #e8eee9;
-  border-radius: 17px;
-  box-shadow: 0 3px 8px #1f402804;
+  padding: 8px 0;
 }
 .welcome-title {
   display: block;
@@ -396,7 +392,6 @@ input {
   padding: 4px 0;
 }
 .failed-bubble {
-  background: #fff9f1;
   color: #9d7650;
 }
 .loading-note {
