@@ -16,10 +16,14 @@ const origin = "http://127.0.0.1:3315";
 const env: NodeJS.ProcessEnv = { ...process.env, HELLO_ORIGIN: origin, HELLO_DATABASE_URI: `file:${directory}/test.db`, HELLO_PRIVACY_DELETION_LEDGER: `${directory}/ledger.ndjson`, HELLO_HTTP_ISOLATED: "true", HELLO_TRUST_PROXY: "false", HELLO_ADMIN_BOOTSTRAP: "false", NODE_ENV: "production" };
 const child = (script: string, extra: Partial<NodeJS.ProcessEnv> = {}, args: string[] = []) => promisify(execFile)(process.execPath, ["--import", "tsx", script, ...args], { env: { ...env, ...extra }, timeout: 240_000, maxBuffer: 2 ** 20 });
 let server: ReturnType<typeof spawn> | undefined;
+let stage = "initialize";
+const secrets = Object.entries(process.env).filter(([key, value]) => /secret|token|key|password/i.test(key) && value).map(([, value]) => value!);
+const externalOnly = process.env.HELLO_SMOKE_EXTERNAL_ONLY === "true";
 try {
   await child("scripts/seed.ts");
   const seeded = await child("scripts/http-fixture.ts");
   const fixtures = JSON.parse(seeded.stdout.trim().split("\n").at(-1)!) as { native: { token: string } };
+  secrets.push(fixtures.native.token);
   const headers = { Authorization: `Bearer ${fixtures.native.token}`, "Content-Type": "application/json" };
   server = spawn(process.execPath, [createRequire(import.meta.url).resolve("next/dist/bin/next"), "start", "-H", "127.0.0.1", "-p", "3315"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let ready = false;
@@ -39,22 +43,31 @@ try {
   assert.equal(policy.ready, true);
   await post("privacy/consent", { version: policy.version, core: true, model: true, sensitive: true, external: true, externalRecipient: { name: "隔离验收客户端与 DeepSeek", contact: "test@example.invalid", region: "中国境内", privacyUrl: "https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html" } });
   const session = sessionSchema.parse(await post("sessions", { title: "隔离三种文字聊天验收" }));
-  for (const mode of ["platform", "byok"] as const) {
+  for (const mode of (externalOnly ? [] : ["platform", "byok"] as const)) {
+    stage = mode;
     const turn = turnResultSchema.parse(await post("greet", { sessionId: session.id, requestId: randomUUID(), mode, ...(mode === "byok" ? { apiKey: process.env.DEEPSEEK_API_KEY } : {}), input: { text: "今天把桌面收拾整齐了，感觉轻松了一点。请简短回应。", mediaIds: [] } }));
     assert.equal(turn.status, "completed");
     assert.ok(turn.greeting);
     console.log(`PASS real ${mode} text generation`);
   }
+  stage = "external-token";
   const credential = await post("token", {}) as { token: string };
+  secrets.push(credential.token);
+  stage = "external-client";
   const external = await child("scripts/external-agent.ts", { HELLO_MCP_TOKEN: credential.token, HELLO_SESSION_ID: String(session.id) }, ["今天散步看到了阳光，请简短回应。"]);
+  stage = "external-result";
   assert.equal(JSON.parse(external.stdout).status, "completed");
+  stage = "shared-history";
   const history = historySchema.parse(await (await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers })).json());
-  assert.deepEqual(history.map((row) => row.mode), ["platform", "byok", "external"]);
+  assert.deepEqual(history.map((row) => row.mode), externalOnly ? ["external"] : ["platform", "byok", "external"]);
   assert.ok(!JSON.stringify(history).includes(process.env.DEEPSEEK_API_KEY!));
   console.log("PASS real external MCP generation and shared history; no customer database used");
-} catch {
-  // Child-process errors can contain request credentials; never echo raw errors.
-  console.error("三种真实文字聊天验收失败，未输出请求、密钥或原始异常。");
+} catch (error) {
+  // Keep diagnostic output limited to the disposable fixture; redact credentials.
+  let detail = error instanceof Error ? error.message : "unknown";
+  for (const secret of secrets) if (secret.length >= 6) detail = detail.split(secret).join("[redacted]");
+  detail = detail.replace(/Bearer\s+[A-Za-z0-9_-]+/g, "Bearer [redacted]");
+  console.error(JSON.stringify({ stage, error: detail.slice(-6000) }));
   process.exitCode = 1;
 } finally {
   if (server && server.exitCode === null) {
