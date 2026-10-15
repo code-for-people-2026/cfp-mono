@@ -17,7 +17,7 @@ const env: NodeJS.ProcessEnv = { ...process.env, HELLO_ORIGIN: origin, HELLO_DAT
 const child = (script: string, extra: Partial<NodeJS.ProcessEnv> = {}, args: string[] = []) => promisify(execFile)(process.execPath, ["--import", "tsx", script, ...args], { env: { ...env, ...extra }, timeout: 240_000, maxBuffer: 2 ** 20 });
 let server: ReturnType<typeof spawn> | undefined;
 try {
-  await child("scripts/init-db.ts");
+  await child("scripts/seed.ts");
   const seeded = await child("scripts/http-fixture.ts");
   const fixtures = JSON.parse(seeded.stdout.trim().split("\n").at(-1)!) as { native: { token: string } };
   const headers = { Authorization: `Bearer ${fixtures.native.token}`, "Content-Type": "application/json" };
