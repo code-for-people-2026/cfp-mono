@@ -11,7 +11,7 @@ import { wechatLogin } from "./wechat";
 const agePreviewEnabled = () => process.env.HELLO_PREVIEW_SCOPE === "login-and-age";
 const previewStatus = (status: Awaited<ReturnType<AgeService["status"]>>) => ({ ...status, allowed: false, configuration: { ...status.configuration, previewOnly: true } });
 const json = (value: unknown, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
-export function previewPolicy() {
+function previewPolicy() {
   return {
     version: `onboarding-preview-v1.${ageNotice().version}`, ready: false,
     contact: "请联系本次预览的提供者。", retentionDays: 30, backupDays: null, responseDays: null, imageReviewDisclosed: false,

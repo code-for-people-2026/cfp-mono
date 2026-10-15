@@ -8,7 +8,7 @@ import { authenticate, mintCredential, checkClientRequest, revokeCredentials } f
 import { withAgeLock } from "./lock";
 import { ageNotice, wechatConfigured } from "./policy";
 
-export type WechatExchange = (code: string) => Promise<string>;
+type WechatExchange = (code: string) => Promise<string>;
 export const exchangeWechat: WechatExchange = async (code) => {
   if (!wechatConfigured()) throw new AppError(503, "微信登录尚未配置，请联系运营方；不会用访客身份冒充微信登录");
   try {
