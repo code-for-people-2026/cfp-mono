@@ -12,6 +12,7 @@ import {
   validateA2uiMessages,
 } from "@cfp/hello-agent-protocol";
 import { ScriptedModel } from "./scripted-model";
+import { seedSyntheticAge } from "./synthetic-age";
 
 const directory = await mkdtemp(path.join(tmpdir(), "aj-artifact-check-"));
 process.env.HELLO_DATABASE_URI = `file:${directory}/test.db`;
@@ -255,7 +256,9 @@ try {
     /回应尚未保存/,
   );
   assert.deepEqual(repaired.artifacts, artifacts);
-  const credential = await mintCredential(payload, "cookie", owner.id);
+  await seedSyntheticAge(payload, repo.owner);
+  await seedSyntheticAge(payload, stranger.repo.owner);
+  const credential = await mintCredential(payload, "cookie", owner.id, repo.owner.wechatKey);
   for (const kind of ["image", "page"]) {
     const segments = [
       `artifact-${kind}`,
@@ -287,6 +290,7 @@ try {
       payload,
       "cookie",
       stranger.repo.owner.id,
+      stranger.repo.owner.wechatKey,
     );
     const denied = await GET(
       new Request(url, {

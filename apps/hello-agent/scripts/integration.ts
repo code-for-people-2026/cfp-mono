@@ -189,7 +189,7 @@ try {
     name: "hello_save_greeting",
     arguments: external,
   });
-  assert.ok(!response.isError);
+  assert.ok(!response.isError, JSON.stringify(response.content));
   await client.callTool({ name: "hello_save_greeting", arguments: external });
   const externalRows = (await service.history(session.id)).filter(
     (row) => row.mode === "external",
