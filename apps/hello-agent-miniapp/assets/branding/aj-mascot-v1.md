@@ -2,6 +2,8 @@
 
 2026-10-05 使用内置 imagegen 生成，未使用 CLI/API 回退。页面资源为 `src/assets/aj-mascot.png`，透明底 PNG。独立静态文件打包，不内嵌 base64，不依赖用户图片 OSS，不覆盖已有 J 字母小丑标志。
 
+2026-10-15 恢复包内 PNG：此前为控制包大小改为 WebP，导致手机首页形象无法显示。微信 Image 的 WebP 开关仅支持网络资源（[Taro 组件文档](https://docs.taro.zone/docs/components/media/image#imageprops)）。现从原始 PNG 用 Zopfli 无损压缩为 1,433,250 字节，解码后逐像素与原图一致，透明度和尺寸保持不变。发布检查读取实际小程序页面引用并校验 PNG 文件头，防止再次引入本地 WebP。
+
 设计方向：友善、温和的绿色小丑帽卡通阿J，用于欢迎页和聊天头像；借鉴用户参考图的“大形象＋欢迎词”层级，不复刻豆包角色。
 
 ## 生成提示词

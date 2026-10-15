@@ -27,7 +27,7 @@ import {
   type FormValues,
   type RunProgress,
 } from "@cfp/hello-agent-protocol";
-import mascot from "../../assets/aj-mascot.webp";
+import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
   requestId,
