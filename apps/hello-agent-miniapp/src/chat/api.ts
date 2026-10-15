@@ -132,7 +132,21 @@ export function establishIdentity(): Promise<void> {
   });
   return identityPromise;
 }
-export const getAge = () => request("age", ageStatusSchema);
+let loginRecovery: Promise<void> | undefined;
+export async function getAge() {
+  const attemptedToken = deviceToken;
+  try { return await request("age", ageStatusSchema); }
+  catch (error) {
+    if (!native || !(error instanceof IdentityExpiredError)) throw error;
+    // A guest can only open the login form. WeChat login restores the same
+    // server account and its history; never delete or migrate data here.
+    if (attemptedToken === deviceToken) {
+      loginRecovery ??= restartIdentity().finally(() => { loginRecovery = undefined; });
+      await loginRecovery;
+    }
+    return request("age", ageStatusSchema);
+  }
+}
 export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true; correction?: boolean }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
 export const submitAge = (body: { challenge: string; name: string; idCard: string }) => request("age/submit", ageStatusSchema, "POST", body);
 export const cancelAge = () => request("age/cancel", ageStatusSchema, "POST", {});

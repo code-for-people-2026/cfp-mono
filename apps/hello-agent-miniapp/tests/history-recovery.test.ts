@@ -49,6 +49,10 @@ vi.mock("@tarojs/components", () => ({
   Textarea: "textarea",
   ScrollView: "scroll-view",
   RootPortal: "root-portal",
+  Checkbox: "checkbox",
+  CheckboxGroup: "checkbox-group",
+  Label: "label",
+  Picker: "picker",
 }));
 
 type AgentBody = {
@@ -164,6 +168,36 @@ async function openArtifact() {
       .props.onClick();
   });
 }
+
+it("后台重置登录后直接显示新用户登录窗口，保留对话并使用新凭证加载页面", async () => {
+  const originalRequest = platform.request.getMockImplementation()!;
+  const preservedHistory = structuredClone(history);
+  platform.request.mockImplementation(async (options: { url: string; header: { Authorization?: string } }) => {
+    const route = options.url.split("/api/hello/")[1];
+    if (route === "miniapp-identity") {
+      expect(options.header.Authorization).toBeUndefined();
+      return { statusCode: 200, data: { token: "signed-out-token", expiresAt: "2030-01-01" } };
+    }
+    if (route === "age" && options.header.Authorization === "Bearer fixture-device-token")
+      return { statusCode: 401, data: {} };
+    expect(options.header.Authorization).toBe("Bearer signed-out-token");
+    if (route === "age") return { statusCode: 200, data: {
+      loggedIn: false, state: "unverified", allowed: false, verifiedAt: null,
+      expiresAt: null, source: null, assurance: null, additionalVerification: "not_requested",
+      notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true, previewOnly: true },
+    } };
+    expect(["config", "privacy"]).toContain(route);
+    return originalRequest(options);
+  });
+  await mount(false);
+  expect(text()).toContain("先登录一下吧");
+  expect(text()).not.toContain("设备凭证");
+  expect(text()).not.toContain("重新开始");
+  expect(text()).not.toContain("仍能看见的好彩头");
+  expect(platform.showModal).not.toHaveBeenCalled();
+  expect(history).toEqual(preservedHistory);
+  expect(platform.request.mock.calls.some(([options]) => options.method === "DELETE")).toBe(false);
+});
 
 async function chooseModeInSettings(index: number) {
   const { default: SettingsPage } = await import("../src/pages/connection/index");

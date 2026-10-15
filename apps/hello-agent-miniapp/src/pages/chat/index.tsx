@@ -285,10 +285,13 @@ export default function Chat() {
     setError("");
     try {
       await api.establishIdentity();
-      const [config, nextPrivacy, nextAge] = await Promise.all([
+      // Recover a revoked WeChat login before issuing other authenticated reads.
+      const nextAge = await api.getAge();
+      if (version !== bootVersion.current) return;
+      if (!nextAge.loggedIn) clearIdentityView(false);
+      const [config, nextPrivacy] = await Promise.all([
         api.getSettings(),
         api.getPrivacy(),
-        api.getAge(),
       ]);
       if (version !== bootVersion.current) return;
       setAge(nextAge);
@@ -329,8 +332,8 @@ export default function Chat() {
       if (version === bootVersion.current) setLoading(false);
     }
   }
-  function clearIdentityView() {
-    bootVersion.current++;
+  function clearIdentityView(invalidateBoot = true) {
+    if (invalidateBoot) bootVersion.current++;
     setAge(undefined);
     setProfile(undefined); setAvatarSource(undefined);
     setAgeOpen(true);
