@@ -123,3 +123,5 @@ export type ModelContext = z.output<typeof modelContextSchema>;
 export type Decoder<T> = {
   parse(value: unknown, options?: { jitless?: boolean }): T;
 };
+
+export * from "./privacy";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ request: vi.fn(), chooseImage: vi.fn() }));
+const mocks = vi.hoisted(() => ({ request: vi.fn(), chooseImage: vi.fn(), downloadFile: vi.fn(), shareFileMessage: vi.fn() }));
 vi.mock("@tarojs/taro", () => ({ default: mocks }));
 afterEach(() => {
   vi.resetModules();
@@ -87,4 +87,13 @@ describe("网络响应不能靠泛型强信任", () => {
     const api = await import("../src/chat/api");
     await expect(api.getSessions()).rejects.toThrow("暂时连接不上");
   });
+});
+
+it.each([[413, "申请完整副本"], [429, "一分钟后"], [401, "设备凭证无效"], [500, "稍后重试"]])("微信导出失败 %s 不分享错误文件，并解释可恢复的原因", async (statusCode, message) => {
+  vi.stubEnv("TARO_ENV", "weapp");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+  mocks.downloadFile.mockResolvedValue({ statusCode, tempFilePath: "error-response.json" });
+  const api = await import("../src/chat/api");
+  await expect(api.exportPersonalData()).rejects.toThrow(String(message));
+  expect(mocks.shareFileMessage).not.toHaveBeenCalled();
 });

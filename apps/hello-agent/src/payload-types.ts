@@ -69,6 +69,7 @@ export interface Config {
   collections: {
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
+    'privacy-profiles': PrivacyProfile;
     'platform-model-quotas': PlatformModelQuota;
     admins: Admin;
     credentials: Credential;
@@ -86,6 +87,7 @@ export interface Config {
   collectionsSelect: {
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
+    'privacy-profiles': PrivacyProfilesSelect<false> | PrivacyProfilesSelect<true>;
     'platform-model-quotas': PlatformModelQuotasSelect<false> | PlatformModelQuotasSelect<true>;
     admins: AdminsSelect<false> | AdminsSelect<true>;
     credentials: CredentialsSelect<false> | CredentialsSelect<true>;
@@ -197,6 +199,41 @@ export interface KnowledgeBase {
   hasApiKey?: boolean | null;
   clearApiKey?: boolean | null;
   encryptedApiKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "privacy-profiles".
+ */
+export interface PrivacyProfile {
+  id: number;
+  owner: string;
+  state: 'active' | 'withdrawn' | 'deleting' | 'deleted';
+  revision: number;
+  consent?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  sensitiveHistory?: boolean | null;
+  historyInspected?: boolean | null;
+  events?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  recoveryDigest?: string | null;
+  expiresAt?: string | null;
+  deletedAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -462,6 +499,24 @@ export interface KnowledgeBasesSelect<T extends boolean = true> {
   hasApiKey?: T;
   clearApiKey?: T;
   encryptedApiKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "privacy-profiles_select".
+ */
+export interface PrivacyProfilesSelect<T extends boolean = true> {
+  owner?: T;
+  state?: T;
+  revision?: T;
+  consent?: T;
+  sensitiveHistory?: T;
+  historyInspected?: T;
+  events?: T;
+  recoveryDigest?: T;
+  expiresAt?: T;
+  deletedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

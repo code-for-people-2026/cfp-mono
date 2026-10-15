@@ -1,3 +1,4 @@
+import { privacyCollections, guardPrivacyWrite } from "../privacy/collections";
 import {
   APIError,
   type Access,
@@ -46,11 +47,13 @@ const owned = (
     update: internalWrite,
     delete: internalWrite,
   },
+  hooks: { beforeChange: [guardPrivacyWrite] },
   fields: [...ownedFields, ...fields],
 });
 
 export const collections: CollectionConfig[] = [
   ...agentCollections,
+  ...privacyCollections,
   {
     slug: "platform-model-quotas",
     admin: { hidden: true },

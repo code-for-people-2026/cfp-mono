@@ -2,7 +2,13 @@ import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
 import { artifacts } from "../../../packages/hello-agent-protocol/test/fixtures";
-const mocks = vi.hoisted(() => ({ request: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  request: vi.fn(),
+  getStorageSync: vi.fn(),
+  downloadFile: vi.fn(),
+  setClipboardData: vi.fn(),
+  showToast: vi.fn(),
+}));
 vi.mock("@tarojs/taro", () => ({ default: mocks }));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
@@ -140,6 +146,82 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
         .find((node) => node.props.className?.includes("artifact-submit"))!
         .props.disabled,
     ).toBe(true);
+  } finally {
+    act(() => renderer!.unmount());
+  }
+});
+
+it.each([false, true])(
+  "图片说明原生长按复制保留 AI 和来源声明（external=%s）",
+  async (external) => {
+    vi.stubEnv("TARO_ENV", "weapp");
+    vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+    mocks.downloadFile.mockResolvedValue({
+      statusCode: 200,
+      tempFilePath: "synthetic-image.png",
+    });
+    mocks.setClipboardData.mockResolvedValue({});
+    const { Artifacts } = await import("../src/chat/artifacts");
+    const images = artifacts.filter((item) => item.kind === "image");
+    let renderer: ReturnType<typeof create>;
+    await act(async () => {
+      renderer = create(
+        createElement(Artifacts, {
+          turnId: 1,
+          artifacts: images,
+          responses: {},
+          external,
+        }),
+      );
+    });
+    try {
+      await act(async () => {
+        renderer!.root.findByType("button").props.onClick();
+      });
+      const caption = renderer!.root
+        .findAllByType("text")
+        .find((item) => item.children.join("") === images[0].alt)!;
+      expect(caption.props.selectable).toBe(false);
+      await act(async () => {
+        caption.props.onLongPress();
+      });
+      expect(mocks.setClipboardData).toHaveBeenLastCalledWith({
+        data: `AI 生成${external ? "（外部客户端声明）" : ""} · 阿 J 先生\n${images[0].alt}`,
+      });
+    } finally {
+      act(() => renderer!.unmount());
+    }
+  },
+);
+
+it("H5 图片加载及失败保留系统来源，图片说明保留生成来源", async () => {
+  vi.stubEnv("TARO_ENV", "h5");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+  const { ArtifactImage } = await import("../src/chat/artifact-components");
+  const images = artifacts.filter((item) => item.kind === "image");
+  let renderer: ReturnType<typeof create>;
+  act(() => {
+    renderer = create(
+      createElement(ArtifactImage, {
+        url: "/api/hello/artifact-image/1/image",
+        alt: images[0].alt,
+        external: true,
+      }),
+    );
+  });
+  try {
+    const text = (value: string) =>
+      renderer!.root
+        .findAllByType("text")
+        .find((item) => item.children.join("") === value)!;
+    expect(text("加载中…").props["data-ai-generated"]).toBe("false");
+    expect(text(images[0].alt).props["data-ai-generated"]).toBe("true");
+    expect(text(images[0].alt).props["data-ai-external"]).toBe("true");
+    await act(async () => {}); // Let the URL resolve, then simulate the image load failure.
+    act(() => {
+      renderer!.root.findByType("image").props.onError();
+    });
+    expect(text("图片暂不可用").props["data-ai-generated"]).toBe("false");
   } finally {
     act(() => renderer!.unmount());
   }

@@ -16,7 +16,8 @@ const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { MAX_STORED_IMAGE_BASE64_LENGTH } = await import("../src/domain/media-policy");
 const payload = await cms();
-const service = new GreetingService(new Repository(payload, { id: randomUUID(), auth: "miniapp" }));
+// Storage regression uses an explicit synthetic allow decision.
+const service = new GreetingService(new Repository(payload, { id: randomUUID(), auth: "miniapp" }), undefined, undefined, async () => "allow");
 let failed = false;
 try {
   for (const width of [128, 256, 512]) {

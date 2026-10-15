@@ -57,13 +57,35 @@ function ArtifactSurfaces({
           initialValues={responses[surface.id]}
         >
           {compact ? (
-            <ArtifactPreview surface={surface}>{content}</ArtifactPreview>
+            <ArtifactPreview surface={surface}>
+              <ArtifactDetails external={props.external}>
+                {content}
+              </ArtifactDetails>
+            </ArtifactPreview>
           ) : (
-            content
+            <ArtifactDetails external={props.external}>
+              {content}
+            </ArtifactDetails>
           )}
         </ArtifactState>
       )}
     />
+  );
+}
+function ArtifactDetails({
+  external = false,
+  children,
+}: {
+  external?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <View data-ai-external={external ? "true" : "false"}>
+      <Text className="artifact-caption">
+        AI 生成作品{external ? "（外部客户端声明）" : ""} · 用户填写和原图除外
+      </Text>
+      {children}
+    </View>
   );
 }
 export function Artifacts({
@@ -102,7 +124,13 @@ export function Artifacts({
   return (
     <>
       <ArtifactSurfaces messages={messages} {...props} />
-      {images.length > 1 && <ImageCollection turnId={turnId} images={images} />}
+      {images.length > 1 && (
+        <ImageCollection
+          turnId={turnId}
+          images={images}
+          external={props.external}
+        />
+      )}
     </>
   );
 }
@@ -110,9 +138,11 @@ export function Artifacts({
 function ImageCollection({
   turnId,
   images,
+  external = false,
 }: {
   turnId: number;
   images: ImageArtifact[];
+  external?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const messages = useMemo(() => toA2ui(turnId, images), [turnId, images]);
@@ -120,7 +150,8 @@ function ImageCollection({
     <>
       <CompactCard
         title="这一组图片"
-        meta={`${images.length} 张图片 · 点开查看`}
+        meta={`${images.length} 张图片 · AI 生成${external ? "（外部声明）" : ""}`}
+        external={external}
         icon="image"
         preview={
           <View className="artifact-thumbnail-stack">
@@ -145,6 +176,7 @@ function ImageCollection({
             messages={messages}
             responses={emptyResponses}
             compact={false}
+            external={external}
           />
         </BottomSheet>
       )}

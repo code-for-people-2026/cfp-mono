@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import sharp from "sharp";
-import { sessionSchema, uploadResultSchema, credentialSchema, historySchema, memoryStatusSchema, submissionResultSchema } from "@cfp/hello-agent-contracts";
+import { sessionSchema, privacyPolicySchema, privacyStatusSchema, deletionSchema, credentialSchema, historySchema, memoryStatusSchema, submissionResultSchema } from "@cfp/hello-agent-contracts";
 
 const origin = process.env.HELLO_ORIGIN || "http://127.0.0.1:3310";
 // 只在脚本自己建立的隔离实例尝试注册，避免在用户已开放注册的本地库创建测试管理员。
@@ -39,6 +39,12 @@ async function post(path: string, body: unknown) {
     body: JSON.stringify(body),
   });
 }
+const policy = privacyPolicySchema.parse(await (await fetch(`${origin}/api/hello/legal`)).json());
+const consent = { version: policy.version, core: true, model: true, sensitive: true, external: true,
+  externalRecipient: { name: "合成 HTTP 客户端", contact: "test@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } };
+assert.equal((await post("sessions", { title: "未授权不能创建" })).status, 403);
+assert.equal((await post("token", {})).status, 403);
+assert.equal(privacyStatusSchema.parse(await (await post("privacy/consent", consent)).json()).state, "active");
 const session = sessionSchema.parse(await (
   await post("sessions", { title: "HTTP 集成验证（测试数据）" })
 ).json());
@@ -61,10 +67,8 @@ const image = await sharp({
 })
   .png()
   .toBuffer();
-const media = uploadResultSchema.parse(await (
-  await post("upload", { base64: image.toString("base64") })
-).json());
-assert.ok(media.id);
+// No reviewer is wired in this build; real HTTP uploads must remain closed.
+assert.equal((await post("upload", { base64: image.toString("base64") })).status, 503);
 const nativeIdentity = await fetch(`${origin}/api/hello/miniapp-identity`, {
   method: "POST",
 });
@@ -74,6 +78,10 @@ const nativeHeaders = {
   Authorization: `Bearer ${device.token}`,
   "Content-Type": "application/json",
 };
+const nativeConsent = await fetch(`${origin}/api/hello/privacy/consent`, {
+  method: "POST", headers: nativeHeaders, body: JSON.stringify({ ...consent, external: false }),
+});
+assert.equal(nativeConsent.status, 200);
 const nativeSession = await fetch(`${origin}/api/hello/sessions`, {
   method: "POST",
   headers: nativeHeaders,
@@ -126,15 +134,7 @@ const nativeImage = await fetch(`${origin}/api/hello/upload`, {
   headers: nativeHeaders,
   body: JSON.stringify({ base64: image.toString("base64") }),
 });
-assert.equal(nativeImage.status, 200);
-assert.equal(
-  (
-    await fetch(`${origin}/api/hello/media/${uploadResultSchema.parse(await nativeImage.json()).id}`, {
-      headers: nativeHeaders,
-    })
-  ).status,
-  200,
-);
+assert.equal(nativeImage.status, 503);
 const credential = credentialSchema.parse(await (await post("token", {})).json());
 const client = new Client({ name: "hello-http-test", version: "1.0.0" });
 const transport = new StreamableHTTPClientTransport(
@@ -149,7 +149,7 @@ try {
   const args = {
     sessionId: session.id,
     requestId: randomUUID(),
-    input: { text: "测试用的橙色方块", mediaIds: [media.id] },
+    input: { text: "测试用的橙色方块", mediaIds: [] },
     output: {
       greeting: "愿日子如暖橙般明亮，心有所盼，步步生光。",
       association: "HTTP 测试固定产物，并非真实模型生成。",
@@ -186,7 +186,7 @@ try {
   const modelContext = await client.callTool({ name: "hello_get_context", arguments: { sessionId: session.id } });
   assert.ok(!modelContext.isError);
   assert.equal(
-    (await fetch(`${origin}/api/hello/media/${media.id}`)).status,
+    (await fetch(`${origin}/api/hello/media/1`)).status,
     401,
   );
   assert.equal(
@@ -229,8 +229,21 @@ try {
     ).status,
     401,
   );
+  if (process.env.HELLO_HTTP_ISOLATED === "true") {
+    const exported = await fetch(`${origin}/api/hello/privacy/export`, { headers: { Cookie: cookie } });
+    assert.equal(exported.status, 200);
+    assert.equal((await exported.json()).records.greetings.length, 1);
+    assert.equal((await post("privacy/withdraw", {})).status, 200);
+    assert.equal((await post("sessions", { title: "撤回后不能创建" })).status, 403);
+    const deletion = await post("privacy/delete", { confirmation: "删除我的全部在线数据" });
+    assert.equal(deletion.status, 200);
+    assert.equal(deletionSchema.parse(await deletion.json()).deleted, true);
+    assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: cookie } })).status, 401);
+    assert.equal((await fetch(`${origin}/api/hello/sessions/${nativeId}`, { headers: nativeHeaders })).status, 200);
+    console.log("✓ 真实 HTTP 导出、撤回、删除及其他身份保留通过");
+  }
   console.log(
-    "✓ HTTP + 标准 MCP 客户端：握手、工具发现、图片上传、外部产物、历史、幂等、访客隔离、CMS 原始接口、CSRF、撤销，以及小程序独立凭证验证通过",
+    "✓ HTTP + 标准 MCP 客户端：授权、握手、工具发现、未接图审拒绝上传、外部产物、历史、幂等、访客隔离、CMS 原始接口、CSRF、撤销，以及小程序独立凭证验证通过",
   );
   console.log(`测试会话 ${session.id}，产物明确标为测试数据；未调用付费模型。`);
 } finally {

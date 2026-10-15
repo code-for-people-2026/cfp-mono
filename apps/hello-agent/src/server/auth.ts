@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
+import { withCredentialExecution, withCredentialLock } from "./credential-lock";
 import type { Payload } from "payload";
 import { AppError, type Owner } from "../domain/contracts";
 
@@ -23,17 +24,21 @@ export async function mintCredential(
   kind: Owner["auth"],
   owner: string = randomUUID(),
 ) {
-  const token = randomBytes(32).toString("base64url");
-  const expiresAt = new Date(
-    Date.now() + (kind === "bearer" ? 7 : 30) * 86400_000,
-  ).toISOString();
-  // 凭证仓库是认证模块的私有存储；只有这里允许提升权限，其他业务请求不能直接访问。
-  await payload.create({
-    collection: "credentials",
-    overrideAccess: true,
-    data: { owner, digest: digest(token), kind, expiresAt },
+  return withCredentialLock(owner, async () => {
+    const [profile] = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, select: { state: true }, where: { owner: { equals: owner } } })).docs;
+    if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "此身份正在删除或已删除，不能签发新连接");
+    const token = randomBytes(32).toString("base64url");
+    const expiresAt = new Date(
+      Date.now() + (kind === "bearer" ? 7 : 30) * 86400_000,
+    ).toISOString();
+    // 凭证仓库是认证模块的私有存储；只有这里允许提升权限，其他业务请求不能直接访问。
+    await payload.create({
+      collection: "credentials",
+      overrideAccess: true,
+      data: { owner, digest: digest(token), kind, expiresAt },
+    });
+    return { token, owner, expiresAt };
   });
-  return { token, owner, expiresAt };
 }
 
 export async function authenticate(
@@ -78,12 +83,20 @@ export async function authenticate(
   return { id: String(result.docs[0].owner), auth: kind };
 }
 
+export async function revokeCredentials(payload: Payload, owner: string, kind?: Owner["auth"]) {
+  return withCredentialLock(owner, async () => {
+    const result = await payload.delete({ collection: "credentials", overrideAccess: true, where: { and: [{ owner: { equals: owner } }, ...(kind ? [{ kind: { equals: kind } }] : [])] } });
+    if (result.errors.length) throw new AppError(503, "连接凭证未能全部清理，请稍后重试");
+  });
+}
 export async function revokeTokens(payload: Payload, owner: Owner) {
-  await payload.delete({
-    collection: "credentials",
-    overrideAccess: true,
-    where: {
-      and: [{ owner: { equals: owner.id } }, { kind: { equals: "bearer" } }],
-    },
+  await revokeCredentials(payload, owner.id, "bearer");
+}
+
+export async function withAuthenticatedExecution<T>(payload: Payload, request: Request, expected: Owner, action: (owner: Owner) => Promise<T>, bearerOnly = false): Promise<T> {
+  return withCredentialExecution(expected.id, async () => {
+    const current = await authenticate(payload, request, bearerOnly);
+    if (current.id !== expected.id) throw new AppError(401, "连接身份已变更，请重新连接");
+    return action(current);
   });
 }

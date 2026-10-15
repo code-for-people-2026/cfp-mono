@@ -1,7 +1,8 @@
+import { privacyService } from "../../../privacy/service";
 import { cms } from "../../../cms/client";
 import { Repository } from "../../../cms/repository";
 import { GreetingService } from "../../../domain/greetings";
-import { authenticate } from "../../../server/auth";
+import { authenticate, withAuthenticatedExecution } from "../../../server/auth";
 import { failure, rateLimit, readJson } from "../../../server/http";
 import { handleMcp } from "../../../server/mcp";
 
@@ -12,11 +13,13 @@ export async function POST(request: Request) {
     const payload = await cms();
     const owner = await authenticate(payload, request, true);
     rateLimit(owner.id);
-    return await handleMcp(
-      request,
-      await readJson(request),
-      new GreetingService(new Repository(payload, owner)),
-    );
+    const body = await readJson(request);
+    return await withAuthenticatedExecution(payload, request, owner, async (current) => {
+      await privacyService(payload, current).requireExternalAccess();
+      // JSON transport resolves after the tool response, keeping the execution
+      // lease through history/image reads and writes, not just dispatch.
+      return await handleMcp(request, body, new GreetingService(new Repository(payload, current)));
+    }, true);
   } catch (error) {
     return failure(error);
   }

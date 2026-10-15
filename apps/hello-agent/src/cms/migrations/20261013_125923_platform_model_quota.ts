@@ -2,9 +2,9 @@ import { type MigrateUpArgs, sql } from "@payloadcms/db-sqlite";
 
 export async function up({ db }: MigrateUpArgs): Promise<void> {
   await db.run(sql`CREATE TABLE \`platform_model_quotas\` (
-  	\`id\` integer PRIMARY KEY NOT NULL,
-  	\`day\` text NOT NULL,
-  	\`reserved_calls\` numeric NOT NULL
+    \`id\` integer PRIMARY KEY NOT NULL,
+    \`day\` text NOT NULL,
+    \`reserved_calls\` numeric NOT NULL
   );
   `);
   await db.run(

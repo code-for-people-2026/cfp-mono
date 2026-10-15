@@ -21,6 +21,7 @@ export function EvidenceCard({ turn }: { turn: Turn }) {
   return (
     <View className="evidence-card">
       <CompactCard
+        external={turn.mode === "external"}
         title="为什么这样说"
         summary={turn.association || undefined}
         meta={approaches[turn.approach || ""] || "回应思路"}
@@ -29,11 +30,15 @@ export function EvidenceCard({ turn }: { turn: Turn }) {
       />
       {open && (
         <BottomSheet title="回应依据" onClose={() => setOpen(false)}>
-          <MessageText className="artifact-text">
+          <MessageText
+            aiGenerated
+            external={turn.mode === "external"}
+            className="artifact-text"
+          >
             {turn.association}
           </MessageText>
           <Text className="artifact-caption">
-            {approaches[turn.approach || ""]}
+            {approaches[turn.approach || ""] || turn.approach}
           </Text>
           <Text className="artifact-caption">
             {modes.find((item) => item.id === turn.mode)?.label}

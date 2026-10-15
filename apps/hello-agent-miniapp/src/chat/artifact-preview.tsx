@@ -13,6 +13,8 @@ export function CompactCard({
   icon = "squarePen",
   preview,
   onClick,
+  external = false,
+  generatedTitle = false,
 }: {
   title: string;
   summary?: string;
@@ -20,12 +22,15 @@ export function CompactCard({
   icon?: "squarePen" | "messageCircle" | "image" | "search";
   preview?: ReactNode;
   onClick: () => void;
+  external?: boolean;
+  generatedTitle?: boolean;
 }) {
   return (
     <Button
       className="control artifact-preview"
       ariaLabel={`查看${title}`}
       onClick={onClick}
+      data-ai-external={external ? "true" : "false"}
     >
       {preview || (
         <View className="artifact-preview-icon">
@@ -33,9 +38,14 @@ export function CompactCard({
         </View>
       )}
       <View className="artifact-preview-copy">
-        <Text className="artifact-preview-title">{title}</Text>
+        <Text
+          className="artifact-preview-title"
+          data-ai-generated={generatedTitle ? "true" : "false"}
+        >
+          {title}
+        </Text>
         {summary && (
-          <Text className="artifact-preview-summary">
+          <Text className="artifact-preview-summary" data-ai-generated="true">
             {summary.slice(0, 100)}
           </Text>
         )}
@@ -56,7 +66,7 @@ export function ArtifactPreview({
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const { values, submitted, sending, error } = useArtifactState();
+  const { values, submitted, sending, error, external } = useArtifactState();
   const components = Array.from(surface.componentsModel.entries).map(
     ([id, model]) =>
       componentSchema.parse(
@@ -99,6 +109,8 @@ export function ArtifactPreview({
   return (
     <>
       <CompactCard
+        generatedTitle
+        external={external}
         title={name}
         summary={
           fields.length || image
@@ -107,7 +119,7 @@ export function ArtifactPreview({
               ? description.text
               : page?.page.subtitle
         }
-        meta={meta}
+        meta={`${meta} · AI 生成${external ? "（外部声明）" : ""}`}
         icon={
           fields.length === 1 ? "messageCircle" : image ? "image" : "squarePen"
         }
@@ -119,7 +131,12 @@ export function ArtifactPreview({
         onClick={() => setOpen(true)}
       />
       {open && (
-        <BottomSheet title={name} onClose={() => setOpen(false)}>
+        <BottomSheet
+          title={name}
+          generatedTitle
+          external={external}
+          onClose={() => setOpen(false)}
+        >
           <View className="artifact-detail-single">{children}</View>
         </BottomSheet>
       )}

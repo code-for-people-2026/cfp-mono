@@ -58,6 +58,7 @@ function view(
   onAction?: (event: ClientEvent) => Promise<void>,
   answers?: FormValues,
   compact = false,
+  external = false,
 ) {
   return createElement(Host, {
     messages: validateA2uiMessages(messages),
@@ -65,6 +66,7 @@ function view(
       createElement(ArtifactState, {
         key: surface.id,
         surface,
+        external,
         onAction,
         initialValues: answers,
         submitted: !!answers,
@@ -79,6 +81,55 @@ for (const [platform, Host] of [
   ["h5", WebHost],
 ] as const) {
   describe(`${platform} 官方 A2UI 集成`, () => {
+    it.each([false, true])(
+      "完整作品保留 AI 文本来源，用户字段与系统说明不误标（external=%s）",
+      async (external) => {
+        vi.stubEnv("TARO_ENV", platform);
+        await act(async () => {
+          renderer = create(
+            view(
+              Host,
+              toA2ui(1, artifacts),
+              undefined,
+              undefined,
+              false,
+              external,
+            ),
+          );
+        });
+        const generated = renderer!.root
+          .findAllByType("text")
+          .filter((node) => node.props["data-ai-generated"] === "true");
+        for (const className of [
+          "artifact-h3",
+          "artifact-text",
+          "artifact-table-cell",
+          "artifact-heading",
+          "artifact-label",
+          "artifact-caption",
+        ]) {
+          expect(
+            generated.some((node) =>
+              node.props.className.split(" ").includes(className),
+            ),
+          ).toBe(true);
+        }
+        for (const node of generated) {
+          expect(node.props["data-ai-external"]).toBe(String(external));
+          expect(node.props.selectable).toBe(platform === "h5");
+          expect(typeof node.props.children).toBe("string");
+        }
+        expect(
+          fields().every((node) => node.props["data-ai-generated"] !== "true"),
+        ).toBe(true);
+        const note = renderer!.root
+          .findAllByType("text")
+          .find((node) =>
+            node.children.join("").startsWith("只在点击提交后发送"),
+          )!;
+        expect(note.props["data-ai-generated"]).toBe("false");
+      },
+    );
     it("紧凑表单点开填写，关闭/重开保留草稿和失败提示，确认后收起", async () => {
       const onAction = vi
         .fn()

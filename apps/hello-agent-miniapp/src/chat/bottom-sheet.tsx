@@ -7,10 +7,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Button, ScrollView, Text, View } from "@tarojs/components";
+import { Button, ScrollView, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { ChatIcon } from "./icon";
 import { SheetPortal } from "./sheet-portal";
+import { MessageText } from "./message-text";
 
 const FocusField = createContext<(id: string) => void>(() => {});
 export const useSheetFieldFocus = () => useContext(FocusField);
@@ -21,10 +22,14 @@ export function BottomSheet({
   title,
   onClose,
   children,
+  generatedTitle = false,
+  external = false,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  generatedTitle?: boolean;
+  external?: boolean;
 }) {
   const id = `detail_${useId().replace(/:/g, "")}`;
   const close = useRef(onClose);
@@ -163,7 +168,13 @@ export function BottomSheet({
         >
           <View className="sheet-handle" />
           <View className="detail-heading">
-            <Text className="detail-title">{title}</Text>
+            <MessageText
+              aiGenerated={generatedTitle}
+              external={external}
+              className="detail-title"
+            >
+              {title}
+            </MessageText>
             <Button
               className="control detail-close"
               ariaLabel="关闭详情"

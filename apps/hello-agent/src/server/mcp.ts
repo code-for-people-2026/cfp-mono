@@ -1,3 +1,4 @@
+import { PrivacyService } from "../privacy/service";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { z } from "zod";
@@ -15,6 +16,8 @@ export function createMcpServer(service: GreetingService) {
     <T>(handler: (args: T) => Promise<unknown>) =>
     async (args: T) => {
       try {
+        const privacy = new PrivacyService(service.repo);
+        await privacy.requireExternalAccess();
         return result(await handler(args));
       } catch (error) {
         return {
@@ -74,7 +77,10 @@ export function createMcpServer(service: GreetingService) {
         "上传用户选择的 JPEG、PNG 或 WebP 图片。只接收 base64，不抓取 URL，不接受本地路径。",
       inputSchema: { base64: z.string().min(1).max(7_000_000) },
     },
-    protect(async (args) => service.upload(Buffer.from(args.base64, "base64"))),
+    protect(async (args) => {
+      await new PrivacyService(service.repo).requireImageInput();
+      return service.upload(Buffer.from(args.base64, "base64"));
+    }),
   );
   server.registerTool(
     "hello_get_image",
@@ -84,6 +90,8 @@ export function createMcpServer(service: GreetingService) {
     },
     async (args) => {
       try {
+        const privacy = new PrivacyService(service.repo);
+        await privacy.requireExternalAccess();
         const media = await service.media.read(args.mediaId);
         return {
           content: [
@@ -106,7 +114,10 @@ export function createMcpServer(service: GreetingService) {
         "保存你已根据用户输入生成的吉祥话。服务端不调用模型；模型名称是你的来源声明。重试必须使用相同 requestId 和相同内容。",
       inputSchema: externalSchema,
     },
-    protect(async (args) => service.acceptExternal(args)),
+    protect(async (args) => {
+      await new PrivacyService(service.repo).requireInput(args.input);
+      return service.acceptExternal(args);
+    }),
   );
   server.registerPrompt(
     "hello_greeting",

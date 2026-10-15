@@ -35,10 +35,12 @@ export function ArtifactImage({
   url,
   alt,
   thumbnail = false,
+  external = false,
 }: {
   url: string;
   alt: string;
   thumbnail?: boolean;
+  external?: boolean;
 }) {
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState(false);
@@ -77,13 +79,20 @@ export function ArtifactImage({
         </MessageText>
       )}
       {!thumbnail && (
-        <MessageText className="artifact-caption">{alt}</MessageText>
+        <MessageText
+          aiGenerated
+          external={external}
+          className="artifact-caption"
+        >
+          {alt}
+        </MessageText>
       )}
     </View>
   );
 }
 
 export type ArtifactProps = {
+  external?: boolean;
   disabled?: boolean;
   onAction?: (action: ClientEvent) => Promise<void>;
   submitted?: boolean;
@@ -93,6 +102,7 @@ type Dispatch = (action: {
   event: { name: string; context: { values: FormValues } };
 }) => void | Promise<void>;
 const ArtifactContext = createContext<{
+  external: boolean;
   values: FormValues;
   update: (path: string, value: string | number) => void;
   locked: boolean;
@@ -115,6 +125,7 @@ export function ArtifactState({
   onAction,
   submitted,
   initialValues,
+  external = false,
   children,
 }: ArtifactProps & { surface: SurfaceModel; children: ReactNode }) {
   const modelValues = surface.dataModel.get("/values");
@@ -203,6 +214,7 @@ export function ArtifactState({
   return (
     <ArtifactContext.Provider
       value={{
+        external,
         values,
         locked,
         canSubmit: !!onAction,
@@ -237,8 +249,16 @@ export function ArtifactComponent({
 }) {
   const context = useArtifactState();
   const focusField = useSheetFieldFocus();
-  const { values, locked, canSubmit, submitted, sending, error, submit } =
-    context;
+  const {
+    values,
+    locked,
+    canSubmit,
+    submitted,
+    sending,
+    error,
+    submit,
+    external,
+  } = context;
   const id = component.id;
   switch (component.component) {
     case "Column":
@@ -257,13 +277,22 @@ export function ArtifactComponent({
       return (
         <MessageText
           key={id}
+          aiGenerated
+          external={external}
           className={`artifact-text artifact-${component.variant || "body"}`}
         >
           {component.text}
         </MessageText>
       );
     case "Image":
-      return <ArtifactImage key={id} url={component.url} alt={component.alt} />;
+      return (
+        <ArtifactImage
+          key={id}
+          url={component.url}
+          alt={component.alt}
+          external={external}
+        />
+      );
     case "Table":
       return (
         <ScrollView key={id} scrollX className="artifact-table-scroll">
@@ -274,7 +303,12 @@ export function ArtifactComponent({
                 className={`artifact-table-row ${rowIndex === 0 ? "artifact-table-head" : ""}`}
               >
                 {row.map((cell, cellIndex) => (
-                  <MessageText key={cellIndex} className="artifact-table-cell">
+                  <MessageText
+                    aiGenerated
+                    external={external}
+                    key={cellIndex}
+                    className="artifact-table-cell"
+                  >
                     {cell}
                   </MessageText>
                 ))}
@@ -284,7 +318,7 @@ export function ArtifactComponent({
         </ScrollView>
       );
     case "Page":
-      return <PageView key={id} component={component} />;
+      return <PageView key={id} component={component} external={external} />;
     case "FormField": {
       const field = component.field;
       const fieldId = component.value.path.slice("/values/".length);
@@ -303,9 +337,12 @@ export function ArtifactComponent({
           id={`artifact_field_${fieldId}`}
           className="artifact-field"
         >
-          <MessageText className="artifact-label">
-            {field.label}
-            {field.required ? " *" : "（选填）"}
+          <MessageText
+            aiGenerated
+            external={external}
+            className="artifact-label"
+          >
+            {`${field.label}${field.required ? " *" : "（选填）"}`}
           </MessageText>
           {field.type === "longText" ? (
             <Textarea
@@ -366,25 +403,46 @@ export function ArtifactComponent({
 
 function PageView({
   component,
+  external,
 }: {
   component: Extract<Component, { component: "Page" }>;
+  external: boolean;
 }) {
   return (
     <View className="artifact-page">
       {component.page.subtitle && (
-        <MessageText className="artifact-caption">
+        <MessageText
+          aiGenerated
+          external={external}
+          className="artifact-caption"
+        >
           {component.page.subtitle}
         </MessageText>
       )}
       {component.page.sections.map((section, index) => (
         <View key={index} className="artifact-section">
-          <MessageText className="artifact-heading">
+          <MessageText
+            aiGenerated
+            external={external}
+            className="artifact-heading"
+          >
             {section.heading}
           </MessageText>
-          <MessageText className="artifact-text">{section.body}</MessageText>
+          <MessageText
+            aiGenerated
+            external={external}
+            className="artifact-text"
+          >
+            {section.body}
+          </MessageText>
           {section.items?.map((item, i) => (
-            <MessageText key={i} className="artifact-text">
-              • {item}
+            <MessageText
+              aiGenerated
+              external={external}
+              key={i}
+              className="artifact-text"
+            >
+              {`• ${item}`}
             </MessageText>
           ))}
         </View>
