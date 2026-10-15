@@ -5,13 +5,7 @@ import serverSchema from "../spec/server_to_client.json";
 import clientSchema from "../spec/client_to_server.json";
 import commonSchema from "../spec/common_types.json";
 import { artifacts } from "../test/fixtures";
-import {
-  A2UI_VERSION,
-  applyA2ui,
-  toA2ui,
-  formAction,
-  type Surfaces,
-} from "./a2ui";
+import { A2UI_VERSION, validateA2uiMessages, toA2ui } from "./a2ui";
 import { a2uiCatalog } from "./catalog";
 import { artifactsSchema, clientEventSchema, validateForm } from "./artifacts";
 import { createRunReader } from "./stream";
@@ -31,26 +25,34 @@ describe("A2UI 互操作与用户填写", () => {
     messages.forEach((message) =>
       expect(server(message), JSON.stringify(server.errors)).toBe(true),
     );
-    const surfaces = messages.reduce<Surfaces>(applyA2ui, {});
-    expect(Object.keys(surfaces)).toHaveLength(5);
-    const action = formAction(surfaces.turn_7_thought_record!, {
-      situation: "我说错了一个数字",
-      intensity: 0,
-    });
+    expect(
+      validateA2uiMessages(messages).filter(
+        (message) => "createSurface" in message,
+      ),
+    ).toHaveLength(5);
+    const action = {
+      version: A2UI_VERSION,
+      action: {
+        name: "submit_form",
+        surfaceId: "turn_7_thought_record",
+        sourceComponentId: "submit",
+        timestamp: "2026-10-14T00:00:00.000Z",
+        context: { values: { situation: "我说错了一个数字", intensity: 0 } },
+      },
+    };
     expect(client(action), JSON.stringify(client.errors)).toBe(true);
     expect(clientEventSchema.safeParse(action).success).toBe(true);
   });
   it("拒绝陌生目录、脚本组件、远程图片、重复 ID、不齐的表格与危险字段", () => {
     expect(() =>
-      applyA2ui(
-        {},
+      validateA2uiMessages([
         {
           version: A2UI_VERSION,
           createSurface: { surfaceId: "turn_1_card", catalogId: "evil" },
         },
-      ),
+      ]),
     ).toThrow();
-    const state = toA2ui(1, [artifacts[0]]).reduce<Surfaces>(applyA2ui, {});
+    const messages = toA2ui(1, [artifacts[0]]);
     for (const component of [
       { id: "bad", component: "Script", code: "alert(1)" },
       {
@@ -61,13 +63,16 @@ describe("A2UI 互操作与用户填写", () => {
       },
     ])
       expect(() =>
-        applyA2ui(state, {
-          version: A2UI_VERSION,
-          updateComponents: {
-            surfaceId: "turn_1_one_step",
-            components: [component],
+        validateA2uiMessages([
+          ...messages,
+          {
+            version: A2UI_VERSION,
+            updateComponents: {
+              surfaceId: "turn_1_one_step",
+              components: [component],
+            },
           },
-        }),
+        ]),
       ).toThrow();
     expect(
       artifactsSchema.safeParse([artifacts[0], artifacts[0]]).success,
@@ -102,9 +107,8 @@ describe("A2UI 互操作与用户填写", () => {
       validateForm(form, { situation: "事情", injected: "admin" }),
     ).toContain("未知字段");
   });
-  it("支持数据更新与删除，拒绝原型路径和乱序更新", () => {
+  it("允许受限数据更新与删除，拒绝乱序、原型路径和循环组件", () => {
     const messages = toA2ui(8, [artifacts[4]]);
-    let state = messages.reduce<Surfaces>(applyA2ui, {});
     const update = {
       version: A2UI_VERSION,
       updateDataModel: {
@@ -113,29 +117,44 @@ describe("A2UI 互操作与用户填写", () => {
         value: 0,
       },
     };
-    state = applyA2ui(state, update);
-    expect(state.turn_8_thought_record?.values.intensity).toBe(0);
-    expect(() => applyA2ui({}, update)).toThrow();
+    expect(() => validateA2uiMessages([...messages, update])).not.toThrow();
+    expect(() => validateA2uiMessages([update])).toThrow();
+    for (const path of [
+      "/__proto__/polluted",
+      "/values/constructor",
+      "/values/prototype",
+    ])
+      expect(() =>
+        validateA2uiMessages([
+          ...messages,
+          { ...update, updateDataModel: { ...update.updateDataModel, path } },
+        ]),
+      ).toThrow();
     expect(() =>
-      applyA2ui(state, {
-        ...update,
-        updateDataModel: {
-          ...update.updateDataModel,
-          path: "/__proto__/polluted",
+      validateA2uiMessages([
+        ...messages,
+        {
+          ...update,
+          updateDataModel: { ...update.updateDataModel, value: undefined },
         },
-      }),
-    ).toThrow();
-    state = applyA2ui(state, {
-      ...update,
-      updateDataModel: { ...update.updateDataModel, value: undefined },
-    });
-    expect(state.turn_8_thought_record?.values.intensity).toBeUndefined();
-    expect(
-      applyA2ui(state, {
-        version: A2UI_VERSION,
-        deleteSurface: { surfaceId: "turn_8_thought_record" },
-      }),
-    ).toEqual({});
+        {
+          version: A2UI_VERSION,
+          deleteSurface: { surfaceId: "turn_8_thought_record" },
+        },
+      ]),
+    ).not.toThrow();
+    expect(() =>
+      validateA2uiMessages([
+        ...messages,
+        {
+          version: A2UI_VERSION,
+          updateComponents: {
+            surfaceId: "turn_8_thought_record",
+            components: [{ id: "root", component: "Card", child: "root" }],
+          },
+        },
+      ]),
+    ).toThrow(/循环/);
   });
 });
 
@@ -161,7 +180,11 @@ describe("AG-UI 传输恢复", () => {
       for (let offset = 0; offset < wire.length; offset += size)
         reader.push(wire.slice(offset, offset + size));
       expect(reader.finish().text).toBe("且慢，先看眼前。");
-      expect(Object.keys(reader.finish().surfaces)).toHaveLength(1);
+      expect(
+        reader
+          .finish()
+          .messages.filter((message) => "createSurface" in message),
+      ).toHaveLength(1);
     }
   });
   it("错误与中断不得伪装成完成，不接受另一个 run 的结果", () => {

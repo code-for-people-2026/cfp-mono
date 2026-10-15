@@ -17,6 +17,7 @@ import { useChatMode } from "../../chat/preferences";
 import { MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
+import { EvidenceCard } from "../../chat/evidence-card";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import {
   type ClientEvent,
@@ -26,7 +27,6 @@ import {
 import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,
-  modes,
   requestId,
   type Attachment,
   type Mode,
@@ -97,7 +97,6 @@ export default function Chat() {
     text: string;
     images: Attachment[];
   }>();
-  const [expanded, setExpanded] = useState<number[]>([]);
   const followLatest = useRef(true);
   const pageTop = useRef(0);
   const scrollRevision = useRef(0);
@@ -204,7 +203,6 @@ export default function Chat() {
     setHistory([]);
     setImages({});
     setMemory(undefined);
-    setExpanded([]);
     setProgress(undefined);
     setPending(undefined);
     setMemoryOpen(false);
@@ -488,6 +486,7 @@ export default function Chat() {
     setError("");
     let id = sessionId;
     let saved = false;
+    let formFailure: Error | undefined;
     try {
       if (!id) {
         const session = await api.newSession();
@@ -553,6 +552,11 @@ export default function Chat() {
         } else {
           if (status?.turn?.status === "failed") submission.current = undefined;
           problem(value);
+          if (formInput)
+            formFailure =
+              value instanceof Error
+                ? value
+                : new Error("表单尚未确认提交，请稍后重试");
           if (!formInput) {
             setText(draft.text);
             setAttachments(draft.images);
@@ -567,6 +571,9 @@ export default function Chat() {
       setBusy(false);
       sendLock.current = false;
     }
+    // A form's error must be visible inside its sheet, not behind the overlay.
+    // Confirmed saves (including recovered responses) never become retry errors.
+    if (formFailure) throw formFailure;
   }
   const formResponses = Object.fromEntries(
     history
@@ -757,27 +764,7 @@ export default function Chat() {
                         />
                       )}
                       {row.status === "completed" && row.association && (
-                        <View className="association">
-                          <Button
-                            className="association-toggle"
-                            onClick={() =>
-                              setExpanded((ids) =>
-                                ids.includes(row.id)
-                                  ? ids.filter((id) => id !== row.id)
-                                  : [...ids, row.id],
-                              )
-                            }
-                          >
-                            {expanded.includes(row.id)
-                              ? "收起联想依据 −"
-                              : "看看为什么这样说 ＋"}
-                          </Button>
-                          {expanded.includes(row.id) && (
-                            <MessageText aiGenerated external={row.mode === "external"} className="association-text">
-                              {`${row.association}${row.approach ? ` · ${row.approach}` : ""}\n${modes.find((item) => item.id === row.mode)?.label || ""}${row.mode === "external" ? " · 来源由客户端声明" : ` · ${row.model}`}`}
-                            </MessageText>
-                          )}
-                        </View>
+                        <EvidenceCard turn={row} />
                       )}
                     </View>
                     <View className="message-footer">
@@ -831,7 +818,7 @@ export default function Chat() {
                           "阿 J 先生正在换个角度想…"}
                       </MessageText>
                       {progress && (
-                        <LiveArtifacts surfaces={progress.surfaces} />
+                        <LiveArtifacts messages={progress.messages} />
                       )}
                     </View>
                   </View>

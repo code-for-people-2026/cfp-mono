@@ -111,3 +111,15 @@ pnpm --filter @cfp/hello-agent-miniapp test:wxss
 发布入口取回最新 `origin/main`，拒绝未包含该主分支或相关源码未提交的目录；构建两端后检查真实产物中的新版输入栏、语音插件、作品与 AG-UI。两份产物均写入 `build-info.json`（版本、提交、主分支基线、构建时间），设置显示版本号。部署后运行 `node scripts/check-release.mjs https://aj-preview.codeforpeople.cn` 核对实际线上资源，不能以“上传成功”代替 UI 验收。微信上传记录与体验版指向必须分别核对。
 
 聊天作品支持卡片、表格、插画、结构化网页和表单。表单不自动发送；只有提交才生成下一轮，沿用普通发送的请求编号、失联恢复和防重复机制，历史加载后恢复已提交答案。
+
+对话中只展示紧凑作品卡片：表单显示题数与填写状态，单题显示「简单问答」，图片显示缩略图，同轮多图合成一张预览卡片，回应依据显示一行摘要。点击后在底部面板展示完整内容，由相同 A2UI 渲染器呈现。面板关闭不清空表单草稿，失败可重开重试，服务端确认成功后自动收起并显示已完成。面板内独立滚动，关闭后聊天仍使用页面滚动；微信使用 RootPortal，H5 使用 React portal，避免被消息气泡裁切。H5 支持 Escape、焦点循环和背景滚动恢复，键盘出现时面板调整可用高度。
+
+## A2UI 渲染
+
+H5 使用 `@copilotkit/a2ui-renderer@1.79.0` 的 `A2UIProvider`、`A2UIRenderer`、`createCatalog`。微信没有 DOM，Taro 构建选择 `a2ui-host.tsx`，直接使用同版本依赖的 `@a2ui/web_core@0.10.4`，仅将组件树适配为原生 Taro 组件；H5 构建选择 `a2ui-host.h5.tsx`。两个入口共用 `a2ui-catalog.tsx`、作品外观和表单交互，不复制官方协议处理器，也不以 WebView 承载小程序聊天。
+
+线上协议保留 v0.9.1，适配层转换成官方 SDK 当前使用的 v0.9 家族标记；历史存储和模型保存工具不变。组件目录继续限制为 Column/Card/Text/Image/Table/Page/FormField/Button，不自动启用网页专用基本目录、任意脚本或远程图片。Zod 3 的渲染目录校验委托给现有 Zod 4 协议定义，不维护第二份字段约束。
+
+`tests/a2ui-hosts.test.ts` 对真实 CopilotKit 和原生核心运行同一组场景：五类作品、分块更新、零值、删除、动作 ID、失败提示/重试/草稿、历史恢复锁定和会话切换。微信路径额外禁用 DOM 与动态函数，并检查仅输出原生组件。测试不会替代微信真机验收。
+
+设计取舍及为何不整体迁移聊天后端：[ADR-0006](../hello-agent/docs/adr/0006-copilotkit-a2ui-rendering.md)。

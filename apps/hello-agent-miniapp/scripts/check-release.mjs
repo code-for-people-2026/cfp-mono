@@ -56,7 +56,26 @@ assert.ok(
   [chat, ...dependencies].some((code) => code.includes("/api/hello/ag-ui")),
   "缺少 AG-UI 请求",
 );
+assert.ok(
+  [chat, ...dependencies].some(
+    (code) => code.includes("data-surface-id") && code.includes("a2ui-surface"),
+  ),
+  "H5 发布包缺少 CopilotKit A2UI 渲染器",
+);
 if (!base) {
+  const nativeVendor = await readFile(
+    path.join(app, "dist/weapp/vendors.js"),
+    "utf8",
+  );
+  assert.ok(
+    nativeVendor.includes("Surface not found for message"),
+    "小程序缺少官方 A2UI 核心",
+  );
+  assert.ok(
+    !nativeVendor.includes("data-surface-id") &&
+      !nativeVendor.includes("a2ui-shimmer"),
+    "小程序错误引入网页专用 A2UI 渲染器",
+  );
   const mini = await readFile(
     path.join(app, "dist/weapp/pages/chat/index.js"),
     "utf8",

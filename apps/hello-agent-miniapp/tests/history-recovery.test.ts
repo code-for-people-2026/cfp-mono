@@ -48,6 +48,7 @@ vi.mock("@tarojs/components", () => ({
   Input: "input",
   Textarea: "textarea",
   ScrollView: "scroll-view",
+  RootPortal: "root-portal",
 }));
 
 type AgentBody = {
@@ -153,6 +154,15 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+async function openArtifact() {
+  await act(async () => {
+    renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.className?.includes("artifact-preview"))!
+      .props.onClick();
+  });
+}
+
 async function chooseModeInSettings(index: number) {
   const { default: SettingsPage } = await import("../src/pages/connection/index");
   let settingsPage: ReactTestRenderer;
@@ -223,6 +233,7 @@ it.each([false, true])(
         : response;
     });
     await mount();
+    await openArtifact();
     const submit = renderer!.root
       .findAllByType("button")
       .find((node) => node.props.className?.includes("artifact-submit"))!;
@@ -276,6 +287,7 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     return original(options);
   });
   await mount();
+  await openArtifact();
   const fields = () =>
     renderer!.root.findAll(
       (node) =>
@@ -296,12 +308,18 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     button().props.onClick();
   });
   expect(submitted).toHaveLength(1);
+  expect(
+    renderer!.root
+      .findAll((node) => node.props.className === "artifact-error")
+      .some((node) => node.children.includes("模型暂时失败")),
+  ).toBe(true);
   expect(fields().map((field) => field.props.value)).toEqual(answers);
   expect(button().props.disabled).toBeFalsy();
   await act(async () => {
     button().props.onClick();
   });
   expect(submitted).toHaveLength(2);
+  await openArtifact();
   expect(submitted[1]).toEqual(submitted[0]);
   expect(submitted[1]).toMatchObject({ intensity: 0 });
   expect(fields().map((field) => field.props.value)).toEqual(answers);
@@ -1242,11 +1260,11 @@ it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生�
   history[0].association = "第一行联想\n第二行依据";
   history[0].approach = "认知视角";
   await mount(false);
-  expect(text()).toContain("association-toggle");
-  await act(async () => { renderer!.root.findAllByType("button").find((item) => item.props.className?.split(" ").includes("association-toggle"))!.props.onClick(); });
-  const details = renderer!.root.findAllByType("text").find((item) => item.props.className === "association-text")!;
+  await act(async () => { renderer!.root.findAllByType("button").find((item) => item.props.ariaLabel === "查看为什么这样说")!.props.onClick(); });
+  const details = renderer!.root.findAllByType("text").find((item) => item.props.className === "artifact-text" && item.children.join("") === history[0].association)!;
   const value = details.children.join("");
-  expect(value).toContain("第一行联想\n第二行依据 · 认知视角");
+  expect(value).toBe("第一行联想\n第二行依据");
+  expect(text()).toContain("认知视角");
   expect(details.props.selectable).toBe(false);
   await act(async () => { details.props.onLongPress(); });
   expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 J 先生\n${value}` });
