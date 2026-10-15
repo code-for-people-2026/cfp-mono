@@ -14,7 +14,7 @@ import { historySchema, sessionSchema, turnResultSchema } from "@cfp/hello-agent
 assert.ok(process.env.DEEPSEEK_API_KEY, "需要真实模型配置");
 const directory = await mkdtemp(path.join(tmpdir(), "hello-http-e2e-live-"));
 const origin = "http://127.0.0.1:3315";
-const env: NodeJS.ProcessEnv = { ...process.env, HELLO_ORIGIN: origin, HELLO_DATABASE_URI: `file:${directory}/test.db`, HELLO_PRIVACY_DELETION_LEDGER: `${directory}/ledger.ndjson`, HELLO_HTTP_ISOLATED: "true", HELLO_TRUST_PROXY: "false", HELLO_ADMIN_BOOTSTRAP: "false", NODE_ENV: "production" };
+const env: NodeJS.ProcessEnv = { ...process.env, HELLO_ORIGIN: origin, HELLO_DATABASE_URI: `file:${directory}/test.db`, HELLO_PRIVACY_DELETION_LEDGER: `${directory}/ledger.ndjson`, HELLO_HTTP_ISOLATED: "true", HELLO_TRUST_PROXY: "true", HELLO_ADMIN_BOOTSTRAP: "false", NODE_ENV: "production" };
 const child = (script: string, extra: Partial<NodeJS.ProcessEnv> = {}, args: string[] = []) => promisify(execFile)(process.execPath, ["--import", "tsx", script, ...args], { env: { ...env, ...extra }, timeout: 240_000, maxBuffer: 2 ** 20 });
 let server: ReturnType<typeof spawn> | undefined;
 let stage = "initialize";
@@ -25,7 +25,8 @@ try {
   const seeded = await child("scripts/http-fixture.ts");
   const fixtures = JSON.parse(seeded.stdout.trim().split("\n").at(-1)!) as { native: { token: string }; otherCookie: string };
   secrets.push(fixtures.native.token);
-  const headers = { Authorization: `Bearer ${fixtures.native.token}`, "Content-Type": "application/json" };
+  // The isolated listener is loopback-only; emulate the trusted proxy header.
+  const headers = { "X-Real-IP": "127.0.0.1", Authorization: `Bearer ${fixtures.native.token}`, "Content-Type": "application/json" };
   server = spawn(process.execPath, [createRequire(import.meta.url).resolve("next/dist/bin/next"), "start", "-H", "127.0.0.1", "-p", "3315"], { env, stdio: ["ignore", "pipe", "pipe"] });
   let ready = false;
   server.stdout!.on("data", (chunk) => { if (chunk.toString().includes("Ready in")) ready = true; });
@@ -71,8 +72,11 @@ try {
   assert.equal(history.length, 2);
   assert.ok(!JSON.stringify(history).includes(process.env.DEEPSEEK_API_KEY!));
   const exported = await fetch(`${origin}/api/hello/privacy/export`, { headers });
-  assert.equal(exported.status, 200);
-  assert.equal((await exported.json()).records.greetings.length, 2);
+  const exportData = await exported.json();
+  assert.equal(exported.status, 200, exportData.error || "图片与对话应能导出");
+  assert.equal(exportData.records.greetings.length, 2);
+  assert.equal(exportData.media.length, 1);
+  assert.ok(exportData.media[0].base64);
   stage = "fixture-cleanup";
   await deleteFixture(); deleteFixture = undefined;
   assert.equal((await fetch(mediaUrl, { headers })).status, 401);
