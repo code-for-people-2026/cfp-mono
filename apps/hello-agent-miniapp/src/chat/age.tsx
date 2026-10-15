@@ -152,7 +152,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
           </> : <>
             <Text className="age-copy">{correcting ? `生日填错了？用本人姓名和身份证，经${providerName}核验后更正。` : `需要本人姓名和身份证，由${providerName}核验。`}</Text>
             <Input className="age-input" value={name} maxlength={50} placeholder="本人姓名" disabled={busy} onInput={(event) => setName(event.detail.value)} />
-            <Input className="age-input" password value={idCard} maxlength={18} placeholder="本人18位大陆居民身份证号码" disabled={busy} onInput={(event) => setIdCard(event.detail.value)} />
+            <Input className="age-input" type="text" value={idCard} maxlength={18} placeholder="本人18位大陆居民身份证号码" disabled={busy} onInput={(event) => setIdCard(event.detail.value)} />
             <CheckboxGroup onChange={(event) => setConsent(event.detail.value.includes("age"))}><Label className="age-choice"><Checkbox value="age" checked={consent} /><Text>{correcting ? "我确认本人已满14周岁，" : ""}已阅读核验说明，单独同意将本人姓名和身份证交由{providerName}核验。</Text></Label></CheckboxGroup>
             <Button className="age-primary" disabled={busy || !consent || name.trim().length < 2 || !/^\d{17}[\dXx]$/.test(idCard)} onClick={() => void act(submit)}>{busy ? "正在核验…" : "同意并核验"}</Button>
             {status && ["failed", "unknown", "expired", "unavailable"].includes(status.state) && <Text className="age-hint">{ageStateText[status.state]}</Text>}
