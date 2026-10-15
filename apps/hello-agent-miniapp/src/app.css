@@ -120,16 +120,8 @@ input {
   margin-bottom: 19px;
   align-items: flex-start;
 }
-.small-avatar {
-  width: 29px;
-  height: 29px;
-  border-radius: 10px;
-  font-size: 20px;
-  margin-right: 8px;
-  margin-top: 2px;
-}
 .message-main {
-  max-width: calc(100% - 42px);
+  width: 100%;
   min-width: 0;
 }
 .bubble {
@@ -142,7 +134,7 @@ input {
   padding: 14px 15px;
   background: #fff;
   border: 1px solid #e8eee9;
-  border-radius: 3px 17px 17px 17px;
+  border-radius: 17px;
   box-shadow: 0 3px 8px #1f402804;
 }
 .welcome-title {

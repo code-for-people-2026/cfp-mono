@@ -765,11 +765,6 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <Image
-                    className="avatar small-avatar"
-                    src={mascot}
-                    mode="aspectFill"
-                  />
                   <View className="message-main">
                     <View
                       data-ai-external={row.mode === "external" ? "true" : "false"}
@@ -842,11 +837,6 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <Image
-                    className="avatar small-avatar"
-                    src={mascot}
-                    mode="aspectFill"
-                  />
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
