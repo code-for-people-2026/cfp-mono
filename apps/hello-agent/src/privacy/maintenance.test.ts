@@ -32,7 +32,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const result = await maintainPrivacy(payload, { apply: true, restoreLedger: ledger });
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
-    expect(find).toHaveBeenCalledTimes(32); // ten paginated scans plus two empty onboarding-expiry scans
+    expect(find).toHaveBeenCalledTimes(38); // ten paginated scans plus two empty onboarding-expiry scans
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -151,4 +151,21 @@ it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时�
     expect(removePrefix.mock.calls).toEqual([...digests, ...digests].map((value) => [`hello-agent/${value.slice(0, 32)}/`]));
     expect(cleanup).not.toHaveBeenCalled();
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("旧匿名会话和图片按配置到期；近期关联记录与已授权身份不会被误删", async () => {
+  cleanup.mockReset().mockResolvedValue({ deleted: true });
+  const find = vi.fn(async ({ collection, where }) => {
+    if (collection === "privacy-profiles") return { docs: [] };
+    if (collection === "sessions") return { docs: [{ id: 1, owner: "old" }, { id: 2, owner: "recent-media" }, { id: 3, owner: "consented" }] };
+    if (collection === "media") return { docs: [{ id: 4, owner: "old" }, { id: 5, owner: "orphan-image" }] };
+    expect(where.and[1].updatedAt.less_than).toBeTypeOf("string");
+    return { docs: [] };
+  });
+  const count = vi.fn(async ({ collection, where }) => ({ totalDocs:
+    collection === "privacy-profiles" ? Number(where.owner.equals === "consented") :
+      Number(collection === "media" && where.and[0].owner.equals === "recent-media") }));
+  const payload = { find, count, delete: vi.fn().mockResolvedValue({ errors: [] }) } as unknown as Payload;
+  await expect(maintainPrivacy(payload, { apply: true })).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
+  expect(cleanup.mock.calls).toEqual([["old"], ["orphan-image"]]);
 });

@@ -23,6 +23,7 @@ import {
   revokeTokens,
 } from "../../../../server/auth";
 import { withCredentialExecution, withCredentialLock } from "../../../../server/credential-lock";
+import { rateLimitLogin } from "../../../../server/login-limits";
 import { failure, readJson, rateLimit } from "../../../../server/http";
 import { agentStream, readAgentInput } from "../../../../server/ag-ui";
 import {
@@ -158,7 +159,7 @@ export async function POST(request: Request, context: Context) {
     const path = (await context.params).path;
     const payload = await cms();
     if (path[0] === "wechat-login" && path.length === 1) {
-      rateLimit("wechat-login");
+      rateLimitLogin(request, "wechat-login");
       return json(await wechatLogin(payload, request, await readJson(request, PROFILE_BODY_LIMIT)));
     }
     if (path[0] === "privacy-recover") return await recoveryResponse(payload, request);
@@ -166,7 +167,7 @@ export async function POST(request: Request, context: Context) {
       if (request.headers.has("origin"))
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
       // 访客凭证仅用于登录前状态和数据权利；业务读取也必须完成微信登录。
-      rateLimit("miniapp-identity");
+      rateLimitLogin(request, "miniapp-identity");
       return json(await mintCredential(payload, "miniapp"));
     }
     if (path[0] === "identity") {

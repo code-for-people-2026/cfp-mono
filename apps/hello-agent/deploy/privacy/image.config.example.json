@@ -1,0 +1,10 @@
+{
+  "container": "cfp-hello-agent-image-preview",
+  "dataDir": "/opt/cfp-hello-agent/image-preview-data",
+  "ledgerDir": "/opt/cfp-hello-agent/privacy-ops/image/ledger",
+  "backupDir": "/opt/cfp-hello-agent/privacy-ops/image/backups",
+  "stateDir": "/opt/cfp-hello-agent/privacy-ops/image/state",
+  "sourceDir": "/opt/cfp-hello-agent/privacy-ops/source",
+  "legacyBackupDirs": ["/opt/cfp-hello-agent/backups"],
+  "healthUrl": "http://127.0.0.1:3313/api/ready"
+}

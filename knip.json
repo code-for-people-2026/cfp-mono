@@ -42,6 +42,8 @@
       "ignoreDependencies": ["react"]
     },
     "apps/hello-agent": {
+      "ignoreDependencies": ["libsql"],
+      "ignoreBinaries": ["python3"],
       "entry": [
         "next.config.ts",
         "payload.config.ts",

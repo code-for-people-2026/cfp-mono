@@ -30,18 +30,28 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
     if (profiles.docs.length < pageSize) break;
     cursor = profiles.docs[profiles.docs.length - 1].id;
   }
-  // Login and age records without a privacy profile still expire. Check both
-  // timestamps so an active onboarding step cannot be removed by its older peer.
-  const cutoff = new Date(Date.now() - 30 * 86400_000).toISOString();
-  for (const collection of ["wechat-identities", "age-profiles"] as const) {
+  // Legacy records predate privacy profiles. Consider all owned collections so
+  // old anonymous conversations/media expire too; a recent peer protects the owner.
+  const retention = process.env.HELLO_PRIVACY_RETENTION_DAYS || "30";
+  if (!/^[1-9]\d{0,3}$/.test(retention)) throw new Error("隐私保留期限配置无效");
+  const cutoff = new Date(Date.now() - Number(retention) * 86400_000).toISOString();
+  const legacyCollections = ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "wechat-identities", "age-profiles"] as const;
+  const checked = new Set<string>();
+  for (const collection of legacyCollections) {
     cursor = 0;
     while (true) {
       const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0, limit: pageSize, sort: "id", select: { id: true, owner: true }, where: { and: [{ id: { greater_than: cursor } }, { updatedAt: { less_than: cutoff } }] } });
       for (const row of rows.docs) {
+        if (checked.has(row.owner) || owners.has(row.owner)) continue;
+        checked.add(row.owner);
         const profile = await payload.count({ collection: "privacy-profiles", overrideAccess: true, where: { owner: { equals: row.owner } } });
         if (profile.totalDocs) continue;
-        const other = await payload.count({ collection: collection === "wechat-identities" ? "age-profiles" : "wechat-identities", overrideAccess: true, where: { and: [{ owner: { equals: row.owner } }, { updatedAt: { greater_than_equal: cutoff } }] } });
-        if (!other.totalDocs) owners.add(row.owner);
+        let recent = false;
+        for (const peer of legacyCollections) {
+          const other = await payload.count({ collection: peer, overrideAccess: true, where: { and: [{ owner: { equals: row.owner } }, { updatedAt: { greater_than_equal: cutoff } }] } });
+          if (other.totalDocs) { recent = true; break; }
+        }
+        if (!recent) owners.add(row.owner);
       }
       if (rows.docs.length < pageSize) break;
       cursor = rows.docs[rows.docs.length - 1].id;
