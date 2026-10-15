@@ -134,7 +134,8 @@ if (!base) {
     }),
   );
   const bytes = sizes.reduce((sum, size) => sum + size, 0);
-  assert.ok(bytes <= 2 * 1024 * 1024, `小程序主包超过 2 MiB：${bytes} 字节`);
+  // 微信会再编译并增大上传包；源码接近 2 MiB 仍会被服务端拒绝。
+  assert.ok(bytes <= 1800 * 1024, `小程序主包须预留微信编译余量：${bytes} 字节`);
 }
 console.log(
   "✓ 实际发布包包含设置入口、连接方式、隐私管理及协议子页面、帮助反馈、新版输入栏、语音切换、作品与 AG-UI 请求",
