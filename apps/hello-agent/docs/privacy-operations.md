@@ -1,4 +1,6 @@
-# 隐私运营配置与验收（2026-10-14）
+# 隐私运营配置与验收
+
+首轮独立图片实例验收记录如下；2026-10-15 的公开文字聊天切换及其独立作业见文末。
 
 用户确认：隐私渠道 `ajoker@codeforpeople.cn`，在线身份记录 30 天，数据库备份 7 天，权利请求 7 天内答复。本任务只配置隐私运营，不修改年龄核验，不修改另一任务的登录预览。邮箱域名有邮件路由；尚未发送测试邮件，实际日常收件、身份归属核实和答复由运营人员负责。
 
@@ -61,3 +63,25 @@ python3 /opt/cfp-hello-agent/privacy-ops/source/privacy-operations.py \
 - `/api/hello/legal` 返回邮箱与 30/7/7，独立实例隐私就绪；主服务、登录预览、独立生图实例均健康。匿名图片/历史读取仍需鉴权。
 
 公开入口整合仍是单独发布步骤。共享反向代理日志、外部供应商副本、用户自行导出的文件不属于这次数据库清理。未把“删除聊天”表述为立即擦除所有日志、物理介质或供应商副本。万相/DeepSeek 的公开数据处理说明分别见 [阿里云隐私说明](https://help.aliyun.com/zh/model-studio/privacy-notice) 与 [DeepSeek 隐私政策](https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html)，不将公开说明替代公司自己的协议及运营责任。
+
+## 公开文字聊天切换（2026-10-15）
+
+用户授权开放平台助手、自带 DeepSeek 密钥和外部 MCP 连接，图片上传与生图另行接入。公开域名 `aj-preview.codeforpeople.cn` 的聊天服务切换至 `cfp-hello-agent-full-preview`，回环端口 3314，镜像 `cfp-hello-agent:preview-20261015-full060p1`，就绪接口发布标记为 `preview-20261015-full060`。旧开发版使用的 `/login-preview/api/hello/`、`/login-preview/api/mcp` 与就绪接口作为兼容入口接入同一服务；该前缀下其他路径返回 404，原管理后台 IP 限制保留。
+
+切换前停止旧主服务与登录预览服务，分别创建通过完整性及外键检查的 SQLite 快照。迁移逐列校验旧主库数据，并导入登录预览的微信账号、年龄核验状态和凭证；保留 30 个会话、55 条生成记录、31 个媒体记录及 9 个 Agent 配置。未更改原数据归属，没有代替用户同意隐私授权，也没有生成或修改真实账号的年龄核验结果。原两个容器保持停止，快照和原数据库是回退副本，按已确认的 7 天备份期限管理；正在使用的数据保留在 `full-preview-data/hello.db`。
+
+完整文字部署使用相同的 30/7/7 运营期限与联系邮箱，另行完成实际验收后开启就绪标志。使用本次文字聊天及既有登录/年龄服务配置，不带入图片生成功能配置。`privacy-ops/full/ledger` 独立于数据库备份；作业配置位于 `privacy-ops/full/config.json`，备份与状态分别在同目录的 `backups`、`state`。`legacyBackupDirs` 包括 `/opt/cfp-hello-agent/backups`、`/opt/cfp-hello-agent/data`、`/opt/cfp-hello-agent/onboarding-preview-data`；原库已经在停写后完成 WAL 检查点，不能再把旧容器启动为并行业务写入者。
+
+`cfp-hello-privacy-full.timer` 每小时第 37 分钟执行，独立图片实例的第 17 分钟作业继续保留。切换前首次完整作业已通过，未清理任何现有身份或到期备份。完整部署使用以下状态与恢复入口；恢复仍须重放独立删除清单并经过健康检查：
+
+```sh
+systemctl status cfp-hello-privacy-full.timer
+cat /opt/cfp-hello-agent/privacy-ops/full/state/status.json
+python3 /opt/cfp-hello-agent/privacy-ops/full/source/privacy-operations.py \
+  /opt/cfp-hello-agent/privacy-ops/full/config.json \
+  --restore /opt/cfp-hello-agent/privacy-ops/full/backups/实际备份名.db
+```
+
+本轮在隔离临时数据库中实测三种文字方式，均产生真实 DeepSeek 回复并保存到同一会话，历史中的模式依次为 `platform`、`byok`、`external`；密钥未出现在历史中。另用合成身份完成真实 OSS 与 SQLite 备份、删除、恢复和清单重放，已删身份没有复现，保留身份仍可访问。真实账号未用于这些写入测试。
+
+微信开发版 0.5.9 已确认上传成功；此次为后台切换，继续使用原 API 地址和原开发版即可，未再次上传小程序。H5 为 0.6.0。登录、年龄核验、隐私授权与 AI 标识继续生效，是否能聊天仍由每个账号的真实状态决定。
