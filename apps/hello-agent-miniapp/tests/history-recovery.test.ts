@@ -12,6 +12,7 @@ const platform = vi.hoisted(() => ({
   ),
   setStorageSync: vi.fn(),
   showModal: vi.fn(),
+  showToast: vi.fn(),
   nextTick: vi.fn((fn: () => void) => fn()),
   onAppHide: vi.fn(),
   offAppHide: vi.fn(),
@@ -458,7 +459,9 @@ describe("聊天历史与图片失败隔离", () => {
     expect(platform.setClipboardData).toHaveBeenLastCalledWith({
       data: `AI 生成 · 阿 J 先生\n${history[0].greeting}`,
     });
-    expect(button.findByType("text").children.join("")).toBe("已复制");
+    expect(button.props["aria-label"]).toBe("已复制");
+    expect(button.findAllByType("text")).toHaveLength(0);
+    expect(button.findAllByType("image")).toHaveLength(1);
     expect(platform.request.mock.calls).toHaveLength(requests);
     expect(text()).toContain("按住说话");
   });
@@ -471,12 +474,13 @@ describe("聊天历史与图片失败隔离", () => {
     await act(async () => {
       await button.props.onClick();
     });
-    expect(text()).toContain("复制失败，重试");
+    expect(button.props["aria-label"]).toBe("复制失败，重试");
+    expect(platform.showToast).toHaveBeenCalledWith({ title: "复制失败，请重试", icon: "none" });
     expect(text()).not.toContain("error-banner");
     await act(async () => {
       await button.props.onClick();
     });
-    expect(text()).toContain("已复制");
+    expect(button.props["aria-label"]).toBe("已复制");
     expect(platform.setClipboardData).toHaveBeenCalledTimes(2);
   });
   it("首页恢复三条快捷建议，点击后切到键盘填入草稿但不自动发送", async () => {

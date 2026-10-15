@@ -22,6 +22,7 @@ import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
 import { CopyMessage, MessageText } from "../../chat/message-text";
+import { ChatIcon } from "../../chat/icon";
 import {
   type ClientEvent,
   type FormValues,
@@ -796,19 +797,28 @@ export default function Chat() {
                       )}
                     </View>
                     <View className="message-footer">
-                      <Button className="text-button" onClick={() => void openHelp(row.id)}>举报或反馈</Button>
                       <Text className="message-meta">
                         {row.status === "completed"
                           ? "AI 生成 · 已保存"
                           : "这一轮尚未完成"}
                       </Text>
-                      {row.status === "completed" && row.greeting && (
-                        <CopyMessage
-                          external={row.mode === "external"}
-                          value={row.greeting}
-                          label="复制阿 J 先生的回复"
-                        />
-                      )}
+                      <View className="message-actions">
+                        {row.status === "completed" && row.greeting && (
+                          <CopyMessage
+                            external={row.mode === "external"}
+                            value={row.greeting}
+                            label="复制阿 J 先生的回复"
+                          />
+                        )}
+                        <Button
+                          className="control message-action"
+                          aria-label="举报或反馈这条回复"
+                          onLongPress={() => void Taro.showToast({ title: "举报或反馈", icon: "none" })}
+                          onClick={() => void openHelp(row.id)}
+                        >
+                          <ChatIcon name="flag" />
+                        </Button>
+                      </View>
                     </View>
                   </View>
                 </View>

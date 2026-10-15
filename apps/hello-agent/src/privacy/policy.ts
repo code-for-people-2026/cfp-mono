@@ -10,7 +10,9 @@ export function privacyPolicy() {
   const backupDays = positiveDays(process.env.HELLO_PRIVACY_BACKUP_DAYS);
   const responseDays = positiveDays(process.env.HELLO_PRIVACY_RESPONSE_DAYS);
   const deployment = process.env.HELLO_PRIVACY_STORAGE_LOCATION?.trim();
-  const imageReview = process.env.HELLO_IMAGE_REVIEW_URL?.trim() ? {
+  const imageReview = process.env.HELLO_IMAGE_REVIEW_MODE === "aliyun-green" ? {
+    name: "阿里云计算有限公司（内容安全增强版）", contact: "https://www.aliyun.com/contact", region: "中国内地上海", policy: "https://help.aliyun.com/zh/document_detail/2705225.html",
+  } : process.env.HELLO_IMAGE_REVIEW_URL?.trim() ? {
     name: process.env.HELLO_IMAGE_REVIEW_PROVIDER,
     contact: process.env.HELLO_IMAGE_REVIEW_CONTACT,
     region: process.env.HELLO_IMAGE_REVIEW_REGION,

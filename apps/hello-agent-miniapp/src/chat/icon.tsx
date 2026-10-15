@@ -7,6 +7,8 @@ import arrowUp from "lucide-static/icons/arrow-up.svg?raw";
 import image from "lucide-static/icons/image.svg?raw";
 import x from "lucide-static/icons/x.svg?raw";
 import copy from "lucide-static/icons/copy.svg?raw";
+import check from "lucide-static/icons/check.svg?raw";
+import flag from "lucide-static/icons/flag.svg?raw";
 
 import menu from "lucide-static/icons/menu.svg?raw";
 import squarePen from "lucide-static/icons/square-pen.svg?raw";
@@ -32,6 +34,8 @@ const icons = {
   image,
   x,
   copy,
+  check,
+  flag,
 };
 type IconName = keyof typeof icons;
 

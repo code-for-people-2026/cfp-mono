@@ -22,27 +22,23 @@ export function CopyMessage({
   external?: boolean;
 }) {
   const [state, setState] = useState<"ready" | "copied" | "failed">("ready");
+  const actionLabel = state === "copied" ? "已复制" : state === "failed" ? "复制失败，重试" : label;
   return (
     <Button
-      className="control message-copy"
-      aria-label={label}
+      className="control message-action message-copy"
+      aria-label={actionLabel}
+      onLongPress={() => void Taro.showToast({ title: actionLabel, icon: "none" })}
       onClick={async () => {
         try {
           await copyAiReply(value, external);
           setState("copied");
         } catch {
           setState("failed");
+          void Taro.showToast({ title: "复制失败，请重试", icon: "none" });
         }
       }}
     >
-      <ChatIcon name="copy" />
-      <Text>
-        {state === "copied"
-          ? "已复制"
-          : state === "failed"
-            ? "复制失败，重试"
-            : "复制"}
-      </Text>
+      <ChatIcon name={state === "copied" ? "check" : "copy"} />
     </Button>
   );
 }
