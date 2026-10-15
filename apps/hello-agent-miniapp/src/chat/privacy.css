@@ -1,6 +1,9 @@
 .privacy-policy-link { display: block; margin: -7px 0 15px; }
 .privacy-choice { display: flex; align-items: flex-start; gap: 10px; padding: 19px 15px; }
 .privacy-choice + .privacy-choice { border-top: 1px solid #eef1ee; }
+.privacy-upload-intro { margin-bottom: 20px; }
+.privacy-choice-highlight { background: #edf4e9; border: 2px solid #78966b; border-radius: 12px; padding: 17px 13px; }
+.privacy-choice-highlight .privacy-choice-heading { color: #315443; }
 .privacy-choice-copy { flex: 1; min-width: 0; }
 .privacy-choice-heading { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: 14px; font-weight: 550; line-height: 1.7; }
 .privacy-choice-tag { color: #859586; background: #f2f6ef; padding: 1px 6px; border-radius: 5px; font-size: 10px; font-weight: 400; white-space: nowrap; }

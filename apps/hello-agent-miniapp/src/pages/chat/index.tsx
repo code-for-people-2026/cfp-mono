@@ -464,7 +464,7 @@ export default function Chat() {
 
   async function chooseImage(source?: ImageSource) {
     if (disabled || attachments.length >= 3) return;
-    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); return; }
+    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization", "image-upload"); return; }
     setUploading(true);
     setError("");
     try {
@@ -797,11 +797,6 @@ export default function Chat() {
                       )}
                     </View>
                     <View className="message-footer">
-                      <Text className="message-meta">
-                        {row.status === "completed"
-                          ? "AI 生成 · 已保存"
-                          : "这一轮尚未完成"}
-                      </Text>
                       <View className="message-actions">
                         {row.status === "completed" && row.greeting && (
                           <CopyMessage
@@ -819,6 +814,11 @@ export default function Chat() {
                           <ChatIcon name="flag" />
                         </Button>
                       </View>
+                      <Text className="message-meta">
+                        {row.status === "completed"
+                          ? "AI 生成 · 已保存"
+                          : "这一轮尚未完成"}
+                      </Text>
                     </View>
                   </View>
                 </View>

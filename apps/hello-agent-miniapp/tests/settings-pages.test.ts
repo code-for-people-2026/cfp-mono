@@ -1,5 +1,5 @@
 import { createElement } from "react";
-import { Checkbox } from "@tarojs/components";
+import { Checkbox, CheckboxGroup } from "@tarojs/components";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
@@ -47,6 +47,53 @@ it("首次授权不预选，缺少基础选择不能保存", async () => {
   expect(renderer.root.findAllByType(Checkbox).every((item) => item.props.checked === false)).toBe(true);
   expect(button("保存授权选择").props.disabled).toBe(true);
   expect(api.updateConsent).not.toHaveBeenCalled();
+});
+it("图片入口解释授权原因并突出敏感信息选项，不会替用户勾选或提交", async () => {
+  platform.params = { reason: "image-upload" };
+  await mount(PrivacyAuthorization);
+  expect(view()).toContain("上传图片需要你的同意");
+  const firstChoice = renderer.root.findAllByType("label")[0];
+  expect(firstChoice.props.className).toContain("privacy-choice-highlight");
+  expect(firstChoice.findByType(Checkbox).props.value).toBe("sensitive");
+  expect(renderer.root.findAllByType(Checkbox).every((item) => !item.props.checked)).toBe(true);
+  act(() => renderer.root.findByType(CheckboxGroup).props.onChange({ detail: { value: ["core", "model"] } }));
+  expect(button("保存并返回聊天").props.disabled).toBe(true);
+  await act(async () => { button("保存并返回聊天").props.onClick(); });
+  expect(api.updateConsent).not.toHaveBeenCalled();
+  act(() => renderer.root.findAllByType("button").find((item) => item.props["aria-label"] === "返回上一级")!.props.onClick());
+  expect(platform.navigateBack).toHaveBeenCalledTimes(1);
+  expect(api.updateConsent).not.toHaveBeenCalled();
+});
+it("图片授权保存失败保留选择，重试确认成功后才返回聊天并通知更新", async () => {
+  platform.params = { reason: "image-upload" };
+  const before = { policy, state: "active", consent: { version: "v1", core: true, model: true, sensitive: false, external: false } };
+  const saved = { ...before, consent: { ...before.consent, sensitive: true } };
+  api.getPrivacy.mockResolvedValue(before);
+  api.updateConsent.mockRejectedValueOnce(new Error("网络未连接，请重试")).mockResolvedValueOnce(saved);
+  await mount(PrivacyAuthorization);
+  act(() => renderer.root.findByType(CheckboxGroup).props.onChange({ detail: { value: ["core", "model", "sensitive"] } }));
+  await act(async () => { button("保存并返回聊天").props.onClick(); });
+  expect(view()).toContain("网络未连接，请重试");
+  expect(renderer.root.findAllByType(Checkbox).find((item) => item.props.value === "sensitive")!.props.checked).toBe(true);
+  expect(platform.navigateBack).not.toHaveBeenCalled();
+  expect(platform.eventCenter.trigger).not.toHaveBeenCalled();
+  await act(async () => { button("保存并返回聊天").props.onClick(); });
+  expect(api.updateConsent).toHaveBeenLastCalledWith({ version: "v1", core: true, model: true, sensitive: true, external: false });
+  expect(platform.eventCenter.trigger).toHaveBeenCalledWith("hello:privacy-changed", { status: saved });
+  expect(platform.navigateBack).toHaveBeenCalledTimes(1);
+});
+it("更新说明后的图片授权要求重新确认，普通授权页仍保留原入口", async () => {
+  platform.params = { reason: "image-upload" };
+  api.getPrivacy.mockResolvedValue({ policy, state: "active", consent: { version: "old", core: true, model: true, sensitive: true } });
+  await mount(PrivacyAuthorization);
+  expect(view()).toContain("说明已更新，请一并确认其余授权选择");
+  expect(renderer.root.findAllByType(Checkbox).every((item) => !item.props.checked)).toBe(true);
+  act(() => renderer.unmount());
+  platform.params = {};
+  await mount(PrivacyAuthorization);
+  expect(view()).not.toContain("上传图片需要你的同意");
+  expect(renderer.root.findAllByType("label")[0].findByType(Checkbox).props.value).toBe("core");
+  expect(button("保存授权选择")).toBeDefined();
 });
 it("删除需要完整确认短语，打开页面不会删除数据", async () => {
   platform.params = { action: "delete" };

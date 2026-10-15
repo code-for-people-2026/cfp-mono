@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Checkbox, CheckboxGroup, Input, Label, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import * as api from "./api";
-import { PageButton, SettingsPage, SettingsRow } from "./settings-page";
+import { leavePage, PageButton, SettingsPage, SettingsRow } from "./settings-page";
 import { notifyPrivacyChange, openHelp, openPrivacy, privacyChangedEvent, type PrivacyChange } from "./settings-navigation";
 import "./privacy.css";
 
@@ -66,6 +66,7 @@ export function PrivacyHome() {
 }
 
 export function PrivacyAuthorization() {
+  const forImageUpload = useRouter().params.reason === "image-upload";
   const { policy, status, setStatus, loading, error, refresh } = usePrivacy();
   const [checked, setChecked] = useState<string[]>([]);
   const [recipient, setRecipient] = useState({ name: "", contact: "", region: "", privacyUrl: "" });
@@ -84,29 +85,38 @@ export function PrivacyAuthorization() {
     { key: "sensitive", title: "敏感信息处理", tag: "可选", description: "单独同意处理我主动提供的敏感信息，用于图片、情绪练习、回应及安全审核。可能涉及健康或人脸，泄露会影响个人权益；可不选并只发送不含此类信息的普通文字。" },
     { key: "external", title: "外部 Agent 访问", tag: "可选", description: "单独授权我选择并提供令牌的外部 Agent 读取全部历史、摘要和图片。历史可能含敏感信息，使用外部连接还需单独开启敏感信息处理。我会先核查其接收方、地域与留存说明；可不选并使用平台或 BYOK。" },
   ];
+  const displayedChoices = forImageUpload
+    ? [...choices.filter((choice) => choice.key === "sensitive"), ...choices.filter((choice) => choice.key !== "sensitive")]
+    : choices;
   async function save() {
-    if (!policy || inFlight.current) return;
+    if (!policy || loading || inFlight.current || !checked.includes("core") || !checked.includes("model") || (forImageUpload && !checked.includes("sensitive"))) return;
     inFlight.current = true; setBusy(true); setMessage("");
     try {
       await api.establishIdentity();
       const next = await api.updateConsent({ version: policy.version, core: true, model: true, sensitive: checked.includes("sensitive"), external: checked.includes("external"), ...(checked.includes("external") ? { externalRecipient: recipient } : {}) });
       setStatus(next); notifyPrivacyChange({ status: next }); setMessage("授权已保存。");
+      if (forImageUpload && consentCurrent(next) && next.consent?.sensitive) leavePage();
     } catch (value) { setMessage(value instanceof Error ? value.message : "保存未完成，请重试"); }
     finally { inFlight.current = false; setBusy(false); }
   }
   return <SettingsPage title="授权管理" back>
-    <Text className="page-intro">按需选择权限，随时可以调整。首次授权不预选。</Text>
+    {forImageUpload ? <View className="privacy-upload-intro">
+      <Text className="page-heading">上传图片需要你的同意</Text>
+      <Text className="page-copy">图片可能含有人脸等敏感信息。请开启下方「敏感信息处理」，保存后即可上传。</Text>
+      {status?.consent && !consentCurrent(status) && <Text className="page-caption">说明已更新，请一并确认其余授权选择。</Text>}
+    </View> : <Text className="page-intro">按需选择权限，随时可以调整。首次授权不预选。</Text>}
     <LoadState loading={loading} error={error} retry={refresh} />
     {message && <Text className="page-result">{message}</Text>}
     <PageButton className="page-link privacy-policy-link" onClick={() => void openPrivacy("policies")}>阅读隐私政策、服务协议与第三方说明 ›</PageButton>
     <CheckboxGroup onChange={(event) => setChecked(event.detail.value)}>
-      <View className="page-card">{choices.map((choice) => <Label className="privacy-choice" key={choice.key}>
+      <View className="page-card">{displayedChoices.map((choice) => <Label className={`privacy-choice${forImageUpload && choice.key === "sensitive" ? " privacy-choice-highlight" : ""}`} key={choice.key}>
         <Checkbox value={choice.key} checked={checked.includes(choice.key)} disabled={busy || loading} color="#56765d" />
         <View className="privacy-choice-copy"><View className="privacy-choice-heading"><Text>{choice.title}</Text><Text className="privacy-choice-tag">{choice.tag}</Text></View><Text className="privacy-choice-description">{choice.description}</Text></View>
       </Label>)}</View>
     </CheckboxGroup>
     {checked.includes("external") && <View className="privacy-recipient"><Text className="page-section-title">外部接收方信息</Text><Text className="page-caption">填写实际使用的客户端及模型接收方；不明时请先使用平台或 BYOK。跨境处理须满足政策所述前提，填写不代表跨境手续获准。</Text>{([["name", "客户端及模型服务商名称"], ["contact", "接收方权利联系渠道"], ["region", "实际数据处理地域"], ["privacyUrl", "隐私政策完整 https 地址"]] as const).map(([key, label]) => <Input key={key} className="page-input" value={recipient[key]} disabled={busy} maxlength={500} placeholder={label} onInput={(event) => setRecipient((current) => ({ ...current, [key]: event.detail.value }))} />)}</View>}
-    <PageButton className="page-primary" disabled={busy || loading || !policy || !checked.includes("core") || !checked.includes("model")} onClick={() => void save()}>{busy ? "正在保存…" : "保存授权选择"}</PageButton>
+    <PageButton className="page-primary" disabled={busy || loading || !policy || !checked.includes("core") || !checked.includes("model") || (forImageUpload && !checked.includes("sensitive"))} onClick={() => void save()}>{busy ? "正在保存…" : forImageUpload ? "保存并返回聊天" : "保存授权选择"}</PageButton>
+    {forImageUpload && <Text className="page-caption">暂不开启，也可以返回聊天，只发送普通文字。</Text>}
     <Text className="page-caption">取消可选项后保存即可撤销该项授权。取消敏感信息处理后，含相关历史的对话不能继续交给模型，可导出或删除。停止全部处理，请撤回全部授权。</Text>
     <PageButton className="page-secondary" onClick={() => dataPage("withdraw")}>撤回全部授权</PageButton>
   </SettingsPage>;

@@ -161,6 +161,21 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传原因进入设置：%s", async (reason) => {
+  const originalRequest = platform.request.getMockImplementation()!;
+  platform.request.mockImplementation(async (options: { url: string }) => {
+    const response = await originalRequest(options);
+    if (options.url.endsWith("/privacy")) {
+      response.data.consent = { ...response.data.consent, sensitive: reason !== "missing-sensitive", version: reason === "updated-policy" ? "old" : "test" };
+    }
+    return response;
+  });
+  await mount();
+  await act(async () => { renderer!.root.findAllByType("button").find((node) => node.props.ariaLabel === "添加图片")!.props.onClick(); });
+  expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/privacy/authorization/index?reason=image-upload" });
+  expect(platform.request.mock.calls.some(([options]) => options.url.endsWith("/media") && options.method === "POST")).toBe(false);
+});
+
 async function openArtifact() {
   await act(async () => {
     renderer!.root
