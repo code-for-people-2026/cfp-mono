@@ -56,7 +56,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   async function confirmBirthday() {
     if (!status || !birthdayDeclaration) return;
     // Only the age band leaves this form; a birthday never becomes verified evidence.
-    if (birthdayDeclaration === "under14" || status.configuration.previewOnly) {
+    if (birthdayDeclaration !== "adult" || status.configuration.previewOnly) {
       const result = await api.beginAge({ declaration: birthdayDeclaration, noticeVersion: status.notice.version, consent: true });
       onChange(result.status);
     }

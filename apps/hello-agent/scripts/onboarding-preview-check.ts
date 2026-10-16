@@ -11,7 +11,7 @@ const { wechatLogin } = await import("../src/age/wechat");
 const { ageNotice } = await import("../src/age/policy");
 const { authenticate } = await import("../src/server/auth");
 const payload = await cms();
-const call = (url: string, token?: string, body?: unknown) => onboardingPreview(payload, new Request(`http://localhost${url}`, { method: body === undefined ? "GET" : "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
+const call = (url: string, token?: string, body?: unknown, ip?: string) => onboardingPreview(payload, new Request(`http://localhost${url}`, { method: body === undefined ? "GET" : "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(ip ? { "x-real-ip": ip } : {}), "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
 try {
   assert.equal((await call("/api/ready")).status, 200);
   const visitor = await (await call("/api/hello/miniapp-identity", undefined, {})).json();
@@ -59,5 +59,12 @@ try {
   await cleanOnboardingPreview(payload);
   assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true })).totalDocs, 0);
   assert.equal((await payload.count({ collection: "age-profiles", overrideAccess: true })).totalDocs, 0);
+  process.env.HELLO_TRUST_PROXY = "true";
+  for (const [endpoint, status] of [["wechat-login", 400], ["miniapp-identity", 200]] as const) {
+    for (let attempt = 0; attempt < 20; attempt++) assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.10")).status, status);
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.10")).status, 429);
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.11")).status, status, "另一来源仍可登录");
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {})).status, 503, "缺少可信代理来源时拒绝请求");
+  }
   console.log("Preview checks passed: login, explicitly scoped identity correction, no chat after verification, export/deletion and expiry cleanup.");
 } finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

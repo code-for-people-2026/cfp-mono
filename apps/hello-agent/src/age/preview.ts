@@ -4,6 +4,7 @@ import { AppError } from "../domain/contracts";
 import { authenticate, checkClientRequest, mintCredential, revokeCredentials, withAuthenticatedExecution } from "../server/auth";
 import { withCredentialLock } from "../server/credential-lock";
 import { failure, rateLimit, readJson } from "../server/http";
+import { rateLimitLogin } from "../server/login-limits";
 import { ageNotice, providerConfigured, wechatConfigured } from "./policy";
 import { AgeService, ageProfile } from "./service";
 import { wechatLogin } from "./wechat";
@@ -47,7 +48,7 @@ export async function onboardingPreview(payload: Payload, request: Request) {
     if (request.method === "GET" && path[0] === "legal") return json(previewPolicy());
     if (request.method === "POST" && ["wechat-login", "miniapp-identity"].includes(path[0])) {
       if (request.headers.has("origin")) throw new AppError(403, "请在微信小程序中体验登录");
-      rateLimit(`onboarding:${path[0]}`);
+      rateLimitLogin(request, `onboarding:${path[0]}`);
       return json(path[0] === "wechat-login" ? await wechatLogin(payload, request, await readJson(request, PROFILE_BODY_LIMIT)) : await mintCredential(payload, "miniapp"));
     }
     const owner = await authenticate(payload, request);

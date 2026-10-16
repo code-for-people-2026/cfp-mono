@@ -130,6 +130,14 @@ try {
   assert.equal(corrected.allowed, true); assert.equal(corrected.declaration, "adult");
   assert.equal(childCalls, 1);
   await assert.rejects(() => childService.submit({ ...identity, challenge: correction.challenge }), /无效|过期/);
+  const teen = await fresh(); let teenCalls = 0;
+  const teenService = new AgeService(payload, teen.owner, async () => { teenCalls++; return { state: "adult" }; });
+  const teenDeclaration = await challenge(teenService, "14to17");
+  assert.equal(teenDeclaration.status.allowed, false); assert.equal(teenCalls, 0);
+  const teenCorrection = await correct(teenService);
+  assert.equal(teenCorrection.status.declaration, "14to17"); assert.equal(teenCorrection.status.allowed, false);
+  const correctedTeen = await teenService.submit({ ...identity, challenge: teenCorrection.challenge });
+  assert.equal(correctedTeen.allowed, true); assert.equal(correctedTeen.declaration, "adult"); assert.equal(teenCalls, 1);
   const verifiedMinor = await fresh();
   const minorService = new AgeService(payload, verifiedMinor.owner, async () => ({ state: "minor", reference: "synthetic-minor" }));
   const minorChallenge = await challenge(minorService);

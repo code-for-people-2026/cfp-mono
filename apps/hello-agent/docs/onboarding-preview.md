@@ -6,6 +6,8 @@
 
 部署必须设置 `HELLO_PREVIEW_SCOPE=login-and-birthday`、`HELLO_DEPLOYED=true`、`PAYLOAD_SECRET`、独立 `HELLO_DATABASE_URI` 和真实微信配置。健康检查明确返回 `scope: login-and-birthday`；没有修改完整服务的 readiness 检查。数据库按现有迁移初始化，登录资料/年龄申报记录在30天未操作后清除，启动及每小时执行；清理失败会终止进程。
 
+登录限流还要求 `HELLO_TRUST_PROXY=true`：可信反向代理必须用实际客户端地址覆盖 `X-Real-IP`，应用端口只映射到宿主机回环地址，不能直接对外开放。每个来源独立限流，并另设全局上限；缺少可信来源时拒绝登录。
+
 预览支持导出、删除与退出。现有聊天不迁移。停止预览时应下线独立路由和进程，并按告知的保留期限处理独立数据。
 
 验证：`pnpm --filter @cfp/hello-agent exec tsx scripts/onboarding-preview-check.ts` 使用临时库验证登录状态、年龄申报、功能关闭、导出删除和过期清理；它的合成微信交换仅用于测试。上线验收另用开发者工具真实 `wx.login` 验证生产微信交换。全服务仍需要真实年龄核验服务和完整隐私运营配置，此发布不宣称其已完成。

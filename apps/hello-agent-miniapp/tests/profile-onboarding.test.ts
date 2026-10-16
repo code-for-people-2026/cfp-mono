@@ -14,8 +14,8 @@ let renderer: ReactTestRenderer;
 const onLogin = vi.fn(), onClose = vi.fn();
 const props = { status, privacyReady: false, onLogin, onClose, onChange: vi.fn(), onRefresh: vi.fn(), onPrivacy: vi.fn(), onHelp: vi.fn() };
 const button = (className: string) => renderer.root.findAllByType("button").find((item) => item.props.className.includes(className))!;
-beforeEach(() => { vi.clearAllMocks(); vi.stubEnv("TARO_ENV", "weapp"); api.loginWechat.mockResolvedValue({}); });
-afterEach(() => { act(() => renderer?.unmount()); vi.unstubAllEnvs(); });
+beforeEach(() => { vi.resetAllMocks(); vi.stubEnv("TARO_ENV", "weapp"); api.loginWechat.mockResolvedValue({}); });
+afterEach(() => { act(() => renderer?.unmount()); vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 it("未登录窗口默认填好昵称，直接登录提交所见昵称，详细说明默认收起", async () => {
   act(() => { renderer = create(createElement(AgeGate, props)); });
@@ -97,6 +97,32 @@ it("误填生日被拦截后明确说明无法对话，并允许通过身份证�
   expect(JSON.stringify(renderer.toJSON())).toContain("身份证");
   expect(renderer.root.findAllByType(Picker)).toHaveLength(0);
   expect(button("age-primary").props.disabled).toBe(true);
+});
+
+it.each([ ["2016-01-01", "under14"], ["2010-01-01", "14to17"] ] as const)("首次误填生日 %s 后保存年龄段，重新打开仍可通过身份证更正", async (birthday, declaration) => {
+  vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-16T00:00:00Z"));
+  const initial: AgeStatus = { ...status, loggedIn: true, configuration: { ...status.configuration, previewOnly: false, provider: true, providerName: "aliyun" } };
+  const declared: AgeStatus = { ...initial, declaration, state: declaration === "under14" ? "minor" : "unverified" };
+  const verified: AgeStatus = { ...declared, declaration: "adult", state: "adult", allowed: true, assurance: "identity_details_match" };
+  api.beginAge.mockResolvedValueOnce({ status: declared }).mockResolvedValueOnce({ status: declared, challenge: "synthetic-correction" });
+  api.submitAge.mockResolvedValue(verified);
+  act(() => { renderer = create(createElement(AgeGate, { ...props, status: initial })); });
+  act(() => { renderer.root.findByType(Picker).props.onChange({ detail: { value: birthday } }); });
+  await act(async () => { button("age-primary").props.onClick(); });
+  expect(api.beginAge).toHaveBeenNthCalledWith(1, { declaration, noticeVersion: "test", consent: true });
+  expect(props.onChange).toHaveBeenCalledWith(declared);
+  expect(JSON.stringify(renderer.toJSON())).toContain("暂时无法开始对话");
+  expect(api.submitAge).not.toHaveBeenCalled();
+  act(() => { renderer.unmount(); renderer = create(createElement(AgeGate, { ...props, status: declared })); });
+  act(() => { button("age-correct").props.onClick(); });
+  const inputs = renderer.root.findAllByType("input");
+  act(() => { inputs[0].props.onInput({ detail: { value: "隔离测试" } }); inputs[1].props.onInput({ detail: { value: "000000200001010000" } }); });
+  expect(button("age-primary").props.disabled).toBe(true);
+  act(() => { renderer.root.findByType(CheckboxGroup).props.onChange({ detail: { value: ["age"] } }); });
+  await act(async () => { button("age-primary").props.onClick(); });
+  expect(api.beginAge).toHaveBeenNthCalledWith(2, { declaration: "unknown", correction: true, noticeVersion: "test", consent: true });
+  expect(api.submitAge).toHaveBeenCalledWith({ challenge: "synthetic-correction", name: "隔离测试", idCard: "000000200001010000" });
+  expect(props.onChange).toHaveBeenLastCalledWith(verified);
 });
 
 it("更正生日提交单独同意和身份证，核验失败保留更正入口且清除敏感表单", async () => {
