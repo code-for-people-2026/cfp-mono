@@ -1,3 +1,4 @@
+import { projectVisibleRows } from "../operations/enforcement";
 import { createHash } from "node:crypto";
 import type {
   Payload,
@@ -44,10 +45,10 @@ export class Repository {
       sort,
       depth: 0,
     });
-    return result.docs;
+    return projectVisibleRows(this.payload, this.owner.id, collection, result.docs);
   }
   async all<C extends OwnedCollection>(collection: C, where: Where = {}) {
-    const rows: DataFromCollectionSlug<C>[] = [];
+    const rows: (DataFromCollectionSlug<C> & { visibility?: "quarantined" })[] = [];
     let cursor = 0;
     while (true) {
       const page = await this.list(

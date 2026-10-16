@@ -1,3 +1,4 @@
+import { isAdministrator } from "../../../../../../operations/policy";
 import { z } from "zod";
 import { cms } from "../../../../../../cms/client";
 import { readTurnKnowledge } from "../../../../../../agent/knowledge-evidence";
@@ -12,8 +13,9 @@ export async function GET(
   try {
     const payload = await cms();
     const { user } = await payload.auth({ headers: request.headers });
-    if (user?.collection !== "admins")
+    if (!user || user.collection !== "admins")
       throw new AppError(401, "请先登录管理后台");
+    if (!isAdministrator(user)) throw new AppError(403, "需要系统管理员权限");
     const id = z.coerce
       .number()
       .int()

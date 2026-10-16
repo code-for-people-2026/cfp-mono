@@ -1,0 +1,34 @@
+import assert from "node:assert/strict";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { sql } from "@payloadcms/db-sqlite";
+import { createLocalReq } from "payload";
+const dir = await mkdtemp(path.join(tmpdir(), "aj-operations-migration-"));
+process.env.HELLO_DATABASE_URI = `file:${dir}/migration.db`;
+process.env.PAYLOAD_SECRET = "isolated-safety-migration-test";
+process.env.HELLO_DEPLOYED = "true";
+Object.assign(process.env, { NODE_ENV: "test" });
+const { cms } = await import("../src/cms/client");
+const { migrations } = await import("../src/cms/migrations");
+const payload = await cms();
+try {
+  const db = payload.db.drizzle, req = await createLocalReq({}, payload);
+  for (const migration of migrations.filter((m) => !m.name.includes("safety_operations"))) await migration.up({ db, payload, req });
+  await db.run(sql`INSERT INTO admins (email, updated_at, created_at) VALUES ('legacy@migration.example', '2026-10-01', '2026-10-01')`);
+  await db.run(sql`INSERT INTO sessions (owner, title) VALUES ('migration-synthetic', '保留的旧记录')`);
+  await db.run(sql`INSERT INTO media (owner, mime_type, base64) VALUES ('migration-synthetic', 'image/png', 'c3ludGhldGlj')`);
+  const before = await db.all(sql`SELECT * FROM sessions`);
+  const safety = migrations.find((m) => m.name.includes("safety_operations"))!;
+  await safety.up({ db, payload, req }); await safety.up({ db, payload, req });
+  assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
+  assert.equal((await payload.find({ collection: "admins", overrideAccess: true })).docs[0].role, "administrator");
+  assert.equal((await payload.find({ collection: "media", overrideAccess: true })).docs[0].base64, "c3ludGhldGlj");
+  const { OperationsService } = await import("../src/operations/service");
+  const result = await new OperationsService(payload).complain({ id: "migration-synthetic", auth: "cookie" }, { category: "other", description: "迁移后真实受理与审计写入验证" });
+  assert.ok(result.receipt);
+  assert.equal((await payload.count({ collection: "safety-audit", overrideAccess: true })).totalDocs, 1);
+  assert.equal((await db.all(sql`PRAGMA foreign_key_check`)).length, 0);
+  assert.equal((await db.all<{ integrity_check: string }>(sql`PRAGMA integrity_check`))[0].integrity_check, "ok");
+  console.log("✓ 独立空库应用旧迁移→合成旧记录→运营迁移两次；旧数据保留、管理员角色迁移、投诉/审计写入、完整性与外键检查通过（未使用 schema push）");
+} finally { await payload.destroy(); }

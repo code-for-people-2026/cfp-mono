@@ -29,7 +29,15 @@
     "db:rename-brand": "tsx scripts/rename-brand.ts",
     "test:configuration": "tsx scripts/agent-configuration-check.ts",
     "eval:knowledge": "tsx scripts/evaluate-knowledge.ts",
-    "test:privacy-operations": "python3 scripts/privacy-operations-check.py && node scripts/privacy-snapshot-check.mjs && tsx scripts/privacy-restore-check.ts"
+    "test:privacy-operations": "python3 scripts/privacy-operations-check.py && node scripts/privacy-snapshot-check.mjs && tsx scripts/privacy-restore-check.ts",
+    "test:moderation": "tsx scripts/moderation-check.ts",
+    "test:artifacts": "tsx scripts/artifact-check.ts",
+    "test:images": "tsx scripts/image-generation-check.ts && tsx scripts/image-generation-migration-check.ts",
+    "test:operations": "tsx scripts/operations-check.ts && tsx scripts/operations-migration-check.ts",
+    "operations:maintenance": "tsx scripts/operations-maintenance.ts",
+    "operations:preview": "tsx scripts/operations-preview.ts",
+    "test:age": "tsx scripts/age-verification-check.ts && tsx scripts/age-migration-check.ts",
+    "age:preview": "node scripts/age-preview.mjs"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.2",

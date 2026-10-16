@@ -1,3 +1,8 @@
+import { operationsCollections, adminRoleField, adminAuditHook } from "../operations/collections";
+import { isAdministrator } from "../operations/policy";
+import { protectLastAdministrator, auditAdminDeletion } from "../operations/admin-access";
+import { guardSafetyWrite } from "../operations/guards";
+import { sensitiveReadAudit } from "../operations/audit";
 import { ageCollections, guardAgeWrite } from "../age/collections";
 import { privacyCollections, guardPrivacyWrite } from "../privacy/collections";
 import {
@@ -11,9 +16,9 @@ import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
 import type { OwnedCollection } from "./repository";
 
-const admin: Access = ({ req }) => req.user?.collection === "admins";
+const admin: Access = ({ req }) => isAdministrator(req.user);
 const ownerRead: Access = ({ req }) => {
-  if (req.user?.collection === "admins") return true;
+  if (isAdministrator(req.user)) return true;
   const owner = req.context.helloOwner;
   return typeof owner === "string" ? { owner: { equals: owner } } : false;
 };
@@ -48,11 +53,12 @@ const owned = (
     update: internalWrite,
     delete: internalWrite,
   },
-  hooks: { beforeChange: [guardPrivacyWrite, guardAgeWrite] },
+  hooks: { beforeChange: [guardPrivacyWrite, guardAgeWrite, guardSafetyWrite], afterRead: [sensitiveReadAudit] },
   fields: [...ownedFields, ...fields],
 });
 
 export const collections: CollectionConfig[] = [
+  ...operationsCollections,
   ...agentCollections,
   ...privacyCollections,
   ...ageCollections,
@@ -78,6 +84,7 @@ export const collections: CollectionConfig[] = [
     auth: true,
     admin: {
       group: "系统管理",
+      hidden: ({ user }) => !isAdministrator(user),
       useAsTitle: "email",
       defaultColumns: ["email", "createdAt", "updatedAt"],
       description:
@@ -85,10 +92,15 @@ export const collections: CollectionConfig[] = [
     },
     hooks: {
       // Payload 首次注册会 overrideAccess；必须在仍会执行的钩子中守住初始化边界。
+      beforeDelete: [auditAdminDeletion],
       beforeChange: [
+        protectLastAdministrator,
         async ({ req, operation, data }) => {
-          if (operation !== "create" || req.user?.collection === "admins")
+          if (req.user?.collection === "admins") {
+            if (!isAdministrator(req.user)) throw new APIError("账户与权限修改需要系统管理员", 403);
             return data;
+          }
+          if (operation !== "create") throw new APIError("账户与权限修改需要系统管理员", 403);
           const bootstrap =
             process.env.HELLO_ADMIN_BOOTSTRAP === "true" ||
             req.context.helloAdminBootstrap === true;
@@ -107,17 +119,19 @@ export const collections: CollectionConfig[] = [
               403,
             );
           }
+          data.role = "administrator";
           return data;
         },
       ],
+      afterChange: [adminAuditHook],
     },
     access: {
       admin: ({ req }) => req.user?.collection === "admins",
-      read: admin,
+      read: ({ req }) => isAdministrator(req.user) || (req.user?.collection === "admins" ? { id: { equals: req.user.id } } : false),
       update: admin,
       delete: admin,
       create: async ({ req }) => {
-        if (req.user?.collection === "admins") return true;
+        if (isAdministrator(req.user)) return true;
         if (process.env.HELLO_ADMIN_BOOTSTRAP !== "true") return false;
         return (
           (
@@ -129,7 +143,7 @@ export const collections: CollectionConfig[] = [
         );
       },
     },
-    fields: [],
+    fields: [adminRoleField],
   },
   {
     slug: "credentials",
@@ -252,6 +266,7 @@ export const collections: CollectionConfig[] = [
         }),
       ],
     },
+    { name: "imageGeneration", label: "图片生成任务", type: "json", admin: { readOnly: true }, typescriptSchema: [() => ({ type: "object", tsType: 'import("./images/service").ImageState | null' })] },
     { name: "model", label: "模型或外部声明", type: "text" },
     { name: "promptVersion", label: "提示词版本", type: "text" },
     { name: "error", label: "安全错误信息", type: "text" },
@@ -288,6 +303,9 @@ export const collections: CollectionConfig[] = [
     { name: "expiresAt", label: "失效时间", type: "date", required: true },
   ]),
   owned("media", "灵感图片", [
+    { name: "generationKey", type: "text", unique: true, admin: { hidden: true } },
+    { name: "generation", label: "生成来源", type: "json", admin: { readOnly: true }, typescriptSchema: [() => ({ type: "object", tsType: '{ turnId: number; provider: string; model: string; taskId: string } | null' })] },
+    { name: "safetyReview", label: "图片审核", type: "json", admin: { readOnly: true }, typescriptSchema: [() => ({ type: "object", tsType: 'import("./operations/image-review").ImageReview | null' })] },
     {
       name: "mimeType",
       label: "图片与格式",

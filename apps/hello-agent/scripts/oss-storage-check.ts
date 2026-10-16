@@ -257,7 +257,7 @@ try {
   const password = randomUUID();
   await payload.create({
     collection: "admins",
-    data: { email: "oss-admin@example.invalid", password },
+    data: { role: "reviewer", email: "oss-admin@example.invalid", password },
     context: { helloAdminBootstrap: true },
   });
   const login = await payload.login({

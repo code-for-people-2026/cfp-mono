@@ -1,3 +1,5 @@
+import { operationsCollections } from "../operations/collections";
+import { up as safetyMigration } from "../cms/migrations/20261013_163000_safety_operations";
 import { ageCollections } from "../age/collections";
 import { ageNotice } from "../age/policy";
 import { up as ageMigration } from "../cms/migrations/20261013_181500_wechat_age_verification";
@@ -25,7 +27,7 @@ import { up as initial } from "../cms/migrations/20261013_151000_privacy_lifecyc
 import { up as historyInspection } from "../cms/migrations/20261013_175000_privacy_history_inspection";
 import { up as revision } from "../cms/migrations/20261013_174000_privacy_revision";
 
-// No operations collections or production database: this exercises the real
+// An isolated database exercises the real
 // Payload profile reads, SQLite CAS and additive migration in isolation.
 const holder = vi.hoisted(() => ({ payload: undefined as Payload | undefined }));
 vi.mock("../cms/client", () => ({ cms: () => holder.payload }));
@@ -59,7 +61,7 @@ beforeAll(async () => {
   payload = await new BasePayload().init({ config: buildConfig({
     secret: "isolated-profile-test", telemetry: false,
     db: sqliteAdapter({ client: { url: `file:${directory}/profiles.db` }, push: false, transactionOptions: {} }),
-    collections: [...privacyCollections, ...ageCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "wechatKey", type: "text" }, { name: "expiresAt", type: "date" }] }],
+    collections: [...operationsCollections, ...privacyCollections, ...ageCollections, { slug: "greetings", access: { read: () => true }, fields: [{ name: "owner", type: "text" }, { name: "input", type: "json" }, { name: "artifacts", type: "json" }, { name: "status", type: "text" }, { name: "mode", type: "text" }, { name: "fingerprint", type: "text" }] }, { slug: "admins", auth: true, fields: [] }, { slug: "credentials", fields: [{ name: "owner", type: "text" }, { name: "kind", type: "text" }, { name: "digest", type: "text" }, { name: "wechatKey", type: "text" }, { name: "expiresAt", type: "date" }] }],
   }) });
   holder.payload = payload;
   const args = { db: payload.db.drizzle } as MigrateUpArgs;
@@ -69,7 +71,7 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
-  await ageMigration(args); await accountMigration(args); await correctionMigration(args);
+  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });

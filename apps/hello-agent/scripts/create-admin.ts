@@ -21,7 +21,7 @@ try {
       collection: "admins",
       overrideAccess: true,
       context: { helloAdminBootstrap: true },
-      data: { email, password },
+      data: { email, password, role: "administrator" },
     });
     console.log(
       "已创建本地 CMS 管理员。请清除初始化环境变量，通过 /admin 登录。",

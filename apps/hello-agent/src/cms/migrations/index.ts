@@ -1,3 +1,5 @@
+import * as migration_20261014_080000_image_generation from "./20261014_080000_image_generation";
+import * as migration_20261013_163000_safety_operations from "./20261013_163000_safety_operations";
 import * as profile from "./20261014_080000_wechat_profile";
 import * as correction from "./20261014_103000_wechat_age_correction";
 import * as age from "./20261013_181500_wechat_age_verification";
@@ -42,4 +44,6 @@ export const migrations = [
   { up: age.up, down: age.down, name: "20261013_181500_wechat_age_verification" },
   { up: profile.up, down: profile.down, name: "20261014_080000_wechat_profile" },
   { up: correction.up, down: correction.down, name: "20261014_103000_wechat_age_correction" },
+  { up: migration_20261013_163000_safety_operations.up, down: migration_20261013_163000_safety_operations.down, name: "20261013_163000_safety_operations" },
+  { up: migration_20261014_080000_image_generation.up, down: migration_20261014_080000_image_generation.down, name: "20261014_080000_image_generation" },
 ];

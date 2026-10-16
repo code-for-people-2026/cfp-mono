@@ -1,8 +1,9 @@
+import { isAdministrator } from "../operations/policy";
 import { APIError, type Access, type CollectionConfig } from "payload";
 import { PSYCHOLOGY_APPROACHES } from "../agent/psychology";
 import { encryptKnowledgeSecret } from "./secret";
 
-const admin: Access = ({ req }) => req.user?.collection === "admins";
+const admin: Access = ({ req }) => isAdministrator(req.user);
 const access = { read: admin, create: admin, update: admin, delete: admin };
 
 export const agentCollections: CollectionConfig[] = [

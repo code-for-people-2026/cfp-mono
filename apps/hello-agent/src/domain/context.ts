@@ -44,7 +44,7 @@ export class ContextService {
           { id: { greater_than: memory.throughId } },
         ],
       })
-    ).map(toMemoryTurn);
+    ).filter((row) => row.status === "completed").map(toMemoryTurn);
     return { memory, turns };
   }
   private save(sessionId: number, memory: Memory) {

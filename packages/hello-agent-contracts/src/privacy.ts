@@ -13,6 +13,6 @@ export const privacyStatusSchema = z.object({
 export const recoveryCodeSchema = z.object({ code: z.string() });
 export const recoveredIdentitySchema = z.object({ token: z.string().optional(), owner: z.string().optional() });
 export const logoutSchema = z.object({ loggedOut: z.literal(true) });
-export const deletionSchema = z.object({ deleted: z.literal(true), backupNotice: z.string() });
+export const deletionSchema = z.object({ deleted: z.literal(true), backupNotice: z.string(), operations: z.object({ erased: z.number(), held: z.number(), notice: z.string() }).optional() });
 export type PrivacyPolicy = z.infer<typeof privacyPolicySchema>;
 export type PrivacyStatus = z.infer<typeof privacyStatusSchema>;

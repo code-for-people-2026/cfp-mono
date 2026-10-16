@@ -76,7 +76,14 @@ export async function uploadedAiXmp(bytes: Uint8Array) {
   if (!texts.length) return undefined;
   if (texts.length !== 1) throw invalid();
   let label: z.infer<typeof schema>;
-  try { label = schema.parse(JSON.parse(texts[0])); } catch { throw invalid(); }
+  try {
+    // Wan PNGs store a JSON-string-encoded flat AIGC object under the AIGC
+    // keyword. Decode at most twice, then retain every required source field.
+    let parsed: unknown = texts[0];
+    for (let pass = 0; pass < 2 && typeof parsed === "string"; pass++) parsed = JSON.parse(parsed);
+    const wrapped = schema.safeParse(parsed);
+    label = wrapped.success ? wrapped.data : { AIGC: schema.shape.AIGC.parse(parsed) };
+  } catch { throw invalid(); }
   // Keep only AI provenance, never user EXIF/GPS or unrelated XMP properties.
   return `<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:aj="https://codeforpeople.cn/ns/aigc/1.0/"><aj:AIGC>${escapeHtml(JSON.stringify(label))}</aj:AIGC></rdf:Description></rdf:RDF></x:xmpmeta>`;
 }

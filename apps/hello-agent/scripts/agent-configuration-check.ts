@@ -24,7 +24,7 @@ try {
   const admin = {
     ...(await payload.create({
       collection: "admins",
-      data: {
+      data: { role: "reviewer",
         email: "configuration@example.test",
         password: "fixture-password-long",
       },

@@ -59,7 +59,7 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
   }
   if (restoreLedger) {
     // Older snapshots may predate the privacy collection contents entirely.
-    for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "privacy-profiles", "wechat-identities", "age-profiles"] as const) {
+    for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "privacy-profiles", "wechat-identities", "age-profiles", "safety-cases"] as const) {
       cursor = 0;
       while (true) {
         const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0, limit: pageSize, sort: "id", select: { id: true, owner: true }, where: { id: { greater_than: cursor } } });

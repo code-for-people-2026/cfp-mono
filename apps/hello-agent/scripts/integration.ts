@@ -39,7 +39,7 @@ try {
   const repo = new Repository(payload, owner);
   const model = new ScriptedModel();
   await (await import("./privacy-test-fixture")).consentForFixture(repo);
-  await assert.rejects(() => new GreetingService(repo).upload(Buffer.from("no reviewer")), { status: 503 });
+  await assert.rejects(async () => new GreetingService(repo).upload(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()), { status: 503 });
   // Synthetic allow decision exercises image storage, not a real reviewer.
   const service = new GreetingService(repo, (args) => runGreeting(args, model), undefined, async () => "allow");
   const session = await service.createSession("集成测试");
@@ -247,6 +247,7 @@ try {
   pass("小程序凭证支持原生请求，但不能冒充 MCP 令牌或绕过浏览器来源校验");
 
   const adminData = {
+    role: "administrator" as const,
     email: "integration-admin@example.invalid",
     password: randomUUID(),
   };
@@ -270,7 +271,7 @@ try {
       payload.create({
         collection: "admins",
         overrideAccess: true,
-        data: { email: "second@example.invalid", password: randomUUID() },
+        data: { role: "reviewer", email: "second@example.invalid", password: randomUUID() },
       }),
     /管理员注册未开放/,
   );

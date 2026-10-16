@@ -67,6 +67,16 @@ export interface Config {
   };
   blocks: {};
   collections: {
+    'safety-cases': SafetyCase;
+    'safety-evidence': SafetyEvidence;
+    'safety-audit': SafetyAudit;
+    'safety-enforcements': SafetyEnforcement;
+    'safety-settings': SafetySetting;
+    'safety-rules': SafetyRule;
+    'safety-releases': SafetyRelease;
+    'safety-regressions': SafetyRegression;
+    'safety-evaluation-items': SafetyEvaluationItem;
+    'safety-evaluations': SafetyEvaluation;
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
     'privacy-profiles': PrivacyProfile;
@@ -88,6 +98,16 @@ export interface Config {
   };
   collectionsJoins: {};
   collectionsSelect: {
+    'safety-cases': SafetyCasesSelect<false> | SafetyCasesSelect<true>;
+    'safety-evidence': SafetyEvidenceSelect<false> | SafetyEvidenceSelect<true>;
+    'safety-audit': SafetyAuditSelect<false> | SafetyAuditSelect<true>;
+    'safety-enforcements': SafetyEnforcementsSelect<false> | SafetyEnforcementsSelect<true>;
+    'safety-settings': SafetySettingsSelect<false> | SafetySettingsSelect<true>;
+    'safety-rules': SafetyRulesSelect<false> | SafetyRulesSelect<true>;
+    'safety-releases': SafetyReleasesSelect<false> | SafetyReleasesSelect<true>;
+    'safety-regressions': SafetyRegressionsSelect<false> | SafetyRegressionsSelect<true>;
+    'safety-evaluation-items': SafetyEvaluationItemsSelect<false> | SafetyEvaluationItemsSelect<true>;
+    'safety-evaluations': SafetyEvaluationsSelect<false> | SafetyEvaluationsSelect<true>;
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
     'privacy-profiles': PrivacyProfilesSelect<false> | PrivacyProfilesSelect<true>;
@@ -140,6 +160,252 @@ export interface AdminAuthOperations {
     email: string;
     password: string;
   };
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-cases".
+ */
+export interface SafetyCase {
+  id: number;
+  receipt: string;
+  owner: string;
+  source: 'complaint' | 'appeal' | 'moderation' | 'image';
+  status: 'pending' | 'in_progress' | 'review' | 'resolved';
+  severity: 'urgent' | 'high' | 'normal';
+  category: string;
+  stage: string;
+  sessionId?: number | null;
+  turnId?: number | null;
+  mediaId?: number | null;
+  requestId?: string | null;
+  parentId?: number | null;
+  assignedTo?: number | null;
+  lastReviewer?: number | null;
+  revision: number;
+  acceptBy?: string | null;
+  resolveBy?: string | null;
+  feedbackBy?: string | null;
+  acceptedAt?: string | null;
+  resolvedAt?: string | null;
+  feedbackAt?: string | null;
+  ruleVersion?: string | null;
+  lexiconVersion?: string | null;
+  modelVersion?: string | null;
+  decision?: string | null;
+  action?: string | null;
+  reason?: string | null;
+  reply?: string | null;
+  retentionBasis?: string | null;
+  retainUntil?: string | null;
+  legalHold?: boolean | null;
+  holdReason?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evidence".
+ */
+export interface SafetyEvidence {
+  id: number;
+  caseId: number;
+  excerpt?: string | null;
+  digest: string;
+  originalLength?: number | null;
+  purgedAt?: string | null;
+  purgeReason?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-audit".
+ */
+export interface SafetyAudit {
+  id: number;
+  actor: string;
+  event: string;
+  target: string;
+  reason: string;
+  metadata?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-enforcements".
+ */
+export interface SafetyEnforcement {
+  id: number;
+  key: string;
+  owner: string;
+  targetType: string;
+  targetId?: number | null;
+  sessionId?: number | null;
+  caseId: number;
+  active: boolean;
+  reason: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-settings".
+ */
+export interface SafetySetting {
+  id: number;
+  acceptanceHours: number;
+  resolutionHours: number;
+  feedbackHours: number;
+  evidenceDays: number;
+  staffing: string;
+  retentionBasis: string;
+  reason: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-rules".
+ */
+export interface SafetyRule {
+  id: number;
+  version: string;
+  reason: string;
+  mode: string;
+  extraWords?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  ignoredWords?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  lexiconVersion: string;
+  lexiconHash: string;
+  promptVersion: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-releases".
+ */
+export interface SafetyRelease {
+  id: number;
+  ruleId: number;
+  regressionId: number;
+  reason: string;
+  actor: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-regressions".
+ */
+export interface SafetyRegression {
+  id: number;
+  ruleId: number;
+  state: string;
+  results?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  actor: string;
+  suiteVersion: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evaluation-items".
+ */
+export interface SafetyEvaluationItem {
+  id: number;
+  suite: string;
+  key: string;
+  category: string;
+  input: string;
+  expected: string;
+  provenance: string;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evaluations".
+ */
+export interface SafetyEvaluation {
+  id: number;
+  itemId: number;
+  parentId?: number | null;
+  remediation?: string | null;
+  state: string;
+  input: string;
+  output?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  owner: string;
+  turnId?: number | null;
+  modelVersion?: string | null;
+  ruleVersion?: string | null;
+  error?: string | null;
+  judgment?: string | null;
+  judgmentReason?: string | null;
+  judge?: string | null;
+  judgedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
 }
 /**
  * 一个心理流派对应一个 subagent；主 Agent 选择专家并整合回复。保存后下一轮对话生效。停用流派不会删除已有聊天。
@@ -320,6 +586,7 @@ export interface PlatformModelQuota {
  */
 export interface Admin {
   id: number;
+  role: 'administrator' | 'reviewer' | 'auditor';
   updatedAt: string;
   createdAt: string;
   email: string;
@@ -386,6 +653,7 @@ export interface Greeting {
   association?: string | null;
   approach?: string | null;
   artifacts?: import('@cfp/hello-agent-protocol').Artifact[] | null;
+  imageGeneration?: import('./images/service').ImageState | null;
   model?: string | null;
   promptVersion?: string | null;
   error?: string | null;
@@ -430,6 +698,9 @@ export interface SessionLock {
 export interface Media {
   id: number;
   owner: string;
+  generationKey?: string | null;
+  generation?: {turnId: number; provider: string; model: string; taskId: string} | null;
+  safetyReview?: import('./operations/image-review').ImageReview | null;
   mimeType: string;
   base64?: string | null;
   object?: import('./domain/media-policy').ImageReference | null;
@@ -537,6 +808,182 @@ export interface PayloadMigration {
   batch?: number | null;
   updatedAt: string;
   createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-cases_select".
+ */
+export interface SafetyCasesSelect<T extends boolean = true> {
+  receipt?: T;
+  owner?: T;
+  source?: T;
+  status?: T;
+  severity?: T;
+  category?: T;
+  stage?: T;
+  sessionId?: T;
+  turnId?: T;
+  mediaId?: T;
+  requestId?: T;
+  parentId?: T;
+  assignedTo?: T;
+  lastReviewer?: T;
+  revision?: T;
+  acceptBy?: T;
+  resolveBy?: T;
+  feedbackBy?: T;
+  acceptedAt?: T;
+  resolvedAt?: T;
+  feedbackAt?: T;
+  ruleVersion?: T;
+  lexiconVersion?: T;
+  modelVersion?: T;
+  decision?: T;
+  action?: T;
+  reason?: T;
+  reply?: T;
+  retentionBasis?: T;
+  retainUntil?: T;
+  legalHold?: T;
+  holdReason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evidence_select".
+ */
+export interface SafetyEvidenceSelect<T extends boolean = true> {
+  caseId?: T;
+  excerpt?: T;
+  digest?: T;
+  originalLength?: T;
+  purgedAt?: T;
+  purgeReason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-audit_select".
+ */
+export interface SafetyAuditSelect<T extends boolean = true> {
+  actor?: T;
+  event?: T;
+  target?: T;
+  reason?: T;
+  metadata?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-enforcements_select".
+ */
+export interface SafetyEnforcementsSelect<T extends boolean = true> {
+  key?: T;
+  owner?: T;
+  targetType?: T;
+  targetId?: T;
+  sessionId?: T;
+  caseId?: T;
+  active?: T;
+  reason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-settings_select".
+ */
+export interface SafetySettingsSelect<T extends boolean = true> {
+  acceptanceHours?: T;
+  resolutionHours?: T;
+  feedbackHours?: T;
+  evidenceDays?: T;
+  staffing?: T;
+  retentionBasis?: T;
+  reason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-rules_select".
+ */
+export interface SafetyRulesSelect<T extends boolean = true> {
+  version?: T;
+  reason?: T;
+  mode?: T;
+  extraWords?: T;
+  ignoredWords?: T;
+  lexiconVersion?: T;
+  lexiconHash?: T;
+  promptVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-releases_select".
+ */
+export interface SafetyReleasesSelect<T extends boolean = true> {
+  ruleId?: T;
+  regressionId?: T;
+  reason?: T;
+  actor?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-regressions_select".
+ */
+export interface SafetyRegressionsSelect<T extends boolean = true> {
+  ruleId?: T;
+  state?: T;
+  results?: T;
+  actor?: T;
+  suiteVersion?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evaluation-items_select".
+ */
+export interface SafetyEvaluationItemsSelect<T extends boolean = true> {
+  suite?: T;
+  key?: T;
+  category?: T;
+  input?: T;
+  expected?: T;
+  provenance?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-evaluations_select".
+ */
+export interface SafetyEvaluationsSelect<T extends boolean = true> {
+  itemId?: T;
+  parentId?: T;
+  remediation?: T;
+  state?: T;
+  input?: T;
+  output?: T;
+  owner?: T;
+  turnId?: T;
+  modelVersion?: T;
+  ruleVersion?: T;
+  error?: T;
+  judgment?: T;
+  judgmentReason?: T;
+  judge?: T;
+  judgedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
@@ -649,6 +1096,7 @@ export interface PlatformModelQuotasSelect<T extends boolean = true> {
  * via the `definition` "admins_select".
  */
 export interface AdminsSelect<T extends boolean = true> {
+  role?: T;
   updatedAt?: T;
   createdAt?: T;
   email?: T;
@@ -706,6 +1154,7 @@ export interface GreetingsSelect<T extends boolean = true> {
   association?: T;
   approach?: T;
   artifacts?: T;
+  imageGeneration?: T;
   model?: T;
   promptVersion?: T;
   error?: T;
@@ -741,6 +1190,9 @@ export interface SessionLocksSelect<T extends boolean = true> {
  */
 export interface MediaSelect<T extends boolean = true> {
   owner?: T;
+  generationKey?: T;
+  generation?: T;
+  safetyReview?: T;
   mimeType?: T;
   base64?: T;
   object?: T;

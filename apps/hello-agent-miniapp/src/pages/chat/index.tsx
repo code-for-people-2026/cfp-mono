@@ -613,6 +613,22 @@ export default function Chat() {
         ];
       }),
   ) as Record<string, FormValues>;
+  async function resumeImage(row: Turn) {
+    if (disabled || !sessionId) return;
+    if (row.mode === "byok" && apiKey.trim().length < 10) {
+      setError("请先填写本次使用的 DeepSeek 密钥，再继续取图"); return;
+    }
+    const key = row.mode === "byok" ? apiKey : undefined;
+    setApiKey(""); setBusy(true); setError("");
+    setProgress({ text: "", messages: [], step: "正在继续取图…" });
+    try {
+      await api.resumeImage(row.id, requestId(), key, setProgress);
+      await readHistory(sessionId);
+    } catch (value) {
+      problem(value);
+      await readHistory(sessionId).catch(() => undefined);
+    } finally { setProgress(undefined); setBusy(false); }
+  }
   async function submitForm(event: ClientEvent) {
     if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); throw new Error("请先单独同意情绪练习的敏感信息处理"); }
     const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
@@ -793,6 +809,7 @@ export default function Chat() {
                     </View>
                     <View className="message-footer">
                       <View className="message-actions">
+                        {row.imageGeneration?.canResume && <Button className="control message-action" disabled={disabled} onClick={() => void resumeImage(row)}>继续取图</Button>}
                         {row.status === "completed" && row.greeting && (
                           <CopyMessage
                             external={row.mode === "external"}
@@ -853,6 +870,7 @@ export default function Chat() {
                 </View>
               </View>
             )}
+            {busy && !pending && progress && <Text className="artifact-caption">{progress.step}</Text>}
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
