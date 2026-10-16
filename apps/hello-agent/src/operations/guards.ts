@@ -1,4 +1,5 @@
 import type { CollectionBeforeChangeHook } from "payload";
+import { isDeepStrictEqual } from "node:util";
 import { AppError } from "../domain/contracts";
 export const guardSafetyWrite: CollectionBeforeChangeHook = async ({ req, data, originalDoc, collection }) => {
   if (!["greetings", "sessions"].includes(collection.slug)) return data;
@@ -7,7 +8,8 @@ export const guardSafetyWrite: CollectionBeforeChangeHook = async ({ req, data, 
   const restrictions = (await req.payload.find({ collection: "safety-enforcements", overrideAccess: true, req, pagination: false, limit: 0, where: { and: [{ owner: { equals: owner } }, { active: { equals: true } }] } })).docs;
   if (collection.slug === "greetings" && data.status === "completed" && restrictions.some((item) => item.targetType === "owner" || (item.targetType === "turn" && item.targetId === originalDoc?.id)))
     throw new AppError(403, "内容或身份已受限，不能发布本轮回应");
-  if (collection.slug === "sessions" && data.memory && restrictions.some((item) => item.targetType === "media" || item.targetType === "turn"))
+  // Payload 的 beforeChange data 已合入原记录；仅更新活动时间不能误当成写入新摘要。
+  if (collection.slug === "sessions" && data.memory && !isDeepStrictEqual(data.memory, originalDoc?.memory) && restrictions.some((item) => item.targetType === "media" || item.targetType === "turn"))
     throw new AppError(403, "此会话存在隔离内容，暂不保存可能包含该内容的记忆摘要");
   return data;
 };

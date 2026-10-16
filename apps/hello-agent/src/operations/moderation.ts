@@ -1,3 +1,4 @@
+import { reservePlatformCalls } from "../cms/platform-quota";
 import type { Repository } from "../cms/repository";
 import { ContentReviewError } from "../domain/contracts";
 import { evaluateText, type Moderator } from "../domain/moderation";
@@ -8,7 +9,7 @@ import { OperationsService, transaction } from "./service";
 export function operationalModerator(repo: Repository): Moderator {
   return async (request) => {
     const rule = await activeRule(repo.payload);
-    const verdict = await evaluateText(request, rule);
+    const verdict = await evaluateText(request, rule, request.mode === "byok" ? undefined : () => reservePlatformCalls(repo.payload, 1));
     await transaction(repo.payload, async (req) => {
       if (!["allow", "not_reviewed"].includes(verdict.decision)) {
         await new OperationsService(repo.payload).createCase({

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeDeepSeek } from "../models/deepseek";
-import { moderateText } from "./moderation";
+import { evaluateText, moderateText } from "./moderation";
 import { createKeywordMatcher, textLeaves } from "./keyword-matcher";
 
 vi.mock("../models/deepseek", () => ({ DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
@@ -64,4 +64,16 @@ describe("命中后的语境复核", () => {
     complete.mockRejectedValue(new Error("private-test-key provider raw body"));
     await expect(moderateText(request)).rejects.toMatchObject({ status: 503, message: "内容审核暂未完成，请稍后重试" });
   });
+  it("语义审核先预扣一次调用，预算不足不访问供应商；未召回不扣额度", async () => {
+    const reserve = vi.fn(async () => { throw new Error("quota exhausted"); });
+    const blocked = await evaluateText(request, undefined, reserve);
+    expect(blocked.decision).toBe("unavailable");
+    expect(reserve).toHaveBeenCalledTimes(1);
+    expect(complete).not.toHaveBeenCalled();
+    reserve.mockClear();
+    const skipped = await evaluateText({ ...request, texts: ["早上好"] }, undefined, reserve);
+    expect(skipped.decision).toBe("not_reviewed");
+    expect(reserve).not.toHaveBeenCalled();
+  });
+
 });

@@ -1,3 +1,4 @@
+import { reservePlatformCalls } from "../cms/platform-quota";
 import type { Payload, TypedUser } from "payload";
 import { AppError } from "../domain/contracts";
 import { evaluateText, type ModerationRequest } from "../domain/moderation";
@@ -32,7 +33,7 @@ export class RulesService {
     for (const item of regressionSuite) {
       for (const stage of ["input", "output"] as const) {
         const request: ModerationRequest = { stage, texts: [item.text], requestId: `regression:${id}:${item.key}:${stage}`, apiKey: process.env.DEEPSEEK_API_KEY };
-        const actual = await reviewer(request, rule);
+        const actual = await reviewer(request, rule, reviewer === evaluateText ? () => reservePlatformCalls(this.payload, 1) : undefined);
         results.push({ key: item.key, stage, expected: item.expected, actual: actual.decision, model: actual.model, passed: actual.decision === item.expected });
       }
     }

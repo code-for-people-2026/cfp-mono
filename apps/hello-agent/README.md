@@ -317,6 +317,6 @@ Compose 的 `data-init` 使用同一镜像内的 `node` 用户准备 `/opt/cfp-h
 
 运营统一使用 [Payload 原生后台](http://127.0.0.1:3310/admin) 的「内容安全运营」资源；独立 `/operations` 页面已移除。系统管理员维护运营安排、规则与评测，审核员在审核案件中领取、查看最小证据、处置与复核，审计员只读审计。原始聊天及主分支新增的知识库、Agent 配置仍仅供系统管理员访问。详见 [运营说明](docs/safety-operations.md)。
 
-主 Agent 可按用户明确需求调用万相文生图，先审核后入库；图片任务中断时使用「继续取图」复用任务。保留主分支的专家协作与共享调用预算；生图轮次的运行时间上限为 180 秒，普通轮次仍为 75 秒。见 [生图说明](docs/image-generation.md)。
+主 Agent 可按用户明确需求调用万相文生图，先审核后入库；图片任务中断时使用「继续取图」复用任务。保留主分支的专家协作与共享调用预算；平台密钥触发的语义审核及规则回归每次实际模型调用另预扣 1 次，BYOK 审核沿用当次个人密钥；生图轮次的运行时间上限为 180 秒，普通轮次仍为 75 秒。见 [生图说明](docs/image-generation.md)。
 
 回归入口：`test:operations`、`test:images`、`test:moderation`，与现有 `test:integration`、`test:age`、`test:privacy-operations` 配合运行。全部自动检查使用隔离数据，真实模型质量评估仍需独立执行。

@@ -13,6 +13,7 @@ const verdictSchema = z.object({
 
 export type ModerationRequest = {
   stage: "input" | "output";
+  mode?: "platform" | "byok" | "external";
   texts: string[];
   context?: string;
   requestId: string;
@@ -28,7 +29,7 @@ block：促进现实暴力、恐怖活动、违法交易或诈骗的可操作指
 allow：正常日常交流、对困难情绪或自杀自伤念头的求助、安慰与危机支持；医学、性健康、法律、历史及新闻的中性讨论；政治观点、政策批评、身份词或人名本身；对有害内容的拒绝、预防及不含实施细节的说明。不要因出现关键词就阻断求助或拒答。
 stage=input 时判断用户请求是否要求生成上述有害内容，不阻断用户描述自己经历的伤害；stage=output 时判断 texts 中准备展示的回应及作品，context 只帮助理解，不因 context 中被拒绝的请求误拦安全回应。无法确定时 uncertain。`;
 
-export async function evaluateText(request: ModerationRequest, rule?: Rule) {
+export async function evaluateText(request: ModerationRequest, rule?: Rule, beforeReview?: () => Promise<void>) {
   const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text)))].filter((word) => !rule?.ignoredWords.includes(word));
   if (rule?.extraWords.length) keywords.push(...request.texts.flatMap((text) => createKeywordMatcher(rule.extraWords)(text)));
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
@@ -36,6 +37,7 @@ export async function evaluateText(request: ModerationRequest, rule?: Rule) {
   if (!keywords.length && rule?.mode !== "all") return result("not_reviewed");
   if (!request.apiKey) return result("unavailable");
   try {
+    await beforeReview?.();
     const response = await completeDeepSeek({
       model,
       messages: [

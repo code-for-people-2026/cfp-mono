@@ -175,19 +175,19 @@ export class GreetingService {
         throw new AppError(409, "该请求此前失败，请使用新的请求标识重试");
       return { row: existing, duplicate: existing.status === "completed" };
     }
-    await this.moderate({ stage: "input", texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
+    await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     await new ContextService(this.repo).ensureRoom(sessionId);
     // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
-    await this.repo.update("sessions", sessionId, {
-      title: [
+    await this.repo.update("sessions", sessionId,
+      [
         "新对话",
         "与阿 J 先生的日常",
         "与阿 Q 先生的日常",
         "与好阿 J 的日常",
       ].includes(session.title)
-        ? input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话"
-        : session.title,
-    });
+        ? { title: input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话" }
+        : {}, // 只触碰活动时间，避免将读取时的隔离占位标题写回原记录。
+    );
 
     const row = await this.repo.create("greetings", {
       sessionId,
@@ -237,7 +237,7 @@ export class GreetingService {
       }
     }
     await this.moderate({
-      stage: "output", texts: textLeaves(output), context: (row.input as Inspiration).text,
+      stage: "output", mode: row.mode, texts: textLeaves(output), context: (row.input as Inspiration).text,
       requestId: String(row.requestKey), turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
     });
     return this.repo.update("greetings", id, {

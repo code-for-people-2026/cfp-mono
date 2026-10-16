@@ -5,9 +5,30 @@ const source = {
   title: "思维记录",
   excerpt: "检查证据",
   referenceId: "ref_1",
+  sourceId: "original-source-1",
   readStatus: "document",
 };
 describe("逐轮知识依据", () => {
+  it("初始空快照不遮住新收到的知识上下文，后续脱敏事件仍可关联成功引用", () => {
+    const empty = evidenceFromSnapshot("cbt", { events: [] });
+    const loaded = evidenceFromSnapshot("cbt", {
+      state: { safetyKnowledgeEvidence: empty },
+      events: [{ content: { role: "user", parts: [{ text: JSON.stringify({ coordinatorRequest: "帮助", configurationRevision: "1", knowledgeContext: { query: "测试查询", sources: [source], notices: [] } }) }] } }],
+    });
+    expect(loaded.sources).toHaveLength(1);
+    expect(loaded.sources[0].cited).toBe(false);
+    const submitted = evidenceFromSnapshot("cbt", {
+      state: { safetyKnowledgeEvidence: loaded },
+      events: [
+        { content: { role: "user", parts: [{ text: "[正文不重复保存]" }] } },
+        { content: { parts: [{ functionCall: { id: "plan", name: "submit_psychology_plan", args: { usedSourceIds: ["ref_1"] } } }] } },
+        { content: { parts: [{ functionResponse: { id: "plan", name: "submit_psychology_plan", response: { submitted: true } } }] } },
+      ],
+    });
+    expect(submitted.query).toBe("测试查询");
+    expect(submitted.sources[0]).toMatchObject({ referenceId: "ref_1", sourceId: "original-source-1", cited: true });
+    expect(evidenceFromSnapshot("cbt", { state: { safetyKnowledgeEvidence: submitted }, events: [] })).toEqual(submitted);
+  });
   it("仅成功提交的专家引用算引用，原文未读不算采用", () => {
     const result = evidenceFromSnapshot("cbt", {
       events: [

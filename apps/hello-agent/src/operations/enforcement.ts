@@ -34,9 +34,21 @@ export async function projectVisibleRows<C extends OwnedCollection>(payload: Pay
   if (!["greetings", "sessions"].includes(collection) || !rows.length) return rows;
   const restrictions = await enforcements(payload, owner);
   const blockedMedia = await restrictedMedia(payload, owner, restrictions);
+  const affectedSessions = new Set(restrictions.filter((item) => item.targetType !== "owner").map((item) => item.sessionId));
+  if (collection === "sessions" && blockedMedia.size) {
+    // 自动标题可能含首条输入；复用被隔离图片的会话也需隐藏标题。
+    // 只检查当前返回的会话，并分页读取，避免一次加载全部聊天历史。
+    let cursor = 0;
+    while (true) {
+      const page = await payload.find({ collection: "greetings", overrideAccess: true, depth: 0, limit: 100, sort: "id", where: { and: [{ owner: { equals: owner } }, { sessionId: { in: rows.map((row) => row.id) } }, { id: { greater_than: cursor } }] }, select: { sessionId: true, input: true, artifacts: true, imageGeneration: true } });
+      for (const turn of page.docs) if (mediaIds(turn).some((id) => blockedMedia.has(id))) affectedSessions.add(turn.sessionId);
+      if (page.docs.length < 100) break;
+      cursor = page.docs[page.docs.length - 1].id;
+    }
+  }
   return rows.map((row) => {
-    if (collection === "sessions" && (blockedMedia.size > 0 || restrictions.some((item) => item.sessionId === row.id && item.targetType !== "owner")))
-      return { ...row, memory: null }; // 共享图片可能出现在别的会话旧摘要中；保守停用摘要，原文仍保留。
+    if (collection === "sessions" && (blockedMedia.size > 0 || affectedSessions.has(row.id)))
+      return { ...row, memory: null, ...(affectedSessions.has(row.id) ? { title: "内容复核中的会话" } : {}) }; // 共享图片可能出现在别的会话旧摘要中；保守停用摘要，原文仍保留。
     if (collection === "greetings" && "input" in row && (restrictions.some((item) => item.targetType === "turn" && item.targetId === row.id) || mediaIds(row).some((id) => blockedMedia.has(id))))
       return { id: row.id, owner, sessionId: row.sessionId, requestKey: row.requestKey, fingerprint: row.fingerprint, mode: row.mode, status: "failed", input: { text: "此轮内容已停止展示，可提交申诉", mediaIds: [] }, greeting: null, artifacts: [], error: "内容已隔离", createdAt: row.createdAt, updatedAt: row.updatedAt, visibility: "quarantined" };
     return row;

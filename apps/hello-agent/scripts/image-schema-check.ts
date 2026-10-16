@@ -141,6 +141,8 @@ try {
       collection: "media",
       id: 17,
       depth: 0,
+      // 此处仅运行到历史图片迁移；新版生成/审核字段由后续迁移添加。
+      select: { base64: true, owner: true, object: true },
     });
     assert.equal(record.base64, "b2xkLWltYWdl");
     assert.equal(record.owner, "old-owner");

@@ -105,8 +105,12 @@ export class PayloadSessionService extends BaseSessionService {
           .filter((p) => !p.thought)
           .map((p) => {
             if (p.inlineData) return { text: "[图片内容见本轮灵感输入的媒体引用]" };
-            if (p.functionCall) return { functionCall: { ...p.functionCall, args: { note: "工具参数正文不重复保存；已审核产物见生成轮次，未通过的最小证据见受限案件" } } };
-            if (p.functionResponse) return { functionResponse: { ...p.functionResponse, response: { note: "工具结果正文不重复保存，见生成轮次状态" } } };
+            if (p.functionCall) return { functionCall: { ...p.functionCall, args: p.functionCall.name === "submit_psychology_plan"
+              ? { usedSourceIds: Array.isArray(p.functionCall.args?.usedSourceIds) ? p.functionCall.args.usedSourceIds.filter((id): id is string => typeof id === "string").slice(0, 100) : [] }
+              : { note: "工具参数正文不重复保存；已审核产物见生成轮次，未通过的最小证据见受限案件" } } };
+            if (p.functionResponse) return { functionResponse: { ...p.functionResponse, response: p.functionResponse.name === "submit_psychology_plan"
+              ? { submitted: p.functionResponse.response?.submitted === true }
+              : { note: "工具结果正文不重复保存，见生成轮次状态" } } };
             if (p.text) return { text: "[正文不重复保存，见生成轮次；审核失败内容仅保留受限最小证据]" };
             return p;
           });

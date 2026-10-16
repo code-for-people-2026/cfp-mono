@@ -47,6 +47,7 @@ try {
   const turn = await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "合成输入", mediaIds: [media.id] } });
   const sharedSession = await service.createSession("复用同一图片的另一个会话");
   const sharedTurn = await service.generateGreeting({ sessionId: sharedSession.id, requestId: randomUUID(), mode: "platform", input: { text: "合成图片复用", mediaIds: [media.id] } });
+  const unrelatedSession = await service.createSession("未受影响的会话");
   const receipt = await ops.complain(owner, { category: "other", description: "合成举报内容用于测试运营闭环", turnId: turn.id });
   const list = await ops.queue(reviewer, { status: "pending" }); const row = list.find((r) => r.receipt === receipt.receipt)!;
   assert.ok(row && row.acceptBy && row.resolveBy);
@@ -73,6 +74,9 @@ try {
   const hidden = (await service.history(session.id))[0];
   assert.equal((await service.history(sharedSession.id))[0].visibility, "quarantined");
   assert.equal(hidden.visibility, "quarantined"); assert.equal(hidden.greeting, null);
+  assert.equal((await repo.get("sessions", session.id)).title, "内容复核中的会话");
+  assert.equal((await repo.get("sessions", sharedSession.id)).title, "内容复核中的会话");
+  assert.equal((await repo.get("sessions", unrelatedSession.id)).title, "未受影响的会话");
   assert.equal((await service.submission(session.id, String(turn.requestKey).split(":").at(-1)!)).turn?.greeting, null);
   await assert.rejects(() => readArtifact(repo, turn.id, "page1"));
   await assert.rejects(() => service.media.read(media.id), { status: 404 });
@@ -80,8 +84,11 @@ try {
   assert.ok(!memory.memory.includes("被隔离")); assert.equal(memory.previous.length, 0);
   const raw = await payload.findByID({ collection: "greetings", id: turn.id, overrideAccess: true });
   assert.equal(raw.greeting, turn.greeting);
+  await assert.rejects(() => repo.update("sessions", session.id, { memory: { compressions: 1, summary: "试图重新保存隔离内容", throughId: turn.id, revision: 2 } }), { status: 403 });
+  await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "隔离后仍可继续正常对话" } });
+  assert.equal((await payload.findByID({ collection: "sessions", id: session.id, overrideAccess: true })).title, "合成输入");
   await assert.rejects(() => payload.update({ collection: "greetings", id: turn.id, overrideAccess: true, data: { owner: owner.id, status: "completed", greeting: "试图绕过隔离发布" } }), { status: 403 });
-  pass("隔离覆盖历史/请求恢复/作品/图片/模型记忆，保留原文并阻断并发再发布");
+  pass("隔离覆盖历史/请求恢复/作品/图片/模型记忆/会话标题，继续对话不改写原名，并阻断并发再发布");
   const appeal = await ops.complain(owner, { kind: "appeal", parentReceipt: receipt.receipt, category: "other", description: "这是正常帮助内容，请由其他人员复核" });
   const appealRow = (await ops.queue(reviewer, {})).find((r) => r.receipt === appeal.receipt)!;
   await ops.action(reviewer, Number(appealRow.id), { revision: 0, action: "claim", reason: "领取申诉并验证独立复核权限" });
@@ -91,6 +98,8 @@ try {
   await ops.action(reviewer2, Number(appealRow.id), { revision: 3, action: "restore", reason: "合成测试确认内容无害恢复展示", reply: "复核后已恢复原内容展示。" });
   assert.equal((await service.history(session.id))[0].greeting, turn.greeting);
   assert.equal((await service.history(sharedSession.id))[0].greeting, sharedTurn.greeting);
+  assert.equal((await repo.get("sessions", session.id)).title, "合成输入");
+  assert.equal((await repo.get("sessions", sharedSession.id)).title, "复用同一图片的另一个会话");
   assert.equal((await ops.mine(owner, String(appeal.receipt)))[0].reply, "复核后已恢复原内容展示。");
   pass("投诉→处置反馈→本人申诉→独立复核→恢复展示闭环");
   await assert.rejects(() => payload.update({ collection: "safety-audit", id: 1, overrideAccess: false, user: administrator, data: { reason: "篡改" } }));

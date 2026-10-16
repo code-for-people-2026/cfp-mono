@@ -32,7 +32,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const result = await maintainPrivacy(payload, { apply: true, restoreLedger: ledger });
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
-    expect(find).toHaveBeenCalledTimes(38); // ten paginated scans plus two empty onboarding-expiry scans
+    expect(find).toHaveBeenCalledTimes(41); // eleven paginated scans (including safety cases) plus two empty onboarding-expiry scans
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 

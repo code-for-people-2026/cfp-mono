@@ -12,6 +12,7 @@ const { cms } = await import("../src/cms/client");
 const { seedAgents } = await import("../src/cms/seed");
 const { renameAgentBrand } = await import("../src/cms/rename-brand");
 const { loadAgentConfiguration } = await import("../src/agent/configuration");
+const { readTurnKnowledge } = await import("../src/agent/knowledge-evidence");
 const { decryptKnowledgeSecret } = await import("../src/cms/secret");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
@@ -279,6 +280,9 @@ try {
     const events = JSON.stringify(await repo.all("adk-sessions"));
     assert.ok(!events.includes("runtime-ima-fixture"));
     assert.ok(events.includes("reference-fixture"));
+    assert.ok(!events.includes("请用 CBT 帮我整理想法"), "聊天正文不应复制进执行日志");
+    const evidence = await readTurnKnowledge(payload, row.id);
+    assert.ok(evidence.some((expert) => expert.approach === "cbt" && expert.sources.some((source) => source.sourceId === "reference-fixture" && source.referenceId === "ref_1" && source.excerpt.includes("ima 测试片段"))), "脱敏保存后管理员仍可读取本轮知识依据和原始资料标识");
     globalThis.fetch = async () => {
       throw new Error("vendor error: runtime-ima-fixture");
     };
