@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 
 const config: NextConfig = {
   devIndicators: false,
+  // 预览服务器仅在独立 typecheck 通过后设置，避免重复占用内存。
+  typescript: { ignoreBuildErrors: process.env.HELLO_BUILD_TYPES_VERIFIED === "true" },
   transpilePackages: [
     "@cfp/hello-agent-contracts",
     "@cfp/hello-agent-protocol",
@@ -14,6 +16,10 @@ const config: NextConfig = {
   serverExternalPackages: [
     // OSS SDK 包含可选代理依赖，按 Node 服务端包加载，不交给前端构建器展开。
     "ali-oss",
+    "@alicloud/green20220302",
+    "@alicloud/openapi-core",
+    "@darabonba/typescript",
+    "libsql",
     "unpdf",
     "@google/adk",
     "@google/genai",

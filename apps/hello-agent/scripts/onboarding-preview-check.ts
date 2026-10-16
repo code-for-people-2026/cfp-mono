@@ -1,0 +1,70 @@
+import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { sql } from "@payloadcms/db-sqlite";
+const dir = await mkdtemp(path.join(tmpdir(), "onboarding-preview-check-"));
+Object.assign(process.env, { HELLO_DATABASE_URI: `file:${dir}/onboarding-preview.db`, PAYLOAD_SECRET: "isolated-onboarding-test", HELLO_DEPLOYED: "false", HELLO_WECHAT_APP_ID: "fixture-app", HELLO_WECHAT_APP_SECRET: "fixture-secret", HELLO_AGE_SECRET_KEY: "", HELLO_AGE_SECRET_ID: "" });
+const { cms } = await import("../src/cms/client");
+const { onboardingPreview, cleanOnboardingPreview } = await import("../src/age/preview");
+const { wechatLogin } = await import("../src/age/wechat");
+const { ageNotice } = await import("../src/age/policy");
+const { authenticate } = await import("../src/server/auth");
+const payload = await cms();
+const call = (url: string, token?: string, body?: unknown, ip?: string) => onboardingPreview(payload, new Request(`http://localhost${url}`, { method: body === undefined ? "GET" : "POST", headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(ip ? { "x-real-ip": ip } : {}), "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) }));
+try {
+  assert.equal((await call("/api/ready")).status, 200);
+  const visitor = await (await call("/api/hello/miniapp-identity", undefined, {})).json();
+  assert.equal((await (await call("/api/hello/age", visitor.token)).json()).loggedIn, false);
+  const login = await wechatLogin(payload, new Request("http://localhost/api/hello/wechat-login"), { code: "synthetic", consent: true, noticeVersion: ageNotice().version, migrateCurrent: false }, async () => "synthetic-preview-only");
+  const status = await (await call("/api/hello/age", login.token)).json();
+  assert.equal(status.loggedIn, true);
+  assert.equal(status.configuration.previewOnly, true);
+  for (const route of ["sessions", "greet", "upload", "ag-ui", "token", "age/submit", "privacy/consent"]) assert.equal((await call(`/api/hello/${route}`, login.token, {})).status, 503, route);
+  const adult = await call("/api/hello/age/challenge", login.token, { declaration: "adult", consent: true, noticeVersion: ageNotice().version });
+  const adultResult = await adult.json();
+  assert.equal(adultResult.status.allowed, false);
+  assert.equal(adultResult.status.configuration.previewOnly, true);
+  assert.equal(adultResult.challenge, null);
+  const minor = await call("/api/hello/age/challenge", login.token, { declaration: "under14", consent: true, noticeVersion: ageNotice().version });
+  assert.equal((await minor.json()).status.allowed, false);
+  const exported = await (await call("/api/hello/privacy/export", login.token)).json();
+  assert.equal(exported.ageDeclaration, "under14");
+  Object.assign(process.env, { HELLO_PREVIEW_SCOPE: "login-and-age", HELLO_AGE_PROVIDER: "aliyun", HELLO_AGE_SECRET_ID: "synthetic", HELLO_AGE_SECRET_KEY: "synthetic", HELLO_AGE_PROVIDER_APPROVED: "true", HELLO_AGE_PROVIDER_DISCLOSURE: "隔离测试" });
+  const correction = await (await call("/api/hello/age/challenge", login.token, { declaration: "unknown", correction: true, consent: true, noticeVersion: ageNotice().version })).json();
+  assert.ok(correction.challenge); assert.equal(correction.status.allowed, false);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    assert.equal(url, "https://cloudauth.cn-shanghai.aliyuncs.com/");
+    return Response.json({ Code: "200", RequestId: "synthetic-reference", ResultObject: { BizCode: "1" } });
+  };
+  try {
+    const prefix = "99000020000101001", weights = [7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2];
+    const idCard = prefix + "10X98765432"[weights.reduce((sum, weight, index) => sum + Number(prefix[index]) * weight, 0) % 11];
+    const result = await (await call("/api/hello/age/submit", login.token, { challenge: correction.challenge, name: "隔离测试", idCard })).json();
+    assert.equal(result.state, "adult"); assert.equal(result.declaration, "adult"); assert.equal(result.allowed, false);
+    assert.equal((await (await call("/api/hello/age", login.token)).json()).allowed, false);
+    assert.equal((await call("/api/hello/greet", login.token, {})).status, 503);
+    const data = await (await call("/api/hello/privacy/export", login.token)).json();
+    assert.equal(data.ageVerification.source, "aliyun_id2_meta_name_id");
+    assert.ok(!JSON.stringify(data).includes(idCard));
+  } finally { globalThis.fetch = realFetch; }
+  assert.equal((await call("/api/hello/privacy/delete", login.token, { confirmation: "删除我的全部在线数据" })).status, 200);
+  await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { Authorization: `Bearer ${login.token}` } })));
+  assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true })).totalDocs, 0);
+  await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner: "expired", key: "expired-preview" } });
+  await payload.create({ collection: "age-profiles", overrideAccess: true, data: { owner: "expired", state: "unverified" } });
+  await payload.db.drizzle.run(sql`UPDATE wechat_identities SET updated_at = '2020-01-01T00:00:00.000Z'`);
+  await payload.db.drizzle.run(sql`UPDATE age_profiles SET updated_at = '2020-01-01T00:00:00.000Z'`);
+  await cleanOnboardingPreview(payload);
+  assert.equal((await payload.count({ collection: "wechat-identities", overrideAccess: true })).totalDocs, 0);
+  assert.equal((await payload.count({ collection: "age-profiles", overrideAccess: true })).totalDocs, 0);
+  process.env.HELLO_TRUST_PROXY = "true";
+  for (const [endpoint, status] of [["wechat-login", 400], ["miniapp-identity", 200]] as const) {
+    for (let attempt = 0; attempt < 20; attempt++) assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.10")).status, status);
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.10")).status, 429);
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {}, "192.0.2.11")).status, status, "另一来源仍可登录");
+    assert.equal((await call(`/api/hello/${endpoint}`, undefined, {})).status, 503, "缺少可信代理来源时拒绝请求");
+  }
+  console.log("Preview checks passed: login, explicitly scoped identity correction, no chat after verification, export/deletion and expiry cleanup.");
+} finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

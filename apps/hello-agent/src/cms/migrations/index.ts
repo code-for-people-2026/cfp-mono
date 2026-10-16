@@ -1,3 +1,6 @@
+import * as profile from "./20261014_080000_wechat_profile";
+import * as correction from "./20261014_103000_wechat_age_correction";
+import * as age from "./20261013_181500_wechat_age_verification";
 import * as privacyHistory from "./20261013_175000_privacy_history_inspection";
 import * as privacyRevision from "./20261013_174000_privacy_revision";
 import * as privacy from './20261013_151000_privacy_lifecycle';
@@ -36,4 +39,7 @@ export const migrations = [
   { up: privacy.up, down: privacy.down, name: "20261013_151000_privacy_lifecycle" },
   { up: privacyRevision.up, down: privacyRevision.down, name: "20261013_174000_privacy_revision" },
   { up: privacyHistory.up, down: privacyHistory.down, name: "20261013_175000_privacy_history_inspection" },
+  { up: age.up, down: age.down, name: "20261013_181500_wechat_age_verification" },
+  { up: profile.up, down: profile.down, name: "20261014_080000_wechat_profile" },
+  { up: correction.up, down: correction.down, name: "20261014_103000_wechat_age_correction" },
 ];

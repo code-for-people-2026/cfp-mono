@@ -129,6 +129,17 @@ it("聊天只用自定义标题，设置是原生返回的子页面，胶囊区�
   expect(byClass("nav-identity").props.style.right).toBe("106px");
 });
 
+it("导航抽屉顶部只显示用户头像昵称，关闭按钮仍可用", async () => {
+  const { ChatNavigation } = await import("../src/chat/navigation");
+  const close = vi.fn();
+  act(() => { page = create(createElement(ChatNavigation, { open: true, profile: { nickname: "会留白的小水豚", avatar: { emoji: "🦦", color: "#e4eee5", image: false } }, sessions: [], disabled: true, memoryFull: false, onOpen: vi.fn(), onClose: close, onNew: vi.fn(), onSelect: vi.fn(), onMemory: vi.fn(), onSettings: vi.fn() })); });
+  const heading = page!.root.findAllByType("view").find((node) => node.props.className === "drawer-heading")!;
+  expect(heading.findAllByType("text").map((node) => node.children.join("")).join(" ")).toContain("会留白的小水豚");
+  expect(heading.findAllByType("text").map((node) => node.children.join("")).join(" ")).not.toContain("阿 J 先生");
+  act(() => { heading.findByType("button").props.onClick(); });
+  expect(close).toHaveBeenCalledOnce();
+});
+
 it("胶囊冷启动返回空矩形时，仍预留状态栏和右侧位置", async () => {
   platform.getMenuButtonBoundingClientRect.mockReturnValue({
     top: 0,

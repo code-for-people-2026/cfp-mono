@@ -12,6 +12,7 @@ const platform = vi.hoisted(() => ({
   ),
   setStorageSync: vi.fn(),
   showModal: vi.fn(),
+  showToast: vi.fn(),
   nextTick: vi.fn((fn: () => void) => fn()),
   onAppHide: vi.fn(),
   offAppHide: vi.fn(),
@@ -49,6 +50,10 @@ vi.mock("@tarojs/components", () => ({
   Textarea: "textarea",
   ScrollView: "scroll-view",
   RootPortal: "root-portal",
+  Checkbox: "checkbox",
+  CheckboxGroup: "checkbox-group",
+  Label: "label",
+  Picker: "picker",
 }));
 
 type AgentBody = {
@@ -92,6 +97,8 @@ beforeEach(() => {
   history = [structuredClone(initial)];
   platform.request.mockImplementation(async ({ url }: { url: string }) => {
     const route = url.split("/api/hello/")[1];
+    if (route === "profile") return { statusCode: 200, data: { nickname: "正念小水豚", avatar: { emoji: "🦦", color: "#e4eee5", image: false } } };
+    if (route === "age") return { statusCode: 200, data: { loggedIn: true, state: "adult", allowed: true, verifiedAt: "2026-10-01T00:00:00Z", expiresAt: "2099-01-01T00:00:00Z", source: "isolated-test", assurance: "identity_details_match", additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true } } };
     if (route === "privacy") return { statusCode: 200, data: { policy: { version: "test", ready: true, contact: "test", documents: [] }, state: "active", consent: { version: "test", core: true, model: true, sensitive: true, external: true }, expiresAt: null, hasRecoveryCode: false } };
     const data =
       route === "config"
@@ -154,6 +161,21 @@ async function mount(keyboard = true) {
 }
 const text = () => JSON.stringify(renderer?.toJSON());
 
+it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传原因进入设置：%s", async (reason) => {
+  const originalRequest = platform.request.getMockImplementation()!;
+  platform.request.mockImplementation(async (options: { url: string }) => {
+    const response = await originalRequest(options);
+    if (options.url.endsWith("/privacy")) {
+      response.data.consent = { ...response.data.consent, sensitive: reason !== "missing-sensitive", version: reason === "updated-policy" ? "old" : "test" };
+    }
+    return response;
+  });
+  await mount();
+  await act(async () => { renderer!.root.findAllByType("button").find((node) => node.props.ariaLabel === "添加图片")!.props.onClick(); });
+  expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/privacy/authorization/index?reason=image-upload" });
+  expect(platform.request.mock.calls.some(([options]) => options.url.endsWith("/media") && options.method === "POST")).toBe(false);
+});
+
 async function openArtifact() {
   await act(async () => {
     renderer!.root
@@ -162,6 +184,36 @@ async function openArtifact() {
       .props.onClick();
   });
 }
+
+it("后台重置登录后直接显示新用户登录窗口，保留对话并使用新凭证加载页面", async () => {
+  const originalRequest = platform.request.getMockImplementation()!;
+  const preservedHistory = structuredClone(history);
+  platform.request.mockImplementation(async (options: { url: string; header: { Authorization?: string } }) => {
+    const route = options.url.split("/api/hello/")[1];
+    if (route === "miniapp-identity") {
+      expect(options.header.Authorization).toBeUndefined();
+      return { statusCode: 200, data: { token: "signed-out-token", expiresAt: "2030-01-01" } };
+    }
+    if (route === "age" && options.header.Authorization === "Bearer fixture-device-token")
+      return { statusCode: 401, data: {} };
+    expect(options.header.Authorization).toBe("Bearer signed-out-token");
+    if (route === "age") return { statusCode: 200, data: {
+      loggedIn: false, state: "unverified", allowed: false, verifiedAt: null,
+      expiresAt: null, source: null, assurance: null, additionalVerification: "not_requested",
+      notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true, previewOnly: true },
+    } };
+    expect(["config", "privacy"]).toContain(route);
+    return originalRequest(options);
+  });
+  await mount(false);
+  expect(text()).toContain("先登录一下吧");
+  expect(text()).not.toContain("设备凭证");
+  expect(text()).not.toContain("重新开始");
+  expect(text()).not.toContain("仍能看见的好彩头");
+  expect(platform.showModal).not.toHaveBeenCalled();
+  expect(history).toEqual(preservedHistory);
+  expect(platform.request.mock.calls.some(([options]) => options.method === "DELETE")).toBe(false);
+});
 
 async function chooseModeInSettings(index: number) {
   const { default: SettingsPage } = await import("../src/pages/connection/index");
@@ -422,7 +474,9 @@ describe("聊天历史与图片失败隔离", () => {
     expect(platform.setClipboardData).toHaveBeenLastCalledWith({
       data: `AI 生成 · 阿 J 先生\n${history[0].greeting}`,
     });
-    expect(button.findByType("text").children.join("")).toBe("已复制");
+    expect(button.props["aria-label"]).toBe("已复制");
+    expect(button.findAllByType("text")).toHaveLength(0);
+    expect(button.findAllByType("image")).toHaveLength(1);
     expect(platform.request.mock.calls).toHaveLength(requests);
     expect(text()).toContain("按住说话");
   });
@@ -435,12 +489,13 @@ describe("聊天历史与图片失败隔离", () => {
     await act(async () => {
       await button.props.onClick();
     });
-    expect(text()).toContain("复制失败，重试");
+    expect(button.props["aria-label"]).toBe("复制失败，重试");
+    expect(platform.showToast).toHaveBeenCalledWith({ title: "复制失败，请重试", icon: "none" });
     expect(text()).not.toContain("error-banner");
     await act(async () => {
       await button.props.onClick();
     });
-    expect(text()).toContain("已复制");
+    expect(button.props["aria-label"]).toBe("已复制");
     expect(platform.setClipboardData).toHaveBeenCalledTimes(2);
   });
   it("首页恢复三条快捷建议，点击后切到键盘填入草稿但不自动发送", async () => {
@@ -1268,4 +1323,14 @@ it.each(["platform", "external"] as const)("展开 %s 联想依据后，原生�
   expect(details.props.selectable).toBe(false);
   await act(async () => { details.props.onLongPress(); });
   expect(platform.setClipboardData).toHaveBeenLastCalledWith({ data: `AI 生成${mode === "external" ? "（外部客户端声明）" : ""} · 阿 J 先生\n${value}` });
+});
+
+it("未完成微信登录时不请求历史或个人资料，业务输入禁用且登录窗口不能关闭", async () => {
+  const original = platform.request.getMockImplementation()!;
+  platform.request.mockImplementation(async (options) => options.url.endsWith("/age") ? { statusCode: 200, data: { loggedIn: false, state: "unverified", allowed: false, verifiedAt: null, expiresAt: null, source: null, assurance: null, additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: false } } } : original(options));
+  await mount(false);
+  expect(platform.request.mock.calls.some(([options]) => /\/(sessions|profile)(\/|$)/.test(options.url))).toBe(false);
+  expect(text()).toContain("先登录一下吧");
+  expect(text()).not.toContain("已经保存的日常");
+  expect(renderer!.root.findAllByType("button").some((button) => button.props.className?.includes("age-close"))).toBe(false);
 });

@@ -108,3 +108,43 @@ describe("不同后端的设备身份隔离", () => {
     );
   });
 });
+
+const signedOutAge = { loggedIn: false, state: "unverified", allowed: false, verifiedAt: null, expiresAt: null, source: null, assurance: null, additionalVerification: "not_requested", notice: { version: "test", paragraphs: [] }, configuration: { wechat: true, provider: true, previewOnly: true } };
+it("小程序旧登录被后台重置后直接回到未登录状态，不删除账号或对话", async () => {
+  vi.stubEnv("TARO_ENV", "weapp");
+  vi.stubGlobal("HELLO_API_ORIGIN", "https://preview.example.test");
+  mocks.getStorageSync.mockReturnValue("revoked-token");
+  mocks.request.mockResolvedValueOnce({ statusCode: 401, data: {} })
+    .mockResolvedValueOnce({ statusCode: 200, data: { token: "visitor-token", expiresAt: "2030-01-01" } })
+    .mockResolvedValueOnce({ statusCode: 200, data: signedOutAge });
+  const api = await import("../src/chat/api");
+  await api.establishIdentity();
+  await expect(api.getAge()).resolves.toEqual(signedOutAge);
+  expect(mocks.request.mock.calls.map(([options]) => new URL(options.url).pathname)).toEqual(["/api/hello/age", "/api/hello/miniapp-identity", "/api/hello/age"]);
+  expect(mocks.request.mock.calls[1][0].header.Authorization).toBeUndefined();
+  expect(mocks.request.mock.calls[2][0].header.Authorization).toBe("Bearer visitor-token");
+});
+it("网络错误不换凭证，恢复后的再次401也不会无限重试", async () => {
+  vi.stubEnv("TARO_ENV", "weapp"); vi.stubGlobal("HELLO_API_ORIGIN", "https://preview.example.test");
+  mocks.getStorageSync.mockReturnValue("old-token");
+  const api = await import("../src/chat/api"); await api.establishIdentity();
+  mocks.request.mockResolvedValueOnce({ statusCode: 503, data: { error: "网络暂不可用" } });
+  await expect(api.getAge()).rejects.toThrow("网络暂不可用");
+  expect(mocks.setStorageSync).not.toHaveBeenCalled();
+  mocks.request.mockResolvedValueOnce({ statusCode: 401, data: {} })
+    .mockResolvedValueOnce({ statusCode: 200, data: { token: "guest", expiresAt: "2030-01-01" } })
+    .mockResolvedValueOnce({ statusCode: 401, data: {} });
+  await expect(api.getAge()).rejects.toBeInstanceOf(api.IdentityExpiredError);
+  expect(mocks.request).toHaveBeenCalledTimes(4);
+});
+it("并发读取过期微信登录只恢复一次访客身份", async () => {
+  vi.stubEnv("TARO_ENV", "weapp"); vi.stubGlobal("HELLO_API_ORIGIN", "https://preview.example.test");
+  mocks.getStorageSync.mockReturnValue("old-token");
+  mocks.request.mockImplementation(async ({url, header}) => {
+    if (url.endsWith('/miniapp-identity')) return { statusCode: 200, data: {token:'guest',expiresAt:'2030-01-01'} };
+    return header.Authorization==='Bearer old-token' ? {statusCode:401,data:{}} : {statusCode:200,data:signedOutAge};
+  });
+  const api = await import("../src/chat/api"); await api.establishIdentity();
+  await expect(Promise.all([api.getAge(),api.getAge()])).resolves.toEqual([signedOutAge,signedOutAge]);
+  expect(mocks.request.mock.calls.filter(([options]) => options.url.endsWith('/miniapp-identity'))).toHaveLength(1);
+});

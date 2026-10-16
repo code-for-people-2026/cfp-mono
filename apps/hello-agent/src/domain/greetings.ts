@@ -1,4 +1,5 @@
 import { uploadedAiXmp } from "../labeling/upload-provenance";
+import { imageReviewConfigured, reviewUpload as configuredUploadReview } from "../images/image-review";
 import sharp from "sharp";
 import { Repository, fingerprint } from "../cms/repository";
 import type { Greeting as GreetingRecord } from "../payload-types";
@@ -33,9 +34,7 @@ export class GreetingService {
     readonly repo: Repository,
     private generate: Generator = platformGenerator,
     readonly media = new MediaService(repo),
-    // No production reviewer is wired until #383 lands. Configuration alone
-    // must never enable storage; the reviewer must explicitly allow the bytes.
-    private readonly reviewUpload?: (bytes: Buffer) => Promise<"allow" | "reject">,
+    private readonly reviewUpload: ((bytes: Buffer) => Promise<"allow" | "reject">) | undefined = configuredUploadReview,
   ) {}
 
   async sessions(): Promise<Session[]> {
@@ -78,7 +77,7 @@ export class GreetingService {
     return { turn: rows[0] || null };
   }
   async upload(data: Uint8Array) {
-    if (!this.reviewUpload)
+    if (!this.reviewUpload || (this.reviewUpload === configuredUploadReview && !imageReviewConfigured()))
       throw new AppError(503, "图片审核暂不可用，请稍后重试或使用文字");
     if (data.length > 5 * 1024 * 1024)
       throw new AppError(413, "单张图片不能超过 5 MB");

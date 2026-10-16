@@ -113,7 +113,7 @@ it("简单问答的键盘抬起时缩小面板，焦点字段滚动可见；关�
   expect(platform.offKeyboardHeightChange).toHaveBeenCalledWith(listener);
   expect(byClass("detail-overlay")).toHaveLength(0);
 });
-it("回应依据默认仅显示摘要，完整内容放在底部面板", async () => {
+it("回应依据默认是一行入口，完整内容和心理视角放在底部面板", async () => {
   const association = "从日常里找一个可信的角度。".repeat(20);
   await act(async () => {
     renderer = create(
@@ -132,9 +132,11 @@ it("回应依据默认仅显示摘要，完整内容放在底部面板", async (
     );
   });
   expect(text()).not.toContain(association);
-  expect(text()).toContain("认知行为视角");
-  await click("artifact-preview");
+  expect(text()).not.toContain("认知行为视角");
+  expect(text()).toContain("看看为什么这样说 ＋");
+  await click("evidence-toggle");
   expect(text()).toContain(association);
+  expect(text()).toContain("认知行为视角");
   await click("detail-close");
   expect(text()).not.toContain(association);
 });

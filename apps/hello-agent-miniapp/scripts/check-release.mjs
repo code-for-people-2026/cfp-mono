@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile, readdir } from "node:fs/promises";
+import { Buffer } from "node:buffer";
+import { readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import console from "node:console";
@@ -82,6 +83,21 @@ if (!base) {
   );
   for (const marker of ["chat-composer", "input-toggle", "artifact-surface"])
     assert.ok(mini.includes(marker), `小程序遗漏功能：${marker}`);
+  const mascotPath = mini.match(/["'](\/assets\/aj-mascot[^"']*)["']/)?.[1];
+  assert.ok(mascotPath, "小程序遗漏本地阿 J 形象图");
+  // 微信 Image 的 WebP 开关只支持网络资源，包内形象图使用 PNG。
+  // https://docs.taro.zone/docs/components/media/image#imageprops
+  assert.equal(
+    path.extname(mascotPath),
+    ".png",
+    "小程序形象图须为兼容真机的 PNG",
+  );
+  const mascot = await readFile(path.join(app, "dist/weapp", mascotPath));
+  assert.deepEqual(
+    mascot.subarray(0, 8),
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    "形象图不是有效的 PNG 文件",
+  );
   const config = JSON.parse(
     await readFile(path.join(app, "dist/weapp/app.json"), "utf8"),
   );
@@ -109,7 +125,17 @@ if (!base) {
     "default",
     "微信设置页应使用原生返回导航",
   );
-  assert.ok((await readdir(path.join(app, "dist/weapp"))).length > 0);
+  const nativeRoot = path.join(app, "dist/weapp");
+  const files = await readdir(nativeRoot, { recursive: true });
+  const sizes = await Promise.all(
+    files.map(async (file) => {
+      const info = await stat(path.join(nativeRoot, file));
+      return info.isFile() ? info.size : 0;
+    }),
+  );
+  const bytes = sizes.reduce((sum, size) => sum + size, 0);
+  // 微信会再编译并增大上传包；源码接近 2 MiB 仍会被服务端拒绝。
+  assert.ok(bytes <= 1800 * 1024, `小程序主包须预留微信编译余量：${bytes} 字节`);
 }
 console.log(
   "✓ 实际发布包包含设置入口、连接方式、隐私管理及协议子页面、帮助反馈、新版输入栏、语音切换、作品与 AG-UI 请求",

@@ -29,9 +29,10 @@ function fixture(priorInputs: unknown[] = []) {
   const payload = {
     find: vi.fn(async ({ collection, where, limit = 1 }: { collection: string; limit?: number; where?: { and?: { id?: { greater_than?: number } }[] } }) => {
       const cursor = where?.and?.find((clause) => clause.id)?.id?.greater_than || 0;
-      return { docs: collection === "privacy-profiles" ? [profile] : priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) };
+      return { docs: collection === "privacy-profiles" ? [profile] : collection === "greetings" ? priorInputs.map((input, index) => ({ id: index + 1, input })).filter((row) => row.id > cursor).slice(0, limit) : [] };
     }),
     update,
+    count: vi.fn(async () => ({ totalDocs: 0 })),
     delete: vi.fn(async () => ({ docs: [], errors: [] })),
   } as unknown as Payload;
   return { service: new PrivacyService(new Repository(payload, { id: "isolated", auth: "cookie" })), profile: () => profile, update };

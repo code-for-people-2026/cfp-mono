@@ -1,0 +1,9 @@
+[Unit]
+Description=Hello Agent isolated privacy retention and backup
+After=docker.service
+Requires=docker.service
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/cfp-hello-agent/privacy-ops/source/privacy-operations.py /opt/cfp-hello-agent/privacy-ops/image/config.json
+TimeoutStartSec=20min

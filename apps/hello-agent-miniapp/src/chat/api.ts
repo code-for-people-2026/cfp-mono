@@ -1,3 +1,5 @@
+import { userProfileSchema, ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/hello-agent-contracts";
+import type { AgeDeclaration } from "@cfp/hello-agent-protocol";
 import { labeledAiText } from "./ai-copy";
 import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, type PrivacyStatus } from "@cfp/hello-agent-contracts";
 import Taro from "@tarojs/taro";
@@ -129,6 +131,45 @@ export function establishIdentity(): Promise<void> {
     throw error;
   });
   return identityPromise;
+}
+let loginRecovery: Promise<void> | undefined;
+export async function getAge() {
+  const attemptedToken = deviceToken;
+  try { return await request("age", ageStatusSchema); }
+  catch (error) {
+    if (!native || !(error instanceof IdentityExpiredError)) throw error;
+    // A guest can only open the login form. WeChat login restores the same
+    // server account and its history; never delete or migrate data here.
+    if (attemptedToken === deviceToken) {
+      loginRecovery ??= restartIdentity().finally(() => { loginRecovery = undefined; });
+      await loginRecovery;
+    }
+    return request("age", ageStatusSchema);
+  }
+}
+export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true; correction?: boolean }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
+export const submitAge = (body: { challenge: string; name: string; idCard: string }) => request("age/submit", ageStatusSchema, "POST", body);
+export const cancelAge = () => request("age/cancel", ageStatusSchema, "POST", {});
+export const getProfile = () => request("profile", userProfileSchema);
+export const profileAvatarSource = () => privateImageSource("/api/hello/profile/avatar");
+export async function loginWechat(migrateCurrent: boolean, noticeVersion: string, profile: { nickname?: string; avatarPath?: string } = {}) {
+  if (!native) throw new Error("请在微信小程序中完成微信登录");
+  if (typeof Taro.requirePrivacyAuthorize !== "function") throw new Error("请更新微信后再试，当前版本不支持所需隐私授权交互");
+  await new Promise<void>((resolve, reject) => Taro.requirePrivacyAuthorize({ success: () => resolve(), fail: () => reject(new Error("已取消或拒绝微信隐私授权，可以阅读政策后再次尝试")) }));
+  let avatarBase64: string | undefined;
+  if (profile.avatarPath) {
+    const compressed = await Taro.compressImage({ src: profile.avatarPath, quality: 80, compressedWidth: 256, compressedHeight: 256 });
+    rememberTemporaryFile(profile.avatarPath); rememberTemporaryFile(compressed.tempFilePath);
+    avatarBase64 = await new Promise<string>((resolve, reject) => Taro.getFileSystemManager().readFile({ filePath: compressed.tempFilePath, encoding: "base64", success: (result) => resolve(String(result.data)), fail: () => reject(new Error("头像读取失败，请重新选择")) }));
+    if (avatarBase64.length > 4 * Math.ceil(128 * 1024 / 3)) throw new Error("头像有点大，请换一张再试");
+  }
+  const login = await Taro.login();
+  if (!login.code) throw new Error("微信登录未完成，请重新点击登录");
+  const result = await request("wechat-login", wechatLoginResultSchema, "POST", { code: login.code, consent: true, noticeVersion, migrateCurrent, nickname: profile.nickname?.trim() || undefined, avatarBase64 });
+  await forgetIdentity();
+  deviceToken = result.token; Taro.setStorageSync(storageKey, result.token);
+  identityPromise = undefined;
+  return result;
 }
 export const getSettings = () => request("config", settingsSchema);
 export const getSessions = () => request("sessions", sessionsSchema);
@@ -273,13 +314,14 @@ export async function imageSource(id: number): Promise<string> {
 
 export async function privateImageSource(path: string): Promise<string> {
   if (
-    !/^\/api\/hello\/(media\/[1-9]\d*|artifact-image\/[1-9]\d*\/[a-z][a-z0-9_]{0,39})$/.test(
+    !/^\/api\/hello\/(profile\/avatar|media\/[1-9]\d*|artifact-image\/[1-9]\d*\/[a-z][a-z0-9_]{0,39})$/.test(
       path,
     )
   )
     throw new Error("图片地址不受支持");
   const url = `${origin}${path}`;
   if (!native) return url;
+  const credential = deviceToken;
   // 与新上传预览共用三个下载位，为聊天及血条请求保留连接；失败也必须释放。
   await new Promise<void>((resolve) => {
     const start = () => {
@@ -290,12 +332,17 @@ export async function privateImageSource(path: string): Promise<string> {
     else waitingDownloads.push(start);
   });
   try {
+    if (credential !== deviceToken) throw new IdentityExpiredError();
     const result = await Taro.downloadFile({
       url,
-      header: { Authorization: `Bearer ${deviceToken}` },
+      header: { Authorization: `Bearer ${credential}` },
     });
     if (result.statusCode === 401) throw new IdentityExpiredError();
     if (result.statusCode !== 200) throw new Error("图片读取失败");
+    if (credential !== deviceToken) {
+      await new Promise<void>((resolve) => Taro.getFileSystemManager().unlink({ filePath: result.tempFilePath, complete: () => resolve() }));
+      throw new IdentityExpiredError();
+    }
     rememberTemporaryFile(result.tempFilePath);
     return result.tempFilePath;
   } finally {
@@ -367,10 +414,6 @@ export async function copy(value: string) {
     field.remove();
     if (previous instanceof HTMLElement) previous.focus();
   }
-}
-export function openCms() {
-  if (native) Taro.setClipboardData({ data: `${HELLO_API_ORIGIN}/admin` });
-  else window.open("/admin", "_blank", "noopener,noreferrer");
 }
 
 export const getLegal = () => request("legal", privacyPolicySchema);

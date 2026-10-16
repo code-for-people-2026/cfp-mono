@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "include": ["scripts/onboarding-preview.ts", "scripts/onboarding-preview-check.ts"],
+  "exclude": ["node_modules"]
+}

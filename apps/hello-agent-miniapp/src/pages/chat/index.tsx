@@ -1,3 +1,6 @@
+import type { UserProfile } from "@cfp/hello-agent-contracts";
+import { AgeGate } from "../../chat/age";
+import type { AgeStatus } from "@cfp/hello-agent-protocol";
 import { installAiCopyLabels } from "../../chat/ai-copy";
 import { consentCurrent, type PrivacyStatus } from "../../chat/privacy";
 import { openPrivacy, openHelp, privacyChangedEvent, type PrivacyChange } from "../../chat/settings-navigation";
@@ -19,6 +22,7 @@ import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
 import { CopyMessage, MessageText } from "../../chat/message-text";
+import { ChatIcon } from "../../chat/icon";
 import {
   type ClientEvent,
   type FormValues,
@@ -67,6 +71,11 @@ const suggestions = [
 ];
 
 export default function Chat() {
+  const [profile, setProfile] = useState<UserProfile>();
+  const [avatarSource, setAvatarSource] = useState<string>();
+  const [age, setAge] = useState<AgeStatus>();
+  const [ageOpen, setAgeOpen] = useState(true);
+  const bootVersion = useRef(0);
   const [privacy, setPrivacy] = useState<PrivacyStatus>();
   const privacyDirty = useRef(false);
   const [settings, setSettings] = useState<Settings>();
@@ -105,7 +114,7 @@ export default function Chat() {
   // 只保留待确认提交的业务标识，不保留 BYOK 密钥。网络错误不代表服务端没有保存。
   const submission = useRef<PendingSubmission>();
   const disabled =
-    busy || uploading || loading || memoryBusy || identityExpired;
+    busy || uploading || loading || memoryBusy || identityExpired || !age?.allowed || !age.expiresAt || Date.parse(age.expiresAt) <= Date.now();
   const ready = canSend(
     text,
     attachments,
@@ -272,17 +281,28 @@ export default function Chat() {
     }
   }
   async function boot() {
+    const version = ++bootVersion.current;
     setLoading(true);
     setError("");
     try {
       await api.establishIdentity();
-      const [config, rows, nextPrivacy] = await Promise.all([
+      // Recover a revoked WeChat login before issuing other authenticated reads.
+      const nextAge = await api.getAge();
+      if (version !== bootVersion.current) return;
+      if (!nextAge.loggedIn) clearIdentityView(false);
+      const [config, nextPrivacy] = await Promise.all([
         api.getSettings(),
-        api.getSessions(),
         api.getPrivacy(),
       ]);
+      if (version !== bootVersion.current) return;
+      setAge(nextAge);
+      setAgeOpen(!nextAge.allowed || !consentCurrent(nextPrivacy));
       setPrivacy(nextPrivacy);
       setSettings(config);
+      const [rows, nextProfile] = nextAge.loggedIn ? await Promise.all([api.getSessions(), api.getProfile()]) : [[], undefined];
+      if (version !== bootVersion.current) return;
+      setProfile(nextProfile); setAvatarSource(undefined);
+      if (nextProfile?.avatar.image) void api.profileAvatarSource().then((source) => { if (version === bootVersion.current) setAvatarSource(source); }).catch(() => { /* Generated avatar remains visible when the photo cannot load. */ });
       setSessions(rows);
       if (rows.length) {
         let remembered = activeSession.current;
@@ -304,15 +324,20 @@ export default function Chat() {
         rememberSelection(selected.id);
         await readHistory(selected.id);
       }
-      setHistoryFailed(false);
+      if (version === bootVersion.current) setHistoryFailed(false);
     } catch (value) {
+      if (version !== bootVersion.current) return;
       setHistoryFailed(true);
       problem(value);
     } finally {
-      setLoading(false);
+      if (version === bootVersion.current) setLoading(false);
     }
   }
-  function clearIdentityView() {
+  function clearIdentityView(invalidateBoot = true) {
+    if (invalidateBoot) bootVersion.current++;
+    setAge(undefined);
+    setProfile(undefined); setAvatarSource(undefined);
+    setAgeOpen(true);
     // 防止旧身份的图片异步结果混入新页面。
     historyVersion.current++;
     submission.current = undefined;
@@ -407,6 +432,7 @@ export default function Chat() {
   useEffect(() => {
     void boot();
     return () => {
+      bootVersion.current++;
       historyVersion.current++;
       scrollRevision.current++;
     };
@@ -433,11 +459,12 @@ export default function Chat() {
   }, []);
   useDidShow(() => {
     if (privacyDirty.current) { privacyDirty.current = false; void boot(); }
+    else if (age?.expiresAt && Date.parse(age.expiresAt) <= Date.now()) { setAge({ ...age, allowed: false, state: "expired" }); setAgeOpen(true); }
   });
 
   async function chooseImage(source?: ImageSource) {
     if (disabled || attachments.length >= 3) return;
-    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); return; }
+    if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization", "image-upload"); return; }
     setUploading(true);
     setError("");
     try {
@@ -622,6 +649,8 @@ export default function Chat() {
     <View className={h5 ? "h5-shell" : "native-shell"}>
       <View className="chat-app">
         <ChatNavigation
+          profile={profile}
+          avatarSource={avatarSource}
           open={navigationOpen}
           sessions={sessions}
           activeId={sessionId}
@@ -736,11 +765,6 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <Image
-                    className="avatar small-avatar"
-                    src={mascot}
-                    mode="aspectFill"
-                  />
                   <View className="message-main">
                     <View
                       data-ai-external={row.mode === "external" ? "true" : "false"}
@@ -768,19 +792,28 @@ export default function Chat() {
                       )}
                     </View>
                     <View className="message-footer">
-                      <Button className="text-button" onClick={() => void openHelp(row.id)}>举报或反馈</Button>
+                      <View className="message-actions">
+                        {row.status === "completed" && row.greeting && (
+                          <CopyMessage
+                            external={row.mode === "external"}
+                            value={row.greeting}
+                            label="复制阿 J 先生的回复"
+                          />
+                        )}
+                        <Button
+                          className="control message-action"
+                          aria-label="举报或反馈这条回复"
+                          onLongPress={() => void Taro.showToast({ title: "举报或反馈", icon: "none" })}
+                          onClick={() => void openHelp(row.id)}
+                        >
+                          <ChatIcon name="flag" />
+                        </Button>
+                      </View>
                       <Text className="message-meta">
                         {row.status === "completed"
                           ? "AI 生成 · 已保存"
                           : "这一轮尚未完成"}
                       </Text>
-                      {row.status === "completed" && row.greeting && (
-                        <CopyMessage
-                          external={row.mode === "external"}
-                          value={row.greeting}
-                          label="复制阿 J 先生的回复"
-                        />
-                      )}
                     </View>
                   </View>
                 </View>
@@ -804,11 +837,6 @@ export default function Chat() {
                   </View>
                 </View>
                 <View className="message assistant-message">
-                  <Image
-                    className="avatar small-avatar"
-                    src={mascot}
-                    mode="aspectFill"
-                  />
                   <View className="message-main">
                     <View className="bubble assistant-bubble thinking">
                       <Text className="thinking-dots">● ● ●</Text>
@@ -876,7 +904,7 @@ export default function Chat() {
             )}
             {mode === "platform" &&
               settings &&
-              !settings.platformConfigured && (
+              !settings.platformConfigured && !age?.configuration.previewOnly && (
                 <Text className="config-warning">
                   平台尚未配置模型账户，请切换到“我的密钥”。
                 </Text>
@@ -936,8 +964,9 @@ export default function Chat() {
                 onSend={() => send()}
               />
             )}
+            {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
             <Text className="composer-footnote">
-              {!loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
+              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
                 ? "对话仍留在这里 · 支持撤销连接"
                 : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>
@@ -961,6 +990,10 @@ export default function Chat() {
           />
         )}
       </View>
+      {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
+        onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
+        onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}
+        onHelp={() => void openHelp()} onClose={() => setAgeOpen(false)} />}
     </View>
   );
 }

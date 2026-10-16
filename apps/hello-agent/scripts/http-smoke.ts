@@ -5,6 +5,8 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import sharp from "sharp";
 import { sessionSchema, privacyPolicySchema, privacyStatusSchema, deletionSchema, credentialSchema, historySchema, memoryStatusSchema, submissionResultSchema } from "@cfp/hello-agent-contracts";
 
+if (process.env.HELLO_HTTP_ISOLATED !== "true" || !process.env.HELLO_HTTP_FIXTURES) throw new Error("HTTP 检查仅允许由 e2e 脚本启动的隔离测试库");
+const fixtures = JSON.parse(process.env.HELLO_HTTP_FIXTURES) as { cookie: string; native: { token: string; expiresAt: string }; otherCookie: string };
 const origin = process.env.HELLO_ORIGIN || "http://127.0.0.1:3310";
 // 只在脚本自己建立的隔离实例尝试注册，避免在用户已开放注册的本地库创建测试管理员。
 if (process.env.HELLO_HTTP_ISOLATED === "true") {
@@ -27,7 +29,9 @@ const response = await fetch(`${origin}/api/hello/identity`, {
   headers: { Origin: origin },
 });
 assert.equal(response.status, 200);
-const cookie = response.headers.get("set-cookie")!.split(";")[0];
+const guestCookie = response.headers.get("set-cookie")!.split(";")[0];
+assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: guestCookie } })).status, 403);
+const cookie = fixtures.cookie;
 async function post(path: string, body: unknown) {
   return fetch(`${origin}/api/hello/${path}`, {
     method: "POST",
@@ -59,8 +63,8 @@ assert.equal(recovered.status, 200);
 assert.match(recovered.headers.get("set-cookie")!, /HttpOnly/);
 const recoveredCookie = recovered.headers.get("set-cookie")!.split(";")[0];
 assert.notEqual(recoveredCookie, cookie);
-assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: recoveredCookie } })).status, 200);
-assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers: { Cookie: recoveredCookie } })).status, 404);
+assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Cookie: recoveredCookie } })).status, 403);
+assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers: { Cookie: recoveredCookie } })).status, 403);
 assert.equal((await fetch(`${origin}/api/hello/sessions/${session.id}`, { headers: { Cookie: cookie } })).status, 200);
 const image = await sharp({
   create: { width: 16, height: 16, channels: 3, background: "#eeaa44" },
@@ -73,7 +77,9 @@ const nativeIdentity = await fetch(`${origin}/api/hello/miniapp-identity`, {
   method: "POST",
 });
 assert.equal(nativeIdentity.status, 200);
-const device = credentialSchema.parse(await nativeIdentity.json());
+const guestDevice = credentialSchema.parse(await nativeIdentity.json());
+assert.equal((await fetch(`${origin}/api/hello/sessions`, { headers: { Authorization: `Bearer ${guestDevice.token}` } })).status, 403);
+const device = credentialSchema.parse(fixtures.native);
 const nativeHeaders = {
   Authorization: `Bearer ${device.token}`,
   "Content-Type": "application/json",
@@ -208,7 +214,8 @@ try {
     method: "POST",
     headers: { Origin: origin },
   });
-  const otherCookie = wrongOwner.headers.get("set-cookie")!.split(";")[0];
+  assert.equal(wrongOwner.status, 200);
+  const otherCookie = fixtures.otherCookie;
   assert.equal((await fetch(statusPath, { headers: { Cookie: otherCookie } })).status, 404);
   assert.equal((await fetch(`${origin}/api/hello/context/${session.id}`, { headers: { Cookie: otherCookie } })).status, 404);
   assert.equal(

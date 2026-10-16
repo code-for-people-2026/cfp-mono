@@ -31,6 +31,8 @@ await promisify(execFile)(
   ["--import", "tsx", "scripts/init-db.ts"],
   { env: { ...env, NODE_ENV: "development" }, timeout: 60_000 },
 );
+const fixtures = await promisify(execFile)(process.execPath, ["--import", "tsx", "scripts/http-fixture.ts"], { env: { ...env, NODE_ENV: "development" }, timeout: 60_000 });
+env.HELLO_HTTP_FIXTURES = fixtures.stdout.trim().split("\n").at(-1);
 const require = createRequire(import.meta.url);
 const server = spawn(
   process.execPath,

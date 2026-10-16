@@ -31,6 +31,7 @@
     "@tarojs/taro": "4.2.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
+    "unique-names-generator": "4.7.1",
     "zod": "^3.25.76"
   },
   "devDependencies": {

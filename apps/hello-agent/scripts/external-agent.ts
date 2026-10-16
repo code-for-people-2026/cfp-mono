@@ -90,7 +90,8 @@ try {
   const instruction = prompt.messages
     .map((m) => (m.content.type === "text" ? m.content.text : ""))
     .join("\n")
-    .replaceAll("hello_save_greeting", "save_greeting");
+    .replaceAll("hello_save_greeting", "save_greeting") +
+    "\n本次客户端已完成上述会话查询/创建、上下文读取和所需图片上传；用户消息中已提供真实上下文与图片。你现在只负责生成回应，并且只能调用本次提供的 save_greeting 一次。不要再调用 hello_list_sessions、hello_create_session、hello_get_context 或其他未提供的工具。实际保存和 requestId 由客户端处理。";
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
   const generated = await completeDeepSeek(
     {

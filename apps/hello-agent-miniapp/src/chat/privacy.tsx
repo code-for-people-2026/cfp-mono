@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Checkbox, CheckboxGroup, Input, Label, Text, View } from "@tarojs/components";
 import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import * as api from "./api";
-import { PageButton, SettingsPage, SettingsRow } from "./settings-page";
+import { leavePage, PageButton, SettingsPage, SettingsRow } from "./settings-page";
 import { notifyPrivacyChange, openHelp, openPrivacy, privacyChangedEvent, type PrivacyChange } from "./settings-navigation";
 import "./privacy.css";
 
@@ -66,6 +66,7 @@ export function PrivacyHome() {
 }
 
 export function PrivacyAuthorization() {
+  const forImageUpload = useRouter().params.reason === "image-upload";
   const { policy, status, setStatus, loading, error, refresh } = usePrivacy();
   const [checked, setChecked] = useState<string[]>([]);
   const [recipient, setRecipient] = useState({ name: "", contact: "", region: "", privacyUrl: "" });
@@ -84,29 +85,38 @@ export function PrivacyAuthorization() {
     { key: "sensitive", title: "敏感信息处理", tag: "可选", description: "单独同意处理我主动提供的敏感信息，用于图片、情绪练习、回应及安全审核。可能涉及健康或人脸，泄露会影响个人权益；可不选并只发送不含此类信息的普通文字。" },
     { key: "external", title: "外部 Agent 访问", tag: "可选", description: "单独授权我选择并提供令牌的外部 Agent 读取全部历史、摘要和图片。历史可能含敏感信息，使用外部连接还需单独开启敏感信息处理。我会先核查其接收方、地域与留存说明；可不选并使用平台或 BYOK。" },
   ];
+  const displayedChoices = forImageUpload
+    ? [...choices.filter((choice) => choice.key === "sensitive"), ...choices.filter((choice) => choice.key !== "sensitive")]
+    : choices;
   async function save() {
-    if (!policy || inFlight.current) return;
+    if (!policy || loading || inFlight.current || !checked.includes("core") || !checked.includes("model") || (forImageUpload && !checked.includes("sensitive"))) return;
     inFlight.current = true; setBusy(true); setMessage("");
     try {
       await api.establishIdentity();
       const next = await api.updateConsent({ version: policy.version, core: true, model: true, sensitive: checked.includes("sensitive"), external: checked.includes("external"), ...(checked.includes("external") ? { externalRecipient: recipient } : {}) });
       setStatus(next); notifyPrivacyChange({ status: next }); setMessage("授权已保存。");
+      if (forImageUpload && consentCurrent(next) && next.consent?.sensitive) leavePage();
     } catch (value) { setMessage(value instanceof Error ? value.message : "保存未完成，请重试"); }
     finally { inFlight.current = false; setBusy(false); }
   }
   return <SettingsPage title="授权管理" back>
-    <Text className="page-intro">按需选择权限，随时可以调整。首次授权不预选。</Text>
+    {forImageUpload ? <View className="privacy-upload-intro">
+      <Text className="page-heading">上传图片需要你的同意</Text>
+      <Text className="page-copy">图片可能含有人脸等敏感信息。请开启下方「敏感信息处理」，保存后即可上传。</Text>
+      {status?.consent && !consentCurrent(status) && <Text className="page-caption">说明已更新，请一并确认其余授权选择。</Text>}
+    </View> : <Text className="page-intro">按需选择权限，随时可以调整。首次授权不预选。</Text>}
     <LoadState loading={loading} error={error} retry={refresh} />
     {message && <Text className="page-result">{message}</Text>}
     <PageButton className="page-link privacy-policy-link" onClick={() => void openPrivacy("policies")}>阅读隐私政策、服务协议与第三方说明 ›</PageButton>
     <CheckboxGroup onChange={(event) => setChecked(event.detail.value)}>
-      <View className="page-card">{choices.map((choice) => <Label className="privacy-choice" key={choice.key}>
+      <View className="page-card">{displayedChoices.map((choice) => <Label className={`privacy-choice${forImageUpload && choice.key === "sensitive" ? " privacy-choice-highlight" : ""}`} key={choice.key}>
         <Checkbox value={choice.key} checked={checked.includes(choice.key)} disabled={busy || loading} color="#56765d" />
         <View className="privacy-choice-copy"><View className="privacy-choice-heading"><Text>{choice.title}</Text><Text className="privacy-choice-tag">{choice.tag}</Text></View><Text className="privacy-choice-description">{choice.description}</Text></View>
       </Label>)}</View>
     </CheckboxGroup>
     {checked.includes("external") && <View className="privacy-recipient"><Text className="page-section-title">外部接收方信息</Text><Text className="page-caption">填写实际使用的客户端及模型接收方；不明时请先使用平台或 BYOK。跨境处理须满足政策所述前提，填写不代表跨境手续获准。</Text>{([["name", "客户端及模型服务商名称"], ["contact", "接收方权利联系渠道"], ["region", "实际数据处理地域"], ["privacyUrl", "隐私政策完整 https 地址"]] as const).map(([key, label]) => <Input key={key} className="page-input" value={recipient[key]} disabled={busy} maxlength={500} placeholder={label} onInput={(event) => setRecipient((current) => ({ ...current, [key]: event.detail.value }))} />)}</View>}
-    <PageButton className="page-primary" disabled={busy || loading || !policy || !checked.includes("core") || !checked.includes("model")} onClick={() => void save()}>{busy ? "正在保存…" : "保存授权选择"}</PageButton>
+    <PageButton className="page-primary" disabled={busy || loading || !policy || !checked.includes("core") || !checked.includes("model") || (forImageUpload && !checked.includes("sensitive"))} onClick={() => void save()}>{busy ? "正在保存…" : forImageUpload ? "保存并返回聊天" : "保存授权选择"}</PageButton>
+    {forImageUpload && <Text className="page-caption">暂不开启，也可以返回聊天，只发送普通文字。</Text>}
     <Text className="page-caption">取消可选项后保存即可撤销该项授权。取消敏感信息处理后，含相关历史的对话不能继续交给模型，可导出或删除。停止全部处理，请撤回全部授权。</Text>
     <PageButton className="page-secondary" onClick={() => dataPage("withdraw")}>撤回全部授权</PageButton>
   </SettingsPage>;
@@ -154,7 +164,7 @@ export function PrivacyData() {
     {!loading && !status && !done && action !== "recovery" && <Text className="page-result">当前没有有效身份。可以先在“身份恢复与旧记录”中找回，再管理原有数据。</Text>}
     {action === "export" && <>
       <Text className="page-intro">将属于你的记录保存一份，方便查阅和备份。</Text>
-      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">对话输入与回应作品、对话摘要、上传图片和授权信息。</Text><Text className="page-caption">被隔离的图片可能仅保留说明。自助导出上限为 8 MB 或 1000 条记录，超限可通过隐私政策中的联系渠道申请完整副本。</Text></View>
+      <View className="page-card page-card-padded"><Text className="page-heading">导出包含哪些内容</Text><Text className="page-copy">昵称头像、年龄申报、对话输入与回应作品、上传图片和授权信息。</Text><Text className="page-caption">被隔离的图片可能仅保留说明。自助导出上限为 8 MB 或 1000 条记录，超限可通过隐私政策中的联系渠道申请完整副本。</Text></View>
       <Text className="page-caption">文件可能含有私密信息，请妥善保管，分享前先检查内容。导出不会删除在线记录。</Text>
       <PageButton className="page-primary" disabled={unavailable} onClick={() => void act(async () => { await api.exportPersonalData(); setMessage("已发起导出，请保存文件并妥善保管其中的私密信息。"); })}>{busy ? "正在导出…" : "导出我的数据与图片"}</PageButton>
     </>}
@@ -170,21 +180,21 @@ export function PrivacyData() {
       <PageButton className="page-primary page-danger" disabled={unavailable} onClick={() => void act(async () => { const next = await api.withdrawConsent(); setStatus(next); notifyPrivacyChange({ status: next }); setDone(true); setMessage("全部授权已撤回，数据停止新处理并等待清理。你也可以进入删除数据立即执行删除。"); })}>{busy ? "正在撤回…" : "确认撤回全部授权"}</PageButton>
     </>}
     {action === "recovery" && <>
-      <Text className="page-intro">退出或清除缓存前，请保存恢复码。恢复码可以找回原有记录，请像密码一样妥善保管。</Text>
+      <Text className="page-intro">微信账号可再次登录恢复资料。旧访客记录可通过恢复码导出和删除，请像密码一样妥善保管。</Text>
       <View className="page-card page-card-padded"><Text className="page-heading">保管当前记录的恢复码</Text><Text className="page-copy">访客记录在凭证到期或清缓存后不能自动找回。请保存恢复码；重新生成会使旧恢复码失效。</Text>
         <PageButton className="page-secondary" disabled={unavailable} onClick={() => void act(async () => { setCode((await api.createRecoveryCode()).code); setStatus((current) => current ? { ...current, hasRecoveryCode: true } : current); })}>{status?.hasRecoveryCode ? "更换恢复码（旧码失效）" : "生成恢复码"}</PageButton>
         {code && <><Text className="privacy-code" selectable>{code}</Text><PageButton className="page-link" onClick={() => void act(async () => { await api.copy(code); setMessage("恢复码已复制，请自行妥善保管。"); })}>复制恢复码</PageButton></>}
       </View>
       <Text className="page-section-title">恢复原有记录</Text><View className="page-card page-card-padded"><Text className="page-copy">填入此前保存的恢复码。恢复成功后，原有连接将被撤销。</Text>
         <Input className="page-input" password value={recovery} maxlength={60} disabled={busy} placeholder="填写此前保存的恢复码" onInput={(event) => setRecovery(event.detail.value)} />
-        <PageButton className="page-primary" disabled={busy || !recovery.trim()} onClick={() => void act(async () => { await api.recoverIdentity(recovery); setRecovery(""); setCode(""); notifyPrivacyChange({ clearIdentity: true }); await refresh(); setMessage("记录已恢复，旧连接已撤销。返回聊天后将更新记录。"); })}>恢复记录</PageButton>
+        <PageButton className="page-primary" disabled={busy || !recovery.trim()} onClick={() => void act(async () => { await api.recoverIdentity(recovery); setRecovery(""); setCode(""); notifyPrivacyChange({ clearIdentity: true }); await refresh(); setMessage("已恢复数据管理权限，旧连接已撤销。使用聊天仍需微信登录。"); })}>恢复记录</PageButton>
       </View>
       <Text className="page-caption">没有任何有效凭证时，请通过隐私权利请求联系运营方核验归属。不要在反馈中发送完整恢复码。</Text>
       <PageButton className="page-link" onClick={() => void openHelp(undefined, "privacy")}>申请隐私权利协助 ›</PageButton>
       {status && <PageButton className="page-secondary" onClick={() => dataPage("logout")}>退出并撤销所有连接</PageButton>}
     </>}
     {action === "logout" && <>
-      <View className="page-card page-card-padded"><Text className="page-heading">退出前请保存恢复方式</Text><Text className="page-copy">退出会撤销全部设备及 MCP 连接，数据仍按政策保留。旧记录需要恢复码才能自行找回。</Text></View>
+      <View className="page-card page-card-padded"><Text className="page-heading">退出登录？</Text><Text className="page-copy">退出会撤销全部设备及外部连接，数据仍按政策保留。同一微信可再次登录；未绑定的旧访客记录需保管恢复码。</Text></View>
       <PageButton className="page-primary" disabled={unavailable} onClick={() => void act(async () => { await api.logoutIdentity(); notifyPrivacyChange({ clearIdentity: true }); setStatus(undefined); setCode(""); setDone(true); setMessage("已退出，全部连接已撤销，数据仍按政策保留。"); })}>确认退出并撤销连接</PageButton>
     </>}
   </SettingsPage>;

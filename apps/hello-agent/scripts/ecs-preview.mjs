@@ -16,7 +16,7 @@ function api(action, parameters) {
     args.push(`--${key}`, String(value));
   }
   try {
-    return JSON.parse(execFileSync("aliyun", args, { encoding: "utf8", maxBuffer: 2 ** 22 }));
+    return JSON.parse(execFileSync("aliyun", args, { encoding: "utf8", maxBuffer: 2 ** 22, stdio: ["ignore", "pipe", "pipe"] }));
   } catch {
     // 不输出参数或完整命令，避免文件内容出现在错误日志。
     throw new Error(`阿里云 ${action} 未成功，请核对权限和目标`);

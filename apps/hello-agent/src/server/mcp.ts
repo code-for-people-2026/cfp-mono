@@ -1,3 +1,4 @@
+import { AgeService } from "../age/service";
 import { PrivacyService } from "../privacy/service";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
@@ -17,6 +18,7 @@ export function createMcpServer(service: GreetingService) {
     async (args: T) => {
       try {
         const privacy = new PrivacyService(service.repo);
+        await new AgeService(service.repo.payload, service.repo.owner).requireCapability();
         await privacy.requireExternalAccess();
         return result(await handler(args));
       } catch (error) {
@@ -91,6 +93,7 @@ export function createMcpServer(service: GreetingService) {
     async (args) => {
       try {
         const privacy = new PrivacyService(service.repo);
+        await new AgeService(service.repo.payload, service.repo.owner).requireCapability();
         await privacy.requireExternalAccess();
         const media = await service.media.read(args.mediaId);
         return {

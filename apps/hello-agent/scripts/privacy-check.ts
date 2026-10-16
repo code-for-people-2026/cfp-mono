@@ -29,7 +29,10 @@ const { GET, POST } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 try {
-  const owner = { id: randomUUID(), auth: "cookie" as const };
+  const owner = { id: randomUUID(), auth: "miniapp" as const, wechatKey: "synthetic-privacy-owner" };
+  const { ageNotice } = await import("../src/age/policy");
+  await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner: owner.id, key: owner.wechatKey } });
+  await payload.create({ collection: "age-profiles", overrideAccess: true, data: { owner: owner.id, state: "adult", assurance: "identity_details_match", noticeVersion: ageNotice().version, expiresAt: "2099-01-01T00:00:00Z" } });
   const stranger = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
   const service = new PrivacyService(repo);
