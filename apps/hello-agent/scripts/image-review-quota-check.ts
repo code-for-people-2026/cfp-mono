@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
+import { mock } from "node:test";
 import sharp from "sharp";
 import { sql, type MigrateDownArgs, type MigrateUpArgs } from "@payloadcms/db-sqlite";
 import { AppError } from "../src/domain/contracts";
@@ -21,7 +23,9 @@ const { Repository } = await import("../src/cms/repository");
 const { MediaService } = await import("../src/domain/media");
 const { GreetingService } = await import("../src/domain/greetings");
 const { ImageGenerationService, readImageState } = await import("../src/images/service");
-const { reviewImage } = await import("../src/operations/image-review");
+const { reviewImage, configuredImageReviewer, imageReviewConfigured } = await import("../src/operations/image-review");
+const { configuredGreenReviewer } = await import("../src/images/aliyun-image-review");
+const { imageReviewConfigured: legacyGreenConfigured } = await import("../src/images/image-review");
 const { reserveImageReview } = await import("../src/operations/image-review-quota");
 const payload = await cms();
 const clearReviews = () => payload.db.drizzle.run(sql`DELETE FROM platform_model_quotas WHERE day LIKE 'image-review:%'`);
@@ -36,6 +40,14 @@ try {
   const configuredService = new GreetingService(configuredRepo, undefined, new MediaService(configuredRepo, () => undefined));
   const beforeConfigurationFailure = await counts();
   let proxyCalls = 0;
+  let greenCalls = 0;
+  let greenCredentialsUsed: { accessKeyId: string; accessKeySecret: string } | undefined;
+  const { default: Green } = createRequire(import.meta.url)("@alicloud/green20220302") as typeof import("@alicloud/green20220302");
+  const greenRequest = mock.method(Green.prototype, "describeUploadTokenWithOptions", async function (this: InstanceType<typeof Green>) {
+    greenCalls++;
+    greenCredentialsUsed = { accessKeyId: await this.getAccessKeyId(), accessKeySecret: await this.getAccessKeySecret() };
+    throw new Error("synthetic SDK interception: never request a real upload token");
+  });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (url, init) => {
     assert.equal(String(url), "https://review.example.invalid/check", "no real service may receive a test request");
@@ -44,31 +56,48 @@ try {
     return Response.json({ decision: "allow", version: "synthetic-config-recovery", category: "test" });
   };
   try {
-    const invalidConfigurations: { mode?: string; url?: string; token?: string }[] = [
+    const invalidConfigurations: { mode?: string; url?: string; token?: string; greenId?: string; greenSecret?: string }[] = [
       {}, {}, { mode: "aliyun-green" },
       { url: "http://review.example.invalid/check", token: "synthetic-review-token" },
       { url: "https://user:password@review.example.invalid/check", token: "synthetic-review-token" },
       { url: "not-a-valid-url", token: "synthetic-review-token" },
+      ...[" \t\r\n ", "synthetic token", "synthetic\ntoken", "synthetic\ttoken", "synthetic\u0007token", "synthetic\u007ftoken", "syntheticé"].map((token) => ({ url: "https://review.example.invalid/check", token })),
+      ...[" \t ", "synthetic id", "synthetic\nid", "synthetic\u0007id"].map((greenId) => ({ mode: "aliyun-green", greenId, greenSecret: "synthetic-secret" })),
+      ...[" \r\n ", "synthetic secret", "synthetic\nsecret", "synthetic\u007fsecret"].map((greenSecret) => ({ mode: "aliyun-green", greenId: "synthetic-id", greenSecret })),
     ];
     for (const config of invalidConfigurations) {
-      for (const [key, value] of [["HELLO_IMAGE_REVIEW_MODE", config.mode], ["HELLO_IMAGE_REVIEW_URL", config.url], ["HELLO_IMAGE_REVIEW_TOKEN", config.token]] as const) {
+      for (const [key, value] of [["HELLO_IMAGE_REVIEW_MODE", config.mode], ["HELLO_IMAGE_REVIEW_URL", config.url], ["HELLO_IMAGE_REVIEW_TOKEN", config.token], ["HELLO_GREEN_ACCESS_KEY_ID", config.greenId], ["HELLO_GREEN_ACCESS_KEY_SECRET", config.greenSecret]] as const) {
         if (value === undefined) delete process.env[key]; else process.env[key] = value;
       }
       await assert.rejects(configuredService.upload(pixels), { status: 503 });
       assert.deepEqual(await ledger(), [], "known missing/invalid reviewer configuration must not consume quota");
       assert.deepEqual(await counts(), beforeConfigurationFailure, "configuration errors must not create content cases or save pixels");
+      assert.equal(imageReviewConfigured(), false);
+      assert.equal(legacyGreenConfigured(), false);
+      assert.equal((await configuredImageReviewer(pixels)).decision, "unavailable", "direct adapter calls must use the same validation");
+      assert.equal((await configuredGreenReviewer(pixels)).decision, "unavailable");
       assert.equal(proxyCalls, 0);
+      assert.equal(greenCalls, 0);
     }
     delete process.env.HELLO_IMAGE_REVIEW_MODE;
-    Object.assign(process.env, { HELLO_IMAGE_REVIEW_URL: "https://review.example.invalid/check", HELLO_IMAGE_REVIEW_TOKEN: "synthetic-review-token" });
+    Object.assign(process.env, { HELLO_IMAGE_REVIEW_URL: "  https://REVIEW.example.invalid:443/check  ", HELLO_IMAGE_REVIEW_TOKEN: " \t synthetic-review-token \t " });
+    assert.equal(imageReviewConfigured(), true);
+    assert.equal(legacyGreenConfigured(), false, "the legacy readiness check remains Green-only");
     const configuredUpload = await configuredService.upload(pixels);
     assert.equal(proxyCalls, 1, "fixing configuration still permits the first budgeted call");
     assert.deepEqual((await ledger()).map((row) => row.reserved_calls), [1, 1]);
     assert.equal((await configuredRepo.get("media", configuredUpload.id)).safetyReview?.decision, "allow");
-  } finally { globalThis.fetch = originalFetch; }
+    Object.assign(process.env, { HELLO_IMAGE_REVIEW_MODE: "aliyun-green", HELLO_GREEN_ACCESS_KEY_ID: " \t synthetic-id \t ", HELLO_GREEN_ACCESS_KEY_SECRET: "  synthetic-secret  " });
+    assert.equal(imageReviewConfigured(), true);
+    assert.equal(legacyGreenConfigured(), true);
+    assert.equal((await configuredGreenReviewer(pixels)).decision, "unavailable", "the SDK test deliberately stops before network access");
+    assert.equal(greenCalls, 1);
+    assert.deepEqual(greenCredentialsUsed, { accessKeyId: "synthetic-id", accessKeySecret: "synthetic-secret" }, "the actual SDK constructor receives normalized credentials");
+  } finally { globalThis.fetch = originalFetch; greenRequest.mock.restore(); }
+  for (const key of ["HELLO_IMAGE_REVIEW_MODE", "HELLO_IMAGE_REVIEW_URL", "HELLO_IMAGE_REVIEW_TOKEN", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) delete process.env[key];
   await clearReviews();
   Object.assign(process.env, { HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "2", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "3" });
-  console.log("✓ missing or invalid reviewer configuration charges nothing and creates no cases; a restored synthetic proxy call charges once and saves the upload");
+  console.log("✓ missing/invalid/whitespace credentials cause no calls, charges or cases; restored proxy and Green adapters use the same normalized credentials as readiness");
 
   let calls = 0, throwReview = false;
   let decision: ImageReview["decision"] = "allow";

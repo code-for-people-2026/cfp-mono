@@ -6,18 +6,14 @@ import { OperationsService, transaction } from "./service";
 import { audit } from "./audit";
 import { assertReviewWrite } from "./review-write";
 import { reserveImageReview } from "./image-review-quota";
+import { greenReviewCredentials, proxyReviewConfiguration } from "../images/review-config";
 export type ImageReview = { decision: "allow" | "block" | "uncertain" | "unavailable"; version: string; category: string };
 export type ImageReviewer = (bytes: Buffer) => Promise<ImageReview>;
 export class ImageReviewUnavailableError extends ContentReviewError {}
 const verdict = z.object({ decision: z.enum(["allow", "block", "uncertain"]), version: z.string().min(1).max(100), category: z.string().min(1).max(80) }).strict();
 export function imageReviewConfigured() {
-  if (process.env.HELLO_IMAGE_REVIEW_MODE === "aliyun-green")
-    return !!(process.env.HELLO_GREEN_ACCESS_KEY_ID && process.env.HELLO_GREEN_ACCESS_KEY_SECRET);
-  if (!process.env.HELLO_IMAGE_REVIEW_URL || !process.env.HELLO_IMAGE_REVIEW_TOKEN) return false;
-  try {
-    const url = new URL(process.env.HELLO_IMAGE_REVIEW_URL);
-    return url.protocol === "https:" && !url.username && !url.password;
-  } catch { return false; }
+  return process.env.HELLO_IMAGE_REVIEW_MODE === "aliyun-green"
+    ? !!greenReviewCredentials() : !!proxyReviewConfiguration();
 }
 // 只向部署者显式配置的受信任审核代理发送压缩后的像素；不接受用户传入 URL。
 export const configuredImageReviewer: ImageReviewer = async (bytes) => {
@@ -25,13 +21,10 @@ export const configuredImageReviewer: ImageReviewer = async (bytes) => {
     const { configuredGreenReviewer } = await import("./aliyun-image-review");
     return configuredGreenReviewer(bytes);
   }
-  const endpoint = process.env.HELLO_IMAGE_REVIEW_URL;
-  const key = process.env.HELLO_IMAGE_REVIEW_TOKEN;
-  if (!endpoint || !key) return { decision: "unavailable", version: "unconfigured", category: "image_unreviewed" };
+  const config = proxyReviewConfiguration();
+  if (!config) return { decision: "unavailable", version: "unconfigured", category: "image_unreviewed" };
   try {
-    const url = new URL(endpoint);
-    if (url.protocol !== "https:" || url.username || url.password) throw new Error("invalid endpoint");
-    const result = await fetch(url, { method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000), headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ mimeType: "image/jpeg", base64: bytes.toString("base64") }) });
+    const result = await fetch(config.url, { method: "POST", redirect: "error", signal: AbortSignal.timeout(15_000), headers: { Authorization: `Bearer ${config.token}`, "Content-Type": "application/json" }, body: JSON.stringify({ mimeType: "image/jpeg", base64: bytes.toString("base64") }) });
     if (!result.ok) throw new Error("review failed");
     const text = await result.text();
     if (text.length > 4096) throw new Error("oversize verdict");

@@ -181,8 +181,12 @@ try {
   const awaitableImage = await sharp({ create: { width: 8, height: 8, channels: 3, background: "blue" } }).png().toBuffer();
   const imageOwner = { id: randomUUID(), auth: "cookie" as const };
   const imageRepo = new Repository(payload, imageOwner);
-  const closedImages = new GreetingService(imageRepo);
-  delete process.env.HELLO_IMAGE_REVIEW_URL; delete process.env.HELLO_IMAGE_REVIEW_TOKEN;
+  const unconfiguredImages = new GreetingService(imageRepo);
+  for (const key of ["HELLO_IMAGE_REVIEW_MODE", "HELLO_IMAGE_REVIEW_URL", "HELLO_IMAGE_REVIEW_TOKEN", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) delete process.env[key];
+  await assert.rejects(() => unconfiguredImages.upload(awaitableImage), { status: 503 });
+  assert.equal((await imageRepo.all("media")).length, 0);
+  assert.equal((await ops.mine(imageOwner)).length, 0, "known missing configuration is not a content-review case");
+  const closedImages = new GreetingService(imageRepo, undefined, undefined, undefined, { imageReviewer: async () => ({ decision: "unavailable", category: "image_unreviewed", version: "synthetic-provider-outage" }) });
   await assert.rejects(() => closedImages.upload(awaitableImage), { status: 503 });
   assert.equal((await imageRepo.all("media")).length, 0);
   const imageCases = await ops.mine(imageOwner); assert.equal(imageCases.length, 1);
@@ -198,6 +202,6 @@ try {
   assert.ok((await imageRepo.all("greetings")).every((r) => !r.artifacts && r.status === "failed"));
   await purgeExpiredEvidence(payload, true, new Date(Date.now() + 8 * 86400_000));
   assert.equal((await ops.evidence(administrator, Number(imageCase.id), "验证到期清理后图片摘要不可再读")).unavailable, true);
-  pass("默认图片失败关闭不保存像素；真实审核不可用入队且不建生成记录；到期证据实际清理");
+  pass("缺少图片审核配置不建案或保存像素；实际审核异常入队且不建生成记录；到期证据实际清理");
   console.log(`\n${checks} 组真实 Payload/SQLite 功能检查通过；审核/像素决定为注入模拟，非正式语义安全评测。`);
 } finally { await payload.destroy(); }
