@@ -30,6 +30,46 @@ const counts = () => Promise.all((["safety-cases", "safety-evidence", "safety-au
 try {
   await payload.db.migrate({ migrations: migrations.map((migration) => ({ name: migration.name, up: (args: unknown) => migration.up(args as MigrateUpArgs), down: (args: unknown) => migration.down(args as MigrateDownArgs) })) });
   const pixels = await sharp({ create: { width: 128, height: 128, channels: 3, background: "#559977" } }).jpeg().toBuffer();
+  Object.assign(process.env, { HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "1", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "1" });
+  for (const key of ["HELLO_IMAGE_REVIEW_MODE", "HELLO_IMAGE_REVIEW_URL", "HELLO_IMAGE_REVIEW_TOKEN", "HELLO_GREEN_ACCESS_KEY_ID", "HELLO_GREEN_ACCESS_KEY_SECRET"]) delete process.env[key];
+  const configuredRepo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
+  const configuredService = new GreetingService(configuredRepo, undefined, new MediaService(configuredRepo, () => undefined));
+  const beforeConfigurationFailure = await counts();
+  let proxyCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    assert.equal(String(url), "https://review.example.invalid/check", "no real service may receive a test request");
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer synthetic-review-token");
+    proxyCalls++;
+    return Response.json({ decision: "allow", version: "synthetic-config-recovery", category: "test" });
+  };
+  try {
+    const invalidConfigurations: { mode?: string; url?: string; token?: string }[] = [
+      {}, {}, { mode: "aliyun-green" },
+      { url: "http://review.example.invalid/check", token: "synthetic-review-token" },
+      { url: "https://user:password@review.example.invalid/check", token: "synthetic-review-token" },
+      { url: "not-a-valid-url", token: "synthetic-review-token" },
+    ];
+    for (const config of invalidConfigurations) {
+      for (const [key, value] of [["HELLO_IMAGE_REVIEW_MODE", config.mode], ["HELLO_IMAGE_REVIEW_URL", config.url], ["HELLO_IMAGE_REVIEW_TOKEN", config.token]] as const) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      await assert.rejects(configuredService.upload(pixels), { status: 503 });
+      assert.deepEqual(await ledger(), [], "known missing/invalid reviewer configuration must not consume quota");
+      assert.deepEqual(await counts(), beforeConfigurationFailure, "configuration errors must not create content cases or save pixels");
+      assert.equal(proxyCalls, 0);
+    }
+    delete process.env.HELLO_IMAGE_REVIEW_MODE;
+    Object.assign(process.env, { HELLO_IMAGE_REVIEW_URL: "https://review.example.invalid/check", HELLO_IMAGE_REVIEW_TOKEN: "synthetic-review-token" });
+    const configuredUpload = await configuredService.upload(pixels);
+    assert.equal(proxyCalls, 1, "fixing configuration still permits the first budgeted call");
+    assert.deepEqual((await ledger()).map((row) => row.reserved_calls), [1, 1]);
+    assert.equal((await configuredRepo.get("media", configuredUpload.id)).safetyReview?.decision, "allow");
+  } finally { globalThis.fetch = originalFetch; }
+  await clearReviews();
+  Object.assign(process.env, { HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "2", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "3" });
+  console.log("✓ missing or invalid reviewer configuration charges nothing and creates no cases; a restored synthetic proxy call charges once and saves the upload");
+
   let calls = 0, throwReview = false;
   let decision: ImageReview["decision"] = "allow";
   const reviewer = async (): Promise<ImageReview> => {

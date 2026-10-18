@@ -11,9 +11,13 @@ export type ImageReviewer = (bytes: Buffer) => Promise<ImageReview>;
 export class ImageReviewUnavailableError extends ContentReviewError {}
 const verdict = z.object({ decision: z.enum(["allow", "block", "uncertain"]), version: z.string().min(1).max(100), category: z.string().min(1).max(80) }).strict();
 export function imageReviewConfigured() {
-  return process.env.HELLO_IMAGE_REVIEW_MODE === "aliyun-green"
-    ? !!(process.env.HELLO_GREEN_ACCESS_KEY_ID && process.env.HELLO_GREEN_ACCESS_KEY_SECRET)
-    : !!(process.env.HELLO_IMAGE_REVIEW_URL && process.env.HELLO_IMAGE_REVIEW_TOKEN);
+  if (process.env.HELLO_IMAGE_REVIEW_MODE === "aliyun-green")
+    return !!(process.env.HELLO_GREEN_ACCESS_KEY_ID && process.env.HELLO_GREEN_ACCESS_KEY_SECRET);
+  if (!process.env.HELLO_IMAGE_REVIEW_URL || !process.env.HELLO_IMAGE_REVIEW_TOKEN) return false;
+  try {
+    const url = new URL(process.env.HELLO_IMAGE_REVIEW_URL);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch { return false; }
 }
 // 只向部署者显式配置的受信任审核代理发送压缩后的像素；不接受用户传入 URL。
 export const configuredImageReviewer: ImageReviewer = async (bytes) => {
@@ -35,6 +39,8 @@ export const configuredImageReviewer: ImageReviewer = async (bytes) => {
   } catch { return { decision: "unavailable", version: "provider-unavailable", category: "image_unreviewed" }; }
 };
 export async function reviewImage(repo: Repository, bytes: Buffer, reviewer = configuredImageReviewer, source: { stage?: "input_image" | "output_image"; turnId?: number; sessionId?: number; mediaId?: number } = {}) {
+  if (reviewer === configuredImageReviewer && !imageReviewConfigured())
+    throw new ImageReviewUnavailableError(503, "图片审核服务尚未配置，本次图片未保存或展示；可以先使用文字");
   // Quota refusal is an admission error, never a content verdict or case.
   await reserveImageReview(repo.payload, repo.owner.id);
   let result: ImageReview;
