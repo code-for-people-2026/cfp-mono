@@ -27,7 +27,10 @@ export async function GET(request: Request, context: Context) {
     const { payload, user } = await authenticate(request);
     const path = (await context.params).path;
     const service = new OperationsService(payload);
-    if (path[0] === "status") return json({ role: roleOf(user), id: user.id, configuration: await service.configuration(), rule: await activeRule(payload), imageReviewConfigured: imageReviewConfigured() });
+    if (path[0] === "status") {
+      const { version, mode } = await activeRule(payload);
+      return json({ role: roleOf(user), id: user.id, configuration: await service.configuration(), rule: { version, mode }, imageReviewConfigured: imageReviewConfigured() });
+    }
     if (path[0] === "cases") {
       const query = new URL(request.url).searchParams;
       return json(await service.queue(user, { status: query.get("status") || undefined, severity: query.get("severity") || undefined, mine: query.get("mine") === "true", overdue: query.get("overdue") === "true" }));

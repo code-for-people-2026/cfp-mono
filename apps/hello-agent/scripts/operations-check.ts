@@ -35,6 +35,14 @@ try {
   for (const collection of ["agent-configs", "knowledge-bases"] as const) await assert.rejects(() => payload.find({ collection, overrideAccess: false, user: reviewer }));
   await assert.rejects(() => payload.find({ collection: "safety-evidence", overrideAccess: false, user: administrator }));
   pass("角色权限：审核员不能升权/读原始聊天，管理员不能从通用接口读受限证据");
+  const { GET: operationsGET } = await import("../src/app/api/operations/[...path]/route");
+  for (const user of [administrator, reviewer, auditor]) {
+    const { token } = await payload.login({ collection: "admins", data: { email: user.email, password: "isolated-test-pass-123" } });
+    const response = await operationsGET(new Request("http://localhost/api/operations/status", { headers: { Cookie: `payload-token=${token}` } }), { params: Promise.resolve({ path: ["status"] }) });
+    assert.equal(response.status, 200);
+    assert.deepEqual((await response.json()).rule, { version: "builtin-unreleased", mode: "keywords" });
+  }
+  pass("真实认证的状态接口只返回规则版本和覆盖模式，不向各角色披露召回词或内部理由");
   const ops = new OperationsService(payload);
   assert.equal((await ops.configuration()).configured, false);
   await assert.rejects(() => ops.configure(reviewer, {}), { status: 403 });

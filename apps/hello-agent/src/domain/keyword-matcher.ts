@@ -21,7 +21,7 @@ export function createKeywordMatcher(words: readonly string[]) {
     }
     node.word = word;
   }
-  return (text: string, limit = 20): string[] => {
+  return (text: string, limit = 20, ignored: ReadonlySet<string> = new Set()): string[] => {
     const characters = [...normalizeKeywordText(text)];
     const hits = new Set<string>();
     for (let start = 0; start < characters.length; start++) {
@@ -29,7 +29,8 @@ export function createKeywordMatcher(words: readonly string[]) {
       for (let end = start; end < characters.length; end++) {
         node = node.children.get(characters[end]);
         if (!node) break;
-        if (!node.word) continue;
+        // Ignored words must not consume the recall budget and hide later hits.
+        if (!node.word || ignored.has(node.word)) continue;
         // English terms must not match inside an unrelated word (e.g. class).
         if (/^[a-z0-9]/.test(node.word) && /[a-z0-9]/.test(characters[start - 1] ?? "")) continue;
         if (/[a-z0-9]$/.test(node.word) && /[a-z0-9]/.test(characters[end + 1] ?? "")) continue;

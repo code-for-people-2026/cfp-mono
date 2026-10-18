@@ -5,12 +5,14 @@ import { evaluateText, type Moderator } from "../domain/moderation";
 import { activeRule } from "./policy";
 import { audit } from "./audit";
 import { OperationsService, transaction } from "./service";
+import { assertReviewWrite } from "./review-write";
 
 export function operationalModerator(repo: Repository): Moderator {
   return async (request) => {
     const rule = await activeRule(repo.payload);
     const verdict = await evaluateText(request, rule, request.mode === "byok" ? undefined : () => reservePlatformCalls(repo.payload, 1));
     await transaction(repo.payload, async (req) => {
+      await assertReviewWrite(repo.owner.id, req);
       if (!["allow", "not_reviewed"].includes(verdict.decision)) {
         await new OperationsService(repo.payload).createCase({
           owner: repo.owner.id, source: "moderation", stage: request.stage, category: verdict.category,

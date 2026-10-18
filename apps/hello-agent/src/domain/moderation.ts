@@ -30,7 +30,8 @@ allow：正常日常交流、对困难情绪或自杀自伤念头的求助、安
 stage=input 时判断用户请求是否要求生成上述有害内容，不阻断用户描述自己经历的伤害；stage=output 时判断 texts 中准备展示的回应及作品，context 只帮助理解，不因 context 中被拒绝的请求误拦安全回应。无法确定时 uncertain。`;
 
 export async function evaluateText(request: ModerationRequest, rule?: Rule, beforeReview?: () => Promise<void>) {
-  const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text)))].filter((word) => !rule?.ignoredWords.includes(word));
+  const ignored = new Set(rule?.ignoredWords ?? []);
+  const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text, 20, ignored)))];
   if (rule?.extraWords.length) keywords.push(...request.texts.flatMap((text) => createKeywordMatcher(rule.extraWords)(text)));
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
   const result = (decision: "allow" | "block" | "uncertain" | "unavailable" | "not_reviewed", category = "other") => ({ decision, model, keywordCount: keywords.length, category });

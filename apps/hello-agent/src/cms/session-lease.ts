@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { CollectionBeforeChangeHook } from "payload";
+import type { CollectionBeforeChangeHook, PayloadRequest } from "payload";
 import { AppError } from "../domain/contracts";
 
 export const SESSION_LEASE_MS = 180_000;
@@ -62,17 +62,22 @@ export function holdSessionLease(options: {
   });
 }
 
-// Read the lease in the same SQLite transaction as the business write. Even a
-// paused process or a provider ignoring cancellation cannot publish after a
-// replacement execution has acquired the session. Lock maintenance is exempt.
-export const guardSessionLease: CollectionBeforeChangeHook = async ({ req, data, originalDoc, collection }) => {
+// Also used by operations transactions, which do not write owned collections.
+export async function assertSessionLeaseInTransaction(owner: string, req: PayloadRequest) {
   const lease = execution.getStore();
-  if (!lease || collection.slug === "session-locks" || (data.owner ?? originalDoc?.owner) !== lease.owner) return data;
+  if (!lease || lease.owner !== owner) return;
   lease.signal.throwIfAborted();
   const current = await req.payload.find({ collection: "session-locks", overrideAccess: true, req, limit: 1, where: {
     and: [{ id: { equals: lease.id } }, { createdAt: { equals: lease.createdAt } }, { owner: { equals: lease.owner } }, { expiresAt: { greater_than: new Date().toISOString() } }],
   } });
   lease.signal.throwIfAborted();
   if (!current.docs.length) throw new AppError(409, "本轮执行许可已失效，不能继续保存内容");
+}
+
+// Read the lease in the same SQLite transaction as the business write. Even a
+// paused process or a provider ignoring cancellation cannot publish after a
+// replacement execution has acquired the session. Lock maintenance is exempt.
+export const guardSessionLease: CollectionBeforeChangeHook = async ({ req, data, originalDoc, collection }) => {
+  if (collection.slug !== "session-locks") await assertSessionLeaseInTransaction(data.owner ?? originalDoc?.owner, req);
   return data;
 };

@@ -28,6 +28,7 @@ import {
 } from "../../../../server/auth";
 import { withCredentialExecution, withCredentialLock } from "../../../../server/credential-lock";
 import { rateLimitLogin } from "../../../../server/login-limits";
+import { reservePublicAdmission } from "../../../../server/public-admission";
 import { failure, readJson, rateLimit } from "../../../../server/http";
 import { agentStream, readAgentInput } from "../../../../server/ag-ui";
 import {
@@ -178,6 +179,7 @@ export async function POST(request: Request, context: Context) {
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
       // 访客凭证仅用于登录前状态和数据权利；业务读取也必须完成微信登录。
       rateLimitLogin(request, "miniapp-identity");
+      await reservePublicAdmission(payload, request, "identity");
       return json(await mintCredential(payload, "miniapp"));
     }
     if (path[0] === "identity") {
@@ -188,6 +190,7 @@ export async function POST(request: Request, context: Context) {
       } catch (error) {
         if (!(error instanceof AppError && error.status === 401)) throw error;
       }
+      await reservePublicAdmission(payload, request, "identity");
       const credential = await mintCredential(payload, "cookie");
       const response = json({ owner: credential.owner });
       const secure = (process.env.HELLO_ORIGIN || "").startsWith("https:")
@@ -202,13 +205,17 @@ export async function POST(request: Request, context: Context) {
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
     if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
-    // External business traffic cannot spend the person's privacy-control quota.
-    rateLimit(path[0] === "token" && owner.auth !== "bearer" ? `privacy-control:${owner.id}` : owner.id);
     if (path[0] === "safety") {
       if (owner.auth === "bearer") throw new AppError(403, "请本人在小程序或网页中提交举报或申诉");
       const body = await readJson(request, 8 * 1024);
-      return withAuthenticatedExecution(payload, request, owner, (current) => new OperationsService(payload).complain(current, body).then(json));
+      return await withAuthenticatedExecution(payload, request, owner, async (current) => {
+        await reservePublicAdmission(payload, request, "safety");
+        return json(await new OperationsService(payload).complain(current, body));
+      });
     }
+    // Complaints remain available when generation or its request quota is blocked.
+    // External business traffic cannot spend the person's privacy-control quota.
+    rateLimit(path[0] === "token" && owner.auth !== "bearer" ? `privacy-control:${owner.id}` : owner.id);
     if (path[0] === "token") {
       return await withCredentialLock(owner.id, async () => {
         // Cached authentication can predate recovery. Validate it again inside

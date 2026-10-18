@@ -4,6 +4,7 @@ import type { Repository } from "../cms/repository";
 import { ContentReviewError } from "../domain/contracts";
 import { OperationsService, transaction } from "./service";
 import { audit } from "./audit";
+import { assertReviewWrite } from "./review-write";
 export type ImageReview = { decision: "allow" | "block" | "uncertain" | "unavailable"; version: string; category: string };
 export type ImageReviewer = (bytes: Buffer) => Promise<ImageReview>;
 export class ImageReviewUnavailableError extends ContentReviewError {}
@@ -37,6 +38,7 @@ export async function reviewImage(repo: Repository, bytes: Buffer, reviewer = co
   try { result = await reviewer(bytes); } catch { result = { decision: "unavailable", version: "review-error", category: "image_unreviewed" }; }
   const digest = createHash("sha256").update(bytes).digest("hex");
   await transaction(repo.payload, async (req) => {
+    await assertReviewWrite(repo.owner.id, req);
     await audit(repo.payload, "system:image-review", `image.${result.decision}`, digest, "图片像素审核", { version: result.version, category: result.category, ...source }, req);
     if (result.decision !== "allow") await new OperationsService(repo.payload).createCase({
       owner: repo.owner.id, source: "image", category: result.category, stage: source.stage || "input_image", turnId: source.turnId, sessionId: source.sessionId, mediaId: source.mediaId, decision: result.decision,

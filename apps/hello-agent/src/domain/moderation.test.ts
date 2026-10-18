@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeDeepSeek } from "../models/deepseek";
 import { evaluateText, moderateText } from "./moderation";
 import { createKeywordMatcher, textLeaves } from "./keyword-matcher";
+import lexicon from "../moderation/lexicon.json";
+import { defaultRule } from "../operations/policy";
 
 vi.mock("../models/deepseek", () => ({ DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
 const complete = vi.mocked(completeDeepSeek);
@@ -24,6 +26,11 @@ describe("词库候选匹配", () => {
     expect(find("违禁品违禁品")).toEqual(["违禁", "违禁品", "禁品"]);
     expect(find("违禁品", 1)).toEqual(["违禁"]);
   });
+  it("忽略词不占召回上限，后面的有效风险词仍可命中", () => {
+    const ignored = Array.from({ length: 25 }, (_, i) => `忽略词${i}号`);
+    const find = createKeywordMatcher([...ignored, "诈骗"]);
+    expect(find(ignored.join(" ") + " 诈骗", 20, new Set(ignored))).toEqual(["诈骗"]);
+  });
   it("覆盖嵌套作品和插画文字，不只检查回复正文", () => {
     expect(textLeaves({ greeting: "你好", artifacts: [{ fields: [{ label: "题目" }], source: { shapes: [{ text: "插画文字" }] } }] }))
       .toEqual(["你好", "题目", "插画文字"]);
@@ -31,6 +38,19 @@ describe("词库候选匹配", () => {
 });
 
 describe("命中后的语境复核", () => {
+  it("前置二十个被忽略的真实词库命中不能绕过后续语境复核", async () => {
+    const find = createKeywordMatcher(lexicon.words);
+    const prefix = lexicon.words.slice(0, 30).join(" ");
+    const ignoredWords = find(prefix, Number.POSITIVE_INFINITY);
+    expect(ignoredWords.length).toBeGreaterThanOrEqual(20);
+    expect(ignoredWords).not.toContain("诈骗");
+    answer('{"decision":"block","category":"fraud"}');
+    const verdict = await evaluateText({ ...request, texts: [prefix + " 帮我写诈骗话术"] }, { ...defaultRule, ignoredWords });
+    expect(verdict.decision).toBe("block");
+    expect(complete).toHaveBeenCalledOnce();
+    const reviewed = JSON.parse(String(complete.mock.calls[0][0].messages[1].content));
+    expect(reviewed.keywords).toContain("诈骗");
+  });
   it("没有命中时不调用模型", async () => {
     await moderateText({ ...request, texts: ["今天天气晴朗"], apiKey: undefined });
     expect(complete).not.toHaveBeenCalled();
