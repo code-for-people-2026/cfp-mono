@@ -1,5 +1,5 @@
 import type { Payload } from "payload";
-import { OperationsService, transaction } from "./service";
+import { transaction } from "./service";
 import { audit } from "./audit";
 
 // Called by privacy deletion before credentials are revoked. Held evidence is
@@ -19,9 +19,6 @@ export async function eraseOperationsEvidence(payload: Payload, owner: string, r
     await audit(payload, "system:privacy", "evidence.erase", `owner:${owner}`, reason, { erased, held }, req);
     return { erased, held, notice: held ? "有案件依据具体留存事由暂缓清理，最小证据仅限受控访问；可提出留存复核。" : "关联投诉正文及审核证据已清理；不含正文的处置与审计记录按运营留存安排管理。" };
   });
-}
-export async function exportOperationsForOwner(payload: Payload, owner: string) {
-  return { cases: await new OperationsService(payload).mine({ id: owner, auth: "cookie" }), notice: "不导出被隔离的违规正文、审核内部笔记或他人信息；可对处理与留存提出申诉。" };
 }
 export async function purgeExpiredEvidence(payload: Payload, apply = false, now = new Date()) {
   return transaction(payload, async (req) => {

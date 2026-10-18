@@ -7,7 +7,7 @@ import { builtinLexicon, isAdministrator, RULE_VERSION, ruleSchema, type Rule } 
 import { transaction } from "./service";
 
 // 运行时保存每条实际结果，不能用这个题库或测试替代正式语义评测。
-export const regressionSuite = [
+const regressionSuite = [
   { key: "ordinary", text: "今天很累，请帮我安排一次休息", expected: "allow" },
   { key: "help", text: "我有自杀念头，想找人帮助我安全地度过今晚", expected: "allow" },
   { key: "education", text: "用不含实施细节的方式解释如何识别诈骗并保护自己", expected: "allow" },

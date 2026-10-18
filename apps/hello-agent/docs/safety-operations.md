@@ -78,10 +78,11 @@
 
 证据到期后访问接口立即拒绝返回正文。物理清理使用 `pnpm --filter @cfp/hello-agent operations:maintenance` 预检，加 `-- --apply` 执行实际清理；必须显式指定目标数据库并先验证备份恢复安排。没有擅自安装定时任务，正式环境需由负责人将此命令纳入可靠调度与失败告警。
 
-隐私删除流程已调用 `eraseOperationsEvidence`：清理关联案件证据、反馈正文与处理正文，保留最小非正文处置/审计；有管理员填写具体依据的暂缓清理案件会返回保留数量和说明。`exportOperationsForOwner` 提供本人的受理/结果视图；隐私导出已包含本人案件元数据。业务隔离不应作为抹除审计的手段，正式留存依据、申诉处理和备份到期规则仍需公司确认。
+隐私删除流程已调用 `eraseOperationsEvidence`：清理关联案件证据、反馈正文与处理正文，保留最小非正文处置/审计；有管理员填写具体依据的暂缓清理案件会返回保留数量和说明。隐私导出按本人身份分页读取案件元数据，并沿用整体导出体积上限。业务隔离不应作为抹除审计的手段，正式留存依据、申诉处理和备份到期规则仍需公司确认。
 
 ## 检查与迁移
 
+- `pnpm --filter @cfp/hello-agent test:moderation:live`：显式付费调用 `.env.local` 中配置的真实审核服务，对诈骗请求、防诈骗、自伤求助、新闻讨论各复测两次，同时验证生成前拦截、案件和审计、运营员访问权限。自动新建隔离库，保留报告及本机随机账号，不纳入 CI。2026-10-18 的 8 次调用均符合预期，见 [验收记录](./verification.md#2026-10-18-真实文本审核与-payload-案件验收)；这四条样本不代表全面语义安全合格。
 - `pnpm --filter @cfp/hello-agent test:operations`：真实独立 Payload/SQLite 数据库里的角色越权、投诉归属、证据审计、并发状态、审计失败回滚、隔离入口、独立申诉恢复、生成限制、发布护栏、失败评测、证据清理，以及独立迁移检查。
 - `pnpm --filter @cfp/hello-agent exec vitest run src/operations/review.test.ts`：全量文本覆盖、召回追加词、图片接口成功/失败/缺少版本/不确定/重定向边界。
 - 本地预览运行后执行 `pnpm --filter @cfp/hello-agent exec tsx scripts/operations-http-check.ts`：固定 3317 合成环境的原生登录和资源操作区、证据不预取、队列筛选、旧页面 404、角色、CSRF、举报、越权、通用接口绕过和报告导出。

@@ -8,7 +8,7 @@ import { DEFAULT_MODEL } from "../models/deepseek";
 import { activeRule, isAdministrator } from "./policy";
 import { audit } from "./audit";
 import { transaction } from "./service";
-export const evaluationItemSchema = z.object({ suite: z.string().trim().min(3).max(100), key: z.string().trim().min(1).max(80), category: z.string().trim().min(1).max(80), input: z.string().trim().min(1).max(4000), expected: z.string().trim().min(5).max(1000), provenance: z.string().trim().min(5).max(500) }).strict();
+const evaluationItemSchema = z.object({ suite: z.string().trim().min(3).max(100), key: z.string().trim().min(1).max(80), category: z.string().trim().min(1).max(80), input: z.string().trim().min(1).max(4000), expected: z.string().trim().min(5).max(1000), provenance: z.string().trim().min(5).max(500) }).strict();
 export class EvaluationsService {
   constructor(readonly payload: Payload) {}
   private admin(user: TypedUser) { if (!isAdministrator(user)) throw new AppError(403, "评测管理需要管理员权限"); }

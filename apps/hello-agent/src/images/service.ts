@@ -17,6 +17,7 @@ const stateSchema = z.object({
   taskId: z.string().regex(/^[a-zA-Z0-9-]{1,100}$/).optional(),
   mediaId: z.number().int().positive().optional(),
 });
+/** @public Referenced by Payload generated types through typescriptSchema. */
 export type ImageState = z.infer<typeof stateSchema>;
 export const readImageState = (row: ImageStateRow) => row.imageGeneration ? stateSchema.parse(row.imageGeneration) : undefined;
 export function canResumeImage(row: ImageStateRow) {

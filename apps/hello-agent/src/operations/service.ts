@@ -8,12 +8,12 @@ import { canReview, categories, isAdministrator, settings, settingSchema } from 
 
 type Doc = SafetyCase;
 type CaseInput = Pick<SafetyCase, "owner" | "source" | "category" | "stage"> & Partial<Pick<SafetyCase, "severity" | "sessionId" | "turnId" | "mediaId" | "requestId" | "parentId" | "modelVersion" | "ruleVersion" | "lexiconVersion" | "decision">>;
-export const complaintSchema = z.object({
+const complaintSchema = z.object({
   kind: z.enum(["complaint", "appeal"]).default("complaint"), category: z.enum(categories),
   description: z.string().trim().min(5).max(1200), turnId: z.number().int().positive().optional(),
   parentReceipt: z.string().uuid().optional(),
 }).strict();
-export const actionSchema = z.object({
+const actionSchema = z.object({
   revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold"]),
   reason: z.string().trim().min(8).max(1000), reply: z.string().trim().min(5).max(1000).optional(),
   severity: z.enum(["urgent", "high", "normal"]).optional(),

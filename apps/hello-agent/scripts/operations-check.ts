@@ -102,6 +102,42 @@ try {
   assert.equal((await repo.get("sessions", sharedSession.id)).title, "复用同一图片的另一个会话");
   assert.equal((await ops.mine(owner, String(appeal.receipt)))[0].reply, "复核后已恢复原内容展示。");
   pass("投诉→处置反馈→本人申诉→独立复核→恢复展示闭环");
+  const raceOwner = { id: randomUUID(), auth: "cookie" as const };
+  const raceRepo = new Repository(payload, raceOwner);
+  let duringOutputReview = async () => {};
+  const raceService = new GreetingService(raceRepo, undefined, undefined, undefined, {
+    moderate: async (request) => { if (request.stage === "output") await duringOutputReview(); },
+    imageReviewer: async () => ({ decision: "allow", category: "test", version: "synthetic-race-check" }),
+  });
+  const raceMedia = await raceService.upload(await sharp({ create: { width: 8, height: 8, channels: 3, background: "green" } }).png().toBuffer());
+  const sourceSession = await raceService.createSession();
+  const sourceTurn = await raceService.acceptExternal({ sessionId: sourceSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "共享图片来源", mediaIds: [raceMedia.id] }, output: { greeting: "图片来源回应", association: "合成内容" } });
+  const sharedComplaint = await ops.complain(raceOwner, { category: "other", description: "隔离共享图片的并发发布验证", turnId: sourceTurn.id });
+  const sharedCase = (await ops.queue(administrator, {})).find((r) => r.receipt === sharedComplaint.receipt)!;
+  await ops.action(reviewer, Number(sharedCase.id), { revision: 0, action: "claim", reason: "领取共享图片并发隔离测试案件" });
+  duringOutputReview = async () => { await ops.action(reviewer, Number(sharedCase.id), { revision: 1, action: "quarantine", reason: "在输出审核等待期间隔离共享图片" }); };
+  const racingSession = await raceService.createSession();
+  await assert.rejects(() => raceService.acceptExternal({ sessionId: racingSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "另一轮引用同图" }, output: { greeting: "不得回传的待审回应", association: "合成内容", artifacts: [{ kind: "image", id: "shared_image", title: "共享图片", alt: "合成测试图片", source: { type: "media", mediaId: raceMedia.id } }] } }), { status: 403 });
+  const rejected = (await payload.find({ collection: "greetings", overrideAccess: true, where: { sessionId: { equals: racingSession.id } } })).docs[0];
+  assert.equal(rejected.status, "failed");
+  assert.ok(!rejected.greeting && !rejected.artifacts);
+  pass("输出审核期间另一轮隔离共享图片，外部保存的事务守卫拒绝发布及回传");
+
+  const textOwner = { id: randomUUID(), auth: "cookie" as const };
+  const textRepo = new Repository(payload, textOwner);
+  const textService = new GreetingService(textRepo, undefined, undefined, undefined, { moderate: async () => {} });
+  const textSession = await textService.createSession();
+  const textTurn = await textService.acceptExternal({ sessionId: textSession.id, requestId: randomUUID(), model: "synthetic-memory-check", input: { text: "纯文本隔离来源" }, output: { greeting: "合成文本", association: "合成内容" } });
+  const textComplaint = await ops.complain(textOwner, { category: "other", description: "纯文本隔离不影响其他会话记忆", turnId: textTurn.id });
+  const textCase = (await ops.queue(administrator, {})).find((r) => r.receipt === textComplaint.receipt)!;
+  await ops.action(reviewer, Number(textCase.id), { revision: 0, action: "claim", reason: "领取纯文本记忆隔离测试案件" });
+  await ops.action(reviewer, Number(textCase.id), { revision: 1, action: "quarantine", reason: "隔离本会话纯文本且保留其他会话能力" });
+  const separateSession = await textService.createSession();
+  const separateMemory = { compressions: 1, summary: "其他会话的正常摘要", throughId: 0, revision: 1 };
+  await textRepo.update("sessions", separateSession.id, { memory: separateMemory });
+  assert.deepEqual((await textRepo.get("sessions", separateSession.id)).memory, separateMemory);
+  await assert.rejects(() => textRepo.update("sessions", textSession.id, { memory: separateMemory }), { status: 403 });
+  pass("纯文本隔离仅阻止该会话保存摘要，其他会话可正常更新记忆");
   await assert.rejects(() => payload.update({ collection: "safety-audit", id: 1, overrideAccess: false, user: administrator, data: { reason: "篡改" } }));
   await assert.rejects(() => payload.delete({ collection: "safety-audit", id: 1, overrideAccess: true }));
   await assert.rejects(() => payload.update({ collection: "safety-cases", id: row.id, overrideAccess: true, data: { status: "pending" } }));
