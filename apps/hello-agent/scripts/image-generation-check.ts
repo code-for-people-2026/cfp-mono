@@ -63,6 +63,29 @@ try {
   const progress: string[] = [];
   const saved = await service.generateGreeting(input, (message) => progress.push(message));
   assert.equal(saved.status, "completed");
+  // Simulate a suspended worker whose lease expires without its timer running.
+  // SQLite must reject its late write even before the old AbortSignal notices.
+  const staleTurn = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "stale-lease", status: "running", mode: "platform", input: { mediaIds: [], text: "合成过期执行验证" } });
+  const oldLease = await repo.acquire(session.id);
+  const lateWrite = Promise.withResolvers<void>();
+  const stale = oldLease.run(async () => { await lateWrite.promise; return service.complete(staleTurn.id, { greeting: "过期执行不能发布", association: "合成测试" }); });
+  let replacement: Awaited<ReturnType<InstanceType<typeof Repository>["acquire"]>> | undefined;
+  try {
+    const lock = (await repo.list("session-locks", { sessionKey: { equals: `${repo.owner.id}:${session.id}` } }))[0];
+    await repo.update("session-locks", lock.id, { expiresAt: new Date(Date.now() - 1000).toISOString() });
+    replacement = await repo.acquire(session.id);
+    assert.equal(oldLease.signal.aborted, false, "模拟进程暂停，不依赖定时器及时触发");
+    const rejected = assert.rejects(stale, { status: 409 });
+    lateWrite.resolve(); await rejected;
+    await oldLease();
+    await assert.rejects(() => repo.acquire(session.id), { status: 409 }, "旧执行释放不能删除替换执行的锁");
+    assert.equal((await repo.get("greetings", staleTurn.id)).status, "running");
+    await replacement.run(() => service.complete(staleTurn.id, { greeting: "新执行可以发布", association: "合成测试" }));
+    assert.equal((await repo.get("greetings", staleTurn.id)).greeting, "新执行可以发布");
+  } finally {
+    lateWrite.resolve(); await Promise.allSettled([stale]);
+    await oldLease(); await replacement?.();
+  }
   assert.equal(submitted, 1);
   assert.equal(objects.size, 1);
   assert.ok(progress.some((message) => message.includes("审核和保存")));

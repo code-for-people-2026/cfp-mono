@@ -264,6 +264,7 @@ export class GreetingService {
       );
     const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
     const release = await this.repo.acquire(args.sessionId);
+    return release.run(async () => {
     let row: GreetingRecord | undefined;
     let reviewFailure: ContentReviewError | undefined;
     const started = Date.now();
@@ -285,6 +286,7 @@ export class GreetingService {
       const imageState = readImageState(row);
       await this.generate({
         repo: this.repo,
+        signal: release.signal,
         turnId: row.id,
         sessionId: args.sessionId,
         input: row.input,
@@ -334,10 +336,12 @@ export class GreetingService {
     } finally {
       await release();
     }
+    });
   }
   async acceptExternal(value: unknown) {
     const args = externalSchema.parse(value);
     const release = await this.repo.acquire(args.sessionId);
+    return release.run(async () => {
     let pending: GreetingRecord | undefined;
     try {
       const { row, duplicate } = await this.begin(
@@ -361,5 +365,6 @@ export class GreetingService {
     } finally {
       await release();
     }
+    });
   }
 }

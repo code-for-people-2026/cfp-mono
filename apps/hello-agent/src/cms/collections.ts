@@ -3,6 +3,7 @@ import { isAdministrator } from "../operations/policy";
 import { protectLastAdministrator, auditAdminDeletion } from "../operations/admin-access";
 import { guardSafetyWrite } from "../operations/guards";
 import { sensitiveReadAudit } from "../operations/audit";
+import { guardSessionLease } from "./session-lease";
 import { ageCollections, guardAgeWrite } from "../age/collections";
 import { privacyCollections, guardPrivacyWrite } from "../privacy/collections";
 import {
@@ -53,7 +54,7 @@ const owned = (
     update: internalWrite,
     delete: internalWrite,
   },
-  hooks: { beforeChange: [guardPrivacyWrite, guardAgeWrite, guardSafetyWrite], afterRead: [sensitiveReadAudit] },
+  hooks: { beforeChange: [guardSessionLease, guardPrivacyWrite, guardAgeWrite, guardSafetyWrite], afterRead: [sensitiveReadAudit] },
   fields: [...ownedFields, ...fields],
 });
 

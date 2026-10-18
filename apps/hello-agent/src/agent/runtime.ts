@@ -26,6 +26,7 @@ export type GenerationRequest = {
   existingImage?: GeneratedImage;
   resumingImage?: boolean;
   executionId?: string;
+  signal?: AbortSignal;
 };
 export type Generator = (request: GenerationRequest) => Promise<void>;
 
@@ -69,6 +70,7 @@ export async function runGreeting(
     });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), request.generateImage ? 180_000 : 75_000);
+  const signal = request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal;
   let imageInFlight: Promise<GeneratedImage> | undefined;
   let imageFailure: unknown;
   const imageTool = request.generateImage ? new FunctionTool({
@@ -78,7 +80,8 @@ export async function runGreeting(
     execute: async (input) => {
       const parsed = imageRequestSchema.safeParse(input);
       if (!parsed.success) return { error: "请提供 prompt、title、alt 和 aspectRatio（square、portrait 或 landscape）" };
-      if (!imageInFlight) imageInFlight = request.generateImage!(parsed.data, controller.signal);
+      signal.throwIfAborted();
+      if (!imageInFlight) imageInFlight = request.generateImage!(parsed.data, signal);
       try { return await imageInFlight; }
       catch (error) { imageFailure = error; controller.abort(); throw error; }
     },
@@ -94,7 +97,7 @@ export async function runGreeting(
     userId: request.repo.owner.id,
     turnSessionId: executionId,
     inputParts: parts,
-    signal: controller.signal,
+    signal,
     save: async (value) => {
       if (imageInFlight) await imageInFlight;
       try { return await request.save(value); }
@@ -115,7 +118,7 @@ export async function runGreeting(
       userId: request.repo.owner.id,
       sessionId: executionId,
       newMessage: { role: "user", parts },
-      abortSignal: controller.signal,
+      abortSignal: signal,
       runConfig: { maxLlmCalls: COORDINATOR_MAX_CALLS },
     })) {
       if (event.errorCode) throw new AppError(502, "模型未能完成本轮生成");
