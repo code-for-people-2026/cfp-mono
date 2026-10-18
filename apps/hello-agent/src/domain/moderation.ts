@@ -1,6 +1,6 @@
 import { z } from "zod";
 import lexicon from "../moderation/lexicon.json";
-import { completeDeepSeek, DEFAULT_MODEL } from "../models/deepseek";
+import { completeDeepSeek, DEFAULT_MODEL, DeepSeekError, normalizedDeepSeekKey } from "../models/deepseek";
 import { ContentReviewError } from "./contracts";
 import { createKeywordMatcher } from "./keyword-matcher";
 import type { Rule } from "../operations/policy";
@@ -34,11 +34,15 @@ export async function evaluateText(request: ModerationRequest, rule?: Rule, befo
   const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text, 20, ignored)))];
   if (rule?.extraWords.length) keywords.push(...request.texts.flatMap((text) => createKeywordMatcher(rule.extraWords)(text)));
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
-  const result = (decision: "allow" | "block" | "uncertain" | "unavailable" | "not_reviewed", category = "other") => ({ decision, model, keywordCount: keywords.length, category });
+  const result = (decision: "allow" | "block" | "uncertain" | "unavailable" | "not_reviewed", category = "other", failure?: "configuration" | "admission" | "caller" | "provider") => ({ decision, model, keywordCount: keywords.length, category, failure });
   if (!keywords.length && rule?.mode !== "all") return result("not_reviewed");
-  if (!request.apiKey) return result("unavailable");
+  const key = normalizedDeepSeekKey(request.apiKey);
+  if (!key) return result("unavailable", "other", "configuration");
+  // Admission errors are known to precede any provider work. They must never
+  // become content cases, regardless of whether quota or storage rejected them.
+  try { await beforeReview?.(); }
+  catch { return result("unavailable", "other", "admission"); }
   try {
-    await beforeReview?.();
     const response = await completeDeepSeek({
       model,
       messages: [
@@ -46,12 +50,16 @@ export async function evaluateText(request: ModerationRequest, rule?: Rule, befo
         { role: "user", content: JSON.stringify({ stage: request.stage, texts: request.texts, context: request.context, keywords: keywords.slice(0, 20) }) },
       ],
       tools: [], tool_choice: "none", max_tokens: 80,
-    }, request.apiKey, AbortSignal.timeout(15_000));
+    }, key, AbortSignal.timeout(15_000));
     const choice = response.choices[0];
     if (choice.finish_reason !== "stop" || choice.message.tool_calls?.length) throw new Error("incomplete verdict");
     const verdict = verdictSchema.parse(JSON.parse(choice.message.content || ""));
     return result(verdict.decision, verdict.category);
-  } catch { return result("unavailable"); }
+  } catch (error) {
+    const caller = error instanceof DeepSeekError &&
+      (error.kind === "credential" || (error.status !== undefined && error.status >= 400 && error.status < 500));
+    return result("unavailable", "other", caller ? "caller" : "provider");
+  }
 }
 
 export const moderateText: Moderator = async (request) => {

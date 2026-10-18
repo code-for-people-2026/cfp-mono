@@ -5,7 +5,7 @@ import { createKeywordMatcher, textLeaves } from "./keyword-matcher";
 import lexicon from "../moderation/lexicon.json";
 import { defaultRule } from "../operations/policy";
 
-vi.mock("../models/deepseek", () => ({ DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
+vi.mock("../models/deepseek", async (importOriginal) => ({ ...await importOriginal<typeof import("../models/deepseek")>(), DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
 const complete = vi.mocked(completeDeepSeek);
 function answer(content: string, finish_reason = "stop") {
   complete.mockResolvedValue({ model: "deepseek-flash", choices: [{ finish_reason, message: { content } }] });
@@ -88,12 +88,23 @@ describe("命中后的语境复核", () => {
     const reserve = vi.fn(async () => { throw new Error("quota exhausted"); });
     const blocked = await evaluateText(request, undefined, reserve);
     expect(blocked.decision).toBe("unavailable");
+    expect(blocked.failure).toBe("admission");
     expect(reserve).toHaveBeenCalledTimes(1);
     expect(complete).not.toHaveBeenCalled();
     reserve.mockClear();
     const skipped = await evaluateText({ ...request, texts: ["早上好"] }, undefined, reserve);
     expect(skipped.decision).toBe("not_reviewed");
     expect(reserve).not.toHaveBeenCalled();
+  });
+  it("无效密钥在额度预留前失败；供应商异常才标记为服务故障", async () => {
+    const reserve = vi.fn();
+    for (const apiKey of [undefined, "", " \r\n ", "private\nkey"]) {
+      expect(await evaluateText({ ...request, apiKey }, undefined, reserve)).toMatchObject({ decision: "unavailable", failure: "configuration" });
+    }
+    expect(reserve).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+    complete.mockRejectedValue(new Error("private provider body"));
+    expect(await evaluateText(request)).toMatchObject({ decision: "unavailable", failure: "provider" });
   });
 
 });

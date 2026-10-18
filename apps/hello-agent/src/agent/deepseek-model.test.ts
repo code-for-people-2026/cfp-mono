@@ -190,15 +190,20 @@ describe("DeepSeek 协议适配", () => {
         .fn()
         .mockResolvedValue(new Response("private-test-key", { status: 401 })),
     );
-    await expect(completeDeepSeek(input, "private-test-key")).rejects.toThrow(
-      "HTTP 401",
-    );
+    await expect(completeDeepSeek(input, "private-test-key")).rejects.toMatchObject({ kind: "http", status: 401, message: "DeepSeek 请求失败（HTTP 401）" });
     vi.stubGlobal(
       "fetch",
       vi.fn().mockRejectedValue(new Error("private-test-key")),
     );
-    await expect(completeDeepSeek(input, "private-test-key")).rejects.toThrow(
-      "DeepSeek 请求未完成",
-    );
+    await expect(completeDeepSeek(input, "private-test-key")).rejects.toMatchObject({ kind: "transport", message: "DeepSeek 请求未完成，请检查网络或稍后重试" });
+  });
+  it("调用前拒绝无效密钥，不发送网络请求或保留原值", async () => {
+    const fetch = vi.fn(); vi.stubGlobal("fetch", fetch);
+    for (const key of ["", " \t\r\n ", "private test key", "private\ntest", "private\u0007test"]) {
+      const error = await completeDeepSeek(toDeepSeekRequest(request(), "deepseek-flash"), key).catch((error: unknown) => error);
+      expect(error).toMatchObject({ kind: "credential", message: "DeepSeek 密钥配置无效" });
+      expect(JSON.stringify(error)).not.toContain("private");
+    }
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

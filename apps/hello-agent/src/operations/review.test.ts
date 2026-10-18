@@ -3,7 +3,7 @@ import { completeDeepSeek } from "../models/deepseek";
 import { evaluateText } from "../domain/moderation";
 import { defaultRule } from "./policy";
 import { configuredImageReviewer } from "./image-review";
-vi.mock("../models/deepseek", () => ({ DEFAULT_MODEL: "test-model", completeDeepSeek: vi.fn() }));
+vi.mock("../models/deepseek", async (importOriginal) => ({ ...await importOriginal<typeof import("../models/deepseek")>(), DEFAULT_MODEL: "test-model", completeDeepSeek: vi.fn() }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.mocked(completeDeepSeek).mockReset(); });
 describe("审核覆盖与失败行为", () => {
   it("全量模式对无关键词文本也调用语境复核，并保存类别", async () => {

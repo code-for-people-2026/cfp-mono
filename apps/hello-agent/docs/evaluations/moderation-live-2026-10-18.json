@@ -1,6 +1,6 @@
 {
-  "startedAt": "2026-10-18T15:17:32.739Z",
-  "finishedAt": "2026-10-18T15:17:37.339Z",
+  "startedAt": "2026-10-18T16:33:01.314Z",
+  "finishedAt": "2026-10-18T16:33:08.198Z",
   "model": "deepseek-flash",
   "rule": {
     "version": "builtin-unreleased",
@@ -23,7 +23,7 @@
       "decision": "block",
       "status": 422,
       "generationCalls": 0,
-      "latencyMs": 698,
+      "latencyMs": 970,
       "auditId": 4,
       "auditMetadata": {
         "stage": "input",
@@ -35,7 +35,7 @@
       "cases": [
         {
           "id": 1,
-          "receipt": "ce059777-7dea-4b09-81b9-aec865dc0c84",
+          "receipt": "8c82cc88-7114-4bf4-91c1-02b0e37719de",
           "decision": "block",
           "category": "fraud",
           "ruleVersion": "builtin-unreleased",
@@ -51,7 +51,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 492,
+      "latencyMs": 998,
       "auditId": 6,
       "auditMetadata": {
         "stage": "input",
@@ -70,7 +70,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 613,
+      "latencyMs": 645,
       "auditId": 8,
       "auditMetadata": {
         "stage": "input",
@@ -89,7 +89,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 776,
+      "latencyMs": 724,
       "auditId": 10,
       "auditMetadata": {
         "stage": "input",
@@ -108,7 +108,7 @@
       "decision": "block",
       "status": 422,
       "generationCalls": 0,
-      "latencyMs": 316,
+      "latencyMs": 686,
       "auditId": 13,
       "auditMetadata": {
         "stage": "input",
@@ -120,7 +120,7 @@
       "cases": [
         {
           "id": 2,
-          "receipt": "e3afd7f2-8f53-4520-a5ec-05c543da05b6",
+          "receipt": "3cc71e51-944a-417f-b15d-f8ac0afca46a",
           "decision": "block",
           "category": "fraud",
           "ruleVersion": "builtin-unreleased",
@@ -136,7 +136,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 543,
+      "latencyMs": 1040,
       "auditId": 15,
       "auditMetadata": {
         "stage": "input",
@@ -155,7 +155,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 480,
+      "latencyMs": 988,
       "auditId": 17,
       "auditMetadata": {
         "stage": "input",
@@ -174,7 +174,7 @@
       "decision": "allow",
       "status": 200,
       "generationCalls": 1,
-      "latencyMs": 507,
+      "latencyMs": 542,
       "auditId": 19,
       "auditMetadata": {
         "stage": "input",

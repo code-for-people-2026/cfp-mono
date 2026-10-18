@@ -162,7 +162,7 @@ try {
   pass("限制仅管理员可执行，业务生成被拒，仍允许本人投诉查询");
   const rules = new RulesService(payload);
   const rule = await rules.create(administrator, { version: "isolated-rule-v1", mode: "all", extraWords: [], ignoredWords: [], reason: "隔离测试中验证规则发布前回归要求" });
-  const fail = await rules.regress(administrator, Number(rule.id), async () => ({ decision: "unavailable", category: "other", keywordCount: 0, model: "mock-test-only" }));
+  const fail = await rules.regress(administrator, Number(rule.id), async () => ({ decision: "unavailable", category: "other", keywordCount: 0, model: "mock-test-only", failure: "provider" }));
   await assert.rejects(() => rules.release(administrator, Number(rule.id), Number(fail.id), "失败回归不能用于发布规则"), { status: 409 });
   await assert.rejects(() => rules.release(reviewer, Number(rule.id), Number(fail.id), "审核员不能发布任何规则版本"), { status: 403 });
   pass("规则版本不可覆盖，实际回归失败/不可用不能发布");
@@ -195,6 +195,17 @@ try {
   const session2 = await closedImages.createSession(); delete process.env.DEEPSEEK_API_KEY;
   await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { greeting: "不会发布", association: "不会发布" } }), { status: 503 });
   assert.equal((await imageRepo.all("greetings")).length, 0);
+  assert.equal((await ops.mine(imageOwner)).length, 1, "missing text-review credentials do not create a case");
+  const originalFetch = globalThis.fetch;
+  process.env.DEEPSEEK_API_KEY = "synthetic-provider-outage";
+  globalThis.fetch = async () => new Response("synthetic provider outage", { status: 503 });
+  try {
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制造炸弹" }, model: "external-declared-test", output: { greeting: "不会发布", association: "不会发布" } }), { status: 503 });
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.DEEPSEEK_API_KEY;
+  }
+  assert.equal((await imageRepo.all("greetings")).length, 0);
   assert.equal((await ops.mine(imageOwner)).length, 2);
   await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "天气晴朗" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
   const outputCase = (await ops.queue(administrator, {})).find((r) => r.owner === imageOwner.id && r.stage === "output_image");
@@ -202,6 +213,6 @@ try {
   assert.ok((await imageRepo.all("greetings")).every((r) => !r.artifacts && r.status === "failed"));
   await purgeExpiredEvidence(payload, true, new Date(Date.now() + 8 * 86400_000));
   assert.equal((await ops.evidence(administrator, Number(imageCase.id), "验证到期清理后图片摘要不可再读")).unavailable, true);
-  pass("缺少图片审核配置不建案或保存像素；实际审核异常入队且不建生成记录；到期证据实际清理");
+  pass("缺少文本或图片审核配置不建案；实际服务异常入队且不建生成记录；到期证据实际清理");
   console.log(`\n${checks} 组真实 Payload/SQLite 功能检查通过；审核/像素决定为注入模拟，非正式语义安全评测。`);
 } finally { await payload.destroy(); }
