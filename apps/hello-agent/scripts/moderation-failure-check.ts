@@ -166,18 +166,40 @@ try {
     await clear(); response = 500;
     Object.assign(process.env, { HELLO_REVIEW_FAILURE_OWNER_DAILY_LIMIT: "3", HELLO_REVIEW_FAILURE_GLOBAL_DAILY_LIMIT: "5" });
     const sameOwner = randomUUID(), sameId = randomUUID();
-    const launch = async (prefix: string, entries: { owner: string; request: string; attempts: number }[]) => {
+    const launch = async (prefix: string, entries: { owner: string; request: string; attempts: number }[], holdWriter = false) => {
       const workers = entries.map((entry, index) => runWorker(String(index), entry.owner, entry.request, entry.attempts, prefix));
       const all = Promise.all(workers); void all.catch(() => {});
       await Promise.all(entries.map((_, index) => waitForFile(path.join(dir, `${prefix}-${index}`))));
-      await writeFile(path.join(dir, `${prefix}-go`), "go");
-      for (const [index, result] of (await all).entries()) {
-        await writeFile(path.join(dir, `${prefix}-result-${index}.log`), result.stdout + result.stderr);
-        confirmWorker(result.stdout);
+      const writer = holdWriter ? new Database(path.join(dir, "test.db")) : undefined;
+      try {
+        writer?.prepare("BEGIN IMMEDIATE").run();
+        await writeFile(path.join(dir, `${prefix}-go`), "go");
+        for (const [index, result] of (await all).entries()) {
+          await writeFile(path.join(dir, `${prefix}-result-${index}.log`), result.stdout + result.stderr);
+          confirmWorker(result.stdout);
+          if (holdWriter) assert.doesNotMatch(result.stdout, /"queued":true/, "a held writer must never produce a false acceptance promise");
+        }
+      } finally {
+        if (writer?.inTransaction) writer.prepare("ROLLBACK").run();
+        writer?.close();
       }
     };
+    const blockedOwner = randomUUID(), blockedId = randomUUID();
+    await launch("held-writer", Array.from({ length: 3 }, () => ({ owner: blockedOwner, request: blockedId, attempts: 1 })), true);
+    assert.deepEqual(await counts(), [0, 0, 0], "all attempts may fail closed while another transaction owns the writer");
+    const afterRelease = await runWorker("released-writer", blockedOwner, blockedId, 1);
+    confirmWorker(afterRelease.stdout);
+    assert.match(afterRelease.stdout, /"queued":true/, "the same request must recover when the writer is released");
+    assert.deepEqual(await counts(), [1, 1, 2]);
+    confirmWorker((await runWorker("released-replay", blockedOwner, blockedId, 1)).stdout);
+    assert.deepEqual(await counts(), [1, 1, 2], "recovered requests must remain idempotent");
+    await clear();
     await launch("duplicate", Array.from({ length: 4 }, () => ({ owner: sameOwner, request: sameId, attempts: 3 })));
-    assert.deepEqual(await counts(), [1, 1, 2], "independent simultaneous workers must deduplicate one request");
+    const [concurrentCases, concurrentEvidence, concurrentAudit] = await counts();
+    assert.ok(concurrentCases <= 1, "independent simultaneous workers must never duplicate a request");
+    assert.deepEqual([concurrentEvidence, concurrentAudit], [concurrentCases, concurrentCases * 2], "contention must not leave partial writes");
+    confirmWorker((await runWorker("duplicate-recovery", sameOwner, sameId, 1)).stdout);
+    assert.deepEqual(await counts(), [1, 1, 2], "after contention the same request must persist exactly once");
     await payload.db.drizzle.run(sql`UPDATE safety_cases SET created_at = '2000-01-01T00:00:00.000Z'`);
     confirmWorker((await runWorker("restart", sameOwner, sameId, 1)).stdout);
     assert.deepEqual(await counts(), [1, 1, 2], "deduplication must survive process restart and UTC days");

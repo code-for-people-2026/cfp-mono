@@ -1,5 +1,5 @@
 // The lexicon is a risk signal, not a verdict. Keep harmless context for review.
-function normalizeKeywordText(value: string) {
+export function normalizeKeywordText(value: string) {
   return value.normalize("NFKC").toLowerCase().replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, "");
 }
 

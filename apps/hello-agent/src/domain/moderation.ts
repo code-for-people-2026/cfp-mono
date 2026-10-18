@@ -2,7 +2,7 @@ import { z } from "zod";
 import lexicon from "../moderation/lexicon.json";
 import { completeDeepSeek, DEFAULT_MODEL, DeepSeekError, normalizedDeepSeekKey } from "../models/deepseek";
 import { ContentReviewError } from "./contracts";
-import { createKeywordMatcher } from "./keyword-matcher";
+import { createKeywordMatcher, normalizeKeywordText } from "./keyword-matcher";
 import type { Rule } from "../operations/policy";
 
 const findKeywords = createKeywordMatcher(lexicon.words);
@@ -30,7 +30,7 @@ allow：正常日常交流、对困难情绪或自杀自伤念头的求助、安
 stage=input 时判断用户请求是否要求生成上述有害内容，不阻断用户描述自己经历的伤害；stage=output 时判断 texts 中准备展示的回应及作品，context 只帮助理解，不因 context 中被拒绝的请求误拦安全回应。无法确定时 uncertain。`;
 
 export async function evaluateText(request: ModerationRequest, rule?: Rule, beforeReview?: () => Promise<void>) {
-  const ignored = new Set(rule?.ignoredWords ?? []);
+  const ignored = new Set((rule?.ignoredWords ?? []).map((word) => normalizeKeywordText(word).trim()));
   const keywords = [...new Set(request.texts.flatMap((text) => findKeywords(text, 20, ignored)))];
   if (rule?.extraWords.length) keywords.push(...request.texts.flatMap((text) => createKeywordMatcher(rule.extraWords)(text)));
   const model = process.env.HELLO_MODEL || DEFAULT_MODEL;

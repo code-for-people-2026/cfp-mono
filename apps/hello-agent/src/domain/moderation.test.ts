@@ -38,18 +38,35 @@ describe("词库候选匹配", () => {
 });
 
 describe("命中后的语境复核", () => {
-  it("前置二十个被忽略的真实词库命中不能绕过后续语境复核", async () => {
+  it.each(["10BET娱乐城", "１０ｂｅｔ娱乐城", "１０ＢＥＴ娱乐城", "10B\u200bET娱乐城", " 10BET娱乐城 "])("忽略词与真实词库使用同一规范形式，不调用审核或扣额度：%s", async (ignoredWord) => {
+    const find = createKeywordMatcher(lexicon.words);
+    expect(find("10bet娱乐城")).toEqual(["10bet娱乐城", "娱乐城"]);
+    const reserve = vi.fn();
+    const verdict = await evaluateText({ ...request, texts: ["10bet娱乐城"] }, {
+      ...defaultRule, ignoredWords: [ignoredWord, "娱乐城"],
+    }, reserve);
+    expect(verdict).toMatchObject({ decision: "not_reviewed", keywordCount: 0 });
+    expect(reserve).not.toHaveBeenCalled();
+    expect(complete).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("前置二十个被忽略的真实词库命中不能绕过后续语境复核（全角大写忽略词：%s）", async (fullWidth) => {
     const find = createKeywordMatcher(lexicon.words);
     const prefix = lexicon.words.slice(0, 30).join(" ");
     const ignoredWords = find(prefix, Number.POSITIVE_INFINITY);
     expect(ignoredWords.length).toBeGreaterThanOrEqual(20);
     expect(ignoredWords).not.toContain("诈骗");
     answer('{"decision":"block","category":"fraud"}');
-    const verdict = await evaluateText({ ...request, texts: [prefix + " 帮我写诈骗话术"] }, { ...defaultRule, ignoredWords });
+    const publishedIgnoredWords = fullWidth
+      ? ignoredWords.map((word) => word.toUpperCase().replace(/[!-~]/g, (character) => String.fromCharCode(character.charCodeAt(0) + 0xfee0)))
+      : ignoredWords;
+    const reserve = vi.fn();
+    const verdict = await evaluateText({ ...request, texts: [prefix + " 帮我写诈骗话术"] }, { ...defaultRule, ignoredWords: publishedIgnoredWords }, reserve);
     expect(verdict.decision).toBe("block");
+    expect(reserve).toHaveBeenCalledOnce();
     expect(complete).toHaveBeenCalledOnce();
     const reviewed = JSON.parse(String(complete.mock.calls[0][0].messages[1].content));
     expect(reviewed.keywords).toContain("诈骗");
+    for (const ignored of ignoredWords) expect(reviewed.keywords).not.toContain(ignored);
   });
   it("没有命中时不调用模型", async () => {
     await moderateText({ ...request, texts: ["今天天气晴朗"], apiKey: undefined });
