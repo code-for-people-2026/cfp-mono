@@ -7,6 +7,7 @@ import { assertGenerationAllowed } from "../operations/enforcement";
 import { configuredImageReviewer, imageReviewConfigured, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
 import { configuredImageProvider, ImageTaskFailed, imageRequestSchema, WAN_MODEL, type ImageProvider, type ImageRequest } from "./wan";
 import { generatedJpeg } from "./render";
+import { reserveImageTask } from "./quota";
 
 type ImageStateRow = { imageGeneration?: unknown; status?: string; visibility?: string };
 const stateSchema = z.object({
@@ -63,6 +64,9 @@ export class ImageGenerationService {
       if (this.reviewer === configuredImageReviewer && !imageReviewConfigured())
         throw new AppError(503, "图片审核服务尚未配置，暂不能生成图片");
       await this.moderate({ stage: "output", mode: row.mode, texts: [input.prompt, input.title, input.alt], context: String((row.input as { text?: string }).text || ""), requestId: `image:${turnId}`, turnId, sessionId: Number(row.sessionId), apiKey });
+      signal.throwIfAborted();
+      await reserveImageTask(this.repo.payload, this.repo.owner.id);
+      signal.throwIfAborted();
       state = { input, model: WAN_MODEL, status: "submitting", startedAt: new Date().toISOString() };
       await this.repo.update("greetings", turnId, { imageGeneration: state });
       progress?.("阿J正在绘制图片");

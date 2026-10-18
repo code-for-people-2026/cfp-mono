@@ -13,6 +13,7 @@ Object.assign(process.env, {
   HELLO_DATABASE_URI: `file:${directory}/check.db`, PAYLOAD_SECRET: "isolated-review-lifecycle-test",
   HELLO_DEPLOYED: "false", HELLO_MEDIA_STORAGE: "database", HELLO_ADMIN_BOOTSTRAP: "false",
   HELLO_PRIVACY_DELETION_LEDGER: `${directory}/deletions.ndjson`, DEEPSEEK_API_KEY: "synthetic-provider-key",
+  HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "1000", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "10000",
 });
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");

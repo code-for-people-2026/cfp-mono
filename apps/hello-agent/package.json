@@ -33,7 +33,7 @@
     "test:moderation": "tsx scripts/moderation-check.ts && tsx scripts/moderation-lifecycle-check.ts && tsx scripts/public-admission-check.ts",
     "test:moderation:live": "node --env-file=.env.local --import tsx scripts/moderation-live-check.ts",
     "test:artifacts": "tsx scripts/artifact-check.ts",
-    "test:images": "tsx scripts/image-generation-check.ts && tsx scripts/image-generation-migration-check.ts",
+    "test:images": "tsx scripts/image-generation-check.ts && tsx scripts/image-generation-migration-check.ts && tsx scripts/image-quota-check.ts && tsx scripts/image-review-quota-check.ts",
     "test:operations": "tsx scripts/operations-check.ts && tsx scripts/operations-migration-check.ts",
     "operations:maintenance": "tsx scripts/operations-maintenance.ts",
     "operations:preview": "tsx scripts/operations-preview.ts",

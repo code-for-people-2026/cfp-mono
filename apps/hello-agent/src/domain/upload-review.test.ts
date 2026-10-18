@@ -8,6 +8,7 @@ import { MediaService } from "./media";
 // Isolate storage/audit effects; real transactions and evidence are verified by operations-check.
 vi.mock("../operations/enforcement", () => ({ assertGenerationAllowed: vi.fn() }));
 vi.mock("../operations/audit", () => ({ audit: vi.fn() }));
+vi.mock("../operations/image-review-quota", () => ({ reserveImageReview: vi.fn() }));
 vi.mock("../operations/service", () => ({ transaction: (payload: Payload, action: (req: object) => unknown) => action({ payload, context: { safetyInternal: true }, transactionID: "upload-review-unit" }), OperationsService: class { createCase() {} } }));
 const payload = { find: vi.fn(async () => ({ docs: [{ state: "active", expiresAt: "2099-01-01T00:00:00.000Z" }] })) } as unknown as Payload;
 const repo = new Repository(payload, { id: "isolated", auth: "cookie" });

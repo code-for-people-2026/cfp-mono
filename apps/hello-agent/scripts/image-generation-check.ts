@@ -12,6 +12,8 @@ import { seedSyntheticAge } from "./synthetic-age";
 
 const directory = await mkdtemp(path.join(tmpdir(), "aj-image-generation-"));
 Object.assign(process.env, { HELLO_DATABASE_URI: `file:${directory}/test.db`, PAYLOAD_SECRET: "isolated-image-generation-test", HELLO_MEDIA_STORAGE: "database", HELLO_DEPLOYED: "false", DEEPSEEK_API_KEY: "synthetic-test-only", DASHSCOPE_API_KEY: "", HELLO_PRIVACY_DELETION_LEDGER: `${directory}/deletions.ndjson` });
+Object.assign(process.env, { HELLO_IMAGE_OWNER_DAILY_LIMIT: "100", HELLO_IMAGE_GLOBAL_DAILY_LIMIT: "1000" });
+Object.assign(process.env, { HELLO_IMAGE_REVIEW_OWNER_DAILY_LIMIT: "1000", HELLO_IMAGE_REVIEW_GLOBAL_DAILY_LIMIT: "10000" });
 const { cms } = await import("../src/cms/client");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");

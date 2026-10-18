@@ -5,6 +5,7 @@ import { ContentReviewError } from "../domain/contracts";
 import { OperationsService, transaction } from "./service";
 import { audit } from "./audit";
 import { assertReviewWrite } from "./review-write";
+import { reserveImageReview } from "./image-review-quota";
 export type ImageReview = { decision: "allow" | "block" | "uncertain" | "unavailable"; version: string; category: string };
 export type ImageReviewer = (bytes: Buffer) => Promise<ImageReview>;
 export class ImageReviewUnavailableError extends ContentReviewError {}
@@ -34,6 +35,8 @@ export const configuredImageReviewer: ImageReviewer = async (bytes) => {
   } catch { return { decision: "unavailable", version: "provider-unavailable", category: "image_unreviewed" }; }
 };
 export async function reviewImage(repo: Repository, bytes: Buffer, reviewer = configuredImageReviewer, source: { stage?: "input_image" | "output_image"; turnId?: number; sessionId?: number; mediaId?: number } = {}) {
+  // Quota refusal is an admission error, never a content verdict or case.
+  await reserveImageReview(repo.payload, repo.owner.id);
   let result: ImageReview;
   try { result = await reviewer(bytes); } catch { result = { decision: "unavailable", version: "review-error", category: "image_unreviewed" }; }
   const digest = createHash("sha256").update(bytes).digest("hex");
