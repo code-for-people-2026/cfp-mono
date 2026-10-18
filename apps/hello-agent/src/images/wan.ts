@@ -17,12 +17,16 @@ export type ImageProvider = {
   submit(input: ImageRequest, signal: AbortSignal): Promise<string>;
   result(taskId: string, signal: AbortSignal): Promise<Buffer>;
 };
+function configuredKey() {
+  const key = process.env.DASHSCOPE_API_KEY?.trim();
+  return key && /^[\x21-\x7E]+$/.test(key) ? key : undefined;
+}
 export function imageGenerationConfigured() {
-  return !!process.env.DASHSCOPE_API_KEY?.trim();
+  return !!configuredKey();
 }
 
 export function configuredImageProvider(): ImageProvider {
-  const key = process.env.DASHSCOPE_API_KEY?.trim();
+  const key = configuredKey();
   if (!key) throw new AppError(503, "生图服务尚未配置，请联系管理员开通百炼万相");
   const workspace = process.env.HELLO_IMAGE_WORKSPACE_ID?.trim();
   if (workspace && !/^[a-zA-Z0-9-]{1,100}$/.test(workspace)) throw new AppError(503, "生图业务空间配置无效");

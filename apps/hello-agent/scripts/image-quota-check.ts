@@ -26,6 +26,7 @@ const { Repository } = await import("../src/cms/repository");
 const { MediaService } = await import("../src/domain/media");
 const { ImageGenerationService, readImageState } = await import("../src/images/service");
 const { reserveImageTask } = await import("../src/images/quota");
+const { configuredImageProvider, imageGenerationConfigured } = await import("../src/images/wan");
 const payload = await cms();
 const clearQuota = () => payload.db.drizzle.run(sql`DELETE FROM platform_model_quotas WHERE day LIKE 'image:%'`);
 const ledger = () => payload.db.drizzle.all<{ day: string; reserved_calls: number }>(sql`SELECT day, reserved_calls FROM platform_model_quotas WHERE day LIKE 'image:%' ORDER BY day`);
@@ -67,6 +68,61 @@ try {
       return { repo, media, service, turn, generate };
     };
     const a = await fixture(), b = await fixture(), c = await fixture();
+    const configured = await fixture();
+    const configuredTurn = await configured.turn("byok");
+    let configuredReviews = 0, configuredImageReviews = 0, configuredRequests = 0, configuredSubmissions = 0;
+    const configuredService = new ImageGenerationService(configured.repo, configured.media, async () => { configuredReviews++; }, async () => { configuredImageReviews++; return allowImage(); });
+    const originalFetch = globalThis.fetch;
+    const originalWorkspace = process.env.HELLO_IMAGE_WORKSPACE_ID;
+    delete process.env.HELLO_IMAGE_WORKSPACE_ID;
+    globalThis.fetch = async (url, options) => {
+      const target = String(url);
+      // Payload may emit a delayed startup event; intercept it separately so
+      // provider-call counts remain exact and no test telemetry is transmitted.
+      if (target === "https://telemetry.payloadcms.com/events") return new Response(null, { status: 204 });
+      configuredRequests++;
+      if (target === "https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/synthetic.png") {
+        assert.equal(options?.headers, undefined, "image download must not receive the provider credential");
+        return new Response(new Uint8Array(png));
+      }
+      assert.equal(new Headers(options?.headers).get("authorization"), "Bearer synthetic-wan-key");
+      if (target === "https://dashscope.aliyuncs.com/api/v1/services/aigc/image-generation/generation") {
+        configuredSubmissions++;
+        return Response.json({ output: { task_id: "synthetic-configured-task", task_status: "PENDING" } });
+      }
+      assert.equal(target, "https://dashscope.aliyuncs.com/api/v1/tasks/synthetic-configured-task", "all provider HTTP must be intercepted");
+      return Response.json({ output: { task_id: "synthetic-configured-task", task_status: "SUCCEEDED", choices: [{ message: { content: [{ image: "https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/synthetic.png" }] } }] } });
+    };
+    try {
+      const emptyLedger = await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`);
+      for (const key of [undefined, "", " \t\r\n ", "synthetic key", "synthetic\nkey", "synthetic\tkey", "synthetic\u0007key", "synthetic\u007fkey", "syntheticé"]) {
+        if (key === undefined) delete process.env.DASHSCOPE_API_KEY; else process.env.DASHSCOPE_API_KEY = key;
+        await assert.rejects(configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 503 });
+        assert.equal(imageGenerationConfigured(), false);
+        assert.throws(() => configuredImageProvider(), { status: 503 });
+        assert.equal(configuredReviews, 0, "invalid known credentials must fail before description moderation");
+        assert.equal(configuredImageReviews, 0);
+        assert.equal(configuredRequests, 0);
+        assert.equal(configuredSubmissions, 0);
+        assert.deepEqual(await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`), emptyLedger, "known configuration errors must consume neither task nor review budget");
+        assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id)), undefined, "known configuration errors must not strand submitting state");
+      }
+      process.env.DASHSCOPE_API_KEY = " \t synthetic-wan-key \r\n ";
+      assert.equal(imageGenerationConfigured(), true);
+      const recovered = await configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000));
+      assert.ok(recovered.mediaId);
+      assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id))?.status, "stored");
+      assert.equal(configuredReviews, 1); assert.equal(configuredSubmissions, 1);
+      assert.equal(configuredImageReviews, 1); assert.equal(configuredRequests, 3);
+      assert.deepEqual((await ledger()).map((row) => row.reserved_calls), [1, 1]);
+      assert.equal((await configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000))).mediaId, recovered.mediaId);
+      assert.equal(configuredSubmissions, 1, "repaired configuration creates a single task and stored recovery never resubmits");
+    } finally {
+      globalThis.fetch = originalFetch; process.env.DASHSCOPE_API_KEY = "";
+      if (originalWorkspace === undefined) delete process.env.HELLO_IMAGE_WORKSPACE_ID; else process.env.HELLO_IMAGE_WORKSPACE_ID = originalWorkspace;
+      await clearQuota();
+    }
+    console.log("✓ default Wan rejects invalid credentials before review/quota/submitting; repaired padded credentials submit once with normalized Authorization");
     const byok = await a.turn("byok");
     const firstImage = await a.generate(byok.id);
     failResult = true;

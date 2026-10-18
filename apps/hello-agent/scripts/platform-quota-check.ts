@@ -5,6 +5,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import Database from "libsql";
 import {
   sql,
   type MigrateUpArgs,
@@ -306,6 +307,27 @@ try {
       "✓ migrated ledger; prepaid specialist run; fresh identities, failure, retry, BYOK, external, compaction and access checks",
     );
 
+    // A real business writer can hold SQLite for longer than the old 375 ms
+    // retry window. It must release before reservation succeeds, exactly once.
+    const writer = new Database(path.join(dir, "test.db"));
+    writer.prepare("BEGIN IMMEDIATE").run();
+    const release = setTimeout(() => writer.prepare("COMMIT").run(), 700);
+    try {
+      await reservePlatformCalls(payload, 1);
+      assert.equal(writer.inTransaction, false);
+      assert.equal(await used(), 21, "busy retries must not charge multiple times");
+      // A retry must not leave a failed statement holding the shared database.
+      // Actually write: BEGIN/COMMIT alone would miss a retained reader lock.
+      writer.transaction(() => {
+        writer.prepare("UPDATE platform_model_quotas SET reserved_calls = reserved_calls").run();
+      }).immediate();
+    } finally {
+      clearTimeout(release);
+      if (writer.inTransaction) writer.prepare("ROLLBACK").run();
+      writer.close();
+    }
+    console.log("✓ a competing 700 ms write releases before one exact reservation; no duplicate charge");
+
     // Model a new UTC day without modifying the trusted application clock.
     await db.run(sql`UPDATE platform_model_quotas SET day = '2000-01-01'`);
     process.env.HELLO_PLATFORM_DAILY_CALL_LIMIT = "90";
@@ -330,7 +352,7 @@ try {
     });
     assert.deepEqual(
       rows.docs.map((row) => row.reservedCalls),
-      [20, 90],
+      [21, 90],
     );
     await db.run(
       sql`ALTER TABLE platform_model_quotas RENAME TO unavailable_quota`,

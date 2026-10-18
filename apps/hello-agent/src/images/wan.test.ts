@@ -1,10 +1,25 @@
-import { describe, expect, it, vi } from "vitest";
-import { ImageTaskFailed, validateWanImageUrl, wanProvider } from "./wan";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { configuredImageProvider, imageGenerationConfigured, ImageTaskFailed, validateWanImageUrl, wanProvider } from "./wan";
 
 const input = { prompt: "窗台的一盆番茄，温暖插画", title: "小番茄", alt: "红色番茄", aspectRatio: "square" as const };
 const resultUrl = "https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/result.png?Expires=1&Signature=temporary";
 const reply = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
+afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("万相图片供应商边界", () => {
+  it.each(["", " \t\r\n ", "synthetic key", "synthetic\nkey", "synthetic\tkey", "synthetic\u0007key", "synthetic\u007fkey", "syntheticé"])("无效凭证既不报告可用也不创建供应商：%j", (key) => {
+    vi.stubEnv("DASHSCOPE_API_KEY", key); vi.stubGlobal("fetch", vi.fn());
+    expect(imageGenerationConfigured()).toBe(false);
+    expect(() => configuredImageProvider()).toThrow("生图服务尚未配置");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+  it("readiness 与实际请求共用去除首尾空白后的凭证", async () => {
+    vi.stubEnv("DASHSCOPE_API_KEY", " \t synthetic-wan-key \r\n "); vi.stubEnv("HELLO_IMAGE_WORKSPACE_ID", "");
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(reply({ output: { task_id: "configured-task", task_status: "PENDING" } }));
+    vi.stubGlobal("fetch", transport);
+    expect(imageGenerationConfigured()).toBe(true);
+    expect(await configuredImageProvider().submit(input, AbortSignal.timeout(1000))).toBe("configured-task");
+    expect(new Headers(transport.mock.calls[0][1]?.headers).get("authorization")).toBe("Bearer synthetic-wan-key");
+  });
   it("接受真实北京任务返回的精确加速桶，不放宽到任意 OSS 桶", () => {
     expect(validateWanImageUrl("https://dashscope-a717.oss-accelerate.aliyuncs.com/result.png?Signature=temporary").hostname).toBe("dashscope-a717.oss-accelerate.aliyuncs.com");
     expect(() => validateWanImageUrl("https://other.oss-accelerate.aliyuncs.com/result.png")).toThrow();

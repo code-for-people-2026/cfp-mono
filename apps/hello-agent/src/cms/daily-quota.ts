@@ -6,7 +6,7 @@ import { AppError } from "../domain/contracts";
 
 type Counter = { key: string; limit: number };
 
-function quotaDatabasePath(payload: Payload) {
+export function quotaDatabasePath(payload: Payload) {
   // This app uses a file SQLite database. A separate :memory: connection would
   // silently create a different ledger; remote/replicated adapters need their
   // own atomic implementation instead of falling back to local counters.
