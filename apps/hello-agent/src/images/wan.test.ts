@@ -25,7 +25,7 @@ describe("万相图片供应商边界", () => {
     expect(() => validateWanImageUrl("https://other.oss-accelerate.aliyuncs.com/result.png")).toThrow();
     expect(() => validateWanImageUrl("https://dashscope-a717.oss-accelerate.aliyuncs.com.evil.test/result.png")).toThrow();
   });
-  it("提交一张带标识的图片，轮询原任务，下载时不携带密钥", async () => {
+  it("关闭供应商额外的可见水印，由保存阶段统一标识；轮询原任务且下载不携带密钥", async () => {
     const transport = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(reply({ output: { task_id: "task-1", task_status: "PENDING" } }))
       .mockResolvedValueOnce(reply({ output: { task_id: "task-1", task_status: "RUNNING" } }))
@@ -35,7 +35,7 @@ describe("万相图片供应商边界", () => {
     const signal = AbortSignal.timeout(3000);
     const task = await provider.submit(input, signal);
     expect(await provider.result(task, signal)).toEqual(Buffer.from([1, 2, 3]));
-    expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toMatchObject({ model: "wan2.6-t2i", parameters: { n: 1, watermark: true, prompt_extend: false, size: "1280*1280" } });
+    expect(JSON.parse(String(transport.mock.calls[0][1]?.body))).toMatchObject({ model: "wan2.6-t2i", parameters: { n: 1, watermark: false, prompt_extend: false, size: "1280*1280" } });
     expect(transport.mock.calls[0][1]).toMatchObject({ redirect: "error", headers: { Authorization: "Bearer private-test-key", "X-DashScope-Async": "enable" } });
     expect(transport.mock.calls[3][1]).not.toHaveProperty("headers");
     expect(transport.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);

@@ -2,11 +2,21 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { privacyPolicy } from "./policy";
 
 beforeEach(() => {
+  vi.stubEnv("DASHSCOPE_API_KEY", "");
   vi.stubEnv("HELLO_IMAGE_REVIEW_MODE", "");
   for (const [key, value] of Object.entries({
     HELLO_PRIVACY_CONTACT: "test@example.invalid", HELLO_PRIVACY_RESPONSE_DAYS: "7", HELLO_PRIVACY_STORAGE_LOCATION: "隔离测试", HELLO_PRIVACY_RETENTION_DAYS: "30", HELLO_PRIVACY_BACKUP_DAYS: "7", HELLO_PRIVACY_DELETION_LEDGER: "/test-only/deletions.ndjson", HELLO_PRIVACY_OPERATIONS_APPROVED: "true",
     HELLO_IMAGE_REVIEW_PROVIDER: "合成审核器", HELLO_IMAGE_REVIEW_CONTACT: "test@example.invalid", HELLO_IMAGE_REVIEW_REGION: "隔离测试", HELLO_IMAGE_REVIEW_PRIVACY_URL: "https://example.invalid/privacy",
   })) vi.stubEnv(key, value);
+});
+it("启用万相后告知生图接收方和北京地域，并要求重新同意", () => {
+  const before = privacyPolicy();
+  vi.stubEnv("DASHSCOPE_API_KEY", "synthetic-test-only");
+  const after = privacyPolicy();
+  expect(after.version).not.toBe(before.version);
+  expect(JSON.stringify(after.documents)).toContain("百炼万相");
+  expect(JSON.stringify(after.documents)).toContain("中国内地北京");
+  expect(JSON.stringify(after.documents)).not.toContain("synthetic-test-only");
 });
 it("阿里云审核使用实际接收方说明，切换后必须重新同意政策", () => {
   const before = privacyPolicy();

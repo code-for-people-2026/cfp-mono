@@ -23,6 +23,16 @@ function api(action, parameters) {
   }
 }
 const pause = () => new Promise((resolve) => setTimeout(resolve, 2500));
+// Only retry status reads: a transient CLI failure must never submit a second deployment.
+async function readStatus(action, parameters) {
+  for (let attempt = 0; ; attempt++) {
+    try { return api(action, parameters); }
+    catch (error) {
+      if (attempt >= 2) throw error;
+      await pause();
+    }
+  }
+}
 async function run(content, timeout = 1200) {
   const { InvokeId } = api("RunCommand", {
     "InstanceId.1": instance, Type: "RunShellScript", ContentEncoding: "PlainText",
@@ -31,7 +41,7 @@ async function run(content, timeout = 1200) {
   console.log(`云助手任务：${InvokeId}`);
   for (let elapsed = 0; elapsed < timeout + 60; elapsed += 2.5) {
     await pause();
-    const result = api("DescribeInvocationResults", { InvokeId, ContentEncoding: "PlainText" })
+    const result = (await readStatus("DescribeInvocationResults", { InvokeId, ContentEncoding: "PlainText" }))
       .Invocation?.InvocationResults?.InvocationResult?.[0];
     if (!result || ["Pending", "Running", "Scheduled"].includes(result.InvocationStatus)) continue;
     if (result.Output) console.log(result.Output);
@@ -52,7 +62,7 @@ async function send(content, target) {
   });
   for (let attempt = 0; attempt < 40; attempt++) {
     await pause();
-    const result = api("DescribeSendFileResults", { InvokeId })
+    const result = (await readStatus("DescribeSendFileResults", { InvokeId }))
       .Invocations?.Invocation?.[0]?.InvokeInstances?.InvokeInstance?.[0];
     if (result?.InvocationStatus === "Success") return;
     if (result && !["Pending", "Running", "Scheduled"].includes(result.InvocationStatus)) {

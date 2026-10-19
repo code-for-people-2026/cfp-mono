@@ -1,6 +1,7 @@
 import { ageNotice } from "../age/policy";
 import { createHash } from "node:crypto";
 import { deletionLedgerPath } from "./deletion-ledger";
+import { imageGenerationConfigured } from "../images/wan";
 
 export const COMPANY = "码成仝软件（深圳）有限公司";
 const positiveDays = (value: string | undefined) => value && /^[1-9]\d{0,3}$/.test(value) ? Number(value) : undefined;
@@ -34,6 +35,7 @@ export function privacyPolicy() {
       "政策、接收方或用途变化会更新版本并要求重新同意。未成年人保护、危机处置和拟人化服务专门措施另行建设，本页同意不替代法定监护人同意或相应上线条件。",
     ] },
     { title: "第三方处理说明", paragraphs: [
+      ...(imageGenerationConfigured() ? ["文生图接收方：阿里云计算有限公司（百炼万相）；联系方式：https://www.aliyun.com/contact；处理地域：中国内地北京；隐私说明：https://help.aliyun.com/zh/model-studio/privacy-notice 。你主动请求生成图片时，仅向万相发送必要的画面描述，不自动发送完整对话历史或上传原图。生成图片经格式检查、AI 标识及独立内容审核后存入平台私有 OSS，供本人查看、下载、导出和删除；供应商临时地址不作为公开分享链接。平台与 BYOK 模式的生图均由平台百炼账户提供，供应商侧留存依其协议处理。"] : []),
       "DeepSeek（杭州深度求索人工智能基础技术研究有限公司）：平台与 BYOK 均由我们的服务器通过 DeepSeek API 发送输入、必要历史/摘要、图片（当前模型支持时）、生成作品及安全审核所需文本。BYOK 密钥仅存在本次请求内存，不写入业务库；不用自己密钥不影响平台模式。外部 MCP 保存的输入与作品仍可能送 DeepSeek 做安全审核。隐私说明：https://cdn.deepseek.com/policies/zh-CN/deepseek-privacy-policy.html；API 数据留存、受托处理条款和是否用于训练须由公司与供应商协议核实，不将平台自身“不训练”承诺扩展为供应商承诺。",
       imageReview ? `图片内容审核接收方：${imageReview.name || "待配置"}；联系方式：${imageReview.contact || "待配置"}；处理地域：${imageReview.region || "待配置"}；隐私说明：${imageReview.policy || "待配置"}。仅发送压缩后图片像素，用于安全审核；返回判定、版本与类别。平台保存审核判定、版本与类别，并记录访问与处置审计；未通过时仅保留图片摘要哈希、长度和审核类别等最小复核证据，不保存被拒图片像素。未通过审核的图片不会进入平台私有图片库。供应商留存须由公司确认；告知未齐时图片处理入口不放行。` : "图片审核：当前未配置审核接收方，聊天图片会暂停接收；启用前必须公布供应商名称、联系渠道、地域及政策，并重新取得同意。",
       "阿里云（阿里云计算有限公司）：部署启用 OSS 时存放私有图片，服务器存放数据库；只由有权限的服务读取，不公开桶或长期链接。具体地域、对象版本及备份期限由公司核实后写入政策。隐私说明：https://help.aliyun.com/zh/document_detail/2705225.html。",

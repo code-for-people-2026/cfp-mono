@@ -80,7 +80,7 @@ export async function GET(request: Request, context: Context) {
       }
       await new AgeService(payload, owner).requireLogin();
       if (path[0] === "profile") {
-        if (owner.auth !== "miniapp") throw new AppError(403, "请本人在小程序中查看资料");
+        if (owner.auth === "bearer") throw new AppError(403, "请本人在小程序或网页中查看资料");
         if (path.length === 1) return json(await readProfile(payload, owner.id));
         if (path.length === 2 && path[1] === "avatar") return avatarResponse(payload, owner.id);
       }

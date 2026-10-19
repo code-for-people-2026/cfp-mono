@@ -103,7 +103,8 @@ export function wanProvider(origin: string, key: string, transport: typeof fetch
       const input = imageRequestSchema.parse(value);
       const output = await api("/api/v1/services/aigc/image-generation/generation", signal, {
         model: WAN_MODEL, input: { messages: [{ role: "user", content: [{ text: input.prompt }] }] },
-        parameters: { size: sizes[input.aspectRatio], n: 1, prompt_extend: false, watermark: true },
+        // The save pipeline adds our single visible label and preserves source metadata.
+        parameters: { size: sizes[input.aspectRatio], n: 1, prompt_extend: false, watermark: false },
       });
       return taskIdSchema.parse(output.task_id);
     },

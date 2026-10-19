@@ -30,6 +30,7 @@ import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { privateImageSource } from "./api";
 import { MessageText } from "./message-text";
 import { useSheetFieldFocus } from "./bottom-sheet";
+import { ChatIcon } from "./icon";
 
 export function ArtifactImage({
   url,
@@ -44,10 +45,12 @@ export function ArtifactImage({
 }) {
   const [source, setSource] = useState("");
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     let active = true;
     setSource("");
     setFailed(false);
+    setLoaded(false);
     privateImageSource(url)
       .then((value) => {
         if (active) setSource(value);
@@ -61,23 +64,34 @@ export function ArtifactImage({
   }, [url]);
   return (
     <View className={thumbnail ? "artifact-thumbnail" : "artifact-image-full"}>
-      {source && !failed ? (
-        <Image
-          className={thumbnail ? "artifact-thumbnail-image" : "artifact-image"}
-          src={source}
-          mode={thumbnail ? "aspectFill" : "widthFix"}
-          onError={() => setFailed(true)}
-          onClick={
-            thumbnail
-              ? undefined
-              : () => Taro.previewImage({ urls: [source], current: source })
-          }
-        />
-      ) : (
-        <MessageText className="artifact-caption">
-          {failed ? "图片暂不可用" : "加载中…"}
-        </MessageText>
-      )}
+      <View
+        className={`artifact-image-frame${!loaded && !failed ? " is-loading" : ""}`}
+      >
+        {source && !failed && (
+          <Image
+            className={thumbnail ? "artifact-thumbnail-image" : "artifact-image"}
+            src={source}
+            mode={thumbnail ? "aspectFit" : "widthFix"}
+            onLoad={() => setLoaded(true)}
+            onError={() => setFailed(true)}
+            onClick={
+              thumbnail
+                ? undefined
+                : () => Taro.previewImage({ urls: [source], current: source })
+            }
+          />
+        )}
+        {!loaded && !failed && (
+          <View className="artifact-image-loading" aria-label="图片加载中">
+            <View className="artifact-image-spinner">
+              <ChatIcon name="loaderCircle" />
+            </View>
+          </View>
+        )}
+        {failed && (
+          <MessageText className="artifact-caption">图片暂不可用</MessageText>
+        )}
+      </View>
       {!thumbnail && (
         <MessageText
           aiGenerated

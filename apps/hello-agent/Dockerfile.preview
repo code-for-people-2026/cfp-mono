@@ -14,7 +14,9 @@ COPY packages/hello-agent-contracts packages/hello-agent-contracts
 COPY packages/hello-agent-protocol packages/hello-agent-protocol
 # H5 在开发机编译，并随经过白名单筛选的源码包传入；不在 ECS 重装 Taro。
 RUN test -f apps/hello-agent/public/chat/index.html
-RUN HELLO_BUILD_PREVIEW=true NODE_OPTIONS=--max-old-space-size=1536 pnpm --filter @cfp/hello-agent exec next build
+# 将类型检查与打包分开，避免小型 ECS 同时驻留编译器和类型检查子进程。
+RUN NODE_OPTIONS=--max-old-space-size=1024 pnpm --filter @cfp/hello-agent typecheck
+RUN HELLO_BUILD_PREVIEW=true HELLO_BUILD_TYPES_VERIFIED=true NODE_OPTIONS=--max-old-space-size=1024 RAYON_NUM_THREADS=1 pnpm --filter @cfp/hello-agent exec next build --webpack
 RUN mkdir -p apps/hello-agent/.data && chown -R node:node apps/hello-agent/.data apps/hello-agent/.next
 ENV NODE_ENV=production
 USER node
