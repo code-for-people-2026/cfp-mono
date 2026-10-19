@@ -5,6 +5,7 @@ import { RuntimeOptions } from "@darabonba/typescript";
 import OSS from "ali-oss";
 import { z } from "zod";
 import type { ImageReviewer } from "./image-review";
+import { greenReviewCredentials } from "./review-config";
 
 // Alibaba publishes this SDK as CommonJS; Node ESM otherwise exposes an extra
 // default wrapper (unlike Vitest's transform). Load its actual exported class.
@@ -44,10 +45,9 @@ export function greenImageReviewer(ports: GreenPorts): ImageReviewer {
 }
 
 export const configuredGreenReviewer: ImageReviewer = async (bytes) => {
-  const accessKeyId = process.env.HELLO_GREEN_ACCESS_KEY_ID;
-  const accessKeySecret = process.env.HELLO_GREEN_ACCESS_KEY_SECRET;
-  if (!accessKeyId || !accessKeySecret) return { decision: "unavailable", version: "unconfigured", category: "image_unreviewed" };
-  const client = new Green(new $OpenApiUtil.Config({ accessKeyId, accessKeySecret, endpoint: "green-cip.cn-shanghai.aliyuncs.com", regionId: "cn-shanghai" }));
+  const credentials = greenReviewCredentials();
+  if (!credentials) return { decision: "unavailable", version: "unconfigured", category: "image_unreviewed" };
+  const client = new Green(new $OpenApiUtil.Config({ ...credentials, endpoint: "green-cip.cn-shanghai.aliyuncs.com", regionId: "cn-shanghai" }));
   const runtime = new RuntimeOptions({ connectTimeout: 5000, readTimeout: 15000, autoretry: false });
   return greenImageReviewer({
     async token() {

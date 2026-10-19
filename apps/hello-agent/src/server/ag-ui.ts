@@ -69,14 +69,17 @@ export function agentStream(
   service: {
     generateGreeting: (
       args: z.infer<typeof turnSchema>,
+      progress?: (message: string) => void,
     ) => Promise<
       Pick<
         Awaited<ReturnType<GreetingService["generateGreeting"]>>,
         "id" | "greeting" | "artifacts" | "status"
       >
     >;
+    resumeImage?: (id: number, apiKey?: string, progress?: (message: string) => void) => ReturnType<GreetingService["resumeImage"]>;
   },
   args: z.infer<typeof turnSchema>,
+  resumeTurnId?: number,
 ) {
   const encoder = new EventEncoder({ accept: "text/event-stream" });
   const utf8 = new TextEncoder();
@@ -89,6 +92,7 @@ export function agentStream(
       };
       const threadId = String(args.sessionId);
       const runId = args.requestId;
+      const heartbeat = setInterval(() => { if (connected) controller.enqueue(utf8.encode(": keepalive\n\n")); }, 15_000);
       try {
         emit({
           type: EventType.RUN_STARTED,
@@ -100,7 +104,9 @@ export function agentStream(
           type: EventType.STEP_STARTED,
           stepName: "阿 J 先生正在构思回应与作品",
         });
-        const row = await service.generateGreeting(args);
+        const progress = (stepName: string) => emit({ type: EventType.STEP_STARTED, stepName });
+        if (resumeTurnId && !service.resumeImage) throw new AppError(409, "此服务不支持继续取图");
+        const row = resumeTurnId ? await service.resumeImage!(resumeTurnId, args.apiKey, progress) : await service.generateGreeting(args, progress);
         emit({
           type: EventType.STEP_FINISHED,
           stepName: "阿 J 先生正在构思回应与作品",
@@ -134,6 +140,7 @@ export function agentStream(
           code: "GENERATION_FAILED",
         });
       } finally {
+        clearInterval(heartbeat);
         if (connected) controller.close();
       }
     },

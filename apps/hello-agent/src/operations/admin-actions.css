@@ -1,0 +1,18 @@
+.safety-actions { border: 1px solid var(--theme-elevation-200); padding: 20px; margin: 16px 0 24px; border-radius: 4px; min-width: 0; }
+.safety-actions legend { font-weight: 600; padding: 0 8px; }
+.safety-actions p { margin: 0 0 16px; color: var(--theme-elevation-700); }
+.safety-actions__fields { display: grid; gap: 16px; margin-bottom: 16px; }
+.safety-actions label { display: block; margin-bottom: 6px; }
+.safety-actions input, .safety-actions textarea, .safety-actions select { display: block; width: 100%; background: var(--theme-input-bg, var(--theme-elevation-0)); color: var(--theme-text); border: 1px solid var(--theme-elevation-200); padding: 10px 12px; border-radius: 3px; font: inherit; }
+.safety-actions textarea { resize: vertical; }
+.safety-actions input:focus, .safety-actions textarea:focus, .safety-actions select:focus { outline: 2px solid var(--theme-elevation-600); outline-offset: 2px; }
+.safety-actions button { background: var(--theme-elevation-900); color: var(--theme-elevation-0); border: 0; border-radius: 3px; padding: 10px 16px; font: inherit; cursor: pointer; }
+.safety-actions button:disabled { opacity: .45; cursor: not-allowed; }
+.safety-actions .safety-actions__error { color: var(--theme-error-600); margin-top: 12px; }
+.safety-create { margin: 16px 0; }
+.safety-create summary { cursor: pointer; font-weight: 600; padding: 10px 0; }
+.safety-evidence { background: var(--theme-elevation-50); border: 1px solid var(--theme-elevation-200); padding: 16px; margin-bottom: 20px; overflow-wrap: anywhere; }
+.safety-evidence pre { white-space: pre-wrap; font: inherit; }
+.safety-list-tools { margin-bottom: 20px; }
+.safety-list-tools nav { display: flex; flex-wrap: wrap; gap: 16px; margin: 12px 0; }
+.safety-list-tools p { margin: 10px 0; }

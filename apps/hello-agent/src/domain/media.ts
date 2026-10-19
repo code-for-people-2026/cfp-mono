@@ -1,3 +1,4 @@
+import { assertMediaAllowed } from "../operations/enforcement";
 import { createHash, randomUUID } from "node:crypto";
 import type { Repository } from "../cms/repository";
 import type { Media } from "../payload-types";
@@ -34,17 +35,22 @@ export class MediaService {
     return reference;
   }
 
-  async save(bytes: Buffer) {
+  async save(bytes: Buffer, generation?: { turnId: number; provider: string; model: string; taskId: string }) {
     if (!bytes.length || bytes.length > MAX_STORED_IMAGE_BYTES)
       throw new AppError(413, "处理后的图片大小无效");
     const lease = await this.repo.create("session-locks", { sessionKey: `upload:${this.repo.owner.id}:${randomUUID()}`, expiresAt: new Date(Date.now() + 180_000).toISOString() });
     try {
+    const generationKey = generation ? `${this.repo.owner.id}:${generation.turnId}` : undefined;
+    if (generationKey) {
+      const existing = (await this.repo.list("media", { generationKey: { equals: generationKey } }, 1))[0];
+      if (existing) { await this.read(existing.id); return existing; }
+    }
     const store = this.storeFactory();
     const data = store
-      ? { object: await this.writeObject(store, bytes), base64: null }
+      ? { object: await this.writeObject(store, bytes, generation ? `${generation.turnId}-${digest(bytes)}` : undefined), base64: null }
       : { base64: bytes.toString("base64") };
     // OSS 与数据库没有跨服务事务；数据库提交结果不明时保留对象，避免误删已引用的图片。
-    return await this.repo.create("media", { mimeType: "image/jpeg", ...data });
+    return await this.repo.create("media", { mimeType: "image/jpeg", ...data, ...(generation ? { generation, generationKey } : {}) });
     } finally { await this.repo.remove("session-locks", lease.id); }
   }
 
@@ -75,7 +81,9 @@ export class MediaService {
 
   async read(id: number) {
     // 必须先做 Payload 归属校验，再访问 OSS；对象名不能充当访问凭据。
-    return this.readRow(await this.repo.get("media", id));
+    const row = await this.repo.get("media", id);
+    await assertMediaAllowed(this.repo.payload, this.repo.owner.id, id);
+    return this.readRow(row);
   }
 
   private async *deletionPages() {

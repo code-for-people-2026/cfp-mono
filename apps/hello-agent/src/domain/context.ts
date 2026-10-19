@@ -44,7 +44,7 @@ export class ContextService {
           { id: { greater_than: memory.throughId } },
         ],
       })
-    ).map(toMemoryTurn);
+    ).filter((row) => row.status === "completed").map(toMemoryTurn);
     return { memory, turns };
   }
   private save(sessionId: number, memory: Memory) {
@@ -88,6 +88,7 @@ export class ContextService {
     if (this.repo.owner.auth === "bearer")
       throw new AppError(403, "广告必须由用户在阿 J 先生页面观看");
     const release = await this.repo.acquire(sessionId);
+    return release.run(async () => {
     try {
       const { memory, turns } = await this.read(sessionId);
       if (turns.length <= RECENT_TURNS)
@@ -111,12 +112,14 @@ export class ContextService {
     } finally {
       await release();
     }
+    });
   }
   async finishAd(sessionId: number, rewardId: string, completed: boolean) {
     if (this.repo.owner.auth === "bearer")
       throw new AppError(403, "Agent 不能代替用户确认广告观看");
     if (!completed) throw new AppError(409, "广告未完整观看，记忆没有变化");
     const release = await this.repo.acquire(sessionId);
+    return release.run(async () => {
     try {
       const { memory } = await this.read(sessionId);
       const reward = assertReward(
@@ -137,6 +140,7 @@ export class ContextService {
     } finally {
       await release();
     }
+    });
   }
   async compact(sessionId: number, rewardId: string, apiKey?: string) {
     return this.compactWithAccess(
@@ -169,6 +173,7 @@ export class ContextService {
     apiKey?: string,
   ) {
     const release = await this.repo.acquire(sessionId);
+    return release.run(async () => {
     try {
       const { memory, turns } = await this.read(sessionId);
       // 网络重试返回上次结果，不重复扣资格或调用模型。
@@ -255,5 +260,6 @@ export class ContextService {
     } finally {
       await release();
     }
+    });
   }
 }

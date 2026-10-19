@@ -48,8 +48,11 @@ export const turnResultSchema = z.object({
   id: z.number().int().positive(),
   input: inputSchema,
   status: z.enum(["running", "completed", "failed"]),
+  visibility: z.literal("quarantined").optional(),
+  imageGeneration: z.object({ status: z.enum(["submitting", "pending", "stored", "failed", "blocked"]), canResume: z.boolean() }).nullish(),
   mode: modeSchema,
   greeting: z.string().nullish(),
+  error: z.string().nullish(),
   association: z.string().nullish(),
   approach: z.string().nullish(),
   artifacts: artifactsSchema.nullish(),
@@ -67,6 +70,7 @@ export const advertisementSchema = z.object({
 });
 export const settingsSchema = z.object({
   platformConfigured: z.boolean(),
+  imageGenerationConfigured: z.boolean().optional(),
   model: z.string(),
   origin: z.string(),
   advertisement: advertisementSchema,
@@ -127,3 +131,7 @@ export type Decoder<T> = {
 };
 
 export * from "./privacy";
+
+export const safetyReceiptSchema = z.object({ receipt: z.string(), kind: z.string(), status: z.string(), createdAt: z.string(), reply: z.string().nullish(), acceptBy: z.string().nullish(), resolveBy: z.string().nullish(), canAppeal: z.boolean(), turnId: z.number().nullish() });
+export const safetyStatusSchema = z.object({ configuration: z.object({ configured: z.boolean(), acceptanceHours: z.number().optional(), resolutionHours: z.number().optional(), feedbackHours: z.number().optional() }), cases: z.array(safetyReceiptSchema) });
+export type SafetyReceipt = z.output<typeof safetyReceiptSchema>;

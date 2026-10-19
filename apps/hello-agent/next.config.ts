@@ -2,6 +2,7 @@ import { withPayload } from "@payloadcms/next/withPayload";
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  distDir: process.env.HELLO_NEXT_DIST_DIR || ".next",
   devIndicators: false,
   // 预览服务器仅在独立 typecheck 通过后设置，避免重复占用内存。
   typescript: { ignoreBuildErrors: process.env.HELLO_BUILD_TYPES_VERIFIED === "true" },

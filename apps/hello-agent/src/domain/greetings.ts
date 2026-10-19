@@ -1,11 +1,14 @@
+import type { Session } from "@cfp/hello-agent-contracts";
+import type { Greeting as GreetingRecord } from "../payload-types";
+import { reservePlatformCalls } from "../cms/platform-quota";
+import { GREETING_MAX_CALLS } from "../agent/limits";
+import { illustrationPng } from "./artifact-rendering";
 import { uploadedAiXmp } from "../labeling/upload-provenance";
-import { imageReviewConfigured, reviewUpload as configuredUploadReview } from "../images/image-review";
 import sharp from "sharp";
 import { Repository, fingerprint } from "../cms/repository";
-import type { Greeting as GreetingRecord } from "../payload-types";
-import type { Turn, Session } from "@cfp/hello-agent-contracts";
 import {
   AppError,
+  ContentReviewError,
   externalSchema,
   turnSchema,
   greetingSchema,
@@ -16,12 +19,18 @@ import {
 import { PROMPT_VERSION } from "../agent/instruction";
 import type { Generator } from "../agent/runtime";
 import { DEFAULT_MODEL } from "../models/deepseek";
-import { reservePlatformCalls } from "../cms/platform-quota";
-import { GREETING_MAX_CALLS } from "../agent/limits";
 import { ContextService } from "./context";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
 import { artifactsSchema, validateForm } from "@cfp/hello-agent-protocol";
+import { type Moderator } from "./moderation";
+import { operationalModerator } from "../operations/moderation";
+import { assertGenerationAllowed, assertMediaAllowed } from "../operations/enforcement";
+import { configuredImageReviewer, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
+import { textLeaves } from "./keyword-matcher";
+import { randomUUID } from "node:crypto";
+import { ImageGenerationService, canResumeImage, publicImageState, readImageState } from "../images/service";
+import { configuredImageProvider, type ImageProvider } from "../images/wan";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
@@ -34,8 +43,16 @@ export class GreetingService {
     readonly repo: Repository,
     private generate: Generator = platformGenerator,
     readonly media = new MediaService(repo),
-    private readonly reviewUpload: ((bytes: Buffer) => Promise<"allow" | "reject">) | undefined = configuredUploadReview,
-  ) {}
+    reviewUpload?: (bytes: Buffer) => Promise<"allow" | "reject">,
+    safety: { moderate?: Moderator; imageReviewer?: ImageReviewer; imageProvider?: () => ImageProvider } = {},
+  ) {
+    this.moderate = safety.moderate ?? operationalModerator(repo);
+    this.imageReviewer = safety.imageReviewer ?? (reviewUpload ? async (bytes) => ({ decision: await reviewUpload(bytes) === "allow" ? "allow" : "block", category: "upload", version: "injected-upload-review" }) : configuredImageReviewer);
+    this.imageProvider = safety.imageProvider ?? configuredImageProvider;
+  }
+  private moderate: Moderator;
+  private imageReviewer: ImageReviewer;
+  private imageProvider: () => ImageProvider;
 
   async sessions(): Promise<Session[]> {
     return (await this.repo.all("sessions"))
@@ -55,35 +72,22 @@ export class GreetingService {
   async createSession(title = "新对话"): Promise<Session> {
     return this.repo.create("sessions", { title: title.slice(0, 80) });
   }
-  async history(sessionId: number): Promise<Turn[]> {
+  async history(sessionId: number) {
     await this.repo.get("sessions", sessionId);
-    return this.repo.all("greetings", { sessionId: { equals: sessionId } });
+    return (await this.repo.all("greetings", { sessionId: { equals: sessionId } })).map(publicImageState);
   }
-  async submission(
-    sessionId: number,
-    requestId: string,
-  ): Promise<{ turn: Turn | null }> {
+  async submission(sessionId: number, requestId: string) {
     await this.repo.get("sessions", sessionId);
-    const rows = await this.repo.list(
-      "greetings",
-      {
-        and: [
-          { sessionId: { equals: sessionId } },
-          { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } },
-        ],
-      },
-      1,
-    );
-    return { turn: rows[0] || null };
+    const rows = await this.repo.list("greetings", {
+      and: [{ sessionId: { equals: sessionId } }, { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } }],
+    }, 1);
+    return { turn: rows[0] ? publicImageState(rows[0]) : null };
   }
   async upload(data: Uint8Array) {
-    if (!this.reviewUpload || (this.reviewUpload === configuredUploadReview && !imageReviewConfigured()))
-      throw new AppError(503, "图片审核暂不可用，请稍后重试或使用文字");
     if (data.length > 5 * 1024 * 1024)
       throw new AppError(413, "单张图片不能超过 5 MB");
     let buffer: Buffer;
     try {
-      // Bound PNG text metadata before libvips can decompress it as well.
       const provenance = await uploadedAiXmp(data);
       const metadata = await sharp(data, {
         limitInputPixels: 20_000_000,
@@ -102,9 +106,10 @@ export class GreetingService {
     }
     if (buffer.length > MAX_STORED_IMAGE_BYTES)
       throw new AppError(413, "处理后的图片仍过大");
-    if (await this.reviewUpload(buffer) !== "allow")
-      throw new AppError(422, "这张图片未通过审核，请更换图片或使用文字");
+    await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
+    const review = await reviewImage(this.repo, buffer, this.imageReviewer);
     const row = await this.media.save(buffer);
+    await this.repo.update("media", row.id, { safetyReview: review });
     return {
       id: row.id,
       mimeType: "image/jpeg",
@@ -117,32 +122,32 @@ export class GreetingService {
     mode: Mode,
     input: Inspiration,
     model: string,
-    extra?: Greeting,
+    extra?: unknown,
+    reviewKey?: string,
+    resumeTurnId?: number,
   ) {
+    await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     const session = await this.repo.get("sessions", sessionId);
-    await Promise.all(input.mediaIds.map((id) => this.repo.get("media", id)));
+    await Promise.all(input.mediaIds.map(async (id) => {
+      await assertMediaAllowed(this.repo.payload, this.repo.owner.id, id);
+      const media = await this.repo.get("media", id);
+      if ((media.safetyReview as { decision?: string } | undefined)?.decision !== "allow") {
+        const content = await this.media.read(id);
+        const review = await reviewImage(this.repo, content.bytes, this.imageReviewer, { sessionId, mediaId: id });
+        await this.repo.update("media", id, { safetyReview: review });
+      }
+    }));
     if (input.formResponse) {
       const response = input.formResponse;
       const source = await this.repo.get("greetings", response.turnId);
       if (source.sessionId !== sessionId || source.status !== "completed")
         throw new AppError(400, "表单不属于当前对话或尚未完成");
-      const form = artifactsSchema
-        .parse(source.artifacts ?? [])
-        .find((item) => item.id === response.artifactId);
-      if (!form || form.kind !== "form")
-        throw new AppError(400, "原表单不存在");
+      const form = artifactsSchema.parse(source.artifacts ?? []).find((item) => item.id === response.artifactId);
+      if (!form || form.kind !== "form") throw new AppError(400, "原表单不存在");
       const problem = validateForm(form, response.values);
       if (problem) throw new AppError(400, problem);
-      const text =
-        `填写「${form.title}」\n` +
-        form.fields
-          .map(
-            (field) =>
-              `${field.label}：${response.values[field.id] ?? "（未填写）"}`,
-          )
-          .join("\n");
-      if (text.length > 4000)
-        throw new AppError(400, "填写内容过长，请精简后再提交");
+      const text = `填写「${form.title}」\n` + form.fields.map((field) => `${field.label}：${response.values[field.id] ?? "（未填写）"}`).join("\n");
+      if (text.length > 4000) throw new AppError(400, "填写内容过长，请精简后再提交");
       input = { ...input, text };
     }
     const requestKey = `${this.repo.owner.id}:${requestId}`;
@@ -157,6 +162,10 @@ export class GreetingService {
     if (existing) {
       if (existing.fingerprint !== hash)
         throw new AppError(409, "同一个请求标识不能用于不同内容");
+      if (resumeTurnId === existing.id && canResumeImage(existing)) {
+        const row = await this.repo.update("greetings", existing.id, { status: "running", error: null });
+        return { row, duplicate: false };
+      }
       if (existing.status === "running" && mode !== "external")
         throw new AppError(
           409,
@@ -166,18 +175,20 @@ export class GreetingService {
         throw new AppError(409, "该请求此前失败，请使用新的请求标识重试");
       return { row: existing, duplicate: existing.status === "completed" };
     }
+    await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     await new ContextService(this.repo).ensureRoom(sessionId);
     // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
-    await this.repo.update("sessions", sessionId, {
-      title: [
+    await this.repo.update("sessions", sessionId,
+      [
         "新对话",
         "与阿 J 先生的日常",
         "与阿 Q 先生的日常",
         "与好阿 J 的日常",
       ].includes(session.title)
-        ? input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话"
-        : session.title,
-    });
+        ? { title: input.text.trim().replace(/\s+/g, " ").slice(0, 32) || "图片对话" }
+        : {}, // 只触碰活动时间，避免将读取时的隔离占位标题写回原记录。
+    );
+
     const row = await this.repo.create("greetings", {
       sessionId,
       requestKey,
@@ -190,30 +201,57 @@ export class GreetingService {
     });
     return { row, duplicate: false };
   }
-  async complete(id: number, value: Greeting) {
+  async complete(id: number, value: Greeting, reviewKey?: string) {
+    await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     const output = greetingSchema.parse(value);
     const row = await this.repo.get("greetings", id);
+    if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
     if (row.status === "completed") {
       if (
         row.greeting !== output.greeting ||
         row.association !== output.association ||
-        fingerprint(row.artifacts ?? []) !==
-          fingerprint(output.artifacts ?? []) ||
+        fingerprint(row.artifacts ?? []) !== fingerprint(output.artifacts ?? []) ||
         (row.approach ?? undefined) !== output.approach
       )
         throw new AppError(409, "本轮产物已保存，不能覆盖");
       return row;
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
+    const imageState = readImageState(row);
+    if (imageState && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
+      artifact.kind === "image" && artifact.source.type === "media" && artifact.source.mediaId === imageState.mediaId)))
+      throw new AppError(409, "生图尚未完成或回应未引用本轮生成图片，不能宣称完成");
     for (const artifact of output.artifacts ?? [])
-      if (artifact.kind === "image" && artifact.source.type === "media")
-        await this.repo.get("media", artifact.source.mediaId);
+      if (artifact.kind === "image" && artifact.source.type === "media") {
+        const image = await this.repo.get("media", artifact.source.mediaId);
+        const content = await this.media.read(image.id);
+        if ((image.safetyReview as { decision?: string } | undefined)?.decision !== "allow") {
+          const review = await reviewImage(this.repo, content.bytes, this.imageReviewer, { stage: "output_image", turnId: row.id, sessionId: Number(row.sessionId), mediaId: image.id });
+          await this.repo.update("media", image.id, { safetyReview: review });
+        }
+      }
+    for (const artifact of output.artifacts ?? []) {
+      if (artifact.kind === "image" && artifact.source.type === "illustration") {
+        const pixels = await sharp(await illustrationPng(artifact)).flatten({ background: "white" }).jpeg({ quality: 85 }).toBuffer();
+        await reviewImage(this.repo, pixels, this.imageReviewer, { stage: "output_image", turnId: row.id, sessionId: Number(row.sessionId) });
+      }
+    }
+    await this.moderate({
+      stage: "output", mode: row.mode, texts: textLeaves(output), context: (row.input as Inspiration).text,
+      requestId: String(row.requestKey), turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
+    });
     return this.repo.update("greetings", id, {
       ...output,
       status: "completed",
     });
   }
-  async generateGreeting(value: unknown) {
+  async resumeImage(turnId: number, apiKey?: string, progress?: (message: string) => void) {
+    const row = await this.repo.get("greetings", turnId);
+    if (row.status === "completed") return row;
+    if (!canResumeImage(row) || row.mode === "external") throw new AppError(409, "这次图片任务不能继续，请查看本轮状态");
+    return this.generateGreeting({ sessionId: row.sessionId, requestId: String(row.requestKey).slice(this.repo.owner.id.length + 1), input: row.input, mode: row.mode, apiKey }, progress, row.id);
+  }
+  async generateGreeting(value: unknown, progress?: (message: string) => void, resumeTurnId?: number) {
     const args = turnSchema.parse(value);
     const key =
       args.mode === "byok" ? args.apiKey : process.env.DEEPSEEK_API_KEY;
@@ -226,7 +264,9 @@ export class GreetingService {
       );
     const model = process.env.HELLO_MODEL || DEFAULT_MODEL;
     const release = await this.repo.acquire(args.sessionId);
+    return release.run(async () => {
     let row: GreetingRecord | undefined;
+    let reviewFailure: ContentReviewError | undefined;
     const started = Date.now();
     try {
       const result = await this.begin(
@@ -235,20 +275,37 @@ export class GreetingService {
         args.mode,
         args.input,
         model,
+        undefined,
+        key,
+        resumeTurnId,
       );
       row = result.row;
       if (result.duplicate) return row;
-      if (args.mode === "platform")
-        await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
+      if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
+      const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
+      const imageState = readImageState(row);
       await this.generate({
         repo: this.repo,
+        signal: release.signal,
         turnId: row.id,
         sessionId: args.sessionId,
         input: row.input,
         apiKey: key,
         model,
         readImage: (id) => this.media.read(id),
-        save: (output) => this.complete(row!.id, output),
+        generateImage: (input, signal) => images.generate(row!.id, input, signal, key, progress),
+        existingImage: imageState?.status === "stored" && imageState.mediaId ? { mediaId: imageState.mediaId, title: imageState.input.title, alt: imageState.input.alt } : undefined,
+        resumingImage: !!resumeTurnId,
+        executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
+        save: async (output) => {
+          try {
+            return await this.complete(row!.id, output, key);
+          } catch (error) {
+            // ADK may convert a thrown tool error to an event; preserve its safe verdict.
+            if (error instanceof ContentReviewError) reviewFailure = error;
+            throw error;
+          }
+        },
       });
       const saved = await this.repo.get("greetings", row.id);
       if (saved.status !== "completed")
@@ -263,13 +320,13 @@ export class GreetingService {
         if (saved.status === "completed") return saved;
         await this.repo.update("greetings", row.id, {
           status: "failed",
-          error:
-            error instanceof AppError && error.status === 429
-              ? error.message
-              : "模型调用或保存失败，请检查配置后重试",
+          error: error instanceof AppError ? error.message : "模型调用或保存失败，请检查配置后重试",
           durationMs: Date.now() - started,
+          ...((reviewFailure || error instanceof ContentReviewError) && !(reviewFailure instanceof ImageReviewUnavailableError) && !(error instanceof ImageReviewUnavailableError) && saved.imageGeneration
+            ? { imageGeneration: { ...saved.imageGeneration, status: "blocked" } } : {}),
         });
       }
+      if (reviewFailure) throw reviewFailure;
       if (error instanceof AppError) throw error;
       // 供应商原始异常可能含请求、密钥或图片；不写日志、数据库或响应。
       throw new AppError(
@@ -279,10 +336,12 @@ export class GreetingService {
     } finally {
       await release();
     }
+    });
   }
   async acceptExternal(value: unknown) {
     const args = externalSchema.parse(value);
     const release = await this.repo.acquire(args.sessionId);
+    return release.run(async () => {
     let pending: GreetingRecord | undefined;
     try {
       const { row, duplicate } = await this.begin(
@@ -300,15 +359,12 @@ export class GreetingService {
       // Validation failures are terminal; transient storage failures keep the request retryable.
       if (pending && error instanceof AppError) {
         const row = await this.repo.get("greetings", pending.id);
-        if (row.status === "running")
-          await this.repo.update("greetings", row.id, {
-            status: "failed",
-            error: "外部回应作品未能通过校验或保存",
-          });
+        if (row.status === "running") await this.repo.update("greetings", row.id, { status: "failed", error: "外部回应作品未能通过校验或保存" });
       }
       throw error;
     } finally {
       await release();
     }
+    });
   }
 }

@@ -1,3 +1,4 @@
+import { publicImageState } from "../images/service";
 import type { Payload } from "payload";
 import type { Inspiration, Turn } from "@cfp/hello-agent-contracts";
 import type { Session as AdkSession } from "@google/adk";
@@ -7,7 +8,7 @@ import type { Repository } from "./repository";
 async function checkTypes(repo: Repository, payload: Payload) {
   const row = await repo.get("greetings", 1);
   const input: Inspiration = row.input;
-  const turn: Turn = row;
+  const turn: Turn = publicImageState(row);
   const snapshot: AdkSession = (await repo.get("adk-sessions", 1)).snapshot;
   await repo.create("sessions", { title: "有效输入" });
   await repo.update("greetings", 1, { status: "completed" });

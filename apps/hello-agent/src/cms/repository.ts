@@ -1,3 +1,4 @@
+import { projectVisibleRows } from "../operations/enforcement";
 import { createHash } from "node:crypto";
 import type {
   Payload,
@@ -7,6 +8,7 @@ import type {
 } from "payload";
 import type { Config, SessionLock } from "../payload-types";
 import { AppError, type Owner } from "../domain/contracts";
+import { assertSessionLease, holdSessionLease, SESSION_LEASE_MS } from "./session-lease";
 
 // 认证凭证、管理员与 Payload 内部集合不能通过访客仓库操作。
 export type OwnedCollection = Extract<
@@ -25,6 +27,7 @@ export class Repository {
     readonly owner: Owner,
   ) {}
   private get options() {
+    assertSessionLease(this.owner.id);
     return {
       overrideAccess: false,
       context: { helloOwner: this.owner.id, helloWrite: true },
@@ -44,10 +47,10 @@ export class Repository {
       sort,
       depth: 0,
     });
-    return result.docs;
+    return projectVisibleRows(this.payload, this.owner.id, collection, result.docs);
   }
   async all<C extends OwnedCollection>(collection: C, where: Where = {}) {
-    const rows: DataFromCollectionSlug<C>[] = [];
+    const rows: (DataFromCollectionSlug<C> & { visibility?: "quarantined" })[] = [];
     let cursor = 0;
     while (true) {
       const page = await this.list(
@@ -104,6 +107,7 @@ export class Repository {
   async acquire(sessionId: number) {
     await this.get("sessions", sessionId);
     const sessionKey = `${this.owner.id}:${sessionId}`;
+    const options = this.options;
     // 过期锁用带条件删除，不能删掉另一轮新获取的锁。
     await this.payload.delete({
       collection: "session-locks",
@@ -120,7 +124,7 @@ export class Repository {
     try {
       lock = await this.create("session-locks", {
         sessionKey,
-        expiresAt: new Date(Date.now() + 180_000).toISOString(),
+        expiresAt: new Date(Date.now() + SESSION_LEASE_MS).toISOString(),
       });
     } catch {
       throw new AppError(
@@ -128,9 +132,21 @@ export class Repository {
         "阿 J 先生正在回复，请稍后重试；若刚才意外中断，请三分钟后再试",
       );
     }
-    return async () => {
-      await this.remove("session-locks", lock.id);
-    };
+    return holdSessionLease({
+      // SQLite can reuse a deleted row ID. A replacement acquired after expiry
+      // has a newer creation time, which fences the previous worker as well.
+      owner: this.owner.id, id: lock.id, createdAt: lock.createdAt, expiresAt: Date.parse(lock.expiresAt),
+      renew: async (now, expiresAt) => {
+        const result = await this.payload.update({ collection: "session-locks", ...options,
+          where: { and: [{ id: { equals: lock.id } }, { createdAt: { equals: lock.createdAt } }, { owner: { equals: this.owner.id } }, { expiresAt: { greater_than: new Date(now).toISOString() } }] },
+          data: { expiresAt: new Date(expiresAt).toISOString() },
+        });
+        return result.docs.length === 1 && result.errors.length === 0;
+      },
+      release: async () => {
+        await this.payload.delete({ collection: "session-locks", ...options, where: { and: [{ id: { equals: lock.id } }, { createdAt: { equals: lock.createdAt } }, { owner: { equals: this.owner.id } }] } });
+      },
+    });
   }
 }
 

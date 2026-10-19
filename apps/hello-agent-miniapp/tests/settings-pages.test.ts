@@ -10,6 +10,7 @@ const platform = vi.hoisted(() => ({
   eventCenter: { on: vi.fn(), off: vi.fn(), trigger: vi.fn() },
 }));
 const api = vi.hoisted(() => ({
+  getSafety: vi.fn(), submitSafety: vi.fn(),
   getLegal: vi.fn(), getPrivacy: vi.fn(), establishIdentity: vi.fn(),
   updateConsent: vi.fn(),
   deletePersonalData: vi.fn(),
@@ -28,6 +29,8 @@ async function mount(component: typeof PrivacyHome) { await act(async () => { re
 beforeEach(() => {
   vi.clearAllMocks(); platform.params = {};
   api.getLegal.mockResolvedValue(policy);
+  api.getSafety.mockResolvedValue({ configuration: { configured: false }, cases: [] });
+  api.submitSafety.mockResolvedValue({ receipt: "synthetic-receipt" });
   api.establishIdentity.mockResolvedValue(undefined);
   api.getPrivacy.mockResolvedValue({ policy, state: "unaccepted", consent: null, expiresAt: null, hasRecoveryCode: false });
 });
@@ -103,23 +106,26 @@ it("删除需要完整确认短语，打开页面不会删除数据", async () =
   expect(button("确认删除在线数据").props.disabled).toBe(true);
   expect(api.deletePersonalData).not.toHaveBeenCalled();
 });
-it("帮助只读取公开联系渠道，右侧图标刷新且不建立身份", async () => {
+it("帮助读取联系渠道和本人受理记录，右侧图标支持刷新", async () => {
   await mount(HelpPage);
   const refresh = renderer.root.findAllByType("button").find((item) => item.props["aria-label"] === "刷新帮助与反馈")!;
   api.getLegal.mockResolvedValueOnce({ ...policy, contact: "updated@example.invalid" });
   await act(async () => { refresh.props.onClick(); });
   expect(api.getLegal).toHaveBeenCalledTimes(2);
   expect(view()).toContain("updated@example.invalid");
-  expect(api.establishIdentity).not.toHaveBeenCalled();
+  expect(api.establishIdentity).toHaveBeenCalledTimes(2);
+  expect(api.getSafety).toHaveBeenCalledTimes(2);
   expect(renderer.root.findAllByType("button").some((item) => item.props["aria-label"] === "关闭帮助与反馈")).toBe(true);
 });
-it("反馈未开放时没有可提交表单或虚构受理记录", async () => {
+it("反馈关联指定轮次，提交成功前不虚构受理记录", async () => {
   platform.params = { turnId: "42" };
   await mount(HelpPage);
-  expect(button("在线反馈暂未开放").props.disabled).toBe(true);
-  expect(renderer.root.findAllByType("textarea")).toHaveLength(0);
-  expect(view()).toContain("回应编号 #");
+  expect(button("提交反馈").props.disabled).toBe(true);
   expect(view()).not.toContain("已提交，受理编号");
+  act(() => renderer.root.findByType("textarea").props.onInput({ detail: { value: "这条回应需要人工复核" } }));
+  await act(async () => { button("提交反馈").props.onClick(); });
+  expect(api.submitSafety).toHaveBeenCalledWith({ kind: "complaint", category: "other", description: "这条回应需要人工复核", turnId: 42 });
+  expect(view()).toContain("synthetic-receipt");
 });
 it("帮助联系渠道读取失败显示错误，刷新后恢复", async () => {
   api.getLegal.mockRejectedValueOnce(new Error("联系渠道读取失败"));

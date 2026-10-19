@@ -1,3 +1,7 @@
+import { publicImageState } from "../../../../images/service";
+import { OperationsService } from "../../../../operations/service";
+import { imageGenerationConfigured } from "../../../../images/wan";
+import { imageReviewConfigured } from "../../../../operations/image-review";
 import { avatarResponse, readProfile, PROFILE_BODY_LIMIT } from "../../../../profile/service";
 import { AgeService } from "../../../../age/service";
 import { agePost } from "../../../../age/http";
@@ -8,7 +12,7 @@ import { privacyService } from "../../../../privacy/service";
 import { z } from "zod";
 import { cms } from "../../../../cms/client";
 import { Repository } from "../../../../cms/repository";
-import { AppError } from "../../../../domain/contracts";
+import { AppError, turnSchema } from "../../../../domain/contracts";
 import { GreetingService } from "../../../../domain/greetings";
 import { ContextService } from "../../../../domain/context";
 import { adConfiguration } from "../../../../domain/rewarded-ads";
@@ -24,6 +28,7 @@ import {
 } from "../../../../server/auth";
 import { withCredentialExecution, withCredentialLock } from "../../../../server/credential-lock";
 import { rateLimitLogin } from "../../../../server/login-limits";
+import { reservePublicAdmission } from "../../../../server/public-admission";
 import { failure, readJson, rateLimit } from "../../../../server/http";
 import { agentStream, readAgentInput } from "../../../../server/ag-ui";
 import {
@@ -39,7 +44,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 90;
+export const maxDuration = 240;
 type Context = { params: Promise<{ path: string[] }> };
 const json = (value: unknown) =>
   Response.json(value, { headers: { "Cache-Control": "no-store" } });
@@ -53,6 +58,7 @@ export async function GET(request: Request, context: Context) {
     if (path[0] === "config")
       return json({
         platformConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
+        imageGenerationConfigured: imageGenerationConfigured() && imageReviewConfigured(),
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
         origin: process.env.HELLO_ORIGIN || "http://127.0.0.1:3310",
         advertisement: adConfiguration(),
@@ -61,6 +67,11 @@ export async function GET(request: Request, context: Context) {
     const payload = await cms();
     const owner = await authenticate(payload, request);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
+    if (path[0] === "safety") {
+      if (owner.auth === "bearer") throw new AppError(403, "请本人在小程序或网页中查看投诉处理结果");
+      const operations = new OperationsService(payload);
+      return json({ configuration: await operations.configuration(), cases: await operations.mine(owner, path[1]) });
+    }
       if (path[0] === "age" && path.length === 1) return json(await new AgeService(payload, owner).status());
       if (path[0] === "privacy") return await privacyGet(payload, owner, path[1], request);
       if (owner.auth === "bearer") {
@@ -168,6 +179,7 @@ export async function POST(request: Request, context: Context) {
         throw new AppError(403, "浏览器请使用访客 Cookie 入口");
       // 访客凭证仅用于登录前状态和数据权利；业务读取也必须完成微信登录。
       rateLimitLogin(request, "miniapp-identity");
+      await reservePublicAdmission(payload, request, "identity");
       return json(await mintCredential(payload, "miniapp"));
     }
     if (path[0] === "identity") {
@@ -178,6 +190,7 @@ export async function POST(request: Request, context: Context) {
       } catch (error) {
         if (!(error instanceof AppError && error.status === 401)) throw error;
       }
+      await reservePublicAdmission(payload, request, "identity");
       const credential = await mintCredential(payload, "cookie");
       const response = json({ owner: credential.owner });
       const secure = (process.env.HELLO_ORIGIN || "").startsWith("https:")
@@ -192,6 +205,15 @@ export async function POST(request: Request, context: Context) {
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
     if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
+    if (path[0] === "safety") {
+      if (owner.auth === "bearer") throw new AppError(403, "请本人在小程序或网页中提交举报或申诉");
+      const body = await readJson(request, 8 * 1024);
+      return await withAuthenticatedExecution(payload, request, owner, async (current) => {
+        await reservePublicAdmission(payload, request, "safety");
+        return json(await new OperationsService(payload).complain(current, body));
+      });
+    }
+    // Complaints remain available when generation or its request quota is blocked.
     // External business traffic cannot spend the person's privacy-control quota.
     rateLimit(path[0] === "token" && owner.auth !== "bearer" ? `privacy-control:${owner.id}` : owner.id);
     if (path[0] === "token") {
@@ -229,8 +251,15 @@ export async function POST(request: Request, context: Context) {
         // The stream starts generation before returning its Response. A nested
         // lease keeps revocation excluded until that work finishes or fails,
         // including when the client disconnects.
-        return agentStream({ generateGreeting: (args) => withCredentialExecution(owner.id, () => service.generateGreeting(args)) }, input);
+        return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)) }, input);
       }
+    if (path[0] === "image-resume" && path.length === 1) {
+      const retry = z.object({ turnId: z.number().int().positive(), requestId: z.string().uuid(), apiKey: z.string().min(10).max(256).optional() }).strict().parse(body);
+      const row = await service.repo.get("greetings", retry.turnId);
+      await privacy.requireInput(row.input);
+      const args = turnSchema.parse({ sessionId: row.sessionId, requestId: retry.requestId, input: row.input, mode: row.mode, apiKey: retry.apiKey });
+      return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) }, args, row.id);
+    }
       if (path[0] === "context") {
         const args = z
           .object({
@@ -288,7 +317,7 @@ export async function POST(request: Request, context: Context) {
       }
       if (path[0] === "greet") {
         await privacy.requireInput(body);
-        return json(await service.generateGreeting(body));
+        return json(publicImageState(await service.generateGreeting(body)));
       }
       if (path[0] === "upload") {
         await privacy.requireImageInput();

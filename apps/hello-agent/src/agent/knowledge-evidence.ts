@@ -6,6 +6,7 @@ const sourceSchema = z.object({
   library: z.string(),
   title: z.string(),
   excerpt: z.string(),
+  sourceId: z.string().optional(),
   referenceId: z.string().optional(),
   searchQuery: z.string().optional(),
   readStatus: z.string().optional(),
@@ -28,6 +29,8 @@ export function evidenceFromSnapshot(
   approach: string,
   snapshot: unknown,
 ): KnowledgeEvidence {
+  const stored = z.object({ state: z.object({ safetyKnowledgeEvidence: z.object({ approach: z.string(), label: z.string(), query: z.string(), sources: z.array(sourceSchema.extend({ cited: z.boolean() })), notices: z.array(z.string()) }) }) }).safeParse(snapshot);
+  const previous = stored.success ? stored.data.state.safetyKnowledgeEvidence : undefined;
   const document = z
     .object({
       events: z.array(
@@ -42,9 +45,10 @@ export function evidenceFromSnapshot(
       ),
     })
     .safeParse(snapshot);
-  let context: z.infer<typeof contextSchema> | undefined;
+  // 已脱敏的历史从独立依据字段恢复；本次新事件仍须参与计算，不能被旧快照短路。
+  let context: z.infer<typeof contextSchema> | undefined = previous;
   const calls = new Map<string, string[]>();
-  let cited: string[] = [];
+  let cited: string[] = previous?.sources.filter((source) => source.cited).map((source) => source.referenceId || "") ?? [];
   for (const event of document.success ? document.data.events : []) {
     for (const part of event.content?.parts ?? []) {
       const item = z
@@ -128,15 +132,21 @@ export async function readTurnKnowledge(payload: Payload, turnId: number) {
   const rows = await payload.find({
     collection: "adk-sessions",
     depth: 0,
-    limit: 8,
+    limit: 100,
+    sort: "-id",
     where: {
       and: [
         { owner: { equals: turn.owner } },
-        { key: { in: approaches.map((key) => prefix + key) } },
+        { key: { contains: prefix } },
       ],
     },
   });
-  return rows.docs.map((row) =>
-    evidenceFromSnapshot(row.key.slice(prefix.length), row.snapshot),
-  );
+  const found = new Set<string>();
+  return rows.docs.flatMap((row) => {
+    if (!row.key.startsWith(prefix)) return [];
+    const approach = row.key.split(":").at(-1)!;
+    if (!approaches.includes(approach) || found.has(approach)) return [];
+    found.add(approach);
+    return [evidenceFromSnapshot(approach, row.snapshot)];
+  });
 }

@@ -17,3 +17,6 @@ export class AppError extends Error {
     super(message);
   }
 }
+
+// Distinguishes a terminal moderation verdict from provider or storage failure.
+export class ContentReviewError extends AppError {}

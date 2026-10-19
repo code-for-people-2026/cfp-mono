@@ -3,3 +3,8 @@
 !.env.example
 next-env.d.ts
 public/chat/
+
+.next-operations/
+.next-operations-reviewed/
+.next-age-verification/
+.next-image-generation/

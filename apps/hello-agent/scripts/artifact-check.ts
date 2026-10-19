@@ -27,6 +27,8 @@ const { mintCredential, COOKIE } = await import("../src/server/auth");
 const { GET } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
+// 本脚本验证作品协议与保存链路；真实审核失败关闭另由 operations/moderation 检查覆盖。
+const syntheticReviews = { moderate: async () => {}, imageReviewer: async () => ({ decision: "allow" as const, category: "synthetic-artifacts", version: "mock-pixels-test-only" }) };
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
@@ -38,6 +40,7 @@ try {
   });
   const service = new GreetingService(repo, (request) =>
     runGreeting(request, model),
+    undefined, undefined, syntheticReviews,
   );
   const session = await service.createSession("回应作品测试");
   const input = {
@@ -242,6 +245,7 @@ try {
   ]);
   const repairedService = new GreetingService(repo, (request) =>
     runGreeting(request, repairedModel),
+    undefined, undefined, syntheticReviews,
   );
   const repaired = await repairedService.generateGreeting({
     ...input,

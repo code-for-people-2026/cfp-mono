@@ -65,6 +65,19 @@ const completionSchema = z.object({
     .optional(),
 });
 
+export function normalizedDeepSeekKey(value: string | undefined) {
+  const key = value?.trim();
+  return key && /^[\x21-\x7E]+$/.test(key) ? key : undefined;
+}
+
+// Keep only a safe classification and HTTP status. Never retain provider bodies,
+// request headers, credentials, or an original exception as a cause.
+export class DeepSeekError extends Error {
+  constructor(message: string, readonly kind: "credential" | "http" | "transport" | "response", readonly status?: number) {
+    super(message);
+  }
+}
+
 // 平台适配器和独立客户端共用协议层；这里不导入 ADK、CMS 或业务服务。
 // 固定官方端点，禁止重定向携带密钥；不记录请求头、响应原文或隐藏推理。
 export async function completeDeepSeek(
@@ -72,13 +85,15 @@ export async function completeDeepSeek(
   apiKey: string,
   signal?: AbortSignal,
 ) {
+  const key = normalizedDeepSeekKey(apiKey);
+  if (!key) throw new DeepSeekError("DeepSeek 密钥配置无效", "credential");
   try {
     const response = await fetch("https://api.deepseek.com/chat/completions", {
       method: "POST",
       redirect: "error",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
+        Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
         ...request,
@@ -90,16 +105,14 @@ export async function completeDeepSeek(
         : AbortSignal.timeout(60_000),
     });
     if (!response.ok) {
-      await response.body?.cancel();
-      throw new DeepSeekError(`DeepSeek 请求失败（HTTP ${response.status}）`);
+      await response.body?.cancel().catch(() => {});
+      throw new DeepSeekError(`DeepSeek 请求失败（HTTP ${response.status}）`, "http", response.status);
     }
     const parsed = completionSchema.safeParse(await response.json());
-    if (!parsed.success) throw new DeepSeekError("DeepSeek 响应格式不符合约定");
+    if (!parsed.success) throw new DeepSeekError("DeepSeek 响应格式不符合约定", "response");
     return parsed.data;
   } catch (error) {
     if (error instanceof DeepSeekError) throw error;
-    throw new DeepSeekError("DeepSeek 请求未完成，请检查网络或稍后重试");
+    throw new DeepSeekError("DeepSeek 请求未完成，请检查网络或稍后重试", "transport");
   }
 }
-
-class DeepSeekError extends Error {}

@@ -8,6 +8,9 @@ import { privacyPolicy } from "./policy";
 import { maintainPrivacy } from "./maintenance";
 import { writeDeletionLedger } from "./deletion-ledger";
 
+// Safety erasure uses its own real-DB integration tests; these doubles isolate privacy lifecycle concurrency.
+vi.mock("../operations/retention", () => ({ eraseOperationsEvidence: vi.fn(async () => ({ erased: 0, held: 0, notice: "测试证据清理" })) }));
+
 // Repository calls are unit-test doubles;
 // ledger durability and actual file writes are covered in separate tests.
 vi.mock("./profile-store", () => ({ updateProfile: async (payload: Payload, expected: PrivacyProfile, data: Partial<PrivacyProfile>) => {
