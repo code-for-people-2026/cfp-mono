@@ -15,9 +15,12 @@ export async function generatedJpeg(bytes: Buffer, contentId: string) {
     const pixels = await sharp(bytes, { limitInputPixels: 20_000_000 }).rotate().resize(2048, 2048, { fit: "inside", withoutEnlargement: true }).flatten({ background: "white" }).png().toBuffer();
     const { width, height } = await sharp(pixels).metadata();
     if (!width || !height) throw new Error("missing size");
-    const footer = Buffer.from(`<svg width="${width}" height="48"><rect width="100%" height="48" fill="white"/><text x="${width - 16}" y="34" text-anchor="end" font-family="sans-serif" font-size="24" fill="#111">阿J先生生成</text></svg>`);
+    const fontSize = Math.max(1, Math.min(28, Math.round(Math.min(width, height) * 0.022)));
+    const padding = Math.max(1, Math.round(fontSize * 0.8));
+    // One in-image label, readable on light and dark pixels without adding a border.
+    const watermark = Buffer.from(`<svg width="${width}" height="${height}"><text x="${width - padding}" y="${height - padding}" text-anchor="end" font-family="sans-serif" font-size="${fontSize}" fill="white" fill-opacity="0.9" stroke="black" stroke-opacity="0.6" stroke-width="${fontSize / 14}" stroke-linejoin="round" paint-order="stroke">阿J先生生成</text></svg>`);
     for (const quality of [90, 80, 65]) {
-      const output = await sharp(pixels).extend({ bottom: 48, background: "white" }).composite([{ input: footer, top: height, left: 0 }]).withXmp(xmp).jpeg({ quality }).toBuffer();
+      const output = await sharp(pixels).composite([{ input: watermark, top: 0, left: 0 }]).withXmp(xmp).jpeg({ quality }).toBuffer();
       if (output.length <= MAX_STORED_IMAGE_BYTES) return output;
     }
     throw new AppError(413, "生成图片超过保存上限，请选择更简单的画面后重试");

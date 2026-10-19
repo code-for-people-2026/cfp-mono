@@ -6,17 +6,19 @@ import { uploadedAiXmp } from "../labeling/upload-provenance";
 import { aiMetadata, labelPng } from "../labeling/metadata";
 
 describe("生成图片保存格式与标识", () => {
-  it("转为带可见页脚与可读 AIGC 来源的 JPEG，大小满足现有存储", async () => {
-    const source = await sharp({ create: { width: 1280, height: 1280, channels: 3, background: "#ff7755" } }).png().toBuffer();
+  it.each(["#111111", "#ffffff"])("图内水印在 %s 背景可见，不增加白边或改变尺寸，并保留 AIGC 来源", async (background) => {
+    const source = await sharp({ create: { width: 1280, height: 1280, channels: 3, background } }).png().toBuffer();
     const image = await generatedJpeg(source, "test-turn-1");
     const metadata = await sharp(image).metadata();
-    expect(metadata).toMatchObject({ format: "jpeg", width: 1280, height: 1328 });
+    expect(metadata).toMatchObject({ format: "jpeg", width: 1280, height: 1280 });
     expect(image.length).toBeLessThanOrEqual(MAX_STORED_IMAGE_BYTES);
     expect(metadata.exif).toBeUndefined();
     expect(await uploadedAiXmp(image)).toContain("AIGC");
-    const footer = await sharp(image).extract({ left: 0, top: 1280, width: 1280, height: 48 }).stats();
-    expect(footer.channels[0].min).toBeLessThan(100);
-    expect(footer.channels[0].max).toBeGreaterThan(245);
+    const corner = await sharp(await sharp(image).extract({ left: 1030, top: 1200, width: 250, height: 80 }).toBuffer()).stats();
+    expect(corner.channels[0].max - corner.channels[0].min).toBeGreaterThan(60);
+    const untouched = await sharp(await sharp(image).extract({ left: 0, top: 1200, width: 800, height: 80 }).toBuffer()).stats();
+    expect(untouched.channels[0].stdev).toBeLessThan(1);
+    expect(untouched.channels[0].mean).toBeCloseTo(background === "#ffffff" ? 255 : 17, 0);
   });
   it("不会把无效供应商数据伪装为成功图片", async () => {
     await expect(generatedJpeg(Buffer.from("not-an-image"), "test")).rejects.toThrow("格式无效");

@@ -133,6 +133,8 @@ try {
     assert.equal(createHash("sha256").update(stored).digest("hex"), object.sha256);
     const metadata = await sharp(stored).metadata();
     assert.equal(metadata.format, "jpeg");
+    if (process.env.HELLO_IMAGE_LIVE_CAPTURE === "true")
+      await writeFile(path.join(output, `generated-${report.length + 1}.jpg`), stored, { mode: 0o600 });
     const turn = history.find((entry) => entry.artifacts?.some((a) => a.kind === "image" && a.source.type === "media" && a.source.mediaId === row.id));
     assert.ok(turn, "真实图片必须关联为手机端的回应作品");
     assert.equal(turn.status, "completed");
