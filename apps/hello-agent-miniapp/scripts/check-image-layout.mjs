@@ -31,7 +31,7 @@ try {
       const visible = await page.locator("img").evaluate((img) => {
         const image = img.getBoundingClientRect(), frame = img.parentElement.getBoundingClientRect();
         const thumbnail = img.closest(".artifact-thumbnail"), clip = thumbnail.getBoundingClientRect();
-        const style = getComputedStyle(thumbnail), border = parseFloat(style.borderLeftWidth);
+        const style = img.ownerDocument.defaultView.getComputedStyle(thumbnail), border = parseFloat(style.borderLeftWidth);
         const radius = Math.max(0, parseFloat(style.borderBottomRightRadius) - border);
         const corners = [[image.left, image.top], [image.right, image.top], [image.left, image.bottom], [image.right, image.bottom]];
         const insideRoundedClip = corners.every(([x, y]) => {
