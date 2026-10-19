@@ -13,6 +13,8 @@ const failures = {
   current: "",
   "escaped-text": "",
   "direct-re-export": "",
+  "dynamic-ag-ui": "",
+  "missing-ag-ui": "缺少 AG-UI 请求",
   legacy: "缺少独立设置路由",
   "legacy-renderer": "缺少 CopilotKit A2UI 渲染器",
   "missing-chunk": "无法读取发布文件 js/index.settings.js",
@@ -26,6 +28,7 @@ const failures = {
   "missing-privacy-entry": "遗漏设置页：隐私与数据",
   "missing-authorization-route": "缺少独立授权管理路由",
   "missing-connection-options": "遗漏连接方式页：mode-option",
+  "legacy-help": "遗漏帮助与反馈页：提交反馈",
   "missing-settings-loader": "缺少设置页面模块",
 };
 const privacyPages = [
@@ -89,11 +92,12 @@ it.each(scenarios)(
         })
         .join(""),
       "/chat/js/index.chat.js":
-        "chat-composer input-toggle artifact-surface /api/hello/ag-ui" +
+        "chat-composer input-toggle artifact-surface " +
+        (scenario === "missing-ag-ui" ? "/api/hello/sessions" : scenario === "dynamic-ag-ui" ? '`/api/hello/${route}` consume("ag-ui") consume("image-resume")' : "/api/hello/ag-ui") +
         (scenario === "legacy-renderer" ? "" : " data-surface-id a2ui-surface"),
       "/chat/js/index.settings.js": `settings-page settings-header 连接方式 帮助与反馈 ${scenario === "missing-privacy-entry" ? "" : "隐私与数据"}`,
       "/chat/js/index.connection.js": `生成专用连接令牌 ${scenario === "missing-connection-options" ? "" : "mode-option"}`,
-      "/chat/js/index.help.js": "在线反馈暂未开放 联系渠道",
+      "/chat/js/index.help.js": scenario === "legacy-help" ? "在线反馈暂未开放 联系渠道" : "提交反馈 我的受理记录 联系渠道",
       "/chat/js/index.privacy.js":
         scenario === "empty-privacy-module"
           ? "export{}"
