@@ -12,7 +12,8 @@ const { wechatLogin } = await import("../src/age/wechat");
 const { ageNotice } = await import("../src/age/policy");
 const { onboardingPreview } = await import("../src/age/preview");
 const { readProfile, profileBinding, generatedProfile, saveLoginProfile, readAvatar, exportProfile, deleteProfileImages } = await import("../src/profile/service");
-const { mintCredential, authenticate } = await import("../src/server/auth");
+const { mintCredential, authenticate, COOKIE } = await import("../src/server/auth");
+const { GET } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
 const objects = new Map<string, Buffer>();
 const store: ImageObjectStore = {
@@ -31,6 +32,18 @@ try {
   assert.equal((await call("privacy", visitor.token)).status, 200);
   const first = await wechatLogin(payload, request(), { ...input, nickname: " " }, async () => "fixture-wechat-profile");
   const defaults = await readProfile(payload, first.owner);
+  // H5 bootstrap reads this real route alongside sessions. A native-only guard
+  // used to prevent the entire history (including generated images) loading.
+  const linked = await authenticate(payload, request(first.token));
+  const web = await mintCredential(payload, "cookie", first.owner, linked.wechatKey);
+  const profileHttp = (headers: HeadersInit) => GET(new Request("http://localhost/api/hello/profile", { headers }), { params: Promise.resolve({ path: ["profile"] }) });
+  const webProfile = await profileHttp({ Cookie: `${COOKIE}=${web.token}` });
+  assert.equal(webProfile.status, 200, "已登录 H5 必须能读取本人资料并完成聊天启动");
+  assert.deepEqual(await webProfile.json(), defaults);
+  assert.equal((await profileHttp({ Authorization: `Bearer ${first.token}` })).status, 200);
+  assert.equal((await profileHttp({})).status, 401);
+  const webVisitor = await mintCredential(payload, "cookie");
+  assert.equal((await profileHttp({ Cookie: `${COOKIE}=${webVisitor.token}` })).status, 403);
   assert.deepEqual(defaults, generatedProfile(first.owner));
   assert.ok(defaults.nickname.length <= 24);
   assert.ok(new Set(Array.from({ length: 100 }, (_, index) => generatedProfile(`owner-${index}`).nickname)).size > 50);

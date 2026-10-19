@@ -53,6 +53,12 @@ DeepSeek → `generate_image` → 百炼万相 → 文件验证与图片审核 �
 
 ## 验证入口
 
+`HELLO_IMAGE_LIVE_TEST=true pnpm --filter @cfp/hello-agent test:images:live` 是显式付费验收，须先构建 H5 和 Next 并提供真实模型、图审、OSS 与隐私运营环境。它只在新建临时数据库中创建合成身份，不修改部署库或核验真实年龄；通过原生凭证发送实际 AG-UI 请求，检查真实媒体作品、Green 放行、OSS 哈希回读、本人/他人/匿名读取、导出及对象删除。失败时也清理测试身份前缀；清理失败保留隔离库供重试，不把供应商模拟结果当作实测。
+
+可设置 `HELLO_IMAGE_LIVE_BROWSER=true` 暂停在浏览器验收阶段；本地 `.data/image-live/access.json` 保存同一测试身份的临时 Cookie，最长等待 15 分钟。浏览器检查结束后创建 `.data/image-live/browser-done` 继续存储与删除验收。凭证不能提交、打印或导入正式用户环境；脚本退出时删除该文件。报告写入 `.data/image-live/report.json`。
+
+2026-10-19 基于主分支 `4bfed9da` 的真实验收发现并修复两项问题：H5 已登录身份读取本人资料被原生客户端专用判断拦住，导致聊天历史无法加载；启用百炼没有更新第三方说明和政策版本。本人资料现在支持已有登录绑定的 Cookie，访客和外部令牌仍不能借此读取资料；开启万相会增加北京接收方说明并要求重新同意。两个问题均已先复现失败再通过回归检查，资料检查纳入集成入口。年龄核验逻辑及供应商配置未改动。
+
 `pnpm --filter @cfp/hello-agent test:images` 使用真实 Payload、ADK、图片编码及迁移，以明确标注的合成供应商和对象存储覆盖工具调用、单次提交、下载/存储中断恢复、未知回执、审核拒绝、跨用户鉴权、导出与删除。`scripts/image-quota-check.ts` 使用真实 Payload 和合成供应商验证 BYOK/平台共享额度、恢复不扣生图额度、未知提交不退款、原子双额度及多进程重启；`scripts/image-review-quota-check.ts` 验证统一图片审核预算、供应商前拒绝、不误建案件及原任务恢复。两者不会调用付费服务。`test` 覆盖万相 HTTP 契约、URL 白名单、体积限制、标识及 Green 风险映射；`test:operations` 覆盖现有处置流程。合成测试不能作为云服务已开通或真实模型评测证据。
 
 参考：[万相 2.6 API](https://help.aliyun.com/zh/model-studio/text-to-image-v2-api-reference)、[图片审核增强版](https://help.aliyun.com/zh/document_detail/467829.html)、[上传令牌权限](https://help.aliyun.com/zh/document_detail/2926827.html)、[图片审核权限](https://help.aliyun.com/zh/document_detail/2528742.html)、[调研记录](image-generation-research.md)。
