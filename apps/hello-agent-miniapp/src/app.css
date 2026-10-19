@@ -1366,6 +1366,42 @@ input {
   width: 100%;
   height: 100%;
 }
+.artifact-image-frame {
+  position: relative;
+}
+.artifact-thumbnail .artifact-image-frame {
+  width: 100%;
+  height: 100%;
+}
+.artifact-image-full .artifact-image-frame.is-loading {
+  min-height: 120px;
+}
+.artifact-image-frame.is-loading > .artifact-image,
+.artifact-image-frame.is-loading > .artifact-thumbnail-image {
+  opacity: 0;
+}
+.artifact-image-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.artifact-image-spinner,
+.artifact-image-spinner .chat-icon {
+  width: 20px;
+  height: 20px;
+}
+.artifact-image-spinner {
+  opacity: 0.55;
+  animation: artifact-image-spin 0.9s linear infinite;
+}
+@keyframes artifact-image-spin {
+  to { transform: rotate(360deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-image-spinner { animation: none; }
+}
 .artifact-thumbnail .artifact-caption {
   padding: 5px;
   font-size: 10px;

@@ -194,7 +194,7 @@ it.each([false, true])(
   },
 );
 
-it("H5 图片加载及失败保留系统来源，图片说明保留生成来源", async () => {
+it("图片解码完成前显示无文字 SVG 动画，失败与图片说明保留各自来源", async () => {
   vi.stubEnv("TARO_ENV", "h5");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { ArtifactImage } = await import("../src/chat/artifact-components");
@@ -214,12 +214,18 @@ it("H5 图片加载及失败保留系统来源，图片说明保留生成来源"
       renderer!.root
         .findAllByType("text")
         .find((item) => item.children.join("") === value)!;
-    expect(text("加载中…").props["data-ai-generated"]).toBe("false");
+    expect(text("加载中…")).toBeUndefined();
+    const loading = () => renderer!.root.findAllByProps({ "aria-label": "图片加载中" });
+    expect(loading()).toHaveLength(1);
     expect(text(images[0].alt).props["data-ai-generated"]).toBe("true");
     expect(text(images[0].alt).props["data-ai-external"]).toBe("true");
-    await act(async () => {}); // Let the URL resolve, then simulate the image load failure.
+    await act(async () => {}); // A resolved URL alone must not remove the loading indicator.
+    expect(loading()).toHaveLength(1);
+    const image = () => renderer!.root.findByProps({ className: "artifact-image" });
+    act(() => image().props.onLoad());
+    expect(loading()).toHaveLength(0);
     act(() => {
-      renderer!.root.findByType("image").props.onError();
+      image().props.onError();
     });
     expect(text("图片暂不可用").props["data-ai-generated"]).toBe("false");
   } finally {
