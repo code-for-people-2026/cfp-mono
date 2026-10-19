@@ -1355,8 +1355,10 @@ input {
 }
 .artifact-thumbnail {
   flex-shrink: 0;
+  box-sizing: border-box;
   width: 54px;
   height: 54px;
+  padding: 3px;
   border-radius: 8px;
   overflow: hidden;
   background: #eaf0e5;

@@ -30,7 +30,16 @@ try {
       await page.locator("img").evaluate((img) => img.decode());
       const visible = await page.locator("img").evaluate((img) => {
         const image = img.getBoundingClientRect(), frame = img.parentElement.getBoundingClientRect();
-        return image.left >= frame.left - 0.1 && image.top >= frame.top - 0.1 && image.right <= frame.right + 0.1 && image.bottom <= frame.bottom + 0.1;
+        const thumbnail = img.closest(".artifact-thumbnail"), clip = thumbnail.getBoundingClientRect();
+        const style = getComputedStyle(thumbnail), border = parseFloat(style.borderLeftWidth);
+        const radius = Math.max(0, parseFloat(style.borderBottomRightRadius) - border);
+        const corners = [[image.left, image.top], [image.right, image.top], [image.left, image.bottom], [image.right, image.bottom]];
+        const insideRoundedClip = corners.every(([x, y]) => {
+          const dx = Math.max(clip.left + border + radius - x, 0, x - clip.right + border + radius);
+          const dy = Math.max(clip.top + border + radius - y, 0, y - clip.bottom + border + radius);
+          return dx * dx + dy * dy <= radius * radius + 0.1;
+        });
+        return insideRoundedClip && image.left >= frame.left - 0.1 && image.top >= frame.top - 0.1 && image.right <= frame.right + 0.1 && image.bottom <= frame.bottom + 0.1;
       });
       assert.ok(visible, `缩略图必须完整保留 ${width}×${height} 图片及右下角水印（stacked=${stacked}）`);
     }
