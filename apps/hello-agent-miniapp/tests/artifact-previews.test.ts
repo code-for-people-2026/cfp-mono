@@ -59,6 +59,8 @@ it("多图只显示一张缩略图卡片，点开官方渲染的完整列表；�
   });
   expect(byClass("artifact-preview")).toHaveLength(1);
   expect(byClass("artifact-thumbnail-image")).toHaveLength(2);
+  for (const thumbnail of byClass("artifact-thumbnail-image"))
+    expect(thumbnail.props.mode).toBe("aspectFit");
   expect(byClass("artifact-image")).toHaveLength(0);
   expect(text()).toContain("2 张图片");
   await click("artifact-preview");
@@ -66,6 +68,10 @@ it("多图只显示一张缩略图卡片，点开官方渲染的完整列表；�
     renderer.root.findAll((node) => String(node.type) === "root-portal"),
   ).toHaveLength(1);
   expect(byClass("artifact-image")).toHaveLength(2);
+  for (const [index, full] of byClass("artifact-image").entries()) {
+    expect(full.props.mode).toBe("widthFix");
+    expect(full.props.src).toBe(byClass("artifact-thumbnail-image")[index]!.props.src);
+  }
   expect(text()).toContain("第二张图片");
   act(() => byClass("artifact-image")[1]!.props.onClick());
   expect(platform.previewImage).toHaveBeenCalledWith({

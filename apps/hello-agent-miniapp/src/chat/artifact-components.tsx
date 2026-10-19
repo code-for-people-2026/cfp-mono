@@ -71,7 +71,7 @@ export function ArtifactImage({
           <Image
             className={thumbnail ? "artifact-thumbnail-image" : "artifact-image"}
             src={source}
-            mode={thumbnail ? "aspectFill" : "widthFix"}
+            mode={thumbnail ? "aspectFit" : "widthFix"}
             onLoad={() => setLoaded(true)}
             onError={() => setFailed(true)}
             onClick={

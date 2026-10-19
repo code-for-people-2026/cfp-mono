@@ -1366,6 +1366,10 @@ input {
   width: 100%;
   height: 100%;
 }
+.artifact-thumbnail-image .taro-img__mode-aspectfit {
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
 .artifact-image-frame {
   position: relative;
 }
