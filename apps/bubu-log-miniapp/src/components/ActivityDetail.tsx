@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Image, ScrollView, Text, View } from '@tarojs/components'
-import { activityDetails, activityTone, activityTypeLabel, type Activity } from '../model'
+import { activityDetails, recordDetailFields, activityTone, activityTypeLabel, type Activity, type RecordEvent } from '../model'
 import './visualizations.css'
 
 export interface ActivityDetailProps {
@@ -9,19 +9,23 @@ export interface ActivityDetailProps {
   onClose: () => void
   photoUrl?: string | null
   photoLoading?: boolean
+  photoUrls?: string[]
+  photoCount?: number
+  recordEvent?: RecordEvent | null
 }
 
-export function ActivityDetail({ activity, onClose, photoUrl, photoLoading }: ActivityDetailProps) {
-  const [failedImage, setFailedImage] = useState('')
+export function ActivityDetail({ activity, onClose, photoUrl, photoLoading, photoUrls, photoCount, recordEvent }: ActivityDetailProps) {
+  const [failedImages, setFailedImages] = useState<string[]>([])
   if (!activity) return null
   const tone = activityTone(activity.type)
-  const details = activityDetails(activity)
+  const details = recordEvent ? recordDetailFields(activity, recordEvent) : activityDetails(activity)
   const image = photoUrl === undefined ? activity.poopPhotoUrl : photoUrl
+  const images = photoUrls ?? (image ? [image] : [])
+  const hasPhotos = !!activity.poopPhotoUrl || !!photoCount
 
-  async function previewImage() {
-    if (!image) return
+  async function previewImage(current: string) {
     try {
-      await Taro.previewImage({ current: image, urls: [image] })
+      await Taro.previewImage({ current, urls: images })
     } catch {
       void Taro.showToast({ title: '图片暂时无法打开', icon: 'none' })
     }
@@ -39,7 +43,7 @@ export function ActivityDetail({ activity, onClose, photoUrl, photoLoading }: Ac
           <View className='bubu-detail-fields'>
             {details.map((detail, index) => <View className='bubu-detail-row' key={`${detail.label}-${index}`}><Text className='bubu-detail-label'>{detail.label}</Text><Text className='bubu-detail-value' selectable>{detail.value}</Text></View>)}
           </View>
-          {activity.poopPhotoUrl && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片</Text>{photoLoading ? <View className='bubu-photo-error'>正在读取照片…</View> : !image || failedImage === image ? <View className='bubu-photo-error'>图片暂时无法加载</View> : <Image className='bubu-detail-photo' src={image} mode='aspectFill' onClick={() => void previewImage()} onError={() => setFailedImage(image)} />}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
+          {hasPhotos && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片{photoCount && photoCount > 1 ? ` · ${photoCount} 张` : ''}</Text>{photoLoading ? <View className='bubu-photo-error'>正在读取照片…</View> : !images.length ? <View className='bubu-photo-error'>图片暂时无法加载</View> : images.map(url => failedImages.includes(url) ? <View className='bubu-photo-error' key={url}>图片暂时无法加载</View> : <Image key={url} className='bubu-detail-photo' src={url} mode='aspectFill' onClick={() => void previewImage(url)} onError={() => setFailedImages(previous => [...previous, url])} />)}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
           <View className='bubu-detail-bottom-space' />
         </ScrollView>
       </View>

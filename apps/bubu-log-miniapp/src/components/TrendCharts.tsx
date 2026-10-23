@@ -33,8 +33,9 @@ function LineChart({ rows, title, unit, series }: { rows: TrendRow[]; title: str
   const [selectedDate, setSelectedDate] = useState('')
   const selected = rows.findIndex((row) => row.date === selectedDate)
   const selectedRow = rows[selected >= 0 ? selected : rows.length - 1]
-  const hasData = rows.some((row) => row.hasData)
-  const maximum = Math.max(1, ...rows.flatMap((row) => row.hasData ? series.map((item) => row[item.key]) : []))
+  const known = (row: TrendRow, key: Series['key']) => row.hasData && (row.known?.[key] ?? true)
+  const hasData = rows.some((row) => series.some(item => known(row, item.key)))
+  const maximum = Math.max(1, ...rows.flatMap((row) => series.filter(item => known(row, item.key)).map(item => row[item.key])))
   const scaleMax = maximum <= 5 ? Math.ceil(maximum) : Math.ceil(maximum / 5) * 5
   const plotHeight = CHART_HEIGHT - 18
   const pointX = (index: number) => (index + 0.5) / rows.length * width
@@ -79,7 +80,7 @@ function LineChart({ rows, title, unit, series }: { rows: TrendRow[]; title: str
             {selected >= 0 && <View className='bubu-chart-selection' style={{ left: `${(selected + 0.5) / rows.length * 100}%` }} />}
             {width > 0 && series.map((item) => <View className='bubu-chart-series' key={item.key}>
               {rows.map((row, index) => {
-                if (!row.hasData) return null
+                if (!known(row, item.key)) return null
                 const previous = rows[index - 1]
                 const x = pointX(index)
                 const y = pointY(row[item.key])
@@ -88,7 +89,7 @@ function LineChart({ rows, title, unit, series }: { rows: TrendRow[]; title: str
                 const length = Math.hypot(x - fromX, y - fromY)
                 const angle = Math.atan2(y - fromY, x - fromX) * 180 / Math.PI
                 return <View key={row.date}>
-                  {previous?.hasData && <View className='bubu-chart-line' style={{ left: `${fromX}px`, top: `${fromY}px`, width: `${length}px`, backgroundColor: item.color, transform: `rotate(${angle}deg)` }} />}
+                  {previous && known(previous, item.key) && <View className='bubu-chart-line' style={{ left: `${fromX}px`, top: `${fromY}px`, width: `${length}px`, backgroundColor: item.color, transform: `rotate(${angle}deg)` }} />}
                   <View className={`bubu-chart-point${selected === index ? ' bubu-chart-point-selected' : ''}`} style={{ left: `${x}px`, top: `${y}px`, backgroundColor: item.color }} />
                 </View>
               })}
@@ -98,9 +99,10 @@ function LineChart({ rows, title, unit, series }: { rows: TrendRow[]; title: str
           </View>
         </View>
         {width > 0 && <View className='bubu-chart-x-axis'>{rows.map((row, index) => <View className='bubu-chart-x-cell' key={row.date}><Text className='bubu-chart-x-label'>{index === 0 || index === rows.length - 1 || index === Math.floor(rows.length / 2) ? row.label : ''}</Text></View>)}</View>}
-        {selectedRow && <View className='bubu-chart-reading'><Text className='bubu-chart-reading-date'>{dateLabel(selectedRow.date)}</Text>{selectedRow.hasData ? series.map((item) => <Text key={item.key} style={{ color: item.color }}>{item.label} {item.key === 'sleep' ? formatDuration(Math.round(selectedRow.sleep * 60)) : `${formatValue(selectedRow[item.key])} ${unit}`}</Text>) : <Text className='bubu-viz-caption'>暂无统计</Text>}</View>}
+        {selectedRow && <View className='bubu-chart-reading'><Text className='bubu-chart-reading-date'>{dateLabel(selectedRow.date)}</Text>{selectedRow.hasData ? series.map((item) => <Text key={item.key} style={{ color: item.color }}>{item.label} {known(selectedRow, item.key) ? item.key === 'sleep' ? formatDuration(Math.round(selectedRow.sleep * 60)) : `${formatValue(selectedRow[item.key])} ${unit}` : '暂无确定数值'}</Text>) : <Text className='bubu-viz-caption'>暂无统计</Text>}</View>}
+        {selectedRow?.coverage && <Text className='bubu-viz-footnote'>{selectedRow.coverage}</Text>}
         <Text className='bubu-viz-footnote'>点击图表查看每日数据 · 暂无统计的日期留空</Text>
-      </> : <View id={chartId} className='bubu-chart-empty'><View className='bubu-chart-empty-mark' /><Text>这段时间还没有统计</Text><Text className='bubu-viz-caption'>有统计的日子会在这里连成线</Text></View>}
+      </> : <View id={chartId} className='bubu-chart-empty'><View className='bubu-chart-empty-mark' /><Text>{rows.some(row => row.known) ? '这段时间暂无可确定数值' : '这段时间还没有统计'}</Text><Text className='bubu-viz-caption'>{selectedRow?.coverage || '有统计的日子会在这里连成线'}</Text></View>}
     </View>
   )
 }

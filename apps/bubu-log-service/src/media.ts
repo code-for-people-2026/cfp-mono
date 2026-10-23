@@ -8,6 +8,17 @@ export function protectLegacyPhotos(value: unknown, babyId: string): unknown {
   if (value.babyId !== babyId || typeof value.id !== "string") throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
   return { ...value, poopPhotoUrl: `/api/app/media/activities/${encodeURIComponent(value.id)}?babyId=${encodeURIComponent(babyId)}` };
 }
+/** Revisions and receipts nest legacy facts inside their owning event. */
+export function protectRecordPhotos(value: unknown, babyId: string, inheritedId?: string): unknown {
+  if (Array.isArray(value)) return value.map(item => protectRecordPhotos(item, babyId, inheritedId));
+  if (!object(value)) return value;
+  if (typeof value.babyId === "string" && value.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+  const id = typeof value.legacyId === "string" ? value.legacyId : typeof value.id === "string" && typeof value.startTime === "string" ? value.id : inheritedId;
+  return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => {
+    if (key === "poopPhotoUrl" && typeof item === "string" && item) return id ? [[key, `/api/app/media/activities/${encodeURIComponent(id)}?babyId=${encodeURIComponent(babyId)}`]] : [];
+    return [[key, protectRecordPhotos(item, babyId, id)]];
+  }));
+}
 export async function readLegacyPhoto(activity: unknown, babyId: string, options: MediaOptions): Promise<Response> {
   if (!object(activity) || activity.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
   if (typeof activity.poopPhotoUrl !== "string" || !activity.poopPhotoUrl) throw new AppError(404, "MEDIA_NOT_FOUND", "此记录没有照片。");

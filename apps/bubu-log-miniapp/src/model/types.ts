@@ -85,6 +85,40 @@ export interface DailyStat {
   projectileSpitUpCount?: number;
   createdAt?: string | null;
   updatedAt?: string | null;
+  /** Present only in sidecar mode; separate from the original DailyStat metrics. */
+  coverage?: RecordCoverage;
+  byType?: Record<string, RecordTypeSummary>;
+}
+
+export interface RecordCoverage {
+  recordedEvents: number; incompleteEvents: number; pendingFields: number; unknownFields: number;
+  ongoingEvents: number; pendingCandidates: number; duplicateCandidates: number; unresolvedTime: number;
+  knownMilkAmounts: number; unknownMilkAmounts: number; knownZeroMilkAmounts: number;
+  eventsWithUnknownFields: string[]; pendingEventIds: string[];
+}
+export interface RecordTypeSummary {
+  events: number; knownMinutes: number; knownCount: number; unknownCount: number;
+  knownMilkAmount: number; preparedMilkAmount: number; knownMilkAmounts: number;
+  unknownMilkAmounts: number; knownDurations: number; unknownDurations: number; ongoingEvents: number;
+}
+export interface RecordSummary { metrics: Record<string, number>; coverage: RecordCoverage; byType: Record<string, RecordTypeSummary> }
+export interface RecordEvent {
+  id: string; babyId: string; legacyId: string; version: number;
+  progress: "ongoing" | "ended" | "unknown"; projection: "candidate" | "pending" | "synced" | "conflict";
+  currentProgress: "ongoing" | "ended" | "unknown";
+  complete: boolean; states: Record<string, "known" | "pending" | "unknown" | "not_applicable" | "not_yet">;
+  missing: string[]; conflicts: Array<{ code: string; fields: string[] }>;
+  sources: Array<{ kind: "chat" | "wechat" | "manual"; sentAt: string }>;
+  attachmentIds: string[];
+}
+export interface RecordCollection {
+  activities: Activity[]; events: RecordEvent[];
+  questions: Array<{ id: string; babyId: string; eventId: string; state: "open" | "resolved" | "dismissed" }>;
+}
+export interface RecordSnapshot extends RecordCollection { summary: RecordSummary }
+export interface RecordSyncStatus {
+  id: string; enabled: boolean; lastSuccessAt: string | null; processedThrough: string | null;
+  pending: boolean; pendingMedia: number; failure: { code: string; at: string; attempts: number } | null;
 }
 
 export interface DaySummary {

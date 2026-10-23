@@ -1,15 +1,21 @@
-# 哺哺日记身份服务
+# 哺哺日记身份与录入服务
 
-[模块 #396](https://github.com/code-for-people-2026/cfp-mono/issues/396) 位于 [可视化 PR #399](https://github.com/code-for-people-2026/cfp-mono/pull/399) 之后，供后续 MCP、内置聊天、群绑定、运营和会员复用。所有新增代码在 cfp-mono；原 `sunmer-home/apps/bubu-log` 固定版本 `ac86de31b08bdf413e021e60240da2dcd8e63911` 只读参考，无真实数据迁移、群采集、支付或生产部署。
+身份模块 [#396](https://github.com/code-for-people-2026/cfp-mono/issues/396) 接续可视化模块；录入模块 [#393](https://github.com/code-for-people-2026/cfp-mono/issues/393) 在同一服务提供真实 MCP、持久化修订与追问、私有图片和受控群采集。所有新增代码在 cfp-mono；原 `sunmer-home/apps/bubu-log` 固定版本 `ac86de31b08bdf413e021e60240da2dcd8e63911` 只读参考，开发验证未读取真实客户数据、采集真实群、启用定时任务、支付或部署生产。
+
+后续内置聊天接入阅读 [MCP 工具与刷新契约](docs/records-mcp.md)，群采集运行阅读 [采集 CLI 与订阅 Agent 桥接](docs/collector.md)，跨旧站写入边界见 [ADR-0002](docs/adr/0002-durable-care-operations.md)。
+
+历史切换前可运行 [离线映射核对](docs/history-audit.md) 比较导出的记录、照片关联、日期覆盖和关键指标；未进行真实客户迁移时不会给出迁移已完成结论。
 
 ## 可运行结构
 
 - `src/wechat.ts`：服务器向微信 `jscode2session` 交换真实 `wx.login` code。AppID 来自服务器配置；不接收客户端 openid/unionid，不返回 session_key。缺配置失败关闭，主程序无假登录分支。
 - `src/identity.ts`：会话、旧账号绑定、新家庭、邀请/撤权、当前宝宝、运营及 Agent 授权。
 - `src/store.ts`：独立 Payload SQLite，身份数据不写入聊天或旧业务集合；`src/migrations` 提供空库生产初始化迁移。凭证保存 SHA-256 摘要，原始 token 只在签发时返回；微信映射保存 AppID+openid 摘要。密码和临时 NextAuth cookie 不入库。
-- `src/legacy.ts`：原 NextAuth CSRF→Credentials→Session 验证 user.id；临时 cookie 用完丢弃。旧服务的专用 CMS 账号只在服务器登录并刷新 JWT，通过白名单读 BabyUser、Baby、Activity、DailyStat；不会提供任意集合代理。记录字段、原日历 GET 查询语义和已保存统计保持不变。
+- `src/legacy.ts`：原 NextAuth CSRF→Credentials→Session 验证 user.id；临时 cookie 用完丢弃。专用 CMS 凭证通过白名单读写原集合，记录写入使用稳定ID、写前核对及写后读回；不提供任意集合代理，保留原字段与关系。
 - `src/media.ts`：活动照片代理重新核验宝宝与 `media:read`，只取配置的 HTTPS 图片来源，限制类型/大小且不跟随重定向。旧已公开 URL 本身不因此变私有。
-- `src/http.ts` / `src/main.ts`：真实 Node HTTP 入口，严格输入校验、16 KiB JSON 限制、登录速率限制、H5 Origin 校验与 HttpOnly/SameSite Cookie、原生 Bearer。不开通 Payload REST 或默认 CMS 管理界面。
+- `src/http.ts` / `src/main.ts`：真实 Node HTTP 入口，严格输入校验、普通16KiB/MCP 1MiB JSON限制、附件10MiB限制、登录速率限制、H5 Origin校验与 HttpOnly/SameSite Cookie、原生 Bearer。不开通 Payload REST 或默认 CMS 管理界面。
+- `src/records`：15类统一录入规则、版本、来源、撤销、疑似重复、待补充、恢复日志；真实 MCP 路由 `/api/mcp`；同一统计投影服务聊天与sidecar页面。
+- `src/collector` 与 `scripts/collector*`：已绑定群的持久化增量游标、批次、失败重试、补采；复用本机wechat-cli来源适配，具体Codex订阅执行桥接生成计划后实际调用MCP；默认单次运行，定时需显式启用。
 
 默认个人会话 7 天、聊天委托 15 分钟（不超过父会话）、采集凭证 1 小时、运营 CLI 凭证 1 小时。这些是可撤销认证有效期，不是免费体验期或会员权益。首期限时免费，支付不启用。
 
@@ -25,6 +31,7 @@ export BUBU_LEGACY_ORIGIN=http://127.0.0.1:1030
 export BUBU_LEGACY_CMS_EMAIL='your-test-cms-account'
 # BUBU_LEGACY_CMS_PASSWORD、BUBU_WECHAT_APP_ID/SECRET 从私有配置注入。
 export BUBU_PUBLIC_ORIGIN=http://127.0.0.1:10086
+export PORT=3320 # 服务监听端口；上面的10086是H5页面的Origin。
 pnpm --filter @cfp/bubu-log-service dev
 
 # 另一个终端：H5 原账号登录；浏览器的实际 origin 必须与上述配置一致。
@@ -54,7 +61,7 @@ BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --
 | POST `/api/identity/grants` | `{babyId,subjectId,state,permissions?}` | 管理者可撤销，只有运营可直接授予；普通用户使用邀请；不能修改自己的管理权限 |
 | POST `/api/identity/group-bindings` | `{babyId,groupId,agentId,active}` | 仅相应宝宝运营身份；groupId 应包含平台来源账号与群稳定标识 |
 | POST `/api/identity/agent-credentials` | `{babyId,kind,groupId?,agentId?}` | 照护者签发当前宝宝聊天委托；运营按有效群绑定签发采集凭证 |
-| GET `/api/app/user-babies`、`activities[/latest或/id]`、`daily-stats[/date]` | 原可视化参数 | 经过同一宝宝权限检查；Activity/DailyStat 语义保留；照片 URL 投影为受保护代理 |
+| GET `/api/app/user-babies`、`activities[/latest或/id]`、`daily-stats[/date]` | 原可视化参数 | 经过同一宝宝权限检查；sidecar统计由当前事实投影，新增coverage/byType，原指标语义保留；照片URL投影为受保护代理 |
 | PATCH `/api/app/user-babies/:id?babyId=…` | `{name,fullName}` | 同一宝宝名字更新与原长度/同用户重名校验 |
 | GET `/api/app/media/activities/:id?babyId=…` | 当前登录凭证 | 按记录的真实 babyId 校验，返回 `private,no-store` 图片；微信端下载临时文件后预览 |
 
@@ -80,7 +87,7 @@ await identity.executeAuthorized(principal, babyId, "records:write", async (scop
 ```
 
 - `executeAuthorized` 在同一个 sidecar 事务内重新验证会话和授权并执行业务 callback；异常回滚。`Store.transaction(req => …)` 可直接供领域模块多行事务使用。下层通过 `openStore({directory,extensions:[…]})` 注册新的独立 Payload 集合并提交迁移，使用同一 `store.payload` 和传入的 `req`；不要另建内存事实仓库或第二个聊天专用 Store。
-- 当前 `LegacyBackend` 的读取/家庭创建/名字更新适配不是后续 MCP 唯一可用的写入协议。本层没有暴露旧 POST Activity 冒充安全写入。下层应扩展领域专用适配或迁入原业务逻辑，保留旧字段/关系，并用独立候选/幂等/修订集合处理旧 POST 非幂等、物理删除、PATCH 字段缺漏及跨库恢复；不得把一次 sidecar 事务说成覆盖远程 HTTP。
+- `LegacyRecordsBackend` 已补齐受限Activity读写与日报刷新，`RecordsService` 通过独立候选/操作/修订处理确定性ID、物理删除后的防重放、字段缺漏和跨库恢复。后续聊天复用MCP工具，不直接调用旧应用POST。Payload REST条件选择不是数据库原子CAS；旧站同时写入窗口仍需生产接入时通过停用旧写入或数据库原子版本端点关闭。
 - 聊天通过照护者真实会话签发短期 `chat-agent`，审计 Actor 是 Agent 且带 `onBehalfOf`；父会话退出、到期或宝宝授权撤销均拒绝。凭证只在服务器连接层保管。
 - 采集必须提供凭证内匹配的宝宝和群，绑定暂停、更换 agentId、跨群或跨宝宝均拒绝；群发送者仅作为来源信息保存。
 - 运营使用本地 `pnpm --filter @cfp/bubu-log-service operator <operator-id> <baby-id>` 签发受限短期凭证；只打印一次，不交给模型或客户端。运行者必须有该机器身份库和服务配置访问权。后续 Payload 运营 UI 接入相同领域方法并建立管理员登录映射，不从普通照护者推断运营身份。
@@ -96,6 +103,6 @@ pnpm --filter @cfp/bubu-log-service test:production
 pnpm --filter @cfp/bubu-log-service build
 ```
 
-测试使用隔离临时 **真实 Payload SQLite** 身份库，注入微信 provider 和合成旧业务后端；协议测试另注入 fetch 验证真实适配器的请求/响应。覆盖重启、过期、绑定、邀请并发/事务中断、撤权重放、宝宝/群/Agent 隔离、媒体和 H5 CSRF；这不等于真实微信 AppID/secret、微信真机或现有客户数据库联调。生产初始化测试以 `NODE_ENV=production` 对空临时库执行已提交迁移并重开核对。
+测试使用隔离临时 **真实 Payload SQLite**；身份与记录测试注入微信 provider 和合成旧后端，另用实际Payload REST及临时SQLite验证远程适配器。MCP通过SDK客户端与真实loopback HTTP调用，图片写入私有临时目录；覆盖重启、撤权、群隔离、丢响应恢复、旧统计失败后新修订、候选补充撞重复、图片证据被明确答案替换、跨日进行中及撤销防重放。生产初始化测试以 `NODE_ENV=production` 执行身份和录入迁移并重开核对。群来源和订阅Agent桥接使用合成SQLite/CLI fixture，这不等于真实微信、真实模型或客户库联调。
 
 上线前仍需配置本产品 AppID/secret、HTTPS和微信 request/downloadFile 域名、专用旧 CMS 凭证、真实照片来源 allowlist；用隔离账号验收真实微信登录、旧账号绑定、跨宝宝/撤权、后台角色核对、数据备份。此次没有读取真实客户群、连接真实业务库、迁移旧数据或启用支付。旧照片公开历史是仍待后续私有附件迁移治理的限制。

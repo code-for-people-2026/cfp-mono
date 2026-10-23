@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { emptyRecordSummary } from "../fixtures/records";
 
 // Run against a BUBU_AUTH_MODE=sidecar H5 build. All accounts and records are synthetic.
 test.skip(process.env.BUBU_AUTH_MODE !== "sidecar", "Build with BUBU_AUTH_MODE=sidecar to test identity UI");
@@ -32,6 +33,8 @@ async function fixture(page: Page, signedIn = false, legacyLinked = false) {
     expect(url.searchParams.get("babyId")).toBe(baby.id);
     if (revoked) return json({ code: "BABY_FORBIDDEN", error: "照护权限已撤销" }, 403);
     if (url.pathname === "/api/app/activities/latest") return json(null);
+    if (url.pathname === "/api/app/records/snapshot") return json({ activities: [], events: [], questions: [], summary: emptyRecordSummary() });
+    if (url.pathname === "/api/app/records/sync") return json([]);
     if (url.pathname === "/api/app/activities" || url.pathname === "/api/app/daily-stats") return json([]);
     return json({ error: "Unexpected endpoint" }, 404);
   });
