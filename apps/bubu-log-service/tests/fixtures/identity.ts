@@ -5,7 +5,10 @@ import { AppError, type Baby, type LegacyBackend, type WechatProvider } from "..
 import { IdentityService } from "../../src/identity";
 import { openStore, type Store } from "../../src/store";
 
-/** Only the external providers are injected. Identity state uses Payload + SQLite. */
+/**
+ * Only the external providers are injected. Identity state uses Payload + SQLite.
+ * @public Synthetic legacy boundary shared by downstream module integration tests.
+ */
 export class LegacyFixture implements LegacyBackend {
   users = new Set(["old-alice", "old-bob"]);
   babies = new Map<string, Baby>([
@@ -56,6 +59,7 @@ export class LegacyFixture implements LegacyBackend {
   }
 }
 
+/** @public Synthetic WeChat boundary shared by downstream module integration tests. */
 export class WechatFixture implements WechatProvider {
   exchanges: string[] = [];
   async exchange(code: string) {

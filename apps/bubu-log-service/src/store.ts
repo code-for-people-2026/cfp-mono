@@ -6,9 +6,10 @@ import { buildConfig, getPayload, createLocalReq, initTransaction, commitTransac
 import { migrations } from "./migrations";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 
+/** @public Core table registry for downstream runtime and operations schema composition. */
 export const tables = ["identities", "sessions", "grants", "invitations", "group-bindings", "audit"] as const;
-export type Table = typeof tables[number];
-export interface Row { id: string; key: string; value: Record<string, unknown>; createdAt?: string }
+type Table = typeof tables[number];
+interface Row { id: string; key: string; value: Record<string, unknown>; createdAt?: string }
 export const collections: CollectionConfig[] = tables.map((slug) => ({
   slug, timestamps: true,
   access: { read: () => false, create: () => false, update: () => false, delete: () => false },

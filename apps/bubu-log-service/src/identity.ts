@@ -7,7 +7,7 @@ const secret = () => randomBytes(32).toString("base64url");
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const forbidden = () => fail(403, "BABY_FORBIDDEN", "没有此宝宝的访问权限，请刷新宝宝列表。");
 const unauthorized = () => fail(401, "UNAUTHORIZED", "登录已失效，请重新登录。");
-export interface Identity { id: string; legacyUserId?: string; currentBabyId?: string }
+interface Identity { id: string; legacyUserId?: string; currentBabyId?: string }
 export interface Principal {
   kind: ActorKind; subjectId: string; sessionId: string;
   babyId?: string; groupId?: string; bindingId?: string; parentSessionId?: string;
@@ -15,6 +15,7 @@ export interface Principal {
 }
 interface Session extends Principal { revoked?: boolean; channel: "native" | "browser" | "service" }
 interface Grant { subjectId: string; babyId: string; state: "active" | "revoked"; permissions: Permission[]; source: "legacy" | "managed" }
+/** @public Authorized actor and baby scope passed to downstream recording services. */
 export interface ActorScope {
   actor: { kind: ActorKind; id: string; sessionId: string; onBehalfOf?: string };
   babyId: string; groupId?: string; permissions: Permission[];
