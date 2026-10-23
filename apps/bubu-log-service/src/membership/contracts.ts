@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const date = z.iso.datetime({ offset: true });
-export const expiryPolicySchema = z.object({ chat: z.enum(["continue", "pause"]), collection: z.enum(["continue", "pause"]) }).strict().nullable();
+const expiryPolicySchema = z.object({ chat: z.enum(["continue", "pause"]), collection: z.enum(["continue", "pause"]) }).strict().nullable();
 export const membershipPolicySchema = z.object({
   startsAt: date.nullable(), endsAt: date.nullable(), expiryPolicy: expiryPolicySchema, paused: z.boolean(),
 }).strict().refine(value => !value.startsAt || !value.endsAt || Date.parse(value.startsAt) < Date.parse(value.endsAt), "开始时间须早于截止时间")

@@ -18,7 +18,7 @@ export const membershipCollections: CollectionConfig[] = ["service-memberships",
 }));
 const stateSchema = z.object({ version: z.number().int().positive(), policy: membershipPolicySchema }).strict();
 export interface MembershipState { version: number; policy: MembershipPolicy }
-export interface MembershipChange {
+interface MembershipChange {
   version: number; action: string; at: string; actorId: string; reason: string; fingerprint: string;
   before: MembershipState; after: MembershipState;
 }

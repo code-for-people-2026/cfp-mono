@@ -23,6 +23,7 @@ export interface RawPaymentNotification {
   headers: Readonly<Record<string, string | undefined>>;
   receivedAt: string;
 }
+/** @public Future verified provider observations are part of the payment integration contract. */
 export type PaymentObservation =
   | { kind: "payment"; state: "NOTPAY" | "SUCCESS" | "CLOSED" | "REFUND"; transactionId: string | null }
   | { kind: "refund"; state: "PROCESSING" | "SUCCESS" | "CLOSED" | "ABNORMAL"; transactionId: string; merchantRefundId: string; refundId: string; refundFen: number };
@@ -66,6 +67,7 @@ export interface PaymentProvider {
  * Future consumer must atomically deduplicate notification IDs AND order/refund business keys.
  * Duplicate confirmations do not grant twice; conflicting/older evidence needs a verified query.
  * Payment/refund facts alone never select a price, entitlement duration or revocation policy.
+ * @public Future payment integration contract; intentionally has no enabled consumer yet.
  */
 export interface PaymentConfirmationConsumer {
   confirm(evidence: VerifiedPaymentEvidence): Promise<{
