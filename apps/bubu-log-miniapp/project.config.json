@@ -1,0 +1,7 @@
+{
+  "appid": "touristappid",
+  "projectname": "bubu-log-miniapp",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "dist/weapp/",
+  "setting": { "urlCheck": true, "es6": false, "minified": true }
+}
