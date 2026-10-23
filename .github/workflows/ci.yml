@@ -52,7 +52,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.23.4'
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -225,7 +225,7 @@ jobs:
         if: steps.gate.outputs.should_deploy == 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.23.4'
 
       - name: Install the pinned Vercel CLI
         if: steps.gate.outputs.should_deploy == 'true'
