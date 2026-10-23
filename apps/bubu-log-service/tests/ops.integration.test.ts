@@ -180,4 +180,16 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect((await operations.context(operator)).accountAudit).toBeUndefined();
     expect((await operations.context(auditor)).accountAudit).toBeUndefined();
   });
+  it("pending projection resumes the original MCP request after its temporary delegate expires", async () => {
+    legacy.failStatisticsOnce = true;
+    const before = legacy.committedWrites;
+    const command = input({ type: "record", tool: "bubu_record_events", arguments: { events: [{ facts: { type: "PUMP", startTime: "2026-10-02T10:00:00+08:00", endTime: "2026-10-02T10:15:00+08:00", milkAmount: 35 } }] } }, "ops-projection-retry");
+    const pending = await operations.execute(operator, command) as { status: string; events: { id: string }[] };
+    expect(pending.status).toBe("pending_projection");
+    // withPrincipal already revoked its first transport token; the stable operator identity owns recovery.
+    const recovered = await operations.execute(operator, command) as typeof pending;
+    expect(recovered.status).toBe("saved"); expect(recovered.events[0]!.id).toBe(pending.events[0]!.id);
+    expect(legacy.committedWrites).toBe(before + 1);
+    expect(await operations.execute(operator, command)).toEqual(recovered);
+  });
 });
