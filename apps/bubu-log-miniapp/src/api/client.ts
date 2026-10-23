@@ -4,7 +4,7 @@ import { SessionCookies, type SessionStorage } from "./session";
 
 export interface TransportRequest {
   url: string;
-  method: "GET" | "POST";
+  method: "GET" | "POST" | "PATCH";
   headers: Record<string, string>;
   body?: string;
   credentials?: "include";
@@ -20,7 +20,7 @@ export class ApiError extends Error {
   constructor(public readonly status: number, message: string, public readonly code?: string) { super(message); }
 }
 export class ConfigurationError extends ApiError {
-  constructor() { super(0, "尚未配置宝宝日记服务地址，请联系管理员。", "NOT_CONFIGURED"); }
+  constructor() { super(0, "尚未配置哺哺日记服务地址，请联系管理员。", "NOT_CONFIGURED"); }
 }
 export const ACTIVITY_LIMIT = 1000;
 export interface ActivityQuery {
@@ -76,7 +76,7 @@ export function createBubuApi(options: ClientOptions) {
   let expiredRevision: number | undefined;
   let changingSession = false;
 
-  async function request(path: string, args: { method?: "GET" | "POST"; form?: Record<string, string>; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean } = {}): Promise<unknown> {
+  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: Record<string, string | null>; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean } = {}): Promise<unknown> {
     if (options.native && !origin) throw new ConfigurationError();
     const generation = revision;
     const headers: Record<string, string> = { Accept: "application/json" };
@@ -87,15 +87,17 @@ export function createBubuApi(options: ClientOptions) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       headers["X-Auth-Return-Redirect"] = "1";
     }
+    if (args.json) headers["Content-Type"] = "application/json";
     let response: TransportResponse;
     try {
       response = await options.transport({
         url: `${origin}${path}`, method: args.method ?? "GET", headers,
         ...(args.form ? { body: queryString(args.form).slice(1) } : {}),
+        ...(args.json ? { body: JSON.stringify(args.json) } : {}),
         ...(!options.native ? { credentials: "include" as const } : {}),
       });
     } catch {
-      throw new ApiError(0, "暂时无法连接宝宝日记，请检查网络后重试。");
+      throw new ApiError(0, "暂时无法连接哺哺日记，请检查网络后重试。");
     }
     if (generation !== revision) throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
     // Concurrent reads belong to the same identity even after one discovers expiry.
@@ -178,6 +180,18 @@ export function createBubuApi(options: ClientOptions) {
     },
     async getBabies(babyId?: string) {
       return decode.babyList(await request(`/api/app/user-babies${queryString({ babyId })}`, { babyId }));
+    },
+    async updateBabyNames(babyId: string, input: { name: string; fullName: string }) {
+      const name = input.name.trim();
+      const fullName = input.fullName.trim();
+      if (!name || name.length > 30) throw new ApiError(400, "宝宝昵称不能为空，且不能超过 30 个字。");
+      if (fullName.length > 60) throw new ApiError(400, "宝宝姓名不能超过 60 个字。");
+      const result = decode.object(await request(scoped(`user-babies/${encodeURIComponent(requiredId(babyId))}`, babyId), {
+        method: "PATCH", babyId, json: { name, fullName: fullName || null },
+      }));
+      const updated = decode.baby(result.data);
+      if (updated.id !== babyId) throw new decode.ResponseFormatError();
+      return updated;
     },
     async getActivities(input: ActivityQuery): Promise<ActivityResult> {
       if (input.date) day(input.date);
