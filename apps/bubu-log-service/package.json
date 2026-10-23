@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
-    "build": "tsc",
+    "start": "NODE_ENV=production tsx src/main.ts",
+    "build": "next build --webpack",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -18,6 +18,9 @@
     "db:migration": "tsx scripts/create-migration.ts",
     "test:production": "NODE_ENV=production tsx scripts/verify-production.ts",
     "test:browser-server": "NODE_ENV=test tsx tests/chat-browser-server.ts",
+    "cms:admin": "tsx scripts/create-admin.ts",
+    "test:ops-server": "NODE_ENV=test tsx tests/ops-browser-server.ts",
+    "test:ops-http": "tsx scripts/verify-ops-http.ts",
     "test:sqlite": "node scripts/sqlite-connection-check.mjs"
   },
   "dependencies": {
@@ -27,6 +30,10 @@
     "sharp": "0.34.5",
     "tsx": "^4.20.0",
     "zod": "^4.4.3",
+    "@payloadcms/next": "3.85.1",
+    "next": "16.2.9",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
     "fs-ext": "2.1.1"
   },
   "devDependencies": {
@@ -36,6 +43,8 @@
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "@types/fs-ext": "2.0.3"
   }
 }

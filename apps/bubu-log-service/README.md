@@ -8,6 +8,8 @@
 
 历史切换前可运行 [离线映射核对](docs/history-audit.md) 比较导出的记录、照片关联、日期覆盖和关键指标；未进行真实客户迁移时不会给出迁移已完成结论。
 
+后台运营模块 [#397](https://github.com/code-for-people-2026/cfp-mono/issues/397) 提供原生 Payload Admin `/admin`，与既有身份、录入、采集和聊天共享同一进程与 Store。管理员初始化、三类运营角色、一次性凭证、异常恢复和会员接缝见 [运营接入](docs/operations.md)，单进程及业务写入边界见 [ADR-0004](docs/adr/0004-native-operations-with-shared-runtime.md)。
+
 ## 可运行结构
 
 - `src/wechat.ts`：服务器向微信 `jscode2session` 交换真实 `wx.login` code。AppID 来自服务器配置；不接收客户端 openid/unionid，不返回 session_key。缺配置失败关闭，主程序无假登录分支。
@@ -15,7 +17,7 @@
 - `src/store.ts`：独立 Payload SQLite，身份数据不写入聊天或旧业务集合；`src/migrations` 提供空库生产初始化迁移。凭证保存 SHA-256 摘要，原始 token 只在签发时返回；微信映射保存 AppID+openid 摘要。密码和临时 NextAuth cookie 不入库。
 - `src/legacy.ts`：原 NextAuth CSRF→Credentials→Session 验证 user.id；临时 cookie 用完丢弃。专用 CMS 凭证通过白名单读写原集合，记录写入使用稳定ID、写前核对及写后读回；不提供任意集合代理，保留原字段与关系。
 - `src/media.ts`：活动照片代理重新核验宝宝与 `media:read`，只取配置的 HTTPS 图片来源，限制类型/大小且不跟随重定向。旧已公开 URL 本身不因此变私有。
-- `src/http.ts` / `src/main.ts`：真实 Node HTTP 入口，严格输入校验、普通16KiB/MCP 1MiB JSON限制、附件10MiB限制、登录速率限制、H5 Origin校验与 HttpOnly/SameSite Cookie、原生 Bearer。不开通 Payload REST 或默认 CMS 管理界面。
+- `src/http.ts` / `src/main.ts`：真实 Node HTTP 入口，严格输入校验、普通16KiB/MCP 1MiB JSON限制、附件10MiB限制、登录速率限制、H5 Origin校验与 HttpOnly/SameSite Cookie、原生 Bearer。运营的原生 Admin 与受限 REST 独立使用运营 Cookie、角色与宝宝范围；原始身份、会话、私人对话等集合保持隐藏拒读。
 - `src/records`：15类统一录入规则、版本、来源、撤销、疑似重复、待补充、恢复日志；真实 MCP 路由 `/api/mcp`；同一统计投影服务聊天与sidecar页面。
 - `src/collector` 与 `scripts/collector*`：已绑定群的持久化增量游标、批次、失败重试、补采；复用本机wechat-cli来源适配，具体Codex订阅执行桥接生成计划后实际调用MCP；默认单次运行，定时需显式启用。
 - `src/chat`：身份与宝宝隔离的私人对话、图文 provider、真实 MCP client、模型工具计划和保存回执的持久恢复；模型与客户端都不能直接写 Activity。`chat-turns` 与既有身份/照护集合共用同一个库。
@@ -34,6 +36,7 @@ export BUBU_LEGACY_ORIGIN=http://127.0.0.1:1030
 export BUBU_LEGACY_CMS_EMAIL='your-test-cms-account'
 # BUBU_LEGACY_CMS_PASSWORD、BUBU_WECHAT_APP_ID/SECRET 从私有配置注入。
 export BUBU_PUBLIC_ORIGIN=http://127.0.0.1:10086
+export BUBU_OPS_ORIGIN=http://127.0.0.1:3320
 export PORT=3320 # 服务监听端口；上面的10086是H5页面的Origin。
 pnpm --filter @cfp/bubu-log-service dev
 
@@ -45,7 +48,7 @@ BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --
 
 未配置微信凭证时，微信登录返回 `WECHAT_NOT_CONFIGURED`，H5 旧账号路径仍可使用。未配置旧 CMS 凭证时不会返回伪造宝宝列表。`GET /health` 仅表示进程可响应，不宣称微信或旧服务已联通。小程序构建默认 `BUBU_AUTH_MODE=sidecar`，旧 H5/原生 NextAuth 部署须显式配置 `legacy`。
 
-对话另外需要服务器配置 `BUBU_CHAT_API_KEY` 与支持图文和工具调用的 `BUBU_CHAT_MODEL`，可指定 `BUBU_CHAT_BASE_URL`。未配置时明确提示模型未开通，日历和身份模块仍可使用。`BUBU_CHAT_MCP_URL` 默认指向同一进程的本机端口，令牌只存在于服务端运输层；真实群采集的订阅 CLI 与内置聊天 provider 是各自配置，不把订阅登录当作模型 API key。
+对话另外需要服务器配置 `BUBU_CHAT_API_KEY` 与支持图文和工具调用的 `BUBU_CHAT_MODEL`，可指定 `BUBU_CHAT_BASE_URL`。未配置时明确提示模型未开通，日历和身份模块仍可使用。内置聊天及运营的 MCP 地址固定指向同一进程的本机端口，令牌只存在于服务端运输层；真实群采集的订阅 CLI 与内置聊天 provider 是各自配置，不把订阅登录当作模型 API key。
 
 生产入口 `pnpm --filter @cfp/bubu-log-service start` 要求 `NODE_ENV=production`、HTTPS `BUBU_PUBLIC_ORIGIN`、持久独立的 `BUBU_IDENTITY_DIRECTORY`、显式 `BUBU_PAYLOAD_SECRET`。启动运行已提交迁移，不做开发 schema push。首次本地开发会生成私有随机 secret 与 SQLite 文件；开发库不要直接当生产库使用。首版按单进程服务运行，SQLite 事务负责数据原子性；不声称分布式运行或旧服务写入的跨库原子性。备份身份目录（数据库、WAL/SHM 如存在、secret）需先停止服务或使用一致的 SQLite 备份，再与旧业务库配套保管。
 
@@ -95,7 +98,7 @@ await identity.executeAuthorized(principal, babyId, "records:write", async (scop
 - `LegacyRecordsBackend` 已补齐受限Activity读写与日报刷新，`RecordsService` 通过独立候选/操作/修订处理确定性ID、物理删除后的防重放、字段缺漏和跨库恢复。后续聊天复用MCP工具，不直接调用旧应用POST。Payload REST条件选择不是数据库原子CAS；旧站同时写入窗口仍需生产接入时通过停用旧写入或数据库原子版本端点关闭。
 - 聊天通过照护者真实会话签发短期 `chat-agent`，审计 Actor 是 Agent 且带 `onBehalfOf`；父会话退出、到期或宝宝授权撤销均拒绝。凭证只在服务器连接层保管。
 - 采集必须提供凭证内匹配的宝宝和群，绑定暂停、更换 agentId、跨群或跨宝宝均拒绝；群发送者仅作为来源信息保存。
-- 运营使用本地 `pnpm --filter @cfp/bubu-log-service operator <operator-id> <baby-id>` 签发受限短期凭证；只打印一次，不交给模型或客户端。运行者必须有该机器身份库和服务配置访问权。后续 Payload 运营 UI 接入相同领域方法并建立管理员登录映射，不从普通照护者推断运营身份。
+- 运营人员使用 `/admin` 的独立 `ops-users` 账号；所有角色（含管理员）均需明确宝宝范围。服务从账号派生短期 operator 委托，每个 MCP 调用再次核验账号状态及范围。离线 `operator <operator-id> <baby-id>` CLI 保留维护用途，只打印一次凭证；必须停止服务并使用同一完整 schema/目录，运行锁阻止第二写进程。
 - 会员模块在身份授权之后单独检查服务权益；本层不会用免费到期决定宝宝归属，不会删历史。
 
 ## 验证和外部验收
