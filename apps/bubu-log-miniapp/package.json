@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:chat-live": "playwright test --config playwright.chat-live.config.ts",
     "test:wxss": "node scripts/check-wxss.mjs"
   },
   "dependencies": {

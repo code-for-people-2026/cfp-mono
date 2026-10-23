@@ -1,3 +1,4 @@
+import { getWechatSpeechPlugin } from "./speech";
 import { defineConfig } from "@tarojs/cli";
 
 export default defineConfig(async () => ({
@@ -15,8 +16,9 @@ export default defineConfig(async () => ({
     ),
   },
   defineConstants: {
+    BUBU_WECHAT_SI_ENABLED: JSON.stringify(!!getWechatSpeechPlugin()),
     BUBU_API_ORIGIN: JSON.stringify(process.env.BUBU_API_ORIGIN || ""),
-    BUBU_AUTH_MODE: JSON.stringify(process.env.BUBU_AUTH_MODE === "sidecar" ? "sidecar" : "legacy"),
+    BUBU_AUTH_MODE: JSON.stringify(process.env.BUBU_AUTH_MODE === "legacy" ? "legacy" : "sidecar"),
   },
   mini: { imageUrlLoaderOption: { limit: false } },
   h5: {

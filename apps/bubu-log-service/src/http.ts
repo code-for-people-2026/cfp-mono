@@ -7,12 +7,14 @@ import { createAttachmentHandler, type AttachmentService } from "./records/attac
 import type { CollectorService } from "./collector/service";
 import { handleRecordsMcp } from "./records/mcp";
 import { readRecordView, readSyncStatus } from "./records/read-model";
+import type { ChatService } from "./chat/service";
+import { chatInputSchema } from "./chat/contracts";
 
 const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
 const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
 const babyScope = z.object({ babyId: id }).strict();
-export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService}) {
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
   const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
@@ -69,6 +71,11 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       const principal: Principal = await sessions(req);
       if(features) {const attachmentResponse=await createAttachmentHandler(features.attachments)(req,principal);if(attachmentResponse)return attachmentResponse;}
+      if (features?.chat && path === "/api/app/chat" && req.method === "POST") {
+        const input = chatInputSchema.parse(await body(32768));
+        if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== input.babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+        return json({ turn: await features.chat.submit(principal, input) });
+      }
       if (req.method === "POST" && path === "/api/identity/bind-legacy") {
         const input = credentials.parse(await body());
         return resultWithSession(await service.bindLegacy(principal, input.username, input.password), browser);
@@ -108,6 +115,8 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       const babyId = babyScope.parse({ babyId: url.searchParams.get("babyId") || req.headers.get("x-baby-id") }).babyId;
       if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+      if (features?.chat && req.method === "GET" && path === "/api/app/chat") return json(await features.chat.history(principal, babyId));
+      if (features?.chat && req.method === "GET" && path === "/api/app/chat/request") return json({ turn: await features.chat.request(principal, babyId, id.parse(url.searchParams.get("requestId"))) });
       if(features&&req.method==="GET"&&path==="/api/app/records/snapshot") {
         const eventId=url.searchParams.get("eventId")||undefined;
         const snapshot=await features.records.query(principal,{babyId,date:url.searchParams.get("date")||(eventId?undefined:features.records.today()),eventId});

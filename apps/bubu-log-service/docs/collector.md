@@ -70,7 +70,7 @@ stdin 是 `bubu-collector-agent/v1` 结构化任务；stdout 仅为解析验证�
 
 桥接使用本机 `codex exec --help` 已核对的 stdin `-`、`--ignore-user-config`、`--ignore-rules`、`--ephemeral`、`--sandbox read-only`、`--skip-git-repo-check`、`--cd`、`--output-schema`、`--output-last-message`，并以 `--no-daemon` 启动。结构化输出使用封闭 schema `{planJson: string}`（required，additionalProperties=false），再解析内部计划，避免把任意 tool arguments 的开放对象直接交给 strict structured output。
 
-覆盖配置限制为 ChatGPT 登录，关闭 shell、apps、plugins、多 Agent、hooks、memory、browser/computer tools、view_image 与 web search；不加载用户配置或项目指令，工作目录为一次性私有临时目录。只继承 PATH/HOME/LANG 和已有 CODEX_HOME，不继承 API key 或业务凭证环境变量。临时输出在完成/失败后删除，CLI 原始日志不转发给服务日志。参数依据 [官方配置参考](https://developers.openai.com/codex/config-reference/) 和本机帮助；实际模型调用未在 fixtures 中执行。
+覆盖配置限制为 ChatGPT 登录，关闭 shell、apps、plugins、多 Agent、hooks、memory、browser/computer tools、view_image 与 web search；不加载用户配置或项目指令，工作目录为一次性私有临时目录。只传入 NODE_ENV（未设置时为 production）、PATH/HOME/LANG 和已有 CODEX_HOME，不继承 API key 或业务凭证环境变量。临时输出在完成/失败后删除，CLI 原始日志不转发给服务日志。参数依据 [官方配置参考](https://developers.openai.com/codex/config-reference/) 和本机帮助；实际模型调用未在 fixtures 中执行。
 
 已有其他受控 Agent 可以使用 `agent: {executable,args?,cwd?,timeoutMs?,env?}` 替代 `codex`，不能同时指定两种。该命令使用无 shell 的 stdin/stdout JSON 协议；显式 env 属于运营配置，不应传入业务凭证。
 
