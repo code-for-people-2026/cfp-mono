@@ -1,6 +1,8 @@
 # Build context: a tracked-source archive under overlay/ (never .env or .data).
-ARG BASE_IMAGE=cfp-hello-agent:preview-20261013-name052
+# Explicitly supply a rebuilt preview image; never inherit the pre-security-release default.
+ARG BASE_IMAGE
 FROM ${BASE_IMAGE} AS runtime
+RUN node -e "const [major,minor,patch]=process.versions.node.split('.').map(Number);if(major!==24 || minor<22 || (minor===22 && patch<1))throw Error('Node.js 24.22.1+ within 24.x is required; rebuild the preview base image');console.log(process.version)"
 # Start a fresh layer chain; the long-lived preview base is near Docker’s layer limit.
 FROM scratch
 COPY --from=runtime / /
