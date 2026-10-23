@@ -4,6 +4,8 @@
 
 后续内置聊天接入阅读 [MCP 工具与刷新契约](docs/records-mcp.md)，群采集运行阅读 [采集 CLI 与订阅 Agent 桥接](docs/collector.md)，跨旧站写入边界见 [ADR-0002](docs/adr/0002-durable-care-operations.md)。
 
+内置对话模块 [#395](https://github.com/code-for-people-2026/cfp-mono/issues/395) 在同一服务增加私人持久轮次、真实图文模型适配与 MCP 执行恢复，客户端接口、配置和验证边界见 [对话接入](docs/chat.md)。首页右下角展开聊天，详情可进入对话修改；照护事实及待补事项继续由录入模块维护。
+
 历史切换前可运行 [离线映射核对](docs/history-audit.md) 比较导出的记录、照片关联、日期覆盖和关键指标；未进行真实客户迁移时不会给出迁移已完成结论。
 
 ## 可运行结构
@@ -16,6 +18,7 @@
 - `src/http.ts` / `src/main.ts`：真实 Node HTTP 入口，严格输入校验、普通16KiB/MCP 1MiB JSON限制、附件10MiB限制、登录速率限制、H5 Origin校验与 HttpOnly/SameSite Cookie、原生 Bearer。不开通 Payload REST 或默认 CMS 管理界面。
 - `src/records`：15类统一录入规则、版本、来源、撤销、疑似重复、待补充、恢复日志；真实 MCP 路由 `/api/mcp`；同一统计投影服务聊天与sidecar页面。
 - `src/collector` 与 `scripts/collector*`：已绑定群的持久化增量游标、批次、失败重试、补采；复用本机wechat-cli来源适配，具体Codex订阅执行桥接生成计划后实际调用MCP；默认单次运行，定时需显式启用。
+- `src/chat`：身份与宝宝隔离的私人对话、图文 provider、真实 MCP client、模型工具计划和保存回执的持久恢复；模型与客户端都不能直接写 Activity。`chat-turns` 与既有身份/照护集合共用同一个库。
 
 默认个人会话 7 天、聊天委托 15 分钟（不超过父会话）、采集凭证 1 小时、运营 CLI 凭证 1 小时。这些是可撤销认证有效期，不是免费体验期或会员权益。首期限时免费，支付不启用。
 
@@ -40,7 +43,9 @@ BUBU_AUTH_MODE=sidecar BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/b
 BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
 ```
 
-未配置微信凭证时，微信登录返回 `WECHAT_NOT_CONFIGURED`，H5 旧账号路径仍可使用。未配置旧 CMS 凭证时不会返回伪造宝宝列表。`GET /health` 仅表示进程可响应，不宣称微信或旧服务已联通。旧版小程序构建默认 `BUBU_AUTH_MODE=legacy`，保持旧 H5/原生 NextAuth 路径；新模式显式配置 `sidecar`。
+未配置微信凭证时，微信登录返回 `WECHAT_NOT_CONFIGURED`，H5 旧账号路径仍可使用。未配置旧 CMS 凭证时不会返回伪造宝宝列表。`GET /health` 仅表示进程可响应，不宣称微信或旧服务已联通。小程序构建默认 `BUBU_AUTH_MODE=sidecar`，旧 H5/原生 NextAuth 部署须显式配置 `legacy`。
+
+对话另外需要服务器配置 `BUBU_CHAT_API_KEY` 与支持图文和工具调用的 `BUBU_CHAT_MODEL`，可指定 `BUBU_CHAT_BASE_URL`。未配置时明确提示模型未开通，日历和身份模块仍可使用。`BUBU_CHAT_MCP_URL` 默认指向同一进程的本机端口，令牌只存在于服务端运输层；真实群采集的订阅 CLI 与内置聊天 provider 是各自配置，不把订阅登录当作模型 API key。
 
 生产入口 `pnpm --filter @cfp/bubu-log-service start` 要求 `NODE_ENV=production`、HTTPS `BUBU_PUBLIC_ORIGIN`、持久独立的 `BUBU_IDENTITY_DIRECTORY`、显式 `BUBU_PAYLOAD_SECRET`。启动运行已提交迁移，不做开发 schema push。首次本地开发会生成私有随机 secret 与 SQLite 文件；开发库不要直接当生产库使用。首版按单进程服务运行，SQLite 事务负责数据原子性；不声称分布式运行或旧服务写入的跨库原子性。备份身份目录（数据库、WAL/SHM 如存在、secret）需先停止服务或使用一致的 SQLite 备份，再与旧业务库配套保管。
 

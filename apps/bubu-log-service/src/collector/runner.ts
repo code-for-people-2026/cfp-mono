@@ -54,7 +54,7 @@ export class CollectorMcpClient implements McpGateway {
 interface Command { executable: string; args?: string[]; cwd?: string; timeoutMs?: number; env?: Record<string, string> }
 /** No shell, inherited secrets, raw stderr, or credentials in the Agent task. */
 async function invokeJson(command: Command, input: unknown): Promise<unknown> {
-  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...command.env };
+  const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV || "production", PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...command.env };
   return new Promise((resolve, reject) => {
     const child = spawn(command.executable, command.args || [], { cwd: command.cwd, env, shell: false, stdio: ["pipe", "pipe", "pipe"] });
     let output = ""; let overflow = false;

@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { emptyRecordSummary } from "../fixtures/records";
 
 // Run against a BUBU_AUTH_MODE=sidecar H5 build. All accounts and records are synthetic.
-test.skip(process.env.BUBU_AUTH_MODE !== "sidecar", "Build with BUBU_AUTH_MODE=sidecar to test identity UI");
+test.skip(process.env.BUBU_AUTH_MODE === "legacy", "Build with BUBU_AUTH_MODE=sidecar to test identity UI");
 const baby = { id: "identity-test-baby", name: "小满" };
 const unbound = { authenticated: true, identityId: "identity-test-user", legacyLinked: false, hasBaby: false, baby: null, babies: [], defaultBabyId: null };
 const family = { ...unbound, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id };
@@ -34,6 +34,8 @@ async function fixture(page: Page, signedIn = false, legacyLinked = false) {
     if (revoked) return json({ code: "BABY_FORBIDDEN", error: "照护权限已撤销" }, 403);
     if (url.pathname === "/api/app/activities/latest") return json(null);
     if (url.pathname === "/api/app/records/snapshot") return json({ activities: [], events: [], questions: [], summary: emptyRecordSummary() });
+    if (url.pathname === "/api/app/records/pending") return json([]);
+    if (url.pathname === "/api/app/chat") return json({ babyId: url.searchParams.get("babyId"), conversationId: "synthetic-conversation", turns: [], pending: [], pendingCount: 0 });
     if (url.pathname === "/api/app/records/sync") return json([]);
     if (url.pathname === "/api/app/activities" || url.pathname === "/api/app/daily-stats") return json([]);
     return json({ error: "Unexpected endpoint" }, 404);

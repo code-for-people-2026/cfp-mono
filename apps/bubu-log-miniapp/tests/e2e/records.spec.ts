@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { emptyRecordSummary, recordEventFixture } from "../fixtures/records";
 
-test.skip(process.env.BUBU_AUTH_MODE !== "sidecar", "Requires the sidecar H5 build");
+test.skip(process.env.BUBU_AUTH_MODE === "legacy", "Requires the sidecar H5 build");
 test("sidecar cards use server facts and expose unknown, ongoing and duplicate coverage", async ({ page }) => {
   await page.clock.install({ time: new Date("2026-10-23T13:00:00+08:00") });
   const baby = { id: "synthetic-baby", name: "小满" };
@@ -18,6 +18,8 @@ test("sidecar cards use server facts and expose unknown, ongoing and duplicate c
     if (url.pathname === "/api/app/auth/context") return route.fulfill({ json: { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id, identityId: "test", legacyLinked: true } });
     expect(url.searchParams.get("babyId")).toBe(baby.id);
     if (url.pathname === "/api/app/records/snapshot") return route.fulfill({ json: { activities: [], events: [], questions: [], summary } });
+    if (url.pathname === "/api/app/records/pending") return route.fulfill({ json: [] });
+    if (url.pathname === "/api/app/chat") return route.fulfill({ json: { babyId: url.searchParams.get("babyId"), conversationId: "synthetic-conversation", turns: [], pending: [], pendingCount: 0 } });
     if (url.pathname === "/api/app/records/sync") return route.fulfill({ json: [] });
     if (url.pathname === "/api/app/activities/latest") return route.fulfill({ json: null });
     if (url.pathname === "/api/app/activities") return route.fulfill({ json: [] });
@@ -64,6 +66,8 @@ test("sidecar details show private attachments and source context while sync fai
     if (url.pathname === `/api/app/activities/${activity.id}`) return route.fulfill({ json: activity });
     if (url.pathname === "/api/app/activities/latest") return route.fulfill({ json: null });
     if (url.pathname === "/api/app/activities") return route.fulfill({ json: [] });
+    if (url.pathname === "/api/app/records/pending") return route.fulfill({ json: [] });
+    if (url.pathname === "/api/app/chat") return route.fulfill({ json: { babyId: url.searchParams.get("babyId"), conversationId: "synthetic-conversation", turns: [], pending: [], pendingCount: 0 } });
     if (url.pathname === "/api/app/records/sync") return syncUnavailable ? route.fulfill({ status: 503, json: { error: "temporarily unavailable" } }) : route.fulfill({ json: [{ id: "job", enabled: true, lastSuccessAt: "2026-10-23T12:00:00+08:00", processedThrough: "2026-10-23T11:50:00+08:00", pending: true, pendingMedia: 2, failure: { code: "PRIVATE_INTERNAL_ERROR", at: "2026-10-23T12:05:00+08:00", attempts: 1 } }] });
     if (url.pathname.startsWith("/api/app/attachments/")) {
       expect(attachmentIds).toContain(url.pathname.split("/").pop());
