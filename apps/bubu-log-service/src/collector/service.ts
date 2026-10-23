@@ -44,7 +44,6 @@ export const collectorInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("heartbeat"), ...leased }).strict(),
   z.object({ action: z.literal("fail"), ...leased, code: z.string().regex(/^[A-Z0-9_]{1,80}$/) }).strict(),
 ]);
-export type CollectorInput = z.infer<typeof collectorInputSchema>;
 interface Backfill { id: string; range: { from: string; to: string }; cursor: SourceCursor; state: "queued" | "completed" }
 export interface CollectorJob {
   id: string; babyId: string; groupId: string; accountId: string; chatId: string; agentId: string;
@@ -65,7 +64,8 @@ interface StoredMessage { source: SourceMessage; contentHash: string; state: "pe
 interface HumanMediaResolution { index: number; eventId: string; resolution: "provided" | "unknown"; attachmentId?: string; requestId: string; requestHash: string; actor: string; resolvedAt: string; result: { kind: "media"; id: string; sourceId: string; state: "resolved" | "open"; resolution: "provided" | "unknown" } }
 export const resolveMediaSchema = baseMutation.extend({ pendingId: identifier, eventId: identifier, expectedVersion: z.number().int().positive(), attachmentId: identifier.optional(), mediaIndex: z.number().int().min(0).max(9).default(0), resolution: z.enum(["provided", "unknown"]).default("provided") })
   .refine(input => input.resolution === "provided" ? !!input.attachmentId : input.attachmentId === undefined, "provided requires an attachment; unknown must not claim one");
-export type ReceiptVerifier = (babyId: string, requestId: string, req: PayloadRequest, principal: Principal) => Promise<boolean>;
+type ReceiptVerifier = (babyId: string, requestId: string, req: PayloadRequest, principal: Principal) => Promise<boolean>;
+/** @public Unresolved media contract consumed by downstream chat and operations views. */
 export interface PendingMedia {
   kind: "media"; id: string; sourceId: string; babyId: string; eventIds: string[];
   source: { kind: "wechat"; accountId: string; conversationId: string; messageId: string; sentAt: string; senderId: string; groupId: string };

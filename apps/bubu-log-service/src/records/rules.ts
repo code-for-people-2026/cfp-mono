@@ -1,7 +1,7 @@
 import { activityTypes, type Evidence, type Facts, type Field, type FieldState, type RuleInput, type RuleIssue, type RuleResult } from "./types";
 
-export const pointTypes = new Set(["DIAPER", "SUPPLEMENT", "SPIT_UP", "ROLL_OVER", "PULL_TO_SIT"]);
-export const durationTypes = new Set(activityTypes.filter(type => !pointTypes.has(type)));
+const pointTypes = new Set(["DIAPER", "SUPPLEMENT", "SPIT_UP", "ROLL_OVER", "PULL_TO_SIT"]);
+const durationTypes = new Set(activityTypes.filter(type => !pointTypes.has(type)));
 const common: Field[] = ["type", "startTime", "notes"];
 const feeding: Field[] = ["endTime", "durationMinutes", "burpSuccess"];
 const applicable: Record<string, Field[]> = {

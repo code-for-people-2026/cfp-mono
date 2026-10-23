@@ -19,9 +19,12 @@ const dailyStatSchema = z.object({ babyId: identifier, date: z.string().min(1),
   ...Object.fromEntries(metricNames.map(name => [name, z.number().finite().nonnegative().optional()])),
 }).passthrough();
 const snapshotSchema = z.object({ activities: z.array(activitySchema), dailyStats: z.array(dailyStatSchema).optional() }).strict();
-export interface HistorySnapshot { activities: LegacyActivity[]; dailyStats?: Array<{ babyId: string; date: string; [field: string]: unknown }> }
+interface HistorySnapshot { activities: LegacyActivity[]; dailyStats?: Array<{ babyId: string; date: string; [field: string]: unknown }> }
 
-/** Exported legacy facts only. No database, credentials, remote media, or sidecar mutation is used. */
+/**
+ * Exported legacy facts only. No database, credentials, remote media, or sidecar mutation is used.
+ * @public Read-only snapshot validation shared with downstream operations workflows.
+ */
 export function parseHistorySnapshot(input: unknown): HistorySnapshot {
   const parsed = snapshotSchema.parse(input);
   const seen = new Set<string>();

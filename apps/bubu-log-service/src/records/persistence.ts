@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { CollectionConfig, PayloadRequest, Payload } from "payload";
 
 export const recordTables = ["care-events", "care-operations", "care-revisions", "care-questions", "care-source-links", "care-attachments", "care-batches", "care-sync", "care-messages"] as const;
-export type RecordTable = typeof recordTables[number];
+type RecordTable = typeof recordTables[number];
 export const recordCollections: CollectionConfig[] = recordTables.map(slug => ({
   slug, timestamps: true,
   access: { read: () => false, create: () => false, update: () => false, delete: () => false },
@@ -10,7 +10,7 @@ export const recordCollections: CollectionConfig[] = recordTables.map(slug => ({
     { name: "babyId", type: "text", required: true, index: true }, { name: "value", type: "json", required: true }],
 }));
 export const hash = (value: unknown): string => createHash("sha256").update(stableJson(value)).digest("hex");
-export function stableJson(value: unknown): string {
+function stableJson(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(item => stableJson(item)).join(",")}]`;
   if (value && typeof value === "object") return `{${Object.entries(value).filter(([,v]) => v !== undefined).sort(([a],[b]) => a.localeCompare(b)).map(([k,v]) => `${JSON.stringify(k)}:${stableJson(v)}`).join(",")}}`;
   return JSON.stringify(value) ?? "null";

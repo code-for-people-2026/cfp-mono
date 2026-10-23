@@ -16,7 +16,10 @@ function semantic(row: LegacyActivity | null) {
   return facts;
 }
 
-/** Synthetic remote boundary with conditional writes and controllable response loss; sidecar persistence is real SQLite. */
+/**
+ * Synthetic remote boundary with conditional writes and controllable response loss; sidecar persistence is real SQLite.
+ * @public Shared records fixture for downstream chat, operations and membership integration tests.
+ */
 export class RecordsLegacyFixture extends LegacyFixture implements LegacyRecordsBackend {
   activities = new Map<string, LegacyActivity>();
   dailyStats = new Map<string, DailyMetrics>();

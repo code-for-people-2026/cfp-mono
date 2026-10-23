@@ -4,7 +4,7 @@ import { activityTypes } from "./types";
 export const identifier = z.string().min(1).max(200);
 const time = z.iso.datetime({ offset: true });
 const amount = z.number().finite().min(0).max(100000).nullable().optional();
-export const factsSchema = z.object({
+const factsSchema = z.object({
   type: z.enum(activityTypes).optional(), startTime: time.optional(), endTime: time.nullable().optional(), durationMinutes: z.number().finite().min(0).max(10080).optional(),
   milkAmount: amount, preparedMilkAmount: amount, remainingMilkAmount: amount, sameBottle: z.boolean().optional(),
   milkSource: z.enum(["BREAST_MILK", "FORMULA"]).optional(), burpSuccess: z.boolean().nullable().optional(),
@@ -16,19 +16,20 @@ export const factsSchema = z.object({
   supplementType: z.enum(["AD", "D3", "PROBIOTICS", "PREBIOTICS"]).optional(),
   spitUpType: z.enum(["NORMAL", "PROJECTILE"]).optional(), notes: z.string().max(4000).nullable().optional(),
 }).strict();
-export const fieldSchema = z.union([factsSchema.keyof(), z.literal("poopPhotoUrl")]);
+const fieldSchema = z.union([factsSchema.keyof(), z.literal("poopPhotoUrl")]);
 export const sourceSchema = z.object({
   kind: z.enum(["chat", "wechat", "manual"]), accountId: identifier, conversationId: identifier,
   messageId: z.string().min(1).max(500), eventKey: identifier, sentAt: time, senderId: identifier,
   collectedAt: time.optional(), groupId: identifier.optional(), mediaIds: z.array(identifier).max(10).optional(),
 }).strict();
+/** @public Shared care-fact input rules for downstream chat tool contracts. */
 export const ruleSchema = z.object({
   facts: factsSchema,
   states: z.partialRecord(fieldSchema, z.enum(["known", "pending", "unknown", "not_applicable", "not_yet"])).optional(),
   progress: z.enum(["ongoing", "ended", "unknown"]).optional(), intent: z.literal("feeding").optional(),
   evidence: z.array(z.object({ field: fieldSchema, kind: z.enum(["reported", "image", "extracted", "calculated"]), sourceKey: z.string().max(200).optional(), detail: z.string().max(1000).optional(), confirmed: z.boolean() }).strict()).max(100).optional(),
 }).strict();
-export const eventInputSchema = ruleSchema.extend({ sources: z.array(sourceSchema).max(100).optional(), attachmentIds: z.array(identifier).max(10).optional() });
+const eventInputSchema = ruleSchema.extend({ sources: z.array(sourceSchema).max(100).optional(), attachmentIds: z.array(identifier).max(10).optional() });
 export const baseMutation = z.object({ babyId: identifier, requestId: z.string().min(8).max(128) }).strict();
 export const eventMutation = baseMutation.extend({ eventId: identifier, expectedVersion: z.number().int().positive() });
 export const recordSchema = baseMutation.extend({ events: z.array(eventInputSchema).min(1).max(25) });

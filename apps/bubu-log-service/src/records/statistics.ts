@@ -50,13 +50,13 @@ export function emptyDailyMetrics(): DailyMetrics {
     supplementADCount: 0, supplementD3Count: 0, supplementProbioticsCount: 0,
     supplementPrebioticsCount: 0, spitUpCount: 0, projectileSpitUpCount: 0 };
 }
-export interface StatisticsCoverage {
+interface StatisticsCoverage {
   recordedEvents: number; incompleteEvents: number; pendingFields: number; unknownFields: number;
   ongoingEvents: number; pendingCandidates: number; duplicateCandidates: number; unresolvedTime: number;
   knownMilkAmounts: number; unknownMilkAmounts: number; knownZeroMilkAmounts: number;
   eventsWithUnknownFields: string[]; pendingEventIds: string[];
 }
-export interface TypeStatistics { events: number; knownMinutes: number; knownCount: number; unknownCount: number; knownMilkAmount: number; preparedMilkAmount: number;
+interface TypeStatistics { events: number; knownMinutes: number; knownCount: number; unknownCount: number; knownMilkAmount: number; preparedMilkAmount: number;
   knownMilkAmounts: number; unknownMilkAmounts: number; knownDurations: number; unknownDurations: number; ongoingEvents: number }
 
 /** Old DailyStat metrics retain their original meaning; coverage and per-type details are separate. */

@@ -7,7 +7,7 @@ import { agentPlanSchema } from "./service";
 import type { AgentExecutor, AgentTask } from "./runner";
 
 export const codexAgentOptionsSchema = z.object({ executable: z.string().min(1).default("codex"), timeoutMs: z.number().int().min(100).max(600_000).default(180_000) }).strict();
-export type CodexAgentOptions = z.input<typeof codexAgentOptionsSchema>;
+type CodexAgentOptions = z.input<typeof codexAgentOptionsSchema>;
 // The nested plans are validated against the full MCP-derived task schema after
 // parsing. A JSON string envelope works with strict structured output without
 // pretending arbitrary tool argument objects have a single fixed schema.
