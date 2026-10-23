@@ -23,7 +23,7 @@ function createRecordsMcp(identity: IdentityService, records: RecordsService, co
         const value=await handler(principal,args);
         return result(protectRecordPhotos(value,(args as {babyId:string}).babyId));
       } catch(error) {
-        const failure = error instanceof AppError ? {code:error.code,error:error.message,retryable:error.status>=500}
+        const failure = error instanceof AppError ? {code:error.code,error:error.message,status:error.status,retryable:error.retryable ?? error.status>=500}
           : error instanceof z.ZodError ? {code:"INVALID_INPUT",error:"工具参数不符合契约。",retryable:false}
           : {code:"SERVICE_UNAVAILABLE",error:"请求未确认完成，请使用原请求号查询或重试。",retryable:true};
         return {...result(failure),isError:true};

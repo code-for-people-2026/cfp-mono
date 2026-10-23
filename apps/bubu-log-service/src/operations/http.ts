@@ -47,7 +47,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
       return json({ code: "NOT_FOUND", error: "未找到此运营入口。" }, 404);
     } catch (error) {
       if (error instanceof z.ZodError) return json({ code: "INVALID_INPUT", error: "请核对字段、理由与操作范围。", retryable: false }, 400);
-      if (error instanceof AppError) return json({ code: error.code, error: error.message, retryable: error.status >= 500 }, error.status);
+      if (error instanceof AppError) return json({ code: error.code, error: error.message, retryable: error.retryable ?? error.status >= 500 }, error.status);
       return json({ code: "OPS_UNCONFIRMED", error: "操作结果尚未确认，请保留原请求号重试。", retryable: true }, 503);
     }
   };

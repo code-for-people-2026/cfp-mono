@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activityDetails, activityGaps, addDays, buildHeatmap, buildTrendRows, buildWeek, currentTimePosition,
-  dateKey, durationInDay, filterActivities, getIntensity, layoutDayTimeline, mondayOfWeek,
+  dateKey, durationInDay, filterActivities, fullDateTimeLabel, getIntensity, layoutDayTimeline, mondayOfWeek,
   previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList, timeLabel, timeSinceLatest,
   type Activity, type DailyStat,
 } from "../src/model";
@@ -14,6 +14,11 @@ const stat = (date: string, extra: Partial<DailyStat> = {}): DailyStat => ({
 });
 
 describe("Shanghai calendar dates", () => {
+  it("formats full China-time dates across a device daylight-saving transition", () => {
+    expect(fullDateTimeLabel("2026-11-01T00:00:00Z")).toBe("2026/11/01 08:00");
+    expect(fullDateTimeLabel("2026-03-08T00:00:00Z")).toBe("2026/03/08 08:00");
+    expect(fullDateTimeLabel("2026-11-01 09:30")).toBe("2026/11/01 09:30");
+  });
   it("uses China dates for ISO instants and bare dates regardless of host timezone", () => {
     expect(dateKey("2026-01-01T16:30:00Z")).toBe("2026-01-02");
     expect(timeLabel("2026-01-01T16:30:00Z")).toBe("00:30");

@@ -147,7 +147,7 @@ export class OperationsService {
             if (others.some(baby => baby && baby.id !== input.babyId && baby.name.trim().toLowerCase() === command.name.toLowerCase())) return fail(409, "DUPLICATE_NAME", "运营范围内已存在同名宝宝。");
             return this.runtime.identity.legacy.updateBabyNames(input.babyId, { name: command.name, fullName: command.fullName });
           }
-          if (command.type === "membership" && this.membership) return this.membership.execute(principal, input.babyId, input.requestId, this.membership.schema.parse(command.input));
+          if (command.type === "membership" && this.membership) return this.membership.execute(principal, input.babyId, input.requestId, this.membership.schema.parse(command.input), input.reason);
           return fail(409, "MEMBERSHIP_NOT_CONFIGURED", "会员模块尚未接入；未设置收费、截止或到期停服策略。");
         });
         const receipt = receiptSummary(value);

@@ -30,5 +30,5 @@ export type OpsRead = z.infer<typeof readSchema>;
 export interface MembershipOperations {
   schema: z.ZodType;
   read(principal: Principal, babyId: string): Promise<unknown>;
-  execute(principal: Principal, babyId: string, requestId: string, input: unknown): Promise<unknown>;
+  execute(principal: Principal, babyId: string, requestId: string, input: unknown, reason?: string): Promise<unknown>;
 }

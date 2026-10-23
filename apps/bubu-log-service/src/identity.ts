@@ -28,6 +28,7 @@ export class IdentityService {
   private readonly familyRuns = new Map<string, Promise<unknown>>();
   private readonly executing = new AsyncLocalStorage<boolean>();
   private operatorGuard?: (userId: string, babyId: string, permission: Permission) => Promise<void>;
+  private serviceGuard?: (babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) => Promise<void>;
   constructor(readonly store: Store, readonly legacy: LegacyBackend, readonly wechat: WechatProvider,
     readonly now: () => number = Date.now, readonly sessionTtlMs = 7 * 86400_000) {}
   /** One process owns the SQLite sidecar. All state transitions use this queue. */
@@ -40,6 +41,15 @@ export class IdentityService {
   }
   /** Installed by the composition root, never selected by a request or model. */
   setOperatorGuard(guard: (userId: string, babyId: string, permission: Permission) => Promise<void>) { this.operatorGuard = guard; }
+  /** Installed once by the shared runtime. Service eligibility never replaces baby authorization. */
+  setServiceGuard(guard: (babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) => Promise<void>) { this.serviceGuard = guard; }
+  async assertService(babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) {
+    await this.serviceGuard?.(babyId, capability, req);
+  }
+  /** Record and attachment effects share one actor-to-capability rule. Authorization remains the caller's first step. */
+  async assertRecordingService(principal: Principal, babyId: string, req?: import("payload").PayloadRequest) {
+    await this.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+  }
   private async audit(action: string, actorId: string, target: Record<string, unknown>) {
     await this.store.put("audit", randomUUID(), { action, actorId, ...target, at: new Date(this.now()).toISOString() });
   }

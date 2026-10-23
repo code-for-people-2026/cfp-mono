@@ -309,7 +309,7 @@ describe("executable external Agent and real MCP runner", () => {
     expect(await runner.once("baby-a", f.job.id)).toMatchObject({ skipped: "not_due" });
     expect(reader.read).toHaveBeenCalledTimes(1);
     await f.identity.bindGroup(f.operator, "baby-a", f.groupId, "collector-agent", false);
-    await expect(client.call("bubu_get_pending", { babyId: "baby-a" })).rejects.toThrow("MCP_TOOL_FAILED");
+    await expect(client.call("bubu_get_pending", { babyId: "baby-a" })).rejects.toMatchObject({ status: 403, code: "BABY_FORBIDDEN", retryable: false });
   }, 30_000);
 
   it("exposes a real timer entry that stops on abort without enabling a job", async () => {

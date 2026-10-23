@@ -4,6 +4,7 @@ import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import { SessionCookies, type SessionStorage } from "./session";
 import { IdentitySession } from "./identity-session";
+import { decodeMembership } from "../membership/contracts";
 
 export interface TransportRequest {
   url: string;
@@ -353,6 +354,10 @@ export function createBubuApi(options: ClientOptions) {
     },
     async getBabies(babyId?: string) {
       return decode.babyList(await request(`/api/app/user-babies${queryString({ babyId })}`, { babyId }));
+    },
+    async getMembership(babyId: string) {
+      requireSidecar();
+      return decodeMembership(await request(scoped("membership", babyId), { babyId }), babyId);
     },
     async updateBabyNames(babyId: string, input: { name: string; fullName: string }) {
       const name = input.name.trim();

@@ -10,8 +10,9 @@ import { migrations } from "../src/migrations";
 import { recordCollections, recordTables, RecordsRepository } from "../src/records/persistence";
 import { chatCollections } from "../src/chat/persistence";
 import { buildRuntimeConfig } from "../src/runtime-config";
-import { bootstrapOpsAdmin } from "../src/operations/collections";
+import { bootstrapOpsAdmin, operationsCollections, decorateCollections } from "../src/operations/collections";
 import { serializeDatabaseTransactions } from "../src/database-queue";
+import { MembershipRepository } from "../src/membership/persistence";
 
 if (process.env.NODE_ENV !== "production") throw new Error("Run with NODE_ENV=production to verify real migrations, never schema push.");
 const directory = await mkdtemp(join(tmpdir(), "bubu-production-schema-"));
@@ -44,6 +45,16 @@ async function verifyOps(payload: Payload, suffix: string) {
   await assert.rejects(db.drizzle.run(sql`UPDATE ops_users SET active = 0 WHERE id = ${admin.id}`));
   await payload.create({ collection: "ops-requests", overrideAccess: true, data: { id: `ops-${suffix}`, key: `ops-${suffix}`, babyId: "schema-baby", value: { commandFingerprint: "fixture-only", receipt: { status: "done" } } } });
 }
+async function verifyMembership(store: Store, suffix: string) {
+  const repository = new MembershipRepository(store);
+  await store.transaction(async req => {
+    const before = { version: 0, policy: { startsAt: null, endsAt: null, expiryPolicy: null, paused: false } };
+    const after = { version: 1, policy: { ...before.policy, paused: true } };
+    await repository.save("schema-baby", `membership-${suffix}`, { version: 1, before, after, action: "pause", at: "2026-10-23T12:00:00Z", actorId: "synthetic-operator", reason: "隔离生产迁移验证", fingerprint: `test-${suffix}` }, req);
+    assert.deepEqual(await repository.state("schema-baby", req), after);
+  });
+}
+const currentTables = [...tables, ...recordTables, "chat-turns", "ops-requests", "service-memberships", "service-membership-changes"];
 try {
   store = await openCurrent(directory);
   await store.transaction(async () => { await store!.put("identities", "production-check", { restored: true }); });
@@ -54,7 +65,8 @@ try {
   await store.transaction(async req => { const records = new RecordsRepository(store!.payload); for (const table of recordTables) await records.put(table, "schema-baby", `${table}:persistence`, { persisted: true }, req); });
   await store.transaction(async req => { await store!.payload.create({ collection: "chat-turns", data: { id: "chat-schema-check", key: "chat-schema-check", identityId: "schema-person", babyId: "schema-baby", value: { status: "needs_recovery", requestId: "same-request-after-restart" } }, overrideAccess: true, req }); });
   await verifyOps(store.payload, "empty");
-  const emptyBefore = await snapshot(store.payload, [...tables, ...recordTables, "chat-turns", "ops-requests"]);
+  await verifyMembership(store, "empty");
+  const emptyBefore = await snapshot(store.payload, currentTables);
   await store.close(); store = undefined;
   store = await openCurrent(directory);
   await assertPreserved(store.payload, emptyBefore);
@@ -62,22 +74,24 @@ try {
   assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, "empty@fixture.invalid");
   await store.close(); store = undefined;
 
-  for (const previousVersion of [1, 2, 3]) {
+  for (const previousVersion of [1, 2, 3, 4]) {
     const upgradeDirectory = join(directory, `upgrade-${previousVersion}`); await mkdir(upgradeDirectory);
-    const previousCollections = [...collections, ...(previousVersion >= 2 ? recordCollections : []), ...(previousVersion >= 3 ? chatCollections : [])];
-    const config = await buildConfig({ secret, collections: previousCollections, db: sqliteAdapter({ client: { url: `file:${upgradeDirectory}/identity.db` }, push: false, prodMigrations: migrations.slice(0, previousVersion), transactionOptions: {} }), typescript: { autoGenerate: false }, telemetry: false });
+    const previousCollections = [...collections, ...(previousVersion >= 2 ? recordCollections : []), ...(previousVersion >= 3 ? chatCollections : []), ...(previousVersion >= 4 ? operationsCollections : [])];
+    const config = await buildConfig({ secret, ...(previousVersion >= 4 ? { admin: { user: "ops-users" } } : {}), collections: previousVersion >= 4 ? decorateCollections(previousCollections) : previousCollections, db: sqliteAdapter({ client: { url: `file:${upgradeDirectory}/identity.db` }, push: false, prodMigrations: migrations.slice(0, previousVersion), transactionOptions: {} }), typescript: { autoGenerate: false }, telemetry: false });
     store = new Store(await getPayload({ config, key: `old-schema-${randomUUID()}` }));
     await store.transaction(async () => { for (const table of tables) await store!.put(table, `${table}:before-upgrade`, { historical: true, nested: { unchanged: [null, 0, false, "旧来源"] }, sessionId: "fixture-session-digest-preserve", babyId: "schema-baby" }); });
     if (previousVersion >= 2) await store.transaction(async req => { const records = new RecordsRepository(store!.payload); for (const table of recordTables) await records.put(table, "schema-baby", `${table}:before-upgrade`, { historical: true, facts: { type: "BOTTLE", milkAmount: 0, notes: null }, state: "open", sessionId: "fixture-actor-digest-preserve" }, req); });
     if (previousVersion >= 3) await store.transaction(async req => { await store!.payload.create({ collection: "chat-turns", data: { id: "chat-before-upgrade", key: "chat-before-upgrade", identityId: "schema-person", babyId: "schema-baby", value: { status: "needs_recovery", requestId: "same-chat-request", transcript: [{ role: "user", content: "合成私人对话" }] } }, overrideAccess: true, req }); });
+    if (previousVersion >= 4) await verifyOps(store.payload, `upgrade-${previousVersion}`);
     const before = await snapshot(store.payload, previousCollections.map(collection => collection.slug));
     await store.close(); store = undefined;
     store = await openCurrent(upgradeDirectory);
     await assertPreserved(store.payload, before);
-    await verifyOps(store.payload, `upgrade-${previousVersion}`);
+    if (previousVersion < 4) await verifyOps(store.payload, `upgrade-${previousVersion}`);
+    await verifyMembership(store, `upgrade-${previousVersion}`);
     await store.transaction(async req => { const records = new RecordsRepository(store!.payload); for (const table of recordTables) await records.put(table, "schema-baby", `${table}:after-upgrade`, { persisted: true }, req); });
     await store.transaction(async req => { await store!.payload.create({ collection: "chat-turns", data: { id: "chat-after-upgrade", key: "chat-after-upgrade", identityId: "schema-person", babyId: "schema-baby", value: { persisted: true } }, overrideAccess: true, req }); });
-    const upgraded = await snapshot(store.payload, [...tables, ...recordTables, "chat-turns", "ops-requests"]);
+    const upgraded = await snapshot(store.payload, currentTables);
     await store.close(); store = undefined;
     store = await openCurrent(upgradeDirectory);
     await assertPreserved(store.payload, before);
@@ -85,7 +99,7 @@ try {
     assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, `upgrade-${previousVersion}@fixture.invalid`);
     await store.close(); store = undefined;
   }
-  console.log("Production migrations verified: empty initialization and identity / records / chat upgrades to ops; original JSON, private session fields and timestamps preserved; rollback, admin constraints and close/reopen passed in isolated SQLite fixtures.");
+  console.log("Production migrations verified: empty initialization and identity / records / chat / ops upgrades to membership; original JSON, private session fields and timestamps preserved; rollback, admin constraints, membership state and close/reopen passed in isolated SQLite fixtures.");
 } finally {
   await store?.close();
   await rm(directory, { recursive: true, force: true });
