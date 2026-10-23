@@ -9,14 +9,14 @@ import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from 
 import {
   activityLabel, addDays, dateLabel, dayBounds, filterActivities, formatDuration,
   layoutDayTimeline, mondayOfWeek, previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList,
-  timeLabel, timestamp, todayKey, weekdayLabel,
-  type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter,
+  timeLabel, timestamp, todayKey, weekdayLabel, coverageMessage, recordStatCards, syncStatusLines,
+  type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter, type RecordSummary, type RecordEvent, type RecordSyncStatus,
 } from "../../model";
 
 const calendarViews = [
   { key: "day", label: "日历" }, { key: "week", label: "周历" }, { key: "month", label: "月历" },
 ] as const;
-type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean };
+type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean; recordSummary?: RecordSummary };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
 const isForbidden = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 403;
@@ -43,9 +43,12 @@ export default function DiaryPage() {
   const [detail, setDetail] = useState<Activity | null>(null);
   const [detailError, setDetailError] = useState("");
   const [detailBusy, setDetailBusy] = useState(false);
-  const [detailPhoto, setDetailPhoto] = useState<string | null>(null);
+  const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
+  const [detailEvent, setDetailEvent] = useState<RecordEvent | null>(null);
+  const [photoCount, setPhotoCount] = useState(0);
   const [photoLoading, setPhotoLoading] = useState(false);
-  const photoPath = useRef<string | null>(null);
+  const photoPaths = useRef<string[]>([]);
+  const [sync, setSync] = useState<{ babyId: string; jobs: RecordSyncStatus[]; error?: string } | null>(null);
   const detailVersion = useRef(0);
   const contextVersion = useRef(0);
   const authInFlight = useRef(false);
@@ -56,16 +59,16 @@ export default function DiaryPage() {
 
   const clearPrivateView = useCallback(() => {
     setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
-    setDetailBusy(false); setDataError(""); detailVersion.current++;
-    if (photoPath.current) api.releasePhotoUrl(photoPath.current);
-    photoPath.current = null; setDetailPhoto(null); setPhotoLoading(false);
+    setDetailBusy(false); setDataError(""); setSync(null); detailVersion.current++;
+    photoPaths.current.forEach(path => api.releasePhotoUrl(path));
+    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0); setPhotoLoading(false);
   }, []);
   const closeDetail = () => {
     detailVersion.current++; setDetail(null); setDetailBusy(false); setDetailError("");
-    if (photoPath.current) api.releasePhotoUrl(photoPath.current);
-    photoPath.current = null; setDetailPhoto(null); setPhotoLoading(false);
+    photoPaths.current.forEach(path => api.releasePhotoUrl(path));
+    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0); setPhotoLoading(false);
   };
-  useEffect(() => () => { if (photoPath.current) api.releasePhotoUrl(photoPath.current); detailVersion.current++; }, []);
+  useEffect(() => () => { photoPaths.current.forEach(path => api.releasePhotoUrl(path)); detailVersion.current++; }, []);
 
   const restore = useCallback(async () => {
     const version = ++contextVersion.current;
@@ -109,7 +112,8 @@ export default function DiaryPage() {
         });
         return { key: dataKey, ...result, evening: [], latest: [], stats: [] };
       }
-      const result = await api.getActivities({ babyId, date });
+      const snapshot = identityEnabled ? await api.getSnapshot(babyId, date) : null;
+      const result = snapshot ? { activities: snapshot.activities, complete: true } : await api.getActivities({ babyId, date });
       let evening: Activity[] = [];
       let complete = result.complete;
       if (mode === "day") {
@@ -120,7 +124,7 @@ export default function DiaryPage() {
         complete = complete && previous.complete;
       }
       const latest = mode === "day" && date === todayKey() ? (await Promise.all([api.getLatestActivity(babyId, ["SLEEP"]), api.getLatestActivity(babyId, ["BREASTFEED", "BOTTLE"])] )).filter((activity): activity is Activity => activity !== null) : [];
-      return { key: dataKey, ...result, complete, evening, latest, stats: [] };
+      return { key: dataKey, ...result, complete, evening, latest, stats: [], ...(snapshot ? { recordSummary: snapshot.summary } : {}) };
     };
     void load().then((next) => { if (!cancelled) setLoaded(next); }).catch((error: unknown) => {
       if (cancelled) return;
@@ -130,6 +134,18 @@ export default function DiaryPage() {
     });
     return () => { cancelled = true; };
   }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, clearPrivateView, restore]);
+
+  useEffect(() => {
+    if (!identityEnabled || !babyId || !context?.authenticated) return;
+    let cancelled = false;
+    void api.getSyncStatus(babyId).then(jobs => { if (!cancelled) setSync({ babyId, jobs }); }).catch((error: unknown) => {
+      if (cancelled) return;
+      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+      else if (isForbidden(error)) void restore();
+      else setSync({ babyId, jobs: [], error: "同步状态暂时不可用，当前仅显示已保存记录" });
+    });
+    return () => { cancelled = true; };
+  }, [babyId, context?.authenticated, revision, clearPrivateView, restore]);
 
   const login = async () => {
     if (authInFlight.current) return;
@@ -169,14 +185,19 @@ export default function DiaryPage() {
     const version = ++detailVersion.current;
     setDetail(null); setDetailError(""); setDetailBusy(true);
     try {
-      const current = await api.getActivity(babyId, activity.id);
+      const [current, event] = await Promise.all([api.getActivity(babyId, activity.id), identityEnabled ? api.getRecordEvent(babyId, activity.id) : Promise.resolve(null)]);
       if (version !== detailVersion.current) return;
-      setDetail(current); setDetailBusy(false);
-      if (current.poopPhotoUrl) {
+      setDetail(current); setDetailEvent(event); setDetailBusy(false);
+      const urls = [...new Set([...(current.poopPhotoUrl ? [current.poopPhotoUrl] : []), ...(event?.attachmentIds.map(id => `/api/app/attachments/${id}?babyId=${encodeURIComponent(babyId)}`) ?? [])])];
+      setPhotoCount(urls.length);
+      if (urls.length) {
         setPhotoLoading(true);
-        const photo = await api.resolvePhotoUrl(current.poopPhotoUrl, babyId);
-        if (version !== detailVersion.current) { api.releasePhotoUrl(photo); return; }
-        photoPath.current = photo; setDetailPhoto(photo);
+        for (const url of urls) {
+          const photo = await api.resolvePhotoUrl(url, babyId);
+          if (version !== detailVersion.current) { api.releasePhotoUrl(photo); return; }
+          photoPaths.current.push(photo);
+          setDetailPhotos([...photoPaths.current]);
+        }
       }
     } catch (error) {
       if (version !== detailVersion.current) return;
@@ -189,6 +210,7 @@ export default function DiaryPage() {
   const summary = useMemo(() => mode === "list"
     ? summarizeRecordList(data?.activities || [], date)
     : summarizeHomeDay(data?.activities || [], date), [data, date, mode]);
+  const cards = useMemo(() => data?.recordSummary ? recordStatCards(data.recordSummary) : statCards(summary), [data, summary]);
   const visible = useMemo(() => filterActivities(data?.activities || [], filters), [data, filters]);
   const navigate = (direction: number) => {
     const distance = mode === "trend" ? days : mode === "week" || mode === "month" ? 7 : 1;
@@ -246,19 +268,23 @@ export default function DiaryPage() {
       {dataError ? <View className="state-panel"><Text className="error-text">{dataError}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重试</Button></View>
         : !data ? <View className="state-panel">正在读取记录…</View> : <>
           {!data.complete && <View className="notice">记录数量达到读取上限，当前展示可能不完整。可切换到单日查看。</View>}
-          {mode === "day" && <DayTimeline latestActivities={data.latest} activities={visible} date={date} onActivityClick={(activity) => { void openDetail(activity); }} />}
+          {mode === "day" && <DayTimeline latestActivities={data.latest} activities={visible} date={date} recordCoverage={data.recordSummary?.coverage} onActivityClick={(activity) => { void openDetail(activity); }} />}
           {(mode === "day" || mode === "list") && <View className="daily-summary">
-            <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{layoutDayTimeline(visible, date).length} 条记录</Text></View>
-            <View className="stats-grid">{statCards(summary).map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
+            <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{data.recordSummary?.coverage.recordedEvents ?? layoutDayTimeline(visible, date).length} 条记录</Text></View>
+            <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
               <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
             </View>)}</View>
             <View className="filter-caption"><Text>轻点上方卡片筛选记录</Text>{filters.length > 0 && <Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text>}</View>
+            {data.recordSummary && <View className="data-note">
+              {data.recordSummary.metrics.diaperCount > 0 && <Text>尿布 {data.recordSummary.metrics.diaperCount} 次 · 明确有尿 {data.recordSummary.metrics.peeCount} 次 · 明确有便 {data.recordSummary.metrics.poopCount} 次。 </Text>}
+              <Text>{coverageMessage(data.recordSummary.coverage) || "汇总仅包含已记录的事实。"}</Text>
+            </View>}
           </View>}
-          {mode === "day" && <PreviousEvening activities={data.evening} date={date} />}
+          {mode === "day" && <PreviousEvening activities={data.evening} date={date} sidecar={identityEnabled} />}
           {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay} />}
           {mode === "month" && <Heatmap stats={data.stats} endDate={date} onDateClick={(selected, metric) => { setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
           {mode === "trend" && <TrendCharts stats={data.stats} days={days} endDate={date} onDaysChange={setDays} />}
-          {(mode === "month" || mode === "trend") && <View className="data-note">展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。</View>}
+          {(mode === "month" || mode === "trend") && <View className="data-note">{identityEnabled ? "按已保存记录统一计算。未知数值与未结束时长不当作零，疑似重复待核对期间不重复计入；暂无记录不代表实际没有发生。" : "展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。"}</View>}
           {mode === "list" && <>
             <View className="section-heading"><Text className="section-title">{visible.length} 条记录</Text><Picker mode="selector" range={["按活动时间", "按创建时间", "按更新时间"]} value={["endTime", "createdAt", "updatedAt"].indexOf(sort)} onChange={(e) => setSort((["endTime", "createdAt", "updatedAt"] as const)[Number(e.detail.value)]!)}><Text className="inline-action">{{ endTime: "按活动时间", createdAt: "按创建时间", updatedAt: "按更新时间" }[sort]} ⌄</Text></Picker></View>
             {sortActivities(visible, sort).map((activity) => <View className="record-row" key={activity.id} onClick={() => { void openDetail(activity); }}>
@@ -267,19 +293,20 @@ export default function DiaryPage() {
             {!visible.length && <View className="state-panel">这一天还没有{filters.length ? "符合筛选的" : ""}记录</View>}
           </>}
         </>}
+      {identityEnabled && sync?.babyId === babyId && <View className="data-note sync-status"><Text className="section-title">采集同步</Text>{(sync.error ? [sync.error] : syncStatusLines(sync.jobs)).map(line => <View key={line}><Text>{line}</Text></View>)}</View>}
       {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={closeDetail}>关闭</Text></View>}
-      <ActivityDetail activity={detail} photoUrl={detailPhoto} photoLoading={photoLoading} onClose={closeDetail} />
+      <ActivityDetail activity={detail} photoUrls={detailPhotos} photoCount={photoCount} recordEvent={detailEvent} photoLoading={photoLoading} onClose={closeDetail} />
     </>}
     </View>
   </View>;
 }
 
-function PreviousEvening({ activities, date }: { activities: Activity[]; date: string }) {
+function PreviousEvening({ activities, date, sidecar = false }: { activities: Activity[]; date: string; sidecar?: boolean }) {
   const start = dayBounds(date).start;
   const { feeding, sleep } = previousEvening(activities, date);
   if (!feeding && !sleep) return null;
   return <View className="evening-card"><Text className="evening-heading">昨晚的衔接</Text>
     {feeding && <Text className="evening-line">{timeLabel(feeding.startTime)} · {activityLabel(feeding)}</Text>}
-    {sleep && <Text className="evening-line">{timeLabel(sleep.startTime)} 入睡 · {sleep.endTime ? `${timestamp(sleep.endTime) >= start ? "今天 " : ""}${timeLabel(sleep.endTime)} 醒来，睡了 ${formatDuration(Math.max(0, Math.trunc((timestamp(sleep.endTime) - timestamp(sleep.startTime)) / 60000)))}` : "睡眠尚未结束"}</Text>}
+    {sleep && <Text className="evening-line">{timeLabel(sleep.startTime)} 入睡 · {sleep.endTime ? `${timestamp(sleep.endTime) >= start ? "今天 " : ""}${timeLabel(sleep.endTime)} 醒来，睡了 ${formatDuration(Math.max(0, Math.trunc((timestamp(sleep.endTime) - timestamp(sleep.startTime)) / 60000)))}` : sidecar ? "结束时间尚未确定" : "睡眠尚未结束"}</Text>}
   </View>;
 }
