@@ -93,7 +93,8 @@ test("an invited caregiver sees a calendar without binding, and revocation clear
   expect(setup.requests.find((request) => request.path === "/api/identity/invitations/accept")?.body).toEqual({ code: "caregiver-invite" });
   expect(setup.requests.some((request) => request.path === "/api/identity/bind-legacy")).toBe(false);
   setup.revoke();
-  await menu(page, "刷新数据");
+  // Opening the menu now reads baby service state and detects revocation immediately.
+  await page.getByLabel("打开菜单", { exact: true }).click();
   await expect(page.locator(".bubu-day-card")).toHaveCount(0);
   await expect(page.getByText("开始记录宝宝的日常", { exact: true })).toBeVisible();
   await expect(page.locator('input[placeholder="请输入密码"]')).toHaveCount(0);

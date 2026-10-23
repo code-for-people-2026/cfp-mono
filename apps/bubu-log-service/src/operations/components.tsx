@@ -9,7 +9,14 @@ type Context = { user: { id: string | number; email: string; role: string; babyI
 type EventSummary = { id: string; version: number; type?: string; startTime?: string; lifecycle: string; projection: string; attachmentIds: string[] };
 type Job = { id: string; accountId: string; chatId: string; agentId: string; enabled: boolean; intervalMs: number; lastSuccessAt?: string; processedThrough?: string; nextRunAt?: string; heartbeatAt?: string; failure?: { code: string; at: string; attempts: number }; activeBatchId?: string; pendingMedia?: number; cursor?: Record<string, number>; backfills?: { id: string; state: string; range: { from: string; to: string } }[] };
 type Pending = { id: string; kind?: string; eventId?: string; eventIds?: string[]; version?: number; eventVersion?: number; fields?: string[]; conflicts?: { code: string; message?: string }[]; duplicateCandidates?: string[]; sourceId?: string; media?: { index: number; state: string; reason: string }[]; state: string };
-type Overview = { baby: Baby; grants: { subjectId: string; state: string; permissions: string[]; source: string }[]; bindings: { groupId: string; agentId: string; active: boolean }[]; jobs: Job[]; pending: Pending[]; events: EventSummary[]; audit: Row[] };
+type ExpiryAction = "continue" | "pause";
+type MembershipOverview = {
+  babyId: string; version: number; configured: boolean; status: "free" | "scheduled" | "paused" | "expired"; label: string; message: string;
+  startsAt: string | null; endsAt: string | null; entitlements: { chat: boolean; collection: boolean; history: true }; payment: { enabled: false };
+  policy: { startsAt: string | null; endsAt: string | null; expiryPolicy: { chat: ExpiryAction; collection: ExpiryAction } | null; paused: boolean };
+  changes: { version: number; action: string; reason: string; at: string; actorId: string }[];
+};
+type Overview = { baby: Baby; grants: { subjectId: string; state: string; permissions: string[]; source: string }[]; bindings: { groupId: string; agentId: string; active: boolean }[]; jobs: Job[]; pending: Pending[]; events: EventSummary[]; audit: Row[]; membership?: MembershipOverview };
 type Command = Row & { type: string };
 type ActionRequest = { babyId: string; reason: string; requestId: string; command: Command };
 type ReadRequest = { babyId: string; reason: string; kind: string; id?: string; before?: unknown; after?: unknown };
@@ -103,7 +110,7 @@ export function OperationsTools() {
       {!context.babies.length && <Empty>尚未分配宝宝范围。请由管理员在运营账号中明确授权。</Empty>}
       {babyId && <Workspace key={babyId} babyId={babyId} writable={context.user.role !== "auditor"} denied={denied} accountAudit={context.user.role === "administrator" ? context.accountAudit : undefined} />}
       {!babyId && context.user.role === "administrator" && context.accountAudit && <AccountAudit rows={context.accountAudit} />}
-      <p className="bubu-ops__footer">会员权益：{context.membership.configured ? "已配置，请通过会员模块管理。" : "等待会员模块提供配置；此处不设价格、免费截止日或到期限流。"}</p>
+      <p className="bubu-ops__footer">服务权益按宝宝共享。{context.membership.configured ? "免费服务配置请在“服务权益”中核对。" : "暂时无法读取服务权益配置。"}微信支付保持关闭。</p>
     </>}
   </section>;
 }
@@ -213,7 +220,7 @@ function Workspace({ babyId, writable, denied, accountAudit }: { babyId: string;
   }
   const actionsDisabled = busy || !writable;
   const newActionDisabled = actionsDisabled || retryAllowed;
-  const tabs: Choice[] = [["pending", "记录与待补"], ["family", "宝宝与照护授权"], ["collector", "群绑定与采集"], ["history", "历史核对"], ["audit", "操作审计"]];
+  const tabs: Choice[] = [["pending", "记录与待补"], ["family", "宝宝与照护授权"], ["collector", "群绑定与采集"], ["membership", "服务权益"], ["history", "历史核对"], ["audit", "操作审计"]];
   return <>
     <div className="bubu-ops__reason"><Field title="本次核对或操作理由（至少 8 个字）" hint="请说明所处理的客服事项或授权依据；每次操作均保存这段理由。">{id => <textarea id={id} value={reason} maxLength={500} rows={2} onChange={event => setReason(event.target.value)} placeholder="例如：根据照护者反馈核对今天的瓶喂时间" />}</Field></div>
     {!writable && <p className="bubu-ops__notice">当前为审计只读角色，仅能核对范围内的进度和摘要；私有正文、图片和变更操作需运营角色。</p>}
@@ -231,6 +238,7 @@ function Workspace({ babyId, writable, denied, accountAudit }: { babyId: string;
       <small>{retryAllowed ? "响应未确认时请保留此请求号。重试沿用原参数；请勿重复新建同一操作。" : "回执已确认。需要更正时，核对当前版本后再提交新操作。"}</small></div>}
     {!overview && !error && <p role="status">正在读取宝宝的运营状态…</p>}
     {overview && <>
+      <div hidden={section !== "membership"}><Membership membership={overview.membership} send={send} disabled={newActionDisabled} busy={busy} writable={writable} /></div>
       {section === "family" && <Family overview={overview} send={send} disabled={newActionDisabled} />}
       {section === "collector" && <Collector overview={overview} send={send} disabled={newActionDisabled} />}
       {section === "pending" && <>
@@ -258,6 +266,97 @@ function Workspace({ babyId, writable, denied, accountAudit }: { babyId: string;
 
 type Sender = (command: Command, existing?: ActionRequest) => Promise<void>;
 type Reader = (input: Omit<ReadRequest, "babyId" | "reason">) => Promise<void>;
+
+const expiryChoices: Choice[] = [["", "未配置到期策略"], ["continue", "到期后继续免费服务"], ["pause", "到期后暂停此服务"]];
+const membershipActionLabels: Record<string, string> = { configure: "配置免费服务", extend: "延长免费服务", pause: "暂停服务", resume: "恢复服务" };
+// Keep the operator's date inputs in a fixed timezone, independent of the browser's locale.
+const membershipDateInput = (value: string | null) => value ? new Date(Date.parse(value) + 8 * 60 * 60 * 1000).toISOString().slice(0, 19) : "";
+const membershipDraft = (membership: MembershipOverview) => ({
+  version: membership.version,
+  startsAt: membershipDateInput(membership.policy.startsAt), endsAt: membershipDateInput(membership.policy.endsAt),
+  chat: membership.policy.expiryPolicy?.chat || "", collection: membership.policy.expiryPolicy?.collection || "",
+});
+function Membership({ membership, send, disabled, busy, writable }: { membership?: MembershipOverview; send: Sender; disabled: boolean; busy: boolean; writable: boolean }) {
+  if (!membership || !Number.isSafeInteger(membership.version)) return <Panel title="服务权益"><p role="status" className="bubu-ops__error">暂时无法读取服务状态。请刷新状态后再核对，不能据此确认服务已开放。</p></Panel>;
+  return <MembershipEditor membership={membership} send={send} disabled={disabled} busy={busy} writable={writable} />;
+}
+function MembershipEditor({ membership, send, disabled, busy, writable }: { membership: MembershipOverview; send: Sender; disabled: boolean; busy: boolean; writable: boolean }) {
+  // Refreshes update the visible server state but never replace an in-progress versioned draft.
+  const [draft, setDraft] = useState(() => membershipDraft(membership));
+  const [extension, setExtension] = useState("");
+  const [error, setError] = useState("");
+  const stale = draft.version !== membership.version;
+  function reload() { setDraft(membershipDraft(membership)); setExtension(""); setError(""); }
+  function timestamp(value: string): string | null {
+    if (!value.trim()) return null;
+    const date = new Date(`${value}+08:00`);
+    if (!Number.isFinite(date.getTime())) throw new Error("请填写有效的北京时间。");
+    return date.toISOString();
+  }
+  async function apply(action: "configure" | "extend" | "pause" | "resume") {
+    setError("");
+    if (disabled || stale) return;
+    try {
+      let input: Row = { action, expectedVersion: draft.version };
+      if (action === "configure") {
+        const startsAt = timestamp(draft.startsAt), endsAt = timestamp(draft.endsAt);
+        if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) throw new Error("免费截止时间必须晚于开始时间。");
+        if (Boolean(draft.chat) !== Boolean(draft.collection)) throw new Error("请分别选择聊天与采集的到期策略，或将两项都设为未配置。");
+        if (!endsAt && (draft.chat || draft.collection)) throw new Error("设置到期策略前，请先明确免费截止时间；未设截止时间时无需配置到期策略。");
+        input = { ...input, startsAt, endsAt, expiryPolicy: draft.chat && draft.collection ? { chat: draft.chat, collection: draft.collection } : null };
+      }
+      if (action === "extend") {
+        const endsAt = timestamp(extension);
+        if (!endsAt) throw new Error("请明确填写延长后的截止时间。");
+        if (!membership.policy.endsAt || Date.parse(endsAt) <= Date.parse(membership.policy.endsAt)) throw new Error("延长后的截止时间必须晚于当前已配置的截止时间。");
+        input = { ...input, endsAt };
+      }
+      await send({ type: "membership", input });
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "请核对免费服务配置后重试。"); }
+  }
+  const dates = <dl className="bubu-ops__membership-summary">
+    <div><dt>免费开始时间</dt><dd>{membership.startsAt ? dateLabel(membership.startsAt) : "未配置"}</dd></div>
+    <div><dt>免费截止时间</dt><dd>{membership.endsAt ? dateLabel(membership.endsAt) : "未配置，不自动停服"}</dd></div>
+    <div><dt>内置聊天</dt><dd>{membership.entitlements.chat ? "可用" : "暂停"}</dd></div>
+    <div><dt>群记录采集</dt><dd>{membership.entitlements.collection ? "可用" : "暂停"}</dd></div>
+    <div><dt>历史查看与导出</dt><dd>保留，仍按宝宝授权访问</dd></div>
+    <div><dt>微信支付</dt><dd>关闭</dd></div>
+  </dl>;
+  return <>
+    <Panel title="当前服务权益" help="同一个宝宝的所有授权照护者共享服务状态。这里显示服务端当前判断；时间均为北京时间。">
+      <p><strong>{membership.label}</strong><span className="bubu-ops__badge">当前 v{membership.version}</span></p><p>{membership.message}</p>
+      {dates}
+      <p className="bubu-ops__muted">{membership.policy.expiryPolicy ? `已配置到期策略：聊天${membership.policy.expiryPolicy.chat === "pause" ? "暂停" : "继续"}，采集${membership.policy.expiryPolicy.collection === "pause" ? "暂停" : "继续"}。` : "未配置到期策略，截止时间本身不会触发自动停服。"}暂停或到期不会删除历史记录。</p>
+    </Panel>
+    {writable && <>
+      <div className="bubu-ops__notice"><div className="bubu-ops__header"><p>正在编辑 v{draft.version} · 服务端当前 v{membership.version}</p><button type="button" className="bubu-ops__secondary" disabled={busy} onClick={reload}>重新载入当前配置</button></div>
+        <small>重新载入会清空尚未提交的修改。刷新状态不会替换本页草稿；每次提交使用草稿版本和上方填写的操作理由。</small>
+        {stale && <p role="status">配置已发生变化。请先核对当前状态，再重新载入配置；旧草稿不会覆盖新版本。</p>}
+      </div>
+      {error && <p className="bubu-ops__error" role="alert">{error}</p>}
+      <Panel title="免费时间与到期策略" disabled={disabled || stale} help="留空表示未配置，不补默认期限。保存时间或到期策略不会解除人工暂停。">
+        <div className="bubu-ops__grid">
+          <Field title="免费开始时间（北京时间，可留空）">{id => <input id={id} type="datetime-local" step="1" value={draft.startsAt} onChange={event => setDraft(current => ({ ...current, startsAt: event.target.value }))} />}</Field>
+          <Field title="免费截止时间（北京时间，可留空）">{id => <input id={id} type="datetime-local" step="1" value={draft.endsAt} onChange={event => setDraft(current => ({ ...current, endsAt: event.target.value }))} />}</Field>
+          <Select title="到期后的内置聊天" value={draft.chat} onChange={chat => setDraft(current => ({ ...current, chat }))} options={expiryChoices} />
+          <Select title="到期后的群记录采集" value={draft.collection} onChange={collection => setDraft(current => ({ ...current, collection }))} options={expiryChoices} />
+        </div>
+        <p className="bubu-ops__muted">到期策略须分别明确选择。两项都保持未配置时，不会因截止时间自动停服。</p>
+        <button type="button" onClick={() => void apply("configure")}>保存免费服务配置</button>
+      </Panel>
+      <Panel title="延长免费服务" disabled={disabled || stale || !membership.policy.endsAt} help={membership.policy.endsAt ? "仅延后已配置的截止时间，保留到期策略和人工暂停状态。" : "当前未配置截止时间，无需延期。如需明确起止时间，请使用上方配置。"}>
+        <Field title="延长后的截止时间（北京时间）">{id => <input id={id} type="datetime-local" step="1" value={extension} onChange={event => setExtension(event.target.value)} />}</Field>
+        <button type="button" disabled={!extension} onClick={() => void apply("extend")}>延长免费截止时间</button>
+      </Panel>
+      <Panel title="暂停与恢复" disabled={disabled || stale} help="暂停会同时停止内置聊天与群记录采集，保留历史和已提交记录。恢复只解除人工暂停，仍按开始时间与已配置的到期策略判断可用性。">
+        <div className="bubu-ops__buttons"><button type="button" className="bubu-ops__secondary" disabled={membership.policy.paused} onClick={() => void apply("pause")}>暂停聊天与采集</button><button type="button" disabled={!membership.policy.paused} onClick={() => void apply("resume")}>解除人工暂停</button></div>
+      </Panel>
+    </>}
+    <Panel title="服务权益变更记录" help="每次变更保留版本、操作者和原因；审计只读角色可查看这些记录。">
+      <Table headers={["版本", "时间", "动作", "操作者", "原因"]} rows={membership.changes.map(change => [`v${change.version}`, dateLabel(change.at), membershipActionLabels[change.action] || change.action, change.actorId, change.reason])} />
+    </Panel>
+  </>;
+}
 function Family({ overview, send, disabled }: { overview: Overview; send: Sender; disabled: boolean }) {
   const [name, setName] = useState(overview.baby.name);
   const [fullName, setFullName] = useState(overview.baby.fullName || "");

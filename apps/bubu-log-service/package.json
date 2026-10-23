@@ -20,7 +20,9 @@
     "test:browser-server": "NODE_ENV=test tsx tests/chat-browser-server.ts",
     "cms:admin": "tsx scripts/create-admin.ts",
     "test:ops-server": "NODE_ENV=test tsx tests/ops-browser-server.ts",
-    "test:ops-http": "tsx scripts/verify-ops-http.ts"
+    "test:ops-http": "tsx scripts/verify-ops-http.ts",
+    "test:fullstack-server": "NODE_ENV=test tsx tests/fullstack-browser-server.ts",
+    "test:membership-http": "tsx scripts/verify-membership-http.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",

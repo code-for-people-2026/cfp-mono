@@ -32,7 +32,14 @@ export class RecordsService {
     this.repo = new RecordsRepository(identity.store.payload);
   }
   private async authorized<T>(principal: Principal, babyId: string, write: boolean, action: (scope: ActorScope, req: PayloadRequest) => Promise<T>) {
-    return this.identity.executeAuthorized(principal, babyId, write ? "records:write" : "records:read", action, principal.kind === "collector" ? principal.groupId : undefined);
+    return this.identity.executeAuthorized(principal, babyId, write ? "records:write" : "records:read", async (scope, req) => {
+      if (write) await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+      return action(scope, req);
+    }, principal.kind === "collector" ? principal.groupId : undefined);
+  }
+  private async beforeProjection(principal: Principal, babyId: string, req: PayloadRequest) {
+    await this.identity.authorize(principal, babyId, "records:write", principal.kind === "collector" ? principal.groupId : undefined);
+    await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
   }
   private operationKey(scope: ActorScope, requestId: string) { return hash([scope.babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf || "", scope.groupId || "", requestId]); }
   private serial<T>(action: () => Promise<T>): Promise<T> {
@@ -157,6 +164,7 @@ export class RecordsService {
           return old;
         }
         const changes = await prepare(scope, req);
+        await this.beforeProjection(principal, babyId, req);
         const projections: Projection[] = [];
         for (const change of changes) {
           if (change.unchanged) continue;
@@ -174,8 +182,9 @@ export class RecordsService {
     });
   }
   private async flush(principal: Principal, operation: Operation): Promise<RecordReceipt> {
-    return this.authorized(principal, operation.babyId, true, async (scope, req) => {
+    const outcome = await this.authorized(principal, operation.babyId, true, async (scope, req) => {
       const op = (await this.repo.get<Operation>("care-operations", operation.babyId, operation.key, req))!;
+      let interruption: AppError | undefined;
       try {
         for (const action of op.projections) {
           const event = (await this.repo.get<CareEvent>("care-events", op.babyId, action.eventId, req))!;
@@ -183,6 +192,7 @@ export class RecordsService {
           // older action already succeeded; never replay it over later intent.
           if(event.version!==action.version)continue;
           if (event.projection === "synced") continue;
+          await this.beforeProjection(principal, op.babyId, req);
           const projected = await this.legacy.writeActivity(op.babyId, event.legacyId, action.desired, action.expected);
           event.projected = projected; event.projection = "synced";
           await this.repo.put("care-events", op.babyId, event.id, event, req);
@@ -190,11 +200,15 @@ export class RecordsService {
         if (op.projections.length) {
           const activities = await this.legacy.listActivities(op.babyId);
           const events = await this.repo.list<CareEvent>("care-events", op.babyId, req);
-          for (const date of op.dates) await this.legacy.saveDailyStats(op.babyId, date, computeStatistics(activities, date, events, this.identity.now()).metrics);
+          for (const date of op.dates) {
+            await this.beforeProjection(principal, op.babyId, req);
+            await this.legacy.saveDailyStats(op.babyId, date, computeStatistics(activities, date, events, this.identity.now()).metrics);
+          }
         }
         op.status = "done"; delete op.error;
       } catch (error) {
-        op.status = error instanceof AppError && error.status === 409 ? "conflict" : "pending";
+        if (error instanceof AppError && (error.retryable === true || error.status === 401 || error.status === 403)) interruption = error;
+        op.status = !interruption && error instanceof AppError && error.status === 409 ? "conflict" : "pending";
         op.error = error instanceof AppError ? error.code : "PROJECTION_UNAVAILABLE";
         if (op.status === "conflict") for (const action of op.projections) {
           const event = (await this.repo.get<CareEvent>("care-events", op.babyId, action.eventId, req))!;
@@ -204,8 +218,12 @@ export class RecordsService {
       const receipt = await this.receipt(op, req, scope);
       op.receipt = receipt;
       await this.repo.put("care-operations", op.babyId, op.key, op, req);
-      return receipt;
+      return { receipt, interruption };
     });
+    // Commit each confirmed projection before returning a recoverable service stop.
+    // Throwing inside the transaction would roll back its checkpoint after the remote write.
+    if (outcome.interruption) throw outcome.interruption;
+    return outcome.receipt;
   }
   private async receipt(op: Operation, req: PayloadRequest, scope:ActorScope): Promise<RecordReceipt> {
     const events = (await Promise.all(op.eventIds.map(id => this.repo.get<CareEvent>("care-events", op.babyId, id, req)))).filter((event): event is CareEvent => !!event);

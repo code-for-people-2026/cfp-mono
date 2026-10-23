@@ -53,6 +53,9 @@ export class ChatService {
     return this.identity.executeAuthorized(principal, babyId, write ? "records:write" : "records:read", (_scope, req) => action(req));
   }
   private async check(principal: Principal, babyId: string) { await this.authorized(principal, babyId, false, async () => undefined); }
+  private async checkService(principal: Principal, babyId: string) {
+    await this.authorized(principal, babyId, true, req => this.identity.assertService(babyId, "chat", req));
+  }
   private publicTurn(turn: StoredTurn): ChatTurn {
     const { id, requestId, conversationId, babyId, createdAt, updatedAt, input, assistantText, receipts, pending: questions, refreshRequired, error } = turn;
     // A process restart leaves a durable checkpoint, not an eternally spinning message.
@@ -67,14 +70,14 @@ export class ChatService {
   private async connect(principal: Principal, babyId: string, signal?: AbortSignal, readOnly = false) {
     const delegated = await this.identity.issueAgent(principal, babyId, "chat-agent", { readOnly });
     const client = new ChatMcpClient(this.options.mcpUrl, delegated.token, this.options.fetch, signal);
-    try { await client.connect(); await this.check(principal, babyId); return client; }
+    try { await client.connect(); await (readOnly ? this.check(principal, babyId) : this.checkService(principal, babyId)); return client; }
     catch (error) { await client.close().catch(() => undefined); throw error; }
   }
   private async call(principal: Principal, turn: Pick<StoredTurn, "babyId">, client: ChatMcpClient, name: string, args: Record<string, unknown>, signal?: AbortSignal) {
-    await this.check(principal, turn.babyId);
+    await (signal ? this.checkService(principal, turn.babyId) : this.check(principal, turn.babyId));
     if (signal?.aborted) throw new AppError(503, "CHAT_INTERRUPTED", "处理已暂停，可以继续处理。");
     const result = signal ? await abortable(client.call(name, args), signal) : await client.call(name, args);
-    await this.check(principal, turn.babyId);
+    await (signal ? this.checkService(principal, turn.babyId) : this.check(principal, turn.babyId));
     return result;
   }
   async history(principal: Principal, babyId: string): Promise<ChatHistory> {
@@ -105,6 +108,7 @@ export class ChatService {
         if (previous.fingerprint !== fingerprint) throw new AppError(409, "CHAT_REQUEST_REUSED", "同一请求号不能用于不同内容，请核对原输入。");
         if (previous.status === "completed" || previous.error?.retryable === false || this.active.has(id)) return previous;
       }
+      await this.identity.assertService(input.babyId, "chat", req);
       const blocker = (await this.repository.list(principal.subjectId, input.babyId, req)).find(item => item.id !== id && ["processing", "needs_recovery"].includes(item.status));
       if (blocker) throw new AppError(409, "CHAT_PREVIOUS_PENDING", "上一条还在处理或等待恢复，请先处理上一条。");
       const { babyId, requestId, ...message } = input;
@@ -213,7 +217,7 @@ export class ChatService {
       if (typeof metadata.attachmentId !== "string") continue;
       const id = metadata.attachmentId;
       const image = await this.attachments.read(principal, turn.babyId, id);
-      await this.check(principal, turn.babyId);
+      await this.checkService(principal, turn.babyId);
       images.push({ type: "text", text: JSON.stringify({ type: "bubu_image_reference", ...metadata }) });
       images.push({ type: "image_url" as const, image_url: { url: `data:${image.attachment.mime};base64,${image.bytes.toString("base64")}` } });
     }
@@ -272,7 +276,7 @@ export class ChatService {
   }
   private failure(error: unknown): ChatError {
     if (error instanceof McpToolError) return { code: error.code, message: error.message, retryable: error.retryable };
-    if (error instanceof AppError) return { code: error.code, message: error.message, retryable: error.status >= 500 };
+    if (error instanceof AppError) return { code: error.code, message: error.message, retryable: error.retryable ?? error.status >= 500 };
     if (error instanceof z.ZodError) return { code: "CHAT_PLAN_INVALID", message: "模型提出的操作不符合记录规则，请核对后重新说明。", retryable: false };
     return { code: "CHAT_SERVICE_UNAVAILABLE", message: "处理暂未完成，输入和已确认结果仍保留，请继续处理。", retryable: true };
   }
@@ -280,33 +284,34 @@ export class ChatService {
     let client: ChatMcpClient | undefined;
     try {
       client = await abortable(this.connect(principal, turn.babyId, signal), signal);
-      const tools = await abortable(client.tools(), signal); await this.check(principal, turn.babyId);
+      const tools = await abortable(client.tools(), signal); await this.checkService(principal, turn.babyId);
       await this.context(principal, turn, client, signal);
       if (typeof turn.modelContext?.imageAmbiguity === "string") {
         turn.assistantText = turn.modelContext.imageAmbiguity; turn.status = "completed";
         await this.persist(principal, turn); return this.publicTurn(turn);
       }
       while (true) {
+        await this.checkService(principal, turn.babyId);
         if (!await this.execute(principal, turn, client, signal)) return this.publicTurn(turn);
         if (turn.rounds >= 10 || turn.steps.length >= 24) throw new AppError(409, "CHAT_STEP_LIMIT", "这一轮步骤较多，已确认结果仍保留。请查看记录后继续说明。");
         const messages = await this.messages(principal, turn);
-        await this.check(principal, turn.babyId);
+        await this.checkService(principal, turn.babyId);
         const output = outputSchema.parse(await abortable(this.options.provider!.complete({ instructions: CHAT_INSTRUCTIONS, messages, tools: modelTools(tools), signal }), signal));
-        await this.check(principal, turn.babyId);
+        await this.checkService(principal, turn.babyId);
         if (output.calls.some(call => !tools.some(tool => tool.name === call.name))) throw new AppError(409, "CHAT_TOOL_FORBIDDEN", "模型请求了未授权工具，未执行修改。");
         if (output.calls.length) { await this.plan(principal, turn, output); continue; }
         turn.pending = pending(await this.call(principal, turn, client, "bubu_get_pending", { babyId: turn.babyId }, signal));
         turn.assistantText = turn.receipts.length ? confirmedReply(turn.receipts, turn.pending) : uncommittedReply(output.text);
         turn.status = "completed"; delete turn.error;
         await this.persist(principal, turn);
-        await this.check(principal, turn.babyId);
+        await this.checkService(principal, turn.babyId);
         return this.publicTurn(turn);
       }
     } catch (error) {
       // Revoked/expired principals must not publish late model output or read a stale chat result.
       await this.check(principal, turn.babyId);
       turn.error = this.failure(error);
-      turn.status = turn.error.retryable && turn.steps.some(step => step.state !== "completed" && mutationTools.has(step.call.name)) ? "needs_recovery" : "failed";
+      turn.status = turn.error.retryable && ((error instanceof AppError && error.retryable === true) || turn.steps.some(step => step.state !== "completed" && mutationTools.has(step.call.name))) ? "needs_recovery" : "failed";
       turn.assistantText = [confirmedReply(turn.receipts, []), turn.error.message].filter(Boolean).join("\n");
       await this.persist(principal, turn);
       return this.publicTurn(turn);

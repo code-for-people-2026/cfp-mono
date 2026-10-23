@@ -144,6 +144,7 @@ export class CollectorService {
     // rechecks that account's current role/scope; CLI and collector tokens do not qualify.
     if (principal.kind !== "caregiver" && principal.kind !== "chat-agent" && !(principal.kind === "operator" && principal.operatorUserId)) return fail("MEDIA_HUMAN_CONFIRMATION_REQUIRED", 403);
     return this.identity.executeAuthorized(principal, input.babyId, "records:write", async (scope, req) => {
+      await this.identity.assertService(input.babyId, "chat", req);
       if (!scope.permissions.includes("media:write")) return fail("MEDIA_WRITE_REQUIRED", 403);
       const sourceId = input.pendingId.startsWith("media:") ? input.pendingId.slice(6) : "";
       const stored = await this.repository.get<StoredMessage>("care-messages", input.babyId, sourceId, req);
@@ -204,6 +205,9 @@ export class CollectorService {
       if (principal.kind !== "collector") return fail("COLLECTOR_CREDENTIAL_REQUIRED", 403);
       await this.bound(job);
       if (!job.enabled) return { skipped: true, reason: "disabled", job };
+      // Failure checkpoints can release the current lease during a service pause.
+      // Every advancing boundary must re-read eligibility before changing progress.
+      if (input.action !== "fail") await this.identity.assertService(input.babyId, "collection", req);
       if (input.action === "begin") {
         if (Date.parse(job.nextRunAt) > this.identity.now()) return { skipped: true, reason: "not_due", job };
         let batch = job.activeBatchId ? await this.repository.get<CollectorBatch>("care-batches", job.babyId, job.activeBatchId, req) : undefined;

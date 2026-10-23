@@ -260,7 +260,7 @@ export default function DiaryPage() {
 
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "哺哺日记"}
-      open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu}
+      open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu} onAccessRevoked={restore}
       onSelect={(next) => { setMode(next); setDetailError(""); setFilters([]); if (next === "day") setDate(todayKey()); closeMenu(); }}
       onBabyChange={(index) => { void changeBaby(index); }}
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}

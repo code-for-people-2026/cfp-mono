@@ -15,5 +15,5 @@ export interface LegacyBackend {
 }
 export interface WechatProvider { exchange(code: string): Promise<{ appId: string; openId: string }> }
 export class AppError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string, public readonly retryable?: boolean) { super(message); }
 }

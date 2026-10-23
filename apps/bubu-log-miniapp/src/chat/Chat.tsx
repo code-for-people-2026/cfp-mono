@@ -87,7 +87,7 @@ export function DiaryChat(props: DiaryChatProps) {
           {state.loading && <Text className="bubu-chat-muted">正在恢复对话和待补事项…</Text>}
           {state.history.map(turn => <Turn key={turn.id} turn={turn} babyId={props.babyId} onRevoked={props.onRevoked} recoveryDisabled={locked} onRecover={() => { void session.recoverTurn(turn.id); }} />)}
           {state.draft.pending && !currentTurn && <View className="bubu-chat-turn"><View className="bubu-chat-user"><Text>{state.draft.pending.text}</Text></View><Text className="bubu-chat-muted">消息已保留，等待确认发送结果</Text></View>}
-          {state.pending.length > 0 && <View className="bubu-chat-pending"><Text className="bubu-chat-pending-title">待补充 · {state.pending.length}</Text>{state.pending.map(item => <Button key={item.id} className="bubu-chat-question" disabled={locked || undefined} onClick={() => selectPending(item)}><Text>{pendingLabel(item)}</Text><Text> 回答 ›</Text></Button>)}</View>}
+          {state.pending.length > 0 && <View className="bubu-chat-pending"><Text className="bubu-chat-pending-title">待补充 · {state.pending.length}</Text>{state.pending.map(item => <Button key={item.id} className="bubu-chat-question" disabled={locked || undefined} onClick={() => selectPending(item)}><Text className="bubu-chat-question-copy">{pendingLabel(item)}</Text><Text className="bubu-chat-question-action">回答 ›</Text></Button>)}</View>}
           <View id="bubu-chat-end" />
         </View>
       </ScrollView>

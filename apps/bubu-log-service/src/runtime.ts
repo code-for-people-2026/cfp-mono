@@ -17,7 +17,7 @@ import { buildRuntimeConfig } from "./runtime-config";
 import { acquireRuntimeLock } from "./runtime-lock";
 import { registerRuntimeState, runtimeState, clearRuntimeState } from "./runtime-state";
 import { createOperationsHandler } from "./operations/http";
-import type { MembershipOperations } from "./operations/contracts";
+import { MembershipService } from "./membership/service";
 
 export interface BubuRuntime {
   store: Store;
@@ -26,6 +26,7 @@ export interface BubuRuntime {
   attachments: AttachmentService;
   collector: CollectorService;
   chat: ChatService;
+  membership: MembershipService;
   mcpUrl: string;
   opsOrigin: string;
   handler: (request: Request) => Promise<Response>;
@@ -40,7 +41,6 @@ interface RuntimeOptions {
   legacy?: LegacyBackend & LegacyRecordsBackend;
   wechat?: WechatProvider;
   provider?: ChatProvider;
-  membership?: MembershipOperations;
 }
 
 /** One writer, one Payload instance, and one RecordsService serialization queue. */
@@ -61,16 +61,18 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     serializeDatabaseTransactions(store.payload);
     const legacy = options.legacy || legacyBackendFromEnv();
     const identity = new IdentityService(store, legacy, options.wechat || new WechatCodeProvider(process.env.BUBU_WECHAT_APP_ID || "", process.env.BUBU_WECHAT_APP_SECRET || ""));
+    const membership = new MembershipService(identity);
+    identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
     const attachments = new AttachmentService(identity, { directory: options.directory });
     const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
     const collector = new CollectorService(identity, (babyId, requestId, req, principal) => records.verifyCollectorReceipt(babyId, requestId, req, principal));
     chat = new ChatService(identity, attachments, { mcpUrl: options.mcpUrl, provider: options.provider || chatProviderFromEnv() });
     const appHandler = createHandler(identity, options.publicOrigin, {
       allowedOrigins: (process.env.BUBU_LEGACY_MEDIA_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean),
-    }, { records, attachments, collector, chat });
+    }, { records, attachments, collector, chat, membership });
     let closed = false;
     const runtime: BubuRuntime = {
-      store, identity, records, attachments, collector, chat,
+      store, identity, records, attachments, collector, chat, membership,
       mcpUrl: options.mcpUrl, opsOrigin,
       handler: appHandler,
       close: async () => {
@@ -80,7 +82,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
         finally { clearRuntimeState(); releaseLock(); }
       },
     };
-    const opsHandler = createOperationsHandler(runtime, { membership: options.membership });
+    const opsHandler = createOperationsHandler(runtime, { membership });
     runtime.handler = request => new URL(request.url).pathname.startsWith("/api/ops/") ? opsHandler(request) : appHandler(request);
     runtimeState()!.runtime = runtime;
     return runtime;

@@ -7,7 +7,7 @@ import type { ProviderTool } from "./contracts";
 export const readTools = new Set(["bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_revisions", "bubu_get_rules"]);
 export const mutationTools = new Set(["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_answer_pending", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_accept_legacy"]);
 export class McpToolError extends AppError {
-  constructor(code: string, message: string, readonly retryable: boolean) { super(retryable ? 503 : code === "REQUEST_NOT_FOUND" ? 404 : 409, code, message); }
+  constructor(code: string, message: string, readonly retryable: boolean, status?: number) { super(status ?? (retryable ? 503 : code === "REQUEST_NOT_FOUND" ? 404 : 409), code, message, retryable); }
 }
 const resultSchema = z.object({ isError: z.boolean().optional(), structuredContent: z.unknown().optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()).optional() }).passthrough();
 
@@ -41,8 +41,8 @@ export class ChatMcpClient {
     let value: unknown;
     try { value = result.structuredContent ?? (text ? JSON.parse(text) : undefined); } catch { throw new AppError(502, "CHAT_MCP_RESPONSE_INVALID", "记录服务回执格式无效，请使用原请求恢复。"); }
     if (result.isError) {
-      const failure = z.object({ code: z.string(), error: z.string(), retryable: z.boolean() }).safeParse(value);
-      if (failure.success) throw new McpToolError(failure.data.code, failure.data.error, failure.data.retryable);
+      const failure = z.object({ code: z.string(), error: z.string(), retryable: z.boolean(), status: z.number().int().min(400).max(599).optional() }).safeParse(value);
+      if (failure.success) throw new McpToolError(failure.data.code, failure.data.error, failure.data.retryable, failure.data.status);
       throw new McpToolError("CHAT_MCP_UNAVAILABLE", "记录服务暂不可用，请使用原请求恢复。", true);
     }
     if (value === undefined) throw new McpToolError("CHAT_MCP_RESPONSE_INVALID", "记录服务未确认结果，请使用原请求恢复。", true);

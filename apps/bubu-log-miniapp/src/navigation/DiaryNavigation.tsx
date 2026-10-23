@@ -3,6 +3,8 @@ import Taro from "@tarojs/taro";
 import { useEffect, useState } from "react";
 import type { AuthContext } from "../model";
 import { readNavigationLayout } from "./layout";
+import { identityEnabled } from "../api";
+import { MembershipStatus } from "../membership/MembershipStatus";
 import "./navigation.css";
 
 export type DiaryView = "day" | "week" | "month" | "trend" | "list";
@@ -19,6 +21,7 @@ type Props = {
   onRefresh?: () => void;
   onSettings?: () => void;
   onLogout?: () => void;
+  onAccessRevoked?: () => void;
 };
 
 export function DiaryNavigation(props: Props) {
@@ -70,6 +73,7 @@ export function DiaryNavigation(props: Props) {
           ] as const).map(([mode, label, caption]) => <Button key={mode} className={`diary-menu-link ${(props.mode === mode || (mode === "day" && ["week", "month"].includes(props.mode || ""))) ? "current" : ""}`} onClick={() => props.onSelect?.(mode)}>
             <View><Text className="diary-menu-label">{label}</Text><Text className="diary-menu-caption">{caption}</Text></View><Text className="diary-menu-arrow">›</Text>
           </Button>)}
+          {identityEnabled && context.baby && <MembershipStatus key={`${context.identityId}:${context.baby.id}`} babyId={context.baby.id} onAccessRevoked={props.onAccessRevoked} />}
         </ScrollView>
         <View className="diary-menu-footer">
           <Button className="diary-menu-link" onClick={props.onSettings}><View><Text className="diary-menu-label">设置</Text><Text className="diary-menu-caption">宝宝昵称与姓名</Text></View><Text className="diary-menu-arrow">›</Text></Button>
