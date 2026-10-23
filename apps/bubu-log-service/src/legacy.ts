@@ -4,7 +4,7 @@ import { AppError, type Baby, type LegacyBackend, type LegacyUser } from "./cont
 type Doc = Record<string, unknown>;
 type Where = Record<string, unknown>;
 type Collection = "app-users" | "baby-users" | "babies" | "activities" | "daily-stats";
-export interface LegacyHttpOptions {
+interface LegacyHttpOptions {
   origin: string;
   cmsEmail: string;
   cmsPassword: string;
