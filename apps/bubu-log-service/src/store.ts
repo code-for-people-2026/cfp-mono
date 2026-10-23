@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { buildConfig, getPayload, createLocalReq, initTransaction, commitTransaction, killTransaction, type PayloadRequest, type Payload, type CollectionConfig, type Where } from "payload";
+import { buildConfig, getPayload, createLocalReq, initTransaction, commitTransaction, killTransaction, type PayloadRequest, type Payload, type CollectionConfig, type Where, type Config } from "payload";
 import { migrations } from "./migrations";
 import { sqliteAdapter } from "@payloadcms/db-sqlite";
 
@@ -49,15 +49,20 @@ export class Store {
   }
   async close() { await this.payload.destroy(); }
 }
-export async function openStore(options: { directory: string; secret?: string; extensions?: CollectionConfig[] }): Promise<Store> {
+interface StoreOptions { directory: string; secret?: string; extensions?: CollectionConfig[]; schemaOnly?: boolean; configure?: (config: Config) => Config }
+export async function buildStoreConfig(options: StoreOptions) {
   const directory = path.resolve(options.directory);
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (!options.schemaOnly) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const secretFile = path.join(directory, "secret");
   if (!options.secret && !existsSync(secretFile)) writeFileSync(secretFile, randomBytes(48).toString("hex"), { flag: "wx", mode: 0o600 });
-  const config = await buildConfig({
+  const config: Config = {
     secret: options.secret || readFileSync(secretFile, "utf8"), collections: [...collections, ...(options.extensions || [])],
-    db: sqliteAdapter({ client: { url: `file:${directory}/identity.db` }, push: process.env.NODE_ENV !== "production", prodMigrations: migrations, transactionOptions: {} }),
+    db: sqliteAdapter({ client: { url: options.schemaOnly ? "file::memory:" : `file:${directory}/identity.db` }, push: !options.schemaOnly && process.env.NODE_ENV !== "production", prodMigrations: options.schemaOnly ? [] : migrations, transactionOptions: {} }),
     typescript: { autoGenerate: false }, telemetry: false,
-  });
-  return new Store(await getPayload({ config, key: `${directory}:${randomBytes(12).toString("hex")}` }));
+  };
+  return buildConfig(options.configure ? options.configure(config) : config);
+}
+export async function openStore(options: StoreOptions): Promise<Store> {
+  const config = await buildStoreConfig(options);
+  return new Store(await getPayload({ config, key: `${path.resolve(options.directory)}:${randomBytes(12).toString("hex")}` }));
 }
