@@ -1,6 +1,7 @@
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import { SessionCookies, type SessionStorage } from "./session";
+import { IdentitySession } from "./identity-session";
 
 export interface TransportRequest {
   url: string;
@@ -39,6 +40,11 @@ export interface ClientOptions {
   transport: Transport;
   storage: SessionStorage;
   now?: () => number;
+  authMode?: "legacy" | "sidecar";
+  wechatLogin?: () => Promise<string>;
+  onSessionExpired?: () => void;
+  download?: (request: { url: string; headers: Record<string, string> }) => Promise<{ status: number; path: string }>;
+  removeDownloadedFile?: (path: string) => void;
 }
 
 function normalizeOrigin(value: string): string {
@@ -71,15 +77,42 @@ const guest = (): AuthContext => ({ authenticated: false, hasBaby: false, baby: 
 export function createBubuApi(options: ClientOptions) {
   // H5 deliberately ignores an API origin: browser-managed HttpOnly cookies stay same-origin.
   const origin = options.native ? normalizeOrigin(options.origin) : "";
-  const jar = options.native && origin ? new SessionCookies(origin, options.storage, options.now) : undefined;
+  const sidecar = options.authMode === "sidecar";
+  const jar = !sidecar && options.native && origin ? new SessionCookies(origin, options.storage, options.now) : undefined;
+  const identity = sidecar && options.native && origin ? new IdentitySession(origin, options.storage, options.now) : undefined;
   let revision = 0;
   let expiredRevision: number | undefined;
+  let authenticatedContextSeen = false;
   let changingSession = false;
+  let loggingOut = false;
+  let pendingLogoutAuthorization: string | undefined;
+  let activeChange: Promise<void> | undefined;
+  let mediaRevision = 0;
+  const downloadedFiles = new Set<string>();
+  function releasePhotoUrl(path: string): void {
+    if (downloadedFiles.delete(path)) options.removeDownloadedFile?.(path);
+  }
+  function clearPhotos(): void {
+    mediaRevision++;
+    for (const path of downloadedFiles) releasePhotoUrl(path);
+  }
+  function beginChange(): () => void {
+    if (changingSession || loggingOut) throw new ApiError(409, "正在处理登录状态，请稍候。");
+    changingSession = true;
+    clearPhotos();
+    let resolveChange: () => void = () => {};
+    const current = new Promise<void>((resolve) => { resolveChange = resolve; });
+    activeChange = current;
+    return () => { changingSession = false; if (activeChange === current) activeChange = undefined; resolveChange(); };
+  }
 
-  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: Record<string, string | null>; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean } = {}): Promise<unknown> {
+  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: Record<string, string | null>; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
     if (options.native && !origin) throw new ConfigurationError();
     const generation = revision;
     const headers: Record<string, string> = { Accept: "application/json" };
+    if (sidecar) headers["X-Bubu-Client"] = options.native ? "native" : "browser";
+    const authorization = args.logout ? pendingLogoutAuthorization ?? identity?.header() : identity?.header();
+    if (authorization) headers.Authorization = authorization;
     if (args.babyId) headers["x-baby-id"] = requiredId(args.babyId);
     const cookie = jar?.header(path.split("?")[0]);
     if (cookie) headers.Cookie = cookie;
@@ -99,14 +132,30 @@ export function createBubuApi(options: ClientOptions) {
     } catch {
       throw new ApiError(0, "暂时无法连接哺哺日记，请检查网络后重试。");
     }
-    if (generation !== revision) throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
+    if (generation !== revision) {
+      // A native bind can rotate the token while logout waits. Revoke that new token
+      // directly; it must never reach persistent storage or a restored UI context.
+      if (loggingOut && sidecar && options.native && args.credentialExchange && response.status >= 200 && response.status < 300) {
+        const stale = response.data && typeof response.data === "object" ? response.data as Record<string, unknown> : {};
+        if (typeof stale.token === "string" && /^[A-Za-z0-9._~-]+$/.test(stale.token)
+          && typeof stale.expiresAt === "string" && Date.parse(stale.expiresAt) > (options.now ?? Date.now)()) pendingLogoutAuthorization = `Bearer ${stale.token}`;
+      }
+      throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
+    }
+    const data = response.data;
+    const error = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
     // Concurrent reads belong to the same identity even after one discovers expiry.
     // Keep them unauthorized, including late successes, before accepting any cookies.
-    if (response.status === 401 || expiredRevision === generation) {
+    if ((response.status === 401 && (!args.credentialExchange || error.code === "UNAUTHORIZED")) || expiredRevision === generation) {
+      const firstExpiry = expiredRevision !== generation;
       expiredRevision = generation;
       jar?.clear();
+      identity?.clear();
+      clearPhotos();
+      if (firstExpiry && (authenticatedContextSeen || !args.guestAllowed)) options.onSessionExpired?.();
+      authenticatedContextSeen = false;
       if (args.guestAllowed) return guest();
-      throw new ApiError(401, "登录已失效，请重新登录原有宝宝日记账号。", "UNAUTHORIZED");
+      throw new ApiError(401, sidecar ? "登录已失效，请重新登录。" : "登录已失效，请重新登录原有宝宝日记账号。", "UNAUTHORIZED");
     }
     if (jar) {
       const cookies = [...(response.cookies ?? [])];
@@ -117,9 +166,7 @@ export function createBubuApi(options: ClientOptions) {
       }
       if (cookies.length) jar.receive(cookies);
     }
-    const data = response.data;
-    const error = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
-    if (response.status === 404 && args.missingAllowed && !error.code) return null;
+    if (response.status === 404 && args.missingAllowed && (!error.code || (sidecar && error.code === "NOT_FOUND"))) return null;
     if (response.status < 200 || response.status >= 300) {
       throw new ApiError(response.status,
         typeof error.error === "string" ? error.error.slice(0, 300) : "请求未完成，请稍后重试。",
@@ -131,20 +178,100 @@ export function createBubuApi(options: ClientOptions) {
     return `/api/app/${path}${queryString({ ...query, babyId: requiredId(babyId) })}`;
   }
   async function getContext(babyId?: string): Promise<AuthContext> {
+    clearPhotos();
     const result = await request(`/api/app/auth/context${queryString({ babyId })}`, { babyId, guestAllowed: true });
-    return decode.authContext(result);
+    const context = decode.authContext(result);
+    if (sidecar && context.authenticated && (!context.identityId || context.legacyLinked === undefined)) throw new decode.ResponseFormatError();
+    if (context.authenticated && babyId && context.baby?.id !== babyId) throw new decode.ResponseFormatError();
+    authenticatedContextSeen = context.authenticated;
+    return context;
   }
   async function csrfToken(): Promise<string> {
     const result = decode.object(await request("/api/auth/csrf"));
     if (typeof result.csrfToken !== "string" || !result.csrfToken) throw new decode.ResponseFormatError();
     return result.csrfToken;
   }
+  function requireSidecar(): void {
+    if (!sidecar) throw new ApiError(400, "当前服务未启用微信身份登录。", "IDENTITY_NOT_ENABLED");
+  }
+  async function identityExchange(path: string, input: Record<string, string> | (() => Promise<Record<string, string>>), preserveSession = false): Promise<AuthContext> {
+    requireSidecar();
+    const finish = beginChange();
+    const generation = ++revision;
+    expiredRevision = undefined;
+    if (!preserveSession) identity?.clear();
+    try {
+      const payload = typeof input === "function" ? await input() : input;
+      if (generation !== revision) throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
+      const result = decode.object(await request(path, { method: "POST", json: payload, credentialExchange: true }));
+      const context = decode.authContext(result.context);
+      if (!context.authenticated || !context.identityId || context.legacyLinked === undefined) throw new decode.ResponseFormatError();
+      if (identity) {
+        if (typeof result.token !== "string" || typeof result.expiresAt !== "string") throw new decode.ResponseFormatError();
+        identity.save({ token: result.token, expiresAt: result.expiresAt });
+      }
+      authenticatedContextSeen = true;
+      return context;
+    } finally { finish(); }
+  }
+  function credentials(input: { username: string; password: string }): { username: string; password: string } {
+    if (!input.username.trim() || !input.password) throw new ApiError(400, "请输入原有账号和密码。");
+    return { username: input.username.trim(), password: input.password };
+  }
+  async function updateIdentityContext(path: string, input: Record<string, string>): Promise<AuthContext> {
+    requireSidecar();
+    const finish = beginChange();
+    revision++;
+    try {
+      const result = decode.object(await request(path, { method: "POST", json: input }));
+      const context = decode.authContext(result.context);
+      if (!context.authenticated || !context.identityId || context.legacyLinked === undefined) throw new decode.ResponseFormatError();
+      authenticatedContextSeen = true;
+      return context;
+    } finally { finish(); }
+  }
   return {
     getContext,
+    releasePhotoUrl,
+    async resolvePhotoUrl(url: string, babyId: string): Promise<string> {
+      if (!sidecar) return url;
+      // Never forward a Bearer credential to a data-supplied host or arbitrary route.
+      const match = /^\/api\/app\/media\/activities\/([A-Za-z0-9%_.~-]+)\?babyId=([^&#]+)$/.exec(url);
+      let requestedBaby: string;
+      try { requestedBaby = match ? decodeURIComponent(match[2]) : ""; } catch { throw new decode.ResponseFormatError(); }
+      if (!match || requestedBaby !== requiredId(babyId)) throw new decode.ResponseFormatError();
+      if (!options.native) return url;
+      if (!origin) throw new ConfigurationError();
+      if (!options.download) throw new ApiError(0, "当前客户端无法加载照片。");
+      const authorization = identity?.header();
+      if (!authorization) throw new ApiError(401, "登录已失效，请重新登录。", "UNAUTHORIZED");
+      const generation = revision;
+      const mediaGeneration = mediaRevision;
+      let result: { status: number; path: string };
+      try { result = await options.download({ url: `${origin}${url}`, headers: { Authorization: authorization, "X-Bubu-Client": "native", "x-baby-id": babyId } }); }
+      catch { throw new ApiError(0, "图片暂时无法加载，请重试。"); }
+      if (result.path) downloadedFiles.add(result.path);
+      if (generation !== revision || mediaGeneration !== mediaRevision) {
+        releasePhotoUrl(result.path);
+        throw new ApiError(409, "宝宝或登录状态已变化。", "SESSION_CHANGED");
+      }
+      if (result.status === 401 || expiredRevision === generation) {
+        const firstExpiry = expiredRevision !== generation;
+        expiredRevision = generation; identity?.clear(); clearPhotos();
+        authenticatedContextSeen = false;
+        if (firstExpiry) options.onSessionExpired?.();
+        throw new ApiError(401, "登录已失效，请重新登录。", "UNAUTHORIZED");
+      }
+      if (result.status < 200 || result.status >= 300 || !result.path) {
+        releasePhotoUrl(result.path);
+        throw new ApiError(result.status, result.status === 403 ? "已无权查看这张照片。" : "图片暂时无法加载。", result.status === 403 ? "BABY_FORBIDDEN" : "MEDIA_UNAVAILABLE");
+      }
+      return result.path;
+    },
     async login(input: { username: string; password: string }): Promise<AuthContext> {
-      if (changingSession) throw new ApiError(409, "正在处理登录状态，请稍候。");
+      if (sidecar) return identityExchange("/api/identity/legacy-login", credentials(input));
       if (!input.username.trim() || !input.password) throw new ApiError(400, "请输入原有账号和密码。");
-      changingSession = true;
+      const finish = beginChange();
       revision++;
       expiredRevision = undefined;
       jar?.clear();
@@ -161,21 +288,53 @@ export function createBubuApi(options: ClientOptions) {
       } catch (error) {
         jar?.clear();
         throw error;
-      } finally { changingSession = false; }
+      } finally { finish(); }
+    },
+    async loginWithWechat(): Promise<AuthContext> {
+      requireSidecar();
+      if (!options.native || !options.wechatLogin) throw new ApiError(400, "请在微信小程序内使用微信登录。");
+      return identityExchange("/api/identity/wechat", async () => {
+        let code: string;
+        try { code = await options.wechatLogin!(); }
+        catch { throw new ApiError(0, "暂时无法获取微信登录凭证，请重试。", "WECHAT_LOGIN_FAILED"); }
+        if (!code.trim()) throw new ApiError(400, "微信登录凭证为空，请重试。", "WECHAT_LOGIN_FAILED");
+        return { code };
+      });
+    },
+    async bindLegacy(input: { username: string; password: string }): Promise<AuthContext> {
+      return identityExchange("/api/identity/bind-legacy", credentials(input), true);
+    },
+    async createFamily(input: { name: string }): Promise<AuthContext> {
+      const name = input.name.trim();
+      if (!name || name.length > 30) throw new ApiError(400, "宝宝昵称不能为空，且不能超过 30 个字。");
+      return updateIdentityContext("/api/identity/family", { name });
+    },
+    async acceptInvitation(input: { code: string }): Promise<AuthContext> {
+      const code = input.code.trim();
+      if (!code) throw new ApiError(400, "请输入照护邀请码。");
+      return updateIdentityContext("/api/identity/invitations/accept", { code });
     },
     async logout(): Promise<void> {
-      if (changingSession) throw new ApiError(409, "正在处理登录状态，请稍候。");
-      changingSession = true;
+      if (loggingOut) throw new ApiError(409, "正在退出登录，请稍候。");
+      loggingOut = true;
+      clearPhotos();
       revision++;
       expiredRevision = undefined;
       try {
+        // Wait for an in-flight login/bind response before clearing its browser cookie.
+        // Its generation is already invalid, so it cannot restore a client view or token.
+        await activeChange;
+        if (sidecar) { await request("/api/identity/logout", { method: "POST", json: {}, logout: true }); return; }
         const token = await csrfToken();
         const result = decode.object(await request("/api/auth/signout", { method: "POST", form: { csrfToken: token, callbackUrl: `${origin}/` } }));
         if (typeof result.url !== "string" || /[?&]error=/.test(result.url)) throw new ApiError(502, "退出登录未完成，请重试。");
       } finally {
         revision++;
         jar?.clear();
-        changingSession = false;
+        identity?.clear();
+        pendingLogoutAuthorization = undefined;
+        authenticatedContextSeen = false;
+        loggingOut = false;
       }
     },
     async getBabies(babyId?: string) {
