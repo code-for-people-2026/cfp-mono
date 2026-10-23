@@ -1,10 +1,13 @@
 import Taro from "@tarojs/taro";
 import { createBubuApi, type Transport } from "./client";
+import { sessionExpiredEvent } from "../navigation/events";
 
 export { ApiError, ConfigurationError, ACTIVITY_LIMIT } from "./client";
 export type { BubuApi, ActivityQuery, ActivityResult } from "./client";
 
 const native = process.env.TARO_ENV === "weapp";
+export const identityEnabled = BUBU_AUTH_MODE === "sidecar";
+export const wechatIdentityEnabled = native && identityEnabled;
 const transport: Transport = async (request) => {
   if (!native) {
     const response = await fetch(request.url, {
@@ -23,6 +26,14 @@ const transport: Transport = async (request) => {
 
 export const api = createBubuApi({
   native, origin: BUBU_API_ORIGIN, transport,
+  authMode: BUBU_AUTH_MODE,
+  wechatLogin: async () => (await Taro.login()).code,
+  onSessionExpired: () => Taro.eventCenter.trigger(sessionExpiredEvent),
+  download: async (request) => {
+    const response = await Taro.downloadFile({ url: request.url, header: request.headers });
+    return { status: response.statusCode, path: response.tempFilePath };
+  },
+  removeDownloadedFile: (path) => { if (native) Taro.getFileSystemManager().unlink({ filePath: path, fail: () => {} }); },
   storage: {
     get: (key) => Taro.getStorageSync<unknown>(key),
     set: (key, value) => Taro.setStorageSync(key, value),

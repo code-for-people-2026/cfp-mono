@@ -58,6 +58,8 @@ export function authContext(value: unknown): AuthContext {
   if (hasBaby !== !!current || (current && !babies.some((item) => item.id === current.id))) throw new ResponseFormatError();
   return { authenticated, hasBaby, baby: current, babies,
     defaultBabyId: optional(row.defaultBabyId, id),
+    ...(row.identityId !== undefined ? { identityId: id(row.identityId) } : {}),
+    ...(row.legacyLinked !== undefined ? { legacyLinked: boolean(row.legacyLinked) } : {}),
     ...(typeof row.code === "string" ? { code: row.code } : {}) };
 }
 export function activity(value: unknown): Activity {

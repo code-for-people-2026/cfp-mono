@@ -7,14 +7,16 @@ import './visualizations.css'
 export interface ActivityDetailProps {
   activity: Activity | null
   onClose: () => void
+  photoUrl?: string | null
+  photoLoading?: boolean
 }
 
-export function ActivityDetail({ activity, onClose }: ActivityDetailProps) {
+export function ActivityDetail({ activity, onClose, photoUrl, photoLoading }: ActivityDetailProps) {
   const [failedImage, setFailedImage] = useState('')
   if (!activity) return null
   const tone = activityTone(activity.type)
   const details = activityDetails(activity)
-  const image = activity.poopPhotoUrl
+  const image = photoUrl === undefined ? activity.poopPhotoUrl : photoUrl
 
   async function previewImage() {
     if (!image) return
@@ -37,7 +39,7 @@ export function ActivityDetail({ activity, onClose }: ActivityDetailProps) {
           <View className='bubu-detail-fields'>
             {details.map((detail, index) => <View className='bubu-detail-row' key={`${detail.label}-${index}`}><Text className='bubu-detail-label'>{detail.label}</Text><Text className='bubu-detail-value' selectable>{detail.value}</Text></View>)}
           </View>
-          {image && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片</Text>{failedImage === image ? <View className='bubu-photo-error'>图片暂时无法加载</View> : <Image className='bubu-detail-photo' src={image} mode='aspectFill' onClick={() => void previewImage()} onError={() => setFailedImage(image)} />}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
+          {activity.poopPhotoUrl && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片</Text>{photoLoading ? <View className='bubu-photo-error'>正在读取照片…</View> : !image || failedImage === image ? <View className='bubu-photo-error'>图片暂时无法加载</View> : <Image className='bubu-detail-photo' src={image} mode='aspectFill' onClick={() => void previewImage()} onError={() => setFailedImage(image)} />}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
           <View className='bubu-detail-bottom-space' />
         </ScrollView>
       </View>

@@ -54,6 +54,9 @@ export interface AuthContext {
   babies: Baby[];
   defaultBabyId?: string | null;
   code?: string;
+  /** Present for the independent identity service, absent in legacy mode. */
+  identityId?: string;
+  legacyLinked?: boolean;
 }
 
 /** DailyStats is read as calculated by the existing server, never recomputed here. */

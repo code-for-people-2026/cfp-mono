@@ -1,0 +1,32 @@
+{
+  "name": "@cfp/bubu-log-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "operator": "tsx scripts/operator.ts",
+    "db:migration": "tsx scripts/create-migration.ts",
+    "test:production": "NODE_ENV=production tsx scripts/verify-production.ts"
+  },
+  "dependencies": {
+    "payload": "3.85.1",
+    "@payloadcms/db-sqlite": "3.85.1",
+    "zod": "^4.4.3",
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.26",
+    "typescript": "^5.9.3",
+    "eslint": "^9.39.2",
+    "@cfp/eslint-config": "workspace:*",
+    "vitest": "^4.0.15",
+    "@vitest/coverage-v8": "^4.0.15"
+  }
+}
