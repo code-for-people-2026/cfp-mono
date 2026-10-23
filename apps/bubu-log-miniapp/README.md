@@ -1,10 +1,10 @@
 # 哺哺日记小程序
 
-哺哺日记的数据可视化客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
+哺哺日记的日历与对话客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
 
-对应 [数据可视化模块](https://github.com/code-for-people-2026/cfp-mono/issues/394)，完整产品路线见 [六大模块落地规划](https://github.com/code-for-people-2026/cfp-mono/issues/392)。
+对应 [数据可视化模块](https://github.com/code-for-people-2026/cfp-mono/issues/394) 与 [程序内对话模块](https://github.com/code-for-people-2026/cfp-mono/issues/395)，完整产品路线见 [六大模块落地规划](https://github.com/code-for-people-2026/cfp-mono/issues/392)。
 
-## 已迁移范围
+## 已实现范围
 
 - 菜单导航：自定义顶栏、左上角抽屉；历史数据、趋势、宝宝切换、昵称与姓名设置、刷新及退出收进菜单。首页先展示日历，摘要卡与昨晚衔接在下方。
 - 日历首页：24 小时时间轴、全部 15 类记录、八张摘要卡、多选筛选、昨晚衔接、喂奶及睡眠间隔。
@@ -13,19 +13,20 @@
 - 趋势：7 / 14 / 30 天睡眠、瓶喂与吸奶、尿布统计。
 - 记录列表：按活动、创建、更新时间排序；只读详情；已有照片预览。Sidecar 详情显示来源类型、来源时间、版本及待补状态，并预览记录关联的私有附件；不展示来源账号、群或发送者标识。
 - 切换有权访问的宝宝与日期，加载、失败重试、空状态、读取上限提示。
+- 右下角聊天入口、待补数量、可收起底部对话、文字/照片/校对后语音输入、持久草稿和发送恢复。
 
-昵称／姓名设置复用原 `PATCH /api/app/user-babies/:id` 的归属、重名和长度校验，保存成功才更新界面；只发送 `name` / `fullName`，不改其他资料。客户端没有加入活动创建、编辑、删除或触发旧日报重算的请求。独立服务已提供 [Agent/MCP 录入与受控群采集](../bubu-log-service/README.md)，本客户端读取它的统一统计投影；内置聊天入口与支付尚未接入。微信身份认证见下文。
+昵称／姓名设置复用原 `PATCH /api/app/user-babies/:id` 的归属、重名和长度校验，保存成功才更新界面；只发送 `name` / `fullName`，不改其他资料。客户端通过服务端对话执行录入、更正、删除与撤销，所有事实读写仍由统一 MCP 规则控制；不直接写旧 Activity 或触发旧日报重算。独立服务已提供 [Agent/MCP 录入与受控群采集](../bubu-log-service/README.md)，本客户端读取它的统一统计投影；已接入内置聊天入口；首期限时免费，支付未启用。微信身份认证见下文。
 
 ## 开发与构建
 
 ```sh
 pnpm install
 
-# 微信端：地址是现有宝宝日记服务，不是 Payload 管理接口。
-BUBU_API_ORIGIN=https://your-existing-diary.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
+# 微信端默认接入哺哺日记独立身份与对话服务。
+BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
 
-# H5 开发：请求仍发往浏览器同源 /api，由开发代理转到旧服务。
-BUBU_DEV_PROXY=http://127.0.0.1:3000 pnpm --filter @cfp/bubu-log-miniapp dev:h5
+# H5 开发：请求仍发往浏览器同源 /api，由开发代理转到独立服务。
+BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/bubu-log-miniapp dev:h5
 
 pnpm --filter @cfp/bubu-log-miniapp lint
 pnpm --filter @cfp/bubu-log-miniapp typecheck
@@ -46,19 +47,21 @@ H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `
 
 ### 独立身份服务模式（Issue #396）
 
-默认 `BUBU_AUTH_MODE=legacy` 保留上述旧登录方式。设置 `BUBU_AUTH_MODE=sidecar` 后，`BUBU_API_ORIGIN` / H5 代理指向 [哺哺日记身份服务](../bubu-log-service/README.md)：
+默认 `BUBU_AUTH_MODE=sidecar`。显式设置 `BUBU_AUTH_MODE=legacy` 可保留上述旧登录方式（对话不开放）。独立身份模式中，`BUBU_API_ORIGIN` / H5 代理指向 [哺哺日记身份服务](../bubu-log-service/README.md)：
 
 ```sh
 BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
 BUBU_AUTH_MODE=sidecar BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/bubu-log-miniapp dev:h5
 
-# 使用合成账号/数据验证独立身份与统一统计界面
+# 使用合成账号/数据验证独立身份、统一统计与对话界面（默认 sidecar）
 BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp build:h5
-BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/identity.spec.ts tests/e2e/records.spec.ts
-# 旧模式界面回归使用默认构建和原有用例
-pnpm --filter @cfp/bubu-log-miniapp build:h5
-pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/diary.spec.ts
+BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp test:e2e
+# 旧模式界面回归使用显式 legacy 构建和原有用例
+BUBU_AUTH_MODE=legacy pnpm --filter @cfp/bubu-log-miniapp build:h5
+BUBU_AUTH_MODE=legacy pnpm --filter @cfp/bubu-log-miniapp test:e2e
 ```
+
+端到端测试读取现有 `dist/h5`，不会自动切换构建模式。构建与运行测试必须使用相同的 `BUBU_AUTH_MODE`；都省略时运行默认 sidecar 的身份、记录与对话用例，只有显式 `legacy` 才运行旧日历用例。
 
 - 微信端调用真实 `Taro.login()` 获取一次性 code，向 `POST /api/identity/wechat` 交换身份会话。AppSecret 只配置在服务端。Native Bearer token 只在本地 `bubu-identity:<origin>` 中保存，包含到期时间；不保存微信 code、密码或账号文本。
 - H5 使用旧用户名/密码向 `POST /api/identity/legacy-login` 交换服务端 HttpOnly Cookie；不存储或使用响应中的 token。请求携带 `X-Bubu-Client: browser`，服务端校验同源 Origin；服务端 `BUBU_PUBLIC_ORIGIN` 应设置为浏览器实际访问的 H5 地址（Taro 开发服务器默认 `http://localhost:10086`），开发代理目标仍为 `http://127.0.0.1:3320`。原生请求标记为 `native`。
@@ -88,3 +91,18 @@ Sidecar 详情按活动 ID 读取独立的记录快照，不附加“今天”�
 - `tests`：跨日、时区、原统计差异、Cookie 与 API 协议测试；`tests/e2e` 用合成数据验证手机尺寸 H5 交互，不访问真实家庭数据。
 
 迁移参考版本：sunmer-home `ac86de31b08bdf413e021e60240da2dcd8e63911`。原项目只读保留。
+
+
+## 程序内对话
+
+日历右下角打开宝宝持续对话，数字显示服务端仍开放的字段/媒体待补数量。收起保留草稿和发送状态。记录详情可进入对话更正、删除或撤销；当前浏览日期和选中事件仅为上下文，“现在/刚才”由服务端按消息时间理解。
+
+- `GET /api/app/chat?babyId=…` 恢复历史；`POST /api/app/chat` 保存稳定请求号与文字、附件、上下文、可选问题版本；`GET /api/app/chat/request?babyId&requestId` 查询原请求。发送前持久化原请求；响应中断后先查询，再用原号与原参数恢复。`processing` 定期查询，`needs_recovery` 保留并显示恢复按钮；服务器明确不可重试的失败才允许人工修改后建立新请求。
+- 草稿和未确认请求按服务地址、身份 ID、宝宝 ID 隔离保存，包含文字、附件 ID 和版本，不保存登录令牌、模型密钥、照片字节或整个历史。照片预览每次经过私有路径授权。退出、登录失效、宝宝撤权清理相关草稿和临时图片；迟到响应不能重新显示旧宝宝内容。
+- 字段问题来自 `/records/pending`，回答附原 `questionVersion/eventVersion`；媒体待补独立传 `context.mediaPendingId`，不伪装成字段问题。用户可答“不知道”，由统一规则记录未知。没有复杂 A2UI 表单、阿 J 人设或心理业务。
+- 图片经 `POST /api/app/attachments?babyId=…` 二进制上传（稳定 `X-Bubu-Request-Id`）；保留原字节，支持 JPG/PNG/WebP，单张最多 10 MiB，每次聊天最多三张。服务端确认的附件只用受保护地址访问；图片含义由服务端真实图文模型与 MCP 处理。
+- `已记录` 等状态只来自结构化回执；未确认投影和冲突分别显示待恢复/待核对。`refreshRequired` 后重新读取当前日历或趋势的统一事实视图，不在前端累计记录或奶量。
+
+语音输入仅是文字草稿来源。微信需为本 AppID 添加同声传译插件 `wx069ba97219f66d99` 并配置已授权的 `BUBU_WECHAT_SI_VERSION`（不假设其他产品已有的授权可复用）；未配置会说明原因并保留键盘。按住后请求 `scope.record`，最长 60 秒，松开后识别等待最多 15 秒。H5 使用浏览器 SpeechRecognition，要求 HTTPS/localhost 和浏览器支持；第三方识别可能联网处理声音。转写结果先展示给用户校对，绝不自动发送；取消、切键盘、收起、卸载或后台忽略迟到结果。没有向哺哺日记后端上传录音。
+
+纯状态/API 测试覆盖重启草稿恢复、同号查询后重试、已保存响应丢失、撤权后的迟到回包、图片二进制与私有路径、字段/媒体问题分离；语音测试覆盖权限、超时、取消及单例串音隔离。H5 自动化使用隔离合成账号/数据；微信构建与 WXSS 编译不替代真机麦克风、插件隐私授权或真实模型验收。

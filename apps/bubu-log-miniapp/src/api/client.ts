@@ -1,3 +1,5 @@
+import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
+import type { ChatRequest } from "../chat/drafts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import { SessionCookies, type SessionStorage } from "./session";
@@ -8,6 +10,7 @@ export interface TransportRequest {
   method: "GET" | "POST" | "PATCH";
   headers: Record<string, string>;
   body?: string;
+  binary?: ArrayBuffer;
   credentials?: "include";
 }
 export interface TransportResponse {
@@ -43,6 +46,7 @@ export interface ClientOptions {
   authMode?: "legacy" | "sidecar";
   wechatLogin?: () => Promise<string>;
   onSessionExpired?: () => void;
+  onAccessRevoked?: (babyId?: string) => void;
   download?: (request: { url: string; headers: Record<string, string> }) => Promise<{ status: number; path: string }>;
   removeDownloadedFile?: (path: string) => void;
 }
@@ -88,6 +92,7 @@ export function createBubuApi(options: ClientOptions) {
   let pendingLogoutAuthorization: string | undefined;
   let activeChange: Promise<void> | undefined;
   let mediaRevision = 0;
+  const babyRevisions = new Map<string, number>();
   const downloadedFiles = new Set<string>();
   function releasePhotoUrl(path: string): void {
     if (downloadedFiles.delete(path)) options.removeDownloadedFile?.(path);
@@ -106,9 +111,10 @@ export function createBubuApi(options: ClientOptions) {
     return () => { changingSession = false; if (activeChange === current) activeChange = undefined; resolveChange(); };
   }
 
-  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: Record<string, string | null>; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
+  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: object; binary?: ArrayBuffer; mime?: string; requestId?: string; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
     if (options.native && !origin) throw new ConfigurationError();
     const generation = revision;
+    const babyGeneration = args.babyId ? babyRevisions.get(args.babyId) ?? 0 : 0;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (sidecar) headers["X-Bubu-Client"] = options.native ? "native" : "browser";
     const authorization = args.logout ? pendingLogoutAuthorization ?? identity?.header() : identity?.header();
@@ -121,12 +127,14 @@ export function createBubuApi(options: ClientOptions) {
       headers["X-Auth-Return-Redirect"] = "1";
     }
     if (args.json) headers["Content-Type"] = "application/json";
+    if (args.binary) { headers["Content-Type"] = args.mime!; headers["X-Bubu-Request-Id"] = args.requestId!; }
     let response: TransportResponse;
     try {
       response = await options.transport({
         url: `${origin}${path}`, method: args.method ?? "GET", headers,
         ...(args.form ? { body: queryString(args.form).slice(1) } : {}),
         ...(args.json ? { body: JSON.stringify(args.json) } : {}),
+        ...(args.binary ? { binary: args.binary } : {}),
         ...(!options.native ? { credentials: "include" as const } : {}),
       });
     } catch {
@@ -142,6 +150,7 @@ export function createBubuApi(options: ClientOptions) {
       }
       throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
     }
+    if (args.babyId && babyGeneration !== (babyRevisions.get(args.babyId) ?? 0)) throw new ApiError(403, "宝宝访问权限已变化，请重新加载。", "BABY_FORBIDDEN");
     const data = response.data;
     const error = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
     // Concurrent reads belong to the same identity even after one discovers expiry.
@@ -152,6 +161,7 @@ export function createBubuApi(options: ClientOptions) {
       jar?.clear();
       identity?.clear();
       clearPhotos();
+      options.onAccessRevoked?.();
       if (firstExpiry && (authenticatedContextSeen || !args.guestAllowed)) options.onSessionExpired?.();
       authenticatedContextSeen = false;
       if (args.guestAllowed) return guest();
@@ -167,6 +177,7 @@ export function createBubuApi(options: ClientOptions) {
       if (cookies.length) jar.receive(cookies);
     }
     if (response.status === 404 && args.missingAllowed && (!error.code || (sidecar && error.code === "NOT_FOUND"))) return null;
+    if (response.status === 403 && args.babyId) { babyRevisions.set(args.babyId, babyGeneration + 1); clearPhotos(); options.onAccessRevoked?.(args.babyId); }
     if (response.status < 200 || response.status >= 300) {
       throw new ApiError(response.status,
         typeof error.error === "string" ? error.error.slice(0, 300) : "请求未完成，请稍后重试。",
@@ -259,11 +270,13 @@ export function createBubuApi(options: ClientOptions) {
         const firstExpiry = expiredRevision !== generation;
         expiredRevision = generation; identity?.clear(); clearPhotos();
         authenticatedContextSeen = false;
+        options.onAccessRevoked?.();
         if (firstExpiry) options.onSessionExpired?.();
         throw new ApiError(401, "登录已失效，请重新登录。", "UNAUTHORIZED");
       }
       if (result.status < 200 || result.status >= 300 || !result.path) {
         releasePhotoUrl(result.path);
+        if (result.status === 403) { clearPhotos(); options.onAccessRevoked?.(babyId); }
         throw new ApiError(result.status, result.status === 403 ? "已无权查看这张照片。" : "图片暂时无法加载。", result.status === 403 ? "BABY_FORBIDDEN" : "MEDIA_UNAVAILABLE");
       }
       return result.path;
@@ -317,6 +330,7 @@ export function createBubuApi(options: ClientOptions) {
     async logout(): Promise<void> {
       if (loggingOut) throw new ApiError(409, "正在退出登录，请稍候。");
       loggingOut = true;
+      options.onAccessRevoked?.();
       clearPhotos();
       revision++;
       expiredRevision = undefined;
@@ -351,6 +365,34 @@ export function createBubuApi(options: ClientOptions) {
       const updated = decode.baby(result.data);
       if (updated.id !== babyId) throw new decode.ResponseFormatError();
       return updated;
+    },
+    async getChatHistory(babyId: string) {
+      requireSidecar();
+      return decodeHistory(await request(scoped("chat", babyId), { babyId }), babyId);
+    },
+    async getChatRequest(babyId: string, requestId: string) {
+      requireSidecar();
+      const result = decode.object(await request(scoped("chat/request", babyId, { requestId }), { babyId }));
+      const turn = result.turn === null ? null : decodeTurn(result.turn, babyId);
+      if (turn && turn.requestId !== requestId) throw new decode.ResponseFormatError();
+      return turn;
+    },
+    async sendChat(input: ChatRequest) {
+      requireSidecar(); day(input.context.viewedDate);
+      const result = decode.object(await request("/api/app/chat", { method: "POST", babyId: input.babyId, json: input }));
+      const turn = decodeTurn(result.turn, input.babyId);
+      if (turn.requestId !== input.requestId) throw new decode.ResponseFormatError();
+      return turn;
+    },
+    async getPending(babyId: string) {
+      requireSidecar();
+      return decode.array(await request(scoped("records/pending", babyId), { babyId }), value => decodePending(value, babyId));
+    },
+    async uploadAttachment(babyId: string, requestId: string, bytes: ArrayBuffer, mime: string) {
+      requireSidecar();
+      if (!["image/png", "image/jpeg", "image/webp"].includes(mime) || !bytes.byteLength || bytes.byteLength > 10 * 1024 * 1024) throw new ApiError(400, "请选择不超过 10 MB 的 JPG、PNG 或 WebP 照片。");
+      const result = decode.object(await request(scoped("attachments", babyId), { method: "POST", babyId, binary: bytes, mime, requestId }));
+      return decodeAttachment(result.data, babyId);
     },
     async getSnapshot(babyId: string, date: string) {
       if (!sidecar) throw new ApiError(400, "当前服务未启用统一记录视图。");

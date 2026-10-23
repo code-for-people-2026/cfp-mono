@@ -1,6 +1,7 @@
 import { AppError } from "./contracts";
 export interface MediaOptions { allowedOrigins: string[]; fetch?: typeof fetch; maxBytes?: number }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+const fieldStates = new Set(["known", "pending", "unknown", "not_applicable", "not_yet"]);
 /** Keep the persisted legacy URL unchanged, but never return it through the authenticated API. */
 export function protectLegacyPhotos(value: unknown, babyId: string): unknown {
   if (Array.isArray(value)) return value.map(row => protectLegacyPhotos(row, babyId));
@@ -15,7 +16,8 @@ export function protectRecordPhotos(value: unknown, babyId: string, inheritedId?
   if (typeof value.babyId === "string" && value.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
   const id = typeof value.legacyId === "string" ? value.legacyId : typeof value.id === "string" && typeof value.startTime === "string" ? value.id : inheritedId;
   return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => {
-    if (key === "poopPhotoUrl" && typeof item === "string" && item) return id ? [[key, `/api/app/media/activities/${encodeURIComponent(id)}?babyId=${encodeURIComponent(babyId)}`]] : [];
+    // The same field name also appears in states maps; those enums are not photo URLs.
+    if (key === "poopPhotoUrl" && typeof item === "string" && item && !fieldStates.has(item)) return id ? [[key, `/api/app/media/activities/${encodeURIComponent(id)}?babyId=${encodeURIComponent(babyId)}`]] : [];
     return [[key, protectRecordPhotos(item, babyId, id)]];
   }));
 }

@@ -1,3 +1,6 @@
+import { DiaryChat, type ChatSelection } from "../../chat/Chat";
+import { chatDrafts } from "../../chat/storage";
+import { clearImageFiles } from "../../chat/files";
 import { Button, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
@@ -23,6 +26,7 @@ const isForbidden = (error: unknown): boolean => !!error && typeof error === "ob
 const iso = (value: number) => new Date(value).toISOString();
 
 export default function DiaryPage() {
+  const [chatSelection, setChatSelection] = useState<ChatSelection>();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -58,7 +62,7 @@ export default function DiaryPage() {
   const data = loaded?.key === dataKey ? loaded : null;
 
   const clearPrivateView = useCallback(() => {
-    setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
+    setChatSelection(undefined); setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); setDataError(""); setSync(null); detailVersion.current++;
     photoPaths.current.forEach(path => api.releasePhotoUrl(path));
     photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0); setPhotoLoading(false);
@@ -80,7 +84,12 @@ export default function DiaryPage() {
   const identityUpdated = useCallback((next: AuthContext) => {
     contextVersion.current++; clearPrivateView(); setContext(next); setAccountError(""); setBooting(false);
   }, [clearPrivateView]);
-  useEffect(() => { void restore(); }, [restore]);
+  useEffect(() => { clearImageFiles(); void restore(); }, [restore]);
+  useEffect(() => {
+    if (!identityEnabled || !context) return;
+    if (context.authenticated && context.identityId) chatDrafts.reconcile(context.identityId, context.babies.map(baby => baby.id));
+    else chatDrafts.clear();
+  }, [context]);
   useEffect(() => {
     const updateProfile = (baby: Baby) => setContext((current) => current ? {
       ...current, baby: current.baby?.id === baby.id ? baby : current.baby,
@@ -161,6 +170,7 @@ export default function DiaryPage() {
   };
   const logout = async () => {
     if (authInFlight.current) return;
+    chatDrafts.clear(); clearImageFiles();
     authInFlight.current = true;
     const version = ++contextVersion.current;
     setAuthBusy(true); setAccountError(""); clearPrivateView(); setContext(null);
@@ -206,6 +216,13 @@ export default function DiaryPage() {
       else setDetailError(message(error));
     } finally { if (version === detailVersion.current) { setDetailBusy(false); setPhotoLoading(false); } }
   };
+
+  const refreshAfterChat = useCallback(() => { setLoaded(null); setRevision(value => value + 1); }, []);
+  const chatRevoked = useCallback((error: { status: number }) => {
+    clearPrivateView();
+    if (error.status === 401) { setContext(null); setAccountError("登录已过期，请重新登录"); }
+    else void restore();
+  }, [clearPrivateView, restore]);
 
   const summary = useMemo(() => mode === "list"
     ? summarizeRecordList(data?.activities || [], date)
@@ -295,9 +312,12 @@ export default function DiaryPage() {
         </>}
       {identityEnabled && sync?.babyId === babyId && <View className="data-note sync-status"><Text className="section-title">采集同步</Text>{(sync.error ? [sync.error] : syncStatusLines(sync.jobs)).map(line => <View key={line}><Text>{line}</Text></View>)}</View>}
       {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={closeDetail}>关闭</Text></View>}
-      <ActivityDetail activity={detail} photoUrls={detailPhotos} photoCount={photoCount} recordEvent={detailEvent} photoLoading={photoLoading} onClose={closeDetail} />
+      <ActivityDetail activity={detail} photoUrls={detailPhotos} photoCount={photoCount} recordEvent={detailEvent} photoLoading={photoLoading} onClose={closeDetail}
+        onChat={identityEnabled ? () => { if (!detail) return; setChatSelection({ eventId: detailEvent?.id || detail.id, label: `${timeLabel(detail.startTime)} ${activityLabel(detail)}`, nonce: Date.now() }); closeDetail(); } : undefined} />
+      {!identityEnabled && <Text className="bubu-chat-legacy">旧服务兼容模式仅查看记录，程序内对话暂未开放。</Text>}
     </>}
     </View>
+    {identityEnabled && context.identityId && context.baby && <DiaryChat key={`${context.identityId}:${babyId}`} identityId={context.identityId} babyId={babyId} babyName={context.baby.name} viewedDate={date} revision={revision} selection={chatSelection} onRefresh={refreshAfterChat} onRevoked={chatRevoked} />}
   </View>;
 }
 

@@ -1,4 +1,8 @@
+import { getWechatSpeechPlugin } from "../config/speech";
+const speech = getWechatSpeechPlugin();
+
 export default defineAppConfig({
+  plugins: speech ? { WechatSI: speech } : {},
   pages: ["pages/index/index", "pages/settings/index"],
   window: {
     navigationBarTitleText: "哺哺日记",
