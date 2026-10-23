@@ -10,7 +10,7 @@ import { identifier, baseMutation, eventMutation, recordSchema, updateSchema, an
 import { activityTypes } from "./types";
 import { evaluateEvent } from "./rules";
 
-export function createRecordsMcp(identity: IdentityService, records: RecordsService, collector: CollectorService, token: string) {
+function createRecordsMcp(identity: IdentityService, records: RecordsService, collector: CollectorService, token: string) {
   const server = new McpServer({ name: "bubu-diary", version: "1.0.0" });
   const result = (value: unknown) => ({ content: [{ type: "text" as const, text: JSON.stringify(value) }] });
   function register<S extends z.ZodType>(name:string,description:string,schema:S,handler:(principal:Principal,args:z.output<S>)=>Promise<unknown>) {

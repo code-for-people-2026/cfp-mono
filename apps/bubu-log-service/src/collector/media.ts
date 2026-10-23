@@ -15,7 +15,7 @@ export const exactMediaConfigSchema = z.object({
   // We neither walk monthly folders nor choose a first image candidate.
   md5Directories: z.array(z.string().min(1)).max(20).default([]),
 }).strict();
-export type ExactMediaConfig = z.input<typeof exactMediaConfigSchema>;
+type ExactMediaConfig = z.input<typeof exactMediaConfigSchema>;
 export type MediaResult = { available: true; bytes: Buffer; mime: AttachmentMime } | { available: false; reason: string };
 export interface MediaResolver { resolve(message: SourceMessage, index: number): Promise<MediaResult> }
 const digest = (algorithm: string, bytes: Buffer) => createHash(algorithm).update(bytes).digest("hex");

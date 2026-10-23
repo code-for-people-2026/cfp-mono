@@ -15,7 +15,7 @@ interface Operation {
   status: "pending" | "done" | "conflict"; error?: string; receipt?: RecordReceipt;
 }
 function fail(code: string, message: string, status = 409): never { throw new AppError(status, code, message); }
-export const sourceKey = (source: SourceRef) => hash([source.kind, source.accountId, source.conversationId, source.messageId, source.eventKey]);
+const sourceKey = (source: SourceRef) => hash([source.kind, source.accountId, source.conversationId, source.messageId, source.eventKey]);
 const sourceLinkKey = (babyId:string,source:SourceRef) => hash([babyId,sourceKey(source)]);
 const pointTypes = new Set(["DIAPER", "SUPPLEMENT", "SPIT_UP", "ROLL_OVER", "PULL_TO_SIT"]);
 const idFor = (value: string) => `bubu-${hash(value).slice(0, 40)}`;

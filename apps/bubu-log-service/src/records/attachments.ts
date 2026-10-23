@@ -22,7 +22,7 @@ export interface Attachment {
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
 }
-export interface AttachmentOptions { directory: string; maxBytes?: number }
+interface AttachmentOptions { directory: string; maxBytes?: number }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");

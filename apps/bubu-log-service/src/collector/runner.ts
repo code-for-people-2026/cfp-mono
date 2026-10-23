@@ -12,8 +12,9 @@ import type { MediaResolution } from "./types";
 import { hash } from "../records/persistence";
 import { answerSchema, eventMutation, identifier, recordSchema, updateSchema } from "../records/schemas";
 
+/** @public MCP transport boundary for downstream agent bridges and integration fixtures. */
 export interface McpGateway { call(name: string, args: Record<string, unknown>): Promise<unknown>; tools(): Promise<unknown[]> }
-export interface ImageUploader { uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef): Promise<{ id: string }> }
+interface ImageUploader { uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef): Promise<{ id: string }> }
 export class CollectorMcpClient implements McpGateway {
   readonly client = new Client({ name: "bubu-controlled-collector", version: "1.0.0" });
   constructor(readonly url: URL, readonly token: () => Promise<string>) {
@@ -50,9 +51,9 @@ export class CollectorMcpClient implements McpGateway {
   async close() { await this.client.close(); }
 }
 
-export interface Command { executable: string; args?: string[]; cwd?: string; timeoutMs?: number; env?: Record<string, string> }
+interface Command { executable: string; args?: string[]; cwd?: string; timeoutMs?: number; env?: Record<string, string> }
 /** No shell, inherited secrets, raw stderr, or credentials in the Agent task. */
-export async function invokeJson(command: Command, input: unknown): Promise<unknown> {
+async function invokeJson(command: Command, input: unknown): Promise<unknown> {
   const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...command.env };
   return new Promise((resolve, reject) => {
     const child = spawn(command.executable, command.args || [], { cwd: command.cwd, env, shell: false, stdio: ["pipe", "pipe", "pipe"] });
