@@ -244,14 +244,14 @@ describe("independent identity sessions", () => {
     expect(download).toHaveBeenCalledTimes(1);
   });
 
-  it("discards a late native photo download after logout without exposing its local file", async () => {
+  it.each(["media/activities/photo-1", `attachments/att_${"a".repeat(64)}`])("discards a late native %s download after logout without exposing its local file", async route => {
     let finishDownload: ((value: { status: number; path: string }) => void) | undefined;
     const remove = vi.fn();
     const setup = fixture(async (request) => request.url.endsWith("/wechat") ? response(exchange()) : response({}), {
       download: () => new Promise((resolve) => { finishDownload = resolve; }), removeDownloadedFile: remove,
     });
     await setup.client.loginWithWechat();
-    const photo = setup.client.resolvePhotoUrl("/api/app/media/activities/photo-1?babyId=baby-1", baby.id).catch((error: unknown) => error);
+    const photo = setup.client.resolvePhotoUrl(`/api/app/${route}?babyId=baby-1`, baby.id).catch((error: unknown) => error);
     await setup.client.logout();
     finishDownload?.({ status: 200, path: "/tmp/old-photo" });
     expect(await photo).toMatchObject({ code: "SESSION_CHANGED" });
@@ -263,6 +263,9 @@ describe("independent identity sessions", () => {
     const setup = fixture(async () => response(context), { native: false, download });
     const protectedUrl = "/api/app/media/activities/photo-1?babyId=baby-1";
     expect(await setup.client.resolvePhotoUrl(protectedUrl, baby.id)).toBe(protectedUrl);
+    const attachmentUrl = `/api/app/attachments/att_${"a".repeat(64)}?babyId=baby-1`;
+    expect(await setup.client.resolvePhotoUrl(attachmentUrl, baby.id)).toBe(attachmentUrl);
+    await expect(setup.client.resolvePhotoUrl(attachmentUrl.replace("baby-1", "other"), baby.id)).rejects.toBeInstanceOf(ResponseFormatError);
     const legacy = fixture(async () => response(context), { authMode: "legacy", download });
     expect(await legacy.client.resolvePhotoUrl("https://old-blob.test/photo", baby.id)).toBe("https://old-blob.test/photo");
     expect(download).not.toHaveBeenCalled();

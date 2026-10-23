@@ -1,13 +1,18 @@
 import { z } from "zod";
 import { AppError, permissions, type Permission } from "./contracts";
-import { readLegacyPhoto, protectLegacyPhotos, type MediaOptions } from "./media";
+import { readLegacyPhoto, protectLegacyPhotos, protectRecordPhotos, type MediaOptions } from "./media";
 import { IdentityService, type Principal } from "./identity";
+import type { RecordsService } from "./records/service";
+import { createAttachmentHandler, type AttachmentService } from "./records/attachments";
+import type { CollectorService } from "./collector/service";
+import { handleRecordsMcp } from "./records/mcp";
+import { readRecordView, readSyncStatus } from "./records/read-model";
 
 const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
 const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
 const babyScope = z.object({ babyId: id }).strict();
-export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }) {
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
   const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
@@ -36,14 +41,18 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       const mutation = !["GET", "HEAD"].includes(req.method);
       if (mutation) {
         if ((browser && req.headers.get("origin") !== origin) || (req.headers.has("origin") && req.headers.get("origin") !== origin)) throw new AppError(403, "UNTRUSTED_ORIGIN", "请求来源不受信任。");
-        if (!req.headers.get("content-type")?.startsWith("application/json")) throw new AppError(415, "JSON_REQUIRED", "请发送 JSON 请求。");
+        if (!(features && path === "/api/app/attachments" && req.method === "POST") && !req.headers.get("content-type")?.startsWith("application/json")) throw new AppError(415, "JSON_REQUIRED", "请发送 JSON 请求。");
       }
-      const body = async () => {
+      const body = async (limit=16384) => {
         const raw = await req.text();
-        if (Buffer.byteLength(raw) > 16384) throw new AppError(413, "BODY_TOO_LARGE", "请求内容过长。");
+        if (Buffer.byteLength(raw) > limit) throw new AppError(413, "BODY_TOO_LARGE", "请求内容过长。");
         try { return JSON.parse(raw) as unknown; } catch { throw new AppError(400, "INVALID_JSON", "请求格式不正确。"); }
       };
       if (req.method === "GET" && path === "/health") return json({ ok: true, service: "bubu-log-service" });
+      if(features && path==="/api/mcp") {
+        if(req.method!=="POST")return json({code:"METHOD_NOT_ALLOWED",error:"MCP使用无状态Streamable HTTP POST。"},405);
+        return await handleRecordsMcp(req,await body(1024*1024),service,features.records,features.collector);
+      }
       if (req.method === "POST" && ["/api/identity/wechat", "/api/identity/legacy-login", "/api/identity/bind-legacy"].includes(path)) {
         const window = Math.floor(service.now() / 60000);
         if (window !== loginWindow) { loginWindow = window; logins = 0; }
@@ -59,6 +68,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         return resultWithSession(await service.loginLegacy(input.username, input.password, browser ? "browser" : "native"), browser);
       }
       const principal: Principal = await sessions(req);
+      if(features) {const attachmentResponse=await createAttachmentHandler(features.attachments)(req,principal);if(attachmentResponse)return attachmentResponse;}
       if (req.method === "POST" && path === "/api/identity/bind-legacy") {
         const input = credentials.parse(await body());
         return resultWithSession(await service.bindLegacy(principal, input.username, input.password), browser);
@@ -98,6 +108,15 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       const babyId = babyScope.parse({ babyId: url.searchParams.get("babyId") || req.headers.get("x-baby-id") }).babyId;
       if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+      if(features&&req.method==="GET"&&path==="/api/app/records/snapshot") {
+        const eventId=url.searchParams.get("eventId")||undefined;
+        const snapshot=await features.records.query(principal,{babyId,date:url.searchParams.get("date")||(eventId?undefined:features.records.today()),eventId});
+        const mediaQuestions=await features.collector.pendingMedia(principal,babyId);
+        return json(protectRecordPhotos({...snapshot,mediaQuestions:mediaQuestions.filter(question=>!eventId||question.eventIds.includes(eventId))},babyId));
+      }
+      if(features&&req.method==="GET"&&path==="/api/app/records/pending")return json([...await features.records.pending(principal,babyId),...await features.collector.pendingMedia(principal,babyId)]);
+      if(features&&req.method==="GET"&&path==="/api/app/records/sync")return json(await readSyncStatus(features.records,principal,babyId,features.collector));
+      if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
         await service.authorize(principal, babyId, "media:read");
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
@@ -114,7 +133,8 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       if (req.method === "GET" && /^\/api\/app\/(activities(?:\/[^/]+)?|daily-stats(?:\/[^/]+)?)$/.test(path)) {
         await service.authorize(principal, babyId, "records:read");
-        return json(protectLegacyPhotos(await service.legacy.read(babyId, path.slice("/api/app/".length), url.searchParams), babyId));
+        const value=features?await readRecordView(features.records,principal,babyId,path.slice("/api/app/".length),url.searchParams):await service.legacy.read(babyId,path.slice("/api/app/".length),url.searchParams);
+        return json(protectLegacyPhotos(value, babyId));
       }
       return json({ code: "NOT_FOUND", error: "未找到此接口。" }, 404);
     } catch (error) {

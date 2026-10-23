@@ -1,5 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { AppError, type Baby, type LegacyBackend, type LegacyUser } from "./contracts";
+import { activityTypes, type DailyMetrics, type LegacyActivity, type LegacyRecordsBackend } from "./records/types";
+import { chinaDayRange, emptyDailyMetrics } from "./records/statistics";
 
 type Doc = Record<string, unknown>;
 type Where = Record<string, unknown>;
@@ -14,6 +16,26 @@ const upstreamFailure = () => new AppError(502, "LEGACY_UNAVAILABLE", "旧版服
 const invalidCredentials = () => new AppError(401, "LEGACY_CREDENTIALS_INVALID", "旧账号或密码不正确");
 const scopeFailure = () => new AppError(502, "LEGACY_SCOPE_INVALID", "旧版服务返回了不匹配的宝宝范围");
 const isDoc = (value: unknown): value is Doc => !!value && typeof value === "object" && !Array.isArray(value);
+const activityFields = ["type", "startTime", "endTime", "hasPoop", "hasPee", "poopColor", "poopPhotoUrl", "peeAmount", "burpSuccess", "milkAmount", "milkSource", "breastFirmness", "supplementType", "spitUpType", "count", "notes"] as const;
+const legacyConflict = () => new AppError(409, "LEGACY_VERSION_CONFLICT", "旧版记录已发生变化，请重新核对后修改");
+function activityDocument(value: unknown, babyId: string, documentId?: string): LegacyActivity {
+  const row = doc(value);
+  if (row.babyId !== babyId || !id(row.id) || (documentId && row.id !== documentId)) throw scopeFailure();
+  if (!activityTypes.includes(row.type as LegacyActivity["type"]) || typeof row.startTime !== "string" || !Number.isFinite(Date.parse(row.startTime))) throw upstreamFailure();
+  return row as unknown as LegacyActivity;
+}
+function activityData(value: LegacyActivity): Doc {
+  return Object.fromEntries(activityFields.map(field => [field, value[field] ?? null]));
+}
+function sameActivity(left: LegacyActivity | null, right: LegacyActivity | null): boolean {
+  if (!left || !right) return left === right;
+  if (left.id !== right.id || left.babyId !== right.babyId) return false;
+  const normalized = (row: LegacyActivity, field: typeof activityFields[number]) => {
+    const value = row[field] ?? null;
+    return (field === "startTime" || field === "endTime") && typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : value;
+  };
+  return activityFields.every(field => normalized(left, field) === normalized(right, field));
+}
 function id(value: unknown): string | null {
   if (typeof value === "string" && value.length && value.length <= 256) return value;
   if (isDoc(value)) return id(value.id);
@@ -54,7 +76,7 @@ function deterministicId(kind: string, identityId: string): string {
 }
 
 /** Only this server-side adapter holds the legacy CMS credential. Never expose it as a generic proxy. */
-export class HttpLegacyBackend implements LegacyBackend {
+export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend {
   private readonly origin: string;
   private readonly fetcher: typeof fetch;
   private cmsToken?: { value: string; expiresAt: number };
@@ -227,6 +249,90 @@ export class HttpLegacyBackend implements LegacyBackend {
     const value = baby(response.doc);
     if (value.id !== babyId) throw scopeFailure();
     return value;
+  }
+
+  /** Paginate explicitly: Payload may cap limit, and conflict checks must not silently inspect only 1000 rows. */
+  async listActivities(babyId: string): Promise<LegacyActivity[]> {
+    if (!id(babyId)) throw new AppError(400, "INVALID_BABY", "缺少宝宝范围");
+    const result: LegacyActivity[] = []; const seen = new Set<string>();
+    let page = 1;
+    for (;;) {
+      const query = new URLSearchParams({ depth: "0", limit: "500", page: String(page), pagination: "true", sort: "id" });
+      putQuery(query, "where", { babyId: { equals: babyId } });
+      const response = doc(await this.cms(`activities?${query}`));
+      if (!Array.isArray(response.docs)) throw upstreamFailure();
+      for (const value of response.docs) {
+        const row = activityDocument(value, babyId);
+        if (seen.has(row.id)) throw new AppError(502, "LEGACY_PAGINATION_CHANGED", "旧版记录分页发生变化，请重试读取");
+        seen.add(row.id); result.push(row);
+      }
+      if (response.hasNextPage === false || (response.hasNextPage === undefined && response.nextPage == null)) return result;
+      if (response.hasNextPage !== true || response.nextPage !== page + 1 || !response.docs.length || page >= 10_000) throw upstreamFailure();
+      page++;
+    }
+  }
+
+  async getActivity(babyId: string, documentId: string): Promise<LegacyActivity | null> {
+    if (!id(babyId) || !id(documentId)) throw new AppError(400, "INVALID_ACTIVITY", "缺少宝宝或记录范围");
+    const row = await this.get("activities", documentId);
+    return row ? activityDocument(row, babyId, documentId) : null;
+  }
+
+  async writeActivity(babyId: string, documentId: string, desired: LegacyActivity | null, expected: LegacyActivity | null): Promise<LegacyActivity | null> {
+    if (!id(babyId) || !id(documentId)) throw new AppError(400, "INVALID_ACTIVITY", "缺少宝宝或记录范围");
+    if (desired) activityDocument(desired, babyId, documentId);
+    if (expected) activityDocument(expected, babyId, documentId);
+    const current = await this.getActivity(babyId, documentId);
+    // A stable ID and the complete target snapshot recover a successful write whose response was lost.
+    if (sameActivity(current, desired)) return current;
+    if (!sameActivity(current, expected) || (current && expected?.updatedAt && current.updatedAt !== expected.updatedAt)) throw legacyConflict();
+    let operationError: unknown;
+    try {
+      if (!expected && desired) {
+        const response = doc(await this.cms("activities", { method: "POST", body: JSON.stringify({ id: documentId, babyId, ...activityData(desired) }) }));
+        activityDocument(response.doc, babyId, documentId);
+      } else if (expected) {
+        // Payload applies this snapshot condition when selecting records, then updates by ID internally.
+        // This selection precondition plus before/after verification detects observed external edits;
+        // it is not a database-atomic CAS against a simultaneous write inside Payload's own operation.
+        const conditions: Where[] = [{ id: { equals: documentId } }, { babyId: { equals: babyId } }];
+        if (expected.updatedAt) conditions.push({ updatedAt: { equals: expected.updatedAt } });
+        for (const field of activityFields) conditions.push({ [field]: expected[field] == null ? { exists: false } : { equals: expected[field] } });
+        const query = new URLSearchParams({ depth: "0" }); putQuery(query, "where", { and: conditions });
+        const response = doc(await this.cms(`activities?${query}`, { method: desired ? "PATCH" : "DELETE", ...(desired ? { body: JSON.stringify(activityData(desired)) } : {}) }));
+        if (!Array.isArray(response.docs) || response.docs.length > 1 || (Array.isArray(response.errors) && response.errors.length)) throw upstreamFailure();
+        for (const value of response.docs) activityDocument(value, babyId, documentId);
+        if (!response.docs.length) throw legacyConflict();
+      }
+    } catch (error) { operationError = error; }
+    const actual = await this.getActivity(babyId, documentId);
+    if (sameActivity(actual, desired)) return actual;
+    if (operationError) throw operationError;
+    throw legacyConflict();
+  }
+
+  async saveDailyStats(babyId: string, date: string, metrics: DailyMetrics): Promise<void> {
+    if (!id(babyId)) throw new AppError(400, "INVALID_BABY", "缺少宝宝范围");
+    const metricNames = Object.keys(emptyDailyMetrics());
+    if (Object.keys(metrics).some(key => !metricNames.includes(key)) || metricNames.some(key => typeof metrics[key] !== "number" || !Number.isFinite(metrics[key]) || metrics[key]! < 0)) throw new AppError(400, "INVALID_METRICS", "日报指标无效");
+    const dateValue = new Date(chinaDayRange(date).start).toISOString();
+    const rows = await this.find("daily-stats", { and: [{ babyId: { equals: babyId } }, { date: { equals: dateValue } }] }, 2);
+    if (rows.length > 1 || rows.some(row => row.babyId !== babyId || isoDate(String(row.date)) !== dateValue)) throw scopeFailure();
+    const existing = rows[0];
+    const documentId = existing ? id(existing.id) : deterministicId("daily-stat", `${babyId}:${date}`);
+    if (!documentId) throw upstreamFailure();
+    const matches = (row: Doc | null) => !!row && row.babyId === babyId && isoDate(String(row.date)) === dateValue && metricNames.every(key => row[key] === metrics[key]);
+    if (matches(existing || null)) return;
+    try {
+      const response = doc(await this.cms(existing ? `daily-stats/${encodeURIComponent(documentId)}?depth=0` : "daily-stats", {
+        method: existing ? "PATCH" : "POST", body: JSON.stringify(existing ? metrics : { id: documentId, babyId, date: dateValue, ...metrics }),
+      }));
+      const saved = doc(response.doc);
+      if (saved.id !== documentId || !matches(saved)) throw scopeFailure();
+    } catch (error) {
+      const recovered = await this.get("daily-stats", documentId);
+      if (!matches(recovered)) throw error;
+    }
   }
 
   async read(babyId: string, path: string, query: URLSearchParams): Promise<unknown> {

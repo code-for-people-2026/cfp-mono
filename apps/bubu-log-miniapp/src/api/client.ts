@@ -236,9 +236,9 @@ export function createBubuApi(options: ClientOptions) {
     async resolvePhotoUrl(url: string, babyId: string): Promise<string> {
       if (!sidecar) return url;
       // Never forward a Bearer credential to a data-supplied host or arbitrary route.
-      const match = /^\/api\/app\/media\/activities\/([A-Za-z0-9%_.~-]+)\?babyId=([^&#]+)$/.exec(url);
+      const match = /^\/api\/app\/(?:media\/activities\/[A-Za-z0-9%_.~-]+|attachments\/att_[a-f0-9]{64})\?babyId=([^&#]+)$/.exec(url);
       let requestedBaby: string;
-      try { requestedBaby = match ? decodeURIComponent(match[2]) : ""; } catch { throw new decode.ResponseFormatError(); }
+      try { requestedBaby = match ? decodeURIComponent(match[1]) : ""; } catch { throw new decode.ResponseFormatError(); }
       if (!match || requestedBaby !== requiredId(babyId)) throw new decode.ResponseFormatError();
       if (!options.native) return url;
       if (!origin) throw new ConfigurationError();
@@ -352,6 +352,27 @@ export function createBubuApi(options: ClientOptions) {
       if (updated.id !== babyId) throw new decode.ResponseFormatError();
       return updated;
     },
+    async getSnapshot(babyId: string, date: string) {
+      if (!sidecar) throw new ApiError(400, "当前服务未启用统一记录视图。");
+      day(date);
+      const result = decode.recordSnapshot(await request(scoped("records/snapshot", babyId, { date }), { babyId }));
+      result.activities.forEach(item => { if (item.babyId !== babyId) throw new decode.ResponseFormatError(); });
+      result.events.forEach(item => verifyScope(item, babyId));
+      result.questions.forEach(item => verifyScope(item, babyId));
+      return result;
+    },
+    async getRecordEvent(babyId: string, eventId: string) {
+      requireSidecar();
+      const result = decode.recordCollection(await request(scoped("records/snapshot", babyId, { eventId: requiredId(eventId) }), { babyId }));
+      result.activities.forEach(item => { if (item.babyId !== babyId) throw new decode.ResponseFormatError(); });
+      result.events.forEach(item => verifyScope(item, babyId));
+      result.questions.forEach(item => verifyScope(item, babyId));
+      return result.events.find(item => item.id === eventId || item.legacyId === eventId) ?? null;
+    },
+    async getSyncStatus(babyId: string) {
+      requireSidecar();
+      return decode.array(await request(scoped("records/sync", babyId), { babyId }), decode.recordSyncStatus);
+    },
     async getActivities(input: ActivityQuery): Promise<ActivityResult> {
       if (input.date) day(input.date);
       if (input.startTimeGte || input.startTimeLt) {
@@ -378,7 +399,7 @@ export function createBubuApi(options: ClientOptions) {
       const range = day(input.endDate) - day(input.startDate);
       if (range < 0 || range > 365 * 86_400_000) throw new ApiError(400, "汇总查询一次最多查看一年，请缩小日期范围。");
       const result = await request(scoped("daily-stats", input.babyId, { startDate: input.startDate, endDate: input.endDate }), { babyId: input.babyId });
-      // These are stored snapshots. Missing dates remain missing, never synthesized as zeros.
+      // Legacy sends saved snapshots; sidecar adds live projection coverage and known-value masks.
       return decode.array(result, (item) => verifyScope(decode.dailyStat(item), input.babyId));
     },
     async getDailyStat(babyId: string, date: string) {

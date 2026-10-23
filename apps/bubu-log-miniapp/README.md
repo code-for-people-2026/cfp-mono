@@ -11,10 +11,10 @@
 - 周历：周一到周日、原有分类筛选、跨日记录。
 - 月历：最近四周的睡眠与瓶喂奶量热力图。
 - 趋势：7 / 14 / 30 天睡眠、瓶喂与吸奶、尿布统计。
-- 记录列表：按活动、创建、更新时间排序；只读详情；已有照片预览。
+- 记录列表：按活动、创建、更新时间排序；只读详情；已有照片预览。Sidecar 详情显示来源类型、来源时间、版本及待补状态，并预览记录关联的私有附件；不展示来源账号、群或发送者标识。
 - 切换有权访问的宝宝与日期，加载、失败重试、空状态、读取上限提示。
 
-昵称／姓名设置复用原 `PATCH /api/app/user-babies/:id` 的归属、重名和长度校验，保存成功才更新界面；只发送 `name` / `fullName`，不改其他资料。没有加入活动创建、编辑、删除或重新计算统计的请求。MCP、内置聊天、微信群采集和支付按各自模块后续接入。微信身份认证见下文。
+昵称／姓名设置复用原 `PATCH /api/app/user-babies/:id` 的归属、重名和长度校验，保存成功才更新界面；只发送 `name` / `fullName`，不改其他资料。客户端没有加入活动创建、编辑、删除或触发旧日报重算的请求。独立服务已提供 [Agent/MCP 录入与受控群采集](../bubu-log-service/README.md)，本客户端读取它的统一统计投影；内置聊天入口与支付尚未接入。微信身份认证见下文。
 
 ## 开发与构建
 
@@ -52,9 +52,9 @@ H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `
 BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
 BUBU_AUTH_MODE=sidecar BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/bubu-log-miniapp dev:h5
 
-# 使用合成账号/数据验证独立身份界面
+# 使用合成账号/数据验证独立身份与统一统计界面
 BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp build:h5
-BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/identity.spec.ts
+BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/identity.spec.ts tests/e2e/records.spec.ts
 # 旧模式界面回归使用默认构建和原有用例
 pnpm --filter @cfp/bubu-log-miniapp build:h5
 pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/diary.spec.ts
@@ -69,13 +69,17 @@ pnpm --filter @cfp/bubu-log-miniapp exec playwright test tests/e2e/diary.spec.ts
 
 必须在目标服务、自有 AppID、微信开发者工具和真机验证登录、恢复、退出、照护撤权与照片读取后才可发布。自动测试使用注入的微信 provider 和合成数据，不表示真实微信联调已通过。
 
-首页与记录列表沿用各自原有的 Activity 汇总；趋势与热力图直接读取后端保存的 DailyStat。尿量折算、分钟截断与服务端舍入的差异均保留，详见 [模型说明](src/model/README.md)。页面“刷新”仅重新读取，不触发旧 `POST /daily-stats` 计算。没有 DailyStat 的日期显示“暂无统计”，并不意味着没有活动。旧活动接口无分页总数，达到 1,000 条时显式提示结果可能不完整。
+`legacy` 模式：首页与记录列表沿用各自原有的 Activity 汇总；趋势与热力图直接读取后端保存的 DailyStat。尿量折算、分钟截断与服务端舍入的差异均保留。没有 DailyStat 的日期显示“暂无统计”，并不意味着没有活动。旧活动接口无分页总数，达到 1,000 条时显式提示结果可能不完整。
+
+`sidecar` 模式：首页与记录列表读取 `GET /api/app/records/snapshot?babyId&date` 的 `summary`，趋势和热力图读取同一服务实时计算的 DailyStat 形状；客户端不重算卡片口径。尿布卡显示真实换尿布次数，有尿与有便分别列出；明确的 0 保留，未知或进行中的数值不画成零。覆盖提示显示待补充、明确未知、进行中及疑似重复。明确进行中的跨夜睡眠延续到当前日期，但暂估经过时间不计入完成分钟；旧站补写结束时间后按当前已保存事实显示完成量。疑似新重复暂不双计，尚未确认的修改保留上次已保存事实。详见 [模型说明](src/model/README.md)。两种模式的“刷新”都只重新读取，不请求旧 `POST /daily-stats`。
+
+Sidecar 详情按活动 ID 读取独立的记录快照，不附加“今天”条件，因此历史记录的来源与附件仍可查看。关联图片使用 `/api/app/attachments/:id?babyId=…` 受保护接口，与旧照片复用相同的鉴权下载、预览和临时文件释放流程。首页单独读取 `/api/app/records/sync`，显示最近成功、消息处理时间、处理中任务、待补媒体与失败提醒；同步失败或状态读取失败不会清空已保存记录。状态随打开宝宝或手动刷新重新读取，客户端不启用自动采集或定时轮询。
 
 旧模式照片沿用 Activity.poopPhotoUrl 的原公开 URL。独立身份模式由服务端返回 `/api/app/media/activities/:id?babyId=...` 受保护路径；H5 同源 Cookie 读取，微信端打开详情时带 Bearer 下载为临时文件。客户端仅接受约定路径与当前宝宝，不把凭证发给记录中的任意 URL。没有持久媒体缓存；关详情、换宝宝、登录状态变化会释放本地临时文件，迟到下载不会展示。既有公开 Blob URL 本身的可访问性仍由旧存储决定。
 
 ## 文件分工与验证
 
-- `src/model`：时间、布局、展示字段，以及独立保留的旧摘要口径。
+- `src/model`：时间、布局、展示字段、独立保留的旧摘要口径，以及 sidecar 统计与完整性提示的展示。
 - `src/api`：读取、昵称／姓名更新契约，独立身份与旧会话适配，可注入传输层、微信 provider 和照片下载器做协议测试。
 - `src/components`：记录与统计的 Taro 可视化组件；`IdentitySetup` 单独承载账号绑定、首次创建和邀请码加入。
 - `src/navigation`：顶部安全区、菜单及跨页面资料更新通知。
