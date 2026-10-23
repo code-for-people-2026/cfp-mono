@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { AppError, permissions, type ActorKind, type Baby, type LegacyBackend, type Permission, type WechatProvider } from "./contracts";
 import { Store } from "./store";
 
@@ -12,6 +13,8 @@ export interface Principal {
   kind: ActorKind; subjectId: string; sessionId: string;
   babyId?: string; groupId?: string; bindingId?: string; parentSessionId?: string;
   permissions: Permission[]; expiresAt: string;
+  /** Present only on credentials delegated by an authenticated Payload operator. */
+  operatorUserId?: string;
 }
 interface Session extends Principal { revoked?: boolean; channel: "native" | "browser" | "service" }
 interface Grant { subjectId: string; babyId: string; state: "active" | "revoked"; permissions: Permission[]; source: "legacy" | "managed" }
@@ -23,15 +26,20 @@ export interface ActorScope {
 export class IdentityService {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly familyRuns = new Map<string, Promise<unknown>>();
+  private readonly executing = new AsyncLocalStorage<boolean>();
+  private operatorGuard?: (userId: string, babyId: string, permission: Permission) => Promise<void>;
   constructor(readonly store: Store, readonly legacy: LegacyBackend, readonly wechat: WechatProvider,
     readonly now: () => number = Date.now, readonly sessionTtlMs = 7 * 86400_000) {}
   /** One process owns the SQLite sidecar. All state transitions use this queue. */
   exclusive<T>(action: () => Promise<T>): Promise<T> {
-    const run = () => this.store.transaction(action);
+    if (this.executing.getStore()) return this.store.transaction(action);
+    const run = () => this.executing.run(true, () => this.store.transaction(action));
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
   }
+  /** Installed by the composition root, never selected by a request or model. */
+  setOperatorGuard(guard: (userId: string, babyId: string, permission: Permission) => Promise<void>) { this.operatorGuard = guard; }
   private async audit(action: string, actorId: string, target: Record<string, unknown>) {
     await this.store.put("audit", randomUUID(), { action, actorId, ...target, at: new Date(this.now()).toISOString() });
   }
@@ -208,7 +216,13 @@ export class IdentityService {
       } else if (current.kind === "collector") {
         const binding = current.bindingId && await this.store.get("group-bindings", current.bindingId);
         if (!binding || binding.value.active !== true || binding.value.babyId !== babyId || binding.value.groupId !== groupId || binding.value.agentId !== current.subjectId) return forbidden();
-      } else if (groupId) return forbidden();
+      } else {
+        if (groupId) return forbidden();
+        if (current.operatorUserId) {
+          if (!this.operatorGuard) return forbidden();
+          await this.operatorGuard(current.operatorUserId, babyId, permission);
+        }
+      }
     }
     if (!allowed.includes(permission)) return forbidden();
     return { actor: { kind: current.kind, id: current.subjectId, sessionId: current.sessionId, ...(onBehalfOf ? { onBehalfOf } : {}) }, babyId, ...(groupId ? { groupId } : {}), permissions: allowed };
@@ -276,10 +290,15 @@ export class IdentityService {
     });
   }
   /** Local CLI provisioning only. No HTTP endpoint can mint an operator. */
-  async provisionOperator(operatorId: string, babyId: string, ttlMs: number) {
+  async provisionOperator(operatorId: string, babyId: string, ttlMs: number, authority?: { userId: string; permissions: Permission[] }) {
     return this.exclusive(async () => {
     if (!operatorId.trim() || !await this.legacy.getBaby(babyId) || ttlMs <= 0 || ttlMs > 86400_000) fail(400, "INVALID_OPERATOR", "运营身份、宝宝和不超过一天的期限必填。");
-    const issued = await this.mint(operatorId, "service", { kind: "operator", babyId, permissions, expiresAt: new Date(this.now() + ttlMs).toISOString() });
+    if (authority) {
+      if (!this.operatorGuard) return forbidden();
+      for (const permission of authority.permissions) await this.operatorGuard(authority.userId, babyId, permission);
+    }
+    const issued = await this.mint(operatorId, "service", { kind: "operator", babyId, permissions: authority?.permissions || permissions,
+      ...(authority ? { operatorUserId: authority.userId } : {}), expiresAt: new Date(this.now() + ttlMs).toISOString() });
     await this.audit("operator.provision", operatorId, { babyId });
     return issued;
     });

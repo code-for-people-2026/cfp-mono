@@ -1,6 +1,7 @@
 import * as migration_20261023_122805_identity_schema from './20261023_122805_identity_schema';
 import * as migration_20261023_125354_care_records from './20261023_125354_care_records';
 import * as migration_20261023_132619_private_chat from './20261023_132619_private_chat';
+import * as migration_20261023_140114_ops_admin from './20261023_140114_ops_admin';
 
 export const migrations = [
   {
@@ -16,6 +17,11 @@ export const migrations = [
   {
     up: migration_20261023_132619_private_chat.up,
     down: migration_20261023_132619_private_chat.down,
-    name: '20261023_132619_private_chat'
+    name: '20261023_132619_private_chat',
+  },
+  {
+    up: migration_20261023_140114_ops_admin.up,
+    down: migration_20261023_140114_ops_admin.down,
+    name: '20261023_140114_ops_admin'
   },
 ];

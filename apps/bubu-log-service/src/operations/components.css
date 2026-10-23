@@ -1,0 +1,51 @@
+.bubu-ops { color: var(--theme-text); margin: 20px 0 32px; max-width: 1440px; }
+.bubu-ops * { box-sizing: border-box; }
+.bubu-ops h2 { margin: 0 0 8px; font-size: 1.65rem; }
+.bubu-ops h3 { margin: 0 0 12px; font-size: 1.1rem; }
+.bubu-ops p { line-height: 1.65; margin: 10px 0 16px; }
+.bubu-ops__header, .bubu-ops__toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.bubu-ops__toolbar { align-items: center; padding: 12px 0; }
+.bubu-ops__toolbar .bubu-ops__field { min-width: 280px; margin-bottom: 0; }
+.bubu-ops__badge { display: inline-block; padding: 3px 9px; background: var(--theme-elevation-100); border-radius: 20px; font-size: .85rem; margin-left: 8px; }
+.bubu-ops__reason { padding: 16px; border-left: 3px solid var(--theme-elevation-600); background: var(--theme-elevation-50); margin: 12px 0 20px; }
+.bubu-ops__reason .bubu-ops__field { margin: 0; }
+.bubu-ops__nav, .bubu-ops__buttons { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0; }
+.bubu-ops button { border: 1px solid var(--theme-elevation-800); background: var(--theme-elevation-800); color: var(--theme-elevation-0); border-radius: 4px; font: inherit; padding: 9px 14px; cursor: pointer; line-height: 1.4; }
+.bubu-ops button.bubu-ops__secondary { background: var(--theme-elevation-0); color: var(--theme-text); border-color: var(--theme-elevation-250); }
+.bubu-ops button:disabled, .bubu-ops fieldset:disabled button { opacity: .45; cursor: not-allowed; }
+.bubu-ops button:focus-visible, .bubu-ops input:focus-visible, .bubu-ops textarea:focus-visible, .bubu-ops select:focus-visible, .bubu-ops summary:focus-visible { outline: 2px solid var(--theme-elevation-600); outline-offset: 3px; }
+.bubu-ops__panel { min-width: 0; border: 1px solid var(--theme-elevation-200); border-radius: 5px; padding: 18px; margin: 22px 0; }
+.bubu-ops__panel legend { font-size: 1.05rem; font-weight: 600; padding: 0 8px; }
+.bubu-ops__field { min-width: 0; margin: 0 0 16px; }
+.bubu-ops__field > label { display: block; margin-bottom: 6px; font-weight: 500; }
+.bubu-ops input:not([type=checkbox]), .bubu-ops textarea, .bubu-ops select { width: 100%; display: block; color: var(--theme-text); background: var(--theme-input-bg, var(--theme-elevation-0)); border: 1px solid var(--theme-elevation-250); border-radius: 4px; padding: 9px 11px; font: inherit; min-height: 40px; }
+.bubu-ops textarea { resize: vertical; line-height: 1.5; }
+.bubu-ops input:disabled, .bubu-ops select:disabled, .bubu-ops textarea:disabled { opacity: .65; }
+.bubu-ops small { display: block; font-size: .8rem; line-height: 1.5; color: var(--theme-elevation-650); margin-top: 5px; overflow-wrap: anywhere; }
+.bubu-ops__grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 16px; margin: 12px 0 0; }
+.bubu-ops__columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.bubu-ops__columns > .bubu-ops__panel { margin-top: 0; }
+.bubu-ops__checks { display: flex; gap: 12px 18px; flex-wrap: wrap; margin: 12px 0 20px; }
+.bubu-ops__checks label { display: inline-flex; align-items: center; gap: 7px; }
+.bubu-ops__checks input { accent-color: var(--theme-elevation-800); }
+.bubu-ops__table { overflow-x: auto; }
+.bubu-ops table { width: 100%; border-collapse: collapse; font-size: .9rem; text-align: left; }
+.bubu-ops th { background: var(--theme-elevation-50); font-weight: 600; white-space: nowrap; }
+.bubu-ops th, .bubu-ops td { border-bottom: 1px solid var(--theme-elevation-150); padding: 11px 10px; vertical-align: top; overflow-wrap: anywhere; min-width: 90px; }
+.bubu-ops td button { white-space: nowrap; padding: 6px 10px; font-size: .85rem; }
+.bubu-ops__id { max-width: 280px; }
+.bubu-ops .bubu-ops__muted, .bubu-ops__footer { color: var(--theme-elevation-650); font-size: .9rem; }
+.bubu-ops__footer { padding-top: 20px; border-top: 1px solid var(--theme-elevation-150); }
+.bubu-ops__notice { border-left: 3px solid var(--theme-elevation-500); background: var(--theme-elevation-50); padding: 12px 16px; }
+.bubu-ops .bubu-ops__error { color: var(--theme-error-600, #b42318); border: 1px solid var(--theme-error-300, #efc1bc); padding: 12px 16px; border-radius: 4px; }
+.bubu-ops__result, .bubu-ops__once { background: var(--theme-elevation-50); border: 1px solid var(--theme-elevation-250); border-radius: 5px; margin: 16px 0; padding: 16px; overflow-wrap: anywhere; }
+.bubu-ops pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 560px; overflow: auto; font-size: .85rem; line-height: 1.6; }
+.bubu-ops summary { cursor: pointer; padding: 5px 0; font-weight: 500; }
+.bubu-ops__request { margin: 14px 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; font-size: .85rem; }
+.bubu-ops__request small { flex-basis: 100%; }
+.bubu-ops code { overflow-wrap: anywhere; font-size: .85rem; }
+.bubu-ops__correction { display: grid; grid-template-columns: 1fr 1fr 1.2fr auto; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--theme-elevation-150); align-items: start; }
+.bubu-ops__correction button { margin-top: 26px; }
+.bubu-ops__image { display: block; max-width: 100%; max-height: 640px; object-fit: contain; margin: 10px auto; }
+@media (max-width: 900px) { .bubu-ops__columns { grid-template-columns: 1fr; gap: 0; } .bubu-ops__correction { grid-template-columns: 1fr 1fr; } .bubu-ops__correction button { margin-top: 0; } }
+@media (max-width: 540px) { .bubu-ops__toolbar .bubu-ops__field { min-width: 100%; } .bubu-ops__panel { padding: 12px; } .bubu-ops__grid, .bubu-ops__correction { grid-template-columns: 1fr; } .bubu-ops__nav button { flex: 1 0 auto; } }

@@ -140,7 +140,9 @@ export class CollectorService {
   /** Explicit human continuation after a private upload and versioned core attach. */
   async resolveMedia(principal: Principal, raw: z.input<typeof resolveMediaSchema>) {
     const input = resolveMediaSchema.parse(raw);
-    if (principal.kind !== "caregiver" && principal.kind !== "chat-agent") return fail("MEDIA_HUMAN_CONFIRMATION_REQUIRED", 403);
+    // CMS delegates identify a signed-in human operator. executeAuthorized
+    // rechecks that account's current role/scope; CLI and collector tokens do not qualify.
+    if (principal.kind !== "caregiver" && principal.kind !== "chat-agent" && !(principal.kind === "operator" && principal.operatorUserId)) return fail("MEDIA_HUMAN_CONFIRMATION_REQUIRED", 403);
     return this.identity.executeAuthorized(principal, input.babyId, "records:write", async (scope, req) => {
       if (!scope.permissions.includes("media:write")) return fail("MEDIA_WRITE_REQUIRED", 403);
       const sourceId = input.pendingId.startsWith("media:") ? input.pendingId.slice(6) : "";

@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/main.ts",
-    "start": "tsx src/main.ts",
-    "build": "tsc",
+    "start": "NODE_ENV=production tsx src/main.ts",
+    "build": "next build --webpack",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
@@ -17,7 +17,10 @@
     "audit:history": "tsx scripts/audit-history.ts",
     "db:migration": "tsx scripts/create-migration.ts",
     "test:production": "NODE_ENV=production tsx scripts/verify-production.ts",
-    "test:browser-server": "NODE_ENV=test tsx tests/chat-browser-server.ts"
+    "test:browser-server": "NODE_ENV=test tsx tests/chat-browser-server.ts",
+    "cms:admin": "tsx scripts/create-admin.ts",
+    "test:ops-server": "NODE_ENV=test tsx tests/ops-browser-server.ts",
+    "test:ops-http": "tsx scripts/verify-ops-http.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
@@ -25,7 +28,11 @@
     "payload": "3.85.1",
     "sharp": "0.34.5",
     "tsx": "^4.20.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "@payloadcms/next": "3.85.1",
+    "next": "16.2.9",
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
     "@cfp/eslint-config": "workspace:*",
@@ -33,6 +40,8 @@
     "@vitest/coverage-v8": "^4.0.15",
     "eslint": "^9.39.2",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
+    "vitest": "^4.0.15",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0"
   }
 }
