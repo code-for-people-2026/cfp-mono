@@ -1,9 +1,10 @@
 import { Button, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
-import { profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
+import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../../api";
+import { api, identityEnabled, wechatIdentityEnabled } from "../../api";
+import { IdentitySetup } from "../../components/IdentitySetup";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
 import {
   activityLabel, addDays, dateLabel, dayBounds, filterActivities, formatDuration,
@@ -18,6 +19,7 @@ const calendarViews = [
 type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
+const isForbidden = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 403;
 const iso = (value: number) => new Date(value).toISOString();
 
 export default function DiaryPage() {
@@ -41,7 +43,12 @@ export default function DiaryPage() {
   const [detail, setDetail] = useState<Activity | null>(null);
   const [detailError, setDetailError] = useState("");
   const [detailBusy, setDetailBusy] = useState(false);
+  const [detailPhoto, setDetailPhoto] = useState<string | null>(null);
+  const [photoLoading, setPhotoLoading] = useState(false);
+  const photoPath = useRef<string | null>(null);
   const detailVersion = useRef(0);
+  const contextVersion = useRef(0);
+  const authInFlight = useRef(false);
   const babyId = context?.baby?.id || "";
   const weekStart = mondayOfWeek(date);
   const dataKey = `${babyId}:${mode}:${date}:${days}:${revision}`;
@@ -49,26 +56,39 @@ export default function DiaryPage() {
 
   const clearPrivateView = useCallback(() => {
     setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
-    setDetailBusy(false); detailVersion.current++;
+    setDetailBusy(false); setDataError(""); detailVersion.current++;
+    if (photoPath.current) api.releasePhotoUrl(photoPath.current);
+    photoPath.current = null; setDetailPhoto(null); setPhotoLoading(false);
   }, []);
+  const closeDetail = () => {
+    detailVersion.current++; setDetail(null); setDetailBusy(false); setDetailError("");
+    if (photoPath.current) api.releasePhotoUrl(photoPath.current);
+    photoPath.current = null; setDetailPhoto(null); setPhotoLoading(false);
+  };
+  useEffect(() => () => { if (photoPath.current) api.releasePhotoUrl(photoPath.current); detailVersion.current++; }, []);
 
   const restore = useCallback(async () => {
-    setBooting(true); setAccountError("");
-    try { setContext(await api.getContext()); }
-    catch (error) { setAccountError(message(error)); }
-    finally { setBooting(false); }
-  }, []);
+    const version = ++contextVersion.current;
+    clearPrivateView(); setContext(null); setBooting(true); setAccountError("");
+    try { const next = await api.getContext(); if (version === contextVersion.current) setContext(next); }
+    catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
+    finally { if (version === contextVersion.current) setBooting(false); }
+  }, [clearPrivateView]);
+  const identityUpdated = useCallback((next: AuthContext) => {
+    contextVersion.current++; clearPrivateView(); setContext(next); setAccountError(""); setBooting(false);
+  }, [clearPrivateView]);
   useEffect(() => { void restore(); }, [restore]);
   useEffect(() => {
     const updateProfile = (baby: Baby) => setContext((current) => current ? {
       ...current, baby: current.baby?.id === baby.id ? baby : current.baby,
       babies: current.babies.map((item) => item.id === baby.id ? baby : item),
     } : current);
-    const expire = () => { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); };
+    const expire = () => { contextVersion.current++; clearPrivateView(); setContext(null); setBooting(false); setAccountError("登录已过期，请重新登录"); };
     Taro.eventCenter.on(profileUpdatedEvent, updateProfile);
     Taro.eventCenter.on(sessionExpiredEvent, expire);
-    return () => { Taro.eventCenter.off(profileUpdatedEvent, updateProfile); Taro.eventCenter.off(sessionExpiredEvent, expire); };
-  }, [clearPrivateView]);
+    Taro.eventCenter.on(identityUpdatedEvent, identityUpdated);
+    return () => { Taro.eventCenter.off(profileUpdatedEvent, updateProfile); Taro.eventCenter.off(sessionExpiredEvent, expire); Taro.eventCenter.off(identityUpdatedEvent, identityUpdated); };
+  }, [clearPrivateView, identityUpdated]);
 
   useEffect(() => {
     if (!babyId || !context?.authenticated) return;
@@ -105,44 +125,65 @@ export default function DiaryPage() {
     void load().then((next) => { if (!cancelled) setLoaded(next); }).catch((error: unknown) => {
       if (cancelled) return;
       if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+      else if (isForbidden(error)) { void restore(); }
       else setDataError(message(error));
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, clearPrivateView]);
+  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, clearPrivateView, restore]);
 
   const login = async () => {
-    if (!username.trim() || !password) { setAccountError("请输入账号和密码"); return; }
-    setAuthBusy(true); setAccountError("");
-    try { const next = await api.login({ username: username.trim(), password }); setPassword(""); setContext(next); clearPrivateView(); }
-    catch (error) { setAccountError(message(error)); }
-    finally { setAuthBusy(false); }
+    if (authInFlight.current) return;
+    if (!wechatIdentityEnabled && (!username.trim() || !password)) { setAccountError("请输入账号和密码"); return; }
+    authInFlight.current = true;
+    const version = ++contextVersion.current;
+    clearPrivateView(); setAuthBusy(true); setAccountError("");
+    try {
+      const next = wechatIdentityEnabled ? await api.loginWithWechat() : await api.login({ username: username.trim(), password });
+      if (version === contextVersion.current) setContext(next);
+    } catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
+    finally { authInFlight.current = false; setPassword(""); setAuthBusy(false); }
   };
   const logout = async () => {
-    setAuthBusy(true); setAccountError("");
-    clearPrivateView();
-    try { await api.logout(); setContext(null); }
-    catch (error) { setContext(null); setAccountError(message(error)); }
-    finally { setAuthBusy(false); }
+    if (authInFlight.current) return;
+    authInFlight.current = true;
+    const version = ++contextVersion.current;
+    setAuthBusy(true); setAccountError(""); clearPrivateView(); setContext(null);
+    try { await api.logout(); }
+    catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
+    finally { authInFlight.current = false; setAuthBusy(false); }
   };
   const changeBaby = async (index: number) => {
     const selected = context?.babies[index];
     if (!selected || selected.id === babyId) return;
-    clearPrivateView(); setBooting(true); setAccountError("");
-    try { setContext(await api.getContext(selected.id)); setFilters([]); }
-    catch (error) { setContext(null); setAccountError(message(error)); }
-    finally { setBooting(false); }
+    const version = ++contextVersion.current;
+    clearPrivateView(); setContext(null); setBooting(true); setAccountError("");
+    try { const next = await api.getContext(selected.id); if (version === contextVersion.current) { setContext(next); setFilters([]); } }
+    catch (error) {
+      if (version !== contextVersion.current) return;
+      if (isForbidden(error)) { void restore(); }
+      else setAccountError(message(error));
+    } finally { if (version === contextVersion.current) setBooting(false); }
   };
   const openDetail = async (activity: Activity) => {
+    closeDetail();
     const version = ++detailVersion.current;
     setDetail(null); setDetailError(""); setDetailBusy(true);
     try {
       const current = await api.getActivity(babyId, activity.id);
-      if (version === detailVersion.current) setDetail(current);
+      if (version !== detailVersion.current) return;
+      setDetail(current); setDetailBusy(false);
+      if (current.poopPhotoUrl) {
+        setPhotoLoading(true);
+        const photo = await api.resolvePhotoUrl(current.poopPhotoUrl, babyId);
+        if (version !== detailVersion.current) { api.releasePhotoUrl(photo); return; }
+        photoPath.current = photo; setDetailPhoto(photo);
+      }
     } catch (error) {
       if (version !== detailVersion.current) return;
       if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+      else if (isForbidden(error)) { void restore(); }
       else setDetailError(message(error));
-    } finally { if (version === detailVersion.current) setDetailBusy(false); }
+    } finally { if (version === detailVersion.current) { setDetailBusy(false); setPhotoLoading(false); } }
   };
 
   const summary = useMemo(() => mode === "list"
@@ -166,14 +207,14 @@ export default function DiaryPage() {
     <Text className="welcome-title">每一天，都值得记住</Text>
     <Text className="muted">登录哺哺日记，看看宝宝的日常与成长。</Text>
     <View className="login-card">
-      <Text className="section-title">登录已有账号</Text>
-      <Text className="field-label">用户名或邮箱</Text>
+      <Text className="section-title">{wechatIdentityEnabled ? "微信登录" : "登录已有账号"}</Text>
+      {!wechatIdentityEnabled && <><Text className="field-label">用户名或邮箱</Text>
       <Input className="login-input" value={username} placeholder="请输入用户名或邮箱" onInput={(e) => setUsername(e.detail.value)} disabled={authBusy || undefined} />
       <Text className="field-label">密码</Text>
-      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} />
+      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} /></>}
       {accountError && <Text className="error-text">{accountError}</Text>}
-      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>登录</Button>
-      <Text className="login-note">使用原宝宝日记的账号与密码</Text>
+      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>{wechatIdentityEnabled ? "微信登录并继续" : "登录"}</Button>
+      <Text className="login-note">{wechatIdentityEnabled ? "登录后可创建宝宝、绑定已有账号或加入家人" : "使用原宝宝日记的账号与密码"}</Text>
     </View>
     <Button className="text-button" disabled={authBusy || undefined} onClick={() => { void restore(); }}>重新连接</Button>
   </View></View>;
@@ -188,7 +229,7 @@ export default function DiaryPage() {
       onLogout={() => { void logout(); }} />
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
-    {!context.hasBaby ? <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
+    {!context.hasBaby ? identityEnabled ? <IdentitySetup context={context} onComplete={identityUpdated} /> : <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
       <View className="calendar-toolbar">
         <Button className="arrow-button" ariaLabel="上一段日期" onClick={() => navigate(-1)}>‹</Button>
         <Picker className="date-picker" mode="date" value={date} end={todayKey()} onChange={(event) => setDate(event.detail.value)}><View className="date-title">{periodLabel}<Text className="date-dropdown">⌄</Text></View></Picker>
@@ -226,8 +267,8 @@ export default function DiaryPage() {
             {!visible.length && <View className="state-panel">这一天还没有{filters.length ? "符合筛选的" : ""}记录</View>}
           </>}
         </>}
-      {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={() => { detailVersion.current++; setDetailBusy(false); setDetailError(""); }}>关闭</Text></View>}
-      <ActivityDetail activity={detail} onClose={() => { setDetail(null); detailVersion.current++; }} />
+      {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={closeDetail}>关闭</Text></View>}
+      <ActivityDetail activity={detail} photoUrl={detailPhoto} photoLoading={photoLoading} onClose={closeDetail} />
     </>}
     </View>
   </View>;

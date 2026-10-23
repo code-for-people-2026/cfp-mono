@@ -63,3 +63,8 @@ button::after { border: 0; }
 .calendar-view-option { margin: 0; background: transparent; color: #8c7962; padding: 10px 12px; line-height: 1.5; font-size: 13px; border-radius: 8px; }
 .calendar-view-option.current { background: #f1e9dc; color: #8d5935; }
 .calendar-view-select::after, .calendar-view-option::after { border: 0; pointer-events: none; }
+.identity-setup { margin-top: 16px; }
+.identity-setup > .muted { display: block; margin-top: 8px; }
+.identity-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.identity-choices .text-button { font-size: 12px; border-radius: 6px; }
+.identity-choice-current { background: #f1e9dc; }

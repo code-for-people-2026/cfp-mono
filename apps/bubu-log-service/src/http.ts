@@ -1,0 +1,127 @@
+import { z } from "zod";
+import { AppError, permissions, type Permission } from "./contracts";
+import { readLegacyPhoto, protectLegacyPhotos, type MediaOptions } from "./media";
+import { IdentityService, type Principal } from "./identity";
+
+const COOKIE = "bubu_session";
+const id = z.string().trim().min(1).max(200);
+const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
+const babyScope = z.object({ babyId: id }).strict();
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }) {
+  const origin = new URL(publicOrigin).origin;
+  const secure = origin.startsWith("https://");
+  const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
+  const json = (data: unknown, status = 200, headers: Record<string, string> = {}) => Response.json(data, { status, headers: { "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", ...headers } });
+  const sessions = (req: Request) => {
+    const bearer = req.headers.get("authorization");
+    const browserToken = req.headers.get("cookie")?.split(";").map(x => x.trim()).find(x => x.startsWith(`${COOKIE}=`))?.slice(COOKIE.length + 1);
+    if (bearer && browserToken) throw new AppError(400, "AMBIGUOUS_CREDENTIAL", "请使用一种登录凭证。");
+    if (bearer) {
+      if (!bearer.startsWith("Bearer ")) throw new AppError(401, "UNAUTHORIZED", "登录已失效。");
+      return service.authenticate(bearer.slice(7), "bearer");
+    }
+    return service.authenticate(browserToken || "", "browser");
+  };
+  const resultWithSession = (result: { token: string; expiresAt: string; context: unknown }, browser: boolean) => browser
+    ? json({ expiresAt: result.expiresAt, context: result.context }, 200, { "Set-Cookie": cookie(result.token, Math.max(0, Math.floor((Date.parse(result.expiresAt) - service.now()) / 1000))) })
+    : json(result);
+  // Admission limits are per server process and do not trust client-supplied forwarding headers.
+  let loginWindow = 0;
+  let logins = 0;
+  return async function handle(req: Request): Promise<Response> {
+    try {
+      const url = new URL(req.url);
+      const path = url.pathname;
+      const browser = req.headers.get("x-bubu-client") === "browser" || !!req.headers.get("origin") || !!req.headers.get("cookie");
+      const mutation = !["GET", "HEAD"].includes(req.method);
+      if (mutation) {
+        if ((browser && req.headers.get("origin") !== origin) || (req.headers.has("origin") && req.headers.get("origin") !== origin)) throw new AppError(403, "UNTRUSTED_ORIGIN", "请求来源不受信任。");
+        if (!req.headers.get("content-type")?.startsWith("application/json")) throw new AppError(415, "JSON_REQUIRED", "请发送 JSON 请求。");
+      }
+      const body = async () => {
+        const raw = await req.text();
+        if (Buffer.byteLength(raw) > 16384) throw new AppError(413, "BODY_TOO_LARGE", "请求内容过长。");
+        try { return JSON.parse(raw) as unknown; } catch { throw new AppError(400, "INVALID_JSON", "请求格式不正确。"); }
+      };
+      if (req.method === "GET" && path === "/health") return json({ ok: true, service: "bubu-log-service" });
+      if (req.method === "POST" && ["/api/identity/wechat", "/api/identity/legacy-login", "/api/identity/bind-legacy"].includes(path)) {
+        const window = Math.floor(service.now() / 60000);
+        if (window !== loginWindow) { loginWindow = window; logins = 0; }
+        if (++logins > 60) throw new AppError(429, "LOGIN_RATE_LIMIT", "登录尝试过多，请稍后重试。");
+      }
+      if (req.method === "POST" && path === "/api/identity/wechat") {
+        if (browser) throw new AppError(400, "NATIVE_REQUIRED", "请在微信小程序内登录。");
+        const input = z.object({ code: z.string().min(1).max(512) }).strict().parse(await body());
+        return resultWithSession(await service.loginWechat(input.code), false);
+      }
+      if (req.method === "POST" && path === "/api/identity/legacy-login") {
+        const input = credentials.parse(await body());
+        return resultWithSession(await service.loginLegacy(input.username, input.password, browser ? "browser" : "native"), browser);
+      }
+      const principal: Principal = await sessions(req);
+      if (req.method === "POST" && path === "/api/identity/bind-legacy") {
+        const input = credentials.parse(await body());
+        return resultWithSession(await service.bindLegacy(principal, input.username, input.password), browser);
+      }
+      if (req.method === "POST" && path === "/api/identity/family") {
+        const input = z.object({ name: z.string().trim().min(1).max(30) }).strict().parse(await body());
+        return json(await service.createFamily(principal, input.name));
+      }
+      if (req.method === "POST" && path === "/api/identity/logout") {
+        await service.logout(principal);
+        return json({}, 200, browser ? { "Set-Cookie": cookie("", 0) } : {});
+      }
+      if (req.method === "POST" && path === "/api/identity/invitations") {
+        const input = z.object({ babyId: id, access: z.enum(["read", "write"]) }).strict().parse(await body());
+        return json(await service.invite(principal, input.babyId, input.access));
+      }
+      if (req.method === "POST" && path === "/api/identity/invitations/accept") {
+        const input = z.object({ code: z.string().min(1).max(128) }).strict().parse(await body());
+        return json(await service.acceptInvite(principal, input.code));
+      }
+      if (req.method === "POST" && path === "/api/identity/grants") {
+        const input = z.object({ babyId: id, subjectId: id, state: z.enum(["active", "revoked"]), permissions: z.array(z.enum(permissions as [Permission, ...Permission[]])).max(6).default([]) }).strict().parse(await body());
+        return json(await service.setGrant(principal, input.babyId, input.subjectId, input.state, input.permissions));
+      }
+      if (req.method === "POST" && path === "/api/identity/group-bindings") {
+        const input = z.object({ babyId: id, groupId: id, agentId: id, active: z.boolean() }).strict().parse(await body());
+        return json(await service.bindGroup(principal, input.babyId, input.groupId, input.agentId, input.active));
+      }
+      if (req.method === "POST" && path === "/api/identity/agent-credentials") {
+        const input = z.object({ babyId: id, kind: z.enum(["chat-agent", "collector"]), groupId: id.optional(), agentId: id.optional() }).strict().parse(await body());
+        return json(await service.issueAgent(principal, input.babyId, input.kind, input));
+      }
+      if (req.method === "GET" && path === "/api/app/auth/context") return json(await service.context(principal, url.searchParams.get("babyId") || undefined));
+      if (req.method === "GET" && path === "/api/app/user-babies") {
+        const context = await service.context(principal, url.searchParams.get("babyId") || undefined);
+        return json({ data: context.babies, defaultBabyId: context.defaultBabyId, currentBabyId: context.baby?.id || null });
+      }
+      const babyId = babyScope.parse({ babyId: url.searchParams.get("babyId") || req.headers.get("x-baby-id") }).babyId;
+      if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+      if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
+        await service.authorize(principal, babyId, "media:read");
+        const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
+        const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
+        return await readLegacyPhoto(activity, babyId, media);
+      }
+      if (req.method === "PATCH" && path.startsWith("/api/app/user-babies/")) {
+        if (decodeURIComponent(path.slice("/api/app/user-babies/".length)) !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "宝宝范围不一致。");
+        await service.authorize(principal, babyId, "baby:manage");
+        const input = z.object({ name: z.string().trim().min(1).max(30), fullName: z.string().trim().max(60).nullable() }).strict().parse(await body());
+        const context = await service.context(principal);
+        if (context.babies.some(baby => baby.id !== babyId && baby.name.trim().toLowerCase() === input.name.toLowerCase())) throw new AppError(409, "DUPLICATE_NAME", "已存在同名宝宝。");
+        return json({ data: await service.legacy.updateBabyNames(babyId, input) });
+      }
+      if (req.method === "GET" && /^\/api\/app\/(activities(?:\/[^/]+)?|daily-stats(?:\/[^/]+)?)$/.test(path)) {
+        await service.authorize(principal, babyId, "records:read");
+        return json(protectLegacyPhotos(await service.legacy.read(babyId, path.slice("/api/app/".length), url.searchParams), babyId));
+      }
+      return json({ code: "NOT_FOUND", error: "未找到此接口。" }, 404);
+    } catch (error) {
+      if (error instanceof z.ZodError) return json({ code: "INVALID_INPUT", error: "请求字段或格式不正确。" }, 400);
+      if (error instanceof AppError) return json({ code: error.code, error: error.message }, error.status);
+      // Do not leak upstream response bodies, credential URLs or stack traces to clients.
+      return json({ code: "SERVICE_UNAVAILABLE", error: "服务暂时不可用，请稍后重试。" }, 503);
+    }
+  };
+}
