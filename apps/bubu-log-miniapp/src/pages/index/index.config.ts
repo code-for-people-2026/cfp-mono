@@ -1,1 +1,1 @@
-export default definePageConfig({ navigationBarTitleText: "宝宝日记" });
+export default definePageConfig({ navigationStyle: "custom", disableScroll: false, ...(process.env.TARO_ENV === "h5" ? { usingWindowScroll: true } : {}) });

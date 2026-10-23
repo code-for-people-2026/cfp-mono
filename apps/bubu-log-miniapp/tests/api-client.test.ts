@@ -222,3 +222,28 @@ describe("read API and data boundaries", () => {
     expect(await client.getBabies(baby.id)).toMatchObject({ data: [{ id: baby.id, birthDate: "2026-01-01T00:00:00Z" }], currentBabyId: baby.id });
   });
 });
+
+
+describe("existing baby name update protocol", () => {
+  it("uses the scoped existing PATCH route and only sends name fields", async () => {
+    const { client } = fixture(async (request) => {
+      expect(request.url).toBe("https://baby.example.test/api/app/user-babies/baby-1?babyId=baby-1");
+      expect(request.method).toBe("PATCH");
+      expect(request.headers["x-baby-id"]).toBe(baby.id);
+      expect(request.headers["Content-Type"]).toBe("application/json");
+      expect(JSON.parse(request.body!)).toEqual({ name: "小满", fullName: null });
+      return response({ data: { ...baby, name: "小满" } });
+    });
+    expect(await client.updateBabyNames(baby.id, { name: " 小满 ", fullName: "  " })).toMatchObject({ id: baby.id, name: "小满", fullName: null });
+  });
+  it("rejects invalid drafts, forbidden writes and a mismatched response", async () => {
+    const transport = vi.fn<Parameters<Transport>, ReturnType<Transport>>(async () => response({ error: "没有权限操作该宝宝" }, 403));
+    const { client } = fixture(transport);
+    await expect(client.updateBabyNames(baby.id, { name: " ", fullName: "" })).rejects.toMatchObject({ status: 400 });
+    await expect(client.updateBabyNames(baby.id, { name: "宝宝", fullName: "a".repeat(61) })).rejects.toMatchObject({ status: 400 });
+    expect(transport).not.toHaveBeenCalled();
+    await expect(client.updateBabyNames(baby.id, { name: "小满", fullName: "" })).rejects.toMatchObject({ status: 403 });
+    const other = fixture(async () => response({ data: { ...baby, id: "another-baby" } }));
+    await expect(other.client.updateBabyNames(baby.id, { name: "小满", fullName: "" })).rejects.toBeInstanceOf(ResponseFormatError);
+  });
+});

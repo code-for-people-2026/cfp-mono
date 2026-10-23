@@ -1,7 +1,7 @@
 export default defineAppConfig({
-  pages: ["pages/index/index"],
+  pages: ["pages/index/index", "pages/settings/index"],
   window: {
-    navigationBarTitleText: "宝宝日记",
+    navigationBarTitleText: "哺哺日记",
     navigationBarBackgroundColor: "#faf7f2",
     navigationBarTextStyle: "black",
     backgroundColor: "#faf7f2",

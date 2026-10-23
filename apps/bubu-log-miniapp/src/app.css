@@ -3,21 +3,12 @@ body { margin: 0; background: #faf7f2; }
 button { font: inherit; }
 button::after { border: 0; }
 .page { color: #3d3831; background: #faf7f2; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 14px; box-sizing: border-box; max-width: 540px; min-height: 100vh; margin: 0 auto; padding: 18px 14px calc(24px + env(safe-area-inset-bottom)); }
-.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
 .eyebrow { white-space: nowrap; display: block; font-size: 9.5px; letter-spacing: 2.5px; color: #a08f7c; font-weight: 600; }
-.baby-switch { display: block; font-size: 22px; font-weight: 650; line-height: 1.4; margin-top: 4px; }
-.down-arrow { margin-left: 8px; color: #a08f7c; font-size: 15px; }
 .text-button { width: auto; flex-shrink: 0; display: inline-block; background: transparent; color: #96633d; padding: 4px 6px; line-height: 1.6; margin: 0; font-size: 14px; }
 .text-button.small { font-size: 12px; }
-.view-tabs { display: flex; background: #eee9e1; border-radius: 11px; padding: 3.5px; }
-.view-tab { flex: 1; padding: 8.5px 0; text-align: center; color: #807568; font-size: 13.5px; border-radius: 8.5px; }
-.view-tab.selected { background: #fffdf9; color: #8d5935; font-weight: 600; box-shadow: 0 1.5px 5px #45351d0a; }
-.date-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
 .date-title { text-align: center; font-size: 15px; font-weight: 600; }
-.date-year { display: block; color: #a09383; font-size: 11px; font-weight: 400; margin-top: 3.5px; }
 .arrow-button { background: transparent; padding: 0; margin: 0; width: 36px; height: 36px; line-height: 32px; font-size: 24px; color: #87735d; }
 .arrow-button[disabled] { background: transparent; color: #d2cabe; }
-.period-actions { display: flex; justify-content: space-between; margin: 3px 0 9px; }
 .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .stat-card { border: 1px solid #efe8dd; padding: 8.5px 3.5px; border-radius: 11px; background: #fffdf9; text-align: center; }
 .stat-card.active { border-color: #b48259; background: #f5e8d8; }
@@ -43,7 +34,7 @@ button::after { border: 0; }
 .record-note { display: block; color: #9b8d7b; font-size: 11.5px; margin-top: 5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .record-chevron { color: #c0b4a4; font-size: 18px; }
 .detail-notice { position: fixed; bottom: calc(20px + env(safe-area-inset-bottom)); left: 12px; right: 12px; display: flex; justify-content: space-between; gap: 12px; background: #fff9ee; border: 0.5px solid #e5d6be; border-radius: 10px; padding: 12px; z-index: 90; box-shadow: 0 4px 20px #33231115; }
-.login-page { padding-top: 13vh; display: flex; align-items: center; flex-direction: column; }
+.login-page { padding-top: 8vh; display: flex; align-items: center; flex-direction: column; }
 .brand-mark { width: 50px; height: 50px; border-radius: 15px; background: #e9d6ba; color: #986b45; font-size: 25px; line-height: 50px; text-align: center; margin-bottom: 15px; }
 .welcome-title { display: block; font-size: 19.5px; font-weight: 600; margin: 11px 0 8px; }
 .login-card { background: #fffdf9; border: 0.5px solid #eee5d6; border-radius: 15px; padding: 18px; margin: 24px 0 10px; align-self: stretch; }
@@ -51,3 +42,24 @@ button::after { border: 0; }
 .login-input { border: 0.5px solid #e6ddcf; background: #faf7f2; border-radius: 7.5px; padding: 9px 11px; height: 24px; font-size: 14.5px; }
 .primary-button { background: #a8764e; color: #fffdf9; font-size: 14.5px; border-radius: 8.5px; line-height: 2.8; margin: 16px 0 0; }
 .login-note { display: block; font-size: 11px; text-align: center; color: #a39583; margin-top: 12px; }
+.diary-shell { max-width: 540px; margin: 0 auto; color: #3d3831; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+.diary-content { min-height: 0; padding-top: 0; }
+.calendar-toolbar { display: flex; align-items: center; gap: 2px; min-height: 46px; margin-bottom: 10px; }
+.date-picker { flex: 1; min-width: 0; }
+.calendar-toolbar .date-title { font-size: 13px; white-space: nowrap; }
+.date-dropdown { margin-left: 5px; color: #a3927d; font-size: 11px; }
+.calendar-view-select { padding: 7px 9px; margin-left: 6px; font-size: 12px; border-radius: 8px; background: #efe9df; white-space: nowrap; }
+.calendar-toolbar .arrow-button { width: 28px; flex-shrink: 0; }
+.calendar-toolbar .today-button { font-size: 11px; padding: 4px 2px; }
+.daily-summary { margin-top: 18px; }
+
+.arrow-button::after, .text-button::after, .primary-button::after { border: 0; pointer-events: none; }
+
+.calendar-view-control { position: relative; flex-shrink: 0; }
+.calendar-view-control.view-menu-open { z-index: 40; }
+.calendar-view-select { position: relative; z-index: 2; line-height: 1.6; color: #75634e; }
+.calendar-view-backdrop { position: fixed; inset: 0; z-index: 1; }
+.calendar-view-popover { position: absolute; right: 0; top: calc(100% + 8px); width: 96px; z-index: 3; padding: 5px; border-radius: 12px; background: #fffdf9; border: 0.5px solid #e9dfd0; box-shadow: 0 5px 24px #48341f18; }
+.calendar-view-option { margin: 0; background: transparent; color: #8c7962; padding: 10px 12px; line-height: 1.5; font-size: 13px; border-radius: 8px; }
+.calendar-view-option.current { background: #f1e9dc; color: #8d5935; }
+.calendar-view-select::after, .calendar-view-option::after { border: 0; pointer-events: none; }
