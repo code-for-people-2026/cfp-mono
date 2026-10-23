@@ -120,7 +120,7 @@ export class AttachmentService {
   }
   async upload(principal: Principal, babyId: string, bytes: Uint8Array, declaredMime: string, requestId: string, source?: SourceRef): Promise<Attachment> {
     return this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
-      await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+      await this.identity.assertRecordingService(principal, babyId, req);
       if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
       if (!bytes.byteLength || bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片为空或超过大小限制。");
       const mime = await inspectAttachment(bytes, declaredMime), sha256 = checksum(bytes), normalizedSource = this.normalizeSource(scope, source);
@@ -136,9 +136,9 @@ export class AttachmentService {
       };
       // Exact retries also repair an object lost/corrupted after the original commit, using the same verified bytes.
       await this.identity.authorize(principal, babyId, "media:write", principal.kind === "collector" ? principal.groupId : undefined);
-      await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+      await this.identity.assertRecordingService(principal, babyId, req);
       await this.writeObject(value, bytes);
-      await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+      await this.identity.assertRecordingService(principal, babyId, req);
       if (!existing) await this.repository.put("care-attachments", babyId, attachmentId, value, req);
       return this.view(value);
     }, principal.kind === "collector" ? principal.groupId : undefined);
@@ -180,7 +180,7 @@ export function createAttachmentHandler(service: AttachmentService) {
     if (!babyId || babyId.length > 200 || (request.headers.has("x-baby-id") && request.headers.get("x-baby-id") !== babyId)) return fail(400, "SCOPE_MISMATCH", "请提供一致的宝宝范围。");
     const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
     if (upload) {
-      await service.identity.executeAuthorized(principal, babyId, "media:write", async (_scope, req) => service.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req), principal.kind === "collector" ? principal.groupId : undefined);
+      await service.identity.executeAuthorized(principal, babyId, "media:write", async (_scope, req) => service.identity.assertRecordingService(principal, babyId, req), principal.kind === "collector" ? principal.groupId : undefined);
       let source: SourceRef | undefined;
       const encoded = request.headers.get("x-bubu-source");
       if (encoded) {

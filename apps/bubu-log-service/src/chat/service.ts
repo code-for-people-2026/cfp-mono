@@ -65,7 +65,12 @@ export class ChatService {
   }
   private async persist(principal: Principal, turn: StoredTurn) {
     turn.updatedAt = this.now();
-    await this.authorized(principal, turn.babyId, true, req => this.repository.put(turn, req));
+    await this.authorized(principal, turn.babyId, true, async req => {
+      // Publishing a completed reply and its eligibility check share one transaction.
+      // Recovery checkpoints remain writable while the service is paused.
+      if (turn.status === "completed") await this.identity.assertService(turn.babyId, "chat", req);
+      await this.repository.put(turn, req);
+    });
   }
   private async connect(principal: Principal, babyId: string, signal?: AbortSignal, readOnly = false) {
     const delegated = await this.identity.issueAgent(principal, babyId, "chat-agent", { readOnly });
@@ -304,7 +309,8 @@ export class ChatService {
         turn.assistantText = turn.receipts.length ? confirmedReply(turn.receipts, turn.pending) : uncommittedReply(output.text);
         turn.status = "completed"; delete turn.error;
         await this.persist(principal, turn);
-        await this.checkService(principal, turn.babyId);
+        // The reply is committed history now; a later pause cannot downgrade it.
+        await this.check(principal, turn.babyId);
         return this.publicTurn(turn);
       }
     } catch (error) {

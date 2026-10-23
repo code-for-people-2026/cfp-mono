@@ -33,13 +33,13 @@ export class RecordsService {
   }
   private async authorized<T>(principal: Principal, babyId: string, write: boolean, action: (scope: ActorScope, req: PayloadRequest) => Promise<T>) {
     return this.identity.executeAuthorized(principal, babyId, write ? "records:write" : "records:read", async (scope, req) => {
-      if (write) await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+      if (write) await this.identity.assertRecordingService(principal, babyId, req);
       return action(scope, req);
     }, principal.kind === "collector" ? principal.groupId : undefined);
   }
   private async beforeProjection(principal: Principal, babyId: string, req: PayloadRequest) {
     await this.identity.authorize(principal, babyId, "records:write", principal.kind === "collector" ? principal.groupId : undefined);
-    await this.identity.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+    await this.identity.assertRecordingService(principal, babyId, req);
   }
   private operationKey(scope: ActorScope, requestId: string) { return hash([scope.babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf || "", scope.groupId || "", requestId]); }
   private serial<T>(action: () => Promise<T>): Promise<T> {

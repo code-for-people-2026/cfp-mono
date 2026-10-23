@@ -46,6 +46,10 @@ export class IdentityService {
   async assertService(babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) {
     await this.serviceGuard?.(babyId, capability, req);
   }
+  /** Record and attachment effects share one actor-to-capability rule. Authorization remains the caller's first step. */
+  async assertRecordingService(principal: Principal, babyId: string, req?: import("payload").PayloadRequest) {
+    await this.assertService(babyId, principal.kind === "collector" ? "collection" : "chat", req);
+  }
   private async audit(action: string, actorId: string, target: Record<string, unknown>) {
     await this.store.put("audit", randomUUID(), { action, actorId, ...target, at: new Date(this.now()).toISOString() });
   }

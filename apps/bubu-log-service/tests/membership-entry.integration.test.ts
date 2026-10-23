@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { AsyncResource } from "node:async_hooks";
 import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { permissions } from "../src/contracts";
+import { AppError, permissions } from "../src/contracts";
 import { createHandler } from "../src/http";
-import { chatCollections } from "../src/chat/persistence";
+import { ChatRepository, chatCollections } from "../src/chat/persistence";
 import { ChatService } from "../src/chat/service";
 import type { ChatInput, ChatProvider } from "../src/chat/contracts";
 import { ChatMcpClient } from "../src/chat/mcp";
@@ -162,5 +163,79 @@ describe("one entitlement policy protects every service entry and preserves reco
     const completed = await s.chat.send(s.f.alice, input);
     expect(completed.status).toBe("completed"); expect(completed.id).toBe(stopped.id); expect(s.f.legacy.committedWrites).toBe(1);
     expect(s.f.mcpRequests.some(request => request.name === "bubu_get_request")).toBe(true);
+  }, 30_000);
+
+  it.each(["reply", "image-ambiguity", "conflict"] as const)("does not publish %s when an operator pause commits before the completion transaction", async kind => {
+    let modelCalls = 0, pendingReads = 0, pauseAfterCheck = false, completedWrites = 0;
+    const provider: ChatProvider = { complete: async () => {
+      modelCalls++;
+      return kind === "conflict" && modelCalls === 1
+        ? { text: "", calls: [{ id: "conflicting-record", name: "bubu_record_events", arguments: { events: [{ facts }] } }] }
+        : { text: "这是一条等待发布的示例回复。", calls: [] };
+    } };
+    const requestFetch: typeof fetch = async (url, init) => {
+      const response = await fetch(url, init);
+      if (typeof init?.body === "string" && init.body.includes('"name":"bubu_get_pending"') && ++pendingReads === 2) pauseAfterCheck = true;
+      return response;
+    };
+    const s = await setup(provider, requestFetch);
+    if (kind === "conflict") vi.spyOn(s.f.legacy, "writeActivity").mockRejectedValueOnce(new AppError(409, "LEGACY_VERSION_CONFLICT", "隔离示例旧库冲突"));
+    // A separate operator request must queue behind the current transaction, not
+    // re-enter its AsyncLocalStorage context. This fixes the ordering without timers.
+    const operatorRequest = new AsyncResource("membership-publication-test");
+    cleanups.push(async () => { operatorRequest.emitDestroy(); });
+    let paused: Promise<unknown> | undefined;
+    const enqueuePause = () => {
+      paused ??= operatorRequest.runInAsyncScope(() => s.membership.execute(s.operator, babyId, `pause-before-${kind}`, { action: "pause", expectedVersion: 0 }, "隔离示例发布前暂停"));
+      void paused.catch(() => undefined);
+    };
+    const check = s.membership.requireAvailable.bind(s.membership);
+    vi.spyOn(s.membership, "requireAvailable").mockImplementation(async (...args) => {
+      await check(...args);
+      if (kind !== "image-ambiguity" && pauseAfterCheck) { pauseAfterCheck = false; enqueuePause(); }
+    });
+    const put = ChatRepository.prototype.put;
+    vi.spyOn(ChatRepository.prototype, "put").mockImplementation(async function (this: ChatRepository, turn, req) {
+      await put.call(this, turn, req);
+      if (turn.status === "completed") completedWrites++;
+      if (kind === "image-ambiguity" && turn.status === "processing" && turn.modelContext?.imageAmbiguity) enqueuePause();
+    });
+    const input = { ...message(`publication-before-${kind}`), ...(kind === "image-ambiguity" ? { text: "上一张图片是什么颜色" } : {}) };
+    const stopped = await s.chat.send(s.f.alice, input);
+    await paused;
+    expect((await s.membership.status(s.f.alice, babyId)).status).toBe("paused");
+    expect(stopped).toMatchObject({ status: "needs_recovery", error: { code: "SERVICE_PAUSED", retryable: true } });
+    expect(completedWrites).toBe(0);
+    expect((await s.chat.request(s.f.alice, babyId, input.requestId))?.status).toBe("needs_recovery");
+    await s.configure({ action: "resume" });
+    const completed = await s.chat.send(s.f.alice, input);
+    expect(completed.status).toBe("completed"); expect(completed.id).toBe(stopped.id); expect(completedWrites).toBe(1);
+    expect(modelCalls).toBe(kind === "image-ambiguity" ? 0 : 2);
+  }, 30_000);
+
+  it("keeps a committed completion as history when a queued operator pause runs immediately afterward", async () => {
+    let modelCalls = 0;
+    const s = await setup({ complete: async () => ++modelCalls === 1
+      ? { text: "", calls: [{ id: "record-before-completion", name: "bubu_record_events", arguments: { events: [{ facts }] } }] }
+      : { text: "照护结果已确认。", calls: [] } });
+    const operatorRequest = new AsyncResource("membership-after-publication-test");
+    cleanups.push(async () => { operatorRequest.emitDestroy(); });
+    let paused: Promise<unknown> | undefined;
+    const put = ChatRepository.prototype.put;
+    vi.spyOn(ChatRepository.prototype, "put").mockImplementation(async function (this: ChatRepository, turn, req) {
+      await put.call(this, turn, req);
+      if (turn.status === "completed" && !paused) {
+        paused = operatorRequest.runInAsyncScope(() => s.membership.execute(s.operator, babyId, "pause-after-completion", { action: "pause", expectedVersion: 0 }, "隔离示例发布后暂停"));
+        void paused.catch(() => undefined);
+      }
+    });
+    const input = message("publication-completed-before-pause"), completed = await s.chat.send(s.f.alice, input);
+    await paused;
+    expect((await s.membership.status(s.f.alice, babyId)).status).toBe("paused");
+    expect(completed.status).toBe("completed"); expect(completed.error).toBeUndefined();
+    expect((await s.chat.history(s.f.alice, babyId)).turns[0]).toMatchObject({ id: completed.id, status: "completed" });
+    expect(await s.chat.send(s.f.alice, input)).toMatchObject({ id: completed.id, status: "completed" });
+    expect(modelCalls).toBe(2); expect(s.f.legacy.committedWrites).toBe(1);
+    expect(s.f.mcpRequests.filter(request => request.name === "bubu_record_events")).toHaveLength(1);
   }, 30_000);
 });
