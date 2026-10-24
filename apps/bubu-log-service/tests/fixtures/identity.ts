@@ -10,6 +10,7 @@ import { openStore, type Store } from "../../src/store";
  * @public Synthetic legacy boundary shared by downstream module integration tests.
  */
 export class LegacyFixture implements LegacyBackend {
+  async findFamilyAccount(identityId: string) { const family = this.families.get(identityId); return family ? { id: family.userId } : null; }
   users = new Set(["old-alice", "old-bob"]);
   babies = new Map<string, Baby>([
     ["baby-a", { id: "baby-a", name: "小一", isDefault: true }],

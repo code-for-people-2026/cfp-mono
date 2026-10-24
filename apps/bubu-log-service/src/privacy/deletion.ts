@@ -8,10 +8,14 @@ import type { PrivacyService, GuardianConsent } from "./service";
 import { DeletionLedger, type DeletionEntry } from "./deletion-ledger";
 
 export interface DeletionJob extends DeletionEntry { status: "pending" | "running" | "retry" | "completed"; updatedAt: string; errorCode?: string }
-interface Intent { kind: "account" | "family"; identityId: string; babyId?: string; expiresAt: string; used?: string; confirmation: string }
+interface Intent { contractVersion: 2; legacyUserIds: string[]; kind: "account" | "family"; identityId: string; babyId?: string; expiresAt: string; used?: string; confirmation: string }
 export interface FamilyLifecycle {
   exportFamilyData(babyId: string): Promise<unknown>;
   deleteFamilyData(babyId: string): Promise<void>;
+}
+export interface AccountLifecycle {
+  exportAccountData(userId: string): Promise<unknown>;
+  deleteAccountData(userId: string): Promise<void>;
 }
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const fail = (code: string, message: string, status = 403): never => { throw new AppError(status, code, message); };
@@ -19,7 +23,7 @@ const fail = (code: string, message: string, status = 403): never => { throw new
 /** Durable rights requests; destructive execution only follows an exact, recent, owner-confirmed intent. */
 export class DeletionService {
   private running?: Promise<void>;
-  constructor(readonly privacy: PrivacyService, readonly attachments: AttachmentService, readonly ledger: DeletionLedger, private readonly legacy?: FamilyLifecycle) {}
+  constructor(readonly privacy: PrivacyService, readonly attachments: AttachmentService, readonly ledger: DeletionLedger, private readonly legacy?: FamilyLifecycle, private readonly accounts?: AccountLifecycle) {}
   private get identity() { return this.privacy.identity; }
   private now() { return new Date(this.identity.now()).toISOString(); }
   private async owner(principal: Principal, babyId?: string) {
@@ -34,17 +38,19 @@ export class DeletionService {
     if ((kind === "family") !== !!babyId) fail("INVALID_DELETION_SCOPE", "请选择明确的删除范围。", 400);
     await this.owner(principal, babyId);
     const token = randomBytes(32).toString("base64url"), expiresAt = new Date(this.identity.now() + 10 * 60_000).toISOString();
-    const confirmation = kind === "family" ? "删除宝宝全部数据" : "注销我的账号";
-    await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", `intent:${digest(token)}`, { kind, identityId: principal.subjectId, babyId, expiresAt, confirmation } satisfies Intent, { identityId: principal.subjectId, babyId }));
+    const legacyUserIds = kind === "account" ? await this.identity.accountLegacyUserIds(principal.subjectId) : [];
+    const confirmation = kind === "family" ? "删除宝宝全部数据" : legacyUserIds.length ? "注销我的账号和已绑定原版账号" : "注销我的账号";
+    await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", `intent:${digest(token)}`, { contractVersion: 2, legacyUserIds, kind, identityId: principal.subjectId, babyId, expiresAt, confirmation } satisfies Intent, { identityId: principal.subjectId, babyId }));
     return { token, expiresAt, confirmation, scope: kind, consequences: kind === "family"
       ? ["删除宝宝资料、全部照护记录、来源、修订、照片及家庭相关对话。", "所有照护者和采集 Agent 立即停止访问；此操作不能通过恢复备份撤销。"]
-      : ["删除本人的登录身份、私人对话和未关联家庭记录的照片，退出所有设备与 Agent。", "共同照护记录和必要来源仍由家庭使用；不会注销原版账号或删除其他人的家庭记录。", "若本人是授权监护人，家庭处理会暂停，直到拥有管理权限的其他成年监护人重新声明授权；如要删除宝宝全部数据，请另外选择家庭数据删除。"] };
+      : ["删除本人的登录身份、私人对话和未关联家庭记录的照片，退出所有设备与 Agent。", `已绑定的 ${legacyUserIds.length} 个原版账号的本人资料、密码、登录凭证及家庭授权关系一并删除；其他人的家庭记录和必要照护来源保留。`, "若本人是授权监护人，家庭处理会暂停，直到拥有管理权限的其他成年监护人重新声明授权；如要删除宝宝全部数据，请另外选择家庭数据删除。"] };
   }
   async confirm(principal: Principal, token: string, confirmation: string): Promise<{ id: string; status: DeletionJob["status"] }> {
     await this.identity.privacyIdentity(principal);
     return this.identity.exclusive(async () => {
       const intent = await this.privacy.repository.get<Intent>("privacy-state", `intent:${digest(token)}`);
       if (!intent || intent.identityId !== principal.subjectId) fail("DELETION_INTENT_INVALID", "删除确认已失效，请重新查看删除范围。", 400);
+      if (intent!.contractVersion !== 2) fail("DELETION_SCOPE_CHANGED", "注销范围已更新，请重新阅读并确认。", 409);
       if (intent!.used) {
         const previous = await this.privacy.repository.get<DeletionJob>("privacy-state", `deletion:${intent!.used}`);
         if (previous) return { id: previous.jobId, status: previous.status };
@@ -53,7 +59,9 @@ export class DeletionService {
       const session = await this.identity.store.get("sessions", principal.sessionId);
       if (!session?.createdAt || Date.parse(session.createdAt) < this.identity.now() - 15 * 60_000) fail("REAUTHENTICATION_REQUIRED", "为保护数据，请重新微信登录后再确认删除。", 401);
       await this.owner(principal, intent!.babyId);
-      const entry: DeletionEntry = { version: 1, jobId: randomUUID(), kind: intent!.kind, identityId: principal.subjectId, ...(intent!.babyId ? { babyId: intent!.babyId } : { identityIds: await this.identity.accountIdentityIds(principal.subjectId) }), createdAt: this.now() };
+      const legacyUserIds = intent!.kind === "account" ? await this.identity.accountLegacyUserIds(principal.subjectId) : [];
+      if (JSON.stringify(legacyUserIds) !== JSON.stringify(intent!.legacyUserIds)) fail("DELETION_SCOPE_CHANGED", "已绑定账号发生变化，请重新阅读并确认注销范围。", 409);
+      const entry: DeletionEntry = { version: 1, jobId: randomUUID(), kind: intent!.kind, identityId: principal.subjectId, ...(intent!.babyId ? { babyId: intent!.babyId } : { identityIds: await this.identity.accountIdentityIds(principal.subjectId), legacyUserIds }), createdAt: this.now() };
       // Durable ledger is outside the transaction. If the DB commit fails, replay still freezes this scope.
       this.ledger.append(entry);
       const job: DeletionJob = { ...entry, status: "pending", updatedAt: this.now() };
@@ -81,7 +89,12 @@ export class DeletionService {
       });
       const family = babyId ? await this.legacy?.exportFamilyData(babyId) : undefined;
       if (babyId && family === undefined) fail("LEGACY_EXPORT_UNAVAILABLE", "原照护数据导出尚未配置，请联系隐私渠道处理。", 503);
-      const value = { format: "bubu-privacy-export-v1", exportedAt: this.now(), scope: babyId ? "family" : "account", privateChat: ownChats, ...(family ? { family } : {}), notice: "仅导出本人的私人对话；家庭记录属于共享照护数据。用户原文与事实并非 AI 生成。附件通过已鉴权的图片接口另行保存。" };
+      const account: unknown[] = [];
+      if (!babyId) for (const userId of await this.identity.accountLegacyUserIds(principal.subjectId)) {
+        if (!this.accounts) fail("LEGACY_ACCOUNT_EXPORT_UNAVAILABLE", "本人原账号资料导出尚未配置，请联系隐私渠道。", 503);
+        account.push(await this.accounts!.exportAccountData(userId));
+      }
+      const value = { format: "bubu-privacy-export-v1", ...(!babyId ? { account } : {}), exportedAt: this.now(), scope: babyId ? "family" : "account", privateChat: ownChats, ...(family ? { family } : {}), notice: "账号导出含本人非秘密资料、账号关联和私人对话；不包含密码或访问令牌。家庭记录属于共享照护数据。用户原文与事实并非 AI 生成。附件通过已鉴权的图片接口另行保存。" };
       if (Buffer.byteLength(JSON.stringify(value)) > 10 * 1024 * 1024) fail("EXPORT_TOO_LARGE", "导出超过单次大小限制，请联系隐私渠道分批处理。", 413);
       return value;
     });
@@ -105,6 +118,10 @@ export class DeletionService {
         if (entry.kind === "family") {
           if (!this.legacy) fail("LEGACY_DELETION_UNAVAILABLE", "原照护数据删除尚未配置。", 503);
           await this.legacy!.deleteFamilyData(entry.babyId!);
+        }
+        if (entry.kind === "account" && entry.legacyUserIds?.length) {
+          if (!this.accounts) fail("LEGACY_ACCOUNT_DELETION_UNAVAILABLE", "原账号资料删除尚未配置。", 503);
+          for (const userId of entry.legacyUserIds) await this.accounts!.deleteAccountData(userId);
         }
         await this.identity.exclusive(() => this.identity.store.transaction(async req => {
           req.context.bubuPrivacyDeletion = true;
@@ -153,7 +170,6 @@ export class DeletionService {
       }
     }
   }
-  /** Restored snapshots must replay even jobs that appeared completed in the restored DB. */
   /** Offline restore/migration: only a completed ledger-backed family deletion supersedes older media receipts. */
   async hasCompletedFamilyDeletion(babyId: string) {
     const entries = this.ledger.read().filter(entry => entry.kind === "family" && entry.babyId === babyId);
@@ -161,6 +177,7 @@ export class DeletionService {
     for (const entry of entries) if ((await this.privacy.repository.get<DeletionJob>("privacy-state", `deletion:${entry.jobId}`))?.status !== "completed") return false;
     return true;
   }
+  /** Restored snapshots must replay even jobs that appeared completed in the restored DB. */
   async replayAfterRestore() {
     for (const entry of this.ledger.read()) await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", `deletion:${entry.jobId}`, { ...entry, status: "pending", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }));
     await this.processPending();

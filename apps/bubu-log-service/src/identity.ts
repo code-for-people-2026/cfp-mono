@@ -42,6 +42,8 @@ export class IdentityService {
     this.queue = result.catch(() => undefined);
     return result;
   }
+  private legacyAccountGuard?: (userId: string) => Promise<void>;
+  setLegacyAccountGuard(guard: (userId: string) => Promise<void>) { this.legacyAccountGuard = guard; }
   private accountChangeGuard?: (identityId: string) => Promise<void>;
   setAccountChangeGuard(guard: (identityId: string) => Promise<void>) { this.accountChangeGuard = guard; }
   private contextGuard?: (identityId: string) => Promise<boolean>;
@@ -53,6 +55,26 @@ export class IdentityService {
     const row = await this.store.get("identities", `subject:${identityId}`);
     const aliases = Array.isArray(row?.value.mergedIdentityIds) ? row.value.mergedIdentityIds.filter((id): id is string => typeof id === "string") : [];
     return [...new Set([identityId, ...aliases])].sort();
+  }
+  /** Resolve only server-proven mappings, including aliases; callers cannot supply deletion targets. */
+  async accountLegacyUserIds(identityId: string): Promise<string[]> {
+    const ids = await this.accountIdentityIds(identityId), result = new Set<string>();
+    for (const row of await this.store.list("identities")) {
+      if (row.key.startsWith("legacy:") && ids.includes(String(row.value.subjectId))) result.add(row.key.slice(7));
+      if (ids.some(id => row.key === `subject:${id}`) && typeof row.value.legacyUserId === "string") result.add(row.value.legacyUserId);
+      const provisioningId = ids.find(id => row.key === `family:${id}`);
+      if (provisioningId) {
+        if (row.value.state === "completed" && typeof row.value.legacyUserId === "string") result.add(row.value.legacyUserId);
+        else {
+          // A failed response does not prove that the upstream write failed. Recover by exact ownership,
+          // without creating data or deleting an unrelated account at a colliding stable ID.
+          const recovered = await this.legacy.findFamilyAccount(provisioningId);
+          if (!recovered) fail(409, "FAMILY_PROVISIONING_UNRESOLVED", "家庭创建尚未核实完成，请重试创建或联系运营核对后再注销或导出。");
+          result.add(recovered!.id);
+        }
+      }
+    }
+    return [...result].sort();
   }
   /** Data rights check existing ownership without requiring renewed consent. Never grants new access. */
   async authorizeForPrivacy(principal: Principal, babyId: string, permission: Permission) {
@@ -119,6 +141,7 @@ export class IdentityService {
   async loginLegacy(username: string, password: string, channel: "native" | "browser") {
     const user = await this.legacy.verifyCredentials(username, password);
     return this.exclusive(async () => {
+      await this.legacyAccountGuard?.(user.id);
       const identity = await this.resolve(`legacy:${user.id}`);
       identity.legacyUserId = user.id;
       await this.saveIdentity(identity);
@@ -141,6 +164,7 @@ export class IdentityService {
       const identity = await this.caregiver(principal);
       await this.accountChangeGuard?.(identity.id);
       const user = await this.legacy.verifyCredentials(username, password);
+      await this.legacyAccountGuard?.(user.id);
       if (identity.legacyUserId && identity.legacyUserId !== user.id) fail(409, "ALREADY_LINKED", "此微信已关联其他旧账号，请联系运营核对。");
       const mapping = await this.store.get("identities", `legacy:${user.id}`);
       const target = mapping ? await this.identity(String(mapping.value.subjectId)) : identity;
@@ -179,6 +203,7 @@ export class IdentityService {
   private async provisionFamily(principal: Principal, name: string) {
     const pending = await this.exclusive(async () => {
       const identity = await this.caregiver(principal);
+      await this.accountChangeGuard?.(identity.id);
       if (!name.trim() || name.trim().length > 30) fail(400, "INVALID_NAME", "请输入 1 到 30 字的宝宝昵称。");
       const key = `family:${identity.id}`;
       const provisioning = await this.store.get("identities", key);
@@ -190,9 +215,11 @@ export class IdentityService {
     });
     if (pending.completed) return { context: await this.context(principal) };
     // A durable journal + stable legacy IDs bridge two databases. This is not a distributed transaction.
-    const result = await this.exclusive(async () => { await this.accountChangeGuard?.(pending.identityId); return this.legacy.createFamily(pending.identityId, { name: pending.name }); });
     return this.exclusive(async () => {
       const identity = await this.caregiver(principal);
+      await this.accountChangeGuard?.(pending.identityId);
+      if (identity.id !== pending.identityId || identity.legacyUserId) fail(409, "IDENTITY_CHANGED", "身份已变化，请重新登录后核对。");
+      const result = await this.legacy.createFamily(pending.identityId, { name: pending.name });
       if (identity.id !== pending.identityId || (identity.legacyUserId && identity.legacyUserId !== result.userId)) fail(409, "IDENTITY_CHANGED", "身份已变化，请重新登录后核对。");
       identity.legacyUserId = result.userId;
       identity.currentBabyId = result.baby.id;

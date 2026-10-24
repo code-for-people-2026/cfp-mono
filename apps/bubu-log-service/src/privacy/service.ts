@@ -34,6 +34,9 @@ export class PrivacyService {
   }
   private current(value: { policyVersion: string; revokedAt?: string } | undefined) { return !!value && !value.revokedAt && value.policyVersion === this.policy().version; }
   /** Storage migration is not model processing, but may never restore a frozen family's data. */
+  async requireLegacyAccount(userId: string) {
+    if (this.ledger?.legacyAccountFrozen(userId)) fail("LEGACY_ACCOUNT_DELETED", "这个旧账号已申请注销，不能恢复原家庭权限。可以用微信重新开始，或联系隐私渠道。", 403);
+  }
   async requireLegacyStorage(babyId: string) {
     if (this.ledger?.frozen("family", babyId) || await this.repository.get("privacy-state", `frozen-baby:${babyId}`)) fail("PRIVACY_PROCESSING_FROZEN", "宝宝数据已申请删除，不能重新导入或读取历史照片。");
   }
