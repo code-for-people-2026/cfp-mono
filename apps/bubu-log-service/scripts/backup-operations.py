@@ -174,7 +174,9 @@ def node(config, work, script, args, source=False):
                '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '0:0', '--entrypoint', 'node',
                '-v', config['scriptsDirectory'] + ':/scripts:ro', '-v', str(work) + ':/work', '-v', config['keyFile'] + ':/backup.key:ro']
     if source:
-        command += ['-v', config['sourceDirectory'] + ':/source:ro']
+        # Production data belongs to the application UID with mode 0700/0600. Root without
+        # capabilities cannot read it. Grant only DAC read/search, while the bind stays read-only.
+        command += ['--cap-add', 'DAC_READ_SEARCH', '-v', config['sourceDirectory'] + ':/source:ro']
     try: run(command + [config['nodeImage'], '/scripts/' + script] + args)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
