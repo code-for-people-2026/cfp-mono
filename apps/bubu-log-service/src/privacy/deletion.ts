@@ -154,6 +154,13 @@ export class DeletionService {
     }
   }
   /** Restored snapshots must replay even jobs that appeared completed in the restored DB. */
+  /** Offline restore/migration: only a completed ledger-backed family deletion supersedes older media receipts. */
+  async hasCompletedFamilyDeletion(babyId: string) {
+    const entries = this.ledger.read().filter(entry => entry.kind === "family" && entry.babyId === babyId);
+    if (!entries.length) return false;
+    for (const entry of entries) if ((await this.privacy.repository.get<DeletionJob>("privacy-state", `deletion:${entry.jobId}`))?.status !== "completed") return false;
+    return true;
+  }
   async replayAfterRestore() {
     for (const entry of this.ledger.read()) await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", `deletion:${entry.jobId}`, { ...entry, status: "pending", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }));
     await this.processPending();

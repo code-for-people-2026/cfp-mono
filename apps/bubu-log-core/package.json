@@ -1,0 +1,37 @@
+{
+  "name": "@cfp/bubu-log-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3321",
+    "start": "next start --hostname 127.0.0.1 --port 3321",
+    "build": "next build --webpack",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:postgres": "tsx scripts/verify-postgres.ts"
+  },
+  "dependencies": {
+    "@payloadcms/db-postgres": "3.77.0",
+    "@payloadcms/next": "3.77.0",
+    "payload": "3.77.0",
+    "next": "16.2.9",
+    "next-auth": "5.0.0-beta.30",
+    "bcryptjs": "3.0.3",
+    "pg": "8.20.0",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "tsx": "^4.20.0"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@types/node": "^20.19.26",
+    "@types/pg": "^8.15.6",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

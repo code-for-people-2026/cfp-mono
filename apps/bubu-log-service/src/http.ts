@@ -174,9 +174,12 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
-        return await service.executeAuthorized(principal, babyId, "media:read", async () => {
+        return await service.executeAuthorized(principal, babyId, "media:read", async (scope, request) => {
           const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
-          return readLegacyPhoto(activity, babyId, media);
+          return readLegacyPhoto(activity, babyId, { ...media, ...(features ? { readPrivate: async (id: string) => {
+            const { attachment, bytes } = await features.attachments.readInScope(scope, request, id);
+            return new Response(new Uint8Array(bytes), { headers: { "Content-Type": attachment.mime, "Content-Length": String(attachment.byteLength), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" } });
+          } } : {}) });
         });
       }
       if (req.method === "PATCH" && path.startsWith("/api/app/user-babies/")) {

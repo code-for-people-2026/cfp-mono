@@ -20,10 +20,12 @@ export interface Attachment {
   uploadedBy: Pick<ActorScope["actor"], "kind" | "id" | "onBehalfOf">;
   url: string;
 }
+export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "legacy-source"; documentId: string }
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
+  legacyReference?: LegacyMediaReference;
 }
-interface AttachmentOptions { directory: string; maxBytes?: number; encryptionKey?: string }
+interface AttachmentOptions { directory: string; maxBytes?: number; encryptionKey?: string; beforeLegacyAccess?: (babyId: string) => Promise<void> }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");
@@ -67,7 +69,7 @@ export class AttachmentService {
   private readonly objectDirectory: string;
   readonly maxBytes: number;
   private readonly encryptionKey: Buffer;
-  constructor(readonly identity: IdentityService, options: AttachmentOptions) {
+  constructor(readonly identity: IdentityService, private readonly options: AttachmentOptions) {
     this.repository = new RecordsRepository(identity.store.payload);
     this.objectDirectory = path.join(path.resolve(options.directory), "private-attachments");
     this.encryptionKey = mediaKey(options.directory, options.encryptionKey);
@@ -167,6 +169,39 @@ export class AttachmentService {
     // rerunning the offline command also finds/removes unreferenced leftovers.
     if (apply) await this.identity.exclusive(() => this.identity.store.transaction(req => this.purgeOrphanObjects(req)));
     return result;
+  }
+  /** Offline, verified legacy migration only; no HTTP/MCP endpoint exposes this capability. */
+  async importLegacy(babyId: string, reference: LegacyMediaReference, bytes: Uint8Array, declaredMime: string): Promise<Attachment> {
+    if (!babyId || babyId.length > 200 || !["activity", "baby-avatar", "profile-avatar", "legacy-source"].includes(reference.kind) || !reference.documentId || reference.documentId.length > 200) throw new Error("Invalid legacy media scope");
+    if (!bytes.byteLength || bytes.byteLength > this.maxBytes) throw new Error("Invalid legacy media size");
+    const originalSha = checksum(bytes), normalized = await sanitizeAttachment(bytes, declaredMime);
+    if (normalized.bytes.length > this.maxBytes) throw new Error("Invalid normalized legacy media size");
+    return this.identity.exclusive(() => this.identity.store.transaction(async req => {
+      await this.options.beforeLegacyAccess?.(babyId);
+      const id = `att_${hash(["legacy-media-v1", babyId, reference])}`, requestFingerprint = hash([reference, originalSha]);
+      const existing = await this.repository.get<StoredAttachment>("care-attachments", babyId, id, req);
+      if (existing && existing.requestFingerprint !== requestFingerprint) throw new Error("Legacy media source changed; migration stopped");
+      const value: StoredAttachment = existing ? { ...existing, mime: normalized.mime, byteLength: normalized.bytes.length, sha256: checksum(normalized.bytes) } : { id, babyId, mime: normalized.mime, byteLength: normalized.bytes.length, sha256: checksum(normalized.bytes), requestFingerprint,
+        createdAt: new Date(this.identity.now()).toISOString(), legacyReference: reference,
+        actor: { kind: "operator", id: "legacy-media-migration", sessionId: "offline-migration" }, uploadedBy: { kind: "operator", id: "legacy-media-migration" } };
+      await this.options.beforeLegacyAccess?.(babyId);
+      await this.writeObject(value, normalized.bytes);
+      await this.repository.put("care-attachments", babyId, id, value, req);
+      return this.view(value);
+    }));
+  }
+  async verifyLegacy(babyId: string, reference: LegacyMediaReference, id: string) {
+    return this.identity.exclusive(() => this.identity.store.transaction(async req => {
+      await this.options.beforeLegacyAccess?.(babyId);
+      const value = await this.repository.get<StoredAttachment>("care-attachments", babyId, id, req);
+      if (!value || value.babyId !== babyId || value.legacyReference?.kind !== reference.kind || value.legacyReference.documentId !== reference.documentId) throw new Error("Legacy media ownership mismatch");
+      await this.readObject(value); return this.view(value);
+    }));
+  }
+  /** Caller already holds executeAuthorized(media:read), including current privacy choices. */
+  async readInScope(scope: ActorScope, req: PayloadRequest, attachmentId: string) {
+    const attachment = await this.validateAttachment(scope, req, attachmentId);
+    return { attachment, bytes: await this.readObject(attachment) };
   }
   private normalizeSource(scope: ActorScope, source?: SourceRef): SourceRef | undefined {
     const parsed = source === undefined ? undefined : sourceSchema.safeParse(source);

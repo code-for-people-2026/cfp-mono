@@ -85,7 +85,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     identity.setContextGuard(identityId => privacy.contextAllowed(identityId));
     const membership = new MembershipService(identity);
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
-    const attachments = new AttachmentService(identity, { directory: options.directory });
+    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId) });
     const lifecycle = legacy as typeof legacy & Partial<FamilyLifecycle>;
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined);
     const safety = new SafetyService(privacy);

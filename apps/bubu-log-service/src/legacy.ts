@@ -1,8 +1,10 @@
+import type { FamilyLifecycle } from "./privacy/deletion";
 import { createHash, randomBytes } from "node:crypto";
 import { AppError, type Baby, type LegacyBackend, type LegacyUser } from "./contracts";
 import { activityTypes, type DailyMetrics, type LegacyActivity, type LegacyRecordsBackend } from "./records/types";
 import { chinaDayRange, emptyDailyMetrics } from "./records/statistics";
 
+export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "audit-photo"; documentId: string; babyId: string; url: string }
 type Doc = Record<string, unknown>;
 type Where = Record<string, unknown>;
 type Collection = "app-users" | "baby-users" | "babies" | "activities" | "daily-stats";
@@ -10,6 +12,7 @@ interface LegacyHttpOptions {
   origin: string;
   cmsEmail: string;
   cmsPassword: string;
+  coreToken?: string;
   fetch?: typeof fetch;
 }
 const upstreamFailure = () => new AppError(502, "LEGACY_UNAVAILABLE", "旧版服务暂时不可用，请稍后重试");
@@ -76,7 +79,7 @@ function deterministicId(kind: string, identityId: string): string {
 }
 
 /** Only this server-side adapter holds the legacy CMS credential. Never expose it as a generic proxy. */
-export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend {
+export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, FamilyLifecycle {
   private readonly origin: string;
   private readonly fetcher: typeof fetch;
   private cmsToken?: { value: string; expiresAt: number };
@@ -89,13 +92,14 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend {
     if ((url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
       throw new AppError(503, "LEGACY_CONFIG_INVALID", "旧版服务须使用 HTTPS 或本机地址");
     }
+    if (options.coreToken && (!loopback || !/^[a-f0-9]{64}$/.test(options.coreToken))) throw new AppError(503, "CORE_CONFIG_INVALID", "私有数据层必须使用本机地址和独立凭证");
     this.origin = url.origin;
     this.fetcher = options.fetch ?? fetch;
   }
 
   private async request(path: string, init: RequestInit = {}): Promise<Response> {
     try {
-      const response = await this.fetcher(`${this.origin}${path}`, { ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000) });
+      const response = await this.fetcher(`${this.origin}${path}`, { ...init, headers: { ...Object.fromEntries(new Headers(init.headers)), ...(this.options.coreToken ? { "x-bubu-core-token": this.options.coreToken } : {}) }, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(10_000) });
       if (response.status >= 300 && response.status < 400) throw upstreamFailure();
       return response;
     } catch { throw upstreamFailure(); }
@@ -193,6 +197,41 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend {
     if (id(row.id) !== documentId) throw scopeFailure();
     return row;
   }
+
+  private async core(path: string, method: "GET" | "DELETE" | "POST", body?: unknown) {
+    if (!this.options.coreToken) throw new AppError(503, "LEGACY_LIFECYCLE_UNAVAILABLE", "原照护数据尚未迁入私有存储，请联系隐私渠道处理。");
+    const send = async (refresh: boolean) => this.request(path, { method, headers: { Authorization: `JWT ${await this.token(refresh)}`, "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+    let response = await send(false); if (response.status === 401) response = await send(true);
+    if (!response.ok) throw new AppError(response.status === 413 ? 413 : 503, "LEGACY_LIFECYCLE_UNAVAILABLE", "原照护数据操作尚未完成，请联系隐私渠道处理。");
+    return doc(await this.json(response));
+  }
+  private async lifecycle(babyId: string, method: "GET" | "DELETE") {
+    if (!id(babyId)) throw new AppError(400, "INVALID_BABY", "缺少宝宝范围");
+    const result = await this.core(`/internal/family?${new URLSearchParams({ babyId })}`, method);
+    if (result.babyId !== babyId || method === "DELETE" && result.deleted !== true) throw scopeFailure();
+    return result;
+  }
+  async listLegacyMedia(): Promise<{ references: LegacyMediaReference[]; unresolvedProfiles: number }> {
+    const result = await this.core("/internal/media", "GET");
+    if (!Array.isArray(result.references) || !Number.isInteger(result.unresolvedProfiles) || Number(result.unresolvedProfiles) < 0) throw upstreamFailure();
+    const references = result.references.map(item => {
+      const row = doc(item);
+      if (!["activity", "baby-avatar", "profile-avatar", "audit-photo"].includes(String(row.kind)) || !id(row.babyId) || !id(row.documentId) || typeof row.url !== "string" || !row.url || row.url.length > 4096) throw upstreamFailure();
+      return row as unknown as LegacyMediaReference;
+    });
+    return { references, unresolvedProfiles: Number(result.unresolvedProfiles) };
+  }
+  async replaceLegacyMedia(reference: LegacyMediaReference, uri: string) {
+    if (!/^bubu-attachment:att_[a-f0-9]{64}$/.test(uri)) throw new Error("Invalid private media reference");
+    const result = await this.core("/internal/media", "POST", { ...reference, uri });
+    if (result.babyId !== reference.babyId || result.documentId !== reference.documentId || result.uri !== uri) throw scopeFailure();
+  }
+  async exportFamilyData(babyId: string): Promise<unknown> {
+    const result = await this.lifecycle(babyId, "GET");
+    if (!isDoc(result.data) || result.data.babyId !== babyId || result.data.format !== "bubu-original-payload-v1") throw scopeFailure();
+    return result.data;
+  }
+  async deleteFamilyData(babyId: string): Promise<void> { await this.lifecycle(babyId, "DELETE"); }
 
   async userExists(userId: string): Promise<boolean> { return !!await this.get("app-users", userId); }
   async getBaby(babyId: string): Promise<Baby | null> { const value = await this.get("babies", babyId); return value ? baby(value) : null; }
@@ -400,5 +439,5 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend {
 }
 
 export function legacyBackendFromEnv(): HttpLegacyBackend {
-  return new HttpLegacyBackend({ origin: process.env.BUBU_LEGACY_ORIGIN || "http://127.0.0.1:1030", cmsEmail: process.env.BUBU_LEGACY_CMS_EMAIL || "", cmsPassword: process.env.BUBU_LEGACY_CMS_PASSWORD || "" });
+  return new HttpLegacyBackend({ origin: process.env.BUBU_LEGACY_ORIGIN || "http://127.0.0.1:1030", cmsEmail: process.env.BUBU_LEGACY_CMS_EMAIL || "", cmsPassword: process.env.BUBU_LEGACY_CMS_PASSWORD || "", coreToken: process.env.BUBU_CORE_SERVICE_TOKEN });
 }

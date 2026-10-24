@@ -45,7 +45,10 @@ export class PrivacyMaintenance {
         const key = String(row.babyId); references.set(key, [...references.get(key) || [], JSON.stringify(row.value)]);
       }
       for (const row of await rows("care-attachments")) {
-        const value = row.value as { id: string; babyId: string; createdAt: string };
+        const value = row.value as { id: string; babyId: string; createdAt: string; legacyReference?: unknown };
+        // Imported photos belong to original care facts/history, outside the sidecar reference tables.
+        // Like a retracted event's revision, they survive until the guardian deletes the family.
+        if (value.legacyReference) continue;
         if (!(Date.parse(value.createdAt) < orphanCutoff) || references.get(value.babyId)?.some(text => text.includes(value.id))) continue;
         report.orphanAttachments++;
         if (apply) await payload.delete({ collection: "care-attachments", id: row.id, overrideAccess: true, req });
