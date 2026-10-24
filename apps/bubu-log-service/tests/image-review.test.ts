@@ -8,7 +8,7 @@ const ports = (risk = "none"): GreenPorts => ({ token: vi.fn(async () => token()
 describe("Green adapter only sends normalized bytes to validated temporary storage", () => {
   it.each([["none", "allow"], ["high", "block"], ["low", "uncertain"], ["medium", "uncertain"], ["unknown", "unavailable"]])("maps %s without forwarding raw labels", async (risk, decision) => {
     const p = ports(risk), bytes = Buffer.from("synthetic image bytes");
-    expect(await greenImageReviewer(p)(bytes, "image/png")).toBe(decision);
+    expect(await greenImageReviewer(p)(bytes, "image/png", async () => undefined)).toBe(decision);
     expect(p.upload).toHaveBeenCalledWith(expect.any(Object), expect.stringMatching(/^upload\/test\/[a-f0-9-]{36}\.png$/), bytes, "image/png");
     expect(p.inspect).toHaveBeenCalledWith("oss-cip-example", expect.any(String), expect.stringMatching(/^[a-f0-9-]{36}$/));
   });
@@ -17,28 +17,39 @@ describe("Green adapter only sends normalized bytes to validated temporary stora
     { fileNamePrefix: "upload/../../" }, { expiration: 1 },
   ])("rejects an unsafe or expired upload token before sending pixels: %j", async change => {
     const p = ports(); p.token = async () => ({ ...token(), ...change });
-    expect(await greenImageReviewer(p)(Buffer.from("pixels"), "image/png")).toBe("unavailable");
+    expect(await greenImageReviewer(p)(Buffer.from("pixels"), "image/png", async () => undefined)).toBe("unavailable");
     expect(p.upload).not.toHaveBeenCalled(); expect(p.inspect).not.toHaveBeenCalled();
   });
   it("does not continue to upload when a token request finishes after the deadline", async () => {
     const p = ports(); let resolve!: (value: unknown) => void;
     p.token = () => new Promise(r => { resolve = r; });
-    expect(await greenImageReviewer(p, 10)(Buffer.from("pixels"), "image/jpeg")).toBe("unavailable");
+    expect(await greenImageReviewer(p, 10)(Buffer.from("pixels"), "image/jpeg", async () => undefined)).toBe("unavailable");
     resolve(token()); await new Promise(r => setTimeout(r, 10));
     expect(p.upload).not.toHaveBeenCalled(); expect(p.inspect).not.toHaveBeenCalled();
   });
   it("does not begin moderation after an upload times out; errors never expose secrets", async () => {
     const p = ports(); let finish!: () => void;
     p.upload = () => new Promise(r => { finish = () => r({}); });
-    expect(await greenImageReviewer(p, 10)(Buffer.from("pixels"), "image/jpeg")).toBe("unavailable");
+    expect(await greenImageReviewer(p, 10)(Buffer.from("pixels"), "image/jpeg", async () => undefined)).toBe("unavailable");
     finish(); await new Promise(r => setTimeout(r, 10)); expect(p.inspect).not.toHaveBeenCalled();
     p.token = async () => { throw new Error("temporary-secret"); };
-    expect(await greenImageReviewer(p)(Buffer.from("pixels"), "image/webp")).toBe("unavailable");
+    expect(await greenImageReviewer(p)(Buffer.from("pixels"), "image/webp", async () => undefined)).toBe("unavailable");
   });
   it("has no environment-based allow mode or credential-free success", () => {
     vi.stubEnv("BUBU_IMAGE_REVIEW_MODE", "allow"); expect(configuredImageReviewer()).toBeUndefined();
     vi.stubEnv("BUBU_IMAGE_REVIEW_MODE", "aliyun-green"); vi.stubEnv("BUBU_GREEN_ACCESS_KEY_ID", ""); expect(configuredImageReviewer()).toBeUndefined();
     vi.unstubAllEnvs();
+  });
+  it("keeps concurrency slots while timed-out supplier uploads are still unsettled", async () => {
+    const p = ports(), finish: Array<() => void> = [];
+    p.upload = vi.fn(() => new Promise(r => { finish.push(() => r({})); }));
+    const review = greenImageReviewer(p, 10), run = () => review(Buffer.from("pixels"), "image/png", async () => undefined);
+    expect(await Promise.all([run(), run()])).toEqual(["unavailable", "unavailable"]);
+    expect(p.upload).toHaveBeenCalledTimes(2);
+    expect(await run()).toBe("unavailable"); expect(p.upload).toHaveBeenCalledTimes(2);
+    finish[0]!(); finish[1]!(); await new Promise(r => setTimeout(r, 10));
+    p.upload = vi.fn(async () => ({}));
+    expect(await run()).toBe("allow");
   });
   it("changes consent versions when supplier handling changes while text can remain enabled", () => {
     const missing = privacyPolicy({ ...testPrivacyConfig, imageReview: undefined });

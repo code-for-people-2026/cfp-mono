@@ -7,7 +7,7 @@ import type { AttachmentMime } from "../records/attachments";
 import { hash } from "../records/persistence";
 
 export const REVIEW_VERSION = "aliyun-green-baselineCheck-2022-03-02-v1";
-export type ImageReviewer = (bytes: Buffer, mime: AttachmentMime) => Promise<"allow" | "block" | "uncertain" | "unavailable">;
+export type ImageReviewer = (bytes: Buffer, mime: AttachmentMime, beforeDisclosure: () => Promise<void>) => Promise<"allow" | "block" | "uncertain" | "unavailable">;
 export interface ImageReviewProof { version: string; sha256: string; at: string }
 const counterSchema = z.object({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), count: z.number().int().nonnegative() }).strict();
 const unavailable = () => new AppError(503, "IMAGE_REVIEW_UNAVAILABLE", "图片检测暂时不可用，请稍后重试。可以先用文字记录。");
@@ -39,13 +39,13 @@ export class ImageReviewService {
     }
   }
   /** No SQLite transaction is held while the supplier handles normalized pixels. */
-  async inspect(bytes: Buffer, mime: AttachmentMime, sha256: string): Promise<ImageReviewProof> {
+  async inspect(bytes: Buffer, mime: AttachmentMime, sha256: string, beforeDisclosure: () => Promise<void>): Promise<ImageReviewProof> {
     if (!this.configured || this.active >= 2) throw unavailable();
     this.active++;
     try {
       // The adapter has a bounded overall deadline and never starts the next network step after it expires.
       let verdict: Awaited<ReturnType<ImageReviewer>>;
-      try { verdict = await this.reviewer!(bytes, mime); } catch { throw unavailable(); }
+      try { verdict = await this.reviewer!(bytes, mime, beforeDisclosure); } catch (error) { if (error instanceof AppError) throw error; throw unavailable(); }
       if (verdict === "block" || verdict === "uncertain") throw new AppError(422, "IMAGE_REVIEW_NOT_ACCEPTED", "这张照片未通过自动检测，尚未保存，也未发送给 AI。这不是宝宝健康判断；若尿布等照护照片被误判，可在菜单的隐私与数据中提交申诉，先用文字记录。");
       if (verdict !== "allow") throw unavailable();
       return { version: REVIEW_VERSION, sha256, at: new Date(this.privacy.identity.now()).toISOString() };

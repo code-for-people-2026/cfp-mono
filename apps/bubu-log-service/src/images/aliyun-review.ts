@@ -5,6 +5,7 @@ import { RuntimeOptions } from "@darabonba/typescript";
 import OSS from "ali-oss";
 import { z } from "zod";
 import type { ImageReviewer } from "./review";
+import { AppError } from "../contracts";
 
 const { default: Green, ImageModerationRequest } = createRequire(import.meta.url)("@alicloud/green20220302") as typeof import("@alicloud/green20220302");
 const tokenSchema = z.object({
@@ -23,19 +24,25 @@ const verdictSchema = z.object({ code: z.literal(200), data: z.object({ riskLeve
 
 /** Supplier temporary storage; never our public bucket, a user URL, or an image path containing a family ID. */
 export function greenImageReviewer(ports: GreenPorts, deadlineMs = 20_000): ImageReviewer {
-  return async (bytes, mime) => {
+  let inFlight = 0;
+  return async (bytes, mime, beforeDisclosure) => {
+    // A deadline only ends the caller's wait. Keep the network slot until the underlying SDK work settles.
+    if (inFlight >= 2) return "unavailable";
+    inFlight++;
     let expired = false, timer: ReturnType<typeof setTimeout> | undefined;
     const check = () => { if (expired) throw new Error("review deadline"); };
+    const authorize = async () => { check(); await beforeDisclosure(); check(); };
     const work = async (): Promise<Awaited<ReturnType<ImageReviewer>>> => {
       try {
-        check(); const token = tokenSchema.parse(await ports.token()); check();
+        await authorize(); const token = tokenSchema.parse(await ports.token()); check();
         if (token.expiration * 1000 < Date.now() + 60_000) throw new Error("expired token");
         const id = randomUUID(), extension = mime === "image/jpeg" ? "jpg" : mime === "image/png" ? "png" : "webp";
         const name = `${token.fileNamePrefix}${id}.${extension}`;
-        await ports.upload(token, name, bytes, mime); check();
-        const result = verdictSchema.parse(await ports.inspect(token.bucketName, name, id)); check();
+        await authorize(); await ports.upload(token, name, bytes, mime); check();
+        await authorize(); const result = verdictSchema.parse(await ports.inspect(token.bucketName, name, id)); check();
         return result.data.riskLevel === "none" ? "allow" : result.data.riskLevel === "high" ? "block" : "uncertain";
-      } catch { return "unavailable"; }
+      } catch (error) { if (error instanceof AppError) throw error; return "unavailable"; }
+      finally { inFlight--; }
     };
     try {
       return await Promise.race([work(), new Promise<"unavailable">(resolve => { timer = setTimeout(() => { expired = true; resolve("unavailable"); }, deadlineMs); })]);

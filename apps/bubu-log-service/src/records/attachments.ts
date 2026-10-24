@@ -261,7 +261,8 @@ export class AttachmentService {
       if (!alreadyReviewed) await this.options.imageReview!.reserve(scope, req);
       return { value, alreadyReviewed };
     }, groupId);
-    const review = prepared.alreadyReviewed ? prepared.value.review : await this.options.imageReview!.inspect(normalized.bytes, mime, sha256);
+    const beforeDisclosure = async () => { await this.identity.executeAuthorized(principal, babyId, "media:write", prepare, groupId); };
+    const review = prepared.alreadyReviewed ? prepared.value.review : await this.options.imageReview!.inspect(normalized.bytes, mime, sha256, beforeDisclosure);
     return this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
       // Recheck source, rights, consent, deletion and idempotency after the supplier returns.
       const value = await prepare(scope, req);

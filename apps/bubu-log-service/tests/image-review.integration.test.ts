@@ -12,6 +12,7 @@ import { AttachmentService } from "../src/records/attachments";
 import { recordCollections, RecordsRepository } from "../src/records/persistence";
 import { ImageReviewService, type ImageReviewer, REVIEW_VERSION } from "../src/images/review";
 import { testPrivacyConfig } from "./fixtures/privacy";
+import { greenImageReviewer } from "../src/images/aliyun-review";
 
 describe("private photo review uses durable quotas and rechecks authorization after supplier work", () => {
   let directory: string, store: Store, identity: IdentityService, privacy: PrivacyService, alice: Principal, photo: Buffer;
@@ -67,6 +68,15 @@ describe("private photo review uses durable quotas and rechecks authorization af
     const upload = service().upload(alice, "baby-a", photo, "image/png", "withdraw-during-review");
     await pending; await privacy.withdraw(alice); finish("allow");
     await expect(upload).rejects.toMatchObject({ code: "PRIVACY_CONSENT_REQUIRED" });
+    expect((await attachRows()).docs).toHaveLength(0); expect(await objects()).toEqual([]);
+  });
+  it.each(["token", "upload"] as const)("stops the next external step when consent is withdrawn during %s", async stage => {
+    const token = { accessKeyId: "temporary", accessKeySecret: "temporary", securityToken: "temporary", bucketName: "oss-cip-fixture", ossInternetEndPoint: "https://oss-cn-shanghai.aliyuncs.com", fileNamePrefix: "upload/test/", expiration: Date.now() / 1000 + 3600 };
+    const upload = vi.fn(async () => { if (stage === "upload") await privacy.withdraw(alice); });
+    const inspect = vi.fn(async () => ({ code: 200, data: { riskLevel: "none" } }));
+    const adapter = greenImageReviewer({ token: async () => { if (stage === "token") await privacy.withdraw(alice); return token; }, upload, inspect });
+    await expect(service(adapter).upload(alice, "baby-a", photo, "image/png", `withdraw-${stage}`)).rejects.toMatchObject({ code: "PRIVACY_CONSENT_REQUIRED" });
+    expect(upload).toHaveBeenCalledTimes(stage === "token" ? 0 : 1); expect(inspect).not.toHaveBeenCalled();
     expect((await attachRows()).docs).toHaveLength(0); expect(await objects()).toEqual([]);
   });
   it("does not revive a family frozen while a supplier call was in flight", async () => {
