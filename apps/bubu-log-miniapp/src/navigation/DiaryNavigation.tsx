@@ -46,14 +46,14 @@ export function DiaryNavigation(props: Props) {
     <View className="diary-header" style={layout ? { paddingTop: `${layout.statusBarHeight}px` } : undefined}>
       <View className="diary-navigation-row" style={layout ? { height: `${layout.height}px` } : undefined}>
         {props.onOpen && <Button className="diary-icon-button" ariaLabel="打开菜单" onClick={props.onOpen}><View className="menu-glyph"><View className="menu-glyph-line" /><View className="menu-glyph-line" /><View className="menu-glyph-line menu-glyph-short" /></View></Button>}
-        <Text className="diary-title" style={layout ? { left: `${layout.side}px`, right: `${layout.side}px` } : undefined}>{props.title || "哺哺日记"}</Text>
+        <Text className="diary-title" style={layout ? { left: `${layout.side}px`, right: `${layout.side}px` } : undefined}>{props.title || "卜卜日记"}</Text>
       </View>
     </View>
     {props.open && context && <View className="diary-menu-overlay" catchMove>
       <View className="diary-menu-backdrop" onClick={props.onClose} />
-      <View className="diary-drawer" role="dialog" ariaLabel="哺哺日记菜单" style={layout ? { paddingTop: `${layout.statusBarHeight + layout.height + 8}px` } : undefined}>
+      <View className="diary-drawer" role="dialog" ariaLabel="卜卜日记菜单" style={layout ? { paddingTop: `${layout.statusBarHeight + layout.height + 8}px` } : undefined}>
         <View className="diary-drawer-heading">
-          <Text className="diary-drawer-brand">哺哺日记</Text>
+          <Text className="diary-drawer-brand">卜卜日记</Text>
           <Button className="diary-icon-button" ariaLabel="关闭菜单" onClick={props.onClose}>×</Button>
         </View>
         <View className="diary-family">

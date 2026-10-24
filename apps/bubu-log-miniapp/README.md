@@ -1,6 +1,6 @@
-# 哺哺日记小程序
+# 卜卜日记小程序
 
-哺哺日记的日历与对话客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
+卜卜日记的日历与对话客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
 
 对应 [数据可视化模块](https://github.com/code-for-people-2026/cfp-mono/issues/394) 与 [程序内对话模块](https://github.com/code-for-people-2026/cfp-mono/issues/395)，完整产品路线见 [六大模块落地规划](https://github.com/code-for-people-2026/cfp-mono/issues/392)。
 
@@ -23,7 +23,7 @@
 ```sh
 pnpm install
 
-# 微信端默认接入哺哺日记独立身份与对话服务。
+# 微信端默认接入卜卜日记独立身份与对话服务。
 BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
 
 # H5 开发：请求仍发往浏览器同源 /api，由开发代理转到独立服务。
@@ -48,7 +48,7 @@ H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `
 
 ### 独立身份服务模式（Issue #396）
 
-默认 `BUBU_AUTH_MODE=sidecar`。显式设置 `BUBU_AUTH_MODE=legacy` 可保留上述旧登录方式（对话不开放）。独立身份模式中，`BUBU_API_ORIGIN` / H5 代理指向 [哺哺日记身份服务](../bubu-log-service/README.md)：
+默认 `BUBU_AUTH_MODE=sidecar`。显式设置 `BUBU_AUTH_MODE=legacy` 可保留上述旧登录方式（对话不开放）。独立身份模式中，`BUBU_API_ORIGIN` / H5 代理指向 [卜卜日记身份服务](../bubu-log-service/README.md)：
 
 ```sh
 BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
@@ -104,6 +104,6 @@ Sidecar 详情按活动 ID 读取独立的记录快照，不附加“今天”�
 - 图片经 `POST /api/app/attachments?babyId=…` 二进制上传（稳定 `X-Bubu-Request-Id`）；保留原字节，支持 JPG/PNG/WebP，单张最多 10 MiB，每次聊天最多三张。服务端确认的附件只用受保护地址访问；图片含义由服务端真实图文模型与 MCP 处理。
 - `已记录` 等状态只来自结构化回执；未确认投影和冲突分别显示待恢复/待核对。`refreshRequired` 后重新读取当前日历或趋势的统一事实视图，不在前端累计记录或奶量。
 
-语音输入仅是文字草稿来源。微信需为本 AppID 添加同声传译插件 `wx069ba97219f66d99` 并配置已授权的 `BUBU_WECHAT_SI_VERSION`（不假设其他产品已有的授权可复用）；未配置会说明原因并保留键盘。按住后请求 `scope.record`，最长 60 秒，松开后识别等待最多 15 秒。H5 使用浏览器 SpeechRecognition，要求 HTTPS/localhost 和浏览器支持；第三方识别可能联网处理声音。转写结果先展示给用户校对，绝不自动发送；取消、切键盘、收起、卸载或后台忽略迟到结果。没有向哺哺日记后端上传录音。
+语音输入仅是文字草稿来源。微信需为本 AppID 添加同声传译插件 `wx069ba97219f66d99` 并配置已授权的 `BUBU_WECHAT_SI_VERSION`（不假设其他产品已有的授权可复用）；未配置会说明原因并保留键盘。按住后请求 `scope.record`，最长 60 秒，松开后识别等待最多 15 秒。H5 使用浏览器 SpeechRecognition，要求 HTTPS/localhost 和浏览器支持；第三方识别可能联网处理声音。转写结果先展示给用户校对，绝不自动发送；取消、切键盘、收起、卸载或后台忽略迟到结果。没有向卜卜日记后端上传录音。
 
 纯状态/API 测试覆盖重启草稿恢复、同号查询后重试、已保存响应丢失、撤权后的迟到回包、图片二进制与私有路径、字段/媒体问题分离；语音测试覆盖权限、超时、取消及单例串音隔离。H5 自动化使用隔离合成账号/数据；微信构建与 WXSS 编译不替代真机麦克风、插件隐私授权或真实模型验收。

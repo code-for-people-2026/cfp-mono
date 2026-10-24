@@ -32,7 +32,7 @@ export function buildRuntimeConfig(options: { directory: string; secret?: string
       i18n: { supportedLanguages: { zh }, fallbackLanguage: "zh" },
       admin: {
         user: "ops-users",
-        meta: { titleSuffix: " · 哺哺日记运营" },
+        meta: { titleSuffix: " · 卜卜日记运营" },
         importMap: { autoGenerate: false, baseDir: serviceDirectory },
         components: { beforeDashboard: ["/src/operations/components#OperationsTools"] },
       },

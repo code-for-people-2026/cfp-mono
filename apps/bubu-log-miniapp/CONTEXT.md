@@ -1,6 +1,6 @@
-# 哺哺日记
+# 卜卜日记
 
-产品展示名为「哺哺日记」。日历可视化与程序内对话均在 `cfp-mono` 实现。客户端采用本仓库的 Taro 技术栈；数据仍由 `sunmer-home/apps/bubu-log` 的既有 Payload CMS 后端维护。业务数据的集合、字段和统计逻辑保持原样，不迁移数据库；独立身份与照护授权由哺哺日记服务负责。
+产品展示名为「卜卜日记」。日历可视化与程序内对话均在 `cfp-mono` 实现。客户端采用本仓库的 Taro 技术栈；数据仍由 `sunmer-home/apps/bubu-log` 的既有 Payload CMS 后端维护。业务数据的集合、字段和统计逻辑保持原样，不迁移数据库；独立身份与照护授权由卜卜日记服务负责。
 
 ## Language
 
@@ -18,7 +18,7 @@
 
 **照护邀请码**：服务端签发的有限期加入凭证。加入成功的照护者无需绑定旧账号，即可查看被授权宝宝；每个后续业务请求仍由服务端核验权限。
 
-**独立身份模式**：`BUBU_AUTH_MODE=sidecar` 选择哺哺日记服务。微信使用按 origin 隔离的 Bearer token，H5 使用同源 HttpOnly Cookie；`sidecar` 为默认模式，显式 `legacy` 保留原部署路径。
+**独立身份模式**：`BUBU_AUTH_MODE=sidecar` 选择卜卜日记服务。微信使用按 origin 隔离的 Bearer token，H5 使用同源 HttpOnly Cookie；`sidecar` 为默认模式，显式 `legacy` 保留原部署路径。
 
 ## Module boundaries
 
