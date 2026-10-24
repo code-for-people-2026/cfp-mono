@@ -4,7 +4,8 @@ import type { PrivacyPolicy } from "../../privacy/contracts";
 import { DiaryChat, type ChatSelection } from "../../chat/Chat";
 import { chatDrafts } from "../../chat/storage";
 import { clearImageFiles } from "../../chat/files";
-import { Button, Input, Picker, Text, View } from "@tarojs/components";
+import { Button, Image, Input, Picker, Text, View } from "@tarojs/components";
+import brandIcon from "../../assets/branding/bubu-avatar-borderless-v1.png";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
 import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
@@ -31,6 +32,9 @@ const iso = (value: number) => new Date(value).toISOString();
 export default function DiaryPage() {
   const [privacyReadyKey, setPrivacyReadyKey] = useState("");
   const [privacyPolicy, setPrivacyPolicy] = useState<PrivacyPolicy>();
+  const [policyLoading, setPolicyLoading] = useState(identityEnabled);
+  const [policyError, setPolicyError] = useState("");
+  const policyGeneration = useRef(0);
   const [loginNotice, setLoginNotice] = useState(false);
   const [privacyCheck, setPrivacyCheck] = useState(0);
   const [chatSelection, setChatSelection] = useState<ChatSelection>();
@@ -67,10 +71,26 @@ export default function DiaryPage() {
   const privacyKey = `${context?.identityId || ""}:${babyId}:${privacyCheck}`;
   const privacyReady = !identityEnabled || privacyReadyKey === privacyKey;
   useDidShow(() => { setPrivacyReadyKey(""); setPrivacyCheck(value => value + 1); });
-  useEffect(() => {
+  const loadLoginPolicy = useCallback(async () => {
     if (!identityEnabled) return;
-    void api.privacyPolicy().then(setPrivacyPolicy).catch(() => {});
+    const generation = ++policyGeneration.current;
+    setPolicyLoading(true); setPolicyError(""); setPrivacyPolicy(undefined); setLoginNotice(false);
+    try {
+      const next = await api.privacyPolicy();
+      if (generation === policyGeneration.current) {
+        setPrivacyPolicy(next);
+        if (!next.ready) setPolicyError("服务暂未就绪，请稍后重试。");
+      }
+    } catch {
+      if (generation === policyGeneration.current) setPolicyError("隐私说明暂时无法加载，请检查网络后重试。");
+    } finally {
+      if (generation === policyGeneration.current) setPolicyLoading(false);
+    }
   }, []);
+  useEffect(() => {
+    void loadLoginPolicy();
+    return () => { policyGeneration.current++; };
+  }, [loadLoginPolicy]);
   useEffect(() => {
     if (!identityEnabled || !context?.authenticated) return;
     let active = true;
@@ -181,7 +201,8 @@ export default function DiaryPage() {
 
   const login = async () => {
     if (authInFlight.current) return;
-    if (identityEnabled && (!loginNotice || !privacyPolicy?.ready)) { setAccountError("请先阅读说明并主动同意本次登录。"); return; }
+    if (identityEnabled && (policyLoading || !privacyPolicy?.ready)) { setAccountError("请先成功加载隐私说明，再继续登录。"); return; }
+    if (identityEnabled && !loginNotice) { setAccountError("请阅读说明并主动选择同意本次登录。"); return; }
     if (!wechatIdentityEnabled && (!username.trim() || !password)) { setAccountError("请输入账号和密码"); return; }
     authInFlight.current = true;
     const version = ++contextVersion.current;
@@ -194,6 +215,7 @@ export default function DiaryPage() {
   };
   const logout = async () => {
     if (authInFlight.current) return;
+    setLoginNotice(false);
     chatDrafts.clear(); clearImageFiles();
     authInFlight.current = true;
     const version = ++contextVersion.current;
@@ -266,7 +288,7 @@ export default function DiaryPage() {
 
   if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开卜卜日记…</View></View></View>;
   if (!context?.authenticated) return <View className="diary-shell"><DiaryNavigation /><View className="page login-page">
-    <View className="brand-mark">日</View><Text className="eyebrow">BUBU DIARY</Text>
+    <Image className="brand-mark" src={brandIcon} mode="aspectFit" ariaLabel="卜卜日记图标" /><Text className="eyebrow">BUBU DIARY</Text>
     <Text className="welcome-title">每一天，都值得记住</Text>
     <Text className="muted">登录卜卜日记，看看宝宝的日常与成长。</Text>
     <View className="login-card">
@@ -275,12 +297,18 @@ export default function DiaryPage() {
       <Input className="login-input" value={username} placeholder="请输入用户名或邮箱" onInput={(e) => setUsername(e.detail.value)} disabled={authBusy || undefined} />
       <Text className="field-label">密码</Text>
       <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} /></>}
-      {identityEnabled && <>{privacyPolicy ? <PolicyDocuments policy={privacyPolicy} /> : <Button className="text-button" onClick={() => { void api.privacyPolicy().then(setPrivacyPolicy).catch(error => setAccountError(message(error))); }}>读取隐私说明</Button>}<Choice label="我已阅读说明，同意用微信或已有账号完成登录" value={loginNotice} onChange={setLoginNotice} /><Text className="muted">登录后再分别选择敏感信息、AI、图片和监护授权。</Text></>}
+      {identityEnabled && <>
+        {policyLoading && <Text className="muted">正在读取隐私说明…</Text>}
+        {privacyPolicy && <PolicyDocuments policy={privacyPolicy} />}
+        {policyError && <><Text className="error-text">{policyError}</Text><Button className="text-button" onClick={() => { void loadLoginPolicy(); }}>重试读取说明</Button></>}
+        <Choice label="我已阅读说明，同意用微信或已有账号完成登录" value={loginNotice} disabled={policyLoading || !privacyPolicy?.ready || authBusy} onChange={value => { setLoginNotice(value); setAccountError(""); }} />
+        <Text className="muted">登录后再分别选择敏感信息、AI、图片和监护授权。</Text>
+      </>}
       {accountError && <Text className="error-text">{accountError}</Text>}
-      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>{wechatIdentityEnabled ? "微信登录并继续" : "登录"}</Button>
+      <Button className="primary-button" loading={authBusy} disabled={authBusy || (identityEnabled && (policyLoading || !privacyPolicy?.ready || !loginNotice)) || undefined} onClick={() => { void login(); }}>{wechatIdentityEnabled ? "微信登录并继续" : "登录"}</Button>
       <Text className="login-note">{wechatIdentityEnabled ? "登录后可创建宝宝、绑定已有账号或加入家人" : "使用原宝宝日记的账号与密码"}</Text>
     </View>
-    <Button className="text-button" disabled={authBusy || undefined} onClick={() => { void restore(); }}>重新连接</Button>
+    <Button className="text-button" disabled={authBusy || policyLoading || undefined} onClick={() => { void restore(); void loadLoginPolicy(); }}>重新连接</Button>
   </View></View>;
 
   if (!privacyReady) return <View className="diary-shell"><DiaryNavigation context={context} restricted open={menuOpen} onOpen={() => setMenuOpen(true)} onClose={closeMenu} onBabyChange={index => { void changeBaby(index); }} onRefresh={() => { void restore(); }} onLogout={() => { void logout(); }} /><View className="page"><PrivacyCenter key={privacyKey} babyId={babyId || undefined} onReady={() => { setPrivacyCheck(value => value + 1); void restore(); }} /><Button className="text-button" onClick={() => { void logout(); }}>退出登录</Button></View></View>;

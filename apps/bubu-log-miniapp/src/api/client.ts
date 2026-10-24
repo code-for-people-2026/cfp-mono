@@ -113,17 +113,17 @@ export function createBubuApi(options: ClientOptions) {
     return () => { changingSession = false; if (activeChange === current) activeChange = undefined; resolveChange(); };
   }
 
-  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: object; binary?: ArrayBuffer; mime?: string; requestId?: string; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
+  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: object; binary?: ArrayBuffer; mime?: string; requestId?: string; babyId?: string; guestAllowed?: boolean; publicPolicy?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
     if (options.native && !origin) throw new ConfigurationError();
     const generation = revision;
     const babyGeneration = args.babyId ? babyRevisions.get(args.babyId) ?? 0 : 0;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (sidecar) headers["X-Bubu-Client"] = options.native ? "native" : "browser";
     const authorization = args.logout ? pendingLogoutAuthorization ?? identity?.header() : identity?.header();
-    if (authorization) headers.Authorization = authorization;
+    if (authorization && !args.publicPolicy) headers.Authorization = authorization;
     if (args.babyId) headers["x-baby-id"] = requiredId(args.babyId);
     const cookie = jar?.header(path.split("?")[0]);
-    if (cookie) headers.Cookie = cookie;
+    if (cookie && !args.publicPolicy) headers.Cookie = cookie;
     if (args.form) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       headers["X-Auth-Return-Redirect"] = "1";
@@ -142,7 +142,7 @@ export function createBubuApi(options: ClientOptions) {
     } catch {
       throw new ApiError(0, "暂时无法连接卜卜日记，请检查网络后重试。");
     }
-    if (generation !== revision) {
+    if (!args.publicPolicy && generation !== revision) {
       // A native bind can rotate the token while logout waits. Revoke that new token
       // directly; it must never reach persistent storage or a restored UI context.
       if (loggingOut && sidecar && options.native && args.credentialExchange && response.status >= 200 && response.status < 300) {
@@ -157,7 +157,9 @@ export function createBubuApi(options: ClientOptions) {
     const error = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
     // Concurrent reads belong to the same identity even after one discovers expiry.
     // Keep them unauthorized, including late successes, before accepting any cookies.
-    if ((response.status === 401 && (!args.credentialExchange || error.code === "UNAUTHORIZED")) || expiredRevision === generation) {
+    // The public policy must remain readable before login, after expiry and during
+    // identity changes. Its response never restores or invalidates a session.
+    if (!args.publicPolicy && ((response.status === 401 && (!args.credentialExchange || error.code === "UNAUTHORIZED")) || expiredRevision === generation)) {
       const firstExpiry = expiredRevision !== generation;
       expiredRevision = generation;
       jar?.clear();
@@ -169,7 +171,7 @@ export function createBubuApi(options: ClientOptions) {
       if (args.guestAllowed) return guest();
       throw new ApiError(401, sidecar ? "登录已失效，请重新登录。" : "登录已失效，请重新登录原有宝宝日记账号。", "UNAUTHORIZED");
     }
-    if (jar) {
+    if (jar && !args.publicPolicy) {
       const cookies = [...(response.cookies ?? [])];
       for (const [key, value] of Object.entries(response.headers ?? {})) {
         if (key.toLowerCase() !== "set-cookie") continue;
@@ -246,7 +248,7 @@ export function createBubuApi(options: ClientOptions) {
   return {
     async safetyNotices(babyId: string) { return decodeSafetyNotices(await request(scoped("safety", babyId), { babyId }), babyId); },
     async acknowledgeSafety(babyId: string, signalId: string) { await request("/api/app/safety/acknowledge", { method: "POST", babyId, json: { babyId, signalId } }); },
-    async privacyPolicy() { return decodePolicy(await request("/api/app/privacy/policy", { guestAllowed: true })); },
+    async privacyPolicy() { return decodePolicy(await request("/api/app/privacy/policy", { publicPolicy: true })); },
     async privacyStatus(babyId?: string) { return decodePrivacyStatus(await request("/api/app/privacy/status" + queryString({ babyId }))); },
     async privacyConsent(input: PersonalChoice) { await request("/api/app/privacy/consent", { method: "POST", json: input }); },
     async privacyGuardian(babyId: string, consent: GuardianChoice) { await request("/api/app/privacy/guardian", { method: "POST", json: { babyId, consent } }); },

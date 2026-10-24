@@ -9,8 +9,8 @@ import { sessionExpiredEvent } from "../navigation/events";
 import type { DeletionIntent, DeletionJob, PrivacyPolicy, PrivacyRequest, PrivacyStatus } from "./contracts";
 import "./privacy.css";
 
-export function Choice({ value, label, onChange }: { value: boolean; label: string; onChange: (value: boolean) => void }) {
-  return <View className="privacy-choice"><Text>{label}</Text><Switch checked={value} ariaLabel={label} color="#9b6654" onChange={event => onChange(event.detail.value)} /></View>;
+export function Choice({ value, label, disabled, onChange }: { value: boolean; label: string; disabled?: boolean; onChange: (value: boolean) => void }) {
+  return <View className="privacy-choice"><Text>{label}</Text><Switch checked={value} disabled={disabled} ariaLabel={label} color="#9b6654" onChange={event => { if (!disabled) onChange(event.detail.value); }} /></View>;
 }
 export function PolicyDocuments({ policy }: { policy: PrivacyPolicy }) {
   const [open, setOpen] = useState(false);
