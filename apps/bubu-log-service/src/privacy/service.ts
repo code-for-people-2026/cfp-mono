@@ -45,8 +45,9 @@ export class PrivacyService {
     if (babyId) await this.identity.authorizeForPrivacy(principal, babyId, "records:read");
     const consent = await this.repository.get<Consent>("privacy-state", `consent:${principal.subjectId}`);
     const guardian = babyId ? await this.repository.get<GuardianConsent>("privacy-state", `guardian:${babyId}`) : undefined;
+    const ownIds = await this.identity.accountIdentityIds(principal.subjectId);
     return { policy: this.policy(), consent: consent ? { ...consent, identityId: undefined } : null,
-      consentCurrent: this.current(consent), guardian: guardian ? { ...guardian, identityId: undefined, isOwn: guardian.identityId === principal.subjectId, replaceable: !!this.ledger?.frozen("account", guardian.identityId) } : null,
+      consentCurrent: this.current(consent), guardian: guardian ? { ...guardian, identityId: undefined, isOwn: ownIds.includes(guardian.identityId), replaceable: !!this.ledger?.frozen("account", guardian.identityId) } : null,
       guardianCurrent: this.guardianCurrent(guardian), canManage: babyId ? await this.canManage(principal, babyId) : false };
   }
   private async canManage(principal: Principal, babyId: string) { try { await this.identity.authorizeForPrivacy(principal, babyId, "baby:manage"); return true; } catch { return false; } }
@@ -66,10 +67,11 @@ export class PrivacyService {
     await this.requirePerson(principal.subjectId);
     if (parsed.collection && !parsed.groupMembersInformed) fail("GROUP_NOTICE_REQUIRED", "请先向群成员说明采集范围并取得必要同意。");
     return this.identity.exclusive(async () => {
+      await this.requirePerson(principal.subjectId);
       await this.identity.authorizeForPrivacy(principal, babyId, "baby:manage");
       if (this.ledger?.frozen("family", babyId)) fail("PRIVACY_PROCESSING_FROZEN", "宝宝数据已申请删除，不能重新开启处理。");
       const old = await this.repository.get<GuardianConsent>("privacy-state", `guardian:${babyId}`);
-      if (old && old.identityId !== principal.subjectId && !this.ledger?.frozen("account", old.identityId)) fail("GUARDIAN_CHANGE_REQUIRES_REVIEW", "此宝宝已有监护授权，请由原监护人或运营核实后处理。");
+      if (old && !(await this.identity.accountIdentityIds(principal.subjectId)).includes(old.identityId) && !this.ledger?.frozen("account", old.identityId)) fail("GUARDIAN_CHANGE_REQUIRES_REVIEW", "此宝宝已有监护授权，请由原监护人或运营核实后处理。");
       const value: GuardianConsent = { ...parsed, babyId, identityId: principal.subjectId, updatedAt: this.now() };
       await this.repository.put("privacy-state", `guardian:${babyId}`, value, { babyId });
       await this.revokeDelegations(undefined, babyId);
@@ -83,7 +85,7 @@ export class PrivacyService {
       const previous = await this.repository.get<Consent | GuardianConsent>("privacy-state", key);
       if (babyId) {
         await this.identity.authorizeForPrivacy(principal, babyId, "baby:manage");
-        if (previous?.identityId !== principal.subjectId) fail("GUARDIAN_REQUIRED", "请由此宝宝的授权监护人撤回。");
+        if (!previous || !(await this.identity.accountIdentityIds(principal.subjectId)).includes(previous.identityId)) fail("GUARDIAN_REQUIRED", "请由此宝宝的授权监护人撤回。");
       }
       if (previous) await this.repository.put("privacy-state", key, { ...previous, revokedAt: this.now() }, babyId ? { babyId } : { identityId: principal.subjectId });
       await this.revokeDelegations(babyId ? undefined : principal.subjectId, babyId);
@@ -94,6 +96,11 @@ export class PrivacyService {
     const sessions = await this.identity.store.list("sessions");
     const own = new Set(sessions.filter(row => row.value.subjectId === identityId).map(row => row.key));
     for (const row of sessions) if (row.value.kind !== "caregiver" && (babyId ? row.value.babyId === babyId : own.has(String(row.value.parentSessionId)))) await this.identity.store.put("sessions", row.key, { ...row.value, revoked: true });
+  }
+  async requireIdentityChange(identityId: string) {
+    if (this.ledger?.frozen("account", identityId)) fail("PRIVACY_PROCESSING_FROZEN", "账号已申请注销，不能关联或创建新的家庭数据。");
+    const consent = await this.repository.get<Consent>("privacy-state", `consent:${identityId}`);
+    if (consent?.revokedAt) fail("PRIVACY_CONSENT_REQUIRED", "账号已撤回授权，请先重新确认处理选择。");
   }
   async requirePerson(identityId: string) {
     if (this.ledger?.frozen("account", identityId)) fail("PRIVACY_PROCESSING_FROZEN", "账号已申请注销，已暂停处理。");
@@ -108,14 +115,16 @@ export class PrivacyService {
     this.ready();
     const guardian = await this.repository.get<GuardianConsent>("privacy-state", `guardian:${scope.babyId}`, req);
     if (!this.guardianCurrent(guardian)) fail("GUARDIAN_CONSENT_REQUIRED", "请先由宝宝的监护人确认儿童信息处理授权。");
+    const agentImageRead = permission === "media:read" && (scope.actor.kind === "collector" || scope.actor.kind === "chat-agent" && scope.actor.purpose !== "history");
+    if ((permission === "media:write" || agentImageRead) && !guardian!.images) fail("IMAGE_CONSENT_REQUIRED", "监护人尚未开启此宝宝的图片处理。");
     if (scope.actor.kind === "operator") return;
     if (scope.actor.kind === "collector") {
       if (!guardian!.collection || !guardian!.groupMembersInformed || !guardian!.ai) fail("COLLECTION_CONSENT_REQUIRED", "监护人尚未开通此宝宝的群采集授权。");
     } else {
       const person = await this.requirePerson(scope.actor.onBehalfOf || scope.actor.id);
-      if (permission === "media:write" && !person.images) fail("IMAGE_CONSENT_REQUIRED", "请在隐私设置中单独开启图片处理。");
+      if (scope.actor.kind === "chat-agent" && scope.actor.purpose !== "history" && (!person.ai || !guardian!.ai)) fail("AI_CONSENT_REQUIRED", "请由本人和监护人分别开启 AI 整理授权。");
+      if ((permission === "media:write" || agentImageRead) && !person.images) fail("IMAGE_CONSENT_REQUIRED", "请在隐私设置中单独开启图片处理。");
     }
-    if (permission === "media:write" && !guardian!.images) fail("IMAGE_CONSENT_REQUIRED", "监护人尚未开启此宝宝的图片处理。");
   }
   async requireModel(principal: Principal, babyId: string, images: boolean) {
     const scope = await this.identity.authorize(principal, babyId, "records:write");

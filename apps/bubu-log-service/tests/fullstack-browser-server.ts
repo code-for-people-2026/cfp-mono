@@ -1,3 +1,4 @@
+import { grantFixturePrivacy, testPrivacyConfig } from "./fixtures/privacy";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -30,7 +31,7 @@ const wechat: WechatProvider = { exchange: async code => {
   if (!account) throw new AppError(401, "FIXTURE_CODE_REQUIRED", "隔离示例只接受 fixture-alice:随机标识 或 fixture-bob:随机标识，不验证真实微信登录。");
   return { appId: "fixture-fullstack", openId: account };
 } };
-const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, provider: new BrowserScenarioProvider() });
+const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, privacy: testPrivacyConfig, maintenanceWorker: false, provider: new BrowserScenarioProvider() });
 let ready = false;
 const appHandler = runtime.handler;
 const h5Root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../bubu-log-miniapp/dist/h5");
@@ -63,10 +64,15 @@ try {
   const administrator = { id: admin.id, collection: "ops-users" as const };
   const operator = await runtime.store.payload.create({ collection: "ops-users", data: { email: users.operator, password, role: "operator", active: true, babyIds: ["baby-a", "baby-verify"] }, user: administrator, overrideAccess: false });
   await runtime.store.payload.create({ collection: "ops-users", data: { email: users.auditor, password, role: "auditor", active: true, babyIds: ["baby-a", "baby-verify"] }, user: administrator, overrideAccess: false });
+  await grantFixturePrivacy(runtime);
   const aliceToken = (await runtime.identity.loginLegacy("old-alice", "correct-password", "native")).token;
   const alice = await runtime.identity.authenticate(aliceToken, "bearer");
   const bobToken = (await runtime.identity.loginLegacy("old-bob", "correct-password", "native")).token;
   const verificationToken = (await runtime.identity.loginLegacy("old-verifier", "correct-password", "native")).token;
+  const verifier = await runtime.identity.authenticate(verificationToken);
+  const policyVersion = runtime.privacy.policy().version;
+  await runtime.privacy.consent(verifier, { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+  await runtime.privacy.guardian(verifier, "baby-verify", { policyVersion, guardian: true, sensitive: true, ai: true, images: true, collection: true, groupMembersInformed: true });
   // Fixed test account mappings support explicit fixture codes without granting arbitrary code holders another baby.
   for (const account of ["alice", "bob"]) {
     const login = await runtime.identity.loginWechat(`fixture-${account}:seed`);

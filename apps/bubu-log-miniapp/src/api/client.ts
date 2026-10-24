@@ -1,4 +1,4 @@
-import { decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
+import { decodeSafetyNotices, decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
 import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
 import type { ChatRequest } from "../chat/drafts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
@@ -244,6 +244,8 @@ export function createBubuApi(options: ClientOptions) {
     } finally { finish(); }
   }
   return {
+    async safetyNotices(babyId: string) { return decodeSafetyNotices(await request(scoped("safety", babyId), { babyId }), babyId); },
+    async acknowledgeSafety(babyId: string, signalId: string) { await request("/api/app/safety/acknowledge", { method: "POST", babyId, json: { babyId, signalId } }); },
     async privacyPolicy() { return decodePolicy(await request("/api/app/privacy/policy", { guestAllowed: true })); },
     async privacyStatus(babyId?: string) { return decodePrivacyStatus(await request("/api/app/privacy/status" + queryString({ babyId }))); },
     async privacyConsent(input: PersonalChoice) { await request("/api/app/privacy/consent", { method: "POST", json: input }); },

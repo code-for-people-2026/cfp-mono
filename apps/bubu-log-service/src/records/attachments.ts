@@ -134,7 +134,7 @@ export class AttachmentService {
   }
   /** Offline upgrade only. Hold the runtime lock; callers must take an encrypted backup first. */
   async migrateObjects(apply = false) {
-    return this.identity.exclusive(() => this.identity.store.transaction(async req => {
+    const result = await this.identity.exclusive(() => this.identity.store.transaction(async req => {
       const rows = await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
       let plaintext = 0, encrypted = 0;
       for (const row of rows.docs) {
@@ -163,6 +163,10 @@ export class AttachmentService {
       }
       return { plaintext, encrypted, applied: apply };
     }));
+    // The index must commit before deleting the old plaintext path. On interruption,
+    // rerunning the offline command also finds/removes unreferenced leftovers.
+    if (apply) await this.identity.exclusive(() => this.identity.store.transaction(req => this.purgeOrphanObjects(req)));
+    return result;
   }
   private normalizeSource(scope: ActorScope, source?: SourceRef): SourceRef | undefined {
     const parsed = source === undefined ? undefined : sourceSchema.safeParse(source);

@@ -34,6 +34,26 @@ beforeEach(async () => {
 });
 const setup = async () => fixture;
 describe("privacy authorization across real identity and SQLite boundaries", () => {
+  it("enforces image choices for operators and AI choices for freshly delegated agents", async () => {
+    const f = await setup();
+    await f.privacy.consent(f.alice, f.consent); await f.privacy.guardian(f.alice, "baby-a", f.guardian);
+    const operator = await f.identity.authenticate((await f.identity.provisionOperator("privacy-ops", "baby-a", 60000)).token);
+    await expect(f.identity.authorize(operator, "baby-a", "media:write")).rejects.toMatchObject({ code: "IMAGE_CONSENT_REQUIRED" });
+    await expect(f.identity.issueAgent(f.alice, "baby-a", "chat-agent")).rejects.toMatchObject({ code: "AI_CONSENT_REQUIRED" });
+    const history = await f.identity.authenticate((await f.identity.issueAgent(f.alice, "baby-a", "chat-agent", { readOnly: true })).token);
+    await f.identity.authorize(history, "baby-a", "records:read");
+    await expect(f.identity.authorize(history, "baby-a", "records:write")).rejects.toMatchObject({ code: "BABY_FORBIDDEN" });
+    await f.privacy.consent(f.alice, { ...f.consent, ai: true });
+    await expect(f.identity.issueAgent(f.alice, "baby-a", "chat-agent")).rejects.toMatchObject({ code: "AI_CONSENT_REQUIRED" });
+    await f.privacy.guardian(f.alice, "baby-a", { ...f.guardian, ai: true });
+    const active = await f.identity.authenticate((await f.identity.issueAgent(f.alice, "baby-a", "chat-agent")).token);
+    await f.identity.authorize(active, "baby-a", "records:write");
+    await expect(f.identity.authorize(active, "baby-a", "media:read")).rejects.toMatchObject({ code: "IMAGE_CONSENT_REQUIRED" });
+    await f.privacy.guardian(f.alice, "baby-a", f.guardian);
+    await expect(f.identity.authorize(active, "baby-a", "records:write")).rejects.toMatchObject({ code: "UNAUTHORIZED" });
+    await expect(f.identity.issueAgent(f.alice, "baby-a", "chat-agent")).rejects.toMatchObject({ code: "AI_CONSENT_REQUIRED" });
+  });
+
   it("requires independent personal and guardian choices, and cannot grant another baby's scope", async () => {
     const f = await setup();
     await expect(f.identity.authorize(f.alice, "baby-a", "records:read")).rejects.toMatchObject({ code: "GUARDIAN_CONSENT_REQUIRED" });

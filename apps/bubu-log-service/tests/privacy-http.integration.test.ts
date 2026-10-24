@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -42,7 +42,21 @@ describe("privacy HTTP integration and independent emergency response", () => {
     expect(emergency.status).toBe(200); expect(emergency.body.turn).toMatchObject({ status: "completed", replySource: "safety", receipts: [] }); expect(emergency.body.turn.assistantText).toContain("120");
     expect(legacy.committedWrites).toBe(0);
     expect((await call("/api/app/safety?babyId=baby-a")).body.data).toHaveLength(1);
+    expect((await call("/api/identity/agent-credentials", { babyId: "baby-a", kind: "chat-agent" })).body.code).toBe("AI_CONSENT_REQUIRED");
+    const notices = (await call("/api/app/safety?babyId=baby-a")).body.data;
+    expect((await call("/api/app/safety/acknowledge", { babyId: "baby-b", signalId: notices[0].id })).status).toBe(403);
+    expect((await call("/api/app/safety/acknowledge", { babyId: "baby-a", signalId: notices[0].id })).status).toBe(200);
+    expect((await call("/api/app/safety?babyId=baby-a")).body.data).toEqual([]);
+    // Start an upload body, then finish withdrawal before allowing its mutation body to arrive.
+    let release!: () => void;
+    const blocked = new Promise<void>(resolve => { release = resolve; });
+    const input = new Request(origin + "/api/app/user-babies/baby-a?babyId=baby-a", { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", "X-Bubu-Client": "native" }, body: JSON.stringify({ name: "must-not-write", fullName: null }) });
+    const originalText = input.text.bind(input);
+    vi.spyOn(input, "text").mockImplementation(async () => { await blocked; return originalText(); });
+    const update = vi.spyOn(legacy, "updateBabyNames"), delayed = runtime.handler(input);
     expect((await call("/api/app/privacy/withdraw", {})).status).toBe(200);
+    release(); const denied = await delayed;
+    expect(denied.status).toBe(403); expect(update).not.toHaveBeenCalled(); update.mockRestore();
     expect((await call("/api/app/records/snapshot?babyId=baby-a&date=2026-10-24")).body.code).toBe("PRIVACY_CONSENT_REQUIRED");
     expect((await call("/api/app/privacy/requests", { kind: "privacy", message: "合成数据导出请求" })).status).toBe(201);
     expect((await call("/api/app/privacy/requests")).body.data).toHaveLength(1);

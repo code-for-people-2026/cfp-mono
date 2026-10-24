@@ -1,3 +1,4 @@
+import { privacyFixture } from "../fixtures/privacy";
 import { expect, test, type Page } from "@playwright/test";
 import { emptyRecordSummary } from "../fixtures/records";
 
@@ -16,6 +17,7 @@ async function fixture(page: Page, signedIn = false, legacyLinked = false) {
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return route.fulfill({ json: privacy });
     const body: unknown = request.method() === "POST" ? request.postDataJSON() : undefined;
     requests.push({ path: url.pathname, body });
     const json = (data: unknown, status = 200) => route.fulfill({ status, json: data });
@@ -52,6 +54,7 @@ test("H5 legacy exchange restores an existing baby and signs out without storing
   await page.goto("/");
   await page.locator('input[placeholder="请输入用户名或邮箱"]').fill("parent");
   await page.locator('input[placeholder="请输入密码"]').fill("old-password");
+  await page.locator(".privacy-choice input").check();
   await page.getByText("登录", { exact: true }).click();
   await expect(page.locator(".bubu-day-card")).toBeVisible();
   expect(requests.some((request) => request.path === "/api/identity/family")).toBe(false);
@@ -63,15 +66,16 @@ test("H5 legacy exchange restores an existing baby and signs out without storing
   await expect(page.locator(".bubu-day-card")).toHaveCount(0);
 });
 
-test("an already authenticated unbound identity can create its first baby from only a nickname", async ({ page }) => {
+test("an already authenticated unbound identity can create its first baby from a nickname after explicit guardian declaration", async ({ page }) => {
   const { requests } = await fixture(page, true);
   await page.goto("/");
   await expect(page.getByText("开始记录宝宝的日常", { exact: true })).toBeVisible();
   await page.screenshot({ path: "test-results/identity-first-baby.png", fullPage: true });
   await page.locator('input[placeholder="怎么称呼宝宝"]').fill("小满");
+  await page.locator(".identity-setup .privacy-choice input").check();
   await page.locator(".identity-setup .primary-button").click();
   await expect(page.locator(".bubu-day-card")).toBeVisible();
-  expect(requests.find((request) => request.path === "/api/identity/family")?.body).toEqual({ name: "小满" });
+  expect(requests.find((request) => request.path === "/api/identity/family")?.body).toMatchObject({ name: "小满", guardian: { guardian: true, sensitive: true, ai: false, images: false } });
 });
 
 test("a linked old account with no baby gets association guidance and invitation access", async ({ page }) => {

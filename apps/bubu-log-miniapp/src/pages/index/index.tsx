@@ -1,3 +1,4 @@
+import { SafetyNotices } from "../../privacy/SafetyNotices";
 import { Choice, PolicyDocuments, PrivacyCenter } from "../../privacy/PrivacyCenter";
 import type { PrivacyPolicy } from "../../privacy/contracts";
 import { DiaryChat, type ChatSelection } from "../../chat/Chat";
@@ -282,7 +283,7 @@ export default function DiaryPage() {
     <Button className="text-button" disabled={authBusy || undefined} onClick={() => { void restore(); }}>重新连接</Button>
   </View></View>;
 
-  if (!privacyReady) return <View className="diary-shell"><DiaryNavigation /><View className="page"><PrivacyCenter key={privacyKey} babyId={babyId || undefined} onReady={() => { setPrivacyCheck(value => value + 1); void restore(); }} /><Button className="text-button" onClick={() => { void logout(); }}>退出登录</Button></View></View>;
+  if (!privacyReady) return <View className="diary-shell"><DiaryNavigation context={context} restricted open={menuOpen} onOpen={() => setMenuOpen(true)} onClose={closeMenu} onBabyChange={index => { void changeBaby(index); }} onRefresh={() => { void restore(); }} onLogout={() => { void logout(); }} /><View className="page"><PrivacyCenter key={privacyKey} babyId={babyId || undefined} onReady={() => { setPrivacyCheck(value => value + 1); void restore(); }} /><Button className="text-button" onClick={() => { void logout(); }}>退出登录</Button></View></View>;
 
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
@@ -295,6 +296,7 @@ export default function DiaryPage() {
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
     {!context.hasBaby ? identityEnabled ? <IdentitySetup context={context} onComplete={identityUpdated} /> : <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
+      {identityEnabled && <SafetyNotices key={`${context.identityId}:${babyId}`} babyId={babyId} revision={revision + privacyCheck} />}
       <View className="calendar-toolbar">
         <Button className="arrow-button" ariaLabel="上一段日期" onClick={() => navigate(-1)}>‹</Button>
         <Picker className="date-picker" mode="date" value={date} end={todayKey()} onChange={(event) => setDate(event.detail.value)}><View className="date-title">{periodLabel}<Text className="date-dropdown">⌄</Text></View></Picker>

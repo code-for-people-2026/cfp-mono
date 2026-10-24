@@ -27,7 +27,7 @@ export class PrivacyOperations {
         if (table === "privacy-requests") {
           const request = previous as PrivacyRequest;
           if (request.updatedAt !== input.expectedUpdatedAt) throw new AppError(409, "PRIVACY_REQUEST_CHANGED", "请求已被其他人处理，请刷新。");
-          await this.privacy.repository.put(table, input.id, { ...request, reply: input.reply, status: input.status || "resolved", updatedAt: new Date(this.privacy.identity.now()).toISOString() }, { identityId: request.identityId, babyId: request.babyId }, req);
+          await this.privacy.repository.put(table, input.id, { ...request, reply: input.reply, status: input.status || "resolved", updatedAt: new Date(Math.max(this.privacy.identity.now(), Date.parse(request.updatedAt) + 1)).toISOString() }, { identityId: request.identityId, babyId: request.babyId }, req);
         } else {
           await this.privacy.repository.put(table, input.id, { ...previous, status: "reviewed", note: input.reply }, { babyId: previous.babyId }, req);
         }
@@ -37,7 +37,8 @@ export class PrivacyOperations {
       const requests = (await this.privacy.repository.list<PrivacyRequest>("privacy-requests", where, req)).map(row => ({ ...row.value, identityId: undefined }));
       const signals = input.babyId ? (await this.privacy.repository.list<SafetySignal>("safety-signals", where, req)).map(row => row.value) : [];
       const jobs = user.role === "administrator" ? (await this.privacy.repository.list<DeletionJob>("privacy-state", { key: { like: "deletion:" } }, req)).filter(row => row.key.startsWith("deletion:")).map(row => ({ id: row.value.jobId, kind: row.value.kind, status: row.value.status, updatedAt: row.value.updatedAt, errorCode: row.value.errorCode })) : [];
-      return { requests, signals, jobs };
+      const maintenance = user.role === "administrator" ? await this.privacy.repository.get<{ at: string; failed?: boolean; report?: { deferredTasks?: number } }>("privacy-state", "maintenance:last", req) : undefined;
+      return { requests, signals, jobs, maintenance: maintenance || null };
     }));
     if (input.action === "retry-deletions") await this.deletion.processPending();
     return result;

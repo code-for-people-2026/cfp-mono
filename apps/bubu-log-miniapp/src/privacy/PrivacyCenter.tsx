@@ -1,3 +1,4 @@
+import { clearPrivacyExports } from "./exports";
 import { Button, Input, Switch, Text, Textarea, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { useEffect, useRef, useState } from "react";
@@ -26,12 +27,12 @@ export function PrivacyCenter({ babyId, authenticated = true, onReady, onChanged
   const [requests, setRequests] = useState<PrivacyRequest[]>([]), [jobs, setJobs] = useState<DeletionJob[]>([]);
   const [message, setMessage] = useState(""), [kind, setKind] = useState<"privacy" | "complaint" | "appeal">("privacy");
   const [intent, setIntent] = useState<DeletionIntent>(), [confirmation, setConfirmation] = useState("");
-  const inFlight = useRef(false), generation = useRef(0);
+  const inFlight = useRef(false), generation = useRef(0), mounted = useRef(true);
   const refresh = async () => {
     const current = ++generation.current;
     const nextPolicy = await api.privacyPolicy();
     const next = authenticated ? await api.privacyStatus(babyId) : undefined;
-    const rights = authenticated ? await Promise.all([api.privacyRequests(), api.deletionJobs()]) : undefined;
+
     if (generation.current !== current) return;
     setPolicy(nextPolicy); setStatus(next);
     if (next) {
@@ -41,15 +42,21 @@ export function PrivacyCenter({ babyId, authenticated = true, onReady, onChanged
       setGuardian(own); setChild(own); setChildAi(own && !!next.guardian?.ai); setChildImages(own && !!next.guardian?.images);
       setCollection(own && !!next.guardian?.collection); setGroupNotice(own && !!next.guardian?.groupMembersInformed);
     }
-    if (rights) { setRequests(rights[0]); setJobs(rights[1]); }
+    if (authenticated) {
+      const rights = await Promise.allSettled([api.privacyRequests(), api.deletionJobs()]);
+      if (generation.current !== current) return;
+      if (rights[0].status === "fulfilled") setRequests(rights[0].value);
+      if (rights[1].status === "fulfilled") setJobs(rights[1].value);
+      if (rights.some(result => result.status === "rejected")) setError("授权已读取；数据请求进度暂时无法读取，可稍后刷新。");
+    }
   };
-  useEffect(() => { void refresh().catch(failure => setError(failure instanceof Error ? failure.message : "读取失败")); return () => { generation.current++; }; }, [babyId, authenticated]);
-  const run = async (operation: () => Promise<void>, success: string) => {
+  useEffect(() => { mounted.current = true; void refresh().catch(failure => setError(failure instanceof Error ? failure.message : "读取失败")); return () => { mounted.current = false; generation.current++; }; }, [babyId, authenticated]);
+  const run = async (operation: () => Promise<void>, success: string, refreshAfter = true) => {
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError(""); setReceipt("");
-    try { await operation(); setReceipt(success); await refresh(); onChanged?.(); }
-    catch (failure) { setError(failure instanceof Error ? failure.message : "处理未完成，请重试。"); }
-    finally { inFlight.current = false; setBusy(false); }
+    try { await operation(); if (!mounted.current) return; setReceipt(success); if (refreshAfter) await refresh(); onChanged?.(); }
+    catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "处理未完成，请重试。"); }
+    finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   };
   const exportData = async (family: boolean) => {
     const result = await api.privacyExport(family ? babyId : undefined), text = JSON.stringify(result, null, 2), fileName = `bubu-${family ? "family" : "account"}-${Date.now()}.json`;
@@ -57,6 +64,7 @@ export function PrivacyCenter({ babyId, authenticated = true, onReady, onChanged
       const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
       const link = document.createElement("a"); link.href = url; link.download = fileName; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
     } else {
+      clearPrivacyExports();
       const filePath = `${Taro.env.USER_DATA_PATH}/${fileName}`, fs = Taro.getFileSystemManager();
       fs.writeFileSync(filePath, text, "utf8");
       try { await Taro.shareFileMessage({ filePath, fileName }); }
@@ -104,7 +112,7 @@ export function PrivacyCenter({ babyId, authenticated = true, onReady, onChanged
           <Button className="text-button" disabled={busy || undefined} onClick={() => { void run(async () => { setIntent(await api.deletionIntent("account")); setConfirmation(""); }, "请核对注销范围"); }}>申请注销本人账号</Button>
           {babyId && status.guardian?.isOwn && <Button className="text-button privacy-danger" disabled={busy || undefined} onClick={() => { void run(async () => { setIntent(await api.deletionIntent("family", babyId)); setConfirmation(""); }, "请核对家庭删除范围"); }}>申请删除宝宝全部数据</Button>}
           {intent && <View className="privacy-confirm">{intent.consequences.map(text => <Text className="privacy-paragraph" key={text}>{text}</Text>)}<Text>确认后立即暂停访问，清理失败会继续重试。请输入：{intent.confirmation}</Text><Input value={confirmation} ariaLabel="删除确认文字" onInput={event => setConfirmation(event.detail.value)} />
-            <Button className="primary-button" disabled={busy || confirmation !== intent.confirmation || undefined} onClick={() => { void run(async () => { await api.deletionConfirm(intent.token, confirmation); const account = intent.scope === "account"; setIntent(undefined); setConfirmation(""); chatDrafts.clear(); clearImageFiles(); if (account) { await api.logout().catch(() => {}); Taro.eventCenter.trigger(sessionExpiredEvent); } }, "删除申请已受理；受理不代表清理已完成"); }}>确认提交删除申请</Button>
+            <Button className="primary-button" disabled={busy || confirmation !== intent.confirmation || undefined} onClick={() => { void run(async () => { await api.deletionConfirm(intent.token, confirmation); const account = intent.scope === "account"; setIntent(undefined); setConfirmation(""); chatDrafts.clear(); clearImageFiles(); if (account) { await api.logout().catch(() => {}); Taro.eventCenter.trigger(sessionExpiredEvent); } }, "删除申请已受理；受理不代表清理已完成", intent.scope !== "account"); }}>确认提交删除申请</Button>
             <Button className="text-button" disabled={busy || undefined} onClick={() => { setIntent(undefined); setConfirmation(""); }}>取消</Button></View>}
           {jobs.map(job => <Text className="privacy-paragraph" key={job.id}>{job.scope === "family" ? "家庭删除" : "账号注销"}：{({ pending: "等待处理", running: "正在清理", retry: "等待重试，访问已暂停", completed: "处理完成" })[job.status]}</Text>)}
         </View>

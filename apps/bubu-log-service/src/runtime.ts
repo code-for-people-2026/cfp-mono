@@ -81,6 +81,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const ledger = new DeletionLedger(ledgerPath);
     const privacy = new PrivacyService(identity, options.privacy || privacyConfigFromEnv(), ledger);
     identity.setProcessingGuard((scope, permission) => privacy.guard(scope, permission));
+    identity.setAccountChangeGuard(identityId => privacy.requireIdentityChange(identityId));
     identity.setContextGuard(identityId => privacy.contextAllowed(identityId));
     const membership = new MembershipService(identity);
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
@@ -105,7 +106,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
           const report = await maintenance.run(true);
           await identity.exclusive(() => privacy.repository.put("privacy-state", "maintenance:last", { at: new Date().toISOString(), report }, {}));
         }
-      })().catch(async () => { await identity.exclusive(() => privacy.repository.put("privacy-state", "maintenance:last", { at: new Date().toISOString(), failed: true }, {})); }).finally(() => { maintenanceTask = undefined; });
+      })().catch(async () => { try { await identity.exclusive(() => privacy.repository.put("privacy-state", "maintenance:last", { at: new Date().toISOString(), failed: true }, {})); } catch { console.error("bubu_privacy_maintenance_failed"); } }).finally(() => { maintenanceTask = undefined; });
     };
     const timer = options.maintenanceWorker === false || process.env.NODE_ENV === "test" ? undefined : setInterval(maintain, 60_000);
     timer?.unref();

@@ -1,13 +1,15 @@
-.privacy-center { display: flex; flex-direction: column; gap: 24px; padding-bottom: 80px; }
-.privacy-card { display: flex; flex-direction: column; gap: 20px; background: #fff; border-radius: 24px; padding: 28px; }
-.privacy-choice { display: flex; align-items: center; justify-content: space-between; gap: 20px; font-size: 26px; line-height: 1.6; }
+.privacy-center { display: flex; flex-direction: column; gap: 12px; padding-bottom: 40px; }
+.privacy-card { display: flex; flex-direction: column; gap: 10px; background: #fff; border-radius: 12px; padding: 14px; }
+.privacy-choice { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; line-height: 1.6; }
 .privacy-choice > text { flex: 1; }
 .privacy-choice switch { flex: 0 0 auto; }
-.privacy-documents { display: flex; flex-direction: column; gap: 30px; padding: 16px 0; }
-.privacy-paragraph { display: block; margin: 16px 0; font-size: 25px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
-.privacy-request { display: flex; flex-direction: column; gap: 12px; padding: 20px 0; border-top: 1px solid #eee; }
-.privacy-tabs { display: flex; gap: 12px; }
-.privacy-confirm { background: #fff3ee; padding: 24px; border-radius: 16px; }
-.privacy-confirm input { margin: 24px 0; background: #fff; padding: 16px; }
+.privacy-documents { display: flex; flex-direction: column; gap: 15px; padding: 8px 0; }
+.privacy-paragraph { display: block; margin: 8px 0; font-size: 12.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere; }
+.privacy-request { display: flex; flex-direction: column; gap: 6px; padding: 10px 0; border-top: 0.5px solid #eee; }
+.privacy-tabs { display: flex; gap: 6px; }
+.privacy-confirm { background: #fff3ee; padding: 12px; border-radius: 8px; }
+.privacy-confirm input { margin: 12px 0; background: #fff; padding: 8px; }
 .privacy-danger { color: #a33d2e; }
-.privacy-card textarea { width: 100%; min-height: 160px; font-size: 28px; }
+.privacy-card textarea { width: 100%; min-height: 80px; font-size: 14px; }
+
+.safety-notices { margin-bottom: 16px; padding: 16px; background: #fff4e9; border: 1px solid #d8a482; border-radius: 12px; display: flex; flex-direction: column; gap: 8px; }

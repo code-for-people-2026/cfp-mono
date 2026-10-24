@@ -333,18 +333,18 @@ export class CollectorService {
       if (source.groupId !== job.groupId || source.accountId !== job.accountId || source.chatId !== job.chatId || !/^message\/message_\d+\.db$/.test(source.databaseId) || source.tableName !== table || source.sourceId !== expected || unique.has(source.sourceId)) fail("COLLECTOR_SOURCE_MISMATCH");
       if (source.media.some(item => item.sourceId !== source.sourceId)) fail("COLLECTOR_SOURCE_MISMATCH");
       unique.add(source.sourceId);
-      await this.safetySignal?.(job.babyId, source, req);
       const stream = `${source.databaseId}:${table}`;
       if (source.localId <= (nextCursor[stream] || 0)) fail("COLLECTOR_CURSOR_REGRESSION");
       nextCursor[stream] = source.localId;
       const existing = await this.repository.get<StoredMessage>("care-messages", job.babyId, source.sourceId, req);
+      if (!existing?.privacyExpired) await this.safetySignal?.(job.babyId, source, req);
       if (existing && existing.contentHash !== hash(source)) fail("COLLECTOR_SOURCE_CHANGED");
       if (existing && existing.state !== "pending" && !existing.mediaPending) { skipped.push(source.sourceId); continue; }
       if (existing && existing.state !== "pending" && existing.mediaPending) {
         mediaOnly[source.sourceId] = events.filter(event => event.sources.some(ref => ref.kind === "wechat" && ref.groupId === job.groupId && ref.accountId === source.accountId && ref.conversationId === source.chatId && ref.messageId === `${source.databaseId}/${source.tableName}/${source.localId}`)).map(event => event.id);
       }
       await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, { ...existing, source, contentHash: hash(source), state: "pending", batchId: batch.id, ...(existing?.privacyExpired ? { source: { ...source, text: "" } } : {}) }, req);
-      pending.push(source);
+      pending.push(existing?.privacyExpired ? { ...source, text: "" } : source);
     }
     if (hash(nextCursor) !== hash(page.nextCursor)) fail("COLLECTOR_CURSOR_MISMATCH");
     batch.messages = pending; batch.skippedSourceIds = skipped; batch.nextCursor = nextCursor; batch.hasMore = page.hasMore; batch.state = "processing"; batch.mediaOnly = mediaOnly;

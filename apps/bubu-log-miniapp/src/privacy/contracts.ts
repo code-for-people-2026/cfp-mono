@@ -16,3 +16,14 @@ export function decodePrivacyStatus(value: unknown): PrivacyStatus {
   if (!["consentCurrent", "guardianCurrent", "canManage"].every(k => typeof row[k] === "boolean") || ![row.consent, row.guardian].every(v => v === null || typeof v === "object" && v !== undefined)) throw new Error("隐私选择读取失败，请重试。");
   return row as unknown as PrivacyStatus;
 }
+
+export interface SafetyNotice { id: string; babyId: string; source: "chat" | "group"; sentAt: string; observedAt: string; message: string }
+export function decodeSafetyNotices(value: unknown, babyId: string): SafetyNotice[] {
+  const rows = object(value).data;
+  if (!Array.isArray(rows)) throw new Error("安全提示格式不完整");
+  return rows.map(value => {
+    const row = object(value);
+    if (row.babyId !== babyId || !["chat", "group"].includes(String(row.source)) || !["id", "sentAt", "observedAt", "message"].every(key => typeof row[key] === "string") || !Number.isFinite(Date.parse(String(row.sentAt))) || !Number.isFinite(Date.parse(String(row.observedAt)))) throw new Error("安全提示范围或格式不正确");
+    return row as unknown as SafetyNotice;
+  });
+}

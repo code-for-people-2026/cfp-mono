@@ -28,7 +28,7 @@ export class DeletionService {
     await this.identity.authorizeForPrivacy(principal, babyId, "baby:manage");
     const guardian = await this.privacy.repository.get<GuardianConsent>("privacy-state", `guardian:${babyId}`);
     // Withdrawal never removes the owner's ability to delete their family's data.
-    if (guardian?.identityId !== principal.subjectId) fail("GUARDIAN_REQUIRED", "只有已声明并获授权的监护人可以删除整个家庭的宝宝数据。");
+    if (!guardian || !(await this.identity.accountIdentityIds(principal.subjectId)).includes(guardian.identityId)) fail("GUARDIAN_REQUIRED", "只有已声明并获授权的监护人可以删除整个家庭的宝宝数据。");
   }
   async prepare(principal: Principal, kind: "account" | "family", babyId?: string) {
     if ((kind === "family") !== !!babyId) fail("INVALID_DELETION_SCOPE", "请选择明确的删除范围。", 400);
@@ -53,7 +53,7 @@ export class DeletionService {
       const session = await this.identity.store.get("sessions", principal.sessionId);
       if (!session?.createdAt || Date.parse(session.createdAt) < this.identity.now() - 15 * 60_000) fail("REAUTHENTICATION_REQUIRED", "为保护数据，请重新微信登录后再确认删除。", 401);
       await this.owner(principal, intent!.babyId);
-      const entry: DeletionEntry = { version: 1, jobId: randomUUID(), kind: intent!.kind, identityId: principal.subjectId, ...(intent!.babyId ? { babyId: intent!.babyId } : {}), createdAt: this.now() };
+      const entry: DeletionEntry = { version: 1, jobId: randomUUID(), kind: intent!.kind, identityId: principal.subjectId, ...(intent!.babyId ? { babyId: intent!.babyId } : { identityIds: await this.identity.accountIdentityIds(principal.subjectId) }), createdAt: this.now() };
       // Durable ledger is outside the transaction. If the DB commit fails, replay still freezes this scope.
       this.ledger.append(entry);
       const job: DeletionJob = { ...entry, status: "pending", updatedAt: this.now() };
@@ -71,8 +71,9 @@ export class DeletionService {
     await this.owner(principal, babyId);
     return this.identity.exclusive(async () => {
       const payload = this.identity.store.payload, req = this.identity.store.currentRequest();
-      const where: Where = babyId ? { babyId: { equals: babyId } } : { identityId: { equals: principal.subjectId } };
-      const chats = await payload.find({ collection: "chat-turns", where: { and: [where, { identityId: { equals: principal.subjectId } }] }, pagination: true, limit: 10001, depth: 0, overrideAccess: true, req });
+      const identityIds = await this.identity.accountIdentityIds(principal.subjectId);
+      const where: Where = babyId ? { babyId: { equals: babyId } } : { identityId: { in: identityIds } };
+      const chats = await payload.find({ collection: "chat-turns", where: { and: [where, { identityId: { in: identityIds } }] }, pagination: true, limit: 10001, depth: 0, overrideAccess: true, req });
       if (chats.totalDocs > 10000) fail("EXPORT_TOO_LARGE", "记录较多，请联系隐私渠道分批导出。", 413);
       const ownChats = chats.docs.map(row => {
         const value = row.value as Record<string, unknown>;
@@ -108,7 +109,8 @@ export class DeletionService {
         await this.identity.exclusive(() => this.identity.store.transaction(async req => {
           req.context.bubuPrivacyDeletion = true;
           const store = this.identity.store, payload = store.payload;
-          const scoped: Where = entry.kind === "family" ? { babyId: { equals: entry.babyId } } : { identityId: { equals: entry.identityId } };
+          const identityIds = entry.identityIds || [entry.identityId];
+          const scoped: Where = entry.kind === "family" ? { babyId: { equals: entry.babyId } } : { identityId: { in: identityIds } };
           await this.remove("chat-turns", scoped, req);
           if (entry.kind === "family") {
             for (const collection of [...recordTables, "service-memberships", "service-membership-changes", "ops-requests", "safety-signals"]) {
@@ -119,7 +121,7 @@ export class DeletionService {
             const rows = await payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
             for (const row of rows.docs) {
               const attachment = row.value as { uploadedBy?: { id?: string; onBehalfOf?: string }; babyId: string; id: string };
-              if (![attachment.uploadedBy?.id, attachment.uploadedBy?.onBehalfOf].includes(entry.identityId)) continue;
+              if (![attachment.uploadedBy?.id, attachment.uploadedBy?.onBehalfOf].some(id => !!id && identityIds.includes(id))) continue;
               // Shared record/revision references remain part of the family's care history.
               let shared = false;
               for (const collection of ["care-events", "care-revisions", "care-operations", "care-messages"]) {
@@ -129,14 +131,14 @@ export class DeletionService {
               if (!shared) await payload.delete({ collection: "care-attachments", id: row.id, overrideAccess: true, req });
             }
           }
-          const accountSessions = new Set((await store.list("sessions")).filter(row => row.value.subjectId === entry.identityId).map(row => row.key));
+          const accountSessions = new Set((await store.list("sessions")).filter(row => identityIds.includes(String(row.value.subjectId))).map(row => row.key));
           for (const collection of ["sessions", "grants", "invitations", "group-bindings", "audit"] as const) {
             for (const row of await store.list(collection)) {
-              const matches = entry.kind === "family" ? row.value.babyId === entry.babyId : [row.value.subjectId, row.value.actorId, row.value.identityId, row.value.createdBy].includes(entry.identityId) || entry.kind === "account" && collection === "sessions" && accountSessions.has(String(row.value.parentSessionId));
+              const matches = entry.kind === "family" ? row.value.babyId === entry.babyId : [row.value.subjectId, row.value.actorId, row.value.identityId, row.value.createdBy, row.value.acceptedBy].some(id => identityIds.includes(String(id))) || entry.kind === "account" && collection === "sessions" && accountSessions.has(String(row.value.parentSessionId));
               if (matches) await payload.delete({ collection, id: row.id, overrideAccess: true, req });
             }
           }
-          if (entry.kind === "account") for (const row of await store.list("identities")) if (row.value.subjectId === entry.identityId || row.key === `subject:${entry.identityId}` || row.key === `family:${entry.identityId}`) await payload.delete({ collection: "identities", id: row.id, overrideAccess: true, req });
+          if (entry.kind === "account") for (const row of await store.list("identities")) if (identityIds.includes(String(row.value.subjectId)) || identityIds.some(id => row.key === `subject:${id}` || row.key === `family:${id}`)) await payload.delete({ collection: "identities", id: row.id, overrideAccess: true, req });
           await this.remove("privacy-requests", scoped, req);
           for (const row of await this.privacy.repository.list("privacy-state", scoped, req)) if (!row.key.startsWith("deletion:")) await payload.delete({ collection: "privacy-state", id: row.id, overrideAccess: true, req });
           if (entry.kind === "family") for (const row of await store.list("identities")) {

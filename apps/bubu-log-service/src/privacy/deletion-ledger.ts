@@ -3,7 +3,7 @@ import { constants, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import path from "node:path";
 import { z } from "zod";
 
-const entrySchema = z.object({ version: z.literal(1), jobId: z.string().uuid(), kind: z.enum(["account", "family"]), identityId: z.string().min(1).max(200), babyId: z.string().min(1).max(200).optional(), createdAt: z.string().datetime() }).strict();
+const entrySchema = z.object({ version: z.literal(1), jobId: z.string().uuid(), kind: z.enum(["account", "family"]), identityId: z.string().min(1).max(200), babyId: z.string().min(1).max(200).optional(), identityIds: z.array(z.string().min(1).max(200)).max(1000).optional(), createdAt: z.string().datetime() }).strict().refine(entry => (entry.kind === "family") === !!entry.babyId && (!entry.identityIds || entry.kind === "account" && entry.identityIds.includes(entry.identityId)), "Invalid deletion scope");
 export type DeletionEntry = z.infer<typeof entrySchema>;
 /** Independent of database snapshots. Append is durable before any destructive step. */
 export class DeletionLedger {
@@ -54,6 +54,6 @@ export class DeletionLedger {
     try { fsyncSync(parent); } finally { closeSync(parent); }
   }
   frozen(kind: "account" | "family", id: string): boolean {
-    return this.read().some(entry => entry.kind === kind && (kind === "account" ? entry.identityId : entry.babyId) === id);
+    return this.read().some(entry => entry.kind === kind && (kind === "account" ? (entry.identityIds || [entry.identityId]).includes(id) : entry.babyId === id));
   }
 }

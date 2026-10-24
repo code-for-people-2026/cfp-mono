@@ -2,13 +2,13 @@ import { MigrateUpArgs, MigrateDownArgs, sql } from '@payloadcms/db-sqlite'
 
 export async function up({ db }: MigrateUpArgs): Promise<void> {
   await db.run(sql`CREATE TABLE \`privacy_state\` (
-  	\`id\` text PRIMARY KEY NOT NULL,
-  	\`key\` text NOT NULL,
-  	\`identity_id\` text,
-  	\`baby_id\` text,
-  	\`value\` text NOT NULL,
-  	\`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
-  	\`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`key\` text NOT NULL,
+    \`identity_id\` text,
+    \`baby_id\` text,
+    \`value\` text NOT NULL,
+    \`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
+    \`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
   );
   `)
   await db.run(sql`CREATE UNIQUE INDEX \`privacy_state_key_idx\` ON \`privacy_state\` (\`key\`);`)
@@ -17,13 +17,13 @@ export async function up({ db }: MigrateUpArgs): Promise<void> {
   await db.run(sql`CREATE INDEX \`privacy_state_updated_at_idx\` ON \`privacy_state\` (\`updated_at\`);`)
   await db.run(sql`CREATE INDEX \`privacy_state_created_at_idx\` ON \`privacy_state\` (\`created_at\`);`)
   await db.run(sql`CREATE TABLE \`privacy_requests\` (
-  	\`id\` text PRIMARY KEY NOT NULL,
-  	\`key\` text NOT NULL,
-  	\`identity_id\` text,
-  	\`baby_id\` text,
-  	\`value\` text NOT NULL,
-  	\`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
-  	\`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`key\` text NOT NULL,
+    \`identity_id\` text,
+    \`baby_id\` text,
+    \`value\` text NOT NULL,
+    \`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
+    \`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
   );
   `)
   await db.run(sql`CREATE UNIQUE INDEX \`privacy_requests_key_idx\` ON \`privacy_requests\` (\`key\`);`)
@@ -32,13 +32,13 @@ export async function up({ db }: MigrateUpArgs): Promise<void> {
   await db.run(sql`CREATE INDEX \`privacy_requests_updated_at_idx\` ON \`privacy_requests\` (\`updated_at\`);`)
   await db.run(sql`CREATE INDEX \`privacy_requests_created_at_idx\` ON \`privacy_requests\` (\`created_at\`);`)
   await db.run(sql`CREATE TABLE \`safety_signals\` (
-  	\`id\` text PRIMARY KEY NOT NULL,
-  	\`key\` text NOT NULL,
-  	\`identity_id\` text,
-  	\`baby_id\` text,
-  	\`value\` text NOT NULL,
-  	\`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
-  	\`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
+    \`id\` text PRIMARY KEY NOT NULL,
+    \`key\` text NOT NULL,
+    \`identity_id\` text,
+    \`baby_id\` text,
+    \`value\` text NOT NULL,
+    \`updated_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL,
+    \`created_at\` text DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) NOT NULL
   );
   `)
   await db.run(sql`CREATE UNIQUE INDEX \`safety_signals_key_idx\` ON \`safety_signals\` (\`key\`);`)
@@ -60,49 +60,49 @@ export async function down({ db }: MigrateDownArgs): Promise<void> {
   await db.run(sql`DROP TABLE \`safety_signals\`;`)
   await db.run(sql`PRAGMA foreign_keys=OFF;`)
   await db.run(sql`CREATE TABLE \`__new_payload_locked_documents_rels\` (
-  	\`id\` integer PRIMARY KEY NOT NULL,
-  	\`order\` integer,
-  	\`parent_id\` integer NOT NULL,
-  	\`path\` text NOT NULL,
-  	\`identities_id\` text,
-  	\`sessions_id\` text,
-  	\`grants_id\` text,
-  	\`invitations_id\` text,
-  	\`group_bindings_id\` text,
-  	\`audit_id\` text,
-  	\`care_events_id\` text,
-  	\`care_operations_id\` text,
-  	\`care_revisions_id\` text,
-  	\`care_questions_id\` text,
-  	\`care_source_links_id\` text,
-  	\`care_attachments_id\` text,
-  	\`care_batches_id\` text,
-  	\`care_sync_id\` text,
-  	\`care_messages_id\` text,
-  	\`chat_turns_id\` text,
-  	\`users_id\` integer,
-  	\`ops_requests_id\` text,
-  	\`ops_users_id\` integer,
-  	FOREIGN KEY (\`parent_id\`) REFERENCES \`payload_locked_documents\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`identities_id\`) REFERENCES \`identities\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`sessions_id\`) REFERENCES \`sessions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`grants_id\`) REFERENCES \`grants\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`invitations_id\`) REFERENCES \`invitations\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`group_bindings_id\`) REFERENCES \`group_bindings\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`audit_id\`) REFERENCES \`audit\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_events_id\`) REFERENCES \`care_events\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_operations_id\`) REFERENCES \`care_operations\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_revisions_id\`) REFERENCES \`care_revisions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_questions_id\`) REFERENCES \`care_questions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_source_links_id\`) REFERENCES \`care_source_links\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_attachments_id\`) REFERENCES \`care_attachments\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_batches_id\`) REFERENCES \`care_batches\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_sync_id\`) REFERENCES \`care_sync\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`care_messages_id\`) REFERENCES \`care_messages\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`chat_turns_id\`) REFERENCES \`chat_turns\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`users_id\`) REFERENCES \`users\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`ops_requests_id\`) REFERENCES \`ops_requests\`(\`id\`) ON UPDATE no action ON DELETE cascade,
-  	FOREIGN KEY (\`ops_users_id\`) REFERENCES \`ops_users\`(\`id\`) ON UPDATE no action ON DELETE cascade
+    \`id\` integer PRIMARY KEY NOT NULL,
+    \`order\` integer,
+    \`parent_id\` integer NOT NULL,
+    \`path\` text NOT NULL,
+    \`identities_id\` text,
+    \`sessions_id\` text,
+    \`grants_id\` text,
+    \`invitations_id\` text,
+    \`group_bindings_id\` text,
+    \`audit_id\` text,
+    \`care_events_id\` text,
+    \`care_operations_id\` text,
+    \`care_revisions_id\` text,
+    \`care_questions_id\` text,
+    \`care_source_links_id\` text,
+    \`care_attachments_id\` text,
+    \`care_batches_id\` text,
+    \`care_sync_id\` text,
+    \`care_messages_id\` text,
+    \`chat_turns_id\` text,
+    \`users_id\` integer,
+    \`ops_requests_id\` text,
+    \`ops_users_id\` integer,
+    FOREIGN KEY (\`parent_id\`) REFERENCES \`payload_locked_documents\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`identities_id\`) REFERENCES \`identities\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`sessions_id\`) REFERENCES \`sessions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`grants_id\`) REFERENCES \`grants\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`invitations_id\`) REFERENCES \`invitations\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`group_bindings_id\`) REFERENCES \`group_bindings\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`audit_id\`) REFERENCES \`audit\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_events_id\`) REFERENCES \`care_events\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_operations_id\`) REFERENCES \`care_operations\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_revisions_id\`) REFERENCES \`care_revisions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_questions_id\`) REFERENCES \`care_questions\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_source_links_id\`) REFERENCES \`care_source_links\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_attachments_id\`) REFERENCES \`care_attachments\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_batches_id\`) REFERENCES \`care_batches\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_sync_id\`) REFERENCES \`care_sync\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`care_messages_id\`) REFERENCES \`care_messages\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`chat_turns_id\`) REFERENCES \`chat_turns\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`users_id\`) REFERENCES \`users\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`ops_requests_id\`) REFERENCES \`ops_requests\`(\`id\`) ON UPDATE no action ON DELETE cascade,
+    FOREIGN KEY (\`ops_users_id\`) REFERENCES \`ops_users\`(\`id\`) ON UPDATE no action ON DELETE cascade
   );
   `)
   await db.run(sql`INSERT INTO \`__new_payload_locked_documents_rels\`("id", "order", "parent_id", "path", "identities_id", "sessions_id", "grants_id", "invitations_id", "group_bindings_id", "audit_id", "care_events_id", "care_operations_id", "care_revisions_id", "care_questions_id", "care_source_links_id", "care_attachments_id", "care_batches_id", "care_sync_id", "care_messages_id", "chat_turns_id", "users_id", "ops_requests_id", "ops_users_id") SELECT "id", "order", "parent_id", "path", "identities_id", "sessions_id", "grants_id", "invitations_id", "group_bindings_id", "audit_id", "care_events_id", "care_operations_id", "care_revisions_id", "care_questions_id", "care_source_links_id", "care_attachments_id", "care_batches_id", "care_sync_id", "care_messages_id", "chat_turns_id", "users_id", "ops_requests_id", "ops_users_id" FROM \`payload_locked_documents_rels\`;`)

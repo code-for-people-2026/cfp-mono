@@ -77,6 +77,10 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       if (req.method === "GET" && path === "/api/app/privacy/policy" && features?.privacy) return json(features.privacy.policy());
       const principal: Principal = await sessions(req);
+      if (features?.safety && req.method === "POST" && path === "/api/app/safety/acknowledge") {
+        const input = z.object({ babyId: id, signalId: id }).strict().parse(await body());
+        return json(await features.safety.acknowledge(principal, input.babyId, input.signalId));
+      }
       if (features?.safety && req.method === "GET" && path === "/api/app/safety") return json({ data: await features.safety.notices(principal, id.parse(url.searchParams.get("babyId"))) });
       if (features?.privacy && path.startsWith("/api/app/privacy/")) {
         const privacy = features.privacy;
@@ -169,18 +173,20 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       if(features&&req.method==="GET"&&path==="/api/app/records/sync")return json(await readSyncStatus(features.records,principal,babyId,features.collector));
       if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
-        await service.authorize(principal, babyId, "media:read");
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
-        const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
-        return await readLegacyPhoto(activity, babyId, media);
+        return await service.executeAuthorized(principal, babyId, "media:read", async () => {
+          const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
+          return readLegacyPhoto(activity, babyId, media);
+        });
       }
       if (req.method === "PATCH" && path.startsWith("/api/app/user-babies/")) {
         if (decodeURIComponent(path.slice("/api/app/user-babies/".length)) !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "宝宝范围不一致。");
-        await service.authorize(principal, babyId, "baby:manage");
         const input = z.object({ name: z.string().trim().min(1).max(30), fullName: z.string().trim().max(60).nullable() }).strict().parse(await body());
-        const context = await service.context(principal);
-        if (context.babies.some(baby => baby.id !== babyId && baby.name.trim().toLowerCase() === input.name.toLowerCase())) throw new AppError(409, "DUPLICATE_NAME", "已存在同名宝宝。");
-        return json({ data: await service.legacy.updateBabyNames(babyId, input) });
+        return await service.executeAuthorized(principal, babyId, "baby:manage", async () => {
+          const context = await service.context(principal);
+          if (context.babies.some(baby => baby.id !== babyId && baby.name.trim().toLowerCase() === input.name.toLowerCase())) throw new AppError(409, "DUPLICATE_NAME", "已存在同名宝宝。");
+          return json({ data: await service.legacy.updateBabyNames(babyId, input) });
+        });
       }
       if (req.method === "GET" && /^\/api\/app\/(activities(?:\/[^/]+)?|daily-stats(?:\/[^/]+)?)$/.test(path)) {
         await service.authorize(principal, babyId, "records:read");

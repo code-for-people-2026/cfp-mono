@@ -54,6 +54,11 @@ export class PrivacyMaintenance {
         const value = row.value as { observedAt: string };
         if (Date.parse(value.observedAt) < cutoff) { report.expiredSignals++; if (apply) await payload.delete({ collection: "safety-signals", id: row.id, overrideAccess: true, req }); }
       }
+      for (const row of await rows("privacy-state")) {
+        const value = row.value as { seenAt?: string; expiresAt?: string };
+        const time = String(row.key).startsWith("safety-seen:") ? value.seenAt : String(row.key).startsWith("intent:") ? value.expiresAt : undefined;
+        if (time && Date.parse(time) < cutoff && apply) await payload.delete({ collection: "privacy-state", id: row.id, overrideAccess: true, req });
+      }
       if (apply) await this.attachments.purgeOrphanObjects(req as PayloadRequest, orphanCutoff);
       return report;
     }));

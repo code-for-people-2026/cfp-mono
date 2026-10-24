@@ -1,6 +1,6 @@
-import { beforeAll, afterAll, describe, expect, it } from "vitest";
+import { beforeAll, afterAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -25,6 +25,7 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     store = await openStore({ directory: path.join(directory, "data"), extensions: [...recordCollections, ...chatCollections, ...privacyCollections] });
     identity = new IdentityService(store, legacy, new WechatFixture()); ledger = new DeletionLedger(path.join(directory, "ledger", "deletions.ndjson"));
     privacy = new PrivacyService(identity, testPrivacyConfig, ledger); identity.setProcessingGuard((scope, permission) => privacy.guard(scope, permission));
+    identity.setAccountChangeGuard(id => privacy.requireIdentityChange(id));
     attachments = new AttachmentService(identity, { directory: path.join(directory, "data") });
     deletion = new DeletionService(privacy, attachments, ledger, { exportFamilyData: async babyId => ({ babyId }), deleteFamilyData: async () => { remoteCalls++; if (failRemote) throw new Error("Synthetic upstream unavailable"); } });
   }, 30000);
@@ -38,7 +39,7 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     await privacy.guardian(principal, babyId, { policyVersion, guardian: true, sensitive: true, ai: true, images: true, collection: false, groupMembersInformed: false });
     const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "red" } }).png().toBuffer();
     const attachment = await attachments.upload(principal, babyId, bytes, "image/png", `privacy-image-${suffix}`);
-    return { principal, babyId, attachment };
+    return { principal, babyId, attachment, username };
   }
   it("requires exact recent confirmation and never grants cross-family rights", async () => {
     const a = await family(), b = await family();
@@ -80,6 +81,62 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     await deletion.replayAfterRestore();
     expect((await store.payload.count({ collection: "care-attachments", where: { babyId: { equals: a.babyId } } })).totalDocs).toBe(0);
     await expect(readFile(objectPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("deletes private data from proof-merged identities while retaining shared family records", async () => {
+    const f = await family(), other = await family();
+    const source = await identity.authenticate((await identity.loginWechat("app:merged-source:one")).token);
+    const policyVersion = privacy.policy().version;
+    await privacy.consent(source, { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+    const inviter = await identity.authenticate((await identity.provisionOperator("synthetic-inviter", f.babyId, 60000)).token);
+    await identity.acceptInvite(source, (await identity.invite(inviter, f.babyId, "write")).code);
+    const image = await sharp({ create: { width: 3, height: 2, channels: 3, background: "blue" } }).png().toBuffer();
+    const privatePhoto = await attachments.upload(source, f.babyId, image, "image/png", "merged-private-photo");
+    const sharedPhoto = await attachments.upload(source, f.babyId, image, "image/png", "merged-shared-photo");
+    const chatId = randomUUID(), eventId = randomUUID();
+    await identity.exclusive(async () => {
+      await store.payload.create({ collection: "chat-turns", data: { id: chatId, key: chatId, identityId: source.subjectId, babyId: f.babyId, value: { input: { text: "merged private conversation" }, status: "completed" } }, overrideAccess: true, req: store.currentRequest() });
+      await store.payload.create({ collection: "care-events", data: { id: eventId, key: eventId, babyId: f.babyId, value: { attachmentIds: [sharedPhoto.id], facts: { type: "POOP" } } }, overrideAccess: true, req: store.currentRequest() });
+    });
+    const merged = await identity.authenticate((await identity.bindLegacy(source, f.username, "correct-password")).token);
+    expect(merged.subjectId).toBe(f.principal.subjectId);
+    expect((await deletion.export(merged)).privateChat).toHaveLength(1);
+    const intent = await deletion.prepare(merged, "account"); await deletion.confirm(merged, intent.token, intent.confirmation);
+    expect(ledger.frozen("account", source.subjectId)).toBe(true);
+    const late = await identity.authenticate((await identity.loginWechat("app:late-merge-source:one")).token);
+    await privacy.consent(late, { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+    await expect(identity.bindLegacy(late, f.username, "correct-password")).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    expect(await identity.accountIdentityIds(merged.subjectId)).not.toContain(late.subjectId);
+    await deletion.processPending();
+    expect((await store.payload.count({ collection: "chat-turns", where: { identityId: { equals: source.subjectId } } })).totalDocs).toBe(0);
+    expect(await store.get("identities", `subject:${source.subjectId}`)).toBeUndefined();
+    expect(await store.get("identities", `subject:${merged.subjectId}`)).toBeUndefined();
+    expect((await store.payload.count({ collection: "care-attachments", where: { key: { equals: privatePhoto.id } } })).totalDocs).toBe(0);
+    expect((await store.payload.count({ collection: "care-attachments", where: { key: { equals: sharedPhoto.id } } })).totalDocs).toBe(1);
+    expect((await store.payload.count({ collection: "care-events", where: { key: { equals: eventId } } })).totalDocs).toBe(1);
+    expect((await attachments.read(other.principal, other.babyId, other.attachment.id)).bytes.length).toBeGreaterThan(0);
+    // Another proved family manager may explicitly become the guardian; deletion is not implicit consent.
+    legacy.memberships.set(other.username, [other.babyId, f.babyId]);
+    expect((await privacy.status(other.principal, f.babyId)).guardianCurrent).toBe(false);
+    expect((await privacy.status(other.principal, f.babyId)).guardian?.replaceable).toBe(true);
+    await privacy.guardian(other.principal, f.babyId, { policyVersion, guardian: true, sensitive: true, ai: false, images: true, collection: false, groupMembersInformed: false });
+    await attachments.read(other.principal, f.babyId, sharedPhoto.id);
+  });
+  it("migrates verified plaintext, strips metadata, and cleans leftovers after interrupted cleanup", async () => {
+    const f = await family();
+    const bytes = await sharp({ create: { width: 8, height: 4, channels: 3, background: "red" } }).jpeg().withExif({ IFD0: { Artist: "private original" } }).toBuffer();
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const row = await store.payload.findByID({ collection: "care-attachments", id: f.attachment.id, overrideAccess: true });
+    await identity.exclusive(() => store.payload.update({ collection: "care-attachments", id: row.id, data: { value: { ...row.value as object, mime: "image/jpeg", sha256, byteLength: bytes.length } }, overrideAccess: true, req: store.currentRequest() }));
+    const original = path.join(directory, "data", "private-attachments", hash(f.babyId), sha256); await writeFile(original, bytes);
+    expect(await attachments.migrateObjects()).toMatchObject({ plaintext: 1, applied: false });
+    expect(await readFile(original)).toEqual(bytes);
+    const interrupted = vi.spyOn(attachments, "purgeOrphanObjects").mockRejectedValueOnce(new Error("synthetic interrupted cleanup"));
+    await expect(attachments.migrateObjects(true)).rejects.toThrow("synthetic interrupted cleanup"); interrupted.mockRestore();
+    expect(await readFile(original)).toEqual(bytes);
+    expect(await attachments.migrateObjects(true)).toMatchObject({ plaintext: 0, applied: true });
+    await expect(readFile(original)).rejects.toMatchObject({ code: "ENOENT" });
+    const result = await attachments.read(f.principal, f.babyId, f.attachment.id);
+    expect((await sharp(result.bytes).metadata()).exif).toBeUndefined();
   });
   it("detects interrupted and modified ledger entries before trusting the deletion state", async () => {
     const file = path.join(directory, "corrupt.ndjson"), local = new DeletionLedger(file);

@@ -219,6 +219,21 @@ describe("executable external Agent and real MCP runner", () => {
     expect(await f.collector.pendingMedia(await f.principal(), "baby-a")).toEqual([]);
   }, 30_000);
 
+  it("does not resurrect expired raw text through a media-only backfill", async () => {
+    const f = await setup(); await f.configure(true); const client = await startMcp(f);
+    const message = { ...source(), media: [{ sourceId: source().sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
+    await new CollectorRunner(client, { read: async () => page(message) }, { execute: async () => plan(message) }).once("baby-a", f.job.id);
+    const row = (await f.store.payload.find({ collection: "care-messages", where: { babyId: { equals: "baby-a" } }, overrideAccess: true })).docs[0]!;
+    const original = row.value as { source: SourceMessage };
+    await f.identity.exclusive(() => f.store.payload.update({ collection: "care-messages", id: row.id, data: { value: { ...original, privacyExpired: true, source: { ...original.source, text: "" } } }, req: f.store.currentRequest(), overrideAccess: true }));
+    await f.collector.dispatch(f.operator, { action: "backfill", babyId: "baby-a", jobId: f.job.id, requestId: "expired-source-backfill", range: { from: "2026-10-23T00:00:00Z", to: "2026-10-23T01:00:00Z" } });
+    const started = await f.call({ action: "begin", runId: "expired-backfill" });
+    const result = await f.call({ action: "stage", batchId: started.batch.id, runId: "expired-backfill", page: page(message) });
+    expect(result.batch.messages).toHaveLength(1); expect(result.batch.messages?.[0]?.text).toBe("");
+    const persisted = await f.store.payload.findByID({ collection: "care-batches", id: result.batch.id, overrideAccess: true });
+    expect(JSON.stringify(persisted)).not.toContain(message.text);
+  }, 30000);
+
   it("never revives withdrawn facts when media backfill proposes a new event key", async () => {
     const f = await setup(); await f.configure(true); const client = await startMcp(f);
     const message = { ...source(), media: [{ sourceId: source().sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
