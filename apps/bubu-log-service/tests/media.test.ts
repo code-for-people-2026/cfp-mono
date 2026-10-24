@@ -113,6 +113,23 @@ describe("media HTTP authorization and errors", () => {
   beforeAll(async () => { fixture = await identityFixture(); }, 30_000);
   afterAll(async () => { await fixture?.close(); });
 
+  it("blocks delegated AI from the old remote URL branch while preserving caregiver and history viewing", async () => {
+    const login = await fixture.service.loginLegacy("old-alice", "correct-password", "native");
+    const principal = await fixture.service.authenticate(login.token);
+    const active = await fixture.service.issueAgent(principal, "baby-a", "chat-agent");
+    const history = await fixture.service.issueAgent(principal, "baby-a", "chat-agent", { readOnly: true });
+    vi.spyOn(fixture.service.legacy, "read").mockResolvedValue(activity);
+    const fetcher = vi.fn<typeof fetch>(async () => new Response(bytes, { headers: { "Content-Type": "image/png" } }));
+    const handler = createHandler(fixture.service, "https://bubu.example.test", { allowedOrigins: [photoOrigin], fetch: fetcher });
+    const request = (token: string) => handler(new Request("https://bubu.example.test/api/app/media/activities/activity-1?babyId=baby-a", { headers: { Authorization: `Bearer ${token}` } }));
+    const denied = await request(active.token);
+    expect(denied.status).toBe(409); expect(await denied.json()).toMatchObject({ code: "IMAGE_REVIEW_REQUIRED" });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((await request(login.token)).status).toBe(200);
+    expect((await request(history.token)).status).toBe(200);
+    expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
   it("uses service authorization, rejects cross-baby access and returns structured media errors", async () => {
     const login = await fixture.service.loginLegacy("old-alice", "correct-password", "native");
     const read = vi.spyOn(fixture.service.legacy, "read").mockResolvedValue(activity);
@@ -133,7 +150,7 @@ describe("media HTTP authorization and errors", () => {
 it("uses an already-authorized private attachment reader without ever fetching its URI", async () => {
   const fetcher = vi.fn(), id = "att_" + "a".repeat(64), readPrivate = vi.fn(async () => new Response(bytes));
   const item = { ...activity, poopPhotoUrl: `bubu-attachment:${id}` };
-  expect(new Uint8Array(await (await readLegacyPhoto(item, "baby-a", { allowedOrigins: [], fetch: fetcher, readPrivate })).arrayBuffer())).toEqual(bytes);
+  expect(new Uint8Array(await (await readLegacyPhoto(item, "baby-a", { allowedOrigins: [], remoteAllowed: false, fetch: fetcher, readPrivate })).arrayBuffer())).toEqual(bytes);
   expect(readPrivate).toHaveBeenCalledWith(id); expect(fetcher).not.toHaveBeenCalled();
   await expect(readLegacyPhoto(item, "baby-a", { allowedOrigins: [], fetch: fetcher })).rejects.toMatchObject({ code: "MEDIA_UNAVAILABLE" });
   await expect(readLegacyPhoto(item, "baby-b", { allowedOrigins: [], readPrivate })).rejects.toMatchObject({ status: 403 });

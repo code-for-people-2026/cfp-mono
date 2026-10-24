@@ -176,7 +176,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
         return await service.executeAuthorized(principal, babyId, "media:read", async (scope, request) => {
           const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
-          return readLegacyPhoto(activity, babyId, { ...media, ...(features ? { readPrivate: async (id: string) => {
+          return readLegacyPhoto(activity, babyId, { ...media, remoteAllowed: scope.actor.kind !== "collector" && (scope.actor.kind !== "chat-agent" || scope.actor.purpose === "history"), ...(features ? { readPrivate: async (id: string) => {
             const { attachment, bytes } = await features.attachments.readInScope(scope, request, id);
             return new Response(new Uint8Array(bytes), { headers: { "Content-Type": attachment.mime, "Content-Length": String(attachment.byteLength), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" } });
           } } : {}) });

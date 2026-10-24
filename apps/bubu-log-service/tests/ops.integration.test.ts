@@ -1,6 +1,6 @@
 import { PrivacyOperations } from "../src/privacy/operations";
-import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { fixtureImageReviewer, testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -19,6 +19,7 @@ import { RecordsRepository, hash } from "../src/records/persistence";
 import { ChatMcpClient } from "../src/chat/mcp";
 
 describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
+  const imageReviewer = vi.fn(fixtureImageReviewer);
   let directory: string, runtime: BubuRuntime, operations: OperationsService, admin: OpsUser, operator: OpsUser, auditor: OpsUser;
   const legacy = new RecordsLegacyFixture();
   const server = createNodeServer(request => runtime.handler(request), "http://127.0.0.1");
@@ -28,7 +29,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-integration-"));
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    runtime = await createRuntime({ privacy: testPrivacyConfig, directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    runtime = await createRuntime({ privacy: testPrivacyConfig, imageReviewer, directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
     await grantFixturePrivacy(runtime);
     const first = await bootstrapOpsAdmin(runtime.store.payload, { email: "admin@synthetic.invalid", password: "Synthetic-Password-Only-2026", babyIds: ["baby-a", "baby-b"] });
     admin = await readOpsUser(runtime.store.payload, { ...first, collection: "ops-users" });
@@ -164,6 +165,20 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     const revisions = await operations.read(operator, { babyId: "baby-a", reason: "核对原始记录修订来源", kind: "revisions", id: eventId });
     expect(Array.isArray(revisions)).toBe(true);
     expect((await runtime.store.list("audit")).some(row => row.value.action === "ops.read.event")).toBe(true);
+  });
+  it("lets family deletion freeze an operator upload without waiting for the supplier", async () => {
+    let finish!: (result: "allow") => void, started!: () => void;
+    const waiting = new Promise<void>(r => { started = r; });
+    imageReviewer.mockImplementationOnce(() => new Promise(r => { finish = r; started(); }));
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#bbccdd" } }).png().toBuffer();
+    const uploading = operations.upload(operator, "baby-a", "合成撤回并发验收", "operator-review-withdraw", bytes, "image/png");
+    await waiting;
+    await runtime.identity.exclusive(() => runtime.privacy.repository.put("privacy-state", "frozen-baby:baby-a", { state: "deleting" }, { babyId: "baby-a" }));
+    finish("allow");
+    await expect(uploading).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    const audit = (await runtime.store.list("audit")).filter(row => row.value.action === "ops.attachment.upload.requested");
+    expect(audit.length).toBeGreaterThan(0);
+    await runtime.identity.exclusive(() => runtime.store.transaction(req => runtime.store.payload.delete({ collection: "privacy-state", where: { key: { equals: "frozen-baby:baby-a" } }, overrideAccess: true, req })));
   });
   it("attachment upload/read is private, association and retract execute MCP and refresh facts", async () => {
     const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();

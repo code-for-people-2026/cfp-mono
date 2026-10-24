@@ -1,4 +1,4 @@
-import { grantFixturePrivacy, testPrivacyConfig } from "./fixtures/privacy";
+import { fixtureImageReviewer, grantFixturePrivacy, testPrivacyConfig } from "./fixtures/privacy";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,7 +31,7 @@ const wechat: WechatProvider = { exchange: async code => {
   if (!account) throw new AppError(401, "FIXTURE_CODE_REQUIRED", "隔离示例只接受 fixture-alice:随机标识 或 fixture-bob:随机标识，不验证真实微信登录。");
   return { appId: "fixture-fullstack", openId: account };
 } };
-const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, privacy: testPrivacyConfig, maintenanceWorker: false, provider: new BrowserScenarioProvider() });
+const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, privacy: testPrivacyConfig, imageReviewer: fixtureImageReviewer, maintenanceWorker: false, provider: new BrowserScenarioProvider() });
 let ready = false;
 const appHandler = runtime.handler;
 const h5Root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../bubu-log-miniapp/dist/h5");

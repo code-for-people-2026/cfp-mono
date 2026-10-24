@@ -124,6 +124,7 @@ export class PrivacyService {
     if (!this.guardianCurrent(guardian)) fail("GUARDIAN_CONSENT_REQUIRED", "请先由宝宝的监护人确认儿童信息处理授权。");
     const agentImageRead = permission === "media:read" && (scope.actor.kind === "collector" || scope.actor.kind === "chat-agent" && scope.actor.purpose !== "history");
     if ((permission === "media:write" || agentImageRead) && !guardian!.images) fail("IMAGE_CONSENT_REQUIRED", "监护人尚未开启此宝宝的图片处理。");
+    if ((permission === "media:write" || agentImageRead) && !this.policy().imageProcessingReady) fail("IMAGE_REVIEW_NOT_CONFIGURED", "图片处理说明尚未配置完整，可以先用文字记录。", 503);
     if (scope.actor.kind === "operator") return;
     if (scope.actor.kind === "collector") {
       if (!guardian!.collection || !guardian!.groupMembersInformed || !guardian!.ai) fail("COLLECTION_CONSENT_REQUIRED", "监护人尚未开通此宝宝的群采集授权。");
@@ -139,6 +140,7 @@ export class PrivacyService {
     const person = await this.requirePerson(principal.subjectId), guardian = await this.repository.get<GuardianConsent>("privacy-state", `guardian:${babyId}`);
     if (!person.ai || !guardian?.ai) fail("AI_CONSENT_REQUIRED", "请由本人和监护人分别开启 AI 整理授权。");
     if (images && (!person.images || !guardian?.images)) fail("IMAGE_CONSENT_REQUIRED", "照片发送给 AI 前需要单独的图片处理授权。");
+    if (images && !this.policy().imageProcessingReady) fail("IMAGE_REVIEW_NOT_CONFIGURED", "图片处理说明尚未配置完整，可以先用文字记录。", 503);
   }
   async request(principal: Principal, input: unknown) {
     await this.identity.privacyIdentity(principal);

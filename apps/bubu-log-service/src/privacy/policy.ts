@@ -4,6 +4,7 @@ export interface PrivacyConfig {
   company: string; contact: string; storageLocation: string; legacyStorageLocation: string;
   chatDays: number; backupDays: number; orphanHours: number; responseDays: number;
   modelName: string; modelRegion: string; modelPolicy: string;
+  imageReview?: { mode: string; policy: string; handling: string };
 }
 const positive = (value: string | undefined, maximum: number) => value && /^[1-9]\d*$/.test(value) && Number(value) <= maximum ? Number(value) : 0;
 export function privacyConfigFromEnv(): PrivacyConfig {
@@ -14,10 +15,13 @@ export function privacyConfigFromEnv(): PrivacyConfig {
     orphanHours: positive(process.env.BUBU_PRIVACY_ORPHAN_HOURS, 720), responseDays: positive(process.env.BUBU_PRIVACY_RESPONSE_DAYS, 30),
     modelName: process.env.BUBU_PRIVACY_MODEL_NAME?.trim() || "", modelRegion: process.env.BUBU_PRIVACY_MODEL_REGION?.trim() || "",
     modelPolicy: process.env.BUBU_PRIVACY_MODEL_POLICY?.trim() || "",
+    imageReview: { mode: process.env.BUBU_IMAGE_REVIEW_MODE || "", policy: process.env.BUBU_PRIVACY_IMAGE_REVIEW_POLICY?.trim() || "", handling: process.env.BUBU_PRIVACY_IMAGE_REVIEW_HANDLING?.trim() || "" },
   };
 }
 export function privacyPolicy(config: PrivacyConfig) {
-  const ready = Object.values(config).every(Boolean) && /^https:\/\//.test(config.modelPolicy);
+  const { imageReview, ...basic } = config;
+  const ready = Object.values(basic).every(Boolean) && /^https:\/\//.test(config.modelPolicy);
+  const imageProcessingReady = imageReview?.mode === "aliyun-green" && /^https:\/\//.test(imageReview.policy) && !!imageReview.handling.trim();
   const documents = [
     { title: "隐私政策", paragraphs: [
       `运营者：${config.company || "待确认"}。隐私联系渠道：${config.contact || "待配置"}。${config.responseDays ? `将在 ${config.responseDays} 天内答复隐私请求。` : "答复期限待确认，当前尚未完成上线配置。"}`,
@@ -36,6 +40,8 @@ export function privacyPolicy(config: PrivacyConfig) {
     { title: "第三方处理与图片", paragraphs: [
       `AI 接收方：${config.modelName || "待配置"}；处理地域：${config.modelRegion || "待核实"}；政策：${config.modelPolicy || "待配置"}。你开启 AI 后，当前消息、必要记录上下文和最近对话交由该服务整理；照片还需单独开启图片处理。供应商侧留存依其政策及实际服务约定，不承诺代其立即删除。`,
       "图片由你主动选择，上传后校验格式和尺寸、移除定位等 EXIF 元数据，保存于私有空间；每次读取校验宝宝授权，不公开存储地址或长期分享链接。图片只能辅助描述可见现象，不作疾病诊断。",
+      imageProcessingReady ? `图片安全检测接收方：阿里云内容安全增强版（中国上海），采用 baselineCheck。仅发送去除元数据后的像素、格式及随机请求号，不附带宝宝身份和照护文字。政策：${imageReview!.policy}。供应商处理与留存说明：${imageReview!.handling}。检测不是健康判断；不确定或未通过时不保存新照片，也不交给 AI，可通过隐私请求申诉。` : "图片安全检测的供应商处理与留存说明尚未确认，新图片上传及图片交给 AI 暂不开放；已经保存的家庭照片仍按权限查看。",
+      "图片检测按 UTC 日限制每个家庭 100 次、全服务 1000 次，失败也计数。只保留最近一次使用日的累计次数，跨日使用时覆盖；家庭计数随家庭删除清除。通过结果随私有附件保留，不保存供应商原始标签、临时地址或拒绝图片副本。既有照片无有效检测结果时不发给 AI，需要用户重新选择上传。",
       "微信能力由腾讯提供，只有主动选择图片或使用语音时请求相应能力。语音识别结果先进入可编辑草稿，发送后才交给服务；未配置和披露语音供应商前不开放语音。",
     ] },
     { title: "服务说明与 AI 标识", paragraphs: [
@@ -45,5 +51,5 @@ export function privacyPolicy(config: PrivacyConfig) {
     ] },
   ];
   const version = `2026-10-24.${createHash("sha256").update(JSON.stringify(documents)).digest("hex").slice(0, 16)}`;
-  return { version, ready, contact: config.contact, documents, retention: { chatDays: config.chatDays, backupDays: config.backupDays, orphanHours: config.orphanHours, responseDays: config.responseDays } };
+  return { version, ready, imageProcessingReady, contact: config.contact, documents, retention: { chatDays: config.chatDays, backupDays: config.backupDays, orphanHours: config.orphanHours, responseDays: config.responseDays } };
 }
