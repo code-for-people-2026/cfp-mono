@@ -1,5 +1,5 @@
 import { AppError } from "./contracts";
-export interface MediaOptions { allowedOrigins: string[]; fetch?: typeof fetch; maxBytes?: number; readPrivate?: (attachmentId: string) => Promise<Response> }
+export interface MediaOptions { allowedOrigins: string[]; remoteAllowed?: boolean; fetch?: typeof fetch; maxBytes?: number; readPrivate?: (attachmentId: string) => Promise<Response> }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const fieldStates = new Set(["known", "pending", "unknown", "not_applicable", "not_yet"]);
 /** Keep the persisted legacy URL unchanged, but never return it through the authenticated API. */
@@ -29,6 +29,7 @@ export async function readLegacyPhoto(activity: unknown, babyId: string, options
     if (!options.readPrivate) throw new AppError(503, "MEDIA_UNAVAILABLE", "私有照片读取尚未配置。");
     return options.readPrivate(privateId);
   }
+  if (options.remoteAllowed === false) throw new AppError(409, "IMAGE_REVIEW_REQUIRED", "这张历史照片尚无当前检测结果，请由照护者重新选择上传后再交给 AI。");
   let url: URL;
   try { url = new URL(activity.poopPhotoUrl); } catch { throw new AppError(502, "MEDIA_UNAVAILABLE", "照片地址不可用。"); }
   if (url.protocol !== "https:" || url.username || url.password || !options.allowedOrigins.includes(url.origin)) throw new AppError(503, "MEDIA_ORIGIN_NOT_CONFIGURED", "此旧照片来源尚未配置，请联系运营。");

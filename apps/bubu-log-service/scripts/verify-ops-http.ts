@@ -72,6 +72,10 @@ assert.equal((await post(operator, { ...body, command: { ...body.command, active
 const event = await post(operator, { babyId: "baby-a", kind: "event", id: fixture.eventId, reason: "隔离来源核对" }, "/api/ops/read");
 assert.equal(event.status, 200); noSecrets(await event.json()); checks++;
 const photo = await post(operator, { babyId: "baby-a", kind: "attachment", id: fixture.attachmentId, reason: "隔离私图审阅" }, "/api/ops/read");
-assert.equal(photo.status, 200); assert.match(photo.headers.get("content-type") || "", /image\/png/); assert.ok((await photo.arrayBuffer()).byteLength > 0); checks++;
+assert.equal(photo.status, 200); assert.match(photo.headers.get("content-type") || "", /image\/png/); const pixels = await photo.arrayBuffer(); assert.ok(pixels.byteLength > 0); checks++;
+const upload = (cookie: string, babyId: string) => request(`/api/ops/attachment?babyId=${babyId}&requestId=http-upload-${randomUUID()}`, { method: "POST", headers: { Cookie: cookie, Origin: fixture.origin, "Content-Type": "image/png", "X-Bubu-Reason": encodeURIComponent("隔离图片检测链路验收") }, body: pixels });
+const uploaded = await upload(operator, "baby-a"); assert.equal(uploaded.status, 200); noSecrets(await uploaded.json()); checks++;
+assert.equal((await upload(auditor, "baby-a")).status, 403); checks++;
+assert.equal((await upload(operator, "baby-b")).status, 403); checks++;
 assert.equal((await post(operator, { babyId: "baby-b", kind: "attachment", id: fixture.attachmentId, reason: "隔离越权审阅" }, "/api/ops/read")).status, 403); checks++;
 console.log(`Native Payload + shared runtime HTTP checks passed: ${checks} (real SQLite/Admin login, role/baby isolation, CSRF, no secret JSON, read-only records, controlled action replay, private image).`);
