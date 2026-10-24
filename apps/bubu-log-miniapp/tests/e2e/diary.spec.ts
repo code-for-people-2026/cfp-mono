@@ -69,7 +69,7 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await page.locator('input[placeholder="请输入用户名或邮箱"]').fill("parent");
   await page.locator('input[placeholder="请输入密码"]').fill("test-password");
   await page.getByText("登录", { exact: true }).click();
-  await expect(page.locator(".diary-title")).toHaveText("哺哺日记");
+  await expect(page.locator(".diary-title")).toHaveText("卜卜日记");
   await expect(page.locator(".stats-grid")).toContainText("120 ml");
   await page.screenshot({ path: "test-results/diary-day.png", fullPage: true });
   await calendarView(page, "周历");

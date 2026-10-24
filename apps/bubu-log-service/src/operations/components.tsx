@@ -97,11 +97,11 @@ export function OperationsTools() {
     return () => controller.abort();
   }, [reload]);
   function denied() { setContext(undefined); setBabyId(""); setError("登录或宝宝授权已失效。请刷新权限，必要时重新登录。"); }
-  return <section className="bubu-ops" aria-label="哺哺日记运营工作区" onKeyDown={event => {
+  return <section className="bubu-ops" aria-label="卜卜日记运营工作区" onKeyDown={event => {
     // Do not submit the surrounding Payload form when entering a field value.
     if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault();
   }}>
-    <div className="bubu-ops__header"><div><h2>哺哺日记 · 运营工作区</h2><p>按宝宝核对授权、采集和待补事项。敏感查看与操作均留下审计。</p></div>
+    <div className="bubu-ops__header"><div><h2>卜卜日记 · 运营工作区</h2><p>按宝宝核对授权、采集和待补事项。敏感查看与操作均留下审计。</p></div>
       <button type="button" className="bubu-ops__secondary" onClick={() => { setContext(undefined); setReload(value => value + 1); }}>刷新权限</button></div>
     {error && <p role="alert" className="bubu-ops__error">{error} <a href="/admin/login">运营登录</a></p>}
     {!context && !error && <p role="status">正在核对运营身份…</p>}

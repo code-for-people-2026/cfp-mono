@@ -1,4 +1,4 @@
-# 哺哺日记身份与录入服务
+# 卜卜日记身份与录入服务
 
 身份模块 [#396](https://github.com/code-for-people-2026/cfp-mono/issues/396) 接续可视化模块；录入模块 [#393](https://github.com/code-for-people-2026/cfp-mono/issues/393) 在同一服务提供真实 MCP、持久化修订与追问、私有图片和受控群采集。所有新增代码在 cfp-mono；原 `sunmer-home/apps/bubu-log` 固定版本 `ac86de31b08bdf413e021e60240da2dcd8e63911` 只读参考，开发验证未读取真实客户数据、采集真实群、启用定时任务、支付或部署生产。
 
