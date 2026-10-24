@@ -53,3 +53,4 @@
 **私有原数据层**：原 Payload 照护表在境内的单一权威实例；与 sidecar 共享授权边界但不合并数据库。物理迁移与家庭生命周期见 [ADR-0007](docs/adr/0007-private-original-payload.md)，代码在 `apps/bubu-log-core`。
 
 - 已绑定账号注销、稳定原账号冻结及本人资料导出见 [ADR 0008](docs/adr/0008-linked-account-erasure.md)。共享家庭记录不能随最后一位照护者注销而自动删除。
+- 运行监测、原数据库与 sidecar 的停写备份，以及不覆盖生产的隔离恢复见 [ADR 0009](docs/adr/0009-operations-and-backup-boundaries.md)。全局状态不扩张管理员的家庭访问范围，备份成功不等于恢复演练或外部通知已验收。

@@ -1,7 +1,7 @@
 import { PrivacyOperations } from "../src/privacy/operations";
 import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -11,6 +11,7 @@ import { createNodeServer } from "../src/node-server";
 import { bootstrapOpsAdmin } from "../src/operations/collections";
 import { readOpsUser, type OpsUser } from "../src/operations/access";
 import { OperationsService } from "../src/operations/service";
+import { OperationsHealth } from "../src/operations/health";
 import type { OpsAction } from "../src/operations/contracts";
 import { RecordsLegacyFixture } from "./fixtures/records";
 import { WechatFixture } from "./fixtures/identity";
@@ -72,6 +73,39 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     await expect(operations.overview(operator, "baby-b")).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
     await expect(operations.execute(auditor, input({ type: "invite", access: "read" }, "auditor-denied"))).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
     await expect(operations.read(auditor, { babyId: "baby-a", reason: "不能读取敏感原文", kind: "event", id: "any" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+  });
+  it("global health requires a fresh administrator and contains no family or account identifiers", async () => {
+    await expect(operations.health(operator)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(operations.health(auditor)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    const report = await operations.health(admin);
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("unconfigured");
+    expect(report.checks.find(check => check.id === "maintenance")?.level).toBe("warning");
+    expect(JSON.stringify(report)).not.toMatch(/baby-a|baby-b|synthetic.invalid|old-alice/);
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: false }, overrideAccess: false, user: admin });
+    await expect(operations.health({ ...operator, role: "administrator" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: true }, overrideAccess: false, user: admin });
+  });
+  it("marks failed/stale host evidence and deferred cleanup honestly", async () => {
+    const file = path.join(directory, "host-status.json"), health = new OperationsHealth(runtime.privacy, directory, file);
+    const stamp = new Date(runtime.identity.now()).toISOString(), old = new Date(runtime.identity.now() - 31 * 3600_000).toISOString();
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "verified", at: stamp, lastVerifiedAt: stamp }, certificate: { state: "verified", at: stamp, expiresAt: new Date(runtime.identity.now() + 30 * 86400_000).toISOString() } }), { mode: 0o644 });
+    let report = await health.read();
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("ok");
+    expect(report.checks.find(check => check.id === "certificate")?.level).toBe("ok");
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "verified", at: old, lastVerifiedAt: old }, certificate: { state: "verified", at: old, expiresAt: new Date(runtime.identity.now() + 30 * 86400_000).toISOString() } }));
+    report = await health.read();
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("warning");
+    expect(report.checks.find(check => check.id === "certificate")?.level).toBe("critical");
+    await runtime.privacy.repository.put("privacy-state", "maintenance:last", { at: stamp, report: { deferredTasks: 3 } }, {});
+    expect((await health.read()).checks.find(check => check.id === "maintenance")?.message).toContain("3 项");
+    await runtime.privacy.repository.put("privacy-state", "maintenance:last", { at: stamp, failed: true }, {});
+    expect((await health.read()).checks.find(check => check.id === "maintenance")?.level).toBe("critical");
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "failed", at: stamp, lastVerifiedAt: old } }));
+    expect((await health.read()).checks.find(check => check.id === "backup")?.level).toBe("critical");
+    await writeFile(file, JSON.stringify({ version: 1, secret: "MUST-NOT-LEAK" }));
+    report = await health.read();
+    expect(report.checks.find(check => check.id === "host-report")?.level).toBe("critical");
+    expect(JSON.stringify(report)).not.toContain("MUST-NOT-LEAK");
   });
   it("inherited BabyUser grants are visible without inventing persisted grants", async () => {
     const before = (await runtime.store.list("grants")).length;

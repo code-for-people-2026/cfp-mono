@@ -26,6 +26,7 @@ import { acquireRuntimeLock } from "./runtime-lock";
 import { registerRuntimeState, runtimeState, clearRuntimeState } from "./runtime-state";
 import { createOperationsHandler } from "./operations/http";
 import { MembershipService } from "./membership/service";
+import { OperationsHealth } from "./operations/health";
 
 export interface BubuRuntime {
   store: Store;
@@ -39,6 +40,7 @@ export interface BubuRuntime {
   deletion: DeletionService;
   safety: SafetyService;
   maintenance: PrivacyMaintenance;
+  health: OperationsHealth;
   mcpUrl: string;
   opsOrigin: string;
   handler: (request: Request) => Promise<Response>;
@@ -113,6 +115,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     timer?.unref();
     const runtime: BubuRuntime = {
       store, identity, records, attachments, collector, chat, membership, privacy, deletion, safety, maintenance,
+      health: new OperationsHealth(privacy, options.directory, process.env.BUBU_OPERATIONS_REPORT),
       mcpUrl: options.mcpUrl, opsOrigin,
       handler: appHandler,
       close: async () => {

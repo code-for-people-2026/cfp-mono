@@ -11,6 +11,7 @@ import { permissions } from "../src/contracts";
 import { ChatMcpClient } from "../src/chat/mcp";
 import { RecordsLegacyFixture } from "./fixtures/records";
 import { WechatFixture } from "./fixtures/identity";
+import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 
 if (process.env.NODE_ENV !== "test") throw new Error("The isolated operations fixture requires NODE_ENV=test.");
 const directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-browser-"));
@@ -19,6 +20,7 @@ const origin = `http://127.0.0.1:${port}`;
 const password = `Fixture-${randomBytes(18).toString("hex")}`;
 const legacy = new RecordsLegacyFixture();
 const options = {
+  privacy: testPrivacyConfig,
   directory, secret: "isolated-ops-browser-fixture-not-production-secret",
   publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture(),
   provider: { complete: async () => ({ text: "隔离测试回复，不调用外部模型。", calls: [] }) },
@@ -32,6 +34,7 @@ await runtime.store.payload.create({ collection: "ops-users", data: { email: "au
 const oldPayload = runtime.store.payload;
 await runtime.close();
 runtime = await createRuntime(options);
+await grantFixturePrivacy(runtime);
 assert.notEqual(runtime.store.payload, oldPayload);
 assert.equal((await runtime.store.payload.count({ collection: "ops-users", overrideAccess: true })).totalDocs, 3);
 const running = await startRuntimeServer(runtime, { port, production: true });
