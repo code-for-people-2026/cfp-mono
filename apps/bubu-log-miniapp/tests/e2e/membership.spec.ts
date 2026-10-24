@@ -1,3 +1,4 @@
+import { privacyFixture } from "../fixtures/privacy";
 import { expect, test, type Page } from "@playwright/test";
 import { emptyRecordSummary } from "../fixtures/records";
 import type { MembershipStatus } from "../../src/membership/contracts";
@@ -15,6 +16,7 @@ async function fixture(page: Page) {
   await page.clock.setFixedTime(new Date("2026-10-23T20:00:00+08:00"));
   await page.route("**/api/**", route => {
     const url = new URL(route.request().url());
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return route.fulfill({ json: privacy });
     const json = (data: unknown, status = 200) => route.fulfill({ json: data, status });
     if (url.pathname === "/api/app/auth/context") return json({ authenticated: true, identityId: "membership-caregiver", legacyLinked: false, hasBaby: true, baby, babies: [baby] });
     expect(url.searchParams.get("babyId")).toBe(baby.id);

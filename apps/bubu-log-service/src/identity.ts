@@ -8,25 +8,28 @@ const secret = () => randomBytes(32).toString("base64url");
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const forbidden = () => fail(403, "BABY_FORBIDDEN", "没有此宝宝的访问权限，请刷新宝宝列表。");
 const unauthorized = () => fail(401, "UNAUTHORIZED", "登录已失效，请重新登录。");
-interface Identity { id: string; legacyUserId?: string; currentBabyId?: string }
+interface Identity { id: string; legacyUserId?: string; currentBabyId?: string; mergedIdentityIds?: string[]; mergedInto?: string }
 export interface Principal {
   kind: ActorKind; subjectId: string; sessionId: string;
   babyId?: string; groupId?: string; bindingId?: string; parentSessionId?: string;
   permissions: Permission[]; expiresAt: string;
   /** Present only on credentials delegated by an authenticated Payload operator. */
   operatorUserId?: string;
+  /** Internal history delegation, never accepted from an HTTP request. */
+  purpose?: "history";
 }
 interface Session extends Principal { revoked?: boolean; channel: "native" | "browser" | "service" }
 interface Grant { subjectId: string; babyId: string; state: "active" | "revoked"; permissions: Permission[]; source: "legacy" | "managed" }
 /** @public Authorized actor and baby scope passed to downstream recording services. */
 export interface ActorScope {
-  actor: { kind: ActorKind; id: string; sessionId: string; onBehalfOf?: string };
+  actor: { kind: ActorKind; id: string; sessionId: string; onBehalfOf?: string; purpose?: "history" };
   babyId: string; groupId?: string; permissions: Permission[];
 }
 export class IdentityService {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly familyRuns = new Map<string, Promise<unknown>>();
   private readonly executing = new AsyncLocalStorage<boolean>();
+  private processingGuard?: (scope: ActorScope, permission: Permission) => Promise<void>;
   private operatorGuard?: (userId: string, babyId: string, permission: Permission) => Promise<void>;
   private serviceGuard?: (babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) => Promise<void>;
   constructor(readonly store: Store, readonly legacy: LegacyBackend, readonly wechat: WechatProvider,
@@ -38,6 +41,23 @@ export class IdentityService {
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
+  }
+  private accountChangeGuard?: (identityId: string) => Promise<void>;
+  setAccountChangeGuard(guard: (identityId: string) => Promise<void>) { this.accountChangeGuard = guard; }
+  private contextGuard?: (identityId: string) => Promise<boolean>;
+  setContextGuard(guard: (identityId: string) => Promise<boolean>) { this.contextGuard = guard; }
+  setProcessingGuard(guard: (scope: ActorScope, permission: Permission) => Promise<void>) { this.processingGuard = guard; }
+  async privacyIdentity(principal: Principal) { return this.caregiver(principal); }
+  /** Proof-backed aliases survive snapshot restoration through the deletion ledger. */
+  async accountIdentityIds(identityId: string): Promise<string[]> {
+    const row = await this.store.get("identities", `subject:${identityId}`);
+    const aliases = Array.isArray(row?.value.mergedIdentityIds) ? row.value.mergedIdentityIds.filter((id): id is string => typeof id === "string") : [];
+    return [...new Set([identityId, ...aliases])].sort();
+  }
+  /** Data rights check existing ownership without requiring renewed consent. Never grants new access. */
+  async authorizeForPrivacy(principal: Principal, babyId: string, permission: Permission) {
+    if (principal.kind !== "caregiver") return forbidden();
+    return this.authorizeScope(principal, babyId, permission, undefined, false);
   }
   /** Installed by the composition root, never selected by a request or model. */
   setOperatorGuard(guard: (userId: string, babyId: string, permission: Permission) => Promise<void>) { this.operatorGuard = guard; }
@@ -117,20 +137,25 @@ export class IdentityService {
   }
   async bindLegacy(principal: Principal, username: string, password: string) {
     await this.caregiver(principal);
-    const user = await this.legacy.verifyCredentials(username, password);
     return this.exclusive(async () => {
       const identity = await this.caregiver(principal);
+      await this.accountChangeGuard?.(identity.id);
+      const user = await this.legacy.verifyCredentials(username, password);
       if (identity.legacyUserId && identity.legacyUserId !== user.id) fail(409, "ALREADY_LINKED", "此微信已关联其他旧账号，请联系运营核对。");
       const mapping = await this.store.get("identities", `legacy:${user.id}`);
       const target = mapping ? await this.identity(String(mapping.value.subjectId)) : identity;
+      await this.accountChangeGuard?.(target.id);
       // Proof of both identities permits merging an unlinked WeChat identity into the canonical legacy account.
       // Session revocation, grants and mappings commit in the same sidecar transaction.
       if (identity.id !== target.id) {
+        const targetAccess = await this.access(target);
+        target.mergedIdentityIds = [...new Set([...(target.mergedIdentityIds || []), ...await this.accountIdentityIds(identity.id)])].filter(id => id !== target.id).sort();
+        await this.saveIdentity({ ...identity, mergedInto: target.id });
         for (const row of await this.store.list("sessions")) if (row.value.subjectId === identity.id) await this.store.put("sessions", row.key, { ...row.value, revoked: true });
         for (const row of await this.store.list("grants")) if (row.value.subjectId === identity.id) {
           const key = `${target.id}:${String(row.value.babyId)}`;
           const previous = await this.store.get("grants", key);
-          if (!previous) await this.store.put("grants", key, { ...row.value, subjectId: target.id });
+          if (!previous) await this.store.put("grants", key, { ...row.value, subjectId: target.id, permissions: [...new Set([...(targetAccess.grants.get(String(row.value.babyId)) || []), ...(row.value.permissions as Permission[])])] });
           await this.store.put("grants", row.key, { ...row.value, state: "revoked" });
         }
         for (const row of await this.store.list("identities")) if (row.key.startsWith("wx:") && row.value.subjectId === identity.id) await this.store.put("identities", row.key, { subjectId: target.id });
@@ -165,7 +190,7 @@ export class IdentityService {
     });
     if (pending.completed) return { context: await this.context(principal) };
     // A durable journal + stable legacy IDs bridge two databases. This is not a distributed transaction.
-    const result = await this.legacy.createFamily(pending.identityId, { name: pending.name });
+    const result = await this.exclusive(async () => { await this.accountChangeGuard?.(pending.identityId); return this.legacy.createFamily(pending.identityId, { name: pending.name }); });
     return this.exclusive(async () => {
       const identity = await this.caregiver(principal);
       if (identity.id !== pending.identityId || (identity.legacyUserId && identity.legacyUserId !== result.userId)) fail(409, "IDENTITY_CHANGED", "身份已变化，请重新登录后核对。");
@@ -182,7 +207,7 @@ export class IdentityService {
   }
   private async access(identity: Identity): Promise<{ babies: Baby[]; grants: Map<string, Permission[]> }> {
     const inherited = identity.legacyUserId ? (await this.legacy.userExists(identity.legacyUserId) ? await this.legacy.listBabies(identity.legacyUserId) : []) : [];
-    const babies = new Map(inherited.map(baby => [baby.id, baby]));
+    const babies = new Map(inherited.map(baby => [baby.id, { ...baby, avatarUrl: null }]));
     const grants = new Map<string, Permission[]>(inherited.map(baby => [baby.id, permissions.filter(p => p !== "caregivers:manage")]));
     for (const row of await this.store.list("grants")) {
       const grant = row.value as unknown as Grant;
@@ -191,11 +216,12 @@ export class IdentityService {
         babies.delete(grant.babyId); grants.delete(grant.babyId); continue;
       }
       const baby = babies.get(grant.babyId) || await this.legacy.getBaby(grant.babyId);
-      if (baby) { babies.set(grant.babyId, baby); grants.set(grant.babyId, grant.permissions); }
+      if (baby) { babies.set(grant.babyId, { ...baby, avatarUrl: null }); grants.set(grant.babyId, grant.permissions); }
     }
     return { babies: [...babies.values()].filter(baby => grants.get(baby.id)?.includes("records:read")), grants };
   }
   private async contextFor(identity: Identity, requestedBabyId?: string) {
+    if (this.contextGuard && !await this.contextGuard(identity.id)) return { authenticated: true, hasBaby: false, baby: null, babies: [] as Baby[], defaultBabyId: null, identityId: identity.id, legacyLinked: !!identity.legacyUserId };
     const { babies } = await this.access(identity);
     if (requestedBabyId && !babies.some(baby => baby.id === requestedBabyId)) return forbidden();
     const baby = babies.find(baby => baby.id === (requestedBabyId || identity.currentBabyId)) || babies.find(baby => baby.isDefault) || babies[0] || null;
@@ -206,6 +232,9 @@ export class IdentityService {
   async context(principal: Principal, requestedBabyId?: string) { return this.exclusive(async () => this.contextFor(await this.caregiver(principal), requestedBabyId)); }
   /** Authorize each tool/HTTP operation, not just connection setup. Resource babyId must come from the stored resource. */
   async authorize(principal: Principal, babyId: string, permission: Permission, groupId?: string): Promise<ActorScope> {
+    return this.authorizeScope(principal, babyId, permission, groupId, true);
+  }
+  private async authorizeScope(principal: Principal, babyId: string, permission: Permission, groupId: string | undefined, process: boolean): Promise<ActorScope> {
     const current = await this.fresh(principal);
     if (current.subjectId !== principal.subjectId || !babyId) return forbidden();
     let allowed: Permission[];
@@ -235,7 +264,9 @@ export class IdentityService {
       }
     }
     if (!allowed.includes(permission)) return forbidden();
-    return { actor: { kind: current.kind, id: current.subjectId, sessionId: current.sessionId, ...(onBehalfOf ? { onBehalfOf } : {}) }, babyId, ...(groupId ? { groupId } : {}), permissions: allowed };
+    const scope: ActorScope = { actor: { kind: current.kind, id: current.subjectId, sessionId: current.sessionId, ...(onBehalfOf ? { onBehalfOf } : {}), ...(current.purpose ? { purpose: current.purpose } : {}) }, babyId, ...(groupId ? { groupId } : {}), permissions: allowed };
+    if (process) await this.processingGuard?.(scope, permission);
+    return scope;
   }
   async executeAuthorized<T>(principal: Principal, babyId: string, permission: Permission,
     action: (scope: ActorScope, req: import("payload").PayloadRequest) => Promise<T>, groupId?: string): Promise<T> {
@@ -332,7 +363,8 @@ export class IdentityService {
       const granted = permissions.filter(p => readOnly ? p === "records:read" || p === "media:read" : !p.endsWith(":manage"));
       if (kind === "chat-agent") {
         await this.caregiver(principal);
-        return this.mint("bubu-chat", "service", { kind, babyId, parentSessionId: principal.sessionId, permissions: granted,
+        await this.processingGuard?.({ actor: { kind, id: "bubu-chat", sessionId: principal.sessionId, onBehalfOf: principal.subjectId, ...(readOnly ? { purpose: "history" as const } : {}) }, babyId, permissions: granted }, readOnly ? "records:read" : "records:write");
+        return this.mint("bubu-chat", "service", { kind, babyId, parentSessionId: principal.sessionId, permissions: granted, ...(readOnly ? { purpose: "history" as const } : {}),
           expiresAt: new Date(Math.min(Date.parse(principal.expiresAt), this.now() + 15 * 60000)).toISOString() });
       }
       if ((await this.fresh(principal)).kind !== "operator" || !options.groupId) return forbidden();

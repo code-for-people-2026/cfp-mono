@@ -9,6 +9,7 @@ import "./navigation.css";
 
 export type DiaryView = "day" | "week" | "month" | "trend" | "list";
 type Props = {
+  restricted?: boolean;
   context?: AuthContext | null;
   mode?: DiaryView;
   title?: string;
@@ -57,7 +58,7 @@ export function DiaryNavigation(props: Props) {
           <Button className="diary-icon-button" ariaLabel="关闭菜单" onClick={props.onClose}>×</Button>
         </View>
         <View className="diary-family">
-          <View className="diary-avatar">{context.baby?.name.slice(0, 1) || "哺"}</View>
+          <View className="diary-avatar">{context.baby?.name.slice(0, 1) || "卜"}</View>
           <View className="diary-family-copy">
             <Text className="diary-menu-caption">正在陪伴</Text>
             {context.babies.length > 1 ? <Picker mode="selector" range={context.babies.map((baby) => baby.name)} value={Math.max(0, context.babies.findIndex((baby) => baby.id === context.baby?.id))} onChange={(event) => props.onBabyChange?.(Number(event.detail.value))}>
@@ -66,17 +67,18 @@ export function DiaryNavigation(props: Props) {
           </View>
         </View>
         <ScrollView scrollY className="diary-menu-content">
-          {([
+          {!props.restricted && ([
             ["day", "日历首页", "看看今天的日常"],
             ["list", "历史数据", "按日期查看全部记录"],
             ["trend", "趋势统计", "睡眠、奶量与尿布的变化"],
           ] as const).map(([mode, label, caption]) => <Button key={mode} className={`diary-menu-link ${(props.mode === mode || (mode === "day" && ["week", "month"].includes(props.mode || ""))) ? "current" : ""}`} onClick={() => props.onSelect?.(mode)}>
             <View><Text className="diary-menu-label">{label}</Text><Text className="diary-menu-caption">{caption}</Text></View><Text className="diary-menu-arrow">›</Text>
           </Button>)}
-          {identityEnabled && context.baby && <MembershipStatus key={`${context.identityId}:${context.baby.id}`} babyId={context.baby.id} onAccessRevoked={props.onAccessRevoked} />}
+          {!props.restricted && identityEnabled && context.baby && <MembershipStatus key={`${context.identityId}:${context.baby.id}`} babyId={context.baby.id} onAccessRevoked={props.onAccessRevoked} />}
         </ScrollView>
         <View className="diary-menu-footer">
-          <Button className="diary-menu-link" onClick={props.onSettings}><View><Text className="diary-menu-label">设置</Text><Text className="diary-menu-caption">宝宝昵称与姓名</Text></View><Text className="diary-menu-arrow">›</Text></Button>
+          {!props.restricted && <Button className="diary-menu-link" onClick={props.onSettings}><View><Text className="diary-menu-label">设置</Text><Text className="diary-menu-caption">宝宝昵称与姓名</Text></View><Text className="diary-menu-arrow">›</Text></Button>}
+          {identityEnabled && <Button className="diary-menu-link" onClick={() => { props.onClose?.(); void Taro.navigateTo({ url: `/pages/privacy/index?babyId=${encodeURIComponent(context.baby?.id || "")}` }); }}><View><Text className="diary-menu-label">隐私与安全</Text><Text className="diary-menu-caption">授权、数据、投诉与注销</Text></View><Text className="diary-menu-arrow">›</Text></Button>}
           <View className="diary-menu-utilities">
             <Button className="text-button" onClick={props.onRefresh}>刷新数据</Button>
             <Button className="text-button" disabled={props.busy || undefined} onClick={props.onLogout}>退出登录</Button>

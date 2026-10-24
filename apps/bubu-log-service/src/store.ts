@@ -47,6 +47,7 @@ export class Store {
       : await this.payload.create({ collection: table, data: { id: key, key, value }, overrideAccess: true, req: this.transactions.getStore() });
     return row as unknown as Row;
   }
+  currentRequest(): PayloadRequest | undefined { return this.transactions.getStore(); }
   async close() { await this.payload.destroy(); }
 }
 interface StoreOptions { directory: string; secret?: string; extensions?: CollectionConfig[]; schemaOnly?: boolean; configure?: (config: Config) => Config }

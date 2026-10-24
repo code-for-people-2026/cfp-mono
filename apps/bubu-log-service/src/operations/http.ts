@@ -1,3 +1,4 @@
+import type { PrivacyOperations } from "../privacy/operations";
 import { z } from "zod";
 import { AppError } from "../contracts";
 import { MAX_ATTACHMENT_BYTES } from "../records/attachments";
@@ -6,7 +7,7 @@ import { actionSchema, readSchema, opsReason, opsRequestId, type MembershipOpera
 import { OperationsService, type OperationsRuntime } from "./service";
 
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
-export function createOperationsHandler(runtime: OperationsRuntime, options: { membership?: MembershipOperations } = {}) {
+export function createOperationsHandler(runtime: OperationsRuntime, options: { membership?: MembershipOperations; privacy?: PrivacyOperations } = {}) {
   const service = new OperationsService(runtime, options.membership), origin = new URL(runtime.opsOrigin).origin;
   const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
   return async (request: Request): Promise<Response> => {
@@ -34,6 +35,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
         const text = await request.text();
         if (Buffer.byteLength(text) > 1024 * 1024) throw new AppError(413, "BODY_TOO_LARGE", "请求内容过长。");
         let raw: unknown; try { raw = JSON.parse(text); } catch { throw new AppError(400, "INVALID_JSON", "请求格式不正确。"); }
+        if (url.pathname === "/api/ops/privacy" && options.privacy) return json(await options.privacy.execute(user, raw));
         if (url.pathname === "/api/ops/action") return json({ receipt: await service.execute(user, actionSchema.parse(raw)) });
         if (url.pathname === "/api/ops/read") {
           const input = readSchema.parse(raw), value = await service.read(user, input);

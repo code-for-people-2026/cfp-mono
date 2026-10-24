@@ -1,3 +1,5 @@
+import { PrivacyOperations } from "../src/privacy/operations";
+import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,7 +27,8 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-integration-"));
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    runtime = await createRuntime({ directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    runtime = await createRuntime({ privacy: testPrivacyConfig, directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    await grantFixturePrivacy(runtime);
     const first = await bootstrapOpsAdmin(runtime.store.payload, { email: "admin@synthetic.invalid", password: "Synthetic-Password-Only-2026", babyIds: ["baby-a", "baby-b"] });
     admin = await readOpsUser(runtime.store.payload, { ...first, collection: "ops-users" });
     const create = async (email: string, role: string) => {
@@ -44,6 +47,25 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect(response.status).toBe(401);
     const cookie = await runtime.handler(new Request(`${runtime.opsOrigin}/api/ops/context`, { headers: { Cookie: `bubu_session=${login.token}` } }));
     expect(cookie.status).toBe(401);
+  });
+  it("scopes private complaints, rejects stale replies, and returns the reply only to its owner", async () => {
+    const principal = await runtime.identity.authenticate((await runtime.identity.loginLegacy("old-alice", "correct-password", "native")).token);
+    const other = await runtime.identity.authenticate((await runtime.identity.loginLegacy("old-bob", "correct-password", "native")).token);
+    const created = await runtime.privacy.request(principal, { kind: "complaint", message: "synthetic private complaint", babyId: "baby-a" });
+    await runtime.privacy.request(principal, { kind: "privacy", message: "synthetic private account request" });
+    const bridge = new PrivacyOperations(runtime.privacy, runtime.deletion), reason = "合成隐私请求核验";
+    await expect(bridge.execute(auditor, { action: "read", babyId: "baby-a", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(bridge.execute(operator, { action: "read", babyId: "baby-b", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(bridge.execute(operator, { action: "read", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    const queue = await bridge.execute(operator, { action: "read", babyId: "baby-a", reason });
+    expect(queue.requests).toHaveLength(1); expect(queue.requests[0]?.identityId).toBeUndefined();
+    const reply = { action: "reply", babyId: "baby-a", reason, id: created.id, expectedUpdatedAt: queue.requests[0]!.updatedAt, reply: "合成处理答复" };
+    await bridge.execute(operator, reply);
+    await expect(bridge.execute(operator, reply)).rejects.toMatchObject({ code: "PRIVACY_REQUEST_CHANGED" });
+    expect((await runtime.privacy.requests(principal)).find(row => row.id === created.id)?.reply).toBe(reply.reply);
+    expect(await runtime.privacy.requests(other)).toEqual([]);
+    expect((await bridge.execute(admin, { action: "read", reason })).requests).toHaveLength(1);
+    expect(JSON.stringify(await runtime.store.list("audit"))).not.toContain("synthetic private complaint");
   });
   it("explicit scopes and auditor permissions apply even to service callers", async () => {
     expect((await operations.context(operator)).babies.map(baby => baby?.id)).toEqual(["baby-a"]);
@@ -110,7 +132,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect((await runtime.store.list("audit")).some(row => row.value.action === "ops.read.event")).toBe(true);
   });
   it("attachment upload/read is private, association and retract execute MCP and refresh facts", async () => {
-    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
     const uploaded = await operations.upload(operator, "baby-a", "合成图片关联验收", "ops-upload-picture", bytes, "image/png");
     expect(uploaded).not.toHaveProperty("sha256");
     const result = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId, expectedVersion: version, attachmentIds: [uploaded.id] } }, "ops-associate-image")) as { events: { version: number }[] }; version = result.events[0]!.version;
@@ -138,7 +160,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     const cli = await runtime.identity.provisionOperator("synthetic-cli", "baby-a", 60_000);
     await expect(runtime.collector.resolveMedia(await runtime.identity.authenticate(cli.token), { ...args, babyId: "baby-a", requestId: "cli-cannot-confirm", resolution: "unknown" })).rejects.toMatchObject({ code: "MEDIA_HUMAN_CONFIRMATION_REQUIRED" });
     if (resolution === "provided") {
-      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
       args.attachmentId = (await operations.upload(operator, "baby-a", "合成待补照片核对", "pending-media-upload", bytes, "image/png")).id;
       await expect(operations.execute(operator, input({ type: "record", tool: "bubu_resolve_media", arguments: args }, "unlinked-media-denied"))).rejects.toMatchObject({ code: "MEDIA_ATTACHMENT_NOT_LINKED" });
       const attached = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId: event.id, expectedVersion: event.version, attachmentIds: [args.attachmentId] } }, "attach-pending-media")) as { events: { version: number }[] };

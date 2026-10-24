@@ -11,7 +11,7 @@ export const membershipCollections: CollectionConfig[] = ["service-memberships",
       if (req.context.bubuInternal !== true || (slug === "service-membership-changes" && operation === "update")) throw new APIError("请使用受控服务权益操作。", 403);
       return data;
     }],
-    beforeDelete: [() => { throw new APIError("服务权益及变更记录不可直接删除。", 403); }],
+    beforeDelete: [({ req }) => { if (req.context.bubuInternal !== true || req.context.bubuPrivacyDeletion !== true) throw new APIError("服务权益及变更记录不可直接删除。", 403); }],
   },
   fields: [{ name: "id", type: "text" }, { name: "key", type: "text", required: true, unique: true },
     { name: "babyId", type: "text", required: true, index: true }, { name: "value", type: "json", required: true }],

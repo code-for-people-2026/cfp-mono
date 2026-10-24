@@ -70,7 +70,7 @@ describe("one entitlement policy protects every service entry and preserves reco
   it("returns recoverable HTTP/MCP 423 while authorized history and existing photos stay readable", async () => {
     const s = await setup();
     const recorded = await s.f.records.record(s.f.alice, { babyId, requestId: "before-pause", events: [{ facts }] });
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#fff" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#fff" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await s.f.attachments.upload(s.f.alice, babyId, bytes, "image/png", "before-pause-photo");
     await s.configure({ action: "pause" });
     const response = await fetch(`${s.f.origin}/api/app/chat`, { method: "POST", headers: { Authorization: `Bearer ${s.f.aliceToken}`, "Content-Type": "application/json" }, body: JSON.stringify(message("during-pause")) });

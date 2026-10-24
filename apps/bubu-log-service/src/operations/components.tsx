@@ -1,4 +1,5 @@
 "use client";
+import { PrivacyOperationsPanel } from "../privacy/OperationsPanel";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import "./components.css";
@@ -108,6 +109,8 @@ export function OperationsTools() {
     {context && <><div className="bubu-ops__toolbar"><p>{context.user.email} <span className="bubu-ops__badge">{label(context.user.role)}</span></p>
       <Select title="当前宝宝" value={babyId} onChange={setBabyId} options={context.babies.map(baby => [baby.id, `${baby.name} · ${baby.id}`])} /></div>
       {!context.babies.length && <Empty>尚未分配宝宝范围。请由管理员在运营账号中明确授权。</Empty>}
+      {context.user.role === "administrator" && <PrivacyOperationsPanel key="account-privacy" />}
+      {babyId && context.user.role !== "auditor" && <PrivacyOperationsPanel key={`privacy-${babyId}`} babyId={babyId} />}
       {babyId && <Workspace key={babyId} babyId={babyId} writable={context.user.role !== "auditor"} denied={denied} accountAudit={context.user.role === "administrator" ? context.accountAudit : undefined} />}
       {!babyId && context.user.role === "administrator" && context.accountAudit && <AccountAudit rows={context.accountAudit} />}
       <p className="bubu-ops__footer">服务权益按宝宝共享。{context.membership.configured ? "免费服务配置请在“服务权益”中核对。" : "暂时无法读取服务权益配置。"}微信支付保持关闭。</p>

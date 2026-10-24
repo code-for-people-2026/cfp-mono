@@ -1,6 +1,7 @@
+import { mediaKey, encryptMedia, decryptMedia, encryptedMediaOverhead } from "../privacy/media-encryption";
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { mkdir, open, rename, unlink } from "node:fs/promises";
+import { mkdir, open, rename, unlink, readdir, lstat, rm } from "node:fs/promises";
 import path from "node:path";
 import type { PayloadRequest } from "payload";
 import sharp from "sharp";
@@ -22,11 +23,11 @@ export interface Attachment {
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
 }
-interface AttachmentOptions { directory: string; maxBytes?: number }
+interface AttachmentOptions { directory: string; maxBytes?: number; encryptionKey?: string }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");
-/** Decode only for validation; the uploaded bytes are stored without recompression or metadata changes. */
+/** Validate the complete container and decodability before normalization. */
 export async function inspectAttachment(bytes: Uint8Array, declaredMime: string): Promise<AttachmentMime> {
   try {
     const original = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -53,13 +54,23 @@ export async function inspectAttachment(bytes: Uint8Array, declaredMime: string)
   } catch { return formatError(); }
 }
 
+/** Re-encode decoded pixels, apply orientation, and strip EXIF/XMP/IPTC and embedded profiles. */
+export async function sanitizeAttachment(bytes: Uint8Array, declaredMime: string): Promise<{ bytes: Buffer; mime: AttachmentMime }> {
+  const mime = await inspectAttachment(bytes, declaredMime);
+  let image = sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS, failOn: "warning" }).rotate().resize({ width: 2048, height: 2048, fit: "inside", withoutEnlargement: true });
+  image = mime === "image/jpeg" ? image.jpeg({ quality: 90 }) : mime === "image/webp" ? image.webp({ quality: 90 }) : image.png({ compressionLevel: 9 });
+  return { bytes: await image.toBuffer(), mime };
+}
+
 export class AttachmentService {
   private readonly repository: RecordsRepository;
   private readonly objectDirectory: string;
   readonly maxBytes: number;
+  private readonly encryptionKey: Buffer;
   constructor(readonly identity: IdentityService, options: AttachmentOptions) {
     this.repository = new RecordsRepository(identity.store.payload);
     this.objectDirectory = path.join(path.resolve(options.directory), "private-attachments");
+    this.encryptionKey = mediaKey(options.directory, options.encryptionKey);
     this.maxBytes = options.maxBytes ?? MAX_ATTACHMENT_BYTES;
     if (!Number.isInteger(this.maxBytes) || this.maxBytes < 1 || this.maxBytes > MAX_ATTACHMENT_BYTES) throw new Error("Attachment size limit must be within 1–10485760 bytes");
   }
@@ -77,8 +88,8 @@ export class AttachmentService {
     try {
       file = await open(this.objectPath(value), constants.O_RDONLY | constants.O_NOFOLLOW);
       const stat = await file.stat();
-      if (!stat.isFile() || stat.size !== value.byteLength || stat.size > this.maxBytes) throw new Error("Invalid private object");
-      const bytes = await file.readFile();
+      if (!stat.isFile() || stat.size !== value.byteLength + encryptedMediaOverhead || stat.size > this.maxBytes + encryptedMediaOverhead) throw new Error("Invalid private object");
+      const bytes = decryptMedia(await file.readFile(), this.encryptionKey, `${hash(value.babyId)}:${value.sha256}`);
       if (checksum(bytes) !== value.sha256) throw new Error("Private object checksum mismatch");
       return bytes;
     } catch { return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。"); }
@@ -92,13 +103,70 @@ export class AttachmentService {
     let file;
     try {
       file = await open(temporary, "wx", 0o600);
-      await file.writeFile(bytes); await file.sync(); await file.close(); file = undefined;
+      await file.writeFile(encryptMedia(bytes, this.encryptionKey, `${hash(value.babyId)}:${value.sha256}`)); await file.sync(); await file.close(); file = undefined;
       await rename(temporary, target);
       for (const durableDirectory of [directory, this.objectDirectory, path.dirname(this.objectDirectory)]) {
         const parent = await open(durableDirectory, constants.O_RDONLY);
         try { await parent.sync(); } finally { await parent.close(); }
       }
     } finally { await file?.close(); await unlink(temporary).catch(() => undefined); }
+  }
+  /** Internal lifecycle operation, run only while the identity serialization queue is held. */
+  async purgeFamilyObjects(babyId: string) {
+    await rm(path.join(this.objectDirectory, hash(babyId)), { recursive: true, force: true });
+  }
+  async purgeOrphanObjects(req: PayloadRequest, olderThan = Number.POSITIVE_INFINITY) {
+    const rows = await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
+    const referenced = new Set(rows.docs.map(row => this.objectPath(row.value as StoredAttachment)));
+    let directories: string[];
+    try { directories = await readdir(this.objectDirectory); } catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return; throw error; }
+    for (const directory of directories) {
+      if (!/^[a-f0-9]{64}$/.test(directory)) throw new Error("Unexpected private media directory");
+      const folder = path.join(this.objectDirectory, directory);
+      if (!(await lstat(folder)).isDirectory()) throw new Error("Invalid private media directory");
+      for (const name of await readdir(folder)) {
+        if (!/^(?:[a-f0-9]{64}|\.upload-[a-f0-9-]{36})$/.test(name)) throw new Error("Unexpected private media object");
+        const file = path.join(folder, name), stat = await lstat(file);
+        if (stat.isSymbolicLink() || !stat.isFile()) throw new Error("Invalid private media object");
+        if (!referenced.has(file) && stat.mtimeMs < olderThan) await unlink(file);
+      }
+    }
+  }
+  /** Offline upgrade only. Hold the runtime lock; callers must take an encrypted backup first. */
+  async migrateObjects(apply = false) {
+    const result = await this.identity.exclusive(() => this.identity.store.transaction(async req => {
+      const rows = await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
+      let plaintext = 0, encrypted = 0;
+      for (const row of rows.docs) {
+        const value = row.value as StoredAttachment;
+        const file = await open(this.objectPath(value), constants.O_RDONLY | constants.O_NOFOLLOW);
+        let original: Buffer;
+        try {
+          const stat = await file.stat();
+          if (!stat.isFile() || stat.size > MAX_ATTACHMENT_BYTES + encryptedMediaOverhead) throw new Error("Invalid media object");
+          original = await file.readFile();
+        } finally { await file.close(); }
+        try {
+          const decoded = decryptMedia(original, this.encryptionKey, `${hash(value.babyId)}:${value.sha256}`);
+          if (checksum(decoded) !== value.sha256) throw new Error("Media digest mismatch");
+          encrypted++; continue;
+        } catch {
+          // No arbitrary plaintext fallback in serving: an offline upgrade verifies the original digest.
+          if (original.length !== value.byteLength || checksum(original) !== value.sha256) throw new Error("Media object could not be verified; migration stopped");
+        }
+        plaintext++;
+        if (!apply) continue;
+        const normalized = await sanitizeAttachment(original, value.mime);
+        const updated = { ...value, byteLength: normalized.bytes.length, sha256: checksum(normalized.bytes), mime: normalized.mime };
+        await this.writeObject(updated, normalized.bytes);
+        await this.repository.put("care-attachments", value.babyId, value.id, updated, req);
+      }
+      return { plaintext, encrypted, applied: apply };
+    }));
+    // The index must commit before deleting the old plaintext path. On interruption,
+    // rerunning the offline command also finds/removes unreferenced leftovers.
+    if (apply) await this.identity.exclusive(() => this.identity.store.transaction(req => this.purgeOrphanObjects(req)));
+    return result;
   }
   private normalizeSource(scope: ActorScope, source?: SourceRef): SourceRef | undefined {
     const parsed = source === undefined ? undefined : sourceSchema.safeParse(source);
@@ -123,12 +191,15 @@ export class AttachmentService {
       await this.identity.assertRecordingService(principal, babyId, req);
       if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
       if (!bytes.byteLength || bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片为空或超过大小限制。");
-      const mime = await inspectAttachment(bytes, declaredMime), sha256 = checksum(bytes), normalizedSource = this.normalizeSource(scope, source);
+      const originalSha = checksum(bytes), normalized = await sanitizeAttachment(bytes, declaredMime);
+      bytes = normalized.bytes;
+      if (bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片处理后仍超过大小限制。");
+      const mime = normalized.mime, sha256 = checksum(bytes), normalizedSource = this.normalizeSource(scope, source);
       const attachmentId = `att_${hash([babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf, scope.groupId, requestId])}`;
-      const requestFingerprint = hash([sha256, mime, normalizedSource]);
+      const requestFingerprint = hash([originalSha, mime, normalizedSource]);
       const existing = await this.repository.get<StoredAttachment>("care-attachments", babyId, attachmentId, req);
       if (existing && existing.requestFingerprint !== requestFingerprint) return fail(409, "ATTACHMENT_IDEMPOTENCY_CONFLICT", "此上传请求号已用于不同照片或来源。");
-      const value: StoredAttachment = existing ?? {
+      const value: StoredAttachment = existing ? { ...existing, sha256, mime, byteLength: bytes.byteLength } : {
         id: attachmentId, babyId, mime, byteLength: bytes.byteLength, sha256, requestFingerprint,
         createdAt: new Date(this.identity.now()).toISOString(), actor: scope.actor,
         uploadedBy: { kind: scope.actor.kind, id: scope.actor.id, ...(scope.actor.onBehalfOf ? { onBehalfOf: scope.actor.onBehalfOf } : {}) },
@@ -139,7 +210,7 @@ export class AttachmentService {
       await this.identity.assertRecordingService(principal, babyId, req);
       await this.writeObject(value, bytes);
       await this.identity.assertRecordingService(principal, babyId, req);
-      if (!existing) await this.repository.put("care-attachments", babyId, attachmentId, value, req);
+      await this.repository.put("care-attachments", babyId, attachmentId, value, req);
       return this.view(value);
     }, principal.kind === "collector" ? principal.groupId : undefined);
   }

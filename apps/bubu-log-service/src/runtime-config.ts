@@ -1,3 +1,4 @@
+import { privacyCollections } from "./privacy/persistence";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { zh } from "payload/i18n/zh";
@@ -20,7 +21,7 @@ export function buildRuntimeConfig(options: { directory: string; secret?: string
   const origin = new URL(options.origin).origin;
   return buildStoreConfig({
     directory: options.directory, secret: options.secret, schemaOnly: options.schemaOnly,
-    extensions: [...recordCollections, ...chatCollections, ...membershipCollections, ...operatorCollections],
+    extensions: [...recordCollections, ...chatCollections, ...membershipCollections, ...privacyCollections, ...operatorCollections],
     configure: config => ({
       ...config,
       collections: decorateCollections(config.collections || []),
