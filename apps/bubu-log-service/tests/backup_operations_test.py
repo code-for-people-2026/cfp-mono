@@ -83,6 +83,21 @@ class BackupOperationsTest(unittest.TestCase):
             self.assertEqual(list(backups.iterdir()), [])
             self.assertNotEqual(json.loads((root / 'status.json').read_text())['backup']['state'], 'verified')
 
+    def test_hourly_retention_reserves_interval_and_rejects_linked_archive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory); clock = time.time(); files = []
+            for index, age in enumerate([7 * 86400 - 1800, 7 * 86400 - 10800]):
+                file = root / ('bubu-20261024T000000Z-' + str(index) * 32 + '.enc')
+                file.write_bytes(b'synthetic'); file.chmod(0o600)
+                os.utime(str(file), (clock - age, clock - age)); files.append(file)
+            with patch.object(ops.time, 'time', return_value=clock):
+                ops.prune({'backupDirectory': directory, 'retentionDays': 7})
+            self.assertFalse(files[0].exists()); self.assertTrue(files[1].exists())
+            linked = root / ('bubu-20261024T000000Z-' + 'a' * 32 + '.enc')
+            linked.symlink_to(files[1])
+            with self.assertRaises(ValueError): ops.prune({'backupDirectory': directory, 'retentionDays': 7})
+            self.assertTrue(files[1].exists())
+
     def test_preflight_rejects_stopped_namespace_owner_and_public_database(self):
         config = {'appContainer': 'app', 'coreContainer': 'core', 'postgresContainer': 'pg', 'sourceDirectory': '/private/data', 'ledgerFile': '/private/ledger', 'retentionDays': 1}
         app_env = {'BUBU_IDENTITY_DIRECTORY': '/data', 'BUBU_DELETION_LEDGER': '/ledger', 'BUBU_PRIVACY_BACKUP_DAYS': '1', 'BUBU_MEDIA_ENCRYPTION_KEY': 'a' * 64, 'BUBU_PAYLOAD_SECRET': 'synthetic', 'BUBU_LEGACY_ORIGIN': 'http://localhost:3321', 'BUBU_CORE_SERVICE_TOKEN': 'b' * 64}
