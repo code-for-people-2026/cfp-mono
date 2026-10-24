@@ -119,14 +119,16 @@ describe("generateMenu pure preview", () => {
     }
   });
 
-  it("handles all allowed structures, including zero categories and maximum counts", () => {
-    for (let meat = 0; meat <= 10; meat++) for (let vegetable = 0; vegetable <= 10; vegetable++) {
-      for (let soup = 0; soup <= 10; soup++) {
-        if (meat + vegetable + soup < 1 || meat + vegetable + soup > 20) continue;
-        const preview = generateMenu("2026-09-21", settings({ meat, vegetable, soup }), pool(10), () => 0.99);
-        expect(MenuPreviewSchema.safeParse(preview).success).toBe(true);
-      }
-    }
+  const counts = Array.from({ length: 11 }, (_, count) => count);
+  const allowedStructures = counts.flatMap((meat) => counts.flatMap((vegetable) =>
+    counts.map((soup) => ({ meat, vegetable, soup }))
+  )).filter(({ meat, vegetable, soup }) => meat + vegetable + soup >= 1 && meat + vegetable + soup <= 20);
+
+  // Each structure is an independent case: all 1,110 combinations keep the
+  // default timeout instead of sharing one deadline under CI coverage load.
+  it.each(allowedStructures)("handles structure meat=$meat vegetable=$vegetable soup=$soup", (structure) => {
+    const preview = generateMenu("2026-09-21", settings(structure), pool(10), () => 0.99);
+    expect(MenuPreviewSchema.safeParse(preview).success).toBe(true);
   });
 
   it("reports every shortage before consuming randomness and ignores inactive dishes", () => {
