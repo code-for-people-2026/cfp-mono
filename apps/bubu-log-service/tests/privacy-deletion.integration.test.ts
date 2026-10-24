@@ -9,6 +9,7 @@ import { IdentityService } from "../src/identity";
 import { recordCollections, hash } from "../src/records/persistence";
 import { chatCollections } from "../src/chat/persistence";
 import { privacyCollections } from "../src/privacy/persistence";
+import { PrivacyMaintenance } from "../src/privacy/maintenance";
 import { PrivacyService } from "../src/privacy/service";
 import { DeletionService } from "../src/privacy/deletion";
 import { DeletionLedger } from "../src/privacy/deletion-ledger";
@@ -26,7 +27,7 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     identity = new IdentityService(store, legacy, new WechatFixture()); ledger = new DeletionLedger(path.join(directory, "ledger", "deletions.ndjson"));
     privacy = new PrivacyService(identity, testPrivacyConfig, ledger); identity.setProcessingGuard((scope, permission) => privacy.guard(scope, permission));
     identity.setAccountChangeGuard(id => privacy.requireIdentityChange(id));
-    attachments = new AttachmentService(identity, { directory: path.join(directory, "data") });
+    attachments = new AttachmentService(identity, { directory: path.join(directory, "data"), beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId) });
     deletion = new DeletionService(privacy, attachments, ledger, { exportFamilyData: async babyId => ({ babyId }), deleteFamilyData: async () => { remoteCalls++; if (failRemote) throw new Error("Synthetic upstream unavailable"); } });
   }, 30000);
   afterAll(async () => { await store?.close(); await rm(directory, { recursive: true, force: true }); });
@@ -56,11 +57,14 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     const receipt = await deletion.confirm(a.principal, intent.token, intent.confirmation);
     expect(await deletion.confirm(a.principal, intent.token, intent.confirmation)).toEqual(receipt);
     await expect(attachments.read(a.principal, a.babyId, a.attachment.id)).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    expect(await deletion.hasCompletedFamilyDeletion(a.babyId)).toBe(false);
     failRemote = true; await deletion.processPending();
     expect((await deletion.jobs(a.principal))[0]?.status).toBe("retry");
     expect(await store.payload.count({ collection: "care-attachments", where: { babyId: { equals: a.babyId } } })).toMatchObject({ totalDocs: 1 });
     failRemote = false; await deletion.processPending();
     expect((await deletion.jobs(a.principal))[0]?.status).toBe("completed");
+    expect(await deletion.hasCompletedFamilyDeletion(a.babyId)).toBe(true);
+    expect(await deletion.hasCompletedFamilyDeletion(b.babyId)).toBe(false);
     expect(await store.payload.count({ collection: "care-attachments", where: { babyId: { equals: a.babyId } } })).toMatchObject({ totalDocs: 0 });
     expect((await attachments.read(b.principal, b.babyId, b.attachment.id)).bytes.length).toBeGreaterThan(0);
     expect(ledger.frozen("family", a.babyId)).toBe(true);
@@ -137,6 +141,24 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     await expect(readFile(original)).rejects.toMatchObject({ code: "ENOENT" });
     const result = await attachments.read(f.principal, f.babyId, f.attachment.id);
     expect((await sharp(result.bytes).metadata()).exif).toBeUndefined();
+  });
+  it("keeps migrated original record photos through orphan cleanup and deletes them with their family", async () => {
+    const f = await family(), other = await family(), reference = { kind: "activity" as const, documentId: "original-photo-record" };
+    const bytes = await sharp({ create: { width: 4, height: 3, channels: 3, background: "orange" } }).jpeg().withExif({ IFD0: { Artist: "private legacy metadata" } }).toBuffer();
+    const imported = await attachments.importLegacy(f.babyId, reference, bytes, "image/jpeg");
+    expect(await attachments.importLegacy(f.babyId, reference, bytes, "image/jpeg")).toEqual(imported);
+    const result = await attachments.read(f.principal, f.babyId, imported.id);
+    expect((await sharp(result.bytes).metadata()).exif).toBeUndefined();
+    await expect(attachments.read(other.principal, other.babyId, imported.id)).rejects.toMatchObject({ status: 404 });
+    await expect(attachments.verifyLegacy(other.babyId, reference, imported.id)).rejects.toThrow("ownership");
+    const row = await store.payload.findByID({ collection: "care-attachments", id: imported.id, overrideAccess: true });
+    await identity.exclusive(() => store.payload.update({ collection: "care-attachments", id: row.id, data: { value: { ...row.value as object, createdAt: "2000-01-01T00:00:00Z" } }, overrideAccess: true, req: store.currentRequest() }));
+    await new PrivacyMaintenance(privacy, attachments, deletion).run(true);
+    await attachments.verifyLegacy(f.babyId, reference, imported.id);
+    const intent = await deletion.prepare(f.principal, "family", f.babyId); await deletion.confirm(f.principal, intent.token, intent.confirmation); await deletion.processPending();
+    await expect(attachments.verifyLegacy(f.babyId, reference, imported.id)).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    await expect(attachments.importLegacy(f.babyId, reference, bytes, "image/jpeg")).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    await expect(readFile(path.join(directory, "data", "private-attachments", hash(f.babyId), imported.sha256))).rejects.toMatchObject({ code: "ENOENT" });
   });
   it("detects interrupted and modified ledger entries before trusting the deletion state", async () => {
     const file = path.join(directory, "corrupt.ndjson"), local = new DeletionLedger(file);

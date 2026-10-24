@@ -1,5 +1,5 @@
 import { AppError } from "./contracts";
-export interface MediaOptions { allowedOrigins: string[]; fetch?: typeof fetch; maxBytes?: number }
+export interface MediaOptions { allowedOrigins: string[]; fetch?: typeof fetch; maxBytes?: number; readPrivate?: (attachmentId: string) => Promise<Response> }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
 const fieldStates = new Set(["known", "pending", "unknown", "not_applicable", "not_yet"]);
 /** Keep the persisted legacy URL unchanged, but never return it through the authenticated API. */
@@ -24,6 +24,11 @@ export function protectRecordPhotos(value: unknown, babyId: string, inheritedId?
 export async function readLegacyPhoto(activity: unknown, babyId: string, options: MediaOptions): Promise<Response> {
   if (!object(activity) || activity.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
   if (typeof activity.poopPhotoUrl !== "string" || !activity.poopPhotoUrl) throw new AppError(404, "MEDIA_NOT_FOUND", "此记录没有照片。");
+  const privateId = /^bubu-attachment:(att_[a-f0-9]{64})$/.exec(activity.poopPhotoUrl)?.[1];
+  if (privateId) {
+    if (!options.readPrivate) throw new AppError(503, "MEDIA_UNAVAILABLE", "私有照片读取尚未配置。");
+    return options.readPrivate(privateId);
+  }
   let url: URL;
   try { url = new URL(activity.poopPhotoUrl); } catch { throw new AppError(502, "MEDIA_UNAVAILABLE", "照片地址不可用。"); }
   if (url.protocol !== "https:" || url.username || url.password || !options.allowedOrigins.includes(url.origin)) throw new AppError(503, "MEDIA_ORIGIN_NOT_CONFIGURED", "此旧照片来源尚未配置，请联系运营。");

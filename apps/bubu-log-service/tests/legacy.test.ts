@@ -274,3 +274,30 @@ describe("new family provisioning", () => {
     await expect(backend.createFamily("server-identity", { name: "宝宝" })).rejects.toMatchObject({ code: "LEGACY_SCOPE_INVALID" });
   });
 });
+
+
+describe("private core family lifecycle", () => {
+  const coreToken = "a".repeat(64);
+  it("never sends a core credential to the public legacy site", () => {
+    expect(() => new HttpLegacyBackend({ ...options, coreToken })).toThrow("私有数据层");
+  });
+  it("does not falsely complete lifecycle operations before private storage is configured", async () => {
+    const fetcher = vi.fn(); const backend = new HttpLegacyBackend({ ...options, fetch: fetcher });
+    await expect(backend.deleteFamilyData("baby-a")).rejects.toMatchObject({ status: 503 });
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it("requires the exact family receipt and independently authenticated private request", async () => {
+    let mismatch = false;
+    const backend = new HttpLegacyBackend({ ...options, origin: "http://127.0.0.1:3321", coreToken, fetch: async (input, init) => {
+      const url = new URL(String(input)); expect(new Headers(init?.headers).get("x-bubu-core-token")).toBe(coreToken);
+      if (url.pathname === "/api/cms-admins/login") return tokenResponse();
+      expect(new Headers(init?.headers).get("authorization")).toBe("JWT cms-test-secret");
+      expect(url.searchParams.get("babyId")).toBe("baby-a");
+      return Response.json({ babyId: mismatch ? "baby-b" : "baby-a", deleted: true, data: { babyId: "baby-a", format: "bubu-original-payload-v1", tables: {} } });
+    } });
+    await expect(backend.exportFamilyData("baby-a")).resolves.toMatchObject({ babyId: "baby-a" });
+    await expect(backend.deleteFamilyData("baby-a")).resolves.toBeUndefined();
+    mismatch = true;
+    await expect(backend.deleteFamilyData("baby-a")).rejects.toMatchObject({ code: "LEGACY_SCOPE_INVALID" });
+  });
+});

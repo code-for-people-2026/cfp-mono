@@ -53,3 +53,11 @@ docker compose -f compose.yml up -d app
 每次升级前，只停止本项目应用，再完整归档 `data/`（SQLite、附件及元数据）和私密配置，验证归档可读；保留上一镜像和 Nginx 配置。新库首次初始化后也保留备份。需要回滚时一起恢复匹配的数据、配置与镜像，不能只回退镜像掩盖迁移问题。不停止其他 Compose 项目，不执行全局镜像清理。
 
 证书沿用本机 DNS-01 签发和加密传输方式；续期后需要重新部署证书并验证 Nginx reload。本方案没有声称已部署证书自动续期或自动备份。
+
+## 上线准备中的私有原数据层
+
+当前 0.1.0 仍按上面的体验环境运行。后续境内私有数据层见 [ADR 0007](../docs/adr/0007-private-original-payload.md) 和 [core 说明](../../bubu-log-core/README.md)，不能直接把当前地址换到未经核验的副本。
+
+`backup-codec.mjs` 只负责独立密钥的 AES-256-GCM 备份封装，不表示已部署自动备份。恢复先完整验签，再生成权限 0600 的明文临时文件；恢复后必须在隔离环境比较原表并重放最新删除清单。密钥与独立删除清单不得仅存在于同一份数据库备份里。
+
+历史图片迁移需停止全部旧写入和 sidecar，保留只读核心查询与显式迁移写入口；`migrate-legacy-media.ts` 默认 dry-run，应用前要求 `BUBU_LEGACY_MEDIA_WRITE_FENCE=confirmed`、准确的 `BUBU_LEGACY_MEDIA_ORIGINS` 及应用目录外的私密 `BUBU_LEGACY_MEDIA_MANIFEST`。每次重跑验证并重放清单，任何错误保持停写。确认图片、编辑、恢复、撤销和导出均使用私有引用后，才能按清单撤销旧对象。脚本不会自行删除公共对象。

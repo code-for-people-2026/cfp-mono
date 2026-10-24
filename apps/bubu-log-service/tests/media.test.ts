@@ -129,3 +129,12 @@ describe("media HTTP authorization and errors", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 });
+
+it("uses an already-authorized private attachment reader without ever fetching its URI", async () => {
+  const fetcher = vi.fn(), id = "att_" + "a".repeat(64), readPrivate = vi.fn(async () => new Response(bytes));
+  const item = { ...activity, poopPhotoUrl: `bubu-attachment:${id}` };
+  expect(new Uint8Array(await (await readLegacyPhoto(item, "baby-a", { allowedOrigins: [], fetch: fetcher, readPrivate })).arrayBuffer())).toEqual(bytes);
+  expect(readPrivate).toHaveBeenCalledWith(id); expect(fetcher).not.toHaveBeenCalled();
+  await expect(readLegacyPhoto(item, "baby-a", { allowedOrigins: [], fetch: fetcher })).rejects.toMatchObject({ code: "MEDIA_UNAVAILABLE" });
+  await expect(readLegacyPhoto(item, "baby-b", { allowedOrigins: [], readPrivate })).rejects.toMatchObject({ status: 403 });
+});

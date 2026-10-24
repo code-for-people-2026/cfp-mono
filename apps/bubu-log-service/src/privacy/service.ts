@@ -33,6 +33,10 @@ export class PrivacyService {
     return result;
   }
   private current(value: { policyVersion: string; revokedAt?: string } | undefined) { return !!value && !value.revokedAt && value.policyVersion === this.policy().version; }
+  /** Storage migration is not model processing, but may never restore a frozen family's data. */
+  async requireLegacyStorage(babyId: string) {
+    if (this.ledger?.frozen("family", babyId) || await this.repository.get("privacy-state", `frozen-baby:${babyId}`)) fail("PRIVACY_PROCESSING_FROZEN", "宝宝数据已申请删除，不能重新导入或读取历史照片。");
+  }
   private guardianCurrent(value: GuardianConsent | undefined) { return this.current(value) && !this.ledger?.frozen("account", value!.identityId); }
   private now() { return new Date(this.identity.now()).toISOString(); }
   private ready(version?: string) {
