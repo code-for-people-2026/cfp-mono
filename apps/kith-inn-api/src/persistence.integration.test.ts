@@ -41,9 +41,12 @@ describe("kith-inn PostgreSQL 17 persistence", () => {
   afterAll(async () => { await pool.end(); });
 
   it("caps connections at five and releases queued requests after a slot is freed", async () => {
-    const bounded = createKithInnPool({ KITH_INN_DATABASE_URL: databaseUrl }, { connectionTimeoutMillis: 100 });
+    const bounded = createKithInnPool({ KITH_INN_DATABASE_URL: databaseUrl });
     const clients = await Promise.all(Array.from({ length: 5 }, () => bounded.connect()));
     try {
+      // Only the exhausted-pool wait uses the short deadline; establishing the
+      // five real PostgreSQL connections retains the normal connection budget.
+      bounded.options.connectionTimeoutMillis = 100;
       await expect(bounded.connect()).rejects.toThrow();
       expect(bounded.totalCount).toBe(5);
       clients.pop()!.release();
