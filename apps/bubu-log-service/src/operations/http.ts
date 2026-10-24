@@ -20,6 +20,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
       const user = await readOpsUser(runtime.store.payload, auth.user);
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/api/ops/context") return json(await service.context(user));
+      if (request.method === "GET" && url.pathname === "/api/ops/health") return json(await service.health(user));
       if (request.method === "GET" && url.pathname === "/api/ops/overview") return json(await service.overview(user, url.searchParams.get("babyId") || ""));
       if (request.method === "POST" && url.pathname === "/api/ops/attachment") {
         const reason = opsReason.parse(decodeURIComponent(request.headers.get("x-bubu-reason") || ""));

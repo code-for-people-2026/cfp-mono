@@ -1,0 +1,14 @@
+{
+  "appContainer": "cfp-bubu-service",
+  "coreContainer": "cfp-bubu-core",
+  "postgresContainer": "cfp-bubu-postgres",
+  "nodeImage": "REPLACE_WITH_VERIFIED_LOCAL_SHA256_IMAGE_ID",
+  "sourceDirectory": "/opt/cfp-bubu-log/data",
+  "backupDirectory": "/opt/cfp-bubu-log/backups",
+  "reportDirectory": "/opt/cfp-bubu-log/operations-status",
+  "keyFile": "/opt/cfp-bubu-log/private/backup.key",
+  "ledgerFile": "/opt/cfp-bubu-log/deletion-ledger/deletions.ndjson",
+  "scriptsDirectory": "/opt/cfp-bubu-log/operations/scripts",
+  "publicOrigin": "https://bubu-preview.codeforpeople.cn",
+  "retentionDays": null
+}

@@ -73,6 +73,17 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     await expect(operations.execute(auditor, input({ type: "invite", access: "read" }, "auditor-denied"))).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
     await expect(operations.read(auditor, { babyId: "baby-a", reason: "不能读取敏感原文", kind: "event", id: "any" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
   });
+  it("global health requires a fresh administrator and contains no family or account identifiers", async () => {
+    await expect(operations.health(operator)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(operations.health(auditor)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    const report = await operations.health(admin);
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("unconfigured");
+    expect(report.checks.find(check => check.id === "maintenance")?.level).toBe("warning");
+    expect(JSON.stringify(report)).not.toMatch(/baby-a|baby-b|synthetic.invalid|old-alice/);
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: false }, overrideAccess: false, user: admin });
+    await expect(operations.health({ ...operator, role: "administrator" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: true }, overrideAccess: false, user: admin });
+  });
   it("inherited BabyUser grants are visible without inventing persisted grants", async () => {
     const before = (await runtime.store.list("grants")).length;
     const overview = await operations.overview(operator, "baby-a");
