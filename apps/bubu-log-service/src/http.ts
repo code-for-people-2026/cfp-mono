@@ -1,3 +1,6 @@
+import type { SafetyService } from "./safety/service";
+import type { DeletionService } from "./privacy/deletion";
+import type { PrivacyService } from "./privacy/service";
 import { z } from "zod";
 import { AppError, permissions, type Permission } from "./contracts";
 import { readLegacyPhoto, protectLegacyPhotos, protectRecordPhotos, type MediaOptions } from "./media";
@@ -16,7 +19,7 @@ const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
 const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
 const babyScope = z.object({ babyId: id }).strict();
-export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;membership?:MembershipService}) {
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;membership?:MembershipService;privacy?:PrivacyService;deletion?:DeletionService;safety?:SafetyService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
   const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
@@ -64,14 +67,46 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       if (req.method === "POST" && path === "/api/identity/wechat") {
         if (browser) throw new AppError(400, "NATIVE_REQUIRED", "请在微信小程序内登录。");
-        const input = z.object({ code: z.string().min(1).max(512) }).strict().parse(await body());
+        const input = z.object({ code: z.string().min(1).max(512), noticeVersion: z.string().max(100).optional() }).strict().parse(await body());
+        features?.privacy?.checkLoginNotice(input.noticeVersion);
         return resultWithSession(await service.loginWechat(input.code), false);
       }
       if (req.method === "POST" && path === "/api/identity/legacy-login") {
         const input = credentials.parse(await body());
         return resultWithSession(await service.loginLegacy(input.username, input.password, browser ? "browser" : "native"), browser);
       }
+      if (req.method === "GET" && path === "/api/app/privacy/policy" && features?.privacy) return json(features.privacy.policy());
       const principal: Principal = await sessions(req);
+      if (features?.safety && req.method === "GET" && path === "/api/app/safety") return json({ data: await features.safety.notices(principal, id.parse(url.searchParams.get("babyId"))) });
+      if (features?.privacy && path.startsWith("/api/app/privacy/")) {
+        const privacy = features.privacy;
+        if (features.deletion) {
+          if (req.method === "GET" && path === "/api/app/privacy/export") return json(await features.deletion.export(principal, url.searchParams.get("babyId") || undefined));
+          if (req.method === "GET" && path === "/api/app/privacy/deletions") return json({ data: await features.deletion.jobs(principal) });
+          if (req.method === "POST" && path === "/api/app/privacy/delete-intent") {
+            const input = z.object({ kind: z.enum(["account", "family"]), babyId: id.optional() }).strict().parse(await body());
+            return json(await features.deletion.prepare(principal, input.kind, input.babyId));
+          }
+          if (req.method === "POST" && path === "/api/app/privacy/delete-confirm") {
+            const input = z.object({ token: z.string().min(20).max(100), confirmation: z.string().max(50) }).strict().parse(await body());
+            const job = await features.deletion.confirm(principal, input.token, input.confirmation);
+            void features.deletion.processPending().catch(() => undefined);
+            return json(job, 202);
+          }
+        }
+        if (req.method === "GET" && path === "/api/app/privacy/status") return json(await privacy.status(principal, url.searchParams.get("babyId") || undefined));
+        if (req.method === "GET" && path === "/api/app/privacy/requests") return json({ data: await privacy.requests(principal) });
+        if (req.method === "POST" && path === "/api/app/privacy/consent") return json(await privacy.consent(principal, await body()));
+        if (req.method === "POST" && path === "/api/app/privacy/guardian") {
+          const input = z.object({ babyId: id, consent: z.unknown() }).strict().parse(await body());
+          return json(await privacy.guardian(principal, input.babyId, input.consent));
+        }
+        if (req.method === "POST" && path === "/api/app/privacy/withdraw") {
+          const input = z.object({ babyId: id.optional() }).strict().parse(await body());
+          return json(await privacy.withdraw(principal, input.babyId));
+        }
+        if (req.method === "POST" && path === "/api/app/privacy/requests") return json(await privacy.request(principal, await body()), 201);
+      }
       if (path === "/api/payments" || path.startsWith("/api/payments/")) rejectPayment();
       if(features) {const attachmentResponse=await createAttachmentHandler(features.attachments)(req,principal);if(attachmentResponse)return attachmentResponse;}
       if (features?.chat && path === "/api/app/chat" && req.method === "POST") {
@@ -80,12 +115,14 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         return json({ turn: await features.chat.submit(principal, input) });
       }
       if (req.method === "POST" && path === "/api/identity/bind-legacy") {
+        await features?.privacy?.requirePerson(principal.subjectId);
         const input = credentials.parse(await body());
         return resultWithSession(await service.bindLegacy(principal, input.username, input.password), browser);
       }
       if (req.method === "POST" && path === "/api/identity/family") {
-        const input = z.object({ name: z.string().trim().min(1).max(30) }).strict().parse(await body());
-        return json(await service.createFamily(principal, input.name));
+        await features?.privacy?.requirePerson(principal.subjectId);
+        const input = z.object({ name: z.string().trim().min(1).max(30), guardian: z.unknown().optional() }).strict().parse(await body());
+        return json(features?.privacy ? await features.privacy.createFamily(principal, input.name, input.guardian) : await service.createFamily(principal, input.name));
       }
       if (req.method === "POST" && path === "/api/identity/logout") {
         await service.logout(principal);
@@ -96,6 +133,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         return json(await service.invite(principal, input.babyId, input.access));
       }
       if (req.method === "POST" && path === "/api/identity/invitations/accept") {
+        await features?.privacy?.requirePerson(principal.subjectId);
         const input = z.object({ code: z.string().min(1).max(128) }).strict().parse(await body());
         return json(await service.acceptInvite(principal, input.code));
       }

@@ -32,13 +32,13 @@ describe("private attachments use the shared durable identity boundary", () => {
     await identity.bindGroup(operator, "baby-a", "account:group-b", "fixture-collector-b", true);
     collectorA = await identity.authenticate((await identity.issueAgent(operator, "baby-a", "collector", { groupId: "account:group-a", agentId: "fixture-collector-a" })).token, "bearer");
     collectorB = await identity.authenticate((await identity.issueAgent(operator, "baby-a", "collector", { groupId: "account:group-b", agentId: "fixture-collector-b" })).token, "bearer");
-    photo = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#77aabb" } }).png().toBuffer();
-    otherPhoto = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8899" } }).png().toBuffer();
+    photo = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#77aabb" } }).png({ compressionLevel: 9 }).toBuffer();
+    otherPhoto = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8899" } }).png({ compressionLevel: 9 }).toBuffer();
   }, 30_000);
   afterEach(() => vi.restoreAllMocks());
   afterAll(async () => { await store?.close(); if (directory) await rm(directory, { force: true, recursive: true }); });
 
-  it("stores original bytes privately and keeps retries stable across process restart", async () => {
+  it("stores normalized pixels privately and keeps retries stable across process restart", async () => {
     const first = await attachments.upload(alice, "baby-a", photo, "image/png", "restart-upload");
     const second = await attachments.upload(alice, "baby-a", photo, "image/png", "restart-upload");
     expect(second).toEqual(first);
@@ -129,7 +129,7 @@ describe("private attachments use the shared durable identity boundary", () => {
 
   it("handles raw binary HTTP bodies separately from JSON and returns only private media headers", async () => {
     const handler = createAttachmentHandler(attachments);
-    const largePhoto = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png().toBuffer();
+    const largePhoto = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer();
     expect(largePhoto.length).toBeGreaterThan(16_384);
     const response = await handler(new Request("https://bubu.example/api/app/attachments?babyId=baby-a", {
       method: "POST", body: new Uint8Array(largePhoto), headers: { "Content-Type": "image/png", "X-Bubu-Request-Id": "binary-upload" },

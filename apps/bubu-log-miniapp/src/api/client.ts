@@ -1,3 +1,4 @@
+import { decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
 import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
 import type { ChatRequest } from "../chat/drafts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
@@ -230,7 +231,7 @@ export function createBubuApi(options: ClientOptions) {
     if (!input.username.trim() || !input.password) throw new ApiError(400, "请输入原有账号和密码。");
     return { username: input.username.trim(), password: input.password };
   }
-  async function updateIdentityContext(path: string, input: Record<string, string>): Promise<AuthContext> {
+  async function updateIdentityContext(path: string, input: object): Promise<AuthContext> {
     requireSidecar();
     const finish = beginChange();
     revision++;
@@ -243,6 +244,17 @@ export function createBubuApi(options: ClientOptions) {
     } finally { finish(); }
   }
   return {
+    async privacyPolicy() { return decodePolicy(await request("/api/app/privacy/policy", { guestAllowed: true })); },
+    async privacyStatus(babyId?: string) { return decodePrivacyStatus(await request("/api/app/privacy/status" + queryString({ babyId }))); },
+    async privacyConsent(input: PersonalChoice) { await request("/api/app/privacy/consent", { method: "POST", json: input }); },
+    async privacyGuardian(babyId: string, consent: GuardianChoice) { await request("/api/app/privacy/guardian", { method: "POST", json: { babyId, consent } }); },
+    async privacyWithdraw(babyId?: string) { await request("/api/app/privacy/withdraw", { method: "POST", json: { babyId } }); clearPhotos(); options.onAccessRevoked?.(babyId); },
+    async privacyRequests() { return (await request("/api/app/privacy/requests") as { data: PrivacyRequest[] }).data; },
+    async privacyRequest(kind: "privacy" | "complaint" | "appeal", message: string, babyId?: string) { await request("/api/app/privacy/requests", { method: "POST", json: { kind, message, ...(babyId ? { babyId } : {}) } }); },
+    async deletionIntent(kind: "account" | "family", babyId?: string) { return await request("/api/app/privacy/delete-intent", { method: "POST", json: { kind, ...(babyId ? { babyId } : {}) } }) as DeletionIntent; },
+    async deletionConfirm(token: string, confirmation: string) { const result = await request("/api/app/privacy/delete-confirm", { method: "POST", json: { token, confirmation } }); clearPhotos(); options.onAccessRevoked?.(); return result; },
+    async deletionJobs() { return (await request("/api/app/privacy/deletions") as { data: DeletionJob[] }).data; },
+    async privacyExport(babyId?: string) { return request("/api/app/privacy/export" + queryString({ babyId })); },
     getContext,
     releasePhotoUrl,
     async resolvePhotoUrl(url: string, babyId: string): Promise<string> {
@@ -304,7 +316,7 @@ export function createBubuApi(options: ClientOptions) {
         throw error;
       } finally { finish(); }
     },
-    async loginWithWechat(): Promise<AuthContext> {
+    async loginWithWechat(noticeVersion?: string): Promise<AuthContext> {
       requireSidecar();
       if (!options.native || !options.wechatLogin) throw new ApiError(400, "请在微信小程序内使用微信登录。");
       return identityExchange("/api/identity/wechat", async () => {
@@ -312,16 +324,16 @@ export function createBubuApi(options: ClientOptions) {
         try { code = await options.wechatLogin!(); }
         catch { throw new ApiError(0, "暂时无法获取微信登录凭证，请重试。", "WECHAT_LOGIN_FAILED"); }
         if (!code.trim()) throw new ApiError(400, "微信登录凭证为空，请重试。", "WECHAT_LOGIN_FAILED");
-        return { code };
+        return { code, ...(noticeVersion ? { noticeVersion } : {}) };
       });
     },
     async bindLegacy(input: { username: string; password: string }): Promise<AuthContext> {
       return identityExchange("/api/identity/bind-legacy", credentials(input), true);
     },
-    async createFamily(input: { name: string }): Promise<AuthContext> {
+    async createFamily(input: { name: string; guardian?: GuardianChoice }): Promise<AuthContext> {
       const name = input.name.trim();
       if (!name || name.length > 30) throw new ApiError(400, "宝宝昵称不能为空，且不能超过 30 个字。");
-      return updateIdentityContext("/api/identity/family", { name });
+      return updateIdentityContext("/api/identity/family", { name, ...(input.guardian ? { guardian: input.guardian } : {}) });
     },
     async acceptInvitation(input: { code: string }): Promise<AuthContext> {
       const code = input.code.trim();

@@ -3,6 +3,7 @@ import * as migration_20261023_125354_care_records from './20261023_125354_care_
 import * as migration_20261023_132619_private_chat from './20261023_132619_private_chat';
 import * as migration_20261023_140114_ops_admin from './20261023_140114_ops_admin';
 import * as migration_20261023_143630_membership_service from './20261023_143630_membership_service';
+import * as migration_20261024_073959_privacy_safety_lifecycle from './20261024_073959_privacy_safety_lifecycle';
 
 export const migrations = [
   {
@@ -28,6 +29,11 @@ export const migrations = [
   {
     up: migration_20261023_143630_membership_service.up,
     down: migration_20261023_143630_membership_service.down,
-    name: '20261023_143630_membership_service'
+    name: '20261023_143630_membership_service',
+  },
+  {
+    up: migration_20261024_073959_privacy_safety_lifecycle.up,
+    down: migration_20261024_073959_privacy_safety_lifecycle.down,
+    name: '20261024_073959_privacy_safety_lifecycle'
   },
 ];

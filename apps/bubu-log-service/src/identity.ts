@@ -27,6 +27,7 @@ export class IdentityService {
   private queue: Promise<unknown> = Promise.resolve();
   private readonly familyRuns = new Map<string, Promise<unknown>>();
   private readonly executing = new AsyncLocalStorage<boolean>();
+  private processingGuard?: (scope: ActorScope, permission: Permission) => Promise<void>;
   private operatorGuard?: (userId: string, babyId: string, permission: Permission) => Promise<void>;
   private serviceGuard?: (babyId: string, capability: "chat" | "collection", req?: import("payload").PayloadRequest) => Promise<void>;
   constructor(readonly store: Store, readonly legacy: LegacyBackend, readonly wechat: WechatProvider,
@@ -38,6 +39,15 @@ export class IdentityService {
     const result = this.queue.then(run, run);
     this.queue = result.catch(() => undefined);
     return result;
+  }
+  private contextGuard?: (identityId: string) => Promise<boolean>;
+  setContextGuard(guard: (identityId: string) => Promise<boolean>) { this.contextGuard = guard; }
+  setProcessingGuard(guard: (scope: ActorScope, permission: Permission) => Promise<void>) { this.processingGuard = guard; }
+  async privacyIdentity(principal: Principal) { return this.caregiver(principal); }
+  /** Data rights check existing ownership without requiring renewed consent. Never grants new access. */
+  async authorizeForPrivacy(principal: Principal, babyId: string, permission: Permission) {
+    if (principal.kind !== "caregiver") return forbidden();
+    return this.authorizeScope(principal, babyId, permission, undefined, false);
   }
   /** Installed by the composition root, never selected by a request or model. */
   setOperatorGuard(guard: (userId: string, babyId: string, permission: Permission) => Promise<void>) { this.operatorGuard = guard; }
@@ -182,7 +192,7 @@ export class IdentityService {
   }
   private async access(identity: Identity): Promise<{ babies: Baby[]; grants: Map<string, Permission[]> }> {
     const inherited = identity.legacyUserId ? (await this.legacy.userExists(identity.legacyUserId) ? await this.legacy.listBabies(identity.legacyUserId) : []) : [];
-    const babies = new Map(inherited.map(baby => [baby.id, baby]));
+    const babies = new Map(inherited.map(baby => [baby.id, { ...baby, avatarUrl: null }]));
     const grants = new Map<string, Permission[]>(inherited.map(baby => [baby.id, permissions.filter(p => p !== "caregivers:manage")]));
     for (const row of await this.store.list("grants")) {
       const grant = row.value as unknown as Grant;
@@ -191,11 +201,12 @@ export class IdentityService {
         babies.delete(grant.babyId); grants.delete(grant.babyId); continue;
       }
       const baby = babies.get(grant.babyId) || await this.legacy.getBaby(grant.babyId);
-      if (baby) { babies.set(grant.babyId, baby); grants.set(grant.babyId, grant.permissions); }
+      if (baby) { babies.set(grant.babyId, { ...baby, avatarUrl: null }); grants.set(grant.babyId, grant.permissions); }
     }
     return { babies: [...babies.values()].filter(baby => grants.get(baby.id)?.includes("records:read")), grants };
   }
   private async contextFor(identity: Identity, requestedBabyId?: string) {
+    if (this.contextGuard && !await this.contextGuard(identity.id)) return { authenticated: true, hasBaby: false, baby: null, babies: [] as Baby[], defaultBabyId: null, identityId: identity.id, legacyLinked: !!identity.legacyUserId };
     const { babies } = await this.access(identity);
     if (requestedBabyId && !babies.some(baby => baby.id === requestedBabyId)) return forbidden();
     const baby = babies.find(baby => baby.id === (requestedBabyId || identity.currentBabyId)) || babies.find(baby => baby.isDefault) || babies[0] || null;
@@ -206,6 +217,9 @@ export class IdentityService {
   async context(principal: Principal, requestedBabyId?: string) { return this.exclusive(async () => this.contextFor(await this.caregiver(principal), requestedBabyId)); }
   /** Authorize each tool/HTTP operation, not just connection setup. Resource babyId must come from the stored resource. */
   async authorize(principal: Principal, babyId: string, permission: Permission, groupId?: string): Promise<ActorScope> {
+    return this.authorizeScope(principal, babyId, permission, groupId, true);
+  }
+  private async authorizeScope(principal: Principal, babyId: string, permission: Permission, groupId: string | undefined, process: boolean): Promise<ActorScope> {
     const current = await this.fresh(principal);
     if (current.subjectId !== principal.subjectId || !babyId) return forbidden();
     let allowed: Permission[];
@@ -235,7 +249,9 @@ export class IdentityService {
       }
     }
     if (!allowed.includes(permission)) return forbidden();
-    return { actor: { kind: current.kind, id: current.subjectId, sessionId: current.sessionId, ...(onBehalfOf ? { onBehalfOf } : {}) }, babyId, ...(groupId ? { groupId } : {}), permissions: allowed };
+    const scope: ActorScope = { actor: { kind: current.kind, id: current.subjectId, sessionId: current.sessionId, ...(onBehalfOf ? { onBehalfOf } : {}) }, babyId, ...(groupId ? { groupId } : {}), permissions: allowed };
+    if (process) await this.processingGuard?.(scope, permission);
+    return scope;
   }
   async executeAuthorized<T>(principal: Principal, babyId: string, permission: Permission,
     action: (scope: ActorScope, req: import("payload").PayloadRequest) => Promise<T>, groupId?: string): Promise<T> {

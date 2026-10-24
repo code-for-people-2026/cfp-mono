@@ -27,7 +27,7 @@ function Turn({ turn, babyId, onRevoked, onRecover, recoveryDisabled }: { turn: 
   const labels = receiptLabels(turn);
   return <View className="bubu-chat-turn">
     <View className="bubu-chat-user"><Text selectable>{turn.input.text}</Text><View className="bubu-chat-images">{turn.input.attachmentIds.map(id => <PrivateImage key={id} id={id} babyId={babyId} onRevoked={onRevoked} />)}</View></View>
-    <View className="bubu-chat-reply"><Text selectable>{turn.assistantText || (turn.status === "processing" ? "正在理解并确认记录…" : turn.error?.message || "这次对话暂未完成。")}</Text>
+    <View className="bubu-chat-reply"><Text selectable>{`${turn.replySource === "safety" ? "【系统安全提示】" : "【AI 助手回复】"}\n`}{turn.assistantText || (turn.status === "processing" ? "正在理解并确认记录…" : turn.error?.message || "这次对话暂未完成。")}</Text>
       {!!labels.length && <Text className="bubu-chat-receipt">{labels.join(" · ")}</Text>}
       {turn.status === "failed" && <Text className="bubu-chat-failure">未完成 · {turn.error?.message || "请重试"}</Text>}
       {turn.status === "needs_recovery" && <Text className="bubu-chat-failure">保存尚未确认，请继续确认上次发送</Text>}
@@ -80,6 +80,7 @@ export function DiaryChat(props: DiaryChatProps) {
       {state.error && !open && <Text className="bubu-chat-alert">!</Text>}
     </Button>
     {open && <ChatSheet title={`${props.babyName}的日常`} onClose={() => { setOpen(false); setVoice(false); }}>
+      <Text className="bubu-chat-muted">AI 助手 · 可能出错。急症请立即寻求现实帮助；中国大陆拨打 120。</Text>
       <Text className="bubu-chat-context">正在浏览 {props.viewedDate} · “现在、刚才”按本次说话时间理解</Text>
       <ScrollView className="bubu-chat-scroll" scrollY scrollIntoView={scrollTarget} onTouchMove={() => { following.current = false; }} onScrollToLower={() => { following.current = true; }}>
         <View className="bubu-chat-history">
@@ -99,7 +100,7 @@ export function DiaryChat(props: DiaryChatProps) {
         {voice ? <VoiceInput disabled={locked} onActiveChange={setRecording} onText={text => { const previous = session.getSnapshot().draft.text; session.edit({ text: previous ? `${previous}\n${text}` : text }); setVoice(false); }} /> : <Textarea className="bubu-chat-text" value={state.draft.text} placeholder={state.draft.question || state.draft.mediaPendingId ? "补充信息，不清楚也可以说不知道" : "记下刚才发生的事…"} maxlength={-1} autoHeight disabled={locked} adjustPosition={false} onInput={event => session.edit({ text: event.detail.value })} />}
         {state.draft.text.length > 6000 && <Text className="bubu-chat-failure">文字超过 6000 字，请编辑后发送；没有截断你的草稿。</Text>}
         <View className="bubu-chat-tools"><Button className="text-button" ariaLabel="添加照片" disabled={locked || recording || state.draft.attachmentIds.length >= 3 || undefined} onClick={() => { void chooseImage(); }}>{uploading ? "添加中…" : "照片"}</Button><Button className="text-button" ariaLabel={voice ? "切换键盘" : "切换语音"} disabled={locked || undefined} onClick={() => setVoice(value => !value)}>{voice ? "键盘" : "语音"}</Button>{!voice && <Button className="bubu-chat-send" ariaLabel="发送消息" disabled={locked || (!state.draft.text.trim() && !state.draft.attachmentIds.length) || state.draft.text.length > 6000 || undefined} onClick={() => { following.current = true; void session.send(props.viewedDate); }}>发送</Button>}</View>
-        <Text className="bubu-chat-muted bubu-chat-footnote">{voice ? "语音转成文字，校对后再发送" : "照片最多 3 张 · 记录确认后会更新日历"}</Text>
+        <Text className="bubu-chat-muted bubu-chat-footnote">{voice ? "语音转成文字，校对后再发送" : "照片最多 3 张 · AI 不能诊断疾病"}</Text>
       </View>
     </ChatSheet>}
   </>;

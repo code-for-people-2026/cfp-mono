@@ -60,7 +60,7 @@ export interface CollectorBatch {
   mediaOnly?: Record<string, string[]>;
   receipts: Record<string, { requestId: string; at: string }>; failure?: { code: string; at: string };
 }
-interface StoredMessage { source: SourceMessage; contentHash: string; state: "pending" | "processed" | "ignored"; batchId: string; reason?: string; media?: MediaResolution[]; mediaPending?: boolean; mediaResolutions?: HumanMediaResolution[] }
+interface StoredMessage { privacyExpired?: boolean; source: SourceMessage; contentHash: string; state: "pending" | "processed" | "ignored"; batchId: string; reason?: string; media?: MediaResolution[]; mediaPending?: boolean; mediaResolutions?: HumanMediaResolution[] }
 interface HumanMediaResolution { index: number; eventId: string; resolution: "provided" | "unknown"; attachmentId?: string; requestId: string; requestHash: string; actor: string; resolvedAt: string; result: { kind: "media"; id: string; sourceId: string; state: "resolved" | "open"; resolution: "provided" | "unknown" } }
 export const resolveMediaSchema = baseMutation.extend({ pendingId: identifier, eventId: identifier, expectedVersion: z.number().int().positive(), attachmentId: identifier.optional(), mediaIndex: z.number().int().min(0).max(9).default(0), resolution: z.enum(["provided", "unknown"]).default("provided") })
   .refine(input => input.resolution === "provided" ? !!input.attachmentId : input.attachmentId === undefined, "provided requires an attachment; unknown must not claim one");
@@ -81,7 +81,7 @@ const hasSource = (event: CareEvent, source: SourceMessage) => event.sources.som
 /** Durable job control. The transport authenticates every call; this service rechecks scope. */
 export class CollectorService {
   readonly repository: RecordsRepository;
-  constructor(readonly identity: IdentityService, readonly verifyReceipt: ReceiptVerifier) {
+  constructor(readonly identity: IdentityService, readonly verifyReceipt: ReceiptVerifier, private readonly safetySignal?: (babyId: string, source: SourceMessage, req: PayloadRequest) => Promise<void>) {
     this.repository = new RecordsRepository(identity.store.payload);
   }
   private now() { return new Date(this.identity.now()).toISOString(); }
@@ -333,6 +333,7 @@ export class CollectorService {
       if (source.groupId !== job.groupId || source.accountId !== job.accountId || source.chatId !== job.chatId || !/^message\/message_\d+\.db$/.test(source.databaseId) || source.tableName !== table || source.sourceId !== expected || unique.has(source.sourceId)) fail("COLLECTOR_SOURCE_MISMATCH");
       if (source.media.some(item => item.sourceId !== source.sourceId)) fail("COLLECTOR_SOURCE_MISMATCH");
       unique.add(source.sourceId);
+      await this.safetySignal?.(job.babyId, source, req);
       const stream = `${source.databaseId}:${table}`;
       if (source.localId <= (nextCursor[stream] || 0)) fail("COLLECTOR_CURSOR_REGRESSION");
       nextCursor[stream] = source.localId;
@@ -342,7 +343,7 @@ export class CollectorService {
       if (existing && existing.state !== "pending" && existing.mediaPending) {
         mediaOnly[source.sourceId] = events.filter(event => event.sources.some(ref => ref.kind === "wechat" && ref.groupId === job.groupId && ref.accountId === source.accountId && ref.conversationId === source.chatId && ref.messageId === `${source.databaseId}/${source.tableName}/${source.localId}`)).map(event => event.id);
       }
-      await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, { ...existing, source, contentHash: hash(source), state: "pending", batchId: batch.id }, req);
+      await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, { ...existing, source, contentHash: hash(source), state: "pending", batchId: batch.id, ...(existing?.privacyExpired ? { source: { ...source, text: "" } } : {}) }, req);
       pending.push(source);
     }
     if (hash(nextCursor) !== hash(page.nextCursor)) fail("COLLECTOR_CURSOR_MISMATCH");

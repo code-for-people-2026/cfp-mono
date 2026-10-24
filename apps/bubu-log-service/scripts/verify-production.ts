@@ -1,3 +1,5 @@
+import { privacyTables, PrivacyRepository } from "../src/privacy/persistence";
+import { membershipCollections } from "../src/membership/persistence";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
@@ -54,7 +56,7 @@ async function verifyMembership(store: Store, suffix: string) {
     assert.deepEqual(await repository.state("schema-baby", req), after);
   });
 }
-const currentTables = [...tables, ...recordTables, "chat-turns", "ops-requests", "service-memberships", "service-membership-changes"];
+const currentTables = [...tables, ...recordTables, "chat-turns", "ops-requests", "service-memberships", "service-membership-changes", ...privacyTables];
 try {
   store = await openCurrent(directory);
   await store.transaction(async () => { await store!.put("identities", "production-check", { restored: true }); });
@@ -66,6 +68,7 @@ try {
   await store.transaction(async req => { await store!.payload.create({ collection: "chat-turns", data: { id: "chat-schema-check", key: "chat-schema-check", identityId: "schema-person", babyId: "schema-baby", value: { status: "needs_recovery", requestId: "same-request-after-restart" } }, overrideAccess: true, req }); });
   await verifyOps(store.payload, "empty");
   await verifyMembership(store, "empty");
+  await store.transaction(async req => { for (const table of privacyTables) await new PrivacyRepository(store!.payload).put(table, `schema-${table}`, { synthetic: true }, { babyId: "schema-baby" }, req); });
   const emptyBefore = await snapshot(store.payload, currentTables);
   await store.close(); store = undefined;
   store = await openCurrent(directory);
@@ -74,9 +77,9 @@ try {
   assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, "empty@fixture.invalid");
   await store.close(); store = undefined;
 
-  for (const previousVersion of [1, 2, 3, 4]) {
+  for (const previousVersion of [1, 2, 3, 4, 5]) {
     const upgradeDirectory = join(directory, `upgrade-${previousVersion}`); await mkdir(upgradeDirectory);
-    const previousCollections = [...collections, ...(previousVersion >= 2 ? recordCollections : []), ...(previousVersion >= 3 ? chatCollections : []), ...(previousVersion >= 4 ? operationsCollections : [])];
+    const previousCollections = [...collections, ...(previousVersion >= 2 ? recordCollections : []), ...(previousVersion >= 3 ? chatCollections : []), ...(previousVersion >= 4 ? operationsCollections : []), ...(previousVersion >= 5 ? membershipCollections : [])];
     const config = await buildConfig({ secret, ...(previousVersion >= 4 ? { admin: { user: "ops-users" } } : {}), collections: previousVersion >= 4 ? decorateCollections(previousCollections) : previousCollections, db: sqliteAdapter({ client: { url: `file:${upgradeDirectory}/identity.db` }, push: false, prodMigrations: migrations.slice(0, previousVersion), transactionOptions: {} }), typescript: { autoGenerate: false }, telemetry: false });
     store = new Store(await getPayload({ config, key: `old-schema-${randomUUID()}` }));
     await store.transaction(async () => { for (const table of tables) await store!.put(table, `${table}:before-upgrade`, { historical: true, nested: { unchanged: [null, 0, false, "旧来源"] }, sessionId: "fixture-session-digest-preserve", babyId: "schema-baby" }); });
@@ -99,7 +102,7 @@ try {
     assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, `upgrade-${previousVersion}@fixture.invalid`);
     await store.close(); store = undefined;
   }
-  console.log("Production migrations verified: empty initialization and identity / records / chat / ops upgrades to membership; original JSON, private session fields and timestamps preserved; rollback, admin constraints, membership state and close/reopen passed in isolated SQLite fixtures.");
+  console.log("Production migrations verified: empty initialization and identity / records / chat / ops upgrades to privacy and safety; original JSON, private session fields and timestamps preserved; rollback, admin constraints, membership state and close/reopen passed in isolated SQLite fixtures.");
 } finally {
   await store?.close();
   await rm(directory, { recursive: true, force: true });

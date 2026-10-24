@@ -178,7 +178,7 @@ describe("executable external Agent and real MCP runner", () => {
   it("uploads an exactly mapped image through protected HTTP and attaches its durable ID through actual MCP", async () => {
     const f = await setup(); await f.configure(true); const client = await startMcp(f);
     const message = { ...source(), kind: "image" as const, text: "换了便便尿布", media: [{ sourceId: source().sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
-    const bytes = await sharp({ create: { width: 3, height: 3, channels: 3, background: "#aaccee" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 3, height: 3, channels: 3, background: "#aaccee" } }).png({ compressionLevel: 9 }).toBuffer();
     const file = path.join(f.directory, "exact-image.png"); await writeFile(file, bytes);
     const resolver = new ExactLocalMediaResolver({ roots: [f.directory], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: createHash("sha256").update(bytes).digest("hex") }] });
     const agent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]) => {
@@ -207,7 +207,7 @@ describe("executable external Agent and real MCP runner", () => {
     expect(JSON.stringify(pendingPhoto)).not.toContain(message.text);
     const caregiverToken = (await f.identity.loginLegacy("old-alice", "correct-password", "native")).token;
     expect(await f.collector.pendingMedia(await f.identity.authenticate(caregiverToken), "baby-a")).toEqual(pendingPhoto);
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#f0eedd" } }).png().toBuffer(); const file = path.join(f.directory, "later.png"); await writeFile(file, bytes);
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#f0eedd" } }).png({ compressionLevel: 9 }).toBuffer(); const file = path.join(f.directory, "later.png"); await writeFile(file, bytes);
     const resolver = new ExactLocalMediaResolver({ roots: [f.directory], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: createHash("sha256").update(bytes).digest("hex") }] });
     await f.collector.dispatch(f.operator, { action: "backfill", babyId: "baby-a", jobId: f.job.id, requestId: "media-backfill", range: { from: "2026-10-23T00:00:00Z", to: "2026-10-23T01:00:00Z" } });
     const attachmentAgent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]): Promise<AgentPlan> => {
@@ -247,7 +247,7 @@ describe("executable external Agent and real MCP runner", () => {
     await new CollectorRunner(client, { read: async () => page(message) }, { execute: async () => plan(message) }).once("baby-a", f.job.id);
     const token = (await f.identity.loginLegacy("old-alice", "correct-password", "native")).token, human = await f.identity.authenticate(token);
     const event = (await f.records.query(human, { babyId: "baby-a" })).events[0]!;
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#aabbcc" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#aabbcc" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await f.attachments.upload(human, "baby-a", bytes, "image/png", "human-photo-upload");
     const request = { babyId: "baby-a", requestId: "human-photo-confirm", pendingId: `media:${message.sourceId}`, eventId: event.id, expectedVersion: event.version, attachmentId: attachment.id };
     await expect(f.collector.resolveMedia(await f.principal(), request)).rejects.toMatchObject({ code: "MEDIA_HUMAN_CONFIRMATION_REQUIRED" });

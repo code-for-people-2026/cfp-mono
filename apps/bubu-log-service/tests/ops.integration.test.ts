@@ -1,3 +1,4 @@
+import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,7 +26,8 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-integration-"));
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    runtime = await createRuntime({ directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    runtime = await createRuntime({ privacy: testPrivacyConfig, directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    await grantFixturePrivacy(runtime);
     const first = await bootstrapOpsAdmin(runtime.store.payload, { email: "admin@synthetic.invalid", password: "Synthetic-Password-Only-2026", babyIds: ["baby-a", "baby-b"] });
     admin = await readOpsUser(runtime.store.payload, { ...first, collection: "ops-users" });
     const create = async (email: string, role: string) => {
@@ -110,7 +112,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect((await runtime.store.list("audit")).some(row => row.value.action === "ops.read.event")).toBe(true);
   });
   it("attachment upload/read is private, association and retract execute MCP and refresh facts", async () => {
-    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
     const uploaded = await operations.upload(operator, "baby-a", "合成图片关联验收", "ops-upload-picture", bytes, "image/png");
     expect(uploaded).not.toHaveProperty("sha256");
     const result = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId, expectedVersion: version, attachmentIds: [uploaded.id] } }, "ops-associate-image")) as { events: { version: number }[] }; version = result.events[0]!.version;
@@ -138,7 +140,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     const cli = await runtime.identity.provisionOperator("synthetic-cli", "baby-a", 60_000);
     await expect(runtime.collector.resolveMedia(await runtime.identity.authenticate(cli.token), { ...args, babyId: "baby-a", requestId: "cli-cannot-confirm", resolution: "unknown" })).rejects.toMatchObject({ code: "MEDIA_HUMAN_CONFIRMATION_REQUIRED" });
     if (resolution === "provided") {
-      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
       args.attachmentId = (await operations.upload(operator, "baby-a", "合成待补照片核对", "pending-media-upload", bytes, "image/png")).id;
       await expect(operations.execute(operator, input({ type: "record", tool: "bubu_resolve_media", arguments: args }, "unlinked-media-denied"))).rejects.toMatchObject({ code: "MEDIA_ATTACHMENT_NOT_LINKED" });
       const attached = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId: event.id, expectedVersion: event.version, attachmentIds: [args.attachmentId] } }, "attach-pending-media")) as { events: { version: number }[] };

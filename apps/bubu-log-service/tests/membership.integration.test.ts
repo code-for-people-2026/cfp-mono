@@ -1,3 +1,4 @@
+import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +17,7 @@ describe("宝宝共享的免费服务配置与原生运营持久化", () => {
   let runtime: BubuRuntime, directory: string, operations: OperationsService, admin: OpsUser, auditor: OpsUser, alice: Principal, bob: Principal, token: string;
   let now = Date.parse("2026-10-23T12:00:00Z"), serial = 0;
   const legacy = new RecordsLegacyFixture(), origin = "http://127.0.0.1:4339";
-  const options = () => ({ directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+  const options = () => ({ privacy: testPrivacyConfig, directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
   const command = (input: MembershipCommand, requestId = `membership-test-${++serial}`) => ({ babyId: "baby-a", requestId, reason: "合成权益状态配置验证", command: { type: "membership" as const, input } });
   const status = () => runtime.membership.status(alice, "baby-a");
   async function configure(overrides: Partial<Extract<MembershipCommand, { action: "configure" }>> = {}) {
@@ -25,6 +26,7 @@ describe("宝宝共享的免费服务配置与原生运营持久化", () => {
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-membership-config-"));
     runtime = await createRuntime(options()); vi.spyOn(runtime.identity, "now").mockImplementation(() => now);
+    await grantFixturePrivacy(runtime);
     const first = await bootstrapOpsAdmin(runtime.store.payload, { email: "member-admin@fixture.invalid", password: "Synthetic-Password-2026", babyIds: ["baby-a", "baby-b"] });
     admin = await readOpsUser(runtime.store.payload, { ...first, collection: "ops-users" });
     const doc = await runtime.store.payload.create({ collection: "ops-users", overrideAccess: false, user: admin, data: { email: "member-auditor@fixture.invalid", password: "Synthetic-Password-2026", role: "auditor", active: true, babyIds: ["baby-a"] } });

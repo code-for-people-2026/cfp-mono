@@ -111,7 +111,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
 
   it("reads authorized image bytes for vision, asks about uncertainty and replaces the old inference with the explicit answer", async () => {
     const s = await setup();
-    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#b0a030" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#b0a030" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await upload(s.f, "chat-photo-original", bytes);
     s.provider.enqueue(model => {
       expect(JSON.stringify(model.messages)).toContain(`data:image/png;base64,${bytes.toString("base64")}`);
@@ -134,7 +134,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     expect(downloaded.status).toBe(200); expect(Buffer.from(await downloaded.arrayBuffer())).toEqual(bytes);
     expect(downloaded.headers.get("cache-control")).toBe("private, no-store");
     expect((await fetch(new URL(attachment.url, s.f.origin), { headers: { Authorization: `Bearer ${s.f.bobToken}` } })).status).toBe(403);
-    const replacement = await upload(s.f, "chat-photo-replacement", await sharp({ create: { width: 8, height: 8, channels: 3, background: "#eecc55" } }).png().toBuffer());
+    const replacement = await upload(s.f, "chat-photo-replacement", await sharp({ create: { width: 8, height: 8, channels: 3, background: "#eecc55" } }).png({ compressionLevel: 9 }).toBuffer());
     s.provider.tool("bubu_attach_images", { eventId: event(confirmed).id, expectedVersion: event(confirmed).version, attachmentIds: [replacement.id] });
     const replaced = await s.chat.send(s.f.alice, input("chat-photo-replace", "把照片换成这一张", { attachmentIds: [replacement.id], context: { viewedDate: "2026-10-23", selectedEventId: event(confirmed).id } }));
     expect(event(replaced).attachmentIds).toEqual([replacement.id]);
@@ -145,7 +145,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
 
   it("reauthorizes the previous and selected event photos for later vision turns without persisting image bytes", async () => {
     const s = await setup();
-    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#aabb33" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#aabb33" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await upload(s.f, "chat-revisited-image", bytes), imageUrl = `data:image/png;base64,${bytes.toString("base64")}`;
     s.provider.enqueue({ text: "请描述这张照片需要记录的事情。", calls: [] });
     await s.chat.send(s.f.alice, input("chat-first-image-only", "我先发张照片", { attachmentIds: [attachment.id] }));
@@ -177,7 +177,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     const s = await setup(), client = await s.f.connect();
     const ids: string[] = [];
     for (const [index, background] of ["#aabb33", "#bbcc44", "#ccdd55", "#ddee66"].entries()) {
-      const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background } }).png().toBuffer();
+      const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background } }).png({ compressionLevel: 9 }).toBuffer();
       ids.push((await upload(s.f, `chat-multiple-photo-${index}`, bytes)).id);
     }
     const original = (await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "chat-many-photo-record", events: [{ facts: { type: "DIAPER", startTime: bottle.startTime, hasPee: false, hasPoop: true, poopColor: "YELLOW" }, attachmentIds: ids }] })).events[0]!;
@@ -189,7 +189,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
 
   it("allows explicitly removing an unavailable attachment without requiring the missing image to be viewed", async () => {
     const s = await setup(), client = await s.f.connect();
-    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#aabb33" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#aabb33" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await upload(s.f, "chat-unavailable-image", bytes);
     const original = (await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "chat-missing-photo-record", events: [{ facts: { type: "DIAPER", startTime: bottle.startTime, hasPee: false, hasPoop: true, poopColor: "YELLOW" }, attachmentIds: [attachment.id] }] })).events[0]!;
     await unlink(path.join(s.f.directory, "private-attachments", hash("baby-a"), attachment.sha256));
@@ -467,7 +467,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     expect(mutation.arguments.babyId).toBe("baby-a"); expect(mutation.arguments.requestId).not.toBe("model-chosen-request");
     expect(JSON.stringify(mutation.arguments)).not.toContain("forged-sender");
     expect(await s.f.legacy.listActivities("baby-b")).toEqual([]);
-    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#7799aa" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#7799aa" } }).png({ compressionLevel: 9 }).toBuffer();
     const otherPhoto = await upload(s.f, "other-baby-private-image", bytes, s.f.bobToken, "baby-b");
     const before = s.provider.inputs.length;
     const denied = await s.chat.send(s.f.alice, input("cross-baby-chat-image", "看这张图", { attachmentIds: [otherPhoto.id] }));
