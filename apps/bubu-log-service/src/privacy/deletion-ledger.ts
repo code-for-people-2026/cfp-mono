@@ -3,7 +3,7 @@ import { constants, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readF
 import path from "node:path";
 import { z } from "zod";
 
-const entrySchema = z.object({ version: z.literal(1), jobId: z.string().uuid(), kind: z.enum(["account", "family"]), identityId: z.string().min(1).max(200), babyId: z.string().min(1).max(200).optional(), identityIds: z.array(z.string().min(1).max(200)).max(1000).optional(), createdAt: z.string().datetime() }).strict().refine(entry => (entry.kind === "family") === !!entry.babyId && (!entry.identityIds || entry.kind === "account" && entry.identityIds.includes(entry.identityId)), "Invalid deletion scope");
+const entrySchema = z.object({ version: z.literal(1), jobId: z.string().uuid(), kind: z.enum(["account", "family"]), identityId: z.string().min(1).max(200), babyId: z.string().min(1).max(200).optional(), identityIds: z.array(z.string().min(1).max(200)).max(1000).optional(), legacyUserIds: z.array(z.string().min(1).max(200)).max(1000).optional(), createdAt: z.string().datetime() }).strict().refine(entry => (entry.kind === "family") === !!entry.babyId && (!entry.identityIds || entry.kind === "account" && entry.identityIds.includes(entry.identityId)) && (!entry.legacyUserIds || entry.kind === "account"), "Invalid deletion scope");
 export type DeletionEntry = z.infer<typeof entrySchema>;
 /** Independent of database snapshots. Append is durable before any destructive step. */
 export class DeletionLedger {
@@ -53,6 +53,7 @@ export class DeletionLedger {
     const parent = openSync(path.dirname(this.file), constants.O_RDONLY);
     try { fsyncSync(parent); } finally { closeSync(parent); }
   }
+  legacyAccountFrozen(userId: string): boolean { return this.read().some(entry => entry.kind === "account" && entry.legacyUserIds?.includes(userId)); }
   frozen(kind: "account" | "family", id: string): boolean {
     return this.read().some(entry => entry.kind === kind && (kind === "account" ? (entry.identityIds || [entry.identityId]).includes(id) : entry.babyId === id));
   }

@@ -19,16 +19,17 @@ import { testPrivacyConfig } from "./fixtures/privacy";
 
 describe("confirmed deletion, retries and restoring a snapshot", () => {
   let directory: string, store: Store, identity: IdentityService, privacy: PrivacyService, attachments: AttachmentService, ledger: DeletionLedger, deletion: DeletionService;
-  const legacy = new LegacyFixture(); let failRemote = false, remoteCalls = 0;
+  const legacy = new LegacyFixture(); let failRemote = false, remoteCalls = 0, failAccount = false; const removedAccounts: string[] = [];
   let serial = 0;
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-deletion-test-"));
     store = await openStore({ directory: path.join(directory, "data"), extensions: [...recordCollections, ...chatCollections, ...privacyCollections] });
     identity = new IdentityService(store, legacy, new WechatFixture()); ledger = new DeletionLedger(path.join(directory, "ledger", "deletions.ndjson"));
     privacy = new PrivacyService(identity, testPrivacyConfig, ledger); identity.setProcessingGuard((scope, permission) => privacy.guard(scope, permission));
+    identity.setLegacyAccountGuard(id => privacy.requireLegacyAccount(id));
     identity.setAccountChangeGuard(id => privacy.requireIdentityChange(id));
     attachments = new AttachmentService(identity, { directory: path.join(directory, "data"), beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId) });
-    deletion = new DeletionService(privacy, attachments, ledger, { exportFamilyData: async babyId => ({ babyId }), deleteFamilyData: async () => { remoteCalls++; if (failRemote) throw new Error("Synthetic upstream unavailable"); } });
+    deletion = new DeletionService(privacy, attachments, ledger, { exportFamilyData: async babyId => ({ babyId }), deleteFamilyData: async () => { remoteCalls++; if (failRemote) throw new Error("Synthetic upstream unavailable"); } }, { exportAccountData: async userId => ({ userId, profile: { name: "Synthetic caregiver" } }), deleteAccountData: async userId => { if (failAccount) throw new Error("Synthetic account failure"); removedAccounts.push(userId); } });
   }, 30000);
   afterAll(async () => { await store?.close(); await rm(directory, { recursive: true, force: true }); });
   async function family() {
@@ -108,7 +109,7 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     expect(ledger.frozen("account", source.subjectId)).toBe(true);
     const late = await identity.authenticate((await identity.loginWechat("app:late-merge-source:one")).token);
     await privacy.consent(late, { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
-    await expect(identity.bindLegacy(late, f.username, "correct-password")).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    await expect(identity.bindLegacy(late, f.username, "correct-password")).rejects.toMatchObject({ code: "LEGACY_ACCOUNT_DELETED" });
     expect(await identity.accountIdentityIds(merged.subjectId)).not.toContain(late.subjectId);
     await deletion.processPending();
     expect((await store.payload.count({ collection: "chat-turns", where: { identityId: { equals: source.subjectId } } })).totalDocs).toBe(0);
@@ -124,6 +125,66 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     expect((await privacy.status(other.principal, f.babyId)).guardian?.replaceable).toBe(true);
     await privacy.guardian(other.principal, f.babyId, { policyVersion, guardian: true, sensitive: true, ai: false, images: true, collection: false, groupMembersInformed: false });
     await attachments.read(other.principal, f.babyId, sharedPhoto.id);
+  });
+  it("freezes stable legacy credentials before deletion and does not recover grants after a fresh login or restored alias", async () => {
+    const f = await family();
+    const exported = await deletion.export(f.principal);
+    expect(exported.account).toEqual([{userId:f.username,profile:{name:"Synthetic caregiver"}}]);
+    const intent = await deletion.prepare(f.principal,"account");
+    expect(intent.confirmation).toBe("注销我的账号和已绑定原版账号");
+    await deletion.confirm(f.principal,intent.token,intent.confirmation);
+    expect(ledger.read().find(row => row.identityId === f.principal.subjectId)?.legacyUserIds).toEqual([f.username]);
+    await expect(identity.loginLegacy(f.username,"correct-password","native")).rejects.toMatchObject({code:"LEGACY_ACCOUNT_DELETED"});
+    const newWechat = await identity.authenticate((await identity.loginWechat("app:fresh-after-deletion:one")).token);
+    await expect(identity.bindLegacy(newWechat,f.username,"correct-password")).rejects.toMatchObject({code:"LEGACY_ACCOUNT_DELETED"});
+    failAccount = true; await deletion.processPending();
+    expect((await deletion.jobs(f.principal))[0]?.status).toBe("retry");
+    failAccount = false; await deletion.processPending();
+    expect(removedAccounts).toContain(f.username);
+    // Fixture deliberately retains remote credentials to simulate a restored old User row.
+    await expect(identity.loginLegacy(f.username,"correct-password","native")).rejects.toMatchObject({code:"LEGACY_ACCOUNT_DELETED"});
+    await deletion.replayAfterRestore();
+    expect(removedAccounts.filter(id => id === f.username).length).toBeGreaterThanOrEqual(2);
+    expect(await identity.accountLegacyUserIds(newWechat.subjectId)).toEqual([]);
+  });
+  it("includes a proven upstream account when family creation committed but its response was lost", async () => {
+    const principal = await identity.authenticate((await identity.loginWechat(`app:lost-family-${++serial}:one`)).token);
+    await privacy.consent(principal, { policyVersion: privacy.policy().version, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+    legacy.failFamilyOnce = true;
+    await expect(identity.createFamily(principal,"合成测试")).rejects.toMatchObject({status:502});
+    const remote = legacy.families.get(principal.subjectId)!;
+    expect((await store.get("identities",`family:${principal.subjectId}`))?.value.state).toBeUndefined();
+    expect((await deletion.export(principal)).account).toEqual([{userId:remote.userId,profile:{name:"Synthetic caregiver"}}]);
+    const intent = await deletion.prepare(principal,"account");
+    expect(intent.confirmation).toBe("注销我的账号和已绑定原版账号");
+    await deletion.confirm(principal,intent.token,intent.confirmation);
+    expect(ledger.read().find(row=>row.identityId === principal.subjectId)?.legacyUserIds).toEqual([remote.userId]);
+    await deletion.processPending();
+    expect(removedAccounts).toContain(remote.userId);
+    expect(legacy.babies.has(remote.baby.id)).toBe(true);
+    await expect(identity.loginLegacy(remote.userId,"correct-password","native")).rejects.toMatchObject({code:"LEGACY_ACCOUNT_DELETED"});
+  });
+  it("does not discard an unresolved provisioning journal or expand a version-one intent", async () => {
+    const principal = await identity.authenticate((await identity.loginWechat(`app:unknown-family-${++serial}:one`)).token);
+    const old = await deletion.prepare(principal,"account");
+    const key = `intent:${createHash("sha256").update(old.token).digest("hex")}`;
+    const prior = await privacy.repository.get<Record<string,unknown>>("privacy-state",key);
+    await privacy.repository.put("privacy-state",key,{...prior,contractVersion:1},{identityId:principal.subjectId});
+    await expect(deletion.confirm(principal,old.token,old.confirmation)).rejects.toMatchObject({code:"DELETION_SCOPE_CHANGED"});
+    await store.put("identities",`family:${principal.subjectId}`,{name:"未核实创建"});
+    await expect(deletion.prepare(principal,"account")).rejects.toMatchObject({code:"FAMILY_PROVISIONING_UNRESOLVED"});
+    expect(ledger.read().some(row=>row.identityId === principal.subjectId)).toBe(false);
+    expect(await store.get("identities",`family:${principal.subjectId}`)).not.toBeNull();
+  });
+  it("requires a new explicit intent when an account was bound after the confirmation screen", async () => {
+    const f = await family();
+    const person = await identity.authenticate((await identity.loginWechat("app:scope-change:one")).token);
+    const intent = await deletion.prepare(person,"account");
+    const linked = await identity.bindLegacy(person,f.username,"correct-password");
+    const current = await identity.authenticate(linked.token);
+    // Merge changes the subject too; neither the previous token nor a changed binding can authorize expanded erasure.
+    await expect(deletion.confirm(current,intent.token,intent.confirmation)).rejects.toMatchObject({code:"DELETION_INTENT_INVALID"});
+    expect(ledger.legacyAccountFrozen(f.username)).toBe(false);
   });
   it("migrates verified plaintext, strips metadata, and cleans leftovers after interrupted cleanup", async () => {
     const f = await family();

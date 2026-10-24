@@ -1,4 +1,4 @@
-import type { FamilyLifecycle } from "./privacy/deletion";
+import type { FamilyLifecycle, AccountLifecycle } from "./privacy/deletion";
 import { createHash, randomBytes } from "node:crypto";
 import { AppError, type Baby, type LegacyBackend, type LegacyUser } from "./contracts";
 import { activityTypes, type DailyMetrics, type LegacyActivity, type LegacyRecordsBackend } from "./records/types";
@@ -79,7 +79,7 @@ function deterministicId(kind: string, identityId: string): string {
 }
 
 /** Only this server-side adapter holds the legacy CMS credential. Never expose it as a generic proxy. */
-export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, FamilyLifecycle {
+export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, FamilyLifecycle, AccountLifecycle {
   private readonly origin: string;
   private readonly fetcher: typeof fetch;
   private cmsToken?: { value: string; expiresAt: number };
@@ -93,6 +93,10 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
       throw new AppError(503, "LEGACY_CONFIG_INVALID", "旧版服务须使用 HTTPS 或本机地址");
     }
     if (options.coreToken && (!loopback || !/^[a-f0-9]{64}$/.test(options.coreToken))) throw new AppError(503, "CORE_CONFIG_INVALID", "私有数据层必须使用本机地址和独立凭证");
+    // NextRequest canonicalizes loopback IPs to localhost, including Auth.js error callbacks.
+    // Use that single origin for every private-core request; never relax callback checks or
+    // follow a redirect. Public legacy origins retain their exact original authority.
+    if (options.coreToken) url.hostname = "localhost";
     this.origin = url.origin;
     this.fetcher = options.fetch ?? fetch;
   }
@@ -202,7 +206,14 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
     if (!this.options.coreToken) throw new AppError(503, "LEGACY_LIFECYCLE_UNAVAILABLE", "原照护数据尚未迁入私有存储，请联系隐私渠道处理。");
     const send = async (refresh: boolean) => this.request(path, { method, headers: { Authorization: `JWT ${await this.token(refresh)}`, "Content-Type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
     let response = await send(false); if (response.status === 401) response = await send(true);
-    if (!response.ok) throw new AppError(response.status === 413 ? 413 : 503, "LEGACY_LIFECYCLE_UNAVAILABLE", "原照护数据操作尚未完成，请联系隐私渠道处理。");
+    if (!response.ok) {
+      let code = "LEGACY_LIFECYCLE_UNAVAILABLE";
+      try {
+        const error = doc(await this.json(response)).error;
+        if (["ACCOUNT_MEDIA_OWNER_UNRESOLVED", "VERIFICATION_TOKEN_OWNER_UNRESOLVED", "LEGACY_PROFILE_OWNER_UNRESOLVED", "LEGACY_AUDIT_SCOPE_CONFLICT", "MEDIA_REFERENCE_CHANGED"].includes(String(error))) code = String(error);
+      } catch { /* Never relay arbitrary upstream text, URLs, queries or secrets. */ }
+      throw new AppError(response.status === 413 ? 413 : 503, code, "原数据操作尚未完成，请联系隐私渠道处理。");
+    }
     return doc(await this.json(response));
   }
   private async lifecycle(babyId: string, method: "GET" | "DELETE") {
@@ -233,6 +244,16 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
   }
   async deleteFamilyData(babyId: string): Promise<void> { await this.lifecycle(babyId, "DELETE"); }
 
+  async exportAccountData(userId: string): Promise<unknown> {
+    const result = await this.core(`/internal/account?${new URLSearchParams({ userId })}`, "GET");
+    if (result.userId !== userId || !isDoc(result.data) || result.data.userId !== userId || result.data.format !== "bubu-original-account-v1") throw scopeFailure();
+    return result.data;
+  }
+  async deleteAccountData(userId: string): Promise<void> {
+    const result = await this.core(`/internal/account?${new URLSearchParams({ userId })}`, "DELETE");
+    if (result.userId !== userId || result.deleted !== true) throw scopeFailure();
+  }
+
   async userExists(userId: string): Promise<boolean> { return !!await this.get("app-users", userId); }
   async getBaby(babyId: string): Promise<Baby | null> { const value = await this.get("babies", babyId); return value ? baby(value) : null; }
 
@@ -247,6 +268,16 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
       if (value) result.push({ ...value, isDefault: binding.isDefault === true });
     }
     return result;
+  }
+
+  async findFamilyAccount(identityId: string): Promise<{ id: string } | null> {
+    if (!identityId || identityId.length > 256) throw scopeFailure();
+    const userId = deterministicId("user", identityId);
+    const user = await this.get("app-users", userId);
+    if (!user) return null;
+    const username = `bubu_${createHash("sha256").update(identityId).digest("hex").slice(0, 24)}`;
+    if (user.id !== userId || user.username !== username) throw scopeFailure();
+    return { id: userId };
   }
 
   async createFamily(identityId: string, input: { name: string }): Promise<{ userId: string; baby: Baby }> {

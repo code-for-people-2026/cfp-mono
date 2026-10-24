@@ -206,6 +206,7 @@ describe("new family provisioning", () => {
       return existing ? Response.json(existing) : Response.json({}, { status: 404 });
     });
     await expect(backend.createFamily("server-generated-identity", { name: "宝宝" })).rejects.toMatchObject({ status: 502 });
+    expect(await backend.findFamilyAccount("server-generated-identity")).toEqual({id:writes[0]!.value.id});
     const family = await backend.createFamily("server-generated-identity", { name: "宝宝" });
     const replay = await backend.createFamily("server-generated-identity", { name: "不应覆盖原昵称" });
     expect(replay).toEqual(family);
@@ -251,6 +252,7 @@ describe("new family provisioning", () => {
       return Response.json({ id: url.pathname.split("/").at(-1), username: "unrelated-account" });
     });
     await expect(backend.createFamily("server-identity", { name: "宝宝" })).rejects.toMatchObject({ code: "LEGACY_SCOPE_INVALID" });
+    await expect(backend.findFamilyAccount("server-identity")).rejects.toMatchObject({code:"LEGACY_SCOPE_INVALID"});
     expect(seen.filter(({ url }) => url.pathname.startsWith("/api/babies"))).toHaveLength(0);
     expect(seen.filter(({ init }) => init.method === "POST")).toHaveLength(1); // CMS authentication only.
   });
@@ -278,6 +280,21 @@ describe("new family provisioning", () => {
 
 describe("private core family lifecycle", () => {
   const coreToken = "a".repeat(64);
+  it.each(["success","wrong-password","foreign-origin"])("uses one canonical private origin without weakening callback verification: %s",async mode => {
+    const backend = new HttpLegacyBackend({...options,origin:"http://127.0.0.1:3321",coreToken,fetch:async(input,init)=>{
+      const url = new URL(String(input)); expect(url.origin).toBe("http://localhost:3321"); expect(init?.redirect).toBe("error");
+      if (url.pathname.endsWith("csrf")) return Response.json({csrfToken:"proof"},{headers:{"Set-Cookie":"authjs.csrf-token=proof"}});
+      if (url.pathname.includes("callback")) {
+        expect(new URLSearchParams(String(init?.body)).get("callbackUrl")).toBe("http://localhost:3321");
+        if (mode === "wrong-password") return Response.json({url:"http://localhost:3321/api/auth/signin?error=CredentialsSignin"});
+        if (mode === "foreign-origin") return Response.json({url:"http://localhost:4444/"});
+        return Response.json({url:"http://localhost:3321"},{headers:{"Set-Cookie":"authjs.session-token=proof"}});
+      }
+      return Response.json({user:{id:"synthetic-user"},expires:new Date(Date.now()+60000).toISOString()});
+    }});
+    if (mode === "success") await expect(backend.verifyCredentials("synthetic","secret-password")).resolves.toEqual({id:"synthetic-user"});
+    else await expect(backend.verifyCredentials("synthetic","secret-password")).rejects.toMatchObject({code:mode === "wrong-password" ? "LEGACY_CREDENTIALS_INVALID" : "LEGACY_UNAVAILABLE"});
+  });
   it("never sends a core credential to the public legacy site", () => {
     expect(() => new HttpLegacyBackend({ ...options, coreToken })).toThrow("私有数据层");
   });
@@ -300,4 +317,22 @@ describe("private core family lifecycle", () => {
     mismatch = true;
     await expect(backend.deleteFamilyData("baby-a")).rejects.toMatchObject({ code: "LEGACY_SCOPE_INVALID" });
   });
+  it("scopes account export and erasure receipts and keeps actionable errors free of upstream details", async () => {
+    let mode: "ok" | "mismatch" | "owned-media" | "secret-error" = "ok";
+    const backend = new HttpLegacyBackend({ ...options, origin:"http://127.0.0.1:3321", coreToken, fetch:async(input,init) => {
+      const url = new URL(String(input));
+      if (url.pathname === "/api/cms-admins/login") return tokenResponse();
+      expect(url.pathname).toBe("/internal/account"); expect(url.searchParams.get("userId")).toBe("self");
+      expect(new Headers(init?.headers).get("x-bubu-core-token")).toBe(coreToken);
+      if (mode === "owned-media") return Response.json({error:"ACCOUNT_MEDIA_OWNER_UNRESOLVED"},{status:503});
+      if (mode === "secret-error") return Response.json({error:"postgres://secret@private/db"},{status:503});
+      return Response.json({userId:mode === "mismatch" ? "other" : "self",deleted:true,data:{format:"bubu-original-account-v1",userId:"self",profile:{username:"self"}}});
+    } });
+    await expect(backend.exportAccountData("self")).resolves.toMatchObject({userId:"self"});
+    await expect(backend.deleteAccountData("self")).resolves.toBeUndefined();
+    mode="mismatch"; await expect(backend.deleteAccountData("self")).rejects.toMatchObject({code:"LEGACY_SCOPE_INVALID"});
+    mode="owned-media"; await expect(backend.deleteAccountData("self")).rejects.toMatchObject({code:"ACCOUNT_MEDIA_OWNER_UNRESOLVED"});
+    mode="secret-error"; await expect(backend.deleteAccountData("self")).rejects.toMatchObject({code:"LEGACY_LIFECYCLE_UNAVAILABLE"});
+  });
+
 });

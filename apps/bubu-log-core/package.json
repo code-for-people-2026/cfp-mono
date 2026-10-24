@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:postgres": "tsx scripts/verify-postgres.ts"
+    "test:postgres": "tsx scripts/verify-postgres.ts",
+    "test:account-postgres": "tsx scripts/verify-account-postgres.ts"
   },
   "dependencies": {
     "@payloadcms/db-postgres": "3.77.0",
