@@ -1,6 +1,6 @@
 """Archive and host failure tests; Docker effects are mocked, SQLite/codec tests run separately."""
 import importlib.util
-import io
+import copy
 import json
 import os
 import tarfile
@@ -73,7 +73,7 @@ class BackupOperationsTest(unittest.TestCase):
                 if args[:2] == ['docker', 'stop']: running[args[-1]] = False
                 if args[:2] == ['docker', 'start']: running[args[-1]] = True
                 return b'100'
-            def inspect(identifier): return {'State': {'Running': running[identifier]}}
+            def inspect(identifier): return {'State': {'Running': running[identifier], 'Health': {'Status': 'healthy'}}}
             def dump(*args, **kwargs): kwargs['stdout'].write(b'synthetic pg dump')
             with patch.object(ops, 'preflight', return_value=(app, core, pg, 'synthetic', 'synthetic', 'private')), patch.object(ops, 'run', side_effect=command), patch.object(ops, 'inspect', side_effect=inspect), patch.object(ops.subprocess, 'run', side_effect=dump), patch.object(ops, 'node', side_effect=RuntimeError('synthetic capture failure')):
                 with self.assertRaises(RuntimeError): ops.backup(config)
@@ -82,6 +82,39 @@ class BackupOperationsTest(unittest.TestCase):
             self.assertTrue(all(running.values()))
             self.assertEqual(list(backups.iterdir()), [])
             self.assertNotEqual(json.loads((root / 'status.json').read_text())['backup']['state'], 'verified')
+
+    def test_preflight_rejects_stopped_namespace_owner_and_public_database(self):
+        config = {'appContainer': 'app', 'coreContainer': 'core', 'postgresContainer': 'pg', 'sourceDirectory': '/private/data', 'ledgerFile': '/private/ledger', 'retentionDays': 1}
+        app_env = {'BUBU_IDENTITY_DIRECTORY': '/data', 'BUBU_DELETION_LEDGER': '/ledger', 'BUBU_PRIVACY_BACKUP_DAYS': '1', 'BUBU_MEDIA_ENCRYPTION_KEY': 'a' * 64, 'BUBU_PAYLOAD_SECRET': 'synthetic', 'BUBU_LEGACY_ORIGIN': 'http://localhost:3321', 'BUBU_CORE_SERVICE_TOKEN': 'b' * 64}
+        core_env = {'BUBU_CORE_SERVICE_TOKEN': 'b' * 64, 'BUBU_CORE_DATABASE_URL': 'postgresql://synthetic:private@localhost:5432/synthetic'}
+        def container(name, role, env, mode):
+            return {'Id': name, 'State': {'Running': True}, 'Config': {'Labels': {'cn.codeforpeople.bubu.role': role}, 'Env': [k + '=' + v for k, v in env.items()]}, 'Mounts': [], 'HostConfig': {'NetworkMode': mode, 'PortBindings': {}}}
+        containers = {'app': container('app', 'service', app_env, 'container:pg'), 'core': container('core', 'core', core_env, 'container:pg'), 'pg': container('pg', 'database', {}, 'none')}
+        containers['app']['Mounts'] = [{'Destination': '/data', 'Type': 'bind', 'Source': '/private/data', 'RW': True}, {'Destination': '/ledger', 'Type': 'bind', 'Source': '/private/ledger', 'RW': True}]
+        with patch.object(ops, 'inspect', side_effect=lambda name: containers[name]), patch.object(ops, 'run', return_value=b'app core pg'):
+            ops.preflight(config)
+            baseline = copy.deepcopy(containers)
+            for owner in ['app', 'core']:
+                with self.subTest(owner=owner):
+                    containers.clear(); containers.update(copy.deepcopy(baseline))
+                    for name in containers: containers[name]['HostConfig']['NetworkMode'] = 'none' if name == owner else 'container:' + owner
+                    with self.assertRaisesRegex(ValueError, 'owner must remain'): ops.preflight(config)
+            containers.clear(); containers.update(copy.deepcopy(baseline)); containers['pg']['HostConfig']['NetworkMode'] = 'host'
+            with self.assertRaisesRegex(ValueError, 'must not be published'): ops.preflight(config)
+            containers['pg']['HostConfig']['NetworkMode'] = 'bridge'
+            containers['pg']['HostConfig']['PortBindings'] = {'5432/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '5432'}]}
+            with self.assertRaisesRegex(ValueError, 'must not be published'): ops.preflight(config)
+            containers['pg']['HostConfig']['PortBindings'] = {}
+            containers['pg']['HostConfig']['PublishAllPorts'] = True
+            with self.assertRaisesRegex(ValueError, 'must not be published'): ops.preflight(config)
+            containers['pg']['HostConfig']['PublishAllPorts'] = False
+            containers['pg']['NetworkSettings'] = {'Ports': {'5432/tcp': [{'HostIp': '0.0.0.0', 'HostPort': '32768'}]}}
+            with self.assertRaisesRegex(ValueError, 'must not be published'): ops.preflight(config)
+
+    def test_runtime_verification_rejects_stopped_container_with_stale_healthy_status(self):
+        with patch.object(ops, 'inspect', return_value={'State': {'Running': False, 'Health': {'Status': 'healthy'}}}):
+            with self.assertRaisesRegex(RuntimeError, 'stopped after backup'):
+                ops.verify_runtime({'Id': 'app'}, {'Id': 'core'})
 
 
 if __name__ == '__main__': unittest.main()

@@ -115,11 +115,22 @@ def preflight(config):
     def network_owner(container):
         mode = container['HostConfig']['NetworkMode']
         return inspect(mode.split(':', 1)[1])['Id'] if mode.startswith('container:') else container['Id']
-    if len({network_owner(c) for c in [app, core, pg]}) != 1:
+    owners = {network_owner(c) for c in [app, core, pg]}
+    if len(owners) != 1:
         raise ValueError('Private network namespace mismatch')
+    owner = next(iter(owners))
+    anchor = inspect(owner)
+    if owner in [app['Id'], core['Id']] or not anchor['State']['Running']:
+        raise ValueError('Network namespace owner must remain running during backup')
+    private_containers = [app, core, pg, anchor]
+    published = any(bindings for container in private_containers for mapping in [container['HostConfig'].get('PortBindings') or {}, container.get('NetworkSettings', {}).get('Ports') or {}] for port, bindings in mapping.items() if port.split('/')[0] in ['3321', '5432'])
+    if anchor['HostConfig']['NetworkMode'] == 'host' or any(c['HostConfig'].get('PublishAllPorts') for c in private_containers) or published:
+        raise ValueError('Private core/database ports must not be published')
     source = Path(config['sourceDirectory'])
     for identifier in run(['docker', 'ps', '-q']).decode().split():
         other = inspect(identifier)
+        if other['Id'] not in [app['Id'], core['Id'], pg['Id'], owner] and network_owner(other) == owner:
+            raise ValueError('Unexpected process shares the private database network')
         if other['Id'] == app['Id']: continue
         for mount in other['Mounts']:
             origin = Path(mount.get('Source', '/'))
@@ -228,6 +239,15 @@ def prune(config):
             if file.stat().st_mtime < cutoff: file.unlink()
 
 
+def verify_runtime(app, core):
+    for _ in range(45):
+        states = [inspect(container['Id'])['State'] for container in [app, core]]
+        if not all(state.get('Running') for state in states): raise RuntimeError('Runtime stopped after backup')
+        if all(state.get('Health', {}).get('Status') == 'healthy' for state in states): return
+        time.sleep(2)
+    raise RuntimeError('Runtime health not confirmed')
+
+
 def backup(config):
     app, core, pg, database, user, password = preflight(config)
     write_report(config, 'backup', {'state': 'running', 'at': now()})
@@ -274,12 +294,7 @@ def backup(config):
                 if not inspect(identifier)['State']['Running']: run(['docker', 'start', identifier], timeout=120)
             except Exception: failures.append(identifier)
         if failures: raise RuntimeError('Runtime restart failed')
-    for _ in range(45):
-        states = [inspect(container['Id'])['State'] for container in [app, core]]
-        if all(state.get('Health', {}).get('Status') == 'healthy' for state in states): break
-        if not all(state.get('Running') for state in states): raise RuntimeError('Runtime stopped after backup')
-        time.sleep(2)
-    else: raise RuntimeError('Runtime health not confirmed')
+        if stopped: verify_runtime(app, core)
     stamp = now()
     write_report(config, 'backup', {'state': 'verified', 'at': stamp, 'lastVerifiedAt': stamp})
 

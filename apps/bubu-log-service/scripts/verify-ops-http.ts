@@ -35,6 +35,10 @@ function noSecrets(value: unknown) {
   }
 }
 const operator = await login("operator"), auditor = await login("auditor"), admin = await login("admin");
+for (const [cookie, expected] of [[admin, 200], [operator, 403], [auditor, 403]] as const) {
+  const response = await request("/api/ops/health", { headers: { Cookie: cookie } });
+  assert.equal(response.status, expected); noSecrets(await response.json()); checks++;
+}
 const post = (cookie: string, body: unknown, pathname = "/api/ops/action") => request(pathname, { method: "POST", headers: { Cookie: cookie, Origin: fixture.origin, "Content-Type": "application/json" }, body: JSON.stringify(body) });
 for (const pathname of ["/api/ops/overview?babyId=baby-a", "/api/cms/care-events"]) {
   const response = await request(pathname, { headers: { Cookie: operator } });

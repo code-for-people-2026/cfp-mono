@@ -2,7 +2,7 @@ import process from 'node:process';
 import { Buffer } from 'node:buffer';
 import console from 'node:console';
 import { constants, createReadStream } from 'node:fs';
-import { open, lstat, mkdir, readdir, chmod, readFile } from 'node:fs/promises';
+import { open, lstat, mkdir, readdir, chmod, readFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { DatabaseSync, backup } from 'node:sqlite';
 import { join, resolve } from 'node:path';
@@ -55,8 +55,14 @@ export async function captureSnapshot(source, postgresDump, target) {
   if (!entries.includes('identity.db') || entries.some(name => !['identity.db', 'identity.db-wal', 'identity.db-shm', 'private-attachments'].includes(name))) throw new Error('Unexpected live data entry or active writer');
   for (const name of entries.filter(name => name !== 'private-attachments')) await regular(join(source, name));
   await mkdir(target, { mode: 0o700 }); await mkdir(join(target, 'sidecar'), { mode: 0o700 });
-  const original = new DatabaseSync(join(source, 'identity.db'), { readOnly: true });
-  try { healthy(original); await backup(original, join(target, 'sidecar/identity.db')); } finally { original.close(); }
+  // Even a read-only SQLite connection may create WAL shared-memory files. Work only on stopped-writer copies,
+  // keeping the production source mount read-only on Linux as well as macOS.
+  const sqliteInput = join(target, '.sqlite-input'); await mkdir(sqliteInput, { mode: 0o700 });
+  try {
+    for (const name of entries.filter(name => name !== 'private-attachments')) await copy(join(source, name), join(sqliteInput, name));
+    const original = new DatabaseSync(join(sqliteInput, 'identity.db'), { readOnly: true });
+    try { healthy(original); await backup(original, join(target, 'sidecar/identity.db')); } finally { original.close(); }
+  } finally { await rm(sqliteInput, { recursive: true, force: true }); }
   // The backup API preserves WAL mode. Normalize the isolated copy so verification never creates side files.
   const consolidated = new DatabaseSync(join(target, 'sidecar/identity.db'));
   try { consolidated.exec('PRAGMA journal_mode=DELETE'); healthy(consolidated); } finally { consolidated.close(); }

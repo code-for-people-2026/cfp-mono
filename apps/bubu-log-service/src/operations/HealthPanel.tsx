@@ -16,14 +16,18 @@ export function OperationsHealthPanel({ denied }: { denied: () => void }) {
     const refresh = async () => {
       if (running || controller.signal.aborted) return;
       running = true;
+      const request = new AbortController(), abort = () => request.abort();
+      controller.signal.addEventListener("abort", abort, { once: true });
+      const timeout = setTimeout(abort, 15_000);
       try {
-        const response = await fetch("/api/ops/health", { credentials: "same-origin", cache: "no-store", signal: controller.signal });
+        const response = await fetch("/api/ops/health", { credentials: "same-origin", cache: "no-store", signal: request.signal });
+        if (controller.signal.aborted) return;
         if ([401, 403].includes(response.status)) { denied(); return; }
         if (!response.ok) throw new Error("Health unavailable");
         const value = await response.json() as OperationsHealthReport;
         if (!controller.signal.aborted) { setReport(value); setError(""); }
       } catch { if (!controller.signal.aborted) { setReport(undefined); setError("无法更新运行状态，请核对后台服务。"); } }
-      finally { running = false; }
+      finally { clearTimeout(timeout); controller.signal.removeEventListener("abort", abort); running = false; }
     };
     void refresh(); const timer = setInterval(() => { void refresh(); }, 60_000);
     return () => { controller.abort(); clearInterval(timer); };
@@ -33,6 +37,7 @@ export function OperationsHealthPanel({ denied }: { denied: () => void }) {
     <p className="bubu-ops__muted">每分钟刷新。异常显示在后台，尚未连接外部通知渠道。</p>
     {error && <p role="alert" className="bubu-ops__error">{error}</p>}
     {!report && !error && <p>正在读取运行状态…</p>}
+    {report && <p className="bubu-ops__muted">核对时间：{new Date(report.at).toLocaleString("zh-CN")}</p>}
     {report?.checks.map(check => <HealthResult key={check.id} check={check} />)}
   </fieldset>;
 }

@@ -6,7 +6,7 @@
 
 1. 复制 `deploy/operations.example.json` 到受保护的宿主机配置，权限 `0600`；显式填写经负责人确认的 `retentionDays`，与服务环境 `BUBU_PRIVACY_BACKUP_DAYS` 一致。示例为 `null`，不能被误作已确认政策。
 2. 数据和备份目录为 `0700`。备份密钥为独立随机 32 字节文件 `0600`；媒体密钥、Payload secret、原数据库凭证另行保全，不在归档内。删除清单是独立 `0600` 文件，并单独 bind 到应用配置的 `BUBU_DELETION_LEDGER` 路径。禁止使用数据目录下的开发密钥或 `secret` 文件。
-3. 应用、原数据层、PostgreSQL 容器分别设置 `cn.codeforpeople.bubu.role=service|core|database`，共享同一个私有回环网络；原数据层端口 3321、PG 5432 不公开。原数据层使用 `BUBU_CORE_DATABASE_URL`，应用使用相同 `BUBU_CORE_SERVICE_TOKEN`；两个服务都必须定义真实健康检查。PG 角色有读取全部业务表的权限，凭证仅从容器环境读取，经 stdin 传到备份子进程，不输出或放进命令参数。
+3. 应用、原数据层、PostgreSQL 容器分别设置 `cn.codeforpeople.bubu.role=service|core|database`，共享同一个私有回环网络；网络 owner 必须是持续运行的 PG 或独立网络容器，不能是待停的 app/core；拒绝 host 网络、公开 3321/5432 端口和非预期共享网络进程。原数据层端口 3321、PG 5432 不公开。原数据层使用 `BUBU_CORE_DATABASE_URL`，应用使用相同 `BUBU_CORE_SERVICE_TOKEN`；两个服务都必须定义真实健康检查。PG 角色有读取全部业务表的权限，凭证仅从容器环境读取，经 stdin 传到备份子进程，不输出或放进命令参数。
 4. 脚本目录为只允许运维修改的固定版本路径，至少包含 `backup-operations.py`、`backup-snapshot.mjs`、`backup-codec.mjs`。`nodeImage` 固定为本机已校验 Node 24 镜像的 `sha256:…` ID，不运行未固定 tag 或自动拉取镜像。
 5. `reportDirectory` 不含敏感数据；状态文件是时间、状态的 `0644` JSON。将**整个目录**只读挂载给应用，设置 `BUBU_OPERATIONS_REPORT` 为其中 `status.json` 的绝对路径；不能仅挂文件，否则原子替换后容器仍会读取旧 inode。管理员后台每分钟刷新；普通运营不能查看全局状态。
 
