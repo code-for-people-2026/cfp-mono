@@ -54,3 +54,4 @@
 
 - 已绑定账号注销、稳定原账号冻结及本人资料导出见 [ADR 0008](docs/adr/0008-linked-account-erasure.md)。共享家庭记录不能随最后一位照护者注销而自动删除。
 - 运行监测、原数据库与 sidecar 的停写备份，以及不覆盖生产的隔离恢复见 [ADR 0009](docs/adr/0009-operations-and-backup-boundaries.md)。全局状态不扩张管理员的家庭访问范围，备份成功不等于恢复演练或外部通知已验收。
+- 私人照护图片的检测、供应商披露、历史查看与 AI 输入之间的边界见 [ADR 0010](docs/adr/0010-private-image-review.md)。检测通过不构成健康判断，未通过图片不建立新的事实库。

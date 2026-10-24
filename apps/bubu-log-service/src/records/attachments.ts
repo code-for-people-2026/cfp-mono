@@ -10,6 +10,7 @@ import { IdentityService, type ActorScope, type Principal } from "../identity";
 import { hash, RecordsRepository } from "./persistence";
 import { sourceSchema } from "./schemas";
 import type { SourceRef } from "./types";
+import type { ImageReviewProof, ImageReviewService } from "../images/review";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
@@ -24,8 +25,9 @@ export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "prof
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
   legacyReference?: LegacyMediaReference;
+  review?: ImageReviewProof;
 }
-interface AttachmentOptions { directory: string; maxBytes?: number; encryptionKey?: string; beforeLegacyAccess?: (babyId: string) => Promise<void> }
+interface AttachmentOptions { imageReview?: ImageReviewService; directory: string; maxBytes?: number; encryptionKey?: string; beforeLegacyAccess?: (babyId: string) => Promise<void> }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");
@@ -219,34 +221,65 @@ export class AttachmentService {
     const value = await this.repository.get<StoredAttachment>("care-attachments", scope.babyId, attachmentId, req);
     if (!value || value.babyId !== scope.babyId) return fail(404, "ATTACHMENT_NOT_FOUND", "没有找到此宝宝的照片。");
     if (scope.actor.kind === "collector" && (!scope.groupId || value.source?.groupId !== scope.groupId || value.source.kind !== "wechat")) return fail(403, "ATTACHMENT_SOURCE_FORBIDDEN", "照片来源不属于此采集群。");
+    if (scope.actor.kind === "collector" || scope.actor.kind === "chat-agent" && scope.actor.purpose !== "history") this.options.imageReview?.requireProof(value.review, value.sha256);
     return this.view(value);
   }
   async upload(principal: Principal, babyId: string, bytes: Uint8Array, declaredMime: string, requestId: string, source?: SourceRef): Promise<Attachment> {
-    return this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
+    if (this.options.imageReview && this.identity.store.currentRequest()) throw new Error("Image uploads require an independent transaction boundary");
+    const groupId = principal.kind === "collector" ? principal.groupId : undefined;
+    // Reject unauthorized sources before decoding. External review never holds the identity queue.
+    await this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
       await this.identity.assertRecordingService(principal, babyId, req);
-      if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
-      if (!bytes.byteLength || bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片为空或超过大小限制。");
-      const originalSha = checksum(bytes), normalized = await sanitizeAttachment(bytes, declaredMime);
-      bytes = normalized.bytes;
-      if (bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片处理后仍超过大小限制。");
-      const mime = normalized.mime, sha256 = checksum(bytes), normalizedSource = this.normalizeSource(scope, source);
+      this.normalizeSource(scope, source);
+    }, groupId);
+    if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
+    if (!bytes.byteLength || bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片为空或超过大小限制。");
+    const originalSha = checksum(bytes), normalized = await sanitizeAttachment(bytes, declaredMime);
+    if (normalized.bytes.length > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片处理后仍超过大小限制。");
+    const sha256 = checksum(normalized.bytes), mime = normalized.mime;
+    const prepare = async (scope: ActorScope, req: PayloadRequest) => {
+      await this.identity.assertRecordingService(principal, babyId, req);
+      const normalizedSource = this.normalizeSource(scope, source);
       const attachmentId = `att_${hash([babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf, scope.groupId, requestId])}`;
       const requestFingerprint = hash([originalSha, mime, normalizedSource]);
       const existing = await this.repository.get<StoredAttachment>("care-attachments", babyId, attachmentId, req);
       if (existing && existing.requestFingerprint !== requestFingerprint) return fail(409, "ATTACHMENT_IDEMPOTENCY_CONFLICT", "此上传请求号已用于不同照片或来源。");
-      const value: StoredAttachment = existing ? { ...existing, sha256, mime, byteLength: bytes.byteLength } : {
-        id: attachmentId, babyId, mime, byteLength: bytes.byteLength, sha256, requestFingerprint,
+      const value: StoredAttachment = existing ? { ...existing, sha256, mime, byteLength: normalized.bytes.length } : {
+        id: attachmentId, babyId, mime, byteLength: normalized.bytes.length, sha256, requestFingerprint,
         createdAt: new Date(this.identity.now()).toISOString(), actor: scope.actor,
         uploadedBy: { kind: scope.actor.kind, id: scope.actor.id, ...(scope.actor.onBehalfOf ? { onBehalfOf: scope.actor.onBehalfOf } : {}) },
         ...(normalizedSource ? { source: normalizedSource } : {}),
       };
-      // Exact retries also repair an object lost/corrupted after the original commit, using the same verified bytes.
-      await this.identity.authorize(principal, babyId, "media:write", principal.kind === "collector" ? principal.groupId : undefined);
+      return value;
+    };
+    const prepared = await this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
+      const value = await prepare(scope, req);
+      let alreadyReviewed = !this.options.imageReview;
+      if (this.options.imageReview && value.review) {
+        try { this.options.imageReview.requireProof(value.review, sha256); alreadyReviewed = true; } catch { /* re-review the same normalized pixels */ }
+      }
+      if (!alreadyReviewed) await this.options.imageReview!.reserve(scope, req);
+      return { value, alreadyReviewed };
+    }, groupId);
+    const review = prepared.alreadyReviewed ? prepared.value.review : await this.options.imageReview!.inspect(normalized.bytes, mime, sha256);
+    return this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
+      // Recheck source, rights, consent, deletion and idempotency after the supplier returns.
+      const value = await prepare(scope, req);
+      if (this.options.imageReview) this.options.imageReview.requireProof(review, sha256);
+      if (review) value.review = review;
+      await this.writeObject(value, normalized.bytes);
       await this.identity.assertRecordingService(principal, babyId, req);
-      await this.writeObject(value, bytes);
-      await this.identity.assertRecordingService(principal, babyId, req);
-      await this.repository.put("care-attachments", babyId, attachmentId, value, req);
+      await this.repository.put("care-attachments", babyId, value.id, value, req);
       return this.view(value);
+    }, groupId);
+  }
+  /** Model input must not use the caregiver/history path to bypass image review. */
+  async readForModel(principal: Principal, babyId: string, attachmentId: string) {
+    return this.identity.executeAuthorized(principal, babyId, "media:read", async (scope, req) => {
+      const attachment = await this.validateAttachment(scope, req, attachmentId);
+      const stored = await this.repository.get<StoredAttachment>("care-attachments", babyId, attachmentId, req);
+      this.options.imageReview?.requireProof(stored?.review, attachment.sha256);
+      return { attachment, bytes: await this.readObject(attachment) };
     }, principal.kind === "collector" ? principal.groupId : undefined);
   }
   async read(principal: Principal, babyId: string, attachmentId: string): Promise<{ attachment: Attachment; bytes: Buffer }> {

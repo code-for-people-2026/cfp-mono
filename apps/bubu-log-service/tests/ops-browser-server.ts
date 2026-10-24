@@ -11,7 +11,7 @@ import { permissions } from "../src/contracts";
 import { ChatMcpClient } from "../src/chat/mcp";
 import { RecordsLegacyFixture } from "./fixtures/records";
 import { WechatFixture } from "./fixtures/identity";
-import { testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
+import { fixtureImageReviewer, testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
 
 if (process.env.NODE_ENV !== "test") throw new Error("The isolated operations fixture requires NODE_ENV=test.");
 const directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-browser-"));
@@ -20,7 +20,7 @@ const origin = `http://127.0.0.1:${port}`;
 const password = `Fixture-${randomBytes(18).toString("hex")}`;
 const legacy = new RecordsLegacyFixture();
 const options = {
-  privacy: testPrivacyConfig,
+  privacy: testPrivacyConfig, imageReviewer: fixtureImageReviewer,
   directory, secret: "isolated-ops-browser-fixture-not-production-secret",
   publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture(),
   provider: { complete: async () => ({ text: "隔离测试回复，不调用外部模型。", calls: [] }) },

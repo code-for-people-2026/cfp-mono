@@ -225,7 +225,7 @@ export class ChatService {
       const metadata = object(reference);
       if (typeof metadata.attachmentId !== "string") continue;
       const id = metadata.attachmentId;
-      const image = await this.attachments.read(principal, turn.babyId, id);
+      const image = await this.attachments.readForModel(principal, turn.babyId, id);
       await this.checkService(principal, turn.babyId);
       images.push({ type: "text", text: JSON.stringify({ type: "bubu_image_reference", ...metadata }) });
       images.push({ type: "image_url" as const, image_url: { url: `data:${image.attachment.mime};base64,${image.bytes.toString("base64")}` } });

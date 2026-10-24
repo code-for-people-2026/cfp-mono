@@ -206,10 +206,12 @@ export class OperationsService {
   }
   async upload(raw: OpsUser, babyId: string, reason: string, requestId: string, bytes: Uint8Array, mime: string) {
     const user = await this.user(raw, babyId, true);
-    return this.withPrincipal(user, babyId, true, principal => this.runtime.identity.exclusive(async () => {
+    return this.withPrincipal(user, babyId, true, async principal => {
+      // Commit the intent before external image detection; never hold the identity transaction across it.
+      await this.runtime.identity.executeAuthorized(principal, babyId, "media:write", (_scope, req) => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload.requested", reason, target: { requestId } }, req));
       const result = await this.runtime.attachments.upload(principal, babyId, bytes, mime, requestId);
-      await this.runtime.store.transaction(req => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload", reason, target: { id: result.id, requestId } }, req));
+      await this.runtime.identity.executeAuthorized(principal, babyId, "media:write", (_scope, req) => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload", reason, target: { id: result.id, requestId } }, req));
       return { id: result.id, babyId, mime: result.mime, byteLength: result.byteLength };
-    }));
+    });
   }
 }

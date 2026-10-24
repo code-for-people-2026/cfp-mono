@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { PrivacyService } from "../privacy/service";
 import type { DeletionJob } from "../privacy/deletion";
 import type { CollectorJob } from "../collector/service";
+import type { ImageReviewService } from "../images/review";
 
 export type HealthLevel = "ok" | "warning" | "critical" | "unconfigured";
 export interface HealthCheck { id: string; label: string; level: HealthLevel; message: string; at?: string }
@@ -29,12 +30,13 @@ export async function readHostReport(file: string | undefined) {
 
 /** Only low-cardinality operational counts leave this module; never facts, messages, IDs, or errors. */
 export class OperationsHealth {
-  constructor(private readonly privacy: PrivacyService, private readonly directory: string, private readonly hostReportFile?: string) {}
+  constructor(private readonly privacy: PrivacyService, private readonly directory: string, private readonly hostReportFile?: string, private readonly imageReview?: ImageReviewService) {}
   async read(): Promise<OperationsHealthReport> {
     const now = this.privacy.identity.now(), checks: HealthCheck[] = [];
     const add = (id: string, label: string, level: HealthLevel, message: string, at?: string) => checks.push({ id, label, level, message, ...(at ? { at } : {}) });
     const policyReady = this.privacy.policy().ready;
     add("policy", "隐私配置", policyReady ? "ok" : "unconfigured", policyReady ? "必要配置已填写，仍需单独核对平台审核与供应商约定。" : "运营主体、期限或供应商说明尚未完整配置。到期清理未启用。");
+    add("image-review", "图片安全检测", this.imageReview?.configured ? "warning" : "unconfigured", this.imageReview?.configured ? "本地凭证及披露已配置；不代表供应商已开通、额度充足或真实图片检测已验收。" : "图片上传和图片交给 AI 保持关闭，等待检测服务及处理说明配置。");
     try {
       if (!this.privacy.ledger) throw new Error("Missing ledger");
       this.privacy.ledger.read();

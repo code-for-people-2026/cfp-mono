@@ -27,6 +27,8 @@ import { registerRuntimeState, runtimeState, clearRuntimeState } from "./runtime
 import { createOperationsHandler } from "./operations/http";
 import { MembershipService } from "./membership/service";
 import { OperationsHealth } from "./operations/health";
+import { ImageReviewService, type ImageReviewer } from "./images/review";
+import { configuredImageReviewer } from "./images/aliyun-review";
 
 export interface BubuRuntime {
   store: Store;
@@ -55,6 +57,7 @@ interface RuntimeOptions {
   legacy?: LegacyBackend & LegacyRecordsBackend;
   wechat?: WechatProvider;
   provider?: ChatProvider;
+  imageReviewer?: ImageReviewer;
   privacy?: PrivacyConfig;
   deletionLedger?: string;
   maintenanceWorker?: boolean;
@@ -88,7 +91,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     identity.setContextGuard(identityId => privacy.contextAllowed(identityId));
     const membership = new MembershipService(identity);
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
-    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId) });
+    const imageReview = new ImageReviewService(privacy, options.imageReviewer || configuredImageReviewer());
+    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview });
     const lifecycle = legacy as typeof legacy & Partial<FamilyLifecycle & AccountLifecycle>;
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined, lifecycle.exportAccountData && lifecycle.deleteAccountData ? lifecycle as AccountLifecycle : undefined);
     const safety = new SafetyService(privacy);
@@ -115,7 +119,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     timer?.unref();
     const runtime: BubuRuntime = {
       store, identity, records, attachments, collector, chat, membership, privacy, deletion, safety, maintenance,
-      health: new OperationsHealth(privacy, options.directory, process.env.BUBU_OPERATIONS_REPORT),
+      health: new OperationsHealth(privacy, options.directory, process.env.BUBU_OPERATIONS_REPORT, imageReview),
       mcpUrl: options.mcpUrl, opsOrigin,
       handler: appHandler,
       close: async () => {

@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import sharp from "sharp";
 import { createRuntime, type BubuRuntime } from "../src/runtime";
 import { RecordsLegacyFixture } from "./fixtures/records";
 import { WechatFixture } from "./fixtures/identity";
@@ -61,5 +62,14 @@ describe("privacy HTTP integration and independent emergency response", () => {
     expect((await call("/api/app/privacy/requests", { kind: "privacy", message: "合成数据导出请求" })).status).toBe(201);
     expect((await call("/api/app/privacy/requests")).body.data).toHaveLength(1);
     expect((await call("/api/app/auth/context")).body.babies).toEqual([]);
+  });
+  it("keeps actual runtime image upload closed without supplier credentials after valid image consent", async () => {
+    const policyVersion = runtime.privacy.policy().version;
+    await call("/api/app/privacy/consent", { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+    await call("/api/app/privacy/guardian", { babyId: "baby-a", consent: { policyVersion, guardian: true, sensitive: true, ai: true, images: true, collection: false, groupMembersInformed: false } });
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#aaccff" } }).png().toBuffer();
+    const response = await runtime.handler(new Request(origin + "/api/app/attachments?babyId=baby-a", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/png", "X-Bubu-Client": "native", "X-Bubu-Request-Id": "real-runtime-unconfigured" }, body: new Uint8Array(bytes) }));
+    expect(response.status).toBe(503); expect(await response.json()).toMatchObject({ code: "IMAGE_REVIEW_UNAVAILABLE" });
+    expect((await runtime.store.payload.find({ collection: "care-attachments", overrideAccess: true })).totalDocs).toBe(0);
   });
 });
