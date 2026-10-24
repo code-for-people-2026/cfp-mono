@@ -174,7 +174,9 @@ def node(config, work, script, args, source=False):
                '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '0:0', '--entrypoint', 'node',
                '-v', config['scriptsDirectory'] + ':/scripts:ro', '-v', str(work) + ':/work', '-v', config['keyFile'] + ':/backup.key:ro']
     if source:
-        command += ['-v', config['sourceDirectory'] + ':/source:ro']
+        # Production data belongs to the application UID with mode 0700/0600. Root without
+        # capabilities cannot read it. Grant only DAC read/search, while the bind stays read-only.
+        command += ['--cap-add', 'DAC_READ_SEARCH', '-v', config['sourceDirectory'] + ':/source:ro']
     try: run(command + [config['nodeImage'], '/scripts/' + script] + args)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
@@ -232,7 +234,9 @@ def unpack(source, target):
 
 
 def prune(config):
-    cutoff = time.time() - config['retentionDays'] * 86400
+    # Reserve one hourly interval plus retry/maintenance margin. The retention unit retries
+    # lock contention every minute; daily backup success must not extend retention.
+    cutoff = time.time() - config['retentionDays'] * 86400 + 2 * 3600
     for file in Path(config['backupDirectory']).iterdir():
         if re.fullmatch(r'bubu-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{32}\.enc', file.name):
             private_file(file)
@@ -316,7 +320,7 @@ def main():
     def interrupted(_number, _frame): raise InterruptedError('Host operation interrupted')
     signal.signal(signal.SIGTERM, interrupted)
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=['check', 'backup', 'certificate', 'unpack'])
+    parser.add_argument('action', choices=['check', 'backup', 'prune', 'certificate', 'unpack'])
     parser.add_argument('--config', required=True)
     parser.add_argument('--archive')
     parser.add_argument('--target')
@@ -328,6 +332,13 @@ def main():
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if args.action == 'check': preflight(config)
         elif args.action == 'certificate': certificate(config)
+        elif args.action == 'prune':
+            if not args.apply: raise ValueError('Retention cleanup requires --apply')
+            try: prune(config)
+            except BaseException:
+                # Surface failures in the existing backup alert without inventing a verified backup.
+                write_report(config, 'backup', {'state': 'failed', 'at': now()})
+                raise
         elif args.action == 'backup':
             if not args.apply: raise ValueError('Backup requires --apply after the read-only check')
             try:
