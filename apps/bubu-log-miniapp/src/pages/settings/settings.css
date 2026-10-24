@@ -1,0 +1,7 @@
+.settings-page { padding-top: 24px; }
+.settings-navigation { display: flex; align-items: center; justify-content: space-between; margin: -12px 0 26px; font-size: 17px; font-weight: 600; }
+.settings-spacer { width: 54px; }
+.settings-heading { display: block; font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+.settings-card { margin-top: 24px; padding: 3px 16px 18px; border: 0.5px solid #eee5d6; border-radius: 14px; background: #fffdf9; }
+.settings-feedback, .settings-success { display: block; margin-top: 12px; font-size: 12px; }
+.settings-success { color: #6b865a; }

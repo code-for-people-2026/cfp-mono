@@ -1,6 +1,10 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
   "workspaces": {
+    "apps/bubu-log-miniapp": {
+      "entry": ["config/**/*.ts", "src/**/*.{ts,tsx}", "tests/**/*.ts", "scripts/**/*.mjs", "vitest.config.ts", "playwright.config.ts", "eslint.config.mjs"],
+      "ignoreDependencies": ["react"]
+    },
     "apps/website": {
       "entry": [
         "next.config.ts",

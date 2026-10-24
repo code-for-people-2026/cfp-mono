@@ -22,6 +22,94 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  apps/bubu-log-miniapp:
+    dependencies:
+      '@tarojs/components':
+        specifier: 4.2.0
+        version: 4.2.0(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(postcss@8.5.15)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15))
+      '@tarojs/helper':
+        specifier: 4.2.0
+        version: 4.2.0(@swc/helpers@0.5.15)
+      '@tarojs/plugin-framework-react':
+        specifier: 4.2.0
+        version: 4.2.0(@pmmmwh/react-refresh-webpack-plugin@0.6.2(react-refresh@0.18.0)(type-fest@2.19.0)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@tarojs/runtime@4.2.0)(@tarojs/shared@4.2.0)(@vitejs/plugin-react@4.7.0(vite@4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)))(react@18.2.0)(vite@4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15))
+      '@tarojs/plugin-platform-h5':
+        specifier: 4.2.0
+        version: 4.2.0(54a8d00745850c97732a103eb3c7ef5a)
+      '@tarojs/plugin-platform-weapp':
+        specifier: 4.2.0
+        version: 4.2.0(@tarojs/service@4.2.0(@swc/helpers@0.5.15))(@tarojs/shared@4.2.0)
+      '@tarojs/react':
+        specifier: 4.2.0
+        version: 4.2.0(react@18.2.0)
+      '@tarojs/runtime':
+        specifier: 4.2.0
+        version: 4.2.0
+      '@tarojs/shared':
+        specifier: 4.2.0
+        version: 4.2.0
+      '@tarojs/taro':
+        specifier: 4.2.0
+        version: 4.2.0(@tarojs/components@4.2.0(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(postcss@8.5.15)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(@tarojs/helper@4.2.0(@swc/helpers@0.5.15))(@tarojs/shared@4.2.0)(@types/react@18.3.31)(html-webpack-plugin@5.6.7(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(postcss@8.5.15)(rollup@3.30.0)(webpack-chain@6.5.1)(webpack-dev-server@4.15.2(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15)))(webpack@5.91.0(@swc/core@1.3.96(@swc/helpers@0.5.15))(lightningcss@1.32.0)(postcss@8.5.15))
+      dayjs:
+        specifier: ^1.11.13
+        version: 1.11.23
+      react:
+        specifier: 18.2.0
+        version: 18.2.0
+      react-dom:
+        specifier: 18.2.0
+        version: 18.2.0(react@18.2.0)
+    devDependencies:
+      '@babel/plugin-proposal-decorators':
+        specifier: ^7.29.7
+        version: 7.29.7(@babel/core@7.29.7)
+      '@babel/plugin-transform-class-properties':
+        specifier: ^7.29.7
+        version: 7.29.7(@babel/core@7.29.7)
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@cfp/typescript-config':
+        specifier: workspace:*
+        version: link:../../packages/typescript-config
+      '@playwright/test':
+        specifier: ^1.57.0
+        version: 1.60.0
+      '@tarojs/cli':
+        specifier: 4.2.0
+        version: 4.2.0(@swc/helpers@0.5.15)(@types/node@20.19.43)
+      '@tarojs/vite-runner':
+        specifier: 4.2.0
+        version: 4.2.0(@swc/helpers@0.5.15)(@tarojs/runtime@4.2.0)(@types/babel__core@7.20.5)(jiti@2.7.0)(postcss@8.5.15)(rollup@3.30.0)(terser@5.48.0)(tsx@4.22.4)(typescript@5.9.3)(vite@4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))
+      '@types/node':
+        specifier: ^20.19.30
+        version: 20.19.43
+      '@types/react':
+        specifier: ^18.3.27
+        version: 18.3.31
+      '@types/react-dom':
+        specifier: ^18.3.7
+        version: 18.3.7(@types/react@18.3.31)
+      '@vitejs/plugin-react':
+        specifier: ^4.7.0
+        version: 4.7.0(vite@4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))
+      '@vitest/coverage-v8':
+        specifier: ^1.6.1
+        version: 1.6.1(vitest@1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vite:
+        specifier: ^4.5.14
+        version: 4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)
+      vitest:
+        specifier: ^1.6.1
+        version: 1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)
+
   apps/community-cooking:
     dependencies:
       '@cfp/weekly-menu-shared':
@@ -5357,6 +5445,9 @@ packages:
 
   dateformat@4.6.3:
     resolution: {integrity: sha512-2P0p0pFGzHS5EMnhdxQi7aJN+iMheud0UhG4dlE1DLAlvL8JHjJJTX/CSm4JXwV0Ka5nGk3zC5mcb5bUQUxxMA==}
+
+  dayjs@1.11.23:
+    resolution: {integrity: sha512-QDTCU0M0MxR3hQfnlDJfwekQiaanm1ubOD231u73WBckQ/fsamwRLiE2GBz6D3a/xF1NgfiDLJjXBa1hYOYTtQ==}
 
   debug@2.6.9:
     resolution: {integrity: sha512-bC7ElrdJaJnPbAP+1EotYvqZsb3ecl5wi6Bfi6BJTUcNowp6cvspg0jXznRTKDjm/E7AdgFBVeAPVMNcKGsHMA==}
@@ -15318,6 +15409,8 @@ snapshots:
   dateformat@2.2.0: {}
 
   dateformat@4.6.3: {}
+
+  dayjs@1.11.23: {}
 
   debug@2.6.9:
     dependencies:
