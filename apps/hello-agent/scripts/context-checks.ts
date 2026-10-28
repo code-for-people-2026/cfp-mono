@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { Repository } from "../src/cms/repository";
@@ -39,7 +40,7 @@ export async function verifyContext(repo: Repository) {
   await assert.rejects(() => context.ensureRoom(session.id), /空间已满/);
   await assert.rejects(
     () =>
-      new GreetingService(repo).acceptExternal({
+      new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).acceptExternal({
         sessionId: session.id,
         requestId: randomUUID(),
         input: { text: "外部不能绕过" },
@@ -86,7 +87,7 @@ export async function verifyContext(repo: Repository) {
     1,
   );
   assert.equal(calls, 1);
-  assert.equal((await new GreetingService(repo).history(session.id)).length, 8);
+  assert.equal((await new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(session.id)).length, 8);
   const restored = new ContextService(new Repository(repo.payload, repo.owner));
   const model = await restored.modelContext(session.id);
   assert.equal(model.memory, next.summary);
@@ -138,7 +139,7 @@ export async function verifyContext(repo: Repository) {
     });
   assert.equal((await restored.modelContext(archive.id)).previous.length, 102);
   assert.equal(
-    (await new GreetingService(repo).history(archive.id)).length,
+    (await new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).history(archive.id)).length,
     102,
   );
   const fresh = new ContextService(

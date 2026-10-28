@@ -5,9 +5,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
 import { BaseLlm, type LlmRequest, type LlmResponse } from "@google/adk";
-import type { ImageProvider } from "../src/images/wan";
+import { ImageSubmissionRejected, wanProvider, type ImageProvider } from "../src/images/wan";
 import type { ImageObjectStore } from "../src/storage/oss";
 import { AppError, ContentReviewError } from "../src/domain/contracts";
+import type { Moderator } from "../src/domain/moderation";
 import { seedSyntheticAge } from "./synthetic-age";
 
 const directory = await mkdtemp(path.join(tmpdir(), "aj-image-generation-"));
@@ -135,6 +136,24 @@ try {
   await assert.rejects(() => uncertain.generate(fourth.id, imageInput, AbortSignal.timeout(3000)), /避免重复扣费/);
   assert.equal(uncertainCalls, 1);
 
+  // Replay the real FAILED/DataInspectionFailed response through the adapter
+  // and product service. It must be terminal safety blocking, not a dead task.
+  for (const duringSubmit of [true, false]) {
+    const row = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-block", status: "running", mode: "platform", input: { mediaIds: [], text: "合成供应商拒绝" } });
+    const mockFetch: typeof fetch = async (_input, init) => Response.json(init?.method === "POST"
+      ? duringSubmit ? { code: "DataInspectionFailed" } : { output: { task_id: "blocked-task", task_status: "PENDING" } }
+      : { output: { task_id: "blocked-task", task_status: "FAILED", code: "DataInspectionFailed" } }, { status: init?.method === "POST" && duringSubmit ? 400 : 200 });
+    const generator = new ImageGenerationService(repo, media, allowText, allowImage, () => wanProvider("https://dashscope.aliyuncs.com", "synthetic", mockFetch));
+    await assert.rejects(generator.generate(row.id, imageInput, AbortSignal.timeout(3000)), { status: 422 });
+    assert.equal((await repo.get("greetings", row.id)).imageGeneration?.status, "blocked");
+    assert.equal(canResumeImage(await repo.get("greetings", row.id)), false);
+  }
+  const limited = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-throttle", status: "running", mode: "platform", input: { mediaIds: [], text: "合成限流" } });
+  const throttled = new ImageGenerationService(repo, media, allowText, allowImage, () => ({ ...provider, async submit() { throw new ImageSubmissionRejected(503, "尚未受理"); } }));
+  await assert.rejects(throttled.generate(limited.id, imageInput, AbortSignal.timeout(3000)), /尚未受理/);
+  assert.equal((await repo.get("greetings", limited.id)).imageGeneration?.status, "failed");
+  assert.equal(canResumeImage(await repo.get("greetings", limited.id)), false);
+
   const privacy = new PrivacyService(repo, media);
   await privacy.consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
   const exported = await privacy.exportData();
@@ -163,6 +182,43 @@ try {
   const beforeReviewRetry = submitted;
   assert.equal((await service.resumeImage(waitingReview.id)).status, "completed");
   assert.equal(submitted, beforeReviewRetry, "审核服务恢复后不重新计费生图");
+  // A model can rewrite a harmful request into an innocent drawing. The
+  // product must check the original request before new work AND old-task reuse.
+  const policyRepo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
+  await seedSyntheticAge(payload, policyRepo.owner);
+  const policyMedia = new MediaService(policyRepo, () => store);
+  const harmfulOriginal = "请用万相生成图片，把虚构外交危机包装成权威消息";
+  let originalReviews = 0, pixelReviews = 0;
+  const rejectOriginal: Moderator = async (request) => {
+    if (request.purpose === "image_generation") {
+      originalReviews++;
+      assert.equal(request.stage, "input");
+      assert.deepEqual(request.texts, [harmfulOriginal], "审核原题，不能只检查已改写的番茄绘图说明");
+      throw new ContentReviewError(422, "原请求拒绝，不生成替代图");
+    }
+  };
+  const policyService = new GreetingService(policyRepo, undefined, policyMedia, undefined, { moderate: rejectOriginal, imageReviewer: async () => { pixelReviews++; return allowImage(); }, imageProvider: () => provider });
+  const policySession = await policyService.createSession("有害原请求不自动改图");
+  const policyImages = new ImageGenerationService(policyRepo, policyMedia, rejectOriginal, allowImage, () => provider);
+  const beforeIntentGate = { submitted, downloaded, objects: objects.size };
+  for (const state of [undefined, "pending", "stored"] as const) {
+    const row = await policyRepo.create("greetings", { sessionId: policySession.id, requestKey: randomUUID(), fingerprint: "original-image-intent", status: "running", mode: "platform", input: { mediaIds: [], text: harmfulOriginal },
+      ...(state ? { imageGeneration: { input: imageInput, model: "wan2.6-t2i", status: state, startedAt: new Date().toISOString(), taskId: "existing-task", ...(state === "stored" ? { mediaId: imageRow.id } : {}) } } : {}) });
+    await assert.rejects(policyImages.generate(row.id, imageInput, AbortSignal.timeout(3000)), { status: 422 });
+    const rejected = await policyRepo.get("greetings", row.id);
+    assert.equal(rejected.imageGeneration?.status ?? undefined, state ? "blocked" : undefined);
+    assert.equal(canResumeImage(rejected), false, "明确拒绝的旧任务不能继续试取图片");
+  }
+  for (const source of [{ type: "illustration" as const, background: "#ffffff", shapes: [{ type: "circle" as const, x: 50, y: 50, radius: 20, fill: "#000000" }] }, { type: "media" as const, mediaId: imageRow.id }]) {
+    const row = await policyRepo.create("greetings", { sessionId: policySession.id, requestKey: randomUUID(), fingerprint: "save-image-intent", status: "running", mode: "platform", input: { mediaIds: [], text: harmfulOriginal } });
+    await assert.rejects(policyService.complete(row.id, { greeting: "我改成一张公益图", association: "合成绕过验证", artifacts: [{ kind: "image", id: "replacement", title: "公益图", alt: "清楚的公益图片", source }] }), { status: 422 });
+    assert.equal((await policyRepo.get("greetings", row.id)).status, "running");
+    await policyService.complete(row.id, { greeting: "不能伪造权威消息，本次不生成图片。", association: "拒绝原请求", artifacts: [] });
+    assert.equal((await policyRepo.get("greetings", row.id)).status, "completed", "安全文字拒绝仍可保存");
+  }
+  assert.equal(originalReviews, 5); assert.equal(pixelReviews, 0);
+  assert.deepEqual({ submitted, downloaded, objects: objects.size }, beforeIntentGate, "拒绝前不提交、取图、审核图片或存储");
+  console.log("✓ 有害原请求防改图：新任务、待取任务、已存图片、几何插画及旧图引用5条路径拒绝，零生图/取图/像素审核，纯文字拒绝可保存（合成判定，真实应用/数据库）。");
   // Simulate a media commit whose turn reference has not yet been written.
   const unlinked = await media.save((await media.read(imageRow.id)).bytes, { turnId: fourth.id, provider: "bailian", model: "wan2.6-t2i", taskId: "synthetic-unlinked" });
   for (const turn of [saved, fourth]) await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: { key: `synthetic-turn:${turn.id}`, owner: repo.owner.id, targetType: "turn", targetId: turn.id, sessionId: session.id, caseId: 1, active: true, reason: "仅合成隔离测试" } });

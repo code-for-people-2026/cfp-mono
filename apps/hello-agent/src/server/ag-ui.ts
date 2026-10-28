@@ -10,11 +10,13 @@ import {
 } from "@cfp/hello-agent-protocol";
 import { AppError, turnSchema } from "../domain/contracts";
 import type { GreetingService } from "../domain/greetings";
+import { requirePlatformInput } from "./service-scope";
 
 export function readAgentInput(value: unknown) {
   const parsed = RunAgentInputSchema.safeParse(value);
   if (!parsed.success) throw new AppError(400, "AG-UI 请求格式不正确");
   const run = parsed.data;
+  requirePlatformInput(run.forwardedProps);
   if (run.protocolVersion && run.protocolVersion !== "1.0")
     throw new AppError(400, "不支持此 AG-UI 版本");
   const props = z

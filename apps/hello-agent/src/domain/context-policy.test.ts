@@ -5,6 +5,7 @@ import {
   memorySchema,
   memoryTokens,
   summarySchema,
+  forgetContextRequested,
 } from "./context-policy";
 import {
   adConfiguration,
@@ -15,6 +16,10 @@ import {
 
 afterEach(() => vi.unstubAllEnvs());
 describe("记忆血条与观看资格", () => {
+  it("only resets context for explicit standalone forget requests", () => {
+    for (const s of ["请忘掉这件事。", "请把这件事忘掉", "忘掉之前的对话", "请你忘记我刚才说的"]) expect(forgetContextRequested(s)).toBe(true);
+    for (const s of ["请不要忘掉这件事", "他说‘请忘掉这件事’", "我忘掉这件事了", "怎样才能忘掉烦恼？"]) expect(forgetContextRequested(s)).toBe(false);
+  });
   it("没有记录时满血，中文与英文均纳入估算", () => {
     expect(estimateTokens("")).toBe(0);
     expect(estimateTokens("abcd")).toBe(1);

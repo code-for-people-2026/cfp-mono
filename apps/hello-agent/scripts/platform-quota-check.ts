@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -139,7 +140,7 @@ try {
     });
     const firstRepo = makeRepo();
     const service = new GreetingService(firstRepo, (args) =>
-      runGreeting(args, model),
+      runGreeting(args, model), undefined, undefined, { moderate: syntheticTextReview }
     );
     const session = await service.createSession();
     const first = request(session.id);
@@ -151,7 +152,7 @@ try {
 
     const failing = new GreetingService(makeRepo(), async () => {
       throw new Error("provider timeout");
-    });
+    }, undefined, undefined, { moderate: syntheticTextReview });
     await assert.rejects(
       failing.generateGreeting(request((await failing.createSession()).id)),
       { status: 502 },
@@ -169,7 +170,7 @@ try {
     assert.equal(await used(), 18);
     const byokModel = new ScriptedModel();
     const third = new GreetingService(makeRepo(), (args) =>
-      runGreeting(args, byokModel),
+      runGreeting(args, byokModel), undefined, undefined, { moderate: syntheticTextReview }
     );
     const thirdSession = await third.createSession();
     await assert.rejects(third.generateGreeting(request(thirdSession.id)), {

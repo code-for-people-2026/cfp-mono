@@ -66,7 +66,8 @@ try {
   await repo.create("adk-sessions", { key: randomUUID(), snapshot: { id: "trace", appName: "privacy-test", userId: owner.id, state: {}, events: [], lastUpdateTime: 1 } });
   await service.consent({ ...consent, sensitive: true, external: true, externalRecipient: { name: "隔离测试客户端", contact: "test@example.invalid", region: "本地测试", privacyUrl: "https://example.invalid/privacy" } });
   assert.notEqual((await client.callTool({ name: "hello_list_sessions", arguments: {} })).isError, true);
-  const bearer = await mintCredential(payload, "bearer", owner.id);
+  await assert.rejects(() => mintCredential(payload, "bearer", owner.id), /仅开放平台/);
+  const recoveredTestCredential = await mintCredential(payload, "miniapp", owner.id);
   const photo = await sharp({ create: { width: 20, height: 20, channels: 3, background: "#aabbcc" } }).jpeg().toBuffer();
   const original = await service.media.save(photo);
   assert.deepEqual((await service.media.read(original.id)).bytes, photo);
@@ -88,7 +89,7 @@ try {
   assert.equal(await recoverOwner(payload, code), owner.id);
   await service.consent({ ...consent, sensitive: true, external: true, externalRecipient: { name: "隔离测试客户端", contact: "test@example.invalid", region: "本地测试", privacyUrl: "https://example.invalid/privacy" } });
   await assert.rejects(() => recoverOwner(payload, "x".repeat(43)), /恢复码无效/);
-  await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { authorization: `Bearer ${bearer.token}` } }), true), /已过期/);
+  await assert.rejects(() => authenticate(payload, new Request("http://localhost", { headers: { authorization: `Bearer ${recoveredTestCredential.token}` } })), /已过期/);
   const model = new ScriptedModel();
   await runGreeting({ repo, turnId: 123456, sessionId: session.id, input: { text: "本轮生成中撤回", mediaIds: [] }, apiKey: "isolated-test", model: "isolated-test", readImage: async () => { throw new Error("unexpected image read"); }, save: async () => { await service.withdraw(); throw new AppError(403, "已撤回同意"); } }, model);
   assert.equal(model.requests.length, 1, "撤回后不继续向模型请求重试");

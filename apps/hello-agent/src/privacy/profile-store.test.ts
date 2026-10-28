@@ -1,3 +1,6 @@
+import { createHash, randomBytes } from "node:crypto";
+import { up as interactionMigration } from "../cms/migrations/20261024_100000_interaction_safety";
+import { up as feishuMigration } from "../cms/migrations/20261024_120000_feishu_alerts";
 import { operationsCollections } from "../operations/collections";
 import { up as safetyMigration } from "../cms/migrations/20261013_163000_safety_operations";
 import { ageCollections } from "../age/collections";
@@ -71,13 +74,20 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
-  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args);
+  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args); await interactionMigration(args); await feishuMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });
 // Business tests start from a synthetic completed WeChat/age prerequisite.
 // Cookie/recovery credentials still never acquire a WeChat binding.
 const mintCredential: typeof issueCredential = (db, kind, owner, wechatKey) => issueCredential(db, kind, owner, wechatKey ?? (kind !== "cookie" && owner ? `fixture:${owner}` : undefined));
+// 仅测试夹具导入升级前已存在的令牌；生产签发路径始终拒绝 bearer。
+async function legacyCredential(db: Payload, owner: string) {
+  const token = randomBytes(32).toString("base64url"), expiresAt = "2099-01-01T00:00:00.000Z";
+  await db.create({ collection: "credentials", overrideAccess: true, data: { owner, kind: "bearer", digest: createHash("sha256").update(token).digest("hex"), expiresAt, wechatKey: `fixture:${owner}` } });
+  return { token, owner, expiresAt };
+}
+
 async function setup(owner: string) {
   await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner, revision: 0, state: "active", consent: consent(), expiresAt: "2020-01-01T00:00:00.000Z" } });
   return new PrivacyService(new Repository(payload, { id: owner, auth: "cookie" }));
@@ -135,26 +145,17 @@ it.each(["deleting", "deleted"] as const)("%s 资料不能恢复或重新签发�
   await expect(recoverOwner(payload, code)).rejects.toMatchObject({ status: 401 });
   await expect(mintCredential(payload, "cookie", service.repo.owner.id)).rejects.toMatchObject({ status: 409 });
 });
-it("旧 bearer 的缓存鉴权跨过恢复后，token 路由重新鉴权拒绝续签", async () => {
+it("外部令牌关闭后不能续签，身份恢复仍可签发本人 Cookie", async () => {
   const service = await setup("old-bearer");
-  await updateProfile(payload, (await profileFor(payload, service.repo.owner.id))!, { consent: { ...consent(), external: true, externalRecipient: { name: "测试客户端", contact: "test@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } }, expiresAt: "2099-01-01T00:00:00.000Z", historyInspected: true });
   const { code } = await service.recoveryCode();
-  const old = await mintCredential(payload, "bearer", service.repo.owner.id);
-  const read = Promise.withResolvers<void>(), resume = Promise.withResolvers<void>();
-  const originalFind = payload.find.bind(payload);
-  const find = vi.spyOn(payload, "find").mockImplementationOnce(async (options) => {
-    const result = await originalFind(options); read.resolve(); await resume.promise; return result;
-  });
-  vi.stubEnv("HELLO_ORIGIN", "http://localhost");
-  const pending = POST(new Request("http://localhost/api/hello/token", { method: "POST", headers: { origin: "http://localhost", authorization: `Bearer ${old.token}` } }), { params: Promise.resolve({ path: ["token"] }) });
-  try {
-    await read.promise;
-    const current = await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
-    resume.resolve(); const response = await pending; expect({ status: response.status, body: await response.json() }).toMatchObject({ status: 401 });
-    expect(await authenticate(payload, new Request("http://localhost", { headers: { cookie: `hello_identity=${current.token}` } }))).toMatchObject({ id: service.repo.owner.id, auth: "cookie" });
-    const credentials = await payload.find({ collection: "credentials", overrideAccess: true, where: { owner: { equals: service.repo.owner.id } } });
-    expect(credentials.docs.map((row) => row.kind)).toEqual(["cookie"]);
-  } finally { resume.resolve(); await pending; find.mockRestore(); vi.unstubAllEnvs(); }
+  const old = await legacyCredential(payload, service.repo.owner.id);
+  const response = await POST(new Request("http://localhost/api/hello/token", { method: "POST", headers: { authorization: `Bearer ${old.token}` } }), { params: Promise.resolve({ path: ["token"] }) });
+  expect(response.status).toBe(403);
+  await expect(issueCredential(payload, "bearer", service.repo.owner.id)).rejects.toMatchObject({ status: 403 });
+  const current = await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
+  expect(await authenticate(payload, new Request("http://localhost", { headers: { cookie: `hello_identity=${current.token}` } }))).toMatchObject({ id: service.repo.owner.id, auth: "cookie" });
+  const credentials = await payload.find({ collection: "credentials", overrideAccess: true, where: { owner: { equals: service.repo.owner.id } } });
+  expect(credentials.docs.map((row) => row.kind)).toEqual(["cookie"]);
 });
 it("恢复在签发前持有身份保护，删除须重试且完成后不残留新凭证", async () => {
   const service = await setup("recovery-delete");
@@ -254,14 +255,14 @@ it("接收方变更前旧 bearer 撤销失败，授权与历史保持原样，�
   const recipient = { name: "原接收方", contact: "old@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" };
   await updateProfile(payload, (await profileFor(payload, service.repo.owner.id))!, { consent: { ...consent(), external: true, externalRecipient: recipient }, expiresAt: "2099-01-01T00:00:00.000Z" });
   const before = (await profileFor(payload, service.repo.owner.id))!;
-  const old = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const old = await legacyCredential(payload, service.repo.owner.id);
   const next = { ...consent(), external: true, externalRecipient: { ...recipient, name: "新接收方", contact: "new@example.invalid" } };
   const erase = vi.spyOn(payload, "delete").mockResolvedValueOnce({ docs: [], errors: [{ id: 1, isPublic: false, message: "simulated partial failure" }] });
   try {
     await expect(service.consent(next)).rejects.toMatchObject({ status: 503 });
     expect(await profileFor(payload, service.repo.owner.id)).toEqual(before);
     const request = new Request("http://localhost", { headers: { authorization: `Bearer ${old.token}` } });
-    await expect(authenticate(payload, request)).resolves.toMatchObject({ id: service.repo.owner.id });
+    await expect(authenticate(payload, request)).rejects.toMatchObject({ status: 403 });
     await service.consent(next);
     expect(await profileFor(payload, service.repo.owner.id)).toMatchObject({ revision: before.revision + 1, consent: next });
     await expect(authenticate(payload, request)).rejects.toMatchObject({ status: 401 });
@@ -314,7 +315,7 @@ it.each(unclassifiedHistory.flatMap((text) => [false, true].map((inspected) => (
   await updateProfile(payload, (await profileFor(payload, service.repo.owner.id))!, { historyInspected: inspected, sensitiveHistory: false });
   await payload.db.drizzle.run(sql`INSERT INTO greetings (owner, session_id, request_key, fingerprint, mode, status, input) VALUES (${service.repo.owner.id}, 7, ${crypto.randomUUID()}, 'fixture', 'external', 'completed', ${JSON.stringify({ text, mediaIds: [] })})`);
   const current = (await profileFor(payload, service.repo.owner.id))!;
-  const token = await mintCredential(payload, "bearer", service.repo.owner.id); // legacy credential with external-only consent
+  const token = await legacyCredential(payload, service.repo.owner.id); // legacy credential with external-only consent
   const requestId = crypto.randomUUID();
   const paths = [["sessions"], ["sessions", "7"], ["sessions", "7", "requests", requestId], ["context", "7"], ["artifact-page", "7", "page"], ["artifact-image", "7", "image"]];
   const read = vi.spyOn(payload, "find");
@@ -336,13 +337,13 @@ it.each(unclassifiedHistory.flatMap((text) => [false, true].map((inspected) => (
   } finally { read.mockRestore(); }
 
   await service.consent({ ...(current.consent as object), sensitive: true });
-  const allowed = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const allowed = await legacyCredential(payload, service.repo.owner.id);
   const history = await GET(new Request("http://localhost/api/hello/sessions/7", { headers: rpcHeaders(allowed.token) }), { params: Promise.resolve({ path: ["sessions", "7"] }) });
-  expect(history.status).toBe(200); expect(business.history).toHaveBeenCalledOnce();
+  expect(history.status).toBe(403); expect(business.history).not.toHaveBeenCalled();
   const body = { jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "hello_get_context", arguments: { sessionId: 7 } } };
   const context = await mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(allowed.token), body: JSON.stringify(body) }));
-  expect(context.status).toBe(200); expect((await context.json()).result.isError).not.toBe(true);
-  expect(business.context).toHaveBeenCalledTimes(2);
+  expect(context.status).toBe(403);
+  expect(business.context).not.toHaveBeenCalled();
 });
 
 it.each(["hello_get_history", "hello_get_context"])("MCP 工具 %s 自身也检查敏感授权，不依赖 HTTP 外层", async (tool) => {
@@ -357,7 +358,7 @@ it.each(["hello_get_history", "hello_get_context"])("MCP 工具 %s 自身也检�
 it.each(["greet", "ag-ui", "context"])("外部 bearer 不能经 REST %s 绕过敏感授权复用历史", async (route) => {
   const service = await authorized(`external-processing-${route}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
-  const token = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const token = await legacyCredential(payload, service.repo.owner.id);
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
   try {
     const body = route === "ag-ui" ? agentBody() : { sessionId: 7, requestId: crypto.randomUUID(), mode: "platform", input: { text: "ordinary new input", mediaIds: [] } };
@@ -381,25 +382,17 @@ it.each(["cookie", "miniapp"] as const)("%s 未开敏感授权时，仅微信本
     expect((await payload.find({ collection: "credentials", overrideAccess: true, where: { owner: { equals: service.repo.owner.id } } })).docs.map((row) => row.kind)).toEqual([kind]);
   } finally { vi.unstubAllEnvs(); }
 });
-it.each(["recovery", "recipient"].flatMap((change) => ["hello_get_history", "hello_get_image"].map((tool) => ({ change, tool }))))("MCP $tool 延迟正文跨过 $change 后旧 token 失效，新连接仍可执行真实传输", async ({ change, tool }) => {
-  const service = await authorized(`mcp-${change}-${tool}`);
+it.each(["hello_get_history", "hello_get_image"])("关闭的 MCP %s 不读取迟到正文，也不阻碍本人恢复", async (tool) => {
+  const service = await authorized(`mcp-closed-${tool}`);
   const { code } = await service.recoveryCode();
-  const old = await mintCredential(payload, "bearer", service.repo.owner.id);
-  const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: tool === "hello_get_image" ? { mediaId: 1 } : { sessionId: 7 } } };
-  const delayed = delayedRequest("http://localhost/api/mcp", rpcHeaders(old.token), body);
-  const pending = mcpPost(delayed.request);
+  const old = await legacyCredential(payload, service.repo.owner.id);
+  const delayed = delayedRequest("http://localhost/api/mcp", rpcHeaders(old.token), { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: tool, arguments: { sessionId: 7 } } });
   try {
-    await delayed.paused.promise;
-    if (change === "recovery") await withRecoveredOwner(payload, code, (owner) => mintCredential(payload, "cookie", owner));
-    else await service.consent({ ...consent(), sensitive: true, external: true, externalRecipient: { name: "接收方 B", contact: "b@example.invalid", region: "隔离测试", privacyUrl: "https://example.invalid/privacy" } });
-    delayed.resume.resolve(); expect((await pending).status).toBe(401);
+    expect(mcpPost(delayed.request).status).toBe(403);
+    expect(delayed.request.bodyUsed).toBe(false);
     expect(business.history).not.toHaveBeenCalled(); expect(business.image).not.toHaveBeenCalled();
-    const current = await mintCredential(payload, "bearer", service.repo.owner.id);
-    const response = await mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(current.token), body: JSON.stringify(body) }));
-    expect(response.status).toBe(200);
-    expect((await response.json()).result.isError).not.toBe(true);
-    expect(tool === "hello_get_image" ? business.image : business.history).toHaveBeenCalledTimes(1);
-  } finally { delayed.resume.resolve(); await pending; }
+    await expect(recoverOwner(payload, code)).resolves.toBe(service.repo.owner.id);
+  } finally { delayed.resume.resolve(); await delayed.request.body?.cancel(); }
 });
 it.each(["success", "failure", "disconnect"])("AG-UI %s 在后台生成结束前持续保护凭证，之后可恢复", async (mode) => {
   const service = await authorized(`stream-${mode}`);
@@ -420,30 +413,10 @@ it.each(["success", "failure", "disconnect"])("AG-UI %s 在后台生成结束前
   } finally { finish.resolve(); vi.unstubAllEnvs(); }
 });
 
-it("MCP 工具执行结束前不能恢复身份，真实 JSON 传输完成后释放保护", async () => {
-  const service = await authorized("mcp-active-execution");
-  const { code } = await service.recoveryCode();
-  const credential = await mintCredential(payload, "bearer", service.repo.owner.id);
-  const started = Promise.withResolvers<void>(), finish = Promise.withResolvers<void>();
-  business.history.mockImplementationOnce(async () => { started.resolve(); await finish.promise; return [{ id: 1, greeting: "synthetic history" }]; });
-  const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hello_get_history", arguments: { sessionId: 7 } } };
-  const pending = mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(credential.token), body: JSON.stringify(body) }));
-  try {
-    await started.promise;
-    const recovery = recoverOwner(payload, code);
-    await vi.waitFor(async () => expect((await GET(new Request("http://localhost/api/hello/sessions/7", { headers: rpcHeaders(credential.token) }), { params: Promise.resolve({ path: ["sessions", "7"] }) })).status).toBe(409));
-    finish.resolve();
-    const response = await pending;
-    expect(response.status).toBe(200);
-    expect((await response.json()).result.isError).not.toBe(true);
-    await expect(recovery).resolves.toBe(service.repo.owner.id);
-  } finally { finish.resolve(); await pending; }
-});
-
 it.each(["media", "artifact-image"])("关闭敏感授权后，REST %s 拒绝外部 bearer，但本人仍能查阅图片", async (route) => {
   const service = await authorized(`image-scope-${route}`);
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: false });
-  const bearer = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const bearer = await legacyCredential(payload, service.repo.owner.id);
   const personal = await mintCredential(payload, "miniapp", service.repo.owner.id);
   if (route === "artifact-image") {
     const artifact = { kind: "image", id: "uploaded", title: "用户图片", alt: "合成图片", source: { type: "media", mediaId: 1 } };
@@ -457,17 +430,18 @@ it.each(["media", "artifact-image"])("关闭敏感授权后，REST %s 拒绝外�
   const own = await read({ authorization: `Bearer ${personal.token}` });
   expect(own.status).toBe(200); expect(await own.text()).toBe("synthetic-image");
   await service.consent({ ...((await profileFor(payload, service.repo.owner.id))!.consent as object), sensitive: true });
-  const current = await mintCredential(payload, "bearer", service.repo.owner.id);
-  expect((await read(rpcHeaders(current.token))).status).toBe(200);
+  const current = await legacyCredential(payload, service.repo.owner.id);
+  expect((await read(rpcHeaders(current.token))).status).toBe(403);
 });
 
 const controls = ["consent", "withdraw", "logout", "delete", "recovery-code", "revoke"];
 it.each((["cookie", "miniapp"] as const).flatMap((kind) => controls.map((action) => ({ kind, action }))))("业务配额用尽后 $kind 本人仍可进入 $action，外部连接不能消耗隐私额度", async ({ kind, action }) => {
   const service = await authorized(`quota-${kind}-${action}`);
-  const bearer = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const bearer = await legacyCredential(payload, service.repo.owner.id);
   const personal = await mintCredential(payload, kind, service.repo.owner.id);
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
-  const businessRequest = () => POST(new Request("http://localhost/api/hello/sessions", { method: "POST", headers: { ...rpcHeaders(bearer.token), origin: "http://localhost" }, body: JSON.stringify({ title: "synthetic" }) }), { params: Promise.resolve({ path: ["sessions"] }) });
+  const businessCredential = await mintCredential(payload, "miniapp", service.repo.owner.id);
+  const businessRequest = () => POST(new Request("http://localhost/api/hello/sessions", { method: "POST", headers: { ...rpcHeaders(businessCredential.token), origin: "http://localhost" }, body: JSON.stringify({ title: "synthetic" }) }), { params: Promise.resolve({ path: ["sessions"] }) });
   const controlPath = action === "revoke" ? ["token", "revoke"] : ["privacy", action];
   const control = (headers: Record<string, string>) => POST(new Request(`http://localhost/api/hello/${controlPath.join("/")}`, { method: "POST", headers: { origin: "http://localhost", ...headers }, body: JSON.stringify(action === "consent" ? { ...consent(), sensitive: false, external: false } : { confirmation: "invalid confirmation" }) }), { params: Promise.resolve({ path: controlPath }) });
   try {
@@ -475,7 +449,7 @@ it.each((["cookie", "miniapp"] as const).flatMap((kind) => controls.map((action)
     expect((await businessRequest()).status).toBe(429);
     for (let count = 0; count < 25; count++) {
       const response = await control(rpcHeaders(bearer.token));
-      expect(response.status).toBe(action === "revoke" ? 429 : 403);
+      expect(response.status).toBe(403);
     }
     const headers: Record<string, string> = kind === "cookie" ? { cookie: `hello_identity=${personal.token}` } : { authorization: `Bearer ${personal.token}` };
     const response = await control(headers);
@@ -484,20 +458,19 @@ it.each((["cookie", "miniapp"] as const).flatMap((kind) => controls.map((action)
     if (["consent", "withdraw", "logout", "revoke"].includes(action)) await expect(authenticate(payload, new Request("http://localhost", { headers: rpcHeaders(bearer.token) }))).rejects.toMatchObject({ status: 401 });
   } finally { vi.unstubAllEnvs(); }
 });
-it("MCP 实际工具请求耗尽业务额度后，本人仍可撤回授权", async () => {
+it("重复访问已关闭 MCP 不消耗本人撤回授权额度", async () => {
   const service = await authorized("mcp-quota");
-  const bearer = await mintCredential(payload, "bearer", service.repo.owner.id);
+  const bearer = await legacyCredential(payload, service.repo.owner.id);
   const cookie = await mintCredential(payload, "cookie", service.repo.owner.id);
   const body = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "hello_get_history", arguments: { sessionId: 7 } } };
   const request = () => mcpPost(new Request("http://localhost/api/mcp", { method: "POST", headers: rpcHeaders(bearer.token), body: JSON.stringify(body) }));
-  for (let count = 0; count < 20; count++) expect((await request()).status).toBe(200);
-  expect((await request()).status).toBe(429);
+  for (let count = 0; count < 25; count++) expect((await request()).status).toBe(403);
   vi.stubEnv("HELLO_ORIGIN", "http://localhost");
   try {
     const response = await POST(new Request("http://localhost/api/hello/privacy/withdraw", { method: "POST", headers: { origin: "http://localhost", cookie: `hello_identity=${cookie.token}` } }), { params: Promise.resolve({ path: ["privacy", "withdraw"] }) });
     expect(response.status).toBe(200);
     expect((await profileFor(payload, service.repo.owner.id))!.state).toBe("withdrawn");
-    expect((await request()).status).toBe(401);
+    expect((await request()).status).toBe(403);
   } finally { vi.unstubAllEnvs(); }
 });
 

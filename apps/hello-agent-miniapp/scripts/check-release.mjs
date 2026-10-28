@@ -20,8 +20,9 @@ const bootstrapPath = html.match(/src="\/chat\/(js\/app\.[^"\s]+\.js)"/)?.[1];
 assert.ok(bootstrapPath, "缺少 H5 入口");
 const bootstrap = await read(bootstrapPath);
 const settingsPages = [
-  ["pages/settings/index", "设置", ["settings-page", "settings-header", "连接方式", "隐私与数据", "帮助与反馈"]],
-  ["pages/connection/index", "连接方式", ["mode-option", "生成专用连接令牌"]],
+  ["pages/settings/index", "设置", ["settings-page", "settings-header", "连接方式", "隐私与数据", "帮助与反馈", "互动安全"]],
+  ["pages/connection/index", "连接方式", ["平台助手", "当前模型", "图片生成", "由平台提供 DeepSeek 对话和万相图片生成服务。"]],
+  ["pages/safety/index", "互动安全", ["人工支持", "紧急联系人", "保存联系人及单独授权"]],
   ["pages/help/index", "帮助与反馈", ["提交反馈", "我的受理记录", "联系渠道"]],
   ["pages/privacy/index", "隐私与数据", ["授权管理", "导出数据", "删除数据", "政策与协议"]],
   ["pages/privacy/authorization/index", "授权管理", ["保存授权选择"]],
@@ -34,6 +35,10 @@ for (const [route, title, markers] of settingsPages) {
   const page = await readPage(route, title);
   for (const marker of markers)
     assert.ok(page.includes(marker), `发布版本遗漏${title}页：${marker}`);
+  if (route === "pages/connection/index") {
+    for (const marker of ["mode-option", "生成专用连接令牌"])
+      assert.ok(!page.includes(marker), `发布版本仍包含外部连接入口：${marker}`);
+  }
 }
 if (process.env.HELLO_EXPECTED_COMMIT) {
   const info = JSON.parse(await read("build-info.json"));

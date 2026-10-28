@@ -23,7 +23,7 @@ export function HelpPage() {
       const policy = await api.getLegal(); setContact(policy.contact);
       await api.establishIdentity();
       const result = await api.getSafety(); setRows(result.cases); setLoaded(true);
-      setNotice(result.configuration.configured ? `预计 ${result.configuration.acceptanceHours} 小时内受理、${result.configuration.resolutionHours} 小时内处置，处置后 ${result.configuration.feedbackHours} 小时内提供结果。` : "人工值班与处理时限尚待运营配置；提交后可获取受理编号，不代表已有人受理。");
+      setNotice(result.configuration.notice || (result.configuration.configured ? `预计 ${result.configuration.acceptanceHours} 小时内受理、${result.configuration.resolutionHours} 小时内处置，处置后 ${result.configuration.feedbackHours} 小时内提供结果。` : "人工值班与处理时限尚待运营配置；提交后可获取受理编号，不代表已有人受理。"));
     } catch (e) { setError(e instanceof Error ? e.message : "记录读取失败，请点击右上角刷新"); }
     finally { refreshInFlight.current = false; setRefreshing(false); }
   }

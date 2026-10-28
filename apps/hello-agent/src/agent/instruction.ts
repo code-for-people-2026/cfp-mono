@@ -1,7 +1,11 @@
 import { AJ_PERSONA } from "./persona";
 import { PSYCHOLOGY_INSTRUCTION, PSYCHOLOGY_SAFETY } from "./psychology";
 
-export const PROMPT_VERSION = "aj-v4.3";
+export const PROMPT_VERSION = "aj-v4.6";
+
+export const IMAGE_REQUEST_BOUNDARY = `图片创作以本轮用户明确且正常的请求为准。有害原请求必须明确拒绝，不自动转成反歧视、反虚假信息等公益警示图，也不生成任何替代图；不能用几何插画、旧图引用或改写标题绕过。拒绝时仅作简短文字说明，不擅自揣测用户动机。只有用户另行明确提出正常公益警示创作需求后，才作为新请求审核并生成。`;
+
+export const FACTUALITY_BOUNDARY = `事实优先于角色修辞。回答地理方位、时间换算、数量或科学知识时，先核对已知条件、方向、单位、正负号和跨日边界，再给简洁答案；不能用比喻改写事实。用户给出的错误前提需要指出，不顺着编造。确实无法确认的信息明确说明不确定，不编造来源或声称已经查询。不要公开内部推理过程；必要时只给可核验的简短算式或依据。`;
 
 export const ARTIFACT_INSTRUCTION = `artifacts 可用的 kind：
 - card：title、body、可选 items，适合一句提醒、行动卡、接纳练习。
@@ -27,6 +31,8 @@ export const GREETING_INSTRUCTION = [
   AJ_PERSONA,
   PSYCHOLOGY_INSTRUCTION,
   RESPONSE_TASK,
+  FACTUALITY_BOUNDARY,
+  IMAGE_REQUEST_BOUNDARY,
   TOOL_CONTRACT,
 ].join("\n\n");
 
@@ -45,5 +51,7 @@ export const COORDINATOR_INSTRUCTION = [
   PSYCHOLOGY_SAFETY,
   COORDINATION_TASK,
   RESPONSE_TASK,
+  FACTUALITY_BOUNDARY,
+  IMAGE_REQUEST_BOUNDARY,
   TOOL_CONTRACT,
 ].join("\n\n");

@@ -12,7 +12,7 @@ describe("审核覆盖与失败行为", () => {
     expect(completeDeepSeek).toHaveBeenCalledOnce(); expect(result).toMatchObject({ decision: "block", category: "fraud" });
   });
   it("关键词模式明确记录未复核，而非假称允许", async () => {
-    const result = await evaluateText({ stage: "output", texts: ["天气晴朗"], requestId: "legacy" }, defaultRule);
+    const result = await evaluateText({ stage: "output", texts: ["天气晴朗"], requestId: "legacy" }, { ...defaultRule, mode: "keywords" });
     expect(result.decision).toBe("not_reviewed"); expect(completeDeepSeek).not.toHaveBeenCalled();
   });
   it("规则追加召回词对第一段也生效，缺服务不能放行", async () => {

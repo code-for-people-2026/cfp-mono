@@ -1,3 +1,6 @@
+import { InteractionService } from "../../../../interaction/service";
+import { SERVICE_SCOPE } from "@cfp/hello-agent-contracts";
+import { requirePlatformInput, rejectExternalConnection } from "../../../../server/service-scope";
 import { publicImageState } from "../../../../images/service";
 import { OperationsService } from "../../../../operations/service";
 import { imageGenerationConfigured } from "../../../../images/wan";
@@ -57,6 +60,7 @@ export async function GET(request: Request, context: Context) {
       return json(a2uiCatalog());
     if (path[0] === "config")
       return json({
+        serviceScope: SERVICE_SCOPE,
         platformConfigured: Boolean(process.env.DEEPSEEK_API_KEY),
         imageGenerationConfigured: imageGenerationConfigured() && imageReviewConfigured(),
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
@@ -73,6 +77,7 @@ export async function GET(request: Request, context: Context) {
       return json({ configuration: await operations.configuration(), cases: await operations.mine(owner, path[1]) });
     }
       if (path[0] === "age" && path.length === 1) return json(await new AgeService(payload, owner).status());
+      if (path[0] === "interaction" && path.length === 1) return json(await new InteractionService(payload, owner).status());
       if (path[0] === "privacy") return await privacyGet(payload, owner, path[1], request);
       if (owner.auth === "bearer") {
         await new AgeService(payload, owner).requireCapability();
@@ -168,6 +173,7 @@ export async function GET(request: Request, context: Context) {
 export async function POST(request: Request, context: Context) {
   try {
     const path = (await context.params).path;
+    if (path[0] === "token" && path[1] !== "revoke") rejectExternalConnection();
     const payload = await cms();
     if (path[0] === "wechat-login" && path.length === 1) {
       rateLimitLogin(request, "wechat-login");
@@ -205,6 +211,19 @@ export async function POST(request: Request, context: Context) {
     const owner = await authenticate(payload, request);
     checkClientRequest(request, owner);
     if (path[0] === "privacy") return await privacyPost(payload, owner, path[1], request);
+    if (path[0] === "interaction" && path.length === 2) {
+      if (owner.auth === "bearer") throw new AppError(403, "请本人管理互动安全设置");
+      rateLimit(`interaction:${owner.id}`);
+      const body = await readJson(request, 2048);
+      return await withAuthenticatedExecution(payload, request, owner, async (current) => {
+        const service = new InteractionService(payload, current);
+        if (path[1] === "contact") return json(await service.saveContact(body));
+        if (path[1] === "remove-contact") return json(await service.removeContact());
+        if (path[1] === "heartbeat") return json(await service.heartbeat());
+        if (path[1] === "acknowledge") return json(await service.acknowledge(body));
+        throw new AppError(404, "接口不存在");
+      });
+    }
     if (path[0] === "safety") {
       if (owner.auth === "bearer") throw new AppError(403, "请本人在小程序或网页中提交举报或申诉");
       const body = await readJson(request, 8 * 1024);
@@ -226,11 +245,7 @@ export async function POST(request: Request, context: Context) {
           await revokeTokens(payload, current);
           return json({ revoked: true });
         }
-        await new AgeService(payload, current).requireCapability();
-        const currentPrivacy = privacyService(payload, current);
-        await currentPrivacy.requireExternalAccess();
-        const credential = await mintCredential(payload, "bearer", current.id, current.wechatKey);
-        return json({ token: credential.token, expiresAt: credential.expiresAt });
+        rejectExternalConnection();
       });
     }
     if (path[0] === "age") return await withAuthenticatedExecution(payload, request, owner, (current) => agePost(payload, current, path[1], request));
@@ -238,6 +253,7 @@ export async function POST(request: Request, context: Context) {
       request,
       path[0] === "ag-ui" ? 64 * 1024 : undefined,
     );
+    if (["greet", "context", "image-resume"].includes(path[0])) requirePlatformInput(body);
     return await withAuthenticatedExecution(payload, request, owner, async (owner) => {
       checkClientRequest(request, owner);
       const privacy = privacyService(payload, owner);
@@ -256,6 +272,7 @@ export async function POST(request: Request, context: Context) {
     if (path[0] === "image-resume" && path.length === 1) {
       const retry = z.object({ turnId: z.number().int().positive(), requestId: z.string().uuid(), apiKey: z.string().min(10).max(256).optional() }).strict().parse(body);
       const row = await service.repo.get("greetings", retry.turnId);
+      requirePlatformInput({ mode: row.mode, apiKey: retry.apiKey });
       await privacy.requireInput(row.input);
       const args = turnSchema.parse({ sessionId: row.sessionId, requestId: retry.requestId, input: row.input, mode: row.mode, apiKey: retry.apiKey });
       return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) }, args, row.id);

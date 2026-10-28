@@ -11,7 +11,7 @@ function subscribe(listener: () => void) {
   };
 }
 export function selectChatMode(value: Mode) {
-  if (mode === value) return;
+  if (value !== "platform" || mode === value) return;
   mode = value;
   listeners.forEach((listener) => listener());
 }

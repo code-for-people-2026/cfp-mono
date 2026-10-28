@@ -14,7 +14,7 @@ const { migrations } = await import("../src/cms/migrations");
 const payload = await cms();
 try {
   const db = payload.db.drizzle, req = await createLocalReq({}, payload);
-  for (const migration of migrations.filter((m) => !m.name.includes("wechat_"))) await migration.up({ db, payload, req });
+  for (const migration of migrations.filter((m) => !m.name.includes("wechat_") && !m.name.includes("interaction_safety"))) await migration.up({ db, payload, req });
   await db.run(sql`INSERT INTO sessions (owner, title) VALUES ('synthetic-old', '旧会话保留')`);
   await db.run(sql`INSERT INTO credentials (owner, digest, kind, expires_at) VALUES ('synthetic-old', 'synthetic-digest', 'miniapp', '2027-01-01')`);
   const before = await db.all(sql`SELECT * FROM sessions`);
@@ -24,6 +24,11 @@ try {
   await profileMigration.up({ db, payload, req }); await profileMigration.up({ db, payload, req });
   const correction = migrations.find((m) => m.name.includes("age_correction"))!;
   await correction.up({ db, payload, req }); await correction.up({ db, payload, req });
+  await db.run(sql`INSERT INTO age_profiles (owner, state) VALUES ('synthetic-existing-age', 'unknown')`);
+  const interaction = migrations.find((m) => m.name.includes("interaction_safety"))!;
+  await interaction.up({ db, payload, req }); await interaction.up({ db, payload, req });
+  const existingAge = await payload.find({ collection: "age-profiles", overrideAccess: true, where: { owner: { equals: "synthetic-existing-age" } } });
+  assert.equal(existingAge.docs[0].state, "unknown"); assert.equal(existingAge.docs[0].interaction, null);
   assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
   const credential = (await payload.find({ collection: "credentials", overrideAccess: true })).docs[0];
   assert.equal(credential.owner, "synthetic-old"); assert.equal(credential.wechatKey, null);
@@ -33,5 +38,5 @@ try {
   assert.equal((await new AgeService(payload, { id: "synthetic-old", auth: "miniapp" }).status()).allowed, false);
   assert.equal((await db.all(sql`PRAGMA foreign_key_check`)).length, 0);
   assert.equal((await db.all<{ integrity_check: string }>(sql`PRAGMA integrity_check`))[0].integrity_check, "ok");
-  console.log("✓ 旧迁移→合成旧会话/凭证→年龄迁移两次；记录保留、旧凭证不自动升级、完整性与外键通过");
+  console.log("✓ 旧迁移→合成旧会话/凭证→年龄与互动安全迁移各两次；旧记录保留、旧凭证不自动升级、完整性与外键通过");
 } finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

@@ -1,3 +1,4 @@
+import { rejectExternalConnection } from "../server/service-scope";
 import { z } from "zod";
 import type { Payload } from "payload";
 import type { Owner } from "../domain/contracts";
@@ -58,7 +59,10 @@ export async function privacyPost(payload: Payload, owner: Owner, action: string
     const current = await authenticate(payload, request);
     if (current.id !== owner.id || current.auth === "bearer") throw new AppError(401, "连接身份已失效，请重新连接");
     const service = privacyService(payload, current);
-    if (action === "consent") return json(await service.consent(body));
+    if (action === "consent") {
+      if (body && typeof body === "object" && "external" in body && body.external === true) rejectExternalConnection();
+      return json(await service.consent(body));
+    }
     if (action === "withdraw") return json(await service.withdraw());
     if (action === "recovery-code") return json(await service.recoveryCode());
     if (action === "delete") {

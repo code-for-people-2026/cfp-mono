@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -254,7 +255,7 @@ try {
     ]);
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
     const service = new GreetingService(repo, (request) =>
-      runGreeting(request, model),
+      runGreeting(request, model), undefined, undefined, { moderate: syntheticTextReview }
     );
     const session = await service.createSession("配置集成检查");
     process.env.DEEPSEEK_API_KEY = "fixture-platform-key";

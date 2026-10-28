@@ -43,7 +43,8 @@ async function rejected(owner: string, id: string = randomUUID(), stage: "input"
     assert.ok(error instanceof ContentReviewError);
     // If rule loading itself fails during SQLite contention, no provider
     // verdict exists yet. That request must fail closed with 503, not claim 422.
-    assert.equal(error.status, response === "block" && providerCalls > reviewedBefore ? 422 : 503);
+    const queuedReview = response === "uncertain" && /需要人工复核/.test(error.message);
+    assert.equal(error.status, queuedReview ? 409 : response === "block" && providerCalls > reviewedBefore ? 422 : 503);
     return error.message;
   }
 }
@@ -131,7 +132,10 @@ try {
     try { for (const verdict of ["block", "uncertain"] as const) { response = verdict; assert.doesNotMatch(await rejected(owner, id), /已记录/); } }
     finally { await payload.db.drizzle.run(sql`DROP TRIGGER synthetic_content_audit_failure`); }
     assert.deepEqual(await counts(), [0, 0, 0]);
-    response = "uncertain"; assert.match(await rejected(owner, id), /已记录/);
+    response = "uncertain";
+    await assert.rejects(invoke(owner, id), { status: 409, message: /已记录待复核事项/ });
+    assert.equal((await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: owner } } })).docs[0].decision, "uncertain");
+    await assert.rejects(invoke(owner, id), { status: 409, message: /同一请求已有审核记录/ });
     await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner, state: "withdrawn", revision: 1 } });
     const beforeWithdrawal = await counts();
     await assert.rejects(invoke(owner, id), { status: 403 });

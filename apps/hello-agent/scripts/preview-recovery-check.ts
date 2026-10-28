@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,7 +28,7 @@ try {
       greeting: "好".repeat(1000),
       association: "隔离合成回复",
     });
-  });
+  }, undefined, undefined, { moderate: syntheticTextReview });
   const session = await service.createSession("测试版满血条恢复");
   const input = () => ({
     sessionId: session.id,
@@ -124,7 +125,7 @@ try {
       greeting: "恢复后自带密钥也可继续",
       association: "合成数据",
     });
-  });
+  }, undefined, undefined, { moderate: syntheticTextReview });
   await byok.generateGreeting({
     ...input(),
     mode: "byok",

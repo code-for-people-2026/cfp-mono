@@ -120,6 +120,22 @@ it("删除敏感身份后只保留冻结墓碑，不保留敏感标记或到期�
   expect(profile()).toMatchObject({ state: "deleted", sensitiveHistory: null, historyInspected: null, expiresAt: null, consent: null, events: null, recoveryDigest: null });
 });
 
+it.each([
+  { days: "7", expected: "备份最长保留 7 天" },
+  { days: undefined, expected: "备份保留上限及清理作业待公司核实配置" },
+])("删除响应保留实际备份限制，不受隐私政策新增段落影响（$days）", async ({ days, expected }) => {
+  vi.stubEnv("HELLO_PRIVACY_BACKUP_DAYS", days);
+  const { service } = fixture();
+  vi.spyOn(service.media, "deleteAll").mockResolvedValue(undefined);
+  const result = await service.deleteData();
+  expect(result.deleted).toBe(true);
+  expect(result.backupNotice).toContain("不承诺立即永久抹除磁盘、日志或备份");
+  expect(result.backupNotice).toContain(expected);
+  expect(result.backupNotice).toContain("恢复备份前必须重放独立保存的删除清单");
+  expect(result.backupNotice).not.toContain("当前数据保存位置");
+  expect(privacyPolicy().documents.flatMap((document) => document.paragraphs)).toContain(result.backupNotice);
+});
+
 it("清单落盘失败时保留冻结状态，不能删除图片或会话", async () => {
   const { service, profile } = fixture();
   vi.mocked(writeDeletionLedger).mockRejectedValueOnce(new Error("directory sync failed"));

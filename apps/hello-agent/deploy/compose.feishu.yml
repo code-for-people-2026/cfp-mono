@@ -1,0 +1,32 @@
+# 与 compose.preview.yml 合并使用；仅显式选择 feishu profile 才启动发送任务。
+services:
+  app:
+    env_file:
+      - /opt/cfp-hello-agent/private/feishu.env
+  feishu-alerts:
+    profiles: [feishu]
+    image: ${HELLO_PREVIEW_IMAGE:?请提供本次构建的独立镜像}
+    depends_on:
+      app:
+        condition: service_healthy
+    command: ["node", "--import", "tsx", "scripts/feishu-alerts.ts", "--worker"]
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/cfp-hello-agent/private/runtime.env
+      - /opt/cfp-hello-agent/private/feishu.env
+    environment:
+      HELLO_DEPLOYED: "true"
+    volumes:
+      - /opt/cfp-hello-agent/data:/data
+    mem_limit: 512m
+    cpus: 0.5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"

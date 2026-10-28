@@ -215,20 +215,6 @@ it("后台重置登录后直接显示新用户登录窗口，保留对话并使�
   expect(platform.request.mock.calls.some(([options]) => options.method === "DELETE")).toBe(false);
 });
 
-async function chooseModeInSettings(index: number) {
-  const { default: SettingsPage } = await import("../src/pages/connection/index");
-  let settingsPage: ReactTestRenderer;
-  await act(async () => {
-    settingsPage = create(createElement(SettingsPage));
-  });
-  act(() => {
-    const options = settingsPage.root
-      .findAllByType("button")
-      .filter((button) => button.props.className.includes("mode-option"));
-    options[index].props.onClick();
-  });
-  act(() => settingsPage.unmount());
-}
 
 it("设置通过页面栈打开，聊天草稿保留且不弹出设置面板", async () => {
   await mount();
@@ -668,77 +654,18 @@ describe("聊天历史与图片失败隔离", () => {
       ),
     ).toHaveLength(1);
   });
-  it("BYOK 响应丢失后可不重填密钥，只查询上次结果", async () => {
-    const originalRequest = platform.request.getMockImplementation()!;
-    let checks = 0;
-    platform.request.mockImplementation(
-      async (options: { url: string; data?: AgentBody }) => {
-        if (options.url.endsWith("/ag-ui")) {
-          history.push({
-            ...initial,
-            id: 2,
-            input: inputOf(options.data!),
-            mode: "byok",
-            greeting: "自带密钥生成过的回复",
-          });
-          throw new Error("成功响应丢失");
-        }
-        if (options.url.includes("/requests/")) {
-          if (++checks === 1) throw new Error("查询暂时断网");
-          return { statusCode: 200, data: { turn: history.at(-1) } };
-        }
-        return originalRequest(options);
-      },
-    );
+  it("旧 BYOK 历史仍可查看，当前发送保持平台模式且不显示密钥框", async () => {
+    history.push({ ...initial, id: 2, mode: "byok", greeting: "以前自带密钥生成的回复" });
     await mount();
-    act(() =>
-      renderer!.root
-        .findAllByType("button")
-        .find((button) => button.props.ariaLabel === "打开会话导航")!
-        .props.onClick(),
-    );
-    await act(
-      async () =>
-        await renderer!.root
-          .findAllByType("button")
-          .find(
-            (button) =>
-              button.props.className.includes("drawer-footer-action") &&
-              button
-                .findAllByType("text")
-                .some((node) => node.children.includes("设置")),
-          )!
-          .props.onClick(),
-    );
-    await chooseModeInSettings(1);
-    act(() => {
-      renderer!.root
-        .findByType("input")
-        .props.onInput({ detail: { value: "fixture-key-not-real" } });
-      renderer!.root
-        .findByType("textarea")
-        .props.onInput({ detail: { value: "仅确认已生成的回复" } });
-    });
-    await act(async () => {
-      await renderer!.root
-        .findAllByType("button")
-        .find((button) => button.props.className.includes("send-button"))!
-        .props.onClick();
-    });
-    expect(renderer!.root.findByType("input").props.value).toBe("");
-    const check = renderer!.root
-      .findAllByType("button")
-      .find((button) => button.props.className.includes("check-submission"));
-    expect(check).toBeDefined();
-    await act(async () => {
-      await check!.props.onClick();
-    });
-    expect(renderer!.root.findByType("textarea").props.value).toBe("");
-    expect(
-      platform.request.mock.calls.filter(([options]) =>
-        options.url.endsWith("/ag-ui"),
-      ),
-    ).toHaveLength(1);
+    expect(text()).toContain("以前自带密钥生成的回复");
+    expect(renderer!.root.findAllByType("input")).toHaveLength(0);
+    const { selectChatMode } = await import("../src/chat/preferences");
+    act(() => selectChatMode("byok"));
+    act(() => renderer!.root.findByType("textarea").props.onInput({ detail: { value: "现在继续聊" } }));
+    await act(async () => { await renderer!.root.findAllByType("button").find((button) => button.props.className.includes("send-button"))!.props.onClick(); });
+    const call = platform.request.mock.calls.find(([options]) => options.url.endsWith("/ag-ui"));
+    expect(call?.[0].data.forwardedProps.mode).toBe("platform");
+    expect(call?.[0].data.forwardedProps).not.toHaveProperty("apiKey");
   });
   it.each([false, true])(
     "响应与查询均断网后重试，已保存=%s 时不重复产生回复",

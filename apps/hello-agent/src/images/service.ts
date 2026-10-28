@@ -2,10 +2,11 @@ import { z } from "zod";
 import type { Repository } from "../cms/repository";
 import { AppError, ContentReviewError } from "../domain/contracts";
 import { MediaService } from "../domain/media";
+import { ContextService } from "../domain/context";
 import type { Moderator } from "../domain/moderation";
 import { assertGenerationAllowed } from "../operations/enforcement";
 import { configuredImageReviewer, imageReviewConfigured, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
-import { configuredImageProvider, ImageTaskFailed, imageRequestSchema, WAN_MODEL, type ImageProvider, type ImageRequest } from "./wan";
+import { configuredImageProvider, ImageTaskFailed, ImageSubmissionRejected, imageRequestSchema, WAN_MODEL, type ImageProvider, type ImageRequest } from "./wan";
 import { generatedJpeg } from "./render";
 import { reserveImageTask } from "./quota";
 
@@ -50,6 +51,26 @@ export class ImageGenerationService {
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     let state = readImageState(row);
+    // Known local configuration failures must not trigger paid text reviews.
+    // Stored images need no provider, but must still pass the intent gate below.
+    let provider: ImageProvider | undefined;
+    if (!state) {
+      provider = this.provider();
+      if (this.reviewer === configuredImageReviewer && !imageReviewConfigured())
+        throw new AppError(503, "图片审核服务尚未配置，暂不能生成图片");
+    }
+    // Review the user's request before rewritten prompts, charges or task reuse.
+    try {
+      await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
+        texts: [String((row.input as { text?: string }).text || "")],
+        context: JSON.stringify(await new ContextService(this.repo).modelContext(Number(row.sessionId))), requestId: `image-intent:${turnId}`,
+        turnId, sessionId: Number(row.sessionId), apiKey });
+    } catch (error) {
+      if (state && error instanceof ContentReviewError && error.status === 422)
+        await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "blocked" } });
+      throw error;
+    }
+    signal.throwIfAborted();
     if (state?.status === "stored" && state.mediaId) {
       await this.media.read(state.mediaId);
       return { mediaId: state.mediaId, title: state.input.title, alt: state.input.alt };
@@ -57,12 +78,9 @@ export class ImageGenerationService {
     if (state && state.status !== "pending") throw new AppError(409, state.status === "submitting"
       ? "生图提交结果尚未确认，为避免重复扣费不会自动再次提交，请联系管理员核对"
       : "这次生图未能完成，请重新提出图片需求");
-    const provider = this.provider();
+    provider ??= this.provider();
     if (!state) {
       const input = imageRequestSchema.parse(value);
-      // Fail before charging if output review has not been configured.
-      if (this.reviewer === configuredImageReviewer && !imageReviewConfigured())
-        throw new AppError(503, "图片审核服务尚未配置，暂不能生成图片");
       await this.moderate({ stage: "output", mode: row.mode, texts: [input.prompt, input.title, input.alt], context: String((row.input as { text?: string }).text || ""), requestId: `image:${turnId}`, turnId, sessionId: Number(row.sessionId), apiKey });
       signal.throwIfAborted();
       await reserveImageTask(this.repo.payload, this.repo.owner.id);
@@ -70,7 +88,15 @@ export class ImageGenerationService {
       state = { input, model: WAN_MODEL, status: "submitting", startedAt: new Date().toISOString() };
       await this.repo.update("greetings", turnId, { imageGeneration: state });
       progress?.("阿J正在绘制图片");
-      const taskId = await provider.submit(input, signal);
+      let taskId: string;
+      try { taskId = await provider.submit(input, signal); }
+      catch (error) {
+        // Only definitive rejection ends submitting. Lost acknowledgements stay
+        // uncertain, so recovery never silently submits a second paid task.
+        if (error instanceof ContentReviewError || error instanceof ImageSubmissionRejected)
+          await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: error instanceof ContentReviewError ? "blocked" : "failed" } });
+        throw error;
+      }
       state = { ...state, taskId, status: "pending" };
       await this.repo.update("greetings", turnId, { imageGeneration: state });
     }

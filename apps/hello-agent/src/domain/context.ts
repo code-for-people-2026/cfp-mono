@@ -74,6 +74,17 @@ export class ContextService {
       previous: turns.map(({ input, greeting }) => ({ input, greeting })),
     };
   }
+  // Caller holds the session lease. Reset only the model's context cursor and
+  // summary; keep original user records and evidence available for export.
+  async forgetForFuture(sessionId: number) {
+    const { memory, turns } = await this.read(sessionId);
+    await this.save(sessionId, {
+      revision: memory.revision + 1,
+      summary: "",
+      throughId: Math.max(memory.throughId, ...turns.map(turn => turn.id)),
+      compressions: memory.compressions,
+    });
+  }
   async ensureRoom(sessionId: number) {
     const { memory, turns } = await this.read(sessionId);
     if (memoryTokens(memory.summary, turns) >= MEMORY_BUDGET)

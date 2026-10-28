@@ -51,6 +51,16 @@ it("首次授权不预选，缺少基础选择不能保存", async () => {
   expect(button("保存授权选择").props.disabled).toBe(true);
   expect(api.updateConsent).not.toHaveBeenCalled();
 });
+it("旧外部授权不会重新显示或随保存再次开启", async () => {
+  const status = { policy, state: "active", consent: { version: "v1", core: true, model: true, sensitive: true, external: true }, expiresAt: null };
+  api.getPrivacy.mockResolvedValue(status);
+  api.updateConsent.mockResolvedValue({ ...status, consent: { ...status.consent, external: false } });
+  await mount(PrivacyAuthorization);
+  expect(view()).not.toMatch(/外部 Agent 访问|外部接收方信息/);
+  expect(renderer.root.findAllByType(Checkbox).map((item) => item.props.value)).toEqual(["core", "model", "sensitive"]);
+  await act(async () => { button("保存授权选择").props.onClick(); });
+  expect(api.updateConsent).toHaveBeenCalledWith({ version: "v1", core: true, model: true, sensitive: true, external: false });
+});
 it("图片入口解释授权原因并突出敏感信息选项，不会替用户勾选或提交", async () => {
   platform.params = { reason: "image-upload" };
   await mount(PrivacyAuthorization);
@@ -136,7 +146,7 @@ it("帮助联系渠道读取失败显示错误，刷新后恢复", async () => {
   expect(view()).not.toContain("联系渠道读取失败");
   expect(view()).toContain(policy.contact);
 });
-it("独立设置页只保留三个入口，连接方式进入子页面", async () => {
+it("独立设置页保留分组入口，互动安全进入子页面", async () => {
   const { default: Settings } = await import("../src/pages/settings/index");
   await mount(Settings);
   expect(view()).not.toContain("mode-option");
@@ -145,6 +155,8 @@ it("独立设置页只保留三个入口，连接方式进入子页面", async (
   expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/connection/index" });
   act(() => button("帮助与反馈").props.onClick());
   expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/help/index" });
+  act(() => button("互动安全").props.onClick());
+  expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/safety/index" });
   act(() => button("隐私与数据").props.onClick());
   expect(platform.navigateTo).toHaveBeenLastCalledWith({ url: "/pages/privacy/index" });
 });

@@ -14,13 +14,15 @@ const { migrations } = await import("../src/cms/migrations");
 const payload = await cms();
 try {
   const db = payload.db.drizzle, req = await createLocalReq({}, payload);
-  for (const migration of migrations.filter((m) => !m.name.includes("safety_operations"))) await migration.up({ db, payload, req });
+  for (const migration of migrations.filter((m) => !m.name.includes("safety_operations") && !m.name.includes("feishu_alerts"))) await migration.up({ db, payload, req });
   await db.run(sql`INSERT INTO admins (email, updated_at, created_at) VALUES ('legacy@migration.example', '2026-10-01', '2026-10-01')`);
   await db.run(sql`INSERT INTO sessions (owner, title) VALUES ('migration-synthetic', '保留的旧记录')`);
   await db.run(sql`INSERT INTO media (owner, mime_type, base64) VALUES ('migration-synthetic', 'image/png', 'c3ludGhldGlj')`);
   const before = await db.all(sql`SELECT * FROM sessions`);
   const safety = migrations.find((m) => m.name.includes("safety_operations"))!;
   await safety.up({ db, payload, req }); await safety.up({ db, payload, req });
+  const alerts = migrations.find((m) => m.name.includes("feishu_alerts"))!;
+  await alerts.up({ db, payload, req }); await alerts.up({ db, payload, req });
   assert.deepEqual(await db.all(sql`SELECT * FROM sessions`), before);
   assert.equal((await payload.find({ collection: "admins", overrideAccess: true })).docs[0].role, "administrator");
   assert.equal((await payload.find({ collection: "media", overrideAccess: true })).docs[0].base64, "c3ludGhldGlj");

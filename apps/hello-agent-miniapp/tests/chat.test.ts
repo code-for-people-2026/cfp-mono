@@ -30,7 +30,7 @@ describe("对话式输入", () => {
   it("BYOK 不借用平台凭证，外部 Agent 不触发内置生成", () => {
     expect(canSend("输入", [], "byok", "", true, false)).toBe(false);
     expect(canSend("输入", [], "byok", "test-only-key", false, false)).toBe(
-      true,
+      false,
     );
     expect(canSend("输入", [], "platform", "test-only-key", false, false)).toBe(
       false,

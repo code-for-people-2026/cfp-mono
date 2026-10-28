@@ -69,21 +69,18 @@ export function PrivacyAuthorization() {
   const forImageUpload = useRouter().params.reason === "image-upload";
   const { policy, status, setStatus, loading, error, refresh } = usePrivacy();
   const [checked, setChecked] = useState<string[]>([]);
-  const [recipient, setRecipient] = useState({ name: "", contact: "", region: "", privacyUrl: "" });
   const [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   const inFlight = useRef(false);
   useEffect(() => {
     // Only display previously granted, still-current scopes. New consent is never preselected.
     if (!consentCurrent(status) || !status?.consent) { setChecked([]); return; }
     const saved = status.consent;
-    setChecked((["core", "model", "sensitive", "external"] as const).filter((key) => saved[key]));
-    if (saved.externalRecipient) setRecipient(saved.externalRecipient);
+    setChecked((["core", "model", "sensitive"] as const).filter((key) => saved[key]));
   }, [status]);
   const choices = [
     { key: "core", title: "对话存储", tag: "基础服务", description: "我已阅读隐私政策、服务协议与第三方说明，同意保存对话以提供服务。" },
-    { key: "model", title: "模型生成与安全审核", tag: "基础服务", description: "我同意将必要输入、历史、摘要与作品发送 DeepSeek 生成及安全审核；BYOK 和外部提交也适用所列说明。" },
+    { key: "model", title: "模型生成与安全审核", tag: "基础服务", description: "我同意将必要输入、历史、摘要与作品发送 DeepSeek 生成及文本安全审核；绘图描述交由阿里云万相生成图片，图片由已告知的审核服务进行安全审核。" },
     { key: "sensitive", title: "敏感信息处理", tag: "可选", description: "单独同意处理我主动提供的敏感信息，用于图片、情绪练习、回应及安全审核。可能涉及健康或人脸，泄露会影响个人权益；可不选并只发送不含此类信息的普通文字。" },
-    { key: "external", title: "外部 Agent 访问", tag: "可选", description: "单独授权我选择并提供令牌的外部 Agent 读取全部历史、摘要和图片。历史可能含敏感信息，使用外部连接还需单独开启敏感信息处理。我会先核查其接收方、地域与留存说明；可不选并使用平台或 BYOK。" },
   ];
   const displayedChoices = forImageUpload
     ? [...choices.filter((choice) => choice.key === "sensitive"), ...choices.filter((choice) => choice.key !== "sensitive")]
@@ -93,7 +90,7 @@ export function PrivacyAuthorization() {
     inFlight.current = true; setBusy(true); setMessage("");
     try {
       await api.establishIdentity();
-      const next = await api.updateConsent({ version: policy.version, core: true, model: true, sensitive: checked.includes("sensitive"), external: checked.includes("external"), ...(checked.includes("external") ? { externalRecipient: recipient } : {}) });
+      const next = await api.updateConsent({ version: policy.version, core: true, model: true, sensitive: checked.includes("sensitive"), external: false });
       setStatus(next); notifyPrivacyChange({ status: next }); setMessage("授权已保存。");
       if (forImageUpload && consentCurrent(next) && next.consent?.sensitive) leavePage();
     } catch (value) { setMessage(value instanceof Error ? value.message : "保存未完成，请重试"); }
@@ -114,7 +111,6 @@ export function PrivacyAuthorization() {
         <View className="privacy-choice-copy"><View className="privacy-choice-heading"><Text>{choice.title}</Text><Text className="privacy-choice-tag">{choice.tag}</Text></View><Text className="privacy-choice-description">{choice.description}</Text></View>
       </Label>)}</View>
     </CheckboxGroup>
-    {checked.includes("external") && <View className="privacy-recipient"><Text className="page-section-title">外部接收方信息</Text><Text className="page-caption">填写实际使用的客户端及模型接收方；不明时请先使用平台或 BYOK。跨境处理须满足政策所述前提，填写不代表跨境手续获准。</Text>{([["name", "客户端及模型服务商名称"], ["contact", "接收方权利联系渠道"], ["region", "实际数据处理地域"], ["privacyUrl", "隐私政策完整 https 地址"]] as const).map(([key, label]) => <Input key={key} className="page-input" value={recipient[key]} disabled={busy} maxlength={500} placeholder={label} onInput={(event) => setRecipient((current) => ({ ...current, [key]: event.detail.value }))} />)}</View>}
     <PageButton className="page-primary" disabled={busy || loading || !policy || !checked.includes("core") || !checked.includes("model") || (forImageUpload && !checked.includes("sensitive"))} onClick={() => void save()}>{busy ? "正在保存…" : forImageUpload ? "保存并返回聊天" : "保存授权选择"}</PageButton>
     {forImageUpload && <Text className="page-caption">暂不开启，也可以返回聊天，只发送普通文字。</Text>}
     <Text className="page-caption">取消可选项后保存即可撤销该项授权。取消敏感信息处理后，含相关历史的对话不能继续交给模型，可导出或删除。停止全部处理，请撤回全部授权。</Text>

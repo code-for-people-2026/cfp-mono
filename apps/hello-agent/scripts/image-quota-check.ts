@@ -27,6 +27,7 @@ const { MediaService } = await import("../src/domain/media");
 const { ImageGenerationService, readImageState } = await import("../src/images/service");
 const { reserveImageTask } = await import("../src/images/quota");
 const { configuredImageProvider, imageGenerationConfigured } = await import("../src/images/wan");
+const { configuredImageReviewer } = await import("../src/operations/image-review");
 const payload = await cms();
 const clearQuota = () => payload.db.drizzle.run(sql`DELETE FROM platform_model_quotas WHERE day LIKE 'image:%'`);
 const ledger = () => payload.db.drizzle.all<{ day: string; reserved_calls: number }>(sql`SELECT day, reserved_calls FROM platform_model_quotas WHERE day LIKE 'image:%' ORDER BY day`);
@@ -70,8 +71,9 @@ try {
     const a = await fixture(), b = await fixture(), c = await fixture();
     const configured = await fixture();
     const configuredTurn = await configured.turn("byok");
-    let configuredReviews = 0, configuredImageReviews = 0, configuredRequests = 0, configuredSubmissions = 0;
-    const configuredService = new ImageGenerationService(configured.repo, configured.media, async () => { configuredReviews++; }, async () => { configuredImageReviews++; return allowImage(); });
+    const configuredReviews: { stage: string; purpose?: string }[] = [];
+    let configuredImageReviews = 0, configuredRequests = 0, configuredSubmissions = 0;
+    const configuredService = new ImageGenerationService(configured.repo, configured.media, async ({ stage, purpose }) => { configuredReviews.push({ stage, purpose }); }, async () => { configuredImageReviews++; return allowImage(); });
     const originalFetch = globalThis.fetch;
     const originalWorkspace = process.env.HELLO_IMAGE_WORKSPACE_ID;
     delete process.env.HELLO_IMAGE_WORKSPACE_ID;
@@ -100,23 +102,47 @@ try {
         await assert.rejects(configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 503 });
         assert.equal(imageGenerationConfigured(), false);
         assert.throws(() => configuredImageProvider(), { status: 503 });
-        assert.equal(configuredReviews, 0, "invalid known credentials must fail before description moderation");
+        assert.deepEqual(configuredReviews, [], "invalid known credentials must fail before original-input or description moderation");
         assert.equal(configuredImageReviews, 0);
         assert.equal(configuredRequests, 0);
         assert.equal(configuredSubmissions, 0);
         assert.deepEqual(await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`), emptyLedger, "known configuration errors must consume neither task nor review budget");
         assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id)), undefined, "known configuration errors must not strand submitting state");
       }
+      const previousReviewMode = process.env.HELLO_IMAGE_REVIEW_MODE, previousReviewToken = process.env.HELLO_IMAGE_REVIEW_TOKEN;
+      Object.assign(process.env, { HELLO_IMAGE_REVIEW_MODE: "proxy", HELLO_IMAGE_REVIEW_TOKEN: "" });
+      try {
+        const missingPixelReview = new ImageGenerationService(configured.repo, configured.media, async () => {
+          assert.fail("known missing image reviewer must fail before paid text review");
+        }, configuredImageReviewer, () => provider);
+        await assert.rejects(missingPixelReview.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 503 });
+        assert.equal(submitted, 0);
+        assert.deepEqual(await payload.db.drizzle.all(sql`SELECT day, reserved_calls FROM platform_model_quotas`), emptyLedger);
+        assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id)), undefined);
+      } finally {
+        if (previousReviewMode === undefined) delete process.env.HELLO_IMAGE_REVIEW_MODE; else process.env.HELLO_IMAGE_REVIEW_MODE = previousReviewMode;
+        if (previousReviewToken === undefined) delete process.env.HELLO_IMAGE_REVIEW_TOKEN; else process.env.HELLO_IMAGE_REVIEW_TOKEN = previousReviewToken;
+      }
       process.env.DASHSCOPE_API_KEY = " \t synthetic-wan-key \r\n ";
       assert.equal(imageGenerationConfigured(), true);
       const recovered = await configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000));
       assert.ok(recovered.mediaId);
       assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id))?.status, "stored");
-      assert.equal(configuredReviews, 1); assert.equal(configuredSubmissions, 1);
+      assert.deepEqual(configuredReviews, [{ stage: "input", purpose: "image_generation" }, { stage: "output", purpose: undefined }], "new image tasks review the original request and the generated description separately");
+      assert.equal(configuredSubmissions, 1);
       assert.equal(configuredImageReviews, 1); assert.equal(configuredRequests, 3);
       assert.deepEqual((await ledger()).map((row) => row.reserved_calls), [1, 1]);
+      process.env.DASHSCOPE_API_KEY = "";
       assert.equal((await configuredService.generate(configuredTurn.id, input, AbortSignal.timeout(15_000))).mediaId, recovered.mediaId);
+      assert.deepEqual(configuredReviews, [{ stage: "input", purpose: "image_generation" }, { stage: "output", purpose: undefined }, { stage: "input", purpose: "image_generation" }], "stored recovery must still review the original request before reusing media");
       assert.equal(configuredSubmissions, 1, "repaired configuration creates a single task and stored recovery never resubmits");
+      const deniedRecovery = new ImageGenerationService(configured.repo, configured.media, async (request) => {
+        assert.equal(request.stage, "input"); assert.equal(request.purpose, "image_generation");
+        throw new ContentReviewError(422, "合成原请求复核拒绝");
+      }, async () => { assert.fail("blocked original request must not reach pixel review"); });
+      await assert.rejects(deniedRecovery.generate(configuredTurn.id, input, AbortSignal.timeout(15_000)), { status: 422 });
+      assert.equal(readImageState(await configured.repo.get("greetings", configuredTurn.id))?.status, "blocked", "stored images fail the intent gate even after provider credentials are removed");
+      assert.equal(configuredRequests, 3); assert.equal(configuredSubmissions, 1);
     } finally {
       globalThis.fetch = originalFetch; process.env.DASHSCOPE_API_KEY = "";
       if (originalWorkspace === undefined) delete process.env.HELLO_IMAGE_WORKSPACE_ID; else process.env.HELLO_IMAGE_WORKSPACE_ID = originalWorkspace;

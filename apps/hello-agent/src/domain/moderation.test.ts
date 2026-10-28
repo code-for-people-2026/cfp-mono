@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeDeepSeek } from "../models/deepseek";
 import { evaluateText, moderateText } from "./moderation";
 import { createKeywordMatcher, textLeaves } from "./keyword-matcher";
-import lexicon from "../moderation/lexicon.json";
+import lexicon from "../moderation/lexicon";
 import { defaultRule } from "../operations/policy";
 
 vi.mock("../models/deepseek", async (importOriginal) => ({ ...await importOriginal<typeof import("../models/deepseek")>(), DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
@@ -38,12 +38,22 @@ describe("词库候选匹配", () => {
 });
 
 describe("命中后的语境复核", () => {
+  it("绘图原请求即使没有词命中，也不能被关键词模式跳过", async () => {
+    answer('{"decision":"allow"}');
+    const reserve = vi.fn();
+    const result = await evaluateText({ ...request, purpose: "image_generation", texts: ["画一朵小花"], context: "前一轮谈到春天" },
+      { ...defaultRule, mode: "keywords", ignoredWords: lexicon.words }, reserve);
+    expect(result).toMatchObject({ decision: "allow", keywordCount: 0 });
+    expect(reserve).toHaveBeenCalledOnce();
+    const reviewed = JSON.parse(String(complete.mock.calls[0][0].messages[1].content));
+    expect(reviewed).toMatchObject({ stage: "input", purpose: "image_generation", texts: ["画一朵小花"], context: "前一轮谈到春天" });
+  });
   it.each(["10BET娱乐城", "１０ｂｅｔ娱乐城", "１０ＢＥＴ娱乐城", "10B\u200bET娱乐城", " 10BET娱乐城 "])("忽略词与真实词库使用同一规范形式，不调用审核或扣额度：%s", async (ignoredWord) => {
     const find = createKeywordMatcher(lexicon.words);
     expect(find("10bet娱乐城")).toEqual(["10bet娱乐城", "娱乐城"]);
     const reserve = vi.fn();
     const verdict = await evaluateText({ ...request, texts: ["10bet娱乐城"] }, {
-      ...defaultRule, ignoredWords: [ignoredWord, "娱乐城"],
+      ...defaultRule, mode: "keywords", ignoredWords: [ignoredWord, "娱乐城"],
     }, reserve);
     expect(verdict).toMatchObject({ decision: "not_reviewed", keywordCount: 0 });
     expect(reserve).not.toHaveBeenCalled();
@@ -68,9 +78,10 @@ describe("命中后的语境复核", () => {
     expect(reviewed.keywords).toContain("诈骗");
     for (const ignored of ignoredWords) expect(reviewed.keywords).not.toContain(ignored);
   });
-  it("没有命中时不调用模型", async () => {
-    await moderateText({ ...request, texts: ["今天天气晴朗"], apiKey: undefined });
-    expect(complete).not.toHaveBeenCalled();
+  it("默认对无关键词文本也进行语义复核，避免漏检", async () => {
+    answer('{"decision":"allow"}');
+    await moderateText({ ...request, texts: ["今天天气晴朗"] });
+    expect(complete).toHaveBeenCalledOnce();
   });
   it("把真实词库命中交给复核，使用当次密钥且日志不含正文", async () => {
     answer('{"decision":"allow"}');
@@ -87,7 +98,11 @@ describe("命中后的语境复核", () => {
     answer('{"decision":"block"}');
     await expect(moderateText({ ...request, stage: "output" })).rejects.toMatchObject({ status: 422 });
   });
-  it.each(["not JSON", '{"decision":"allow","extra":true}', '{"decision":"uncertain"}', '{"decision":"ignore"}'])("无效或不确定判定不放行：%s", async (content) => {
+  it("不确定判定明确进入人工复核而非假称服务故障", async () => {
+    answer('{"decision":"uncertain"}');
+    await expect(moderateText(request)).rejects.toMatchObject({ status: 409, message: expect.stringContaining("人工复核") });
+  });
+  it.each(["not JSON", '{"decision":"allow","extra":true}', '{"decision":"ignore"}'])("无效判定不放行：%s", async (content) => {
     answer(content);
     await expect(moderateText(request)).rejects.toMatchObject({ status: 503 });
   });
@@ -109,7 +124,7 @@ describe("命中后的语境复核", () => {
     expect(reserve).toHaveBeenCalledTimes(1);
     expect(complete).not.toHaveBeenCalled();
     reserve.mockClear();
-    const skipped = await evaluateText({ ...request, texts: ["早上好"] }, undefined, reserve);
+    const skipped = await evaluateText({ ...request, texts: ["早上好"] }, { ...defaultRule, mode: "keywords" }, reserve);
     expect(skipped.decision).toBe("not_reviewed");
     expect(reserve).not.toHaveBeenCalled();
   });

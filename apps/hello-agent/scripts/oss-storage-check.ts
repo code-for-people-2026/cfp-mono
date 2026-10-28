@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -72,7 +73,8 @@ try {
     repo,
     (args) => runGreeting(args, model),
     media,
-    async () => "allow", // Synthetic reviewer; this suite checks storage.
+    async () => "allow", // Synthetic reviewers; this suite checks storage.
+    { moderate: syntheticTextReview },
   );
   const original = await sharp({
     create: { width: 256, height: 256, channels: 3, background: "#df573e" },
@@ -140,7 +142,7 @@ try {
   await server.close();
   console.log("✓ 自带 Agent 的 MCP 图片读取兼容新存储");
 
-  const legacy = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
+  const legacy = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const old = await repo.get("media", legacy.id);
   corrupt = true;
   await assert.rejects(() => media.migrate(legacy.id), /完整性/);
@@ -155,7 +157,7 @@ try {
   assert.equal((await repo.get("media", legacy.id)).base64, null);
   console.log("✓ 迁移校验失败保留原图；成功后清空旧内容且可安全重试");
 
-  const interrupted = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
+  const interrupted = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const previous = await repo.get("media", interrupted.id);
   const recordsBefore = (await repo.all("media")).length;
   const objectsBefore = objects.size;
@@ -253,7 +255,7 @@ try {
     ).status,
     401,
   );
-  const adminImage = await new GreetingService(repo, undefined, undefined, async () => "allow").upload(original);
+  const adminImage = await new GreetingService(repo, undefined, undefined, async () => "allow", { moderate: syntheticTextReview }).upload(original);
   const password = randomUUID();
   await payload.create({
     collection: "admins",

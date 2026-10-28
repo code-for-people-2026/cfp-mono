@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, createHash } from "node:crypto";
 import { withCredentialExecution, withCredentialLock } from "./credential-lock";
 import type { Payload } from "payload";
 import { AppError, type Owner } from "../domain/contracts";
+import { rejectExternalConnection } from "./service-scope";
 
 export const COOKIE = "hello_identity";
 const digest = (value: string) =>
@@ -25,12 +26,13 @@ export async function mintCredential(
   owner: string = randomUUID(),
   wechatKey?: string,
 ) {
+  if (kind === "bearer") rejectExternalConnection();
   return withCredentialLock(owner, async () => {
     const [profile] = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, select: { state: true }, where: { owner: { equals: owner } } })).docs;
     if (profile?.state === "deleting" || profile?.state === "deleted") throw new AppError(409, "此身份正在删除或已删除，不能签发新连接");
     const token = randomBytes(32).toString("base64url");
     const expiresAt = new Date(
-      Date.now() + (kind === "bearer" ? 7 : 30) * 86400_000,
+      Date.now() + 30 * 86400_000,
     ).toISOString();
     // 凭证仓库是认证模块的私有存储；只有这里允许提升权限，其他业务请求不能直接访问。
     await payload.create({
@@ -81,6 +83,8 @@ export async function authenticate(
   const kind = result.docs[0].kind;
   if (kind !== "cookie" && kind !== "bearer" && kind !== "miniapp")
     throw new AppError(401, "凭证类型无效");
+  // 小程序也用 Authorization: Bearer 传输，必须按已验证的凭证种类区分。
+  if (kind === "bearer") rejectExternalConnection();
   return { id: String(result.docs[0].owner), auth: kind, ...(result.docs[0].wechatKey ? { wechatKey: result.docs[0].wechatKey } : {}) };
 }
 

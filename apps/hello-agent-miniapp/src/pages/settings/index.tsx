@@ -19,6 +19,7 @@ export default function SettingsPage() {
         <View className="page-card">
           <SettingsRow title="连接方式" detail={modes.find((item) => item.id === mode)?.label} onClick={() => void Taro.navigateTo({ url: "/pages/connection/index" })} />
           <SettingsRow title="隐私与数据" description="授权、导出与删除" onClick={() => void openPrivacy()} />
+          <SettingsRow title="互动安全" description="人工支持与紧急联系人" onClick={() => void Taro.navigateTo({ url: "/pages/safety/index" })} />
           <SettingsRow title="帮助与反馈" description="提交问题，查看处理进度" onClick={() => void openHelp()} />
         </View>
       </View>
