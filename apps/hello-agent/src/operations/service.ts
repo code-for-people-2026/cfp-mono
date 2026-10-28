@@ -1,3 +1,4 @@
+import { workingDeadline, COMPLAINT_SLA } from "./deadlines";
 import type { SafetyCase, Greeting } from "../payload-types";
 import { createHash, randomUUID } from "node:crypto";
 import { commitTransaction, createLocalReq, initTransaction, killTransaction, type Payload, type PayloadRequest, type TypedUser, type Where } from "payload";
@@ -14,16 +15,29 @@ const complaintSchema = z.object({
   parentReceipt: z.string().uuid().optional(),
 }).strict();
 const actionSchema = z.object({
-  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold"]),
+  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "reject", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold"]),
   reason: z.string().trim().min(8).max(1000), reply: z.string().trim().min(5).max(1000).optional(),
   severity: z.enum(["urgent", "high", "normal"]).optional(),
   category: z.enum(categories).optional(),
 }).strict();
+// SQLite's local adapter shares a connection. Do not overlap transaction lifetimes
+// on that connection; the database lease still coordinates separate processes.
+const transactionQueues = new WeakMap<Payload, Promise<void>>();
 export async function transaction<T>(payload: Payload, action: (req: PayloadRequest) => Promise<T>) {
-  const req = await createLocalReq({ context: { safetyInternal: true } }, payload);
-  await initTransaction(req);
-  try { const result = await action(req); await commitTransaction(req); return result; }
-  catch (error) { await killTransaction(req); throw error; }
+  const previous = transactionQueues.get(payload) || Promise.resolve();
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => { release = resolve; });
+  transactionQueues.set(payload, waiting);
+  await previous;
+  try {
+    const req = await createLocalReq({ context: { safetyInternal: true } }, payload);
+    if (!await initTransaction(req)) throw new Error("Safety operations require a database transaction");
+    try { const result = await action(req); await commitTransaction(req); return result; }
+    catch (error) { await killTransaction(req); throw error; }
+  } finally {
+    release();
+    if (transactionQueues.get(payload) === waiting) transactionQueues.delete(payload);
+  }
 }
 const safePublic = (doc: Doc) => ({
   receipt: doc.receipt, kind: doc.source, status: doc.status, createdAt: doc.createdAt,
@@ -35,8 +49,8 @@ export class OperationsService {
   constructor(readonly payload: Payload) {}
   async configuration() {
     const config = await settings(this.payload);
-    return config ? { configured: true, acceptanceHours: config.acceptanceHours, resolutionHours: config.resolutionHours, feedbackHours: config.feedbackHours, evidenceDays: config.evidenceDays }
-      : { configured: false, notice: "可提交并获取受理编号；人工值班与时限尚待运营配置，不代表已有人受理。" };
+    return config ? { notice: COMPLAINT_SLA, configured: true, acceptanceHours: config.acceptanceHours, resolutionHours: config.resolutionHours, feedbackHours: config.feedbackHours, evidenceDays: config.evidenceDays }
+      : { configured: false, notice: COMPLAINT_SLA + "当前后台其他运营参数尚待配置；获取编号不代表已受理。" };
   }
   async createCase(data: CaseInput, evidence: string, req: PayloadRequest) {
     const config = await settings(this.payload, req);
@@ -44,7 +58,10 @@ export class OperationsService {
     const hours = (value: unknown) => config ? new Date(now + Number(value) * 3600_000).toISOString() : undefined;
     const row = await this.payload.create({ collection: "safety-cases", overrideAccess: true, req, data: {
       ...data, receipt: randomUUID(), status: data.source === "appeal" ? "review" : "pending", severity: data.severity || "normal", revision: 0,
-      acceptBy: hours(config?.acceptanceHours), resolveBy: hours(config?.resolutionHours),
+      acceptBy: data.severity === "urgent" ? new Date(now).toISOString() : ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 1) : hours(config?.acceptanceHours),
+      resolveBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : hours(config?.resolutionHours),
+      feedbackBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : undefined,
+      ...(data.severity === "urgent" ? { alertStatus: "pending" as const, alertNextAt: new Date(now).toISOString(), alertDetails: { attempts: 0 } } : {}),
       // 未经公司确认的 7 天仅为开发安全上限，工作台明确标注，不能作为上线承诺。
       retainUntil: new Date(now + Number(config?.evidenceDays || 7) * 86400_000).toISOString(),
       retentionBasis: config?.retentionBasis || "未配置正式依据；开发最小证据 7 天后停止访问，由维护任务清理",
@@ -142,11 +159,22 @@ export class OperationsService {
             if (parent.lastReviewer === user.id) throw new AppError(403, "申诉须由原处置人以外的人员复核");
           }
           if (["restrict", "unrestrict"].includes(input.action) && !isAdministrator(user)) throw new AppError(403, "用户生成限制需要管理员");
+          if (input.action === "reject") {
+            if (row.source !== "moderation" || !["input", "output"].includes(row.stage) || row.mediaId)
+              throw new AppError(409, "此动作仅用于尚未生成内容的文本审核请求");
+            if (row.turnId) {
+              const turn = await this.payload.findByID({ collection: "greetings", id: row.turnId, overrideAccess: true, req });
+              // Do not close a running/stored task with a bookkeeping-only action.
+              // Existing content and resumable images require quarantine instead.
+              if (turn.owner !== row.owner || turn.status !== "failed" || turn.greeting || turn.artifacts?.length || turn.imageGeneration)
+                throw new AppError(409, "已有生成内容或未结束的任务，请使用内容隔离处置");
+            }
+          }
           if (["quarantine", "restore"].includes(input.action) && !row.turnId && !row.mediaId) throw new AppError(400, "此案件没有可处置的已存内容");
           if (["quarantine", "restore", "restrict", "unrestrict"].includes(input.action)) await this.enforce(row, input.action, input.reason, req);
           const config = await settings(this.payload, req);
           Object.assign(patch, { status: "resolved", resolvedAt: now, action: input.action, reason: input.reason, lastReviewer: user.id,
-            feedbackBy: config ? new Date(Date.now() + Number(config.feedbackHours) * 3600_000).toISOString() : null,
+            feedbackBy: ["complaint", "appeal"].includes(row.source) ? row.resolveBy : config ? new Date(Date.now() + Number(config.feedbackHours) * 3600_000).toISOString() : null,
             reply: input.reply || null, feedbackAt: input.reply ? now : null,
           });
         }

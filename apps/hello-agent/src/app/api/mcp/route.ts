@@ -1,36 +1,12 @@
-import { AgeService } from "../../../age/service";
-import { privacyService } from "../../../privacy/service";
-import { cms } from "../../../cms/client";
-import { Repository } from "../../../cms/repository";
-import { GreetingService } from "../../../domain/greetings";
-import { authenticate, withAuthenticatedExecution } from "../../../server/auth";
-import { failure, rateLimit, readJson } from "../../../server/http";
-import { handleMcp } from "../../../server/mcp";
+import { failure } from "../../../server/http";
+import { rejectExternalConnection } from "../../../server/service-scope";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export async function POST(request: Request) {
-  try {
-    const payload = await cms();
-    const owner = await authenticate(payload, request, true);
-    rateLimit(owner.id);
-    const body = await readJson(request);
-    return await withAuthenticatedExecution(payload, request, owner, async (current) => {
-      await new AgeService(payload, current).requireCapability();
-      await privacyService(payload, current).requireExternalAccess();
-      // JSON transport resolves after the tool response, keeping the execution
-      // lease through history/image reads and writes, not just dispatch.
-      return await handleMcp(request, body, new GreetingService(new Repository(payload, current)));
-    }, true);
-  } catch (error) {
-    return failure(error);
-  }
+// 首版不对外提供 MCP；旧令牌也不能建立连接，不读取或写入业务数据。
+export function POST(request?: Request) {
+  void request; // 保留路由签名，但不读取正文或访问任何业务资源。
+  try { rejectExternalConnection(); } catch (error) { return failure(error); }
 }
-export function GET() {
-  return new Response("本接口使用无状态 Streamable HTTP，请发送 POST。", {
-    status: 405,
-  });
-}
-export function DELETE() {
-  return new Response(null, { status: 405 });
-}
+export const GET = POST;
+export const DELETE = POST;

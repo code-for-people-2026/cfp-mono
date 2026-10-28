@@ -1,4 +1,5 @@
 import { eraseOperationsEvidence } from "../operations/retention";
+import { InteractionService } from "../interaction/service";
 import { exportProfile, deleteProfileImages } from "../profile/service";
 import { ageProfile } from "../age/service";
 import { createHash, randomBytes } from "node:crypto";
@@ -177,7 +178,7 @@ export class PrivacyService {
     const age = await ageProfile(this.repo.payload, this.repo.owner.id);
     const ageVerification = age ? { state: age.state, declaration: age.declaration, source: age.source, assurance: age.assurance, verifiedAt: age.verifiedAt, expiresAt: age.expiresAt, noticeVersion: age.noticeVersion, consentedAt: age.consentedAt, reference: age.reference, additionalVerification: age.additionalVerification } : null;
     const retainedSafetyRecords: unknown[] = [];
-    const result = { retainedSafetyRecords, userProfile: await exportProfile(this.repo.payload, this.repo.owner.id), ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
+    const result = { interactionSafety: await new InteractionService(this.repo.payload, this.repo.owner).status(), retainedSafetyRecords, userProfile: await exportProfile(this.repo.payload, this.repo.owner.id), ageVerification, format: "hello-agent-personal-data-v1", exportedAt: new Date().toISOString(), notice: "用户输入与上传图片保持原始归属；greetings 中的回应和 artifacts 为 AI 生成，外部来源由客户端声明。内部执行快照可能含后台参考资料，不纳入自助导出；如需其他本人数据，可通过隐私权利请求申请核验副本。", metadata: aiMetadata(`personal-export:${this.repo.owner.id}`), records, media, credentials, privacy: profile ? { state: profile.state, consent: profile.consent, events: profile.events, expiresAt: profile.expiresAt } : null };
     budget.add(result, false);
     // ADK snapshots mix visitor input with admin-only knowledgeContext and
     // tool state. The visitor-facing conversation is exported below instead.

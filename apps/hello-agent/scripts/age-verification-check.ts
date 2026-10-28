@@ -2,7 +2,7 @@
 // No application endpoint or environment flag can return a synthetic adult result.
 import { sql } from "@payloadcms/db-sqlite";
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, rm, readdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -80,9 +80,11 @@ try {
   const consent = { version: privacyPolicy().version, core: true as const, model: true as const, sensitive: true, external: true, externalRecipient: { name: "合成外部客户端", contact: "test@example.invalid", region: "本地", privacyUrl: "https://example.invalid/privacy" } };
   await privacy.consent(consent);
   assert.equal((await http(linked.token, ["sessions"], { title: "通过后的合成会话" })).status, 200);
-  const minted = await http(linked.token, ["token"], {}); assert.equal(minted.status, 200);
-  const bearer = (await minted.json()).token;
-  assert.equal((await authenticate(payload, nativeReq(bearer), true)).wechatKey, owner.wechatKey);
+  assert.equal((await http(linked.token, ["token"], {})).status, 403);
+  // 导入升级前的测试令牌，验证已有外部凭证也不能访问。
+  const bearer = randomUUID();
+  await payload.create({ collection: "credentials", overrideAccess: true, data: { owner: owner.id, kind: "bearer", digest: createHash("sha256").update(bearer).digest("hex"), wechatKey: owner.wechatKey, expiresAt: "2099-01-01T00:00:00.000Z" } });
+  await assert.rejects(() => authenticate(payload, nativeReq(bearer), true), /仅开放平台/);
   const webCredential = await mintCredential(payload, "cookie", owner.id);
   const webBypass = await POST(new Request("http://127.0.0.1:3310/api/hello/upload", { method: "POST", headers: { Origin: "http://127.0.0.1:3310", Cookie: `${COOKIE}=${webCredential.token}`, "Content-Type": "application/json" }, body: "{}" }), { params: Promise.resolve({ path: ["upload"] }) });
   assert.equal(webBypass.status, 403, "H5恢复/访客Cookie不能继承微信成年权限");

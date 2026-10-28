@@ -1,3 +1,5 @@
+import { INTERACTION_VERSION } from "../interaction/policy";
+import { InteractionService } from "../interaction/service";
 import type { Session } from "@cfp/hello-agent-contracts";
 import type { Greeting as GreetingRecord } from "../payload-types";
 import { reservePlatformCalls } from "../cms/platform-quota";
@@ -20,6 +22,7 @@ import { PROMPT_VERSION } from "../agent/instruction";
 import type { Generator } from "../agent/runtime";
 import { DEFAULT_MODEL } from "../models/deepseek";
 import { ContextService } from "./context";
+import { forgetContextRequested, FORGET_CONTEXT_GUIDANCE } from "./context-policy";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
 import { artifactsSchema, validateForm } from "@cfp/hello-agent-protocol";
@@ -164,7 +167,7 @@ export class GreetingService {
         throw new AppError(409, "同一个请求标识不能用于不同内容");
       if (resumeTurnId === existing.id && canResumeImage(existing)) {
         const row = await this.repo.update("greetings", existing.id, { status: "running", error: null });
-        return { row, duplicate: false };
+        return { row, duplicate: false, guidance: undefined };
       }
       if (existing.status === "running" && mode !== "external")
         throw new AppError(
@@ -175,7 +178,12 @@ export class GreetingService {
         throw new AppError(409, "该请求此前失败，请使用新的请求标识重试");
       return { row: existing, duplicate: existing.status === "completed" };
     }
+    let guidance = await new InteractionService(this.repo.payload, this.repo.owner).inspectInput(input.text ?? "", sessionId, requestKey);
     await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
+    if (!guidance && forgetContextRequested(input.text ?? "")) {
+      await new ContextService(this.repo).forgetForFuture(sessionId);
+      guidance = FORGET_CONTEXT_GUIDANCE;
+    }
     await new ContextService(this.repo).ensureRoom(sessionId);
     // 首条消息为默认标题命名；每次发言更新最近活动时间，已有自定义标题保持不变。
     await this.repo.update("sessions", sessionId,
@@ -196,10 +204,10 @@ export class GreetingService {
       mode,
       input,
       status: "running",
-      model,
-      promptVersion: mode === "external" ? "external-declared" : PROMPT_VERSION,
+      model: guidance ? "product-guidance" : model,
+      promptVersion: guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
-    return { row, duplicate: false };
+    return { row, duplicate: false, guidance };
   }
   async complete(id: number, value: Greeting, reviewKey?: string) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
@@ -217,6 +225,12 @@ export class GreetingService {
       return row;
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
+    // Covers both generated media and geometry illustrations, including reuse.
+    if (output.artifacts?.some((artifact) => artifact.kind === "image"))
+      await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
+        texts: [String((row.input as Inspiration).text || "")],
+        context: JSON.stringify(await new ContextService(this.repo).modelContext(Number(row.sessionId))), requestId: `image-save-intent:${row.id}`,
+        turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     const imageState = readImageState(row);
     if (imageState && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
       artifact.kind === "image" && artifact.source.type === "media" && artifact.source.mediaId === imageState.mediaId)))
@@ -281,6 +295,7 @@ export class GreetingService {
       );
       row = result.row;
       if (result.duplicate) return row;
+      if (result.guidance) return await this.complete(row.id, { greeting: result.guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive" }, key);
       if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
       const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
       const imageState = readImageState(row);
@@ -344,7 +359,7 @@ export class GreetingService {
     return release.run(async () => {
     let pending: GreetingRecord | undefined;
     try {
-      const { row, duplicate } = await this.begin(
+      const { row, duplicate, guidance } = await this.begin(
         args.sessionId,
         args.requestId,
         "external",
@@ -354,7 +369,7 @@ export class GreetingService {
       );
       if (duplicate) return row;
       pending = row;
-      return await this.complete(row.id, args.output);
+      return await this.complete(row.id, guidance ? { greeting: guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive" } : args.output);
     } catch (error) {
       // Validation failures are terminal; transient storage failures keep the request retryable.
       if (pending && error instanceof AppError) {

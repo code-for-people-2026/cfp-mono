@@ -19,7 +19,7 @@ function collection(slug: string, label: string, fields: Field[], columns: strin
     hooks: {
       beforeChange: [({ req, data, operation }) => {
         if (!internal(req)) throw new APIError("请使用有权限的运营操作入口", 403);
-        if (operation === "update" && !["safety-cases", "safety-evidence", "safety-enforcements", "safety-evaluations"].includes(slug))
+        if (operation === "update" && !["safety-cases", "safety-evidence", "safety-enforcements", "safety-evaluations", "safety-alert-state"].includes(slug))
           throw new APIError("此记录只允许追加新版本", 403);
         return data;
       }],
@@ -44,12 +44,21 @@ export const operationsCollections: CollectionConfig[] = [
     number("lastReviewer", "上次处置人"), { ...number("revision", "修订号", true), defaultValue: 0 },
     date("acceptBy", "受理期限"), date("resolveBy", "处置期限"), date("feedbackBy", "反馈期限"),
     date("acceptedAt", "已受理"), date("resolvedAt", "已处置"), date("feedbackAt", "已向本人提供结果"),
+    { name: "alertStatus", label: "飞书提醒", type: "select", index: true, options: [
+      { value: "pending", label: "待发送" }, { value: "sending", label: "发送中" }, { value: "retry", label: "待重试" },
+      { value: "delivered", label: "平台已接收（非本人已读）" }, { value: "failed", label: "发送失败" }, { value: "cancelled", label: "已停止提醒" },
+    ] }, date("alertNextAt", "下次尝试时间"), json("alertDetails", "提醒结果（不含密钥和正文）"),
     text("ruleVersion", "规则版本"), text("lexiconVersion", "词库版本"), text("modelVersion", "模型版本"),
     text("decision", "自动审核决定"), text("action", "处置动作"), text("reason", "处置理由"),
     { name: "reply", label: "给本人的处理结果", type: "textarea", maxLength: 1000 },
     text("retentionBasis", "留存依据"), date("retainUntil", "证据保留至"),
     { name: "legalHold", label: "暂缓到期清理", type: "checkbox", defaultValue: false }, text("holdReason", "暂缓清理依据"),
-  ], ["receipt", "status", "severity", "category", "assignedTo", "acceptBy", "resolveBy", "feedbackBy"]),
+  ], ["receipt", "status", "severity", "alertStatus", "category", "assignedTo", "acceptBy", "resolveBy", "feedbackBy"]),
+  collection("safety-alert-state", "通知服务状态", [
+    { ...text("key", "渠道", true), unique: true }, text("fingerprint", "配置指纹"), text("testId", "测试编号"),
+    date("testedAt", "平台接受测试时间"), date("verifiedAt", "负责人确认收件时间"), date("heartbeatAt", "任务心跳"),
+    text("leaseToken", "任务锁"), date("leaseUntil", "任务锁到期"), date("nextSendAt", "下次允许发送"), text("lastError", "安全错误码"),
+  ], ["key"], "private"),
   collection("safety-evidence", "受限证据", [number("caseId", "案件", true), text("excerpt", "最小证据片段"), text("digest", "内容摘要哈希", true), number("originalLength", "原始字符数"), date("purgedAt", "已清理"), text("purgeReason", "清理依据")], ["id"], "private"),
   collection("safety-audit", "运营审计", [text("actor", "操作人", true), text("event", "操作", true), text("target", "对象", true), text("reason", "理由", true), json("metadata", "不含正文的变更信息")], ["event", "actor", "target", "createdAt"], "audit"),
   collection("safety-enforcements", "处置执行状态", [

@@ -1,3 +1,5 @@
+import { platformInputAllowed, PLATFORM_ONLY_NOTICE } from "@cfp/hello-agent-contracts";
+import { interactionStatusSchema } from "@cfp/hello-agent-contracts";
 import { safetyStatusSchema, safetyReceiptSchema } from "@cfp/hello-agent-contracts";
 import { userProfileSchema, ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/hello-agent-contracts";
 import type { AgeDeclaration } from "@cfp/hello-agent-protocol";
@@ -27,6 +29,10 @@ import {
   errorSchema,
   type Decoder,
 } from "@cfp/hello-agent-contracts";
+
+function requirePlatform(mode: Mode, apiKey?: string) {
+  if (!platformInputAllowed({ mode, apiKey: apiKey || undefined })) throw new Error(PLATFORM_ONLY_NOTICE);
+}
 
 const native = process.env.TARO_ENV === "weapp";
 const origin = native ? HELLO_API_ORIGIN.replace(/\/$/, "") : "";
@@ -200,27 +206,29 @@ export const compactMemory = (
   rewardId: string,
   mode: Mode,
   apiKey?: string,
-) =>
-  request("context/compact", memoryStatusSchema, "POST", {
+) => {
+  requirePlatform(mode, apiKey);
+  return request("context/compact", memoryStatusSchema, "POST", {
     sessionId,
     rewardId,
-    mode: mode === "byok" ? "byok" : "platform",
-    ...(mode === "byok" ? { apiKey } : {}),
+    mode: "platform",
   });
+};
 export const compactPreview = (
   sessionId: number,
   requestId: string,
   revision: number,
   mode: Mode,
   apiKey?: string,
-) =>
-  request("context/preview-compact", memoryStatusSchema, "POST", {
+) => {
+  requirePlatform(mode, apiKey);
+  return request("context/preview-compact", memoryStatusSchema, "POST", {
     sessionId,
     requestId,
     revision,
-    mode: mode === "byok" ? "byok" : "platform",
-    ...(mode === "byok" ? { apiKey } : {}),
+    mode: "platform",
   });
+};
 export async function generate(
   sessionId: number,
   id: string,
@@ -229,6 +237,7 @@ export async function generate(
   apiKey?: string,
   onProgress?: (progress: RunProgress) => void,
 ) {
+  requirePlatform(mode, apiKey);
   const body = {
     protocolVersion: "1.0",
     threadId: String(sessionId),
@@ -239,7 +248,6 @@ export async function generate(
     forwardedProps: {
       mode,
       mediaIds: input.mediaIds,
-      ...(mode === "byok" ? { apiKey } : {}),
       clientEvent: input.formResponse
         ? {
             version: "v0.9.1",
@@ -262,6 +270,7 @@ export async function generate(
   return turn;
 }
 export function resumeImage(turnId: number, id: string, apiKey?: string, onProgress?: (progress: RunProgress) => void) {
+  requirePlatform("platform", apiKey);
   return consumeRun("image-resume", { turnId, requestId: id, ...(apiKey ? { apiKey } : {}) }, id, onProgress);
 }
 async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: string, onProgress?: (progress: RunProgress) => void) {
@@ -311,7 +320,7 @@ async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: str
   }
   reader.finish();
 }
-export const mintMcpToken = () => request("token", credentialSchema, "POST");
+export const mintMcpToken = async () => { throw new Error(PLATFORM_ONLY_NOTICE); };
 export const revokeMcpTokens = () =>
   request("token/revoke", revokedSchema, "POST");
 
@@ -474,3 +483,6 @@ export async function copyAiReply(value: string, external = false) { return copy
 
 export const getSafety = () => request("safety", safetyStatusSchema);
 export const submitSafety = (body: unknown) => request("safety", safetyReceiptSchema, "POST", body);
+
+export const getInteractionStatus = () => request("interaction", interactionStatusSchema);
+export const interactionAction = (action: "contact" | "remove-contact" | "heartbeat" | "acknowledge", body: unknown = {}) => request(`interaction/${action}`, interactionStatusSchema, "POST", body);

@@ -3,6 +3,7 @@ import type { BeforeListTableServerProps, UIFieldServerProps } from "payload";
 import { activeRule, canAudit, canReview, isAdministrator } from "./policy";
 import { imageReviewConfigured } from "./image-review";
 import { OperationsService } from "./service";
+import { feishuAlertStatus } from "./alerts";
 import { caseQueueFilters, collectionURL, recordURL } from "./admin-presentation";
 import { CaseActions, CreateOperation, JudgeEvaluation, RuleActions, RunEvaluation } from "./admin-actions";
 
@@ -14,8 +15,10 @@ export async function OperationsListTools({ collectionSlug: slug, user, payload 
     try { const rule = await activeRule(payload); coverage = `${rule.mode === "all" ? "全量语境复核" : "关键词召回 · 存在漏检区间"}（${rule.version}）`; }
     catch { coverage = "规则与程序版本不一致，需管理员复核"; }
     const filters = caseQueueFilters(user.id);
+    const alerts = await feishuAlertStatus(payload);
     return <div className="safety-list-tools">
       <p>运营安排：{config.configured ? "已配置" : "待配置值班、时限与正式留存依据"}。文本审核：{coverage}。图片像素审核：{imageReviewConfigured() ? "已配置接口，以实际调用为准" : "未配置，图片处理关闭"}。</p>
+      <p>危机通知：{alerts.text}。请留意「飞书提醒」列；消息发送成功不等于案件已受理。</p>
       {/* A document navigation resets Payload's client query state when clearing filters. */}
       <nav aria-label="案件快捷筛选">
         <a href={recordURL(slug, undefined, admin)}>全部案件</a>

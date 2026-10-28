@@ -2,6 +2,7 @@ import type { Where } from "payload";
 
 export const operationLabels: Record<string, string> = {
   pending: "待受理", in_progress: "处理中", review: "待复核", resolved: "已处置",
+  reject: "拒绝未生成请求",
   urgent: "紧急", high: "高", normal: "普通", complaint: "用户举报", appeal: "用户申诉",
   moderation: "自动审核", image: "图片审核", input: "输入", output: "输出", user_report: "用户报告",
   input_image: "图片输入", output_image: "图片输出", violence: "暴力", self_harm: "自伤相关",

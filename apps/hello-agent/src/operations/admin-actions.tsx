@@ -93,12 +93,15 @@ export function CreateOperation({ kind, admin }: { kind: "rules" | "settings" | 
 }
 
 export function CaseActions({ row, administrator, userId }: { row: Row; administrator: boolean; userId: number | string }) {
+  const [emergency, setEmergency] = useState<Row>();
   const [evidence, setEvidence] = useState<Record<string, unknown>>();
   const own = row.assignedTo === userId;
   const actions: [string, string][] = [];
   if (row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
   if (own || administrator) actions.push(["review", "转交独立复核"]);
   if (own && ["in_progress", "review"].includes(String(row.status))) {
+    if (row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
+      actions.push(["reject", "拒绝未生成请求并结案"]);
     actions.push(["dismiss", "无需限制，结案"]);
     if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
     if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
@@ -106,6 +109,10 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
   if (own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
   if (administrator) actions.push(row.legalHold ? ["release_hold", "解除暂缓清理"] : ["hold", "基于具体依据暂缓证据清理"]);
   return <div>
+    {row.severity === "urgent" && row.status !== "resolved" && <ActionPanel title="紧急人工联络" fields={[{ ...reason, max: 500 }, { key: "result", label: "操作", options: [["read", "读取有效授权的紧急联系人"], ["contacted", "登记：已人工联系"], ["unreachable", "登记：人工联系未接通"]] }]} button="执行并记入审计" disabled={!own && !administrator} submit={async (body) => {
+      setEmergency(undefined); setEmergency(await request(`cases/${row.id}/emergency-contact`, body));
+    }}><p>孙逢负责人工处置。当前没有自动拨号或推送，须本人查看队列并实际联络。只在必要的紧急处置中使用联系人资料。</p></ActionPanel>}
+    {emergency && <div role="status"><p>{String(emergency.notice)}</p>{emergency.contact ? <p>{String((emergency.contact as { name: string }).name)} · {String((emergency.contact as { phone: string }).phone)}</p> : <p>未展示联系人资料。</p>}</div>}
     <ActionPanel title="按需查看最小证据" fields={[{ ...reason, max: 500 }]} button="查看证据并留痕" disabled={!own && !administrator} submit={async (body) => {
       setEvidence(undefined); setEvidence(await request(`cases/${row.id}/evidence`, body));
     }}><p>{!own && !administrator ? "请先领取案件，再按需查看证据。" : "访问须填写具体理由，访问记录会写入审计。"}</p></ActionPanel>

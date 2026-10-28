@@ -1,3 +1,4 @@
+import { emergencyContactForCase } from "../../../../interaction/service";
 import type { CollectionSlug } from "payload";
 import { z } from "zod";
 import { cms } from "../../../../cms/client";
@@ -57,6 +58,7 @@ export async function POST(request: Request, context: Context) {
     const path = (await context.params).path;
     const body = await readJson(request, 128 * 1024);
     const service = new OperationsService(payload);
+    if (path[0] === "cases" && path[2] === "emergency-contact") return json(await emergencyContactForCase(payload, user, id(path[1]), body));
     if (path[0] === "cases" && path[2] === "evidence") return json(await service.evidence(user, id(path[1]), z.object({ reason: z.string() }).strict().parse(body).reason));
     if (path[0] === "cases" && path[2] === "action") return json(await service.action(user, id(path[1]), body));
     if (path[0] === "settings") return json(await service.configure(user, body));

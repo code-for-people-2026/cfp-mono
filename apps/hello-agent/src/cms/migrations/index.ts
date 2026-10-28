@@ -12,6 +12,9 @@ import * as migration_20261010_060548_response_artifacts from './20261010_060548
 import * as migration_20261012_035545_agent_configuration from './20261012_035545_agent_configuration';
 import * as migration_20261013_125923_platform_model_quota from './20261013_125923_platform_model_quota';
 
+import * as interaction from "./20261024_100000_interaction_safety";
+import * as feishuAlerts from "./20261024_120000_feishu_alerts";
+
 export const migrations = [
   {
     up: migration_20260930_123608_initial_preview.up,
@@ -46,4 +49,6 @@ export const migrations = [
   { up: correction.up, down: correction.down, name: "20261014_103000_wechat_age_correction" },
   { up: migration_20261013_163000_safety_operations.up, down: migration_20261013_163000_safety_operations.down, name: "20261013_163000_safety_operations" },
   { up: migration_20261014_080000_image_generation.up, down: migration_20261014_080000_image_generation.down, name: "20261014_080000_image_generation" },
+  { up: interaction.up, down: interaction.down, name: "20261024_100000_interaction_safety" },
+  { up: feishuAlerts.up, down: feishuAlerts.down, name: "20261024_120000_feishu_alerts" },
 ];

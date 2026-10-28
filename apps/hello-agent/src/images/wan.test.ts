@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ContentReviewError } from "../domain/contracts";
 import { configuredImageProvider, imageGenerationConfigured, ImageTaskFailed, validateWanImageUrl, wanProvider } from "./wan";
 
 const input = { prompt: "窗台的一盆番茄，温暖插画", title: "小番茄", alt: "红色番茄", aspectRatio: "square" as const };
@@ -6,6 +7,17 @@ const resultUrl = "https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/resul
 const reply = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 describe("万相图片供应商边界", () => {
+  it.each(["DataInspectionFailed", "IPInfringementSuspect"])("任务安全拒绝 %s 不误报成生成故障或重新提交", async (code) => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(reply({ output: { task_id: "task-1", task_status: "FAILED", code } }));
+    await expect(wanProvider("https://dashscope.aliyuncs.com", "key", transport).result("task-1", AbortSignal.timeout(1000))).rejects.toBeInstanceOf(ContentReviewError);
+    expect(transport).toHaveBeenCalledOnce();
+  });
+  it("提交时的安全拒绝是内容拦截；明确限流提示重新提出而非取不存在的图", async () => {
+    const transport = vi.fn<typeof fetch>().mockResolvedValueOnce(reply({ code: "DataInspectionFailed", message: "private raw body" }, 400)).mockResolvedValueOnce(reply({ code: "Throttling" }, 429));
+    const provider = wanProvider("https://dashscope.aliyuncs.com", "key", transport);
+    await expect(provider.submit(input, AbortSignal.timeout(1000))).rejects.toMatchObject({ status: 422 });
+    await expect(provider.submit(input, AbortSignal.timeout(1000))).rejects.toThrow("尚未受理");
+  });
   it.each(["", " \t\r\n ", "synthetic key", "synthetic\nkey", "synthetic\tkey", "synthetic\u0007key", "synthetic\u007fkey", "syntheticé"])("无效凭证既不报告可用也不创建供应商：%j", (key) => {
     vi.stubEnv("DASHSCOPE_API_KEY", key); vi.stubGlobal("fetch", vi.fn());
     expect(imageGenerationConfigured()).toBe(false);
@@ -25,7 +37,7 @@ describe("万相图片供应商边界", () => {
     expect(() => validateWanImageUrl("https://other.oss-accelerate.aliyuncs.com/result.png")).toThrow();
     expect(() => validateWanImageUrl("https://dashscope-a717.oss-accelerate.aliyuncs.com.evil.test/result.png")).toThrow();
   });
-  it("关闭供应商额外的可见水印，由保存阶段统一标识；轮询原任务且下载不携带密钥", async () => {
+  it("由保存阶段统一加标识，轮询原任务，下载时不携带密钥", async () => {
     const transport = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(reply({ output: { task_id: "task-1", task_status: "PENDING" } }))
       .mockResolvedValueOnce(reply({ output: { task_id: "task-1", task_status: "RUNNING" } }))

@@ -1,5 +1,6 @@
 export * from "./age";
 export * from "./profile";
+export * from "./service-scope";
 import { z } from "zod";
 import {
   formResponseSchema,
@@ -131,7 +132,8 @@ export type Decoder<T> = {
 };
 
 export * from "./privacy";
+export * from "./interaction";
 
 export const safetyReceiptSchema = z.object({ receipt: z.string(), kind: z.string(), status: z.string(), createdAt: z.string(), reply: z.string().nullish(), acceptBy: z.string().nullish(), resolveBy: z.string().nullish(), canAppeal: z.boolean(), turnId: z.number().nullish() });
-export const safetyStatusSchema = z.object({ configuration: z.object({ configured: z.boolean(), acceptanceHours: z.number().optional(), resolutionHours: z.number().optional(), feedbackHours: z.number().optional() }), cases: z.array(safetyReceiptSchema) });
+export const safetyStatusSchema = z.object({ configuration: z.object({ notice: z.string().optional(), configured: z.boolean(), acceptanceHours: z.number().optional(), resolutionHours: z.number().optional(), feedbackHours: z.number().optional() }), cases: z.array(safetyReceiptSchema) });
 export type SafetyReceipt = z.output<typeof safetyReceiptSchema>;

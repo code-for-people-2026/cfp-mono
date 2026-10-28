@@ -68,6 +68,7 @@ export interface Config {
   blocks: {};
   collections: {
     'safety-cases': SafetyCase;
+    'safety-alert-state': SafetyAlertState;
     'safety-evidence': SafetyEvidence;
     'safety-audit': SafetyAudit;
     'safety-enforcements': SafetyEnforcement;
@@ -99,6 +100,7 @@ export interface Config {
   collectionsJoins: {};
   collectionsSelect: {
     'safety-cases': SafetyCasesSelect<false> | SafetyCasesSelect<true>;
+    'safety-alert-state': SafetyAlertStateSelect<false> | SafetyAlertStateSelect<true>;
     'safety-evidence': SafetyEvidenceSelect<false> | SafetyEvidenceSelect<true>;
     'safety-audit': SafetyAuditSelect<false> | SafetyAuditSelect<true>;
     'safety-enforcements': SafetyEnforcementsSelect<false> | SafetyEnforcementsSelect<true>;
@@ -190,6 +192,17 @@ export interface SafetyCase {
   acceptedAt?: string | null;
   resolvedAt?: string | null;
   feedbackAt?: string | null;
+  alertStatus?: ('pending' | 'sending' | 'retry' | 'delivered' | 'failed' | 'cancelled') | null;
+  alertNextAt?: string | null;
+  alertDetails?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   ruleVersion?: string | null;
   lexiconVersion?: string | null;
   modelVersion?: string | null;
@@ -201,6 +214,27 @@ export interface SafetyCase {
   retainUntil?: string | null;
   legalHold?: boolean | null;
   holdReason?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * 通过本资源的操作区受理、复核、处置或追加版本；原始记录只读。
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-alert-state".
+ */
+export interface SafetyAlertState {
+  id: number;
+  key: string;
+  fingerprint?: string | null;
+  testId?: string | null;
+  testedAt?: string | null;
+  verifiedAt?: string | null;
+  heartbeatAt?: string | null;
+  leaseToken?: string | null;
+  leaseUntil?: string | null;
+  nextSendAt?: string | null;
+  lastError?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -537,6 +571,15 @@ export interface WechatIdentity {
  */
 export interface AgeProfile {
   id: number;
+  interaction?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
   owner: string;
   state: string;
   declaration?: string | null;
@@ -835,6 +878,9 @@ export interface SafetyCasesSelect<T extends boolean = true> {
   acceptedAt?: T;
   resolvedAt?: T;
   feedbackAt?: T;
+  alertStatus?: T;
+  alertNextAt?: T;
+  alertDetails?: T;
   ruleVersion?: T;
   lexiconVersion?: T;
   modelVersion?: T;
@@ -846,6 +892,24 @@ export interface SafetyCasesSelect<T extends boolean = true> {
   retainUntil?: T;
   legalHold?: T;
   holdReason?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "safety-alert-state_select".
+ */
+export interface SafetyAlertStateSelect<T extends boolean = true> {
+  key?: T;
+  fingerprint?: T;
+  testId?: T;
+  testedAt?: T;
+  verifiedAt?: T;
+  heartbeatAt?: T;
+  leaseToken?: T;
+  leaseUntil?: T;
+  nextSendAt?: T;
+  lastError?: T;
   updatedAt?: T;
   createdAt?: T;
 }
@@ -1052,6 +1116,7 @@ export interface WechatIdentitiesSelect<T extends boolean = true> {
  * via the `definition` "age-profiles_select".
  */
 export interface AgeProfilesSelect<T extends boolean = true> {
+  interaction?: T;
   owner?: T;
   state?: T;
   declaration?: T;

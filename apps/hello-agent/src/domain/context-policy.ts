@@ -7,6 +7,12 @@ import { artifactsSchema, artifactSummary } from "@cfp/hello-agent-protocol";
 // 这是产品的对话记忆预算，不是供应商上下文窗口，也不是计费 token。
 export const MEMORY_BUDGET = 18_000;
 export const RECENT_TURNS = 2;
+// An explicit, standalone request only; quotations, advice, and "不要忘掉"
+// must not reset conversation context. Historical records are not deleted.
+export function forgetContextRequested(text: string) {
+  return /^(?:请|麻烦你|请你)?(?:把)?(?:刚才说的|我刚才说的|这件事|之前的对话)?(?:忘掉|忘记)(?:这件事|刚才那件事|刚才说的|我刚才说的|之前的对话)?[。！!\s]*$/.test(text.normalize("NFKC").trim());
+}
+export const FORGET_CONTEXT_GUIDANCE = "已停止把本次对话之前的内容和摘要用于后续聊天。原聊天记录仍保留；这不等于删除数据。如需删除，可到“设置→隐私与数据→删除数据”自行确认。我不会替你确认删除。";
 export const summarySchema = z.object({
   summary: z.string().trim().min(1).max(900),
 });

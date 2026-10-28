@@ -1,3 +1,4 @@
+import { InteractionGuard } from "../../chat/interaction";
 import type { UserProfile } from "@cfp/hello-agent-contracts";
 import { AgeGate } from "../../chat/age";
 import type { AgeStatus } from "@cfp/hello-agent-protocol";
@@ -9,11 +10,10 @@ import {
   Button as TaroButton,
   type ButtonProps,
   Image,
-  Input as TextInput,
   Text,
   View,
 } from "@tarojs/components";
-import Taro, { usePageScroll, useDidShow } from "@tarojs/taro";
+import Taro, { usePageScroll, useDidShow, useDidHide } from "@tarojs/taro";
 import * as api from "../../chat/api";
 import { ChatNavigation } from "../../chat/navigation";
 import { useChatMode } from "../../chat/preferences";
@@ -71,6 +71,7 @@ const suggestions = [
 ];
 
 export default function Chat() {
+  const [visible, setVisible] = useState(true);
   const [profile, setProfile] = useState<UserProfile>();
   const [avatarSource, setAvatarSource] = useState<string>();
   const [age, setAge] = useState<AgeStatus>();
@@ -457,7 +458,9 @@ export default function Chat() {
     const cleanupCopy = h5 ? installAiCopyLabels() : undefined;
     return () => { Taro.eventCenter.off(privacyChangedEvent, changed); cleanupCopy?.(); };
   }, []);
+  useDidHide(() => setVisible(false));
   useDidShow(() => {
+    setVisible(true);
     if (privacyDirty.current) { privacyDirty.current = false; void boot(); }
     else if (age?.expiresAt && Date.parse(age.expiresAt) <= Date.now()) { setAge({ ...age, allowed: false, state: "expired" }); setAgeOpen(true); }
   });
@@ -615,14 +618,13 @@ export default function Chat() {
   ) as Record<string, FormValues>;
   async function resumeImage(row: Turn) {
     if (disabled || !sessionId) return;
-    if (row.mode === "byok" && apiKey.trim().length < 10) {
-      setError("请先填写本次使用的 DeepSeek 密钥，再继续取图"); return;
+    if (row.mode !== "platform") {
+      setError("当前仅支持继续生成平台模式的图片，原有记录仍可查看"); return;
     }
-    const key = row.mode === "byok" ? apiKey : undefined;
     setApiKey(""); setBusy(true); setError("");
     setProgress({ text: "", messages: [], step: "正在继续取图…" });
     try {
-      await api.resumeImage(row.id, requestId(), key, setProgress);
+      await api.resumeImage(row.id, requestId(), undefined, setProgress);
       await readHistory(sessionId);
     } catch (value) {
       problem(value);
@@ -663,6 +665,7 @@ export default function Chat() {
 
   return (
     <View className={h5 ? "h5-shell" : "native-shell"}>
+      <InteractionGuard enabled={visible && !loading && !!age?.allowed && consentCurrent(privacy)} revision={history.length} onUnavailable={() => { void api.getAge().then((s) => { setAge(s); if (!s.allowed) setAgeOpen(true); }).catch(() => {}); }} />
       <View className="chat-app">
         <ChatNavigation
           profile={profile}
@@ -907,47 +910,13 @@ export default function Chat() {
             </View>
           )}
           <View className="composer-area">
-            {mode === "byok" && (
-              <View className="key-row">
-                <TextInput
-                  className="key-input"
-                  password
-                  value={apiKey}
-                  onInput={(event) => setApiKey(event.detail.value)}
-                  placeholder="填写本次 DeepSeek API Key"
-                  disabled={busy}
-                />
-                <Text className="key-hint">仅用于本次生成，发送后清空</Text>
-              </View>
-            )}
             {mode === "platform" &&
               settings &&
               !settings.platformConfigured && !age?.configuration.previewOnly && (
                 <Text className="config-warning">
-                  平台尚未配置模型账户，请切换到“我的密钥”。
+                  对话服务暂不可用，请稍后重试。
                 </Text>
               )}
-            {mode === "external" ? (
-              <View className="external-composer">
-                <Text>让你自己的 Agent 生成，祝福仍留在这里。</Text>
-                <View className="external-actions">
-                  <Button
-                    className="primary-button"
-                    disabled={disabled}
-                    onClick={openSettings}
-                  >
-                    连接我的 Agent ↗
-                  </Button>
-                  <Button
-                    className="quiet-button"
-                    disabled={disabled}
-                    onClick={boot}
-                  >
-                    刷新对话
-                  </Button>
-                </View>
-              </View>
-            ) : (
               <ChatComposer
                 inputMode={inputMode}
                 text={text}
@@ -981,12 +950,9 @@ export default function Chat() {
                 }
                 onSend={() => send()}
               />
-            )}
             {!loading && !age?.allowed && <Button className="age-resume" onClick={() => setAgeOpen(true)}>{age?.configuration.previewOnly ? "继续体验" : "继续登录与年龄确认"}</Button>}
             <Text className="composer-footnote">
-              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : mode === "external"
-                ? "对话仍留在这里 · 支持撤销连接"
-                : "阿 J 先生是 AI，好意不是对未来的保证"}
+              {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>
           </View>
         </View>

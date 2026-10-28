@@ -17,7 +17,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { ContextService } = await import("../src/domain/context");
 const { readArtifact } = await import("../src/domain/artifact-rendering");
-const { OperationsService } = await import("../src/operations/service");
+const { OperationsService, transaction } = await import("../src/operations/service");
 const { RulesService } = await import("../src/operations/rules");
 const { EvaluationsService } = await import("../src/operations/evaluations");
 const { purgeExpiredEvidence, eraseOperationsEvidence } = await import("../src/operations/retention");
@@ -40,13 +40,26 @@ try {
     const { token } = await payload.login({ collection: "admins", data: { email: user.email, password: "isolated-test-pass-123" } });
     const response = await operationsGET(new Request("http://localhost/api/operations/status", { headers: { Cookie: `payload-token=${token}` } }), { params: Promise.resolve({ path: ["status"] }) });
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).rule, { version: "builtin-unreleased", mode: "keywords" });
+    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v2", mode: "all" });
   }
   pass("真实认证的状态接口只返回规则版本和覆盖模式，不向各角色披露召回词或内部理由");
   const ops = new OperationsService(payload);
   assert.equal((await ops.configuration()).configured, false);
   await assert.rejects(() => ops.configure(reviewer, {}), { status: 403 });
   await ops.configure(administrator, { acceptanceHours: 8, resolutionHours: 48, feedbackHours: 24, evidenceDays: 7, staffing: "仅隔离自动化测试的合成值班安排", retentionBasis: "本次隔离功能验证，所有数据均为合成材料", reason: "测试配置受理与处置时限的真实计算" });
+  const rejectedInput = await transaction(payload, (req) => ops.createCase({ owner: "regression:review-reject", source: "moderation", stage: "input", category: "fraud", decision: "uncertain" }, "合成拒绝请求，无已生成内容", req));
+  await assert.rejects(() => ops.action(reviewer, rejectedInput.id, { revision: 0, action: "reject", reason: "未受理时不能拒绝并结案" }));
+  await ops.action(reviewer, rejectedInput.id, { revision: 0, action: "claim", reason: "受理未生成内容的拒绝复核" });
+  await payload.db.drizzle.run(sql`CREATE TRIGGER test_reject_audit_failure BEFORE INSERT ON safety_audit WHEN NEW.event = 'case.reject' BEGIN SELECT RAISE(ABORT, 'synthetic audit failure'); END`);
+  await assert.rejects(() => ops.action(reviewer, rejectedInput.id, { revision: 1, action: "reject", reason: "验证拒绝结案与审计原子提交" }));
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: rejectedInput.id, overrideAccess: true })).status, "in_progress");
+  await payload.db.drizzle.run(sql`DROP TRIGGER test_reject_audit_failure`);
+  const manualRejection = await ops.action(reviewer, rejectedInput.id, { revision: 1, action: "reject", reason: "人工决定拒绝原请求，不生成替代图", reply: "本次原请求不执行，也不生成替代内容。" });
+  assert.equal(manualRejection.status, "resolved"); assert.equal(manualRejection.action, "reject"); assert.equal(manualRejection.decision, "uncertain");
+  assert.equal((await ops.mine({ id: rejectedInput.owner, auth: "cookie" }, manualRejection.receipt))[0].reply, "本次原请求不执行，也不生成替代内容。");
+  assert.equal((await payload.count({ collection: "safety-enforcements", overrideAccess: true, where: { owner: { equals: rejectedInput.owner } } })).totalDocs, 0);
+  assert.equal((await payload.count({ collection: "safety-audit", overrideAccess: true, where: { event: { equals: "case.reject" } } })).totalDocs, 1);
+  pass("未生成内容可维持拒绝并反馈；保留自动审核原判、不封禁身份，审计失败回滚");
   const owner = { id: randomUUID(), auth: "cookie" as const }, other = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
   const service = new GreetingService(repo, async (args) => { await args.save({ greeting: "合成内容：愿你今晚安稳休息", association: "测试关照", artifacts: [{ kind: "page", id: "page1", title: "测试页面", sections: [{ heading: "小步骤", body: "休息" }] }] }); }, undefined, undefined, { moderate: async () => {}, imageReviewer: async () => ({ decision: "allow", category: "test", version: "mock-pixels-test-only" }) });
@@ -63,6 +76,9 @@ try {
   await assert.rejects(() => ops.mine(other, String(receipt.receipt)), { status: 404 });
   assert.equal((await ops.mine(owner)).length, 1);
   pass("投诉受理编号、时限、本人查询与越权举报/查询拒绝");
+  const completedCase = await transaction(payload, (req) => ops.createCase({ owner: owner.id, source: "moderation", stage: "output", category: "other", decision: "uncertain", turnId: turn.id }, "已存内容不能仅拒绝结案而保持展示", req));
+  await ops.action(reviewer, completedCase.id, { revision: 0, action: "claim", reason: "受理已存内容的错误动作验证" });
+  await assert.rejects(() => ops.action(reviewer, completedCase.id, { revision: 1, action: "reject", reason: "已存内容必须走内容隔离动作" }), { status: 409 });
   await assert.rejects(() => ops.evidence(reviewer, Number(row.id), "测试未领取时查看受限证据"), { status: 403 });
   const claimed = await ops.action(reviewer, Number(row.id), { revision: 0, action: "claim", reason: "领取合成案件进行闭环验证" });
   assert.equal(claimed.status, "in_progress");
@@ -207,7 +223,16 @@ try {
   }
   assert.equal((await imageRepo.all("greetings")).length, 0);
   assert.equal((await ops.mine(imageOwner)).length, 2);
-  await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "天气晴朗" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
+  // Full text review now precedes image review even for ordinary words. Isolate
+  // the image outage by allowing text through an explicitly synthetic verdict.
+  process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
+  globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"decision":"allow"}' } }] });
+  try {
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "天气晴朗" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.DEEPSEEK_API_KEY;
+  }
   const outputCase = (await ops.queue(administrator, {})).find((r) => r.owner === imageOwner.id && r.stage === "output_image");
   assert.ok(outputCase?.turnId);
   assert.ok((await imageRepo.all("greetings")).every((r) => !r.artifacts && r.status === "failed"));

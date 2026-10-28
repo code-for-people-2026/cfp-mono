@@ -1,6 +1,6 @@
 import { reservePlatformCalls } from "../cms/platform-quota";
 import type { Repository } from "../cms/repository";
-import { AppError, ContentReviewError } from "../domain/contracts";
+import { AppError, ContentReviewError, ContentPendingReviewError } from "../domain/contracts";
 import { evaluateText, type Moderator } from "../domain/moderation";
 import { activeRule } from "./policy";
 import { audit } from "./audit";
@@ -39,7 +39,10 @@ export function operationalModerator(repo: Repository): Moderator {
       throw unavailable();
     });
     if (verdict.decision === "unavailable" || verdict.decision === "uncertain") {
-      if (recorded === "duplicate") throw new ContentReviewError(503, "内容审核暂未完成，同一请求已有审核记录，请稍后重试");
+      if (recorded === "duplicate") {
+        if (verdict.decision === "uncertain") throw new ContentPendingReviewError("这条内容需要人工复核，同一请求已有审核记录，可通过投诉与申诉入口查看或补充说明");
+        throw new ContentReviewError(503, "内容审核暂未完成，同一请求已有审核记录，请稍后重试");
+      }
       if (!recorded || typeof recorded !== "object") throw unavailable();
       // The SQLite adapter can hide a failed COMMIT. Only promise a queued case
       // after observing its committed row outside the transaction.
@@ -47,6 +50,7 @@ export function operationalModerator(repo: Repository): Moderator {
         { id: { equals: recorded.id } }, { receipt: { equals: recorded.receipt } }, { owner: { equals: repo.owner.id } },
       ] } }).catch(() => ({ totalDocs: 0 }));
       if (!visible.totalDocs) throw unavailable();
+      if (verdict.decision === "uncertain") throw new ContentPendingReviewError("这条内容需要人工复核，已记录待复核事项，暂未放行；可通过投诉与申诉入口查看或补充说明");
       throw new ContentReviewError(503, "内容审核暂未完成，已记录待复核事项，请稍后重试");
     }
     if (verdict.decision === "block") throw new ContentReviewError(422, request.stage === "input"

@@ -1,3 +1,4 @@
+import { INTERACTION_BOUNDARY } from "../interaction/policy";
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { AJ_PERSONA } from "./persona";
@@ -31,6 +32,9 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      "aj-v4.6": "5e57a4af04a09e3348cbbdf6817ba0a67409ba10ae7706faff520104bc13074e",
+      "aj-v4.5": "c0d1d5e9fd9e65bc0aa1790aa5b1d2e16d59069cf2b48b0a43a0cfdf85966c4a",
+      "aj-v4.4": "256fca0d79ed6c3a90a5c3ff3910a57246082f586232bee61c64a9999cee89ee",
       "aj-v4.3":
         "d9c7f5a6d2e228ce57db3e3848f3156aa4ec9c7bdee2c054d505b3cd9c140cf5",
       "aq-v4.2":
@@ -57,6 +61,7 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
             greeting: GREETING_INSTRUCTION,
             coordinator: COORDINATOR_INSTRUCTION,
             specialists: SPECIALIST_INSTRUCTIONS,
+            interaction: INTERACTION_BOUNDARY,
           }),
         )
         .digest("hex"),

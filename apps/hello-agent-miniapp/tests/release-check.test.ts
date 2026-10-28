@@ -27,7 +27,11 @@ const failures = {
   "missing-selected-export": "找不到页面导出",
   "missing-privacy-entry": "遗漏设置页：隐私与数据",
   "missing-authorization-route": "缺少独立授权管理路由",
-  "missing-connection-options": "遗漏连接方式页：mode-option",
+  "missing-platform-connection": "遗漏连接方式页：平台助手",
+  "legacy-connection-entry": "发布版本仍包含外部连接入口：mode-option",
+  "missing-safety-route": "缺少独立互动安全路由",
+  "missing-safety-entry": "遗漏设置页：互动安全",
+  "missing-safety-consent": "遗漏互动安全页：保存联系人及单独授权",
   "legacy-help": "遗漏帮助与反馈页：提交反馈",
   "missing-settings-loader": "缺少设置页面模块",
 };
@@ -64,6 +68,7 @@ it.each(scenarios)(
       ["chat", "chat"],
       ["settings", "settings"],
       ["connection", "connection"],
+      ["safety", "safety"],
       ["help", "help"],
       ...privacyPages.map(([route, name]) => [route, "privacy", name]),
     ];
@@ -73,6 +78,7 @@ it.each(scenarios)(
         .filter(
           ([route]) =>
             !(scenario === "legacy" && route === "settings") &&
+            !(scenario === "missing-safety-route" && route === "safety") &&
             !(scenario === "missing-privacy-route" && route === "privacy") &&
             !(
               scenario === "missing-authorization-route" &&
@@ -95,8 +101,9 @@ it.each(scenarios)(
         "chat-composer input-toggle artifact-surface " +
         (scenario === "missing-ag-ui" ? "/api/hello/sessions" : scenario === "dynamic-ag-ui" ? '`/api/hello/${route}` consume("ag-ui") consume("image-resume")' : "/api/hello/ag-ui") +
         (scenario === "legacy-renderer" ? "" : " data-surface-id a2ui-surface"),
-      "/chat/js/index.settings.js": `settings-page settings-header 连接方式 帮助与反馈 ${scenario === "missing-privacy-entry" ? "" : "隐私与数据"}`,
-      "/chat/js/index.connection.js": `生成专用连接令牌 ${scenario === "missing-connection-options" ? "" : "mode-option"}`,
+      "/chat/js/index.settings.js": `settings-page settings-header 连接方式 帮助与反馈 ${scenario === "missing-safety-entry" ? "" : "互动安全"} ${scenario === "missing-privacy-entry" ? "" : "隐私与数据"}`,
+      "/chat/js/index.connection.js": `当前模型 图片生成 由平台提供 DeepSeek 对话和万相图片生成服务。 ${scenario === "missing-platform-connection" ? "" : "平台助手"} ${scenario === "legacy-connection-entry" ? "mode-option 生成专用连接令牌" : ""}`,
+      "/chat/js/index.safety.js": `人工支持 紧急联系人 ${scenario === "missing-safety-consent" ? "" : "保存联系人及单独授权"}`,
       "/chat/js/index.help.js": scenario === "legacy-help" ? "在线反馈暂未开放 联系渠道" : "提交反馈 我的受理记录 联系渠道",
       "/chat/js/index.privacy.js":
         scenario === "empty-privacy-module"

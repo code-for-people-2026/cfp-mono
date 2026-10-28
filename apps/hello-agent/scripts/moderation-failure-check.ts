@@ -48,7 +48,7 @@ const refused = async (...args: Parameters<typeof invoke>) => {
   try { await invoke(...args); assert.fail("review must fail closed"); }
   catch (error) {
     assert.ok(error instanceof ContentReviewError, "review must expose only its safe domain error");
-    assert.equal(error.status, 503);
+    assert.equal(error.status, response === "uncertain" && /需要人工复核/.test(error.message) ? 409 : 503);
     assert.doesNotMatch(error.message, /synthetic-review-key|private body/);
     return error.message;
   }

@@ -9,6 +9,18 @@ afterEach(() => {
 });
 
 describe("网络响应不能靠泛型强信任", () => {
+  it.each(["h5", "weapp"])("%s 不能从旧调用入口发送密钥、签发外部令牌或以外部模式整理记忆", async (environment) => {
+    vi.stubEnv("TARO_ENV", environment);
+    vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
+    const api = await import("../src/chat/api");
+    await expect(api.generate(1, crypto.randomUUID(), "byok", { text: "测试", mediaIds: [] }, "test-key-only")).rejects.toThrow(/仅开放平台/);
+    await expect(api.generate(1, crypto.randomUUID(), "platform", { text: "测试", mediaIds: [] }, "test-key-only")).rejects.toThrow(/仅开放平台/);
+    expect(() => api.compactMemory(1, crypto.randomUUID(), "external")).toThrow(/仅开放平台/);
+    expect(() => api.compactPreview(1, crypto.randomUUID(), 1, "byok", "test-key-only")).toThrow(/仅开放平台/);
+    expect(() => api.resumeImage(1, crypto.randomUUID(), "test-key-only")).toThrow(/仅开放平台/);
+    await expect(api.mintMcpToken()).rejects.toThrow(/仅开放平台/);
+    expect(mocks.request).not.toHaveBeenCalled();
+  });
   it.each(["camera", "album"] as const)(
     "图片入口 %s 只请求用户选择的来源，取消不上传",
     async (source) => {

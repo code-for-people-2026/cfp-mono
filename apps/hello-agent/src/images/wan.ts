@@ -1,6 +1,6 @@
 import { setTimeout as pause } from "node:timers/promises";
 import { z } from "zod";
-import { AppError } from "../domain/contracts";
+import { AppError, ContentReviewError } from "../domain/contracts";
 
 export const imageRequestSchema = z.object({
   prompt: z.string().trim().min(2).max(1800),
@@ -13,6 +13,7 @@ export const WAN_MODEL = "wan2.6-t2i";
 const sizes = { square: "1280*1280", portrait: "1104*1472", landscape: "1472*1104" };
 const taskIdSchema = z.string().regex(/^[a-zA-Z0-9-]{1,100}$/);
 export class ImageTaskFailed extends AppError {}
+export class ImageSubmissionRejected extends AppError {}
 export type ImageProvider = {
   submit(input: ImageRequest, signal: AbortSignal): Promise<string>;
   result(taskId: string, signal: AbortSignal): Promise<Buffer>;
@@ -38,6 +39,7 @@ export function configuredImageProvider(): ImageProvider {
 const responseSchema = z.object({
   code: z.string().optional(),
   output: z.object({
+    code: z.string().optional(),
     task_id: taskIdSchema.optional(),
     task_status: z.enum(["PENDING", "RUNNING", "SUCCEEDED", "FAILED", "CANCELED", "UNKNOWN"]),
     choices: z.array(z.object({ message: z.object({ content: z.array(z.object({ image: z.string().optional() })) }) })).optional(),
@@ -68,6 +70,10 @@ async function boundedBody(response: Response, maximum: number): Promise<Buffer>
 // Exact provider buckets only: the documented Beijing bucket and the accelerated
 // bucket returned by the authenticated Beijing Wan 2.6 API in live verification.
 const resultHosts = new Set(["dashscope-result-bj.oss-cn-beijing.aliyuncs.com", "dashscope-a717.oss-accelerate.aliyuncs.com"]);
+function checkContentCode(code?: string) {
+  if (code === "DataInspectionFailed" || code === "IPInfringementSuspect")
+    throw new ContentReviewError(422, "这次图片请求或生成结果未通过生图服务的内容审核，图片未返回；可通过投诉与申诉入口申请复核");
+}
 export function validateWanImageUrl(value: string) {
   const url = new URL(value);
   if (url.protocol !== "https:" || !resultHosts.has(url.hostname) ||
@@ -85,12 +91,20 @@ export function wanProvider(origin: string, key: string, transport: typeof fetch
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
       if (!response.ok) {
-        await response.body?.cancel();
+        // Read only the bounded error code; raw messages and URLs are discarded.
+        const data = await boundedBody(response, 64 * 1024);
+        let code: string | undefined;
+        try { code = z.object({ code: z.string().optional() }).parse(JSON.parse(data.toString("utf8"))).code; } catch { /* Non-JSON HTTP error. */ }
+        checkContentCode(code);
         if ([401, 403].includes(response.status)) throw new AppError(503, "百炼生图凭证或模型权限不可用，请联系管理员检查");
-        if (response.status === 429) throw new AppError(503, "生图服务繁忙，请稍后继续取图");
+        if (response.status === 429) {
+          if (body) throw new ImageSubmissionRejected(503, "生图服务繁忙，本次任务尚未受理，请稍后重新提出图片需求");
+          throw new AppError(503, "生图服务繁忙，请稍后继续取图");
+        }
         throw new AppError(502, "生图请求未完成，请稍后继续取图");
       }
       const data = responseSchema.parse(JSON.parse((await boundedBody(response, 64 * 1024)).toString("utf8")));
+      checkContentCode(data.code);
       if (data.code || !data.output) throw new AppError(502, "生图服务未返回有效任务");
       return data.output;
     } catch (error) {
@@ -103,7 +117,6 @@ export function wanProvider(origin: string, key: string, transport: typeof fetch
       const input = imageRequestSchema.parse(value);
       const output = await api("/api/v1/services/aigc/image-generation/generation", signal, {
         model: WAN_MODEL, input: { messages: [{ role: "user", content: [{ text: input.prompt }] }] },
-        // The save pipeline adds our single visible label and preserves source metadata.
         parameters: { size: sizes[input.aspectRatio], n: 1, prompt_extend: false, watermark: false },
       });
       return taskIdSchema.parse(output.task_id);
@@ -113,6 +126,7 @@ export function wanProvider(origin: string, key: string, transport: typeof fetch
       while (!signal.aborted) {
         const output = await api(`/api/v1/tasks/${taskId}`, signal);
         if (output.task_id !== taskId) throw new AppError(502, "生图任务编号不一致");
+        checkContentCode(output.code);
         if (["FAILED", "CANCELED", "UNKNOWN"].includes(output.task_status))
           throw new ImageTaskFailed(502, "这次图片生成失败或任务已过期，请重新提出图片需求");
         if (output.task_status === "SUCCEEDED") {

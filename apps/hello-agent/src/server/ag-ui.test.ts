@@ -17,13 +17,15 @@ const request = () => ({
   context: [],
   messages: [{ id: "u", role: "user", content: "帮我做一份表单" }],
   forwardedProps: {
-    mode: "byok",
-    apiKey: "private-request-key",
+    mode: "platform",
     mediaIds: [],
     a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] },
   },
 });
 describe("AG-UI 协议适配", () => {
+  it.each([{ mode: "byok", apiKey: "private-request-key" }, { mode: "platform", apiKey: "private-request-key" }, { mode: "external" }])("旧 AG-UI 连接方式不能绕过平台限制：%o", (props) => {
+    expect(() => readAgentInput({ ...request(), forwardedProps: props })).toThrowError(/仅开放平台/);
+  });
   it("使用官方事件 Schema 验证整个流，输出仅含已保存作品，不回显密钥", async () => {
     const body = request();
     const response = agentStream(

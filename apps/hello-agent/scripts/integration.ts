@@ -214,14 +214,9 @@ try {
   );
   pass("标准 MCP 客户端握手、发现工具、保存外部产物，幂等且完全绕过平台模型");
 
-  const credential = await mintCredential(payload, "bearer", owner.id);
-  const request = new Request("http://localhost/api/mcp", {
-    headers: { Authorization: `Bearer ${credential.token}` },
-  });
-  assert.equal((await authenticate(payload, request, true)).id, owner.id);
+  await assert.rejects(() => mintCredential(payload, "bearer", owner.id), /仅开放平台/);
   await revokeTokens(payload, owner);
-  await assert.rejects(() => authenticate(payload, request, true), /无效/);
-  pass("MCP 凭证哈希验证与撤销");
+  pass("公开 MCP 令牌停止签发；旧数据协议仅在隔离内存传输中验证");
 
   const device = await mintCredential(payload, "miniapp", owner.id);
   const deviceRequest = new Request("http://localhost/api/hello/sessions", {

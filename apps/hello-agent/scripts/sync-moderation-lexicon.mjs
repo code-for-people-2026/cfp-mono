@@ -17,16 +17,20 @@ const contents = await Promise.all(files.map(async ([path, sha256]) => {
   return bytes.toString("utf8");
 }));
 const rawWords = contents[0].split(/\r?\n/).map((word) => word.trim()).filter(Boolean);
-const words = [...new Set(rawWords.map((word) => word.normalize("NFKC").toLowerCase().replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, "")))]
+const initial = [...new Set(rawWords.map((word) => word.normalize("NFKC").toLowerCase().replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/gu, "")))]
   .filter((word) => [...word].length >= 2 && [...word].length <= 120).sort();
+// Preserve the reviewed clean-v2 sequence and its evidence row identifiers:
+// control-character cleanup was applied after the original normalized sort.
+const words = [...new Set(initial.map((word) => word.replace(/[\u0000-\u001f\u007f-\u009f]/gu, "").trim()))]
+  .filter((word) => [...word].length >= 2 && [...word].length <= 120);
 if (words.length < 50_000) throw new Error("Unexpected lexicon size; inspect before updating");
 const output = new URL("../src/moderation/", import.meta.url);
 await mkdir(output, { recursive: true });
 await writeFile(new URL("lexicon.json", output), JSON.stringify({
-  version: `houbb-${commit.slice(0, 12)}-nfkc-v1`,
+  version: `houbb-${commit.slice(0, 12)}-clean-v2`,
   source, commit, license: "Apache-2.0", sourcePath: files[0][0], sourceSha256: files[0][1],
   rawCount: rawWords.length, count: words.length,
-  modifications: "NFKC/lowercase; remove invisible format characters; deduplicate; retain 2–120 code points. Keywords trigger contextual review, not automatic blocking. No official endorsement or GB/T category equivalence claimed.",
+  modifications: "NFKC/lowercase; remove control and invisible format characters; trim; deduplicate; retain 2–120 code points. Keywords trigger contextual review, not automatic blocking. No official endorsement or GB/T category equivalence claimed.",
   words,
 }, null, 2) + "\n");
 await writeFile(new URL("LICENSE.houbb.txt", output), contents[1]);

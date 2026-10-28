@@ -161,87 +161,25 @@ async function mountSettings() {
     page = create(createElement(SettingsPage));
   });
 }
-function modeButton(index: number) {
-  return page!.root
-    .findAllByType("button")
-    .filter((node) => node.props.className.includes("mode-option"))[index];
-}
-function button(label: string) {
-  return page!.root
-    .findAllByType("button")
-    .find((node) => node.children.includes(label))!;
-}
-
-it("连接方式子页面原地选择方式，供仍在页面栈内的聊天读取，不再渲染弹窗", async () => {
-  await mountSettings();
-  const { useChatMode } = await import("../src/chat/preferences");
-  function ModeConsumer() {
-    return createElement("text", {}, useChatMode());
-  }
-  let consumer: ReactTestRenderer;
-  act(() => {
-    consumer = create(createElement(ModeConsumer));
-  });
-  act(() => modeButton(1).props.onClick());
-  expect(consumer!.toJSON()).toMatchObject({ children: ["byok"] });
-  expect(modeButton(1).props.className).toContain("selected");
-  expect(JSON.stringify(page!.toJSON())).not.toContain("sheet-overlay");
-  expect(JSON.stringify(page!.toJSON())).not.toContain("settings-header");
-  act(() => consumer!.unmount());
-});
-
-it("离开连接方式后，迟到的 MCP 令牌不能重新出现在返回后的页面", async () => {
-  await mountSettings();
-  act(() => modeButton(2).props.onClick());
-  let resolve!: (value: { token: string }) => void;
-  api.mintMcpToken.mockReturnValueOnce(
-    new Promise((done) => {
-      resolve = done;
-    }),
-  );
-  let pending: Promise<void>;
-  await act(async () => {
-    pending = button("生成专用连接令牌").props.onClick();
-    await Promise.resolve();
-  });
-  act(() => platform.useDidHide.mock.calls.at(-1)![0]());
-  act(() => platform.useDidShow.mock.calls.at(-1)![0]());
-  await act(async () => {
-    resolve({ token: "late-test-token" });
-    await pending;
-  });
-  expect(button("复制 MCP 连接配置")).toBeUndefined();
-  api.mintMcpToken.mockResolvedValueOnce({ token: "visible-test-token" });
-  await act(async () => {
-    await button("生成专用连接令牌").props.onClick();
-  });
-  await act(async () => {
-    await button("复制 MCP 连接配置").props.onClick();
-  });
-  expect(
-    JSON.parse(api.copy.mock.calls[0][0]).mcpServers["hello-agent"].headers
-      .Authorization,
-  ).toBe("Bearer visible-test-token");
-  act(() => platform.useDidHide.mock.calls.at(-1)![0]());
-  expect(button("复制 MCP 连接配置")).toBeUndefined();
-});
-
-it.each(["h5", "weapp"])("%s 连接缺少敏感授权时先打开授权页，返回后重新检查并签发", async (environment) => {
+it.each(["h5", "weapp"])("%s 旧连接页面只显示平台服务，不提供密钥及外部令牌入口", async (environment) => {
   vi.stubEnv("TARO_ENV", environment);
   await mountSettings();
-  act(() => modeButton(2).props.onClick());
-  api.getPrivacy.mockResolvedValueOnce({ policy: { version: "test" }, state: "active", consent: { version: "test", external: true, sensitive: false }, expiresAt: null });
-  await act(async () => { await button("生成专用连接令牌").props.onClick(); });
-  expect(platform.navigateTo).toHaveBeenCalledWith({ url: "/pages/privacy/authorization/index" });
+  const rendered = JSON.stringify(page!.toJSON());
+  expect(rendered).toContain("平台助手");
+  expect(rendered).toContain("万相");
+  expect(page!.root.findAllByType("input")).toHaveLength(0);
+  expect(rendered).not.toMatch(/mode-option|生成专用连接令牌|复制 MCP|连接我的 Agent/);
   expect(api.mintMcpToken).not.toHaveBeenCalled();
-  expect(button("复制 MCP 连接配置")).toBeUndefined();
-  act(() => platform.useDidHide.mock.calls.at(-1)![0]());
-  act(() => platform.useDidShow.mock.calls.at(-1)![0]());
-  api.mintMcpToken.mockResolvedValueOnce({ token: "newly-authorized-token" });
-  await act(async () => { await button("生成专用连接令牌").props.onClick(); });
-  expect(api.getPrivacy).toHaveBeenCalledTimes(2);
-  expect(api.mintMcpToken).toHaveBeenCalledOnce();
-  expect(button("复制 MCP 连接配置")).toBeDefined();
+});
+
+it("旧页面尝试切换 BYOK 或外部模式，不改变平台模式", async () => {
+  const { useChatMode, selectChatMode } = await import("../src/chat/preferences");
+  function Consumer() { return createElement("text", {}, useChatMode()); }
+  act(() => { page = create(createElement(Consumer)); });
+  for (const mode of ["byok", "external", "platform"] as const) {
+    act(() => selectChatMode(mode));
+    expect(page!.toJSON()).toMatchObject({ children: ["platform"] });
+  }
 });
 
 it.each([1, 2])("网页连接方式的返回支持页面栈深度 %s", async (depth) => {

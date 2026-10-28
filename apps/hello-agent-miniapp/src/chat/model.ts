@@ -22,18 +22,7 @@ export const modes: {
     detail: "直接开始聊天，由平台提供模型",
     icon: "✦",
   },
-  {
-    id: "byok",
-    label: "我的密钥",
-    detail: "使用你自己的 DeepSeek API 密钥",
-    icon: "⌘",
-  },
-  {
-    id: "external",
-    label: "自带 Agent",
-    detail: "连接自己的助手，沿用这里的对话",
-    icon: "↗",
-  },
+
 ];
 export function canSend(
   text: string,
@@ -47,8 +36,9 @@ export function canSend(
     !busy &&
     text.trim().length <= 4000 &&
     !!(text.trim() || attachments.length) &&
-    mode !== "external" &&
-    (mode === "platform" ? configured : key.trim().length >= 10)
+    mode === "platform" &&
+    !key &&
+    configured
   );
 }
 // 这是幂等标识，不是身份凭证；身份令牌由服务端使用安全随机数生成。
