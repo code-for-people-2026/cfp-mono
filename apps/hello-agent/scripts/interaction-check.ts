@@ -50,11 +50,30 @@ try {
   await assert.rejects(interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: false, contactInformed: true, version: "2026-10-24.v1" }));
   const saved = await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
   assert.equal(saved.contact?.phone, "13800000000");
-  const profile = (await ageProfile(payload, adult.id))!;
+  let profile = (await ageProfile(payload, adult.id))!;
   assert.ok(!JSON.stringify(profile.interaction).includes("13800000000"), "database must not retain contact plaintext");
   assert.equal((await new InteractionService(payload, owner).status()).contact, null);
   await assert.rejects(new InteractionService(payload, { ...adult, auth: "bearer" }).status(), /外部连接/);
   assert.equal((await privacy.exportData()).interactionSafety.contact?.phone, "13800000000");
+  for (const invalidConsent of ["stale-version", "expired"] as const) {
+    const privacyProfile = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: adult.id } } })).docs[0];
+    await payload.update({ collection: "privacy-profiles", id: privacyProfile.id, overrideAccess: true, data: invalidConsent === "stale-version"
+      ? { consent: { version: "superseded-policy", core: true, model: true, sensitive: true, external: false } }
+      : { expiresAt: new Date(Date.now() - 60_000).toISOString() } });
+    assert.equal((await new AgeService(payload, adult).status()).allowed, true, "valid age verification alone does not establish current privacy consent");
+    const before = (await ageProfile(payload, adult.id))!.interaction;
+    assert.equal((await request("heartbeat", {})).status, 403, `${invalidConsent}: must not collect more usage`);
+    assert.equal((await request("contact", { name: "另一个合成联系人", phone: "13900000000", consent: true, contactInformed: true, version: "2026-10-24.v1" })).status, 403, `${invalidConsent}: separate contact consent must not bypass overall privacy consent`);
+    assert.deepEqual((await ageProfile(payload, adult.id))!.interaction, before, `${invalidConsent}: rejected requests must not change interaction data`);
+    assert.equal((await interaction.status()).contact?.phone, "13800000000", `${invalidConsent}: existing data remains readable`);
+    assert.equal((await privacy.exportData()).interactionSafety.contact?.phone, "13800000000", `${invalidConsent}: existing data remains exportable`);
+    assert.equal((await request("remove-contact", {})).status, 200, `${invalidConsent}: removal must remain available`);
+    assert.equal((await interaction.status()).contact, null);
+    await privacy.consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
+    await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
+    assert.equal((await request("heartbeat", {})).status, 200, "renewed overall consent restores new processing");
+  }
+  profile = (await ageProfile(payload, adult.id))!;
   await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, data: { interaction: { ...(profile.interaction as object), activeMs: TWO_HOURS, lastSeen: Date.now(), reminded: 0 } } });
   const first = await interaction.heartbeat(), second = await interaction.heartbeat();
   assert.equal(first.notice?.kind, "duration"); assert.equal(first.notice?.id, second.notice?.id);
@@ -77,8 +96,8 @@ try {
   await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
   await privacy.withdraw(); await interaction.removeContact();
   assert.equal((await interaction.status()).contact, null);
-  await assert.rejects(interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" }), /停止处理/);
+  await assert.rejects(interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" }), /撤回或到期/);
   await privacy.deleteData();
   assert.equal(await ageProfile(payload, adult.id), undefined);
-  console.log("PASS: authenticated HTTP/error conversion/CSRF; age conflict; encryption; separate consent; cross-owner/external isolation; export; two-hour acknowledgement; crisis precedence/deduplication; audit; withdrawal; deletion");
+  console.log("PASS: authenticated HTTP/error conversion/CSRF; age conflict; encryption; separate/current/unexpired consent; cross-owner/external isolation; export/removal after expired consent; two-hour acknowledgement; crisis precedence/deduplication; audit; withdrawal; deletion");
 } finally { await payload.destroy(); }

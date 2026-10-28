@@ -111,7 +111,7 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
   return <div>
     {row.severity === "urgent" && row.status !== "resolved" && <ActionPanel title="紧急人工联络" fields={[{ ...reason, max: 500 }, { key: "result", label: "操作", options: [["read", "读取有效授权的紧急联系人"], ["contacted", "登记：已人工联系"], ["unreachable", "登记：人工联系未接通"]] }]} button="执行并记入审计" disabled={!own && !administrator} submit={async (body) => {
       setEmergency(undefined); setEmergency(await request(`cases/${row.id}/emergency-contact`, body));
-    }}><p>孙逢负责人工处置。当前没有自动拨号或推送，须本人查看队列并实际联络。只在必要的紧急处置中使用联系人资料。</p></ActionPanel>}
+    }}><p>孙逢负责人工处置。不提供自动拨号；飞书通知只有完成配置及实际收件确认后才启用。消息发送成功不代表人工已读或受理，须本人查看队列并实际联络。只在必要的紧急处置中使用联系人资料。</p></ActionPanel>}
     {emergency && <div role="status"><p>{String(emergency.notice)}</p>{emergency.contact ? <p>{String((emergency.contact as { name: string }).name)} · {String((emergency.contact as { phone: string }).phone)}</p> : <p>未展示联系人资料。</p>}</div>}
     <ActionPanel title="按需查看最小证据" fields={[{ ...reason, max: 500 }]} button="查看证据并留痕" disabled={!own && !administrator} submit={async (body) => {
       setEvidence(undefined); setEvidence(await request(`cases/${row.id}/evidence`, body));

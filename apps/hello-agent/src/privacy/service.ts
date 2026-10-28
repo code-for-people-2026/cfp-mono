@@ -247,7 +247,7 @@ export class PrivacyService {
     await this.revoke();
     // Replays preserve an existing deleted tombstone while clearing leftovers.
     await updateProfile(this.repo.payload, profile!, { state: "deleted", deletedAt: profile!.deletedAt || new Date().toISOString(), consent: null, events: null, recoveryDigest: null, sensitiveHistory: null, historyInspected: null, expiresAt: null });
-    return { deleted: true, operations, backupNotice: privacyPolicy().documents[0].paragraphs[7] };
+    return { deleted: true, operations, backupNotice: privacyPolicy().backupNotice };
   }
 }
 export async function withRecoveredOwner<T>(payload: Payload, code: unknown, issue: (owner: string) => Promise<T>): Promise<T> {

@@ -1,7 +1,7 @@
 export const INTERACTION_VERSION = "aj-interaction-v5";
 export const TWO_HOURS = 2 * 60 * 60 * 1000;
-export const BREAK_MS = 15 * 60 * 1000;
-export type Usage = { activeMs: number; lastSeen: number; reminded: number };
+const BREAK_MS = 15 * 60 * 1000;
+type Usage = { activeMs: number; lastSeen: number; reminded: number };
 
 // Server time only. Visibility heartbeats count at most 90 seconds at a time;
 // short reconnects preserve progress, a 15-minute absence starts a new period.

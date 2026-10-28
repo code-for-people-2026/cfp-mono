@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -41,7 +42,7 @@ const service = new GreetingService(
   new Repository(payload, { id: randomUUID(), auth: "bearer" }),
   async () => {
     throw new Error("外部保存不应调用模型");
-  },
+  }, undefined, undefined, { moderate: syntheticTextReview }
 );
 await (await import("./privacy-test-fixture")).consentForFixture(service.repo);
 const server = createMcpServer(service);

@@ -51,6 +51,14 @@ export class ImageGenerationService {
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     let state = readImageState(row);
+    // Known local configuration failures must not trigger paid text reviews.
+    // Stored images need no provider, but must still pass the intent gate below.
+    let provider: ImageProvider | undefined;
+    if (!state) {
+      provider = this.provider();
+      if (this.reviewer === configuredImageReviewer && !imageReviewConfigured())
+        throw new AppError(503, "图片审核服务尚未配置，暂不能生成图片");
+    }
     // Review the user's request before rewritten prompts, charges or task reuse.
     try {
       await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
@@ -70,12 +78,9 @@ export class ImageGenerationService {
     if (state && state.status !== "pending") throw new AppError(409, state.status === "submitting"
       ? "生图提交结果尚未确认，为避免重复扣费不会自动再次提交，请联系管理员核对"
       : "这次生图未能完成，请重新提出图片需求");
-    const provider = this.provider();
+    provider ??= this.provider();
     if (!state) {
       const input = imageRequestSchema.parse(value);
-      // Fail before charging if output review has not been configured.
-      if (this.reviewer === configuredImageReviewer && !imageReviewConfigured())
-        throw new AppError(503, "图片审核服务尚未配置，暂不能生成图片");
       await this.moderate({ stage: "output", mode: row.mode, texts: [input.prompt, input.title, input.alt], context: String((row.input as { text?: string }).text || ""), requestId: `image:${turnId}`, turnId, sessionId: Number(row.sessionId), apiKey });
       signal.throwIfAborted();
       await reserveImageTask(this.repo.payload, this.repo.owner.id);

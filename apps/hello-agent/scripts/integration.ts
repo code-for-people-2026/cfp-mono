@@ -1,3 +1,4 @@
+import { syntheticTextReview } from "./synthetic-text-review";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -39,9 +40,9 @@ try {
   const repo = new Repository(payload, owner);
   const model = new ScriptedModel();
   await (await import("./privacy-test-fixture")).consentForFixture(repo);
-  await assert.rejects(async () => new GreetingService(repo).upload(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()), { status: 503 });
+  await assert.rejects(async () => new GreetingService(repo, undefined, undefined, undefined, { moderate: syntheticTextReview }).upload(await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer()), { status: 503 });
   // Synthetic allow decision exercises image storage, not a real reviewer.
-  const service = new GreetingService(repo, (args) => runGreeting(args, model), undefined, async () => "allow");
+  const service = new GreetingService(repo, (args) => runGreeting(args, model), undefined, async () => "allow", { moderate: syntheticTextReview });
   const session = await service.createSession("集成测试");
   const media = await service.upload(
     await sharp({
@@ -84,7 +85,7 @@ try {
   const byok = new GreetingService(repo, (args) => {
     receivedKey = args.apiKey;
     return runGreeting(args, new ScriptedModel());
-  });
+  }, undefined, undefined, { moderate: syntheticTextReview });
   await byok.generateGreeting({
     sessionId: session.id,
     requestId: randomUUID(),
@@ -104,7 +105,7 @@ try {
   pass("BYOK 请求隔离，密钥未写入产物和 ADK 会话，不修改平台环境变量");
 
   const other = new GreetingService(
-    new Repository(payload, { id: randomUUID(), auth: "cookie" }),
+    new Repository(payload, { id: randomUUID(), auth: "cookie" }), undefined, undefined, undefined, { moderate: syntheticTextReview }
   );
   await assert.rejects(() => other.history(session.id), /无权/);
   await assert.rejects(() => other.repo.get("media", media.id), /无权/);
@@ -138,7 +139,7 @@ try {
 
   const failed = new GreetingService(repo, async () => {
     throw new Error("private-byok-secret");
-  });
+  }, undefined, undefined, { moderate: syntheticTextReview });
   await assert.rejects(
     () => failed.generateGreeting({ ...first, requestId: randomUUID() }),
     /生成失败/,
@@ -151,7 +152,7 @@ try {
   const server = createMcpServer(
     new GreetingService(repo, async () => {
       throw new Error("外部模式不应调用平台模型");
-    }),
+    }, undefined, undefined, { moderate: syntheticTextReview }),
   );
   const client = new Client({
     name: "integration-external-agent",

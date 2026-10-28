@@ -9,6 +9,7 @@ import { OperationsService, transaction } from "../operations/service";
 import { audit } from "../operations/audit";
 import { canReview, isAdministrator } from "../operations/policy";
 import { feishuAlertStatus } from "../operations/alerts";
+import { privacyService } from "../privacy/service";
 import { DATA_HELP, durationDue, interactionSignals, noticeText, tickUsage, TWO_HOURS } from "./policy";
 
 const stateSchema = z.object({
@@ -32,7 +33,7 @@ function decrypt(value: string, owner: string, secret: string) {
     return z.object({ name: z.string(), phone: z.string() }).parse(JSON.parse(Buffer.concat([decipher.update(b.subarray(28)), decipher.final()]).toString()));
   } catch { throw new AppError(503, "紧急联系人暂时无法读取，请联系管理员核对加密配置"); }
 }
-export function interactionSupport() {
+function interactionSupport() {
   return { phone: process.env.HELLO_EMERGENCY_PHONE || "19925452049", hours: "孙逢本人处理，全天可电话联系；不承诺即时接听，危急情况请同时联系当地急救或警方", alertConfigured: false };
 }
 export class InteractionService {
@@ -42,8 +43,7 @@ export class InteractionService {
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
       const { profile, state } = await this.read();
       if (!profile) return state; // Internal synthetic evaluations have no personal profile.
-      const privacy = (await this.payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: this.owner.id } } })).docs[0];
-      if (privacy && privacy.state !== "active") throw new AppError(403, "已停止处理，请通过隐私与数据管理已有信息");
+      await privacyService(this.payload, this.owner).require();
       const next = action(state);
       await this.payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, data: { interaction: next } });
       return next;
