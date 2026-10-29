@@ -57,6 +57,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify native SQLite connection lifetime
+        run: pnpm --filter @cfp/hello-agent test:sqlite-connections && pnpm --filter @cfp/hello-agent test:feishu
+
       - name: Verify Hello Agent Docker context excludes private data
         run: pnpm --filter @cfp/hello-agent exec node scripts/image-context-check.mjs --docker
 
