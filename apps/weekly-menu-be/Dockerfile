@@ -12,6 +12,7 @@ RUN printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && corepack enable
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/weekly-menu-be/package.json apps/weekly-menu-be/package.json
 COPY packages/menu-core/package.json packages/menu-core/package.json
 COPY packages/weekly-menu-shared/package.json packages/weekly-menu-shared/package.json

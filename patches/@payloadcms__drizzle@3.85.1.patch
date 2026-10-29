@@ -1,0 +1,66 @@
+diff --git a/dist/transactions/beginTransaction.js b/dist/transactions/beginTransaction.js
+index b997960d6443005979890c1fdeef9271810a407c..79ded923ee2362cd41d0210a9807803842138e4c 100644
+--- a/dist/transactions/beginTransaction.js
++++ b/dist/transactions/beginTransaction.js
+@@ -8,6 +8,12 @@ export const beginTransaction = async function beginTransaction(options) {
+         let transaction;
+         let transactionReady;
+         let transactionFailed;
++        let started = false;
++        const rollback = new Error("Payload requested rollback");
++        const ready = new Promise((res, rej) => {
++            transactionReady = res;
++            transactionFailed = rej;
++        });
+         // Await initialization here
+         // Prevent race conditions where the adapter may be
+         // re-initializing, and `this.drizzle` is potentially undefined
+@@ -26,21 +32,23 @@ export const beginTransaction = async function beginTransaction(options) {
+                 };
+                 reject = ()=>{
+                     // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
+-                    rej();
++                    rej(rollback);
+                     return done;
+                 };
++                started = true;
+                 transactionReady();
+             });
+         }, options || this.transactionOptions).catch((err)=>{
+             // Connection failed before callback ran - reject instead of hanging forever
+-            transactionFailed(err);
++            if (!started) transactionFailed(err);
++            else if (err !== rollback) throw err;
+         });
+         // Need to wait until the transaction is ready
+         // before binding its `resolve` and `reject` methods below
+-        await new Promise((res, rej)=>{
+-            transactionReady = res;
+-            transactionFailed = rej;
+-        });
++        // Preserve commit errors for resolve/reject, even if failure occurs
++        // before the caller ends the transaction. Avoid an unhandled rejection.
++        void done.catch(() => {});
++        await ready;
+         this.sessions[id] = {
+             db: transaction,
+             reject,
+diff --git a/dist/transactions/commitTransaction.js b/dist/transactions/commitTransaction.js
+index 50c8251dbd29fe3ca7296800ed4fe5d2bb814057..581b5cf21169ef8f8bd1fcd6d37b4cd91118cf89 100644
+--- a/dist/transactions/commitTransaction.js
++++ b/dist/transactions/commitTransaction.js
+@@ -8,11 +8,9 @@ export const commitTransaction = async function commitTransaction(incomingID = '
+     // Delete from registry FIRST to prevent race conditions
+     // This ensures other operations can't retrieve this session while we're ending it
+     delete this.sessions[transactionID];
+-    try {
+-        await session.resolve();
+-    } catch (_) {
+-        await session.reject();
+-    }
++    // Drizzle already rolls back on commit failure. Propagate it to the caller;
++    // swallowing it reports success for changes that were never committed.
++    await session.resolve();
+ };
+ 
+ //# sourceMappingURL=commitTransaction.js.map

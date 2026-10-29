@@ -75,6 +75,16 @@ export class FeishuAlerts {
       ] } })).docs[0];
       if (!row) return { stateId: locked.docs[0].id, row: null };
       const details = detailsSchema.parse(row.alertDetails || {});
+      // A previous process may have sent before losing its acknowledgement.
+      // Webhooks have no idempotency key: never resend an expired sending claim.
+      if (row.alertStatus === "sending") {
+        await this.payload.update({ collection: "safety-cases", id: row.id, overrideAccess: true, req, data: {
+          alertStatus: "failed", alertNextAt: null, alertDetails: { ...details, code: "delivery_uncertain" },
+        } });
+        await this.payload.update({ collection: "safety-alert-state", id: locked.docs[0].id, overrideAccess: true, req, data: { lastError: "delivery_uncertain" } });
+        await audit(this.payload, "system:feishu", "alert.failed", `case:${row.id}`, "此前发送结果不确定，停止自动重发；请人工核对，案件仍待处理", undefined, req);
+        return { stateId: locked.docs[0].id, row: null };
+      }
       if (row.status === "resolved" || row.acceptedAt || row.severity !== "urgent" || Date.parse(row.createdAt) < now - 86400_000 || details.attempts >= MAX_ATTEMPTS) {
         const status = row.status === "resolved" || row.acceptedAt || row.severity !== "urgent" ? "cancelled" : "failed";
         await this.payload.update({ collection: "safety-cases", id: row.id, overrideAccess: true, req, data: { alertStatus: status, alertNextAt: null, alertDetails: { ...details, code: status === "failed" ? "expired_or_exhausted" : "already_handled" } } });
@@ -89,9 +99,15 @@ export class FeishuAlerts {
     if (!claimed) return "not_ready_or_busy";
     let result: FeishuResult | undefined;
     if (claimed.row) {
+      // Read outside the claim transaction: no side effect on a fictional commit.
+      const state = await this.payload.findByID({ collection: "safety-alert-state", id: claimed.stateId, overrideAccess: true });
+      const row = await this.payload.findByID({ collection: "safety-cases", id: claimed.row.id, overrideAccess: true });
+      if (state.leaseToken !== token || !state.leaseUntil || Date.parse(state.leaseUntil) <= this.clock()
+        || row.alertStatus !== "sending" || detailsSchema.parse(row.alertDetails || {}).token !== token)
+        throw new Error("Feishu claim was not durably saved");
       // No network while holding a DB transaction. Only ID/receipt leave the server.
       try { result = await this.send(this.config, { caseId: claimed.row.id, receipt: claimed.row.receipt }); }
-      catch { result = { ok: false, code: "sender_error", retryable: true }; }
+      catch { result = { ok: false, code: "sender_error", retryable: false }; }
     }
     const finalized = await transaction(this.payload, async (req) => {
       const current = (await this.payload.find({ collection: "safety-alert-state", overrideAccess: true, req, where: { and: [stateQuery, { fingerprint: { equals: this.config.fingerprint } }, { leaseToken: { equals: token } }, { leaseUntil: { greater_than: new Date(this.clock()).toISOString() } }] }, limit: 1 })).docs[0];
@@ -115,6 +131,12 @@ export class FeishuAlerts {
       return true;
     });
     if (!finalized) return "lease_lost";
+    if (claimed.row && result) {
+      const row = await this.payload.findByID({ collection: "safety-cases", id: claimed.row.id, overrideAccess: true });
+      const expected = result.ok ? "delivered" : result.retryable && claimed.attempts! < MAX_ATTEMPTS ? "retry" : "failed";
+      if (row.alertStatus !== expected || detailsSchema.parse(row.alertDetails || {}).attempts !== claimed.attempts)
+        throw new Error("Feishu acknowledgement was not durably saved");
+    }
     return result ? result.ok ? "delivered" : "failed_attempt" : "idle";
   }
 }

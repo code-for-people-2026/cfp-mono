@@ -3,6 +3,7 @@ RUN apk add --no-cache font-wqy-zenhei
 WORKDIR /app
 RUN corepack enable && corepack prepare pnpm@10.2.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/hello-agent/package.json apps/hello-agent/package.json
 COPY packages/hello-agent-contracts/package.json packages/hello-agent-contracts/package.json
 COPY packages/hello-agent-protocol/package.json packages/hello-agent-protocol/package.json

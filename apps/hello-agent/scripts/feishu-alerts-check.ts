@@ -25,7 +25,15 @@ if (process.argv.includes("--concurrent-child")) {
     process.send?.({ result: await worker.tick() });
   } catch (error) {
     // Competing SQLite processes may receive BUSY. No other failure is expected.
-    if (!String(error).includes("SQLITE_BUSY")) throw error;
+    let cause: unknown = error;
+    const seen = new Set<unknown>();
+    let busy = false;
+    while (cause instanceof Error && !seen.has(cause)) {
+      seen.add(cause);
+      if (String(cause).includes("SQLITE_BUSY")) { busy = true; break; }
+      cause = cause.cause;
+    }
+    if (!busy) throw error;
     process.send?.({ result: "sqlite_busy" });
   } finally { await childPayload.destroy(); process.disconnect?.(); }
   process.exit(0);
@@ -63,7 +71,7 @@ try {
     if ("testId" in target) { tests++; return { ok: true as const }; }
     deliveries++;
     assert.deepEqual(Object.keys(target).sort(), ["caseId", "receipt"]);
-    return behavior === "success" ? { ok: true as const } : { ok: false as const, code: behavior === "temporary" ? "network_or_timeout" : "provider_19021", retryable: behavior === "temporary" };
+    return behavior === "success" ? { ok: true as const } : { ok: false as const, code: behavior === "temporary" ? "http_429" : "provider_19021", retryable: behavior === "temporary" };
   };
   let alerts = new FeishuAlerts(payload, config, send, () => now);
   const ops = new OperationsService(payload);
@@ -101,7 +109,7 @@ try {
   assert.equal((await read(exhaustion.id)).alertStatus, "failed");
   assert.equal(((await read(exhaustion.id)).alertDetails as { attempts: number }).attempts, 5);
   const crash = await create(); await update(crash.id, { alertStatus: "sending", alertNextAt: new Date(now - 1).toISOString(), alertDetails: { attempts: 1, token: "dead-worker" } });
-  behavior = "success"; now += 2500; await alerts.tick(); assert.equal((await read(crash.id)).alertStatus, "delivered", "过期发送锁可恢复");
+  behavior = "success"; now += 2500; const beforeUncertain = deliveries; await alerts.tick(); assert.equal((await read(crash.id)).alertStatus, "failed", "过期发送锁结果不确定，需人工核对"); assert.equal(deliveries, beforeUncertain);
   // Two workers sharing the SQLite adapter must not overlap transactions or lose completion writes.
   const concurrent = await create(); now += 2500; const count = deliveries;
   const race = await Promise.allSettled([alerts.tick(), new FeishuAlerts(payload, config, send, () => now).tick()]);

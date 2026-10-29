@@ -42,6 +42,7 @@ assert.deepEqual(
   "构建上下文不得包含数据库、凭证或私密归档",
 );
 const required = [
+  "patches/@payloadcms__drizzle@3.85.1.patch",
   "apps/hello-agent/package.json",
   "apps/hello-agent/payload.config.ts",
   "apps/hello-agent/src/cms/migrations/index.ts",
