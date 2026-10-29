@@ -49,7 +49,7 @@ if (process.argv[2] === "--child") {
       child.stderr.on("data", (data) => { output += data; });
       const timeout = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("native SQLite child failed to exit within 45 seconds")); }, 45_000);
       child.once("error", (error) => { clearTimeout(timeout); reject(error); });
-      child.once("exit", (code, signal) => {
+      child.once("close", (code, signal) => {
         clearTimeout(timeout);
         if (code !== 0) reject(new Error(`SQLite child exited ${code ?? signal}: ${output}`));
         else if (!output.includes("PASS: 1000 mixed transactions")) reject(new Error(`SQLite child exited without completing checks: ${output}`));
