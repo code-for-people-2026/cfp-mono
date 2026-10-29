@@ -26,6 +26,7 @@ const sources = [
   "pnpm-lock.yaml",
   "pnpm-workspace.yaml",
   "package.json",
+  "patches",
 ];
 if (git("status", "--porcelain", "--", ...sources))
   throw new Error("发布来源必须先提交，不能用未记录的本地改动打包");

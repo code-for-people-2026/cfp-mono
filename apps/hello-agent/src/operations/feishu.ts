@@ -34,6 +34,7 @@ export async function sendFeishu(config: FeishuConfig, target: { caseId: number;
     if (!parsed.success) return { ok: false, code: "invalid_response", retryable: false };
     const codes = [parsed.data.code, parsed.data.StatusCode].filter((x): x is number => x !== undefined);
     if (codes.length && codes.every((code) => code === 0)) return { ok: true };
+    if (new Set(codes).size > 1) return { ok: false, code: "conflicting_response", retryable: false };
     const code = codes.find((value) => value !== 0);
     return { ok: false, code: code === undefined ? "invalid_response" : `provider_${code}`, retryable: code === 11232 || code === 99991400 };
   // A timeout or unreadable acknowledgement may follow a successful delivery.
