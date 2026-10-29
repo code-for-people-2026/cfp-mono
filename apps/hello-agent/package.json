@@ -35,7 +35,7 @@
     "eval:knowledge": "tsx scripts/evaluate-knowledge.ts",
     "test:privacy-operations": "python3 scripts/privacy-operations-check.py && node scripts/privacy-snapshot-check.mjs && tsx scripts/privacy-restore-check.ts",
     "test:forget-context": "tsx scripts/forget-context-check.ts",
-    "test:moderation": "tsx scripts/moderation-check.ts && tsx scripts/moderation-lifecycle-check.ts && tsx scripts/moderation-failure-check.ts && tsx scripts/moderation-content-check.ts && tsx scripts/public-admission-check.ts",
+    "test:moderation": "tsx scripts/moderation-check.ts && tsx scripts/moderation-lifecycle-check.ts && tsx scripts/moderation-failure-check.ts && tsx scripts/moderation-content-check.ts && tsx scripts/public-admission-check.ts && tsx scripts/public-admission-check.ts --rollback-journal",
     "test:moderation:live": "node --env-file=.env.local --import tsx scripts/moderation-live-check.ts",
     "test:artifacts": "tsx scripts/artifact-check.ts",
     "test:images": "tsx scripts/image-generation-check.ts && tsx scripts/image-generation-migration-check.ts && tsx scripts/image-quota-check.ts && tsx scripts/image-review-quota-check.ts",
