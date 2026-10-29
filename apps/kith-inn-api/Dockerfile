@@ -12,6 +12,7 @@ RUN printf '%s' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$' && corepack enable
 WORKDIR /app
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
 COPY apps/kith-inn-api/package.json apps/kith-inn-api/package.json
 COPY packages/kith-inn-contracts/package.json packages/kith-inn-contracts/package.json
 RUN pnpm install --frozen-lockfile --prod --filter @cfp/kith-inn-api...

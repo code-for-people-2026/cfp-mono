@@ -32,9 +32,14 @@ describe("飞书值守提醒", () => {
   it.each([{}, { code: "0" }, { StatusCode: 0, code: 19021 }])("HTTP 200不掩盖缺失/冲突结果：%o", async (body) => {
     expect((await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(Response.json(body)))).ok).toBe(false);
   });
-  it("永久签名错误不盲目重试，限流和网络超时可以有限重试且不泄露响应", async () => {
+  it.each([{ code: 11232, StatusCode: 0 }, { code: 0, StatusCode: 99991400 }])("冲突的成功及限流结果不能自动重发：%o", async (body) => {
+    expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(Response.json(body)))).toEqual({ ok: false, code: "conflicting_response", retryable: false });
+  });
+  it("仅明确限流重试；网络或回执不确定时停止，且不泄露响应", async () => {
     expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 19021, msg: env.HELLO_FEISHU_WEBHOOK })))).toEqual({ ok: false, code: "provider_19021", retryable: false });
     expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(Response.json({ code: 11232 })))).toEqual({ ok: false, code: "provider_11232", retryable: true });
-    expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockRejectedValue(new Error(env.HELLO_FEISHU_WEBHOOK)))).toEqual({ ok: false, code: "network_or_timeout", retryable: true });
+    expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockRejectedValue(new Error(env.HELLO_FEISHU_WEBHOOK)))).toEqual({ ok: false, code: "network_or_timeout", retryable: false });
+    expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(new Response("", { status: 500 })))).toEqual({ ok: false, code: "http_500", retryable: false });
+    expect(await sendFeishu(config, target, vi.fn<typeof fetch>().mockResolvedValue(Response.json({})))).toEqual({ ok: false, code: "invalid_response", retryable: false });
   });
 });

@@ -1,4 +1,4 @@
-export const INTERACTION_VERSION = "aj-interaction-v5";
+export const INTERACTION_VERSION = "aj-interaction-v6";
 export const TWO_HOURS = 2 * 60 * 60 * 1000;
 const BREAK_MS = 15 * 60 * 1000;
 type Usage = { activeMs: number; lastSeen: number; reminded: number };

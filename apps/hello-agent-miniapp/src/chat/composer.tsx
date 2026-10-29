@@ -87,6 +87,8 @@ export function ChatComposer(props: ComposerProps) {
             placeholder="发消息，聊聊你的烦心事…"
             maxlength={4000}
             autoHeight
+            adjustPosition={process.env.TARO_ENV === "h5" ? undefined : false}
+            fixed={process.env.TARO_ENV !== "h5"}
             disabled={props.disabled}
           />
         )}

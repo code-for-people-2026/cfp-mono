@@ -13,6 +13,7 @@ WORKDIR /app
 # stage — important for Payload's native deps (sharp, pg).
 FROM base AS deps
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml turbo.json ./
+COPY patches patches
 COPY apps/website/package.json apps/website/package.json
 COPY packages/ui/package.json packages/ui/package.json
 COPY packages/tailwind-config/package.json packages/tailwind-config/package.json

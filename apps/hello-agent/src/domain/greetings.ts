@@ -179,7 +179,9 @@ export class GreetingService {
       return { row: existing, duplicate: existing.status === "completed" };
     }
     let guidance = await new InteractionService(this.repo.payload, this.repo.owner).inspectInput(input.text ?? "", sessionId, requestKey);
-    await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
+    // Fixed safety guidance contains no user/model text and never starts a model.
+    // In particular, a crisis must not lose its help text to a classifier outage.
+    if (!guidance) await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     if (!guidance && forgetContextRequested(input.text ?? "")) {
       await new ContextService(this.repo).forgetForFuture(sessionId);
       guidance = FORGET_CONTEXT_GUIDANCE;
@@ -208,6 +210,17 @@ export class GreetingService {
       promptVersion: guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
     return { row, duplicate: false, guidance };
+  }
+  private async completeProductGuidance(id: number, guidance: string) {
+    await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
+    const row = await this.repo.get("greetings", id);
+    if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
+    if (row.status !== "running" || row.model !== "product-guidance") throw new AppError(409, "本轮不再接受产品指引");
+    // Only called with inspectInput's server-owned constants (or forget guidance).
+    // Public complete() has no bypass option and still reviews every supplied output.
+    return this.repo.update("greetings", id, {
+      greeting: guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive", status: "completed",
+    });
   }
   async complete(id: number, value: Greeting, reviewKey?: string) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
@@ -295,7 +308,7 @@ export class GreetingService {
       );
       row = result.row;
       if (result.duplicate) return row;
-      if (result.guidance) return await this.complete(row.id, { greeting: result.guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive" }, key);
+      if (result.guidance) return await this.completeProductGuidance(row.id, result.guidance);
       if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
       const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
       const imageState = readImageState(row);
@@ -369,7 +382,7 @@ export class GreetingService {
       );
       if (duplicate) return row;
       pending = row;
-      return await this.complete(row.id, guidance ? { greeting: guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive" } : args.output);
+      return guidance ? await this.completeProductGuidance(row.id, guidance) : await this.complete(row.id, args.output);
     } catch (error) {
       // Validation failures are terminal; transient storage failures keep the request retryable.
       if (pending && error instanceof AppError) {

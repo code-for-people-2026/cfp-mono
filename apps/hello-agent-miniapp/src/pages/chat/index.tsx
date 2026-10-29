@@ -19,6 +19,7 @@ import { ChatNavigation } from "../../chat/navigation";
 import { useChatMode } from "../../chat/preferences";
 import { MemoryPanel } from "../../chat/memory";
 import { ChatComposer, type ImageSource } from "../../chat/composer";
+import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
 import { CopyMessage, MessageText } from "../../chat/message-text";
@@ -793,7 +794,7 @@ export default function Chat() {
                         {row.status === "completed"
                           ? row.greeting
                           : row.status === "failed"
-                            ? "这一次没有生成成功。检查连接或密钥后，可以重新发给我。"
+                            ? row.error || "这一次没有完成，请查看下方提示。"
                             : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
                       </MessageText>
                       {row.status === "completed" && (
@@ -877,7 +878,7 @@ export default function Chat() {
             <View id="chat-end" className="chat-end" />
           </View>
         </View>
-        <View className="chat-dock">
+        <ChatDock>
           {error && (
             <View className="error-banner">
               <Text>
@@ -955,7 +956,7 @@ export default function Chat() {
               {age?.configuration.previewOnly ? "本次预览体验登录与年龄确认，暂不开放聊天" : !loading && !consentCurrent(privacy) ? "使用前请在设置 → 隐私与数据中确认授权" : "阿 J 先生是 AI，好意不是对未来的保证"}
             </Text>
           </View>
-        </View>
+        </ChatDock>
         {memoryOpen && (
           <MemoryPanel
             platformConfigured={!!settings?.platformConfigured}

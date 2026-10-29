@@ -34,7 +34,9 @@ function decrypt(value: string, owner: string, secret: string) {
   } catch { throw new AppError(503, "紧急联系人暂时无法读取，请联系管理员核对加密配置"); }
 }
 function interactionSupport() {
-  return { phone: process.env.HELLO_EMERGENCY_PHONE || "19925452049", hours: "孙逢本人处理，全天可电话联系；不承诺即时接听，危急情况请同时联系当地急救或警方", alertConfigured: false };
+  const configured = process.env.HELLO_EMERGENCY_PHONE || "19925452049";
+  const phone = /^\+?[0-9 -]{7,20}$/.test(configured) ? configured : "19925452049";
+  return { phone, hours: "孙逢本人处理，全天可电话联系；不承诺即时接听，危急情况请同时联系当地急救或警方", alertConfigured: false };
 }
 export class InteractionService {
   constructor(readonly payload: Payload, readonly owner: Owner) {}

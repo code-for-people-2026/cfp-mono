@@ -26,6 +26,9 @@
       "@payloadcms/db-sqlite@3.85.1>@libsql/client": "0.18.0",
       "@types/react": "^18.3.27",
       "@types/react-dom": "^18.3.7"
+    },
+    "patchedDependencies": {
+      "@payloadcms/drizzle@3.85.1": "patches/@payloadcms__drizzle@3.85.1.patch"
     }
   },
   "engines": {

@@ -44,11 +44,12 @@
     "operations:preview": "tsx scripts/operations-preview.ts",
     "test:age": "tsx scripts/age-verification-check.ts && tsx scripts/age-migration-check.ts",
     "age:preview": "node scripts/age-preview.mjs",
-    "test:feishu": "tsx scripts/feishu-alerts-check.ts",
+    "test:feishu": "tsx scripts/transaction-failure-check.ts && tsx scripts/feishu-alerts-check.ts",
     "test:sqlite-connections": "node scripts/sqlite-connection-check.mjs",
     "alerts:feishu": "tsx scripts/feishu-alerts.ts",
     "test:images:live": "tsx scripts/image-generation-live.ts",
-    "test:profile": "tsx scripts/profile-check.ts"
+    "test:profile": "tsx scripts/profile-check.ts",
+    "test:interaction": "tsx scripts/interaction-check.ts && tsx scripts/product-guidance-check.ts"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.2",
