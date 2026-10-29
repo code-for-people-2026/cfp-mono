@@ -16,6 +16,8 @@ const platform = vi.hoisted(() => ({
   nextTick: vi.fn((fn: () => void) => fn()),
   onAppHide: vi.fn(),
   offAppHide: vi.fn(),
+  onKeyboardHeightChange: vi.fn(),
+  offKeyboardHeightChange: vi.fn(),
   authorize: vi.fn(),
   requirePlugin: vi.fn(),
   setClipboardData: vi.fn(),
