@@ -7,6 +7,7 @@ import { buildConfig } from "payload";
 import { zh } from "payload/i18n/zh";
 import { collections } from "./src/cms/collections";
 import { migrations } from "./src/cms/migrations";
+import { installSqliteContentionWait } from "./src/cms/sqlite-contention";
 
 // 检查工具可能从仓库根目录加载配置，数据位置不能随进程工作目录变化。
 const dataDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".data");
@@ -30,7 +31,11 @@ if (!process.env.PAYLOAD_SECRET && !existsSync(secretPath)) {
 
 export default buildConfig({
   secret: process.env.PAYLOAD_SECRET || readFileSync(secretPath, "utf8"),
+  onInit: async (payload) => { installSqliteContentionWait(payload); },
   db: sqliteAdapter({
+    // Readers (phone/admin) must not block the separate alert worker's commits.
+    // Backups use SQLite's backup API, including committed WAL pages.
+    wal: { synchronous: "FULL" },
     client: {
       url: process.env.HELLO_DATABASE_URI || `file:${dataDir}/hello.db`,
     },

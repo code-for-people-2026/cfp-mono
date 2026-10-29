@@ -10,6 +10,9 @@ overrides:
   '@types/react-dom': ^18.3.7
 
 patchedDependencies:
+  '@libsql/client@0.18.0':
+    hash: 55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb
+    path: patches/@libsql__client@0.18.0.patch
   '@payloadcms/drizzle@3.85.1':
     hash: 0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16
     path: patches/@payloadcms__drizzle@3.85.1.patch
@@ -472,7 +475,7 @@ importers:
     dependencies:
       '@payloadcms/db-postgres':
         specifier: 3.85.1
-        version: 3.85.1(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))
+        version: 3.85.1(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))
       '@payloadcms/db-sqlite':
         specifier: 3.85.1
         version: 3.85.1(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
@@ -12118,7 +12121,7 @@ snapshots:
   '@leichtgewicht/ip-codec@2.0.5':
     optional: true
 
-  '@libsql/client@0.18.0':
+  '@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb)':
     dependencies:
       '@libsql/core': 0.18.0
       '@libsql/hrana-client': 0.10.0
@@ -12502,13 +12505,13 @@ snapshots:
       '@parcel/watcher-win32-x64': 2.5.6
     optional: true
 
-  '@payloadcms/db-postgres@3.85.1(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))':
+  '@payloadcms/db-postgres@3.85.1(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))':
     dependencies:
-      '@payloadcms/drizzle': 3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
+      '@payloadcms/drizzle': 3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
       '@types/pg': 8.20.0
       console-table-printer: 2.12.1
       drizzle-kit: 0.31.7
-      drizzle-orm: 0.45.2(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
+      drizzle-orm: 0.45.2(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
       payload: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
       pg: 8.20.0
       prompts: 2.4.2
@@ -12547,11 +12550,11 @@ snapshots:
 
   '@payloadcms/db-sqlite@3.85.1(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)':
     dependencies:
-      '@libsql/client': 0.18.0
-      '@payloadcms/drizzle': 3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
+      '@libsql/client': 0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb)
+      '@payloadcms/drizzle': 3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
       console-table-printer: 2.12.1
       drizzle-kit: 0.31.7
-      drizzle-orm: 0.45.2(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
+      drizzle-orm: 0.45.2(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
       payload: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
       prompts: 2.4.2
       to-snake-case: 1.0.0
@@ -12589,11 +12592,11 @@ snapshots:
       - supports-color
       - utf-8-validate
 
-  '@payloadcms/drizzle@3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)':
+  '@payloadcms/drizzle@3.85.1(patch_hash=0e86c3acc063dea04b9999ca29197d4835f22c78cf4b55e044b13ab5c129ba16)(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)':
     dependencies:
       console-table-printer: 2.12.1
       dequal: 2.0.3
-      drizzle-orm: 0.45.2(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
+      drizzle-orm: 0.45.2(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0)
       payload: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
       prompts: 2.4.2
       to-snake-case: 1.0.0
@@ -15605,9 +15608,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  drizzle-orm@0.45.2(@libsql/client@0.18.0)(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0):
+  drizzle-orm@0.45.2(@libsql/client@0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb))(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(pg@8.20.0):
     optionalDependencies:
-      '@libsql/client': 0.18.0
+      '@libsql/client': 0.18.0(patch_hash=55b413502827874fcd02b3a8e8d75527bed5fd71dfe411ed15a9bd7732d7ddcb)
       '@opentelemetry/api': 1.9.0
       '@types/pg': 8.20.0
       pg: 8.20.0

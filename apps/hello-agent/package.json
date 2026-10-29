@@ -44,7 +44,7 @@
     "operations:preview": "tsx scripts/operations-preview.ts",
     "test:age": "tsx scripts/age-verification-check.ts && tsx scripts/age-migration-check.ts",
     "age:preview": "node scripts/age-preview.mjs",
-    "test:feishu": "tsx scripts/transaction-failure-check.ts && tsx scripts/feishu-alerts-check.ts",
+    "test:feishu": "tsx scripts/sqlite-contention-check.ts && tsx scripts/sqlite-concurrent-operations-check.ts && tsx scripts/transaction-failure-check.ts && tsx scripts/feishu-alerts-check.ts",
     "test:sqlite-connections": "node scripts/sqlite-connection-check.mjs",
     "alerts:feishu": "tsx scripts/feishu-alerts.ts",
     "test:images:live": "tsx scripts/image-generation-live.ts",

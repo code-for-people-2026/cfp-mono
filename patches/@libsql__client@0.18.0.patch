@@ -1,0 +1,30 @@
+diff --git a/lib-cjs/sqlite3.js b/lib-cjs/sqlite3.js
+index 21a13a83b6f8f8d5057fb9ea7edd97cc8881f955..6aebc2426bc05013099f901ccc9f7ccddfa5473d 100644
+--- a/lib-cjs/sqlite3.js
++++ b/lib-cjs/sqlite3.js
+@@ -351,6 +351,10 @@ class Sqlite3Client {
+             executeStmt(db, (0, util_1.transactionModeToBegin)(mode), this.#intMode);
+         }
+         catch (e) {
++            // A failed native BEGIN can retain an unfinished statement. Reusing
++            // this handle makes a later COMMIT fail (statements in progress).
++            // BEGIN did not return a transaction: discard only this connection.
++            closeQuietly(db);
+             this.#pool.release(db);
+             throw e;
+         }
+diff --git a/lib-esm/sqlite3.js b/lib-esm/sqlite3.js
+index bfeed75499001ad72e43d4919465108d946bb165..50a9fca2283646bbc1969903f27c33ad25c86b61 100644
+--- a/lib-esm/sqlite3.js
++++ b/lib-esm/sqlite3.js
+@@ -328,6 +328,10 @@ export class Sqlite3Client {
+             executeStmt(db, transactionModeToBegin(mode), this.#intMode);
+         }
+         catch (e) {
++            // A failed native BEGIN can retain an unfinished statement. Reusing
++            // this handle makes a later COMMIT fail (statements in progress).
++            // BEGIN did not return a transaction: discard only this connection.
++            closeQuietly(db);
+             this.#pool.release(db);
+             throw e;
+         }
