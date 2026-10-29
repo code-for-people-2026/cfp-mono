@@ -45,6 +45,7 @@
     "test:age": "tsx scripts/age-verification-check.ts && tsx scripts/age-migration-check.ts",
     "age:preview": "node scripts/age-preview.mjs",
     "test:feishu": "tsx scripts/feishu-alerts-check.ts",
+    "test:sqlite-connections": "node scripts/sqlite-connection-check.mjs",
     "alerts:feishu": "tsx scripts/feishu-alerts.ts",
     "test:images:live": "tsx scripts/image-generation-live.ts",
     "test:profile": "tsx scripts/profile-check.ts"
@@ -65,7 +66,7 @@
     "ali-oss": "6.23.0",
     "fflate": "^0.8.3",
     "html-to-text": "^10.0.1",
-    "libsql": "0.4.7",
+    "libsql": "0.5.29",
     "next": "16.2.9",
     "payload": "3.85.1",
     "react": "19.2.3",
