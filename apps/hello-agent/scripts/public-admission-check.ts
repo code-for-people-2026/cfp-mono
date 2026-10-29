@@ -115,7 +115,9 @@ try {
     await waitForFile(path.join(dir, "read-worker-ready"));
     const reader = new Database(path.join(dir, "test.db"));
     try {
-      assert.equal(reader.prepare("PRAGMA journal_mode").get().journal_mode, "delete", "this regression exercises reader-blocked COMMIT, not WAL");
+      const mode = reader.prepare("PRAGMA journal_mode").get();
+      assert.ok(mode && typeof mode === "object" && "journal_mode" in mode);
+      assert.equal(mode.journal_mode, "delete", "this regression exercises reader-blocked COMMIT, not WAL");
       reader.exec("BEGIN DEFERRED");
       reader.prepare("SELECT day FROM platform_model_quotas").all();
       const writer = new Database(path.join(dir, "test.db"));
