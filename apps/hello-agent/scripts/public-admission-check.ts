@@ -15,6 +15,15 @@ Object.assign(process.env, {
   HELLO_DATABASE_URI: `file:${dir}/test.db`, PAYLOAD_SECRET: "public-admission-isolated-test-only",
   HELLO_DEPLOYED: "true", HELLO_TRUST_PROXY: "true", HELLO_ORIGIN: "https://admission.example.invalid", NODE_ENV: "test",
 });
+// Keep the legacy reader-blocked COMMIT regression, alongside the default WAL
+// deployment path. Child admission processes must use the same isolated mode.
+if (process.argv.includes("--rollback-journal")) process.env.HELLO_TEST_ADMISSION_ROLLBACK = "true";
+const rollbackJournal = process.env.HELLO_TEST_ADMISSION_ROLLBACK === "true";
+if (rollbackJournal) {
+  const config = await (await import("../payload.config")).default;
+  const initialize = config.db.init;
+  config.db.init = (args) => Object.assign(initialize(args), { wal: false });
+}
 const { cms } = await import("../src/cms/client");
 const { migrations } = await import("../src/cms/migrations");
 const { reservePublicAdmission } = await import("../src/server/public-admission");
@@ -117,22 +126,28 @@ try {
     try {
       const mode = reader.prepare("PRAGMA journal_mode").get();
       assert.ok(mode && typeof mode === "object" && "journal_mode" in mode);
-      assert.equal(mode.journal_mode, "delete", "this regression exercises reader-blocked COMMIT, not WAL");
+      assert.equal(mode.journal_mode, rollbackJournal ? "delete" : "wal");
       reader.exec("BEGIN DEFERRED");
       reader.prepare("SELECT day FROM platform_model_quotas").all();
       const writer = new Database(path.join(dir, "test.db"));
       try {
         writer.exec("BEGIN IMMEDIATE");
         writer.prepare("UPDATE platform_model_quotas SET reserved_calls = reserved_calls + 1 WHERE day = '2000-01-01'").run();
-        assert.throws(() => writer.exec("COMMIT"), { code: "SQLITE_BUSY" }, "the real reader must block COMMIT after a successful write");
-        writer.exec("ROLLBACK");
+        if (rollbackJournal) {
+          assert.throws(() => writer.exec("COMMIT"), { code: "SQLITE_BUSY" }, "the real reader must block COMMIT after a successful write");
+          writer.exec("ROLLBACK");
+        } else {
+          writer.exec("COMMIT"); // WAL readers must not block the business writer.
+        }
       } finally { writer.close(); }
       await writeFile(path.join(dir, "read-locked"), "locked");
       await setTimeout(1_000);
     } finally { if (reader.inTransaction) reader.exec("ROLLBACK"); reader.close(); }
     assert.equal(await commitContended, 1);
     assert.deepEqual((await payload.db.drizzle.all<{ reserved_calls: number }>(sql`SELECT reserved_calls FROM platform_model_quotas WHERE day LIKE 'admission:%'`)).map((row) => row.reserved_calls), [1, 1], "busy commit must roll back both increments before retry, with no double charge");
-    console.log("✓ a real competing reader blocks COMMIT after writes; rollback and retry charge each budget only once");
+    console.log(rollbackJournal
+      ? "✓ a real competing reader blocks COMMIT after writes; rollback and retry charge each budget only once"
+      : "✓ WAL reader allows business COMMIT and admission; each budget charged only once");
 
     await clearAdmission();
     process.env.HELLO_SAFETY_GLOBAL_DAILY_LIMIT = "100";

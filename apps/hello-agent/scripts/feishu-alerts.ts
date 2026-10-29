@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { feishuConfig } from "../src/operations/feishu";
 import { FeishuAlerts } from "../src/operations/alerts";
+import { errorCategory } from "../src/server/error-category";
 const args = process.argv.slice(2);
 if (!["--worker", "--once", "--send-test", "--confirm-test"].includes(args[0]) || (args.length !== (args[0] === "--confirm-test" ? 2 : 1)))
   throw new Error("请选择 --worker、--once、--send-test 或 --confirm-test <手机收到的测试编号>");
@@ -20,7 +21,7 @@ try {
   } else if (args[0] === "--confirm-test") { await alerts.confirmTest(args[1]); console.log("已记录本人收件确认；保持任务持续运行后才显示通知可用。"); }
   else do {
     try { const result = await alerts.tick(); if (result !== "idle") console.log(JSON.stringify({ at: new Date().toISOString(), result })); }
-    catch { console.error("飞书通知任务本轮失败，待处理记录已保留；请检查数据库/配置。"); if (args[0] === "--once") process.exitCode = 1; }
+    catch (error) { console.error(JSON.stringify({ at: new Date().toISOString(), event: "feishu.worker_failure", category: errorCategory(error), notice: "本轮失败，待处理记录已保留" })); if (args[0] === "--once") process.exitCode = 1; }
     if (args[0] === "--once") break;
     await sleep(2000, undefined, { signal: stop.signal }).catch(() => {});
   } while (!stop.signal.aborted);

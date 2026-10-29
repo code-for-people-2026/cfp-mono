@@ -28,7 +28,8 @@
       "@types/react-dom": "^18.3.7"
     },
     "patchedDependencies": {
-      "@payloadcms/drizzle@3.85.1": "patches/@payloadcms__drizzle@3.85.1.patch"
+      "@payloadcms/drizzle@3.85.1": "patches/@payloadcms__drizzle@3.85.1.patch",
+      "@libsql/client@0.18.0": "patches/@libsql__client@0.18.0.patch"
     }
   },
   "engines": {

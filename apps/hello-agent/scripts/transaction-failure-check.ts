@@ -12,6 +12,11 @@ Object.assign(process.env, {
   HELLO_FEISHU_SIGNING_SECRET: "synthetic-only-signing-secret", HELLO_FEISHU_ALERTS_ENABLED: "true",
 });
 globalThis.fetch = async () => { throw new Error("network prohibited"); };
+// Keep the legacy DELETE-journal failed-COMMIT regression. Normal WAL operation
+// and reader/writer concurrency are covered by sqlite-contention-check.ts.
+const config = await (await import("../payload.config")).default;
+const initialize = config.db.init;
+config.db.init = (args) => Object.assign(initialize(args), { wal: false });
 const { cms } = await import("../src/cms/client");
 const { transaction, OperationsService } = await import("../src/operations/service");
 const { FeishuAlerts } = await import("../src/operations/alerts");

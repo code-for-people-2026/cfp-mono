@@ -1,7 +1,10 @@
 import { ZodError } from "zod";
 import { AppError } from "../domain/contracts";
+import { errorCategory } from "./error-category";
 
 export function failure(error: unknown) {
+  if (!(error instanceof AppError) && !(error instanceof ZodError))
+    console.error({ event: "hello.request_failed", at: new Date().toISOString(), category: errorCategory(error) });
   const status =
     error instanceof AppError
       ? error.status
