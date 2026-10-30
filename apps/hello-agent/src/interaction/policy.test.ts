@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { durationDue, interactionSignals, tickUsage, TWO_HOURS } from "./policy";
 describe("interaction boundaries", () => {
+  it.each(["求助】我想伤害自己", "【求助】我想伤害自己。", "[求助]我想伤害自己", "【求助】我不想活了", "求助】我现在想死", "我想伤害自己", "【求助】\n我想伤害自己"])("recognizes a direct help label: %s", s => {
+    expect(interactionSignals(s).crisis).toBe(true);
+  });
+  it.each(["【求助】我不想伤害自己", "求助】我正在学习自杀预防知识", "他说：求助】我想伤害自己", "小说台词：‘【求助】我想伤害自己’", "【案例】我想伤害自己", "【求助】我的朋友想伤害自己"])("does not treat quoted, third-party or denied help as a first-person crisis: %s", s => {
+    expect(interactionSignals(s).crisis).toBe(false);
+  });
   it.each(["我现在心情很差，但没有要伤害自己的打算。", "我现在不想自杀，只是想找人聊聊。", "我正在学习自杀预防知识。"])("does not turn denial or education into an immediate crisis: %s", s => {
     expect(interactionSignals(s).crisis).toBe(false);
   });

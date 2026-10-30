@@ -81,7 +81,10 @@ try {
   assert.equal((await interaction.acknowledge({ id: first.notice!.id })).notice, null);
   assert.equal((await interaction.heartbeat()).notice, null);
   const dep = await interaction.inspectInput("我离不开你", session.id, randomUUID()); assert.match(dep!, /不能替代/);
-  const crisis = await interaction.inspectInput("我现在准备伤害自己，也想删除聊天记录", session.id, randomUUID()); assert.match(crisis!, /眼前安全/);
+  const crisis = await interaction.inspectInput("求助】我想伤害自己，也想删除聊天记录", session.id, randomUUID()); assert.match(crisis!, /眼前安全/);
+  const helpCases = await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } });
+  assert.equal(helpCases.docs.length, 1, "prefixed help must itself create the crisis case");
+  assert.equal(helpCases.docs[0].stage, "interaction_crisis");
   await interaction.inspectInput("我想死", session.id, randomUUID());
   const cases = (await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } })).docs;
   assert.equal(cases.length, 1); assert.equal(cases[0].severity, "urgent");

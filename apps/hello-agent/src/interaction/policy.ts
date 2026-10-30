@@ -31,7 +31,10 @@ export function interactionSignals(text: string) {
   // Do not bridge sentences/negations with a wildcard. Each affirmative
   // first-person action is evaluated separately, so a denial in another
   // clause cannot suppress an explicit act already under way.
-  const crisis = /(?:^|[。！!？?，,；;\n])\s*(?:但|但是|可是|而且)?\s*我(?:现在|已经|正|正准备|马上|打算|准备|正在|刚刚|刚才)?\s*(?:真的|马上|准备|打算|要|想要|想|正在|已经|忍不住)?\s*(?:伤害自己|自杀|自残|跳楼|结束生命|服药过量|(?:吞下|吃下|服下)了?过量药物)(?!预防|防治|干预)/.test(t) || /(?:^|[。！!？?，,；;\n])\s*我(?:真的|现在)?(?:想死|不想活(?:了)?|活不下去|要自杀)/.test(t);
+  // Only unwrap an explicit help label at the start of the message. Do not
+  // make arbitrary closing brackets a sentence boundary (quoted examples).
+  const crisisText = t.replace(/^\s*(?:【求助】|\[求助\]|求助[】\]])\s*/, "");
+  const crisis = /(?:^|[。！!？?，,；;\n])\s*(?:但|但是|可是|而且)?\s*我(?:现在|已经|正|正准备|马上|打算|准备|正在|刚刚|刚才)?\s*(?:真的|马上|准备|打算|要|想要|想|正在|已经|忍不住)?\s*(?:伤害自己|自杀|自残|跳楼|结束生命|服药过量|(?:吞下|吃下|服下)了?过量药物)(?!预防|防治|干预)/.test(crisisText) || /(?:^|[。！!？?，,；;\n])\s*我(?:真的|现在)?(?:想死|不想活(?:了)?|活不下去|要自杀)/.test(crisisText);
   const dependency = /(?:只(?:有你|跟你)|只和你).{0,22}(?:理解|说话|聊天|联系)|(?:断绝|断开).{0,16}(?:朋友|所有人|家人).{0,12}(?:联系|关系)|离不开你/.test(t);
   const overuse = /(?:连续|已经).{0,12}(?:[3-9三四五六七八九]|十).{0,3}(?:小时|个钟)|(?:聊|陪).{0,12}(?:通宵|一整夜)/.test(t);
   const dataHelp = /(?:怎么|如何|哪里|告诉我|想|要).{0,30}(?:删除|清除|删掉).{0,16}(?:聊天|图片|记录|数据)|(?:删除|清除|删掉).{0,16}(?:聊天|图片|记录|数据).{0,25}(?:怎么|如何|哪里)|^你(?:已经|刚才)?(?:替我|帮我)(?:删(?:掉|除)?|清除)(?:所有|全部)?(?:聊天|图片|记录|数据)?(?:了|好了)吗[？?。\s]*$/.test(t.trim());
