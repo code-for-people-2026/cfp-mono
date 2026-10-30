@@ -49,10 +49,10 @@ class ImageModel extends BaseLlm {
 // Intentionally disobey the tool instructions to exercise the program gate.
 class RefusalModel extends BaseLlm {
   private step = 0;
-  constructor(private scenario: "missing" | "refuse" | "parallel") { super({ model: "synthetic-refusal-gate" }); }
+  constructor(private scenario: "missing" | "refuse" | "parallel" | "uncertain") { super({ model: "synthetic-refusal-gate" }); }
   async *generateContentAsync(): AsyncGenerator<LlmResponse> {
     const call = (name: string, args: Record<string, unknown>) => ({ functionCall: { id: randomUUID(), name, args } });
-    const refuse = call("decide_image_request", { decision: "refuse", reason: "有害原请求，不能以反向图替代" });
+    const refuse = call("decide_image_request", { decision: this.scenario === "uncertain" ? "uncertain" : "refuse", reason: "原意不安全或不能确认，不能以反向图替代" });
     const allow = call("decide_image_request", { decision: "allow", reason: "试图用反向图绕过拒绝" });
     const generate = call("generate_image", imageInput);
     const save = call("save_greeting", { greeting: "我还是给你一张替代图。", association: "合成越权测试", artifacts: [{ kind: "image", id: "replacement", title: "反向图", alt: "替代图", source: { type: "illustration", background: "#ffffff", shapes: [{ type: "circle", x: 50, y: 50, radius: 20, fill: "#000000" }] } }] });
@@ -244,7 +244,7 @@ try {
   assert.deepEqual({ submitted, downloaded, objects: objects.size }, beforeIntentGate, "拒绝前不提交、取图、审核图片或存储");
   console.log("✓ 有害原请求防改图：新任务、待取任务、已存图片、几何插画及旧图引用5条路径拒绝，零生图/取图/像素审核，纯文字拒绝可保存（合成判定，真实应用/数据库）。");
   const beforeCoordinatorGate = { submitted, downloaded, objects: objects.size };
-  for (const scenario of ["missing", "refuse", "parallel"] as const) {
+  for (const scenario of ["missing", "refuse", "parallel", "uncertain"] as const) {
     const refusalService = new GreetingService(policyRepo, request => runGreeting(request, new RefusalModel(scenario)), policyMedia, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
     const refusalSession = await refusalService.createSession(`拒绝门禁-${scenario}`);
     const result = await refusalService.generateGreeting({ sessionId: refusalSession.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: harmfulOriginal } });

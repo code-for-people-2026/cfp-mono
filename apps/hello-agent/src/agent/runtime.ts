@@ -89,7 +89,7 @@ export async function runGreeting(
   const imageDecision = new ImageDecision();
   const imageDecisionTool = request.generateImage ? new FunctionTool({
     name: "decide_image_request",
-    description: "调用生图前先判断本轮原始请求。需要拒绝时选择 refuse；不得因为可以改成公益或反向作品而允许。refuse 后本轮仅可保存简短文字拒绝，不能生成或附带替代作品。",
+    description: "调用生图前先判断本轮原始请求。需要拒绝时选择 refuse；不能确定原始意图是否安全时选择 uncertain，同样停止生图，不猜测意图；不得因为可以改成公益或反向作品而允许。refuse 后本轮仅可保存简短文字拒绝，不能生成或附带替代作品。",
     parameters: imageDecisionSchema,
     execute: async (input) => imageDecision.record(imageDecisionSchema.parse(input)),
   }) : undefined;
