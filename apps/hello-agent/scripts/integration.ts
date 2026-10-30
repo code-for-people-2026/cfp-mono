@@ -65,7 +65,8 @@ try {
   assert.ok(model.requests[0].toolsDict.save_greeting);
   assert.ok(model.requests[0].toolsDict.cbt_agent);
   assert.ok(model.requests[0].toolsDict.generate_image);
-  assert.equal(Object.keys(model.requests[0].toolsDict).length, 10);
+  assert.ok(model.requests[0].toolsDict.decide_image_request);
+  assert.equal(Object.keys(model.requests[0].toolsDict).length, 11);
   assert.ok(
     model.requests[0].contents.some((c) =>
       c.parts?.some((p) => p.inlineData?.mimeType === "image/jpeg"),

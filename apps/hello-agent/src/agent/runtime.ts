@@ -1,6 +1,7 @@
+import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
-import { Runner, FunctionTool, type BaseLlm } from "@google/adk";
+import { Runner, FunctionTool, type BaseLlm, type RunAsyncToolRequest } from "@google/adk";
 import type { Part } from "@google/genai";
 import { Repository } from "../cms/repository";
 import { AppError, ContentReviewError, type Greeting, type Inspiration } from "../domain/contracts";
@@ -12,6 +13,18 @@ import { ContextService } from "../domain/context";
 import { COORDINATOR_MAX_CALLS } from "./limits";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
+
+// Require a completed decision step, not parallel allow/refuse and generation.
+class ImageGenerationTool extends FunctionTool<typeof imageRequestSchema> {
+  override async runAsync(request: RunAsyncToolRequest) {
+    const event = request.toolContext.invocationContext.session.events.findLast(event =>
+      event.content?.parts?.some(part => part.functionCall?.id === request.toolContext.functionCallId));
+    if (event?.content?.parts?.some(part => ["decide_image_request", "save_greeting"].includes(part.functionCall?.name || ""))) {
+      return { error: "生图必须在原始请求判断完成之后单独调用，不能与判断或保存回复并行。" };
+    }
+    return super.runAsync(request);
+  }
+}
 
 export type GenerationRequest = {
   repo: Repository;
@@ -73,11 +86,21 @@ export async function runGreeting(
   const signal = request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal;
   let imageInFlight: Promise<GeneratedImage> | undefined;
   let imageFailure: unknown;
-  const imageTool = request.generateImage ? new FunctionTool({
+  const imageDecision = new ImageDecision();
+  const imageDecisionTool = request.generateImage ? new FunctionTool({
+    name: "decide_image_request",
+    description: "调用生图前先判断本轮原始请求。需要拒绝时选择 refuse；不得因为可以改成公益或反向作品而允许。refuse 后本轮仅可保存简短文字拒绝，不能生成或附带替代作品。",
+    parameters: imageDecisionSchema,
+    execute: async (input) => imageDecision.record(imageDecisionSchema.parse(input)),
+  }) : undefined;
+  const imageTool = request.generateImage ? new ImageGenerationTool({
     name: "generate_image",
     description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_greeting 将它作为 image 回应作品。",
     parameters: imageRequestSchema,
     execute: async (input) => {
+      if (!imageDecision.allowed) return { error: imageDecision.refused
+        ? "本轮原始请求已拒绝，禁止生图或生成替代图。请仅保存简短文字拒绝。"
+        : "尚未判断原始请求，请先单独调用 decide_image_request，再根据结果决定是否生图。" };
       const parsed = imageRequestSchema.safeParse(input);
       if (!parsed.success) return { error: "请提供 prompt、title、alt 和 aspectRatio（square、portrait 或 landscape）" };
       signal.throwIfAborted();
@@ -91,6 +114,7 @@ export async function runGreeting(
   const executionId = request.executionId || String(request.turnId);
   const agent = createGreetingAgent({
     imageTool,
+    imageDecisionTool,
     model,
     configuration,
     sessionService,
@@ -100,7 +124,7 @@ export async function runGreeting(
     signal,
     save: async (value) => {
       if (imageInFlight) await imageInFlight;
-      try { return await request.save(value); }
+      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
       catch (error) {
         if (error instanceof ContentReviewError || (error instanceof AppError && error.status === 403)) controller.abort();
         throw error;

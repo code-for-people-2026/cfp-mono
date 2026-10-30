@@ -31,6 +31,11 @@ const imageInput = { prompt: "一盆窗台上的红番茄，温暖的水彩插�
 class ImageModel extends BaseLlm {
   constructor() { super({ model: "scripted-image-test-only" }); }
   async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse> {
+    const decision = request.contents.flatMap(c => c.parts || []).findLast(p => p.functionResponse?.name === "decide_image_request");
+    if (!decision) {
+      yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: "decide_image_request", args: { decision: "allow", reason: "合成正常插画需求" } } }] } };
+      return;
+    }
     const result = request.contents.flatMap((content) => content.parts || []).findLast((part) => part.functionResponse?.name === "generate_image")?.functionResponse?.response;
     const initial = request.contents.flatMap((content) => content.parts || []).find((part) => part.text?.includes("currentInput"))?.text;
     const existing = initial ? JSON.parse(initial).generatedImage : undefined;
@@ -38,6 +43,25 @@ class ImageModel extends BaseLlm {
     yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: mediaId ? "save_greeting" : "generate_image", args: mediaId ? {
       greeting: "把这盆小番茄送给今天的自己。", association: "按用户要求生成窗台插画", artifacts: [{ kind: "image", id: "tomato", title: imageInput.title, alt: imageInput.alt, source: { type: "media", mediaId } }],
     } : imageInput } }] } };
+  }
+  async connect(): Promise<never> { throw new Error("not supported in tests"); }
+}
+// Intentionally disobey the tool instructions to exercise the program gate.
+class RefusalModel extends BaseLlm {
+  private step = 0;
+  constructor(private scenario: "missing" | "refuse" | "parallel") { super({ model: "synthetic-refusal-gate" }); }
+  async *generateContentAsync(): AsyncGenerator<LlmResponse> {
+    const call = (name: string, args: Record<string, unknown>) => ({ functionCall: { id: randomUUID(), name, args } });
+    const refuse = call("decide_image_request", { decision: "refuse", reason: "有害原请求，不能以反向图替代" });
+    const allow = call("decide_image_request", { decision: "allow", reason: "试图用反向图绕过拒绝" });
+    const generate = call("generate_image", imageInput);
+    const save = call("save_greeting", { greeting: "我还是给你一张替代图。", association: "合成越权测试", artifacts: [{ kind: "image", id: "replacement", title: "反向图", alt: "替代图", source: { type: "illustration", background: "#ffffff", shapes: [{ type: "circle", x: 50, y: 50, radius: 20, fill: "#000000" }] } }] });
+    const steps = this.scenario === "missing" ? [[generate], [refuse], [save]]
+      : this.scenario === "parallel" ? [[allow, generate], [refuse, generate], [save]]
+      : [[refuse], [allow], [generate], [save]];
+    const parts = steps[this.step++];
+    assert.ok(parts, "脚本应在有限步骤内结束");
+    yield { content: { role: "model", parts } };
   }
   async connect(): Promise<never> { throw new Error("not supported in tests"); }
 }
@@ -219,6 +243,17 @@ try {
   assert.equal(originalReviews, 5); assert.equal(pixelReviews, 0);
   assert.deepEqual({ submitted, downloaded, objects: objects.size }, beforeIntentGate, "拒绝前不提交、取图、审核图片或存储");
   console.log("✓ 有害原请求防改图：新任务、待取任务、已存图片、几何插画及旧图引用5条路径拒绝，零生图/取图/像素审核，纯文字拒绝可保存（合成判定，真实应用/数据库）。");
+  const beforeCoordinatorGate = { submitted, downloaded, objects: objects.size };
+  for (const scenario of ["missing", "refuse", "parallel"] as const) {
+    const refusalService = new GreetingService(policyRepo, request => runGreeting(request, new RefusalModel(scenario)), policyMedia, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
+    const refusalSession = await refusalService.createSession(`拒绝门禁-${scenario}`);
+    const result = await refusalService.generateGreeting({ sessionId: refusalSession.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: harmfulOriginal } });
+    assert.equal(result.status, "completed");
+    assert.equal(result.greeting, "抱歉，这个图片请求不能执行，本次不会生成图片。");
+    assert.deepEqual(result.artifacts, []);
+    assert.deepEqual({ submitted, downloaded, objects: objects.size }, beforeCoordinatorGate, "未判定、拒绝后改口、并行调用均不能触发生图");
+  }
+  console.log("✓ ADK拒绝门禁：未判定、拒绝后改口、并行绕过均零生图，拒绝回复无替代作品。");
   // Simulate a media commit whose turn reference has not yet been written.
   const unlinked = await media.save((await media.read(imageRow.id)).bytes, { turnId: fourth.id, provider: "bailian", model: "wan2.6-t2i", taskId: "synthetic-unlinked" });
   for (const turn of [saved, fourth]) await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: { key: `synthetic-turn:${turn.id}`, owner: repo.owner.id, targetType: "turn", targetId: turn.id, sessionId: session.id, caseId: 1, active: true, reason: "仅合成隔离测试" } });
