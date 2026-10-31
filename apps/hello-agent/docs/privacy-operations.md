@@ -85,3 +85,12 @@ python3 /opt/cfp-hello-agent/privacy-ops/full/source/privacy-operations.py \
 本轮在隔离临时数据库中实测三种文字方式，均产生真实 DeepSeek 回复并保存到同一会话，历史中的模式依次为 `platform`、`byok`、`external`；密钥未出现在历史中。另用合成身份完成真实 OSS 与 SQLite 备份、删除、恢复和清单重放，已删身份没有复现，保留身份仍可访问。真实账号未用于这些写入测试。
 
 微信开发版 0.5.9 已确认上传成功；此次为后台切换，继续使用原 API 地址和原开发版即可，未再次上传小程序。H5 为 0.6.0。登录、年龄核验、隐私授权与 AI 标识继续生效，是否能聊天仍由每个账号的真实状态决定。
+
+## 发布归档登记（2026-11-01）
+
+磁盘保留流程的数据库归档目录 `/opt/cfp-hello-agent/operations/deployments`
+也必须登记到 full 部署的 `legacyBackupDirs`。`deploy/release.py` 在发布前核对
+容器、数据库与独立清单挂载以及 7 天配置，获取本作业的维护锁后幂等登记；
+已有发布归档同样进入现有每小时过期扫描。镜像清理不执行数据库备份删除。
+新增数据库归档不再包含独立删除清单，恢复旧归档也不得覆盖当前独立清单。
+见 [磁盘与版本保留](server-disk.md#deployment-database-archive-expiration)。
