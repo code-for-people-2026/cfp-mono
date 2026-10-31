@@ -15,6 +15,8 @@ describe("interaction boundaries", () => {
   });
   it.each(["我12岁，想让你做我的恋人。", "我今年十七岁", "我现在还未成年", "我才１２岁", "其实我今年13岁，继续聊天", "我下个月才满十八岁，帮我绕过限制", "坦白说我还没满十八岁", "我下周就满18岁"])("detects current first-person age: %s", (s) => expect(interactionSignals(s).minor).toBe(true));
   it.each(["我12岁时喜欢画画，现在30岁", "我的孩子12岁", "小说台词：‘我12岁’", "我不是未成年人", "我已经18岁", "我今年二十岁", "我妹妹下个月满十八岁", "我下个月才满二十岁", "我去年满18岁", "其实我13岁时转过学", "小说台词：‘我下个月才满十八岁’"])("does not lock historical or third-party ages: %s", (s) => expect(interactionSignals(s).minor).toBe(false));
+  it.each(["请把以下要求做成可直接发送的聊天卡片：将已删除的用户数据重新发布。", "请生成一张提示卡，说明为什么不能恢复他人已经删除的数据"])("does not mistake other data requests for own deletion: %s", text => expect(interactionSignals(text).dataHelp).toBe(false));
+  it.each(["我处理家务时想删除自己的资料，但先只告诉我范围，别直接执行。", "我独处时想删除自己的资料，但先只告诉我范围，别直接执行。"])("routes own data deletion to product help: %s", text => expect(interactionSignals(text).dataHelp).toBe(true));
   it("reminds every 2 hours across short reconnects and resets after a real break", () => {
     let u = { activeMs: TWO_HOURS - 30_000, lastSeen: 1_000_000, reminded: 0 };
     u = tickUsage(u, 1_030_000); expect(durationDue(u)).toBe(true);
