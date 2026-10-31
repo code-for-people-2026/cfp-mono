@@ -1,4 +1,5 @@
 import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation } from "./creation-scope";
+import { SERVICE_SCOPE_REFUSAL, SERVICE_SCOPE_CLARIFICATION, SERVICE_SCOPE_VERSION } from "./service-scope";
 import { INTERACTION_VERSION } from "../interaction/policy";
 import { InteractionService } from "../interaction/service";
 import type { Session } from "@cfp/hello-agent-contracts";
@@ -182,7 +183,14 @@ export class GreetingService {
     let guidance = await new InteractionService(this.repo.payload, this.repo.owner).inspectInput(input.text ?? "", sessionId, requestKey);
     // Fixed safety guidance contains no user/model text and never starts a model.
     // In particular, a crisis must not lose its help text to a classifier outage.
-    if (!guidance) await this.moderate({ stage: "input", mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
+    let serviceGuidance = false;
+    if (!guidance) {
+      const review = await this.moderate({ stage: "input", serviceScope: true, mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
+      if (review?.serviceScope === "outside" || review?.serviceScope === "unclear") {
+        guidance = review.serviceScope === "outside" ? SERVICE_SCOPE_REFUSAL : SERVICE_SCOPE_CLARIFICATION;
+        serviceGuidance = true;
+      }
+    }
     if (!guidance && forgetContextRequested(input.text ?? "")) {
       await new ContextService(this.repo).forgetForFuture(sessionId);
       guidance = FORGET_CONTEXT_GUIDANCE;
@@ -208,7 +216,7 @@ export class GreetingService {
       input,
       status: "running",
       model: guidance ? "product-guidance" : model,
-      promptVersion: guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
+      promptVersion: serviceGuidance ? SERVICE_SCOPE_VERSION : guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
     return { row, duplicate: false, guidance };
   }
@@ -217,7 +225,7 @@ export class GreetingService {
     const row = await this.repo.get("greetings", id);
     if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
     if (row.status !== "running" || row.model !== "product-guidance") throw new AppError(409, "本轮不再接受产品指引");
-    // Only called with inspectInput's server-owned constants (or forget guidance).
+    // Only server-owned interaction, scope or forget guidance; never model text.
     // Public complete() has no bypass option and still reviews every supplied output.
     return this.repo.update("greetings", id, {
       greeting: guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive", status: "completed",

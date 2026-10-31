@@ -8,5 +8,5 @@ export function isRestReminderRequest(text: string) {
 export function isUnsupportedCreation(text: string) {
   // Describing work-related distress is not commissioning an artifact.
   if (/^(?:我在|我因为|我正在|我做).*(?:焦虑|难受|压力|沮丧|累)/.test(text) && !/(?:请|帮我|给我|替我|为我)/.test(text)) return false;
-  return creation.test(text) && !isRestReminderRequest(text) && (general.test(text) || /图片|图像|插画|绘画|一幅|一张图|一幅画|image|illustration/i.test(text));
+  return creation.test(text) && !isRestReminderRequest(text) && (general.test(text) || /图片|图像|插画|绘画|一幅|一张图|一幅画|提示卡|说明卡|卡片|image|illustration/i.test(text));
 }

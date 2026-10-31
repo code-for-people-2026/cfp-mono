@@ -28,7 +28,7 @@ export function operationalModerator(repo: Repository): Moderator {
         }, request.texts.join("\n"), req);
         recordedCase = { id: row.id, receipt: row.receipt };
       }
-      await audit(repo.payload, "system:moderation", `moderation.${verdict.decision}`, request.requestId, "自动审核执行记录", { stage: request.stage, rule: rule.version, lexicon: rule.lexiconVersion, model: verdict.model, keywordCount: verdict.keywordCount }, req);
+      await audit(repo.payload, "system:moderation", `moderation.${verdict.decision}`, request.requestId, "自动审核执行记录", { stage: request.stage, rule: rule.version, lexicon: rule.lexiconVersion, model: verdict.model, keywordCount: verdict.keywordCount, serviceScope: verdict.serviceScope }, req);
       return recordedCase;
     }).catch((error: unknown) => {
       if (error instanceof AppError) throw error;
@@ -56,5 +56,6 @@ export function operationalModerator(repo: Repository): Moderator {
     if (verdict.decision === "block") throw new ContentReviewError(422, request.stage === "input"
       ? "这条请求未通过内容审核，可通过投诉与申诉入口申请复核"
       : "这次回应未通过内容审核，可通过投诉与申诉入口申请复核");
+    if (verdict.serviceScope) return { serviceScope: verdict.serviceScope };
   };
 }

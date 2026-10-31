@@ -38,6 +38,22 @@ describe("词库候选匹配", () => {
 });
 
 describe("命中后的语境复核", () => {
+  it.each(["support", "outside", "unclear"])("无害请求的服务范围单独返回，不冒充有害：%s", async (service_scope) => {
+    answer(JSON.stringify({ decision: "allow", service_scope }));
+    const verdict = await moderateText({ ...request, serviceScope: true, texts: ["计算12加4再减2"] });
+    expect(verdict).toEqual({ serviceScope: service_scope });
+  });
+  it("缺少服务范围判断不能放行，即使关键词模式没有命中", async () => {
+    answer('{"decision":"allow"}');
+    const reserve = vi.fn();
+    const verdict = await evaluateText({ ...request, serviceScope: true, texts: ["1+2是多少"] }, { ...defaultRule, mode: "keywords" }, reserve);
+    expect(verdict.decision).toBe("unavailable");
+    expect(reserve).toHaveBeenCalledOnce();
+  });
+  it("范围内标签不能覆盖有害内容拒绝", async () => {
+    answer('{"decision":"block","service_scope":"support"}');
+    await expect(moderateText({ ...request, serviceScope: true })).rejects.toMatchObject({ status: 422 });
+  });
   it("绘图原请求即使没有词命中，也不能被关键词模式跳过", async () => {
     answer('{"decision":"allow"}');
     const reserve = vi.fn();

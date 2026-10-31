@@ -4,7 +4,7 @@ import type { Payload, PayloadRequest } from "payload";
 import lexicon from "../moderation/lexicon";
 import { AppError } from "../domain/contracts";
 
-export const RULE_VERSION = "aj-safety-context-v4";
+export const RULE_VERSION = "aj-safety-context-v5";
 export const builtinLexicon = { version: lexicon.version, sha256: createHash("sha256").update(JSON.stringify(lexicon.words)).digest("hex"), count: lexicon.words.length };
 export const categories = ["violence", "self_harm", "sexual", "hate", "privacy", "fraud", "harassment", "other"] as const;
 export const roleOf = (user: unknown) => {
@@ -21,7 +21,7 @@ export const ruleSchema = z.object({
   ignoredWords: z.array(z.string().trim().min(1).max(80)).max(1000),
 }).strict();
 export type Rule = z.infer<typeof ruleSchema> & { id?: number; lexiconVersion: string; lexiconHash: string; promptVersion: string };
-export const defaultRule: Rule = { version: "builtin-full-review-v5", reason: "输入输出默认全量语境审核；正式发布仍须回归留痕", mode: "all", extraWords: [], ignoredWords: [], lexiconVersion: builtinLexicon.version, lexiconHash: builtinLexicon.sha256, promptVersion: RULE_VERSION };
+export const defaultRule: Rule = { version: "builtin-full-review-v6", reason: "输入输出默认全量语境审核；正式发布仍须回归留痕", mode: "all", extraWords: [], ignoredWords: [], lexiconVersion: builtinLexicon.version, lexiconHash: builtinLexicon.sha256, promptVersion: RULE_VERSION };
 export const settingSchema = z.object({
   acceptanceHours: z.number().int().min(1).max(168), resolutionHours: z.number().int().min(1).max(720),
   feedbackHours: z.number().int().min(1).max(168), evidenceDays: z.number().int().min(1).max(365),
