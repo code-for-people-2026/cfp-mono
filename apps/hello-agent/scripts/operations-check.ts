@@ -40,7 +40,7 @@ try {
     const { token } = await payload.login({ collection: "admins", data: { email: user.email, password: "isolated-test-pass-123" } });
     const response = await operationsGET(new Request("http://localhost/api/operations/status", { headers: { Cookie: `payload-token=${token}` } }), { params: Promise.resolve({ path: ["status"] }) });
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v6", mode: "all" });
+    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v7", mode: "all" });
   }
   pass("真实认证的状态接口只返回规则版本和覆盖模式，不向各角色披露召回词或内部理由");
   const ops = new OperationsService(payload);
