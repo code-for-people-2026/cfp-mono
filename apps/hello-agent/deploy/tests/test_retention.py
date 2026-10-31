@@ -1,5 +1,11 @@
 import copy
 import json
+import importlib.util
+import os
+import sqlite3
+import tarfile
+import time
+import fcntl
 from pathlib import Path
 import sys
 import tempfile
@@ -120,7 +126,7 @@ class RetentionTests(unittest.TestCase):
             if args[0] == 'rename':
                 next(c for c in rows if c['Id'] == args[1])['Name'] = '/' + args[2]
             return ''
-        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup', return_value={}), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=RuntimeError('candidate create failed')):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup_policy'), patch.object(release, 'backup', return_value={}), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=RuntimeError('candidate create failed')):
             root = Path(tmp); r.save(root / 'retention.json', state)
             with self.assertRaisesRegex(RuntimeError, 'candidate create failed'):
                 release.deploy('preview-new', root)
@@ -154,7 +160,7 @@ class RetentionTests(unittest.TestCase):
                 import io
                 return io.StringIO('{"ok":true,"release":"preview-new"}')
             def __exit__(self, *args): pass
-        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup', return_value={}), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=create), patch.object(release.urllib.request, 'urlopen', return_value=Response()), patch.object(release, 'database_state', return_value={}), patch.object(release, 'check_worker', return_value=True), patch.object(r, 'cleanup') as cleanup:
+        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup_policy'), patch.object(release, 'backup', return_value={}), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=create), patch.object(release.urllib.request, 'urlopen', return_value=Response()), patch.object(release, 'database_state', return_value={}), patch.object(release, 'check_worker', return_value=True), patch.object(r, 'cleanup') as cleanup:
             root = Path(tmp); r.save(root / 'retention.json', state)
             release.deploy('preview-new', root)
             saved = json.loads((root / 'retention.json').read_text())
@@ -170,11 +176,77 @@ class RetentionTests(unittest.TestCase):
             if args[:2] == ('image', 'inspect'):
                 return json.dumps([{'Id': 'sha256:new', 'Config': {'Labels': {'cn.codeforpeople.release': 'preview-new'}}}])
             raise AssertionError('Unexpected mutation before offline smoke passed: ' + str(args))
-        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', return_value=rows), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release.verify_runtime, 'verify', side_effect=RuntimeError('offline snapshot failed')):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', return_value=rows), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup_policy'), patch.object(release.verify_runtime, 'verify', side_effect=RuntimeError('offline snapshot failed')):
             root = Path(tmp); r.save(root / 'retention.json', state)
             with self.assertRaisesRegex(RuntimeError, 'offline snapshot failed'):
                 release.deploy('preview-new', root)
             self.assertEqual(json.loads((root / 'retention.json').read_text()), state)
+            self.assertFalse((root / 'deployment-journal.json').exists())
+
+
+    def test_deployment_archives_expire_through_privacy_policy(self):
+        spec = importlib.util.spec_from_file_location('privacy_operations', str(Path(__file__).resolve().parents[2] / 'scripts/privacy-operations.py'))
+        privacy = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(privacy)
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = str(Path(tmp).resolve())
+            root = Path(tmp) / 'operations'
+            policy = Path(tmp) / 'privacy-ops/full'
+            for path in (root, policy / 'state', Path(tmp) / 'data', policy / 'ledger', policy / 'backups'):
+                path.mkdir(parents=True, exist_ok=True)
+            config = {'container': r.NAMES[0], 'dataDir': str(Path(tmp) / 'data'),
+                      'ledgerDir': str(policy / 'ledger'), 'stateDir': str(policy / 'state'),
+                      'backupDir': str(policy / 'backups'), 'legacyBackupDirs': [str(policy / 'backups')]}
+            r.save(policy / 'config.json', config)
+            containers = [{'Name': '/' + name, 'Mounts': [
+                {'Type': 'bind', 'Source': config['dataDir'], 'Destination': '/data'},
+                {'Type': 'bind', 'Source': config['ledgerDir'], 'Destination': '/privacy-ledger'}],
+                'Config': {'Env': ['HELLO_PRIVACY_BACKUP_DAYS=7']}} for name in r.NAMES]
+            database = Path(config['dataDir']) / 'hello.db'
+            with sqlite3.connect(str(database)) as db:
+                db.execute('CREATE TABLE example(id)')
+            ledger = Path(config['ledgerDir']) / 'deletions.ndjson'
+            ledger.write_text('authoritative ledger')
+            with release.backup_policy(root, containers):
+                enrolled = json.loads((policy / 'config.json').read_text())
+                self.assertIn(str(root / 'deployments'), enrolled['legacyBackupDirs'])
+                self.assertIn(config['backupDir'], enrolled['legacyBackupDirs'])
+                with (policy / 'state/maintenance.lock').open('a') as lock:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            for name in ('old', 'recent'):
+                dest = root / 'deployments' / name
+                dest.mkdir()
+                with tarfile.open(str(dest / 'data.tar.gz'), 'w:gz') as archive:
+                    archive.add(str(database), arcname='data/hello.db')
+                (dest / 'receipt.json').write_text('{}')
+            os.utime(str(root / 'deployments/old/data.tar.gz'), (time.time() - 8 * 86400,) * 2)
+            removed = sum(privacy.prune_backups(Path(path), 7) for path in enrolled['legacyBackupDirs'])
+            self.assertEqual(removed, 1)
+            self.assertFalse((root / 'deployments/old/data.tar.gz').exists())
+            self.assertTrue((root / 'deployments/recent/data.tar.gz').exists())
+            self.assertTrue((root / 'deployments/old/receipt.json').exists())
+            self.assertTrue(database.exists())
+            self.assertEqual(ledger.read_text(), 'authoritative ledger')
+            with release.backup_policy(root, containers):
+                self.assertEqual(json.loads((policy / 'config.json').read_text()), enrolled)
+            containers[0]['Mounts'][0]['Source'] = str(root / 'deployments')
+            with self.assertRaises(RuntimeError):
+                with release.backup_policy(root, containers):
+                    self.fail('mismatched live data accepted')
+
+    def test_missing_privacy_policy_prevents_service_stop(self):
+        state, rows = fixture()
+        def docker(*args):
+            if args[:2] == ('image', 'inspect'):
+                return json.dumps([{'Id': 'sha256:new', 'Config': {'Labels': {'cn.codeforpeople.release': 'preview-new'}}}])
+            raise AssertionError('Unexpected mutation: ' + str(args))
+        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', return_value=rows), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release.verify_runtime, 'verify') as verify:
+            root = Path(tmp) / 'operations'
+            r.save(root / 'retention.json', state)
+            with self.assertRaises((RuntimeError, FileNotFoundError)):
+                release.deploy('preview-new', root)
+            verify.assert_not_called()
             self.assertFalse((root / 'deployment-journal.json').exists())
 
 

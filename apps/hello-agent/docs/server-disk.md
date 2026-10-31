@@ -40,7 +40,8 @@ Never run a second publisher around this lock.
 web and alert worker pair. Before stopping anything it verifies the current
 manifest, readiness, candidate build label and at least 2 GiB free. It first starts the candidate offline against a disposable database snapshot and
 checks readiness, native modules, worker imports, H5 and unchanged schema; then stops
-the pair, validates and archives their bound data, and keeps the old containers.
+the pair, validates and archives their bound database directory, and keeps the old containers.
+The independent privacy deletion ledger is excluded from new database archives.
 Only after candidate readiness, SQLite integrity, unchanged schema and existing
 alert verification, and an advancing worker heartbeat, does it atomically record
 the new current and rollback pair. Previous rollback containers/images then enter
@@ -77,6 +78,31 @@ force or volume deletion, and non-forced removal of the recorded image tags.
 Business data, OSS, databases, ledgers, backups and source release directories are
 never deleted. The only force-removal path is failed newly-created candidate
 containers during rollback, still without `--volumes`.
+
+## Deployment database archive expiration
+
+Before any candidate smoke check or service stop, `release.py` reads the existing
+`/opt/cfp-hello-agent/privacy-ops/full/config.json`, verifies its container and
+live data/ledger mounts and the seven-day backup setting, then acquires that
+privacy job's `stateDir/maintenance.lock` for the deployment. It idempotently
+adds `/opt/cfp-hello-agent/operations/deployments` to `legacyBackupDirs`, preserving
+all existing roots. Missing/mismatched policy or a busy maintenance lock aborts
+the deployment. The directory exists before registration, so privacy maintenance
+will not fail on an absent root. Installers must confirm the existing
+`cfp-hello-privacy-full.timer` is enabled and healthy; image retention does not
+replace or enable privacy operations.
+
+The existing hourly privacy job expires SQLite-containing archives there,
+including earlier deployments, under the approved seven-day policy. Recent
+archives, non-database receipts, live databases and the independent deletion
+ledger are outside this expiration. No new business-data deletion logic is
+added to `retention.py`. Existing installations must enroll this directory before
+the next privacy run; use `release.backup_policy` with the current app/worker
+inspection records to perform registration without deploying or deleting data.
+Failed or interrupted deployment archives follow the same privacy deadline;
+resolve recovery promptly rather than extending personal-data retention.
+Never restore an archive's old deletion ledger, including legacy archives that
+contained one; database recovery must replay the current independent ledger.
 
 ## Interrupted deployment and rollback
 

@@ -268,7 +268,9 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           [[ -n "$DEEPSEEK_API_KEY" ]]
-          deployment_url="$(vercel deploy --yes --target=preview --archive=tgz \
+          # A restored Vercel cache can retain traces into removed pnpm packages.
+          # Build this PR from its locked dependencies (no --with-cache).
+          deployment_url="$(vercel deploy --yes --target=preview --force --archive=tgz \
             --build-env RELEASE_SHA="$PR_HEAD_SHA" \
             --env DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
             --env RELEASE_SHA="$PR_HEAD_SHA" \
