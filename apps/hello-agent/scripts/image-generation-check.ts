@@ -96,10 +96,11 @@ try {
   const media = new MediaService(repo, () => store);
   const service = new GreetingService(repo, (request) => runGreeting(request, new ImageModel()), media, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
   const session = await service.createSession("生图集成验收");
-  const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡，用窗台番茄作为装饰，提醒先休息" } };
+  const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "制作一张自我关怀心理支持图片，用窗台番茄作为装饰，提醒温柔对待自己" } };
   const progress: string[] = [];
   const saved = await service.generateGreeting(input, (message) => progress.push(message));
   assert.equal(saved.status, "completed");
+  assert.match(saved.association || "", /制图素材不代表已核实的本人状态/);
   // Simulate a suspended worker whose lease expires without its timer running.
   // SQLite must reject its late write even before the old AbortSignal notices.
   const staleTurn = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "stale-lease", status: "running", mode: "platform", input: { mediaIds: [], text: "合成过期执行验证" } });

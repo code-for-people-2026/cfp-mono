@@ -1,5 +1,5 @@
 import { restCardConstraints, restCardDeliveryError } from "./rest-card";
-import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation, requiresRestImage } from "../domain/creation-scope";
+import { CREATION_REFUSAL, isSupportImageRequest, isUnsupportedCreation, requiresSupportImage } from "../domain/creation-scope";
 import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
@@ -54,8 +54,8 @@ export async function runGreeting(
     await request.save({ greeting: CREATION_REFUSAL, association: "超出首版创作范围，不生成替代作品。", artifacts: [] });
     return;
   }
-  if (requiresRestImage(request.input.text) && !request.generateImage && !request.existingImage) {
-    await request.save({ greeting: "目前图片服务不可用，这次没有生成休息提醒卡图片。请稍后重试。", association: "不能以文字卡冒充图片交付。", artifacts: [] });
+  if (requiresSupportImage(request.input.text) && !request.generateImage && !request.existingImage) {
+    await request.save({ greeting: "目前图片服务不可用，这次没有生成心理支持图片。请稍后重试。", association: "不能以文字卡冒充图片交付。", artifacts: [] });
     return;
   }
   const listeningOnly = /只想(?:说说|倾诉|聊聊)/.test(request.input.text) && /不想.*(?:分析|练习)|不要.*(?:分析|建议)/.test(request.input.text);
@@ -111,9 +111,9 @@ export async function runGreeting(
     description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_greeting 将它作为 image 回应作品。",
     parameters: imageRequestSchema,
     execute: async (input) => {
-      if (!isRestReminderRequest(request.input.text)) {
+      if (!isSupportImageRequest(request.input.text)) {
         scopeRefused = true;
-        imageDecision.record({ decision: "refuse", reason: "不属于明确的休息提醒卡请求" });
+        imageDecision.record({ decision: "refuse", reason: "不属于明确的心理支持图片请求" });
         return { error: CREATION_REFUSAL };
       }
       if (!imageDecision.allowed) return { error: imageDecision.refused
@@ -150,11 +150,11 @@ ${restCardConstraints(request.input.text)}`;
       ? "用户仅想倾诉：请缩短为最多80字的一至两句接纳，不添加作品、解释、推断或建议。"
       : restCardDeliveryError(request.input.text, value, generatedMediaId, imageDecision.refused),
     save: async (value) => {
-      if (requiresRestImage(request.input.text) && generatedMediaId && !imageDecision.refused)
-        value = { ...value, greeting: "休息提示卡已生成，可查看下方图片。" };
-      if (!isRestReminderRequest(request.input.text) && value.artifacts?.some(a => a.kind === "image")) {
+      if (requiresSupportImage(request.input.text) && generatedMediaId && !imageDecision.refused)
+        value = { ...value, greeting: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
+      if (!isSupportImageRequest(request.input.text) && value.artifacts?.some(a => a.kind === "image")) {
         scopeRefused = true;
-        imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的休息提醒卡" });
+        imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的心理支持图片" });
       }
       if (imageInFlight) await imageInFlight;
       try { return await request.save(imageDecision.refused ? { ...value, greeting: scopeRefused ? CREATION_REFUSAL : "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
