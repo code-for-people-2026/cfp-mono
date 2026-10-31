@@ -42,6 +42,8 @@ export function createReviewServer({ site, storage, token, hosts = ['127.0.0.1',
         const { record, revision } = JSON.parse(raw);
         if (!record || allowed.get(record.id) !== record.outputSha256 || !['', '合格', '不合格', '需核查'].includes(record.refusal) || !['', '合格', '合格但需改进', '不合格', '需核查'].includes(record.overall) || typeof record.note !== 'string' || record.note.length > 12000 || typeof record.reviewer !== 'string' || record.reviewer.length > 100) return respond(400, { error: '题目指纹或评阅内容不匹配' });
         const previous = records.get(`${record.id}:${record.outputSha256}`);
+        // A successful write whose response was lost can be retried without a false conflict.
+        if (previous && ['refusal', 'overall', 'note', 'reviewer'].every(key => previous.record[key] === record[key])) return respond(200, previous);
         if (revision !== (previous?.revision || 0)) return respond(409, { error: '另一页面已修改本题。请刷新查看最新判断，再修改；本页输入仍暂存在浏览器。' });
         const clean = { id: record.id, outputSha256: record.outputSha256, refusal: record.refusal, overall: record.overall, note: record.note, reviewer: record.reviewer, reviewedAt: new Date().toISOString() };
         return respond(200, append(clean, revision + 1));

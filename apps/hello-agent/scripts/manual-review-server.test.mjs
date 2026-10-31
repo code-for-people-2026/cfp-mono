@@ -18,6 +18,7 @@ test('durable revisions survive restart, stale and forged submissions cannot ove
   const record = { id: 'TEST', outputSha256: 'answer-hash', refusal: '需核查', overall: '', note: '合成测试，不是负责人评阅', reviewer: '自动化测试' };
   try {
     assert.equal((await save(record)).status, 200);
+    assert.equal((await save(record)).status, 200, 'retry after a lost acknowledgement is idempotent');
     assert.equal((await save({ ...record, overall: '合格' })).status, 409);
     assert.equal((await save({ ...record, outputSha256: 'old-output' }, 1)).status, 400);
     assert.equal((await fetch(`${origin}/${config.token}/api/save`, { method: 'POST', headers: { origin: 'http://evil.example', 'content-type': 'application/json' }, body: '{}' })).status, 403);
