@@ -1,4 +1,5 @@
-import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation } from "../domain/creation-scope";
+import { restCardConstraints, restCardDeliveryError } from "./rest-card";
+import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation, requiresRestImage } from "../domain/creation-scope";
 import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
@@ -53,6 +54,11 @@ export async function runGreeting(
     await request.save({ greeting: CREATION_REFUSAL, association: "超出首版创作范围，不生成替代作品。", artifacts: [] });
     return;
   }
+  if (requiresRestImage(request.input.text) && !request.generateImage && !request.existingImage) {
+    await request.save({ greeting: "目前图片服务不可用，这次没有生成休息提醒卡图片。请稍后重试。", association: "不能以文字卡冒充图片交付。", artifacts: [] });
+    return;
+  }
+  const listeningOnly = /只想(?:说说|倾诉|聊聊)/.test(request.input.text) && /不想.*(?:分析|练习)|不要.*(?:分析|建议)/.test(request.input.text);
   const configuration = await loadAgentConfiguration(request.repo.payload);
   const media = await Promise.all(
     request.input.mediaIds.map((id) => request.readImage(id)),
@@ -91,6 +97,7 @@ export async function runGreeting(
   const signal = request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal;
   let imageInFlight: Promise<GeneratedImage> | undefined;
   let imageFailure: unknown;
+  let generatedMediaId = request.existingImage?.mediaId;
   let scopeRefused = false;
   const imageDecision = new ImageDecision();
   const imageDecisionTool = request.generateImage ? new FunctionTool({
@@ -115,8 +122,13 @@ export async function runGreeting(
       const parsed = imageRequestSchema.safeParse(input);
       if (!parsed.success) return { error: "请提供 prompt、title、alt 和 aspectRatio（square、portrait 或 landscape）" };
       signal.throwIfAborted();
-      if (!imageInFlight) imageInFlight = request.generateImage!(parsed.data, signal);
-      try { return await imageInFlight; }
+      if (!imageInFlight) {
+        const prompt = `${parsed.data.prompt.slice(0, 1400)}
+画面硬性约束：
+${restCardConstraints(request.input.text)}`;
+        imageInFlight = request.generateImage!({ ...parsed.data, prompt }, signal);
+      }
+      try { const image = await imageInFlight; generatedMediaId = image.mediaId; return image; }
       catch (error) { imageFailure = error; controller.abort(); throw error; }
     },
   }) : undefined;
@@ -133,7 +145,13 @@ export async function runGreeting(
     turnSessionId: executionId,
     inputParts: parts,
     signal,
+    responseGuidance: listeningOnly ? "本轮用户明确只想倾诉、不想分析或练习：只用一至两句简短接纳（正文最多80字），仅回应用户明确说出的感受。不讲道理，不打比方，不自述先想什么又转念什么，不描述用户的身体或场景，不推断事情已经完成，不要求休息、喝水或做任何事情；不咨询专家、不提供作品。" : undefined,
+    checkDelivery: value => listeningOnly && (value.greeting.length > 80 || value.artifacts?.length)
+      ? "用户仅想倾诉：请缩短为最多80字的一至两句接纳，不添加作品、解释、推断或建议。"
+      : restCardDeliveryError(request.input.text, value, generatedMediaId, imageDecision.refused),
     save: async (value) => {
+      if (requiresRestImage(request.input.text) && generatedMediaId && !imageDecision.refused)
+        value = { ...value, greeting: "休息提示卡已生成，可查看下方图片。" };
       if (!isRestReminderRequest(request.input.text) && value.artifacts?.some(a => a.kind === "image")) {
         scopeRefused = true;
         imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的休息提醒卡" });

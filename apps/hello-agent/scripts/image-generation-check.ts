@@ -31,8 +31,16 @@ const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 const imageInput = { prompt: "一盆窗台上的红番茄，温暖的水彩插画", title: "窗台的番茄", alt: "窗台上一盆红番茄", aspectRatio: "square" as const };
 class ImageModel extends BaseLlm {
+  private triedPrematureSave = false;
   constructor() { super({ model: "scripted-image-test-only" }); }
   async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse> {
+    if (!this.triedPrematureSave) {
+      this.triedPrematureSave = true;
+      yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: "save_greeting", args: { greeting: "卡片做好了，请休息。", association: "故意尝试用文字冒充图片", artifacts: [] } } }] } };
+      return;
+    }
+    const saveAttempt = request.contents.flatMap(c => c.parts || []).find(p => p.functionResponse?.name === "save_greeting");
+    assert.ok(saveAttempt?.functionResponse?.response?.error, "premature text-only completion must be rejected before saving");
     const decision = request.contents.flatMap(c => c.parts || []).findLast(p => p.functionResponse?.name === "decide_image_request");
     if (!decision) {
       yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: "decide_image_request", args: { decision: "allow", reason: "合成正常插画需求" } } }] } };
