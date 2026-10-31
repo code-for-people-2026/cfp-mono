@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { AgeStatus } from "@cfp/a-j-oker-protocol";
+import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { CheckboxGroup, Picker } from "@tarojs/components";
 
 const api = vi.hoisted(() => ({ loginWechat: vi.fn(), cancelAge: vi.fn(), beginAge: vi.fn(), submitAge: vi.fn() }));

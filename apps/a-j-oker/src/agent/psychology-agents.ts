@@ -10,7 +10,7 @@ import {
 } from "@google/adk";
 import { FunctionCallingConfigMode, Type, type Part } from "@google/genai";
 import { z } from "zod";
-import { artifactsSchema } from "@cfp/a-j-oker-protocol";
+import { artifactsSchema } from "@cfp/base-chat-protocol";
 import { AppError, type Greeting } from "../domain/contracts";
 export { SPECIALIST_INSTRUCTIONS } from "./default-prompts";
 import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";

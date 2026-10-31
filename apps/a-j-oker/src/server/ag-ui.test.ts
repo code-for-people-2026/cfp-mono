@@ -4,8 +4,8 @@ import {
   createSseDecoder,
   createRunReader,
   CATALOG_ID,
-} from "@cfp/a-j-oker-protocol";
-import { artifacts } from "../../../../packages/a-j-oker-protocol/test/fixtures";
+} from "@cfp/base-chat-protocol";
+import { artifacts } from "../../../../packages/base-chat-protocol/test/fixtures";
 import { AppError } from "../domain/contracts";
 import { agentStream, readAgentInput } from "./ag-ui";
 

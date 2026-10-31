@@ -2,7 +2,7 @@ import { platformInputAllowed, PLATFORM_ONLY_NOTICE } from "@cfp/a-j-oker-contra
 import { interactionStatusSchema } from "@cfp/a-j-oker-contracts";
 import { safetyStatusSchema, safetyReceiptSchema } from "@cfp/a-j-oker-contracts";
 import { userProfileSchema, ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/a-j-oker-contracts";
-import type { AgeDeclaration } from "@cfp/a-j-oker-protocol";
+import type { AgeDeclaration } from "@cfp/a-j-oker-contracts";
 import { labeledAiText } from "./ai-copy";
 import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, type PrivacyStatus } from "@cfp/a-j-oker-contracts";
 import Taro from "@tarojs/taro";
@@ -11,7 +11,7 @@ import {
   createRunReader,
   textResponseSchema,
   type RunProgress,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import type { Attachment, Input, Mode } from "./model";
 import {
   settingsSchema,

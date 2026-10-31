@@ -64,7 +64,7 @@
     "packages/kith-inn-contracts": {
       "entry": ["src/index.ts"]
     },
-    "packages/a-j-oker-protocol": {
+    "packages/base-chat-protocol": {
       "entry": ["src/index.ts", "test/**/*.ts"]
     },
     "packages/a-j-oker-contracts": {

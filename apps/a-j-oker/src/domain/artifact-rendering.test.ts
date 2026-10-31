@@ -1,7 +1,7 @@
 import { it, expect } from "vitest";
 import sharp from "sharp";
 import { pageHtml, illustrationPng } from "./artifact-rendering";
-import { artifacts } from "../../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../../packages/base-chat-protocol/test/fixtures";
 import { toMemoryTurn, memoryTokens, MEMORY_BUDGET } from "./context-policy";
 
 it("网页文本无法成为脚本或 HTML，插画只栅格化已验证的几何描述", async () => {

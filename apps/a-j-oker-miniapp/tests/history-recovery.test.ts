@@ -254,7 +254,7 @@ it.each([false, true])(
   "已有表单的可用状态与平台密钥配置一致（configured=%s）",
   async (configured) => {
     const { artifacts } =
-      await import("../../../packages/a-j-oker-protocol/test/fixtures");
+      await import("../../../packages/base-chat-protocol/test/fixtures");
     history = [
       {
         ...initial,
@@ -289,7 +289,7 @@ it.each([false, true])(
 
 it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
   const { artifacts } =
-    await import("../../../packages/a-j-oker-protocol/test/fixtures");
+    await import("../../../packages/base-chat-protocol/test/fixtures");
   history = [
     {
       ...initial,

@@ -20,7 +20,7 @@ const sources = [
   "apps/a-j-oker",
   "apps/a-j-oker-miniapp",
   "packages/a-j-oker-contracts",
-  "packages/a-j-oker-protocol",
+  "packages/base-chat-protocol",
   "packages/typescript-config",
   "packages/eslint-config",
   "pnpm-lock.yaml",

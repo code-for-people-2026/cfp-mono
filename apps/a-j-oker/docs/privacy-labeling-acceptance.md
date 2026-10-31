@@ -55,8 +55,8 @@ pnpm --filter @cfp/a-j-oker exec tsx scripts/privacy-check.ts
 pnpm --filter @cfp/a-j-oker exec tsx scripts/privacy-migration-check.ts
 pnpm --filter @cfp/a-j-oker exec vitest run src/labeling/metadata.test.ts src/domain/artifact-rendering.test.ts
 pnpm --filter @cfp/a-j-oker-miniapp test
-pnpm --filter @cfp/a-j-oker-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp typecheck
-pnpm --filter @cfp/a-j-oker-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp lint
+pnpm --filter @cfp/base-chat-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp typecheck
+pnpm --filter @cfp/base-chat-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp lint
 pnpm --filter @cfp/a-j-oker-miniapp build
 ```
 

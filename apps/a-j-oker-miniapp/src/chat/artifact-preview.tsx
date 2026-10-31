@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Text, View } from "@tarojs/components";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
-import { componentSchema } from "@cfp/a-j-oker-protocol";
+import { componentSchema } from "@cfp/base-chat-protocol";
 import { ArtifactImage, useArtifactState } from "./artifact-components";
 import { BottomSheet } from "./bottom-sheet";
 import { ChatIcon } from "./icon";

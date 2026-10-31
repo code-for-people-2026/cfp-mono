@@ -8,7 +8,7 @@ const config: NextConfig = {
   typescript: { ignoreBuildErrors: process.env.HELLO_BUILD_TYPES_VERIFIED === "true" },
   transpilePackages: [
     "@cfp/a-j-oker-contracts",
-    "@cfp/a-j-oker-protocol",
+    "@cfp/base-chat-protocol",
   ],
   // 小型 ECS 构建限制并行度，避免挤占同机官网的资源。
   ...(process.env.HELLO_BUILD_PREVIEW === "true"

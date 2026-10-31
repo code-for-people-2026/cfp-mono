@@ -3,7 +3,7 @@ import type {
   A2uiMessage as CoreMessage,
   SurfaceModel,
 } from "@a2ui/web_core/v0_9";
-import type { A2uiMessage } from "@cfp/a-j-oker-protocol";
+import type { A2uiMessage } from "@cfp/base-chat-protocol";
 
 export type HostProps = {
   messages: A2uiMessage[];

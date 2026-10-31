@@ -8,8 +8,8 @@ import {
   type A2uiMessage,
   type FormValues,
   type ClientEvent,
-} from "@cfp/a-j-oker-protocol";
-import { artifacts } from "../../../packages/a-j-oker-protocol/test/fixtures";
+} from "@cfp/base-chat-protocol";
+import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
 import type { HostProps } from "../src/chat/a2ui-feed";
 vi.mock("@tarojs/taro", () => ({ default: { previewImage: vi.fn() } }));
 vi.mock("@tarojs/components", () => ({

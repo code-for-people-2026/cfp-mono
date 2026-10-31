@@ -3,14 +3,14 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { artifacts } from "../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
 import {
   createRunReader,
   A2UI_VERSION,
   clientEventSchema,
   toA2ui,
   validateA2uiMessages,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import { ScriptedModel } from "./scripted-model";
 import { seedSyntheticAge } from "./synthetic-age";
 

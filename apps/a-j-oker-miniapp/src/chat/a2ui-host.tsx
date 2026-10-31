@@ -6,7 +6,7 @@ import {
   MessageProcessor,
   type SurfaceModel,
 } from "@a2ui/web_core/v0_9";
-import { CATALOG_ID } from "@cfp/a-j-oker-protocol";
+import { CATALOG_ID } from "@cfp/base-chat-protocol";
 import { definitions, renderers } from "./a2ui-catalog";
 import { useMessageFeed, surfaceIds, type HostProps } from "./a2ui-feed";
 

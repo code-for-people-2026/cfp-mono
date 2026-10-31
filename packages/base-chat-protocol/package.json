@@ -1,5 +1,5 @@
 {
-  "name": "@cfp/a-j-oker-protocol",
+  "name": "@cfp/base-chat-protocol",
   "version": "0.1.0",
   "private": true,
   "type": "module",

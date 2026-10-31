@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
-import { artifacts } from "../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
 const platform = vi.hoisted(() => ({
   previewImage: vi.fn(),
   getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),

@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import OSS from "ali-oss";
 import sharp from "sharp";
-import { CATALOG_ID, createRunReader } from "@cfp/a-j-oker-protocol";
+import { CATALOG_ID, createRunReader } from "@cfp/base-chat-protocol";
 import { historySchema, sessionSchema } from "@cfp/a-j-oker-contracts";
 import { seedSyntheticAge } from "./synthetic-age";
 

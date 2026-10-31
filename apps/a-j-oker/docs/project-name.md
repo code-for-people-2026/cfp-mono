@@ -1,11 +1,13 @@
 # Project name: a-j-oker
 
-2026-10-31：项目目录、四个 workspace 包、导入、锁文件、构建/发布脚本、CI 和当前开发文档统一使用 `a-j-oker`。小程序对外名称仍为「赢麻的阿 J 先生」。
+2026-10-31：项目目录、包名、导入、锁文件、构建/发布脚本、CI 和当前开发文档完成命名整理。小程序对外名称仍为「赢麻的阿 J 先生」。
 
 - 服务端：`apps/a-j-oker` / `@cfp/a-j-oker`
 - 客户端：`apps/a-j-oker-miniapp` / `@cfp/a-j-oker-miniapp`
 - 业务契约：`packages/a-j-oker-contracts` / `@cfp/a-j-oker-contracts`
-- 协议：`packages/a-j-oker-protocol` / `@cfp/a-j-oker-protocol`
+- 基础回复与展示协议：`packages/base-chat-protocol` / `@cfp/base-chat-protocol`
+
+2026-11-01：业务接口保留 `a-j-oker-contracts`，回复与展示协议改为 `base-chat-protocol`。年龄核验全部归入业务接口；协议包同时包含 AG-UI 与 A2UI。
 
 ## 兼容标识
 以下是已持久化数据或已发布客户端的契约，不是当前项目名称，本次不做数据迁移：

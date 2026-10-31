@@ -43,7 +43,7 @@ import {
   A2UI_VERSION,
   CATALOG_ID,
   a2uiCatalog,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

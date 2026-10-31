@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { AgeStatus } from "@cfp/a-j-oker-protocol";
+import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { ageGateStep, declarationForBirthday, todayInChina } from "../src/chat/age-onboarding";
 
 const loggedIn: AgeStatus = {

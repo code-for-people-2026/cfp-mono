@@ -41,7 +41,7 @@
 ## 重现
 
 ```sh
-pnpm --filter @cfp/a-j-oker-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp test
+pnpm --filter @cfp/base-chat-protocol --filter @cfp/a-j-oker --filter @cfp/a-j-oker-miniapp test
 pnpm --filter @cfp/a-j-oker test:artifacts
 pnpm --filter @cfp/a-j-oker-miniapp build
 pnpm --filter @cfp/a-j-oker build

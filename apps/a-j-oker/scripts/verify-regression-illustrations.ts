@@ -3,7 +3,7 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import { illustrationPng } from "../src/domain/artifact-rendering";
-import { imageSchema } from "@cfp/a-j-oker-protocol";
+import { imageSchema } from "@cfp/base-chat-protocol";
 
 const root = process.argv[2];
 if (!root) throw new Error("Usage: verify-regression-illustrations EVIDENCE_DIRECTORY");

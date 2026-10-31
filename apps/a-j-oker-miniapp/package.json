@@ -18,7 +18,7 @@
   "dependencies": {
     "@a2ui/web_core": "0.10.4",
     "@cfp/a-j-oker-contracts": "workspace:*",
-    "@cfp/a-j-oker-protocol": "workspace:*",
+    "@cfp/base-chat-protocol": "workspace:*",
     "@copilotkit/a2ui-renderer": "1.79.0",
     "@tarojs/components": "4.2.0",
     "@tarojs/helper": "4.2.0",

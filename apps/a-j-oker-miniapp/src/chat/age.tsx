@@ -3,7 +3,7 @@ import { AccountAvatar, AccountProfile } from "./profile";
 import { randomNickname } from "./nickname";
 import { useRef, useState } from "react";
 import { Button as TaroButton, type ButtonProps, Checkbox, CheckboxGroup, Input, Label, Picker, ScrollView, Text, View } from "@tarojs/components";
-import { ageStateText, type AgeDeclaration, type AgeStatus } from "@cfp/a-j-oker-protocol";
+import { ageStateText, type AgeDeclaration, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { ageGateStep, declarationForBirthday, todayInChina } from "./age-onboarding";
 import * as api from "./api";
 import "./age.css";

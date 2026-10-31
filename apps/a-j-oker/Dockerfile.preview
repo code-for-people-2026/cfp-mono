@@ -6,13 +6,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY patches patches
 COPY apps/a-j-oker/package.json apps/a-j-oker/package.json
 COPY packages/a-j-oker-contracts/package.json packages/a-j-oker-contracts/package.json
-COPY packages/a-j-oker-protocol/package.json packages/a-j-oker-protocol/package.json
+COPY packages/base-chat-protocol/package.json packages/base-chat-protocol/package.json
 COPY packages/eslint-config packages/eslint-config
 COPY packages/typescript-config packages/typescript-config
 RUN pnpm install --frozen-lockfile --filter @cfp/a-j-oker... --ignore-scripts
 COPY apps/a-j-oker apps/a-j-oker
 COPY packages/a-j-oker-contracts packages/a-j-oker-contracts
-COPY packages/a-j-oker-protocol packages/a-j-oker-protocol
+COPY packages/base-chat-protocol packages/base-chat-protocol
 # H5 在开发机编译，并随经过白名单筛选的源码包传入；不在 ECS 重装 Taro。
 RUN test -f apps/a-j-oker/public/chat/index.html
 # 将类型检查与打包分开，避免小型 ECS 同时驻留编译器和类型检查子进程。

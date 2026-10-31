@@ -54,7 +54,7 @@ DeepSeek 的工具调用可以承接“需要图片时请求生图工具”的�
 | --- | --- | --- |
 | 对话模型 | 默认 `deepseek-flash`，调用官方 `/chat/completions`；返回契约接收文字与工具调用 | 保留现有对话模型，新增独立生图服务即可。见 [模型适配](../src/models/deepseek.ts) |
 | Agent 工具 | 只有 `save_greeting`，工具名称白名单也只允许它；一轮最多 3 次模型调用，总执行时限 60 秒 | 仅改提示词不能获得生图能力，需要新增工具并调整工具选择及执行时限。见 [执行流程](../src/agent/runtime.ts) |
-| 图片回应作品 | `source.type=illustration` 保存几何形状描述；`source.type=media` 引用已有媒体编号 | 当前没有专用生图模型。新增图片保存为媒体后可沿用作品协议。见 [作品契约](../../../packages/a-j-oker-protocol/src/artifacts.ts)、[模型指令](../src/agent/instruction.ts) |
+| 图片回应作品 | `source.type=illustration` 保存几何形状描述；`source.type=media` 引用已有媒体编号 | 当前没有专用生图模型。新增图片保存为媒体后可沿用作品协议。见 [作品契约](../../../packages/base-chat-protocol/src/artifacts.ts)、[模型指令](../src/agent/instruction.ts) |
 | 几何图文件 | 读取作品时，程序将形状描述绘制为带 AI 标识的 PNG；保存回应时也会绘制副本做审核 | 这类图片目前没有调用 `MediaService.save`，不会因为已配置 OSS 就自动入桶。见 [图片绘制](../src/domain/artifact-rendering.ts)、[回应保存](../src/domain/greetings.ts) |
 | 私有图片存储 | `HELLO_MEDIA_STORAGE=oss` 时，`MediaService.save` 写私有 OSS，Payload 保存所属用户、对象引用、大小、摘要；默认配置仍可使用数据库 | 新生图工具必须显式调用媒体保存链路。不能只把供应商 URL 填进回复。见 [媒体服务](../src/domain/media.ts)、[OSS 适配](../src/storage/oss.ts) |
 | 图片展示 | `/api/hello/artifact-image/{turnId}/{artifactId}` 读取作品后，按来源绘制或读取媒体；媒体读取校验所属用户及隔离状态。H5 使用现有登录身份，小程序带凭证下载后预览 | 前端已具备显示图片回应作品的基础，无需让模型编造链接。见 [服务端路由](../src/app/api/hello/[...path]/route.ts)、[小程序图片读取](../../a-j-oker-miniapp/src/chat/api.ts) |

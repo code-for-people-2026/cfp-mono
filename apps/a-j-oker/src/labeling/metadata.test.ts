@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import sharp from "sharp";
 import { illustrationPng, pageHtml } from "../domain/artifact-rendering";
-import { artifacts } from "../../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../../packages/base-chat-protocol/test/fixtures";
 import { aiMetadata } from "./metadata";
 
 describe("下载作品的标识", () => {

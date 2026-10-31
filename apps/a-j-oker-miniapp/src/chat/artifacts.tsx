@@ -7,7 +7,7 @@ import {
   type A2uiMessage,
   type FormValues,
   type ImageArtifact,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import {
   ArtifactState,
   ArtifactImage,

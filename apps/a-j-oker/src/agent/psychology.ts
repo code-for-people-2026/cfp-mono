@@ -1,5 +1,5 @@
 import type { z } from "zod";
-import { approachSchema } from "@cfp/a-j-oker-protocol";
+import { approachSchema } from "@cfp/base-chat-protocol";
 
 export type PsychologyApproach = z.infer<typeof approachSchema>;
 

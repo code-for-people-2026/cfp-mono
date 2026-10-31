@@ -6,7 +6,7 @@ import {
   formResponseSchema,
   replySchema,
   artifactsSchema,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 
 // 只含跨端协议与校验；不能依赖 Payload、ADK 或 Node 运行时。
 export const inputSchema = z

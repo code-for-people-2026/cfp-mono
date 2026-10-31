@@ -1,7 +1,7 @@
 import { InteractionGuard } from "../../chat/interaction";
 import type { UserProfile } from "@cfp/a-j-oker-contracts";
 import { AgeGate } from "../../chat/age";
-import type { AgeStatus } from "@cfp/a-j-oker-protocol";
+import type { AgeStatus } from "@cfp/a-j-oker-contracts";
 import { installAiCopyLabels } from "../../chat/ai-copy";
 import { consentCurrent, type PrivacyStatus } from "../../chat/privacy";
 import { openPrivacy, openHelp, privacyChangedEvent, type PrivacyChange } from "../../chat/settings-navigation";
@@ -28,7 +28,7 @@ import {
   type ClientEvent,
   type FormValues,
   type RunProgress,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import mascot from "../../assets/aj-mascot.png";
 import {
   canSend,

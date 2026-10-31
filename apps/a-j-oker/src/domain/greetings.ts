@@ -27,7 +27,7 @@ import { ContextService } from "./context";
 import { forgetContextRequested, FORGET_CONTEXT_GUIDANCE } from "./context-policy";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
-import { artifactsSchema, validateForm } from "@cfp/a-j-oker-protocol";
+import { artifactsSchema, validateForm } from "@cfp/base-chat-protocol";
 import { type Moderator } from "./moderation";
 import { operationalModerator } from "../operations/moderation";
 import { assertGenerationAllowed, assertMediaAllowed } from "../operations/enforcement";

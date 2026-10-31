@@ -7,7 +7,7 @@ import {
   pageSchema,
   type ImageArtifact,
   type PageArtifact,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import type { Repository } from "../cms/repository";
 import { AppError } from "./contracts";
 

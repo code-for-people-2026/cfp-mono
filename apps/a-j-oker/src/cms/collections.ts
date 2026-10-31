@@ -263,7 +263,7 @@ export const collections: CollectionConfig[] = [
       typescriptSchema: [
         () => ({
           type: "object",
-          tsType: 'import("@cfp/a-j-oker-protocol").Artifact[] | null',
+          tsType: 'import("@cfp/base-chat-protocol").Artifact[] | null',
         }),
       ],
     },

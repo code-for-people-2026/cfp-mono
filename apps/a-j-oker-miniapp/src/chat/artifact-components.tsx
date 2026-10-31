@@ -25,7 +25,7 @@ import {
   type ClientEvent,
   type Component,
   type FormValues,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 import { privateImageSource } from "./api";
 import { MessageText } from "./message-text";

@@ -1,5 +1,5 @@
 import { z as v3 } from "zod";
-import { componentSchema } from "@cfp/a-j-oker-protocol";
+import { componentSchema } from "@cfp/base-chat-protocol";
 import type {
   CatalogDefinitions,
   CatalogRenderers,

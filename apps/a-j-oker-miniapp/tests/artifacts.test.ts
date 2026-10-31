@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { act, create } from "react-test-renderer";
 import { afterEach, expect, it, vi } from "vitest";
-import { artifacts } from "../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
 const mocks = vi.hoisted(() => ({
   request: vi.fn(),
   getStorageSync: vi.fn(),
@@ -31,7 +31,7 @@ it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { generate } = await import("../src/chat/api");
-  const { toA2ui } = await import("@cfp/a-j-oker-protocol");
+  const { toA2ui } = await import("@cfp/base-chat-protocol");
   vi.stubGlobal("Function", function WechatFunction() {});
   const id = "13b11c49-812c-4193-9b10-530d8ae94d09";
   const events = [

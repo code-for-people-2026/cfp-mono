@@ -7,7 +7,7 @@ import {
   CATALOG_ID,
   clientEventSchema,
   toA2ui,
-} from "@cfp/a-j-oker-protocol";
+} from "@cfp/base-chat-protocol";
 import { AppError, turnSchema } from "../domain/contracts";
 import type { GreetingService } from "../domain/greetings";
 import { requirePlatformInput } from "./service-scope";

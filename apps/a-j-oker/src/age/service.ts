@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Payload } from "payload";
-import { ageChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-protocol";
+import { ageChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { AppError, type Owner } from "../domain/contracts";
 import type { AgeProfile } from "../payload-types";
 import { ageNotice, ageProvider, providerConfigured, wechatConfigured } from "./policy";

@@ -695,7 +695,7 @@ export interface Greeting {
   greeting?: string | null;
   association?: string | null;
   approach?: string | null;
-  artifacts?: import('@cfp/a-j-oker-protocol').Artifact[] | null;
+  artifacts?: import('@cfp/base-chat-protocol').Artifact[] | null;
   imageGeneration?: import('./images/service').ImageState | null;
   model?: string | null;
   promptVersion?: string | null;

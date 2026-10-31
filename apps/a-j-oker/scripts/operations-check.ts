@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import sharp from "sharp";
-import { artifacts } from "../../../packages/a-j-oker-protocol/test/fixtures";
+import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
 import { sql } from "@payloadcms/db-sqlite";
 const directory = await mkdtemp(path.join(tmpdir(), "aj-operations-check-"));
 process.env.HELLO_DATABASE_URI = `file:${directory}/isolated.db`;

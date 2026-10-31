@@ -1,4 +1,4 @@
-import type { AgeDeclaration, AgeStatus } from "@cfp/a-j-oker-protocol";
+import type { AgeDeclaration, AgeStatus } from "@cfp/a-j-oker-contracts";
 
 // Match the service's China-facing date, independently of the device's timezone.
 export function todayInChina(now = new Date()): string {

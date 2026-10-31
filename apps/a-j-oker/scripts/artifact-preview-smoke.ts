@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile } from "node:fs/promises";
-import { artifactsSchema, CATALOG_ID, createRunReader, surfaceName, validateA2uiMessages, toA2ui, type ClientEvent } from "@cfp/a-j-oker-protocol";
+import { artifactsSchema, CATALOG_ID, createRunReader, surfaceName, validateA2uiMessages, toA2ui, type ClientEvent } from "@cfp/base-chat-protocol";
 
 // Explicit remote test: creates a named test conversation and makes two paid model calls.
 const origin = process.env.HELLO_ORIGIN;
