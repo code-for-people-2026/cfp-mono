@@ -32,6 +32,7 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      "aj-v4.8": "b2113bdac731b66bee0f01cf3ea493db5fdcbaef78611e64c14480615687f3d0",
       "aj-v4.7": "1de4c74faa609f737d5512931231bd77088ff099b33f8b74c24421f26fdc5412",
       "aj-v4.6": "5e57a4af04a09e3348cbbdf6817ba0a67409ba10ae7706faff520104bc13074e",
       "aj-v4.5": "c0d1d5e9fd9e65bc0aa1790aa5b1d2e16d59069cf2b48b0a43a0cfdf85966c4a",

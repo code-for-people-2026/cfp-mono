@@ -1,3 +1,4 @@
+import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation } from "./creation-scope";
 import { INTERACTION_VERSION } from "../interaction/policy";
 import { InteractionService } from "../interaction/service";
 import type { Session } from "@cfp/hello-agent-contracts";
@@ -238,6 +239,10 @@ export class GreetingService {
       return row;
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
+    const originalText = String((row.input as Inspiration).text || "");
+    if (output.artifacts?.length && (isUnsupportedCreation(originalText) ||
+      (!isRestReminderRequest(originalText) && output.artifacts.some(a => a.kind === "image"))))
+      throw new AppError(422, CREATION_REFUSAL);
     // Covers both generated media and geometry illustrations, including reuse.
     if (output.artifacts?.some((artifact) => artifact.kind === "image"))
       await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
@@ -245,7 +250,8 @@ export class GreetingService {
         context: JSON.stringify(await new ContextService(this.repo).modelContext(Number(row.sessionId))), requestId: `image-save-intent:${row.id}`,
         turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     const imageState = readImageState(row);
-    if (imageState && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
+    const scopeRefusal = !isRestReminderRequest(originalText) && output.greeting === CREATION_REFUSAL && !output.artifacts?.length;
+    if (imageState && !scopeRefusal && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
       artifact.kind === "image" && artifact.source.type === "media" && artifact.source.mediaId === imageState.mediaId)))
       throw new AppError(409, "生图尚未完成或回应未引用本轮生成图片，不能宣称完成");
     for (const artifact of output.artifacts ?? [])

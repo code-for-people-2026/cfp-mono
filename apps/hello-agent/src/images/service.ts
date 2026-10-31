@@ -1,3 +1,4 @@
+import { CREATION_REFUSAL, isRestReminderRequest } from "../domain/creation-scope";
 import { z } from "zod";
 import type { Repository } from "../cms/repository";
 import { AppError, ContentReviewError } from "../domain/contracts";
@@ -51,6 +52,10 @@ export class ImageGenerationService {
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     let state = readImageState(row);
+    if (!isRestReminderRequest(String((row.input as { text?: string }).text || ""))) {
+      if (state) await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "blocked" } });
+      throw new AppError(422, CREATION_REFUSAL);
+    }
     // Known local configuration failures must not trigger paid text reviews.
     // Stored images need no provider, but must still pass the intent gate below.
     let provider: ImageProvider | undefined;

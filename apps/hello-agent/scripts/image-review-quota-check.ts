@@ -111,8 +111,8 @@ try {
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
     const media = new MediaService(repo, () => undefined);
     const service = new GreetingService(repo, undefined, media, undefined, { moderate: allowText, imageReviewer: reviewer });
-    const session = await repo.create("sessions", { title: "合成图片审核预算验证" });
-    const turn = () => repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode: "byok", input: { text: "合成图片审核", mediaIds: [] } });
+    const session = await repo.create("sessions", { title: "制作休息提醒卡（合成图片审核）预算验证" });
+    const turn = () => repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode: "byok", input: { text: "制作休息提醒卡（合成图片审核）", mediaIds: [] } });
     return { repo, media, service, turn };
   };
   const illustration = { kind: "image" as const, id: "synthetic", title: "合成插画", alt: "绿色圆形", source: { type: "illustration" as const, background: "#ffffff", shapes: [{ type: "circle" as const, x: 100, y: 100, radius: 50, fill: "#559977" }] } };

@@ -47,7 +47,7 @@ try {
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "platform",
-    input: { text: "试试这五种作品" },
+    input: { text: "制作休息提醒卡，并提供情绪练习" },
   };
   const saved = await service.generateGreeting(input);
   assert.deepEqual(saved.artifacts, artifacts);
@@ -190,7 +190,7 @@ try {
   const external = await service.acceptExternal({
     sessionId: session.id,
     requestId: randomUUID(),
-    input: { text: "外部作品" },
+    input: { text: "制作休息提醒卡（历史外部协议兼容测试）" },
     model: "test-client",
     output: {
       greeting: "外部生成的作品。",
@@ -205,7 +205,7 @@ try {
       service.acceptExternal({
         sessionId: session.id,
         requestId: badExternalId,
-        input: { text: "不可引用不存在的图片" },
+        input: { text: "制作休息提醒卡，不可引用不存在的图片" },
         model: "test-client",
         output: {
           greeting: "图片作品测试。",

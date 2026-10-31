@@ -63,7 +63,7 @@ try {
       const service = new ImageGenerationService(repo, media, allowText, allowImage, () => provider);
       const turn = async (mode: Mode) => {
         const session = await repo.create("sessions", { title: "合成生图额度验证" });
-        return repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode, input: { text: "生成合成测试插画", mediaIds: [] } });
+        return repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "synthetic", status: "running", mode, input: { text: "制作休息提醒卡（合成配额测试）", mediaIds: [] } });
       };
       const generate = (id: number) => service.generate(id, input, AbortSignal.timeout(15_000), "synthetic-text-byok-never-sent");
       return { repo, media, service, turn, generate };

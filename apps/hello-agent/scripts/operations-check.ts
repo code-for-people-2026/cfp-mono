@@ -40,7 +40,7 @@ try {
     const { token } = await payload.login({ collection: "admins", data: { email: user.email, password: "isolated-test-pass-123" } });
     const response = await operationsGET(new Request("http://localhost/api/operations/status", { headers: { Cookie: `payload-token=${token}` } }), { params: Promise.resolve({ path: ["status"] }) });
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v4", mode: "all" });
+    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v5", mode: "all" });
   }
   pass("真实认证的状态接口只返回规则版本和覆盖模式，不向各角色披露召回词或内部理由");
   const ops = new OperationsService(payload);
@@ -141,7 +141,7 @@ try {
   await ops.action(reviewer, Number(sharedCase.id), { revision: 0, action: "claim", reason: "领取共享图片并发隔离测试案件" });
   duringOutputReview = async () => { await ops.action(reviewer, Number(sharedCase.id), { revision: 1, action: "quarantine", reason: "在输出审核等待期间隔离共享图片" }); };
   const racingSession = await raceService.createSession();
-  await assert.rejects(() => raceService.acceptExternal({ sessionId: racingSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "另一轮引用同图" }, output: { greeting: "不得回传的待审回应", association: "合成内容", artifacts: [{ kind: "image", id: "shared_image", title: "共享图片", alt: "合成测试图片", source: { type: "media", mediaId: raceMedia.id } }] } }), { status: 403 });
+  await assert.rejects(() => raceService.acceptExternal({ sessionId: racingSession.id, requestId: randomUUID(), model: "synthetic-race-check", input: { text: "制作休息提醒卡，引用同图" }, output: { greeting: "不得回传的待审回应", association: "合成内容", artifacts: [{ kind: "image", id: "shared_image", title: "共享图片", alt: "合成测试图片", source: { type: "media", mediaId: raceMedia.id } }] } }), { status: 403 });
   const rejected = (await payload.find({ collection: "greetings", overrideAccess: true, where: { sessionId: { equals: racingSession.id } } })).docs[0];
   assert.equal(rejected.status, "failed");
   assert.ok(!rejected.greeting && !rejected.artifacts);
@@ -228,7 +228,7 @@ try {
   process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
   globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"decision":"allow"}' } }] });
   try {
-    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "天气晴朗" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.DEEPSEEK_API_KEY;
