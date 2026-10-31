@@ -62,9 +62,9 @@ export class OperationsService {
       resolveBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : hours(config?.resolutionHours),
       feedbackBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : undefined,
       ...(data.severity === "urgent" ? { alertStatus: "pending" as const, alertNextAt: new Date(now).toISOString(), alertDetails: { attempts: 0 } } : {}),
-      // 未经公司确认的 7 天仅为开发安全上限，工作台明确标注，不能作为上线承诺。
-      retainUntil: new Date(now + Number(config?.evidenceDays || 7) * 86400_000).toISOString(),
-      retentionBasis: config?.retentionBasis || "未配置正式依据；开发最小证据 7 天后停止访问，由维护任务清理",
+      // 0 means no automatic expiry; explicit finite settings and prior cases retain their terms.
+      retainUntil: Number(config?.evidenceDays ?? 0) > 0 ? new Date(now + Number(config?.evidenceDays) * 86400_000).toISOString() : null,
+      retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
     } });
     await this.payload.create({ collection: "safety-evidence", overrideAccess: true, req, data: {
       caseId: row.id, excerpt: evidence.slice(0, 1200), originalLength: evidence.length,
@@ -124,7 +124,7 @@ export class OperationsService {
       if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取案件后按需查看证据");
       const evidence = (await this.payload.find({ collection: "safety-evidence", overrideAccess: true, req, limit: 1, where: { caseId: { equals: id } } })).docs[0];
       await audit(this.payload, `admin:${user.id}`, "evidence.read", `case:${id}`, reason, undefined, req);
-      if (!evidence || evidence.purgedAt || (!row.legalHold && String(row.retainUntil) < new Date().toISOString())) return { unavailable: true, message: "最小证据已清理或到期" };
+      if (!evidence || evidence.purgedAt || (!row.legalHold && row.retainUntil && String(row.retainUntil) < new Date().toISOString())) return { unavailable: true, message: "最小证据已清理或到期" };
       return { excerpt: evidence.excerpt, digest: evidence.digest, originalLength: evidence.originalLength };
     });
   }

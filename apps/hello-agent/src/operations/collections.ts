@@ -67,7 +67,7 @@ export const operationsCollections: CollectionConfig[] = [
     { name: "active", label: "生效", type: "checkbox", required: true }, text("reason", "依据", true),
   ], ["key"], "private"),
   collection("safety-settings", "运营安排版本", [
-    number("acceptanceHours", "受理时限（小时）", true), number("resolutionHours", "处置时限（小时）", true), number("feedbackHours", "处置后反馈时限（小时）", true), number("evidenceDays", "证据留存（天）", true),
+    number("acceptanceHours", "受理时限（小时）", true), number("resolutionHours", "处置时限（小时）", true), number("feedbackHours", "处置后反馈时限（小时）", true), { ...number("evidenceDays", "证据留存天数（0 为永久）", true), defaultValue: 0, min: 0, max: 365 },
     text("staffing", "真实值班安排", true), text("retentionBasis", "留存依据", true), text("reason", "变更理由", true),
   ], ["id", "staffing", "createdAt"], "admin"),
   collection("safety-rules", "规则与词库版本", [

@@ -22,7 +22,7 @@ export async function eraseOperationsEvidence(payload: Payload, owner: string, r
 }
 export async function purgeExpiredEvidence(payload: Payload, apply = false, now = new Date()) {
   return transaction(payload, async (req) => {
-    const cases = (await payload.find({ collection: "safety-cases", overrideAccess: true, req, pagination: false, limit: 0, where: { and: [{ retainUntil: { less_than_equal: now.toISOString() } }, { legalHold: { not_equals: true } }] } })).docs;
+    const cases = (await payload.find({ collection: "safety-cases", overrideAccess: true, req, pagination: false, limit: 0, where: { and: [{ retainUntil: { exists: true } }, { retainUntil: { less_than_equal: now.toISOString() } }, { legalHold: { not_equals: true } }] } })).docs;
     let count = 0;
     for (const row of cases) {
       const evidence = await payload.find({ collection: "safety-evidence", overrideAccess: true, req, limit: 1, where: { and: [{ caseId: { equals: row.id } }, { purgedAt: { exists: false } }] } });
