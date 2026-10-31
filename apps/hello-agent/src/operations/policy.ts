@@ -4,7 +4,7 @@ import type { Payload, PayloadRequest } from "payload";
 import lexicon from "../moderation/lexicon";
 import { AppError } from "../domain/contracts";
 
-export const RULE_VERSION = "aj-safety-context-v6";
+export const RULE_VERSION = "aj-safety-context-v7";
 export const builtinLexicon = { version: lexicon.version, sha256: createHash("sha256").update(JSON.stringify(lexicon.words)).digest("hex"), count: lexicon.words.length };
 export const categories = ["violence", "self_harm", "sexual", "hate", "privacy", "fraud", "harassment", "other"] as const;
 export const roleOf = (user: unknown) => {

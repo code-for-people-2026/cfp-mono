@@ -1,6 +1,6 @@
 import { isArtifactRequest } from "../domain/creation-scope";
 import { isDataHelpRequest } from "../domain/product-knowledge";
-export const INTERACTION_VERSION = "aj-interaction-v8";
+export const INTERACTION_VERSION = "aj-interaction-v9";
 export const TWO_HOURS = 2 * 60 * 60 * 1000;
 const BREAK_MS = 15 * 60 * 1000;
 type Usage = { activeMs: number; lastSeen: number; reminded: number };

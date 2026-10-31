@@ -57,12 +57,13 @@ try {
     assert.deepEqual(result.artifacts, []);
     assert.equal(result.status, "completed");
   }
-  const { AGE_HELP, DATA_HELP, DATA_TARGET_CLARIFICATION, REMINDER_HELP } = await import("../src/domain/product-knowledge");
+  const { AGE_HELP, DATA_HELP, DATA_TARGET_CLARIFICATION, REMINDER_HELP, PRODUCT_DELETE_CLARIFICATION } = await import("../src/domain/product-knowledge");
   for (const [text, expected] of [
     ["我想删除这个小程序里的个人资料，怎么操作？", DATA_HELP],
     ["我想删除自己保存的个人资料，怎么操作？", DATA_TARGET_CLARIFICATION],
     ["不想在聊天中填写身份证，还能聊天吗？", AGE_HELP],
     ["我不想开提醒，先普通聊天", REMINDER_HELP],
+    ["请把“说明当前小程序的真实删除入口”的回答整理成可读卡片。", PRODUCT_DELETE_CLARIFICATION],
   ]) {
     const result = await service.generateGreeting(request(text));
     assert.equal(result.greeting, expected);
