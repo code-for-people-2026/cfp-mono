@@ -57,6 +57,21 @@ try {
     assert.deepEqual(result.artifacts, []);
     assert.equal(result.status, "completed");
   }
+  const { AGE_HELP, DATA_HELP, DATA_TARGET_CLARIFICATION, REMINDER_HELP } = await import("../src/domain/product-knowledge");
+  for (const [text, expected] of [
+    ["我想删除这个小程序里的个人资料，怎么操作？", DATA_HELP],
+    ["我想删除自己保存的个人资料，怎么操作？", DATA_TARGET_CLARIFICATION],
+    ["不想在聊天中填写身份证，还能聊天吗？", AGE_HELP],
+    ["我不想开提醒，先普通聊天", REMINDER_HELP],
+  ]) {
+    const result = await service.generateGreeting(request(text));
+    assert.equal(result.greeting, expected);
+    assert.equal(result.model, "product-guidance");
+    assert.deepEqual(result.artifacts, []);
+  }
+  const duration = await service.generateGreeting(request("我已经连续和你聊了三个小时，很困了，不想开提醒"));
+  assert.match(duration.greeting || "", /已连续使用/);
+  assert.equal(generated, 0, "product facts and active safety reminders need no model");
   assert.equal((await payload.count({ collection: "safety-cases", overrideAccess: true })).totalDocs, 1, "scope rejection must not create a harmful-content case");
   console.log("PASS fixed crisis survives reviewer outage; no model/image/echo; dedup; ordinary and caller-supplied output still reviewed");
 } finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

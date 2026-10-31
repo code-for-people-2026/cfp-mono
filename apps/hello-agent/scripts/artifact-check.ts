@@ -32,11 +32,13 @@ const syntheticReviews = { moderate: async () => {}, imageReviewer: async () => 
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
+  // Text-only rest cards exercise structured text artifacts; real image delivery is covered by image-generation-check.
+  const textArtifacts = artifacts.filter((artifact) => artifact.kind !== "image");
   const model = new ScriptedModel({
     greeting: "且把眼前的小事理清楚。",
     association: "回应作品链路验收",
     approach: "cbt",
-    artifacts,
+    artifacts: textArtifacts,
   });
   const service = new GreetingService(repo, (request) =>
     runGreeting(request, model),
@@ -47,11 +49,11 @@ try {
     sessionId: session.id,
     requestId: randomUUID(),
     mode: "platform",
-    input: { text: "制作休息提醒卡，并提供情绪练习" },
+    input: { text: "制作休息提醒卡，只生成文本，并提供情绪练习" },
   };
   const saved = await service.generateGreeting(input);
-  assert.deepEqual(saved.artifacts, artifacts);
-  assert.deepEqual((await service.history(session.id))[0].artifacts, artifacts);
+  assert.deepEqual(saved.artifacts, textArtifacts);
+  assert.deepEqual((await service.history(session.id))[0].artifacts, textArtifacts);
   assert.equal((await service.generateGreeting(input)).id, saved.id);
   assert.equal(model.requests.length, 3);
   const executionSessions = await repo.list("adk-sessions");
@@ -241,7 +243,7 @@ try {
         },
       ],
     },
-    { greeting: "现在修好了。", association: "格式修复验收", artifacts },
+    { greeting: "现在修好了。", association: "格式修复验收", artifacts: textArtifacts },
   ]);
   const repairedService = new GreetingService(repo, (request) =>
     runGreeting(request, repairedModel),
@@ -259,14 +261,14 @@ try {
     JSON.stringify(repairedModel.requests[1].contents),
     /回应尚未保存/,
   );
-  assert.deepEqual(repaired.artifacts, artifacts);
+  assert.deepEqual(repaired.artifacts, textArtifacts);
   await seedSyntheticAge(payload, repo.owner);
   await seedSyntheticAge(payload, stranger.repo.owner);
   const credential = await mintCredential(payload, "cookie", owner.id, repo.owner.wechatKey);
   for (const kind of ["image", "page"]) {
     const segments = [
       `artifact-${kind}`,
-      String(saved.id),
+      String(external.id),
       kind === "image" ? "sun" : "rest",
     ];
     const url = `http://127.0.0.1:3310/api/hello/${segments.join("/")}`;
@@ -305,7 +307,7 @@ try {
     assert.equal(denied.status, 404);
   }
   console.log(
-    "✓ 五类作品经真实 ADK 工具保存；AG-UI/A2UI 表单往返、内容重建、幂等、历史恢复、跨会话/用户拒绝、外部产物及私有图片/网页读取通过。",
+    "✓ 四类文字作品经真实 ADK 工具保存；五类历史外部作品兼容，AG-UI/A2UI 表单往返、内容重建、幂等、历史恢复、跨会话/用户拒绝、外部产物及私有图片/网页读取通过。",
   );
 } finally {
   await payload.destroy();
