@@ -94,3 +94,8 @@ python3 /opt/cfp-hello-agent/privacy-ops/full/source/privacy-operations.py \
 已有发布归档同样进入现有每小时过期扫描。镜像清理不执行数据库备份删除。
 新增数据库归档不再包含独立删除清单，恢复旧归档也不得覆盖当前独立清单。
 见 [磁盘与版本保留](server-disk.md#deployment-database-archive-expiration)。
+
+离线 smoke 快照目录 `operations/smoke` 同样登记为备份根。升级隐私运行脚本与
+`verify_runtime.py` 后，每小时作业先执行登记的 `smokeCleanupScript --cleanup`，
+恢复中断的隔离测试容器、清理副本及其 WAL/SHM，再进行备份过期与删除防护记录
+处理。恢复失败或部署锁忙时作业失败并保留恢复证据，不能继续清除删除防护记录。

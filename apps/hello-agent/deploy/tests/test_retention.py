@@ -212,6 +212,8 @@ class RetentionTests(unittest.TestCase):
             with release.backup_policy(root, containers):
                 enrolled = json.loads((policy / 'config.json').read_text())
                 self.assertIn(str(root / 'deployments'), enrolled['legacyBackupDirs'])
+                self.assertIn(str(root / 'smoke'), enrolled['legacyBackupDirs'])
+                self.assertEqual(enrolled['smokeCleanupScript'], str(root / 'bin/verify_runtime.py'))
                 self.assertIn(config['backupDir'], enrolled['legacyBackupDirs'])
                 with (policy / 'state/maintenance.lock').open('a') as lock:
                     with self.assertRaises(BlockingIOError):

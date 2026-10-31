@@ -152,3 +152,31 @@ The retention service completed with exit status 0 and its daily timer is enable
 At installation the filesystem showed about 64% used / 14 GiB available, compared
 with 91% / 3.7 GiB immediately before this task's cleanup. These are point-in-time
 readings, not a capacity guarantee. Other applications' containers were preserved.
+
+## Interrupted offline smoke tests
+
+Install the updated `scripts/privacy-operations.py` in the full deployment's
+configured privacy source directory together with `deploy/verify_runtime.py` in
+`operations/bin` before enabling the new registration. This is a coordinated
+script upgrade; registration alone does not upgrade the existing privacy runner.
+`backup_policy` enrolls both `operations/deployments` and `operations/smoke` in
+privacy backup roots and records `smokeCleanupScript` pointing to the installed
+verifier. Standalone smoke verification uses the same registration and locks.
+
+Every smoke container, including the read-only SQLite snapshot helper, gets a
+durable ownership journal before Docker creation. Normal exit, the next smoke
+run, and the existing hourly privacy job recover abandoned resources. The hourly
+job calls `verify_runtime.py --cleanup` before expiration or deletion-guard
+retirement, so recovery does not depend on another deployment. It acquires the
+deployment lock without waiting; an active deployment causes maintenance to fail
+closed and retry on the next run. It does not inspect or mutate the release
+retention manifest, which may be blocked independently by runtime drift.
+
+Recovery validates journaled names, immutable image IDs, exact mounts and network
+isolation, removes only matching disposable containers without deleting volumes,
+rechecks references, then deletes copied mounts including WAL/SHM and ledger
+copies. Unknown references, symlinked sessions or Docker failures retain the
+journal and fail the privacy job before deletion guards are retired. An old
+unreferenced session without a journal can have its disposable mounts removed;
+legacy containers without ownership evidence require manual inspection. Receipts
+remain, but no database snapshot is intentionally retained after recovery.

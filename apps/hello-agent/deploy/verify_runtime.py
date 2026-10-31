@@ -5,6 +5,7 @@ import fcntl
 import http.client
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import socket
@@ -17,6 +18,80 @@ import retention as r
 def run(*args):
     return subprocess.check_output(args, stderr=subprocess.PIPE,
                                    universal_newlines=True, timeout=180).strip()
+
+
+def register_resource(root, name, image, mounts):
+    """Persist ownership before Docker can create a resource (including helpers)."""
+    journal = root / 'resources.json'
+    resources = json.loads(journal.read_text()) if journal.exists() else {}
+    resources[name] = {'image': image, 'mounts': mounts}
+    r.save(journal, resources)
+    fd = os.open(str(root), os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def mount_signature(mounts):
+    return sorted((m['Source'], m['Destination'], m['RW']) for m in mounts)
+
+
+def references(container, root):
+    for mount in container.get('Mounts', []):
+        source = Path(mount['Source']).resolve()
+        if source == root or root in source.parents or source in root.parents:
+            return True
+    return False
+
+
+def recover(directory):
+    """Caller holds deployment lock. Recover only owned, disposable resources.
+
+    Called by the hourly privacy job even if no further deployment is attempted.
+    An unknown reference or Docker failure keeps the journal and fails closed;
+    the next invocation retries before privacy deletion guards can be retired.
+    """
+    if not directory.exists():
+        return
+    if directory.resolve() != directory.absolute():
+        raise RuntimeError('Smoke root must not traverse symlinks')
+    for root in sorted(directory.iterdir()):
+        if not re.fullmatch(r'[0-9]{8}T[0-9]{12}Z', root.name):
+            raise RuntimeError('Unknown smoke directory; manual inspection required')
+        if root.is_symlink() or not root.is_dir():
+            raise RuntimeError('Invalid smoke session directory')
+        journal = root / 'resources.json'
+        if journal.is_symlink():
+            raise RuntimeError('Invalid smoke resource journal')
+        resources = json.loads(journal.read_text()) if journal.exists() else {}
+        prefix = 'cfp-hello-agent-smoke-' + root.name.lower()
+        rows = r.inventory()  # Inventory failure must never authorize deletion.
+        owned = []
+        for container in rows:
+            name = container['Name'].lstrip('/')
+            if name not in resources and not references(container, root):
+                continue
+            expected = resources.get(name)
+            if (not expected or not (name == prefix or name.startswith(prefix + '-snapshot-')) or
+                    container['Image'] != expected['image'] or
+                    container.get('HostConfig', {}).get('NetworkMode') != 'none' or
+                    mount_signature(container['Mounts']) != mount_signature(expected['mounts']) or
+                    any(m['RW'] and root not in Path(m['Source']).resolve().parents
+                        for m in container['Mounts'])):
+                raise RuntimeError('Unknown or changed container references smoke data')
+            owned.append(container['Id'])
+        for cid in owned:
+            run('docker', 'rm', '-f', cid)  # Never --volumes; these are journaled test containers.
+        if any(references(c, root) for c in r.inventory()):
+            raise RuntimeError('Smoke data is still referenced')
+        for target in root.glob('mount-*'):
+            if target.is_symlink() or not target.is_dir():
+                target.unlink()
+            else:
+                shutil.rmtree(str(target))
+        if journal.exists():
+            journal.unlink()
 
 
 def copy_mount(source, target, destination, image):
@@ -37,7 +112,11 @@ def copy_mount(source, target, destination, image):
                     extra.unlink()  # Only files in this invocation's disposable copy.
             # ECS's Python 3.6 has no Connection.backup(). Use the pinned Node 24
             # runtime; the original database + WAL are mounted READ ONLY.
-            run('docker', 'run', '--rm', '--network', 'none', '--user', '0:0',
+            helper = 'cfp-hello-agent-smoke-' + target.parent.name.lower() + '-snapshot-' + target.name + '-' + str(len(schemas))
+            register_resource(target.parent, helper, image, [
+                {'Source': str(source), 'Destination': '/source', 'RW': False},
+                {'Source': str(target), 'Destination': '/snapshot', 'RW': True}])
+            run('docker', 'run', '--rm', '--name', helper, '--network', 'none', '--user', '0:0',
                 '--mount', 'type=bind,src=' + str(source) + ',dst=/source,readonly',
                 '--mount', 'type=bind,src=' + str(target) + ',dst=/snapshot',
                 '--entrypoint', 'node', image, '--input-type=module', '-e',
@@ -69,13 +148,14 @@ def verify(image, same_source=False):
     if metadata['Size'] >= 1900000000:
         raise RuntimeError('Runtime image exceeds the 1.9 GB budget')
     old = json.loads(run('docker', 'inspect', 'cfp-hello-agent-full-preview'))[0]
+    recover(r.ROOT / 'smoke')
     token = r.stamp()
     root = r.ROOT / 'smoke' / token
     root.mkdir(parents=True, mode=0o700)
     name = 'cfp-hello-agent-smoke-' + token.lower()
     cid = None
     try:
-        binds, schemas = [], {}
+        binds, schemas, mounts = [], {}, []
         for index, mount in enumerate(old['Mounts']):
             if mount['Type'] != 'bind' or not mount['Source'].startswith('/opt/cfp-hello-agent/'):
                 raise RuntimeError('Unexpected business mount; refusing to reuse it in smoke')
@@ -83,6 +163,7 @@ def verify(image, same_source=False):
             target = root / ('mount-' + str(index))
             schemas.update(copy_mount(source, target, mount['Destination'], metadata['Id']))
             binds.append(str(target) + ':' + mount['Destination'])
+            mounts.append({'Source': str(target), 'Destination': mount['Destination'], 'RW': True})
         if not schemas:
             raise RuntimeError('No isolated database snapshot was created')
         config = dict(old['Config'])
@@ -94,6 +175,7 @@ def verify(image, same_source=False):
         host.update({'NetworkMode': 'none', 'PortBindings': {}, 'Binds': binds, 'Mounts': [],
                      'RestartPolicy': {'Name': 'no'}, 'VolumesFrom': None, 'Links': None})
         config['HostConfig'] = host
+        register_resource(root, name, metadata['Id'], mounts)
         conn = UnixHTTP('localhost')
         try:
             conn.request('POST', '/containers/create?name=' + name, json.dumps(config),
@@ -160,21 +242,26 @@ def verify(image, same_source=False):
         print(json.dumps(receipt))
         return receipt
     finally:
-        if cid:
-            run('docker', 'rm', '-f', cid)
-        for target in root.glob('mount-*'):
-            if target.is_dir():
-                shutil.rmtree(str(target))
-            else:
-                target.unlink()
+        recover(r.ROOT / 'smoke')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('image')
+    parser.add_argument('image', nargs='?')
+    parser.add_argument('--cleanup', action='store_true', help='recover abandoned smoke resources only')
     parser.add_argument('--same-source', action='store_true')
     args = parser.parse_args()
     os.umask(0o077)
     with open('/var/lock/cfp-hello-agent-deploy.lock', 'a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        verify(args.image, args.same_source)
+        if args.cleanup:
+            recover(r.ROOT / 'smoke')
+        else:
+            if not args.image:
+                parser.error('image is required unless --cleanup is used')
+            # Direct smoke checks must register expiration too. Import lazily to
+            # avoid the release/verify_runtime module cycle during normal deploy.
+            import release
+            old = json.loads(run('docker', 'inspect', r.NAMES[0]))[0]
+            with release.backup_policy(r.ROOT, [old]):
+                verify(args.image, args.same_source)

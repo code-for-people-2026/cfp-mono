@@ -106,22 +106,27 @@ def backup_policy(root, configs):
                 env.get('HELLO_PRIVACY_BACKUP_DAYS') != '7'):
             raise RuntimeError('Privacy backup policy differs from the live deployment')
     archives = root / 'deployments'
-    if archives.resolve() != archives.absolute():
+    smoke = root / 'smoke'
+    if any(p.resolve() != p.absolute() for p in (archives, smoke)):
         raise RuntimeError('Deployment backup root must not traverse symlinks')
     for key in ('dataDir', 'ledgerDir'):
         live = Path(policy[key]).resolve()
-        if live == archives.resolve() or archives.resolve() in live.parents:
+        if any(live == p.resolve() or p.resolve() in live.parents for p in (archives, smoke)):
             raise RuntimeError('Backup root contains live data')
     # Open the same inode as privacy-operations.py, without truncating it. A
     # running maintenance job prevents deployment before any service is stopped.
     with (Path(policy['stateDir']) / 'maintenance.lock').open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         archives.mkdir(mode=0o700, parents=True, exist_ok=True)
+        smoke.mkdir(mode=0o700, parents=True, exist_ok=True)
         roots = policy.get('legacyBackupDirs', [])
         if not isinstance(roots, list) or any(not isinstance(p, str) for p in roots):
             raise RuntimeError('Invalid privacy backup roots')
-        if str(archives) not in roots:
-            policy['legacyBackupDirs'] = roots + [str(archives)]
+        updated = roots + [str(p) for p in (archives, smoke) if str(p) not in roots]
+        cleanup = str(root / 'bin/verify_runtime.py')
+        if updated != roots or policy.get('smokeCleanupScript') != cleanup:
+            policy['legacyBackupDirs'] = updated
+            policy['smokeCleanupScript'] = cleanup
             r.save(policy_path, policy)
         yield
 
