@@ -1,3 +1,4 @@
+import { needsLearningCardImage } from "./learning-card";
 import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
@@ -122,6 +123,12 @@ export async function runGreeting(
     turnSessionId: executionId,
     inputParts: parts,
     signal,
+    checkDelivery: (value) => {
+      if (!request.generateImage || !needsLearningCardImage(request.input.text) || imageDecision.refused) return;
+      if (!imageDecision.allowed && !request.existingImage) return "学习卡需要图片。请先单独调用 decide_image_request 审核原始请求，安全时生成图文卡片；不安全时拒绝，不用文字卡或表格替代图片。";
+      if (!imageInFlight && !request.existingImage) return "尚未生成计算卡图片，请调用 generate_image，等待成功后再保存。";
+      if (!value.artifacts?.some(a => a.kind === "image" && a.source.type === "media")) return "图文学习卡尚未交付，请把生成工具返回的 mediaId 作为 image 作品附上，不用文字或表格替代。";
+    },
     save: async (value) => {
       if (imageInFlight) await imageInFlight;
       try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }

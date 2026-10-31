@@ -65,6 +65,18 @@ class RefusalModel extends BaseLlm {
   }
   async connect(): Promise<never> { throw new Error("not supported in tests"); }
 }
+class LearningCardModel extends ImageModel {
+  private triedText = false;
+  override async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse> {
+    if (!this.triedText) {
+      this.triedText = true;
+      yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: "save_greeting", args: {
+        greeting: "13＋5－3＝15", association: "计算卡", artifacts: [{ kind: "card", id: "math", title: "计算卡", body: "13＋5－3＝15" }],
+      } } }] } }; return;
+    }
+    yield* super.generateContentAsync(request);
+  }
+}
 const png = await sharp({ create: { width: 1280, height: 1280, channels: 3, background: "#ff6655" } }).png().toBuffer();
 let submitted = 0, downloaded = 0, failDownload = false, failPut = false;
 const provider: ImageProvider = {
@@ -260,6 +272,16 @@ try {
   await assert.rejects(() => media.read(imageRow.id), { status: 404 });
   await assert.rejects(() => media.read(unlinked.id), { status: 404 });
   assert.equal(canResumeImage(await repo.get("greetings", fourth.id)), false);
+  {
+    const learning = new GreetingService(repo, request => runGreeting(request, new LearningCardModel()), media, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
+    const learningSession = await learning.createSession("图文学习卡交付");
+    const beforeLearning = submitted;
+    const learningResult = await learning.generateGreeting({ sessionId: learningSession.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "请生成中文计算卡：13朵花，加5朵，送出3朵，写出剩余数量及算式。" } });
+    assert.equal(learningResult.status, "completed");
+    assert.equal(learningResult.artifacts?.[0]?.kind, "image", "计算卡不能仅保存文字卡片，必须交付已审核图片");
+    assert.equal(submitted - beforeLearning, 1, "格式纠正后只提交一次图片任务");
+    console.log("✓ 计算卡文字替代被拒，完成审核图片交付（合成供应商、真实运行路径）");
+  }
   await privacy.deleteData();
   assert.equal(objects.size, 0);
   assert.equal((await repo.all("greetings")).length, 0);

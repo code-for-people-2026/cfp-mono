@@ -1,4 +1,4 @@
-export const INTERACTION_VERSION = "aj-interaction-v6";
+export const INTERACTION_VERSION = "aj-interaction-v7";
 export const TWO_HOURS = 2 * 60 * 60 * 1000;
 const BREAK_MS = 15 * 60 * 1000;
 type Usage = { activeMs: number; lastSeen: number; reminded: number };
@@ -37,7 +37,9 @@ export function interactionSignals(text: string) {
   const crisis = /(?:^|[。！!？?，,；;\n])\s*(?:但|但是|可是|而且)?\s*我(?:现在|已经|正|正准备|马上|打算|准备|正在|刚刚|刚才)?\s*(?:真的|马上|准备|打算|要|想要|想|正在|已经|忍不住)?\s*(?:伤害自己|自杀|自残|跳楼|结束生命|服药过量|(?:吞下|吃下|服下)了?过量药物)(?!预防|防治|干预)/.test(crisisText) || /(?:^|[。！!？?，,；;\n])\s*我(?:真的|现在)?(?:想死|不想活(?:了)?|活不下去|要自杀)/.test(crisisText);
   const dependency = /(?:只(?:有你|跟你)|只和你).{0,22}(?:理解|说话|聊天|联系)|(?:断绝|断开).{0,16}(?:朋友|所有人|家人).{0,12}(?:联系|关系)|离不开你/.test(t);
   const overuse = /(?:连续|已经).{0,12}(?:[3-9三四五六七八九]|十).{0,3}(?:小时|个钟)|(?:聊|陪).{0,12}(?:通宵|一整夜)/.test(t);
-  const dataHelp = /(?:怎么|如何|哪里|告诉我|想|要).{0,30}(?:删除|清除|删掉).{0,16}(?:聊天|图片|记录|数据)|(?:删除|清除|删掉).{0,16}(?:聊天|图片|记录|数据).{0,25}(?:怎么|如何|哪里)|^你(?:已经|刚才)?(?:替我|帮我)(?:删(?:掉|除)?|清除)(?:所有|全部)?(?:聊天|图片|记录|数据)?(?:了|好了)吗[？?。\s]*$/.test(t.trim());
+  // Match a request to delete the speaker's data, not a request about
+  // redistributing data which happens to contain the word "已删除".
+  const dataHelp = /(?:怎么|如何|哪里|我想|想|我要|请)(?:操作|才能|可以|把|将|帮我|要|去|来|直接|彻底|永久|\s){0,6}(?:删除|清除|删掉)(?:我(?:的)?|自己(?:的)?|个人|所有|全部|在线|的|\s){0,6}(?:聊天|图片|记录|数据|资料)|(?:删除|清除|删掉)(?:我(?:的)?|自己(?:的)?|个人|所有|全部|在线|的|\s){0,6}(?:聊天|图片|记录|数据|资料)[^。！？\n]{0,25}(?:怎么|如何|哪里)|^你(?:已经|刚才)?(?:替我|帮我)(?:删(?:掉|除)?|清除)(?:所有|全部)?(?:聊天|图片|记录|数据)?(?:了|好了)吗[？?。\s]*$/.test(t.trim());
   const exit = /^(?:(?:我(?:要|想|先))?(?:退出(?:聊天|服务)?|停止(?:聊天|服务)|不聊了|结束聊天)|就到这里(?:[，,]\s*不要再问我问题)?)[。！!\s]*$/.test(t.trim());
   return { minor, crisis, dependency, overuse, dataHelp, exit };
 }
