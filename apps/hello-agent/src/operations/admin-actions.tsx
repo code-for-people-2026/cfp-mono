@@ -5,7 +5,7 @@ import { operationLabels, recordURL } from "./admin-presentation";
 import "./admin-actions.css";
 
 type Row = { id: number; [key: string]: unknown };
-type Field = { key: string; label: string; type?: "number" | "words" | "textarea"; options?: [string, string][]; optional?: boolean; min?: number; max?: number };
+type Field = { key: string; label: string; type?: "number" | "words" | "textarea"; options?: [string, string][]; optional?: boolean; initial?: string; min?: number; max?: number };
 const reason: Field = { key: "reason", label: "具体理由（至少 8 个字）", type: "textarea", min: 8, max: 1000 };
 const number = (key: string, label: string, min = 1, max?: number): Field => ({ key, label, type: "number", min, max });
 
@@ -28,7 +28,7 @@ function ActionPanel({ title, fields, button, submit, children, disabled = false
   const root = useRef<HTMLFieldSetElement>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
-  const valueFor = (field: Field) => values[field.key] ?? field.options?.[0]?.[0] ?? "";
+  const valueFor = (field: Field) => values[field.key] ?? field.options?.[0]?.[0] ?? field.initial ?? "";
   async function send() {
     if (!root.current || busy || disabled) return;
     for (const control of root.current.querySelectorAll<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>("input,textarea,select")) {
@@ -72,7 +72,7 @@ export function CreateOperation({ kind, admin }: { kind: "rules" | "settings" | 
     ] },
     settings: { title: "新增运营安排版本", slug: "safety-settings", fields: [
       number("acceptanceHours", "受理时限（小时）", 1, 168), number("resolutionHours", "处置时限（小时）", 1, 720),
-      number("feedbackHours", "处置后反馈时限（小时）", 1, 168), number("evidenceDays", "最小证据留存（天）", 1, 365),
+      number("feedbackHours", "处置后反馈时限（小时）", 1, 168), { ...number("evidenceDays", "证据留存天数（0 为永久，不自动到期）", 0, 365), initial: "0" },
       { key: "staffing", label: "已落实的值班安排", type: "textarea", min: 5, max: 500 },
       { key: "retentionBasis", label: "留存用途与具体依据", type: "textarea", min: 10, max: 1000 }, reason,
     ] },

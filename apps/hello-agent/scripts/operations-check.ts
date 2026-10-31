@@ -239,5 +239,15 @@ try {
   await purgeExpiredEvidence(payload, true, new Date(Date.now() + 8 * 86400_000));
   assert.equal((await ops.evidence(administrator, Number(imageCase.id), "验证到期清理后图片摘要不可再读")).unavailable, true);
   pass("缺少文本或图片审核配置不建案；实际服务异常入队且不建生成记录；到期证据实际清理");
+  await ops.configure(administrator, { acceptanceHours: 8, resolutionHours: 48, feedbackHours: 24, evidenceDays: 0, staffing: "仅隔离自动化测试的合成值班安排", retentionBasis: "负责人确认安全证据默认永久保留，不自动到期；数据权利申请另行处理", reason: "验证永久留存与按期留存互不改写" });
+  const permanentOwner = { id: randomUUID(), auth: "cookie" as const };
+  const permanentReceipt = await ops.complain(permanentOwner, { category: "other", description: "默认永久保留的合成证据验证" });
+  const permanentCase = (await ops.queue(administrator, {})).find(r => r.receipt === permanentReceipt.receipt)!;
+  assert.equal(permanentCase.retainUntil, null);
+  await purgeExpiredEvidence(payload, true, new Date("2099-01-01T00:00:00Z"));
+  assert.equal((await ops.evidence(administrator, Number(permanentCase.id), "验证永久证据未被自动清理")).excerpt, "默认永久保留的合成证据验证");
+  assert.ok((await payload.findByID({ collection: "safety-cases", id: imageCase.id, overrideAccess: true })).retainUntil, "旧有限期案件不被改写");
+  assert.equal((await eraseOperationsEvidence(payload, permanentOwner.id)).erased, 1, "永久默认不取消数据权利处理");
+  pass("永久留存不自动到期，旧有限期安排不改写，数据权利删除仍生效");
   console.log(`\n${checks} 组真实 Payload/SQLite 功能检查通过；审核/像素决定为注入模拟，非正式语义安全评测。`);
 } finally { await payload.destroy(); }

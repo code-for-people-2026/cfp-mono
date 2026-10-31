@@ -24,7 +24,7 @@ export type Rule = z.infer<typeof ruleSchema> & { id?: number; lexiconVersion: s
 export const defaultRule: Rule = { version: "builtin-full-review-v7", reason: "输入输出默认全量语境审核；正式发布仍须回归留痕", mode: "all", extraWords: [], ignoredWords: [], lexiconVersion: builtinLexicon.version, lexiconHash: builtinLexicon.sha256, promptVersion: RULE_VERSION };
 export const settingSchema = z.object({
   acceptanceHours: z.number().int().min(1).max(168), resolutionHours: z.number().int().min(1).max(720),
-  feedbackHours: z.number().int().min(1).max(168), evidenceDays: z.number().int().min(1).max(365),
+  feedbackHours: z.number().int().min(1).max(168), evidenceDays: z.number().int().min(0).max(365).default(0),
   retentionBasis: z.string().trim().min(10).max(1000), staffing: z.string().trim().min(5).max(500),
   reason: z.string().trim().min(8).max(1000),
 }).strict();
