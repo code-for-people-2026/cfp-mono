@@ -30,7 +30,7 @@
       "entry": ["config/**/*.ts", "src/**/*.{ts,tsx}", "vitest.config.ts", "eslint.config.mjs"],
       "ignoreDependencies": ["react"]
     },
-    "apps/hello-agent-miniapp": {
+    "apps/a-j-oker-miniapp": {
       "entry": [
         "config/**/*.ts",
         "src/**/*.{ts,tsx}",
@@ -41,7 +41,7 @@
       ],
       "ignoreDependencies": ["react"]
     },
-    "apps/hello-agent": {
+    "apps/a-j-oker": {
       "ignoreDependencies": ["libsql"],
       "ignoreBinaries": ["python3"],
       "entry": [
@@ -64,10 +64,10 @@
     "packages/kith-inn-contracts": {
       "entry": ["src/index.ts"]
     },
-    "packages/hello-agent-protocol": {
+    "packages/base-chat-protocol": {
       "entry": ["src/index.ts", "test/**/*.ts"]
     },
-    "packages/hello-agent-contracts": {
+    "packages/a-j-oker-contracts": {
       "entry": ["src/index.ts"]
     },
     "packages/weekly-menu-shared": {

@@ -122,7 +122,7 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)
 
-  apps/hello-agent:
+  apps/a-j-oker:
     dependencies:
       '@ag-ui/core':
         specifier: 1.0.2
@@ -136,12 +136,12 @@ importers:
       '@alicloud/openapi-core':
         specifier: 1.0.8
         version: 1.0.8
-      '@cfp/hello-agent-contracts':
+      '@cfp/a-j-oker-contracts':
         specifier: workspace:*
-        version: link:../../packages/hello-agent-contracts
-      '@cfp/hello-agent-protocol':
+        version: link:../../packages/a-j-oker-contracts
+      '@cfp/base-chat-protocol':
         specifier: workspace:*
-        version: link:../../packages/hello-agent-protocol
+        version: link:../../packages/base-chat-protocol
       '@darabonba/typescript':
         specifier: 1.0.5
         version: 1.0.5
@@ -234,17 +234,17 @@ importers:
         specifier: ^4.0.15
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.25.12)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  apps/hello-agent-miniapp:
+  apps/a-j-oker-miniapp:
     dependencies:
       '@a2ui/web_core':
         specifier: 0.10.4
         version: 0.10.4
-      '@cfp/hello-agent-contracts':
+      '@cfp/a-j-oker-contracts':
         specifier: workspace:*
-        version: link:../../packages/hello-agent-contracts
-      '@cfp/hello-agent-protocol':
+        version: link:../../packages/a-j-oker-contracts
+      '@cfp/base-chat-protocol':
         specifier: workspace:*
-        version: link:../../packages/hello-agent-protocol
+        version: link:../../packages/base-chat-protocol
       '@copilotkit/a2ui-renderer':
         specifier: 1.79.0
         version: 1.79.0(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -617,11 +617,11 @@ importers:
         specifier: ^8.54.0
         version: 8.61.0(eslint@9.39.4(jiti@2.7.0))(typescript@5.9.3)
 
-  packages/hello-agent-contracts:
+  packages/a-j-oker-contracts:
     dependencies:
-      '@cfp/hello-agent-protocol':
+      '@cfp/base-chat-protocol':
         specifier: workspace:*
-        version: link:../hello-agent-protocol
+        version: link:../base-chat-protocol
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -645,7 +645,7 @@ importers:
         specifier: ^4.0.15
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.20.5)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@22.20.5)(esbuild@0.28.1)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  packages/hello-agent-protocol:
+  packages/base-chat-protocol:
     dependencies:
       zod:
         specifier: ^4.4.3
