@@ -91,7 +91,13 @@ try {
   assert.equal((await interaction.status()).notice?.kind, "crisis");
   const admin = await payload.create({ collection: "admins", overrideAccess: true, context: { helloAdminBootstrap: true }, data: { email: "interaction-test@example.invalid", password: randomUUID(), role: "administrator" } });
   const user = { ...admin, collection: "admins" as const };
+  assert.equal(cases[0].retainUntil, null, "未配置时的新案默认永久留存");
   const access = await emergencyContactForCase(payload, user, cases[0].id, { reason: "隔离合成紧急事件读取测试" }); assert.equal(access.contact?.phone, "13800000000");
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: "2000-01-01T00:00:00.000Z" } });
+  await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "有限期已过期不得读取联系人" }), /有效的紧急处置/);
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: null, status: "resolved" } });
+  await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "永久留存已结案不得读取联系人" }), /有效的紧急处置/);
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { status: cases[0].status } });
   await interaction.removeContact();
   assert.equal((await emergencyContactForCase(payload, user, cases[0].id, { reason: "撤销联络授权后再次检查" })).contact, null);
   await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "没有联系人不可登记联系成功", result: "contacted" }), /没有有效授权/);

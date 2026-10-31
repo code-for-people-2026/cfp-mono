@@ -118,7 +118,7 @@ export async function emergencyContactForCase(payload: Payload, user: TypedUser,
   if (!canReview(user)) throw new AppError(403, "需要审核运营权限");
   const input = z.object({ reason: z.string().trim().min(8).max(500), result: z.enum(["read", "contacted", "unreachable"]).default("read") }).strict().parse(value);
   const row = await payload.findByID({ collection: "safety-cases", id: caseId, overrideAccess: true });
-  if (row.severity !== "urgent" || row.status === "resolved" || !row.retainUntil || Date.parse(row.retainUntil) <= Date.now()) throw new AppError(403, "仅可在有效的紧急处置中读取联络资料");
+  if (row.severity !== "urgent" || row.status === "resolved" || (row.retainUntil && Date.parse(row.retainUntil) <= Date.now())) throw new AppError(403, "仅可在有效的紧急处置中读取联络资料");
   if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取此紧急案件");
   return withAgeLock(payload, `owner:${row.owner}`, async () => {
   const contact = (await new InteractionService(payload, { id: row.owner, auth: "cookie" }).status()).contact;
