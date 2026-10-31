@@ -202,6 +202,8 @@ class RetentionTests(unittest.TestCase):
                 {'Type': 'bind', 'Source': config['dataDir'], 'Destination': '/data'},
                 {'Type': 'bind', 'Source': config['ledgerDir'], 'Destination': '/privacy-ledger'}],
                 'Config': {'Env': ['HELLO_PRIVACY_BACKUP_DAYS=7']}} for name in r.NAMES]
+            # The alert worker only mounts /data; only the web app needs the ledger.
+            containers[1]['Mounts'] = containers[1]['Mounts'][:1]
             database = Path(config['dataDir']) / 'hello.db'
             with sqlite3.connect(str(database)) as db:
                 db.execute('CREATE TABLE example(id)')

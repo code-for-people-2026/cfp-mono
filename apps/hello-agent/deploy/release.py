@@ -99,9 +99,10 @@ def backup_policy(root, configs):
     for config in configs:
         mounts = {m['Destination']: m['Source'] for m in config['Mounts'] if m['Type'] == 'bind'}
         env = dict(v.split('=', 1) for v in config['Config'].get('Env', []) if '=' in v)
-        if (mounts.get('/data') != policy.get('dataDir') or
-                mounts.get('/privacy-ledger') != policy.get('ledgerDir') or
-                not mounts.get('/data') or not mounts.get('/privacy-ledger') or
+        ledger_required = config['Name'].lstrip('/') == policy['container']
+        if (mounts.get('/data') != policy.get('dataDir') or not mounts.get('/data') or
+                (ledger_required and not mounts.get('/privacy-ledger')) or
+                ('/privacy-ledger' in mounts and mounts['/privacy-ledger'] != policy.get('ledgerDir')) or
                 env.get('HELLO_PRIVACY_BACKUP_DAYS') != '7'):
             raise RuntimeError('Privacy backup policy differs from the live deployment')
     archives = root / 'deployments'
