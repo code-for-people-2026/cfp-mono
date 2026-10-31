@@ -1,4 +1,4 @@
-import { needsLearningCardImage } from "./learning-card";
+import { CREATION_REFUSAL, isRestReminderRequest, isUnsupportedCreation } from "../domain/creation-scope";
 import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
@@ -49,6 +49,10 @@ export async function runGreeting(
   request: GenerationRequest,
   modelOverride?: BaseLlm,
 ) {
+  if (isUnsupportedCreation(request.input.text)) {
+    await request.save({ greeting: CREATION_REFUSAL, association: "超出首版创作范围，不生成替代作品。", artifacts: [] });
+    return;
+  }
   const configuration = await loadAgentConfiguration(request.repo.payload);
   const media = await Promise.all(
     request.input.mediaIds.map((id) => request.readImage(id)),
@@ -87,6 +91,7 @@ export async function runGreeting(
   const signal = request.signal ? AbortSignal.any([controller.signal, request.signal]) : controller.signal;
   let imageInFlight: Promise<GeneratedImage> | undefined;
   let imageFailure: unknown;
+  let scopeRefused = false;
   const imageDecision = new ImageDecision();
   const imageDecisionTool = request.generateImage ? new FunctionTool({
     name: "decide_image_request",
@@ -99,6 +104,11 @@ export async function runGreeting(
     description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_greeting 将它作为 image 回应作品。",
     parameters: imageRequestSchema,
     execute: async (input) => {
+      if (!isRestReminderRequest(request.input.text)) {
+        scopeRefused = true;
+        imageDecision.record({ decision: "refuse", reason: "不属于明确的休息提醒卡请求" });
+        return { error: CREATION_REFUSAL };
+      }
       if (!imageDecision.allowed) return { error: imageDecision.refused
         ? "本轮原始请求已拒绝，禁止生图或生成替代图。请仅保存简短文字拒绝。"
         : "尚未判断原始请求，请先单独调用 decide_image_request，再根据结果决定是否生图。" };
@@ -123,15 +133,13 @@ export async function runGreeting(
     turnSessionId: executionId,
     inputParts: parts,
     signal,
-    checkDelivery: (value) => {
-      if (!request.generateImage || !needsLearningCardImage(request.input.text) || imageDecision.refused) return;
-      if (!imageDecision.allowed && !request.existingImage) return "学习卡需要图片。请先单独调用 decide_image_request 审核原始请求，安全时生成图文卡片；不安全时拒绝，不用文字卡或表格替代图片。";
-      if (!imageInFlight && !request.existingImage) return "尚未生成计算卡图片，请调用 generate_image，等待成功后再保存。";
-      if (!value.artifacts?.some(a => a.kind === "image" && a.source.type === "media")) return "图文学习卡尚未交付，请把生成工具返回的 mediaId 作为 image 作品附上，不用文字或表格替代。";
-    },
     save: async (value) => {
+      if (!isRestReminderRequest(request.input.text) && value.artifacts?.some(a => a.kind === "image")) {
+        scopeRefused = true;
+        imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的休息提醒卡" });
+      }
       if (imageInFlight) await imageInFlight;
-      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
+      try { return await request.save(imageDecision.refused ? { ...value, greeting: scopeRefused ? CREATION_REFUSAL : "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
       catch (error) {
         if (error instanceof ContentReviewError || (error instanceof AppError && error.status === 403)) controller.abort();
         throw error;

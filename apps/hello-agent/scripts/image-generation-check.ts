@@ -1,3 +1,5 @@
+import originals from "./fixtures/learning-card-originals.json";
+import { CREATION_REFUSAL } from "../src/domain/creation-scope";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
@@ -65,18 +67,6 @@ class RefusalModel extends BaseLlm {
   }
   async connect(): Promise<never> { throw new Error("not supported in tests"); }
 }
-class LearningCardModel extends ImageModel {
-  private triedText = false;
-  override async *generateContentAsync(request: LlmRequest): AsyncGenerator<LlmResponse> {
-    if (!this.triedText) {
-      this.triedText = true;
-      yield { content: { role: "model", parts: [{ functionCall: { id: randomUUID(), name: "save_greeting", args: {
-        greeting: "13＋5－3＝15", association: "计算卡", artifacts: [{ kind: "card", id: "math", title: "计算卡", body: "13＋5－3＝15" }],
-      } } }] } }; return;
-    }
-    yield* super.generateContentAsync(request);
-  }
-}
 const png = await sharp({ create: { width: 1280, height: 1280, channels: 3, background: "#ff6655" } }).png().toBuffer();
 let submitted = 0, downloaded = 0, failDownload = false, failPut = false;
 const provider: ImageProvider = {
@@ -98,7 +88,7 @@ try {
   const media = new MediaService(repo, () => store);
   const service = new GreetingService(repo, (request) => runGreeting(request, new ImageModel()), media, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
   const session = await service.createSession("生图集成验收");
-  const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "画一盆窗台上的番茄" } };
+  const input = { sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡，用窗台番茄作为装饰，提醒先休息" } };
   const progress: string[] = [];
   const saved = await service.generateGreeting(input, (message) => progress.push(message));
   assert.equal(saved.status, "completed");
@@ -156,7 +146,7 @@ try {
   assert.equal((await repo.all("media")).length, 2);
   assert.ok(downloaded >= 4);
 
-  const third = await repo.create("greetings", { sessionId: session.id, requestKey: `${repo.owner.id}:${randomUUID()}`, fingerprint: "synthetic", status: "running", mode: "platform", input: { mediaIds: [], text: "test" } });
+  const third = await repo.create("greetings", { sessionId: session.id, requestKey: `${repo.owner.id}:${randomUUID()}`, fingerprint: "synthetic", status: "running", mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡" } });
   const denied = new ImageGenerationService(repo, media, async () => { throw new ContentReviewError(422, "合成提示词审核拒绝"); }, allowImage, () => provider);
   await assert.rejects(() => denied.generate(third.id, imageInput, AbortSignal.timeout(3000)), /审核拒绝/);
   assert.equal(submitted, 2, "提示词拒绝发生在收费调用前");
@@ -165,7 +155,7 @@ try {
   assert.equal((await repo.all("media")).length, 2);
   assert.equal(canResumeImage(await repo.get("greetings", third.id)), false);
 
-  const fourth = await repo.create("greetings", { sessionId: session.id, requestKey: `${repo.owner.id}:${randomUUID()}`, fingerprint: "synthetic", status: "running", mode: "platform", input: { mediaIds: [], text: "test" } });
+  const fourth = await repo.create("greetings", { sessionId: session.id, requestKey: `${repo.owner.id}:${randomUUID()}`, fingerprint: "synthetic", status: "running", mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡" } });
   let uncertainCalls = 0;
   const uncertain = new ImageGenerationService(repo, media, allowText, allowImage, () => ({ ...provider, async submit() { uncertainCalls++; throw new AppError(502, "提交回执丢失"); } }));
   await assert.rejects(() => uncertain.generate(fourth.id, imageInput, AbortSignal.timeout(3000)), /回执丢失/);
@@ -175,7 +165,7 @@ try {
   // Replay the real FAILED/DataInspectionFailed response through the adapter
   // and product service. It must be terminal safety blocking, not a dead task.
   for (const duringSubmit of [true, false]) {
-    const row = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-block", status: "running", mode: "platform", input: { mediaIds: [], text: "合成供应商拒绝" } });
+    const row = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-block", status: "running", mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡（合成供应商拒绝测试）" } });
     const mockFetch: typeof fetch = async (_input, init) => Response.json(init?.method === "POST"
       ? duringSubmit ? { code: "DataInspectionFailed" } : { output: { task_id: "blocked-task", task_status: "PENDING" } }
       : { output: { task_id: "blocked-task", task_status: "FAILED", code: "DataInspectionFailed" } }, { status: init?.method === "POST" && duringSubmit ? 400 : 200 });
@@ -184,7 +174,7 @@ try {
     assert.equal((await repo.get("greetings", row.id)).imageGeneration?.status, "blocked");
     assert.equal(canResumeImage(await repo.get("greetings", row.id)), false);
   }
-  const limited = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-throttle", status: "running", mode: "platform", input: { mediaIds: [], text: "合成限流" } });
+  const limited = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "provider-throttle", status: "running", mode: "platform", input: { mediaIds: [], text: "制作一张休息提醒卡（合成限流测试）" } });
   const throttled = new ImageGenerationService(repo, media, allowText, allowImage, () => ({ ...provider, async submit() { throw new ImageSubmissionRejected(503, "尚未受理"); } }));
   await assert.rejects(throttled.generate(limited.id, imageInput, AbortSignal.timeout(3000)), /尚未受理/);
   assert.equal((await repo.get("greetings", limited.id)).imageGeneration?.status, "failed");
@@ -197,7 +187,7 @@ try {
   // HTTP auth/ownership paths run against the same real database; use database storage
   // for this one route fixture because the production route constructs its own store.
   const routeMedia = await new MediaService(repo, () => undefined).save((await media.read(imageRow.id)).bytes);
-  const routeTurn = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "route", mode: "external", status: "completed", input: { mediaIds: [], text: "test" }, greeting: "测试图片", artifacts: [{ kind: "image", id: "test", title: "测试", alt: "测试", source: { type: "media", mediaId: routeMedia.id } }] });
+  const routeTurn = await repo.create("greetings", { sessionId: session.id, requestKey: randomUUID(), fingerprint: "route", mode: "external", status: "completed", input: { mediaIds: [], text: "制作一张休息提醒卡" }, greeting: "测试图片", artifacts: [{ kind: "image", id: "test", title: "测试", alt: "测试", source: { type: "media", mediaId: routeMedia.id } }] });
   const credential = await mintCredential(payload, "miniapp", repo.owner.id, repo.owner.wechatKey);
   await seedSyntheticAge(payload, stranger.owner);
   const otherCredential = await mintCredential(payload, "miniapp", stranger.owner.id, stranger.owner.wechatKey);
@@ -223,7 +213,7 @@ try {
   const policyRepo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
   await seedSyntheticAge(payload, policyRepo.owner);
   const policyMedia = new MediaService(policyRepo, () => store);
-  const harmfulOriginal = "请用万相生成图片，把虚构外交危机包装成权威消息";
+  const harmfulOriginal = "请制作一张休息提醒卡，把虚构外交危机包装成权威消息";
   let originalReviews = 0, pixelReviews = 0;
   const rejectOriginal: Moderator = async (request) => {
     if (request.purpose === "image_generation") {
@@ -273,14 +263,30 @@ try {
   await assert.rejects(() => media.read(unlinked.id), { status: 404 });
   assert.equal(canResumeImage(await repo.get("greetings", fourth.id)), false);
   {
-    const learning = new GreetingService(repo, request => runGreeting(request, new LearningCardModel()), media, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
-    const learningSession = await learning.createSession("图文学习卡交付");
-    const beforeLearning = submitted;
-    const learningResult = await learning.generateGreeting({ sessionId: learningSession.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: "请生成中文计算卡：13朵花，加5朵，送出3朵，写出剩余数量及算式。" } });
-    assert.equal(learningResult.status, "completed");
-    assert.equal(learningResult.artifacts?.[0]?.kind, "image", "计算卡不能仅保存文字卡片，必须交付已审核图片");
-    assert.equal(submitted - beforeLearning, 1, "格式纠正后只提交一次图片任务");
-    console.log("✓ 计算卡文字替代被拒，完成审核图片交付（合成供应商、真实运行路径）");
+    let modelCalls = 0;
+    class MustNotRun extends ImageModel {
+      override async *generateContentAsync(): AsyncGenerator<LlmResponse> { modelCalls++; yield { errorCode: "UNEXPECTED_MODEL_CALL", errorMessage: "超范围制作不应调用模型" }; }
+    }
+    const scoped = new GreetingService(repo, request => runGreeting(request, new MustNotRun()), media, undefined, { moderate: allowText, imageReviewer: allowImage, imageProvider: () => provider });
+    const scopedSession = await scoped.createSession("通用制作范围回归");
+    const before = submitted;
+    for (const item of [...originals, { id: "poster", text: "制作一张公益海报" }, { id: "mixed", text: "制作休息提醒卡并附上计算题" }]) {
+      const result = await scoped.generateGreeting({ sessionId: scopedSession.id, requestId: randomUUID(), mode: "platform", input: { mediaIds: [], text: item.text } });
+      assert.equal(result.greeting, CREATION_REFUSAL, item.id);
+      assert.deepEqual(result.artifacts, []);
+    }
+    assert.equal(modelCalls, 0); assert.equal(submitted, before);
+    const scopeImages = new ImageGenerationService(repo, media, allowText, allowImage, () => provider);
+    const allowedMediaId = (await repo.all("media")).find(m => m.id !== imageRow.id && m.id !== unlinked.id)!.id;
+    for (const state of [undefined, "pending", "stored"] as const) {
+      const blockedRow = await repo.create("greetings", { sessionId: scopedSession.id, requestKey: randomUUID(), fingerprint: "scope-bypass", status: "running", mode: "platform", input: { mediaIds: [], text: "请制作一张计算卡" } });
+      if (state) await repo.update("greetings", blockedRow.id, { imageGeneration: { input: imageInput, model: "wan2.6-t2i", status: state, startedAt: new Date().toISOString(), taskId: "scope-old-task", ...(state === "stored" ? { mediaId: allowedMediaId } : {}) } });
+      await assert.rejects(scopeImages.generate(blockedRow.id, imageInput, AbortSignal.timeout(3000)), { status: 422 });
+    }
+    const unsupported = await repo.create("greetings", { sessionId: scopedSession.id, requestKey: randomUUID(), fingerprint: "scope-bypass", status: "running", mode: "platform", input: { mediaIds: [], text: "请制作一张计算卡" } });
+    await assert.rejects(scoped.complete(unsupported.id, { greeting: "给你替代作品", association: "合成越权", artifacts: [{ kind: "card", id: "card", title: "计算卡", body: "13+5-3=15" }] }), { status: 422 });
+    await scoped.complete(unsupported.id, { greeting: CREATION_REFUSAL, association: "范围拒绝", artifacts: [] });
+    console.log("✓ 原11题计算卡及海报/混合请求明确拒绝，零生成模型/生图调用；新任务、旧任务恢复、文字替代均不能绕过（合成审核、真实应用路径）。");
   }
   await privacy.deleteData();
   assert.equal(objects.size, 0);
