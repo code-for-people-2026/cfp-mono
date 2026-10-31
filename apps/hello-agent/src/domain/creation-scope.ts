@@ -1,5 +1,4 @@
 /** Product scope, not a content-safety verdict. Unknown image requests fail closed. */
-export const CREATION_SCOPE_VERSION = "rest-reminder-only-v1";
 export const CREATION_REFUSAL = "抱歉，我不提供海报、计算题、学习卡等通用制作服务。目前只支持与休息有关的提醒卡。";
 const creation = /生成|制作|设计|绘制|画|做[一张个套份]|给我|帮我|create|generate|draw|make/i;
 const general = /海报|计算卡|计算题|算术卡|算术题|识字卡|单词卡|学习卡|闪卡|试卷|练习题|广告|宣传|营销|商标|logo|poster|flashcard|worksheet/i;
