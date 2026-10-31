@@ -46,5 +46,17 @@ try {
   await assert.rejects(service.complete(forged.id, { greeting: "arbitrary caller output", association: "fixture", artifacts: [], approach: "supportive" }), ContentReviewError);
   assert.equal(moderated, 2, "model label cannot grant the public completion path a review bypass");
   assert.equal(generated, 0);
+  const { SERVICE_SCOPE_REFUSAL, SERVICE_SCOPE_CLARIFICATION, SERVICE_SCOPE_VERSION } = await import("../src/domain/service-scope");
+  for (const verdict of ["outside", "unclear"] as const) {
+    const scoped = new GreetingService(repo, async () => { throw new Error("scope must stop generation and all image tools"); }, undefined, undefined, {
+      moderate: async (input) => { assert.equal(input.serviceScope, true); return { serviceScope: verdict }; },
+    });
+    const result = await scoped.generateGreeting(request("帮我解答数学题12+4-2"));
+    assert.equal(result.greeting, verdict === "outside" ? SERVICE_SCOPE_REFUSAL : SERVICE_SCOPE_CLARIFICATION);
+    assert.equal(result.promptVersion, SERVICE_SCOPE_VERSION);
+    assert.deepEqual(result.artifacts, []);
+    assert.equal(result.status, "completed");
+  }
+  assert.equal((await payload.count({ collection: "safety-cases", overrideAccess: true })).totalDocs, 1, "scope rejection must not create a harmful-content case");
   console.log("PASS fixed crisis survives reviewer outage; no model/image/echo; dedup; ordinary and caller-supplied output still reviewed");
 } finally { await payload.destroy(); await rm(dir, { recursive: true, force: true }); }

@@ -40,7 +40,7 @@ try {
     const { token } = await payload.login({ collection: "admins", data: { email: user.email, password: "isolated-test-pass-123" } });
     const response = await operationsGET(new Request("http://localhost/api/operations/status", { headers: { Cookie: `payload-token=${token}` } }), { params: Promise.resolve({ path: ["status"] }) });
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v5", mode: "all" });
+    assert.deepEqual((await response.json()).rule, { version: "builtin-full-review-v6", mode: "all" });
   }
   pass("真实认证的状态接口只返回规则版本和覆盖模式，不向各角色披露召回词或内部理由");
   const ops = new OperationsService(payload);
@@ -226,7 +226,7 @@ try {
   // Full text review now precedes image review even for ordinary words. Isolate
   // the image outage by allowing text through an explicitly synthetic verdict.
   process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
-  globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"decision":"allow"}' } }] });
+  globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"decision":"allow","service_scope":"support"}' } }] });
   try {
     await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
   } finally {
