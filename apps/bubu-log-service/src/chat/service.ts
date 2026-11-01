@@ -302,6 +302,9 @@ export class ChatService {
       while (true) {
         if (!await this.execute(principal, turn, client, signal)) return this.publicTurn(turn);
         if (turn.rounds >= 10 || turn.steps.length >= 24) throw new AppError(409, "CHAT_STEP_LIMIT", "这一轮步骤较多，已确认结果仍保留。请查看记录后继续说明。");
+        // A media receipt may close a question within this same turn. Tool
+        // availability follows current MCP state, without refreshing write pins.
+        turn.pending = pending(await this.call(principal, turn, client, "bubu_get_pending", { babyId: turn.babyId }, signal));
         const messages = await this.messages(principal, turn);
         await this.check(principal, turn.babyId);
         const availableTools = modelTools(tools).filter(tool => tool.name !== "bubu_resolve_media" || turn.pending.some(question => question.kind === "media"));

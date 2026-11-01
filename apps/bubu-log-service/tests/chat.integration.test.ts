@@ -296,6 +296,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     s.provider.tool("bubu_resolve_media", { pendingId: media.id, eventId: media.eventIds[0], resolution: "unknown" });
     const resolved = await s.chat.send(s.f.alice, input("chat-media-unavailable", "这张照片我找不到了", { context: { viewedDate: "2026-10-23", mediaPendingId: media.id } }));
     expect(resolved.status).toBe("completed"); expect(resolved.pending).toHaveLength(0);
+    expect(s.provider.inputs.at(-1)!.tools.some(tool => tool.name === "bubu_resolve_media")).toBe(false);
     expect(resolved.receipts).toContainEqual(expect.objectContaining({ kind: "media", state: "resolved", resolution: "unknown" }));
     expect(s.f.mcpRequests.some(value => value.name === "bubu_answer_pending")).toBe(false);
     expect([...s.f.legacy.activities.values()][0]?.poopPhotoUrl).toBeUndefined();
