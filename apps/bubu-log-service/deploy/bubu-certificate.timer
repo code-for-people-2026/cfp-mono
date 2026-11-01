@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Bubu certificate verification
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1h
+RandomizedDelaySec=30
+Unit=bubu-certificate.service
+
+[Install]
+WantedBy=timers.target

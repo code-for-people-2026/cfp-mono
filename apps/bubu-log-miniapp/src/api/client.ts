@@ -1,3 +1,4 @@
+import { decodeSafetyNotices, decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
 import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
 import type { ChatRequest } from "../chat/drafts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
@@ -111,17 +112,17 @@ export function createBubuApi(options: ClientOptions) {
     return () => { changingSession = false; if (activeChange === current) activeChange = undefined; resolveChange(); };
   }
 
-  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: object; binary?: ArrayBuffer; mime?: string; requestId?: string; babyId?: string; guestAllowed?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
+  async function request(path: string, args: { method?: "GET" | "POST" | "PATCH"; form?: Record<string, string>; json?: object; binary?: ArrayBuffer; mime?: string; requestId?: string; babyId?: string; guestAllowed?: boolean; publicPolicy?: boolean; missingAllowed?: boolean; credentialExchange?: boolean; logout?: boolean } = {}): Promise<unknown> {
     if (options.native && !origin) throw new ConfigurationError();
     const generation = revision;
     const babyGeneration = args.babyId ? babyRevisions.get(args.babyId) ?? 0 : 0;
     const headers: Record<string, string> = { Accept: "application/json" };
     if (sidecar) headers["X-Bubu-Client"] = options.native ? "native" : "browser";
     const authorization = args.logout ? pendingLogoutAuthorization ?? identity?.header() : identity?.header();
-    if (authorization) headers.Authorization = authorization;
+    if (authorization && !args.publicPolicy) headers.Authorization = authorization;
     if (args.babyId) headers["x-baby-id"] = requiredId(args.babyId);
     const cookie = jar?.header(path.split("?")[0]);
-    if (cookie) headers.Cookie = cookie;
+    if (cookie && !args.publicPolicy) headers.Cookie = cookie;
     if (args.form) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
       headers["X-Auth-Return-Redirect"] = "1";
@@ -140,7 +141,7 @@ export function createBubuApi(options: ClientOptions) {
     } catch {
       throw new ApiError(0, "暂时无法连接卜卜日记，请检查网络后重试。");
     }
-    if (generation !== revision) {
+    if (!args.publicPolicy && generation !== revision) {
       // A native bind can rotate the token while logout waits. Revoke that new token
       // directly; it must never reach persistent storage or a restored UI context.
       if (loggingOut && sidecar && options.native && args.credentialExchange && response.status >= 200 && response.status < 300) {
@@ -155,7 +156,9 @@ export function createBubuApi(options: ClientOptions) {
     const error = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
     // Concurrent reads belong to the same identity even after one discovers expiry.
     // Keep them unauthorized, including late successes, before accepting any cookies.
-    if ((response.status === 401 && (!args.credentialExchange || error.code === "UNAUTHORIZED")) || expiredRevision === generation) {
+    // The public policy must remain readable before login, after expiry and during
+    // identity changes. Its response never restores or invalidates a session.
+    if (!args.publicPolicy && ((response.status === 401 && (!args.credentialExchange || error.code === "UNAUTHORIZED")) || expiredRevision === generation)) {
       const firstExpiry = expiredRevision !== generation;
       expiredRevision = generation;
       jar?.clear();
@@ -167,7 +170,7 @@ export function createBubuApi(options: ClientOptions) {
       if (args.guestAllowed) return guest();
       throw new ApiError(401, sidecar ? "登录已失效，请重新登录。" : "登录已失效，请重新登录原有宝宝日记账号。", "UNAUTHORIZED");
     }
-    if (jar) {
+    if (jar && !args.publicPolicy) {
       const cookies = [...(response.cookies ?? [])];
       for (const [key, value] of Object.entries(response.headers ?? {})) {
         if (key.toLowerCase() !== "set-cookie") continue;
@@ -229,7 +232,7 @@ export function createBubuApi(options: ClientOptions) {
     if (!input.username.trim() || !input.password) throw new ApiError(400, "请输入原有账号和密码。");
     return { username: input.username.trim(), password: input.password };
   }
-  async function updateIdentityContext(path: string, input: Record<string, string>): Promise<AuthContext> {
+  async function updateIdentityContext(path: string, input: object): Promise<AuthContext> {
     requireSidecar();
     const finish = beginChange();
     revision++;
@@ -242,6 +245,19 @@ export function createBubuApi(options: ClientOptions) {
     } finally { finish(); }
   }
   return {
+    async safetyNotices(babyId: string) { return decodeSafetyNotices(await request(scoped("safety", babyId), { babyId }), babyId); },
+    async acknowledgeSafety(babyId: string, signalId: string) { await request("/api/app/safety/acknowledge", { method: "POST", babyId, json: { babyId, signalId } }); },
+    async privacyPolicy() { return decodePolicy(await request("/api/app/privacy/policy", { publicPolicy: true })); },
+    async privacyStatus(babyId?: string) { return decodePrivacyStatus(await request("/api/app/privacy/status" + queryString({ babyId }))); },
+    async privacyConsent(input: PersonalChoice) { await request("/api/app/privacy/consent", { method: "POST", json: input }); },
+    async privacyGuardian(babyId: string, consent: GuardianChoice) { await request("/api/app/privacy/guardian", { method: "POST", json: { babyId, consent } }); },
+    async privacyWithdraw(babyId?: string) { await request("/api/app/privacy/withdraw", { method: "POST", json: { babyId } }); clearPhotos(); options.onAccessRevoked?.(babyId); },
+    async privacyRequests() { return (await request("/api/app/privacy/requests") as { data: PrivacyRequest[] }).data; },
+    async privacyRequest(kind: "privacy" | "complaint" | "appeal", message: string, babyId?: string) { await request("/api/app/privacy/requests", { method: "POST", json: { kind, message, ...(babyId ? { babyId } : {}) } }); },
+    async deletionIntent(kind: "account" | "family", babyId?: string) { return await request("/api/app/privacy/delete-intent", { method: "POST", json: { kind, ...(babyId ? { babyId } : {}) } }) as DeletionIntent; },
+    async deletionConfirm(token: string, confirmation: string) { const result = await request("/api/app/privacy/delete-confirm", { method: "POST", json: { token, confirmation } }); clearPhotos(); options.onAccessRevoked?.(); return result; },
+    async deletionJobs() { return (await request("/api/app/privacy/deletions") as { data: DeletionJob[] }).data; },
+    async privacyExport(babyId?: string) { return request("/api/app/privacy/export" + queryString({ babyId })); },
     getContext,
     releasePhotoUrl,
     async resolvePhotoUrl(url: string, babyId: string): Promise<string> {
@@ -303,7 +319,7 @@ export function createBubuApi(options: ClientOptions) {
         throw error;
       } finally { finish(); }
     },
-    async loginWithWechat(): Promise<AuthContext> {
+    async loginWithWechat(noticeVersion?: string): Promise<AuthContext> {
       requireSidecar();
       if (!options.native || !options.wechatLogin) throw new ApiError(400, "请在微信小程序内使用微信登录。");
       return identityExchange("/api/identity/wechat", async () => {
@@ -311,16 +327,16 @@ export function createBubuApi(options: ClientOptions) {
         try { code = await options.wechatLogin!(); }
         catch { throw new ApiError(0, "暂时无法获取微信登录凭证，请重试。", "WECHAT_LOGIN_FAILED"); }
         if (!code.trim()) throw new ApiError(400, "微信登录凭证为空，请重试。", "WECHAT_LOGIN_FAILED");
-        return { code };
+        return { code, ...(noticeVersion ? { noticeVersion } : {}) };
       });
     },
     async bindLegacy(input: { username: string; password: string }): Promise<AuthContext> {
       return identityExchange("/api/identity/bind-legacy", credentials(input), true);
     },
-    async createFamily(input: { name: string }): Promise<AuthContext> {
+    async createFamily(input: { name: string; guardian?: GuardianChoice }): Promise<AuthContext> {
       const name = input.name.trim();
       if (!name || name.length > 30) throw new ApiError(400, "宝宝昵称不能为空，且不能超过 30 个字。");
-      return updateIdentityContext("/api/identity/family", { name });
+      return updateIdentityContext("/api/identity/family", { name, ...(input.guardian ? { guardian: input.guardian } : {}) });
     },
     async acceptInvitation(input: { code: string }): Promise<AuthContext> {
       const code = input.code.trim();

@@ -1,0 +1,11 @@
+[Unit]
+Description=Hourly Bubu backup retention
+
+[Timer]
+OnCalendar=*-*-* *:17:00 UTC
+Persistent=true
+AccuracySec=1s
+Unit=bubu-backup-retention.service
+
+[Install]
+WantedBy=timers.target

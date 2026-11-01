@@ -37,6 +37,8 @@ vi.mock("../src/api", async () => ({ ...await import("../src/api/client"), api: 
 // Only unrelated presentation is replaced. The page, DiaryChat, ChatSession,
 // image chooser, draft store and foreground lifecycle below are production code.
 vi.mock("../src/navigation/DiaryNavigation", () => ({ DiaryNavigation: ({ onLogout }: { onLogout?: () => void }) => onLogout ? <button aria-label="logout-context" onClick={onLogout} /> : null }));
+vi.mock("../src/privacy/SafetyNotices", () => ({ SafetyNotices: () => null }));
+vi.mock("../src/privacy/PrivacyCenter", () => ({ PrivacyCenter: () => <div>permission-needed</div>, Choice: () => null, PolicyDocuments: () => null }));
 vi.mock("../src/chat/sheet-portal", () => ({ SheetPortal: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("../src/components", () => Object.fromEntries(["ActivityDetail", "DayTimeline", "Heatmap", "TrendCharts", "WeekCalendar"].map(key => [key, () => null])));
 import DiaryPage from "../src/pages/index/index";
@@ -71,4 +73,23 @@ it("keeps an in-flight native image selection and its preview when onShow fires 
   expect(fixture.api.uploadAttachment).toHaveBeenCalledOnce();
   expect(root.root.findAllByProps({ src: "local-synthetic-preview" })).toHaveLength(1);
   expect(button("发送消息").props.disabled).toBeFalsy();
+});
+it("still removes private views when the foreground recheck finds revoked consent", async () => {
+  await openChat();
+  fixture.api.privacyStatus.mockResolvedValue({ consentCurrent: false, guardianCurrent: false });
+  await act(async () => { for (const show of [...fixture.show]) show(); });
+  expect(root.root.findAllByProps({ ariaLabel: "添加照片" })).toHaveLength(0);
+  expect(JSON.stringify(root.toJSON())).toContain("permission-needed");
+});
+
+it("waits for fresh consent when restoring the same identity and baby", async () => {
+  await openChat();
+  let checked!: (value: { consentCurrent: boolean; guardianCurrent: boolean }) => void;
+  fixture.api.privacyStatus.mockImplementation(() => new Promise(resolve => { checked = resolve; }));
+  // A session expiry must invalidate cached readiness even for the same account.
+  await act(async () => root.root.findByProps({ "aria-label": "logout-context" }).props.onClick());
+  await act(async () => root.root.find(node => typeof node.type === "string" && node.props.children === "重新连接").props.onClick());
+  expect(root.root.findAllByProps({ ariaLabel: "打开对话" })).toHaveLength(0);
+  await act(async () => checked({ consentCurrent: true, guardianCurrent: true }));
+  expect(root.root.findAllByProps({ ariaLabel: "打开对话" })).toHaveLength(1);
 });

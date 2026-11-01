@@ -1,3 +1,4 @@
+import { privacyFixture } from "../fixtures/privacy";
 import { expect, test, type Page } from "@playwright/test";
 
 test.skip(process.env.BUBU_AUTH_MODE !== "legacy", "Requires an explicit legacy H5 build");
@@ -25,6 +26,7 @@ async function fixture(page: Page, options: { authenticated?: boolean; failActiv
   const requests: string[] = [];
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return route.fulfill({ json: privacy });
     requests.push(`${route.request().method()} ${url.pathname}`);
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
     if (url.pathname === "/api/auth/csrf") return json({ csrfToken: "test-csrf" });

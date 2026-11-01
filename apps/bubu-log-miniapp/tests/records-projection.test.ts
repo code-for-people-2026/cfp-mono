@@ -5,6 +5,12 @@ import { buildHeatmap, buildTrendRows, coverageMessage, recordDetailFields, reco
 import { emptyRecordSummary, recordEventFixture } from "./fixtures/records";
 
 describe("sidecar record projection", () => {
+  it("does not ask for more information when the incomplete fields are explicitly unknown and no question remains", () => {
+    const { coverage } = emptyRecordSummary();
+    Object.assign(coverage, { recordedEvents: 1, incompleteEvents: 1, unknownFields: 1, pendingFields: 0 });
+    expect(coverageMessage(coverage)).toBe("1 条记录信息不完整；1 项明确未知");
+    expect(coverageMessage(coverage)).not.toContain("待补");
+  });
   it("uses authoritative actual diaper counts and retains known zero without form defaults", () => {
     const summary = emptyRecordSummary();
     Object.assign(summary.metrics, { diaperCount: 2, peeCount: 2, totalMilkAmount: 0 });

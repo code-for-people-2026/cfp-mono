@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Bubu backup (enable only after retention and isolated restore are verified)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=300
+Unit=bubu-backup.service
+
+[Install]
+WantedBy=timers.target

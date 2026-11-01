@@ -6,7 +6,7 @@ export type ChatPending = FieldPending | MediaPending;
 export interface ChatTurn {
   id: string; requestId: string; babyId: string; createdAt: string; updatedAt: string;
   status: "processing" | "completed" | "failed" | "needs_recovery";
-  input: Omit<ChatRequest, "babyId" | "requestId">; assistantText: string;
+  input: Omit<ChatRequest, "babyId" | "requestId">; assistantText: string; replySource?: "ai" | "safety";
   receipts: Array<{ status: "saved" | "needs_information" | "pending_projection" | "conflict" } | { kind: "media"; state: "resolved" | "open" }>;
   pending: ChatPending[]; refreshRequired: boolean; error?: { code: string; message: string; retryable: boolean };
 }
@@ -45,7 +45,7 @@ export function decodeTurn(value: unknown, babyId: string): ChatTurn {
   return { id: id(row.id), requestId: id(row.requestId), babyId, createdAt: date(row.createdAt), updatedAt: date(row.updatedAt), status: choice(row.status, ["processing", "completed", "failed", "needs_recovery"] as const),
     input: { text: text(input.text), attachmentIds: attachments, context: { viewedDate, ...(context.selectedEventId ? { selectedEventId: id(context.selectedEventId) } : {}), ...(context.mediaPendingId ? { mediaPendingId: id(context.mediaPendingId) } : {}) },
       ...(question ? { question: { id: id(question.id), questionVersion: integer(question.questionVersion), eventVersion: integer(question.eventVersion) } } : {}) },
-    assistantText: text(row.assistantText), receipts: array(row.receipts, item => { const receipt = object(item); return receipt.kind === "media" ? { kind: "media" as const, state: choice(receipt.state, ["resolved", "open"] as const) } : { status: choice(receipt.status, ["saved", "needs_information", "pending_projection", "conflict"] as const) }; }),
+    assistantText: text(row.assistantText), replySource: row.replySource === "safety" ? "safety" : "ai", receipts: array(row.receipts, item => { const receipt = object(item); return receipt.kind === "media" ? { kind: "media" as const, state: choice(receipt.state, ["resolved", "open"] as const) } : { status: choice(receipt.status, ["saved", "needs_information", "pending_projection", "conflict"] as const) }; }),
     pending: array(row.pending, value => decodePending(value, babyId)), refreshRequired: bool(row.refreshRequired),
     ...(error ? { error: { code: id(error.code), message: text(error.message), retryable: bool(error.retryable) } } : {}) };
 }
