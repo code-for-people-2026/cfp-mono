@@ -225,6 +225,25 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     expect([...s.f.legacy.activities.values()][0]?.milkAmount).toBe(100);
   }, 30_000);
 
+  it("returns fresh questions after an in-turn stale answer without overwriting or trapping the composer", async () => {
+    const s = await setup();
+    let questionId = "";
+    s.provider.enqueue({ text: "", calls: [{ id: "stale-create", name: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: bottle.startTime, milkSource: "BREAST_MILK" } }] } }] }, model => {
+      const result = JSON.parse(String(model.messages.filter(message => message.role === "tool").at(-1)!.content)) as RecordReceipt;
+      questionId = result.questions[0]!.id;
+      return { text: "", calls: [{ id: "stale-first-answer", name: "bubu_answer_pending", arguments: { questionId, patch: { facts: { milkAmount: 80 } } } }] };
+    }, () => ({ text: "", calls: [{ id: "stale-second-answer", name: "bubu_answer_pending", arguments: { questionId, patch: { facts: { milkAmount: 120 } } } }] }));
+    const result = await s.chat.send(s.f.alice, input("chat-stale-mid-turn", "瓶喂母乳，喝了80毫升"));
+    expect(result.status).toBe("completed"); expect(result.error).toBeUndefined();
+    expect(result.assistantText).toContain("待补问题有更新");
+    expect(question(result).fields).not.toContain("milkAmount");
+    expect([...s.f.legacy.activities.values()]).toHaveLength(1);
+    expect([...s.f.legacy.activities.values()][0]?.milkAmount).toBe(80);
+    const next = await answer(s, result, "chat-after-stale-answer", "时长和拍嗝都不知道", { facts: {}, states: { durationMinutes: "unknown", endTime: "unknown", burpSuccess: "unknown" } });
+    expect(next.status).toBe("completed"); expect(next.pending).toHaveLength(0);
+    expect([...s.f.legacy.activities.values()][0]?.milkAmount).toBe(80);
+  }, 30_000);
+
   it("accepts explicitly unknown answers without turning them into zero or repeatedly asking", async () => {
     const s = await setup();
     s.provider.tool("bubu_record_events", { events: [{ facts: { type: "BOTTLE", startTime: bottle.startTime, milkSource: "BREAST_MILK" } }] });

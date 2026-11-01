@@ -249,7 +249,20 @@ export class ChatService {
         try { result = await this.call(principal, turn, client, "bubu_get_request", { babyId: turn.babyId, requestId: step.arguments.requestId, retry: true }, signal); }
         catch (error) { if (!(error instanceof McpToolError && error.code === "REQUEST_NOT_FOUND")) throw error; }
       }
-      if (result === undefined) result = await this.call(principal, turn, client, step.call.name, step.arguments, signal);
+      if (result === undefined) {
+        try { result = await this.call(principal, turn, client, step.call.name, step.arguments, signal); }
+        catch (error) {
+          if (!(error instanceof McpToolError && error.code === "QUESTION_STALE")) throw error;
+          // A rejected stale answer did not write. End this turn with fresh questions;
+          // never retry a changed question with a newer version on the user's behalf.
+          turn.pending = pending(await this.call(principal, turn, client, "bubu_get_pending", { babyId: turn.babyId }, signal));
+          step.result = { code: error.code, rejected: true }; step.state = "completed";
+          turn.transcript.push({ role: "tool", toolCallId: step.call.id, content: JSON.stringify(step.result) });
+          turn.assistantText = [confirmedReply(turn.receipts, turn.pending), "待补问题有更新，请按当前问题补充。"].filter(Boolean).join("\n");
+          turn.status = "completed"; delete turn.error;
+          await this.persist(principal, turn); return false;
+        }
+      }
       const saved = receipt(result);
       if (mutationTools.has(step.call.name) && !saved) throw new McpToolError("CHAT_MCP_RESPONSE_INVALID", "记录服务没有返回有效保存回执，请继续处理原请求。", true);
       step.result = result;
