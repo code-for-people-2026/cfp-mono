@@ -22,6 +22,7 @@
     "test:ops-server": "NODE_ENV=test tsx tests/ops-browser-server.ts",
     "test:ops-http": "tsx scripts/verify-ops-http.ts",
     "test:fullstack-server": "NODE_ENV=test tsx tests/fullstack-browser-server.ts",
+    "test:membership-http": "tsx scripts/verify-membership-http.ts",
     "test:sqlite": "node scripts/sqlite-connection-check.mjs"
   },
   "dependencies": {
