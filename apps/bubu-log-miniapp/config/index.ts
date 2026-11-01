@@ -16,6 +16,7 @@ export default defineConfig(async () => ({
   },
   defineConstants: {
     BUBU_API_ORIGIN: JSON.stringify(process.env.BUBU_API_ORIGIN || ""),
+    BUBU_AUTH_MODE: JSON.stringify(process.env.BUBU_AUTH_MODE === "sidecar" ? "sidecar" : "legacy"),
   },
   mini: { imageUrlLoaderOption: { limit: false } },
   h5: {

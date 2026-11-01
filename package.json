@@ -30,7 +30,10 @@
     "patchedDependencies": {
       "@payloadcms/drizzle@3.85.1": "patches/@payloadcms__drizzle@3.85.1.patch",
       "@libsql/client@0.18.0": "patches/@libsql__client@0.18.0.patch"
-    }
+    },
+    "onlyBuiltDependencies": [
+      "fs-ext"
+    ]
   },
   "engines": {
     "node": "^22.23.4 || ^24.22.1"

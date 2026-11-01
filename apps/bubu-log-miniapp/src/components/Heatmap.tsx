@@ -22,6 +22,7 @@ export function Heatmap({ stats, endDate = todayKey(), onDateClick }: HeatmapPro
   const allDays = heatmap.weeks.flatMap((week) => week.days)
   const selectedDay = allDays.find((day) => day.date === (selectedDate || endDate))
   const palette = palettes[metric]
+  const selectedHasData = selectedDay && selectedDay.hasData && (selectedDay.known?.[metric] ?? true)
 
   return (
     <View className='bubu-viz-card bubu-heatmap-card'>
@@ -31,11 +32,13 @@ export function Heatmap({ stats, endDate = todayKey(), onDateClick }: HeatmapPro
         <Text className='bubu-heatmap-week-label'>{Number(week.start.slice(5, 7))}/{Number(week.start.slice(-2))}</Text>
         {week.days.map((day) => {
           const intensity = metric === 'sleep' ? day.sleepIntensity : day.milkIntensity
-          return <View key={day.date} className={`bubu-heatmap-cell${day.isToday ? ' bubu-heatmap-today' : ''}${day.isFuture ? ' bubu-heatmap-future' : ''}${!day.hasData && !day.isFuture ? ' bubu-heatmap-missing' : ''}${selectedDay?.date === day.date ? ' bubu-heatmap-selected' : ''}`} style={{ backgroundColor: day.isFuture ? 'transparent' : palette[day.hasData ? intensity : 0], color: day.hasData && intensity >= 3 ? '#fffaf3' : '#766c60' }} onClick={() => !day.isFuture && setSelectedDate(day.date)}><Text className='bubu-heatmap-day-number'>{Number(day.date.slice(-2))}</Text></View>
+          const hasData = day.hasData && (day.known?.[metric] ?? true)
+          return <View key={day.date} className={`bubu-heatmap-cell${day.isToday ? ' bubu-heatmap-today' : ''}${day.isFuture ? ' bubu-heatmap-future' : ''}${!hasData && !day.isFuture ? ' bubu-heatmap-missing' : ''}${selectedDay?.date === day.date ? ' bubu-heatmap-selected' : ''}`} style={{ backgroundColor: day.isFuture ? 'transparent' : palette[hasData ? intensity : 0], color: hasData && intensity >= 3 ? '#fffaf3' : '#766c60' }} onClick={() => !day.isFuture && setSelectedDate(day.date)}><Text className='bubu-heatmap-day-number'>{Number(day.date.slice(-2))}</Text></View>
         })}
       </View>)}
-      <View className='bubu-heatmap-key'><Text>少</Text>{palette.map((color) => <View className='bubu-heatmap-key-cell' key={color} style={{ backgroundColor: color }} />)}<Text>多</Text><Text className='bubu-heatmap-key-spacer'>虚线：暂无统计</Text></View>
-      {selectedDay && <View className='bubu-heatmap-reading'><View><Text className='bubu-chart-reading-date'>{dateLabel(selectedDay.date)}</Text><Text className='bubu-heatmap-value'>{selectedDay.hasData ? metric === 'sleep' ? `睡眠 ${formatDuration(selectedDay.sleep)}` : `瓶喂 ${selectedDay.milk} 毫升` : selectedDay.isFuture ? '这一天还没到' : '暂无统计'}</Text></View>{onDateClick && !selectedDay.isFuture && <View className='bubu-text-action' onClick={() => onDateClick(selectedDay.date, metric)}>查看当天 ›</View>}</View>}
+      <View className='bubu-heatmap-key'><Text>少</Text>{palette.map((color) => <View className='bubu-heatmap-key-cell' key={color} style={{ backgroundColor: color }} />)}<Text>多</Text><Text className='bubu-heatmap-key-spacer'>{allDays.some(day => day.known) ? '虚线：暂无确定数值' : '虚线：暂无统计'}</Text></View>
+      {selectedDay && <View className='bubu-heatmap-reading'><View><Text className='bubu-chart-reading-date'>{dateLabel(selectedDay.date)}</Text><Text className='bubu-heatmap-value'>{selectedHasData ? metric === 'sleep' ? `睡眠 ${formatDuration(selectedDay.sleep)}` : `瓶喂 ${selectedDay.milk} 毫升` : selectedDay.isFuture ? '这一天还没到' : selectedDay.known ? '暂无该项确定数值' : '暂无统计'}</Text></View>{onDateClick && !selectedDay.isFuture && <View className='bubu-text-action' onClick={() => onDateClick(selectedDay.date, metric)}>查看当天 ›</View>}</View>}
+      {selectedDay?.coverage && <Text className='bubu-viz-footnote'>{selectedDay.coverage}</Text>}
       <Text className='bubu-viz-footnote'>颜色深浅按这四周的数据比较</Text>
     </View>
   )

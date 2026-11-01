@@ -8,6 +8,7 @@ import {
   timeLabel,
   todayKey,
   type Activity,
+  type RecordCoverage,
 } from '../model'
 import { designSize } from './display'
 import './visualizations.css'
@@ -18,6 +19,7 @@ export interface DayTimelineProps {
   onActivityClick?: (activity: Activity) => void
   showCurrentTime?: boolean
   latestActivities?: Activity[]
+  recordCoverage?: RecordCoverage
 }
 
 const HOUR_HEIGHT = 116
@@ -28,12 +30,12 @@ function clockMinutes(): number {
   return hour * 60 + minute
 }
 
-export function DayTimeline({ activities, date, onActivityClick, showCurrentTime = true, latestActivities }: DayTimelineProps) {
+export function DayTimeline({ activities, date, onActivityClick, showCurrentTime = true, latestActivities, recordCoverage }: DayTimelineProps) {
   const blocks = useMemo(() => layoutDayTimeline(activities, date), [activities, date])
   const [minutes, setMinutes] = useState(clockMinutes)
   const [scrollTarget, setScrollTarget] = useState('')
   const isToday = date === todayKey()
-  const sinceLatest = useMemo(() => timeSinceLatest(latestActivities ?? activities, new Date()), [latestActivities, activities, minutes])
+  const sinceLatest = useMemo(() => timeSinceLatest(recordCoverage ? (latestActivities ?? activities).filter(activity => activity.endTime) : latestActivities ?? activities, new Date()), [latestActivities, activities, minutes, recordCoverage])
 
   useEffect(() => {
     if (!showCurrentTime || !isToday) return
@@ -65,7 +67,7 @@ export function DayTimeline({ activities, date, onActivityClick, showCurrentTime
         {sinceLatest.sleep != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#83a8b9' }} /><Text>距上次睡眠 {formatDuration(sinceLatest.sleep)}</Text></View>}
         {sinceLatest.feed != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#d29c9a' }} /><Text>距上次吃奶 {formatDuration(sinceLatest.feed)}</Text></View>}
       </View>}
-      {blocks.length === 0 && <View className='bubu-empty-inline'>这一天还没有记录</View>}
+      {blocks.length === 0 && <View className='bubu-empty-inline'>{recordCoverage?.ongoingEvents ? '有活动进行中，完成时长待结束后确认' : recordCoverage?.recordedEvents ? '当日有记录，当前没有可显示的时间段' : '这一天还没有记录'}</View>}
       <ScrollView className='bubu-day-scroll' scrollY enhanced scrollIntoView={scrollTarget} scrollWithAnimation>
         <View className='bubu-day-canvas' style={{ height: designSize(24 * HOUR_HEIGHT) }}>
           {hours.map((hour) => (
