@@ -122,7 +122,9 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     expect(event(first).facts.hasPoop).toBeUndefined(); expect(event(first).facts.hasPee).toBeUndefined();
     expect(question(first).fields).toContain("hasPoop");
     expect(first.assistantText).toMatch(/有尿.*有便/);
-    const branch = await answer(s, first, "chat-diaper-branch", "有便，没有尿", { facts: { hasPoop: true, hasPee: false } });
+    const branch = await answer(s, first, "chat-diaper-branch", "有便，没有尿", { facts: { hasPoop: true, hasPee: false }, states: { poopPhotoUrl: "known" }, evidence: [{ field: "poopPhotoUrl", kind: "image", confirmed: false }] });
+    expect(event(branch).conflicts).toEqual([]);
+    expect(s.provider.inputs.at(-1)!.tools.some(tool => tool.name === "bubu_resolve_media")).toBe(false);
     expect(question(branch).fields).toContain("poopColor"); expect(branch.assistantText).toMatch(/便便.*什么颜色/);
     const confirmed = await answer(s, branch, "chat-diaper-confirm", "黄色的", { facts: { poopColor: "YELLOW" } });
     expect(event(confirmed).id).toBe(event(first).id); expect(event(confirmed).facts.poopColor).toBe("YELLOW");

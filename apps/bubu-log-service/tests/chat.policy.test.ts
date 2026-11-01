@@ -48,6 +48,12 @@ describe("chat tool scope and evidence boundary", () => {
     expect(JSON.stringify(tools)).toContain('"minItems":1');
     expect(() => prepareCall(turn(), { id: "forbidden", name: "bubu_collector", arguments: {} }, 0)).toThrow(/不能使用/);
   });
+  it("keeps legacy photo state out of model schemas and rejects field questions passed to media resolution", () => {
+    const tools = modelTools([{ name: "bubu_answer_pending", inputSchema: { properties: { states: { propertyNames: { anyOf: [{ enum: ["hasPoop", "poopPhotoUrl"] }, { const: "poopPhotoUrl" }] } } } } }]);
+    expect(JSON.stringify(tools)).not.toContain("poopPhotoUrl");
+    expect(JSON.stringify(tools)).toContain("hasPoop");
+    expect(() => prepareCall(turn(), { id: "wrong-media", name: "bubu_resolve_media", arguments: { eventId: "event-1", pendingId: "question-1", resolution: "unknown" } }, 0)).toThrow(/没有这项待补照片/);
+  });
 });
 describe("natural follow-ups use only MCP-selected fields", () => {
   it.each(["保存成功，100ml已入账。", "已记下这次100ml", "我已经帮你记录到日历啦。", "删除完成。", "记好啦，已入库。", "I saved the new feeding."])("rejects an unconfirmed success statement: %s", text => {

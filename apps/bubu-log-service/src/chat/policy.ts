@@ -20,15 +20,17 @@ pending.kind=fields 是持久字段/重复/重叠问题；用 bubu_answer_pendin
 一次最多调用一个修改工具；读工具可以多次。工具参数不要包含babyId、requestId、sources、expectedVersion；这些由服务器固定。不得调用采集或运营工具。
 完成后返回简短答复或必要的澄清。保存确认和缺项提示由服务器根据回执生成，不输出“已保存/已记录/已删除/已更正”等自行判断的成功声明。查询数值只能依据 get_summary 的返回，不从聊天文本重算。不要心理分析、角色扮演、吉祥话或复杂表单。`;
 
-const hiddenKeys = new Set(["babyId", "requestId", "sources", "sourceKey", "expectedVersion", "questionVersion", "eventVersion"]);
+const hiddenKeys = new Set(["babyId", "requestId", "sources", "sourceKey", "expectedVersion", "questionVersion", "eventVersion", "poopPhotoUrl"]);
 /** The actual discovered MCP schema remains authoritative; only transport-owned fields are hidden from the model. */
 export function modelTools(tools: ProviderTool[]): ProviderTool[] {
   function clean(value: unknown): unknown {
     if (Array.isArray(value)) return value.map(clean);
     if (!value || typeof value !== "object") return value;
     const source = value as Record<string, unknown>;
+    if (source.const === "poopPhotoUrl") return false;
     return Object.fromEntries(Object.entries(source).map(([key, item]) => [key,
       key === "properties" && item && typeof item === "object" ? Object.fromEntries(Object.entries(item).filter(([name]) => !hiddenKeys.has(name)).map(([name, schema]) => [name, clean(schema)]))
+        : key === "enum" && Array.isArray(item) ? item.filter(name => name !== "poopPhotoUrl")
         : key === "required" && Array.isArray(item) ? item.filter(name => typeof name === "string" && !hiddenKeys.has(name)) : clean(item),
     ]));
   }
@@ -43,6 +45,10 @@ const sourceFor = (turn: StoredTurn, eventKey: string): SourceRef => ({
 });
 function patch(value: unknown, turn: StoredTurn) {
   const input = ruleSchema.parse(value);
+  // The legacy photo URL is produced from private attachment IDs by the record
+  // projector. A model cannot manufacture its value, state or evidence.
+  if (input.states) delete input.states.poopPhotoUrl;
+  if (input.evidence) input.evidence = input.evidence.filter(item => item.field !== "poopPhotoUrl");
   // A caption is not field-level confirmation. Conservatively keep visual attributes
   // unconfirmed on an image turn; a later explicit text-only answer can confirm them.
   const fields = Object.keys(input.facts) as Array<keyof typeof input.facts>;
@@ -110,6 +116,7 @@ export function prepareCall(turn: StoredTurn, call: ProviderCall, index: number)
   if (call.name === "bubu_attach_images") return eventMutation.extend({ attachmentIds: z.array(identifier).max(10) }).parse({ ...event, attachmentIds: attachmentIds(raw.attachmentIds, turn) });
   if (call.name === "bubu_resolve_media") {
     const pendingId = turn.input.context.mediaPendingId ?? identifier.parse(raw.pendingId);
+    if (!turn.pending.some(question => question.kind === "media" && question.id === pendingId)) return fail("CHAT_MEDIA_QUESTION", "当前没有这项待补照片，请核对待补事项；已关联的照片不需要再次补图。");
     if (raw.attachmentId !== undefined) attachmentIds([raw.attachmentId], turn);
     return resolveMediaSchema.parse({ ...event, pendingId, resolution: raw.resolution, mediaIndex: raw.mediaIndex, attachmentId: raw.attachmentId });
   }

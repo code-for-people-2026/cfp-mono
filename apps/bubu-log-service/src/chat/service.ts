@@ -304,7 +304,8 @@ export class ChatService {
         if (turn.rounds >= 10 || turn.steps.length >= 24) throw new AppError(409, "CHAT_STEP_LIMIT", "这一轮步骤较多，已确认结果仍保留。请查看记录后继续说明。");
         const messages = await this.messages(principal, turn);
         await this.check(principal, turn.babyId);
-        const output = outputSchema.parse(await abortable(this.options.provider!.complete({ instructions: CHAT_INSTRUCTIONS, messages, tools: modelTools(tools), signal }), signal));
+        const availableTools = modelTools(tools).filter(tool => tool.name !== "bubu_resolve_media" || turn.pending.some(question => question.kind === "media"));
+        const output = outputSchema.parse(await abortable(this.options.provider!.complete({ instructions: CHAT_INSTRUCTIONS, messages, tools: availableTools, signal }), signal));
         await this.check(principal, turn.babyId);
         if (output.calls.some(call => !tools.some(tool => tool.name === call.name))) throw new AppError(409, "CHAT_TOOL_FORBIDDEN", "模型请求了未授权工具，未执行修改。");
         if (output.calls.length) { await this.plan(principal, turn, output); continue; }
