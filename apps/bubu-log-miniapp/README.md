@@ -1,6 +1,6 @@
-# 哺哺日记小程序
+# 卜卜日记小程序
 
-哺哺日记的数据可视化客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。本阶段不搬数据库、不复制 Payload 集合或修改业务写入逻辑。
+卜卜日记的数据可视化客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。本阶段不搬数据库、不复制 Payload 集合或修改业务写入逻辑。
 
 对应 [数据可视化模块](https://github.com/code-for-people-2026/cfp-mono/issues/394)，完整产品路线见 [六大模块落地规划](https://github.com/code-for-people-2026/cfp-mono/issues/392)。
 
@@ -61,3 +61,7 @@ H5 在生产环境须与旧服务同源（或由部署层同源反向代理 `/ap
 - `tests`：跨日、时区、原统计差异、Cookie 与 API 协议测试；`tests/e2e` 用合成数据验证手机尺寸 H5 交互，不访问真实家庭数据。
 
 迁移参考版本：sunmer-home `ac86de31b08bdf413e021e60240da2dcd8e63911`。原项目只读保留。
+
+## 核心 PR 1：可视化
+
+本层仅迁移已有数据的日历、周/月视图、趋势、历史和昵称设置，保留原 Payload 表与旧账号接口。后续 MCP 层负责统一录入；正式微信登录、家庭引导、运营和会员不作为此层依赖。验收使用集成候选版本按模块分别录制，线上已有数据和保护不因分层回退。

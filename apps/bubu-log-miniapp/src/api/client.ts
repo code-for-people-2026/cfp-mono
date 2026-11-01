@@ -20,7 +20,7 @@ export class ApiError extends Error {
   constructor(public readonly status: number, message: string, public readonly code?: string) { super(message); }
 }
 export class ConfigurationError extends ApiError {
-  constructor() { super(0, "尚未配置哺哺日记服务地址，请联系管理员。", "NOT_CONFIGURED"); }
+  constructor() { super(0, "尚未配置卜卜日记服务地址，请联系管理员。", "NOT_CONFIGURED"); }
 }
 export const ACTIVITY_LIMIT = 1000;
 export interface ActivityQuery {
@@ -97,7 +97,7 @@ export function createBubuApi(options: ClientOptions) {
         ...(!options.native ? { credentials: "include" as const } : {}),
       });
     } catch {
-      throw new ApiError(0, "暂时无法连接哺哺日记，请检查网络后重试。");
+      throw new ApiError(0, "暂时无法连接卜卜日记，请检查网络后重试。");
     }
     if (generation !== revision) throw new ApiError(409, "登录状态已变化，请重新加载。", "SESSION_CHANGED");
     // Concurrent reads belong to the same identity even after one discovers expiry.

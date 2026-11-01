@@ -1,4 +1,5 @@
-import { Button, Input, Picker, Text, View } from "@tarojs/components";
+import brandIcon from "../../assets/branding/bubu-avatar-borderless-v1.png";
+import { Button, Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
 import { profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
@@ -160,11 +161,11 @@ export default function DiaryPage() {
     : `${dateLabel(date)} · ${weekdayLabel(date)}`;
   const openDay = (selected: string) => { setDate(selected); setMode("list"); setFilters([]); };
 
-  if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开哺哺日记…</View></View></View>;
+  if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开卜卜日记…</View></View></View>;
   if (!context?.authenticated) return <View className="diary-shell"><DiaryNavigation /><View className="page login-page">
-    <View className="brand-mark">日</View><Text className="eyebrow">BUBU DIARY</Text>
+    <Image className="brand-mark" src={brandIcon} mode="aspectFit" ariaLabel="卜卜日记图标" /><Text className="eyebrow">BUBU DIARY</Text>
     <Text className="welcome-title">每一天，都值得记住</Text>
-    <Text className="muted">登录哺哺日记，看看宝宝的日常与成长。</Text>
+    <Text className="muted">登录卜卜日记，看看宝宝的日常与成长。</Text>
     <View className="login-card">
       <Text className="section-title">登录已有账号</Text>
       <Text className="field-label">用户名或邮箱</Text>
@@ -179,7 +180,7 @@ export default function DiaryPage() {
   </View></View>;
 
   return <View className="diary-shell">
-    <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "哺哺日记"}
+    <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
       open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu}
       onSelect={(next) => { setMode(next); setDetailError(""); setFilters([]); if (next === "day") setDate(todayKey()); closeMenu(); }}
       onBabyChange={(index) => { void changeBaby(index); }}
