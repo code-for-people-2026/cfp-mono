@@ -10,6 +10,8 @@
 
 后台运营模块 [#397](https://github.com/code-for-people-2026/cfp-mono/issues/397) 提供原生 Payload Admin `/admin`，与既有身份、录入、采集和聊天共享同一进程与 Store。管理员初始化、三类运营角色、一次性凭证、异常恢复和会员接缝见 [运营接入](docs/operations.md)，单进程及业务写入边界见 [ADR-0004](docs/adr/0004-native-operations-with-shared-runtime.md)。
 
+服务权益模块 [#398](https://github.com/code-for-people-2026/cfp-mono/issues/398) 提供宝宝共享的限时免费状态、运营配置与持久变更记录。未配置期限和到期策略不会自动停服；暂停保留历史及请求恢复。接口、受控联调和真实验收边界见 [服务权益](docs/membership.md)，[支付契约](docs/payment-disabled.md) 仅保留默认关闭的未来接缝。
+
 ## 可运行结构
 
 - `src/wechat.ts`：服务器向微信 `jscode2session` 交换真实 `wx.login` code。AppID 来自服务器配置；不接收客户端 openid/unionid，不返回 session_key。缺配置失败关闭，主程序无假登录分支。

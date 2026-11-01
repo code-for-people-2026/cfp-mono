@@ -17,7 +17,7 @@ const runtime = await createRuntime({
   mcpUrl: `http://127.0.0.1:${port}/api/mcp`,
 });
 const server = await startRuntimeServer(runtime, { port, hostname, production });
-console.log("哺哺日记服务与 Payload 运营后台已启动");
+console.log("卜卜日记服务与 Payload 运营后台已启动");
 let closing = false;
 for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => {
   if (closing) return;

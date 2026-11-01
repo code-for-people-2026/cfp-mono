@@ -1,3 +1,4 @@
+import { AppError } from "../contracts";
 import type { CollectionConfig, Payload, PayloadRequest } from "payload";
 import type { ChatTurn, ProviderCall, ProviderMessage } from "./contracts";
 
@@ -21,6 +22,7 @@ export interface ChatStep {
   result?: unknown;
 }
 export interface StoredTurn extends ChatTurn {
+  privacyExpired?: boolean;
   identityId: string; fingerprint: string;
   transcript: ProviderMessage[];
   steps: ChatStep[];
@@ -44,6 +46,7 @@ export class ChatRepository {
   }
   async put(turn: StoredTurn, req: PayloadRequest): Promise<void> {
     const old = await this.payload.find({ collection: "chat-turns", where: { key: { equals: turn.id } }, limit: 1, depth: 0, overrideAccess: true, req });
+    if (old.docs[0] && (old.docs[0].value as StoredTurn).privacyExpired && !turn.privacyExpired) throw new AppError(409, "RETENTION_EXPIRED", "对话原文已清理，不能恢复旧内容。");
     if (old.docs[0] && (old.docs[0].identityId !== turn.identityId || old.docs[0].babyId !== turn.babyId)) throw new Error("Chat namespace mismatch");
     if (old.docs[0]) await this.payload.update({ collection: "chat-turns", id: old.docs[0].id, data: { value: turn }, overrideAccess: true, req });
     else await this.payload.create({ collection: "chat-turns", data: { id: turn.id, key: turn.id, identityId: turn.identityId, babyId: turn.babyId, value: turn }, overrideAccess: true, req });

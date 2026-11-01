@@ -1,4 +1,7 @@
 "use client";
+import { PrivacyOperationsPanel } from "../privacy/OperationsPanel";
+import { HealthResult, OperationsHealthPanel } from "./HealthPanel";
+import type { HealthCheck } from "./health";
 
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import "./components.css";
@@ -9,7 +12,7 @@ type Context = { user: { id: string | number; email: string; role: string; babyI
 type EventSummary = { id: string; version: number; type?: string; startTime?: string; lifecycle: string; projection: string; attachmentIds: string[] };
 type Job = { id: string; accountId: string; chatId: string; agentId: string; enabled: boolean; intervalMs: number; lastSuccessAt?: string; processedThrough?: string; nextRunAt?: string; heartbeatAt?: string; failure?: { code: string; at: string; attempts: number }; activeBatchId?: string; pendingMedia?: number; cursor?: Record<string, number>; backfills?: { id: string; state: string; range: { from: string; to: string } }[] };
 type Pending = { id: string; kind?: string; eventId?: string; eventIds?: string[]; version?: number; eventVersion?: number; fields?: string[]; conflicts?: { code: string; message?: string }[]; duplicateCandidates?: string[]; sourceId?: string; media?: { index: number; state: string; reason: string }[]; state: string };
-type Overview = { baby: Baby; grants: { subjectId: string; state: string; permissions: string[]; source: string }[]; bindings: { groupId: string; agentId: string; active: boolean }[]; jobs: Job[]; pending: Pending[]; events: EventSummary[]; audit: Row[] };
+type Overview = { collectionHealth?: HealthCheck; baby: Baby; grants: { subjectId: string; state: string; permissions: string[]; source: string }[]; bindings: { groupId: string; agentId: string; active: boolean }[]; jobs: Job[]; pending: Pending[]; events: EventSummary[]; audit: Row[] };
 type Command = Row & { type: string };
 type ActionRequest = { babyId: string; reason: string; requestId: string; command: Command };
 type ReadRequest = { babyId: string; reason: string; kind: string; id?: string; before?: unknown; after?: unknown };
@@ -90,20 +93,22 @@ export function OperationsTools() {
     return () => controller.abort();
   }, [reload]);
   function denied() { setContext(undefined); setBabyId(""); setError("登录或宝宝授权已失效。请刷新权限，必要时重新登录。"); }
-  return <section className="bubu-ops" aria-label="哺哺日记运营工作区" onKeyDown={event => {
+  return <section className="bubu-ops" aria-label="卜卜日记运营工作区" onKeyDown={event => {
     // Do not submit the surrounding Payload form when entering a field value.
     if (event.key === "Enter" && event.target instanceof HTMLInputElement) event.preventDefault();
   }}>
-    <div className="bubu-ops__header"><div><h2>哺哺日记 · 运营工作区</h2><p>按宝宝核对授权、采集和待补事项。敏感查看与操作均留下审计。</p></div>
+    <div className="bubu-ops__header"><div><h2>卜卜日记 · 运营工作区</h2><p>按宝宝核对授权、采集和待补事项。敏感查看与操作均留下审计。</p></div>
       <button type="button" className="bubu-ops__secondary" onClick={() => { setContext(undefined); setReload(value => value + 1); }}>刷新权限</button></div>
     {error && <p role="alert" className="bubu-ops__error">{error} <a href="/admin/login">运营登录</a></p>}
     {!context && !error && <p role="status">正在核对运营身份…</p>}
     {context && <><div className="bubu-ops__toolbar"><p>{context.user.email} <span className="bubu-ops__badge">{label(context.user.role)}</span></p>
       <Select title="当前宝宝" value={babyId} onChange={setBabyId} options={context.babies.map(baby => [baby.id, `${baby.name} · ${baby.id}`])} /></div>
       {!context.babies.length && <Empty>尚未分配宝宝范围。请由管理员在运营账号中明确授权。</Empty>}
+      {context.user.role === "administrator" && <OperationsHealthPanel denied={denied} />}
+      {context.user.role === "administrator" && <PrivacyOperationsPanel key="account-privacy" />}
+      {babyId && context.user.role !== "auditor" && <PrivacyOperationsPanel key={`privacy-${babyId}`} babyId={babyId} />}
       {babyId && <Workspace key={babyId} babyId={babyId} writable={context.user.role !== "auditor"} denied={denied} accountAudit={context.user.role === "administrator" ? context.accountAudit : undefined} />}
       {!babyId && context.user.role === "administrator" && context.accountAudit && <AccountAudit rows={context.accountAudit} />}
-      <p className="bubu-ops__footer">会员权益：{context.membership.configured ? "已配置，请通过会员模块管理。" : "等待会员模块提供配置；此处不设价格、免费截止日或到期限流。"}</p>
     </>}
   </section>;
 }
@@ -215,6 +220,7 @@ function Workspace({ babyId, writable, denied, accountAudit }: { babyId: string;
   const newActionDisabled = actionsDisabled || retryAllowed;
   const tabs: Choice[] = [["pending", "记录与待补"], ["family", "宝宝与照护授权"], ["collector", "群绑定与采集"], ["history", "历史核对"], ["audit", "操作审计"]];
   return <>
+    {overview?.collectionHealth && <HealthResult check={overview.collectionHealth} />}
     <div className="bubu-ops__reason"><Field title="本次核对或操作理由（至少 8 个字）" hint="请说明所处理的客服事项或授权依据；每次操作均保存这段理由。">{id => <textarea id={id} value={reason} maxLength={500} rows={2} onChange={event => setReason(event.target.value)} placeholder="例如：根据照护者反馈核对今天的瓶喂时间" />}</Field></div>
     {!writable && <p className="bubu-ops__notice">当前为审计只读角色，仅能核对范围内的进度和摘要；私有正文、图片和变更操作需运营角色。</p>}
     <nav className="bubu-ops__nav" aria-label="运营工作区栏目">{tabs.map(([key, title]) => <button key={key} type="button" aria-pressed={section === key} className={section === key ? "" : "bubu-ops__secondary"} onClick={() => { setSection(key); setSensitive(undefined); clearImage(); setOneTime(undefined); }}>{title}</button>)}
@@ -258,6 +264,7 @@ function Workspace({ babyId, writable, denied, accountAudit }: { babyId: string;
 
 type Sender = (command: Command, existing?: ActionRequest) => Promise<void>;
 type Reader = (input: Omit<ReadRequest, "babyId" | "reason">) => Promise<void>;
+
 function Family({ overview, send, disabled }: { overview: Overview; send: Sender; disabled: boolean }) {
   const [name, setName] = useState(overview.baby.name);
   const [fullName, setFullName] = useState(overview.baby.fullName || "");

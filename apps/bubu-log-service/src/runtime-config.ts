@@ -1,9 +1,11 @@
+import { privacyCollections } from "./privacy/persistence";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { zh } from "payload/i18n/zh";
 import { buildStoreConfig } from "./store";
 import { recordCollections } from "./records/persistence";
 import { chatCollections } from "./chat/persistence";
+import { membershipCollections } from "./membership/persistence";
 import { operationsCollections, decorateCollections, installOpsConstraints } from "./operations/collections";
 
 export const serviceDirectory = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -19,7 +21,7 @@ export function buildRuntimeConfig(options: { directory: string; secret?: string
   const origin = new URL(options.origin).origin;
   return buildStoreConfig({
     directory: options.directory, secret: options.secret, schemaOnly: options.schemaOnly,
-    extensions: [...recordCollections, ...chatCollections, ...operatorCollections],
+    extensions: [...recordCollections, ...chatCollections, ...membershipCollections, ...privacyCollections, ...operatorCollections],
     configure: config => ({
       ...config,
       collections: decorateCollections(config.collections || []),
@@ -31,7 +33,7 @@ export function buildRuntimeConfig(options: { directory: string; secret?: string
       i18n: { supportedLanguages: { zh }, fallbackLanguage: "zh" },
       admin: {
         user: "ops-users",
-        meta: { titleSuffix: " · 哺哺日记运营" },
+        meta: { titleSuffix: " · 卜卜日记运营" },
         importMap: { autoGenerate: false, baseDir: serviceDirectory },
         components: { beforeDashboard: ["/src/operations/components#OperationsTools"] },
       },

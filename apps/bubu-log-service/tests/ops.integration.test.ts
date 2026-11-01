@@ -1,5 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { PrivacyOperations } from "../src/privacy/operations";
+import { fixtureImageReviewer, testPrivacyConfig, grantFixturePrivacy } from "./fixtures/privacy";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -9,6 +11,7 @@ import { createNodeServer } from "../src/node-server";
 import { bootstrapOpsAdmin } from "../src/operations/collections";
 import { readOpsUser, type OpsUser } from "../src/operations/access";
 import { OperationsService } from "../src/operations/service";
+import { OperationsHealth } from "../src/operations/health";
 import type { OpsAction } from "../src/operations/contracts";
 import { RecordsLegacyFixture } from "./fixtures/records";
 import { WechatFixture } from "./fixtures/identity";
@@ -16,6 +19,7 @@ import { RecordsRepository, hash } from "../src/records/persistence";
 import { ChatMcpClient } from "../src/chat/mcp";
 
 describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
+  const imageReviewer = vi.fn(fixtureImageReviewer);
   let directory: string, runtime: BubuRuntime, operations: OperationsService, admin: OpsUser, operator: OpsUser, auditor: OpsUser;
   const legacy = new RecordsLegacyFixture();
   const server = createNodeServer(request => runtime.handler(request), "http://127.0.0.1");
@@ -25,7 +29,8 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-ops-integration-"));
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
     const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    runtime = await createRuntime({ directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    runtime = await createRuntime({ privacy: testPrivacyConfig, imageReviewer, directory, secret: "isolated-ops-integration-secret", publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat: new WechatFixture() });
+    await grantFixturePrivacy(runtime);
     const first = await bootstrapOpsAdmin(runtime.store.payload, { email: "admin@synthetic.invalid", password: "Synthetic-Password-Only-2026", babyIds: ["baby-a", "baby-b"] });
     admin = await readOpsUser(runtime.store.payload, { ...first, collection: "ops-users" });
     const create = async (email: string, role: string) => {
@@ -45,11 +50,63 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     const cookie = await runtime.handler(new Request(`${runtime.opsOrigin}/api/ops/context`, { headers: { Cookie: `bubu_session=${login.token}` } }));
     expect(cookie.status).toBe(401);
   });
+  it("scopes private complaints, rejects stale replies, and returns the reply only to its owner", async () => {
+    const principal = await runtime.identity.authenticate((await runtime.identity.loginLegacy("old-alice", "correct-password", "native")).token);
+    const other = await runtime.identity.authenticate((await runtime.identity.loginLegacy("old-bob", "correct-password", "native")).token);
+    const created = await runtime.privacy.request(principal, { kind: "complaint", message: "synthetic private complaint", babyId: "baby-a" });
+    await runtime.privacy.request(principal, { kind: "privacy", message: "synthetic private account request" });
+    const bridge = new PrivacyOperations(runtime.privacy, runtime.deletion), reason = "合成隐私请求核验";
+    await expect(bridge.execute(auditor, { action: "read", babyId: "baby-a", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(bridge.execute(operator, { action: "read", babyId: "baby-b", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(bridge.execute(operator, { action: "read", reason })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    const queue = await bridge.execute(operator, { action: "read", babyId: "baby-a", reason });
+    expect(queue.requests).toHaveLength(1); expect(queue.requests[0]?.identityId).toBeUndefined();
+    const reply = { action: "reply", babyId: "baby-a", reason, id: created.id, expectedUpdatedAt: queue.requests[0]!.updatedAt, reply: "合成处理答复" };
+    await bridge.execute(operator, reply);
+    await expect(bridge.execute(operator, reply)).rejects.toMatchObject({ code: "PRIVACY_REQUEST_CHANGED" });
+    expect((await runtime.privacy.requests(principal)).find(row => row.id === created.id)?.reply).toBe(reply.reply);
+    expect(await runtime.privacy.requests(other)).toEqual([]);
+    expect((await bridge.execute(admin, { action: "read", reason })).requests).toHaveLength(1);
+    expect(JSON.stringify(await runtime.store.list("audit"))).not.toContain("synthetic private complaint");
+  });
   it("explicit scopes and auditor permissions apply even to service callers", async () => {
     expect((await operations.context(operator)).babies.map(baby => baby?.id)).toEqual(["baby-a"]);
     await expect(operations.overview(operator, "baby-b")).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
     await expect(operations.execute(auditor, input({ type: "invite", access: "read" }, "auditor-denied"))).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
     await expect(operations.read(auditor, { babyId: "baby-a", reason: "不能读取敏感原文", kind: "event", id: "any" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+  });
+  it("global health requires a fresh administrator and contains no family or account identifiers", async () => {
+    await expect(operations.health(operator)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await expect(operations.health(auditor)).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    const report = await operations.health(admin);
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("unconfigured");
+    expect(report.checks.find(check => check.id === "maintenance")?.level).toBe("warning");
+    expect(JSON.stringify(report)).not.toMatch(/baby-a|baby-b|synthetic.invalid|old-alice/);
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: false }, overrideAccess: false, user: admin });
+    await expect(operations.health({ ...operator, role: "administrator" })).rejects.toMatchObject({ code: "OPS_FORBIDDEN" });
+    await runtime.store.payload.update({ collection: "ops-users", id: operator.id, data: { active: true }, overrideAccess: false, user: admin });
+  });
+  it("marks failed/stale host evidence and deferred cleanup honestly", async () => {
+    const file = path.join(directory, "host-status.json"), health = new OperationsHealth(runtime.privacy, directory, file);
+    const stamp = new Date(runtime.identity.now()).toISOString(), old = new Date(runtime.identity.now() - 31 * 3600_000).toISOString();
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "verified", at: stamp, lastVerifiedAt: stamp }, certificate: { state: "verified", at: stamp, expiresAt: new Date(runtime.identity.now() + 30 * 86400_000).toISOString() } }), { mode: 0o644 });
+    let report = await health.read();
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("ok");
+    expect(report.checks.find(check => check.id === "certificate")?.level).toBe("ok");
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "verified", at: old, lastVerifiedAt: old }, certificate: { state: "verified", at: old, expiresAt: new Date(runtime.identity.now() + 30 * 86400_000).toISOString() } }));
+    report = await health.read();
+    expect(report.checks.find(check => check.id === "backup")?.level).toBe("warning");
+    expect(report.checks.find(check => check.id === "certificate")?.level).toBe("critical");
+    await runtime.privacy.repository.put("privacy-state", "maintenance:last", { at: stamp, report: { deferredTasks: 3 } }, {});
+    expect((await health.read()).checks.find(check => check.id === "maintenance")?.message).toContain("3 项");
+    await runtime.privacy.repository.put("privacy-state", "maintenance:last", { at: stamp, failed: true }, {});
+    expect((await health.read()).checks.find(check => check.id === "maintenance")?.level).toBe("critical");
+    await writeFile(file, JSON.stringify({ version: 1, backup: { state: "failed", at: stamp, lastVerifiedAt: old } }));
+    expect((await health.read()).checks.find(check => check.id === "backup")?.level).toBe("critical");
+    await writeFile(file, JSON.stringify({ version: 1, secret: "MUST-NOT-LEAK" }));
+    report = await health.read();
+    expect(report.checks.find(check => check.id === "host-report")?.level).toBe("critical");
+    expect(JSON.stringify(report)).not.toContain("MUST-NOT-LEAK");
   });
   it("inherited BabyUser grants are visible without inventing persisted grants", async () => {
     const before = (await runtime.store.list("grants")).length;
@@ -109,8 +166,22 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect(Array.isArray(revisions)).toBe(true);
     expect((await runtime.store.list("audit")).some(row => row.value.action === "ops.read.event")).toBe(true);
   });
+  it("lets family deletion freeze an operator upload without waiting for the supplier", async () => {
+    let finish!: (result: "allow") => void, started!: () => void;
+    const waiting = new Promise<void>(r => { started = r; });
+    imageReviewer.mockImplementationOnce(() => new Promise(r => { finish = r; started(); }));
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#bbccdd" } }).png().toBuffer();
+    const uploading = operations.upload(operator, "baby-a", "合成撤回并发验收", "operator-review-withdraw", bytes, "image/png");
+    await waiting;
+    await runtime.identity.exclusive(() => runtime.privacy.repository.put("privacy-state", "frozen-baby:baby-a", { state: "deleting" }, { babyId: "baby-a" }));
+    finish("allow");
+    await expect(uploading).rejects.toMatchObject({ code: "PRIVACY_PROCESSING_FROZEN" });
+    const audit = (await runtime.store.list("audit")).filter(row => row.value.action === "ops.attachment.upload.requested");
+    expect(audit.length).toBeGreaterThan(0);
+    await runtime.identity.exclusive(() => runtime.store.transaction(req => runtime.store.payload.delete({ collection: "privacy-state", where: { key: { equals: "frozen-baby:baby-a" } }, overrideAccess: true, req })));
+  });
   it("attachment upload/read is private, association and retract execute MCP and refresh facts", async () => {
-    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
     const uploaded = await operations.upload(operator, "baby-a", "合成图片关联验收", "ops-upload-picture", bytes, "image/png");
     expect(uploaded).not.toHaveProperty("sha256");
     const result = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId, expectedVersion: version, attachmentIds: [uploaded.id] } }, "ops-associate-image")) as { events: { version: number }[] }; version = result.events[0]!.version;
@@ -138,7 +209,7 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     const cli = await runtime.identity.provisionOperator("synthetic-cli", "baby-a", 60_000);
     await expect(runtime.collector.resolveMedia(await runtime.identity.authenticate(cli.token), { ...args, babyId: "baby-a", requestId: "cli-cannot-confirm", resolution: "unknown" })).rejects.toMatchObject({ code: "MEDIA_HUMAN_CONFIRMATION_REQUIRED" });
     if (resolution === "provided") {
-      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png().toBuffer();
+      const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#84b8a1" } }).png({ compressionLevel: 9 }).toBuffer();
       args.attachmentId = (await operations.upload(operator, "baby-a", "合成待补照片核对", "pending-media-upload", bytes, "image/png")).id;
       await expect(operations.execute(operator, input({ type: "record", tool: "bubu_resolve_media", arguments: args }, "unlinked-media-denied"))).rejects.toMatchObject({ code: "MEDIA_ATTACHMENT_NOT_LINKED" });
       const attached = await operations.execute(operator, input({ type: "record", tool: "bubu_attach_images", arguments: { eventId: event.id, expectedVersion: event.version, attachmentIds: [args.attachmentId] } }, "attach-pending-media")) as { events: { version: number }[] };

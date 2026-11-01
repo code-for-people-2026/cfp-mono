@@ -52,6 +52,21 @@ describe("recoverable baby conversation", () => {
     const resumed = new ChatSession(api, store, identityId, babyId, { refresh: vi.fn(), revoked: vi.fn() });
     await resumed.recover(); expect(api.sendChat).toHaveBeenCalledOnce(); expect(resumed.getSnapshot().draft.pending).toBeUndefined(); resumed.dispose();
   });
+  it("keeps a paused service request and resumes the identical submission after service is restored", async () => {
+    const { store, session, api, callbacks } = fixture(); await session.load();
+    session.edit({ text: "刚才换了尿布", question: { id: "q1", questionVersion: 2, eventVersion: 3 } });
+    api.sendChat.mockRejectedValueOnce(new ApiError(423, "服务已暂停，恢复后可继续。", "SERVICE_PAUSED"));
+    await session.send("2026-10-23");
+    const original = store.read(identityId, babyId).pending!;
+    expect(session.getSnapshot().error).toBe("服务已暂停，恢复后可继续。");
+    expect(session.getSnapshot().draft.text).toBe("刚才换了尿布");
+    expect(callbacks.revoked).not.toHaveBeenCalled(); session.dispose();
+    const resumed = new ChatSession(api, store, identityId, babyId, callbacks);
+    await resumed.recover();
+    expect(api.getChatRequest).toHaveBeenCalledWith(babyId, original.requestId);
+    expect(api.sendChat.mock.calls.map(call => call[0])).toEqual([original, original]);
+    expect(store.read(identityId, babyId).pending).toBeUndefined(); resumed.dispose();
+  });
   it("polls processing, preserves immutable request and does not duplicate generation", async () => {
     vi.useFakeTimers(); const { session, api, store } = fixture(); await session.load(); session.edit({ text: "睡着了" });
     api.sendChat.mockImplementation(async input => turn(input, { status: "processing", refreshRequired: false, receipts: [] }));

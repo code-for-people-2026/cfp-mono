@@ -1,3 +1,4 @@
+import type { PrivacyOperations } from "../privacy/operations";
 import { z } from "zod";
 import { AppError } from "../contracts";
 import { MAX_ATTACHMENT_BYTES } from "../records/attachments";
@@ -6,7 +7,7 @@ import { actionSchema, readSchema, opsReason, opsRequestId, type MembershipOpera
 import { OperationsService, type OperationsRuntime } from "./service";
 
 const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
-export function createOperationsHandler(runtime: OperationsRuntime, options: { membership?: MembershipOperations } = {}) {
+export function createOperationsHandler(runtime: OperationsRuntime, options: { membership?: MembershipOperations; privacy?: PrivacyOperations } = {}) {
   const service = new OperationsService(runtime, options.membership), origin = new URL(runtime.opsOrigin).origin;
   const json = (value: unknown, status = 200) => Response.json(value, { status, headers });
   return async (request: Request): Promise<Response> => {
@@ -19,6 +20,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
       const user = await readOpsUser(runtime.store.payload, auth.user);
       const url = new URL(request.url);
       if (request.method === "GET" && url.pathname === "/api/ops/context") return json(await service.context(user));
+      if (request.method === "GET" && url.pathname === "/api/ops/health") return json(await service.health(user));
       if (request.method === "GET" && url.pathname === "/api/ops/overview") return json(await service.overview(user, url.searchParams.get("babyId") || ""));
       if (request.method === "POST" && url.pathname === "/api/ops/attachment") {
         const reason = opsReason.parse(decodeURIComponent(request.headers.get("x-bubu-reason") || ""));
@@ -34,6 +36,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
         const text = await request.text();
         if (Buffer.byteLength(text) > 1024 * 1024) throw new AppError(413, "BODY_TOO_LARGE", "请求内容过长。");
         let raw: unknown; try { raw = JSON.parse(text); } catch { throw new AppError(400, "INVALID_JSON", "请求格式不正确。"); }
+        if (url.pathname === "/api/ops/privacy" && options.privacy) return json(await options.privacy.execute(user, raw));
         if (url.pathname === "/api/ops/action") return json({ receipt: await service.execute(user, actionSchema.parse(raw)) });
         if (url.pathname === "/api/ops/read") {
           const input = readSchema.parse(raw), value = await service.read(user, input);
@@ -47,7 +50,7 @@ export function createOperationsHandler(runtime: OperationsRuntime, options: { m
       return json({ code: "NOT_FOUND", error: "未找到此运营入口。" }, 404);
     } catch (error) {
       if (error instanceof z.ZodError) return json({ code: "INVALID_INPUT", error: "请核对字段、理由与操作范围。", retryable: false }, 400);
-      if (error instanceof AppError) return json({ code: error.code, error: error.message, retryable: error.status >= 500 }, error.status);
+      if (error instanceof AppError) return json({ code: error.code, error: error.message, retryable: error.retryable ?? error.status >= 500 }, error.status);
       return json({ code: "OPS_UNCONFIRMED", error: "操作结果尚未确认，请保留原请求号重试。", retryable: true }, 503);
     }
   };

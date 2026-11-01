@@ -1,0 +1,19 @@
+FROM node:24.22.1-alpine@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+WORKDIR /app
+RUN corepack enable && corepack prepare pnpm@10.2.0 --activate
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches patches
+COPY apps/bubu-log-service/package.json apps/bubu-log-service/package.json
+COPY packages/eslint-config packages/eslint-config
+COPY packages/typescript-config packages/typescript-config
+RUN pnpm install --frozen-lockfile --filter @cfp/bubu-log-service... --ignore-scripts
+RUN apk add --no-cache --virtual .native-build python3 make g++ && pnpm --filter @cfp/bubu-log-service exec npm rebuild fs-ext && apk del .native-build
+COPY apps/bubu-log-service apps/bubu-log-service
+# Types are checked locally before packaging; keep this small ECS build single-process.
+RUN BUBU_BUILD_TYPES_VERIFIED=true NODE_OPTIONS=--max-old-space-size=1024 RAYON_NUM_THREADS=1 pnpm --filter @cfp/bubu-log-service build
+RUN mkdir -p /data && chown node:node /data && chown -R node:node apps/bubu-log-service/.next
+ENV NODE_ENV=production
+USER node
+WORKDIR /app/apps/bubu-log-service
+EXPOSE 3320
+CMD ["node", "--import", "tsx", "src/main.ts"]

@@ -11,6 +11,7 @@ export function imageMime(bytes: ArrayBuffer): "image/png" | "image/jpeg" | "ima
   throw new Error("请选择 JPG、PNG 或 WebP 照片；其他格式请先在相册中转换。");
 }
 export async function chooseChatImage(babyId: string, source?: "camera" | "album", active: () => boolean = () => true) {
+  if (native) { if (typeof Taro.requirePrivacyAuthorize !== "function") throw new Error("请更新微信后再使用图片功能。"); await Taro.requirePrivacyAuthorize(); }
   const selected = await Taro.chooseImage({ count: 1, sizeType: ["original"], sourceType: source ? [source] : ["camera", "album"] });
   const path = selected.tempFilePaths[0]; if (!path) throw new Error("没有选中照片。");
   trackImageFile(path);

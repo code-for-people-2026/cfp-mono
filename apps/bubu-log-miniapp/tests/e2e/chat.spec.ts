@@ -1,3 +1,4 @@
+import { privacyFixture } from "../fixtures/privacy";
 import { expect, test, type Page } from "@playwright/test";
 import { emptyRecordSummary } from "../fixtures/records";
 test.skip(process.env.BUBU_AUTH_MODE === "legacy", "Chat requires sidecar mode");
@@ -9,6 +10,7 @@ async function fixture(page: Page, loseResponse = false) {
   await page.route("**/api/**", async route => {
     const request = route.request(), url = new URL(request.url());
     const json = (data: unknown, status = 200) => route.fulfill({ json: data, status });
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return json(privacy);
     if (url.pathname === "/api/app/auth/context") return json({ authenticated: true, identityId: "chat-parent", legacyLinked: false, hasBaby: !revoked, baby: revoked ? null : baby, babies: revoked ? [] : [baby] });
     if (revoked) return json({ error: "照护权限已撤销", code: "BABY_FORBIDDEN" }, 403);
     if (url.pathname === "/api/app/chat/request") return json({ turn: turns.find(turn => turn.requestId === url.searchParams.get("requestId")) ?? null });

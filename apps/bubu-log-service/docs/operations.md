@@ -32,6 +32,7 @@
 | 方法与路径 | 契约 |
 | --- | --- |
 | GET `/api/ops/context` | fresh 账号、明确范围的宝宝、会员是否已配置；管理员另得最近 100 条账号审计 |
+| GET `/api/ops/health` | 仅 fresh 管理员；低敏感计数、备份/磁盘/证书/清理状态，不包含家庭标识、路径或原始错误 |
 | GET `/api/ops/overview?babyId=…` | 授权、绑定、采集、待补、事件安全摘要、最近 100 条宝宝审计 |
 | POST `/api/ops/action` | `{babyId,reason,requestId,command}`；返回 `{receipt}`；同号异参 409；凭证仅首次响应 |
 | POST `/api/ops/read` | `{babyId,reason,kind,id?}`；kind 为 event/revisions/source/attachment；history 使用 before/after |
@@ -46,3 +47,5 @@
 `test` 覆盖真实临时 SQLite、MCP 回环、角色／范围撤销、一次性凭证、旧 Activity 读取与更正及照片待补。`test:production` 从空库及身份、录入、聊天三版升级，逐行核对原数据并关闭重开。`test:ops-server` 启动隔离合成后台，打印私有 fixture 文件路径；`test:ops-http <路径>` 使用该文件验证实际原生登录、只读 REST、CSRF、秘密字段和业务动作。fixture 文件含测试凭证，不提交或公开。
 
 本模块仅验证合成数据；未接入真实客户库、真实微信、真实群或生产部署。没有启用采集定时器、支付或到期停服。旧公开照片、旧站跨库写入窗口、外部 provider 和生产代理配置仍需各自验收。SQLite 只支持此方案的单进程实例；服务、初始化及离线维护 CLI 的目录锁防止同时写入，不能用它代替多主机数据库锁。
+
+管理员工作区增加自动刷新运行面板；范围内采集失败与延迟提示仍来自原任务状态。加密备份、恢复隔离及定时器安装条件见 [备份与恢复操作](backup-operations.md)。未接入外部通知渠道；界面明确提示该限制。

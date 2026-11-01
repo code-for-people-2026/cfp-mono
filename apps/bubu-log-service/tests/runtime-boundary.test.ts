@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createNodeServer } from "../src/node-server";
 import { acquireRuntimeLock } from "../src/runtime-lock";
+import { spawn } from "node:child_process";
 
 const cleanup: Array<() => Promise<unknown>> = [];
 afterEach(async () => { for (const action of cleanup.splice(0).reverse()) await action(); });
@@ -27,6 +28,26 @@ async function serverFixture() {
 }
 
 describe("single-process native Admin boundary", () => {
+  it("recovers after a crashed owner while excluding another live writer", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "bubu-crash-lock-"));
+    cleanup.push(() => rm(directory, { recursive: true, force: true }));
+    const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e",
+      `import { acquireRuntimeLock } from './src/runtime-lock.ts'; acquireRuntimeLock(process.argv[1]); console.log('locked'); setInterval(() => {}, 1000);`, directory],
+    { stdio: ["ignore", "pipe", "pipe"] });
+    cleanup.push(async () => { child.kill("SIGKILL"); });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("lock owner did not start")), 3000);
+      child.stdout.once("data", () => { clearTimeout(timer); resolve(); });
+      child.once("error", reject);
+      child.once("exit", code => { clearTimeout(timer); if (code !== null) reject(new Error(`lock owner exited ${code}`)); });
+    });
+    expect(() => acquireRuntimeLock(directory)).toThrow(/already owned/);
+    const died = new Promise<void>(resolve => child.once("exit", () => resolve()));
+    child.kill("SIGKILL"); await died;
+    const release = acquireRuntimeLock(directory);
+    expect(() => acquireRuntimeLock(directory)).toThrow(/already owned/);
+    release();
+  });
   it("keeps native request bytes/cookies and existing HTTP routes intact", async () => {
     const f = await serverFixture();
     const response = await fetch(`${f.url}/api/cms/ops-users/login`, { method: "POST", headers: { Origin: "https://ops.example.test", Cookie: "bubu-ops-token=opaque" }, body: JSON.stringify({ email: "合成" }) });

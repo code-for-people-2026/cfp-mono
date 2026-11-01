@@ -1,3 +1,4 @@
+import { privacyFixture } from "../fixtures/privacy";
 import { expect, test } from "@playwright/test";
 import { emptyRecordSummary, recordEventFixture } from "../fixtures/records";
 
@@ -15,6 +16,7 @@ test("sidecar cards use server facts and expose unknown, ongoing and duplicate c
   Object.assign(summary.coverage, { recordedEvents: 6, incompleteEvents: 1, unknownFields: 1, ongoingEvents: 1, duplicateCandidates: 1, pendingCandidates: 1 });
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return route.fulfill({ json: privacy });
     if (url.pathname === "/api/app/auth/context") return route.fulfill({ json: { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id, identityId: "test", legacyLinked: true } });
     expect(url.searchParams.get("babyId")).toBe(baby.id);
     if (url.pathname === "/api/app/records/snapshot") return route.fulfill({ json: { activities: [], events: [], questions: [], summary } });
@@ -57,6 +59,7 @@ test("sidecar details show private attachments and source context while sync fai
   let syncUnavailable = false;
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
+    const privacy = privacyFixture(url.pathname); if (privacy !== undefined) return route.fulfill({ json: privacy });
     if (url.pathname === "/api/app/auth/context") return route.fulfill({ json: { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id, identityId: "test", legacyLinked: true } });
     expect(url.searchParams.get("babyId")).toBe(baby.id);
     if (url.pathname === "/api/app/records/snapshot") {

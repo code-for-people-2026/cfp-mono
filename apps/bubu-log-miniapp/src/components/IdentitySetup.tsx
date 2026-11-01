@@ -1,3 +1,4 @@
+import { Choice } from "../privacy/PrivacyCenter";
 import { Button, Input, Text, View } from "@tarojs/components";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
@@ -9,6 +10,7 @@ type Props = { context: AuthContext; onComplete: (context: AuthContext) => void;
 /** Identity actions never infer an account or a baby's authorization from a nickname. */
 export function IdentitySetup({ context, onComplete, settings = false }: Props) {
   const [mode, setMode] = useState<SetupMode>(settings || context.legacyLinked ? "invite" : "create");
+  const [guardian, setGuardian] = useState(false);
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +26,9 @@ export function IdentitySetup({ context, onComplete, settings = false }: Props) 
     if (inFlight.current) return;
     inFlight.current = true; setBusy(true); setError("");
     try {
-      const next = mode === "create" ? await api.createFamily({ name })
+      if (mode === "create" && !guardian) throw new Error("请先确认你是宝宝的成年监护人并同意儿童信息处理。");
+      const policy = mode === "create" ? await api.privacyPolicy() : undefined;
+      const next = mode === "create" ? await api.createFamily({ name, guardian: { policyVersion: policy!.version, guardian: true, sensitive: true, ai: false, images: false, collection: false, groupMembersInformed: false } })
         : mode === "bind" ? await api.bindLegacy({ username, password })
         : await api.acceptInvitation({ code });
       // Refresh the home context even if this settings page closed while saving.
@@ -48,6 +52,8 @@ export function IdentitySetup({ context, onComplete, settings = false }: Props) 
       <Button className={`text-button ${mode === "invite" ? "identity-choice-current" : ""}`} disabled={busy || undefined} onClick={() => select("invite")}>使用邀请码</Button>
     </View>
     {mode === "create" ? <>
+      <Choice label="我是宝宝的成年监护人，同意儿童敏感信息用于照护记录" value={guardian} onChange={setGuardian} />
+      <Text className="muted">创建后可分别开启 AI、图片与群采集授权。</Text>
       <Text className="field-label">宝宝昵称（小名）</Text>
       <Input className="login-input" ariaLabel="新宝宝昵称" value={name} maxlength={30} placeholder="怎么称呼宝宝" disabled={busy || undefined} onInput={(event) => setName(event.detail.value)} />
     </> : mode === "bind" ? <>

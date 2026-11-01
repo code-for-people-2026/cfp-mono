@@ -14,10 +14,11 @@ import { readOpsUser, requireBaby, type OpsUser } from "./access";
 import { appendOpsAudit } from "./audit";
 import { redactOperations } from "./redaction";
 import { type MembershipOperations, type OpsAction, type OpsRead } from "./contracts";
+import { collectorHealth, type OperationsHealth } from "./health";
 
 export interface OperationsRuntime {
   identity: IdentityService; records: RecordsService; attachments: AttachmentService; collector: CollectorService;
-  store: Store; mcpUrl: string; opsOrigin: string;
+  store: Store; mcpUrl: string; opsOrigin: string; health?: OperationsHealth;
 }
 interface RequestEntry { fingerprint: string; state: "running" | "completed" | "retry"; receipt?: unknown }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
@@ -69,6 +70,12 @@ export class OperationsService {
       .slice(0, 100).map(({ id, value }) => ({ id, actorId: value.actorId, action: value.action, at: value.at, reason: value.reason, target: redactOperations(value.target), result: redactOperations(value.result) })) : undefined;
     return { user, babies, accountAudit, membership: { configured: !!this.membership } };
   }
+  async health(raw: OpsUser) {
+    const user = await readOpsUser(this.runtime.store.payload, raw);
+    if (user.role !== "administrator") return fail(403, "OPS_FORBIDDEN", "全局运行状态仅供管理员核对。");
+    if (!this.runtime.health) return fail(503, "OPS_HEALTH_UNCONFIGURED", "运行监测尚未配置。");
+    return this.runtime.health.read();
+  }
   async overview(raw: OpsUser, babyId: string) {
     const user = await this.user(raw, babyId);
     return this.withPrincipal(user, babyId, false, async principal => {
@@ -94,7 +101,7 @@ export class OperationsService {
       const pending = [...await this.runtime.records.pending(principal, babyId), ...(await this.runtime.collector.pendingMedia(principal, babyId)).map(question => ({ kind: "media", id: question.id, eventIds: question.eventIds, state: question.state, sourceId: question.sourceId,
         media: question.media.map(item => ({ index: item.index, kind: item.kind, state: item.state, reason: item.reason, attachmentId: item.attachmentId })) }))];
       const membership = this.membership ? await this.membership.read(principal, babyId) : { configured: false };
-      return { baby, ...data, events, pending, membership };
+      return { baby, ...data, events, pending, membership, collectionHealth: collectorHealth(data.jobs, this.runtime.identity.now()) };
     });
   }
   private requestKey(user: OpsUser, input: OpsAction) { return `ops:${hash([user.id, input.babyId, input.requestId])}`; }
@@ -147,7 +154,7 @@ export class OperationsService {
             if (others.some(baby => baby && baby.id !== input.babyId && baby.name.trim().toLowerCase() === command.name.toLowerCase())) return fail(409, "DUPLICATE_NAME", "运营范围内已存在同名宝宝。");
             return this.runtime.identity.legacy.updateBabyNames(input.babyId, { name: command.name, fullName: command.fullName });
           }
-          if (command.type === "membership" && this.membership) return this.membership.execute(principal, input.babyId, input.requestId, this.membership.schema.parse(command.input));
+          if (command.type === "membership" && this.membership) return this.membership.execute(principal, input.babyId, input.requestId, this.membership.schema.parse(command.input), input.reason);
           return fail(409, "MEMBERSHIP_NOT_CONFIGURED", "会员模块尚未接入；未设置收费、截止或到期停服策略。");
         });
         const receipt = receiptSummary(value);
@@ -199,10 +206,12 @@ export class OperationsService {
   }
   async upload(raw: OpsUser, babyId: string, reason: string, requestId: string, bytes: Uint8Array, mime: string) {
     const user = await this.user(raw, babyId, true);
-    return this.withPrincipal(user, babyId, true, principal => this.runtime.identity.exclusive(async () => {
+    return this.withPrincipal(user, babyId, true, async principal => {
+      // Commit the intent before external image detection; never hold the identity transaction across it.
+      await this.runtime.identity.executeAuthorized(principal, babyId, "media:write", (_scope, req) => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload.requested", reason, target: { requestId } }, req));
       const result = await this.runtime.attachments.upload(principal, babyId, bytes, mime, requestId);
-      await this.runtime.store.transaction(req => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload", reason, target: { id: result.id, requestId } }, req));
+      await this.runtime.identity.executeAuthorized(principal, babyId, "media:write", (_scope, req) => appendOpsAudit(this.runtime.store.payload, { actorId: user.id, babyId, action: "ops.attachment.upload", reason, target: { id: result.id, requestId } }, req));
       return { id: result.id, babyId, mime: result.mime, byteLength: result.byteLength };
-    }));
+    });
   }
 }
