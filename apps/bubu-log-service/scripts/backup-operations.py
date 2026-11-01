@@ -92,6 +92,11 @@ def environment(container):
 
 
 def preflight(config):
+    # A generic Node image or the old Bubu image cannot run kernel-lease snapshots.
+    # Fail before stopping either writer if the pinned image lacks the dependency.
+    run(['docker', 'run', '--rm', '--network', 'none', '--read-only', '--memory', '128m',
+         '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--entrypoint', 'node', config['nodeImage'],
+         '--input-type=module', '-e', "import { createRequire } from 'node:module'; const r=createRequire('/app/apps/bubu-log-service/package.json'); if(typeof r('fs-ext').flockSync!=='function')throw new Error('Missing native snapshot lease');"])
     app, core, pg = [inspect(config[key]) for key in ['appContainer', 'coreContainer', 'postgresContainer']]
     for container, role in [(app, 'service'), (core, 'core'), (pg, 'database')]:
         if container['Config'].get('Labels', {}).get('cn.codeforpeople.bubu.role') != role or not container['State']['Running']:

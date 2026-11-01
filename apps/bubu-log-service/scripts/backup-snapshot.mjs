@@ -51,13 +51,10 @@ async function inventory(root, prefix = '') {
 export async function captureSnapshot(source, postgresDump, target) {
   let lease;
   try {
-    try { lease = await open(join(resolve(source), 'runtime.lock'), constants.O_RDONLY | constants.O_NOFOLLOW); }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    if (lease) {
-      const stat = await lease.stat();
-      if (!stat.isFile() || stat.nlink !== 1 || stat.size !== 0) throw new Error('Legacy or invalid writer lease');
-      flockSync(lease.fd, 'exnb');
-    }
+    lease = await open(join(resolve(source), 'runtime.lock'), constants.O_RDONLY | constants.O_NOFOLLOW);
+    const stat = await lease.stat();
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size !== 0) throw new Error('Legacy or invalid writer lease');
+    flockSync(lease.fd, 'exnb');
     return await captureSnapshotFiles(source, postgresDump, target);
   } finally { await lease?.close(); }
 }

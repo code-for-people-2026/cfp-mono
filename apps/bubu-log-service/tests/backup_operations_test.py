@@ -16,6 +16,14 @@ spec.loader.exec_module(ops)
 
 
 class BackupOperationsTest(unittest.TestCase):
+    def test_missing_native_snapshot_dependency_fails_before_inspecting_or_stopping_writers(self):
+        with patch.object(ops, 'run', side_effect=RuntimeError('missing fs-ext')) as run, patch.object(ops, 'inspect') as inspect:
+            with self.assertRaises(RuntimeError): ops.backup({'nodeImage': 'fixture-image'})
+            inspect.assert_not_called()
+            self.assertEqual(run.call_count, 1)
+            self.assertIn('fixture-image', run.call_args[0][0])
+            self.assertIn("r('fs-ext')", run.call_args[0][0][-1])
+
     def test_archive_escape_links_duplicates_and_corruption_leave_no_partial_restore(self):
         for kind in ['escape', 'symlink', 'hardlink', 'duplicate', 'unknown', 'oversized']:
             with self.subTest(kind=kind), tempfile.TemporaryDirectory() as directory:
@@ -99,7 +107,7 @@ class BackupOperationsTest(unittest.TestCase):
             self.assertTrue(files[1].exists())
 
     def test_preflight_rejects_stopped_namespace_owner_and_public_database(self):
-        config = {'appContainer': 'app', 'coreContainer': 'core', 'postgresContainer': 'pg', 'sourceDirectory': '/private/data', 'ledgerFile': '/private/ledger', 'retentionDays': 1}
+        config = {'nodeImage': 'fixture-image', 'appContainer': 'app', 'coreContainer': 'core', 'postgresContainer': 'pg', 'sourceDirectory': '/private/data', 'ledgerFile': '/private/ledger', 'retentionDays': 1}
         app_env = {'BUBU_IDENTITY_DIRECTORY': '/data', 'BUBU_DELETION_LEDGER': '/ledger', 'BUBU_PRIVACY_BACKUP_DAYS': '1', 'BUBU_MEDIA_ENCRYPTION_KEY': 'a' * 64, 'BUBU_PAYLOAD_SECRET': 'synthetic', 'BUBU_LEGACY_ORIGIN': 'http://localhost:3321', 'BUBU_CORE_SERVICE_TOKEN': 'b' * 64}
         core_env = {'BUBU_CORE_SERVICE_TOKEN': 'b' * 64, 'BUBU_CORE_DATABASE_URL': 'postgresql://synthetic:private@localhost:5432/synthetic'}
         def container(name, role, env, mode):
