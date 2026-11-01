@@ -1,3 +1,4 @@
+import { chatProviderFromEnv } from "../src/chat/provider";
 import { fixtureImageReviewer, grantFixturePrivacy, testPrivacyConfig } from "./fixtures/privacy";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -15,6 +16,9 @@ import { RecordsLegacyFixture } from "./fixtures/records";
 import type { CollectorJob } from "../src/collector/service";
 
 if (process.env.NODE_ENV !== "test") throw new Error("Isolated full-stack fixture requires NODE_ENV=test; never use it for production.");
+const realModel = process.env.BUBU_LIVE_MODEL_QA === "synthetic-only";
+const liveProvider = realModel ? chatProviderFromEnv() : undefined;
+if (realModel && !liveProvider) throw new Error("Live QA requires an explicitly configured real provider");
 const port = Number(process.env.BUBU_FULLSTACK_FIXTURE_PORT || 4368);
 if (!Number.isInteger(port) || port < 1024 || port > 65535 || [4340, 4357].includes(port)) throw new Error("Choose an isolated full-stack fixture port, default 4368; existing fixture ports are reserved.");
 const origin = `http://127.0.0.1:${port}`, directory = await mkdtemp(path.join(tmpdir(), "bubu-fullstack-browser-"));
@@ -31,7 +35,7 @@ const wechat: WechatProvider = { exchange: async code => {
   if (!account) throw new AppError(401, "FIXTURE_CODE_REQUIRED", "隔离示例只接受 fixture-alice:随机标识 或 fixture-bob:随机标识，不验证真实微信登录。");
   return { appId: "fixture-fullstack", openId: account };
 } };
-const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, privacy: testPrivacyConfig, imageReviewer: fixtureImageReviewer, maintenanceWorker: false, provider: new BrowserScenarioProvider() });
+const runtime = await createRuntime({ directory, secret: randomBytes(48).toString("hex"), publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`, legacy, wechat, privacy: testPrivacyConfig, imageReviewer: fixtureImageReviewer, maintenanceWorker: false, provider: liveProvider || new BrowserScenarioProvider() });
 let ready = false;
 const appHandler = runtime.handler;
 const h5Root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../bubu-log-miniapp/dist/h5");
@@ -98,5 +102,6 @@ try {
   await writeFile(filename, JSON.stringify({ fixture: "bubu-fullstack-fixture/v1", synthetic: true, origin, directory, password, users, babyIds: ["baby-a", "baby-b"], aliceToken, bobToken, eventId, attachmentId: image.id, verification: { babyId: "baby-verify", token: verificationToken }, collector: { ...group, groupId, jobId: configured.job.id }, legacyLogin: { username: "old-alice", password: "correct-password" }, nativeFixtureCode: "fixture-alice:preview" }, null, 2), { mode: 0o600, flag: "wx" });
   ready = true;
   console.log(`Isolated full-stack fixture ready: ${origin}; native Payload: ${origin}/admin; private fixture file: ${filename}`);
-  console.log("EXAMPLE DATA ONLY: synthetic old business/model/WeChat boundaries; no customer group reader, real model, or payment provider is started.");
+  console.log(`Model boundary: ${realModel ? "REAL configured model; synthetic family only" : "scripted fixture"}`);
+  console.log("EXAMPLE DATA ONLY: synthetic old business/model/WeChat boundaries; no customer group reader or payment provider is started; model mode is reported above.");
 } catch (error) { await close(); throw error; }
