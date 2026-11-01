@@ -166,7 +166,7 @@ describe("one entitlement policy protects every service entry and preserves reco
   }, 30_000);
 
   it.each(["reply", "image-ambiguity", "conflict"] as const)("does not publish %s when an operator pause commits before the completion transaction", async kind => {
-    let modelCalls = 0, pendingReads = 0, pauseAfterCheck = false, completedWrites = 0;
+    let modelCalls = 0, pauseAfterCheck = false, completedWrites = 0;
     const provider: ChatProvider = { complete: async () => {
       modelCalls++;
       return kind === "conflict" && modelCalls === 1
@@ -175,7 +175,9 @@ describe("one entitlement policy protects every service entry and preserves reco
     } };
     const requestFetch: typeof fetch = async (url, init) => {
       const response = await fetch(url, init);
-      if (typeof init?.body === "string" && init.body.includes('"name":"bubu_get_pending"') && ++pendingReads === 2) pauseAfterCheck = true;
+      // Pause after a model result is available, independent of extra pending
+      // refreshes used to prepare the next model call.
+      if (typeof init?.body === "string" && init.body.includes('"name":"bubu_get_pending"') && modelCalls > 0) pauseAfterCheck = true;
       return response;
     };
     const s = await setup(provider, requestFetch);
@@ -206,6 +208,7 @@ describe("one entitlement policy protects every service entry and preserves reco
     expect((await s.membership.status(s.f.alice, babyId)).status).toBe("paused");
     expect(stopped).toMatchObject({ status: "needs_recovery", error: { code: "SERVICE_PAUSED", retryable: true } });
     expect(completedWrites).toBe(0);
+    expect(modelCalls).toBe(kind === "image-ambiguity" ? 0 : 1);
     expect((await s.chat.request(s.f.alice, babyId, input.requestId))?.status).toBe("needs_recovery");
     await s.configure({ action: "resume" });
     const completed = await s.chat.send(s.f.alice, input);
