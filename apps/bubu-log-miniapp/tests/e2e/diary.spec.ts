@@ -1,5 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
+test.skip(process.env.BUBU_AUTH_MODE !== "legacy", "Requires an explicit legacy H5 build");
+
 // Synthetic records only: this suite never connects to a family account or database.
 const baby = { id: "test-baby", name: "小满", fullName: null, avatarUrl: null, isDefault: true };
 const context = { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id };

@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import Taro from '@tarojs/taro'
-import { Image, ScrollView, Text, View } from '@tarojs/components'
+import { Button, Image, ScrollView, Text, View } from '@tarojs/components'
 import { activityDetails, recordDetailFields, activityTone, activityTypeLabel, type Activity, type RecordEvent } from '../model'
 import './visualizations.css'
 
 export interface ActivityDetailProps {
   activity: Activity | null
   onClose: () => void
+  onChat?: () => void
   photoUrl?: string | null
   photoLoading?: boolean
   photoUrls?: string[]
@@ -14,7 +15,7 @@ export interface ActivityDetailProps {
   recordEvent?: RecordEvent | null
 }
 
-export function ActivityDetail({ activity, onClose, photoUrl, photoLoading, photoUrls, photoCount, recordEvent }: ActivityDetailProps) {
+export function ActivityDetail({ activity, onClose, photoUrl, photoLoading, photoUrls, photoCount, recordEvent, onChat }: ActivityDetailProps) {
   const [failedImages, setFailedImages] = useState<string[]>([])
   if (!activity) return null
   const tone = activityTone(activity.type)
@@ -44,6 +45,7 @@ export function ActivityDetail({ activity, onClose, photoUrl, photoLoading, phot
             {details.map((detail, index) => <View className='bubu-detail-row' key={`${detail.label}-${index}`}><Text className='bubu-detail-label'>{detail.label}</Text><Text className='bubu-detail-value' selectable>{detail.value}</Text></View>)}
           </View>
           {hasPhotos && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片{photoCount && photoCount > 1 ? ` · ${photoCount} 张` : ''}</Text>{photoLoading ? <View className='bubu-photo-error'>正在读取照片…</View> : !images.length ? <View className='bubu-photo-error'>图片暂时无法加载</View> : images.map(url => failedImages.includes(url) ? <View className='bubu-photo-error' key={url}>图片暂时无法加载</View> : <Image key={url} className='bubu-detail-photo' src={url} mode='aspectFill' onClick={() => void previewImage(url)} onError={() => setFailedImages(previous => [...previous, url])} />)}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
+          {onChat && <Button className='primary-button' onClick={onChat}>在对话中修改这条记录</Button>}
           <View className='bubu-detail-bottom-space' />
         </ScrollView>
       </View>

@@ -100,6 +100,9 @@ importers:
       '@types/react-dom':
         specifier: ^18.3.7
         version: 18.3.7(@types/react@18.3.31)
+      '@types/react-test-renderer':
+        specifier: 18.0.7
+        version: 18.0.7
       '@vitejs/plugin-react':
         specifier: ^4.7.0
         version: 4.7.0(vite@4.5.14(@types/node@20.19.43)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0))
@@ -109,6 +112,9 @@ importers:
       eslint:
         specifier: ^9.39.2
         version: 9.39.4(jiti@2.7.0)
+      react-test-renderer:
+        specifier: 18.2.0
+        version: 18.2.0(react@18.2.0)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
@@ -4336,6 +4342,9 @@ packages:
     resolution: {integrity: sha512-MEe3UeoENYVFXzoXEWsvcpg6ZvlrFNlOQ7EOsvhI3CfAXwzPfO8Qwuxd40nepsYKqyyVQnTdEfv68q91yLcKrQ==}
     peerDependencies:
       '@types/react': ^18.3.27
+
+  '@types/react-test-renderer@18.0.7':
+    resolution: {integrity: sha512-1+ANPOWc6rB3IkSnElhjv6VLlKg2dSv/OWClUyZimbLsQyBn8Js9Vtdsi3UICJ2rIQ3k2la06dkB+C92QfhKmg==}
 
   '@types/react-test-renderer@18.3.1':
     resolution: {integrity: sha512-vAhnk0tG2eGa37lkU9+s5SoroCsRI08xnsWFiAXOuPH2jqzMbcXvKExXViPi1P5fIklDeCvXqyrdmipFaSkZrA==}
@@ -14057,6 +14066,10 @@ snapshots:
     optional: true
 
   '@types/react-dom@18.3.7(@types/react@18.3.31)':
+    dependencies:
+      '@types/react': 18.3.31
+
+  '@types/react-test-renderer@18.0.7':
     dependencies:
       '@types/react': 18.3.31
 
