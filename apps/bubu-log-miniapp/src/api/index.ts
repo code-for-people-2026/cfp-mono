@@ -7,7 +7,9 @@ export type { BubuApi, ActivityQuery, ActivityResult } from "./client";
 
 const native = process.env.TARO_ENV === "weapp";
 export const identityEnabled = BUBU_AUTH_MODE === "sidecar";
-export const wechatIdentityEnabled = native && identityEnabled;
+// Formal WeChat onboarding is introduced in module 4. Existing-account exchange
+// still uses the same server-issued, baby-scoped session in the recording core.
+export const wechatIdentityEnabled = false;
 const transport: Transport = async (request) => {
   if (!native) {
     const response = await fetch(request.url, {

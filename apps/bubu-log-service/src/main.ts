@@ -1,3 +1,4 @@
+import { acquireRuntimeLock } from "./runtime-lock";
 import { createServer } from "node:http";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +15,7 @@ import { CollectorService } from "./collector/service";
 const origin = process.env.BUBU_PUBLIC_ORIGIN || "http://127.0.0.1:3320";
 if (process.env.NODE_ENV === "production" && (!origin.startsWith("https://") || !process.env.BUBU_IDENTITY_DIRECTORY || !process.env.BUBU_PAYLOAD_SECRET)) throw new Error("Production requires HTTPS origin, persistent BUBU_IDENTITY_DIRECTORY and BUBU_PAYLOAD_SECRET.");
 const directory = process.env.BUBU_IDENTITY_DIRECTORY || resolve(dirname(fileURLToPath(import.meta.url)), "../.data");
+const releaseLock = acquireRuntimeLock(directory);
 const store = await openStore({ directory, secret: process.env.BUBU_PAYLOAD_SECRET, extensions:recordCollections });
 const legacy=legacyBackendFromEnv();
 const service = new IdentityService(store, legacy, new WechatCodeProvider(process.env.BUBU_WECHAT_APP_ID || "", process.env.BUBU_WECHAT_APP_SECRET || ""));
@@ -43,5 +45,5 @@ const server = createServer(async (incoming, outgoing) => {
 });
 server.requestTimeout = 20000;
 server.headersTimeout = 10000;
-server.listen(Number(process.env.PORT || 3320), process.env.HOST || "127.0.0.1", () => console.log("哺哺日记服务已启动"));
-for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => { server.close(() => { void store.close().then(() => process.exit(0)); }); });
+server.listen(Number(process.env.PORT || 3320), process.env.HOST || "127.0.0.1", () => console.log("卜卜日记服务已启动"));
+for (const signal of ["SIGTERM", "SIGINT"] as const) process.once(signal, () => { server.close(() => { void store.close().finally(releaseLock).then(() => process.exit(0)); }); });

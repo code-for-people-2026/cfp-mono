@@ -5,7 +5,6 @@ import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigatio
 import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, identityEnabled, wechatIdentityEnabled } from "../../api";
-import { IdentitySetup } from "../../components/IdentitySetup";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
 import {
   activityLabel, addDays, dateLabel, dayBounds, filterActivities, formatDuration,
@@ -252,7 +251,7 @@ export default function DiaryPage() {
       onLogout={() => { void logout(); }} />
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
-    {!context.hasBaby ? identityEnabled ? <IdentitySetup context={context} onComplete={identityUpdated} /> : <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
+    {!context.hasBaby ? <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
       <View className="calendar-toolbar">
         <Button className="arrow-button" ariaLabel="上一段日期" onClick={() => navigate(-1)}>‹</Button>
         <Picker className="date-picker" mode="date" value={date} end={todayKey()} onChange={(event) => setDate(event.detail.value)}><View className="date-title">{periodLabel}<Text className="date-dropdown">⌄</Text></View></Picker>

@@ -1,6 +1,6 @@
-# 哺哺日记小程序
+# 卜卜日记小程序
 
-哺哺日记的数据可视化客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
+卜卜日记的数据可视化客户端，新增代码集中在 `cfp-mono/apps/bubu-log-miniapp`。使用本仓库已有的 Taro 4.2 / React 18 技术栈，读取现有 `sunmer-home/apps/bubu-log` 后端。既有照护数据不迁移；可通过独立身份服务连接原后端。
 
 对应 [数据可视化模块](https://github.com/code-for-people-2026/cfp-mono/issues/394)，完整产品路线见 [六大模块落地规划](https://github.com/code-for-people-2026/cfp-mono/issues/392)。
 
@@ -46,7 +46,7 @@ H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `
 
 ### 独立身份服务模式（Issue #396）
 
-默认 `BUBU_AUTH_MODE=legacy` 保留上述旧登录方式。设置 `BUBU_AUTH_MODE=sidecar` 后，`BUBU_API_ORIGIN` / H5 代理指向 [哺哺日记身份服务](../bubu-log-service/README.md)：
+默认 `BUBU_AUTH_MODE=legacy` 保留上述旧登录方式。设置 `BUBU_AUTH_MODE=sidecar` 后，`BUBU_API_ORIGIN` / H5 代理指向 [卜卜日记身份服务](../bubu-log-service/README.md)：
 
 ```sh
 BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
