@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
-import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink, open, stat } from "node:fs/promises";
+import { flockSync } from "fs-ext";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -36,7 +37,7 @@ it("refuses active writer leases, linked files and plaintext media", async () =>
   try {
     const pg = path.join(root, "pg"); await writeFile(pg, "synthetic");
     await writeFile(path.join(source, "runtime.lock"), "active");
-    await expect(captureSnapshot(source, pg, path.join(root, "lease"))).rejects.toThrow("active writer");
+    await expect(captureSnapshot(source, pg, path.join(root, "lease"))).rejects.toThrow("writer lease");
     await rm(path.join(source, "runtime.lock"));
     const objects = path.join(source, "private-attachments", "a".repeat(64)); await mkdir(objects, { recursive: true });
     const photo = path.join(objects, "b".repeat(64)); await symlink(pg, photo);
@@ -44,4 +45,20 @@ it("refuses active writer leases, linked files and plaintext media", async () =>
     await rm(photo); await writeFile(photo, "plaintext photo");
     await expect(captureSnapshot(source, pg, path.join(root, "plain"))).rejects.toThrow("Unencrypted");
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+it("accepts an unlocked permanent inode after shutdown while refusing a live kernel writer", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "bubu-kernel-snapshot-")), source = path.join(root, "data");
+  await mkdir(source); const db = new DatabaseSync(path.join(source, "identity.db")); db.exec("CREATE TABLE records(id TEXT)"); db.close();
+  const lock = path.join(source, "runtime.lock"), owner = await open(lock, "wx", 0o600);
+  const inode = (await owner.stat()).ino;
+  try {
+    const pg = path.join(root, "pg"); await writeFile(pg, "synthetic");
+    flockSync(owner.fd, "exnb");
+    await expect(captureSnapshot(source, pg, path.join(root, "active"))).rejects.toThrow();
+    await owner.close();
+    expect(await captureSnapshot(source, pg, path.join(root, "stopped"))).toEqual({ files: 2 });
+    expect((await stat(lock)).ino).toBe(inode);
+    await expect(stat(path.join(root, "stopped/sidecar/runtime.lock"))).rejects.toMatchObject({ code: "ENOENT" });
+  } finally { await owner.close(); await rm(root, { recursive: true, force: true }); }
 });

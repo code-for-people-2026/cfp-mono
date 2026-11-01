@@ -172,12 +172,12 @@ def node(config, work, script, args, source=False):
     name = 'bubu-backup-tool-' + uuid.uuid4().hex
     command = ['docker', 'run', '--name', name, '--label', 'cn.codeforpeople.bubu.operation=backup', '--rm', '--network', 'none', '--read-only', '--memory', '256m', '--cpus', '0.5',
                '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges:true', '--user', '0:0', '--entrypoint', 'node',
-               '-v', config['scriptsDirectory'] + ':/scripts:ro', '-v', str(work) + ':/work', '-v', config['keyFile'] + ':/backup.key:ro']
+               '-v', config['scriptsDirectory'] + ':/app/apps/bubu-log-service/.backup-scripts:ro', '-v', str(work) + ':/work', '-v', config['keyFile'] + ':/backup.key:ro']
     if source:
         # Production data belongs to the application UID with mode 0700/0600. Root without
         # capabilities cannot read it. Grant only DAC read/search, while the bind stays read-only.
         command += ['--cap-add', 'DAC_READ_SEARCH', '-v', config['sourceDirectory'] + ':/source:ro']
-    try: run(command + [config['nodeImage'], '/scripts/' + script] + args)
+    try: run(command + [config['nodeImage'], '/app/apps/bubu-log-service/.backup-scripts/' + script] + args)
     finally:
         subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
 

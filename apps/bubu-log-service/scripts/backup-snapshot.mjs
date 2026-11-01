@@ -5,6 +5,7 @@ import { constants, createReadStream } from 'node:fs';
 import { open, lstat, mkdir, readdir, chmod, readFile, rm } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { DatabaseSync, backup } from 'node:sqlite';
+import { flockSync } from 'fs-ext';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -48,9 +49,23 @@ async function inventory(root, prefix = '') {
 
 /** Writers must be stopped by the host runner. Only database and encrypted objects are included. */
 export async function captureSnapshot(source, postgresDump, target) {
+  let lease;
+  try {
+    try { lease = await open(join(resolve(source), 'runtime.lock'), constants.O_RDONLY | constants.O_NOFOLLOW); }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (lease) {
+      const stat = await lease.stat();
+      if (!stat.isFile() || stat.nlink !== 1 || stat.size !== 0) throw new Error('Legacy or invalid writer lease');
+      flockSync(lease.fd, 'exnb');
+    }
+    return await captureSnapshotFiles(source, postgresDump, target);
+  } finally { await lease?.close(); }
+}
+async function captureSnapshotFiles(source, postgresDump, target) {
   source = resolve(source); target = resolve(target);
   await directory(source);
-  const entries = await readdir(source);
+  // A verified empty kernel lease is permanent; it is never copied or unlinked.
+  const entries = (await readdir(source)).filter(name => name !== 'runtime.lock');
   // Keys, deletion ledgers, unknown files and a surviving writer lease must never be silently copied or skipped.
   if (!entries.includes('identity.db') || entries.some(name => !['identity.db', 'identity.db-wal', 'identity.db-shm', 'private-attachments'].includes(name))) throw new Error('Unexpected live data entry or active writer');
   for (const name of entries.filter(name => name !== 'private-attachments')) await regular(join(source, name));
