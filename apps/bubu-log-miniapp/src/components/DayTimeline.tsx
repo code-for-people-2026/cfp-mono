@@ -49,18 +49,7 @@ export function DayTimeline({ activities, date, onActivityClick, showCurrentTime
 
   return (
     <View className='bubu-viz-card bubu-day-card'>
-      <View className='bubu-viz-heading'>
-        <View>
-          <Text className='bubu-viz-title'>一天的节奏</Text>
-          <Text className='bubu-viz-caption'>点击记录，查看详情</Text>
-        </View>
-        {isToday && showCurrentTime && <View className='bubu-text-action' onClick={goToNow}>此刻</View>}
-      </View>
-      <View className='bubu-viz-legend'>
-        {[['睡眠', '#83a8b9'], ['吃奶', '#d29c9a'], ['尿布', '#c0aa6d'], ['其他', '#aba18f']].map(([label, color]) => (
-          <View className='bubu-legend-item' key={label}><View className='bubu-legend-dot' style={{ backgroundColor: color }} /><Text>{label}</Text></View>
-        ))}
-      </View>
+      {isToday && showCurrentTime && <View className='bubu-day-actions'><View className='bubu-text-action' onClick={goToNow}>此刻</View></View>}
       {isToday && showCurrentTime && (sinceLatest.sleep != null || sinceLatest.feed != null) && <View className='bubu-latest-gaps'>
         {sinceLatest.sleep != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#83a8b9' }} /><Text>距上次睡眠 {formatDuration(sinceLatest.sleep)}</Text></View>}
         {sinceLatest.feed != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#d29c9a' }} /><Text>距上次吃奶 {formatDuration(sinceLatest.feed)}</Text></View>}
@@ -106,7 +95,6 @@ export function DayTimeline({ activities, date, onActivityClick, showCurrentTime
           {isToday && showCurrentTime && <View className='bubu-now-line' style={{ top: designSize(minutes / 60 * HOUR_HEIGHT) }}><View className='bubu-now-dot' /><Text className='bubu-now-label'>{timeLabel(new Date().toISOString())}</Text></View>}
         </View>
       </ScrollView>
-      <Text className='bubu-viz-footnote'>时间范围 00:00–24:00 · 跨日记录按当天显示</Text>
     </View>
   )
 }

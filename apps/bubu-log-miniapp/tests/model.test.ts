@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   activityDetails, activityGaps, addDays, buildHeatmap, buildTrendRows, buildWeek, currentTimePosition,
-  dateKey, durationInDay, filterActivities, getIntensity, layoutDayTimeline, mondayOfWeek,
+  dateKey, dateRange, dayBounds, durationInDay, filterActivities, getIntensity, layoutDayTimeline, mondayOfWeek,
   previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList, timeLabel, timeSinceLatest,
   type Activity, type DailyStat,
 } from "../src/model";
@@ -20,6 +20,17 @@ describe("Shanghai calendar dates", () => {
     expect(timeLabel("2026-01-02 09:30")).toBe("09:30");
     expect(mondayOfWeek("2026-01-01")).toBe("2025-12-29");
     expect(addDays("2025-12-31", 1)).toBe("2026-01-01");
+  });
+
+  it("keeps Shanghai dates advancing across a device daylight-saving change", () => {
+    expect(dateKey("2026-10-04")).toBe("2026-10-04");
+    expect(addDays("2026-10-04", 1)).toBe("2026-10-05");
+    expect(dateRange("2026-09-24", "2026-10-23")).toHaveLength(30);
+    expect(dayBounds("2026-10-04")).toEqual({
+      start: Date.parse("2026-10-03T16:00:00Z"),
+      end: Date.parse("2026-10-04T15:59:59.999Z"),
+      next: Date.parse("2026-10-04T16:00:00Z"),
+    });
   });
 
   it("retains the old client integer-minute clipping instead of DailyStats rounding", () => {

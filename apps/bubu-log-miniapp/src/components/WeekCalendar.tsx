@@ -22,15 +22,11 @@ export function WeekCalendar({ activities, weekStart, onActivityClick, onDateCli
 
   return (
     <View className='bubu-viz-card bubu-week-card'>
-      <View className='bubu-viz-heading'>
-        <View><Text className='bubu-viz-title'>一周的日常</Text><Text className='bubu-viz-caption'>纵向看作息，横向看变化</Text></View>
-        <Text className='bubu-viz-count'>{recordCount} 条记录</Text>
-      </View>
       <View className='bubu-week-filters'>{WEEKLY_FILTERS.map((filter) => <View key={filter.key} className={`bubu-week-filter${filters.includes(filter.key) ? ' bubu-week-filter-active' : ''}`} onClick={() => setFilters((current) => current.includes(filter.key) ? current.filter((key) => key !== filter.key) : [...current, filter.key])}><View className='bubu-legend-dot' style={{ backgroundColor: filter.color }} /><Text>{filter.label}</Text></View>)}</View>
       <View className='bubu-week-head'>
         <View className='bubu-week-gutter' />
         {week.map((day, index) => (
-          <View className={`bubu-week-day${day.isToday ? ' bubu-week-day-today' : ''}${day.isFuture ? ' bubu-week-day-future' : ''}`} key={day.date} onClick={() => onDateClick?.(day.date)}>
+          <View className={`bubu-week-day${day.isToday ? ' bubu-week-day-today' : ''}${day.isFuture ? ' bubu-week-day-future' : ''}`} key={day.date} onClick={() => !day.isFuture && onDateClick?.(day.date)}>
             <Text className='bubu-week-weekday'>{weekdays[index]}</Text><Text className='bubu-week-date'>{Number(day.date.slice(-2))}</Text>
           </View>
         ))}
@@ -51,7 +47,6 @@ export function WeekCalendar({ activities, weekStart, onActivityClick, onDateCli
           </View>
         </View>
       </ScrollView>
-      <Text className='bubu-viz-footnote'>点击色块查看记录 · 点击日期查看当天</Text>
     </View>
   )
 }

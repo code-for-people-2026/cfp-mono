@@ -7,34 +7,39 @@ export const TIMEZONE = "Asia/Shanghai";
 const CHINA_OFFSET_MINUTES = 480;
 
 /** Bare calendar dates/local timestamps are China time, ISO offsets remain instants. */
-export function chinaDate(value: DateInput) {
+function instant(value: DateInput) {
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?)?$/.test(value)) {
     const local = value.length === 10 ? `${value}T00:00:00` : value.replace(" ", "T");
-    return dayjs.utc(`${local}+08:00`).utcOffset(CHINA_OFFSET_MINUTES);
+    return dayjs.utc(`${local}+08:00`);
   }
-  // Modern China time is fixed UTC+8. Avoid the timezone plugin's Intl dependency
-  // because WeChat JavaScript runtimes do not all provide Intl.DateTimeFormat.
-  return dayjs(value).utcOffset(CHINA_OFFSET_MINUTES);
+  return dayjs.utc(value);
 }
 
-export const dateKey = (value: DateInput): string => chinaDate(value).format("YYYY-MM-DD");
+// Calendar fields use UTC arithmetic shifted by China's fixed offset. Dayjs.utcOffset
+// internally converts through the device's local clock; a DST transition there can
+// otherwise repeat a date forever. This shifted clock must never be used as an instant.
+function calendarClock(value: DateInput) {
+  return instant(value).add(CHINA_OFFSET_MINUTES, "minute");
+}
+
+export const dateKey = (value: DateInput): string => calendarClock(value).format("YYYY-MM-DD");
 export const todayKey = (now: DateInput = new Date()): string => dateKey(now);
-export const dateLabel = (value: DateInput): string => chinaDate(value).format("M月D日");
-export const timeLabel = (value: DateInput): string => chinaDate(value).format("HH:mm");
-export const dateTimeLabel = (value: DateInput): string => chinaDate(value).format("M月D日 HH:mm");
-export const shortDateLabel = (value: DateInput): string => chinaDate(value).format("M/D");
-export const weekdayLabel = (value: DateInput): string => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][chinaDate(value).day()]!;
-export const addDays = (value: DateInput, days: number): string => chinaDate(value).add(days, "day").format("YYYY-MM-DD");
+export const dateLabel = (value: DateInput): string => calendarClock(value).format("M月D日");
+export const timeLabel = (value: DateInput): string => calendarClock(value).format("HH:mm");
+export const dateTimeLabel = (value: DateInput): string => calendarClock(value).format("M月D日 HH:mm");
+export const shortDateLabel = (value: DateInput): string => calendarClock(value).format("M/D");
+export const weekdayLabel = (value: DateInput): string => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][calendarClock(value).day()]!;
+export const addDays = (value: DateInput, days: number): string => calendarClock(value).add(days, "day").format("YYYY-MM-DD");
 export function mondayOfWeek(value: DateInput): string {
-  const day = chinaDate(value);
+  const day = calendarClock(value);
   return day.subtract((day.day() + 6) % 7, "day").format("YYYY-MM-DD");
 }
 export function dayBounds(value: DateInput): { start: number; end: number; next: number } {
-  const start = chinaDate(value).startOf("day");
-  return { start: start.valueOf(), end: start.endOf("day").valueOf(), next: start.add(1, "day").valueOf() };
+  const start = calendarClock(value).startOf("day").valueOf() - CHINA_OFFSET_MINUTES * 60_000;
+  return { start, end: start + 86_400_000 - 1, next: start + 86_400_000 };
 }
-export const timestamp = (value: DateInput): number => chinaDate(value).valueOf();
-export const durationMinutes = (start: DateInput, end: DateInput): number => chinaDate(end).diff(chinaDate(start), "minute");
+export const timestamp = (value: DateInput): number => instant(value).valueOf();
+export const durationMinutes = (start: DateInput, end: DateInput): number => Math.trunc((timestamp(end) - timestamp(start)) / 60_000);
 /** Retains the web client's truncation at 23:59:59.999 (server DailyStats rounds). */
 export function durationInDay(start: DateInput, end: DateInput, date: DateInput): number {
   const bounds = dayBounds(date);

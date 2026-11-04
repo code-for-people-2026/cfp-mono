@@ -25,7 +25,7 @@ export function Heatmap({ stats, endDate = todayKey(), onDateClick }: HeatmapPro
 
   return (
     <View className='bubu-viz-card bubu-heatmap-card'>
-      <View className='bubu-viz-heading'><View><Text className='bubu-viz-title'>近四周</Text><Text className='bubu-viz-caption'>把日常，慢慢看成规律</Text></View><View className='bubu-range-switch'><View className={`bubu-range-option${metric === 'sleep' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('sleep')}>睡眠</View><View className={`bubu-range-option${metric === 'milk' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('milk')}>奶量</View></View></View>
+      <View className='bubu-viz-heading'><View><Text className='bubu-viz-title'>近四周</Text></View><View className='bubu-range-switch'><View className={`bubu-range-option${metric === 'sleep' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('sleep')}>睡眠</View><View className={`bubu-range-option${metric === 'milk' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('milk')}>奶量</View></View></View>
       <View className='bubu-heatmap-head'><View className='bubu-heatmap-week-label' />{weekdays.map((day) => <Text className='bubu-heatmap-weekday' key={day}>{day}</Text>)}</View>
       {heatmap.weeks.map((week) => <View className='bubu-heatmap-week' key={week.start}>
         <Text className='bubu-heatmap-week-label'>{Number(week.start.slice(5, 7))}/{Number(week.start.slice(-2))}</Text>

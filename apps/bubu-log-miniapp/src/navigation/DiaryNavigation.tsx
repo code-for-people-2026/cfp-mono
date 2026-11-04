@@ -1,6 +1,7 @@
-import { Button, Picker, ScrollView, Text, View } from "@tarojs/components";
+import { Button, Image, Picker, ScrollView, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import brandIcon from "../assets/branding/bubu-avatar-borderless-v1.png";
 import type { AuthContext } from "../model";
 import { readNavigationLayout } from "./layout";
 import "./navigation.css";
@@ -10,6 +11,7 @@ type Props = {
   context?: AuthContext | null;
   mode?: DiaryView;
   title?: string;
+  children?: ReactNode;
   open?: boolean;
   busy?: boolean;
   onOpen?: () => void;
@@ -39,11 +41,18 @@ export function DiaryNavigation(props: Props) {
     return () => { document.body.style.overflow = previous; document.removeEventListener("keydown", escape); };
   }, [props.open, props.onClose]);
   const context = props.context;
+  const avatar = context?.baby?.avatarUrl || brandIcon;
+  const [failedAvatar, setFailedAvatar] = useState("");
+  const avatarSource = failedAvatar === avatar ? brandIcon : avatar;
   return <>
     <View className="diary-header" style={layout ? { paddingTop: `${layout.statusBarHeight}px` } : undefined}>
       <View className="diary-navigation-row" style={layout ? { height: `${layout.height}px` } : undefined}>
-        {props.onOpen && <Button className="diary-icon-button" ariaLabel="打开菜单" onClick={props.onOpen}><View className="menu-glyph"><View className="menu-glyph-line" /><View className="menu-glyph-line" /><View className="menu-glyph-line menu-glyph-short" /></View></Button>}
-        <Text className="diary-title" style={layout ? { left: `${layout.side}px`, right: `${layout.side}px` } : undefined}>{props.title || "卜卜日记"}</Text>
+        {props.onOpen && <Button className="diary-avatar-button" ariaLabel="打开菜单" onClick={props.onOpen}>
+          <Image className="diary-header-avatar" src={avatarSource} mode="aspectFill" onError={() => setFailedAvatar(avatar)} />
+          <View className="diary-avatar-badge"><View className="menu-glyph"><View className="menu-glyph-line" /><View className="menu-glyph-line" /><View className="menu-glyph-line" /></View></View>
+        </Button>}
+        {props.children ? <View className="diary-header-center" style={layout ? { right: `${layout.side - 8}px` } : undefined}>{props.children}</View>
+          : <Text className="diary-title" style={layout ? { left: `${layout.side}px`, right: `${layout.side}px` } : undefined}>{props.title || "卜卜日记"}</Text>}
       </View>
     </View>
     {props.open && context && <View className="diary-menu-overlay" catchMove>
@@ -54,7 +63,7 @@ export function DiaryNavigation(props: Props) {
           <Button className="diary-icon-button" ariaLabel="关闭菜单" onClick={props.onClose}>×</Button>
         </View>
         <View className="diary-family">
-          <View className="diary-avatar">{context.baby?.name.slice(0, 1) || "哺"}</View>
+          <Image className="diary-avatar" src={avatarSource} mode="aspectFill" onError={() => setFailedAvatar(avatar)} />
           <View className="diary-family-copy">
             <Text className="diary-menu-caption">正在陪伴</Text>
             {context.babies.length > 1 ? <Picker mode="selector" range={context.babies.map((baby) => baby.name)} value={Math.max(0, context.babies.findIndex((baby) => baby.id === context.baby?.id))} onChange={(event) => props.onBabyChange?.(Number(event.detail.value))}>
@@ -64,9 +73,9 @@ export function DiaryNavigation(props: Props) {
         </View>
         <ScrollView scrollY className="diary-menu-content">
           {([
-            ["day", "日历首页", "看看今天的日常"],
-            ["list", "历史数据", "按日期查看全部记录"],
-            ["trend", "趋势统计", "睡眠、奶量与尿布的变化"],
+            ["day", "日历", "每天的照护记录"],
+            ["list", "历史记录", "按日期查看全部记录"],
+            ["trend", "趋势", "睡眠、奶量与尿布的变化"],
           ] as const).map(([mode, label, caption]) => <Button key={mode} className={`diary-menu-link ${(props.mode === mode || (mode === "day" && ["week", "month"].includes(props.mode || ""))) ? "current" : ""}`} onClick={() => props.onSelect?.(mode)}>
             <View><Text className="diary-menu-label">{label}</Text><Text className="diary-menu-caption">{caption}</Text></View><Text className="diary-menu-arrow">›</Text>
           </Button>)}

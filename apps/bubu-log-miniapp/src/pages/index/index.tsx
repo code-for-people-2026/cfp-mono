@@ -2,20 +2,18 @@ import brandIcon from "../../assets/branding/bubu-avatar-borderless-v1.png";
 import { Button, Image, Input, Picker, Text, View } from "@tarojs/components";
 import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
+import { CalendarNavigation } from "../../navigation/CalendarNavigation";
 import { profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
 import {
-  activityLabel, addDays, dateLabel, dayBounds, filterActivities, formatDuration,
-  layoutDayTimeline, mondayOfWeek, previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList,
-  timeLabel, timestamp, todayKey, weekdayLabel,
+  activityLabel, addDays, dayBounds, filterActivities, formatDuration,
+  mondayOfWeek, previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList,
+  timeLabel, timestamp, todayKey,
   type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter,
 } from "../../model";
 
-const calendarViews = [
-  { key: "day", label: "日历" }, { key: "week", label: "周历" }, { key: "month", label: "月历" },
-] as const;
 type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
@@ -23,6 +21,8 @@ const iso = (value: number) => new Date(value).toISOString();
 
 export default function DiaryPage() {
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
+  const [returnPeriod, setReturnPeriod] = useState<{ mode: DiaryView; date: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [context, setContext] = useState<AuthContext | null>(null);
@@ -49,7 +49,7 @@ export default function DiaryPage() {
   const data = loaded?.key === dataKey ? loaded : null;
 
   const clearPrivateView = useCallback(() => {
-    setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
+    setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); detailVersion.current++;
   }, []);
 
@@ -155,11 +155,10 @@ export default function DiaryPage() {
     const next = addDays(date, direction * distance);
     setDate(next > todayKey() ? todayKey() : next);
   };
-  const periodLabel = mode === "week" ? `${dateLabel(weekStart)} — ${dateLabel(addDays(weekStart, 6))}`
-    : mode === "month" ? `${dateLabel(addDays(weekStart, -21))} — ${dateLabel(addDays(weekStart, 6))}`
-    : mode === "trend" ? `${dateLabel(addDays(date, 1 - days))} — ${dateLabel(date)}`
-    : `${dateLabel(date)} · ${weekdayLabel(date)}`;
-  const openDay = (selected: string) => { setDate(selected); setMode("list"); setFilters([]); };
+  const openDay = (selected: string) => {
+    if (selected > todayKey()) return;
+    setReturnPeriod({ mode, date }); setDate(selected); setMode("day"); setFilters([]);
+  };
 
   if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开卜卜日记…</View></View></View>;
   if (!context?.authenticated) return <View className="diary-shell"><DiaryNavigation /><View className="page login-page">
@@ -182,41 +181,36 @@ export default function DiaryPage() {
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
       open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu}
-      onSelect={(next) => { setMode(next); setDetailError(""); setFilters([]); if (next === "day") setDate(todayKey()); closeMenu(); }}
+      onSelect={(next) => { setMode(next); setReturnPeriod(null); setDetailError(""); setFilters([]); closeMenu(); }}
       onBabyChange={(index) => { void changeBaby(index); }}
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}
       onRefresh={() => { setLoaded(null); setRevision((value) => value + 1); closeMenu(); }}
-      onLogout={() => { void logout(); }} />
+      onLogout={() => { void logout(); }}>
+      {context.hasBaby && <CalendarNavigation date={date} mode={mode} days={days} open={viewMenuOpen}
+        onToggle={() => setViewMenuOpen((value) => !value)} onClose={closeViewMenu}
+        onNavigate={(direction) => { closeViewMenu(); setReturnPeriod(null); navigate(direction); }}
+        onDateChange={(next) => { setDate(next); setReturnPeriod(null); }}
+        onModeChange={(next) => { setMode(next); setFilters([]); setReturnPeriod(null); }} />}
+    </DiaryNavigation>
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
     {!context.hasBaby ? <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
-      <View className="calendar-toolbar">
-        <Button className="arrow-button" ariaLabel="上一段日期" onClick={() => navigate(-1)}>‹</Button>
-        <Picker className="date-picker" mode="date" value={date} end={todayKey()} onChange={(event) => setDate(event.detail.value)}><View className="date-title">{periodLabel}<Text className="date-dropdown">⌄</Text></View></Picker>
-        <Button className="arrow-button" ariaLabel="下一段日期" disabled={(mode === "week" || mode === "month" ? weekStart >= mondayOfWeek(todayKey()) : date >= todayKey()) || undefined} onClick={() => navigate(1)}>›</Button>
-        {mode !== "list" && mode !== "trend" && <View className={`calendar-view-control ${viewMenuOpen ? "view-menu-open" : ""}`}>
-          <Button className="calendar-view-select" ariaLabel="切换日历视图" onClick={() => setViewMenuOpen((value) => !value)}>{calendarViews.find((item) => item.key === mode)?.label}<Text> ⌄</Text></Button>
-          {viewMenuOpen && <>
-            <View className="calendar-view-backdrop" onClick={() => setViewMenuOpen(false)} />
-            <View className="calendar-view-popover">{calendarViews.map((item) => <Button key={item.key} className={`calendar-view-option ${item.key === mode ? "current" : ""}`} onClick={() => { setMode(item.key); setFilters([]); setViewMenuOpen(false); }}>{item.label}</Button>)}</View>
-          </>}
-        </View>}
-        {date !== todayKey() && <Button className="text-button today-button" onClick={() => setDate(todayKey())}>今天</Button>}
-      </View>
+      {returnPeriod && <Button className="text-button period-back" onClick={() => { setMode(returnPeriod.mode); setDate(returnPeriod.date); setFilters([]); setReturnPeriod(null); }}>‹ 返回{returnPeriod.mode === "week" ? "周历" : "月历"}</Button>}
       {dataError ? <View className="state-panel"><Text className="error-text">{dataError}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重试</Button></View>
         : !data ? <View className="state-panel">正在读取记录…</View> : <>
           {!data.complete && <View className="notice">记录数量达到读取上限，当前展示可能不完整。可切换到单日查看。</View>}
-          {mode === "day" && <DayTimeline latestActivities={data.latest} activities={visible} date={date} onActivityClick={(activity) => { void openDetail(activity); }} />}
           {(mode === "day" || mode === "list") && <View className="daily-summary">
-            <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{layoutDayTimeline(visible, date).length} 条记录</Text></View>
             <View className="stats-grid">{statCards(summary).map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
               <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
             </View>)}</View>
-            <View className="filter-caption"><Text>轻点上方卡片筛选记录</Text>{filters.length > 0 && <Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text>}</View>
+            {filters.length > 0 && <View className="filter-caption"><Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text></View>}
           </View>}
-          {mode === "day" && <PreviousEvening activities={data.evening} date={date} />}
+          {mode === "day" && <>
+            <PreviousEvening activities={data.evening} date={date} />
+            <DayTimeline latestActivities={data.latest} activities={visible} date={date} onActivityClick={(activity) => { void openDetail(activity); }} />
+          </>}
           {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay} />}
-          {mode === "month" && <Heatmap stats={data.stats} endDate={date} onDateClick={(selected, metric) => { setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
+          {mode === "month" && <Heatmap stats={data.stats} endDate={date} onDateClick={(selected, metric) => { setReturnPeriod({ mode, date }); setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
           {mode === "trend" && <TrendCharts stats={data.stats} days={days} endDate={date} onDaysChange={setDays} />}
           {(mode === "month" || mode === "trend") && <View className="data-note">展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。</View>}
           {mode === "list" && <>
@@ -238,7 +232,7 @@ function PreviousEvening({ activities, date }: { activities: Activity[]; date: s
   const start = dayBounds(date).start;
   const { feeding, sleep } = previousEvening(activities, date);
   if (!feeding && !sleep) return null;
-  return <View className="evening-card"><Text className="evening-heading">昨晚的衔接</Text>
+  return <View className="evening-card"><Text className="evening-heading">昨晚</Text>
     {feeding && <Text className="evening-line">{timeLabel(feeding.startTime)} · {activityLabel(feeding)}</Text>}
     {sleep && <Text className="evening-line">{timeLabel(sleep.startTime)} 入睡 · {sleep.endTime ? `${timestamp(sleep.endTime) >= start ? "今天 " : ""}${timeLabel(sleep.endTime)} 醒来，睡了 ${formatDuration(Math.max(0, Math.trunc((timestamp(sleep.endTime) - timestamp(sleep.startTime)) / 60000)))}` : "睡眠尚未结束"}</Text>}
   </View>;

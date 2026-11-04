@@ -17,7 +17,7 @@ const daily = Array.from({ length: 30 }, (_, i) => ({
 }));
 
 async function fixture(page: Page, options: { authenticated?: boolean; failActivities?: boolean; failProfile?: boolean } = {}) {
-  await page.clock.install({ time: new Date("2026-10-23T13:00:00+08:00") });
+  await page.clock.setSystemTime(new Date("2026-10-23T13:00:00+08:00"));
   let loggedIn = options.authenticated ?? true;
   const currentBaby = { ...baby };
   const requests: string[] = [];
@@ -54,9 +54,9 @@ async function menu(page: Page, label: string) {
   await page.locator(".diary-drawer").locator("taro-button-core").filter({ has: page.getByText(label, { exact: true }) }).click();
 }
 async function calendarView(page: Page, label: string) {
-  if (!await page.locator(".calendar-view-select").count()) await menu(page, "日历首页");
-  await page.locator(".calendar-view-select").click();
-  await page.locator(".calendar-view-option").filter({ hasText: new RegExp(`^${label}$`) }).click();
+  if (await page.locator(".record-row, .bubu-chart-point").count()) await menu(page, "日历");
+  await page.getByLabel("展开日期与日历视图", { exact: true }).click();
+  await page.locator(".calendar-view-option").filter({ hasText: new RegExp(`^${label}`) }).click();
 }
 
 test("existing account opens day, week, heatmap, trends and read-only details", async ({ page }) => {
@@ -67,7 +67,7 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await page.locator('input[placeholder="请输入用户名或邮箱"]').fill("parent");
   await page.locator('input[placeholder="请输入密码"]').fill("test-password");
   await page.getByText("登录", { exact: true }).click();
-  await expect(page.locator(".diary-title")).toHaveText("卜卜日记");
+  await expect(page.locator(".date-title")).toContainText("10月23日");
   await expect(page.locator(".stats-grid")).toContainText("120 ml");
   await page.screenshot({ path: "test-results/diary-day.png", fullPage: true });
   await calendarView(page, "周历");
@@ -85,7 +85,7 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await page.getByText("查看当天 ›", { exact: true }).click();
   await expect(page.locator(".record-row")).toHaveCount(1);
   await expect(page.locator(".record-row")).toContainText("120");
-  await menu(page, "趋势统计");
+  await menu(page, "趋势");
   await expect(page.locator(".data-note")).toBeVisible();
   await expect(page.locator(".bubu-chart-line").first()).toBeVisible();
   await expect(page.locator(".bubu-chart-point")).toHaveCount(28);
@@ -94,7 +94,7 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await expect(page.locator(".bubu-chart-point")).toHaveCount(56);
   await page.getByText("30 天", { exact: true }).click();
   await expect(page.locator(".bubu-chart-point")).toHaveCount(120);
-  await menu(page, "历史数据");
+  await menu(page, "历史记录");
 
   await expect(page.locator(".record-row")).toHaveCount(4);
   await page.locator(".record-row").filter({ hasText: "120" }).click();
@@ -154,4 +154,61 @@ test("rejected name updates retain the draft and never report success", async ({
   await expect(page.getByText("已存在同名宝宝", { exact: true })).toBeVisible();
   await expect(page.getByText("已保存", { exact: true })).toHaveCount(0);
   await expect(page.locator('input[placeholder="怎么称呼宝宝"]')).toHaveValue("重名宝宝");
+});
+
+for (const width of [320, 360, 375]) {
+  test(`date navigation and avatar fit a ${width}px phone with capsule space`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 568 });
+    await fixture(page);
+    await page.goto("/");
+    await expect(page.locator(".stats-grid")).toContainText("120 ml");
+    const avatar = await page.locator(".diary-avatar-button").boundingBox();
+    const center = await page.locator(".diary-header-center").boundingBox();
+    expect(avatar!.x + avatar!.width).toBeLessThanOrEqual(center!.x);
+    expect(center!.x + center!.width).toBeLessThanOrEqual(width - 88);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+    expect(await page.locator(".date-title").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.getByLabel("上一段日期", { exact: true }).click();
+    await expect(page.locator(".date-title")).toContainText("10月22日");
+    await calendarView(page, "周历");
+    await expect(page.locator(".bubu-week-card")).toBeVisible();
+    await page.locator(".bubu-week-day").nth(3).click();
+    await expect(page.locator(".bubu-day-card")).toBeVisible();
+    await expect(page.locator(".date-title")).toContainText("10月22日");
+    await page.getByText("‹ 返回周历", { exact: true }).click();
+    await expect(page.locator(".date-title")).toContainText("10/19–10/25");
+    await calendarView(page, "日历");
+    await expect(page.locator(".date-title")).toContainText("10月22日");
+    await menu(page, "历史记录");
+    await expect(page.locator(".date-title")).toContainText("10月22日");
+    await menu(page, "日历");
+    await expect(page.locator(".date-title")).toContainText("10月22日");
+    await page.getByLabel("展开日期与日历视图", { exact: true }).click();
+    await expect(page.locator(".calendar-view-popover")).toBeVisible();
+    const popup = await page.locator(".calendar-view-popover").boundingBox();
+    expect(popup!.x).toBeGreaterThanOrEqual(0);
+    expect(popup!.x + popup!.width).toBeLessThanOrEqual(width);
+    await page.getByText("回到今天", { exact: true }).click();
+    await expect(page.locator(".date-title")).toContainText("10月23日");
+    await expect(page.locator(".calendar-view-popover")).toHaveCount(0);
+    await page.getByLabel("打开菜单", { exact: true }).click();
+    await expect(page.locator(".diary-header-avatar img")).toHaveAttribute("src", /bubu-avatar-borderless/);
+    await expect(page.locator(".diary-drawer")).toBeVisible();
+    await expect(page.getByText("一天的节奏", { exact: true })).toHaveCount(0);
+    await page.getByLabel("关闭菜单", { exact: true }).click();
+    await expect(page.locator(".diary-drawer")).toHaveCount(0);
+  });
+}
+
+test.describe("calendar dates on a phone outside China", () => {
+  test.use({ timezoneId: "Australia/Sydney" });
+  test("thirty-day trends cross the device daylight-saving boundary", async ({ page }) => {
+    await fixture(page);
+    await page.goto("/");
+    await menu(page, "趋势");
+    await expect(page.locator(".bubu-chart-point")).toHaveCount(28);
+    await page.getByText("30 天", { exact: true }).click();
+    await expect(page.locator(".bubu-chart-point")).toHaveCount(120);
+    await expect(page.locator(".date-title")).toContainText("9/24–10/23");
+  });
 });
