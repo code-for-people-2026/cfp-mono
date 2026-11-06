@@ -193,12 +193,10 @@ jobs:
           scp -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes deploy/deploy-website-candidate.sh "$remote:~/cfp-mono/deploy/"
           printf '%s' "$ACR_PASSWORD" | ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
             "docker login --username '$ACR_USERNAME' --password-stdin '$ACR_REGISTRY'"
-          # pull 前清掉未用旧镜像 + 构建缓存:ECS 40G 盘会被历次 deploy 累积的旧镜像撑满
-          # (曾导致 docker compose pull 解压时 no space left on device)。prune -af 只删
-          # "没有运行中容器引用的"镜像 → 当前在跑的旧版保留, 新镜像失败可回滚上一版;
-          # 更早的历史 tag 永久留在阿里云 ACR, 需要时 docker pull 回滚。
+          # Keep unrelated containers and rollback images on this shared ECS.
+          # Candidate pull/preflight must succeed before the write gate is applied.
           ssh -i ~/.ssh/cfp-ecs -o StrictHostKeyChecking=yes "$remote" \
-            "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && docker system prune -af && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh preflight-candidate"
+            "chmod 700 ~/cfp-mono/deploy/deploy-website-candidate.sh && chmod 600 ~/cfp-mono/docker-compose.yml.next ~/cfp-mono/.env.next ~/cfp-mono/.env.production.next && RELEASE_SHA='$RELEASE_SHA' bash ~/cfp-mono/deploy/deploy-website-candidate.sh preflight-candidate"
 
       - id: gate
         name: Gate website writes before creating the recovery point

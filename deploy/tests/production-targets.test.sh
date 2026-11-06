@@ -6,6 +6,11 @@ selector="$root/deploy/resolve-deploy-targets.sh"
 website_config_check="$root/deploy/check-website-production-config.sh"
 workflow="$root/.github/workflows/deploy-production.yml"
 ci_workflow="$root/.github/workflows/ci.yml"
+# A website release must retain other applications' stopped containers and rollback images.
+if grep -Eq 'docker (system|container|image|volume|builder) prune' "$workflow"; then
+  echo 'Website deployment must not prune shared Docker resources.' >&2
+  exit 1
+fi
 tmp="$(mktemp -d)"
 worktree=""
 trap 'if [[ -n "$worktree" ]]; then git -C "$root" worktree remove --force "$worktree" >/dev/null 2>&1 || true; fi; rm -rf "$tmp"' EXIT
