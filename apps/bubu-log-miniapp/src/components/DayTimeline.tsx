@@ -134,6 +134,7 @@ export function DayTimeline({
                     onClick={() => openActivity(block.activity)}
                   >
                     {block.isBackground ? <>
+                      {block.gapMinutes != null && <Text className='bubu-event-gap'>距上次 {formatDuration(block.gapMinutes)}</Text>}
                       <View className='bubu-timeline-band' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
                         <Text className='bubu-event-label'>{block.label}</Text>
                       </View>

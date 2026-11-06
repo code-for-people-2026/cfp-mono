@@ -193,6 +193,59 @@ describe("day timeline", () => {
       event("next", "DIAPER", "2026-01-03 00:00"),
     ], "2026-01-02")).toEqual([]);
   });
+  it("keeps the interval to the previous sleep on the later background band", () => {
+    const layout = layoutDayTimeline([
+      event("first", "SLEEP", "2026-01-02 08:00", { endTime: "2026-01-02 09:00" }),
+      event("second", "SLEEP", "2026-01-02 12:30", { endTime: "2026-01-02 14:00" }),
+    ], "2026-01-02");
+    const first = layout.find((item) => item.activity.id === "first")!;
+    const second = layout.find((item) => item.activity.id === "second")!;
+    expect(first).toMatchObject({ isBackground: true, left: 0, width: 100 });
+    expect(first.gapMinutes).toBeUndefined();
+    expect(second).toMatchObject({ isBackground: true, left: 0, width: 100, gapMinutes: 210 });
+  });
+
+  it("uses the true clipped height for completed bands and clamps any minimum at 24:00", () => {
+    const layout = layoutDayTimeline([
+      event("nap", "SLEEP", "2026-01-02 12:00", { endTime: "2026-01-02 12:05" }),
+      event("late", "OUTDOOR", "2026-01-02 23:55", { endTime: "2026-01-03 00:30" }),
+      event("ongoing", "SLEEP", "2026-01-02 23:50"),
+    ], "2026-01-02");
+    expect(layout.find((item) => item.activity.id === "nap")).toMatchObject({ top: 720, height: 5, duration: 5 });
+    expect(layout.find((item) => item.activity.id === "late")).toMatchObject({ top: 1435, height: 5 });
+    // Unfinished records keep the legacy minimum, clamped so nothing passes 24:00.
+    const ongoing = layout.find((item) => item.activity.id === "ongoing")!;
+    expect(ongoing).toMatchObject({ top: 1430, height: 10 });
+    expect(ongoing.top + ongoing.height).toBeLessThanOrEqual(1440);
+    // The week column reports the same clipped segment as its measurement.
+    const week = buildWeek([
+      event("late", "OUTDOOR", "2026-01-05 23:55", { endTime: "2026-01-06 00:30" }),
+    ], "2026-01-05", undefined, "2026-01-06");
+    expect(week[0]?.blocks).toHaveLength(1);
+    expect(week[0]?.blocks[0]).toMatchObject({ minutes: 5, isBackground: true });
+  });
+
+  it("keeps a late foreground block readable by moving only its visual top before 24:00", () => {
+    const layout = layoutDayTimeline([
+      event("late-pump", "PUMP", "2026-01-02 23:59", { endTime: "2026-01-03 00:04", milkAmount: 80 }),
+      event("late-milk", "BOTTLE", "2026-01-02 23:59", { milkAmount: 90 }),
+    ], "2026-01-02", { minBlockHeightMinutes: 30 });
+    const pump = layout.find((item) => item.activity.id === "late-pump")!;
+    const milk = layout.find((item) => item.activity.id === "late-milk")!;
+    for (const block of [pump, milk]) {
+      expect(block.height).toBe(30);
+      expect(block.top + block.height).toBeLessThanOrEqual(1440);
+      expect(block.isBackground).toBe(false);
+    }
+    // The stored start times are untouched; only the visual placement moved.
+    expect(pump.activity.startTime).toBe("2026-01-02 23:59");
+    expect(milk.activity.startTime).toBe("2026-01-02 23:59");
+    // Lane collision reserves the final visual position and height.
+    expect([pump.top, milk.top]).toEqual([1410, 1410]);
+    expect([pump.lanes, milk.lanes]).toEqual([2, 2]);
+    expect([pump.width, milk.width]).toEqual([50, 50]);
+  });
+
   it("combines feeding types for gaps, excludes pumps and future endings", () => {
     const activities = [
       event("first", "BREASTFEED", "2026-01-02 08:00", { endTime: "2026-01-02 08:20" }),

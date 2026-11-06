@@ -89,12 +89,16 @@ export function layoutDayTimeline(activities: readonly Activity[], date: DateInp
     } else if (start >= bounds.next || end <= bounds.start) continue;
     const top = Math.trunc((Math.max(start, bounds.start) - bounds.start) / 60000);
     const visualMinutes = Math.max(Math.trunc((Math.min(end, bounds.next) - Math.max(start, bounds.start)) / 60000), isLine ? 0 : 1);
-    const naturalHeight = isLine ? 2 : Math.max(visualMinutes, 15);
-    // Background bands keep their true clipped height and instant rules stay a
-    // one-pixel line. Foreground minimums are part of layout, so a readable block
-    // also reserves the lane space it occupies.
-    const height = isLine ? 2 : isBackground ? naturalHeight : Math.max(naturalHeight, minimumMinutes);
-    items.push({ activity, top, height, left: 0, width: 100,
+    // Completed sleep/outdoor bands keep their true clipped height, matching
+    // buildWeek; unfinished background records keep the legacy minimum, clamped
+    // so no band passes the 24:00 edge.
+    const naturalHeight = isLine ? 2 : isBackground && activity.endTime ? visualMinutes : Math.max(visualMinutes, 15);
+    // Foreground minimums are part of layout, so a readable block also reserves
+    // the lane space it occupies. A foreground block never shrinks below its
+    // readable height: like buildWeek, only its visual top moves up to fit
+    // 00:00–24:00; the stored timestamps, labels and details are untouched.
+    const height = isLine ? 2 : isBackground ? Math.min(naturalHeight, TIMELINE_HEIGHT - top) : Math.max(naturalHeight, minimumMinutes);
+    items.push({ activity, top: isLine || isBackground ? top : Math.min(top, Math.max(0, TIMELINE_HEIGHT - height)), height, left: 0, width: 100,
       isLine, isBackground, lane: 0, lanes: 1,
       duration, label: activityLabel(activity), color: activityTone(activity.type).border,
       ...(gaps.has(activity.id) ? { gapMinutes: gaps.get(activity.id)! } : {}) });

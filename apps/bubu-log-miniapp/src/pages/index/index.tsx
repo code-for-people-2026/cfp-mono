@@ -49,6 +49,7 @@ export default function DiaryPage() {
   const [provenance, setProvenance] = useState<DetailProvenanceState>({ status: "idle" });
   const detailVersion = useRef(0);
   const provenanceVersion = useRef(0);
+  const mounted = useRef(true);
   const babyId = context?.baby?.id || "";
   const weekStart = calendarPeriod("week", date).start;
   const dataKey = `${babyId}:${mode}:${date}:${days}:${revision}`;
@@ -58,9 +59,14 @@ export default function DiaryPage() {
     setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); setProvenance({ status: "idle" }); detailVersion.current++; provenanceVersion.current++;
   }, []);
-  useEffect(() => () => {
-    // Unmount is another context boundary: stop a multi-page audit scan.
-    detailVersion.current++; provenanceVersion.current++;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      // Unmount is another context boundary: stop a multi-page audit scan and
+      // keep late unauthorized responses from writing to an unmounted page.
+      mounted.current = false;
+      detailVersion.current++; provenanceVersion.current++;
+    };
   }, []);
 
   const restore = useCallback(async () => {
@@ -154,9 +160,15 @@ export default function DiaryPage() {
       const current = await api.getActivity(babyId, activity.id);
       if (version === detailVersion.current) setDetail(current);
     } catch (error) {
+      // A current-session 401 expires the private view even if this detail was
+      // closed meanwhile; a replaced session surfaces as 409 SESSION_CHANGED
+      // from the client instead, so it can never reach this branch.
+      if (isUnauthorized(error)) {
+        if (mounted.current) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+        return;
+      }
       if (version !== detailVersion.current) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else setDetailError(message(error));
+      setDetailError(message(error));
     } finally { if (version === detailVersion.current) setDetailBusy(false); }
   };
   const fetchProvenance = useCallback(async () => {
@@ -170,9 +182,16 @@ export default function DiaryPage() {
       if (result.provenance) setProvenance({ status: "found", provenance: result.provenance });
       else setProvenance({ status: result.complete ? "absent" : "incomplete" });
     } catch (error) {
+      // Unauthorized is checked before the version guard: closing or collapsing
+      // this optional section must not shield a genuinely expired session, while
+      // late successes stay ignored. Old-session responses arrive as 409
+      // SESSION_CHANGED (see the client generation guard), never as 401 here.
+      if (isUnauthorized(error)) {
+        if (mounted.current) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+        return;
+      }
       if (version !== provenanceVersion.current) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else setProvenance({ status: "error", message: message(error) });
+      setProvenance({ status: "error", message: message(error) });
     }
   }, [babyId, detail, clearPrivateView]);
   const closeDetail = () => {

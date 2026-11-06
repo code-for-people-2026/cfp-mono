@@ -10,6 +10,13 @@ const records = [
   activity("diaper", "DIAPER", "2026-10-23T09:15:00+08:00", { hasPee: true, peeAmount: "LARGE", hasPoop: true, poopColor: "YELLOW", poopPhotoUrl: "/test-photo.svg" }),
   activity("head", "HEAD_LIFT", "2026-10-23T10:00:00+08:00", { endTime: "2026-10-23T10:10:00+08:00" }),
 ];
+const gappedSleepRecords = [
+  activity("sleep-morning", "SLEEP", "2026-10-23T08:00:00+08:00", { endTime: "2026-10-23T09:00:00+08:00" }),
+  activity("sleep-noon", "SLEEP", "2026-10-23T12:30:00+08:00", { endTime: "2026-10-23T14:00:00+08:00" }),
+];
+const lateForegroundRecords = [
+  activity("late-milk", "BOTTLE", "2026-10-23T23:59:00+08:00", { milkAmount: 90, milkSource: "FORMULA" }),
+];
 const denseWeekRecords = [
   activity("dense-sleep", "SLEEP", "2026-10-23T07:30:00+08:00", { endTime: "2026-10-23T09:30:00+08:00" }),
   activity("dense-milk", "BOTTLE", "2026-10-23T08:30:00+08:00", { endTime: "2026-10-23T09:00:00+08:00", milkAmount: 120, milkSource: "FORMULA" }),
@@ -485,6 +492,77 @@ test("a 401 from the optional audit clears the private view like other session e
   await expect(page.locator(".bubu-detail-sheet")).toHaveCount(0);
   await expect(page.locator(".stats-grid")).toHaveCount(0);
   await expect(page.getByText("登录已过期，请重新登录", { exact: true })).toBeVisible();
+});
+
+test("an audit 401 arriving after the detail closed still clears the private view", async ({ page }) => {
+  const control = await fixture(page, { audit: { gateFirst: true, statusForCall: [401] } });
+  await page.goto("/");
+  await menu(page, "历史记录");
+  await page.locator(".record-row").filter({ hasText: "120" }).click();
+  await page.getByLabel("展开更多信息", { exact: true }).click();
+  await expect.poll(() => control.auditRequests.length).toBe(1);
+  await page.getByText("关闭", { exact: true }).last().click();
+  await expect(page.locator(".bubu-detail-sheet")).toHaveCount(0);
+  // The family calendar is still on screen while the gated response is pending.
+  await expect(page.locator(".record-row")).toHaveCount(4);
+  control.releaseAudit();
+  await expect(page.locator('input[placeholder="请输入密码"]')).toBeVisible();
+  await expect(page.getByText("登录已过期，请重新登录", { exact: true })).toBeVisible();
+  await expect(page.locator(".record-row")).toHaveCount(0);
+  await expect(page.locator(".bubu-detail-sheet")).toHaveCount(0);
+  // The expired session stops the bounded scan; no further audit page is requested.
+  await page.waitForTimeout(250);
+  expect(control.auditRequests).toHaveLength(1);
+});
+
+test("an audit 401 arriving after collapsing more info still clears the private view", async ({ page }) => {
+  const control = await fixture(page, { audit: { gateFirst: true, statusForCall: [401] } });
+  await page.goto("/");
+  await menu(page, "历史记录");
+  await page.locator(".record-row").filter({ hasText: "120" }).click();
+  await page.getByLabel("展开更多信息", { exact: true }).click();
+  await expect.poll(() => control.auditRequests.length).toBe(1);
+  await page.getByLabel("收起更多信息", { exact: true }).click();
+  await expect(page.locator(".bubu-provenance-content")).toHaveCount(0);
+  await expect(page.locator(".bubu-detail-sheet")).toBeVisible();
+  control.releaseAudit();
+  await expect(page.locator('input[placeholder="请输入密码"]')).toBeVisible();
+  await expect(page.getByText("登录已过期，请重新登录", { exact: true })).toBeVisible();
+  await expect(page.locator(".record-row")).toHaveCount(0);
+  await expect(page.locator(".bubu-detail-sheet")).toHaveCount(0);
+  await page.waitForTimeout(250);
+  expect(control.auditRequests).toHaveLength(1);
+});
+
+test("a second completed sleep band keeps its interval and stays full width", async ({ page }) => {
+  await fixture(page, { recordsOverride: gappedSleepRecords });
+  await page.goto("/");
+  const bands = page.locator(".bubu-timeline-background");
+  await expect(bands).toHaveCount(2);
+  await expect(bands.nth(0).locator(".bubu-event-gap")).toHaveCount(0);
+  await expect(bands.nth(1).locator(".bubu-event-gap")).toHaveText("距上次 3小时30分钟");
+  const widths = await bands.evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.width));
+  expect(widths).toEqual(["100%", "100%"]);
+});
+
+test("320px late foreground block keeps its readable height inside 24:00 and opens its original time", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await fixture(page, { recordsOverride: lateForegroundRecords });
+  await page.goto("/");
+  const block = page.locator(".bubu-timeline-position").filter({ hasText: "90ml" });
+  await block.scrollIntoViewIfNeeded();
+  await expect(block).toBeVisible();
+  const geometry = await block.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    const canvas = (element.closest(".bubu-day-canvas") as HTMLElement).getBoundingClientRect();
+    return { height: rect.height, bottom: rect.bottom - canvas.top, canvasHeight: canvas.height };
+  });
+  expect(geometry.height).toBeGreaterThanOrEqual(30);
+  expect(geometry.bottom).toBeLessThanOrEqual(geometry.canvasHeight + 1);
+  await block.click();
+  await expect(page.locator(".bubu-detail-sheet")).toBeVisible();
+  const start = page.locator(".bubu-detail-row").filter({ hasText: "开始时间" });
+  await expect(start).toContainText("10月23日 23:59");
 });
 
 test("320px long provenance ids and text wrap inside the scroll sheet and the photo still previews", async ({ page }) => {
