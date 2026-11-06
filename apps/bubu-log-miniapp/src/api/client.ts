@@ -185,6 +185,11 @@ export function createBubuApi(options: ClientOptions) {
     async getBabies(babyId?: string) {
       return decode.babyList(await request(`/api/app/user-babies${queryString({ babyId })}`, { babyId }));
     },
+    async getBabyProfile(babyId: string) {
+      const profile = decode.baby(await request(scoped("baby-profile", babyId), { babyId }));
+      if (profile.id !== babyId) throw new decode.ResponseFormatError();
+      return profile;
+    },
     async updateBabyNames(babyId: string, input: { name: string; fullName: string }) {
       const name = input.name.trim();
       const fullName = input.fullName.trim();

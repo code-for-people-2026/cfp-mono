@@ -9,6 +9,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
 import type { DetailProvenanceState } from "../../components";
+import { DEFAULT_CARE_PREFERENCES, getCarePreferences, type CarePreferences } from "../../preferences/care-preferences";
+import { carePreferencesScope, carePreferencesUpdatedEvent } from "../../preferences/runtime";
 import {
   activityLabel, addDays, calendarPeriod, dayBounds, filterActivities, formatDuration,
   previousEvening, sortActivities, statCards, stepPeriod, summarizeHomeDay, summarizeRecordList,
@@ -16,10 +18,36 @@ import {
   type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter,
 } from "../../model";
 
-type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean };
+type Loaded = {
+  key: string;
+  activities: Activity[];
+  evening: Activity[];
+  latest: Activity[];
+  stats: DailyStat[];
+  complete: boolean;
+  birthDate?: string | null;
+  profileError?: string;
+};
+type CarePreferencesState = { babyId: string; preferences: CarePreferences; error: string };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
 const iso = (value: number) => new Date(value).toISOString();
+const readCarePreferences = (babyId: string): CarePreferencesState => {
+  try {
+    const result = getCarePreferences(carePreferencesScope(babyId));
+    return {
+      babyId,
+      preferences: result.preferences,
+      error: result.storageState === "corrupt" ? "本地照护环设置已损坏，已使用默认参考。" : "",
+    };
+  } catch {
+    return {
+      babyId,
+      preferences: DEFAULT_CARE_PREFERENCES,
+      error: "照护环设置暂时不可读取，已使用默认参考。",
+    };
+  }
+};
 
 export default function DiaryPage() {
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -42,6 +70,7 @@ export default function DiaryPage() {
   const [sort, setSort] = useState<SortField>("endTime");
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const [carePreferences, setCarePreferences] = useState<CarePreferencesState | null>(null);
   const [dataError, setDataError] = useState("");
   const [detail, setDetail] = useState<Activity | null>(null);
   const [detailError, setDetailError] = useState("");
@@ -49,6 +78,8 @@ export default function DiaryPage() {
   const [provenance, setProvenance] = useState<DetailProvenanceState>({ status: "idle" });
   const detailVersion = useRef(0);
   const provenanceVersion = useRef(0);
+  const identityEpoch = useRef(0);
+  const identityKey = useRef("");
   const mounted = useRef(true);
   const babyId = context?.baby?.id || "";
   const weekStart = calendarPeriod("week", date).start;
@@ -59,6 +90,17 @@ export default function DiaryPage() {
     setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); setProvenance({ status: "idle" }); detailVersion.current++; provenanceVersion.current++;
   }, []);
+  useEffect(() => {
+    const nextIdentity = `${context?.authenticated ? "authenticated" : "guest"}:${context?.authenticated ? babyId : ""}`;
+    if (!identityKey.current) {
+      identityKey.current = nextIdentity;
+      return;
+    }
+    if (identityKey.current !== nextIdentity) {
+      identityEpoch.current++;
+      identityKey.current = nextIdentity;
+    }
+  }, [babyId, context?.authenticated]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -88,7 +130,23 @@ export default function DiaryPage() {
   }, [clearPrivateView]);
 
   useEffect(() => {
+    if (!babyId || !context?.authenticated) {
+      setCarePreferences(null);
+      return;
+    }
+    setCarePreferences(readCarePreferences(babyId));
+    const updatePreferences = (changedBaby: unknown) => {
+      if (changedBaby === babyId) setCarePreferences(readCarePreferences(babyId));
+    };
+    Taro.eventCenter.on(carePreferencesUpdatedEvent, updatePreferences);
+    return () => {
+      Taro.eventCenter.off(carePreferencesUpdatedEvent, updatePreferences);
+    };
+  }, [babyId, context?.authenticated]);
+
+  useEffect(() => {
     if (!babyId || !context?.authenticated) return;
+    const requestIdentityEpoch = identityEpoch.current;
     let cancelled = false;
     setDataError("");
     const load = async (): Promise<Loaded> => {
@@ -96,8 +154,45 @@ export default function DiaryPage() {
         const month = calendarPeriod("month", date);
         const startDate = mode === "trend" ? addDays(date, 1 - days) : month.start;
         const endDate = mode === "trend" ? date : month.end;
-        const stats = await api.getDailyStats({ babyId, startDate, endDate });
-        return { key: dataKey, activities: [], evening: [], latest: [], stats, complete: true };
+        if (mode === "trend") {
+          const stats = await api.getDailyStats({ babyId, startDate, endDate });
+          return { key: dataKey, activities: [], evening: [], latest: [], stats, complete: true };
+        }
+
+        const bounds = dayBounds(month.start);
+        const endBounds = dayBounds(month.end);
+        const [statsResult, activitiesResult, profileResult] = await Promise.allSettled([
+          api.getDailyStats({ babyId, startDate, endDate }),
+          api.getActivities({
+            babyId,
+            startTimeGte: iso(bounds.start),
+            startTimeLt: iso(endBounds.next),
+            crossStartTime: true,
+            crossEndTime: true,
+          }),
+          api.getBabyProfile(babyId),
+        ]);
+        const failures = [statsResult, activitiesResult, profileResult].filter((result) => result.status === "rejected");
+        const unauthorized = failures.find((result) => result.status === "rejected" && isUnauthorized(result.reason));
+        if (unauthorized) throw (unauthorized as PromiseRejectedResult).reason;
+        const requiredFailure = [statsResult, activitiesResult].find((result) => result.status === "rejected");
+        if (requiredFailure) throw (requiredFailure as PromiseRejectedResult).reason;
+        if (activitiesResult.status !== "fulfilled" || statsResult.status !== "fulfilled") throw new Error("暂时无法连接，请稍后重试");
+
+        let birthDate: string | null = null;
+        let profileError = "";
+        if (profileResult.status === "fulfilled") birthDate = profileResult.value.birthDate ?? null;
+        else profileError = "宝宝资料读取失败，年龄参考不可用；月历仍展示记录。";
+        return {
+          key: dataKey,
+          activities: activitiesResult.value.activities,
+          evening: [],
+          latest: [],
+          stats: statsResult.value,
+          complete: activitiesResult.value.complete,
+          birthDate,
+          profileError,
+        };
       }
       if (mode === "week") {
         const week = calendarPeriod("week", date);
@@ -122,9 +217,17 @@ export default function DiaryPage() {
       return { key: dataKey, ...result, complete, evening, latest, stats: [] };
     };
     void load().then((next) => { if (!cancelled) setLoaded(next); }).catch((error: unknown) => {
-      if (cancelled) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else setDataError(message(error));
+      if (isUnauthorized(error)) {
+        // A view/date change is not an identity change: a late 401 still
+        // expires the current session. Baby/session changes advance the epoch;
+        // their old responses must not clear the newly selected view.
+        if (mounted.current && identityEpoch.current === requestIdentityEpoch) {
+          clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录");
+        }
+        return;
+      }
+      if (cancelled || !mounted.current) return;
+      setDataError(message(error));
     });
     return () => { cancelled = true; };
   }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, today, clearPrivateView]);
@@ -146,6 +249,8 @@ export default function DiaryPage() {
   const changeBaby = async (index: number) => {
     const selected = context?.babies[index];
     if (!selected || selected.id === babyId) return;
+    identityEpoch.current++;
+    identityKey.current = `authenticated:${selected.id}`;
     clearPrivateView(); setBooting(true); setAccountError("");
     try { setContext(await api.getContext(selected.id)); setFilters([]); }
     catch (error) { setContext(null); setAccountError(message(error)); }
@@ -287,9 +392,28 @@ export default function DiaryPage() {
             gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:week:${date}`}
             onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay}
             onNavigate={(direction) => { setReturnPeriod(null); navigate(direction === "prev" ? -1 : 1); }} />}
-          {mode === "month" && <Heatmap stats={data.stats} endDate={date} today={today} onDateClick={(selected, metric) => { setReturnPeriod({ mode, date }); setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
+          {mode === "month" && (
+            <Heatmap
+              stats={data.stats}
+              activities={data.activities}
+              complete={data.complete}
+              birthDate={data.birthDate}
+              preferences={carePreferences?.babyId === babyId ? carePreferences.preferences : DEFAULT_CARE_PREFERENCES}
+              preferencesError={carePreferences?.babyId === babyId ? carePreferences.error : ""}
+              profileError={data.profileError}
+              endDate={date}
+              today={today}
+              onDateClick={openDay}
+            />
+          )}
           {mode === "trend" && <TrendCharts stats={data.stats} days={days} endDate={date} onDaysChange={setDays} />}
-          {(mode === "month" || mode === "trend") && <View className="data-note">展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。</View>}
+          {(mode === "month" || mode === "trend") && (
+            <View className="data-note">
+              {mode === "month"
+                ? "月环读取已保存统计和当月记录；缺少统计不代表当天没有记录。"
+                : "展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。"}
+            </View>
+          )}
           {mode === "list" && <>
             <View className="section-heading"><Text className="section-title">{visible.length} 条记录</Text><Picker mode="selector" range={["按活动时间", "按创建时间", "按更新时间"]} value={["endTime", "createdAt", "updatedAt"].indexOf(sort)} onChange={(e) => setSort((["endTime", "createdAt", "updatedAt"] as const)[Number(e.detail.value)]!)}><Text className="inline-action">{{ endTime: "按活动时间", createdAt: "按创建时间", updatedAt: "按更新时间" }[sort]} ⌄</Text></Picker></View>
             {sortActivities(visible, sort).map((activity) => <View className="record-row" key={activity.id} onClick={() => { void openDetail(activity); }}>

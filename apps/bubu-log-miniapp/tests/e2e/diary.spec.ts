@@ -30,6 +30,11 @@ const overflowWeekRecords = [
   activity("overflow-milk-two", "BOTTLE", "2026-10-23T08:31:00+08:00", { endTime: "2026-10-23T09:05:00+08:00", milkAmount: 120, milkSource: "FORMULA" }),
   activity("overflow-diaper", "DIAPER", "2026-10-23T08:33:00+08:00", { hasPee: true }),
 ];
+const ringRecords = [
+  ...records,
+  activity("ring-breastfeed", "BREASTFEED", "2026-10-23T10:30:00+08:00", { endTime: "2026-10-23T10:50:00+08:00" }),
+  activity("ring-outdoor", "OUTDOOR", "2026-10-23T15:00:00+08:00", { endTime: "2026-10-23T18:20:00+08:00" }),
+];
 const daily = Array.from({ length: 30 }, (_, i) => ({
   id: `stat-${i}`, babyId: baby.id, date: new Date(Date.UTC(2026, 9, 23 - i)).toISOString().slice(0, 10),
   sleepCount: 4, totalSleepMinutes: 450 + i * 9, totalMilkAmount: 420 + i * 6,
@@ -49,6 +54,8 @@ type FixtureOptions = {
   authenticated?: boolean;
   failActivities?: boolean;
   failProfile?: boolean;
+  babyProfileStatus?: number;
+  babyProfileGateFirst?: boolean;
   recordsOverride?: typeof records;
   audit?: AuditOptions;
 };
@@ -63,6 +70,8 @@ async function fixture(page: Page, options: FixtureOptions = {}) {
   const auditQueries: Array<Record<string, string>> = [];
   let releaseAudit = () => {};
   const auditGate = new Promise<void>((resolve) => { releaseAudit = resolve; });
+  let releaseBabyProfile = () => {};
+  const babyProfileGate = new Promise<void>((resolve) => { releaseBabyProfile = resolve; });
   await page.route("**/test-photo.svg", (route) => route.fulfill({
     status: 200, contentType: "image/svg+xml",
     body: '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><rect width="80" height="80" fill="#d29c9a"/></svg>',
@@ -82,6 +91,11 @@ async function fixture(page: Page, options: FixtureOptions = {}) {
       if (options.failProfile) return json({ error: "已存在同名宝宝" }, 409);
       Object.assign(currentBaby, route.request().postDataJSON());
       return json({ data: currentBaby });
+    }
+    if (url.pathname === "/api/app/baby-profile") {
+      if (options.babyProfileGateFirst) await babyProfileGate;
+      if (options.babyProfileStatus) return json({ error: "test profile failure" }, options.babyProfileStatus);
+      return json({ ...currentBaby, birthDate: "2026-06-23" });
     }
     if (url.pathname === "/api/app/audits") {
       const call = auditRequests.length;
@@ -105,7 +119,13 @@ async function fixture(page: Page, options: FixtureOptions = {}) {
     if (url.pathname === "/api/app/daily-stats") return json(daily.filter((row) => row.date >= url.searchParams.get("startDate")! && row.date <= url.searchParams.get("endDate")!));
     return json({ error: "Unexpected endpoint" }, 404);
   });
-  return { requests, auditRequests, auditQueries, releaseAudit: () => releaseAudit() };
+  return {
+    requests,
+    auditRequests,
+    auditQueries,
+    releaseAudit: () => releaseAudit(),
+    releaseBabyProfile: () => releaseBabyProfile(),
+  };
 }
 
 const provenanceAudit = (id: string, extra: Record<string, unknown> = {}) => ({
@@ -285,16 +305,15 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await expect(page.locator(".bubu-heatmap-week")).toHaveCount(5);
   await expect(page.locator(".bubu-heatmap-cell")).toHaveCount(35);
   await expect(page.locator(".bubu-heatmap-padding")).toHaveCount(4);
+  await expect(page.locator(".bubu-range-switch")).toHaveCount(0);
+  await expect(page.locator(".bubu-legend-item")).toHaveCount(4);
   await expect(page.locator(".data-note")).toBeVisible();
   await page.screenshot({ path: "test-results/diary-month.png", fullPage: true });
   await page.getByText("查看当天 ›", { exact: true }).click();
-  await expect(page.locator(".record-row")).toHaveCount(1);
-  await expect(page.locator(".record-row")).toContainText("睡眠");
-  await calendarView(page, "月历");
-  await page.getByText("奶量", { exact: true }).click();
-  await page.getByText("查看当天 ›", { exact: true }).click();
-  await expect(page.locator(".record-row")).toHaveCount(1);
-  await expect(page.locator(".record-row")).toContainText("120");
+  await expect(page.locator(".bubu-day-card")).toBeVisible();
+  await expect(page.locator(".bubu-timeline-background", { hasText: "睡眠" })).toBeVisible();
+  await page.getByText("‹ 返回月历", { exact: true }).click();
+  await expect(page.locator(".date-title")).toContainText("本月（10月）");
   await menu(page, "趋势");
   await expect(page.locator(".data-note")).toBeVisible();
   await expect(page.locator(".bubu-chart-line").first()).toBeVisible();
@@ -543,6 +562,60 @@ test("a second completed sleep band keeps its interval and stays full width", as
   await expect(bands.nth(1).locator(".bubu-event-gap")).toHaveText("距上次 3小时30分钟");
   const widths = await bands.evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.width));
   expect(widths).toEqual(["100%", "100%"]);
+});
+
+test("320px day backgrounds span the hour gutter while foreground records stay clickable", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await fixture(page, { recordsOverride: denseWeekRecords });
+  await page.goto("/");
+  const band = page.locator(".bubu-timeline-background").first();
+  await band.scrollIntoViewIfNeeded();
+  await expect(band).toBeVisible();
+  const geometry = await page.evaluate(() => {
+    const canvas = document.querySelector(".bubu-day-canvas") as HTMLElement;
+    const backgroundLayer = canvas.querySelector(".bubu-day-backgrounds") as HTMLElement;
+    const background = backgroundLayer.querySelector(".bubu-timeline-background") as HTMLElement;
+    const backgroundLabel = background.querySelector(".bubu-event-label") as HTMLElement;
+    const gutterLabel = canvas.querySelector(".bubu-hour-label") as HTMLElement;
+    const hourRow = canvas.querySelector(".bubu-hour-row") as HTMLElement;
+    const recordLayer = canvas.querySelector(".bubu-day-events") as HTMLElement;
+    const rect = (element: Element) => {
+      const box = element.getBoundingClientRect();
+      return { left: box.left, right: box.right, width: box.width };
+    };
+    return {
+      background: rect(background),
+      backgroundLabel: rect(backgroundLabel),
+      canvas: rect(canvas),
+      gutterLabel: rect(gutterLabel),
+      recordLayer: rect(recordLayer),
+      backgroundLayerZ: Number.parseInt(getComputedStyle(backgroundLayer).zIndex, 10),
+      hourRowZ: Number.parseInt(getComputedStyle(hourRow).zIndex, 10),
+      recordLayerZ: Number.parseInt(getComputedStyle(recordLayer).zIndex, 10),
+    };
+  });
+  expect(geometry.background.left).toBeCloseTo(geometry.canvas.left, 1);
+  expect(geometry.background.right).toBeCloseTo(geometry.canvas.right, 1);
+  expect(geometry.gutterLabel.left).toBeGreaterThanOrEqual(geometry.background.left - 0.5);
+  expect(geometry.gutterLabel.right).toBeLessThanOrEqual(geometry.background.right + 0.5);
+  expect(geometry.backgroundLabel.left).toBeCloseTo(geometry.recordLayer.left, 1);
+  expect(geometry.recordLayerZ).toBeGreaterThan(geometry.backgroundLayerZ);
+  expect(geometry.hourRowZ).toBeGreaterThan(geometry.backgroundLayerZ);
+
+  const pump = page.locator(".bubu-timeline-position").filter({ hasText: "吸奶 80ml" });
+  await pump.scrollIntoViewIfNeeded();
+  await pump.click();
+  await expect(page.locator(".bubu-detail-type")).toContainText("吸奶");
+  await page.getByText("关闭", { exact: true }).last().click();
+
+  const milk = page.locator(".bubu-timeline-position").filter({ hasText: "瓶喂 120ml" });
+  await milk.click();
+  await expect(page.locator(".bubu-detail-type")).toContainText("瓶喂");
+  await page.getByText("关闭", { exact: true }).last().click();
+
+  await band.click({ position: { x: 8, y: 20 } });
+  await expect(page.locator(".bubu-detail-type")).toContainText("睡眠");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
 });
 
 test("320px late foreground block keeps its readable height inside 24:00 and opens its original time", async ({ page }) => {
@@ -1072,8 +1145,7 @@ test("month view is a natural calendar month and steps without entering the futu
   await page.goto("/");
   await calendarView(page, "月历");
   await expect(page.locator(".date-title")).toContainText("本月（10月）");
-  await expect(page.locator(".bubu-viz-title")).toContainText("10月");
-  await expect(page.locator(".bubu-viz-footnote")).toContainText("本月");
+  await expect(page.locator(".bubu-heatmap-card .bubu-viz-footnote")).toContainText("满环仅作参考，实际数值仍完整显示");
   await expect(page.getByText("近四周", { exact: true })).toHaveCount(0);
   await expect(page.locator(".bubu-heatmap-week")).toHaveCount(5);
   await expect(page.locator(".bubu-heatmap-padding")).toHaveCount(4);
@@ -1081,12 +1153,87 @@ test("month view is a natural calendar month and steps without entering the futu
   expect(await next.evaluate((element) => element.hasAttribute("disabled"))).toBe(true);
   await page.getByLabel("上一段日期", { exact: true }).click();
   await expect(page.locator(".date-title")).toContainText("上月（9月）");
-  await expect(page.locator(".bubu-viz-title")).toContainText("9月");
   await expect(page.locator(".bubu-heatmap-week")).toHaveCount(5);
   expect(await next.evaluate((element) => element.hasAttribute("disabled"))).toBe(false);
   await next.click();
   await expect(page.locator(".date-title")).toContainText("本月（10月）");
   expect(await next.evaluate((element) => element.hasAttribute("disabled"))).toBe(true);
+});
+
+test("month care rings fit a 320px natural month and read all four metrics", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await fixture(page, { recordsOverride: ringRecords });
+  await page.goto("/");
+  await calendarView(page, "月历");
+  const card = page.locator(".bubu-heatmap-card");
+  await expect(card).toBeVisible();
+  await expect(page.locator(".bubu-heatmap-cell")).toHaveCount(35);
+  await expect(page.locator(".bubu-heatmap-padding")).toHaveCount(4);
+  expect(await page.locator(".bubu-heatmap-cell").first().evaluate((element) => element.getBoundingClientRect().height)).toBe(56);
+  await expect(page.locator(".bubu-heatmap-cell .activity-rings")).toHaveCount(23);
+  await expect(page.locator(".bubu-heatmap-cell .activity-rings__ring")).toHaveCount(92);
+  const ringSizes = await page.locator(".bubu-heatmap-cell .activity-rings").evaluateAll(
+    (nodes) => nodes.map((node) => ({ width: node.clientWidth, height: node.clientHeight })),
+  );
+  expect(ringSizes).toHaveLength(23);
+  for (const size of ringSizes) expect(size.width).toBe(size.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+
+  await page.locator(".bubu-heatmap-today").click();
+  const reading = page.locator(".bubu-heatmap-reading");
+  await expect(reading).toContainText("瓶喂 420 ml");
+  await expect(reading).toContainText("亲喂估算 100–200 ml");
+  await expect(reading).toContainText("约 520–620 ml");
+  await expect(reading).toContainText("7小时30分钟");
+  await expect(reading).toContainText("3小时20分钟");
+  await expect(reading).toContainText("4 次");
+  await expect(reading).toContainText("年龄参考 800–1000 ml/日");
+  await expect(reading).toContainText("家庭目标：1小时合格、2小时良好、3小时优秀");
+  await expect(reading).toContainText("达到 180 分钟");
+});
+
+test("a non-unauthorized baby profile failure keeps the month with reference unavailable", async ({ page }) => {
+  await fixture(page, { babyProfileStatus: 503 });
+  await page.goto("/");
+  await calendarView(page, "月历");
+  await expect(page.locator(".bubu-heatmap-card")).toBeVisible();
+  await expect(page.locator(".bubu-heatmap-notice").first()).toContainText("宝宝资料读取失败，年龄参考不可用");
+  await expect(page.locator(".bubu-heatmap-cell .activity-rings")).toHaveCount(23);
+});
+
+test("a baby profile 401 expires the private month view", async ({ page }) => {
+  await fixture(page, { babyProfileStatus: 401 });
+  await page.goto("/");
+  await calendarView(page, "月历");
+  await expect(page.getByText("登录已过期，请重新登录")).toBeVisible();
+  await expect(page.locator('input[placeholder="请输入密码"]')).toBeVisible();
+  await expect(page.locator(".bubu-heatmap-card")).toHaveCount(0);
+});
+
+test("a baby profile 401 arriving after switching month to day still expires login", async ({ page }) => {
+  const control = await fixture(page, { babyProfileStatus: 401, babyProfileGateFirst: true });
+  await page.goto("/");
+  await expect(page.locator(".bubu-day-card")).toBeVisible();
+  await calendarView(page, "月历");
+  await expect.poll(() => control.requests.filter((request) => request.includes("/api/app/baby-profile")).length).toBe(1);
+  await calendarView(page, "日历");
+  await expect(page.locator(".bubu-day-card")).toBeVisible();
+  control.releaseBabyProfile();
+  await expect(page.getByText("登录已过期，请重新登录")).toBeVisible();
+  await expect(page.locator('input[placeholder="请输入密码"]')).toBeVisible();
+  await expect(page.locator(".bubu-day-card")).toHaveCount(0);
+});
+
+test("month view opens an unfiltered day and returns to its origin month", async ({ page }) => {
+  await fixture(page);
+  await page.goto("/");
+  await calendarView(page, "月历");
+  await expect(page.locator(".date-title")).toContainText("本月（10月）");
+  await page.getByText("查看当天 ›", { exact: true }).click();
+  await expect(page.locator(".bubu-day-card")).toBeVisible();
+  await expect(page.locator(".bubu-timeline-background, .bubu-timeline-position, .bubu-timeline-instant")).toHaveCount(4);
+  await page.getByText("‹ 返回月历", { exact: true }).click();
+  await expect(page.locator(".date-title")).toContainText("本月（10月）");
 });
 
 test("failed reads show retry instead of zero-valued statistics", async ({ page }) => {

@@ -1,50 +1,162 @@
 import { useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
-import { buildHeatmap, dateLabel, formatDuration, todayKey, type DailyStat } from '../model'
+import { dateLabel } from '../model/date'
+import { buildCareMonthRings, type CareRingMetric } from '../model/care-rings'
+import type { Activity, DailyStat } from '../model/types'
+import type { CarePreferences } from '../preferences/care-preferences'
+import { ActivityRings } from './ActivityRings'
 import './visualizations.css'
 
 export interface HeatmapProps {
   stats: DailyStat[]
-  endDate?: string
+  activities: Activity[]
+  complete: boolean
+  birthDate?: string | null
+  preferences: CarePreferences
   /** Current Shanghai day from the page tick; keeps future-cell limits fresh after midnight. */
   today?: string
-  onDateClick?: (date: string, metric: 'sleep' | 'milk') => void
+  endDate?: string
+  profileError?: string
+  preferencesError?: string
+  onDateClick?: (date: string) => void
 }
 
 const weekdays = ['一', '二', '三', '四', '五', '六', '日']
-const palettes = {
-  sleep: ['#f3f0e9', '#e2ebef', '#bfd4dd', '#96b6c5', '#7298ab'],
-  milk: ['#f3f0e9', '#f3e2df', '#e5c3be', '#d4a4a0', '#b9807d'],
+const metricStyles = [
+  { key: 'milk', label: '吃', color: '#c56b6b' },
+  { key: 'sleep', label: '睡', color: '#528ba2' },
+  { key: 'outdoor', label: '玩', color: '#7b9c64' },
+  { key: 'diaper', label: '便', color: '#c9a249' },
+] as const
+
+const dataStateLabels: Record<CareRingMetric['dataState'], string> = {
+  known: '已记录',
+  partial: '信息不完整',
+  unknown: '缺少有效数据',
 }
 
-export function Heatmap({ stats, endDate = todayKey(), today: todayProp, onDateClick }: HeatmapProps) {
-  const [metric, setMetric] = useState<'sleep' | 'milk'>('sleep')
+function plainReason(reason: string): string {
+  return reason
+    .replace(/Activity 月度列表不完整，亲喂可能缺失。/g, '本月部分记录尚未读取完整，亲喂可能缺失。')
+    .replace(/Activity 月度列表不完整/g, '本月部分记录尚未读取完整')
+    .replace(/研究启发区间/g, '默认参考区间')
+}
+
+function metricSource(metric: CareRingMetric, complete: boolean): string | null {
+  if (metric.key === 'milk') {
+    const breastfeed = metric.breastfeed
+    if (metric.dataState === 'known' && breastfeed.state === 'known-zero') return '亲喂 0 次'
+    if (breastfeed.reason) return plainReason(breastfeed.reason)
+    if (!complete) return '本月部分记录尚未读取完整，亲喂可能缺失。'
+    return metric.dataState === 'known' ? null : dataStateLabels[metric.dataState]
+  }
+  if (metric.dataState === 'known') return null
+  if (!complete) return '本月部分记录尚未读取完整。'
+  return metric.value.type === 'unknown' ? plainReason(metric.value.reason) : dataStateLabels[metric.dataState]
+}
+
+function referenceLabel(metric: CareRingMetric): string {
+  if (metric.key === 'outdoor' && metric.reference) return '家庭目标：1小时合格、2小时良好、3小时优秀'
+  return metric.reference?.label ?? '无可用参考'
+}
+
+export function Heatmap({
+  stats, activities, complete, birthDate, preferences, today: todayProp,
+  endDate, profileError, preferencesError, onDateClick,
+}: HeatmapProps) {
   const [selectedDate, setSelectedDate] = useState('')
-  const today = todayProp ?? todayKey()
-  const heatmap = useMemo(() => buildHeatmap(stats, endDate, today), [stats, endDate, today])
-  const allDays = heatmap.weeks.flatMap((week) => week.days)
-  const selectedDay = allDays.find((day) => day.date === (selectedDate || endDate) && day.inMonth && !day.isFuture)
+  const [referenceOpen, setReferenceOpen] = useState(false)
+  const today = todayProp ?? endDate ?? ''
+  const monthDate = endDate ?? today
+  const calendar = useMemo(() => buildCareMonthRings({
+    activities, activitiesComplete: complete, stats, monthDate, today, birthDate, preferences,
+  }), [activities, complete, stats, monthDate, today, birthDate, preferences])
+  const allDays = calendar.weeks.flatMap((week) => week.days)
+  const selectedDay = allDays.find((day) => day.date === (selectedDate || monthDate) && day.inMonth && !day.isFuture)
     || [...allDays].reverse().find((day) => day.inMonth && !day.isFuture)
-  const palette = palettes[metric]
+  const profileMessage = profileError || (!birthDate ? '出生日期未知，年龄参考不可用。' : '')
 
   return (
     <View className='bubu-viz-card bubu-heatmap-card'>
-      <View className='bubu-viz-heading'>
-        <View><Text className='bubu-viz-title'>{heatmap.month}月</Text><Text className='bubu-viz-caption'>自然月 · 睡眠与瓶喂奶量</Text></View>
-        <View className='bubu-range-switch'><View className={`bubu-range-option${metric === 'sleep' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('sleep')}>睡眠</View><View className={`bubu-range-option${metric === 'milk' ? ' bubu-range-option-active' : ''}`} onClick={() => setMetric('milk')}>奶量</View></View>
+      {!complete && <View className='bubu-heatmap-notice'>本月部分记录尚未读取完整。</View>}
+      {profileMessage && <View className='bubu-heatmap-notice'>{profileMessage}</View>}
+      {preferencesError && <View className='bubu-heatmap-notice'>{preferencesError}</View>}
+      <View className='bubu-heatmap-head'>
+        {weekdays.map((day) => <Text className='bubu-heatmap-weekday' key={day}>{day}</Text>)}
       </View>
-      <View className='bubu-heatmap-head'><View className='bubu-heatmap-week-label' />{weekdays.map((day) => <Text className='bubu-heatmap-weekday' key={day}>{day}</Text>)}</View>
-      {heatmap.weeks.map((week) => <View className='bubu-heatmap-week' key={week.start}>
-        <Text className='bubu-heatmap-week-label'>{Number(week.start.slice(5, 7))}/{Number(week.start.slice(-2))}</Text>
+      {calendar.weeks.map((week) => <View className='bubu-heatmap-week' key={week.start}>
         {week.days.map((day) => {
-          const intensity = metric === 'sleep' ? day.sleepIntensity : day.milkIntensity
           const interactive = day.inMonth && !day.isFuture
-          return <View key={day.date} className={`bubu-heatmap-cell${day.isPadding ? ' bubu-heatmap-padding' : ''}${day.isToday ? ' bubu-heatmap-today' : ''}${day.isFuture ? ' bubu-heatmap-future' : ''}${day.inMonth && !day.hasData && !day.isFuture ? ' bubu-heatmap-missing' : ''}${selectedDay?.date === day.date ? ' bubu-heatmap-selected' : ''}`} style={{ backgroundColor: !interactive ? 'transparent' : palette[day.hasData ? intensity : 0], color: day.hasData && intensity >= 3 ? '#fffaf3' : '#766c60' }} onClick={() => { if (interactive) setSelectedDate(day.date) }}>{day.inMonth && <Text className='bubu-heatmap-day-number'>{Number(day.date.slice(-2))}</Text>}</View>
+          return (
+            <View
+              key={day.date}
+              className={`bubu-heatmap-cell${day.isPadding ? ' bubu-heatmap-padding' : ''}${day.isFuture ? ' bubu-heatmap-future' : ''}${day.isToday ? ' bubu-heatmap-today' : ''}${selectedDay?.date === day.date ? ' bubu-heatmap-selected' : ''}`}
+              onClick={() => { if (interactive) setSelectedDate(day.date) }}
+            >
+              {day.inMonth && <Text className='bubu-heatmap-day-number'>{Number(day.date.slice(-2))}</Text>}
+              {interactive && (
+                <ActivityRings
+                  rings={day.metrics.map((metric, index) => ({
+                    key: metric.key, color: metricStyles[index].color, progress: metric.progress,
+                  }))}
+                  ariaLabel={`${day.date} ${day.metrics.map((metric) => `${metric.label}${metric.readableValue}`).join('，')}`}
+                />
+              )}
+            </View>
+          )
         })}
       </View>)}
-      <View className='bubu-heatmap-key'><Text>少</Text>{palette.map((color) => <View className='bubu-heatmap-key-cell' key={color} style={{ backgroundColor: color }} />)}<Text>多</Text><Text className='bubu-heatmap-key-spacer'>虚线：暂无统计</Text></View>
-      {selectedDay && <View className='bubu-heatmap-reading'><View><Text className='bubu-chart-reading-date'>{dateLabel(selectedDay.date)}</Text><Text className='bubu-heatmap-value'>{selectedDay.hasData ? metric === 'sleep' ? `睡眠 ${formatDuration(selectedDay.sleep)}` : `瓶喂 ${selectedDay.milk} 毫升` : '暂无统计'}</Text></View>{onDateClick && <View className='bubu-text-action' onClick={() => onDateClick(selectedDay.date, metric)}>查看当天 ›</View>}</View>}
-      <Text className='bubu-viz-footnote'>颜色深浅按本月已保存的统计比较</Text>
+      <View className='bubu-heatmap-key'>
+        {metricStyles.map((metric) => (
+          <View className='bubu-legend-item' key={metric.key}>
+            <View className='bubu-legend-dot' style={{ backgroundColor: metric.color }} />
+            <Text>{metric.label}</Text>
+          </View>
+        ))}
+      </View>
+      {selectedDay && (
+        <View className='bubu-heatmap-reading'>
+          <View className='bubu-heatmap-reading-head'>
+            <View>
+              <Text className='bubu-chart-reading-date'>{dateLabel(selectedDay.date)}</Text>
+              <Text className='bubu-heatmap-reading-state'>{dataStateLabels[selectedDay.dataState]} · 虚线为缺失</Text>
+            </View>
+            {onDateClick && (
+              <View className='bubu-text-action' onClick={() => onDateClick(selectedDay.date)}>查看当天 ›</View>
+            )}
+          </View>
+          <View className='bubu-heatmap-metrics'>
+            {selectedDay.metrics.map((metric, index) => {
+              const detail = metricSource(metric, complete)
+              return (
+                <View className='bubu-heatmap-metric' key={metric.key}>
+                  <View className='bubu-heatmap-metric-head'>
+                    <Text className='bubu-heatmap-metric-label' style={{ color: metricStyles[index].color }}>{metric.label}</Text>
+                    <Text className='bubu-heatmap-value'>{metric.readableValue}</Text>
+                  </View>
+                  {metric.key === 'milk' && <Text className='bubu-heatmap-detail'>{metric.readableComponents.join('；')}</Text>}
+                  {detail && <Text className='bubu-heatmap-detail'>{detail}</Text>}
+                  <Text className='bubu-heatmap-reference'>
+                    {referenceLabel(metric)} · {metric.status.label}
+                  </Text>
+                </View>
+              )
+            })}
+          </View>
+        </View>
+      )}
+      <View className='bubu-heatmap-reference-toggle'>
+        <Text onClick={() => setReferenceOpen((open) => !open)}>{referenceOpen ? '收起参考说明' : '参考说明'}</Text>
+      </View>
+      {referenceOpen && (
+        <View className='bubu-heatmap-reference-notes'>
+          <Text className='bubu-heatmap-reference-note'>· 亲喂初始 5–10 ml/分钟只是可调整的估算，不是经验证的正常范围。</Text>
+          <Text className='bubu-heatmap-reference-note'>· 年龄参考只帮助读环；满环或更多不代表更好。</Text>
+          <Text className='bubu-heatmap-reference-note'>· 便环统计全部换尿布次数，不等于第5天起的6片明显湿尿片观察；湿尿片也不能直接推算奶量。</Text>
+          <Text className='bubu-heatmap-reference-note'>· 玩环 1小时合格、2小时良好、3小时优秀是家庭目标，不是医学评价标准。</Text>
+        </View>
+      )}
+      <Text className='bubu-viz-footnote'>满环仅作参考，实际数值仍完整显示。</Text>
     </View>
   )
 }

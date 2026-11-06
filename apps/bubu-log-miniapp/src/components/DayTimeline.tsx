@@ -8,6 +8,7 @@ import {
   timeLabel,
   todayKey,
   type Activity,
+  type TimelineItem,
 } from '../model'
 import { useTimelineGestures } from '../gestures/useTimelineGestures'
 import { designPixelsFloor, designSize } from './display'
@@ -86,6 +87,39 @@ export function DayTimeline({
     onActivityClick?.(activity)
   }
 
+  const renderBlock = (block: TimelineItem) => {
+    const tone = activityTone(block.activity.type)
+    const top = block.top / 60 * HOUR_HEIGHT * scale
+    const height = block.isLine ? Math.max(block.height / 60 * HOUR_HEIGHT * scale, 2) : block.height / 60 * HOUR_HEIGHT * scale
+    return (
+      <View
+        key={block.activity.id}
+        className={block.isBackground ? 'bubu-timeline-background' : block.isLine ? 'bubu-timeline-instant' : 'bubu-timeline-position'}
+        style={{ top: designSize(top), height: designSize(height), left: `${block.left}%`, width: `${block.width}%`, color: tone.color }}
+        ariaLabel={`${block.label}，${timeLabel(block.activity.startTime)}`}
+        onClick={() => openActivity(block.activity)}
+      >
+        {block.isBackground ? <>
+          {block.gapMinutes != null && <Text className='bubu-event-gap'>距上次 {formatDuration(block.gapMinutes)}</Text>}
+          <View className='bubu-timeline-band' style={{ backgroundColor: tone.background }}>
+            <Text className='bubu-event-label'>{block.label}</Text>
+          </View>
+        </> : block.isLine ? <>
+          <View className='bubu-instant-rule' style={{ backgroundColor: tone.border }} />
+          <View className='bubu-instant-label' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
+            <Text>{block.label}</Text><Text className='bubu-instant-time'>{timeLabel(block.activity.startTime)}</Text>
+          </View>
+        </> : <>
+          {block.gapMinutes != null && <Text className='bubu-event-gap'>距上次 {formatDuration(block.gapMinutes)}</Text>}
+          <View className='bubu-timeline-event' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
+            <Text className='bubu-event-label'>{block.label}</Text>
+            {height > 76 && <Text className='bubu-event-time'>{timeLabel(block.activity.startTime)}{block.activity.endTime ? ` — ${timeLabel(block.activity.endTime)}` : ''}</Text>}
+          </View>
+        </>}
+      </View>
+    )
+  }
+
   return (
     <View className='bubu-viz-card bubu-day-card'>
       {isToday && showCurrentTime && <View className='bubu-day-actions'><View className='bubu-text-action' onClick={goToNow}>此刻</View></View>}
@@ -120,39 +154,11 @@ export function DayTimeline({
                 {hour < 24 && <View className='bubu-half-hour-rule' style={{ top: designSize(HOUR_HEIGHT / 2 * scale) }} />}
               </View>
             ))}
+            <View className='bubu-day-backgrounds'>
+              {blocks.filter((block) => block.isBackground).map(renderBlock)}
+            </View>
             <View className='bubu-day-events'>
-              {blocks.map((block) => {
-                const tone = activityTone(block.activity.type)
-                const top = block.top / 60 * HOUR_HEIGHT * scale
-                const height = block.isLine ? Math.max(block.height / 60 * HOUR_HEIGHT * scale, 2) : block.height / 60 * HOUR_HEIGHT * scale
-                return (
-                  <View
-                    key={block.activity.id}
-                    className={block.isBackground ? 'bubu-timeline-background' : block.isLine ? 'bubu-timeline-instant' : 'bubu-timeline-position'}
-                    style={{ top: designSize(top), height: designSize(height), left: `${block.left}%`, width: `${block.width}%`, color: tone.color }}
-                    ariaLabel={`${block.label}，${timeLabel(block.activity.startTime)}`}
-                    onClick={() => openActivity(block.activity)}
-                  >
-                    {block.isBackground ? <>
-                      {block.gapMinutes != null && <Text className='bubu-event-gap'>距上次 {formatDuration(block.gapMinutes)}</Text>}
-                      <View className='bubu-timeline-band' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
-                        <Text className='bubu-event-label'>{block.label}</Text>
-                      </View>
-                    </> : block.isLine ? <>
-                      <View className='bubu-instant-rule' style={{ backgroundColor: tone.border }} />
-                      <View className='bubu-instant-label' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
-                        <Text>{block.label}</Text><Text className='bubu-instant-time'>{timeLabel(block.activity.startTime)}</Text>
-                      </View>
-                    </> : <>
-                      {block.gapMinutes != null && <Text className='bubu-event-gap'>距上次 {formatDuration(block.gapMinutes)}</Text>}
-                      <View className='bubu-timeline-event' style={{ backgroundColor: tone.background, borderColor: tone.border }}>
-                        <Text className='bubu-event-label'>{block.label}</Text>
-                        {height > 76 && <Text className='bubu-event-time'>{timeLabel(block.activity.startTime)}{block.activity.endTime ? ` — ${timeLabel(block.activity.endTime)}` : ''}</Text>}
-                      </View>
-                    </>}
-                  </View>
-                )
-              })}
+              {blocks.filter((block) => !block.isBackground).map(renderBlock)}
             </View>
             {isToday && showCurrentTime && <View className='bubu-now-line' style={{ top: designSize(minutes / 60 * HOUR_HEIGHT * scale) }}><View className='bubu-now-dot' /><Text className='bubu-now-label'>{timeLabel(new Date().toISOString())}</Text></View>}
           </View>
