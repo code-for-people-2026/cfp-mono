@@ -1,4 +1,4 @@
-import { activityLabel, activityTone } from "./presentation";
+import { activityLabel, activityTone, weekBlockLabel, weekBlockLabelParts } from "./presentation";
 import { addDays, dateKey, dayBounds, durationMinutes, timestamp, todayKey } from "./date";
 import type { Activity, ActivityType, DateInput, WeeklyFilter } from "./types";
 
@@ -12,12 +12,42 @@ export interface TimelineItem {
   left: number;
   width: number;
   isLine: boolean;
+  /** Full-width, non-interactive-lane sleep/outdoor band behind foreground events. */
+  isBackground: boolean;
+  lane: number;
+  lanes: number;
   duration: number;
   label: string;
   color: string;
   gapMinutes?: number;
 }
 const lineTypes = new Set<ActivityType>(["DIAPER", "SUPPLEMENT", "SPIT_UP"]);
+const backgroundTypes = new Set<ActivityType>(["SLEEP", "OUTDOOR"]);
+export const isBackgroundActivity = (type: ActivityType): boolean => backgroundTypes.has(type);
+
+interface LaneItem { top: number; height: number; lane: number; lanes: number }
+/** Greedy interval lanes for foreground blocks; background bands never enter here. */
+function assignLanes<T extends LaneItem>(items: readonly T[]): void {
+  const ordered = [...items].sort((a, b) => a.top - b.top || b.height - a.height);
+  let active: T[] = [];
+  let group: T[] = [];
+  const finish = () => {
+    const lanes = Math.max(1, ...group.map((item) => item.lane + 1));
+    for (const item of group) item.lanes = lanes;
+    group = [];
+  };
+  for (const item of ordered) {
+    active = active.filter((other) => other.top + other.height > item.top);
+    if (!active.length && group.length) finish();
+    const used = new Set(active.map((other) => other.lane));
+    let lane = 0;
+    while (used.has(lane)) lane++;
+    item.lane = lane;
+    active.push(item);
+    group.push(item);
+  }
+  if (group.length) finish();
+}
 
 export function activityGaps(activities: readonly Activity[]): Map<string, number> {
   const gaps = new Map<string, number>();
@@ -33,13 +63,23 @@ export function activityGaps(activities: readonly Activity[]): Map<string, numbe
   return gaps;
 }
 
-export function layoutDayTimeline(activities: readonly Activity[], date: DateInput): TimelineItem[] {
+export interface DayLayoutOptions {
+  /**
+   * Minimum visual block height in minutes at the current zoom. Callers derive it
+   * from the measured canvas so lane collisions use the same height the user sees.
+   */
+  minBlockHeightMinutes?: number;
+}
+
+export function layoutDayTimeline(activities: readonly Activity[], date: DateInput, options: DayLayoutOptions = {}): TimelineItem[] {
   const bounds = dayBounds(date);
   const gaps = activityGaps(activities);
+  const minimumMinutes = Math.max(0, options.minBlockHeightMinutes ?? 15);
   const items: TimelineItem[] = [];
   for (const activity of activities) {
     const start = timestamp(activity.startTime);
     const isLine = lineTypes.has(activity.type);
+    const isBackground = !isLine && backgroundTypes.has(activity.type);
     const duration = activity.endTime ? durationMinutes(start, activity.endTime) : isLine ? 0 : 5;
     const end = activity.endTime ? timestamp(activity.endTime) : start + Math.max(duration, 1) * 60000;
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
@@ -49,20 +89,24 @@ export function layoutDayTimeline(activities: readonly Activity[], date: DateInp
     } else if (start >= bounds.next || end <= bounds.start) continue;
     const top = Math.trunc((Math.max(start, bounds.start) - bounds.start) / 60000);
     const visualMinutes = Math.max(Math.trunc((Math.min(end, bounds.next) - Math.max(start, bounds.start)) / 60000), isLine ? 0 : 1);
-    items.push({ activity, top, height: isLine ? 2 : Math.max(visualMinutes, 15), left: 0, width: 100,
-      isLine, duration, label: activityLabel(activity), color: activityTone(activity.type).border,
+    const naturalHeight = isLine ? 2 : Math.max(visualMinutes, 15);
+    // Background bands keep their true clipped height and instant rules stay a
+    // one-pixel line. Foreground minimums are part of layout, so a readable block
+    // also reserves the lane space it occupies.
+    const height = isLine ? 2 : isBackground ? naturalHeight : Math.max(naturalHeight, minimumMinutes);
+    items.push({ activity, top, height, left: 0, width: 100,
+      isLine, isBackground, lane: 0, lanes: 1,
+      duration, label: activityLabel(activity), color: activityTone(activity.type).border,
       ...(gaps.has(activity.id) ? { gapMinutes: gaps.get(activity.id)! } : {}) });
   }
   items.sort((a, b) => a.top - b.top);
-  const result: TimelineItem[] = [];
+  assignLanes(items.filter((item) => !item.isLine && !item.isBackground));
   for (const item of items) {
-    if (!item.isLine) {
-      const overlaps = result.some((other) => !other.isLine && other.activity.type !== "OUTDOOR" && item.top < other.top + other.height && item.top + item.height > other.top);
-      if (item.activity.type === "OUTDOOR" || overlaps) { item.left = 50; item.width = 48; }
-    }
-    result.push(item);
+    if (item.isBackground || item.isLine) continue;
+    item.left = item.lane / item.lanes * 100;
+    item.width = 100 / item.lanes;
   }
-  return result;
+  return items;
 }
 
 export function timeSinceLatest(activities: readonly Activity[], now: DateInput = new Date()): { sleep: number | null; feed: number | null } {
@@ -92,10 +136,43 @@ export const WEEKLY_FILTERS: Array<{ key: WeeklyFilter; label: string; types: Ac
   { key: "diaper", label: "换尿布", types: ["DIAPER"], color: "#c0aa6d" },
   { key: "exercise", label: "运动", types: ["HEAD_LIFT", "PASSIVE_EXERCISE", "GAS_EXERCISE", "BATH", "OUTDOOR", "EARLY_EDUCATION"], color: "#bd9d77" },
 ];
-export interface WeekBlock { activity: Activity; top: number; height: number; color: string }
+export interface WeekBlock {
+  activity: Activity;
+  top: number;
+  height: number;
+  /** Percentage of the day column width. */
+  left: number;
+  width: number;
+  color: string;
+  label: string;
+  /** Clipped minutes for this calendar day segment; undefined when unmeasured. */
+  minutes?: number;
+  isBackground: boolean;
+  lane: number;
+  lanes: number;
+}
 export interface WeekDay { date: string; isToday: boolean; isFuture: boolean; blocks: WeekBlock[] }
-export function buildWeek(activities: readonly Activity[], weekStart: DateInput, filters: readonly WeeklyFilter[] = WEEKLY_FILTERS.map((f) => f.key), now: DateInput = new Date()): WeekDay[] {
+export interface WeekLayoutOptions {
+  /**
+   * Minimum visual block height as a percentage of the 24h canvas. The component
+   * derives it from the measured canvas height and current zoom, so zooming out
+   * cannot shrink a stacked number+unit label; lane collisions reserve this height.
+   */
+  minBlockHeightPercent?: number;
+}
+/**
+ * Give measurement lanes a little more horizontal room than text-only lanes.
+ * Values keep their digits and units; this only decides how much of the day column
+ * each overlapping lane receives.
+ */
+function weekLaneWeight(label: string): number {
+  const parts = weekBlockLabelParts(label);
+  if (!parts) return 1;
+  return 1 + Math.min(4, parts.value.length) * 0.12 + (parts.unit.length > 1 ? 0.05 : 0);
+}
+export function buildWeek(activities: readonly Activity[], weekStart: DateInput, filters: readonly WeeklyFilter[] = WEEKLY_FILTERS.map((f) => f.key), now: DateInput = new Date(), options: WeekLayoutOptions = {}): WeekDay[] {
   const today = todayKey(now);
+  const minimumHeight = Math.max(0, options.minBlockHeightPercent ?? 1.5);
   const allowed = new Set(WEEKLY_FILTERS.filter((f) => filters.includes(f.key)).flatMap((f) => f.types));
   return Array.from({ length: 7 }, (_, index) => {
     const date = addDays(weekStart, index);
@@ -111,11 +188,37 @@ export function buildWeek(activities: readonly Activity[], weekStart: DateInput,
       if (point ? start < bounds.start || start >= bounds.next : start >= bounds.next || end <= bounds.start) continue;
       const startMinutes = Math.floor((Math.max(start, bounds.start) - bounds.start) / 60000);
       const endMinutes = Math.floor((Math.min(end, bounds.next) - bounds.start) / 60000);
-      const top = startMinutes / 1440 * 100;
-      const height = (endMinutes - startMinutes) / 1440 * 100;
-      blocks.push({ activity, top, height: height > 0 ? height : 0.5, color: activityTone(activity.type).border });
+      const naturalTop = startMinutes / 1440 * 100;
+      const naturalHeight = (endMinutes - startMinutes) / 1440 * 100;
+      // A cross-midnight record is deliberately clipped per column; stored stats are untouched.
+      const minutes = activity.endTime ? Math.max(0, endMinutes - startMinutes) : undefined;
+      const isBackground = isBackgroundActivity(activity.type);
+      const height = isBackground ? (naturalHeight > 0 ? naturalHeight : 1.5) : Math.max(naturalHeight > 0 ? naturalHeight : 1.5, minimumHeight);
+      // Keep a readable minimum on-canvas instead of letting a late-night instant
+      // block overflow the 24:00 edge. This is visual placement, not a timestamp change.
+      const top = isBackground ? naturalTop : Math.min(naturalTop, Math.max(0, 100 - height));
+      blocks.push({
+        // Instant records still need one readable line; this is a visual minimum, not a duration.
+        activity, top, height, left: 0, width: 100,
+        color: activityTone(activity.type).border, label: weekBlockLabel(activity, minutes),
+        ...(minutes === undefined ? {} : { minutes }),
+        isBackground, lane: 0, lanes: 1,
+      });
     }
     blocks.sort((a, b) => a.top - b.top);
+    const foreground = blocks.filter((block) => !block.isBackground);
+    assignLanes(foreground);
+    const laneWeights: number[] = [];
+    for (const block of foreground) {
+      laneWeights[block.lane] = Math.max(laneWeights[block.lane] ?? 1, weekLaneWeight(block.label));
+    }
+    for (const block of foreground) {
+      const weights = Array.from({ length: block.lanes }, (_, lane) => laneWeights[lane] ?? 1);
+      const total = weights.reduce((sum, weight) => sum + weight, 0);
+      const before = weights.slice(0, block.lane).reduce((sum, weight) => sum + weight, 0);
+      block.left = before / total * 100;
+      block.width = (weights[block.lane] ?? 1) / total * 100;
+    }
     return { date, isToday: date === today, isFuture: date > today, blocks };
   });
 }

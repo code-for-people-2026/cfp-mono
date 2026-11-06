@@ -3,6 +3,9 @@ import { createBubuApi, type Transport } from "./client";
 
 export { ApiError, ConfigurationError, ACTIVITY_LIMIT } from "./client";
 export type { BubuApi, ActivityQuery, ActivityResult } from "./client";
+export type {
+  ActivityProvenance, ActivityProvenanceResult, AuditInputMethod, AuditLogRecord,
+} from "./provenance";
 
 const native = process.env.TARO_ENV === "weapp";
 const transport: Transport = async (request) => {

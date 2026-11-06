@@ -12,8 +12,7 @@
 .calendar-arrow { flex: 0 0 30PX; width: 30PX; height: 44PX; line-height: 40PX; padding: 0; margin: 0; background: transparent; color: #87735d; font-size: 24PX; }
 .calendar-arrow[disabled] { background: transparent; color: #d2cabe; }
 .calendar-date-button { flex: 1; min-width: 0; height: 44PX; display: flex; align-items: center; justify-content: center; flex-direction: column; margin: 0; padding: 0; background: transparent; color: #3d3831; border-radius: 8PX; }
-.date-title { display: flex; align-items: center; justify-content: center; white-space: nowrap; font-size: 13PX; font-weight: 600; line-height: 20PX; }
-.date-dropdown { flex-shrink: 0; margin-left: 2PX; color: #a3927d; font-size: 10PX; }
+.date-title { display: flex; align-items: center; justify-content: center; max-width: 100%; white-space: normal; word-break: break-word; text-align: center; font-size: 13PX; font-weight: 600; line-height: 18PX; }
 .date-subtitle { display: block; font-size: 10PX; font-weight: 400; color: #9b8d7b; line-height: 15PX; }
 .calendar-view-backdrop { position: fixed; inset: 0; z-index: 1; background: #30282012; }
 .calendar-view-popover { position: absolute; left: 50%; transform: translateX(-50%); top: calc(100% + 5PX); width: 200PX; box-sizing: border-box; z-index: 3; padding: 7PX; border-radius: 12PX; background: #fffdf9; border: 0.5PX solid #e9dfd0; box-shadow: 0 5PX 24PX #48341f18; }
@@ -24,8 +23,9 @@
 .diary-menu-overlay { position: fixed; inset: 0; z-index: 110; }
 .diary-menu-backdrop { position: absolute; inset: 0; background: #30282055; }
 .diary-drawer { position: absolute; top: 0; bottom: 0; left: 0; width: 86%; max-width: 360px; display: flex; flex-direction: column; box-sizing: border-box; padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); background: #fffdf8; box-shadow: 12px 0 40px #33271c15; }
-.diary-drawer-heading { display: flex; align-items: center; justify-content: space-between; }
-.diary-drawer-brand { font-size: 18px; font-weight: 600; }
+.diary-drawer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.diary-drawer-brand { flex: 1; min-width: 0; font-size: 18px; font-weight: 600; line-height: 1.35; word-break: break-word; }
+.diary-drawer-heading .diary-icon-button { flex-shrink: 0; }
 .diary-family { display: flex; align-items: center; gap: 12px; padding: 22px 0 28px; }
 .diary-avatar { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: #eee1cc; }
 .diary-family-copy { min-width: 0; flex: 1; }

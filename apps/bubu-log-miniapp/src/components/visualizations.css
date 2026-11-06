@@ -26,13 +26,18 @@
 .bubu-legend-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; }
 .bubu-empty-inline { margin: 0 14px 10px; padding: 10px; border-radius: 7px; background: #f7f3ec; color: #a09485; text-align: center; font-size: 12px; }
 
+/* The time axis owns two-finger vertical zoom; do not let the H5 viewport zoom. */
+.bubu-timeline-viewport { position: relative; touch-action: pan-y; }
 .bubu-day-scroll { height: 440px; }
+.bubu-day-scroll, .bubu-week-scroll { touch-action: pan-y; overscroll-behavior: contain; }
 .bubu-day-canvas { position: relative; margin: 12px 10px 11px 4px; }
 .bubu-hour-row { position: absolute; right: 0; left: 0; height: 0; }
 .bubu-hour-label { position: absolute; top: -6.5px; left: 5px; width: 34px; color: #afa497; font-size: 10px; text-align: right; line-height: 13px; }
 .bubu-hour-rule { position: absolute; right: 0; left: 47px; border-top: 0.5px solid #eee8df; }
 .bubu-half-hour-rule { position: absolute; right: 0; left: 47px; border-top: 0.5px dashed #f2ede6; }
 .bubu-day-events { position: absolute; top: 0; bottom: 0; left: 52px; right: 4px; }
+.bubu-timeline-background { position: absolute; z-index: 1; }
+.bubu-timeline-band { box-sizing: border-box; height: 100%; width: 100%; overflow: hidden; padding: 1.5px 6px; border-left: 3px solid; border-radius: 4.5px; }
 .bubu-timeline-position { position: absolute; z-index: 2; }
 .bubu-timeline-event { position: relative; box-sizing: border-box; height: 100%; width: 100%; overflow: hidden; padding: 1.5px 6px; border-left: 2.5px solid; border-radius: 4.5px; }
 .bubu-event-label { display: block; overflow: hidden; font-size: 11px; line-height: 14px; white-space: nowrap; text-overflow: ellipsis; }
@@ -63,11 +68,41 @@
 .bubu-week-columns { position: absolute; display: flex; top: 0; bottom: 0; right: 0; left: 28px; }
 .bubu-week-column { position: relative; flex: 1; min-width: 0; height: 100%; border-left: 0.5px solid #f1ece5; }
 .bubu-week-column-today { background: rgba(181,128,85,.035); }
-.bubu-week-event { position: absolute; box-sizing: border-box; left: 1.5px; right: 1.5px; min-height: 5px; overflow: hidden; border-left: 1.5px solid; border-radius: 2.5px; }
-.bubu-week-event-label { display: block; overflow: hidden; padding: 1px; font-size: 8.5px; line-height: 11px; text-overflow: clip; white-space: nowrap; }
+/* Minimum visible heights come from buildWeek, not CSS, so rendered blocks and
+   collision lanes always agree. */
+.bubu-week-event { position: absolute; box-sizing: border-box; z-index: 2; overflow: hidden; border-left: 1.5px solid; border-radius: 2.5px; }
+.bubu-week-event-bg { z-index: 1; border-left-width: 2.5px; border-radius: 2.5px; }
+.bubu-week-event-label { display: block; overflow: hidden; padding: 1px; font-size: 8.5px; line-height: 10.5px; }
+.bubu-week-event-label-inline { white-space: nowrap; text-overflow: ellipsis; }
+.bubu-week-event-label-stacked { white-space: normal; }
+.bubu-week-event-value, .bubu-week-event-unit { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.bubu-week-event-dense .bubu-week-event-label { padding: 0; font-size: 8px; line-height: 9.5px; letter-spacing: -0.3px; }
 .bubu-week-filters { display: flex; gap: 6px; padding: 0 14px 11px; }
 .bubu-week-filter { display: flex; align-items: center; gap: 3.5px; padding: 4.5px 6.5px; border: 0.5px solid #e7dfd3; border-radius: 10px; color: #a79c8d; font-size: 10.5px; }
 .bubu-week-filter-active { background: #f3ede4; border-color: #d9c9b5; color: #7d6851; }
+
+.bubu-gesture-feedback {
+  position: absolute;
+  left: 50%;
+  z-index: 20;
+  max-width: calc(100% - 24px);
+  box-sizing: border-box;
+  transform: translateX(-50%);
+  overflow: hidden;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: rgba(77, 64, 52, .92);
+  color: #fffaf4;
+  font-size: 11.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: 0 3px 12px rgba(51, 35, 17, .16);
+  pointer-events: none;
+}
+.bubu-gesture-feedback-top { top: 8px; }
+.bubu-gesture-feedback-bottom { bottom: 8px; }
+.bubu-gesture-feedback-center { top: 42%; }
 
 .bubu-trend-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 12px; }
 .bubu-section-title { color: #736250; font-size: 12.5px; }
@@ -102,6 +137,7 @@
 .bubu-heatmap-weekday { flex: 1; min-width: 0; text-align: center; color: #ac9f8e; font-size: 10.5px; }
 .bubu-heatmap-cell { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: center; box-sizing: border-box; height: 31.5px; border: 1px solid transparent; border-radius: 5.5px; font-size: 11px; }
 .bubu-heatmap-missing { border: 1px dashed #dfd5c7; }
+.bubu-heatmap-padding { border-color: transparent; background: transparent; pointer-events: none; }
 .bubu-heatmap-future { opacity: .3; }
 .bubu-heatmap-selected { border: 1.5px solid #a97a53; }
 .bubu-heatmap-today .bubu-heatmap-day-number { text-decoration: underline; text-underline-offset: 2.5px; }
@@ -128,6 +164,18 @@
 .bubu-detail-photo-section { margin: 14px 16px; }
 .bubu-detail-photo { display: block; width: 110px; height: 110px; margin-top: 8px; border-radius: 9px; }
 .bubu-photo-error { display: flex; align-items: center; justify-content: center; width: 110px; height: 80px; margin-top: 8px; border-radius: 9px; background: #f2ece2; color: #a28f76; font-size: 11px; }
+.bubu-provenance { box-sizing: border-box; margin: 14px 15px 0; border: 0.5px solid #eee5d9; border-radius: 11px; background: #fbf7f0; overflow: hidden; }
+.bubu-provenance-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 11px; }
+.bubu-provenance-title { color: #66513e; font-size: 13.5px; font-weight: 600; }
+.bubu-provenance-action { flex-shrink: 0; color: #a07a57; font-size: 12px; }
+.bubu-provenance-content { box-sizing: border-box; padding: 0 11px 10px; border-top: 0.5px solid #f0e9df; }
+.bubu-provenance-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0; padding: 9px 0; border-bottom: 0.5px solid #f3ede5; }
+.bubu-provenance-row:last-of-type { border-bottom: 0; }
+.bubu-provenance-label { flex-shrink: 0; width: 55px; color: #a08e7b; font-size: 12px; line-height: 1.6; }
+.bubu-provenance-value { flex: 1; min-width: 0; color: #66513e; font-size: 12.5px; line-height: 1.6; text-align: right; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.bubu-provenance-status { display: block; padding: 10px 0; color: #8f7d66; font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.bubu-provenance-note { display: block; margin-top: 8px; color: #9b8b77; font-size: 11px; line-height: 1.6; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.bubu-provenance-retry { display: inline-block; margin-top: 9px; padding: 4px 11px; border: 0.5px solid #e3d6c4; border-radius: 999px; color: #a06a43; font-size: 12px; line-height: 1.5; }
 .bubu-detail-bottom-space { height: 20px; }
 
 /* The calendar is the page canvas; cards are reserved for record details and charts. */

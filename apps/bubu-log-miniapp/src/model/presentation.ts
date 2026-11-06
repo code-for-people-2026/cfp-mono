@@ -1,4 +1,4 @@
-import { dateTimeLabel, durationMinutes, formatDuration, timeLabel } from "./date";
+import { compactDuration, dateTimeLabel, durationMinutes, formatDuration, timeLabel } from "./date";
 import type { Activity, ActivityType } from "./types";
 
 export const ACTIVITY_LABELS: Record<ActivityType, string> = {
@@ -53,6 +53,47 @@ export function activityLabel(activity: Activity): string {
   return label;
 }
 
+const shortDuration = (minutes: number): string => minutes > 0 ? compactDuration(minutes) : "0m";
+/**
+ * Week columns are narrow, so measured blocks show only the recorded quantity
+ * (`120ml`, `7h`, `10m`, `3次`). The short type name is a fallback for records
+ * without a measurement. The full activity label remains available as the block's
+ * accessible name and in the tap-to-open detail sheet.
+ *
+ * `clippedMinutes` is the part of a timed record that intersects that calendar day,
+ * matching its block; it never changes the stored duration or timestamps.
+ */
+export function weekBlockLabel(activity: Activity, clippedMinutes?: number): string {
+  const typeLabel = activityTypeLabel(activity.type);
+  if (activity.type === "BOTTLE" || activity.type === "PUMP") {
+    // Null and undefined mean unknown; an explicit 0 is a recorded measurement.
+    return activity.milkAmount != null ? `${activity.milkAmount}ml` : typeLabel;
+  }
+  if (activity.type === "DIAPER") {
+    if (activity.hasPoop && activity.hasPee) return "大小便";
+    if (activity.hasPoop) return "大便";
+    if (activity.hasPee) return "小便";
+    return typeLabel;
+  }
+  if (activity.type === "SUPPLEMENT" && activity.supplementType) return SUPPLEMENT_LABELS[activity.supplementType];
+  if (activity.type === "SPIT_UP") return activity.spitUpType === "PROJECTILE" ? "喷射性吐奶" : activity.spitUpType === "NORMAL" ? "普通吐奶" : "吐奶";
+  if (activity.type === "ROLL_OVER" || activity.type === "PULL_TO_SIT") {
+    return activity.count != null ? `${activity.count}次` : typeLabel;
+  }
+  if (activity.type === "SLEEP" || activity.type === "BREASTFEED" || activity.type === "HEAD_LIFT"
+    || activity.type === "PASSIVE_EXERCISE" || activity.type === "GAS_EXERCISE" || activity.type === "BATH"
+    || activity.type === "OUTDOOR" || activity.type === "EARLY_EDUCATION") {
+    if (clippedMinutes != null) return shortDuration(clippedMinutes);
+  }
+  return typeLabel;
+}
+
+/** Split a compact measurement so narrow week lanes can stack the unit, never the number. */
+export function weekBlockLabelParts(label: string): { value: string; unit: string } | null {
+  const match = /^(\d+(?:\.\d+)?)(ml|h|m|次)$/.exec(label);
+  return match ? { value: match[1]!, unit: match[2]! } : null;
+}
+
 export interface DetailField { label: string; value: string }
 export function activityDetails(activity: Activity): DetailField[] {
   const fields: DetailField[] = [{ label: "开始时间", value: dateTimeLabel(activity.startTime) }];
@@ -63,7 +104,8 @@ export function activityDetails(activity: Activity): DetailField[] {
   } else if (activity.type === "SLEEP") fields.push({ label: "状态", value: "正在睡觉…" });
 
   if (activity.type === "BOTTLE" || activity.type === "PUMP") {
-    fields.push({ label: "奶量", value: activity.milkAmount ? `${activity.milkAmount} ml` : "未记录奶量" });
+    // Null/undefined mean unknown; an explicit zero is a recorded measurement.
+    fields.push({ label: "奶量", value: activity.milkAmount != null ? `${activity.milkAmount} ml` : "未记录奶量" });
     if (activity.type === "BOTTLE" && activity.milkSource) fields.push({ label: "奶源", value: MILK_SOURCE_LABELS[activity.milkSource] });
   }
   if (activity.type === "BOTTLE" || activity.type === "BREASTFEED") {
@@ -80,8 +122,7 @@ export function activityDetails(activity: Activity): DetailField[] {
   if (activity.type === "SPIT_UP") fields.push({ label: "吐奶类型", value: activity.spitUpType ? SPIT_UP_LABELS[activity.spitUpType] : "未记录类型" });
   if (activity.type === "ROLL_OVER" || activity.type === "PULL_TO_SIT") fields.push({ label: "次数", value: activity.count ? `${activity.count} 次` : "未记录次数" });
   if (activity.notes) fields.push({ label: "备注", value: activity.notes });
-  if (activity.createdAt) fields.push({ label: "记录时间", value: dateTimeLabel(activity.createdAt) });
-  if (activity.updatedAt) fields.push({ label: "更新时间", value: dateTimeLabel(activity.updatedAt) });
+  // Creation/update metadata belongs to the detail's collapsed "更多信息" section.
   return fields;
 }
 

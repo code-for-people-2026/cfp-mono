@@ -1,5 +1,9 @@
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
+import {
+  AUDIT_MAX_OFFSET, AUDIT_PAGE_SIZE, auditPage, selectActivityProvenance,
+  type ActivityProvenanceResult,
+} from "./provenance";
 import { SessionCookies, type SessionStorage } from "./session";
 
 export interface TransportRequest {
@@ -209,6 +213,44 @@ export function createBubuApi(options: ClientOptions) {
     },
     async getActivity(babyId: string, activityId: string) {
       return verifyScope(decode.activity(await request(scoped(`activities/${encodeURIComponent(requiredId(activityId))}`, babyId), { babyId })), babyId);
+    },
+    /**
+     * Read the existing audit trail only when a detail's provenance is expanded.
+     * The legacy endpoint cannot filter by activity, so scan bounded pages until a
+     * successful CREATE for this exact activity is found or the scan is exhausted.
+     */
+    async getActivityProvenance(babyId: string, activityId: string, shouldStop?: () => boolean): Promise<ActivityProvenanceResult> {
+      requiredId(babyId);
+      requiredId(activityId);
+      const seen = new Set<string>();
+      let offset = 0;
+      let pages = 0;
+      while (offset <= AUDIT_MAX_OFFSET) {
+        // A closed/collapsed detail or changed context stops before the next page.
+        if (shouldStop?.()) return { provenance: null, complete: false, pages };
+        const page = auditPage(await request(scoped("audits", babyId, {
+          action: "CREATE", resourceType: "ACTIVITY", success: true,
+          limit: AUDIT_PAGE_SIZE, offset,
+        }), { babyId }));
+        pages++;
+        if (shouldStop?.()) return { provenance: null, complete: false, pages };
+        if (!page.data.length) return { provenance: null, complete: !page.hasMore, pages };
+        let fresh = 0;
+        for (const row of page.data) {
+          if (seen.has(row.id)) continue;
+          seen.add(row.id);
+          fresh++;
+        }
+        if (fresh === 0) return { provenance: null, complete: false, pages };
+        const selection = selectActivityProvenance(page.data, babyId, activityId);
+        if (selection.conflict) return { provenance: null, complete: false, pages };
+        if (selection.provenance) return { provenance: selection.provenance, complete: true, pages };
+        if (!page.hasMore) return { provenance: null, complete: true, pages };
+        // hasMore with a short page is an inconsistent cursor, not a complete scan.
+        if (page.data.length < AUDIT_PAGE_SIZE) return { provenance: null, complete: false, pages };
+        offset += AUDIT_PAGE_SIZE;
+      }
+      return { provenance: null, complete: false, pages };
     },
     async getLatestActivity(babyId: string, types: ActivityType[]) {
       if (!types.length) throw new ApiError(400, "请选择活动类型。");

@@ -1,6 +1,6 @@
 import { Button, Picker, Text, View } from "@tarojs/components";
 import { useEffect } from "react";
-import { addDays, dateLabel, mondayOfWeek, shortDateLabel, todayKey, weekdayLabel } from "../model";
+import { addDays, calendarPeriod, shortDateLabel, todayKey, weekdayLabel, type PeriodMode } from "../model";
 import type { DiaryView } from "./DiaryNavigation";
 
 const calendarViews = [
@@ -11,6 +11,8 @@ type Props = {
   mode: DiaryView;
   days: number;
   open: boolean;
+  /** Shanghai today from the page-level midnight/app-show tick. */
+  today?: string;
   onToggle: () => void;
   onClose: () => void;
   onNavigate: (direction: number) => void;
@@ -20,12 +22,13 @@ type Props = {
 
 export function CalendarNavigation(props: Props) {
   const { date, mode, days, open, onClose } = props;
-  const weekStart = mondayOfWeek(date);
+  const today = props.today ?? todayKey();
+  const periodMode: PeriodMode = mode === "week" ? "week" : mode === "month" ? "month" : "day";
+  const period = calendarPeriod(periodMode, date, today);
   const calendar = mode !== "list" && mode !== "trend";
-  const start = mode === "month" ? addDays(weekStart, -21) : mode === "week" ? weekStart : addDays(date, 1 - days);
-  const end = mode === "trend" ? date : addDays(weekStart, 6);
-  const label = mode === "day" || mode === "list" ? dateLabel(date) : `${shortDateLabel(start)}–${shortDateLabel(end)}`;
-  const subtitle = mode === "day" ? weekdayLabel(date) : mode === "week" ? "周历" : mode === "month" ? "近四周" : mode === "list" ? "历史记录" : "趋势";
+  const label = mode === "trend" ? `${shortDateLabel(addDays(date, 1 - days))}–${shortDateLabel(date)}` : period.title;
+  const subtitle = mode === "list" ? "历史记录" : mode === "trend" ? "趋势" : "";
+  const canNext = mode === "trend" ? date < today : period.canNext;
   useEffect(() => {
     if (!open || process.env.TARO_ENV !== "h5") return;
     const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
@@ -35,10 +38,10 @@ export function CalendarNavigation(props: Props) {
   return <View className="calendar-navigation">
     <Button className="calendar-arrow" ariaLabel="上一段日期" onClick={() => props.onNavigate(-1)}>‹</Button>
     <Button className="calendar-date-button" ariaLabel="展开日期与日历视图" onClick={props.onToggle}>
-      <View className="date-title"><Text>{label}</Text><Text className="date-dropdown">⌄</Text></View>
-      <Text className="date-subtitle">{subtitle}</Text>
+      <View className="date-title"><Text>{label}</Text></View>
+      {subtitle && <Text className="date-subtitle">{subtitle}</Text>}
     </Button>
-    <Button className="calendar-arrow" ariaLabel="下一段日期" disabled={(mode === "week" || mode === "month" ? weekStart >= mondayOfWeek(todayKey()) : date >= todayKey()) || undefined} onClick={() => props.onNavigate(1)}>›</Button>
+    <Button className="calendar-arrow" ariaLabel="下一段日期" disabled={!canNext || undefined} onClick={() => props.onNavigate(1)}>›</Button>
     {open && <>
       <View className="calendar-view-backdrop" onClick={onClose} catchMove />
       <View className="calendar-view-popover" role="dialog" ariaLabel="日期与日历视图">

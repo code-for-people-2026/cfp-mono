@@ -4,12 +4,14 @@ import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
 import { CalendarNavigation } from "../../navigation/CalendarNavigation";
 import { profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
+import { useTodayKey } from "../../navigation/useToday";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../api";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
+import type { DetailProvenanceState } from "../../components";
 import {
-  activityLabel, addDays, dayBounds, filterActivities, formatDuration,
-  mondayOfWeek, previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList,
+  activityLabel, addDays, calendarPeriod, dayBounds, filterActivities, formatDuration,
+  previousEvening, sortActivities, statCards, stepPeriod, summarizeHomeDay, summarizeRecordList,
   timeLabel, timestamp, todayKey,
   type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter,
 } from "../../model";
@@ -33,6 +35,8 @@ export default function DiaryPage() {
   const [authBusy, setAuthBusy] = useState(false);
   const [mode, setMode] = useState<DiaryView>("day");
   const [date, setDate] = useState(todayKey);
+  const [timeScale, setTimeScale] = useState(1);
+  const today = useTodayKey();
   const [days, setDays] = useState<7 | 14 | 30>(7);
   const [filters, setFilters] = useState<StatFilter[]>([]);
   const [sort, setSort] = useState<SortField>("endTime");
@@ -42,15 +46,21 @@ export default function DiaryPage() {
   const [detail, setDetail] = useState<Activity | null>(null);
   const [detailError, setDetailError] = useState("");
   const [detailBusy, setDetailBusy] = useState(false);
+  const [provenance, setProvenance] = useState<DetailProvenanceState>({ status: "idle" });
   const detailVersion = useRef(0);
+  const provenanceVersion = useRef(0);
   const babyId = context?.baby?.id || "";
-  const weekStart = mondayOfWeek(date);
+  const weekStart = calendarPeriod("week", date).start;
   const dataKey = `${babyId}:${mode}:${date}:${days}:${revision}`;
   const data = loaded?.key === dataKey ? loaded : null;
 
   const clearPrivateView = useCallback(() => {
     setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
-    setDetailBusy(false); detailVersion.current++;
+    setDetailBusy(false); setProvenance({ status: "idle" }); detailVersion.current++; provenanceVersion.current++;
+  }, []);
+  useEffect(() => () => {
+    // Unmount is another context boundary: stop a multi-page audit scan.
+    detailVersion.current++; provenanceVersion.current++;
   }, []);
 
   const restore = useCallback(async () => {
@@ -77,15 +87,17 @@ export default function DiaryPage() {
     setDataError("");
     const load = async (): Promise<Loaded> => {
       if (mode === "trend" || mode === "month") {
-        const startDate = mode === "trend" ? addDays(date, 1 - days) : addDays(weekStart, -21);
-        const endDate = mode === "trend" ? date : addDays(weekStart, 6);
+        const month = calendarPeriod("month", date);
+        const startDate = mode === "trend" ? addDays(date, 1 - days) : month.start;
+        const endDate = mode === "trend" ? date : month.end;
         const stats = await api.getDailyStats({ babyId, startDate, endDate });
         return { key: dataKey, activities: [], evening: [], latest: [], stats, complete: true };
       }
       if (mode === "week") {
+        const week = calendarPeriod("week", date);
         const result = await api.getActivities({ babyId,
-          startTimeGte: iso(dayBounds(weekStart).start),
-          startTimeLt: iso(dayBounds(addDays(weekStart, 7)).start),
+          startTimeGte: iso(dayBounds(week.start).start),
+          startTimeLt: iso(dayBounds(week.end).next),
           crossStartTime: true, crossEndTime: true,
         });
         return { key: dataKey, ...result, evening: [], latest: [], stats: [] };
@@ -100,7 +112,7 @@ export default function DiaryPage() {
         evening = previous.activities;
         complete = complete && previous.complete;
       }
-      const latest = mode === "day" && date === todayKey() ? (await Promise.all([api.getLatestActivity(babyId, ["SLEEP"]), api.getLatestActivity(babyId, ["BREASTFEED", "BOTTLE"])] )).filter((activity): activity is Activity => activity !== null) : [];
+      const latest = mode === "day" && date === today ? (await Promise.all([api.getLatestActivity(babyId, ["SLEEP"]), api.getLatestActivity(babyId, ["BREASTFEED", "BOTTLE"])] )).filter((activity): activity is Activity => activity !== null) : [];
       return { key: dataKey, ...result, complete, evening, latest, stats: [] };
     };
     void load().then((next) => { if (!cancelled) setLoaded(next); }).catch((error: unknown) => {
@@ -109,7 +121,7 @@ export default function DiaryPage() {
       else setDataError(message(error));
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, clearPrivateView]);
+  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, today, clearPrivateView]);
 
   const login = async () => {
     if (!username.trim() || !password) { setAccountError("请输入账号和密码"); return; }
@@ -135,6 +147,8 @@ export default function DiaryPage() {
   };
   const openDetail = async (activity: Activity) => {
     const version = ++detailVersion.current;
+    provenanceVersion.current++;
+    setProvenance({ status: "idle" });
     setDetail(null); setDetailError(""); setDetailBusy(true);
     try {
       const current = await api.getActivity(babyId, activity.id);
@@ -145,20 +159,56 @@ export default function DiaryPage() {
       else setDetailError(message(error));
     } finally { if (version === detailVersion.current) setDetailBusy(false); }
   };
+  const fetchProvenance = useCallback(async () => {
+    const activity = detail;
+    if (!activity || !babyId) return;
+    const version = ++provenanceVersion.current;
+    setProvenance({ status: "loading" });
+    try {
+      const result = await api.getActivityProvenance(babyId, activity.id, () => version !== provenanceVersion.current);
+      if (version !== provenanceVersion.current) return;
+      if (result.provenance) setProvenance({ status: "found", provenance: result.provenance });
+      else setProvenance({ status: result.complete ? "absent" : "incomplete" });
+    } catch (error) {
+      if (version !== provenanceVersion.current) return;
+      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+      else setProvenance({ status: "error", message: message(error) });
+    }
+  }, [babyId, detail, clearPrivateView]);
+  const closeDetail = () => {
+    setDetail(null); setDetailError(""); detailVersion.current++;
+    provenanceVersion.current++; setProvenance({ status: "idle" });
+  };
+  const toggleMoreInfo = (expanded: boolean) => {
+    if (expanded) {
+      // Only the first expansion of this open detail requests the audit endpoint.
+      if (provenance.status === "idle") void fetchProvenance();
+      return;
+    }
+    if (provenance.status === "loading") {
+      provenanceVersion.current++;
+      setProvenance({ status: "idle" });
+    }
+  };
 
   const summary = useMemo(() => mode === "list"
     ? summarizeRecordList(data?.activities || [], date)
     : summarizeHomeDay(data?.activities || [], date), [data, date, mode]);
   const visible = useMemo(() => filterActivities(data?.activities || [], filters), [data, filters]);
   const navigate = (direction: number) => {
-    const distance = mode === "trend" ? days : mode === "week" || mode === "month" ? 7 : 1;
-    const next = addDays(date, direction * distance);
-    setDate(next > todayKey() ? todayKey() : next);
+    if (mode === "trend") {
+      const next = addDays(date, direction * days);
+      setDate(next > today ? today : next);
+      return;
+    }
+    const period = mode === "week" ? "week" : mode === "month" ? "month" : "day";
+    setDate(stepPeriod(period, date, direction, today));
   };
   const openDay = (selected: string) => {
-    if (selected > todayKey()) return;
+    if (selected > today) return;
     setReturnPeriod({ mode, date }); setDate(selected); setMode("day"); setFilters([]);
   };
+  const gesturesDisabled = menuOpen || viewMenuOpen || detailBusy || !!detail || !!detailError;
 
   if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开卜卜日记…</View></View></View>;
   if (!context?.authenticated) return <View className="diary-shell"><DiaryNavigation /><View className="page login-page">
@@ -186,7 +236,7 @@ export default function DiaryPage() {
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}
       onRefresh={() => { setLoaded(null); setRevision((value) => value + 1); closeMenu(); }}
       onLogout={() => { void logout(); }}>
-      {context.hasBaby && <CalendarNavigation date={date} mode={mode} days={days} open={viewMenuOpen}
+      {context.hasBaby && <CalendarNavigation date={date} mode={mode} days={days} open={viewMenuOpen} today={today}
         onToggle={() => setViewMenuOpen((value) => !value)} onClose={closeViewMenu}
         onNavigate={(direction) => { closeViewMenu(); setReturnPeriod(null); navigate(direction); }}
         onDateChange={(next) => { setDate(next); setReturnPeriod(null); }}
@@ -207,10 +257,18 @@ export default function DiaryPage() {
           </View>}
           {mode === "day" && <>
             <PreviousEvening activities={data.evening} date={date} />
-            <DayTimeline latestActivities={data.latest} activities={visible} date={date} onActivityClick={(activity) => { void openDetail(activity); }} />
+            <DayTimeline latestActivities={data.latest} activities={visible} date={date} today={today}
+              scale={timeScale} onScaleChange={setTimeScale}
+              gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:day:${date}`}
+              onActivityClick={(activity) => { void openDetail(activity); }}
+              onNavigate={(direction) => { setReturnPeriod(null); navigate(direction === "prev" ? -1 : 1); }} />
           </>}
-          {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay} />}
-          {mode === "month" && <Heatmap stats={data.stats} endDate={date} onDateClick={(selected, metric) => { setReturnPeriod({ mode, date }); setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
+          {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} today={today}
+            scale={timeScale} onScaleChange={setTimeScale}
+            gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:week:${date}`}
+            onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay}
+            onNavigate={(direction) => { setReturnPeriod(null); navigate(direction === "prev" ? -1 : 1); }} />}
+          {mode === "month" && <Heatmap stats={data.stats} endDate={date} today={today} onDateClick={(selected, metric) => { setReturnPeriod({ mode, date }); setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
           {mode === "trend" && <TrendCharts stats={data.stats} days={days} endDate={date} onDaysChange={setDays} />}
           {(mode === "month" || mode === "trend") && <View className="data-note">展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。</View>}
           {mode === "list" && <>
@@ -222,7 +280,8 @@ export default function DiaryPage() {
           </>}
         </>}
       {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={() => { detailVersion.current++; setDetailBusy(false); setDetailError(""); }}>关闭</Text></View>}
-      <ActivityDetail activity={detail} onClose={() => { setDetail(null); detailVersion.current++; }} />
+      <ActivityDetail key={`${babyId}:${detail?.id ?? "none"}:${detailVersion.current}`} activity={detail} provenance={provenance}
+        onMoreInfoToggle={toggleMoreInfo} onRetryProvenance={() => { void fetchProvenance(); }} onClose={closeDetail} />
     </>}
     </View>
   </View>;

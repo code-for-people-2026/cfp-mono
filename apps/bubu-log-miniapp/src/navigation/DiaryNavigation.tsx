@@ -59,7 +59,7 @@ export function DiaryNavigation(props: Props) {
       <View className="diary-menu-backdrop" onClick={props.onClose} />
       <View className="diary-drawer" role="dialog" ariaLabel="卜卜日记菜单" style={layout ? { paddingTop: `${layout.statusBarHeight + layout.height + 8}px` } : undefined}>
         <View className="diary-drawer-heading">
-          <Text className="diary-drawer-brand">卜卜日记</Text>
+          <Text className="diary-drawer-brand">卜卜日记——科学育娃</Text>
           <Button className="diary-icon-button" ariaLabel="关闭菜单" onClick={props.onClose}>×</Button>
         </View>
         <View className="diary-family">
