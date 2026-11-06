@@ -117,6 +117,11 @@ def operate(config, restore=None):
         for root in roots:
             if not root.is_dir() or root.is_symlink() or root.resolve() == Path(config['dataDir']).resolve() or root.resolve() in Path(config['dataDir']).resolve().parents:
                 raise RuntimeError('invalid backup root')
+        # Recover disposable smoke containers before scanning copied databases,
+        # including WAL/SHM and ledger copies. Failure blocks guard retirement.
+        if config.get('smokeCleanupScript'):
+            status['stage'] = 'recover-smoke-snapshots'
+            run(['python3', config['smokeCleanupScript'], '--cleanup'])
         status['stage'] = 'expire-backups'
         status['expiredBackups'] = sum(prune_backups(root, days) for root in roots)
         selected = None
