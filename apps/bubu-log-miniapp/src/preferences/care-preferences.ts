@@ -133,9 +133,6 @@ export function validateCarePreferences(input: unknown): CarePreferencesValidati
   return { ok: true, value: { breastfeedRate, milkReference, sleepReference } };
 }
 
-/** Alias for form/parser call sites; invalid values remain explicit errors. */
-export const parseCarePreferences = validateCarePreferences;
-
 export function validCarePreferencesOrThrow(input: unknown): CarePreferences {
   const result = validateCarePreferences(input);
   if (!result.ok) throw new CarePreferencesValidationError(result.issues);
