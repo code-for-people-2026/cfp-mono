@@ -1,0 +1,163 @@
+import foldTableJson from "./paper-fold-frames.json";
+import type { PaperTurnAxis, PaperTurnDirection, PaperTurnPhase } from "./paper-turn";
+
+export type PaperFoldPoint = readonly [number, number];
+export type PaperFoldPolygon = readonly PaperFoldPoint[];
+
+interface PaperFoldTable {
+  version: number;
+  progressSteps: number;
+  tiltSteps: number;
+  frames: readonly (readonly [PaperFoldPolygon, PaperFoldPolygon, PaperFoldPolygon])[];
+}
+
+export interface PaperFoldMotionInput {
+  axis: PaperTurnAxis;
+  direction: PaperTurnDirection | null;
+  phase: PaperTurnPhase;
+  displacement: number;
+  crossDisplacement?: number;
+  size: number;
+}
+
+export interface PaperFoldMotion {
+  /** Position in the canonical fold table; 0 is fully open and 1 is fully turned. */
+  progress: number;
+  /** Normalized crease slope in the table's -1..1 range. */
+  tilt: number;
+}
+
+export interface PaperFoldFrame {
+  flat: PaperFoldPolygon;
+  back: PaperFoldPolygon;
+  shadow: PaperFoldPolygon;
+  flatClipPath: string;
+  backClipPath: string;
+  shadowClipPath: string;
+}
+
+const foldTable = foldTableJson as unknown as PaperFoldTable;
+const { progressSteps, tiltSteps, frames } = foldTable;
+const maxProgressIndex = progressSteps - 1;
+const maxTiltIndex = tiltSteps - 1;
+
+const finite = (value: number | undefined): number => (
+  typeof value === "number" && Number.isFinite(value) ? value : 0
+);
+
+const clamp = (value: number, minimum: number, maximum: number): number => (
+  Math.min(maximum, Math.max(minimum, value))
+);
+
+/** Convert touch values to a table coordinate. This performs no fold geometry. */
+export function resolvePaperFoldMotion(input: PaperFoldMotionInput): PaperFoldMotion {
+  const size = Math.max(1, finite(input.size));
+  const displacement = finite(input.displacement);
+  const progress = clamp(Math.abs(displacement) / size, 0, 1);
+  const cross = finite(input.crossDisplacement);
+  const tilt = clamp(cross / Math.max(56, Math.abs(displacement)) * 1.6, -1, 1);
+  const signedTilt = input.axis === "horizontal" ? tilt : -tilt;
+  const canonicalProgress = input.direction === "prev" ? 1 - progress : progress;
+  return {
+    progress: input.phase === "drag" ? canonicalProgress : 0,
+    tilt: input.phase === "drag" ? signedTilt : 0,
+  };
+}
+
+/** Bilinear lookup plus fixed-array interpolation against four preset frames. */
+export function resolvePaperFoldFrame(
+  progress: number,
+  tilt: number,
+  axis: PaperTurnAxis,
+): PaperFoldFrame {
+  const boundedProgress = clamp(finite(progress), 0, 1);
+  const boundedTilt = clamp(finite(tilt), -1, 1);
+  const progressPosition = boundedProgress * maxProgressIndex;
+  const tiltPosition = (boundedTilt + 1) / 2 * maxTiltIndex;
+  const lowerProgress = Math.floor(progressPosition);
+  const upperProgress = Math.min(maxProgressIndex, lowerProgress + 1);
+  const lowerTilt = Math.floor(tiltPosition);
+  const upperTilt = Math.min(maxTiltIndex, lowerTilt + 1);
+  const progressAmount = progressPosition - lowerProgress;
+  const tiltAmount = tiltPosition - lowerTilt;
+
+  const polygon = (slot: 0 | 1 | 2): PaperFoldPolygon => {
+    const pointCount = frames[lowerTilt * progressSteps + lowerProgress][slot].length;
+    return Array.from({ length: pointCount }, (_, index) => {
+      const pointAt = (tiltIndex: number, progressIndex: number): PaperFoldPoint => (
+        frames[tiltIndex * progressSteps + progressIndex][slot][index]
+      );
+      const lowerTiltPoint = interpolatePoint(
+        pointAt(lowerTilt, lowerProgress),
+        pointAt(lowerTilt, upperProgress),
+        progressAmount,
+      );
+      const upperTiltPoint = interpolatePoint(
+        pointAt(upperTilt, lowerProgress),
+        pointAt(upperTilt, upperProgress),
+        progressAmount,
+      );
+      const point = interpolatePoint(lowerTiltPoint, upperTiltPoint, tiltAmount);
+      return axis === "horizontal" ? point : ([point[1], point[0]] as PaperFoldPoint);
+    });
+  };
+
+  const flat = polygon(0);
+  const back = polygon(1);
+  const shadow = polygon(2);
+  return {
+    flat,
+    back,
+    shadow,
+    flatClipPath: polygonClipPath(flat),
+    backClipPath: polygonClipPath(back),
+    shadowClipPath: polygonClipPath(shadow),
+  };
+}
+
+/**
+ * Map a full-sheet avatar image onto three projected backside corners.
+ *
+ * Each turn axis sees a different projected corner order. Keeping the three
+ * source-to-target edges explicit avoids mirroring the printed backside.
+ */
+export function paperFoldAvatarTransform(
+  back: PaperFoldPolygon,
+  width: number,
+  height: number,
+  axis: PaperTurnAxis,
+): string | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  if (back.length < 4 || back.some((point) => point.length < 2
+    || !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) return null;
+
+  const [projectedTopRight, topLeft, projectedBottomLeft] = back;
+  const targetTopRight = axis === "horizontal" ? projectedTopRight : projectedBottomLeft;
+  const targetBottomLeft = axis === "horizontal" ? projectedBottomLeft : projectedTopRight;
+  const q0 = [targetTopRight[0] / 1000, targetTopRight[1] / 1000] as const;
+  const q1 = [topLeft[0] / 1000, topLeft[1] / 1000] as const;
+  const q2 = [targetBottomLeft[0] / 1000, targetBottomLeft[1] / 1000] as const;
+  const a = q0[0] - q1[0];
+  const b = (q0[1] - q1[1]) * height / width;
+  const c = (q2[0] - q1[0]) * width / height;
+  const d = q2[1] - q1[1];
+  const tx = q1[0] * width;
+  const ty = q1[1] * height;
+  const values = [a, b, c, d, tx, ty];
+  return values.every(Number.isFinite) ? `matrix(${values.join(", ")})` : null;
+}
+
+function interpolatePoint(from: PaperFoldPoint, to: PaperFoldPoint, amount: number): PaperFoldPoint {
+  return [
+    from[0] + (to[0] - from[0]) * amount,
+    from[1] + (to[1] - from[1]) * amount,
+  ];
+}
+
+function polygonClipPath(polygon: PaperFoldPolygon): string {
+  return `polygon(${polygon.map(([x, y]) => `${formatPercent(x)} ${formatPercent(y)}`).join(", ")})`;
+}
+
+function formatPercent(value: number): string {
+  return `${(value / 10).toFixed(1)}%`;
+}
