@@ -16,6 +16,7 @@ import {
 } from "../src/gestures/model";
 import { paperTurnTransition } from "../src/gestures/paper-turn";
 import {
+  paperFoldAvatarTransform,
   resolvePaperFoldFrame,
   resolvePaperFoldMotion,
   type PaperFoldPolygon,
@@ -36,6 +37,12 @@ const config = (canNext = true): GestureConfig => ({
 });
 
 const point = (x: number, y: number): GesturePoint => ({ x, y });
+
+const matrixValues = (transform: string): number[] => {
+  const match = transform.match(/^matrix\(([^)]+)\)$/);
+  expect(match).toBeTruthy();
+  return (match?.[1] ?? "").split(",").map(Number);
+};
 
 const drag = (
   start: GesturePoint,
@@ -258,6 +265,67 @@ describe("paper-fold preset table", () => {
     const horizontalAtTilt = resolvePaperFoldFrame(0.5, 0.5, "horizontal");
     const vertical = resolvePaperFoldFrame(0.5, 0.5, "vertical");
     expect(vertical.back).toEqual(horizontalAtTilt.back.map(([x, y]) => [y, x]));
+  });
+
+  it("maps non-square avatar corners onto each projected back without mirroring", () => {
+    const width = 320;
+    const height = 568;
+    const horizontalBack: MutablePolygon = [[360, 80], [120, 40], [180, 540], [420, 580]];
+    const horizontalTransform = paperFoldAvatarTransform(horizontalBack, width, height, "horizontal");
+    expect(horizontalTransform).toBeTruthy();
+    const [a, b, c, d, tx, ty] = matrixValues(horizontalTransform ?? "");
+    const map = (x: number, y: number): MutablePoint => [
+      a * x + c * y + tx,
+      b * x + d * y + ty,
+    ];
+    // Horizontal turns swap the top source edges, while the left edge remains left.
+    expect(map(0, 0)[0]).toBeCloseTo(38.4, 8);
+    expect(map(0, 0)[1]).toBeCloseTo(22.72, 8);
+    expect(map(width, 0)[0]).toBeCloseTo(115.2, 8);
+    expect(map(width, 0)[1]).toBeCloseTo(45.44, 8);
+    expect(map(0, height)[0]).toBeCloseTo(57.6, 8);
+    expect(map(0, height)[1]).toBeCloseTo(306.72, 8);
+    expect(a * d - b * c).toBeGreaterThan(0);
+
+    const verticalBack: MutablePolygon = [[420, 580], [120, 40], [360, 80], [180, 540]];
+    const verticalTransform = paperFoldAvatarTransform(verticalBack, width, height, "vertical");
+    expect(verticalTransform).toBeTruthy();
+    const verticalValues = matrixValues(verticalTransform ?? "");
+    const verticalMap = (x: number, y: number): MutablePoint => [
+      verticalValues[0] * x + verticalValues[2] * y + verticalValues[4],
+      verticalValues[1] * x + verticalValues[3] * y + verticalValues[5],
+    ];
+    // A vertical turn swaps the source edges that the transposed fold exposes.
+    expect(verticalMap(0, 0)[0]).toBeCloseTo(38.4, 8);
+    expect(verticalMap(0, 0)[1]).toBeCloseTo(22.72, 8);
+    expect(verticalMap(width, 0)[0]).toBeCloseTo(115.2, 8);
+    expect(verticalMap(width, 0)[1]).toBeCloseTo(45.44, 8);
+    expect(verticalMap(0, height)[0]).toBeCloseTo(134.4, 8);
+    expect(verticalMap(0, height)[1]).toBeCloseTo(329.44, 8);
+    expect(verticalValues[0] * verticalValues[3]
+      - verticalValues[1] * verticalValues[2]).toBeGreaterThan(0);
+
+    for (const axis of ["horizontal", "vertical"] as const) {
+      const frame = resolvePaperFoldFrame(0.5, 0, axis);
+      const transform = paperFoldAvatarTransform(frame.back, width, height, axis);
+      expect(transform).toBeTruthy();
+      const values = matrixValues(transform ?? "");
+      expect(values[0]).toBeGreaterThan(0);
+      expect(values[3]).toBeGreaterThan(0);
+      expect(Math.abs(values[1])).toBeLessThan(0.001);
+      expect(Math.abs(values[2])).toBeLessThan(0.001);
+      expect(values[0] * values[3] - values[1] * values[2]).toBeGreaterThan(0);
+    }
+
+    expect(paperFoldAvatarTransform(horizontalBack, 0, height, "horizontal")).toBeNull();
+    expect(paperFoldAvatarTransform(horizontalBack, width, Number.NaN, "vertical")).toBeNull();
+    expect(paperFoldAvatarTransform([[0, 0], [100, 0], [100, 100]], width, height, "horizontal")).toBeNull();
+    expect(paperFoldAvatarTransform(
+      [[0, 0], [Number.NaN, 0], [100, 100], [0, 100]],
+      width,
+      height,
+      "vertical",
+    )).toBeNull();
   });
 
   it("generates byte-identical checked-in output", () => {

@@ -2,6 +2,9 @@ import { expect, test, type CDPSession, type Page } from "@playwright/test";
 
 const baby = { id: "page-turn-baby", name: "小满", fullName: null, avatarUrl: null, isDefault: true };
 const context = { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id };
+const knownAvatarUrl = "/test-assets/page-turn-avatar.svg";
+const brokenAvatarUrl = "/test-assets/broken-page-turn-avatar.svg";
+const knownAvatarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="#f6ebda"/><circle cx="32" cy="24" r="12" fill="#8a5a44"/><path d="M8 62c4-16 14-22 24-22s20 6 24 22z" fill="#d99a70"/></svg>`;
 const records = Array.from({ length: 5 }, (_, dayIndex) => {
   const date = `2026-10-${20 + dayIndex}`;
   const previousDate = `2026-10-${19 + dayIndex}`;
@@ -16,14 +19,35 @@ const daily = Array.from({ length: 5 }, (_, index) => ({
   sleepCount: 1, totalSleepMinutes: 660, totalMilkAmount: 120, totalPumpMilkAmount: 0, diaperCount: 1,
 }));
 
-async function syntheticApp(page: Page) {
+async function syntheticApp(page: Page, options: { avatarUrl?: string | null } = {}) {
+  let selectedAvatarUrl = options.avatarUrl;
+  const selectedBaby = () => (
+    selectedAvatarUrl === undefined ? baby : { ...baby, avatarUrl: selectedAvatarUrl }
+  );
+  const selectedContext = () => {
+    const activeBaby = selectedBaby();
+    return { ...context, baby: activeBaby, babies: [activeBaby] };
+  };
+
   await page.clock.setSystemTime(new Date("2026-10-24T12:00:00+08:00"));
+  await page.route(`**${knownAvatarUrl}`, async (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: knownAvatarSvg,
+  }));
+  await page.route(`**${brokenAvatarUrl}`, async (route) => route.fulfill({
+    status: 404,
+    contentType: "text/plain",
+    body: "missing avatar",
+  }));
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
     if (url.pathname === "/api/auth/csrf") return json({ csrfToken: "page-turn-csrf" });
-    if (url.pathname === "/api/app/auth/context") return json(context);
-    if (url.pathname === "/api/app/baby-profile") return json({ ...baby, birthDate: "2026-06-23" });
+    if (url.pathname === "/api/app/auth/context") return json(selectedContext());
+    if (url.pathname === "/api/app/baby-profile") {
+      return json({ ...selectedBaby(), birthDate: "2026-06-23" });
+    }
     if (url.pathname === "/api/app/activities") {
       const date = url.searchParams.get("date");
       const startTimeGte = url.searchParams.get("startTimeGte");
@@ -48,6 +72,12 @@ async function syntheticApp(page: Page) {
     }
     return json({ error: `Unexpected endpoint: ${url.pathname}` }, 404);
   });
+
+  return {
+    setAvatarUrl: async (avatarUrl: string | null) => {
+      selectedAvatarUrl = avatarUrl;
+    },
+  };
 }
 
 async function sendTouch(session: CDPSession, type: "touchStart" | "touchMove" | "touchEnd", point = { x: 0, y: 0 }) {
@@ -261,6 +291,57 @@ async function expectFold(page: Page, layer: string, initialFlat: string): Promi
   return geometry;
 }
 
+type AvatarImageState = {
+  source: string;
+  loaded: boolean;
+  determinant: number;
+};
+
+async function avatarImageState(page: Page, selector: string): Promise<AvatarImageState> {
+  return page.locator(selector).evaluate((element) => {
+    const image = element instanceof HTMLImageElement
+      ? element
+      : element.querySelector("img");
+    const transform = getComputedStyle(element).transform;
+    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+    return {
+      source: image?.currentSrc || image?.src || element.getAttribute("src") || "",
+      loaded: image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+      determinant: matrix.m11 * matrix.m22 - matrix.m12 * matrix.m21,
+    };
+  });
+}
+
+async function expectFoldAvatar(
+  page: Page,
+  layer: string,
+  expectedAvatar: "known" | "fallback",
+) {
+  await expect(page.locator(".bubu-paper-fold-avatar-preload")).toHaveCount(1);
+  const preload = await avatarImageState(page, ".bubu-paper-fold-avatar-preload");
+  const visible = await avatarImageState(page, `${layer} .bubu-paper-fold-avatar`);
+  const expectedSource = expectedAvatar === "known" ? knownAvatarUrl : brokenAvatarUrl;
+  expect(preload.source).toContain(expectedSource);
+  if (expectedAvatar === "known") {
+    expect(preload.loaded).toBe(true);
+    expect(visible.source).toContain(knownAvatarUrl);
+    expect(visible.loaded).toBe(true);
+  } else {
+    expect(preload.loaded).toBe(false);
+    expect(visible.source).not.toContain(brokenAvatarUrl);
+    expect(visible.loaded).toBe(true);
+  }
+  expect(visible.determinant).toBeGreaterThan(0.45);
+  expect(visible.determinant).toBeLessThanOrEqual(1.02);
+}
+
+async function expectPreloadedAvatar(page: Page, source: string, loaded: boolean) {
+  await expect(page.locator(".bubu-paper-fold-avatar-preload")).toHaveCount(1);
+  const preload = await avatarImageState(page, ".bubu-paper-fold-avatar-preload");
+  expect(preload.source).toContain(source);
+  expect(preload.loaded).toBe(loaded);
+}
+
 async function expectIdleFold(page: Page) {
   await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
 }
@@ -294,7 +375,7 @@ async function titleHistory(page: Page): Promise<string[]> {
 }
 
 test("vertical previous-turn keeps text stationary while a diagonal fold covers current", async ({ page }) => {
-  await syntheticApp(page);
+  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
@@ -314,6 +395,7 @@ test("vertical previous-turn keeps text stationary while a diagonal fold covers 
     await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
     await expectStationaryText(page, text, true);
     await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-neighbor-prev", "known");
     await sendTouch(touch.session, "touchEnd");
   } finally {
     await touch.session.detach();
@@ -322,7 +404,7 @@ test("vertical previous-turn keeps text stationary while a diagonal fold covers 
 });
 
 test("vertical next-turn keeps text stationary while a diagonal fold reveals real next", async ({ page }) => {
-  await syntheticApp(page);
+  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
@@ -344,6 +426,7 @@ test("vertical next-turn keeps text stationary while a diagonal fold reveals rea
     await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
     await expectStationaryText(page, text, true);
     await expectFold(page, ".bubu-paper-current", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-current", "known");
     await sendTouch(touch.session, "touchEnd");
   } finally {
     await touch.session.detach();
@@ -352,10 +435,12 @@ test("vertical next-turn keeps text stationary while a diagonal fold reveals rea
 });
 
 test("horizontal previous-turn reverses diagonal within one held gesture and recoils", async ({ page }) => {
-  await syntheticApp(page);
+  const app = await syntheticApp(page, { avatarUrl: brokenAvatarUrl });
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
+  await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
+  await expectPreloadedAvatar(page, brokenAvatarUrl, false);
   const heldTitle = await title.textContent();
 
   const touch = await beginTouchAtCurrentScroll(page);
@@ -371,6 +456,7 @@ test("horizontal previous-turn reverses diagonal within one held gesture and rec
     await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
     await expectStationaryText(page, text, true);
     const positive = await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-neighbor-prev", "fallback");
 
     await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y - 35 });
     const negative = await foldGeometry(page, ".bubu-paper-neighbor-prev", "back");
@@ -387,13 +473,17 @@ test("horizontal previous-turn reverses diagonal within one held gesture and rec
     await page.waitForTimeout(250);
     await expect(title).toHaveText(heldTitle ?? "");
     await expectIdleFold(page);
+
+    await app.setAvatarUrl(knownAvatarUrl);
+    await page.reload();
+    await expectPreloadedAvatar(page, knownAvatarUrl, true);
   } finally {
     await touch.session.detach();
   }
 });
 
 test("horizontal next-turn preloads the real next page and refuses today's future", async ({ page }) => {
-  await syntheticApp(page);
+  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
@@ -415,6 +505,7 @@ test("horizontal next-turn preloads the real next page and refuses today's futur
     await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
     await expectStationaryText(page, text, true);
     await expectFold(page, ".bubu-paper-current", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-current", "known");
     await sendTouch(touch.session, "touchEnd");
   } finally {
     await touch.session.detach();

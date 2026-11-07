@@ -13,3 +13,5 @@ Regenerate deterministically with:
 ```sh
 pnpm --dir apps/bubu-log-miniapp generate:paper-fold
 ```
+
+The folded backside prints the active baby avatar used by the menu. A persistent hidden image preloads that URL before it is used; while loading, when absent, or after an error, the existing bundled brand icon is shown. URL-scoped load/error state keeps late callbacks from applying to a different requested avatar. The image is mapped from its full-sheet rectangle onto the precomputed backside corners with a 2D affine matrix, using separate horizontal/vertical corner order to avoid mirrored portraits. Only the folded image is transformed; the calendar and adjacent page remain stationary. No additional geometry table or runtime 3D calculation is introduced.

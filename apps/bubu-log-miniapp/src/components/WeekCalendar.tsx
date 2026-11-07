@@ -34,6 +34,7 @@ export interface WeekCalendarProps {
   onNavigate?: (direction: 'prev' | 'next') => void
   onNavigateReady?: (direction: 'prev' | 'next') => boolean
   adjacentPages?: Partial<Record<'prev' | 'next', TimelineLoaded>>
+  foldAvatarUrl?: string | null
 }
 
 const HOUR_HEIGHT = 78
@@ -84,6 +85,7 @@ function WeekCanvas({
 export function WeekCalendar({
   activities, weekStart, onActivityClick, onDateClick,
   scale = 1, onScaleChange, gesturesDisabled, gestureResetKey, today: todayProp, onNavigate, onNavigateReady, adjacentPages,
+  foldAvatarUrl,
 }: WeekCalendarProps) {
   const today = todayProp ?? todayKey()
   const gestures = useTimelineGestures({
@@ -142,6 +144,7 @@ export function WeekCalendar({
         viewportWidth={gestures.viewportWidth}
         viewportHeight={gestures.viewportHeight}
         gestureScrollTop={gestures.gestureScrollTop}
+        foldAvatarUrl={foldAvatarUrl}
         previous={previousPage ? (
           <WeekCanvas canvasId={`${gestures.canvasId}-preview-prev`} week={previousWeek} scale={scale} preview />
         ) : undefined}

@@ -115,6 +115,38 @@ export function resolvePaperFoldFrame(
   };
 }
 
+/**
+ * Map a full-sheet avatar image onto three projected backside corners.
+ *
+ * Each turn axis sees a different projected corner order. Keeping the three
+ * source-to-target edges explicit avoids mirroring the printed backside.
+ */
+export function paperFoldAvatarTransform(
+  back: PaperFoldPolygon,
+  width: number,
+  height: number,
+  axis: PaperTurnAxis,
+): string | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  if (back.length < 4 || back.some((point) => point.length < 2
+    || !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) return null;
+
+  const [projectedTopRight, topLeft, projectedBottomLeft] = back;
+  const targetTopRight = axis === "horizontal" ? projectedTopRight : projectedBottomLeft;
+  const targetBottomLeft = axis === "horizontal" ? projectedBottomLeft : projectedTopRight;
+  const q0 = [targetTopRight[0] / 1000, targetTopRight[1] / 1000] as const;
+  const q1 = [topLeft[0] / 1000, topLeft[1] / 1000] as const;
+  const q2 = [targetBottomLeft[0] / 1000, targetBottomLeft[1] / 1000] as const;
+  const a = q0[0] - q1[0];
+  const b = (q0[1] - q1[1]) * height / width;
+  const c = (q2[0] - q1[0]) * width / height;
+  const d = q2[1] - q1[1];
+  const tx = q1[0] * width;
+  const ty = q1[1] * height;
+  const values = [a, b, c, d, tx, ty];
+  return values.every(Number.isFinite) ? `matrix(${values.join(", ")})` : null;
+}
+
 function interpolatePoint(from: PaperFoldPoint, to: PaperFoldPoint, amount: number): PaperFoldPoint {
   return [
     from[0] + (to[0] - from[0]) * amount,

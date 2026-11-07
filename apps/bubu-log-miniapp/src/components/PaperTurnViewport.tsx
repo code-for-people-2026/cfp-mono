@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { View } from '@tarojs/components'
+import brandIcon from '../assets/branding/bubu-avatar-borderless-v1.png'
+import { Image, View } from '@tarojs/components'
 import type { PaperTurnState } from '../gestures/model'
 import {
   paperTurnTransition,
   type PaperTurnDirection,
 } from '../gestures/paper-turn'
 import {
+  paperFoldAvatarTransform,
   resolvePaperFoldFrame,
   resolvePaperFoldMotion,
   type PaperFoldMotion,
@@ -20,6 +22,7 @@ interface PaperTurnViewportProps {
   previous?: ReactNode
   next?: ReactNode
   children?: ReactNode
+  foldAvatarUrl?: string | null
 }
 
 interface FoldLayers {
@@ -46,6 +49,7 @@ export function PaperTurnViewport({
   previous,
   next,
   children,
+  foldAvatarUrl,
 }: PaperTurnViewportProps) {
   const horizontal = paperTurn.axis === 'horizontal'
   const size = Math.max(1, horizontal ? viewportWidth : viewportHeight)
@@ -65,6 +69,22 @@ export function PaperTurnViewport({
   const motionRef = useRef<PaperFoldMotion | null>(null)
   const layersRef = useRef<FoldLayers | null>(null)
   const [playback, setPlayback] = useState<FoldPlayback | null>(null)
+  const [loadedAvatarUrl, setLoadedAvatarUrl] = useState("")
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState("")
+  const requestedAvatarUrl = foldAvatarUrl || brandIcon
+  const requestedAvatarIsBrand = requestedAvatarUrl === brandIcon
+  const requestedAvatarLoaded = loadedAvatarUrl === requestedAvatarUrl
+  const requestedAvatarFailed = failedAvatarUrl === requestedAvatarUrl
+  const showRequestedAvatar = !requestedAvatarIsBrand
+    && requestedAvatarLoaded
+    && !requestedAvatarFailed
+  const avatarUrl = showRequestedAvatar ? requestedAvatarUrl : brandIcon
+  const avatarMode = showRequestedAvatar ? 'aspectFill' : 'aspectFit'
+  const markAvatarLoaded = (url: string) => setLoadedAvatarUrl(url)
+  const markAvatarFailed = (url: string) => setFailedAvatarUrl(url)
+  const markVisibleAvatarFailed = () => {
+    if (showRequestedAvatar) markAvatarFailed(requestedAvatarUrl)
+  }
 
   if (paperTurn.phase === 'drag') {
     motionRef.current = dragMotion
@@ -147,6 +167,9 @@ export function PaperTurnViewport({
   const foldFrame = gestureLayersActive && displayMotion != null
     ? resolvePaperFoldFrame(displayMotion.progress, displayMotion.tilt, paperTurn.axis)
     : null
+  const avatarTransform = foldFrame == null
+    ? null
+    : paperFoldAvatarTransform(foldFrame.back, viewportWidth, viewportHeight, paperTurn.axis)
   const foldDecorations = foldFrame != null ? (
     <>
       <View
@@ -161,7 +184,19 @@ export function PaperTurnViewport({
         <View
           className={`bubu-paper-fold-back bubu-paper-fold-${horizontal ? 'horizontal' : 'vertical'}`}
           style={{ clipPath: foldFrame.backClipPath }}
-        />
+        >
+          {avatarTransform == null ? null : (
+            <Image
+              className='bubu-paper-fold-avatar'
+              key={avatarUrl}
+              src={avatarUrl}
+              mode={avatarMode}
+              style={{ transform: avatarTransform }}
+              onError={markVisibleAvatarFailed}
+            />
+          )}
+          <View className={`bubu-paper-fold-avatar-shade bubu-paper-fold-${horizontal ? 'horizontal' : 'vertical'}`} />
+        </View>
       </View>
     </>
   ) : null
@@ -202,6 +237,15 @@ export function PaperTurnViewport({
 
   return (
     <View className='bubu-timeline-viewport'>
+      <Image
+        className='bubu-paper-fold-avatar-preload'
+        key={requestedAvatarUrl}
+        src={requestedAvatarUrl}
+        mode='aspectFill'
+        aria-hidden
+        onLoad={() => markAvatarLoaded(requestedAvatarUrl)}
+        onError={() => markAvatarFailed(requestedAvatarUrl)}
+      />
       {stablePrevious != null
         ? preview('prev', stablePrevious, previousVisible, previousVisible)
         : null}

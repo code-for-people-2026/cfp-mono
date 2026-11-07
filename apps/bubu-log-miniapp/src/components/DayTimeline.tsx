@@ -37,6 +37,7 @@ export interface DayTimelineProps {
   /** Real, already-loaded adjacent pages. A missing side recoils rather than showing a placeholder. */
   adjacentPages?: Partial<Record<'prev' | 'next', TimelineLoaded>>
   viewportExpansion?: number
+  foldAvatarUrl?: string | null
 }
 
 const HOUR_HEIGHT = 116
@@ -123,7 +124,7 @@ function DayCanvas({
 export function DayTimeline({
   activities, date, onActivityClick, showCurrentTime = true, latestActivities,
   scale = 1, onScaleChange, gesturesDisabled, gestureResetKey, today: todayProp, onNavigate, onNavigateReady, adjacentPages,
-  onScrollIntent, viewportExpansion = 0,
+  onScrollIntent, viewportExpansion = 0, foldAvatarUrl,
 }: DayTimelineProps) {
   const today = todayProp ?? todayKey()
   const isToday = date === today
@@ -206,6 +207,7 @@ export function DayTimeline({
         viewportWidth={gestures.viewportWidth}
         viewportHeight={gestures.viewportHeight}
         gestureScrollTop={gestures.gestureScrollTop}
+        foldAvatarUrl={foldAvatarUrl}
         previous={previousPage ? (
           <DayCanvas
             canvasId={`${gestures.canvasId}-preview-prev`} idPrefix='preview-prev-'

@@ -533,6 +533,7 @@ export default function DiaryPage() {
               <PreviousEvening activities={data.evening} date={date} />
             </CollapsibleDaySummary>
             <DayTimeline latestActivities={data.latest} activities={visible} date={date} today={today}
+              foldAvatarUrl={context.baby?.avatarUrl}
               scale={timeScale} onScaleChange={setTimeScale}
               gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:day:${date}`}
               onScrollIntent={handleScrollIntent}
@@ -541,6 +542,7 @@ export default function DiaryPage() {
               onNavigate={navigateTimeline} onNavigateReady={navigateTimelineReady} adjacentPages={adjacentPages} />
           </>}
           {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} today={today}
+            foldAvatarUrl={context.baby?.avatarUrl}
             scale={timeScale} onScaleChange={setTimeScale}
             gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:week:${date}`}
             onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay}
