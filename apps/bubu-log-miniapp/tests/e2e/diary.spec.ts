@@ -1230,18 +1230,36 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   ] as const;
   for (const [index, expected] of legendExpectations.entries()) {
     const compactItem = compactLegend.nth(index);
+    const compactDot = compactItem.locator(".bubu-legend-dot");
     await expect(compactItem).toHaveText(expected.label);
-    await expect(compactItem.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
+    await expect(compactDot).toHaveCSS("border-top-color", expected.color);
+    await expect(compactDot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   }
+  const legendIcon = card.locator(".bubu-heatmap-legend-toggle .bubu-heatmap-legend-icon");
+  const legendImage = legendIcon.locator("img");
+  await expect(legendIcon).toBeVisible();
+  await expect.poll(async () => legendImage.evaluate(
+    (image) => image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+  )).toBe(true);
+  const iconBox = await legendIcon.boundingBox();
+  const imageBox = await legendImage.boundingBox();
+  expect(iconBox).not.toBeNull();
+  expect(imageBox).not.toBeNull();
+  expect(imageBox!.x).toBeGreaterThanOrEqual(iconBox!.x - 1);
+  expect(imageBox!.x + imageBox!.width).toBeLessThanOrEqual(iconBox!.x + iconBox!.width + 1);
+  expect(imageBox!.y).toBeGreaterThanOrEqual(iconBox!.y - 1);
+  expect(imageBox!.y + imageBox!.height).toBeLessThanOrEqual(iconBox!.y + iconBox!.height + 1);
 
   await card.getByLabel("展开四环图例", { exact: true }).click();
   const expandedLegend = card.locator(".bubu-legend-expanded");
   await expect(expandedLegend).toHaveCount(4);
   for (const [index, expected] of legendExpectations.entries()) {
     const expandedItem = expandedLegend.nth(index);
+    const expandedDot = expandedItem.locator(".bubu-legend-dot");
     await expect(expandedItem).toContainText(expected.label);
     await expect(expandedItem).toContainText(expected.meaning);
-    await expect(expandedItem.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
+    await expect(expandedDot).toHaveCSS("border-top-color", expected.color);
+    await expect(expandedDot).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   }
   await card.getByLabel("收起四环图例", { exact: true }).click();
   await expect(expandedLegend).toHaveCount(0);

@@ -146,10 +146,13 @@
 .bubu-heatmap-guide { display: flex; align-items: center; justify-content: center; gap: 4px; padding: 4px 10px 0; color: #9b8b77; font-size: 10px; line-height: 1.5; white-space: nowrap; }
 .bubu-heatmap-guide-text { flex-shrink: 0; }
 .bubu-heatmap-guide .bubu-legend-item { flex-shrink: 0; gap: 2.5px; font-size: 10px; }
-.bubu-heatmap-legend-toggle { box-sizing: border-box; flex-shrink: 0; width: 24px; height: 24px; margin: 0 0 0 3px; padding: 0; border: 0; border-radius: 12px; background: #f1e8dc; color: #9b8b77; font-size: 10px; line-height: 24px; text-align: center; }
+.bubu-heatmap-guide .bubu-legend-dot, .bubu-heatmap-key .bubu-legend-dot { box-sizing: border-box; width: 8px; height: 8px; border: 1.5px solid transparent; background: transparent; }
+.bubu-heatmap-legend-toggle { display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex-shrink: 0; width: 24px; height: 24px; margin: 0 0 0 3px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: #9b8b77; font-size: 10px; line-height: 1; text-align: center; }
+.bubu-heatmap-legend-toggle::after { border: 0; }
+.bubu-heatmap-legend-icon { display: block; width: 16px; height: 16px; }
 .bubu-heatmap-key { display: flex; flex-direction: column; gap: 4px; padding: 5px 10px 6px; }
 .bubu-heatmap-key .bubu-legend-item { min-width: 0; align-items: flex-start; gap: 5px; }
-.bubu-heatmap-key .bubu-legend-dot { margin-top: 5px; }
+.bubu-heatmap-key .bubu-legend-dot { margin-top: 4px; }
 .bubu-heatmap-key .bubu-legend-label { flex-shrink: 0; width: 12px; color: #7d6f5e; font-weight: 700; line-height: 16px; }
 .bubu-heatmap-key .bubu-legend-meaning { flex: 1; min-width: 0; line-height: 16px; overflow-wrap: anywhere; }
 .bubu-heatmap-reading { margin: 7px 8px 0; padding: 8px; border-radius: 8px; background: #f7f3ed; }
