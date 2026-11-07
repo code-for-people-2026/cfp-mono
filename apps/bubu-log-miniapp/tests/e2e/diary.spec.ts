@@ -1010,7 +1010,7 @@ test("320px dense week overlap keeps milk value and unit readable at default and
   await page.goto("/");
   await calendarView(page, "周历");
   await expect(page.locator(".bubu-week-card")).toBeVisible();
-  const friday = page.locator(".bubu-week-column").nth(4);
+  const friday = page.locator(".bubu-paper-current .bubu-week-column").nth(4);
   await expect(friday.locator(".bubu-week-event:not(.bubu-week-event-bg)")).toHaveCount(3);
   await expect(friday.locator(".bubu-week-event-bg")).toHaveCount(1);
 
@@ -1115,7 +1115,7 @@ test("320px extreme week density shows an ellipsis cue while keeping full quanti
   await fixture(page, { recordsOverride: overflowWeekRecords });
   await page.goto("/");
   await calendarView(page, "周历");
-  const friday = page.locator(".bubu-week-column").nth(4);
+  const friday = page.locator(".bubu-paper-current .bubu-week-column").nth(4);
   await expect(friday.locator(".bubu-week-event:not(.bubu-week-event-bg)")).toHaveCount(4);
   const geometry = await friday.evaluate((column) => {
     const col = column as HTMLElement;

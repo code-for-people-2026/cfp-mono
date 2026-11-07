@@ -16,6 +16,7 @@ export type GesturePhase =
   | "scroll"
   | "pinch"
   | "blocked"
+  | "settling"
   | "done";
 export type PullEdge = "top" | "bottom";
 export type FeedbackPlacement = "top" | "bottom" | "center";
@@ -93,6 +94,15 @@ export interface GestureState {
   suppressClick: boolean;
   scale: number;
   pinch: PinchState | null;
+  paperTurn: PaperTurnState;
+}
+
+export interface PaperTurnState {
+  phase: PaperTurnPhase;
+  axis: PaperTurnAxis;
+  direction: PaperDirection | null;
+  displacement: number;
+  reducedMotion: boolean;
 }
 
 export interface GestureUpdate {
@@ -104,6 +114,9 @@ export interface GestureUpdate {
   blocked: boolean;
   ended: boolean;
 }
+import type { PaperTurnAxis, PaperTurnDirection, PaperTurnPhase } from "./paper-turn";
+
+type PaperDirection = PaperTurnDirection;
 
 export interface PointerInput {
   points: GesturePoint[];
@@ -147,6 +160,7 @@ export function createGestureState(scale = 1): GestureState {
     suppressClick: false,
     scale,
     pinch: null,
+    paperTurn: { phase: "idle", axis: "horizontal", direction: null, displacement: 0, reducedMotion: false },
   };
 }
 
@@ -176,6 +190,13 @@ const pullFeedback = (edge: PullEdge, armed: boolean, config: GestureConfig): st
   return armed ? `松开切换${label}` : `继续${pull}查看${label}`;
 };
 
+const clearPaperTurn = (state: GestureState): PaperTurnState => ({
+  ...state.paperTurn,
+  phase: "idle",
+  direction: null,
+  displacement: 0,
+});
+
 const baseStart = (points: readonly GesturePoint[], metrics: GestureMetrics, scale: number, config: GestureConfig): GestureState => ({
   ...createGestureState(scale),
   phase: "pending",
@@ -200,6 +221,7 @@ const block = (state: GestureState, pointerCount: number, config?: GestureConfig
   placement: "center",
   suppressClick: true,
   pinch: null,
+  paperTurn: clearPaperTurn(state),
 });
 
 function startPinch(state: GestureState, points: readonly GesturePoint[], metrics: GestureMetrics): GestureState {
@@ -273,10 +295,16 @@ export function resolvePinchFrame(input: PinchFrameInput): PinchFrame {
 
 export function pointerDown(state: GestureState, input: PointerInput): GestureState {
   const { points, metrics, scale, config } = input;
+  if (state.phase === "settling") return { ...state, config: cloneConfig(config) };
   const fresh = state.phase === "idle" || state.phase === "done";
   const next = fresh ? { ...createGestureState(scale), config: cloneConfig(config) } : { ...state, config: cloneConfig(config) };
   if (points.length >= 3) return block(next, points.length, config);
   if (points.length === 2) {
+    // A second finger joining a locked paper-turn drag cancels that drag. A
+    // pending touch has not chosen an axis yet, so it can still become a pinch.
+    if (!fresh && state.phase !== "pinch" && state.phase !== "pending") {
+      return block(next, points.length, config);
+    }
     if (fresh) return startPinch(baseStart(points, metrics, scale, config), points, metrics);
     return startPinch(next, points, metrics);
   }
@@ -325,14 +353,17 @@ function movePinch(state: GestureState, input: MoveInput): GestureUpdate {
 
 export function pointerMove(state: GestureState, input: MoveInput): GestureUpdate {
   const { points, config } = input;
-  if (state.phase === "idle" || state.phase === "done") {
+  if (state.phase === "idle" || state.phase === "done" || state.phase === "settling") {
     return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (points.length >= 3) {
     return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
-  if (state.phase === "pinch" || points.length === 2) {
+  if (state.phase === "pinch") {
     return movePinch(state, input);
+  }
+  if (points.length === 2) {
+    return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (points.length !== 1) {
     return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
@@ -408,6 +439,17 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
     feedback = "";
     placement = "center";
   }
+  const blockedFuture = direction === "next" && !config.canNext;
+  const activeTurn = (phase === "horizontal" || phase === "pull") && !blockedFuture;
+  const paperTurn: PaperTurnState = activeTurn && direction
+    ? {
+      ...state.paperTurn,
+      phase: "drag",
+      axis: phase === "horizontal" ? "horizontal" : "vertical",
+      direction,
+      displacement: phase === "horizontal" ? dx : dy,
+    }
+    : clearPaperTurn(state);
 
   return {
     state: {
@@ -421,6 +463,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
       feedback,
       placement,
       suppressClick: state.suppressClick || moved,
+      paperTurn,
     },
     scaleChanged: false,
     scrollTop: null,
@@ -434,10 +477,20 @@ function finish(state: GestureState, config: GestureConfig): GestureUpdate {
   const wanted = state.phase === "horizontal" || state.phase === "pull" ? state.direction : null;
   const blocked = !!wanted && wanted === "next" && !config.canNext;
   const navigation = state.armed && wanted && !blocked ? wanted : null;
+  const canTurn = !!wanted && state.paperTurn.phase === "drag" && state.paperTurn.direction === wanted && !blocked;
+  const turnPhase: PaperTurnPhase = navigation ? "complete" : canTurn ? "recoil" : "idle";
+  const paperTurn: PaperTurnState = canTurn || navigation
+    ? {
+      ...state.paperTurn,
+      phase: turnPhase,
+      direction: wanted,
+      displacement: 0,
+    }
+    : { ...clearPaperTurn(state), phase: turnPhase };
   const next: GestureState = {
     ...state,
     config: cloneConfig(config),
-    phase: "done",
+    phase: navigation || canTurn ? "settling" : "done",
     pointerCount: 0,
     edge: null,
     direction: null,
@@ -446,6 +499,7 @@ function finish(state: GestureState, config: GestureConfig): GestureUpdate {
     placement: "center",
     suppressClick: state.suppressClick || navigation !== null || blocked || state.phase === "pinch",
     pinch: null,
+    paperTurn,
   };
   return {
     state: next,
@@ -459,8 +513,8 @@ function finish(state: GestureState, config: GestureConfig): GestureUpdate {
 
 export function pointerUp(state: GestureState, input: UpInput): GestureUpdate {
   const { remaining, changed, metrics, config } = input;
-  if (state.phase === "idle" || state.phase === "done") {
-    return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: true };
+  if (state.phase === "idle" || state.phase === "done" || state.phase === "settling") {
+    return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (remaining.length > 0) {
     // A second finger (or a third) was involved: consume the rest of the touch
@@ -474,11 +528,12 @@ export function pointerUp(state: GestureState, input: UpInput): GestureUpdate {
   return finish(current, config);
 }
 
-export function cancelGesture(state: GestureState): GestureState {
+export function cancelGesture(state: GestureState, animate = false): GestureState {
   if (state.phase === "idle" || state.phase === "done") return state;
+  const animateBack = animate && state.paperTurn.phase === "drag";
   return {
     ...state,
-    phase: "done",
+    phase: animateBack ? "settling" : "done",
     pointerCount: 0,
     edge: null,
     direction: null,
@@ -487,5 +542,8 @@ export function cancelGesture(state: GestureState): GestureState {
     placement: "center",
     suppressClick: true,
     pinch: null,
+    paperTurn: animateBack
+      ? { ...state.paperTurn, phase: "recoil", displacement: 0 }
+      : clearPaperTurn(state),
   };
 }

@@ -14,13 +14,25 @@ import {
   type GestureState,
   type GestureUpdate,
   type PeriodDirection,
+  type PaperTurnState,
 } from "./model";
+import { paperTurnTransition, type PaperTurnPhase } from "./paper-turn";
+import {
+  createScrollChromeState,
+  resetScrollChromeState,
+  shouldTrackScrollIntent,
+  updateScrollIntent,
+} from "./scroll-chrome";
 
 export interface TimelineGestureOptions {
   /** Current shared time-axis scale (1 = normal). */
   scale: number;
   onScaleChange?: (scale: number) => void;
   onNavigate?: (direction: PeriodDirection) => void;
+  /** Returns whether the adjacent real page can be committed without a placeholder. */
+  onNavigateReady?: (direction: PeriodDirection) => boolean;
+  /** Ordinary one-finger vertical scrolling asks the timeline chrome to hide/show. */
+  onScrollIntent?: (intent: "hide" | "show") => void;
   /** False at the newest period. Never navigate into the future. */
   canNext: boolean;
   previousLabel: string;
@@ -30,6 +42,8 @@ export interface TimelineGestureOptions {
   disabled?: boolean;
   /** Date/mode/baby changes cancel any pending gesture. */
   resetKey?: string;
+  /** Layout shift outside the ScrollView (for example a collapsing summary). */
+  viewportExpansion?: number;
 }
 
 export interface TimelineScrollDetail {
@@ -63,6 +77,11 @@ export interface TimelineGestures {
   /** Controlled fallback offset for native ScrollView; H5 is moved directly. */
   scrollTop: number;
   isPinching: boolean;
+  paperTurn: PaperTurnState;
+  /** ScrollView offset captured when the gesture began. */
+  gestureScrollTop: number;
+  viewportWidth: number;
+  viewportHeight: number;
   feedback: string;
   feedbackPlacement: FeedbackPlacement;
   onScroll: (event: TimelineScrollEvent) => void;
@@ -75,6 +94,7 @@ export interface TimelineGestures {
   };
   consumeClickSuppression: () => boolean;
   cancel: () => void;
+  applyScrollTop: (top: number) => void;
 }
 
 const pointsFromTouches = (touches: ArrayLike<TouchLike> | undefined, viewportTop: number): GesturePoint[] =>
@@ -98,19 +118,28 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     scrollTop: 0, viewportHeight: 0, contentHeight: 0, canvasTop: 0, canvasHeight: 0,
   });
   const viewportTopRef = useRef(0);
+  const h5TouchViewportTopRef = useRef<number | null>(null);
   const scrollContextRef = useRef<NativeScrollView | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
   const suppressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const feedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const turnGenerationRef = useRef(0);
   const measureGenerationRef = useRef(0);
+  const scrollChromeRef = useRef(createScrollChromeState());
+  const reducedMotionRef = useRef(false);
   const mountedRef = useRef(true);
 
   const [feedback, setFeedback] = useState<Feedback>({ text: "", placement: "center" });
   const [isPinching, setIsPinching] = useState(false);
   const [baseCanvasHeight, setBaseCanvasHeight] = useState(0);
   const [scrollTop, setScrollTop] = useState(0);
+  const [paperTurn, setPaperTurn] = useState<PaperTurnState>(createGestureState(options.scale).paperTurn);
+  const [gestureScrollTop, setGestureScrollTop] = useState(0);
+  const [viewportWidth, setViewportWidth] = useState(320);
+  const [viewportHeight, setViewportHeight] = useState(440);
 
   const showFeedback = useCallback((text: string, placement: FeedbackPlacement = "center") => {
     setFeedback((previous) => previous.text === text && previous.placement === placement
@@ -139,6 +168,15 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     }, 700);
   }, []);
 
+  const clearTurnTimer = useCallback(() => {
+    if (turnTimerRef.current) clearTimeout(turnTimerRef.current);
+    turnTimerRef.current = null;
+    // A cleared callback must also lose its generation lease. This covers reset,
+    // disable and unmount even when the platform timer fires late.
+    turnGenerationRef.current += 1;
+  }, []);
+
+
   const config = useCallback((): GestureConfig => {
     const current = optionsRef.current;
     return {
@@ -154,6 +192,9 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
   const applyScrollTopNow = useCallback((top: number) => {
     const next = Math.max(0, top);
     metricsRef.current.scrollTop = next;
+    // Programmatic offsets are not user scrolling. Rebase before the platform
+    // echoes the change through onScroll, and never emit a chrome intent here.
+    scrollChromeRef.current = resetScrollChromeState(next, scrollChromeRef.current);
     if (process.env.TARO_ENV === "h5") {
       if (typeof document !== "undefined") {
         const element = document.getElementById(scrollId);
@@ -193,6 +234,8 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
         canvasHeight,
       };
       viewportTopRef.current = viewRect.top;
+      setViewportWidth((previous) => Math.abs(previous - viewRect.width) > 0.5 ? viewRect.width : previous);
+      setViewportHeight((previous) => Math.abs(previous - viewRect.height) > 0.5 ? viewRect.height : previous);
       if (base > 0) setBaseCanvasHeight((previous) => Math.abs(previous - base) > 0.5 ? base : previous);
       return;
     }
@@ -204,8 +247,9 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       // different scale may already be current, so stale callbacks must not write.
       if (!mountedRef.current || generation !== measureGenerationRef.current) return;
       if (Math.abs((scaleRef.current || 1) - scale) > 0.001) return;
-      const view = result?.[0] as { top: number; height: number } | undefined;
-      const canvas = result?.[1] as { top: number; height: number } | undefined;
+      const selectorResults = result as Array<{ top: number; height: number; width?: number } | null | undefined> | undefined;
+      const view = selectorResults?.[0];
+      const canvas = selectorResults?.[1];
       if (!view || !canvas) return;
       const scroll = metricsRef.current.scrollTop;
       const canvasHeight = canvas.height;
@@ -220,6 +264,11 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
         contentHeight: Math.max(view.height, canvasTop + canvasHeight),
       };
       viewportTopRef.current = view.top;
+      const width = view.width;
+      if (typeof width === "number") {
+        setViewportWidth((previous) => Math.abs(previous - width) > 0.5 ? width : previous);
+      }
+      setViewportHeight((previous) => Math.abs(previous - view.height) > 0.5 ? view.height : previous);
       if (base > 0) setBaseCanvasHeight((previous) => Math.abs(previous - base) > 0.5 ? base : previous);
     });
   }, [scrollId, canvasId]);
@@ -231,22 +280,48 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     }, 0);
   }, [measureNow]);
 
+  const scheduleTurnEnd = useCallback((phase: PaperTurnPhase) => {
+    clearTurnTimer();
+    const generation = ++turnGenerationRef.current;
+    const duration = paperTurnTransition(phase, reducedMotionRef.current).durationMs;
+    turnTimerRef.current = setTimeout(() => {
+      if (!mountedRef.current || generation !== turnGenerationRef.current) return;
+      turnTimerRef.current = null;
+      const next: PaperTurnState = { ...stateRef.current.paperTurn, phase: "idle", direction: null, displacement: 0 };
+      stateRef.current = { ...stateRef.current, phase: "done", paperTurn: next };
+      setPaperTurn(next);
+      setNativeScrollEnabled(true);
+      scheduleMeasure();
+    }, duration);
+  }, [clearTurnTimer, scheduleMeasure, setNativeScrollEnabled]);
+
   const syncVisual = useCallback((next: GestureState) => {
     setIsPinching(next.phase === "pinch");
     // Apply the native scroll lock synchronously on the second touchstart, before
     // the state-driven catchMove update commits.
-    setNativeScrollEnabled(next.phase !== "pinch");
+    setNativeScrollEnabled(next.phase === "idle"
+      || next.phase === "pending"
+      || next.phase === "done"
+      || next.phase === "scroll"
+      || next.phase === "blocked");
+    setPaperTurn({ ...next.paperTurn, reducedMotion: reducedMotionRef.current });
     if (next.feedback) showFeedback(next.feedback, next.placement);
     else showFeedback("", "center");
   }, [setNativeScrollEnabled, showFeedback]);
 
   const handleStartPoints = useCallback((points: GesturePoint[]) => {
     if (!points.length || optionsRef.current.disabled) return;
+    // A settling turn owns the short animation interval. New touches neither
+    // cancel nor restart its timer, so the pending commit cannot be duplicated.
+    if (stateRef.current.phase === "settling") return;
     const fresh = stateRef.current.phase === "idle" || stateRef.current.phase === "done";
     if (fresh && points.length === 1) {
       suppressClickRef.current = false;
       if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
       suppressTimerRef.current = null;
+      setGestureScrollTop(metricsRef.current.scrollTop);
+      scrollChromeRef.current = resetScrollChromeState(metricsRef.current.scrollTop);
+      clearTurnTimer();
     }
     if (points.length >= 2) measureNow();
     const next = pointerDown(stateRef.current, {
@@ -258,10 +333,11 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     stateRef.current = next;
     if (next.suppressClick) markSuppressed();
     syncVisual(next);
-  }, [config, markSuppressed, measureNow, syncVisual]);
+  }, [clearTurnTimer, config, markSuppressed, measureNow, syncVisual]);
 
   const handleMovePoints = useCallback((points: GesturePoint[]) => {
     if (!points.length || optionsRef.current.disabled) return;
+    if (stateRef.current.phase === "settling") return;
     const update: GestureUpdate = pointerMove(stateRef.current, {
       points,
       metrics: metricsRef.current,
@@ -279,15 +355,18 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     syncVisual(update.state);
   }, [applyScrollTopNow, config, markSuppressed, syncVisual]);
 
-  const cancel = useCallback(() => {
-    const next = cancelGesture(stateRef.current);
+  const cancel = useCallback((animate = false) => {
+    const next = cancelGesture(stateRef.current, animate);
     stateRef.current = next;
     pendingScrollTopRef.current = null;
+    if (animate && next.paperTurn.phase === "recoil") scheduleTurnEnd("recoil");
+    else clearTurnTimer();
     setIsPinching(false);
+    setPaperTurn({ ...next.paperTurn, reducedMotion: reducedMotionRef.current });
     setNativeScrollEnabled(true);
     clearFeedbackTimer();
     showFeedback("", "center");
-  }, [clearFeedbackTimer, setNativeScrollEnabled, showFeedback]);
+  }, [clearFeedbackTimer, clearTurnTimer, scheduleTurnEnd, setNativeScrollEnabled, showFeedback]);
 
   const handleEndPoints = useCallback((remaining: GesturePoint[], changed: GesturePoint[]) => {
     if (optionsRef.current.disabled) {
@@ -302,27 +381,61 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     });
     stateRef.current = update.state;
     setIsPinching(false);
-    setNativeScrollEnabled(true);
+    if (update.state.phase !== "settling") setNativeScrollEnabled(true);
+    // The release frame itself must render `complete` or `recoil`; waiting for
+    // the timer would skip the CSS transition and jump directly to the new date.
+    syncVisual(update.state);
     if (update.state.suppressClick) markSuppressed();
     if (update.navigation) {
       clearFeedbackTimer();
-      showFeedback("", "center");
-      optionsRef.current.onNavigate?.(update.navigation);
+      const ready = optionsRef.current.onNavigateReady?.(update.navigation) ?? true;
+      if (ready) {
+        clearTurnTimer();
+        const generation = ++turnGenerationRef.current;
+        const duration = paperTurnTransition(update.state.paperTurn.phase, reducedMotionRef.current).durationMs;
+        turnTimerRef.current = setTimeout(() => {
+          if (!mountedRef.current || generation !== turnGenerationRef.current) return;
+          turnTimerRef.current = null;
+          optionsRef.current.onNavigate?.(update.navigation!);
+          const next = { ...stateRef.current.paperTurn, phase: "idle" as const, direction: null, displacement: 0 };
+          stateRef.current = { ...stateRef.current, phase: "done", paperTurn: next };
+          setPaperTurn(next);
+          setNativeScrollEnabled(true);
+          scheduleMeasure();
+        }, duration);
+      } else {
+        const next = {
+          ...update.state,
+          phase: "done" as const,
+          paperTurn: { ...update.state.paperTurn, phase: "recoil" as const },
+        };
+        stateRef.current = next;
+        setPaperTurn({ ...next.paperTurn, reducedMotion: reducedMotionRef.current });
+        scheduleTurnEnd("recoil");
+        showTransientFeedback(`正在准备${update.navigation === "prev" ? config().labels.previous : config().labels.next}，请稍后再试`);
+      }
     } else if (update.blocked) {
       showTransientFeedback(update.state.feedback, "center");
     } else {
       clearFeedbackTimer();
       showFeedback("", "center");
+      if (update.state.paperTurn.phase === "recoil") scheduleTurnEnd("recoil");
     }
     if (update.ended) scheduleMeasure();
-  }, [cancel, clearFeedbackTimer, config, markSuppressed, scheduleMeasure, setNativeScrollEnabled, showFeedback, showTransientFeedback]);
+  }, [cancel, clearFeedbackTimer, clearTurnTimer, config, markSuppressed, scheduleMeasure, scheduleTurnEnd, setNativeScrollEnabled, showFeedback, showTransientFeedback, syncVisual]);
 
   const handleCancel = useCallback(() => {
-    cancel();
+    cancel(true);
     markSuppressed();
   }, [cancel, markSuppressed]);
 
   const consumeClickSuppression = useCallback(() => {
+    // Touchend can precede the synthetic click while recoil is still running.
+    // Keep the lease until the settling timer has actually finished.
+    if (stateRef.current.phase === "settling") {
+      suppressClickRef.current = true;
+      return true;
+    }
     const suppressed = suppressClickRef.current;
     suppressClickRef.current = false;
     if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
@@ -334,7 +447,29 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     const detail = event?.detail;
     if (!detail) return;
     if (typeof detail.scrollTop === "number" && Number.isFinite(detail.scrollTop)) {
-      metricsRef.current.scrollTop = detail.scrollTop;
+      const scrollTop = detail.scrollTop;
+      metricsRef.current.scrollTop = scrollTop;
+      if (stateRef.current.phase === "idle" || stateRef.current.phase === "done") {
+        setGestureScrollTop(scrollTop);
+      }
+      const trackIntent = shouldTrackScrollIntent({
+        phase: stateRef.current.phase,
+        pointerCount: stateRef.current.pointerCount,
+        isDrag: detail.isDrag,
+      });
+      if (!trackIntent) {
+        // Pulls, pinches, settling turns and programmatic restoration all rebase
+        // without emission, so a later real scroll starts from the actual offset.
+        scrollChromeRef.current = resetScrollChromeState(
+          scrollTop,
+          scrollChromeRef.current,
+          stateRef.current.phase !== "idle" && stateRef.current.phase !== "done",
+        );
+      } else {
+        const result = updateScrollIntent(scrollChromeRef.current, scrollTop, Date.now());
+        scrollChromeRef.current = result.state;
+        if (result.intent) optionsRef.current.onScrollIntent?.(result.intent);
+      }
     }
     if (typeof detail.scrollHeight === "number" && detail.scrollHeight > 0) {
       metricsRef.current.contentHeight = detail.scrollHeight;
@@ -351,8 +486,20 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       if (suppressTimerRef.current) clearTimeout(suppressTimerRef.current);
       if (feedbackTimerRef.current) clearTimeout(feedbackTimerRef.current);
       if (measureTimerRef.current) clearTimeout(measureTimerRef.current);
+      clearTurnTimer();
       stateRef.current = cancelGesture(stateRef.current);
     };
+  }, [clearTurnTimer]);
+
+  useEffect(() => {
+    if (process.env.TARO_ENV !== "h5" || typeof window?.matchMedia !== "function") return;
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => {
+      reducedMotionRef.current = query.matches;
+    };
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
   }, []);
 
   useEffect(() => {
@@ -361,6 +508,19 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     }, 0);
     return () => clearTimeout(timer);
   }, [measureNow]);
+
+  useEffect(() => {
+    const immediateTimer = setTimeout(() => {
+      if (mountedRef.current) measureNow();
+    }, 0);
+    const settledTimer = setTimeout(() => {
+      if (mountedRef.current) measureNow();
+    }, 220);
+    return () => {
+      clearTimeout(immediateTimer);
+      clearTimeout(settledTimer);
+    };
+  }, [options.viewportExpansion, measureNow]);
 
   useEffect(() => {
     if (process.env.TARO_ENV === "h5") {
@@ -380,7 +540,8 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     query.select(`#${scrollId}`).node();
     query.exec((result) => {
       if (!mountedRef.current) return;
-      const node = result?.[0]?.node as NativeScrollView | undefined;
+      const nodeResult = result as Array<{ node?: NativeScrollView } | null | undefined> | undefined;
+      const node = nodeResult?.[0]?.node;
       if (node?.scrollTo) {
         scrollContextRef.current = node;
         // The node may resolve after a pinch already began.
@@ -425,6 +586,7 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     const element = document.getElementById(scrollId);
     if (!element) return;
     const localTop = () => element.getBoundingClientRect().top;
+    const gestureTop = () => h5TouchViewportTopRef.current ?? localTop();
     const refreshScrollMetrics = () => {
       metricsRef.current.viewportHeight = element.clientHeight;
       metricsRef.current.contentHeight = element.scrollHeight;
@@ -435,24 +597,34 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       // and boundary detection must use the exact offset under the finger.
       refreshScrollMetrics();
       measureNow();
-      const points = pointsFromTouches(event.touches, localTop());
+      // The current layer itself moves during a vertical turn. Keep the viewport
+      // origin captured by the first touch fixed for the whole gesture, including
+      // a later second touch that starts a pinch.
+      if (h5TouchViewportTopRef.current == null) {
+        h5TouchViewportTopRef.current = localTop();
+      }
+      const points = pointsFromTouches(event.touches, gestureTop());
       handleStartPoints(points);
     };
     const move = (event: TouchEvent) => {
-      const points = pointsFromTouches(event.touches, localTop());
+      const points = pointsFromTouches(event.touches, gestureTop());
       handleMovePoints(points);
       const phase = stateRef.current.phase;
-      if (points.length >= 2 || phase === "pinch" || phase === "horizontal" || phase === "pull") {
+      if (points.length >= 2 || phase === "pinch" || phase === "horizontal" || phase === "pull" || phase === "settling") {
         event.preventDefault();
       }
     };
     const end = (event: TouchEvent) => {
       handleEndPoints(
-        pointsFromTouches(event.touches, localTop()),
-        pointsFromTouches(event.changedTouches, localTop()),
+        pointsFromTouches(event.touches, gestureTop()),
+        pointsFromTouches(event.changedTouches, gestureTop()),
       );
+      if (event.touches.length === 0) h5TouchViewportTopRef.current = null;
     };
-    const cancelTouch = () => handleCancel();
+    const cancelTouch = () => {
+      h5TouchViewportTopRef.current = null;
+      handleCancel();
+    };
     element.addEventListener("touchstart", start, { passive: true });
     element.addEventListener("touchmove", move, { passive: false, capture: true });
     element.addEventListener("touchend", end, { passive: true });
@@ -490,11 +662,16 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     canvasHeight: baseCanvasHeight > 0 ? baseCanvasHeight * options.scale : 0,
     scrollTop,
     isPinching,
+    paperTurn,
+    gestureScrollTop,
+    viewportWidth,
+    viewportHeight,
     feedback: feedback.text,
     feedbackPlacement: feedback.placement,
     onScroll,
     nativeTouchProps,
     consumeClickSuppression,
     cancel,
+    applyScrollTop: applyScrollTopNow,
   };
 }
