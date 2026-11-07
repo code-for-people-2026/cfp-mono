@@ -1,3 +1,8 @@
+import { execFileSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   createGestureState,
@@ -9,12 +14,12 @@ import {
   type GesturePoint,
   type GestureState,
 } from "../src/gestures/model";
+import { paperTurnTransition } from "../src/gestures/paper-turn";
 import {
-  completedPaperTurnDisplacement,
-  resolvePaperCurl,
-  resolvePaperFoldGeometry,
-  resolvePaperTurnTransform,
-} from "../src/gestures/paper-turn";
+  resolvePaperFoldFrame,
+  resolvePaperFoldMotion,
+  type PaperFoldPolygon,
+} from "../src/gestures/paper-fold";
 
 const metrics = (overrides: Partial<GestureMetrics> = {}): GestureMetrics => ({
   scrollTop: 0,
@@ -48,260 +53,272 @@ const drag = (
   return state;
 };
 
-describe("paper-turn geometry", () => {
-  it("moves both horizontal directions from the same right boundary", () => {
-    expect(resolvePaperTurnTransform({
-      axis: "horizontal", direction: "prev", phase: "drag",
-      displacement: 160, size: 320, side: "neighbor",
-    })).toEqual({ x: -160, y: 0, progress: 0.5 });
-    expect(resolvePaperTurnTransform({
+type MutablePoint = [number, number];
+type MutablePolygon = MutablePoint[];
+
+const square: MutablePolygon = [[0, 0], [1000, 0], [1000, 1000], [0, 1000]];
+
+const polygonArea = (polygon: readonly (readonly [number, number])[]): number => {
+  let doubledArea = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const current = polygon[index];
+    const next = polygon[(index + 1) % polygon.length];
+    doubledArea += current[0] * next[1] - next[0] * current[1];
+  }
+  return Math.abs(doubledArea) / 2 / 1_000_000;
+};
+
+const isNonCrossing = (polygon: PaperFoldPolygon): boolean => {
+  let orientation = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const previous = polygon[(index + polygon.length - 1) % polygon.length];
+    const current = polygon[index];
+    const next = polygon[(index + 1) % polygon.length];
+    const cross = (current[0] - previous[0]) * (next[1] - current[1])
+      - (current[1] - previous[1]) * (next[0] - current[0]);
+    // Ignore sub-pixel turns introduced by 0.1% quantization.
+    if (Math.abs(cross) > 500) {
+      const sign = Math.sign(cross);
+      if (orientation === 0) orientation = sign;
+      else if (sign !== orientation) return false;
+    }
+  }
+  return true;
+};
+
+const intersection = (
+  a: readonly [number, number],
+  b: readonly [number, number],
+  c: readonly [number, number],
+  d: readonly [number, number],
+): MutablePoint => {
+  const dc = [d[0] - c[0], d[1] - c[1]];
+  const ca = [a[0] - c[0], a[1] - c[1]];
+  const ba = [b[0] - a[0], b[1] - a[1]];
+  const denominator = ba[0] * dc[1] - ba[1] * dc[0];
+  const amount = (dc[0] * ca[1] - dc[1] * ca[0]) / denominator;
+  return [a[0] + amount * ba[0], a[1] + amount * ba[1]];
+};
+
+/** Test-only Sutherland-Hodgman clipping; runtime code never clips geometry. */
+const clipConvex = (subject: PaperFoldPolygon, inputClip: MutablePolygon): MutablePolygon => {
+  let clipDoubledArea = 0;
+  for (let index = 0; index < inputClip.length; index += 1) {
+    const current = inputClip[index];
+    const next = inputClip[(index + 1) % inputClip.length];
+    clipDoubledArea += current[0] * next[1] - next[0] * current[1];
+  }
+  const clip = clipDoubledArea < 0 ? [...inputClip].reverse() : inputClip;
+  let output = subject.map(([x, y]) => [x, y] as MutablePoint);
+  for (let edge = 0; edge < clip.length; edge += 1) {
+    if (output.length === 0) break;
+    const a = clip[edge];
+    const b = clip[(edge + 1) % clip.length];
+    const edgeX = b[0] - a[0];
+    const edgeY = b[1] - a[1];
+    const input = output;
+    output = [];
+    for (let index = 0; index < input.length; index += 1) {
+      const current = input[index];
+      const next = input[(index + 1) % input.length];
+      const currentInside = edgeX * (current[1] - a[1]) - edgeY * (current[0] - a[0]) >= -0.01;
+      const nextInside = edgeX * (next[1] - a[1]) - edgeY * (next[0] - a[0]) >= -0.01;
+      if (currentInside) {
+        output.push(current);
+        if (!nextInside) output.push(intersection(current, next, a, b));
+      } else if (nextInside) {
+        output.push(intersection(current, next, a, b));
+      }
+    }
+  }
+  return output.filter((point, index) => {
+    const next = output[(index + 1) % output.length];
+    return Math.abs(point[0] - next[0]) > 0.01 || Math.abs(point[1] - next[1]) > 0.01;
+  });
+};
+
+const visibleFlatArea = (frame: { flat: PaperFoldPolygon }): number => (
+  polygonArea(clipConvex(frame.flat, square))
+);
+
+const visibleBackArea = (frame: { flat: PaperFoldPolygon; back: PaperFoldPolygon }): number => (
+  polygonArea(clipConvex(clipConvex(frame.back, frame.flat.map(([x, y]) => [x, y])), square))
+);
+
+const analyticFlatArea = (progress: number, tilt: number): number => {
+  const slope = tilt * 0.85 * Math.sin(Math.PI * progress);
+  const intercept = (1 - progress) - slope * 0.5;
+  const valueAt = (y: number) => intercept + slope * y;
+  const boundaries = new Set([0, 1]);
+  for (const value of [0, 1]) {
+    const y = (value - intercept) / slope;
+    if (Number.isFinite(y) && y > 0 && y < 1) boundaries.add(y);
+  }
+  const points = [...boundaries].sort((a, b) => a - b);
+  let result = 0;
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const start = points[index];
+    const end = points[index + 1];
+    const clipped = Math.min(1, Math.max(0, valueAt((start + end) / 2)));
+    result += (end - start) * clipped;
+  }
+  return result;
+};
+
+const mulberry32 = (seed: number) => () => {
+  seed |= 0;
+  seed = seed + 0x6d2b79f5 | 0;
+  let bits = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  bits = bits + Math.imul(bits ^ bits >>> 7, 61 | bits) ^ bits;
+  return ((bits ^ bits >>> 14) >>> 0) / 4294967296;
+};
+
+describe("paper-fold preset table", () => {
+  it("contains signed finite four-point polygons outside the viewport without self-crossing", () => {
+    for (let tiltIndex = 0; tiltIndex <= 12; tiltIndex += 1) {
+      const tilt = tiltIndex / 6 - 1;
+      for (let progressIndex = 0; progressIndex <= 40; progressIndex += 1) {
+        const frame = resolvePaperFoldFrame(progressIndex / 40, tilt, "horizontal");
+        for (const polygon of [frame.flat, frame.back, frame.shadow]) {
+          expect(polygon).toHaveLength(4);
+          expect(polygon.every(([x, y]) => Number.isFinite(x) && Number.isFinite(y))).toBe(true);
+          expect(isNonCrossing(polygon)).toBe(true);
+        }
+      }
+    }
+
+    const start = resolvePaperFoldFrame(0, 0, "horizontal");
+    const end = resolvePaperFoldFrame(1, 0, "horizontal");
+    expect(start.flat[0]).toEqual([-2000, 0]);
+    expect(end.back[1][0]).toBeLessThan(0);
+  });
+
+  it("matches the exact flat half-plane after viewport clipping", () => {
+    for (let tiltIndex = 0; tiltIndex <= 12; tiltIndex += 1) {
+      const tilt = tiltIndex / 6 - 1;
+      for (let progressIndex = 0; progressIndex <= 40; progressIndex += 1) {
+        const progress = progressIndex / 40;
+        const frame = resolvePaperFoldFrame(progress, tilt, "horizontal");
+        expect(Math.abs(visibleFlatArea(frame) - analyticFlatArea(progress, tilt)))
+          .toBeLessThan(0.003);
+      }
+    }
+  });
+
+  it("keeps random bilinear intermediates simple and close to the exact flat mask", () => {
+    const random = mulberry32(438);
+    for (let sample = 0; sample < 500; sample += 1) {
+      const progress = random();
+      const tilt = random() * 2 - 1;
+      const frame = resolvePaperFoldFrame(progress, tilt, "horizontal");
+      for (const polygon of [frame.flat, frame.back, frame.shadow]) {
+        expect(polygon).toHaveLength(4);
+        expect(isNonCrossing(polygon)).toBe(true);
+      }
+      expect(Math.abs(visibleFlatArea(frame) - analyticFlatArea(progress, tilt)))
+        .toBeLessThan(0.01);
+    }
+  });
+
+  it("hides projected backs at endpoints while providing a broad visible intermediate flap", () => {
+    for (const tilt of [-1, 0, 1]) {
+      expect(visibleBackArea(resolvePaperFoldFrame(0, tilt, "horizontal"))).toBe(0);
+      expect(visibleBackArea(resolvePaperFoldFrame(1, tilt, "horizontal"))).toBe(0);
+    }
+    for (const progress of [0.25, 0.45, 0.65]) {
+      const frame = resolvePaperFoldFrame(progress, 0, "horizontal");
+      expect(visibleBackArea(frame)).toBeGreaterThan(0.1);
+      expect(frame.flatClipPath).not.toContain("NaN");
+      expect(frame.backClipPath).not.toContain("NaN");
+    }
+
+    const positive = resolvePaperFoldFrame(0.5, 1, "horizontal");
+    const negative = resolvePaperFoldFrame(0.5, -1, "horizontal");
+    expect(visibleBackArea(positive)).toBeGreaterThan(0.1);
+    expect(visibleBackArea(negative)).toBeGreaterThan(0.1);
+    expect(positive.back.some(([x, y], index) => Math.abs(x - negative.back[index][0]) > 2
+      || Math.abs(y - negative.back[index][1]) > 2)).toBe(true);
+  });
+
+  it("interpolates the four surrounding frames and transposes vertical coordinates", () => {
+    const near00 = resolvePaperFoldFrame(0.5, 0, "horizontal");
+    const near10 = resolvePaperFoldFrame(0.525, 0, "horizontal");
+    const near01 = resolvePaperFoldFrame(0.5, 1 / 6, "horizontal");
+    const near11 = resolvePaperFoldFrame(0.525, 1 / 6, "horizontal");
+    const center = resolvePaperFoldFrame(0.5125, 1 / 12, "horizontal");
+    center.back.forEach((point, index) => {
+      const expected = [0, 1].map((slot) => (
+        (near00.back[index][slot] + near10.back[index][slot]
+          + near01.back[index][slot] + near11.back[index][slot]) / 4
+      ));
+      expect(point[0]).toBeCloseTo(expected[0], 8);
+      expect(point[1]).toBeCloseTo(expected[1], 8);
+    });
+
+    const horizontalAtTilt = resolvePaperFoldFrame(0.5, 0.5, "horizontal");
+    const vertical = resolvePaperFoldFrame(0.5, 0.5, "vertical");
+    expect(vertical.back).toEqual(horizontalAtTilt.back.map(([x, y]) => [y, x]));
+  });
+
+  it("generates byte-identical checked-in output", () => {
+    const directory = mkdtempSync(join(tmpdir(), "bubu-paper-fold-"));
+    const script = fileURLToPath(new URL("../scripts/generate-paper-fold.mjs", import.meta.url));
+    const committed = fileURLToPath(new URL("../src/gestures/paper-fold-frames.json", import.meta.url));
+    const first = join(directory, "first.json");
+    const second = join(directory, "second.json");
+    try {
+      execFileSync(process.execPath, [script, first]);
+      execFileSync(process.execPath, [script, second]);
+      expect(readFileSync(first, "utf8")).toBe(readFileSync(second, "utf8"));
+      expect(readFileSync(first, "utf8")).toBe(readFileSync(committed, "utf8"));
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("paper-fold gesture mapping", () => {
+  it("uses outgoing progress for next and reversed incoming progress for previous", () => {
+    expect(resolvePaperFoldMotion({
       axis: "horizontal", direction: "next", phase: "drag",
-      displacement: -160, size: 320, side: "current",
-    })).toEqual({ x: -160, y: 0, progress: 0.5 });
-    expect(completedPaperTurnDisplacement("horizontal", "prev", 320)).toBe(320);
-    expect(completedPaperTurnDisplacement("horizontal", "next", 320)).toBe(-320);
-  });
+      displacement: -160, crossDisplacement: 20, size: 320,
+    })).toEqual({ progress: 0.5, tilt: 0.2 });
 
-  it("uses downward top pulls and signed upward bottom pulls on the vertical axis", () => {
-    expect(resolvePaperTurnTransform({
+    expect(resolvePaperFoldMotion({
+      axis: "horizontal", direction: "prev", phase: "drag",
+      displacement: 160, crossDisplacement: 20, size: 320,
+    })).toEqual({ progress: 0.5, tilt: 0.2 });
+
+    expect(resolvePaperFoldMotion({
       axis: "vertical", direction: "prev", phase: "drag",
-      displacement: 160, size: 400, side: "neighbor",
-    })).toEqual({ x: 0, y: -240, progress: 0.4 });
-    expect(resolvePaperTurnTransform({
-      axis: "vertical", direction: "next", phase: "drag",
-      displacement: -160, size: 400, side: "current",
-    })).toEqual({ x: 0, y: -160, progress: 0.4 });
-    expect(completedPaperTurnDisplacement("vertical", "prev", 400)).toBe(400);
-    expect(completedPaperTurnDisplacement("vertical", "next", 400)).toBe(-400);
-
-    const state = drag(
-      point(100, 300),
-      point(100, 240),
-      metrics({ scrollTop: 400, contentHeight: 800 }),
-      config(true),
-    );
-    expect(state.phase).toBe("pull");
-    expect(state.edge).toBe("bottom");
-    expect(state.direction).toBe("next");
-    expect(state.paperTurn).toMatchObject({
-      axis: "vertical", direction: "next", phase: "drag", displacement: -60,
-    });
+      displacement: 160, crossDisplacement: 20, size: 400,
+    })).toEqual({ progress: 0.6, tilt: -0.2 });
   });
 
-  it("captures the first touch once and follows cross-axis direction changes", () => {
-    const settings = config(true);
-    let state = pointerDown(createGestureState(), {
-      points: [point(100, 100)],
-      metrics: metrics(),
-      scale: 1,
-      config: settings,
+  it("follows cross-axis reversal and rejects invalid touch values", () => {
+    const positive = resolvePaperFoldMotion({
+      axis: "horizontal", direction: "next", phase: "drag",
+      displacement: -120, crossDisplacement: 30, size: 320,
     });
-    state = pointerMove(state, {
-      points: [point(220, 76)],
-      metrics: metrics(),
-      config: settings,
-    }).state;
-    expect(state.paperTurn).toMatchObject({
-      direction: "prev",
-      displacement: 120,
-      crossDisplacement: -24,
-      origin: { x: 100, y: 100 },
+    const negative = resolvePaperFoldMotion({
+      axis: "horizontal", direction: "next", phase: "drag",
+      displacement: -120, crossDisplacement: -30, size: 320,
     });
+    expect(positive.tilt).toBeGreaterThan(0);
+    expect(negative.tilt).toBeLessThan(0);
+    expect(negative.tilt).toBeCloseTo(-positive.tilt, 12);
 
-    state = pointerMove(state, {
-      points: [point(20, 124)],
-      metrics: metrics(),
-      config: settings,
-    }).state;
-    expect(state.paperTurn).toMatchObject({
-      direction: "next",
-      displacement: -80,
-      crossDisplacement: 24,
-      origin: { x: 100, y: 100 },
-    });
-  });
-});
-
-describe("paper curl", () => {
-  const curl = (overrides: Partial<Parameters<typeof resolvePaperCurl>[0]> = {}) => resolvePaperCurl({
-    axis: "horizontal",
-    phase: "drag",
-    displacement: 100,
-    crossDisplacement: 0,
-    origin: { x: 120, y: 180 },
-    width: 320,
-    height: 400,
-    ...overrides,
+    expect(resolvePaperFoldMotion({
+      axis: "horizontal", direction: "next", phase: "drag",
+      displacement: Number.NaN, crossDisplacement: Number.POSITIVE_INFINITY, size: Number.NaN,
+    })).toEqual({ progress: 0, tilt: 0 });
   });
 
-  it("reverses the touch angle within one gesture without snapping direction", () => {
-    let state = pointerDown(createGestureState(), {
-      points: [point(160, 200)],
-      metrics: metrics(),
-      scale: 1,
-      config: config(),
-    });
-    state = pointerMove(state, {
-      points: [point(260, 180)],
-      metrics: metrics(),
-      config: config(),
-    }).state;
-    const rightward = curl(state.paperTurn);
-    state = pointerMove(state, {
-      points: [point(60, 220)],
-      metrics: metrics(),
-      config: config(),
-    }).state;
-    const leftward = curl(state.paperTurn);
-
-    expect(rightward.angle).toBeLessThan(0);
-    expect(leftward.angle).toBeGreaterThan(0);
-    expect(leftward.angle).toBeCloseTo(-rightward.angle, 10);
-    expect(curl({ ...state.paperTurn, crossDisplacement: 0 }).angle).toBe(0);
-  });
-
-  it("keeps every output finite and within the visual bounds", () => {
-    const result = curl({
-      displacement: Number.NaN,
-      crossDisplacement: Number.POSITIVE_INFINITY,
-      origin: { x: Number.NEGATIVE_INFINITY, y: Number.NaN },
-      width: Number.NaN,
-      height: Number.POSITIVE_INFINITY,
-    });
-    expect(Object.values(result).every(Number.isFinite)).toBe(true);
-    expect(result.angle).toBeGreaterThanOrEqual(-8);
-    expect(result.angle).toBeLessThanOrEqual(8);
-    expect(result.curlSize).toBeLessThanOrEqual(36);
-    expect(result.shadowOpacity).toBeLessThanOrEqual(0.3);
-
-    const bounded = curl({ displacement: 320, crossDisplacement: 10000 });
-    expect(bounded.angle).toBe(8);
-    expect(bounded.curlSize).toBeLessThanOrEqual(36);
-    expect(bounded.shadowOpacity).toBeLessThanOrEqual(0.3);
-  });
-
-  it("opens smoothly and saturates before the swipe threshold", () => {
-    expect(curl({ displacement: 0, crossDisplacement: 40 }).angle).toBe(0);
-    const near = curl({ displacement: 1, crossDisplacement: 20 });
-    const saturated = curl({ displacement: 56, crossDisplacement: 20 });
-    expect(near.angle).toBeGreaterThan(0);
-    expect(near.angle).toBeLessThan(saturated.angle);
-    expect(curl({ displacement: 72, crossDisplacement: 72 * 20 / 56 }).angle)
-      .toBeCloseTo(saturated.angle, 10);
-  });
-
-  it("follows increasing cross-axis drag without an early angle cap", () => {
-    const angle10 = curl({ displacement: 120, crossDisplacement: 10 }).angle;
-    const angle20 = curl({ displacement: 120, crossDisplacement: 20 }).angle;
-    const angle30 = curl({ displacement: 120, crossDisplacement: 30 }).angle;
-
-    expect(angle10).toBeGreaterThan(0);
-    expect(angle20).toBeGreaterThan(angle10);
-    expect(angle30).toBeGreaterThan(angle20);
-    expect(angle30).toBeLessThan(8);
-    expect(curl({ displacement: 120, crossDisplacement: -30 }).angle)
-      .toBeCloseTo(-angle30, 10);
-  });
-
-  it("clamps the stable touch pivot to the physical viewport", () => {
-    expect(curl({ origin: { x: -40, y: 480 } })).toMatchObject({ originX: 0, originY: 400 });
-    expect(curl({ origin: { x: 500, y: -20 } })).toMatchObject({ originX: 320, originY: 0 });
-  });
-
-  it("lets CSS own reduced-motion and ending frames", () => {
-    const active = curl({ displacement: 100, crossDisplacement: 30 });
-    expect(active.angle).not.toBe(0);
-    expect(curl({ reducedMotion: true })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
-    expect(curl({ phase: "complete" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
-    expect(curl({ phase: "recoil" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
-    expect(curl({ phase: "idle" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
-  });
-});
-
-describe("paper fold geometry", () => {
-  it("keeps the horizontal seam, clip, and skew edge on one line", () => {
-    const geometry = resolvePaperFoldGeometry({
-      axis: "horizontal", width: 320, height: 400,
-      angle: 8, curlSize: 24, band: 56,
-    });
-
-    expect([geometry.seamStart, geometry.seamEnd].every(Number.isFinite)).toBe(true);
-    expect(geometry.seamStart).toBeGreaterThanOrEqual(320 - 56);
-    expect(geometry.seamStart).toBeLessThanOrEqual(320);
-    expect(geometry.seamEnd).toBeGreaterThanOrEqual(320 - 56);
-    expect(geometry.seamEnd).toBeLessThanOrEqual(320);
-    expect((geometry.seamEnd - geometry.seamStart) / 400)
-      .toBeCloseTo(geometry.slope, 12);
-    expect(Math.tan(geometry.skewAngle)).toBeCloseTo(geometry.slope, 12);
-    expect(geometry.clipPath).toContain(`${geometry.seamStart}px`);
-    expect(geometry.clipPath).toContain(`${geometry.seamEnd}px`);
-    expect(geometry.curl).toMatchObject({
-      left: geometry.seamStart - 24, top: 0, width: 24, height: 400,
-      transformOrigin: "100% 0%",
-    });
-    expect(geometry.curl.transform).toContain("skewX(");
-    expect(geometry.shadow).toMatchObject({
-      left: geometry.seamStart - 2, top: 0, width: 18, height: 400,
-      transformOrigin: "0% 0%",
-    });
-  });
-
-  it("reverses inclination without changing the moving-edge side", () => {
-    const positive = resolvePaperFoldGeometry({
-      axis: "horizontal", width: 320, height: 400, angle: 8, curlSize: 20, band: 56,
-    });
-    const negative = resolvePaperFoldGeometry({
-      axis: "horizontal", width: 320, height: 400, angle: -8, curlSize: 20, band: 56,
-    });
-
-    expect(positive.slope).toBeLessThan(0);
-    expect(negative.slope).toBeGreaterThan(0);
-    expect(negative.slope).toBeCloseTo(-positive.slope, 12);
-    expect(Math.max(positive.seamStart, positive.seamEnd)).toBe(320);
-    expect(Math.max(negative.seamStart, negative.seamEnd)).toBe(320);
-  });
-
-  it("keeps the vertical seam, clip, and skew edge on one line", () => {
-    const geometry = resolvePaperFoldGeometry({
-      axis: "vertical", width: 320, height: 400,
-      angle: -8, curlSize: 24, band: 56,
-    });
-
-    expect([geometry.seamStart, geometry.seamEnd].every(Number.isFinite)).toBe(true);
-    expect(Math.min(geometry.seamStart, geometry.seamEnd))
-      .toBeGreaterThanOrEqual(400 - 56);
-    expect(Math.max(geometry.seamStart, geometry.seamEnd)).toBeLessThanOrEqual(400);
-    expect((geometry.seamEnd - geometry.seamStart) / 320)
-      .toBeCloseTo(geometry.slope, 12);
-    expect(Math.tan(geometry.skewAngle)).toBeCloseTo(geometry.slope, 12);
-    expect(geometry.curl).toMatchObject({
-      left: 0, top: geometry.seamStart - 24, width: 320, height: 24,
-      transformOrigin: "0% 100%",
-    });
-    expect(geometry.curl.transform).toContain("skewY(");
-    expect(geometry.shadow).toMatchObject({
-      left: 0, top: geometry.seamStart - 2, width: 320, height: 18,
-      transformOrigin: "0% 0%",
-    });
-  });
-
-  it("keeps a flat ending edge and rejects invalid geometry safely", () => {
-    const flat = resolvePaperFoldGeometry({
-      axis: "horizontal", width: 320, height: 400,
-      angle: 0, curlSize: 0, band: 18,
-    });
-    expect(flat).toMatchObject({ seamStart: 320, seamEnd: 320, slope: 0, skewAngle: 0 });
-    expect(flat.curl).toMatchObject({ left: 320, width: 0, height: 400 });
-
-    const invalid = resolvePaperFoldGeometry({
-      axis: "vertical", width: Number.NaN, height: Number.POSITIVE_INFINITY,
-      angle: Number.NaN, curlSize: Number.POSITIVE_INFINITY, band: Number.POSITIVE_INFINITY,
-    });
-    expect(invalid.seamStart).toBe(1);
-    expect(invalid.seamEnd).toBe(1);
-    expect(invalid.slope).toBe(0);
-    expect(invalid.curl.width).toBe(1);
-    expect(invalid.curl.height).toBe(0);
+  it("keeps release timing available for preset playback", () => {
+    expect(paperTurnTransition("drag")).toEqual({ durationMs: 0, property: "none" });
+    expect(paperTurnTransition("recoil")).toEqual({ durationMs: 180, property: "transform" });
+    expect(paperTurnTransition("complete")).toEqual({ durationMs: 300, property: "transform" });
+    expect(paperTurnTransition("complete", true)).toEqual({ durationMs: 0, property: "transform" });
   });
 });
 
@@ -343,14 +360,8 @@ describe("paper-turn release", () => {
   it("never reveals a future page when next is blocked", () => {
     const settings = config(false);
     const state = drag(point(100, 100), point(20, 100), metrics(), settings);
-    expect(resolvePaperTurnTransform({
-      axis: state.paperTurn.axis,
-      direction: state.paperTurn.direction ?? "next",
-      phase: state.paperTurn.phase,
-      displacement: state.paperTurn.displacement,
-      size: 320,
-      side: "current",
-    }).progress).toBe(0);
+    expect(state.paperTurn.phase).toBe("idle");
+    expect(state.paperTurn.displacement).toBe(0);
 
     const update = pointerUp(state, {
       remaining: [],

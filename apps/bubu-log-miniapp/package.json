@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "generate:paper-fold": "node scripts/generate-paper-fold.mjs",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:wxss": "node scripts/check-wxss.mjs"

@@ -56,28 +56,8 @@ async function sendTouch(session: CDPSession, type: "touchStart" | "touchMove" |
   });
 }
 
-async function dragActiveScroll(page: Page, dy: number, finish = true): Promise<CDPSession> {
-  const box = await page.locator(".bubu-paper-current .bubu-day-scroll").boundingBox();
-  if (!box) throw new Error("Missing active day scroll");
-  const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
-  const session = await page.context().newCDPSession(page);
-  try {
-    await sendTouch(session, "touchStart", point);
-    for (let step = 1; step <= 12; step++) {
-      await page.waitForTimeout(16);
-      await sendTouch(session, "touchMove", { x: point.x, y: point.y + dy * step / 12 });
-    }
-    if (!finish) return session;
-    await page.waitForTimeout(16);
-    await sendTouch(session, "touchEnd");
-    return session;
-  } finally {
-    if (finish) await session.detach();
-  }
-}
-
 type TouchPoint = { x: number; y: number };
-type HeldTouch = { session: CDPSession; pageBox: { x: number; y: number; width: number; height: number }; point: TouchPoint };
+type HeldTouch = { session: CDPSession; point: TouchPoint };
 
 async function beginTouchAtCurrentScroll(page: Page): Promise<HeldTouch> {
   const pageBox = await page.locator(".bubu-paper-current .bubu-day-scroll").boundingBox();
@@ -85,12 +65,12 @@ async function beginTouchAtCurrentScroll(page: Page): Promise<HeldTouch> {
   const point = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
   const session = await page.context().newCDPSession(page);
   await sendTouch(session, "touchStart", point);
-  return { session, pageBox, point };
+  return { session, point };
 }
 
 async function moveHeldTouch(page: Page, touch: HeldTouch, target: TouchPoint, steps = 6): Promise<void> {
   const from = touch.point;
-  for (let step = 1; step <= steps; step++) {
+  for (let step = 1; step <= steps; step += 1) {
     await page.waitForTimeout(16);
     await sendTouch(touch.session, "touchMove", {
       x: from.x + (target.x - from.x) * step / steps,
@@ -100,122 +80,197 @@ async function moveHeldTouch(page: Page, touch: HeldTouch, target: TouchPoint, s
   touch.point = target;
 }
 
-async function layerOffDiagonals(page: Page, selector: string): Promise<{ rotation: number; shear: number }> {
-  return page.locator(selector).evaluate((element) => {
+type TextGeometry = {
+  key: string;
+  text: string;
+  x: number;
+  y: number;
+  preview: boolean;
+  identity: boolean;
+};
+
+async function captureTextGeometry(page: Page): Promise<TextGeometry[]> {
+  return page.locator(".bubu-timeline-viewport .bubu-event-label").evaluateAll((elements) => elements.map((element, index) => {
+    const rect = element.getBoundingClientRect();
     let node: Element | null = element;
-    let rotation = 0;
-    let shear = 0;
-    while (node != null) {
+    let identity = true;
+    while (node != null && !node.classList.contains("bubu-timeline-viewport")) {
       const transform = getComputedStyle(node).transform;
       const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
-      rotation = Math.max(rotation, Math.abs(Math.atan2(matrix.m12, matrix.m11) * 180 / Math.PI));
-      shear = Math.max(shear, Math.abs(Math.atan2(matrix.m21, matrix.m22) * 180 / Math.PI));
+      const isPreviewScroll = node.classList.contains("bubu-paper-preview-scroll");
+      const identityHere = matrix.m11 === 1 && matrix.m22 === 1
+        && matrix.m12 === 0 && matrix.m21 === 0
+        && matrix.m41 === 0 && (isPreviewScroll ? matrix.m42 <= 0.01 : matrix.m42 === 0);
+      identity = identity && identityHere;
       node = node.parentElement;
     }
-    return { rotation, shear };
+    return {
+      key: `${index}:${element.textContent ?? ""}`,
+      text: element.textContent ?? "",
+      x: rect.x,
+      y: rect.y,
+      preview: element.closest(".bubu-paper-preview-scroll") != null,
+      identity,
+    };
+  }));
+}
+
+async function expectStationaryText(page: Page, before: TextGeometry[], requirePreview: boolean) {
+  const after = await captureTextGeometry(page);
+  expect(after.length).toBeGreaterThanOrEqual(before.length);
+  expect(before.some((item) => !item.preview)).toBe(true);
+  if (requirePreview) expect(before.some((item) => item.preview)).toBe(true);
+  for (const initial of before) {
+    const current = after.find((item) => item.key === initial.key && item.text === initial.text);
+    expect(current, initial.key).toBeDefined();
+    expect(current?.x).toBeCloseTo(initial.x, 1);
+    expect(current?.y).toBeCloseTo(initial.y, 1);
+    expect(current?.identity).toBe(true);
+  }
+}
+
+async function expectIdentityLayers(page: Page, selectors: string[]) {
+  for (const selector of selectors) {
+    await expect.poll(() => page.locator(selector).evaluate((element) => {
+      let node: Element | null = element;
+      let identity = true;
+      while (node != null && !node.classList.contains("bubu-timeline-viewport")) {
+        const transform = getComputedStyle(node).transform;
+        const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+        identity = identity && matrix.m11 === 1 && matrix.m22 === 1
+          && matrix.m12 === 0 && matrix.m21 === 0
+          && matrix.m41 === 0 && matrix.m42 === 0;
+        node = node.parentElement;
+      }
+      return identity;
+    })).toBe(true);
+  }
+}
+
+type FoldGeometry = {
+  points: TouchPoint[];
+  areaRatio: number;
+  diagonal: number;
+};
+
+async function foldGeometry(page: Page, layer: string, kind: "back" | "flat"): Promise<FoldGeometry> {
+  return page.locator(`${layer} .bubu-paper-${kind === "back" ? "fold-back" : "sheet-clip"}`).evaluate((element) => {
+    const viewportElement = document.querySelector(".bubu-timeline-viewport");
+    const viewportRect = viewportElement?.getBoundingClientRect();
+    if (!viewportRect) return { points: [], areaRatio: 0, diagonal: 0 };
+
+    type LocalPoint = { x: number; y: number };
+    const clipPolygon = (inputClip: LocalPoint[], subject: LocalPoint[]): LocalPoint[] => {
+      let doubledClipArea = 0;
+      for (let index = 0; index < inputClip.length; index += 1) {
+        const current = inputClip[index];
+        const next = inputClip[(index + 1) % inputClip.length];
+        doubledClipArea += current.x * next.y - next.x * current.y;
+      }
+      const clip = doubledClipArea < 0 ? [...inputClip].reverse() : inputClip;
+      let output = [...subject];
+      const intersect = (a: LocalPoint, b: LocalPoint, c: LocalPoint, d: LocalPoint) => {
+        const edgeX = d.x - c.x;
+        const edgeY = d.y - c.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const denominator = dx * edgeY - dy * edgeX;
+        const amount = (edgeX * (a.y - c.y) - edgeY * (a.x - c.x)) / denominator;
+        return { x: a.x + amount * dx, y: a.y + amount * dy };
+      };
+      for (let edge = 0; edge < clip.length; edge += 1) {
+        if (output.length === 0) break;
+        const a = clip[edge];
+        const b = clip[(edge + 1) % clip.length];
+        const edgeX = b.x - a.x;
+        const edgeY = b.y - a.y;
+        const inputPoints = output;
+        output = [];
+        for (let index = 0; index < inputPoints.length; index += 1) {
+          const current = inputPoints[index];
+          const next = inputPoints[(index + 1) % inputPoints.length];
+          const currentInside = edgeX * (current.y - a.y) - edgeY * (current.x - a.x) >= -0.5;
+          const nextInside = edgeX * (next.y - a.y) - edgeY * (next.x - a.x) >= -0.5;
+          if (currentInside) {
+            output.push(current);
+            if (!nextInside) output.push(intersect(current, next, a, b));
+          } else if (nextInside) {
+            output.push(intersect(current, next, a, b));
+          }
+        }
+      }
+      return output;
+    };
+    const parseClipPath = (clipPath: string, clipRect: DOMRect): LocalPoint[] => {
+      const percentages = [...clipPath.matchAll(/(-?\d+(?:\.\d+)?)%/g)].map((match) => Number(match[1]));
+      if (percentages.length < 6 || percentages.length % 2 !== 0) return [];
+      const points: LocalPoint[] = [];
+      for (let index = 0; index < percentages.length; index += 2) {
+        points.push({
+          x: clipRect.left + percentages[index] / 100 * clipRect.width,
+          y: clipRect.top + percentages[index + 1] / 100 * clipRect.height,
+        });
+      }
+      return points;
+    };
+
+    const rect = element.getBoundingClientRect();
+    const clip = parseClipPath(getComputedStyle(element).clipPath, rect);
+    const viewport = [
+      { x: viewportRect.left, y: viewportRect.top },
+      { x: viewportRect.right, y: viewportRect.top },
+      { x: viewportRect.right, y: viewportRect.bottom },
+      { x: viewportRect.left, y: viewportRect.bottom },
+    ];
+    let visible = clipPolygon(viewport, clip);
+    const parent = element.closest(".bubu-paper-fold-region");
+    if (parent instanceof HTMLElement) {
+      const parentRect = parent.getBoundingClientRect();
+      const parentClip = parseClipPath(getComputedStyle(parent).clipPath, parentRect);
+      visible = clipPolygon(parentClip, visible);
+    }
+
+    let doubledArea = 0;
+    let diagonal = 0;
+    for (let index = 0; index < visible.length; index += 1) {
+      const current = visible[index];
+      const next = visible[(index + 1) % visible.length];
+      doubledArea += current.x * next.y - next.x * current.y;
+      const dx = Math.abs(next.x - current.x);
+      const dy = Math.abs(next.y - current.y);
+      const total = dx + dy;
+      if (total > viewportRect.width * 0.06) diagonal = Math.max(diagonal, Math.min(dx, dy) / total);
+    }
+    return {
+      points: visible,
+      areaRatio: Math.abs(doubledArea) / 2 / (viewportRect.width * viewportRect.height),
+      diagonal,
+    };
   });
 }
 
-async function expectRotatedCurl(page: Page, layer: string): Promise<number> {
-  const selector = `${layer} .bubu-paper-curl`;
-  const angle = page.locator(selector).evaluate((element) => {
-    const transform = getComputedStyle(element).transform;
-    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
-    const horizontal = element.classList.contains("bubu-paper-curl-horizontal");
-    return Math.atan2(horizontal ? matrix.m21 : matrix.m12, horizontal ? matrix.m22 : matrix.m11) * 180 / Math.PI;
-  });
-  await expect.poll(() => angle.then(Math.abs)).toBeGreaterThan(0.05);
-  await expect.poll(() => angle.then(Math.abs)).toBeLessThanOrEqual(8);
-  return angle;
+async function expectFold(page: Page, layer: string, initialFlat: string): Promise<FoldGeometry> {
+  await expect(page.locator(`${layer} .bubu-paper-fold-region`)).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-fold-back`)).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-fold-shadow`)).toHaveCount(1);
+  const geometry = await foldGeometry(page, layer, "back");
+  expect(geometry.areaRatio).toBeGreaterThan(0.02);
+  expect(geometry.diagonal).toBeGreaterThan(0.02);
+  const flat = await page.locator(`${layer} .bubu-paper-sheet-clip`).evaluate((element) => getComputedStyle(element).clipPath);
+  expect(flat).not.toBe(initialFlat);
+  return geometry;
 }
 
-async function expectFlatLayer(page: Page, selector: string): Promise<void> {
-  await expect.poll(() => layerOffDiagonals(page, selector).then(({ rotation, shear }) => (
-    Math.max(rotation, shear)
-  ))).toBeLessThanOrEqual(0.01);
+async function expectIdleFold(page: Page) {
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
 }
 
-async function expectFlatContentAncestry(page: Page, selector: string): Promise<void> {
-  const label = page.locator(
-    `${selector} .bubu-day-preview-canvas .bubu-event-label, ${selector} .bubu-day-scroll .bubu-event-label`,
-  ).first();
-  await expect(label).toHaveCount(1);
-  await expect.poll(() => label.evaluate((element) => {
-    let node: Element | null = element;
-    let maximumOffDiagonal = 0;
-    while (node != null) {
-      const matrix = new DOMMatrix(getComputedStyle(node).transform === "none" ? undefined : getComputedStyle(node).transform);
-      maximumOffDiagonal = Math.max(
-        maximumOffDiagonal,
-        Math.abs(Math.atan2(matrix.m12, matrix.m11) * 180 / Math.PI),
-        Math.abs(Math.atan2(matrix.m21, matrix.m22) * 180 / Math.PI),
-      );
-      node = node.parentElement;
-    }
-    return maximumOffDiagonal;
-  })).toBeLessThanOrEqual(0.01);
-}
-
-async function expectVisibleCurl(page: Page, layer: string): Promise<void> {
-  const curl = page.locator(`${layer} .bubu-paper-curl`);
-  await expect(curl).toHaveCount(1);
-  await expect.poll(() => curl.evaluate((element) => {
-    const rect = element.getBoundingClientRect();
-    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
-    if (!viewport) return false;
-    const overlapWidth = Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left);
-    const overlapHeight = Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top);
-    const overlapArea = Math.max(0, overlapWidth) * Math.max(0, overlapHeight);
-    const opacity = Number(getComputedStyle(element).opacity);
-    return Number.isFinite(opacity) && opacity > 0 && Math.max(rect.width, rect.height) > 5
-      && overlapWidth > 5 && overlapHeight > 5
-      && overlapArea >= viewport.width * viewport.height * 0.02;
-  })).toBe(true);
-}
-
-async function expectVisibleCastShadow(page: Page, layer: string): Promise<void> {
-  const shadow = page.locator(`${layer} .bubu-paper-cast-shadow`);
-  await expect(shadow).toHaveCount(1);
-  await expect.poll(() => shadow.evaluate((element) => {
-    const opacity = Number(getComputedStyle(element).opacity);
-    const rect = element.getBoundingClientRect();
-    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
-    const overlapWidth = viewport ? Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left) : 0;
-    return Number.isFinite(opacity) && opacity > 0 && overlapWidth > 5;
-  })).toBe(true);
-}
-
-async function expectSeamInView(page: Page, layer: string, axis: "horizontal" | "vertical"): Promise<void> {
-  const sheet = page.locator(`${layer} .bubu-paper-sheet-clip`);
-  await expect.poll(() => sheet.evaluate((element, foldAxis) => {
-    const clipPath = getComputedStyle(element).clipPath;
-    const coordinates = [...clipPath.matchAll(/(-?\d+(?:\.\d+)?)px/g)].map((match) => Number(match[1]));
-    if (coordinates.length !== 2 || coordinates.some((coordinate) => !Number.isFinite(coordinate))) return false;
-    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
-    const rect = element.getBoundingClientRect();
-    if (!viewport) return false;
-    if (foldAxis === "horizontal") {
-      const start = rect.left + Math.min(coordinates[0], coordinates[1]);
-      const end = rect.left + Math.max(coordinates[0], coordinates[1]);
-      return start < viewport.right - 2 && end > viewport.left + 2;
-    }
-    const start = rect.top + Math.min(coordinates[0], coordinates[1]);
-    const end = rect.top + Math.max(coordinates[0], coordinates[1]);
-    return start < viewport.bottom - 2 && end > viewport.top + 2;
-  }, axis)).toBe(true);
-}
-
-async function expectDecorationOwner(page: Page, layer: string): Promise<void> {
-  await expect(page.locator(".bubu-paper-curl")).toHaveCount(1);
-  await expect(page.locator(`${layer} .bubu-paper-curl`)).toHaveCount(1);
-  await expect(page.locator(".bubu-paper-cast-shadow")).toHaveCount(1);
-  await expect(page.locator(`${layer} .bubu-paper-cast-shadow`)).toHaveCount(1);
-}
-
-async function expectIdleDecorations(page: Page): Promise<void> {
-  await expect.poll(() => page.locator(".bubu-paper-curl, .bubu-paper-cast-shadow").evaluateAll((elements) => (
-    elements.every((element) => Number(getComputedStyle(element).opacity) === 0)
-  ))).toBe(true);
+async function expectPreloadedNeighbor(page: Page, direction: "next" | "prev", quantityLabel: string) {
+  const side = `.bubu-paper-neighbor-${direction}`;
+  await expect(page.locator(side)).toHaveCount(1);
+  await expect(page.locator(`${side} .bubu-day-preview-canvas`)).toHaveCount(1);
+  await expect(page.locator(`${side} .bubu-day-scroll`)).toHaveCount(0);
+  await expect(page.locator(`${side} .bubu-timeline-position .bubu-event-label`)).toHaveText(quantityLabel);
 }
 
 type TitleWindow = Window & { __bubuDateTitleHistory?: string[] };
@@ -238,74 +293,35 @@ async function titleHistory(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as TitleWindow).__bubuDateTitleHistory ?? []);
 }
 
-async function elementTranslation(page: Page, selector: string) {
-  return page.locator(selector).evaluate((element) => {
-    const transform = getComputedStyle(element).transform;
-    return new DOMMatrix(transform === "none" ? undefined : transform).m42;
-  });
-}
-
-const currentTranslation = (page: Page) => elementTranslation(page, ".bubu-paper-current");
-
-async function expectHeldGeometry(page: Page, dy: number) {
-  const viewportHeight = await page.locator(".bubu-timeline-viewport").evaluate((element) => element.getBoundingClientRect().height);
-  if (dy > 0) {
-    await expect.poll(() => currentTranslation(page)).toBe(0);
-    const neighborY = () => elementTranslation(page, ".bubu-paper-neighbor-prev");
-    await expectFlatLayer(page, ".bubu-paper-current");
-    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
-    await expectFlatContentAncestry(page, ".bubu-paper-neighbor-prev");
-    await expectDecorationOwner(page, ".bubu-paper-neighbor-prev");
-    await expectVisibleCurl(page, ".bubu-paper-neighbor-prev");
-    await expectVisibleCastShadow(page, ".bubu-paper-neighbor-prev");
-    await expectSeamInView(page, ".bubu-paper-neighbor-prev", "vertical");
-    await expect.poll(neighborY).toBeGreaterThanOrEqual(-viewportHeight + 103);
-    await expect.poll(neighborY).toBeLessThanOrEqual(-viewportHeight + 117);
-  } else {
-    await expect.poll(() => currentTranslation(page)).toBeGreaterThanOrEqual(-113);
-    await expect.poll(() => currentTranslation(page)).toBeLessThanOrEqual(-107);
-    await expect.poll(() => elementTranslation(page, ".bubu-paper-neighbor-next")).toBe(0);
-    await expectFlatLayer(page, ".bubu-paper-current");
-    await expectFlatLayer(page, ".bubu-paper-neighbor-next");
-    await expectFlatContentAncestry(page, ".bubu-paper-current");
-    await expectDecorationOwner(page, ".bubu-paper-current");
-    await expectVisibleCurl(page, ".bubu-paper-current");
-    await expectVisibleCastShadow(page, ".bubu-paper-current");
-    await expectSeamInView(page, ".bubu-paper-current", "vertical");
-  }
-}
-
-async function expectPreloadedNeighbor(page: Page, direction: "next" | "prev", quantityLabel: string) {
-  const side = `.bubu-paper-neighbor-${direction}`;
-  await expect(page.locator(side)).toHaveCount(1);
-  await expect(page.locator(`${side} .bubu-timeline-position`)).toHaveCount(1);
-  await expect(page.locator(`${side} .bubu-timeline-position .bubu-event-label`)).toHaveText(quantityLabel);
-}
-
-async function holdFullPull(page: Page, dy: number, title = page.locator(".date-title")) {
-  const heldDate = (await title.textContent()) ?? "";
-  const session = await dragActiveScroll(page, dy, false);
-  try {
-    await expectHeldGeometry(page, dy);
-    await expect(title).toHaveText(heldDate);
-    await sendTouch(session, "touchEnd");
-  } finally {
-    await session.detach();
-  }
-}
-
-test("top-down pull keeps its touch anchor through the full previous-page turn", async ({ page }) => {
+test("vertical previous-turn keeps text stationary while a diagonal fold covers current", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
   await page.locator(".bubu-paper-current .bubu-day-scroll").evaluate((element) => { element.scrollTop = 0; });
   await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
-  await holdFullPull(page, 110);
+
+  const touch = await beginTouchAtCurrentScroll(page);
+  try {
+    const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x + 8, y: origin.y + 18 }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-neighbor-prev .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
+    await moveHeldTouch(page, touch, { x: origin.x + 28, y: origin.y + 110 });
+    await expect(title).toHaveText("今日（周六）");
+    await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
+    await expectStationaryText(page, text, true);
+    await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
+    await sendTouch(touch.session, "touchEnd");
+  } finally {
+    await touch.session.detach();
+  }
   await expect(title).toContainText("昨日（周五）");
 });
 
-test("bottom-up pull keeps its touch anchor through the full next-page turn", async ({ page }) => {
+test("vertical next-turn keeps text stationary while a diagonal fold reveals real next", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -314,11 +330,28 @@ test("bottom-up pull keeps its touch anchor through the full next-page turn", as
   await expect(title).toContainText("昨日（周五）");
   await page.locator(".bubu-paper-current .bubu-day-scroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
   await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
-  await holdFullPull(page, -110);
+
+  const touch = await beginTouchAtCurrentScroll(page);
+  try {
+    const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x - 10, y: origin.y - 18 }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-current .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
+    await moveHeldTouch(page, touch, { x: origin.x - 30, y: origin.y - 110 });
+    await expect(title).toHaveText("昨日（周五）");
+    await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
+    await expectStationaryText(page, text, true);
+    await expectFold(page, ".bubu-paper-current", initialFlat);
+    await sendTouch(touch.session, "touchEnd");
+  } finally {
+    await touch.session.detach();
+  }
   await expect(title).toContainText("今日（周六）");
 });
 
-test("horizontal previous-turn keeps flat sheets while its curl follows the cross-axis and recoils", async ({ page }) => {
+test("horizontal previous-turn reverses diagonal within one held gesture and recoils", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -328,36 +361,38 @@ test("horizontal previous-turn keeps flat sheets while its curl follows the cros
   const touch = await beginTouchAtCurrentScroll(page);
   try {
     const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x + 18, y: origin.y }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-neighbor-prev .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
     await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y + 35 });
     await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
     await expect(title).toHaveText(heldTitle ?? "");
-    const firstAngle = await expectRotatedCurl(page, ".bubu-paper-neighbor-prev");
-    await expectDecorationOwner(page, ".bubu-paper-neighbor-prev");
-    await expectFlatLayer(page, ".bubu-paper-current");
-    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
-    await expectFlatContentAncestry(page, ".bubu-paper-neighbor-prev");
-    await expectSeamInView(page, ".bubu-paper-neighbor-prev", "horizontal");
-    await expectVisibleCurl(page, ".bubu-paper-neighbor-prev");
-    await expectVisibleCastShadow(page, ".bubu-paper-neighbor-prev");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
+    await expectStationaryText(page, text, true);
+    const positive = await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
 
     await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y - 35 });
-    const secondAngle = await expectRotatedCurl(page, ".bubu-paper-neighbor-prev");
-    expect(firstAngle * secondAngle).toBeLessThan(0);
-    await expectFlatLayer(page, ".bubu-paper-current");
-    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
+    const negative = await foldGeometry(page, ".bubu-paper-neighbor-prev", "back");
+    expect(negative.areaRatio).toBeGreaterThan(0.02);
+    expect(negative.points.some((point, index) => (
+      Math.abs(point.x - positive.points[index].x) > 2
+      || Math.abs(point.y - positive.points[index].y) > 2
+    ))).toBe(true);
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
     await expect(title).toHaveText(heldTitle ?? "");
 
     await moveHeldTouch(page, touch, { x: origin.x + 8, y: origin.y });
     await sendTouch(touch.session, "touchEnd");
     await page.waitForTimeout(250);
     await expect(title).toHaveText(heldTitle ?? "");
-    await expectIdleDecorations(page);
+    await expectIdleFold(page);
   } finally {
     await touch.session.detach();
   }
 });
 
-test("horizontal next-turn keeps flat sheets, preloads the real next page, and refuses today's future", async ({ page }) => {
+test("horizontal next-turn preloads the real next page and refuses today's future", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -370,17 +405,16 @@ test("horizontal next-turn keeps flat sheets, preloads the real next page, and r
   const touch = await beginTouchAtCurrentScroll(page);
   try {
     const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x - 18, y: origin.y }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-current .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
     await moveHeldTouch(page, touch, { x: origin.x - 110, y: origin.y - 25 });
     await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
     await expect(title).toHaveText(heldTitle ?? "");
-    await expectRotatedCurl(page, ".bubu-paper-current");
-    await expectDecorationOwner(page, ".bubu-paper-current");
-    await expectFlatLayer(page, ".bubu-paper-neighbor-next");
-    await expectFlatLayer(page, ".bubu-paper-current");
-    await expectFlatContentAncestry(page, ".bubu-paper-current");
-    await expectSeamInView(page, ".bubu-paper-current", "horizontal");
-    await expectVisibleCurl(page, ".bubu-paper-current");
-    await expectVisibleCastShadow(page, ".bubu-paper-current");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
+    await expectStationaryText(page, text, true);
+    await expectFold(page, ".bubu-paper-current", initialFlat);
     await sendTouch(touch.session, "touchEnd");
   } finally {
     await touch.session.detach();
@@ -396,7 +430,7 @@ test("horizontal next-turn keeps flat sheets, preloads the real next page, and r
     const origin = forbiddenTouch.point;
     await moveHeldTouch(page, forbiddenTouch, { x: origin.x - 110, y: origin.y });
     await expect(title).toContainText("今日（周六）");
-    await expectIdleDecorations(page);
+    await expectIdleFold(page);
     await sendTouch(forbiddenTouch.session, "touchEnd");
     await expect(title).toContainText("今日（周六）");
   } finally {
@@ -410,9 +444,26 @@ test("ordinary scrolling collapses and restores the day summary without losing n
   const summary = page.locator(".collapsible-day-summary");
   await expect(summary).toBeVisible();
   expect(await summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
-  await dragActiveScroll(page, -120);
-  await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
-  await dragActiveScroll(page, 80);
+  const scroll = page.locator(".bubu-paper-current .bubu-day-scroll");
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (const dy of [-120, 80]) {
+      const box = await scroll.boundingBox();
+      if (!box) throw new Error("Missing active day scroll");
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await sendTouch(session, "touchStart", point);
+      for (let step = 1; step <= 12; step += 1) {
+        await page.waitForTimeout(16);
+        await sendTouch(session, "touchMove", { x: point.x, y: point.y + dy * step / 12 });
+      }
+      await page.waitForTimeout(16);
+      await sendTouch(session, "touchEnd");
+      await page.waitForTimeout(40);
+      if (dy === -120) await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
+    }
+  } finally {
+    await session.detach();
+  }
   await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
   await expect(page.locator(".calendar-navigation")).toBeVisible();
 });
