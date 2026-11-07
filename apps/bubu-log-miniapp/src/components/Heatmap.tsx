@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Text, View } from '@tarojs/components'
 import { dateLabel } from '../model/date'
+import { activityCategoryTone } from '../model/presentation'
 import { buildCareMonthRings, type CareRingMetric } from '../model/care-rings'
 import type { Activity, DailyStat } from '../model/types'
 import type { CarePreferences } from '../preferences/care-preferences'
@@ -31,10 +32,10 @@ interface CareMetricStyle {
 }
 
 const metricStyles: Record<CareRingMetric['key'], CareMetricStyle> = {
-  sleep: { key: 'sleep', label: '睡', color: '#528ba2', meaning: '睡眠时长' },
-  outdoor: { key: 'outdoor', label: '玩', color: '#7b9c64', meaning: '户外时长' },
-  milk: { key: 'milk', label: '吃', color: '#c56b6b', meaning: '瓶喂奶量+亲喂估计/记录量' },
-  diaper: { key: 'diaper', label: '便', color: '#c9a249', meaning: '尿布数量' },
+  sleep: { key: 'sleep', label: '睡', color: activityCategoryTone('sleep').color, meaning: '睡眠时长' },
+  outdoor: { key: 'outdoor', label: '玩', color: activityCategoryTone('outdoor').color, meaning: '户外时长' },
+  milk: { key: 'milk', label: '吃', color: activityCategoryTone('milk').color, meaning: '瓶喂奶量+亲喂估计/记录量' },
+  diaper: { key: 'diaper', label: '便', color: activityCategoryTone('diaper').color, meaning: '尿布数量' },
 }
 const metricDisplayOrder: readonly CareMetricStyle[] = [
   metricStyles.sleep,

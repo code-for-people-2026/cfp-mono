@@ -30,6 +30,10 @@ const overflowWeekRecords = [
   activity("overflow-milk-two", "BOTTLE", "2026-10-23T08:31:00+08:00", { endTime: "2026-10-23T09:05:00+08:00", milkAmount: 120, milkSource: "FORMULA" }),
   activity("overflow-diaper", "DIAPER", "2026-10-23T08:33:00+08:00", { hasPee: true }),
 ];
+const fullwidthDayRecords = [
+  ...denseWeekRecords,
+  activity("fullwidth-outdoor", "OUTDOOR", "2026-10-23T10:00:00+08:00", { endTime: "2026-10-23T11:00:00+08:00" }),
+];
 const ringRecords = [
   ...records,
   activity("ring-breastfeed", "BREASTFEED", "2026-10-23T10:30:00+08:00", { endTime: "2026-10-23T10:50:00+08:00" }),
@@ -285,6 +289,21 @@ test("existing account opens day, week, heatmap, trends and read-only details", 
   await expect(page.locator(".date-title")).toContainText("今日（周五）");
   await expect(page.locator(".date-title")).not.toContainText("⌄");
   await expect(page.locator(".stats-grid")).toContainText("120 ml");
+  const cards = page.locator(".stat-card");
+  const statColors = [
+    "rgb(111, 86, 136)",
+    "rgb(163, 79, 112)",
+    "rgb(163, 79, 112)",
+    "rgb(128, 86, 109)",
+    "rgb(128, 107, 23)",
+    "rgb(140, 101, 31)",
+    "rgb(150, 107, 80)",
+    "rgb(150, 107, 80)",
+  ];
+  for (const [index, color] of statColors.entries()) {
+    await expect(cards.nth(index)).toHaveCSS("background-color", "rgb(255, 253, 249)");
+    await expect(cards.nth(index).locator(".stat-label")).toHaveCSS("color", color);
+  }
   await page.screenshot({ path: "test-results/diary-day.png", fullPage: true });
   await calendarView(page, "周历");
   await expect(page.locator(".bubu-week-card")).toBeVisible();
@@ -566,8 +585,24 @@ test("a second completed sleep band keeps its interval and stays full width", as
 
 test("320px day backgrounds span the hour gutter while foreground records stay clickable", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await fixture(page, { recordsOverride: denseWeekRecords });
+  await fixture(page, { recordsOverride: fullwidthDayRecords });
   await page.goto("/");
+  await expect(page.locator(".bubu-latest-gap").filter({ hasText: "距上次睡眠" }).locator(".bubu-legend-dot"))
+    .toHaveCSS("background-color", "rgb(111, 86, 136)");
+  await expect(page.locator(".bubu-latest-gap").filter({ hasText: "距上次吃奶" }).locator(".bubu-legend-dot"))
+    .toHaveCSS("background-color", "rgb(163, 79, 112)");
+  const bands = page.locator(".bubu-timeline-background");
+  await expect(bands).toHaveCount(2);
+  await expect(bands.filter({ hasText: "睡眠" }).locator(".bubu-timeline-band"))
+    .toHaveCSS("background-color", "rgb(240, 235, 246)");
+  await expect(bands.filter({ hasText: "睡眠" }).locator(".bubu-event-label"))
+    .toHaveCSS("color", "rgb(111, 86, 136)");
+  await expect(bands.filter({ hasText: "户外" }).locator(".bubu-timeline-band"))
+    .toHaveCSS("background-color", "rgb(251, 242, 217)");
+  await expect(bands.filter({ hasText: "户外" }).locator(".bubu-event-label"))
+    .toHaveCSS("color", "rgb(140, 101, 31)");
+  expect(await bands.evaluateAll((elements) => elements.map((element) => (element as HTMLElement).style.width)))
+    .toEqual(["100%", "100%"]);
   const band = page.locator(".bubu-timeline-background").first();
   await band.scrollIntoViewIfNeeded();
   await expect(band).toBeVisible();
@@ -904,10 +939,20 @@ test("two-finger vertical pinch zooms in and out on day and week without browser
 
 test("320px week labels keep the measurement on one readable line", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await fixture(page);
+  await fixture(page, {
+    recordsOverride: [...records, activity("week-outdoor", "OUTDOOR", "2026-10-23T10:00:00+08:00", { endTime: "2026-10-23T11:00:00+08:00" })],
+  });
   await page.goto("/");
   await calendarView(page, "周历");
   await expect(page.locator(".bubu-week-card")).toBeVisible();
+  const weekSleep = page.locator(".bubu-week-event-bg").filter({ hasText: "7h" });
+  const weekOutdoor = page.locator('.bubu-week-event-bg[aria-label^="户外晒太阳"]');
+  await expect(weekSleep).toHaveCSS("background-color", "rgb(240, 235, 246)");
+  await expect(weekSleep).toHaveCSS("border-left-color", "rgb(180, 160, 202)");
+  await expect(weekSleep).toHaveCSS("color", "rgb(111, 86, 136)");
+  await expect(weekOutdoor).toHaveCSS("background-color", "rgb(251, 242, 217)");
+  await expect(weekOutdoor).toHaveCSS("border-left-color", "rgb(217, 184, 95)");
+  await expect(weekOutdoor).toHaveCSS("color", "rgb(140, 101, 31)");
 
   const allTexts = (await page.locator(".bubu-week-event-label").allTextContents()).map((text) => text.trim());
   expect(allTexts).toContain("120ml");
@@ -1176,10 +1221,10 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   const legend = card.locator(".bubu-legend-item");
   await expect(legend).toHaveCount(4);
   const legendExpectations = [
-    { label: "睡", meaning: "睡眠时长", color: "rgb(82, 139, 162)" },
-    { label: "玩", meaning: "户外时长", color: "rgb(123, 156, 100)" },
-    { label: "吃", meaning: "瓶喂奶量+亲喂估计/记录量", color: "rgb(197, 107, 107)" },
-    { label: "便", meaning: "尿布数量", color: "rgb(201, 162, 73)" },
+    { label: "睡", meaning: "睡眠时长", color: "rgb(111, 86, 136)" },
+    { label: "玩", meaning: "户外时长", color: "rgb(140, 101, 31)" },
+    { label: "吃", meaning: "瓶喂奶量+亲喂估计/记录量", color: "rgb(163, 79, 112)" },
+    { label: "便", meaning: "尿布数量", color: "rgb(128, 107, 23)" },
   ] as const;
   for (const [index, expected] of legendExpectations.entries()) {
     const item = legend.nth(index);
@@ -1199,10 +1244,10 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   expect(await todayRings.locator(".activity-rings__track").evaluateAll(
     (nodes) => nodes.map((node) => getComputedStyle(node).borderTopColor),
   )).toEqual([
-    "rgb(82, 139, 162)",
-    "rgb(123, 156, 100)",
-    "rgb(197, 107, 107)",
-    "rgb(201, 162, 73)",
+    "rgb(111, 86, 136)",
+    "rgb(140, 101, 31)",
+    "rgb(163, 79, 112)",
+    "rgb(128, 107, 23)",
   ]);
   const ringSizes = await page.locator(".bubu-heatmap-cell .activity-rings").evaluateAll(
     (nodes) => nodes.map((node) => ({ width: node.clientWidth, height: node.clientHeight })),
@@ -1225,10 +1270,10 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
 
   const detailCards = reading.locator(".bubu-heatmap-metric");
   const detailExpectations = [
-    { label: "睡", value: "7小时30分钟", color: "rgb(82, 139, 162)" },
-    { label: "玩", value: "3小时20分钟", color: "rgb(123, 156, 100)" },
-    { label: "吃", value: "约 520–620 ml", color: "rgb(197, 107, 107)" },
-    { label: "便", value: "4 次", color: "rgb(201, 162, 73)" },
+    { label: "睡", value: "7小时30分钟", color: "rgb(111, 86, 136)" },
+    { label: "玩", value: "3小时20分钟", color: "rgb(140, 101, 31)" },
+    { label: "吃", value: "约 520–620 ml", color: "rgb(163, 79, 112)" },
+    { label: "便", value: "4 次", color: "rgb(128, 107, 23)" },
   ] as const;
   for (const [index, expected] of detailExpectations.entries()) {
     const detail = detailCards.nth(index);

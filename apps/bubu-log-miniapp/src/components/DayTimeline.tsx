@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ScrollView, Text, View } from '@tarojs/components'
 import {
+  activityCategoryTone,
   activityTone,
   formatDuration,
   layoutDayTimeline,
@@ -124,8 +125,8 @@ export function DayTimeline({
     <View className='bubu-viz-card bubu-day-card'>
       {isToday && showCurrentTime && <View className='bubu-day-actions'><View className='bubu-text-action' onClick={goToNow}>此刻</View></View>}
       {isToday && showCurrentTime && (sinceLatest.sleep != null || sinceLatest.feed != null) && <View className='bubu-latest-gaps'>
-        {sinceLatest.sleep != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#83a8b9' }} /><Text>距上次睡眠 {formatDuration(sinceLatest.sleep)}</Text></View>}
-        {sinceLatest.feed != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: '#d29c9a' }} /><Text>距上次吃奶 {formatDuration(sinceLatest.feed)}</Text></View>}
+        {sinceLatest.sleep != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: activityCategoryTone('sleep').color }} /><Text>距上次睡眠 {formatDuration(sinceLatest.sleep)}</Text></View>}
+        {sinceLatest.feed != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: activityCategoryTone('milk').color }} /><Text>距上次吃奶 {formatDuration(sinceLatest.feed)}</Text></View>}
       </View>}
       {blocks.length === 0 && <View className='bubu-empty-inline'>这一天还没有记录</View>}
       <View className='bubu-timeline-viewport'>

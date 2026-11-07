@@ -1,4 +1,4 @@
-import { activityLabel, activityTone, weekBlockLabel, weekBlockLabelParts } from "./presentation";
+import { activityCategoryTone, activityLabel, activityTone, weekBlockLabel, weekBlockLabelParts } from "./presentation";
 import { addDays, dateKey, dayBounds, durationMinutes, timestamp, todayKey } from "./date";
 import type { Activity, ActivityType, DateInput, WeeklyFilter } from "./types";
 
@@ -135,10 +135,10 @@ export function previousEvening(activities: readonly Activity[], date: DateInput
 }
 
 export const WEEKLY_FILTERS: Array<{ key: WeeklyFilter; label: string; types: ActivityType[]; color: string }> = [
-  { key: "sleep", label: "睡眠", types: ["SLEEP"], color: "#83a8b9" },
-  { key: "feeding", label: "喂奶", types: ["BREASTFEED", "BOTTLE", "PUMP"], color: "#d29c9a" },
-  { key: "diaper", label: "换尿布", types: ["DIAPER"], color: "#c0aa6d" },
-  { key: "exercise", label: "运动", types: ["HEAD_LIFT", "PASSIVE_EXERCISE", "GAS_EXERCISE", "BATH", "OUTDOOR", "EARLY_EDUCATION"], color: "#bd9d77" },
+  { key: "sleep", label: "睡眠", types: ["SLEEP"], color: activityCategoryTone("sleep").color },
+  { key: "feeding", label: "喂奶", types: ["BREASTFEED", "BOTTLE", "PUMP"], color: activityCategoryTone("milk").color },
+  { key: "diaper", label: "换尿布", types: ["DIAPER"], color: activityCategoryTone("diaper").color },
+  { key: "exercise", label: "运动", types: ["HEAD_LIFT", "PASSIVE_EXERCISE", "GAS_EXERCISE", "BATH", "OUTDOOR", "EARLY_EDUCATION"], color: activityTone("HEAD_LIFT").border },
 ];
 export interface WeekBlock {
   activity: Activity;

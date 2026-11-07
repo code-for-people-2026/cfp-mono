@@ -16,25 +16,47 @@ export const BREAST_FIRMNESS_LABELS = { SOFT: "软", ELASTIC: "弹", HARD: "硬"
 export const SPIT_UP_LABELS = { NORMAL: "普通吐奶", PROJECTILE: "喷射性吐奶" };
 
 export interface ActivityTone { color: string; background: string; border: string }
+
+/**
+ * The home surfaces share one semantic palette. `color` is the foreground/ring
+ * tone, `background` is the pale fill, and `border` is the coordinating outline.
+ */
+export const ACTIVITY_CATEGORY_TONES = {
+  sleep: { color: "#6f5688", background: "#f0ebf6", border: "#b4a0ca" },
+  outdoor: { color: "#8c651f", background: "#fbf2d9", border: "#d9b85f" },
+  milk: { color: "#a34f70", background: "#fbe9ef", border: "#d991ab" },
+  diaper: { color: "#806b17", background: "#f9f3d5", border: "#cbb755" },
+  pump: { color: "#80566d", background: "#f5e8f0", border: "#c493ac" },
+} as const satisfies Record<string, ActivityTone>;
+export type ActivityCategoryToneKey = keyof typeof ACTIVITY_CATEGORY_TONES;
+export const activityCategoryTone = (key: ActivityCategoryToneKey): ActivityTone => ACTIVITY_CATEGORY_TONES[key];
+
 const tones: Record<string, ActivityTone> = {
-  sky: { color: "#456f83", background: "#e5eff3", border: "#83a8b9" },
-  rose: { color: "#945a5b", background: "#f8e7e5", border: "#d29c9a" },
-  pink: { color: "#945a5b", background: "#f8e7e5", border: "#d29c9a" },
-  fuchsia: { color: "#78618d", background: "#eee8f3", border: "#aa96bc" },
-  yellow: { color: "#8b773d", background: "#f4efdd", border: "#c0aa6d" },
+  legacyYellow: { color: "#8b773d", background: "#f4efdd", border: "#c0aa6d" },
   amber: { color: "#8d7050", background: "#f3eadd", border: "#bd9d77" },
   orange: { color: "#966b50", background: "#f7e9dc", border: "#c7a183" },
   red: { color: "#a35e55", background: "#fae8e3", border: "#d49a90" },
   gray: { color: "#776f62", background: "#f0ede7", border: "#aba18f" },
 };
 export function activityTone(type: ActivityType): ActivityTone {
-  const name = {
-    SLEEP: "sky", BREASTFEED: "rose", BOTTLE: "pink", PUMP: "fuchsia", DIAPER: "yellow",
-    HEAD_LIFT: "amber", PASSIVE_EXERCISE: "orange", GAS_EXERCISE: "amber", BATH: "yellow",
-    OUTDOOR: "amber", EARLY_EDUCATION: "orange", ROLL_OVER: "amber", PULL_TO_SIT: "orange",
-    SUPPLEMENT: "orange", SPIT_UP: "red",
+  const tone = {
+    SLEEP: activityCategoryTone("sleep"),
+    BREASTFEED: activityCategoryTone("milk"),
+    BOTTLE: activityCategoryTone("milk"),
+    PUMP: activityCategoryTone("pump"),
+    DIAPER: activityCategoryTone("diaper"),
+    HEAD_LIFT: tones.amber,
+    PASSIVE_EXERCISE: tones.orange,
+    GAS_EXERCISE: tones.amber,
+    BATH: tones.legacyYellow,
+    OUTDOOR: activityCategoryTone("outdoor"),
+    EARLY_EDUCATION: tones.orange,
+    ROLL_OVER: tones.amber,
+    PULL_TO_SIT: tones.orange,
+    SUPPLEMENT: tones.orange,
+    SPIT_UP: tones.red,
   }[type];
-  return tones[name] || tones.gray!;
+  return tone ?? tones.gray!;
 }
 
 export function activityLabel(activity: Activity): string {
