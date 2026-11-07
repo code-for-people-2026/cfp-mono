@@ -1217,9 +1217,11 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   expect(await page.locator(".bubu-heatmap-cell").first().evaluate((element) => element.getBoundingClientRect().height)).toBe(56);
   await expect(page.locator(".bubu-heatmap-cell .activity-rings")).toHaveCount(23);
   await expect(page.locator(".bubu-heatmap-cell .activity-rings__ring")).toHaveCount(92);
-  await expect(card.locator(".bubu-heatmap-guide")).toContainText("四环从外到内：睡 → 玩 → 吃 → 便");
-  const legend = card.locator(".bubu-legend-item");
-  await expect(legend).toHaveCount(4);
+  const guide = card.locator(".bubu-heatmap-guide");
+  await expect(guide).toContainText("由外到内：");
+  const compactLegend = guide.locator(".bubu-legend-compact");
+  await expect(compactLegend).toHaveCount(4);
+  await expect(card.locator(".bubu-legend-expanded")).toHaveCount(0);
   const legendExpectations = [
     { label: "睡", meaning: "睡眠时长", color: "rgb(111, 86, 136)" },
     { label: "玩", meaning: "户外时长", color: "rgb(63, 107, 79)" },
@@ -1227,11 +1229,22 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
     { label: "便", meaning: "尿布数量", color: "rgb(128, 107, 23)" },
   ] as const;
   for (const [index, expected] of legendExpectations.entries()) {
-    const item = legend.nth(index);
-    await expect(item).toContainText(expected.label);
-    await expect(item).toContainText(expected.meaning);
-    await expect(item.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
+    const compactItem = compactLegend.nth(index);
+    await expect(compactItem).toHaveText(expected.label);
+    await expect(compactItem.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
   }
+
+  await card.getByLabel("展开四环图例", { exact: true }).click();
+  const expandedLegend = card.locator(".bubu-legend-expanded");
+  await expect(expandedLegend).toHaveCount(4);
+  for (const [index, expected] of legendExpectations.entries()) {
+    const expandedItem = expandedLegend.nth(index);
+    await expect(expandedItem).toContainText(expected.label);
+    await expect(expandedItem).toContainText(expected.meaning);
+    await expect(expandedItem.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
+  }
+  await card.getByLabel("收起四环图例", { exact: true }).click();
+  await expect(expandedLegend).toHaveCount(0);
 
   const todayRings = page.locator(".bubu-heatmap-today .activity-rings");
   const ariaLabel = await todayRings.getAttribute("aria-label");

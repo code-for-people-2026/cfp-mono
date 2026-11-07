@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Text, View } from '@tarojs/components'
+import { Button, Text, View } from '@tarojs/components'
 import { dateLabel } from '../model/date'
 import { activityCategoryTone } from '../model/presentation'
 import { buildCareMonthRings, type CareRingMetric } from '../model/care-rings'
@@ -94,6 +94,7 @@ export function Heatmap({
 }: HeatmapProps) {
   const [selectedDate, setSelectedDate] = useState('')
   const [referenceOpen, setReferenceOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
   const today = todayProp ?? endDate ?? ''
   const monthDate = endDate ?? today
   const calendar = useMemo(() => buildCareMonthRings({
@@ -136,17 +137,32 @@ export function Heatmap({
         })}
       </View>)}
       <View className='bubu-heatmap-guide'>
-        <Text>四环从外到内：睡 → 玩 → 吃 → 便</Text>
-      </View>
-      <View className='bubu-heatmap-key'>
+        <Text className='bubu-heatmap-guide-text'>由外到内：</Text>
         {metricDisplayOrder.map((style) => (
-          <View className='bubu-legend-item' key={style.key}>
+          <View className='bubu-legend-item bubu-legend-compact' key={style.key}>
             <View className='bubu-legend-dot' style={{ backgroundColor: style.color }} />
             <Text className='bubu-legend-label'>{style.label}</Text>
-            <Text className='bubu-legend-meaning'>{style.meaning}</Text>
           </View>
         ))}
+        <Button
+          className='bubu-heatmap-legend-toggle'
+          ariaLabel={legendOpen ? '收起四环图例' : '展开四环图例'}
+          onClick={() => setLegendOpen((open) => !open)}
+        >
+          ?
+        </Button>
       </View>
+      {legendOpen && (
+        <View className='bubu-heatmap-key'>
+          {metricDisplayOrder.map((style) => (
+            <View className='bubu-legend-item bubu-legend-expanded' key={style.key}>
+              <View className='bubu-legend-dot' style={{ backgroundColor: style.color }} />
+              <Text className='bubu-legend-label'>{style.label}</Text>
+              <Text className='bubu-legend-meaning'>{style.meaning}</Text>
+            </View>
+          ))}
+        </View>
+      )}
       {selectedDay && (
         <View className='bubu-heatmap-reading'>
           <View className='bubu-heatmap-reading-head'>
