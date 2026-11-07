@@ -133,6 +133,38 @@ describe("HTTP authorization and usable onboarding", () => {
     fixture.legacy.memberships.set("old-alice", ["baby-a"]);
   });
 
+  it("authorizes exact #438 baby profile and successful audit reads without changing scope", async () => {
+    const auditPath = "/api/app/audits?babyId=baby-a&action=CREATE&resourceType=ACTIVITY&success=true&limit=200&offset=200";
+    await code(await request("/api/app/baby-profile?babyId=baby-a"), 401, "UNAUTHORIZED");
+    await code(await request(auditPath), 401, "UNAUTHORIZED");
+    const alice = await (await legacyLogin()).json() as { token: string };
+    const bobToken = ((await (await request("/api/identity/legacy-login", { body: { username: "old-bob", password: "correct-password" } })).json()) as { token: string }).token;
+    const babyReads = fixture.legacy.babyReads.length;
+    const reads = fixture.legacy.reads.length;
+    await code(await request("/api/app/baby-profile?babyId=baby-a", { headers: bearer(bobToken) }), 403, "BABY_FORBIDDEN");
+    await code(await request(auditPath, { headers: bearer(bobToken) }), 403, "BABY_FORBIDDEN");
+    expect(fixture.legacy.babyReads).toHaveLength(babyReads);
+    expect(fixture.legacy.reads).toHaveLength(reads);
+    await code(await request("/api/app/baby-profile?babyId=baby-a", { headers: { ...bearer(alice.token), "x-baby-id": "baby-b" } }), 400, "SCOPE_MISMATCH");
+    const originalBaby = fixture.legacy.babies.get("baby-a")!;
+    try {
+      fixture.legacy.babies.set("baby-a", { ...originalBaby, birthDate: "2019-05-04", gender: "GIRL" });
+      const profile = await request("/api/app/baby-profile?babyId=baby-a", { headers: { ...bearer(alice.token), "x-baby-id": "baby-a" } });
+      expect(profile.status).toBe(200);
+      expect(await profile.json()).toEqual({ id: "baby-a", name: "小一", fullName: "一一", birthDate: "2019-05-04", gender: "GIRL" });
+      fixture.legacy.babies.set("baby-a", { ...originalBaby, birthDate: "2019-05-04", gender: "UNKNOWN" });
+      const sanitized = await request("/api/app/baby-profile?babyId=baby-a", { headers: bearer(alice.token) });
+      expect(sanitized.status).toBe(200);
+      expect(await sanitized.json()).toEqual({ id: "baby-a", name: "小一", fullName: "一一", birthDate: "2019-05-04", gender: null });
+    } finally {
+      fixture.legacy.babies.set("baby-a", originalBaby);
+    }
+    const audits = await request(auditPath, { headers: { ...bearer(alice.token), "x-baby-id": "baby-a" } });
+    expect(audits.status).toBe(200);
+    expect(await audits.json()).toEqual(fixture.legacy.auditPage);
+    expect(fixture.legacy.reads.at(-1)).toEqual({ babyId: "baby-a", path: "audits" });
+  });
+
   it("applies a per-process login admission limit without trusting forwarding headers", async () => {
     const limited = createHandler(fixture.service, origin);
     for (let i = 0; i < 60; i++) {

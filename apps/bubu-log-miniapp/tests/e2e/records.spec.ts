@@ -40,7 +40,7 @@ test("sidecar cards use server facts and expose unknown, ongoing and duplicate c
   await expect(page.getByText(/明确有尿 2 次/)).toBeVisible();
   await page.locator(".daily-summary").screenshot({ path: "test-results/records-sidecar-summary.png" });
   await page.getByLabel("打开菜单", { exact: true }).click();
-  await page.locator(".diary-drawer taro-button-core").filter({ has: page.getByText("趋势统计", { exact: true }) }).click();
+  await page.locator(".diary-drawer taro-button-core").filter({ has: page.getByText("趋势", { exact: true }) }).click();
   await expect(page.locator(".bubu-chart-point")).toHaveCount(2); // Known-zero bottle and actual diapers; unknown pump/sleep remain gaps.
   await expect(page.getByText("这段时间暂无可确定数值", { exact: true })).toBeVisible();
 });
@@ -84,7 +84,7 @@ test("sidecar details show private attachments and source context while sync fai
   await expect(page.locator(".sync-status")).toContainText("2 项媒体待补取");
   await expect(page.locator(".sync-status")).toContainText("当前显示已保存记录");
   await page.getByLabel("打开菜单", { exact: true }).click();
-  await page.locator(".diary-drawer taro-button-core").filter({ has: page.getByText("历史数据", { exact: true }) }).click();
+  await page.locator(".diary-drawer taro-button-core").filter({ has: page.getByText("历史记录", { exact: true }) }).click();
   await page.locator(".record-row").click();
   const detail = page.locator(".bubu-detail-sheet");
   await expect(detail).toContainText("第 3 版");

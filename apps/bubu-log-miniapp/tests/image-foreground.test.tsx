@@ -20,6 +20,8 @@ vi.mock("@tarojs/taro", async () => {
     },
     default: {
       eventCenter: { on: vi.fn(), off: vi.fn() },
+      onAppShow: (callback: () => void) => { fixture.show.add(callback); },
+      offAppShow: (callback: () => void) => { fixture.show.delete(callback); },
       getStorageSync: (key: string) => fixture.storage.get(key),
       setStorageSync: (key: string, value: unknown) => fixture.storage.set(key, value),
       removeStorageSync: (key: string) => fixture.storage.delete(key),

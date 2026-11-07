@@ -191,6 +191,17 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
           return json({ data: await service.legacy.updateBabyNames(babyId, input) });
         });
       }
+      if (req.method === "GET" && path === "/api/app/baby-profile") {
+        await service.authorize(principal, babyId, "records:read");
+        const baby = await service.legacy.getBaby(babyId);
+        if (!baby || baby.id !== babyId) throw new AppError(404, "NOT_FOUND", "未找到此宝宝。");
+        const gender = baby.gender;
+        return json({ id: baby.id, name: baby.name, fullName: baby.fullName ?? null, birthDate: baby.birthDate ?? null, gender: gender === "BOY" || gender === "GIRL" || gender === "OTHER" ? gender : null });
+      }
+      if (req.method === "GET" && path === "/api/app/audits") {
+        await service.authorize(principal, babyId, "records:read");
+        return json(await service.legacy.read(babyId, "audits", url.searchParams));
+      }
       if (req.method === "GET" && /^\/api\/app\/(activities(?:\/[^/]+)?|daily-stats(?:\/[^/]+)?)$/.test(path)) {
         await service.authorize(principal, babyId, "records:read");
         const value=features?await readRecordView(features.records,principal,babyId,path.slice("/api/app/".length),url.searchParams):await service.legacy.read(babyId,path.slice("/api/app/".length),url.searchParams);

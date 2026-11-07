@@ -7,7 +7,7 @@ import { chinaDayRange, emptyDailyMetrics } from "./records/statistics";
 export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "audit-photo"; documentId: string; babyId: string; url: string }
 type Doc = Record<string, unknown>;
 type Where = Record<string, unknown>;
-type Collection = "app-users" | "baby-users" | "babies" | "activities" | "daily-stats";
+type Collection = "app-users" | "baby-users" | "babies" | "activities" | "daily-stats" | "audit-logs";
 interface LegacyHttpOptions {
   origin: string;
   cmsEmail: string;
@@ -54,6 +54,34 @@ function baby(value: unknown): Baby {
   if (!babyId || typeof row.name !== "string") throw upstreamFailure();
   const text = (field: string) => typeof row[field] === "string" ? row[field] as string : null;
   return { id: babyId, name: row.name, fullName: text("fullName"), avatarUrl: text("avatarUrl"), birthDate: text("birthDate"), gender: text("gender") };
+}
+interface PublicAuditLog {
+  id: string; action: "CREATE"; resourceType: "ACTIVITY"; success: true; inputMethod: "TEXT" | "VOICE";
+  resourceId: string | null; activityId: string | null; babyId: string | null; userId: string | null;
+  inputText: string | null; createdAt: string | null;
+}
+function publicAudit(value: Doc): PublicAuditLog {
+  const optionalId = (field: "resourceId" | "activityId" | "babyId" | "userId"): string | null => {
+    const item = value[field];
+    if (item === null || item === undefined) return null;
+    const result = id(item);
+    if (!result) throw upstreamFailure();
+    return result;
+  };
+  const inputText = value.inputText;
+  if (inputText !== null && inputText !== undefined && typeof inputText !== "string") throw upstreamFailure();
+  const createdAt = value.createdAt;
+  if (createdAt !== null && createdAt !== undefined && (typeof createdAt !== "string" || !Number.isFinite(Date.parse(createdAt)))) throw upstreamFailure();
+  if (value.action !== "CREATE" || value.resourceType !== "ACTIVITY" || value.success !== true || value.inputMethod !== "TEXT" && value.inputMethod !== "VOICE") throw upstreamFailure();
+  const rowId = id(value.id);
+  if (!rowId) throw upstreamFailure();
+  return {
+    id: rowId,
+    action: "CREATE", resourceType: "ACTIVITY", success: true,
+    inputMethod: value.inputMethod,
+    resourceId: optionalId("resourceId"), activityId: optionalId("activityId"), babyId: optionalId("babyId"), userId: optionalId("userId"),
+    inputText: inputText ?? null, createdAt: createdAt ?? null,
+  };
 }
 function putQuery(query: URLSearchParams, key: string, value: unknown): void {
   if (Array.isArray(value)) value.forEach((item, index) => putQuery(query, `${key}[${index}]`, item));
@@ -192,6 +220,19 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
     const result = doc(await this.cms(`${collection}?${query}`));
     if (!Array.isArray(result.docs) || result.docs.some((row) => !isDoc(row))) throw upstreamFailure();
     return result.docs as Doc[];
+  }
+  private async page(collection: Collection, where: Where, page: number, limit: number, sort: string): Promise<{ docs: Doc[]; total: number; hasMore: boolean }> {
+    const query = new URLSearchParams({ depth: "0", limit: String(limit), page: String(page) });
+    putQuery(query, "where", where);
+    query.set("sort", sort);
+    const result = doc(await this.cms(`${collection}?${query}`));
+    const total = result.totalDocs;
+    const start = (page - 1) * limit;
+    const docs = result.docs;
+    if (!Array.isArray(docs) || docs.some((row) => !isDoc(row)) || typeof total !== "number" || !Number.isInteger(total) || total < 0 || total > Number.MAX_SAFE_INTEGER || typeof result.hasNextPage !== "boolean") throw upstreamFailure();
+    const expectedCount = total > start ? Math.min(limit, total - start) : 0;
+    if (docs.length !== expectedCount || result.hasNextPage !== start + expectedCount < total) throw upstreamFailure();
+    return { docs: docs as Doc[], total, hasMore: result.hasNextPage };
   }
 
   private async get(collection: Collection, documentId: string): Promise<Doc | null> {
@@ -407,8 +448,9 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
 
   async read(babyId: string, path: string, query: URLSearchParams): Promise<unknown> {
     if (!id(babyId)) throw new AppError(400, "INVALID_BABY", "缺少宝宝范围");
-    const match = /^(activities|daily-stats)(?:\/([^/]+))?$/.exec(path);
+    const match = /^(activities|daily-stats|audits)(?:\/([^/]+))?$/.exec(path);
     if (!match) throw new AppError(404, "NOT_FOUND", "没有此读取接口");
+    if (match[1] === "audits") return this.readAudits(babyId, match[2], query);
     const collection = match[1] as "activities" | "daily-stats";
     const detail = match[2];
     const conditions: Where[] = [{ babyId: { equals: babyId } }];
@@ -466,6 +508,37 @@ export class HttpLegacyBackend implements LegacyBackend, LegacyRecordsBackend, F
       return rows[0] ?? null;
     }
     return rows;
+  }
+
+  private async readAudits(babyId: string, detail: string | undefined, query: URLSearchParams): Promise<unknown> {
+    if (detail) throw new AppError(404, "NOT_FOUND", "没有此读取接口");
+    const one = (key: string): string => {
+      const values = query.getAll(key);
+      if (values.length !== 1) throw new AppError(400, "INVALID_INPUT", "审计查询参数不正确。");
+      return values[0]!;
+    };
+    const scope = query.getAll("babyId");
+    if (scope.length > 1 || scope[0] !== undefined && scope[0] !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+    for (const key of new Set(query.keys())) if (!["babyId", "action", "resourceType", "success", "limit", "offset"].includes(key)) throw new AppError(400, "INVALID_INPUT", "审计查询参数不正确。");
+    if (one("action") !== "CREATE" || one("resourceType") !== "ACTIVITY" || one("success") !== "true") throw new AppError(400, "INVALID_INPUT", "审计查询参数不正确。");
+    const limit = one("limit"), offset = one("offset");
+    if (!/^\d+$/.test(limit) || Number(limit) < 1 || Number(limit) > 200 || !/^\d+$/.test(offset) || Number(offset) > 5000) throw new AppError(400, "INVALID_INPUT", "审计分页参数不正确。");
+    const limitValue = Number(limit), offsetValue = Number(offset);
+    const where = { and: [
+      { babyId: { equals: babyId } }, { action: { equals: "CREATE" } }, { resourceType: { equals: "ACTIVITY" } }, { success: { equals: true } },
+    ] } satisfies Where;
+    const firstPage = Math.floor(offsetValue / limitValue) + 1;
+    const first = await this.page("audit-logs", where, firstPage, limitValue, "-createdAt,-id");
+    const selectedFromFirst = first.docs.length - offsetValue % limitValue;
+    const second = selectedFromFirst < limitValue && first.hasMore
+      ? await this.page("audit-logs", where, firstPage + 1, limitValue, "-createdAt,-id")
+      : null;
+    if (second && second.total !== first.total) throw upstreamFailure();
+    const fetched = second ? [...first.docs, ...second.docs] : first.docs;
+    if (fetched.some((row) => row.babyId !== babyId)) throw scopeFailure();
+    const data = fetched.map(publicAudit).slice(offsetValue % limitValue, offsetValue % limitValue + limitValue);
+    const total = first.total;
+    return { data, total, hasMore: offsetValue + data.length < total };
   }
 }
 
