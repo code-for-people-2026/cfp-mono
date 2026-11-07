@@ -23,7 +23,7 @@ export interface ActivityTone { color: string; background: string; border: strin
  */
 export const ACTIVITY_CATEGORY_TONES = {
   sleep: { color: "#6f5688", background: "#f0ebf6", border: "#b4a0ca" },
-  outdoor: { color: "#8c651f", background: "#fbf2d9", border: "#d9b85f" },
+  outdoor: { color: "#3f6b4f", background: "#eaf3e8", border: "#96b58e" },
   milk: { color: "#a34f70", background: "#fbe9ef", border: "#d991ab" },
   diaper: { color: "#806b17", background: "#f9f3d5", border: "#cbb755" },
   pump: { color: "#80566d", background: "#f5e8f0", border: "#c493ac" },
