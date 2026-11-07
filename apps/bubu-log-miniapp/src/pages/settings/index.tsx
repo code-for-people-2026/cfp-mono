@@ -6,7 +6,6 @@ import type { Baby } from "../../model";
 import { profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
 import {
   DEFAULT_CARE_PREFERENCES,
-  calculateBreastfeedRateFromWeighing,
   getCarePreferences,
   resetCarePreferences,
   saveCarePreferences,
@@ -18,7 +17,6 @@ import { carePreferencesScope, carePreferencesUpdatedEvent } from "../../prefere
 import "./settings.css";
 
 type RateChoice = CarePreferences["breastfeedRate"]["mode"];
-type CalibrationPreview = Extract<ReturnType<typeof calculateBreastfeedRateFromWeighing>, { ok: true }>["value"];
 
 const numberText = (value: number) => String(value);
 
@@ -63,12 +61,6 @@ export default function SettingsPage() {
   const [storageState, setStorageState] = useState<CarePreferencesStorageState>("empty");
   const [careError, setCareError] = useState("");
   const [careSaved, setCareSaved] = useState("");
-  const [calibrationOpen, setCalibrationOpen] = useState(false);
-  const [calibrationError, setCalibrationError] = useState("");
-  const [beforeGrams, setBeforeGrams] = useState("");
-  const [afterGrams, setAfterGrams] = useState("");
-  const [activeFeedMinutes, setActiveFeedMinutes] = useState("");
-  const [calibrationPreview, setCalibrationPreview] = useState<CalibrationPreview | null>(null);
   const mounted = useRef(true);
   const savingRef = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -91,12 +83,6 @@ export default function SettingsPage() {
     setPreferencesFromValue(DEFAULT_CARE_PREFERENCES, "empty");
     setCareError("");
     setCareSaved("");
-    setCalibrationOpen(false);
-    setBeforeGrams("");
-    setAfterGrams("");
-    setActiveFeedMinutes("");
-    setCalibrationPreview(null);
-    setCalibrationError("");
   };
 
   useEffect(() => {
@@ -212,7 +198,7 @@ export default function SettingsPage() {
         breastfeedRate: {
           mode: rateChoice,
           range: rate,
-          source: rateChoice === "calibrated" ? "user-calibrated" : rateChoice === "custom" ? "user-custom" : "research-heuristic",
+          source: rateChoice === "research" ? "research-heuristic" : "user-custom",
         },
         milkReference: null,
         sleepReference: null,
@@ -273,45 +259,6 @@ export default function SettingsPage() {
     }
   };
 
-  const previewCalibration = () => {
-    clearCareFeedback();
-    setCalibrationPreview(null);
-    setCalibrationError("");
-    const before = Number(beforeGrams.trim());
-    const after = Number(afterGrams.trim());
-    const minutes = Number(activeFeedMinutes.trim());
-    if (!Number.isFinite(before) || before <= 0) {
-      setCalibrationError("称重校准的开始前体重必须大于 0 克。");
-      return;
-    }
-    if (!Number.isFinite(after) || after <= 0) {
-      setCalibrationError("称重校准的结束后体重必须大于 0 克。");
-      return;
-    }
-    if (!Number.isFinite(minutes) || minutes <= 0) {
-      setCalibrationError("有效哺喂时长必须大于 0 分钟。");
-      return;
-    }
-    const result = calculateBreastfeedRateFromWeighing({ beforeGrams: before, afterGrams: after, activeFeedMinutes: minutes });
-    if (!result.ok) {
-      setCalibrationError(result.issues[0]?.message ?? "称重校准数据不完整。");
-      return;
-    }
-    setCalibrationPreview(result.value);
-  };
-
-  const applyCalibration = () => {
-    if (!calibrationPreview) return;
-    clearCareFeedback();
-    setCalibrationError("");
-    const rate = numberText(calibrationPreview.rateMlPerMinute);
-    setRateChoice("calibrated");
-    setRateMin(rate);
-    setRateMax(rate);
-    setBeforeGrams(""); setAfterGrams(""); setActiveFeedMinutes("");
-    setCalibrationPreview(null);
-  };
-
   return <View className="page settings-page">
     {process.env.TARO_ENV === "h5" && <View className="settings-navigation"><Button className="text-button" onClick={() => { void Taro.navigateBack(); }}>‹ 返回</Button><Text>设置</Text><View className="settings-spacer" /></View>}
     {loading ? <View className="state-panel">正在读取宝宝资料…</View> : baby ? <>
@@ -331,7 +278,6 @@ export default function SettingsPage() {
       <View className="settings-card preference-card">
         <Text className="preference-title">亲喂估算速度</Text>
         {storageState === "corrupt" && <Text className="preference-warning">本机数据已损坏，正在显示初始参考；保存后会修复。</Text>}
-        {rateChoice === "calibrated" && <Text className="preference-status">已按称重估计：{rateMin}–{rateMax} ml/分钟</Text>}
         <Text className="muted">初始 5–10 ml/分钟依据公开研究作粗略估计，可按个人情况调整；不代表每个人的标准流速。</Text>
         <View className="settings-segment">
           <Button className={`segment-button${rateChoice === "research" ? " active" : ""}`} ariaLabel="亲喂按初始参考估算" onClick={selectResearchRate}>初始参考 5–10</Button>
@@ -341,11 +287,11 @@ export default function SettingsPage() {
         {rateChoice !== "off" && <View className="range-row">
           <View className="range-field">
             <Text className="field-label">下限 ml/分钟</Text>
-            <Input className="login-input" ariaLabel="亲喂速度下限" type="digit" placeholder="5" value={rateMin} disabled={rateChoice === "research" || undefined} onInput={(event) => { clearCareFeedback(); if (rateChoice === "calibrated") setRateChoice("custom"); setRateMin(event.detail.value); }} />
+            <Input className="login-input" ariaLabel="亲喂速度下限" type="digit" placeholder="5" value={rateMin} disabled={rateChoice === "research" || undefined} onInput={(event) => { clearCareFeedback(); setRateMin(event.detail.value); }} />
           </View>
           <View className="range-field">
             <Text className="field-label">上限 ml/分钟</Text>
-            <Input className="login-input" ariaLabel="亲喂速度上限" type="digit" placeholder="10" value={rateMax} disabled={rateChoice === "research" || undefined} onInput={(event) => { clearCareFeedback(); if (rateChoice === "calibrated") setRateChoice("custom"); setRateMax(event.detail.value); }} />
+            <Input className="login-input" ariaLabel="亲喂速度上限" type="digit" placeholder="10" value={rateMax} disabled={rateChoice === "research" || undefined} onInput={(event) => { clearCareFeedback(); setRateMax(event.detail.value); }} />
           </View>
         </View>}
 
@@ -392,37 +338,6 @@ export default function SettingsPage() {
           <Button className="primary-button preference-save" onClick={savePreferences}>保存参考设置</Button>
           <Button className="settings-secondary" onClick={restoreDefaults}>恢复初始参考设置</Button>
         </View>
-
-        <Button
-          className="settings-disclosure"
-          ariaLabel={calibrationOpen ? "收起用称重结果校准速度" : "展开用称重结果校准速度"}
-          onClick={() => { clearCareFeedback(); setCalibrationOpen((open) => !open); setCalibrationPreview(null); setCalibrationError(""); }}
-        >{calibrationOpen ? "收起称重校准" : "用称重结果校准速度"}</Button>
-        {calibrationOpen && <View className="calibration-panel">
-          <Text className="muted">同一台秤、相同衣物和尿布。结果受秤精度影响；只保存采用的速度，不保存体重。</Text>
-          <View className="range-row">
-            <View className="range-field">
-              <Text className="field-label">喂前体重 克</Text>
-              <Input className="login-input" ariaLabel="称重校准喂前体重克" type="digit" placeholder="5000" value={beforeGrams} onInput={(event) => { clearCareFeedback(); setCalibrationPreview(null); setCalibrationError(""); setBeforeGrams(event.detail.value); }} />
-            </View>
-            <View className="range-field">
-              <Text className="field-label">喂后体重 克</Text>
-              <Input className="login-input" ariaLabel="称重校准喂后体重克" type="digit" placeholder="5103" value={afterGrams} onInput={(event) => { clearCareFeedback(); setCalibrationPreview(null); setCalibrationError(""); setAfterGrams(event.detail.value); }} />
-            </View>
-          </View>
-          <Text className="field-label">有效哺喂时长 分钟</Text>
-          <Input className="login-input" ariaLabel="称重校准有效哺喂时长分钟" type="digit" placeholder="10" value={activeFeedMinutes} onInput={(event) => { clearCareFeedback(); setCalibrationPreview(null); setCalibrationError(""); setActiveFeedMinutes(event.detail.value); }} />
-          {calibrationError && <Text className="error-text settings-feedback calibration-error">{calibrationError}</Text>}
-          <View className="settings-actions calibration-actions">
-            <Button className="settings-secondary" onClick={previewCalibration}>先预览结果</Button>
-            <Button className="settings-secondary" disabled={!calibrationPreview || undefined} onClick={applyCalibration}>采用此速度</Button>
-          </View>
-          {calibrationPreview && <View className="calibration-preview">
-            <Text className="calibration-preview-line">参考奶量：约 {numberText(calibrationPreview.approximateVolumeMl)} ml</Text>
-            <Text className="calibration-preview-line">估算速度：{numberText(calibrationPreview.rateMlPerMinute)} ml/分钟</Text>
-          </View>}
-          <Text className="preference-note">「采用此速度」只更新上方草稿；还需点「保存参考设置」才会本机生效。</Text>
-        </View>}
       </View>
     </> : <View className="state-panel"><Text className="error-text">{error}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重新读取</Button><Button className="text-button" onClick={() => { void Taro.navigateBack(); }}>返回首页</Button></View>}
   </View>;

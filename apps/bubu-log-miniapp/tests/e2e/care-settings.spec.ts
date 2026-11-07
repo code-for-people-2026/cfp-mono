@@ -22,8 +22,9 @@ async function fixture(page: Page) {
 
 async function labeledInput(page: Page, label: string) {
   const field = page.getByLabel(label, { exact: true });
-  const nestedInput = field.locator("input");
-  return (await nestedInput.count()) ? nestedInput.first() : field;
+  const nestedInput = field.locator("input").first();
+  await expect(nestedInput).toBeVisible();
+  return nestedInput;
 }
 
 async function readTaroStorage(page: Page, key: string) {
@@ -89,76 +90,5 @@ test("invalid custom reference input is rejected and never stored", async ({ pag
   const stored = await readTaroStorage(page, `bubu-care-preferences:${origin}:care-test-baby`);
   expect(stored).toBeNull();
   await expect(page.getByText("本机参考设置已保存。", { exact: true })).toHaveCount(0);
-  expect(writes()).toEqual([]);
-});
-
-test("weighing calibration previews first and persists only the selected rate", async ({ page }) => {
-  const { writes } = await fixture(page);
-  await openSettings(page);
-  await page.getByLabel("展开用称重结果校准速度").click();
-  await expect(page.locator(".calibration-panel")).toBeVisible();
-  const viewportOverflow = await page.evaluate(() => ({
-    clientWidth: document.documentElement.clientWidth,
-    scrollWidth: document.documentElement.scrollWidth,
-  }));
-  expect(viewportOverflow.scrollWidth).toBeLessThanOrEqual(viewportOverflow.clientWidth);
-
-  const beforeGrams = await labeledInput(page, "称重校准喂前体重克");
-  const afterGrams = await labeledInput(page, "称重校准喂后体重克");
-  const activeFeedMinutes = await labeledInput(page, "称重校准有效哺喂时长分钟");
-  const preview = page.getByText("先预览结果", { exact: true });
-  const apply = page.getByText("采用此速度", { exact: true });
-
-  await beforeGrams.fill("0");
-  await afterGrams.fill("5103");
-  await activeFeedMinutes.fill("10");
-  await page.getByText("先预览结果", { exact: true }).click();
-  await expect(page.getByText("称重校准的开始前体重必须大于 0 克。", { exact: true })).toBeVisible();
-
-  const makeValidPreview = async () => {
-    await beforeGrams.fill("5000");
-    await afterGrams.fill("5103");
-    await activeFeedMinutes.fill("10");
-    await preview.click();
-    await expect(page.getByText("参考奶量：约 100 ml", { exact: true })).toBeVisible();
-    await expect(page.getByText("估算速度：10 ml/分钟", { exact: true })).toBeVisible();
-  };
-
-  for (const [field, replacement] of [
-    [beforeGrams, "5001"],
-    [afterGrams, "5102"],
-    [activeFeedMinutes, "11"],
-  ] as const) {
-    await makeValidPreview();
-    await field.fill(replacement);
-    await expect(page.locator(".calibration-preview")).toBeHidden();
-    await expect(apply).toHaveAttribute("disabled", "");
-    await apply.click();
-    await expect(page.getByText("已按称重估计：10–10 ml/分钟", { exact: true })).toHaveCount(0);
-    await expect.poll(() => readTaroStorage(page, `bubu-care-preferences:${new URL(page.url()).origin}:care-test-baby`)).toBeNull();
-  }
-
-  await makeValidPreview();
-  await expect(page.getByText("参考奶量：约 100 ml", { exact: true })).toBeVisible();
-  await expect(page.getByText("估算速度：10 ml/分钟", { exact: true })).toBeVisible();
-
-  await apply.click();
-  await expect(beforeGrams).toHaveValue("");
-  await expect(afterGrams).toHaveValue("");
-  await expect(activeFeedMinutes).toHaveValue("");
-  await expect(page.getByText("已按称重估计：10–10 ml/分钟", { exact: true })).toBeVisible();
-
-  await page.getByText("保存参考设置", { exact: true }).click();
-  await expect(page.getByText("本机参考设置已保存。", { exact: true })).toBeVisible();
-  const origin = new URL(page.url()).origin;
-  await expect.poll(() => readTaroStorage(page, `bubu-care-preferences:${origin}:care-test-baby`)).toEqual({
-    breastfeedRate: { mode: "calibrated", range: { min: 10, max: 10 }, source: "user-calibrated" },
-    milkReference: null,
-    sleepReference: null,
-  });
-  const raw = await page.evaluate((key) => window.localStorage.getItem(key), `bubu-care-preferences:${origin}:care-test-baby`);
-  expect(raw).not.toContain("beforeGrams");
-  expect(raw).not.toContain("afterGrams");
-  expect(raw).not.toContain("activeFeedMinutes");
   expect(writes()).toEqual([]);
 });

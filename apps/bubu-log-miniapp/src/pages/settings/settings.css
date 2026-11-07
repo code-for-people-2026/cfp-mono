@@ -8,7 +8,6 @@
 .settings-success { color: #6b865a; }
 .preference-card { overflow: hidden; }
 .preference-title { display: block; margin: 18px 0 7px; font-size: 14.5px; font-weight: 600; }
-.preference-status { display: block; margin-bottom: 8px; color: #6b865a; font-size: 12px; font-weight: 600; }
 .preference-warning { display: block; margin: 12px 0 0; padding: 8px 9px; border-radius: 7px; background: #fff3e8; color: #9b5735; font-size: 12px; line-height: 1.6; }
 .settings-segment { display: flex; gap: 6px; margin-top: 12px; }
 .settings-segment.compact { flex: 1; margin-top: 2px; }
@@ -24,13 +23,7 @@
 .settings-actions { display: flex; align-items: center; gap: 8px; }
 .settings-actions .primary-button { flex: 1 1 0; min-width: 0; margin-top: 14px; }
 .settings-secondary { flex: 1 1 0; min-width: 0; margin: 14px 0 0; border: 0.5px solid #d8c7b1; border-radius: 8px; background: #fffdf9; color: #875c38; font-size: 13px; line-height: 2.5; }
-.settings-disclosure { width: 100%; margin: 15px 0 0; border: 0.5px dashed #d8c7b1; border-radius: 8px; background: #faf6ef; color: #7c5a3b; font-size: 13px; line-height: 2.4; }
-.calibration-panel { min-width: 0; margin-top: 13px; padding: 12px 10px 2px; border-radius: 10px; background: #faf6ef; }
-.calibration-actions { margin-top: 2px; }
-.calibration-preview { margin-top: 12px; padding: 10px; border: 0.5px solid #e1d5c3; border-radius: 8px; background: #fffdf9; font-size: 12.5px; line-height: 1.8; }
-.calibration-preview-line { display: block; }
-.settings-secondary[disabled] { background: #f5efe6; color: #71614f; }
-.segment-button::after, .settings-secondary::after, .settings-disclosure::after { border: 0; pointer-events: none; }
+.segment-button::after, .settings-secondary::after { border: 0; pointer-events: none; }
 
 @media (max-width: 340px) {
   .settings-segment { flex-wrap: wrap; }

@@ -2,15 +2,14 @@ import Taro from "@tarojs/taro";
 
 export interface NumericRange { min: number; max: number }
 
-export type BreastfeedRateMode = "research" | "custom" | "calibrated" | "off";
+export type BreastfeedRateMode = "research" | "custom" | "off";
 export type BreastfeedRateSource =
   | "research-heuristic"
   | "user-custom"
-  | "user-calibrated"
   | "user-disabled";
 
 export type BreastfeedRatePreference =
-  | { mode: "research" | "custom" | "calibrated"; range: NumericRange; source: "research-heuristic" | "user-custom" | "user-calibrated" }
+  | { mode: "research" | "custom"; range: NumericRange; source: "research-heuristic" | "user-custom" }
   | { mode: "off"; range: null; source: "user-disabled" };
 
 export interface CarePreferences {
@@ -106,10 +105,19 @@ export function validateCarePreferences(input: unknown): CarePreferencesValidati
       if (rate.source !== "user-disabled") issues.push({ path: "breastfeedRate.source", message: "来源标记不正确。" });
       breastfeedRate = { mode: "off", range: null, source: "user-disabled" };
     } else if (rate.mode === "research" || rate.mode === "custom" || rate.mode === "calibrated") {
-      const expectedSource = rate.mode === "research" ? "research-heuristic" : rate.mode === "custom" ? "user-custom" : "user-calibrated";
+      const isResearch = rate.mode === "research";
+      const expectedSource = isResearch ? "research-heuristic" : rate.mode === "custom" ? "user-custom" : "user-calibrated";
       if (rate.source !== expectedSource) issues.push({ path: "breastfeedRate.source", message: "来源标记不正确。" });
       const range = validateRange(rate.range, "breastfeedRate.range", { min: 0.1, max: 30 }, issues);
-      if (range) breastfeedRate = { mode: rate.mode, range, source: expectedSource };
+      if (range) {
+        // Existing local data may contain rates produced by the removed calibration UI.
+        // Read them as ordinary custom ranges so their saved min/max remains usable.
+        breastfeedRate = {
+          mode: isResearch ? "research" : "custom",
+          range,
+          source: isResearch ? "research-heuristic" : "user-custom",
+        };
+      }
     } else {
       issues.push({ path: "breastfeedRate.mode", message: "亲喂速率模式不正确。" });
     }
@@ -238,55 +246,4 @@ export function resetCarePreferences(
   } catch (cause) {
     throw new CarePreferencesStorageFailure(cause);
   }
-}
-
-export interface BreastfeedWeighingInput {
-  beforeGrams: number;
-  afterGrams: number;
-  activeFeedMinutes: number;
-}
-export interface BreastfeedWeighingResult {
-  approximateVolumeMl: number;
-  rateMlPerMinute: number;
-  density: 1.03;
-  note: string;
-}
-export type BreastfeedWeighingCalculation =
-  | { ok: true; value: BreastfeedWeighingResult }
-  | { ok: false; issues: CarePreferencesIssue[] };
-
-/** Pure preview only; applying a calibrated rate is an explicit UI action, never an automatic save. */
-export function calculateBreastfeedRateFromWeighing(input: BreastfeedWeighingInput): BreastfeedWeighingCalculation {
-  const issues: CarePreferencesIssue[] = [];
-  const before = finiteNumber(input.beforeGrams, "beforeGrams", issues);
-  const after = finiteNumber(input.afterGrams, "afterGrams", issues);
-  const minutes = finiteNumber(input.activeFeedMinutes, "activeFeedMinutes", issues);
-  if (before === null || after === null || minutes === null) return { ok: false, issues };
-  if (before <= 0 || after <= 0) {
-    issues.push({ path: before <= 0 ? "beforeGrams" : "afterGrams", message: "体重必须是正数。" });
-    return { ok: false, issues };
-  }
-  if (after <= before) {
-    issues.push({ path: "afterGrams", message: "结束后体重必须大于开始前体重。" });
-    return { ok: false, issues };
-  }
-  if (minutes <= 0) {
-    issues.push({ path: "activeFeedMinutes", message: "哺喂时长必须大于 0。" });
-    return { ok: false, issues };
-  }
-  const volume = (after - before) / 1.03;
-  const rate = volume / minutes;
-  if (rate < 0.1 || rate > 30) {
-    issues.push({ path: "rateMlPerMinute", message: "估算速率超出 0.1–30 ml/分钟的工程边界。" });
-    return { ok: false, issues };
-  }
-  return {
-    ok: true,
-    value: {
-      approximateVolumeMl: Math.round(volume * 10) / 10,
-      rateMlPerMinute: Math.round(rate * 100) / 100,
-      density: 1.03,
-      note: "体重差估算体积，受秤的精度限制；仅校准速度，不是临床测试或照护记录。",
-    },
-  };
 }

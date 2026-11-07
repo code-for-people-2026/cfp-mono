@@ -22,12 +22,39 @@ export interface HeatmapProps {
 }
 
 const weekdays = ['一', '二', '三', '四', '五', '六', '日']
-const metricStyles = [
-  { key: 'milk', label: '吃', color: '#c56b6b' },
-  { key: 'sleep', label: '睡', color: '#528ba2' },
-  { key: 'outdoor', label: '玩', color: '#7b9c64' },
-  { key: 'diaper', label: '便', color: '#c9a249' },
-] as const
+
+interface CareMetricStyle {
+  key: CareRingMetric['key']
+  label: string
+  color: string
+  meaning: string
+}
+
+const metricStyles: Record<CareRingMetric['key'], CareMetricStyle> = {
+  sleep: { key: 'sleep', label: '睡', color: '#528ba2', meaning: '睡眠时长' },
+  outdoor: { key: 'outdoor', label: '玩', color: '#7b9c64', meaning: '户外时长' },
+  milk: { key: 'milk', label: '吃', color: '#c56b6b', meaning: '瓶喂奶量+亲喂估计/记录量' },
+  diaper: { key: 'diaper', label: '便', color: '#c9a249', meaning: '尿布数量' },
+}
+const metricDisplayOrder: readonly CareMetricStyle[] = [
+  metricStyles.sleep,
+  metricStyles.outdoor,
+  metricStyles.milk,
+  metricStyles.diaper,
+]
+
+interface OrderedCareMetric {
+  metric: CareRingMetric
+  style: CareMetricStyle
+}
+
+function orderedCareMetrics(metrics: readonly CareRingMetric[]): OrderedCareMetric[] {
+  const metricsByKey = new Map(metrics.map((metric) => [metric.key, metric]))
+  return metricDisplayOrder.flatMap((style) => {
+    const metric = metricsByKey.get(style.key)
+    return metric ? [{ metric, style }] : []
+  })
+}
 
 const dataStateLabels: Record<CareRingMetric['dataState'], string> = {
   known: '已记录',
@@ -87,6 +114,7 @@ export function Heatmap({
       {calendar.weeks.map((week) => <View className='bubu-heatmap-week' key={week.start}>
         {week.days.map((day) => {
           const interactive = day.inMonth && !day.isFuture
+          const displayMetrics = orderedCareMetrics(day.metrics)
           return (
             <View
               key={day.date}
@@ -96,21 +124,25 @@ export function Heatmap({
               {day.inMonth && <Text className='bubu-heatmap-day-number'>{Number(day.date.slice(-2))}</Text>}
               {interactive && (
                 <ActivityRings
-                  rings={day.metrics.map((metric, index) => ({
-                    key: metric.key, color: metricStyles[index].color, progress: metric.progress,
+                  rings={displayMetrics.map(({ metric, style }) => ({
+                    key: metric.key, color: style.color, progress: metric.progress,
                   }))}
-                  ariaLabel={`${day.date} ${day.metrics.map((metric) => `${metric.label}${metric.readableValue}`).join('，')}`}
+                  ariaLabel={`${day.date} ${displayMetrics.map(({ metric, style }) => `${style.label}（${style.meaning}）${metric.readableValue}`).join('，')}`}
                 />
               )}
             </View>
           )
         })}
       </View>)}
+      <View className='bubu-heatmap-guide'>
+        <Text>四环从外到内：睡 → 玩 → 吃 → 便</Text>
+      </View>
       <View className='bubu-heatmap-key'>
-        {metricStyles.map((metric) => (
-          <View className='bubu-legend-item' key={metric.key}>
-            <View className='bubu-legend-dot' style={{ backgroundColor: metric.color }} />
-            <Text>{metric.label}</Text>
+        {metricDisplayOrder.map((style) => (
+          <View className='bubu-legend-item' key={style.key}>
+            <View className='bubu-legend-dot' style={{ backgroundColor: style.color }} />
+            <Text className='bubu-legend-label'>{style.label}</Text>
+            <Text className='bubu-legend-meaning'>{style.meaning}</Text>
           </View>
         ))}
       </View>
@@ -126,12 +158,12 @@ export function Heatmap({
             )}
           </View>
           <View className='bubu-heatmap-metrics'>
-            {selectedDay.metrics.map((metric, index) => {
+            {orderedCareMetrics(selectedDay.metrics).map(({ metric, style }) => {
               const detail = metricSource(metric, complete)
               return (
                 <View className='bubu-heatmap-metric' key={metric.key}>
                   <View className='bubu-heatmap-metric-head'>
-                    <Text className='bubu-heatmap-metric-label' style={{ color: metricStyles[index].color }}>{metric.label}</Text>
+                    <Text className='bubu-heatmap-metric-label' style={{ color: style.color }}>{style.label}</Text>
                     <Text className='bubu-heatmap-value'>{metric.readableValue}</Text>
                   </View>
                   {metric.key === 'milk' && <Text className='bubu-heatmap-detail'>{metric.readableComponents.join('；')}</Text>}

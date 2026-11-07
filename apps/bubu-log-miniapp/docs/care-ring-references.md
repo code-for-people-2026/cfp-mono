@@ -1,6 +1,6 @@
 # Care-ring references and behavior
 
-Care rings are a family-facing display, not diagnosis or a feeding/sleep prescription. Existing Payload `DailyStat` snapshots are read-only; this feature performs no database writes. Calibration computes a rate preview only: Apply updates the in-form draft, a separate Save persists only the local breastfeed-rate preference, and raw weights are never stored.
+Care rings are a family-facing display, not diagnosis or a feeding/sleep prescription. Existing Payload `DailyStat` snapshots are read-only; this feature performs no database writes. Local preferences only select display references and the adjustable breastfeed-rate estimate.
 
 ## Implemented completed-month milk buckets
 
@@ -12,11 +12,9 @@ The 2025 NHC guidance supplies 6–7 months 800–1000, 7–9 months 700–800, 
 
 Sleep uses WHO ranges as display bands: under 4 months 14–17 hours; 4–under 12 months 12–16 hours; 1–under 3 years 11–14 hours; and 3–under 5 years 10–13 hours per 24 hours. The six-diaper family goal is only a display target. NHS guidance about roughly six heavy wet nappies from day five refers to hydration signals, not all changes or milk volume.
 
-## Breastfeed-rate heuristic and weighing calibration
+## Breastfeed-rate heuristic and direct reporting
 
-The default 5–10 ml/minute breastfeed range is a reversible product heuristic, not a validated normal range. It is blocked when age is unknown or under 7 days; an explicit custom/calibrated choice can estimate without a birth date. Research study samples are small: one reports a mean of 8.1 ml/min across 47 dyads, and another reports 10.6 ml/min across 14 sessions.
-
-Test weighing uses a 1.03 g/ml milk-density approximation. Home scale imprecision can exceed the measured weight difference, so results are only a rate preview with positive finite before/after weights and a positive active-feed duration.
+The default 5–10 ml/minute breastfeed range is a reversible product heuristic, not a validated normal range. It is blocked when age is unknown or under 7 days; an explicit custom choice can estimate without a birth date. Research study samples are small: one reports a mean of 8.1 ml/min across 47 dyads, and another reports 10.6 ml/min across 14 sessions. Directly reported gram amounts are planned for future MCP/chat input (#439, #440); they will be accepted as reported. The miniapp does not implement that input yet.
 
 ## Sources
 
@@ -25,5 +23,3 @@ Test weighing uses a 1.03 g/ml milk-density approximation. Home scale imprecisio
 - WHO sleep guidelines: https://www.ncbi.nlm.nih.gov/books/NBK541173/
 - NHS enough-milk guidance: https://www.nhs.uk/baby/breastfeeding-and-bottle-feeding/breastfeeding-problems/enough-milk/
 - Breastfeed transfer-rate studies: https://pmc.ncbi.nlm.nih.gov/articles/PMC8476436/ and https://pmc.ncbi.nlm.nih.gov/articles/PMC10613710/
-- Milk-density study: https://pmc.ncbi.nlm.nih.gov/articles/PMC11270915/
-- Home-scale imprecision discussion: https://pmc.ncbi.nlm.nih.gov/articles/PMC2672832/

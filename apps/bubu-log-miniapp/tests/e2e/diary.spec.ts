@@ -1172,6 +1172,38 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   expect(await page.locator(".bubu-heatmap-cell").first().evaluate((element) => element.getBoundingClientRect().height)).toBe(56);
   await expect(page.locator(".bubu-heatmap-cell .activity-rings")).toHaveCount(23);
   await expect(page.locator(".bubu-heatmap-cell .activity-rings__ring")).toHaveCount(92);
+  await expect(card.locator(".bubu-heatmap-guide")).toContainText("四环从外到内：睡 → 玩 → 吃 → 便");
+  const legend = card.locator(".bubu-legend-item");
+  await expect(legend).toHaveCount(4);
+  const legendExpectations = [
+    { label: "睡", meaning: "睡眠时长", color: "rgb(82, 139, 162)" },
+    { label: "玩", meaning: "户外时长", color: "rgb(123, 156, 100)" },
+    { label: "吃", meaning: "瓶喂奶量+亲喂估计/记录量", color: "rgb(197, 107, 107)" },
+    { label: "便", meaning: "尿布数量", color: "rgb(201, 162, 73)" },
+  ] as const;
+  for (const [index, expected] of legendExpectations.entries()) {
+    const item = legend.nth(index);
+    await expect(item).toContainText(expected.label);
+    await expect(item).toContainText(expected.meaning);
+    await expect(item.locator(".bubu-legend-dot")).toHaveCSS("background-color", expected.color);
+  }
+
+  const todayRings = page.locator(".bubu-heatmap-today .activity-rings");
+  const ariaLabel = await todayRings.getAttribute("aria-label");
+  expect(ariaLabel).toMatch(
+    /^2026-10-23 睡（睡眠时长）.*玩（户外时长）.*吃（瓶喂奶量\+亲喂估计\/记录量）.*便（尿布数量）/,
+  );
+  expect(await todayRings.locator(".activity-rings__ring").evaluateAll(
+    (nodes) => nodes.map((node) => node.clientWidth),
+  )).toEqual([36, 28, 20, 12]);
+  expect(await todayRings.locator(".activity-rings__track").evaluateAll(
+    (nodes) => nodes.map((node) => getComputedStyle(node).borderTopColor),
+  )).toEqual([
+    "rgb(82, 139, 162)",
+    "rgb(123, 156, 100)",
+    "rgb(197, 107, 107)",
+    "rgb(201, 162, 73)",
+  ]);
   const ringSizes = await page.locator(".bubu-heatmap-cell .activity-rings").evaluateAll(
     (nodes) => nodes.map((node) => ({ width: node.clientWidth, height: node.clientHeight })),
   );
@@ -1190,6 +1222,20 @@ test("month care rings fit a 320px natural month and read all four metrics", asy
   await expect(reading).toContainText("年龄参考 800–1000 ml/日");
   await expect(reading).toContainText("家庭目标：1小时合格、2小时良好、3小时优秀");
   await expect(reading).toContainText("达到 180 分钟");
+
+  const detailCards = reading.locator(".bubu-heatmap-metric");
+  const detailExpectations = [
+    { label: "睡", value: "7小时30分钟", color: "rgb(82, 139, 162)" },
+    { label: "玩", value: "3小时20分钟", color: "rgb(123, 156, 100)" },
+    { label: "吃", value: "约 520–620 ml", color: "rgb(197, 107, 107)" },
+    { label: "便", value: "4 次", color: "rgb(201, 162, 73)" },
+  ] as const;
+  for (const [index, expected] of detailExpectations.entries()) {
+    const detail = detailCards.nth(index);
+    await expect(detail.locator(".bubu-heatmap-metric-label")).toHaveText(expected.label);
+    await expect(detail.locator(".bubu-heatmap-value")).toContainText(expected.value);
+    await expect(detail.locator(".bubu-heatmap-metric-label")).toHaveCSS("color", expected.color);
+  }
 });
 
 test("a non-unauthorized baby profile failure keeps the month with reference unavailable", async ({ page }) => {

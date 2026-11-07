@@ -4,7 +4,7 @@ vi.mock("@tarojs/taro", () => ({ default: {} }));
 import { buildCareMonthRings, type CareRingCalendarDay } from "../src/model/care-rings";
 import type { Activity, DailyStat } from "../src/model/types";
 import {
-  DEFAULT_CARE_PREFERENCES, calculateBreastfeedRateFromWeighing, carePreferencesStorageKey,
+  DEFAULT_CARE_PREFERENCES, carePreferencesStorageKey,
   getCarePreferences, saveCarePreferences, validateCarePreferences,
   CarePreferencesStorageFailure, type CarePreferences, type CarePreferencesStorage,
 } from "../src/preferences/care-preferences";
@@ -239,6 +239,20 @@ describe("care preferences", () => {
     });
     expect(invalid.ok).toBe(false);
     if (!invalid.ok) expect(invalid.issues.some(({ message }) => message.includes("1–3000"))).toBe(true);
+
+    const legacyCalibrated = validateCarePreferences({
+      breastfeedRate: { mode: "calibrated", range: { min: 7, max: 12 }, source: "user-calibrated" },
+      milkReference: null,
+      sleepReference: null,
+    });
+    expect(legacyCalibrated).toEqual({
+      ok: true,
+      value: {
+        breastfeedRate: { mode: "custom", range: { min: 7, max: 12 }, source: "user-custom" },
+        milkReference: null,
+        sleepReference: null,
+      },
+    });
   });
 
   it("scopes keys by backend origin and encoded baby, recovers corrupt values, and reports storage failures", () => {
@@ -260,10 +274,4 @@ describe("care preferences", () => {
     expect(() => saveCarePreferences(scope, DEFAULT_CARE_PREFERENCES, failing)).toThrow(CarePreferencesStorageFailure);
   });
 
-  it("requires positive finite weighing inputs and computes only a preview", () => {
-    expect(calculateBreastfeedRateFromWeighing({ beforeGrams: -1, afterGrams: 3010, activeFeedMinutes: 10 }).ok).toBe(false);
-    expect(calculateBreastfeedRateFromWeighing({ beforeGrams: 3000, afterGrams: 3000, activeFeedMinutes: 10 }).ok).toBe(false);
-    const result = calculateBreastfeedRateFromWeighing({ beforeGrams: 3000, afterGrams: 3010, activeFeedMinutes: 10 });
-    expect(result).toMatchObject({ ok: true, value: { approximateVolumeMl: 9.7, rateMlPerMinute: 0.97, density: 1.03 } });
-  });
 });
