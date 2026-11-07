@@ -64,30 +64,30 @@ function up(
 }
 
 describe("one-finger axis gestures", () => {
-  it("arms a left swipe for the previous period only past the physical threshold", () => {
+  it("arms a left swipe for the next period only past the physical threshold", () => {
     const begun = start();
     const below = move(begun, [point(200 - SWIPE_THRESHOLD + 1, 200)]);
     expect(below.state.phase).toBe("horizontal");
     expect(below.state.armed).toBe(false);
-    expect(below.state.feedback).toBe("继续左滑查看前一天");
+    expect(below.state.feedback).toBe("继续左滑查看后一天");
     expect(up(below.state, [], [point(130, 200)]).navigation).toBeNull();
 
     const armed = move(begun, [point(200 - SWIPE_THRESHOLD, 200)]);
     expect(armed.state.armed).toBe(true);
-    expect(armed.state.feedback).toBe("松开切换前一天");
-    expect(up(armed.state, [], [point(120, 200)]).navigation).toBe("prev");
+    expect(armed.state.feedback).toBe("松开切换后一天");
+    expect(up(armed.state, [], [point(120, 200)]).navigation).toBe("next");
   });
 
-  it("maps a right swipe to the next period and cancels when the drag returns below threshold", () => {
+  it("maps a right swipe to the previous period and cancels when the drag returns below threshold", () => {
     const begun = start();
     const armed = move(begun, [point(200 + SWIPE_THRESHOLD + 10, 200)]);
-    expect(armed.state.direction).toBe("next");
+    expect(armed.state.direction).toBe("prev");
     expect(armed.state.armed).toBe(true);
     const returned = move(armed.state, [point(200 + 30, 200)]);
     expect(returned.state.armed).toBe(false);
-    expect(returned.state.feedback).toBe("继续右滑查看后一天");
+    expect(returned.state.feedback).toBe("继续右滑查看前一天");
     expect(up(returned.state, [], [point(230, 200)]).navigation).toBeNull();
-    expect(up(armed.state, [], [point(300, 200)]).navigation).toBe("next");
+    expect(up(armed.state, [], [point(300, 200)]).navigation).toBe("prev");
   });
 
   it("never requests a future period and reports the current limit", () => {
@@ -96,10 +96,10 @@ describe("one-finger axis gestures", () => {
       labels: { previous: "前一天", next: "后一天", current: "今天" },
     };
     const begun = start([point(200, 200)], {}, blockedConfig);
-    const moved = move(begun, [point(320, 200)], {}, blockedConfig);
+    const moved = move(begun, [point(80, 200)], {}, blockedConfig);
     expect(moved.state.armed).toBe(false);
     expect(moved.state.feedback).toBe("已经是今天，无法查看未来");
-    const ended = up(moved.state, [], [point(320, 200)], {}, blockedConfig);
+    const ended = up(moved.state, [], [point(80, 200)], {}, blockedConfig);
     expect(ended.navigation).toBeNull();
     expect(ended.blocked).toBe(true);
     expect(ended.state.feedback).toBe("已经是今天，无法查看未来");

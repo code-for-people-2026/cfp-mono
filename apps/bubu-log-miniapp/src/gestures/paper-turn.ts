@@ -14,6 +14,29 @@ export interface PaperTurnInput {
   side: PaperTurnSide;
 }
 
+export interface PaperCurlInput {
+  axis: PaperTurnAxis;
+  phase: PaperTurnPhase;
+  /** Signed primary-axis finger displacement in physical CSS pixels. */
+  displacement: number;
+  /** Signed cross-axis displacement: dy for horizontal, dx for vertical. */
+  crossDisplacement?: number;
+  /** Stable viewport-local first touch. */
+  origin?: { x: number; y: number };
+  width: number;
+  height: number;
+  reducedMotion?: boolean;
+}
+
+export interface PaperCurl {
+  /** Continuous sheet rotation in degrees, bounded by the visual design. */
+  angle: number;
+  curlSize: number;
+  shadowOpacity: number;
+  originX: number;
+  originY: number;
+}
+
 export interface PaperTurnTransform {
   x: number;
   y: number;
@@ -21,12 +44,14 @@ export interface PaperTurnTransform {
   progress: number;
 }
 
-const finite = (value: number): number => Number.isFinite(value) ? value : 0;
+const finite = (value: number | undefined): number => (
+  typeof value === "number" && Number.isFinite(value) ? value : 0
+);
 
 /**
- * Direct-manipulation geometry. Previous keeps the current sheet stationary and
- * slides its neighbor over it; next moves the current sheet away and reveals the
- * pre-rendered neighbor underneath.
+ * Direct-manipulation geometry. A rightward finger turns previous: the current
+ * sheet stays put and its left-hand neighbor slides over it. A leftward finger
+ * turns next by moving the current sheet away from the pre-rendered neighbor.
  */
 export function resolvePaperTurnTransform(input: PaperTurnInput): PaperTurnTransform {
   const size = Math.max(1, finite(input.size));
@@ -41,7 +66,7 @@ export function resolvePaperTurnTransform(input: PaperTurnInput): PaperTurnTrans
   }
   if (input.direction === "prev" && input.side === "neighbor") {
     return input.axis === "horizontal"
-      ? { x: size + displacement, y: 0, progress }
+      ? { x: -size + displacement, y: 0, progress }
       : { x: 0, y: -size + displacement, progress };
   }
   return { x: 0, y: 0, progress };
@@ -54,8 +79,46 @@ export function completedPaperTurnDisplacement(
   size: number,
 ): number {
   const magnitude = Math.max(1, finite(size));
-  if (direction === "prev") return axis === "horizontal" ? -magnitude : magnitude;
-  return axis === "horizontal" ? magnitude : -magnitude;
+  if (direction === "prev") return magnitude;
+  return -magnitude;
+}
+
+const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+/** Smoothly opens the curl and fully opens it before the commit threshold. */
+const smoothDistanceGate = (distance: number): number => {
+  const amount = clamp(distance / 56, 0, 1);
+  return amount * amount * (3 - 2 * amount);
+};
+
+/**
+ * Pure touch-following curl. The primary displacement controls how far the sheet
+ * has lifted, while the cross displacement rotates it around the first touch.
+ * Ending phases intentionally return zero motion so CSS can animate the landing.
+ */
+export function resolvePaperCurl(input: PaperCurlInput): PaperCurl {
+  const width = Math.max(1, finite(input.width));
+  const height = Math.max(1, finite(input.height));
+  const originX = clamp(finite(input.origin?.x), 0, width);
+  const originY = clamp(finite(input.origin?.y), 0, height);
+  const inactive = input.phase !== "drag" || input.reducedMotion === true;
+  if (inactive) {
+    return { angle: 0, curlSize: 0, shadowOpacity: 0, originX, originY };
+  }
+
+  const primary = finite(input.displacement);
+  const cross = finite(input.crossDisplacement);
+  const distance = Math.abs(primary);
+  const gate = smoothDistanceGate(distance);
+  const size = input.axis === "vertical" ? height : width;
+  const progress = clamp(distance / size, 0, 1);
+  const rawAngle = Math.atan2(cross, distance) * 180 / Math.PI;
+  const scaledRawAngle = rawAngle * 0.3;
+  const angle = clamp((input.axis === "vertical" ? -scaledRawAngle : scaledRawAngle) * gate, -8, 8);
+  const curlSize = (12 + 20 * progress) * gate;
+  const shadowOpacity = (0.08 + 0.22 * progress) * gate;
+
+  return { angle, curlSize, shadowOpacity, originX, originY };
 }
 
 export function paperTurnTransition(phase: PaperTurnPhase, reducedMotion = false): {

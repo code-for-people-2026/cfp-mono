@@ -102,6 +102,10 @@ export interface PaperTurnState {
   axis: PaperTurnAxis;
   direction: PaperDirection | null;
   displacement: number;
+  /** First touch in stable viewport-local coordinates. */
+  origin?: GesturePoint;
+  /** Cross-axis displacement: dy for horizontal turns, dx for vertical turns. */
+  crossDisplacement?: number;
   reducedMotion: boolean;
 }
 
@@ -179,7 +183,7 @@ const blockedFeedback = (config: GestureConfig): string => `已经是${config.la
 const horizontalFeedback = (direction: PeriodDirection, armed: boolean, config: GestureConfig): string => {
   if (direction === "next" && !config.canNext) return blockedFeedback(config);
   const label = direction === "prev" ? config.labels.previous : config.labels.next;
-  const swipe = direction === "prev" ? "左" : "右";
+  const swipe = direction === "prev" ? "右" : "左";
   return armed ? `松开切换${label}` : `继续${swipe}滑查看${label}`;
 };
 
@@ -195,6 +199,8 @@ const clearPaperTurn = (state: GestureState): PaperTurnState => ({
   phase: "idle",
   direction: null,
   displacement: 0,
+  origin: undefined,
+  crossDisplacement: undefined,
 });
 
 const baseStart = (points: readonly GesturePoint[], metrics: GestureMetrics, scale: number, config: GestureConfig): GestureState => ({
@@ -404,7 +410,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
   }
 
   if (phase === "horizontal") {
-    const swipeDirection: PeriodDirection | null = dx < 0 ? "prev" : dx > 0 ? "next" : null;
+    const swipeDirection: PeriodDirection | null = dx < 0 ? "next" : dx > 0 ? "prev" : null;
     direction = swipeDirection;
     if (!swipeDirection) {
       armed = false;
@@ -448,6 +454,8 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
       axis: phase === "horizontal" ? "horizontal" : "vertical",
       direction,
       displacement: phase === "horizontal" ? dx : dy,
+      origin: { ...start },
+      crossDisplacement: phase === "horizontal" ? dy : dx,
     }
     : clearPaperTurn(state);
 

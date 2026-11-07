@@ -718,7 +718,7 @@ test("320px long provenance ids and text wrap inside the scroll sheet and the ph
   await expect(page.locator(".preview-image")).toHaveCount(0);
 });
 
-test("horizontal swipes use the requested unusual direction in day and week", async ({ page }) => {
+test("horizontal swipes use the standard left-next and right-previous direction in day and week", async ({ page }) => {
   await fixture(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -728,17 +728,17 @@ test("horizontal swipes use the requested unusual direction in day and week", as
   await swipe(page, ".calendar-navigation", -100, 0);
   await expect(title).toContainText("今日（周五）");
 
-  await swipe(page, ".bubu-day-scroll", -100, 0);
+  await swipe(page, ".bubu-day-scroll", 100, 0);
   await expect(title).toContainText("昨日（周四）");
   await expect(page.locator(".stats-grid")).toBeVisible();
   await expect(page.locator(".bubu-day-scroll")).toBeVisible();
 
-  await swipe(page, ".bubu-day-scroll", 100, 0);
+  await swipe(page, ".bubu-day-scroll", -100, 0);
   await expect(title).toContainText("今日（周五）");
   await expect(page.locator(".stats-grid")).toBeVisible();
   await expect(page.locator(".bubu-day-scroll")).toBeVisible();
 
-  await swipe(page, ".bubu-day-scroll", 100, 0);
+  await swipe(page, ".bubu-day-scroll", -100, 0);
   await expect(page.locator(".bubu-gesture-feedback")).toContainText("已经是今天，无法查看未来");
   await expect(title).toContainText("今日（周五）");
 
@@ -746,15 +746,15 @@ test("horizontal swipes use the requested unusual direction in day and week", as
   await expect(page.locator(".bubu-week-scroll")).toBeVisible();
   await expect(title).toContainText("本周（10/19–）");
 
-  await swipe(page, ".bubu-week-scroll", -100, 0);
+  await swipe(page, ".bubu-week-scroll", 100, 0);
   await expect(title).toContainText("上周（10/12–10/18）");
   await expect(page.locator(".bubu-week-scroll")).toBeVisible();
 
-  await swipe(page, ".bubu-week-scroll", 100, 0);
+  await swipe(page, ".bubu-week-scroll", -100, 0);
   await expect(title).toContainText("本周（10/19–）");
   await expect(page.locator(".bubu-week-scroll")).toBeVisible();
 
-  await swipe(page, ".bubu-week-scroll", 100, 0);
+  await swipe(page, ".bubu-week-scroll", -100, 0);
   await expect(page.locator(".bubu-gesture-feedback")).toContainText("已经是本周，无法查看未来");
   await expect(title).toContainText("本周（10/19–）");
 });

@@ -59,6 +59,7 @@ export type TimelineScrollEvent = BaseEventOrig<TimelineScrollDetail>;
 
 type TouchLike = { clientX: number; clientY: number };
 type NativeTouchHandler = (event: BaseEventOrig) => void;
+type ViewportOrigin = { left: number; top: number };
 interface NativeScrollView {
   scrollTo?: (options: { top?: number; animated?: boolean }) => void;
   scrollEnabled?: boolean;
@@ -97,10 +98,10 @@ export interface TimelineGestures {
   applyScrollTop: (top: number) => void;
 }
 
-const pointsFromTouches = (touches: ArrayLike<TouchLike> | undefined, viewportTop: number): GesturePoint[] =>
+const pointsFromTouches = (touches: ArrayLike<TouchLike> | undefined, viewportOrigin: ViewportOrigin): GesturePoint[] =>
   Array.from(touches || []).map((touch) => ({
-    x: touch.clientX,
-    y: touch.clientY - viewportTop,
+    x: touch.clientX - viewportOrigin.left,
+    y: touch.clientY - viewportOrigin.top,
   }));
 
 export function useTimelineGestures(options: TimelineGestureOptions): TimelineGestures {
@@ -117,8 +118,8 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
   const metricsRef = useRef<GestureMetrics>({
     scrollTop: 0, viewportHeight: 0, contentHeight: 0, canvasTop: 0, canvasHeight: 0,
   });
-  const viewportTopRef = useRef(0);
-  const h5TouchViewportTopRef = useRef<number | null>(null);
+  const viewportOriginRef = useRef<ViewportOrigin>({ left: 0, top: 0 });
+  const h5TouchViewportOriginRef = useRef<ViewportOrigin | null>(null);
   const scrollContextRef = useRef<NativeScrollView | null>(null);
   const pendingScrollTopRef = useRef<number | null>(null);
   const suppressClickRef = useRef(false);
@@ -215,6 +216,7 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
   }, []);
 
   const measureNow = useCallback(() => {
+    if (stateRef.current.paperTurn.phase !== "idle") return;
     const scale = scaleRef.current || 1;
     const generation = ++measureGenerationRef.current;
     if (process.env.TARO_ENV === "h5") {
@@ -222,6 +224,8 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       const element = document.getElementById(scrollId);
       const canvas = document.getElementById(canvasId);
       if (!element || !canvas) return;
+      const anchor = element.closest(".bubu-timeline-viewport") ?? element;
+      const anchorRect = anchor.getBoundingClientRect();
       const viewRect = element.getBoundingClientRect();
       const canvasRect = canvas.getBoundingClientRect();
       const canvasHeight = canvasRect.height;
@@ -230,10 +234,12 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
         scrollTop: element.scrollTop,
         viewportHeight: element.clientHeight,
         contentHeight: element.scrollHeight,
-        canvasTop: canvasRect.top - viewRect.top + element.scrollTop,
+        canvasTop: canvasRect.top - anchorRect.top + element.scrollTop,
         canvasHeight,
       };
-      viewportTopRef.current = viewRect.top;
+      if (stateRef.current.phase === "idle" || stateRef.current.phase === "done") {
+        viewportOriginRef.current = { left: anchorRect.left, top: anchorRect.top };
+      }
       setViewportWidth((previous) => Math.abs(previous - viewRect.width) > 0.5 ? viewRect.width : previous);
       setViewportHeight((previous) => Math.abs(previous - viewRect.height) > 0.5 ? viewRect.height : previous);
       if (base > 0) setBaseCanvasHeight((previous) => Math.abs(previous - base) > 0.5 ? base : previous);
@@ -246,8 +252,14 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       // Native selector queries resolve asynchronously. A newer pinch frame or a
       // different scale may already be current, so stale callbacks must not write.
       if (!mountedRef.current || generation !== measureGenerationRef.current) return;
+      if (stateRef.current.paperTurn.phase !== "idle") return;
       if (Math.abs((scaleRef.current || 1) - scale) > 0.001) return;
-      const selectorResults = result as Array<{ top: number; height: number; width?: number } | null | undefined> | undefined;
+      const selectorResults = result as Array<{
+        left?: number;
+        top: number;
+        height: number;
+        width?: number;
+      } | null | undefined> | undefined;
       const view = selectorResults?.[0];
       const canvas = selectorResults?.[1];
       if (!view || !canvas) return;
@@ -263,7 +275,10 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
         // Recompute rather than max(): zooming out must shrink the content height.
         contentHeight: Math.max(view.height, canvasTop + canvasHeight),
       };
-      viewportTopRef.current = view.top;
+      if ((stateRef.current.phase === "idle" || stateRef.current.phase === "done")
+        && typeof view.left === "number" && Number.isFinite(view.left)) {
+        viewportOriginRef.current = { left: view.left, top: view.top };
+      }
       const width = view.width;
       if (typeof width === "number") {
         setViewportWidth((previous) => Math.abs(previous - width) > 0.5 ? width : previous);
@@ -287,7 +302,14 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     turnTimerRef.current = setTimeout(() => {
       if (!mountedRef.current || generation !== turnGenerationRef.current) return;
       turnTimerRef.current = null;
-      const next: PaperTurnState = { ...stateRef.current.paperTurn, phase: "idle", direction: null, displacement: 0 };
+      const next: PaperTurnState = {
+        ...stateRef.current.paperTurn,
+        phase: "idle",
+        direction: null,
+        displacement: 0,
+        origin: undefined,
+        crossDisplacement: undefined,
+      };
       stateRef.current = { ...stateRef.current, phase: "done", paperTurn: next };
       setPaperTurn(next);
       setNativeScrollEnabled(true);
@@ -397,7 +419,14 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
           if (!mountedRef.current || generation !== turnGenerationRef.current) return;
           turnTimerRef.current = null;
           optionsRef.current.onNavigate?.(update.navigation!);
-          const next = { ...stateRef.current.paperTurn, phase: "idle" as const, direction: null, displacement: 0 };
+          const next = {
+            ...stateRef.current.paperTurn,
+            phase: "idle" as const,
+            direction: null,
+            displacement: 0,
+            origin: undefined,
+            crossDisplacement: undefined,
+          };
           stateRef.current = { ...stateRef.current, phase: "done", paperTurn: next };
           setPaperTurn(next);
           setNativeScrollEnabled(true);
@@ -585,8 +614,12 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     if (process.env.TARO_ENV !== "h5" || typeof document === "undefined") return;
     const element = document.getElementById(scrollId);
     if (!element) return;
-    const localTop = () => element.getBoundingClientRect().top;
-    const gestureTop = () => h5TouchViewportTopRef.current ?? localTop();
+    const localOrigin = () => {
+      const anchor = element.closest(".bubu-timeline-viewport") ?? element;
+      const rect = anchor.getBoundingClientRect();
+      return { left: rect.left, top: rect.top };
+    };
+    const gestureOrigin = () => h5TouchViewportOriginRef.current ?? localOrigin();
     const refreshScrollMetrics = () => {
       metricsRef.current.viewportHeight = element.clientHeight;
       metricsRef.current.contentHeight = element.scrollHeight;
@@ -600,14 +633,14 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       // The current layer itself moves during a vertical turn. Keep the viewport
       // origin captured by the first touch fixed for the whole gesture, including
       // a later second touch that starts a pinch.
-      if (h5TouchViewportTopRef.current == null) {
-        h5TouchViewportTopRef.current = localTop();
+      if (h5TouchViewportOriginRef.current == null) {
+        h5TouchViewportOriginRef.current = localOrigin();
       }
-      const points = pointsFromTouches(event.touches, gestureTop());
+      const points = pointsFromTouches(event.touches, gestureOrigin());
       handleStartPoints(points);
     };
     const move = (event: TouchEvent) => {
-      const points = pointsFromTouches(event.touches, gestureTop());
+      const points = pointsFromTouches(event.touches, gestureOrigin());
       handleMovePoints(points);
       const phase = stateRef.current.phase;
       if (points.length >= 2 || phase === "pinch" || phase === "horizontal" || phase === "pull" || phase === "settling") {
@@ -616,13 +649,13 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
     };
     const end = (event: TouchEvent) => {
       handleEndPoints(
-        pointsFromTouches(event.touches, gestureTop()),
-        pointsFromTouches(event.changedTouches, gestureTop()),
+        pointsFromTouches(event.touches, gestureOrigin()),
+        pointsFromTouches(event.changedTouches, gestureOrigin()),
       );
-      if (event.touches.length === 0) h5TouchViewportTopRef.current = null;
+      if (event.touches.length === 0) h5TouchViewportOriginRef.current = null;
     };
     const cancelTouch = () => {
-      h5TouchViewportTopRef.current = null;
+      h5TouchViewportOriginRef.current = null;
       handleCancel();
     };
     element.addEventListener("touchstart", start, { passive: true });
@@ -640,17 +673,17 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
   const nativeTouchProps = process.env.TARO_ENV === "h5" ? {} : {
     onTouchStart: (event: BaseEventOrig) => {
       const touchEvent = event as ITouchEvent;
-      handleStartPoints(pointsFromTouches(touchEvent.touches, viewportTopRef.current));
+      handleStartPoints(pointsFromTouches(touchEvent.touches, viewportOriginRef.current));
     },
     onTouchMove: (event: BaseEventOrig) => {
       const touchEvent = event as ITouchEvent;
-      handleMovePoints(pointsFromTouches(touchEvent.touches, viewportTopRef.current));
+      handleMovePoints(pointsFromTouches(touchEvent.touches, viewportOriginRef.current));
     },
     onTouchEnd: (event: BaseEventOrig) => {
       const touchEvent = event as ITouchEvent;
       handleEndPoints(
-        pointsFromTouches(touchEvent.touches, viewportTopRef.current),
-        pointsFromTouches(touchEvent.changedTouches, viewportTopRef.current),
+        pointsFromTouches(touchEvent.touches, viewportOriginRef.current),
+        pointsFromTouches(touchEvent.changedTouches, viewportOriginRef.current),
       );
     },
     onTouchCancel: () => handleCancel(),
