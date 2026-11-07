@@ -10,19 +10,19 @@
 
 .bubu-paper-turn { position: relative; background: #fffdf8; }
 .bubu-paper-current {
-  position: relative; z-index: 2; overflow: visible; background: #fffdf8;
+  position: relative; z-index: 2; overflow: visible; background: transparent;
   box-shadow: 0 1px 5px rgba(75, 57, 35, .06); will-change: transform;
   transition-timing-function: cubic-bezier(.22, .61, .36, 1);
 }
 .bubu-paper-neighbor {
   position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: visible;
-  visibility: hidden; background: #fffdf8; pointer-events: none; will-change: transform;
+  visibility: hidden; background: transparent; pointer-events: none; will-change: transform;
   transition-timing-function: cubic-bezier(.22, .61, .36, 1);
 }
 .bubu-paper-neighbor-prev { z-index: 3; }
 .bubu-paper-neighbor-next { z-index: 1; }
 .bubu-paper-neighbor-active { visibility: visible; }
-.bubu-paper-sheet-clip { position: relative; width: 100%; overflow: hidden; }
+.bubu-paper-sheet-clip { position: relative; width: 100%; overflow: hidden; background: #fffdf8; }
 .bubu-paper-neighbor .bubu-paper-sheet-clip { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
 .bubu-paper-preview-scroll {
   position: absolute; top: 0; right: 0; left: 0; height: auto;
@@ -32,24 +32,22 @@
 .bubu-paper-curl {
   position: absolute; z-index: 5; pointer-events: none; opacity: 0;
   transition-timing-function: cubic-bezier(.22, .61, .36, 1);
-  will-change: opacity, width, height;
+  will-change: opacity, width, height, transform;
 }
 .bubu-paper-cast-shadow-horizontal {
-  top: -5px; right: -14px; bottom: -5px; width: 38px;
-  border-radius: 6px 20px 20px 6px;
+  top: 0; left: 0; width: 18px; height: 100%;
   background:
-    linear-gradient(90deg, rgba(75, 57, 35, 0) 0%, rgba(75, 57, 35, .06) 31%,
-      rgba(74, 53, 31, .17) 72%, rgba(75, 57, 35, .05) 100%);
+    linear-gradient(90deg, rgba(74, 53, 31, .20) 0%, rgba(75, 57, 35, .08) 42%,
+      rgba(75, 57, 35, 0) 100%);
 }
 .bubu-paper-cast-shadow-vertical {
-  right: -5px; bottom: -14px; height: 38px; left: -5px;
-  border-radius: 6px 6px 20px 20px;
+  top: 0; left: 0; width: 100%; height: 18px;
   background:
-    linear-gradient(180deg, rgba(75, 57, 35, 0) 0%, rgba(75, 57, 35, .06) 31%,
-      rgba(74, 53, 31, .17) 72%, rgba(75, 57, 35, .05) 100%);
+    linear-gradient(180deg, rgba(74, 53, 31, .20) 0%, rgba(75, 57, 35, .08) 42%,
+      rgba(75, 57, 35, 0) 100%);
 }
 .bubu-paper-curl-horizontal {
-  top: 0; right: 0; bottom: 0; width: 0;
+  top: 0; left: 0; width: 0; height: 100%;
   border-radius: 10px 50% 50% 10px / 10px 34px 34px 10px;
   background:
     radial-gradient(circle at 24% 50%, rgba(255, 253, 248, .88) 0%, rgba(255, 253, 248, .28) 46%, rgba(255, 253, 248, 0) 74%),
@@ -59,7 +57,7 @@
   box-shadow: inset -1px 0 4px rgba(112, 82, 52, .16), inset 3px 0 7px rgba(255, 253, 248, .72);
 }
 .bubu-paper-curl-vertical {
-  right: 0; bottom: 0; height: 0; left: 0;
+  top: 0; left: 0; width: 100%; height: 0;
   border-radius: 10px 10px 50% 50% / 10px 10px 34px 34px;
   background:
     radial-gradient(circle at 50% 24%, rgba(255, 253, 248, .88) 0%, rgba(255, 253, 248, .28) 46%, rgba(255, 253, 248, 0) 74%),

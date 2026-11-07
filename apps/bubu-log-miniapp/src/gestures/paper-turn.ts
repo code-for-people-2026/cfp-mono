@@ -29,12 +29,47 @@ export interface PaperCurlInput {
 }
 
 export interface PaperCurl {
-  /** Continuous sheet rotation in degrees, bounded by the visual design. */
+  /** Signed decorative-edge inclination in degrees, bounded by the visual design. */
   angle: number;
   curlSize: number;
   shadowOpacity: number;
   originX: number;
   originY: number;
+}
+
+export interface PaperFoldGeometryInput {
+  axis: PaperTurnAxis;
+  width: number;
+  height: number;
+  /** Curl seam inclination in degrees. */
+  angle: number;
+  /** Width of the attached curl perpendicular to its moving edge. */
+  curlSize: number;
+  /** Maximum distance either seam endpoint may trail the moving edge. */
+  band?: number;
+}
+
+export interface PaperDecorationGeometry {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  transform: string;
+  transformOrigin: string;
+}
+
+export interface PaperFoldGeometry {
+  clipPath: string;
+  /** At y=0 for horizontal folds and x=0 for vertical folds. */
+  seamStart: number;
+  /** At the opposite viewport edge along the cross axis. */
+  seamEnd: number;
+  /** Seam delta in primary-axis pixels per cross-axis pixel. */
+  slope: number;
+  /** Exact skew angle whose tangent is slope. */
+  skewAngle: number;
+  curl: PaperDecorationGeometry;
+  shadow: PaperDecorationGeometry;
 }
 
 export interface PaperTurnTransform {
@@ -93,7 +128,7 @@ const smoothDistanceGate = (distance: number): number => {
 
 /**
  * Pure touch-following curl. The primary displacement controls how far the sheet
- * has lifted, while the cross displacement rotates it around the first touch.
+ * has lifted, while the cross displacement inclines its decorative edge.
  * Ending phases intentionally return zero motion so CSS can animate the landing.
  */
 export function resolvePaperCurl(input: PaperCurlInput): PaperCurl {
@@ -119,6 +154,82 @@ export function resolvePaperCurl(input: PaperCurlInput): PaperCurl {
   const shadowOpacity = (0.08 + 0.22 * progress) * gate;
 
   return { angle, curlSize, shadowOpacity, originX, originY };
+}
+
+/**
+ * One coherent fold geometry for the clipped moving sheet, curl, and cast
+ * shadow. Both turn directions move toward the same visible boundary (right or
+ * bottom), so direction never changes the seam or its attached decorations.
+ */
+export function resolvePaperFoldGeometry(input: PaperFoldGeometryInput): PaperFoldGeometry {
+  const width = Math.max(1, finite(input.width));
+  const height = Math.max(1, finite(input.height));
+  const horizontal = input.axis === "horizontal";
+  const crossSize = horizontal ? height : width;
+  const band = clamp(finite(input.band), 0, crossSize);
+  const angle = clamp(finite(input.angle), -45, 45);
+  const angleRadians = angle * Math.PI / 180;
+  const rawSlope = horizontal ? -Math.tan(angleRadians) : Math.tan(angleRadians);
+  const slopeLimit = band / crossSize;
+  const signedSlope = Math.sign(rawSlope) * Math.min(Math.abs(rawSlope), slopeLimit);
+  const boundedSlope = signedSlope === 0 ? 0 : signedSlope;
+  const skewAngle = Math.atan(boundedSlope);
+  const curlSize = clamp(finite(input.curlSize), 0, band);
+  const skew = `skew${horizontal ? "X" : "Y"}(${skewAngle}rad)`;
+
+  if (input.axis === "horizontal") {
+    const seamStart = width - Math.max(0, boundedSlope * height);
+    const seamEnd = seamStart + boundedSlope * height;
+    return {
+      clipPath: `polygon(0% 0%, ${seamStart}px 0%, ${seamEnd}px 100%, 0% 100%)`,
+      seamStart,
+      seamEnd,
+      slope: boundedSlope,
+      skewAngle,
+      curl: {
+        left: seamStart - curlSize,
+        top: 0,
+        width: curlSize,
+        height,
+        transform: skew,
+        transformOrigin: "100% 0%",
+      },
+      shadow: {
+        left: seamStart - 2,
+        top: 0,
+        width: 18,
+        height,
+        transform: skew,
+        transformOrigin: "0% 0%",
+      },
+    };
+  }
+
+  const seamStart = height - Math.max(0, boundedSlope * width);
+  const seamEnd = seamStart + boundedSlope * width;
+  return {
+    clipPath: `polygon(0% 0%, 100% 0%, 100% ${seamEnd}px, 0% ${seamStart}px)`,
+    seamStart,
+    seamEnd,
+    slope: boundedSlope,
+    skewAngle,
+    curl: {
+      left: 0,
+      top: seamStart - curlSize,
+      width,
+      height: curlSize,
+      transform: skew,
+      transformOrigin: "0% 100%",
+    },
+    shadow: {
+      left: 0,
+      top: seamStart - 2,
+      width,
+      height: 18,
+      transform: skew,
+      transformOrigin: "0% 0%",
+    },
+  };
 }
 
 export function paperTurnTransition(phase: PaperTurnPhase, reducedMotion = false): {

@@ -12,6 +12,7 @@ import {
 import {
   completedPaperTurnDisplacement,
   resolvePaperCurl,
+  resolvePaperFoldGeometry,
   resolvePaperTurnTransform,
 } from "../src/gestures/paper-turn";
 
@@ -48,7 +49,7 @@ const drag = (
 };
 
 describe("paper-turn geometry", () => {
-  it("keeps right as previous and left as next on the horizontal axis", () => {
+  it("moves both horizontal directions from the same right boundary", () => {
     expect(resolvePaperTurnTransform({
       axis: "horizontal", direction: "prev", phase: "drag",
       displacement: 160, size: 320, side: "neighbor",
@@ -214,6 +215,93 @@ describe("paper curl", () => {
     expect(curl({ phase: "complete" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
     expect(curl({ phase: "recoil" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
     expect(curl({ phase: "idle" })).toMatchObject({ angle: 0, curlSize: 0, shadowOpacity: 0 });
+  });
+});
+
+describe("paper fold geometry", () => {
+  it("keeps the horizontal seam, clip, and skew edge on one line", () => {
+    const geometry = resolvePaperFoldGeometry({
+      axis: "horizontal", width: 320, height: 400,
+      angle: 8, curlSize: 24, band: 56,
+    });
+
+    expect([geometry.seamStart, geometry.seamEnd].every(Number.isFinite)).toBe(true);
+    expect(geometry.seamStart).toBeGreaterThanOrEqual(320 - 56);
+    expect(geometry.seamStart).toBeLessThanOrEqual(320);
+    expect(geometry.seamEnd).toBeGreaterThanOrEqual(320 - 56);
+    expect(geometry.seamEnd).toBeLessThanOrEqual(320);
+    expect((geometry.seamEnd - geometry.seamStart) / 400)
+      .toBeCloseTo(geometry.slope, 12);
+    expect(Math.tan(geometry.skewAngle)).toBeCloseTo(geometry.slope, 12);
+    expect(geometry.clipPath).toContain(`${geometry.seamStart}px`);
+    expect(geometry.clipPath).toContain(`${geometry.seamEnd}px`);
+    expect(geometry.curl).toMatchObject({
+      left: geometry.seamStart - 24, top: 0, width: 24, height: 400,
+      transformOrigin: "100% 0%",
+    });
+    expect(geometry.curl.transform).toContain("skewX(");
+    expect(geometry.shadow).toMatchObject({
+      left: geometry.seamStart - 2, top: 0, width: 18, height: 400,
+      transformOrigin: "0% 0%",
+    });
+  });
+
+  it("reverses inclination without changing the moving-edge side", () => {
+    const positive = resolvePaperFoldGeometry({
+      axis: "horizontal", width: 320, height: 400, angle: 8, curlSize: 20, band: 56,
+    });
+    const negative = resolvePaperFoldGeometry({
+      axis: "horizontal", width: 320, height: 400, angle: -8, curlSize: 20, band: 56,
+    });
+
+    expect(positive.slope).toBeLessThan(0);
+    expect(negative.slope).toBeGreaterThan(0);
+    expect(negative.slope).toBeCloseTo(-positive.slope, 12);
+    expect(Math.max(positive.seamStart, positive.seamEnd)).toBe(320);
+    expect(Math.max(negative.seamStart, negative.seamEnd)).toBe(320);
+  });
+
+  it("keeps the vertical seam, clip, and skew edge on one line", () => {
+    const geometry = resolvePaperFoldGeometry({
+      axis: "vertical", width: 320, height: 400,
+      angle: -8, curlSize: 24, band: 56,
+    });
+
+    expect([geometry.seamStart, geometry.seamEnd].every(Number.isFinite)).toBe(true);
+    expect(Math.min(geometry.seamStart, geometry.seamEnd))
+      .toBeGreaterThanOrEqual(400 - 56);
+    expect(Math.max(geometry.seamStart, geometry.seamEnd)).toBeLessThanOrEqual(400);
+    expect((geometry.seamEnd - geometry.seamStart) / 320)
+      .toBeCloseTo(geometry.slope, 12);
+    expect(Math.tan(geometry.skewAngle)).toBeCloseTo(geometry.slope, 12);
+    expect(geometry.curl).toMatchObject({
+      left: 0, top: geometry.seamStart - 24, width: 320, height: 24,
+      transformOrigin: "0% 100%",
+    });
+    expect(geometry.curl.transform).toContain("skewY(");
+    expect(geometry.shadow).toMatchObject({
+      left: 0, top: geometry.seamStart - 2, width: 320, height: 18,
+      transformOrigin: "0% 0%",
+    });
+  });
+
+  it("keeps a flat ending edge and rejects invalid geometry safely", () => {
+    const flat = resolvePaperFoldGeometry({
+      axis: "horizontal", width: 320, height: 400,
+      angle: 0, curlSize: 0, band: 18,
+    });
+    expect(flat).toMatchObject({ seamStart: 320, seamEnd: 320, slope: 0, skewAngle: 0 });
+    expect(flat.curl).toMatchObject({ left: 320, width: 0, height: 400 });
+
+    const invalid = resolvePaperFoldGeometry({
+      axis: "vertical", width: Number.NaN, height: Number.POSITIVE_INFINITY,
+      angle: Number.NaN, curlSize: Number.POSITIVE_INFINITY, band: Number.POSITIVE_INFINITY,
+    });
+    expect(invalid.seamStart).toBe(1);
+    expect(invalid.seamEnd).toBe(1);
+    expect(invalid.slope).toBe(0);
+    expect(invalid.curl.width).toBe(1);
+    expect(invalid.curl.height).toBe(0);
   });
 });
 

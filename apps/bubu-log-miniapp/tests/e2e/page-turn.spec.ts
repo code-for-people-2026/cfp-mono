@@ -100,22 +100,60 @@ async function moveHeldTouch(page: Page, touch: HeldTouch, target: TouchPoint, s
   touch.point = target;
 }
 
-async function layerRotation(page: Page, selector: string): Promise<number> {
+async function layerOffDiagonals(page: Page, selector: string): Promise<{ rotation: number; shear: number }> {
   return page.locator(selector).evaluate((element) => {
-    const transform = getComputedStyle(element).transform;
-    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
-    return Math.atan2(matrix.m12, matrix.m11) * 180 / Math.PI;
+    let node: Element | null = element;
+    let rotation = 0;
+    let shear = 0;
+    while (node != null) {
+      const transform = getComputedStyle(node).transform;
+      const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+      rotation = Math.max(rotation, Math.abs(Math.atan2(matrix.m12, matrix.m11) * 180 / Math.PI));
+      shear = Math.max(shear, Math.abs(Math.atan2(matrix.m21, matrix.m22) * 180 / Math.PI));
+      node = node.parentElement;
+    }
+    return { rotation, shear };
   });
 }
 
-async function expectRotatedLayer(page: Page, selector: string): Promise<number> {
-  await expect.poll(() => layerRotation(page, selector).then(Math.abs)).toBeGreaterThan(0.05);
-  await expect.poll(() => layerRotation(page, selector).then(Math.abs)).toBeLessThanOrEqual(8);
-  return layerRotation(page, selector);
+async function expectRotatedCurl(page: Page, layer: string): Promise<number> {
+  const selector = `${layer} .bubu-paper-curl`;
+  const angle = page.locator(selector).evaluate((element) => {
+    const transform = getComputedStyle(element).transform;
+    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+    const horizontal = element.classList.contains("bubu-paper-curl-horizontal");
+    return Math.atan2(horizontal ? matrix.m21 : matrix.m12, horizontal ? matrix.m22 : matrix.m11) * 180 / Math.PI;
+  });
+  await expect.poll(() => angle.then(Math.abs)).toBeGreaterThan(0.05);
+  await expect.poll(() => angle.then(Math.abs)).toBeLessThanOrEqual(8);
+  return angle;
 }
 
 async function expectFlatLayer(page: Page, selector: string): Promise<void> {
-  await expect.poll(() => layerRotation(page, selector).then(Math.abs)).toBeLessThanOrEqual(0.01);
+  await expect.poll(() => layerOffDiagonals(page, selector).then(({ rotation, shear }) => (
+    Math.max(rotation, shear)
+  ))).toBeLessThanOrEqual(0.01);
+}
+
+async function expectFlatContentAncestry(page: Page, selector: string): Promise<void> {
+  const label = page.locator(
+    `${selector} .bubu-day-preview-canvas .bubu-event-label, ${selector} .bubu-day-scroll .bubu-event-label`,
+  ).first();
+  await expect(label).toHaveCount(1);
+  await expect.poll(() => label.evaluate((element) => {
+    let node: Element | null = element;
+    let maximumOffDiagonal = 0;
+    while (node != null) {
+      const matrix = new DOMMatrix(getComputedStyle(node).transform === "none" ? undefined : getComputedStyle(node).transform);
+      maximumOffDiagonal = Math.max(
+        maximumOffDiagonal,
+        Math.abs(Math.atan2(matrix.m12, matrix.m11) * 180 / Math.PI),
+        Math.abs(Math.atan2(matrix.m21, matrix.m22) * 180 / Math.PI),
+      );
+      node = node.parentElement;
+    }
+    return maximumOffDiagonal;
+  })).toBeLessThanOrEqual(0.01);
 }
 
 async function expectVisibleCurl(page: Page, layer: string): Promise<void> {
@@ -123,8 +161,15 @@ async function expectVisibleCurl(page: Page, layer: string): Promise<void> {
   await expect(curl).toHaveCount(1);
   await expect.poll(() => curl.evaluate((element) => {
     const rect = element.getBoundingClientRect();
+    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
+    if (!viewport) return false;
+    const overlapWidth = Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left);
+    const overlapHeight = Math.min(rect.bottom, viewport.bottom) - Math.max(rect.top, viewport.top);
+    const overlapArea = Math.max(0, overlapWidth) * Math.max(0, overlapHeight);
     const opacity = Number(getComputedStyle(element).opacity);
-    return Number.isFinite(opacity) && opacity > 0 && Math.max(rect.width, rect.height) > 5;
+    return Number.isFinite(opacity) && opacity > 0 && Math.max(rect.width, rect.height) > 5
+      && overlapWidth > 5 && overlapHeight > 5
+      && overlapArea >= viewport.width * viewport.height * 0.02;
   })).toBe(true);
 }
 
@@ -133,8 +178,38 @@ async function expectVisibleCastShadow(page: Page, layer: string): Promise<void>
   await expect(shadow).toHaveCount(1);
   await expect.poll(() => shadow.evaluate((element) => {
     const opacity = Number(getComputedStyle(element).opacity);
-    return Number.isFinite(opacity) && opacity > 0;
+    const rect = element.getBoundingClientRect();
+    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
+    const overlapWidth = viewport ? Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left) : 0;
+    return Number.isFinite(opacity) && opacity > 0 && overlapWidth > 5;
   })).toBe(true);
+}
+
+async function expectSeamInView(page: Page, layer: string, axis: "horizontal" | "vertical"): Promise<void> {
+  const sheet = page.locator(`${layer} .bubu-paper-sheet-clip`);
+  await expect.poll(() => sheet.evaluate((element, foldAxis) => {
+    const clipPath = getComputedStyle(element).clipPath;
+    const coordinates = [...clipPath.matchAll(/(-?\d+(?:\.\d+)?)px/g)].map((match) => Number(match[1]));
+    if (coordinates.length !== 2 || coordinates.some((coordinate) => !Number.isFinite(coordinate))) return false;
+    const viewport = document.querySelector(".bubu-timeline-viewport")?.getBoundingClientRect();
+    const rect = element.getBoundingClientRect();
+    if (!viewport) return false;
+    if (foldAxis === "horizontal") {
+      const start = rect.left + Math.min(coordinates[0], coordinates[1]);
+      const end = rect.left + Math.max(coordinates[0], coordinates[1]);
+      return start < viewport.right - 2 && end > viewport.left + 2;
+    }
+    const start = rect.top + Math.min(coordinates[0], coordinates[1]);
+    const end = rect.top + Math.max(coordinates[0], coordinates[1]);
+    return start < viewport.bottom - 2 && end > viewport.top + 2;
+  }, axis)).toBe(true);
+}
+
+async function expectDecorationOwner(page: Page, layer: string): Promise<void> {
+  await expect(page.locator(".bubu-paper-curl")).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-curl`)).toHaveCount(1);
+  await expect(page.locator(".bubu-paper-cast-shadow")).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-cast-shadow`)).toHaveCount(1);
 }
 
 async function expectIdleDecorations(page: Page): Promise<void> {
@@ -177,12 +252,26 @@ async function expectHeldGeometry(page: Page, dy: number) {
   if (dy > 0) {
     await expect.poll(() => currentTranslation(page)).toBe(0);
     const neighborY = () => elementTranslation(page, ".bubu-paper-neighbor-prev");
+    await expectFlatLayer(page, ".bubu-paper-current");
+    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
+    await expectFlatContentAncestry(page, ".bubu-paper-neighbor-prev");
+    await expectDecorationOwner(page, ".bubu-paper-neighbor-prev");
+    await expectVisibleCurl(page, ".bubu-paper-neighbor-prev");
+    await expectVisibleCastShadow(page, ".bubu-paper-neighbor-prev");
+    await expectSeamInView(page, ".bubu-paper-neighbor-prev", "vertical");
     await expect.poll(neighborY).toBeGreaterThanOrEqual(-viewportHeight + 103);
     await expect.poll(neighborY).toBeLessThanOrEqual(-viewportHeight + 117);
   } else {
     await expect.poll(() => currentTranslation(page)).toBeGreaterThanOrEqual(-113);
     await expect.poll(() => currentTranslation(page)).toBeLessThanOrEqual(-107);
     await expect.poll(() => elementTranslation(page, ".bubu-paper-neighbor-next")).toBe(0);
+    await expectFlatLayer(page, ".bubu-paper-current");
+    await expectFlatLayer(page, ".bubu-paper-neighbor-next");
+    await expectFlatContentAncestry(page, ".bubu-paper-current");
+    await expectDecorationOwner(page, ".bubu-paper-current");
+    await expectVisibleCurl(page, ".bubu-paper-current");
+    await expectVisibleCastShadow(page, ".bubu-paper-current");
+    await expectSeamInView(page, ".bubu-paper-current", "vertical");
   }
 }
 
@@ -229,7 +318,7 @@ test("bottom-up pull keeps its touch anchor through the full next-page turn", as
   await expect(title).toContainText("今日（周六）");
 });
 
-test("horizontal previous-turn curl follows the cross-axis origin and recoils without decoration residue", async ({ page }) => {
+test("horizontal previous-turn keeps flat sheets while its curl follows the cross-axis and recoils", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -242,15 +331,20 @@ test("horizontal previous-turn curl follows the cross-axis origin and recoils wi
     await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y + 35 });
     await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
     await expect(title).toHaveText(heldTitle ?? "");
-    const firstAngle = await expectRotatedLayer(page, ".bubu-paper-neighbor-prev");
+    const firstAngle = await expectRotatedCurl(page, ".bubu-paper-neighbor-prev");
+    await expectDecorationOwner(page, ".bubu-paper-neighbor-prev");
     await expectFlatLayer(page, ".bubu-paper-current");
+    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
+    await expectFlatContentAncestry(page, ".bubu-paper-neighbor-prev");
+    await expectSeamInView(page, ".bubu-paper-neighbor-prev", "horizontal");
     await expectVisibleCurl(page, ".bubu-paper-neighbor-prev");
     await expectVisibleCastShadow(page, ".bubu-paper-neighbor-prev");
 
     await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y - 35 });
-    const secondAngle = await expectRotatedLayer(page, ".bubu-paper-neighbor-prev");
+    const secondAngle = await expectRotatedCurl(page, ".bubu-paper-neighbor-prev");
     expect(firstAngle * secondAngle).toBeLessThan(0);
     await expectFlatLayer(page, ".bubu-paper-current");
+    await expectFlatLayer(page, ".bubu-paper-neighbor-prev");
     await expect(title).toHaveText(heldTitle ?? "");
 
     await moveHeldTouch(page, touch, { x: origin.x + 8, y: origin.y });
@@ -263,7 +357,7 @@ test("horizontal previous-turn curl follows the cross-axis origin and recoils wi
   }
 });
 
-test("horizontal next-turn rotates the current sheet, preloads the real next page, and refuses today's future", async ({ page }) => {
+test("horizontal next-turn keeps flat sheets, preloads the real next page, and refuses today's future", async ({ page }) => {
   await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
@@ -279,8 +373,14 @@ test("horizontal next-turn rotates the current sheet, preloads the real next pag
     await moveHeldTouch(page, touch, { x: origin.x - 110, y: origin.y - 25 });
     await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
     await expect(title).toHaveText(heldTitle ?? "");
-    await expectRotatedLayer(page, ".bubu-paper-current");
+    await expectRotatedCurl(page, ".bubu-paper-current");
+    await expectDecorationOwner(page, ".bubu-paper-current");
     await expectFlatLayer(page, ".bubu-paper-neighbor-next");
+    await expectFlatLayer(page, ".bubu-paper-current");
+    await expectFlatContentAncestry(page, ".bubu-paper-current");
+    await expectSeamInView(page, ".bubu-paper-current", "horizontal");
+    await expectVisibleCurl(page, ".bubu-paper-current");
+    await expectVisibleCastShadow(page, ".bubu-paper-current");
     await sendTouch(touch.session, "touchEnd");
   } finally {
     await touch.session.detach();

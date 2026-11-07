@@ -5,6 +5,7 @@ import {
   completedPaperTurnDisplacement,
   paperTurnTransition,
   resolvePaperCurl,
+  resolvePaperFoldGeometry,
   resolvePaperTurnTransform,
   type PaperTurnDirection,
   type PaperTurnSide,
@@ -30,6 +31,8 @@ const emptyCurl = {
   originX: 0,
   originY: 0,
 }
+
+const fullSheetClip = 'none'
 
 export function PaperTurnViewport({
   paperTurn,
@@ -80,53 +83,65 @@ export function PaperTurnViewport({
     : emptyCurl
   const movingLayerTransform = movingTransform == null
     ? 'translate(0px, 0px)'
-    : `translate(${movingTransform.x}px, ${movingTransform.y}px) rotate(${curl.angle}deg)`
+    : `translate(${movingTransform.x}px, ${movingTransform.y}px)`
   const movingLayerStyle = {
     transform: movingLayerTransform,
-    transformOrigin: `${curl.originX}px ${curl.originY}px`,
   }
+  const movingFold = canMoveSheet && movingDirection != null
+    && !paperTurn.reducedMotion
+    ? resolvePaperFoldGeometry({
+      axis: paperTurn.axis,
+      width: viewportWidth,
+      height: viewportHeight,
+      angle: curl.angle,
+      curlSize: curl.curlSize,
+      band: Math.max(curl.curlSize * 2, 18),
+    })
+    : null
+  const movingSheetClipPath = movingFold?.clipPath ?? fullSheetClip
+  const sheetClipStyle = (moving: boolean) => moving
+    ? {
+      clipPath: movingSheetClipPath,
+      transitionProperty: paperTurn.phase === 'drag' ? 'none' : 'clip-path',
+      transitionDuration: `${transition.durationMs}ms`,
+    }
+    : undefined
   const decorationTransition = transition.property === 'none'
     ? 'none'
-    : 'transform, opacity, width, height'
+    : 'left, top, width, height, transform, opacity'
   const layerStyle = (transform: string, moving = false) => ({
     ...(moving ? movingLayerStyle : { transform }),
-    transformOrigin: moving ? `${curl.originX}px ${curl.originY}px` : undefined,
-    transitionProperty: moving ? decorationTransition : transition.property,
+    transitionProperty: transition.property,
     transitionDuration: `${transition.durationMs}ms`,
   })
-  const curlTransition = transition.property === 'none'
-    ? 'none'
-    : 'opacity, width, height'
-  const curlStyle = (visible: boolean) => horizontal
-    ? {
-      width: `${curl.curlSize}px`,
-      height: '100%',
-      opacity: visible ? Math.min(1, curl.curlSize / 18) : 0,
-      transitionProperty: curlTransition,
-      transitionDuration: `${transition.durationMs}ms`,
-    }
-    : {
-      width: '100%',
-      height: `${curl.curlSize}px`,
-      opacity: visible ? Math.min(1, curl.curlSize / 18) : 0,
-      transitionProperty: curlTransition,
-      transitionDuration: `${transition.durationMs}ms`,
-    }
-  const shadowStyle = (visible: boolean) => ({
-    opacity: visible ? Math.min(1, curl.shadowOpacity / 0.24) : 0,
-    transitionProperty: transition.property === 'none' ? 'none' : 'opacity',
+  const decorationStyle = (
+    decoration: NonNullable<typeof movingFold>['curl'] | NonNullable<typeof movingFold>['shadow'],
+    opacity: number,
+  ) => ({
+    left: `${decoration.left}px`,
+    top: `${decoration.top}px`,
+    right: 'auto',
+    bottom: 'auto',
+    width: `${decoration.width}px`,
+    height: `${decoration.height}px`,
+    opacity,
+    transform: decoration.transform,
+    transformOrigin: decoration.transformOrigin,
+    transitionProperty: decorationTransition,
     transitionDuration: `${transition.durationMs}ms`,
   })
-  const paperDecorations = (visible: boolean) => (
+  const paperDecorations = (visible: boolean) => movingFold == null ? null : (
     <>
       <View
         className={`bubu-paper-cast-shadow bubu-paper-cast-shadow-${horizontal ? 'horizontal' : 'vertical'}`}
-        style={shadowStyle(visible)}
+        style={decorationStyle(movingFold.shadow, visible ? Math.min(1, curl.shadowOpacity / 0.24) : 0)}
         aria-hidden
       />
       <View
         className={`bubu-paper-curl bubu-paper-curl-${horizontal ? 'horizontal' : 'vertical'}`}
-        style={curlStyle(visible)}
+        style={{
+          ...decorationStyle(movingFold.curl, visible ? Math.min(1, curl.curlSize / 18) : 0),
+        }}
         aria-hidden
       />
     </>
@@ -137,7 +152,7 @@ export function PaperTurnViewport({
       style={layerStyle(moving ? movingLayerTransform : 'translate(0px, 0px)', moving)}
       {...inertPreviewAttributes}
     >
-      <View className='bubu-paper-sheet-clip'>
+      <View className='bubu-paper-sheet-clip' style={sheetClipStyle(moving)}>
         <View
           className='bubu-paper-preview-scroll'
           style={{ transform: `translateY(${-gestureScrollTop}px)` }}
@@ -145,7 +160,9 @@ export function PaperTurnViewport({
           {content}
         </View>
       </View>
-      {direction === 'prev' ? paperDecorations(moving) : null}
+      {direction === 'prev' && activeDirection === 'prev' && canMoveSheet
+        ? paperDecorations(paperTurn.phase === 'drag')
+        : null}
     </View>
   )
 
@@ -161,8 +178,15 @@ export function PaperTurnViewport({
           activeDirection === 'next' && next != null,
         )}
       >
-        <View className='bubu-paper-sheet-clip'>{current}</View>
-        {paperDecorations(activeDirection === 'next' && next != null)}
+        <View
+          className='bubu-paper-sheet-clip'
+          style={sheetClipStyle(activeDirection === 'next' && next != null)}
+        >
+          {current}
+        </View>
+        {activeDirection === 'next' && canMoveSheet
+          ? paperDecorations(paperTurn.phase === 'drag')
+          : null}
       </View>
       {next != null ? preview('next', next, activeDirection === 'next', false) : null}
       {children}
