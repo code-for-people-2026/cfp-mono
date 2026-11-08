@@ -64,7 +64,7 @@ const clamp = (value: number, minimum: number, maximum: number): number => (
   Math.min(maximum, Math.max(minimum, value))
 );
 
-/** Derive depth-of-field from the same table position that draws the fold. */
+/** Derive depth-of-field from fold progress, transferring focus in the first half. */
 export function resolvePaperFoldFocusState(
   progress: number,
   direction: PaperTurnDirection,
@@ -73,10 +73,11 @@ export function resolvePaperFoldFocusState(
   const completion = direction === "next"
     ? canonicalProgress
     : 1 - canonicalProgress;
+  const focusProgress = Math.min(completion * 2, 1);
   return {
     completion,
-    outgoingBlur: 6 * completion,
-    incomingBlur: 6 * (1 - completion),
+    outgoingBlur: 6 * focusProgress,
+    incomingBlur: 6 * (1 - focusProgress),
   };
 }
 

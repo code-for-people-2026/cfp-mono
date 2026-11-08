@@ -676,17 +676,21 @@ for (const mode of ['day', 'week'] as const) for (const direction of ['prev', 'n
     const sign = direction === 'next' ? -1 : 1;
     try {
       await sendTouch(session, 'touchStart', origin);
-      await moveHeldTouch(page, touch, { x: origin.x + sign * 40, y: origin.y });
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 20, y: origin.y });
       const early = await pageFocus(page);
       expect(early.current).toBeLessThan(1);
       expect(early.incoming).toBeGreaterThan(5);
-      await moveHeldTouch(page, touch, { x: origin.x + sign * 160, y: origin.y + 24 });
+      await moveHeldTouch(page, touch, { x: origin.x + sign * box.width * .5, y: origin.y + 24 });
       const later = await pageFocus(page);
-      expect(later.current).toBeGreaterThan(early.current + 1);
-      expect(later.incoming).toBeLessThan(early.incoming - 1);
+      expect(later.current).toBeCloseTo(6, 5);
+      expect(later.incoming).toBeCloseTo(0, 5);
       await expectIdentityLayers(page, ['.bubu-paper-current', `.bubu-paper-neighbor-${direction}`]);
       await expectVisibleCreaseShadow(page);
-      await moveHeldTouch(page, touch, { x: origin.x + sign * 40, y: origin.y });
+      await moveHeldTouch(page, touch, { x: origin.x + sign * box.width * .65, y: origin.y + 24 });
+      const beyondHalf = await pageFocus(page);
+      expect(beyondHalf.current).toBeCloseTo(6, 5);
+      expect(beyondHalf.incoming).toBeCloseTo(0, 5);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 20, y: origin.y });
       const reversed = await pageFocus(page);
       expect(reversed.current).toBeCloseTo(early.current, 1);
       expect(reversed.incoming).toBeCloseTo(early.incoming, 1);

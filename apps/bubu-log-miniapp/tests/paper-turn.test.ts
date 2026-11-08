@@ -596,15 +596,14 @@ describe("paper-turn release", () => {
 
 
 describe("paper focus and crease projection", () => {
-  it("transfers focus from current to target in both date directions", () => {
+  it("finishes focus transfer at halfway and holds it in both date directions", () => {
     for (const direction of ["prev", "next"] as const) {
-      const states = [0, .15, .5, .85, 1].map((completion) =>
+      const states = [0, .25, .5, .75, 1].map((completion) =>
         resolvePaperFoldFocusState(direction === "next" ? completion : 1 - completion, direction));
       expect(states[0]).toMatchObject({ outgoingBlur: 0, incomingBlur: 6 });
-      expect(states.at(-1)).toMatchObject({ outgoingBlur: 6, incomingBlur: 0 });
-      for (let index = 1; index < states.length; index++) {
-        expect(states[index].outgoingBlur).toBeGreaterThan(states[index - 1].outgoingBlur);
-        expect(states[index].incomingBlur).toBeLessThan(states[index - 1].incomingBlur);
+      expect(states[1]).toMatchObject({ completion: .25, outgoingBlur: 3, incomingBlur: 3 });
+      for (const [index, completion] of [[2, .5], [3, .75], [4, 1]]) {
+        expect(states[index]).toMatchObject({ completion, outgoingBlur: 6, incomingBlur: 0 });
       }
       for (const progress of [-1, 2, Number.NaN, Number.POSITIVE_INFINITY]) {
         const state = resolvePaperFoldFocusState(progress, direction);
