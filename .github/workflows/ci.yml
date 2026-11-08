@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pin the OS until Playwright supports the ubuntu-latest 26.04 runner image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       website_affected: ${{ steps.deploy_targets.outputs.website }}
