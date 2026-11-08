@@ -19,6 +19,8 @@ import {
   paperFoldAvatarTransform,
   resolvePaperFoldFrame,
   resolvePaperFoldMotion,
+  resolvePaperFoldFocusState,
+  paperFoldCreaseShadowTransform,
   resolvePaperFoldTileGrid,
   type PaperFoldPolygon,
 } from "../src/gestures/paper-fold";
@@ -589,5 +591,42 @@ describe("paper-turn release", () => {
     expect(anchorRatio).toBeCloseTo(0.11, 5);
     expect(update.scrollTop).toBeCloseTo(100 + anchorRatio * 1300 - 210, 5);
     expect(update.scrollTop).toBeCloseTo(33, 5);
+  });
+});
+
+
+describe("paper focus and crease projection", () => {
+  it("transfers focus from current to target in both date directions", () => {
+    for (const direction of ["prev", "next"] as const) {
+      const states = [0, .15, .5, .85, 1].map((completion) =>
+        resolvePaperFoldFocusState(direction === "next" ? completion : 1 - completion, direction));
+      expect(states[0]).toMatchObject({ outgoingBlur: 0, incomingBlur: 6 });
+      expect(states.at(-1)).toMatchObject({ outgoingBlur: 6, incomingBlur: 0 });
+      for (let index = 1; index < states.length; index++) {
+        expect(states[index].outgoingBlur).toBeGreaterThan(states[index - 1].outgoingBlur);
+        expect(states[index].incomingBlur).toBeLessThan(states[index - 1].incomingBlur);
+      }
+      for (const progress of [-1, 2, Number.NaN, Number.POSITIVE_INFINITY]) {
+        const state = resolvePaperFoldFocusState(progress, direction);
+        expect(state.outgoingBlur).toBeGreaterThanOrEqual(0);
+        expect(state.incomingBlur).toBeGreaterThanOrEqual(0);
+        expect(state.outgoingBlur + state.incomingBlur).toBe(6);
+      }
+    }
+  });
+
+  it("places the shadow along both ends of an angled crease on a non-square phone", () => {
+    const width = 320, height = 568;
+    for (const tilt of [-.6, 0, .6]) {
+      const { flat } = resolvePaperFoldFrame(.35, tilt, "horizontal");
+      const transform = paperFoldCreaseShadowTransform(flat, width, height);
+      expect(transform).not.toBeNull();
+      const [a, b, c, d, tx, ty] = matrixValues(transform ?? "");
+      expect(a).toBe(1); expect(b).toBe(0); expect(d).toBe(1); expect(ty).toBe(0);
+      expect(tx + 1).toBeCloseTo(flat[1][0] / 1000 * width, 8);
+      expect(c * height + tx + 1).toBeCloseTo(flat[2][0] / 1000 * width, 8);
+      expect(paperFoldCreaseShadowTransform(flat, width, 0)).toBeNull();
+    }
+    expect(paperFoldCreaseShadowTransform([[0, 0], [Number.NaN, 0], [100, 100]], width, height)).toBeNull();
   });
 });

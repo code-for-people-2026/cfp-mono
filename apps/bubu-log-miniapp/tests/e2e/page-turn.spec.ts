@@ -382,7 +382,8 @@ async function expectPreloadedAvatar(page: Page, source: string, loaded: boolean
 }
 
 async function expectIdleFold(page: Page) {
-  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow, .bubu-paper-crease-shadow")).toHaveCount(0);
+  expect(await page.locator(".bubu-paper-current .bubu-paper-sheet-clip").evaluate((element) => getComputedStyle(element).filter)).toMatch(/^(none|blur\(0px\))$/);
 }
 
 async function expectOutwardBoundaryDragToStay(
@@ -599,3 +600,102 @@ test("ordinary scrolling collapses and restores the day summary without losing n
   await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
   await expect(page.locator(".calendar-navigation")).toBeVisible();
 });
+
+async function pageFocus(page: Page) {
+  return page.evaluate(() => {
+    const blur = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing focus layer: ${selector}`);
+      const filter = getComputedStyle(element).filter;
+      return Number(filter.match(/blur\(([\d.]+)px\)/)?.[1] ?? 0);
+    };
+    return {
+      current: blur('.bubu-paper-current .bubu-paper-sheet-clip'),
+      incoming: blur('.bubu-paper-neighbor-active .bubu-paper-sheet-clip'),
+    };
+  });
+}
+
+async function expectVisibleCreaseShadow(page: Page) {
+  const shadow = page.locator('.bubu-paper-crease-shadow');
+  await expect(shadow).toHaveCount(1);
+  const points = await shadow.evaluate((element) => {
+    const parent = element.closest('.bubu-paper-current, .bubu-paper-neighbor');
+    if (!parent) throw new Error('Missing shadow page');
+    const rect = parent.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const matrix = new DOMMatrix(style.transform);
+    const height = parseFloat(style.height);
+    if (element.closest('.bubu-paper-fold-region')) throw new Error('Crease shadow clipped by fold region');
+    return [.2, .35, .5, .65, .8].map((fraction) => ({
+      x: rect.x + matrix.e + matrix.c * height * fraction + 5,
+      y: rect.y + height * fraction,
+    })).filter((point) => point.x > 1 && point.x < innerWidth - 1 && point.y > 1 && point.y < innerHeight - 1);
+  });
+  expect(points.length).toBeGreaterThan(0);
+  const visible = (await page.screenshot({ scale: 'css' })).toString('base64');
+  await shadow.evaluate((element) => { (element as HTMLElement).style.visibility = 'hidden'; });
+  let hidden: string;
+  try { hidden = (await page.screenshot({ scale: 'css' })).toString('base64'); }
+  finally { await shadow.evaluate((element) => { (element as HTMLElement).style.visibility = ''; }); }
+  const darkening = await page.evaluate(async ({ visible, hidden, points }) => {
+    const read = async (source: string) => {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = reject; image.src = `data:image/png;base64,${source}`; });
+      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext('2d'); if (!context) throw new Error('Missing canvas');
+      context.drawImage(image, 0, 0);
+      return points.map(({ x, y }) => [...context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].slice(0, 3).reduce((sum, value) => sum + value, 0) / 3);
+    };
+    const [withShadow, withoutShadow] = await Promise.all([read(visible), read(hidden)]);
+    return Math.max(...withoutShadow.map((value, index) => value - withShadow[index]));
+  }, { visible, hidden, points });
+  expect(darkening).toBeGreaterThan(6);
+}
+
+for (const mode of ['day', 'week'] as const) for (const direction of ['prev', 'next'] as const) {
+  test(`${mode} ${direction} transfers focus with drag and paints a visible crease shadow`, async ({ page }) => {
+    await syntheticApp(page);
+    await page.goto('/');
+    const title = page.locator('.date-title');
+    await expect(title).toContainText('今日');
+    if (mode === 'week') {
+      await page.getByLabel('展开日期与日历视图', { exact: true }).click();
+      await page.locator('.calendar-view-option').filter({ hasText: /^周历/ }).click();
+      await expect(page.locator('.bubu-week-card')).toBeVisible();
+    }
+    if (direction === 'next') await page.getByLabel('上一段日期', { exact: true }).click();
+    const selector = `.bubu-paper-current .bubu-${mode}-scroll`;
+    await expect(page.locator(`.bubu-paper-neighbor-${direction}`)).toHaveCount(1);
+    const heldTitle = await title.textContent();
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error('Missing scroller');
+    const origin = { x: box.x + box.width * (direction === 'next' ? .8 : .2), y: Math.min(box.y + box.height / 2, 600) };
+    const session = await page.context().newCDPSession(page);
+    const touch = { session, point: origin };
+    const sign = direction === 'next' ? -1 : 1;
+    try {
+      await sendTouch(session, 'touchStart', origin);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 40, y: origin.y });
+      const early = await pageFocus(page);
+      expect(early.current).toBeLessThan(1);
+      expect(early.incoming).toBeGreaterThan(5);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 160, y: origin.y + 24 });
+      const later = await pageFocus(page);
+      expect(later.current).toBeGreaterThan(early.current + 1);
+      expect(later.incoming).toBeLessThan(early.incoming - 1);
+      await expectIdentityLayers(page, ['.bubu-paper-current', `.bubu-paper-neighbor-${direction}`]);
+      await expectVisibleCreaseShadow(page);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 40, y: origin.y });
+      const reversed = await pageFocus(page);
+      expect(reversed.current).toBeCloseTo(early.current, 1);
+      expect(reversed.incoming).toBeCloseTo(early.incoming, 1);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 8, y: origin.y });
+      await sendTouch(session, 'touchEnd');
+      await page.waitForTimeout(300);
+      await expect(title).toHaveText(heldTitle ?? '');
+      await expect(page.locator('.bubu-paper-crease-shadow')).toHaveCount(0);
+      expect(await page.locator('.bubu-paper-current .bubu-paper-sheet-clip').evaluate((element) => getComputedStyle(element).filter)).toMatch(/^(none|blur\(0px\))$/);
+    } finally { await session.detach(); }
+  });
+}

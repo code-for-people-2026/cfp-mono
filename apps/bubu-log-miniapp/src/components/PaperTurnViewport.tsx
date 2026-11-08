@@ -9,7 +9,9 @@ import {
 } from '../gestures/paper-turn'
 import {
   paperFoldAvatarTransform,
+  paperFoldCreaseShadowTransform,
   resolvePaperFoldFrame,
+  resolvePaperFoldFocusState,
   resolvePaperFoldMotion,
   resolvePaperFoldTileGrid,
   type PaperFoldMotion,
@@ -212,11 +214,35 @@ export function PaperTurnViewport({
   const foldFrame = gestureLayersActive && displayMotion != null
     ? resolvePaperFoldFrame(displayMotion.progress, displayMotion.tilt, paperTurn.axis)
     : null
+  const focusState = gestureLayersActive && activeDirection != null && displayMotion != null
+    ? resolvePaperFoldFocusState(displayMotion.progress, activeDirection)
+    : null
   const avatarTransform = foldFrame == null
     ? null
     : paperFoldAvatarTransform(foldFrame.back, viewportWidth, viewportHeight, paperTurn.axis)
+  const creaseShadowTransform = horizontal && foldFrame != null
+    ? paperFoldCreaseShadowTransform(foldFrame.flat, viewportWidth, viewportHeight)
+    : null
+  const creaseProgress = displayMotion != null && Number.isFinite(displayMotion.progress)
+    ? Math.min(1, Math.max(0, displayMotion.progress))
+    : 0
+  const creaseShadowOpacity = Math.min(
+    1,
+    creaseProgress * 10,
+    (1 - creaseProgress) * 10,
+  )
   const foldDecorations = foldFrame != null ? (
     <>
+      {creaseShadowTransform == null ? null : (
+        <View
+          className='bubu-paper-crease-shadow'
+          style={{
+            transform: creaseShadowTransform,
+            opacity: creaseShadowOpacity,
+          }}
+          aria-hidden
+        />
+      )}
       <View
         className={`bubu-paper-fold-region bubu-paper-fold-${horizontal ? 'horizontal' : 'vertical'}`}
         style={{ clipPath: foldFrame.flatClipPath }}
@@ -253,9 +279,12 @@ export function PaperTurnViewport({
       </View>
     </>
   ) : null
-  const sheetClipStyle = (moving: boolean) => moving && foldFrame != null
-    ? { clipPath: foldFrame.flatClipPath }
-    : undefined
+  const sheetStyle = (moving: boolean, blur: number | null) => {
+    const style: { clipPath?: string; filter?: string } = {}
+    if (moving && foldFrame != null) style.clipPath = foldFrame.flatClipPath
+    if (blur != null && blur > 0) style.filter = `blur(${blur}px)`
+    return Object.keys(style).length > 0 ? style : undefined
+  }
 
   const currentIsUpper = activeDirection !== 'prev'
   const stableCurrent = activeDirection != null && layers != null
@@ -276,7 +305,13 @@ export function PaperTurnViewport({
       className={`bubu-paper-neighbor bubu-paper-neighbor-${direction}${visible ? ' bubu-paper-neighbor-active' : ''}`}
       {...inertPreviewAttributes}
     >
-      <View className='bubu-paper-sheet-clip' style={sheetClipStyle(moving)}>
+      <View
+        className='bubu-paper-sheet-clip'
+        style={sheetStyle(
+          moving,
+          visible ? focusState?.incomingBlur ?? null : null,
+        )}
+      >
         <View
           className='bubu-paper-preview-scroll'
           style={{ transform: `translateY(${-gestureScrollTop}px)` }}
@@ -305,7 +340,10 @@ export function PaperTurnViewport({
       <View className='bubu-paper-current'>
         <View
           className='bubu-paper-sheet-clip'
-          style={sheetClipStyle(currentIsUpper && nextVisible)}
+          style={sheetStyle(
+            currentIsUpper && nextVisible,
+            focusState?.outgoingBlur ?? null,
+          )}
         >
           {stableCurrent}
         </View>

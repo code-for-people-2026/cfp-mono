@@ -37,6 +37,15 @@ export interface PaperFoldFrame {
   shadowClipPath: string;
 }
 
+export interface PaperFoldFocusState {
+  /** Logical completion of a turn, independent of table direction. */
+  completion: number;
+  /** Blur for the outgoing current page; 0 is sharp. */
+  outgoingBlur: number;
+  /** Blur for the incoming adjacent page; 6 is fully deferred focus. */
+  incomingBlur: number;
+}
+
 export interface PaperFoldTileGrid {
   columns: number;
   rows: number;
@@ -54,6 +63,22 @@ const finite = (value: number | undefined): number => (
 const clamp = (value: number, minimum: number, maximum: number): number => (
   Math.min(maximum, Math.max(minimum, value))
 );
+
+/** Derive depth-of-field from the same table position that draws the fold. */
+export function resolvePaperFoldFocusState(
+  progress: number,
+  direction: PaperTurnDirection,
+): PaperFoldFocusState {
+  const canonicalProgress = clamp(finite(progress), 0, 1);
+  const completion = direction === "next"
+    ? canonicalProgress
+    : 1 - canonicalProgress;
+  return {
+    completion,
+    outgoingBlur: 6 * completion,
+    incomingBlur: 6 * (1 - completion),
+  };
+}
 
 /** Convert touch values to a table coordinate. This performs no fold geometry. */
 export function resolvePaperFoldMotion(input: PaperFoldMotionInput): PaperFoldMotion {
@@ -137,7 +162,8 @@ export function paperFoldAvatarTransform(
   height: number,
   axis: PaperTurnAxis,
 ): string | null {
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  if (!Number.isFinite(width) || !Number.isFinite(height)
+    || width <= 0 || height <= 0) return null;
   if (back.length < 4 || back.some((point) => point.length < 2
     || !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) return null;
 
@@ -154,6 +180,28 @@ export function paperFoldAvatarTransform(
   const tx = q1[0] * width;
   const ty = q1[1] * height;
   const values = [a, b, c, d, tx, ty];
+  return values.every(Number.isFinite) ? `matrix(${values.join(", ")})` : null;
+}
+
+/**
+ * Align the narrow crease shadow with flat polygon edge 1 -> 2.
+ *
+ * The matrix is a horizontal translation and shear; no trigonometry is
+ * required. The component offsets the strip by one pixel so its sharp edge sits
+ * on the crease while the gradient extends toward the exposed page.
+ */
+export function paperFoldCreaseShadowTransform(
+  flat: PaperFoldPolygon,
+  width: number,
+  height: number,
+): string | null {
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
+  if (flat.length < 3 || flat.some((point) => point.length < 2
+    || !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) return null;
+
+  const xTop = flat[1][0] / 1000 * width;
+  const xBottom = flat[2][0] / 1000 * width;
+  const values = [1, 0, (xBottom - xTop) / height, 1, xTop - 1, 0];
   return values.every(Number.isFinite) ? `matrix(${values.join(", ")})` : null;
 }
 

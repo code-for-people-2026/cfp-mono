@@ -26,6 +26,12 @@
   position: absolute; top: 0; right: 0; left: 0; height: auto;
   pointer-events: none;
 }
+.bubu-paper-crease-shadow {
+  position: absolute; top: 0; left: 0; z-index: 3;
+  width: 22px; height: 100%;
+  transform-origin: 0 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(87, 64, 40, .35), rgba(87, 64, 40, 0));
+}
 .bubu-paper-fold-region {
   position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 4;
   pointer-events: none;
