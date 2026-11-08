@@ -51,7 +51,7 @@ test("server pause, expiry and restoration remain explainable while historical f
     await expect(page.locator(".diary-service-label")).toHaveText(label);
     await expect(page.locator(".diary-service-message")).toHaveText(message);
     await expect(page.locator(".diary-service-date")).toContainText("2026/10/22");
-    await page.locator(".diary-menu-link").filter({ has: page.getByText("历史数据", { exact: true }) }).click();
+    await page.locator(".diary-drawer taro-button-core").filter({ has: page.getByText("历史记录", { exact: true }) }).click();
     await expect(page.locator(".record-row")).toContainText(/90\s*ml/);
   }
   service.update({ ...free, version: 3, message: "服务已恢复，当前可免费使用。" });

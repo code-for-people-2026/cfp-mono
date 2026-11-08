@@ -44,6 +44,8 @@ button::after { border: 0; }
 .diary-shell { max-width: 540px; margin: 0 auto; color: #3d3831; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
 .diary-content { min-height: 0; padding-top: 0; }
 .daily-summary { margin: 6px 0 10px; }
+.collapsible-day-summary { height: auto; overflow: hidden; transition: height 200ms ease; will-change: height; }
+.collapsible-day-summary-inner { width: 100%; display: flex; flex-direction: column; transition: opacity 200ms ease, transform 200ms ease; }
 
 .arrow-button::after, .text-button::after, .primary-button::after { border: 0; pointer-events: none; }
 

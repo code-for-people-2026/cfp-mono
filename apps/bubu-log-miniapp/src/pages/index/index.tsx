@@ -16,26 +16,27 @@ import { api, identityEnabled, wechatIdentityEnabled } from "../../api";
 import { IdentitySetup } from "../../components/IdentitySetup";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
 import type { DetailProvenanceState } from "../../components";
+import { CollapsibleDaySummary } from "../../components/CollapsibleDaySummary";
 import { DEFAULT_CARE_PREFERENCES, getCarePreferences, type CarePreferences } from "../../preferences/care-preferences";
 import { carePreferencesScope, carePreferencesUpdatedEvent } from "../../preferences/runtime";
 import {
   activityLabel, addDays, calendarPeriod, dayBounds, filterActivities, formatDuration,
   layoutDayTimeline, previousEvening, sortActivities, statCards, stepPeriod, summarizeHomeDay, summarizeRecordList,
   timeLabel, timestamp, todayKey, coverageMessage, recordStatCards, syncStatusLines,
-  type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter,
-  type RecordSummary, type RecordEvent, type RecordSyncStatus,
+  type Activity, type AuthContext, type Baby, type SortField, type StatFilter,
+  type RecordEvent, type RecordSyncStatus,
 } from "../../model";
-type Loaded = {
-  key: string;
-  activities: Activity[];
-  evening: Activity[];
-  latest: Activity[];
-  stats: DailyStat[];
-  complete: boolean;
-  recordSummary?: RecordSummary;
-  birthDate?: string | null;
-  profileError?: string;
-};
+import { loadTimeline, type TimelineLoaded, type TimelineMode } from "../../api/timeline";
+import {
+  TimelineCacheStaleError,
+  TimelinePrefetchCache,
+  timelineCacheKey,
+  timelineDisplayKey,
+  timelinePeriodDate,
+  type TimelineCacheContext,
+} from "../../navigation/timeline-cache";
+
+type Loaded = TimelineLoaded;
 type CarePreferencesState = { babyId: string; preferences: CarePreferences; error: string };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
@@ -87,6 +88,8 @@ export default function DiaryPage() {
   const [sort, setSort] = useState<SortField>("endTime");
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const timelineCache = useRef(new TimelinePrefetchCache(5));
+  const [cacheVersion, setCacheVersion] = useState(0);
   const [carePreferences, setCarePreferences] = useState<CarePreferencesState | null>(null);
   const [dataError, setDataError] = useState("");
   const [detail, setDetail] = useState<Activity | null>(null);
@@ -99,6 +102,8 @@ export default function DiaryPage() {
   const [photoLoading, setPhotoLoading] = useState(false);
   const photoPaths = useRef<string[]>([]);
   const [sync, setSync] = useState<{ babyId: string; jobs: RecordSyncStatus[]; error?: string } | null>(null);
+  const [summaryHidden, setSummaryHidden] = useState(false);
+  const [summaryHeight, setSummaryHeight] = useState(0);
   const detailVersion = useRef(0);
   const provenanceVersion = useRef(0);
   const identityEpoch = useRef(0);
@@ -141,7 +146,9 @@ export default function DiaryPage() {
     return () => { active = false; };
   }, [context?.authenticated, babyId, privacyKey, privacyCheck]);
   const weekStart = calendarPeriod("week", date).start;
-  const dataKey = `${babyId}:${mode}:${date}:${days}:${revision}`;
+  const dataKey = mode === "day" || mode === "week"
+    ? timelineDisplayKey({ identity: { epoch: identityEpoch.current, babyId, revision, today }, mode, date })
+    : `${babyId}:${mode}:${date}:${days}:${revision}`;
   const data = loaded?.key === dataKey ? loaded : null;
 
   const releaseDetailPhotos = useCallback(() => {
@@ -160,6 +167,8 @@ export default function DiaryPage() {
     setViewMenuOpen(false); setReturnPeriod(null);
     releaseDetailPhotos();
     setProvenance({ status: "idle" }); provenanceVersion.current++;
+    timelineCache.current.reset();
+    setCacheVersion((version) => version + 1);
   }, [releaseDetailPhotos]);
   useEffect(() => {
     const nextIdentity = `${context?.authenticated ? "authenticated" : "guest"}:${context?.authenticated ? babyId : ""}`;
@@ -172,6 +181,87 @@ export default function DiaryPage() {
       identityKey.current = nextIdentity;
     }
   }, [babyId, context?.authenticated]);
+
+  const timelineContext = useCallback((targetMode: TimelineMode, targetDate: string): TimelineCacheContext => ({
+    identity: { epoch: identityEpoch.current, babyId, revision, today },
+    mode: targetMode,
+    date: targetDate,
+  }), [babyId, revision, today]);
+
+  const requestTimeline = useCallback((target: TimelineCacheContext) => timelineCache.current.load(target, () => loadTimeline({
+    babyId: target.identity.babyId,
+    mode: target.mode,
+    date: target.date,
+    today: target.identity.today,
+    key: timelineDisplayKey(target),
+  })), []);
+
+  const expireForIdentity = useCallback((
+    identity: TimelineCacheContext["identity"],
+    error: unknown,
+    requestContextVersion: number,
+  ) => {
+    if (!isUnauthorized(error) || !mounted.current) return;
+    // Authentication and baby boundaries advance the epoch. Date, view, refresh,
+    // and rollover changes remain the same session; a late 401 still expires it.
+    if (
+      identityEpoch.current !== identity.epoch
+      || babyId !== identity.babyId
+      || contextVersion.current !== requestContextVersion
+    ) return;
+    clearPrivateView();
+    setContext(null);
+    setAccountError("登录已过期，请重新登录");
+  }, [babyId, clearPrivateView]);
+
+  const prefetchAdjacent = useCallback((base: TimelineCacheContext, requestContextVersion: number) => {
+    const targets: Array<"prev" | "next"> = ["prev", "next"];
+    const periodDate = timelinePeriodDate(base.mode, base.date);
+    for (const direction of targets) {
+      const distance = base.mode === "week" ? 7 : 1;
+      const targetDate = addDays(periodDate, direction === "prev" ? -distance : distance);
+      if (base.mode === "day" ? targetDate > today : calendarPeriod("week", targetDate).start > calendarPeriod("week", today).start) continue;
+      const next = { ...base, date: targetDate };
+      void requestTimeline(next).then(() => {
+        if (!mounted.current
+          || identityEpoch.current !== base.identity.epoch
+          || babyId !== base.identity.babyId
+          || revision !== base.identity.revision
+          || today !== base.identity.today
+          || contextVersion.current !== requestContextVersion) return;
+        // adjacentPages is memoized over the cache; completion must re-render it.
+        setCacheVersion((version) => version + 1);
+      }).catch((error: unknown) => expireForIdentity(next.identity, error, requestContextVersion));
+    }
+  }, [babyId, expireForIdentity, requestTimeline, revision, today]);
+
+  const showCachedTimeline = useCallback((targetMode: TimelineMode, targetDate: string) => {
+    const cached = timelineCache.current.peek(timelineContext(targetMode, targetDate));
+    if (cached) setLoaded(cached);
+    return cached;
+  }, [timelineContext]);
+
+  const navigateTimeline = useCallback((direction: "prev" | "next") => {
+    if (mode !== "day" && mode !== "week") return;
+    const targetDate = stepPeriod(mode, date, direction === "prev" ? -1 : 1, today);
+    if (targetDate === date) return;
+    showCachedTimeline(mode, targetDate);
+    setReturnPeriod(null);
+    setDate(targetDate);
+  }, [date, mode, showCachedTimeline, today]);
+
+  const navigateTimelineReady = useCallback((direction: "prev" | "next") => {
+    if (mode !== "day" && mode !== "week") return false;
+    const targetDate = stepPeriod(mode, date, direction === "prev" ? -1 : 1, today);
+    if (timelineCache.current.peek(timelineContext(mode, targetDate))) return true;
+    // Recoil is not permanent: a failed/absent prefetch is retried when ready is polled.
+    const target = timelineContext(mode, targetDate);
+    const requestContextVersion = contextVersion.current;
+    void requestTimeline(target).then(() => {
+      if (contextVersion.current === requestContextVersion) setCacheVersion((version) => version + 1);
+    }).catch((error: unknown) => expireForIdentity(target.identity, error, requestContextVersion));
+    return false;
+  }, [date, expireForIdentity, mode, requestTimeline, timelineContext, today]);
   useEffect(() => {
     mounted.current = true;
     return () => {
@@ -232,6 +322,49 @@ export default function DiaryPage() {
 
   useEffect(() => {
     if (!babyId || !context?.authenticated || !privacyReady) return;
+    if (mode === "day" || mode === "week") {
+      const request = timelineContext(mode, date);
+      const requestIdentity = request.identity;
+      const requestCacheKey = timelineCacheKey(request);
+      const requestContextVersion = contextVersion.current;
+      let cancelled = false;
+      setDataError("");
+      const cached = timelineCache.current.peek(request);
+      if (cached) {
+        setLoaded(cached);
+        prefetchAdjacent(request, requestContextVersion);
+        return () => { cancelled = true; };
+      }
+      void requestTimeline(request).then((next) => {
+        const currentKey = timelineCacheKey(timelineContext(mode, date));
+        if (
+          !cancelled &&
+          mounted.current &&
+          identityEpoch.current === requestIdentity.epoch &&
+          contextVersion.current === requestContextVersion &&
+          currentKey === requestCacheKey
+        ) {
+          setLoaded(next);
+          prefetchAdjacent(request, requestContextVersion);
+        }
+        if (contextVersion.current === requestContextVersion && currentKey === requestCacheKey) {
+          setCacheVersion((version) => version + 1);
+        }
+      }).catch((error: unknown) => {
+        expireForIdentity(requestIdentity, error, requestContextVersion);
+        if (cancelled || !mounted.current || error instanceof TimelineCacheStaleError) return;
+        if (
+          identityEpoch.current !== requestIdentity.epoch ||
+          contextVersion.current !== requestContextVersion ||
+          timelineCacheKey(timelineContext(mode, date)) !== requestCacheKey
+        ) return;
+        if (isUnauthorized(error)) return;
+        if (isForbidden(error)) { void restore(); return; }
+        setDataError(message(error));
+      });
+      return () => { cancelled = true; };
+    }
+
     const requestIdentityEpoch = identityEpoch.current;
     const requestContextVersion = contextVersion.current;
     let cancelled = false;
@@ -281,28 +414,23 @@ export default function DiaryPage() {
           profileError,
         };
       }
-      if (mode === "week") {
-        const week = calendarPeriod("week", date);
-        const result = await api.getActivities({ babyId,
-          startTimeGte: iso(dayBounds(week.start).start),
-          startTimeLt: iso(dayBounds(week.end).next),
-          crossStartTime: true, crossEndTime: true,
-        });
+      if (mode === "list") {
+        const snapshot = identityEnabled ? await api.getSnapshot(babyId, date) : null;
+        if (snapshot) {
+          return {
+            key: dataKey,
+            activities: snapshot.activities,
+            complete: true,
+            recordSummary: snapshot.summary,
+            evening: [],
+            latest: [],
+            stats: [],
+          };
+        }
+        const result = await api.getActivities({ babyId, date });
         return { key: dataKey, ...result, evening: [], latest: [], stats: [] };
       }
-      const snapshot = identityEnabled ? await api.getSnapshot(babyId, date) : null;
-      const result = snapshot ? { activities: snapshot.activities, complete: true } : await api.getActivities({ babyId, date });
-      let evening: Activity[] = [];
-      let complete = result.complete;
-      if (mode === "day") {
-        const previous = await api.getActivities({ babyId,
-          startTimeGte: iso(dayBounds(date).start - 6 * 3600000), startTimeLt: iso(dayBounds(date).start),
-        });
-        evening = previous.activities;
-        complete = complete && previous.complete;
-      }
-      const latest = mode === "day" && date === today ? (await Promise.all([api.getLatestActivity(babyId, ["SLEEP"]), api.getLatestActivity(babyId, ["BREASTFEED", "BOTTLE"])] )).filter((activity): activity is Activity => activity !== null) : [];
-      return { key: dataKey, ...result, complete, evening, latest, stats: [], ...(snapshot ? { recordSummary: snapshot.summary } : {}) };
+      throw new Error("暂时无法连接，请稍后重试");
     };
     void load().then((next) => {
       if (
@@ -338,7 +466,8 @@ export default function DiaryPage() {
       setDataError(message(error));
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, privacyReady, mode, date, days, weekStart, dataKey, today, clearPrivateView, restore]);
+  }, [babyId, context?.authenticated, privacyReady, mode, date, days, weekStart, dataKey, today,
+    clearPrivateView, restore, expireForIdentity, prefetchAdjacent, requestTimeline, timelineContext]);
 
   useEffect(() => {
     if (!identityEnabled || !babyId || !context?.authenticated || !privacyReady) return;
@@ -502,17 +631,48 @@ export default function DiaryPage() {
     : summarizeHomeDay(data?.activities || [], date), [data, date, mode]);
   const cards = useMemo(() => data?.recordSummary ? recordStatCards(data.recordSummary) : statCards(summary), [data, summary]);
   const visible = useMemo(() => filterActivities(data?.activities || [], filters), [data, filters]);
+  const revealSummary = useCallback(() => setSummaryHidden(false), []);
+  const handleSummaryHeight = useCallback((height: number) => {
+    setSummaryHeight((previous) => (Math.abs(previous - height) <= 0.5 ? previous : height));
+  }, []);
+  const handleScrollIntent = useCallback((intent: "hide" | "show") => {
+    setSummaryHidden(intent === "hide");
+  }, []);
   const navigate = (direction: number) => {
+    revealSummary();
     if (mode === "trend") {
       const next = addDays(date, direction * days);
       setDate(next > today ? today : next);
       return;
     }
-    const period = mode === "week" ? "week" : mode === "month" ? "month" : "day";
+    if (mode === "day" || mode === "week") {
+      const next = stepPeriod(mode === "week" ? "week" : "day", date, direction, today);
+      if (next !== date) showCachedTimeline(mode, next);
+      setDate(next);
+      return;
+    }
+    const period = mode === "month" ? "month" : "day";
     setDate(stepPeriod(period, date, direction, today));
   };
+  const adjacentPages = useMemo(() => {
+    if (mode !== "day" && mode !== "week") return undefined;
+    const distance = mode === "week" ? 7 : 1;
+    const result: Partial<Record<"prev" | "next", Loaded>> = {};
+    for (const direction of ["prev", "next"] as const) {
+      const targetDate = addDays(date, direction === "prev" ? -distance : distance);
+      if (mode === "day" ? targetDate > today : calendarPeriod("week", targetDate).start > calendarPeriod("week", today).start) continue;
+      const target = timelineCache.current.peek(timelineContext(mode, targetDate));
+      if (!target) continue;
+      result[direction] = mode === "day"
+        ? { ...target, activities: filterActivities(target.activities, filters) }
+        : target;
+    }
+    return result;
+  }, [cacheVersion, date, filters, mode, today, timelineContext]);
   const openDay = (selected: string) => {
     if (selected > today) return;
+    revealSummary();
+    showCachedTimeline("day", selected);
     setReturnPeriod({ mode, date }); setDate(selected); setMode("day"); setFilters([]);
   };
   const gesturesDisabled = menuOpen || viewMenuOpen || detailBusy || !!detail || !!detailError;
@@ -547,26 +707,42 @@ export default function DiaryPage() {
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
       open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu} onAccessRevoked={restore}
-      onSelect={(next) => { setMode(next); setReturnPeriod(null); setDetailError(""); setFilters([]); closeMenu(); }}
-      onBabyChange={(index) => { void changeBaby(index); }}
+      onSelect={(next) => {
+        revealSummary();
+        if (next === "day" || next === "week") showCachedTimeline(next, date);
+        setMode(next); setReturnPeriod(null); setDetailError(""); setFilters([]); closeMenu();
+      }}
+      onBabyChange={(index) => { revealSummary(); void changeBaby(index); }}
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}
-      onRefresh={() => { setLoaded(null); setRevision((value) => value + 1); closeMenu(); }}
+      onRefresh={() => { timelineCache.current.reset(); setLoaded(null); setRevision((value) => value + 1); setCacheVersion((version) => version + 1); closeMenu(); }}
       onLogout={() => { void logout(); }}>
       {context.hasBaby && <CalendarNavigation date={date} mode={mode} days={days} open={viewMenuOpen} today={today}
         onToggle={() => setViewMenuOpen((value) => !value)} onClose={closeViewMenu}
         onNavigate={(direction) => { closeViewMenu(); setReturnPeriod(null); navigate(direction); }}
-        onDateChange={(next) => { setDate(next); setReturnPeriod(null); }}
-        onModeChange={(next) => { setMode(next); setFilters([]); setReturnPeriod(null); }} />}
+        onDateChange={(next) => {
+          revealSummary();
+          if (mode === "day" || mode === "week") showCachedTimeline(mode, next);
+          setDate(next); setReturnPeriod(null);
+        }}
+        onModeChange={(next) => {
+          revealSummary();
+          if (next === "day" || next === "week") showCachedTimeline(next, date);
+          setMode(next); setFilters([]); setReturnPeriod(null);
+        }} />}
     </DiaryNavigation>
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
     {!context.hasBaby ? identityEnabled ? <IdentitySetup context={context} onComplete={identityUpdated} /> : <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
       {identityEnabled && <SafetyNotices key={`${context.identityId}:${babyId}`} babyId={babyId} revision={revision + privacyCheck} />}
-      {returnPeriod && <Button className="text-button period-back" onClick={() => { setMode(returnPeriod.mode); setDate(returnPeriod.date); setFilters([]); setReturnPeriod(null); }}>‹ 返回{returnPeriod.mode === "week" ? "周历" : "月历"}</Button>}
+      {returnPeriod && <Button className="text-button period-back" onClick={() => {
+        revealSummary();
+        if (returnPeriod.mode === "day" || returnPeriod.mode === "week") showCachedTimeline(returnPeriod.mode, returnPeriod.date);
+        setMode(returnPeriod.mode); setDate(returnPeriod.date); setFilters([]); setReturnPeriod(null);
+      }}>‹ 返回{returnPeriod.mode === "week" ? "周历" : "月历"}</Button>}
       {dataError ? <View className="state-panel"><Text className="error-text">{dataError}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重试</Button></View>
         : !data ? <View className="state-panel">正在读取记录…</View> : <>
           {!data.complete && <View className="notice">记录数量达到读取上限，当前展示可能不完整。可切换到单日查看。</View>}
-          {(mode === "day" || mode === "list") && <View className="daily-summary">
+          {mode === "list" && <View className="daily-summary">
             <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{data.recordSummary?.coverage.recordedEvents ?? layoutDayTimeline(visible, date).length} 条记录</Text></View>
             <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
               <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
@@ -578,19 +754,40 @@ export default function DiaryPage() {
             </View>}
           </View>}
           {mode === "day" && <>
-            <PreviousEvening activities={data.evening} date={date} sidecar={identityEnabled} />
+            <CollapsibleDaySummary
+              collapsed={summaryHidden}
+              measurementKey={`${dataKey}:${filters.join(",")}`}
+              onHeightChange={handleSummaryHeight}
+            >
+              <View className="daily-summary">
+                <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{data.recordSummary?.coverage.recordedEvents ?? layoutDayTimeline(visible, date).length} 条记录</Text></View>
+                <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
+                  <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
+                </View>)}</View>
+                <View className="filter-caption"><Text>轻点上方卡片筛选记录</Text>{filters.length > 0 && <Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text>}</View>
+                {data.recordSummary && <View className="data-note">
+                  {data.recordSummary.metrics.diaperCount > 0 && <Text>尿布 {data.recordSummary.metrics.diaperCount} 次 · 明确有尿 {data.recordSummary.metrics.peeCount} 次 · 明确有便 {data.recordSummary.metrics.poopCount} 次。 </Text>}
+                  <Text>{coverageMessage(data.recordSummary.coverage) || "汇总仅包含已记录的事实。"}</Text>
+                </View>}
+              </View>
+              <PreviousEvening activities={data.evening} date={date} sidecar={identityEnabled} />
+            </CollapsibleDaySummary>
             <DayTimeline latestActivities={data.latest} activities={visible} date={date} today={today}
               recordCoverage={data.recordSummary?.coverage}
+              foldAvatarUrl={context.baby?.avatarUrl}
               scale={timeScale} onScaleChange={setTimeScale}
               gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:day:${date}`}
+              onScrollIntent={handleScrollIntent}
+              viewportExpansion={summaryHidden ? summaryHeight : 0}
               onActivityClick={(activity) => { void openDetail(activity); }}
-              onNavigate={(direction) => { setReturnPeriod(null); navigate(direction === "prev" ? -1 : 1); }} />
+              onNavigate={navigateTimeline} onNavigateReady={navigateTimelineReady} adjacentPages={adjacentPages} />
           </>}
           {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} today={today}
+            foldAvatarUrl={context.baby?.avatarUrl}
             scale={timeScale} onScaleChange={setTimeScale}
             gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:week:${date}`}
             onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay}
-            onNavigate={(direction) => { setReturnPeriod(null); navigate(direction === "prev" ? -1 : 1); }} />}
+            onNavigate={navigateTimeline} onNavigateReady={navigateTimelineReady} adjacentPages={adjacentPages} />}
           {mode === "month" && (
             <Heatmap
               stats={data.stats}

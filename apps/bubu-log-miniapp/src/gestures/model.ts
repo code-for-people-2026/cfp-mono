@@ -12,10 +12,10 @@ export type GesturePhase =
   | "idle"
   | "pending"
   | "horizontal"
-  | "pull"
   | "scroll"
   | "pinch"
   | "blocked"
+  | "settling"
   | "done";
 export type PullEdge = "top" | "bottom";
 export type FeedbackPlacement = "top" | "bottom" | "center";
@@ -93,6 +93,19 @@ export interface GestureState {
   suppressClick: boolean;
   scale: number;
   pinch: PinchState | null;
+  paperTurn: PaperTurnState;
+}
+
+export interface PaperTurnState {
+  phase: PaperTurnPhase;
+  axis: PaperTurnAxis;
+  direction: PaperDirection | null;
+  displacement: number;
+  /** First touch in stable viewport-local coordinates. */
+  origin?: GesturePoint;
+  /** Cross-axis displacement: dy for horizontal turns, dx for vertical turns. */
+  crossDisplacement?: number;
+  reducedMotion: boolean;
 }
 
 export interface GestureUpdate {
@@ -104,6 +117,9 @@ export interface GestureUpdate {
   blocked: boolean;
   ended: boolean;
 }
+import type { PaperTurnAxis, PaperTurnDirection, PaperTurnPhase } from "./paper-turn";
+
+type PaperDirection = PaperTurnDirection;
 
 export interface PointerInput {
   points: GesturePoint[];
@@ -147,6 +163,7 @@ export function createGestureState(scale = 1): GestureState {
     suppressClick: false,
     scale,
     pinch: null,
+    paperTurn: { phase: "idle", axis: "horizontal", direction: null, displacement: 0, reducedMotion: false },
   };
 }
 
@@ -165,16 +182,18 @@ const blockedFeedback = (config: GestureConfig): string => `已经是${config.la
 const horizontalFeedback = (direction: PeriodDirection, armed: boolean, config: GestureConfig): string => {
   if (direction === "next" && !config.canNext) return blockedFeedback(config);
   const label = direction === "prev" ? config.labels.previous : config.labels.next;
-  const swipe = direction === "prev" ? "左" : "右";
+  const swipe = direction === "prev" ? "右" : "左";
   return armed ? `松开切换${label}` : `继续${swipe}滑查看${label}`;
 };
 
-const pullFeedback = (edge: PullEdge, armed: boolean, config: GestureConfig): string => {
-  if (edge === "bottom" && !config.canNext) return blockedFeedback(config);
-  const label = edge === "top" ? config.labels.previous : config.labels.next;
-  const pull = edge === "top" ? "下拉" : "上拉";
-  return armed ? `松开切换${label}` : `继续${pull}查看${label}`;
-};
+const clearPaperTurn = (state: GestureState): PaperTurnState => ({
+  ...state.paperTurn,
+  phase: "idle",
+  direction: null,
+  displacement: 0,
+  origin: undefined,
+  crossDisplacement: undefined,
+});
 
 const baseStart = (points: readonly GesturePoint[], metrics: GestureMetrics, scale: number, config: GestureConfig): GestureState => ({
   ...createGestureState(scale),
@@ -200,6 +219,7 @@ const block = (state: GestureState, pointerCount: number, config?: GestureConfig
   placement: "center",
   suppressClick: true,
   pinch: null,
+  paperTurn: clearPaperTurn(state),
 });
 
 function startPinch(state: GestureState, points: readonly GesturePoint[], metrics: GestureMetrics): GestureState {
@@ -273,10 +293,16 @@ export function resolvePinchFrame(input: PinchFrameInput): PinchFrame {
 
 export function pointerDown(state: GestureState, input: PointerInput): GestureState {
   const { points, metrics, scale, config } = input;
+  if (state.phase === "settling") return { ...state, config: cloneConfig(config) };
   const fresh = state.phase === "idle" || state.phase === "done";
   const next = fresh ? { ...createGestureState(scale), config: cloneConfig(config) } : { ...state, config: cloneConfig(config) };
   if (points.length >= 3) return block(next, points.length, config);
   if (points.length === 2) {
+    // A second finger joining a locked paper-turn drag cancels that drag. A
+    // pending touch has not chosen an axis yet, so it can still become a pinch.
+    if (!fresh && state.phase !== "pinch" && state.phase !== "pending") {
+      return block(next, points.length, config);
+    }
     if (fresh) return startPinch(baseStart(points, metrics, scale, config), points, metrics);
     return startPinch(next, points, metrics);
   }
@@ -325,14 +351,17 @@ function movePinch(state: GestureState, input: MoveInput): GestureUpdate {
 
 export function pointerMove(state: GestureState, input: MoveInput): GestureUpdate {
   const { points, config } = input;
-  if (state.phase === "idle" || state.phase === "done") {
+  if (state.phase === "idle" || state.phase === "done" || state.phase === "settling") {
     return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (points.length >= 3) {
     return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
-  if (state.phase === "pinch" || points.length === 2) {
+  if (state.phase === "pinch") {
     return movePinch(state, input);
+  }
+  if (points.length === 2) {
+    return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (points.length !== 1) {
     return { state: block(state, points.length, config), scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
@@ -347,7 +376,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
   const dy = current.y - start.y;
   const moved = Math.abs(dx) > TOUCH_SLOP || Math.abs(dy) > TOUCH_SLOP;
   let phase = state.phase;
-  let edge = state.edge;
+  const edge = state.edge;
   let direction = state.direction;
   let feedback = state.feedback;
   let placement = state.placement;
@@ -358,22 +387,17 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
     if (Math.max(Math.abs(dx), Math.abs(dy)) > DIRECTION_LOCK) {
       if (Math.abs(dx) >= Math.abs(dy)) {
         phase = "horizontal";
-      } else if (state.atTop && dy > 0) {
-        phase = "pull";
-        edge = "top";
-      } else if (state.atBottom && dy < 0) {
-        phase = "pull";
-        edge = "bottom";
       } else {
+        // Vertical movement always belongs to native/H5 scrolling, including at
+        // either content boundary. Page turns activate only after a horizontal lock.
         phase = "scroll";
-        edge = null;
         direction = null;
       }
     }
   }
 
   if (phase === "horizontal") {
-    const swipeDirection: PeriodDirection | null = dx < 0 ? "prev" : dx > 0 ? "next" : null;
+    const swipeDirection: PeriodDirection | null = dx < 0 ? "next" : dx > 0 ? "prev" : null;
     direction = swipeDirection;
     if (!swipeDirection) {
       armed = false;
@@ -385,29 +409,25 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
       feedback = horizontalFeedback(swipeDirection, armed, config);
       placement = "center";
     }
-  } else if (phase === "pull" && edge) {
-    const outward = edge === "top" ? dy : -dy;
-    if (outward <= 0) {
-      // Started on a boundary but dragged inward: hand the gesture back to native scrolling.
-      phase = "scroll";
-      edge = null;
-      direction = null;
-      armed = false;
-      feedback = "";
-      placement = "center";
-    } else {
-      direction = edge === "top" ? "prev" : "next";
-      const blocked = edge === "bottom" && !config.canNext;
-      armed = !blocked && outward >= SWIPE_THRESHOLD;
-      feedback = pullFeedback(edge, armed, config);
-      placement = edge;
-    }
   } else if (phase === "scroll") {
     armed = false;
     direction = null;
     feedback = "";
     placement = "center";
   }
+  const blockedFuture = direction === "next" && !config.canNext;
+  const activeTurn = phase === "horizontal" && !blockedFuture;
+  const paperTurn: PaperTurnState = activeTurn && direction
+    ? {
+      ...state.paperTurn,
+      phase: "drag",
+      axis: "horizontal",
+      direction,
+      displacement: dx,
+      origin: { ...start },
+      crossDisplacement: dy,
+    }
+    : clearPaperTurn(state);
 
   return {
     state: {
@@ -421,6 +441,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
       feedback,
       placement,
       suppressClick: state.suppressClick || moved,
+      paperTurn,
     },
     scaleChanged: false,
     scrollTop: null,
@@ -431,13 +452,23 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
 }
 
 function finish(state: GestureState, config: GestureConfig): GestureUpdate {
-  const wanted = state.phase === "horizontal" || state.phase === "pull" ? state.direction : null;
+  const wanted = state.phase === "horizontal" ? state.direction : null;
   const blocked = !!wanted && wanted === "next" && !config.canNext;
   const navigation = state.armed && wanted && !blocked ? wanted : null;
+  const canTurn = !!wanted && state.paperTurn.phase === "drag" && state.paperTurn.direction === wanted && !blocked;
+  const turnPhase: PaperTurnPhase = navigation ? "complete" : canTurn ? "recoil" : "idle";
+  const paperTurn: PaperTurnState = canTurn || navigation
+    ? {
+      ...state.paperTurn,
+      phase: turnPhase,
+      direction: wanted,
+      displacement: 0,
+    }
+    : { ...clearPaperTurn(state), phase: turnPhase };
   const next: GestureState = {
     ...state,
     config: cloneConfig(config),
-    phase: "done",
+    phase: navigation || canTurn ? "settling" : "done",
     pointerCount: 0,
     edge: null,
     direction: null,
@@ -446,6 +477,7 @@ function finish(state: GestureState, config: GestureConfig): GestureUpdate {
     placement: "center",
     suppressClick: state.suppressClick || navigation !== null || blocked || state.phase === "pinch",
     pinch: null,
+    paperTurn,
   };
   return {
     state: next,
@@ -459,8 +491,8 @@ function finish(state: GestureState, config: GestureConfig): GestureUpdate {
 
 export function pointerUp(state: GestureState, input: UpInput): GestureUpdate {
   const { remaining, changed, metrics, config } = input;
-  if (state.phase === "idle" || state.phase === "done") {
-    return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: true };
+  if (state.phase === "idle" || state.phase === "done" || state.phase === "settling") {
+    return { state, scaleChanged: false, scrollTop: null, navigation: null, blocked: false, ended: false };
   }
   if (remaining.length > 0) {
     // A second finger (or a third) was involved: consume the rest of the touch
@@ -474,11 +506,12 @@ export function pointerUp(state: GestureState, input: UpInput): GestureUpdate {
   return finish(current, config);
 }
 
-export function cancelGesture(state: GestureState): GestureState {
+export function cancelGesture(state: GestureState, animate = false): GestureState {
   if (state.phase === "idle" || state.phase === "done") return state;
+  const animateBack = animate && state.paperTurn.phase === "drag";
   return {
     ...state,
-    phase: "done",
+    phase: animateBack ? "settling" : "done",
     pointerCount: 0,
     edge: null,
     direction: null,
@@ -487,5 +520,8 @@ export function cancelGesture(state: GestureState): GestureState {
     placement: "center",
     suppressClick: true,
     pinch: null,
+    paperTurn: animateBack
+      ? { ...state.paperTurn, phase: "recoil", displacement: 0 }
+      : clearPaperTurn(state),
   };
 }

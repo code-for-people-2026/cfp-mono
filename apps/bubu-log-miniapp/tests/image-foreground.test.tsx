@@ -43,6 +43,7 @@ vi.mock("../src/privacy/SafetyNotices", () => ({ SafetyNotices: () => null }));
 vi.mock("../src/privacy/PrivacyCenter", () => ({ PrivacyCenter: () => <div>permission-needed</div>, Choice: () => null, PolicyDocuments: () => null }));
 vi.mock("../src/chat/sheet-portal", () => ({ SheetPortal: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("../src/components", () => Object.fromEntries(["ActivityDetail", "DayTimeline", "Heatmap", "TrendCharts", "WeekCalendar"].map(key => [key, () => null])));
+vi.mock("../src/components/CollapsibleDaySummary", () => ({ CollapsibleDaySummary: ({ children }: { children: React.ReactNode }) => children }));
 import DiaryPage from "../src/pages/index/index";
 
 let root: ReactTestRenderer;
