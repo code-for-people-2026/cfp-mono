@@ -18,8 +18,6 @@ import { PaperTurnViewport } from './PaperTurnViewport'
 import { designPixelsFloor, designSize } from './display'
 import './visualizations.css'
 
-type NativeTimelineTouchProps = ReturnType<typeof useTimelineGestures>['nativeTouchProps']
-
 export interface DayTimelineProps {
   activities: Activity[]
   date: string
@@ -51,7 +49,7 @@ function clockMinutes(): number {
 
 function DayCanvas({
   canvasId, idPrefix, blocks, scale, isToday, showCurrentTime, minutes,
-  preview = false, nativeTouchProps, nativeCatchMove = false, onActivityClick,
+  preview = false, onActivityClick,
 }: {
   canvasId: string
   idPrefix: string
@@ -61,8 +59,6 @@ function DayCanvas({
   showCurrentTime: boolean
   minutes: number
   preview?: boolean
-  nativeTouchProps?: NativeTimelineTouchProps
-  nativeCatchMove?: boolean
   onActivityClick?: (activity: Activity) => void
 }) {
   const openActivity = (activity: Activity) => { if (onActivityClick) onActivityClick(activity) }
@@ -103,7 +99,6 @@ function DayCanvas({
       id={canvasId}
       className={preview ? 'bubu-day-preview-canvas' : 'bubu-day-canvas'}
       style={{ height: designSize(24 * HOUR_HEIGHT * scale) }}
-      {...(preview ? {} : { ...nativeTouchProps, catchMove: nativeCatchMove })}
     >
       {hours.map((hour) => (
         <View id={`${idPrefix}timeline-hour-${hour}`} className='bubu-hour-row' style={{ top: designSize(hour * HOUR_HEIGHT * scale) }} key={hour}>
@@ -173,7 +168,6 @@ export function DayTimeline({
     if (gestures.consumeClickSuppression()) return
     onActivityClick?.(activity)
   }
-  const turn = gestures.paperTurn
   const previousPage = adjacentPages?.prev
   const nextPage = adjacentPages?.next
   const previousDate = addDays(date, -1)
@@ -186,7 +180,6 @@ export function DayTimeline({
     () => nextPage ? layoutDayTimeline(nextPage.activities, nextDate, { minBlockHeightMinutes }) : [],
     [nextPage, nextDate, minBlockHeightMinutes],
   )
-  const nativeCatchMove = gestures.isPinching || turn.phase !== 'idle'
   const dayScrollStyle = {
     height: `calc(100vh - ${designSize(470)} + ${Math.max(0, viewportExpansion)}px)`,
     transitionProperty: 'height',
@@ -203,11 +196,12 @@ export function DayTimeline({
       </View>}
       {blocks.length === 0 && <View className='bubu-empty-inline'>这一天还没有记录</View>}
       <PaperTurnViewport
-        paperTurn={turn}
+        paperTurn={gestures.paperTurn}
         viewportWidth={gestures.viewportWidth}
         viewportHeight={gestures.viewportHeight}
         gestureScrollTop={gestures.gestureScrollTop}
         foldAvatarUrl={foldAvatarUrl}
+        nativeTouchProps={gestures.nativeTouchProps}
         previous={previousPage ? (
           <DayCanvas
             canvasId={`${gestures.canvasId}-preview-prev`} idPrefix='preview-prev-'
@@ -232,7 +226,7 @@ export function DayTimeline({
           >
             <DayCanvas canvasId={gestures.canvasId} idPrefix='' blocks={blocks} scale={scale}
               isToday={isToday} showCurrentTime={showCurrentTime} minutes={minutes}
-              nativeTouchProps={gestures.nativeTouchProps} nativeCatchMove={nativeCatchMove} onActivityClick={openActivity} />
+              onActivityClick={openActivity} />
           </ScrollView>
         }
       >

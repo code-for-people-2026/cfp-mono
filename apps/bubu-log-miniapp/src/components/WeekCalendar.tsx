@@ -19,8 +19,6 @@ import { PaperTurnViewport } from './PaperTurnViewport'
 import { designPixelsFloor, designSize } from './display'
 import './visualizations.css'
 
-type NativeTimelineTouchProps = ReturnType<typeof useTimelineGestures>['nativeTouchProps']
-
 export interface WeekCalendarProps {
   activities: Activity[]
   weekStart: string
@@ -43,14 +41,12 @@ const weekdays = ['一', '二', '三', '四', '五', '六', '日']
 const hours = Array.from({ length: 13 }, (_, index) => index * 2)
 
 function WeekCanvas({
-  canvasId, week, scale, preview = false, nativeTouchProps, nativeCatchMove = false, onActivityClick,
+  canvasId, week, scale, preview = false, onActivityClick,
 }: {
   canvasId: string
   week: ReturnType<typeof buildWeek>
   scale: number
   preview?: boolean
-  nativeTouchProps?: NativeTimelineTouchProps
-  nativeCatchMove?: boolean
   onActivityClick?: (activity: Activity) => void
 }) {
   const canvas = (
@@ -58,7 +54,6 @@ function WeekCanvas({
       id={canvasId}
       className={preview ? 'bubu-week-preview-canvas' : 'bubu-week-canvas'}
       style={{ height: designSize(24 * HOUR_HEIGHT * scale) }}
-      {...(preview ? {} : { ...nativeTouchProps, catchMove: nativeCatchMove })}
     >
       {hours.map((hour) => <View className='bubu-week-hour' style={{ top: designSize(hour * HOUR_HEIGHT * scale) }} key={hour}><Text className='bubu-week-hour-label'>{String(hour).padStart(2, '0')}</Text><View className='bubu-week-hour-rule' /></View>)}
       <View className='bubu-week-columns'>
@@ -109,7 +104,6 @@ export function WeekCalendar({
     if (gestures.consumeClickSuppression()) return
     onActivityClick?.(activity)
   }
-  const turn = gestures.paperTurn
   const previousPage = adjacentPages?.prev
   const nextPage = adjacentPages?.next
   const previousWeekStart = addDays(weekStart, -7)
@@ -122,7 +116,6 @@ export function WeekCalendar({
     () => nextPage ? buildWeek(nextPage.activities, nextWeekStart, filters, today, { minBlockHeightPercent }) : [],
     [nextPage, nextWeekStart, filters, today, minBlockHeightPercent],
   )
-  const nativeCatchMove = gestures.isPinching || turn.phase !== 'idle'
   const weekHead = (targetWeek: ReturnType<typeof buildWeek>, preview = false) => (
     <View className='bubu-week-head'>
       <View className='bubu-week-gutter' />
@@ -140,11 +133,12 @@ export function WeekCalendar({
       {weekHead(week)}
       {recordCount === 0 && <View className='bubu-empty-inline'>{filters.length ? '这一周没有所选类型的记录' : '选择活动类型，查看一周记录'}</View>}
       <PaperTurnViewport
-        paperTurn={turn}
+        paperTurn={gestures.paperTurn}
         viewportWidth={gestures.viewportWidth}
         viewportHeight={gestures.viewportHeight}
         gestureScrollTop={gestures.gestureScrollTop}
         foldAvatarUrl={foldAvatarUrl}
+        nativeTouchProps={gestures.nativeTouchProps}
         previous={previousPage ? (
           <WeekCanvas canvasId={`${gestures.canvasId}-preview-prev`} week={previousWeek} scale={scale} preview />
         ) : undefined}
@@ -155,7 +149,7 @@ export function WeekCalendar({
           <ScrollView id={gestures.scrollId} className='bubu-week-scroll' scrollY enhanced bounces={false}
             {...(process.env.TARO_ENV === 'h5' ? {} : { scrollTop: gestures.scrollTop })} onScroll={gestures.onScroll}>
             <WeekCanvas canvasId={gestures.canvasId} week={week} scale={scale}
-              nativeTouchProps={gestures.nativeTouchProps} nativeCatchMove={nativeCatchMove} onActivityClick={openActivity} />
+              onActivityClick={openActivity} />
           </ScrollView>
         }
       >

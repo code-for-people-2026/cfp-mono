@@ -3,6 +3,7 @@ import brandIcon from '../assets/branding/bubu-mark-transparent-v1.png'
 import Taro from '@tarojs/taro'
 import { Image, View } from '@tarojs/components'
 import type { PaperTurnState } from '../gestures/model'
+import type { useTimelineGestures } from '../gestures/useTimelineGestures'
 import {
   paperTurnTransition,
   type PaperTurnDirection,
@@ -27,6 +28,7 @@ interface PaperTurnViewportProps {
   next?: ReactNode
   children?: ReactNode
   foldAvatarUrl?: string | null
+  nativeTouchProps?: ReturnType<typeof useTimelineGestures>['nativeTouchProps']
 }
 
 interface FoldLayers {
@@ -70,6 +72,7 @@ export function PaperTurnViewport({
   next,
   children,
   foldAvatarUrl,
+  nativeTouchProps,
 }: PaperTurnViewportProps) {
   const horizontal = paperTurn.axis === 'horizontal'
   const size = Math.max(1, horizontal ? viewportWidth : viewportHeight)
@@ -324,7 +327,9 @@ export function PaperTurnViewport({
   )
 
   return (
-    <View className='bubu-timeline-viewport'>
+    // Keep the native touch owner outside frozen/clipped sheets: toggling catchMove changes the
+    // Taro template midgesture and loses heldmove routing. Native scrolling uses the enhanced ScrollViewContext.
+    <View className='bubu-timeline-viewport' {...nativeTouchProps}>
       <Image
         className='bubu-paper-fold-avatar-preload'
         key={requestedAvatarUrl}
