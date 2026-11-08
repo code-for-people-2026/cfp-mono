@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  activityDetails, activityGaps, addDays, buildHeatmap, buildTrendRows, buildWeek, calendarPeriod,
+  activityDetails, activityGaps, activityLabel, addDays, buildHeatmap, buildTrendRows, buildWeek, calendarPeriod,
   currentTimePosition, dateKey, dateRange, dayBounds, dayTitle, durationInDay, filterActivities,
   getIntensity, layoutDayTimeline, mondayOfWeek, monthBounds, monthTitle, millisecondsUntilNextShanghaiDay, previousEvening, shiftMonth,
   sortActivities, statCards, stepPeriod, summarizeHomeDay, summarizeRecordList, timeLabel, timeSinceLatest,
@@ -431,6 +431,41 @@ describe("read-only details", () => {
       .toContainEqual({ label: "奶量", value: "未记录奶量" });
     expect(activityDetails(event("unknown", "BOTTLE", "2026-01-02 08:00")))
       .toContainEqual({ label: "奶量", value: "未记录奶量" });
+  });
+
+  it("distinguishes known false diaper flags from unknown elimination details", () => {
+    expect(activityDetails(event("clean", "DIAPER", "2026-01-02 08:00", { hasPoop: false, hasPee: false })))
+      .toContainEqual({ label: "尿布", value: "只换尿布" });
+    expect(activityDetails(event("unknown-pooh", "DIAPER", "2026-01-02 08:00", { hasPoop: null, hasPee: false })))
+      .toContainEqual({ label: "尿布", value: "未记录大小便情况" });
+    expect(activityDetails(event("unknown-both", "DIAPER", "2026-01-02 08:00")))
+      .toContainEqual({ label: "尿布", value: "未记录大小便情况" });
+
+    const positive = activityDetails(event("positive", "DIAPER", "2026-01-02 08:00", {
+      hasPoop: true, hasPee: null, poopColor: "YELLOW",
+    }));
+    expect(positive).toContainEqual({ label: "大便", value: "黄色" });
+    expect(positive.some((field) => field.label === "尿布")).toBe(false);
+  });
+
+  it("preserves explicit zero counts and unknown count fields", () => {
+    expect(activityDetails(event("zero-roll", "ROLL_OVER", "2026-01-02 08:00", { count: 0 })))
+      .toContainEqual({ label: "次数", value: "0 次" });
+    expect(activityDetails(event("zero-sit", "PULL_TO_SIT", "2026-01-02 08:00", { count: 0 })))
+      .toContainEqual({ label: "次数", value: "0 次" });
+    expect(activityDetails(event("null-roll", "ROLL_OVER", "2026-01-02 08:00", { count: null })))
+      .toContainEqual({ label: "次数", value: "未记录次数" });
+    expect(activityDetails(event("unknown-sit", "PULL_TO_SIT", "2026-01-02 08:00")))
+      .toContainEqual({ label: "次数", value: "未记录次数" });
+  });
+
+  it("keeps zero milk and unknown spit-up labels explicit", () => {
+    expect(activityLabel(event("zero-bottle", "BOTTLE", "2026-01-02 08:00", { milkAmount: 0 }))).toBe("瓶喂 0ml");
+    expect(activityLabel(event("zero-pump", "PUMP", "2026-01-02 08:00", { milkAmount: 0 }))).toBe("吸奶 0ml");
+    expect(activityLabel(event("spit-missing", "SPIT_UP", "2026-01-02 08:00"))).toBe("吐奶");
+    expect(activityLabel(event("spit-null", "SPIT_UP", "2026-01-02 08:00", { spitUpType: null }))).toBe("吐奶");
+    expect(activityLabel(event("spit-normal", "SPIT_UP", "2026-01-02 08:00", { spitUpType: "NORMAL" }))).toBe("普通吐奶");
+    expect(activityLabel(event("spit-projectile", "SPIT_UP", "2026-01-02 08:00", { spitUpType: "PROJECTILE" }))).toBe("喷射性吐奶");
   });
 
   it("keeps creation and update metadata out of the core care fields", () => {

@@ -392,6 +392,7 @@ function calculateBreastfeed(
   let recordedMinutes = 0;
   let invalidDuration = false;
   let durationRecordCount = 0;
+  let perRecordRoundedMinutes = 0;
 
   for (const activity of records) {
     const amount = activity.milkAmount;
@@ -415,6 +416,8 @@ function calculateBreastfeed(
     const minutes = (end - start) / 60_000;
     recordedMinutes += minutes;
     eligibleMinutes += minutes;
+    // Legacy DailyStats round each feed before totaling; estimates retain raw durations.
+    perRecordRoundedMinutes += Math.round(minutes);
     durationRecordCount += 1;
   }
 
@@ -448,7 +451,7 @@ function calculateBreastfeed(
     addIssue(context, { date, metric: "milk", code: "breastfeed-mismatch", message: "已保存亲喂时长大于 0，但 Activity 未返回亲喂记录。" });
   }
   if (savedMinutes !== null && durationRecordCount > 0 && durationRecordCount === records.length
-    && Math.abs(Math.round(savedMinutes) - roundedMinutes) > 1) {
+    && Math.abs(Math.round(savedMinutes) - perRecordRoundedMinutes) > 1) {
     mismatch = true;
     addIssue(context, {
       date,

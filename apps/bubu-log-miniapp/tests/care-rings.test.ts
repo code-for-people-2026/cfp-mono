@@ -109,6 +109,51 @@ describe("care ring milk estimation", () => {
     expect(milk(result, "2026-02-02").value).toEqual({ type: "range", range: { min: 550, max: 600 } });
   });
 
+  it("matches backend per-record breastfeed rounding while estimating from raw durations", () => {
+    const fractionalFeeds = (durationSeconds: number) => [0, 1, 2, 3, 4].map((index) => activity(
+      `down-${index}`, "BREASTFEED", `2026-02-02 10:0${index}:00`,
+      { endTime: `2026-02-02 10:${String(index + 10).padStart(2, "0")}:${String(durationSeconds).padStart(2, "0")}` },
+    ));
+
+    const roundingDown = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 50 })],
+      activities: fractionalFeeds(24),
+    });
+    const downMetric = milk(roundingDown, "2026-02-02");
+    expect(downMetric.breastfeed).toMatchObject({
+      state: "estimated", recordedMinutes: 52, estimatedRange: { min: 260, max: 520 },
+    });
+    expect(roundingDown.issues.filter((issue) => issue.code === "breastfeed-mismatch")).toEqual([]);
+
+    const roundingUp = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 55 })],
+      activities: fractionalFeeds(36),
+    });
+    expect(milk(roundingUp, "2026-02-02").breastfeed).toMatchObject({
+      state: "estimated", recordedMinutes: 53, estimatedRange: { min: 265, max: 530 },
+    });
+    expect(roundingUp.issues.filter((issue) => issue.code === "breastfeed-mismatch")).toEqual([]);
+  });
+
+  it("still detects a genuine breastfeed duration mismatch after per-record rounding", () => {
+    const feeds = [0, 1, 2, 3, 4].map((index) => activity(
+      `mismatch-${index}`, "BREASTFEED", `2026-02-02 10:0${index}:00`,
+      { endTime: `2026-02-02 10:${10 + index}:24` },
+    ));
+    const result = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 70 })],
+      activities: feeds,
+    });
+
+    expect(milk(result, "2026-02-02").breastfeed.state).toBe("partial");
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "breastfeed-mismatch", metric: "milk" }),
+    ]));
+  });
+
   it("blocks default research estimates for unknown or first-week ages, but honors explicit custom rates", () => {
     const feed = activity("bf", "BREASTFEED", "2026-02-02 10:00", { endTime: "2026-02-02 10:10" });
     const stats = [dailyStat("2026-02-02", { totalMilkAmount: 500, breastfeedCount: 1, totalBreastfeedMinutes: 10 })];

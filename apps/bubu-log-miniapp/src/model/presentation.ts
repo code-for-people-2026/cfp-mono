@@ -61,7 +61,9 @@ export function activityTone(type: ActivityType): ActivityTone {
 
 export function activityLabel(activity: Activity): string {
   let label = activityTypeLabel(activity.type);
-  if ((activity.type === "BOTTLE" || activity.type === "PUMP") && activity.milkAmount) return `${label} ${activity.milkAmount}ml`;
+  if ((activity.type === "BOTTLE" || activity.type === "PUMP") && activity.milkAmount != null) {
+    return `${label} ${activity.milkAmount}ml`;
+  }
   if (activity.type === "DIAPER") {
     if (activity.hasPoop && activity.hasPee) return "大小便";
     if (activity.hasPoop) return "大便";
@@ -69,7 +71,11 @@ export function activityLabel(activity: Activity): string {
     return label;
   }
   if (activity.type === "SUPPLEMENT" && activity.supplementType) return SUPPLEMENT_LABELS[activity.supplementType];
-  if (activity.type === "SPIT_UP") return activity.spitUpType === "PROJECTILE" ? "喷射性吐奶" : "普通吐奶";
+  if (activity.type === "SPIT_UP") {
+    if (activity.spitUpType === "PROJECTILE") return "喷射性吐奶";
+    if (activity.spitUpType === "NORMAL") return "普通吐奶";
+    return "吐奶";
+  }
   const duration = activity.endTime ? durationMinutes(activity.startTime, activity.endTime) : 0;
   if (duration > 0) label += ` ${duration}分钟`;
   return label;
@@ -138,11 +144,16 @@ export function activityDetails(activity: Activity): DetailField[] {
   if (activity.type === "DIAPER") {
     if (activity.hasPoop) fields.push({ label: "大便", value: activity.poopColor ? POOP_COLOR_LABELS[activity.poopColor] : "有" });
     if (activity.hasPee) fields.push({ label: "小便", value: activity.peeAmount ? PEE_AMOUNT_LABELS[activity.peeAmount] : "有" });
-    if (!activity.hasPoop && !activity.hasPee) fields.push({ label: "尿布", value: "只换尿布" });
+    if (activity.hasPoop !== true && activity.hasPee !== true) {
+      const hasUnknownElimination = activity.hasPoop == null || activity.hasPee == null;
+      fields.push({ label: "尿布", value: hasUnknownElimination ? "未记录大小便情况" : "只换尿布" });
+    }
   }
   if (activity.type === "SUPPLEMENT") fields.push({ label: "补剂", value: activity.supplementType ? SUPPLEMENT_LABELS[activity.supplementType] : "未记录类型" });
   if (activity.type === "SPIT_UP") fields.push({ label: "吐奶类型", value: activity.spitUpType ? SPIT_UP_LABELS[activity.spitUpType] : "未记录类型" });
-  if (activity.type === "ROLL_OVER" || activity.type === "PULL_TO_SIT") fields.push({ label: "次数", value: activity.count ? `${activity.count} 次` : "未记录次数" });
+  if (activity.type === "ROLL_OVER" || activity.type === "PULL_TO_SIT") {
+    fields.push({ label: "次数", value: activity.count != null ? `${activity.count} 次` : "未记录次数" });
+  }
   if (activity.notes) fields.push({ label: "备注", value: activity.notes });
   // Creation/update metadata belongs to the detail's collapsed "更多信息" section.
   return fields;
