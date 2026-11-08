@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  BOUNDARY_TOLERANCE,
   MIN_PINCH_SEPARATION,
   SWIPE_THRESHOLD,
   cancelGesture,
@@ -105,15 +104,22 @@ describe("one-finger axis gestures", () => {
     expect(ended.state.feedback).toBe("已经是今天，无法查看未来");
   });
 
-  it("uses the dominant axis so a vertical drag near the top becomes a boundary pull", () => {
+  it("keeps a dominant diagonal drag at the top as ordinary scrolling", () => {
     const begun = start([point(200, 200)], { scrollTop: 0 });
     const diagonal = move(begun, [point(230, 240)], { scrollTop: 0 });
-    expect(diagonal.state.phase).toBe("pull");
-    expect(diagonal.state.edge).toBe("top");
-    expect(diagonal.state.feedback).toBe("继续下拉查看前一天");
-    const armed = move(diagonal.state, [point(232, 290)], { scrollTop: 0 });
-    expect(armed.state.armed).toBe(true);
-    expect(up(armed.state, [], [point(232, 290)], { scrollTop: 0 }).navigation).toBe("prev");
+    expect(diagonal.state).toMatchObject({
+      phase: "scroll",
+      edge: null,
+      direction: null,
+      armed: false,
+      feedback: "",
+      paperTurn: { phase: "idle", direction: null, displacement: 0 },
+    });
+    const outward = move(diagonal.state, [point(232, 300)], { scrollTop: 0 });
+    expect(outward.state.phase).toBe("scroll");
+    expect(outward.state.armed).toBe(false);
+    expect(outward.state.paperTurn.phase).toBe("idle");
+    expect(up(outward.state, [], [point(232, 300)], { scrollTop: 0 }).navigation).toBeNull();
   });
 
   it("keeps an ordinary mid-list vertical drag as scrolling even if it reaches the top", () => {
@@ -125,7 +131,7 @@ describe("one-finger axis gestures", () => {
     expect(up(moved.state, [], [point(200, 400)], { scrollTop: 0 }).navigation).toBeNull();
   });
 
-  it("turns an inward drag from a boundary back into ordinary scrolling", () => {
+  it("keeps an inward drag from either boundary as ordinary scrolling", () => {
     const top = start([point(200, 200)], { scrollTop: 0 });
     const upInward = move(top, [point(200, 100)], { scrollTop: 0 });
     expect(upInward.state.phase).toBe("scroll");
@@ -136,31 +142,20 @@ describe("one-finger axis gestures", () => {
     expect(downInward.state.phase).toBe("scroll");
   });
 
-  it("pages forward only from the bottom outward pull and blocks the newest period", () => {
+  it("keeps a dominant bottom-boundary drag as scrolling even when next is available", () => {
     const bottom = start([point(200, 400)], { scrollTop: 992, contentHeight: 1392 });
-    const armed = move(bottom, [point(200, 290)], { scrollTop: 992, contentHeight: 1392 });
-    expect(armed.state.phase).toBe("pull");
-    expect(armed.state.edge).toBe("bottom");
-    expect(armed.state.armed).toBe(true);
-    expect(up(armed.state, [], [point(200, 290)], { scrollTop: 992, contentHeight: 1392 }).navigation).toBe("next");
-
-    const blockedConfig: GestureConfig = {
-      canNext: false,
-      labels: { previous: "前一周", next: "后一周", current: "本周" },
-    };
-    const blockedStart = start([point(200, 400)], { scrollTop: 992, contentHeight: 1392 }, blockedConfig);
-    const blocked = move(blockedStart, [point(200, 290)], { scrollTop: 992, contentHeight: 1392 }, blockedConfig);
-    expect(blocked.state.feedback).toBe("已经是本周，无法查看未来");
-    expect(up(blocked.state, [], [point(200, 290)], { scrollTop: 992, contentHeight: 1392 }, blockedConfig).navigation).toBeNull();
-  });
-
-  it("does not arm when no boundary was occupied at gesture start", () => {
-    const begun = start([point(200, 200)], { scrollTop: 3 });
-    expect(begun.atTop).toBe(false);
-    const moved = move(begun, [point(200, 320)], { scrollTop: 100 });
-    expect(moved.state.phase).toBe("scroll");
-    expect(moved.state.armed).toBe(false);
-    expect(BOUNDARY_TOLERANCE).toBeGreaterThanOrEqual(1);
+    const outward = move(bottom, [point(200, 280)], { scrollTop: 992, contentHeight: 1392 });
+    expect(outward.state).toMatchObject({
+      phase: "scroll",
+      edge: null,
+      direction: null,
+      armed: false,
+      feedback: "",
+      paperTurn: { phase: "idle", direction: null, displacement: 0 },
+    });
+    const ended = up(outward.state, [], [point(200, 280)], { scrollTop: 992, contentHeight: 1392 });
+    expect(ended.navigation).toBeNull();
+    expect(ended.state.paperTurn.phase).toBe("idle");
   });
 
   it("cancels touch sequences without navigation and suppresses the following click", () => {

@@ -363,6 +363,8 @@ describe("paper wallpaper coverage", () => {
       expect(grid.columns * grid.rows).toBe(0);
     }
   });
+
+
 });
 
 describe("paper-fold gesture mapping", () => {
@@ -449,6 +451,45 @@ describe("paper-fold gesture mapping", () => {
 });
 
 describe("paper-turn release", () => {
+  it("keeps outward boundary drags scroll-only without paper fold or recoil", () => {
+    const boundaries = [
+      { scrollTop: 0, end: point(100, 320) },
+      { scrollTop: 400, end: point(100, 80) },
+    ];
+    for (const boundary of boundaries) {
+      const geometry = metrics({ scrollTop: boundary.scrollTop });
+      const state = drag(point(100, 200), boundary.end, geometry);
+      expect(state).toMatchObject({
+        phase: "scroll",
+        armed: false,
+        feedback: "",
+        paperTurn: {
+          phase: "idle",
+          direction: null,
+          displacement: 0,
+          origin: undefined,
+          crossDisplacement: undefined,
+        },
+      });
+
+      const update = pointerUp(state, {
+        remaining: [],
+        changed: [boundary.end],
+        metrics: geometry,
+        config: config(),
+      });
+      expect(update.navigation).toBeNull();
+      expect(update.state.phase).toBe("done");
+      expect(update.state.paperTurn).toMatchObject({
+        phase: "idle",
+        direction: null,
+        displacement: 0,
+        origin: undefined,
+        crossDisplacement: undefined,
+      });
+    }
+  });
+
   it("commits with a complete target while preserving the selected axis and direction", () => {
     const state = drag(point(100, 100), point(180, 100));
     const update = pointerUp(state, {
@@ -466,11 +507,11 @@ describe("paper-turn release", () => {
     });
   });
 
-  it("recoils below the threshold without losing the selected geometry", () => {
-    const state = drag(point(100, 0), point(100, 24), metrics());
+  it("recoils a horizontal release below the threshold without losing its geometry", () => {
+    const state = drag(point(100, 100), point(150, 100), metrics());
     const update = pointerUp(state, {
       remaining: [],
-      changed: [point(100, 24)],
+      changed: [point(150, 100)],
       metrics: metrics(),
       config: config(),
     });
@@ -478,8 +519,8 @@ describe("paper-turn release", () => {
     expect(update.navigation).toBeNull();
     expect(update.state.phase).toBe("settling");
     expect(update.state.paperTurn).toMatchObject({
-      axis: "vertical", direction: "prev", phase: "recoil", displacement: 0,
-      origin: { x: 100, y: 0 }, crossDisplacement: 0,
+      axis: "horizontal", direction: "prev", phase: "recoil", displacement: 0,
+      origin: { x: 100, y: 100 }, crossDisplacement: 0,
     });
   });
 

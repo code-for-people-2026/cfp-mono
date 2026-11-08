@@ -12,7 +12,6 @@ export type GesturePhase =
   | "idle"
   | "pending"
   | "horizontal"
-  | "pull"
   | "scroll"
   | "pinch"
   | "blocked"
@@ -185,13 +184,6 @@ const horizontalFeedback = (direction: PeriodDirection, armed: boolean, config: 
   const label = direction === "prev" ? config.labels.previous : config.labels.next;
   const swipe = direction === "prev" ? "右" : "左";
   return armed ? `松开切换${label}` : `继续${swipe}滑查看${label}`;
-};
-
-const pullFeedback = (edge: PullEdge, armed: boolean, config: GestureConfig): string => {
-  if (edge === "bottom" && !config.canNext) return blockedFeedback(config);
-  const label = edge === "top" ? config.labels.previous : config.labels.next;
-  const pull = edge === "top" ? "下拉" : "上拉";
-  return armed ? `松开切换${label}` : `继续${pull}查看${label}`;
 };
 
 const clearPaperTurn = (state: GestureState): PaperTurnState => ({
@@ -384,7 +376,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
   const dy = current.y - start.y;
   const moved = Math.abs(dx) > TOUCH_SLOP || Math.abs(dy) > TOUCH_SLOP;
   let phase = state.phase;
-  let edge = state.edge;
+  const edge = state.edge;
   let direction = state.direction;
   let feedback = state.feedback;
   let placement = state.placement;
@@ -395,15 +387,10 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
     if (Math.max(Math.abs(dx), Math.abs(dy)) > DIRECTION_LOCK) {
       if (Math.abs(dx) >= Math.abs(dy)) {
         phase = "horizontal";
-      } else if (state.atTop && dy > 0) {
-        phase = "pull";
-        edge = "top";
-      } else if (state.atBottom && dy < 0) {
-        phase = "pull";
-        edge = "bottom";
       } else {
+        // Vertical movement always belongs to native/H5 scrolling, including at
+        // either content boundary. Page turns activate only after a horizontal lock.
         phase = "scroll";
-        edge = null;
         direction = null;
       }
     }
@@ -422,23 +409,6 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
       feedback = horizontalFeedback(swipeDirection, armed, config);
       placement = "center";
     }
-  } else if (phase === "pull" && edge) {
-    const outward = edge === "top" ? dy : -dy;
-    if (outward <= 0) {
-      // Started on a boundary but dragged inward: hand the gesture back to native scrolling.
-      phase = "scroll";
-      edge = null;
-      direction = null;
-      armed = false;
-      feedback = "";
-      placement = "center";
-    } else {
-      direction = edge === "top" ? "prev" : "next";
-      const blocked = edge === "bottom" && !config.canNext;
-      armed = !blocked && outward >= SWIPE_THRESHOLD;
-      feedback = pullFeedback(edge, armed, config);
-      placement = edge;
-    }
   } else if (phase === "scroll") {
     armed = false;
     direction = null;
@@ -446,16 +416,16 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
     placement = "center";
   }
   const blockedFuture = direction === "next" && !config.canNext;
-  const activeTurn = (phase === "horizontal" || phase === "pull") && !blockedFuture;
+  const activeTurn = phase === "horizontal" && !blockedFuture;
   const paperTurn: PaperTurnState = activeTurn && direction
     ? {
       ...state.paperTurn,
       phase: "drag",
-      axis: phase === "horizontal" ? "horizontal" : "vertical",
+      axis: "horizontal",
       direction,
-      displacement: phase === "horizontal" ? dx : dy,
+      displacement: dx,
       origin: { ...start },
-      crossDisplacement: phase === "horizontal" ? dy : dx,
+      crossDisplacement: dy,
     }
     : clearPaperTurn(state);
 
@@ -482,7 +452,7 @@ export function pointerMove(state: GestureState, input: MoveInput): GestureUpdat
 }
 
 function finish(state: GestureState, config: GestureConfig): GestureUpdate {
-  const wanted = state.phase === "horizontal" || state.phase === "pull" ? state.direction : null;
+  const wanted = state.phase === "horizontal" ? state.direction : null;
   const blocked = !!wanted && wanted === "next" && !config.canNext;
   const navigation = state.armed && wanted && !blocked ? wanted : null;
   const canTurn = !!wanted && state.paperTurn.phase === "drag" && state.paperTurn.direction === wanted && !blocked;

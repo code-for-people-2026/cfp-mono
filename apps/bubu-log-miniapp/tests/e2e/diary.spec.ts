@@ -759,85 +759,49 @@ test("horizontal swipes use the standard left-next and right-previous direction 
   await expect(title).toContainText("本周（10/19–）");
 });
 
-test("top and bottom pulls page only on deliberate outward release", async ({ page }) => {
+test("vertical boundary gestures stay ordinary scrolling without paging", async ({ page }) => {
   await fixture(page);
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周五）");
 
   await setScrollTop(page, ".bubu-day-scroll", "top");
-  const topBox = await scrollBox(page, ".bubu-day-scroll");
-  let session = await touchSession(page);
-  try {
-    await sendTouch(session, "touchStart", [{ x: topBox.x + topBox.width / 2, y: topBox.y + topBox.height / 2 }]);
-    await sendTouch(session, "touchMove", [{ x: topBox.x + topBox.width / 2, y: topBox.y + topBox.height / 2 + 110 }]);
-    await expect(page.locator(".bubu-gesture-feedback")).toContainText("松开切换前一天");
-    await sendTouch(session, "touchEnd", []);
-  } finally {
-    await session.detach();
-  }
-  await expect(title).toContainText("昨日（周四）");
-  await expect(page.locator(".stats-grid")).toBeVisible();
-  await expect(page.getByText("这一天还没有记录")).toBeVisible();
-  await expect(page.locator(".bubu-day-scroll")).toBeVisible();
-
-  // Returning below the threshold before release cancels the pending page turn.
-  await setScrollTop(page, ".bubu-day-scroll", "top");
-  const cancelBox = await scrollBox(page, ".bubu-day-scroll");
-  session = await touchSession(page);
-  try {
-    await sendTouch(session, "touchStart", [{ x: cancelBox.x + cancelBox.width / 2, y: cancelBox.y + cancelBox.height / 2 }]);
-    await sendTouch(session, "touchMove", [{ x: cancelBox.x + cancelBox.width / 2, y: cancelBox.y + cancelBox.height / 2 + 40 }]);
-    await expect(page.locator(".bubu-gesture-feedback")).toContainText("继续下拉查看前一天");
-    await sendTouch(session, "touchMove", [{ x: cancelBox.x + cancelBox.width / 2, y: cancelBox.y + cancelBox.height / 2 + 8 }]);
-    await sendTouch(session, "touchEnd", []);
-  } finally {
-    await session.detach();
-  }
-  await expect(title).toContainText("昨日（周四）");
+  await swipe(page, ".bubu-day-scroll", 0, 120, 6);
+  await expect(title).toContainText("今日（周五）");
   await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
+
+  await setScrollTop(page, ".bubu-day-scroll", "bottom");
+  await swipe(page, ".bubu-day-scroll", 0, -120, 6);
+  await expect(title).toContainText("今日（周五）");
+  await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
 
   // Starting at the top and dragging inward must remain ordinary scroll.
   await setScrollTop(page, ".bubu-day-scroll", "top");
   await swipe(page, ".bubu-day-scroll", 0, -120, 6);
-  await expect(title).toContainText("昨日（周四）");
+  await expect(title).toContainText("今日（周五）");
   await expect.poll(() => page.locator(".bubu-day-scroll").evaluate((element) => (element as HTMLElement).scrollTop)).toBeGreaterThan(0);
 
   // A fling from the middle that merely reaches the top is not a page turn.
   await setScrollTop(page, ".bubu-day-scroll", 100);
   await swipe(page, ".bubu-day-scroll", 0, 180, 6);
-  await expect(title).toContainText("昨日（周四）");
-
-  // On a non-newest day, an outward pull at the bottom advances.
-  await setScrollTop(page, ".bubu-day-scroll", "bottom");
-  const bottomBox = await scrollBox(page, ".bubu-day-scroll");
-  session = await touchSession(page);
-  try {
-    await sendTouch(session, "touchStart", [{ x: bottomBox.x + bottomBox.width / 2, y: bottomBox.y + bottomBox.height / 2 }]);
-    await sendTouch(session, "touchMove", [{ x: bottomBox.x + bottomBox.width / 2, y: bottomBox.y + bottomBox.height / 2 - 110 }]);
-    await expect(page.locator(".bubu-gesture-feedback")).toContainText("松开切换后一天");
-    await sendTouch(session, "touchEnd", []);
-  } finally {
-    await session.detach();
-  }
   await expect(title).toContainText("今日（周五）");
-  await expect(page.locator(".stats-grid")).toBeVisible();
-  await expect(page.locator(".bubu-timeline-event").first()).toBeVisible();
-  await expect(page.locator(".bubu-day-scroll")).toBeVisible();
 
-  // At the newest day the bottom pull reports the limit and never navigates.
-  await setScrollTop(page, ".bubu-day-scroll", "bottom");
-  const newestBottom = await scrollBox(page, ".bubu-day-scroll");
-  session = await touchSession(page);
-  try {
-    await sendTouch(session, "touchStart", [{ x: newestBottom.x + newestBottom.width / 2, y: newestBottom.y + newestBottom.height / 2 }]);
-    await sendTouch(session, "touchMove", [{ x: newestBottom.x + newestBottom.width / 2, y: newestBottom.y + newestBottom.height / 2 - 110 }]);
-    await expect(page.locator(".bubu-gesture-feedback")).toContainText("已经是今天，无法查看未来");
-    await sendTouch(session, "touchEnd", []);
-  } finally {
-    await session.detach();
-  }
-  await expect(title).toContainText("今日（周五）");
+  await calendarView(page, "周历");
+  await expect(page.locator(".bubu-week-scroll")).toBeVisible();
+  await expect(title).toContainText("本周（10/19–）");
+  await setScrollTop(page, ".bubu-week-scroll", "top");
+  await swipe(page, ".bubu-week-scroll", 0, 120, 6);
+  await expect(title).toContainText("本周（10/19–）");
+  await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
+
+  await setScrollTop(page, ".bubu-week-scroll", "bottom");
+  await swipe(page, ".bubu-week-scroll", 0, -120, 6);
+  await expect(title).toContainText("本周（10/19–）");
+  await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
 });
 
 test("two-finger vertical pinch zooms in and out on day and week without browser zoom", async ({ page }) => {

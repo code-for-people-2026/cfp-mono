@@ -89,9 +89,12 @@ async function sendTouch(session: CDPSession, type: "touchStart" | "touchMove" |
 type TouchPoint = { x: number; y: number };
 type HeldTouch = { session: CDPSession; point: TouchPoint };
 
-async function beginTouchAtCurrentScroll(page: Page): Promise<HeldTouch> {
-  const pageBox = await page.locator(".bubu-paper-current .bubu-day-scroll").boundingBox();
-  if (!pageBox) throw new Error("Missing active day scroll");
+async function beginTouchAtCurrentScroll(
+  page: Page,
+  selector = ".bubu-paper-current .bubu-day-scroll",
+): Promise<HeldTouch> {
+  const pageBox = await page.locator(selector).boundingBox();
+  if (!pageBox) throw new Error(`Missing active scroll: ${selector}`);
   const point = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
   const session = await page.context().newCDPSession(page);
   await sendTouch(session, "touchStart", point);
@@ -330,6 +333,26 @@ async function expectFoldAvatar(
     expect(preload.loaded).toBe(false);
     expect(visible.source).not.toContain(brokenAvatarUrl);
     expect(visible.loaded).toBe(true);
+    const alpha = await page.locator(`${layer} .bubu-paper-fold-avatar img`).first().evaluate((node) => {
+      const image = node as HTMLImageElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Missing canvas context");
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let borderMax = 0;
+      let opaque = 0;
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const value = data[(y * canvas.width + x) * 4 + 3];
+        if (x === 0 || y === 0 || x === canvas.width - 1 || y === canvas.height - 1) borderMax = Math.max(borderMax, value);
+        if (value > 0) opaque++;
+      }
+      return { borderMax, opaque };
+    });
+    expect(alpha.borderMax).toBe(0);
+    expect(alpha.opaque).toBeGreaterThan(1000);
   }
   expect(visible.determinant).toBeGreaterThan(0.45);
   expect(visible.determinant).toBeLessThanOrEqual(1.02);
@@ -362,6 +385,39 @@ async function expectIdleFold(page: Page) {
   await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow")).toHaveCount(0);
 }
 
+async function expectOutwardBoundaryDragToStay(
+  page: Page,
+  selector: string,
+  edge: "top" | "bottom",
+) {
+  const title = page.locator(".date-title");
+  const heldTitle = await title.textContent();
+  await page.locator(selector).evaluate((element, target) => {
+    const node = element as HTMLElement;
+    node.scrollTop = target === "top" ? 0 : node.scrollHeight;
+  }, edge);
+  await page.waitForTimeout(32);
+
+  const touch = await beginTouchAtCurrentScroll(page, selector);
+  try {
+    const origin = touch.point;
+    const target = { x: origin.x, y: origin.y + (edge === "top" ? 120 : -120) };
+    await moveHeldTouch(page, touch, target);
+    await expect(title).toHaveText(heldTitle ?? "");
+    await expectIdleFold(page);
+    await expect(page.locator(".bubu-paper-neighbor-active")).toHaveCount(0);
+    await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+    await sendTouch(touch.session, "touchEnd");
+  } finally {
+    await touch.session.detach();
+  }
+  await page.waitForTimeout(80);
+  await expect(title).toHaveText(heldTitle ?? "");
+  await expectIdleFold(page);
+  await expect(page.locator(".bubu-paper-neighbor-active")).toHaveCount(0);
+  await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+}
+
 async function expectPreloadedNeighbor(page: Page, direction: "next" | "prev", quantityLabel: string) {
   const side = `.bubu-paper-neighbor-${direction}`;
   await expect(page.locator(side)).toHaveCount(1);
@@ -390,64 +446,33 @@ async function titleHistory(page: Page): Promise<string[]> {
   return page.evaluate(() => (window as TitleWindow).__bubuDateTitleHistory ?? []);
 }
 
-test("vertical previous-turn keeps text stationary while a diagonal fold covers current", async ({ page }) => {
-  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
-  await page.goto("/");
-  const title = page.locator(".date-title");
-  await expect(title).toContainText("今日（周六）");
-  await page.locator(".bubu-paper-current .bubu-day-scroll").evaluate((element) => { element.scrollTop = 0; });
-  await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
-
-  const touch = await beginTouchAtCurrentScroll(page);
-  try {
-    const origin = touch.point;
-    await moveHeldTouch(page, touch, { x: origin.x + 8, y: origin.y + 18 }, 3);
-    const text = await captureTextGeometry(page);
-    const initialFlat = await page.locator(".bubu-paper-neighbor-prev .bubu-paper-sheet-clip")
-      .evaluate((element) => getComputedStyle(element).clipPath);
-    await moveHeldTouch(page, touch, { x: origin.x + 28, y: origin.y + 110 });
-    await expect(title).toHaveText("今日（周六）");
-    await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
-    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
-    await expectStationaryText(page, text, true);
-    await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
-    await expectFoldAvatar(page, ".bubu-paper-neighbor-prev", "known");
-    await sendTouch(touch.session, "touchEnd");
-  } finally {
-    await touch.session.detach();
-  }
-  await expect(title).toContainText("昨日（周五）");
-});
-
-test("vertical next-turn keeps text stationary while a diagonal fold reveals real next", async ({ page }) => {
-  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
+test("day top and bottom outward drags have no fold, hint, or date change", async ({ page }) => {
+  await syntheticApp(page);
   await page.goto("/");
   const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
   await page.getByLabel("上一段日期", { exact: true }).click();
   await expect(title).toContainText("昨日（周五）");
-  await page.locator(".bubu-paper-current .bubu-day-scroll").evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
 
-  const touch = await beginTouchAtCurrentScroll(page);
-  try {
-    const origin = touch.point;
-    await moveHeldTouch(page, touch, { x: origin.x - 10, y: origin.y - 18 }, 3);
-    const text = await captureTextGeometry(page);
-    const initialFlat = await page.locator(".bubu-paper-current .bubu-paper-sheet-clip")
-      .evaluate((element) => getComputedStyle(element).clipPath);
-    await moveHeldTouch(page, touch, { x: origin.x - 30, y: origin.y - 110 });
-    await expect(title).toHaveText("昨日（周五）");
-    await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
-    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
-    await expectStationaryText(page, text, true);
-    await expectFold(page, ".bubu-paper-current", initialFlat);
-    await expectFoldAvatar(page, ".bubu-paper-current", "known");
-    await sendTouch(touch.session, "touchEnd");
-  } finally {
-    await touch.session.detach();
-  }
+  await expectOutwardBoundaryDragToStay(page, ".bubu-paper-current .bubu-day-scroll", "top");
+  await expectOutwardBoundaryDragToStay(page, ".bubu-paper-current .bubu-day-scroll", "bottom");
+});
+
+test("week top and bottom outward drags have no fold, hint, or date change", async ({ page }) => {
+  await syntheticApp(page);
+  await page.goto("/");
+  const title = page.locator(".date-title");
   await expect(title).toContainText("今日（周六）");
+  await page.getByLabel("展开日期与日历视图", { exact: true }).click();
+  await page.locator(".calendar-view-option").filter({ hasText: /^周历/ }).click();
+  await expect(page.locator(".bubu-paper-current .bubu-week-scroll")).toBeVisible();
+  await expect(title).toContainText("本周");
+  await page.getByLabel("上一段日期", { exact: true }).click();
+  await expect(title).toContainText("上周");
+
+  const weekScroll = ".bubu-paper-current .bubu-week-scroll";
+  await expectOutwardBoundaryDragToStay(page, weekScroll, "top");
+  await expectOutwardBoundaryDragToStay(page, weekScroll, "bottom");
 });
 
 test("horizontal previous-turn reverses diagonal within one held gesture and recoils", async ({ page }) => {

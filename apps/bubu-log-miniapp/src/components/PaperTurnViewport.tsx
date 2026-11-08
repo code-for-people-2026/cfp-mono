@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import brandIcon from '../assets/branding/bubu-avatar-borderless-v1.png'
+import brandIcon from '../assets/branding/bubu-mark-transparent-v1.png'
 import Taro from '@tarojs/taro'
 import { Image, View } from '@tarojs/components'
 import type { PaperTurnState } from '../gestures/model'

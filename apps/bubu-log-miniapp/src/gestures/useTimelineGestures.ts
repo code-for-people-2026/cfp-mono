@@ -630,9 +630,8 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       // and boundary detection must use the exact offset under the finger.
       refreshScrollMetrics();
       measureNow();
-      // The current layer itself moves during a vertical turn. Keep the viewport
-      // origin captured by the first touch fixed for the whole gesture, including
-      // a later second touch that starts a pinch.
+      // Keep the viewport origin captured by the first touch fixed for the whole
+      // gesture, including a later second touch that starts a pinch.
       if (h5TouchViewportOriginRef.current == null) {
         h5TouchViewportOriginRef.current = localOrigin();
       }
@@ -643,7 +642,7 @@ export function useTimelineGestures(options: TimelineGestureOptions): TimelineGe
       const points = pointsFromTouches(event.touches, gestureOrigin());
       handleMovePoints(points);
       const phase = stateRef.current.phase;
-      if (points.length >= 2 || phase === "pinch" || phase === "horizontal" || phase === "pull" || phase === "settling") {
+      if (points.length >= 2 || phase === "pinch" || phase === "horizontal" || phase === "settling") {
         event.preventDefault();
       }
     };
