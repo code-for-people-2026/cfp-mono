@@ -1,13 +1,19 @@
 import { addDays, dateKey, dateRange, mondayOfWeek, monthBounds, shortDateLabel, todayKey } from "./date";
 import type { DailyStat, DateInput } from "./types";
+import { coverageMessage, hasMetricFacts } from "./records";
 
-export interface TrendRow { date: string; label: string; sleep: number; milk: number; pump: number; diapers: number; hasData: boolean }
+export interface TrendRow { date: string; label: string; sleep: number; milk: number; pump: number; diapers: number; hasData: boolean; known?: Record<"sleep" | "milk" | "pump" | "diapers", boolean>; coverage?: string }
 export function buildTrendRows(stats: readonly DailyStat[], days: number = 7, endDate: DateInput = new Date()): TrendRow[] {
   const byDate = new Map(stats.map((stat) => [dateKey(stat.date), stat]));
   return dateRange(addDays(endDate, 1 - days), endDate).map((date) => {
     const stat = byDate.get(date);
     return { date, label: shortDateLabel(date), sleep: stat?.totalSleepMinutes ?? 0, milk: stat?.totalMilkAmount ?? 0,
-      pump: stat?.totalPumpMilkAmount ?? 0, diapers: stat?.diaperCount ?? 0, hasData: Boolean(stat) };
+      pump: stat?.totalPumpMilkAmount ?? 0, diapers: stat?.diaperCount ?? 0, hasData: Boolean(stat),
+      ...(stat?.byType ? { known: {
+        sleep: !!hasMetricFacts(stat.byType, "sleep"), milk: !!hasMetricFacts(stat.byType, "milk"),
+        pump: !!hasMetricFacts(stat.byType, "pump"), diapers: !!hasMetricFacts(stat.byType, "diapers"),
+      } } : {}),
+      ...(stat?.coverage ? { coverage: coverageMessage(stat.coverage) } : {}) };
   });
 }
 export type Intensity = 0 | 1 | 2 | 3 | 4;
@@ -28,6 +34,8 @@ export interface HeatmapDay {
   milk: number;
   sleepIntensity: Intensity;
   milkIntensity: Intensity;
+  known?: { sleep: boolean; milk: boolean };
+  coverage?: string;
 }
 export interface HeatmapData {
   year: number;
@@ -67,6 +75,8 @@ export function buildHeatmap(stats: readonly DailyStat[], monthDate: DateInput =
         hasData: Boolean(stat), sleep, milk,
         sleepIntensity: stat ? getIntensity(sleep, maxSleep) : 0,
         milkIntensity: stat ? getIntensity(milk, maxMilk) : 0,
+        ...(stat?.byType ? { known: { sleep: !!hasMetricFacts(stat.byType, "sleep"), milk: !!hasMetricFacts(stat.byType, "milk") } } : {}),
+        ...(stat?.coverage ? { coverage: coverageMessage(stat.coverage) } : {}),
       };
     }) });
   }

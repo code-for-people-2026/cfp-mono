@@ -1,0 +1,40 @@
+{
+  "name": "@cfp/bubu-log-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "operator": "tsx scripts/operator.ts",
+    "collector": "tsx scripts/collector.ts",
+    "collector:codex-agent": "tsx scripts/collector-codex-agent.ts",
+    "audit:history": "tsx scripts/audit-history.ts",
+    "db:migration": "tsx scripts/create-migration.ts",
+    "test:production": "NODE_ENV=production tsx scripts/verify-production.ts",
+    "test:sqlite": "node scripts/sqlite-connection-check.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
+    "@payloadcms/db-sqlite": "3.85.1",
+    "payload": "3.85.1",
+    "sharp": "0.34.5",
+    "tsx": "^4.20.0",
+    "zod": "^4.4.3",
+    "fs-ext": "2.1.1"
+  },
+  "devDependencies": {
+    "@cfp/eslint-config": "workspace:*",
+    "@types/node": "^20.19.26",
+    "@vitest/coverage-v8": "^4.0.15",
+    "eslint": "^9.39.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15",
+    "@types/fs-ext": "2.0.3"
+  }
+}

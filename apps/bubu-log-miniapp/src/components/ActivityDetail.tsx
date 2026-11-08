@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Image, ScrollView, Text, View } from '@tarojs/components'
-import { activityDetails, activityTone, activityTypeLabel, dateTimeLabel, type Activity } from '../model'
+import { activityDetails, activityTone, activityTypeLabel, dateTimeLabel, recordDetailFields, type Activity, type RecordEvent } from '../model'
 import type { ActivityProvenance, AuditInputMethod } from '../api/provenance'
 import './visualizations.css'
 
@@ -20,6 +20,13 @@ export interface ActivityDetailProps {
   provenance?: DetailProvenanceState
   onMoreInfoToggle?: (expanded: boolean) => void
   onRetryProvenance?: () => void
+  /** Sidecar metadata is read-only. When present it replaces the legacy audit panel. */
+  recordEvent?: RecordEvent | null
+  /** Authorized temporary URLs resolved by the owning page; never constructed here. */
+  photos?: string[]
+  photoCount?: number
+  photoLoading?: boolean
+  photoError?: string
   onClose: () => void
 }
 
@@ -85,25 +92,32 @@ function moreInfoRows(activity: Activity, provenance: DetailProvenanceState): {
   }
 }
 
-export function ActivityDetail({ activity, provenance = { status: 'idle' }, onMoreInfoToggle, onRetryProvenance, onClose }: ActivityDetailProps) {
-  const [failedImage, setFailedImage] = useState('')
+export function ActivityDetail({
+  activity, provenance = { status: 'idle' }, onMoreInfoToggle, onRetryProvenance,
+  recordEvent, photos, photoCount, photoLoading, photoError, onClose,
+}: ActivityDetailProps) {
+  const [failedImages, setFailedImages] = useState<string[]>([])
   const [moreOpen, setMoreOpen] = useState(false)
   const activityId = activity?.id ?? ''
 
   // Closing the sheet, or changing activity/baby/session, always starts collapsed.
   useEffect(() => { setMoreOpen(false) }, [activityId])
+  useEffect(() => { setFailedImages([]) }, [activityId, photos])
 
   if (!activity) return null
   const tone = activityTone(activity.type)
-  const details = activityDetails(activity)
+  const details = recordEvent ? recordDetailFields(activity, recordEvent) : activityDetails(activity)
   const image = activity.poopPhotoUrl
+  const legacyImages = image ? [image] : []
+  const images = photos ?? legacyImages
+  const hasPhotos = photos ? photos.length > 0 || !!photoCount || photoLoading || !!photoError : !!image
   const more = moreInfoRows(activity, provenance)
   const loading = provenance.status === 'idle' || provenance.status === 'loading'
 
-  async function previewImage() {
-    if (!image) return
+  async function previewImage(current: string) {
+    if (!images.length) return
     try {
-      await Taro.previewImage({ current: image, urls: [image] })
+      await Taro.previewImage({ current, urls: images })
     } catch {
       void Taro.showToast({ title: '图片暂时无法打开', icon: 'none' })
     }
@@ -127,8 +141,20 @@ export function ActivityDetail({ activity, provenance = { status: 'idle' }, onMo
           <View className='bubu-detail-fields'>
             {details.map((detail, index) => <View className='bubu-detail-row' key={`${detail.label}-${index}`}><Text className='bubu-detail-label'>{detail.label}</Text><Text className='bubu-detail-value' selectable>{detail.value}</Text></View>)}
           </View>
-          {image && <View className='bubu-detail-photo-section'><Text className='bubu-detail-label'>记录照片</Text>{failedImage === image ? <View className='bubu-photo-error'>图片暂时无法加载</View> : <Image className='bubu-detail-photo' src={image} mode='aspectFill' onClick={() => void previewImage()} onError={() => setFailedImage(image)} />}<Text className='bubu-viz-caption'>点击图片可放大查看</Text></View>}
-          <View className='bubu-provenance'>
+          {hasPhotos && <View className='bubu-detail-photo-section'>
+            <Text className='bubu-detail-label'>记录照片{photoCount && photoCount > 1 ? ` · ${photoCount} 张` : ''}</Text>
+            {photoLoading
+              ? <View className='bubu-photo-error'>正在读取照片…</View>
+              : photoError
+                ? <View className='bubu-photo-error'>{photoError}</View>
+                : images.length === 0
+                  ? <View className='bubu-photo-error'>图片暂时无法加载</View>
+                  : images.map((url) => failedImages.includes(url)
+                    ? <View className='bubu-photo-error' key={url}>图片暂时无法加载</View>
+                    : <Image className='bubu-detail-photo' key={url} src={url} mode='aspectFill' onClick={() => void previewImage(url)} onError={() => setFailedImages((previous) => [...previous, url])} />)}
+            <Text className='bubu-viz-caption'>点击图片可放大查看</Text>
+          </View>}
+          {!recordEvent && <View className='bubu-provenance'>
             <View className='bubu-provenance-toggle' ariaLabel={moreOpen ? '收起更多信息' : '展开更多信息'} onClick={toggleMore}>
               <Text className='bubu-provenance-title'>更多信息</Text>
               <Text className='bubu-provenance-action'>{moreOpen ? '收起' : '展开'}</Text>
@@ -142,7 +168,7 @@ export function ActivityDetail({ activity, provenance = { status: 'idle' }, onMo
                   {more.canRetry && <View className='bubu-provenance-retry' onClick={onRetryProvenance}>重试</View>}
                 </>}
             </View>}
-          </View>
+          </View>}
           <View className='bubu-detail-bottom-space' />
         </ScrollView>
       </View>

@@ -1,6 +1,6 @@
 import { dateKey, dayBounds, monthBounds, timestamp, todayKey } from "./date";
 import { buildHeatmap } from "./trends";
-import type { Activity, DailyStat, DateInput } from "./types";
+import type { Activity, DailyStat, DateInput, RecordTypeSummary } from "./types";
 import type {
   BreastfeedRatePreference, CarePreferences, NumericRange,
 } from "../preferences/care-preferences";
@@ -337,6 +337,32 @@ interface BuildContext {
   byDate: Map<string, DailyStat>;
 }
 
+type SidecarByType = Record<string, RecordTypeSummary>;
+
+function sidecarRows(stat: DailyStat | null): SidecarByType | null {
+  if (!stat || (stat.byType === undefined && stat.coverage === undefined)) return null;
+  return stat.byType ?? {};
+}
+
+const EMPTY_RECORD_TYPE_SUMMARY: RecordTypeSummary = {
+  events: 0,
+  knownMinutes: 0,
+  knownCount: 0,
+  unknownCount: 0,
+  knownMilkAmount: 0,
+  preparedMilkAmount: 0,
+  knownMilkAmounts: 0,
+  unknownMilkAmounts: 0,
+  knownDurations: 0,
+  unknownDurations: 0,
+  ongoingEvents: 0,
+};
+
+function sidecarRow(rows: SidecarByType | null | undefined, type: string): RecordTypeSummary | undefined {
+  if (!rows) return undefined;
+  return rows[type] ?? EMPTY_RECORD_TYPE_SUMMARY;
+}
+
 function addIssue(context: BuildContext, issue: CareRingIssue): void {
   context.issues.push(issue);
 }
@@ -383,8 +409,24 @@ function calculateBreastfeed(
   rate: BreastfeedRatePreference,
   date: string,
   context: BuildContext,
+  sidecarBreastfeed?: RecordTypeSummary,
 ): MilkRingMetric["breastfeed"] {
   const records = activities.filter((activity) => activity.type === "BREASTFEED" && dateKey(activity.startTime) === date);
+  if (sidecarBreastfeed && records.length === 0) {
+    const eventCount = Math.max(0, sidecarBreastfeed.events);
+    return {
+      state: eventCount ? "partial" : "unknown",
+      explicitMl: null,
+      estimatedRange: null,
+      recordedMinutes: null,
+      recordCount: eventCount,
+      savedCount: null,
+      source: "unavailable",
+      reason: eventCount
+        ? "亲喂记录存在，但未返回可用于估算的明细。"
+        : "无亲喂记录，未记录不能当作 0。",
+    };
+  }
   let explicitMl = 0;
   let hasExplicit = false;
   let invalidExplicit = false;
@@ -557,19 +599,45 @@ function buildMilkMetric(
   breastfeed: MilkRingMetric["breastfeed"],
   age: CareRingAge,
   preferences: CarePreferences,
+  sidecar?: SidecarByType | null,
 ): MilkRingMetric {
-  const bottle = stat ? finiteNonNegative(stat.totalMilkAmount) : null;
+  const sidecarBottle = sidecarRow(sidecar, "BOTTLE");
+  let bottle = stat ? finiteNonNegative(stat.totalMilkAmount) : null;
+  let bottleIsKnown = bottle !== null;
+  let bottleIncompleteCount = 0;
+  if (sidecarBottle) {
+    const knownCount = Math.max(0, sidecarBottle.knownMilkAmounts);
+    const unknownCount = Math.max(0, sidecarBottle.unknownMilkAmounts);
+    const ongoingCount = Math.max(0, sidecarBottle.ongoingEvents);
+    bottleIncompleteCount = unknownCount + ongoingCount;
+    bottleIsKnown = sidecarBottle.events > 0 && knownCount > 0 && bottle !== null;
+    bottle = bottleIsKnown ? bottle : null;
+  }
   const reference = preferences.milkReference
     ? customRangeReference(preferences.milkReference, "ml", "自定义奶量参考")
     : milkAgeReference(age);
   const components: string[] = [];
-  components.push(bottle === null ? "瓶喂未知" : `瓶喂 ${formatNumber(bottle)} ml`);
+  if (sidecarBottle) {
+    if (bottleIsKnown && bottle !== null && bottleIncompleteCount > 0) {
+      const incompleteParts: string[] = [];
+      if (sidecarBottle.unknownMilkAmounts > 0) incompleteParts.push(`${sidecarBottle.unknownMilkAmounts} 次奶量未知`);
+      if (sidecarBottle.ongoingEvents > 0) incompleteParts.push(`${sidecarBottle.ongoingEvents} 次进行中`);
+      components.push(`瓶喂已知 ${formatNumber(bottle)} ml，${incompleteParts.join("、")}`);
+    } else {
+      components.push(bottle === null ? "瓶喂未知" : `瓶喂 ${formatNumber(bottle)} ml`);
+    }
+  } else {
+    components.push(bottle === null ? "瓶喂未知" : `瓶喂 ${formatNumber(bottle)} ml`);
+  }
   if (breastfeed.recordCount > 0 || breastfeed.state === "known-zero") {
     if (breastfeed.explicitMl !== null) components.push(`亲喂记录量 ${formatNumber(breastfeed.explicitMl)} ml`);
     if (breastfeed.estimatedRange) components.push(`亲喂估算 ${formatRange(breastfeed.estimatedRange)} ml`);
     if (breastfeed.recordedMinutes !== null && breastfeed.explicitMl === null && !breastfeed.estimatedRange) {
       components.push(`亲喂时长 ${formatNumber(breastfeed.recordedMinutes)} 分钟`);
     }
+  }
+  if (sidecar && !components.some((component) => component.startsWith("亲喂"))) {
+    components.push("亲喂未知");
   }
 
   if (breastfeed.state === "estimated" && breastfeed.estimatedRange === null) {
@@ -589,14 +657,21 @@ function buildMilkMetric(
     };
   }
   const estimatedRange = breastfeed.state === "estimated" ? breastfeed.estimatedRange : null;
-  const canTotal = bottle !== null && (
+  const bottleCanTotal = !sidecarBottle || (bottleIsKnown && bottleIncompleteCount === 0);
+  const breastfeedCanTotal =
     breastfeed.state === "known-zero" ||
     breastfeed.state === "known" ||
     breastfeed.state === "estimated"
-  );
+  ;
   let value: CareRingRawValue;
-  if (!canTotal) {
-    value = rawUnknown(bottle === null ? "瓶喂奶量未知，不能合计总奶量。" : "亲喂奶量未知，不能合计总奶量。");
+  if (bottle === null || !bottleCanTotal || !breastfeedCanTotal) {
+    value = rawUnknown(
+      bottle === null
+        ? "瓶喂奶量未知，不能合计总奶量。"
+        : !bottleCanTotal
+          ? "瓶喂奶量包含未知记录，不能合计总奶量。"
+          : "亲喂奶量未知，不能合计总奶量。",
+    );
   } else if (breastfeed.state === "estimated" && estimatedRange) {
     const explicit = breastfeed.explicitMl ?? 0;
     value = rawRange({ min: bottle + explicit + estimatedRange.min, max: bottle + explicit + estimatedRange.max });
@@ -624,20 +699,50 @@ function buildMilkMetric(
     progress,
     status,
     reference,
-    dataState: value.type === "unknown" ? "partial" : "known",
+    dataState: value.type === "unknown"
+      ? sidecar
+        ? bottleIsKnown || breastfeed.recordCount > 0 ? "partial" : "unknown"
+        : "partial"
+      : "known",
     readableComponents: components,
   };
 }
 
-function buildSleepMetric(stat: DailyStat | null, age: CareRingAge, preferences: CarePreferences): SleepRingMetric {
-  const saved = stat ? finiteNonNegative(stat.totalSleepMinutes) : null;
+function buildSleepMetric(
+  stat: DailyStat | null,
+  age: CareRingAge,
+  preferences: CarePreferences,
+  sidecarSleep?: RecordTypeSummary,
+): SleepRingMetric {
+  let saved = stat ? finiteNonNegative(stat.totalSleepMinutes) : null;
+  let partialReason: string | null = null;
+  let partialDetail: string | null = null;
+  if (sidecarSleep) {
+    const knownCount = Math.max(0, sidecarSleep.knownDurations);
+    const unknownCount = Math.max(0, sidecarSleep.unknownDurations);
+    const ongoingCount = Math.max(0, sidecarSleep.ongoingEvents);
+    if (sidecarSleep.events === 0 || knownCount === 0) {
+      saved = null;
+      partialReason = sidecarSleep.events === 0 ? "无睡眠记录" : "睡眠记录缺少已知完成时长";
+    } else {
+      const incompleteParts: string[] = [];
+      if (unknownCount > 0) incompleteParts.push(`${unknownCount} 条待补全`);
+      if (ongoingCount > 0) incompleteParts.push(`${ongoingCount} 条进行中`);
+      if (incompleteParts.length > 0) {
+        partialReason = "睡眠记录包含未知或进行中时长";
+        partialDetail = `未知（${saved === null ? "" : `已完成 ${formatMinutes(saved)}、`}${incompleteParts.join("、")}）`;
+      }
+    }
+  }
   const reference = preferences.sleepReference
     ? customRangeReference(preferences.sleepReference, "minutes", "自定义睡眠参考")
     : sleepAgeReference(age);
-  const value = saved === null ? rawUnknown("缺少有效睡眠统计") : rawNumber(saved);
+  const value = saved === null || partialReason
+    ? rawUnknown(partialReason ?? "缺少有效睡眠统计")
+    : rawNumber(saved);
   let progress: number | null = null;
   let status: CareRingStatus;
-  if (saved === null) status = unknownStatus("睡眠未知");
+  if (saved === null || partialReason) status = unknownStatus("睡眠未知");
   else if (!reference?.range) status = noReferenceStatus(age.state === "missing" || age.state === "invalid" || age.state === "future" ? "年龄未知或不受支持，不猜测睡眠参考" : "无睡眠参考");
   else {
     progress = clampProgress(saved / midpoint(reference.range));
@@ -649,11 +754,13 @@ function buildSleepMetric(stat: DailyStat | null, age: CareRingAge, preferences:
     unit: "minutes",
     savedMinutes: saved,
     value,
-    readableValue: saved === null ? "未知" : formatMinutes(saved),
-    progress,
+    readableValue: partialDetail ?? (saved === null ? "未知" : formatMinutes(saved)),
+    progress: partialReason ? null : progress,
     status,
     reference,
-    dataState: saved === null ? "unknown" : "known",
+    dataState: partialReason
+      ? sidecarSleep && sidecarSleep.knownDurations > 0 ? "partial" : "unknown"
+      : saved === null ? "unknown" : "known",
   };
 }
 
@@ -699,28 +806,109 @@ function buildOutdoorMetric(
   complete: boolean,
   date: string,
   context: BuildContext,
+  sidecarOutdoor?: RecordTypeSummary,
 ): OutdoorRingMetric {
   const reference = outdoorReference();
   const records = outdoorRecordsForDay(allActivities, date);
-  if (!statExists) {
-    if (records.length === 0) {
-      return {
-        key: "outdoor", label: "玩", unit: "minutes", recordedMinutes: null, recordCount: 0,
-        value: rawUnknown("该日没有统计快照或户外记录"), readableValue: "未知", progress: null,
-        status: unknownStatus("户外时长未知"), reference, dataState: "unknown",
-      };
-    }
+  if (!statExists && records.length === 0) {
+    return {
+      key: "outdoor", label: "玩", unit: "minutes", recordedMinutes: null, recordCount: 0,
+      value: rawUnknown("该日没有统计快照或户外记录"), readableValue: "未知", progress: null,
+      status: unknownStatus("户外时长未知"), reference, dataState: "unknown",
+    };
   }
-  let invalid = false;
+
+  const sidecarKnownDurationCount = sidecarOutdoor ? Math.max(0, sidecarOutdoor.knownDurations) : 0;
+  const sidecarUnknownCount = sidecarOutdoor ? Math.max(0, sidecarOutdoor.unknownDurations) : 0;
+  const sidecarOngoingCount = sidecarOutdoor ? Math.max(0, sidecarOutdoor.ongoingEvents) : 0;
+  const metadataAccountsForUnfinished = sidecarUnknownCount + sidecarOngoingCount > 0;
+
+  let invalidCount = 0;
+  let unfinishedCount = 0;
+  let validEndedCount = 0;
   for (const activity of records) {
     const end = activity.endTime === undefined || activity.endTime === null ? NaN : timestamp(activity.endTime);
-    if (!Number.isFinite(end) || end <= timestamp(activity.startTime)) {
-      invalid = true;
+    if (!Number.isFinite(end)) {
+      unfinishedCount++;
+      if (!metadataAccountsForUnfinished) {
+        addIssue(context, { date, metric: "outdoor", code: "invalid-outdoor", message: "户外记录未结束或结束时间无效。", activityId: activity.id });
+      }
+      continue;
+    }
+    if (end < timestamp(activity.startTime) || (!sidecarOutdoor && end === timestamp(activity.startTime))) {
+      invalidCount++;
       addIssue(context, { date, metric: "outdoor", code: "invalid-outdoor", message: "户外记录未结束或结束时间无效。", activityId: activity.id });
+    } else {
+      validEndedCount++;
     }
   }
-  const minutes = mergedOutdoorMinutes(records, date);
-  const known = complete && !invalid;
+  const activityMinutes = mergedOutdoorMinutes(records, date);
+
+  if (sidecarOutdoor) {
+    const knownDurationCount = sidecarKnownDurationCount;
+    const unknownCount = sidecarUnknownCount;
+    const ongoingCount = sidecarOngoingCount;
+    const eventCount = Math.max(0, sidecarOutdoor.events);
+    const recordCount = Math.max(eventCount, records.length);
+    const missingDetailCount = Math.max(0, eventCount - records.length);
+    const metadataKnownMinutes = finiteNonNegative(sidecarOutdoor.knownMinutes);
+    const safeZeroWithoutDetail = knownDurationCount > 0 && metadataKnownMinutes === 0;
+    const metadataIncomplete = unknownCount > 0 || ongoingCount > 0;
+    const unexplainedUnfinishedCount = Math.max(
+      0,
+      unfinishedCount - sidecarUnknownCount - sidecarOngoingCount,
+    );
+    const known = complete
+      && invalidCount === 0
+      && unexplainedUnfinishedCount === 0
+      && missingDetailCount === 0
+      && !metadataIncomplete
+      && (records.length > 0 || safeZeroWithoutDetail);
+    const hasKnownData = validEndedCount > 0 || knownDurationCount > 0;
+
+    if (!known && !hasKnownData) {
+      return {
+        key: "outdoor", label: "玩", unit: "minutes", recordedMinutes: null, recordCount,
+        value: rawUnknown(eventCount === 0 ? "无户外记录" : "户外记录缺少已知完成时长"),
+        readableValue: "未知", progress: null, status: unknownStatus("户外时长未知"), reference, dataState: "unknown",
+      };
+    }
+
+    const incompleteParts: string[] = [];
+    if (unknownCount > 0) incompleteParts.push(`${unknownCount} 条待补全`);
+    if (ongoingCount > 0) incompleteParts.push(`${ongoingCount} 条进行中`);
+    if (invalidCount > 0) incompleteParts.push(`${invalidCount} 条无效`);
+    if (unexplainedUnfinishedCount > 0) incompleteParts.push(`${unexplainedUnfinishedCount} 条无效`);
+    if (missingDetailCount > 0) incompleteParts.push(`${missingDetailCount} 条缺少明细`);
+    if (!complete) incompleteParts.push("本月部分记录尚未读取完整");
+    if (!known) {
+      const knownMinutes = validEndedCount > 0 || safeZeroWithoutDetail ? activityMinutes : null;
+      return {
+        key: "outdoor", label: "玩", unit: "minutes", recordedMinutes: knownMinutes, recordCount,
+        value: rawUnknown("户外记录包含未知或进行中时长"),
+        readableValue: knownMinutes === null ? "未知" : `未知（已知 ${formatMinutes(knownMinutes)}、${incompleteParts.join("、")}）`,
+        progress: null, status: unknownStatus("户外时长未知"), reference, dataState: "partial",
+      };
+    }
+
+    const minutes = activityMinutes;
+    const achievement = minutes >= 180 ? 3 : minutes >= 120 ? 2 : minutes >= 60 ? 1 : 0;
+    return {
+      key: "outdoor", label: "玩", unit: "minutes", recordedMinutes: minutes, recordCount,
+      value: rawNumber(minutes), readableValue: formatMinutes(minutes),
+      progress: clampProgress(minutes / 180),
+      status: {
+        code: achievement === 3 ? "at-target" : "below-range",
+        label: achievement === 0 ? "未到 60 分钟" : `达到 ${achievement === 1 ? 60 : achievement === 2 ? 120 : 180} 分钟`,
+        note: achievement === 3 ? "整环已满，仍保留实际分钟数。" : undefined,
+      },
+      reference,
+      dataState: "known",
+    };
+  }
+
+  const minutes = activityMinutes;
+  const known = complete && invalidCount === 0 && unfinishedCount === 0;
   const value = known ? rawNumber(minutes) : rawUnknown(complete ? "户外记录不完整" : "Activity 月度列表不完整");
   const achievement = known && minutes >= 180 ? 3 : known && minutes >= 120 ? 2 : known && minutes >= 60 ? 1 : 0;
   const status: CareRingStatus = !known
@@ -745,8 +933,28 @@ function buildOutdoorMetric(
   };
 }
 
-function buildDiaperMetric(stat: DailyStat | null): DiaperRingMetric {
+function buildDiaperMetric(stat: DailyStat | null, sidecarDiaper?: RecordTypeSummary): DiaperRingMetric {
   const reference = diaperReference();
+  if (sidecarDiaper) {
+    const count = finiteNonNegative(sidecarDiaper.events);
+    const value = count === null || count === 0 ? rawUnknown("无尿布记录") : rawNumber(count);
+    return {
+      key: "diaper",
+      label: "便",
+      unit: "count",
+      count: count === null || count === 0 ? null : count,
+      value,
+      readableValue: count === null || count === 0 ? "未知" : `${formatNumber(count)} 次`,
+      progress: count === null || count === 0 ? null : clampProgress(count / 6),
+      status: count === null || count === 0 ? unknownStatus("尿布次数未知") : {
+        code: count >= 6 ? "at-target" : "below-range",
+        label: count >= 6 ? "达到家庭目标 6 次" : "少于家庭目标 6 次",
+        note: "只描述与家庭目标的关系，不是医学正常值。",
+      },
+      reference,
+      dataState: count === null || count === 0 ? "unknown" : "known",
+    };
+  }
   const count = stat ? finiteNonNegative(stat.diaperCount) : null;
   const value = count === null ? rawUnknown("缺少有效尿布统计") : rawNumber(count);
   return {
@@ -824,16 +1032,28 @@ export function buildCareMonthRings(input: CareMonthRingsInput): CareMonthRings 
         if (finiteNonNegative(stat.diaperCount) === null) addIssue(context, { date, metric: "diaper", code: "invalid-stat", message: "尿布统计无效。" });
       }
       const age = ageFromBirth(input.birthDate, date);
-      const breastfeed = calculateBreastfeed(context.uniqueActivities, stat, input.activitiesComplete, age, input.preferences.breastfeedRate, date, context);
+      const sidecar = sidecarRows(stat);
+      const breastfeed = calculateBreastfeed(
+        context.uniqueActivities,
+        stat,
+        input.activitiesComplete,
+        age,
+        input.preferences.breastfeedRate,
+        date,
+        context,
+        sidecarRow(sidecar, "BREASTFEED"),
+      );
       const metrics: CareRingMetrics = [
-        buildMilkMetric(stat, breastfeed, age, input.preferences),
-        buildSleepMetric(stat, age, input.preferences),
-        buildOutdoorMetric(context.uniqueActivities, Boolean(stat), input.activitiesComplete, date, context),
-        buildDiaperMetric(stat),
+        buildMilkMetric(stat, breastfeed, age, input.preferences, sidecar),
+        buildSleepMetric(stat, age, input.preferences, sidecarRow(sidecar, "SLEEP")),
+        buildOutdoorMetric(context.uniqueActivities, Boolean(stat), input.activitiesComplete, date, context, sidecarRow(sidecar, "OUTDOOR")),
+        buildDiaperMetric(stat, sidecarRow(sidecar, "DIAPER")),
       ];
       const hasKnownData = metrics.some((metric) => metric.dataState !== "unknown");
       const allMetricsKnown = metrics.every((metric) => metric.dataState === "known");
-      const dataState = !stat && !hasKnownData ? "unknown" : allMetricsKnown ? "known" : "partial";
+      const dataState = sidecar
+        ? allMetricsKnown ? "known" : hasKnownData ? "partial" : "unknown"
+        : !stat && !hasKnownData ? "unknown" : allMetricsKnown ? "known" : "partial";
       return {
         date,
         inMonth: true,
