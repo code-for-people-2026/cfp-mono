@@ -136,6 +136,9 @@ export function activityDetails(activity: Activity): DetailField[] {
     fields.push({ label: "奶量", value: activity.milkAmount != null ? `${activity.milkAmount} ml` : "未记录奶量" });
     if (activity.type === "BOTTLE" && activity.milkSource) fields.push({ label: "奶源", value: MILK_SOURCE_LABELS[activity.milkSource] });
   }
+  if (activity.type === "BREASTFEED" && activity.milkAmount != null) {
+    fields.push({ label: "记录奶量", value: `${activity.milkAmount} ml` });
+  }
   if (activity.type === "BOTTLE" || activity.type === "BREASTFEED") {
     // Undefined and null both mean unknown; never present a missing value as failure.
     if (activity.burpSuccess != null) fields.push({ label: "拍嗝", value: activity.burpSuccess ? "成功" : "未成功" });

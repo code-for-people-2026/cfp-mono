@@ -433,6 +433,25 @@ describe("read-only details", () => {
       .toContainEqual({ label: "奶量", value: "未记录奶量" });
   });
 
+  it("shows recorded breastfeed milk without estimating unknown amounts", () => {
+    const shared = { endTime: "2026-01-02 08:20", burpSuccess: true, breastFirmness: "ELASTIC" as const };
+    expect(activityDetails(event("recorded", "BREASTFEED", "2026-01-02 08:00", { ...shared, milkAmount: 80 })))
+      .toContainEqual({ label: "记录奶量", value: "80 ml" });
+    expect(activityDetails(event("zero", "BREASTFEED", "2026-01-02 08:00", { ...shared, milkAmount: 0 })))
+      .toContainEqual({ label: "记录奶量", value: "0 ml" });
+
+    const unknownDetails = [
+      activityDetails(event("null", "BREASTFEED", "2026-01-02 08:00", { ...shared, milkAmount: null })),
+      activityDetails(event("missing", "BREASTFEED", "2026-01-02 08:00", shared)),
+    ];
+    for (const details of unknownDetails) {
+      expect(details.map((field) => field.label)).toEqual(expect.arrayContaining([
+        "开始时间", "结束时间", "时长", "拍嗝", "喂后乳房硬度",
+      ]));
+      expect(details.some((field) => field.label.includes("奶量") || field.value.includes("ml"))).toBe(false);
+    }
+  });
+
   it("distinguishes known false diaper flags from unknown elimination details", () => {
     expect(activityDetails(event("clean", "DIAPER", "2026-01-02 08:00", { hasPoop: false, hasPee: false })))
       .toContainEqual({ label: "尿布", value: "只换尿布" });
