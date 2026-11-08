@@ -1,0 +1,11 @@
+{
+  "appid": "wx45c6373b565632ab",
+  "projectname": "卜卜日记",
+  "compileType": "miniprogram",
+  "miniprogramRoot": "dist/weapp/",
+  "setting": {
+    "urlCheck": true,
+    "es6": false,
+    "minified": true
+  }
+}
