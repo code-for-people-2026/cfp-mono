@@ -19,6 +19,7 @@ import {
   paperFoldAvatarTransform,
   resolvePaperFoldFrame,
   resolvePaperFoldMotion,
+  resolvePaperFoldTileGrid,
   type PaperFoldPolygon,
 } from "../src/gestures/paper-fold";
 
@@ -345,6 +346,25 @@ describe("paper-fold preset table", () => {
   });
 });
 
+describe("paper wallpaper coverage", () => {
+  it("covers short and tall phone sheets with half-window-square tiles", () => {
+    for (const width of [320, 360, 390, 430]) {
+      for (const height of [320, 568, 932, 1200]) {
+        const grid = resolvePaperFoldTileGrid(width, height);
+        expect(grid.columns).toBe(2);
+        expect(grid.rows * width / 2).toBeGreaterThanOrEqual(height);
+        expect((grid.rows - 1) * width / 2).toBeLessThan(height);
+      }
+    }
+  });
+  it("rejects invalid and implausibly tiny widths without unbounded image nodes", () => {
+    for (const width of [0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.MIN_VALUE, 1]) {
+      const grid = resolvePaperFoldTileGrid(width, 10000);
+      expect(grid.columns * grid.rows).toBe(0);
+    }
+  });
+});
+
 describe("paper-fold gesture mapping", () => {
   it("uses outgoing progress for next and reversed incoming progress for previous", () => {
     expect(resolvePaperFoldMotion({
@@ -360,7 +380,7 @@ describe("paper-fold gesture mapping", () => {
     expect(resolvePaperFoldMotion({
       axis: "vertical", direction: "prev", phase: "drag",
       displacement: 160, crossDisplacement: 20, size: 400,
-    })).toEqual({ progress: 0.6, tilt: -0.2 });
+    })).toEqual({ progress: 0.6, tilt: 0.2 });
   });
 
   it("follows cross-axis reversal and rejects invalid touch values", () => {
@@ -380,6 +400,44 @@ describe("paper-fold gesture mapping", () => {
       axis: "horizontal", direction: "next", phase: "drag",
       displacement: Number.NaN, crossDisplacement: Number.POSITIVE_INFINITY, size: Number.NaN,
     })).toEqual({ progress: 0, tilt: 0 });
+  });
+
+  it("uses the same physical crease angle for horizontal and vertical phone turns", () => {
+    for (const direction of ["prev", "next"] as const) {
+      const physicalSlopes: number[] = [];
+      for (const axis of ["horizontal", "vertical"] as const) {
+        const main = axis === "horizontal" ? 320 : 568;
+        const cross = axis === "horizontal" ? 568 : 320;
+        const distance = main / 4;
+        const motion = resolvePaperFoldMotion({ axis, direction, phase: "drag",
+          displacement: direction === "prev" ? distance : -distance,
+          crossDisplacement: distance / 8, size: main, crossSize: cross });
+        expect(motion.tilt).toBeGreaterThan(0);
+        const frame = resolvePaperFoldFrame(motion.progress, motion.tilt, axis);
+        const primary = axis === "horizontal" ? 0 : 1;
+        physicalSlopes.push((frame.flat[2][primary] - frame.flat[1][primary]) / 1000 * main / cross);
+      }
+      expect(physicalSlopes[0]).toBeGreaterThan(0);
+      expect(physicalSlopes[1]).toBeCloseTo(physicalSlopes[0], 2);
+    }
+  });
+
+  it("unfolds previous from top and peels next from bottom with increasing vertical drag", () => {
+    for (const direction of ["prev", "next"] as const) {
+      const edges = [0, 56, 140, 280, 560].map((distance) => {
+        const motion = resolvePaperFoldMotion({ axis: "vertical", direction, phase: "drag",
+          displacement: direction === "prev" ? distance : -distance,
+          crossDisplacement: 0, size: 560, crossSize: 320 });
+        const frame = resolvePaperFoldFrame(motion.progress, motion.tilt, "vertical");
+        expect(frame.flat[1][1]).toBeCloseTo(frame.flat[2][1], 8);
+        return frame.flat[1][1];
+      });
+      expect(edges[0]).toBe(direction === "prev" ? 0 : 1000);
+      expect(edges.at(-1)).toBe(direction === "prev" ? 1000 : 0);
+      for (let i = 1; i < edges.length; i++) {
+        expect((edges[i] - edges[i - 1]) * (direction === "prev" ? 1 : -1)).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("keeps release timing available for preset playback", () => {

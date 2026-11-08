@@ -333,6 +333,22 @@ async function expectFoldAvatar(
   }
   expect(visible.determinant).toBeGreaterThan(0.45);
   expect(visible.determinant).toBeLessThanOrEqual(1.02);
+  const wallpaper = await page.locator(`${layer} .bubu-paper-fold-avatar`).evaluate((element) => {
+    const tiles = [...element.querySelectorAll(".bubu-paper-fold-avatar-tile")].map((tile) => {
+      const style = getComputedStyle(tile);
+      return { width: parseFloat(style.width), height: parseFloat(style.height),
+        left: parseFloat(style.left), top: parseFloat(style.top) };
+    });
+    return { tiles, windowWidth: innerWidth, height: element.clientHeight, overflow: getComputedStyle(element).overflow };
+  });
+  expect(wallpaper.tiles.length).toBeGreaterThanOrEqual(4);
+  expect(wallpaper.overflow).toBe("hidden");
+  for (const tile of wallpaper.tiles) {
+    expect(tile.width).toBeCloseTo(wallpaper.windowWidth / 2, 0);
+    expect(tile.height).toBeCloseTo(wallpaper.windowWidth / 2, 0);
+  }
+  expect(new Set(wallpaper.tiles.map((tile) => tile.left)).size).toBe(2);
+  expect(Math.max(...wallpaper.tiles.map((tile) => tile.top + tile.height))).toBeGreaterThanOrEqual(wallpaper.height);
 }
 
 async function expectPreloadedAvatar(page: Page, source: string, loaded: boolean) {

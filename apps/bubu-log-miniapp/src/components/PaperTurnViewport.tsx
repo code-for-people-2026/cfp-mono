@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import brandIcon from '../assets/branding/bubu-avatar-borderless-v1.png'
+import Taro from '@tarojs/taro'
 import { Image, View } from '@tarojs/components'
 import type { PaperTurnState } from '../gestures/model'
 import {
@@ -10,6 +11,7 @@ import {
   paperFoldAvatarTransform,
   resolvePaperFoldFrame,
   resolvePaperFoldMotion,
+  resolvePaperFoldTileGrid,
   type PaperFoldMotion,
 } from '../gestures/paper-fold'
 
@@ -38,7 +40,23 @@ interface FoldPlayback {
   running: boolean
 }
 
+interface ScreenDimensions {
+  width: number
+  height: number
+}
+
 const inertPreviewAttributes = { "aria-hidden": true, inert: true } as const
+
+const readScreenDimensions = (): ScreenDimensions => {
+  try {
+    const info = typeof Taro.getWindowInfo === 'function'
+      ? Taro.getWindowInfo()
+      : Taro.getSystemInfoSync()
+    return { width: info.windowWidth, height: info.windowHeight }
+  } catch {
+    return { width: 0, height: 0 }
+  }
+}
 
 export function PaperTurnViewport({
   paperTurn,
@@ -53,6 +71,7 @@ export function PaperTurnViewport({
 }: PaperTurnViewportProps) {
   const horizontal = paperTurn.axis === 'horizontal'
   const size = Math.max(1, horizontal ? viewportWidth : viewportHeight)
+  const crossSize = Math.max(1, horizontal ? viewportHeight : viewportWidth)
   const activeDirection = paperTurn.phase === 'idle' ? null : paperTurn.direction
   const reducedMotion = paperTurn.reducedMotion
   const transition = paperTurnTransition(paperTurn.phase, reducedMotion)
@@ -64,6 +83,7 @@ export function PaperTurnViewport({
       displacement: paperTurn.displacement,
       crossDisplacement: paperTurn.crossDisplacement,
       size,
+      crossSize,
     })
     : null
   const motionRef = useRef<PaperFoldMotion | null>(null)
@@ -71,6 +91,7 @@ export function PaperTurnViewport({
   const [playback, setPlayback] = useState<FoldPlayback | null>(null)
   const [loadedAvatarUrl, setLoadedAvatarUrl] = useState("")
   const [failedAvatarUrl, setFailedAvatarUrl] = useState("")
+  const [screenDimensions, setScreenDimensions] = useState(readScreenDimensions)
   const requestedAvatarUrl = foldAvatarUrl || brandIcon
   const requestedAvatarIsBrand = requestedAvatarUrl === brandIcon
   const requestedAvatarLoaded = loadedAvatarUrl === requestedAvatarUrl
@@ -80,6 +101,26 @@ export function PaperTurnViewport({
     && !requestedAvatarFailed
   const avatarUrl = showRequestedAvatar ? requestedAvatarUrl : brandIcon
   const avatarMode = showRequestedAvatar ? 'aspectFill' : 'aspectFit'
+  const avatarSheetWidth = Number.isFinite(screenDimensions.width) && screenDimensions.width > 0
+    ? screenDimensions.width
+    : viewportWidth
+  const avatarSheetHeight = Math.max(
+    Number.isFinite(screenDimensions.height) && screenDimensions.height > 0
+      ? screenDimensions.height
+      : 0,
+    viewportHeight,
+  )
+  const avatarTileGrid = useMemo(
+    () => resolvePaperFoldTileGrid(avatarSheetWidth, avatarSheetHeight),
+    [avatarSheetHeight, avatarSheetWidth],
+  )
+  const avatarTiles = useMemo(() => Array.from(
+    { length: avatarTileGrid.rows * avatarTileGrid.columns },
+    (_, index) => ({
+      row: Math.floor(index / avatarTileGrid.columns),
+      column: index % avatarTileGrid.columns,
+    }),
+  ), [avatarTileGrid.columns, avatarTileGrid.rows])
   const markAvatarLoaded = (url: string) => setLoadedAvatarUrl(url)
   const markAvatarFailed = (url: string) => setFailedAvatarUrl(url)
   const markVisibleAvatarFailed = () => {
@@ -141,6 +182,10 @@ export function PaperTurnViewport({
     }
   }, [activeDirection, paperTurn.phase, reducedMotion, transition.durationMs])
 
+  useEffect(() => {
+    setScreenDimensions(readScreenDimensions())
+  }, [viewportHeight, viewportWidth])
+
   const layers = reducedMotion ? null : layersRef.current
   const dragContentExists = activeDirection === 'prev'
     ? previous != null
@@ -186,14 +231,22 @@ export function PaperTurnViewport({
           style={{ clipPath: foldFrame.backClipPath }}
         >
           {avatarTransform == null ? null : (
-            <Image
+            <View
               className='bubu-paper-fold-avatar'
               key={avatarUrl}
-              src={avatarUrl}
-              mode={avatarMode}
               style={{ transform: avatarTransform }}
-              onError={markVisibleAvatarFailed}
-            />
+            >
+              {avatarTiles.map(({ row, column }) => (
+                <Image
+                  className='bubu-paper-fold-avatar-tile'
+                  key={`${row}-${column}`}
+                  src={avatarUrl}
+                  mode={avatarMode}
+                  style={{ left: `${column * 50}vw`, top: `${row * 50}vw` }}
+                  onError={markVisibleAvatarFailed}
+                />
+              ))}
+            </View>
           )}
           <View className={`bubu-paper-fold-avatar-shade bubu-paper-fold-${horizontal ? 'horizontal' : 'vertical'}`} />
         </View>

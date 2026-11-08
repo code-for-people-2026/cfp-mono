@@ -18,6 +18,7 @@ export interface PaperFoldMotionInput {
   displacement: number;
   crossDisplacement?: number;
   size: number;
+  crossSize?: number;
 }
 
 export interface PaperFoldMotion {
@@ -36,6 +37,11 @@ export interface PaperFoldFrame {
   shadowClipPath: string;
 }
 
+export interface PaperFoldTileGrid {
+  columns: number;
+  rows: number;
+}
+
 const foldTable = foldTableJson as unknown as PaperFoldTable;
 const { progressSteps, tiltSteps, frames } = foldTable;
 const maxProgressIndex = progressSteps - 1;
@@ -52,15 +58,19 @@ const clamp = (value: number, minimum: number, maximum: number): number => (
 /** Convert touch values to a table coordinate. This performs no fold geometry. */
 export function resolvePaperFoldMotion(input: PaperFoldMotionInput): PaperFoldMotion {
   const size = Math.max(1, finite(input.size));
+  const crossSize = Math.max(1, finite(input.crossSize ?? input.size));
   const displacement = finite(input.displacement);
   const progress = clamp(Math.abs(displacement) / size, 0, 1);
   const cross = finite(input.crossDisplacement);
-  const tilt = clamp(cross / Math.max(56, Math.abs(displacement)) * 1.6, -1, 1);
-  const signedTilt = input.axis === "horizontal" ? tilt : -tilt;
+  const tilt = clamp(
+    cross / Math.max(56, Math.abs(displacement)) * 1.6 * crossSize / size,
+    -1,
+    1,
+  );
   const canonicalProgress = input.direction === "prev" ? 1 - progress : progress;
   return {
     progress: input.phase === "drag" ? canonicalProgress : 0,
-    tilt: input.phase === "drag" ? signedTilt : 0,
+    tilt: input.phase === "drag" ? tilt : 0,
   };
 }
 
@@ -145,6 +155,33 @@ export function paperFoldAvatarTransform(
   const ty = q1[1] * height;
   const values = [a, b, c, d, tx, ty];
   return values.every(Number.isFinite) ? `matrix(${values.join(", ")})` : null;
+}
+
+/**
+ * Bound the image-node wallpaper to a little larger than a phone screen.  CSS
+ * percentage/vw units ultimately decide each tile's rendered size; this count
+ * only ensures enough nodes exist before that sheet is clipped.
+ */
+export function resolvePaperFoldTileGrid(
+  windowWidth: number,
+  sheetHeight: number,
+): PaperFoldTileGrid {
+  const width = boundFiniteScreenDimension(windowWidth);
+  const height = boundFiniteScreenDimension(sheetHeight);
+  if (width < 120 || height === 0) return { columns: 0, rows: 0 };
+
+  const tileSize = width / 2;
+  return {
+    columns: 2,
+    rows: Math.max(1, Math.ceil(height / tileSize)),
+  };
+}
+
+function boundFiniteScreenDimension(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  // Keep malformed platform input from creating an unbounded wallpaper while
+  // allowing every plausible phone/window height.
+  return Math.min(value, 10000);
 }
 
 function interpolatePoint(from: PaperFoldPoint, to: PaperFoldPoint, amount: number): PaperFoldPoint {
