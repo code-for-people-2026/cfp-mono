@@ -248,8 +248,8 @@ describe("executable external Agent and real MCP runner", () => {
     await f.call({ action: "media", ...leased, resolutions: [{ sourceId: message.sourceId, index: 0, state: "unavailable", reason: "MEDIA_EXACT_FILE_MISSING" }] });
     const replay = plan(message); replay.plans[0]!.key = "brand-new-event-key";
     await expect(f.call({ action: "plan", ...leased, plan: replay })).rejects.toMatchObject({ code: "COLLECTOR_MEDIA_ONLY_SOURCE" });
-    const revive: AgentPlan = { plans: [{ key: "revive", sourceIds: [message.sourceId], tool: "bubu_restore_event", arguments: { eventId: event.id, expectedVersion: event.version + 1 } }], ignored: [] };
-    await expect(f.call({ action: "plan", ...leased, plan: revive })).rejects.toMatchObject({ code: "COLLECTOR_MEDIA_ONLY_SOURCE" });
+    const rewrite: AgentPlan = { plans: [{ key: "rewrite", sourceIds: [message.sourceId], tool: "bubu_update_event", arguments: { eventId: event.id, expectedVersion: event.version + 1, patch: { facts: { notes: "must not rewrite a media-only source" } } } }], ignored: [] };
+    await expect(f.call({ action: "plan", ...leased, plan: rewrite })).rejects.toMatchObject({ code: "COLLECTOR_MEDIA_ONLY_SOURCE" });
     await f.call({ action: "plan", ...leased, plan: { plans: [], ignored: [] } }); await f.call({ action: "finish", ...leased });
     const result = await f.records.query(await f.principal(), { babyId: "baby-a", includeRetracted: true });
     expect(result.events).toHaveLength(1); expect(result.events[0]!.lifecycle).toBe("retracted"); expect(f.backend.activities.size).toBe(0);

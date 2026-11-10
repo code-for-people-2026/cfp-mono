@@ -98,7 +98,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const safety = new SafetyService(privacy);
     const maintenance = new PrivacyMaintenance(privacy, attachments, deletion);
     const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
-    const collector = new CollectorService(identity, (babyId, requestId, req, principal) => records.verifyCollectorReceipt(babyId, requestId, req, principal), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
+    const collector = new CollectorService(identity, (babyId, requestId, req, principal, actor) => records.verifyCollectorReceipt(babyId, requestId, req, principal, actor), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
     chat = new ChatService(identity, attachments, { mcpUrl: options.mcpUrl, provider: options.provider || chatProviderFromEnv(), safetySignal: (babyId, id, text, at, req) => safety.observe(babyId, id, text, at, "chat", req), authorizeModel: (principal, babyId, images) => privacy.requireModel(principal, babyId, images) });
     const appHandler = createHandler(identity, options.publicOrigin, {
       allowedOrigins: (process.env.BUBU_LEGACY_MEDIA_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean),
