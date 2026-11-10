@@ -139,6 +139,20 @@ wrapper 不调用旧包按月目录“取第一个文件”的媒体路径逻辑
 
 失败保留批次和指数退避（最高 5 分钟）。运营可发送 `{"action":"retry","jobId":"已有job.id"}` 提前下一次运行；不要手改游标、批次或 requestId。已成功的操作即使响应丢失，也从同一身份的持久化 operation 验证，避免重复旧后端写入。版本或业务冲突需先核对原事件，失败状态不会假称同步完成。
 
+只有服务端按采集作业的精确 collector 身份核对到“该 requestId 未落库、原目标版本确实已变化”的 `VERSION_CONFLICT`，才会记录 recovery；pending 或已提交 operation 都不能进入重规划。运营确认后再发送：
+
+```json
+{
+  "action": "retry",
+  "jobId": "已有job.id",
+  "replan": true
+}
+```
+
+下一次 runner 会把旧计划放入 `recovery.plans` 并携带最新事件、待办、规则、媒体和当前附件重新询问模型。模型必须按顺序为每个旧计划返回一个替换；服务端接受 `{ "oldPlanKey": "feeding", "plan": { "key": "feeding-v2", "...": "..." } }` 形式的显式映射，强制新旧 tool、sourceIds 和原 event/question 目标一致，并要求新 key 未被本批次任何旧计划、恢复计划或持久化 requestId 使用。替换必须读取当前版本并保留人类事实与既有附件；不能换目标、复活撤销、忽略来源、发送群消息或编造事实。已提交但回执丢失的操作继续使用原请求号重试，由原 operation 返回结果并验证回执，不重复写入旧后端；持久 pending operation 不能重规划，需先完成其恢复语义。
+
+局限：重规划不是自动模型重试，必须由运营显式授权；一次只处理服务端验证过的未提交版本冲突，不用于业务规则失败、重复来源、越权或待恢复写入。媒体缺失的后续处理仍走 [./wechat-image-export.md](./wechat-image-export.md) 的受保护导出/补图路径，不会凭元数据猜测图片内容。
+
 补采请求示例：
 
 ```json

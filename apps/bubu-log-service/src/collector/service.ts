@@ -5,8 +5,9 @@ import { AppError } from "../contracts";
 import { digest, type IdentityService, type Principal } from "../identity";
 import { hash, RecordsRepository } from "../records/persistence";
 import { canonicalGroupId, type MediaResolution, type SourceCursor, type SourceMessage, type SourcePage } from "./types";
-import type { CareEvent } from "../records/types";
+import type { CareEvent, PendingQuestion } from "../records/types";
 import { baseMutation, identifier } from "../records/schemas";
+import type { CollectorOperationActor, CollectorOperationSnapshot } from "../records/service";
 
 const id = z.string().min(1).max(256);
 const time = z.iso.datetime({ offset: true });
@@ -23,26 +24,29 @@ export const sourceMessageSchema = z.object({
   kind: z.enum(["text", "image", "voice", "video", "file", "system", "other"]), text: z.string().max(200_000), media: z.array(media).max(10),
 }).strict();
 export const collectorWriteTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_answer_pending", "bubu_attach_images"] as const;
+export const agentPlanItemSchema = z.object({ key: z.string().regex(/^[\w.-]{1,100}$/), sourceIds: z.array(id).min(1).max(100), tool: z.enum(collectorWriteTools), arguments: z.record(z.string(), z.unknown()) }).strict();
 export const agentPlanSchema = z.object({
-  plans: z.array(z.object({ key: z.string().regex(/^[\w.-]{1,100}$/), sourceIds: z.array(id).min(1).max(100), tool: z.enum(collectorWriteTools), arguments: z.record(z.string(), z.unknown()) }).strict()).max(500),
+  plans: z.array(agentPlanItemSchema).max(500),
   ignored: z.array(z.object({ sourceId: id, reason: z.string().trim().min(4).max(300) }).strict()).max(500),
 }).strict();
 export type AgentPlan = z.infer<typeof agentPlanSchema>;
+const agentReplacementSchema = z.object({ oldPlanKey: id, plan: agentPlanItemSchema }).strict();
 const base = { babyId: id, jobId: id };
 const leased = { ...base, batchId: id, runId: id };
 export const collectorInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("configure"), babyId: id, accountId: id, chatId: id, agentId: id, enabled: z.boolean().default(false), intervalMs: z.number().int().min(10_000).max(86400_000).default(60000) }).strict(),
   z.object({ action: z.literal("status"), babyId: id, jobId: id.optional() }).strict(),
   z.object({ action: z.literal("backfill"), ...base, requestId: id, range }).strict(),
-  z.object({ action: z.literal("retry"), ...base }).strict(),
+  z.object({ action: z.literal("retry"), ...base, replan: z.boolean().optional() }).strict(),
   z.object({ action: z.literal("begin"), ...base, runId: id }).strict(),
   z.object({ action: z.literal("stage"), ...leased, page: z.object({ messages: z.array(sourceMessageSchema).max(500), nextCursor: cursor, hasMore: z.boolean() }).strict() }).strict(),
   z.object({ action: z.literal("media"), ...leased, resolutions: z.array(mediaResolution).max(5000) }).strict(),
   z.object({ action: z.literal("plan"), ...leased, plan: agentPlanSchema }).strict(),
+  z.object({ action: z.literal("replan"), ...leased, replacements: z.array(agentReplacementSchema).min(1).max(500) }).strict(),
   z.object({ action: z.literal("receipt"), ...leased, planKey: id, requestId: id }).strict(),
   z.object({ action: z.literal("finish"), ...leased }).strict(),
   z.object({ action: z.literal("heartbeat"), ...leased }).strict(),
-  z.object({ action: z.literal("fail"), ...leased, code: z.string().regex(/^[A-Z0-9_]{1,80}$/) }).strict(),
+  z.object({ action: z.literal("fail"), ...leased, code: z.string().regex(/^[A-Z0-9_]{1,80}$/), conflictPlanKey: id.optional() }).strict(),
 ]);
 interface Backfill { id: string; range: { from: string; to: string }; cursor: SourceCursor; state: "queued" | "completed" }
 export interface CollectorJob {
@@ -58,13 +62,17 @@ export interface CollectorBatch {
   messages?: SourceMessage[]; skippedSourceIds?: string[]; sourceThrough?: string; plan?: AgentPlan; media?: MediaResolution[];
   /** Already consumed care sources may only repair images on their existing events. */
   mediaOnly?: Record<string, string[]>;
+  /** Server-verified version conflicts that an operator may explicitly send back to the Agent. */
+  recovery?: Record<string, { detectedAt: string; authorizedAt?: string; replannedAt?: string; replacementKey?: string }>;
+  /** Every key ever authorized by this plan, including retired conflict keys. */
+  usedPlanKeys?: string[]; retiredPlanKeys?: string[];
   receipts: Record<string, { requestId: string; at: string }>; failure?: { code: string; at: string };
 }
 interface StoredMessage { source: SourceMessage; contentHash: string; state: "pending" | "processed" | "ignored"; batchId: string; reason?: string; media?: MediaResolution[]; mediaPending?: boolean; mediaResolutions?: HumanMediaResolution[] }
 interface HumanMediaResolution { index: number; eventId: string; resolution: "provided" | "unknown"; attachmentId?: string; requestId: string; requestHash: string; actor: string; resolvedAt: string; result: { kind: "media"; id: string; sourceId: string; state: "resolved" | "open"; resolution: "provided" | "unknown" } }
 export const resolveMediaSchema = baseMutation.extend({ pendingId: identifier, eventId: identifier, expectedVersion: z.number().int().positive(), attachmentId: identifier.optional(), mediaIndex: z.number().int().min(0).max(9).default(0), resolution: z.enum(["provided", "unknown"]).default("provided") })
   .refine(input => input.resolution === "provided" ? !!input.attachmentId : input.attachmentId === undefined, "provided requires an attachment; unknown must not claim one");
-type ReceiptVerifier = (babyId: string, requestId: string, req: PayloadRequest, principal: Principal) => Promise<boolean>;
+type ReceiptVerifier = (babyId: string, requestId: string, req: PayloadRequest, principal: Principal, actor?: CollectorOperationActor) => Promise<boolean | CollectorOperationSnapshot>;
 /** @public Unresolved media contract consumed by downstream chat and operations views. */
 export interface PendingMedia {
   kind: "media"; id: string; sourceId: string; babyId: string; eventIds: string[];
@@ -105,6 +113,51 @@ export class CollectorService {
     const batch = await this.repository.get<CollectorBatch>("care-batches", job.babyId, input.batchId, req);
     if (!batch || job.activeBatchId !== batch.id || batch.runId !== input.runId || batch.state === "completed" || Date.parse(batch.leaseUntil) <= this.identity.now()) return fail("COLLECTOR_LEASE_LOST");
     return batch;
+  }
+  private operationStatus(value: boolean | CollectorOperationSnapshot): CollectorOperationSnapshot["status"] | "unknown" {
+    if (value === true) return "done";
+    if (value === false) return "unknown";
+    return value.status;
+  }
+  private collectorActor(job: CollectorJob): CollectorOperationActor {
+    return { kind: "collector", babyId: job.babyId, groupId: job.groupId, subjectId: job.agentId };
+  }
+  private async operationForJob(job: CollectorJob, requestId: string, req: PayloadRequest, principal: Principal) {
+    return this.operationStatus(await this.verifyReceipt(job.babyId, requestId, req, principal, this.collectorActor(job)));
+  }
+  private targetIdentity(plan: AgentPlan["plans"][number]) {
+    if (plan.tool === "bubu_record_events") return {};
+    const field = plan.tool === "bubu_answer_pending" ? "questionId" : "eventId";
+    const value = plan.arguments[field];
+    return typeof value === "string" && value ? { [field]: value } : fail("COLLECTOR_RECOVERY_TARGET_INVALID");
+  }
+  private samePlanTarget(left: AgentPlan["plans"][number], right: AgentPlan["plans"][number]) {
+    const a = this.targetIdentity(left); const b = this.targetIdentity(right);
+    return hash(a) === hash(b);
+  }
+  private async mutationTarget(job: CollectorJob, plan: AgentPlan["plans"][number], req: PayloadRequest) {
+    let eventId: unknown = plan.arguments.eventId; let expected: unknown = plan.arguments.expectedVersion;
+    if (plan.tool === "bubu_answer_pending") {
+      const questionId = plan.arguments.questionId;
+      if (typeof questionId !== "string" || !questionId) return fail("COLLECTOR_RECOVERY_TARGET_INVALID");
+      const question = await this.repository.get<PendingQuestion>("care-questions", job.babyId, questionId, req);
+      if (!question) return fail("COLLECTOR_RECOVERY_TARGET_INVALID");
+      eventId = question.eventId; expected = plan.arguments.eventVersion;
+    }
+    if (typeof eventId !== "string" || !eventId || typeof expected !== "number" || !Number.isInteger(expected) || expected <= 0) return fail("COLLECTOR_RECOVERY_TARGET_INVALID");
+    const event = await this.repository.get<CareEvent>("care-events", job.babyId, eventId as string, req);
+    if (!event || !visibleToGroup(event, job.groupId)) return fail("COLLECTOR_RECOVERY_TARGET_INVALID");
+    return { event, expectedVersion: expected as number };
+  }
+  /** A runner may label a failure VERSION_CONFLICT; recovery is granted only from durable operation absence plus an observed version mismatch. */
+  private async verifiedConflict(job: CollectorJob, batch: CollectorBatch, plan: AgentPlan["plans"][number], req: PayloadRequest, principal: Principal) {
+    const requestId = collectorRequestId(batch.id, plan.key);
+    const status = await this.operationForJob(job, requestId, req, principal);
+    if (status === "pending") fail("COLLECTOR_RECOVERY_PENDING");
+    if (status !== "missing") fail("COLLECTOR_RECOVERY_COMMITTED");
+    const target = await this.mutationTarget(job, plan, req);
+    if (target.event.version === target.expectedVersion) fail("COLLECTOR_CONFLICT_UNVERIFIED");
+    return true;
   }
   /** Read-side continuation for both the built-in chat and authorized collectors. */
   async pendingMedia(principal: Principal, babyId: string): Promise<PendingMedia[]> {
@@ -195,6 +248,21 @@ export class CollectorService {
       }
       if (input.action === "retry") {
         this.operator(principal);
+        if (input.replan) {
+          if (!job.activeBatchId) fail("COLLECTOR_RECOVERY_BATCH_REQUIRED");
+          const retryBatch = await this.repository.get<CollectorBatch>("care-batches", job.babyId, job.activeBatchId!, req);
+          if (!retryBatch || retryBatch.state !== "retry" || Date.parse(retryBatch.leaseUntil) > this.identity.now()) return fail("COLLECTOR_LEASE_ACTIVE");
+          const recovery = retryBatch.recovery || {};
+          const pending = Object.entries(recovery).filter(([, item]) => item.detectedAt && !item.replannedAt);
+          if (!pending.length) fail("COLLECTOR_RECOVERY_NOT_AUTHORIZED");
+          for (const [key] of pending) {
+            const plan = retryBatch!.plan?.plans.find(item => item.key === key);
+            if (!plan || retryBatch!.receipts[key]) fail("COLLECTOR_RECOVERY_COMMITTED");
+            await this.verifiedConflict(job, retryBatch!, plan!, req, principal);
+          }
+          for (const [key] of pending) recovery[key]!.authorizedAt = this.now();
+          await this.saveBatch(retryBatch!, req);
+        }
         job.nextRunAt = this.now();
         await this.saveJob(job, req);
         return { job };
@@ -266,11 +334,60 @@ export class CollectorService {
         }
         if (covered.size !== sourceIds.size) fail("COLLECTOR_UNPROCESSED_MESSAGES");
         batch.plan = input.plan;
+        batch.usedPlanKeys = [...new Set([...(batch.usedPlanKeys || []), ...input.plan.plans.map(plan => plan.key)])];
       }
       if (input.action === "receipt") {
         if (!batch.plan?.plans.some(plan => plan.key === input.planKey) || input.requestId !== collectorRequestId(batch.id, input.planKey)) fail("COLLECTOR_RECEIPT_MISMATCH");
-        if (!await this.verifyReceipt(job.babyId, input.requestId, req, principal)) fail("COLLECTOR_WRITE_NOT_COMMITTED");
+        if (await this.operationForJob(job, input.requestId, req, principal) !== "done") fail("COLLECTOR_WRITE_NOT_COMMITTED");
         batch.receipts[input.planKey] = { requestId: input.requestId, at: this.now() };
+      }
+      if (input.action === "replan") {
+        if (!batch.plan || !batch.recovery || batch.state !== "processing") fail("COLLECTOR_RECOVERY_NOT_AUTHORIZED");
+        const recovery = batch.recovery!; const plan = batch.plan!;
+        const authorized = Object.entries(recovery).filter(([, item]) => item.authorizedAt && !item.replannedAt).map(([key]) => key);
+        if (input.replacements.length !== authorized.length) fail("COLLECTOR_REPLPLAN_MISMATCH");
+        const oldKeys = new Set(authorized); const wrappers = new Map<string, AgentPlan["plans"][number]>();
+        for (const wrapper of input.replacements) {
+          if (!oldKeys.has(wrapper.oldPlanKey) || wrappers.has(wrapper.oldPlanKey)) fail("COLLECTOR_REPLPLAN_MISMATCH");
+          wrappers.set(wrapper.oldPlanKey, wrapper.plan);
+        }
+        if (wrappers.size !== authorized.length) fail("COLLECTOR_REPLPLAN_MISMATCH");
+        const usedKeys = new Set([...(batch.usedPlanKeys || []), ...(batch.retiredPlanKeys || []), ...Object.keys(recovery), ...plan.plans.map(item => item.key)]);
+        const replacements: Array<{ oldKey: string; replacement: AgentPlan["plans"][number] }> = [];
+        for (const oldKey of authorized) {
+          const oldPlan = plan.plans.find(item => item.key === oldKey);
+          const replacement = wrappers.get(oldKey)!;
+          if (!oldPlan || batch.receipts[oldKey]) fail("COLLECTOR_RECOVERY_COMMITTED");
+          const previous = oldPlan!;
+          if (replacement.tool !== previous.tool || hash(replacement.sourceIds) !== hash(previous.sourceIds) || !this.samePlanTarget(previous, replacement)) fail("COLLECTOR_REPLPLAN_MISMATCH");
+          if (usedKeys.has(replacement.key) || batch.receipts[replacement.key]) fail("COLLECTOR_REPLPLAN_MISMATCH");
+          usedKeys.add(replacement.key);
+          const eventCount = (value: unknown) => Array.isArray(value) ? value.length : undefined;
+          if (previous.tool === "bubu_record_events" && eventCount(replacement.arguments.events) !== eventCount(previous.arguments.events)) fail("COLLECTOR_REPLPLAN_MISMATCH");
+          await this.verifiedConflict(job, batch, previous, req, principal);
+          const newStatus = await this.operationForJob(job, collectorRequestId(batch.id, replacement.key), req, principal);
+          if (newStatus === "pending") fail("COLLECTOR_RECOVERY_PENDING");
+          if (newStatus !== "missing") fail("COLLECTOR_RECOVERY_COMMITTED");
+          const targets = batch.mediaOnly?.[replacement.sourceIds[0]!];
+          if (targets && (replacement.tool !== "bubu_attach_images" || typeof replacement.arguments.eventId !== "string" || !targets.includes(replacement.arguments.eventId))) fail("COLLECTOR_MEDIA_ONLY_SOURCE");
+          if (replacement.tool !== "bubu_record_events") {
+            const target = await this.mutationTarget(job, replacement, req);
+            const expected = replacement.tool === "bubu_answer_pending" ? replacement.arguments.eventVersion : replacement.arguments.expectedVersion;
+            if (target.event!.version !== expected) fail("COLLECTOR_RECOVERY_STALE");
+            if (replacement.tool === "bubu_answer_pending") {
+              const question = await this.repository.get<PendingQuestion>("care-questions", job.babyId, String(replacement.arguments.questionId), req);
+              if (!question || question.state !== "open" || question.version !== replacement.arguments.questionVersion || question.eventVersion !== expected) fail("COLLECTOR_RECOVERY_STALE");
+            }
+          }
+          replacements.push({ oldKey, replacement });
+        }
+        for (const { oldKey, replacement } of replacements) {
+          const index = plan.plans.findIndex(item => item.key === oldKey);
+          if (index >= 0) plan.plans.splice(index, 1, replacement);
+          batch.retiredPlanKeys = [...new Set([...(batch.retiredPlanKeys || []), oldKey])];
+          batch.usedPlanKeys = [...new Set([...(batch.usedPlanKeys || []), oldKey, replacement.key])];
+          recovery[oldKey]!.replannedAt = this.now(); recovery[oldKey]!.replacementKey = replacement.key;
+        }
       }
       if (input.action === "finish") {
         if (!batch.plan || !batch.nextCursor || batch.plan.plans.some(plan => !batch.receipts[plan.key])) fail("COLLECTOR_UNPROCESSED_MESSAGES");
@@ -300,7 +417,21 @@ export class CollectorService {
         job.nextRunAt = new Date(this.identity.now() + (batch.hasMore ? 0 : job.intervalMs)).toISOString();
       }
       if (input.action === "fail") {
-        batch.state = "retry"; batch.failure = { code: input.code, at: this.now() };
+        let failureCode = input.code;
+        if (input.conflictPlanKey) {
+          const plan = batch.plan?.plans.find(item => item.key === input.conflictPlanKey);
+          if (plan && input.code === "VERSION_CONFLICT") {
+            try {
+              await this.verifiedConflict(job, batch, plan, req, principal);
+              const existing = batch.recovery?.[plan.key];
+              batch.recovery ??= {}; batch.recovery[plan.key] = { detectedAt: this.now(), ...(existing?.authorizedAt ? { authorizedAt: existing.authorizedAt } : {}), ...(existing?.replannedAt ? { replannedAt: existing.replannedAt } : {}), ...(existing?.replacementKey ? { replacementKey: existing.replacementKey } : {}) };
+            } catch (error) {
+              if (!(error instanceof AppError && ["COLLECTOR_RECOVERY_PENDING", "COLLECTOR_RECOVERY_COMMITTED", "COLLECTOR_CONFLICT_UNVERIFIED", "COLLECTOR_RECOVERY_TARGET_INVALID"].includes(error.code))) throw error;
+              failureCode = "COLLECTOR_CONFLICT_UNVERIFIED";
+            }
+          } else failureCode = "COLLECTOR_CONFLICT_UNVERIFIED";
+        }
+        batch.state = "retry"; batch.failure = { code: failureCode, at: this.now() };
         batch.leaseUntil = this.now();
         job.failure = { ...batch.failure, attempts: batch.attempts };
         job.nextRunAt = new Date(this.identity.now() + Math.min(300_000, 1000 * 2 ** Math.min(batch.attempts, 8))).toISOString();

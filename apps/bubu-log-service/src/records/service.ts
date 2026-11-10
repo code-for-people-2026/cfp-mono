@@ -14,6 +14,12 @@ interface Operation {
   eventIds: string[]; projections: Projection[]; dates: string[];
   status: "pending" | "done" | "conflict"; error?: string; receipt?: RecordReceipt;
 }
+/** Public collector recovery contract: expose durable state, never persisted arguments. */
+export interface CollectorOperationSnapshot { status: "missing" | "pending" | "conflict" | "done" }
+/** Exact collector identity attached to a collector job; no session or operator identity is inferred. */
+export interface CollectorOperationActor {
+  kind: "collector"; babyId: string; groupId: string; subjectId: string;
+}
 function fail(code: string, message: string, status = 409): never { throw new AppError(status, code, message); }
 const sourceKey = (source: SourceRef) => hash([source.kind, source.accountId, source.conversationId, source.messageId, source.eventKey]);
 const sourceLinkKey = (babyId:string,source:SourceRef) => hash([babyId,sourceKey(source)]);
@@ -395,10 +401,15 @@ export class RecordsService {
     });
   }
   today() { return chinaDate(this.identity.now()); }
-  async verifyCollectorReceipt(babyId:string,requestId:string,req:PayloadRequest,principal:Principal):Promise<boolean> {
-    if(principal.kind!=="collector"||principal.babyId!==babyId)return false;
-    const key=hash([babyId,principal.kind,principal.subjectId,"",principal.groupId||"",requestId]);
+  async collectorOperation(babyId:string,requestId:string,req:PayloadRequest,principal:Principal,actor?:CollectorOperationActor):Promise<CollectorOperationSnapshot> {
+    const exact=actor ?? (principal.kind==="collector"&&principal.babyId===babyId ? {kind:"collector" as const,babyId,groupId:principal.groupId||"",subjectId:principal.subjectId} : undefined);
+    if(!exact || exact.kind!=="collector" || exact.babyId!==babyId || !exact.groupId || !exact.subjectId) return {status:"missing"};
+    const key=hash([exact.babyId,exact.kind,exact.subjectId,"",exact.groupId,requestId]);
     const op=await this.repo.get<Operation>("care-operations",babyId,key,req);
-    return !!op&&op.status==="done"&&op.actor.kind==="collector"&&op.actor.id===principal.subjectId;
+    if(!op||op.actor.kind!=="collector"||op.actor.id!==exact.subjectId)return {status:"missing"};
+    return {status:op.status};
+  }
+  async verifyCollectorReceipt(babyId:string,requestId:string,req:PayloadRequest,principal:Principal,actor?:CollectorOperationActor):Promise<CollectorOperationSnapshot> {
+    return this.collectorOperation(babyId,requestId,req,principal,actor);
   }
 }

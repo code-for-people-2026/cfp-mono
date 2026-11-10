@@ -31,6 +31,10 @@ def database_id(value):
     return require(value.replace("\\", "/"), r"message/message_\d+\.db", "INVALID_DATABASE_ID")
 
 
+def is_group_database_id(value):
+    return isinstance(value, str) and re.fullmatch(r"message/message_\d+\.db", value.replace("\\", "/")) is not None
+
+
 def streams(request, account):
     if request.get("fixtureManifest"):
         # Deliberately explicit: fixtures cannot accidentally invoke AppContext.
@@ -47,6 +51,11 @@ def streams(request, account):
         raise ValueError("SOURCE_ACCOUNT_MISMATCH")
     result = []
     for key in app.msg_db_keys:
+        # AppContext can include non-group stores (for example biz messages).
+        # They are irrelevant to this bound-group source identity, so avoid
+        # decrypting them before applying the fail-closed group-DB path check.
+        if not is_group_database_id(key):
+            continue
         decrypted = app.cache.get(key)
         if not decrypted:
             app.cache.cleanup()
