@@ -10,6 +10,7 @@ import {
   timeLabel,
   todayKey,
   type Activity,
+  type RecordCoverage,
   type TimelineItem,
 } from '../model'
 import type { TimelineLoaded } from '../api/timeline'
@@ -34,6 +35,8 @@ export interface DayTimelineProps {
   onScrollIntent?: (intent: 'hide' | 'show') => void
   /** Real, already-loaded adjacent pages. A missing side recoils rather than showing a placeholder. */
   adjacentPages?: Partial<Record<'prev' | 'next', TimelineLoaded>>
+  /** Optional sidecar completeness metadata; it never alters timeline layout or gestures. */
+  recordCoverage?: RecordCoverage
   viewportExpansion?: number
   foldAvatarUrl?: string | null
 }
@@ -119,7 +122,7 @@ function DayCanvas({
 export function DayTimeline({
   activities, date, onActivityClick, showCurrentTime = true, latestActivities,
   scale = 1, onScaleChange, gesturesDisabled, gestureResetKey, today: todayProp, onNavigate, onNavigateReady, adjacentPages,
-  onScrollIntent, viewportExpansion = 0, foldAvatarUrl,
+  onScrollIntent, recordCoverage, viewportExpansion = 0, foldAvatarUrl,
 }: DayTimelineProps) {
   const today = todayProp ?? todayKey()
   const isToday = date === today
@@ -194,7 +197,13 @@ export function DayTimeline({
         {sinceLatest.sleep != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: activityCategoryTone('sleep').color }} /><Text>距上次睡眠 {formatDuration(sinceLatest.sleep)}</Text></View>}
         {sinceLatest.feed != null && <View className='bubu-latest-gap'><View className='bubu-legend-dot' style={{ backgroundColor: activityCategoryTone('milk').color }} /><Text>距上次吃奶 {formatDuration(sinceLatest.feed)}</Text></View>}
       </View>}
-      {blocks.length === 0 && <View className='bubu-empty-inline'>这一天还没有记录</View>}
+      {blocks.length === 0 && <View className='bubu-empty-inline'>
+        {recordCoverage?.ongoingEvents
+          ? '有活动进行中，完成时长待结束后确认'
+          : recordCoverage?.recordedEvents
+            ? '当日有记录，当前没有可显示的时间段'
+            : '这一天还没有记录'}
+      </View>}
       <PaperTurnViewport
         paperTurn={gestures.paperTurn}
         viewportWidth={gestures.viewportWidth}

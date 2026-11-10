@@ -119,6 +119,52 @@ importers:
         specifier: ^1.6.1
         version: 1.6.1(@types/node@20.19.43)(jsdom@29.1.1)(less@4.5.1)(lightningcss@1.32.0)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)
 
+  apps/bubu-log-service:
+    dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: 1.31.0
+        version: 1.31.0(zod@4.4.3)
+      '@payloadcms/db-sqlite':
+        specifier: 3.85.1
+        version: 3.85.1(@opentelemetry/api@1.9.0)(@types/pg@8.20.0)(payload@3.85.1(graphql@16.14.2)(typescript@5.9.3))(pg@8.20.0)
+      fs-ext:
+        specifier: 2.1.1
+        version: 2.1.1
+      payload:
+        specifier: 3.85.1
+        version: 3.85.1(graphql@16.14.2)(typescript@5.9.3)
+      sharp:
+        specifier: 0.34.5
+        version: 0.34.5
+      tsx:
+        specifier: ^4.20.0
+        version: 4.22.4
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      '@cfp/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@types/fs-ext':
+        specifier: 2.0.3
+        version: 2.0.3
+      '@types/node':
+        specifier: ^20.19.26
+        version: 20.19.43
+      '@vitest/coverage-v8':
+        specifier: ^4.0.15
+        version: 4.1.8(vitest@4.1.8)
+      eslint:
+        specifier: ^9.39.2
+        version: 9.39.4(jiti@2.7.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@20.19.43)(@vitest/coverage-v8@4.1.8)(jsdom@29.1.1)(vite@8.0.16(@types/node@20.19.43)(esbuild@0.25.12)(jiti@2.7.0)(less@4.5.1)(sass@1.101.0)(stylus@0.64.0)(terser@5.48.0)(tsx@4.22.4)(yaml@2.9.0))
+
   apps/community-cooking:
     dependencies:
       '@cfp/weekly-menu-shared':
@@ -4201,6 +4247,9 @@ packages:
   '@types/express@4.17.25':
     resolution: {integrity: sha512-dVd04UKsfpINUnK0yBoYHDF3xu7xVH4BuDotC/xGuycx4CgbP48X/KF/586bcObxT0HENHXEU8Nqtu6NR+eKhw==}
 
+  '@types/fs-ext@2.0.3':
+    resolution: {integrity: sha512-0j2F+laosJF2NTd2DVheQ5GvXo8ln9L175VwLPfbsppE33iYC+6gn6XlOQS0pGvZm2yrQ32/LRZh0As/7rCs2Q==}
+
   '@types/fs-extra@8.1.5':
     resolution: {integrity: sha512-0dzKcwO+S8s2kuF5Z9oUWatQJj5Uq/iqphEtE3GQJVRRYm/tD1LglU2UnXi2A8jLq5umkGouOXOR9y0n613ZwQ==}
 
@@ -6384,6 +6433,10 @@ packages:
 
   fs-constants@1.0.0:
     resolution: {integrity: sha512-y6OAwoSIf7FyjMIv94u+b5rdheZEjzR63GTyZJm5qh4Bi+2YgwLCcI/fPFZkL5PSixOt6ZNKm+w+Hfp/Bciwow==}
+
+  fs-ext@2.1.1:
+    resolution: {integrity: sha512-/TrISPOFhCkbgIRWK9lzscRzwPCu0PqtCcvMc9jsHKBgZGoqA0VzhspVht5Zu8lxaXjIYIBWILHpRotYkCCcQA==}
+    engines: {node: '>= 8.0.0'}
 
   fs-extra@11.3.5:
     resolution: {integrity: sha512-eKpRKAovdpZtR1WopLHxlBWvAgPny3c4gX1G5Jhwmmw4XJj0ifSD5qB5TOo8hmA0wlRKDAOAhEE1yVPgs6Fgcg==}
@@ -13905,6 +13958,10 @@ snapshots:
       '@types/serve-static': 1.15.10
     optional: true
 
+  '@types/fs-ext@2.0.3':
+    dependencies:
+      '@types/node': 20.19.43
+
   '@types/fs-extra@8.1.5':
     dependencies:
       '@types/node': 20.19.43
@@ -16637,6 +16694,10 @@ snapshots:
 
   fs-constants@1.0.0: {}
 
+  fs-ext@2.1.1:
+    dependencies:
+      nan: 2.29.0
+
   fs-extra@11.3.5:
     dependencies:
       graceful-fs: 4.2.11
@@ -18494,8 +18555,7 @@ snapshots:
       object-assign: 4.1.1
       thenify-all: 1.6.0
 
-  nan@2.29.0:
-    optional: true
+  nan@2.29.0: {}
 
   nanoid@3.3.12: {}
 

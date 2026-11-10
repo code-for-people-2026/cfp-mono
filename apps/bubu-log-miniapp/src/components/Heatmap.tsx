@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Button, Image, Text, View } from '@tarojs/components'
-import { dateLabel } from '../model/date'
+import { dateKey, dateLabel } from '../model/date'
+import { coverageMessage } from '../model/records'
 import { activityCategoryTone } from '../model/presentation'
 import { buildCareMonthRings, type CareRingMetric } from '../model/care-rings'
 import type { Activity, DailyStat } from '../model/types'
@@ -98,12 +99,14 @@ export function Heatmap({
   const [legendOpen, setLegendOpen] = useState(false)
   const today = todayProp ?? endDate ?? ''
   const monthDate = endDate ?? today
+  const statsByDate = useMemo(() => new Map(stats.map((stat) => [dateKey(stat.date), stat])), [stats])
   const calendar = useMemo(() => buildCareMonthRings({
     activities, activitiesComplete: complete, stats, monthDate, today, birthDate, preferences,
   }), [activities, complete, stats, monthDate, today, birthDate, preferences])
   const allDays = calendar.weeks.flatMap((week) => week.days)
   const selectedDay = allDays.find((day) => day.date === (selectedDate || monthDate) && day.inMonth && !day.isFuture)
     || [...allDays].reverse().find((day) => day.inMonth && !day.isFuture)
+  const selectedCoverage = selectedDay ? coverageMessage(statsByDate.get(selectedDay.date)?.coverage) : ''
   const profileMessage = profileError || (!birthDate ? '出生日期未知，年龄参考不可用。' : '')
 
   return (
@@ -168,6 +171,7 @@ export function Heatmap({
           ))}
         </View>
       )}
+      {selectedCoverage && <Text className='bubu-viz-footnote'>{selectedCoverage}</Text>}
       {selectedDay && (
         <View className='bubu-heatmap-reading'>
           <View className='bubu-heatmap-reading-head'>
