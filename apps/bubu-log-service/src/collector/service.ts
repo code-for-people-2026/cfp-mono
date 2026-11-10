@@ -24,7 +24,7 @@ export const sourceMessageSchema = z.object({
   kind: z.enum(["text", "image", "voice", "video", "file", "system", "other"]), text: z.string().max(200_000), media: z.array(media).max(10),
 }).strict();
 export const collectorWriteTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_answer_pending", "bubu_attach_images"] as const;
-export const agentPlanItemSchema = z.object({ key: z.string().regex(/^[\w.-]{1,100}$/), sourceIds: z.array(id).min(1).max(100), tool: z.enum(collectorWriteTools), arguments: z.record(z.string(), z.unknown()) }).strict();
+const agentPlanItemSchema = z.object({ key: z.string().regex(/^[\w.-]{1,100}$/), sourceIds: z.array(id).min(1).max(100), tool: z.enum(collectorWriteTools), arguments: z.record(z.string(), z.unknown()) }).strict();
 export const agentPlanSchema = z.object({
   plans: z.array(agentPlanItemSchema).max(500),
   ignored: z.array(z.object({ sourceId: id, reason: z.string().trim().min(4).max(300) }).strict()).max(500),
