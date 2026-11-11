@@ -21,10 +21,6 @@ jobs:
       deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
       preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
-      WEEKLY_MENU_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_weekly_menu_test
-      KITH_INN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_kith_inn_test
-      PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
@@ -32,7 +28,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         ports:
-          - 54324:5432
+          - 5432
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -46,6 +42,27 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Resolve PostgreSQL service URLs
+        env:
+          POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          case "$POSTGRES_PORT" in
+            ""|*[!0-9]*)
+              echo "PostgreSQL service port must be numeric" >&2
+              exit 1
+              ;;
+          esac
+          if (( POSTGRES_PORT < 1 || POSTGRES_PORT > 65535 )); then
+            echo "PostgreSQL service port must be between 1 and 65535" >&2
+            exit 1
+          fi
+          {
+            echo "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp"
+            echo "PAYLOAD_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp"
+            echo "WEEKLY_MENU_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp_weekly_menu_test"
+            echo "KITH_INN_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp_kith_inn_test"
+          } >> "$GITHUB_ENV"
 
       - uses: pnpm/action-setup@v4
         with:
