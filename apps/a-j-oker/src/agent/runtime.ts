@@ -1,5 +1,4 @@
-import { restCardConstraints, restCardDeliveryError } from "./rest-card";
-import { CREATION_REFUSAL, isSupportImageRequest, isUnsupportedCreation, requiresSupportImage } from "../domain/creation-scope";
+import { imagePromptConstraints, restCardDeliveryError } from "./rest-card";
 import { ImageDecision, imageDecisionSchema } from "./image-decision";
 import { imageRequestSchema, type ImageRequest } from "../images/wan";
 import type { GeneratedImage } from "../images/service";
@@ -40,6 +39,7 @@ export type GenerationRequest = {
   generateImage?: (input: ImageRequest, signal: AbortSignal) => Promise<GeneratedImage>;
   existingImage?: GeneratedImage;
   resumingImage?: boolean;
+  imageRequested?: boolean;
   executionId?: string;
   signal?: AbortSignal;
 };
@@ -50,15 +50,6 @@ export async function runGreeting(
   request: GenerationRequest,
   modelOverride?: BaseLlm,
 ) {
-  if (isUnsupportedCreation(request.input.text)) {
-    await request.save({ greeting: CREATION_REFUSAL, association: "超出首版创作范围，不生成替代作品。", artifacts: [] });
-    return;
-  }
-  if (requiresSupportImage(request.input.text) && !request.generateImage && !request.existingImage) {
-    await request.save({ greeting: "目前图片服务不可用，这次没有生成心理支持图片。请稍后重试。", association: "不能以文字卡冒充图片交付。", artifacts: [] });
-    return;
-  }
-  const listeningOnly = /只想(?:说说|倾诉|聊聊)/.test(request.input.text) && /不想.*(?:分析|练习)|不要.*(?:分析|建议)/.test(request.input.text);
   const configuration = await loadAgentConfiguration(request.repo.payload);
   const media = await Promise.all(
     request.input.mediaIds.map((id) => request.readImage(id)),
@@ -98,23 +89,23 @@ export async function runGreeting(
   let imageInFlight: Promise<GeneratedImage> | undefined;
   let imageFailure: unknown;
   let generatedMediaId = request.existingImage?.mediaId;
-  let scopeRefused = false;
   const imageDecision = new ImageDecision();
-  const imageDecisionTool = request.generateImage ? new FunctionTool({
+  const imageAdmitted = request.imageRequested === true || request.resumingImage === true;
+  const imageToolsEnabled = request.generateImage !== undefined && imageAdmitted;
+  const imageDecisionTool = imageToolsEnabled ? new FunctionTool({
     name: "decide_image_request",
     description: "调用生图前先判断本轮原始请求。需要拒绝时选择 refuse；不能确定原始意图是否安全时选择 uncertain，同样停止生图，不猜测意图；不得因为可以改成公益或反向作品而允许。refuse 后本轮仅可保存简短文字拒绝，不能生成或附带替代作品。",
     parameters: imageDecisionSchema,
     execute: async (input) => imageDecision.record(imageDecisionSchema.parse(input)),
   }) : undefined;
-  const imageTool = request.generateImage ? new ImageGenerationTool({
+  const imageTool = imageToolsEnabled ? new ImageGenerationTool({
     name: "generate_image",
     description: "根据当前用户明确的图片需求调用万相文生图，一轮最多一张。输入只包含必要的画面描述；不支持修改上传原图。结果为已审核并保存的媒体编号，随后必须用 save_greeting 将它作为 image 回应作品。",
     parameters: imageRequestSchema,
     execute: async (input) => {
-      if (!isSupportImageRequest(request.input.text)) {
-        scopeRefused = true;
+      if (!imageAdmitted) {
         imageDecision.record({ decision: "refuse", reason: "不属于明确的心理支持图片请求" });
-        return { error: CREATION_REFUSAL };
+        return { error: "本轮没有明确的语义图片请求，禁止生图或生成替代图。" };
       }
       if (!imageDecision.allowed) return { error: imageDecision.refused
         ? "本轮原始请求已拒绝，禁止生图或生成替代图。请仅保存简短文字拒绝。"
@@ -125,7 +116,7 @@ export async function runGreeting(
       if (!imageInFlight) {
         const prompt = `${parsed.data.prompt.slice(0, 1400)}
 画面硬性约束：
-${restCardConstraints(request.input.text)}`;
+${imagePromptConstraints()}`;
         imageInFlight = request.generateImage!({ ...parsed.data, prompt }, signal);
       }
       try { const image = await imageInFlight; generatedMediaId = image.mediaId; return image; }
@@ -145,19 +136,20 @@ ${restCardConstraints(request.input.text)}`;
     turnSessionId: executionId,
     inputParts: parts,
     signal,
-    responseGuidance: listeningOnly ? "本轮用户明确只想倾诉、不想分析或练习：只用一至两句简短接纳（正文最多80字），仅回应用户明确说出的感受。不讲道理，不打比方，不自述先想什么又转念什么，不描述用户的身体或场景，不推断事情已经完成，不要求休息、喝水或做任何事情；不咨询专家、不提供作品。" : undefined,
-    checkDelivery: value => listeningOnly && (value.greeting.length > 80 || value.artifacts?.length)
-      ? "用户仅想倾诉：请缩短为最多80字的一至两句接纳，不添加作品、解释、推断或建议。"
-      : restCardDeliveryError(request.input.text, value, generatedMediaId, imageDecision.refused),
+    checkDelivery: value => restCardDeliveryError(
+      imageAdmitted,
+      value,
+      generatedMediaId,
+      imageDecision.refused,
+    ),
     save: async (value) => {
-      if (requiresSupportImage(request.input.text) && generatedMediaId && !imageDecision.refused)
+      if (generatedMediaId && !imageDecision.refused)
         value = { ...value, greeting: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
-      if (!isSupportImageRequest(request.input.text) && value.artifacts?.some(a => a.kind === "image")) {
-        scopeRefused = true;
+      if (!imageAdmitted && value.artifacts?.some(a => a.kind === "image")) {
         imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的心理支持图片" });
       }
       if (imageInFlight) await imageInFlight;
-      try { return await request.save(imageDecision.refused ? { ...value, greeting: scopeRefused ? CREATION_REFUSAL : "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
+      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
       catch (error) {
         if (error instanceof ContentReviewError || (error instanceof AppError && error.status === 403)) controller.abort();
         throw error;

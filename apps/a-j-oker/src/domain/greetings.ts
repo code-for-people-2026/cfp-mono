@@ -1,4 +1,5 @@
-import { CREATION_REFUSAL, isSupportImageRequest, isUnsupportedCreation } from "./creation-scope";
+import { CREATION_REFUSAL } from "./creation-scope";
+import { z } from "zod";
 import { SERVICE_SCOPE_REFUSAL, SERVICE_SCOPE_CLARIFICATION, SERVICE_SCOPE_VERSION } from "./service-scope";
 import { INTERACTION_VERSION } from "../interaction/policy";
 import { InteractionService } from "../interaction/service";
@@ -24,11 +25,11 @@ import { PROMPT_VERSION } from "../agent/instruction";
 import type { Generator } from "../agent/runtime";
 import { DEFAULT_MODEL } from "../models/deepseek";
 import { ContextService } from "./context";
-import { forgetContextRequested, FORGET_CONTEXT_GUIDANCE } from "./context-policy";
+import { FORGET_CONTEXT_GUIDANCE } from "./context-policy";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
 import { artifactsSchema, validateForm } from "@cfp/base-chat-protocol";
-import { type Moderator } from "./moderation";
+import { assertImageGenerationReview, interactionAssessmentSchema, type Moderator } from "./moderation";
 import { operationalModerator } from "../operations/moderation";
 import { assertGenerationAllowed, assertMediaAllowed } from "../operations/enforcement";
 import { configuredImageReviewer, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
@@ -42,6 +43,14 @@ const platformGenerator: Generator = async (request) => {
   const { runGreeting } = await import("../agent/runtime");
   return runGreeting(request);
 };
+
+const requiredInputReviewSchema = z.object({
+  serviceScope: z.enum(["support", "outside", "unclear"]),
+  interaction: interactionAssessmentSchema,
+});
+const requiredOutputReviewSchema = z.object({
+  serviceScope: z.enum(["support", "outside", "unclear"]),
+});
 
 export class GreetingService {
   constructor(
@@ -169,7 +178,7 @@ export class GreetingService {
         throw new AppError(409, "同一个请求标识不能用于不同内容");
       if (resumeTurnId === existing.id && canResumeImage(existing)) {
         const row = await this.repo.update("greetings", existing.id, { status: "running", error: null });
-        return { row, duplicate: false, guidance: undefined };
+        return { row, duplicate: false, guidance: undefined, imageRequested: true };
       }
       if (existing.status === "running" && mode !== "external")
         throw new AppError(
@@ -178,20 +187,31 @@ export class GreetingService {
         );
       if (existing.status === "failed")
         throw new AppError(409, "该请求此前失败，请使用新的请求标识重试");
-      return { row: existing, duplicate: existing.status === "completed" };
+      return { row: existing, duplicate: existing.status === "completed", imageRequested: false };
     }
-    let guidance = await new InteractionService(this.repo.payload, this.repo.owner).inspectInput(input.text ?? "", sessionId, requestKey);
-    // Fixed safety guidance contains no user/model text and never starts a model.
-    // In particular, a crisis must not lose its help text to a classifier outage.
+    // One existing moderation call supplies safety, service scope and strict
+    // semantic interaction flags. There is intentionally no keyword fallback.
+    const moderationContext = JSON.stringify(await new ContextService(this.repo)
+      .reviewContext(sessionId));
+    const review = await this.moderate({
+      stage: "input", serviceScope: true, interaction: true, mode,
+      texts: [input.text ?? ""], context: moderationContext, requestId: requestKey,
+      sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
+    });
+    const semanticReview = requiredInputReviewSchema.safeParse(review);
+    if (!semanticReview.success) throw new ContentReviewError(503, "互动安全判断暂未完成，请稍后重试");
+    const { serviceScope, interaction } = semanticReview.data;
+    // Safety and account-protection actions take precedence over product scope.
+    let guidance = await new InteractionService(this.repo.payload, this.repo.owner)
+      .inspectInput(input.text ?? "", sessionId, requestKey, interaction);
     let serviceGuidance = false;
     if (!guidance) {
-      const review = await this.moderate({ stage: "input", serviceScope: true, mode, texts: [input.text ?? ""], requestId: requestKey, sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
-      if (review?.serviceScope === "outside" || review?.serviceScope === "unclear") {
-        guidance = review.serviceScope === "outside" ? SERVICE_SCOPE_REFUSAL : SERVICE_SCOPE_CLARIFICATION;
+      if (serviceScope === "outside" || serviceScope === "unclear") {
+        guidance = serviceScope === "outside" ? SERVICE_SCOPE_REFUSAL : SERVICE_SCOPE_CLARIFICATION;
         serviceGuidance = true;
       }
     }
-    if (!guidance && forgetContextRequested(input.text ?? "")) {
+    if (!guidance && interaction.forget_context) {
       await new ContextService(this.repo).forgetForFuture(sessionId);
       guidance = FORGET_CONTEXT_GUIDANCE;
     }
@@ -218,7 +238,7 @@ export class GreetingService {
       model: guidance ? "product-guidance" : model,
       promptVersion: serviceGuidance ? SERVICE_SCOPE_VERSION : guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
-    return { row, duplicate: false, guidance };
+    return { row, duplicate: false, guidance, imageRequested: interaction.image_requested };
   }
   private async completeProductGuidance(id: number, guidance: string) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
@@ -248,18 +268,25 @@ export class GreetingService {
     }
     if (row.status !== "running") throw new AppError(409, "本轮不再接受产物");
     const originalText = String((row.input as Inspiration).text || "");
-    if (output.artifacts?.length && (isUnsupportedCreation(originalText) ||
-      (!isSupportImageRequest(originalText) && output.artifacts.some(a => a.kind === "image"))))
-      throw new AppError(422, CREATION_REFUSAL);
-    // Covers both generated media and geometry illustrations, including reuse.
-    if (output.artifacts?.some((artifact) => artifact.kind === "image"))
-      await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
-        texts: [String((row.input as Inspiration).text || "")],
-        context: JSON.stringify(await new ContextService(this.repo).modelContext(Number(row.sessionId))), requestId: `image-save-intent:${row.id}`,
-        turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY });
     const imageState = readImageState(row);
-    const scopeRefusal = !isSupportImageRequest(originalText) && output.greeting === CREATION_REFUSAL && !output.artifacts?.length;
-    if (imageState && !scopeRefusal && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
+    // Covers both generated media and geometry illustrations, including reuse.
+    if (output.artifacts?.some((artifact) => artifact.kind === "image")) {
+      try {
+        assertImageGenerationReview(await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
+          texts: [originalText],
+          serviceScope: true, interaction: true,
+          context: JSON.stringify(await new ContextService(this.repo).reviewContext(Number(row.sessionId))), requestId: `image-save-intent:${row.id}`,
+          turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY }));
+      } catch (error) {
+        if (imageState && error instanceof ContentReviewError && error.status === 422)
+          await this.repo.update("greetings", row.id, { imageGeneration: { ...imageState, status: "blocked" } });
+        throw error;
+      }
+    }
+    const hasImageArtifact = Boolean(output.artifacts?.some((artifact) => artifact.kind === "image"));
+    if (imageState?.status === "blocked" && hasImageArtifact)
+      throw new AppError(422, "原图片请求已被拒绝，不能改用替代图片");
+    if (imageState && (imageState.status !== "blocked") && (imageState.status !== "stored" || !output.artifacts?.some((artifact) =>
       artifact.kind === "image" && artifact.source.type === "media" && artifact.source.mediaId === imageState.mediaId)))
       throw new AppError(409, "生图尚未完成或回应未引用本轮生成图片，不能宣称完成");
     for (const artifact of output.artifacts ?? [])
@@ -277,10 +304,17 @@ export class GreetingService {
         await reviewImage(this.repo, pixels, this.imageReviewer, { stage: "output_image", turnId: row.id, sessionId: Number(row.sessionId) });
       }
     }
-    await this.moderate({
+    const requiresArtifactScope = Boolean(output.artifacts?.length);
+    const outputReview = await this.moderate({
       stage: "output", mode: row.mode, texts: textLeaves(output), context: (row.input as Inspiration).text,
+      serviceScope: requiresArtifactScope,
       requestId: String(row.requestKey), turnId: row.id, sessionId: Number(row.sessionId), apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
     });
+    if (requiresArtifactScope) {
+      const scopeReview = requiredOutputReviewSchema.safeParse(outputReview);
+      if (!scopeReview.success) throw new ContentReviewError(503, "作品范围审核暂未完成，请稍后重试");
+      if (scopeReview.data.serviceScope !== "support") throw new AppError(422, CREATION_REFUSAL);
+    }
     return this.repo.update("greetings", id, {
       ...output,
       status: "completed",
@@ -338,6 +372,7 @@ export class GreetingService {
         generateImage: (input, signal) => images.generate(row!.id, input, signal, key, progress),
         existingImage: imageState?.status === "stored" && imageState.mediaId ? { mediaId: imageState.mediaId, title: imageState.input.title, alt: imageState.input.alt } : undefined,
         resumingImage: !!resumeTurnId,
+        imageRequested: result.imageRequested,
         executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
         save: async (output) => {
           try {

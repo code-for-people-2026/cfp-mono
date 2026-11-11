@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { imageReview, syntheticTextReview } from "./synthetic-text-review";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -62,7 +63,7 @@ try {
   pass("未生成内容可维持拒绝并反馈；保留自动审核原判、不封禁身份，审计失败回滚");
   const owner = { id: randomUUID(), auth: "cookie" as const }, other = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
-  const service = new GreetingService(repo, async (args) => { await args.save({ greeting: "合成内容：愿你今晚安稳休息", association: "测试关照", artifacts: [{ kind: "page", id: "page1", title: "测试页面", sections: [{ heading: "小步骤", body: "休息" }] }] }); }, undefined, undefined, { moderate: async () => {}, imageReviewer: async () => ({ decision: "allow", category: "test", version: "mock-pixels-test-only" }) });
+  const service = new GreetingService(repo, async (args) => { await args.save({ greeting: "合成内容：愿你今晚安稳休息", association: "测试关照", artifacts: [{ kind: "page", id: "page1", title: "测试页面", sections: [{ heading: "小步骤", body: "休息" }] }] }); }, undefined, undefined, { moderate: syntheticTextReview, imageReviewer: async () => ({ decision: "allow", category: "test", version: "mock-pixels-test-only" }) });
   const session = await service.createSession();
   const media = await service.upload(await sharp({ create: { width: 8, height: 8, channels: 3, background: "red" } }).png().toBuffer());
   const turn = await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "合成输入", mediaIds: [media.id] } });
@@ -130,7 +131,14 @@ try {
   const raceRepo = new Repository(payload, raceOwner);
   let duringOutputReview = async () => {};
   const raceService = new GreetingService(raceRepo, undefined, undefined, undefined, {
-    moderate: async (request) => { if (request.stage === "output") await duringOutputReview(); },
+    moderate: async (request) => {
+      if (request.purpose === "image_generation") return imageReview(true);
+      if (request.stage === "output") {
+        await duringOutputReview();
+        return syntheticTextReview(request);
+      }
+      return syntheticTextReview(request);
+    },
     imageReviewer: async () => ({ decision: "allow", category: "test", version: "synthetic-race-check" }),
   });
   const raceMedia = await raceService.upload(await sharp({ create: { width: 8, height: 8, channels: 3, background: "green" } }).png().toBuffer());
@@ -149,7 +157,7 @@ try {
 
   const textOwner = { id: randomUUID(), auth: "cookie" as const };
   const textRepo = new Repository(payload, textOwner);
-  const textService = new GreetingService(textRepo, undefined, undefined, undefined, { moderate: async () => {} });
+  const textService = new GreetingService(textRepo, undefined, undefined, undefined, { moderate: syntheticTextReview });
   const textSession = await textService.createSession();
   const textTurn = await textService.acceptExternal({ sessionId: textSession.id, requestId: randomUUID(), model: "synthetic-memory-check", input: { text: "纯文本隔离来源" }, output: { greeting: "合成文本", association: "合成内容" } });
   const textComplaint = await ops.complain(textOwner, { category: "other", description: "纯文本隔离不影响其他会话记忆", turnId: textTurn.id });
@@ -184,7 +192,7 @@ try {
   pass("规则版本不可覆盖，实际回归失败/不可用不能发布");
   const evals = new EvaluationsService(payload);
   const item = await evals.add(administrator, { suite: "synthetic-functional-v1", key: "1", category: "other", input: "测试应用故障状态", expected: "不能将失败伪装为已通过", provenance: "本功能测试自产合成题目" });
-  const run = await evals.run(administrator, Number(item.id), undefined, undefined, (r) => new GreetingService(r, async () => { throw new Error("test failure"); }, undefined, undefined, { moderate: async () => {} }));
+  const run = await evals.run(administrator, Number(item.id), undefined, undefined, (r) => new GreetingService(r, async () => { throw new Error("test failure"); }, undefined, undefined, { moderate: syntheticTextReview }));
   assert.equal(run.state, "failed");
   await assert.rejects(() => evals.judge(administrator, Number(run.id), { judgment: "pass", reason: "失败运行不能伪装成正式通过" }), { status: 409 });
   pass("评测保存真实失败状态，未运行成功不能人工填写通过");
@@ -226,7 +234,7 @@ try {
   // Full text review now precedes image review even for ordinary words. Isolate
   // the image outage by allowing text through an explicitly synthetic verdict.
   process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
-  globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: '{"decision":"allow","service_scope":"support"}' } }] });
+    globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ decision: "allow", service_scope: "support", interaction: { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: true } }) } }] });
   try {
     await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
   } finally {

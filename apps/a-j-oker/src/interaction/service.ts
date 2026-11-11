@@ -1,5 +1,3 @@
-import { isArtifactRequest } from "../domain/creation-scope";
-import { needsProductDeleteClarification, productHelp } from "../domain/product-knowledge";
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { Payload, TypedUser } from "payload";
@@ -12,7 +10,8 @@ import { audit } from "../operations/audit";
 import { canReview, isAdministrator } from "../operations/policy";
 import { feishuAlertStatus } from "../operations/alerts";
 import { privacyService } from "../privacy/service";
-import { durationDue, interactionSignals, noticeText, tickUsage, TWO_HOURS } from "./policy";
+import { durationDue, noticeText, tickUsage, TWO_HOURS } from "./policy";
+import { interactionAssessmentSchema } from "../domain/moderation";
 
 const stateSchema = z.object({
   activeMs: z.number().nonnegative().default(0), lastSeen: z.number().nonnegative().default(0), reminded: z.number().nonnegative().default(0),
@@ -91,8 +90,10 @@ export class InteractionService {
     await this.change((s) => s.notice?.id === id ? { ...s, reminded: s.notice.kind === "duration" ? Math.floor(s.activeMs / TWO_HOURS) : s.reminded, notice: null } : s);
     return this.status();
   }
-  async inspectInput(text: string, sessionId: number, requestId: string): Promise<string | undefined> {
-    const flags = interactionSignals(text);
+  async inspectInput(text: string, sessionId: number, requestId: string, semanticVerdict: unknown): Promise<string | undefined> {
+    const assessed = interactionAssessmentSchema.safeParse(semanticVerdict);
+    if (!assessed.success) throw new AppError(503, "互动安全判断暂未完成，请稍后重试");
+    const flags = assessed.data;
     if (flags.crisis) {
       await transaction(this.payload, async (req) => {
         const previous = await this.payload.find({ collection: "safety-cases", overrideAccess: true, req, limit: 1, where: { and: [{ owner: { equals: this.owner.id } }, { stage: { equals: "interaction_crisis" } }, { status: { not_equals: "resolved" } }] } });
@@ -104,13 +105,10 @@ export class InteractionService {
       throw new AppError(403, "你刚才提供的年龄信息与成年核验存在冲突，已暂停聊天、上传及外部连接。请通过设置→帮助与反馈申请年龄复核；隐私与删除入口仍可使用。若有紧急危险，请立即联系当地急救或警方，也可拨打人工联系电话 19925452049。");
     }
     if (flags.exit && !flags.crisis) return "已停止本次聊天。你可以直接离开页面；如需退出账号，可打开设置→隐私与数据。";
-    if (!flags.crisis && !flags.dependency && !flags.overuse && (!isArtifactRequest(text) || needsProductDeleteClarification(text))) {
-      const help = productHelp(text);
-      if (help) return help;
-    }
     const kind = flags.crisis ? "crisis" : flags.dependency ? "dependency" : flags.overuse ? "duration" : undefined;
-    if (kind) await this.change((s) => ({ ...s, notice: { id: randomUUID(), kind, text: noticeText[kind] } }));
-    if (kind) return `${noticeText[kind]}${kind === "crisis" ? ` 人工联系电话：${interactionSupport().phone}（孙逢，全天可联系，不保证即时接听）。` : ""}`;
+    const notice = kind === "duration" ? noticeText.semanticOveruse : kind ? noticeText[kind] : undefined;
+    if (kind && notice) await this.change((s) => ({ ...s, notice: { id: randomUUID(), kind, text: notice } }));
+    if (kind && notice) return `${notice}${kind === "crisis" ? ` 人工联系电话：${interactionSupport().phone}（孙逢，全天可联系，不保证即时接听）。` : ""}`;
     return undefined;
   }
 }
