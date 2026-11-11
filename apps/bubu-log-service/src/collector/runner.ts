@@ -88,10 +88,15 @@ export class CollectorMcpClient implements McpGateway {
     if (response.status === 404 && this.serverCode(payload) === "NOT_FOUND") return { supported: false };
     throw new CollectorUploadError(response.status, this.serverCode(payload), "COLLECTOR_RECEIPT_UNAVAILABLE");
   }
-  private repairCandidate(receipt: NeedsRepairReceipt, current: ImageUploadMedia, original?: ImageUploadMedia): ImageUploadMedia | undefined {
+  private repairCandidate(receipt: NeedsRepairReceipt, current: ImageUploadMedia, source: SourceRef, original?: ImageUploadMedia): ImageUploadMedia | undefined {
     const candidates = original ? [original, current] : [current];
-    return candidates.find(candidate => candidate.mime === receipt.mime &&
-      createHash("sha256").update(candidate.bytes).digest("hex") === receipt.sha256);
+    return candidates.find(candidate => {
+      const sha256 = createHash("sha256").update(candidate.bytes).digest("hex");
+      if (receipt.requestFingerprint) {
+        return candidate.mime === receipt.mime && hash([sha256, candidate.mime, source]) === receipt.requestFingerprint;
+      }
+      return candidate.mime === receipt.mime && sha256 === receipt.sha256;
+    });
   }
   private async postImage(babyId: string, candidate: ImageUploadMedia, requestId: string, source: SourceRef): Promise<Response> {
     const url = new URL("/api/app/attachments", this.url); url.searchParams.set("babyId", babyId);
@@ -126,7 +131,7 @@ export class CollectorMcpClient implements McpGateway {
     if (receipt.receipt.state === "verified") return { id: receipt.receipt.attachment.id };
     const firstCandidate = receipt.receipt.state === "absent"
       ? current
-      : this.repairCandidate(receipt.receipt, current, original);
+      : this.repairCandidate(receipt.receipt, current, source, original);
     if (!firstCandidate) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
     const response = await this.postImage(babyId, firstCandidate, requestId, source);
     if (response.ok) return this.uploadResponse(response);
@@ -141,7 +146,7 @@ export class CollectorMcpClient implements McpGateway {
     if (!recovered.supported) throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_RECOVERY_UNSUPPORTED");
     if (recovered.receipt.state === "verified") return { id: recovered.receipt.attachment.id };
     if (recovered.receipt.state === "absent") throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_IDEMPOTENCY_CONFLICT");
-    const repaired = this.repairCandidate(recovered.receipt, current, original);
+    const repaired = this.repairCandidate(recovered.receipt, current, source, original);
     if (!repaired) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
     const repairResponse = await this.postImage(babyId, repaired, requestId, source);
     if (repairResponse.ok) return this.uploadResponse(repairResponse);
@@ -156,12 +161,12 @@ export class CollectorMcpClient implements McpGateway {
 
 const attachmentIdSchema = z.string().regex(/^att_[a-f0-9]{64}$/);
 interface VerifiedReceipt { state: "verified"; attachment: { id: string } }
-interface NeedsRepairReceipt { state: "needsRepair"; id: string; mime: AttachmentMime; sha256: string }
+interface NeedsRepairReceipt { state: "needsRepair"; id: string; mime: AttachmentMime; sha256: string; requestFingerprint?: string }
 type UploadReceipt = { state: "absent" } | VerifiedReceipt | NeedsRepairReceipt;
 const uploadReceiptSchema = z.discriminatedUnion("state", [
   z.object({ state: z.literal("absent") }).strict(),
   z.object({ state: z.literal("verified"), attachment: z.object({ id: attachmentIdSchema }).passthrough() }).strict(),
-  z.object({ state: z.literal("needsRepair"), id: attachmentIdSchema, mime: z.enum(["image/jpeg", "image/png", "image/webp"]), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+  z.object({ state: z.literal("needsRepair"), id: attachmentIdSchema, mime: z.enum(["image/jpeg", "image/png", "image/webp"]), sha256: z.string().regex(/^[a-f0-9]{64}$/), requestFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional() }).strict(),
 ]);
 const uploadReceiptEnvelopeSchema = z.object({ data: uploadReceiptSchema }).passthrough();
 

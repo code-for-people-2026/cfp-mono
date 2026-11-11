@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CollectorMcpClient } from "../src/collector/runner";
+import { hash } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
 
 afterEach(() => vi.restoreAllMocks());
@@ -101,6 +102,30 @@ describe("collector upload receipt recovery", () => {
     expect(fixture.requests[1]!.headers.get("content-type")).toBe("image/png");
     expect(fixture.requests[1]!.headers.get("x-bubu-request-id")).toBe("repair-request");
     expect(new Uint8Array(await fixture.requests[1]!.arrayBuffer())).toEqual(original);
+  });
+
+  it("prefers the repair request fingerprint when the stored SHA is normalized", async () => {
+    const id = attachmentId("d");
+    const requestFingerprint = hash([sha256(original), "image/png", source]);
+    const fixture = await transport([
+      { status: 200, body: { data: { state: "needsRepair", id, mime: "image/png", sha256: sha256(optimized), requestFingerprint } } },
+      { status: 200, body: { data: { id } } },
+    ]);
+    await expect(fixture.client.uploadImage("baby-a", optimized, "image/jpeg", "fingerprint-repair", source, { bytes: original, mime: "image/png" })).resolves.toEqual({ id });
+    expect(fixture.requests).toHaveLength(2);
+    expect(new Uint8Array(await fixture.requests[1]!.arrayBuffer())).toEqual(original);
+    expect(fixture.requests[1]!.headers.get("content-type")).toBe("image/png");
+  });
+
+  it("never posts an in-memory candidate when the repair request fingerprint is wrong", async () => {
+    const requestFingerprint = hash([sha256(original), "image/png", source]);
+    const fixture = await transport([
+      { status: 200, body: { data: { state: "needsRepair", id: attachmentId("e"), mime: "image/png", sha256: sha256(optimized),
+        requestFingerprint: requestFingerprint.slice(0, -1) + (requestFingerprint.endsWith("0") ? "1" : "0") } } },
+    ]);
+    const error = await fixture.client.uploadImage("baby-a", optimized, "image/jpeg", "wrong-fingerprint", source, { bytes: original, mime: "image/png" }).catch(error => error) as Error;
+    expect(error).toMatchObject({ message: "COLLECTOR_UPLOAD_REPAIR_REQUIRED" });
+    expect(fixture.requests).toHaveLength(1);
   });
 
   it("fails closed when no in-memory payload exactly matches repair metadata", async () => {

@@ -230,7 +230,7 @@ describe("executable external Agent and real MCP runner", () => {
     // transport must choose its retained exact original and repair the same ID.
     const objectPath = path.join(f.directory, "private-attachments", hash("baby-a"), read.attachment.sha256);
     const corrupted = Buffer.from(original); corrupted[0] = (corrupted[0] ?? 0) ^ 1; await writeFile(objectPath, corrupted);
-    await expect(f.attachments.read(await f.principal(), "baby-a", committed.id)).rejects.toMatchObject({ code: "ATTACHMENT_UNAVAILABLE" });
+    await expect(f.attachments.read(await f.principal(), "baby-a", committed.id)).rejects.toMatchObject({ code: "ATTACHMENT_OBJECT_CORRUPT" });
     const repaired = await client.uploadImage("baby-a", resolved.bytes, resolved.mime, requestId, mediaSource,
       resolved.original ? { bytes: resolved.original.bytes, mime: resolved.original.mime } : undefined);
     expect(repaired.id).toBe(committed.id);
