@@ -4,6 +4,7 @@ import { mkdir, open, rename, unlink } from "node:fs/promises";
 import path from "node:path";
 import type { PayloadRequest } from "payload";
 import sharp from "sharp";
+import { z } from "zod";
 import { AppError } from "../contracts";
 import { IdentityService, type ActorScope, type Principal } from "../identity";
 import { hash, RecordsRepository } from "./persistence";
@@ -11,6 +12,7 @@ import { sourceSchema } from "./schemas";
 import type { SourceRef } from "./types";
 
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const MAX_ATTACHMENT_RECEIPT_JSON_BYTES = 16 * 1024;
 const MAX_IMAGE_PIXELS = 40_000_000;
 export type AttachmentMime = "image/jpeg" | "image/png" | "image/webp";
 export interface Attachment {
@@ -19,10 +21,15 @@ export interface Attachment {
   uploadedBy: Pick<ActorScope["actor"], "kind" | "id" | "onBehalfOf">;
   url: string;
 }
+type AttachmentUploadReceipt =
+  | { state: "absent" }
+  | { state: "verified"; attachment: Attachment }
+  | { state: "needsRepair"; id: string; mime: AttachmentMime; sha256: string };
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
 }
 interface AttachmentOptions { directory: string; maxBytes?: number }
+const receiptSchema = z.object({ requestId: z.string().max(200), source: sourceSchema.optional() }).strict();
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");
@@ -110,6 +117,9 @@ export class AttachmentService {
     } else if (value?.groupId || value?.kind === "wechat") return fail(403, "ATTACHMENT_SOURCE_FORBIDDEN", "群照片必须由受限采集身份上传。");
     return value;
   }
+  private attachmentId(babyId: string, scope: ActorScope, requestId: string): string {
+    return `att_${hash([babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf, scope.groupId, requestId])}`;
+  }
   /** Called inside the record service's executeAuthorized transaction before linking a private attachment. */
   async validateAttachment(scope: ActorScope, req: PayloadRequest, attachmentId: string): Promise<Attachment> {
     if (!scope.permissions.includes("media:read")) return fail(403, "BABY_FORBIDDEN", "没有此宝宝的照片访问权限。");
@@ -123,7 +133,7 @@ export class AttachmentService {
       if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
       if (!bytes.byteLength || bytes.byteLength > this.maxBytes) return fail(413, "ATTACHMENT_TOO_LARGE", "照片为空或超过大小限制。");
       const mime = await inspectAttachment(bytes, declaredMime), sha256 = checksum(bytes), normalizedSource = this.normalizeSource(scope, source);
-      const attachmentId = `att_${hash([babyId, scope.actor.kind, scope.actor.id, scope.actor.onBehalfOf, scope.groupId, requestId])}`;
+      const attachmentId = this.attachmentId(babyId, scope, requestId);
       const requestFingerprint = hash([sha256, mime, normalizedSource]);
       const existing = await this.repository.get<StoredAttachment>("care-attachments", babyId, attachmentId, req);
       if (existing && existing.requestFingerprint !== requestFingerprint) return fail(409, "ATTACHMENT_IDEMPOTENCY_CONFLICT", "此上传请求号已用于不同照片或来源。");
@@ -137,6 +147,36 @@ export class AttachmentService {
       await this.writeObject(value, bytes);
       if (!existing) await this.repository.put("care-attachments", babyId, attachmentId, value, req);
       return this.view(value);
+    }, principal.kind === "collector" ? principal.groupId : undefined);
+  }
+  /**
+   * Recover metadata for a prior upload after its HTTP response was lost. This is
+   * deliberately read-only. An unavailable object is advertised only through
+   * authorized metadata so the client can select the exact committed bytes.
+   */
+  async recoverUpload(principal: Principal, babyId: string, requestId: string, source?: SourceRef): Promise<AttachmentUploadReceipt> {
+    return this.identity.executeAuthorized(principal, babyId, "media:write", async (scope, req) => {
+      if (!scope.permissions.includes("media:read")) return fail(403, "BABY_FORBIDDEN", "没有此宝宝的照片访问权限。");
+      if (!requestId.trim() || requestId.length > 200) return fail(400, "ATTACHMENT_REQUEST_ID_INVALID", "请提供不超过 200 字符的上传请求号。");
+      const normalizedSource = this.normalizeSource(scope, source);
+      const attachmentId = this.attachmentId(babyId, scope, requestId);
+      const existing = await this.repository.get<StoredAttachment>("care-attachments", babyId, attachmentId, req);
+      if (!existing || existing.babyId !== babyId || existing.id !== attachmentId) return { state: "absent" };
+      // hash uses the same canonical JSON convention as the persisted upload
+      // fingerprint. All authorization, source, and fingerprint checks happen
+      // before any private object is read or metadata is returned.
+      if (hash(existing.source) !== hash(normalizedSource) ||
+          existing.requestFingerprint !== hash([existing.sha256, existing.mime, normalizedSource])) {
+        return fail(409, "ATTACHMENT_IDEMPOTENCY_CONFLICT", "此上传请求号已用于不同照片或来源。");
+      }
+      try { await this.readObject(existing); }
+      catch (error) {
+        if (error instanceof AppError && error.code === "ATTACHMENT_UNAVAILABLE") {
+          return { state: "needsRepair", id: existing.id, mime: existing.mime, sha256: existing.sha256 };
+        }
+        throw error;
+      }
+      return { state: "verified", attachment: this.view(existing) };
     }, principal.kind === "collector" ? principal.groupId : undefined);
   }
   async read(principal: Principal, babyId: string, attachmentId: string): Promise<{ attachment: Attachment; bytes: Buffer }> {
@@ -170,8 +210,9 @@ export function createAttachmentHandler(service: AttachmentService) {
   return async (request: Request, principal: Principal): Promise<Response | undefined> => {
     const url = new URL(request.url);
     const upload = request.method === "POST" && url.pathname === "/api/app/attachments";
+    const receipt = request.method === "POST" && url.pathname === "/api/app/attachments/receipt";
     const download = request.method === "GET" && /^\/api\/app\/attachments\/att_[a-f0-9]{64}$/.test(url.pathname);
-    if (!upload && !download) return undefined;
+    if (!upload && !receipt && !download) return undefined;
     const babyId = url.searchParams.get("babyId") || request.headers.get("x-baby-id") || "";
     if (!babyId || babyId.length > 200 || (request.headers.has("x-baby-id") && request.headers.get("x-baby-id") !== babyId)) return fail(400, "SCOPE_MISMATCH", "请提供一致的宝宝范围。");
     const headers = { "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
@@ -186,6 +227,17 @@ export function createAttachmentHandler(service: AttachmentService) {
       }
       const attachment = await service.upload(principal, babyId, await readUploadBody(request, service.maxBytes), request.headers.get("content-type") || "", request.headers.get("x-bubu-request-id") || "", source);
       return Response.json({ data: attachment }, { status: 200, headers });
+    }
+    if (receipt) {
+      // Size enforcement is deliberately outside the JSON catch: an oversized
+      // body must remain 413 even when its bytes are also invalid JSON.
+      const body = await readUploadBody(request, MAX_ATTACHMENT_RECEIPT_JSON_BYTES);
+      let input: unknown;
+      try { input = JSON.parse(body.toString("utf8")); }
+      catch { return fail(400, "INVALID_JSON", "请求格式不正确。"); }
+      const parsed = receiptSchema.safeParse(input);
+      if (!parsed.success) return fail(400, "ATTACHMENT_RECEIPT_INVALID", "上传回执查询字段不完整或格式不正确。");
+      return Response.json({ data: await service.recoverUpload(principal, babyId, parsed.data.requestId, parsed.data.source) }, { status: 200, headers });
     }
     const result = await service.read(principal, babyId, url.pathname.slice("/api/app/attachments/".length));
     return new Response(new Uint8Array(result.bytes), { headers: { ...headers, "Content-Type": result.attachment.mime, "Content-Length": String(result.attachment.byteLength), "Content-Disposition": "inline" } });

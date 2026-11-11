@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createCipheriv, createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -8,7 +8,7 @@ import sharp from "sharp";
 import { ZodError } from "zod";
 import { IdentityService } from "../src/identity";
 import { openStore } from "../src/store";
-import { recordCollections, hash } from "../src/records/persistence";
+import { RecordsRepository, recordCollections, hash } from "../src/records/persistence";
 import { RecordsService } from "../src/records/service";
 import { recordSchema } from "../src/records/schemas";
 import { createHandler } from "../src/http";
@@ -72,6 +72,15 @@ function source(localId = 1): SourceMessage {
 }
 function page(message = source()) { return { messages: [message], nextCursor: { [`${message.databaseId}:${message.tableName}`]: message.localId }, hasMore: false }; }
 function plan(message = source()): AgentPlan { return { plans: [{ key: "feeding", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkSource: "FORMULA" }, progress: "unknown" }] } }], ignored: [] }; }
+async function syntheticOpaquePng(width: number, height: number) {
+  const key = createHash("sha256").update("collector-noisy-png").digest();
+  const pixels = createCipheriv("aes-256-ctr", key, key.subarray(0, 16)).update(Buffer.alloc(width * height * 3));
+  return sharp(pixels, { raw: { width, height, channels: 3 } }).png({ compressionLevel: 0 }).toBuffer();
+}
+async function attachmentIds(f: Fixture) {
+  const rows = await f.identity.executeAuthorized(await f.principal(), "baby-a", "records:read", (_scope, req) => new RecordsRepository(f.identity.store.payload).list<{ id: string }>("care-attachments", "baby-a", req), f.groupId);
+  return rows.map(row => row.id);
+}
 async function staged(f: Fixture, runId = "run-a") {
   await f.configure(true);
   const started = await f.call({ action: "begin", runId });
@@ -177,6 +186,62 @@ async function startMcp(f: Fixture) {
 }
 
 describe("executable external Agent and real MCP runner", () => {
+  it("recovers a lost PNG upload response when transport now optimizes the same media to JPEG", async () => {
+    const f = await setup("2026-11-11T03:00:00Z"); await f.configure(true); const client = await startMcp(f);
+    const base = source(7); const message = { ...base, kind: "image" as const, text: "奶粉泡好120ml，还不知道喝了多少", media: [{ sourceId: base.sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
+    const mediaSource = { kind: "wechat" as const, accountId: message.accountId, conversationId: message.chatId, mediaIds: [`${message.sourceId}:media:0`],
+      messageId: `${message.databaseId}/${message.tableName}/${message.localId}`, eventKey: "media:0", sentAt: message.sentAt,
+      senderId: message.senderId || "synthetic-sender", groupId: message.groupId };
+    const requestId = `collector-media-${hash([message.sourceId, 0])}`;
+    const original = await syntheticOpaquePng(2049, 1200);
+    expect(original.length).toBeGreaterThan(1024 * 1024);
+    const committed = await client.uploadImage("baby-a", original, "image/png", requestId, mediaSource);
+    const failedBatch = await f.call({ action: "begin", runId: "lost-media-response" });
+    const stagedBatch = await f.call({ action: "stage", batchId: failedBatch.batch.id, runId: "lost-media-response", page: page(message) });
+    expect(stagedBatch.batch.media).toBeUndefined();
+    await f.call({ action: "fail", batchId: failedBatch.batch.id, runId: "lost-media-response", code: "SYNTHETIC_LOST_RESPONSE" });
+    const file = path.join(f.directory, "synthetic-noisy.png"); await writeFile(file, original);
+    const resolver = new ExactLocalMediaResolver({ roots: [f.directory], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: createHash("sha256").update(original).digest("hex") }] });
+    const resolved = await resolver.resolve(message, 0);
+    expect(resolved).toMatchObject({ available: true, mime: "image/jpeg" });
+    if (!resolved.available) throw new Error(resolved.reason);
+    expect(resolved.bytes.length).toBeLessThan(original.length);
+    const agent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]) => {
+      const attachmentId = task.media[0]?.state === "uploaded" ? task.media[0].attachmentId : undefined;
+      return { plans: [{ key: "feeding", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{
+        facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkSource: "FORMULA" }, progress: "unknown",
+        ...(attachmentId ? { attachmentIds: [attachmentId] } : {}),
+      }] } }], ignored: [] } satisfies AgentPlan;
+    }) };
+    await f.collector.dispatch(f.operator, { action: "retry", babyId: "baby-a", jobId: f.job.id });
+    expect(await new CollectorRunner(client, { read: async () => { throw new Error("SOURCE_SHOULD_NOT_BE_READ"); } }, agent, { resolver, uploader: client }).once("baby-a", f.job.id)).toMatchObject({ completed: true });
+    expect(agent.execute).toHaveBeenCalledTimes(1);
+    const event = (await f.records.query(await f.principal(), { babyId: "baby-a" })).events.find(item => item.facts.type === "BOTTLE")!;
+    expect(event.attachmentIds).toEqual([committed.id]);
+    expect(await attachmentIds(f)).toEqual([committed.id]);
+    const read = await f.attachments.read(await f.principal(), "baby-a", committed.id);
+    expect(read.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: createHash("sha256").update(original).digest("hex") });
+    expect(read.bytes.equals(original)).toBe(true);
+    // Repeating receipt recovery must neither POST alternate JPEG bytes nor duplicate metadata.
+    const repeated = await client.uploadImage("baby-a", resolved.bytes, resolved.mime, requestId, mediaSource);
+    expect(repeated.id).toBe(committed.id);
+    expect(await attachmentIds(f)).toEqual([committed.id]);
+    // Corrupt the committed object after the verified retry. The optimized
+    // transport must choose its retained exact original and repair the same ID.
+    const objectPath = path.join(f.directory, "private-attachments", hash("baby-a"), read.attachment.sha256);
+    const corrupted = Buffer.from(original); corrupted[0] = (corrupted[0] ?? 0) ^ 1; await writeFile(objectPath, corrupted);
+    await expect(f.attachments.read(await f.principal(), "baby-a", committed.id)).rejects.toMatchObject({ code: "ATTACHMENT_UNAVAILABLE" });
+    const repaired = await client.uploadImage("baby-a", resolved.bytes, resolved.mime, requestId, mediaSource,
+      resolved.original ? { bytes: resolved.original.bytes, mime: resolved.original.mime } : undefined);
+    expect(repaired.id).toBe(committed.id);
+    expect(await attachmentIds(f)).toEqual([committed.id]);
+    const repairedRead = await f.attachments.read(await f.principal(), "baby-a", committed.id);
+    expect(repairedRead.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: read.attachment.sha256 });
+    expect(repairedRead.bytes.equals(original)).toBe(true);
+    const repairedEvent = (await f.records.query(await f.principal(), { babyId: "baby-a" })).events.find(item => item.facts.type === "BOTTLE")!;
+    expect(repairedEvent.attachmentIds).toEqual([committed.id]);
+  }, 45_000);
+
   it("passes adjacent-media context to the Agent and preserves unavailable-photo linkage for replay", async () => {
     const f = await setup("2026-10-23T10:00:00Z"); await f.configure(true); const client = await startMcp(f);
     // Existing group-visible facts are part of the extraction context, but this

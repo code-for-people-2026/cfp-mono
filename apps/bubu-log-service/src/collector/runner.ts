@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
@@ -15,7 +15,12 @@ import { collectorAgentInstructions } from "./prompt";
 
 /** @public MCP transport boundary for downstream agent bridges and integration fixtures. */
 export interface McpGateway { call(name: string, args: Record<string, unknown>): Promise<unknown>; tools(): Promise<unknown[]> }
-interface ImageUploader { uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef): Promise<{ id: string }> }
+interface ImageUploadMedia { bytes: Uint8Array; mime: AttachmentMime }
+interface ImageUploader { uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef, original?: ImageUploadMedia): Promise<{ id: string }> }
+/** Transport failures carry only allow-listed client codes plus sanitized HTTP status/server code. */
+class CollectorUploadError extends Error {
+  constructor(readonly status: number, readonly serverCode: string | undefined, code: string) { super(code); }
+}
 /** Sanitized MCP failure boundary: expose only an allow-listed code, never server text or raw content. */
 export class McpToolError extends Error {
   readonly mcpCode: string;
@@ -56,17 +61,109 @@ export class CollectorMcpClient implements McpGateway {
     return JSON.parse(text.text);
   }
   async tools() { return (await this.client.listTools()).tools; }
-  async uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef) {
+  private async json(response: Response): Promise<unknown> {
+    try { return await response.json(); }
+    catch { return undefined; }
+  }
+  private serverCode(value: unknown): string | undefined {
+    const code = z.object({ code: z.string().regex(/^[A-Z0-9_]{1,100}$/) }).passthrough().safeParse(value);
+    return code.success ? code.data.code : undefined;
+  }
+  private async lookupReceipt(babyId: string, requestId: string, source: SourceRef): Promise<{ supported: false } | { supported: true; receipt: UploadReceipt }> {
+    const url = new URL("/api/app/attachments/receipt", this.url); url.searchParams.set("babyId", babyId);
+    let response: Response;
+    try {
+      response = await fetch(url, { method: "POST", redirect: "error", headers: {
+        Authorization: `Bearer ${await this.token()}`, "X-Bubu-Client": "native", "Content-Type": "application/json",
+      }, body: JSON.stringify({ requestId, source }), signal: AbortSignal.timeout(30_000) });
+    } catch {
+      throw new CollectorUploadError(0, undefined, "COLLECTOR_RECEIPT_UNAVAILABLE");
+    }
+    const payload = await this.json(response);
+    if (response.ok) {
+      const receipt = uploadReceiptEnvelopeSchema.safeParse(payload);
+      if (receipt.success) return { supported: true, receipt: receipt.data.data };
+      throw new CollectorUploadError(response.status, this.serverCode(payload), "COLLECTOR_RECEIPT_UNAVAILABLE");
+    }
+    if (response.status === 404 && this.serverCode(payload) === "NOT_FOUND") return { supported: false };
+    throw new CollectorUploadError(response.status, this.serverCode(payload), "COLLECTOR_RECEIPT_UNAVAILABLE");
+  }
+  private repairCandidate(receipt: NeedsRepairReceipt, current: ImageUploadMedia, original?: ImageUploadMedia): ImageUploadMedia | undefined {
+    const candidates = original ? [original, current] : [current];
+    return candidates.find(candidate => candidate.mime === receipt.mime &&
+      createHash("sha256").update(candidate.bytes).digest("hex") === receipt.sha256);
+  }
+  private async postImage(babyId: string, candidate: ImageUploadMedia, requestId: string, source: SourceRef): Promise<Response> {
     const url = new URL("/api/app/attachments", this.url); url.searchParams.set("babyId", babyId);
-    const response = await fetch(url, { method: "POST", redirect: "error", headers: {
-      Authorization: `Bearer ${await this.token()}`, "X-Bubu-Client": "native", "Content-Type": mime,
-      "X-Bubu-Request-Id": requestId, "X-Bubu-Source": encodeURIComponent(JSON.stringify(source)),
-    }, body: new Uint8Array(bytes), signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error("COLLECTOR_UPLOAD_FAILED");
-    return z.object({ data: z.object({ id: z.string().regex(/^att_[a-f0-9]{64}$/) }) }).parse(await response.json()).data;
+    let response: Response;
+    try {
+      response = await fetch(url, { method: "POST", redirect: "error", headers: {
+        Authorization: `Bearer ${await this.token()}`, "X-Bubu-Client": "native", "Content-Type": candidate.mime,
+        "X-Bubu-Request-Id": requestId, "X-Bubu-Source": encodeURIComponent(JSON.stringify(source)),
+      }, body: new Uint8Array(candidate.bytes), signal: AbortSignal.timeout(30_000) });
+    } catch {
+      throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_FAILED");
+    }
+    return response;
+  }
+  private async uploadResponse(response: Response): Promise<{ id: string }> {
+    const parsed = z.object({ data: z.object({ id: attachmentIdSchema }) }).passthrough().safeParse(await this.json(response));
+    if (!parsed.success || !parsed.data.data.id) throw new CollectorUploadError(response.status, undefined, "COLLECTOR_UPLOAD_FAILED");
+    return parsed.data.data;
+  }
+  async uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef, original?: ImageUploadMedia) {
+    const receipt = await this.lookupReceipt(babyId, requestId, source);
+    const current = { bytes, mime };
+    if (!receipt.supported) {
+      const response = await this.postImage(babyId, current, requestId, source);
+      if (response.ok) return this.uploadResponse(response);
+      const code = this.serverCode(await this.json(response));
+      if (response.status === 409 && code === "ATTACHMENT_IDEMPOTENCY_CONFLICT") {
+        throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_RECOVERY_UNSUPPORTED");
+      }
+      throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_FAILED");
+    }
+    if (receipt.receipt.state === "verified") return { id: receipt.receipt.attachment.id };
+    const firstCandidate = receipt.receipt.state === "absent"
+      ? current
+      : this.repairCandidate(receipt.receipt, current, original);
+    if (!firstCandidate) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
+    const response = await this.postImage(babyId, firstCandidate, requestId, source);
+    if (response.ok) return this.uploadResponse(response);
+    const code = this.serverCode(await this.json(response));
+    if (response.status !== 409 || code !== "ATTACHMENT_IDEMPOTENCY_CONFLICT") {
+      throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_FAILED");
+    }
+
+    // Only this exact race gets one more lookup. A repair receipt permits one
+    // bounded candidate selection/POST, after which conflicts fail closed.
+    const recovered = await this.lookupReceipt(babyId, requestId, source);
+    if (!recovered.supported) throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_RECOVERY_UNSUPPORTED");
+    if (recovered.receipt.state === "verified") return { id: recovered.receipt.attachment.id };
+    if (recovered.receipt.state === "absent") throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_IDEMPOTENCY_CONFLICT");
+    const repaired = this.repairCandidate(recovered.receipt, current, original);
+    if (!repaired) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
+    const repairResponse = await this.postImage(babyId, repaired, requestId, source);
+    if (repairResponse.ok) return this.uploadResponse(repairResponse);
+    const repairCode = this.serverCode(await this.json(repairResponse));
+    if (repairResponse.status === 409 && repairCode === "ATTACHMENT_IDEMPOTENCY_CONFLICT") {
+      throw new CollectorUploadError(repairResponse.status, repairCode, "COLLECTOR_UPLOAD_IDEMPOTENCY_CONFLICT");
+    }
+    throw new CollectorUploadError(repairResponse.status, repairCode, "COLLECTOR_UPLOAD_FAILED");
   }
   async close() { await this.client.close(); }
 }
+
+const attachmentIdSchema = z.string().regex(/^att_[a-f0-9]{64}$/);
+interface VerifiedReceipt { state: "verified"; attachment: { id: string } }
+interface NeedsRepairReceipt { state: "needsRepair"; id: string; mime: AttachmentMime; sha256: string }
+type UploadReceipt = { state: "absent" } | VerifiedReceipt | NeedsRepairReceipt;
+const uploadReceiptSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("absent") }).strict(),
+  z.object({ state: z.literal("verified"), attachment: z.object({ id: attachmentIdSchema }).passthrough() }).strict(),
+  z.object({ state: z.literal("needsRepair"), id: attachmentIdSchema, mime: z.enum(["image/jpeg", "image/png", "image/webp"]), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
+]);
+const uploadReceiptEnvelopeSchema = z.object({ data: uploadReceiptSchema }).passthrough();
 
 interface Command { executable: string; args?: string[]; cwd?: string; timeoutMs?: number; env?: Record<string, string> }
 /** No shell, inherited secrets, raw stderr, or credentials in the Agent task. */
@@ -200,7 +297,8 @@ export class CollectorRunner {
               const source = sourcesFor(batch, [message.sourceId], `media:${index}`)[0]!;
               // Stable across batch replay/backfill and renewed credentials.
               delete source.collectedAt;
-              const attachment = await this.images!.uploader.uploadImage(babyId, resolved.bytes, resolved.mime, `collector-media-${hash([message.sourceId, index])}`, source);
+                  const attachment = await this.images!.uploader.uploadImage(babyId, resolved.bytes, resolved.mime, `collector-media-${hash([message.sourceId, index])}`, source,
+                    resolved.original ? { bytes: resolved.original.bytes, mime: resolved.original.mime } : undefined);
               resolutions.push({ sourceId: message.sourceId, index, state: "uploaded", attachmentId: attachment.id });
             }
           }

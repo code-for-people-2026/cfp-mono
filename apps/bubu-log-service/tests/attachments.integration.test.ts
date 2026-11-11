@@ -64,6 +64,23 @@ describe("private attachments use the shared durable identity boundary", () => {
     await expect(attachments.upload(collectorA, "baby-a", photo, "image/png", "source-retry", source("account:group-a", "43"))).rejects.toMatchObject({ code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
   });
 
+  it("recovers a committed upload receipt only with exact provenance and advertises repair metadata", async () => {
+    const exact = source("account:group-a");
+    const uploaded = await attachments.upload(collectorA, "baby-a", photo, "image/png", "receipt-retry", exact);
+    expect(await attachments.recoverUpload(collectorA, "baby-a", "receipt-retry", exact)).toEqual({ state: "verified", attachment: uploaded });
+    await expect(attachments.recoverUpload(collectorA, "baby-a", "receipt-retry", source("account:group-a", "43"))).rejects.toMatchObject({ status: 409, code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
+    await expect(attachments.recoverUpload(collectorA, "baby-a", "receipt-retry", source("account:group-b"))).rejects.toMatchObject({ status: 403, code: "ATTACHMENT_SOURCE_FORBIDDEN" });
+    await expect(attachments.recoverUpload(collectorA, "baby-b", "receipt-retry", exact)).rejects.toMatchObject({ status: 403, code: "BABY_FORBIDDEN" });
+    expect(await attachments.recoverUpload(collectorB, "baby-a", "receipt-retry", source("account:group-b"))).toEqual({ state: "absent" });
+    // Alternate bytes cannot bypass the original POST fingerprint check.
+    await expect(attachments.upload(collectorA, "baby-a", otherPhoto, "image/png", "receipt-retry", exact)).rejects.toMatchObject({ status: 409, code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
+    await rm(path.join(directory, "private-attachments", hash("baby-a"), uploaded.sha256), { force: true });
+    expect(await attachments.recoverUpload(collectorA, "baby-a", "receipt-retry", exact)).toEqual({
+      state: "needsRepair", id: uploaded.id, mime: uploaded.mime, sha256: uploaded.sha256,
+    });
+    await expect(attachments.read(alice, "baby-a", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_UNAVAILABLE" });
+  });
+
   it("checks the stored baby's ownership for download and association", async () => {
     const uploaded = await attachments.upload(alice, "baby-a", photo, "image/png", "isolation");
     await expect(attachments.read(bob, "baby-a", uploaded.id)).rejects.toMatchObject({ status: 403, code: "BABY_FORBIDDEN" });
@@ -144,6 +161,27 @@ describe("private attachments use the shared durable identity boundary", () => {
     expect(downloaded!.headers.get("content-type")).toBe("image/png");
     expect(downloaded!.headers.get("content-length")).toBe(String(largePhoto.length));
     expect(await handler(new Request("https://bubu.example/api/app/not-attachments"), alice)).toBeUndefined();
+  });
+
+  it("exposes a strict JSON receipt endpoint without returning pixels", async () => {
+    const uploaded = await attachments.upload(alice, "baby-a", photo, "image/png", "http-receipt");
+    const handler = createAttachmentHandler(attachments);
+    const response = await handler(new Request("https://bubu.example/api/app/attachments/receipt?babyId=baby-a", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: "http-receipt" }),
+    }), alice);
+    expect(response?.status).toBe(200);
+    expect(await response!.json()).toEqual({ data: { state: "verified", attachment: uploaded } });
+    const missing = await handler(new Request("https://bubu.example/api/app/attachments/receipt?babyId=baby-a", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: "missing" }),
+    }), alice);
+    expect(await missing!.json()).toEqual({ data: { state: "absent" } });
+    await expect(handler(new Request("https://bubu.example/api/app/attachments/receipt?babyId=baby-a", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requestId: "http-receipt", extra: true }),
+    }), alice)).rejects.toMatchObject({ status: 400, code: "ATTACHMENT_RECEIPT_INVALID" });
+    await expect(handler(new Request("https://bubu.example/api/app/attachments/receipt?babyId=baby-a", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "oversized-receipt", padding: "x".repeat(16_384) }),
+    }), alice)).rejects.toMatchObject({ status: 413, code: "ATTACHMENT_TOO_LARGE" });
   });
 
   it("bounds streamed bodies even when Content-Length lies and validates scope/source before persistence", async () => {

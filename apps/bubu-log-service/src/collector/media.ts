@@ -17,7 +17,9 @@ export const exactMediaConfigSchema = z.object({
   md5Directories: z.array(z.string().min(1)).max(20).default([]),
 }).strict();
 type ExactMediaConfig = z.input<typeof exactMediaConfigSchema>;
-export type MediaResult = { available: true; bytes: Buffer; mime: AttachmentMime } | { available: false; reason: string };
+export type MediaResult =
+  | { available: true; bytes: Buffer; mime: AttachmentMime; original?: { bytes: Buffer; mime: AttachmentMime } }
+  | { available: false; reason: string };
 export interface MediaResolver { resolve(message: SourceMessage, index: number): Promise<MediaResult> }
 const digest = (algorithm: string, bytes: Buffer) => createHash(algorithm).update(bytes).digest("hex");
 const within = (root: string, file: string) => file.startsWith(root + path.sep);
@@ -110,7 +112,9 @@ export class ExactLocalMediaResolver implements MediaResolver {
       // output-validation failure falls back to the already-validated original.
       try {
         const optimized = await optimizeLargeOpaquePng(bytes);
-        return optimized ? { available: true, ...optimized } : { available: true, bytes, mime };
+        return optimized
+          ? { available: true, ...optimized, original: { bytes, mime } }
+          : { available: true, bytes, mime };
       }
       catch { return { available: true, bytes, mime }; }
     } catch (error) {
