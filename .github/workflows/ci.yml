@@ -115,6 +115,37 @@ jobs:
 
       - run: pnpm verify
 
+      # GitHub's ubuntu-24.04 image can list the Azure Ubuntu mirror first. If its
+      # DNS is unavailable, Playwright's --with-deps install stalls. Drop only that
+      # ephemeral entry; the official archive and security mirrors stay in place.
+      - name: Drop unreachable Azure apt mirror for Playwright (PR only)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+          mirrors=/etc/apt/apt-mirrors.txt
+          if [[ ! -f "$mirrors" ]]; then
+            echo 'No apt mirror list; nothing to do.'
+            exit 0
+          fi
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          awk '!/azure\.archive\.ubuntu\.com/' "$mirrors" > "$tmp"
+          if cmp -s "$mirrors" "$tmp"; then
+            echo 'Azure Ubuntu mirror is not configured; nothing to do.'
+            exit 0
+          fi
+          if [[ ! -s "$tmp" ]]; then
+            echo 'Refusing to empty the apt mirror list.' >&2
+            exit 1
+          fi
+          # Blank lines and comments are not usable mirrors: require a remaining
+          # official Ubuntu HTTPS entry (trailing slash and metadata allowed).
+          if ! grep -Eq '^[[:space:]]*https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)' "$tmp"; then
+            echo 'Refusing to replace the apt mirror list without an official Ubuntu HTTPS mirror.' >&2
+            exit 1
+          fi
+          sudo cp -- "$tmp" "$mirrors"
+
       # e2e 只在 PR 时跑。merge 进 main(push)时省掉(playwright install 浏览器 + e2e 较慢),
       # 但上面 pnpm verify 里的 unit(lint+typecheck+test:coverage+knip+build)仍跑,作为
       # merge 后的快速复查 + 防御绕过 PR 直推 main 的提交。
