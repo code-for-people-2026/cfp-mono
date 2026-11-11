@@ -112,6 +112,25 @@ export class AttachmentService {
     if (value.storage) return false;
     return expected?.kind === "oss" && expected.key === attachmentObjectKey(value.babyId, value.sha256);
   }
+  private concurrentInsertMatches(current: StoredAttachment, candidate: StoredAttachment): boolean {
+    const actor = current.actor as ActorScope["actor"] | undefined;
+    return current.id === candidate.id && current.babyId === candidate.babyId &&
+      current.sha256 === candidate.sha256 && current.mime === candidate.mime &&
+      current.byteLength === candidate.byteLength && hash(current.source) === hash(candidate.source) &&
+      hash(current.uploadedBy) === hash(candidate.uploadedBy) &&
+      actor?.kind === candidate.actor.kind && actor?.id === candidate.actor.id &&
+      actor?.onBehalfOf === candidate.actor.onBehalfOf &&
+      typeof current.createdAt === "string" && typeof actor?.sessionId === "string";
+  }
+  private validateCurrentForUpload(current: StoredAttachment, candidate: StoredAttachment, strict: boolean): void {
+    if (!strict && current.requestFingerprint !== candidate.requestFingerprint) {
+      return fail(409, "ATTACHMENT_IDEMPOTENCY_CONFLICT", "此上传请求号已用于不同照片或来源。");
+    }
+    if (strict ? this.metadataFingerprint(current) !== this.metadataFingerprint(candidate)
+               : !this.concurrentInsertMatches(current, candidate)) {
+      return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
+    }
+  }
   private async readObject(value: Pick<StoredAttachment, "babyId" | "sha256" | "byteLength" | "storage">): Promise<Buffer> {
     const remoteKey = this.validateStorage(value);
     if (remoteKey) return this.readRemoteObject(remoteKey, value);
@@ -248,9 +267,7 @@ export class AttachmentService {
         }
         const current = await this.repository.get<StoredAttachment>("care-attachments", babyId, snapshot.attachmentId, req);
         if (current) {
-          if (current.requestFingerprint !== requestFingerprint || this.metadataFingerprint(current) !== this.metadataFingerprint(candidate)) {
-            return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
-          }
+          this.validateCurrentForUpload(current, candidate, snapshot.existing !== undefined);
           this.validateStorage(current);
         } else if (snapshot.existing) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
         return undefined;
@@ -266,13 +283,15 @@ export class AttachmentService {
       }
       const current = await this.repository.get<StoredAttachment>("care-attachments", babyId, snapshot.attachmentId, req);
       if (current) {
-        if (current.requestFingerprint !== requestFingerprint || this.metadataFingerprint(current) !== this.metadataFingerprint(candidate)) {
-          return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
-        }
+        this.validateCurrentForUpload(current, candidate, snapshot.existing !== undefined);
         this.validateStorage(current);
         if (!this.canCommitStorage(current, stored.storage)) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
-        if (!current.storage) await this.repository.put("care-attachments", babyId, snapshot.attachmentId, stored, req);
-        return this.view(current.storage ? current : stored);
+        if (!current.storage && stored.storage) {
+          const merged = { ...current, storage: stored.storage };
+          await this.repository.put("care-attachments", babyId, snapshot.attachmentId, merged, req);
+          return this.view(merged);
+        }
+        return this.view(current);
       }
       if (snapshot.existing) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请重试上传或联系运营。");
       await this.repository.put("care-attachments", babyId, snapshot.attachmentId, stored, req);

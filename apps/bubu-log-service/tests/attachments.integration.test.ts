@@ -159,6 +159,81 @@ describe("private attachments use the shared durable identity boundary", () => {
     await expect(attachments.upload(collectorA, "baby-a", photo, "image/png", "source-retry", source("account:group-a", "43"))).rejects.toMatchObject({ code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
   });
 
+  it("lets an exact concurrent retry adopt the first committed winner", async () => {
+    const startedAt = Date.now(), firstTime = startedAt, secondTime = startedAt + 60_000;
+    const firstIdentity = new IdentityService(store, legacy, wechat, () => firstTime);
+    const secondIdentity = new IdentityService(store, legacy, wechat, () => secondTime);
+    const first = await firstIdentity.authenticate((await firstIdentity.loginLegacy("old-alice", "correct-password", "native")).token, "bearer");
+    const second = await secondIdentity.authenticate((await secondIdentity.loginLegacy("old-alice", "correct-password", "native")).token, "bearer");
+    const objects = new DeferredObjectStore();
+    const firstUploads = new AttachmentService(firstIdentity, { directory, objectStore: objects });
+    const secondUploads = new AttachmentService(secondIdentity, { directory, objectStore: objects });
+
+    objects.pauseNextPut();
+    const firstAttempt = firstUploads.upload(first, "baby-a", photo, "image/png", "concurrent-exact-retry");
+    await objects.startedPut();
+    const winner = await secondUploads.upload(second, "baby-a", photo, "image/png", "concurrent-exact-retry");
+    objects.finishPut();
+    expect(await firstAttempt).toEqual(winner);
+    expect(winner.createdAt).toBe(new Date(secondTime).toISOString());
+
+    const id = `att_${hash(["baby-a", "caregiver", first.subjectId, undefined, undefined, "concurrent-exact-retry"])}`;
+    expect(winner.id).toBe(id);
+    const rows = await store.transaction(async req => (await new RecordsRepository(store.payload)
+      .list<Record<string, unknown>>("care-attachments", "baby-a", req)).filter(row => row.id === id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      id, createdAt: new Date(secondTime).toISOString(), actor: { sessionId: second.sessionId },
+    });
+  }, 30_000);
+
+  it("keeps the concurrent winner when a slower retry changes bytes", async () => {
+    const startedAt = Date.now(), firstTime = startedAt, secondTime = startedAt + 1_000;
+    const firstIdentity = new IdentityService(store, legacy, wechat, () => firstTime);
+    const secondIdentity = new IdentityService(store, legacy, wechat, () => secondTime);
+    const first = await firstIdentity.authenticate((await firstIdentity.loginLegacy("old-alice", "correct-password", "native")).token, "bearer");
+    const second = await secondIdentity.authenticate((await secondIdentity.loginLegacy("old-alice", "correct-password", "native")).token, "bearer");
+    const objects = new DeferredObjectStore();
+    const firstUploads = new AttachmentService(firstIdentity, { directory, objectStore: objects });
+    const secondUploads = new AttachmentService(secondIdentity, { directory, objectStore: objects });
+
+    objects.pauseNextPut();
+    const firstAttempt = firstUploads.upload(first, "baby-a", otherPhoto, "image/png", "concurrent-byte-conflict");
+    await objects.startedPut();
+    const winner = await secondUploads.upload(second, "baby-a", photo, "image/png", "concurrent-byte-conflict");
+    objects.finishPut();
+    await expect(firstAttempt).rejects.toMatchObject({ status: 409, code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
+
+    const stored = await store.transaction(req => new RecordsRepository(store.payload)
+      .get<Record<string, unknown>>("care-attachments", "baby-a", winner.id, req));
+    expect(stored).toMatchObject({ id: winner.id, createdAt: new Date(secondTime).toISOString(), actor: { sessionId: second.sessionId } });
+  }, 30_000);
+
+  it("keeps the concurrent winner when a slower retry changes provenance", async () => {
+    const startedAt = Date.now(), firstTime = startedAt, secondTime = startedAt + 1_000;
+    const firstIdentity = new IdentityService(store, legacy, wechat, () => firstTime);
+    const secondIdentity = new IdentityService(store, legacy, wechat, () => secondTime);
+    const operatorLogin = await firstIdentity.provisionOperator("fixture-operator", "baby-a", 3_600_000);
+    const operatorPrincipal = await firstIdentity.authenticate(operatorLogin.token, "bearer");
+    const first = await firstIdentity.authenticate((await firstIdentity.issueAgent(operatorPrincipal, "baby-a", "collector", { groupId: "account:group-a", agentId: "fixture-collector-a" })).token, "bearer");
+    const second = await secondIdentity.authenticate((await secondIdentity.issueAgent(operatorPrincipal, "baby-a", "collector", { groupId: "account:group-a", agentId: "fixture-collector-a" })).token, "bearer");
+    const winnerSource = source("account:group-a", "winner");
+    const objects = new DeferredObjectStore();
+    const firstUploads = new AttachmentService(firstIdentity, { directory, objectStore: objects });
+    const secondUploads = new AttachmentService(secondIdentity, { directory, objectStore: objects });
+
+    objects.pauseNextPut();
+    const firstAttempt = firstUploads.upload(first, "baby-a", photo, "image/png", "concurrent-source-conflict", source("account:group-a", "loser"));
+    await objects.startedPut();
+    const winner = await secondUploads.upload(second, "baby-a", photo, "image/png", "concurrent-source-conflict", winnerSource);
+    objects.finishPut();
+    await expect(firstAttempt).rejects.toMatchObject({ status: 409, code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
+
+    const stored = await store.transaction(req => new RecordsRepository(store.payload)
+      .get<Record<string, unknown>>("care-attachments", "baby-a", winner.id, req));
+    expect(stored).toMatchObject({ id: winner.id, source: winnerSource, createdAt: new Date(secondTime).toISOString(), actor: { sessionId: second.sessionId } });
+  }, 30_000);
+
   it("recovers a committed upload receipt only with exact provenance and advertises repair metadata", async () => {
     const exact = source("account:group-a");
     const uploaded = await attachments.upload(collectorA, "baby-a", photo, "image/png", "receipt-retry", exact);
