@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createCipheriv, createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,26 +18,26 @@ const sourceMessage = (sourceId: string): SourceMessage => ({
   media: [{ sourceId, kind: "image", state: "unresolved", reason: "EXACT_PATH_REQUIRED" }],
 });
 
-// A fixed xorshift stream makes every large fixture reproducible without using
-// a real child image or OS-dependent randomness.
+// Encrypting a native zero buffer with a seeded AES-CTR keystream gives every
+// fixture reproducible synthetic noise without real image data or per-pixel JS.
+function deterministicNoise(length: number, seed: string) {
+  const key = createHash("sha256").update(seed).digest();
+  const cipher = createCipheriv("aes-256-ctr", key, key.subarray(0, 16));
+  const bytes = cipher.update(Buffer.alloc(length));
+  cipher.final();
+  return bytes;
+}
+
 async function syntheticPng(width: number, height: number, alpha: "opaque" | "mixed" | "opaque-alpha") {
-  const channels = alpha === "opaque" ? 3 : 4;
-  const pixels = Buffer.allocUnsafe(width * height * channels);
-  let state = 0x12345678;
-  const next = () => {
-    state = (state ^ (state << 13)) >>> 0;
-    state = (state ^ (state >>> 17)) >>> 0;
-    state = (state ^ (state << 5)) >>> 0;
-    return state;
-  };
-  for (let pixel = 0; pixel < width * height; pixel++) {
-    const offset = pixel * channels;
-    pixels[offset] = next();
-    pixels[offset + 1] = next();
-    pixels[offset + 2] = next();
-    if (channels === 4) pixels[offset + 3] = alpha === "opaque-alpha" ? 255 : pixel % 7 === 0 ? 128 : 255;
+  const pixelCount = width * height;
+  const rgb = deterministicNoise(pixelCount * 3, `${width}x${height}:${alpha}`);
+  let image = sharp(rgb, { raw: { width, height, channels: 3 } });
+  if (alpha !== "opaque") {
+    const alphaChannel = alpha === "opaque-alpha" ? Buffer.alloc(pixelCount, 255) : deterministicNoise(pixelCount, `${width}x${height}:mixed-alpha`);
+    if (alpha === "mixed") alphaChannel[0] = 128;
+    image = image.joinChannel(alphaChannel, { raw: { width, height, channels: 1 } });
   }
-  return sharp(pixels, { raw: { width, height, channels } }).png({ compressionLevel: 9 }).toBuffer();
+  return image.png({ compressionLevel: alpha === "opaque" ? 1 : 0 }).toBuffer();
 }
 const sha256 = (bytes: Buffer) => createHash("sha256").update(bytes).digest("hex");
 
@@ -62,23 +62,31 @@ describe("collector media transport optimization", () => {
   });
 
   it("keeps a large non-opaque PNG byte-for-byte", async () => {
-    const root = await temp(), original = await syntheticPng(1200, 1000, "mixed"), file = path.join(root, "transparent.png");
+    const root = await temp(), original = await syntheticPng(640, 416, "mixed"), file = path.join(root, "transparent.png");
     await writeFile(file, original);
     expect(original.length).toBeGreaterThan(1024 * 1024);
     const message = sourceMessage("nonopaque-png");
     const result = await new ExactLocalMediaResolver({ roots: [root], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: sha256(original) }] }).resolve(message, 0);
-    expect(result).toEqual({ available: true, bytes: original, mime: "image/png" });
-    expect(await readFile(file)).toEqual(original);
+    expect(result.available).toBe(true);
+    if (!result.available) throw new Error(result.reason);
+    expect(result.bytes.equals(original)).toBe(true);
+    expect(result.mime).toBe("image/png");
+    expect(await sharp(original).metadata()).toMatchObject({ format: "png", width: 640, height: 416, hasAlpha: true });
+    expect((await readFile(file)).equals(original)).toBe(true);
   }, 20_000);
 
   it("keeps a large all-opaque RGBA PNG byte-for-byte", async () => {
-    const root = await temp(), original = await syntheticPng(1200, 1000, "opaque-alpha"), file = path.join(root, "opaque-alpha.png");
+    const root = await temp(), original = await syntheticPng(640, 416, "opaque-alpha"), file = path.join(root, "opaque-alpha.png");
     await writeFile(file, original);
     expect(original.length).toBeGreaterThan(1024 * 1024);
     const message = sourceMessage("opaque-alpha-png");
     const result = await new ExactLocalMediaResolver({ roots: [root], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: sha256(original) }] }).resolve(message, 0);
-    expect(result).toEqual({ available: true, bytes: original, mime: "image/png" });
-    expect(await readFile(file)).toEqual(original);
+    expect(result.available).toBe(true);
+    if (!result.available) throw new Error(result.reason);
+    expect(result.bytes.equals(original)).toBe(true);
+    expect(result.mime).toBe("image/png");
+    expect(await sharp(original).metadata()).toMatchObject({ format: "png", width: 640, height: 416, hasAlpha: true });
+    expect((await readFile(file)).equals(original)).toBe(true);
   }, 20_000);
 
   it("transports a large opaque noisy PNG as validated geometry-preserving JPEG", async () => {
@@ -90,12 +98,13 @@ describe("collector media transport optimization", () => {
     const result = await new ExactLocalMediaResolver({ roots: [root], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: sha256(original) }] }).resolve(message, 0);
     expect(result.available).toBe(true);
     if (!result.available) throw new Error(result.reason);
+    expect(await sharp(original).metadata()).toMatchObject({ format: "png", width: 2049, height: 1200, hasAlpha: false });
     expect(result.mime).toBe("image/jpeg");
     expect(result.bytes.length).toBeLessThan(original.length);
     await expect(inspectAttachment(result.bytes, result.mime)).resolves.toBe("image/jpeg");
     const metadata = await sharp(result.bytes).metadata();
     expect(metadata).toMatchObject({ format: "jpeg", width: 2048, height: 1199, hasAlpha: false });
-    expect(await readFile(file)).toEqual(original);
+    expect((await readFile(file)).equals(original)).toBe(true);
   }, 20_000);
 
   it("does not alter existing JPEG or WebP transport", async () => {
