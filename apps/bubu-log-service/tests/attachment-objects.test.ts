@@ -211,18 +211,31 @@ describe("attachment OSS object operations", () => {
     expect(client.get).not.toHaveBeenCalled();
     expect(stream.destroyed).toBe(true);
 
-    const oversized = Readable.from([Buffer.from("abc")]);
-    client.getStream.mockResolvedValue({ stream: oversized, res: { headers: { "content-length": "3" } } });
-    await expect(store.get(key, 2)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_STORAGE_UNAVAILABLE" });
-    expect(oversized.destroyed).toBe(true);
+    const declaredOversized = Readable.from([Buffer.from("abc")]);
+    client.getStream.mockResolvedValue({ stream: declaredOversized, res: { headers: { "content-length": "3" } } });
+    await expect(store.get(key, 2)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
+    expect(declaredOversized.destroyed).toBe(true);
   });
 
   it("rejects when streamed content exceeds the caller bound", async () => {
     const { client, store } = makeStore();
-    const stream = Readable.from([Buffer.from("ab"), Buffer.from("c")]);
-    client.getStream.mockResolvedValue({ stream });
-    await expect(store.get(key, 2)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_STORAGE_UNAVAILABLE" });
-    expect(stream.destroyed).toBe(true);
+    const unheadered = Readable.from([Buffer.from("ab"), Buffer.from("c")]);
+    client.getStream.mockResolvedValueOnce({ stream: unheadered });
+    await expect(store.get(key, 2)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
+    expect(unheadered.destroyed).toBe(true);
+
+    const underreported = Readable.from([Buffer.from("ab"), Buffer.from("c")]);
+    client.getStream.mockResolvedValueOnce({ stream: underreported, res: { headers: { "content-length": "2" } } });
+    await expect(store.get(key, 2)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
+    expect(underreported.destroyed).toBe(true);
+  });
+
+  it("keeps an invalid caller bound unavailable rather than repairable corruption", async () => {
+    const { client, store } = makeStore();
+    for (const maxBytes of [-1, 1.5, Number.NaN]) {
+      await expect(store.get(key, maxBytes)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_STORAGE_UNAVAILABLE" });
+    }
+    expect(client.getStream).not.toHaveBeenCalled();
   });
 
   it("sanitizes stream errors", async () => {

@@ -44,12 +44,20 @@ function objectMissing(): AppError {
   return new AppError(404, "ATTACHMENT_OBJECT_MISSING", "照片对象缺失，请重新上传修复。");
 }
 
+function objectCorrupt(): AppError {
+  return new AppError(503, "ATTACHMENT_OBJECT_CORRUPT", "照片暂时不可用，请重试上传或联系运营。");
+}
+
 function unavailable(): never {
   throw storageUnavailable();
 }
 
 function isKnownAttachmentError(error: unknown): error is AppError {
-  return error instanceof AppError && (error.code === "ATTACHMENT_STORAGE_UNAVAILABLE" || error.code === "ATTACHMENT_OBJECT_MISSING");
+  return error instanceof AppError && (
+    error.code === "ATTACHMENT_STORAGE_UNAVAILABLE" ||
+    error.code === "ATTACHMENT_OBJECT_MISSING" ||
+    error.code === "ATTACHMENT_OBJECT_CORRUPT"
+  );
 }
 
 function storageFailure(error: unknown, missingIsAbsent = false): AppError {
@@ -144,7 +152,7 @@ async function readBoundedStream(stream: ReadableLike, maxBytes: number): Promis
       if (!Buffer.isBuffer(value) && !(value instanceof Uint8Array)) throw storageUnavailable();
       const chunk = Buffer.from(value);
       total += chunk.length;
-      if (total > maxBytes) throw storageUnavailable();
+      if (total > maxBytes) throw objectCorrupt();
       chunks.push(chunk);
     }
     return Buffer.concat(chunks);
@@ -192,7 +200,7 @@ function createStore(rootPrefix: string, client: OssClient): AttachmentObjectSto
         stream = returnedStream;
         const headers = result.res?.headers as Record<string, unknown> | undefined;
         const declaredLength = contentLength(headers?.["content-length"] ?? headers?.["Content-Length"]);
-        if (declaredLength !== undefined && declaredLength > maxBytes) unavailable();
+        if (declaredLength !== undefined && declaredLength > maxBytes) throw objectCorrupt();
         return await Promise.race([readBoundedStream(stream, maxBytes), deadline.expiration]);
       } catch (error) {
         stream?.destroy?.();

@@ -139,7 +139,11 @@ export class AttachmentService {
     try {
       bytes = await this.objectStore!.get(key, this.maxBytes);
     } catch (error) {
-      if (error instanceof AppError && (error.code === "ATTACHMENT_OBJECT_MISSING" || error.code === "ATTACHMENT_STORAGE_UNAVAILABLE")) throw error;
+      if (error instanceof AppError && (
+        error.code === "ATTACHMENT_OBJECT_MISSING" ||
+        error.code === "ATTACHMENT_STORAGE_UNAVAILABLE" ||
+        error.code === "ATTACHMENT_OBJECT_CORRUPT"
+      )) throw error;
       return fail(503, "ATTACHMENT_STORAGE_UNAVAILABLE", "附件存储暂不可用，请稍后重试。");
     }
     if (bytes.byteLength !== value.byteLength || bytes.byteLength > this.maxBytes || checksum(bytes) !== value.sha256) {

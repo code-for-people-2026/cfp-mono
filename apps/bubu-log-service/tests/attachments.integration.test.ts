@@ -29,7 +29,7 @@ class MemoryObjectStore implements AttachmentObjectStore {
     if (this.getFailure) throw this.getFailure;
     const bytes = this.objects.get(key);
     if (!bytes) throw new AppError(503, "ATTACHMENT_OBJECT_MISSING", "synthetic missing object");
-    if (bytes.byteLength > maxBytes) throw new Error("synthetic remote oversized object");
+    if (bytes.byteLength > maxBytes) throw new AppError(503, "ATTACHMENT_OBJECT_CORRUPT", "synthetic remote oversized object");
     return Buffer.from(bytes);
   }
   async remove(key: string): Promise<void> { this.objects.delete(key); this.removals++; }
@@ -429,14 +429,24 @@ describe("private attachments use the shared durable identity boundary", () => {
 
   it("distinguishes remote corruption and transient remote unavailability in repair receipts", async () => {
     const objects = new MemoryObjectStore();
-    const remote = new AttachmentService(identity, { directory, objectStore: objects });
+    const remote = new AttachmentService(identity, { directory, objectStore: objects, maxBytes: photo.length });
     const uploaded = await remote.upload(bob, "baby-b", photo, "image/png", "remote-storage-errors");
     const key = `${hash("baby-b")}/${uploaded.sha256}`;
-    objects.objects.set(key, Buffer.alloc(photo.length, 7));
-    await expect(remote.read(bob, "baby-b", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
-    expect(await remote.recoverUpload(bob, "baby-b", "remote-storage-errors")).toMatchObject({
-      state: "needsRepair", requestFingerprint: hash([uploaded.sha256, uploaded.mime, undefined]),
-    });
+
+    for (const corrupted of [Buffer.alloc(photo.length, 7), Buffer.concat([photo, Buffer.from([7])])]) {
+      objects.objects.set(key, corrupted);
+      await expect(remote.read(bob, "baby-b", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
+      expect(await remote.recoverUpload(bob, "baby-b", "remote-storage-errors")).toEqual({
+        state: "needsRepair", id: uploaded.id, mime: uploaded.mime, sha256: uploaded.sha256,
+        requestFingerprint: hash([uploaded.sha256, uploaded.mime, undefined]),
+      });
+      const repaired = await remote.upload(bob, "baby-b", photo, "image/png", "remote-storage-errors");
+      expect(repaired.id).toBe(uploaded.id);
+      expect(objects.objects.get(key)).toEqual(photo);
+      expect(await remote.recoverUpload(bob, "baby-b", "remote-storage-errors")).toMatchObject({
+        state: "verified", attachment: uploaded,
+      });
+    }
 
     objects.getFailure = new AppError(503, "ATTACHMENT_STORAGE_UNAVAILABLE", "synthetic transient remote failure");
     await expect(remote.read(bob, "baby-b", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_STORAGE_UNAVAILABLE" });
