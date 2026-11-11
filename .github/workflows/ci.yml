@@ -75,46 +75,85 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # GitHub's ubuntu-24.04 image can list the Azure Ubuntu mirror first. If its
-      # DNS is unavailable, Playwright's --with-deps install stalls. Drop only that
-      # ephemeral entry; the official archive and security mirrors stay in place.
-      - name: Drop unreachable Azure apt mirror for Playwright (PR only)
+      # GitHub's ubuntu-24.04 image can list an Ubuntu mirror whose DNS is unavailable.
+      # Prefer the official archive when reachable, and otherwise use kernel.org's
+      # fixed Ubuntu mirror. Apt continues to verify Ubuntu's signed indexes/packages.
+      - name: Prepare Ubuntu apt mirror for Playwright (PR only)
         if: github.event_name == 'pull_request'
+        timeout-minutes: 2
         run: |
           set -euo pipefail
           mirrors=/etc/apt/apt-mirrors.txt
-          if [[ ! -f "$mirrors" ]]; then
-            echo 'No apt mirror list; nothing to do.'
+
+          if curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 15 \
+            --connect-timeout 5 \
+            --output /dev/null \
+            https://archive.ubuntu.com/ubuntu/dists/noble/InRelease; then
+            if [[ ! -f "$mirrors" ]]; then
+              echo 'Official Ubuntu archive is reachable; no apt mirror list needs changing.'
+              exit 0
+            fi
+
+            tmp="$(mktemp)"
+            trap 'rm -f "$tmp"' EXIT
+            mode="$(stat -c '%a' "$mirrors")"
+            awk '!/azure\.archive\.ubuntu\.com/' "$mirrors" > "$tmp"
+            if cmp -s "$mirrors" "$tmp"; then
+              echo 'Azure Ubuntu mirror is not configured; official archive is reachable.'
+              exit 0
+            fi
+            if [[ ! -s "$tmp" ]]; then
+              echo 'Refusing to empty the apt mirror list.' >&2
+              exit 1
+            fi
+            # Blank lines and comments are not usable mirrors: require a remaining
+            # official Ubuntu HTTPS entry (trailing slash and metadata allowed).
+            if ! grep -Eq '^[[:space:]]*https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)' "$tmp"; then
+              echo 'Refusing to replace the apt mirror list without an official Ubuntu HTTPS mirror.' >&2
+              exit 1
+            fi
+            sudo cp -- "$tmp" "$mirrors"
+            sudo chmod "$mode" "$mirrors"
+            echo 'Removed the Azure Ubuntu mirror; official Ubuntu mirrors remain configured.'
             exit 0
+          fi
+
+          echo 'Official Ubuntu archive is unreachable; probing the kernel.org Ubuntu mirror.' >&2
+          if ! curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 30 \
+            --connect-timeout 5 \
+            --output /dev/null \
+            https://mirrors.edge.kernel.org/ubuntu/dists/noble/InRelease; then
+            echo 'Trusted Ubuntu mirror fallback is also unreachable.' >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$mirrors" ]]; then
+            echo 'Expected apt mirror list does not exist; refusing to configure the fallback.' >&2
+            exit 1
           fi
           tmp="$(mktemp)"
           trap 'rm -f "$tmp"' EXIT
-          awk '!/azure\.archive\.ubuntu\.com/' "$mirrors" > "$tmp"
-          if cmp -s "$mirrors" "$tmp"; then
-            echo 'Azure Ubuntu mirror is not configured; nothing to do.'
-            exit 0
-          fi
-          if [[ ! -s "$tmp" ]]; then
-            echo 'Refusing to empty the apt mirror list.' >&2
-            exit 1
-          fi
-          # Blank lines and comments are not usable mirrors: require a remaining
-          # official Ubuntu HTTPS entry (trailing slash and metadata allowed).
-          if ! grep -Eq '^[[:space:]]*https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)' "$tmp"; then
-            echo 'Refusing to replace the apt mirror list without an official Ubuntu HTTPS mirror.' >&2
-            exit 1
-          fi
+          mode="$(stat -c '%a' "$mirrors")"
+          printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' > "$tmp"
           sudo cp -- "$tmp" "$mirrors"
+          sudo chmod "$mode" "$mirrors"
+          echo 'Configured the kernel.org Ubuntu mirror fallback.'
 
-      - name: Install Playwright Chromium and apt dependencies after DNS diagnostics (PR only)
+      - name: Install Playwright Chromium and apt dependencies (PR only)
         if: github.event_name == 'pull_request'
         timeout-minutes: 5
         run: |
           set -euo pipefail
-          echo 'Resolving archive.ubuntu.com over IPv4:'
-          timeout 15s getent ahostsv4 archive.ubuntu.com
-          echo 'Resolving security.ubuntu.com over IPv4:'
-          timeout 15s getent ahostsv4 security.ubuntu.com
           pnpm --filter @cfp/website exec playwright install --with-deps chromium
 
       - name: Verify native SQLite connection lifetime
