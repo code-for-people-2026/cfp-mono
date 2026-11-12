@@ -223,3 +223,29 @@ tests, private evidence and Python caches, including scripts that depend on
 excluded fixtures. Production worker, privacy-maintenance and type-generation
 scripts remain available. The Docker context check exercises synthetic private
 paths and required runtime files; it never copies personal source material.
+
+### Verification on 2026-11-12
+
+The restored workflow passed 36 deployment tests, shell syntax checks, Docker
+context filtering and the complete privacy-operations regression. The audited
+manifest was reconciled after an isolated rollback check; official retention
+then removed four retired releases (eight containers), without deleting volumes.
+
+`build-preview.sh` rebuilt `preview-20261112-semantic-managed` from the reviewed
+source and hash-verified current static assets. The runtime image is
+1,321,773,901 bytes. Type checking and production compilation passed; an isolated
+image-content check confirmed private-report/fixture paths and compilation
+cache were absent while runtime scripts and H5 remained available. The command
+transport reached its wait limit, but the original locked build continued; its
+image export and automatic cache cleanup were verified before publication. Do
+not replay a timed-out transport request without inspecting its original task.
+
+`release.py` verified the candidate offline, preserved schema and alert state,
+confirmed worker heartbeat advancement, and promoted the app/worker pair. It
+then automatically retired `preview-20261031-retention436-v2` (one image and two
+containers). The protected rollback is `preview-20261111-semantic-privacy`.
+Both the retention service and privacy maintenance completed with exit status
+zero afterward; both timers are enabled. Public readiness returned the new
+release, the retirement queue and deployment journal were empty, and no copied
+smoke mounts or ownership journals remained. Final available disk space was
+about 8.5 GiB, versus 3.4 GiB before recovery; these are point-in-time readings.
