@@ -26,3 +26,17 @@
 # Local state and deployment credentials never belong in an image.
 **/.data
 .codex-tmp
+**/docs
+**/tests
+**/test
+**/evaluations
+**/fixtures
+**/*.test.ts
+**/*.test.tsx
+apps/a-j-oker/scripts/semantic-history*.ts
+apps/a-j-oker/scripts/image-generation-check.ts
+apps/a-j-oker/scripts/artifact-check.ts
+apps/a-j-oker/scripts/operations-check.ts
+**/semantic-routing-evidence
+**/__pycache__
+**/*.pyc
