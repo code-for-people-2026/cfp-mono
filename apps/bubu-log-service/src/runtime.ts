@@ -29,6 +29,7 @@ import { MembershipService } from "./membership/service";
 import { OperationsHealth } from "./operations/health";
 import { ImageReviewService, type ImageReviewer } from "./images/review";
 import { configuredImageReviewer } from "./images/aliyun-review";
+import { configuredAttachmentObjectStore, type AttachmentObjectStore } from "./storage/attachment-objects";
 
 export interface BubuRuntime {
   store: Store;
@@ -58,6 +59,7 @@ interface RuntimeOptions {
   wechat?: WechatProvider;
   provider?: ChatProvider;
   imageReviewer?: ImageReviewer;
+  objectStore?: AttachmentObjectStore;
   privacy?: PrivacyConfig;
   deletionLedger?: string;
   maintenanceWorker?: boolean;
@@ -92,7 +94,9 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const membership = new MembershipService(identity);
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
     const imageReview = new ImageReviewService(privacy, options.imageReviewer || configuredImageReviewer());
-    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview });
+    // Production explicitly refuses the local default; development and test remain local unless OSS is configured.
+    const objectStore = options.objectStore ?? configuredAttachmentObjectStore();
+    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview, ...(objectStore ? { objectStore } : {}) });
     const lifecycle = legacy as typeof legacy & Partial<FamilyLifecycle & AccountLifecycle>;
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined, lifecycle.exportAccountData && lifecycle.deleteAccountData ? lifecycle as AccountLifecycle : undefined);
     const safety = new SafetyService(privacy);

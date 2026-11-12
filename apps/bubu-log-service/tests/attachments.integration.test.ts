@@ -109,7 +109,7 @@ describe("private attachments use the shared durable identity boundary", () => {
   it("detects object corruption without exposing the path and exact retry repairs the object", async () => {
     const uploaded = await attachments.upload(alice, "baby-a", otherPhoto, "image/png", "corrupted-object");
     await writeFile(path.join(directory, "private-attachments", hash("baby-a"), uploaded.sha256), Buffer.alloc(otherPhoto.length));
-    await expect(attachments.read(alice, "baby-a", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_UNAVAILABLE" });
+    await expect(attachments.read(alice, "baby-a", uploaded.id)).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_OBJECT_CORRUPT" });
     await attachments.upload(alice, "baby-a", otherPhoto, "image/png", "corrupted-object");
     expect((await attachments.read(alice, "baby-a", uploaded.id)).bytes).toEqual(otherPhoto);
   });

@@ -1,11 +1,36 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import sharp from "sharp";
 import { readLegacyPhoto, protectLegacyPhotos } from "../src/media";
 import { createHandler } from "../src/http";
+import { AttachmentService, sanitizeAttachment } from "../src/records/attachments";
+import { CollectorService } from "../src/collector/service";
+import { hash } from "../src/records/persistence";
+import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
 import { identityFixture, type IdentityFixture } from "./fixtures/identity";
+import { recordsFixture } from "./fixtures/records";
 
 const photoOrigin = "https://photos.example.test";
 const activity = { id: "activity-1", babyId: "baby-a", type: "DIAPER", poopPhotoUrl: `${photoOrigin}/private-photo.png` };
 const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const makeGate = <T = void>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>(result => { resolve = result; });
+  return { promise, resolve };
+};
+class MemoryAttachmentObjectStore implements AttachmentObjectStore {
+  readonly kind = "oss";
+  readonly objects = new Map<string, Buffer>();
+  readonly reads: string[] = [];
+  async put(key: string, value: Uint8Array) { this.objects.set(key, Buffer.from(value)); }
+  async get(key: string, maxBytes: number) {
+    this.reads.push(key);
+    const value = this.objects.get(key);
+    if (!value || value.length > maxBytes) throw new Error("fixture object unavailable");
+    return value;
+  }
+  async remove(key: string) { this.objects.delete(key); }
+  async *list(): AsyncIterableIterator<{ key: string; lastModified: number }> { yield *[]; }
+}
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("legacy photo URLs exposed through authorized routes", () => {
@@ -113,21 +138,64 @@ describe("media HTTP authorization and errors", () => {
   beforeAll(async () => { fixture = await identityFixture(); }, 30_000);
   afterAll(async () => { await fixture?.close(); });
 
-  it("blocks delegated AI from the old remote URL branch while preserving caregiver and history viewing", async () => {
+  it("blocks delegated AI and collectors from the old remote URL branch while preserving history viewing", async () => {
     const login = await fixture.service.loginLegacy("old-alice", "correct-password", "native");
     const principal = await fixture.service.authenticate(login.token);
     const active = await fixture.service.issueAgent(principal, "baby-a", "chat-agent");
     const history = await fixture.service.issueAgent(principal, "baby-a", "chat-agent", { readOnly: true });
+    const operator = await fixture.service.authenticate((await fixture.service.provisionOperator("media-operator", "baby-a", 60_000)).token);
+    await fixture.service.bindGroup(operator, "baby-a", "account:group-a", "media-collector", true);
+    const collector = await fixture.service.issueAgent(operator, "baby-a", "collector", { groupId: "account:group-a", agentId: "media-collector" });
     vi.spyOn(fixture.service.legacy, "read").mockResolvedValue(activity);
     const fetcher = vi.fn<typeof fetch>(async () => new Response(bytes, { headers: { "Content-Type": "image/png" } }));
     const handler = createHandler(fixture.service, "https://bubu.example.test", { allowedOrigins: [photoOrigin], fetch: fetcher });
     const request = (token: string) => handler(new Request("https://bubu.example.test/api/app/media/activities/activity-1?babyId=baby-a", { headers: { Authorization: `Bearer ${token}` } }));
     const denied = await request(active.token);
     expect(denied.status).toBe(409); expect(await denied.json()).toMatchObject({ code: "IMAGE_REVIEW_REQUIRED" });
+    expect((await request(collector.token)).status).toBe(409);
     expect(fetcher).not.toHaveBeenCalled();
     expect((await request(login.token)).status).toBe(200);
     expect((await request(history.token)).status).toBe(200);
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+
+  it("lets revocation finish while legacy media is paused and returns no image bytes", async () => {
+    const login = await fixture.service.loginLegacy("old-alice", "correct-password", "native");
+    const principal = await fixture.service.authenticate(login.token);
+    vi.spyOn(fixture.service.legacy, "read").mockResolvedValue(activity);
+    const network = makeGate<void>();
+    const fetchStarted = makeGate<void>();
+    const fetcher = vi.fn<typeof fetch>(async () => { fetchStarted.resolve(); await network.promise; return new Response(bytes, { headers: { "Content-Type": "image/png" } }); });
+    const handler = createHandler(fixture.service, "https://bubu.example.test", { allowedOrigins: [photoOrigin], fetch: fetcher });
+    const pending = handler(new Request("https://bubu.example.test/api/app/media/activities/activity-1?babyId=baby-a", { headers: { Authorization: `Bearer ${login.token}` } }));
+    await fetchStarted.promise;
+    await fixture.service.logout(principal);
+    network.resolve();
+    const response = await pending;
+    expect(response.status).toBe(401);
+    expect(await response.clone().json()).toMatchObject({ code: "UNAUTHORIZED" });
+    expect(new Uint8Array(await response.arrayBuffer())).not.toEqual(bytes);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not return the old image when its activity photo changes during a paused read", async () => {
+    const login = await fixture.service.loginLegacy("old-alice", "correct-password", "native");
+    let current = activity;
+    const read = vi.spyOn(fixture.service.legacy, "read").mockImplementation(async () => current);
+    const network = makeGate<void>();
+    const fetchStarted = makeGate<void>();
+    const fetcher = vi.fn<typeof fetch>(async () => { fetchStarted.resolve(); await network.promise; return new Response(bytes, { headers: { "Content-Type": "image/png" } }); });
+    const handler = createHandler(fixture.service, "https://bubu.example.test", { allowedOrigins: [photoOrigin], fetch: fetcher });
+    const pending = handler(new Request("https://bubu.example.test/api/app/media/activities/activity-1?babyId=baby-a", { headers: { Authorization: `Bearer ${login.token}` } }));
+    await fetchStarted.promise;
+    current = { ...activity, poopPhotoUrl: `${photoOrigin}/replacement-photo.png` };
+    network.resolve();
+    const response = await pending;
+    expect(response.status).toBe(409);
+    expect(await response.clone().json()).toMatchObject({ code: "MEDIA_CHANGED_DURING_READ" });
+    expect(new Uint8Array(await response.arrayBuffer())).not.toEqual(bytes);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
   it("uses service authorization, rejects cross-baby access and returns structured media errors", async () => {
@@ -145,6 +213,39 @@ describe("media HTTP authorization and errors", () => {
     expect(await unavailable.json()).toMatchObject({ code: "MEDIA_ORIGIN_NOT_CONFIGURED" });
     expect(fetcher).not.toHaveBeenCalled();
   });
+
+  it("serves an OSS private attachment ID through the public reader with private headers", async () => {
+    const fixture = await recordsFixture();
+    try {
+      const objectStore = new MemoryAttachmentObjectStore();
+      const attachments = new AttachmentService(fixture.identity, { directory: fixture.directory, objectStore });
+      const photo = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#778899" } }).png().toBuffer();
+      const uploaded = await attachments.upload(fixture.alice, "baby-a", photo, "image/png", "media-route-oss");
+      const session = await fixture.identity.loginLegacy("old-alice", "correct-password", "native");
+      const principal = await fixture.identity.authenticate(session.token);
+      const item = { ...activity, poopPhotoUrl: `bubu-attachment:${uploaded.id}` } as unknown as Awaited<ReturnType<typeof fixture.legacy.read>>;
+      vi.spyOn(fixture.legacy, "read").mockResolvedValue(item);
+      const fetcher = vi.fn<typeof fetch>();
+      const read = vi.spyOn(attachments, "read");
+      const collector = new CollectorService(fixture.identity, (...args: Parameters<typeof fixture.records.verifyCollectorReceipt>) => fixture.records.verifyCollectorReceipt(...args));
+      const handler = createHandler(fixture.identity, "https://bubu.example.test", { allowedOrigins: [photoOrigin], fetch: fetcher }, { records: fixture.records, attachments, collector });
+      const response = await handler(new Request("https://bubu.example.test/api/app/media/activities/activity-1?babyId=baby-a", { headers: { Authorization: `Bearer ${session.token}` } }));
+      const expected = await sanitizeAttachment(photo, "image/png");
+      expect(response.status).toBe(200);
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array(expected.bytes));
+      expect(response.headers.get("content-type")).toBe(uploaded.mime);
+      expect(response.headers.get("content-length")).toBe(String(uploaded.byteLength));
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("cross-origin-resource-policy")).toBe("same-origin");
+      expect(response.headers.get("x-baby-id")).toBeNull();
+      expect(read).toHaveBeenCalledWith(principal, "baby-a", uploaded.id);
+      expect(fetcher).not.toHaveBeenCalled();
+      expect(objectStore.reads).toEqual([`${hash("baby-a")}/${uploaded.sha256}`, `${hash("baby-a")}/${uploaded.sha256}`]);
+    } finally {
+      await fixture.close();
+    }
+  }, 30_000);
 });
 
 it("uses an already-authorized private attachment reader without ever fetching its URI", async () => {
