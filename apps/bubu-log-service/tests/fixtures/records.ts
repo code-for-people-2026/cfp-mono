@@ -1,3 +1,4 @@
+import { privacyCollections } from "../../src/privacy/persistence";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -57,7 +58,7 @@ export async function recordsFixture() {
   const directory = await mkdtemp(path.join(tmpdir(), "bubu-records-test-"));
   const legacy = new RecordsLegacyFixture(), wechat = new WechatFixture();
   let now = Date.parse("2026-10-23T12:00:00.000Z");
-  let store: Store = await openStore({ directory, extensions: recordCollections });
+  let store: Store = await openStore({ directory, extensions: [...recordCollections, ...privacyCollections] });
   let identity = new IdentityService(store, legacy, wechat, () => now);
   let attachments = new AttachmentService(identity, { directory });
   let records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
@@ -80,7 +81,7 @@ export async function recordsFixture() {
       legacy.loseWriteResponseOnce = false; legacy.failBeforeWriteOnce = false; legacy.failStatisticsOnce = false;
     },
     async restart() {
-      await store.close(); store = await openStore({ directory, extensions: recordCollections });
+      await store.close(); store = await openStore({ directory, extensions: [...recordCollections, ...privacyCollections] });
       identity = new IdentityService(store, legacy, wechat, () => now);
       attachments = new AttachmentService(identity, { directory });
       records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
