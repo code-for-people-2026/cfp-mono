@@ -125,8 +125,10 @@ class RetentionTests(unittest.TestCase):
                 next(c for c in rows if c['Id'] == args[-1])['State']['Status'] = 'exited'
             if args[0] == 'rename':
                 next(c for c in rows if c['Id'] == args[1])['Name'] = '/' + args[2]
+            if args[0] == 'start':
+                next(c for c in rows if c['Id'] == args[1])['State']['Status'] = 'running'
             return ''
-        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup_policy'), patch.object(release, 'backup', return_value={}), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=RuntimeError('candidate create failed')):
+        with tempfile.TemporaryDirectory() as tmp, patch.object(r, 'inventory', side_effect=lambda: copy.deepcopy(rows)), patch.object(r, 'ready'), patch.object(r, 'docker', side_effect=docker), patch.object(release.shutil, 'disk_usage', return_value=type('Disk', (), {'free': 10 * 1024 ** 3})()), patch.object(release, 'backup_policy'), patch.object(release, 'backup', return_value={}), patch.object(release, 'database_state', return_value={}), patch.object(release, 'check_worker', return_value=True), patch.object(release.verify_runtime, 'verify'), patch.object(release, 'create', side_effect=RuntimeError('candidate create failed')):
             root = Path(tmp); r.save(root / 'retention.json', state)
             with self.assertRaisesRegex(RuntimeError, 'candidate create failed'):
                 release.deploy('preview-new', root)

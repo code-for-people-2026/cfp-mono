@@ -29,7 +29,13 @@ import { FORGET_CONTEXT_GUIDANCE } from "./context-policy";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
 import { artifactsSchema, validateForm } from "@cfp/base-chat-protocol";
-import { assertImageGenerationReview, interactionAssessmentSchema, type Moderator } from "./moderation";
+import {
+  assertImageGenerationReview,
+  interactionAssessmentSchema,
+  semanticModerationRejection,
+  type Moderator,
+  type SemanticModerationRejection,
+} from "./moderation";
 import { operationalModerator } from "../operations/moderation";
 import { assertGenerationAllowed, assertMediaAllowed } from "../operations/enforcement";
 import { configuredImageReviewer, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
@@ -48,6 +54,7 @@ const requiredInputReviewSchema = z.object({
   serviceScope: z.enum(["support", "outside", "unclear"]),
   interaction: interactionAssessmentSchema,
 });
+const serviceScopeSchema = requiredInputReviewSchema.shape.serviceScope;
 const requiredOutputReviewSchema = z.object({
   serviceScope: z.enum(["support", "outside", "unclear"]),
 });
@@ -193,17 +200,41 @@ export class GreetingService {
     // semantic interaction flags. There is intentionally no keyword fallback.
     const moderationContext = JSON.stringify(await new ContextService(this.repo)
       .reviewContext(sessionId));
-    const review = await this.moderate({
-      stage: "input", serviceScope: true, interaction: true, mode,
-      texts: [input.text ?? ""], context: moderationContext, requestId: requestKey,
-      sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
-    });
-    const semanticReview = requiredInputReviewSchema.safeParse(review);
-    if (!semanticReview.success) throw new ContentReviewError(503, "互动安全判断暂未完成，请稍后重试");
-    const { serviceScope, interaction } = semanticReview.data;
+    let review: void | Awaited<ReturnType<Moderator>>;
+    let rejection: SemanticModerationRejection | undefined;
+    try {
+      review = await this.moderate({
+        stage: "input", serviceScope: true, interaction: true, mode,
+        texts: [input.text ?? ""], context: moderationContext, requestId: requestKey,
+        sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
+      });
+    } catch (error) {
+      rejection = semanticModerationRejection(error);
+      if (!rejection) throw error;
+      review = rejection.semanticVerdict;
+    }
+    let serviceScope: z.infer<typeof serviceScopeSchema> | undefined;
+    let interaction: z.infer<typeof interactionAssessmentSchema>;
+    if (rejection) {
+      // Content rejection may omit the optional product-scope field. The seven
+      // interaction booleans, when supplied, still describe the same current
+      // input and must remain independently actionable.
+      const assessed = interactionAssessmentSchema.safeParse(rejection.semanticVerdict.interaction);
+      if (!assessed.success) throw rejection;
+      interaction = assessed.data;
+      const scoped = serviceScopeSchema.safeParse(rejection.semanticVerdict.serviceScope);
+      serviceScope = scoped.success ? scoped.data : undefined;
+    } else {
+      const semanticReview = requiredInputReviewSchema.safeParse(review);
+      if (!semanticReview.success) throw new ContentReviewError(503, "互动安全判断暂未完成，请稍后重试");
+      ({ serviceScope, interaction } = semanticReview.data);
+    }
     // Safety and account-protection actions take precedence over product scope.
     let guidance = await new InteractionService(this.repo.payload, this.repo.owner)
       .inspectInput(input.text ?? "", sessionId, requestKey, interaction);
+    // Only a completed interaction action may replace the refusal surface. A
+    // rejected request with no actionable flag remains rejected.
+    if (rejection && !guidance) throw rejection;
     let serviceGuidance = false;
     if (!guidance) {
       if (serviceScope === "outside" || serviceScope === "unclear") {

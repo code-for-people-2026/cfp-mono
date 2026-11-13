@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { completeDeepSeek } from "../models/deepseek";
-import { evaluateText, interactionAssessmentSchema, moderateText } from "./moderation";
+import { evaluateText, interactionAssessmentSchema, moderateText, ModerationRejectionError } from "./moderation";
 import { createKeywordMatcher, textLeaves } from "./keyword-matcher";
 import lexicon from "../moderation/lexicon";
 import { defaultRule } from "../operations/policy";
+import { ContentPendingReviewError, ContentReviewError } from "./contracts";
 
 vi.mock("../models/deepseek", async (importOriginal) => ({ ...await importOriginal<typeof import("../models/deepseek")>(), DEFAULT_MODEL: "deepseek-flash", completeDeepSeek: vi.fn() }));
 const complete = vi.mocked(completeDeepSeek);
@@ -99,6 +100,27 @@ describe("命中后的语境复核", () => {
     expect(interactionAssessmentSchema.safeParse({ ...assessment, crisis: undefined }).success).toBe(false);
     expect(interactionAssessmentSchema.safeParse({ ...assessment, productHelp: true }).success).toBe(false);
     expect(interactionAssessmentSchema.safeParse({ ...assessment, crisis: "false" }).success).toBe(false);
+  });
+  it.each(["block", "uncertain"] as const)("内容拒绝保留同一响应中的有效互动标志：%s", async decision => {
+    const interaction = { minor: true, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+    answer(JSON.stringify({ decision, service_scope: "support", interaction }));
+    const error = await moderateText({ ...request, serviceScope: true, interaction: true }).then(() => { throw new Error("rejected content must not resolve"); }, (value: unknown) => value);
+    if (decision === "block") {
+      expect(error).toBeInstanceOf(ModerationRejectionError);
+      expect(error).not.toBeInstanceOf(ContentPendingReviewError);
+    } else {
+      expect(error).toBeInstanceOf(ContentPendingReviewError);
+      expect(error).not.toBeInstanceOf(ModerationRejectionError);
+    }
+    expect((error as ModerationRejectionError).semanticVerdict).toEqual({ serviceScope: "support", interaction });
+    expect(error).toMatchObject({ status: decision === "block" ? 422 : 409 });
+  });
+  it("互动响应无效时不构造可信拒绝标志", async () => {
+    answer('{"decision":"block","interaction":{"minor":"yes"}}');
+    const error = await moderateText({ ...request, serviceScope: true, interaction: true }).then(() => { throw new Error("invalid review must not resolve"); }, (value: unknown) => value);
+    expect(error).toBeInstanceOf(ContentReviewError);
+    expect(error).not.toBeInstanceOf(ModerationRejectionError);
+    expect(error).toMatchObject({ status: 503 });
   });
   it.each([
     ['{"decision":"allow","service_scope":"support"}'],

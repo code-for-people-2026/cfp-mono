@@ -49,7 +49,7 @@
     "alerts:feishu": "tsx scripts/feishu-alerts.ts",
     "test:images:live": "tsx scripts/image-generation-live.ts",
     "test:profile": "tsx scripts/profile-check.ts",
-    "test:interaction": "tsx scripts/semantic-history-check.ts && tsx scripts/interaction-check.ts && tsx scripts/product-guidance-check.ts"
+    "test:interaction": "tsx scripts/semantic-history-check.ts && tsx scripts/interaction-check.ts && tsx scripts/moderation-semantic-preservation-check.ts && tsx scripts/product-guidance-check.ts"
   },
   "dependencies": {
     "@ag-ui/core": "1.0.2",

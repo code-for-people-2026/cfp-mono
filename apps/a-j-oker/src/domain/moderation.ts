@@ -27,6 +27,26 @@ export type ModerationVerdict = {
   serviceScope?: "support" | "outside" | "unclear";
   interaction?: InteractionAssessment;
 };
+/**
+ * A completed content rejection whose semantic fields were produced and
+ * validated by the same reviewer response. Callers may use these fields for
+ * independent protective actions, but must still refuse the content itself.
+ */
+export class ModerationRejectionError extends ContentReviewError {
+  constructor(error: ContentReviewError, readonly semanticVerdict: ModerationVerdict) {
+    super(error.status, error.message);
+  }
+}
+/** A pending-review rejection carrying the same validated semantic assessment. */
+export class ModerationPendingReviewError extends ContentPendingReviewError {
+  constructor(error: ContentPendingReviewError, readonly semanticVerdict: ModerationVerdict) {
+    super(error.message);
+  }
+}
+export type SemanticModerationRejection = ModerationRejectionError | ModerationPendingReviewError;
+export function semanticModerationRejection(error: unknown): SemanticModerationRejection | undefined {
+  return error instanceof ModerationRejectionError || error instanceof ModerationPendingReviewError ? error : undefined;
+}
 export const requiredImageGenerationReviewSchema = z.object({
   serviceScope: z.enum(["support", "outside", "unclear"]),
   interaction: interactionAssessmentSchema,
@@ -117,10 +137,14 @@ export const moderateText: Moderator = async (request) => {
   const verdict = await evaluateText(request);
   if (verdict.decision === "not_reviewed") return;
   console.info(JSON.stringify({ event: "hello_content_review", version: lexicon.version, stage: request.stage, requestId: request.requestId, keywordCount: verdict.keywordCount, decision: verdict.decision, ...(verdict.interaction ? { interaction: verdict.interaction } : {}) }));
-  if (verdict.decision === "uncertain") throw new ContentPendingReviewError();
+  const semanticVerdict = {
+    ...(verdict.serviceScope ? { serviceScope: verdict.serviceScope } : {}),
+    ...(verdict.interaction ? { interaction: verdict.interaction } : {}),
+  };
+  if (verdict.decision === "uncertain") throw new ModerationPendingReviewError(new ContentPendingReviewError(), semanticVerdict);
   if (verdict.decision === "unavailable") throw new ContentReviewError(503, "内容审核暂未完成，请稍后重试");
-  if (verdict.decision === "block") throw new ContentReviewError(422, request.stage === "input"
+  if (verdict.decision === "block") throw new ModerationRejectionError(new ContentReviewError(422, request.stage === "input"
     ? "这条请求涉及不适合提供的内容，可以换一种方式描述你需要的帮助"
-    : "这次回应未通过内容审核，请重新尝试");
+    : "这次回应未通过内容审核，请重新尝试"), semanticVerdict);
   if (verdict.serviceScope || verdict.interaction) return { ...(verdict.serviceScope ? { serviceScope: verdict.serviceScope } : {}), ...(verdict.interaction ? { interaction: verdict.interaction } : {}) };
 };
