@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
-import { fileURLToPath, URL } from "node:url";
+import { appRoot, profile } from "./weapp-artifact.mjs";
 
 // Taro 构建不执行微信的原生样式编译；上传前单独检查实际产物。
 const compiler =
@@ -15,7 +15,7 @@ if (!existsSync(compiler)) {
     "缺少微信样式编译器，请安装开发者工具或设置 BUBU_WXSS_COMPILER；不能跳过后声称校验通过。",
   );
 }
-const root = fileURLToPath(new URL("../dist/weapp/", import.meta.url));
+const root = path.join(appRoot, profile(process.argv[2] || "development").outputRoot);
 function styles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name);

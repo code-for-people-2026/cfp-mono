@@ -4,17 +4,22 @@
   "private": true,
   "scripts": {
     "build": "pnpm build:weapp && pnpm build:h5",
-    "build:weapp": "taro build --type weapp",
+    "build:weapp": "node scripts/build-weapp.mjs development",
+    "build:weapp:development": "node scripts/build-weapp.mjs development",
+    "build:weapp:experience": "node scripts/build-weapp.mjs experience",
     "build:h5": "taro build --type h5",
-    "dev:weapp": "taro build --type weapp --watch",
+    "dev:weapp": "node scripts/build-weapp.mjs development --watch",
     "dev:h5": "taro build --type h5 --watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
+    "test": "pnpm test:environment && vitest run",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:chat-live": "playwright test --config playwright.chat-live.config.ts",
-    "test:wxss": "node scripts/check-wxss.mjs"
+    "test:wxss": "node scripts/check-wxss.mjs development",
+    "test:wxss:experience": "node scripts/check-wxss.mjs experience",
+    "upload:experience": "node scripts/upload-experience.mjs",
+    "test:environment": "node --test scripts/environment.test.mjs"
   },
   "dependencies": {
     "@tarojs/components": "4.2.0",
