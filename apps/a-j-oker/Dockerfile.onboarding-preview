@@ -1,0 +1,19 @@
+# Build context: a tracked-source archive under overlay/ (never .env or .data).
+# Explicitly supply a rebuilt preview image; never inherit the pre-security-release default.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE} AS runtime
+RUN node -e "const [major,minor,patch]=process.versions.node.split('.').map(Number);if(major!==24 || minor<22 || (minor===22 && patch<1))throw Error('Node.js 24.22.1+ within 24.x is required; rebuild the preview base image');console.log(process.version)"
+# Start a fresh layer chain; the long-lived preview base is near Docker’s layer limit.
+FROM scratch
+COPY --from=runtime / /
+USER root
+COPY --chown=node:node overlay/ /release/
+# One dependency added to the inherited runtime; verify the exact lockfile archive.
+COPY vendor/unique-names-generator-4.7.1.tgz /tmp/profile-dependency.tgz
+RUN node -e "const fs=require('node:fs'),c=require('node:crypto');if(c.createHash('sha512').update(fs.readFileSync('/tmp/profile-dependency.tgz')).digest('base64')!=='lMx9dX+KRmG8sq6gulYYpKWZc9RlGsgBR6aoO8Qsm3qvkSJ+3rAymr+TnV8EDMrIrwuFJ4kruzMWM/OpYzPoow==')throw Error('Dependency integrity mismatch')" && mkdir -p /release/apps/a-j-oker/node_modules/unique-names-generator && tar -xzf /tmp/profile-dependency.tgz --strip-components=1 -C /release/apps/a-j-oker/node_modules/unique-names-generator && rm /tmp/profile-dependency.tgz
+WORKDIR /release/apps/a-j-oker
+USER node
+ENV NODE_ENV=production
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=4 CMD node -e "fetch('http://127.0.0.1:3310/api/ready').then(async r=>{if(!r.ok||!['login-and-birthday','login-and-age'].includes((await r.json()).scope))process.exit(1)}).catch(()=>process.exit(1))"
+ENTRYPOINT ["node"]
+CMD ["node_modules/tsx/dist/cli.mjs", "scripts/onboarding-preview.ts"]
