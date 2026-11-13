@@ -30,11 +30,11 @@ export function CompactCard({
   external?: boolean;
   generatedTitle?: boolean;
 }) {
-  const { renderIcon } = useArtifactUi();
+  const { labels, renderIcon } = useArtifactUi();
   return (
     <Button
       className="control artifact-preview"
-      ariaLabel={`查看${title}`}
+      ariaLabel={labels.previewCardAriaLabel(title)}
       onClick={onClick}
       data-ai-external={external ? "true" : "false"}
     >
@@ -97,19 +97,22 @@ export function ArtifactPreview({
     ? sending
       ? labels.submitting
       : submitted
-        ? "已完成 · 查看填写"
+        ? labels.previewFormSubmitted()
         : error
-          ? "未提交 · 点开重试"
-          : `${fields.length === 1 ? "简单问答" : `${fields.length} 个问题`} · ${filled ? `已填 ${filled} 项` : "点开填写"}`
+          ? labels.previewFormError()
+          : labels.previewFormProgress({
+              fieldCount: fields.length,
+              filledCount: filled,
+            })
     : image
-      ? "图片 · 点开查看"
+      ? labels.previewImage()
       : table
-        ? `表格 · ${table.rows.length} 行`
+        ? labels.previewTable(table.rows.length)
         : page
-          ? `阅读 · ${page.page.sections.length} 个部分`
+          ? labels.previewPage(page.page.sections.length)
           : code
-            ? `代码 · ${code.code.language} · 只读`
-            : "小卡片 · 点开查看";
+            ? labels.previewCode(code.code.language)
+            : labels.previewFallback();
   useEffect(() => {
     if (submitted) setOpen(false);
   }, [submitted]);

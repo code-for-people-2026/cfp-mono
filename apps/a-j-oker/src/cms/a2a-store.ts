@@ -276,6 +276,11 @@ type Reservation = {
   scope: Scope;
 };
 
+export interface A2ACompletedTaskRecoveryInput {
+  scope: Scope;
+  requestIdentity: string;
+}
+
 export class PayloadA2ARequestLedger implements A2ARequestLedger {
   private readonly reservations = new Map<string, Reservation>();
 
@@ -402,6 +407,41 @@ export class PayloadA2ARequestLedger implements A2ARequestLedger {
     }
   }
 
+  /**
+   * Host-owned completed-result recovery join. The ledger owns the stable
+   * request identity and the task collection owns the durable snapshot; this
+   * method does not relax same-ID/different-fingerprint request rejection.
+   */
+  async recoverCompletedTask(
+    input: A2ACompletedTaskRecoveryInput,
+  ): Promise<Task | undefined> {
+    const row = await this.find(input.scope, scopeKey(
+      input.scope,
+      input.requestIdentity,
+    ));
+    if (!row || row.status !== "recorded" || !row.taskId || !row.contextId) {
+      return undefined;
+    }
+    const result = await this.payload.find({
+      collection: "a2a-execution-tasks",
+      ...this.options(input.scope),
+      where: scopeWhere(input.scope, {
+        and: [
+          { taskId: { equals: row.taskId } },
+          { contextId: { equals: row.contextId } },
+        ],
+      }),
+      limit: 1,
+    });
+    const task = result.docs[0]?.snapshot;
+    if (!task || task.id !== row.taskId || task.contextId !== row.contextId) {
+      return undefined;
+    }
+    return task.status?.state === TASK_STATE.COMPLETED
+      ? structuredClone(task)
+      : undefined;
+  }
+
   private async find(scope: Scope, key: string) {
     const result = await this.payload.find({
       collection: "a2a-request-ledgers",
@@ -430,8 +470,11 @@ export class PayloadA2ARequestLedger implements A2ARequestLedger {
 }
 
 export function createPayloadA2AStorage(repo: Repository, tenant: string) {
+  const requestLedger = new PayloadA2ARequestLedger(repo.payload, repo.owner.id, tenant);
   return {
     taskStore: new PayloadA2ATaskStore(repo.payload, repo.owner.id, tenant),
-    requestLedger: new PayloadA2ARequestLedger(repo.payload, repo.owner.id, tenant),
+    requestLedger,
+    recoverCompletedTask: (input: A2ACompletedTaskRecoveryInput) =>
+      requestLedger.recoverCompletedTask(input),
   };
 }

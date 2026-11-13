@@ -57,14 +57,22 @@ interface Inspection<TResult> {
   result?: TResult;
 }
 
+interface Operation<TScope extends string | number> {
+  epoch: number;
+  scope: TScope;
+}
+
 export function createRecoverableSubmitController<
   TScope extends string | number,
   TRequest,
   TResult,
 >(config: RecoverableSubmitConfig<TScope, TRequest, TResult>) {
   const pending = new Map<TScope, StoredSubmission<TScope, TRequest>>();
-  let inFlight = false;
+  let activeOperation: Operation<TScope> | undefined;
   let epoch = 0;
+
+  const isCurrent = (operation: Operation<TScope>) =>
+    activeOperation === operation && operation.epoch === epoch;
 
   const inspect = async (
     submission: RecoverableSubmission<TScope, TRequest>,
@@ -83,11 +91,12 @@ export function createRecoverableSubmitController<
     }
   };
   const completed = (
-    scope: TScope,
+    operation: Operation<TScope>,
     result: TResult,
     recovered: boolean,
   ): RecoverableSubmitOutcome<TResult> => {
-    pending.delete(scope);
+    if (!isCurrent(operation)) return { type: "stale" };
+    pending.delete(operation.scope);
     return { type: "completed", result, recovered };
   };
   const failed = (
@@ -102,12 +111,12 @@ export function createRecoverableSubmitController<
   const recover = async (
     submission: StoredSubmission<TScope, TRequest>,
     error: unknown,
-    epochAtStart: number,
+    operation: Operation<TScope>,
   ): Promise<RecoverableSubmitOutcome<TResult>> => {
     const inspection = await safeInspect(submission);
-    if (epoch !== epochAtStart) return { type: "stale" };
+    if (!isCurrent(operation)) return { type: "stale" };
     if (inspection.status === "completed" && inspection.result !== undefined)
-      return completed(submission.scope, inspection.result, true);
+      return completed(operation, inspection.result, true);
     if (inspection.status === "failed")
       pending.delete(submission.scope);
     return failed(error, inspection.status);
@@ -129,14 +138,17 @@ export function createRecoverableSubmitController<
     reset() {
       epoch++;
       pending.clear();
+      // Detach unresolved operations from the new identity scope. Their late
+      // results and lock releases cannot affect a newer operation.
+      activeOperation = undefined;
     },
     async submit(
       scope: TScope,
       request: TRequest,
     ): Promise<RecoverableSubmitOutcome<TResult>> {
-      if (inFlight) return { type: "busy" };
-      const epochAtStart = epoch;
-      inFlight = true;
+      if (activeOperation) return { type: "busy" };
+      const operation: Operation<TScope> = { epoch, scope };
+      activeOperation = operation;
       try {
         let submission = pending.get(scope);
         if (submission && submission.fingerprint !== config.fingerprint(request))
@@ -146,14 +158,14 @@ export function createRecoverableSubmitController<
           try {
             inspection = await inspect(submission);
           } catch (error) {
-            const recovery = await recover(submission, error, epochAtStart);
+            const recovery = await recover(submission, error, operation);
             if (recovery.type === "failed" && recovery.confirmedFailed)
               pending.delete(scope);
             return recovery;
           }
-          if (epoch !== epochAtStart) return { type: "stale" };
+          if (!isCurrent(operation)) return { type: "stale" };
           if (inspection.status === "completed" && inspection.result !== undefined)
-            return completed(scope, inspection.result, true);
+            return completed(operation, inspection.result, true);
           if (inspection.status === "running")
             return failed(undefined, inspection.status);
           // Only an explicit failed status may retire an ambiguous request id.
@@ -172,28 +184,28 @@ export function createRecoverableSubmitController<
         pending.set(scope, submission);
         try {
           const result = await config.send(submission);
-          if (epoch !== epochAtStart) return { type: "stale" };
+          if (!isCurrent(operation)) return { type: "stale" };
           const status = config.classify(result);
-          if (status === "completed") return completed(scope, result, false);
+          if (status === "completed") return completed(operation, result, false);
           if (status === "failed") pending.delete(scope);
           return failed(undefined, status);
         } catch (error) {
-          if (epoch !== epochAtStart) return { type: "stale" };
-          return await recover(submission, error, epochAtStart);
+          if (!isCurrent(operation)) return { type: "stale" };
+          return await recover(submission, error, operation);
         }
       } finally {
-        inFlight = false;
+        if (activeOperation === operation) activeOperation = undefined;
       }
     },
     async check(scope: TScope): Promise<RecoverableCheckOutcome<TResult>> {
-      if (inFlight) return { type: "running" };
+      if (activeOperation) return { type: "running" };
       const submission = pending.get(scope);
       if (!submission) return { type: "missing" };
-      const epochAtStart = epoch;
-      inFlight = true;
+      const operation: Operation<TScope> = { epoch, scope };
+      activeOperation = operation;
       try {
         const inspection = await inspect(submission);
-        if (epoch !== epochAtStart) return { type: "stale" };
+        if (!isCurrent(operation)) return { type: "stale" };
         if (inspection.status === "completed" && inspection.result !== undefined) {
           pending.delete(scope);
           return { type: "completed", result: inspection.result };
@@ -205,10 +217,10 @@ export function createRecoverableSubmitController<
         if (inspection.status === "running") return { type: "running" };
         return { type: "missing" };
       } catch (error) {
-        if (epoch !== epochAtStart) return { type: "stale" };
+        if (!isCurrent(operation)) return { type: "stale" };
         return { type: "error", error };
       } finally {
-        inFlight = false;
+        if (activeOperation === operation) activeOperation = undefined;
       }
     },
   };

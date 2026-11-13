@@ -287,12 +287,44 @@ it("full-config Payload A2A storage is private, isolated, durable, and atomic un
     const recreatedStore = new PayloadA2ATaskStore(payload, "alice", "aj-platform");
     expect((await recreatedStore.load("task-1", alice))?.status?.state).toBe(COMPLETED);
     const recreatedLedger = new PayloadA2ARequestLedger(payload, "alice", "aj-platform");
+    expect(await recreatedLedger.recoverCompletedTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      requestIdentity: "missing-message",
+    })).toBeUndefined();
+    await recreatedStore.save(task(SUBMITTED, "pending-task"), alice);
+    const pendingReservation = await recreatedLedger.reserve(
+      { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      "pending-message",
+      "pending-fingerprint",
+    );
+    if (pendingReservation.outcome !== "new") throw new Error("expected pending reservation");
+    await recreatedLedger.recordTask(pendingReservation.token, {
+      id: "pending-task",
+      contextId: "context-pending-task",
+    });
+    expect(await recreatedLedger.recoverCompletedTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      requestIdentity: "pending-message",
+    })).toBeUndefined();
     const replay = await recreatedLedger.reserve(
       { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
       "message-1",
       "fingerprint-1",
     );
     expect(replay).toMatchObject({ outcome: "existing", entry: { status: "recorded", taskId: "task-1" } });
+    expect(await recreatedLedger.recoverCompletedTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
+      requestIdentity: "message-1",
+    })).toMatchObject({ id: "task-1", status: { state: COMPLETED } });
+    expect(await recreatedLedger.recoverCompletedTask({
+      scope: { tenant: "aj-platform", owner: "alice", agentId: "dbt" },
+      requestIdentity: "message-1",
+    })).toBeUndefined();
+    expect(await new PayloadA2ARequestLedger(payload, "bob", "aj-platform")
+      .recoverCompletedTask({
+        scope: { tenant: "aj-platform", owner: "bob", agentId: "cbt" },
+        requestIdentity: "message-1",
+      })).toBeUndefined();
     const concurrentReplay = await recreatedLedger.reserve(
       { tenant: "aj-platform", owner: "alice", agentId: "cbt" },
       "message-2",

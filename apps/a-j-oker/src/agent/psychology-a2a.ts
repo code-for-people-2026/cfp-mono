@@ -60,6 +60,19 @@ export interface PsychologyA2ARuntime {
   }): Promise<PsychologyA2AOutcome>;
 }
 
+export interface PsychologyA2ACompletedTaskRecoveryInput {
+  scope: {
+    tenant: string;
+    owner: string;
+    agentId: string;
+  };
+  requestIdentity: string;
+}
+
+export type PsychologyA2ACompletedTaskRecovery = (
+  input: PsychologyA2ACompletedTaskRecoveryInput,
+) => Promise<Task | undefined>;
+
 export type PsychologyA2AFactory = (
   bindings: PsychologySpecialistBinding[],
 ) => PsychologyA2ARuntime;
@@ -68,6 +81,7 @@ export type PsychologyA2AFactoryOptions = {
   principal: AuthenticatedA2APrincipal;
   taskStore: ScopedA2ATaskStore;
   requestLedger: A2ARequestLedger;
+  recoverCompletedTask?: PsychologyA2ACompletedTaskRecovery;
 };
 
 function endpointPath(approach: PsychologyApproach): string {
@@ -113,6 +127,64 @@ function planFromTask(task: Task, approach: PsychologyApproach): PsychologyPlan 
   return parsed.success && parsed.data.approach === approach
     ? parsed.data
     : undefined;
+}
+
+function requestMatchesTask(
+  task: Task,
+  input: {
+    requestIdentity: string;
+    approach: PsychologyApproach;
+    configurationRevision: string;
+  },
+) {
+  const requests = task.history.flatMap((message) =>
+    message.messageId === input.requestIdentity
+      ? message.parts.flatMap((part) =>
+          part.content?.$case === "data" ? [part.content.value] : [],
+        )
+      : [],
+  );
+  if (requests.length !== 1) return false;
+  const request = psychologyA2ARequestSchema.safeParse(requests[0]);
+  return request.success
+    && request.data.approach === input.approach
+    && request.data.configurationRevision === input.configurationRevision;
+}
+
+function recoverablePlanFromTask(
+  task: Task | undefined,
+  input: {
+    requestIdentity: string;
+    approach: PsychologyApproach;
+    configurationRevision: string;
+  },
+): PsychologyPlan | undefined {
+  if (!task || task.status?.state !== TASK_STATE.COMPLETED) return undefined;
+  if (!requestMatchesTask(task, input)) return undefined;
+  return planFromTask(task, input.approach);
+}
+
+function withCancellation<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const finish = (settle: () => void) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      settle();
+    };
+    const onAbort = () => {
+      finish(() => reject(signal.reason ?? new Error("A2A recovery canceled")));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => finish(() => resolve(value)),
+      (error) => finish(() => reject(error)),
+    );
+  });
 }
 
 /**
@@ -305,8 +377,43 @@ export function createInProcessPsychologyA2AFactory(
         const timer = setTimeout(() => deadline.abort(), AJ_A2A_DEADLINE_MS);
         timer.unref?.();
         const invocationSignal = AbortSignal.any([input.signal, deadline.signal]);
-        invocationSignals.set(messageId, invocationSignal);
         try {
+          if (input.signal.aborted) return { status: "canceled" };
+          let recoveredPlan: PsychologyPlan | undefined;
+          if (options.recoverCompletedTask) {
+            let task: Task | undefined;
+            try {
+              task = await withCancellation(
+                options.recoverCompletedTask({
+                  scope: {
+                    tenant: options.principal.tenant,
+                    owner: options.principal.owner,
+                    agentId: input.approach,
+                  },
+                  requestIdentity: messageId,
+                }),
+                invocationSignal,
+              );
+            } catch {
+              // A failed or timed-out recovery lookup is authoritative only
+              // as an unavailable state; it must not bypass the ledger with a
+              // speculative send.
+              if (input.signal.aborted) return { status: "canceled" };
+              return { status: "unavailable" };
+            }
+            if (invocationSignal.aborted) return { status: "canceled" };
+            recoveredPlan = recoverablePlanFromTask(task, {
+              requestIdentity: messageId,
+              approach: input.approach,
+              configurationRevision: binding.revision,
+            });
+          }
+          if (recoveredPlan) {
+            if (invocationSignal.aborted) return { status: "canceled" };
+            return { status: "completed", plan: recoveredPlan };
+          }
+          if (invocationSignal.aborted) return { status: "canceled" };
+          invocationSignals.set(messageId, invocationSignal);
           const outcome = await client.sendMessage({
             tenant: "",
             message: {
@@ -340,6 +447,7 @@ export function createInProcessPsychologyA2AFactory(
             },
             metadata: {},
           }, { signal: invocationSignal });
+          if (invocationSignal.aborted) return { status: "canceled" };
           if (outcome.status === "canceled") return { status: "canceled" };
           if (outcome.status !== "ok" || "messageId" in outcome.value) {
             return { status: "unavailable" };

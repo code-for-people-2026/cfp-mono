@@ -3,6 +3,14 @@ import { createRecoverableSubmitController } from "./recoverable-submit";
 
 type Result = { id: string; state: "completed" | "running" | "failed" };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((callbackResolve) => {
+    resolve = callbackResolve;
+  });
+  return { promise, resolve };
+}
+
 function setup(options?: { status?: Result | undefined }) {
   const ids = ["id-1", "id-2", "id-3"];
   const send = vi.fn(async (_submission: { requestId: string; request: string }) =>
@@ -140,5 +148,57 @@ describe("recoverable submit controller", () => {
     finishSend!({ id: "old-result", state: "completed" });
     await expect(submission).resolves.toEqual({ type: "stale" });
     expect(controller.hasPending()).toBe(false);
+  });
+
+  it("lets a reset scope submit while an old send is still unresolved", async () => {
+    const { controller, send } = setup();
+    const gates = [deferred<Result>(), deferred<Result>()];
+    send.mockImplementation(() => gates[send.mock.calls.length - 1]!.promise);
+
+    const oldSubmission = controller.submit(1, "old");
+    controller.reset();
+    const newSubmission = controller.submit(1, "new");
+    const duplicateNew = await controller.submit(1, "new");
+
+    expect(duplicateNew).toEqual({ type: "busy" });
+    gates[0]!.resolve({ id: "old-result", state: "completed" });
+    await expect(oldSubmission).resolves.toEqual({ type: "stale" });
+    expect(controller.hasPending(1)).toBe(true);
+    expect(await controller.submit(1, "new")).toEqual({ type: "busy" });
+    gates[1]!.resolve({ id: "new-result", state: "completed" });
+    await expect(newSubmission).resolves.toEqual({
+      type: "completed",
+      result: { id: "new-result", state: "completed" },
+      recovered: false,
+    });
+  });
+
+  it("keeps a newer lookup/send lock isolated from an unresolved old lookup", async () => {
+    const { controller, send, lookup } = setup();
+    const oldLookup = deferred<Result | undefined>();
+    const newSend = deferred<Result>();
+    send.mockRejectedValueOnce(new Error("old response unknown"));
+    lookup.mockResolvedValueOnce(undefined);
+    await controller.submit(1, "old");
+    expect(controller.hasPending(1)).toBe(true);
+
+    lookup.mockReturnValueOnce(oldLookup.promise);
+    const oldRetry = controller.submit(1, "old");
+    controller.reset();
+    send.mockImplementation(() => newSend.promise);
+    const newSubmission = controller.submit(2, "new");
+    const duplicateNew = await controller.submit(2, "new");
+    expect(duplicateNew).toEqual({ type: "busy" });
+
+    oldLookup.resolve({ id: "old-completed", state: "completed" });
+    await expect(oldRetry).resolves.toEqual({ type: "stale" });
+    expect(controller.hasPending(2)).toBe(true);
+    expect(await controller.submit(2, "new")).toEqual({ type: "busy" });
+
+    newSend.resolve({ id: "new-completed", state: "completed" });
+    await expect(newSubmission).resolves.toMatchObject({
+      type: "completed",
+      result: { id: "new-completed" },
+    });
   });
 });

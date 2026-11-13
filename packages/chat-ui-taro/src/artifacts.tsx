@@ -92,7 +92,7 @@ function ArtifactDetails({
     <View data-ai-external={external ? "true" : "false"}>
       <Text className="artifact-caption">
         {labels.generated}
-        {external ? labels.external : ""} · 用户填写和原图除外
+        {external ? labels.external : ""} · {labels.detailNonGeneratedContent()}
       </Text>
       {children}
     </View>
@@ -243,8 +243,8 @@ function ImageCollection<Identity extends string | number>({
   return (
     <>
       <CompactCard
-        title="这一组图片"
-        meta={`${images.length} 张图片 · ${labels.generated}${external ? labels.external : ""}`}
+        title={labels.imageCollectionTitle(images.length)}
+        meta={`${labels.imageCollectionSummary(images.length)} · ${labels.generated}${external ? labels.external : ""}`}
         external={external}
         icon="image"
         preview={
@@ -263,7 +263,7 @@ function ImageCollection<Identity extends string | number>({
       />
       {open && (
         <BottomSheet
-          title={`图片 · ${images.length} 张`}
+          title={labels.imageCollectionDialogTitle(images.length)}
           onClose={() => setOpen(false)}
         >
           <ArtifactSurfaces

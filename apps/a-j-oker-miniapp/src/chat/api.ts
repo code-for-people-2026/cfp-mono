@@ -281,6 +281,7 @@ export function resumeImage(turnId: number, id: string, apiKey?: string, onProgr
 async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: string, onProgress?: (progress: RunProgress) => void) {
   const reader = createRunReader(id, onProgress, {
     catalogIds: [AJ_CATALOG_ID],
+    initialStep: "阿 J 先生正在想一想…",
   });
   if (native) {
     // Native Taro buffers SSE; it consumes exactly the same AG-UI/A2UI events as H5.

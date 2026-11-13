@@ -132,6 +132,7 @@ ${imagePromptConstraints()}`;
   const sessionService = new PayloadSessionService(request.repo);
   const executionId = request.executionId || String(request.turnId);
   const a2aStorage = createPayloadA2AStorage(request.repo, AJ_A2A_TENANT);
+  const { taskStore, requestLedger, recoverCompletedTask } = a2aStorage;
   const agent = createGreetingAgent({
     imageTool,
     imageDecisionTool,
@@ -147,7 +148,9 @@ ${imagePromptConstraints()}`;
     signal,
     a2a: createInProcessPsychologyA2AFactory({
       principal: { owner: request.repo.owner.id, tenant: AJ_A2A_TENANT },
-      ...a2aStorage,
+      taskStore,
+      requestLedger,
+      recoverCompletedTask,
     }),
     checkDelivery: value => restCardDeliveryError(
       imageAdmitted,

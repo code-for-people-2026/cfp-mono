@@ -114,6 +114,115 @@ it("renders through an opaque identity and consumer-owned resource resolver", as
   );
 });
 
+it("lets a host override dynamic artifact preview and collection copy", async () => {
+  const blocks: Artifact[] = [
+    {
+      id: "first",
+      title: "第一张",
+      kind: "image",
+      alt: "第一张",
+      source: { type: "media", mediaId: 1 },
+    },
+    {
+      id: "second",
+      title: "第二张",
+      kind: "image",
+      alt: "第二张",
+      source: { type: "media", mediaId: 2 },
+    },
+    {
+      id: "notes",
+      title: "补充",
+      kind: "form",
+      description: "补充",
+      submitLabel: "提交",
+      fields: [{
+        id: "note",
+        label: "笔记",
+        type: "multiSelect",
+        required: true,
+        allowOther: false,
+        maxChoices: 1,
+        options: [{ id: "saved", label: "已保存" }],
+      }],
+    },
+  ];
+  await act(async () => {
+    renderer = create(
+      <Artifacts
+        config={{
+          ...config,
+          copy: {
+            generated: "HOST GENERATED",
+            previewCardAriaLabel: (title) => `OPEN ${title}`,
+            previewFormSubmitted: () => "SUBMITTED FORM",
+            imageCollectionTitle: () => "HOST IMAGE GROUP",
+            imageCollectionSummary: (count) => `HOST IMAGES ${count}`,
+            imageCollectionDialogTitle: (count) => `HOST DIALOG ${count}`,
+          },
+        }}
+        Host={NativeA2uiHost}
+        adapter={adapter}
+        identity={identity}
+        artifacts={blocks}
+        responses={{ surface_notes: { note: { optionIds: ["saved"], otherText: "" } } }}
+      />,
+    );
+  });
+  const output = JSON.stringify(renderer!.toJSON());
+  expect(output).toContain("SUBMITTED FORM");
+  expect(output).toContain("HOST IMAGE GROUP");
+  expect(output).toContain("HOST IMAGES 2");
+  expect(output).toContain("HOST GENERATED");
+  expect(renderer!.root
+    .findAllByType("button")
+    .some((node) => node.props.ariaLabel === "OPEN HOST IMAGE GROUP")).toBe(true);
+
+  await act(async () => {
+    renderer!.root
+      .findAllByType("button")
+      .find((node) => node.props.ariaLabel === "OPEN HOST IMAGE GROUP")!
+      .props.onClick();
+  });
+  expect(JSON.stringify(renderer!.toJSON())).toContain("HOST DIALOG 2");
+});
+
+it("lets a host override the artifact source detail boundary", async () => {
+  await act(async () => {
+    renderer = create(
+      <Artifacts
+        config={{
+          ...config,
+          copy: {
+            generated: "HOST GENERATED",
+            external: " HOST SOURCE",
+            detailNonGeneratedContent: () => "HOST NON-GENERATED",
+          },
+        }}
+        Host={NativeA2uiHost}
+        adapter={adapter}
+        identity={identity}
+        artifacts={[{
+          id: "snippet",
+          title: "代码",
+          kind: "code",
+          language: "text",
+          code: "ok",
+        }]}
+        responses={{}}
+        compact={false}
+        external
+      />,
+    );
+  });
+  const caption = renderer!.root
+    .findAllByType("text")
+    .find((node) => node.props.className?.includes("artifact-caption"));
+  expect(caption?.children?.join("")).toBe(
+    "HOST GENERATED HOST SOURCE · HOST NON-GENERATED",
+  );
+});
+
 it("renders code, typed table cells and bounded choices without app CSS contracts", async () => {
   const blocks: Artifact[] = [
     {

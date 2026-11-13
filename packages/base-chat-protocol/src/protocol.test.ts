@@ -25,7 +25,7 @@ import {
   validateForm,
   type A2uiMessage,
 } from "./index";
-import { createRunReader } from "./stream";
+import { createRunReader, type RunProgress } from "./stream";
 
 const compile = (values: unknown) =>
   legacyArtifactsToA2ui(values, {
@@ -779,5 +779,25 @@ describe("AG-UI 传输恢复", () => {
     expect(() =>
       createRunReader("other").push(`data: ${JSON.stringify(events[0])}\n\n`),
     ).toThrow(/不匹配/);
+  });
+
+  it("默认使用产品中立进度文案，宿主可注入初始步骤", () => {
+    const neutral: RunProgress[] = [];
+    const neutralReader = createRunReader("run", (progress) => {
+      neutral.push({ ...progress });
+    });
+    neutralReader.push(`data: ${JSON.stringify(events[0])}\n\n`);
+    expect(neutral.at(-1)?.step).toBe("Working…");
+
+    const branded: RunProgress[] = [];
+    const brandedReader = createRunReader(
+      "run",
+      (progress) => {
+        branded.push({ ...progress });
+      },
+      { initialStep: "阿 J 先生正在想一想…" },
+    );
+    brandedReader.push(`data: ${JSON.stringify(events[0])}\n\n`);
+    expect(branded.at(-1)?.step).toBe("阿 J 先生正在想一想…");
   });
 });
