@@ -67,7 +67,7 @@ export type PeerOutcome<T> =
   | { status: "canceled" }
   | { status: "failed"; failure: PeerFailure };
 
-export interface PeerStreamSuccess {
+interface PeerStreamSuccess {
   events: AsyncGenerator<StreamResponse, void, undefined>;
 }
 
@@ -319,7 +319,7 @@ function failureFromError(error: unknown, deadline: DeadlineController): PeerFai
   return { kind: "unknown", message: "A2A peer call failed" };
 }
 
-export interface A2APeerClientOptions {
+interface A2APeerClientOptions {
   peerId: string;
   registry: A2APeerRegistry;
   credentialProvider: A2ACredentialProvider;

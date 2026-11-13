@@ -276,7 +276,7 @@ type Reservation = {
   scope: Scope;
 };
 
-export interface A2ACompletedTaskRecoveryInput {
+interface A2ACompletedTaskRecoveryInput {
   scope: Scope;
   requestIdentity: string;
 }

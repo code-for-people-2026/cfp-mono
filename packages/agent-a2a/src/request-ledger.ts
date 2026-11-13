@@ -319,5 +319,3 @@ export class IdempotentA2ARequestHandler implements A2ARequestHandler {
     return this.inner.listTasks(...args);
   }
 }
-
-export { A2AError };

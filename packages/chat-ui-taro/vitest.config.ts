@@ -5,6 +5,7 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
-    poolOptions: { threads: { singleThread: true } }
+    poolOptions: { threads: { singleThread: true } },
+    coverage: { provider: "v8" }
   }
 });

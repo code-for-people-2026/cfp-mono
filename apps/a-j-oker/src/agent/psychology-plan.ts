@@ -66,5 +66,3 @@ export const psychologyA2ARequestSchema = z
     consultation: psychologyConsultationSchema,
   })
   .strict();
-
-export type PsychologyA2ARequest = z.infer<typeof psychologyA2ARequestSchema>;

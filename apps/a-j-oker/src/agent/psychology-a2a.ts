@@ -46,7 +46,7 @@ export type PsychologySpecialistBinding = {
   ) => Promise<PsychologyPlan>;
 };
 
-export type PsychologyA2AOutcome =
+type PsychologyA2AOutcome =
   | { status: "completed"; plan: PsychologyPlan }
   | { status: "unavailable" }
   | { status: "canceled" };
@@ -77,7 +77,7 @@ export type PsychologyA2AFactory = (
   bindings: PsychologySpecialistBinding[],
 ) => PsychologyA2ARuntime;
 
-export type PsychologyA2AFactoryOptions = {
+type PsychologyA2AFactoryOptions = {
   principal: AuthenticatedA2APrincipal;
   taskStore: ScopedA2ATaskStore;
   requestLedger: A2ARequestLedger;
