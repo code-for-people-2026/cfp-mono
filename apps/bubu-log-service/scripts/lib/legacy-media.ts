@@ -14,7 +14,7 @@ const entrySchema = z.object({
   sourceSha256: hex, attachmentId: z.string().regex(/^att_[a-f0-9]{64}$/), normalizedSha256: hex,
 }).strict();
 export type MigrationEntry = z.infer<typeof entrySchema>;
-export type MigrationReference = LegacyMediaReference | { kind: 'sidecar-photo'; documentId: string; babyId: string; url: string };
+type MigrationReference = LegacyMediaReference | { kind: 'sidecar-photo'; documentId: string; babyId: string; url: string };
 export const sourceReference = (url: string) => ({ kind: 'legacy-source' as const, documentId: digest(url) });
 /** Durable intent journal: complete, hash-chained entries are required before either store is changed. */
 export class MediaMigrationManifest {
@@ -54,7 +54,7 @@ export class MediaMigrationManifest {
 }
 
 const migrationTables = [...recordTables.filter(table => table !== 'care-attachments'), 'chat-turns', 'safety-signals', 'privacy-requests'] as const;
-export function photoUrls(value: unknown): string[] {
+function photoUrls(value: unknown): string[] {
   const urls = new Set<string>();
   const visit = (item: unknown) => {
     if (typeof item === 'string') { try { visit(JSON.parse(item)); } catch { /* Plain text. */ } return; }

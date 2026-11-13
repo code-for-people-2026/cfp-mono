@@ -228,4 +228,20 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     await writeFile(file, valid.slice(0, -1)); expect(() => local.read()).toThrow("incomplete");
     await writeFile(file, valid.replace("synthetic", "changed")); expect(() => local.read()).toThrow("integrity");
   });
+  it("removes an unreferenced local account photo and retains cleanup keys across retry", async () => {
+    const f = await family();
+    const file = path.join(directory, "data", "private-attachments", hash(f.babyId), f.attachment.sha256);
+    const intent = await deletion.prepare(f.principal, "account");
+    const receipt = await deletion.confirm(f.principal, intent.token, intent.confirmation);
+    const original = attachments.purgeAccountObjects.bind(attachments);
+    const spy = vi.spyOn(attachments, "purgeAccountObjects").mockRejectedValueOnce(new Error("synthetic cleanup failure"));
+    await deletion.processPending();
+    expect(await readFile(file)).toBeTruthy();
+    spy.mockRestore();
+    await deletion.processPending();
+    await expect(readFile(file)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(original([f.principal.subjectId], [`${hash(f.babyId)}/${f.attachment.sha256}`])).resolves.toBeUndefined();
+    expect((await privacy.repository.get<{ status: string }>("privacy-state", `deletion:${receipt.id}`))?.status).toBe("completed");
+  });
+
 });

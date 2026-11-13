@@ -37,7 +37,7 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
     token = (await fixture.identity.loginLegacy("old-alice", "correct-password", "native")).token;
     bobToken = (await fixture.identity.loginLegacy("old-bob", "correct-password", "native")).token;
     const operatorToken = (await fixture.identity.provisionOperator("mcp-operator", "baby-a", 3_600_000)).token;
-    const collector = new CollectorService(fixture.identity, (babyId, requestId, req, principal) => fixture.records.verifyCollectorReceipt(babyId, requestId, req, principal));
+    const collector = new CollectorService(fixture.identity, (babyId, requestId, req, principal, actor) => fixture.records.verifyCollectorReceipt(babyId, requestId, req, principal, actor));
     server = createServer(async (incoming, outgoing) => {
       try {
         const chunks: Buffer[] = [];

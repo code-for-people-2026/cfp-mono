@@ -34,7 +34,7 @@
     },
     "@cfp/bubu-log-miniapp#build": {
       "dependsOn": ["^build"],
-      "env": ["BUBU_API_ORIGIN"],
+      "env": ["BUBU_API_ORIGIN", "BUBU_API_PROFILE", "BUBU_AUTH_MODE", "BUBU_DEV_PROXY", "BUBU_WECHAT_SI_VERSION"],
       "outputs": ["dist/**"]
     },
     "@cfp/kith-inn-miniapp#build": {

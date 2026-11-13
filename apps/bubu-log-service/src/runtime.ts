@@ -29,6 +29,7 @@ import { MembershipService } from "./membership/service";
 import { OperationsHealth } from "./operations/health";
 import { ImageReviewService, type ImageReviewer } from "./images/review";
 import { configuredImageReviewer } from "./images/aliyun-review";
+import { configuredAttachmentObjectStore, type AttachmentObjectStore } from "./storage/attachment-objects";
 
 export interface BubuRuntime {
   store: Store;
@@ -58,6 +59,7 @@ interface RuntimeOptions {
   wechat?: WechatProvider;
   provider?: ChatProvider;
   imageReviewer?: ImageReviewer;
+  objectStore?: AttachmentObjectStore;
   privacy?: PrivacyConfig;
   deletionLedger?: string;
   maintenanceWorker?: boolean;
@@ -92,13 +94,15 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const membership = new MembershipService(identity);
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
     const imageReview = new ImageReviewService(privacy, options.imageReviewer || configuredImageReviewer());
-    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview });
+    // Production explicitly refuses the local default; development and test remain local unless OSS is configured.
+    const objectStore = options.objectStore ?? configuredAttachmentObjectStore();
+    const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview, ...(objectStore ? { objectStore } : {}) });
     const lifecycle = legacy as typeof legacy & Partial<FamilyLifecycle & AccountLifecycle>;
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined, lifecycle.exportAccountData && lifecycle.deleteAccountData ? lifecycle as AccountLifecycle : undefined);
     const safety = new SafetyService(privacy);
     const maintenance = new PrivacyMaintenance(privacy, attachments, deletion);
     const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
-    const collector = new CollectorService(identity, (babyId, requestId, req, principal) => records.verifyCollectorReceipt(babyId, requestId, req, principal), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
+    const collector = new CollectorService(identity, (babyId, requestId, req, principal, actor) => records.verifyCollectorReceipt(babyId, requestId, req, principal, actor), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
     chat = new ChatService(identity, attachments, { mcpUrl: options.mcpUrl, provider: options.provider || chatProviderFromEnv(), safetySignal: (babyId, id, text, at, req) => safety.observe(babyId, id, text, at, "chat", req), authorizeModel: (principal, babyId, images) => privacy.requireModel(principal, babyId, images) });
     const appHandler = createHandler(identity, options.publicOrigin, {
       allowedOrigins: (process.env.BUBU_LEGACY_MEDIA_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean),

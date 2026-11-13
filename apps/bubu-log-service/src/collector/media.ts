@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import path from "node:path";
+import sharp from "sharp";
 import { z } from "zod";
 import { inspectAttachment, MAX_ATTACHMENT_BYTES, type AttachmentMime } from "../records/attachments";
 import type { SourceMessage } from "./types";
@@ -16,10 +17,47 @@ export const exactMediaConfigSchema = z.object({
   md5Directories: z.array(z.string().min(1)).max(20).default([]),
 }).strict();
 type ExactMediaConfig = z.input<typeof exactMediaConfigSchema>;
-export type MediaResult = { available: true; bytes: Buffer; mime: AttachmentMime } | { available: false; reason: string };
+export type MediaResult =
+  | { available: true; bytes: Buffer; mime: AttachmentMime; original?: { bytes: Buffer; mime: AttachmentMime } }
+  | { available: false; reason: string };
 export interface MediaResolver { resolve(message: SourceMessage, index: number): Promise<MediaResult> }
 const digest = (algorithm: string, bytes: Buffer) => createHash(algorithm).update(bytes).digest("hex");
 const within = (root: string, file: string) => file.startsWith(root + path.sep);
+const MAX_TRANSPORT_IMAGE_PIXELS = 40_000_000;
+const PNG_TRANSPORT_MIN_BYTES = 1024 * 1024;
+const TRANSPORT_LONG_EDGE = 2048;
+
+/** Improve only the reviewer transport after exact-file and complete image validation. */
+async function optimizeLargeOpaquePng(bytes: Buffer): Promise<{ bytes: Buffer; mime: "image/jpeg" } | undefined> {
+  const decoder = sharp(bytes, { limitInputPixels: MAX_TRANSPORT_IMAGE_PIXELS, failOn: "warning", animated: false });
+  const metadata = await decoder.metadata();
+  if (!metadata.width || !metadata.height) return undefined;
+  // Preserve every PNG that declares alpha. This avoids relying on bit-depth
+  // specific alpha normalization when deciding whether flattening is lossless.
+  if (metadata.hasAlpha) return undefined;
+
+  const candidate = await sharp(bytes, { limitInputPixels: MAX_TRANSPORT_IMAGE_PIXELS, failOn: "warning", animated: false })
+    .rotate()
+    .resize({ width: TRANSPORT_LONG_EDGE, height: TRANSPORT_LONG_EDGE, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 90, chromaSubsampling: "4:4:4" })
+    .toBuffer();
+  if (candidate.length >= bytes.length) return undefined;
+
+  // inspectAttachment re-decodes the complete output. Also reject an unexpected
+  // geometry so a decoder/pipeline defect can never enlarge or distort transport.
+  await inspectAttachment(candidate, "image/jpeg");
+  const output = sharp(candidate, { limitInputPixels: MAX_TRANSPORT_IMAGE_PIXELS, failOn: "warning", animated: false });
+  const outputMetadata = await output.metadata();
+  const orientation = metadata.orientation ?? 1;
+  const swapsDimensions = orientation >= 5 && orientation <= 8;
+  const sourceWidth = swapsDimensions ? metadata.height : metadata.width;
+  const sourceHeight = swapsDimensions ? metadata.width : metadata.height;
+  if (!outputMetadata.width || !outputMetadata.height || outputMetadata.hasAlpha ||
+      Math.max(outputMetadata.width, outputMetadata.height) !== Math.min(TRANSPORT_LONG_EDGE, Math.max(sourceWidth, sourceHeight)) ||
+      outputMetadata.width > sourceWidth || outputMetadata.height > sourceHeight ||
+      Math.abs(outputMetadata.width / outputMetadata.height - sourceWidth / sourceHeight) > 1 / Math.min(outputMetadata.width, outputMetadata.height)) return undefined;
+  return { bytes: candidate, mime: "image/jpeg" };
+}
 
 export class ExactLocalMediaResolver implements MediaResolver {
   readonly config: z.output<typeof exactMediaConfigSchema>;
@@ -67,8 +105,18 @@ export class ExactLocalMediaResolver implements MediaResolver {
         if (candidates.length !== 1) return { available: false, reason: candidates.length ? "MEDIA_MAPPING_AMBIGUOUS" : "MEDIA_EXACT_FILE_MISSING" };
         bytes = candidates[0]!;
       }
-      const mime = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png" : bytes[0] === 255 && bytes[1] === 216 ? "image/jpeg" : "image/webp";
-      return { available: true, bytes, mime: await inspectAttachment(bytes, mime) };
+      const declaredMime = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])) ? "image/png" : bytes[0] === 255 && bytes[1] === 216 ? "image/jpeg" : "image/webp";
+      const mime = await inspectAttachment(bytes, declaredMime);
+      if (mime !== "image/png" || bytes.length <= PNG_TRANSPORT_MIN_BYTES) return { available: true, bytes, mime };
+      // This is deliberately an optional transport optimization: an encoding or
+      // output-validation failure falls back to the already-validated original.
+      try {
+        const optimized = await optimizeLargeOpaquePng(bytes);
+        return optimized
+          ? { available: true, ...optimized, original: { bytes, mime } }
+          : { available: true, bytes, mime };
+      }
+      catch { return { available: true, bytes, mime }; }
     } catch (error) {
       const reason = error instanceof Error && /^MEDIA_[A-Z_]+$/.test(error.message) ? error.message : "MEDIA_LOCAL_FILE_UNAVAILABLE";
       return { available: false, reason };

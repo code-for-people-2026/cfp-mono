@@ -9,7 +9,7 @@ import { privacyPolicy, type PrivacyConfig } from "./policy";
 
 const choices = z.object({ policyVersion: z.string().min(1).max(100), accepted: z.literal(true), adultCaregiver: z.literal(true), sensitive: z.literal(true), ai: z.boolean(), images: z.boolean() }).strict();
 const guardianChoices = z.object({ policyVersion: z.string().min(1).max(100), guardian: z.literal(true), sensitive: z.literal(true), ai: z.boolean(), images: z.boolean(), collection: z.boolean(), groupMembersInformed: z.boolean() }).strict();
-export type Consent = z.infer<typeof choices> & { identityId: string; updatedAt: string; revokedAt?: string };
+type Consent = z.infer<typeof choices> & { identityId: string; updatedAt: string; revokedAt?: string };
 export type GuardianConsent = z.infer<typeof guardianChoices> & { identityId: string; babyId: string; updatedAt: string; revokedAt?: string };
 export interface PrivacyRequest { id: string; identityId: string; babyId?: string; kind: "privacy" | "complaint" | "appeal"; message: string; createdAt: string; status: "open" | "reviewing" | "resolved"; reply?: string; updatedAt: string }
 const fail = (code: string, message: string, status = 403): never => { throw new AppError(status, code, message); };

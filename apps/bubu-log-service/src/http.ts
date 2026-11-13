@@ -4,7 +4,7 @@ import type { PrivacyService } from "./privacy/service";
 import { z } from "zod";
 import { AppError, permissions, type Permission } from "./contracts";
 import { readLegacyPhoto, protectLegacyPhotos, protectRecordPhotos, type MediaOptions } from "./media";
-import { IdentityService, type Principal } from "./identity";
+import { IdentityService, type ActorScope, type Principal } from "./identity";
 import type { RecordsService } from "./records/service";
 import { createAttachmentHandler, type AttachmentService } from "./records/attachments";
 import type { CollectorService } from "./collector/service";
@@ -19,6 +19,21 @@ const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
 const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
 const babyScope = z.object({ babyId: id }).strict();
+interface LegacyMediaActivity { babyId: unknown; id: unknown; poopPhotoUrl: unknown }
+const legacyMediaActivity = (activity: unknown, babyId: string, activityId: string): LegacyMediaActivity => {
+  if (!activity || typeof activity !== "object" || Array.isArray(activity) ||
+    (activity as LegacyMediaActivity).babyId !== babyId || (activity as LegacyMediaActivity).id !== activityId)
+    throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+  return { babyId: (activity as LegacyMediaActivity).babyId, id: (activity as LegacyMediaActivity).id, poopPhotoUrl: (activity as LegacyMediaActivity).poopPhotoUrl };
+};
+const sameLegacyMediaActivity = (left: LegacyMediaActivity, right: LegacyMediaActivity) =>
+  left.babyId === right.babyId && left.id === right.id && left.poopPhotoUrl === right.poopPhotoUrl;
+const sameActorScope = (left: ActorScope, right: ActorScope) =>
+  left.babyId === right.babyId && left.groupId === right.groupId && left.permissions.length === right.permissions.length &&
+  left.permissions.every(permission => right.permissions.includes(permission)) &&
+  left.actor.kind === right.actor.kind && left.actor.id === right.actor.id && left.actor.sessionId === right.actor.sessionId &&
+  left.actor.onBehalfOf === right.actor.onBehalfOf && left.actor.purpose === right.actor.purpose;
+const remoteLegacyAllowed = (scope: ActorScope) => scope.actor.kind !== "collector" && (scope.actor.kind !== "chat-agent" || scope.actor.purpose === "history");
 export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;membership?:MembershipService;privacy?:PrivacyService;deletion?:DeletionService;safety?:SafetyService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
@@ -174,13 +189,31 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
-        return await service.executeAuthorized(principal, babyId, "media:read", async (scope, request) => {
-          const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
-          return readLegacyPhoto(activity, babyId, { ...media, remoteAllowed: scope.actor.kind !== "collector" && (scope.actor.kind !== "chat-agent" || scope.actor.purpose === "history"), ...(features ? { readPrivate: async (id: string) => {
-            const { attachment, bytes } = await features.attachments.readInScope(scope, request, id);
+        const readActivity = () => service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
+        const groupId = principal.kind === "collector" ? principal.groupId : undefined;
+        const snapshot = await service.executeAuthorized(principal, babyId, "media:read", async scope => ({
+          scope,
+          activity: legacyMediaActivity(await readActivity(), babyId, activityId),
+        }), groupId);
+        const response = await readLegacyPhoto(snapshot.activity, babyId, {
+          ...media,
+          remoteAllowed: remoteLegacyAllowed(snapshot.scope),
+          ...(features ? { readPrivate: async (attachmentId: string) => {
+            const { attachment, bytes } = await features.attachments.read(principal, babyId, attachmentId);
             return new Response(new Uint8Array(bytes), { headers: { "Content-Type": attachment.mime, "Content-Length": String(attachment.byteLength), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" } });
-          } } : {}) });
+          } } : {}),
         });
+        try {
+          await service.executeAuthorized(principal, babyId, "media:read", async scope => {
+            const activity = legacyMediaActivity(await readActivity(), babyId, activityId);
+            if (!sameLegacyMediaActivity(snapshot.activity, activity) || !sameActorScope(snapshot.scope, scope))
+              throw new AppError(409, "MEDIA_CHANGED_DURING_READ", "照片状态在读取过程中发生变化，请重试。");
+          }, groupId);
+        } catch (error) {
+          await response.body?.cancel().catch(() => undefined);
+          throw error;
+        }
+        return response;
       }
       if (req.method === "PATCH" && path.startsWith("/api/app/user-babies/")) {
         if (decodeURIComponent(path.slice("/api/app/user-babies/".length)) !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "宝宝范围不一致。");

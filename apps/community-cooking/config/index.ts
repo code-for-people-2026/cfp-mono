@@ -15,7 +15,9 @@ export default defineConfig(async () => ({
   framework: "react",
   compiler: "vite",
   alias: {
-    "@": path.resolve(__dirname, "..", "src")
+    "@": path.resolve(__dirname, "..", "src"),
+    // Lifecycle hooks must use the React runtime initialized by the app entry.
+    "@tarojs/plugin-framework-react/dist/runtime": require.resolve("@tarojs/plugin-framework-react/dist/runtime")
   },
   plugins: [],
   mini: {},

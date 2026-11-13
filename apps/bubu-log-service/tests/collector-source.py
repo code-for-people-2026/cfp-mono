@@ -8,8 +8,10 @@ import importlib.util
 import json
 import pathlib
 import sqlite3
+import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import zstandard
@@ -45,6 +47,43 @@ class SyntheticSourceTest(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def live_request(self):
+        request = {**self.request, "allowLive": True, "configPath": "unused-synthetic-config"}
+        request.pop("fixtureManifest", None)
+        return request
+
+    def live_context(self, paths):
+        irrelevant_key = "message/biz_message_0.db"
+
+        class FakeCache:
+            def __init__(self):
+                self.get_keys = []
+                self.cleaned = False
+
+            def get(self, key):
+                self.get_keys.append(key)
+                if key == irrelevant_key:
+                    raise AssertionError("irrelevant biz database must not be decrypted")
+                return paths.get(key)
+
+            def cleanup(self):
+                self.cleaned = True
+
+        cache = FakeCache()
+
+        class FakeAppContext:
+            def __init__(fake_self, config_path):
+                fake_self.db_dir = self.root / "synthetic-account" / "db"
+                fake_self.msg_db_keys = [
+                    irrelevant_key,
+                    "message/message_0.db",
+                    "message/message_1.db",
+                ]
+                fake_self.cache = cache
+
+        module = SimpleNamespace(AppContext=FakeAppContext)
+        return patch.dict(sys.modules, {"wechat_cli.core.context": module}), cache
 
     def test_identity_seconds_sender_media_and_resume(self):
         with patch.object(adapter.wc, "_resolve_media_path", side_effect=AssertionError("must not guess media")):
@@ -85,6 +124,29 @@ class SyntheticSourceTest(unittest.TestCase):
             adapter.read({"accountId": "synthetic-account", "chatId": self.chat})
         with self.assertRaisesRegex(ValueError, "BOUND_GROUP_REQUIRED"):
             adapter.read({**self.request, "chatId": "some-person"})
+
+    def test_live_irrelevant_database_is_not_decrypted_and_group_databases_process(self):
+        paths = {
+            "message/message_0.db": self.databases[0]["path"],
+            "message/message_1.db": self.databases[1]["path"],
+        }
+        context, cache = self.live_context(paths)
+        with context:
+            result = adapter.read({**self.live_request(), "limit": 500})
+        self.assertEqual(cache.get_keys, list(paths))
+        self.assertTrue(cache.cleaned)
+        self.assertEqual(
+            [row["databaseId"] for row in result["messages"]],
+            ["message/message_0.db", "message/message_0.db", "message/message_1.db", "message/message_1.db"],
+        )
+
+    def test_live_eligible_database_failure_remains_fail_closed(self):
+        paths = {"message/message_0.db": None, "message/message_1.db": self.databases[1]["path"]}
+        context, cache = self.live_context(paths)
+        with context, self.assertRaisesRegex(ValueError, "SOURCE_DATABASE_UNAVAILABLE"):
+            adapter.read(self.live_request())
+        self.assertEqual(cache.get_keys, ["message/message_0.db"])
+        self.assertTrue(cache.cleaned)
 
     def test_corrupt_message_or_missing_database_does_not_advance_cursor(self):
         with sqlite3.connect(self.databases[0]["path"]) as conn:

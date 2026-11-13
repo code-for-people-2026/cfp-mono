@@ -5,7 +5,7 @@ const durationTypes = new Set(activityTypes.filter(type => !pointTypes.has(type)
 const common: Field[] = ["type", "startTime", "notes"];
 const feeding: Field[] = ["endTime", "durationMinutes", "burpSuccess"];
 const applicable: Record<string, Field[]> = {
-  BREASTFEED: [...feeding, "breastFirmness"],
+  BREASTFEED: [...feeding, "reportedIntake", "milkAmount", "breastFirmness"],
   BOTTLE: [...feeding, "milkSource", "milkAmount", "preparedMilkAmount", "remainingMilkAmount", "sameBottle"],
   PUMP: ["endTime", "durationMinutes", "milkAmount"], SLEEP: ["endTime", "durationMinutes"],
   DIAPER: ["hasPoop", "hasPee", "peeAmount", "poopColor", "poopPhotoUrl"],
@@ -22,6 +22,15 @@ const enums: Partial<Record<Field, readonly string[]>> = {
   supplementType: ["AD", "D3", "PROBIOTICS", "PREBIOTICS"], spitUpType: ["NORMAL", "PROJECTILE"],
 };
 const present = (value: unknown) => value !== undefined && value !== null && value !== "";
+const validReportedIntake = (value: unknown) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const intake = value as Record<string, unknown>;
+  const keys = new Set(Object.keys(intake));
+  if (keys.size !== 3 || !["value", "unit", "originalText"].every(key => keys.has(key))) return false;
+  return typeof intake.value === "number" && Number.isFinite(intake.value) && intake.value >= 0 && intake.value <= 100000 &&
+    intake.unit === "g" &&
+    typeof intake.originalText === "string" && intake.originalText.length <= 4000 && intake.originalText.trim().length > 0;
+};
 function timed(value: unknown): value is string {
   if (typeof value !== "string") return false;
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
@@ -54,6 +63,7 @@ export function evaluateEvent(input: RuleInput, options: { now?: number } = {}):
       issue("INVALID_NUMBER", [field], field === "count" ? "次数必须是非负整数" : "数值必须是有限的非负数，请核对单位");
     }
   }
+  if (facts.reportedIntake !== undefined && facts.reportedIntake !== null && !validReportedIntake(facts.reportedIntake)) issue("INVALID_REPORTED_INTAKE", ["reportedIntake"], "报告摄入量必须是0到100000克的明确对象，并保留非空原话");
   for (const [name, choices] of Object.entries(enums)) {
     const field = name as Field;
     if (present(facts[field]) && !choices.includes(facts[field] as string)) issue("INVALID_ENUM", [field], "该字段不在支持的选项内");

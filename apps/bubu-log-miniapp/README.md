@@ -24,7 +24,7 @@
 pnpm install
 
 # 微信端默认接入卜卜日记独立身份与对话服务。
-BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
+pnpm --filter @cfp/bubu-log-miniapp build:weapp:development
 
 # H5 开发：请求仍发往浏览器同源 /api，由开发代理转到独立服务。
 BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/bubu-log-miniapp dev:h5
@@ -38,9 +38,28 @@ pnpm --filter @cfp/bubu-log-miniapp test:e2e
 pnpm --filter @cfp/bubu-log-miniapp test:wxss
 ```
 
-微信产物位于 `dist/weapp`，H5 位于 `dist/h5`。环境变量在启动构建的 shell 中设置；`.env.example` 仅解释配置，不会自动加载。未设置服务地址时原生端显示未配置状态，不使用演示数据冒充家庭记录。本地导入时在微信开发者工具选择「测试号」替换 `project.config.json` 中的 AppID 占位值；发布前使用本项目自己的 AppID，并在微信后台配置所选服务的 request 域名；独立身份模式同时配置该服务的 downloadFile 域名，旧模式配置已有图片域名。不要借用 Hello Agent 的 AppID。
+微信开发包位于 `dist/weapp-development`，体验包位于 `dist/weapp-experience`，H5 位于 `dist/h5`。默认 `build:weapp` 和 `dev:weapp` 固定连接 `http://127.0.0.1:3320`；`build:weapp:experience` 固定连接 `https://bubu-preview.codeforpeople.cn`。本机环境变量若与命令或固定地址冲突，构建会报错，不静默覆盖。`.env.example` 仅说明配置，不自动加载。
 
-H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `/api/auth`、`/api/identity` 与 `/api/app`）。H5 明确忽略 `BUBU_API_ORIGIN`，不假设旧服务支持跨域 Cookie 或 CORS。开发代理连接 HTTPS 服务时，建议本地也使用 HTTPS 以保持 Secure Cookie 的条件。
+开发者工具导入本应用根目录（默认指向开发包），或直接导入 `dist/weapp-development`。开发包关闭域名检查以访问本地服务；体验包开启域名检查。两者使用卜卜自己的 AppID `wx45c6373b565632ab`，体验域名必须已在微信后台配置 request / downloadFile 白名单。手机上的 `127.0.0.1` 指手机自身，不能用于访问 Mac；当前固定开发包用于电脑开发者工具，手机验收用云端体验包。
+
+### 体验包构建与上传检查
+
+```sh
+# 从仓库根目录执行；构建不上传、不部署、不启动后端
+pnpm --filter @cfp/bubu-log-miniapp build:weapp:experience
+# 只检查，不调用微信上传
+pnpm --filter @cfp/bubu-log-miniapp upload:experience --check-only
+# 经授权上传时才执行，并明确版本号
+pnpm --filter @cfp/bubu-log-miniapp upload:experience --version 0.2.4
+```
+
+上传入口固定使用体验目录，校验 AppID、实际 JS 中的云端地址、完整构建回执、全部产物 SHA-256、源码指纹及微信原生 WXSS 编译。源码变化、产物增删改、开发包、构建失败留下的残包都必须重新构建。源码指纹覆盖源码、配置、脚本、类型、包定义及锁文件；回执用于防止操作失误，不是防篡改签名。构建完成后不要手工编辑产物或让开发者工具在目录内写入额外配置，否则需重建。
+
+使用本机已登录的微信开发者工具 CLI，无需将上传密钥写入仓库。微信 GUI 的手动上传按钮无法被仓库脚本拦截；约定只从 `upload:experience` 入口上传，不手工上传开发包。微信平台称上传后的代码为“开发版本”，这里的 `experience` 指准备给体验版使用的云端构建配置，并非依据微信的 `envVersion` 自动切换。上传成功也不等于手机验收通过。
+
+这些命令不会开启定时采集或隔离测试，不会更改云端服务器配置。
+
+H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `/api/auth`、`/api/identity` 与 `/api/app`）。H5 明确忽略 `BUBU_API_ORIGIN`，不假设旧服务支持跨域 Cookie 或 CORS。本地 H5 代理固定指向 `http://127.0.0.1:3320`，不代理到体验云端。
 
 ## 兼容边界
 
@@ -51,7 +70,7 @@ H5 在生产环境须与所选服务同源（或由部署层同源反向代理 `
 默认 `BUBU_AUTH_MODE=sidecar`。显式设置 `BUBU_AUTH_MODE=legacy` 可保留上述旧登录方式（对话不开放）。独立身份模式中，`BUBU_API_ORIGIN` / H5 代理指向 [卜卜日记身份服务](../bubu-log-service/README.md)：
 
 ```sh
-BUBU_AUTH_MODE=sidecar BUBU_API_ORIGIN=https://your-bubu-service.example pnpm --filter @cfp/bubu-log-miniapp build:weapp
+BUBU_AUTH_MODE=sidecar pnpm --filter @cfp/bubu-log-miniapp build:weapp:development
 BUBU_AUTH_MODE=sidecar BUBU_DEV_PROXY=http://127.0.0.1:3320 pnpm --filter @cfp/bubu-log-miniapp dev:h5
 
 # 使用合成账号/数据验证独立身份、统一统计与对话界面（默认 sidecar）
