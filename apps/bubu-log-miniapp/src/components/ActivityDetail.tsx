@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import Taro from '@tarojs/taro'
-import { Image, ScrollView, Text, View } from '@tarojs/components'
+import { Button, Image, ScrollView, Text, View } from '@tarojs/components'
 import { activityDetails, activityTone, activityTypeLabel, dateTimeLabel, recordDetailFields, type Activity, type RecordEvent } from '../model'
 import type { ActivityProvenance, AuditInputMethod } from '../api/provenance'
 import './visualizations.css'
@@ -28,6 +28,8 @@ export interface ActivityDetailProps {
   photoLoading?: boolean
   photoError?: string
   onClose: () => void
+  /** Sidecar-only entry into the persisted chat flow; legacy remains read-only. */
+  onChat?: () => void
 }
 
 interface MoreInfoRow {
@@ -94,7 +96,7 @@ function moreInfoRows(activity: Activity, provenance: DetailProvenanceState): {
 
 export function ActivityDetail({
   activity, provenance = { status: 'idle' }, onMoreInfoToggle, onRetryProvenance,
-  recordEvent, photos, photoCount, photoLoading, photoError, onClose,
+  recordEvent, photos, photoCount, photoLoading, photoError, onClose, onChat,
 }: ActivityDetailProps) {
   const [failedImages, setFailedImages] = useState<string[]>([])
   const [moreOpen, setMoreOpen] = useState(false)
@@ -154,6 +156,7 @@ export function ActivityDetail({
                     : <Image className='bubu-detail-photo' key={url} src={url} mode='aspectFill' onClick={() => void previewImage(url)} onError={() => setFailedImages((previous) => [...previous, url])} />)}
             <Text className='bubu-viz-caption'>点击图片可放大查看</Text>
           </View>}
+          {onChat && <Button className='primary-button' onClick={onChat}>在对话中修改这条记录</Button>}
           {!recordEvent && <View className='bubu-provenance'>
             <View className='bubu-provenance-toggle' ariaLabel={moreOpen ? '收起更多信息' : '展开更多信息'} onClick={toggleMore}>
               <Text className='bubu-provenance-title'>更多信息</Text>
