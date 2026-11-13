@@ -215,11 +215,13 @@ export class AttachmentService {
   }
   /** Internal lifecycle operation. OSS I/O is serialized in the independent media queue. */
   async purgeFamilyObjects(babyId: string) {
+    let remoteReport: { removed: number } | undefined;
     if (this.objectStore) {
       if (this.identity.store.currentRequest()) return fail(503, "OSS_REMOTE_IO_IN_LOCK", "OSS 照片删除不能在身份队列内执行。");
-      await this.mediaOperations!.purgeFamily(babyId);
+      remoteReport = await this.mediaOperations!.purgeFamily(babyId);
     }
     await rm(path.join(this.objectDirectory, hash(babyId)), { recursive: true, force: true });
+    return remoteReport;
   }
   async purgeAccountObjects(identityIds: readonly string[], objectKeys: readonly string[]) {
     if (this.objectStore) {
