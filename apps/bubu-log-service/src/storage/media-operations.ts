@@ -198,6 +198,18 @@ export class MediaOperations {
     });
   }
 
+  async accountObjectKeys(identityIds: readonly string[], req?: PayloadRequest): Promise<string[]> {
+    const identities = new Set(identityIds);
+    const keys = new Set<string>();
+    for (const row of await this.intents(req)) {
+      if (!identities.has(row.value.identityId)) continue;
+      const key = row.value.objectKey;
+      if (!OBJECT_KEY.test(key) || !key.startsWith(`${hash(row.value.babyId)}/`)) throw new Error("Invalid media intent object key");
+      keys.add(key);
+    }
+    return [...keys];
+  }
+
   async purgeAccount(identityIds: string[], candidateKeys: readonly string[]): Promise<{ removed: number }> {
     const identities = new Set(identityIds);
     if (!identities.size) return { removed: 0 };
@@ -208,12 +220,7 @@ export class MediaOperations {
         if (await this.hasUncertainOperations({ identityIds }, req)) throw uncertain();
         // Verified PUTs can outlive a failed metadata commit. Their durable intents
         // survive account deletion and retries, even when no attachment row exists.
-        for (const row of await this.intents(req)) {
-          if (!identities.has(row.value.identityId)) continue;
-          const key = row.value.objectKey;
-          if (!OBJECT_KEY.test(key) || !key.startsWith(`${hash(row.value.babyId)}/`)) throw new Error("Invalid media intent object key");
-          candidates.add(key);
-        }
+        for (const key of await this.accountObjectKeys(identityIds, req)) candidates.add(key);
         const references = await this.attachmentReferences(req);
         return new Set([...candidates].filter(key => !references.has(key)));
       });
