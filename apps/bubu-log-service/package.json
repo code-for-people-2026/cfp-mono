@@ -23,7 +23,11 @@
     "test:ops-http": "tsx scripts/verify-ops-http.ts",
     "test:fullstack-server": "NODE_ENV=test tsx tests/fullstack-browser-server.ts",
     "test:membership-http": "tsx scripts/verify-membership-http.ts",
-    "test:sqlite": "node scripts/sqlite-connection-check.mjs"
+    "test:sqlite": "node scripts/sqlite-connection-check.mjs",
+    "media:migrate-attachments": "tsx scripts/migrate-attachment-storage.ts",
+    "media:migrate-legacy": "tsx scripts/migrate-legacy-media.ts",
+    "privacy:maintenance": "tsx scripts/privacy-maintenance.ts",
+    "verify:private-core": "tsx scripts/verify-private-core.ts"
   },
   "dependencies": {
     "@alicloud/green20220302": "3.6.8",

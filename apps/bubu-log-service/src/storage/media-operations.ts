@@ -20,13 +20,13 @@ export interface MediaUploadIntent {
   updatedAt: string;
 }
 
-export interface MediaUploadActor {
+interface MediaUploadActor {
   kind: ActorScope["actor"]["kind"];
   id: string;
   onBehalfOf?: string;
 }
 
-export interface VerifiedMediaPut<TContext, TResult> {
+interface VerifiedMediaPut<TContext, TResult> {
   babyId: string;
   actor: MediaUploadActor;
   attachmentId: string;
@@ -206,6 +206,14 @@ export class MediaOperations {
     return this.enqueue(async () => {
       const targets = await this.transaction(async req => {
         if (await this.hasUncertainOperations({ identityIds }, req)) throw uncertain();
+        // Verified PUTs can outlive a failed metadata commit. Their durable intents
+        // survive account deletion and retries, even when no attachment row exists.
+        for (const row of await this.intents(req)) {
+          if (!identities.has(row.value.identityId)) continue;
+          const key = row.value.objectKey;
+          if (!OBJECT_KEY.test(key) || !key.startsWith(`${hash(row.value.babyId)}/`)) throw new Error("Invalid media intent object key");
+          candidates.add(key);
+        }
         const references = await this.attachmentReferences(req);
         return new Set([...candidates].filter(key => !references.has(key)));
       });

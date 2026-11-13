@@ -135,6 +135,39 @@ describe("OSS experience lifecycle", () => {
     expect(objectStore.objects.has(other)).toBe(true);
   }, 30_000);
 
+  it("retries account cleanup of verified uploads whose metadata commit was revoked", async () => {
+    const { principal: guardian, babyId } = await family("account-uncommitted");
+    const source = await identity.authenticate((await identity.loginWechat(`app:orphan-source-${++serial}:one`)).token);
+    await privacy.consent(source, { policyVersion: privacy.policy().version, accepted: true, adultCaregiver: true, sensitive: true, ai: true, images: true });
+    const inviter = await identity.authenticate((await identity.provisionOperator(`orphan-inviter-${++serial}`, babyId, 60_000)).token);
+    await identity.acceptInvite(source, (await identity.invite(inviter, babyId, "write")).code);
+    const image = await photo("#ab1234");
+    const gate = makeDeferred<void>();
+    objectStore.resetPutGate();
+    objectStore.putGate = gate.promise;
+    const upload = attachments.upload(source, babyId, image.bytes, "image/png", "account-uncommitted");
+    await objectStore.putStarted.promise;
+    await privacy.withdraw(guardian, babyId);
+    gate.resolve();
+    await expect(upload).rejects.toMatchObject({ code: "GUARDIAN_CONSENT_REQUIRED" });
+    expect(await rows(babyId)).toHaveLength(0);
+    const target = (await intents(babyId)).at(-1)!.value.objectKey;
+    expect(objectStore.objects.has(target)).toBe(true);
+    const remove = vi.spyOn(objectStore, "remove").mockRejectedValueOnce(new Error("synthetic delete timeout"));
+    try {
+      const { receipt } = await confirm(source, "account");
+      await deletion.processPending();
+      expect(await job(receipt.id)).toMatchObject({ status: "retry" });
+      expect(objectStore.objects.has(target)).toBe(true);
+      await deletion.processPending();
+      expect(await job(receipt.id)).toMatchObject({ status: "completed" });
+      expect(objectStore.objects.has(target)).toBe(false);
+    } finally {
+      remove.mockRestore();
+      objectStore.resetPutGate();
+    }
+  }, 30_000);
+
   it("keeps a timed-out PUT uncertain and deletion retrying", async () => {
     const { principal, babyId } = await family("timeout");
     const image = await photo("#335577");

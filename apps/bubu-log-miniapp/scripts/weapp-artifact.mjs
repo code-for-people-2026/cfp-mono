@@ -33,10 +33,12 @@ function artifactHashes(directory) {
 export function sourceHash(root = appRoot) {
   // Only public build inputs; never scan .env files or credentials.
   const inputs = ['src', 'config', 'scripts', 'types'].flatMap(dir => files(path.join(root, dir)).map(f => `${dir}/${f}`));
-  inputs.push('package.json', 'project.config.json');
+  inputs.push('package.json', 'project.config.json', 'tsconfig.json');
   const digest = createHash('sha256');
   for (const f of inputs.sort()) digest.update(f).update('\0').update(readFileSync(path.join(root, f))).update('\0');
   for (const f of ['pnpm-lock.yaml', 'pnpm-workspace.yaml']) digest.update(f).update(readFileSync(path.resolve(root, '../..', f)));
+  const sharedConfig = path.resolve(root, '../../packages/typescript-config');
+  for (const f of readdirSync(sharedConfig).sort().filter(f => f.endsWith('.json'))) digest.update(`typescript-config/${f}`).update(readFileSync(path.join(sharedConfig, f)));
   return digest.digest('hex');
 }
 function validateContents(directory, expected) {
