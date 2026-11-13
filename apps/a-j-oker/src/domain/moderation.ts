@@ -47,7 +47,7 @@ export type SemanticModerationRejection = ModerationRejectionError | ModerationP
 export function semanticModerationRejection(error: unknown): SemanticModerationRejection | undefined {
   return error instanceof ModerationRejectionError || error instanceof ModerationPendingReviewError ? error : undefined;
 }
-export const requiredImageGenerationReviewSchema = z.object({
+const requiredImageGenerationReviewSchema = z.object({
   serviceScope: z.enum(["support", "outside", "unclear"]),
   interaction: interactionAssessmentSchema,
 });
