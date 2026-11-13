@@ -11,6 +11,9 @@ const manual = new Set(semanticHistoryCorpus.lexicalPolicy.manualExpansions);
 assert.equal(semanticHistoryCorpus.counts.regex, semanticHistoryCorpus.originalRegexes.length, "regex count");
 assert.equal(semanticHistoryCorpus.counts.keyword, semanticHistoryCorpus.keywords.length, "keyword count");
 assert.equal(semanticHistoryCorpus.counts.case, semanticHistoryCorpus.cases.length, "case count");
+assert.equal(semanticHistoryCorpus.counts.regex, 50, "historical regex inventory");
+assert.equal(semanticHistoryCorpus.counts.keyword, 682, "historical keyword inventory");
+assert.equal(semanticHistoryCorpus.counts.case, 284, "historical case structure");
 assert.ok(semanticHistoryCorpus.cases.length >= 200 && semanticHistoryCorpus.cases.length <= 350, "case range");
 assert.equal(new Set(semanticHistoryCorpus.originalRegexes.map((row) => row.id)).size, semanticHistoryCorpus.originalRegexes.length, "unique regex IDs");
 assert.equal(new Set(semanticHistoryCorpus.cases.map((row) => row.id)).size, semanticHistoryCorpus.cases.length, "unique case IDs");
@@ -65,10 +68,48 @@ for (const word of semanticHistoryCorpus.keywords) {
     assert.equal(row?.expected.serviceScope, "support");
     assert.deepEqual(row?.expected.interaction, Object.fromEntries(interactionFields.map((flag) => [flag, false])));
   }
+  const expectedOrdinaryDisclosureCaseIds = semanticHistoryCorpus.cases
+    .filter((row) =>
+      row.keywords.includes(word.value) &&
+      row.kind === "ordinary-disclosure" &&
+      row.purpose === undefined &&
+      row.expected.decision === "allow" &&
+      row.expected.serviceScope === "support" &&
+      Object.values(row.expected.interaction).every((value) => value === false)
+    )
+    .map((row) => row.id);
+  assert.deepEqual(word.ordinaryDisclosureCaseIds, expectedOrdinaryDisclosureCaseIds, `${word.value}: ordinary disclosure links`);
+}
+
+for (const row of semanticHistoryCorpus.cases) {
+  for (const id of row.sourceRegexIds) {
+    const regex = semanticHistoryCorpus.originalRegexes.find((item) => item.id === id);
+    assert.ok(regex?.caseIds.includes(row.id), `${row.id}: missing reverse regex link ${id}`);
+  }
+  for (const word of row.keywords) {
+    const keyword = semanticHistoryCorpus.keywords.find((item) => item.value === word);
+    assert.ok(keyword?.caseIds.includes(row.id), `${row.id}: missing reverse keyword link ${word}`);
+  }
+}
+
+for (const row of semanticHistoryCorpus.originalRegexes) {
+  for (const id of row.caseIds) {
+    assert.ok(caseById.get(id)?.sourceRegexIds.includes(row.id), `${row.id}: stale case link ${id}`);
+  }
 }
 
 for (const row of semanticHistoryCorpus.cases) {
   assert.ok(row.input.length > 0 && row.input.length <= 1000, `${row.id}: input size`);
+  assert.equal(row.input.startsWith("关键词覆盖："), false, `${row.id}: bare keyword coverage is not a semantic case`);
+  const keywordOnlyCandidate = row.input
+    .replace(/^(?:关键词覆盖[:：])?/, "")
+    .replace(/[。.!！?？]?$/u, "");
+  const keywordOnlySegments = keywordOnlyCandidate.split(/[、，,]\s*/);
+  assert.equal(
+    keywordOnlySegments.length >= 2 && keywordOnlySegments.every((term) => keywordValues.has(term)),
+    false,
+    `${row.id}: keyword-only input`,
+  );
   assert.ok(["allow", "block", "uncertain"].includes(row.expected.decision));
   assert.ok(["support", "outside", "unclear"].includes(row.expected.serviceScope));
   assert.deepEqual(Object.keys(row.expected.interaction).sort(), [...interactionFields].sort(), `${row.id}: seven bools`);
@@ -81,6 +122,27 @@ for (const row of semanticHistoryCorpus.cases) {
     assert.equal(row.expected.decision, "allow");
     assert.equal(row.expected.serviceScope, "support");
   }
+}
+
+const syntheticReplacements = semanticHistoryCorpus.cases.filter((row) => row.notes?.startsWith("隐私脱敏合成替换："));
+assert.equal(syntheticReplacements.length, 8, "privacy synthetic replacements");
+assert.deepEqual(
+  syntheticReplacements.map((row) => row.id),
+  [
+    "ordinary-disclosure-019",
+    "third-party-dependency",
+    "product-reminder-help",
+    "natural-disclosure-01",
+    "natural-disclosure-02",
+    "natural-disclosure-03",
+    "natural-disclosure-06",
+    "natural-disclosure-08",
+  ],
+  "synthetic replacement IDs",
+);
+for (const row of syntheticReplacements) {
+  assert.ok(!row.input.startsWith("关键词覆盖："), `${row.id}: coherent replacement content`);
+  assert.ok(row.keywords.length > 0, `${row.id}: provenance keywords`);
 }
 
 for (const flag of interactionFields) {

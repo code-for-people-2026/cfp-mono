@@ -46,6 +46,12 @@ Only after candidate readiness, SQLite integrity, unchanged schema and existing
 alert verification, and an advancing worker heartbeat, does it atomically record
 the new current and rollback pair. Previous rollback containers/images then enter
 the explicit retirement list. A failed candidate restores the original pair.
+Recovery retains its journal until the exact original pair is running, HTTP
+readiness passes, database integrity/schema and alert verification are preserved,
+and the restored worker advances its heartbeat beyond a fresh recovery snapshot.
+A heartbeat written by the failed candidate cannot prove recovery. A failed
+recovery check leaves the journal in place for investigation; it never restores
+an old database over live writes.
 Schema migrations need a separate reviewed migration/restore procedure; do not
 use this workflow as a generic migration runner.
 
