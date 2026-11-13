@@ -1,9 +1,20 @@
 import { createServer, type Server } from "node:http";
+import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { afterEach, expect, it } from "vitest";
 
 const run = promisify(execFile);
+const releasePageModuleUrl = new URL(
+  "../scripts/release-page-module.mjs",
+  import.meta.url,
+).href;
+const { collectCommonJsModules } = (await import(releasePageModuleUrl)) as {
+  collectCommonJsModules: (
+    entry: string,
+    read: (file: string) => Promise<string>,
+  ) => Promise<{ file: string; code: string }[]>;
+};
 let server: Server;
 afterEach(() => {
   server?.close();
@@ -34,6 +45,9 @@ const failures = {
   "missing-safety-consent": "遗漏互动安全页：保存联系人及单独授权",
   "legacy-help": "遗漏帮助与反馈页：提交反馈",
   "missing-settings-loader": "缺少设置页面模块",
+  "unreferenced-chat-chunk": "测试版遗漏功能：chat-composer",
+  "sibling-chat-page": "测试版遗漏功能：chat-composer",
+  "missing-chat-feature": "测试版遗漏功能：chat-composer",
 };
 const privacyPages = [
   ["privacy", "home", "授权管理 导出数据 删除数据 政策与协议"],
@@ -60,6 +74,56 @@ const scenarios = [
       })),
   ),
 ];
+
+it.each([
+  { scenario: "reachable-shared-module", passes: true },
+  { scenario: "unreferenced-native-chunk", passes: false },
+  { scenario: "missing-native-feature", passes: false },
+])(
+  "小程序发布检查只统计选中聊天页可达的 CommonJS 模块：$scenario",
+  async ({ scenario, passes }) => {
+    const sharedMarkers = ["unreferenced-native-chunk", "missing-native-feature"].includes(
+      scenario,
+    )
+      ? []
+      : ["chat-composer", "input-toggle"];
+    const unreachableMarkers =
+      scenario === "unreferenced-native-chunk"
+        ? ["chat-composer", "input-toggle"]
+        : [];
+    const files: Record<string, string> = {
+      "pages/chat/index.js":
+        'const artifact="artifact-surface";const shared=require("../../common.js");const taro=require("../../taro.js");',
+      "common.js": sharedMarkers.join(" "),
+      "taro.js": 'const runtime=require("./runtime.js");',
+      "runtime.js": "native-runtime",
+      "unreferenced.js": unreachableMarkers.join(" "),
+      "pages/unrelated/index.js": unreachableMarkers.join(" "),
+    };
+    const modules = await collectCommonJsModules(
+      "pages/chat/index.js",
+      async (file) => {
+        assert.ok(Object.hasOwn(files, file), `缺少小程序测试模块：${file}`);
+        return files[file];
+      },
+    );
+    expect(modules.map((module) => module.file)).toEqual([
+      "pages/chat/index.js",
+      "common.js",
+      "taro.js",
+      "runtime.js",
+    ]);
+    expect(
+      ["chat-composer", "input-toggle"].every((marker) =>
+        modules.some((module) => module.code.includes(marker)),
+      ),
+    ).toBe(passes);
+    expect(
+      modules.some(({ file }) => file === "unreferenced.js" || file === "pages/unrelated/index.js"),
+    ).toBe(false);
+  },
+);
+
 it.each(scenarios)(
   "线上发布检查实际读取设置路由、模块与提交：$scenario",
   async ({ scenario, failure, replaced, replacement }) => {
@@ -72,6 +136,13 @@ it.each(scenarios)(
       ["help", "help"],
       ...privacyPages.map(([route, name]) => [route, "privacy", name]),
     ];
+    const chatFeatureMissing =
+      scenario === "unreferenced-chat-chunk" ||
+      scenario === "sibling-chat-page" ||
+      scenario === "missing-chat-feature";
+    const reachableChatMarkers = chatFeatureMissing
+      ? []
+      : ["chat-composer", "input-toggle"];
     const files: Record<string, string> = {
       "/chat/index.html": '<script src="/chat/js/app.fixture.js"></script>',
       "/chat/js/app.fixture.js": routes
@@ -98,9 +169,11 @@ it.each(scenarios)(
         })
         .join(""),
       "/chat/js/index.chat.js":
-        "chat-composer input-toggle artifact-surface " +
+        'import{sharedComposer as chatUI}from"./common.chat.js";' +
+        (scenario === "missing-chat-feature" ? "" : "artifact-surface ") +
         (scenario === "missing-ag-ui" ? "/api/hello/sessions" : scenario === "dynamic-ag-ui" ? '`/api/hello/${route}` consume("ag-ui") consume("image-resume")' : "/api/hello/ag-ui") +
         (scenario === "legacy-renderer" ? "" : " data-surface-id a2ui-surface"),
+      "/chat/js/common.chat.js": reachableChatMarkers.join(" "),
       "/chat/js/index.settings.js": `settings-page settings-header 连接方式 帮助与反馈 ${scenario === "missing-safety-entry" ? "" : "互动安全"} ${scenario === "missing-privacy-entry" ? "" : "隐私与数据"}`,
       "/chat/js/index.connection.js": `当前模型 图片生成 由平台提供 DeepSeek 对话和万相图片生成服务。 ${scenario === "missing-platform-connection" ? "" : "平台助手"} ${scenario === "legacy-connection-entry" ? "mode-option 生成专用连接令牌" : ""}`,
       "/chat/js/index.safety.js": `人工支持 紧急联系人 ${scenario === "missing-safety-consent" ? "" : "保存联系人及单独授权"}`,
@@ -130,6 +203,11 @@ it.each(scenarios)(
     for (const [, name] of privacyPages)
       files[`/chat/js/index.${name}.js`] =
         `export{${name} as default}from"./common.privacy.js";`;
+    if (scenario === "unreferenced-chat-chunk")
+      files["/chat/js/unreferenced.chat.js"] =
+        "chat-composer input-toggle";
+    if (scenario === "sibling-chat-page")
+      files["/chat/js/pages/chat/index.js"] = "chat-composer input-toggle";
     if (scenario === "missing-chunk")
       delete files["/chat/js/index.settings.js"];
     if (scenario === "missing-privacy-chunk")
