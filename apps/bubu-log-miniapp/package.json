@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "pnpm test:environment && vitest run",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "pnpm test:environment && vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:chat-live": "playwright test --config playwright.chat-live.config.ts",
     "test:wxss": "node scripts/check-wxss.mjs development",

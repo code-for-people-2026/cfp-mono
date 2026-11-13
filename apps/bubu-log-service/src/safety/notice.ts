@@ -8,4 +8,5 @@ export function safetyCategory(text: string): "breathing" | "consciousness" | un
   }
 }
 export const safetyNotice = "你描述了需要立即关注的危险表现。如果宝宝现在呼吸困难、嘴唇发紫、叫不醒或持续抽搐，请立即拨打 120（中国大陆；境外使用当地急救号码），说明宝宝的情况和位置，按调度员指导行动。不要等 AI、群采集或后台回复。这里不能诊断，也不能判断宝宝已经安全。请先处理现实中的安全，之后再补记；本条未自动写入照护记录。";
-export const safetySources = ["https://ws.zibo.gov.cn/art/2026/7/16/art_815_3010993.html", "https://www.nhc.gov.cn/xcs/c100122/202601/b805b5cc607941f1a4445a8b297bf4e9.shtml"];
+
+// Reference sources for the fixed notices: ["https://ws.zibo.gov.cn/art/2026/7/16/art_815_3010993.html", "https://www.nhc.gov.cn/xcs/c100122/202601/b805b5cc607941f1a4445a8b297bf4e9.shtml"];

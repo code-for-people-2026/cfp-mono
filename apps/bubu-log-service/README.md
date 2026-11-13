@@ -116,3 +116,21 @@ pnpm --filter @cfp/bubu-log-service build
 测试使用隔离临时 **真实 Payload SQLite**；身份与记录测试注入微信 provider 和合成旧后端，另用实际Payload REST及临时SQLite验证远程适配器。MCP通过SDK客户端与真实loopback HTTP调用，图片写入私有临时目录；覆盖重启、撤权、群隔离、丢响应恢复、旧统计失败后新修订、候选补充撞重复、图片证据被明确答案替换、跨日进行中及撤销防重放。生产初始化测试以 `NODE_ENV=production` 执行身份和录入迁移并重开核对。群来源和订阅Agent桥接使用合成SQLite/CLI fixture，这不等于真实微信、真实模型或客户库联调。
 
 上线前仍需配置本产品 AppID/secret、HTTPS和微信 request/downloadFile 域名、专用旧 CMS 凭证、真实照片来源 allowlist；用隔离账号验收真实微信登录、旧账号绑定、跨宝宝/撤权、后台角色核对、数据备份。此次没有读取真实客户群、连接真实业务库、迁移旧数据或启用支付。旧照片公开历史是仍待后续私有附件迁移治理的限制。
+
+
+## 私有附件 OSS 存储与迁移
+
+生产环境必须配置 `BUBU_MEDIA_STORAGE=oss` 以及 `.env.example` 中的 OSS bucket、region、prefix、服务端凭证；缺失时启动失败，不回退到服务器磁盘。Bucket 必须私有，运行账号只授予目标前缀所需权限。`BUBU_OSS_INTERNAL=true` 仅适用于能访问相应内网端点的同地域 ECS。凭证只保存在服务端；数据库保存附件元数据、摘要和对象引用，图片以既有 AES-GCM 加密信封存入 OSS，仍经身份、隐私和图片审核检查后访问。保留原 `BUBU_MEDIA_ENCRYPTION_KEY`，不可因迁移换密钥。
+
+迁移是手动运维操作，不属于普通构建、CI 或部署的自动步骤。先验证备份，停止写入服务及外部自动重启入口，保留 `runtime.lock` 文件本身，由迁移运行时取得相同的独占锁；配置与原实例相同的数据目录、数据库、加密密钥及 OSS。不要同时运行在线服务或删除锁文件。
+
+```sh
+# 仅盘点，不写对象、不删除本地图片
+pnpm --filter @cfp/bubu-log-service media:migrate-attachments
+# 验证远端读回后提交元数据；此阶段保留本地文件
+pnpm --filter @cfp/bubu-log-service media:migrate-attachments --apply
+# 核对结果后，再次验证远端对象并移除已迁移本地文件
+pnpm --filter @cfp/bubu-log-service media:migrate-attachments --apply --remove-local
+```
+
+完整成功后再恢复服务，并验证受保护图片读取。任何失败先保留现场；回退必须同时考虑数据库、对象存储和运行版本，不可仅换回旧镜像。以上操作不会开启定时采集或隔离验收服务。

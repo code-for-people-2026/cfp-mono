@@ -11,8 +11,10 @@ function fixture(t, name = 'experience') {
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const root = path.join(temp, 'apps/app');
   for (const d of ['src', 'config', 'scripts', 'types']) mkdirSync(path.join(root, d), { recursive: true });
-  for (const f of ['package.json', 'project.config.json']) writeFileSync(path.join(root, f), '{}');
+  for (const f of ['package.json', 'project.config.json', 'tsconfig.json']) writeFileSync(path.join(root, f), '{}');
   for (const f of ['pnpm-lock.yaml', 'pnpm-workspace.yaml']) writeFileSync(path.join(temp, f), 'test');
+  mkdirSync(path.join(temp, 'packages/typescript-config'), { recursive: true });
+  writeFileSync(path.join(temp, 'packages/typescript-config/react-library.json'), '{}');
   writeFileSync(path.join(root, 'src/app.ts'), 'test');
   const p = profile(name), directory = path.join(root, p.outputRoot);
   mkdirSync(directory, { recursive: true });
@@ -52,12 +54,14 @@ test('development artifacts cannot upload', t => {
   writeFileSync(path.join(target, 'bubu-build.json'), readFileSync(path.join(directory, 'bubu-build.json')));
   assert.throws(() => validateExperience(root), /不是/);
 });
-for (const mutation of ['modify', 'add', 'delete', 'source']) test(`${mutation} after build invalidates receipt`, t => {
+for (const mutation of ['modify', 'add', 'delete', 'source', 'tsconfig', 'shared-tsconfig']) test(`${mutation} after build invalidates receipt`, t => {
   const { root, directory } = fixture(t); sealBuild('experience', root);
   if (mutation === 'modify') writeFileSync(path.join(directory, 'app.js'), 'modified');
   if (mutation === 'add') writeFileSync(path.join(directory, 'extra.js'), 'extra');
   if (mutation === 'delete') rmSync(path.join(directory, 'app.json'));
   if (mutation === 'source') writeFileSync(path.join(root, 'src/app.ts'), 'changed');
+  if (mutation === 'tsconfig') writeFileSync(path.join(root, 'tsconfig.json'), '{} changed');
+  if (mutation === 'shared-tsconfig') writeFileSync(path.resolve(root, '../../packages/typescript-config/react-library.json'), '{} changed');
   assert.throws(() => uploadExperience(['--version', '1.0.0'], { root, run() { assert.fail('must not invoke'); } }));
 });
 for (const mutation of ['origin', 'appid', 'root', 'domainCheck']) test(`cannot seal wrong ${mutation}`, t => {

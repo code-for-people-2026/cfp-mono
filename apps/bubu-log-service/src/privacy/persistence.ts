@@ -8,7 +8,7 @@ export const privacyCollections: CollectionConfig[] = privacyTables.map(slug => 
   fields: [{ name: "id", type: "text" }, { name: "key", type: "text", required: true, unique: true },
     { name: "identityId", type: "text", index: true }, { name: "babyId", type: "text", index: true }, { name: "value", type: "json", required: true }],
 }));
-export interface PrivacyRow<T> { id: string; key: string; identityId?: string; babyId?: string; value: T }
+interface PrivacyRow<T> { id: string; key: string; identityId?: string; babyId?: string; value: T }
 export class PrivacyRepository {
   constructor(readonly payload: Payload, private readonly currentRequest?: () => PayloadRequest | undefined) {}
   async list<T>(table: Table, where?: Where, req?: PayloadRequest): Promise<PrivacyRow<T>[]> {

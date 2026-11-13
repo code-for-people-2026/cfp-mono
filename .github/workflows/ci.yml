@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pin the OS until Playwright supports the ubuntu-latest 26.04 runner image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       website_affected: ${{ steps.deploy_targets.outputs.website }}
@@ -20,10 +21,6 @@ jobs:
       deploy_targets: ${{ steps.deploy_targets.outputs.targets }}
       preview_matrix: ${{ steps.deploy_targets.outputs.preview_matrix }}
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
-      WEEKLY_MENU_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_weekly_menu_test
-      KITH_INN_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp_kith_inn_test
-      PAYLOAD_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54324/cfp
       PAYLOAD_SECRET: ci-secret
       PAYLOAD_DB_PUSH: "true"
       ALLOW_ADMIN_BOOTSTRAP: "true"
@@ -31,7 +28,7 @@ jobs:
       postgres:
         image: postgres:17-alpine
         ports:
-          - 54324:5432
+          - 5432
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -46,6 +43,27 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Resolve PostgreSQL service URLs
+        env:
+          POSTGRES_PORT: ${{ job.services.postgres.ports[5432] }}
+        run: |
+          case "$POSTGRES_PORT" in
+            ""|*[!0-9]*)
+              echo "PostgreSQL service port must be numeric" >&2
+              exit 1
+              ;;
+          esac
+          if (( POSTGRES_PORT < 1 || POSTGRES_PORT > 65535 )); then
+            echo "PostgreSQL service port must be between 1 and 65535" >&2
+            exit 1
+          fi
+          {
+            echo "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp"
+            echo "PAYLOAD_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp"
+            echo "WEEKLY_MENU_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp_weekly_menu_test"
+            echo "KITH_INN_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:${POSTGRES_PORT}/cfp_kith_inn_test"
+          } >> "$GITHUB_ENV"
+
       - uses: pnpm/action-setup@v4
         with:
           version: 10.2.0
@@ -57,8 +75,92 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # GitHub's ubuntu-24.04 image can list an Ubuntu mirror whose DNS is unavailable.
+      # Prefer the official archive when reachable, and otherwise use kernel.org's
+      # fixed Ubuntu mirror. Apt continues to verify Ubuntu's signed indexes/packages.
+      - name: Prepare Ubuntu apt mirror for Playwright (PR only)
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 2
+        run: |
+          set -euo pipefail
+          mirrors=/etc/apt/apt-mirrors.txt
+
+          if curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 15 \
+            --connect-timeout 5 \
+            --output /dev/null \
+            https://archive.ubuntu.com/ubuntu/dists/noble/InRelease; then
+            if [[ ! -f "$mirrors" ]]; then
+              echo 'Official Ubuntu archive is reachable; no apt mirror list needs changing.'
+              exit 0
+            fi
+
+            tmp="$(mktemp)"
+            trap 'rm -f "$tmp"' EXIT
+            mode="$(stat -c '%a' "$mirrors")"
+            awk '!/azure\.archive\.ubuntu\.com/' "$mirrors" > "$tmp"
+            if cmp -s "$mirrors" "$tmp"; then
+              echo 'Azure Ubuntu mirror is not configured; official archive is reachable.'
+              exit 0
+            fi
+            if [[ ! -s "$tmp" ]]; then
+              echo 'Refusing to empty the apt mirror list.' >&2
+              exit 1
+            fi
+            # Blank lines and comments are not usable mirrors: require a remaining
+            # official Ubuntu HTTPS entry (trailing slash and metadata allowed).
+            if ! grep -Eq '^[[:space:]]*https://(archive|security)\.ubuntu\.com/ubuntu/?([[:space:]]|$)' "$tmp"; then
+              echo 'Refusing to replace the apt mirror list without an official Ubuntu HTTPS mirror.' >&2
+              exit 1
+            fi
+            sudo cp -- "$tmp" "$mirrors"
+            sudo chmod "$mode" "$mirrors"
+            echo 'Removed the Azure Ubuntu mirror; official Ubuntu mirrors remain configured.'
+            exit 0
+          fi
+
+          echo 'Official Ubuntu archive is unreachable; probing the kernel.org Ubuntu mirror.' >&2
+          if ! curl \
+            --fail \
+            --silent \
+            --show-error \
+            --location \
+            --max-time 30 \
+            --connect-timeout 5 \
+            --output /dev/null \
+            https://mirrors.edge.kernel.org/ubuntu/dists/noble/InRelease; then
+            echo 'Trusted Ubuntu mirror fallback is also unreachable.' >&2
+            exit 1
+          fi
+
+          if [[ ! -f "$mirrors" ]]; then
+            echo 'Expected apt mirror list does not exist; refusing to configure the fallback.' >&2
+            exit 1
+          fi
+          tmp="$(mktemp)"
+          trap 'rm -f "$tmp"' EXIT
+          mode="$(stat -c '%a' "$mirrors")"
+          printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' > "$tmp"
+          sudo cp -- "$tmp" "$mirrors"
+          sudo chmod "$mode" "$mirrors"
+          echo 'Configured the kernel.org Ubuntu mirror fallback.'
+
+      - name: Install Playwright Chromium and apt dependencies (PR only)
+        if: github.event_name == 'pull_request'
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          pnpm --filter @cfp/website exec playwright install --with-deps chromium
+
       - name: Verify native SQLite connection lifetime
         run: pnpm --filter @cfp/hello-agent test:sqlite-connections && pnpm --filter @cfp/hello-agent test:feishu && pnpm --filter @cfp/hello-agent test:interaction
+
+      - name: Verify Hello Agent release retention
+        run: python3 -m unittest discover -s apps/hello-agent/deploy/tests -v
 
       - name: Verify Hello Agent Docker context excludes private data
         run: pnpm --filter @cfp/hello-agent exec node scripts/image-context-check.mjs --docker
@@ -97,9 +199,6 @@ jobs:
       # e2e 只在 PR 时跑。merge 进 main(push)时省掉(playwright install 浏览器 + e2e 较慢),
       # 但上面 pnpm verify 里的 unit(lint+typecheck+test:coverage+knip+build)仍跑,作为
       # merge 后的快速复查 + 防御绕过 PR 直推 main 的提交。
-      - run: pnpm --filter @cfp/website exec playwright install --with-deps chromium
-        if: github.event_name == 'pull_request'
-
       - name: Run affected E2E
         env:
           E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -173,12 +272,18 @@ jobs:
           VERIFY_RESULT: ${{ needs.verify.result }}
           PREVIEW_BUILD_RESULT: ${{ needs.preview-build.result }}
           WEBSITE_AFFECTED: ${{ needs.verify.outputs.website_affected }}
+          NO_DEPLOY: ${{ contains(github.event.pull_request.labels.*.name, 'ci:no-deploy') }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPOSITORY: ${{ github.repository }}
         run: |
           if [[ "$VERIFY_RESULT" != success || "$PREVIEW_BUILD_RESULT" != success ]]; then
             echo 'Website Preview requires verify and preview-build to succeed.' >&2
             exit 1
+          fi
+          if [[ "$NO_DEPLOY" == true ]]; then
+            echo 'Preview deployment explicitly disabled by ci:no-deploy; verification remains required.'
+            echo 'should_deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [[ "$WEBSITE_AFFECTED" != true ]]; then
             echo 'No website change requires a Vercel Preview.'
@@ -265,7 +370,9 @@ jobs:
           PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           [[ -n "$DEEPSEEK_API_KEY" ]]
-          deployment_url="$(vercel deploy --yes --target=preview --archive=tgz \
+          # A restored Vercel cache can retain traces into removed pnpm packages.
+          # Build this PR from its locked dependencies (no --with-cache).
+          deployment_url="$(vercel deploy --yes --target=preview --force --archive=tgz \
             --build-env RELEASE_SHA="$PR_HEAD_SHA" \
             --env DEEPSEEK_API_KEY="$DEEPSEEK_API_KEY" \
             --env RELEASE_SHA="$PR_HEAD_SHA" \

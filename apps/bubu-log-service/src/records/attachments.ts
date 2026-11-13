@@ -26,7 +26,7 @@ export interface Attachment {
   uploadedBy: Pick<ActorScope["actor"], "kind" | "id" | "onBehalfOf">;
   url: string;
 }
-export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "legacy-source"; documentId: string }
+interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "legacy-source"; documentId: string }
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
   legacyReference?: LegacyMediaReference;
