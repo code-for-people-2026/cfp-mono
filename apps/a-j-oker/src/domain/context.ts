@@ -74,6 +74,24 @@ export class ContextService {
       previous: turns.map(({ input, greeting }) => ({ input, greeting })),
     };
   }
+  /**
+   * Bounded review context. Only antecedent summary/history is clipped here;
+   * the moderation caller sends the complete current input in texts[0].
+   */
+  async reviewContext(sessionId: number) {
+    const { memory, turns } = await this.read(sessionId);
+    const bounded = (text: string, characters: number) => text.slice(0, characters);
+    return {
+      memory: bounded(memory.summary, 900),
+      previous: turns.slice(-(RECENT_TURNS + 2)).map(turn => ({
+        input: {
+          text: bounded(turn.input.text, 1_000),
+          mediaIds: turn.input.mediaIds,
+        },
+        greeting: bounded(turn.greeting, 1_000),
+      })),
+    };
+  }
   // Caller holds the session lease. Reset only the model's context cursor and
   // summary; keep original user records and evidence available for export.
   async forgetForFuture(sessionId: number) {

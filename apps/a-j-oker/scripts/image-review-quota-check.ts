@@ -9,6 +9,7 @@ import sharp from "sharp";
 import { sql, type MigrateDownArgs, type MigrateUpArgs } from "@payloadcms/db-sqlite";
 import { AppError } from "../src/domain/contracts";
 import type { ImageReview } from "../src/operations/image-review";
+import { imageReview, syntheticTextReview } from "./synthetic-text-review";
 
 const dir = await mkdtemp(path.join(tmpdir(), "hello-image-review-quota-"));
 Object.assign(process.env, {
@@ -106,7 +107,8 @@ try {
     if (throwReview) throw new Error("synthetic lost review response");
     return { decision, version: "synthetic-budget-review", category: "test" };
   };
-  const allowText = async () => {};
+  const allowText: typeof syntheticTextReview = async request =>
+    request.purpose === "image_generation" ? imageReview(true) : syntheticTextReview(request);
   const fixture = async () => {
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
     const media = new MediaService(repo, () => undefined);
@@ -119,8 +121,8 @@ try {
   const output = { greeting: "一张测试插画", association: "合成验证" };
   const a = await fixture(), b = await fixture(), c = await fixture();
   await a.service.upload(pixels);
-  const legacy = await a.media.save(pixels);
   const legacyTurn = await a.turn();
+  const legacy = await a.media.save(pixels, { turnId: legacyTurn.id, provider: "bailian", model: "wan2.6-t2i", taskId: "legacy-generated-media" });
   await a.service.complete(legacyTurn.id, { ...output, artifacts: [{ ...illustration, source: { type: "media", mediaId: legacy.id } }] });
   assert.equal(calls, 2, "upload and legacy output review share one owner budget");
   const beforeOwnerRejection = await counts();

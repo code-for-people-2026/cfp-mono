@@ -1,10 +1,9 @@
-import { CREATION_REFUSAL, isSupportImageRequest } from "../domain/creation-scope";
 import { z } from "zod";
 import type { Repository } from "../cms/repository";
 import { AppError, ContentReviewError } from "../domain/contracts";
 import { MediaService } from "../domain/media";
 import { ContextService } from "../domain/context";
-import type { Moderator } from "../domain/moderation";
+import { assertImageGenerationReview, type Moderator } from "../domain/moderation";
 import { assertGenerationAllowed } from "../operations/enforcement";
 import { configuredImageReviewer, imageReviewConfigured, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
 import { configuredImageProvider, ImageTaskFailed, ImageSubmissionRejected, imageRequestSchema, WAN_MODEL, type ImageProvider, type ImageRequest } from "./wan";
@@ -52,10 +51,6 @@ export class ImageGenerationService {
     if (row.status !== "running" || row.visibility === "quarantined") throw new AppError(409, "本轮已结束或停止展示，不能继续生图");
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     let state = readImageState(row);
-    if (!isSupportImageRequest(String((row.input as { text?: string }).text || ""))) {
-      if (state) await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "blocked" } });
-      throw new AppError(422, CREATION_REFUSAL);
-    }
     // Known local configuration failures must not trigger paid text reviews.
     // Stored images need no provider, but must still pass the intent gate below.
     let provider: ImageProvider | undefined;
@@ -66,10 +61,11 @@ export class ImageGenerationService {
     }
     // Review the user's request before rewritten prompts, charges or task reuse.
     try {
-      await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
+      assertImageGenerationReview(await this.moderate({ stage: "input", purpose: "image_generation", mode: row.mode,
         texts: [String((row.input as { text?: string }).text || "")],
-        context: JSON.stringify(await new ContextService(this.repo).modelContext(Number(row.sessionId))), requestId: `image-intent:${turnId}`,
-        turnId, sessionId: Number(row.sessionId), apiKey });
+        serviceScope: true, interaction: true,
+        context: JSON.stringify(await new ContextService(this.repo).reviewContext(Number(row.sessionId))), requestId: `image-intent:${turnId}`,
+        turnId, sessionId: Number(row.sessionId), apiKey }));
     } catch (error) {
       if (state && error instanceof ContentReviewError && error.status === 422)
         await this.repo.update("greetings", turnId, { imageGeneration: { ...state, status: "blocked" } });

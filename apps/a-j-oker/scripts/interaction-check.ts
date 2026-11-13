@@ -26,10 +26,19 @@ try {
   await seedSyntheticAge(payload, owner);
   const repo = new Repository(payload, owner);
   let generated = 0;
-  const service = new GreetingService(repo, async (r) => { generated++; await r.save({ greeting: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, { moderate: async () => {} });
+  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+  const service = new GreetingService(repo, async (r) => { generated++; await r.save({ greeting: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, {
+    moderate: async () => ({ serviceScope: "support" as const, interaction: ordinary }),
+  });
   const session = await service.createSession();
-  await assert.rejects(service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我12岁，想让你做我的恋人。", mediaIds: [] } }), /年龄|未成年|复核/);
-  assert.equal(generated, 0, "已核验账号自述未成年时，不能再调用生成器");
+  await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "小说里写道：“我12岁。”我想聊聊这个角色。", mediaIds: [] } });
+  assert.equal(generated, 1, "quoted age is an ordinary semantic input");
+  const minor = { ...ordinary, minor: true };
+  const minorService = new GreetingService(repo, async () => { throw new Error("minor must not generate"); }, undefined, undefined, {
+    moderate: async () => ({ serviceScope: "support" as const, interaction: minor }),
+  });
+  await assert.rejects(minorService.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我今年12岁，想继续聊天。", mediaIds: [] } }), /年龄|未成年|复核/);
+  assert.equal(generated, 1, "semantic current-minor verdict must pause generation");
   assert.equal((await new AgeService(payload, owner).status()).state, "needs_review");
   await assert.rejects(new AgeService(payload, owner).requireCapability(), /复核/);
   const adult = { id: `synthetic:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };
@@ -80,12 +89,12 @@ try {
   assert.ok((await interaction.acknowledge({ id: randomUUID() })).notice, "stale acknowledgement must not clear a pending notice");
   assert.equal((await interaction.acknowledge({ id: first.notice!.id })).notice, null);
   assert.equal((await interaction.heartbeat()).notice, null);
-  const dep = await interaction.inspectInput("我离不开你", session.id, randomUUID()); assert.match(dep!, /不能替代/);
-  const crisis = await interaction.inspectInput("求助】我想伤害自己，也想删除聊天记录", session.id, randomUUID()); assert.match(crisis!, /眼前安全/);
+  const dep = await interaction.inspectInput("我离不开你", session.id, randomUUID(), { ...ordinary, dependency: true }); assert.match(dep!, /不能替代/);
+  const crisis = await interaction.inspectInput("求助】我想伤害自己，也想删除聊天记录", session.id, randomUUID(), { ...ordinary, crisis: true }); assert.match(crisis!, /眼前安全/);
   const helpCases = await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } });
   assert.equal(helpCases.docs.length, 1, "prefixed help must itself create the crisis case");
   assert.equal(helpCases.docs[0].stage, "interaction_crisis");
-  await interaction.inspectInput("我想死", session.id, randomUUID());
+  await interaction.inspectInput("我想死", session.id, randomUUID(), { ...ordinary, crisis: true });
   const cases = (await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } })).docs;
   assert.equal(cases.length, 1); assert.equal(cases[0].severity, "urgent");
   assert.equal((await interaction.status()).notice?.kind, "crisis");

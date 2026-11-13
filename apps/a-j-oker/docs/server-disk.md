@@ -46,6 +46,12 @@ Only after candidate readiness, SQLite integrity, unchanged schema and existing
 alert verification, and an advancing worker heartbeat, does it atomically record
 the new current and rollback pair. Previous rollback containers/images then enter
 the explicit retirement list. A failed candidate restores the original pair.
+Recovery retains its journal until the exact original pair is running, HTTP
+readiness passes, database integrity/schema and alert verification are preserved,
+and the restored worker advances its heartbeat beyond a fresh recovery snapshot.
+A heartbeat written by the failed candidate cannot prove recovery. A failed
+recovery check leaves the journal in place for investigation; it never restores
+an old database over live writes.
 Schema migrations need a separate reviewed migration/restore procedure; do not
 use this workflow as a generic migration runner.
 
@@ -180,3 +186,106 @@ journal and fail the privacy job before deletion guards are retired. An old
 unreferenced session without a journal can have its disposable mounts removed;
 legacy containers without ownership evidence require manual inspection. Receipts
 remain, but no database snapshot is intentionally retained after recovery.
+
+## Reconnecting the renamed application (2026-11-12)
+
+The rename branch predated the retention merge and omitted its entry points.
+This branch restores the official build, release, retention, timer, and smoke
+recovery scripts under `apps/a-j-oker`, together with their CI tests. Production
+container names, environment variables, operations directories and locks retain
+their existing `cfp-hello-agent` names. Candidate working directories are read
+from the pinned image metadata; only the old and renamed application paths are
+accepted. App and worker commands, mounts, environment and host configuration
+remain those of the existing deployment.
+
+An existing manifest must not be deleted or replaced using `adopt` to conceal
+runtime drift. For a reviewed recovery, prepare a private JSON plan containing
+`expectedManifestSha256` and a complete proposed `state` (schema, current,
+rollback, retired). Each version records the audited full immutable image ID,
+release tag, and app/worker container IDs and names. Include every version from
+the previous manifest; do not infer retirement from dates or tag ordering.
+
+```sh
+python3 /opt/cfp-hello-agent/operations/bin/reconcile.py PLAN.json
+python3 /opt/cfp-hello-agent/operations/bin/reconcile.py PLAN.json --apply
+python3 /opt/cfp-hello-agent/operations/bin/retention.py cleanup
+python3 /opt/cfp-hello-agent/operations/bin/retention.py cleanup --apply
+```
+
+Reconciliation shares the deployment lock and refuses interrupted deployments,
+manifest changes, moved tags, unexpected names or mounts, running retired
+containers and unknown references to retired images. Applying it first verifies
+the chosen rollback against an isolated snapshot under the existing privacy
+policy, then rechecks the inputs and live readiness before saving a private
+receipt and manifest. It does not rename, stop or delete deployment containers.
+Actual retirement still uses the official retention command. Subsequent
+successful releases invoke retention automatically from `release.py`.
+
+Prepare source archives from explicitly selected tracked runtime source and
+configuration files; never archive an entire working directory with private
+reports or credentials. Supply independently verified prebuilt H5 assets. The
+Dockerfile-specific ignore rules additionally exclude documents, test fixtures,
+tests, private evidence and Python caches, including scripts that depend on
+excluded fixtures. Production worker, privacy-maintenance and type-generation
+scripts remain available. The Docker context check exercises synthetic private
+paths and required runtime files; it never copies personal source material.
+
+### Verification on 2026-11-12
+
+The restored workflow passed 36 deployment tests, shell syntax checks, Docker
+context filtering and the complete privacy-operations regression. The audited
+manifest was reconciled after an isolated rollback check; official retention
+then removed four retired releases (eight containers), without deleting volumes.
+
+`build-preview.sh` rebuilt `preview-20261112-semantic-managed` from the reviewed
+source and hash-verified current static assets. The runtime image is
+1,321,773,901 bytes. Type checking and production compilation passed; an isolated
+image-content check confirmed private-report/fixture paths and compilation
+cache were absent while runtime scripts and H5 remained available. The command
+transport reached its wait limit, but the original locked build continued; its
+image export and automatic cache cleanup were verified before publication. Do
+not replay a timed-out transport request without inspecting its original task.
+
+`release.py` verified the candidate offline, preserved schema and alert state,
+confirmed worker heartbeat advancement, and promoted the app/worker pair. It
+then automatically retired `preview-20261031-retention436-v2` (one image and two
+containers). The protected rollback is `preview-20261111-semantic-privacy`.
+Both the retention service and privacy maintenance completed with exit status
+zero afterward; both timers are enabled. Public readiness returned the new
+release, the retirement queue and deployment journal were empty, and no copied
+smoke mounts or ownership journals remained. Final available disk space was
+about 8.5 GiB, versus 3.4 GiB before recovery; these are point-in-time readings.
+
+### Verification on 2026-11-13
+
+The four review findings were resolved and independently reviewed at
+`f2e36fd11d78e7213e18981aecb701434070a8b6` by separate Standards and Spec
+reviewers, with no actionable findings. The final checks passed 463 unit tests,
+45 deployment tests, type checking, lint, interaction regression and full
+integration. Current real-model results are recorded in
+[the semantic regression note](semantic-routing-20261111.md).
+
+The managed build produced `preview-20261113-semantic-reviewed` from runtime
+commit `e275ffd2`; the subsequent reviewed commit changed only documentation and
+the Docker-excluded corpus check. Static assets matched the previous release
+before and after copying. The immutable image is
+`sha256:55418fbd834ce5aa7b37766456852ddb38ba96f80d6b917c39cd0e4e9b6da8bb`
+(1,321,784,594 bytes). Build and automatic cache cleanup exited successfully.
+The image's core source hashes matched the reviewed source; private-report,
+fixture, test, build-cache and temporary-database paths were absent.
+
+After both reviews, the publisher was hash-verified and installed under the
+deployment and privacy-maintenance locks. The official `release.py` passed the
+isolated candidate checks, unchanged-schema/alert verification and worker
+heartbeat checks, then promoted the app/worker pair. Its automatic retention
+removed `preview-20261111-semantic-privacy` (one image and two containers), with
+zero volumes removed. The protected rollback is now
+`preview-20261112-semantic-managed`.
+
+Post-release retention and privacy-maintenance services both finished with
+status zero; both timers were enabled and active. Local and public readiness
+returned the new release. The retired image was absent, retirement queue empty,
+deployment journal absent, exact current/rollback containers valid, and smoke
+mount count zero. Available disk space was 9,192,497,152 bytes (about 8.6 GiB).
+These are server checks, not phone acceptance. Private operational receipts and
+model replies are not committed.

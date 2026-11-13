@@ -64,9 +64,9 @@ try {
   assert.equal(model.requests.length, 1);
   assert.ok(model.requests[0].toolsDict.save_greeting);
   assert.ok(model.requests[0].toolsDict.cbt_agent);
-  assert.ok(model.requests[0].toolsDict.generate_image);
-  assert.ok(model.requests[0].toolsDict.decide_image_request);
-  assert.equal(Object.keys(model.requests[0].toolsDict).length, 11);
+  assert.equal(model.requests[0].toolsDict.generate_image, undefined);
+  assert.equal(model.requests[0].toolsDict.decide_image_request, undefined);
+  assert.equal(Object.keys(model.requests[0].toolsDict).length, 9);
   assert.ok(
     model.requests[0].contents.some((c) =>
       c.parts?.some((p) => p.inlineData?.mimeType === "image/jpeg"),

@@ -13,6 +13,8 @@ import {
 } from "@cfp/base-chat-protocol";
 import { ScriptedModel } from "./scripted-model";
 import { seedSyntheticAge } from "./synthetic-age";
+import type { Moderator } from "../src/domain/moderation";
+import { imageReview, syntheticTextReview } from "./synthetic-text-review";
 
 const directory = await mkdtemp(path.join(tmpdir(), "aj-artifact-check-"));
 process.env.HELLO_DATABASE_URI = `file:${directory}/test.db`;
@@ -28,7 +30,11 @@ const { GET } = await import("../src/app/api/hello/[...path]/route");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 // 本脚本验证作品协议与保存链路；真实审核失败关闭另由 operations/moderation 检查覆盖。
-const syntheticReviews = { moderate: async () => {}, imageReviewer: async () => ({ decision: "allow" as const, category: "synthetic-artifacts", version: "mock-pixels-test-only" }) };
+const syntheticReviews = {
+  moderate: (async (request: Parameters<Moderator>[0]) =>
+    request.purpose === "image_generation" ? imageReview(true) : syntheticTextReview(request)) satisfies Moderator,
+  imageReviewer: async () => ({ decision: "allow" as const, category: "synthetic-artifacts", version: "mock-pixels-test-only" }),
+};
 try {
   const owner = { id: randomUUID(), auth: "cookie" as const };
   const repo = new Repository(payload, owner);
