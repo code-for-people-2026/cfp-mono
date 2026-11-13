@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -41,21 +42,25 @@ describe("kith-inn PostgreSQL 17 persistence", () => {
   afterAll(async () => { await pool.end(); });
 
   it("caps connections at five and releases queued requests after a slot is freed", async () => {
-    const bounded = createKithInnPool({ KITH_INN_DATABASE_URL: databaseUrl }, { connectionTimeoutMillis: 100 });
-    const clients = await Promise.all(Array.from({ length: 5 }, () => bounded.connect()));
+    const bounded = createKithInnPool({ KITH_INN_DATABASE_URL: databaseUrl });
+    const clients: PoolClient[] = [];
     try {
+      for (let index = 0; index < 5; index++) {
+        clients.push(await bounded.connect());
+      }
       await expect(bounded.connect()).rejects.toThrow();
       expect(bounded.totalCount).toBe(5);
-      clients.pop()!.release();
+      clients.pop()?.release();
       const next = await bounded.connect();
+      clients.push(next);
       expect((await next.query("SELECT 1 AS value")).rows[0].value).toBe(1);
-      next.release();
+      clients.pop()?.release();
       expect(bounded.totalCount).toBe(5);
     } finally {
       clients.forEach((client) => client.release());
       await bounded.end();
     }
-  });
+  }, 30_000);
 
   it("records migration checksums after concurrent and repeated migrations and creates only the intended tables", async () => {
     const { rows } = await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() ORDER BY table_name");
