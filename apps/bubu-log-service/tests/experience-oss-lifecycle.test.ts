@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -124,6 +124,9 @@ describe("OSS experience lifecycle", () => {
     expect(intent.value.state).toBe("completed");
     const target = intent.value.objectKey;
     expect(objectStore.objects.has(target)).toBe(true);
+    const retained = path.join(directory, "private-attachments", target);
+    await mkdir(path.dirname(retained), { recursive: true });
+    await writeFile(retained, objectStore.objects.get(target)!);
     const other = `${hash("lifecycle-other-family")}/${"8".repeat(64)}`;
     objectStore.objects.set(other, Buffer.from("unrelated"));
     objectStore.timestamps.set(other, 1);
@@ -133,6 +136,7 @@ describe("OSS experience lifecycle", () => {
     expect(await job(receipt.id)).toMatchObject({ status: "completed" });
     expect(objectStore.objects.has(target)).toBe(false);
     expect(objectStore.objects.has(other)).toBe(true);
+    await expect(readFile(retained)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
   it("retries account cleanup of verified uploads whose metadata commit was revoked", async () => {
@@ -204,6 +208,12 @@ describe("OSS experience lifecycle", () => {
     });
     const sharedKey = `${hash(babyId)}/${sharedAttachment.sha256}`;
     const privateKey = `${hash(babyId)}/${privateAttachment.sha256}`;
+    const privateLocal = path.join(directory, "private-attachments", privateKey);
+    const sharedLocal = path.join(directory, "private-attachments", sharedKey);
+    await mkdir(path.dirname(privateLocal), { recursive: true });
+    const privateCiphertext = objectStore.objects.get(privateKey)!;
+    await writeFile(privateLocal, privateCiphertext);
+    await writeFile(sharedLocal, objectStore.objects.get(sharedKey)!);
     const failAccountPurge = vi.spyOn(attachments, "purgeAccountObjects").mockRejectedValueOnce(new Error("synthetic crash before OSS purge"));
     const { receipt } = await confirm(source, "account");
     await deletion.processPending();
@@ -214,6 +224,15 @@ describe("OSS experience lifecycle", () => {
     expect(await rows(babyId)).toHaveLength(1);
     expect(objectStore.objects.has(privateKey)).toBe(true);
 
+    // An invalid restored local entry must not let a successful remote deletion
+    // report completion; after repairing the local entry the durable job retries.
+    await rm(privateLocal);
+    await mkdir(privateLocal);
+    await deletion.processPending();
+    expect(await job(receipt.id)).toMatchObject({ status: "retry" });
+    expect(objectStore.objects.has(privateKey)).toBe(false);
+    await rm(privateLocal, { recursive: true });
+    await writeFile(privateLocal, privateCiphertext);
     await deletion.processPending();
     expect(await job(receipt.id)).toMatchObject({ status: "completed" });
     const remaining = (await rows(babyId)).map(row => (row.value as { id: string }).id);
@@ -222,6 +241,8 @@ describe("OSS experience lifecycle", () => {
     expect(remaining).not.toContain(privateAttachment.id);
     expect(objectStore.objects.has(privateKey)).toBe(false);
     expect(objectStore.objects.has(sharedKey)).toBe(true);
+    await expect(readFile(privateLocal)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readFile(sharedLocal)).toEqual(objectStore.objects.get(sharedKey));
     expect((await attachments.read(guardian, babyId, sharedAttachment.id)).bytes).toEqual(sharedImage.normalized);
   }, 30_000);
 
@@ -258,6 +279,26 @@ describe("OSS experience lifecycle", () => {
     expect(objectStore.objects.has(newOrphan)).toBe(true);
     expect(objectStore.objects.has(activeKey)).toBe(true);
     expect(objectStore.operations.filter(item => item.key === referencedKey && item.type === "remove")).toHaveLength(0);
+  }, 30_000);
+
+  it("removes retained local orphans in OSS mode while preserving referenced and recent files", async () => {
+    const { principal, babyId } = await family("local-gc");
+    const image = await photo("#346789");
+    const attachment = await attachments.upload(principal, babyId, image.bytes, "image/png", "local-gc-reference");
+    const base = path.join(directory, "private-attachments", hash(babyId));
+    await mkdir(base, { recursive: true });
+    const referenced = path.join(base, attachment.sha256), old = path.join(base, "a".repeat(64)), recent = path.join(base, "b".repeat(64));
+    await writeFile(referenced, Buffer.from("retained referenced ciphertext"));
+    await writeFile(old, Buffer.from("orphan ciphertext restored from snapshot"));
+    await writeFile(recent, Buffer.from("recent ciphertext"));
+    await utimes(old, 1, 1);
+    await attachments.purgeOrphanObjects(undefined, Date.now() - 1_000);
+    await expect(readFile(old)).rejects.toMatchObject({ code: "ENOENT" });
+    expect((await readFile(referenced)).length).toBeGreaterThan(0);
+    expect((await readFile(recent)).length).toBeGreaterThan(0);
+    await attachments.purgeRemovedObjects([`${hash(babyId)}/${"b".repeat(64)}`]);
+    await expect(readFile(recent)).rejects.toMatchObject({ code: "ENOENT" });
+    await attachments.purgeRemovedObjects([`${hash(babyId)}/${"b".repeat(64)}`]);
   }, 30_000);
 
   it("migrates a mixed local/remote shared-hash group before unlinking its local copy", async () => {

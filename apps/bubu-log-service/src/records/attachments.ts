@@ -217,7 +217,7 @@ export class AttachmentService {
   async purgeFamilyObjects(babyId: string) {
     if (this.objectStore) {
       if (this.identity.store.currentRequest()) return fail(503, "OSS_REMOTE_IO_IN_LOCK", "OSS 照片删除不能在身份队列内执行。");
-      return await this.mediaOperations!.purgeFamily(babyId);
+      await this.mediaOperations!.purgeFamily(babyId);
     }
     await rm(path.join(this.objectDirectory, hash(babyId)), { recursive: true, force: true });
   }
@@ -225,12 +225,12 @@ export class AttachmentService {
     if (this.objectStore) {
       if (this.identity.store.currentRequest()) return fail(503, "OSS_REMOTE_IO_IN_LOCK", "OSS 照片删除不能在身份队列内执行。");
       await this.mediaOperations!.purgeAccount([...identityIds], objectKeys);
-      return;
     }
     await this.identity.exclusive(() => this.identity.store.transaction(async req => {
       const referenced = new Set((await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req })).docs
         .map(row => `${hash((row.value as StoredAttachment).babyId)}/${(row.value as StoredAttachment).sha256}`));
-      for (const key of new Set(objectKeys)) {
+      const candidates = new Set([...objectKeys, ...(await this.mediaOperations?.accountObjectKeys(identityIds, req) ?? [])]);
+      for (const key of candidates) {
         if (!/^[a-f0-9]{64}\/[a-f0-9]{64}$/.test(key) || referenced.has(key)) continue;
         await unlink(path.join(this.objectDirectory, key)).catch(error => { if (error.code !== "ENOENT") throw error; });
       }
@@ -240,7 +240,6 @@ export class AttachmentService {
     if (this.objectStore) {
       if (this.identity.store.currentRequest()) return fail(503, "OSS_REMOTE_IO_IN_LOCK", "OSS 照片清理不能在身份队列内执行。");
       await this.mediaOperations!.purgeOrphans(objectKeys, olderThan);
-      return;
     }
     await this.identity.exclusive(() => this.identity.store.transaction(async req => {
       const referenced = new Set((await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req })).docs
@@ -248,7 +247,8 @@ export class AttachmentService {
       for (const key of new Set(objectKeys)) {
         if (!/^[a-f0-9]{64}\/[a-f0-9]{64}$/.test(key) || referenced.has(key)) continue;
         const file = path.join(this.objectDirectory, key);
-        if ((await lstat(file)).mtimeMs < olderThan) await unlink(file);
+        try { if ((await lstat(file)).mtimeMs < olderThan) await unlink(file); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       }
     }));
   }
@@ -262,9 +262,11 @@ export class AttachmentService {
       if (this.identity.store.currentRequest()) return fail(503, "OSS_REMOTE_IO_IN_LOCK", "OSS 照片清理不能在身份队列内执行。");
       // The object-store listing belongs to the media queue, outside the identity transaction.
       await this.mediaOperations!.purgeOrphans([], olderThan);
-      return;
     }
-    if (!req) return this.identity.exclusive(() => this.identity.store.transaction(request => this.purgeOrphanObjects(request, olderThan)));
+    if (!req) return this.identity.exclusive(() => this.identity.store.transaction(request => this.purgeLocalOrphanObjects(request, olderThan)));
+    return this.purgeLocalOrphanObjects(req, olderThan);
+  }
+  private async purgeLocalOrphanObjects(req: PayloadRequest, olderThan: number): Promise<void> {
     const rows = await this.identity.store.payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
     const referenced = new Set(rows.docs.map(row => this.objectPath(row.value as StoredAttachment)));
     let directories: string[];
