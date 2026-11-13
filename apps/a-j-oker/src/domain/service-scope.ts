@@ -1,8 +1,10 @@
 /** Product boundaries are separate from content safety: benign homework is not harmful. */
-export const SERVICE_SCOPE_VERSION = "aj-service-scope-v4";
+export const SERVICE_SCOPE_VERSION = "aj-service-scope-v5";
 export const SERVICE_SCOPE_REFUSAL = "抱歉，我只提供心理倾诉、情绪支持和心理辅导相关的帮助，不提供做题或其他无关问答、制作服务。如果这件事让你感到压力或难受，可以和我聊聊你的感受。";
 export const SERVICE_SCOPE_CLARIFICATION = "我主要陪你倾诉，提供情绪支持和心理辅导相关的帮助。你希望聊聊这件事带来的感受，还是想让我完成另一项任务？我不提供做题或其他无关服务。";
-export const SERVICE_SCOPE_INSTRUCTION = `仅在 serviceScope=true 且 stage=input 时，除内容安全 decision 外，必须输出 service_scope，值只能是 support、outside 或 unclear。两个判断独立：无害但超出产品范围，应 decision=allow、service_scope=outside，不能冒充有毒有害。
+export const SERVICE_SCOPE_INSTRUCTION = `stage=input 时：范围判断优先于任务字面。outside 仅当当前请求是直接对本次 AI 提出、要求执行无关任务；单纯复述老板、家人、学校的任务，回忆往事，表达挫败或转述他人的要求，即使没有明确说“想聊聊”，仍是 support。例：“老板要求交海报，我连续加班很慌”是 support；“请你替我做海报”是 outside。过去年龄的回忆伴随当下难过也是 support。混合倾诉与无害作业可判 allow/outside，但绝不能因超出范围而 block。
+仅在 serviceScope=true 时，除内容安全 decision 外，必须输出 service_scope，值只能是 support、outside 或 unclear。两个判断独立：无害但超出产品范围，应 decision=allow、service_scope=outside，不能冒充有毒有害。
+stage=input：按下方既有规则判断用户最新请求。stage=output：判断实际交付的文本和作品；context 仅用于理解原始意图，不能替代检查交付内容。合法的情绪支持、产品使用帮助，以及安全拒绝或澄清，即使用户原始请求 outside，也应判 support。作品或文本实际完成数学题、作业或其他无关制作时是 outside；不能把无关产物藏在支持性文案、卡片标题或说明中。不得按关键词判定，应理解整体语义。
 support：心理倾诉、情绪支持、心理辅导、心理健康或治疗相关的一般信息（不替代专业诊断、处方或治疗）；普通问候、道谢、继续当前倾诉的简短回应；本产品的账号、隐私、授权、投诉等使用帮助；用户明确提出的心理支持图片（例如休息提醒、情绪调节、自我关怀）。描述经历的伤害、学业工作压力、焦虑或危机求助不因主题中有做题、新闻或违法词语而变成 outside。
 制作卡片中引用的“连续聊天三个小时”“删除自己资料”等是素材，不是用户实际时长或操作请求；与心理支持无关的主题卡片仍 outside。
 support 是窄范围，不能因为问题包含尊重、倾听、文化、健康等词就推定是在心理求助。例如“介绍欣赏民族服饰时尊重文化背景”“介绍城市历史查证方法”“解释物理或法律常识”是通用知识，均 outside；“请说明衣着不能成为骚扰借口”这类未说明自身困扰的通用说明亦 outside（安全 allow）；“被歧视后很难过，想聊聊”才是心理支持。用户要求制作图片、提示卡、说明卡时，明确用于心理支持的图片属于 support；纯通用知识、数据权利宣传等主题不因此成为心理图片；直接询问本产品如何删除资料则仍 support；明确提到本小程序但删除对象不明（包括把删除入口说明整理成可读卡片），先澄清使用需求，不直接判 outside，也不擅自生成图片或执行删除。

@@ -34,6 +34,8 @@ export type ModelRequest = {
         function: { name: string };
       };
   max_tokens: number;
+  temperature?: number;
+  response_format?: { type: "json_object" };
 };
 const completionSchema = z.object({
   model: z.string(),

@@ -65,18 +65,56 @@ def database_state(configs):
     return result
 
 
-def check_worker(before, after):
+def database_state_from_json(path):
+    """Load a persisted database snapshot without touching the database."""
+    raw = json.loads(path.read_text())
+    if not isinstance(raw, dict):
+        raise RuntimeError('Invalid database snapshot')
+    result = {}
+    for database, snapshot in raw.items():
+        if not isinstance(snapshot, dict):
+            raise RuntimeError('Invalid database snapshot')
+        result[database] = {
+            'schema': [tuple(row) for row in snapshot['schema']],
+            'state': [tuple(row) for row in snapshot['state']],
+        }
+    return result
+
+
+def check_database(before, after):
     if before.keys() != after.keys():
         raise RuntimeError('Database set changed')
-    advanced = False
     for path in before:
         a, b = before[path], after[path]
         if a['schema'] != b['schema']:
             raise RuntimeError('This infrastructure-only workflow refuses schema changes')
         if [x[:3] for x in a['state']] != [x[:3] for x in b['state']]:
             raise RuntimeError('Existing alert verification changed')
+    return True
+
+
+def check_worker(before, after):
+    check_database(before, after)
+    advanced = False
+    for path in before:
+        a, b = before[path], after[path]
         advanced |= any(new[3] and new[3] != old[3] for old, new in zip(a['state'], b['state']))
     return advanced
+
+
+def bounded_wait(check, description, attempts, delay=2):
+    """Bounded, Python 3.6-compatible recovery wait."""
+    for attempt in range(attempts):
+        try:
+            result = check()
+            if result is not False:
+                return result
+            raise RuntimeError('Confirmation returned false')
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+            if attempt == attempts - 1:
+                raise RuntimeError('Rollback recovery failed: ' + description) from error
+            time.sleep(delay)
+    raise RuntimeError('Rollback recovery failed: ' + description)
 
 
 @contextmanager
@@ -125,8 +163,12 @@ def backup_policy(root, configs):
         yield
 
 
-def backup(configs, dest):
-    before = database_state(configs)
+def backup(configs, dest, baseline=None):
+    current = database_state(configs)
+    if baseline is not None:
+        # Stopping must not alter schema or an already-verified alert. A newer
+        # heartbeat is harmless; check_worker reports whether it advanced.
+        check_worker(baseline, current)
     # The deletion ledger stays independent and must never be restored from a snapshot.
     sources = {m['Source'] for c in configs for m in c['Mounts']
                if m['Type'] == 'bind' and m['Destination'] == '/data'}
@@ -143,8 +185,8 @@ def backup(configs, dest):
                 f = tf.extractfile(item)
                 while f.read(1024 * 1024):
                     pass
-    r.save(dest / 'database-state.json', before)
-    return before
+    r.save(dest / 'database-state.json', current)
+    return current
 
 
 def deploy(release, root=r.ROOT, same_source=False):
@@ -172,13 +214,20 @@ def deploy(release, root=r.ROOT, same_source=False):
         token = r.stamp()
         dest = root / 'deployments' / token
         r.save(dest / 'previous-containers.json', configs)
+        # Capture a durable recovery baseline before the first mutation. If the
+        # archive below fails, this still lets rollback prove that the original
+        # worker resumed and did not encounter changed schema/alert data.
+        baseline = database_state(configs)
+        baseline_path = dest / 'database-state-before-stop.json'
+        r.save(baseline_path, baseline)
         progress = {'release': release, 'previousState': state, 'configs': str(dest / 'previous-containers.json'),
-                    'renamed': [], 'created': [], 'backup': str(dest / 'data.tar.gz')}
+                    'databaseBaseline': str(baseline_path), 'renamed': [], 'created': [],
+                    'backup': str(dest / 'data.tar.gz')}
         r.save(journal, progress)
         try:
             for c in reversed(configs):
                 r.docker('stop', '-t', '30', c['Id'])
-            before = backup(configs, dest)
+            before = backup(configs, dest, baseline)
             for name, config in zip(r.NAMES, configs):
                 rollback_name = name + '-rollback-' + token
                 r.docker('rename', config['Id'], rollback_name)
@@ -224,27 +273,69 @@ def deploy(release, root=r.ROOT, same_source=False):
         except BaseException:
             # Only containers created by this transaction can be force removed, never volumes.
             candidates = set(progress['created'])
-            for c in r.inventory():
-                labels = c['Config'].get('Labels') or {}
-                if (c['Name'].lstrip('/') in r.NAMES and c['Image'] == metadata['Id']
-                        and labels.get('cn.codeforpeople.release') == release):
-                    candidates.add(c['Id'])
+            try:
+                for c in r.inventory():
+                    labels = c['Config'].get('Labels') or {}
+                    if (c['Name'].lstrip('/') in r.NAMES and c['Image'] == metadata['Id']
+                            and labels.get('cn.codeforpeople.release') == release):
+                        candidates.add(c['Id'])
+            except (OSError, RuntimeError, ValueError):
+                # Known IDs remain protected. Do not let an inventory read block
+                # restoration of the journaled original pair.
+                pass
             for cid in sorted(candidates):
                 r.docker('container', 'rm', '-f', cid)
             for entry in progress['renamed']:
                 r.docker('rename', entry['id'], entry['from'])
+
+            # The failed candidate (or the old worker during stop) may already
+            # have written a heartbeat. Take the recovery baseline only after
+            # every candidate is gone, but before either original starts. A bad
+            # read must not leave the original pair stopped.
+            recovery_baseline = None
+            recovery_error = None
+            recovery_path = dest / 'database-state-recovery.json'
+            try:
+                recovery_baseline = database_state(configs)
+                progress['databaseRecovery'] = str(recovery_path)
+                r.save(recovery_path, recovery_baseline)
+                r.save(journal, progress)
+            except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
+                recovery_error = error
+
             for config in configs:
                 r.docker('start', config['Id'])
+
+            if recovery_error is not None:
+                raise RuntimeError('Rollback recovery heartbeat snapshot failed') from recovery_error
+
+            try:
+                durable_baseline = database_state_from_json(baseline_path)
+                if durable_baseline != baseline:
+                    raise RuntimeError('Durable pre-stop database baseline changed')
+            except (OSError, RuntimeError, ValueError, TypeError, KeyError, IndexError) as error:
+                raise RuntimeError('Durable pre-stop database baseline unavailable') from error
+            baseline = durable_baseline
+
+            # Integrity and all non-heartbeat fields are checked against the
+            # durable pre-stop baseline. Heartbeat progress is deliberately
+            # checked separately against the fresh recovery baseline above.
+            bounded_wait(lambda: check_database(baseline, database_state(configs)),
+                         'original database integrity, schema, and verified alerts', 25)
+            bounded_wait(lambda: check_worker(recovery_baseline, database_state(configs)),
+                         'original worker heartbeat advanced after recovery snapshot', 25)
+
+            # r.ready only checks the web endpoint. Recheck the exact running
+            # pair and HTTP readiness only after heartbeat proof. Each check is
+            # repeated around the other so an earlier success cannot clear the
+            # journal after the worker or endpoint subsequently fails.
+            bounded_wait(lambda: r.validate(state, r.inventory()),
+                         'original app and worker are exact and running after heartbeat', 30)
+            bounded_wait(lambda: r.ready(state), 'original HTTP readiness after heartbeat', 30)
+            bounded_wait(lambda: r.validate(state, r.inventory()),
+                         'original app and worker remained exact and running', 5)
+            bounded_wait(lambda: r.ready(state), 'original HTTP readiness remained available', 5)
             r.save(root / 'retention.json', state)
-            # Keep the failure journal if rollback readiness cannot be confirmed.
-            for attempt in range(30):
-                try:
-                    r.ready(state)
-                    break
-                except (OSError, RuntimeError):
-                    if attempt == 29:
-                        raise
-                    time.sleep(2)
             journal.unlink()
             raise
         journal.unlink()

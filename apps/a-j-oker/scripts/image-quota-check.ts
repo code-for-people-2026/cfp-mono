@@ -11,6 +11,7 @@ import sharp from "sharp";
 import { sql, type MigrateDownArgs, type MigrateUpArgs } from "@payloadcms/db-sqlite";
 import { AppError, ContentReviewError, type Mode } from "../src/domain/contracts";
 import type { ImageProvider } from "../src/images/wan";
+import { imageReview } from "./synthetic-text-review";
 
 const worker = process.argv[2] === "--worker";
 const dir = worker ? process.argv[3] : await mkdtemp(path.join(tmpdir(), "hello-image-quota-"));
@@ -55,7 +56,7 @@ try {
       async submit() { submitted++; if (failSubmit) throw new AppError(502, "合成提交回执丢失"); return `synthetic-${submitted}`; },
       async result() { downloaded++; if (failResult) throw new AppError(502, "合成下载中断"); return png; },
     };
-    const allowText = async () => {};
+    const allowText = async () => imageReview(true);
     const allowImage = async () => ({ decision: "allow" as const, version: "synthetic-quota-review", category: "test" });
     const fixture = async () => {
       const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
@@ -73,7 +74,10 @@ try {
     const configuredTurn = await configured.turn("byok");
     const configuredReviews: { stage: string; purpose?: string }[] = [];
     let configuredImageReviews = 0, configuredRequests = 0, configuredSubmissions = 0;
-    const configuredService = new ImageGenerationService(configured.repo, configured.media, async ({ stage, purpose }) => { configuredReviews.push({ stage, purpose }); }, async () => { configuredImageReviews++; return allowImage(); });
+    const configuredService = new ImageGenerationService(configured.repo, configured.media, async ({ stage, purpose }) => {
+      configuredReviews.push({ stage, purpose });
+      if (purpose === "image_generation") return imageReview(true);
+    }, async () => { configuredImageReviews++; return allowImage(); });
     const originalFetch = globalThis.fetch;
     const originalWorkspace = process.env.HELLO_IMAGE_WORKSPACE_ID;
     delete process.env.HELLO_IMAGE_WORKSPACE_ID;

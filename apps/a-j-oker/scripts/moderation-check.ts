@@ -16,6 +16,7 @@ const { GreetingService } = await import("../src/domain/greetings");
 const { ContentReviewError } = await import("../src/domain/contracts");
 const { runGreeting } = await import("../src/agent/runtime");
 const { ScriptedModel } = await import("./scripted-model");
+const { ordinaryInteraction } = await import("./synthetic-text-review");
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
 try {
@@ -28,6 +29,10 @@ try {
   }, undefined, undefined, { moderate: async (review) => {
     reviews.push(review);
     if (review.texts.some((text) => text.includes("拦截样本"))) throw new ContentReviewError(422, "测试审核拒绝");
+    return {
+      ...(review.serviceScope ? { serviceScope: "support" as const } : {}),
+      ...(review.stage === "input" && review.interaction ? { interaction: ordinaryInteraction } : {}),
+    };
   } });
   const session = await service.createSession();
   const input = { sessionId: session.id, requestId: randomUUID(), mode: "byok", apiKey: "byok-test-key", input: { text: "今天开心" } };
@@ -67,6 +72,10 @@ try {
       outputReviews++;
       throw new ContentReviewError(503, "审核服务暂不可用");
     }
+    return {
+      ...(review.serviceScope ? { serviceScope: "support" as const } : {}),
+      ...(review.interaction ? { interaction: ordinaryInteraction } : {}),
+    };
   } });
   const stoppedSession = await stopped.createSession();
   await assert.rejects(() => stopped.generateGreeting({ ...input, sessionId: stoppedSession.id, requestId: randomUUID() }), { status: 503, message: "审核服务暂不可用" });

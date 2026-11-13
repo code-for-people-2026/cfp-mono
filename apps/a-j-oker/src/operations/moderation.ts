@@ -1,7 +1,7 @@
 import { reservePlatformCalls } from "../cms/platform-quota";
 import type { Repository } from "../cms/repository";
 import { AppError, ContentReviewError, ContentPendingReviewError } from "../domain/contracts";
-import { evaluateText, type Moderator } from "../domain/moderation";
+import { evaluateText, ModerationPendingReviewError, ModerationRejectionError, type Moderator } from "../domain/moderation";
 import { activeRule } from "./policy";
 import { audit } from "./audit";
 import { OperationsService, transaction } from "./service";
@@ -13,6 +13,13 @@ export function operationalModerator(repo: Repository): Moderator {
     const rule = await activeRule(repo.payload).catch(() => { throw new ContentReviewError(503, "内容审核规则暂不可用，请稍后重试"); });
     const verdict = await evaluateText(request, rule, request.mode === "byok" ? undefined : () => reservePlatformCalls(repo.payload, 1));
     const unavailable = () => new ContentReviewError(503, "内容审核暂未完成，请检查调用配置或稍后重试");
+    const semanticVerdict = {
+      ...(verdict.serviceScope ? { serviceScope: verdict.serviceScope } : {}),
+      ...(verdict.interaction ? { interaction: verdict.interaction } : {}),
+    };
+    const rejection = (error: ContentReviewError) => error instanceof ContentPendingReviewError
+      ? new ModerationPendingReviewError(error, semanticVerdict)
+      : new ModerationRejectionError(error, semanticVerdict);
     if (verdict.decision === "unavailable" && verdict.failure !== "provider") throw unavailable();
     const recorded = await transaction(repo.payload, async (req) => {
       await assertReviewWrite(repo.owner.id, req);
@@ -28,7 +35,7 @@ export function operationalModerator(repo: Repository): Moderator {
         }, request.texts.join("\n"), req);
         recordedCase = { id: row.id, receipt: row.receipt };
       }
-      await audit(repo.payload, "system:moderation", `moderation.${verdict.decision}`, request.requestId, "自动审核执行记录", { stage: request.stage, rule: rule.version, lexicon: rule.lexiconVersion, model: verdict.model, keywordCount: verdict.keywordCount, serviceScope: verdict.serviceScope }, req);
+      await audit(repo.payload, "system:moderation", `moderation.${verdict.decision}`, request.requestId, "自动审核执行记录", { stage: request.stage, rule: rule.version, lexicon: rule.lexiconVersion, model: verdict.model, keywordCount: verdict.keywordCount, serviceScope: verdict.serviceScope, interaction: verdict.interaction }, req);
       return recordedCase;
     }).catch((error: unknown) => {
       if (error instanceof AppError) throw error;
@@ -40,7 +47,7 @@ export function operationalModerator(repo: Repository): Moderator {
     });
     if (verdict.decision === "unavailable" || verdict.decision === "uncertain") {
       if (recorded === "duplicate") {
-        if (verdict.decision === "uncertain") throw new ContentPendingReviewError("这条内容需要人工复核，同一请求已有审核记录，可通过投诉与申诉入口查看或补充说明");
+        if (verdict.decision === "uncertain") throw rejection(new ContentPendingReviewError("这条内容需要人工复核，同一请求已有审核记录，可通过投诉与申诉入口查看或补充说明"));
         throw new ContentReviewError(503, "内容审核暂未完成，同一请求已有审核记录，请稍后重试");
       }
       if (!recorded || typeof recorded !== "object") throw unavailable();
@@ -50,12 +57,12 @@ export function operationalModerator(repo: Repository): Moderator {
         { id: { equals: recorded.id } }, { receipt: { equals: recorded.receipt } }, { owner: { equals: repo.owner.id } },
       ] } }).catch(() => ({ totalDocs: 0 }));
       if (!visible.totalDocs) throw unavailable();
-      if (verdict.decision === "uncertain") throw new ContentPendingReviewError("这条内容需要人工复核，已记录待复核事项，暂未放行；可通过投诉与申诉入口查看或补充说明");
+      if (verdict.decision === "uncertain") throw rejection(new ContentPendingReviewError("这条内容需要人工复核，已记录待复核事项，暂未放行；可通过投诉与申诉入口查看或补充说明"));
       throw new ContentReviewError(503, "内容审核暂未完成，已记录待复核事项，请稍后重试");
     }
-    if (verdict.decision === "block") throw new ContentReviewError(422, request.stage === "input"
+    if (verdict.decision === "block") throw rejection(new ContentReviewError(422, request.stage === "input"
       ? "这条请求未通过内容审核，可通过投诉与申诉入口申请复核"
-      : "这次回应未通过内容审核，可通过投诉与申诉入口申请复核");
-    if (verdict.serviceScope) return { serviceScope: verdict.serviceScope };
+      : "这次回应未通过内容审核，可通过投诉与申诉入口申请复核"));
+    if (verdict.serviceScope || verdict.interaction) return { ...(verdict.serviceScope ? { serviceScope: verdict.serviceScope } : {}), ...(verdict.interaction ? { interaction: verdict.interaction } : {}) };
   };
 }
