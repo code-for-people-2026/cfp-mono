@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   downloadFile: vi.fn(),
   setClipboardData: vi.fn(),
   showToast: vi.fn(),
+  getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+  onKeyboardHeightChange: vi.fn(),
+  offKeyboardHeightChange: vi.fn(),
+  onWindowResize: vi.fn(),
+  offWindowResize: vi.fn(),
 }));
 vi.mock("@tarojs/taro", () => ({ default: mocks }));
 vi.mock("@tarojs/components", () => ({
@@ -31,12 +36,12 @@ it("微信禁用动态函数仍可经 AG-UI 接收五类作品，查询确认保
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { generate } = await import("../src/chat/api");
-  const { toA2ui } = await import("@cfp/base-chat-protocol");
+  const { toAjA2ui } = await import("@cfp/a-j-oker-contracts");
   vi.stubGlobal("Function", function WechatFunction() {});
   const id = "13b11c49-812c-4193-9b10-530d8ae94d09";
   const events = [
     { type: "RUN_STARTED", runId: id },
-    ...toA2ui(1, artifacts).map((value) => ({
+    ...toAjA2ui(1, artifacts).map((value) => ({
       type: "CUSTOM",
       name: "a2ui",
       value,

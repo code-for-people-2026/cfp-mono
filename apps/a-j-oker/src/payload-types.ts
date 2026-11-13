@@ -80,6 +80,8 @@ export interface Config {
     'safety-evaluations': SafetyEvaluation;
     'agent-configs': AgentConfig;
     'knowledge-bases': KnowledgeBase;
+    'a2a-execution-tasks': A2AExecutionTask;
+    'a2a-request-ledgers': A2ARequestLedger;
     'privacy-profiles': PrivacyProfile;
     'wechat-identities': WechatIdentity;
     'age-profiles': AgeProfile;
@@ -112,6 +114,8 @@ export interface Config {
     'safety-evaluations': SafetyEvaluationsSelect<false> | SafetyEvaluationsSelect<true>;
     'agent-configs': AgentConfigsSelect<false> | AgentConfigsSelect<true>;
     'knowledge-bases': KnowledgeBasesSelect<false> | KnowledgeBasesSelect<true>;
+    'a2a-execution-tasks': A2AExecutionTasksSelect<false> | A2AExecutionTasksSelect<true>;
+    'a2a-request-ledgers': A2ARequestLedgersSelect<false> | A2ARequestLedgersSelect<true>;
     'privacy-profiles': PrivacyProfilesSelect<false> | PrivacyProfilesSelect<true>;
     'wechat-identities': WechatIdentitiesSelect<false> | WechatIdentitiesSelect<true>;
     'age-profiles': AgeProfilesSelect<false> | AgeProfilesSelect<true>;
@@ -505,6 +509,44 @@ export interface KnowledgeBase {
   hasApiKey?: boolean | null;
   clearApiKey?: boolean | null;
   encryptedApiKey?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-execution-tasks".
+ */
+export interface A2AExecutionTask {
+  id: number;
+  owner: string;
+  tenant: string;
+  agentId: string;
+  key: string;
+  taskId: string;
+  contextId: string;
+  state: number;
+  statusTimestamp?: string | null;
+  revision: number;
+  snapshot: import('@cfp/agent-a2a').Task;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-request-ledgers".
+ */
+export interface A2ARequestLedger {
+  id: number;
+  owner: string;
+  tenant: string;
+  agentId: string;
+  key: string;
+  requestIdentity: string;
+  fingerprint: string;
+  status: 'pending' | 'recorded' | 'failed';
+  taskId?: string | null;
+  contextId?: string | null;
+  revision: number;
   updatedAt: string;
   createdAt: string;
 }
@@ -1077,6 +1119,42 @@ export interface KnowledgeBasesSelect<T extends boolean = true> {
   hasApiKey?: T;
   clearApiKey?: T;
   encryptedApiKey?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-execution-tasks_select".
+ */
+export interface A2AExecutionTasksSelect<T extends boolean = true> {
+  owner?: T;
+  tenant?: T;
+  agentId?: T;
+  key?: T;
+  taskId?: T;
+  contextId?: T;
+  state?: T;
+  statusTimestamp?: T;
+  revision?: T;
+  snapshot?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "a2a-request-ledgers_select".
+ */
+export interface A2ARequestLedgersSelect<T extends boolean = true> {
+  owner?: T;
+  tenant?: T;
+  agentId?: T;
+  key?: T;
+  requestIdentity?: T;
+  fingerprint?: T;
+  status?: T;
+  taskId?: T;
+  contextId?: T;
+  revision?: T;
   updatedAt?: T;
   createdAt?: T;
 }

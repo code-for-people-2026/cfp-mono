@@ -51,6 +51,7 @@ const eventSchema = z.object({
 export function createRunReader(
   runId: string,
   onProgress?: (progress: RunProgress) => void,
+  options: { catalogIds?: readonly string[] } = {},
 ) {
   let started = false;
   let finished = false;
@@ -90,7 +91,10 @@ export function createRunReader(
       if (event.type === "CUSTOM" && event.name === A2UI_EVENT)
         progress = {
           ...progress,
-          messages: validateA2uiMessages([...progress.messages, event.value]),
+          messages: validateA2uiMessages(
+            [...progress.messages, event.value],
+            options,
+          ),
         };
       if (event.type === "RUN_FINISHED") {
         if (event.runId !== runId || textMessage)

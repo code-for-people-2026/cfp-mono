@@ -1,0 +1,10 @@
+{
+  "extends": "@cfp/typescript-config/base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["src"]
+}

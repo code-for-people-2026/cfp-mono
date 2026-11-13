@@ -4,10 +4,16 @@ import { EventEncoder } from "@ag-ui/encoder";
 import { z } from "zod";
 import {
   A2UI_EVENT,
-  CATALOG_ID,
   clientEventSchema,
-  toA2ui,
 } from "@cfp/base-chat-protocol";
+import {
+  AJ_CATALOG_ID,
+  LEGACY_AJ_CATALOG_ID,
+  ajCatalogIdForCapabilities,
+  ajFormResponseFromClientEvent,
+  toAjA2ui,
+  toLegacyAjA2uiForClient,
+} from "@cfp/a-j-oker-contracts";
 import { AppError, turnSchema } from "../domain/contracts";
 import type { GreetingService } from "../domain/greetings";
 import { requirePlatformInput } from "./service-scope";
@@ -32,9 +38,13 @@ export function readAgentInput(value: unknown) {
     .parse(run.forwardedProps);
   if (
     props.a2uiClientCapabilities &&
-    !props.a2uiClientCapabilities.supportedCatalogIds.includes(CATALOG_ID)
+    !props.a2uiClientCapabilities.supportedCatalogIds.includes(AJ_CATALOG_ID) &&
+    !props.a2uiClientCapabilities.supportedCatalogIds.includes(LEGACY_AJ_CATALOG_ID)
   )
     throw new AppError(400, "客户端不支持阿 J 先生的界面目录，请升级后重试");
+  const a2uiCatalogId = props.a2uiClientCapabilities
+    ? ajCatalogIdForCapabilities(props.a2uiClientCapabilities.supportedCatalogIds)
+    : LEGACY_AJ_CATALOG_ID;
   const message = run.messages.at(-1);
   if (
     !message ||
@@ -44,8 +54,13 @@ export function readAgentInput(value: unknown) {
     throw new AppError(400, "请提供本轮用户输入");
   // History, state, client-supplied tools and context never become trusted agent instructions.
   const action = props.clientEvent?.action;
-  const match = action?.surfaceId.match(/^turn_(\d+)_(.+)$/);
-  return turnSchema.parse({
+  const formResponse = action
+    ? ajFormResponseFromClientEvent(action)
+    : undefined;
+  if (action?.context.submission && action.context.submission.requestId !== run.runId)
+    throw new AppError(400, "表单提交请求不匹配");
+  return {
+    ...turnSchema.parse({
     sessionId: z.coerce.number().int().positive().parse(run.threadId),
     requestId: run.runId,
     mode: props.mode,
@@ -53,18 +68,20 @@ export function readAgentInput(value: unknown) {
     input: {
       text: message.content,
       mediaIds: props.mediaIds,
-      ...(action && match
+      ...(action && formResponse
         ? {
-            formResponse: {
-              turnId: Number(match[1]),
-              artifactId: match[2],
-              values: action.context.values,
-            },
+            formResponse,
           }
         : {}),
     },
-  });
+    }),
+    a2uiCatalogId,
+  };
 }
+
+type AgentArgs = z.infer<typeof turnSchema> & {
+  a2uiCatalogId?: string;
+};
 
 // Same domain module as REST and MCP; transport only publishes committed, validated output.
 export function agentStream(
@@ -80,7 +97,7 @@ export function agentStream(
     >;
     resumeImage?: (id: number, apiKey?: string, progress?: (message: string) => void) => ReturnType<GreetingService["resumeImage"]>;
   },
-  args: z.infer<typeof turnSchema>,
+  args: AgentArgs,
   resumeTurnId?: number,
 ) {
   const encoder = new EventEncoder({ accept: "text/event-stream" });
@@ -125,7 +142,14 @@ export function agentStream(
           delta: String(row.greeting),
         });
         emit({ type: EventType.TEXT_MESSAGE_END, messageId });
-        for (const message of toA2ui(row.id, row.artifacts))
+        // Missing capabilities are catalog-v1 for deployed clients. The v1
+        // adapter projects only compatible saved artifacts; unsupported v2
+        // blocks never turn an already committed generation into RUN_ERROR.
+        const a2uiMessages =
+          (args.a2uiCatalogId ?? LEGACY_AJ_CATALOG_ID) === LEGACY_AJ_CATALOG_ID
+            ? toLegacyAjA2uiForClient(row.id, row.artifacts ?? [])
+            : toAjA2ui(row.id, row.artifacts);
+        for (const message of a2uiMessages)
           emit({ type: EventType.CUSTOM, name: A2UI_EVENT, value: message });
         emit({
           type: EventType.STATE_SNAPSHOT,
