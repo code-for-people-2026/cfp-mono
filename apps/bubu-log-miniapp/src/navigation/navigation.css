@@ -1,0 +1,51 @@
+.diary-header { position: sticky; top: 0; z-index: 30; background: #faf7f2; padding: 0 8PX; }
+.diary-navigation-row { position: relative; display: flex; align-items: center; height: 48px; }
+.diary-title { position: absolute; left: 56px; right: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 17px; font-weight: 600; pointer-events: none; }
+.diary-icon-button { display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; padding: 10px; margin: 0; line-height: 1; border: 0; border-radius: 12px; background: transparent; color: #54483b; font-size: 27px; }
+.diary-avatar-button { position: relative; display: flex; align-items: center; justify-content: center; flex-shrink: 0; width: 44PX; height: 44PX; margin: 0; padding: 4PX; border: 0; background: transparent; overflow: visible; }
+.diary-header-avatar { display: block; width: 36PX; height: 36PX; border-radius: 50%; }
+.diary-avatar-badge { position: absolute; bottom: 1PX; right: 0; display: flex; align-items: center; justify-content: center; width: 17PX; height: 17PX; border: 2PX solid #faf7f2; border-radius: 50%; background: #eee4d7; }
+.menu-glyph { width: 9PX; display: flex; flex-direction: column; gap: 2PX; }
+.menu-glyph-line { display: block; height: 1PX; border-radius: 2PX; background: #655646; }
+.diary-header-center { position: absolute; left: 44PX; right: 88PX; min-width: 0; }
+.calendar-navigation { position: relative; display: flex; align-items: center; width: 100%; }
+.calendar-arrow { flex: 0 0 30PX; width: 30PX; height: 44PX; line-height: 40PX; padding: 0; margin: 0; background: transparent; color: #87735d; font-size: 24PX; }
+.calendar-arrow[disabled] { background: transparent; color: #d2cabe; }
+.calendar-date-button { flex: 1; min-width: 0; height: 44PX; display: flex; align-items: center; justify-content: center; flex-direction: column; margin: 0; padding: 0; background: transparent; color: #3d3831; border-radius: 8PX; }
+.date-title { display: flex; align-items: center; justify-content: center; max-width: 100%; white-space: normal; word-break: break-word; text-align: center; font-size: 13PX; font-weight: 600; line-height: 18PX; }
+.date-subtitle { display: block; font-size: 10PX; font-weight: 400; color: #9b8d7b; line-height: 15PX; }
+.calendar-view-backdrop { position: fixed; inset: 0; z-index: 1; background: #30282012; }
+.calendar-view-popover { position: absolute; left: 50%; transform: translateX(-50%); top: calc(100% + 5PX); width: 200PX; box-sizing: border-box; z-index: 3; padding: 7PX; border-radius: 12PX; background: #fffdf9; border: 0.5PX solid #e9dfd0; box-shadow: 0 5PX 24PX #48341f18; }
+.calendar-selected-date { display: block; padding: 8PX 10PX 10PX; font-size: 11PX; color: #9b8d7b; }
+.calendar-view-option { display: flex; align-items: center; justify-content: space-between; box-sizing: border-box; width: 100%; min-height: 44PX; margin: 0; background: transparent; color: #79664f; padding: 10PX 12PX; line-height: 24PX; font-size: 14PX; border-radius: 8PX; }
+.calendar-view-option.current { background: #f1e9dc; color: #8d5935; }
+.calendar-date-picker { border-top: 0.5PX solid #eee5d9; margin-top: 4PX; border-radius: 0; }
+.diary-menu-overlay { position: fixed; inset: 0; z-index: 110; }
+.diary-menu-backdrop { position: absolute; inset: 0; background: #30282055; }
+.diary-drawer { position: absolute; top: 0; bottom: 0; left: 0; width: 86%; max-width: 360px; display: flex; flex-direction: column; box-sizing: border-box; padding: 22px 18px calc(18px + env(safe-area-inset-bottom)); background: #fffdf8; box-shadow: 12px 0 40px #33271c15; }
+.diary-drawer-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.diary-drawer-brand { flex: 1; min-width: 0; font-size: 18px; font-weight: 600; line-height: 1.35; word-break: break-word; }
+.diary-drawer-heading .diary-icon-button { flex-shrink: 0; }
+.diary-family { display: flex; align-items: center; gap: 12px; padding: 22px 0 28px; }
+.diary-avatar { flex-shrink: 0; width: 44px; height: 44px; border-radius: 50%; background: #eee1cc; }
+.diary-family-copy { min-width: 0; flex: 1; }
+.diary-baby-name { display: block; margin-top: 4px; font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.diary-menu-caption { display: block; color: #9e8e7c; font-size: 11px; line-height: 1.5; margin-top: 4px; }
+.diary-menu-content { flex: 1; height: 0; min-height: 0; }
+.diary-menu-link { display: flex; align-items: center; justify-content: space-between; width: 100%; box-sizing: border-box; margin: 0 0 7px; padding: 14px 12px; border: 0; border-radius: 12px; background: transparent; text-align: left; line-height: 1.5; color: #594c3e; }
+.diary-menu-link.current { background: #f1e9dc; }
+.diary-menu-label { display: block; font-size: 15px; font-weight: 500; }
+.diary-menu-arrow { color: #b5a38e; font-size: 20px; }
+.diary-menu-footer { border-top: 0.5px solid #eee4d7; padding-top: 12px; margin-top: 12px; }
+.diary-menu-utilities { display: flex; align-items: center; justify-content: space-between; padding: 0 7px; }
+.diary-menu-utilities .text-button { font-size: 12px; color: #9b8b78; }
+
+.diary-icon-button::after, .diary-menu-link::after { border: 0; pointer-events: none; }
+.diary-avatar-button::after, .calendar-arrow::after, .calendar-date-button::after, .calendar-view-option::after { border: 0; pointer-events: none; }
+@media (max-width: 350PX) {
+  .date-title { font-size: 12PX; }
+  .calendar-arrow { flex-basis: 26PX; width: 26PX; }
+  .diary-drawer { padding-left: 12px; padding-right: 12px; }
+  .diary-family { padding: 12px 0; }
+  .diary-menu-link { padding: 10px 12px; }
+}

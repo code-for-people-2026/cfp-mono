@@ -1,0 +1,33 @@
+.settings-page { padding-top: 24px; }
+.settings-navigation { display: flex; align-items: center; justify-content: space-between; margin: -12px 0 26px; font-size: 17px; font-weight: 600; }
+.settings-spacer { width: 54px; }
+.settings-heading { display: block; font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+.settings-subheading { display: block; margin-top: 30px; font-size: 20px; font-weight: 600; }
+.settings-card { margin-top: 24px; padding: 3px 16px 18px; border: 0.5px solid #eee5d6; border-radius: 14px; background: #fffdf9; }
+.settings-feedback, .settings-success { display: block; margin-top: 12px; font-size: 12px; overflow-wrap: anywhere; }
+.settings-success { color: #6b865a; }
+.preference-card { overflow: hidden; }
+.preference-title { display: block; margin: 18px 0 7px; font-size: 14.5px; font-weight: 600; }
+.preference-warning { display: block; margin: 12px 0 0; padding: 8px 9px; border-radius: 7px; background: #fff3e8; color: #9b5735; font-size: 12px; line-height: 1.6; }
+.settings-segment { display: flex; gap: 6px; margin-top: 12px; }
+.settings-segment.compact { flex: 1; margin-top: 2px; }
+.segment-button { flex: 1 1 0; min-width: 0; margin: 0; padding: 0 6px; border-radius: 7px; background: #f5efe6; color: #71614f; font-size: 12px; line-height: 2.3; }
+.segment-button.active { background: #e5d3bb; color: #6f4425; font-weight: 600; }
+.range-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 4px; }
+.range-field { min-width: 0; }
+.range-field .field-label { white-space: nowrap; }
+.reference-toggle { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 13px; }
+.reference-toggle .field-label { flex-shrink: 0; margin: 0; }
+.preference-divider { height: 0.5px; margin: 18px 0 1px; background: #eee5d6; }
+.preference-note { display: block; margin-top: 13px; color: #9b8d7b; font-size: 11.5px; line-height: 1.7; overflow-wrap: anywhere; }
+.settings-actions { display: flex; align-items: center; gap: 8px; }
+.settings-actions .primary-button { flex: 1 1 0; min-width: 0; margin-top: 14px; }
+.settings-secondary { flex: 1 1 0; min-width: 0; margin: 14px 0 0; border: 0.5px solid #d8c7b1; border-radius: 8px; background: #fffdf9; color: #875c38; font-size: 13px; line-height: 2.5; }
+.segment-button::after, .settings-secondary::after { border: 0; pointer-events: none; }
+
+@media (max-width: 340px) {
+  .settings-segment { flex-wrap: wrap; }
+  .segment-button { flex: 1 1 calc(50% - 3px); }
+  .settings-actions { flex-wrap: wrap; }
+  .settings-actions .primary-button, .settings-secondary { flex: 1 1 100%; }
+}
