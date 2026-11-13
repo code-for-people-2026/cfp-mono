@@ -255,3 +255,37 @@ zero afterward; both timers are enabled. Public readiness returned the new
 release, the retirement queue and deployment journal were empty, and no copied
 smoke mounts or ownership journals remained. Final available disk space was
 about 8.5 GiB, versus 3.4 GiB before recovery; these are point-in-time readings.
+
+### Verification on 2026-11-13
+
+The four review findings were resolved and independently reviewed at
+`f2e36fd11d78e7213e18981aecb701434070a8b6` by separate Standards and Spec
+reviewers, with no actionable findings. The final checks passed 463 unit tests,
+45 deployment tests, type checking, lint, interaction regression and full
+integration. Current real-model results are recorded in
+[the semantic regression note](semantic-routing-20261111.md).
+
+The managed build produced `preview-20261113-semantic-reviewed` from runtime
+commit `e275ffd2`; the subsequent reviewed commit changed only documentation and
+the Docker-excluded corpus check. Static assets matched the previous release
+before and after copying. The immutable image is
+`sha256:55418fbd834ce5aa7b37766456852ddb38ba96f80d6b917c39cd0e4e9b6da8bb`
+(1,321,784,594 bytes). Build and automatic cache cleanup exited successfully.
+The image's core source hashes matched the reviewed source; private-report,
+fixture, test, build-cache and temporary-database paths were absent.
+
+After both reviews, the publisher was hash-verified and installed under the
+deployment and privacy-maintenance locks. The official `release.py` passed the
+isolated candidate checks, unchanged-schema/alert verification and worker
+heartbeat checks, then promoted the app/worker pair. Its automatic retention
+removed `preview-20261111-semantic-privacy` (one image and two containers), with
+zero volumes removed. The protected rollback is now
+`preview-20261112-semantic-managed`.
+
+Post-release retention and privacy-maintenance services both finished with
+status zero; both timers were enabled and active. Local and public readiness
+returned the new release. The retired image was absent, retirement queue empty,
+deployment journal absent, exact current/rollback containers valid, and smoke
+mount count zero. Available disk space was 9,192,497,152 bytes (about 8.6 GiB).
+These are server checks, not phone acceptance. Private operational receipts and
+model replies are not committed.
