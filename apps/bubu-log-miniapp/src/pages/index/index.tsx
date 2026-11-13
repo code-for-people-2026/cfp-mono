@@ -5,29 +5,62 @@ import { chatDrafts } from "../../chat/storage";
 import { clearImageFiles } from "../../chat/files";
 import Taro from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
+import { CalendarNavigation } from "../../navigation/CalendarNavigation";
 import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
+import { useTodayKey } from "../../navigation/useToday";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, identityEnabled, wechatIdentityEnabled } from "../../api";
 import { ActivityDetail, DayTimeline, Heatmap, TrendCharts, WeekCalendar } from "../../components";
+import type { DetailProvenanceState } from "../../components";
+import { CollapsibleDaySummary } from "../../components/CollapsibleDaySummary";
+import { DEFAULT_CARE_PREFERENCES, getCarePreferences, type CarePreferences } from "../../preferences/care-preferences";
+import { carePreferencesScope, carePreferencesUpdatedEvent } from "../../preferences/runtime";
 import {
-  activityLabel, addDays, dateLabel, dayBounds, filterActivities, formatDuration,
-  layoutDayTimeline, mondayOfWeek, previousEvening, sortActivities, statCards, summarizeHomeDay, summarizeRecordList,
-  timeLabel, timestamp, todayKey, weekdayLabel, coverageMessage, recordStatCards, syncStatusLines,
-  type Activity, type AuthContext, type Baby, type DailyStat, type SortField, type StatFilter, type RecordSummary, type RecordEvent, type RecordSyncStatus,
+  activityLabel, addDays, calendarPeriod, dayBounds, filterActivities, formatDuration,
+  previousEvening, sortActivities, statCards, stepPeriod, summarizeHomeDay, summarizeRecordList,
+  timeLabel, timestamp, todayKey, coverageMessage, recordStatCards, syncStatusLines,
+  type Activity, type AuthContext, type Baby, type SortField, type StatFilter,
+  type RecordEvent, type RecordSyncStatus,
 } from "../../model";
+import { loadTimeline, type TimelineLoaded, type TimelineMode } from "../../api/timeline";
+import {
+  TimelineCacheStaleError,
+  TimelinePrefetchCache,
+  timelineCacheKey,
+  timelineDisplayKey,
+  timelinePeriodDate,
+  type TimelineCacheContext,
+} from "../../navigation/timeline-cache";
 
-const calendarViews = [
-  { key: "day", label: "日历" }, { key: "week", label: "周历" }, { key: "month", label: "月历" },
-] as const;
-type Loaded = { key: string; activities: Activity[]; evening: Activity[]; latest: Activity[]; stats: DailyStat[]; complete: boolean; recordSummary?: RecordSummary };
+type Loaded = TimelineLoaded;
+type CarePreferencesState = { babyId: string; preferences: CarePreferences; error: string };
 const message = (error: unknown): string => error instanceof Error ? error.message : "暂时无法连接，请稍后重试";
 const isUnauthorized = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 401;
 const isForbidden = (error: unknown): boolean => !!error && typeof error === "object" && "status" in error && error.status === 403;
 const iso = (value: number) => new Date(value).toISOString();
+const isAttachmentId = (value: string): value is string => /^att_[a-f0-9]{64}$/.test(value);
+const readCarePreferences = (babyId: string): CarePreferencesState => {
+  try {
+    const result = getCarePreferences(carePreferencesScope(babyId));
+    return {
+      babyId,
+      preferences: result.preferences,
+      error: result.storageState === "corrupt" ? "本地照护环设置已损坏，已使用默认参考。" : "",
+    };
+  } catch {
+    return {
+      babyId,
+      preferences: DEFAULT_CARE_PREFERENCES,
+      error: "照护环设置暂时不可读取，已使用默认参考。",
+    };
+  }
+};
 
 export default function DiaryPage() {
   const [chatSelection, setChatSelection] = useState<ChatSelection>();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
+  const [returnPeriod, setReturnPeriod] = useState<{ mode: DiaryView; date: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const [context, setContext] = useState<AuthContext | null>(null);
@@ -38,51 +71,163 @@ export default function DiaryPage() {
   const [authBusy, setAuthBusy] = useState(false);
   const [mode, setMode] = useState<DiaryView>("day");
   const [date, setDate] = useState(todayKey);
+  const [timeScale, setTimeScale] = useState(1);
+  const today = useTodayKey();
   const [days, setDays] = useState<7 | 14 | 30>(7);
   const [filters, setFilters] = useState<StatFilter[]>([]);
   const [sort, setSort] = useState<SortField>("endTime");
   const [revision, setRevision] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
+  const timelineCache = useRef(new TimelinePrefetchCache(5));
+  const [cacheVersion, setCacheVersion] = useState(0);
+  const [carePreferences, setCarePreferences] = useState<CarePreferencesState | null>(null);
   const [dataError, setDataError] = useState("");
   const [detail, setDetail] = useState<Activity | null>(null);
   const [detailError, setDetailError] = useState("");
   const [detailBusy, setDetailBusy] = useState(false);
+  const [provenance, setProvenance] = useState<DetailProvenanceState>({ status: "idle" });
   const [detailPhotos, setDetailPhotos] = useState<string[]>([]);
   const [detailEvent, setDetailEvent] = useState<RecordEvent | null>(null);
   const [photoCount, setPhotoCount] = useState(0);
   const [photoLoading, setPhotoLoading] = useState(false);
-  const photoPaths = useRef<string[]>([]);
+  const [photoError, setPhotoError] = useState("");
   const [sync, setSync] = useState<{ babyId: string; jobs: RecordSyncStatus[]; error?: string } | null>(null);
+  const [summaryHidden, setSummaryHidden] = useState(false);
+  const [summaryHeight, setSummaryHeight] = useState(0);
   const detailVersion = useRef(0);
+  const provenanceVersion = useRef(0);
+  const identityEpoch = useRef(0);
+  const identityKey = useRef("");
+  const photoPaths = useRef<string[]>([]);
+  const mounted = useRef(true);
   const contextVersion = useRef(0);
   const authInFlight = useRef(false);
   const babyId = context?.baby?.id || "";
-  const weekStart = mondayOfWeek(date);
-  const dataKey = `${babyId}:${mode}:${date}:${days}:${revision}`;
+  const weekStart = calendarPeriod("week", date).start;
+  const dataKey = mode === "day" || mode === "week"
+    ? timelineDisplayKey({ identity: { epoch: identityEpoch.current, babyId, revision, today }, mode, date })
+    : `${babyId}:${mode}:${date}:${days}:${revision}`;
   const data = loaded?.key === dataKey ? loaded : null;
 
   const clearPrivateView = useCallback(() => {
-    setChatSelection(undefined); setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
-    setDetailBusy(false); setDataError(""); setSync(null); detailVersion.current++;
-    photoPaths.current.forEach(path => api.releasePhotoUrl(path));
-    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0); setPhotoLoading(false);
+    setChatSelection(undefined); setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
+    setDetailBusy(false); setProvenance({ status: "idle" }); setDataError(""); setSync(null);
+    detailVersion.current++; provenanceVersion.current++;
+    photoPaths.current.forEach((path) => api.releasePhotoUrl(path));
+    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0);
+    setPhotoLoading(false); setPhotoError("");
+    timelineCache.current.reset();
+    setCacheVersion((version) => version + 1);
   }, []);
-  const closeDetail = () => {
-    detailVersion.current++; setDetail(null); setDetailBusy(false); setDetailError("");
-    photoPaths.current.forEach(path => api.releasePhotoUrl(path));
-    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0); setPhotoLoading(false);
-  };
-  useEffect(() => () => { photoPaths.current.forEach(path => api.releasePhotoUrl(path)); detailVersion.current++; }, []);
+  useEffect(() => {
+    const nextIdentity = `${context?.authenticated ? "authenticated" : "guest"}:${context?.authenticated ? babyId : ""}`;
+    if (!identityKey.current) {
+      identityKey.current = nextIdentity;
+      return;
+    }
+    if (identityKey.current !== nextIdentity) {
+      identityEpoch.current++;
+      identityKey.current = nextIdentity;
+    }
+  }, [babyId, context?.authenticated]);
+
+  const timelineContext = useCallback((targetMode: TimelineMode, targetDate: string): TimelineCacheContext => ({
+    identity: { epoch: identityEpoch.current, babyId, revision, today },
+    mode: targetMode,
+    date: targetDate,
+  }), [babyId, revision, today]);
+
+  const requestTimeline = useCallback((target: TimelineCacheContext) => timelineCache.current.load(target, () => loadTimeline({
+    babyId: target.identity.babyId,
+    mode: target.mode,
+    date: target.date,
+    today: target.identity.today,
+    key: timelineDisplayKey(target),
+  })), []);
+
+  const expireForIdentity = useCallback((identity: TimelineCacheContext["identity"], error: unknown) => {
+    if (!isUnauthorized(error) || !mounted.current) return;
+    // Authentication and baby boundaries advance the epoch. Date, view, refresh,
+    // and rollover changes remain the same session; a late 401 still expires it.
+    if (identityEpoch.current !== identity.epoch || babyId !== identity.babyId) return;
+    clearPrivateView();
+    setContext(null);
+    setAccountError("登录已过期，请重新登录");
+  }, [babyId, clearPrivateView]);
+
+  const prefetchAdjacent = useCallback((base: TimelineCacheContext) => {
+    const targets: Array<"prev" | "next"> = ["prev", "next"];
+    const periodDate = timelinePeriodDate(base.mode, base.date);
+    for (const direction of targets) {
+      const distance = base.mode === "week" ? 7 : 1;
+      const targetDate = addDays(periodDate, direction === "prev" ? -distance : distance);
+      if (base.mode === "day" ? targetDate > today : calendarPeriod("week", targetDate).start > calendarPeriod("week", today).start) continue;
+      const next = { ...base, date: targetDate };
+      void requestTimeline(next).then(() => {
+        if (!mounted.current
+          || identityEpoch.current !== base.identity.epoch
+          || babyId !== base.identity.babyId
+          || revision !== base.identity.revision
+          || today !== base.identity.today) return;
+        // adjacentPages is memoized over the cache; completion must re-render it.
+        setCacheVersion((version) => version + 1);
+      }).catch((error: unknown) => expireForIdentity(next.identity, error));
+    }
+  }, [babyId, expireForIdentity, requestTimeline, revision, today]);
+
+  const showCachedTimeline = useCallback((targetMode: TimelineMode, targetDate: string) => {
+    const cached = timelineCache.current.peek(timelineContext(targetMode, targetDate));
+    if (cached) setLoaded(cached);
+    return cached;
+  }, [timelineContext]);
+
+  const navigateTimeline = useCallback((direction: "prev" | "next") => {
+    if (mode !== "day" && mode !== "week") return;
+    const targetDate = stepPeriod(mode, date, direction === "prev" ? -1 : 1, today);
+    if (targetDate === date) return;
+    showCachedTimeline(mode, targetDate);
+    setReturnPeriod(null);
+    setDate(targetDate);
+  }, [date, mode, showCachedTimeline, today]);
+
+  const navigateTimelineReady = useCallback((direction: "prev" | "next") => {
+    if (mode !== "day" && mode !== "week") return false;
+    const targetDate = stepPeriod(mode, date, direction === "prev" ? -1 : 1, today);
+    if (timelineCache.current.peek(timelineContext(mode, targetDate))) return true;
+    // Recoil is not permanent: a failed/absent prefetch is retried when ready is polled.
+    const target = timelineContext(mode, targetDate);
+    void requestTimeline(target).then(() => {
+      setCacheVersion((version) => version + 1);
+    }).catch((error: unknown) => expireForIdentity(target.identity, error));
+    return false;
+  }, [date, expireForIdentity, mode, requestTimeline, timelineContext, today]);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      // Unmount is another context boundary: stop a multi-page audit scan and
+      // keep late unauthorized responses from writing to an unmounted page.
+      mounted.current = false;
+      detailVersion.current++; provenanceVersion.current++;
+      photoPaths.current.forEach((path) => api.releasePhotoUrl(path));
+      photoPaths.current = [];
+    };
+  }, []);
 
   const restore = useCallback(async () => {
     const version = ++contextVersion.current;
     clearPrivateView(); setContext(null); setBooting(true); setAccountError("");
-    try { const next = await api.getContext(); if (version === contextVersion.current) setContext(next); }
-    catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
-    finally { if (version === contextVersion.current) setBooting(false); }
+    try {
+      const next = await api.getContext();
+      if (version === contextVersion.current) setContext(next);
+    } catch (error) {
+      if (version === contextVersion.current) setAccountError(message(error));
+    } finally {
+      if (version === contextVersion.current) setBooting(false);
+    }
   }, [clearPrivateView]);
   const identityUpdated = useCallback((next: AuthContext) => {
-    contextVersion.current++; clearPrivateView(); setContext(next); setAccountError(""); setBooting(false);
+    contextVersion.current++;
+    clearPrivateView(); setContext(next); setAccountError(""); setBooting(false);
   }, [clearPrivateView]);
   useEffect(() => { clearImageFiles(); void restore(); }, [restore]);
   useEffect(() => {
@@ -95,63 +240,173 @@ export default function DiaryPage() {
       ...current, baby: current.baby?.id === baby.id ? baby : current.baby,
       babies: current.babies.map((item) => item.id === baby.id ? baby : item),
     } : current);
-    const expire = () => { contextVersion.current++; clearPrivateView(); setContext(null); setBooting(false); setAccountError("登录已过期，请重新登录"); };
+    const expire = () => {
+      contextVersion.current++;
+      identityEpoch.current++;
+      identityKey.current = "guest:";
+      clearPrivateView(); setContext(null); setBooting(false);
+      setAccountError("登录已过期，请重新登录");
+    };
     Taro.eventCenter.on(profileUpdatedEvent, updateProfile);
     Taro.eventCenter.on(sessionExpiredEvent, expire);
     Taro.eventCenter.on(identityUpdatedEvent, identityUpdated);
-    return () => { Taro.eventCenter.off(profileUpdatedEvent, updateProfile); Taro.eventCenter.off(sessionExpiredEvent, expire); Taro.eventCenter.off(identityUpdatedEvent, identityUpdated); };
+    return () => {
+      Taro.eventCenter.off(profileUpdatedEvent, updateProfile);
+      Taro.eventCenter.off(sessionExpiredEvent, expire);
+      Taro.eventCenter.off(identityUpdatedEvent, identityUpdated);
+    };
   }, [clearPrivateView, identityUpdated]);
 
   useEffect(() => {
+    if (!babyId || !context?.authenticated) {
+      setCarePreferences(null);
+      return;
+    }
+    setCarePreferences(readCarePreferences(babyId));
+    const updatePreferences = (changedBaby: unknown) => {
+      if (changedBaby === babyId) setCarePreferences(readCarePreferences(babyId));
+    };
+    Taro.eventCenter.on(carePreferencesUpdatedEvent, updatePreferences);
+    return () => {
+      Taro.eventCenter.off(carePreferencesUpdatedEvent, updatePreferences);
+    };
+  }, [babyId, context?.authenticated]);
+
+  useEffect(() => {
     if (!babyId || !context?.authenticated) return;
+    if (mode === "day" || mode === "week") {
+      const request = timelineContext(mode, date);
+      const requestIdentity = request.identity;
+      const requestCacheKey = timelineCacheKey(request);
+      let cancelled = false;
+      setDataError("");
+      const cached = timelineCache.current.peek(request);
+      if (cached) {
+        setLoaded(cached);
+        prefetchAdjacent(request);
+        return () => { cancelled = true; };
+      }
+      void requestTimeline(request).then((next) => {
+        if (!cancelled && mounted.current && identityEpoch.current === requestIdentity.epoch
+          && timelineCacheKey(timelineContext(mode, date)) === requestCacheKey) {
+          setLoaded(next);
+          prefetchAdjacent(request);
+        }
+        setCacheVersion((version) => version + 1);
+      }).catch((error: unknown) => {
+        expireForIdentity(requestIdentity, error);
+        if (cancelled || !mounted.current || error instanceof TimelineCacheStaleError) return;
+        if (identityEpoch.current !== requestIdentity.epoch || timelineCacheKey(timelineContext(mode, date)) !== requestCacheKey) return;
+        setDataError(message(error));
+      });
+      return () => { cancelled = true; };
+    }
+    const requestIdentityEpoch = identityEpoch.current;
+    const requestBabyId = babyId;
     let cancelled = false;
     setDataError("");
     const load = async (): Promise<Loaded> => {
       if (mode === "trend" || mode === "month") {
-        const startDate = mode === "trend" ? addDays(date, 1 - days) : addDays(weekStart, -21);
-        const endDate = mode === "trend" ? date : addDays(weekStart, 6);
-        const stats = await api.getDailyStats({ babyId, startDate, endDate });
-        return { key: dataKey, activities: [], evening: [], latest: [], stats, complete: true };
+        const month = calendarPeriod("month", date);
+        const startDate = mode === "trend" ? addDays(date, 1 - days) : month.start;
+        const endDate = mode === "trend" ? date : month.end;
+        if (mode === "trend") {
+          const stats = await api.getDailyStats({ babyId, startDate, endDate });
+          return { key: dataKey, activities: [], evening: [], latest: [], stats, complete: true };
+        }
+
+        const bounds = dayBounds(month.start);
+        const endBounds = dayBounds(month.end);
+        const [statsResult, activitiesResult, profileResult] = await Promise.allSettled([
+          api.getDailyStats({ babyId, startDate, endDate }),
+          api.getActivities({
+            babyId,
+            startTimeGte: iso(bounds.start),
+            startTimeLt: iso(endBounds.next),
+            crossStartTime: true,
+            crossEndTime: true,
+          }),
+          api.getBabyProfile(babyId),
+        ]);
+        const failures = [statsResult, activitiesResult, profileResult].filter((result) => result.status === "rejected");
+        const unauthorized = failures.find((result) => result.status === "rejected" && isUnauthorized(result.reason));
+        if (unauthorized) throw (unauthorized as PromiseRejectedResult).reason;
+        const requiredFailure = [statsResult, activitiesResult].find((result) => result.status === "rejected");
+        if (requiredFailure) throw (requiredFailure as PromiseRejectedResult).reason;
+        if (activitiesResult.status !== "fulfilled" || statsResult.status !== "fulfilled") throw new Error("暂时无法连接，请稍后重试");
+
+        let birthDate: string | null = null;
+        let profileError = "";
+        if (profileResult.status === "fulfilled") birthDate = profileResult.value.birthDate ?? null;
+        else profileError = "宝宝资料读取失败，年龄参考不可用；月历仍展示记录。";
+        return {
+          key: dataKey,
+          activities: activitiesResult.value.activities,
+          evening: [],
+          latest: [],
+          stats: statsResult.value,
+          complete: activitiesResult.value.complete,
+          birthDate,
+          profileError,
+        };
       }
-      if (mode === "week") {
-        const result = await api.getActivities({ babyId,
-          startTimeGte: iso(dayBounds(weekStart).start),
-          startTimeLt: iso(dayBounds(addDays(weekStart, 7)).start),
-          crossStartTime: true, crossEndTime: true,
-        });
-        return { key: dataKey, ...result, evening: [], latest: [], stats: [] };
+      if (mode === "list" && identityEnabled) {
+        const snapshot = await api.getSnapshot(babyId, date);
+        return {
+          key: dataKey,
+          activities: snapshot.activities,
+          evening: [],
+          latest: [],
+          stats: [],
+          complete: true,
+          recordSummary: snapshot.summary,
+        };
       }
-      const snapshot = identityEnabled ? await api.getSnapshot(babyId, date) : null;
-      const result = snapshot ? { activities: snapshot.activities, complete: true } : await api.getActivities({ babyId, date });
-      let evening: Activity[] = [];
-      let complete = result.complete;
-      if (mode === "day") {
-        const previous = await api.getActivities({ babyId,
-          startTimeGte: iso(dayBounds(date).start - 6 * 3600000), startTimeLt: iso(dayBounds(date).start),
-        });
-        evening = previous.activities;
-        complete = complete && previous.complete;
-      }
-      const latest = mode === "day" && date === todayKey() ? (await Promise.all([api.getLatestActivity(babyId, ["SLEEP"]), api.getLatestActivity(babyId, ["BREASTFEED", "BOTTLE"])] )).filter((activity): activity is Activity => activity !== null) : [];
-      return { key: dataKey, ...result, complete, evening, latest, stats: [], ...(snapshot ? { recordSummary: snapshot.summary } : {}) };
+      const result = await api.getActivities({ babyId, date });
+      return { key: dataKey, ...result, evening: [], latest: [], stats: [] };
     };
-    void load().then((next) => { if (!cancelled) setLoaded(next); }).catch((error: unknown) => {
-      if (cancelled) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else if (isForbidden(error)) { void restore(); }
-      else setDataError(message(error));
+    void load().then((next) => {
+      if (cancelled || !mounted.current || identityEpoch.current !== requestIdentityEpoch || babyId !== requestBabyId) return;
+      setLoaded(next);
+    }).catch((error: unknown) => {
+      if (isUnauthorized(error)) {
+        // A view/date change is not an identity change: a late 401 still
+        // expires the current session. Baby/session changes advance the epoch;
+        // their old responses must not clear the newly selected view.
+        if (mounted.current && identityEpoch.current === requestIdentityEpoch && babyId === requestBabyId) {
+          clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录");
+        }
+        return;
+      }
+      if (cancelled || !mounted.current || identityEpoch.current !== requestIdentityEpoch || babyId !== requestBabyId) return;
+      setDataError(message(error));
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, clearPrivateView, restore]);
+  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, today, clearPrivateView,
+    expireForIdentity, prefetchAdjacent, requestTimeline, timelineContext]);
 
   useEffect(() => {
     if (!identityEnabled || !babyId || !context?.authenticated) return;
+    const requestEpoch = identityEpoch.current;
+    const requestBabyId = babyId;
     let cancelled = false;
-    void api.getSyncStatus(babyId).then(jobs => { if (!cancelled) setSync({ babyId, jobs }); }).catch((error: unknown) => {
-      if (cancelled) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else if (isForbidden(error)) void restore();
-      else setSync({ babyId, jobs: [], error: "同步状态暂时不可用，当前仅显示已保存记录" });
+    void api.getSyncStatus(requestBabyId).then((jobs) => {
+      if (cancelled || !mounted.current || identityEpoch.current !== requestEpoch || babyId !== requestBabyId) return;
+      setSync({ babyId: requestBabyId, jobs });
+    }).catch((error: unknown) => {
+      if (cancelled || !mounted.current || identityEpoch.current !== requestEpoch || babyId !== requestBabyId) return;
+      if (isUnauthorized(error)) {
+        clearPrivateView(); setContext(null); setBooting(false);
+        setAccountError("登录已过期，请重新登录");
+        return;
+      }
+      if (isForbidden(error)) {
+        void restore();
+        return;
+      }
+      // Snapshot facts and this optional status read are independent; a 503 or
+      // other collector outage must not erase already loaded records.
+      setSync({ babyId: requestBabyId, jobs: [], error: "同步状态暂时不可用，当前仅显示已保存记录" });
     });
     return () => { cancelled = true; };
   }, [babyId, context?.authenticated, revision, clearPrivateView, restore]);
@@ -163,17 +418,26 @@ export default function DiaryPage() {
     const version = ++contextVersion.current;
     clearPrivateView(); setAuthBusy(true); setAccountError("");
     try {
-      const next = wechatIdentityEnabled ? await api.loginWithWechat() : await api.login({ username: username.trim(), password });
+      const next = wechatIdentityEnabled
+        ? await api.loginWithWechat()
+        : await api.login({ username: username.trim(), password });
       if (version === contextVersion.current) setContext(next);
-    } catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
-    finally { authInFlight.current = false; setPassword(""); setAuthBusy(false); }
+    } catch (error) {
+      if (version === contextVersion.current) setAccountError(message(error));
+    } finally {
+      authInFlight.current = false; setPassword(""); setAuthBusy(false);
+    }
   };
   const logout = async () => {
     if (authInFlight.current) return;
     chatDrafts.clear(); clearImageFiles();
     authInFlight.current = true;
     const version = ++contextVersion.current;
-    setAuthBusy(true); setAccountError(""); clearPrivateView(); setContext(null);
+    setAuthBusy(true); setAccountError("");
+    identityEpoch.current++;
+    identityKey.current = "guest:";
+    clearPrivateView();
+    setContext(null);
     try { await api.logout(); }
     catch (error) { if (version === contextVersion.current) setAccountError(message(error)); }
     finally { authInFlight.current = false; setAuthBusy(false); }
@@ -181,40 +445,153 @@ export default function DiaryPage() {
   const changeBaby = async (index: number) => {
     const selected = context?.babies[index];
     if (!selected || selected.id === babyId) return;
+    if (authInFlight.current) return;
+    authInFlight.current = true;
     const version = ++contextVersion.current;
-    clearPrivateView(); setContext(null); setBooting(true); setAccountError("");
-    try { const next = await api.getContext(selected.id); if (version === contextVersion.current) { setContext(next); setFilters([]); } }
-    catch (error) {
+    identityEpoch.current++;
+    identityKey.current = `authenticated:${selected.id}`;
+    clearPrivateView(); setBooting(true); setAccountError("");
+    setContext(null);
+    try {
+      const next = await api.getContext(selected.id);
+      if (version === contextVersion.current) { setContext(next); setFilters([]); }
+    } catch (error) {
       if (version !== contextVersion.current) return;
       if (isForbidden(error)) { void restore(); }
-      else setAccountError(message(error));
-    } finally { if (version === contextVersion.current) setBooting(false); }
+      else { setContext(null); setAccountError(message(error)); }
+    } finally {
+      if (version === contextVersion.current) setBooting(false);
+      authInFlight.current = false;
+    }
   };
   const openDetail = async (activity: Activity) => {
     closeDetail();
     const version = ++detailVersion.current;
-    setDetail(null); setDetailError(""); setDetailBusy(true);
+    const requestEpoch = identityEpoch.current;
+    const requestBabyId = babyId;
+    provenanceVersion.current++;
+    setProvenance({ status: "idle" });
+    setDetail(null); setDetailEvent(null); setDetailError(""); setPhotoError("");
+    setDetailBusy(true); setPhotoCount(0); setPhotoLoading(false);
     try {
-      const [current, event] = await Promise.all([api.getActivity(babyId, activity.id), identityEnabled ? api.getRecordEvent(babyId, activity.id) : Promise.resolve(null)]);
+      const [current, event] = await Promise.all([
+        api.getActivity(requestBabyId, activity.id),
+        identityEnabled ? api.getRecordEvent(requestBabyId, activity.id) : Promise.resolve(null),
+      ]);
+      // Sidecar metadata is authoritative. If it is unavailable, do not fall back
+      // to the legacy audit panel or expose a detail shell without its safe subset.
+      if (identityEnabled && !event) throw new Error("记录详情元数据暂时不可用");
       if (version !== detailVersion.current) return;
       setDetail(current); setDetailEvent(event); setDetailBusy(false);
-      const urls = [...new Set([...(current.poopPhotoUrl ? [current.poopPhotoUrl] : []), ...(event?.attachmentIds.map(id => `/api/app/attachments/${id}?babyId=${encodeURIComponent(babyId)}`) ?? [])])];
-      setPhotoCount(urls.length);
-      if (urls.length) {
-        setPhotoLoading(true);
-        for (const url of urls) {
-          const photo = await api.resolvePhotoUrl(url, babyId);
-          if (version !== detailVersion.current) { api.releasePhotoUrl(photo); return; }
+
+      if (!identityEnabled || !event) return;
+      const attachmentUrls = [
+        ...event.attachmentIds
+        .filter(isAttachmentId)
+        .map((id) => `/api/app/attachments/${id}?babyId=${encodeURIComponent(requestBabyId)}`),
+        ...(current.poopPhotoUrl ? [current.poopPhotoUrl] : []),
+      ];
+      const protectedPhotoUrls = [...new Set(attachmentUrls)];
+      setPhotoCount(protectedPhotoUrls.length);
+      if (!protectedPhotoUrls.length) return;
+      setPhotoLoading(true);
+      for (const url of protectedPhotoUrls) {
+        try {
+          const photo = await api.resolvePhotoUrl(url, requestBabyId);
+          if (version !== detailVersion.current) {
+            api.releasePhotoUrl(photo);
+            return;
+          }
           photoPaths.current.push(photo);
           setDetailPhotos([...photoPaths.current]);
+        } catch (error) {
+          if (version !== detailVersion.current) return;
+          const stillCurrentIdentity = mounted.current
+            && identityEpoch.current === requestEpoch
+            && babyId === requestBabyId;
+          if (isUnauthorized(error)) {
+            if (stillCurrentIdentity) {
+              contextVersion.current++;
+              identityEpoch.current++;
+              identityKey.current = "guest:";
+              clearPrivateView(); setContext(null); setBooting(false);
+              setAccountError("登录已过期，请重新登录");
+            }
+            return;
+          }
+          if (isForbidden(error)) {
+            if (stillCurrentIdentity) void restore();
+            return;
+          }
+          setPhotoError(message(error));
         }
       }
     } catch (error) {
+      // A current-session 401 expires the private view even if this detail was
+      // closed meanwhile; a replaced session surfaces as 409 SESSION_CHANGED
+      // from the client instead, so it can never reach this branch.
+      if (isUnauthorized(error)) {
+        if (mounted.current && identityEpoch.current === requestEpoch && babyId === requestBabyId) {
+          contextVersion.current++;
+          identityEpoch.current++;
+          identityKey.current = "guest:";
+          clearPrivateView(); setContext(null); setBooting(false);
+          setAccountError("登录已过期，请重新登录");
+        }
+        return;
+      }
       if (version !== detailVersion.current) return;
-      if (isUnauthorized(error)) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
-      else if (isForbidden(error)) { void restore(); }
-      else setDetailError(message(error));
-    } finally { if (version === detailVersion.current) { setDetailBusy(false); setPhotoLoading(false); } }
+      if (isForbidden(error)) {
+        if (mounted.current && identityEpoch.current === requestEpoch && babyId === requestBabyId) void restore();
+        return;
+      }
+      setDetailError(message(error));
+    } finally {
+      if (version === detailVersion.current) {
+        setDetailBusy(false); setPhotoLoading(false);
+      }
+    }
+  };
+  const fetchProvenance = useCallback(async () => {
+    const activity = detail;
+    if (identityEnabled || !activity || !babyId) return;
+    const version = ++provenanceVersion.current;
+    setProvenance({ status: "loading" });
+    try {
+      const result = await api.getActivityProvenance(babyId, activity.id, () => version !== provenanceVersion.current);
+      if (version !== provenanceVersion.current) return;
+      if (result.provenance) setProvenance({ status: "found", provenance: result.provenance });
+      else setProvenance({ status: result.complete ? "absent" : "incomplete" });
+    } catch (error) {
+      // Unauthorized is checked before the version guard: closing or collapsing
+      // this optional section must not shield a genuinely expired session, while
+      // late successes stay ignored. Old-session responses arrive as 409
+      // SESSION_CHANGED (see the client generation guard), never as 401 here.
+      if (isUnauthorized(error)) {
+        if (mounted.current) { clearPrivateView(); setContext(null); setAccountError("登录已过期，请重新登录"); }
+        return;
+      }
+      if (version !== provenanceVersion.current) return;
+      setProvenance({ status: "error", message: message(error) });
+    }
+  }, [babyId, detail, clearPrivateView]);
+  const closeDetail = () => {
+    setDetail(null); setDetailError(""); detailVersion.current++;
+    provenanceVersion.current++; setProvenance({ status: "idle" });
+    photoPaths.current.forEach((path) => api.releasePhotoUrl(path));
+    photoPaths.current = []; setDetailPhotos([]); setDetailEvent(null); setPhotoCount(0);
+    setPhotoLoading(false); setPhotoError("");
+  };
+  const toggleMoreInfo = (expanded: boolean) => {
+    if (expanded) {
+      // Only the first expansion of this open detail requests the audit endpoint.
+      if (provenance.status === "idle") void fetchProvenance();
+      return;
+    }
+    if (provenance.status === "loading") {
+      provenanceVersion.current++;
+      setProvenance({ status: "idle" });
+    }
   };
 
   const refreshAfterChat = useCallback(() => { setLoaded(null); setRevision(value => value + 1); }, []);
@@ -229,16 +606,51 @@ export default function DiaryPage() {
     : summarizeHomeDay(data?.activities || [], date), [data, date, mode]);
   const cards = useMemo(() => data?.recordSummary ? recordStatCards(data.recordSummary) : statCards(summary), [data, summary]);
   const visible = useMemo(() => filterActivities(data?.activities || [], filters), [data, filters]);
+  const revealSummary = useCallback(() => setSummaryHidden(false), []);
+  const handleSummaryHeight = useCallback((height: number) => {
+    setSummaryHeight((previous) => (Math.abs(previous - height) <= 0.5 ? previous : height));
+  }, []);
+  const handleScrollIntent = useCallback((intent: "hide" | "show") => {
+    setSummaryHidden(intent === "hide");
+  }, []);
   const navigate = (direction: number) => {
-    const distance = mode === "trend" ? days : mode === "week" || mode === "month" ? 7 : 1;
-    const next = addDays(date, direction * distance);
-    setDate(next > todayKey() ? todayKey() : next);
+    revealSummary();
+    if (mode === "trend") {
+      const next = addDays(date, direction * days);
+      setDate(next > today ? today : next);
+      return;
+    }
+    if (mode === "day" || mode === "week") {
+      const next = stepPeriod(mode === "week" ? "week" : "day", date, direction, today);
+      if (next !== date) showCachedTimeline(mode, next);
+      setDate(next);
+      return;
+    }
+    const period = mode === "month" ? "month" : "day";
+    setDate(stepPeriod(period, date, direction, today));
   };
-  const periodLabel = mode === "week" ? `${dateLabel(weekStart)} — ${dateLabel(addDays(weekStart, 6))}`
-    : mode === "month" ? `${dateLabel(addDays(weekStart, -21))} — ${dateLabel(addDays(weekStart, 6))}`
-    : mode === "trend" ? `${dateLabel(addDays(date, 1 - days))} — ${dateLabel(date)}`
-    : `${dateLabel(date)} · ${weekdayLabel(date)}`;
-  const openDay = (selected: string) => { setDate(selected); setMode("list"); setFilters([]); };
+  const adjacentPages = useMemo(() => {
+    if (mode !== "day" && mode !== "week") return undefined;
+    const distance = mode === "week" ? 7 : 1;
+    const result: Partial<Record<"prev" | "next", Loaded>> = {};
+    for (const direction of ["prev", "next"] as const) {
+      const targetDate = addDays(date, direction === "prev" ? -distance : distance);
+      if (mode === "day" ? targetDate > today : calendarPeriod("week", targetDate).start > calendarPeriod("week", today).start) continue;
+      const target = timelineCache.current.peek(timelineContext(mode, targetDate));
+      if (!target) continue;
+      result[direction] = mode === "day"
+        ? { ...target, activities: filterActivities(target.activities, filters) }
+        : target;
+    }
+    return result;
+  }, [cacheVersion, date, filters, mode, today, timelineContext]);
+  const openDay = (selected: string) => {
+    if (selected > today) return;
+    revealSummary();
+    showCachedTimeline("day", selected);
+    setReturnPeriod({ mode, date }); setDate(selected); setMode("day"); setFilters([]);
+  };
+  const gesturesDisabled = menuOpen || viewMenuOpen || detailBusy || !!detail || !!detailError;
 
   if (booting) return <View className="diary-shell"><DiaryNavigation /><View className="page"><View className="state-panel">正在打开卜卜日记…</View></View></View>;
   if (!context?.authenticated) return <View className="diary-shell"><DiaryNavigation /><View className="page login-page">
@@ -246,14 +658,14 @@ export default function DiaryPage() {
     <Text className="welcome-title">每一天，都值得记住</Text>
     <Text className="muted">登录卜卜日记，看看宝宝的日常与成长。</Text>
     <View className="login-card">
-      <Text className="section-title">{wechatIdentityEnabled ? "微信登录" : "登录已有账号"}</Text>
-      {!wechatIdentityEnabled && <><Text className="field-label">用户名或邮箱</Text>
+      <Text className="section-title">登录已有账号</Text>
+      <Text className="field-label">用户名或邮箱</Text>
       <Input className="login-input" value={username} placeholder="请输入用户名或邮箱" onInput={(e) => setUsername(e.detail.value)} disabled={authBusy || undefined} />
       <Text className="field-label">密码</Text>
-      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} /></>}
+      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} />
       {accountError && <Text className="error-text">{accountError}</Text>}
-      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>{wechatIdentityEnabled ? "微信登录并继续" : "登录"}</Button>
-      <Text className="login-note">{wechatIdentityEnabled ? "登录后可创建宝宝、绑定已有账号或加入家人" : "使用原宝宝日记的账号与密码"}</Text>
+      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>登录</Button>
+      <Text className="login-note">使用原宝宝日记的账号与密码</Text>
     </View>
     <Button className="text-button" disabled={authBusy || undefined} onClick={() => { void restore(); }}>重新连接</Button>
   </View></View>;
@@ -261,47 +673,106 @@ export default function DiaryPage() {
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
       open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu}
-      onSelect={(next) => { setMode(next); setDetailError(""); setFilters([]); if (next === "day") setDate(todayKey()); closeMenu(); }}
-      onBabyChange={(index) => { void changeBaby(index); }}
+      onSelect={(next) => {
+        revealSummary();
+        if (next === "day" || next === "week") showCachedTimeline(next, date);
+        setMode(next); setReturnPeriod(null); setDetailError(""); setFilters([]); closeMenu();
+      }}
+      onBabyChange={(index) => { revealSummary(); void changeBaby(index); }}
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}
-      onRefresh={() => { setLoaded(null); setRevision((value) => value + 1); closeMenu(); }}
-      onLogout={() => { void logout(); }} />
+      onRefresh={() => { timelineCache.current.reset(); setLoaded(null); setRevision((value) => value + 1); setCacheVersion((version) => version + 1); closeMenu(); }}
+      onLogout={() => { void logout(); }}>
+      {context.hasBaby && <CalendarNavigation date={date} mode={mode} days={days} open={viewMenuOpen} today={today}
+        onToggle={() => setViewMenuOpen((value) => !value)} onClose={closeViewMenu}
+        onNavigate={(direction) => { closeViewMenu(); setReturnPeriod(null); navigate(direction); }}
+        onDateChange={(next) => {
+          revealSummary();
+          if (mode === "day" || mode === "week") showCachedTimeline(mode, next);
+          setDate(next); setReturnPeriod(null);
+        }}
+        onModeChange={(next) => {
+          revealSummary();
+          if (next === "day" || next === "week") showCachedTimeline(next, date);
+          setMode(next); setFilters([]); setReturnPeriod(null);
+        }} />}
+    </DiaryNavigation>
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
     {!context.hasBaby ? <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
-      <View className="calendar-toolbar">
-        <Button className="arrow-button" ariaLabel="上一段日期" onClick={() => navigate(-1)}>‹</Button>
-        <Picker className="date-picker" mode="date" value={date} end={todayKey()} onChange={(event) => setDate(event.detail.value)}><View className="date-title">{periodLabel}<Text className="date-dropdown">⌄</Text></View></Picker>
-        <Button className="arrow-button" ariaLabel="下一段日期" disabled={(mode === "week" || mode === "month" ? weekStart >= mondayOfWeek(todayKey()) : date >= todayKey()) || undefined} onClick={() => navigate(1)}>›</Button>
-        {mode !== "list" && mode !== "trend" && <View className={`calendar-view-control ${viewMenuOpen ? "view-menu-open" : ""}`}>
-          <Button className="calendar-view-select" ariaLabel="切换日历视图" onClick={() => setViewMenuOpen((value) => !value)}>{calendarViews.find((item) => item.key === mode)?.label}<Text> ⌄</Text></Button>
-          {viewMenuOpen && <>
-            <View className="calendar-view-backdrop" onClick={() => setViewMenuOpen(false)} />
-            <View className="calendar-view-popover">{calendarViews.map((item) => <Button key={item.key} className={`calendar-view-option ${item.key === mode ? "current" : ""}`} onClick={() => { setMode(item.key); setFilters([]); setViewMenuOpen(false); }}>{item.label}</Button>)}</View>
-          </>}
-        </View>}
-        {date !== todayKey() && <Button className="text-button today-button" onClick={() => setDate(todayKey())}>今天</Button>}
-      </View>
+      {returnPeriod && <Button className="text-button period-back" onClick={() => {
+        revealSummary();
+        if (returnPeriod.mode === "day" || returnPeriod.mode === "week") showCachedTimeline(returnPeriod.mode, returnPeriod.date);
+        setMode(returnPeriod.mode); setDate(returnPeriod.date); setFilters([]); setReturnPeriod(null);
+      }}>‹ 返回{returnPeriod.mode === "week" ? "周历" : "月历"}</Button>}
       {dataError ? <View className="state-panel"><Text className="error-text">{dataError}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重试</Button></View>
         : !data ? <View className="state-panel">正在读取记录…</View> : <>
           {!data.complete && <View className="notice">记录数量达到读取上限，当前展示可能不完整。可切换到单日查看。</View>}
-          {mode === "day" && <DayTimeline latestActivities={data.latest} activities={visible} date={date} recordCoverage={data.recordSummary?.coverage} onActivityClick={(activity) => { void openDetail(activity); }} />}
-          {(mode === "day" || mode === "list") && <View className="daily-summary">
-            <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{data.recordSummary?.coverage.recordedEvents ?? layoutDayTimeline(visible, date).length} 条记录</Text></View>
+          {mode === "list" && <View className="daily-summary">
             <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
               <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
             </View>)}</View>
-            <View className="filter-caption"><Text>轻点上方卡片筛选记录</Text>{filters.length > 0 && <Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text>}</View>
+            {filters.length > 0 && <View className="filter-caption"><Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text></View>}
             {data.recordSummary && <View className="data-note">
               {data.recordSummary.metrics.diaperCount > 0 && <Text>尿布 {data.recordSummary.metrics.diaperCount} 次 · 明确有尿 {data.recordSummary.metrics.peeCount} 次 · 明确有便 {data.recordSummary.metrics.poopCount} 次。 </Text>}
               <Text>{coverageMessage(data.recordSummary.coverage) || "汇总仅包含已记录的事实。"}</Text>
             </View>}
           </View>}
-          {mode === "day" && <PreviousEvening activities={data.evening} date={date} sidecar={identityEnabled} />}
-          {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay} />}
-          {mode === "month" && <Heatmap stats={data.stats} endDate={date} onDateClick={(selected, metric) => { setDate(selected); setMode("list"); setFilters(metric === "sleep" ? ["sleep"] : ["bottle", "breastfeed", "pump"]); }} />}
+          {mode === "day" && <>
+            <CollapsibleDaySummary
+              collapsed={summaryHidden}
+              measurementKey={`${dataKey}:${filters.join(",")}`}
+              onHeightChange={handleSummaryHeight}
+            >
+              <View className="daily-summary">
+                <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
+                  <Text className="stat-label" style={{ color: card.color }}>{card.label}</Text><Text className="stat-value">{card.value}</Text>
+                </View>)}</View>
+                {filters.length > 0 && <View className="filter-caption"><Text className="inline-action" onClick={() => setFilters([])}>显示全部</Text></View>}
+                {data.recordSummary && <View className="data-note">
+                  {data.recordSummary.metrics.diaperCount > 0 && <Text>尿布 {data.recordSummary.metrics.diaperCount} 次 · 明确有尿 {data.recordSummary.metrics.peeCount} 次 · 明确有便 {data.recordSummary.metrics.poopCount} 次。 </Text>}
+                  <Text>{coverageMessage(data.recordSummary.coverage) || "汇总仅包含已记录的事实。"}</Text>
+                </View>}
+              </View>
+              <PreviousEvening activities={data.evening} date={date} sidecar={identityEnabled} />
+            </CollapsibleDaySummary>
+            <DayTimeline latestActivities={data.latest} activities={visible} date={date} today={today}
+              foldAvatarUrl={context.baby?.avatarUrl}
+              scale={timeScale} onScaleChange={setTimeScale}
+              gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:day:${date}`}
+              onScrollIntent={handleScrollIntent}
+              viewportExpansion={summaryHidden ? summaryHeight : 0}
+              recordCoverage={data.recordSummary?.coverage}
+              onActivityClick={(activity) => { void openDetail(activity); }}
+              onNavigate={navigateTimeline} onNavigateReady={navigateTimelineReady} adjacentPages={adjacentPages} />
+          </>}
+          {mode === "week" && <WeekCalendar activities={data.activities} weekStart={weekStart} today={today}
+            foldAvatarUrl={context.baby?.avatarUrl}
+            scale={timeScale} onScaleChange={setTimeScale}
+            gesturesDisabled={gesturesDisabled} gestureResetKey={`${babyId}:week:${date}`}
+            onActivityClick={(activity) => { void openDetail(activity); }} onDateClick={openDay}
+            onNavigate={navigateTimeline} onNavigateReady={navigateTimelineReady} adjacentPages={adjacentPages} />}
+          {mode === "month" && (
+            <Heatmap
+              stats={data.stats}
+              activities={data.activities}
+              complete={data.complete}
+              birthDate={data.birthDate}
+              preferences={carePreferences?.babyId === babyId ? carePreferences.preferences : DEFAULT_CARE_PREFERENCES}
+              preferencesError={carePreferences?.babyId === babyId ? carePreferences.error : ""}
+              profileError={data.profileError}
+              endDate={date}
+              today={today}
+              onDateClick={openDay}
+            />
+          )}
           {mode === "trend" && <TrendCharts stats={data.stats} days={days} endDate={date} onDaysChange={setDays} />}
-          {(mode === "month" || mode === "trend") && <View className="data-note">{identityEnabled ? "按已保存记录统一计算。未知数值与未结束时长不当作零，疑似重复待核对期间不重复计入；暂无记录不代表实际没有发生。" : "展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。"}</View>}
+          {(mode === "month" || mode === "trend") && (
+            <View className="data-note">
+              {mode === "month"
+                ? "月环读取已保存统计和当月记录；缺少统计不代表当天没有记录。"
+                : "展示已保存的每日统计。缺少统计的日期不代表当天没有记录；刷新会重新读取已有统计。"}
+            </View>
+          )}
           {mode === "list" && <>
             <View className="section-heading"><Text className="section-title">{visible.length} 条记录</Text><Picker mode="selector" range={["按活动时间", "按创建时间", "按更新时间"]} value={["endTime", "createdAt", "updatedAt"].indexOf(sort)} onChange={(e) => setSort((["endTime", "createdAt", "updatedAt"] as const)[Number(e.detail.value)]!)}><Text className="inline-action">{{ endTime: "按活动时间", createdAt: "按创建时间", updatedAt: "按更新时间" }[sort]} ⌄</Text></Picker></View>
             {sortActivities(visible, sort).map((activity) => <View className="record-row" key={activity.id} onClick={() => { void openDetail(activity); }}>
@@ -310,10 +781,27 @@ export default function DiaryPage() {
             {!visible.length && <View className="state-panel">这一天还没有{filters.length ? "符合筛选的" : ""}记录</View>}
           </>}
         </>}
-      {identityEnabled && sync?.babyId === babyId && <View className="data-note sync-status"><Text className="section-title">采集同步</Text>{(sync.error ? [sync.error] : syncStatusLines(sync.jobs)).map(line => <View key={line}><Text>{line}</Text></View>)}</View>}
+      {identityEnabled && sync?.babyId === babyId && (
+        <View className="data-note sync-status">
+          <Text className="section-title">采集同步</Text>
+          {(sync.error ? [sync.error] : syncStatusLines(sync.jobs)).map((line) => (
+            <View key={line}><Text>{line}</Text></View>
+          ))}
+        </View>
+      )}
       {(detailBusy || detailError) && <View className="detail-notice"><Text>{detailBusy ? "正在读取详情…" : detailError}</Text><Text className="inline-action" onClick={closeDetail}>关闭</Text></View>}
-      <ActivityDetail activity={detail} photoUrls={detailPhotos} photoCount={photoCount} recordEvent={detailEvent} photoLoading={photoLoading} onClose={closeDetail}
-        onChat={identityEnabled ? () => { if (!detail) return; setChatSelection({ eventId: detailEvent?.id || detail.id, label: `${timeLabel(detail.startTime)} ${activityLabel(detail)}`, nonce: Date.now() }); closeDetail(); } : undefined} />
+      <ActivityDetail key={`${babyId}:${detail?.id ?? "none"}:${detailVersion.current}`} activity={detail} provenance={provenance}
+        onMoreInfoToggle={toggleMoreInfo} onRetryProvenance={() => { void fetchProvenance(); }} onClose={closeDetail}
+        recordEvent={identityEnabled ? detailEvent : undefined}
+        photos={identityEnabled ? detailPhotos : undefined}
+        photoCount={identityEnabled ? photoCount : undefined}
+        photoLoading={identityEnabled ? photoLoading : undefined}
+        photoError={identityEnabled ? photoError : undefined}
+        onChat={identityEnabled ? () => {
+          if (!detail) return;
+          setChatSelection({ eventId: detailEvent?.id || detail.id, label: `${timeLabel(detail.startTime)} ${activityLabel(detail)}`, nonce: Date.now() });
+          closeDetail();
+        } : undefined} />
       {!identityEnabled && <Text className="bubu-chat-legacy">旧服务兼容模式仅查看记录，程序内对话暂未开放。</Text>}
     </>}
     </View>
@@ -325,7 +813,7 @@ function PreviousEvening({ activities, date, sidecar = false }: { activities: Ac
   const start = dayBounds(date).start;
   const { feeding, sleep } = previousEvening(activities, date);
   if (!feeding && !sleep) return null;
-  return <View className="evening-card"><Text className="evening-heading">昨晚的衔接</Text>
+  return <View className="evening-card"><Text className="evening-heading">昨晚</Text>
     {feeding && <Text className="evening-line">{timeLabel(feeding.startTime)} · {activityLabel(feeding)}</Text>}
     {sleep && <Text className="evening-line">{timeLabel(sleep.startTime)} 入睡 · {sleep.endTime ? `${timestamp(sleep.endTime) >= start ? "今天 " : ""}${timeLabel(sleep.endTime)} 醒来，睡了 ${formatDuration(Math.max(0, Math.trunc((timestamp(sleep.endTime) - timestamp(sleep.startTime)) / 60000)))}` : sidecar ? "结束时间尚未确定" : "睡眠尚未结束"}</Text>}
   </View>;

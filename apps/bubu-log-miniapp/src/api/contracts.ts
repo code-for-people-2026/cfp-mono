@@ -1,4 +1,4 @@
-import { ACTIVITY_TYPES, type Activity, type AuthContext, type Baby, type DailyStat, type RecordCoverage, type RecordSummary, type RecordSnapshot, type RecordTypeSummary, type RecordEvent, type RecordCollection, type RecordSyncStatus } from "../model/types";
+import { ACTIVITY_TYPES, type Activity, type AuthContext, type Baby, type DailyStat, type RecordCoverage, type RecordSummary, type RecordSnapshot, type RecordTypeSummary, type RecordEvent, type RecordCollection, type RecordSyncStatus, type ReportedIntake } from "../model/types";
 
 export class ResponseFormatError extends Error {
   constructor() { super("服务返回的数据格式不正确，请刷新后重试。"); }
@@ -113,6 +113,17 @@ function recordTypes(value: unknown): Record<string, RecordTypeSummary> {
   }
   return result;
 }
+function reportedIntake(facts: Record<string, unknown>, states: Record<string, unknown>): ReportedIntake | undefined {
+  if (facts.type !== "BREASTFEED" || states.reportedIntake !== "known") return undefined;
+  const intake = facts.reportedIntake;
+  if (!intake || typeof intake !== "object" || Array.isArray(intake)) return undefined;
+  const row = intake as Record<string, unknown>;
+  const keys = new Set(Object.keys(row));
+  if (keys.size !== 3 || !["value", "unit", "originalText"].every(key => keys.has(key))) return undefined;
+  if (typeof row.value !== "number" || !Number.isFinite(row.value) || row.value < 0 || row.value > 100000) return undefined;
+  if (row.unit !== "g" || typeof row.originalText !== "string" || row.originalText.length > 4000 || !row.originalText.trim()) return undefined;
+  return { value: row.value, unit: "g", originalText: row.originalText };
+}
 export function recordSummary(value: unknown): RecordSummary {
   const row = object(value);
   const source = object(row.metrics);
@@ -138,7 +149,8 @@ export function recordEvent(value: unknown): RecordEvent {
     complete: boolean(row.complete), states, missing: array(row.missing, id), attachmentIds,
     conflicts: array(row.conflicts, value => { const conflict = object(value); return { code: id(conflict.code), fields: array(conflict.fields, id) }; }),
     // Deliberately do not retain account, group, sender or message identifiers for presentation.
-    sources: array(row.sources, value => { const source = object(value); return { kind: choice(source.kind, ["chat", "wechat", "manual"] as const), sentAt: date(source.sentAt) }; }) };
+    sources: array(row.sources, value => { const source = object(value); return { kind: choice(source.kind, ["chat", "wechat", "manual"] as const), sentAt: date(source.sentAt) }; }),
+    reportedIntake: reportedIntake(facts, states) };
 }
 export function recordCollection(value: unknown): RecordCollection {
   const row = object(value);

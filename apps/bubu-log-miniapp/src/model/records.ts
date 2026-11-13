@@ -1,5 +1,5 @@
 import type { Activity, RecordCoverage, RecordEvent, RecordSummary, RecordSyncStatus, RecordTypeSummary, StatFilter } from "./types";
-import { activityDetails, type DetailField } from "./presentation";
+import { activityCategoryTone, activityDetails, activityTone, type DetailField } from "./presentation";
 import { dateTimeLabel } from "./date";
 
 export function coverageMessage(coverage?: RecordCoverage): string {
@@ -34,14 +34,14 @@ export function recordStatCards(summary: RecordSummary): Array<{ key: StatFilter
   };
   const roll = row("ROLL_OVER");
   return [
-    { key: "sleep", label: "睡", value: duration("SLEEP", metric("totalSleepMinutes"), true), color: "#456f83" },
-    { key: "bottle", label: "瓶", value: milk("BOTTLE", metric("totalMilkAmount")), color: "#945a5b" },
-    { key: "breastfeed", label: "亲", value: duration("BREASTFEED", metric("totalBreastfeedMinutes")), color: "#945a5b" },
-    { key: "pump", label: "吸", value: milk("PUMP", metric("totalPumpMilkAmount")), color: "#78618d" },
-    { key: "diaper", label: "尿布", value: row("DIAPER")?.events ? `${metric("diaperCount")} 次` : "暂无", color: "#8b773d" },
-    { key: "outdoor", label: "阳", value: duration("OUTDOOR", row("OUTDOOR")?.knownMinutes || 0), color: "#8d7050" },
-    { key: "headLift", label: "趴", value: duration("HEAD_LIFT", metric("totalHeadLiftMinutes")), color: "#966b50" },
-    { key: "rollOver", label: "翻", value: !roll?.events ? "暂无" : roll.unknownCount === roll.events ? "待补全" : `${roll.knownCount} 次`, color: "#966b50" },
+    { key: "sleep", label: "睡", value: duration("SLEEP", metric("totalSleepMinutes"), true), color: activityCategoryTone("sleep").color },
+    { key: "bottle", label: "瓶", value: milk("BOTTLE", metric("totalMilkAmount")), color: activityCategoryTone("milk").color },
+    { key: "breastfeed", label: "亲", value: duration("BREASTFEED", metric("totalBreastfeedMinutes")), color: activityCategoryTone("milk").color },
+    { key: "pump", label: "吸", value: milk("PUMP", metric("totalPumpMilkAmount")), color: activityCategoryTone("pump").color },
+    { key: "diaper", label: "尿布", value: row("DIAPER")?.events ? `${metric("diaperCount")} 次` : "暂无", color: activityCategoryTone("diaper").color },
+    { key: "outdoor", label: "阳", value: duration("OUTDOOR", row("OUTDOOR")?.knownMinutes || 0), color: activityCategoryTone("outdoor").color },
+    { key: "headLift", label: "趴", value: duration("HEAD_LIFT", metric("totalHeadLiftMinutes")), color: activityTone("HEAD_LIFT").color },
+    { key: "rollOver", label: "翻", value: !roll?.events ? "暂无" : roll.unknownCount === roll.events ? "待补全" : `${roll.knownCount} 次`, color: activityTone("ROLL_OVER").color },
   ];
 }
 
@@ -54,11 +54,20 @@ export function hasMetricFacts(byType: Record<string, RecordTypeSummary> | undef
 
 const fieldLabels: Record<string, string> = { type: "活动类型", startTime: "开始时间", endTime: "结束时间", durationMinutes: "时长", milkAmount: "实际奶量",
   milkSource: "奶源", preparedMilkAmount: "泡好奶量", remainingMilkAmount: "剩余奶量", sameBottle: "是否同一瓶", burpSuccess: "拍嗝结果",
-  breastFirmness: "乳房硬度", hasPoop: "是否有便", hasPee: "是否有尿", poopColor: "大便颜色", peeAmount: "尿量", count: "次数", supplementType: "补剂类型", spitUpType: "吐奶类型" };
+  breastFirmness: "乳房硬度", hasPoop: "是否有便", hasPee: "是否有尿", poopColor: "大便颜色", peeAmount: "尿量", count: "次数", supplementType: "补剂类型", spitUpType: "吐奶类型",
+  reportedIntake: "报告摄入量" };
 export function recordDetailFields(activity: Activity, event: RecordEvent): DetailField[] {
   const fields = activityDetails(activity).filter(field => field.label !== "状态");
   if (activity.milkAmount === 0) { const milk = fields.find(field => field.label === "奶量"); if (milk) milk.value = "0 ml"; }
   if (activity.count === 0) { const count = fields.find(field => field.label === "次数"); if (count) count.value = "0 次"; }
+  if (event.reportedIntake) {
+    const status = event.projection === "synced" ? "明确报告"
+      : event.projection === "pending" ? "明确报告，待同步保存"
+      : event.projection === "conflict" ? "明确报告，待核对"
+      : "明确报告，待确认保存";
+    fields.push({ label: "报告摄入量", value: `${event.reportedIntake.value} 克（${status}）` });
+    fields.push({ label: "报告原话", value: event.reportedIntake.originalText });
+  }
   const hasCurrentValue = (field: string) => {
     if (field === "durationMinutes") return !!activity.endTime;
     return (activity as unknown as Record<string, unknown>)[field] != null;

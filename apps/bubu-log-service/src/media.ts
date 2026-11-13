@@ -1,25 +1,48 @@
 import { AppError } from "./contracts";
 export interface MediaOptions { allowedOrigins: string[]; fetch?: typeof fetch; maxBytes?: number }
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
-const fieldStates = new Set(["known", "pending", "unknown", "not_applicable", "not_yet"]);
+const photoUrl = (value: unknown): value is string => typeof value === "string" && !!value;
+const mediaUrl = (activityId: string, babyId: string) => `/api/app/media/activities/${encodeURIComponent(activityId)}?babyId=${encodeURIComponent(babyId)}`;
+const requireActivityId = (value: unknown): string => {
+  if (typeof value !== "string" || !value) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+  return value;
+};
 /** Keep the persisted legacy URL unchanged, but never return it through the authenticated API. */
 export function protectLegacyPhotos(value: unknown, babyId: string): unknown {
   if (Array.isArray(value)) return value.map(row => protectLegacyPhotos(row, babyId));
-  if (!object(value) || typeof value.poopPhotoUrl !== "string" || !value.poopPhotoUrl) return value;
-  if (value.babyId !== babyId || typeof value.id !== "string") throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
-  return { ...value, poopPhotoUrl: `/api/app/media/activities/${encodeURIComponent(value.id)}?babyId=${encodeURIComponent(babyId)}` };
+  if (!object(value) || !photoUrl(value.poopPhotoUrl)) return value;
+  if (value.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+  return { ...value, poopPhotoUrl: mediaUrl(requireActivityId(value.id), babyId) };
 }
 /** Revisions and receipts nest legacy facts inside their owning event. */
-export function protectRecordPhotos(value: unknown, babyId: string, inheritedId?: string): unknown {
-  if (Array.isArray(value)) return value.map(item => protectRecordPhotos(item, babyId, inheritedId));
+export function protectRecordPhotos(value: unknown, babyId: string): unknown {
+  if (Array.isArray(value)) return value.map(item => protectRecordPhotos(item, babyId));
   if (!object(value)) return value;
   if (typeof value.babyId === "string" && value.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
-  const id = typeof value.legacyId === "string" ? value.legacyId : typeof value.id === "string" && typeof value.startTime === "string" ? value.id : inheritedId;
-  return Object.fromEntries(Object.entries(value).flatMap(([key, item]) => {
-    // The same field name also appears in states maps; those enums are not photo URLs.
-    if (key === "poopPhotoUrl" && typeof item === "string" && item && !fieldStates.has(item)) return id ? [[key, `/api/app/media/activities/${encodeURIComponent(id)}?babyId=${encodeURIComponent(babyId)}`]] : [];
-    return [[key, protectRecordPhotos(item, babyId, id)]];
-  }));
+
+  // A care event's facts belong to its legacy projection, not to the event id or
+  // to a revision object which may contain before/after copies of the event.
+  if (typeof value.babyId === "string" && object(value.facts) && "legacyId" in value) {
+    if (photoUrl(value.poopPhotoUrl)) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+    const facts = value.facts;
+    const protectedFacts = photoUrl(facts.poopPhotoUrl)
+      ? { ...facts, poopPhotoUrl: mediaUrl(requireActivityId(value.legacyId), babyId) }
+      : protectRecordPhotos(facts, babyId);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, key === "facts" ? protectedFacts : protectRecordPhotos(item, babyId)]
+    ));
+  }
+
+  // A baby-scoped object with a direct photo value is a legacy Activity (or an
+  // incompatible new shape); either way it must not expose the persisted URL.
+  if (photoUrl(value.poopPhotoUrl) && typeof value.babyId === "string") {
+    const activityId = requireActivityId(value.id);
+    return Object.fromEntries(Object.entries(value).map(([key, item]) =>
+      [key, key === "poopPhotoUrl" ? mediaUrl(activityId, babyId) : protectRecordPhotos(item, babyId)]
+    ));
+  }
+
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, protectRecordPhotos(item, babyId)]));
 }
 export async function readLegacyPhoto(activity: unknown, babyId: string, options: MediaOptions): Promise<Response> {
   if (!object(activity) || activity.babyId !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");

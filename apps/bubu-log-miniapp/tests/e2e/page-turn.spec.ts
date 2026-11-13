@@ -1,0 +1,705 @@
+import { expect, test, type CDPSession, type Page } from "@playwright/test";
+
+const baby = { id: "page-turn-baby", name: "小满", fullName: null, avatarUrl: null, isDefault: true };
+const context = { authenticated: true, hasBaby: true, baby, babies: [baby], defaultBabyId: baby.id };
+const knownAvatarUrl = "/test-assets/page-turn-avatar.svg";
+const brokenAvatarUrl = "/test-assets/broken-page-turn-avatar.svg";
+const knownAvatarSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" fill="#f6ebda"/><circle cx="32" cy="24" r="12" fill="#8a5a44"/><path d="M8 62c4-16 14-22 24-22s20 6 24 22z" fill="#d99a70"/></svg>`;
+const records = Array.from({ length: 5 }, (_, dayIndex) => {
+  const date = `2026-10-${20 + dayIndex}`;
+  const previousDate = `2026-10-${19 + dayIndex}`;
+  return [
+    { id: `${date}-sleep`, babyId: baby.id, type: "SLEEP", startTime: `${previousDate}T20:00:00+08:00`, endTime: `${date}T07:00:00+08:00` },
+    { id: `${date}-milk`, babyId: baby.id, type: "BOTTLE", startTime: `${date}T08:30:00+08:00`, endTime: `${date}T08:50:00+08:00`, milkAmount: 100 + dayIndex * 10, milkSource: "FORMULA" },
+    { id: `${date}-outdoor`, babyId: baby.id, type: "OUTDOOR", startTime: `${date}T10:00:00+08:00`, endTime: `${date}T17:30:00+08:00` },
+  ];
+}).flat();
+const daily = Array.from({ length: 5 }, (_, index) => ({
+  id: `page-turn-stat-${index}`, babyId: baby.id, date: `2026-10-${20 + index}`,
+  sleepCount: 1, totalSleepMinutes: 660, totalMilkAmount: 120, totalPumpMilkAmount: 0, diaperCount: 1,
+}));
+
+async function syntheticApp(page: Page, options: { avatarUrl?: string | null } = {}) {
+  let selectedAvatarUrl = options.avatarUrl;
+  const selectedBaby = () => (
+    selectedAvatarUrl === undefined ? baby : { ...baby, avatarUrl: selectedAvatarUrl }
+  );
+  const selectedContext = () => {
+    const activeBaby = selectedBaby();
+    return { ...context, baby: activeBaby, babies: [activeBaby] };
+  };
+
+  await page.clock.setSystemTime(new Date("2026-10-24T12:00:00+08:00"));
+  await page.route(`**${knownAvatarUrl}`, async (route) => route.fulfill({
+    status: 200,
+    contentType: "image/svg+xml",
+    body: knownAvatarSvg,
+  }));
+  await page.route(`**${brokenAvatarUrl}`, async (route) => route.fulfill({
+    status: 404,
+    contentType: "text/plain",
+    body: "missing avatar",
+  }));
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    const json = (body: unknown, status = 200) => route.fulfill({ status, json: body });
+    if (url.pathname === "/api/auth/csrf") return json({ csrfToken: "page-turn-csrf" });
+    if (url.pathname === "/api/app/auth/context") return json(selectedContext());
+    if (url.pathname === "/api/app/baby-profile") {
+      return json({ ...selectedBaby(), birthDate: "2026-06-23" });
+    }
+    if (url.pathname === "/api/app/activities") {
+      const date = url.searchParams.get("date");
+      const startTimeGte = url.searchParams.get("startTimeGte");
+      const startTimeLt = url.searchParams.get("startTimeLt");
+      if (startTimeGte != null || startTimeLt != null) {
+        if (startTimeGte == null || startTimeLt == null) return json({ error: "Missing activity time range" }, 400);
+        const start = Date.parse(startTimeGte);
+        const end = Date.parse(startTimeLt);
+        return json(records.filter((record) => Date.parse(record.startTime) >= start && Date.parse(record.startTime) < end));
+      }
+      return json(records.filter((record) => record.startTime.slice(0, 10) === date));
+    }
+    if (url.pathname === "/api/app/activities/latest") {
+      const type = url.searchParams.get("types")?.split(",").at(-1);
+      return json(records.filter((record) => !type || record.type === type).at(-1) ?? null);
+    }
+    if (url.pathname === "/api/app/daily-stats") {
+      const start = url.searchParams.get("startDate");
+      const end = url.searchParams.get("endDate");
+      if (start == null || end == null) return json({ error: "Missing daily statistics range" }, 400);
+      return json(daily.filter((row) => row.date >= start && row.date <= end));
+    }
+    return json({ error: `Unexpected endpoint: ${url.pathname}` }, 404);
+  });
+
+  return {
+    setAvatarUrl: async (avatarUrl: string | null) => {
+      selectedAvatarUrl = avatarUrl;
+    },
+  };
+}
+
+async function sendTouch(session: CDPSession, type: "touchStart" | "touchMove" | "touchEnd", point = { x: 0, y: 0 }) {
+  await session.send("Input.dispatchTouchEvent", {
+    type, touchPoints: type === "touchEnd" ? [] : [{ ...point, id: 1, radiusX: 2, radiusY: 2, force: 1 }],
+  });
+}
+
+type TouchPoint = { x: number; y: number };
+type HeldTouch = { session: CDPSession; point: TouchPoint };
+
+async function beginTouchAtCurrentScroll(
+  page: Page,
+  selector = ".bubu-paper-current .bubu-day-scroll",
+): Promise<HeldTouch> {
+  const pageBox = await page.locator(selector).boundingBox();
+  if (!pageBox) throw new Error(`Missing active scroll: ${selector}`);
+  const point = { x: pageBox.x + pageBox.width / 2, y: pageBox.y + pageBox.height / 2 };
+  const session = await page.context().newCDPSession(page);
+  await sendTouch(session, "touchStart", point);
+  return { session, point };
+}
+
+async function moveHeldTouch(page: Page, touch: HeldTouch, target: TouchPoint, steps = 6): Promise<void> {
+  const from = touch.point;
+  for (let step = 1; step <= steps; step += 1) {
+    await page.waitForTimeout(16);
+    await sendTouch(touch.session, "touchMove", {
+      x: from.x + (target.x - from.x) * step / steps,
+      y: from.y + (target.y - from.y) * step / steps,
+    });
+  }
+  touch.point = target;
+}
+
+type TextGeometry = {
+  key: string;
+  text: string;
+  x: number;
+  y: number;
+  preview: boolean;
+  identity: boolean;
+};
+
+async function captureTextGeometry(page: Page): Promise<TextGeometry[]> {
+  return page.locator(".bubu-timeline-viewport .bubu-event-label").evaluateAll((elements) => elements.map((element, index) => {
+    const rect = element.getBoundingClientRect();
+    let node: Element | null = element;
+    let identity = true;
+    while (node != null && !node.classList.contains("bubu-timeline-viewport")) {
+      const transform = getComputedStyle(node).transform;
+      const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+      const isPreviewScroll = node.classList.contains("bubu-paper-preview-scroll");
+      const identityHere = matrix.m11 === 1 && matrix.m22 === 1
+        && matrix.m12 === 0 && matrix.m21 === 0
+        && matrix.m41 === 0 && (isPreviewScroll ? matrix.m42 <= 0.01 : matrix.m42 === 0);
+      identity = identity && identityHere;
+      node = node.parentElement;
+    }
+    return {
+      key: `${index}:${element.textContent ?? ""}`,
+      text: element.textContent ?? "",
+      x: rect.x,
+      y: rect.y,
+      preview: element.closest(".bubu-paper-preview-scroll") != null,
+      identity,
+    };
+  }));
+}
+
+async function expectStationaryText(page: Page, before: TextGeometry[], requirePreview: boolean) {
+  const after = await captureTextGeometry(page);
+  expect(after.length).toBeGreaterThanOrEqual(before.length);
+  expect(before.some((item) => !item.preview)).toBe(true);
+  if (requirePreview) expect(before.some((item) => item.preview)).toBe(true);
+  for (const initial of before) {
+    const current = after.find((item) => item.key === initial.key && item.text === initial.text);
+    expect(current, initial.key).toBeDefined();
+    expect(current?.x).toBeCloseTo(initial.x, 1);
+    expect(current?.y).toBeCloseTo(initial.y, 1);
+    expect(current?.identity).toBe(true);
+  }
+}
+
+async function expectIdentityLayers(page: Page, selectors: string[]) {
+  for (const selector of selectors) {
+    await expect.poll(() => page.locator(selector).evaluate((element) => {
+      let node: Element | null = element;
+      let identity = true;
+      while (node != null && !node.classList.contains("bubu-timeline-viewport")) {
+        const transform = getComputedStyle(node).transform;
+        const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+        identity = identity && matrix.m11 === 1 && matrix.m22 === 1
+          && matrix.m12 === 0 && matrix.m21 === 0
+          && matrix.m41 === 0 && matrix.m42 === 0;
+        node = node.parentElement;
+      }
+      return identity;
+    })).toBe(true);
+  }
+}
+
+type FoldGeometry = {
+  points: TouchPoint[];
+  areaRatio: number;
+  diagonal: number;
+};
+
+async function foldGeometry(page: Page, layer: string, kind: "back" | "flat"): Promise<FoldGeometry> {
+  return page.locator(`${layer} .bubu-paper-${kind === "back" ? "fold-back" : "sheet-clip"}`).evaluate((element) => {
+    const viewportElement = document.querySelector(".bubu-timeline-viewport");
+    const viewportRect = viewportElement?.getBoundingClientRect();
+    if (!viewportRect) return { points: [], areaRatio: 0, diagonal: 0 };
+
+    type LocalPoint = { x: number; y: number };
+    const clipPolygon = (inputClip: LocalPoint[], subject: LocalPoint[]): LocalPoint[] => {
+      let doubledClipArea = 0;
+      for (let index = 0; index < inputClip.length; index += 1) {
+        const current = inputClip[index];
+        const next = inputClip[(index + 1) % inputClip.length];
+        doubledClipArea += current.x * next.y - next.x * current.y;
+      }
+      const clip = doubledClipArea < 0 ? [...inputClip].reverse() : inputClip;
+      let output = [...subject];
+      const intersect = (a: LocalPoint, b: LocalPoint, c: LocalPoint, d: LocalPoint) => {
+        const edgeX = d.x - c.x;
+        const edgeY = d.y - c.y;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const denominator = dx * edgeY - dy * edgeX;
+        const amount = (edgeX * (a.y - c.y) - edgeY * (a.x - c.x)) / denominator;
+        return { x: a.x + amount * dx, y: a.y + amount * dy };
+      };
+      for (let edge = 0; edge < clip.length; edge += 1) {
+        if (output.length === 0) break;
+        const a = clip[edge];
+        const b = clip[(edge + 1) % clip.length];
+        const edgeX = b.x - a.x;
+        const edgeY = b.y - a.y;
+        const inputPoints = output;
+        output = [];
+        for (let index = 0; index < inputPoints.length; index += 1) {
+          const current = inputPoints[index];
+          const next = inputPoints[(index + 1) % inputPoints.length];
+          const currentInside = edgeX * (current.y - a.y) - edgeY * (current.x - a.x) >= -0.5;
+          const nextInside = edgeX * (next.y - a.y) - edgeY * (next.x - a.x) >= -0.5;
+          if (currentInside) {
+            output.push(current);
+            if (!nextInside) output.push(intersect(current, next, a, b));
+          } else if (nextInside) {
+            output.push(intersect(current, next, a, b));
+          }
+        }
+      }
+      return output;
+    };
+    const parseClipPath = (clipPath: string, clipRect: DOMRect): LocalPoint[] => {
+      const percentages = [...clipPath.matchAll(/(-?\d+(?:\.\d+)?)%/g)].map((match) => Number(match[1]));
+      if (percentages.length < 6 || percentages.length % 2 !== 0) return [];
+      const points: LocalPoint[] = [];
+      for (let index = 0; index < percentages.length; index += 2) {
+        points.push({
+          x: clipRect.left + percentages[index] / 100 * clipRect.width,
+          y: clipRect.top + percentages[index + 1] / 100 * clipRect.height,
+        });
+      }
+      return points;
+    };
+
+    const rect = element.getBoundingClientRect();
+    const clip = parseClipPath(getComputedStyle(element).clipPath, rect);
+    const viewport = [
+      { x: viewportRect.left, y: viewportRect.top },
+      { x: viewportRect.right, y: viewportRect.top },
+      { x: viewportRect.right, y: viewportRect.bottom },
+      { x: viewportRect.left, y: viewportRect.bottom },
+    ];
+    let visible = clipPolygon(viewport, clip);
+    const parent = element.closest(".bubu-paper-fold-region");
+    if (parent instanceof HTMLElement) {
+      const parentRect = parent.getBoundingClientRect();
+      const parentClip = parseClipPath(getComputedStyle(parent).clipPath, parentRect);
+      visible = clipPolygon(parentClip, visible);
+    }
+
+    let doubledArea = 0;
+    let diagonal = 0;
+    for (let index = 0; index < visible.length; index += 1) {
+      const current = visible[index];
+      const next = visible[(index + 1) % visible.length];
+      doubledArea += current.x * next.y - next.x * current.y;
+      const dx = Math.abs(next.x - current.x);
+      const dy = Math.abs(next.y - current.y);
+      const total = dx + dy;
+      if (total > viewportRect.width * 0.06) diagonal = Math.max(diagonal, Math.min(dx, dy) / total);
+    }
+    return {
+      points: visible,
+      areaRatio: Math.abs(doubledArea) / 2 / (viewportRect.width * viewportRect.height),
+      diagonal,
+    };
+  });
+}
+
+async function expectFold(page: Page, layer: string, initialFlat: string): Promise<FoldGeometry> {
+  await expect(page.locator(`${layer} .bubu-paper-fold-region`)).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-fold-back`)).toHaveCount(1);
+  await expect(page.locator(`${layer} .bubu-paper-fold-shadow`)).toHaveCount(1);
+  const geometry = await foldGeometry(page, layer, "back");
+  expect(geometry.areaRatio).toBeGreaterThan(0.02);
+  expect(geometry.diagonal).toBeGreaterThan(0.02);
+  const flat = await page.locator(`${layer} .bubu-paper-sheet-clip`).evaluate((element) => getComputedStyle(element).clipPath);
+  expect(flat).not.toBe(initialFlat);
+  return geometry;
+}
+
+type AvatarImageState = {
+  source: string;
+  loaded: boolean;
+  determinant: number;
+};
+
+async function avatarImageState(page: Page, selector: string): Promise<AvatarImageState> {
+  return page.locator(selector).evaluate((element) => {
+    const image = element instanceof HTMLImageElement
+      ? element
+      : element.querySelector("img");
+    const transform = getComputedStyle(element).transform;
+    const matrix = new DOMMatrix(transform === "none" ? undefined : transform);
+    return {
+      source: image?.currentSrc || image?.src || element.getAttribute("src") || "",
+      loaded: image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0,
+      determinant: matrix.m11 * matrix.m22 - matrix.m12 * matrix.m21,
+    };
+  });
+}
+
+async function expectFoldAvatar(
+  page: Page,
+  layer: string,
+  expectedAvatar: "known" | "fallback",
+) {
+  await expect(page.locator(".bubu-paper-fold-avatar-preload")).toHaveCount(1);
+  const preload = await avatarImageState(page, ".bubu-paper-fold-avatar-preload");
+  const visible = await avatarImageState(page, `${layer} .bubu-paper-fold-avatar`);
+  const expectedSource = expectedAvatar === "known" ? knownAvatarUrl : brokenAvatarUrl;
+  expect(preload.source).toContain(expectedSource);
+  if (expectedAvatar === "known") {
+    expect(preload.loaded).toBe(true);
+    expect(visible.source).toContain(knownAvatarUrl);
+    expect(visible.loaded).toBe(true);
+  } else {
+    expect(preload.loaded).toBe(false);
+    expect(visible.source).not.toContain(brokenAvatarUrl);
+    expect(visible.loaded).toBe(true);
+    const alpha = await page.locator(`${layer} .bubu-paper-fold-avatar img`).first().evaluate((node) => {
+      const image = node as HTMLImageElement;
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth;
+      canvas.height = image.naturalHeight;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Missing canvas context");
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+      let borderMax = 0;
+      let opaque = 0;
+      for (let y = 0; y < canvas.height; y++) for (let x = 0; x < canvas.width; x++) {
+        const value = data[(y * canvas.width + x) * 4 + 3];
+        if (x === 0 || y === 0 || x === canvas.width - 1 || y === canvas.height - 1) borderMax = Math.max(borderMax, value);
+        if (value > 0) opaque++;
+      }
+      return { borderMax, opaque };
+    });
+    expect(alpha.borderMax).toBe(0);
+    expect(alpha.opaque).toBeGreaterThan(1000);
+  }
+  expect(visible.determinant).toBeGreaterThan(0.45);
+  expect(visible.determinant).toBeLessThanOrEqual(1.02);
+  const wallpaper = await page.locator(`${layer} .bubu-paper-fold-avatar`).evaluate((element) => {
+    const tiles = [...element.querySelectorAll(".bubu-paper-fold-avatar-tile")].map((tile) => {
+      const style = getComputedStyle(tile);
+      return { width: parseFloat(style.width), height: parseFloat(style.height),
+        left: parseFloat(style.left), top: parseFloat(style.top) };
+    });
+    return { tiles, windowWidth: innerWidth, height: element.clientHeight, overflow: getComputedStyle(element).overflow };
+  });
+  expect(wallpaper.tiles.length).toBeGreaterThanOrEqual(4);
+  expect(wallpaper.overflow).toBe("hidden");
+  for (const tile of wallpaper.tiles) {
+    expect(tile.width).toBeCloseTo(wallpaper.windowWidth / 2, 0);
+    expect(tile.height).toBeCloseTo(wallpaper.windowWidth / 2, 0);
+  }
+  expect(new Set(wallpaper.tiles.map((tile) => tile.left)).size).toBe(2);
+  expect(Math.max(...wallpaper.tiles.map((tile) => tile.top + tile.height))).toBeGreaterThanOrEqual(wallpaper.height);
+}
+
+async function expectPreloadedAvatar(page: Page, source: string, loaded: boolean) {
+  await expect(page.locator(".bubu-paper-fold-avatar-preload")).toHaveCount(1);
+  const preload = await avatarImageState(page, ".bubu-paper-fold-avatar-preload");
+  expect(preload.source).toContain(source);
+  expect(preload.loaded).toBe(loaded);
+}
+
+async function expectIdleFold(page: Page) {
+  await expect(page.locator(".bubu-paper-fold-back, .bubu-paper-fold-shadow, .bubu-paper-crease-shadow")).toHaveCount(0);
+  expect(await page.locator(".bubu-paper-current .bubu-paper-sheet-clip").evaluate((element) => getComputedStyle(element).filter)).toMatch(/^(none|blur\(0px\))$/);
+}
+
+async function expectOutwardBoundaryDragToStay(
+  page: Page,
+  selector: string,
+  edge: "top" | "bottom",
+) {
+  const title = page.locator(".date-title");
+  const heldTitle = await title.textContent();
+  await page.locator(selector).evaluate((element, target) => {
+    const node = element as HTMLElement;
+    node.scrollTop = target === "top" ? 0 : node.scrollHeight;
+  }, edge);
+  await page.waitForTimeout(32);
+
+  const touch = await beginTouchAtCurrentScroll(page, selector);
+  try {
+    const origin = touch.point;
+    const target = { x: origin.x, y: origin.y + (edge === "top" ? 120 : -120) };
+    await moveHeldTouch(page, touch, target);
+    await expect(title).toHaveText(heldTitle ?? "");
+    await expectIdleFold(page);
+    await expect(page.locator(".bubu-paper-neighbor-active")).toHaveCount(0);
+    await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+    await sendTouch(touch.session, "touchEnd");
+  } finally {
+    await touch.session.detach();
+  }
+  await page.waitForTimeout(80);
+  await expect(title).toHaveText(heldTitle ?? "");
+  await expectIdleFold(page);
+  await expect(page.locator(".bubu-paper-neighbor-active")).toHaveCount(0);
+  await expect(page.locator(".bubu-gesture-feedback")).toHaveCount(0);
+}
+
+async function expectPreloadedNeighbor(page: Page, direction: "next" | "prev", quantityLabel: string) {
+  const side = `.bubu-paper-neighbor-${direction}`;
+  await expect(page.locator(side)).toHaveCount(1);
+  await expect(page.locator(`${side} .bubu-day-preview-canvas`)).toHaveCount(1);
+  await expect(page.locator(`${side} .bubu-day-scroll`)).toHaveCount(0);
+  await expect(page.locator(`${side} .bubu-timeline-position .bubu-event-label`)).toHaveText(quantityLabel);
+}
+
+type TitleWindow = Window & { __bubuDateTitleHistory?: string[] };
+
+async function startTitleHistory(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const title = document.querySelector(".date-title");
+    const history = [title?.textContent ?? ""];
+    const observer = new MutationObserver(() => {
+      const current = document.querySelector(".date-title")?.textContent ?? "";
+      if (current !== history[history.length - 1]) history.push(current);
+    });
+    observer.observe(document.body, { childList: true, characterData: true, subtree: true });
+    (window as TitleWindow).__bubuDateTitleHistory = history;
+    return history;
+  });
+}
+
+async function titleHistory(page: Page): Promise<string[]> {
+  return page.evaluate(() => (window as TitleWindow).__bubuDateTitleHistory ?? []);
+}
+
+test("day top and bottom outward drags have no fold, hint, or date change", async ({ page }) => {
+  await syntheticApp(page);
+  await page.goto("/");
+  const title = page.locator(".date-title");
+  await expect(title).toContainText("今日（周六）");
+  await page.getByLabel("上一段日期", { exact: true }).click();
+  await expect(title).toContainText("昨日（周五）");
+
+  await expectOutwardBoundaryDragToStay(page, ".bubu-paper-current .bubu-day-scroll", "top");
+  await expectOutwardBoundaryDragToStay(page, ".bubu-paper-current .bubu-day-scroll", "bottom");
+});
+
+test("week top and bottom outward drags have no fold, hint, or date change", async ({ page }) => {
+  await syntheticApp(page);
+  await page.goto("/");
+  const title = page.locator(".date-title");
+  await expect(title).toContainText("今日（周六）");
+  await page.getByLabel("展开日期与日历视图", { exact: true }).click();
+  await page.locator(".calendar-view-option").filter({ hasText: /^周历/ }).click();
+  await expect(page.locator(".bubu-paper-current .bubu-week-scroll")).toBeVisible();
+  await expect(title).toContainText("本周");
+  await page.getByLabel("上一段日期", { exact: true }).click();
+  await expect(title).toContainText("上周");
+
+  const weekScroll = ".bubu-paper-current .bubu-week-scroll";
+  await expectOutwardBoundaryDragToStay(page, weekScroll, "top");
+  await expectOutwardBoundaryDragToStay(page, weekScroll, "bottom");
+});
+
+test("horizontal previous-turn reverses diagonal within one held gesture and recoils", async ({ page }) => {
+  const app = await syntheticApp(page, { avatarUrl: brokenAvatarUrl });
+  await page.goto("/");
+  const title = page.locator(".date-title");
+  await expect(title).toContainText("今日（周六）");
+  await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
+  await expectPreloadedAvatar(page, brokenAvatarUrl, false);
+  const heldTitle = await title.textContent();
+
+  const touch = await beginTouchAtCurrentScroll(page);
+  try {
+    const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x + 18, y: origin.y }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-neighbor-prev .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
+    await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y + 35 });
+    await expectPreloadedNeighbor(page, "prev", "瓶喂 130ml");
+    await expect(title).toHaveText(heldTitle ?? "");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
+    await expectStationaryText(page, text, true);
+    const positive = await expectFold(page, ".bubu-paper-neighbor-prev", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-neighbor-prev", "fallback");
+
+    await moveHeldTouch(page, touch, { x: origin.x + 110, y: origin.y - 35 });
+    const negative = await foldGeometry(page, ".bubu-paper-neighbor-prev", "back");
+    expect(negative.areaRatio).toBeGreaterThan(0.02);
+    expect(negative.points.some((point, index) => (
+      Math.abs(point.x - positive.points[index].x) > 2
+      || Math.abs(point.y - positive.points[index].y) > 2
+    ))).toBe(true);
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-prev"]);
+    await expect(title).toHaveText(heldTitle ?? "");
+
+    await moveHeldTouch(page, touch, { x: origin.x + 8, y: origin.y });
+    await sendTouch(touch.session, "touchEnd");
+    await page.waitForTimeout(250);
+    await expect(title).toHaveText(heldTitle ?? "");
+    await expectIdleFold(page);
+
+    await app.setAvatarUrl(knownAvatarUrl);
+    await page.reload();
+    await expectPreloadedAvatar(page, knownAvatarUrl, true);
+  } finally {
+    await touch.session.detach();
+  }
+});
+
+test("horizontal next-turn preloads the real next page and refuses today's future", async ({ page }) => {
+  await syntheticApp(page, { avatarUrl: knownAvatarUrl });
+  await page.goto("/");
+  const title = page.locator(".date-title");
+  await expect(title).toContainText("今日（周六）");
+  await page.getByLabel("上一段日期", { exact: true }).click();
+  await expect(title).toContainText("昨日（周五）");
+  const heldTitle = await title.textContent();
+  await startTitleHistory(page);
+
+  const touch = await beginTouchAtCurrentScroll(page);
+  try {
+    const origin = touch.point;
+    await moveHeldTouch(page, touch, { x: origin.x - 18, y: origin.y }, 3);
+    const text = await captureTextGeometry(page);
+    const initialFlat = await page.locator(".bubu-paper-current .bubu-paper-sheet-clip")
+      .evaluate((element) => getComputedStyle(element).clipPath);
+    await moveHeldTouch(page, touch, { x: origin.x - 110, y: origin.y - 25 });
+    await expectPreloadedNeighbor(page, "next", "瓶喂 140ml");
+    await expect(title).toHaveText(heldTitle ?? "");
+    await expectIdentityLayers(page, [".bubu-paper-current", ".bubu-paper-neighbor-next"]);
+    await expectStationaryText(page, text, true);
+    await expectFold(page, ".bubu-paper-current", initialFlat);
+    await expectFoldAvatar(page, ".bubu-paper-current", "known");
+    await sendTouch(touch.session, "touchEnd");
+  } finally {
+    await touch.session.detach();
+  }
+
+  await expect(title).toContainText("今日（周六）");
+  await page.waitForTimeout(250);
+  await expect(title).toContainText("今日（周六）");
+  expect(await titleHistory(page)).toEqual([heldTitle ?? "", "今日（周六）"]);
+
+  const forbiddenTouch = await beginTouchAtCurrentScroll(page);
+  try {
+    const origin = forbiddenTouch.point;
+    await moveHeldTouch(page, forbiddenTouch, { x: origin.x - 110, y: origin.y });
+    await expect(title).toContainText("今日（周六）");
+    await expectIdleFold(page);
+    await sendTouch(forbiddenTouch.session, "touchEnd");
+    await expect(title).toContainText("今日（周六）");
+  } finally {
+    await forbiddenTouch.session.detach();
+  }
+});
+
+test("ordinary scrolling collapses and restores the day summary without losing navigation", async ({ page }) => {
+  await syntheticApp(page);
+  await page.goto("/");
+  const summary = page.locator(".collapsible-day-summary");
+  await expect(summary).toBeVisible();
+  expect(await summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
+  const scroll = page.locator(".bubu-paper-current .bubu-day-scroll");
+  const session = await page.context().newCDPSession(page);
+  try {
+    for (const dy of [-120, 80]) {
+      const box = await scroll.boundingBox();
+      if (!box) throw new Error("Missing active day scroll");
+      const point = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+      await sendTouch(session, "touchStart", point);
+      for (let step = 1; step <= 12; step += 1) {
+        await page.waitForTimeout(16);
+        await sendTouch(session, "touchMove", { x: point.x, y: point.y + dy * step / 12 });
+      }
+      await page.waitForTimeout(16);
+      await sendTouch(session, "touchEnd");
+      await page.waitForTimeout(40);
+      if (dy === -120) await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
+    }
+  } finally {
+    await session.detach();
+  }
+  await expect.poll(() => summary.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
+  await expect(page.locator(".calendar-navigation")).toBeVisible();
+});
+
+async function pageFocus(page: Page) {
+  return page.evaluate(() => {
+    const blur = (selector: string) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing focus layer: ${selector}`);
+      const filter = getComputedStyle(element).filter;
+      return Number(filter.match(/blur\(([\d.]+)px\)/)?.[1] ?? 0);
+    };
+    return {
+      current: blur('.bubu-paper-current .bubu-paper-sheet-clip'),
+      incoming: blur('.bubu-paper-neighbor-active .bubu-paper-sheet-clip'),
+    };
+  });
+}
+
+async function expectVisibleCreaseShadow(page: Page) {
+  const shadow = page.locator('.bubu-paper-crease-shadow');
+  await expect(shadow).toHaveCount(1);
+  const points = await shadow.evaluate((element) => {
+    const parent = element.closest('.bubu-paper-current, .bubu-paper-neighbor');
+    if (!parent) throw new Error('Missing shadow page');
+    const rect = parent.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    const matrix = new DOMMatrix(style.transform);
+    const height = parseFloat(style.height);
+    if (element.closest('.bubu-paper-fold-region')) throw new Error('Crease shadow clipped by fold region');
+    return [.2, .35, .5, .65, .8].map((fraction) => ({
+      x: rect.x + matrix.e + matrix.c * height * fraction + 5,
+      y: rect.y + height * fraction,
+    })).filter((point) => point.x > 1 && point.x < innerWidth - 1 && point.y > 1 && point.y < innerHeight - 1);
+  });
+  expect(points.length).toBeGreaterThan(0);
+  const visible = (await page.screenshot({ scale: 'css' })).toString('base64');
+  await shadow.evaluate((element) => { (element as HTMLElement).style.visibility = 'hidden'; });
+  let hidden: string;
+  try { hidden = (await page.screenshot({ scale: 'css' })).toString('base64'); }
+  finally { await shadow.evaluate((element) => { (element as HTMLElement).style.visibility = ''; }); }
+  const darkening = await page.evaluate(async ({ visible, hidden, points }) => {
+    const read = async (source: string) => {
+      const image = new Image();
+      await new Promise<void>((resolve, reject) => { image.onload = () => resolve(); image.onerror = reject; image.src = `data:image/png;base64,${source}`; });
+      const canvas = document.createElement('canvas'); canvas.width = image.width; canvas.height = image.height;
+      const context = canvas.getContext('2d'); if (!context) throw new Error('Missing canvas');
+      context.drawImage(image, 0, 0);
+      return points.map(({ x, y }) => [...context.getImageData(Math.floor(x), Math.floor(y), 1, 1).data].slice(0, 3).reduce((sum, value) => sum + value, 0) / 3);
+    };
+    const [withShadow, withoutShadow] = await Promise.all([read(visible), read(hidden)]);
+    return Math.max(...withoutShadow.map((value, index) => value - withShadow[index]));
+  }, { visible, hidden, points });
+  expect(darkening).toBeGreaterThan(6);
+}
+
+for (const mode of ['day', 'week'] as const) for (const direction of ['prev', 'next'] as const) {
+  test(`${mode} ${direction} transfers focus with drag and paints a visible crease shadow`, async ({ page }) => {
+    await syntheticApp(page);
+    await page.goto('/');
+    const title = page.locator('.date-title');
+    await expect(title).toContainText('今日');
+    if (mode === 'week') {
+      await page.getByLabel('展开日期与日历视图', { exact: true }).click();
+      await page.locator('.calendar-view-option').filter({ hasText: /^周历/ }).click();
+      await expect(page.locator('.bubu-week-card')).toBeVisible();
+    }
+    if (direction === 'next') await page.getByLabel('上一段日期', { exact: true }).click();
+    const selector = `.bubu-paper-current .bubu-${mode}-scroll`;
+    await expect(page.locator(`.bubu-paper-neighbor-${direction}`)).toHaveCount(1);
+    const heldTitle = await title.textContent();
+    const box = await page.locator(selector).boundingBox();
+    if (!box) throw new Error('Missing scroller');
+    const origin = { x: box.x + box.width * (direction === 'next' ? .8 : .2), y: Math.min(box.y + box.height / 2, 600) };
+    const session = await page.context().newCDPSession(page);
+    const touch = { session, point: origin };
+    const sign = direction === 'next' ? -1 : 1;
+    try {
+      await sendTouch(session, 'touchStart', origin);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 20, y: origin.y });
+      const early = await pageFocus(page);
+      expect(early.current).toBeLessThan(1);
+      expect(early.incoming).toBeGreaterThan(5);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * box.width * .5, y: origin.y + 24 });
+      const later = await pageFocus(page);
+      expect(later.current).toBeCloseTo(6, 5);
+      expect(later.incoming).toBeCloseTo(0, 5);
+      await expectIdentityLayers(page, ['.bubu-paper-current', `.bubu-paper-neighbor-${direction}`]);
+      await expectVisibleCreaseShadow(page);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * box.width * .65, y: origin.y + 24 });
+      const beyondHalf = await pageFocus(page);
+      expect(beyondHalf.current).toBeCloseTo(6, 5);
+      expect(beyondHalf.incoming).toBeCloseTo(0, 5);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 20, y: origin.y });
+      const reversed = await pageFocus(page);
+      expect(reversed.current).toBeCloseTo(early.current, 1);
+      expect(reversed.incoming).toBeCloseTo(early.incoming, 1);
+      await moveHeldTouch(page, touch, { x: origin.x + sign * 8, y: origin.y });
+      await sendTouch(session, 'touchEnd');
+      await page.waitForTimeout(300);
+      await expect(title).toHaveText(heldTitle ?? '');
+      await expect(page.locator('.bubu-paper-crease-shadow')).toHaveCount(0);
+      expect(await page.locator('.bubu-paper-current .bubu-paper-sheet-clip').evaluate((element) => getComputedStyle(element).filter)).toMatch(/^(none|blur\(0px\))$/);
+    } finally { await session.detach(); }
+  });
+}

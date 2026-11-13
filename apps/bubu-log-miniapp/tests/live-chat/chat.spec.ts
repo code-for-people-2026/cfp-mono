@@ -60,7 +60,7 @@ test("records a feeding conversation, confirms a captioned image, edits facts an
   await page.screenshot({ path: "test-results/chat-live-image-pending.png", fullPage: true });
   await expect(await send(page, "有黄色便便，没有尿")).toContainText(/已保存|已记录/);
   await page.getByLabel("收起对话", { exact: true }).click();
-  await menu(page, "历史数据");
+  await menu(page, "历史记录");
   await page.locator(".record-row").filter({ hasText: /100\s*ml/ }).click();
   await page.getByText("在对话中修改这条记录", { exact: true }).click();
   await expect(page.locator(".bubu-chat-target")).toBeVisible();

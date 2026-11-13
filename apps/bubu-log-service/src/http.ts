@@ -115,6 +115,12 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       const babyId = babyScope.parse({ babyId: url.searchParams.get("babyId") || req.headers.get("x-baby-id") }).babyId;
       if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
+      if (req.method === "GET" && path === "/api/app/baby-profile") {
+        await service.authorize(principal, babyId, "records:read");
+        const baby = await service.legacy.getBaby(babyId);
+        if (!baby || baby.id !== babyId) throw new AppError(404, "NOT_FOUND", "宝宝不存在。");
+        return json(baby);
+      }
       if (features?.chat && req.method === "GET" && path === "/api/app/chat") return json(await features.chat.history(principal, babyId));
       if (features?.chat && req.method === "GET" && path === "/api/app/chat/request") return json({ turn: await features.chat.request(principal, babyId, id.parse(url.searchParams.get("requestId"))) });
       if(features&&req.method==="GET"&&path==="/api/app/records/snapshot") {

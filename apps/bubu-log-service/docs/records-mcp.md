@@ -13,11 +13,11 @@
 | `bubu_record_events` | `events: EventInput[]`，1–25 项 | 批量保存；每项可缺字段；同一原消息事件重放返回原记录 |
 | `bubu_update_event` | `patch: RuleInput, sources?` | 补充/纠错原事件，重新检查字段、时间与重复 |
 | `bubu_retract_event` | 无 | 明确撤销；旧事实删除，sidecar 来源和修订保留 |
-| `bubu_restore_event` | 无 | 明确恢复撤销记录；重新检查重复；采集不得自动恢复 |
-| `bubu_undo_event` | `revisionId` | 仅撤销当前最新修订；撤销创建变成撤销记录 |
+| `bubu_restore_event` | 无 | 明确恢复撤销记录；重新检查重复；仅照护者/委托照护者可恢复 |
+| `bubu_undo_event` | `revisionId` | 仅照护者/委托照护者撤销当前最新修订；撤销创建变成撤销记录 |
 | `bubu_answer_pending` | `questionId,questionVersion,eventVersion,patch,sources?`，不另传 eventId | 回答当前问题并更新原事件；迟到/旧版本返回 `QUESTION_STALE` |
 | `bubu_attach_images` | `attachmentIds: string[]`，最多10项 | 设置完整图片列表；空数组移除；要求 `media:write` |
-| `bubu_resolve_duplicate` | `resolution: distinct或same`；same还需 `targetEventId,targetVersion` | distinct分别计数；same合并来源及图片并保留候选撤销标记，不用候选字段覆盖目标事实 |
+| `bubu_resolve_duplicate` | `resolution: distinct或same`；same还需 `targetEventId,targetVersion` | 仅照护者/委托照护者核对；distinct分别计数，same合并来源及图片并保留候选撤销标记 |
 | `bubu_confirm_overlap` | `conflictingEventIds,reason` | 照护者明确核对实际重叠；确认绑定双方时间快照，时间变化后重新核对 |
 | `bubu_resolve_media` | `pendingId,eventId,expectedVersion,mediaIndex?,resolution?,attachmentId?` | 照护者把已挂在事件的私有替代图与待补图事项关联，或resolution=unknown明确不再催问；不能假称图片已读取 |
 | `bubu_accept_legacy` | 无 | 核对冲突后接受旧库当前事实，缺失则撤销；待恢复写入不能绕过该恢复步骤 |
@@ -49,7 +49,7 @@
 }
 ```
 
-规则只在同瓶关系明确时计算实际喝入量，上例为90ml；泡好量120ml独立保留，不等于喝入量。原消息时间决定“刚才/昨晚”等相对时间的解释，模型应输出带时区的已确认时间，不用采集执行时刻替代。缺类型或时间的候选先保存，尚不创建不合法的旧 Activity。禁止猜量、把“不知道”变成0或套用旧表单最近选择。
+规则只在同瓶关系明确时计算实际喝入量，上例为90ml；泡好量120ml独立保留，不等于喝入量。亲喂可直接报告 `reportedIntake:{value:80,unit:"g",originalText:"亲喂吃了80克"}`：保留原文克数，不换算ml、不估算克数、不追问前后称重；旧库显式 `milkAmount` 仍为ml。原消息时间决定“刚才/昨晚”等相对时间的解释，模型应输出带时区的已确认时间，不用采集执行时刻替代。缺类型或时间的候选先保存，尚不创建不合法的旧 Activity。禁止猜量、把“不知道”变成0或套用旧表单最近选择。
 
 回执：`{requestId,status,events,questions,retryable}`。事件包含版本、字段状态、来源、附件ID、修订状态及 `projection`；`projected` 是最后确认写入的旧事实，`facts` 可以是尚待核对的修改。
 
