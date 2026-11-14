@@ -41,6 +41,14 @@ describe("统一登录与年龄引导的请求边界", () => {
     expect(calls.setStorageSync).not.toHaveBeenCalled();
     expect(calls.request.mock.calls[0][0].url).toContain("age/submit");
   });
+  it("复核申请发送空对象，批准后的新核验挑战只发送告知版本和单独同意", async () => {
+    const status = { loggedIn: true, state: "needs_review", allowed: false, verifiedAt: null, expiresAt: null, source: null, assurance: null, additionalVerification: "required", notice: { version: "notice-synthetic", paragraphs: [] }, configuration: { wechat: true, provider: true } };
+    calls.request.mockResolvedValueOnce({ statusCode: 200, data: status }).mockResolvedValueOnce({ statusCode: 200, data: { status, challenge: "00000000-0000-4000-8000-000000000001" } });
+    const api = await import("../src/chat/api");
+    await api.requestAgeReview(); await api.beginAgeReview({ noticeVersion: "notice-synthetic", consent: true });
+    expect(calls.request.mock.calls[0][0]).toMatchObject({ url: expect.stringContaining("age/request-review"), method: "POST", data: {} });
+    expect(calls.request.mock.calls[1][0]).toMatchObject({ url: expect.stringContaining("age/review-challenge"), method: "POST", data: { noticeVersion: "notice-synthetic", consent: true } });
+  });
   it("H5不调用微信接口", async () => {
     vi.stubEnv("TARO_ENV", "h5"); const api = await import("../src/chat/api");
     await expect(api.loginWechat(false, "notice-test")).rejects.toThrow("微信小程序");

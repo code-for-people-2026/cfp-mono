@@ -9,6 +9,6 @@ export function openPrivacy(section?: string, reason?: "image-upload") {
   return Taro.navigateTo({ url: reason ? `${path}?reason=${reason}` : path });
 }
 export function openHelp(turnId?: number, category?: string) {
-  const query = turnId ? `?turnId=${turnId}` : category === "privacy" ? "?category=privacy" : "";
+  const query = turnId ? `?turnId=${turnId}` : category ? `?category=${encodeURIComponent(category)}` : "";
   return Taro.navigateTo({ url: `/pages/help/index${query}` });
 }

@@ -1,4 +1,11 @@
 import { createHash } from "node:crypto";
+
+export const MANUAL_AGE_ASSURANCE = "manual_administrator_assurance" as const;
+export const MANUAL_AGE_SOURCE = "administrator_age_review_manual_assurance" as const;
+export function ageAssuranceAccepted(profile: { assurance?: string | null; source?: string | null; reference?: string | null }) {
+  if (profile.assurance === "identity_details_match") return true;
+  return profile.assurance === MANUAL_AGE_ASSURANCE && profile.source === MANUAL_AGE_SOURCE && String(profile.reference || "").startsWith("age-review:");
+}
 export function ageProvider(): "aliyun" | "tencent" { return process.env.HELLO_AGE_PROVIDER === "aliyun" ? "aliyun" : "tencent"; }
 export function ageNotice() {
   const aliyun = ageProvider() === "aliyun";

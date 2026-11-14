@@ -5,9 +5,13 @@ export const operationLabels: Record<string, string> = {
   reject: "拒绝未生成请求",
   urgent: "紧急", high: "高", normal: "普通", complaint: "用户举报", appeal: "用户申诉",
   moderation: "自动审核", image: "图片审核", input: "输入", output: "输出", user_report: "用户报告",
+  age_review: "年龄限制复核", permit_age_reverification: "允许新的本人核验", maintain_age_restriction: "维持年龄限制", restore_age_access: "直接解除年龄限制",
   input_image: "图片输入", output_image: "图片输出", violence: "暴力", self_harm: "自伤相关",
   sexual: "色情", hate: "歧视与仇恨", privacy: "隐私", fraud: "诈骗违法", harassment: "骚扰", other: "其他",
 };
+export const caseOperationLabel = (value: string, stage?: string) => stage === "age_review" ? ({
+  complaint: "本人申请年龄复核", appeal: "本人再次申请年龄复核", moderation: "系统触发年龄复核", other: "年龄限制复核",
+}[value] || operationLabels[value] || value) : operationLabels[value] || value;
 export const options = (values: string[]) => values.map((value) => ({ value, label: operationLabels[value] || value }));
 export const recordURL = (slug: string, id?: number | string, admin = "/admin") =>
   `${admin}/collections/${slug}${id == null ? "" : `/${encodeURIComponent(String(id))}`}`;
@@ -24,10 +28,11 @@ export function collectionURL(slug: string, where: Where, admin = "/admin") {
   return `${recordURL(slug, undefined, admin)}?${params}`;
 }
 
-export function caseQueueFilters(userId: number | string, now = new Date()): Record<"pending" | "mine" | "overdue", Where> {
+export function caseQueueFilters(userId: number | string, now = new Date()): Record<"pending" | "mine" | "overdue" | "ageReview", Where> {
   return {
     pending: { status: { equals: "pending" } },
     mine: { assignedTo: { equals: userId } },
+    ageReview: { stage: { equals: "age_review" } },
     overdue: { or: [
       { and: [{ acceptedAt: { exists: false } }, { acceptBy: { less_than: now.toISOString() } }] },
       { and: [{ status: { not_equals: "resolved" } }, { resolveBy: { less_than: now.toISOString() } }] },
