@@ -37,6 +37,10 @@ export type RunProgress = {
   messages: A2uiMessage[];
   step: string;
 };
+export interface RunReaderOptions {
+  catalogIds?: readonly string[];
+  initialStep?: string;
+}
 const eventSchema = z.object({
   type: z.string(),
   messageId: z.string().optional(),
@@ -51,6 +55,7 @@ const eventSchema = z.object({
 export function createRunReader(
   runId: string,
   onProgress?: (progress: RunProgress) => void,
+  options: RunReaderOptions = {},
 ) {
   let started = false;
   let finished = false;
@@ -59,7 +64,7 @@ export function createRunReader(
   let progress: RunProgress = {
     text: "",
     messages: [],
-    step: "阿 J 先生正在想一想…",
+    step: options.initialStep ?? "Working…",
   };
   const decoder = createSseDecoder((value) => {
     const event = eventSchema.parse(value, { jitless: true });
@@ -90,7 +95,10 @@ export function createRunReader(
       if (event.type === "CUSTOM" && event.name === A2UI_EVENT)
         progress = {
           ...progress,
-          messages: validateA2uiMessages([...progress.messages, event.value]),
+          messages: validateA2uiMessages(
+            [...progress.messages, event.value],
+            options,
+          ),
         };
       if (event.type === "RUN_FINISHED") {
         if (event.runId !== runId || textMessage)

@@ -1,4 +1,10 @@
-import { platformInputAllowed, PLATFORM_ONLY_NOTICE } from "@cfp/a-j-oker-contracts";
+import {
+  AJ_CATALOG_ID,
+  AJ_PRESENTATION_CATALOG_HEADER,
+  ajClientEvent,
+  platformInputAllowed,
+  PLATFORM_ONLY_NOTICE,
+} from "@cfp/a-j-oker-contracts";
 import { interactionStatusSchema } from "@cfp/a-j-oker-contracts";
 import { safetyStatusSchema, safetyReceiptSchema } from "@cfp/a-j-oker-contracts";
 import { userProfileSchema, ageStatusSchema, ageChallengeResultSchema, wechatLoginResultSchema } from "@cfp/a-j-oker-contracts";
@@ -7,7 +13,6 @@ import { labeledAiText } from "./ai-copy";
 import { privacyPolicySchema, privacyStatusSchema, recoveryCodeSchema, recoveredIdentitySchema, logoutSchema, deletionSchema, type PrivacyStatus } from "@cfp/a-j-oker-contracts";
 import Taro from "@tarojs/taro";
 import {
-  CATALOG_ID,
   createRunReader,
   textResponseSchema,
   type RunProgress,
@@ -73,6 +78,9 @@ async function request<T>(
     timeout: path === "ag-ui" || path === "image-resume" ? 240_000 : 90_000,
     header: {
       "Content-Type": "application/json",
+      ...(path.startsWith("sessions/") || path === "image-resume"
+        ? { [AJ_PRESENTATION_CATALOG_HEADER]: AJ_CATALOG_ID }
+        : {}),
       ...(native && deviceToken && path !== "miniapp-identity"
         ? { Authorization: `Bearer ${deviceToken}` }
         : {}),
@@ -249,18 +257,15 @@ export async function generate(
       mode,
       mediaIds: input.mediaIds,
       clientEvent: input.formResponse
-        ? {
-            version: "v0.9.1",
-            action: {
-              name: "submit_form",
-              surfaceId: `turn_${input.formResponse.turnId}_${input.formResponse.artifactId}`,
-              sourceComponentId: "submit",
-              timestamp: new Date().toISOString(),
-              context: { values: input.formResponse.values },
-            },
-          }
+        ? ajClientEvent({
+            turnId: input.formResponse.turnId,
+            artifactId: input.formResponse.artifactId,
+            values: input.formResponse.values,
+            requestId: id,
+            presentation: input.formResponse.presentation,
+          })
         : undefined,
-      a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] },
+      a2uiClientCapabilities: { supportedCatalogIds: [AJ_CATALOG_ID] },
     },
   };
   await consumeRun("ag-ui", body, id, onProgress);
@@ -274,7 +279,10 @@ export function resumeImage(turnId: number, id: string, apiKey?: string, onProgr
   return consumeRun("image-resume", { turnId, requestId: id, ...(apiKey ? { apiKey } : {}) }, id, onProgress);
 }
 async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: string, onProgress?: (progress: RunProgress) => void) {
-  const reader = createRunReader(id, onProgress);
+  const reader = createRunReader(id, onProgress, {
+    catalogIds: [AJ_CATALOG_ID],
+    initialStep: "阿 J 先生正在想一想…",
+  });
   if (native) {
     // Native Taro buffers SSE; it consumes exactly the same AG-UI/A2UI events as H5.
     reader.push(
@@ -291,6 +299,9 @@ async function consumeRun(path: "ag-ui" | "image-resume", body: unknown, id: str
         headers: {
           "Content-Type": "application/json",
           Accept: "text/event-stream",
+          ...(path === "image-resume"
+            ? { [AJ_PRESENTATION_CATALOG_HEADER]: AJ_CATALOG_ID }
+            : {}),
         },
         body: JSON.stringify(body),
       });

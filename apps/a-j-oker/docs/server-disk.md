@@ -55,6 +55,32 @@ an old database over live writes.
 Schema migrations need a separate reviewed migration/restore procedure; do not
 use this workflow as a generic migration runner.
 
+## A2A-only additive pre-expansion
+
+For the reviewed A2A execution schema, run the dedicated migration after the
+managed candidate build but before `release.py`:
+
+```sh
+python3 /opt/cfp-hello-agent/operations/bin/migrate-a2a.py preview-YYYYMMDD-NAME
+python3 /opt/cfp-hello-agent/operations/bin/release.py preview-YYYYMMDD-NAME
+```
+
+The migration shares the deployment lock and privacy-maintenance journal/locks,
+requires the same 2 GiB free-disk floor before its offline snapshot and again
+before stopping the originals, and first proves the candidate against a copied
+offline database. It then stops the original app/worker pair, captures private
+hash/count evidence, creates the managed archive, and runs a network-disabled
+one-shot Payload migration against the live mount. It accepts only an additive
+schema/migration delta, removes the helper, validates the stopped database, and
+restarts the exact original IDs before checking fresh heartbeat and readiness. It does not change
+retention, restore a database, or claim live feature acceptance; an interrupted
+or failed journal remains for recovery or manual review. Recovery is limited to
+validating immutable original IDs/config and integrity/schema/alert evidence,
+then restarting those originals with fresh checks. If full evidence is missing
+and helper execution cannot be excluded, if exposure was journaled, or if
+validation fails, the journal is retained rather
+than overwritten or restored from backup.
+
 ## Retention and installation
 
 Private state: `/opt/cfp-hello-agent/operations/retention.json`. It records immutable

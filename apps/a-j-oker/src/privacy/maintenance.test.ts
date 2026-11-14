@@ -32,7 +32,7 @@ it("恢复按有限页只读归属和状态，已删墓碑不阻断后续身份"
     const result = await maintainPrivacy(payload, { apply: true, restoreLedger: ledger });
     expect(result).toMatchObject({ eligibleIdentities: 2, deleted: 2 });
     expect(cleanup.mock.calls).toEqual([["already-deleted"], ["remaining"]]);
-    expect(find).toHaveBeenCalledTimes(41); // eleven paginated scans (including safety cases) plus two empty onboarding-expiry scans
+    expect(find).toHaveBeenCalledTimes(49); // thirteen paginated restore scans plus ten empty retention scans
   } finally { await rm(directory, { recursive: true, force: true }); }
 });
 
@@ -168,4 +168,38 @@ it("旧匿名会话和图片按配置到期；近期关联记录与已授权身�
   const payload = { find, count, delete: vi.fn().mockResolvedValue({ errors: [] }) } as unknown as Payload;
   await expect(maintainPrivacy(payload, { apply: true })).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
   expect(cleanup.mock.calls).toEqual([["old"], ["orphan-image"]]);
+});
+
+it.each(["retention", "restore"] as const)("%s 扫描会发现只剩 A2A 状态的身份", async (mode) => {
+  cleanup.mockReset().mockResolvedValue({ deleted: true });
+  const directory = await mkdtemp(path.join(tmpdir(), "hello-a2a-maintenance-"));
+  try {
+    const owner = `a2a-only-${mode}`;
+    const ledger = path.join(directory, "ledger.ndjson");
+    await writeFile(ledger, JSON.stringify({ ownerDigest: createHash("sha256").update(owner).digest("hex") }));
+    const find = vi.fn(async ({ collection, where }: { collection: string; where: { id?: { greater_than: number }; and?: unknown[] } }) => {
+      if (collection === "privacy-profiles") return { docs: [] };
+      if (collection !== "a2a-execution-tasks") return { docs: [] };
+      if (mode === "retention" && where.and && JSON.stringify(where).includes("less_than") && JSON.stringify(where).includes('"greater_than":0')) {
+        return { docs: [{ id: 1, owner }] };
+      }
+      if (mode === "restore" && where.id?.greater_than === 0 && !where.and) {
+        return { docs: [{ id: 1, owner }] };
+      }
+      return { docs: [] };
+    });
+    const payload = {
+      find,
+      count: vi.fn().mockResolvedValue({ totalDocs: 0 }),
+      delete: vi.fn().mockResolvedValue({ errors: [] }),
+    } as unknown as Payload;
+    await expect(maintainPrivacy(payload, {
+      apply: true,
+      ...(mode === "restore" ? { restoreLedger: ledger } : {}),
+    })).resolves.toMatchObject({ eligibleIdentities: 1, deleted: 1 });
+    expect(cleanup.mock.calls).toEqual([[owner]]);
+  } finally {
+    cleanup.mockReset().mockResolvedValue({ deleted: true });
+    await rm(directory, { recursive: true, force: true });
+  }
 });

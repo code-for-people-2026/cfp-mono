@@ -16,6 +16,7 @@ import { agentCollections } from "./agent-collections";
 import { collectionViews } from "./presentation";
 import { MAX_STORED_IMAGE_BASE64_LENGTH } from "../domain/media-policy";
 import type { OwnedCollection } from "./repository";
+import { a2aCollections } from "./a2a-collections";
 
 const admin: Access = ({ req }) => isAdministrator(req.user);
 const ownerRead: Access = ({ req }) => {
@@ -61,6 +62,7 @@ const owned = (
 export const collections: CollectionConfig[] = [
   ...operationsCollections,
   ...agentCollections,
+  ...a2aCollections,
   ...privacyCollections,
   ...ageCollections,
   {

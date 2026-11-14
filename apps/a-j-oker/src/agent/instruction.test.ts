@@ -6,6 +6,7 @@ import {
   GREETING_INSTRUCTION,
   COORDINATOR_INSTRUCTION,
   PROMPT_VERSION,
+  SERVER_ARTIFACT_PRESENTATION_RULE,
 } from "./instruction";
 import { SPECIALIST_INSTRUCTIONS } from "./psychology-agents";
 
@@ -32,6 +33,8 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      // 2026-11-14：aj-v5.3 对话表单内联与单作品输出整改；真实模型评测尚未执行。
+      "aj-v5.3": "0c4ba6b67194d6dc3c1c356e5c7ab0e7788f8af705563b8946e3ad684cd80756",
       // 2026-11-11：aj-v5.2 语义路由整改；线下脚本验收通过，真实模型评阅待补。
       "aj-v5.2": "6f6646a2c7a44c48a8d4d6ddcda944443a924176a30ff53fe7a31c58b6e434f5",
       "aj-v5.1": "b617a2af9831bafb6cb5350c08dae520df40b1fa631aeb50d7db4c03e7d4a392",
@@ -67,6 +70,7 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
           JSON.stringify({
             greeting: GREETING_INSTRUCTION,
             coordinator: COORDINATOR_INSTRUCTION,
+            serverArtifactPresentationRule: SERVER_ARTIFACT_PRESENTATION_RULE,
             specialists: SPECIALIST_INSTRUCTIONS,
             interaction: INTERACTION_BOUNDARY,
           }),

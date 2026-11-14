@@ -12,6 +12,92 @@ import type { KnowledgeContext } from "./knowledge";
 import { DEFAULT_AGENT_CONFIGS } from "./default-prompts";
 import { createGreetingAgent } from "./coordinator";
 import { PSYCHOLOGY_APPROACHES, type PsychologyApproach } from "./psychology";
+import {
+  A2A_TASK_STORE_SCOPE,
+  type A2ARequestLedger,
+  type A2ARequestLedgerEntry,
+  type A2ARequestLedgerReservation,
+  type A2ARequestLedgerScope,
+  type ListTasksRequest,
+  type ListTasksResponse,
+  type ScopedA2ATaskStore,
+  type ServerCallContext,
+  type Task,
+  type TaskState,
+} from "@cfp/agent-a2a";
+import {
+  AJ_A2A_TENANT,
+  createInProcessPsychologyA2AFactory,
+} from "./psychology-a2a";
+
+const TASK_STATE_UNSPECIFIED = 0 as TaskState;
+
+class CoordinatorTestTaskStore implements ScopedA2ATaskStore {
+  readonly a2aScope = A2A_TASK_STORE_SCOPE;
+  private readonly scopes = new Map<string, Map<string, Task>>();
+
+  private tasks(context: ServerCallContext) {
+    const key = JSON.stringify([context.tenant, context.user?.userName]);
+    let tasks = this.scopes.get(key);
+    if (!tasks) {
+      tasks = new Map();
+      this.scopes.set(key, tasks);
+    }
+    return tasks;
+  }
+  async save(task: Task, context: ServerCallContext) {
+    this.tasks(context).set(task.id, structuredClone(task));
+  }
+  async load(taskId: string, context: ServerCallContext) {
+    const task = this.tasks(context).get(taskId);
+    return task ? structuredClone(task) : undefined;
+  }
+  async hasContext(contextId: string, context: ServerCallContext) {
+    return [...this.tasks(context).values()].some((task) => task.contextId === contextId);
+  }
+  async list(params: ListTasksRequest, context: ServerCallContext): Promise<ListTasksResponse> {
+    const tasks = [...this.tasks(context).values()].filter((task) =>
+      (!params.contextId || task.contextId === params.contextId)
+      && (params.status === TASK_STATE_UNSPECIFIED || task.status?.state === params.status),
+    );
+    const pageSize = params.pageSize ?? 50;
+    return {
+      tasks: structuredClone(tasks.slice(0, pageSize)),
+      nextPageToken: "",
+      pageSize,
+      totalSize: tasks.length,
+    };
+  }
+}
+
+class CoordinatorTestLedger implements A2ARequestLedger {
+  private readonly entries = new Map<string, A2ARequestLedgerEntry>();
+  private readonly tokens = new Map<string, string>();
+  private key(scope: A2ARequestLedgerScope, identity: string) {
+    return JSON.stringify([scope.tenant, scope.owner, scope.agentId, identity]);
+  }
+  async reserve(scope: A2ARequestLedgerScope, identity: string, fingerprint: string): Promise<A2ARequestLedgerReservation> {
+    const key = this.key(scope, identity);
+    const existing = this.entries.get(key);
+    if (existing) return { outcome: "existing", entry: structuredClone(existing) };
+    const token = crypto.randomUUID();
+    const entry: A2ARequestLedgerEntry = { requestIdentity: identity, fingerprint, status: "pending" };
+    this.entries.set(key, entry);
+    this.tokens.set(token, key);
+    return { outcome: "new", token, entry: structuredClone(entry) };
+  }
+  async recordTask(token: string, task: Pick<Task, "id" | "contextId">) {
+    const key = this.tokens.get(token);
+    const entry = key ? this.entries.get(key) : undefined;
+    if (!entry) throw new Error("unknown reservation");
+    Object.assign(entry, { status: "recorded", taskId: task.id, contextId: task.contextId });
+  }
+  async fail(token: string) {
+    const key = this.tokens.get(token);
+    const entry = key ? this.entries.get(key) : undefined;
+    if (entry?.status === "pending") entry.status = "failed";
+  }
+}
 
 const input: Part[] = [
   {
@@ -66,6 +152,8 @@ function fixture(
   steps: Call[][],
   specialist = () => [call("submit_psychology_plan", plan)],
   knowledge?: KnowledgeContext,
+  specialistKeys = DEFAULT_AGENT_CONFIGS.slice(1),
+  coordinator = DEFAULT_AGENT_CONFIGS[0].prompt,
 ) {
   let step = 0;
   const model = new WorkflowModel((request) =>
@@ -77,11 +165,16 @@ function fixture(
   const controller = new AbortController();
   const save = vi.fn(async (value: unknown) => ({ id: 11, output: value }));
   const knowledgeRead = vi.fn(async () => knowledge!);
+  const a2a = createInProcessPsychologyA2AFactory({
+    principal: { owner: "owner", tenant: AJ_A2A_TENANT },
+    taskStore: new CoordinatorTestTaskStore(),
+    requestLedger: new CoordinatorTestLedger(),
+  });
   const agent = createGreetingAgent({
     configuration: {
-      coordinator: DEFAULT_AGENT_CONFIGS[0].prompt,
+      coordinator,
       revision: "fixture",
-      specialists: DEFAULT_AGENT_CONFIGS.slice(1).map((spec) => ({
+      specialists: specialistKeys.map((spec) => ({
         approach: spec.key as PsychologyApproach,
         label: spec.name,
         prompt: spec.prompt,
@@ -94,8 +187,10 @@ function fixture(
     sessionService,
     userId: "owner",
     turnSessionId: "11",
+    consultationExecutionId: "11",
     inputParts: input,
     signal: controller.signal,
+    a2a,
     save,
   });
   const run = async () => {
@@ -137,6 +232,13 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       Object.keys(PSYCHOLOGY_APPROACHES).map((name) => `${name}_agent`),
     );
     expect(f.model.requests).toHaveLength(1);
+    expect(f.save).toHaveBeenCalledTimes(1);
+  });
+
+  it("全部专家停用时仍可由协调者提供支持性回应", async () => {
+    const f = fixture([[saveReply()]], undefined, undefined, []);
+    await f.run();
+    expect(f.agent.tools.filter(isAgentTool)).toHaveLength(0);
     expect(f.save).toHaveBeenCalledTimes(1);
   });
 
@@ -211,6 +313,51 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       ...reply,
       approach: "supportive",
     });
+  });
+
+  it("AJ 多作品输出由保存工具校验退回，修正后才持久化", async () => {
+    const invalid = call("save_greeting", {
+      ...reply,
+      artifacts: [
+        {
+          kind: "card",
+          id: "reason",
+          title: "辨认烦躁",
+          body: "先选一个原因。",
+        },
+        {
+          kind: "card",
+          id: "comfort",
+          title: "安慰卡",
+          body: "先照顾自己。",
+        },
+      ],
+    });
+    const f = fixture([[invalid], [saveReply()]]);
+    await f.run();
+    expect(JSON.stringify(f.model.requests[1].contents)).toContain(
+      "阿 J 一轮最多输出一件回应作品",
+    );
+    expect(f.save).toHaveBeenCalledExactlyOnceWith({ ...reply, approach: "supportive" });
+  });
+
+  it("旧 coordinator 配置之后仍有服务端固定的单作品与内联追问规则", () => {
+    const f = fixture(
+      [[saveReply()]],
+      undefined,
+      undefined,
+      [],
+      "旧配置：作品通常最多一至两件，并放在底部弹层。",
+    );
+    const instruction = f.agent.instruction as string;
+    const configured = instruction.indexOf("通常最多一至两件");
+    const fixed = instruction.indexOf(
+      "服务端固定作品规则（优先于可配置 coordinator 提示",
+    );
+    expect(configured).toBeGreaterThanOrEqual(0);
+    expect(fixed).toBeGreaterThan(configured);
+    expect(instruction).toContain("在聊天消息内直接选择并继续");
+    expect(instruction).toContain("不得追加第二件作品");
   });
 
   it("专家失败回到主 Agent，由它决定支持性回应，不泄漏原始错误", async () => {
@@ -398,7 +545,7 @@ it("模型的自由文本检索被拒绝，纠正为固定方法词后才读取�
   );
   await f.run();
   expect(f.knowledgeRead).toHaveBeenCalledExactlyOnceWith(
-    "自动思维", f.controller.signal,
+    "自动思维", expect.any(AbortSignal),
   );
   expect(JSON.stringify(f.model.requests[1].contents)).toContain(
     "不允许自由文本",

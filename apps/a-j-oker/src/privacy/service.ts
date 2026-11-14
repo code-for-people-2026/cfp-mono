@@ -19,7 +19,14 @@ import { revokeCredentials } from "../server/auth";
 
 const digest = (value: string) => createHash("sha256").update(value).digest("hex");
 const consentSchema = z.object({ version: z.string(), core: z.literal(true), model: z.literal(true), sensitive: z.boolean(), external: z.boolean(), externalRecipient: z.object({ name: z.string().trim().min(2).max(200), contact: z.string().trim().min(3).max(200), region: z.string().trim().min(2).max(100), privacyUrl: z.string().url().max(500) }).strict().optional() }).strict().refine((value) => !value.external || !!value.externalRecipient, "外部授权需要先填写实际接收方、联系方式、地域和政策链接");
-const contentCollections = ["adk-sessions", "greetings", "sessions", "session-locks"] as const;
+const contentCollections = [
+  "adk-sessions",
+  "a2a-execution-tasks",
+  "a2a-request-ledgers",
+  "greetings",
+  "sessions",
+  "session-locks",
+] as const;
 // Keep the latest consent evidence plus bounded recent lifecycle events. This
 // is a local account history, not an unlimited content-safety audit archive.
 function consentEvents(previous: PrivacyProfile["events"], next: { action: string; at: string; consent?: PrivacyProfile["consent"]; policySnapshot?: ReturnType<typeof privacyPolicy>["documents"] }) {

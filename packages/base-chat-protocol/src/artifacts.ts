@@ -5,27 +5,58 @@ export const identifier = z
   .string()
   .regex(/^(?!constructor$|prototype$)[a-z][a-z0-9_]{0,39}$/);
 const base = { id: identifier, title: text(80) };
-export const approachSchema = z.enum([
-  "supportive",
-  "cbt",
-  "act",
-  "dbt",
-  "solution_focused",
-  "self_compassion",
-  "positive_psychology",
-  "behavioral",
-]);
-export const fieldSchema = z
+
+export const fieldOptionSchema = z
   .object({
     id: identifier,
-    label: text(100),
-    type: z.enum(["text", "longText", "number"]),
-    required: z.boolean(),
-    placeholder: z.string().max(120).optional(),
-    min: z.number().min(-10000).max(10000).optional(),
-    max: z.number().min(-10000).max(10000).optional(),
+    label: text(120),
   })
   .strict();
+
+const fieldCommon = {
+  id: identifier,
+  label: text(100),
+  required: z.boolean(),
+  placeholder: z.string().max(120).optional(),
+};
+
+export const fieldSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      ...fieldCommon,
+      type: z.enum(["text", "longText"]),
+    })
+    .strict(),
+  z
+    .object({
+      ...fieldCommon,
+      type: z.literal("number"),
+      min: z.number().finite().min(-10000).max(10000).optional(),
+      max: z.number().finite().min(-10000).max(10000).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...fieldCommon,
+      type: z.literal("select"),
+      options: z.array(fieldOptionSchema).min(1).max(20),
+      allowOther: z.boolean(),
+      allowUnknown: z.boolean().optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...fieldCommon,
+      type: z.literal("multiSelect"),
+      options: z.array(fieldOptionSchema).min(1).max(20),
+      allowOther: z.boolean(),
+      allowUnknown: z.boolean().optional(),
+      minChoices: z.number().int().min(0).max(20).optional(),
+      maxChoices: z.number().int().min(1).max(20).optional(),
+    })
+    .strict(),
+]);
+
 export const cardSchema = z
   .object({
     ...base,
@@ -34,17 +65,22 @@ export const cardSchema = z
     items: z.array(text(300)).max(8).optional(),
   })
   .strict();
+
+export const tableCellSchema = z.union([
+  z.string().max(400),
+  z.number().finite(),
+  z.boolean(),
+  z.null(),
+]);
 export const tableSchema = z
   .object({
     ...base,
     kind: z.literal("table"),
     columns: z.array(text(80)).min(1).max(6),
-    rows: z
-      .array(z.array(z.string().max(400)).min(1).max(6))
-      .min(1)
-      .max(20),
+    rows: z.array(z.array(tableCellSchema).min(1).max(6)).min(1).max(20),
   })
   .strict();
+
 export const formSchema = z
   .object({
     ...base,
@@ -54,6 +90,29 @@ export const formSchema = z
     submitLabel: text(30),
   })
   .strict();
+
+export const codeLanguageSchema = z.enum([
+  "text",
+  "javascript",
+  "typescript",
+  "python",
+  "json",
+  "sql",
+  "bash",
+  "html",
+  "css",
+  "markdown",
+  "yaml",
+]);
+export const codeSchema = z
+  .object({
+    ...base,
+    kind: z.literal("code"),
+    language: codeLanguageSchema,
+    code: z.string().min(1).max(4000),
+  })
+  .strict();
+
 export const pageSchema = z
   .object({
     ...base,
@@ -73,6 +132,7 @@ export const pageSchema = z
       .max(8),
   })
   .strict();
+
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/);
 const coordinate = z.number().min(0).max(640);
 export const shapeSchema = z.discriminatedUnion("type", [
@@ -139,16 +199,41 @@ export const imageSchema = z
     ]),
   })
   .strict();
+
 export const artifactSchema = z.discriminatedUnion("kind", [
   cardSchema,
   tableSchema,
   formSchema,
+  codeSchema,
   pageSchema,
   imageSchema,
 ]);
+
+export type Field = z.infer<typeof fieldSchema>;
+
+function uniqueOptionIds(field: Field) {
+  if (field.type === "select" || field.type === "multiSelect")
+    return (
+      new Set(field.options.map((option) => option.id)).size ===
+      field.options.length
+    );
+  return true;
+}
+
+function validChoiceBounds(field: Field) {
+  if (field.type !== "multiSelect") return true;
+  // A required multi-select means “at least one answer” even when the producer
+  // omits minChoices. An optional field may be left empty; a positive minimum
+  // applies only once the user supplies an answer.
+  const minimum = field.minChoices ?? (field.required ? 1 : 0);
+  const capacity = field.options.length + (field.allowOther ? 1 : 0);
+  const maximum = field.maxChoices ?? capacity;
+  return minimum <= maximum && maximum <= capacity && (!field.required || minimum > 0);
+}
+
 export const artifactsSchema = z
   .array(artifactSchema)
-  .max(5)
+  .max(6)
   .superRefine((items, ctx) => {
     if (new Set(items.map((item) => item.id)).size !== items.length)
       ctx.addIssue({ code: "custom", message: "产物标识不能重复" });
@@ -164,8 +249,16 @@ export const artifactsSchema = z
           item.fields.length
         )
           ctx.addIssue({ code: "custom", message: "表单字段标识不能重复" });
-        for (const field of item.fields)
+        for (const field of item.fields) {
+          if (!uniqueOptionIds(field))
+            ctx.addIssue({ code: "custom", message: "选项标识不能重复" });
+          if (!validChoiceBounds(field))
+            ctx.addIssue({
+              code: "custom",
+              message: "表单选项数量限制不正确",
+            });
           if (
+            field.type === "number" &&
             field.min !== undefined &&
             field.max !== undefined &&
             field.min > field.max
@@ -174,50 +267,65 @@ export const artifactsSchema = z
               code: "custom",
               message: "表单最小值不能大于最大值",
             });
+        }
       }
     }
-    if (JSON.stringify(items).length > 24000)
+    if (JSON.stringify(items).length > 32000)
       ctx.addIssue({ code: "custom", message: "本轮产物内容过大" });
   });
-export const replySchema = z.object({
-  greeting: z.string().trim().min(2).max(1000),
-  association: text(500),
-  approach: approachSchema.optional(),
-  artifacts: artifactsSchema.optional(),
-});
+
+export const unknownAnswerSchema = z
+  .object({ unknown: z.literal(true) })
+  .strict();
+export const choiceAnswerSchema = z
+  .object({
+    optionIds: z.array(identifier).max(20),
+    otherText: z.string().trim().min(1).max(1200).optional(),
+  })
+  .strict();
+export const formValueSchema = z.union([
+  z.string().max(1200),
+  z.number().finite(),
+  choiceAnswerSchema,
+  unknownAnswerSchema,
+]);
+export const formValuesSchema = z.record(identifier, formValueSchema);
+export const formReferenceSchema = z
+  .object({
+    presentationId: z.string().min(1).max(128),
+    revision: z.number().int().min(0).max(1_000_000_000_000),
+    formId: identifier,
+  })
+  .strict();
+export const formAnswerSchema = z
+  .object({
+    form: formReferenceSchema,
+    requestId: z.string().min(1).max(128),
+    answers: formValuesSchema,
+  })
+  .strict();
+
 export type Artifact = z.infer<typeof artifactSchema>;
 export type FormArtifact = z.infer<typeof formSchema>;
+export type CodeArtifact = z.infer<typeof codeSchema>;
 export type PageArtifact = z.infer<typeof pageSchema>;
 export type ImageArtifact = z.infer<typeof imageSchema>;
-export type Reply = z.infer<typeof replySchema>;
+export type FieldOption = z.infer<typeof fieldOptionSchema>;
+export type TableCell = z.infer<typeof tableCellSchema>;
+export type ChoiceAnswer = z.infer<typeof choiceAnswerSchema>;
+export type UnknownAnswer = z.infer<typeof unknownAnswerSchema>;
+export type FormValue = z.infer<typeof formValueSchema>;
+export type FormValues = z.output<typeof formValuesSchema>;
+export type FormReference = z.output<typeof formReferenceSchema>;
+export type FormAnswer = z.output<typeof formAnswerSchema>;
 
-export const formValuesSchema = z.record(
-  identifier,
-  z.union([z.string().max(1200), z.number().finite()]),
-);
-export const clientEventSchema = z
-  .object({
-    version: z.literal("v0.9.1"),
-    action: z
-      .object({
-        name: z.literal("submit_form"),
-        surfaceId: z.string().regex(/^turn_[1-9]\d*_[a-z][a-z0-9_]{0,39}$/),
-        sourceComponentId: z.literal("submit"),
-        timestamp: z.string().datetime(),
-        context: z.object({ values: formValuesSchema }).strict(),
-      })
-      .strict(),
-  })
-  .strict();
-export type ClientEvent = z.infer<typeof clientEventSchema>;
-export type FormValues = z.infer<typeof formValuesSchema>;
-export const formResponseSchema = z
-  .object({
-    turnId: z.number().int().positive(),
-    artifactId: identifier,
-    values: formValuesSchema,
-  })
-  .strict();
+function hasAnswer(value: FormValue | undefined): value is FormValue {
+  if (value === undefined) return false;
+  if (typeof value === "string") return value.trim() !== "";
+  if (typeof value === "number") return true;
+  if ("unknown" in value) return value.unknown;
+  return value.optionIds.length > 0 || !!value.otherText;
+}
 
 export function validateForm(
   form: FormArtifact,
@@ -231,9 +339,19 @@ export function validateForm(
     return "表单包含未知字段";
   for (const field of form.fields) {
     const value = values[field.id];
-    if (value === undefined || String(value).trim() === "") {
+    // Empty strings represent a deliberately empty draft. An optional field is
+    // valid when empty even if it has a positive answer-count minimum.
+    if (!hasAnswer(value)) {
       if (field.required) return `请填写「${field.label}」`;
       continue;
+    }
+    if (typeof value === "object" && "unknown" in value) {
+      if (
+        (field.type === "select" || field.type === "multiSelect") &&
+        field.allowUnknown
+      )
+        continue;
+      return `「${field.label}」不支持未知答案`;
     }
     if (field.type === "number") {
       if (typeof value !== "number" || !Number.isFinite(value))
@@ -242,8 +360,49 @@ export function validateForm(
         return `「${field.label}」不能小于 ${field.min}`;
       if (field.max !== undefined && value > field.max)
         return `「${field.label}」不能大于 ${field.max}`;
-    } else if (typeof value !== "string" || value.length > 1200)
-      return `请检查「${field.label}」的内容`;
+    } else if (field.type === "text" || field.type === "longText") {
+      if (typeof value !== "string") return `「${field.label}」需要填写文字`;
+    } else if (field.type === "select" || field.type === "multiSelect") {
+      if (typeof value !== "object" || "unknown" in value)
+        return `「${field.label}」的答案类型不正确`;
+      if (new Set(value.optionIds).size !== value.optionIds.length)
+        return `「${field.label}」不能重复选择`;
+      const known = new Set(field.options.map((option) => option.id));
+      if (value.optionIds.some((id) => !known.has(id)))
+        return `「${field.label}」包含无效选项`;
+      if (value.otherText !== undefined && !field.allowOther)
+        return `「${field.label}」不支持补充说明`;
+      const selected =
+        value.optionIds.length + (value.otherText === undefined ? 0 : 1);
+      if (field.type === "select" && selected > 1)
+        return `「${field.label}」只能选择一项`;
+      if (field.type === "multiSelect") {
+        const minimum = field.minChoices ?? (field.required ? 1 : 0);
+        const capacity = field.options.length + (field.allowOther ? 1 : 0);
+        if (selected < minimum)
+          return `「${field.label}」至少选择 ${minimum} 项`;
+        const maximum = field.maxChoices ?? capacity;
+        if (selected > maximum)
+          return `「${field.label}」最多选择 ${maximum} 项`;
+      }
+      if (field.required && selected === 0)
+        return `请选择或补充「${field.label}」`;
+    } else {
+      return `「${field.label}」的答案类型不正确`;
+    }
   }
   return undefined;
+}
+
+export function artifactSummary(artifacts: Artifact[]): string {
+  const summary = artifacts
+    .map((item) =>
+      item.kind === "image"
+        ? `[图片] ${item.title}：${item.alt}`
+        : JSON.stringify(item),
+    )
+    .join("\n");
+  return summary.length <= 500
+    ? summary
+    : `${summary.slice(0, 465)}…（作品摘要节选，完整内容保留在原作品中）`;
 }

@@ -3,7 +3,11 @@ import { z } from "zod";
 import { SERVICE_SCOPE_REFUSAL, SERVICE_SCOPE_CLARIFICATION, SERVICE_SCOPE_VERSION } from "./service-scope";
 import { INTERACTION_VERSION } from "../interaction/policy";
 import { InteractionService } from "../interaction/service";
-import type { Session } from "@cfp/a-j-oker-contracts";
+import {
+  AJ_PRESENTATION_REVISION,
+  ajPresentationId,
+  type Session,
+} from "@cfp/a-j-oker-contracts";
 import type { Greeting as GreetingRecord } from "../payload-types";
 import { reservePlatformCalls } from "../cms/platform-quota";
 import { GREETING_MAX_CALLS } from "../agent/limits";
@@ -28,7 +32,13 @@ import { ContextService } from "./context";
 import { FORGET_CONTEXT_GUIDANCE } from "./context-policy";
 import { MAX_STORED_IMAGE_BYTES } from "./media-policy";
 import { MediaService } from "./media";
-import { artifactsSchema, validateForm } from "@cfp/base-chat-protocol";
+import {
+  legacyArtifactsSchema,
+  presentationFromLegacyArtifacts,
+  validateForm,
+  type Field,
+  type FormValue,
+} from "@cfp/base-chat-protocol";
 import {
   assertImageGenerationReview,
   interactionAssessmentSchema,
@@ -58,6 +68,19 @@ const serviceScopeSchema = requiredInputReviewSchema.shape.serviceScope;
 const requiredOutputReviewSchema = z.object({
   serviceScope: z.enum(["support", "outside", "unclear"]),
 });
+function formatFormValue(field: Field, value: FormValue | undefined) {
+  if (value === undefined) return "（未填写）";
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
+  if ("unknown" in value) return "（无法说明）";
+  if (field.type !== "select" && field.type !== "multiSelect")
+    return "（无效答案）";
+  const labels = field.options
+    .filter((option) => value.optionIds.includes(option.id))
+    .map((option) => option.label);
+  if (value.otherText !== undefined) labels.push(`补充：${value.otherText}`);
+  return labels.join("、") || "（未填写）";
+}
 
 export class GreetingService {
   constructor(
@@ -163,11 +186,34 @@ export class GreetingService {
       const source = await this.repo.get("greetings", response.turnId);
       if (source.sessionId !== sessionId || source.status !== "completed")
         throw new AppError(400, "表单不属于当前对话或尚未完成");
-      const form = artifactsSchema.parse(source.artifacts ?? []).find((item) => item.id === response.artifactId);
+      const savedArtifacts = legacyArtifactsSchema.parse(
+        source.artifacts ?? [],
+        { jitless: true },
+      );
+      const presentation = response.presentation
+        ? presentationFromLegacyArtifacts({
+            id: ajPresentationId(source.id),
+            revision: AJ_PRESENTATION_REVISION,
+            blocks: savedArtifacts,
+          })
+        : undefined;
+      if (
+        response.presentation &&
+        presentation &&
+        (response.presentation.presentationId !== presentation.id ||
+          response.presentation.revision !== presentation.revision ||
+          response.presentation.formId !== response.artifactId)
+      )
+        throw new AppError(400, "表单提交版本不匹配");
+      const form = (presentation?.blocks ?? savedArtifacts).find(
+        (item) => item.id === response.artifactId,
+      );
       if (!form || form.kind !== "form") throw new AppError(400, "原表单不存在");
       const problem = validateForm(form, response.values);
       if (problem) throw new AppError(400, problem);
-      const text = `填写「${form.title}」\n` + form.fields.map((field) => `${field.label}：${response.values[field.id] ?? "（未填写）"}`).join("\n");
+      const text = `填写「${form.title}」\n` + form.fields
+        .map((field) => `${field.label}：${formatFormValue(field, response.values[field.id])}`)
+        .join("\n");
       if (text.length > 4000) throw new AppError(400, "填写内容过长，请精简后再提交");
       input = { ...input, text };
     }

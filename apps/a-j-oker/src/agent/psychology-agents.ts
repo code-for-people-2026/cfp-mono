@@ -9,8 +9,6 @@ import {
   type RunAsyncToolRequest,
 } from "@google/adk";
 import { FunctionCallingConfigMode, Type, type Part } from "@google/genai";
-import { z } from "zod";
-import { artifactsSchema } from "@cfp/base-chat-protocol";
 import { AppError, type Greeting } from "../domain/contracts";
 export { SPECIALIST_INSTRUCTIONS } from "./default-prompts";
 import { PSYCHOLOGY_SAFETY, type PsychologyApproach } from "./psychology";
@@ -19,28 +17,18 @@ import type { AgentConfiguration } from "./configuration";
 import type { KnowledgeContext } from "./knowledge";
 import { KNOWLEDGE_METHODS, methodQuery } from "./knowledge-query";
 import { MAX_SPECIALISTS, SPECIALIST_MAX_CALLS } from "./limits";
+import type { PsychologyA2AFactory } from "./psychology-a2a";
+import {
+  psychologyConsultationSchema,
+  psychologyPlanSchema,
+  psychologyPlanSubmissionSchema,
+  type PsychologyPlan,
+  type PsychologyPlanSubmission,
+} from "./psychology-plan";
 
-const consultationSchema = z
-  .object({
-    request: z.string().trim().min(1).max(1200),
-    urgency: z.enum(["routine", "immediate"]),
-    knowledgeQuery: z.string().trim().min(1).max(80).optional(),
-  })
-  .strict();
-const planSchema = z
-  .object({
-    summary: z.string().trim().min(1).max(600),
-    suggestions: z.array(z.string().trim().min(1).max(500)).max(3),
-    needsImmediateSupport: z.boolean(),
-    usedSourceIds: z.array(z.string().max(80)).max(6).default([]),
-    artifacts: artifactsSchema.optional(),
-  })
-  .strict();
-type Plan = z.infer<typeof planSchema>;
-
-class SubmitPlanTool extends FunctionTool<typeof planSchema> {
+class SubmitPlanTool extends FunctionTool<typeof psychologyPlanSubmissionSchema> {
   override async runAsync(request: RunAsyncToolRequest) {
-    const parsed = planSchema.safeParse(request.args);
+    const parsed = psychologyPlanSubmissionSchema.safeParse(request.args);
     if (!parsed.success)
       return {
         error: "方案尚未提交，请修正格式并再次调用 submit_psychology_plan。",
@@ -74,26 +62,29 @@ export function createPsychologyTeam(options: {
   sessionService: BaseSessionService;
   userId: string;
   turnSessionId: string;
+  consultationExecutionId: string;
   inputParts: Part[];
   signal: AbortSignal;
+  a2a: PsychologyA2AFactory;
 }) {
   const consultations = new Map<PsychologyApproach, Promise<unknown>>();
-  const plans = new Map<PsychologyApproach, Plan>();
+  const plans = new Map<PsychologyApproach, PsychologyPlan>();
   let active = 0;
   let finished = false;
   let immediateSupport = false;
-  const tools = options.configuration.specialists.map((spec) => {
+  const specialists = options.configuration.specialists.map((spec) => {
     const approach = spec.approach;
-    let plan: Plan | undefined;
+    let plan: PsychologyPlanSubmission | undefined;
     let knowledgeContext: KnowledgeContext | undefined;
+    let executionSignal: AbortSignal | undefined;
     const submit = new SubmitPlanTool({
       name: "submit_psychology_plan",
       description:
         "向主 Agent 返回本流派的建议及可选作品，不写入用户聊天产物。",
-      parameters: planSchema,
+      parameters: psychologyPlanSubmissionSchema,
       execute: async (value, context) => {
-        if (options.signal.aborted) throw new AppError(408, "生成已超时");
-        const parsed = planSchema.parse(value);
+        if (executionSignal?.aborted) throw new AppError(408, "生成已超时");
+        const parsed = psychologyPlanSubmissionSchema.parse(value);
         if (
           parsed.usedSourceIds.some(
             (id) =>
@@ -153,10 +144,27 @@ export function createPsychologyTeam(options: {
         },
       },
     });
-    const execute = async (task: string, query?: string) => {
+    const execute = async (
+      consultation: {
+        request: string;
+        urgency: "routine" | "immediate";
+        knowledgeQuery?: string;
+      },
+      signal: AbortSignal,
+    ) => {
       try {
+        plan = undefined;
+        knowledgeContext = undefined;
+        executionSignal = signal;
+        let query: string | undefined;
+        if (spec.knowledge) {
+          if (!consultation.knowledgeQuery) {
+            throw new Error("Knowledge query is required");
+          }
+          query = methodQuery(consultation.knowledgeQuery, approach);
+        }
         knowledgeContext = spec.knowledge
-          ? await spec.knowledge(query!, options.signal)
+          ? await spec.knowledge(query!, signal)
           : undefined;
         const sessionId = `${options.turnSessionId}:${approach}`;
         await options.sessionService.createSession({
@@ -178,42 +186,47 @@ export function createPsychologyTeam(options: {
               ...structuredClone(options.inputParts),
               {
                 text: JSON.stringify({
-                  coordinatorRequest: task,
+                  coordinatorRequest: consultation.request,
                   configurationRevision: spec.revision,
                   knowledgeContext,
                 }),
               },
             ],
           },
-          abortSignal: options.signal,
+          abortSignal: signal,
           runConfig: { maxLlmCalls: SPECIALIST_MAX_CALLS },
         })) {
           if (event.errorCode) throw new Error("Specialist execution failed");
         }
-        if (!plan) throw new Error("Specialist did not submit a plan");
-        plans.set(approach, plan);
-        return {
+        const submitted = plan as PsychologyPlanSubmission | undefined;
+        if (!submitted) throw new Error("Specialist did not submit a plan");
+        const result = psychologyPlanSchema.parse({
+          schemaVersion: 1,
           approach,
-          ...plan,
+          ...submitted,
           references:
             knowledgeContext?.sources.filter((source) =>
-              plan!.usedSourceIds.includes(source.referenceId || ""),
+              submitted.usedSourceIds.includes(source.referenceId || ""),
             ) ?? [],
-        };
-      } catch {
-        if (options.signal.aborted) throw new AppError(408, "生成已超时");
-        return {
-          error:
-            "这个专家未完成本轮方案，请直接给予支持性回应；不能声称该流派方案已完成。",
-        };
+        });
+        return result;
       } finally {
-        active--;
+        executionSignal = undefined;
       }
     };
-    return new PsychologyAgentTool(agent, async (value) => {
+    return { spec, approach, agent, execute };
+  });
+  const a2a = options.a2a(specialists.map(({ approach, spec, execute }) => ({
+    approach,
+    label: spec.label,
+    revision: spec.revision,
+    execute,
+  })));
+  const tools = specialists.map(({ spec, approach, agent }) =>
+    new PsychologyAgentTool(agent, async (value) => {
       if (options.signal.aborted) throw new AppError(408, "生成已超时");
       if (finished) return { error: "最终回复已提交，不能继续咨询。" };
-      const parsed = consultationSchema.safeParse(value);
+      const parsed = psychologyConsultationSchema.safeParse(value);
       if (!parsed.success)
         return {
           error:
@@ -250,13 +263,34 @@ export function createPsychologyTeam(options: {
         };
       // Reserve before starting async work, including parallel calls in one reply.
       active++;
-      const result = Promise.resolve().then(() =>
-        execute(parsed.data.request, query),
-      );
+      const result = Promise.resolve()
+        .then(() => a2a.consult({
+          parentExecutionId: options.consultationExecutionId,
+          approach,
+          consultation: { ...parsed.data, knowledgeQuery: query },
+          signal: options.signal,
+        }))
+        .then((outcome) => {
+          if (outcome.status === "canceled") {
+            throw new AppError(408, "生成已超时");
+          }
+          if (outcome.status !== "completed") {
+            return {
+              error:
+                "这个专家未完成本轮方案，请直接给予支持性回应；不能声称该流派方案已完成。",
+            };
+          }
+          const plan = psychologyPlanSchema.parse(outcome.plan);
+          plans.set(approach, plan);
+          return plan;
+        })
+        .finally(() => {
+          active--;
+        });
       consultations.set(approach, result);
       return result;
-    });
-  });
+    }),
+  );
   return {
     tools,
     checkReply(reply: Greeting): string | undefined {

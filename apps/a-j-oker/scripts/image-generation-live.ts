@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import OSS from "ali-oss";
 import sharp from "sharp";
-import { CATALOG_ID, createRunReader } from "@cfp/base-chat-protocol";
+import { createRunReader } from "@cfp/base-chat-protocol";
+import { AJ_CATALOG_ID } from "@cfp/a-j-oker-contracts";
 import { historySchema, sessionSchema } from "@cfp/a-j-oker-contracts";
 import { seedSyntheticAge } from "./synthetic-age";
 
@@ -93,7 +94,7 @@ try {
   try {
     await run("ag-ui", { protocolVersion: "1.0", threadId: String(session.id), runId, tools: [], context: [],
       messages: [{ id: `user_${runId}`, role: "user", content: "请调用生图工具为我画一张真正的水彩插画：阳光下窗台上的一盆红番茄，没有人物，没有文字，方形画幅。不要用几何图形代替图片。配一句简短祝福。" }],
-      forwardedProps: { mode: "platform", mediaIds: [], a2uiClientCapabilities: { supportedCatalogIds: [CATALOG_ID] } } }, runId);
+      forwardedProps: { mode: "platform", mediaIds: [], a2uiClientCapabilities: { supportedCatalogIds: [AJ_CATALOG_ID] } } }, runId);
   } catch (error) {
     const history = historySchema.parse(await json(`sessions/${session.id}`));
     const pending = history.find((row) => row.imageGeneration?.canResume);

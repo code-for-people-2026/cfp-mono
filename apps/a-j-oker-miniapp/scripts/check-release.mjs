@@ -5,7 +5,10 @@ import path from "node:path";
 import process from "node:process";
 import console from "node:console";
 import { fileURLToPath, URL } from "node:url";
-import { createPageReader } from "./release-page-module.mjs";
+import {
+  collectCommonJsModules,
+  createPageReader,
+} from "./release-page-module.mjs";
 
 const base = process.argv[2];
 const app = fileURLToPath(new URL("..", import.meta.url));
@@ -30,7 +33,7 @@ const settingsPages = [
   ["pages/privacy/policies/index", "政策与协议", ["了解服务如何使用、保存和保护你的信息。"]],
   ["pages/privacy/document/index", "政策正文", ["未找到这份文件，请返回重新选择。"]],
 ];
-const readPage = createPageReader(bootstrap, read);
+const { readPage, readReachable } = createPageReader(bootstrap, read);
 for (const [route, title, markers] of settingsPages) {
   const page = await readPage(route, title);
   for (const marker of markers)
@@ -48,23 +51,18 @@ if (process.env.HELLO_EXPECTED_COMMIT) {
     "发布提交不匹配",
   );
 }
-const chat = await readPage("pages/chat/index", "聊天");
+const chatModules = await readReachable("pages/chat/index", "聊天");
+const chat = chatModules.map((module) => module.code);
 for (const marker of ["chat-composer", "input-toggle", "artifact-surface"]) {
-  assert.ok(chat.includes(marker), `测试版遗漏功能：${marker}`);
+  assert.ok(chat.some((code) => code.includes(marker)), `测试版遗漏功能：${marker}`);
 }
-const imports = [...chat.matchAll(/from"\.\/([^"\s]+\.js)"/g)].map(
-  (match) => match[1],
-);
-const dependencies = await Promise.all(
-  [...new Set(imports)].map((name) => read(`js/${name}`)),
-);
 assert.ok(
-  [chat, ...dependencies].some((code) => code.includes("/api/hello/ag-ui") ||
+  chat.some((code) => code.includes("/api/hello/ag-ui") ||
     (code.includes("/api/hello/") && /["']ag-ui["']/.test(code) && /["']image-resume["']/.test(code))),
   "缺少 AG-UI 请求",
 );
 assert.ok(
-  [chat, ...dependencies].some(
+  chat.some(
     (code) => code.includes("data-surface-id") && code.includes("a2ui-surface"),
   ),
   "H5 发布包缺少 CopilotKit A2UI 渲染器",
@@ -83,13 +81,17 @@ if (!base) {
       !nativeVendor.includes("a2ui-shimmer"),
     "小程序错误引入网页专用 A2UI 渲染器",
   );
-  const mini = await readFile(
-    path.join(app, "dist/weapp/pages/chat/index.js"),
-    "utf8",
+  const nativeRoot = path.join(app, "dist/weapp");
+  const miniModules = await collectCommonJsModules(
+    "pages/chat/index.js",
+    (file) => readFile(path.join(nativeRoot, file), "utf8"),
   );
+  const mini = miniModules.map((module) => module.code);
   for (const marker of ["chat-composer", "input-toggle", "artifact-surface"])
-    assert.ok(mini.includes(marker), `小程序遗漏功能：${marker}`);
-  const mascotPath = mini.match(/["'](\/assets\/aj-mascot[^"']*)["']/)?.[1];
+    assert.ok(mini.some((code) => code.includes(marker)), `小程序遗漏功能：${marker}`);
+  const mascotPath = mini
+    .flatMap((code) => [...code.matchAll(/["'](\/assets\/aj-mascot[^"']*)["']/g)])
+    .map((match) => match[1])[0];
   assert.ok(mascotPath, "小程序遗漏本地阿 J 形象图");
   // 微信 Image 的 WebP 开关只支持网络资源，包内形象图使用 PNG。
   // https://docs.taro.zone/docs/components/media/image#imageprops
@@ -131,7 +133,6 @@ if (!base) {
     "default",
     "微信设置页应使用原生返回导航",
   );
-  const nativeRoot = path.join(app, "dist/weapp");
   const files = await readdir(nativeRoot, { recursive: true });
   const sizes = await Promise.all(
     files.map(async (file) => {
