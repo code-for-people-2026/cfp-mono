@@ -81,6 +81,7 @@ const suggestions = [
 
 export default function Chat() {
   const [visible, setVisible] = useState(true);
+  const pageHidden = useRef(false);
   const [profile, setProfile] = useState<UserProfile>();
   const [avatarSource, setAvatarSource] = useState<string>();
   const [age, setAge] = useState<AgeStatus>();
@@ -524,9 +525,13 @@ export default function Chat() {
     const cleanupCopy = h5 ? installAiCopyLabels() : undefined;
     return () => { Taro.eventCenter.off(privacyChangedEvent, changed); cleanupCopy?.(); };
   }, []);
-  useDidHide(() => setVisible(false));
+  useDidHide(() => { pageHidden.current = true; setVisible(false); });
   useDidShow(() => {
     setVisible(true);
+    if (pageHidden.current && !privacyDirty.current && age?.loggedIn && !age.allowed) {
+      pageHidden.current = false;
+      void api.getAge().then((nextAge) => { setAge(nextAge); setAgeOpen(!nextAge.allowed || !consentCurrent(privacy)); }, problem);
+    } else pageHidden.current = false;
     if (privacyDirty.current) { privacyDirty.current = false; void boot(); }
     else if (age?.expiresAt && Date.parse(age.expiresAt) <= Date.now()) { setAge({ ...age, allowed: false, state: "expired" }); setAgeOpen(true); }
   });
@@ -1092,7 +1097,7 @@ export default function Chat() {
       {(ageOpen || !age?.loggedIn) && !identityExpired && <AgeGate profile={profile} avatarSource={avatarSource} status={age} loadingError={error} privacyReady={consentCurrent(privacy)} onChange={setAge}
         onRefresh={boot} onLogin={async () => { clearIdentityView(); await boot(); }}
         onPrivacy={() => void openPrivacy(age?.allowed && !consentCurrent(privacy) ? "authorization" : undefined)}
-        onHelp={() => void openHelp()} onClose={() => setAgeOpen(false)} />}
+        onHelp={() => void openHelp(undefined, "age_verification")} onClose={() => setAgeOpen(false)} />}
     </View>
   );
 }

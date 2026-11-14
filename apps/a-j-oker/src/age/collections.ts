@@ -1,5 +1,5 @@
 import { AppError } from "../domain/contracts";
-import { ageNotice } from "./policy";
+import { ageAssuranceAccepted, ageNotice } from "./policy";
 import type { CollectionBeforeChangeHook, CollectionConfig } from "payload";
 const access = { read: () => false, create: () => false, update: () => false, delete: () => false };
 export const ageCollections: CollectionConfig[] = [
@@ -43,6 +43,6 @@ export const ageCollections: CollectionConfig[] = [
 export const guardAgeWrite: CollectionBeforeChangeHook = async ({ req, data }) => {
   if (typeof data.owner !== "string") return data;
   const profile = (await req.payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: data.owner } } })).docs[0];
-  if (profile && (profile.state !== "adult" || profile.assurance !== "identity_details_match" || profile.additionalVerification === "required" || profile.noticeVersion !== ageNotice().version || !profile.expiresAt || Date.parse(String(profile.expiresAt)) <= Date.now())) throw new AppError(403, "年龄核验已失效或需复核，本次内容不再保存");
+  if (profile && (profile.state !== "adult" || !ageAssuranceAccepted(profile) || profile.additionalVerification === "required" || profile.noticeVersion !== ageNotice().version || !profile.expiresAt || Date.parse(String(profile.expiresAt)) <= Date.now())) throw new AppError(403, "年龄核验已失效或需复核，本次内容不再保存");
   return data;
 };

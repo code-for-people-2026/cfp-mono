@@ -163,6 +163,8 @@ export async function getAge() {
   }
 }
 export const beginAge = (body: { declaration: AgeDeclaration; noticeVersion: string; consent: true; correction?: boolean }) => request("age/challenge", ageChallengeResultSchema, "POST", body);
+export const requestAgeReview = () => request("age/request-review", ageStatusSchema, "POST", {});
+export const beginAgeReview = (body: { noticeVersion: string; consent: true }) => request("age/review-challenge", ageChallengeResultSchema, "POST", body);
 export const submitAge = (body: { challenge: string; name: string; idCard: string }) => request("age/submit", ageStatusSchema, "POST", body);
 export const cancelAge = () => request("age/cancel", ageStatusSchema, "POST", {});
 export const getProfile = () => request("profile", userProfileSchema);
