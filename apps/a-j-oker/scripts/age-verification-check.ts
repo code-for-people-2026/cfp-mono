@@ -614,6 +614,32 @@ try {
   await assertProvenance(under14MinorResult.review!.receipt!, { source: "moderation", actor: "system:age-verification", reason: "本人核验的未成年结果", evidence: "本人核验返回新的未成年结果。" });
   await assert.rejects(() => under14MinorService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
 
+  let reapprovalCalls = 0;
+  const reapprovalCycle = await manualRestriction(async () => {
+    reapprovalCalls++; return { state: "adult" as const, reference: `synthetic-reapproval-adult-${reapprovalCalls}` };
+  });
+  await ops.action(administrator, Number(reapprovalCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取首次重新核验批准回归案件" });
+  await ops.action(administrator, Number(reapprovalCycle.row.id), { revision: 1, action: "permit_age_reverification", reason: "首次允许本人重新核验", reply: "可以重新发起本人年龄核验。" });
+  const firstReapprovalChallenge = await reapprovalCycle.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  await reapprovalCycle.instance.cancel();
+  await ops.action(administrator, Number(reapprovalCycle.row.id), { revision: 2, action: "review", reason: "用户取消后管理员重新打开同一限制周期" });
+  await ops.action(secondAdministrator, Number(reapprovalCycle.row.id), { revision: 3, action: "claim", reason: "独立管理员重新领取同一限制周期" });
+  await ops.action(secondAdministrator, Number(reapprovalCycle.row.id), { revision: 4, action: "permit_age_reverification", reason: "独立管理员重新允许本人核验", reply: "可以重新发起本人年龄核验。" });
+  const beforeReapprovalRetry = reapprovalCalls;
+  const oldReferenceProfile = await ageProfile(payload, reapprovalCycle.subject.owner.id);
+  assert.equal(oldReferenceProfile?.reference, `age-review:${reapprovalCycle.row.id}:2`);
+  await assert.rejects(() => reapprovalCycle.instance.submit({ ...identity, challenge: firstReapprovalChallenge.challenge }), /无效|过期/);
+  assert.equal(reapprovalCalls, beforeReapprovalRetry);
+  const freshReapprovalChallenge = await reapprovalCycle.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  assert.notEqual(freshReapprovalChallenge.challenge, firstReapprovalChallenge.challenge);
+  const freshReferenceProfile = await ageProfile(payload, reapprovalCycle.subject.owner.id);
+  assert.equal(freshReferenceProfile?.reference, `age-review:${reapprovalCycle.row.id}:5`);
+  const freshReapprovalResult = await reapprovalCycle.instance.submit({ ...identity, challenge: freshReapprovalChallenge.challenge });
+  assert.equal(freshReapprovalResult.allowed, true);
+  assert.equal(freshReapprovalResult.review?.state, "completed");
+  assert.equal(reapprovalCalls, beforeReapprovalRetry + 1);
+  console.log("✓ 同一限制周期重新批准后可再次签发；旧挑战仍无效且仅新挑战调用供应商");
+
   const lateRisk = await fresh(); let releaseLateRisk!: (value: { state: "adult"; reference: string }) => void; let enteredLateRisk!: () => void;
   const lateRiskStarted = new Promise<void>((resolve) => { enteredLateRisk = resolve; });
   const lateRiskEvidence = new Promise<{ state: "adult"; reference: string }>((resolve) => { releaseLateRisk = resolve; });
@@ -657,6 +683,95 @@ try {
   await assert.rejects(() => atomicRiskService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /正在处理|database is locked/);
   releaseRiskCreate(); await registerRisk; payload.create = originalCreate;
   assert.equal((await atomicRiskService.status()).review?.state, "pending");
+
+  const staleIssuanceCycle = await manualRestriction();
+  await ops.action(administrator, Number(staleIssuanceCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取陈旧授权签发案件" });
+  await ops.action(administrator, Number(staleIssuanceCycle.row.id), { revision: 1, action: "permit_age_reverification", reason: "先批准用于陈旧授权签发回归", reply: "可以重新发起本人年龄核验。" });
+  let reviewReadEntered!: () => void; let releaseReviewRead!: () => void; let reviewReadReleased = false;
+  const reviewReadStarted = new Promise<void>((resolve) => { reviewReadEntered = resolve; });
+  const reviewReadBarrier = new Promise<void>((resolve) => { releaseReviewRead = resolve; });
+  const originalReviewFind = payload.find.bind(payload);
+  let pauseReviewRead = true;
+  const findWithReviewReadPause: typeof payload.find = async (args) => {
+    const found = await originalReviewFind(args as never);
+    const target = args as { collection?: string; where?: { and?: Array<{ owner?: { equals?: string } }> } };
+    const ownerClause = target.where?.and?.find((clause) => clause.owner?.equals === staleIssuanceCycle.subject.owner.id);
+    if (pauseReviewRead && target.collection === "safety-cases" && ownerClause) {
+      pauseReviewRead = false; reviewReadEntered(); await reviewReadBarrier;
+    }
+    return found as never;
+  };
+  payload.find = findWithReviewReadPause;
+  let issuanceOutcome!: Promise<{ result?: Awaited<ReturnType<InstanceType<typeof AgeService>["reviewChallenge"]>>; error?: unknown }>;
+  try {
+    issuanceOutcome = staleIssuanceCycle.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version })
+      .then((result) => ({ result }), (error: unknown) => ({ error }));
+    await Promise.race([reviewReadStarted, issuanceOutcome]);
+    await ops.action(administrator, Number(staleIssuanceCycle.row.id), { revision: 2, action: "review", reason: "陈旧授权签发期间重新打开年龄案件" });
+    await ops.action(secondAdministrator, Number(staleIssuanceCycle.row.id), { revision: 3, action: "claim", reason: "另一管理员领取陈旧授权签发案件" });
+    await ops.action(secondAdministrator, Number(staleIssuanceCycle.row.id), { revision: 4, action: "restore_age_access", reason: "陈旧授权签发前由管理员直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" });
+  } finally {
+    if (!reviewReadReleased) { reviewReadReleased = true; releaseReviewRead(); }
+    payload.find = originalReviewFind;
+    await issuanceOutcome;
+  }
+  const staleIssuanceSettled = await issuanceOutcome;
+  assert.ok(staleIssuanceSettled.error instanceof Error);
+  assert.match(staleIssuanceSettled.error.message, /已变更|重新.*复核/);
+  const staleIssuanceProfile = await ageProfile(payload, staleIssuanceCycle.subject.owner.id);
+  const staleIssuanceStatus = await staleIssuanceCycle.instance.status();
+  assert.equal(staleIssuanceProfile?.state, "adult");
+  assert.equal(staleIssuanceProfile?.additionalVerification, "not_requested");
+  assert.equal(staleIssuanceProfile?.reference, `age-review:${staleIssuanceCycle.row.id}:4`);
+  assert.equal(staleIssuanceProfile?.challengePurpose, null);
+  assert.equal(staleIssuanceStatus.state, "adult");
+  assert.equal(staleIssuanceStatus.allowed, true);
+  assert.equal(staleIssuanceStatus.review?.state, "completed");
+  assert.equal(staleIssuanceCycle.providerCalls(), 0);
+
+  const staleCancelCycle = await manualRestriction();
+  await ops.action(administrator, Number(staleCancelCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取陈旧取消回归案件" });
+  await ops.action(administrator, Number(staleCancelCycle.row.id), { revision: 1, action: "permit_age_reverification", reason: "先批准用于陈旧取消回归", reply: "可以重新发起本人年龄核验。" });
+  const staleCancelSnapshot = await ageProfile(payload, staleCancelCycle.subject.owner.id);
+  await payload.update({ collection: "age-profiles", id: staleCancelSnapshot!.id, overrideAccess: true, data: { state: "pending", challenge: null, challengePurpose: null, challengeExpiresAt: null } });
+  let cancelReadEntered!: () => void; let releaseCancelRead!: () => void; let cancelReadReleased = false;
+  const cancelReadStarted = new Promise<void>((resolve) => { cancelReadEntered = resolve; });
+  const cancelReadBarrier = new Promise<void>((resolve) => { releaseCancelRead = resolve; });
+  const originalCancelFind = payload.find.bind(payload);
+  let pauseCancelRead = true;
+  const findWithCancelReadPause: typeof payload.find = async (args) => {
+    const found = await originalCancelFind(args as never);
+    const target = args as { collection?: string; where?: { owner?: { equals?: string } } };
+    if (pauseCancelRead && target.collection === "age-profiles" && target.where?.owner?.equals === staleCancelCycle.subject.owner.id) {
+      pauseCancelRead = false; cancelReadEntered(); await cancelReadBarrier;
+    }
+    return found as never;
+  };
+  payload.find = findWithCancelReadPause;
+  let cancelOutcome!: Promise<{ result?: Awaited<ReturnType<InstanceType<typeof AgeService>["cancel"]>>; error?: unknown }>;
+  try {
+    cancelOutcome = staleCancelCycle.instance.cancel().then((result) => ({ result }), (error: unknown) => ({ error }));
+    await Promise.race([cancelReadStarted, cancelOutcome]);
+    await ops.action(administrator, Number(staleCancelCycle.row.id), { revision: 2, action: "review", reason: "陈旧取消期间重新打开年龄案件" });
+    await ops.action(secondAdministrator, Number(staleCancelCycle.row.id), { revision: 3, action: "claim", reason: "另一管理员领取陈旧取消回归案件" });
+    await ops.action(secondAdministrator, Number(staleCancelCycle.row.id), { revision: 4, action: "restore_age_access", reason: "陈旧取消提交前由管理员直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" });
+  } finally {
+    if (!cancelReadReleased) { cancelReadReleased = true; releaseCancelRead(); }
+    payload.find = originalCancelFind;
+    await cancelOutcome;
+  }
+  const staleCancelSettled = await cancelOutcome;
+  assert.ok(staleCancelSettled.error instanceof Error);
+  assert.match(staleCancelSettled.error.message, /已变更/);
+  const staleCancelProfile = await ageProfile(payload, staleCancelCycle.subject.owner.id);
+  const staleCancelStatus = await staleCancelCycle.instance.status();
+  assert.equal(staleCancelProfile?.state, "adult");
+  assert.equal(staleCancelProfile?.additionalVerification, "not_requested");
+  assert.equal(staleCancelProfile?.reference, `age-review:${staleCancelCycle.row.id}:4`);
+  assert.equal(staleCancelStatus.state, "adult");
+  assert.equal(staleCancelStatus.allowed, true);
+  assert.equal(staleCancelStatus.review?.state, "completed");
+  console.log("✓ 陈旧复核签发和取消请求不会覆盖管理员直接恢复结果");
   console.log("✓ 年龄冲突→申请→管理员决定→全新成年证据解锁；拒绝、重复、越权和陈旧批准重放均保持限制");
   const cancelled = await fresh(); const cancelService = new AgeService(payload, cancelled.owner);
   await cancelService.cancel(); assert.equal((await cancelService.status()).state, "cancelled");

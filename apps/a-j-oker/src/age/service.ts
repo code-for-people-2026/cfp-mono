@@ -111,14 +111,34 @@ export class AgeService {
     const input = ageReviewChallengeSchema.parse(value);
     if (input.noticeVersion !== ageNotice().version) throw new AppError(409, "年龄核验说明已更新，请重新阅读并确认");
     if (!providerConfigured()) throw new AppError(503, "身份核验服务暂不可用，请稍后重试");
-    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+    return withAgeLock(this.payload, `owner:${this.owner.id}`, async (assertLease) => {
       const profile = await ageProfile(this.payload, this.owner.id);
       if (!profile || profile.additionalVerification !== "required") throw new AppError(409, "当前账户不需要年龄复核");
       const approved = await requireApprovedReview(this.payload, this.owner.id);
       const challenge = randomUUID();
-      await this.save({ state: "needs_review", noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(),
-        challenge, challengePurpose: "age_review", challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
-        reference: `age-review:${approved.id}:${approved.revision}` });
+      await transaction(this.payload, async (req) => {
+        await assertLease(req);
+        if (!await this.bound(req)) throw new AppError(409, "登录绑定已变更，请重新登录并发起核验");
+        await this.mayProcess(req);
+        const current = await ageProfile(this.payload, this.owner.id, req);
+        if (!current || current.id !== profile.id || current.updatedAt !== profile.updatedAt
+          || current.additionalVerification !== "required")
+          throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+        const currentApproved = await requireApprovedReview(this.payload, this.owner.id, req);
+        const reference = `age-review:${currentApproved.id}:${currentApproved.revision}`;
+        const cycleReference = `age-review:${currentApproved.id}`;
+        const referencesCurrentApproval = current.reference === cycleReference
+          || String(current.reference || "").startsWith(`${cycleReference}:`);
+        if (currentApproved.id !== approved.id || currentApproved.revision !== approved.revision
+          || !referencesCurrentApproval)
+          throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+        const changed = await this.payload.update({ collection: "age-profiles", overrideAccess: true, req,
+          where: { and: [{ id: { equals: current.id } }, { updatedAt: { equals: current.updatedAt } }] },
+          data: { state: "needs_review", noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(),
+            challenge, challengePurpose: "age_review", challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+            reference } });
+        if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+      });
       return { status: await this.status(), challenge };
     });
   }
@@ -188,10 +208,33 @@ export class AgeService {
   }
   async cancel() {
     if (this.owner.auth === "bearer") throw new AppError(403, "请本人管理年龄核验");
-    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+    return withAgeLock(this.payload, `owner:${this.owner.id}`, async (assertLease) => {
       const profile = await ageProfile(this.payload, this.owner.id);
-      if (profile?.challengePurpose === "correction" || profile?.challengePurpose === "age_review") await this.save({ challenge: null, challengePurpose: null, challengeExpiresAt: null });
-      else if (!profile || !["adult", "minor", "needs_review"].includes(String(profile.state))) await this.save({ state: "cancelled", challenge: null, challengePurpose: null, challengeExpiresAt: null });
+      const clearingChallenge = profile?.challengePurpose === "correction" || profile?.challengePurpose === "age_review";
+      const cancelling = !clearingChallenge && (!profile || !["adult", "minor", "needs_review"].includes(String(profile.state)));
+      if (clearingChallenge || cancelling) await transaction(this.payload, async (req) => {
+        await assertLease(req);
+        const current = await ageProfile(this.payload, this.owner.id, req);
+        if (clearingChallenge) {
+          if (!profile || !current || current.id !== profile.id || current.updatedAt !== profile.updatedAt
+            || current.challengePurpose !== profile.challengePurpose)
+            throw new AppError(409, "年龄核验状态已变更，请按当前状态重新操作");
+          const changed = await this.payload.update({ collection: "age-profiles", overrideAccess: true, req,
+            where: { and: [{ id: { equals: current.id } }, { updatedAt: { equals: current.updatedAt } }] },
+            data: { challenge: null, challengePurpose: null, challengeExpiresAt: null } });
+          if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "年龄核验状态已变更，请按当前状态重新操作");
+        } else if (profile) {
+          if (!current || current.id !== profile.id || current.updatedAt !== profile.updatedAt || current.state !== profile.state
+            || current.challengePurpose !== profile.challengePurpose)
+            throw new AppError(409, "年龄核验状态已变更，请按当前状态重新操作");
+          const changed = await this.payload.update({ collection: "age-profiles", overrideAccess: true, req,
+            where: { and: [{ id: { equals: current.id } }, { updatedAt: { equals: current.updatedAt } }] },
+            data: { state: "cancelled", challenge: null, challengePurpose: null, challengeExpiresAt: null } });
+          if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "年龄核验状态已变更，请按当前状态重新操作");
+        } else {
+          await this.payload.create({ collection: "age-profiles", overrideAccess: true, req, data: { owner: this.owner.id, state: "cancelled" } });
+        }
+      });
       return this.status();
     });
   }
