@@ -23,7 +23,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GET, POST } = await import("../src/app/api/hello/[...path]/route");
 const { POST: mcpPost } = await import("../src/app/api/mcp/route");
 const { OperationsService } = await import("../src/operations/service");
-const { caseOperationLabel } = await import("../src/operations/admin-presentation");
+const { caseOperationLabel, operationLabels } = await import("../src/operations/admin-presentation");
 const payload = await cms();
 const nativeReq = (token?: string) => new Request("http://127.0.0.1:3310/api/hello/wechat-login", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 const creds = { get noticeVersion() { return ageNotice().version; }, code: "synthetic-code", consent: true, migrateCurrent: true };
@@ -172,6 +172,291 @@ try {
   const ops = new OperationsService(payload);
   const administrator = { ...await payload.create({ collection: "admins", overrideAccess: true, context: { helloAdminBootstrap: true }, data: { role: "reviewer", email: "age-admin@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
   const reviewer = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { role: "reviewer", email: "age-reviewer@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
+  const secondAdministrator = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { role: "administrator", email: "age-second-admin@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
+  assert.equal(operationLabels.restore_age_access, "直接解除年龄限制");
+  async function manualRestriction(verifier?: () => Promise<{ state: "adult"; reference: string }>) {
+    const subject = await fresh();
+    let providerCalls = 0;
+    const instance = new AgeService(payload, subject.owner, verifier ?? (() => { providerCalls++; throw new Error("direct restore must not invoke a provider"); }));
+    await instance.requireAdditionalVerification();
+    const pending = await instance.requestReview();
+    const row = (await ops.queue(administrator, {})).find((item) => item.receipt === pending.review?.receipt)!;
+    return { subject, instance, row, providerCalls: () => providerCalls };
+  }
+  const unclaimed = await manualRestriction();
+  await assert.rejects(() => ops.action(administrator, Number(unclaimed.row.id), { revision: 0, action: "restore_age_access", reason: "未领取不能直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" }), /领取|负责人|受理/);
+  const nonAdministrator = await manualRestriction();
+  await ops.action(reviewer, Number(nonAdministrator.row.id), { revision: 0, action: "claim", reason: "普通审核员领取以验证直接恢复权限" });
+  await assert.rejects(() => ops.action(reviewer, Number(nonAdministrator.row.id), { revision: 1, action: "restore_age_access", reason: "普通审核员不能直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" }), /系统管理员/);
+  const missingReason = await manualRestriction();
+  await ops.action(administrator, Number(missingReason.row.id), { revision: 0, action: "claim", reason: "管理员领取缺失理由回归案件" });
+  await assert.rejects(() => ops.action(administrator, Number(missingReason.row.id), { revision: 1, action: "restore_age_access", reply: "缺少人工核实理由。" }));
+  const missingReply = await manualRestriction();
+  await ops.action(administrator, Number(missingReply.row.id), { revision: 0, action: "claim", reason: "管理员领取缺失回复回归案件" });
+  await assert.rejects(() => ops.action(administrator, Number(missingReply.row.id), { revision: 1, action: "restore_age_access", reason: "合成人工材料足以直接恢复年龄能力" }), /说明/);
+  const stale = await manualRestriction();
+  await ops.action(administrator, Number(stale.row.id), { revision: 0, action: "claim", reason: "管理员领取旧修订号回归案件" });
+  await ops.action(administrator, Number(stale.row.id), { revision: 1, action: "review", reason: "制造修订号变化后验证直接恢复" });
+  await assert.rejects(() => ops.action(administrator, Number(stale.row.id), { revision: 1, action: "restore_age_access", reason: "旧修订号不能直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" }), /刷新/);
+  const wrongCycle = await manualRestriction();
+  await ops.action(administrator, Number(wrongCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取周期绑定回归案件" });
+  const wrongCycleProfile = await ageProfile(payload, wrongCycle.subject.owner.id);
+  await payload.update({ collection: "age-profiles", id: wrongCycleProfile!.id, overrideAccess: true, data: { reference: `age-review:${Number(wrongCycle.row.id) + 100}` } });
+  await assert.rejects(() => ops.action(administrator, Number(wrongCycle.row.id), { revision: 1, action: "restore_age_access", reason: "旧周期不能直接恢复当前年龄能力", reply: "管理员已直接恢复年龄权限。" }), /当前限制周期/);
+
+  const directlyRestored = await manualRestriction();
+  const beforeRestore = await ageProfile(payload, directlyRestored.subject.owner.id);
+  await ops.action(administrator, Number(directlyRestored.row.id), { revision: 0, action: "claim", reason: "管理员领取直接恢复合成年龄案件" });
+  await ops.action(administrator, Number(directlyRestored.row.id), { revision: 1, action: "restore_age_access", reason: "合成线下材料已由管理员人工核实为成年", reply: "管理员已直接恢复年龄权限，不需要再次提交身份核验表单。" });
+  const restoredStatus = await directlyRestored.instance.status();
+  assert.equal(restoredStatus.state, "adult"); assert.equal(restoredStatus.allowed, true);
+  assert.equal(restoredStatus.assurance, null);
+  assert.equal(restoredStatus.source, "administrator_age_review_manual_assurance");
+  assert.equal(restoredStatus.review?.state, "completed"); assert.equal(restoredStatus.review?.result, null);
+  assert.equal(restoredStatus.review?.manualDecision, true);
+  assert.equal(restoredStatus.actions?.startReverification, false); assert.equal(directlyRestored.providerCalls(), 0);
+  const restoredProfile = await ageProfile(payload, directlyRestored.subject.owner.id);
+  assert.equal(restoredProfile?.challenge, null); assert.equal(restoredProfile?.challengePurpose, null);
+  assert.equal(restoredProfile?.assurance, "manual_administrator_assurance");
+  assert.equal(restoredProfile?.source, "administrator_age_review_manual_assurance");
+  assert.equal(restoredProfile?.reference, `age-review:${directlyRestored.row.id}:1`);
+  assert.equal(restoredProfile?.consentedAt, beforeRestore?.consentedAt);
+  assert.ok(restoredProfile?.expiresAt);
+  const expectedExpiry = Date.parse(restoredProfile.verifiedAt || new Date().toISOString()) + 30 * 86400_000;
+  assert.ok(Math.abs(Date.parse(restoredProfile.expiresAt) - expectedExpiry) < 5_000);
+  await directlyRestored.instance.requireCapability();
+  const capabilitySession = await payload.create({ collection: "sessions", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, title: "合成直接恢复会话" } });
+  await payload.create({ collection: "greetings", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-write", mode: "platform", status: "completed", input: { text: "合成直接恢复后的实际写入", mediaIds: [] }, greeting: "合成回复", artifacts: [] } });
+  await payload.create({ collection: "media", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, mimeType: "image/png", base64: "c3ludGhldGlj" } });
+  const manualAudit = (await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [{ event: { equals: "case.restore_age_access" } }, { target: { equals: `case:${directlyRestored.row.id}` } }] } })).docs[0];
+  const manualAuditMetadata = manualAudit?.metadata as Record<string, unknown> | undefined;
+  assert.equal(manualAuditMetadata?.assurance, "manual_administrator_assurance");
+  assert.equal(manualAuditMetadata?.source, "administrator_age_review_manual_assurance");
+  assert.equal(manualAuditMetadata?.providerInvoked, false);
+  const { assertGenerationAllowed } = await import("../src/operations/enforcement");
+  const restrictionCase = await payload.create({ collection: "safety-cases", overrideAccess: true, context: { safetyInternal: true }, data: { owner: directlyRestored.subject.owner.id, receipt: randomUUID(), source: "moderation", status: "resolved", severity: "normal", category: "other", stage: "synthetic_content_restriction", revision: 0, action: "restrict", reason: "合成验证内容限制与年龄限制互相独立" } });
+  await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: { key: `owner:${directlyRestored.subject.owner.id}:${restrictionCase.id}`, owner: directlyRestored.subject.owner.id, targetType: "owner", caseId: restrictionCase.id, active: true, reason: "合成内容限制" } });
+  await assert.rejects(() => assertGenerationAllowed(payload, directlyRestored.subject.owner.id), /生成权限/);
+  await assert.rejects(() => payload.create({ collection: "greetings", overrideAccess: true, data: { owner: directlyRestored.subject.owner.id, sessionId: capabilitySession.id, requestKey: randomUUID(), fingerprint: "synthetic-manual-age-content-block", mode: "platform", status: "completed", input: { text: "内容限制仍应独立生效", mediaIds: [] }, greeting: "不应发布", artifacts: [] } }), /内容或身份已受限/);
+  console.log("✓ 管理员直接恢复使用人工来源、30天有效期、真实写入门禁，且不解除内容限制");
+
+  const lifecycleSubject = await fresh(); let lifecycleProviderCalls = 0;
+  const lifecycleService = new AgeService(payload, lifecycleSubject.owner, () => { lifecycleProviderCalls++; throw new Error("manual lifecycle renewal must not invoke provider"); });
+  await challenge(lifecycleService, "under14");
+  await lifecycleService.requireAdditionalVerification();
+  const lifecyclePending = await lifecycleService.requestReview();
+  const lifecycleRow = (await ops.queue(administrator, {})).find((row) => row.receipt === lifecyclePending.review?.receipt)!;
+  await ops.action(administrator, Number(lifecycleRow.id), { revision: 0, action: "claim", reason: "管理员领取人工生命周期回归案件" });
+  await ops.action(administrator, Number(lifecycleRow.id), { revision: 1, action: "restore_age_access", reason: "合成线下材料确认成年但保留原未成年申报", reply: "管理员已直接恢复年龄权限。" });
+  const lifecycleRestored = await lifecycleService.status();
+  assert.equal(lifecycleRestored.allowed, true); assert.equal(lifecycleRestored.declaration, "under14");
+  assert.equal(lifecycleRestored.assurance, null); assert.equal(lifecycleRestored.review?.manualDecision, true);
+  const lifecycleProfile = await ageProfile(payload, lifecycleSubject.owner.id);
+  await payload.update({ collection: "age-profiles", id: lifecycleProfile!.id, overrideAccess: true, data: { expiresAt: new Date(Date.now() - 1_000).toISOString() } });
+  const lifecycleExpired = await lifecycleService.status();
+  assert.equal(lifecycleExpired.state, "expired"); assert.equal(lifecycleExpired.allowed, false);
+  assert.equal(lifecycleExpired.declaration, "under14"); assert.equal(lifecycleExpired.assurance, null);
+  assert.equal(lifecycleExpired.review?.state, "request_required"); assert.equal(lifecycleExpired.review?.result, null);
+  assert.equal(lifecycleExpired.review?.manualDecision, true); assert.equal(lifecycleExpired.actions?.requestReview, true);
+  assert.equal(lifecycleExpired.actions?.startReverification, false);
+  const lifecycleRenewal = await lifecycleService.requestReview();
+  assert.equal(lifecycleRenewal.allowed, false); assert.equal(lifecycleRenewal.state, "needs_review");
+  assert.equal(lifecycleRenewal.declaration, "under14"); assert.notEqual(lifecycleRenewal.review?.receipt, lifecycleRow.receipt);
+  const lifecycleRenewalProfile = await ageProfile(payload, lifecycleSubject.owner.id);
+  assert.equal(lifecycleRenewalProfile?.assurance, null); assert.ok(!lifecycleRenewalProfile?.expiresAt);
+  const lifecycleRenewalRow = (await ops.queue(administrator, {})).find((row) => row.receipt === lifecycleRenewal.review?.receipt)!;
+  assert.equal(lifecycleRenewalRow.parentId, null);
+  await assertProvenance(lifecycleRenewal.review!.receipt!, { source: "complaint", actor: `owner:${lifecycleSubject.owner.id}`, reason: "本人申请年龄复核", evidence: "本人申请年龄限制复核。" });
+  await ops.action(administrator, Number(lifecycleRenewalRow.id), { revision: 0, action: "claim", reason: "原管理员领取日期到期人工续期复核案件" });
+  await ops.action(administrator, Number(lifecycleRenewalRow.id), { revision: 1, action: "restore_age_access", reason: "合成日期到期续期材料仍确认成年且需重新审核", reply: "人工续期复核已重新通过。" });
+  const lifecycleRenewed = await lifecycleService.status();
+  assert.equal(lifecycleRenewed.allowed, true); assert.equal(lifecycleRenewed.declaration, "under14");
+  assert.equal(lifecycleRenewed.review?.state, "completed"); assert.notEqual(lifecycleRenewed.review?.receipt, lifecycleRow.receipt);
+  const lifecycleRenewedCase = await payload.findByID({ collection: "safety-cases", id: Number(lifecycleRenewalRow.id), overrideAccess: true });
+  assert.equal(lifecycleRenewedCase.assignedTo, administrator.id); assert.equal(lifecycleRenewedCase.revision, 2);
+  assert.equal(lifecycleRenewedCase.reason, "合成日期到期续期材料仍确认成年且需重新审核");
+  assert.equal(lifecycleRenewedCase.reply, "人工续期复核已重新通过。");
+  assert.ok((await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [
+    { event: { equals: "case.restore_age_access" } }, { target: { equals: `case:${lifecycleRenewalRow.id}` } },
+  ] } })).docs[0]);
+  await payload.update({ collection: "age-profiles", id: lifecycleRenewalProfile!.id, overrideAccess: true, data: { noticeVersion: "age-v1.outdated-notice" } });
+  const lifecycleNoticeExpired = await lifecycleService.status();
+  assert.equal(lifecycleNoticeExpired.state, "expired"); assert.equal(lifecycleNoticeExpired.allowed, false);
+  assert.equal(lifecycleNoticeExpired.review?.state, "request_required"); assert.equal(lifecycleNoticeExpired.actions?.requestReview, true);
+  const lifecycleNoticeRenewal = await lifecycleService.requestReview();
+  assert.equal(lifecycleNoticeRenewal.allowed, false); assert.equal(lifecycleNoticeRenewal.state, "needs_review");
+  assert.notEqual(lifecycleNoticeRenewal.review?.receipt, lifecycleRenewal.review?.receipt);
+  const lifecycleNoticeRenewalRow = (await ops.queue(administrator, {})).find((row) => row.receipt === lifecycleNoticeRenewal.review?.receipt)!;
+  assert.equal(lifecycleNoticeRenewalRow.parentId, null);
+  await assertProvenance(lifecycleNoticeRenewal.review!.receipt!, { source: "complaint", actor: `owner:${lifecycleSubject.owner.id}`, reason: "本人申请年龄复核", evidence: "本人申请年龄限制复核。" });
+  await ops.action(administrator, Number(lifecycleNoticeRenewalRow.id), { revision: 0, action: "claim", reason: "原管理员领取说明版本到期人工续期复核案件" });
+  await ops.action(administrator, Number(lifecycleNoticeRenewalRow.id), { revision: 1, action: "restore_age_access", reason: "合成说明版本到期续期材料仍确认成年且需重新审核", reply: "说明版本更新后的人工续期复核已重新通过。" });
+  const lifecycleNoticeRenewed = await lifecycleService.status();
+  assert.equal(lifecycleNoticeRenewed.allowed, true); assert.equal(lifecycleNoticeRenewed.state, "adult");
+  assert.equal(lifecycleNoticeRenewed.declaration, "under14");
+  assert.equal(lifecycleNoticeRenewed.review?.receipt, lifecycleNoticeRenewal.review?.receipt);
+  const lifecycleNoticeRenewedCase = await payload.findByID({ collection: "safety-cases", id: Number(lifecycleNoticeRenewalRow.id), overrideAccess: true });
+  assert.equal(lifecycleNoticeRenewedCase.assignedTo, administrator.id); assert.equal(lifecycleNoticeRenewedCase.revision, 2);
+  assert.equal(lifecycleNoticeRenewedCase.reason, "合成说明版本到期续期材料仍确认成年且需重新审核");
+  assert.equal(lifecycleNoticeRenewedCase.reply, "说明版本更新后的人工续期复核已重新通过。");
+  assert.ok((await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [
+    { event: { equals: "case.restore_age_access" } }, { target: { equals: `case:${lifecycleNoticeRenewalRow.id}` } },
+  ] } })).docs[0]);
+  assert.equal(lifecycleProviderCalls, 0);
+  console.log("✓ 人工直接恢复日期或说明到期后创建普通续期案件，同一管理员可重新领取、审批并审计");
+
+  const staleFormRace = await manualRestriction();
+  await ops.action(administrator, Number(staleFormRace.row.id), { revision: 0, action: "claim", reason: "管理员领取待处理表单竞争案件" });
+  const newRisk = await staleFormRace.instance.requireAdditionalVerification();
+  const currentRiskReceipt = newRisk.review?.receipt;
+  assert.ok(currentRiskReceipt);
+  assert.notEqual(currentRiskReceipt, staleFormRace.row.receipt);
+  await assert.rejects(() => ops.action(administrator, Number(staleFormRace.row.id), { revision: 1, action: "restore_age_access", reason: "旧修订号不能覆盖新登记的年龄风险", reply: "管理员不能使用旧表单恢复权限。" }), /更新周期|刷新/);
+  const restrictedAfterNewRisk = await staleFormRace.instance.status();
+  assert.equal(restrictedAfterNewRisk.allowed, false); assert.equal(restrictedAfterNewRisk.review?.state, "pending");
+  const deduplicatedRisk = await staleFormRace.instance.requestReview();
+  assert.equal(deduplicatedRisk.review?.receipt, currentRiskReceipt);
+  const currentRiskRow = (await ops.queue(administrator, {})).find((row) => row.receipt === currentRiskReceipt)!;
+  await ops.action(secondAdministrator, Number(currentRiskRow.id), { revision: 0, action: "claim", reason: "另一管理员领取新风险当前案件" });
+  await ops.action(secondAdministrator, Number(currentRiskRow.id), { revision: 1, action: "restore_age_access", reason: "新风险当前案件可由管理员人工核实后恢复", reply: "当前案件的人工核实结果已生效。" });
+  assert.equal((await staleFormRace.instance.status()).allowed, true);
+  console.log("✓ 新风险使旧表单修订失效；安全去重复用当前案件，当前案件仍可人工决定");
+
+  const permitCycle = await manualRestriction();
+  await ops.action(administrator, Number(permitCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取旧未结案件以验证最新周期" });
+  const permitCycleRisk = await permitCycle.instance.requireAdditionalVerification();
+  assert.ok(permitCycleRisk.review?.receipt);
+  const permitCycleRiskReceipt = permitCycleRisk.review.receipt;
+  assert.notEqual(permitCycleRiskReceipt, permitCycle.row.receipt);
+  const permitCycleRiskRow = (await ops.queue(administrator, {})).find((row) => row.receipt === permitCycleRiskReceipt)!;
+  await ops.action(administrator, Number(permitCycleRiskRow.id), { revision: 0, action: "claim", reason: "管理员领取最新准许核验周期" });
+  await ops.action(administrator, Number(permitCycleRiskRow.id), { revision: 1, action: "permit_age_reverification", reason: "最新周期允许重新本人核验", reply: "可以重新发起本人年龄核验。" });
+  const permitCycleStatus = await permitCycle.instance.status();
+  assert.equal(permitCycleStatus.review?.state, "approved"); assert.equal(permitCycleStatus.review?.receipt, permitCycleRiskReceipt);
+  assert.equal((await permitCycle.instance.requestReview()).review?.receipt, permitCycleRiskReceipt);
+  const permitCycleProfile = await ageProfile(payload, permitCycle.subject.owner.id);
+  assert.equal(String(permitCycleProfile?.reference).startsWith(`age-review:${permitCycleRiskRow.id}`), true);
+  assert.equal(String(permitCycleProfile?.reference).startsWith(`age-review:${permitCycle.row.id}`), false);
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: Number(permitCycle.row.id), overrideAccess: true })).status, "in_progress");
+  console.log("✓ 最新周期准许后重复申请仍复用当前批准，不改绑旧未结案件");
+
+  const maintainCycle = await manualRestriction();
+  await ops.action(administrator, Number(maintainCycle.row.id), { revision: 0, action: "claim", reason: "管理员领取旧未结案件以验证维持后申诉" });
+  const maintainCycleRisk = await maintainCycle.instance.requireAdditionalVerification();
+  assert.ok(maintainCycleRisk.review?.receipt);
+  const maintainCycleRiskReceipt = maintainCycleRisk.review.receipt;
+  const maintainCycleRiskRow = (await ops.queue(administrator, {})).find((row) => row.receipt === maintainCycleRiskReceipt)!;
+  await ops.action(administrator, Number(maintainCycleRiskRow.id), { revision: 0, action: "claim", reason: "管理员领取最新维持限制周期" });
+  await ops.action(administrator, Number(maintainCycleRiskRow.id), { revision: 1, action: "maintain_age_restriction", reason: "最新周期继续维持年龄限制", reply: "继续维持限制。" });
+  const maintainCycleAppeal = await maintainCycle.instance.requestReview();
+  assert.equal(maintainCycleAppeal.review?.state, "pending");
+  assert.equal(maintainCycleAppeal.review?.caseStatus, "review");
+  assert.notEqual(maintainCycleAppeal.review?.receipt, maintainCycleRiskReceipt);
+  assert.notEqual(maintainCycleAppeal.review?.receipt, maintainCycle.row.receipt);
+  const maintainAppealRow = (await ops.queue(administrator, {})).find((row) => row.receipt === maintainCycleAppeal.review?.receipt)!;
+  assert.equal(Number(maintainAppealRow.parentId), Number(maintainCycleRiskRow.id));
+  const maintainCycleProfile = await ageProfile(payload, maintainCycle.subject.owner.id);
+  assert.equal(String(maintainCycleProfile?.reference).startsWith(`age-review:${maintainAppealRow.id}`), true);
+  assert.equal(String(maintainCycleProfile?.reference).startsWith(`age-review:${maintainCycle.row.id}`), false);
+  console.log("✓ 最新周期维持后申请生成独立申诉父案，不改绑旧未结案件");
+
+  const atomic = await manualRestriction();
+  await ops.action(administrator, Number(atomic.row.id), { revision: 0, action: "claim", reason: "管理员领取原子审计回归案件" });
+  await payload.db.drizzle.run(sql`CREATE TRIGGER block_manual_restore_audit BEFORE INSERT ON safety_audit BEGIN SELECT RAISE(ABORT, 'synthetic audit blocked'); END`);
+  try { await assert.rejects(() => ops.action(administrator, Number(atomic.row.id), { revision: 1, action: "restore_age_access", reason: "审计失败时必须整体回滚", reply: "这条结果不应可见。" })); }
+  finally { await payload.db.drizzle.run(sql`DROP TRIGGER block_manual_restore_audit`); }
+  const atomicProfile = await ageProfile(payload, atomic.subject.owner.id);
+  const atomicCase = (await payload.findByID({ collection: "safety-cases", id: Number(atomic.row.id), overrideAccess: true }));
+  assert.equal(atomicProfile?.state, "needs_review"); assert.equal(atomicProfile?.additionalVerification, "required");
+  assert.equal(atomicCase.status, "in_progress"); assert.equal(atomicCase.action, null); assert.equal(atomicCase.revision, 1);
+  assert.equal((await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [{ event: { equals: "case.restore_age_access" } }, { target: { equals: `case:${atomic.row.id}` } }] } })).docs.length, 0);
+  console.log("✓ 直接恢复的案件、年龄状态与审计在同一事务内提交或回滚");
+
+  const protectedSubject = await manualRestriction();
+  await ops.action(administrator, Number(protectedSubject.row.id), { revision: 0, action: "claim", reason: "管理员领取隐私保护回归案件" });
+  const protectedPrivacy = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: protectedSubject.subject.owner.id } } })).docs[0];
+  if (protectedPrivacy) await payload.update({ collection: "privacy-profiles", id: protectedPrivacy.id, overrideAccess: true, data: { state: "withdrawn" } });
+  else await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner: protectedSubject.subject.owner.id, state: "withdrawn", revision: 0 } });
+  await assert.rejects(() => ops.action(administrator, Number(protectedSubject.row.id), { revision: 1, action: "restore_age_access", reason: "隐私停止处理时不能直接恢复", reply: "管理员不能直接恢复年龄权限。" }), /停止处理/);
+  const unbound = await manualRestriction();
+  await ops.action(administrator, Number(unbound.row.id), { revision: 0, action: "claim", reason: "管理员领取微信绑定回归案件" });
+  await payload.delete({ collection: "wechat-identities", overrideAccess: true, where: { owner: { equals: unbound.subject.owner.id } } });
+  await assert.rejects(() => ops.action(administrator, Number(unbound.row.id), { revision: 1, action: "restore_age_access", reason: "缺少微信绑定时不能直接恢复", reply: "管理员不能直接恢复年龄权限。" }), /微信绑定/);
+  console.log("✓ 直接恢复保留隐私状态与微信绑定检查");
+
+  let outstandingCalls = 0; let finishOutstanding!: (value: { state: "adult"; reference: string }) => void; let outstandingStarted!: () => void;
+  const outstandingEntered = new Promise<void>((resolve) => { outstandingStarted = resolve; });
+  const outstandingEvidence = new Promise<{ state: "adult"; reference: string }>((resolve) => { finishOutstanding = resolve; });
+  const outstanding = await manualRestriction(async () => { outstandingCalls++; outstandingStarted(); return outstandingEvidence; });
+  await ops.action(administrator, Number(outstanding.row.id), { revision: 0, action: "claim", reason: "管理员领取晚到供应商结果回归案件" });
+  await ops.action(administrator, Number(outstanding.row.id), { revision: 1, action: "permit_age_reverification", reason: "先批准本人核验以准备晚到结果回归", reply: "可以重新发起本人年龄核验。" });
+  const outstandingReviewChallenge = await outstanding.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  const outstandingSubmit = outstanding.instance.submit({ ...identity, challenge: outstandingReviewChallenge.challenge });
+  await outstandingEntered;
+  await assert.rejects(async () => {
+    try {
+      await ops.action(administrator, Number(outstanding.row.id), { revision: 2, action: "review", reason: "供应商等待期间重新打开年龄案件" });
+      await ops.action(secondAdministrator, Number(outstanding.row.id), { revision: 3, action: "claim", reason: "另一管理员处理等待中的年龄案件" });
+      await ops.action(secondAdministrator, Number(outstanding.row.id), { revision: 4, action: "restore_age_access", reason: "人工决定后晚到结果不能覆盖", reply: "管理员已直接恢复年龄权限。" });
+    } finally {
+      finishOutstanding({ state: "adult", reference: "synthetic-late-provider" });
+    }
+    return outstandingSubmit;
+  }, /状态已变更/);
+  const afterOutstanding = await outstanding.instance.status();
+  assert.equal(afterOutstanding.allowed, true); assert.equal(afterOutstanding.assurance, null); assert.equal(afterOutstanding.source, "administrator_age_review_manual_assurance");
+  assert.equal(afterOutstanding.review?.result, null); assert.equal(afterOutstanding.review?.manualDecision, true); assert.equal(outstandingCalls, 1);
+  console.log("✓ 直接恢复作废挑战，晚到成年供应商结果不能覆盖人工决定");
+
+  let beforePendingCalls = 0;
+  const beforePending = await manualRestriction(async () => { beforePendingCalls++; return { state: "adult", reference: "synthetic-before-pending" }; });
+  await ops.action(administrator, Number(beforePending.row.id), { revision: 0, action: "claim", reason: "管理员领取待写入竞争回归案件" });
+  await ops.action(administrator, Number(beforePending.row.id), { revision: 1, action: "permit_age_reverification", reason: "先批准本人核验以验证待写入竞争", reply: "可以重新发起本人年龄核验。" });
+  const beforePendingChallenge = await beforePending.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  const originalFind = beforePending.instance.payload.find.bind(payload);
+  const mutablePayload = payload as unknown as { find: typeof payload.find };
+  let interceptBeforePending = true;
+  try {
+    mutablePayload.find = async (options) => {
+      const result = await originalFind(options);
+      if (interceptBeforePending && options.collection === "safety-cases") {
+        interceptBeforePending = false;
+        await ops.action(administrator, Number(beforePending.row.id), { revision: 2, action: "review", reason: "提交者读取旧批准后管理员重新打开案件" });
+        await ops.action(secondAdministrator, Number(beforePending.row.id), { revision: 3, action: "claim", reason: "另一管理员处理待写入竞争" });
+        await ops.action(secondAdministrator, Number(beforePending.row.id), { revision: 4, action: "restore_age_access", reason: "待写入前管理员已直接恢复年龄能力", reply: "管理员已直接恢复年龄权限。" });
+      }
+      return result;
+    };
+    await assert.rejects(() => beforePending.instance.submit({ ...identity, challenge: beforePendingChallenge.challenge }), /状态已变更|复核批准已变更/);
+  } finally {
+    mutablePayload.find = originalFind;
+  }
+  const beforePendingStatus = await beforePending.instance.status();
+  assert.equal(beforePendingStatus.allowed, true); assert.equal(beforePendingStatus.assurance, null);
+  assert.equal(beforePendingStatus.source, "administrator_age_review_manual_assurance");
+  assert.equal(beforePendingStatus.review?.manualDecision, true);
+  assert.equal(beforePendingCalls, 0);
+  console.log("✓ 管理员在待写入前提交人工决定时，挑战和尝试不会被旧读取覆盖，也不调用供应商");
+
+  const nextConflict = await manualRestriction();
+  await ops.action(administrator, Number(nextConflict.row.id), { revision: 0, action: "claim", reason: "管理员领取新冲突周期回归案件" });
+  await ops.action(administrator, Number(nextConflict.row.id), { revision: 1, action: "restore_age_access", reason: "先恢复以验证新的未成年申报", reply: "管理员已直接恢复年龄权限。" });
+  const nextConflictResult = await challenge(nextConflict.instance, "under14");
+  assert.equal(nextConflictResult.status.allowed, false); assert.equal(nextConflictResult.status.state, "needs_review"); assert.equal(nextConflictResult.status.additionalVerification, "required");
+  assert.equal(nextConflictResult.status.review?.state, "pending"); assert.notEqual(nextConflictResult.status.review?.receipt, nextConflict.row.receipt);
+  assert.equal(nextConflict.providerCalls(), 0);
+  const nextRisk = await manualRestriction();
+  await ops.action(administrator, Number(nextRisk.row.id), { revision: 0, action: "claim", reason: "管理员领取新风险周期回归案件" });
+  await ops.action(administrator, Number(nextRisk.row.id), { revision: 1, action: "restore_age_access", reason: "先恢复以验证新风险立即失效", reply: "管理员已直接恢复年龄权限。" });
+  const nextRiskResult = await nextRisk.instance.requireAdditionalVerification();
+  assert.equal(nextRiskResult.allowed, false); assert.notEqual(nextRiskResult.review?.receipt, nextRisk.row.receipt);
+  assert.equal(nextRiskResult.review?.state, "pending");
+  console.log("✓ 新的未成年申报或风险创建新的受限周期，不重复使用直接恢复授权");
+
+  const genericCase = await payload.create({ collection: "safety-cases", overrideAccess: true, context: { safetyInternal: true }, data: { owner: directlyRestored.subject.owner.id, receipt: randomUUID(), source: "moderation", status: "in_progress", severity: "normal", category: "other", stage: "user_report", revision: 0, assignedTo: Number(administrator.id), modelVersion: "synthetic" } });
+  await assert.rejects(() => ops.action(administrator, Number(genericCase.id), { revision: 0, action: "restore_age_access", reason: "年龄专用动作不能用于普通案件", reply: "不应允许。" }), /仅适用于年龄复核案件/);
+  console.log("✓ 直接恢复是年龄案件专用动作，不改变通用解除生成限制语义");
+
   const requested = await conflictService.requestReview();
   assert.equal(requested.review?.state, "pending");
   assert.equal(requested.allowed, false);
@@ -277,7 +562,6 @@ try {
   const reconsideredRow = (await ops.queue(administrator, {})).find((row) => row.receipt === reconsidered.review?.receipt)!;
   assert.equal(Number(reconsideredRow.parentId), Number(rejectedRow.id));
   await assertProvenance(reconsidered.review!.receipt!, { source: "appeal", actor: `owner:${rejectedSubject.owner.id}`, reason: "本人再次申请年龄复核", evidence: "本人就年龄限制结果再次申请复核。" });
-  const secondAdministrator = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { role: "administrator", email: "age-second-admin@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
   await ops.action(administrator, Number(reconsideredRow.id), { revision: 0, action: "claim", reason: "原处置管理员领取复议案件以验证独立复核限制" });
   await assert.rejects(() => ops.action(administrator, Number(reconsideredRow.id), { revision: 1, action: "permit_age_reverification", reason: "原处置管理员不得批准同一年龄事项的复议", reply: "允许重新核验。" }), /原处置人以外/);
   await ops.action(secondAdministrator, Number(reconsideredRow.id), { revision: 1, action: "claim", reason: "另一位系统管理员领取年龄复议案件" });

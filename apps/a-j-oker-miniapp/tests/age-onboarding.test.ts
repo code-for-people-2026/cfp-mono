@@ -49,6 +49,19 @@ describe("逐步显示的小窗口", () => {
     expect(ageGateStep({ ...loggedIn, state: "needs_review" }, "adult")).toBe("blocked");
     expect(ageGateStep({ ...loggedIn, state: "pending" }, "adult")).toBe("pending");
   });
+  it("人工恢复过期时不能让旧未成年申报直接进入核验表单", () => {
+    expect(ageGateStep({
+      ...loggedIn,
+      state: "expired",
+      declaration: "under14",
+      allowed: false,
+      source: "administrator_age_review_manual_assurance",
+      assurance: null,
+      additionalVerification: "not_requested",
+      review: { state: "request_required", receipt: null, caseStatus: null, result: null, manualDecision: true, reply: null, requestedAt: null, decidedAt: null, helpPath: "/pages/help/index?category=age_verification" },
+      actions: { requestReview: true, checkReviewStatus: true, startReverification: false },
+    })).toBe("blocked");
+  });
   it("预览核验成年后显示完成提示，不开放对话", () => {
     expect(ageGateStep({ ...loggedIn, state: "adult", declaration: "adult", configuration: { ...loggedIn.configuration, previewOnly: true } })).toBe("preview-ready");
   });

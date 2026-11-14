@@ -23,7 +23,11 @@ export const ageReviewSchema = z.object({
   state: ageReviewStateSchema,
   receipt: z.string().nullable(),
   caseStatus: z.enum(["pending", "in_progress", "review", "resolved"]).nullable(),
+  // Keep the deployed 0.8.1 result enum stable. New clients distinguish a
+  // historical administrator manual restore with manualDecision instead of
+  // forcing an enum value that makes old clients reject the whole status.
   result: z.enum(["permit_fresh_verification", "maintain_restriction"]).nullable(),
+  manualDecision: z.literal(true).optional(),
   reply: z.string().nullable(),
   requestedAt: z.string().nullable(),
   decidedAt: z.string().nullable(),
@@ -38,7 +42,7 @@ export type AgeDeclaration = z.infer<typeof ageDeclarationSchema>;
 export type AgeState = z.infer<typeof ageStateSchema>;
 export const ageStateText: Record<AgeState, string> = {
   unverified: "尚未核验年龄", cancelled: "已取消，可随时继续", pending: "正在核验，请稍候再查询",
-  adult: "提交的身份信息核验为成年", minor: "未成年人保护入口", unknown: "暂未查到可确认的年龄结果",
+  adult: "年龄已确认", minor: "未成年人保护入口", unknown: "暂未查到可确认的年龄结果",
   failed: "核验未通过，请检查本人信息或申请复核", unavailable: "核验服务暂不可用，请稍后重试",
   expired: "年龄核验已过期，请重新核验", needs_review: "需要追加核验，请通过帮助与反馈申请复核",
 };
@@ -46,6 +50,9 @@ export const ageStateText: Record<AgeState, string> = {
 export const ageStatusSchema = z.object({
   loggedIn: z.boolean(), state: ageStateSchema, declaration: ageDeclarationSchema.optional(),
   allowed: z.boolean(), verifiedAt: z.string().nullable(), expiresAt: z.string().nullable(), source: z.string().nullable(),
+  // Public assurance still means a provider identity-details match. A manual
+  // administrator decision is represented truthfully by source and review
+  // metadata while assurance remains null for old clients.
   assurance: z.literal("identity_details_match").nullable(),
   additionalVerification: z.enum(["not_requested", "required"]),
   notice: z.object({ version: z.string(), paragraphs: z.array(z.string()) }),

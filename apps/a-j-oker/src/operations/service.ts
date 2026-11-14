@@ -7,18 +7,21 @@ import { AppError, type Owner } from "../domain/contracts";
 import { audit } from "./audit";
 import { canReview, categories, isAdministrator, settings, settingSchema } from "./policy";
 import { decideAgeReview, isAgeReviewCase, latestAgeReviewCase } from "../age/review";
+import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE } from "../age/policy";
 export { transaction } from "./transaction";
 import { transaction } from "./transaction";
 
 type Doc = SafetyCase;
 type CaseInput = Pick<SafetyCase, "owner" | "source" | "category" | "stage"> & Partial<Pick<SafetyCase, "severity" | "sessionId" | "turnId" | "mediaId" | "requestId" | "parentId" | "modelVersion" | "ruleVersion" | "lexiconVersion" | "decision">>;
+const AGE_REVIEW_ACTIONS = ["permit_age_reverification", "maintain_age_restriction", "restore_age_access"] as const;
+const AGE_REVIEW_ACTION_SET = new Set<string>(AGE_REVIEW_ACTIONS);
 const complaintSchema = z.object({
   kind: z.enum(["complaint", "appeal"]).default("complaint"), category: z.enum(categories),
   description: z.string().trim().min(5).max(1200), turnId: z.number().int().positive().optional(),
   parentReceipt: z.string().uuid().optional(),
 }).strict();
 const actionSchema = z.object({
-  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "reject", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold", "permit_age_reverification", "maintain_age_restriction"]),
+  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "reject", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold", ...AGE_REVIEW_ACTIONS]),
   reason: z.string().trim().min(8).max(1000), reply: z.string().trim().min(5).max(1000).optional(),
   severity: z.enum(["urgent", "high", "normal"]).optional(),
   category: z.enum(categories).optional(),
@@ -146,11 +149,11 @@ export class OperationsService {
             if (parent.lastReviewer === user.id) throw new AppError(403, "申诉须由原处置人以外的人员复核");
           }
           if (["restrict", "unrestrict"].includes(input.action) && !isAdministrator(user)) throw new AppError(403, "用户生成限制需要管理员");
-          if (isAgeReviewCase(row) && !["permit_age_reverification", "maintain_age_restriction"].includes(input.action))
-            throw new AppError(409, "年龄复核案件只能批准重新本人核验或维持限制");
-          if (!isAgeReviewCase(row) && ["permit_age_reverification", "maintain_age_restriction"].includes(input.action))
+          if (isAgeReviewCase(row) && !AGE_REVIEW_ACTION_SET.has(input.action))
+            throw new AppError(409, "年龄复核案件只能批准重新本人核验、维持限制或直接解除年龄限制");
+          if (!isAgeReviewCase(row) && AGE_REVIEW_ACTION_SET.has(input.action))
             throw new AppError(409, "此动作仅适用于年龄复核案件");
-          await decideAgeReview(this.payload, user, row, input.action, input.reply, req);
+          await decideAgeReview(this.payload, user, row, input.action, input.reason, input.reply, req);
           if (input.action === "reject") {
             if (row.source !== "moderation" || !["input", "output"].includes(row.stage) || row.mediaId)
               throw new AppError(409, "此动作仅用于尚未生成内容的文本审核请求");
@@ -173,7 +176,10 @@ export class OperationsService {
       }
       const changed = await this.payload.update({ collection: "safety-cases", overrideAccess: true, req, where: { and: [{ id: { equals: id } }, { revision: { equals: input.revision } }] }, data: patch });
       if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "案件更新冲突，请刷新");
-      await audit(this.payload, `admin:${user.id}`, `case.${input.action}`, `case:${id}`, input.reason, { from: row.status, to: patch.status ?? row.status, revision: patch.revision }, req);
+      await audit(this.payload, `admin:${user.id}`, `case.${input.action}`, `case:${id}`, input.reason, {
+          from: row.status, to: patch.status ?? row.status, revision: patch.revision,
+          ...(input.action === "restore_age_access" ? { assurance: MANUAL_AGE_ASSURANCE, source: MANUAL_AGE_SOURCE, providerInvoked: false } : {}),
+        }, req);
       return changed.docs[0];
     });
   }

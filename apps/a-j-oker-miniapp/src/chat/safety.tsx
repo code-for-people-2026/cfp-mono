@@ -8,6 +8,31 @@ import "./safety.css";
 import type { AgeStatus, SafetyReceipt } from "@cfp/a-j-oker-contracts";
 const states: Record<string, string> = { pending: "待受理", in_progress: "处理中", review: "复核中", resolved: "已处置" };
 const categories = [["age_verification", "年龄核验与账号恢复"], ["other", "其他问题"], ["harassment", "侮辱或骚扰"], ["privacy", "隐私与数据"], ["fraud", "诈骗或违法"], ["violence", "暴力内容"], ["self_harm", "自伤相关不当回应"], ["sexual", "色情内容"], ["hate", "歧视与仇恨"]];
+function ageHelpState(age: AgeStatus) {
+  const manualDecision = age.review?.manualDecision === true;
+  if (manualDecision && age.state === "adult" && age.allowed) return "管理员已直接恢复年龄权限";
+  if (manualDecision && age.state === "expired") return "管理员直接恢复已过期，需重新申请复核";
+  if (manualDecision && !age.loggedIn) return "有直接恢复记录；当前未登录，暂不能使用";
+  if (age.review?.state === "approved") return "已允许重新核验，但尚未恢复使用";
+  if (age.review?.state === "pending") return "复核处理中";
+  if (age.review?.state === "rejected") return "复核后维持限制";
+  if (age.review?.state === "completed") return age.allowed ? "复核流程已完成" : "复核流程已完成，但当前年龄能力不可用";
+  if (age.review?.state === "request_required") return "可以申请人工复核";
+  if (!age.allowed && (age.state === "minor" || age.state === "needs_review" || age.additionalVerification === "required")) return "年龄限制仍然有效";
+  return "当前没有需要处理的复核";
+}
+function ageHelpNextStep(age: AgeStatus) {
+  const manualDecision = age.review?.manualDecision === true;
+  if (manualDecision && age.state === "adult" && age.allowed) return "下一步：管理员已直接恢复当前年龄权限，不需要重复提交身份核验表单；返回聊天后会刷新状态。";
+  if (manualDecision && age.state === "expired") return "下一步：直接恢复已过期，不会自动延长，也不能授权新的风险。请重新申请年龄复核；审核通过前对话和上传仍不可用。";
+  if (manualDecision && !age.loggedIn) return "下一步：当前账号未登录。请先完成微信登录并刷新；历史直接恢复记录不代表当前可使用。";
+  if (age.review?.state === "approved") return "下一步：返回聊天并完成新的本人身份核验。复核批准不会自动恢复使用，只有新的成年核验成功后才会恢复对话和上传。";
+  if (age.review?.state === "rejected") return "下一步：请阅读处理回复；当前限制继续有效。若服务端允许再次申请，可使用下方专用按钮，不要提交普通投诉。";
+  if (age.review?.state === "completed") return age.allowed ? "下一步：年龄能力已恢复，可以返回聊天。" : "下一步：复核流程已完成，但当前年龄能力不可用。请阅读处理回复或刷新最新状态。";
+  if (age.review?.state === "pending") return "下一步：工作人员处理复核。你可以点击刷新查询状态；结果出来前，对话和上传仍不可用。";
+  if (age.review?.state === "request_required") return "下一步：点击下方按钮申请人工复核。工作人员将查看年龄限制情况；申请不保证批准或自动恢复。";
+  return age.allowed ? "下一步：可以返回聊天；也可刷新读取最新状态。" : "下一步：年龄限制仍然有效。请刷新读取最新状态；较早版本未显示专用操作时，请使用下方联系渠道。";
+}
 export function HelpPage() {
   const params = useRouter().params;
   const turnId = Number(params.turnId) > 0 ? Number(params.turnId) : undefined;
@@ -76,20 +101,21 @@ export function HelpPage() {
     {error && <Text className="page-result page-error">{error}</Text>}
     {agePanel ? <View id="help-form" className="page-card page-card-padded age-recovery-panel">
       <Text className="page-heading">年龄核验与账号恢复</Text>
-      <Text className="page-copy">这里用于申请和查看年龄复核，不是普通投诉。请不要在反馈中填写姓名、身份证号码或上传证件照片；需要重新核验时，只会回到受保护的本人核验表单。</Text>
+      <Text className="page-copy">这里用于申请和查看年龄复核，不是普通投诉。请不要在反馈中填写姓名、身份证号码或上传证件照片；需要重新核验时，只会回到受保护的本人核验表单。历史处置只代表当时的结论，仍以下方当前状态和可执行操作为准。</Text>
       <PageButton className="page-link" disabled={busy} onClick={() => { setCategory("other"); setParent(undefined); setSuccess(""); }}>反馈其他问题</PageButton>
       {!age && <Text className="page-copy">正在读取年龄核验状态…</Text>}
       {age && <>
         <Text className="help-field-label">当前状态</Text>
-        <Text className="age-recovery-state">{age.review?.state === "approved" ? "已允许重新核验，但尚未恢复使用" : age.review?.state === "pending" ? "复核处理中" : age.review?.state === "rejected" ? "复核后维持限制" : age.review?.state === "completed" ? "复核流程已完成" : age.review?.state === "request_required" ? "可以申请人工复核" : !age.allowed && (age.state === "minor" || age.state === "needs_review" || age.additionalVerification === "required") ? "年龄限制仍然有效" : "当前没有需要处理的复核"}</Text>
+        <Text className="age-recovery-state">{ageHelpState(age)}</Text>
         {age.review?.receipt && <Text className="help-receipt-id" selectable>复核受理编号 {age.review.receipt}</Text>}
         {age.review?.caseStatus && <Text className="page-copy">处理进度：{states[age.review.caseStatus] || age.review.caseStatus}</Text>}
         {age.review?.reply && <Text className="help-reply">处理回复：{age.review.reply}</Text>}
-        <Text className="age-recovery-steps">{age.review?.state === "approved" ? "下一步：返回聊天并完成新的本人身份核验。复核批准不会自动恢复使用，只有新的成年核验成功后才会恢复对话和上传。" : age.review?.state === "rejected" ? "下一步：请阅读处理回复；当前限制继续有效。若服务端允许再次申请，可使用下方专用按钮，不要提交普通投诉。" : age.review?.state === "completed" ? age.allowed ? "下一步：复核和年龄核验已完成，可以返回聊天。" : "下一步：复核流程已完成，但年龄限制仍然有效。请阅读处理回复或刷新最新状态。" : age.review?.state === "pending" ? "下一步：工作人员处理复核。你可以点击刷新查询状态；结果出来前，对话和上传仍不可用。" : age.review?.state === "request_required" ? "下一步：点击下方按钮申请人工复核。工作人员将查看年龄限制情况；申请不保证批准或自动恢复。" : !age.allowed ? "下一步：年龄限制仍然有效。请刷新读取最新状态；较早版本未显示专用操作时，请使用下方联系渠道。" : "下一步：可以返回聊天；也可刷新读取最新状态。"}</Text>
+        <Text className="age-recovery-steps">{ageHelpNextStep(age)}</Text>
         {age.actions?.requestReview && <PageButton className="page-primary" disabled={busy} onClick={() => void requestReview()}>{busy ? "正在提交…" : "申请年龄复核"}</PageButton>}
         {age.actions?.checkReviewStatus && <PageButton className="page-primary" disabled={busy} onClick={() => void refresh()}>{busy ? "正在查询…" : "查询复核状态"}</PageButton>}
         {age.review?.state === "approved" && age.actions?.startReverification && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天并重新核验</PageButton>}
-        {age.review?.state === "completed" && age.allowed && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天</PageButton>}
+        {age.review?.manualDecision === true && age.state === "adult" && age.allowed && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天（无需重复核验）</PageButton>}
+        {age.review?.state === "completed" && age.allowed && age.review.manualDecision !== true && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天</PageButton>}
       </>}
     </View> : <View id="help-form" className="page-card page-card-padded">
       <Text className="page-heading">{parentReceipt ? "申请复核" : turnId ? "反馈这条回应" : "提交反馈"}</Text>

@@ -24,9 +24,10 @@ vi.mock("@tarojs/components", () => ({ Button: "button", View: "view", Text: "te
 import { AgeGate } from "../src/chat/age";
 import { HelpPage } from "../src/chat/safety";
 
-const review = (state: "request_required" | "pending" | "approved" | "rejected" | "completed") => ({
+const review = (state: "request_required" | "pending" | "approved" | "rejected" | "completed", resultOverride?: "permit_fresh_verification" | "maintain_restriction" | null, manualDecision?: true) => ({
   state, receipt: state === "request_required" ? null : "AGE-SYNTHETIC-001", caseStatus: state === "pending" ? "in_progress" as const : state === "request_required" ? null : "resolved" as const,
-  result: state === "approved" ? "permit_fresh_verification" as const : state === "rejected" ? "maintain_restriction" as const : null,
+  result: resultOverride ?? (state === "approved" ? "permit_fresh_verification" as const : state === "rejected" ? "maintain_restriction" as const : null),
+  ...(manualDecision ? { manualDecision } : {}),
   reply: state === "rejected" ? "合成回复：当前信息仍需维持限制。" : null, requestedAt: null, decidedAt: null,
   helpPath: "/pages/help/index?category=age_verification" as const,
 });
@@ -69,6 +70,17 @@ describe("年龄限制恢复窗口", () => {
     act(() => { renderer.update(createElement(AgeGate, { ...props, status: { ...base, review: review("rejected"), actions: { requestReview: true, checkReviewStatus: true, startReverification: false } } })); });
     expect(text()).toContain("合成回复：当前信息仍需维持限制");
     expect(buttonText("开始重新核验")).toBeUndefined();
+  });
+
+  it("管理员直接恢复后显示完成指引，不出现身份核验表单", () => {
+    const restored: AgeStatus = { ...base, state: "adult", allowed: true, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-12-14T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("completed", null, true), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } };
+    act(() => { renderer = create(createElement(AgeGate, { ...props, status: restored })); });
+    expect(text()).toContain("管理员已直接恢复年龄权限");
+    expect(text()).toContain("不需要再次填写身份核验表单");
+    expect(text()).toContain("还需确认使用授权");
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    expect(buttonText("开始重新核验")).toBeUndefined();
+    expect(api.beginAgeReview).not.toHaveBeenCalled();
   });
 
   it("批准仍保持阻断，单独同意后才发起新挑战并清空临时身份字段", async () => {
@@ -124,12 +136,66 @@ describe("年龄核验帮助页", () => {
 
   it.each([
     ["rejected", { ...base, review: review("rejected"), actions: { requestReview: true, checkReviewStatus: true, startReverification: false } }, "请阅读处理回复", "工作人员处理复核"],
-    ["completed", { ...base, state: "adult", allowed: true, review: review("completed"), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } }, "已完成，可以返回聊天", "工作人员处理复核"],
+    ["completed", { ...base, state: "adult", allowed: true, review: review("completed"), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } }, "年龄能力已恢复，可以返回聊天", "工作人员处理复核"],
     ["approved", { ...base, review: review("approved"), actions: { requestReview: false, checkReviewStatus: true, startReverification: true } }, "完成新的本人身份核验", "工作人员处理复核"],
   ])("按真实服务端 %s 状态选择下一步文案，而不是被通用查询动作覆盖", async (_state, status, expected, hidden) => {
     platform.params = { category: "age_verification" }; api.getAge.mockResolvedValue(status);
     await act(async () => { renderer = create(createElement(HelpPage)); });
     expect(text()).toContain(expected); expect(text()).not.toContain(hidden);
+  });
+
+  it("管理员直接恢复后的帮助页要求直接返回，不提供身份表单或重新核验", async () => {
+    platform.params = { category: "age_verification" };
+    api.getAge.mockResolvedValue({ ...base, state: "adult", allowed: true, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-12-14T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("completed", null, true), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } });
+    await act(async () => { renderer = create(createElement(HelpPage)); });
+    expect(text()).toContain("管理员已直接恢复年龄权限");
+    expect(text()).toContain("不需要重复提交身份核验表单");
+    expect(buttonText("返回聊天（无需重复核验）")).toBeDefined();
+    expect(buttonText("返回聊天并重新核验")).toBeUndefined();
+    expect(renderer.root.findAllByType("textarea")).toHaveLength(0);
+    expect(renderer.root.findAllByType("input")).toHaveLength(0);
+    expect(api.beginAgeReview).not.toHaveBeenCalled();
+  });
+
+  it("区分历史人工决定与到期后的当前不可用状态并提供续期申请", async () => {
+    platform.params = { category: "age_verification" };
+    api.getAge.mockResolvedValue({ ...base, state: "expired", declaration: "under14", allowed: false, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-11-13T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("request_required", null, true), actions: { requestReview: true, checkReviewStatus: true, startReverification: false } });
+    await act(async () => { renderer = create(createElement(HelpPage)); });
+    expect(text()).toContain("管理员直接恢复已过期");
+    expect(text()).toContain("不会自动延长");
+    expect(buttonText("申请年龄复核")).toBeDefined();
+    expect(buttonText("返回聊天（无需重复核验）")).toBeUndefined();
+    expect(buttonText("返回聊天并重新核验")).toBeUndefined();
+  });
+
+  it("历史人工决定在当前未登录时只提示登录刷新，不当作当前可用", async () => {
+    platform.params = { category: "age_verification" };
+    api.getAge.mockResolvedValue({ ...base, loggedIn: false, state: "adult", allowed: false, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-12-14T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("completed", null, true), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } });
+    await act(async () => { renderer = create(createElement(HelpPage)); });
+    expect(text()).toContain("有直接恢复记录；当前未登录");
+    expect(text()).toContain("请先完成微信登录并刷新");
+    expect(buttonText("返回聊天（无需重复核验）")).toBeUndefined();
+  });
+
+  it("新的风险周期覆盖历史人工决定时按当前待处理案件指引", async () => {
+    platform.params = { category: "age_verification" };
+    api.getAge.mockResolvedValue({ ...base, state: "needs_review", declaration: "under14", allowed: false, source: null, assurance: null, additionalVerification: "required", review: review("pending"), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } });
+    await act(async () => { renderer = create(createElement(HelpPage)); });
+    expect(text()).toContain("复核处理中");
+    expect(text()).toContain("结果出来前，对话和上传仍不可用");
+    expect(text()).not.toContain("管理员已直接恢复当前年龄权限");
+  });
+
+  it("返回帮助页时刷新人工恢复状态，过期结果覆盖较早可用快照", async () => {
+    platform.params = { category: "age_verification" };
+    api.getAge
+      .mockResolvedValueOnce({ ...base, state: "adult", allowed: true, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-12-14T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("completed", null, true), actions: { requestReview: false, checkReviewStatus: true, startReverification: false } })
+      .mockResolvedValueOnce({ ...base, state: "expired", declaration: "under14", allowed: false, verifiedAt: "2026-11-14T00:00:00.000Z", expiresAt: "2026-11-13T00:00:00.000Z", source: "administrator_age_review_manual_assurance", assurance: null, additionalVerification: "not_requested", review: review("request_required", null, true), actions: { requestReview: true, checkReviewStatus: true, startReverification: false } });
+    await act(async () => { renderer = create(createElement(HelpPage)); });
+    expect(text()).toContain("管理员已直接恢复年龄权限");
+    await act(async () => { platform.didShow?.(); });
+    expect(text()).toContain("管理员直接恢复已过期");
+    expect(text()).not.toContain("管理员已直接恢复当前年龄权限");
   });
 
   it("旧服务缺少 review 时仍按年龄限制说明，不声称当前没有问题", async () => {

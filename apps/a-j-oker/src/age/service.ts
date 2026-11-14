@@ -3,7 +3,7 @@ import type { Payload, PayloadRequest } from "payload";
 import { ageChallengeSchema, ageReviewChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { AppError, type Owner } from "../domain/contracts";
 import type { AgeProfile } from "../payload-types";
-import { ageNotice, ageProvider, providerConfigured, wechatConfigured } from "./policy";
+import { ageNotice, ageProvider, ageAssuranceAccepted, MANUAL_AGE_ASSURANCE, providerConfigured, wechatConfigured } from "./policy";
 import { withAgeLock } from "./lock";
 import { verifyAge, type AgeVerifier } from "./provider";
 import { bindAgeRestriction, latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection } from "./review";
@@ -43,7 +43,7 @@ export class AgeService {
     if (profile?.additionalVerification === "required") state = "needs_review";
     return {
       loggedIn, state, declaration: ageDeclarationSchema.optional().catch(undefined).parse(profile?.declaration),
-      allowed: loggedIn && state === "adult" && profile?.assurance === "identity_details_match" && profile?.noticeVersion === ageNotice().version,
+      allowed: loggedIn && state === "adult" && ageAssuranceAccepted(profile || {}) && profile?.noticeVersion === ageNotice().version,
       verifiedAt: typeof profile?.verifiedAt === "string" ? profile.verifiedAt : null,
       expiresAt: typeof profile?.expiresAt === "string" ? profile.expiresAt : null,
       source: typeof profile?.source === "string" ? profile.source : null,
@@ -67,7 +67,7 @@ export class AgeService {
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
       const previous = await ageProfile(this.payload, this.owner.id);
       if (input.correction) {
-        if (!previous?.declaration || previous.assurance === "identity_details_match" || previous.additionalVerification === "required") throw new AppError(403, "此记录需要通过帮助与反馈申请复核");
+        if (!previous?.declaration || previous.assurance || previous.additionalVerification === "required") throw new AppError(403, "此记录需要通过帮助与反馈申请复核");
         if (input.declaration !== "unknown") throw new AppError(400, "更正年龄须以本人身份证核验结果为准");
         if (!providerConfigured()) throw new AppError(503, "身份核验服务暂不可用，请稍后重试");
         const challenge = randomUUID();
@@ -88,9 +88,9 @@ export class AgeService {
       const latestReview = input.declaration === "under14" ? await latestAgeReviewCase(this.payload, this.owner.id) : undefined;
       const startsNewReviewCycle = input.declaration === "under14"
         && previous?.state === "adult"
-        && previous.assurance === "identity_details_match"
+        && (previous.assurance === "identity_details_match" || previous.assurance === MANUAL_AGE_ASSURANCE)
         && latestReview?.status === "resolved"
-        && latestReview.action === "permit_age_reverification";
+        && ["permit_age_reverification", "restore_age_access"].includes(String(latestReview.action));
       if (startsNewReviewCycle) await transaction(this.payload, async (req) => {
         const restricted = await this.save({ state: "minor", declaration: input.declaration, noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(), challenge: null, challengePurpose: null, challengeExpiresAt: null, expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(), assurance: null, additionalVerification: "required" }, req);
         await bindAgeRestriction(this.payload, restricted, req, "declaration");
@@ -136,7 +136,29 @@ export class AgeService {
       const day = new Date().toISOString().slice(0, 10);
       const attempts = profile.day === day ? Number(profile.attempts || 0) : 0;
       if (attempts >= 5) throw new AppError(429, "今日核验次数已用完，请明日重试或通过帮助与反馈申请复核");
-      const pending = await this.save({ state: "pending", challenge: null, challengePurpose: null, challengeExpiresAt: null, lastAttemptAt: new Date().toISOString(), day, attempts: attempts + 1, assurance: null, expiresAt: null });
+      const pendingData = { state: "pending", challenge: null, challengePurpose: null, challengeExpiresAt: null, lastAttemptAt: new Date().toISOString(), day, attempts: attempts + 1, assurance: null, expiresAt: null };
+      // Consume the challenge and reserve this attempt in one transaction. An
+      // administrator decision committed after the stale read cannot be
+      // overwritten, and no provider call is made in that case.
+      const pending = await transaction(this.payload, async (req) => {
+        await assertLease(req);
+        if (!await this.bound(req)) throw new AppError(409, "登录绑定已变更，请重新登录并发起核验");
+        await this.mayProcess(req);
+        const current = await ageProfile(this.payload, this.owner.id, req);
+        if (!current || current.id !== profile.id || current.updatedAt !== profile.updatedAt
+          || current.challenge !== input.challenge || current.challengePurpose !== profile.challengePurpose
+          || current.challengeExpiresAt !== profile.challengeExpiresAt || current.noticeVersion !== profile.noticeVersion
+          || (current.additionalVerification === "required" && !reviewing))
+          throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+        if (reviewing) {
+          const approved = await requireApprovedReview(this.payload, this.owner.id, req);
+          if (current.additionalVerification !== "required" || current.reference !== `age-review:${approved.id}:${approved.revision}`)
+            throw new AppError(409, "年龄复核批准已变更，请按当前结果重新发起");
+        }
+        const changed = await this.payload.update({ collection: "age-profiles", overrideAccess: true, req, where: { and: [{ id: { equals: profile.id } }, { updatedAt: { equals: profile.updatedAt } }] }, data: pendingData });
+        if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+        return changed.docs[0];
+      });
       // Consume the challenge before the network operation; a retry cannot replay it.
       let evidence: Awaited<ReturnType<AgeVerifier>>;
       try { evidence = await this.verify({ name: input.name, idCard: input.idCard }); }

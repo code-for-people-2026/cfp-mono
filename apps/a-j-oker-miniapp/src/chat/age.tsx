@@ -38,7 +38,9 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   const baseStep = ageGateStep(status, declaration);
   const reviewVerificationEligible = status?.review?.state === "approved" && !!status.actions?.startReverification && !status.allowed;
   const step = (correcting || (reviewVerification && reviewVerificationEligible)) && baseStep !== "pending" ? "verify" : baseStep;
-  const canCorrect = status?.loggedIn && !status.assurance && status.additionalVerification !== "required";
+  const manualDecision = status?.review?.manualDecision === true;
+  const effectiveManualRestore = manualDecision && status?.state === "adult" && status.allowed;
+  const canCorrect = status?.loggedIn && !status.assurance && status.additionalVerification !== "required" && !manualDecision;
   const providerName = status?.configuration.providerName === "aliyun" ? "阿里云" : "腾讯云";
   const birthdayDeclaration = declarationForBirthday(birthday);
 
@@ -176,7 +178,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
         </>}
         {step === "blocked" && <>
           <Text className="age-title">暂时无法开始对话</Text>
-          <Text className="age-copy">{status?.review?.state === "approved" ? "人工复核已允许你重新进行年龄核验。复核通过不代表已经成年，也不会自动恢复使用；下一步由你完成新的本人身份核验。" : status?.review?.state === "pending" ? "年龄复核申请正在处理中。下一步由工作人员查看；处理结果出来前，对话和上传仍不可用。" : status?.review?.state === "rejected" ? "复核后仍需维持年龄限制，当前不能使用对话和上传。你可以查看处理回复和后续说明。" : status?.state === "minor" || ["under14", "14to17"].includes(declaration || status?.declaration || "") ? "当前年龄核验或申报显示未满18周岁，因此对话和上传暂不可用。若信息可能有误，可按下方指引申请复核。" : "年龄信息需要进一步核实，确认前对话和上传暂不可用。可申请人工复核，由工作人员下一步处理。"}</Text>
+          <Text className="age-copy">{manualDecision && status?.state === "expired" ? "管理员直接恢复年龄权限已过期，不会自动延长，也不能授权新的风险。请申请人工复核；审核通过前对话和上传暂不可用。" : status?.review?.state === "approved" ? "人工复核已允许你重新进行年龄核验。复核通过不代表已经成年，也不会自动恢复使用；下一步由你完成新的本人身份核验。" : status?.review?.state === "pending" ? "年龄复核申请正在处理中。下一步由工作人员查看；处理结果出来前，对话和上传仍不可用。" : status?.review?.state === "rejected" ? "复核后仍需维持年龄限制，当前不能使用对话和上传。你可以查看处理回复和后续说明。" : status?.state === "minor" || ["under14", "14to17"].includes(declaration || status?.declaration || "") ? "当前年龄核验或申报显示未满18周岁，因此对话和上传暂不可用。若信息可能有误，可按下方指引申请复核。" : "年龄信息需要进一步核实，确认前对话和上传暂不可用。可申请人工复核，由工作人员下一步处理。"}</Text>
           {status?.review?.receipt && <Text className="age-review-receipt" selectable>复核受理编号：{status.review.receipt}</Text>}
           {status?.review?.reply && <Text className="age-review-reply">处理回复：{status.review.reply}</Text>}
           {status?.actions?.requestReview && <Button className="age-primary" disabled={busy} onClick={() => void act(async () => onChange(await api.requestAgeReview()))}>{busy ? "正在提交…" : "申请年龄复核"}</Button>}
@@ -192,7 +194,7 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
           <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>
         </>}
         {step === "ready" && <>
-          <Text className="age-title">{privacyReady ? "已经准备好啦" : "最后，确认使用授权"}</Text><Text className="age-copy">{privacyReady ? "可以继续和阿J聊聊了。" : "你可以选择允许阿J使用的信息。"}</Text>
+          <Text className="age-title">{privacyReady ? "已经准备好啦" : "最后，确认使用授权"}</Text><Text className="age-copy">{effectiveManualRestore && !privacyReady ? "管理员已直接恢复年龄权限，不需要再次填写身份核验表单；还需确认使用授权。" : privacyReady ? "可以继续和阿J聊聊了。" : "你可以选择允许阿J使用的信息。"}</Text>
           <Button className="age-primary" onClick={privacyReady ? onClose : onPrivacy}>{privacyReady ? "继续聊天" : "查看授权"}</Button>
           {explanation("verification", "查看登录与年龄状态")}
         </>}
