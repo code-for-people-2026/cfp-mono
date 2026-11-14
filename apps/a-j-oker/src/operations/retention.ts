@@ -197,7 +197,7 @@ export async function purgeExpiredEvidence(payload: Payload, apply = false, now 
   });
 }
 
-export type LegacyAdoptionOptions = {
+type LegacyAdoptionOptions = {
   apply?: boolean;
   activate?: boolean;
   scheduleUntil?: string;
