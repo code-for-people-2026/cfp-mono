@@ -192,11 +192,21 @@ try {
   await ops.action(administrator, Number(rejectedRow.id), { revision: 1, action: "maintain_age_restriction", reason: "合成材料不足以允许重新核验", reply: "当前维持年龄限制，可再次申请复核。" });
   assert.equal((await rejectedService.status()).review?.state, "rejected");
   await assert.rejects(() => rejectedService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+  const reconsidered = await rejectedService.requestReview();
+  const reconsideredRow = (await ops.queue(administrator, {})).find((row) => row.receipt === reconsidered.review?.receipt)!;
+  assert.equal(Number(reconsideredRow.parentId), Number(rejectedRow.id));
+  const secondAdministrator = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { role: "administrator", email: "age-second-admin@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
+  await ops.action(administrator, Number(reconsideredRow.id), { revision: 0, action: "claim", reason: "原处置管理员领取复议案件以验证独立复核限制" });
+  await assert.rejects(() => ops.action(administrator, Number(reconsideredRow.id), { revision: 1, action: "permit_age_reverification", reason: "原处置管理员不得批准同一年龄事项的复议", reply: "允许重新核验。" }), /原处置人以外/);
+  await ops.action(secondAdministrator, Number(reconsideredRow.id), { revision: 1, action: "claim", reason: "另一位系统管理员领取年龄复议案件" });
+  await ops.action(secondAdministrator, Number(reconsideredRow.id), { revision: 2, action: "permit_age_reverification", reason: "独立管理员允许新的本人核验", reply: "可以重新发起本人年龄核验。" });
+  await assert.rejects(() => ops.complain(rejectedSubject.owner, { kind: "appeal", category: "other", description: "通过普通帮助入口申诉年龄复核", parentReceipt: rejectedRow.receipt }), /年龄.*复核|专用/);
   const generic = await ops.complain(rejectedSubject.owner, { category: "other", description: "虚构用户申请核实年龄" });
   const genericRow = (await ops.queue(administrator, {})).find((row) => row.receipt === generic.receipt)!;
   await ops.action(administrator, Number(genericRow.id), { revision: 0, action: "claim", reason: "领取普通内容案件验证年龄限制隔离" });
   await ops.action(administrator, Number(genericRow.id), { revision: 1, action: "dismiss", reason: "普通内容案件无需采取内容限制" });
-  assert.equal((await rejectedService.status()).review?.state, "rejected");
+  assert.equal((await rejectedService.status()).review?.state, "approved");
+  assert.equal((await rejectedService.status()).allowed, false);
 
   const staleSubject = await fresh();
   const staleService = new AgeService(payload, staleSubject.owner, async () => ({ state: "adult", reference: "synthetic" }));
@@ -209,6 +219,77 @@ try {
   await staleService.requireAdditionalVerification();
   await assert.rejects(() => staleService.submit({ ...identity, challenge: staleChallenge.challenge }), /无效|过期/);
   assert.equal((await staleService.status()).review?.state, "pending");
+  await assert.rejects(() => ops.action(administrator, Number(staleRow.id), { revision: 2, action: "review", reason: "旧案件不得在新风险周期重新打开" }), /更新周期|当前案件/);
+
+  const under14Review = await fresh(); let under14Calls = 0;
+  const under14ReviewService = new AgeService(payload, under14Review.owner, async () => { under14Calls++; return { state: "adult", reference: "synthetic-under14-adult" }; });
+  await challenge(under14ReviewService, "under14");
+  const under14Request = await under14ReviewService.requestReview();
+  const under14Row = (await ops.queue(administrator, {})).find((row) => row.receipt === under14Request.review?.receipt)!;
+  await ops.action(administrator, Number(under14Row.id), { revision: 0, action: "claim", reason: "管理员领取未满十四岁申报复核案件" });
+  await ops.action(administrator, Number(under14Row.id), { revision: 1, action: "permit_age_reverification", reason: "允许本人通过既有身份核验入口提供新证据", reply: "可以重新发起本人年龄核验。" });
+  const under14Duplicate = await under14ReviewService.requestReview();
+  assert.equal(under14Duplicate.review?.receipt, under14Request.review?.receipt);
+  const under14Fresh = await under14ReviewService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  assert.equal((await under14ReviewService.submit({ ...identity, challenge: under14Fresh.challenge })).allowed, true);
+  assert.equal(under14Calls, 1);
+
+  const under14Minor = await fresh(); let under14MinorCalls = 0;
+  const under14MinorService = new AgeService(payload, under14Minor.owner, async () => { under14MinorCalls++; return { state: "minor", ageBand: "under14", reference: "synthetic-under14-minor" }; });
+  await challenge(under14MinorService, "under14");
+  const under14MinorRequest = await under14MinorService.requestReview();
+  const under14MinorRow = (await ops.queue(administrator, {})).find((row) => row.receipt === under14MinorRequest.review?.receipt)!;
+  await ops.action(administrator, Number(under14MinorRow.id), { revision: 0, action: "claim", reason: "管理员领取未满十四岁非成年结果复核案件" });
+  await ops.action(administrator, Number(under14MinorRow.id), { revision: 1, action: "permit_age_reverification", reason: "允许本人核验但不预先解除任何限制", reply: "可以重新发起本人年龄核验。" });
+  const under14MinorFresh = await under14MinorService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  const under14MinorResult = await under14MinorService.submit({ ...identity, challenge: under14MinorFresh.challenge });
+  assert.equal(under14MinorResult.allowed, false); assert.equal(under14MinorResult.state, "needs_review"); assert.equal(under14MinorCalls, 1);
+  assert.equal(under14MinorResult.review?.state, "pending");
+  await assert.rejects(() => under14MinorService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+
+  const lateRisk = await fresh(); let releaseLateRisk!: (value: { state: "adult"; reference: string }) => void; let enteredLateRisk!: () => void;
+  const lateRiskStarted = new Promise<void>((resolve) => { enteredLateRisk = resolve; });
+  const lateRiskEvidence = new Promise<{ state: "adult"; reference: string }>((resolve) => { releaseLateRisk = resolve; });
+  const lateRiskService = new AgeService(payload, lateRisk.owner, async () => { enteredLateRisk(); return lateRiskEvidence; });
+  await lateRiskService.requireAdditionalVerification();
+  const lateRiskRequest = await lateRiskService.requestReview();
+  const lateRiskRow = (await ops.queue(administrator, {})).find((row) => row.receipt === lateRiskRequest.review?.receipt)!;
+  await ops.action(administrator, Number(lateRiskRow.id), { revision: 0, action: "claim", reason: "管理员领取并发提交复核案件" });
+  await ops.action(administrator, Number(lateRiskRow.id), { revision: 1, action: "permit_age_reverification", reason: "先允许一次本人核验以验证迟到结果", reply: "可以重新发起本人年龄核验。" });
+  const lateRiskChallenge = await lateRiskService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  const lateRiskSubmit = lateRiskService.submit({ ...identity, challenge: lateRiskChallenge.challenge });
+  await lateRiskStarted;
+  await ops.action(administrator, Number(lateRiskRow.id), { revision: 2, action: "review", reason: "核验过程中重新打开案件并维持限制" });
+  await ops.action(secondAdministrator, Number(lateRiskRow.id), { revision: 3, action: "claim", reason: "另一管理员领取重新打开的年龄案件" });
+  await ops.action(secondAdministrator, Number(lateRiskRow.id), { revision: 4, action: "maintain_age_restriction", reason: "新风险要求继续维持年龄限制", reply: "当前继续维持年龄限制。" });
+  releaseLateRisk({ state: "adult", reference: "synthetic-late-adult" });
+  await assert.rejects(() => lateRiskSubmit, /已变更|重新.*复核|无效/);
+  assert.equal((await lateRiskService.status()).allowed, false);
+
+  const atomicRisk = await fresh();
+  const atomicRiskService = new AgeService(payload, atomicRisk.owner, async () => ({ state: "adult", reference: "synthetic-atomic-risk" }));
+  await atomicRiskService.requireAdditionalVerification();
+  const atomicRequest = await atomicRiskService.requestReview();
+  const atomicRow = (await ops.queue(administrator, {})).find((row) => row.receipt === atomicRequest.review?.receipt)!;
+  await ops.action(administrator, Number(atomicRow.id), { revision: 0, action: "claim", reason: "管理员领取原子风险登记验证案件" });
+  await ops.action(administrator, Number(atomicRow.id), { revision: 1, action: "permit_age_reverification", reason: "先批准以验证新风险原子取代旧授权", reply: "可以重新发起本人年龄核验。" });
+  let riskCreateEntered!: () => void; let releaseRiskCreate!: () => void;
+  const riskCreateStarted = new Promise<void>((resolve) => { riskCreateEntered = resolve; });
+  const riskCreateBarrier = new Promise<void>((resolve) => { releaseRiskCreate = resolve; });
+  const originalCreate = payload.create.bind(payload);
+  const createWithRiskBarrier: typeof payload.create = async (args) => {
+    const value = args as unknown as { collection?: string; data?: { owner?: string; stage?: string } };
+    if (value.collection === "safety-cases" && value.data?.owner === atomicRisk.owner.id && value.data.stage === "age_review") {
+      riskCreateEntered(); await riskCreateBarrier;
+    }
+    return originalCreate(args as never);
+  };
+  payload.create = createWithRiskBarrier;
+  const registerRisk = atomicRiskService.requireAdditionalVerification();
+  await riskCreateStarted;
+  await assert.rejects(() => atomicRiskService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /正在处理|database is locked/);
+  releaseRiskCreate(); await registerRisk; payload.create = originalCreate;
+  assert.equal((await atomicRiskService.status()).review?.state, "pending");
   console.log("✓ 年龄冲突→申请→管理员决定→全新成年证据解锁；拒绝、重复、越权和陈旧批准重放均保持限制");
   const cancelled = await fresh(); const cancelService = new AgeService(payload, cancelled.owner);
   await cancelService.cancel(); assert.equal((await cancelService.status()).state, "cancelled");
@@ -229,6 +310,32 @@ try {
   await payload.update({ collection: "age-profiles", id: expired!.id, overrideAccess: true, data: { expiresAt: new Date(Date.now() - 1).toISOString() } });
   assert.equal((await concurrentService.status()).state, "expired");
   await assert.rejects(() => concurrentService.requireCapability(), /年龄/);
+
+  const expiredLeaseSubject = await fresh(); let finishExpiredLease!: (value: { state: "adult"; reference: string }) => void; let enteredExpiredLease!: () => void;
+  const expiredLeaseStarted = new Promise<void>((resolve) => { enteredExpiredLease = resolve; });
+  const expiredLeaseEvidence = new Promise<{ state: "adult"; reference: string }>((resolve) => { finishExpiredLease = resolve; });
+  const expiredLeaseService = new AgeService(payload, expiredLeaseSubject.owner, async () => { enteredExpiredLease(); return expiredLeaseEvidence; });
+  const expiredLeaseChallenge = await challenge(expiredLeaseService);
+  const expiredLeaseSubmit = expiredLeaseService.submit({ ...identity, challenge: expiredLeaseChallenge.challenge });
+  await expiredLeaseStarted;
+  await payload.update({ collection: "age-locks", overrideAccess: true, where: { key: { equals: `owner:${expiredLeaseSubject.owner.id}` } }, data: { expiresAt: new Date(Date.now() - 1).toISOString() } });
+  finishExpiredLease({ state: "adult", reference: "synthetic-expired-lease" });
+  await assert.rejects(() => expiredLeaseSubmit, /超时/);
+  assert.equal((await expiredLeaseService.status()).allowed, false);
+
+  const deletingSubject = await fresh(); let finishDeleting!: (value: { state: "adult"; reference: string }) => void; let enteredDeleting!: () => void;
+  const deletingStarted = new Promise<void>((resolve) => { enteredDeleting = resolve; });
+  const deletingEvidence = new Promise<{ state: "adult"; reference: string }>((resolve) => { finishDeleting = resolve; });
+  const deletingService = new AgeService(payload, deletingSubject.owner, async () => { enteredDeleting(); return deletingEvidence; });
+  const deletingChallenge = await challenge(deletingService);
+  const deletingSubmit = deletingService.submit({ ...identity, challenge: deletingChallenge.challenge });
+  await deletingStarted;
+  const deletingPrivacy = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: deletingSubject.owner.id } } })).docs[0];
+  if (deletingPrivacy) await payload.update({ collection: "privacy-profiles", id: deletingPrivacy.id, overrideAccess: true, data: { state: "withdrawn" } });
+  else await payload.create({ collection: "privacy-profiles", overrideAccess: true, data: { owner: deletingSubject.owner.id, state: "withdrawn", revision: 0 } });
+  finishDeleting({ state: "adult", reference: "synthetic-deleting" });
+  await assert.rejects(() => deletingSubmit, /停止处理/);
+  assert.equal((await deletingService.status()).allowed, false);
   console.log("✓ 数据库并发锁、核验中查询与有效期失效");
 
   const exported = await privacy.exportData(); assert.ok(exported.ageVerification);

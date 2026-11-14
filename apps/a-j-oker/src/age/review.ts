@@ -49,12 +49,13 @@ export function reviewProjection(profile: AgeProfile | undefined, row: SafetyCas
   };
 }
 
-async function create(payload: Payload, owner: string, req: PayloadRequest) {
+async function create(payload: Payload, owner: string, req: PayloadRequest, parent?: SafetyCase) {
   const now = Date.now();
   const config = await settings(payload, req);
   const row = await payload.create({ collection: "safety-cases", overrideAccess: true, req, data: {
-    receipt: randomUUID(), owner, source: "complaint", status: "pending", severity: "normal",
+    receipt: randomUUID(), owner, source: parent ? "appeal" : "complaint", status: parent ? "review" : "pending", severity: "normal",
     category: AGE_REVIEW_CATEGORY, stage: AGE_REVIEW_STAGE, revision: 0,
+    parentId: parent?.id,
     acceptBy: workingDeadline(now, 1), resolveBy: workingDeadline(now, 7), feedbackBy: workingDeadline(now, 7),
     retainUntil: Number(config?.evidenceDays ?? 0) > 0 ? new Date(now + Number(config?.evidenceDays) * 86400_000).toISOString() : null,
     retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
@@ -67,18 +68,30 @@ async function create(payload: Payload, owner: string, req: PayloadRequest) {
   return row;
 }
 
+// Caller owns the surrounding transaction. A definitive new risk/minor result
+// must move authorization to a new current cycle before that transaction commits.
+export async function supersedeAgeReviewAuthorization(payload: Payload, owner: string, req: PayloadRequest) {
+  const latest = await latestAgeReviewCase(payload, owner, req);
+  return latest && latest.status !== "resolved" ? latest : create(payload, owner, req);
+}
+
 export async function requestAgeReview(payload: Payload, owner: Owner) {
   return transaction(payload, async (req) => {
     const profile = (await payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: owner.id } } })).docs[0];
     if (!profile || !["minor", "needs_review"].includes(String(profile.state)) && profile.additionalVerification !== "required")
       throw new AppError(409, "当前账户没有需要人工复核的年龄限制");
-    const existing = (await cases(payload, owner.id, req)).find((row) => row.status !== "resolved");
+    const rows = await cases(payload, owner.id, req);
+    const existing = rows.find((row) => row.status !== "resolved");
     if (existing) return existing;
+    const latest = rows[0];
+    // An approval is authorization for this restricted cycle, not a reason to
+    // create unlimited duplicate cases when the user refreshes/resubmits.
+    if (latest?.action === "permit_age_reverification") return latest;
     if (profile.additionalVerification !== "required" || profile.state !== "needs_review")
       await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: {
         state: "needs_review", additionalVerification: "required", challenge: null, challengePurpose: null, challengeExpiresAt: null,
       } });
-    return create(payload, owner.id, req);
+    return create(payload, owner.id, req, latest?.action === "maintain_age_restriction" ? latest : undefined);
   });
 }
 
@@ -89,10 +102,16 @@ export async function requireApprovedReview(payload: Payload, owner: string, req
   return row;
 }
 
-export async function ensureAgeRiskCase(payload: Payload, owner: string) {
+export async function requireAgeRiskCase(payload: Payload, owner: string) {
   return transaction(payload, async (req) => {
-    const open = (await cases(payload, owner, req)).find((row) => row.status !== "resolved");
-    return open || create(payload, owner, req);
+    const profile = (await payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: owner } } })).docs[0];
+    const restriction = {
+      state: "needs_review", additionalVerification: "required", challenge: null, challengePurpose: null,
+      challengeExpiresAt: null, assurance: null, expiresAt: null, reference: null,
+    };
+    if (profile) await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: restriction });
+    else await payload.create({ collection: "age-profiles", overrideAccess: true, req, data: { owner, ...restriction } });
+    return supersedeAgeReviewAuthorization(payload, owner, req);
   });
 }
 
@@ -102,6 +121,8 @@ export async function decideAgeReview(payload: Payload, user: TypedUser, row: Sa
   if (!isAdministrator(user)) throw new AppError(403, "年龄复核结论需要系统管理员");
   if (row.assignedTo !== user.id) throw new AppError(403, "请由已领取案件的管理员作出年龄复核结论");
   if (!reply) throw new AppError(400, "年龄复核结论必须填写给本人的说明");
+  const current = await latestAgeReviewCase(payload, row.owner, req);
+  if (!current || current.id !== row.id) throw new AppError(409, "此年龄复核案件已被更新周期取代，请处理当前案件");
   const profile = (await payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: row.owner } } })).docs[0];
   if (!profile || profile.additionalVerification !== "required") throw new AppError(409, "账户已不处于年龄复核限制状态");
   await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: {

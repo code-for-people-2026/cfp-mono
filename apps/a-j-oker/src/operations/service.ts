@@ -6,7 +6,7 @@ import { z } from "zod";
 import { AppError, type Owner } from "../domain/contracts";
 import { audit } from "./audit";
 import { canReview, categories, isAdministrator, settings, settingSchema } from "./policy";
-import { decideAgeReview, isAgeReviewCase } from "../age/review";
+import { decideAgeReview, isAgeReviewCase, latestAgeReviewCase } from "../age/review";
 export { transaction } from "./transaction";
 import { transaction } from "./transaction";
 
@@ -68,6 +68,7 @@ export class OperationsService {
         parent = (await this.payload.find({ collection: "safety-cases", overrideAccess: true, req, limit: 1, where: { and: [{ receipt: { equals: input.parentReceipt } }, { owner: { equals: owner.id } }] } })).docs[0];
         if (!parent) throw new AppError(404, "受理记录不存在");
         if (parent.status !== "resolved") throw new AppError(409, "原事项尚未处置，请等待结果");
+        if (isAgeReviewCase(parent)) throw new AppError(409, "年龄限制申诉请使用年龄核验帮助页的“申请年龄复核”专用入口");
         const duplicate = await this.payload.count({ collection: "safety-cases", overrideAccess: true, req, where: { and: [{ parentId: { equals: parent.id } }, { status: { not_equals: "resolved" } }] } });
         if (duplicate.totalDocs) throw new AppError(409, "已有申诉正在复核");
       } else if (input.parentReceipt) throw new AppError(400, "举报不能指定申诉编号");
@@ -118,6 +119,8 @@ export class OperationsService {
     return transaction(this.payload, async (req) => {
       const row = await this.payload.findByID({ collection: "safety-cases", id, overrideAccess: true, req });
       if (row.revision !== input.revision) throw new AppError(409, "案件已被其他人处理，请刷新");
+      if (isAgeReviewCase(row) && (await latestAgeReviewCase(this.payload, row.owner, req))?.id !== row.id)
+        throw new AppError(409, "此年龄复核案件已被更新周期取代，请处理当前案件");
       const now = new Date().toISOString();
       const patch: Record<string, unknown> = { revision: input.revision + 1 };
       if (input.action === "claim") {

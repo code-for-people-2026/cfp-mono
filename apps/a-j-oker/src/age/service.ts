@@ -1,35 +1,36 @@
 import { randomUUID } from "node:crypto";
-import type { Payload } from "payload";
+import type { Payload, PayloadRequest } from "payload";
 import { ageChallengeSchema, ageReviewChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { AppError, type Owner } from "../domain/contracts";
 import type { AgeProfile } from "../payload-types";
 import { ageNotice, ageProvider, providerConfigured, wechatConfigured } from "./policy";
 import { withAgeLock } from "./lock";
 import { verifyAge, type AgeVerifier } from "./provider";
-import { ensureAgeRiskCase, latestAgeReviewCase, requestAgeReview, requireApprovedReview, reviewProjection } from "./review";
+import { latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection, supersedeAgeReviewAuthorization } from "./review";
+import { transaction } from "../operations/transaction";
 
-export async function ageProfile(payload: Payload, owner: string) {
-  return (await payload.find({ collection: "age-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: owner } } })).docs[0];
+export async function ageProfile(payload: Payload, owner: string, req?: PayloadRequest) {
+  return (await payload.find({ collection: "age-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: owner } } })).docs[0];
 }
 export class AgeService {
   constructor(readonly payload: Payload, readonly owner: Owner, private verify: AgeVerifier = verifyAge) {}
-  private async bound() {
+  private async bound(req?: PayloadRequest) {
     if (!this.owner.wechatKey) return false;
-    return !!(await this.payload.find({ collection: "wechat-identities", overrideAccess: true, limit: 1, where: { and: [{ owner: { equals: this.owner.id } }, { key: { equals: this.owner.wechatKey } }] } })).docs.length;
+    return !!(await this.payload.find({ collection: "wechat-identities", overrideAccess: true, req, limit: 1, where: { and: [{ owner: { equals: this.owner.id } }, { key: { equals: this.owner.wechatKey } }] } })).docs.length;
   }
-  private async mayProcess() {
-    const profile = (await this.payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: this.owner.id } } })).docs[0];
+  private async mayProcess(req?: PayloadRequest) {
+    const profile = (await this.payload.find({ collection: "privacy-profiles", overrideAccess: true, req, limit: 1, where: { owner: { equals: this.owner.id } } })).docs[0];
     if (["deleting", "deleted", "withdrawn"].includes(String(profile?.state))) throw new AppError(403, "此身份已停止处理，请先查看隐私与数据设置");
   }
   private async personal() {
     if (this.owner.auth !== "miniapp" || !await this.bound()) throw new AppError(403, "请本人先在微信小程序完成微信登录");
     await this.mayProcess();
   }
-  private async save(data: Partial<AgeProfile>) {
-    const profile = await ageProfile(this.payload, this.owner.id);
+  private async save(data: Partial<AgeProfile>, req?: PayloadRequest) {
+    const profile = await ageProfile(this.payload, this.owner.id, req);
     return profile
-      ? this.payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, data })
-      : this.payload.create({ collection: "age-profiles", overrideAccess: true, data: { ...data, owner: this.owner.id, state: data.state || "unverified" } });
+      ? this.payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data })
+      : this.payload.create({ collection: "age-profiles", overrideAccess: true, req, data: { ...data, owner: this.owner.id, state: data.state || "unverified" } });
   }
   async status(): Promise<AgeStatus> {
     const profile = await ageProfile(this.payload, this.owner.id);
@@ -100,10 +101,11 @@ export class AgeService {
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
       const profile = await ageProfile(this.payload, this.owner.id);
       if (!profile || profile.additionalVerification !== "required") throw new AppError(409, "当前账户不需要年龄复核");
-      await requireApprovedReview(this.payload, this.owner.id);
+      const approved = await requireApprovedReview(this.payload, this.owner.id);
       const challenge = randomUUID();
       await this.save({ state: "needs_review", noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(),
-        challenge, challengePurpose: "age_review", challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString() });
+        challenge, challengePurpose: "age_review", challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
+        reference: `age-review:${approved.id}:${approved.revision}` });
       return { status: await this.status(), challenge };
     });
   }
@@ -117,21 +119,33 @@ export class AgeService {
       if (!profile || profile.challenge !== input.challenge || !profile.challengeExpiresAt || Date.parse(String(profile.challengeExpiresAt)) <= Date.now() || profile.noticeVersion !== ageNotice().version || (profile.additionalVerification === "required" && !reviewing)) throw new AppError(409, "核验请求无效、已使用或过期，请重新阅读说明并发起");
       if (reviewing) await requireApprovedReview(this.payload, this.owner.id);
       const correcting = profile.challengePurpose === "correction";
-      if (profile.declaration === "under14" && !correcting) throw new AppError(403, "请先通过帮助与反馈获得监护人支持");
+      if (profile.declaration === "under14" && !correcting && !reviewing) throw new AppError(403, "请先通过帮助与反馈获得监护人支持");
       const day = new Date().toISOString().slice(0, 10);
       const attempts = profile.day === day ? Number(profile.attempts || 0) : 0;
       if (attempts >= 5) throw new AppError(429, "今日核验次数已用完，请明日重试或通过帮助与反馈申请复核");
-      await this.save({ state: "pending", challenge: null, challengePurpose: null, challengeExpiresAt: null, lastAttemptAt: new Date().toISOString(), day, attempts: attempts + 1, assurance: null, expiresAt: null });
+      const pending = await this.save({ state: "pending", challenge: null, challengePurpose: null, challengeExpiresAt: null, lastAttemptAt: new Date().toISOString(), day, attempts: attempts + 1, assurance: null, expiresAt: null });
       // Consume the challenge before the network operation; a retry cannot replay it.
       let evidence: Awaited<ReturnType<AgeVerifier>>;
       try { evidence = await this.verify({ name: input.name, idCard: input.idCard }); }
       catch { evidence = { state: "unavailable" }; }
-      await assertLease();
-      await this.mayProcess();
       const state = evidence.state === "adult" && profile.declaration === "14to17" && !correcting && !reviewing ? "needs_review" : evidence.state;
       const verified = state === "adult" || state === "minor";
       const now = new Date();
-      await this.save({ state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: evidence.reference || null, ...((correcting || reviewing) && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: reviewing ? (state === "adult" ? "not_requested" : "required") : state === "needs_review" ? "required" : "not_requested" });
+      await transaction(this.payload, async (req) => {
+        await assertLease(req);
+        if (!await this.bound(req)) throw new AppError(409, "登录绑定已变更，请重新登录并发起核验");
+        await this.mayProcess(req);
+        const current = await ageProfile(this.payload, this.owner.id, req);
+        if (!current || current.id !== pending.id || current.updatedAt !== pending.updatedAt || current.state !== "pending")
+          throw new AppError(409, "年龄核验状态已变更，请按当前复核状态重新发起");
+        if (reviewing) {
+          const approved = await requireApprovedReview(this.payload, this.owner.id, req);
+          if (current.additionalVerification !== "required" || current.reference !== `age-review:${approved.id}:${approved.revision}`)
+            throw new AppError(409, "年龄复核批准已变更，请按当前结果重新发起");
+        }
+        await this.save({ state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: evidence.reference || null, ...((correcting || reviewing) && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: reviewing ? (state === "adult" ? "not_requested" : "required") : state === "needs_review" ? "required" : "not_requested" }, req);
+        if (reviewing && state === "minor") await supersedeAgeReviewAuthorization(this.payload, this.owner.id, req);
+      });
       return this.status();
     });
   }
@@ -147,11 +161,9 @@ export class AgeService {
   // Trusted internal integration seam for a future risk/guardian review service.
   // No client endpoint clears this flag, and no face verification is implemented.
   async requireAdditionalVerification() {
-    const status = await withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
-      await this.save({ state: "needs_review", additionalVerification: "required", challenge: null });
+    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+      await requireAgeRiskCase(this.payload, this.owner.id);
       return this.status();
     });
-    await ensureAgeRiskCase(this.payload, this.owner.id);
-    return status;
   }
 }
