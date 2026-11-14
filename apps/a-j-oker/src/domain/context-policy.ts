@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { Greeting } from "../payload-types";
 import type { MemoryStatus } from "@cfp/a-j-oker-contracts";
 import { inputSchema } from "./contracts";
-import { artifactsSchema, artifactSummary } from "@cfp/base-chat-protocol";
+import { artifactSummary, legacyArtifactsSchema } from "@cfp/base-chat-protocol";
 
 // 这是产品的对话记忆预算，不是供应商上下文窗口，也不是计费 token。
 export const MEMORY_BUDGET = 18_000;
@@ -68,7 +68,7 @@ export function toMemoryTurn(
     input: { text: input.text, mediaIds: input.mediaIds },
     greeting: [
       String(row.greeting || ""),
-      artifactSummary(artifactsSchema.parse(row.artifacts ?? [])),
+      artifactSummary(legacyArtifactsSchema.parse(row.artifacts ?? [], { jitless: true })),
     ]
       .filter(Boolean)
       .join("\n"),

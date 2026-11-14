@@ -298,13 +298,24 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     },
   ];
   const original = platform.request.getMockImplementation()!;
-  const submitted: unknown[] = [];
+  const submitted: Array<{ values: unknown; form: unknown }> = [];
   let result: Turn | undefined;
   platform.request.mockImplementation(async (options) => {
     if (options.url.endsWith("/ag-ui")) {
       const values =
         options.data.forwardedProps.clientEvent.action.context.values;
-      submitted.push(structuredClone(values));
+      const submission =
+        options.data.forwardedProps.clientEvent.action.context.submission;
+      submitted.push(
+        structuredClone({
+          values,
+          form: {
+            presentationId: submission.presentationId,
+            revision: submission.revision,
+            formId: submission.formId,
+          },
+        }),
+      );
       result = {
         ...initial,
         id: submitted.length + 1,
@@ -361,9 +372,83 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
   expect(submitted).toHaveLength(2);
   await openArtifact();
   expect(submitted[1]).toEqual(submitted[0]);
-  expect(submitted[1]).toMatchObject({ intensity: 0 });
+  expect(submitted[1]?.values).toMatchObject({ intensity: 0 });
+  expect(submitted[1]?.form).toMatchObject({
+    presentationId: "urn:cfp:a-j-oker:turn:1",
+    revision: 1,
+    formId: "thought_record",
+  });
   expect(fields().map((field) => field.props.value)).toEqual(answers);
   expect(button().props.disabled).toBe(true);
+});
+
+it("表单按钮渲染后若年龄授权过期，旧回调明确失败且不会误报已提交", async () => {
+  const { artifacts } =
+    await import("../../../packages/base-chat-protocol/test/fixtures");
+  history = [
+    {
+      ...initial,
+      input: { text: "请给我一份练习", mediaIds: [] },
+      artifacts: artifacts.filter((item) => item.kind === "form"),
+    },
+  ];
+  await mount();
+  await openArtifact();
+  const fields = renderer!.root.findAll(
+    (node) =>
+      ["input", "textarea"].includes(String(node.type)) &&
+      node.props.className?.includes("artifact-input"),
+  );
+  act(() =>
+    fields.forEach((field, index) =>
+      field.props.onInput({
+        detail: {
+          value: ["会议数字已更正", "担心大家不信任我", "紧张", "2"][
+            index
+          ],
+        },
+      }),
+    ),
+  );
+  const staleSubmit = renderer!.root
+    .findAllByType("button")
+    .find((node) => node.props.className?.includes("artifact-submit"))!
+    .props.onClick;
+  const now = vi
+    .spyOn(Date, "now")
+    .mockReturnValue(Date.parse("2100-01-01T00:00:00.000Z"));
+  try {
+    const didShow = platform.useDidShow.mock.calls.at(-1)?.[0];
+    expect(didShow).toBeTypeOf("function");
+    act(() => didShow());
+    expect(
+      renderer!.root
+        .findAllByType("button")
+        .find((node) => node.props.className?.includes("artifact-submit"))!
+        .props.disabled,
+    ).toBe(true);
+    await act(async () => {
+      staleSubmit();
+      await Promise.resolve();
+    });
+  } finally {
+    now.mockRestore();
+  }
+  expect(
+    renderer!.root
+      .findAll((node) => node.props.className === "artifact-error")
+      .some((node) =>
+        node.children.includes("表单当前无法提交，请确认页面仍可用后重试"),
+      ),
+  ).toBe(true);
+  expect(text()).not.toContain("已提交，阿 J 先生已接着回应");
+  expect(
+    platform.request.mock.calls.filter(
+      ([options]) =>
+        options.url.endsWith("/ag-ui") &&
+        options.data?.forwardedProps?.clientEvent,
+    ),
+  ).toHaveLength(0);
 });
 
 describe("聊天历史与图片失败隔离", () => {
@@ -1100,6 +1185,65 @@ describe("聊天历史与图片失败隔离", () => {
 });
 
 describe("新会话与历史导航", () => {
+  it.each(["identity-clear", "unmount"] as const)(
+    "创建首个会话期间发生 %s，不恢复旧会话也不启动生成",
+    async (interruption) => {
+      const original = platform.request.getMockImplementation()!;
+      let finishSession: ((response: unknown) => void) | undefined;
+      platform.request.mockImplementation(async (options) => {
+        if (options.url.endsWith("/sessions") && options.method === "POST")
+          return new Promise((resolve) => {
+            finishSession = resolve;
+          });
+        if (options.url.endsWith("/sessions"))
+          return { statusCode: 200, data: [] };
+        return original(options);
+      });
+      await mount();
+      act(() =>
+        renderer!.root.findByType("textarea").props.onInput({
+          detail: { value: "尚未建立会话的消息" },
+        }),
+      );
+      let sending: Promise<void> | undefined;
+      act(() => {
+        sending = renderer!.root
+          .findAllByType("button")
+          .find((node) => node.props.className.includes("send-button"))!
+          .props.onClick();
+      });
+      expect(finishSession).toBeTypeOf("function");
+      if (interruption === "identity-clear") {
+        const identityListener = platform.eventCenter.on.mock.calls.find(
+          ([event]) => event === "hello:privacy-changed",
+        )?.[1];
+        expect(identityListener).toBeTypeOf("function");
+        act(() => identityListener({ clearIdentity: true }));
+      } else {
+        act(() => renderer!.unmount());
+        renderer = undefined;
+      }
+      await act(async () => {
+        finishSession!({
+          statusCode: 200,
+          data: { id: 2, title: "不应恢复的新会话" },
+        });
+        await sending;
+      });
+      expect(
+        platform.request.mock.calls.filter(([options]) =>
+          options.url.endsWith("/ag-ui"),
+        ),
+      ).toHaveLength(0);
+      expect(platform.setStorageSync).not.toHaveBeenCalledWith(
+        "hello-active-session:https://example.test",
+        2,
+      );
+      if (interruption === "identity-clear")
+        expect(text()).not.toContain("不应恢复的新会话");
+    },
+  );
+
   it("新会话保留身份与旧记录，切回恢复草稿并隔离记忆", async () => {
     const original = platform.request.getMockImplementation()!;
     let created = false;

@@ -12,6 +12,11 @@ import { PayloadSessionService } from "./payload-session-service";
 import { DeepSeekModel } from "./deepseek-model";
 import { ContextService } from "../domain/context";
 import { COORDINATOR_MAX_CALLS } from "./limits";
+import {
+  AJ_A2A_TENANT,
+  createInProcessPsychologyA2AFactory,
+} from "./psychology-a2a";
+import { createPayloadA2AStorage } from "../cms/a2a-store";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
 
@@ -126,6 +131,8 @@ ${imagePromptConstraints()}`;
 
   const sessionService = new PayloadSessionService(request.repo);
   const executionId = request.executionId || String(request.turnId);
+  const a2aStorage = createPayloadA2AStorage(request.repo, AJ_A2A_TENANT);
+  const { taskStore, requestLedger, recoverCompletedTask } = a2aStorage;
   const agent = createGreetingAgent({
     imageTool,
     imageDecisionTool,
@@ -134,8 +141,17 @@ ${imagePromptConstraints()}`;
     sessionService,
     userId: request.repo.owner.id,
     turnSessionId: executionId,
+    // Stable across process/image-resume executions: a persisted pending task
+    // is reported unavailable, while a validated completed result is recovered.
+    consultationExecutionId: String(request.turnId),
     inputParts: parts,
     signal,
+    a2a: createInProcessPsychologyA2AFactory({
+      principal: { owner: request.repo.owner.id, tenant: AJ_A2A_TENANT },
+      taskStore,
+      requestLedger,
+      recoverCompletedTask,
+    }),
     checkDelivery: value => restCardDeliveryError(
       imageAdmitted,
       value,

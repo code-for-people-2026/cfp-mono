@@ -41,9 +41,15 @@ import {
 } from "../../../../domain/artifact-rendering";
 import {
   A2UI_VERSION,
-  CATALOG_ID,
   a2uiCatalog,
 } from "@cfp/base-chat-protocol";
+import {
+  AJ_CATALOG_ID,
+  AJ_CATALOG_TITLE,
+  AJ_PRESENTATION_CATALOG_HEADER,
+  ajCatalogIdForResponseHeader,
+  projectAjTurnForClient,
+} from "@cfp/a-j-oker-contracts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -57,7 +63,9 @@ export async function GET(request: Request, context: Context) {
     const path = (await context.params).path;
     if (path[0] === "legal") return path[1] === "page" ? legalPage() : json(privacyPolicy());
     if (path[0] === "a2ui-catalog" && path.length === 1)
-      return json(a2uiCatalog());
+      return json(
+        a2uiCatalog({ id: AJ_CATALOG_ID, title: AJ_CATALOG_TITLE }),
+      );
     if (path[0] === "config")
       return json({
         serviceScope: SERVICE_SCOPE,
@@ -66,7 +74,12 @@ export async function GET(request: Request, context: Context) {
         model: process.env.HELLO_MODEL || DEFAULT_MODEL,
         origin: process.env.HELLO_ORIGIN || "http://127.0.0.1:3310",
         advertisement: adConfiguration(),
-        protocols: { agUi: "1.0", a2ui: A2UI_VERSION, catalogId: CATALOG_ID },
+        protocols: {
+          agUi: "1.0",
+          a2ui: A2UI_VERSION,
+          catalogId: AJ_CATALOG_ID,
+          presentationCatalogHeader: AJ_PRESENTATION_CATALOG_HEADER,
+        },
       });
     const payload = await cms();
     const owner = await authenticate(payload, request);
@@ -137,19 +150,35 @@ export async function GET(request: Request, context: Context) {
         );
       if (path[0] === "sessions" && !path[1])
         return json(await service.sessions());
-      if (path[0] === "sessions" && path[2] === "requests" && path.length === 4)
-        return json(
-          await service.submission(
-            z.coerce.number().int().positive().parse(path[1]),
-            z.string().uuid().parse(path[3]),
-          ),
+      if (
+        path[0] === "sessions" &&
+        path[2] === "requests" &&
+        path.length === 4
+      ) {
+        const result = await service.submission(
+          z.coerce.number().int().positive().parse(path[1]),
+          z.string().uuid().parse(path[3]),
         );
-      if (path[0] === "sessions" && path[1])
-        return json(
-          await service.history(
-            z.coerce.number().int().positive().parse(path[1]),
-          ),
+        const catalogId = ajCatalogIdForResponseHeader(
+          request.headers.get(AJ_PRESENTATION_CATALOG_HEADER),
         );
+        return json({
+          turn: result.turn
+            ? projectAjTurnForClient(result.turn, catalogId)
+            : null,
+        });
+      }
+      if (path[0] === "sessions" && path[1]) {
+        const history = await service.history(
+          z.coerce.number().int().positive().parse(path[1]),
+        );
+        const catalogId = ajCatalogIdForResponseHeader(
+          request.headers.get(AJ_PRESENTATION_CATALOG_HEADER),
+        );
+        return json(
+          history.map((turn) => projectAjTurnForClient(turn, catalogId)),
+        );
+      }
       if (path[0] === "media" && path[1]) {
         if (owner.auth === "bearer") await privacyService(payload, owner).require("sensitive");
         const media = await service.media.read(
@@ -275,7 +304,16 @@ export async function POST(request: Request, context: Context) {
       requirePlatformInput({ mode: row.mode, apiKey: retry.apiKey });
       await privacy.requireInput(row.input);
       const args = turnSchema.parse({ sessionId: row.sessionId, requestId: retry.requestId, input: row.input, mode: row.mode, apiKey: retry.apiKey });
-      return agentStream({ generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) }, args, row.id);
+      return agentStream(
+        { generateGreeting: (args, progress) => withCredentialExecution(owner.id, () => service.generateGreeting(args, progress)), resumeImage: (id, key, progress) => withCredentialExecution(owner.id, () => service.resumeImage(id, key, progress)) },
+        {
+          ...args,
+          a2uiCatalogId: ajCatalogIdForResponseHeader(
+            request.headers.get(AJ_PRESENTATION_CATALOG_HEADER),
+          ),
+        },
+        row.id,
+      );
     }
       if (path[0] === "context") {
         const args = z

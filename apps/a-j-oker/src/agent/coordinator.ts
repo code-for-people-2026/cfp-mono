@@ -15,6 +15,7 @@ import { PSYCHOLOGY_SAFETY } from "./psychology";
 import { FACTUALITY_BOUNDARY, IMAGE_REQUEST_BOUNDARY, CREATION_SCOPE_BOUNDARY } from "./instruction";
 import type { AgentConfiguration } from "./configuration";
 import { createPsychologyTeam } from "./psychology-agents";
+import type { PsychologyA2AFactory } from "./psychology-a2a";
 
 // Correctable format/coordination mistakes return to the coordinator. Storage
 // and permission errors still fail the run instead of being hidden or retried.
@@ -67,8 +68,10 @@ export function createGreetingAgent(options: {
   sessionService: BaseSessionService;
   userId: string;
   turnSessionId: string;
+  consultationExecutionId: string;
   inputParts: Part[];
   signal: AbortSignal;
+  a2a: PsychologyA2AFactory;
   save: (reply: Greeting) => Promise<unknown>;
   checkDelivery?: (reply: Greeting) => string | undefined;
   responseGuidance?: string;

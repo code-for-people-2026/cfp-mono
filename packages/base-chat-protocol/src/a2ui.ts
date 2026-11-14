@@ -1,16 +1,28 @@
 import { z } from "zod";
 import {
-  artifactsSchema,
+  codeSchema,
   fieldSchema,
+  formReferenceSchema,
+  formValueSchema,
   formValuesSchema,
-  pageSchema,
   tableSchema,
+  pageSchema,
+  validateForm,
   type Artifact,
+  type FormAnswer,
 } from "./artifacts";
+import {
+  presentationFromLegacyArtifacts,
+  presentationSchema,
+  requestIdSchema,
+  type Presentation,
+} from "./presentation";
 
 export const A2UI_VERSION = "v0.9.1" as const;
-export const CATALOG_ID = "urn:cfp:hello-agent:catalog:1";
+export const DEFAULT_CATALOG_ID = "urn:cfp:chat:presentation:catalog:1";
 export const A2UI_EVENT = "a2ui";
+export const catalogIdSchema = z.string().min(1).max(256);
+export const surfaceIdSchema = z.string().min(1).max(128);
 const id = z.string().regex(/^[a-z][a-z0-9_]{0,79}$/);
 const binding = z
   .object({
@@ -19,7 +31,15 @@ const binding = z
       .regex(/^\/values\/(?!constructor$|prototype$)[a-z][a-z0-9_]{0,39}$/),
   })
   .strict();
-// An intentionally bounded catalog, shared by the H5 and Taro adapters.
+const resourceUrl = z
+  .string()
+  .max(512)
+  .regex(
+    /^\/(?!\/)[A-Za-z0-9._~!$&'()*+,;=:@%/-]*(?:\?[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?(?:#[A-Za-z0-9._~!$&'()*+,;=:@%/-]*)?$/,
+  );
+
+// An intentionally bounded catalog, shared by platform renderers. Product owners
+// choose their stable catalog ID; no route or product identity is embedded here.
 export const componentSchema = z.discriminatedUnion("component", [
   z
     .object({
@@ -41,11 +61,7 @@ export const componentSchema = z.discriminatedUnion("component", [
     .object({
       id,
       component: z.literal("Image"),
-      url: z
-        .string()
-        .regex(
-          /^\/api\/hello\/artifact-image\/[1-9]\d*\/[a-z][a-z0-9_]{0,39}$/,
-        ),
+      url: resourceUrl,
       alt: z.string().max(300),
     })
     .strict(),
@@ -60,11 +76,16 @@ export const componentSchema = z.discriminatedUnion("component", [
   z
     .object({
       id,
+      component: z.literal("Code"),
+      code: codeSchema,
+    })
+    .strict(),
+  z
+    .object({
+      id,
       component: z.literal("Page"),
       page: pageSchema,
-      url: z
-        .string()
-        .regex(/^\/api\/hello\/artifact-page\/[1-9]\d*\/[a-z][a-z0-9_]{0,39}$/),
+      url: resourceUrl,
     })
     .strict(),
   z
@@ -88,6 +109,7 @@ export const componentSchema = z.discriminatedUnion("component", [
               context: z
                 .object({
                   values: z.object({ path: z.literal("/values") }).strict(),
+                  form: formReferenceSchema.optional(),
                 })
                 .strict(),
             })
@@ -99,7 +121,6 @@ export const componentSchema = z.discriminatedUnion("component", [
 ]);
 export type Component = z.infer<typeof componentSchema>;
 const envelope = { version: z.literal(A2UI_VERSION) };
-const surfaceId = z.string().regex(/^turn_[1-9]\d*_[a-z][a-z0-9_]{0,39}$/);
 const dataModel = z.object({ values: formValuesSchema }).strict();
 export const a2uiMessageSchema = z.union([
   z
@@ -107,8 +128,8 @@ export const a2uiMessageSchema = z.union([
       ...envelope,
       createSurface: z
         .object({
-          surfaceId,
-          catalogId: z.literal(CATALOG_ID),
+          surfaceId: surfaceIdSchema,
+          catalogId: catalogIdSchema,
           sendDataModel: z.literal(false).optional(),
         })
         .strict(),
@@ -118,7 +139,7 @@ export const a2uiMessageSchema = z.union([
     .object({
       ...envelope,
       updateComponents: z
-        .object({ surfaceId, components: z.array(componentSchema).max(64) })
+        .object({ surfaceId: surfaceIdSchema, components: z.array(componentSchema).max(64) })
         .strict(),
     })
     .strict(),
@@ -127,7 +148,7 @@ export const a2uiMessageSchema = z.union([
       ...envelope,
       updateDataModel: z
         .object({
-          surfaceId,
+          surfaceId: surfaceIdSchema,
           path: z
             .string()
             .regex(
@@ -138,6 +159,7 @@ export const a2uiMessageSchema = z.union([
             .union([
               dataModel,
               formValuesSchema,
+              formValueSchema,
               z.string().max(1200),
               z.number().finite(),
             ])
@@ -147,17 +169,83 @@ export const a2uiMessageSchema = z.union([
     })
     .strict(),
   z
-    .object({ ...envelope, deleteSurface: z.object({ surfaceId }).strict() })
+    .object({ ...envelope, deleteSurface: z.object({ surfaceId: surfaceIdSchema }).strict() })
     .strict(),
 ]);
 export type A2uiMessage = z.infer<typeof a2uiMessageSchema>;
-export const surfaceName = (turnId: number, artifactId: string) =>
-  `turn_${turnId}_${artifactId}`;
 
-export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
-  const artifacts = artifactsSchema.parse(value ?? [], { jitless: true });
-  return artifacts.flatMap((artifact) => {
-    const surfaceId = surfaceName(turnId, artifact.id);
+export const clientSubmissionSchema = formReferenceSchema.extend({
+  requestId: requestIdSchema,
+});
+export const clientEventSchema = z
+  .object({
+    version: z.literal(A2UI_VERSION),
+    action: z
+      .object({
+        name: z.literal("submit_form"),
+        surfaceId: surfaceIdSchema,
+        sourceComponentId: id,
+        timestamp: z.string().datetime(),
+        context: z
+          .object({
+            values: formValuesSchema,
+            form: formReferenceSchema.optional(),
+            submission: clientSubmissionSchema.optional(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+export type ClientEvent = z.infer<typeof clientEventSchema>;
+
+export function formAnswerFromClientEvent(
+  presentationValue: unknown,
+  action: ClientEvent["action"],
+): FormAnswer {
+  const presentation = presentationSchema.parse(presentationValue, {
+    jitless: true,
+  });
+  const submission = action.context.submission;
+  if (!submission) throw new Error("表单提交缺少版本标识");
+  const form = presentation.blocks.find(
+    (block) =>
+      block.kind === "form" &&
+      block.id === submission.formId &&
+      submission.presentationId === presentation.id &&
+      submission.revision === presentation.revision,
+  );
+  if (!form || form.kind !== "form") throw new Error("表单提交版本不匹配");
+  const problem = validateForm(form, action.context.values);
+  if (problem) throw new Error(problem);
+  const { requestId, ...reference } = submission;
+  return {
+    form: reference,
+    requestId,
+    answers: action.context.values,
+  };
+}
+
+export type A2uiResource =
+  | { kind: "image"; block: Extract<Artifact, { kind: "image" }> }
+  | { kind: "page"; block: Extract<Artifact, { kind: "page" }> };
+
+export type CompileA2uiOptions = {
+  catalogId: string;
+  surfaceId: (block: Artifact) => string;
+  resourceUrl: (resource: A2uiResource) => string;
+};
+export type LegacyCompileA2uiOptions = CompileA2uiOptions & {
+  presentationId: string;
+  revision: number;
+};
+
+function compilePresentation(
+  presentation: Presentation,
+  options: CompileA2uiOptions,
+): A2uiMessage[] {
+  return presentation.blocks.flatMap((artifact) => {
+    const surfaceId = options.surfaceId(artifact);
     const components: Component[] = [
       { id: "title", component: "Text", text: artifact.title, variant: "h3" },
     ];
@@ -181,11 +269,14 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
           rows: artifact.rows,
         });
         break;
+      case "code":
+        add({ id: "code", component: "Code", code: artifact });
+        break;
       case "image":
         add({
           id: "image",
           component: "Image",
-          url: `/api/hello/artifact-image/${turnId}/${artifact.id}`,
+          url: options.resourceUrl({ kind: "image", block: artifact }),
           alt: artifact.alt,
         });
         break;
@@ -194,10 +285,10 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
           id: "page",
           component: "Page",
           page: artifact,
-          url: `/api/hello/artifact-page/${turnId}/${artifact.id}`,
+          url: options.resourceUrl({ kind: "page", block: artifact }),
         });
         break;
-      case "form":
+      case "form": {
         add({
           id: "description",
           component: "Text",
@@ -224,11 +315,19 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
           action: {
             event: {
               name: "submit_form",
-              context: { values: { path: "/values" } },
+              context: {
+                values: { path: "/values" },
+                form: {
+                  presentationId: presentation.id,
+                  revision: presentation.revision,
+                  formId: artifact.id,
+                },
+              },
             },
           },
         });
         break;
+      }
     }
     components.push(
       { id: "content", component: "Column", children },
@@ -239,7 +338,7 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
         version: A2UI_VERSION,
         createSurface: {
           surfaceId,
-          catalogId: CATALOG_ID,
+          catalogId: options.catalogId,
           sendDataModel: false,
         },
       },
@@ -252,18 +351,46 @@ export function toA2ui(turnId: number, value: unknown): A2uiMessage[] {
   });
 }
 
-// Keep the product allowlist and resource limits here; the official A2UI core owns
-// component/data state. This guard never applies data updates or resolves bindings.
+export function presentationToA2ui(
+  value: unknown,
+  options: CompileA2uiOptions,
+): A2uiMessage[] {
+  return compilePresentation(
+    presentationSchema.parse(value, { jitless: true }),
+    options,
+  );
+}
+
+export function legacyArtifactsToA2ui(
+  value: unknown,
+  options: LegacyCompileA2uiOptions,
+): A2uiMessage[] {
+  return compilePresentation(
+    presentationFromLegacyArtifacts({
+      id: options.presentationId,
+      revision: options.revision,
+      blocks: value ?? [],
+    }),
+    options,
+  );
+}
+
+// Keep the component allowlist and resource limits here; the official A2UI core
+// owns component/data state. This guard never applies data updates or resolves bindings.
 export function validateA2uiMessages(
   values: readonly unknown[],
+  options: { catalogIds?: readonly string[] } = {},
 ): A2uiMessage[] {
   if (values.length > 128) throw new Error("界面消息过多");
+  const catalogIds = new Set(options.catalogIds ?? [DEFAULT_CATALOG_ID]);
   const messages = values.map((value) =>
     a2uiMessageSchema.parse(value, { jitless: true }),
   );
   const surfaces = new Map<string, Map<string, Component>>();
   for (const message of messages) {
     if ("createSurface" in message) {
+      if (!catalogIds.has(message.createSurface.catalogId))
+        throw new Error("界面目录不受支持");
       const key = message.createSurface.surfaceId;
       if (surfaces.has(key)) throw new Error("界面已存在");
       if (surfaces.size >= 10) throw new Error("界面数量过多");
@@ -278,13 +405,16 @@ export function validateA2uiMessages(
       const components = surfaces.get(update.surfaceId);
       if (!components) throw new Error("界面尚未创建");
       if ("components" in update) {
+        if (new Set(update.components.map((component) => component.id)).size !== update.components.length)
+          throw new Error("界面组件标识不能重复");
         for (const component of update.components)
           components.set(component.id, component);
         if (components.size > 64) throw new Error("界面内容过多");
         // Official web renderers assume an acyclic tree. Bound depth and expansion
         // before handing even partially streamed component graphs to them.
-        for (const id of components.keys()) {
+        for (const componentId of components.keys()) {
           let count = 0;
+          const surfaceComponents = components;
           function visit(key: string, ancestors: string[]) {
             if (
               ancestors.includes(key) ||
@@ -292,7 +422,7 @@ export function validateA2uiMessages(
               ++count > 256
             )
               throw new Error("界面结构过深或循环引用");
-            const item = components!.get(key);
+            const item = surfaceComponents.get(key);
             const children =
               item?.component === "Column"
                 ? item.children
@@ -301,34 +431,16 @@ export function validateA2uiMessages(
                   : [];
             for (const child of children) visit(child, [...ancestors, key]);
           }
-          visit(id, []);
+          visit(componentId, []);
         }
       } else if (update.value !== undefined) {
         if (!update.path || update.path === "/")
           dataModel.parse(update.value, { jitless: true });
         else if (update.path === "/values")
           formValuesSchema.parse(update.value, { jitless: true });
-        else
-          z.union([z.string().max(1200), z.number().finite()]).parse(
-            update.value,
-            { jitless: true },
-          );
+        else formValueSchema.parse(update.value, { jitless: true });
       }
     }
   }
   return messages;
-}
-
-export function artifactSummary(artifacts: Artifact[]): string {
-  // Keep the meaningful content (including questions), not rendering coordinates, in model memory.
-  const summary = artifacts
-    .map((item) =>
-      item.kind === "image"
-        ? `[图片] ${item.title}：${item.alt}`
-        : JSON.stringify(item),
-    )
-    .join("\n");
-  return summary.length <= 500
-    ? summary
-    : `${summary.slice(0, 465)}…（作品摘要节选，完整内容保留在原作品中）`;
 }

@@ -35,7 +35,7 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
   const retention = process.env.HELLO_PRIVACY_RETENTION_DAYS || "30";
   if (!/^[1-9]\d{0,3}$/.test(retention)) throw new Error("隐私保留期限配置无效");
   const cutoff = new Date(Date.now() - Number(retention) * 86400_000).toISOString();
-  const legacyCollections = ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "wechat-identities", "age-profiles"] as const;
+  const legacyCollections = ["sessions", "greetings", "media", "credentials", "adk-sessions", "a2a-execution-tasks", "a2a-request-ledgers", "session-locks", "wechat-identities", "age-profiles"] as const;
   const checked = new Set<string>();
   for (const collection of legacyCollections) {
     cursor = 0;
@@ -59,7 +59,7 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
   }
   if (restoreLedger) {
     // Older snapshots may predate the privacy collection contents entirely.
-    for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "session-locks", "privacy-profiles", "wechat-identities", "age-profiles", "safety-cases"] as const) {
+    for (const collection of ["sessions", "greetings", "media", "credentials", "adk-sessions", "a2a-execution-tasks", "a2a-request-ledgers", "session-locks", "privacy-profiles", "wechat-identities", "age-profiles", "safety-cases"] as const) {
       cursor = 0;
       while (true) {
         const rows = await payload.find({ collection, overrideAccess: true, pagination: false, depth: 0, limit: pageSize, sort: "id", select: { id: true, owner: true }, where: { id: { greater_than: cursor } } });

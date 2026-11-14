@@ -14,6 +14,7 @@ import * as migration_20261013_125923_platform_model_quota from './20261013_1259
 
 import * as interaction from "./20261024_100000_interaction_safety";
 import * as feishuAlerts from "./20261024_120000_feishu_alerts";
+import * as a2aExecution from "./20261113_120000_a2a_execution";
 
 export const migrations = [
   {
@@ -51,4 +52,5 @@ export const migrations = [
   { up: migration_20261014_080000_image_generation.up, down: migration_20261014_080000_image_generation.down, name: "20261014_080000_image_generation" },
   { up: interaction.up, down: interaction.down, name: "20261024_100000_interaction_safety" },
   { up: feishuAlerts.up, down: feishuAlerts.down, name: "20261024_120000_feishu_alerts" },
+  { up: a2aExecution.up, down: a2aExecution.down, name: "20261113_120000_a2a_execution" },
 ];

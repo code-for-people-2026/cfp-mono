@@ -1,12 +1,13 @@
 export * from "./age";
 export * from "./profile";
 export * from "./service-scope";
+export * from "./presentation";
 import { z } from "zod";
+import { legacyArtifactsSchema } from "@cfp/base-chat-protocol";
 import {
   formResponseSchema,
   replySchema,
-  artifactsSchema,
-} from "@cfp/base-chat-protocol";
+} from "./presentation";
 
 // 只含跨端协议与校验；不能依赖 Payload、ADK 或 Node 运行时。
 export const inputSchema = z
@@ -56,7 +57,7 @@ export const turnResultSchema = z.object({
   error: z.string().nullish(),
   association: z.string().nullish(),
   approach: z.string().nullish(),
-  artifacts: artifactsSchema.nullish(),
+  artifacts: legacyArtifactsSchema.nullish(),
   model: z.string().nullish(),
   createdAt: z.string(),
 });

@@ -3,15 +3,27 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   A2UI_VERSION,
-  toA2ui,
-  validateA2uiMessages,
   type A2uiMessage,
   type FormValues,
   type ClientEvent,
 } from "@cfp/base-chat-protocol";
 import { artifacts } from "../../../packages/base-chat-protocol/test/fixtures";
+import {
+  toAjA2ui,
+  validateAjA2uiMessages,
+} from "@cfp/a-j-oker-contracts";
+import { ArtifactUiProvider } from "@cfp/chat-ui-taro/artifacts";
 import type { HostProps } from "../src/chat/a2ui-feed";
-vi.mock("@tarojs/taro", () => ({ default: { previewImage: vi.fn() } }));
+vi.mock("@tarojs/taro", () => ({
+  default: {
+    previewImage: vi.fn(),
+    getWindowInfo: vi.fn(() => ({ windowHeight: 800 })),
+    onKeyboardHeightChange: vi.fn(),
+    offKeyboardHeightChange: vi.fn(),
+    onWindowResize: vi.fn(),
+    offWindowResize: vi.fn(),
+  },
+}));
 vi.mock("@tarojs/components", () => ({
   Button: "button",
   View: "view",
@@ -27,7 +39,10 @@ vi.mock("../src/chat/api", () => ({
 }));
 import { A2uiHost as NativeHost } from "../src/chat/a2ui-host";
 import { A2uiHost as WebHost } from "../src/chat/a2ui-host.h5";
-import { ArtifactState } from "../src/chat/artifact-components";
+import {
+  ArtifactState,
+  artifactUiConfig,
+} from "../src/chat/artifact-components";
 import { ArtifactPreview } from "../src/chat/artifact-preview";
 
 let renderer: ReactTestRenderer | undefined;
@@ -38,7 +53,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 const formMessages = () =>
-  toA2ui(
+  toAjA2ui(
     1,
     artifacts.filter((artifact) => artifact.kind === "form"),
   );
@@ -60,21 +75,25 @@ function view(
   compact = false,
   external = false,
 ) {
-  return createElement(Host, {
-    messages: validateA2uiMessages(messages),
-    renderSurface: (surface, content) =>
-      createElement(ArtifactState, {
-        key: surface.id,
-        surface,
-        external,
-        onAction,
-        initialValues: answers,
-        submitted: !!answers,
-        children: compact
-          ? createElement(ArtifactPreview, { surface, children: content })
-          : content,
-      }),
-  });
+  return createElement(
+    ArtifactUiProvider,
+    { config: artifactUiConfig },
+    createElement(Host, {
+      messages: validateAjA2uiMessages(messages),
+      renderSurface: (surface, content) =>
+        createElement(ArtifactState, {
+          key: surface.id,
+          surface,
+          external,
+          onAction,
+          initialValues: answers,
+          submitted: !!answers,
+          children: compact
+            ? createElement(ArtifactPreview, { surface, children: content })
+            : content,
+        }),
+    }),
+  );
 }
 for (const [platform, Host] of [
   ["weapp", NativeHost],
@@ -89,7 +108,7 @@ for (const [platform, Host] of [
           renderer = create(
             view(
               Host,
-              toA2ui(1, artifacts),
+              toAjA2ui(1, artifacts),
               undefined,
               undefined,
               false,
@@ -213,7 +232,7 @@ for (const [platform, Host] of [
         vi.stubGlobal("window", undefined);
       }
       await act(async () => {
-        renderer = create(view(Host, toA2ui(1, artifacts)));
+        renderer = create(view(Host, toAjA2ui(1, artifacts)));
       });
       for (const artifact of artifacts)
         expect(text()).toContain(artifact.title);
@@ -403,7 +422,7 @@ for (const [platform, Host] of [
         fields()[0]!.props.onInput({ detail: { value: "上一段私有草稿" } }),
       );
       await act(async () => {
-        renderer!.update(view(Host, toA2ui(2, [artifacts[4]!]), onAction));
+        renderer!.update(view(Host, toAjA2ui(2, [artifacts[4]!]), onAction));
       });
       expect(fields()[0]!.props.value).toBe("");
       expect(text()).not.toContain("上一段私有草稿");
