@@ -13,6 +13,27 @@ export const ageSubmissionSchema = z.object({
   name: z.string().trim().min(2).max(50),
   idCard: z.string().trim().regex(/^\d{17}[\dXx]$/).transform((value) => value.toUpperCase()),
 }).strict();
+export const ageReviewRequestSchema = z.object({}).strict();
+export const ageReviewChallengeSchema = z.object({
+  noticeVersion: z.string().min(1).max(100),
+  consent: z.literal(true),
+}).strict();
+export const ageReviewStateSchema = z.enum(["not_needed", "request_required", "pending", "approved", "rejected", "completed"]);
+export const ageReviewSchema = z.object({
+  state: ageReviewStateSchema,
+  receipt: z.string().nullable(),
+  caseStatus: z.enum(["pending", "in_progress", "review", "resolved"]).nullable(),
+  result: z.enum(["permit_fresh_verification", "maintain_restriction"]).nullable(),
+  reply: z.string().nullable(),
+  requestedAt: z.string().nullable(),
+  decidedAt: z.string().nullable(),
+  helpPath: z.literal("/pages/help/index?category=age_verification"),
+});
+export const ageActionsSchema = z.object({
+  requestReview: z.boolean(),
+  checkReviewStatus: z.boolean(),
+  startReverification: z.boolean(),
+});
 export type AgeDeclaration = z.infer<typeof ageDeclarationSchema>;
 export type AgeState = z.infer<typeof ageStateSchema>;
 export const ageStateText: Record<AgeState, string> = {
@@ -29,6 +50,9 @@ export const ageStatusSchema = z.object({
   additionalVerification: z.enum(["not_requested", "required"]),
   notice: z.object({ version: z.string(), paragraphs: z.array(z.string()) }),
   configuration: z.object({ wechat: z.boolean(), provider: z.boolean(), providerName: z.enum(["aliyun", "tencent"]).optional(), previewOnly: z.boolean().optional() }),
+  // Optional during rolling upgrades so older servers and clients remain compatible.
+  review: ageReviewSchema.optional(),
+  actions: ageActionsSchema.optional(),
 });
 export const ageChallengeResultSchema = z.object({ status: ageStatusSchema, challenge: z.string().nullable() });
 export const wechatLoginResultSchema = z.object({
@@ -37,3 +61,4 @@ export const wechatLoginResultSchema = z.object({
 });
 
 export type AgeStatus = z.infer<typeof ageStatusSchema>;
+export type AgeReview = z.infer<typeof ageReviewSchema>;

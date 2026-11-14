@@ -23,6 +23,7 @@ export async function OperationsListTools({ collectionSlug: slug, user, payload 
       <nav aria-label="案件快捷筛选">
         <a href={recordURL(slug, undefined, admin)}>全部案件</a>
         <a href={collectionURL(slug, filters.pending, admin)}>待受理</a>
+        <a href={collectionURL(slug, filters.ageReview, admin)}>年龄限制复核</a>
         <a href={collectionURL(slug, filters.mine, admin)}>由我负责</a>
         <a href={collectionURL(slug, filters.overdue, admin)}>仅超时</a>
       </nav><p>使用「过滤条件」选择严重程度、负责人、状态或日期；打开案件详情进行处理。</p>
@@ -43,7 +44,7 @@ export async function OperationsDocumentActions({ collectionSlug: slug, data, id
   const admin = payload.config.routes.admin;
   if (slug === "safety-cases" && canReview(user)) {
     // Pass metadata only. Evidence is fetched explicitly, with a reason and an audit.
-    const row = { id: Number(id), revision: data.revision, status: data.status, assignedTo: data.assignedTo, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold };
+    const row = { id: Number(id), revision: data.revision, status: data.status, assignedTo: data.assignedTo, source: data.source, stage: data.stage, category: data.category, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold };
     return <CaseActions row={row} administrator={isAdministrator(user)} userId={user.id} />;
   }
   if (!isAdministrator(user)) return null;

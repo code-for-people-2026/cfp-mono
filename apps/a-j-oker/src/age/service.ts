@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
 import type { Payload } from "payload";
-import { ageChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-contracts";
+import { ageChallengeSchema, ageReviewChallengeSchema, ageSubmissionSchema, ageStateSchema, ageDeclarationSchema, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { AppError, type Owner } from "../domain/contracts";
 import type { AgeProfile } from "../payload-types";
 import { ageNotice, ageProvider, providerConfigured, wechatConfigured } from "./policy";
 import { withAgeLock } from "./lock";
 import { verifyAge, type AgeVerifier } from "./provider";
+import { ensureAgeRiskCase, latestAgeReviewCase, requestAgeReview, requireApprovedReview, reviewProjection } from "./review";
 
 export async function ageProfile(payload: Payload, owner: string) {
   return (await payload.find({ collection: "age-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: owner } } })).docs[0];
@@ -32,6 +33,7 @@ export class AgeService {
   }
   async status(): Promise<AgeStatus> {
     const profile = await ageProfile(this.payload, this.owner.id);
+    const reviewCase = await latestAgeReviewCase(this.payload, this.owner.id);
     const loggedIn = await this.bound();
     let state = ageStateSchema.catch("unverified").parse(profile?.state);
     if (["adult", "minor"].includes(state) && (!profile?.expiresAt || Date.parse(String(profile.expiresAt)) <= Date.now())) state = "expired";
@@ -47,6 +49,7 @@ export class AgeService {
       assurance: profile?.assurance === "identity_details_match" ? "identity_details_match" : null,
       additionalVerification: profile?.additionalVerification === "required" ? "required" : "not_requested",
       notice: ageNotice(), configuration: { wechat: wechatConfigured(), provider: providerConfigured(), providerName: ageProvider() },
+      ...reviewProjection(profile, reviewCase),
     };
   }
   async requireLogin() {
@@ -82,13 +85,37 @@ export class AgeService {
       return { status: await this.status(), challenge };
     });
   }
+  async requestReview() {
+    await this.personal();
+    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+      await requestAgeReview(this.payload, this.owner);
+      return this.status();
+    });
+  }
+  async reviewChallenge(value: unknown) {
+    await this.personal();
+    const input = ageReviewChallengeSchema.parse(value);
+    if (input.noticeVersion !== ageNotice().version) throw new AppError(409, "年龄核验说明已更新，请重新阅读并确认");
+    if (!providerConfigured()) throw new AppError(503, "身份核验服务暂不可用，请稍后重试");
+    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+      const profile = await ageProfile(this.payload, this.owner.id);
+      if (!profile || profile.additionalVerification !== "required") throw new AppError(409, "当前账户不需要年龄复核");
+      await requireApprovedReview(this.payload, this.owner.id);
+      const challenge = randomUUID();
+      await this.save({ state: "needs_review", noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(),
+        challenge, challengePurpose: "age_review", challengeExpiresAt: new Date(Date.now() + 5 * 60_000).toISOString() });
+      return { status: await this.status(), challenge };
+    });
+  }
   async submit(value: unknown) {
     await this.personal();
     // Strict schema: no owner, birthday, age result, provider callback or extra fields.
     const input = ageSubmissionSchema.parse(value);
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async (assertLease) => {
       const profile = await ageProfile(this.payload, this.owner.id);
-      if (!profile || profile.challenge !== input.challenge || !profile.challengeExpiresAt || Date.parse(String(profile.challengeExpiresAt)) <= Date.now() || profile.noticeVersion !== ageNotice().version || profile.additionalVerification === "required") throw new AppError(409, "核验请求无效、已使用或过期，请重新阅读说明并发起");
+      const reviewing = profile?.challengePurpose === "age_review";
+      if (!profile || profile.challenge !== input.challenge || !profile.challengeExpiresAt || Date.parse(String(profile.challengeExpiresAt)) <= Date.now() || profile.noticeVersion !== ageNotice().version || (profile.additionalVerification === "required" && !reviewing)) throw new AppError(409, "核验请求无效、已使用或过期，请重新阅读说明并发起");
+      if (reviewing) await requireApprovedReview(this.payload, this.owner.id);
       const correcting = profile.challengePurpose === "correction";
       if (profile.declaration === "under14" && !correcting) throw new AppError(403, "请先通过帮助与反馈获得监护人支持");
       const day = new Date().toISOString().slice(0, 10);
@@ -101,10 +128,10 @@ export class AgeService {
       catch { evidence = { state: "unavailable" }; }
       await assertLease();
       await this.mayProcess();
-      const state = evidence.state === "adult" && profile.declaration === "14to17" && !correcting ? "needs_review" : evidence.state;
+      const state = evidence.state === "adult" && profile.declaration === "14to17" && !correcting && !reviewing ? "needs_review" : evidence.state;
       const verified = state === "adult" || state === "minor";
       const now = new Date();
-      await this.save({ state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: evidence.reference || null, ...(correcting && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: state === "needs_review" ? "required" : "not_requested" });
+      await this.save({ state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: evidence.reference || null, ...((correcting || reviewing) && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: reviewing ? (state === "adult" ? "not_requested" : "required") : state === "needs_review" ? "required" : "not_requested" });
       return this.status();
     });
   }
@@ -120,9 +147,11 @@ export class AgeService {
   // Trusted internal integration seam for a future risk/guardian review service.
   // No client endpoint clears this flag, and no face verification is implemented.
   async requireAdditionalVerification() {
-    return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
+    const status = await withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
       await this.save({ state: "needs_review", additionalVerification: "required", challenge: null });
       return this.status();
     });
+    await ensureAgeRiskCase(this.payload, this.owner.id);
+    return status;
   }
 }

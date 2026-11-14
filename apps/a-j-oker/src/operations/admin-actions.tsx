@@ -96,15 +96,20 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
   const [emergency, setEmergency] = useState<Row>();
   const [evidence, setEvidence] = useState<Record<string, unknown>>();
   const own = row.assignedTo === userId;
+  const ageReview = row.stage === "age_review";
   const actions: [string, string][] = [];
   if (row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
   if (own || administrator) actions.push(["review", "转交独立复核"]);
   if (own && ["in_progress", "review"].includes(String(row.status))) {
-    if (row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
+    if (ageReview && administrator) {
+      actions.push(["permit_age_reverification", "批准发起一次新的本人核验"], ["maintain_age_restriction", "维持年龄限制"]);
+    } else if (!ageReview && row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
       actions.push(["reject", "拒绝未生成请求并结案"]);
-    actions.push(["dismiss", "无需限制，结案"]);
-    if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
-    if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
+    if (!ageReview) {
+      actions.push(["dismiss", "无需限制，结案"]);
+      if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
+      if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
+    }
   }
   if (own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
   if (administrator) actions.push(row.legalHold ? ["release_hold", "解除暂缓清理"] : ["hold", "基于具体依据暂缓证据清理"]);
@@ -127,7 +132,7 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
     ]} button="执行案件处理" submit={async (body) => {
       await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
       window.location.reload();
-    }}><p>当前状态：{operationLabels[String(row.status)]}。处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。</p></ActionPanel>}
+    }}><p>当前状态：{operationLabels[String(row.status)]}。{ageReview ? "批准只允许本人重新发起新核验，不会恢复旧成年结论或直接解锁；必须填写给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
   </div>;
 }
 
