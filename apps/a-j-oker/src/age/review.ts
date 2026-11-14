@@ -7,9 +7,15 @@ import { workingDeadline } from "../operations/deadlines";
 import { isAdministrator, settings } from "../operations/policy";
 import { transaction } from "../operations/transaction";
 
-export const AGE_REVIEW_STAGE = "age_review";
-export const AGE_REVIEW_CATEGORY = "other";
-const FIXED_EVIDENCE = "年龄限制账户申请人工复核；身份信息须仅通过既有本人核验入口提交。";
+const AGE_REVIEW_STAGE = "age_review";
+const AGE_REVIEW_CATEGORY = "other";
+const CREATION = {
+  request: { source: "complaint", evidence: "本人申请年龄限制复核。", actor: (owner: string) => `owner:${owner}`, reason: "本人申请年龄复核" },
+  appeal: { source: "appeal", evidence: "本人就年龄限制结果再次申请复核。", actor: (owner: string) => `owner:${owner}`, reason: "本人再次申请年龄复核" },
+  risk: { source: "moderation", evidence: "内部风险信号要求年龄复核。", actor: () => "system:age-risk", reason: "内部年龄风险信号" },
+  minor: { source: "moderation", evidence: "本人核验返回新的未成年结果。", actor: () => "system:age-verification", reason: "本人核验的未成年结果" },
+} as const;
+type CreationKind = keyof typeof CREATION;
 
 export const isAgeReviewCase = (row: Pick<SafetyCase, "stage">) => row.stage === AGE_REVIEW_STAGE;
 
@@ -49,11 +55,12 @@ export function reviewProjection(profile: AgeProfile | undefined, row: SafetyCas
   };
 }
 
-async function create(payload: Payload, owner: string, req: PayloadRequest, parent?: SafetyCase) {
+async function create(payload: Payload, owner: string, req: PayloadRequest, kind: CreationKind, parent?: SafetyCase) {
   const now = Date.now();
   const config = await settings(payload, req);
+  const provenance = CREATION[kind];
   const row = await payload.create({ collection: "safety-cases", overrideAccess: true, req, data: {
-    receipt: randomUUID(), owner, source: parent ? "appeal" : "complaint", status: parent ? "review" : "pending", severity: "normal",
+    receipt: randomUUID(), owner, source: provenance.source, status: parent ? "review" : "pending", severity: "normal",
     category: AGE_REVIEW_CATEGORY, stage: AGE_REVIEW_STAGE, revision: 0,
     parentId: parent?.id,
     acceptBy: workingDeadline(now, 1), resolveBy: workingDeadline(now, 7), feedbackBy: workingDeadline(now, 7),
@@ -61,18 +68,18 @@ async function create(payload: Payload, owner: string, req: PayloadRequest, pare
     retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
   } });
   await payload.create({ collection: "safety-evidence", overrideAccess: true, req, data: {
-    caseId: row.id, excerpt: FIXED_EVIDENCE, originalLength: FIXED_EVIDENCE.length,
-    digest: createHash("sha256").update(FIXED_EVIDENCE).digest("hex"),
+    caseId: row.id, excerpt: provenance.evidence, originalLength: provenance.evidence.length,
+    digest: createHash("sha256").update(provenance.evidence).digest("hex"),
   } });
-  await audit(payload, `owner:${owner}`, "case.created", `case:${row.id}`, "age_review", { stage: AGE_REVIEW_STAGE, category: AGE_REVIEW_CATEGORY }, req);
+  await audit(payload, provenance.actor(owner), "case.created", `case:${row.id}`, provenance.reason, { stage: AGE_REVIEW_STAGE, category: AGE_REVIEW_CATEGORY }, req);
   return row;
 }
 
 // Caller owns the surrounding transaction. A definitive new risk/minor result
 // must move authorization to a new current cycle before that transaction commits.
-export async function supersedeAgeReviewAuthorization(payload: Payload, owner: string, req: PayloadRequest) {
+export async function supersedeAgeReviewAuthorization(payload: Payload, owner: string, req: PayloadRequest, kind: "risk" | "minor" = "minor") {
   const latest = await latestAgeReviewCase(payload, owner, req);
-  return latest && latest.status !== "resolved" ? latest : create(payload, owner, req);
+  return latest && latest.status !== "resolved" ? latest : create(payload, owner, req, kind);
 }
 
 export async function requestAgeReview(payload: Payload, owner: Owner) {
@@ -91,7 +98,8 @@ export async function requestAgeReview(payload: Payload, owner: Owner) {
       await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: {
         state: "needs_review", additionalVerification: "required", challenge: null, challengePurpose: null, challengeExpiresAt: null,
       } });
-    return create(payload, owner.id, req, latest?.action === "maintain_age_restriction" ? latest : undefined);
+    const parent = latest?.action === "maintain_age_restriction" ? latest : undefined;
+    return create(payload, owner.id, req, parent ? "appeal" : "request", parent);
   });
 }
 
@@ -111,7 +119,7 @@ export async function requireAgeRiskCase(payload: Payload, owner: string) {
     };
     if (profile) await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, req, data: restriction });
     else await payload.create({ collection: "age-profiles", overrideAccess: true, req, data: { owner, ...restriction } });
-    return supersedeAgeReviewAuthorization(payload, owner, req);
+    return supersedeAgeReviewAuthorization(payload, owner, req, "risk");
   });
 }
 

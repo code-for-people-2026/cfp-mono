@@ -23,6 +23,7 @@ const { Repository } = await import("../src/cms/repository");
 const { GET, POST } = await import("../src/app/api/hello/[...path]/route");
 const { POST: mcpPost } = await import("../src/app/api/mcp/route");
 const { OperationsService } = await import("../src/operations/service");
+const { caseOperationLabel } = await import("../src/operations/admin-presentation");
 const payload = await cms();
 const nativeReq = (token?: string) => new Request("http://127.0.0.1:3310/api/hello/wechat-login", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 const creds = { get noticeVersion() { return ageNotice().version; }, code: "synthetic-code", consent: true, migrateCurrent: true };
@@ -38,6 +39,18 @@ async function fresh() {
 }
 async function challenge(service: InstanceType<typeof AgeService>, declaration = "adult") {
   return service.challenge({ declaration, consent: true, noticeVersion: ageNotice().version });
+}
+async function assertProvenance(receipt: string, expected: { source: string; actor: string; reason: string; evidence: string }) {
+  const row = (await payload.find({ collection: "safety-cases", overrideAccess: true, limit: 1, where: { receipt: { equals: receipt } } })).docs[0]!;
+  assert.equal(row.source, expected.source);
+  assert.equal(caseOperationLabel(String(row.source), String(row.stage)).includes("年龄复核"), true);
+  const evidence = (await payload.find({ collection: "safety-evidence", overrideAccess: true, limit: 1, where: { caseId: { equals: row.id } } })).docs[0]!;
+  assert.equal(evidence.excerpt, expected.evidence);
+  const entry = (await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 1, where: { and: [
+    { event: { equals: "case.created" } }, { target: { equals: `case:${row.id}` } },
+  ] } })).docs[0]!;
+  assert.equal(entry.actor, expected.actor); assert.equal(entry.reason, expected.reason);
+  return row;
 }
 try {
   const old = await mintCredential(payload, "miniapp");
@@ -162,6 +175,7 @@ try {
   const requested = await conflictService.requestReview();
   assert.equal(requested.review?.state, "pending");
   assert.equal(requested.allowed, false);
+  await assertProvenance(requested.review!.receipt!, { source: "complaint", actor: `owner:${conflict.owner.id}`, reason: "本人申请年龄复核", evidence: "本人申请年龄限制复核。" });
   const duplicate = await conflictService.requestReview();
   assert.equal(duplicate.review?.receipt, requested.review?.receipt);
   const reviewRow = (await ops.queue(administrator, {})).find((row) => row.receipt === requested.review?.receipt)!;
@@ -187,6 +201,7 @@ try {
   const rejectedService = new AgeService(payload, rejectedSubject.owner, async () => ({ state: "adult", reference: "synthetic" }));
   await rejectedService.requireAdditionalVerification();
   const rejectedRequest = await rejectedService.requestReview();
+  await assertProvenance(rejectedRequest.review!.receipt!, { source: "moderation", actor: "system:age-risk", reason: "内部年龄风险信号", evidence: "内部风险信号要求年龄复核。" });
   const rejectedRow = (await ops.queue(administrator, {})).find((row) => row.receipt === rejectedRequest.review?.receipt)!;
   await ops.action(administrator, Number(rejectedRow.id), { revision: 0, action: "claim", reason: "管理员领取维持限制的合成案件" });
   await ops.action(administrator, Number(rejectedRow.id), { revision: 1, action: "maintain_age_restriction", reason: "合成材料不足以允许重新核验", reply: "当前维持年龄限制，可再次申请复核。" });
@@ -195,6 +210,7 @@ try {
   const reconsidered = await rejectedService.requestReview();
   const reconsideredRow = (await ops.queue(administrator, {})).find((row) => row.receipt === reconsidered.review?.receipt)!;
   assert.equal(Number(reconsideredRow.parentId), Number(rejectedRow.id));
+  await assertProvenance(reconsidered.review!.receipt!, { source: "appeal", actor: `owner:${rejectedSubject.owner.id}`, reason: "本人再次申请年龄复核", evidence: "本人就年龄限制结果再次申请复核。" });
   const secondAdministrator = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { role: "administrator", email: "age-second-admin@example.invalid", password: "isolated-test-pass-123" } }), collection: "admins" as const };
   await ops.action(administrator, Number(reconsideredRow.id), { revision: 0, action: "claim", reason: "原处置管理员领取复议案件以验证独立复核限制" });
   await assert.rejects(() => ops.action(administrator, Number(reconsideredRow.id), { revision: 1, action: "permit_age_reverification", reason: "原处置管理员不得批准同一年龄事项的复议", reply: "允许重新核验。" }), /原处置人以外/);
@@ -245,6 +261,7 @@ try {
   const under14MinorResult = await under14MinorService.submit({ ...identity, challenge: under14MinorFresh.challenge });
   assert.equal(under14MinorResult.allowed, false); assert.equal(under14MinorResult.state, "needs_review"); assert.equal(under14MinorCalls, 1);
   assert.equal(under14MinorResult.review?.state, "pending");
+  await assertProvenance(under14MinorResult.review!.receipt!, { source: "moderation", actor: "system:age-verification", reason: "本人核验的未成年结果", evidence: "本人核验返回新的未成年结果。" });
   await assert.rejects(() => under14MinorService.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
 
   const lateRisk = await fresh(); let releaseLateRisk!: (value: { state: "adult"; reference: string }) => void; let enteredLateRisk!: () => void;

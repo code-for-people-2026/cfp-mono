@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, type ReactNode } from "react";
-import { operationLabels, recordURL } from "./admin-presentation";
+import { caseOperationLabel, operationLabels, recordURL } from "./admin-presentation";
 import "./admin-actions.css";
 
 type Row = { id: number; [key: string]: unknown };
@@ -132,7 +132,7 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
     ]} button="执行案件处理" submit={async (body) => {
       await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
       window.location.reload();
-    }}><p>当前状态：{operationLabels[String(row.status)]}。{ageReview ? "批准只允许本人重新发起新核验，不会恢复旧成年结论或直接解锁；必须填写给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
+    }}><p>当前状态：{operationLabels[String(row.status)]}。来源：{caseOperationLabel(String(row.source), String(row.stage))}。{ageReview ? "批准只允许本人重新发起新核验，不会恢复旧成年结论或直接解锁；必须填写给本人的结果。" : "处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。"}</p></ActionPanel>}
   </div>;
 }
 
