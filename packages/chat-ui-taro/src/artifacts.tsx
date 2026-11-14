@@ -19,6 +19,7 @@ import {
   type ArtifactUiConfig,
 } from "./artifact-ui";
 import type { ArtifactHostProps } from "./a2ui-feed";
+import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 
 export interface ArtifactRendererAdapter<Identity extends string | number> {
   catalogId: string;
@@ -31,6 +32,12 @@ type SurfaceProps = ArtifactProps & {
   responses: Record<string, FormValues>;
   compact?: boolean;
 };
+
+function isInlineFormSurface(surface: SurfaceModel) {
+  return Array.from(surface.componentsModel.entries).some(
+    ([, model]) => model.type === "FormField",
+  );
+}
 
 export function ArtifactSurfaces({
   Host,
@@ -65,7 +72,7 @@ export function ArtifactSurfaces({
           submitted={!!responses[surface.id]}
           initialValues={responses[surface.id]}
         >
-          {compact ? (
+          {compact && !isInlineFormSurface(surface) ? (
             <ArtifactPreview surface={surface}>
               <ArtifactDetails external={props.external}>
                 {content}

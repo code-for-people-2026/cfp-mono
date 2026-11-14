@@ -153,6 +153,7 @@ function fixture(
   specialist = () => [call("submit_psychology_plan", plan)],
   knowledge?: KnowledgeContext,
   specialistKeys = DEFAULT_AGENT_CONFIGS.slice(1),
+  coordinator = DEFAULT_AGENT_CONFIGS[0].prompt,
 ) {
   let step = 0;
   const model = new WorkflowModel((request) =>
@@ -171,7 +172,7 @@ function fixture(
   });
   const agent = createGreetingAgent({
     configuration: {
-      coordinator: DEFAULT_AGENT_CONFIGS[0].prompt,
+      coordinator,
       revision: "fixture",
       specialists: specialistKeys.map((spec) => ({
         approach: spec.key as PsychologyApproach,
@@ -312,6 +313,51 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       ...reply,
       approach: "supportive",
     });
+  });
+
+  it("AJ 多作品输出由保存工具校验退回，修正后才持久化", async () => {
+    const invalid = call("save_greeting", {
+      ...reply,
+      artifacts: [
+        {
+          kind: "card",
+          id: "reason",
+          title: "辨认烦躁",
+          body: "先选一个原因。",
+        },
+        {
+          kind: "card",
+          id: "comfort",
+          title: "安慰卡",
+          body: "先照顾自己。",
+        },
+      ],
+    });
+    const f = fixture([[invalid], [saveReply()]]);
+    await f.run();
+    expect(JSON.stringify(f.model.requests[1].contents)).toContain(
+      "阿 J 一轮最多输出一件回应作品",
+    );
+    expect(f.save).toHaveBeenCalledExactlyOnceWith({ ...reply, approach: "supportive" });
+  });
+
+  it("旧 coordinator 配置之后仍有服务端固定的单作品与内联追问规则", () => {
+    const f = fixture(
+      [[saveReply()]],
+      undefined,
+      undefined,
+      [],
+      "旧配置：作品通常最多一至两件，并放在底部弹层。",
+    );
+    const instruction = f.agent.instruction as string;
+    const configured = instruction.indexOf("通常最多一至两件");
+    const fixed = instruction.indexOf(
+      "服务端固定作品规则（优先于可配置 coordinator 提示",
+    );
+    expect(configured).toBeGreaterThanOrEqual(0);
+    expect(fixed).toBeGreaterThan(configured);
+    expect(instruction).toContain("在聊天消息内直接选择并继续");
+    expect(instruction).toContain("不得追加第二件作品");
   });
 
   it("专家失败回到主 Agent，由它决定支持性回应，不泄漏原始错误", async () => {

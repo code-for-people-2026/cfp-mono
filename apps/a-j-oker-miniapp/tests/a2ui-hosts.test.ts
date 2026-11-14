@@ -63,6 +63,12 @@ const fields = () =>
   renderer!.root.findAll((node) =>
     ["input", "textarea"].includes(String(node.type)),
   );
+const renderedImages = () =>
+  renderer!.root.findAll(
+    (node) =>
+      node.type === "image" &&
+      String(node.props.className).split(" ").includes("artifact-image"),
+  );
 const submit = () =>
   renderer!.root
     .findAllByType("button")
@@ -104,21 +110,50 @@ for (const [platform, Host] of [
       "完整作品保留 AI 文本来源，用户字段与系统说明不误标（external=%s）",
       async (external) => {
         vi.stubEnv("TARO_ENV", platform);
-        await act(async () => {
-          renderer = create(
-            view(
+        const generatedClasses = new Set<string>();
+        for (const artifact of artifacts) {
+          await act(async () => {
+            const element = view(
               Host,
-              toAjA2ui(1, artifacts),
+              toAjA2ui(1, [artifact]),
               undefined,
               undefined,
               false,
               external,
+            );
+            if (renderer) renderer.update(element);
+            else renderer = create(element);
+          });
+          expect(text()).toContain(artifact.title);
+          const generated = renderer!.root
+            .findAllByType("text")
+            .filter((node) => node.props["data-ai-generated"] === "true");
+          expect(generated.length).toBeGreaterThan(0);
+          for (const node of generated) {
+            for (const className of String(node.props.className).split(" "))
+              generatedClasses.add(className);
+            expect(node.props["data-ai-external"]).toBe(String(external));
+            expect(node.props.selectable).toBe(platform === "h5");
+            expect(typeof node.props.children).toBe("string");
+          }
+          expect(
+            fields().every(
+              (node) => node.props["data-ai-generated"] !== "true",
             ),
-          );
-        });
-        const generated = renderer!.root
-          .findAllByType("text")
-          .filter((node) => node.props["data-ai-generated"] === "true");
+          ).toBe(true);
+          if (artifact.kind === "image")
+            expect(renderedImages()[0]!.props.src).toBe(
+              "/private/fixture.png",
+            );
+          if (artifact.kind === "form") {
+            const note = renderer!.root
+              .findAllByType("text")
+              .find((node) =>
+                node.children.join("").startsWith("只在点击提交后发送"),
+              )!;
+            expect(note.props["data-ai-generated"]).toBe("false");
+          }
+        }
         for (const className of [
           "artifact-h3",
           "artifact-text",
@@ -126,27 +161,8 @@ for (const [platform, Host] of [
           "artifact-heading",
           "artifact-label",
           "artifact-caption",
-        ]) {
-          expect(
-            generated.some((node) =>
-              node.props.className.split(" ").includes(className),
-            ),
-          ).toBe(true);
-        }
-        for (const node of generated) {
-          expect(node.props["data-ai-external"]).toBe(String(external));
-          expect(node.props.selectable).toBe(platform === "h5");
-          expect(typeof node.props.children).toBe("string");
-        }
-        expect(
-          fields().every((node) => node.props["data-ai-generated"] !== "true"),
-        ).toBe(true);
-        const note = renderer!.root
-          .findAllByType("text")
-          .find((node) =>
-            node.children.join("").startsWith("只在点击提交后发送"),
-          )!;
-        expect(note.props["data-ai-generated"]).toBe("false");
+        ])
+          expect(generatedClasses.has(className)).toBe(true);
       },
     );
     it("紧凑表单点开填写，关闭/重开保留草稿和失败提示，确认后收起", async () => {
@@ -231,39 +247,42 @@ for (const [platform, Host] of [
         vi.stubGlobal("document", undefined);
         vi.stubGlobal("window", undefined);
       }
-      await act(async () => {
-        renderer = create(view(Host, toAjA2ui(1, artifacts)));
-      });
-      for (const artifact of artifacts)
+      for (const artifact of artifacts) {
+        await act(async () => {
+          const element = view(Host, toAjA2ui(1, [artifact]));
+          if (renderer) renderer.update(element);
+          else renderer = create(element);
+        });
         expect(text()).toContain(artifact.title);
-      expect(renderer!.root.findAllByType("image")[0]!.props.src).toBe(
-        "/private/fixture.png",
-      );
-      expect(fields()).toHaveLength(4);
-      if (platform === "weapp") {
-        const types = new Set(
-          renderer!.root
-            .findAll((node) => typeof node.type === "string")
-            .map((node) => node.type),
-        );
-        expect(
-          [...types].every((type) =>
-            [
-              "view",
-              "text",
-              "image",
-              "scroll-view",
-              "input",
-              "textarea",
-              "button",
-            ].includes(String(type)),
-          ),
-        ).toBe(true);
-      } else
-        expect(
-          renderer!.root.findAll((node) => node.props["data-surface-id"])
-            .length,
-        ).toBe(5);
+        if (artifact.kind === "image")
+          expect(renderedImages()[0]!.props.src).toBe(
+            "/private/fixture.png",
+          );
+        expect(fields()).toHaveLength(artifact.kind === "form" ? 4 : 0);
+        if (platform === "weapp") {
+          const types = new Set(
+            renderer!.root
+              .findAll((node) => typeof node.type === "string")
+              .map((node) => node.type),
+          );
+          expect(
+            [...types].every((type) =>
+              [
+                "view",
+                "text",
+                "image",
+                "scroll-view",
+                "input",
+                "textarea",
+                "button",
+              ].includes(String(type)),
+            ),
+          ).toBe(true);
+        } else
+          expect(
+            renderer!.root.findAll((node) => node.props["data-surface-id"]),
+          ).toHaveLength(1);
+      }
     });
     it("逐条消息、零值与删除由真实数据模型处理，组件原位更新", async () => {
       let messages: A2uiMessage[] = [];

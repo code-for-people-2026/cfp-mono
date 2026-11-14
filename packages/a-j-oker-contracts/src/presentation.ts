@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   A2UI_VERSION,
+  artifactSchema,
   cardSchema,
   identifier,
   imageSchema,
@@ -27,11 +28,27 @@ export const approachSchema = z.enum([
 ]);
 
 // Generation remains strict. Saved replay/history uses the bounded legacy decoder.
+// Reuse the generic element and integrity checks, but expose an array maximum
+// so tool-schema clients see a real one-item constraint rather than only a refinement.
+const ajArtifactsSchema = z
+  .array(artifactSchema)
+  .max(1, "阿 J 一轮最多输出一件回应作品")
+  .superRefine((items, ctx) => {
+    const checked = artifactsSchema.safeParse(items, { jitless: true });
+    if (!checked.success)
+      for (const issue of checked.error.issues)
+        ctx.addIssue({
+          code: "custom",
+          path: issue.path,
+          message: issue.message,
+        });
+  });
+
 export const replySchema = z.object({
   greeting: z.string().trim().min(2).max(1000),
   association: z.string().trim().min(1).max(500),
   approach: approachSchema.optional(),
-  artifacts: artifactsSchema.optional(),
+  artifacts: ajArtifactsSchema.optional(),
 });
 
 const ajIdentifier = z
@@ -345,12 +362,27 @@ export function projectAjArtifactsForLegacyClient(value: unknown) {
   return compatible;
 }
 
+export function selectAjArtifactsForPresentation(value: unknown) {
+  // Selection is presentation policy, not another schema gate: malformed history
+  // stays untouched so the generic shared renderer can safe-parse and show its
+  // graceful error rather than crashing this React useMemo.
+  const parsed = legacyArtifactsSchema.safeParse(value ?? [], {
+    jitless: true,
+  });
+  if (!parsed.success) return value ?? [];
+  const artifacts = parsed.data;
+  if (artifacts.length < 2) return artifacts;
+  // Presentation-only policy for pre-launch records: preserve all stored data,
+  // but render one conversational surface. A form is the most relevant follow-up.
+  return [artifacts.find((artifact) => artifact.kind === "form") ?? artifacts[0]!];
+}
+
 export function toAjA2ui(
   turnId: number,
   artifacts: unknown,
   options: { catalogId?: string } = {},
 ): A2uiMessage[] {
-  return legacyArtifactsToA2ui(artifacts, {
+  return legacyArtifactsToA2ui(selectAjArtifactsForPresentation(artifacts), {
     catalogId: options.catalogId ? ajCatalogId(options.catalogId) : AJ_CATALOG_ID,
     presentationId: ajPresentationId(turnId),
     revision: AJ_PRESENTATION_REVISION,

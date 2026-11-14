@@ -13,6 +13,7 @@ import {
   greetingSchema,
   legacyAjA2uiMessageSchema,
   projectAjTurnForClient,
+  selectAjArtifactsForPresentation,
   toLegacyAjA2uiForClient,
   toAjA2ui,
   validateAjA2uiMessages,
@@ -104,6 +105,59 @@ describe("AJ 展示契约所有权", () => {
         values: { intensity: 0 },
       }).success,
     ).toBe(true);
+  });
+
+  it("AJ 新生成和展示协议都限制一轮一件，并优先保留对话表单", () => {
+    const card = {
+      kind: "card" as const,
+      id: "comfort",
+      title: "安慰卡",
+      body: "先照顾自己。",
+    };
+    const form = {
+      kind: "form" as const,
+      id: "reason",
+      title: "辨认烦躁",
+      description: "选一个最像的。",
+      submitLabel: "继续",
+      fields: [
+        {
+          id: "reason",
+          label: "原因",
+          type: "select" as const,
+          required: true,
+          allowOther: false,
+          options: [{ id: "sleep", label: "没睡够" }],
+        },
+      ],
+    };
+    expect(
+      greetingSchema.safeParse({
+        greeting: "先一起看一个原因。",
+        association: "情绪支持",
+        artifacts: [card, form],
+      }).success,
+    ).toBe(false);
+    expect(selectAjArtifactsForPresentation([card, form])).toEqual([form]);
+    const messages = toAjA2ui(7, [card, form]);
+    expect(
+      messages.filter((message) => "createSurface" in message),
+    ).toHaveLength(1);
+    expect(JSON.stringify(messages)).toContain("turn_7_reason");
+    expect(JSON.stringify(messages)).not.toContain("turn_7_comfort");
+  });
+
+  it("畸形历史作品原样交给共享安全解析，严格转换仍拒绝", () => {
+    const malformed = [
+      {
+        kind: "card",
+        id: "bad_card",
+        title: "标题",
+        body: { invalid: true },
+      },
+    ];
+    expect(selectAjArtifactsForPresentation(malformed)).toBe(malformed);
+    expect(() => toAjA2ui(7, malformed)).toThrow();
   });
 
   it("AJ 适配器保留旧目录、surface、资源路径和历史 wire 动作", () => {
