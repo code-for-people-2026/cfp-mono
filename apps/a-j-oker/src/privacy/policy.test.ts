@@ -44,3 +44,15 @@ it("文字运营资料不完整时仍不开放基础处理", () => {
   vi.stubEnv("HELLO_PRIVACY_CONTACT", " ");
   expect(privacyPolicy()).toMatchObject({ imageReviewDisclosed: true, ready: false });
 });
+
+it("公开说明如实反映有限留存、服务器日志和腾讯语音插件的已核实边界", () => {
+  const policy = privacyPolicy();
+  const text = JSON.stringify(policy.documents);
+  expect(policy.backupNotice).toContain("八日恢复防御窗口");
+  expect(policy.backupNotice).not.toContain("运营方案待公司确认");
+  expect(text).toContain("保留 10 个历史文件并压缩");
+  expect(text).toContain("不等于固定保留 10 天");
+  expect(text).toContain("wx069ba97219f66d99");
+  expect(text).toContain("没有公开核实到该插件音频的固定留存期限、处理省份或训练使用承诺");
+  expect(text).toContain("排期仍只是元数据，须管理员另行明确激活");
+});

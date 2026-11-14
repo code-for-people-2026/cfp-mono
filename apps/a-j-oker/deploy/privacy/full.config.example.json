@@ -1,0 +1,25 @@
+{
+  "container": "cfp-hello-agent-full-preview",
+  "companionContainers": [
+    {
+      "name": "cfp-hello-agent-feishu-alerts"
+    }
+  ],
+  "deploymentManifest": "/opt/cfp-hello-agent/operations/retention.json",
+  "dataDir": "/opt/cfp-hello-agent/full-preview-data",
+  "ledgerDir": "/opt/cfp-hello-agent/privacy-ops/full/ledger",
+  "backupDir": "/opt/cfp-hello-agent/privacy-ops/full/backups",
+  "stateDir": "/opt/cfp-hello-agent/privacy-ops/full/state",
+  "sourceDir": "/opt/cfp-hello-agent/privacy-ops/source",
+  "retentionRuntimeImage": "sha256:replace-with-reviewed-64-hex-image-id",
+  "safetyRetentionApply": false,
+  "legacyBackupDirs": [
+    "/opt/cfp-hello-agent/backups",
+    "/opt/cfp-hello-agent/data",
+    "/opt/cfp-hello-agent/onboarding-preview-data",
+    "/opt/cfp-hello-agent/operations/deployments",
+    "/opt/cfp-hello-agent/operations/smoke"
+  ],
+  "smokeCleanupScript": "/opt/cfp-hello-agent/operations/bin/verify_runtime.py",
+  "healthUrl": "http://127.0.0.1:3318/api/ready"
+}

@@ -72,7 +72,7 @@ export function CreateOperation({ kind, admin }: { kind: "rules" | "settings" | 
     ] },
     settings: { title: "新增运营安排版本", slug: "safety-settings", fields: [
       number("acceptanceHours", "受理时限（小时）", 1, 168), number("resolutionHours", "处置时限（小时）", 1, 720),
-      number("feedbackHours", "处置后反馈时限（小时）", 1, 168), { ...number("evidenceDays", "证据留存天数（0 为永久，不自动到期）", 0, 365), initial: "0" },
+      number("feedbackHours", "处置后反馈时限（小时）", 1, 168), { ...number("evidenceDays", "证据留存天数（1—30）", 1, 30), initial: "30" },
       { key: "staffing", label: "已落实的值班安排", type: "textarea", min: 5, max: 500 },
       { key: "retentionBasis", label: "留存用途与具体依据", type: "textarea", min: 10, max: 1000 }, reason,
     ] },
@@ -92,24 +92,29 @@ export function CreateOperation({ kind, admin }: { kind: "rules" | "settings" | 
   </details>;
 }
 
-export function CaseActions({ row, administrator, userId }: { row: Row; administrator: boolean; userId: number | string }) {
+export function CaseActions({ row, administrator, userId, admin }: { row: Row; administrator: boolean; userId: number | string; admin: string }) {
   const [emergency, setEmergency] = useState<Row>();
   const [evidence, setEvidence] = useState<Record<string, unknown>>();
   const own = row.assignedTo === userId;
   const actions: [string, string][] = [];
-  if (row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
-  if (own || administrator) actions.push(["review", "转交独立复核"]);
-  if (own && ["in_progress", "review"].includes(String(row.status))) {
+  if (administrator && row.retentionPurgedAt && row.retentionReviewNeeded) actions.push(["review_purged_restriction", "新建独立生效限制复核"]);
+  if (!row.retentionPurgedAt && row.status !== "resolved" && (!row.assignedTo || own || administrator)) actions.push(["claim", "领取并受理"]);
+  if (!row.retentionPurgedAt && (own || administrator)) actions.push(["review", "转交独立复核"]);
+  if (!row.retentionPurgedAt && own && ["in_progress", "review"].includes(String(row.status))) {
     if (row.source === "moderation" && ["input", "output"].includes(String(row.stage)) && !row.mediaId)
       actions.push(["reject", "拒绝未生成请求并结案"]);
     actions.push(["dismiss", "无需限制，结案"]);
     if (row.turnId || row.mediaId) actions.push(["quarantine", "隔离已存内容并结案"], ["restore", "恢复原案件隔离的内容"]);
     if (administrator) actions.push(["restrict", "限制该身份生成"], ["unrestrict", "解除原案件生成限制"]);
   }
-  if (own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
-  if (administrator) actions.push(row.legalHold ? ["release_hold", "解除暂缓清理"] : ["hold", "基于具体依据暂缓证据清理"]);
+  if (!row.retentionPurgedAt && own && row.status === "resolved") actions.push(["feedback", "向本人提供处理结果"]);
+  if (administrator && !row.retentionPurgedAt) {
+    actions.push(["extend_retention", "指定或延长有限留存期限"]);
+    if (row.retentionReviewNeeded && row.retainUntil) actions.push(["activate_retention", "确认历史迁移期限并启动到期清理"]);
+    actions.push(row.legalHold ? ["release_hold", "解除暂缓清理"] : ["hold", "基于具体依据暂缓证据清理"]);
+  }
   return <div>
-    {row.severity === "urgent" && row.status !== "resolved" && <ActionPanel title="紧急人工联络" fields={[{ ...reason, max: 500 }, { key: "result", label: "操作", options: [["read", "读取有效授权的紧急联系人"], ["contacted", "登记：已人工联系"], ["unreachable", "登记：人工联系未接通"]] }]} button="执行并记入审计" disabled={!own && !administrator} submit={async (body) => {
+    {!row.retentionPurgedAt && row.severity === "urgent" && row.status !== "resolved" && <ActionPanel title="紧急人工联络" fields={[{ ...reason, max: 500 }, { key: "result", label: "操作", options: [["read", "读取有效授权的紧急联系人"], ["contacted", "登记：已人工联系"], ["unreachable", "登记：人工联系未接通"]] }]} button="执行并记入审计" disabled={!own && !administrator} submit={async (body) => {
       setEmergency(undefined); setEmergency(await request(`cases/${row.id}/emergency-contact`, body));
     }}><p>孙逢负责人工处置。不提供自动拨号；飞书通知只有完成配置及实际收件确认后才启用。消息发送成功不代表人工已读或受理，须本人查看队列并实际联络。只在必要的紧急处置中使用联系人资料。</p></ActionPanel>}
     {emergency && <div role="status"><p>{String(emergency.notice)}</p>{emergency.contact ? <p>{String((emergency.contact as { name: string }).name)} · {String((emergency.contact as { phone: string }).phone)}</p> : <p>未展示联系人资料。</p>}</div>}
@@ -123,11 +128,14 @@ export function CaseActions({ row, administrator, userId }: { row: Row; administ
     {actions.length > 0 && <ActionPanel title="案件处理" fields={[
       { key: "action", label: "处理动作", options: actions }, reason,
       { key: "reply", label: "向本人反馈的结果", type: "textarea", min: 5, max: 1000, optional: true },
+      { key: "retainUntil", label: "留存至（指定/延长时必填，ISO 时间）", optional: true },
+      { key: "holdReviewAt", label: "法律留存复核日（暂缓时必填，ISO 时间）", optional: true },
       { key: "severity", label: "受理时更新严重程度", optional: true, options: [["", "保持当前严重程度"], ...["normal", "high", "urgent"].map((key): [string, string] => [key, operationLabels[key]])] },
     ]} button="执行案件处理" submit={async (body) => {
-      await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
-      window.location.reload();
-    }}><p>当前状态：{operationLabels[String(row.status)]}。处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。</p></ActionPanel>}
+      const result = await request(`cases/${row.id}/action`, { ...body, revision: row.revision });
+      if (body.action === "review_purged_restriction" && result.id !== row.id) window.location.assign(recordURL("safety-cases", result.id, admin));
+      else window.location.reload();
+    }}><p>当前状态：{operationLabels[String(row.status)]}。{row.retentionPurgedAt ? row.retentionReviewNeeded ? "案件自由文本与证据已清理，但限制仍生效；管理员可新建独立复核案件，旧案不会重新写入自由文本。" : "案件自由文本与证据已清理；如需后续处置，必须新建独立案件。" : row.retentionReviewNeeded ? "本案件已明确标记为历史留存迁移待复核；有期限时须确认后才启动到期清理。" : ""}{row.legalHold ? ` 法律留存复核日：${String(row.holdReviewAt || "未设置（须立即补充）")}。` : ` 证据期限：${String(row.retainUntil || "待复核")}。`}处置与证据访问都沿用服务器权限校验；申诉和复核须由原处置人以外的人员完成。</p></ActionPanel>}
   </div>;
 }
 
