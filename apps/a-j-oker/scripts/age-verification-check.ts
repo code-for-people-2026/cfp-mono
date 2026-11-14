@@ -3,14 +3,16 @@
 import { sql } from "@payloadcms/db-sqlite";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
-import { mkdtemp, rm, readdir, readFile } from "node:fs/promises";
+import { mkdtemp, rm, readdir, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 const dir = await mkdtemp(path.join(tmpdir(), "aj-age-isolated-"));
+const safetyRetentionLedger = `${dir}/safety-retention.ndjson`;
 process.env.HELLO_DATABASE_URI = `file:${dir}/age.db`;
 process.env.PAYLOAD_SECRET = "isolated-age-test-only";
 process.env.HELLO_DEPLOYED = "false";
 process.env.HELLO_PRIVACY_DELETION_LEDGER = `${dir}/deleted.ndjson`;
+process.env.HELLO_SAFETY_RETENTION_LEDGER = safetyRetentionLedger;
 process.env.HELLO_MEDIA_STORAGE = "database";
 const { cms } = await import("../src/cms/client");
 const { AgeService, ageProfile } = await import("../src/age/service");
@@ -198,6 +200,7 @@ try {
   await writeDeletionLedger(restoredOnly);
   await payload.create({ collection: "wechat-identities", overrideAccess: true, data: { owner: restoredOnly, key: "synthetic-restore-key" } });
   await payload.create({ collection: "age-profiles", overrideAccess: true, data: { owner: restoredOnly, state: "unknown" } });
+  await writeFile(safetyRetentionLedger, "", { mode: 0o600 });
   await maintainPrivacy(payload, { apply: true, restoreLedger: process.env.HELLO_PRIVACY_DELETION_LEDGER });
   assert.equal(await ageProfile(payload, restoredOnly), undefined);
   console.log("✓ 未完成授权的年龄/微信记录到期清理、仅含年龄记录的备份也重放删除清单");
