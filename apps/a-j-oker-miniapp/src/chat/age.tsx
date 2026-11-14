@@ -1,7 +1,7 @@
 import type { UserProfile } from "@cfp/a-j-oker-contracts";
 import { AccountAvatar, AccountProfile } from "./profile";
 import { randomNickname } from "./nickname";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button as TaroButton, type ButtonProps, Checkbox, CheckboxGroup, Input, Label, Picker, ScrollView, Text, View } from "@tarojs/components";
 import { ageStateText, type AgeDeclaration, type AgeStatus } from "@cfp/a-j-oker-contracts";
 import { ageGateStep, declarationForBirthday, todayInChina } from "./age-onboarding";
@@ -36,10 +36,16 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
   const inFlight = useRef(false);
   const native = process.env.TARO_ENV === "weapp";
   const baseStep = ageGateStep(status, declaration);
-  const step = (correcting || reviewVerification) && baseStep !== "pending" ? "verify" : baseStep;
+  const reviewVerificationEligible = status?.review?.state === "approved" && !!status.actions?.startReverification && !status.allowed;
+  const step = (correcting || (reviewVerification && reviewVerificationEligible)) && baseStep !== "pending" ? "verify" : baseStep;
   const canCorrect = status?.loggedIn && !status.assurance && status.additionalVerification !== "required";
   const providerName = status?.configuration.providerName === "aliyun" ? "阿里云" : "腾讯云";
   const birthdayDeclaration = declarationForBirthday(birthday);
+
+  useEffect(() => {
+    if (!reviewVerification || reviewVerificationEligible) return;
+    setReviewVerification(false); setName(""); setIdCard(""); setConsent(false); setMessage("");
+  }, [reviewVerification, reviewVerificationEligible]);
 
   async function act(action: () => Promise<void>) {
     if (inFlight.current) return;
@@ -150,8 +156,8 @@ export function AgeGate({ profile, avatarSource, status, loadingError, privacyRe
         {step === "verify" && <>
           <Text className="age-title">{reviewVerification ? "重新核验年龄" : correcting ? "重新核验年龄" : status?.configuration.provider ? "确认一下年龄" : status?.configuration.previewOnly ? "已完成体验" : "暂时无法核验年龄"}</Text>
           {!status?.configuration.provider ? <>
-            <Text className="age-copy">{correcting ? "身份核验服务暂不可用，请稍后再试。更正需通过本人身份证核验。" : status?.configuration.previewOnly ? "已完成本次登录和生日体验，年龄核验与聊天稍后开放。" : "服务暂不可用，请稍后再来。"}</Text>
-            <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>
+            <Text className="age-copy">{reviewVerification ? "年龄核验服务暂不可用，尚未提交姓名或身份证。请重新查询服务状态，恢复后再核验。" : correcting ? "身份核验服务暂不可用，请稍后再试。更正需通过本人身份证核验。" : status?.configuration.previewOnly ? "已完成本次登录和生日体验，年龄核验与聊天稍后开放。" : "年龄核验服务暂不可用，请稍后再试。"}</Text>
+            {reviewVerification ? <Button className="age-primary" onClick={() => void act(onRefresh)} disabled={busy}>{busy ? "正在查询…" : "重新查询服务状态"}</Button> : <Button className="age-primary" onClick={() => void act(cancel)} disabled={busy}>知道了</Button>}
           </> : <>
             <Text className="age-copy">{reviewVerification ? `复核已允许重新核验，但尚未恢复使用。请用本人姓名和身份证，由${providerName}完成新的年龄核验。` : correcting ? `生日填错了？用本人姓名和身份证，经${providerName}核验后更正。` : `需要本人姓名和身份证，由${providerName}核验。`}</Text>
             <Input className="age-input" value={name} maxlength={50} placeholder="本人姓名" disabled={busy} onInput={(event) => setName(event.detail.value)} />

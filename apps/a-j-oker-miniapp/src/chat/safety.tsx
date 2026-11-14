@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Text, Textarea, View } from "@tarojs/components";
-import { useDidShow, useRouter } from "@tarojs/taro";
+import Taro, { useDidShow, useRouter } from "@tarojs/taro";
 import * as api from "./api";
-import { leavePage, PageButton, SettingsPage } from "./settings-page";
+import { PageButton, SettingsPage } from "./settings-page";
 import "./safety.css";
 
 import type { AgeStatus, SafetyReceipt } from "@cfp/a-j-oker-contracts";
@@ -48,6 +48,27 @@ export function HelpPage() {
     catch (e) { setError(e instanceof Error ? e.message : "申请未完成，请重试"); }
     finally { inFlight.current = false; setBusy(false); }
   }
+  function returnToChatAgeGate() {
+    const pages = Taro.getCurrentPages();
+    let chat = -1;
+    for (let index = pages.length - 1; index >= 0; index--) {
+      if (pages[index]?.route === "pages/chat/index") { chat = index; break; }
+    }
+    if (chat >= 0 && chat < pages.length - 1) void Taro.navigateBack({ delta: pages.length - 1 - chat });
+    else void Taro.reLaunch({ url: "/pages/chat/index" });
+  }
+  async function appeal(row: SafetyReceipt) {
+    let current = age;
+    if (!current) {
+      try { current = await api.getAge(); setAge(current); }
+      catch { /* A generic receipt remains appealable when age status cannot be read. */ }
+    }
+    if (current?.review?.receipt === row.receipt) {
+      setCategory("age_verification"); setParent(undefined); setDescription(""); setSuccess("");
+      return;
+    }
+    setParent(row.receipt); setDescription(""); setSuccess("");
+  }
   const agePanel = category === "age_verification";
   return <SettingsPage title="帮助与反馈" onRefresh={() => void refresh()} refreshing={refreshing || busy} scrollIntoView={parentReceipt ? "help-form" : ""}>
     <Text className="page-intro">遇到问题，或对回应有疑问，都可以在这里告诉我们。</Text>
@@ -56,17 +77,19 @@ export function HelpPage() {
     {agePanel ? <View id="help-form" className="page-card page-card-padded age-recovery-panel">
       <Text className="page-heading">年龄核验与账号恢复</Text>
       <Text className="page-copy">这里用于申请和查看年龄复核，不是普通投诉。请不要在反馈中填写姓名、身份证号码或上传证件照片；需要重新核验时，只会回到受保护的本人核验表单。</Text>
+      <PageButton className="page-link" disabled={busy} onClick={() => { setCategory("other"); setParent(undefined); setSuccess(""); }}>反馈其他问题</PageButton>
       {!age && <Text className="page-copy">正在读取年龄核验状态…</Text>}
       {age && <>
         <Text className="help-field-label">当前状态</Text>
-        <Text className="age-recovery-state">{age.review?.state === "approved" ? "已允许重新核验，但尚未恢复使用" : age.review?.state === "pending" ? "复核处理中" : age.review?.state === "rejected" ? "复核后维持限制" : age.review?.state === "completed" ? "复核流程已完成" : age.review?.state === "request_required" ? "可以申请人工复核" : "当前没有需要处理的复核"}</Text>
+        <Text className="age-recovery-state">{age.review?.state === "approved" ? "已允许重新核验，但尚未恢复使用" : age.review?.state === "pending" ? "复核处理中" : age.review?.state === "rejected" ? "复核后维持限制" : age.review?.state === "completed" ? "复核流程已完成" : age.review?.state === "request_required" ? "可以申请人工复核" : !age.allowed && (age.state === "minor" || age.state === "needs_review" || age.additionalVerification === "required") ? "年龄限制仍然有效" : "当前没有需要处理的复核"}</Text>
         {age.review?.receipt && <Text className="help-receipt-id" selectable>复核受理编号 {age.review.receipt}</Text>}
         {age.review?.caseStatus && <Text className="page-copy">处理进度：{states[age.review.caseStatus] || age.review.caseStatus}</Text>}
         {age.review?.reply && <Text className="help-reply">处理回复：{age.review.reply}</Text>}
-        <Text className="age-recovery-steps">{age.actions?.startReverification ? "下一步：返回聊天页，点击“开始重新核验”，阅读并同意核验说明后提交本人的姓名和身份证进行新的核验。只有新的成年核验成功后才会恢复使用。" : age.actions?.checkReviewStatus ? "下一步：工作人员处理复核。你可以点击刷新查询状态；结果出来前，对话和上传仍不可用。" : age.actions?.requestReview ? "下一步：点击下方按钮申请人工复核。工作人员将查看年龄限制情况；申请不保证批准或自动恢复。" : age.review?.state === "rejected" ? "下一步：请阅读处理回复；当前限制继续有效。如需其他帮助，可使用下方联系渠道。" : "下一步：可刷新读取最新状态。若这是较早版本的受限账号而未显示操作，请使用下方联系渠道。"}</Text>
+        <Text className="age-recovery-steps">{age.review?.state === "approved" ? "下一步：返回聊天并完成新的本人身份核验。复核批准不会自动恢复使用，只有新的成年核验成功后才会恢复对话和上传。" : age.review?.state === "rejected" ? "下一步：请阅读处理回复；当前限制继续有效。若服务端允许再次申请，可使用下方专用按钮，不要提交普通投诉。" : age.review?.state === "completed" ? age.allowed ? "下一步：复核和年龄核验已完成，可以返回聊天。" : "下一步：复核流程已完成，但年龄限制仍然有效。请阅读处理回复或刷新最新状态。" : age.review?.state === "pending" ? "下一步：工作人员处理复核。你可以点击刷新查询状态；结果出来前，对话和上传仍不可用。" : age.review?.state === "request_required" ? "下一步：点击下方按钮申请人工复核。工作人员将查看年龄限制情况；申请不保证批准或自动恢复。" : !age.allowed ? "下一步：年龄限制仍然有效。请刷新读取最新状态；较早版本未显示专用操作时，请使用下方联系渠道。" : "下一步：可以返回聊天；也可刷新读取最新状态。"}</Text>
         {age.actions?.requestReview && <PageButton className="page-primary" disabled={busy} onClick={() => void requestReview()}>{busy ? "正在提交…" : "申请年龄复核"}</PageButton>}
         {age.actions?.checkReviewStatus && <PageButton className="page-primary" disabled={busy} onClick={() => void refresh()}>{busy ? "正在查询…" : "查询复核状态"}</PageButton>}
-        {age.actions?.startReverification && <PageButton className="page-primary" onClick={leavePage}>返回并开始重新核验</PageButton>}
+        {age.review?.state === "approved" && age.actions?.startReverification && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天并重新核验</PageButton>}
+        {age.review?.state === "completed" && age.allowed && <PageButton className="page-primary" onClick={returnToChatAgeGate}>返回聊天</PageButton>}
       </>}
     </View> : <View id="help-form" className="page-card page-card-padded">
       <Text className="page-heading">{parentReceipt ? "申请复核" : turnId ? "反馈这条回应" : "提交反馈"}</Text>
@@ -87,7 +110,7 @@ export function HelpPage() {
         <View className="help-receipt-heading"><Text>{row.kind === "appeal" ? "申诉复核" : row.kind === "complaint" ? "问题反馈" : "自动审核事项"}</Text><Text className={`help-status help-status-${row.status}`}>{states[row.status] || row.status}</Text></View>
         <Text className="help-receipt-id" selectable>受理编号 {row.receipt}</Text>
         <Text className="help-reply">{row.reply || "尚无处理结果，请稍后刷新查看。"}</Text>
-        {row.canAppeal && <PageButton className="page-link" disabled={busy} onClick={() => { setParent(row.receipt); setDescription(""); setSuccess(""); }}>申请复核 ›</PageButton>}
+        {row.canAppeal && <PageButton className="page-link" disabled={busy} onClick={() => void appeal(row)}>申请复核 ›</PageButton>}
       </View>)}
     </View>
     <View className="page-card page-card-padded"><Text className="page-heading">联系渠道</Text><Text className="page-copy" selectable>{contact || "暂未获取联系渠道，请刷新重试。"}</Text></View>
