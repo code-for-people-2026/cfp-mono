@@ -2,6 +2,7 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -214,17 +215,37 @@ class SmokeRecoveryTests(unittest.TestCase):
         privacy = importlib.util.module_from_spec(spec); spec.loader.exec_module(privacy)
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            for name in ('data', 'ledger', 'state', 'backups'):
+            for name in ('data', 'ledger', 'state', 'backups', 'source'):
                 (root / name).mkdir()
             (root / 'ledger/deletions.ndjson').touch()
-            config = {'container': 'web', 'dataDir': str(root / 'data'),
+            (root / 'ledger/safety-retention.ndjson').touch()
+            for name in ('maintenance.ts', 'privacy-maintenance.ts', 'safety-retention.ts', 'safety-retention-ledger.ts'):
+                (root / 'source' / name).touch()
+            database = sqlite3.connect(str(root / 'data/hello.db'))
+            database.executescript('''
+              CREATE TABLE safety_cases (id integer PRIMARY KEY,
+                retention_review_needed integer, retention_purged_at text,
+                hold_review_at text);
+              CREATE TABLE payload_migrations (name text);
+              INSERT INTO payload_migrations VALUES
+                ('20261114_090000_finite_safety_retention');
+            ''')
+            database.commit(); database.close()
+            container_id = 'a' * 64
+            runtime_image = 'sha256:' + 'b' * 64
+            config = {'container': 'web', 'containerId': container_id,
+                      'companionContainers': [], 'dataDir': str(root / 'data'),
                       'ledgerDir': str(root / 'ledger'), 'stateDir': str(root / 'state'),
-                      'backupDir': str(root / 'backups'), 'smokeCleanupScript': '/approved/verify_runtime.py'}
-            meta = {'Mounts': [{'Destination': '/data', 'Source': config['dataDir']},
+                      'backupDir': str(root / 'backups'), 'sourceDir': str(root / 'source'),
+                      'smokeCleanupScript': '/approved/verify_runtime.py',
+                      'retentionRuntimeImage': runtime_image}
+            meta = {'Id': container_id, 'Name': '/web',
+                    'Mounts': [{'Destination': '/data', 'Source': config['dataDir']},
                               {'Destination': '/privacy-ledger', 'Source': config['ledgerDir']}],
-                    'Config': {'Env': ['HELLO_DATABASE_URI=file:/data/hello.db',
+                    'Config': {'WorkingDir': '/app', 'Labels': {'cn.codeforpeople.service': 'hello-agent', 'cn.codeforpeople.retention-runtime': 'v1'}, 'Env': ['HELLO_DATABASE_URI=file:/data/hello.db',
                                       'HELLO_PRIVACY_DELETION_LEDGER=/privacy-ledger/deletions.ndjson',
-                                      'HELLO_PRIVACY_BACKUP_DAYS=7']}}
+                                      'HELLO_PRIVACY_BACKUP_DAYS=7']}, 'Image': runtime_image,
+                    'State': {'Running': True}}
             calls = []
             def run(args):
                 calls.append(args)
@@ -238,6 +259,52 @@ class SmokeRecoveryTests(unittest.TestCase):
                 prune.assert_not_called()
             self.assertEqual(json.loads((root / 'state/status.json').read_text())['stage'], 'recover-smoke-snapshots')
             self.assertFalse(any(c[:2] == ['docker', 'stop'] for c in calls))
+
+    def test_retention_compatibility_failure_precedes_prune_journal_and_stop(self):
+        spec = importlib.util.spec_from_file_location('privacy_preflight', str(Path(__file__).resolve().parents[2] / 'scripts/privacy-operations.py'))
+        privacy = importlib.util.module_from_spec(spec); spec.loader.exec_module(privacy)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for name in ('data', 'ledger', 'state', 'backups', 'source'):
+                (root / name).mkdir()
+            (root / 'ledger/deletions.ndjson').touch()
+            (root / 'ledger/safety-retention.ndjson').touch()
+            sentinel = root / 'backups/keep.db'
+            database = sqlite3.connect(str(sentinel)); database.execute('CREATE TABLE keep(id)'); database.close()
+            database = sqlite3.connect(str(root / 'data/hello.db'))
+            database.executescript('CREATE TABLE safety_cases(id integer PRIMARY KEY); CREATE TABLE payload_migrations(name text);')
+            database.commit(); database.close()
+            before = sentinel.read_bytes()
+            container_id = 'a' * 64
+            runtime_image = 'sha256:' + 'b' * 64
+            config = {'container': 'web', 'containerId': container_id,
+                      'companionContainers': [], 'dataDir': str(root / 'data'),
+                      'ledgerDir': str(root / 'ledger'), 'stateDir': str(root / 'state'),
+                      'backupDir': str(root / 'backups'), 'sourceDir': str(root / 'source'),
+                      'retentionRuntimeImage': runtime_image}
+            meta = {'Id': container_id, 'Name': '/web', 'Image': runtime_image,
+                    'Mounts': [{'Destination': '/data', 'Source': config['dataDir']},
+                               {'Destination': '/privacy-ledger', 'Source': config['ledgerDir']}],
+                    'Config': {'WorkingDir': '/app', 'Labels': {'cn.codeforpeople.service': 'hello-agent', 'cn.codeforpeople.retention-runtime': 'v1'},
+                               'Env': ['HELLO_DATABASE_URI=file:/data/hello.db',
+                                       'HELLO_PRIVACY_DELETION_LEDGER=/privacy-ledger/deletions.ndjson',
+                                       'HELLO_PRIVACY_BACKUP_DAYS=7']},
+                    'State': {'Running': True}}
+            calls = []
+            def run(args):
+                calls.append(args)
+                if args[:2] == ['docker', 'inspect']:
+                    return json.dumps([meta])
+                self.fail('compatibility failure performed a later operation')
+            with patch.object(privacy, 'run', side_effect=run), \
+                    patch.object(privacy, 'prune_backups') as prune, \
+                    patch.object(privacy, '_writer_plan') as writer_plan:
+                with self.assertRaisesRegex(RuntimeError, 'columns'):
+                    privacy.operate(config)
+            prune.assert_not_called(); writer_plan.assert_not_called()
+            self.assertEqual(sentinel.read_bytes(), before)
+            self.assertFalse((root / 'state' / privacy.WRITER_JOURNAL).exists())
+            self.assertFalse(any(call[:2] == ['docker', 'stop'] for call in calls))
 
 if __name__ == '__main__':
     unittest.main()

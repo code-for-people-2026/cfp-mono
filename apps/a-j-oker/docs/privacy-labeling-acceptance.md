@@ -88,7 +88,7 @@ pnpm --filter @cfp/a-j-oker-miniapp build
 | `HELLO_IMAGE_REVIEW_PROVIDER/CONTACT/REGION/PRIVACY_URL` | 配置图审代理时同步提供真实告知；审核URL/token本身不是充分告知 |
 | `HELLO_PRIVACY_OPERATIONS_APPROVED=true` | 公司确认上述安排、供应商受托/第三方协议、敏感及跨境影响评估、实际执行人员和作业已落实后才能设置；本次没有设置生产值 |
 
-维护入口默认只预览：显式指定 `HELLO_DATABASE_URI` 与服务端密钥后运行 `tsx scripts/privacy-maintenance.ts`；确认相同目标再加`--apply`。恢复时保持停流量，配置外置清单，先`--restore`预览，再`--restore --apply`清理并核验，最后才恢复流量。不得用旧数据库备份覆盖删除清单；本次没有对真实备份、真实OSS或真实用户执行维护。
+维护入口默认只预览：显式指定 `HELLO_DATABASE_URI` 与服务端密钥后运行 `tsx scripts/privacy-maintenance.ts`；确认相同目标再加 `--apply`。`--restore` 和 `--apply-safety-retention` 都禁止单独使用，必须与 `--apply` 同时指定，并且在 CMS 初始化前拒绝冲突参数。恢复预检由离线受保护作业在副本上完成；实际恢复保持停流量，使用 `--restore --apply`完整验证并先重放安全留存状态，再重放 owner/对象删除，核验后最后恢复流量。不得用旧数据库备份覆盖删除清单；本次没有对真实备份、真实 OSS 或真实用户执行维护。
 
 维护中的单个身份清理失败不阻断其他身份；完成独立身份和过期凭证的清理尝试后，汇总失败并以非零状态退出，不能当作恢复完成。结果包含成功/候选数量，失败项仅记录与删除清单一致的身份摘要，不输出原始身份、对象路径或底层错误正文。全局凭证清理的部分失败同样汇总；修复问题后重试，保持停流量直至全部成功。回归使用故障替身验证第一个身份失败后仍清理后续撤回/到期身份、多个失败汇总、凭证部分错误和成功重试，不替代真实 OSS/运营后台验收。
 

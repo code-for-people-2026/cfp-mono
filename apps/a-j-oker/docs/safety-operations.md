@@ -137,3 +137,59 @@
 - 实际浏览器验证管理员在规则资源新增版本、执行回归，在题目资源执行评测并人工判定；本地预览显式关闭模型与图片服务，因此如实留下失败记录，禁止发布或判定通过。未执行真实模型质量评测。
 
 全部操作使用本地独立合成数据库，未部署线上、未处理真实用户记录。
+# 安全证据有限留存
+
+普通最小证据从案件创建起默认 30 天，配置只允许 1—30 天。管理员可在案件动作中填写具体理由和未来最多 30 天的日期，手动指定或延长；该明确批准立即恢复自动到期清理，不需要第二次激活，也不会自动续期。只有历史空期限的批量迁移排期可先保留复核门。法律留存同样需要具体依据和未来 30 天内的复核日期。错过复核日不会自动删除或解除，而会出现在后台“仅超时”和维护报告中。
+
+旧有空到期日先做只读盘点：
+
+```sh
+pnpm --filter @cfp/a-j-oker operations:retention-adopt
+```
+
+输出只含数量、案件 ID/修订号、期限和法律留存标记，不含 owner、理由、反馈或证据片段。先确认 `expiredExisting`（已有有限期限但已经到期）与 `count`（旧空期限）分别是多少；两者不能混为一批。普通采用只标记待复核，不设置期限、更不删除内容：
+
+```sh
+pnpm --filter @cfp/a-j-oker operations:retention-adopt -- --apply
+```
+
+该命令重复运行幂等。对非法律留存的旧空期限案件安排宽限复核日时，必须另做一次预览，并把预览中的非 hold 案件数量及完整 ID→revision 映射原样带回；期限须在未来 30 天内：
+
+```sh
+pnpm --filter @cfp/a-j-oker operations:retention-adopt -- \
+  --activate --schedule-until 2026-12-14T00:00:00.000Z \
+  --reason '主管批准旧案采用三十天有限期限并启动自动清理'
+
+pnpm --filter @cfp/a-j-oker operations:retention-adopt -- \
+  --apply --activate --schedule-until 2026-12-14T00:00:00.000Z \
+  --reason '主管批准旧案采用三十天有限期限并启动自动清理' \
+  --expected-count 1 --expected-revisions '{"8":2}'
+```
+
+不带 `--activate` 的历史排期仍只写元数据并保留 `retentionReviewNeeded`；带 `--activate` 时，预览仍不写库，apply 则以完整 ID→revision 和数量 CAS 在同一事务中排期并启动自动到期，重复执行幂等。独立清单记录 intent/commit，审计 actor 固定为 `system:approved-retention`，不冒充人工管理员。上面的日期只适用于所示审批窗口；实际执行时仍须是未来且不超过 30 天。当前用户已批准现有 1—7 号已到期案件按原期限清理正文，并批准空期限 8 号（revision 2）采用 30 天期限；本补丁不执行 live apply。主管应先确认 dry-run 恰为这 7 条 `expiredExisting` 和这 1 条 CAS 候选，任何数量或修订差异都停止。已有有限期限不会被采用命令改写；已获批准且已经到期的案件由日常维护 apply 清理，不再人为改成未来期限。法律留存保持不变，缺少复核日会计入 `holdsMissingReviewDate`。
+
+日常维护 CLI 默认 dry-run：`pnpm --filter @cfp/a-j-oker operations:maintenance`。人工核对 `eligible`/`expiredExisting`、`legacyNullExpiry`、`overdueHolds`、`holdsMissingReviewDate`、`reviewNeeded`、`reviewDueSoon` 与生效限制复核计数后才可 `-- --apply`。`--restore` 与 `--apply-safety-retention` 都是写入选项，必须和 `--apply` 同时使用；不存在“带 restore 的 dry-run”。恢复预检应在复制数据库上由受保护作业完成，不能对 live DB 调用可写入的 Payload 初始化。待复核旧案和法律留存不会自动清理。
+
+到期清理移除证据片段、案件处置理由/反馈/留存依据、旧 hold 理由、提醒元数据、相关处置理由以及案件审计自由文本。没有生效处置时，owner、session、turn、media、request、parent 和非生效处置标识改成留存墓碑；墓碑和摘要哈希都不宣称匿名。仍在生效的隔离或生成限制必须保留解除限制所需的 owner/目标引用，否则会错误重新开放危险内容。此时证据正文仍会清理，引用进入最长 30 天的限制复核；管理员可在已清理案件页使用“新建独立生效限制复核”，新案安全关联旧案件但不会把理由或反馈写回旧案。处置经新案解除后，下一次每小时维护会清除旧引用。现有年龄档案不关联审核案件，也不由本留存流程改写。已清理案件拒绝延长、hold、反馈或其他自由文本写入。
+
+## 每小时维护、恢复与启用门
+
+正式路径沿用 `cfp-hello-privacy-full.timer`。四文件 source overlay 只是对已兼容运行时的受评阅入口，不会给旧镜像补齐 `operations/transaction.ts`、依赖或数据库列。作业要求 `retentionRuntimeImage` 精确锁定已评阅的不可变镜像 ID，并在备份清理、writer journal 和停服前，用 SQLite `mode=ro` 核对三列与唯一 migration 记录；该预检不初始化 CMS、不读取容器凭据。部署源目录须安装经评阅的 `maintenance.ts`、`privacy-maintenance.ts`、`safety-retention.ts` 和 `safety-retention-ledger.ts`，并在独立 ledger 目录预创建 0600 的 `safety-retention.ndjson`。初始配置保持 `"safetyRetentionApply": false`：每小时状态文件会公开上述计数，但安全证据只读预览；完成迁移、旧案采用/排期、人工复核及一次相同目标的预览后，才把该布尔门改为 `true`。这项配置变更和首次 apply 仍是主管操作，本补丁没有执行。
+
+案件期限/hold 状态会先写带唯一操作号的 intent，数据库事务提交后再同步写 matching commit；恢复只重放完整配对。事务回滚或提交边界写盘失败留下的未确认 intent 都属于歧义状态，必须保持关闭并人工核对，绝不把失败的 hold/延长当成已提交。实际 purge 则故意在数据库清理前写保守的 purge 防护，恢复时可重复清理。记录不含 owner 和正文，只含 case ID、receipt 摘要、修订号和留存状态；这不表示摘要匿名。恢复时流量保持停止：先完整验证案件清单（包括未确认 intent）与所有案件 receipt，再于事务内重放 hold/期限/purge，最后才重放通用 owner/对象删除清单。这个顺序避免旧备份中的 `legalHold=false` 在后来已确认 hold 恢复前被本人删除清理。成功后才允许启动；只有明确 404 可跳过，数据库读取失败、文件缺失/损坏、案件摘要不匹配或清理失败都保持关闭。每次所有受管 7 日备份根成功完成清理后，full 作业从官方 deployment manifest 的 `current` 解析配置 allowlist 中主服务及 companion writer 的精确 ID 和共同镜像，拒绝待恢复 deployment journal，再停止并确认这些 writer；精确 ID 与原始运行状态先持久进入维护恢复 journal，未完成恢复时不能跨新发布静默换钉。随后才以原子替换和文件/目录 fsync 压缩清单：保留 8 日恢复防御窗口、尚未到期的状态和所有未确认记录，未知记录拒绝压缩。压缩后才继续快照、维护和恢复；任何失败保持所有 writer 停止。这不是把通用 owner ledger 冒充为案件清理保护。
+
+## 生产迁移计划（未执行）
+
+迁移只允许增加 `safety_cases.retention_review_needed`、`retention_purged_at`、`hold_review_at` 及三个同名索引，并追加唯一的 Payload migration 记录。候选必须是主管核定的部署镜像；当前证据给出的目标是 `preview-20261114-direct-ed28bb62` 的后续整合候选，不得把本地补丁直接当作已部署证明。
+
+```sh
+# 1. 在一次性复制的数据库快照上运行真实候选迁移；不停止服务、不改 live DB。
+python3 /opt/cfp-hello-agent/operations/bin/migrate-finite-retention.py \
+  preview-YYYYMMDD-NAME --preflight-only
+
+# 2. 人工核对 preflight receipt 后，在维护窗口运行同一命令的受保护 live 阶段。
+python3 /opt/cfp-hello-agent/operations/bin/migrate-finite-retention.py \
+  preview-YYYYMMDD-NAME
+```
+
+该命令复用 schema-neutral 的 `migration-guard.py`：部署锁、隐私维护锁、2 GiB 下限、一致快照、网络隔离 helper、Payload 精确 migration 选择、停止原 app+worker、受管归档、完整性/外键检查、旧表逐行哈希、alert 配置、Payload migration journal、原容器 ID、重启后新 heartbeat/readiness 与中断恢复。专用验证器拒绝三列/三索引以外的 schema 变化、旧案件字段变化、新列预填、alert 变化或 migration journal 异常；不覆盖数据库、不做破坏性 rollback、不修改 retention manifest。所有 journal/manifest/归档须按原路径保留。发布顺序固定为：构建并评阅包含留存源码与 transaction 模块的候选镜像 → 用同一候选镜像预检并执行受保护迁移 → 按正常 release 程序替换 app/worker 并验证就绪/心跳 → 将新镜像不可变 ID 写入 `retentionRuntimeImage` 后安装作业和 overlay → 先启用 dry-run，最后单独打开 apply 门。不得在旧镜像上先安装/启用四文件 overlay，也不得把迁移成功当成新 app/worker 已发布。
