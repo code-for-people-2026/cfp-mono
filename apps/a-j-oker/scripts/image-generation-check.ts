@@ -99,7 +99,7 @@ const store: ImageObjectStore = {
 };
 const allowText: Moderator = async request => {
   if (request.purpose === "image_generation") return imageReview(true);
-  if (request.interaction) return { ...(await syntheticTextReview(request)), interaction: { ...ordinaryInteraction, image_requested: true } };
+  if (request.interaction) return { ...(await syntheticTextReview(request)), interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } };
   return syntheticTextReview(request);
 };
 const allowImage = async () => ({ decision: "allow" as const, version: "synthetic-review", category: "test" });
@@ -310,14 +310,14 @@ try {
     }
     assert.equal(modelCalls, 0); assert.equal(submitted, before);
     const outsideImageReview: Moderator = async request => request.purpose === "image_generation"
-      ? { serviceScope: "outside" as const, interaction: { ...ordinaryInteraction, image_requested: true } }
+      ? { serviceScope: "outside" as const, interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } }
       : syntheticTextReview(request);
     const allowedMediaId = (await repo.all("media")).find(m => m.id !== imageRow.id && m.id !== unlinked.id)!.id;
     for (const verdict of [
       { name: "outside", review: outsideImageReview, status: 422, blocked: true },
       { name: "not-requested", review: (async () => imageReview(false)) as Moderator, status: 422, blocked: true },
       { name: "missing", review: (async () => undefined) as Moderator, status: 503, blocked: false },
-      { name: "unclear", review: (async () => ({ serviceScope: "unclear" as const, interaction: { ...ordinaryInteraction, image_requested: true } })) as Moderator, status: 503, blocked: false },
+      { name: "unclear", review: (async () => ({ serviceScope: "unclear" as const, interaction: { ...ordinaryInteraction, image_requested: true, single_choice_only: false } })) as Moderator, status: 503, blocked: false },
       { name: "support-alone", review: (async () => ({ serviceScope: "support" as const })) as Moderator, status: 503, blocked: false },
     ] as const) {
       const blockedRow = await repo.create("greetings", { sessionId: scopedSession.id, requestKey: randomUUID(), fingerprint: "scope-bypass", status: "running", mode: "platform", input: { mediaIds: [], text: "请制作一张计算卡" } });

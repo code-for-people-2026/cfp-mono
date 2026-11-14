@@ -9,6 +9,7 @@ export type InteractionFlags = {
   exit: boolean;
   forget_context: boolean;
   image_requested: boolean;
+  single_choice_only: boolean;
 };
 
 export type SemanticHistoryCase = {

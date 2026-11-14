@@ -11,6 +11,7 @@ import type { Part } from "@google/genai";
 import type { KnowledgeContext } from "./knowledge";
 import { DEFAULT_AGENT_CONFIGS } from "./default-prompts";
 import { createGreetingAgent } from "./coordinator";
+import { singleChoiceDeliveryError } from "./single-choice-delivery";
 import { PSYCHOLOGY_APPROACHES, type PsychologyApproach } from "./psychology";
 import {
   A2A_TASK_STORE_SCOPE,
@@ -154,6 +155,7 @@ function fixture(
   knowledge?: KnowledgeContext,
   specialistKeys = DEFAULT_AGENT_CONFIGS.slice(1),
   coordinator = DEFAULT_AGENT_CONFIGS[0].prompt,
+  checkDelivery?: Parameters<typeof createGreetingAgent>[0]["checkDelivery"],
 ) {
   let step = 0;
   const model = new WorkflowModel((request) =>
@@ -192,6 +194,7 @@ function fixture(
     signal: controller.signal,
     a2a,
     save,
+    checkDelivery,
   });
   const run = async () => {
     await sessionService.createSession({
@@ -339,6 +342,35 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       "阿 J 一轮最多输出一件回应作品",
     );
     expect(f.save).toHaveBeenCalledExactlyOnceWith({ ...reply, approach: "supportive" });
+  });
+
+  it("单题单选约束在保存前退回附加长文本，修正后只保存一次", async () => {
+    const select = {
+      id: "reason", label: "今天更像哪一种？", type: "select" as const,
+      required: false, allowOther: false,
+      options: [{ id: "tired", label: "累积疲惫" }, { id: "pressure", label: "事情太多" }],
+    };
+    const invalid = call("save_greeting", {
+      ...reply,
+      artifacts: [{
+        kind: "form", id: "reason_form", title: "辨认烦躁", description: "选最接近的一项",
+        submitLabel: "选好了", fields: [select, { id: "more", label: "还想补充吗", type: "longText", required: false }],
+      }],
+    });
+    const corrected = call("save_greeting", {
+      ...reply,
+      artifacts: [{
+        kind: "form", id: "reason_form", title: "辨认烦躁", description: "选最接近的一项",
+        submitLabel: "选好了", fields: [select],
+      }],
+    });
+    const checkDelivery = (value: Parameters<NonNullable<Parameters<typeof createGreetingAgent>[0]["checkDelivery"]>>[0]) =>
+      singleChoiceDeliveryError(true, value);
+    const f = fixture([[invalid], [corrected]], undefined, undefined, [], DEFAULT_AGENT_CONFIGS[0].prompt, checkDelivery);
+    await f.run();
+    expect(JSON.stringify(f.model.requests[1].contents)).toContain("只含一个 select 字段");
+    expect(f.save).toHaveBeenCalledTimes(1);
+    expect(f.save.mock.calls[0][0]).toMatchObject({ artifacts: [{ fields: [select] }] });
   });
 
   it("旧 coordinator 配置之后仍有服务端固定的单作品与内联追问规则", () => {

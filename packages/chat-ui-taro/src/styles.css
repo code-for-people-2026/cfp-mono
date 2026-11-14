@@ -60,7 +60,7 @@ page {
 .artifact-field { display: block; }
 .artifact-label { display: block; font-size: 12px; line-height: 1.7; font-weight: 550; margin-bottom: 5px; }
 .artifact-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0 8px; }
-.control.artifact-choice { min-height: 36px; padding: 7px 12px; border: 1px solid var(--chat-ui-border, #dce5d9); border-radius: 10px; background: #fff; color: var(--chat-ui-text, #243b35); text-align: left; }
+.control.artifact-choice { min-height: 36px; min-width: 0; max-width: 100%; box-sizing: border-box; flex: 0 1 auto; padding: 7px 12px; border: 1px solid var(--chat-ui-border, #dce5d9); border-radius: 10px; background: #fff; color: var(--chat-ui-text, #243b35); text-align: left; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .control.artifact-choice.is-selected { border-color: var(--chat-ui-accent, #56765d); background: var(--chat-ui-accent-soft, #eaf0e5); color: #31553a; }
 .control.artifact-choice[disabled] { opacity: .65; }
 .control.artifact-choice-unknown { margin: 0 0 8px; }

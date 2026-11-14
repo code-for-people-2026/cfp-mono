@@ -26,7 +26,7 @@ try {
   await seedSyntheticAge(payload, owner);
   const repo = new Repository(payload, owner);
   let generated = 0;
-  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
   const service = new GreetingService(repo, async (r) => { generated++; await r.save({ greeting: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, {
     moderate: async () => ({ serviceScope: "support" as const, interaction: ordinary }),
   });

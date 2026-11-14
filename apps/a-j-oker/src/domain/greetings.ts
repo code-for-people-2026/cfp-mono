@@ -315,7 +315,7 @@ export class GreetingService {
       model: guidance ? "product-guidance" : model,
       promptVersion: serviceGuidance ? SERVICE_SCOPE_VERSION : guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
-    return { row, duplicate: false, guidance, imageRequested: interaction.image_requested };
+    return { row, duplicate: false, guidance, imageRequested: interaction.image_requested, singleChoiceOnly: interaction.single_choice_only };
   }
   private async completeProductGuidance(id: number, guidance: string) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
@@ -450,6 +450,7 @@ export class GreetingService {
         existingImage: imageState?.status === "stored" && imageState.mediaId ? { mediaId: imageState.mediaId, title: imageState.input.title, alt: imageState.input.alt } : undefined,
         resumingImage: !!resumeTurnId,
         imageRequested: result.imageRequested,
+        singleChoiceOnly: result.singleChoiceOnly,
         executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
         save: async (output) => {
           try {

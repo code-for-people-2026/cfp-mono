@@ -59,9 +59,16 @@ describe("AG-UI 协议适配", () => {
       catalogIds: [AJ_CATALOG_ID],
     });
     reader.push(wire);
-    expect(
-      reader.finish().messages.filter((message) => "createSurface" in message),
-    ).toHaveLength(5);
+    const surfaces = reader
+      .finish()
+      .messages.filter((message) => "createSurface" in message);
+    expect(surfaces).toHaveLength(1);
+    expect(surfaces[0]).toMatchObject({
+      createSurface: {
+        catalogId: AJ_CATALOG_ID,
+        surfaceId: "turn_12_thought_record",
+      },
+    });
   });
   it("失败只发 RUN_ERROR，不发布成功事件或供应商错误原文", async () => {
     const wire = await agentStream(

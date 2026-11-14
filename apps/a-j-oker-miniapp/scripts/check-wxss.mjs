@@ -90,11 +90,23 @@ try {
     );
   for (const selector of [
     ".control",
+    ".control.artifact-choice",
     ".control.artifact-submit",
     ".control.detail-close",
   ]) {
     if (!rules.has(selector))
       throw new Error(`原生 WXSS 输出缺少弹层控件样式：${selector}`);
+  }
+  const choiceRule = rules.get(".control.artifact-choice") || "";
+  for (const declaration of [
+    "white-space:normal",
+    "min-width:0",
+    "max-width:100%",
+    "box-sizing:border-box",
+    "word-break:break-word",
+  ]) {
+    if (!choiceRule.replaceAll(" ", "").includes(declaration))
+      throw new Error(`原生 WXSS 单选项缺少长标签换行约束：${declaration}`);
   }
   console.log(
     `微信原生 WXSS 编译通过：${files.length} 个样式文件。此检查不替代上传或真机验收。`,

@@ -178,7 +178,7 @@ try {
 
   payload = await cms();
   await seedAgents(payload);
-  const interactionFalse = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+  const interactionFalse = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
   for (const sample of samples) {
     const sampleStartedAt = new Date().toISOString();
     const owner = { id: `synthetic:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };

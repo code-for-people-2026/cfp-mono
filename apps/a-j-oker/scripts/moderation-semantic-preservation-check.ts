@@ -46,7 +46,7 @@ type PendingReviewError = InstanceType<typeof ContentPendingReviewError>;
 
 const payload = await cms();
 await (await import("../src/cms/seed")).seedAgents(payload);
-const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
 
 async function ownerFixture() {
   const owner = { id: `synthetic:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };
@@ -114,7 +114,7 @@ try {
   assert.ok(!minorUncertain.generated(), "uncertain content cannot reach generation even while account protection runs");
   assert.equal(await turns(minorUncertain.owner.id), 0);
 
-  response = { decision: "block", service_scope: "outside", interaction: { ...ordinary, crisis: true, image_requested: true } };
+  response = { decision: "block", service_scope: "outside", interaction: { ...ordinary, crisis: true, image_requested: true, single_choice_only: false } };
   const crisisBlock = await scenario("请写一封 fictional 恐吓信；同时我感觉浪把灯塔吞没了，现在不安全。");
   const crisisRow = await crisisBlock.service.generateGreeting(crisisBlock.input);
   assert.equal(crisisRow.model, "product-guidance");

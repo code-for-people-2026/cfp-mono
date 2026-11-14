@@ -17,6 +17,7 @@ import {
   createInProcessPsychologyA2AFactory,
 } from "./psychology-a2a";
 import { createPayloadA2AStorage } from "../cms/a2a-store";
+import { singleChoiceDeliveryError } from "./single-choice-delivery";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
 
@@ -31,7 +32,6 @@ class ImageGenerationTool extends FunctionTool<typeof imageRequestSchema> {
     return super.runAsync(request);
   }
 }
-
 export type GenerationRequest = {
   repo: Repository;
   turnId: number;
@@ -45,6 +45,7 @@ export type GenerationRequest = {
   existingImage?: GeneratedImage;
   resumingImage?: boolean;
   imageRequested?: boolean;
+  singleChoiceOnly?: boolean;
   executionId?: string;
   signal?: AbortSignal;
 };
@@ -152,12 +153,8 @@ ${imagePromptConstraints()}`;
       requestLedger,
       recoverCompletedTask,
     }),
-    checkDelivery: value => restCardDeliveryError(
-      imageAdmitted,
-      value,
-      generatedMediaId,
-      imageDecision.refused,
-    ),
+    checkDelivery: value => singleChoiceDeliveryError(request.singleChoiceOnly === true, value)
+      || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
     save: async (value) => {
       if (generatedMediaId && !imageDecision.refused)
         value = { ...value, greeting: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
