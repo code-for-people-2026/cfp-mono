@@ -87,7 +87,7 @@ async function create(payload: Payload, owner: string, req: PayloadRequest, kind
 
 // Caller owns the surrounding transaction. A definitive new risk/minor result
 // must move authorization to a new current cycle before that transaction commits.
-export async function supersedeAgeReviewAuthorization(payload: Payload, owner: string, req: PayloadRequest, kind: CreationKind = "minor") {
+async function supersedeAgeReviewAuthorization(payload: Payload, owner: string, req: PayloadRequest, kind: CreationKind = "minor") {
   const latest = await latestAgeReviewCase(payload, owner, req);
   return latest && latest.status !== "resolved" ? latest : create(payload, owner, req, kind);
 }
