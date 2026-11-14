@@ -1,6 +1,6 @@
 # 微信登录与年龄核验（本地实现）
 
-事项：[GitHub #384](https://github.com/code-for-people-2026/cfp-mono/issues/384)。实现第一层微信身份、年龄申报与第二层第三方年龄核验；第三层仅保留 `additionalVerification=required` 的可信服务端接口，不采集人脸。供应商语义及官方来源见 [研究记录](./age-verification-research.md)。
+事项：[GitHub #384](https://github.com/code-for-people-2026/cfp-mono/issues/384)。实现第一层微信身份、年龄申报与第二层第三方年龄核验；`additionalVerification=required` 进入[年龄复核与重新核验流程](./age-review.md)，由管理员决定是否允许本人重新核验，不采集人脸。供应商语义及官方来源见 [研究记录](./age-verification-research.md)。
 
 ## 主分支同步（2026-10-14）
 

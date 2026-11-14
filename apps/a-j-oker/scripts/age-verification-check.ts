@@ -120,9 +120,9 @@ try {
     const subject = await fresh(); let calls = 0;
     const instance = new AgeService(payload, subject.owner, async () => { calls++; return { state, reference: "synthetic" }; });
     const prepared = await challenge(instance);
-    assert.equal((await instance.submit({ ...identity, challenge: prepared.challenge })).state, state);
+    assert.equal((await instance.submit({ ...identity, challenge: prepared.challenge })).state, state === "minor" ? "needs_review" : state);
     await assert.rejects(() => instance.requireCapability(), /年龄/);
-    if (state === "minor") { await instance.cancel(); assert.equal((await instance.status()).state, "minor"); await assert.rejects(() => challenge(instance), /复核/); }
+    if (state === "minor") { await instance.cancel(); assert.equal((await instance.status()).state, "needs_review"); await assert.rejects(() => challenge(instance), /复核/); }
     assert.equal(calls, 1);
   }
   const child = await fresh(); let childCalls = 0;
@@ -159,7 +159,7 @@ try {
   const minorChallenge = await challenge(minorService);
   await minorService.submit({ ...identity, challenge: minorChallenge.challenge });
   await assert.rejects(() => correct(minorService), /复核/);
-  assert.equal((await minorService.status()).review?.state, "request_required");
+  assert.equal((await minorService.status()).review?.state, "pending");
   assert.equal((await minorService.requestReview()).review?.state, "pending");
   const review = await fresh(); const reviewService = new AgeService(payload, review.owner);
   await challenge(reviewService, "under14"); await reviewService.requireAdditionalVerification();
@@ -175,7 +175,7 @@ try {
   const requested = await conflictService.requestReview();
   assert.equal(requested.review?.state, "pending");
   assert.equal(requested.allowed, false);
-  await assertProvenance(requested.review!.receipt!, { source: "complaint", actor: `owner:${conflict.owner.id}`, reason: "本人申请年龄复核", evidence: "本人申请年龄限制复核。" });
+  await assertProvenance(requested.review!.receipt!, { source: "moderation", actor: "system:age-verification", reason: "年龄申报与核验结果冲突", evidence: "本人申报与新的身份核验结果冲突。" });
   const duplicate = await conflictService.requestReview();
   assert.equal(duplicate.review?.receipt, requested.review?.receipt);
   const reviewRow = (await ops.queue(administrator, {})).find((row) => row.receipt === requested.review?.receipt)!;
@@ -196,6 +196,72 @@ try {
   const unlocked = await conflictService.submit({ ...identity, challenge: retryEvidence.challenge });
   assert.equal(unlocked.allowed, true); assert.equal(unlocked.review?.state, "completed");
   await assert.rejects(() => conflictService.submit({ ...identity, challenge: retryEvidence.challenge }), /无效|过期/);
+
+  async function completedApproval(verifier: () => Promise<{ state: "adult" | "minor"; reference: string; ageBand?: "under14" | "14to17" }>) {
+    const subject = await fresh();
+    const instance = new AgeService(payload, subject.owner, verifier);
+    await instance.requireAdditionalVerification();
+    const pending = await instance.requestReview();
+    const row = (await ops.queue(administrator, {})).find((item) => item.receipt === pending.review?.receipt)!;
+    await ops.action(administrator, Number(row.id), { revision: 0, action: "claim", reason: "管理员领取限制周期隔离回归案件" });
+    await ops.action(administrator, Number(row.id), { revision: 1, action: "permit_age_reverification", reason: "允许合成用户提供新的本人年龄证据", reply: "可以重新发起本人年龄核验。" });
+    const approvedChallenge = await instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+    assert.equal((await instance.submit({ ...identity, challenge: approvedChallenge.challenge })).allowed, true);
+    return { subject, instance, receipt: pending.review!.receipt! };
+  }
+
+  let conflictCycleCalls = 0;
+  const completedConflict = await completedApproval(async () => ({ state: "adult", reference: `synthetic-cycle-adult-${++conflictCycleCalls}` }));
+  const newTeenChallenge = await challenge(completedConflict.instance, "14to17");
+  const newTeenConflict = await completedConflict.instance.submit({ ...identity, challenge: newTeenChallenge.challenge });
+  assert.equal(newTeenConflict.review?.state, "pending"); assert.notEqual(newTeenConflict.review?.receipt, completedConflict.receipt);
+  assert.equal(newTeenConflict.additionalVerification, "required"); assert.equal(newTeenConflict.allowed, false);
+  await assert.rejects(() => completedConflict.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+  assert.equal((await completedConflict.instance.requestReview()).review?.receipt, newTeenConflict.review?.receipt);
+
+  let minorCycleCalls = 0;
+  const completedMinor = await completedApproval(async () => ++minorCycleCalls === 1
+    ? { state: "adult", reference: "synthetic-cycle-adult" }
+    : { state: "minor", reference: "synthetic-cycle-minor", ageBand: "14to17" });
+  const newMinorChallenge = await challenge(completedMinor.instance, "14to17");
+  const newMinor = await completedMinor.instance.submit({ ...identity, challenge: newMinorChallenge.challenge });
+  assert.equal(newMinor.review?.state, "pending"); assert.notEqual(newMinor.review?.receipt, completedMinor.receipt);
+  assert.equal(newMinor.additionalVerification, "required"); assert.equal(newMinor.allowed, false);
+  await assert.rejects(() => completedMinor.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+
+  const completedUnder14 = await completedApproval(async () => ({ state: "adult", reference: "synthetic-under14-cycle-adult" }));
+  const newUnder14 = await challenge(completedUnder14.instance, "under14");
+  assert.equal(newUnder14.challenge, null); assert.equal(newUnder14.status.review?.state, "pending");
+  assert.notEqual(newUnder14.status.review?.receipt, completedUnder14.receipt); assert.equal(newUnder14.status.additionalVerification, "required");
+  await assert.rejects(() => completedUnder14.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+
+  const legacy = await completedApproval(async () => ({ state: "adult", reference: "synthetic-legacy-adult" }));
+  const legacyProfile = await ageProfile(payload, legacy.subject.owner.id);
+  await payload.update({ collection: "age-profiles", id: legacyProfile!.id, overrideAccess: true, data: {
+    state: "needs_review", additionalVerification: "required", reference: "synthetic-stale-provider-reference", assurance: null, expiresAt: null,
+  } });
+  assert.equal((await legacy.instance.status()).review?.state, "request_required");
+  const recoveredLegacy = await legacy.instance.requestReview();
+  assert.equal(recoveredLegacy.review?.state, "pending"); assert.notEqual(recoveredLegacy.review?.receipt, legacy.receipt);
+  await assert.rejects(() => legacy.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version }), /批准/);
+
+  let cancellationCalls = 0;
+  const cancellation = await completedApproval(async () => { cancellationCalls++; return { state: "adult", reference: `synthetic-cancel-adult-${cancellationCalls}` }; });
+  await cancellation.instance.requireAdditionalVerification();
+  const cancellationPending = await cancellation.instance.requestReview();
+  const cancellationRow = (await ops.queue(administrator, {})).find((item) => item.receipt === cancellationPending.review?.receipt)!;
+  await ops.action(administrator, Number(cancellationRow.id), { revision: 0, action: "claim", reason: "管理员领取取消复核请求回归案件" });
+  await ops.action(administrator, Number(cancellationRow.id), { revision: 1, action: "permit_age_reverification", reason: "允许合成用户重新提供年龄证据", reply: "可以重新发起本人年龄核验。" });
+  const cancelledChallenge = await cancellation.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  const callsBeforeCancelledSubmit = cancellationCalls;
+  await cancellation.instance.cancel();
+  await assert.rejects(() => cancellation.instance.submit({ ...identity, challenge: cancelledChallenge.challenge }), /无效|过期/);
+  assert.equal(cancellationCalls, callsBeforeCancelledSubmit);
+  const replacementChallenge = await cancellation.instance.reviewChallenge({ consent: true, noticeVersion: ageNotice().version });
+  assert.notEqual(replacementChallenge.challenge, cancelledChallenge.challenge);
+  const cancellationUnlocked = await cancellation.instance.submit({ ...identity, challenge: replacementChallenge.challenge });
+  assert.equal(cancellationUnlocked.allowed, true); assert.equal(cancellationCalls, callsBeforeCancelledSubmit + 1);
+  console.log("✓ 已完成批准后的冲突、未成年、未满14岁与遗留陈旧许可均创建当前周期；取消请求不可提交且仅新鲜成年证据解锁");
 
   const rejectedSubject = await fresh();
   const rejectedService = new AgeService(payload, rejectedSubject.owner, async () => ({ state: "adult", reference: "synthetic" }));

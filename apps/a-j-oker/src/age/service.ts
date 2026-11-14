@@ -6,7 +6,7 @@ import type { AgeProfile } from "../payload-types";
 import { ageNotice, ageProvider, providerConfigured, wechatConfigured } from "./policy";
 import { withAgeLock } from "./lock";
 import { verifyAge, type AgeVerifier } from "./provider";
-import { latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection, supersedeAgeReviewAuthorization } from "./review";
+import { bindAgeRestriction, latestAgeReviewCase, requestAgeReview, requireAgeRiskCase, requireApprovedReview, reviewProjection } from "./review";
 import { transaction } from "../operations/transaction";
 
 export async function ageProfile(payload: Payload, owner: string, req?: PayloadRequest) {
@@ -77,12 +77,25 @@ export class AgeService {
       }
       if (previous?.state === "minor" || previous?.additionalVerification === "required") throw new AppError(403, "已有未成年或需复核记录，请通过帮助与反馈申请复核，不能换填他人信息重试");
       if (previous?.declaration === "under14" || (previous?.declaration === "14to17" && input.declaration === "adult")) {
-        await this.save({ state: "needs_review", additionalVerification: "required", challenge: null });
+        await transaction(this.payload, async (req) => {
+          const restricted = await this.save({ state: "needs_review", additionalVerification: "required", challenge: null, challengePurpose: null, challengeExpiresAt: null, assurance: null, expiresAt: null }, req);
+          await bindAgeRestriction(this.payload, restricted, req, "conflict");
+        });
         return { status: await this.status(), challenge: null };
       }
       if ((await this.status()).allowed && input.declaration === "adult") return { status: await this.status(), challenge: null };
       const challenge = input.declaration === "under14" || !providerConfigured() ? null : randomUUID();
-      await this.save({ state: input.declaration === "under14" ? "minor" : challenge ? "unverified" : "unavailable", declaration: input.declaration, noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(), challenge, challengePurpose: "initial", challengeExpiresAt: challenge ? new Date(Date.now() + 5 * 60_000).toISOString() : null, expiresAt: input.declaration === "under14" ? new Date(Date.now() + 30 * 86400_000).toISOString() : null, assurance: null });
+      const latestReview = input.declaration === "under14" ? await latestAgeReviewCase(this.payload, this.owner.id) : undefined;
+      const startsNewReviewCycle = input.declaration === "under14"
+        && previous?.state === "adult"
+        && previous.assurance === "identity_details_match"
+        && latestReview?.status === "resolved"
+        && latestReview.action === "permit_age_reverification";
+      if (startsNewReviewCycle) await transaction(this.payload, async (req) => {
+        const restricted = await this.save({ state: "minor", declaration: input.declaration, noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(), challenge: null, challengePurpose: null, challengeExpiresAt: null, expiresAt: new Date(Date.now() + 30 * 86400_000).toISOString(), assurance: null, additionalVerification: "required" }, req);
+        await bindAgeRestriction(this.payload, restricted, req, "declaration");
+      });
+      else await this.save({ state: input.declaration === "under14" ? "minor" : challenge ? "unverified" : "unavailable", declaration: input.declaration, noticeVersion: input.noticeVersion, consentedAt: new Date().toISOString(), challenge, challengePurpose: "initial", challengeExpiresAt: challenge ? new Date(Date.now() + 5 * 60_000).toISOString() : null, expiresAt: input.declaration === "under14" ? new Date(Date.now() + 30 * 86400_000).toISOString() : null, assurance: null });
       return { status: await this.status(), challenge };
     });
   }
@@ -143,8 +156,10 @@ export class AgeService {
           if (current.additionalVerification !== "required" || current.reference !== `age-review:${approved.id}:${approved.revision}`)
             throw new AppError(409, "年龄复核批准已变更，请按当前结果重新发起");
         }
-        await this.save({ state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: evidence.reference || null, ...((correcting || reviewing) && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: reviewing ? (state === "adult" ? "not_requested" : "required") : state === "needs_review" ? "required" : "not_requested" }, req);
-        if (reviewing && state === "minor") await supersedeAgeReviewAuthorization(this.payload, this.owner.id, req);
+        const newRestriction = state === "minor" || state === "needs_review";
+        const remainsRestricted = newRestriction || reviewing && state !== "adult";
+        const saved = await this.save({ state: reviewing && state === "minor" ? "needs_review" : state, source: ageProvider() === "aliyun" ? "aliyun_id2_meta_name_id" : "tencent_minors_verification_name_id", reference: remainsRestricted && !newRestriction ? current.reference : evidence.reference || null, ...((correcting || reviewing) && verified ? { declaration: state === "adult" ? "adult" : evidence.ageBand || "unknown" } : {}), assurance: verified ? "identity_details_match" : null, verifiedAt: verified ? now.toISOString() : null, expiresAt: verified ? new Date(now.getTime() + 30 * 86400_000).toISOString() : null, additionalVerification: remainsRestricted ? "required" : "not_requested" }, req);
+        if (newRestriction) await bindAgeRestriction(this.payload, saved, req, state === "needs_review" ? "conflict" : "minor");
       });
       return this.status();
     });
@@ -153,7 +168,7 @@ export class AgeService {
     if (this.owner.auth === "bearer") throw new AppError(403, "请本人管理年龄核验");
     return withAgeLock(this.payload, `owner:${this.owner.id}`, async () => {
       const profile = await ageProfile(this.payload, this.owner.id);
-      if (profile?.challengePurpose === "correction") await this.save({ challenge: null, challengePurpose: null, challengeExpiresAt: null });
+      if (profile?.challengePurpose === "correction" || profile?.challengePurpose === "age_review") await this.save({ challenge: null, challengePurpose: null, challengeExpiresAt: null });
       else if (!profile || !["adult", "minor", "needs_review"].includes(String(profile.state))) await this.save({ state: "cancelled", challenge: null, challengePurpose: null, challengeExpiresAt: null });
       return this.status();
     });
