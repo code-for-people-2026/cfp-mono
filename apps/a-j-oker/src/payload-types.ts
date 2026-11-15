@@ -446,7 +446,7 @@ export interface SafetyEvaluation {
   createdAt: string;
 }
 /**
- * 一个心理流派对应一个 subagent；主 Agent 选择专家并整合回复。保存后下一轮对话生效。停用流派不会删除已有聊天。
+ * 一个心理流派对应一个专家；主 Agent 完成交接后由专家直接回复。新建专家任务使用最新设置，进行中的任务保留创建时的配置；停用流派从下一轮对话起生效，且不会删除已有聊天。
  *
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "agent-configs".
@@ -472,6 +472,16 @@ export interface AgentConfig {
    * 可调整语气、方法和表单指导。系统仍固定执行权限、危机回应和工具约束。修改不会覆盖历史轮次。
    */
   prompt: string;
+  theme?: ('sage' | 'blue' | 'plum' | 'amber') | null;
+  preferredLayout?: ('reflection' | 'step_by_step' | 'action_plan') | null;
+  /**
+   * 运行时强制过滤。留空表示该专家不生成回应作品，只回复文字。
+   */
+  allowedComponents?: ('form' | 'card' | 'table' | 'code' | 'page' | 'image')[] | null;
+  /**
+   * 必须是“允许的回应作品”的子集；留空表示默认优先纯文字。
+   */
+  preferredComponents?: ('form' | 'card' | 'table' | 'code' | 'page' | 'image')[] | null;
   /**
    * 最多绑定两个。仅咨询这个 subagent 时读取，停用的知识库不会参与。
    */
@@ -737,6 +747,7 @@ export interface Greeting {
   greeting?: string | null;
   association?: string | null;
   approach?: string | null;
+  specialist?: import('./agent/specialist-state').SpecialistState | null;
   artifacts?: import('@cfp/base-chat-protocol').Artifact[] | null;
   imageGeneration?: import('./images/service').ImageState | null;
   model?: string | null;
@@ -1100,6 +1111,10 @@ export interface AgentConfigsSelect<T extends boolean = true> {
   key?: T;
   enabled?: T;
   prompt?: T;
+  theme?: T;
+  preferredLayout?: T;
+  allowedComponents?: T;
+  preferredComponents?: T;
   knowledgeBases?: T;
   updatedAt?: T;
   createdAt?: T;
@@ -1296,6 +1311,7 @@ export interface GreetingsSelect<T extends boolean = true> {
   greeting?: T;
   association?: T;
   approach?: T;
+  specialist?: T;
   artifacts?: T;
   imageGeneration?: T;
   model?: T;

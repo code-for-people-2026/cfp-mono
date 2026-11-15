@@ -8,11 +8,13 @@ import {
   validateA2uiMessages,
   type Artifact,
   type ClientEvent,
+  type PresentationOrigin,
 } from "@cfp/base-chat-protocol";
 import { NativeA2uiHost } from "./a2ui-host.native";
 import {
   Artifacts,
   LiveArtifacts,
+  PresentationFrame,
   type ArtifactRendererAdapter,
 } from "./artifacts";
 import { H5A2uiHost } from "./a2ui-host.h5";
@@ -43,16 +45,53 @@ const resources: string[] = [];
 const adapter: ArtifactRendererAdapter<string> = {
   catalogId,
   validate: (messages) => validateA2uiMessages(messages, { catalogIds: [catalogId] }),
-  compile: (scope, blocks) =>
+  compile: (scope, blocks, origin) =>
     legacyArtifactsToA2ui(blocks, {
       catalogId,
       presentationId: `urn:example:presentation:${scope}`,
       revision: 4,
+      origin,
       surfaceId: (block) => `surface_${block.id}`,
       resourceUrl: ({ kind, block }) =>
         `/tenant-assets/${scope}/${kind}/${block.id}`,
     }),
 };
+
+const expertOrigin: PresentationOrigin = {
+  id: "task-17",
+  name: "林老师",
+  role: "分步整理",
+  revision: "config-8",
+  theme: "plum",
+  layout: "numbered",
+  state: "continuing",
+  sources: [
+    { library: "方法库", title: "很长的移动端来源标题", readStatus: "snippet" },
+  ],
+};
+
+it("localizes no-source origin state and keeps an unavailable return control disabled", () => {
+  const onExit = vi.fn();
+  act(() => {
+    renderer = create(
+      <PresentationFrame
+        origin={{ ...expertOrigin, state: "completed", sources: [] }}
+        exitLabel="回到协调助手"
+        exitDisabled
+        onExit={onExit}
+      >
+        <TextAdapter>正文</TextAdapter>
+      </PresentationFrame>,
+    );
+  });
+  const output = JSON.stringify(renderer!.toJSON());
+  expect(output).toContain("本次任务已完成");
+  expect(output).toContain("本轮未使用可核对的知识库正文");
+  expect(output).not.toContain("completed");
+  const button = renderer!.root.findByType("button");
+  expect(button.props.disabled).toBe(true);
+  expect(onExit).not.toHaveBeenCalled();
+});
 const TextAdapter = ({ aiGenerated, external, ...props }: ArtifactTextProps) =>
   createElement("text", {
     ...props,
@@ -118,6 +157,42 @@ it("renders through an opaque identity and consumer-owned resource resolver", as
   expect(renderer!.root.findByType("image").props.src).toContain(
     "resolved:/tenant-assets/",
   );
+});
+
+it("shows a generic disabled form status without replacing a confirmed summary", async () => {
+  const form: Artifact = {
+    id: "expired_form",
+    title: "确认问题",
+    kind: "form",
+    description: "填写当前答案",
+    submitLabel: "提交回答",
+    fields: [{ id: "answer", label: "回答", type: "text", required: false }],
+  };
+  const render = (responses: Record<string, { answer: string }>) => (
+    <Artifacts
+      config={config}
+      Host={NativeA2uiHost}
+      adapter={adapter}
+      identity={identity}
+      artifacts={[form]}
+      responses={responses}
+      disabled
+      disabledStatus="此表单已失效"
+      onAction={vi.fn(async () => undefined)}
+    />
+  );
+  await act(async () => {
+    renderer = create(render({}));
+  });
+  expect(renderer!.root.findByType("input").props.disabled).toBe(true);
+  expect(JSON.stringify(renderer!.toJSON())).toContain("此表单已失效");
+
+  await act(async () => {
+    renderer!.update(render({ surface_expired_form: { answer: "已确认" } }));
+  });
+  expect(renderer!.root.findAllByProps({ className: "artifact-form-summary" }))
+    .toHaveLength(1);
+  expect(JSON.stringify(renderer!.toJSON())).not.toContain("此表单已失效");
 });
 
 it("lets a host override dynamic artifact preview and collection copy", async () => {
@@ -456,6 +531,76 @@ it.each([
     });
     expect(renderer!.root.findAllByProps({ className: "artifact-summary-row" }))
       .toHaveLength(3);
+  },
+);
+
+it.each([
+  ["native", NativeA2uiHost],
+  ["h5", H5A2uiHost],
+] as const)(
+  "%s uses transported origin and the same themed layout before and after form submission",
+  async (platform, Host) => {
+    vi.stubEnv("TARO_ENV", platform === "h5" ? "h5" : "weapp");
+    const form: Artifact = {
+      id: "expert_check_in",
+      title: "整理此刻",
+      kind: "form",
+      description: "按顺序写下来。",
+      submitLabel: "保存",
+      fields: [
+        {
+          id: "long_choice",
+          label: "这个很长的问题会在移动端完整换行吗？",
+          type: "select",
+          required: true,
+          allowOther: false,
+          options: [{ id: "long", label: "这是一个需要完整换行而不能横向挤压的很长选项" }],
+        },
+      ],
+    };
+    const render = (responses: Record<string, { long_choice: { optionIds: string[] } }>) => (
+      <Artifacts
+        config={config}
+        Host={Host}
+        adapter={adapter}
+        identity={identity}
+        artifacts={[form]}
+        origin={expertOrigin}
+        responses={responses}
+        onAction={vi.fn(async () => undefined)}
+      />
+    );
+    await act(async () => {
+      renderer = create(render({}));
+    });
+    const frameBefore = renderer!.root.findByProps({
+      className: "presentation-frame presentation-theme-plum presentation-layout-numbered",
+    });
+    expect(frameBefore.findByProps({ className: "presentation-origin-name" }).children.join(""))
+      .toBe("AI 专家：林老师");
+    expect(frameBefore.findByProps({ className: "presentation-origin-role" }).children.join(""))
+      .toContain("方法：分步整理 · 正在继续");
+    expect(frameBefore.findByProps({ className: "presentation-origin-sources" }).children.join(""))
+      .toContain("方法库 / 很长的移动端来源标题（已读片段）");
+    expect(frameBefore.findAllByProps({ className: "artifact-field" })).toHaveLength(1);
+
+    await act(async () => {
+      renderer!.update(render({
+        surface_expert_check_in: { long_choice: { optionIds: ["long"] } },
+      }));
+    });
+    const frameAfter = renderer!.root.findByProps({
+      className: "presentation-frame presentation-theme-plum presentation-layout-numbered",
+    });
+    expect(frameAfter.findAllByProps({ className: "presentation-origin-header-block" }))
+      .toHaveLength(1);
+    const row = frameAfter.findByProps({ className: "artifact-summary-row" });
+    const text = (className: string) => row.findAllByType("text")
+      .find((node) => node.props.className === className)!.children.join("");
+    expect(text("artifact-summary-question"))
+      .toBe("这个很长的问题会在移动端完整换行吗？");
+    expect(text("artifact-summary-answer"))
+      .toBe("这是一个需要完整换行而不能横向挤压的很长选项");
   },
 );
 

@@ -11,10 +11,10 @@ import * as migration_20261002_014226_private_image_objects from './20261002_014
 import * as migration_20261010_060548_response_artifacts from './20261010_060548_response_artifacts';
 import * as migration_20261012_035545_agent_configuration from './20261012_035545_agent_configuration';
 import * as migration_20261013_125923_platform_model_quota from './20261013_125923_platform_model_quota';
-
 import * as interaction from "./20261024_100000_interaction_safety";
 import * as feishuAlerts from "./20261024_120000_feishu_alerts";
 import * as a2aExecution from "./20261113_120000_a2a_execution";
+import * as expertHandoff from "./20261115_090000_expert_handoff";
 
 export const migrations = [
   {
@@ -53,4 +53,5 @@ export const migrations = [
   { up: interaction.up, down: interaction.down, name: "20261024_100000_interaction_safety" },
   { up: feishuAlerts.up, down: feishuAlerts.down, name: "20261024_120000_feishu_alerts" },
   { up: a2aExecution.up, down: a2aExecution.down, name: "20261113_120000_a2a_execution" },
+  { up: expertHandoff.up, down: expertHandoff.down, name: "20261115_090000_expert_handoff" },
 ];

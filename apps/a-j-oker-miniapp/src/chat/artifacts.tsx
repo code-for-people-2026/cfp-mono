@@ -16,7 +16,8 @@ import { artifactUiConfig } from "./artifact-components";
 
 const adapter: ArtifactRendererAdapter<number> = {
   catalogId: AJ_CATALOG_ID,
-  compile: (turnId, artifacts) => toAjA2ui(turnId, artifacts),
+  compile: (turnId, artifacts, origin) =>
+    toAjA2ui(turnId, artifacts, { origin }),
   validate: validateAjA2uiMessages,
 };
 

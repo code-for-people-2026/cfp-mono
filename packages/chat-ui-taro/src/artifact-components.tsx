@@ -107,6 +107,7 @@ export function ArtifactImage({
 export type ArtifactProps = {
   external?: boolean;
   disabled?: boolean;
+  disabledStatus?: string;
   onAction?: (action: ClientEvent) => Promise<void>;
   submitted?: boolean;
   initialValues?: FormValues;
@@ -227,6 +228,7 @@ export function ConfirmedFormSummary({
 export function ArtifactState({
   surface,
   disabled,
+  disabledStatus,
   onAction,
   submitted,
   initialValues,
@@ -369,6 +371,9 @@ export function ArtifactState({
       }}
     >
       {children}
+      {disabledStatus && !submitted && (
+        <Text className="artifact-caption">{disabledStatus}</Text>
+      )}
     </ArtifactContext.Provider>
   );
 }

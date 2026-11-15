@@ -4,6 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { BaseLlm, type LlmRequest, type LlmResponse } from "@google/adk";
 
 const dir = await mkdtemp(path.join(tmpdir(), "a-j-oker-config-"));
 process.env.HELLO_DATABASE_URI = `file:${dir}/test.db`;
@@ -18,7 +19,54 @@ const { decryptKnowledgeSecret } = await import("../src/cms/secret");
 const { Repository } = await import("../src/cms/repository");
 const { GreetingService } = await import("../src/domain/greetings");
 const { runGreeting } = await import("../src/agent/runtime");
-const { ScriptedModel } = await import("./scripted-model");
+
+class ConfigurationModel extends BaseLlm {
+  requests: LlmRequest[] = [];
+
+  constructor() {
+    super({ model: "configuration-check-only" });
+  }
+
+  async *generateContentAsync(
+    request: LlmRequest,
+  ): AsyncGenerator<LlmResponse> {
+    this.requests.push(request);
+    const expert = !!request.toolsDict.submit_psychology_plan;
+    yield {
+      content: {
+        role: "model",
+        parts: [{
+          functionCall: {
+            id: `configuration-call-${this.requests.length}`,
+            name: expert ? "submit_psychology_plan" : "cbt_agent",
+            args: expert
+              ? {
+                  summary: "先把事实与猜测分开。",
+                  suggestions: ["记录原话，再核对支持与不支持想法的证据。"],
+                  needsImmediateSupport: false,
+                  usedSourceIds: ["ref_1"],
+                  lifecycle: "continue",
+                  reply: {
+                    greeting: "我会从认知行为的角度陪你整理：先只记录已经发生的事实。",
+                    association: "认知行为方法：区分事实、猜测与证据。",
+                    approach: "cbt",
+                  },
+                }
+              : {
+                  request: "请用认知行为方法直接回应用户并结合已绑定资料。",
+                  urgency: "routine",
+                  knowledgeQuery: "认知重构",
+                },
+          },
+        }],
+      },
+    };
+  }
+
+  async connect(): Promise<never> {
+    throw new Error("配置检查不连接外部模型");
+  }
+}
 const payload = await cms();
 try {
   await assert.rejects(loadAgentConfiguration(payload), /seed/);
@@ -246,13 +294,7 @@ try {
     });
   };
   try {
-    const model = new ScriptedModel([
-      {
-        greeting: "先把事实与猜测分开。",
-        association: "来自用户填写",
-        approach: "cbt",
-      },
-    ]);
+    const model = new ConfigurationModel();
     const repo = new Repository(payload, { id: randomUUID(), auth: "cookie" });
     const service = new GreetingService(repo, (request) =>
       runGreeting(request, model), undefined, undefined, { moderate: syntheticTextReview }
@@ -266,6 +308,13 @@ try {
       input: { text: "请用 CBT 帮我整理想法" },
     });
     assert.equal(row.status, "completed");
+    assert.equal(
+      row.greeting,
+      "我会从认知行为的角度陪你整理：先只记录已经发生的事实。",
+      "专家回复应直接交付，不再由协调者改写",
+    );
+    assert.equal(row.specialist?.expertId, "cbt");
+    assert.equal(row.specialist?.status, "active");
     const requests = JSON.stringify(
       model.requests.map((request) => ({
         contents: request.contents,
@@ -283,7 +332,7 @@ try {
     assert.ok(events.includes("reference-fixture"));
     assert.ok(!events.includes("请用 CBT 帮我整理想法"), "聊天正文不应复制进执行日志");
     const evidence = await readTurnKnowledge(payload, row.id);
-    assert.ok(evidence.some((expert) => expert.approach === "cbt" && expert.sources.some((source) => source.sourceId === "reference-fixture" && source.referenceId === "ref_1" && source.excerpt.includes("ima 测试片段"))), "脱敏保存后管理员仍可读取本轮知识依据和原始资料标识");
+    assert.ok(evidence.some((expert) => expert.approach === "cbt" && expert.sources.some((source) => source.sourceId === "reference-fixture" && source.referenceId === "ref_1" && source.cited && source.excerpt.includes("ima 测试片段"))), "专家选用的资料应以 cited 状态脱敏保存，管理员仍可读取本轮知识依据和原始资料标识");
     globalThis.fetch = async () => {
       throw new Error("vendor error: runtime-ima-fixture");
     };
@@ -369,8 +418,8 @@ try {
   });
   const beforeRename = await snapshot();
   assert.deepEqual(await renameAgentBrand(payload), {
-    updated: 2,
-    preserved: 7,
+    updated: 9,
+    preserved: 0,
   });
   const afterRename = await snapshot();
   assert.deepEqual(afterRename.libraries, beforeRename.libraries);
@@ -398,7 +447,16 @@ try {
         ...expected,
         updatedAt: current.updatedAt,
       });
-    } else assert.deepEqual(current, previous);
+    } else {
+      assert.deepEqual(current, {
+        ...previous,
+        prompt: previous.prompt
+          .replaceAll("阿 J，也", "阿 J 先生，也")
+          .replaceAll("阿 J 改写", "阿 J 先生改写")
+          .replaceAll("阿 J 时", "阿 J 先生时"),
+        updatedAt: current.updatedAt,
+      });
+    }
   }
   assert.deepEqual(await renameAgentBrand(payload), {
     updated: 0,

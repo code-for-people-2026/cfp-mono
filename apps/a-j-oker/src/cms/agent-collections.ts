@@ -1,10 +1,24 @@
 import { isAdministrator } from "../operations/policy";
 import { APIError, type Access, type CollectionConfig } from "payload";
 import { PSYCHOLOGY_APPROACHES } from "../agent/psychology";
+import {
+  ARTIFACT_COMPONENTS,
+  defaultAgentConfig,
+  type ArtifactComponent,
+} from "../agent/default-prompts";
 import { encryptKnowledgeSecret } from "./secret";
 
 const admin: Access = ({ req }) => isAdministrator(req.user);
 const access = { read: admin, create: admin, update: admin, delete: admin };
+
+export function validatePresentationPreferences(
+  allowed: ArtifactComponent[],
+  preferred: ArtifactComponent[],
+) {
+  const invalid = preferred.filter((value) => !allowed.includes(value));
+  if (invalid.length)
+    throw new APIError(`首选回应作品必须同时被允许：${invalid.join("、")}`, 400);
+}
 
 export const agentCollections: CollectionConfig[] = [
   {
@@ -16,11 +30,36 @@ export const agentCollections: CollectionConfig[] = [
       useAsTitle: "name",
       defaultColumns: ["name", "key", "enabled", "updatedAt"],
       description:
-        "一个心理流派对应一个 subagent；主 Agent 选择专家并整合回复。保存后下一轮对话生效。停用流派不会删除已有聊天。",
+        "一个心理流派对应一个专家；主 Agent 完成交接后由专家直接回复。新建专家任务使用最新设置，进行中的任务保留创建时的配置；停用流派从下一轮对话起生效，且不会删除已有聊天。",
     },
     hooks: {
       beforeChange: [
         ({ data, originalDoc, operation }) => {
+          const defaults = defaultAgentConfig(data.key ?? originalDoc?.key);
+          if (operation === "create" && defaults) {
+            data.theme ??= defaults.theme;
+            data.preferredLayout ??= defaults.preferredLayout;
+            data.allowedComponents ??= [...defaults.allowedComponents];
+            data.preferredComponents ??= [...defaults.preferredComponents];
+          }
+          if (
+            operation === "update" &&
+            defaults &&
+            originalDoc?.theme == null &&
+            originalDoc?.preferredLayout == null
+          ) {
+            // Mark a schema-pushed pre-feature row as configured on its first
+            // admin save, while retaining any explicit empty array in `data`.
+            data.theme ??= defaults.theme;
+            data.preferredLayout ??= defaults.preferredLayout;
+            data.allowedComponents ??= [...defaults.allowedComponents];
+            data.preferredComponents ??= [...defaults.preferredComponents];
+          }
+          const allowed = (data.allowedComponents ??
+            originalDoc?.allowedComponents ?? []) as ArtifactComponent[];
+          const preferred = (data.preferredComponents ??
+            originalDoc?.preferredComponents ?? []) as ArtifactComponent[];
+          validatePresentationPreferences(allowed, preferred);
           if (
             operation === "update" &&
             originalDoc &&
@@ -93,6 +132,44 @@ export const agentCollections: CollectionConfig[] = [
           rows: 22,
           description:
             "可调整语气、方法和表单指导。系统仍固定执行权限、危机回应和工具约束。修改不会覆盖历史轮次。",
+        },
+      },
+      {
+        name: "theme",
+        label: "卡片主题",
+        type: "select",
+        options: ["sage", "blue", "plum", "amber"].map((value) => ({ label: value, value })),
+      },
+      {
+        name: "preferredLayout",
+        label: "首选布局",
+        type: "select",
+        options: [
+          { label: "反思填写", value: "reflection" },
+          { label: "逐步提问", value: "step_by_step" },
+          { label: "行动计划", value: "action_plan" },
+        ],
+      },
+      {
+        name: "allowedComponents",
+        label: "允许的回应作品",
+        type: "select",
+        hasMany: true,
+        options: ARTIFACT_COMPONENTS.map((value) => ({ label: value, value })),
+        admin: {
+          description:
+            "运行时强制过滤。留空表示该专家不生成回应作品，只回复文字。",
+        },
+      },
+      {
+        name: "preferredComponents",
+        label: "首选回应作品",
+        type: "select",
+        hasMany: true,
+        options: ARTIFACT_COMPONENTS.map((value) => ({ label: value, value })),
+        admin: {
+          description:
+            "必须是“允许的回应作品”的子集；留空表示默认优先纯文字。",
         },
       },
       {

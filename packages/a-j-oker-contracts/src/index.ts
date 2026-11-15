@@ -5,6 +5,7 @@ export * from "./presentation";
 import { z } from "zod";
 import { legacyArtifactsSchema } from "@cfp/base-chat-protocol";
 import {
+  approachSchema,
   formResponseSchema,
   replySchema,
 } from "./presentation";
@@ -15,13 +16,29 @@ export const inputSchema = z
     text: z.string().trim().max(4000).default(""),
     mediaIds: z.array(z.number().int().positive()).max(3).default([]),
     formResponse: formResponseSchema.optional(),
+    action: z
+      .object({
+        type: z.literal("return_to_coordinator"),
+        taskId: z.string().trim().min(1).max(128),
+      })
+      .strict()
+      .optional(),
   })
   .refine(
     (value) =>
       value.text.length > 0 ||
       value.mediaIds.length > 0 ||
-      !!value.formResponse,
+      !!value.formResponse ||
+      !!value.action,
     "请输入文字或上传图片",
+  )
+  .refine(
+    (value) => !value.action || (
+      value.text.length === 0 &&
+      value.mediaIds.length === 0 &&
+      !value.formResponse
+    ),
+    "返回操作不能同时携带文字、图片或表单",
   );
 export const modeSchema = z.enum(["platform", "byok", "external"]);
 export const turnSchema = z.object({
@@ -59,6 +76,24 @@ export const turnResultSchema = z.object({
   approach: z.string().nullish(),
   artifacts: legacyArtifactsSchema.nullish(),
   model: z.string().nullish(),
+  specialist: z
+    .object({
+      taskId: z.string().min(1).max(128),
+      expertId: approachSchema,
+      name: z.string().min(1).max(80),
+      method: z.string().min(1).max(120),
+      configurationRevision: z.string().min(1).max(256),
+      theme: z.enum(["sage", "blue", "plum", "amber"]),
+      layout: z.enum(["reflection", "step_by_step", "action_plan"]),
+      status: z.enum(["active", "completed", "unavailable"]),
+      sources: z.array(z.object({
+        library: z.string().max(120),
+        title: z.string().max(500),
+        readStatus: z.enum(["snippet", "document"]),
+      }).strict()).max(6),
+    })
+    .strict()
+    .nullish(),
   createdAt: z.string(),
 });
 export const historySchema = z.array(turnResultSchema);

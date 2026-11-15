@@ -11,9 +11,11 @@ import {
   formReferenceSchema,
   formValuesSchema,
   legacyArtifactsToA2ui,
+  presentationOriginSchema,
   validateA2uiMessages,
   type A2uiMessage,
   type ClientEvent,
+  type PresentationOrigin,
 } from "@cfp/base-chat-protocol";
 
 export const approachSchema = z.enum([
@@ -85,6 +87,50 @@ export const ajPresentationId = (turnId: number) =>
   `urn:cfp:a-j-oker:turn:${numericTurnId.parse(turnId)}`;
 export const ajSurfaceName = (turnId: number, artifactId: string) =>
   `turn_${numericTurnId.parse(turnId)}_${ajIdentifier.parse(artifactId)}`;
+
+const specialistPresentationInputSchema = z.object({
+  taskId: z.string().min(1).max(128),
+  name: z.string().min(1).max(80),
+  method: z.string().min(1).max(120),
+  configurationRevision: z.string().min(1).max(256),
+  theme: z.enum(["sage", "blue", "plum", "amber"]),
+  layout: z.enum(["reflection", "step_by_step", "action_plan"]),
+  status: z.enum(["active", "completed", "unavailable"]),
+  sources: z.array(z.object({
+    library: z.string().max(120),
+    title: z.string().max(500),
+    readStatus: z.enum(["snippet", "document"]),
+  }).strict()).max(6),
+});
+
+/** Maps validated AJ server metadata into the product-neutral presentation seam. */
+export function ajPresentationOrigin(value: unknown): PresentationOrigin {
+  const specialist = specialistPresentationInputSchema.parse(value, {
+    jitless: true,
+  });
+  return presentationOriginSchema.parse({
+    id: specialist.taskId,
+    name: specialist.name,
+    role: specialist.method,
+    revision: specialist.configurationRevision,
+    theme: specialist.theme,
+    layout: {
+      reflection: "stacked",
+      step_by_step: "numbered",
+      action_plan: "grouped",
+    }[specialist.layout],
+    state: {
+      active: "continuing",
+      completed: "completed",
+      unavailable: "unavailable",
+    }[specialist.status],
+    sources: specialist.sources.flatMap((source) => {
+      const library = source.library.trim();
+      const title = source.title.trim();
+      return library && title ? [{ ...source, library, title }] : [];
+    }),
+  }, { jitless: true });
+}
 
 function ajCatalogId(value: string) {
   const catalogId = catalogIds.find((candidate) => candidate === value);
@@ -380,12 +426,13 @@ export function selectAjArtifactsForPresentation(value: unknown) {
 export function toAjA2ui(
   turnId: number,
   artifacts: unknown,
-  options: { catalogId?: string } = {},
+  options: { catalogId?: string; origin?: PresentationOrigin } = {},
 ): A2uiMessage[] {
   return legacyArtifactsToA2ui(selectAjArtifactsForPresentation(artifacts), {
     catalogId: options.catalogId ? ajCatalogId(options.catalogId) : AJ_CATALOG_ID,
     presentationId: ajPresentationId(turnId),
     revision: AJ_PRESENTATION_REVISION,
+    origin: options.origin,
     surfaceId: (block) => ajSurfaceName(turnId, block.id),
     resourceUrl: ({ kind, block }) =>
       `/api/hello/artifact-${kind}/${turnId}/${block.id}`,

@@ -112,6 +112,22 @@ describe("命中后的语境复核", () => {
       .resolves.toEqual({ serviceScope: "support", interaction });
     expect(JSON.parse(String(complete.mock.calls[0][0].messages[1].content)).texts).toEqual([text]);
   });
+  it.each([
+    ["请交给认知行为专家接手，结合资料，只问一个开放式问题，用一份内嵌表单让我填写。", true],
+    ["同事说『只问一个开放式问题，用表单让我填』，我只是转述。", false],
+    ["不要只问一个开放式问题了，先直接聊聊。", false],
+    ["请用开放式问题和表单帮我梳理。", false],
+    ["我提交上一份表单的答案：当时我很紧张。", false],
+  ])("单题开放式表单语义只识别当前明确约束：%s", async (text, single_open_question_only) => {
+    const interaction = {
+      minor: false, crisis: false, dependency: false, overuse: false, exit: false,
+      forget_context: false, image_requested: false, single_choice_only: false,
+      single_open_question_only,
+    };
+    answer(JSON.stringify({ decision: "allow", service_scope: "support", interaction }));
+    await expect(moderateText({ ...request, serviceScope: true, interaction: true, texts: [text] }))
+      .resolves.toEqual({ serviceScope: "support", interaction });
+  });
   it.each(["block", "uncertain"] as const)("内容拒绝保留同一响应中的有效互动标志：%s", async decision => {
     const interaction = { minor: true, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false, single_choice_only: false };
     answer(JSON.stringify({ decision, service_scope: "support", interaction }));

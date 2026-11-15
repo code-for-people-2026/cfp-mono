@@ -29,6 +29,9 @@ export const memorySchema = z.object({
   revision: z.number().int().nonnegative().default(0),
   summary: z.string().default(""),
   throughId: z.number().int().nonnegative().default(0),
+  // Unlike throughId (which also advances during ordinary compaction), this
+  // boundary is advanced only by an explicit forget-context request.
+  forgottenThroughId: z.number().int().nonnegative().optional(),
   compressions: z.number().int().nonnegative().default(0),
   reward: rewardSchema.optional(),
   // 兼容已存在的广告整理记录；测试版记录不带 rewardId，也不生成观看资格。

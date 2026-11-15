@@ -267,6 +267,7 @@ export async function generate(
             presentation: input.formResponse.presentation,
           })
         : undefined,
+      action: input.action,
       a2uiClientCapabilities: { supportedCatalogIds: [AJ_CATALOG_ID] },
     },
   };

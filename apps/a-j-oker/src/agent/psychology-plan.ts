@@ -1,4 +1,4 @@
-import { approachSchema } from "@cfp/a-j-oker-contracts";
+import { approachSchema, greetingSchema } from "@cfp/a-j-oker-contracts";
 import { artifactsSchema } from "@cfp/base-chat-protocol";
 import { z } from "zod";
 
@@ -21,6 +21,8 @@ export const psychologyPlanSubmissionSchema = z
     needsImmediateSupport: z.boolean(),
     usedSourceIds: z.array(z.string().trim().min(1).max(80)).max(6).default([]),
     artifacts: artifactsSchema.optional(),
+    reply: greetingSchema.optional(),
+    lifecycle: z.enum(["continue", "complete"]).optional(),
   })
   .strict();
 

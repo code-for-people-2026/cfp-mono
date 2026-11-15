@@ -250,6 +250,13 @@ export const collections: CollectionConfig[] = [
     { name: "association", label: "联想依据", type: "textarea" },
     { name: "approach", label: "回应视角", type: "text" },
     {
+      name: "specialist",
+      label: "专家任务快照（含服务端私有绑定）",
+      type: "json",
+      admin: { readOnly: true },
+      typescriptSchema: [() => ({ type: "object", tsType: 'import("./agent/specialist-state").SpecialistState | null' })],
+    },
+    {
       name: "knowledgeEvidence",
       type: "ui",
       admin: {

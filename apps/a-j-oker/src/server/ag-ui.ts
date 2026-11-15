@@ -11,6 +11,7 @@ import {
   LEGACY_AJ_CATALOG_ID,
   ajCatalogIdForCapabilities,
   ajFormResponseFromClientEvent,
+  ajPresentationOrigin,
   toAjA2ui,
   toLegacyAjA2uiForClient,
 } from "@cfp/a-j-oker-contracts";
@@ -31,6 +32,10 @@ export function readAgentInput(value: unknown) {
       apiKey: z.string().min(10).max(256).optional(),
       mediaIds: z.array(z.number().int().positive()).max(3).default([]),
       clientEvent: clientEventSchema.optional(),
+      action: z.object({
+        type: z.literal("return_to_coordinator"),
+        taskId: z.string().trim().min(1).max(128),
+      }).strict().optional(),
       a2uiClientCapabilities: z
         .object({ supportedCatalogIds: z.array(z.string()).max(10) })
         .optional(),
@@ -73,6 +78,7 @@ export function readAgentInput(value: unknown) {
             formResponse,
           }
         : {}),
+      ...(props.action ? { action: props.action } : {}),
     },
     }),
     a2uiCatalogId,
@@ -93,7 +99,13 @@ export function agentStream(
       Pick<
         Awaited<ReturnType<GreetingService["generateGreeting"]>>,
         "id" | "greeting" | "artifacts" | "status"
-      >
+      > &
+        Partial<
+          Pick<
+            Awaited<ReturnType<GreetingService["generateGreeting"]>>,
+            "specialist" | "model"
+          >
+        >
     >;
     resumeImage?: (id: number, apiKey?: string, progress?: (message: string) => void) => ReturnType<GreetingService["resumeImage"]>;
   },
@@ -145,10 +157,14 @@ export function agentStream(
         // Missing capabilities are catalog-v1 for deployed clients. The v1
         // adapter projects only compatible saved artifacts; unsupported v2
         // blocks never turn an already committed generation into RUN_ERROR.
+        const mappedOrigin = !args.input.action && row.model !== "product-guidance" && row.specialist
+          ? ajPresentationOrigin(row.specialist)
+          : undefined;
+        const origin = mappedOrigin?.state === "unavailable" ? undefined : mappedOrigin;
         const a2uiMessages =
           (args.a2uiCatalogId ?? LEGACY_AJ_CATALOG_ID) === LEGACY_AJ_CATALOG_ID
             ? toLegacyAjA2uiForClient(row.id, row.artifacts ?? [])
-            : toAjA2ui(row.id, row.artifacts);
+            : toAjA2ui(row.id, row.artifacts, { origin });
         for (const message of a2uiMessages)
           emit({ type: EventType.CUSTOM, name: A2UI_EVENT, value: message });
         emit({

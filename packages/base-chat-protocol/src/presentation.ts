@@ -17,11 +17,29 @@ export const presentationRevisionSchema = z
   .min(0)
   .max(1_000_000_000_000);
 
+export const presentationOriginSchema = z
+  .object({
+    id: z.string().trim().min(1).max(80),
+    name: z.string().trim().min(1).max(80),
+    role: z.string().trim().min(1).max(120),
+    revision: z.string().trim().min(1).max(256),
+    theme: z.enum(["sage", "blue", "plum", "amber"]),
+    layout: z.enum(["stacked", "numbered", "grouped"]),
+    state: z.enum(["continuing", "completed", "unavailable"]),
+    sources: z.array(z.object({
+      library: z.string().trim().min(1).max(120),
+      title: z.string().trim().min(1).max(500),
+      readStatus: z.enum(["snippet", "document"]),
+    }).strict()).max(6),
+  })
+  .strict();
+
 export const presentationSchema = z
   .object({
     version: z.literal(PRESENTATION_VERSION),
     id: presentationIdSchema,
     revision: presentationRevisionSchema,
+    origin: presentationOriginSchema.optional(),
     blocks: artifactsSchema,
   })
   .strict();
@@ -119,12 +137,14 @@ export function presentationFromLegacyArtifacts(options: {
   id: string;
   revision: number;
   blocks: unknown;
+  origin?: unknown;
 }) {
   return presentationSchema.parse(
     {
       version: PRESENTATION_VERSION,
       id: presentationIdSchema.parse(options.id),
       revision: presentationRevisionSchema.parse(options.revision),
+      ...(options.origin === undefined ? {} : { origin: options.origin }),
       blocks: legacyArtifactsSchema.parse(options.blocks, { jitless: true }),
     },
     { jitless: true },
@@ -132,3 +152,4 @@ export function presentationFromLegacyArtifacts(options: {
 }
 
 export type Presentation = z.output<typeof presentationSchema>;
+export type PresentationOrigin = z.output<typeof presentationOriginSchema>;

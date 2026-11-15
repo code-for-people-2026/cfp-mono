@@ -1,7 +1,7 @@
 import { InteractionService } from "../../../../interaction/service";
 import { SERVICE_SCOPE } from "@cfp/a-j-oker-contracts";
 import { requirePlatformInput, rejectExternalConnection } from "../../../../server/service-scope";
-import { publicImageState } from "../../../../images/service";
+import { publicGreetingState } from "../../../../domain/public-greeting";
 import { OperationsService } from "../../../../operations/service";
 import { imageGenerationConfigured } from "../../../../images/wan";
 import { imageReviewConfigured } from "../../../../operations/image-review";
@@ -372,7 +372,7 @@ export async function POST(request: Request, context: Context) {
       }
       if (path[0] === "greet") {
         await privacy.requireInput(body);
-        return json(publicImageState(await service.generateGreeting(body)));
+        return json(publicGreetingState(await service.generateGreeting(body)));
       }
       if (path[0] === "upload") {
         await privacy.requireImageInput();

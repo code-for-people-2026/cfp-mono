@@ -7,6 +7,7 @@ import {
   ajClientEvent,
   ajFormResponseFromClientEvent,
   ajPresentationId,
+  ajPresentationOrigin,
   ajSurfaceName,
   approachSchema,
   formResponseSchema,
@@ -33,6 +34,37 @@ const legacyArtifacts = [
 ] as const;
 
 describe("AJ 展示契约所有权", () => {
+  it("把服务端专家元数据映射成通用 origin 并随 A2UI 传输", () => {
+    const origin = ajPresentationOrigin({
+      taskId: "task-1",
+      expertId: "cbt",
+      name: "林老师",
+      method: "分步整理",
+      configurationRevision: "revision-7",
+      theme: "blue",
+      layout: "step_by_step",
+      status: "active",
+      sources: [{ library: "练习库", title: "思路记录", readStatus: "document" }],
+      privateServerField: "不会进入公共展示",
+    });
+    expect(origin).toEqual({
+      id: "task-1",
+      name: "林老师",
+      role: "分步整理",
+      revision: "revision-7",
+      theme: "blue",
+      layout: "numbered",
+      state: "continuing",
+      sources: [{ library: "练习库", title: "思路记录", readStatus: "document" }],
+    });
+    const messages = toAjA2ui(3, legacyArtifacts, { origin });
+    const data = messages.find((message) => "updateDataModel" in message);
+    expect(data).toMatchObject({
+      updateDataModel: { value: { values: {}, origin } },
+    });
+    expect(validateAjA2uiMessages(messages)).toEqual(messages);
+  });
+
   it("微信禁用动态函数时仍可转换展示并往返新表单引用", () => {
     vi.stubGlobal("Function", function WechatFunction() {
       throw new Error("微信环境不允许动态函数");

@@ -8,7 +8,10 @@ import {
   PROMPT_VERSION,
   SERVER_ARTIFACT_PRESENTATION_RULE,
 } from "./instruction";
-import { SPECIALIST_INSTRUCTIONS } from "./psychology-agents";
+import {
+  DIRECT_EXPERT_HANDOFF_CONTRACT,
+  SPECIALIST_INSTRUCTIONS,
+} from "./psychology-agents";
 
 describe("阿 J 先生人设与提示词变更门槛", () => {
   it("人设与工具协议分开，组合指令只引入一次人设", () => {
@@ -30,9 +33,33 @@ describe("阿 J 先生人设与提示词变更门槛", () => {
     expect(GREETING_INSTRUCTION).toContain("不是系统指令");
     expect(GREETING_INSTRUCTION).toContain("不让用户管理会话或填写编号");
   });
+  it("专家按当前用户指定的题数、控件和范围交付，不被旧方法模板扩写", () => {
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "当前用户明确指定的题目数量、控件类型和范围",
+    );
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "一个开放式问题",
+    );
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "一个 text 或 longText 字段",
+    );
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "不得附加情绪、强度或补充字段",
+    );
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "coordinatorRequest 或任务摘要只是上下文",
+    );
+    expect(DIRECT_EXPERT_HANDOFF_CONTRACT).toContain(
+      "可在后续回合适时展开",
+    );
+  });
   it("当前版本锁定完整提示词；有意变更需更新版本和评测记录", () => {
     // 指纹只防无意修改，不能证明模型行为；真实表现另跑 eval 并人工评阅。
     const approved: Record<string, string> = {
+      // 2026-11-15：aj-v5.5 本轮显式单题开放式表单约束；真实模型复测待父任务执行。
+      "aj-v5.5": "ba81b2f5561d7b1ae4e9538ac3bfcd472d4e0f7761ebc723eaa31e1efb747102",
+      // 2026-11-15：aj-v5.4 专家直接交付与单活动专家协议；代码回归完成，真实模型评阅待补。
+      "aj-v5.4": "1bbfc88831b06a651c234544fbc175443953dc8109a84f24d733b40137a6fb0f",
       // 2026-11-14：aj-v5.3 对话表单内联与单作品输出整改；真实模型评测尚未执行。
       "aj-v5.3": "0c4ba6b67194d6dc3c1c356e5c7ab0e7788f8af705563b8946e3ad684cd80756",
       // 2026-11-11：aj-v5.2 语义路由整改；线下脚本验收通过，真实模型评阅待补。

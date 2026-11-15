@@ -70,6 +70,64 @@ describe("AG-UI 协议适配", () => {
       },
     });
   });
+  it("v2 流把服务端专家来源投影进通用展示，返回操作不投影专家身份", async () => {
+    const body = request();
+    const serverSpecialist = {
+      taskId: "task-1",
+      expertId: "cbt" as const,
+      name: "林老师",
+      method: "分步整理",
+      configurationRevision: "revision-9",
+      theme: "amber" as const,
+      layout: "action_plan" as const,
+      status: "active" as const,
+      sources: [{ library: "练习库", title: "行动记录", readStatus: "snippet" as const }],
+      currentTask: "整理下一步",
+      prompt: "server-only",
+      allowedComponents: ["form" as const],
+      preferredComponents: ["form" as const],
+    };
+    const service = {
+      generateGreeting: async () => ({
+        id: 31,
+        greeting: "先整理下一步。",
+        artifacts,
+        status: "completed" as const,
+        model: "deepseek-chat",
+        specialist: serverSpecialist,
+      }),
+    };
+    const wire = await agentStream(service, readAgentInput(body)).text();
+    const reader = createRunReader(body.runId, undefined, { catalogIds: [AJ_CATALOG_ID] });
+    reader.push(wire);
+    const data = reader.finish().messages.find((message) => "updateDataModel" in message);
+    expect(data).toMatchObject({
+      updateDataModel: {
+        value: {
+          origin: {
+            id: "task-1",
+            name: "林老师",
+            role: "分步整理",
+            theme: "amber",
+            layout: "grouped",
+            sources: [{ library: "练习库", title: "行动记录", readStatus: "snippet" }],
+          },
+        },
+      },
+    });
+    expect(wire).not.toContain("server-only");
+
+    const returnBody = request();
+    const returnWire = await agentStream(service, readAgentInput({
+      ...returnBody,
+      messages: [{ id: "return", role: "user", content: "" }],
+      forwardedProps: {
+        ...returnBody.forwardedProps,
+        action: { type: "return_to_coordinator", taskId: "task-1" },
+      },
+    })).text();
+    expect(returnWire).not.toContain('"origin"');
+  });
   it("失败只发 RUN_ERROR，不发布成功事件或供应商错误原文", async () => {
     const wire = await agentStream(
       {

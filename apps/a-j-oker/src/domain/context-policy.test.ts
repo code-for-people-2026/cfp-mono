@@ -23,6 +23,12 @@ describe("记忆血条与观看资格", () => {
       100,
     );
   });
+  it("忘记边界独立于普通摘要游标", () => {
+    const compacted = memorySchema.parse({ throughId: 12, summary: "普通摘要" });
+    expect(compacted.forgottenThroughId ?? 0).toBe(0);
+    const forgotten = memorySchema.parse({ throughId: 12, forgottenThroughId: 12 });
+    expect(forgotten.forgottenThroughId).toBe(12);
+  });
   it("超预算显示空血，不出现负数；摘要也占空间", () => {
     const memory = memorySchema.parse({ summary: "记".repeat(13000) });
     expect(describeMemory(memory, []).remainingPercent).toBe(0);

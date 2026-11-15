@@ -1,10 +1,12 @@
 import { useMemo, useState, type ComponentType, type ReactNode } from "react";
-import { View } from "./taro-components";
+import { Button, Text, View } from "./taro-components";
 import {
   legacyArtifactsSchema,
+  presentationOriginSchema,
   type A2uiMessage,
   type FormValues,
   type ImageArtifact,
+  type PresentationOrigin,
 } from "@cfp/base-chat-protocol";
 import {
   ArtifactState,
@@ -22,17 +24,104 @@ import {
 import type { ArtifactHostProps } from "./a2ui-feed";
 import type { SurfaceModel } from "@a2ui/web_core/v0_9";
 
+export function PresentationOriginHeader({
+  origin,
+  notice,
+  exitLabel,
+  exitDisabled,
+  onExit,
+}: {
+  origin: PresentationOrigin;
+  notice?: string;
+  exitLabel?: string;
+  exitDisabled?: boolean;
+  onExit?: () => void;
+}) {
+  const state = {
+    continuing: "正在继续",
+    completed: "本次任务已完成",
+    unavailable: "当前不可用",
+  }[origin.state];
+  return (
+    <View className="presentation-origin-header-block">
+      {notice && <Text className="presentation-origin-notice">{notice}</Text>}
+      <View className="presentation-origin-header">
+        <View>
+          <Text className="presentation-origin-name">AI 专家：{origin.name}</Text>
+          <Text className="presentation-origin-role">方法：{origin.role} · {state}</Text>
+        </View>
+        {onExit && exitLabel && <Button className="control presentation-origin-exit" disabled={exitDisabled || undefined} onClick={onExit}>{exitLabel}</Button>}
+      </View>
+      <Text className="presentation-origin-sources">
+        {origin.sources.length
+          ? `实际参考：${origin.sources.map((source) => `${source.library} / ${source.title}（${source.readStatus === "document" ? "已读正文" : "已读片段"}）`).join("；")}`
+          : "本轮未使用可核对的知识库正文"}
+      </Text>
+    </View>
+  );
+}
+
+export function PresentationFrame({
+  origin,
+  notice,
+  exitLabel,
+  exitDisabled,
+  onExit,
+  showHeader = true,
+  children,
+}: {
+  origin: PresentationOrigin;
+  notice?: string;
+  exitLabel?: string;
+  exitDisabled?: boolean;
+  onExit?: () => void;
+  showHeader?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <View className={`presentation-frame presentation-theme-${origin.theme} presentation-layout-${origin.layout}`}>
+      {showHeader && (
+        <PresentationOriginHeader
+          origin={origin}
+          notice={notice}
+          exitLabel={exitLabel}
+          exitDisabled={exitDisabled}
+          onExit={onExit}
+        />
+      )}
+      <View className="presentation-content">{children}</View>
+    </View>
+  );
+}
+
 export interface ArtifactRendererAdapter<Identity extends string | number> {
   catalogId: string;
   validate(messages: readonly unknown[]): A2uiMessage[];
-  compile(identity: Identity, artifacts: unknown): A2uiMessage[];
+  compile(
+    identity: Identity,
+    artifacts: unknown,
+    origin?: PresentationOrigin,
+  ): A2uiMessage[];
 }
 
 type SurfaceProps = ArtifactProps & {
   messages: A2uiMessage[];
   responses: Record<string, FormValues>;
   compact?: boolean;
+  origin?: PresentationOrigin;
+  originNotice?: string;
+  originExitLabel?: string;
+  onOriginExit?: () => void;
+  showOrigin?: boolean;
 };
+type PresentationSurfaceProps = Pick<
+  SurfaceProps,
+  | "origin"
+  | "originNotice"
+  | "originExitLabel"
+  | "onOriginExit"
+  | "showOrigin"
+>;
 
 function isInlineFormSurface(surface: SurfaceModel) {
   return Array.from(surface.componentsModel.entries).some(
@@ -46,6 +135,11 @@ export function ArtifactSurfaces({
   messages,
   responses,
   compact = true,
+  origin,
+  originNotice,
+  originExitLabel,
+  onOriginExit,
+  showOrigin = true,
   ...props
 }: SurfaceProps & {
   Host: ComponentType<ArtifactHostProps>;
@@ -61,6 +155,8 @@ export function ArtifactSurfaces({
   }, [adapter, messages]);
   if (!validated)
     return <Text className="artifact-error">{labels.unsupported}</Text>;
+  const firstSurfaceId = validated.find((message) => "createSurface" in message)
+    ?.createSurface.surfaceId;
   return (
     <Host
       catalogId={adapter.catalogId}
@@ -68,11 +164,17 @@ export function ArtifactSurfaces({
       renderSurface={(surface, content) => {
         const confirmedValues = responses[surface.id];
         const inlineForm = isInlineFormSurface(surface);
-        return (
+        const embedded = presentationOriginSchema.safeParse(
+          surface.dataModel.get("/origin"),
+          { jitless: true },
+        );
+        const surfaceOrigin = origin ?? (embedded.success ? embedded.data : undefined);
+        const contentNode = (
           <ArtifactState
             key={surface.id}
             surface={surface}
             {...props}
+            disabledStatus={inlineForm ? props.disabledStatus : undefined}
             submitted={confirmedValues !== undefined}
             initialValues={confirmedValues}
           >
@@ -95,6 +197,18 @@ export function ArtifactSurfaces({
             )}
           </ArtifactState>
         );
+        return surfaceOrigin && showOrigin ? (
+          <PresentationFrame
+            key={surface.id}
+            origin={surfaceOrigin}
+            notice={surface.id === firstSurfaceId ? originNotice : undefined}
+            exitLabel={surface.id === firstSurfaceId ? originExitLabel : undefined}
+            onExit={surface.id === firstSurfaceId ? onOriginExit : undefined}
+            showHeader={surface.id === firstSurfaceId}
+          >
+            {contentNode}
+          </PresentationFrame>
+        ) : contentNode;
       }}
     />
   );
@@ -149,13 +263,15 @@ export function Artifacts<Identity extends string | number>({
   adapter,
   identity,
   artifacts,
+  origin,
   ...props
-}: ArtifactProps & {
+}: ArtifactProps & PresentationSurfaceProps & {
   config: ArtifactUiConfig;
   Host: ComponentType<ArtifactHostProps>;
   adapter: ArtifactRendererAdapter<Identity>;
   identity: Identity;
   artifacts: unknown;
+  origin?: PresentationOrigin;
   responses: Record<string, FormValues>;
   compact?: boolean;
 }) {
@@ -166,6 +282,7 @@ export function Artifacts<Identity extends string | number>({
         adapter={adapter}
         identity={identity}
         artifacts={artifacts}
+        origin={origin}
         {...props}
       />
     </ArtifactUiProvider>
@@ -177,12 +294,14 @@ function LegacyArtifactsContent<Identity extends string | number>({
   adapter,
   identity,
   artifacts,
+  origin,
   ...props
-}: ArtifactProps & {
+}: ArtifactProps & PresentationSurfaceProps & {
   Host: ComponentType<ArtifactHostProps>;
   adapter: ArtifactRendererAdapter<Identity>;
   identity: Identity;
   artifacts: unknown;
+  origin?: PresentationOrigin;
   responses: Record<string, FormValues>;
   compact?: boolean;
 }) {
@@ -204,8 +323,9 @@ function LegacyArtifactsContent<Identity extends string | number>({
         parsed?.filter(
           (artifact) => images.length < 2 || artifact.kind !== "image",
         ) || [],
+        origin,
       ),
-    [adapter, identity, parsed, images.length],
+    [adapter, identity, parsed, images.length, origin],
   );
   if (!parsed)
     return <Text className="artifact-error">{labels.unsupported}</Text>;
@@ -215,6 +335,7 @@ function LegacyArtifactsContent<Identity extends string | number>({
         Host={Host}
         adapter={adapter}
         messages={messages}
+        origin={origin}
         {...props}
       />
       {images.length > 1 && (

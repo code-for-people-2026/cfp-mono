@@ -8,6 +8,8 @@ import { Repository } from "../cms/repository";
 import { AppError, ContentReviewError, type Greeting, type Inspiration } from "../domain/contracts";
 import { loadAgentConfiguration } from "./configuration";
 import { createGreetingAgent } from "./coordinator";
+import { createPsychologyTeam } from "./psychology-agents";
+import type { SpecialistState } from "./specialist-state";
 import { PayloadSessionService } from "./payload-session-service";
 import { DeepSeekModel } from "./deepseek-model";
 import { ContextService } from "../domain/context";
@@ -17,7 +19,8 @@ import {
   createInProcessPsychologyA2AFactory,
 } from "./psychology-a2a";
 import { createPayloadA2AStorage } from "../cms/a2a-store";
-import { singleChoiceDeliveryError } from "./single-choice-delivery";
+import { constrainedFormDeliveryError } from "./single-choice-delivery";
+import { KNOWLEDGE_METHODS } from "./knowledge-query";
 
 import type { Greeting as GreetingRecord } from "../payload-types";
 
@@ -40,14 +43,16 @@ export type GenerationRequest = {
   apiKey: string;
   model: string;
   readImage: (id: number) => Promise<{ bytes: Buffer; mimeType: string }>;
-  save: (greeting: Greeting) => Promise<GreetingRecord>;
+  save: (greeting: Greeting, specialist?: SpecialistState) => Promise<GreetingRecord>;
   generateImage?: (input: ImageRequest, signal: AbortSignal) => Promise<GeneratedImage>;
   existingImage?: GeneratedImage;
   resumingImage?: boolean;
   imageRequested?: boolean;
   singleChoiceOnly?: boolean;
+  singleOpenQuestionOnly?: boolean;
   executionId?: string;
   signal?: AbortSignal;
+  activeSpecialist?: SpecialistState;
 };
 export type Generator = (request: GenerationRequest) => Promise<void>;
 
@@ -134,6 +139,71 @@ ${imagePromptConstraints()}`;
   const executionId = request.executionId || String(request.turnId);
   const a2aStorage = createPayloadA2AStorage(request.repo, AJ_A2A_TENANT);
   const { taskStore, requestLedger, recoverCompletedTask } = a2aStorage;
+  const a2aFactory = createInProcessPsychologyA2AFactory({
+    principal: { owner: request.repo.owner.id, tenant: AJ_A2A_TENANT },
+    taskStore,
+    requestLedger,
+    recoverCompletedTask,
+  });
+  if (request.activeSpecialist) {
+    const active = request.activeSpecialist;
+    const current = configuration.specialists.find((item) => item.approach === active.expertId);
+    if (!current) {
+      await request.save({
+        greeting: "这位专家目前不可用，当前任务没有被假装完成。你已回到阿 J，可以继续说说现在最需要什么。",
+        association: "专家已停用或不可用，系统明确结束交接。",
+        approach: "supportive",
+        artifacts: [],
+      }, { ...active, status: "unavailable", sources: [] });
+      clearTimeout(timer);
+      return;
+    }
+    const pinned = {
+      ...current,
+      prompt: active.prompt,
+      revision: active.configurationRevision,
+      theme: active.theme,
+      preferredLayout: active.layout,
+      allowedComponents: active.allowedComponents,
+      preferredComponents: active.preferredComponents,
+    };
+    const directConfiguration = { ...configuration, specialists: [pinned] };
+    const team = createPsychologyTeam({
+      model,
+      configuration: directConfiguration,
+      sessionService,
+      userId: request.repo.owner.id,
+      turnSessionId: executionId,
+      consultationExecutionId: String(request.turnId),
+      inputParts: parts,
+      signal,
+      a2a: a2aFactory,
+      checkDelivery: value => constrainedFormDeliveryError(request, value)
+        || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
+      deliverExpert: async ({ plan }) => request.save(plan.reply!, {
+        ...active,
+        status: plan.lifecycle === "complete" ? "completed" : "active",
+        sources: plan.references.flatMap((source) =>
+          source.excerpt && (source.readStatus === "snippet" || source.readStatus === "document")
+            ? [{ library: source.library, title: source.title, readStatus: source.readStatus }]
+            : [],
+        ),
+        currentTask: `${active.currentTask.split("\n最新进展：")[0]}\n最新进展：${plan.summary}`.slice(0, 1200),
+      }),
+    });
+    try {
+      const outcome = await team.consultDirect(active.expertId, {
+        request: active.currentTask,
+        urgency: "routine",
+        ...(current.knowledge ? { knowledgeQuery: KNOWLEDGE_METHODS[active.expertId][0] } : {}),
+      });
+      if (outcome.status !== "completed")
+        throw new AppError(503, "专家本轮未完成，任务仍保留，可稍后重试或返回阿 J");
+      return;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
   const agent = createGreetingAgent({
     imageTool,
     imageDecisionTool,
@@ -147,22 +217,17 @@ ${imagePromptConstraints()}`;
     consultationExecutionId: String(request.turnId),
     inputParts: parts,
     signal,
-    a2a: createInProcessPsychologyA2AFactory({
-      principal: { owner: request.repo.owner.id, tenant: AJ_A2A_TENANT },
-      taskStore,
-      requestLedger,
-      recoverCompletedTask,
-    }),
-    checkDelivery: value => singleChoiceDeliveryError(request.singleChoiceOnly === true, value)
+    a2a: a2aFactory,
+    checkDelivery: value => constrainedFormDeliveryError(request, value)
       || restCardDeliveryError(imageAdmitted, value, generatedMediaId, imageDecision.refused),
-    save: async (value) => {
+    save: async (value, specialist) => {
       if (generatedMediaId && !imageDecision.refused)
         value = { ...value, greeting: "心理支持图片已生成，可查看下方图片。", association: "根据本轮明确的心理支持制图需求生成图片；制图素材不代表已核实的本人状态或已执行的设置变更。" };
       if (!imageAdmitted && value.artifacts?.some(a => a.kind === "image")) {
         imageDecision.record({ decision: "refuse", reason: "未明确请求范围内的心理支持图片" });
       }
       if (imageInFlight) await imageInFlight;
-      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value); }
+      try { return await request.save(imageDecision.refused ? { ...value, greeting: "抱歉，这个图片请求不能执行，本次不会生成图片。", association: "原始图片请求已拒绝，不生成替代作品。", artifacts: [] } : value, specialist); }
       catch (error) {
         if (error instanceof ContentReviewError || (error instanceof AppError && error.status === 403)) controller.abort();
         throw error;

@@ -47,6 +47,24 @@ page {
 
 .artifact-surface { margin-top: 12px; white-space: normal; }
 .artifact-card { border: 1px solid var(--chat-ui-border, #dce5d9); border-radius: 16px; padding: 16px 13px; background: #fcfdf8; overflow: hidden; }
+.presentation-frame { --origin-accent: #56765d; --origin-soft: #edf4ea; --chat-ui-accent: var(--origin-accent); --chat-ui-accent-soft: var(--origin-soft); border-left: 4px solid var(--origin-accent); border-radius: 12px; padding: 12px; margin-bottom: 12px; background: var(--origin-soft); }
+.presentation-theme-blue { --origin-accent: #4f7193; --origin-soft: #edf4fa; }
+.presentation-theme-plum { --origin-accent: #795b7e; --origin-soft: #f5eef6; }
+.presentation-theme-amber { --origin-accent: #8a6a32; --origin-soft: #faf4e7; }
+.presentation-origin-notice, .presentation-origin-name, .presentation-origin-role, .presentation-origin-sources { display: block; white-space: normal; overflow-wrap: anywhere; }
+.presentation-origin-header-block { padding-bottom: 9px; margin-bottom: 9px; border-bottom: 1px solid #dce5d9; }
+.presentation-origin-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.presentation-origin-name { font-weight: 650; }
+.presentation-origin-role, .presentation-origin-sources, .presentation-origin-notice { font-size: 11px; line-height: 1.7; }
+.presentation-origin-sources { margin-top: 6px; }
+.control.presentation-origin-exit { flex: none; padding: 5px 9px; border: 1px solid var(--origin-accent); border-radius: 9px; color: var(--origin-accent); background: #fff; font-size: 11px; }
+.presentation-layout-stacked .artifact-field { margin-bottom: 12px; }
+.presentation-layout-numbered .artifact-column { counter-reset: presentation-step; }
+.presentation-layout-numbered .artifact-field { position: relative; padding: 10px 0 10px 30px; border-top: 1px solid var(--chat-ui-border, #dce5d9); }
+.presentation-layout-numbered .artifact-field::before { counter-increment: presentation-step; content: counter(presentation-step); position: absolute; left: 0; top: 10px; display: flex; width: 21px; height: 21px; align-items: center; justify-content: center; border-radius: 50%; background: var(--origin-accent); color: #fff; font-size: 11px; }
+.presentation-layout-grouped .artifact-card, .presentation-layout-grouped .artifact-form-summary { border-color: var(--origin-accent); box-shadow: inset 4px 0 0 var(--origin-accent); }
+.presentation-layout-grouped .artifact-field { padding: 10px; border-radius: 10px; background: #fff; }
+.presentation-frame .artifact-form-summary { background: #fff; }
 .artifact-column { display: flex; flex-direction: column; gap: 10px; }
 .artifact-text { display: block; font-size: 13px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; }
 .artifact-h3 { font-size: 16px; font-weight: 650; color: #395943; }
@@ -70,10 +88,10 @@ page {
 .artifact-form-summary { border: 1px solid var(--chat-ui-border, #dce5d9); border-radius: 14px; padding: 13px; background: #fcfdf8; }
 .artifact-summary-title { display: block; color: #395943; font-size: 14px; font-weight: 650; line-height: 1.6; margin-bottom: 7px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
 .artifact-summary-list { display: flex; flex-direction: column; }
-.artifact-summary-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-top: 1px solid #e8eee4; }
+.artifact-summary-row { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 8px 0; border-top: 1px solid #e8eee4; }
 .artifact-summary-question, .artifact-summary-answer { display: block; min-width: 0; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
-.artifact-summary-question { flex: 0 1 40%; color: var(--chat-ui-muted, #7b8f7c); font-size: 11px; }
-.artifact-summary-answer { flex: 1 1 60%; color: var(--chat-ui-text, #243b35); font-size: 12px; }
+.artifact-summary-question { width: 100%; color: var(--chat-ui-muted, #7b8f7c); font-size: 11px; }
+.artifact-summary-answer { width: 100%; color: var(--chat-ui-text, #243b35); font-size: 12px; }
 .control.artifact-submit { width: 100%; padding: 10px; background: var(--chat-ui-accent, #56765d); border-radius: 9px; color: #fff; font-size: 13px; margin-top: 5px; }
 .control.artifact-submit[disabled] { opacity: .6; }
 .control.artifact-link { display: inline-block; color: #527459; padding: 8px 4px; font-size: 12px; }

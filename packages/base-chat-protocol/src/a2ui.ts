@@ -14,6 +14,7 @@ import {
 import {
   presentationFromLegacyArtifacts,
   presentationSchema,
+  presentationOriginSchema,
   requestIdSchema,
   type Presentation,
 } from "./presentation";
@@ -121,7 +122,12 @@ export const componentSchema = z.discriminatedUnion("component", [
 ]);
 export type Component = z.infer<typeof componentSchema>;
 const envelope = { version: z.literal(A2UI_VERSION) };
-const dataModel = z.object({ values: formValuesSchema }).strict();
+const dataModel = z
+  .object({
+    values: formValuesSchema,
+    origin: presentationOriginSchema.optional(),
+  })
+  .strict();
 export const a2uiMessageSchema = z.union([
   z
     .object({
@@ -238,6 +244,7 @@ export type CompileA2uiOptions = {
 export type LegacyCompileA2uiOptions = CompileA2uiOptions & {
   presentationId: string;
   revision: number;
+  origin?: unknown;
 };
 
 function compilePresentation(
@@ -345,7 +352,14 @@ function compilePresentation(
       { version: A2UI_VERSION, updateComponents: { surfaceId, components } },
       {
         version: A2UI_VERSION,
-        updateDataModel: { surfaceId, path: "/", value: { values: {} } },
+        updateDataModel: {
+          surfaceId,
+          path: "/",
+          value: {
+            values: {},
+            ...(presentation.origin ? { origin: presentation.origin } : {}),
+          },
+        },
       },
     ];
   });
@@ -369,6 +383,7 @@ export function legacyArtifactsToA2ui(
     presentationFromLegacyArtifacts({
       id: options.presentationId,
       revision: options.revision,
+      origin: options.origin,
       blocks: value ?? [],
     }),
     options,

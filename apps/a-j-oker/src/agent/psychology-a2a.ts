@@ -220,7 +220,7 @@ export function createInProcessPsychologyA2AFactory(
       agents: bindings.map((binding) => ({
         id: binding.approach,
         name: `${binding.label}心理专家`,
-        description: `在 AJ 可信主机内提供${binding.label}心理方案。`,
+        description: `在 AJ 可信主机内承担${binding.label}心理专家任务并返回结构化回复。`,
         agentVersion: binding.revision,
         endpointPath: endpointPath(binding.approach),
         cardPath: cardPath(binding.approach),
@@ -228,8 +228,8 @@ export function createInProcessPsychologyA2AFactory(
         outputModes: [PLAN_MEDIA_TYPE],
         skills: [{
           id: `psychology-${binding.approach}`,
-          name: `${binding.label}方案`,
-          description: "返回供协调者整合的结构化心理方案，不直接回复用户。",
+          name: `${binding.label}专家任务`,
+          description: "返回专家自己的结构化用户回复与可核对来源。",
           tags: ["psychology", binding.approach],
           examples: [],
           inputModes: ["application/json"],
@@ -288,7 +288,7 @@ export function createInProcessPsychologyA2AFactory(
               artifact: {
                 artifactId: "psychology-plan",
                 name: "PsychologyPlan",
-                description: "AJ coordinator-only structured psychology consultation result",
+                description: "AJ specialist-authored structured reply and evidence result",
                 parts: [{
                   content: { $case: "data", value: plan },
                   mediaType: PLAN_MEDIA_TYPE,

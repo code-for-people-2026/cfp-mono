@@ -22,6 +22,12 @@ import { ChatComposer, type ImageSource } from "../../chat/composer";
 import { ChatDock } from "../../chat/dock";
 import { Artifacts, LiveArtifacts } from "../../chat/artifacts";
 import { EvidenceCard } from "../../chat/evidence-card";
+import {
+  activeSpecialistTurn,
+  specialistFormStateForTurn,
+  specialistPresentationForTurn,
+} from "../../chat/specialist-card";
+import { PresentationFrame } from "@cfp/chat-ui-taro/artifacts";
 import { CopyMessage, MessageText } from "../../chat/message-text";
 import { ChatIcon } from "../../chat/icon";
 import {
@@ -582,7 +588,14 @@ export default function Chat() {
       mediaIds: draft.images.map((item) => item.id),
     };
     setBusy(true);
-    setPending(formInput ? { text: formInput.text, images: [] } : draft);
+    setPending(
+      formInput
+        ? {
+            text: formInput.action ? "回到阿 J" : formInput.text,
+            images: [],
+          }
+        : draft,
+    );
     setProgress(undefined);
     if (!formInput) {
       setText("");
@@ -717,6 +730,18 @@ export default function Chat() {
         ];
       }),
   ) as Record<string, FormValues>;
+  const activeSpecialist = activeSpecialistTurn(history);
+  const returnToAj = async (taskId: string) => {
+    try {
+      await send({
+        text: "",
+        mediaIds: [],
+        action: { type: "return_to_coordinator", taskId },
+      });
+    } catch (value) {
+      problem(value);
+    }
+  };
   async function resumeImage(row: Turn) {
     if (disabled || !sessionId) return;
     if (row.mode !== "platform") {
@@ -757,6 +782,14 @@ export default function Chat() {
     if (!consentCurrent(privacy) || !privacy?.consent?.sensitive) { void openPrivacy("authorization"); throw new Error("请先单独同意情绪练习的敏感信息处理"); }
     const match = event.action.surfaceId.match(/^turn_(\d+)_(.+)$/);
     if (!match) throw new Error("表单来源无效");
+    const source = history.find((row) => row.id === Number(match[1]));
+    const specialistFormState = source
+      ? specialistFormStateForTurn(history, source)
+      : undefined;
+    if (specialistFormState === "replaced")
+      throw new Error("专家已发送更新的表单，请填写最新一份");
+    if (specialistFormState === "expired")
+      throw new Error("专家任务已结束，该表单不能再提交");
     await send({
       text: "提交练习表单",
       mediaIds: [],
@@ -854,13 +887,13 @@ export default function Chat() {
                 阿 J 先生正在翻看我们聊过的日常…
               </Text>
             )}
-            {history.map((row) => (
+            {history.map((row, rowIndex) => (
               <View className="turn" key={row.id}>
                 <View className="message user-message">
                   <View className="user-message-main">
                     <View className="bubble user-bubble">
-                      {row.input.text && (
-                        <MessageText>{row.input.text}</MessageText>
+                      {(row.input.text || row.input.action) && (
+                        <MessageText>{row.input.action ? "回到阿 J" : row.input.text}</MessageText>
                       )}
                       {row.input.mediaIds.length > 0 && (
                         <View className="bubble-images">
@@ -907,26 +940,63 @@ export default function Chat() {
                       data-ai-external={row.mode === "external" ? "true" : "false"}
                       className={`bubble assistant-bubble ${row.status === "failed" ? "failed-bubble" : ""}`}
                     >
-                      <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
-                        {row.status === "completed"
-                          ? row.greeting
-                          : row.status === "failed"
-                            ? row.error || "这一次没有完成，请查看下方提示。"
-                            : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
-                      </MessageText>
-                      {row.status === "completed" && (
-                        <Artifacts
-                          external={row.mode === "external"}
-                          turnId={row.id}
-                          artifacts={row.artifacts}
-                          responses={formResponses}
-                          disabled={!formReady}
-                          onAction={submitForm}
-                        />
-                      )}
-                      {row.status === "completed" && row.association && (
-                        <EvidenceCard turn={row} />
-                      )}
+                      {(() => {
+                        const origin = specialistPresentationForTurn(row);
+                        const specialistFormState = specialistFormStateForTurn(history, row);
+                        const specialistFormStatus =
+                          specialistFormState === "replaced"
+                            ? "已有更新的表单，请填写最新一份"
+                            : specialistFormState === "expired"
+                              ? "专家任务已结束，此表单已失效"
+                              : undefined;
+                        const turnContent = (
+                          <>
+                            <MessageText aiGenerated={row.status === "completed"} external={row.mode === "external"}>
+                              {row.status === "completed"
+                                ? row.greeting
+                                : row.status === "failed"
+                                  ? row.error || "这一次没有完成，请查看下方提示。"
+                                  : "这一轮尚未完成，请先确认上次发送；若长时间未完成，请联系开发者。"}
+                            </MessageText>
+                            {row.status === "completed" && (
+                              <Artifacts
+                                external={row.mode === "external"}
+                                turnId={row.id}
+                                artifacts={row.artifacts}
+                                origin={origin}
+                                showOrigin={false}
+                                responses={formResponses}
+                                disabled={
+                                  !formReady ||
+                                  (specialistFormState !== undefined &&
+                                    specialistFormState !== "current")
+                                }
+                                disabledStatus={specialistFormStatus}
+                                onAction={submitForm}
+                              />
+                            )}
+                            {row.status === "completed" && row.association && (
+                              <EvidenceCard turn={row} />
+                            )}
+                          </>
+                        );
+                        if (!origin) return turnContent;
+                        const firstHandoff = !history
+                          .slice(0, rowIndex)
+                          .some((previous) => specialistPresentationForTurn(previous)?.id === origin.id);
+                        const canReturn = activeSpecialist?.id === row.id;
+                        return (
+                          <PresentationFrame
+                            origin={origin}
+                            notice={firstHandoff ? "阿 J 已把这段对话交给这位 AI 专家，以下是 AI 专家的直接回复" : undefined}
+                            exitLabel={canReturn ? "回到阿 J" : undefined}
+                            exitDisabled={!formReady || busy}
+                            onExit={canReturn ? () => void returnToAj(origin.id) : undefined}
+                          >
+                            {turnContent}
+                          </PresentationFrame>
+                        );
+                      })()}
                     </View>
                     <View className="message-footer">
                       <View className="message-actions">
@@ -935,7 +1005,7 @@ export default function Chat() {
                           <CopyMessage
                             external={row.mode === "external"}
                             value={row.greeting}
-                            label="复制阿 J 先生的回复"
+                            label={specialistPresentationForTurn(row) ? "复制 AI 专家的回复" : "复制阿 J 先生的回复"}
                           />
                         )}
                         <Button

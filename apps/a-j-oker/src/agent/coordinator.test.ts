@@ -11,7 +11,8 @@ import type { Part } from "@google/genai";
 import type { KnowledgeContext } from "./knowledge";
 import { DEFAULT_AGENT_CONFIGS } from "./default-prompts";
 import { createGreetingAgent } from "./coordinator";
-import { singleChoiceDeliveryError } from "./single-choice-delivery";
+import { createPsychologyTeam } from "./psychology-agents";
+import { constrainedFormDeliveryError, singleChoiceDeliveryError } from "./single-choice-delivery";
 import { PSYCHOLOGY_APPROACHES, type PsychologyApproach } from "./psychology";
 import {
   A2A_TASK_STORE_SCOPE,
@@ -151,7 +152,16 @@ class WorkflowModel extends BaseLlm {
 }
 function fixture(
   steps: Call[][],
-  specialist = () => [call("submit_psychology_plan", plan)],
+  specialist = (request: LlmRequest) => {
+    const instruction = request.config?.systemInstruction;
+    const approach = ((typeof instruction === "string" ? instruction.match(/只负责 (\w+) 视角/)?.[1] : undefined) || "cbt") as PsychologyApproach;
+    return [call("submit_psychology_plan", {
+      ...plan,
+      reply: { ...reply, approach },
+      lifecycle: "continue",
+      usedSourceIds: [],
+    })];
+  },
   knowledge?: KnowledgeContext,
   specialistKeys = DEFAULT_AGENT_CONFIGS.slice(1),
   coordinator = DEFAULT_AGENT_CONFIGS[0].prompt,
@@ -160,12 +170,12 @@ function fixture(
   let step = 0;
   const model = new WorkflowModel((request) =>
     request.toolsDict.submit_psychology_plan
-      ? specialist()
+      ? specialist(request)
       : steps[Math.min(step++, steps.length - 1)],
   );
   const sessionService = new InMemorySessionService();
   const controller = new AbortController();
-  const save = vi.fn(async (value: unknown) => ({ id: 11, output: value }));
+  const save = vi.fn(async (value: unknown, specialist?: unknown) => ({ id: 11, output: value, specialist }));
   const knowledgeRead = vi.fn(async () => knowledge!);
   const a2a = createInProcessPsychologyA2AFactory({
     principal: { owner: "owner", tenant: AJ_A2A_TENANT },
@@ -238,6 +248,129 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(f.save).toHaveBeenCalledTimes(1);
   });
 
+  it("交接后专家自己的回复直接保存，协调者不改写也不再询问", async () => {
+    const expertReply = {
+      greeting: "我会从认知行为的角度和你一起看这件事。先只写下已经发生的事实。",
+      association: "认知行为方法：先区分事实、想法和感受。",
+      approach: "cbt" as const,
+      artifacts: [{
+        kind: "form" as const,
+        id: "reflection",
+        title: "先写事实",
+        description: "只填你愿意分享的部分",
+        submitLabel: "继续",
+        fields: [{ id: "fact", label: "已经发生了什么？", type: "longText" as const, required: false }],
+      }],
+    };
+    const f = fixture([[consult("cbt")]], () => [
+      call("submit_psychology_plan", {
+        ...plan,
+        reply: expertReply,
+        lifecycle: "continue",
+        usedSourceIds: [],
+      }),
+    ]);
+    await f.run();
+    expect(f.model.requests).toHaveLength(2);
+    expect(f.save).toHaveBeenCalledTimes(1);
+    expect(f.save.mock.calls[0]?.[0]).toEqual(expertReply);
+    expect(f.save.mock.calls[0]?.[1]).toMatchObject({
+      expertId: "cbt",
+      status: "active",
+      sources: [],
+    });
+  });
+
+  it("首次交接把多字段开放表单退给专家并接受修正后的一题表单", async () => {
+    let attempts = 0;
+    const fields = [
+      { id: "fact", label: "你确认发生了什么？", type: "longText" as const, required: false },
+      { id: "emotion", label: "你有什么感受？", type: "text" as const, required: false },
+    ];
+    const f = fixture([[consult("cbt")]], () => [call("submit_psychology_plan", {
+      ...plan,
+      reply: {
+        ...reply,
+        approach: "cbt",
+        artifacts: [{ kind: "form", id: "reflection", title: "先看一步", description: "按需填写", submitLabel: "继续", fields: attempts++ ? fields.slice(0, 1) : fields }],
+      },
+      lifecycle: "continue",
+      usedSourceIds: [],
+    })], undefined, DEFAULT_AGENT_CONFIGS.slice(1), DEFAULT_AGENT_CONFIGS[0].prompt,
+    value => constrainedFormDeliveryError({ singleOpenQuestionOnly: true }, value));
+    await f.run();
+    expect(attempts).toBe(2);
+    expect(JSON.stringify(f.model.requests[2]?.contents)).toContain("只含一个 text 或 longText 字段");
+    expect(f.save.mock.calls[0]?.[0]).toMatchObject({ artifacts: [{ fields: [fields[0]] }] });
+  });
+
+  it("活动专家直达路由同样退回多字段并只交付修正后的一题表单", async () => {
+    let attempts = 0;
+    const fields = [
+      { id: "fact", label: "你确认发生了什么？", type: "longText" as const, required: false },
+      { id: "thought", label: "你当时怎么想？", type: "text" as const, required: false },
+    ];
+    const model = new WorkflowModel(() => [call("submit_psychology_plan", {
+      ...plan,
+      reply: {
+        ...reply,
+        approach: "cbt",
+        artifacts: [{ kind: "form", id: "reflection", title: "先看一步", description: "按需填写", submitLabel: "继续", fields: attempts++ ? fields.slice(0, 1) : fields }],
+      },
+      lifecycle: "continue",
+      usedSourceIds: [],
+    })]);
+    const controller = new AbortController();
+    const deliverExpert = vi.fn(async (_value: { plan: unknown }) => undefined);
+    const team = createPsychologyTeam({
+      model,
+      configuration: {
+        coordinator: DEFAULT_AGENT_CONFIGS[0].prompt,
+        revision: "direct-fixture",
+        specialists: [{
+          approach: "cbt", label: "认知行为", prompt: DEFAULT_AGENT_CONFIGS.find(item => item.key === "cbt")!.prompt,
+          revision: "direct-fixture", allowedComponents: ["form"], preferredComponents: ["form"],
+        }],
+      },
+      sessionService: new InMemorySessionService(),
+      userId: "owner",
+      turnSessionId: "direct-turn",
+      consultationExecutionId: "direct-execution",
+      inputParts: input,
+      signal: controller.signal,
+      a2a: createInProcessPsychologyA2AFactory({
+        principal: { owner: "owner", tenant: AJ_A2A_TENANT },
+        taskStore: new CoordinatorTestTaskStore(),
+        requestLedger: new CoordinatorTestLedger(),
+      }),
+      checkDelivery: value => constrainedFormDeliveryError({ singleOpenQuestionOnly: true }, value),
+      deliverExpert,
+    });
+    await expect(team.consultDirect("cbt", { request: "继续当前任务", urgency: "routine" }))
+      .resolves.toMatchObject({ status: "completed" });
+    expect(attempts).toBe(2);
+    expect(JSON.stringify(model.requests[1]?.contents)).toContain("只含一个 text 或 longText 字段");
+    expect(deliverExpert.mock.calls[0]?.[0]).toMatchObject({ plan: { reply: { artifacts: [{ fields: [fields[0]] }] } } });
+  });
+
+  it("旧版自定义专家提示仍由固定直接交接协议接管并保存专家回复", async () => {
+    const legacy = {
+      ...DEFAULT_AGENT_CONFIGS.find((item) => item.key === "cbt")!,
+      prompt: "保持温和的苏格拉底式提问；不直接对用户发言，只提供方案交给主 Agent。",
+    };
+    const f = fixture([[consult("cbt")]], undefined, undefined, [legacy]);
+    await f.run();
+    const instruction = f.model.requests[1]?.config?.systemInstruction;
+    expect(instruction).toContain(legacy.prompt);
+    expect(instruction).toContain("直接交接执行协议（优先级高于上方配置中的旧工作流描述）");
+    expect(instruction).toContain("任何“不直接对用户发言”“只提供方案”“交回主 Agent”等旧流程片段均被本协议替代");
+    expect(f.save).toHaveBeenCalledOnce();
+    expect(f.save.mock.calls[0]?.[0]).toMatchObject({
+      greeting: reply.greeting,
+      approach: "cbt",
+    });
+  });
+
   it("全部专家停用时仍可由协调者提供支持性回应", async () => {
     const f = fixture([[saveReply()]], undefined, undefined, []);
     await f.run();
@@ -246,11 +379,11 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
   });
 
   it.each(Object.keys(PSYCHOLOGY_APPROACHES) as PsychologyApproach[])(
-    "%s 独立执行后把方案交还主 Agent，由主 Agent 唯一保存",
+    "%s 独立执行后直接交付自己的回复",
     async (approach) => {
-      const f = fixture([[consult(approach)], [saveReply(approach)]]);
+      const f = fixture([[consult(approach)]]);
       await f.run();
-      expect(f.model.requests).toHaveLength(3);
+      expect(f.model.requests).toHaveLength(2);
       const expert = f.model.requests[1];
       expect(Object.keys(expert.toolsDict)).toEqual(["submit_psychology_plan"]);
       expect(expert.config?.systemInstruction).toContain(
@@ -260,10 +393,8 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
         "这嘴今日倒跑得快",
       );
       expect(expert.contents[0].parts?.slice(0, 2)).toEqual(input);
-      expect(JSON.stringify(f.model.requests[2].contents)).toContain(
-        plan.summary,
-      );
-      expect(f.save).toHaveBeenCalledExactlyOnceWith({ ...reply, approach });
+      expect(f.save.mock.calls[0]?.[0]).toEqual({ ...reply, approach });
+      expect(f.save.mock.calls[0]?.[1]).toMatchObject({ expertId: approach });
       const session = await f.sessionService.getSession({
         appName: "hello_agent",
         userId: "owner",
@@ -278,31 +409,25 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     },
   );
 
-  it("同一专家结果复用、每轮最多两个专家，不把第三个请求扩散成模型调用", async () => {
+  it("专家首个有效回复直接交付且不再回到协调模型改写", async () => {
     const f = fixture([
       [consult("cbt")],
-      [consult("cbt")],
-      [consult("act")],
-      [consult("dbt")],
-      [saveReply("act")],
     ]);
     await f.run();
     expect(
       f.model.requests.filter(
         (request) => request.toolsDict.submit_psychology_plan,
       ),
-    ).toHaveLength(2);
-    expect(f.model.requests).toHaveLength(7);
-    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain(
-      "最多咨询两种流派",
-    );
+    ).toHaveLength(1);
+    expect(f.model.requests).toHaveLength(2);
     expect(f.save).toHaveBeenCalledTimes(1);
+    expect(f.save.mock.calls[0]?.[1]).toMatchObject({ expertId: "cbt", status: "active" });
   });
 
   it("同一批重复咨询仍只有一次专家执行", async () => {
     const f = fixture([[consult("cbt"), consult("cbt")], [saveReply("cbt")]]);
     await f.run();
-    expect(f.model.requests).toHaveLength(3);
+    expect(f.model.requests).toHaveLength(2);
     expect(f.save).toHaveBeenCalledTimes(1);
   });
 
@@ -422,19 +547,10 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       ],
     );
     await f.run();
-    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain(
-      "需要立即安全关照",
-    );
+    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain("未完成");
     expect(f.save).toHaveBeenCalledExactlyOnceWith({
       ...reply,
       approach: "supportive",
-    });
-    const returned = f.model.requests[2].contents
-      .flatMap((content) => content.parts ?? [])
-      .find((part) => part.functionResponse)?.functionResponse?.response;
-    expect(returned).toMatchObject({
-      needsImmediateSupport: true,
-      artifacts: [],
     });
   });
 
@@ -445,25 +561,51 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
       return [
         call(
           "submit_psychology_plan",
-          attempts === 1 ? { ...plan, suggestions: "不是列表" } : plan,
+          attempts === 1 ? { ...plan, suggestions: "不是列表" } : {
+            ...plan, reply: { ...reply, approach: "cbt" }, lifecycle: "continue", usedSourceIds: [],
+          },
         ),
       ];
     });
     await f.run();
     expect(attempts).toBe(2);
-    expect(f.model.requests).toHaveLength(4);
+    expect(f.model.requests).toHaveLength(3);
     expect(JSON.stringify(f.model.requests[2].contents)).toContain(
       "方案尚未提交",
     );
     expect(f.save).toHaveBeenCalledTimes(1);
   });
 
-  it("同一批咨询与保存必须分开，主 Agent 读到专家结果后才能整合", async () => {
-    const f = fixture([[consult("cbt"), saveReply("cbt")], [saveReply("cbt")]]);
+  it("complete 不能同时发送新表单，专家可在同一轮纠正为 continue", async () => {
+    let attempts = 0;
+    const formReply = {
+      ...reply,
+      approach: "cbt" as const,
+      artifacts: [{
+        kind: "form" as const,
+        id: "next_step",
+        title: "下一步",
+        description: "继续互动",
+        submitLabel: "继续",
+        fields: [{ id: "answer", label: "你的回答", type: "longText" as const, required: false }],
+      }],
+    };
+    const f = fixture([[consult("cbt")]], () => [call("submit_psychology_plan", {
+      ...plan,
+      reply: formReply,
+      lifecycle: attempts++ === 0 ? "complete" : "continue",
+      usedSourceIds: [],
+    })]);
     await f.run();
-    expect(JSON.stringify(f.model.requests.at(-1)?.contents)).toContain(
-      "咨询和保存不能放在同一批调用",
-    );
+    expect(attempts).toBe(2);
+    expect(JSON.stringify(f.model.requests[2]?.contents)).toContain("生命周期为 complete 时不能交付新的互动表单");
+    expect(f.save).toHaveBeenCalledExactlyOnceWith(formReply, expect.objectContaining({ status: "active" }));
+  });
+
+  it("交接后不再运行协调者的并行保存调用", async () => {
+    const f = fixture([[consult("cbt")]]);
+    await f.run();
+    expect(f.model.requests).toHaveLength(2);
     expect(f.save).toHaveBeenCalledTimes(1);
   });
 
@@ -500,10 +642,10 @@ describe("主 Agent 与心理 subagent 的实际执行", () => {
     expect(f.save).not.toHaveBeenCalled();
   });
 
-  it("协调过程有调用上限，不因反复咨询缓存而无限运行", async () => {
+  it("直接交付在调用上限内结束", async () => {
     const f = fixture([[consult("cbt")]]);
-    await expect(f.run()).rejects.toThrow();
-    expect(f.save).not.toHaveBeenCalled();
+    await f.run();
+    expect(f.save).toHaveBeenCalledOnce();
     expect(f.model.requests.length).toBeLessThanOrEqual(6);
   });
 });
@@ -524,6 +666,8 @@ it("专家不能引用仅有标题或不存在的资料，纠正后才返回正�
     () => [
       call("submit_psychology_plan", {
         ...plan,
+        reply: { ...reply, approach: "cbt" },
+        lifecycle: "continue",
         usedSourceIds: attempt++ ? ["ref_1"] : ["ref_2", "invented"],
       }),
     ],
@@ -553,10 +697,7 @@ it("专家不能引用仅有标题或不存在的资料，纠正后才返回正�
   expect(f.save).toHaveBeenCalledOnce();
   const expertRetry = JSON.stringify(f.model.requests[2].contents);
   expect(expertRetry).toContain("只能选择本轮提供且有正文");
-  const main = JSON.stringify(f.model.requests.at(-1)!.contents);
-  expect(main).toContain(
-    '"references":[{"library":"测试库","title":"可读资料"',
-  );
+  expect(f.save.mock.calls[0]?.[1]).toMatchObject({ sources: [{ library: "测试库", title: "可读资料" }] });
 });
 
 it("模型的自由文本检索被拒绝，纠正为固定方法词后才读取知识库", async () => {
@@ -572,7 +713,9 @@ it("模型的自由文本检索被拒绝，纠正为固定方法词后才读取�
       [consultWith("自动思维")],
       [saveReply("cbt")],
     ],
-    () => [call("submit_psychology_plan", plan)],
+    () => [call("submit_psychology_plan", {
+      ...plan, reply: { ...reply, approach: "cbt" }, lifecycle: "continue", usedSourceIds: [],
+    })],
     { sources: [], notices: [] },
   );
   await f.run();

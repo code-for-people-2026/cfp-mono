@@ -51,8 +51,10 @@ import { assertGenerationAllowed, assertMediaAllowed } from "../operations/enfor
 import { configuredImageReviewer, ImageReviewUnavailableError, reviewImage, type ImageReviewer } from "../operations/image-review";
 import { textLeaves } from "./keyword-matcher";
 import { randomUUID } from "node:crypto";
-import { ImageGenerationService, canResumeImage, publicImageState, readImageState } from "../images/service";
+import { ImageGenerationService, canResumeImage, readImageState } from "../images/service";
 import { configuredImageProvider, type ImageProvider } from "../images/wan";
+import { activeSpecialistFromTurns, specialistActionMatches, specialistStateSchema, type SpecialistState } from "../agent/specialist-state";
+import { publicGreetingState } from "./public-greeting";
 
 // 外部 MCP 路径只保存产物，不加载或启动平台的 Agent 运行时。
 const platformGenerator: Generator = async (request) => {
@@ -118,14 +120,14 @@ export class GreetingService {
   }
   async history(sessionId: number) {
     await this.repo.get("sessions", sessionId);
-    return (await this.repo.all("greetings", { sessionId: { equals: sessionId } })).map(publicImageState);
+    return (await this.repo.all("greetings", { sessionId: { equals: sessionId } })).map(publicGreetingState);
   }
   async submission(sessionId: number, requestId: string) {
     await this.repo.get("sessions", sessionId);
     const rows = await this.repo.list("greetings", {
       and: [{ sessionId: { equals: sessionId } }, { requestKey: { equals: `${this.repo.owner.id}:${requestId}` } }],
     }, 1);
-    return { turn: rows[0] ? publicImageState(rows[0]) : null };
+    return { turn: rows[0] ? publicGreetingState(rows[0]) : null };
   }
   async upload(data: Uint8Array) {
     if (data.length > 5 * 1024 * 1024)
@@ -249,7 +251,15 @@ export class GreetingService {
     let review: void | Awaited<ReturnType<Moderator>>;
     let rejection: SemanticModerationRejection | undefined;
     try {
-      review = await this.moderate({
+      review = input.action ? {
+        serviceScope: "support" as const,
+        interaction: {
+          minor: false, crisis: false, dependency: false, overuse: false,
+          exit: false, forget_context: false, image_requested: false,
+          single_choice_only: false,
+          single_open_question_only: false,
+        },
+      } : await this.moderate({
         stage: "input", serviceScope: true, interaction: true, mode,
         texts: [input.text ?? ""], context: moderationContext, requestId: requestKey,
         sessionId, apiKey: reviewKey ?? process.env.DEEPSEEK_API_KEY,
@@ -315,20 +325,30 @@ export class GreetingService {
       model: guidance ? "product-guidance" : model,
       promptVersion: serviceGuidance ? SERVICE_SCOPE_VERSION : guidance ? INTERACTION_VERSION : mode === "external" ? "external-declared" : PROMPT_VERSION,
     });
-    return { row, duplicate: false, guidance, imageRequested: interaction.image_requested, singleChoiceOnly: interaction.single_choice_only };
+    return { row, duplicate: false, guidance, imageRequested: interaction.image_requested, singleChoiceOnly: interaction.single_choice_only, singleOpenQuestionOnly: interaction.single_open_question_only ?? false, forgetContext: interaction.forget_context };
   }
-  private async completeProductGuidance(id: number, guidance: string) {
+  private async completeProductGuidance(id: number, guidance: string, specialist?: SpecialistState) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     const row = await this.repo.get("greetings", id);
     if (row.visibility === "quarantined") throw new AppError(403, "此轮内容已隔离，不能继续发布");
-    if (row.status !== "running" || row.model !== "product-guidance") throw new AppError(409, "本轮不再接受产品指引");
+    const deterministicReturn = Boolean((row.input as Inspiration).action);
+    if (row.status !== "running" || (row.model !== "product-guidance" && !deterministicReturn))
+      throw new AppError(409, "本轮不再接受产品指引");
     // Only server-owned interaction, scope or forget guidance; never model text.
     // Public complete() has no bypass option and still reviews every supplied output.
     return this.repo.update("greetings", id, {
-      greeting: guidance, association: "产品操作与安全指引", artifacts: [], approach: "supportive", status: "completed",
+      greeting: guidance,
+      association: deterministicReturn ? "本人明确选择结束专家协作，系统完成路由切换。" : "产品操作与安全指引",
+      artifacts: [], approach: "supportive", status: "completed",
+      ...(specialist ? { specialist: {
+        ...specialist,
+        status: "completed" as const,
+        sources: [],
+        currentTask: deterministicReturn ? "本人已返回阿 J" : "已按隐私请求结束",
+      } } : {}),
     });
   }
-  async complete(id: number, value: Greeting, reviewKey?: string) {
+  async complete(id: number, value: Greeting, reviewKey?: string, specialist?: SpecialistState) {
     await assertGenerationAllowed(this.repo.payload, this.repo.owner.id);
     const output = greetingSchema.parse(value);
     const row = await this.repo.get("greetings", id);
@@ -394,6 +414,7 @@ export class GreetingService {
     }
     return this.repo.update("greetings", id, {
       ...output,
+      ...(specialist ? { specialist: specialistStateSchema.parse(specialist) } : {}),
       status: "completed",
     });
   }
@@ -407,7 +428,7 @@ export class GreetingService {
     const args = turnSchema.parse(value);
     const key =
       args.mode === "byok" ? args.apiKey : process.env.DEEPSEEK_API_KEY;
-    if (!key)
+    if (!key && !args.input.action)
       throw new AppError(
         503,
         args.mode === "byok"
@@ -432,18 +453,79 @@ export class GreetingService {
         resumeTurnId,
       );
       row = result.row;
+      // Replay wins over current-state checks: a retried successful return must
+      // remain idempotent after that return has closed the task.
       if (result.duplicate) return row;
-      if (result.guidance) return await this.completeProductGuidance(row.id, result.guidance);
+      const committed = await this.repo.all("greetings", { sessionId: { equals: args.sessionId } });
+      const forgottenThroughId = await new ContextService(this.repo).forgottenThroughId(args.sessionId);
+      const preActive = activeSpecialistFromTurns(committed, forgottenThroughId);
+      if (args.input.action) {
+        if (!specialistActionMatches(preActive, args.input.action))
+          throw new AppError(409, "专家任务已经结束或发生变化，请刷新后再操作");
+      }
+      if (args.input.formResponse) {
+        const source = committed.find((item) => item.id === args.input.formResponse!.turnId);
+        const sourceState = source?.specialist ? specialistStateSchema.safeParse(source.specialist) : undefined;
+        if (source?.specialist) {
+          if (!sourceState?.success || !preActive || sourceState.data.taskId !== preActive.state.taskId)
+            throw new AppError(409, "该表单不属于当前专家任务或已经过期");
+          const response = args.input.formResponse;
+          const alreadyAnswered = committed.some((item) => {
+            if (item.id === row!.id || item.status !== "completed") return false;
+            const input = item.input as Inspiration;
+            return input.formResponse?.turnId === response.turnId
+              && input.formResponse.artifactId === response.artifactId;
+          });
+          if (alreadyAnswered) throw new AppError(409, "该表单已经提交，请刷新查看结果");
+          const hasForm = (item: GreetingRecord) => {
+            try {
+              return legacyArtifactsSchema.parse(item.artifacts ?? [], { jitless: true })
+                .some((artifact) => artifact.kind === "form");
+            } catch { return false; }
+          };
+          const newerForm = committed.some((item) => {
+            if (item.id <= source.id || item.id === row!.id || item.status !== "completed" || !item.specialist)
+              return false;
+            const state = specialistStateSchema.safeParse(item.specialist);
+            return state.success && state.data.taskId === preActive.state.taskId && hasForm(item);
+          });
+          if (newerForm) throw new AppError(409, "专家已发送更新的表单，请填写最新一份");
+        }
+      }
+      if (args.input.action) {
+        const active = preActive!.state;
+        return await this.completeProductGuidance(
+          row.id,
+          "这段专家协作已结束，接下来由阿 J 先生继续陪你聊。",
+          active,
+        );
+      }
+      if (result.guidance) {
+        let specialist: SpecialistState | undefined;
+        if (result.forgetContext) {
+          const previous = (await this.repo.all("greetings", { sessionId: { equals: args.sessionId } }))
+            .filter((item) => item.id !== row!.id && item.status === "completed" && item.specialist)
+            .sort((a, b) => a.id - b.id).at(-1);
+          const parsed = previous?.specialist ? specialistStateSchema.safeParse(previous.specialist) : undefined;
+          if (parsed?.success && parsed.data.status === "active") specialist = parsed.data;
+        }
+        return await this.completeProductGuidance(row.id, result.guidance, specialist);
+      }
       if (args.mode === "platform") await reservePlatformCalls(this.repo.payload, GREETING_MAX_CALLS);
       const images = new ImageGenerationService(this.repo, this.media, this.moderate, this.imageReviewer, this.imageProvider);
       const imageState = readImageState(row);
+      const active = activeSpecialistFromTurns(
+        (await this.repo.all("greetings", { sessionId: { equals: args.sessionId } })).filter((item) => item.id !== row!.id),
+        forgottenThroughId,
+      );
+      const activeSpecialist = active?.state;
       await this.generate({
         repo: this.repo,
         signal: release.signal,
         turnId: row.id,
         sessionId: args.sessionId,
         input: row.input,
-        apiKey: key,
+        apiKey: key!,
         model,
         readImage: (id) => this.media.read(id),
         generateImage: (input, signal) => images.generate(row!.id, input, signal, key, progress),
@@ -451,10 +533,12 @@ export class GreetingService {
         resumingImage: !!resumeTurnId,
         imageRequested: result.imageRequested,
         singleChoiceOnly: result.singleChoiceOnly,
+        singleOpenQuestionOnly: result.singleOpenQuestionOnly,
+        activeSpecialist,
         executionId: resumeTurnId ? `${row.id}:${randomUUID()}` : undefined,
-        save: async (output) => {
+        save: async (output, specialist) => {
           try {
-            return await this.complete(row!.id, output, key);
+            return await this.complete(row!.id, output, key!, specialist);
           } catch (error) {
             // ADK may convert a thrown tool error to an event; preserve its safe verdict.
             if (error instanceof ContentReviewError) reviewFailure = error;
