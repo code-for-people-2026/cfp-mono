@@ -297,10 +297,13 @@ export class IdentityService {
       return { bindingId: key };
     });
   }
-  async issueAgent(principal: Principal, babyId: string, kind: "collector" | "chat-agent", options: { groupId?: string; agentId?: string } = {}) {
+  async issueAgent(principal: Principal, babyId: string, kind: "collector" | "chat-agent", options: { groupId?: string; agentId?: string; readOnly?: boolean } = {}) {
     return this.exclusive(async () => {
-      const parentScope = await this.authorize(principal, babyId, "records:write");
-      const granted = permissions.filter(p => !p.endsWith(":manage") && parentScope.permissions.includes(p));
+      const readOnly = kind === "chat-agent" && options.readOnly === true;
+      const parentScope = await this.authorize(principal, babyId, readOnly ? "records:read" : "records:write");
+      const granted = permissions.filter(permission => readOnly
+        ? (permission === "records:read" || permission === "media:read") && parentScope.permissions.includes(permission)
+        : !permission.endsWith(":manage") && parentScope.permissions.includes(permission));
       if (kind === "chat-agent") {
         await this.caregiver(principal);
         return this.mint("bubu-chat", "service", { kind, babyId, parentSessionId: principal.sessionId, permissions: granted,

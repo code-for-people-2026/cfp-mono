@@ -17,6 +17,7 @@
     "audit:history": "tsx scripts/audit-history.ts",
     "db:migration": "tsx scripts/create-migration.ts",
     "test:production": "NODE_ENV=production tsx scripts/verify-production.ts",
+    "test:browser-server": "NODE_ENV=test tsx tests/chat-browser-server.ts",
     "test:sqlite": "node scripts/sqlite-connection-check.mjs"
   },
   "dependencies": {

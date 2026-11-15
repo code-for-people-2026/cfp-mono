@@ -14,6 +14,7 @@
     "generate:paper-fold": "node scripts/generate-paper-fold.mjs",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
+    "test:e2e:chat-live": "playwright test --config playwright.chat-live.config.ts",
     "test:wxss": "node scripts/check-wxss.mjs"
   },
   "dependencies": {
@@ -46,6 +47,8 @@
     "typescript": "^5.9.3",
     "vite": "^4.5.14",
     "vitest": "^1.6.1",
-    "@playwright/test": "^1.57.0"
+    "@playwright/test": "^1.57.0",
+    "react-test-renderer": "18.2.0",
+    "@types/react-test-renderer": "18.0.7"
   }
 }
