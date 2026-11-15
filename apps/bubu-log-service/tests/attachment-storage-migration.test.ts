@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
+import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { sql } from "@payloadcms/db-sqlite";
@@ -83,6 +83,65 @@ it("opens a dry-run CLI through the full runtime without changing privacy, chat,
   } finally {
     await runtime.close();
     await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
+
+it("does not run production migrations or recreate operations constraints during CLI initialization", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-production-"));
+  const ledgerDirectory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-ledger-"));
+  const origin = "http://127.0.0.1:4998";
+  const runtimeOptions = {
+    directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`,
+    legacy: new RecordsLegacyFixture(), wechat: new WechatFixture(), privacy: testPrivacyConfig,
+    maintenanceWorker: false,
+  } as const;
+  const previousForcePush = process.env.PAYLOAD_FORCE_DRIZZLE_PUSH;
+  let runtime: Awaited<ReturnType<typeof createRuntime>>;
+  try {
+    process.env.PAYLOAD_FORCE_DRIZZLE_PUSH = "true";
+    runtime = await createRuntime(runtimeOptions);
+  } finally {
+    if (previousForcePush === undefined) delete process.env.PAYLOAD_FORCE_DRIZZLE_PUSH; else process.env.PAYLOAD_FORCE_DRIZZLE_PUSH = previousForcePush;
+  }
+  const database = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+  await runtime.store.payload.create({ collection: "privacy-state", data: { id: "production-cli-state", key: "production-cli-state", value: { marker: "unchanged" } }, overrideAccess: true });
+  await database.drizzle.run(sql`INSERT INTO payload_migrations (id, name, batch) VALUES (900, 'cli_pending_marker', 99)`);
+  await database.drizzle.run(sql`DROP TRIGGER IF EXISTS ops_keep_last_admin_update`);
+  await database.drizzle.run(sql`DROP TRIGGER IF EXISTS ops_keep_last_admin_delete`);
+  const migrationsBefore = JSON.stringify(await database.drizzle.run(sql`SELECT id, name, batch FROM payload_migrations ORDER BY id`));
+  await runtime.close();
+  const ledger = path.join(ledgerDirectory, "deletions.ndjson");
+  await writeFile(ledger, "", { mode: 0o600 });
+  const environment: Record<string, string | undefined> = process.env;
+  const previousNodeEnv = environment.NODE_ENV;
+  const previousLedger = process.env.BUBU_DELETION_LEDGER;
+  const previousMediaKey = process.env.BUBU_MEDIA_ENCRYPTION_KEY;
+  try {
+    try {
+      environment.NODE_ENV = "production";
+      process.env.BUBU_DELETION_LEDGER = ledger;
+      process.env.BUBU_MEDIA_ENCRYPTION_KEY = "d".repeat(64);
+      const report = await runAttachmentStorageMigrationCli({ directory, objectStore: new MemoryObjectStore(), publicOrigin: origin, opsOrigin: origin });
+      expect(report).toMatchObject({ mode: "dry-run", scanned: 0, metadataUpdated: 0 });
+    } finally {
+      if (previousNodeEnv === undefined) delete environment.NODE_ENV; else environment.NODE_ENV = previousNodeEnv;
+      if (previousLedger === undefined) delete process.env.BUBU_DELETION_LEDGER; else process.env.BUBU_DELETION_LEDGER = previousLedger;
+      if (previousMediaKey === undefined) delete process.env.BUBU_MEDIA_ENCRYPTION_KEY; else process.env.BUBU_MEDIA_ENCRYPTION_KEY = previousMediaKey;
+    }
+    runtime = await createRuntime({ ...runtimeOptions, initializeSchema: false });
+    const verificationDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT id, name, batch FROM payload_migrations ORDER BY id`))).toBe(migrationsBefore);
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'ops_keep_last_admin_%'`))).not.toContain("ops_keep_last_admin");
+    const state = await runtime.store.payload.find({ collection: "privacy-state", where: { key: { equals: "production-cli-state" } }, limit: 1, overrideAccess: true });
+    expect(state.docs[0]?.value).toEqual({ marker: "unchanged" });
+    await runtime.close();
+    runtime = await createRuntime(runtimeOptions);
+    const normalDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await normalDatabase.drizzle.run(sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'ops_keep_last_admin_%'`))).toContain("ops_keep_last_admin_update");
+  } finally {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+    await rm(ledgerDirectory, { recursive: true, force: true });
   }
 }, 30_000);
 
