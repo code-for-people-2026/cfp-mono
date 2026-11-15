@@ -14,6 +14,12 @@ interface Operation {
   eventIds: string[]; projections: Projection[]; dates: string[];
   status: "pending" | "done" | "conflict"; error?: string; receipt?: RecordReceipt;
 }
+/** Public collector recovery contract: expose durable state, never persisted arguments. */
+export interface CollectorOperationSnapshot { status: "missing" | "pending" | "conflict" | "done" }
+/** Exact collector identity attached to a collector job; no session or operator identity is inferred. */
+export interface CollectorOperationActor {
+  kind: "collector"; babyId: string; groupId: string; subjectId: string;
+}
 function fail(code: string, message: string, status = 409): never { throw new AppError(status, code, message); }
 const sourceKey = (source: SourceRef) => hash([source.kind, source.accountId, source.conversationId, source.messageId, source.eventKey]);
 const sourceLinkKey = (babyId:string,source:SourceRef) => hash([babyId,sourceKey(source)]);
@@ -103,7 +109,7 @@ export class RecordsService {
   private desired(event: CareEvent): LegacyActivity | null {
     if (event.lifecycle !== "active" || event.duplicateCandidates.length || !event.facts.type || !event.facts.startTime || event.conflicts.length) return null;
     const facts = { ...event.facts };
-    delete facts.preparedMilkAmount; delete facts.remainingMilkAmount; delete facts.sameBottle; delete facts.durationMinutes;
+    delete facts.preparedMilkAmount; delete facts.remainingMilkAmount; delete facts.sameBottle; delete facts.reportedIntake; delete facts.durationMinutes;
     return { ...facts, id: event.legacyId, babyId: event.babyId, type: event.facts.type, startTime: event.facts.startTime,
       ...(pointTypes.has(event.facts.type) ? { endTime: event.facts.startTime } : {}) };
   }
@@ -277,6 +283,7 @@ export class RecordsService {
   }
   async retract(principal:Principal,input:{babyId:string;requestId:string;eventId:string;expectedVersion:number},restore=false) {
     return this.mutate(principal,input.babyId,input.requestId,{tool:restore?"restore":"retract",...input},async(scope,req)=>{
+      if(restore&&scope.actor.kind==="collector")fail("CAREGIVER_REQUIRED","恢复已撤销记录需要照护者确认。",403);
       const before=await this.event(scope,input.eventId,req);this.checkVersion(before,input.expectedVersion,restore);
       if(restore&&before.lifecycle!=="retracted")fail("CANNOT_RESTORE","只有明确撤销的记录可以恢复。");
       const after=restore?this.apply(structuredClone(before),{facts:{}}):structuredClone(before);after.lifecycle=restore?"active":"retracted";
@@ -286,6 +293,7 @@ export class RecordsService {
   }
   async undo(principal:Principal,input:{babyId:string;requestId:string;eventId:string;expectedVersion:number;revisionId:string}) {
     return this.mutate(principal,input.babyId,input.requestId,{tool:"undo",...input},async(scope,req)=>{
+      if(scope.actor.kind==="collector")fail("CAREGIVER_REQUIRED","撤销修订并恢复旧事实需要照护者确认。",403);
       const before=await this.event(scope,input.eventId,req);this.checkVersion(before,input.expectedVersion,true);
       const revision=await this.repo.get<Revision>("care-revisions",scope.babyId,input.revisionId,req);
       if(!revision||revision.eventId!==before.id||revision.version!==before.version)fail("REVISION_STALE","只能撤销当前最新修订，请先核对记录。");
@@ -305,6 +313,7 @@ export class RecordsService {
   }
   async resolveDuplicate(principal:Principal,input:{babyId:string;requestId:string;eventId:string;expectedVersion:number;resolution:"distinct"|"same";targetEventId?:string;targetVersion?:number}) {
     return this.mutate(principal,input.babyId,input.requestId,{tool:"duplicate",...input},async(scope,req)=>{
+      if(scope.actor.kind==="collector")fail("CAREGIVER_REQUIRED","疑似重复需要照护者核对确认。",403);
       const before=await this.event(scope,input.eventId,req);this.checkVersion(before,input.expectedVersion);
       if(!before.duplicateCandidates.length)fail("NO_DUPLICATE","记录没有待核对的重复项。");
       const after=structuredClone(before);after.duplicateCandidates=[];
@@ -379,7 +388,9 @@ export class RecordsService {
       after.projected=current;after.conflicts=[];
       if(!current)after.lifecycle="retracted";
       else {
-        const metadata=["preparedMilkAmount","remainingMilkAmount","sameBottle"];
+        const metadata=current.type==="BREASTFEED"
+          ?["preparedMilkAmount","remainingMilkAmount","sameBottle","reportedIntake"]
+          :["preparedMilkAmount","remainingMilkAmount","sameBottle"];
         const facts=Object.fromEntries(Object.entries(after.facts).filter(([field])=>metadata.includes(field)));
         const states=Object.fromEntries(Object.entries(after.states).filter(([field])=>metadata.includes(field)));
         const evidence=after.evidence.filter(item=>metadata.includes(item.field));
@@ -390,10 +401,15 @@ export class RecordsService {
     });
   }
   today() { return chinaDate(this.identity.now()); }
-  async verifyCollectorReceipt(babyId:string,requestId:string,req:PayloadRequest,principal:Principal):Promise<boolean> {
-    if(principal.kind!=="collector"||principal.babyId!==babyId)return false;
-    const key=hash([babyId,principal.kind,principal.subjectId,"",principal.groupId||"",requestId]);
+  async collectorOperation(babyId:string,requestId:string,req:PayloadRequest,principal:Principal,actor?:CollectorOperationActor):Promise<CollectorOperationSnapshot> {
+    const exact=actor ?? (principal.kind==="collector"&&principal.babyId===babyId ? {kind:"collector" as const,babyId,groupId:principal.groupId||"",subjectId:principal.subjectId} : undefined);
+    if(!exact || exact.kind!=="collector" || exact.babyId!==babyId || !exact.groupId || !exact.subjectId) return {status:"missing"};
+    const key=hash([exact.babyId,exact.kind,exact.subjectId,"",exact.groupId,requestId]);
     const op=await this.repo.get<Operation>("care-operations",babyId,key,req);
-    return !!op&&op.status==="done"&&op.actor.kind==="collector"&&op.actor.id===principal.subjectId;
+    if(!op||op.actor.kind!=="collector"||op.actor.id!==exact.subjectId)return {status:"missing"};
+    return {status:op.status};
+  }
+  async verifyCollectorReceipt(babyId:string,requestId:string,req:PayloadRequest,principal:Principal,actor?:CollectorOperationActor):Promise<CollectorOperationSnapshot> {
+    return this.collectorOperation(babyId,requestId,req,principal,actor);
   }
 }

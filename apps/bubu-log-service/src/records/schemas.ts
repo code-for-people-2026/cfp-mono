@@ -4,8 +4,14 @@ import { activityTypes } from "./types";
 export const identifier = z.string().min(1).max(200);
 const time = z.iso.datetime({ offset: true });
 const amount = z.number().finite().min(0).max(100000).nullable().optional();
+const reportedIntake = z.object({
+  value: z.number().finite().min(0).max(100000),
+  unit: z.literal("g"),
+  originalText: z.string().max(4000).refine(text => text.trim().length > 0, "原话不能为空白"),
+}).strict();
 const factsSchema = z.object({
   type: z.enum(activityTypes).optional(), startTime: time.optional(), endTime: time.nullable().optional(), durationMinutes: z.number().finite().min(0).max(10080).optional(),
+  reportedIntake: reportedIntake.nullable().optional(),
   milkAmount: amount, preparedMilkAmount: amount, remainingMilkAmount: amount, sameBottle: z.boolean().optional(),
   milkSource: z.enum(["BREAST_MILK", "FORMULA"]).optional(), burpSuccess: z.boolean().nullable().optional(),
   breastFirmness: z.enum(["SOFT", "ELASTIC", "HARD"]).optional(),

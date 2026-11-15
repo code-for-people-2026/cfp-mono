@@ -39,7 +39,7 @@ describe("sidecar record projection", () => {
     const row = buildTrendRows([stat], 1, "2026-10-23")[0]!;
     expect(row.known).toEqual({ sleep: false, milk: true, pump: false, diapers: false });
     expect(row.milk).toBe(0);
-    const cell = buildHeatmap([stat], "2026-10-23", 1, "2026-10-23").weeks[0]?.days.find(day => day.date === "2026-10-23");
+    const cell = buildHeatmap([stat], "2026-10-23", "2026-10-23").weeks.flatMap(week => week.days).find(day => day.date === "2026-10-23");
     expect(cell?.known).toEqual({ sleep: false, milk: true });
     const legacy = dailyStat({ id: "legacy", date: "2026-10-23", ...summary.metrics });
     expect(buildTrendRows([legacy], 1, "2026-10-23")[0]).not.toHaveProperty("known");

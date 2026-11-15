@@ -1,0 +1,14 @@
+{
+  "container": "cfp-hello-agent-image-preview",
+  "containerId": "replace-with-full-64-character-container-id",
+  "companionContainers": [],
+  "dataDir": "/opt/cfp-hello-agent/image-preview-data",
+  "ledgerDir": "/opt/cfp-hello-agent/privacy-ops/image/ledger",
+  "backupDir": "/opt/cfp-hello-agent/privacy-ops/image/backups",
+  "stateDir": "/opt/cfp-hello-agent/privacy-ops/image/state",
+  "sourceDir": "/opt/cfp-hello-agent/privacy-ops/source",
+  "retentionRuntimeImage": "sha256:replace-with-reviewed-64-hex-image-id",
+  "safetyRetentionApply": false,
+  "legacyBackupDirs": ["/opt/cfp-hello-agent/backups"],
+  "healthUrl": "http://127.0.0.1:3313/api/ready"
+}

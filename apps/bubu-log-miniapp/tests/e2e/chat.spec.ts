@@ -49,7 +49,7 @@ test("revoking baby access removes both visible and stored private drafts", asyn
   const setup = await fixture(page); await page.goto("/"); await open(page); await input(page).fill("只属于这个宝宝的草稿");
   await page.getByLabel("收起对话").click(); setup.revoke();
   await page.locator(".bubu-chat-launcher").click();
-  await expect(page.getByText("开始记录宝宝的日常", { exact: true })).toBeVisible();
+  await expect(page.getByText("还没有关联宝宝", { exact: true })).toBeVisible();
   await expect(page.locator(".bubu-chat-sheet")).toHaveCount(0);
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("只属于这个宝宝的草稿");
 });

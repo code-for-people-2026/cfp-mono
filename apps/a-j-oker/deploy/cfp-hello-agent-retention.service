@@ -1,0 +1,13 @@
+[Unit]
+Description=Retain current and one verified Hello Agent rollback release
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/cfp-hello-agent/operations/bin/retention.py cleanup --apply
+UMask=0077
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=600
+NoNewPrivileges=true

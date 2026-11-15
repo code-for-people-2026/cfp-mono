@@ -1,11 +1,37 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { readLegacyPhoto, protectLegacyPhotos } from "../src/media";
+import { readLegacyPhoto, protectLegacyPhotos, protectRecordPhotos } from "../src/media";
 import { createHandler } from "../src/http";
 import { identityFixture, type IdentityFixture } from "./fixtures/identity";
 
 const photoOrigin = "https://photos.example.test";
 const activity = { id: "activity-1", babyId: "baby-a", type: "DIAPER", poopPhotoUrl: `${photoOrigin}/private-photo.png` };
 const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+const legacyPhotoUrl = `${photoOrigin}/record-private.png`;
+const protectedPhotoUrl = (id: string, babyId = "baby-a") => `/api/app/media/activities/${encodeURIComponent(id)}?babyId=${encodeURIComponent(babyId)}`;
+const photoEvent = (id: string, legacyId: string) => ({
+  id, legacyId, babyId: "baby-a", version: 2, facts: { type: "DIAPER" as const, startTime: "2026-10-22T08:00:00+08:00", poopPhotoUrl: legacyPhotoUrl },
+  states: { startTime: "known" as const, poopPhotoUrl: "known" as const },
+  progress: "ended" as const, evidence: [{ field: "poopPhotoUrl" as const, kind: "image" as const, confirmed: true }],
+  missing: [], conflicts: [{ code: "PHOTO_CONFLICT", fields: ["poopPhotoUrl"], message: "请核对照片。" }], complete: false,
+  lifecycle: "active" as const, duplicateCandidates: [], sources: [], attachmentIds: [], projection: "synced" as const,
+  currentActivity: { id: legacyId, babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T08:00:00+08:00", poopPhotoUrl: legacyPhotoUrl },
+  projected: { id: legacyId, babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T08:00:00+08:00", poopPhotoUrl: legacyPhotoUrl },
+  createdAt: "2026-10-22T08:01:00+08:00", updatedAt: "2026-10-22T08:02:00+08:00",
+});
+const noPhotoEvent = {
+  id: "event-no-photo", legacyId: "legacy-no-photo", babyId: "baby-a", version: 1,
+  facts: { type: "DIAPER" as const, startTime: "2026-10-22T09:00:00+08:00", poopPhotoUrl: null },
+  states: { startTime: "known" as const, poopPhotoUrl: "not_applicable" as const }, progress: "ended" as const,
+  evidence: [], missing: [], conflicts: [], complete: true, lifecycle: "active" as const, duplicateCandidates: [],
+  sources: [], attachmentIds: [], projection: "synced" as const, currentActivity: null, projected: null,
+  createdAt: "2026-10-22T09:01:00+08:00", updatedAt: "2026-10-22T09:02:00+08:00",
+};
+const missingPhotoEvent = {
+  ...noPhotoEvent, id: "event-missing-photo", legacyId: "legacy-missing-photo",
+  facts: { type: "DIAPER" as const, startTime: "2026-10-22T10:00:00+08:00" },
+  states: { startTime: "known" as const, poopPhotoUrl: "pending" as const },
+  currentActivity: { id: "legacy-missing-photo", babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T10:00:00+08:00" },
+};
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("legacy photo URLs exposed through authorized routes", () => {
@@ -25,6 +51,71 @@ describe("legacy photo URLs exposed through authorized routes", () => {
   it("refuses to mint a media URL for another baby's record or an unidentified record", () => {
     expect(() => protectLegacyPhotos(activity, "baby-b")).toThrow("记录不属于当前宝宝");
     expect(() => protectLegacyPhotos({ ...activity, id: undefined }, "baby-a")).toThrow("记录不属于当前宝宝");
+  });
+});
+
+describe("record photo redaction", () => {
+  it("rewrites only snapshot activity and fact photos while preserving field metadata", () => {
+    const source = {
+      events: [photoEvent("event-photo", "legacy-photo"), noPhotoEvent, missingPhotoEvent],
+      activities: [
+        { id: "legacy-photo", babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T08:00:00+08:00", poopPhotoUrl: legacyPhotoUrl },
+        { id: "legacy-no-photo", babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T09:00:00+08:00", poopPhotoUrl: null },
+        { id: "legacy-missing-photo", babyId: "baby-a", type: "DIAPER" as const, startTime: "2026-10-22T10:00:00+08:00" },
+      ],
+      questions: [{ id: "question:event-photo", babyId: "baby-a", eventId: "event-photo", fields: ["poopPhotoUrl"], duplicateCandidates: [], state: "open" as const }],
+    };
+    const unchanged = structuredClone(source);
+    const result = protectRecordPhotos(source, "baby-a") as typeof source;
+    const withPhoto = result.events[0] as ReturnType<typeof photoEvent>;
+    const withoutPhoto = result.events[1] as typeof noPhotoEvent;
+    const missingPhoto = result.events[2] as typeof missingPhotoEvent;
+    const activities = result.activities as Array<{ poopPhotoUrl?: string | null }>;
+
+    expect(source).toEqual(unchanged);
+    expect(withPhoto.facts.poopPhotoUrl).toBe(protectedPhotoUrl("legacy-photo"));
+    expect(withPhoto.states.poopPhotoUrl).toBe("known");
+    expect(withPhoto.evidence[0]!.field).toBe("poopPhotoUrl");
+    expect(withPhoto.conflicts[0]!.fields).toEqual(["poopPhotoUrl"]);
+    expect(withPhoto.currentActivity!.poopPhotoUrl).toBe(protectedPhotoUrl("legacy-photo"));
+    expect(withPhoto.projected!.poopPhotoUrl).toBe(protectedPhotoUrl("legacy-photo"));
+    expect(withoutPhoto.facts.poopPhotoUrl).toBeNull();
+    expect(withoutPhoto.states.poopPhotoUrl).toBe("not_applicable");
+    expect(missingPhoto.facts).not.toHaveProperty("poopPhotoUrl");
+    expect(missingPhoto.states.poopPhotoUrl).toBe("pending");
+    expect(missingPhoto.currentActivity).not.toHaveProperty("poopPhotoUrl");
+    expect(activities.map(row => row.poopPhotoUrl)).toEqual([protectedPhotoUrl("legacy-photo"), null, undefined]);
+    expect(result.questions[0]!.fields).toEqual(["poopPhotoUrl"]);
+    expect(JSON.stringify(result)).not.toContain(photoOrigin);
+  });
+
+  it("uses each revision event's owning legacy id in receipts and before/after copies", () => {
+    const before = photoEvent("event-photo", "legacy-photo");
+    const after = photoEvent("event-photo", "legacy-photo");
+    const receipt = { requestId: "request-photo", status: "saved" as const, events: [before, noPhotoEvent], questions: [], retryable: false };
+    const revisions = [{ id: "revision:event-photo:2", eventId: "event-photo", babyId: "baby-a", version: 2, before, after, at: "2026-10-22T08:03:00+08:00" }];
+    const source = { receipt, revisions };
+    const unchanged = structuredClone(source);
+    const result = protectRecordPhotos(source, "baby-a") as typeof source;
+
+    expect(source).toEqual(unchanged);
+    for (const event of [result.receipt.events[0]!, result.revisions[0]!.before!, result.revisions[0]!.after!]) {
+      expect(event.facts.poopPhotoUrl).toBe(protectedPhotoUrl("legacy-photo"));
+      expect(event.projected!.poopPhotoUrl).toBe(protectedPhotoUrl("legacy-photo"));
+      expect(event.states.poopPhotoUrl).toBe("known");
+    }
+    expect(result.receipt.events[1]!.facts.poopPhotoUrl).toBeNull();
+    expect(result.receipt.events[1]!.states.poopPhotoUrl).toBe("not_applicable");
+    expect(JSON.stringify(result)).not.toContain(legacyPhotoUrl);
+    expect(JSON.stringify(result)).not.toContain(protectedPhotoUrl("event-photo"));
+    expect(JSON.stringify(result)).not.toContain(protectedPhotoUrl("revision:event-photo:2"));
+  });
+
+  it("rejects another baby anywhere in a record payload and refuses unsafe photo owners", () => {
+    expect(() => protectRecordPhotos({ events: [photoEvent("event-photo", "legacy-photo")], activities: [{ ...activity, babyId: "baby-b" }] }, "baby-a")).toThrow("记录不属于当前宝宝");
+    expect(() => protectRecordPhotos({ revisions: [{ id: "revision:event-photo:2", babyId: "baby-b", before: null, after: photoEvent("event-photo", "legacy-photo") }] }, "baby-a")).toThrow("记录不属于当前宝宝");
+    expect(() => protectRecordPhotos({ ...photoEvent("event-photo", ""), facts: { ...photoEvent("event-photo", "legacy-photo").facts } }, "baby-a")).toThrow("记录不属于当前宝宝");
+    expect(() => protectRecordPhotos({ ...activity, id: "", startTime: "2026-10-22T08:00:00+08:00" }, "baby-a")).toThrow("记录不属于当前宝宝");
   });
 });
 

@@ -203,7 +203,8 @@ export class IdentityService {
         if (!current.parentSessionId || groupId) return forbidden();
         const parent = await this.sessionById(current.parentSessionId);
         if (parent.kind !== "caregiver") return forbidden();
-        await this.authorize(parent, babyId, permission);
+        const parentScope = await this.authorize(parent, babyId, permission);
+        allowed = allowed.filter(item => parentScope.permissions.includes(item));
         onBehalfOf = parent.subjectId;
       } else if (current.kind === "collector") {
         const binding = current.bindingId && await this.store.get("group-bindings", current.bindingId);
@@ -299,8 +300,10 @@ export class IdentityService {
   async issueAgent(principal: Principal, babyId: string, kind: "collector" | "chat-agent", options: { groupId?: string; agentId?: string; readOnly?: boolean } = {}) {
     return this.exclusive(async () => {
       const readOnly = kind === "chat-agent" && options.readOnly === true;
-      await this.authorize(principal, babyId, readOnly ? "records:read" : "records:write");
-      const granted = permissions.filter(p => readOnly ? p === "records:read" || p === "media:read" : !p.endsWith(":manage"));
+      const parentScope = await this.authorize(principal, babyId, readOnly ? "records:read" : "records:write");
+      const granted = permissions.filter(permission => readOnly
+        ? (permission === "records:read" || permission === "media:read") && parentScope.permissions.includes(permission)
+        : !permission.endsWith(":manage") && parentScope.permissions.includes(permission));
       if (kind === "chat-agent") {
         await this.caregiver(principal);
         return this.mint("bubu-chat", "service", { kind, babyId, parentSessionId: principal.sessionId, permissions: granted,
