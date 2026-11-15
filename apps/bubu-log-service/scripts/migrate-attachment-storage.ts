@@ -2,18 +2,16 @@ import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { open, unlink } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import type { PayloadRequest } from "payload";
 import { IdentityService } from "../src/identity";
-import { legacyBackendFromEnv } from "../src/legacy";
 import { decryptMedia, encryptedMediaOverhead, mediaKey } from "../src/privacy/media-encryption";
 import { attachmentObjectKey, MAX_ATTACHMENT_BYTES } from "../src/records/attachments";
-import { hash, recordCollections, RecordsRepository } from "../src/records/persistence";
-import { acquireRuntimeLock } from "../src/runtime-lock";
+import { hash, RecordsRepository } from "../src/records/persistence";
+import { createRuntime } from "../src/runtime";
+import { identityDirectory, operationsOrigin } from "../src/runtime-config";
 import { configuredAttachmentObjectStore, type AttachmentObjectStore } from "../src/storage/attachment-objects";
-import { openStore } from "../src/store";
-import { WechatCodeProvider } from "../src/wechat";
 
 interface StoredAttachment {
   id: string; babyId: string; byteLength: number; sha256: string; requestFingerprint: string;
@@ -188,6 +186,34 @@ export async function migrateAttachmentStorage(identity: IdentityService, direct
   return report;
 }
 
+export async function runAttachmentStorageMigrationCli(options: {
+  apply?: boolean; removeLocal?: boolean; directory?: string; secret?: string;
+  publicOrigin?: string; opsOrigin?: string; objectStore?: AttachmentObjectStore;
+} = {}): Promise<AttachmentStorageMigrationReport> {
+  const directory = options.directory ?? identityDirectory();
+  const objectStore = options.objectStore ?? configuredAttachmentObjectStore();
+  if (!objectStore) throw new Error("ATTACHMENT_MIGRATION_OBJECT_STORE_REQUIRED");
+  const publicOrigin = options.publicOrigin ?? process.env.BUBU_PUBLIC_ORIGIN ?? "http://127.0.0.1:3320";
+  const runtime = await createRuntime({
+    directory,
+    secret: options.secret ?? process.env.BUBU_PAYLOAD_SECRET,
+    publicOrigin,
+    opsOrigin: options.opsOrigin ?? operationsOrigin(),
+    mcpUrl: `${new URL(publicOrigin).origin}/api/mcp`,
+    // The migration owns OSS access. Runtime media recovery must not mutate durable
+    // upload receipts while a dry-run is auditing the existing database.
+    objectStore: false,
+    maintenanceWorker: false,
+    schemaPush: false,
+    initializeSchema: false,
+  });
+  try {
+    return await migrateAttachmentStorage(runtime.identity, directory, objectStore, { apply: options.apply, removeLocal: options.removeLocal });
+  } finally {
+    await runtime.close();
+  }
+}
+
 async function runCli() {
   const { values } = parseArgs({ options: {
     apply: { type: "boolean" }, "remove-local": { type: "boolean" }, help: { type: "boolean" },
@@ -198,22 +224,8 @@ async function runCli() {
   }
   if (values["remove-local"] && !values.apply) throw new Error("ATTACHMENT_MIGRATION_REMOVE_LOCAL_REQUIRES_APPLY");
   if (process.env.NODE_ENV === "production" && (!process.env.BUBU_IDENTITY_DIRECTORY || !process.env.BUBU_PAYLOAD_SECRET)) throw new Error("ATTACHMENT_MIGRATION_PRODUCTION_CONFIGURATION_REQUIRED");
-  const directory = process.env.BUBU_IDENTITY_DIRECTORY || resolveDefaultDirectory();
-  const objectStore = configuredAttachmentObjectStore();
-  if (!objectStore) throw new Error("ATTACHMENT_MIGRATION_OBJECT_STORE_REQUIRED");
-  const releaseLock = acquireRuntimeLock(directory);
-  let store;
-  try {
-    store = await openStore({ directory, secret: process.env.BUBU_PAYLOAD_SECRET, extensions: recordCollections });
-    const identity = new IdentityService(store, legacyBackendFromEnv(), new WechatCodeProvider(process.env.BUBU_WECHAT_APP_ID || "", process.env.BUBU_WECHAT_APP_SECRET || ""));
-    const report = await migrateAttachmentStorage(identity, directory, objectStore, { apply: values.apply, removeLocal: values["remove-local"] });
-    console.log(JSON.stringify(report));
-  } finally {
-    await store?.close();
-    releaseLock();
-  }
+  console.log(JSON.stringify(await runAttachmentStorageMigrationCli({ apply: values.apply, removeLocal: values["remove-local"] })));
 }
-function resolveDefaultDirectory() { return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../.data"); }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   runCli().catch(() => {
