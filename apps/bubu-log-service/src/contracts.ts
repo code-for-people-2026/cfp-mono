@@ -7,6 +7,8 @@ export interface LegacyUser { id: string }
 export interface LegacyBackend {
   verifyCredentials(username: string, password: string): Promise<LegacyUser>;
   createFamily(identityId: string, input: { name: string }): Promise<{ userId: string; baby: Baby }>;
+  /** Read-only recovery of a provisioned account, with deterministic ownership verification. */
+  findFamilyAccount(identityId: string): Promise<LegacyUser | null>;
   userExists(userId: string): Promise<boolean>;
   listBabies(userId: string): Promise<Baby[]>;
   getBaby(babyId: string): Promise<Baby | null>;
@@ -15,5 +17,5 @@ export interface LegacyBackend {
 }
 export interface WechatProvider { exchange(code: string): Promise<{ appId: string; openId: string }> }
 export class AppError extends Error {
-  constructor(public status: number, public code: string, message: string) { super(message); }
+  constructor(public status: number, public code: string, message: string, public readonly retryable?: boolean) { super(message); }
 }

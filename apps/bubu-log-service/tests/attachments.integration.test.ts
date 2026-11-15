@@ -9,6 +9,9 @@ import { AttachmentService, createAttachmentHandler, inspectAttachment } from ".
 import { hash, recordCollections, RecordsRepository } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
 import { IdentityService, type Principal } from "../src/identity";
+import { serializeDatabaseTransactions } from "../src/database-queue";
+import { privacyCollections } from "../src/privacy/persistence";
+import { decryptMedia, mediaKey } from "../src/privacy/media-encryption";
 import { openStore, type Store } from "../src/store";
 import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
 import { LegacyFixture, WechatFixture } from "./fixtures/identity";
@@ -113,10 +116,13 @@ describe("private attachments use the shared durable identity boundary", () => {
   const legacy = new LegacyFixture(), wechat = new WechatFixture();
   const source = (groupId: string, messageId = "42"): SourceRef => ({ kind: "wechat", accountId: "fixture-account", conversationId: groupId,
     messageId, eventKey: "photo-0", sentAt: "2026-10-23T08:12:43+08:00", senderId: "fixture-sender", groupId });
+  const remotePlaintext = (objects: MemoryObjectStore | DeferredObjectStore, key: string, babyId: string, sha256: string) =>
+    decryptMedia(objects.objects.get(key)!, mediaKey(directory), `${hash(babyId)}:${sha256}`);
 
   beforeAll(async () => {
     directory = await mkdtemp(path.join(tmpdir(), "bubu-attachments-test-"));
-    store = await openStore({ directory, extensions: recordCollections });
+    store = await openStore({ directory, extensions: [...recordCollections, ...privacyCollections] });
+    serializeDatabaseTransactions(store.payload);
     identity = new IdentityService(store, legacy, wechat);
     attachments = new AttachmentService(identity, { directory });
     const login = await identity.loginLegacy("old-alice", "correct-password", "native");
@@ -127,13 +133,13 @@ describe("private attachments use the shared durable identity boundary", () => {
     await identity.bindGroup(operator, "baby-a", "account:group-b", "fixture-collector-b", true);
     collectorA = await identity.authenticate((await identity.issueAgent(operator, "baby-a", "collector", { groupId: "account:group-a", agentId: "fixture-collector-a" })).token, "bearer");
     collectorB = await identity.authenticate((await identity.issueAgent(operator, "baby-a", "collector", { groupId: "account:group-b", agentId: "fixture-collector-b" })).token, "bearer");
-    photo = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#77aabb" } }).png().toBuffer();
-    otherPhoto = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8899" } }).png().toBuffer();
+    photo = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#77aabb" } }).png({ compressionLevel: 9 }).toBuffer();
+    otherPhoto = await sharp({ create: { width: 8, height: 8, channels: 3, background: "#cc8899" } }).png({ compressionLevel: 9 }).toBuffer();
   }, 30_000);
   afterEach(() => vi.restoreAllMocks());
   afterAll(async () => { await store?.close(); if (directory) await rm(directory, { force: true, recursive: true }); });
 
-  it("stores original bytes privately and keeps retries stable across process restart", async () => {
+  it("stores normalized pixels privately and keeps retries stable across process restart", async () => {
     const first = await attachments.upload(alice, "baby-a", photo, "image/png", "restart-upload");
     const second = await attachments.upload(alice, "baby-a", photo, "image/png", "restart-upload");
     expect(second).toEqual(first);
@@ -144,7 +150,8 @@ describe("private attachments use the shared durable identity boundary", () => {
     expect((await stat(objectPath)).mode & 0o777).toBe(0o600);
     expect((await stat(path.dirname(objectPath))).mode & 0o777).toBe(0o700);
     await store.close();
-    store = await openStore({ directory, extensions: recordCollections });
+    store = await openStore({ directory, extensions: [...recordCollections, ...privacyCollections] });
+    serializeDatabaseTransactions(store.payload);
     identity = new IdentityService(store, legacy, wechat); attachments = new AttachmentService(identity, { directory });
     alice = await identity.authenticate(aliceToken, "bearer");
     const read = await attachments.read(alice, "baby-a", first.id);
@@ -159,7 +166,7 @@ describe("private attachments use the shared durable identity boundary", () => {
     await expect(attachments.upload(collectorA, "baby-a", photo, "image/png", "source-retry", source("account:group-a", "43"))).rejects.toMatchObject({ code: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
   });
 
-  it("lets an exact concurrent retry adopt the first committed winner", async () => {
+  it("keeps the committed exact retry and rejects the slower stale upload snapshot", async () => {
     const startedAt = Date.now(), firstTime = startedAt, secondTime = startedAt + 60_000;
     const firstIdentity = new IdentityService(store, legacy, wechat, () => firstTime);
     const secondIdentity = new IdentityService(store, legacy, wechat, () => secondTime);
@@ -174,7 +181,7 @@ describe("private attachments use the shared durable identity boundary", () => {
     await objects.startedPut();
     const winner = await secondUploads.upload(second, "baby-a", photo, "image/png", "concurrent-exact-retry");
     objects.finishPut();
-    expect(await firstAttempt).toEqual(winner);
+    await expect(firstAttempt).rejects.toMatchObject({ status: 409, code: "ATTACHMENT_CHANGED_DURING_UPLOAD" });
     expect(winner.createdAt).toBe(new Date(secondTime).toISOString());
 
     const id = `att_${hash(["baby-a", "caregiver", first.subjectId, undefined, undefined, "concurrent-exact-retry"])}`;
@@ -331,7 +338,7 @@ describe("private attachments use the shared durable identity boundary", () => {
 
   it("handles raw binary HTTP bodies separately from JSON and returns only private media headers", async () => {
     const handler = createAttachmentHandler(attachments);
-    const largePhoto = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png().toBuffer();
+    const largePhoto = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer();
     expect(largePhoto.length).toBeGreaterThan(16_384);
     const response = await handler(new Request("https://bubu.example/api/app/attachments?babyId=baby-a", {
       method: "POST", body: new Uint8Array(largePhoto), headers: { "Content-Type": "image/png", "X-Bubu-Request-Id": "binary-upload" },
@@ -395,7 +402,7 @@ describe("private attachments use the shared durable identity boundary", () => {
     expect(JSON.stringify(uploaded)).not.toContain(key);
     expect(JSON.stringify(uploaded)).not.toContain("storage");
     expect(JSON.stringify(uploaded)).not.toContain("bucket");
-    expect(objects.objects.get(key)).toEqual(photo);
+    expect(remotePlaintext(objects, key, "baby-b", uploaded.sha256)).toEqual(photo);
     await expect(stat(path.join(directory, "private-attachments", hash("baby-b"), uploaded.sha256))).rejects.toMatchObject({ code: "ENOENT" });
     expect(await remote.read(bob, "baby-b", uploaded.id)).toEqual({ attachment: uploaded, bytes: photo });
     expect(await remote.recoverUpload(bob, "baby-b", "remote-upload")).toEqual({ state: "verified", attachment: uploaded });
@@ -417,10 +424,10 @@ describe("private attachments use the shared durable identity boundary", () => {
     const stored = (requestId: string) => store.transaction(req => new RecordsRepository(store.payload)
       .get<Record<string, unknown>>("care-attachments", "baby-b", `att_${hash(["baby-b", "caregiver", bob.subjectId, undefined, undefined, undefined, requestId])}`, req));
     objects.failPut = true;
-    await expect(remote.upload(bob, "baby-b", photo, "image/png", "remote-put-failure")).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_UNAVAILABLE" });
+    await expect(remote.upload(bob, "baby-b", photo, "image/png", "remote-put-failure")).rejects.toMatchObject({ status: 503, code: "MEDIA_UPLOAD_UNCERTAIN" });
     await expect(stored("remote-put-failure")).resolves.toBeUndefined();
     objects.failPut = false; objects.corruptPut = true;
-    await expect(remote.upload(bob, "baby-b", photo, "image/png", "remote-readback-corrupt")).rejects.toMatchObject({ status: 503, code: "ATTACHMENT_UNAVAILABLE" });
+    await expect(remote.upload(bob, "baby-b", photo, "image/png", "remote-readback-corrupt")).rejects.toMatchObject({ status: 503, code: "MEDIA_UPLOAD_UNCERTAIN" });
     await expect(stored("remote-readback-corrupt")).resolves.toBeUndefined();
   });
 
@@ -442,7 +449,10 @@ describe("private attachments use the shared durable identity boundary", () => {
 
     const id = `att_${hash(["baby-a", "collector", collectorA.subjectId, undefined, "account:group-a", "paused-put"])}`;
     await expect(store.transaction(req => new RecordsRepository(store.payload).get("care-attachments", "baby-a", id, req))).resolves.toBeUndefined();
-    expect([...objects.objects.values()].every(bytes => bytes.equals(photo))).toBe(true);
+    const storedObjects = [...objects.objects];
+    expect(storedObjects).toHaveLength(1);
+    const key = storedObjects[0]![0];
+    expect(remotePlaintext(objects, key, "baby-a", key.split("/")[1]!)).toEqual(photo);
     expect(objects.removals).toBe(0);
   });
 
@@ -517,7 +527,7 @@ describe("private attachments use the shared durable identity boundary", () => {
       });
       const repaired = await remote.upload(bob, "baby-b", photo, "image/png", "remote-storage-errors");
       expect(repaired.id).toBe(uploaded.id);
-      expect(objects.objects.get(key)).toEqual(photo);
+      expect(remotePlaintext(objects, key, "baby-b", uploaded.sha256)).toEqual(photo);
       expect(await remote.recoverUpload(bob, "baby-b", "remote-storage-errors")).toMatchObject({
         state: "verified", attachment: uploaded,
       });
@@ -546,7 +556,7 @@ describe("private attachments use the shared durable identity boundary", () => {
     const remote = new AttachmentService(identity, { directory, objectStore: objects });
     const upgraded = await remote.upload(bob, "baby-b", photo, "image/png", "legacy-upgrade");
     expect(upgraded.id).toBe(uploaded.id);
-    expect(objects.objects.get(key)).toEqual(photo);
+    expect(remotePlaintext(objects, key, "baby-b", uploaded.sha256)).toEqual(photo);
     const metadata = await store.transaction(req => new RecordsRepository(store.payload).get<typeof uploaded & { storage?: { kind: string; key: string } }>("care-attachments", "baby-b", uploaded.id, req));
     expect(metadata?.storage).toEqual({ kind: "oss", key });
     objects.failGet = true;

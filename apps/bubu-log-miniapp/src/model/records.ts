@@ -6,7 +6,7 @@ export function coverageMessage(coverage?: RecordCoverage): string {
   if (!coverage) return "";
   const parts: string[] = [];
   if (!coverage.recordedEvents) parts.push("暂无可计入记录");
-  if (coverage.incompleteEvents) parts.push(`${coverage.incompleteEvents} 条信息待补充`);
+  if (coverage.incompleteEvents) parts.push(`${coverage.incompleteEvents} 条记录信息不完整`);
   if (coverage.unknownFields) parts.push(`${coverage.unknownFields} 项明确未知`);
   else if (coverage.unknownMilkAmounts) parts.push(`${coverage.unknownMilkAmounts} 次奶量未知`);
   if (coverage.ongoingEvents) parts.push(`${coverage.ongoingEvents} 条进行中，未计入完成时长`);

@@ -3,3 +3,5 @@ dist/
 coverage/
 .env
 __pycache__/
+.next/
+*.tsbuildinfo

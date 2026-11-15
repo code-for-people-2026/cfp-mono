@@ -9,7 +9,7 @@
 .bubu-chat-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 16px 4px; font-size: 16px; font-weight: 600; flex-shrink: 0; }
 .bubu-chat-context { color: #9b8d7b; font-size: 10px; padding: 0 16px 10px; display: block; flex-shrink: 0; }
 .bubu-chat-scroll { flex: 1; height: 0; min-height: 0; width: 100%; overscroll-behavior: contain; }
-.bubu-chat-history { padding: 12px 16px 22px; }
+.bubu-chat-history { width: 100%; box-sizing: border-box; padding: 12px 16px 22px; }
 .bubu-chat-welcome { color: #9b8d7b; display: block; padding: 20px 12px; font-size: 13px; line-height: 1.9; }
 .bubu-chat-turn { margin-bottom: 22px; font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; white-space: pre-wrap; }
 .bubu-chat-user { background: #f0e6d7; border-radius: 15px 15px 3px 15px; padding: 10px 13px; margin-left: 35px; }
@@ -20,7 +20,9 @@
 .bubu-chat-image-failed { font-size: 10px; color: #9b8d7b; padding: 8px; }
 .bubu-chat-pending { background: #faf5eb; border: 1px solid #eee2cc; border-radius: 12px; padding: 10px; }
 .bubu-chat-pending-title { color: #8b6b45; font-size: 12px; }
-.bubu-chat-question { display: flex; justify-content: space-between; align-items: center; background: transparent; padding: 8px 0; margin: 0; line-height: 1.7; border-radius: 0; border-bottom: 1px solid #efe6d5; text-align: left; font-size: 12px; color: #795d40; }
+.bubu-chat-question { width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; background: transparent; padding: 8px 0; margin: 0; line-height: 1.7; border-radius: 0; border-bottom: 1px solid #efe6d5; text-align: left; font-size: 12px; color: #795d40; }
+.bubu-chat-question-copy { display: block; flex: 1 1 0%; min-width: 0; white-space: normal; }
+.bubu-chat-question-action { display: block; flex: 0 0 auto; white-space: nowrap; margin-left: 8px; }
 .bubu-chat-question:last-child { border-bottom: 0; }
 .bubu-chat-composer { padding: 10px 14px calc(10px + env(safe-area-inset-bottom)); border-top: 1px solid #eee5d7; background: #fffdf9; flex-shrink: 0; max-height: 48%; overflow-y: auto; }
 .bubu-chat-target { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #8b6b45; padding-bottom: 7px; gap: 8px; }
