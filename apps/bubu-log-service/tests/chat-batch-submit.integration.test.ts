@@ -237,6 +237,101 @@ describe("durable pending form batch", () => {
     expect(await request(fixture, input.requestId)).toMatchObject({ error: { code: "CHAT_BATCH_PARSE_OVERWRITE" } });
   }, 30_000);
 
+  it("rejects cross-channel and milk-source alias overwrites before any batch write", async () => {
+    class SemanticOverwriteParser implements ChatProvider {
+      questionId = "";
+      patch: Record<string, unknown> = { facts: {} };
+      async complete(): Promise<ProviderOutput> {
+        return { text: JSON.stringify({ answers: [{ questionId: this.questionId, patch: this.patch }] }), calls: [] };
+      }
+    }
+    const provider = new SemanticOverwriteParser();
+    const { fixture } = await setup(provider);
+    const client = await fixture.connect();
+    const bottles = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "semantic-overwrite-bottles", events: [
+      { facts: { type: "BOTTLE", startTime: "2026-10-23T05:00:00+08:00", milkItems: [{ id: "valid-item", milkSource: "BREAST_MILK" }] } },
+      { facts: { type: "BOTTLE", startTime: "2026-10-23T06:00:00+08:00", milkItems: [{ id: "selected-item" }] } },
+    ] });
+    const sleep = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "semantic-overwrite-sleep", events: [{
+      facts: { type: "SLEEP", startTime: "2026-10-23T07:00:00+08:00" },
+    }] });
+    const validEvent = bottles.events.find(event => event.facts.milkItems?.[0]?.id === "valid-item")!;
+    const selectedEvent = bottles.events.find(event => event.facts.milkItems?.[0]?.id === "selected-item")!;
+    const validQuestion = bottles.questions.find(question => question.eventId === validEvent.id)!;
+    const selectedQuestion = bottles.questions.find(question => question.eventId === selectedEvent.id)!;
+    const sleepQuestion = sleep.questions[0]!;
+    const writesBefore = fixture.legacy.committedWrites;
+    const pin = (question: PendingQuestion) => ({ id: question.id, questionVersion: question.version, eventVersion: question.eventVersion });
+    const expectAtomicOverwrite = async (requestId: string, question: PendingQuestion, formAnswer: NonNullable<ChatInput["formBatch"]>[number]["formAnswer"], patch: Record<string, unknown>) => {
+      provider.questionId = question.id; provider.patch = patch;
+      const input: ChatInput = { babyId: "baby-a", requestId, text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [
+        { eventId: validQuestion.eventId, question: pin(validQuestion), formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "valid-item", facts: { milkAmount: 80 } }] } },
+        { eventId: question.eventId, question: pin(question), formAnswer, text: "补充说明：夜间喝的" },
+      ] };
+      expect((await post(fixture, input)).status).toBe(200);
+      await expect.poll(async () => (await request(fixture, requestId))?.status).toBe("failed");
+      const failed = await request(fixture, requestId);
+      expect(failed, JSON.stringify(failed)).toMatchObject({ error: { code: "CHAT_BATCH_PARSE_OVERWRITE" }, batchProgress: { completed: 0 } });
+      expect(fixture.legacy.committedWrites).toBe(writesBefore);
+    };
+
+    await expectAtomicOverwrite("semantic-overwrite-item-state", selectedQuestion,
+      { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", facts: { milkAmount: 120 } }] },
+      { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", states: { milkAmountState: "unknown" } }] });
+    await expectAtomicOverwrite("semantic-overwrite-source-alias", selectedQuestion,
+      { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", facts: { milkSource: "FORMULA" } }] },
+      { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", facts: { milkDescription: "奶粉" } }] });
+    await expectAtomicOverwrite("semantic-overwrite-root-state", sleepQuestion,
+      { facts: { durationMinutes: 60 } }, { facts: {}, states: { durationMinutes: "unknown" } });
+  }, 30_000);
+
+  it("accepts an empty non-factual supplement and exact duplicates only beside a validated explicit answer", async () => {
+    class EmptyAndDuplicateParser implements ChatProvider {
+      questionIds: string[] = [];
+      async complete(): Promise<ProviderOutput> {
+        return { text: JSON.stringify({ answers: [
+          { questionId: this.questionIds[0], patch: { facts: {} } },
+          { questionId: this.questionIds[1], patch: { facts: {}, milkItemAnswers: [{ milkItemId: "milk-1", facts: { milkAmount: 130 } }] } },
+        ] }), calls: [] };
+      }
+    }
+    const provider = new EmptyAndDuplicateParser();
+    const { fixture } = await setup(provider);
+    const questions = await seed(fixture, 2, "empty-supplement-explicit");
+    provider.questionIds = questions.map(question => question.id);
+    const writesBefore = fixture.legacy.committedWrites;
+    const input: ChatInput = { babyId: "baby-a", requestId: "empty-supplement-explicit-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: questions.map((question, index) => ({
+      eventId: question.eventId, question: { id: question.id, questionVersion: question.version, eventVersion: question.eventVersion },
+      formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "milk-1", facts: { milkAmount: index ? 130 : 120 } }] },
+      text: index ? "补充说明：还是 130 毫升" : "补充说明：夜间喝的",
+    })) };
+    expect((await post(fixture, input)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, input.requestId))?.status).toBe("completed");
+    const receipt = (await request(fixture, input.requestId))!.receipts[0] as RecordReceipt;
+    expect(receipt.events.map(event => event.facts.milkAmount)).toEqual([120, 130]);
+    expect(fixture.legacy.committedWrites).toBe(writesBefore + 2);
+  }, 30_000);
+
+  it("rejects an empty parsed patch for a text-only answer without writing", async () => {
+    class EmptyParser implements ChatProvider {
+      questionId = "";
+      async complete(): Promise<ProviderOutput> {
+        return { text: JSON.stringify({ answers: [{ questionId: this.questionId, patch: { facts: {} } }] }), calls: [] };
+      }
+    }
+    const provider = new EmptyParser();
+    const { fixture } = await setup(provider);
+    const [question] = await seed(fixture, 1, "empty-supplement-text-only"); provider.questionId = question!.id;
+    const writesBefore = fixture.legacy.committedWrites;
+    const input: ChatInput = { babyId: "baby-a", requestId: "empty-supplement-text-only-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [{
+      eventId: question!.eventId, question: { id: question!.id, questionVersion: question!.version, eventVersion: question!.eventVersion }, text: "补充说明：夜间喝的",
+    }] };
+    expect((await post(fixture, input)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, input.requestId))?.status).toBe("failed");
+    expect(await request(fixture, input.requestId)).toMatchObject({ error: { code: "CHAT_FORM_EMPTY" } });
+    expect(fixture.legacy.committedWrites).toBe(writesBefore);
+  }, 30_000);
+
   it("repairs a non-overlap duration conflict and another event in one idempotent batch, with stale preflight remaining atomic", async () => {
     const { fixture } = await setup();
     const client = await fixture.connect();

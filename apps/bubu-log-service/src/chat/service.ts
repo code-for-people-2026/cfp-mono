@@ -18,20 +18,52 @@ interface ChatServiceOptions { mcpUrl: string | URL; provider?: ChatProvider; fe
 const outputSchema = z.object({ text: z.string().max(16000), calls: z.array(z.object({ id: z.string().min(1).max(200), name: z.string().max(100), arguments: z.record(z.string(), z.unknown()) }).strict()).max(8) }).strict();
 const batchParseSchema = z.object({ answers: z.array(z.object({ questionId: z.string().min(1).max(200), patch: structuredFormAnswerSchema }).strict()).max(25) }).strict();
 export const batchParseJsonSchema = z.toJSONSchema(batchParseSchema) as Record<string, unknown>;
+type SemanticAssertion = { semantic: string; field: string; channel: "fact" | "state"; value: unknown };
+const semanticField = (field: string) => field === "milkSource" || field === "milkDescription" ? "milkSource" : field;
+const semanticAssertions = (facts: object | undefined, states: object | undefined, item = false): SemanticAssertion[] => [
+  ...Object.entries(facts || {}).filter(([, value]) => value !== undefined).map(([field, value]) => ({
+    semantic: item && (field === "milkSource" || field === "milkDescription") ? "milkSource" : semanticField(field),
+    field, channel: "fact" as const, value,
+  })),
+  ...Object.entries(states || {}).filter(([, value]) => value !== undefined).map(([field, value]) => {
+    const itemField = field === "milkSourceState" ? "milkSource" : field === "milkAmountState" ? "milkAmount" : field;
+    return { semantic: item ? itemField : semanticField(field), field, channel: "state" as const, value };
+  }),
+];
+const sameAssertionValue = (left: unknown, right: unknown) => hash(left) === hash(right);
+function assertSemanticAdditions(explicit: SemanticAssertion[], parsed: SemanticAssertion[], message: string) {
+  for (const addition of parsed) {
+    const selected = explicit.filter(assertion => assertion.semantic === addition.semantic);
+    if (!selected.length) continue;
+    const exactFact = addition.channel === "fact" && selected.some(assertion => assertion.channel === "fact"
+      && assertion.field === addition.field && sameAssertionValue(assertion.value, addition.value));
+    const consistent = addition.channel === "state"
+      ? selected.every(assertion => assertion.channel === "state"
+        ? sameAssertionValue(assertion.value, addition.value)
+        : addition.value === "known" && assertion.value !== null)
+      : exactFact && selected.every(assertion => assertion.channel === "fact"
+        ? assertion.field === addition.field && sameAssertionValue(assertion.value, addition.value)
+        : assertion.value === "known");
+    if (!consistent) throw new AppError(409, "CHAT_BATCH_PARSE_OVERWRITE", message);
+  }
+}
+function structuredAnswerEmpty(answer: StructuredFormAnswer) {
+  return !Object.keys(answer.facts || {}).length && !Object.keys(answer.states || {}).length && !answer.progress && !answer.milkItemAnswers?.length;
+}
 function mergeStructuredAnswers(explicit: StructuredFormAnswer | undefined, parsed: StructuredFormAnswer | undefined): StructuredFormAnswer | undefined {
   if (!explicit) return parsed;
   if (!parsed) return explicit;
-  const overlap = (left: object | undefined, right: object | undefined) => Object.keys(left || {}).some(key => Object.prototype.hasOwnProperty.call(right || {}, key));
-  if (overlap(explicit.facts, parsed.facts) || overlap(explicit.states, parsed.states) || explicit.progress !== undefined && parsed.progress !== undefined) {
+  assertSemanticAdditions(semanticAssertions(explicit.facts, explicit.states), semanticAssertions(parsed.facts, parsed.states),
+    "补充说明试图改写已经明确选择的字段，未执行任何修改。");
+  if (explicit.progress !== undefined && parsed.progress !== undefined && explicit.progress !== parsed.progress) {
     throw new AppError(409, "CHAT_BATCH_PARSE_OVERWRITE", "补充说明试图改写已经明确选择的字段，未执行任何修改。");
   }
   const itemAnswers = new Map<string, NonNullable<StructuredFormAnswer["milkItemAnswers"]>[number]>();
   for (const answer of explicit.milkItemAnswers || []) itemAnswers.set(answer.milkItemId, structuredClone(answer));
   for (const answer of parsed.milkItemAnswers || []) {
     const known = itemAnswers.get(answer.milkItemId);
-    if (known && (overlap(known.facts, answer.facts) || overlap(known.states, answer.states))) {
-      throw new AppError(409, "CHAT_BATCH_PARSE_OVERWRITE", "补充说明试图改写已经明确选择的奶品答案，未执行任何修改。");
-    }
+    if (known) assertSemanticAdditions(semanticAssertions(known.facts, known.states, true), semanticAssertions(answer.facts, answer.states, true),
+      "补充说明试图改写已经明确选择的奶品答案，未执行任何修改。");
     itemAnswers.set(answer.milkItemId, known ? {
       milkItemId: answer.milkItemId,
       ...((known.facts || answer.facts) ? { facts: { ...known.facts, ...answer.facts } } : {}),
@@ -511,7 +543,9 @@ export class ChatService {
         const original = textItems.find(item => item.question.id === answer.questionId);
         const question = original && byQuestion.get(answer.questionId);
         if (!original || !question) throw new AppError(409, "CHAT_BATCH_TARGET_MISMATCH", "自定义待补解析包含无关目标，未执行任何修改。");
-        validateStructuredAnswer(turn, question, answer.patch, original.eventId, events.find(candidate => candidate.id === original.eventId));
+        if (!structuredAnswerEmpty(answer.patch) || !original.formAnswer) {
+          validateStructuredAnswer(turn, question, answer.patch, original.eventId, events.find(candidate => candidate.id === original.eventId));
+        }
         parsed.set(answer.questionId, answer.patch);
       }
     }
