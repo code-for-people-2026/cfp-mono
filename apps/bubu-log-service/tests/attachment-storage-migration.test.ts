@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { sql } from "@payloadcms/db-sqlite";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { migrateAttachmentStorage } from "../scripts/migrate-attachment-storage";
+import { migrateAttachmentStorage, runAttachmentStorageMigrationCli } from "../scripts/migrate-attachment-storage";
+import { createRuntime } from "../src/runtime";
 import { attachmentObjectKey, AttachmentService } from "../src/records/attachments";
 import { hash, recordCollections, RecordsRepository } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
@@ -13,6 +15,8 @@ import { decryptMedia, mediaKey } from "../src/privacy/media-encryption";
 import { openStore, type Store } from "../src/store";
 import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
 import { LegacyFixture, WechatFixture } from "./fixtures/identity";
+import { RecordsLegacyFixture } from "./fixtures/records";
+import { testPrivacyConfig } from "./fixtures/privacy";
 
 class MemoryObjectStore implements AttachmentObjectStore {
   readonly kind = "oss" as const;
@@ -39,6 +43,48 @@ interface StoredAttachment {
   id: string; babyId: string; sha256: string; requestFingerprint: string;
   source?: SourceRef; storage?: { kind: "oss"; key: string };
 }
+
+it("opens a dry-run CLI through the full runtime without changing privacy, chat, or operations state", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-"));
+  const origin = "http://127.0.0.1:4997";
+  const runtimeOptions = {
+    directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`,
+    legacy: new RecordsLegacyFixture(), wechat: new WechatFixture(), privacy: testPrivacyConfig,
+    maintenanceWorker: false,
+  } as const;
+  let runtime = await createRuntime(runtimeOptions);
+  const payload = runtime.store.payload;
+  await payload.create({ collection: "privacy-state", data: { id: "cli-privacy", key: "cli-privacy", value: { marker: "privacy" } }, overrideAccess: true });
+  await payload.create({ collection: "privacy-state", data: { id: "media-upload:cli-stale", key: "media-upload:cli-stale", identityId: "cli-identity", babyId: "baby-a", value: {
+    version: 1, operation: "put", babyId: "baby-a", identityId: "cli-identity", actor: { kind: "caregiver", id: "cli-identity" },
+    attachmentId: "att_" + "a".repeat(64), objectKey: `${"b".repeat(64)}/${"c".repeat(64)}`, state: "inflight", processId: "previous-process",
+    startedAt: "2026-11-15T00:00:00.000Z", updatedAt: "2026-11-15T00:00:00.000Z",
+  } }, overrideAccess: true });
+  await payload.create({ collection: "chat-turns", data: { id: "cli-chat", key: "cli-chat", identityId: "cli-identity", babyId: "baby-a", value: { marker: "chat" } }, overrideAccess: true });
+  await payload.create({ collection: "ops-requests", data: { id: "cli-ops", key: "cli-ops", babyId: "baby-a", value: { marker: "ops" } }, overrideAccess: true });
+  const initialDatabase = payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+  await initialDatabase.drizzle.run(sql`CREATE TABLE cli_schema_sentinel (marker text NOT NULL)`);
+  await initialDatabase.drizzle.run(sql`INSERT INTO cli_schema_sentinel (marker) VALUES ('preserved')`);
+  await runtime.close();
+  try {
+    const report = await runAttachmentStorageMigrationCli({ directory, objectStore: new MemoryObjectStore(), publicOrigin: origin, opsOrigin: origin });
+    expect(report).toMatchObject({ mode: "dry-run", scanned: 0, metadataUpdated: 0 });
+    runtime = await createRuntime({ ...runtimeOptions, schemaPush: false });
+    for (const [collection, key, marker] of [
+      ["privacy-state", "cli-privacy", "privacy"], ["chat-turns", "cli-chat", "chat"], ["ops-requests", "cli-ops", "ops"],
+    ] as const) {
+      const rows = await runtime.store.payload.find({ collection, where: { key: { equals: key } }, limit: 1, overrideAccess: true });
+      expect(rows.docs[0]?.value).toEqual({ marker });
+    }
+    const inflight = await runtime.store.payload.find({ collection: "privacy-state", where: { key: { equals: "media-upload:cli-stale" } }, limit: 1, overrideAccess: true });
+    expect(inflight.docs[0]?.value).toMatchObject({ state: "inflight", processId: "previous-process", updatedAt: "2026-11-15T00:00:00.000Z" });
+    const verificationDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT marker FROM cli_schema_sentinel`))).toContain("preserved");
+  } finally {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
 
 describe("offline attachment storage migration", () => {
   let directory: string, store: Store, identity: IdentityService, attachments: AttachmentService, principal: Principal;

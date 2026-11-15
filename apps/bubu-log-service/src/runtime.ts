@@ -59,10 +59,11 @@ interface RuntimeOptions {
   wechat?: WechatProvider;
   provider?: ChatProvider;
   imageReviewer?: ImageReviewer;
-  objectStore?: AttachmentObjectStore;
+  objectStore?: AttachmentObjectStore | false;
   privacy?: PrivacyConfig;
   deletionLedger?: string;
   maintenanceWorker?: boolean;
+  schemaPush?: boolean;
 }
 
 /** One writer, one Payload instance, and one RecordsService serialization queue. */
@@ -77,7 +78,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
   // Payload HMR can destroy/reinitialize its DB; restart the whole server instead.
   process.env.DISABLE_PAYLOAD_HMR = "true";
   try {
-    const config = buildRuntimeConfig({ directory: options.directory, secret: options.secret, origin: opsOrigin });
+    const config = buildRuntimeConfig({ directory: options.directory, secret: options.secret, origin: opsOrigin, schemaPush: options.schemaPush });
     registerRuntimeState({ config });
     store = new Store(await getPayload({ config }));
     serializeDatabaseTransactions(store.payload);
@@ -95,7 +96,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
     const imageReview = new ImageReviewService(privacy, options.imageReviewer || configuredImageReviewer());
     // Production explicitly refuses the local default; development and test remain local unless OSS is configured.
-    const objectStore = options.objectStore ?? configuredAttachmentObjectStore();
+    const objectStore = options.objectStore === false ? undefined : options.objectStore ?? configuredAttachmentObjectStore();
     const attachments = new AttachmentService(identity, { directory: options.directory, beforeLegacyAccess: babyId => privacy.requireLegacyStorage(babyId), imageReview, ...(objectStore ? { objectStore } : {}) });
     const lifecycle = legacy as typeof legacy & Partial<FamilyLifecycle & AccountLifecycle>;
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined, lifecycle.exportAccountData && lifecycle.deleteAccountData ? lifecycle as AccountLifecycle : undefined);

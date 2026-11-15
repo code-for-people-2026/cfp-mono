@@ -1,6 +1,54 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { setTimeout as delay } from "node:timers/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import sharp from "sharp";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { AppError } from "../src/contracts";
 import { createHandler } from "../src/http";
-import { identityFixture, type IdentityFixture } from "./fixtures/identity";
+import { CollectorService } from "../src/collector/service";
+import { serializeDatabaseTransactions } from "../src/database-queue";
+import { IdentityService } from "../src/identity";
+import { privacyCollections } from "../src/privacy/persistence";
+import { AttachmentService } from "../src/records/attachments";
+import { recordCollections } from "../src/records/persistence";
+import { RecordsService } from "../src/records/service";
+import { openStore } from "../src/store";
+import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
+import { identityFixture, type IdentityFixture, WechatFixture } from "./fixtures/identity";
+import { RecordsLegacyFixture } from "./fixtures/records";
+
+class DeferredHttpObjectStore implements AttachmentObjectStore {
+  readonly kind = "oss" as const;
+  readonly objects = new Map<string, Buffer>();
+  private getGate?: Promise<void>;
+  private releaseGet?: () => void;
+  private getStarted?: Promise<void>;
+  private resolveGetStarted?: () => void;
+  private nextGetPauses = false;
+  pauseNextGet() {
+    this.nextGetPauses = true;
+    this.getGate = new Promise(resolve => { this.releaseGet = resolve; });
+    this.getStarted = new Promise(resolve => { this.resolveGetStarted = resolve; });
+  }
+  startedGet() { return this.getStarted ?? Promise.reject(new Error("Deferred GET was not armed")); }
+  finishGet() { this.releaseGet?.(); this.releaseGet = undefined; }
+  async put(key: string, bytes: Uint8Array) { this.objects.set(key, Buffer.from(bytes)); }
+  async get(key: string, maxBytes: number) {
+    if (this.nextGetPauses) {
+      this.nextGetPauses = false;
+      this.resolveGetStarted?.();
+      await this.getGate;
+    }
+    const bytes = this.objects.get(key);
+    if (!bytes || bytes.byteLength > maxBytes) throw new AppError(503, "ATTACHMENT_OBJECT_MISSING", "synthetic missing object");
+    return Buffer.from(bytes);
+  }
+  async remove(key: string) { this.objects.delete(key); }
+  async *list(prefix: string) {
+    for (const key of this.objects.keys()) if (key.startsWith(prefix)) yield { key, lastModified: 1 };
+  }
+}
 
 const origin = "https://bubu.example.test";
 let fixture: IdentityFixture;
@@ -96,6 +144,46 @@ describe("HTTP credential and origin boundaries", () => {
 });
 
 describe("HTTP authorization and usable onboarding", () => {
+  it("reads imported OSS photos outside the identity lock and denies a response revoked during GET", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "bubu-http-oss-test-"));
+    const store = await openStore({ directory, extensions: [...recordCollections, ...privacyCollections] });
+    serializeDatabaseTransactions(store.payload);
+    const legacy = new RecordsLegacyFixture();
+    const identity = new IdentityService(store, legacy, new WechatFixture());
+    const objects = new DeferredHttpObjectStore();
+    const attachments = new AttachmentService(identity, { directory, objectStore: objects });
+    const records = new RecordsService(identity, legacy, (scope, req, attachmentId) => attachments.validateAttachment(scope, req, attachmentId));
+    const collector = new CollectorService(identity, async () => false);
+    const operator = await identity.authenticate((await identity.provisionOperator("http-oss-operator", "baby-a", 60_000)).token, "bearer");
+    const login = await identity.loginWechat("app:http-oss-revocation:code");
+    const guest = await identity.authenticate(login.token, "bearer");
+    await identity.setGrant(operator, "baby-a", guest.subjectId, "active", ["records:read", "records:write", "media:read", "media:write"]);
+    const photo = await sharp({ create: { width: 4, height: 4, channels: 3, background: "#7799bb" } }).png().toBuffer();
+    const attachment = await attachments.upload(guest, "baby-a", photo, "image/png", "http-oss-revocation");
+    const legacyBoundary: { read(babyId: string, resource: string, query: URLSearchParams): Promise<unknown> } = legacy;
+    vi.spyOn(legacyBoundary, "read").mockResolvedValue({ id: "imported-photo", babyId: "baby-a", type: "DIAPER", poopPhotoUrl: `bubu-attachment:${attachment.id}` });
+    const scoped = createHandler(identity, origin, { allowedOrigins: [] }, { records, attachments, collector });
+    objects.pauseNextGet();
+    const response = scoped(new Request(`${origin}/api/app/media/activities/imported-photo?babyId=baby-a`, { headers: bearer(login.token) }));
+    try {
+      const started = await Promise.race([
+        objects.startedGet().then(() => "started"),
+        response.then(async value => `finished:${value.status}:${JSON.stringify(await value.clone().json())}`),
+      ]);
+      expect(started).toBe("started");
+      const revoked = identity.setGrant(operator, "baby-a", guest.subjectId, "revoked");
+      expect(await Promise.race([revoked.then(() => true), delay(500).then(() => false)])).toBe(true);
+      objects.finishGet();
+      await code(await response, 403, "BABY_FORBIDDEN");
+    } finally {
+      objects.finishGet();
+      await response.catch(() => undefined);
+      vi.restoreAllMocks();
+      await store.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("returns a scoped baby profile and rejects mismatched or revoked access", async () => {
     const originalBaby = fixture.legacy.babies.get("baby-a")!;
     fixture.legacy.babies.set("baby-a", { ...originalBaby, birthDate: "2026-01-02T00:00:00.000Z" });
