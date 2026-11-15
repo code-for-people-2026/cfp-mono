@@ -1,4 +1,5 @@
 import { dayBounds, durationInDay, durationMinutes, timestamp } from "./date";
+import { activityCategoryTone } from "./presentation";
 import type { Activity, ActivityType, DateInput, DaySummary, SortField, StatFilter } from "./types";
 
 export const FILTER_TYPES: Record<StatFilter, ActivityType[]> = {
@@ -59,12 +60,12 @@ export const summarizeHomeDay = (activities: readonly Activity[], date: DateInpu
 export const summarizeRecordList = (activities: readonly Activity[], date: DateInput): DaySummary => summarize(activities, date, "list");
 export function statCards(summary: DaySummary): Array<{ key: StatFilter; label: string; value: string; color: string }> {
   return [
-    { key: "sleep", label: "睡", value: `${Math.floor(summary.totalSleepMinutes / 60)}:${String(summary.totalSleepMinutes % 60).padStart(2, "0")}`, color: "#456f83" },
-    { key: "bottle", label: "瓶", value: `${summary.totalBottleMilkAmount} ml`, color: "#945a5b" },
-    { key: "breastfeed", label: "亲", value: `${summary.totalBreastfeedMinutes} min`, color: "#945a5b" },
-    { key: "pump", label: "吸", value: `${summary.totalPumpMilkAmount} ml`, color: "#78618d" },
-    { key: "diaper", label: "尿", value: `${summary.largePeeDiaperCount + Math.ceil(summary.smallMediumPeeDiaperCount / 2)} 次`, color: "#8b773d" },
-    { key: "outdoor", label: "阳", value: `${summary.totalOutdoorMinutes} min`, color: "#8d7050" },
+    { key: "sleep", label: "睡", value: `${Math.floor(summary.totalSleepMinutes / 60)}:${String(summary.totalSleepMinutes % 60).padStart(2, "0")}`, color: activityCategoryTone("sleep").color },
+    { key: "bottle", label: "瓶", value: `${summary.totalBottleMilkAmount} ml`, color: activityCategoryTone("milk").color },
+    { key: "breastfeed", label: "亲", value: `${summary.totalBreastfeedMinutes} min`, color: activityCategoryTone("milk").color },
+    { key: "pump", label: "吸", value: `${summary.totalPumpMilkAmount} ml`, color: activityCategoryTone("pump").color },
+    { key: "diaper", label: "尿", value: `${summary.largePeeDiaperCount + Math.ceil(summary.smallMediumPeeDiaperCount / 2)} 次`, color: activityCategoryTone("diaper").color },
+    { key: "outdoor", label: "阳", value: `${summary.totalOutdoorMinutes} min`, color: activityCategoryTone("outdoor").color },
     { key: "headLift", label: "趴", value: `${summary.totalHeadLiftMinutes} min`, color: "#966b50" },
     { key: "rollOver", label: "翻", value: `${summary.totalRollOverCount} 次`, color: "#966b50" },
   ];

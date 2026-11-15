@@ -1,0 +1,41 @@
+import { defineConfig } from "@tarojs/cli";
+import path from "node:path";
+import { getWechatSpeechPlugin } from "./speech";
+
+const outputRoot = process.env.TARO_ENV === "h5" ? "dist/h5" : "dist/weapp";
+
+export default defineConfig(async () => ({
+  projectName: "a-j-oker-miniapp",
+  date: "2026-09-29",
+  designWidth: 375,
+  deviceRatio: { 375: 2, 640: 1.17, 750: 1, 828: 0.905 },
+  sourceRoot: "src",
+  outputRoot,
+  copy: {
+    patterns: [
+      {
+        from: path.resolve(__dirname, "../node_modules/lucide-static/LICENSE"),
+        to: `${outputRoot}/LUCIDE-LICENSE.txt`,
+      },
+    ],
+  },
+  alias: { "@tarojs/plugin-framework-react/dist/runtime": require.resolve("@tarojs/plugin-framework-react/dist/runtime") },
+  framework: "react",
+  compiler: "vite",
+  defineConstants: {
+    HELLO_BUILD_LABEL: JSON.stringify(
+      process.env.HELLO_RELEASE_VERSION || "开发版",
+    ),
+    HELLO_API_ORIGIN: JSON.stringify(
+      process.env.HELLO_API_ORIGIN || "http://127.0.0.1:3310",
+    ),
+    HELLO_WECHAT_SI_ENABLED: JSON.stringify(!!getWechatSpeechPlugin()),
+  },
+  mini: { imageUrlLoaderOption: { limit: false } },
+  h5: {
+    imageUrlLoaderOption: { limit: false },
+    publicPath: "/chat/",
+    router: { mode: "hash" },
+    postcss: { pxtransform: { enable: false } },
+  },
+}));

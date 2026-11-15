@@ -30,8 +30,8 @@ function createRecordsMcp(identity: IdentityService, records: RecordsService, co
       }
     });
   }
-  register("bubu_record_events","创建或批量整理照护记录。允许缺项；只有回执saved或needs_information才表示可靠保存，pending_projection须用原请求号恢复。",recordSchema,(p,a)=>records.record(p,a));
-  register("bubu_update_event","按版本补充或更正原事件，不创建另一件事。来源重放不会覆盖人类修订。",updateSchema,(p,a)=>records.update(p,a));
+  register("bubu_record_events","创建或批量整理照护记录。允许缺项；亲喂克数只接受显式报告reportedIntake:{value:80,unit:'g',originalText:'亲喂吃了80克'}，不换算ml、不估算、不问称重。只有回执saved或needs_information才表示可靠保存，pending_projection须用原请求号恢复。",recordSchema,(p,a)=>records.record(p,a));
+  register("bubu_update_event","按版本补充或更正原事件，不创建另一件事。亲喂克数只接受显式报告reportedIntake:{value:80,unit:'g',originalText:'亲喂吃了80克'}，不换算ml、不估算、不问称重。来源重放不会覆盖人类修订。",updateSchema,(p,a)=>records.update(p,a));
   register("bubu_retract_event","撤销或删除误记，保留来源防重放和修订。",eventMutation,(p,a)=>records.retract(p,a));
   register("bubu_restore_event","用户明确恢复已撤销事件；采集重跑不得使用此工具自动恢复。",eventMutation,(p,a)=>records.retract(p,a,true));
   register("bubu_undo_event","撤销指定事件的最新修订，须带当前版本及修订ID。",eventMutation.extend({revisionId:identifier}),(p,a)=>records.undo(p,a));
@@ -48,7 +48,7 @@ function createRecordsMcp(identity: IdentityService, records: RecordsService, co
   register("bubu_accept_legacy","核对外部冲突后明确接受旧业务库最新事实。先读取修订和记录，再由用户确认使用。",eventMutation,(p,a)=>records.reconcile(p,a));
   register("bubu_get_rules","读取当前活动分支应收集的字段和状态；备注、图片可选，尚未发生不强问，禁止使用旧表单默认值。",z.object({babyId:identifier,type:z.enum(activityTypes).optional(),milkSource:z.enum(["BREAST_MILK","FORMULA"]).optional()}).strict(),async(p,a)=>{
     await identity.executeAuthorized(p,a.babyId,"records:read",async()=>undefined,p.kind==="collector"?p.groupId:undefined);
-    return {types:activityTypes,rule:evaluateEvent({facts:{type:a.type,milkSource:a.milkSource}}),timezone:"Asia/Shanghai",notesOptional:true,photosOptional:true};
+    return {types:activityTypes,rule:evaluateEvent({facts:{type:a.type,milkSource:a.milkSource}}),reportedIntakeExample:{reportedIntake:{value:80,unit:"g",originalText:"亲喂吃了80克"}},reportedIntakeRules:"explicit grams only; preserve originalText; no g-to-ml conversion, estimates, or before/after weighing requests",timezone:"Asia/Shanghai",notesOptional:true,photosOptional:true};
   });
   // MCP's tool-list renderer requires an object at the root. Keep the full action
   // fields discoverable; dispatch still validates the strict discriminated union.

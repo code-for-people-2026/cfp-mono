@@ -6,6 +6,7 @@ export type FieldState = "known" | "pending" | "unknown" | "not_applicable" | "n
 export type Progress = "ongoing" | "ended" | "unknown";
 export interface Facts {
   type?: ActivityType; startTime?: string; endTime?: string | null; durationMinutes?: number;
+  reportedIntake?: { value: number; unit: "g"; originalText: string } | null;
   milkAmount?: number | null; milkSource?: "BREAST_MILK" | "FORMULA";
   preparedMilkAmount?: number | null; remainingMilkAmount?: number | null; sameBottle?: boolean;
   burpSuccess?: boolean | null; breastFirmness?: "SOFT" | "ELASTIC" | "HARD";

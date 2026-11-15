@@ -70,7 +70,7 @@ stdin 是 `bubu-collector-agent/v1` 结构化任务；stdout 仅为解析验证�
 
 桥接使用本机 `codex exec --help` 已核对的 stdin `-`、`--ignore-user-config`、`--ignore-rules`、`--ephemeral`、`--sandbox read-only`、`--skip-git-repo-check`、`--cd`、`--output-schema`、`--output-last-message`，并以 `--no-daemon` 启动。结构化输出使用封闭 schema `{planJson: string}`（required，additionalProperties=false），再解析内部计划，避免把任意 tool arguments 的开放对象直接交给 strict structured output。
 
-覆盖配置限制为 ChatGPT 登录，关闭 shell、apps、plugins、多 Agent、hooks、memory、browser/computer tools、view_image 与 web search；不加载用户配置或项目指令，工作目录为一次性私有临时目录。只传入 NODE_ENV（未设置时为 production）、PATH/HOME/LANG 和已有 CODEX_HOME，不继承 API key 或业务凭证环境变量。临时输出在完成/失败后删除，CLI 原始日志不转发给服务日志。参数依据 [官方配置参考](https://developers.openai.com/codex/config-reference/) 和本机帮助；实际模型调用未在 fixtures 中执行。
+覆盖配置限制为 ChatGPT 登录，关闭 shell、apps、plugins、多 Agent、hooks、memory、browser/computer tools、view_image 与 web search；不加载用户配置或项目指令，工作目录为一次性私有临时目录。只传递 PATH/HOME/LANG、NODE_ENV（未设置时为 production）和已有 CODEX_HOME，不继承 API key 或业务凭证环境变量。临时输出在完成/失败后删除，CLI 原始日志不转发给服务日志。参数依据 [官方配置参考](https://developers.openai.com/codex/config-reference/) 和本机帮助；实际模型调用未在 fixtures 中执行。
 
 已有其他受控 Agent 可以使用 `agent: {executable,args?,cwd?,timeoutMs?,env?}` 替代 `codex`，不能同时指定两种。该命令使用无 shell 的 stdin/stdout JSON 协议；显式 env 属于运营配置，不应传入业务凭证。
 
@@ -138,6 +138,20 @@ wrapper 不调用旧包按月目录“取第一个文件”的媒体路径逻辑
 作业状态区分 `lastSuccessAt`（批次成功时间）、`processedThrough`（可靠消费来源的最大 sentAt）、`heartbeatAt`、failure、nextRunAt、cursor、activeBatchId 和 pendingMedia。游标按数据库/表保存 local_id，不按消息时间截断，因此后到的历史时间消息也不会丢失。120 秒租约阻止并发批次，runner 每 30 秒心跳并在写入前复核；重启后接管过期租约并继续同一批次/计划/请求号。
 
 失败保留批次和指数退避（最高 5 分钟）。运营可发送 `{"action":"retry","jobId":"已有job.id"}` 提前下一次运行；不要手改游标、批次或 requestId。已成功的操作即使响应丢失，也从同一身份的持久化 operation 验证，避免重复旧后端写入。版本或业务冲突需先核对原事件，失败状态不会假称同步完成。
+
+只有服务端按采集作业的精确 collector 身份核对到“该 requestId 未落库、原目标版本确实已变化”的 `VERSION_CONFLICT`，才会记录 recovery；pending 或已提交 operation 都不能进入重规划。运营确认后再发送：
+
+```json
+{
+  "action": "retry",
+  "jobId": "已有job.id",
+  "replan": true
+}
+```
+
+下一次 runner 会把旧计划放入 `recovery.plans` 并携带最新事件、待办、规则、媒体和当前附件重新询问模型。模型必须按顺序为每个旧计划返回一个替换；服务端接受 `{ "oldPlanKey": "feeding", "plan": { "key": "feeding-v2", "...": "..." } }` 形式的显式映射，强制新旧 tool、sourceIds 和原 event/question 目标一致，并要求新 key 未被本批次任何旧计划、恢复计划或持久化 requestId 使用。替换必须读取当前版本并保留人类事实与既有附件；不能换目标、复活撤销、忽略来源、发送群消息或编造事实。已提交但回执丢失的操作继续使用原请求号重试，由原 operation 返回结果并验证回执，不重复写入旧后端；持久 pending operation 不能重规划，需先完成其恢复语义。
+
+局限：重规划不是自动模型重试，必须由运营显式授权；一次只处理服务端验证过的未提交版本冲突，不用于业务规则失败、重复来源、越权或待恢复写入。媒体缺失的后续处理仍走 [./wechat-image-export.md](./wechat-image-export.md) 的受保护导出/补图路径，不会凭元数据猜测图片内容。
 
 补采请求示例：
 

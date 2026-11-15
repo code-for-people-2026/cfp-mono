@@ -102,6 +102,11 @@ export interface RecordTypeSummary {
   unknownMilkAmounts: number; knownDurations: number; unknownDurations: number; ongoingEvents: number;
 }
 export interface RecordSummary { metrics: Record<string, number>; coverage: RecordCoverage; byType: Record<string, RecordTypeSummary> }
+export interface ReportedIntake {
+  value: number;
+  unit: "g";
+  originalText: string;
+}
 export interface RecordEvent {
   id: string; babyId: string; legacyId: string; version: number;
   progress: "ongoing" | "ended" | "unknown"; projection: "candidate" | "pending" | "synced" | "conflict";
@@ -110,6 +115,8 @@ export interface RecordEvent {
   missing: string[]; conflicts: Array<{ code: string; fields: string[] }>;
   sources: Array<{ kind: "chat" | "wechat" | "manual"; sentAt: string }>;
   attachmentIds: string[];
+  /** Explicitly reported breastfeeding intake; never converted from or into historical ml amounts. */
+  reportedIntake?: ReportedIntake | null;
 }
 export interface RecordCollection {
   activities: Activity[]; events: RecordEvent[];

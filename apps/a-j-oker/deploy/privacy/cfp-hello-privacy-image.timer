@@ -1,0 +1,9 @@
+[Unit]
+Description=Hourly a-j-oker isolated privacy maintenance
+[Timer]
+OnCalendar=*-*-* *:17:00
+Persistent=true
+AccuracySec=1min
+Unit=cfp-hello-privacy-image.service
+[Install]
+WantedBy=timers.target
