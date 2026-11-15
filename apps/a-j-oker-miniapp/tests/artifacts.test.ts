@@ -89,7 +89,7 @@ it("微信禁用动态函数仍可经 AG-UI 接收单个表单作品，查询确
   expect(mocks.request.mock.lastCall![0].url).toContain(`/requests/${id}`);
 });
 
-it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复后锁定已提交表单", async () => {
+it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复后展示已确认答案", async () => {
   vi.stubEnv("TARO_ENV", "weapp");
   vi.stubGlobal("HELLO_API_ORIGIN", "https://example.test");
   const { Artifacts } = await import("../src/chat/artifacts");
@@ -126,28 +126,39 @@ it("真实表单组件保留零值，只在提交时发出 A2UI 动作，恢复�
     });
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction.mock.calls[0][0].action.context.values.intensity).toBe(0);
+    const responseId = "turn_1_thought_record";
+    const submittedValues = onAction.mock.calls[0][0].action.context.values;
+    const responses = { [responseId]: submittedValues };
+    expect(responses[responseId]).toBe(submittedValues);
     await act(async () => {
       renderer!.update(
         createElement(Artifacts, {
           turnId: 1,
           artifacts: form,
-          responses: {
-            turn_1_thought_record:
-              onAction.mock.calls[0][0].action.context.values,
-          },
+          responses,
           onAction,
         }),
       );
     });
-    await act(async () => {
-      renderer!.root.findByType("button").props.onClick();
+    const summary = renderer!.root.findByProps({
+      className: "artifact-form-summary",
     });
+    const rows = summary.findAllByProps({ className: "artifact-summary-row" });
+    const rowText = (row: (typeof rows)[number], className: string) =>
+      row.findAllByType("text").find((node) => node.props.className === className)!
+        .children.join("");
     expect(
-      renderer!.root
-        .findAllByType("button")
-        .find((node) => node.props.className?.includes("artifact-submit"))!
-        .props.disabled,
-    ).toBe(true);
+      rows.map((row) => rowText(row, "artifact-summary-question")),
+    ).toEqual(["发生了什么？", "当时的想法", "当时的情绪", "情绪强度"]);
+    expect(rows.map((row) => rowText(row, "artifact-summary-answer"))).toEqual([
+      "会议说错数字，已更正",
+      "会议说错数字，已更正",
+      "会议说错数字，已更正",
+      "0",
+    ]);
+    expect(summary.findAllByType("input")).toHaveLength(0);
+    expect(summary.findAllByType("textarea")).toHaveLength(0);
+    expect(summary.findAllByType("button")).toHaveLength(0);
   } finally {
     act(() => renderer!.unmount());
   }

@@ -28,6 +28,8 @@ export interface ArtifactUiCopy {
   closeDetails: string;
   unknownChoice: string;
   otherChoice: string;
+  unanswered: string;
+  unavailableSelections(count: number): string;
   optional: string;
   required: string;
   submitUnavailable: string;
@@ -88,6 +90,8 @@ const defaultCopy: ArtifactUiCopy = {
   closeDetails: "关闭详情",
   unknownChoice: "说不清",
   otherChoice: "补充你的说法",
+  unanswered: "未填写",
+  unavailableSelections: (count) => `另有 ${count} 个已选择项`,
   optional: "（选填）",
   required: " *",
   submitUnavailable: "表单暂时无法提交",

@@ -67,6 +67,13 @@ page {
 .artifact-input { display: block; width: 100%; min-height: 38px; border: 1px solid #d4dfd0; border-radius: 8px; padding: 8px 10px; font-size: 13px; line-height: 1.7; background: #fff; box-sizing: border-box; }
 .artifact-other-input { margin-top: 2px; }
 .artifact-textarea { min-height: 85px; height: 95px; }
+.artifact-form-summary { border: 1px solid var(--chat-ui-border, #dce5d9); border-radius: 14px; padding: 13px; background: #fcfdf8; }
+.artifact-summary-title { display: block; color: #395943; font-size: 14px; font-weight: 650; line-height: 1.6; margin-bottom: 7px; white-space: normal; overflow-wrap: anywhere; word-break: break-word; }
+.artifact-summary-list { display: flex; flex-direction: column; }
+.artifact-summary-row { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-top: 1px solid #e8eee4; }
+.artifact-summary-question, .artifact-summary-answer { display: block; min-width: 0; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; }
+.artifact-summary-question { flex: 0 1 40%; color: var(--chat-ui-muted, #7b8f7c); font-size: 11px; }
+.artifact-summary-answer { flex: 1 1 60%; color: var(--chat-ui-text, #243b35); font-size: 12px; }
 .control.artifact-submit { width: 100%; padding: 10px; background: var(--chat-ui-accent, #56765d); border-radius: 9px; color: #fff; font-size: 13px; margin-top: 5px; }
 .control.artifact-submit[disabled] { opacity: .6; }
 .control.artifact-link { display: inline-block; color: #527459; padding: 8px 4px; font-size: 12px; }

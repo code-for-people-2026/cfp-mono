@@ -139,6 +139,91 @@ export function useArtifactState() {
   return context;
 }
 
+export function ConfirmedFormSummary({
+  surface,
+  values,
+  external = false,
+}: {
+  surface: SurfaceModel;
+  values: FormValues;
+  external?: boolean;
+}) {
+  const { Text: MessageText, labels } = useArtifactUi();
+  let title: Extract<Component, { component: "Text" }> | undefined;
+  const fields: Extract<Component, { component: "FormField" }>[] = [];
+  const visit = (id: string) => {
+    const model = surface.componentsModel.get(id);
+    if (!model) return;
+    const component = componentSchema.parse(
+      { id, component: model.type, ...model.properties },
+      { jitless: true },
+    );
+    if (component.component === "Text" && component.variant === "h3") {
+      title ||= component;
+    } else if (component.component === "FormField") {
+      fields.push(component);
+    } else if (component.component === "Card") {
+      visit(component.child);
+    } else if (component.component === "Column") {
+      component.children.forEach(visit);
+    }
+    // A Button's child is its label, not form summary content.
+  };
+  visit("root");
+  const answerText = (component: (typeof fields)[number]) => {
+    const { field } = component;
+    const answer = values[component.value.path.slice("/values/".length)];
+    if (answer === undefined || answer === "") return labels.unanswered;
+    if (typeof answer === "string" || typeof answer === "number")
+      return String(answer);
+    if ("unknown" in answer) return labels.unknownChoice;
+    const optionLabels =
+      field.type === "select" || field.type === "multiSelect"
+        ? new Map(field.options.map((option) => [option.id, option.label]))
+        : new Map<string, string>();
+    const known = answer.optionIds.flatMap((optionId) => {
+      const label = optionLabels.get(optionId);
+      return label === undefined ? [] : [label];
+    });
+    const unavailableCount = answer.optionIds.length - known.length;
+    return [
+      ...known,
+      ...(unavailableCount ? [labels.unavailableSelections(unavailableCount)] : []),
+      ...(answer.otherText ? [answer.otherText] : []),
+    ].join("、") || labels.unanswered;
+  };
+
+  return (
+    <View className="artifact-form-summary">
+      {title?.component === "Text" && (
+        <MessageText
+          aiGenerated
+          external={external}
+          className="artifact-summary-title"
+        >
+          {title.text}
+        </MessageText>
+      )}
+      <View className="artifact-summary-list">
+        {fields.map((component) => (
+          <View key={component.id} className="artifact-summary-row">
+            <MessageText
+              aiGenerated
+              external={external}
+              className="artifact-summary-question"
+            >
+              {component.field.label}
+            </MessageText>
+            <MessageText className="artifact-summary-answer">
+              {answerText(component)}
+            </MessageText>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 export function ArtifactState({
   surface,
   disabled,
@@ -157,6 +242,7 @@ export function ArtifactState({
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
   const inFlight = useRef(false);
+  const actionPending = useRef(false);
   const generation = useRef(0);
   const actionHandler = useRef(onAction);
   actionHandler.current = onAction;
@@ -166,6 +252,7 @@ export function ArtifactState({
     () => () => {
       generation.current++;
       inFlight.current = false;
+      actionPending.current = false;
     },
     [],
   );
@@ -190,6 +277,7 @@ export function ArtifactState({
     const subscription = surface.onAction.subscribe(async (action) => {
       if (!actionHandler.current) return;
       const current = generation.current;
+      actionPending.current = true;
       try {
         await actionHandler.current(
           clientEventSchema.parse(
@@ -200,6 +288,12 @@ export function ArtifactState({
       } catch (cause) {
         if (current === generation.current)
           setError(cause instanceof Error ? cause.message : labels.submitFailed);
+      } finally {
+        if (current === generation.current) {
+          actionPending.current = false;
+          inFlight.current = false;
+          setSending(false);
+        }
       }
     });
     return () => subscription.unsubscribe();
@@ -207,7 +301,7 @@ export function ArtifactState({
 
   const locked = !!(disabled || sending || submitted);
   async function submit(dispatch: Dispatch, action: SubmitAction) {
-    if (locked || inFlight.current || !onAction) return;
+    if (locked || sending || inFlight.current || !onAction) return;
     const fields = Array.from(surface.componentsModel.entries).flatMap(
       ([id, model]) => {
         const component = componentSchema.parse(
@@ -244,7 +338,7 @@ export function ArtifactState({
       if (current === generation.current)
         setError(cause instanceof Error ? cause.message : labels.submitFailed);
     } finally {
-      if (current === generation.current) {
+      if (current === generation.current && !actionPending.current) {
         inFlight.current = false;
         setSending(false);
       }
@@ -604,7 +698,7 @@ export function ArtifactComponent({
           {error && <Text className="artifact-error">{error}</Text>}
           <Button
             className="control artifact-submit"
-            disabled={locked || !canSubmit || undefined}
+            disabled={locked || sending || !canSubmit || undefined}
             onClick={() => void submit(dispatch, component.action)}
           >
             {submitted

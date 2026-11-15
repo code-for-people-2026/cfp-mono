@@ -178,15 +178,6 @@ it.each(["missing-sensitive", "updated-policy"])("图片授权不足时带上传
   expect(platform.request.mock.calls.some(([options]) => options.url.endsWith("/media") && options.method === "POST")).toBe(false);
 });
 
-async function openArtifact() {
-  await act(async () => {
-    renderer!.root
-      .findAllByType("button")
-      .find((node) => node.props.className?.includes("artifact-preview"))!
-      .props.onClick();
-  });
-}
-
 it("后台重置登录后直接显示新用户登录窗口，保留对话并使用新凭证加载页面", async () => {
   const originalRequest = platform.request.getMockImplementation()!;
   const preservedHistory = structuredClone(history);
@@ -273,7 +264,6 @@ it.each([false, true])(
         : response;
     });
     await mount();
-    await openArtifact();
     const submit = renderer!.root
       .findAllByType("button")
       .find((node) => node.props.className?.includes("artifact-submit"))!;
@@ -287,7 +277,7 @@ it.each([false, true])(
   },
 );
 
-it("表单提交失败并刷新历史后保留答案，重试成功才锁定表单", async () => {
+it("内联表单失败后保留可编辑答案，确认重试后原表单恢复为答案摘要", async () => {
   const { artifacts } =
     await import("../../../packages/base-chat-protocol/test/fixtures");
   history = [
@@ -338,7 +328,6 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     return original(options);
   });
   await mount();
-  await openArtifact();
   const fields = () =>
     renderer!.root.findAll(
       (node) =>
@@ -365,12 +354,12 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
       .some((node) => node.children.includes("模型暂时失败")),
   ).toBe(true);
   expect(fields().map((field) => field.props.value)).toEqual(answers);
+  expect(fields().every((field) => !field.props.disabled)).toBe(true);
   expect(button().props.disabled).toBeFalsy();
   await act(async () => {
     button().props.onClick();
   });
   expect(submitted).toHaveLength(2);
-  await openArtifact();
   expect(submitted[1]).toEqual(submitted[0]);
   expect(submitted[1]?.values).toMatchObject({ intensity: 0 });
   expect(submitted[1]?.form).toMatchObject({
@@ -378,8 +367,24 @@ it("表单提交失败并刷新历史后保留答案，重试成功才锁定表�
     revision: 1,
     formId: "thought_record",
   });
-  expect(fields().map((field) => field.props.value)).toEqual(answers);
-  expect(button().props.disabled).toBe(true);
+  const summary = renderer!.root.findByProps({
+    className: "artifact-form-summary",
+  });
+  const rows = summary.findAllByProps({ className: "artifact-summary-row" });
+  const rowText = (row: (typeof rows)[number], className: string) =>
+    row.findAllByType("text").find((node) => node.props.className === className)!
+      .children.join("");
+  expect(rows.map((row) =>
+    rowText(row, "artifact-summary-question"),
+  )).toEqual(["发生了什么？", "当时的想法", "当时的情绪", "情绪强度"]);
+  expect(rows.map((row) =>
+    rowText(row, "artifact-summary-answer"),
+  )).toEqual(answers);
+  const confirmedSurface = summary.parent!;
+  expect(confirmedSurface.findAllByType("input")).toHaveLength(0);
+  expect(confirmedSurface.findAllByType("textarea")).toHaveLength(0);
+  expect(confirmedSurface.findAllByProps({ className: "control artifact-submit" }))
+    .toHaveLength(0);
 });
 
 it("表单按钮渲染后若年龄授权过期，旧回调明确失败且不会误报已提交", async () => {
@@ -393,7 +398,6 @@ it("表单按钮渲染后若年龄授权过期，旧回调明确失败且不会�
     },
   ];
   await mount();
-  await openArtifact();
   const fields = renderer!.root.findAll(
     (node) =>
       ["input", "textarea"].includes(String(node.type)) &&

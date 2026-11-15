@@ -9,6 +9,7 @@ import {
 import {
   ArtifactState,
   ArtifactImage,
+  ConfirmedFormSummary,
   type ArtifactProps,
 } from "./artifact-components";
 import { ArtifactPreview, CompactCard } from "./artifact-preview";
@@ -64,25 +65,37 @@ export function ArtifactSurfaces({
     <Host
       catalogId={adapter.catalogId}
       messages={validated}
-      renderSurface={(surface, content) => (
-        <ArtifactState
-          key={surface.id}
-          surface={surface}
-          {...props}
-          submitted={!!responses[surface.id]}
-          initialValues={responses[surface.id]}
-        >
-          {compact && !isInlineFormSurface(surface) ? (
-            <ArtifactPreview surface={surface}>
+      renderSurface={(surface, content) => {
+        const confirmedValues = responses[surface.id];
+        const inlineForm = isInlineFormSurface(surface);
+        return (
+          <ArtifactState
+            key={surface.id}
+            surface={surface}
+            {...props}
+            submitted={confirmedValues !== undefined}
+            initialValues={confirmedValues}
+          >
+            {inlineForm && confirmedValues !== undefined ? (
               <ArtifactDetails external={props.external}>
-                {content}
+                <ConfirmedFormSummary
+                  surface={surface}
+                  values={confirmedValues}
+                  external={props.external}
+                />
               </ArtifactDetails>
-            </ArtifactPreview>
-          ) : (
-            <ArtifactDetails external={props.external}>{content}</ArtifactDetails>
-          )}
-        </ArtifactState>
-      )}
+            ) : compact && !inlineForm ? (
+              <ArtifactPreview surface={surface}>
+                <ArtifactDetails external={props.external}>
+                  {content}
+                </ArtifactDetails>
+              </ArtifactPreview>
+            ) : (
+              <ArtifactDetails external={props.external}>{content}</ArtifactDetails>
+            )}
+          </ArtifactState>
+        );
+      }}
     />
   );
 }
