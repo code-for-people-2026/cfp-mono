@@ -13,14 +13,14 @@ export const identityDirectory = () => process.env.BUBU_IDENTITY_DIRECTORY || pa
 export const operationsOrigin = () => new URL(process.env.BUBU_OPS_ORIGIN || `http://127.0.0.1:${process.env.PORT || 3320}`).origin;
 
 /** The same sanitized configuration is passed to the Store and every Payload Admin route. */
-export function buildRuntimeConfig(options: { directory: string; secret?: string; origin: string; schemaOnly?: boolean }) {
+export function buildRuntimeConfig(options: { directory: string; secret?: string; origin: string; schemaOnly?: boolean; schemaPush?: boolean }) {
   const secureCookie = process.env.NODE_ENV === "production" || new URL(options.origin).protocol === "https:";
   const operatorCollections = operationsCollections.map(collection => collection.slug === "ops-users" && typeof collection.auth === "object"
     ? { ...collection, auth: { ...collection.auth, cookies: { ...collection.auth.cookies, secure: secureCookie } } }
     : collection);
   const origin = new URL(options.origin).origin;
   return buildStoreConfig({
-    directory: options.directory, secret: options.secret, schemaOnly: options.schemaOnly,
+    directory: options.directory, secret: options.secret, schemaOnly: options.schemaOnly, schemaPush: options.schemaPush,
     extensions: [...recordCollections, ...chatCollections, ...membershipCollections, ...privacyCollections, ...operatorCollections],
     configure: config => ({
       ...config,
