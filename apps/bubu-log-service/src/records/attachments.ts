@@ -97,7 +97,7 @@ export class AttachmentService {
   }
   private attachmentStorage(value: Pick<StoredAttachment, "babyId" | "sha256" | "storage">): { kind: "oss"; key: string } | undefined {
     if (value.storage === undefined) return undefined;
-    const key = attachmentObjectKey(value.babyId, value.sha256);
+    const key = `${hash(value.babyId)}/${value.sha256}`;
     if (value.storage?.kind !== "oss" || value.storage.key !== key) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用。");
     return value.storage;
   }
@@ -158,7 +158,7 @@ export class AttachmentService {
   }
 
   private async putRemoteCiphertext(value: StoredAttachment, encrypted: Buffer): Promise<{ kind: "oss"; key: string }> {
-    const storage = { kind: "oss" as const, key: attachmentObjectKey(value.babyId, value.sha256) };
+    const storage = { kind: "oss" as const, key: `${hash(value.babyId)}/${value.sha256}` };
     try {
       if (encrypted.length !== value.byteLength + encryptedMediaOverhead) throw new Error("Invalid private object size");
       await this.objectStore!.put(storage.key, encrypted);
@@ -171,7 +171,7 @@ export class AttachmentService {
   private async putVerifiedRemoteObject<TResult>(value: StoredAttachment, bytes: Uint8Array, beforePut: () => Promise<StoredAttachment>, afterPut: (context: StoredAttachment) => Promise<TResult>): Promise<TResult> {
     if (!this.objectStore || !this.mediaOperations) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用。");
     if (bytes.length !== value.byteLength) return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请稍后重试。");
-    const key = attachmentObjectKey(value.babyId, value.sha256), storage = { kind: "oss" as const, key };
+    const key = `${hash(value.babyId)}/${value.sha256}`, storage = { kind: "oss" as const, key };
     let encrypted: Buffer;
     try { encrypted = encryptMedia(bytes, this.encryptionKey, `${hash(value.babyId)}:${value.sha256}`); }
     catch { return fail(503, "ATTACHMENT_UNAVAILABLE", "照片暂时不可用，请稍后重试。"); }

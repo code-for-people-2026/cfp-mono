@@ -1,0 +1,35 @@
+{
+  "sameRuntime": "http://127.0.0.1:4368",
+  "synthetic": true,
+  "checks": [
+    "native operator login",
+    "empty free defaults",
+    "native form pauses",
+    "stale draft disabled",
+    "H5 menu refresh",
+    "history during pause",
+    "423 keeps draft",
+    "same request resumes",
+    "pending question 320/390 no overflow",
+    "whole question clickable",
+    "auditor read only"
+  ],
+  "sizes": [
+    {
+      "width": 266,
+      "scroll": 266,
+      "client": 266,
+      "actionHeight": 20.390625,
+      "lineHeight": "20.4px"
+    },
+    {
+      "width": 266,
+      "scroll": 266,
+      "client": 266,
+      "actionHeight": 20.390625,
+      "lineHeight": "20.4px"
+    }
+  ],
+  "requestIdsEqual": true,
+  "consoleErrors": []
+}

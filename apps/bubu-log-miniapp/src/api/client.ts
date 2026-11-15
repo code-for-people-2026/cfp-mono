@@ -1,6 +1,7 @@
 import { decodeSafetyNotices, decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
 import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
 import type { ChatRequest } from "../chat/drafts";
+import { decodeMembership } from "../membership/contracts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import {
@@ -373,6 +374,10 @@ export function createBubuApi(options: ClientOptions) {
     },
     async getBabies(babyId?: string) {
       return decode.babyList(await request(`/api/app/user-babies${queryString({ babyId })}`, { babyId }));
+    },
+    async getMembership(babyId: string) {
+      requireSidecar();
+      return decodeMembership(await request(scoped("membership", babyId), { babyId }), babyId);
     },
     async getBabyProfile(babyId: string) {
       const profile = decode.baby(await request(scoped("baby-profile", babyId), { babyId }));

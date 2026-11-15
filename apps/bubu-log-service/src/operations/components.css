@@ -47,5 +47,8 @@
 .bubu-ops__correction { display: grid; grid-template-columns: 1fr 1fr 1.2fr auto; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--theme-elevation-150); align-items: start; }
 .bubu-ops__correction button { margin-top: 26px; }
 .bubu-ops__image { display: block; max-width: 100%; max-height: 640px; object-fit: contain; margin: 10px auto; }
+.bubu-ops__membership-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
+.bubu-ops__membership-summary dt { color: var(--theme-elevation-650); font-size: .85rem; margin-bottom: 5px; }
+.bubu-ops__membership-summary dd { margin: 0; overflow-wrap: anywhere; }
 @media (max-width: 900px) { .bubu-ops__columns { grid-template-columns: 1fr; gap: 0; } .bubu-ops__correction { grid-template-columns: 1fr 1fr; } .bubu-ops__correction button { margin-top: 0; } }
 @media (max-width: 540px) { .bubu-ops__toolbar .bubu-ops__field { min-width: 100%; } .bubu-ops__panel { padding: 12px; } .bubu-ops__grid, .bubu-ops__correction { grid-template-columns: 1fr; } .bubu-ops__nav button { flex: 1 0 auto; } }

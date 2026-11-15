@@ -1,0 +1,13 @@
+{
+  "appid": "wx45c6373b565632ab",
+  "profiles": {
+    "development": {
+      "apiOrigin": "http://127.0.0.1:3320",
+      "outputRoot": "dist/weapp-development"
+    },
+    "experience": {
+      "apiOrigin": "https://bubu-preview.codeforpeople.cn",
+      "outputRoot": "dist/weapp-experience"
+    }
+  }
+}

@@ -25,6 +25,7 @@ import { buildRuntimeConfig } from "./runtime-config";
 import { acquireRuntimeLock } from "./runtime-lock";
 import { registerRuntimeState, runtimeState, clearRuntimeState } from "./runtime-state";
 import { createOperationsHandler } from "./operations/http";
+import { MembershipService } from "./membership/service";
 import { OperationsHealth } from "./operations/health";
 import { ImageReviewService, type ImageReviewer } from "./images/review";
 import { configuredImageReviewer } from "./images/aliyun-review";
@@ -37,6 +38,7 @@ export interface BubuRuntime {
   attachments: AttachmentService;
   collector: CollectorService;
   chat: ChatService;
+  membership: MembershipService;
   privacy: PrivacyService;
   deletion: DeletionService;
   safety: SafetyService;
@@ -91,6 +93,8 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     identity.setLegacyAccountGuard(userId => privacy.requireLegacyAccount(userId));
     identity.setAccountChangeGuard(identityId => privacy.requireIdentityChange(identityId));
     identity.setContextGuard(identityId => privacy.contextAllowed(identityId));
+    const membership = new MembershipService(identity);
+    identity.setServiceGuard((babyId, capability, req) => membership.requireAvailable(babyId, capability, req));
     const imageReview = new ImageReviewService(privacy, options.imageReviewer || configuredImageReviewer());
     // Production explicitly refuses the local default; development and test remain local unless OSS is configured.
     const objectStore = options.objectStore === false ? undefined : options.objectStore ?? configuredAttachmentObjectStore();
@@ -100,11 +104,11 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const safety = new SafetyService(privacy);
     const maintenance = new PrivacyMaintenance(privacy, attachments, deletion);
     const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
-    const collector = new CollectorService(identity, (babyId, requestId, req, principal) => records.verifyCollectorReceipt(babyId, requestId, req, principal), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
+    const collector = new CollectorService(identity, (babyId, requestId, req, principal, actor) => records.verifyCollectorReceipt(babyId, requestId, req, principal, actor), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
     chat = new ChatService(identity, attachments, { mcpUrl: options.mcpUrl, provider: options.provider || chatProviderFromEnv(), safetySignal: (babyId, id, text, at, req) => safety.observe(babyId, id, text, at, "chat", req), authorizeModel: (principal, babyId, images) => privacy.requireModel(principal, babyId, images) });
     const appHandler = createHandler(identity, options.publicOrigin, {
       allowedOrigins: (process.env.BUBU_LEGACY_MEDIA_ORIGINS || "").split(",").map(value => value.trim()).filter(Boolean),
-    }, { records, attachments, collector, chat, privacy, deletion, safety });
+    }, { records, attachments, collector, chat, membership, privacy, deletion, safety });
     let closed = false;
     let maintenanceTask: Promise<unknown> | undefined;
     const maintain = () => {
@@ -120,7 +124,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const timer = options.maintenanceWorker === false || process.env.NODE_ENV === "test" ? undefined : setInterval(maintain, 60_000);
     timer?.unref();
     const runtime: BubuRuntime = {
-      store, identity, records, attachments, collector, chat, privacy, deletion, safety, maintenance,
+      store, identity, records, attachments, collector, chat, membership, privacy, deletion, safety, maintenance,
       health: new OperationsHealth(privacy, options.directory, process.env.BUBU_OPERATIONS_REPORT, imageReview),
       mcpUrl: options.mcpUrl, opsOrigin,
       handler: appHandler,
@@ -132,7 +136,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
         finally { clearRuntimeState(); releaseLock(); }
       },
     };
-    const opsHandler = createOperationsHandler(runtime, { privacy: new PrivacyOperations(privacy, deletion) });
+    const opsHandler = createOperationsHandler(runtime, { membership, privacy: new PrivacyOperations(privacy, deletion) });
     runtime.handler = request => new URL(request.url).pathname.startsWith("/api/ops/") ? opsHandler(request) : appHandler(request);
     runtimeState()!.runtime = runtime;
     if (timer) maintain();

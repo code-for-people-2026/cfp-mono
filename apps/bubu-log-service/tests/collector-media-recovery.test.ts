@@ -1,18 +1,22 @@
 import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CollectorMcpClient } from "../src/collector/runner";
+import { CollectorMcpClient, scheduleCollector, type CollectorRunner } from "../src/collector/runner";
+import { AppError } from "../src/contracts";
 import { hash } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
 
 afterEach(() => vi.restoreAllMocks());
 
-async function transport(responses: Array<{ status: number; body: unknown }>) {
+type TransportReply = { status: number; body: unknown } | { reject: Error };
+
+async function transport(responses: TransportReply[]) {
   const requests: Request[] = [];
   vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
     const request = input instanceof Request ? input : new Request(input, init);
     requests.push(request);
     const reply = responses[requests.length - 1];
     if (!reply) return new Response(JSON.stringify({ code: "TEST_SEQUENCE_EXHAUSTED" }), { status: 500 });
+    if ("reject" in reply) return Promise.reject(reply.reject);
     return new Response(JSON.stringify(reply.body), { status: reply.status, headers: { "Content-Type": "application/json" } });
   });
   return { client: new CollectorMcpClient(new URL("https://collector.example/api/mcp"), async () => "synthetic-token"), requests };
@@ -88,6 +92,36 @@ describe("collector upload receipt recovery", () => {
     expect(error).toMatchObject({ message: "COLLECTOR_UPLOAD_RECOVERY_UNSUPPORTED", status: 409, serverCode: "ATTACHMENT_IDEMPOTENCY_CONFLICT" });
     expect(error.message).not.toContain("conflicting bytes");
     expect(fixture.requests).toHaveLength(2);
+  });
+
+  it("maps a lost upload response to a retryable AppError without transport details", async () => {
+    const fixture = await transport([
+      { status: 200, body: { data: { state: "absent" } } },
+      { reject: new Error("synthetic socket secret") },
+    ]);
+    const error = await fixture.client.uploadImage("baby-a", original, "image/jpeg", "network-request", source).catch(error => error) as AppError;
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ status: 503, code: "COLLECTOR_UPLOAD_FAILED", message: "COLLECTOR_UPLOAD_FAILED", retryable: true });
+    expect(error.message).not.toContain("synthetic socket secret");
+  });
+
+  it("retains a consent HTTP failure as nonretryable and routes its collector code through the scheduler", async () => {
+    const fixture = await transport([
+      { status: 200, body: { data: { state: "absent" } } },
+      { status: 403, body: { code: "ATTACHMENT_SOURCE_FORBIDDEN", error: "consent was withdrawn", retryable: true } },
+    ]);
+    const error = await fixture.client.uploadImage("baby-a", original, "image/jpeg", "consent-request", source).catch(error => error) as AppError & { serverCode?: string };
+    expect(error).toBeInstanceOf(AppError);
+    expect(error).toMatchObject({ status: 403, code: "ATTACHMENT_SOURCE_FORBIDDEN", message: "COLLECTOR_UPLOAD_FAILED", retryable: false, serverCode: "ATTACHMENT_SOURCE_FORBIDDEN" });
+    expect(error.message).not.toContain("consent was withdrawn");
+
+    const results: unknown[] = [];
+    const controller = new AbortController();
+    await scheduleCollector({ once: async () => { throw error; } } as unknown as CollectorRunner, {
+      babyId: "baby-a", jobId: "consent-job", pollMs: 1_000, signal: controller.signal,
+      onResult: result => { results.push(result); controller.abort(); },
+    });
+    expect(results).toEqual([{ failed: true, code: "ATTACHMENT_SOURCE_FORBIDDEN", retryable: false }]);
   });
 
   it("selects and posts the exact original bytes advertised by a repair receipt", async () => {

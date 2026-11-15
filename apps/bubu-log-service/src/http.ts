@@ -12,6 +12,8 @@ import { handleRecordsMcp } from "./records/mcp";
 import { readRecordView, readSyncStatus } from "./records/read-model";
 import type { ChatService } from "./chat/service";
 import { chatInputSchema } from "./chat/contracts";
+import type { MembershipService } from "./membership/service";
+import { rejectPayment } from "./membership/payment";
 
 const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
@@ -32,7 +34,7 @@ const sameActorScope = (left: ActorScope, right: ActorScope) =>
   left.actor.kind === right.actor.kind && left.actor.id === right.actor.id && left.actor.sessionId === right.actor.sessionId &&
   left.actor.onBehalfOf === right.actor.onBehalfOf && left.actor.purpose === right.actor.purpose;
 const remoteLegacyAllowed = (scope: ActorScope) => scope.actor.kind !== "collector" && (scope.actor.kind !== "chat-agent" || scope.actor.purpose === "history");
-export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;privacy?:PrivacyService;deletion?:DeletionService;safety?:SafetyService}) {
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;membership?:MembershipService;privacy?:PrivacyService;deletion?:DeletionService;safety?:SafetyService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
   const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
@@ -124,6 +126,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         }
         if (req.method === "POST" && path === "/api/app/privacy/requests") return json(await privacy.request(principal, await body()), 201);
       }
+      if (path === "/api/payments" || path.startsWith("/api/payments/")) rejectPayment();
       if(features) {const attachmentResponse=await createAttachmentHandler(features.attachments)(req,principal);if(attachmentResponse)return attachmentResponse;}
       if (features?.chat && path === "/api/app/chat" && req.method === "POST") {
         const input = chatInputSchema.parse(await body(32768));
@@ -178,6 +181,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         if (!baby || baby.id !== babyId) throw new AppError(404, "NOT_FOUND", "宝宝不存在。");
         return json(baby);
       }
+      if (features?.membership && req.method === "GET" && path === "/api/app/membership") return json(await features.membership.status(principal, babyId));
       if (features?.chat && req.method === "GET" && path === "/api/app/chat") return json(await features.chat.history(principal, babyId));
       if (features?.chat && req.method === "GET" && path === "/api/app/chat/request") return json({ turn: await features.chat.request(principal, babyId, id.parse(url.searchParams.get("requestId"))) });
       if(features&&req.method==="GET"&&path==="/api/app/records/snapshot") {

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "codex/bubu-core-*"]
 
 permissions:
   actions: read
@@ -274,12 +274,18 @@ jobs:
           VERIFY_RESULT: ${{ needs.verify.result }}
           PREVIEW_BUILD_RESULT: ${{ needs.preview-build.result }}
           WEBSITE_AFFECTED: ${{ needs.verify.outputs.website_affected }}
+          NO_DEPLOY: ${{ contains(github.event.pull_request.labels.*.name, 'ci:no-deploy') }}
           HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
           BASE_REPOSITORY: ${{ github.repository }}
         run: |
           if [[ "$VERIFY_RESULT" != success || "$PREVIEW_BUILD_RESULT" != success ]]; then
             echo 'Website Preview requires verify and preview-build to succeed.' >&2
             exit 1
+          fi
+          if [[ "$NO_DEPLOY" == true ]]; then
+            echo 'Preview deployment explicitly disabled by ci:no-deploy; verification remains required.'
+            echo 'should_deploy=false' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           if [[ "$WEBSITE_AFFECTED" != true ]]; then
             echo 'No website change requires a Vercel Preview.'

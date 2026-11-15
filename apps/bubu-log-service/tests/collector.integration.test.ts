@@ -242,7 +242,6 @@ describe("executable external Agent and real MCP runner", () => {
     const repairedEvent = (await f.records.query(await f.principal(), { babyId: "baby-a" })).events.find(item => item.facts.type === "BOTTLE")!;
     expect(repairedEvent.attachmentIds).toEqual([committed.id]);
   }, 45_000);
-
   it("passes adjacent-media context to the Agent and preserves unavailable-photo linkage for replay", async () => {
     const f = await setup("2026-10-23T10:00:00Z"); await f.configure(true); const client = await startMcp(f);
     // Existing group-visible facts are part of the extraction context, but this
@@ -381,6 +380,8 @@ describe("executable external Agent and real MCP runner", () => {
     await f.call({ action: "media", ...leased, resolutions: [{ sourceId: message.sourceId, index: 0, state: "unavailable", reason: "MEDIA_EXACT_FILE_MISSING" }] });
     const replay = plan(message); replay.plans[0]!.key = "brand-new-event-key";
     await expect(f.call({ action: "plan", ...leased, plan: replay })).rejects.toMatchObject({ code: "COLLECTOR_MEDIA_ONLY_SOURCE" });
+    const rewrite: AgentPlan = { plans: [{ key: "rewrite", sourceIds: [message.sourceId], tool: "bubu_update_event", arguments: { eventId: event.id, expectedVersion: event.version + 1, patch: { facts: { notes: "must not rewrite a media-only source" } } } }], ignored: [] };
+    await expect(f.call({ action: "plan", ...leased, plan: rewrite })).rejects.toMatchObject({ code: "COLLECTOR_MEDIA_ONLY_SOURCE" });
     const revive = { plans: [{ key: "revive", sourceIds: [message.sourceId], tool: "bubu_restore_event", arguments: { eventId: event.id, expectedVersion: event.version + 1 } }], ignored: [] };
     const rejected = await f.call({ action: "plan", ...leased, plan: revive }).then(() => {
       throw new Error("Expected collector plans to forbid restoring retired events");
