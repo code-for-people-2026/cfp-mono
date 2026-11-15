@@ -1,0 +1,42 @@
+name: cfp-bubu-log
+services:
+  data-init:
+    image: ${BUBU_PREVIEW_IMAGE:?Set the verified Bubu image}
+    user: "0:0"
+    command: ["sh", "-ec", "chmod 0700 /data && chown node:node /data"]
+    restart: "no"
+    network_mode: none
+    read_only: true
+    volumes:
+      - /opt/cfp-bubu-log/data:/data
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "FOWNER"]
+  app:
+    image: ${BUBU_PREVIEW_IMAGE:?Set the verified Bubu image}
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    init: true
+    env_file:
+      - /opt/cfp-bubu-log/private/runtime.env
+    ports:
+      - "127.0.0.1:3320:3320"
+    volumes:
+      - /opt/cfp-bubu-log/data:/data
+    mem_limit: 768m
+    cpus: 0.75
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3320/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      start_period: 90s
+      retries: 3

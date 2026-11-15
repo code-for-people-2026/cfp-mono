@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
+import { AppError } from "../contracts";
 import { agentPlanSchema, collectorRequestId, collectorWriteTools, sourceMessageSchema, type AgentPlan, type CollectorBatch, type CollectorJob } from "./service";
 import type { SourcePage, SourceRead, SourceReader } from "./types";
 import type { SourceRef } from "../records/types";
@@ -17,15 +18,33 @@ import { collectorAgentInstructions } from "./prompt";
 export interface McpGateway { call(name: string, args: Record<string, unknown>): Promise<unknown>; tools(): Promise<unknown[]> }
 interface ImageUploadMedia { bytes: Uint8Array; mime: AttachmentMime }
 interface ImageUploader { uploadImage(babyId: string, bytes: Uint8Array, mime: AttachmentMime, requestId: string, source: SourceRef, original?: ImageUploadMedia): Promise<{ id: string }> }
+const collectorUploadClientCodes = new Set([
+  "COLLECTOR_RECEIPT_UNAVAILABLE",
+  "COLLECTOR_UPLOAD_FAILED",
+  "COLLECTOR_UPLOAD_RECOVERY_UNSUPPORTED",
+  "COLLECTOR_UPLOAD_REPAIR_REQUIRED",
+  "COLLECTOR_UPLOAD_IDEMPOTENCY_CONFLICT",
+]);
 /** Transport failures carry only allow-listed client codes plus sanitized HTTP status/server code. */
-class CollectorUploadError extends Error {
-  constructor(readonly status: number, readonly serverCode: string | undefined, code: string) { super(code); }
+class CollectorUploadError extends AppError {
+  readonly serverCode: string | undefined;
+  constructor(httpStatus: number, serverCode: string | undefined, clientCode: string) {
+    const status = httpStatus === 0 || !Number.isInteger(httpStatus) || httpStatus < 400 || httpStatus > 599 ? 503 : httpStatus;
+    const message = collectorUploadClientCodes.has(clientCode) ? clientCode : "COLLECTOR_UPLOAD_FAILED";
+    const code = /^[A-Z0-9_]{1,100}$/.test(serverCode ?? "") ? serverCode : message;
+    super(status, code!, message, status >= 500);
+    this.serverCode = typeof code === "string" && code !== message ? code : undefined;
+  }
 }
-/** Sanitized MCP failure boundary: expose only an allow-listed code, never server text or raw content. */
-export class McpToolError extends Error {
+/** Sanitized MCP failure boundary: preserve AppError routing without exposing server text. */
+export class McpToolError extends AppError {
   readonly mcpCode: string;
-  constructor(readonly tool: string, code: string) {
-    super(code === "VERSION_CONFLICT" ? "VERSION_CONFLICT" : "MCP_TOOL_FAILED");
+  constructor(readonly tool: string, failure?: string | { code?: unknown; status?: unknown; retryable?: unknown }) {
+    const value = typeof failure === "string" ? { code: failure } : failure;
+    const code = typeof value?.code === "string" && /^[A-Z0-9_]{1,100}$/.test(value.code) ? value.code : "MCP_TOOL_FAILED";
+    const retryable = value?.retryable === true;
+    const parsedStatus = typeof value?.status === "number" && Number.isInteger(value.status) && value.status >= 400 && value.status <= 599 ? value.status : undefined;
+    super(parsedStatus ?? (retryable ? 503 : 409), code, code === "VERSION_CONFLICT" ? "VERSION_CONFLICT" : "MCP_TOOL_FAILED", retryable);
     this.mcpCode = code;
   }
 }
@@ -46,19 +65,15 @@ export class CollectorMcpClient implements McpGateway {
   }
   async call(name: string, args: Record<string, unknown>): Promise<unknown> {
     const result = z.object({ isError: z.boolean().optional(), structuredContent: z.unknown().optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional() }).passthrough()).optional() }).passthrough().parse(await this.client.callTool({ name, arguments: args }));
+    const text = result.content?.find(item => item.type === "text")?.text;
+    let value: unknown = result.structuredContent;
+    if (value === undefined && text) { try { value = JSON.parse(text); } catch { value = undefined; } }
     if (result.isError) {
-      let failure: unknown = result.structuredContent;
-      if (failure === undefined) {
-        const text = result.content?.find(item => item.type === "text");
-        if (typeof text?.text === "string") { try { failure = JSON.parse(text.text); } catch { failure = undefined; } }
-      }
-      const code = z.object({ code: z.string().regex(/^[A-Z0-9_]{1,100}$/) }).passthrough().safeParse(failure);
-      throw new McpToolError(name, code.success ? code.data.code : "MCP_TOOL_FAILED");
+      const failure = z.object({ code: z.unknown().optional(), retryable: z.unknown().optional(), status: z.unknown().optional() }).passthrough().safeParse(value);
+      throw new McpToolError(name, failure.success ? failure.data : {});
     }
-    if (result.structuredContent) return result.structuredContent;
-    const text = result.content?.find(item => item.type === "text");
-    if (!text || typeof text.text !== "string") throw new Error("MCP_RESULT_INVALID");
-    return JSON.parse(text.text);
+    if (value === undefined) throw new Error("MCP_RESULT_INVALID");
+    return value;
   }
   async tools() { return (await this.client.listTools()).tools; }
   private async json(response: Response): Promise<unknown> {
@@ -132,7 +147,7 @@ export class CollectorMcpClient implements McpGateway {
     const firstCandidate = receipt.receipt.state === "absent"
       ? current
       : this.repairCandidate(receipt.receipt, current, source, original);
-    if (!firstCandidate) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
+    if (!firstCandidate) throw new CollectorUploadError(409, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
     const response = await this.postImage(babyId, firstCandidate, requestId, source);
     if (response.ok) return this.uploadResponse(response);
     const code = this.serverCode(await this.json(response));
@@ -147,7 +162,7 @@ export class CollectorMcpClient implements McpGateway {
     if (recovered.receipt.state === "verified") return { id: recovered.receipt.attachment.id };
     if (recovered.receipt.state === "absent") throw new CollectorUploadError(response.status, code, "COLLECTOR_UPLOAD_IDEMPOTENCY_CONFLICT");
     const repaired = this.repairCandidate(recovered.receipt, current, source, original);
-    if (!repaired) throw new CollectorUploadError(0, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
+    if (!repaired) throw new CollectorUploadError(409, undefined, "COLLECTOR_UPLOAD_REPAIR_REQUIRED");
     const repairResponse = await this.postImage(babyId, repaired, requestId, source);
     if (repairResponse.ok) return this.uploadResponse(repairResponse);
     const repairCode = this.serverCode(await this.json(repairResponse));
@@ -173,7 +188,7 @@ const uploadReceiptEnvelopeSchema = z.object({ data: uploadReceiptSchema }).pass
 interface Command { executable: string; args?: string[]; cwd?: string; timeoutMs?: number; env?: Record<string, string> }
 /** No shell, inherited secrets, raw stderr, or credentials in the Agent task. */
 async function invokeJson(command: Command, input: unknown): Promise<unknown> {
-  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: process.env.NODE_ENV ?? "production", LANG: "en_US.UTF-8", ...command.env };
+  const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV || "production", PATH: process.env.PATH, HOME: process.env.HOME, LANG: "en_US.UTF-8", ...command.env };
   return new Promise((resolve, reject) => {
     const child = spawn(command.executable, command.args || [], { cwd: command.cwd, env, shell: false, stdio: ["pipe", "pipe", "pipe"] });
     let output = ""; let overflow = false;
@@ -295,6 +310,7 @@ export class CollectorRunner {
         if (!batch.media && batch.messages!.some(message => message.media.length)) {
           const resolutions: MediaResolution[] = [];
           for (const message of batch.messages!) for (let index = 0; index < message.media.length; index++) {
+            runningBatch(await this.mcp.call("bubu_collector", { action: "heartbeat", ...leased }));
             const resolved = this.images ? await this.images.resolver.resolve(message, index) : { available: false as const, reason: "MEDIA_RESOLVER_NOT_CONFIGURED" };
             if (!resolved.available) resolutions.push({ sourceId: message.sourceId, index, state: "unavailable", reason: resolved.reason });
             else {
@@ -302,8 +318,8 @@ export class CollectorRunner {
               const source = sourcesFor(batch, [message.sourceId], `media:${index}`)[0]!;
               // Stable across batch replay/backfill and renewed credentials.
               delete source.collectedAt;
-                  const attachment = await this.images!.uploader.uploadImage(babyId, resolved.bytes, resolved.mime, `collector-media-${hash([message.sourceId, index])}`, source,
-                    resolved.original ? { bytes: resolved.original.bytes, mime: resolved.original.mime } : undefined);
+              const attachment = await this.images!.uploader.uploadImage(babyId, resolved.bytes, resolved.mime, `collector-media-${hash([message.sourceId, index])}`, source,
+                resolved.original ? { bytes: resolved.original.bytes, mime: resolved.original.mime } : undefined);
               resolutions.push({ sourceId: message.sourceId, index, state: "uploaded", attachmentId: attachment.id });
             }
           }
@@ -313,6 +329,7 @@ export class CollectorRunner {
         const eventList = z.object({ events: z.array(z.object({ id: z.string(), lifecycle: z.string() }).passthrough()) }).parse(task.existingEvents).events;
         const messages = batch.messages!.filter(message => !batch.mediaOnly?.[message.sourceId] ||
           (batch.media?.some(media => media.sourceId === message.sourceId && media.state === "uploaded") && eventList.some(event => event.lifecycle === "active" && batch.mediaOnly![message.sourceId]!.includes(event.id))));
+        runningBatch(await this.mcp.call("bubu_collector", { action: "heartbeat", ...leased }));
         const plan = messages.length ? await this.agent.execute({
           ...task,
           messages,
@@ -335,7 +352,7 @@ export class CollectorRunner {
         batch = runningBatch(await this.mcp.call("bubu_collector", { action: "replan", ...leased, replacements: mapped }));
       }
       for (const plan of batch.plan!.plans) {
-        if (heartbeatError) throw new Error("COLLECTOR_HEARTBEAT_FAILED");
+        if (heartbeatError) throw heartbeatError;
         if (batch.receipts[plan.key]) continue;
         activePlanKey = plan.key;
         runningBatch(await this.mcp.call("bubu_collector", { action: "heartbeat", ...leased }));
@@ -346,14 +363,14 @@ export class CollectorRunner {
         await this.mcp.call("bubu_collector", { action: "receipt", ...leased, planKey: plan.key, requestId: call.arguments.requestId });
         activePlanKey = undefined;
       }
-      if (heartbeatError) throw new Error("COLLECTOR_HEARTBEAT_FAILED");
+      if (heartbeatError) throw heartbeatError;
       const result = await this.mcp.call("bubu_collector", { action: "finish", ...leased }) as BatchResponse;
       if (result.skipped) return { skipped: result.reason, batchId: batch.id };
       return { completed: true, batchId: batch.id };
     } catch (error) {
-      const code = error instanceof Error && /^[A-Z0-9_]{1,80}$/.test(error.message) ? error.message : "COLLECTOR_RUN_FAILED";
+      const code = error instanceof AppError ? error.code : error instanceof Error ? error.message : "";
       const conflictPlanKey = error instanceof McpToolError && error.mcpCode === "VERSION_CONFLICT" ? activePlanKey : undefined;
-      await this.mcp.call("bubu_collector", { action: "fail", ...leased, code, ...(conflictPlanKey ? { conflictPlanKey } : {}) }).catch(() => undefined);
+      await this.mcp.call("bubu_collector", { action: "fail", ...leased, code: /^[A-Z0-9_]{1,80}$/.test(code) ? code : "COLLECTOR_RUN_FAILED", ...(conflictPlanKey ? { conflictPlanKey } : {}) }).catch(() => undefined);
       throw error;
     } finally { clearInterval(heartbeat); }
   }
@@ -365,7 +382,7 @@ export async function scheduleCollector(runner: CollectorRunner, options: { baby
   if (pollMs < 1000 || pollMs > 60_000) throw new Error("COLLECTOR_POLL_INVALID");
   while (!options.signal.aborted) {
     try { const result = await runner.once(options.babyId, options.jobId); if (!result.skipped) options.onResult?.(result); }
-    catch { options.onResult?.({ failed: true, code: "COLLECTOR_RUN_FAILED" }); }
+    catch (error) { options.onResult?.({ failed: true, code: error instanceof AppError ? error.code : "COLLECTOR_RUN_FAILED", ...(error instanceof AppError ? { retryable: error.retryable ?? error.status >= 500 } : {}) }); }
     if (!options.signal.aborted) await new Promise<void>(resolve => {
       const abort = () => { clearTimeout(timer); options.signal.removeEventListener("abort", abort); resolve(); };
       const timer = setTimeout(abort, pollMs);

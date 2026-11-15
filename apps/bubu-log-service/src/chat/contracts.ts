@@ -25,7 +25,7 @@ export interface ChatTurn {
   id: string; requestId: string; conversationId: string; babyId: string;
   createdAt: string; updatedAt: string; status: ChatStatus;
   input: Omit<ChatInput, "babyId" | "requestId">;
-  assistantText: string; receipts: ChatReceipt[]; pending: ChatPending[];
+  assistantText: string; replySource?: "ai" | "safety"; receipts: ChatReceipt[]; pending: ChatPending[];
   /** Refetch the calendar and trend projection. Never optimistically add a record. */
   refreshRequired: boolean;
   error?: ChatError;

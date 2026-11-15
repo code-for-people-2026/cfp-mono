@@ -1,10 +1,13 @@
 import { IdentitySetup } from "../../components/IdentitySetup";
+import { SafetyNotices } from "../../privacy/SafetyNotices";
+import { Choice, PolicyDocuments, PrivacyCenter } from "../../privacy/PrivacyCenter";
+import type { PrivacyPolicy } from "../../privacy/contracts";
 import brandIcon from "../../assets/branding/bubu-avatar-borderless-v1.png";
 import { Button, Image, Input, Picker, Text, View } from "@tarojs/components";
 import { DiaryChat, type ChatSelection } from "../../chat/Chat";
 import { chatDrafts } from "../../chat/storage";
 import { clearImageFiles } from "../../chat/files";
-import Taro from "@tarojs/taro";
+import Taro, { useDidShow } from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
 import { CalendarNavigation } from "../../navigation/CalendarNavigation";
 import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
@@ -58,6 +61,13 @@ const readCarePreferences = (babyId: string): CarePreferencesState => {
 };
 
 export default function DiaryPage() {
+  const [privacyReadyKey, setPrivacyReadyKey] = useState("");
+  const [privacyPolicy, setPrivacyPolicy] = useState<PrivacyPolicy>();
+  const [policyLoading, setPolicyLoading] = useState(identityEnabled);
+  const [policyError, setPolicyError] = useState("");
+  const policyGeneration = useRef(0);
+  const [loginNotice, setLoginNotice] = useState(false);
+  const [privacyCheck, setPrivacyCheck] = useState(0);
   const [chatSelection, setChatSelection] = useState<ChatSelection>();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
@@ -104,6 +114,39 @@ export default function DiaryPage() {
   const contextVersion = useRef(0);
   const authInFlight = useRef(false);
   const babyId = context?.baby?.id || "";
+  const privacyKey = `${context?.identityId || ""}:${babyId}`;
+  const privacyReady = !identityEnabled || privacyReadyKey === privacyKey;
+  // A native picker/preview also triggers onShow. Revalidate the same scope
+  // without destroying its in-flight upload and chat state on every return.
+  useDidShow(() => { setPrivacyCheck((value) => value + 1); });
+  const loadLoginPolicy = useCallback(async () => {
+    if (!identityEnabled) return;
+    const generation = ++policyGeneration.current;
+    setPolicyLoading(true); setPolicyError(""); setPrivacyPolicy(undefined); setLoginNotice(false);
+    try {
+      const next = await api.privacyPolicy();
+      if (generation === policyGeneration.current) {
+        setPrivacyPolicy(next);
+        if (!next.ready) setPolicyError("服务暂未就绪，请稍后重试。");
+      }
+    } catch {
+      if (generation === policyGeneration.current) setPolicyError("隐私说明暂时无法加载，请检查网络后重试。");
+    } finally {
+      if (generation === policyGeneration.current) setPolicyLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void loadLoginPolicy();
+    return () => { policyGeneration.current++; };
+  }, [loadLoginPolicy]);
+  useEffect(() => {
+    if (!identityEnabled || !context?.authenticated) return;
+    let active = true;
+    void api.privacyStatus(babyId || undefined).then((status) => {
+      if (active) setPrivacyReadyKey(status.consentCurrent && (!babyId || status.guardianCurrent) ? privacyKey : "");
+    }).catch(() => { if (active) setPrivacyReadyKey(""); });
+    return () => { active = false; };
+  }, [context?.authenticated, babyId, privacyKey, privacyCheck]);
   const weekStart = calendarPeriod("week", date).start;
   const dataKey = mode === "day" || mode === "week"
     ? timelineDisplayKey({ identity: { epoch: identityEpoch.current, babyId, revision, today }, mode, date })
@@ -111,6 +154,7 @@ export default function DiaryPage() {
   const data = loaded?.key === dataKey ? loaded : null;
 
   const clearPrivateView = useCallback(() => {
+    setPrivacyReadyKey("");
     setChatSelection(undefined); setMenuOpen(false); setViewMenuOpen(false); setReturnPeriod(null); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); setProvenance({ status: "idle" }); setDataError(""); setSync(null);
     detailVersion.current++; provenanceVersion.current++;
@@ -274,7 +318,7 @@ export default function DiaryPage() {
   }, [babyId, context?.authenticated]);
 
   useEffect(() => {
-    if (!babyId || !context?.authenticated) return;
+    if (!babyId || !context?.authenticated || !privacyReady) return;
     if (mode === "day" || mode === "week") {
       const request = timelineContext(mode, date);
       const requestIdentity = request.identity;
@@ -383,11 +427,11 @@ export default function DiaryPage() {
       setDataError(message(error));
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, mode, date, days, weekStart, dataKey, today, clearPrivateView,
+  }, [babyId, context?.authenticated, privacyReady, mode, date, days, weekStart, dataKey, today, clearPrivateView,
     expireForIdentity, prefetchAdjacent, requestTimeline, timelineContext]);
 
   useEffect(() => {
-    if (!identityEnabled || !babyId || !context?.authenticated) return;
+    if (!identityEnabled || !babyId || !context?.authenticated || !privacyReady) return;
     const requestEpoch = identityEpoch.current;
     const requestBabyId = babyId;
     let cancelled = false;
@@ -410,17 +454,19 @@ export default function DiaryPage() {
       setSync({ babyId: requestBabyId, jobs: [], error: "同步状态暂时不可用，当前仅显示已保存记录" });
     });
     return () => { cancelled = true; };
-  }, [babyId, context?.authenticated, revision, clearPrivateView, restore]);
+  }, [babyId, context?.authenticated, privacyReady, revision, clearPrivateView, restore]);
 
   const login = async () => {
     if (authInFlight.current) return;
+    if (identityEnabled && (policyLoading || !privacyPolicy?.ready)) { setAccountError("请先成功加载隐私说明，再继续登录。"); return; }
+    if (identityEnabled && !loginNotice) { setAccountError("请阅读说明并主动选择同意本次登录。"); return; }
     if (!wechatIdentityEnabled && (!username.trim() || !password)) { setAccountError("请输入账号和密码"); return; }
     authInFlight.current = true;
     const version = ++contextVersion.current;
     clearPrivateView(); setAuthBusy(true); setAccountError("");
     try {
       const next = wechatIdentityEnabled
-        ? await api.loginWithWechat()
+        ? await api.loginWithWechat(privacyPolicy?.version)
         : await api.login({ username: username.trim(), password });
       if (version === contextVersion.current) setContext(next);
     } catch (error) {
@@ -431,6 +477,7 @@ export default function DiaryPage() {
   };
   const logout = async () => {
     if (authInFlight.current) return;
+    setLoginNotice(false);
     chatDrafts.clear(); clearImageFiles();
     authInFlight.current = true;
     const version = ++contextVersion.current;
@@ -659,17 +706,26 @@ export default function DiaryPage() {
     <Text className="welcome-title">每一天，都值得记住</Text>
     <Text className="muted">登录卜卜日记，看看宝宝的日常与成长。</Text>
     <View className="login-card">
-      <Text className="section-title">登录已有账号</Text>
-      <Text className="field-label">用户名或邮箱</Text>
+      <Text className="section-title">{wechatIdentityEnabled ? "微信登录" : "登录已有账号"}</Text>
+      {!wechatIdentityEnabled && <><Text className="field-label">用户名或邮箱</Text>
       <Input className="login-input" value={username} placeholder="请输入用户名或邮箱" onInput={(e) => setUsername(e.detail.value)} disabled={authBusy || undefined} />
       <Text className="field-label">密码</Text>
-      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} />
+      <Input className="login-input" value={password} password placeholder="请输入密码" onInput={(e) => setPassword(e.detail.value)} onConfirm={() => { void login(); }} disabled={authBusy || undefined} /></>}
+      {identityEnabled && <>
+        {policyLoading && <Text className="muted">正在读取隐私说明…</Text>}
+        {privacyPolicy && <PolicyDocuments policy={privacyPolicy} />}
+        {policyError && <><Text className="error-text">{policyError}</Text><Button className="text-button" onClick={() => { void loadLoginPolicy(); }}>重试读取说明</Button></>}
+        <Choice label="我已阅读说明，同意用微信或已有账号完成登录" value={loginNotice} disabled={policyLoading || !privacyPolicy?.ready || authBusy} onChange={(value) => { setLoginNotice(value); setAccountError(""); }} />
+        <Text className="muted">登录后再分别选择敏感信息、AI、图片和监护授权。</Text>
+      </>}
       {accountError && <Text className="error-text">{accountError}</Text>}
-      <Button className="primary-button" loading={authBusy} disabled={authBusy || undefined} onClick={() => { void login(); }}>登录</Button>
-      <Text className="login-note">使用原宝宝日记的账号与密码</Text>
+      <Button className="primary-button" loading={authBusy} disabled={authBusy || (identityEnabled && (policyLoading || !privacyPolicy?.ready || !loginNotice)) || undefined} onClick={() => { void login(); }}>{wechatIdentityEnabled ? "微信登录并继续" : "登录"}</Button>
+      <Text className="login-note">{wechatIdentityEnabled ? "登录后可创建宝宝、绑定已有账号并管理照护资料" : "使用原宝宝日记的账号与密码"}</Text>
     </View>
-    <Button className="text-button" disabled={authBusy || undefined} onClick={() => { void restore(); }}>重新连接</Button>
+    <Button className="text-button" disabled={authBusy || policyLoading || undefined} onClick={() => { void restore(); void loadLoginPolicy(); }}>重新连接</Button>
   </View></View>;
+
+  if (!privacyReady) return <View className="diary-shell"><DiaryNavigation context={context} restricted open={menuOpen} onOpen={() => setMenuOpen(true)} onClose={closeMenu} onBabyChange={(index) => { void changeBaby(index); }} onRefresh={() => { void restore(); }} onLogout={() => { void logout(); }} /><View className="page"><PrivacyCenter key={privacyKey} babyId={babyId || undefined} onReady={() => { setPrivacyCheck((value) => value + 1); void restore(); }} /><Button className="text-button" onClick={() => { void logout(); }}>退出登录</Button></View></View>;
 
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
@@ -700,6 +756,7 @@ export default function DiaryPage() {
     <View className="page diary-content">
     {accountError && <Text className="error-text">{accountError}</Text>}
     {!context.hasBaby ? identityEnabled ? <IdentitySetup context={context} onComplete={identityUpdated} /> : <View className="state-panel"><Text className="section-title">还没有关联宝宝</Text><Text className="muted">请先在原宝宝日记中关联宝宝，再回来查看。</Text><Button className="text-button" onClick={() => { void restore(); }}>刷新</Button></View> : <>
+      {identityEnabled && <SafetyNotices key={`${context.identityId}:${babyId}`} babyId={babyId} revision={revision + privacyCheck} />}
       {returnPeriod && <Button className="text-button period-back" onClick={() => {
         revealSummary();
         if (returnPeriod.mode === "day" || returnPeriod.mode === "week") showCachedTimeline(returnPeriod.mode, returnPeriod.date);

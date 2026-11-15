@@ -134,7 +134,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("replaces unconfirmed image evidence with an explicit textual answer and resolves the question", async () => {
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await fixture.attachments.upload(fixture.alice, "baby-a", bytes, "image/png", "image-color-evidence");
     const candidate = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "unconfirmed-poop-photo", events: [{
       facts: { type: "DIAPER", startTime: at(8), hasPoop: true, hasPee: false, poopColor: "YELLOW" }, attachmentIds: [attachment.id],
@@ -329,7 +329,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("rejects cross-baby writes and private attachment association, and rolls back the failed batch", async () => {
-    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await fixture.attachments.upload(fixture.bob, "baby-b", photo, "image/png", "bob-image");
     await expect(fixture.records.record(fixture.alice, { babyId: "baby-b", requestId: "wrong-baby", events: [bottle()] })).rejects.toMatchObject({ status: 403 });
     await expect(fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "foreign-attachment", events: [exercise(8), { ...bottle(10), attachmentIds: [attachment.id] }] })).rejects.toMatchObject({ code: "ATTACHMENT_NOT_FOUND" });
@@ -341,7 +341,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("requires the same media write permission for initial attachment association and later attachment changes", async () => {
-    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await fixture.attachments.upload(fixture.alice, "baby-a", photo, "image/png", "permission-photo");
     const login = await fixture.identity.loginWechat("fixture:read-media-only:nonce");
     const restricted = await fixture.identity.authenticate(login.token, "bearer");
@@ -353,7 +353,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("requires media write permission when undo would restore removed image associations", async () => {
-    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png().toBuffer();
+    const photo = await sharp({ create: { width: 2, height: 2, channels: 3, background: "white" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await fixture.attachments.upload(fixture.alice, "baby-a", photo, "image/png", "undo-permission-photo");
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "undo-permission-original", events: [{ ...exercise(), attachmentIds: [attachment.id] }] })).events[0]!;
     const removed = (await fixture.records.attach(fixture.alice, { babyId: "baby-a", requestId: "undo-permission-remove", eventId: original.id, expectedVersion: original.version, attachmentIds: [] })).events[0]!;

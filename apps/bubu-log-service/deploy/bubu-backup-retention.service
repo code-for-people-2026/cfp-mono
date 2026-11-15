@@ -1,0 +1,16 @@
+[Unit]
+Description=Expire Bubu backups independently of new backup success
+ConditionPathExists=/opt/cfp-bubu-log/private/operations.json
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=root
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/cfp-bubu-log/operations/scripts/backup-operations.py prune --config /opt/cfp-bubu-log/private/operations.json --apply
+TimeoutStartSec=60
+NoNewPrivileges=true
+# A concurrent backup/restore holds the shared lock. Retry without waiting another hour;
+# failures and retries remain visible in this unit's state and journal.
+Restart=on-failure
+RestartSec=60s

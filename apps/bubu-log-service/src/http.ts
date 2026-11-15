@@ -1,7 +1,10 @@
+import type { SafetyService } from "./safety/service";
+import type { DeletionService } from "./privacy/deletion";
+import type { PrivacyService } from "./privacy/service";
 import { z } from "zod";
 import { AppError, permissions, type Permission } from "./contracts";
 import { readLegacyPhoto, protectLegacyPhotos, protectRecordPhotos, type MediaOptions } from "./media";
-import { IdentityService, type Principal } from "./identity";
+import { IdentityService, type ActorScope, type Principal } from "./identity";
 import type { RecordsService } from "./records/service";
 import { createAttachmentHandler, type AttachmentService } from "./records/attachments";
 import type { CollectorService } from "./collector/service";
@@ -14,7 +17,22 @@ const COOKIE = "bubu_session";
 const id = z.string().trim().min(1).max(200);
 const credentials = z.object({ username: z.string().trim().min(1).max(128), password: z.string().min(1).max(256) }).strict();
 const babyScope = z.object({ babyId: id }).strict();
-export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService}) {
+interface LegacyMediaActivity { babyId: unknown; id: unknown; poopPhotoUrl: unknown }
+const legacyMediaActivity = (activity: unknown, babyId: string, activityId: string): LegacyMediaActivity => {
+  if (!activity || typeof activity !== "object" || Array.isArray(activity) ||
+    (activity as LegacyMediaActivity).babyId !== babyId || (activity as LegacyMediaActivity).id !== activityId)
+    throw new AppError(403, "BABY_FORBIDDEN", "记录不属于当前宝宝。");
+  return { babyId: (activity as LegacyMediaActivity).babyId, id: (activity as LegacyMediaActivity).id, poopPhotoUrl: (activity as LegacyMediaActivity).poopPhotoUrl };
+};
+const sameLegacyMediaActivity = (left: LegacyMediaActivity, right: LegacyMediaActivity) =>
+  left.babyId === right.babyId && left.id === right.id && left.poopPhotoUrl === right.poopPhotoUrl;
+const sameActorScope = (left: ActorScope, right: ActorScope) =>
+  left.babyId === right.babyId && left.groupId === right.groupId && left.permissions.length === right.permissions.length &&
+  left.permissions.every(permission => right.permissions.includes(permission)) &&
+  left.actor.kind === right.actor.kind && left.actor.id === right.actor.id && left.actor.sessionId === right.actor.sessionId &&
+  left.actor.onBehalfOf === right.actor.onBehalfOf && left.actor.purpose === right.actor.purpose;
+const remoteLegacyAllowed = (scope: ActorScope) => scope.actor.kind !== "collector" && (scope.actor.kind !== "chat-agent" || scope.actor.purpose === "history");
+export function createHandler(service: IdentityService, publicOrigin: string, media: MediaOptions = { allowedOrigins: [] }, features?: {records:RecordsService;attachments:AttachmentService;collector:CollectorService;chat?:ChatService;privacy?:PrivacyService;deletion?:DeletionService;safety?:SafetyService}) {
   const origin = new URL(publicOrigin).origin;
   const secure = origin.startsWith("https://");
   const cookie = (token: string, age: number) => `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${age}${secure ? "; Secure" : ""}`;
@@ -62,14 +80,50 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       }
       if (req.method === "POST" && path === "/api/identity/wechat") {
         if (browser) throw new AppError(400, "NATIVE_REQUIRED", "请在微信小程序内登录。");
-        const input = z.object({ code: z.string().min(1).max(512) }).strict().parse(await body());
+        const input = z.object({ code: z.string().min(1).max(512), noticeVersion: z.string().max(100).optional() }).strict().parse(await body());
+        features?.privacy?.checkLoginNotice(input.noticeVersion);
         return resultWithSession(await service.loginWechat(input.code), false);
       }
       if (req.method === "POST" && path === "/api/identity/legacy-login") {
         const input = credentials.parse(await body());
         return resultWithSession(await service.loginLegacy(input.username, input.password, browser ? "browser" : "native"), browser);
       }
+      if (req.method === "GET" && path === "/api/app/privacy/policy" && features?.privacy) return json(features.privacy.policy());
       const principal: Principal = await sessions(req);
+      if (features?.safety && req.method === "POST" && path === "/api/app/safety/acknowledge") {
+        const input = z.object({ babyId: id, signalId: id }).strict().parse(await body());
+        return json(await features.safety.acknowledge(principal, input.babyId, input.signalId));
+      }
+      if (features?.safety && req.method === "GET" && path === "/api/app/safety") return json({ data: await features.safety.notices(principal, id.parse(url.searchParams.get("babyId"))) });
+      if (features?.privacy && path.startsWith("/api/app/privacy/")) {
+        const privacy = features.privacy;
+        if (features.deletion) {
+          if (req.method === "GET" && path === "/api/app/privacy/export") return json(await features.deletion.export(principal, url.searchParams.get("babyId") || undefined));
+          if (req.method === "GET" && path === "/api/app/privacy/deletions") return json({ data: await features.deletion.jobs(principal) });
+          if (req.method === "POST" && path === "/api/app/privacy/delete-intent") {
+            const input = z.object({ kind: z.enum(["account", "family"]), babyId: id.optional() }).strict().parse(await body());
+            return json(await features.deletion.prepare(principal, input.kind, input.babyId));
+          }
+          if (req.method === "POST" && path === "/api/app/privacy/delete-confirm") {
+            const input = z.object({ token: z.string().min(20).max(100), confirmation: z.string().max(50) }).strict().parse(await body());
+            const job = await features.deletion.confirm(principal, input.token, input.confirmation);
+            void features.deletion.processPending().catch(() => undefined);
+            return json(job, 202);
+          }
+        }
+        if (req.method === "GET" && path === "/api/app/privacy/status") return json(await privacy.status(principal, url.searchParams.get("babyId") || undefined));
+        if (req.method === "GET" && path === "/api/app/privacy/requests") return json({ data: await privacy.requests(principal) });
+        if (req.method === "POST" && path === "/api/app/privacy/consent") return json(await privacy.consent(principal, await body()));
+        if (req.method === "POST" && path === "/api/app/privacy/guardian") {
+          const input = z.object({ babyId: id, consent: z.unknown() }).strict().parse(await body());
+          return json(await privacy.guardian(principal, input.babyId, input.consent));
+        }
+        if (req.method === "POST" && path === "/api/app/privacy/withdraw") {
+          const input = z.object({ babyId: id.optional() }).strict().parse(await body());
+          return json(await privacy.withdraw(principal, input.babyId));
+        }
+        if (req.method === "POST" && path === "/api/app/privacy/requests") return json(await privacy.request(principal, await body()), 201);
+      }
       if(features) {const attachmentResponse=await createAttachmentHandler(features.attachments)(req,principal);if(attachmentResponse)return attachmentResponse;}
       if (features?.chat && path === "/api/app/chat" && req.method === "POST") {
         const input = chatInputSchema.parse(await body(32768));
@@ -77,12 +131,14 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         return json({ turn: await features.chat.submit(principal, input) });
       }
       if (req.method === "POST" && path === "/api/identity/bind-legacy") {
+        await features?.privacy?.requirePerson(principal.subjectId);
         const input = credentials.parse(await body());
         return resultWithSession(await service.bindLegacy(principal, input.username, input.password), browser);
       }
       if (req.method === "POST" && path === "/api/identity/family") {
-        const input = z.object({ name: z.string().trim().min(1).max(30) }).strict().parse(await body());
-        return json(await service.createFamily(principal, input.name));
+        await features?.privacy?.requirePerson(principal.subjectId);
+        const input = z.object({ name: z.string().trim().min(1).max(30), guardian: z.unknown().optional() }).strict().parse(await body());
+        return json(features?.privacy ? await features.privacy.createFamily(principal, input.name, input.guardian) : await service.createFamily(principal, input.name));
       }
       if (req.method === "POST" && path === "/api/identity/logout") {
         await service.logout(principal);
@@ -93,6 +149,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
         return json(await service.invite(principal, input.babyId, input.access));
       }
       if (req.method === "POST" && path === "/api/identity/invitations/accept") {
+        await features?.privacy?.requirePerson(principal.subjectId);
         const input = z.object({ code: z.string().min(1).max(128) }).strict().parse(await body());
         return json(await service.acceptInvite(principal, input.code));
       }
@@ -133,18 +190,41 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       if(features&&req.method==="GET"&&path==="/api/app/records/sync")return json(await readSyncStatus(features.records,principal,babyId,features.collector));
       if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
-        await service.authorize(principal, babyId, "media:read");
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
-        const activity = await service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
-        return await readLegacyPhoto(activity, babyId, media);
+        const readActivity = () => service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());
+        const groupId = principal.kind === "collector" ? principal.groupId : undefined;
+        const snapshot = await service.executeAuthorized(principal, babyId, "media:read", async scope => ({
+          scope,
+          activity: legacyMediaActivity(await readActivity(), babyId, activityId),
+        }), groupId);
+        const response = await readLegacyPhoto(snapshot.activity, babyId, {
+          ...media,
+          remoteAllowed: remoteLegacyAllowed(snapshot.scope),
+          ...(features ? { readPrivate: async (attachmentId: string) => {
+            const { attachment, bytes } = await features.attachments.read(principal, babyId, attachmentId);
+            return new Response(new Uint8Array(bytes), { headers: { "Content-Type": attachment.mime, "Content-Length": String(attachment.byteLength), "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" } });
+          } } : {}),
+        });
+        try {
+          await service.executeAuthorized(principal, babyId, "media:read", async scope => {
+            const activity = legacyMediaActivity(await readActivity(), babyId, activityId);
+            if (!sameLegacyMediaActivity(snapshot.activity, activity) || !sameActorScope(snapshot.scope, scope))
+              throw new AppError(409, "MEDIA_CHANGED_DURING_READ", "照片状态在读取过程中发生变化，请重试。");
+          }, groupId);
+        } catch (error) {
+          await response.body?.cancel().catch(() => undefined);
+          throw error;
+        }
+        return response;
       }
       if (req.method === "PATCH" && path.startsWith("/api/app/user-babies/")) {
         if (decodeURIComponent(path.slice("/api/app/user-babies/".length)) !== babyId) throw new AppError(403, "BABY_FORBIDDEN", "宝宝范围不一致。");
-        await service.authorize(principal, babyId, "baby:manage");
         const input = z.object({ name: z.string().trim().min(1).max(30), fullName: z.string().trim().max(60).nullable() }).strict().parse(await body());
-        const context = await service.context(principal);
-        if (context.babies.some(baby => baby.id !== babyId && baby.name.trim().toLowerCase() === input.name.toLowerCase())) throw new AppError(409, "DUPLICATE_NAME", "已存在同名宝宝。");
-        return json({ data: await service.legacy.updateBabyNames(babyId, input) });
+        return await service.executeAuthorized(principal, babyId, "baby:manage", async () => {
+          const context = await service.context(principal);
+          if (context.babies.some(baby => baby.id !== babyId && baby.name.trim().toLowerCase() === input.name.toLowerCase())) throw new AppError(409, "DUPLICATE_NAME", "已存在同名宝宝。");
+          return json({ data: await service.legacy.updateBabyNames(babyId, input) });
+        });
       }
       if (req.method === "GET" && /^\/api\/app\/(activities(?:\/[^/]+)?|daily-stats(?:\/[^/]+)?)$/.test(path)) {
         await service.authorize(principal, babyId, "records:read");
@@ -154,7 +234,7 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       return json({ code: "NOT_FOUND", error: "未找到此接口。" }, 404);
     } catch (error) {
       if (error instanceof z.ZodError) return json({ code: "INVALID_INPUT", error: "请求字段或格式不正确。" }, 400);
-      if (error instanceof AppError) return json({ code: error.code, error: error.message }, error.status);
+      if (error instanceof AppError) return json({ code: error.code, error: error.message, retryable: error.retryable ?? error.status >= 500 }, error.status);
       // Do not leak upstream response bodies, credential URLs or stack traces to clients.
       return json({ code: "SERVICE_UNAVAILABLE", error: "服务暂时不可用，请稍后重试。" }, 503);
     }

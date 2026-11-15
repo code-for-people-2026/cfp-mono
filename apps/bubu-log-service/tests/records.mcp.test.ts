@@ -108,8 +108,8 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
     expect(confirmed.status).toBe("saved"); expect(confirmed.events[0]?.projection).toBe("synced");
   });
 
-  it("uploads original binary data over 16 KiB and associates and reads it through authorized routes", async () => {
-    const bytes = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png().toBuffer();
+  it("uploads normalized binary data over 16 KiB and associates and reads it through authorized routes", async () => {
+    const bytes = await sharp(randomBytes(128 * 128 * 3), { raw: { width: 128, height: 128, channels: 3 } }).png({ compressionLevel: 9 }).toBuffer();
     expect(bytes.length).toBeGreaterThan(16_384);
     const uploaded = await fetch(`${origin}/api/app/attachments?babyId=baby-a`, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "image/png", "X-Bubu-Request-Id": "mcp-binary-original" }, body: new Uint8Array(bytes) });
     expect(uploaded.status).toBe(200); const attachment = (await uploaded.json() as { data: Attachment }).data;

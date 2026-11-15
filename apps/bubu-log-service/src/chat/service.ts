@@ -1,3 +1,4 @@
+import { safetyCategory, safetyNotice } from "../safety/notice";
 import { z } from "zod";
 import type { PayloadRequest } from "payload";
 import { AppError } from "../contracts";
@@ -11,7 +12,7 @@ import { ChatMcpClient, McpToolError, mutationTools } from "./mcp";
 import { CHAT_INSTRUCTIONS, modelTools, prepareCall } from "./policy";
 import { confirmedReply, renderPendingQuestion, uncommittedReply } from "./presentation";
 
-interface ChatServiceOptions { mcpUrl: string | URL; provider?: ChatProvider; fetch?: typeof fetch }
+interface ChatServiceOptions { mcpUrl: string | URL; provider?: ChatProvider; fetch?: typeof fetch; safetySignal?: (babyId: string, id: string, text: string, at: string, req: PayloadRequest) => Promise<void>; authorizeModel?: (principal: Principal, babyId: string, images: boolean) => Promise<void> }
 const outputSchema = z.object({ text: z.string().max(16000), calls: z.array(z.object({ id: z.string().min(1).max(200), name: z.string().max(100), arguments: z.record(z.string(), z.unknown()) }).strict()).max(8) }).strict();
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -53,28 +54,36 @@ export class ChatService {
     return this.identity.executeAuthorized(principal, babyId, write ? "records:write" : "records:read", (_scope, req) => action(req));
   }
   private async check(principal: Principal, babyId: string) { await this.authorized(principal, babyId, false, async () => undefined); }
+  private async checkService(principal: Principal, babyId: string) {
+    await this.authorized(principal, babyId, true, req => this.identity.assertService(babyId, "chat", req));
+  }
   private publicTurn(turn: StoredTurn): ChatTurn {
     const { id, requestId, conversationId, babyId, createdAt, updatedAt, input, assistantText, receipts, pending: questions, refreshRequired, error } = turn;
     // A process restart leaves a durable checkpoint, not an eternally spinning message.
     const status = turn.status === "processing" && !this.active.has(turn.id) ? "needs_recovery" : turn.status;
     const events = [...list(turn.modelContext?.events), ...receipts.flatMap(item => "events" in item ? item.events : [])];
-    return { id, requestId, conversationId, babyId, createdAt, updatedAt, status, input, assistantText, receipts, pending: prompted(questions, events.reverse()), refreshRequired, ...(error ? { error } : {}) };
+    return { id, requestId, conversationId, babyId, createdAt, updatedAt, status, input, assistantText, replySource: turn.replySource || "ai", receipts, pending: prompted(questions, events.reverse()), refreshRequired, ...(error ? { error } : {}) };
   }
   private async persist(principal: Principal, turn: StoredTurn) {
     turn.updatedAt = this.now();
-    await this.authorized(principal, turn.babyId, true, req => this.repository.put(turn, req));
+    await this.authorized(principal, turn.babyId, true, async req => {
+      // Publishing a completed reply and its eligibility check share one transaction.
+      // Recovery checkpoints remain writable while the service is paused.
+      if (turn.status === "completed") await this.identity.assertService(turn.babyId, "chat", req);
+      await this.repository.put(turn, req);
+    });
   }
   private async connect(principal: Principal, babyId: string, signal?: AbortSignal, readOnly = false) {
     const delegated = await this.identity.issueAgent(principal, babyId, "chat-agent", { readOnly });
     const client = new ChatMcpClient(this.options.mcpUrl, delegated.token, this.options.fetch, signal);
-    try { await client.connect(); await this.check(principal, babyId); return client; }
+    try { await client.connect(); await (readOnly ? this.check(principal, babyId) : this.checkService(principal, babyId)); return client; }
     catch (error) { await client.close().catch(() => undefined); throw error; }
   }
   private async call(principal: Principal, turn: Pick<StoredTurn, "babyId">, client: ChatMcpClient, name: string, args: Record<string, unknown>, signal?: AbortSignal) {
-    await this.check(principal, turn.babyId);
+    await (signal ? this.checkService(principal, turn.babyId) : this.check(principal, turn.babyId));
     if (signal?.aborted) throw new AppError(503, "CHAT_INTERRUPTED", "处理已暂停，可以继续处理。");
     const result = signal ? await abortable(client.call(name, args), signal) : await client.call(name, args);
-    await this.check(principal, turn.babyId);
+    await (signal ? this.checkService(principal, turn.babyId) : this.check(principal, turn.babyId));
     return result;
   }
   async history(principal: Principal, babyId: string): Promise<ChatHistory> {
@@ -96,7 +105,9 @@ export class ChatService {
   }
   async submit(principal: Principal, raw: ChatInput): Promise<ChatTurn> {
     const input = chatInputSchema.parse(raw);
-    if (!this.options.provider) throw new AppError(503, "CHAT_PROVIDER_NOT_CONFIGURED", "对话模型尚未配置，暂时不能发送。已保存的记录仍可查看。");
+    const urgent = safetyCategory(input.text);
+    if (!urgent) await this.options.authorizeModel?.(principal, input.babyId, input.attachmentIds.length > 0);
+    if (!urgent && !this.options.provider) throw new AppError(503, "CHAT_PROVIDER_NOT_CONFIGURED", "对话模型尚未配置，暂时不能发送。已保存的记录仍可查看。");
     if (this.closing) throw new AppError(503, "CHAT_INTERRUPTED", "服务正在重启，请稍后用原请求继续。");
     const id = this.turnId(principal, input.babyId, input.requestId), fingerprint = hash(input);
     const turn = await this.authorized(principal, input.babyId, true, async req => {
@@ -105,13 +116,15 @@ export class ChatService {
         if (previous.fingerprint !== fingerprint) throw new AppError(409, "CHAT_REQUEST_REUSED", "同一请求号不能用于不同内容，请核对原输入。");
         if (previous.status === "completed" || previous.error?.retryable === false || this.active.has(id)) return previous;
       }
+      if (!urgent) await this.identity.assertService(input.babyId, "chat", req);
       const blocker = (await this.repository.list(principal.subjectId, input.babyId, req)).find(item => item.id !== id && ["processing", "needs_recovery"].includes(item.status));
-      if (blocker) throw new AppError(409, "CHAT_PREVIOUS_PENDING", "上一条还在处理或等待恢复，请先处理上一条。");
+      if (!urgent && blocker) throw new AppError(409, "CHAT_PREVIOUS_PENDING", "上一条还在处理或等待恢复，请先处理上一条。");
       const { babyId, requestId, ...message } = input;
       const row: StoredTurn = previous ?? { id, identityId: principal.subjectId, conversationId: this.conversation(principal, babyId), babyId, requestId, fingerprint,
         createdAt: this.now(), updatedAt: this.now(), input: message, status: "processing", assistantText: "", receipts: [], pending: [], refreshRequired: false,
         transcript: [], steps: [], rounds: 0, versions: {}, questionVersions: {}, };
-      row.status = "processing"; delete row.error;
+      row.status = urgent ? "completed" : "processing"; delete row.error;
+      if (urgent) { row.replySource = "safety"; row.assistantText = safetyNotice; await this.options.safetySignal?.(input.babyId, id, input.text, row.createdAt, req); }
       await this.repository.put(row, req);
       return row;
     });
@@ -212,8 +225,8 @@ export class ChatService {
       const metadata = object(reference);
       if (typeof metadata.attachmentId !== "string") continue;
       const id = metadata.attachmentId;
-      const image = await this.attachments.read(principal, turn.babyId, id);
-      await this.check(principal, turn.babyId);
+      const image = await this.attachments.readForModel(principal, turn.babyId, id);
+      await this.checkService(principal, turn.babyId);
       images.push({ type: "text", text: JSON.stringify({ type: "bubu_image_reference", ...metadata }) });
       images.push({ type: "image_url" as const, image_url: { url: `data:${image.attachment.mime};base64,${image.bytes.toString("base64")}` } });
     }
@@ -285,7 +298,7 @@ export class ChatService {
   }
   private failure(error: unknown): ChatError {
     if (error instanceof McpToolError) return { code: error.code, message: error.message, retryable: error.retryable };
-    if (error instanceof AppError) return { code: error.code, message: error.message, retryable: error.status >= 500 };
+    if (error instanceof AppError) return { code: error.code, message: error.message, retryable: error.retryable ?? error.status >= 500 };
     if (error instanceof z.ZodError) return { code: "CHAT_PLAN_INVALID", message: "模型提出的操作不符合记录规则，请核对后重新说明。", retryable: false };
     return { code: "CHAT_SERVICE_UNAVAILABLE", message: "处理暂未完成，输入和已确认结果仍保留，请继续处理。", retryable: true };
   }
@@ -293,29 +306,32 @@ export class ChatService {
     let client: ChatMcpClient | undefined;
     try {
       client = await abortable(this.connect(principal, turn.babyId, signal), signal);
-      const tools = await abortable(client.tools(), signal); await this.check(principal, turn.babyId);
+      const tools = await abortable(client.tools(), signal); await this.checkService(principal, turn.babyId);
       await this.context(principal, turn, client, signal);
       if (typeof turn.modelContext?.imageAmbiguity === "string") {
         turn.assistantText = turn.modelContext.imageAmbiguity; turn.status = "completed";
         await this.persist(principal, turn); return this.publicTurn(turn);
       }
       while (true) {
+        await this.checkService(principal, turn.babyId);
         if (!await this.execute(principal, turn, client, signal)) return this.publicTurn(turn);
         if (turn.rounds >= 10 || turn.steps.length >= 24) throw new AppError(409, "CHAT_STEP_LIMIT", "这一轮步骤较多，已确认结果仍保留。请查看记录后继续说明。");
         // A media receipt may close a question within this same turn. Tool
         // availability follows current MCP state, without refreshing write pins.
         turn.pending = pending(await this.call(principal, turn, client, "bubu_get_pending", { babyId: turn.babyId }, signal));
         const messages = await this.messages(principal, turn);
-        await this.check(principal, turn.babyId);
+        await this.checkService(principal, turn.babyId);
+        await this.options.authorizeModel?.(principal, turn.babyId, messages.some(message => Array.isArray(message.content) && message.content.some(item => item.type === "image_url")));
         const availableTools = modelTools(tools).filter(tool => tool.name !== "bubu_resolve_media" || turn.pending.some(question => question.kind === "media"));
         const output = outputSchema.parse(await abortable(this.options.provider!.complete({ instructions: CHAT_INSTRUCTIONS, messages, tools: availableTools, signal }), signal));
-        await this.check(principal, turn.babyId);
+        await this.checkService(principal, turn.babyId);
         if (output.calls.some(call => !tools.some(tool => tool.name === call.name))) throw new AppError(409, "CHAT_TOOL_FORBIDDEN", "模型请求了未授权工具，未执行修改。");
         if (output.calls.length) { await this.plan(principal, turn, output); continue; }
         turn.pending = pending(await this.call(principal, turn, client, "bubu_get_pending", { babyId: turn.babyId }, signal));
         turn.assistantText = turn.receipts.length ? confirmedReply(turn.receipts, turn.pending) : uncommittedReply(output.text);
         turn.status = "completed"; delete turn.error;
         await this.persist(principal, turn);
+        // The reply is committed history now; a later pause cannot downgrade it.
         await this.check(principal, turn.babyId);
         return this.publicTurn(turn);
       }
@@ -323,7 +339,7 @@ export class ChatService {
       // Revoked/expired principals must not publish late model output or read a stale chat result.
       await this.check(principal, turn.babyId);
       turn.error = this.failure(error);
-      turn.status = turn.error.retryable && turn.steps.some(step => step.state !== "completed" && mutationTools.has(step.call.name)) ? "needs_recovery" : "failed";
+      turn.status = turn.error.retryable && ((error instanceof AppError && error.retryable === true) || turn.steps.some(step => step.state !== "completed" && mutationTools.has(step.call.name))) ? "needs_recovery" : "failed";
       turn.assistantText = [confirmedReply(turn.receipts, []), turn.error.message].filter(Boolean).join("\n");
       await this.persist(principal, turn);
       return this.publicTurn(turn);

@@ -2,16 +2,21 @@ import { createHash } from "node:crypto";
 import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { sql } from "@payloadcms/db-sqlite";
 import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { migrateAttachmentStorage } from "../scripts/migrate-attachment-storage";
+import { migrateAttachmentStorage, runAttachmentStorageMigrationCli } from "../scripts/migrate-attachment-storage";
+import { createRuntime } from "../src/runtime";
 import { attachmentObjectKey, AttachmentService } from "../src/records/attachments";
 import { hash, recordCollections, RecordsRepository } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
 import { IdentityService, type Principal } from "../src/identity";
+import { decryptMedia, mediaKey } from "../src/privacy/media-encryption";
 import { openStore, type Store } from "../src/store";
 import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
 import { LegacyFixture, WechatFixture } from "./fixtures/identity";
+import { RecordsLegacyFixture } from "./fixtures/records";
+import { testPrivacyConfig } from "./fixtures/privacy";
 
 class MemoryObjectStore implements AttachmentObjectStore {
   readonly kind = "oss" as const;
@@ -38,6 +43,107 @@ interface StoredAttachment {
   id: string; babyId: string; sha256: string; requestFingerprint: string;
   source?: SourceRef; storage?: { kind: "oss"; key: string };
 }
+
+it("opens a dry-run CLI through the full runtime without changing privacy, chat, or operations state", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-"));
+  const origin = "http://127.0.0.1:4997";
+  const runtimeOptions = {
+    directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`,
+    legacy: new RecordsLegacyFixture(), wechat: new WechatFixture(), privacy: testPrivacyConfig,
+    maintenanceWorker: false,
+  } as const;
+  let runtime = await createRuntime(runtimeOptions);
+  const payload = runtime.store.payload;
+  await payload.create({ collection: "privacy-state", data: { id: "cli-privacy", key: "cli-privacy", value: { marker: "privacy" } }, overrideAccess: true });
+  await payload.create({ collection: "privacy-state", data: { id: "media-upload:cli-stale", key: "media-upload:cli-stale", identityId: "cli-identity", babyId: "baby-a", value: {
+    version: 1, operation: "put", babyId: "baby-a", identityId: "cli-identity", actor: { kind: "caregiver", id: "cli-identity" },
+    attachmentId: "att_" + "a".repeat(64), objectKey: `${"b".repeat(64)}/${"c".repeat(64)}`, state: "inflight", processId: "previous-process",
+    startedAt: "2026-11-15T00:00:00.000Z", updatedAt: "2026-11-15T00:00:00.000Z",
+  } }, overrideAccess: true });
+  await payload.create({ collection: "chat-turns", data: { id: "cli-chat", key: "cli-chat", identityId: "cli-identity", babyId: "baby-a", value: { marker: "chat" } }, overrideAccess: true });
+  await payload.create({ collection: "ops-requests", data: { id: "cli-ops", key: "cli-ops", babyId: "baby-a", value: { marker: "ops" } }, overrideAccess: true });
+  const initialDatabase = payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+  await initialDatabase.drizzle.run(sql`CREATE TABLE cli_schema_sentinel (marker text NOT NULL)`);
+  await initialDatabase.drizzle.run(sql`INSERT INTO cli_schema_sentinel (marker) VALUES ('preserved')`);
+  await runtime.close();
+  try {
+    const report = await runAttachmentStorageMigrationCli({ directory, objectStore: new MemoryObjectStore(), publicOrigin: origin, opsOrigin: origin });
+    expect(report).toMatchObject({ mode: "dry-run", scanned: 0, metadataUpdated: 0 });
+    runtime = await createRuntime({ ...runtimeOptions, schemaPush: false });
+    for (const [collection, key, marker] of [
+      ["privacy-state", "cli-privacy", "privacy"], ["chat-turns", "cli-chat", "chat"], ["ops-requests", "cli-ops", "ops"],
+    ] as const) {
+      const rows = await runtime.store.payload.find({ collection, where: { key: { equals: key } }, limit: 1, overrideAccess: true });
+      expect(rows.docs[0]?.value).toEqual({ marker });
+    }
+    const inflight = await runtime.store.payload.find({ collection: "privacy-state", where: { key: { equals: "media-upload:cli-stale" } }, limit: 1, overrideAccess: true });
+    expect(inflight.docs[0]?.value).toMatchObject({ state: "inflight", processId: "previous-process", updatedAt: "2026-11-15T00:00:00.000Z" });
+    const verificationDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT marker FROM cli_schema_sentinel`))).toContain("preserved");
+  } finally {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 30_000);
+
+it("does not run production migrations or recreate operations constraints during CLI initialization", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-production-"));
+  const ledgerDirectory = await mkdtemp(path.join(tmpdir(), "bubu-attachment-cli-ledger-"));
+  const origin = "http://127.0.0.1:4998";
+  const runtimeOptions = {
+    directory, publicOrigin: origin, opsOrigin: origin, mcpUrl: `${origin}/api/mcp`,
+    legacy: new RecordsLegacyFixture(), wechat: new WechatFixture(), privacy: testPrivacyConfig,
+    maintenanceWorker: false,
+  } as const;
+  const previousForcePush = process.env.PAYLOAD_FORCE_DRIZZLE_PUSH;
+  let runtime: Awaited<ReturnType<typeof createRuntime>>;
+  try {
+    process.env.PAYLOAD_FORCE_DRIZZLE_PUSH = "true";
+    runtime = await createRuntime(runtimeOptions);
+  } finally {
+    if (previousForcePush === undefined) delete process.env.PAYLOAD_FORCE_DRIZZLE_PUSH; else process.env.PAYLOAD_FORCE_DRIZZLE_PUSH = previousForcePush;
+  }
+  const database = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+  await runtime.store.payload.create({ collection: "privacy-state", data: { id: "production-cli-state", key: "production-cli-state", value: { marker: "unchanged" } }, overrideAccess: true });
+  await database.drizzle.run(sql`INSERT INTO payload_migrations (id, name, batch) VALUES (900, 'cli_pending_marker', 99)`);
+  await database.drizzle.run(sql`DROP TRIGGER IF EXISTS ops_keep_last_admin_update`);
+  await database.drizzle.run(sql`DROP TRIGGER IF EXISTS ops_keep_last_admin_delete`);
+  const migrationsBefore = JSON.stringify(await database.drizzle.run(sql`SELECT id, name, batch FROM payload_migrations ORDER BY id`));
+  await runtime.close();
+  const ledger = path.join(ledgerDirectory, "deletions.ndjson");
+  await writeFile(ledger, "", { mode: 0o600 });
+  const environment: Record<string, string | undefined> = process.env;
+  const previousNodeEnv = environment.NODE_ENV;
+  const previousLedger = process.env.BUBU_DELETION_LEDGER;
+  const previousMediaKey = process.env.BUBU_MEDIA_ENCRYPTION_KEY;
+  try {
+    try {
+      environment.NODE_ENV = "production";
+      process.env.BUBU_DELETION_LEDGER = ledger;
+      process.env.BUBU_MEDIA_ENCRYPTION_KEY = "d".repeat(64);
+      const report = await runAttachmentStorageMigrationCli({ directory, objectStore: new MemoryObjectStore(), publicOrigin: origin, opsOrigin: origin });
+      expect(report).toMatchObject({ mode: "dry-run", scanned: 0, metadataUpdated: 0 });
+    } finally {
+      if (previousNodeEnv === undefined) delete environment.NODE_ENV; else environment.NODE_ENV = previousNodeEnv;
+      if (previousLedger === undefined) delete process.env.BUBU_DELETION_LEDGER; else process.env.BUBU_DELETION_LEDGER = previousLedger;
+      if (previousMediaKey === undefined) delete process.env.BUBU_MEDIA_ENCRYPTION_KEY; else process.env.BUBU_MEDIA_ENCRYPTION_KEY = previousMediaKey;
+    }
+    runtime = await createRuntime({ ...runtimeOptions, initializeSchema: false });
+    const verificationDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT id, name, batch FROM payload_migrations ORDER BY id`))).toBe(migrationsBefore);
+    expect(JSON.stringify(await verificationDatabase.drizzle.run(sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'ops_keep_last_admin_%'`))).not.toContain("ops_keep_last_admin");
+    const state = await runtime.store.payload.find({ collection: "privacy-state", where: { key: { equals: "production-cli-state" } }, limit: 1, overrideAccess: true });
+    expect(state.docs[0]?.value).toEqual({ marker: "unchanged" });
+    await runtime.close();
+    runtime = await createRuntime(runtimeOptions);
+    const normalDatabase = runtime.store.payload.db as unknown as { drizzle: { run(query: ReturnType<typeof sql>): Promise<unknown> } };
+    expect(JSON.stringify(await normalDatabase.drizzle.run(sql`SELECT name FROM sqlite_master WHERE type = 'trigger' AND name LIKE 'ops_keep_last_admin_%'`))).toContain("ops_keep_last_admin_update");
+  } finally {
+    await runtime.close();
+    await rm(directory, { recursive: true, force: true });
+    await rm(ledgerDirectory, { recursive: true, force: true });
+  }
+}, 30_000);
 
 describe("offline attachment storage migration", () => {
   let directory: string, store: Store, identity: IdentityService, attachments: AttachmentService, principal: Principal;
@@ -69,7 +175,6 @@ describe("offline attachment storage migration", () => {
   const metadata = (id: string) => store.transaction(req => new RecordsRepository(store.payload)
     .get<StoredAttachment>("care-attachments", "baby-a", id, req));
   const objectFile = (sha256: string) => path.join(directory, "private-attachments", hash("baby-a"), sha256);
-  const photoHash = () => createHash("sha256").update(photo).digest("hex");
 
   it("dry-run verifies legacy local bytes without remote or metadata writes", async () => {
     const uploaded = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-dry-run", source);
@@ -101,7 +206,9 @@ describe("offline attachment storage migration", () => {
     expect(afterSecond?.requestFingerprint).toBe(before?.requestFingerprint);
     expect(afterSecond?.source).toEqual(before?.source);
     expect(objects.puts).toBe(1);
-    expect(objects.objects.get(key)).toEqual(photo);
+    const ciphertext = objects.objects.get(key)!;
+    expect(ciphertext).not.toEqual(photo);
+    expect(createHash("sha256").update(decryptMedia(ciphertext, mediaKey(directory), `${hash("baby-a")}:${second.sha256}`)).digest("hex")).toBe(second.sha256);
     expect((await stat(objectFile(second.sha256))).isFile()).toBe(true);
   });
 
@@ -117,17 +224,16 @@ describe("offline attachment storage migration", () => {
   });
 
   it("removes one verified shared local file after every duplicate reference is committed", async () => {
-    await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-first", source);
+    const first = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-first", source);
     await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-second", source);
     const report = await migrateAttachmentStorage(identity, directory, objects, { apply: true, removeLocal: true });
     expect(report).toMatchObject({ scanned: 2, legacy: 2, cleanupCandidates: 2, removedLocal: 1, cleanupFailed: 0 });
     expect(objects.puts).toBe(1); expect(objects.removals).toBe(0);
-    await expect(stat(objectFile(photoHash()))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(objectFile(first.sha256))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not remove the last verified local copy when post-commit cleanup verification fails", async () => {
     const uploaded = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-check", source);
-    await writeFile(objectFile(photoHash()), photo, { mode: 0o600 });
     const file = objectFile(uploaded.sha256);
     objects.failAtGet = objects.gets + 2; // The migration read-back succeeds; the first cleanup GET fails.
     try {

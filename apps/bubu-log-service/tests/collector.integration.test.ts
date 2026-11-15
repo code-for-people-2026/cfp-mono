@@ -12,7 +12,7 @@ import { RecordsRepository, recordCollections, hash } from "../src/records/persi
 import { RecordsService } from "../src/records/service";
 import { recordSchema } from "../src/records/schemas";
 import { createHandler } from "../src/http";
-import { AttachmentService } from "../src/records/attachments";
+import { AttachmentService, sanitizeAttachment } from "../src/records/attachments";
 import type { LegacyActivity, LegacyRecordsBackend } from "../src/records/types";
 import { CollectorService, collectorRequestId, type CollectorJob, type CollectorBatch, type AgentPlan } from "../src/collector/service";
 import { CollectorMcpClient, CollectorRunner, preparePlanCall, scheduleCollector, CommandAgentExecutor } from "../src/collector/runner";
@@ -195,6 +195,7 @@ describe("executable external Agent and real MCP runner", () => {
     const requestId = `collector-media-${hash([message.sourceId, 0])}`;
     const original = await syntheticOpaquePng(2049, 1200);
     expect(original.length).toBeGreaterThan(1024 * 1024);
+    const sanitized = (await sanitizeAttachment(original, "image/png")).bytes;
     const committed = await client.uploadImage("baby-a", original, "image/png", requestId, mediaSource);
     const failedBatch = await f.call({ action: "begin", runId: "lost-media-response" });
     const stagedBatch = await f.call({ action: "stage", batchId: failedBatch.batch.id, runId: "lost-media-response", page: page(message) });
@@ -220,8 +221,8 @@ describe("executable external Agent and real MCP runner", () => {
     expect(event.attachmentIds).toEqual([committed.id]);
     expect(await attachmentIds(f)).toEqual([committed.id]);
     const read = await f.attachments.read(await f.principal(), "baby-a", committed.id);
-    expect(read.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: createHash("sha256").update(original).digest("hex") });
-    expect(read.bytes.equals(original)).toBe(true);
+    expect(read.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: sanitized.length, sha256: createHash("sha256").update(sanitized).digest("hex") });
+    expect(read.bytes.equals(sanitized)).toBe(true);
     // Repeating receipt recovery must neither POST alternate JPEG bytes nor duplicate metadata.
     const repeated = await client.uploadImage("baby-a", resolved.bytes, resolved.mime, requestId, mediaSource);
     expect(repeated.id).toBe(committed.id);
@@ -236,8 +237,8 @@ describe("executable external Agent and real MCP runner", () => {
     expect(repaired.id).toBe(committed.id);
     expect(await attachmentIds(f)).toEqual([committed.id]);
     const repairedRead = await f.attachments.read(await f.principal(), "baby-a", committed.id);
-    expect(repairedRead.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: read.attachment.sha256 });
-    expect(repairedRead.bytes.equals(original)).toBe(true);
+    expect(repairedRead.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: sanitized.length, sha256: read.attachment.sha256 });
+    expect(repairedRead.bytes.equals(sanitized)).toBe(true);
     const repairedEvent = (await f.records.query(await f.principal(), { babyId: "baby-a" })).events.find(item => item.facts.type === "BOTTLE")!;
     expect(repairedEvent.attachmentIds).toEqual([committed.id]);
   }, 45_000);
@@ -310,7 +311,7 @@ describe("executable external Agent and real MCP runner", () => {
   it("uploads an exactly mapped image through protected HTTP and attaches its durable ID through actual MCP", async () => {
     const f = await setup(); await f.configure(true); const client = await startMcp(f);
     const message = { ...source(), kind: "image" as const, text: "换了便便尿布", media: [{ sourceId: source().sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
-    const bytes = await sharp({ create: { width: 3, height: 3, channels: 3, background: "#aaccee" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 3, height: 3, channels: 3, background: "#aaccee" } }).png({ compressionLevel: 9 }).toBuffer();
     const file = path.join(f.directory, "exact-image.png"); await writeFile(file, bytes);
     const resolver = new ExactLocalMediaResolver({ roots: [f.directory], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: createHash("sha256").update(bytes).digest("hex") }] });
     const agent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]) => {
@@ -339,7 +340,7 @@ describe("executable external Agent and real MCP runner", () => {
     expect(JSON.stringify(pendingPhoto)).not.toContain(message.text);
     const caregiverToken = (await f.identity.loginLegacy("old-alice", "correct-password", "native")).token;
     expect(await f.collector.pendingMedia(await f.identity.authenticate(caregiverToken), "baby-a")).toEqual(pendingPhoto);
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#f0eedd" } }).png().toBuffer(); const file = path.join(f.directory, "later.png"); await writeFile(file, bytes);
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#f0eedd" } }).png({ compressionLevel: 9 }).toBuffer(); const file = path.join(f.directory, "later.png"); await writeFile(file, bytes);
     const resolver = new ExactLocalMediaResolver({ roots: [f.directory], mappings: [{ sourceId: message.sourceId, index: 0, path: file, sha256: createHash("sha256").update(bytes).digest("hex") }] });
     await f.collector.dispatch(f.operator, { action: "backfill", babyId: "baby-a", jobId: f.job.id, requestId: "media-backfill", range: { from: "2026-10-23T00:00:00Z", to: "2026-10-23T01:00:00Z" } });
     const attachmentAgent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]): Promise<AgentPlan> => {
@@ -350,6 +351,21 @@ describe("executable external Agent and real MCP runner", () => {
     expect(f.backend.activities.size).toBe(1); expect((await f.call({ action: "status" })).job.pendingMedia).toBe(0); expect(attachmentAgent.execute).toHaveBeenCalledTimes(1);
     expect(await f.collector.pendingMedia(await f.principal(), "baby-a")).toEqual([]);
   }, 30_000);
+
+  it("does not resurrect expired raw text through a media-only backfill", async () => {
+    const f = await setup(); await f.configure(true); const client = await startMcp(f);
+    const message = { ...source(), media: [{ sourceId: source().sourceId, kind: "image" as const, state: "unresolved" as const, reason: "EXACT_PATH_REQUIRED" }] };
+    await new CollectorRunner(client, { read: async () => page(message) }, { execute: async () => plan(message) }).once("baby-a", f.job.id);
+    const row = (await f.store.payload.find({ collection: "care-messages", where: { babyId: { equals: "baby-a" } }, overrideAccess: true })).docs[0]!;
+    const original = row.value as { source: SourceMessage };
+    await f.identity.exclusive(() => f.store.payload.update({ collection: "care-messages", id: row.id, data: { value: { ...original, privacyExpired: true, source: { ...original.source, text: "" } } }, req: f.store.currentRequest(), overrideAccess: true }));
+    await f.collector.dispatch(f.operator, { action: "backfill", babyId: "baby-a", jobId: f.job.id, requestId: "expired-source-backfill", range: { from: "2026-10-23T00:00:00Z", to: "2026-10-23T01:00:00Z" } });
+    const started = await f.call({ action: "begin", runId: "expired-backfill" });
+    const result = await f.call({ action: "stage", batchId: started.batch.id, runId: "expired-backfill", page: page(message) });
+    expect(result.batch.messages).toHaveLength(1); expect(result.batch.messages?.[0]?.text).toBe("");
+    const persisted = await f.store.payload.findByID({ collection: "care-batches", id: result.batch.id, overrideAccess: true });
+    expect(JSON.stringify(persisted)).not.toContain(message.text);
+  }, 30000);
 
   it("never revives withdrawn facts when media backfill proposes a new event key", async () => {
     const f = await setup(); await f.configure(true); const client = await startMcp(f);
@@ -383,7 +399,7 @@ describe("executable external Agent and real MCP runner", () => {
     await new CollectorRunner(client, { read: async () => page(message) }, { execute: async () => plan(message) }).once("baby-a", f.job.id);
     const token = (await f.identity.loginLegacy("old-alice", "correct-password", "native")).token, human = await f.identity.authenticate(token);
     const event = (await f.records.query(human, { babyId: "baby-a" })).events[0]!;
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#aabbcc" } }).png().toBuffer();
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "#aabbcc" } }).png({ compressionLevel: 9 }).toBuffer();
     const attachment = await f.attachments.upload(human, "baby-a", bytes, "image/png", "human-photo-upload");
     const request = { babyId: "baby-a", requestId: "human-photo-confirm", pendingId: `media:${message.sourceId}`, eventId: event.id, expectedVersion: event.version, attachmentId: attachment.id };
     await expect(f.collector.resolveMedia(await f.principal(), request)).rejects.toMatchObject({ code: "MEDIA_HUMAN_CONFIRMATION_REQUIRED" });
@@ -445,7 +461,7 @@ describe("executable external Agent and real MCP runner", () => {
     expect(await runner.once("baby-a", f.job.id)).toMatchObject({ skipped: "not_due" });
     expect(reader.read).toHaveBeenCalledTimes(1);
     await f.identity.bindGroup(f.operator, "baby-a", f.groupId, "collector-agent", false);
-    await expect(client.call("bubu_get_pending", { babyId: "baby-a" })).rejects.toThrow("MCP_TOOL_FAILED");
+    await expect(client.call("bubu_get_pending", { babyId: "baby-a" })).rejects.toMatchObject({ status: 403, code: "BABY_FORBIDDEN", retryable: false });
   }, 30_000);
 
   it("exposes a real timer entry that stops on abort without enabling a job", async () => {
