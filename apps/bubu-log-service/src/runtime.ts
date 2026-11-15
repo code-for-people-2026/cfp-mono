@@ -62,6 +62,7 @@ interface RuntimeOptions {
   deletionLedger?: string;
   maintenanceWorker?: boolean;
   schemaPush?: boolean;
+  initializeSchema?: boolean;
 }
 
 /** One writer, one Payload instance, and one RecordsService serialization queue. */
@@ -76,7 +77,7 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
   // Payload HMR can destroy/reinitialize its DB; restart the whole server instead.
   process.env.DISABLE_PAYLOAD_HMR = "true";
   try {
-    const config = buildRuntimeConfig({ directory: options.directory, secret: options.secret, origin: opsOrigin, schemaPush: options.schemaPush });
+    const config = buildRuntimeConfig({ directory: options.directory, secret: options.secret, origin: opsOrigin, schemaPush: options.schemaPush, initializeSchema: options.initializeSchema });
     registerRuntimeState({ config });
     store = new Store(await getPayload({ config }));
     serializeDatabaseTransactions(store.payload);

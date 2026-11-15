@@ -50,15 +50,17 @@ export class Store {
   currentRequest(): PayloadRequest | undefined { return this.transactions.getStore(); }
   async close() { await this.payload.destroy(); }
 }
-interface StoreOptions { directory: string; secret?: string; extensions?: CollectionConfig[]; schemaOnly?: boolean; schemaPush?: boolean; configure?: (config: Config) => Config }
+interface StoreOptions { directory: string; secret?: string; extensions?: CollectionConfig[]; schemaOnly?: boolean; schemaPush?: boolean; initializeSchema?: boolean; configure?: (config: Config) => Config }
 export async function buildStoreConfig(options: StoreOptions) {
   const directory = path.resolve(options.directory);
+  const initializeSchema = options.initializeSchema !== false;
   if (!options.schemaOnly) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const secretFile = path.join(directory, "secret");
   if (!options.secret && !existsSync(secretFile)) writeFileSync(secretFile, randomBytes(48).toString("hex"), { flag: "wx", mode: 0o600 });
   const config: Config = {
     secret: options.secret || readFileSync(secretFile, "utf8"), collections: [...collections, ...(options.extensions || [])],
-    db: sqliteAdapter({ client: { url: options.schemaOnly ? "file::memory:" : `file:${directory}/identity.db` }, push: !options.schemaOnly && (options.schemaPush ?? process.env.NODE_ENV !== "production"), prodMigrations: options.schemaOnly ? [] : migrations, transactionOptions: {} }),
+    db: sqliteAdapter({ client: { url: options.schemaOnly ? "file::memory:" : `file:${directory}/identity.db` }, push: initializeSchema && !options.schemaOnly && (options.schemaPush ?? process.env.NODE_ENV !== "production"),
+      ...(initializeSchema ? { prodMigrations: options.schemaOnly ? [] : migrations } : {}), transactionOptions: {} }),
     typescript: { autoGenerate: false }, telemetry: false,
   };
   return buildConfig(options.configure ? options.configure(config) : config);

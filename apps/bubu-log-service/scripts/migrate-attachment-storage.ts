@@ -205,6 +205,7 @@ export async function runAttachmentStorageMigrationCli(options: {
     objectStore: false,
     maintenanceWorker: false,
     schemaPush: false,
+    initializeSchema: false,
   });
   try {
     return await migrateAttachmentStorage(runtime.identity, directory, objectStore, { apply: options.apply, removeLocal: options.removeLocal });
