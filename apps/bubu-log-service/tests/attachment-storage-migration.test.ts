@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import sharp from "sharp";
@@ -9,6 +9,7 @@ import { attachmentObjectKey, AttachmentService } from "../src/records/attachmen
 import { hash, recordCollections, RecordsRepository } from "../src/records/persistence";
 import type { SourceRef } from "../src/records/types";
 import { IdentityService, type Principal } from "../src/identity";
+import { decryptMedia, mediaKey } from "../src/privacy/media-encryption";
 import { openStore, type Store } from "../src/store";
 import type { AttachmentObjectStore } from "../src/storage/attachment-objects";
 import { LegacyFixture, WechatFixture } from "./fixtures/identity";
@@ -69,7 +70,6 @@ describe("offline attachment storage migration", () => {
   const metadata = (id: string) => store.transaction(req => new RecordsRepository(store.payload)
     .get<StoredAttachment>("care-attachments", "baby-a", id, req));
   const objectFile = (sha256: string) => path.join(directory, "private-attachments", hash("baby-a"), sha256);
-  const photoHash = () => createHash("sha256").update(photo).digest("hex");
 
   it("dry-run verifies legacy local bytes without remote or metadata writes", async () => {
     const uploaded = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-dry-run", source);
@@ -101,7 +101,9 @@ describe("offline attachment storage migration", () => {
     expect(afterSecond?.requestFingerprint).toBe(before?.requestFingerprint);
     expect(afterSecond?.source).toEqual(before?.source);
     expect(objects.puts).toBe(1);
-    expect(objects.objects.get(key)).toEqual(photo);
+    const ciphertext = objects.objects.get(key)!;
+    expect(ciphertext).not.toEqual(photo);
+    expect(createHash("sha256").update(decryptMedia(ciphertext, mediaKey(directory), `${hash("baby-a")}:${second.sha256}`)).digest("hex")).toBe(second.sha256);
     expect((await stat(objectFile(second.sha256))).isFile()).toBe(true);
   });
 
@@ -117,17 +119,16 @@ describe("offline attachment storage migration", () => {
   });
 
   it("removes one verified shared local file after every duplicate reference is committed", async () => {
-    await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-first", source);
+    const first = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-first", source);
     await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-second", source);
     const report = await migrateAttachmentStorage(identity, directory, objects, { apply: true, removeLocal: true });
     expect(report).toMatchObject({ scanned: 2, legacy: 2, cleanupCandidates: 2, removedLocal: 1, cleanupFailed: 0 });
     expect(objects.puts).toBe(1); expect(objects.removals).toBe(0);
-    await expect(stat(objectFile(photoHash()))).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(objectFile(first.sha256))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("does not remove the last verified local copy when post-commit cleanup verification fails", async () => {
     const uploaded = await attachments.upload(principal, "baby-a", photo, "image/png", "migration-cleanup-check", source);
-    await writeFile(objectFile(photoHash()), photo, { mode: 0o600 });
     const file = objectFile(uploaded.sha256);
     objects.failAtGet = objects.gets + 2; // The migration read-back succeeds; the first cleanup GET fails.
     try {

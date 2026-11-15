@@ -12,7 +12,7 @@ import { RecordsRepository, recordCollections, hash } from "../src/records/persi
 import { RecordsService } from "../src/records/service";
 import { recordSchema } from "../src/records/schemas";
 import { createHandler } from "../src/http";
-import { AttachmentService } from "../src/records/attachments";
+import { AttachmentService, sanitizeAttachment } from "../src/records/attachments";
 import type { LegacyActivity, LegacyRecordsBackend } from "../src/records/types";
 import { CollectorService, collectorRequestId, type CollectorJob, type CollectorBatch, type AgentPlan } from "../src/collector/service";
 import { CollectorMcpClient, CollectorRunner, preparePlanCall, scheduleCollector, CommandAgentExecutor } from "../src/collector/runner";
@@ -195,6 +195,7 @@ describe("executable external Agent and real MCP runner", () => {
     const requestId = `collector-media-${hash([message.sourceId, 0])}`;
     const original = await syntheticOpaquePng(2049, 1200);
     expect(original.length).toBeGreaterThan(1024 * 1024);
+    const sanitized = (await sanitizeAttachment(original, "image/png")).bytes;
     const committed = await client.uploadImage("baby-a", original, "image/png", requestId, mediaSource);
     const failedBatch = await f.call({ action: "begin", runId: "lost-media-response" });
     const stagedBatch = await f.call({ action: "stage", batchId: failedBatch.batch.id, runId: "lost-media-response", page: page(message) });
@@ -220,8 +221,8 @@ describe("executable external Agent and real MCP runner", () => {
     expect(event.attachmentIds).toEqual([committed.id]);
     expect(await attachmentIds(f)).toEqual([committed.id]);
     const read = await f.attachments.read(await f.principal(), "baby-a", committed.id);
-    expect(read.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: createHash("sha256").update(original).digest("hex") });
-    expect(read.bytes.equals(original)).toBe(true);
+    expect(read.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: sanitized.length, sha256: createHash("sha256").update(sanitized).digest("hex") });
+    expect(read.bytes.equals(sanitized)).toBe(true);
     // Repeating receipt recovery must neither POST alternate JPEG bytes nor duplicate metadata.
     const repeated = await client.uploadImage("baby-a", resolved.bytes, resolved.mime, requestId, mediaSource);
     expect(repeated.id).toBe(committed.id);
@@ -236,8 +237,8 @@ describe("executable external Agent and real MCP runner", () => {
     expect(repaired.id).toBe(committed.id);
     expect(await attachmentIds(f)).toEqual([committed.id]);
     const repairedRead = await f.attachments.read(await f.principal(), "baby-a", committed.id);
-    expect(repairedRead.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: original.length, sha256: read.attachment.sha256 });
-    expect(repairedRead.bytes.equals(original)).toBe(true);
+    expect(repairedRead.attachment).toMatchObject({ id: committed.id, mime: "image/png", byteLength: sanitized.length, sha256: read.attachment.sha256 });
+    expect(repairedRead.bytes.equals(sanitized)).toBe(true);
     const repairedEvent = (await f.records.query(await f.principal(), { babyId: "baby-a" })).events.find(item => item.facts.type === "BOTTLE")!;
     expect(repairedEvent.attachmentIds).toEqual([committed.id]);
   }, 45_000);

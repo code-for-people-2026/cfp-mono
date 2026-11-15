@@ -1,4 +1,3 @@
-import type { PayloadRequest } from "payload";
 import type { AttachmentService } from "../records/attachments";
 import type { PrivacyService } from "./service";
 import type { DeletionService } from "./deletion";
@@ -12,7 +11,8 @@ export class PrivacyMaintenance {
   async run(apply = false): Promise<Report> {
     if (!this.privacy.policy().ready) throw new Error("Retention policy must be configured before maintenance");
     if (apply) await this.deletion.processPending();
-    return this.privacy.identity.exclusive(() => this.privacy.identity.store.transaction(async req => {
+    const orphanCutoff = this.privacy.identity.now() - this.privacy.config.orphanHours * 3600_000;
+    const report = await this.privacy.identity.exclusive(() => this.privacy.identity.store.transaction(async req => {
       const payload = this.privacy.identity.store.payload, now = this.privacy.identity.now();
       const cutoff = now - this.privacy.config.chatDays * 86400_000, orphanCutoff = now - this.privacy.config.orphanHours * 3600_000;
       const report: Report = { expiredChats: 0, expiredMessages: 0, expiredBatches: 0, orphanAttachments: 0, expiredSignals: 0, deferredTasks: 0 };
@@ -62,8 +62,11 @@ export class PrivacyMaintenance {
         const time = String(row.key).startsWith("safety-seen:") ? value.seenAt : String(row.key).startsWith("intent:") ? value.expiresAt : undefined;
         if (time && Date.parse(time) < cutoff && apply) await payload.delete({ collection: "privacy-state", id: row.id, overrideAccess: true, req });
       }
-      if (apply) await this.attachments.purgeOrphanObjects(req as PayloadRequest, orphanCutoff);
       return report;
     }));
+    // Metadata removal commits first. OSS listing/removal is then serialized in the media
+    // queue, outside the identity transaction; local cleanup keeps the same external phase.
+    if (apply) await this.attachments.purgeOrphanObjects(undefined, orphanCutoff);
+    return report;
   }
 }

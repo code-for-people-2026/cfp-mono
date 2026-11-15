@@ -100,7 +100,7 @@ it("keeps an in-flight native image selection and its preview when onShow fires 
 it("still removes private views when the foreground recheck finds revoked consent", async () => {
   await openChat();
   fixture.api.privacyStatus.mockResolvedValue({ consentCurrent: false, guardianCurrent: false });
-  await act(async () => { for (const show of [...fixture.show]) show(); });
+  await act(async () => { for (const show of [...fixture.pageShow]) show(); });
   expect(root.root.findAllByProps({ ariaLabel: "添加照片" })).toHaveLength(0);
   expect(JSON.stringify(root.toJSON())).toContain("permission-needed");
 });

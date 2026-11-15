@@ -3,12 +3,13 @@ import type { PayloadRequest, Where } from "payload";
 import { AppError } from "../contracts";
 import type { Principal } from "../identity";
 import type { AttachmentService } from "../records/attachments";
-import { recordTables } from "../records/persistence";
+import { hash, recordTables } from "../records/persistence";
 import type { PrivacyService, GuardianConsent } from "./service";
 import { DeletionLedger, type DeletionEntry } from "./deletion-ledger";
 
-export interface DeletionJob extends DeletionEntry { status: "pending" | "running" | "retry" | "completed"; updatedAt: string; errorCode?: string }
+export interface DeletionJob extends DeletionEntry { status: "pending" | "running" | "retry" | "completed"; updatedAt: string; errorCode?: string; mediaObjectKeys?: string[] }
 interface Intent { contractVersion: 2; legacyUserIds: string[]; kind: "account" | "family"; identityId: string; babyId?: string; expiresAt: string; used?: string; confirmation: string }
+interface DeletionAttachmentReference { id: string; babyId: string; sha256: string; uploadedBy?: { id?: string; onBehalfOf?: string }; storage?: { kind: "oss"; key: string } }
 export interface FamilyLifecycle {
   exportFamilyData(babyId: string): Promise<unknown>;
   deleteFamilyData(babyId: string): Promise<void>;
@@ -108,13 +109,21 @@ export class DeletionService {
     const result = await this.identity.store.payload.delete({ collection, where, overrideAccess: true, req });
     if (result.errors?.length) throw new Error("Deletion did not remove every scoped document");
   }
+  private mediaObjectKey(value: DeletionAttachmentReference): string | undefined {
+    const key = `${hash(value.babyId)}/${value.sha256}`;
+    if (!/^[a-f0-9]{64}\/[a-f0-9]{64}$/.test(key)) throw new Error("Invalid attachment object key");
+    if (value.storage !== undefined && (value.storage.kind !== "oss" || value.storage.key !== key)) throw new Error("Invalid attachment storage");
+    return key;
+  }
   private async run() {
     for (const entry of this.ledger.read()) {
       const key = `deletion:${entry.jobId}`;
       const previous = await this.privacy.repository.get<DeletionJob>("privacy-state", key);
       if (previous?.status === "completed") continue;
+      let currentJob: DeletionJob = { ...entry, status: "retry", updatedAt: this.now(), ...(previous?.mediaObjectKeys ? { mediaObjectKeys: previous.mediaObjectKeys } : {}) };
       try {
-        await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", key, { ...entry, status: "running", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }));
+        currentJob = { ...entry, status: "running", updatedAt: this.now(), ...(previous?.mediaObjectKeys ? { mediaObjectKeys: previous.mediaObjectKeys } : {}) };
+        await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", key, currentJob, { identityId: entry.identityId }));
         if (entry.kind === "family") {
           if (!this.legacy) fail("LEGACY_DELETION_UNAVAILABLE", "原照护数据删除尚未配置。", 503);
           await this.legacy!.deleteFamilyData(entry.babyId!);
@@ -133,11 +142,13 @@ export class DeletionService {
             for (const collection of [...recordTables, "service-memberships", "service-membership-changes", "ops-requests", "safety-signals"]) {
               if (payload.collections[collection]) await this.remove(collection, { babyId: { equals: entry.babyId } }, req);
             }
-            await this.attachments.purgeFamilyObjects(entry.babyId!);
           } else {
             const rows = await payload.find({ collection: "care-attachments", pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
+            const doomed = new Set<string>();
+            const candidates = new Set<string>();
+            for (const key of currentJob.mediaObjectKeys || []) candidates.add(key);
             for (const row of rows.docs) {
-              const attachment = row.value as { uploadedBy?: { id?: string; onBehalfOf?: string }; babyId: string; id: string };
+              const attachment = row.value as DeletionAttachmentReference;
               if (![attachment.uploadedBy?.id, attachment.uploadedBy?.onBehalfOf].some(id => !!id && identityIds.includes(id))) continue;
               // Shared record/revision references remain part of the family's care history.
               let shared = false;
@@ -145,8 +156,16 @@ export class DeletionService {
                 const refs = await payload.find({ collection, where: { babyId: { equals: attachment.babyId } }, pagination: false, limit: 0, depth: 0, overrideAccess: true, req });
                 if (refs.docs.some(ref => JSON.stringify(ref.value).includes(attachment.id))) { shared = true; break; }
               }
-              if (!shared) await payload.delete({ collection: "care-attachments", id: row.id, overrideAccess: true, req });
+              if (!shared) {
+                doomed.add(String(row.id));
+                const objectKey = this.mediaObjectKey(attachment);
+                if (objectKey) candidates.add(objectKey);
+              }
             }
+            // Candidate keys commit before metadata deletion, so a crash can finish the same account purge.
+            currentJob = { ...currentJob, mediaObjectKeys: [...candidates].sort(), updatedAt: this.now() };
+            await this.privacy.repository.put("privacy-state", key, currentJob, { identityId: entry.identityId }, req);
+            for (const id of doomed) await payload.delete({ collection: "care-attachments", id, overrideAccess: true, req });
           }
           const accountSessions = new Set((await store.list("sessions")).filter(row => identityIds.includes(String(row.value.subjectId))).map(row => row.key));
           for (const collection of ["sessions", "grants", "invitations", "group-bindings", "audit"] as const) {
@@ -157,16 +176,19 @@ export class DeletionService {
           }
           if (entry.kind === "account") for (const row of await store.list("identities")) if (identityIds.includes(String(row.value.subjectId)) || identityIds.some(id => row.key === `subject:${id}` || row.key === `family:${id}`)) await payload.delete({ collection: "identities", id: row.id, overrideAccess: true, req });
           await this.remove("privacy-requests", scoped, req);
-          for (const row of await this.privacy.repository.list("privacy-state", scoped, req)) if (!row.key.startsWith("deletion:")) await payload.delete({ collection: "privacy-state", id: row.id, overrideAccess: true, req });
+          for (const row of await this.privacy.repository.list("privacy-state", scoped, req)) if (!row.key.startsWith("deletion:") && !row.key.startsWith("media-upload:")) await payload.delete({ collection: "privacy-state", id: row.id, overrideAccess: true, req });
           if (entry.kind === "family") for (const row of await store.list("identities")) {
             if (row.key.startsWith("family:") && row.value.babyId === entry.babyId) await payload.delete({ collection: "identities", id: row.id, overrideAccess: true, req });
             else if (row.key.startsWith("subject:") && row.value.currentBabyId === entry.babyId) { const value = { ...row.value }; delete value.currentBabyId; await store.put("identities", row.key, value); }
           }
-          await this.attachments.purgeOrphanObjects(req);
-          await this.privacy.repository.put("privacy-state", key, { ...entry, status: "completed", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }, req);
         }));
+        // Runtime OSS cleanup is outside the identity transaction and serialized in the media
+        // queue. Family deletion uses one exact prefix; account deletion uses durable candidates.
+        if (entry.kind === "family") await this.attachments.purgeFamilyObjects(entry.babyId!);
+        else await this.attachments.purgeAccountObjects(entry.identityIds || [entry.identityId], currentJob.mediaObjectKeys || []);
+        await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", key, { ...currentJob, status: "completed", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }));
       } catch (error) {
-        await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", key, { ...entry, status: "retry", updatedAt: this.now(), errorCode: error instanceof AppError ? error.code : "DELETION_RETRY_REQUIRED" } satisfies DeletionJob, { identityId: entry.identityId }));
+        await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", key, { ...currentJob, status: "retry", updatedAt: this.now(), errorCode: error instanceof AppError ? error.code : "DELETION_RETRY_REQUIRED" } satisfies DeletionJob, { identityId: entry.identityId }));
       }
     }
   }
@@ -179,7 +201,10 @@ export class DeletionService {
   }
   /** Restored snapshots must replay even jobs that appeared completed in the restored DB. */
   async replayAfterRestore() {
-    for (const entry of this.ledger.read()) await this.identity.exclusive(() => this.privacy.repository.put("privacy-state", `deletion:${entry.jobId}`, { ...entry, status: "pending", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId }));
+    for (const entry of this.ledger.read()) await this.identity.exclusive(async () => {
+      const existing = await this.privacy.repository.get<DeletionJob>("privacy-state", `deletion:${entry.jobId}`);
+      await this.privacy.repository.put("privacy-state", `deletion:${entry.jobId}`, { ...entry, ...(existing?.mediaObjectKeys ? { mediaObjectKeys: existing.mediaObjectKeys } : {}), status: "pending", updatedAt: this.now() } satisfies DeletionJob, { identityId: entry.identityId });
+    });
     await this.processPending();
     for (const entry of this.ledger.read()) if ((await this.privacy.repository.get<DeletionJob>("privacy-state", `deletion:${entry.jobId}`))?.status !== "completed") throw new Error("Restored data remains frozen: deletion replay is incomplete");
   }

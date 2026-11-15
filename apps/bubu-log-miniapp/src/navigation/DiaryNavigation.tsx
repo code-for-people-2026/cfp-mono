@@ -2,12 +2,14 @@ import { Button, Image, Picker, ScrollView, Text, View } from "@tarojs/component
 import Taro from "@tarojs/taro";
 import { useEffect, useState, type ReactNode } from "react";
 import brandIcon from "../assets/branding/bubu-avatar-borderless-v1.png";
+import { identityEnabled } from "../api";
 import type { AuthContext } from "../model";
 import { readNavigationLayout } from "./layout";
 import "./navigation.css";
 
 export type DiaryView = "day" | "week" | "month" | "trend" | "list";
 type Props = {
+  restricted?: boolean;
   context?: AuthContext | null;
   mode?: DiaryView;
   title?: string;
@@ -72,7 +74,7 @@ export function DiaryNavigation(props: Props) {
           </View>
         </View>
         <ScrollView scrollY className="diary-menu-content">
-          {([
+          {!props.restricted && ([
             ["day", "日历", "每天的照护记录"],
             ["list", "历史记录", "按日期查看全部记录"],
             ["trend", "趋势", "睡眠、奶量与尿布的变化"],
@@ -81,7 +83,8 @@ export function DiaryNavigation(props: Props) {
           </Button>)}
         </ScrollView>
         <View className="diary-menu-footer">
-          <Button className="diary-menu-link" onClick={props.onSettings}><View><Text className="diary-menu-label">设置</Text><Text className="diary-menu-caption">宝宝昵称与姓名</Text></View><Text className="diary-menu-arrow">›</Text></Button>
+          {!props.restricted && <Button className="diary-menu-link" onClick={props.onSettings}><View><Text className="diary-menu-label">设置</Text><Text className="diary-menu-caption">宝宝昵称与姓名</Text></View><Text className="diary-menu-arrow">›</Text></Button>}
+          {identityEnabled && <Button className="diary-menu-link" onClick={() => { props.onClose?.(); void Taro.navigateTo({ url: `/pages/privacy/index?babyId=${encodeURIComponent(context.baby?.id || "")}` }); }}><View><Text className="diary-menu-label">隐私与安全</Text><Text className="diary-menu-caption">授权、数据、投诉与注销</Text></View><Text className="diary-menu-arrow">›</Text></Button>}
           <View className="diary-menu-utilities">
             <Button className="text-button" onClick={props.onRefresh}>刷新数据</Button>
             <Button className="text-button" disabled={props.busy || undefined} onClick={props.onLogout}>退出登录</Button>
