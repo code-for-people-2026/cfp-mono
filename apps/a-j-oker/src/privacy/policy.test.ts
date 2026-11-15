@@ -1,0 +1,58 @@
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { privacyPolicy } from "./policy";
+
+beforeEach(() => {
+  vi.stubEnv("DASHSCOPE_API_KEY", "");
+  vi.stubEnv("HELLO_IMAGE_REVIEW_MODE", "");
+  for (const [key, value] of Object.entries({
+    HELLO_PRIVACY_CONTACT: "test@example.invalid", HELLO_PRIVACY_RESPONSE_DAYS: "7", HELLO_PRIVACY_STORAGE_LOCATION: "隔离测试", HELLO_PRIVACY_RETENTION_DAYS: "30", HELLO_PRIVACY_BACKUP_DAYS: "7", HELLO_PRIVACY_DELETION_LEDGER: "/test-only/deletions.ndjson", HELLO_PRIVACY_OPERATIONS_APPROVED: "true",
+    HELLO_IMAGE_REVIEW_PROVIDER: "合成审核器", HELLO_IMAGE_REVIEW_CONTACT: "test@example.invalid", HELLO_IMAGE_REVIEW_REGION: "隔离测试", HELLO_IMAGE_REVIEW_PRIVACY_URL: "https://example.invalid/privacy",
+  })) vi.stubEnv(key, value);
+});
+it("启用万相后告知生图接收方和北京地域，并要求重新同意", () => {
+  const before = privacyPolicy();
+  vi.stubEnv("DASHSCOPE_API_KEY", "synthetic-test-only");
+  const after = privacyPolicy();
+  expect(after.version).not.toBe(before.version);
+  expect(JSON.stringify(after.documents)).toContain("百炼万相");
+  expect(JSON.stringify(after.documents)).toContain("中国内地北京");
+  expect(JSON.stringify(after.documents)).not.toContain("synthetic-test-only");
+});
+it("阿里云审核使用实际接收方说明，切换后必须重新同意政策", () => {
+  const before = privacyPolicy();
+  vi.stubEnv("HELLO_IMAGE_REVIEW_MODE", "aliyun-green");
+  const after = privacyPolicy();
+  expect(after.imageReviewDisclosed).toBe(true);
+  expect(after.version).not.toBe(before.version);
+  expect(JSON.stringify(after.documents)).toContain("中国内地上海");
+  expect(JSON.stringify(after.documents)).not.toContain("合成审核器");
+});
+afterEach(() => vi.unstubAllEnvs());
+it.each([undefined, "", "   "])("没有图审地址时仅关闭图片，普通文字的运营就绪不受影响（%s）", (url) => {
+  vi.stubEnv("HELLO_IMAGE_REVIEW_URL", url);
+  expect(privacyPolicy()).toMatchObject({ imageReviewDisclosed: false, ready: true });
+});
+it("图审接收方全部配置后才可开放，缺少联系渠道仍拒绝", () => {
+  vi.stubEnv("HELLO_IMAGE_REVIEW_URL", "https://review.example.invalid");
+  expect(privacyPolicy()).toMatchObject({ imageReviewDisclosed: true, ready: true });
+  vi.stubEnv("HELLO_IMAGE_REVIEW_CONTACT", " ");
+  expect(privacyPolicy()).toMatchObject({ imageReviewDisclosed: false, ready: true });
+});
+
+it("文字运营资料不完整时仍不开放基础处理", () => {
+  vi.stubEnv("HELLO_IMAGE_REVIEW_URL", "https://review.example.invalid");
+  vi.stubEnv("HELLO_PRIVACY_CONTACT", " ");
+  expect(privacyPolicy()).toMatchObject({ imageReviewDisclosed: true, ready: false });
+});
+
+it("公开说明如实反映有限留存、服务器日志和腾讯语音插件的已核实边界", () => {
+  const policy = privacyPolicy();
+  const text = JSON.stringify(policy.documents);
+  expect(policy.backupNotice).toContain("八日恢复防御窗口");
+  expect(policy.backupNotice).not.toContain("运营方案待公司确认");
+  expect(text).toContain("保留 10 个历史文件并压缩");
+  expect(text).toContain("不等于固定保留 10 天");
+  expect(text).toContain("wx069ba97219f66d99");
+  expect(text).toContain("没有公开核实到该插件音频的固定留存期限、处理省份或训练使用承诺");
+  expect(text).toContain("排期仍只是元数据，须管理员另行明确激活");
+});

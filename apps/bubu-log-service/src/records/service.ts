@@ -116,7 +116,7 @@ export class RecordsService {
   private desired(event: CareEvent): LegacyActivity | null {
     if (event.lifecycle !== "active" || event.duplicateCandidates.length || !event.facts.type || !event.facts.startTime || event.conflicts.length) return null;
     const facts = { ...event.facts };
-    delete facts.preparedMilkAmount; delete facts.remainingMilkAmount; delete facts.sameBottle; delete facts.durationMinutes; delete facts.reportedIntake;
+    delete facts.preparedMilkAmount; delete facts.remainingMilkAmount; delete facts.sameBottle; delete facts.reportedIntake; delete facts.durationMinutes;
     return { ...facts, id: event.legacyId, babyId: event.babyId, type: event.facts.type, startTime: event.facts.startTime,
       ...(pointTypes.has(event.facts.type) ? { endTime: event.facts.startTime } : {}) };
   }
@@ -406,12 +406,13 @@ export class RecordsService {
       after.projected=current;after.conflicts=[];
       if(!current)after.lifecycle="retracted";
       else {
-        const metadata=["preparedMilkAmount","remainingMilkAmount","sameBottle","reportedIntake"];
+        const metadata=current.type==="BREASTFEED"
+          ?["preparedMilkAmount","remainingMilkAmount","sameBottle","reportedIntake"]
+          :["preparedMilkAmount","remainingMilkAmount","sameBottle"];
         const facts=Object.fromEntries(Object.entries(after.facts).filter(([field])=>metadata.includes(field)));
         const states=Object.fromEntries(Object.entries(after.states).filter(([field])=>metadata.includes(field)));
         const evidence=after.evidence.filter(item=>metadata.includes(item.field));
         Object.assign(after,this.apply({...after,facts,states,evidence},{facts:legacyFacts(current)}));
-        if(after.facts.type!=="BREASTFEED")after.evidence=after.evidence.filter(item=>item.field!=="reportedIntake");
       }
       // Set expected to the explicitly accepted latest snapshot, never silently overwrite it.
       return [{before:{...before,projected:current},after}];

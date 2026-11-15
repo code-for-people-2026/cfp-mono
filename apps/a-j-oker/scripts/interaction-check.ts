@@ -1,0 +1,138 @@
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { randomUUID } from "node:crypto";
+import assert from "node:assert/strict";
+
+const dir = await mkdtemp(join(tmpdir(), "hello-interaction-"));
+process.env.HELLO_DATABASE_URI = `file:${dir}/check.db`;
+process.env.PAYLOAD_SECRET = randomUUID() + randomUUID();
+process.env.HELLO_DEPLOYED = "false";
+process.env.HELLO_PRIVACY_DELETION_LEDGER = `${dir}/deletions.ndjson`;
+process.env.DEEPSEEK_API_KEY = "synthetic-not-a-real-key";
+const { cms } = await import("../src/cms/client");
+const { Repository } = await import("../src/cms/repository");
+const { GreetingService } = await import("../src/domain/greetings");
+const { seedSyntheticAge } = await import("./synthetic-age");
+const { AgeService } = await import("../src/age/service");
+const { InteractionService, emergencyContactForCase } = await import("../src/interaction/service");
+const { ageProfile } = await import("../src/age/service");
+const { PrivacyService } = await import("../src/privacy/service");
+const { purgeExpiredEvidence } = await import("../src/operations/retention");
+const { privacyPolicy } = await import("../src/privacy/policy");
+const { TWO_HOURS } = await import("../src/interaction/policy");
+const payload = await cms();
+try {
+  const owner = { id: `synthetic:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };
+  await seedSyntheticAge(payload, owner);
+  const repo = new Repository(payload, owner);
+  let generated = 0;
+  const ordinary = { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: false };
+  const service = new GreetingService(repo, async (r) => { generated++; await r.save({ greeting: "继续聊吧", association: "合成回归", artifacts: [] }); }, undefined, undefined, {
+    moderate: async () => ({ serviceScope: "support" as const, interaction: ordinary }),
+  });
+  const session = await service.createSession();
+  await service.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "小说里写道：“我12岁。”我想聊聊这个角色。", mediaIds: [] } });
+  assert.equal(generated, 1, "quoted age is an ordinary semantic input");
+  const minor = { ...ordinary, minor: true };
+  const minorService = new GreetingService(repo, async () => { throw new Error("minor must not generate"); }, undefined, undefined, {
+    moderate: async () => ({ serviceScope: "support" as const, interaction: minor }),
+  });
+  await assert.rejects(minorService.generateGreeting({ sessionId: session.id, requestId: randomUUID(), mode: "platform", input: { text: "我今年12岁，想继续聊天。", mediaIds: [] } }), /年龄|未成年|复核/);
+  assert.equal(generated, 1, "semantic current-minor verdict must pause generation");
+  assert.equal((await new AgeService(payload, owner).status()).state, "needs_review");
+  await assert.rejects(new AgeService(payload, owner).requireCapability(), /复核/);
+  const adult = { id: `synthetic:${randomUUID()}`, auth: "cookie" as const, wechatKey: "" };
+  await seedSyntheticAge(payload, adult);
+  const privacy = new PrivacyService(new Repository(payload, adult));
+  await privacy.consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
+  const interaction = new InteractionService(payload, adult);
+  const { POST } = await import("../src/app/api/hello/[...path]/route");
+  const { mintCredential, COOKIE } = await import("../src/server/auth");
+  const credential = await mintCredential(payload, "cookie", adult.id, adult.wechatKey);
+  const request = (action: string, body: unknown, origin = "http://127.0.0.1:3310", token = credential.token) => POST(new Request(`http://127.0.0.1:3310/api/hello/interaction/${action}`, {
+    method: "POST", headers: { Cookie: `${COOKIE}=${token}`, Origin: origin, "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }), { params: Promise.resolve({ path: ["interaction", action] }) });
+  assert.equal((await request("acknowledge", { id: "invalid-notice" })).status, 400, "asynchronous validation errors must become structured HTTP responses");
+  assert.equal((await request("remove-contact", {}, "https://untrusted.invalid")).status, 403);
+  assert.equal((await request("heartbeat", {})).status, 200);
+  assert.equal((await request("heartbeat", {}, "http://127.0.0.1:3310", "invalid-token")).status, 401);
+  await assert.rejects(interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: false, contactInformed: true, version: "2026-10-24.v1" }));
+  const saved = await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
+  assert.equal(saved.contact?.phone, "13800000000");
+  let profile = (await ageProfile(payload, adult.id))!;
+  assert.ok(!JSON.stringify(profile.interaction).includes("13800000000"), "database must not retain contact plaintext");
+  assert.equal((await new InteractionService(payload, owner).status()).contact, null);
+  await assert.rejects(new InteractionService(payload, { ...adult, auth: "bearer" }).status(), /外部连接/);
+  assert.equal((await privacy.exportData()).interactionSafety.contact?.phone, "13800000000");
+  for (const invalidConsent of ["stale-version", "expired"] as const) {
+    const privacyProfile = (await payload.find({ collection: "privacy-profiles", overrideAccess: true, limit: 1, where: { owner: { equals: adult.id } } })).docs[0];
+    await payload.update({ collection: "privacy-profiles", id: privacyProfile.id, overrideAccess: true, data: invalidConsent === "stale-version"
+      ? { consent: { version: "superseded-policy", core: true, model: true, sensitive: true, external: false } }
+      : { expiresAt: new Date(Date.now() - 60_000).toISOString() } });
+    assert.equal((await new AgeService(payload, adult).status()).allowed, true, "valid age verification alone does not establish current privacy consent");
+    const before = (await ageProfile(payload, adult.id))!.interaction;
+    assert.equal((await request("heartbeat", {})).status, 403, `${invalidConsent}: must not collect more usage`);
+    assert.equal((await request("contact", { name: "另一个合成联系人", phone: "13900000000", consent: true, contactInformed: true, version: "2026-10-24.v1" })).status, 403, `${invalidConsent}: separate contact consent must not bypass overall privacy consent`);
+    assert.deepEqual((await ageProfile(payload, adult.id))!.interaction, before, `${invalidConsent}: rejected requests must not change interaction data`);
+    assert.equal((await interaction.status()).contact?.phone, "13800000000", `${invalidConsent}: existing data remains readable`);
+    assert.equal((await privacy.exportData()).interactionSafety.contact?.phone, "13800000000", `${invalidConsent}: existing data remains exportable`);
+    assert.equal((await request("remove-contact", {})).status, 200, `${invalidConsent}: removal must remain available`);
+    assert.equal((await interaction.status()).contact, null);
+    await privacy.consent({ version: privacyPolicy().version, core: true, model: true, sensitive: true, external: false });
+    await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
+    assert.equal((await request("heartbeat", {})).status, 200, "renewed overall consent restores new processing");
+  }
+  profile = (await ageProfile(payload, adult.id))!;
+  await payload.update({ collection: "age-profiles", id: profile.id, overrideAccess: true, data: { interaction: { ...(profile.interaction as object), activeMs: TWO_HOURS, lastSeen: Date.now(), reminded: 0 } } });
+  const first = await interaction.heartbeat(), second = await interaction.heartbeat();
+  assert.equal(first.notice?.kind, "duration"); assert.equal(first.notice?.id, second.notice?.id);
+  assert.ok((await interaction.acknowledge({ id: randomUUID() })).notice, "stale acknowledgement must not clear a pending notice");
+  assert.equal((await interaction.acknowledge({ id: first.notice!.id })).notice, null);
+  assert.equal((await interaction.heartbeat()).notice, null);
+  const dep = await interaction.inspectInput("我离不开你", session.id, randomUUID(), { ...ordinary, dependency: true }); assert.match(dep!, /不能替代/);
+  const crisis = await interaction.inspectInput("求助】我想伤害自己，也想删除聊天记录", session.id, randomUUID(), { ...ordinary, crisis: true }); assert.match(crisis!, /眼前安全/);
+  const helpCases = await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } });
+  assert.equal(helpCases.docs.length, 1, "prefixed help must itself create the crisis case");
+  assert.equal(helpCases.docs[0].stage, "interaction_crisis");
+  await interaction.inspectInput("我想死", session.id, randomUUID(), { ...ordinary, crisis: true });
+  const cases = (await payload.find({ collection: "safety-cases", overrideAccess: true, where: { owner: { equals: adult.id } } })).docs;
+  assert.equal(cases.length, 1); assert.equal(cases[0].severity, "urgent");
+  assert.equal((await interaction.status()).notice?.kind, "crisis");
+  const admin = await payload.create({ collection: "admins", overrideAccess: true, context: { helloAdminBootstrap: true }, data: { email: "interaction-test@example.invalid", password: randomUUID(), role: "administrator" } });
+  const user = { ...admin, collection: "admins" as const };
+  assert.ok(cases[0].retainUntil, "未配置时的新案也必须写入30天有限期限");
+  const access = await emergencyContactForCase(payload, user, cases[0].id, { reason: "隔离合成紧急事件读取测试" }); assert.equal(access.contact?.phone, "13800000000");
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: "2000-01-01T00:00:00.000Z" } });
+  await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "有限期已过期不得读取联系人" }), /有效的紧急处置/);
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: null, status: "resolved" } });
+  await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "有限留存已结案不得读取联系人" }), /有效的紧急处置/);
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { status: cases[0].status } });
+  await interaction.removeContact();
+  assert.equal((await emergencyContactForCase(payload, user, cases[0].id, { reason: "撤销联络授权后再次检查" })).contact, null);
+  await assert.rejects(emergencyContactForCase(payload, user, cases[0].id, { reason: "没有联系人不可登记联系成功", result: "contacted" }), /没有有效授权/);
+  assert.ok(!JSON.stringify((await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 100 })).docs).includes("13800000000"));
+  await interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" });
+  const enforcement = await payload.create({ collection: "safety-enforcements", overrideAccess: true, context: { safetyInternal: true }, data: {
+    key: `owner:${adult.id}:${cases[0].id}`, owner: adult.id, targetType: "owner", caseId: cases[0].id, active: true, reason: "合成生效限制",
+  } });
+  await payload.update({ collection: "safety-cases", id: cases[0].id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: "2000-01-01T00:00:00.000Z", status: cases[0].status } });
+  await purgeExpiredEvidence(payload, true);
+  const purged = await payload.findByID({ collection: "safety-cases", id: cases[0].id, overrideAccess: true });
+  assert.ok(purged.retentionPurgedAt, "expired crisis content must be purged while the minimal active restriction reference remains");
+  const forbiddenReason = "已清理案件不得追加的合成联络理由";
+  await assert.rejects(emergencyContactForCase(payload, user, purged.id, { reason: forbiddenReason }), /未清理且有效/);
+  const afterRejectedRead = JSON.stringify((await payload.find({ collection: "safety-audit", overrideAccess: true, limit: 200 })).docs);
+  assert.ok(!afterRejectedRead.includes(forbiddenReason)); assert.ok(!afterRejectedRead.includes("13800000000"));
+  await payload.update({ collection: "safety-enforcements", id: enforcement.id, overrideAccess: true, context: { safetyInternal: true }, data: { active: false, reason: "合成限制已解除" } });
+  await interaction.inspectInput("新的紧急求助不得被已清理旧案压制", session.id, randomUUID(), { ...ordinary, crisis: true });
+  const afterPurgeCases = (await payload.find({ collection: "safety-cases", overrideAccess: true, sort: "id", where: { owner: { equals: adult.id } } })).docs;
+  assert.equal(afterPurgeCases.length, 2, "a purged unresolved crisis must not deduplicate a fresh crisis before reference sweep");
+  assert.ok(!afterPurgeCases[1].retentionPurgedAt); assert.equal(afterPurgeCases[1].alertStatus, "pending");
+  await privacy.withdraw(); await interaction.removeContact();
+  assert.equal((await interaction.status()).contact, null);
+  await assert.rejects(interaction.saveContact({ name: "合成联系人", phone: "13800000000", consent: true, contactInformed: true, version: "2026-10-24.v1" }), /撤回或到期/);
+  await privacy.deleteData();
+  assert.equal(await ageProfile(payload, adult.id), undefined);
+  console.log("PASS: authenticated HTTP/error conversion/CSRF; age conflict; encryption; separate/current/unexpired consent; cross-owner/external isolation; export/removal after expired consent; two-hour acknowledgement; crisis precedence/deduplication; purged-case contact/audit denial and fresh crisis; withdrawal; deletion");
+} finally { await payload.destroy(); }

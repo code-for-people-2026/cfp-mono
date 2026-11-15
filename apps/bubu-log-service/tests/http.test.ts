@@ -96,6 +96,30 @@ describe("HTTP credential and origin boundaries", () => {
 });
 
 describe("HTTP authorization and usable onboarding", () => {
+  it("returns a scoped baby profile and rejects mismatched or revoked access", async () => {
+    const originalBaby = fixture.legacy.babies.get("baby-a")!;
+    fixture.legacy.babies.set("baby-a", { ...originalBaby, birthDate: "2026-01-02T00:00:00.000Z" });
+    try {
+      const login = await legacyLogin(browser);
+      const cookie = cookieHeader(login);
+      const profile = await request("/api/app/baby-profile?babyId=baby-a", { headers: { cookie } });
+      expect(profile.status).toBe(200);
+      expect(await profile.json()).toMatchObject({ id: "baby-a", birthDate: "2026-01-02T00:00:00.000Z" });
+      await code(await request("/api/app/baby-profile?babyId=baby-b", { headers: { cookie } }), 403, "BABY_FORBIDDEN");
+      await code(await request("/api/app/baby-profile?babyId=baby-a", { headers: { cookie, "x-baby-id": "baby-b" } }), 400, "SCOPE_MISMATCH");
+
+      const guest = await wxLogin("http-profile-revoked");
+      const issuedOperator = await fixture.service.provisionOperator("profile-operator", "baby-b", 60_000);
+      const operator = await fixture.service.authenticate(issuedOperator.token, "bearer");
+      await fixture.service.setGrant(operator, "baby-b", guest.context.identityId, "active", ["records:read"]);
+      expect((await request("/api/app/baby-profile?babyId=baby-b", { headers: bearer(guest.token) })).status).toBe(200);
+      await fixture.service.setGrant(operator, "baby-b", guest.context.identityId, "revoked");
+      await code(await request("/api/app/baby-profile?babyId=baby-b", { headers: bearer(guest.token) }), 403, "BABY_FORBIDDEN");
+    } finally {
+      fixture.legacy.babies.set("baby-a", originalBaby);
+    }
+  });
+
   it("onboards a new family and requires authorization before touching legacy records", async () => {
     const native = await wxLogin("http-new-family");
     expect(native.context).toMatchObject({ hasBaby: false, baby: null });

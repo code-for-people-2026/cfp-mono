@@ -388,7 +388,9 @@ export class IdentityService {
     return this.exclusive(async () => {
       const readOnly = kind === "chat-agent" && options.readOnly === true;
       const parentScope = await this.authorize(principal, babyId, readOnly ? "records:read" : "records:write");
-      const granted = permissions.filter(p => (readOnly ? p === "records:read" || p === "media:read" : !p.endsWith(":manage")) && parentScope.permissions.includes(p));
+      const granted = permissions.filter(permission => readOnly
+        ? (permission === "records:read" || permission === "media:read") && parentScope.permissions.includes(permission)
+        : !permission.endsWith(":manage") && parentScope.permissions.includes(permission));
       if (kind === "chat-agent") {
         await this.caregiver(principal);
         await this.processingGuard?.({ actor: { kind, id: "bubu-chat", sessionId: principal.sessionId, onBehalfOf: principal.subjectId, ...(readOnly ? { purpose: "history" as const } : {}) }, babyId, permissions: granted }, readOnly ? "records:read" : "records:write");

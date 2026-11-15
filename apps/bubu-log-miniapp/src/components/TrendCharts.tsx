@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import Taro from '@tarojs/taro'
 import { Text, View } from '@tarojs/components'
-import { buildTrendRows, dateLabel, formatDuration, todayKey, type DailyStat } from '../model'
+import { activityCategoryTone, buildTrendRows, dateLabel, formatDuration, todayKey, type DailyStat } from '../model'
 import './visualizations.css'
 
 export interface TrendChartsProps {
@@ -17,9 +17,9 @@ interface Series { key: Metric; label: string; color: string }
 
 const CHART_HEIGHT = 150
 const chartGroups: { title: string; unit: string; series: Series[] }[] = [
-  { title: '睡眠', unit: '小时', series: [{ key: 'sleep', label: '睡眠时长', color: '#739caf' }] },
-  { title: '奶量与吸奶', unit: '毫升', series: [{ key: 'milk', label: '瓶喂奶量', color: '#c48c8f' }, { key: 'pump', label: '吸奶量', color: '#a391b9' }] },
-  { title: '换尿布', unit: '次', series: [{ key: 'diapers', label: '换尿布', color: '#b5a160' }] },
+  { title: '睡眠', unit: '小时', series: [{ key: 'sleep', label: '睡眠时长', color: activityCategoryTone('sleep').color }] },
+  { title: '奶量与吸奶', unit: '毫升', series: [{ key: 'milk', label: '瓶喂奶量', color: activityCategoryTone('milk').color }, { key: 'pump', label: '吸奶量', color: activityCategoryTone('pump').color }] },
+  { title: '换尿布', unit: '次', series: [{ key: 'diapers', label: '换尿布', color: activityCategoryTone('diaper').color }] },
 ]
 
 function formatValue(value: number): string { return Number.isInteger(value) ? String(value) : value.toFixed(1) }
