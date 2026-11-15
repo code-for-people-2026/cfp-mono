@@ -34,6 +34,7 @@ const recordActivityLabels: Record<string, string> = { BREASTFEED: "亲喂", BOT
 const overlapKey = (left:Facts,right:Facts) => hash([left.type,left.startTime,left.endTime,right.type,right.startTime,right.endTime]);
 const milkDescriptionNote = (value: string) => `奶品原话：${value}`;
 const milkItemLabel = (item: NonNullable<Facts["milkItems"]>[number]) => item.milkDescription || (item.milkSource === "FORMULA" ? "奶粉" : item.milkSource === "BREAST_MILK" ? "母乳" : "奶品待补");
+const isExplicitUnknownText = (value: string | undefined) => !!value && /^(?:不知道|不清楚)(?:了)?[。.!！?？]?$/.test(value.trim());
 
 /** The sidecar owns intent/revisions; the existing Activity remains the projected fact.
  * A committed operation is deliberately separate from the remote mutation transaction. */
@@ -148,9 +149,9 @@ export class RecordsService {
       return effective ? [effective] : [];
     });
   }
-  private async recheck(scope: ActorScope, before: CareEvent, after: CareEvent, req: PayloadRequest, overlay?: Map<string, CareEvent>) {
+  private async recheck(scope: ActorScope, before: CareEvent, after: CareEvent, req: PayloadRequest, overlay?: Map<string, CareEvent>, confirmedDistinct: string[] = []) {
     const identityChanged = ["type", "startTime", "milkAmount", "milkItems"].some(field => hash(before.facts[field as Field]) !== hash(after.facts[field as Field]));
-    if (identityChanged) after.distinctFrom = [];
+    if (identityChanged) after.distinctFrom = [...new Set(confirmedDistinct)];
     const legacy = await this.legacy.listActivities(scope.babyId);
     const saved = await this.repo.list<CareEvent>("care-events", scope.babyId, req);
     const stagedIds = new Set(overlay?.keys() ?? []);
@@ -292,7 +293,7 @@ export class RecordsService {
       if (sourceTouched) {
         if (item.milkSourceState !== "pending") fail("MILK_ITEM_FIELD_LOCKED", "只能补充当前仍缺少的奶品，不能覆盖已知或明确未知的明细。", 409);
         if (states.milkSourceState === "pending") fail("MILK_ITEM_ANSWER_PENDING", "提交答案不能继续标记为待补。", 400);
-        if (states.milkSourceState === "unknown") { delete item.milkSource; delete item.milkDescription; item.milkSourceState = "unknown"; }
+        if (states.milkSourceState === "unknown" || isExplicitUnknownText(facts.milkDescription)) { delete item.milkSource; delete item.milkDescription; item.milkSourceState = "unknown"; }
         else if (facts.milkSource !== undefined || facts.milkDescription !== undefined) {
           if (facts.milkSource !== undefined && facts.milkDescription !== undefined) fail("AMBIGUOUS_MILK_ITEM_SOURCE", "奶品原话不能同时被猜测为奶粉或母乳。", 400);
           if (facts.milkSource !== undefined) { item.milkSource = facts.milkSource; delete item.milkDescription; }
@@ -613,9 +614,62 @@ export class RecordsService {
   }
   async answerBatch(principal: Principal, input: PendingBatchInput) {
     return this.mutate(principal, input.babyId, input.requestId, { tool: "pending_batch", ...input }, async (scope, req) => {
-      const changes: Array<{ before: CareEvent | null; after: CareEvent }> = [];
+      const changes: Array<{ before: CareEvent | null; after: CareEvent; unchanged?: boolean }> = [];
       const primaryIds = new Set(input.items.map(item => item.eventId));
       const touched = new Set<string>();
+      const confirmedDistinct = new Map<string, string[]>();
+      const applyPendingPatch = (before: CareEvent, effective: PendingQuestion, patch: RulePatch, sources: SourceRef[] = [], includeConflictFields = false) => {
+        const allowed = new Set<Field>(effective.fields);
+        if (includeConflictFields) for (const conflict of effective.conflicts) for (const field of conflict.fields) allowed.add(field);
+        if (allowed.has("endTime") || allowed.has("durationMinutes")) { allowed.add("endTime"); allowed.add("durationMinutes"); }
+        if (allowed.has("milkSource") && before.facts.type === "BOTTLE" && before.states.milkSource !== "known") allowed.add("milkDescription");
+        this.validatePendingPatch(before, allowed, patch);
+        if (patch.facts.milkDescription !== undefined && patch.facts.milkSource !== undefined) fail("BATCH_FIELD_MISMATCH", "奶品原话不能同时被猜测为奶粉或母乳。", 400);
+        for (const field of [...Object.keys(patch.facts), ...Object.keys(patch.states || {})] as Field[]) {
+          if (!allowed.has(field)) fail("BATCH_FIELD_MISMATCH", "批量答案包含当前问题未要求的字段。", 400);
+        }
+        if (patch.progress && !allowed.has("endTime") && !allowed.has("durationMinutes")) fail("BATCH_FIELD_MISMATCH", "当前问题不能提交进行状态。", 400);
+        if (!Object.keys(patch.facts).length && !Object.keys(patch.states || {}).length && !patch.progress && !patch.milkItemAnswers?.length) fail("BATCH_ANSWER_EMPTY", "批量答案不能为空。", 400);
+        this.validateSources(scope, sources);
+        const after = this.apply(structuredClone(before), patch);
+        after.sources = this.mergeSources(after.sources, sources);
+        return after;
+      };
+      const repairTime = (before: CareEvent, effective: PendingQuestion, strategy: Extract<PendingBatchInput["items"][number], { kind: "repair_time" }>["strategy"]) => {
+        const codes = new Set(effective.conflicts.map(issue => issue.code));
+        const base = structuredClone(before);
+        const requireTime = <T>(value: T | undefined | null, code: string): T => {
+          if (value === undefined || value === null) fail("TIME_REPAIR_UNAVAILABLE", code, 409);
+          return value;
+        };
+        if (["use_start_end", "use_start_duration", "use_end_duration"].includes(strategy) && !codes.has("DURATION_MISMATCH")) fail("TIME_REPAIR_STALE", "当前记录已不再是起止时间与时长不一致。", 409);
+        if (strategy === "use_start_end") {
+          const startTime = requireTime(base.facts.startTime, "当前记录缺少可保留的开始时间。"), endTime = requireTime(base.facts.endTime, "当前记录缺少可保留的结束时间。");
+          return this.apply(base, { facts: { startTime, endTime } });
+        }
+        if (strategy === "use_start_duration") {
+          const startTime = requireTime(base.facts.startTime, "当前记录缺少可保留的开始时间。"), durationMinutes = requireTime(base.facts.durationMinutes, "当前记录缺少可保留的时长。");
+          delete base.facts.endTime; delete base.states.endTime; base.evidence = base.evidence.filter(item => item.field !== "endTime");
+          return this.apply(base, { facts: { startTime, durationMinutes } });
+        }
+        if (strategy === "use_end_duration") {
+          const endTime = requireTime(base.facts.endTime, "当前记录缺少可保留的结束时间。"), durationMinutes = requireTime(base.facts.durationMinutes, "当前记录缺少可保留的时长。");
+          delete base.facts.startTime; delete base.states.startTime; base.evidence = base.evidence.filter(item => item.field !== "startTime");
+          return this.apply(base, { facts: { endTime, durationMinutes } });
+        }
+        if (strategy === "end_next_day") {
+          if (!codes.has("END_BEFORE_START")) fail("TIME_REPAIR_STALE", "当前记录已不再是结束早于开始的冲突。", 409);
+          const endTime = requireTime(base.facts.endTime, "当前记录缺少可修正的结束时间。"), instant = Date.parse(endTime) + 24 * 60 * 60_000;
+          return this.apply(base, { facts: { endTime: new Date(instant).toISOString() } });
+        }
+        if (!codes.has("ONGOING_HAS_END")) fail("TIME_REPAIR_STALE", "当前记录已不再是进行状态与结束时间冲突。", 409);
+        if (strategy === "mark_ended") {
+          const endTime = requireTime(base.facts.endTime, "当前记录缺少可保留的结束时间。");
+          return this.apply(base, { facts: { endTime }, progress: "ended" });
+        }
+        delete base.facts.endTime; delete base.states.endTime; base.evidence = base.evidence.filter(item => item.field !== "endTime");
+        return this.apply(base, { facts: {}, progress: "ongoing" });
+      };
       for (const item of input.items) {
         const question = await this.repo.get<PendingQuestion>("care-questions", scope.babyId, item.questionId, req);
         if (!question || question.state !== "open" || question.eventId !== item.eventId || question.version !== item.questionVersion || question.eventVersion !== item.eventVersion) {
@@ -629,21 +683,25 @@ export class RecordsService {
         touched.add(before.id);
 
         if (item.kind === "answer") {
-          if (!effective.fields.length) fail("BATCH_OPERATION_UNSUPPORTED", "重复或冲突问题不能用字段答案处理。", 400);
-          const allowed = new Set<Field>(effective.fields);
-          if (allowed.has("endTime") || allowed.has("durationMinutes")) { allowed.add("endTime"); allowed.add("durationMinutes"); }
-          const milkDescriptionAlias = allowed.has("milkSource") && before.facts.type === "BOTTLE" && before.states.milkSource !== "known";
-          if (milkDescriptionAlias) allowed.add("milkDescription");
-          this.validatePendingPatch(before, allowed, item.patch);
-          if (item.patch.facts.milkDescription !== undefined && item.patch.facts.milkSource !== undefined) fail("BATCH_FIELD_MISMATCH", "奶品原话不能同时被猜测为奶粉或母乳。", 400);
-          for (const field of [...Object.keys(item.patch.facts), ...Object.keys(item.patch.states || {})] as Field[]) {
-            if (!allowed.has(field)) fail("BATCH_FIELD_MISMATCH", "批量答案包含当前问题未要求的字段。", 400);
-          }
-          if (item.patch.progress && !allowed.has("endTime") && !allowed.has("durationMinutes")) fail("BATCH_FIELD_MISMATCH", "当前问题不能提交进行状态。", 400);
-          if (!Object.keys(item.patch.facts).length && !Object.keys(item.patch.states || {}).length && !item.patch.progress && !item.patch.milkItemAnswers?.length) fail("BATCH_ANSWER_EMPTY", "批量答案不能为空。", 400);
-          this.validateSources(scope, item.sources || []);
-          const after = this.apply(structuredClone(before), item.patch);
-          after.sources = this.mergeSources(after.sources, item.sources || []);
+          if (effective.duplicateCandidates.length) fail("BATCH_OPERATION_UNSUPPORTED", "疑似重复必须选择同一事件或不同事件，不能用字段答案跳过。", 400);
+          const after = applyPendingPatch(before, effective, item.patch, item.sources || [], true);
+          changes.push({ before, after });
+          continue;
+        }
+
+        if (item.kind === "defer") {
+          changes.push({ before, after: before, unchanged: true });
+          continue;
+        }
+
+        let patched = before;
+        if (item.patch) patched = applyPendingPatch(before, effective, item.patch, item.sources || [], false);
+
+        if (item.kind === "repair_time") {
+          const after = repairTime(patched, effective, item.strategy);
+          if (item.sources?.length) after.sources = this.mergeSources(after.sources, item.sources);
+          const repairedCode = item.strategy.startsWith("use_") ? "DURATION_MISMATCH" : item.strategy === "end_next_day" ? "END_BEFORE_START" : "ONGOING_HAS_END";
+          if (after.conflicts.some(issue => issue.code === repairedCode)) fail("TIME_REPAIR_INCOMPLETE", "所选时间修正没有解决当前冲突，未写入任何记录。", 409);
           changes.push({ before, after });
           continue;
         }
@@ -651,9 +709,11 @@ export class RecordsService {
         if (scope.actor.kind === "collector") fail("CAREGIVER_REQUIRED", "重复或重叠核对需要照护者确认。", 403);
         if (item.kind === "resolve_duplicate") {
           if (!effective.duplicateCandidates.length) fail("NO_DUPLICATE", "记录没有待核对的重复项。");
-          const after = structuredClone(before); after.duplicateCandidates = [];
+          if (item.resolution === "same" && item.patch) fail("BATCH_SAME_EVENT_PATCH_AMBIGUOUS", "合并为同一事件时，新增字段应写入哪条记录并不明确；本批次没有写入，请先选择不同事件或单独核对合并目标。", 409);
+          const after = structuredClone(patched); after.duplicateCandidates = [];
           if (item.resolution === "distinct") {
             after.distinctFrom = [...new Set([...(before.distinctFrom || []), ...before.duplicateCandidates])];
+            confirmedDistinct.set(after.id, [...after.distinctFrom]);
             changes.push({ before, after });
             continue;
           }
@@ -669,7 +729,7 @@ export class RecordsService {
 
         const allowedConflicts = new Set(effective.conflicts.filter(issue => issue.code === "TIME_OVERLAP" && issue.relatedEventId).map(issue => issue.relatedEventId!));
         if (item.conflictingEvents.some(target => !allowedConflicts.has(target.eventId))) fail("INVALID_OVERLAP", "只能确认当前问题列出的真实重叠记录。", 400);
-        const after = this.apply(structuredClone(before), { facts: {} }); after.confirmedOverlaps = { ...before.confirmedOverlaps };
+        const after = this.apply(structuredClone(patched), { facts: {} }); after.confirmedOverlaps = { ...before.confirmedOverlaps };
         for (const targetPin of item.conflictingEvents) {
           const id = targetPin.eventId;
           if (id === before.id) fail("INVALID_OVERLAP", "不能确认与自身重叠。", 400);
@@ -685,7 +745,7 @@ export class RecordsService {
         changes.push({ before, after });
       }
       const overlay = new Map(changes.map(change => [change.after.id, change.after]));
-      for (const change of changes) if (change.after.lifecycle === "active" && change.before) await this.recheck(scope, change.before, change.after, req, overlay);
+      for (const change of changes) if (change.after.lifecycle === "active" && change.before) await this.recheck(scope, change.before, change.after, req, overlay, confirmedDistinct.get(change.after.id) ?? []);
       return changes;
     });
   }

@@ -10,6 +10,7 @@ export interface PendingFormDraft { fields: Partial<Record<string, PendingFieldV
 
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 const timePattern = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const isExplicitUnknownText = (value: string) => /^(?:不知道|不清楚)(?:了)?[。.!！?？]?$/.test(value.trim());
 
 function object(value: unknown): value is Record<string, unknown> { return !!value && typeof value === "object" && !Array.isArray(value); }
 function fieldValue(value: unknown): value is PendingFieldValue {
@@ -100,7 +101,8 @@ export function buildPendingFormAnswer(form: PendingEventForm, input: PendingFor
     const value = input.fields[draftKey];
     if (control.milkItemId && control.field === "milkSource" && texts[draftKey]?.trim()) {
       const answer = itemAnswer(control.milkItemId);
-      answer.facts = { ...answer.facts, milkDescription: texts[draftKey]!.trim() };
+      if (isExplicitUnknownText(texts[draftKey]!)) answer.states = { ...answer.states, milkSourceState: "unknown" };
+      else answer.facts = { ...answer.facts, milkDescription: texts[draftKey]!.trim() };
       continue;
     }
     if (!value) continue;

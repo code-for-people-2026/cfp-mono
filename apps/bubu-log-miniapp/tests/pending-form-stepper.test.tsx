@@ -10,7 +10,8 @@ vi.mock("../src/api", () => ({
 }));
 
 import { PendingFormStepper } from "../src/chat/PendingFormStepper";
-import type { EventSources, FieldPending, PendingEventForm } from "../src/chat/contracts";
+import type { EventSources, FieldPending, PendingEventForm, ReplyQuestion } from "../src/chat/contracts";
+import type { ChoiceAnswerRef } from "../src/chat/drafts";
 import { pendingFormKey, type PendingFormDraft } from "../src/chat/form";
 
 const progress = { field: "progress" as const, kind: "progress" as const, label: "进行状态", options: [{ label: "仍在进行", value: "ongoing" as const }, { label: "已经结束", value: "ended" as const }, { label: "不确定", value: "unknown" as const }] };
@@ -36,17 +37,21 @@ let drafts: Record<string, PendingFormDraft>;
 let textDrafts: Record<string, Record<string, string>>;
 const onDraft = vi.fn(), onSubmit = vi.fn(), onConversation = vi.fn(), onMedia = vi.fn();
 const onTextDraft = vi.fn();
+const onSelectChoice = vi.fn(), onChoiceDraft = vi.fn(), onSubmitChoice = vi.fn(), onAttachChoice = vi.fn();
+let replyQuestions: ReplyQuestion[], selectedChoices: Record<string, ChoiceAnswerRef>, choiceDrafts: Record<string, string>;
 const onFieldFocus = vi.fn(), onFieldBlur = vi.fn(), onFormChange = vi.fn();
 const onRevoked = vi.fn();
 
 function render(pending: FieldPending[], busy = false, source?: { babyId: string }) {
   root = create(<PendingFormStepper pending={pending} drafts={drafts} busy={busy} onDraft={onDraft} onSubmit={onSubmit} onConversation={onConversation} onMedia={onMedia}
     textDrafts={textDrafts} onTextDraft={onTextDraft}
+    questions={replyQuestions} selectedChoices={selectedChoices} choiceDrafts={choiceDrafts} onSelectChoice={onSelectChoice} onChoiceDraft={onChoiceDraft} onSubmitChoice={onSubmitChoice} onAttachChoice={onAttachChoice}
     onFieldFocus={onFieldFocus} onFieldBlur={onFieldBlur} onFormChange={onFormChange}
     source={source ? { babyId: source.babyId, onRevoked } : undefined} />);
 }
 const rerender = (pending: FieldPending[], busy = false, source?: { babyId: string }) => root.update(<PendingFormStepper pending={pending} drafts={drafts} busy={busy} onDraft={onDraft} onSubmit={onSubmit} onConversation={onConversation} onMedia={onMedia}
   textDrafts={textDrafts} onTextDraft={onTextDraft}
+  questions={replyQuestions} selectedChoices={selectedChoices} choiceDrafts={choiceDrafts} onSelectChoice={onSelectChoice} onChoiceDraft={onChoiceDraft} onSubmitChoice={onSubmitChoice} onAttachChoice={onAttachChoice}
   onFieldFocus={onFieldFocus} onFieldBlur={onFieldBlur} onFormChange={onFormChange}
   source={source ? { babyId: source.babyId, onRevoked } : undefined} />);
 const nodeText = (node: unknown): string => {
@@ -69,9 +74,10 @@ const texts = (className: string) => root.root.findAll(node => node.props.classN
 beforeEach(() => {
   onDraft.mockClear(); onSubmit.mockClear(); onConversation.mockClear(); onMedia.mockClear();
   onTextDraft.mockClear();
+  onSelectChoice.mockClear(); onChoiceDraft.mockClear(); onSubmitChoice.mockClear(); onAttachChoice.mockClear();
   onFieldFocus.mockClear(); onFieldBlur.mockClear(); onFormChange.mockClear();
   onRevoked.mockClear(); getEventSources.mockReset();
-  root?.unmount(); drafts = {}; textDrafts = {};
+  root?.unmount(); drafts = {}; textDrafts = {}; replyQuestions = []; selectedChoices = {}; choiceDrafts = {};
 });
 
 describe("PendingFormStepper", () => {
@@ -255,7 +261,7 @@ describe("PendingFormStepper", () => {
     textDrafts[pendingFormKey(form)] = { supplement: "不知道" };
     await act(async () => rerender([question("event-duration", form)]));
     await act(async () => { buttonText("提交 1 项").props.onClick(); });
-    expect(onSubmit.mock.calls.at(-1)![0][0]).toMatchObject({ question: { id: "question-duration" }, text: "进行状态：仍在进行\n补充说明：不知道" });
+    expect(onSubmit.mock.calls.at(-1)![0][0]).toMatchObject({ question: { id: "question-duration" }, formAnswer: { facts: {}, progress: "ongoing" }, text: "补充说明：不知道" });
   });
 
   it("uses server numeric options instead of generic examples and never preselects one", async () => {
@@ -390,8 +396,54 @@ describe("PendingFormStepper", () => {
     expect(root.root.findByType("textarea").props.value).toBe("羊奶");
     await act(async () => { buttonText("提交 1 项").props.onClick(); });
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit.mock.calls[0]![0][0]).toMatchObject({ question: { id: "question-mixed", questionVersion: 1, eventVersion: 2 }, text: "实际喝入奶量：150 ml\n奶的来源：羊奶" });
+    expect(onSubmit.mock.calls[0]![0][0]).toMatchObject({ question: { id: "question-mixed", questionVersion: 1, eventVersion: 2 }, formAnswer: { facts: { milkAmount: 150 } }, text: "奶的来源：羊奶" });
     expect(onConversation).not.toHaveBeenCalled();
+  });
+
+  it("keeps a selected milk-item amount structured while sending supplement text for guarded parsing", async () => {
+    const form: PendingEventForm = {
+      eventId: "event-item-supplement", eventVersion: 2, questionId: "question-item-supplement", questionVersion: 1,
+      title: "BOTTLE", activityType: "BOTTLE", knownSummary: "母乳 50 ml", conflictMessages: [], duplicateCandidateIds: [], controls: [
+        { field: "milkAmount", draftKey: "milkAmount:selected-item", milkItemId: "selected-item", kind: "number", label: "第二项实际喝入奶量", unit: "ml", allowUnknown: true },
+        { field: "milkSource", draftKey: "milkSource:selected-item", milkItemId: "selected-item", kind: "enum", label: "第二项奶品", allowUnknown: true,
+          options: [{ label: "母乳", value: "BREAST_MILK" }, { label: "配方奶", value: "FORMULA" }] },
+      ],
+    };
+    const key = pendingFormKey(form);
+    drafts[key] = { fields: { "milkAmount:selected-item": { kind: "value", value: 120 } } };
+    textDrafts[key] = { supplement: "第二项是羊奶" };
+    await act(async () => { render([question(form.eventId, form)]); });
+    await act(async () => { buttonText("提交 1 项").props.onClick(); });
+    expect(onSubmit.mock.calls[0]![0][0]).toMatchObject({
+      formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", facts: { milkAmount: 120 } }] },
+      text: "补充说明：第二项是羊奶",
+    });
+  });
+
+  it("submits one event's conflict choice and field patch together", async () => {
+    const form: PendingEventForm = {
+      eventId: "event-combined", eventVersion: 2, questionId: "question-combined", questionVersion: 1,
+      title: "HEAD_LIFT", activityType: "HEAD_LIFT", knownSummary: "08:30 开始", conflictMessages: ["时间重叠"], duplicateCandidateIds: [], controls: [
+        { field: "durationMinutes", kind: "duration", label: "持续时长", unit: "minutes", allowUnknown: true, options: [{ label: "5 分钟", value: "5" }] },
+      ],
+    };
+    const pending = { ...question(form.eventId, form), conflicts: ["TIME_OVERLAP"] };
+    const key = pendingFormKey(form);
+    drafts[key] = { fields: { durationMinutes: { kind: "value", value: 5 } } };
+    const reply: ReplyQuestion = { id: "pending-question-combined-conflict-v1", prompt: "时间冲突怎么处理？", origin: { kind: "pending", selectedEventId: form.eventId,
+      question: { id: form.questionId, questionVersion: form.questionVersion, eventVersion: form.eventVersion } }, choices: [
+      { id: "confirm-overlap-existing", label: "确实同时发生", action: { type: "reply", text: "确认同时发生" } },
+      { id: "defer-conflict", label: "暂不处理", action: { type: "reply", text: "暂不处理" } },
+      { id: "custom", label: "自定义说明", action: { type: "custom" } },
+    ] };
+    replyQuestions = [reply];
+    selectedChoices[key] = { questionId: reply.id, choiceId: "confirm-overlap-existing" };
+    await act(async () => { render([pending]); });
+    await act(async () => { buttonText("提交 1 项").props.onClick(); });
+    expect(onSubmit.mock.calls[0]![0][0]).toMatchObject({
+      formAnswer: { facts: { durationMinutes: 5 } },
+      choiceAnswer: { questionId: reply.id, choiceId: "confirm-overlap-existing", eventVersion: 2 },
+    });
   });
 
   it("drops only superseded same-field custom text before the single save", async () => {
@@ -414,9 +466,9 @@ describe("PendingFormStepper", () => {
     await act(async () => rerender([question("event-supersede", form)]));
     await act(async () => { buttonText("提交 1 项").props.onClick(); });
     expect(onSubmit).toHaveBeenCalledTimes(1);
-    const sent = onSubmit.mock.calls[0]![0][0].text as string;
-    expect(sent).toContain("奶的来源：配方奶");
-    expect(sent).toContain("实际喝入奶量：150 ml");
+    const item = onSubmit.mock.calls[0]![0][0];
+    const sent = item.text as string;
+    expect(item.formAnswer).toEqual({ facts: { milkSource: "FORMULA", milkAmount: 150 } });
     expect(sent).toContain("补充说明：夜间补充");
     expect(sent).not.toContain("羊奶");
 

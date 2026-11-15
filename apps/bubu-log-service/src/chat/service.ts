@@ -17,16 +17,34 @@ import { bindCandidateQuestions, deterministicCandidateIssues, hiddenRequestIssu
 interface ChatServiceOptions { mcpUrl: string | URL; provider?: ChatProvider; fetch?: typeof fetch; safetySignal?: (babyId: string, id: string, text: string, at: string, req: PayloadRequest) => Promise<void>; authorizeModel?: (principal: Principal, babyId: string, images: boolean) => Promise<void> }
 const outputSchema = z.object({ text: z.string().max(16000), calls: z.array(z.object({ id: z.string().min(1).max(200), name: z.string().max(100), arguments: z.record(z.string(), z.unknown()) }).strict()).max(8) }).strict();
 const batchParseSchema = z.object({ answers: z.array(z.object({ questionId: z.string().min(1).max(200), patch: structuredFormAnswerSchema }).strict()).max(25) }).strict();
-const batchParseJsonSchema = {
-  type: "object", additionalProperties: false, required: ["answers"], properties: {
-    answers: { type: "array", maxItems: 25, items: { type: "object", additionalProperties: false, required: ["questionId", "patch"], properties: {
-      questionId: { type: "string" }, patch: { type: "object", additionalProperties: false, required: [], properties: {
-        facts: { type: "object", additionalProperties: true }, states: { type: "object", additionalProperties: { type: "string", enum: ["known", "pending", "unknown", "not_applicable", "not_yet"] } },
-        progress: { type: "string", enum: ["ongoing", "ended", "unknown"] },
-      } },
-    } } },
-  },
-} as const;
+export const batchParseJsonSchema = z.toJSONSchema(batchParseSchema) as Record<string, unknown>;
+function mergeStructuredAnswers(explicit: StructuredFormAnswer | undefined, parsed: StructuredFormAnswer | undefined): StructuredFormAnswer | undefined {
+  if (!explicit) return parsed;
+  if (!parsed) return explicit;
+  const overlap = (left: object | undefined, right: object | undefined) => Object.keys(left || {}).some(key => Object.prototype.hasOwnProperty.call(right || {}, key));
+  if (overlap(explicit.facts, parsed.facts) || overlap(explicit.states, parsed.states) || explicit.progress !== undefined && parsed.progress !== undefined) {
+    throw new AppError(409, "CHAT_BATCH_PARSE_OVERWRITE", "补充说明试图改写已经明确选择的字段，未执行任何修改。");
+  }
+  const itemAnswers = new Map<string, NonNullable<StructuredFormAnswer["milkItemAnswers"]>[number]>();
+  for (const answer of explicit.milkItemAnswers || []) itemAnswers.set(answer.milkItemId, structuredClone(answer));
+  for (const answer of parsed.milkItemAnswers || []) {
+    const known = itemAnswers.get(answer.milkItemId);
+    if (known && (overlap(known.facts, answer.facts) || overlap(known.states, answer.states))) {
+      throw new AppError(409, "CHAT_BATCH_PARSE_OVERWRITE", "补充说明试图改写已经明确选择的奶品答案，未执行任何修改。");
+    }
+    itemAnswers.set(answer.milkItemId, known ? {
+      milkItemId: answer.milkItemId,
+      ...((known.facts || answer.facts) ? { facts: { ...known.facts, ...answer.facts } } : {}),
+      ...((known.states || answer.states) ? { states: { ...known.states, ...answer.states } } : {}),
+    } : structuredClone(answer));
+  }
+  return {
+    facts: { ...(explicit.facts || {}), ...(parsed.facts || {}) },
+    ...((explicit.states || parsed.states) ? { states: { ...explicit.states, ...parsed.states } } : {}),
+    ...(explicit.progress !== undefined ? { progress: explicit.progress } : parsed.progress !== undefined ? { progress: parsed.progress } : {}),
+    ...(itemAnswers.size ? { milkItemAnswers: [...itemAnswers.values()] } : {}),
+  };
+}
 const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const dateInShanghai = (time: string) => new Date(Date.parse(time) + 8 * 3600_000).toISOString().slice(0, 10);
@@ -233,7 +251,7 @@ export class ChatService {
       if (input.attachmentIds.length) throw new AppError(400, "CHAT_CHOICE_INVALID", "这个选项不接收照片。");
       return { ...common, text: choice.action.text, attachmentIds: [] };
     }
-    if (choice.action.type === "custom") {
+    if (choice.action.type === "custom" || choice.action.type === "input") {
       if (!input.text.trim() || input.attachmentIds.length) throw new AppError(400, "CHAT_CHOICE_CUSTOM_REQUIRED", "选择自定义后需要填写文字回答。");
       return { ...common, text: input.text.trim(), attachmentIds: [] };
     }
@@ -464,7 +482,6 @@ export class ChatService {
       }
       if (!event || event.lifecycle !== "active" || event.version !== item.question.eventVersion) throw new McpToolError("VERSION_CONFLICT", "批量待补中的记录已经变化，请保留草稿并刷新后核对。", false);
       byQuestion.set(item.question.id, current);
-      if (current.fields.length && (current.conflicts.length || current.duplicateCandidates.length)) throw new AppError(409, "CHAT_BATCH_COMBINED_REQUIRED", "同一待补事项同时包含字段和冲突核对，不能在单一批量答案中静默丢弃其中一部分；请先单独核对冲突。");
       if (item.formAnswer) validateStructuredAnswer(turn, current, item.formAnswer, item.eventId, event);
     }
 
@@ -474,13 +491,15 @@ export class ChatService {
       await this.checkService(principal, turn.babyId);
       await this.options.authorizeModel?.(principal, turn.babyId, false);
       const output = outputSchema.parse(await abortable(this.options.provider!.complete({
-        instructions: "你只把每项用户文字解析成对应待补问题允许的结构化字段。不得创建、合并、改目标、确认重复或确认时间重叠；不得补写用户没有表达的事实。unknown 表示明确不知道，not_yet 表示尚未发生。严格返回指定 JSON，tools 为空。",
+        instructions: "你只把每项用户文字解析成对应待补问题允许的结构化字段。不得创建、合并、改目标、确认重复或确认时间重叠；不得补写用户没有表达的事实。explicitAnswer 是用户已经点击或填写的权威答案，绝不能在 patch 中重复、改写或重新解释它，只解析补充文字表达的其他允许字段。瓶喂逐项答案必须使用给定 milkItemId 和 milkItemAnswers；不能写根级奶量或奶源，不能触碰已知兄弟项。unknown 表示明确不知道，not_yet 表示尚未发生。严格返回指定 JSON，tools 为空。",
         messages: [{ role: "user", content: JSON.stringify({ type: "bubu_form_batch_parse", items: textItems.map(item => {
           const question = byQuestion.get(item.question.id)!;
           const event = events.find(candidate => candidate.id === item.eventId)!;
-          return { eventId: item.eventId, questionId: item.question.id, text: item.text, allowedFields: question.fields, currentFacts: event.facts, currentProgress: event.progress };
+          return { eventId: item.eventId, questionId: item.question.id, text: item.text,
+            allowedFields: [...new Set([...question.fields, ...question.conflicts.flatMap(conflict => conflict.fields)])],
+            currentFacts: event.facts, currentProgress: event.progress, explicitAnswer: item.formAnswer };
         }) }) }],
-        tools: [], responseFormat: { name: "bubu_form_batch_parse", schema: batchParseJsonSchema as unknown as Record<string, unknown>, strict: false }, signal,
+        tools: [], responseFormat: { name: "bubu_form_batch_parse", schema: batchParseJsonSchema, strict: false }, signal,
       }), signal));
       await this.checkService(principal, turn.babyId);
       if (output.calls.length) throw new AppError(409, "CHAT_BATCH_PLAN_INVALID", "自定义待补解析请求了不允许的操作，未执行任何修改。");
@@ -500,17 +519,35 @@ export class ChatService {
     const replyQuestions = pendingReplyQuestions(questions, events);
     const plans = batch.map(item => {
       const pins = { eventId: item.eventId, questionId: item.question.id, questionVersion: item.question.questionVersion, eventVersion: item.question.eventVersion };
-      const answer = item.formAnswer || parsed.get(item.question.id);
-      if (answer) return { kind: "answer", ...pins, patch: { ...answer, facts: answer.facts || {} } };
-      const choiceAnswer = item.choiceAnswer!;
+      const current = byQuestion.get(item.question.id)!;
+      const event = events.find(candidate => candidate.id === item.eventId)!;
+      const answer = mergeStructuredAnswers(item.formAnswer, parsed.get(item.question.id));
+      if (answer) validateStructuredAnswer(turn, current, answer, item.eventId, event);
+      const choiceAnswer = item.choiceAnswer;
+      if (!choiceAnswer) {
+        if (current.conflicts.length || current.duplicateCandidates.length) throw new AppError(400, "CHAT_BATCH_CHOICE_REQUIRED", "这条记录还有冲突或重复核对，必须选择对应处理方式，不能只保存字段答案。");
+        if (!answer) throw new AppError(400, "CHAT_BATCH_ANSWER_REQUIRED", "这项待补没有可提交的答案。");
+        return { kind: "answer", ...pins, patch: { ...answer, facts: answer.facts || {} } };
+      }
       if (choiceAnswer.eventVersion && choiceAnswer.eventVersion !== item.question.eventVersion) throw new AppError(409, "CHAT_BATCH_TARGET_MISMATCH", "选项绑定的记录版本与待补问题不一致。");
       const question = replyQuestions.find(candidate => candidate.id === choiceAnswer.questionId && candidate.origin.kind === "pending"
         && candidate.origin.selectedEventId === item.eventId && candidate.origin.question?.id === item.question.id
         && candidate.origin.question.questionVersion === item.question.questionVersion && candidate.origin.question.eventVersion === item.question.eventVersion);
       const choice = question?.choices.find(candidate => candidate.id === choiceAnswer.choiceId);
       if (!question || !choice) throw new McpToolError("QUESTION_STALE", "批量待补中的选项已经变化，请保留草稿并按当前选项重新核对。", false);
-      if (choice.id === "different-events") return { kind: "resolve_duplicate", ...pins, resolution: "distinct" };
+      if (choice.action.type === "custom" || choice.action.type === "input") {
+        if (!answer) throw new AppError(400, "CHAT_BATCH_CUSTOM_REQUIRED", "选择更正或自定义后需要填写可解析的事实。");
+        if (current.duplicateCandidates.length) throw new AppError(409, "CHAT_BATCH_DUPLICATE_CUSTOM_UNSUPPORTED", "疑似重复必须明确选择同一事件或不同事件，不能用自定义文字隐式合并。");
+        return { kind: "answer", ...pins, patch: { ...answer, facts: answer.facts || {} } };
+      }
+      if (choice.id === "defer-conflict") {
+        if (answer) throw new AppError(400, "CHAT_BATCH_DEFER_WITH_PATCH", "暂不处理冲突时不能同时提交字段修改；请改选明确处理方式。");
+        return { kind: "defer", ...pins };
+      }
+      const patch = answer ? { patch: { ...answer, facts: answer.facts || {} } } : {};
+      if (choice.id === "different-events") return { kind: "resolve_duplicate", ...pins, resolution: "distinct", ...patch };
       if (choice.id.startsWith("same-event-")) {
+        if (answer) throw new AppError(409, "CHAT_BATCH_SAME_EVENT_PATCH_AMBIGUOUS", "合并为同一事件时不能同时提交额外字段，以免事实写入错误目标；请先单独核对合并目标。");
         const targetEventId = choice.id.slice("same-event-".length);
         const target = events.find(candidate => candidate.id === targetEventId);
         if (!target) throw new McpToolError("QUESTION_STALE", "重复候选记录已经变化，请刷新后重新核对。", false);
@@ -520,8 +557,15 @@ export class ChatService {
         const conflictingEventId = choice.id.slice("confirm-overlap-".length);
         const conflictingEvent = events.find(candidate => candidate.id === conflictingEventId);
         if (!conflictingEvent) throw new McpToolError("QUESTION_STALE", "重叠记录已经变化，请刷新后重新核对。", false);
-        return { kind: "confirm_overlap", ...pins, conflictingEvents: [{ eventId: conflictingEventId, expectedVersion: conflictingEvent.version }], reason: choice.action.type === "reply" ? choice.action.text : "照护者明确确认真实时间重叠" };
+        return { kind: "confirm_overlap", ...pins, conflictingEvents: [{ eventId: conflictingEventId, expectedVersion: conflictingEvent.version }], reason: choice.action.text, ...patch };
       }
+      const timeStrategies = {
+        "repair-time-use-start-end": "use_start_end", "repair-time-use-start-duration": "use_start_duration",
+        "repair-time-use-end-duration": "use_end_duration", "repair-time-end-next-day": "end_next_day",
+        "repair-time-mark-ended": "mark_ended", "repair-time-keep-ongoing": "keep_ongoing",
+      } as const;
+      const strategy = timeStrategies[choice.id as keyof typeof timeStrategies];
+      if (strategy) return { kind: "repair_time", ...pins, strategy, ...patch };
       throw new AppError(400, "CHAT_BATCH_CHOICE_UNSUPPORTED", "这个选项不能作为批量写操作提交，请单独核对或填写受支持的答案。");
     });
     turn.batchProgress = { total: batch.length, completed: 0 };

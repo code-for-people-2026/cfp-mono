@@ -125,7 +125,7 @@ export function validateRenderableQuestions(questions: ReplyQuestion[]): string[
     question.choices.forEach((choice, index) => {
       if (!choice.label.trim()) issues.push(`问题 ${question.id} 有空选项`);
       if (choice.action.type === "custom" && index !== question.choices.length - 1) issues.push(`问题 ${question.id} 的自定义选项不在最后`);
-      if ((choice.action.type === "reply" || choice.action.type === "attach" || choice.action.type === "reference") && !choice.action.text.trim()) issues.push(`问题 ${question.id} 的动作缺少文字载荷`);
+      if ((choice.action.type === "reply" || choice.action.type === "input" || choice.action.type === "attach" || choice.action.type === "reference") && !choice.action.text.trim()) issues.push(`问题 ${question.id} 的动作缺少文字载荷`);
       if (choice.action.type === "reference" && !choice.action.attachmentIds.length) issues.push(`问题 ${question.id} 的照片选项没有引用`);
     });
   }

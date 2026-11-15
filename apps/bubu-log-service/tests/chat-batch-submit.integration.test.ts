@@ -170,8 +170,152 @@ describe("durable pending form batch", () => {
     expect(provider.inputs[0]!.tools).toEqual([]);
     expect(provider.inputs[0]!.responseFormat?.name).toBe("bubu_form_batch_parse");
     expect(provider.inputs[0]!.responseFormat?.strict).toBe(false);
+    expect(JSON.stringify(provider.inputs[0]!.responseFormat?.schema)).toContain('"milkItemAnswers"');
+    expect(JSON.stringify(provider.inputs[0]!.responseFormat?.schema)).toContain('"milkItemId"');
     expect(fixture.legacy.committedWrites).toBe(writesBefore + 1);
     expect(fixture.legacy.activities.size).toBe(1);
+  }, 30_000);
+
+  it("keeps an explicit item amount authoritative while parsing a supplement onto that item only", async () => {
+    class ItemSupplementParser implements ChatProvider {
+      questionId = "";
+      inputs: ProviderInput[] = [];
+      async complete(input: ProviderInput): Promise<ProviderOutput> {
+        this.inputs.push(input);
+        return { text: JSON.stringify({ answers: [{ questionId: this.questionId, patch: { facts: {}, milkItemAnswers: [
+          { milkItemId: "selected-item", facts: { milkDescription: "羊奶" } },
+        ] } }] }), calls: [] };
+      }
+    }
+    const provider = new ItemSupplementParser();
+    const { fixture } = await setup(provider);
+    const client = await fixture.connect();
+    const seeded = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "batch-item-supplement-seed", events: [{ facts: {
+      type: "BOTTLE", startTime: "2026-10-23T05:00:00+08:00", milkItems: [
+        { id: "known-sibling", milkSource: "BREAST_MILK", milkAmount: 50 }, { id: "selected-item" },
+      ],
+    } }] });
+    const question = seeded.questions[0]!; provider.questionId = question.id;
+    const input: ChatInput = { babyId: "baby-a", requestId: "batch-item-supplement-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [{
+      eventId: question.eventId, question: { id: question.id, questionVersion: question.version, eventVersion: question.eventVersion },
+      formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "selected-item", facts: { milkAmount: 120 } }] },
+      text: "补充说明：第二项是羊奶",
+    }] };
+    expect((await post(fixture, input)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, input.requestId))?.status).toBe("completed");
+    const receipt = (await request(fixture, input.requestId))!.receipts[0] as RecordReceipt;
+    expect(receipt.events[0]?.facts.milkItems).toEqual([
+      expect.objectContaining({ id: "known-sibling", milkSource: "BREAST_MILK", milkAmount: 50 }),
+      expect.objectContaining({ id: "selected-item", milkDescription: "羊奶", milkAmount: 120 }),
+    ]);
+    expect(receipt.events[0]?.facts.milkAmount).toBe(170);
+    const parserContext = JSON.parse(String(provider.inputs[0]!.messages[0]!.content)) as { items: Array<{ explicitAnswer: unknown }> };
+    expect(parserContext.items[0]?.explicitAnswer).toEqual(input.formBatch![0]!.formAnswer);
+  }, 30_000);
+
+  it("rejects parser attempts to reinterpret an explicit item selection without any write", async () => {
+    class OverwritingParser implements ChatProvider {
+      questionId = "";
+      async complete(): Promise<ProviderOutput> {
+        return { text: JSON.stringify({ answers: [{ questionId: this.questionId, patch: { facts: {}, milkItemAnswers: [
+          { milkItemId: "milk-1", facts: { milkAmount: 999 } },
+        ] } }] }), calls: [] };
+      }
+    }
+    const provider = new OverwritingParser();
+    const { fixture } = await setup(provider);
+    const [question] = await seed(fixture, 1, "batch-parser-overwrite"); provider.questionId = question!.id;
+    const writesBefore = fixture.legacy.committedWrites;
+    const input: ChatInput = { babyId: "baby-a", requestId: "batch-parser-overwrite-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [{
+      eventId: question!.eventId, question: { id: question!.id, questionVersion: question!.version, eventVersion: question!.eventVersion },
+      formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "milk-1", facts: { milkAmount: 120 } }] }, text: "补充说明：夜间喝的",
+    }] };
+    provider.questionId = question!.id;
+    expect((await post(fixture, input)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, input.requestId))?.status).toBe("failed");
+    expect(fixture.legacy.committedWrites).toBe(writesBefore);
+    expect(await request(fixture, input.requestId)).toMatchObject({ error: { code: "CHAT_BATCH_PARSE_OVERWRITE" } });
+  }, 30_000);
+
+  it("repairs a non-overlap duration conflict and another event in one idempotent batch, with stale preflight remaining atomic", async () => {
+    const { fixture } = await setup();
+    const client = await fixture.connect();
+    const duration = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "duration-repair-seed", events: [{
+      facts: { type: "SLEEP", startTime: "2026-10-23T02:00:00+08:00", endTime: "2026-10-23T03:00:00+08:00", durationMinutes: 120 }, progress: "ended",
+    }] });
+    const milk = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "duration-repair-milk-seed", events: [{ facts: {
+      type: "BOTTLE", startTime: "2026-10-23T05:00:00+08:00", milkItems: [{ id: "repair-milk", milkSource: "FORMULA" }],
+    } }] });
+    const durationQuestion = duration.questions[0]!, milkQuestion = milk.questions[0]!;
+    expect(durationQuestion.fields).toEqual([]);
+    expect(durationQuestion.conflicts.map(issue => issue.code)).toContain("DURATION_MISMATCH");
+    const writesBefore = fixture.legacy.committedWrites;
+    const input: ChatInput = { babyId: "baby-a", requestId: "duration-repair-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [
+      { eventId: durationQuestion.eventId, question: { id: durationQuestion.id, questionVersion: durationQuestion.version, eventVersion: durationQuestion.eventVersion }, choiceAnswer: {
+        questionId: `pending-${durationQuestion.id}-conflict-v${durationQuestion.version}`, choiceId: "repair-time-use-start-end",
+      } },
+      { eventId: milkQuestion.eventId, question: { id: milkQuestion.id, questionVersion: milkQuestion.version, eventVersion: milkQuestion.eventVersion },
+        formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: "repair-milk", facts: { milkAmount: 90 } }] } },
+    ] };
+    expect((await post(fixture, input)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, input.requestId))?.status).toBe("completed");
+    const receipt = (await request(fixture, input.requestId))!.receipts[0] as RecordReceipt;
+    expect(receipt.events.find(event => event.id === durationQuestion.eventId)).toMatchObject({ complete: true, facts: { durationMinutes: 60 } });
+    expect(receipt.events.find(event => event.id === milkQuestion.eventId)).toMatchObject({ complete: true, facts: { milkAmount: 90 } });
+    expect(fixture.mcpRequests.filter(value => value.name === "bubu_submit_pending_batch").at(-1)).toBeDefined();
+    expect(fixture.legacy.committedWrites).toBe(writesBefore + 2);
+    expect((await post(fixture, input)).status).toBe(200);
+    expect(fixture.legacy.committedWrites).toBe(writesBefore + 2);
+
+    const staleSeed = await seed(fixture, 2, "duration-repair-stale");
+    const versionsBefore = (await call<{ events: CareEvent[] }>(client, "bubu_query_events", { babyId: "baby-a", includeRetracted: true })).events
+      .filter(event => staleSeed.some(question => question.eventId === event.id)).map(event => [event.id, event.version]);
+    const staleInput = batchInput("duration-repair-stale-submit", staleSeed);
+    staleInput.formBatch![1]!.question.questionVersion++;
+    expect((await post(fixture, staleInput)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, staleInput.requestId))?.status).toBe("failed");
+    const versionsAfter = (await call<{ events: CareEvent[] }>(client, "bubu_query_events", { babyId: "baby-a", includeRetracted: true })).events
+      .filter(event => staleSeed.some(question => question.eventId === event.id)).map(event => [event.id, event.version]);
+    expect(versionsAfter).toEqual(versionsBefore);
+  }, 30_000);
+
+  it("atomically combines distinct-plus-missing and overlap-plus-missing answers", async () => {
+    const { fixture } = await setup();
+    const client = await fixture.connect();
+    const duplicates = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "combined-duplicate-seed", events: [0, 1].map(index => ({ facts: {
+      type: "BOTTLE", startTime: "2026-10-23T06:00:00+08:00", milkItems: [{ id: `combined-milk-${index}`, milkSource: "FORMULA" }],
+    } })) });
+    const duplicateQuestion = duplicates.questions.find(item => item.duplicateCandidates.length)!;
+    const duplicateItemId = duplicates.events.find(event => event.id === duplicateQuestion.eventId)!.facts.milkItems![0]!.id;
+    const distinctInput: ChatInput = { babyId: "baby-a", requestId: "combined-distinct-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [{
+      eventId: duplicateQuestion.eventId, question: { id: duplicateQuestion.id, questionVersion: duplicateQuestion.version, eventVersion: duplicateQuestion.eventVersion },
+      formAnswer: { facts: {}, milkItemAnswers: [{ milkItemId: duplicateItemId, facts: { milkAmount: 120 } }] },
+      choiceAnswer: { questionId: `pending-${duplicateQuestion.id}-duplicate-v${duplicateQuestion.version}`, choiceId: "different-events" },
+    }] };
+    expect((await post(fixture, distinctInput)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, distinctInput.requestId))?.status).toBe("completed");
+    const distinct = ((await request(fixture, distinctInput.requestId))!.receipts[0] as RecordReceipt).events[0]!;
+    expect(distinct).toMatchObject({ facts: { milkAmount: 120 }, duplicateCandidates: [] });
+
+    const sleep = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "combined-overlap-sleep", events: [{ facts: {
+      type: "SLEEP", startTime: "2026-10-23T08:00:00+08:00", endTime: "2026-10-23T09:00:00+08:00",
+    }, progress: "ended" }] });
+    const head = await call<RecordReceipt>(client, "bubu_record_events", { babyId: "baby-a", requestId: "combined-overlap-head", events: [{ facts: {
+      type: "HEAD_LIFT", startTime: "2026-10-23T08:30:00+08:00",
+    }, progress: "ended" }] });
+    const overlapQuestion = head.questions.find(item => item.conflicts.some(issue => issue.code === "TIME_OVERLAP"))!;
+    expect(overlapQuestion.fields).toContain("endTime");
+    const overlapInput: ChatInput = { babyId: "baby-a", requestId: "combined-overlap-submit", text: "", attachmentIds: [], context: { viewedDate: "2026-10-23" }, formBatch: [{
+      eventId: overlapQuestion.eventId, question: { id: overlapQuestion.id, questionVersion: overlapQuestion.version, eventVersion: overlapQuestion.eventVersion },
+      formAnswer: { facts: { durationMinutes: 5 }, progress: "ended" }, choiceAnswer: {
+        questionId: `pending-${overlapQuestion.id}-conflict-v${overlapQuestion.version}`, choiceId: `confirm-overlap-${sleep.events[0]!.id}`,
+      },
+    }] };
+    expect((await post(fixture, overlapInput)).status).toBe(200);
+    await expect.poll(async () => (await request(fixture, overlapInput.requestId))?.status).toBe("completed");
+    const overlapped = ((await request(fixture, overlapInput.requestId))!.receipts[0] as RecordReceipt).events.find(event => event.id === overlapQuestion.eventId)!;
+    expect(overlapped).toMatchObject({ complete: true, facts: { durationMinutes: 5 }, conflicts: [] });
+    expect(overlapped.confirmedOverlaps).toHaveProperty(sleep.events[0]!.id);
   }, 30_000);
 
   it("server-validates pending choices and rejects fabricated overlap approval before writes", async () => {

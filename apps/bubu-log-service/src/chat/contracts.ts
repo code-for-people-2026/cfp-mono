@@ -31,8 +31,7 @@ export const formBatchItemSchema = z.object({
   text: z.string().trim().min(1).max(6000).optional(),
   choiceAnswer: choiceAnswerSchema.optional(),
 }).strict().superRefine((value, ctx) => {
-  const modes = Number(!!value.formAnswer) + Number(!!value.text) + Number(!!value.choiceAnswer);
-  if (modes !== 1) ctx.addIssue({ code: "custom", message: "每项待补回答必须且只能使用表单、文字或选项中的一种。" });
+  if (!value.formAnswer && !value.text && !value.choiceAnswer) ctx.addIssue({ code: "custom", message: "每项待补回答至少需要表单、文字或选项中的一种。" });
   if (value.choiceAnswer?.originTurnId) ctx.addIssue({ code: "custom", path: ["choiceAnswer", "originTurnId"], message: "批量待补只能回答当前服务端待补选项。" });
 });
 export type FormBatchItem = z.output<typeof formBatchItemSchema>;
@@ -108,6 +107,7 @@ export interface MediaReceipt { kind: "media"; id: string; sourceId: string; sta
 export type ChatReceipt = RecordReceipt | MediaReceipt | PreferenceMutationReceipt;
 export type ReplyChoiceAction =
   | { type: "reply"; text: string }
+  | { type: "input"; text: string }
   | { type: "custom" }
   | { type: "attach"; text: string }
   | { type: "reference"; text: string; attachmentIds: string[] };

@@ -141,7 +141,7 @@ describe("pending-event batch submit regression", () => {
     await act(async () => root.root.find(node => node.type === "button" && nodeText(node) === "提交 3 项").props.onClick());
     expect(onSubmit).not.toHaveBeenCalled();
     expect(position()).toBe("待补充 · 1 / 3");
-    expect(nodeText(root.root.findByProps({ className: "bubu-chat-form-error" }))).toContain("至少选择或填写一项");
+    expect(nodeText(root.root.findByProps({ className: "bubu-chat-form-error" }))).toContain("请完成这一项");
     root.unmount();
   });
 

@@ -36,6 +36,15 @@ describe("pending event forms", () => {
         facts: {}, milkItemAnswers: [{ milkItemId: "item-1", facts: { milkAmount: 75, milkDescription: "羊奶" } }],
       });
     }
+    expect(buildPendingFormAnswer(form([source]), { fields: {} }, { "milkSource:item-1": "不知道" }).answer).toEqual({
+      facts: {}, milkItemAnswers: [{ milkItemId: "item-1", states: { milkSourceState: "unknown" } }],
+    });
+    expect(buildPendingFormAnswer(form([source]), { fields: {} }, { "milkSource:item-1": "不清楚" }).answer).toEqual({
+      facts: {}, milkItemAnswers: [{ milkItemId: "item-1", states: { milkSourceState: "unknown" } }],
+    });
+    expect(buildPendingFormAnswer(form([source]), { fields: {} }, { "milkSource:item-1": "羊奶" }).answer).toEqual({
+      facts: {}, milkItemAnswers: [{ milkItemId: "item-1", facts: { milkDescription: "羊奶" } }],
+    });
   });
 
   it("accepts only a real Shanghai calendar timestamp and the authoritative duration alternative", () => {

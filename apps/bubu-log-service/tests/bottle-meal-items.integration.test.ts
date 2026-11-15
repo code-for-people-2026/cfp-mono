@@ -64,6 +64,26 @@ describe("bottle meal milk items", () => {
     expect(fixture.legacy.dailyStats.get("baby-a:2026-10-22")).toMatchObject({ bottleCount: 1, totalMilkAmount: 350 });
   });
 
+  it("normalizes explicit unknown milk-source text without promoting a fake description", async () => {
+    const seeded = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "unknown-source-seed", events: [8, 10].map((hour, index) => ({
+      facts: { type: "BOTTLE" as const, startTime: time(hour), milkItems: [{ id: index ? "literal-source" : "unknown-source", milkAmount: 90 }] }, progress: "ended" as const,
+    })) });
+    const unknownEvent = seeded.events[0]!, literalEvent = seeded.events[1]!;
+    const unknownQuestion = seeded.questions.find(item => item.eventId === unknownEvent.id)!;
+    const literalQuestion = seeded.questions.find(item => item.eventId === literalEvent.id)!;
+    const unknown = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "unknown-source-answer", questionId: unknownQuestion.id,
+      questionVersion: unknownQuestion.version, eventVersion: unknownQuestion.eventVersion,
+      patch: { facts: {}, milkItemAnswers: [{ milkItemId: "unknown-source", facts: { milkDescription: "不知道" } }] } });
+    expect(unknown.questions).toEqual([]);
+    expect(unknown.events[0]?.facts.milkItems?.[0]).toMatchObject({ id: "unknown-source", milkAmount: 90, milkSourceState: "unknown" });
+    expect(unknown.events[0]?.facts.milkItems?.[0]).not.toHaveProperty("milkDescription");
+    const literal = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "literal-source-answer", questionId: literalQuestion.id,
+      questionVersion: literalQuestion.version, eventVersion: literalQuestion.eventVersion,
+      patch: { facts: {}, milkItemAnswers: [{ milkItemId: "literal-source", facts: { milkDescription: "羊奶" } }] } });
+    expect(literal.status).toBe("saved");
+    expect(literal.events[0]?.facts.milkItems?.[0]).toMatchObject({ id: "literal-source", milkAmount: 90, milkDescription: "羊奶", milkSourceState: "known" });
+  });
+
   it("rejects cross-item and array tampering without partially applying a mixed batch", async () => {
     const make = (id: string, hour: number) => ({ facts: { type: "BOTTLE" as const, startTime: time(hour), milkItems: [
       { id: `${id}-known`, milkDescription: "羊奶", milkAmount: 200 },

@@ -30,19 +30,19 @@ export function ChoiceQuestions({ questions, selected, drafts, busy, onSelect, o
         {choices.map(choice => {
           const value = answerRef(question, choice), active = same(selected, value);
           return <Button key={choice.id} className={`bubu-chat-choice${active ? " selected" : ""}`} disabled={busy || undefined} onClick={() => {
-            if (choice.action.type === "custom" || deferSubmit && choice.action.type !== "attach") onSelect(value);
+            if (choice.action.type === "custom" || choice.action.type === "input" || deferSubmit && choice.action.type !== "attach") onSelect(value);
             else if (choice.action.type === "attach") onAttach(question, choice);
             else onSubmit(question, choice);
           }}>{choice.label}</Button>;
         })}
       </View>
       {choices.map(choice => {
-        if (choice.action.type !== "custom") return null;
+        if (choice.action.type !== "custom" && choice.action.type !== "input") return null;
         const value = answerRef(question, choice);
         if (!same(selected, value)) return null;
         const draft = drafts[replyChoiceKey(value)] ?? "";
         return <View className="bubu-chat-question-custom" key={choice.id}>
-          <Textarea className="bubu-chat-question-input" value={draft} maxlength={6000} autoHeight disabled={busy} placeholder="填写自定义回答" onInput={event => onDraft(value, event.detail.value)} />
+          <Textarea className="bubu-chat-question-input" value={draft} maxlength={6000} autoHeight disabled={busy} placeholder={choice.action.type === "input" ? choice.action.text : "填写自定义回答"} onInput={event => onDraft(value, event.detail.value)} />
           {!deferSubmit && <Button className="bubu-chat-question-submit" disabled={busy || !draft.trim() || undefined} onClick={() => onSubmit(question, choice)}>发送回答</Button>}
         </View>;
       })}

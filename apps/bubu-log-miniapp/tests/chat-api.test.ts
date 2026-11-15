@@ -98,16 +98,16 @@ describe("chat HTTP boundary", () => {
     expect(recovered.input.formAnswer).toEqual(formAnswer);
     expect(decodeHistory({ babyId, conversationId: "conversation-1", turns: [recovered], pending: [pending], pendingCount: 1, replyQuestions: [] }, babyId).automaticMessages).toEqual([]);
   });
-  it("decodes one durable multi-event batch receipt and rejects mixed batch answer modes", () => {
+  it("decodes one durable multi-event batch receipt with a combined structured answer and supplement", () => {
     const formBatch = [1, 2].map(index => ({ eventId: `event-${index}`, question: { id: `q${index}`, questionVersion: 1, eventVersion: 4 }, formAnswer: { facts: { burpSuccess: true } } }));
+    const combinedBatch = [{ ...formBatch[0]!, text: "还有一点补充" }, formBatch[1]!];
     const recovered = decodeTurn(turn({
-      status: "completed", input: { text: "", attachmentIds: [], context: input.context, formBatch }, batchProgress: { total: 2, completed: 2 },
+      status: "completed", input: { text: "", attachmentIds: [], context: input.context, formBatch: combinedBatch }, batchProgress: { total: 2, completed: 2 },
       receipts: [{ requestId: "record-request", status: "needs_information", retryable: false, events: formBatch.map(item => ({ id: item.eventId, version: 5 })), questions: [] }],
     }), babyId);
-    expect(recovered.input.formBatch).toEqual(formBatch);
+    expect(recovered.input.formBatch).toEqual(combinedBatch);
     expect(recovered.receipts).toEqual([{ status: "needs_information", events: [{ id: "event-1", version: 5 }, { id: "event-2", version: 5 }] }]);
     expect(recovered.batchProgress).toEqual({ total: 2, completed: 2 });
-    expect(() => decodeTurn(turn({ input: { text: "", attachmentIds: [], context: input.context, formBatch: [{ ...formBatch[0], text: "重复模式" }] } }), babyId)).toThrow("格式");
   });
   it("keeps versioned field questions and uses server natural prompts before fallback", () => {
     const value = { kind: "fields", id: "q1", babyId, eventId: "e1", version: 3, eventVersion: 4, fields: ["type"], conflicts: [], duplicateCandidates: [], state: "open", prompt: "这次是亲喂还是奶瓶喂？" };

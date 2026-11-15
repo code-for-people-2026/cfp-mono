@@ -344,22 +344,57 @@ export function pendingReplyQuestions(questions: ChatPending[], events: CareEven
         choices: [
           ...candidates,
           { id: "different-events", label: "不同事件", action: { type: "reply", text: "这是不同事件，请分别保留" } },
-          { id: "custom", label: "自定义", action: { type: "custom" } },
         ],
       });
+      // Resolving a duplicate can change which event remains authoritative. Any
+      // independent conflict is deliberately presented on the next fresh pin.
+      continue;
     }
     if (question.conflicts.length) {
-      const timeConflict = question.conflicts.some(issue => ["TIME_OVERLAP", "TIME_INCONSISTENT", "INVALID_TIME", "FUTURE_TIME"].includes(issue.code));
+      const event = events.find(candidate => candidate.id === question.eventId);
+      const durationMismatch = question.conflicts.some(issue => issue.code === "DURATION_MISMATCH");
       const overlap = question.conflicts.find(issue => issue.code === "TIME_OVERLAP" && issue.relatedEventId);
-      if (!overlap) continue;
+      const endBeforeStart = question.conflicts.some(issue => issue.code === "END_BEFORE_START");
+      const ongoingHasEnd = question.conflicts.some(issue => issue.code === "ONGOING_HAS_END");
+      const choices: ReplyQuestion["choices"] = [];
+      if (durationMismatch) {
+        const start = event?.facts.startTime ? readableShanghaiTime(event.facts.startTime) : "现有开始时间";
+        const end = event?.facts.endTime ? readableShanghaiTime(event.facts.endTime) : "现有结束时间";
+        const duration = typeof event?.facts.durationMinutes === "number" ? `${event.facts.durationMinutes} 分钟` : "现有时长";
+        choices.push(
+          { id: "repair-time-use-start-end", label: `保留 ${start} 至 ${end}，重算时长`, action: { type: "reply", text: "以现有开始和结束时间为准，重新计算时长" } },
+          { id: "repair-time-use-start-duration", label: `保留 ${start} 和 ${duration}，重算结束`, action: { type: "reply", text: "以现有开始时间和时长为准，重新计算结束时间" } },
+          { id: "repair-time-use-end-duration", label: `保留 ${end} 和 ${duration}，重算开始`, action: { type: "reply", text: "以现有结束时间和时长为准，重新计算开始时间" } },
+        );
+      } else if (overlap) {
+        choices.push(
+          { id: `confirm-overlap-${overlap.relatedEventId}`, label: "两件事确实同时发生", action: { type: "reply", text: `确认当前记录与记录 ${overlap.relatedEventId} 确实同时发生` } },
+          { id: "edit-conflict", label: "修改当前记录的时间", action: { type: "input", text: "填写当前记录正确的开始、结束或时长" } },
+          { id: "defer-conflict", label: "暂不处理这项冲突", action: { type: "reply", text: "这项时间冲突暂不处理" } },
+        );
+      } else if (endBeforeStart) {
+        choices.push(
+          { id: "repair-time-end-next-day", label: "结束时间是次日", action: { type: "reply", text: "结束时间是第二天的这个时刻" } },
+          { id: "edit-conflict", label: "修改开始或结束时间", action: { type: "input", text: "填写正确的开始或结束时间" } },
+          { id: "defer-conflict", label: "暂不处理这项冲突", action: { type: "reply", text: "这项时间冲突暂不处理" } },
+        );
+      } else if (ongoingHasEnd) {
+        choices.push(
+          { id: "repair-time-mark-ended", label: "按已经结束记录", action: { type: "reply", text: "保留结束时间并按已经结束记录" } },
+          { id: "repair-time-keep-ongoing", label: "保持进行中并移除结束时间", action: { type: "reply", text: "保持进行中，现有结束时间不采用" } },
+        );
+      } else {
+        choices.push(
+          { id: "edit-conflict", label: "更正冲突字段", action: { type: "input", text: "填写这项冲突对应的正确事实" } },
+          { id: "defer-conflict", label: "暂不处理这项冲突", action: { type: "reply", text: "这项冲突暂不处理" } },
+        );
+      }
+      choices.push({ id: "custom", label: "自定义说明", action: { type: "custom" } });
       result.push({
         id: `pending-${question.id}-conflict-v${question.version}`,
-        prompt: timeConflict ? "这条记录的时间冲突按哪种情况处理？" : "这条冲突按哪种情况处理？",
+        prompt: durationMismatch ? "开始、结束和时长不一致，以哪两个现有值为准？" : "这条冲突按哪种情况处理？",
         origin: pendingOrigin(question),
-        choices: [
-          { id: `confirm-overlap-${overlap.relatedEventId}`, label: "两件事确实同时发生", action: { type: "reply" as const, text: `确认当前记录与记录 ${overlap.relatedEventId} 确实同时发生` } },
-          { id: "custom", label: "自定义", action: { type: "custom" } },
-        ],
+        choices,
       });
     }
   }

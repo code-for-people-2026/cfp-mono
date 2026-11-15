@@ -710,7 +710,7 @@ describe("private durable chat over the real HTTP MCP and Payload boundaries", (
     const duplicateQuestion = completed.replyQuestions?.find(item => item.choices.some(choice => choice.id === `same-event-${existing.id}`));
     expect(duplicateQuestion).toBeDefined();
     if (!duplicateQuestion) throw new Error("Missing duplicate choice question");
-    expect(duplicateQuestion.choices.map(choice => choice.label)).toEqual(["与候选 1是同一件事", "不同事件", "自定义"]);
+    expect(duplicateQuestion.choices.map(choice => choice.label)).toEqual(["与候选 1是同一件事", "不同事件"]);
     expect(s.f.legacy.activities.size).toBe(1);
     s.provider.tool("bubu_resolve_duplicate", { eventId: event(completed).id, resolution: "same", targetEventId: existing.id });
     const merged = await s.chat.send(s.f.alice, input("chat-duplicate-confirm", "", { context: { viewedDate: "2026-10-23", selectedEventId: event(completed).id }, question: questionInput(question(completed)), choiceAnswer: { questionId: duplicateQuestion.id, choiceId: `same-event-${existing.id}` } }));

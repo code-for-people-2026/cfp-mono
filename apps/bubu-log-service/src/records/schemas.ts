@@ -91,15 +91,27 @@ const pendingBatchDuplicateSchema = z.object({
   kind: z.literal("resolve_duplicate"), eventId: identifier, questionId: identifier,
   questionVersion: z.number().int().positive(), eventVersion: z.number().int().positive(),
   resolution: z.enum(["distinct", "same"]), targetEventId: identifier.optional(), targetVersion: z.number().int().positive().optional(),
+  patch: rulePatchSchema.optional(), sources: z.array(sourceSchema).max(100).optional(),
 }).strict();
 const pendingBatchOverlapSchema = z.object({
   kind: z.literal("confirm_overlap"), eventId: identifier, questionId: identifier,
   questionVersion: z.number().int().positive(), eventVersion: z.number().int().positive(),
   conflictingEvents: z.array(z.object({ eventId: identifier, expectedVersion: z.number().int().positive() }).strict()).min(1).max(25),
   reason: z.string().trim().min(1).max(500),
+  patch: rulePatchSchema.optional(), sources: z.array(sourceSchema).max(100).optional(),
+}).strict();
+const pendingBatchTimeRepairSchema = z.object({
+  kind: z.literal("repair_time"), eventId: identifier, questionId: identifier,
+  questionVersion: z.number().int().positive(), eventVersion: z.number().int().positive(),
+  strategy: z.enum(["use_start_end", "use_start_duration", "use_end_duration", "end_next_day", "mark_ended", "keep_ongoing"]),
+  patch: rulePatchSchema.optional(), sources: z.array(sourceSchema).max(100).optional(),
+}).strict();
+const pendingBatchDeferSchema = z.object({
+  kind: z.literal("defer"), eventId: identifier, questionId: identifier,
+  questionVersion: z.number().int().positive(), eventVersion: z.number().int().positive(),
 }).strict();
 export const pendingBatchSchema = baseMutation.extend({
-  items: z.array(z.discriminatedUnion("kind", [pendingBatchAnswerSchema, pendingBatchDuplicateSchema, pendingBatchOverlapSchema])).min(1).max(25),
+  items: z.array(z.discriminatedUnion("kind", [pendingBatchAnswerSchema, pendingBatchDuplicateSchema, pendingBatchOverlapSchema, pendingBatchTimeRepairSchema, pendingBatchDeferSchema])).min(1).max(25),
 }).superRefine((value, context) => {
   if (new Set(value.items.map(item => item.eventId)).size !== value.items.length) context.addIssue({ code: "custom", path: ["items"], message: "同一批次不能重复修改同一事件。" });
   if (new Set(value.items.map(item => item.questionId)).size !== value.items.length) context.addIssue({ code: "custom", path: ["items"], message: "同一批次不能重复回答同一问题。" });

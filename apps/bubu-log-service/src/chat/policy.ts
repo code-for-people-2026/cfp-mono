@@ -122,8 +122,9 @@ export function hasExplicitPreferenceIntent(text: string): boolean {
 export function validateStructuredAnswer(turn: StoredTurn, question: PendingQuestion, answer = turn.input.formAnswer, selected = turn.input.context.selectedEventId, event?: CareEvent) {
   if (!answer) return;
   if (selected !== question.eventId) fail("CHAT_SELECTION_MISMATCH", "表单与选中的照护事件不一致，请刷新后重试。");
-  if (!question.fields.length) fail("CHAT_FORM_FORBIDDEN", "重复或冲突需要对话核对，不能用字段表单自动处理。");
   const allowed = new Set(question.fields);
+  for (const conflict of question.conflicts) for (const field of conflict.fields) allowed.add(field);
+  if (!allowed.size) fail("CHAT_FORM_FORBIDDEN", "当前核对项没有可由字段答案更正的事实。");
   if (question.fields.includes("endTime") || question.fields.includes("durationMinutes")) {
     allowed.add("endTime");
     allowed.add("durationMinutes");
@@ -168,7 +169,7 @@ export function prepareCall(turn: StoredTurn, call: ProviderCall, index: number)
     const submitted = turn.input.formBatch;
     if (!submitted) return fail("CHAT_BATCH_REQUIRED", "批量待补操作缺少原始批次绑定。");
     const items = z.array(z.record(z.string(), z.unknown())).min(1).max(25).parse(raw.items).map(item => {
-      const kind = z.enum(["answer", "resolve_duplicate", "confirm_overlap"]).parse(item.kind);
+      const kind = z.enum(["answer", "resolve_duplicate", "confirm_overlap", "repair_time", "defer"]).parse(item.kind);
       const eventId = identifier.parse(item.eventId), questionId = identifier.parse(item.questionId);
       const original = submitted.find(entry => entry.eventId === eventId && entry.question.id === questionId);
       if (!original || original.question.questionVersion !== item.questionVersion || original.question.eventVersion !== item.eventVersion) {
@@ -176,8 +177,11 @@ export function prepareCall(turn: StoredTurn, call: ProviderCall, index: number)
       }
       const pins = { kind, eventId, questionId, questionVersion: original.question.questionVersion, eventVersion: original.question.eventVersion };
       if (kind === "answer") return { ...pins, patch: patch(item.patch, turn, questionId, true), sources: [sourceFor(turn, `batch:${questionId}`)] };
-      if (kind === "resolve_duplicate") return { ...pins, resolution: item.resolution, ...(item.targetEventId === undefined ? {} : { targetEventId: item.targetEventId, targetVersion: item.targetVersion }) };
-      return { ...pins, conflictingEvents: item.conflictingEvents, reason: item.reason };
+      if (kind === "defer") return pins;
+      const patchInput = item.patch === undefined ? {} : { patch: patch(item.patch, turn, questionId, true), sources: [sourceFor(turn, `batch:${questionId}`)] };
+      if (kind === "repair_time") return { ...pins, strategy: item.strategy, ...patchInput };
+      if (kind === "resolve_duplicate") return { ...pins, resolution: item.resolution, ...(item.targetEventId === undefined ? {} : { targetEventId: item.targetEventId, targetVersion: item.targetVersion }), ...patchInput };
+      return { ...pins, conflictingEvents: item.conflictingEvents, reason: item.reason, ...patchInput };
     });
     if (items.length !== submitted.length) return fail("CHAT_BATCH_TARGET_MISMATCH", "批量计划未覆盖全部待补回答。");
     return pendingBatchSchema.parse({ ...base, items });

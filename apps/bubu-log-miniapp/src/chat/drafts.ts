@@ -76,8 +76,7 @@ function formBatch(value: unknown): value is FormBatchItem[] {
     if (!object(item) || typeof item.eventId !== "string" || !item.eventId || !question(item.question)) return false;
     if (events.has(item.eventId) || questions.has(item.question.id)) return false;
     events.add(item.eventId); questions.add(item.question.id);
-    const modes = Number(item.formAnswer !== undefined) + Number(item.text !== undefined) + Number(item.choiceAnswer !== undefined);
-    if (modes !== 1 || (item.formAnswer !== undefined && !formAnswer(item.formAnswer)) || (item.choiceAnswer !== undefined && (!choiceAnswer(item.choiceAnswer) || item.choiceAnswer.originTurnId !== undefined))) return false;
+    if (item.formAnswer === undefined && item.text === undefined && item.choiceAnswer === undefined || (item.formAnswer !== undefined && !formAnswer(item.formAnswer)) || (item.choiceAnswer !== undefined && (!choiceAnswer(item.choiceAnswer) || item.choiceAnswer.originTurnId !== undefined))) return false;
     if (item.text !== undefined) {
       if (typeof item.text !== "string" || !item.text.trim() || item.text.length > 6000) return false;
       textLength += item.text.length;

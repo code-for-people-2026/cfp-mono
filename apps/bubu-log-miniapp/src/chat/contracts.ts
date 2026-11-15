@@ -17,7 +17,7 @@ export type FieldState = "known" | "pending" | "unknown" | "not_applicable" | "n
 export type StructuredFormProgress = "ongoing" | "ended" | "unknown";
 export interface MilkItemAnswer { milkItemId: string; facts?: { milkSource?: "BREAST_MILK" | "FORMULA"; milkDescription?: string; milkAmount?: number | null }; states?: { milkSourceState?: "known" | "pending" | "unknown"; milkAmountState?: "known" | "pending" | "unknown" } }
 export interface StructuredFormAnswer { facts: Record<string, unknown>; states?: Partial<Record<string, FieldState>>; progress?: StructuredFormProgress; milkItemAnswers?: MilkItemAnswer[] }
-export type ReplyChoiceAction = { type: "reply"; text: string } | { type: "custom" } | { type: "attach"; text: string } | { type: "reference"; text: string; attachmentIds: string[] };
+export type ReplyChoiceAction = { type: "reply"; text: string } | { type: "input"; text: string } | { type: "custom" } | { type: "attach"; text: string } | { type: "reference"; text: string; attachmentIds: string[] };
 export interface ReplyChoice { id: string; label: string; action: ReplyChoiceAction }
 export interface ReplyQuestion {
   id: string; prompt: string; choices: ReplyChoice[];
@@ -139,7 +139,7 @@ function decodeReplyQuestion(value: unknown): ReplyQuestion {
     return { id: id(pin.id), questionVersion: positiveInteger(pin.questionVersion), eventVersion: positiveInteger(pin.eventVersion) };
   })();
   const choices = array(row.choices, item => {
-    const option = object(item), action = object(option.action), type = choice(action.type, ["reply", "custom", "attach", "reference"] as const);
+    const option = object(item), action = object(option.action), type = choice(action.type, ["reply", "input", "custom", "attach", "reference"] as const);
     const decodedAction: ReplyChoiceAction = type === "custom" ? { type }
       : type === "reference" ? { type, text: text(action.text), attachmentIds: array(action.attachmentIds, attachmentId => {
         const value = id(attachmentId); if (!/^att_[a-f0-9]{64}$/.test(value)) throw new ResponseFormatError(); return value;
@@ -225,7 +225,7 @@ export function decodeTurn(value: unknown, babyId: string): ChatTurn {
     const batchFormAnswer = item.formAnswer === undefined ? undefined : decodeFormAnswer(item.formAnswer);
     const batchText = item.text === undefined ? undefined : text(item.text);
     const batchChoice = item.choiceAnswer === undefined ? undefined : decodeChoiceAnswer(item.choiceAnswer);
-    if (Number(!!batchFormAnswer) + Number(batchText !== undefined) + Number(!!batchChoice) !== 1 || batchText !== undefined && (!batchText.trim() || batchText.length > 6000) || batchChoice?.originTurnId) throw new ResponseFormatError();
+    if (!batchFormAnswer && batchText === undefined && !batchChoice || batchText !== undefined && (!batchText.trim() || batchText.length > 6000) || batchChoice?.originTurnId) throw new ResponseFormatError();
     return { eventId: id(item.eventId), question: itemQuestion, ...(batchFormAnswer ? { formAnswer: batchFormAnswer } : {}), ...(batchText !== undefined ? { text: batchText } : {}), ...(batchChoice ? { choiceAnswer: batchChoice } : {}) };
   });
   if (formBatch) {

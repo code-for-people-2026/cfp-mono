@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CHAT_INSTRUCTIONS, hasExplicitPreferenceIntent, modelTools, prepareCall } from "../src/chat/policy";
 import { buildPendingForm, confirmedReply, pendingReplyQuestions, renderPendingQuestion, structuredAnswerText, uncommittedReply, validatePendingFormPresentation } from "../src/chat/presentation";
-import { deterministicCandidateIssues, hiddenRequestIssues, safeHistoricalReply } from "../src/chat/reply-gate";
+import { deterministicCandidateIssues, hiddenRequestIssues, safeHistoricalReply, validateRenderableQuestions } from "../src/chat/reply-gate";
 import type { StoredTurn } from "../src/chat/persistence";
 import type { ChatFieldPending } from "../src/chat/contracts";
 import { evaluateEvent } from "../src/records/rules";
@@ -188,9 +188,9 @@ describe("natural follow-ups use only MCP-selected fields", () => {
     const conflict = { ...duplicate, id: "question-conflict", duplicateCandidates: [], conflicts: [{ code: "TIME_OVERLAP", fields: ["startTime" as const, "endTime" as const], message: "时间重叠", relatedEventId: "event-2" }] };
     const media = { kind: "media" as const, id: "media-1", sourceId: "source-1", babyId: "baby-a", eventIds: ["event-1"], source: { kind: "wechat" as const, accountId: "account", conversationId: "conversation", messageId: "message", sentAt: "2026-10-23T08:00:00Z", senderId: "sender", groupId: "group" }, media: [{ index: 0, kind: "image", state: "unavailable" as const, reason: "missing" }], state: "open" as const, resolution: "protected_upload_and_attach_or_backfill" as const };
     const choices = pendingReplyQuestions([duplicate, conflict, media]);
-    expect(choices[0]?.choices.map(item => item.label)).toEqual(["与候选 1是同一件事", "不同事件", "自定义"]);
+    expect(choices[0]?.choices.map(item => item.label)).toEqual(["与候选 1是同一件事", "不同事件"]);
     expect(choices[0]?.choices[0]?.action).toMatchObject({ type: "reply", text: expect.stringContaining("event-2") });
-    expect(choices[1]?.choices.map(item => item.label)).toEqual(["两件事确实同时发生", "自定义"]);
+    expect(choices[1]?.choices.map(item => item.label)).toEqual(["两件事确实同时发生", "修改当前记录的时间", "暂不处理这项冲突", "自定义说明"]);
     expect(choices[1]?.choices[0]?.action).toEqual({ type: "reply", text: "确认当前记录与记录 event-2 确实同时发生" });
     expect(choices[2]?.choices.map(item => item.label)).toEqual(["补照片", "无法提供", "稍后处理"]);
     expect(safeHistoricalReply("告诉我奶量", [])).toContain("未经过当前发送检查");
@@ -201,5 +201,19 @@ describe("natural follow-ups use only MCP-selected fields", () => {
     expect(safeHistoricalReply("尚未确认保存；已整理你的说明。", [], { checked: true, version: 1 })).toBe("尚未确认保存；已整理你的说明。");
     expect(hiddenRequestIssues("告诉我奶量")).toHaveLength(1);
     expect(deterministicCandidateIssues({ text: "说明。", questions: [{ id: "q", prompt: "选择", choices: [{ id: "unknown", label: "不知道", action: { type: "reply", text: "不知道" } }, { id: "custom", label: "自定义", action: { type: "custom" } }] }] })).toEqual(expect.arrayContaining([expect.stringContaining("至少需要两个具体")]));
+  });
+  it("presents a duration mismatch as three version-bound typed repairs instead of an empty form dead end", () => {
+    const mismatched = event({ facts: { type: "SLEEP", startTime: "2026-10-23T02:00:00+08:00", endTime: "2026-10-23T03:00:00+08:00", durationMinutes: 120 }, progress: "ended" });
+    const pending = question(mismatched);
+    const form = buildPendingForm(pending, mismatched)!;
+    const [repair] = pendingReplyQuestions([pending], [mismatched]);
+    expect(pending.fields).toEqual([]);
+    expect(form.controls).toEqual([]);
+    expect(repair?.origin).toMatchObject({ selectedEventId: mismatched.id, question: { id: pending.id, questionVersion: pending.version, eventVersion: pending.eventVersion } });
+    expect(repair?.choices.map(choice => choice.id)).toEqual([
+      "repair-time-use-start-end", "repair-time-use-start-duration", "repair-time-use-end-duration", "custom",
+    ]);
+    expect(repair?.choices.map(choice => choice.label).join(" ")).toMatch(/2026-10-23 02:00.*2026-10-23 03:00.*120 分钟/);
+    expect(validateRenderableQuestions([repair!])).toEqual([]);
   });
 });

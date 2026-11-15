@@ -370,10 +370,10 @@ export class ChatSession {
     if (!this.alive || this.locked || this.state.loading || this.state.draft.pending) return;
     const selected: ChoiceAnswerRef = { questionId: question.id, choiceId: choice.id, ...(question.origin.turnId ? { originTurnId: question.origin.turnId } : {}) };
     const customText = this.state.draft.choiceDrafts?.[replyChoiceKey(selected)]?.trim() ?? "";
-    if (choice.action.type === "custom" && !customText) { this.update({ error: "请先填写自定义回答。" }); return; }
+    if ((choice.action.type === "custom" || choice.action.type === "input") && !customText) { this.update({ error: "请先填写自定义回答。" }); return; }
     if (choice.action.type === "attach" && !attachmentIds.length) { this.update({ error: "请先选择要补充的照片。" }); return; }
     const input: ChatRequest = {
-      babyId: this.babyId, requestId: newRequestId(), text: choice.action.type === "custom" ? customText : "", attachmentIds,
+      babyId: this.babyId, requestId: newRequestId(), text: choice.action.type === "custom" || choice.action.type === "input" ? customText : "", attachmentIds,
       context: { viewedDate, ...(question.origin.selectedEventId ? { selectedEventId: question.origin.selectedEventId } : {}), ...(question.origin.mediaPendingId ? { mediaPendingId: question.origin.mediaPendingId } : {}) },
       ...(question.origin.question ? { question: question.origin.question } : {}), choiceAnswer: selected,
     };

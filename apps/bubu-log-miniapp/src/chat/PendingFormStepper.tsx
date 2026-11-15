@@ -144,6 +144,19 @@ export function buildPendingTextAnswer(form: PendingEventForm, draft: PendingFor
   return [...structured, ...custom].join("\n");
 }
 
+function buildPendingCustomTextAnswer(form: PendingEventForm, texts: Record<string, string>): string {
+  const orderedContexts = [...form.controls.map(control => control.draftKey ?? control.field), "supplement"];
+  return [...new Set([...orderedContexts, ...Object.keys(texts)])].flatMap(context => {
+    const text = texts[context]?.trim();
+    if (!text) return [];
+    const control = form.controls.find(item => (item.draftKey ?? item.field) === context);
+    // A custom bottle item source is already a typed, item-ID-bound answer.
+    if (control?.milkItemId && control.field === "milkSource") return [];
+    const label = context === "supplement" ? "补充说明" : control?.label ?? context;
+    return [`${label}：${text}`];
+  }).join("\n");
+}
+
 export function PendingFormStepper({ pending, drafts, busy, onDraft, onSubmit, onConversation, onMedia, onFieldFocus, onFieldBlur, onFormChange, source,
   textDrafts = {}, onTextDraft, questions = [], selectedChoices = {}, choiceDrafts = {}, onSelectChoice, onChoiceDraft, onSubmitChoice, onAttachChoice }: Props) {
   const groups = useMemo(() => groupPendingEvents(pending), [pending]);
@@ -360,33 +373,37 @@ export function PendingFormStepper({ pending, drafts, busy, onDraft, onSubmit, o
     const texts = textDrafts[targetKey] ?? {}, hasText = Object.values(texts).some(value => !!value.trim());
     const hasFieldInput = !!targetDraft.progress || Object.keys(targetDraft.fields).length > 0 || hasText;
     const chosen = selectedChoices[targetKey];
-    if (chosen && hasFieldInput) return { error: "这一项同时填写了字段和核对选项。请点已选选项取消，或清空字段后只保留一种回答。" };
     const pin = { id: field.id, questionVersion: field.version, eventVersion: field.eventVersion };
+    let selectedOption: ReplyChoice | undefined;
     if (chosen) {
       const selectedQuestion = questionsForGroup(target).find(item => item.id === chosen.questionId && item.origin.turnId === chosen.originTurnId);
-      const selectedOption = selectedQuestion?.choices.find(item => item.id === chosen.choiceId);
+      selectedOption = selectedQuestion?.choices.find(item => item.id === chosen.choiceId);
       if (!selectedOption) return { error: "所选冲突答案已更新，请重新选择。" };
-      if (selectedOption.action.type === "custom") {
-        const custom = choiceDrafts[replyChoiceKey(chosen)]?.trim();
-        if (!custom) return { error: "请填写自定义回答。" };
-        if (field.fields.length) return { item: { eventId: field.eventId, question: pin, text: custom } };
-        return { error: "这类自定义说明不能直接确认当前核对项。请改选明确选项，或返回聊天单独说明。" };
-      }
       if (selectedOption.action.type === "attach") return { error: "照片答案不能放入这次批量提交，请先单独处理照片。" };
-      if (chosen.originTurnId || !(chosen.choiceId === "different-events" || chosen.choiceId.startsWith("same-event-") || chosen.choiceId.startsWith("confirm-overlap-"))) {
+      if (chosen.originTurnId) {
         return { error: "这个选项需要单独核对，暂时不能和其他待补事项一起保存。" };
       }
-      return { item: { eventId: field.eventId, question: pin, choiceAnswer: { ...chosen, eventVersion: field.eventVersion } } };
+      if (chosen.choiceId.startsWith("same-event-") && hasFieldInput) return { error: "合并为同一事件时，额外事实应写入哪条记录并不明确。请先单独核对合并目标，已填草稿不会丢失。" };
+      if (chosen.choiceId === "defer-conflict" && hasFieldInput) return { error: "选择暂不处理时不能同时修改字段；请改选明确处理方式，或保留草稿稍后再处理。" };
     }
-    const itemTextOnly = Object.entries(texts).filter(([, value]) => !!value.trim()).every(([context]) => !!targetForm.controls.find(control => (control.draftKey ?? control.field) === context && !!control.milkItemId));
-    const builtAnswer = buildPendingFormAnswer(targetForm, targetDraft, texts);
-    if (hasText && !itemTextOnly) {
-      const answer = buildPendingTextAnswer(targetForm, targetDraft, texts);
-      if (!answer.trim() || answer.length > 6000) return { error: "这项补充文字不能为空，且不能超过 6000 字。" };
-      return { item: { eventId: field.eventId, question: pin, text: answer } };
+    if ((field.conflicts.length || field.duplicateCandidates.length) && !chosen) return { error: "请先选择这条冲突或重复记录的处理方式。" };
+    const itemScopedText = Object.entries(texts).some(([context, value]) => !!value.trim() && !!targetForm.controls.find(control =>
+      (control.draftKey ?? control.field) === context && control.milkItemId && control.field === "milkSource"));
+    const hasStructuredInput = !!targetDraft.progress || Object.keys(targetDraft.fields).length > 0 || itemScopedText;
+    const builtAnswer = hasStructuredInput ? buildPendingFormAnswer(targetForm, targetDraft, texts) : {};
+    if (hasStructuredInput && !builtAnswer.answer) return { error: builtAnswer.error ?? "请完成这一项。" };
+    const textParts = [buildPendingCustomTextAnswer(targetForm, texts)];
+    if (selectedOption?.action.type === "custom" || selectedOption?.action.type === "input") {
+      const custom = choiceDrafts[replyChoiceKey(chosen!)]?.trim();
+      if (!custom) return { error: "请填写自定义回答。" };
+      textParts.push(`${selectedOption.action.type === "input" ? selectedOption.action.text : "自定义说明"}：${custom}`);
     }
-    if (!builtAnswer.answer) return { error: builtAnswer.error ?? "请完成这一项。" };
-    return { item: { eventId: field.eventId, question: pin, formAnswer: builtAnswer.answer } };
+    const text = textParts.filter(Boolean).join("\n");
+    if (text.length > 6000) return { error: "这项补充文字不能超过 6000 字。" };
+    if (!builtAnswer.answer && !text && !chosen) return { error: builtAnswer.error ?? "请完成这一项。" };
+    return { item: { eventId: field.eventId, question: pin,
+      ...(builtAnswer.answer ? { formAnswer: builtAnswer.answer } : {}), ...(text ? { text } : {}),
+      ...(chosen ? { choiceAnswer: { ...chosen, eventVersion: field.eventVersion } } : {}) } };
   };
   const submitOrAdvance = () => {
     if (busy || !form || !question) return;
