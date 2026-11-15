@@ -22,6 +22,7 @@ button::after { border: 0; }
 .error-text { color: #ab493d; display: block; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
 .notice, .data-note { color: #a17b4e; background: #f4eddf; border-radius: 9px; padding: 11px; font-size: 12px; line-height: 1.7; margin-bottom: 12px; }
 .data-note { background: transparent; color: #9b8d7b; padding: 6px 2px; margin: 10px 0 0; }
+.sync-status { display: block; margin-top: 10px; }
 .empty-hint { text-align: center; color: #a49683; padding: 10px; font-size: 12px; }
 .evening-card { padding: 8px 10px; margin-bottom: 10px; background: #f0ebe6; border-radius: 8px; }
 .evening-heading { font-size: 11.5px; font-weight: 600; display: block; margin-bottom: 6px; color: #8e7966; }
@@ -44,22 +45,11 @@ button::after { border: 0; }
 .diary-shell { max-width: 540px; margin: 0 auto; color: #3d3831; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
 .diary-content { min-height: 0; padding-top: 0; padding-bottom: 58px; }
 .daily-summary { margin: 6px 0 10px; }
+.collapsible-day-summary { height: auto; overflow: hidden; transition: height 200ms ease; will-change: height; }
+.collapsible-day-summary-inner { width: 100%; display: flex; flex-direction: column; transition: opacity 200ms ease, transform 200ms ease; }
 
 .arrow-button::after, .text-button::after, .primary-button::after { border: 0; pointer-events: none; }
 
-.calendar-view-control { position: relative; flex-shrink: 0; }
-.calendar-view-control.view-menu-open { z-index: 40; }
-.calendar-view-select { position: relative; z-index: 2; line-height: 1.6; color: #75634e; }
-.calendar-view-backdrop { position: fixed; inset: 0; z-index: 1; }
-.calendar-view-popover { position: absolute; right: 0; top: calc(100% + 8px); width: 96px; z-index: 3; padding: 5px; border-radius: 12px; background: #fffdf9; border: 0.5px solid #e9dfd0; box-shadow: 0 5px 24px #48341f18; }
-.calendar-view-option { margin: 0; background: transparent; color: #8c7962; padding: 10px 12px; line-height: 1.5; font-size: 13px; border-radius: 8px; }
-.calendar-view-option.current { background: #f1e9dc; color: #8d5935; }
-.calendar-view-select::after, .calendar-view-option::after { border: 0; pointer-events: none; }
-.identity-setup { margin-top: 16px; }
-.identity-setup > .muted { display: block; margin-top: 8px; }
-.identity-choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.identity-choices .text-button { font-size: 12px; border-radius: 6px; }
-.identity-choice-current { background: #f1e9dc; }
 .period-back { margin: 4px 0; font-size: 12px; }
 
 .chat-entry { position: fixed; right: calc(16px + env(safe-area-inset-right)); bottom: calc(20px + env(safe-area-inset-bottom)); z-index: 25; width: 54px; height: 54px; min-width: 0; min-height: 54px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: #35594b; color: #fff; display: flex; align-items: center; justify-content: center; box-sizing: border-box; line-height: 1; text-align: center; overflow: visible; box-shadow: 0 8px 22px #26403528, 0 2px 7px #26403522; }

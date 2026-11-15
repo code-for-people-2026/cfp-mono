@@ -2,10 +2,10 @@ import { Button, Image, Picker, ScrollView, Text, View } from "@tarojs/component
 import Taro from "@tarojs/taro";
 import { useEffect, useState, type ReactNode } from "react";
 import brandIcon from "../assets/branding/bubu-avatar-borderless-v1.png";
-import type { AuthContext } from "../model";
-import { readNavigationLayout } from "./layout";
 import { identityEnabled } from "../api";
+import type { AuthContext } from "../model";
 import { MembershipStatus } from "../membership/MembershipStatus";
+import { readNavigationLayout } from "./layout";
 import "./navigation.css";
 
 export type DiaryView = "day" | "week" | "month" | "trend" | "list";

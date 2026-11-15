@@ -8,6 +8,67 @@
   color: #4d4034;
 }
 
+.bubu-paper-turn { position: relative; background: #fffdf8; }
+.bubu-paper-current {
+  position: relative; z-index: 2; overflow: visible; background: transparent;
+  box-shadow: 0 1px 5px rgba(75, 57, 35, .06);
+}
+.bubu-paper-neighbor {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; overflow: visible;
+  visibility: hidden; background: transparent; pointer-events: none;
+}
+.bubu-paper-neighbor-prev { z-index: 3; }
+.bubu-paper-neighbor-next { z-index: 1; }
+.bubu-paper-neighbor-active { visibility: visible; }
+.bubu-paper-sheet-clip { position: relative; width: 100%; overflow: hidden; background: #fffdf8; }
+.bubu-paper-neighbor .bubu-paper-sheet-clip { position: absolute; top: 0; right: 0; bottom: 0; left: 0; }
+.bubu-paper-preview-scroll {
+  position: absolute; top: 0; right: 0; left: 0; height: auto;
+  pointer-events: none;
+}
+.bubu-paper-crease-shadow {
+  position: absolute; top: 0; left: 0; z-index: 3;
+  width: 22px; height: 100%;
+  transform-origin: 0 0; pointer-events: none;
+  background: linear-gradient(to right, rgba(87, 64, 40, .35), rgba(87, 64, 40, 0));
+}
+.bubu-paper-fold-region {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 4;
+  pointer-events: none;
+}
+.bubu-paper-fold-shadow,
+.bubu-paper-fold-back {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; pointer-events: none;
+}
+.bubu-paper-fold-shadow { background: linear-gradient(112deg, rgba(87, 64, 40, .12), rgba(87, 64, 40, .035)); }
+.bubu-paper-fold-back {
+  background: linear-gradient(112deg, #fffcf5 0%, #f6ebda 58%, #eadcc6 100%);
+  box-shadow: inset 0 0 0 .5px rgba(161, 133, 98, .12);
+}
+.bubu-paper-fold-back.bubu-paper-fold-vertical { background: linear-gradient(202deg, #fffcf5 0%, #f6ebda 58%, #eadcc6 100%); }
+.bubu-paper-fold-shadow.bubu-paper-fold-vertical { background: linear-gradient(202deg, rgba(87, 64, 40, .12), rgba(87, 64, 40, .035)); }
+.bubu-paper-fold-avatar {
+  position: absolute; top: 0; left: 0; z-index: 1;
+  width: 100%; height: 100%;
+  overflow: hidden; transform-origin: 0 0; pointer-events: none;
+}
+.bubu-paper-fold-avatar-tile {
+  position: absolute; top: 0; left: 0;
+  width: 50vw; height: 50vw;
+  pointer-events: none;
+}
+.bubu-paper-fold-avatar-shade {
+  position: absolute; top: 0; right: 0; bottom: 0; left: 0; z-index: 2; pointer-events: none;
+  background: linear-gradient(112deg, rgba(87, 64, 40, .06), rgba(87, 64, 40, .012));
+}
+.bubu-paper-fold-avatar-shade.bubu-paper-fold-vertical {
+  background: linear-gradient(202deg, rgba(87, 64, 40, .06), rgba(87, 64, 40, .012));
+}
+.bubu-paper-fold-avatar-preload {
+  position: absolute; top: 0; left: 0; z-index: 0;
+  width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none;
+}
+
 .bubu-viz-heading {
   display: flex;
   align-items: center;
@@ -27,10 +88,10 @@
 .bubu-empty-inline { margin: 0 14px 10px; padding: 10px; border-radius: 7px; background: #f7f3ec; color: #a09485; text-align: center; font-size: 12px; }
 
 /* The time axis owns two-finger vertical zoom; do not let the H5 viewport zoom. */
-.bubu-timeline-viewport { position: relative; touch-action: pan-y; }
+.bubu-timeline-viewport { position: relative; overflow: hidden; background: #fffdf8; touch-action: pan-y; }
 .bubu-day-scroll { height: 440px; }
 .bubu-day-scroll, .bubu-week-scroll { touch-action: pan-y; overscroll-behavior: contain; }
-.bubu-day-canvas { position: relative; margin: 12px 10px 11px 4px; }
+.bubu-day-canvas, .bubu-day-preview-canvas { position: relative; margin: 12px 10px 11px 4px; }
 .bubu-hour-row { position: absolute; right: 0; left: 0; z-index: 2; height: 0; pointer-events: none; }
 .bubu-hour-label { position: absolute; top: -6.5px; left: 5px; width: 34px; color: #afa497; font-size: 10px; text-align: right; line-height: 13px; text-shadow: 0 0 3px rgba(255, 250, 244, .92), 0 0 2px rgba(255, 250, 244, .92); }
 .bubu-hour-rule { position: absolute; right: 0; left: 47px; border-top: 0.5px solid #eee8df; }
@@ -62,7 +123,7 @@
 .bubu-week-day-today .bubu-week-date { background: #b58055; color: #fffaf4; }
 .bubu-week-day-future { opacity: .45; }
 .bubu-week-scroll { height: 380px; }
-.bubu-week-canvas { position: relative; margin: 10px 9px 10px 0; }
+.bubu-week-canvas, .bubu-week-preview-canvas { position: relative; margin: 10px 9px 10px 0; }
 .bubu-week-hour { position: absolute; right: 0; left: 0; height: 0; }
 .bubu-week-hour-label { position: absolute; left: 6px; top: -6px; color: #afa497; font-size: 9px; line-height: 12px; }
 .bubu-week-hour-rule { position: absolute; left: 28px; right: 0; border-top: 0.5px solid #eee8df; }

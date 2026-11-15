@@ -9,7 +9,10 @@ export function buildTrendRows(stats: readonly DailyStat[], days: number = 7, en
     const stat = byDate.get(date);
     return { date, label: shortDateLabel(date), sleep: stat?.totalSleepMinutes ?? 0, milk: stat?.totalMilkAmount ?? 0,
       pump: stat?.totalPumpMilkAmount ?? 0, diapers: stat?.diaperCount ?? 0, hasData: Boolean(stat),
-      ...(stat?.byType ? { known: { sleep: !!hasMetricFacts(stat.byType, "sleep"), milk: !!hasMetricFacts(stat.byType, "milk"), pump: !!hasMetricFacts(stat.byType, "pump"), diapers: !!hasMetricFacts(stat.byType, "diapers") } } : {}),
+      ...(stat?.byType ? { known: {
+        sleep: !!hasMetricFacts(stat.byType, "sleep"), milk: !!hasMetricFacts(stat.byType, "milk"),
+        pump: !!hasMetricFacts(stat.byType, "pump"), diapers: !!hasMetricFacts(stat.byType, "diapers"),
+      } } : {}),
       ...(stat?.coverage ? { coverage: coverageMessage(stat.coverage) } : {}) };
   });
 }

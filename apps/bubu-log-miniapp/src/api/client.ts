@@ -1,6 +1,7 @@
 import { decodeSafetyNotices, decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
 import { decodeAttachment, decodeEventSources, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
 import { isChatRequest, type ChatRequest } from "../chat/drafts";
+import { decodeMembership } from "../membership/contracts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import {
@@ -9,7 +10,6 @@ import {
 } from "./provenance";
 import { SessionCookies, type SessionStorage } from "./session";
 import { IdentitySession } from "./identity-session";
-import { decodeMembership } from "../membership/contracts";
 import { assertPreferenceUpdates, decodeCarePreferences, decodePreferenceReceipt, type UpdateCarePreferencesInput } from "../preferences/shared-options";
 
 export interface TransportRequest {

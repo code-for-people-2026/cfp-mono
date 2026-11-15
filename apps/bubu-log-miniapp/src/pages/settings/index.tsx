@@ -89,10 +89,16 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const expire = () => {
-      setContext(null); setBaby(null); setName(""); setFullName(""); setSaved(false); setSaving(false); savingRef.current = false;
+      setBaby(null); setName(""); setFullName(""); setSaved(false); setSaving(false); savingRef.current = false;
       clearPreferenceUi();
       setError("登录已过期，请返回首页重新登录。");
     };
+    Taro.eventCenter.on(sessionExpiredEvent, expire);
+    return () => { Taro.eventCenter.off(sessionExpiredEvent, expire); };
+  }, []);
+
+  useEffect(() => {
+    const expire = () => { setContext(null); setBaby(null); setName(""); setFullName(""); setError("登录已过期，请返回首页重新登录。"); };
     Taro.eventCenter.on(sessionExpiredEvent, expire);
     return () => { Taro.eventCenter.off(sessionExpiredEvent, expire); };
   }, []);

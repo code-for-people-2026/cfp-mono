@@ -27,8 +27,7 @@ export const todayKey = (now: DateInput = new Date()): string => dateKey(now);
 export const dateLabel = (value: DateInput): string => calendarClock(value).format("M月D日");
 export const timeLabel = (value: DateInput): string => calendarClock(value).format("HH:mm");
 export const dateTimeLabel = (value: DateInput): string => calendarClock(value).format("M月D日 HH:mm");
-// Formatting a UTC instant avoids inheriting a host DST transition.
-export const fullDateTimeLabel = (value: DateInput): string => dayjs.utc(calendarClock(value).valueOf()).format("YYYY/MM/DD HH:mm");
+export const fullDateTimeLabel = (value: DateInput): string => calendarClock(value).format("YYYY/MM/DD HH:mm");
 export const shortDateLabel = (value: DateInput): string => calendarClock(value).format("M/D");
 export const weekdayLabel = (value: DateInput): string => ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][calendarClock(value).day()]!;
 export const addDays = (value: DateInput, days: number): string => calendarClock(value).add(days, "day").format("YYYY-MM-DD");

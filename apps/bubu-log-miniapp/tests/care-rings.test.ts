@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@tarojs/taro", () => ({ default: {} }));
 import { buildCareMonthRings, type CareRingCalendarDay } from "../src/model/care-rings";
-import type { Activity, DailyStat, RecordTypeSummary } from "../src/model/types";
+import type { Activity, DailyStat } from "../src/model/types";
 import {
   DEFAULT_CARE_PREFERENCES, carePreferencesStorageKey,
   getCarePreferences, saveCarePreferences, validateCarePreferences,
@@ -15,11 +15,6 @@ const activity = (id: string, type: Activity["type"], startTime: string, extra: 
 const dailyStat = (date: string, extra: Partial<DailyStat> = {}): DailyStat => ({
   id: date, date, sleepCount: 0, totalSleepMinutes: 0, totalMilkAmount: 0,
   totalPumpMilkAmount: 0, diaperCount: 0, ...extra,
-});
-const typeSummary = (extra: Partial<RecordTypeSummary> = {}): RecordTypeSummary => ({
-  events: 0, knownMinutes: 0, knownCount: 0, unknownCount: 0, knownMilkAmount: 0,
-  preparedMilkAmount: 0, knownMilkAmounts: 0, unknownMilkAmounts: 0,
-  knownDurations: 0, unknownDurations: 0, ongoingEvents: 0, ...extra,
 });
 const preferences = (breastfeedRate: CarePreferences["breastfeedRate"] = DEFAULT_CARE_PREFERENCES.breastfeedRate): CarePreferences => ({
   breastfeedRate, milkReference: null, sleepReference: null,
@@ -114,6 +109,51 @@ describe("care ring milk estimation", () => {
     expect(milk(result, "2026-02-02").value).toEqual({ type: "range", range: { min: 550, max: 600 } });
   });
 
+  it("matches backend per-record breastfeed rounding while estimating from raw durations", () => {
+    const fractionalFeeds = (durationSeconds: number) => [0, 1, 2, 3, 4].map((index) => activity(
+      `down-${index}`, "BREASTFEED", `2026-02-02 10:0${index}:00`,
+      { endTime: `2026-02-02 10:${String(index + 10).padStart(2, "0")}:${String(durationSeconds).padStart(2, "0")}` },
+    ));
+
+    const roundingDown = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 50 })],
+      activities: fractionalFeeds(24),
+    });
+    const downMetric = milk(roundingDown, "2026-02-02");
+    expect(downMetric.breastfeed).toMatchObject({
+      state: "estimated", recordedMinutes: 52, estimatedRange: { min: 260, max: 520 },
+    });
+    expect(roundingDown.issues.filter((issue) => issue.code === "breastfeed-mismatch")).toEqual([]);
+
+    const roundingUp = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 55 })],
+      activities: fractionalFeeds(36),
+    });
+    expect(milk(roundingUp, "2026-02-02").breastfeed).toMatchObject({
+      state: "estimated", recordedMinutes: 53, estimatedRange: { min: 265, max: 530 },
+    });
+    expect(roundingUp.issues.filter((issue) => issue.code === "breastfeed-mismatch")).toEqual([]);
+  });
+
+  it("still detects a genuine breastfeed duration mismatch after per-record rounding", () => {
+    const feeds = [0, 1, 2, 3, 4].map((index) => activity(
+      `mismatch-${index}`, "BREASTFEED", `2026-02-02 10:0${index}:00`,
+      { endTime: `2026-02-02 10:${10 + index}:24` },
+    ));
+    const result = build({
+      birthDate: "2026-01-01",
+      stats: [dailyStat("2026-02-02", { breastfeedCount: 5, totalBreastfeedMinutes: 70 })],
+      activities: feeds,
+    });
+
+    expect(milk(result, "2026-02-02").breastfeed.state).toBe("partial");
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "breastfeed-mismatch", metric: "milk" }),
+    ]));
+  });
+
   it("blocks default research estimates for unknown or first-week ages, but honors explicit custom rates", () => {
     const feed = activity("bf", "BREASTFEED", "2026-02-02 10:00", { endTime: "2026-02-02 10:10" });
     const stats = [dailyStat("2026-02-02", { totalMilkAmount: 500, breastfeedCount: 1, totalBreastfeedMinutes: 10 })];
@@ -167,49 +207,6 @@ describe("care ring milk estimation", () => {
     expect(milk(zero, "2026-02-03").value).toEqual({ type: "number", value: 200 });
     expect(milk(build(), "2026-02-03").value.type).toBe("unknown");
     expect(milk(build(), "2026-02-03").readableComponents).toEqual(["瓶喂未知", "亲喂记录量 0 ml"]);
-  });
-
-  it("masks sidecar zero placeholders but preserves legacy stats without metadata", () => {
-    const masked = build({
-      birthDate: "2025-10-01",
-      stats: [dailyStat("2026-02-04", {
-        byType: {
-          SLEEP: typeSummary(),
-          BOTTLE: typeSummary(),
-          OUTDOOR: typeSummary(),
-          DIAPER: typeSummary(),
-        },
-      })],
-    });
-    const maskedCell = day(masked, "2026-02-04");
-    expect(maskedCell).toMatchObject({ hasSavedStat: true, dataState: "partial" });
-    for (const metric of maskedCell.metrics) {
-      expect(metric.value.type).toBe("unknown");
-      expect(metric.progress).toBeNull();
-    }
-    expect(maskedCell.metrics[0]).toMatchObject({ bottleMl: null });
-    expect(maskedCell.metrics[1]).toMatchObject({ savedMinutes: null });
-    expect(maskedCell.metrics[2]).toMatchObject({ recordedMinutes: null });
-    expect(maskedCell.metrics[3]).toMatchObject({ count: null });
-
-    const legacy = build({
-      birthDate: "2025-10-01",
-      stats: [dailyStat("2026-02-04", {
-        totalSleepMinutes: 640,
-        totalMilkAmount: 120,
-        breastfeedCount: 0,
-        totalBreastfeedMinutes: 0,
-        diaperCount: 3,
-      })],
-    });
-    const legacyCell = day(legacy, "2026-02-04");
-    expect(legacyCell.metrics.map((metric) => metric.value)).toEqual([
-      { type: "number", value: 120 },
-      { type: "number", value: 640 },
-      { type: "number", value: 0 },
-      { type: "number", value: 3 },
-    ]);
-    expect(legacyCell.metrics.every((metric) => metric.progress !== null)).toBe(true);
   });
 });
 

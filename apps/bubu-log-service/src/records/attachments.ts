@@ -26,7 +26,7 @@ export interface Attachment {
   uploadedBy: Pick<ActorScope["actor"], "kind" | "id" | "onBehalfOf">;
   url: string;
 }
-interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "legacy-source"; documentId: string }
+export interface LegacyMediaReference { kind: "activity" | "baby-avatar" | "profile-avatar" | "legacy-source"; documentId: string }
 interface StoredAttachment extends Omit<Attachment, "url"> {
   requestFingerprint: string; actor: ActorScope["actor"];
   legacyReference?: LegacyMediaReference;
@@ -36,6 +36,7 @@ interface StoredAttachment extends Omit<Attachment, "url"> {
 interface AttachmentOptions { imageReview?: ImageReviewService; directory: string; maxBytes?: number; encryptionKey?: string; beforeLegacyAccess?: (babyId: string) => Promise<void>; objectStore?: AttachmentObjectStore }
 const fail = (status: number, code: string, message: string): never => { throw new AppError(status, code, message); };
 const checksum = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+export const attachmentObjectKey = (babyId: string, sha256: string) => `${hash(babyId)}/${sha256}`;
 const formatError = () => fail(415, "ATTACHMENT_INVALID_IMAGE", "照片内容与支持的图片格式不符。");
 /** Validate the complete container and decodability before normalization. */
 export async function inspectAttachment(bytes: Uint8Array, declaredMime: string): Promise<AttachmentMime> {
@@ -140,7 +141,12 @@ export class AttachmentService {
   private async readRemoteObject(value: Pick<StoredAttachment, "babyId" | "sha256" | "byteLength" | "storage">): Promise<Buffer> {
     const storage = this.remoteStorage(value);
     // Provider failures retain their classification; only verified bytes can be corrupt.
-    const encrypted = await this.objectStore!.get(storage.key, this.maxBytes + encryptedMediaOverhead);
+    let encrypted: Buffer;
+    try { encrypted = await this.objectStore!.get(storage.key, this.maxBytes + encryptedMediaOverhead); }
+    catch (error) {
+      if (error instanceof AppError && ["ATTACHMENT_OBJECT_MISSING", "ATTACHMENT_STORAGE_UNAVAILABLE", "ATTACHMENT_OBJECT_CORRUPT"].includes(error.code)) throw error;
+      return fail(503, "ATTACHMENT_STORAGE_UNAVAILABLE", "附件存储暂不可用，请稍后重试。");
+    }
     try {
       if (encrypted.length !== value.byteLength + encryptedMediaOverhead) throw new Error("Invalid private object size");
       const bytes = decryptMedia(encrypted, this.encryptionKey, `${hash(value.babyId)}:${value.sha256}`);
@@ -535,7 +541,9 @@ export class AttachmentService {
       if (!alreadyReviewed) await this.options.imageReview!.reserve(scope, req);
       return { value, alreadyReviewed };
     }, groupId);
-    if (prepared.alreadyReviewed) {
+    // A legacy local receipt still needs an explicit verified OSS write before it can
+    // become a remote receipt; already-remote and local-only retries can return directly.
+    if (prepared.alreadyReviewed && (prepared.value.storage !== undefined || !this.objectStore)) {
       const receipt = await this.recoverUpload(principal, babyId, requestId, source);
       if (receipt.state === "verified") return receipt.attachment;
     }

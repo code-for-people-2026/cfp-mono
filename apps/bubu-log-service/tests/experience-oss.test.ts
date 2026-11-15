@@ -28,14 +28,14 @@ class MemoryObjectStore implements AttachmentObjectStore {
   async put(key: string, bytes: Uint8Array): Promise<void> {
     this.putStarted.resolve();
     await this.putGate;
-    if (this.remoteError) throw new AppError(503, "ATTACHMENT_UNAVAILABLE", "synthetic remote unavailable");
+    if (this.remoteError) throw new AppError(503, "ATTACHMENT_STORAGE_UNAVAILABLE", "synthetic remote unavailable");
     this.objects.set(key, Buffer.from(bytes));
     this.timestamps.set(key, Date.now());
   }
   async get(key: string, maxBytes: number): Promise<Buffer> {
     this.getStarted.resolve();
     await this.getGate;
-    if (this.remoteError) throw new AppError(503, "ATTACHMENT_UNAVAILABLE", "synthetic remote unavailable");
+    if (this.remoteError) throw new AppError(503, "ATTACHMENT_STORAGE_UNAVAILABLE", "synthetic remote unavailable");
     const value = this.objects.get(key);
     if (!value) throw new AppError(503, "ATTACHMENT_OBJECT_MISSING", "synthetic missing");
     if (value.length > maxBytes) throw new AppError(503, "ATTACHMENT_OBJECT_CORRUPT", "synthetic oversize");
@@ -194,7 +194,7 @@ describe("OSS-backed private experience attachments", () => {
     objects.objects.set(key, Buffer.alloc(service.maxBytes + 1024));
     expect(await service.recoverUpload(alice, babyId, "receipt")).toMatchObject({ state: "needsRepair" });
     objects.remoteError = true;
-    await expect(service.recoverUpload(alice, babyId, "receipt")).rejects.toMatchObject({ code: "ATTACHMENT_UNAVAILABLE" });
+    await expect(service.recoverUpload(alice, babyId, "receipt")).rejects.toMatchObject({ code: "ATTACHMENT_STORAGE_UNAVAILABLE" });
   });
 
   it("reauthorizes receipts after remote reads and bounds receipt HTTP bodies", async () => {
