@@ -14,7 +14,7 @@ import { recordSchema } from "../src/records/schemas";
 import { createHandler } from "../src/http";
 import { AttachmentService, sanitizeAttachment } from "../src/records/attachments";
 import type { LegacyActivity, LegacyRecordsBackend } from "../src/records/types";
-import { CollectorService, collectorRequestId, type CollectorJob, type CollectorBatch, type AgentPlan } from "../src/collector/service";
+import { CollectorService, collectorRequestId, type CollectorJob, type CollectorBatch, type AgentPlan, type StoredMessage } from "../src/collector/service";
 import { CollectorMcpClient, CollectorRunner, preparePlanCall, scheduleCollector, CommandAgentExecutor } from "../src/collector/runner";
 import { canonicalGroupId, type SourceMessage } from "../src/collector/types";
 import { ExactLocalMediaResolver } from "../src/collector/media";
@@ -71,7 +71,7 @@ function source(localId = 1): SourceMessage {
     groupId: canonicalGroupId(accountId, chatId), sentAt: `2026-10-23T00:00:0${localId}Z`, senderId: "synthetic-sender", kind: "text", text: "奶粉泡好120ml，还不知道喝了多少", media: [] };
 }
 function page(message = source()) { return { messages: [message], nextCursor: { [`${message.databaseId}:${message.tableName}`]: message.localId }, hasMore: false }; }
-function plan(message = source()): AgentPlan { return { plans: [{ key: "feeding", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkSource: "FORMULA" }, progress: "unknown" }] } }], ignored: [] }; }
+function plan(message = source()): AgentPlan { return { plans: [{ key: "feeding", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkItems: [{ id: "formula-1", milkSource: "FORMULA" }] }, progress: "ended" }] } }], ignored: [] }; }
 async function syntheticOpaquePng(width: number, height: number) {
   const key = createHash("sha256").update("collector-noisy-png").digest();
   const pixels = createCipheriv("aes-256-ctr", key, key.subarray(0, 16)).update(Buffer.alloc(width * height * 3));
@@ -90,6 +90,33 @@ async function staged(f: Fixture, runId = "run-a") {
 }
 
 describe("durable controlled collection", () => {
+  it("records the exact two-detail message as one complete collector meal", async () => {
+    const f = await setup();
+    await f.configure(true);
+    const message = { ...source(), text: "晚上喝奶 200 羊奶，150 奶粉" };
+    const started = await f.call({ action: "begin", runId: "exact-multi-milk" });
+    const leased = { batchId: started.batch.id, runId: "exact-multi-milk" };
+    const stagedBatch = await f.call({ action: "stage", ...leased, page: page(message) });
+    const exactPlan: AgentPlan = { plans: [{ key: "one-bottle-meal", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{
+      facts: { type: "BOTTLE", milkItems: [
+        { id: "goat-1", milkDescription: "羊奶", milkAmount: 200 },
+        { id: "formula-1", milkSource: "FORMULA", milkAmount: 150 },
+      ] }, progress: "ended",
+    }] } }], ignored: [] };
+    await f.call({ action: "plan", ...leased, plan: exactPlan });
+    const call = preparePlanCall(stagedBatch.batch, exactPlan.plans[0]!);
+    const receipt = await f.records.record(await f.principal(), recordSchema.parse(call.arguments));
+    expect(receipt).toMatchObject({ status: "saved", questions: [], events: [{ complete: true, facts: { milkAmount: 350, milkItems: [
+      { id: "goat-1", milkDescription: "羊奶", milkAmount: 200 },
+      { id: "formula-1", milkSource: "FORMULA", milkAmount: 150 },
+    ] } }] });
+    expect(receipt.events).toHaveLength(1);
+    expect(receipt.events[0]?.facts.startTime).toBe(new Date(message.sentAt).toISOString());
+    expect([...f.backend.activities.values()]).toHaveLength(1);
+    expect([...f.backend.activities.values()][0]).toMatchObject({ milkAmount: 350 });
+    expect([...f.backend.activities.values()][0]).not.toHaveProperty("milkItems");
+  });
+
   it("defaults disabled and enforces the same baby's active group and Agent", async () => {
     const f = await setup();
     expect(await f.call({ action: "begin", runId: "run-a" })).toMatchObject({ skipped: true, reason: "disabled" });
@@ -166,6 +193,27 @@ describe("durable controlled collection", () => {
     const status = await f.call({ action: "status" });
     expect(status.job.cursor).toEqual(committedCursor); expect(status.job.backfills[0]?.state).toBe("completed");
   });
+
+  it("enriches missing display metadata on replay without replaying facts", async () => {
+    const f = await setup(); const { leased } = await staged(f);
+    await f.call({ action: "plan", ...leased, plan: { plans: [], ignored: [{ sourceId: source().sourceId, reason: "Synthetic metadata fixture" }] } });
+    await f.call({ action: "finish", ...leased });
+    const legacyWrites = f.backend.writes;
+    await f.collector.dispatch(f.operator, { action: "backfill", babyId: "baby-a", jobId: f.job.id, requestId: "metadata-backfill", range: { from: "2026-10-22T00:00:00Z", to: "2026-10-24T00:00:00Z" } });
+    const started = await f.call({ action: "begin", runId: "metadata-replay" });
+    const avatar = "https://wx.qlogo.cn/mmhead/synthetic/132";
+    const enrichedSource = { ...source(), senderName: "外婆", senderAvatarUrl: avatar };
+    const replayed = await f.call({ action: "stage", batchId: started.batch.id, runId: "metadata-replay", page: page(enrichedSource) });
+    expect(replayed.batch.messages).toEqual([]);
+    expect(replayed.batch.skippedSourceIds).toEqual([source().sourceId]);
+    const stored = await f.store.transaction(req => f.records.repo.get<StoredMessage>("care-messages", "baby-a", source().sourceId, req));
+    expect(stored?.source).toMatchObject({ text: source().text, sentAt: source().sentAt, senderName: "外婆", senderAvatarUrl: avatar });
+    expect(stored?.metadataEnrichments?.at(-1)).toMatchObject({ actor: { kind: "collector", id: f.job.agentId, groupId: f.groupId }, fields: ["senderName", "senderAvatarUrl"] });
+    expect(f.backend.writes).toBe(legacyWrites);
+    await f.call({ action: "plan", batchId: started.batch.id, runId: "metadata-replay", plan: { plans: [], ignored: [] } });
+    await f.call({ action: "finish", batchId: started.batch.id, runId: "metadata-replay" });
+    expect(f.backend.writes).toBe(legacyWrites);
+  });
 });
 
 async function startMcp(f: Fixture) {
@@ -210,7 +258,7 @@ describe("executable external Agent and real MCP runner", () => {
     const agent = { execute: vi.fn(async (task: Parameters<CommandAgentExecutor["execute"]>[0]) => {
       const attachmentId = task.media[0]?.state === "uploaded" ? task.media[0].attachmentId : undefined;
       return { plans: [{ key: "feeding", sourceIds: [message.sourceId], tool: "bubu_record_events", arguments: { events: [{
-        facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkSource: "FORMULA" }, progress: "unknown",
+        facts: { type: "BOTTLE", startTime: message.sentAt, preparedMilkAmount: 120, milkItems: [{ id: "formula-1", milkSource: "FORMULA" }] }, progress: "ended",
         ...(attachmentId ? { attachmentIds: [attachmentId] } : {}),
       }] } }], ignored: [] } satisfies AgentPlan;
     }) };

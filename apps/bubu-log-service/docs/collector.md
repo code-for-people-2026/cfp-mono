@@ -166,6 +166,8 @@ wrapper 不调用旧包按月目录“取第一个文件”的媒体路径逻辑
 
 相同补采 requestId 不能换范围；补采使用独立游标，不覆盖常规游标。已处理且无需补图的来源会跳过。待补图来源进入 **media-only** 路径：服务端只允许给该来源已经关联的 active 事件执行 `bubu_attach_images`，禁止换 eventKey 新建、修改事实或恢复撤销。多事件来源保留全部原关联 ID。无图时可零写完成并继续待补；原事件均撤销时零写结束补图，不复活已删除事实。
 
+来源适配器使用已安装 `wechat_cli.core.contacts.get_contact_detail` 的本地联系人元数据取得头像 URL，不下载头像，不从消息 XML 或媒体凭据提取。`senderName` 和 `senderAvatarUrl` 均不参与 `sourceFingerprint`；它们的新增或变化不触发事实重放。现有来源只允许补齐缺失的显示元数据：`enrichStoredMessageDisplayMetadata` 会核对原 `contentHash`，保持正文、时间、哈希、处理状态不变，并追加 actor/时间/字段审计。当前最安全的维护入口是运营明确限定范围的既有 backfill/replay；已处理来源只更新元数据后跳过，不产生新事件或旧 Activity 写入。本次不新增公开维护端点。
+
 collector 凭证有效期沿用身份服务，runner 不自行扩大或延长权限。运营用同一 baby/group/agentId 重新签发，原子替换私有 token 文件；HTTP/MCP 每次请求都重读，当前批次可在续签后按同一身份恢复。禁用作业停止采集；停用 group binding 或吊销凭证会在服务端立即拒绝后续请求。配置、授权与模型调用严格分离。
 
 ## 合成验证

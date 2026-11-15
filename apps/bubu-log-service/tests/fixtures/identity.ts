@@ -13,7 +13,7 @@ export class LegacyFixture implements LegacyBackend {
   async findFamilyAccount(identityId: string) { const family = this.families.get(identityId); return family ? { id: family.userId } : null; }
   users = new Set(["old-alice", "old-bob"]);
   babies = new Map<string, Baby>([
-    ["baby-a", { id: "baby-a", name: "小一", isDefault: true }],
+    ["baby-a", { id: "baby-a", name: "小一", fullName: "一一", avatarUrl: "https://public.example/avatar.png", birthDate: null, gender: "UNKNOWN", isDefault: true }],
     ["baby-b", { id: "baby-b", name: "小二", isDefault: true }],
   ]);
   memberships = new Map<string, string[]>([["old-alice", ["baby-a"]], ["old-bob", ["baby-b"]]]);
@@ -21,6 +21,11 @@ export class LegacyFixture implements LegacyBackend {
   families = new Map<string, { userId: string; baby: Baby }>();
   familyCalls: Array<{ identityId: string; name: string }> = [];
   reads: Array<{ babyId: string; path: string }> = [];
+  babyReads: string[] = [];
+  auditPage = {
+    data: [{ id: "audit-1", action: "CREATE", resourceType: "ACTIVITY", success: true, inputMethod: "VOICE", resourceId: "activity-1", activityId: "activity-1", babyId: "baby-a", userId: "user-1", inputText: "原始输入", createdAt: "2026-10-23T01:02:03.000Z" }],
+    total: 1, hasMore: false,
+  };
   failFamilyOnce = false;
 
   async verifyCredentials(username: string, password: string) {
@@ -48,9 +53,10 @@ export class LegacyFixture implements LegacyBackend {
   }
   async userExists(userId: string) { return this.users.has(userId); }
   async listBabies(userId: string) { return (this.memberships.get(userId) || []).flatMap(id => this.babies.has(id) ? [this.babies.get(id)!] : []); }
-  async getBaby(babyId: string) { return this.babies.get(babyId) || null; }
+  async getBaby(babyId: string) { this.babyReads.push(babyId); return this.babies.get(babyId) || null; }
   async read(babyId: string, resource: string, _query: URLSearchParams) {
     this.reads.push({ babyId, path: resource });
+    if (resource === "audits") return structuredClone(this.auditPage);
     return [{ id: "record-a", babyId, type: "SLEEP" }];
   }
   async updateBabyNames(babyId: string, input: { name: string; fullName: string | null }) {

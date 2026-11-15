@@ -8,7 +8,7 @@ export function coverageMessage(coverage?: RecordCoverage): string {
   if (!coverage.recordedEvents) parts.push("暂无可计入记录");
   if (coverage.incompleteEvents) parts.push(`${coverage.incompleteEvents} 条记录信息不完整`);
   if (coverage.unknownFields) parts.push(`${coverage.unknownFields} 项明确未知`);
-  else if (coverage.unknownMilkAmounts) parts.push(`${coverage.unknownMilkAmounts} 次奶量未知`);
+  else if (coverage.unknownMilkAmounts) parts.push(`${coverage.unknownMilkAmounts} 项奶量未知`);
   if (coverage.ongoingEvents) parts.push(`${coverage.ongoingEvents} 条进行中，未计入完成时长`);
   if (coverage.duplicateCandidates) parts.push(`${coverage.duplicateCandidates} 条疑似重复待核对，暂不重复计入`);
   if (coverage.pendingCandidates > coverage.duplicateCandidates) parts.push(`${coverage.pendingCandidates - coverage.duplicateCandidates} 条待确认保存`);

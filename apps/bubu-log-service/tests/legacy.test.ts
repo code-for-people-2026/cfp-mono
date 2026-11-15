@@ -167,6 +167,96 @@ describe("authorized legacy reads preserve old GET semantics", () => {
     expect(values.get("limit")).toBe("500");
     expect(seen[1]!.init.method).toBeUndefined();
   });
+  it("pages only protected successful CREATE ACTIVITY audits and exposes the narrow field projection", async () => {
+    const row = {
+      id: "audit-201", action: "CREATE", resourceType: "ACTIVITY", success: true, inputMethod: "TEXT",
+      resourceId: "activity-1", activityId: "activity-1", babyId: "baby-1", userId: "user-1",
+      inputText: "原始输入", createdAt: "2026-10-22T01:02:03.000Z",
+      beforeData: { private: true }, afterData: { private: true }, errorMessage: "private", description: "private",
+    };
+    const { backend, seen } = fixture(({ url }) => url.pathname === "/api/cms-admins/login" ? tokenResponse() : Response.json({ docs: [row], totalDocs: 201, hasNextPage: false }));
+    const query = new URLSearchParams({ babyId: "baby-1", action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "200" });
+    await expect(backend.read("baby-1", "audits", query)).resolves.toEqual({
+      data: [{
+        id: "audit-201", action: "CREATE", resourceType: "ACTIVITY", success: true, inputMethod: "TEXT",
+        resourceId: "activity-1", activityId: "activity-1", babyId: "baby-1", userId: "user-1",
+        inputText: "原始输入", createdAt: "2026-10-22T01:02:03.000Z",
+      }], total: 201, hasMore: false,
+    });
+    const values = seen[1]!.url.searchParams;
+    expect(values.get("where[and][0][babyId][equals]")).toBe("baby-1");
+    expect(values.get("where[and][1][action][equals]")).toBe("CREATE");
+    expect(values.get("where[and][2][resourceType][equals]")).toBe("ACTIVITY");
+    expect(values.get("where[and][3][success][equals]")).toBe("true");
+    expect(values.get("page")).toBe("2");
+    expect(values.get("sort")).toBe("-createdAt,-id");
+    expect([...values.keys()].some(key => key === "offset" || key.includes("description") || key.includes("errorMessage"))).toBe(false);
+  });
+  it("stitches an arbitrary audit offset across at most two stable Payload pages", async () => {
+    const auditRow = (index: number) => ({
+      id: `audit-${index + 1}`, action: "CREATE", resourceType: "ACTIVITY", success: true, inputMethod: "VOICE",
+      resourceId: `activity-${index + 1}`, activityId: `activity-${index + 1}`, babyId: "baby-1", userId: "user-1",
+      inputText: `原始输入 ${index + 1}`, createdAt: `2026-10-22T01:02:03.00${index}Z`, description: "private",
+    });
+    const rows = [0, 1, 2, 3, 4].map(auditRow);
+    const { backend, seen } = fixture(({ url }) => {
+      if (url.pathname === "/api/cms-admins/login") return tokenResponse();
+      const page = Number(url.searchParams.get("page"));
+      return Response.json({ docs: rows.slice((page - 1) * 2, page * 2), totalDocs: 5, hasNextPage: page < 3 });
+    });
+    await expect(backend.read("baby-1", "audits", new URLSearchParams({
+      babyId: "baby-1", action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "2", offset: "3",
+    }))).resolves.toEqual({
+      data: rows.slice(3).map(({ description: _description, ...row }) => row),
+      total: 5, hasMore: false,
+    });
+    expect(seen).toHaveLength(3);
+    expect(seen[1]!.url.searchParams.get("page")).toBe("2");
+    expect(seen[2]!.url.searchParams.get("page")).toBe("3");
+    for (const request of seen.slice(1)) {
+      expect(request.url.searchParams.get("limit")).toBe("2");
+      expect(request.url.searchParams.get("sort")).toBe("-createdAt,-id");
+    }
+  });
+  it("returns empty audit pages at the end of data and beyond the total", async () => {
+    const rows = [0, 1, 2, 3].map(index => ({
+      id: `audit-${index + 1}`, action: "CREATE", resourceType: "ACTIVITY", success: true, inputMethod: "TEXT",
+      resourceId: `activity-${index + 1}`, activityId: `activity-${index + 1}`, babyId: "baby-1", userId: "user-1",
+      inputText: null, createdAt: `2026-10-22T01:02:03.00${index}Z`,
+    }));
+    const { backend, seen } = fixture(({ url }) => {
+      if (url.pathname === "/api/cms-admins/login") return tokenResponse();
+      const page = Number(url.searchParams.get("page"));
+      return Response.json({ docs: rows.slice((page - 1) * 2, page * 2), totalDocs: 4, hasNextPage: page < 2 });
+    });
+    await expect(backend.read("baby-1", "audits", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "2", offset: "2" }))).resolves.toEqual({
+      data: [expect.objectContaining({ id: "audit-3" }), expect.objectContaining({ id: "audit-4" })], total: 4, hasMore: false,
+    });
+    await expect(backend.read("baby-1", "audits", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "2", offset: "4" }))).resolves.toEqual({ data: [], total: 4, hasMore: false });
+    await expect(backend.read("baby-1", "audits", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "2", offset: "6" }))).resolves.toEqual({ data: [], total: 4, hasMore: false });
+    expect(seen).toHaveLength(4);
+    expect(seen.slice(1).map(({ url }) => url.searchParams.get("page"))).toEqual(["2", "3", "4"]);
+  });
+  it.each([
+    ["mutable action", new URLSearchParams({ action: "DELETE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "0" })],
+    ["mutable resource", new URLSearchParams({ action: "CREATE", resourceType: "BABY", success: "true", limit: "200", offset: "0" })],
+    ["failed rows", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "false", limit: "200", offset: "0" })],
+    ["arbitrary filter", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "0", resourceId: "activity-1" })],
+    ["zero limit", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "0", offset: "0" })],
+    ["limit above 200", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "201", offset: "0" })],
+    ["negative offset", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "-1" })],
+    ["offset above 5000", new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "5001" })],
+    ["cross-baby query", new URLSearchParams({ babyId: "other-baby", action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "0" })],
+  ])("rejects %s before an audit CMS request", async (_name, query) => {
+    const { backend, seen } = fixture(empty);
+    await expect(backend.read("baby-1", "audits", query)).rejects.toMatchObject({ status: 400 });
+    expect(seen).toHaveLength(0);
+  });
+  it.each(["other-baby", null])("rejects a backend audit scoped to %s instead of assigning it", async (babyId) => {
+    const { backend } = fixture(({ url }) => url.pathname === "/api/cms-admins/login" ? tokenResponse() : Response.json({ docs: [{ id: "audit-x", babyId }], totalDocs: 1, hasNextPage: false }));
+    const query = new URLSearchParams({ action: "CREATE", resourceType: "ACTIVITY", success: "true", limit: "200", offset: "0" });
+    await expect(backend.read("baby-1", "audits", query)).rejects.toMatchObject({ code: "LEGACY_SCOPE_INVALID" });
+  });
   it("handles latest/null and detail/404 as the original API", async () => {
     const { backend } = cmsFixture({ docs: [] });
     await expect(backend.read("baby-1", "activities/latest", new URLSearchParams({ types: "BOTTLE,BREASTFEED" }))).resolves.toBeNull();

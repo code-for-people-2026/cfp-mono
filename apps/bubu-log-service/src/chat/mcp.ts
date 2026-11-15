@@ -4,8 +4,8 @@ import { z } from "zod";
 import { AppError } from "../contracts";
 import type { ProviderTool } from "./contracts";
 
-export const readTools = new Set(["bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_revisions", "bubu_get_rules"]);
-export const mutationTools = new Set(["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_answer_pending", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_accept_legacy"]);
+export const readTools = new Set(["bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_record_activity", "bubu_get_revisions", "bubu_get_rules", "bubu_get_care_preferences"]);
+export const mutationTools = new Set(["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_answer_pending", "bubu_submit_pending_batch", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_accept_legacy", "bubu_update_care_preferences"]);
 export class McpToolError extends AppError {
   constructor(code: string, message: string, readonly retryable: boolean, status?: number) { super(status ?? (retryable ? 503 : code === "REQUEST_NOT_FOUND" ? 404 : 409), code, message, retryable); }
 }

@@ -6,6 +6,10 @@ export const ACTIVITY_TYPES = [
 
 export type ActivityType = (typeof ACTIVITY_TYPES)[number];
 export type MilkSource = "BREAST_MILK" | "FORMULA";
+export interface MilkItem {
+  id: string; milkSource?: MilkSource; milkDescription?: string; milkAmount?: number | null;
+  milkSourceState: "known" | "pending" | "unknown"; milkAmountState: "known" | "pending" | "unknown";
+}
 export type BreastFirmness = "SOFT" | "ELASTIC" | "HARD";
 export type PoopColor = "YELLOW" | "GREEN" | "BROWN" | "BLACK" | "WHITE" | "RED";
 export type PeeAmount = "SMALL" | "MEDIUM" | "LARGE";
@@ -30,6 +34,7 @@ export interface Activity {
   burpSuccess?: boolean | null;
   milkAmount?: number | null;
   milkSource?: MilkSource | null;
+  milkItems?: MilkItem[];
   breastFirmness?: BreastFirmness | null;
   supplementType?: SupplementType | null;
   spitUpType?: SpitUpType | null;

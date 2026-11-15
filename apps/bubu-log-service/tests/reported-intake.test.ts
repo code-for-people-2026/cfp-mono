@@ -105,7 +105,7 @@ describe("reported intake persistence and reconciliation", () => {
       babyId: "baby-a", requestId: "reported-intake-bottle", events: [{
         facts: {
           type: "BOTTLE", startTime: "2026-10-22T08:00:00+08:00", durationMinutes: 15,
-          milkSource: "BREAST_MILK", milkAmount: 80, burpSuccess: true,
+          milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 80 }], burpSuccess: true,
         }, sources: [chatSource],
       }],
     });

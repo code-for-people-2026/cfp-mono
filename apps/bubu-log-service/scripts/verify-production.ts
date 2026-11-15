@@ -1,4 +1,4 @@
-import { privacyTables, PrivacyRepository } from "../src/privacy/persistence";
+import { privacyCollections, privacyTables, PrivacyRepository } from "../src/privacy/persistence";
 import { membershipCollections } from "../src/membership/persistence";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -77,15 +77,18 @@ try {
   assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, "empty@fixture.invalid");
   await store.close(); store = undefined;
 
-  for (const previousVersion of [1, 2, 3, 4, 5]) {
+  for (const previousVersion of [1, 2, 3, 4, 5, 6]) {
     const upgradeDirectory = join(directory, `upgrade-${previousVersion}`); await mkdir(upgradeDirectory);
-    const previousCollections = [...collections, ...(previousVersion >= 2 ? recordCollections : []), ...(previousVersion >= 3 ? chatCollections : []), ...(previousVersion >= 4 ? operationsCollections : []), ...(previousVersion >= 5 ? membershipCollections : [])];
+    const historicalRecordCollections = recordCollections.filter(collection => collection.slug !== "care-preferences");
+    const historicalRecordTables = recordTables.filter(table => table !== "care-preferences");
+    const previousCollections = [...collections, ...(previousVersion >= 2 ? historicalRecordCollections : []), ...(previousVersion >= 3 ? chatCollections : []), ...(previousVersion >= 4 ? operationsCollections : []), ...(previousVersion >= 5 ? membershipCollections : []), ...(previousVersion >= 6 ? privacyCollections : [])];
     const config = await buildConfig({ secret, ...(previousVersion >= 4 ? { admin: { user: "ops-users" } } : {}), collections: previousVersion >= 4 ? decorateCollections(previousCollections) : previousCollections, db: sqliteAdapter({ client: { url: `file:${upgradeDirectory}/identity.db` }, push: false, prodMigrations: migrations.slice(0, previousVersion), transactionOptions: {} }), typescript: { autoGenerate: false }, telemetry: false });
     store = new Store(await getPayload({ config, key: `old-schema-${randomUUID()}` }));
     await store.transaction(async () => { for (const table of tables) await store!.put(table, `${table}:before-upgrade`, { historical: true, nested: { unchanged: [null, 0, false, "旧来源"] }, sessionId: "fixture-session-digest-preserve", babyId: "schema-baby" }); });
-    if (previousVersion >= 2) await store.transaction(async req => { const records = new RecordsRepository(store!.payload); for (const table of recordTables) await records.put(table, "schema-baby", `${table}:before-upgrade`, { historical: true, facts: { type: "BOTTLE", milkAmount: 0, notes: null }, state: "open", sessionId: "fixture-actor-digest-preserve" }, req); });
+    if (previousVersion >= 2) await store.transaction(async req => { const records = new RecordsRepository(store!.payload); for (const table of historicalRecordTables) await records.put(table, "schema-baby", `${table}:before-upgrade`, { historical: true, facts: { type: "BOTTLE", milkAmount: 0, notes: null }, state: "open", sessionId: "fixture-actor-digest-preserve" }, req); });
     if (previousVersion >= 3) await store.transaction(async req => { await store!.payload.create({ collection: "chat-turns", data: { id: "chat-before-upgrade", key: "chat-before-upgrade", identityId: "schema-person", babyId: "schema-baby", value: { status: "needs_recovery", requestId: "same-chat-request", transcript: [{ role: "user", content: "合成私人对话" }] } }, overrideAccess: true, req }); });
     if (previousVersion >= 4) await verifyOps(store.payload, `upgrade-${previousVersion}`);
+    if (previousVersion >= 6) await store.transaction(async req => { for (const table of privacyTables) await new PrivacyRepository(store!.payload).put(table, `schema-${table}:before-upgrade`, { historical: true, nested: [null, 0, false, "隐私时期"] }, { babyId: "schema-baby" }, req); });
     const before = await snapshot(store.payload, previousCollections.map(collection => collection.slug));
     await store.close(); store = undefined;
     store = await openCurrent(upgradeDirectory);
@@ -102,7 +105,7 @@ try {
     assert.equal((await store.payload.find({ collection: "ops-users", overrideAccess: true })).docs[0]?.email, `upgrade-${previousVersion}@fixture.invalid`);
     await store.close(); store = undefined;
   }
-  console.log("Production migrations verified: empty initialization and identity / records / chat / ops upgrades to privacy and safety; original JSON, private session fields and timestamps preserved; rollback, admin constraints, membership state and close/reopen passed in isolated SQLite fixtures.");
+  console.log("Production migrations verified: empty initialization and identity / records / chat / ops / membership / privacy-era upgrades to care preferences; original JSON, private session fields and timestamps preserved; rollback, admin constraints, membership state and close/reopen passed in isolated SQLite fixtures.");
 } finally {
   await store?.close();
   await rm(directory, { recursive: true, force: true });

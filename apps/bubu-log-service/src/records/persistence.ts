@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { CollectionConfig, PayloadRequest, Payload } from "payload";
 
-export const recordTables = ["care-events", "care-operations", "care-revisions", "care-questions", "care-source-links", "care-attachments", "care-batches", "care-sync", "care-messages"] as const;
+export const recordTables = ["care-events", "care-operations", "care-revisions", "care-questions", "care-source-links", "care-attachments", "care-batches", "care-sync", "care-messages", "care-preferences"] as const;
 type RecordTable = typeof recordTables[number];
 export const recordCollections: CollectionConfig[] = recordTables.map(slug => ({
   slug, timestamps: true,

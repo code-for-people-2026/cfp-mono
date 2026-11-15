@@ -34,7 +34,11 @@ describe("privacy HTTP integration and independent emergency response", () => {
     expect((await call("/api/app/privacy/consent", { policyVersion, accepted: true, adultCaregiver: true, sensitive: true, ai: false, images: false })).status).toBe(200);
     expect((await call("/api/app/auth/context")).body.babies).toHaveLength(1);
     expect((await call("/api/app/records/snapshot?babyId=baby-a&date=2026-10-24")).body.code).toBe("GUARDIAN_CONSENT_REQUIRED");
+    expect((await call("/api/app/baby-profile?babyId=baby-a")).body.code).toBe("GUARDIAN_CONSENT_REQUIRED");
+    expect((await call("/api/app/audits?babyId=baby-a&action=CREATE&resourceType=ACTIVITY&success=true&limit=200&offset=0")).body.code).toBe("GUARDIAN_CONSENT_REQUIRED");
     expect((await call("/api/app/privacy/guardian", { babyId: "baby-a", consent: { policyVersion, guardian: true, sensitive: true, ai: false, images: false, collection: false, groupMembersInformed: false } })).status).toBe(200);
+    expect((await call("/api/app/baby-profile?babyId=baby-a")).body).toEqual({ id: "baby-a", name: "小一", fullName: "一一", birthDate: null, gender: null });
+    expect((await call("/api/app/audits?babyId=baby-a&action=CREATE&resourceType=ACTIVITY&success=true&limit=200&offset=0")).status).toBe(200);
     const principal = await runtime.identity.authenticate(token);
     await expect(runtime.attachments.upload(principal, "baby-a", Buffer.from("ignored"), "image/png", "denied-photo")).rejects.toMatchObject({ code: "IMAGE_CONSENT_REQUIRED" });
     const ordinary = { babyId: "baby-a", requestId: "ordinary-ai-off", text: "喝奶了", attachmentIds: [], context: { viewedDate: "2026-10-24" } };
@@ -59,6 +63,8 @@ describe("privacy HTTP integration and independent emergency response", () => {
     release(); const denied = await delayed;
     expect(denied.status).toBe(403); expect(update).not.toHaveBeenCalled(); update.mockRestore();
     expect((await call("/api/app/records/snapshot?babyId=baby-a&date=2026-10-24")).body.code).toBe("PRIVACY_CONSENT_REQUIRED");
+    expect((await call("/api/app/baby-profile?babyId=baby-a")).body.code).toBe("PRIVACY_CONSENT_REQUIRED");
+    expect((await call("/api/app/audits?babyId=baby-a&action=CREATE&resourceType=ACTIVITY&success=true&limit=200&offset=0")).body.code).toBe("PRIVACY_CONSENT_REQUIRED");
     expect((await call("/api/app/privacy/requests", { kind: "privacy", message: "合成数据导出请求" })).status).toBe(201);
     expect((await call("/api/app/privacy/requests")).body.data).toHaveLength(1);
     expect((await call("/api/app/auth/context")).body.babies).toEqual([]);

@@ -30,7 +30,11 @@ export interface StoredTurn extends ChatTurn {
   /** First observed versions pin this user action; a model cannot refresh them to overwrite someone else. */
   versions: Record<string, number>;
   questionVersions: Record<string, { questionVersion: number; eventVersion: number }>;
+  /** First observed baby-shared preference version pins config mutations for this turn. */
+  preferenceVersion?: number;
   modelContext?: Record<string, unknown>;
+  /** New completed turns are persisted only after the closed server path or the model reply gate succeeds. */
+  replyGate?: { checked: true; kind: "server" | "model" | "safety"; version?: 1 };
 }
 
 /** Private chat state only. No access to care records or the legacy database. */

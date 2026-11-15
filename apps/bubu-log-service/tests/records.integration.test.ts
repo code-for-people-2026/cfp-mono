@@ -5,7 +5,7 @@ import { recordsFixture, source, type RecordsFixture } from "./fixtures/records"
 
 const day = "2026-10-22";
 const at = (hour: number, minute = 0) => `${day}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:00+08:00`;
-const bottle = (hour = 8, milkAmount = 100): EventInput => ({ facts: { type: "BOTTLE", startTime: at(hour), durationMinutes: 10, milkSource: "BREAST_MILK", milkAmount, burpSuccess: true } });
+const bottle = (hour = 8, milkAmount = 100): EventInput => ({ facts: { type: "BOTTLE", startTime: at(hour), milkItems: [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmount }], burpSuccess: true } });
 const exercise = (hour = 9): EventInput => ({ facts: { type: "ROLL_OVER", startTime: at(hour), count: 2 } });
 
 describe("care records persist intent, legacy projections and recovery in one sidecar", () => {
@@ -17,9 +17,9 @@ describe("care records persist intent, legacy projections and recovery in one si
   it("persists all 15 activity types and projects only unchanged legacy fields", async () => {
     const events: EventInput[] = activityTypes.map((type, index) => {
       const facts: EventInput["facts"] = { type, startTime: at(1 + index), notes: `合成${type}` };
-      if (["BREASTFEED", "BOTTLE", "PUMP", "SLEEP", "HEAD_LIFT", "PASSIVE_EXERCISE", "GAS_EXERCISE", "BATH", "OUTDOOR", "EARLY_EDUCATION"].includes(type)) facts.durationMinutes = 10;
+      if (["BREASTFEED", "PUMP", "SLEEP", "HEAD_LIFT", "PASSIVE_EXERCISE", "GAS_EXERCISE", "BATH", "OUTDOOR", "EARLY_EDUCATION"].includes(type)) facts.durationMinutes = 10;
       if (type === "BREASTFEED") Object.assign(facts, { burpSuccess: false, breastFirmness: "SOFT" });
-      if (type === "BOTTLE") Object.assign(facts, { milkSource: "FORMULA", milkAmount: 100, preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true, burpSuccess: true });
+      if (type === "BOTTLE") Object.assign(facts, { milkItems: [{ id: "formula-1", milkSource: "FORMULA", milkAmount: 100 }], preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true, burpSuccess: true });
       if (type === "PUMP") facts.milkAmount = 60;
       if (type === "DIAPER") Object.assign(facts, { hasPoop: true, hasPee: true, poopColor: "YELLOW", peeAmount: "MEDIUM" });
       if (type === "ROLL_OVER" || type === "PULL_TO_SIT") facts.count = 3;
@@ -40,15 +40,15 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("keeps known zero, unknown values, incomplete facts and unclassified candidates distinct", async () => {
-    const zero = bottle(8, 0), unknown = bottle(10); delete unknown.facts.milkAmount; unknown.states = { milkAmount: "unknown" };
-    const incomplete = bottle(12); delete incomplete.facts.burpSuccess;
+    const zero = bottle(8, 0), unknown = bottle(10); unknown.facts.milkItems = [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmountState: "unknown" }];
+    const incomplete = bottle(12); incomplete.facts.milkItems = [{ id: "milk-1", milkAmount: 100 }];
     const result = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "known-unknown-pending", events: [zero, unknown, incomplete, { facts: { notes: "喂了一点，方式和时间都没记清" }, intent: "feeding" }] });
     expect(result.status).toBe("needs_information"); expect(result.events[0]?.facts.milkAmount).toBe(0);
     expect(result.events[1]?.facts).not.toHaveProperty("milkAmount"); expect(result.events[1]?.states.milkAmount).toBe("unknown");
     expect(result.events[2]?.projection).toBe("synced"); expect(result.events[3]?.projection).toBe("candidate");
     expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(3);
     const questions = await fixture.records.pending(fixture.alice, "baby-a");
-    expect(questions.find(q => q.eventId === result.events[2]!.id)?.fields).toContain("burpSuccess");
+    expect(questions.find(q => q.eventId === result.events[2]!.id)?.fields).toContain("milkSource");
     expect(questions.find(q => q.eventId === result.events[1]!.id)).toBeUndefined();
     const summary = await fixture.records.summary(fixture.alice, "baby-a", day);
     expect(summary?.metrics.totalMilkAmount).toBe(100);
@@ -58,12 +58,98 @@ describe("care records persist intent, legacy projections and recovery in one si
     expect(query.events).toHaveLength(4); expect(query.questions).toHaveLength(2);
   });
 
+  it("keeps the source end time when a required duration is explicitly unknown", async () => {
+    const original = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "unknown-head-lift", events: [{ facts: { notes: "刚做完抬头，时长不记得" }, sources: [source("unknown-head-lift")] }] });
+    const event = original.events[0]!, question = original.questions[0]!;
+    expect(event.facts.startTime).toBe("2026-10-22T00:00:43.000Z");
+
+    const typed = await fixture.records.answer(fixture.collectorA, { babyId: "baby-a", requestId: "unknown-head-lift-type", questionId: question.id,
+      questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: { type: "HEAD_LIFT" } } });
+    const durationQuestion = typed.questions[0]!;
+    expect(durationQuestion.fields).toContain("durationMinutes");
+    const classified = await fixture.records.answer(fixture.collectorA, { babyId: "baby-a", requestId: "unknown-head-lift-duration", questionId: durationQuestion.id,
+      questionVersion: durationQuestion.version, eventVersion: durationQuestion.eventVersion, patch: { facts: {}, states: { durationMinutes: "unknown" }, progress: "ended" } });
+    const updated = classified.events[0]!;
+    expect(updated.id).toBe(event.id);
+    expect(updated.facts.endTime).toBe("2026-10-22T00:00:43.000Z");
+    expect(updated.facts).not.toHaveProperty("startTime");
+    expect(updated.facts).not.toHaveProperty("durationMinutes");
+    expect(updated.states).toMatchObject({ endTime: "known", durationMinutes: "unknown" });
+    expect(updated.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ field: "endTime", kind: "default", detail: "source sentAt used as endTime" })]));
+    expect(classified.questions).toEqual([]);
+    expect(await fixture.records.pending(fixture.alice, "baby-a")).toEqual([]);
+
+    const query = await fixture.records.query(fixture.alice, { babyId: "baby-a", date: day });
+    expect(query.events[0]?.facts.endTime).toBe(updated.facts.endTime);
+    expect(query.events[0]?.states.durationMinutes).toBe("unknown");
+    expect(query.summary?.metrics.totalHeadLiftMinutes).toBe(0);
+    expect(query.summary?.byType.HEAD_LIFT).toMatchObject({ knownMinutes: 0, knownDurations: 0 });
+    expect(query.summary?.coverage.unresolvedTime).toBe(1);
+  });
+
+  it("keeps an explicitly unknown point-event start until an actual time is supplied", async () => {
+    const original = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "unknown-diaper-start", events: [{ facts: { type: "DIAPER", hasPoop: false, hasPee: true } }] });
+    const event = original.events[0]!, question = original.questions[0]!;
+    expect(question.fields).toContain("startTime");
+
+    const unknown = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "unknown-diaper-start-answer", questionId: question.id,
+      questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: {}, states: { startTime: "unknown" } } });
+    expect(unknown.events[0]?.facts).not.toHaveProperty("startTime");
+    expect(unknown.events[0]?.states.startTime).toBe("unknown");
+    expect(unknown.questions).toEqual([]);
+    expect(await fixture.records.pending(fixture.alice, "baby-a")).toEqual([]);
+    const unknownSummary = await fixture.records.summary(fixture.alice, "baby-a", day);
+    expect(unknownSummary?.metrics.diaperCount).toBe(0);
+    expect(unknownSummary?.coverage.unresolvedTime).toBe(1);
+
+    const supplied = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "known-diaper-start", eventId: event.id,
+      expectedVersion: unknown.events[0]!.version, patch: { facts: { startTime: at(9) } } });
+    expect(supplied.events[0]?.facts.startTime).toBe("2026-10-22T01:00:00.000Z");
+    expect(supplied.events[0]?.states.startTime).toBe("known");
+    expect((await fixture.records.summary(fixture.alice, "baby-a", day))?.metrics.diaperCount).toBe(1);
+  });
+
+  it("keeps an explicitly unknown required end without inventing time or duration", async () => {
+    const original = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "unknown-sleep-end", events: [{ facts: { type: "SLEEP", startTime: at(10) }, progress: "ended" }] });
+    const question = original.questions[0]!;
+    expect(question.fields).toContain("endTime");
+
+    const answered = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "unknown-sleep-end-answer", questionId: question.id,
+      questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: {}, states: { endTime: "unknown" }, progress: "ended" } });
+    const updated = answered.events[0]!;
+    expect(updated.facts.startTime).toBe("2026-10-22T02:00:00.000Z");
+    expect(updated.facts).not.toHaveProperty("endTime");
+    expect(updated.facts).not.toHaveProperty("durationMinutes");
+    expect(updated.states.endTime).toBe("unknown");
+    expect(answered.questions).toEqual([]);
+    expect(await fixture.records.pending(fixture.alice, "baby-a")).toEqual([]);
+
+    const query = await fixture.records.query(fixture.alice, { babyId: "baby-a", date: day });
+    expect(query.events[0]?.facts).not.toHaveProperty("endTime");
+    expect(query.events[0]?.states.endTime).toBe("unknown");
+    expect(query.summary?.metrics).toMatchObject({ sleepCount: 0, totalSleepMinutes: 0 });
+    expect(query.summary?.byType.SLEEP).toMatchObject({ knownMinutes: 0, knownDurations: 0, unknownDurations: 1 });
+  });
+
+  it("updates one collector activity notice in place when projection recovery succeeds", async () => {
+    fixture.legacy.failBeforeWriteOnce = true;
+    const pending = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "collector-notice-retry", events: [{ ...bottle(), sources: [source("collector-notice-retry")] }] });
+    expect(pending.status).toBe("pending_projection");
+    const before = await fixture.records.activity(fixture.collectorA, "baby-a", 10);
+    expect(before.messages).toHaveLength(1); expect(before.messages[0]).toMatchObject({ requestId: "collector-notice-retry", outcome: "pending_projection" });
+    fixture.advance(1_000);
+    const recovered = await fixture.records.getRequest(fixture.collectorA, { babyId: "baby-a", requestId: "collector-notice-retry", retry: true });
+    expect(recovered.status).toBe("saved");
+    const after = await fixture.records.activity(fixture.collectorA, "baby-a", 10);
+    expect(after.messages).toHaveLength(1); expect(after.messages[0]).toMatchObject({ id: before.messages[0]!.id, occurredAt: before.messages[0]!.occurredAt, outcome: "saved" });
+  });
+
   it("answers the durable question on the original event and refreshes both query and saved statistics", async () => {
-    const partial = bottle(); delete partial.facts.milkAmount;
+    const partial = bottle(); partial.facts.milkItems = [{ id: "milk-1", milkSource: "BREAST_MILK" }];
     const original = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "missing-amount", events: [{ ...partial, sources: [source("100")] }] });
     const question = original.questions[0]!, event = original.events[0]!;
     const answer = await fixture.records.answer(fixture.collectorA, { babyId: "baby-a", requestId: "group-follow-up", questionId: question.id, questionVersion: question.version, eventVersion: event.version,
-      patch: { facts: { milkAmount: 90 } }, sources: [source("101")] });
+      patch: { facts: {}, milkItemAnswers: [{ milkItemId: "milk-1", facts: { milkAmount: 90 } }] }, sources: [source("101")] });
     expect(answer.status).toBe("saved"); expect(answer.events[0]?.id).toBe(event.id); expect(answer.events[0]?.legacyId).toBe(event.legacyId);
     expect(answer.events[0]?.sources.map(value => value.messageId)).toEqual(["100", "101"]);
     expect(await fixture.records.pending(fixture.alice, "baby-a")).toHaveLength(0);
@@ -74,16 +160,19 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("completes an unclassified candidate without a second event, then closes group questions through ordinary correction", async () => {
-    const candidate = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "unclassified-source", events: [{ facts: { notes: "刚刚吃过" }, intent: "feeding", sources: [source("110")] }] });
+    const candidate = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "unclassified-source", events: [{ facts: {
+      notes: "刚刚吃过", milkSource: "FORMULA", preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true,
+    }, intent: "feeding", sources: [source("110")] }] });
     const event = candidate.events[0]!, question = candidate.questions[0]!;
     expect(event.projection).toBe("candidate"); expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(0);
     const classified = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "classify-feeding", questionId: question.id, questionVersion: question.version, eventVersion: event.version,
-      patch: { facts: { type: "BOTTLE", startTime: at(8), durationMinutes: 10, milkSource: "FORMULA", preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true } } });
+      patch: { facts: { type: "BOTTLE" } } });
     expect(classified.events[0]?.id).toBe(event.id); expect(classified.events[0]?.facts.milkAmount).toBe(100);
     expect(classified.events[0]?.evidence).toEqual(expect.arrayContaining([expect.objectContaining({ field: "milkAmount", kind: "calculated", confirmed: true })]));
-    expect(classified.questions[0]?.fields).toEqual(["burpSuccess"]);
+    expect(classified.status).toBe("saved");
+    expect(classified.questions).toEqual([]);
     const finished = await fixture.records.update(fixture.collectorA, { babyId: "baby-a", requestId: "later-group-supplement", eventId: event.id, expectedVersion: classified.events[0]!.version,
-      patch: { facts: { burpSuccess: false } }, sources: [source("111")] });
+      patch: { facts: { durationMinutes: 10 } }, sources: [source("111")] });
     expect(finished.status).toBe("saved"); expect(await fixture.records.pending(fixture.alice, "baby-a")).toHaveLength(0);
     expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(1); expect(finished.events[0]?.id).toBe(event.id);
     expect(fixture.legacy.dailyStats.get(`baby-a:${day}`)?.totalMilkAmount).toBe(100);
@@ -92,7 +181,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   it("moves a corrected event to another date and refreshes the old and new persisted daily totals", async () => {
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "date-correction-start", events: [bottle()] })).events[0]!;
     const result = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "date-correction-move", eventId: original.id, expectedVersion: original.version,
-      patch: { facts: { startTime: "2026-10-21T08:00:00+08:00", endTime: "2026-10-21T08:15:00+08:00", milkAmount: 120 } } });
+      patch: { facts: { startTime: "2026-10-21T08:00:00+08:00", endTime: "2026-10-21T08:15:00+08:00", milkItems: [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmount: 120 }] } } });
     expect(result.status).toBe("saved"); expect(result.events[0]?.facts.durationMinutes).toBe(15);
     expect((await fixture.records.query(fixture.alice, { babyId: "baby-a", date: day })).events).toHaveLength(0);
     expect((await fixture.records.query(fixture.alice, { babyId: "baby-a", date: "2026-10-21" })).events[0]?.id).toBe(original.id);
@@ -123,9 +212,14 @@ describe("care records persist intent, legacy projections and recovery in one si
 
   it("checks a newly classified candidate against existing bottles before projecting or counting it", async () => {
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-original", events: [bottle()] })).events[0]!;
-    const candidate = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-pending", events: [{ facts: { milkAmount: 100 }, states: { startTime: "unknown" }, intent: "feeding" }] });
+    const candidate = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-pending", events: [{ facts: { startTime: at(8), milkAmount: 100 }, intent: "feeding" }] });
     const pending = candidate.questions[0]!;
-    const answer = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-answer", questionId: pending.id, questionVersion: pending.version, eventVersion: pending.eventVersion, patch: bottle() });
+    const typed = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-type", questionId: pending.id,
+      questionVersion: pending.version, eventVersion: pending.eventVersion, patch: { facts: { type: "BOTTLE" } } });
+    const item = typed.events[0]!.facts.milkItems![0]!, sourceQuestion = typed.questions[0]!;
+    const answer = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "candidate-duplicate-answer", questionId: sourceQuestion.id,
+      questionVersion: sourceQuestion.version, eventVersion: sourceQuestion.eventVersion,
+      patch: { facts: {}, milkItemAnswers: [{ milkItemId: item.id, facts: { milkSource: "BREAST_MILK" } }] } });
     expect(answer.events[0]?.id).toBe(candidate.events[0]?.id);
     expect(answer.events[0]?.duplicateCandidates).toEqual([original.id]); expect(answer.events[0]?.projection).toBe("candidate");
     expect(answer.status).toBe("needs_information"); expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(1);
@@ -133,16 +227,39 @@ describe("care records persist intent, legacy projections and recovery in one si
     expect(fixture.legacy.dailyStats.get(`baby-a:${day}`)?.totalMilkAmount).toBe(100);
   });
 
-  it("replaces unconfirmed image evidence with an explicit textual answer and resolves the question", async () => {
-    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png({ compressionLevel: 9 }).toBuffer();
+  it("creates one stable item when a new untyped feeding with a reported amount becomes BOTTLE", async () => {
+    const candidate = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "new-untyped-bottle-seed", events: [{
+      facts: { startTime: at(16), milkAmount: 200 }, intent: "feeding",
+    }] });
+    const typeQuestion = candidate.questions[0]!;
+    expect(typeQuestion.fields).toEqual(["type"]);
+    const classified = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "new-untyped-bottle-type", questionId: typeQuestion.id,
+      questionVersion: typeQuestion.version, eventVersion: typeQuestion.eventVersion, patch: { facts: { type: "BOTTLE" } } });
+    const event = classified.events[0]!, item = event.facts.milkItems?.[0];
+    expect(event.id).toBe(candidate.events[0]!.id);
+    expect(event.facts).toMatchObject({ type: "BOTTLE", milkAmount: 200, milkItems: [{ milkAmount: 200, milkAmountState: "known", milkSourceState: "pending" }] });
+    expect(item?.id).toMatch(/^milk-[0-9a-f]{16}$/);
+    expect(classified.questions).toHaveLength(1);
+    expect(classified.questions[0]?.fields).toEqual(["milkSource"]);
+
+    const completed = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "new-untyped-bottle-source", questionId: classified.questions[0]!.id,
+      questionVersion: classified.questions[0]!.version, eventVersion: classified.questions[0]!.eventVersion,
+      patch: { facts: {}, milkItemAnswers: [{ milkItemId: item!.id, facts: { milkDescription: "羊奶" } }] } });
+    expect(completed.events[0]).toMatchObject({ id: event.id, complete: true, facts: { milkAmount: 200, milkItems: [{ id: item!.id, milkDescription: "羊奶", milkAmount: 200 }] } });
+    expect(completed.questions).toEqual([]);
+    expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(1);
+  });
+
+  it("keeps optional image color unknown without a question and confirms it by update", async () => {
+    const bytes = await sharp({ create: { width: 2, height: 2, channels: 3, background: "yellow" } }).png().toBuffer();
     const attachment = await fixture.attachments.upload(fixture.alice, "baby-a", bytes, "image/png", "image-color-evidence");
     const candidate = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "unconfirmed-poop-photo", events: [{
       facts: { type: "DIAPER", startTime: at(8), hasPoop: true, hasPee: false, poopColor: "YELLOW" }, attachmentIds: [attachment.id],
       evidence: [{ field: "poopColor", kind: "image", detail: "unconfirmed visual color", confirmed: false }],
     }] });
     expect(candidate.events[0]?.facts).not.toHaveProperty("poopColor"); expect(candidate.events[0]?.states.poopColor).toBe("pending");
-    const pending = candidate.questions[0]!;
-    const answer = await fixture.records.answer(fixture.alice, { babyId: "baby-a", requestId: "human-confirmed-yellow", questionId: pending.id, questionVersion: pending.version, eventVersion: pending.eventVersion,
+    expect(candidate.questions).toHaveLength(0);
+    const answer = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "human-confirmed-yellow", eventId: candidate.events[0]!.id, expectedVersion: candidate.events[0]!.version,
       patch: { facts: { poopColor: "YELLOW" } } });
     expect(answer.status).toBe("saved"); expect(answer.events[0]?.facts.poopColor).toBe("YELLOW");
     expect(answer.events[0]?.evidence.some(item => item.field === "poopColor" && item.kind === "image" && !item.confirmed)).toBe(false);
@@ -277,7 +394,7 @@ describe("care records persist intent, legacy projections and recovery in one si
     const original = await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "older-stats-pending", events: [bottle()] });
     expect(original.status).toBe("pending_projection"); const event = original.events[0]!; expect(event.projection).toBe("synced");
     fixture.legacy.failBeforeWriteOnce = true;
-    const correction = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "newer-write-pending", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkAmount: 110 } } });
+    const correction = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "newer-write-pending", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkItems: [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmount: 110 }] } } });
     expect(correction.status).toBe("pending_projection"); expect(correction.events[0]?.projection).toBe("pending");
     expect(fixture.legacy.activities.get(event.legacyId)?.milkAmount).toBe(100);
     await fixture.records.getRequest(fixture.alice, { babyId: "baby-a", requestId: original.requestId, retry: true });
@@ -291,7 +408,7 @@ describe("care records persist intent, legacy projections and recovery in one si
 
   it("rejects stale concurrent edits and supports undo of the latest revision", async () => {
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "concurrent-start", events: [bottle()] })).events[0]!;
-    const edits = await Promise.allSettled([110, 120].map(milkAmount => fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: `concurrent-${milkAmount}`, eventId: original.id, expectedVersion: original.version, patch: { facts: { milkAmount } } })));
+    const edits = await Promise.allSettled([110, 120].map(milkAmount => fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: `concurrent-${milkAmount}`, eventId: original.id, expectedVersion: original.version, patch: { facts: { milkItems: [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmount }] } } })));
     expect(edits.filter(result => result.status === "fulfilled")).toHaveLength(1);
     expect(edits.filter(result => result.status === "rejected")).toHaveLength(1);
     const rejected = edits.find(result => result.status === "rejected"); expect(rejected?.status === "rejected" && rejected.reason.code).toBe("VERSION_CONFLICT");
@@ -308,7 +425,7 @@ describe("care records persist intent, legacy projections and recovery in one si
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "legacy-conflict-start", events: [bottle()] })).events[0]!;
     const old = fixture.legacy.activities.get(original.legacyId)!;
     fixture.legacy.activities.set(old.id, { ...old, milkAmount: 130, updatedAt: "2026-10-23T12:01:00.000Z" });
-    const conflict = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "stale-remote-write", eventId: original.id, expectedVersion: original.version, patch: { facts: { milkAmount: 110 } } });
+    const conflict = await fixture.records.update(fixture.alice, { babyId: "baby-a", requestId: "stale-remote-write", eventId: original.id, expectedVersion: original.version, patch: { facts: { milkItems: [{ id: "milk-1", milkSource: "BREAST_MILK", milkAmount: 110 }] } } });
     expect(conflict.status).toBe("conflict"); expect(fixture.legacy.activities.get(old.id)?.milkAmount).toBe(130);
     expect((await fixture.records.summary(fixture.alice, "baby-a", day))?.metrics.totalMilkAmount).toBe(130);
     const current = conflict.events[0]!;
@@ -317,7 +434,7 @@ describe("care records persist intent, legacy projections and recovery in one si
   });
 
   it("preserves applicable preparation metadata when accepting newer original-backend fields", async () => {
-    const input = bottle(); Object.assign(input.facts, { milkSource: "FORMULA", preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true });
+    const input = bottle(); Object.assign(input.facts, { milkItems: [{ id: "milk-1", milkSource: "FORMULA", milkAmount: 100 }], preparedMilkAmount: 120, remainingMilkAmount: 20, sameBottle: true });
     const original = (await fixture.records.record(fixture.alice, { babyId: "baby-a", requestId: "formula-metadata-start", events: [input] })).events[0]!;
     const old = fixture.legacy.activities.get(original.legacyId)!;
     fixture.legacy.activities.set(old.id, { ...old, notes: "旧站补充的备注", updatedAt: "2026-10-23T12:02:00Z" });

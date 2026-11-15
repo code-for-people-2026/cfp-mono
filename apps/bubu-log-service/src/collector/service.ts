@@ -4,10 +4,11 @@ import type { PayloadRequest } from "payload";
 import { AppError } from "../contracts";
 import { digest, type IdentityService, type Principal } from "../identity";
 import { hash, RecordsRepository } from "../records/persistence";
-import { canonicalGroupId, type MediaResolution, type SourceCursor, type SourceMessage, type SourcePage } from "./types";
-import type { CareEvent, PendingQuestion } from "../records/types";
+import { canonicalGroupId, isSafeWechatAvatarUrl, sourceFingerprint, type MediaResolution, type SourceCursor, type SourceMessage, type SourcePage } from "./types";
+import type { CareEvent, LegacyActivity, PendingQuestion, SourceRef } from "../records/types";
 import { baseMutation, identifier } from "../records/schemas";
 import type { CollectorOperationActor, CollectorOperationSnapshot } from "../records/service";
+import { collectEventSources, type EventSourcesResult } from "./event-sources";
 
 const id = z.string().min(1).max(256);
 const time = z.iso.datetime({ offset: true });
@@ -21,6 +22,8 @@ const mediaResolution = z.discriminatedUnion("state", [
 export const sourceMessageSchema = z.object({
   sourceId: id, accountId: id, groupId: id, chatId: id, databaseId: id, tableName: id,
   localId: z.number().int().positive(), sentAt: time, senderId: id.nullable(),
+  senderName: z.string().min(1).max(200).optional(),
+  senderAvatarUrl: z.string().max(2048).refine(isSafeWechatAvatarUrl, "Invalid WeChat avatar URL").optional(),
   kind: z.enum(["text", "image", "voice", "video", "file", "system", "other"]), text: z.string().max(200_000), media: z.array(media).max(10),
 }).strict();
 export const collectorWriteTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_answer_pending", "bubu_attach_images"] as const;
@@ -68,7 +71,21 @@ export interface CollectorBatch {
   usedPlanKeys?: string[]; retiredPlanKeys?: string[];
   receipts: Record<string, { requestId: string; at: string }>; failure?: { code: string; at: string };
 }
-interface StoredMessage { privacyExpired?: boolean; source: SourceMessage; contentHash: string; state: "pending" | "processed" | "ignored"; batchId: string; reason?: string; media?: MediaResolution[]; mediaPending?: boolean; mediaResolutions?: HumanMediaResolution[] }
+export interface SourceMetadataEnrichmentAudit {
+  at: string;
+  actor: { kind: "collector" | "operator"; id: string; groupId?: string };
+  fields: Array<"senderName" | "senderAvatarUrl">;
+}
+/** A maintenance-only join for the four explicitly synthetic acceptance fixtures.
+ * It never participates in collector ingestion, cursors, group bindings or models. */
+export interface AcceptanceTestSourceLink {
+  kind: "acceptance-test-original/v1";
+  eventId: string;
+  manualRef: SourceRef;
+  operationFingerprint: string;
+  sourceHash: string;
+}
+export interface StoredMessage { privacyExpired?: boolean; source: SourceMessage; contentHash: string; state: "pending" | "processed" | "ignored"; batchId: string; reason?: string; media?: MediaResolution[]; mediaPending?: boolean; mediaResolutions?: HumanMediaResolution[]; metadataEnrichments?: SourceMetadataEnrichmentAudit[]; acceptanceSource?: AcceptanceTestSourceLink }
 interface HumanMediaResolution { index: number; eventId: string; resolution: "provided" | "unknown"; attachmentId?: string; requestId: string; requestHash: string; actor: string; resolvedAt: string; result: { kind: "media"; id: string; sourceId: string; state: "resolved" | "open"; resolution: "provided" | "unknown" } }
 export const resolveMediaSchema = baseMutation.extend({ pendingId: identifier, eventId: identifier, expectedVersion: z.number().int().positive(), attachmentId: identifier.optional(), mediaIndex: z.number().int().min(0).max(9).default(0), resolution: z.enum(["provided", "unknown"]).default("provided") })
   .refine(input => input.resolution === "provided" ? !!input.attachmentId : input.attachmentId === undefined, "provided requires an attachment; unknown must not claim one");
@@ -85,6 +102,36 @@ const fail = (code: string, status = 409): never => { throw new AppError(status,
 const visibleToGroup = (event: CareEvent, groupId: string) => event.sources.some(source => source.kind === "wechat" && source.groupId === groupId)
   && !event.sources.some(source => source.kind === "wechat" && source.groupId !== groupId);
 const hasSource = (event: CareEvent, source: SourceMessage) => event.sources.some(ref => ref.kind === "wechat" && ref.groupId === source.groupId && ref.accountId === source.accountId && ref.conversationId === source.chatId && ref.messageId === `${source.databaseId}/${source.tableName}/${source.localId}`);
+const scopedLegacyActivity = (value: unknown, babyId: string, eventId: string): value is LegacyActivity => {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Partial<LegacyActivity>;
+  return row.id === eventId && row.babyId === babyId && typeof row.type === "string"
+    && typeof row.startTime === "string" && Number.isFinite(Date.parse(row.startTime));
+};
+
+/** Fill only absent mutable display metadata on an exact immutable source.
+ * This is the bounded entry point for a future offline backfill: the caller
+ * supplies its audit actor, while text/time/contentHash and processing state
+ * remain byte-for-byte owned by the existing record. */
+export function enrichStoredMessageDisplayMetadata(
+  stored: StoredMessage,
+  incoming: SourceMessage,
+  audit: Omit<SourceMetadataEnrichmentAudit, "fields">,
+): { stored: StoredMessage; changed: boolean } {
+  if (hash(sourceFingerprint(incoming)) !== stored.contentHash) throw new Error("COLLECTOR_SOURCE_CHANGED");
+  const fields: SourceMetadataEnrichmentAudit["fields"] = [];
+  const source = { ...stored.source };
+  if (!source.senderName && incoming.senderName) { source.senderName = incoming.senderName; fields.push("senderName"); }
+  if (!source.senderAvatarUrl && incoming.senderAvatarUrl && isSafeWechatAvatarUrl(incoming.senderAvatarUrl)) {
+    source.senderAvatarUrl = incoming.senderAvatarUrl; fields.push("senderAvatarUrl");
+  }
+  if (!fields.length) return { stored, changed: false };
+  return {
+    changed: true,
+    stored: { ...stored, source, contentHash: stored.contentHash,
+      metadataEnrichments: [...(stored.metadataEnrichments || []), { ...audit, fields }] },
+  };
+}
 
 /** Durable job control. The transport authenticates every call; this service rechecks scope. */
 export class CollectorService {
@@ -189,6 +236,40 @@ export class CollectorService {
       }
       return result;
     }, principal.kind === "collector" ? principal.groupId : undefined);
+  }
+  /** Expand saved event provenance for a caregiver; service agents never use this read side. */
+  async eventSources(
+    principal: Principal,
+    babyId: string,
+    eventId: string,
+    options: { includeChat?: boolean } = {},
+  ): Promise<EventSourcesResult> {
+    if (principal.kind !== "caregiver") return fail("RECORD_SOURCES_CAREGIVER_REQUIRED", 403);
+    return this.identity.executeAuthorized(principal, babyId, "records:read", async (_scope, req) => {
+      const event = await this.repository.get<CareEvent>("care-events", babyId, eventId, req);
+      if (event) {
+        if (event.babyId !== babyId || event.id !== eventId) return fail("RECORD_EVENT_NOT_FOUND", 404);
+        return collectEventSources({
+          babyId,
+          event,
+          principal,
+          repository: this.repository,
+          request: req,
+          includeChat: options.includeChat !== false,
+        });
+      }
+      let legacy: unknown;
+      try {
+        legacy = await this.identity.legacy.read(babyId, `activities/${encodeURIComponent(eventId)}`, new URLSearchParams());
+      } catch (error) {
+        if (error instanceof AppError && error.status === 404) return fail("RECORD_EVENT_NOT_FOUND", 404);
+        throw error;
+      }
+      if (!scopedLegacyActivity(legacy, babyId, eventId)) return fail("RECORD_EVENT_NOT_FOUND", 404);
+      // Old activities carry no sidecar provenance; exposing an empty expansion
+      // still lets the UI distinguish that real record from a missing ID.
+      return { babyId, eventId, messages: [], unavailableCount: 0 };
+    });
   }
   /** Explicit human continuation after a private upload and versioned core attach. */
   async resolveMedia(principal: Principal, raw: z.input<typeof resolveMediaSchema>) {
@@ -469,12 +550,23 @@ export class CollectorService {
       nextCursor[stream] = source.localId;
       const existing = await this.repository.get<StoredMessage>("care-messages", job.babyId, source.sourceId, req);
       if (!existing?.privacyExpired) await this.safetySignal?.(job.babyId, source, req);
-      if (existing && existing.contentHash !== hash(source)) fail("COLLECTOR_SOURCE_CHANGED");
-      if (existing && existing.state !== "pending" && !existing.mediaPending) { skipped.push(source.sourceId); continue; }
+      const contentHash = hash(sourceFingerprint(source));
+      if (existing && existing.contentHash !== contentHash) fail("COLLECTOR_SOURCE_CHANGED");
+      const enriched = existing ? enrichStoredMessageDisplayMetadata(existing, source, {
+        at: this.now(), actor: { kind: "collector", id: job.agentId, groupId: job.groupId },
+      }) : undefined;
+      if (existing && existing.state !== "pending" && !existing.mediaPending) {
+        if (enriched?.changed) await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, enriched.stored, req);
+        skipped.push(source.sourceId); continue;
+      }
       if (existing && existing.state !== "pending" && existing.mediaPending) {
         mediaOnly[source.sourceId] = events.filter(event => event.sources.some(ref => ref.kind === "wechat" && ref.groupId === job.groupId && ref.accountId === source.accountId && ref.conversationId === source.chatId && ref.messageId === `${source.databaseId}/${source.tableName}/${source.localId}`)).map(event => event.id);
       }
-      await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, { ...existing, source, contentHash: hash(source), state: "pending", batchId: batch.id, ...(existing?.privacyExpired ? { source: { ...source, text: "" } } : {}) }, req);
+      const baseStored: StoredMessage = existing
+        ? enriched!.stored
+        : { source, contentHash, state: "pending", batchId: batch.id };
+      const persistedSource = { ...baseStored.source, ...(existing?.privacyExpired ? { text: "" } : {}) };
+      await this.repository.put<StoredMessage>("care-messages", job.babyId, source.sourceId, { ...baseStored, source: persistedSource, contentHash, state: "pending", batchId: batch.id }, req);
       pending.push(existing?.privacyExpired ? { ...source, text: "" } : source);
     }
     if (hash(nextCursor) !== hash(page.nextCursor)) fail("COLLECTOR_CURSOR_MISMATCH");

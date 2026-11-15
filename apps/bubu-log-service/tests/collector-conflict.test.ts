@@ -83,9 +83,9 @@ function source(): SourceMessage {
     groupId: canonicalGroupId(accountId, chatId), sentAt: "2026-10-23T00:00:01Z", senderId: "synthetic-sender", kind: "text", text: "奶粉泡好120ml，还不知道喝了多少", media: [] };
 }
 function page() { const message = source(); return { messages: [message], nextCursor: { [`${message.databaseId}:${message.tableName}`]: message.localId }, hasMore: false }; }
-function plan(): AgentPlan { return { plans: [{ key: "feeding", sourceIds: [source().sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: source().sentAt, preparedMilkAmount: 120, milkSource: "FORMULA" }, progress: "unknown" }] } }], ignored: [] }; }
+function plan(): AgentPlan { return { plans: [{ key: "feeding", sourceIds: [source().sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "BOTTLE", startTime: source().sentAt, preparedMilkAmount: 120, milkItems: [{ id: "formula-1", milkSource: "FORMULA" }] }, progress: "unknown" }] } }], ignored: [] }; }
 function updatePlan(eventId: string, expectedVersion: number, key = "edit"): AgentPlan["plans"][number] {
-  return { key, sourceIds: [source().sourceId], tool: "bubu_update_event", arguments: { eventId, expectedVersion, patch: { facts: { milkAmount: expectedVersion === 1 ? 90 : 100 } } } };
+  return { key, sourceIds: [source().sourceId], tool: "bubu_update_event", arguments: { eventId, expectedVersion, patch: { facts: { milkItems: [{ id: "formula-1", milkSource: "FORMULA", milkAmount: expectedVersion === 1 ? 90 : 100 }] } } } };
 }
 async function stagedUpdate(f: Fixture, runId = "run-a") {
   await f.configure(true); const started = await f.call({ action: "begin", runId });

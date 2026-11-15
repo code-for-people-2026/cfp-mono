@@ -12,6 +12,7 @@ import re
 import sqlite3
 import sys
 from datetime import datetime, timezone
+from urllib.parse import urlsplit
 
 from wechat_cli.core import messages as wc
 
@@ -81,6 +82,97 @@ def media_for(source, kind, text):
     return [media]
 
 
+def synthetic_sender_names(request):
+    names = request.get("senderNames", {})
+    if not isinstance(names, dict):
+        raise ValueError("INVALID_SENDER_NAMES")
+    for sender, name in names.items():
+        if not isinstance(sender, str) or not sender or len(sender) > 256:
+            raise ValueError("INVALID_SENDER_NAMES")
+        if not isinstance(name, str) or not name or len(name) > 200:
+            raise ValueError("INVALID_SENDER_NAMES")
+    return names
+
+
+def is_safe_wechat_avatar_url(value):
+    if not isinstance(value, str) or not value or len(value) > 2048:
+        return False
+    try:
+        parsed = urlsplit(value)
+        return (parsed.scheme == "https" and parsed.hostname in ("wx.qlogo.cn", "thirdwx.qlogo.cn")
+                and parsed.username is None and parsed.password is None and parsed.port is None
+                and not parsed.fragment and re.fullmatch(r"/(?:mmhead|mmopen)(?:/.*)?", parsed.path) is not None)
+    except (TypeError, ValueError):
+        return False
+
+
+def synthetic_sender_avatars(request):
+    avatars = request.get("senderAvatars", {})
+    if not isinstance(avatars, dict):
+        raise ValueError("INVALID_SENDER_AVATARS")
+    for sender, avatar in avatars.items():
+        if not isinstance(sender, str) or not sender or len(sender) > 256 or not is_safe_wechat_avatar_url(avatar):
+            raise ValueError("INVALID_SENDER_AVATARS")
+    return avatars
+
+
+def contact_names(app):
+    if not app:
+        return {}
+    try:
+        from wechat_cli.core import contacts
+
+        return contacts.get_contact_names(app.cache, app.decrypted_dir) or {}
+    except Exception:
+        # A contact-index upgrade or missing local cache is metadata degradation,
+        # never a reason to fail immutable bound-group message collection.
+        return {}
+
+
+def sender_name(sender_id, synthetic_names, names, app):
+    if not sender_id:
+        return None
+    value = synthetic_names.get(sender_id)
+    if value:
+        return value
+    value = names.get(sender_id)
+    if isinstance(value, str) and value and len(value) <= 200:
+        return value
+    if not app:
+        return None
+    try:
+        value = app.display_name_fn(sender_id, names)
+    except Exception:
+        return None
+    if not isinstance(value, str) or not value or len(value) > 200:
+        return None
+    if value == "me" or value == sender_id:
+        return None
+    return value
+
+
+def sender_avatar_url(sender_id, synthetic_avatars, app, detail_cache):
+    if not sender_id:
+        return None
+    value = synthetic_avatars.get(sender_id)
+    if value:
+        return value
+    if not app:
+        return None
+    if sender_id not in detail_cache:
+        try:
+            from wechat_cli.core import contacts
+
+            detail_cache[sender_id] = contacts.get_contact_detail(sender_id, app.cache, app.decrypted_dir)
+        except Exception:
+            # Contact metadata is optional. Never download an avatar or inspect
+            # message/media credentials to compensate for a missing detail row.
+            detail_cache[sender_id] = None
+    detail = detail_cache[sender_id]
+    value = detail.get("avatar") if isinstance(detail, dict) else None
+    return value if is_safe_wechat_avatar_url(value) else None
+
+
 def read(request):
     account = require(request.get("accountId"), r"[\w.-]{1,128}", "INVALID_ACCOUNT")
     chat = require(request.get("chatId"), r"[\w.-]{1,160}@chatroom", "BOUND_GROUP_REQUIRED")
@@ -100,10 +192,15 @@ def read(request):
         end = datetime.fromisoformat(request["range"]["to"].replace("Z", "+00:00")).timestamp()
         if start > end:
             raise ValueError("INVALID_RANGE")
+    synthetic_names = synthetic_sender_names(request)
+    synthetic_avatars = synthetic_sender_avatars(request)
     sources, app = streams(request, account)
     output = []
     next_cursor = dict(cursor)
     has_more = False
+    contact_cache = {}
+    contact_detail_cache = {}
+    contacts_loaded = False
     try:
         for db_id, path in sorted(sources):
             stream_id = db_id + ":" + table
@@ -145,10 +242,17 @@ def read(request):
                     # fingerprints, never hand those credentials to the Agent.
                     if kind in ("image", "voice", "video", "file"):
                         text = "[" + kind + "]"
+                    if not contacts_loaded:
+                        contact_cache = contact_names(app)
+                        contacts_loaded = True
+                    display_name = sender_name(sender_id, synthetic_names, contact_cache, app)
+                    avatar_url = sender_avatar_url(sender_id, synthetic_avatars, app, contact_detail_cache)
                     output.append({"sourceId": source, "accountId": account, "groupId": group,
                                    "chatId": chat, "databaseId": db_id, "tableName": table,
                                    "localId": local_id, "sentAt": datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
                                    "senderId": sender_id, "kind": kind, "text": text,
+                                   **({"senderName": display_name} if display_name else {}),
+                                   **({"senderAvatarUrl": avatar_url} if avatar_url else {}),
                                    "media": media})
                     next_cursor[stream_id] = local_id
         return {"messages": output, "nextCursor": next_cursor, "hasMore": has_more}

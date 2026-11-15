@@ -54,6 +54,11 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
   });
   it("freezes before cleanup, retries failures, preserves other families and keeps the ledger outside DB state", async () => {
     const a = await family(), b = await family();
+    await store.transaction(async req => {
+      await store.payload.create({ collection: "care-preferences", data: { id: `preferences-${a.babyId}`, key: `preferences-${a.babyId}`, babyId: a.babyId, value: { kind: "care-preferences-state", version: 1, entries: { "BOTTLE.milkAmount": { values: [120], source: "manual" } } } }, overrideAccess: true, req });
+      await store.payload.create({ collection: "care-preferences", data: { id: `preferences-${b.babyId}`, key: `preferences-${b.babyId}`, babyId: b.babyId, value: { kind: "care-preferences-state", version: 1, entries: { "PUMP.milkAmount": { values: [90], source: "manual" } } } }, overrideAccess: true, req });
+    });
+    expect((await deletion.export(a.principal, a.babyId)).carePreferences).toHaveLength(1);
     const intent = await deletion.prepare(a.principal, "family", a.babyId);
     const receipt = await deletion.confirm(a.principal, intent.token, intent.confirmation);
     expect(await deletion.confirm(a.principal, intent.token, intent.confirmation)).toEqual(receipt);
@@ -67,6 +72,8 @@ describe("confirmed deletion, retries and restoring a snapshot", () => {
     expect(await deletion.hasCompletedFamilyDeletion(a.babyId)).toBe(true);
     expect(await deletion.hasCompletedFamilyDeletion(b.babyId)).toBe(false);
     expect(await store.payload.count({ collection: "care-attachments", where: { babyId: { equals: a.babyId } } })).toMatchObject({ totalDocs: 0 });
+    expect(await store.payload.count({ collection: "care-preferences", where: { babyId: { equals: a.babyId } } })).toMatchObject({ totalDocs: 0 });
+    expect(await store.payload.count({ collection: "care-preferences", where: { babyId: { equals: b.babyId } } })).toMatchObject({ totalDocs: 1 });
     expect((await attachments.read(b.principal, b.babyId, b.attachment.id)).bytes.length).toBeGreaterThan(0);
     expect(ledger.frozen("family", a.babyId)).toBe(true);
     expect(remoteCalls).toBeGreaterThanOrEqual(2);

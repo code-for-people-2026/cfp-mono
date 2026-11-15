@@ -148,12 +148,12 @@ describe("运营使用真实 Payload、HTTP MCP 和原有业务规则", () => {
     expect(await operations.execute(operator, command)).not.toHaveProperty("token");
     expect(JSON.stringify(await operations.overview(operator, "baby-a"))).not.toContain(result.token);
   });
-  it("record creation passes through HTTP MCP, retains unknowns and returns no session hash", async () => {
+  it("record creation passes through HTTP MCP, saves defaults and returns no session hash", async () => {
     const result = await operations.execute(operator, input({ type: "record", tool: "bubu_record_events", arguments: { events: [{ facts: { type: "DIAPER", startTime: "2026-10-22T08:00:00+08:00", hasPee: true, hasPoop: false } }] } }, "ops-create-record")) as { status: string; events: { id: string; version: number }[] };
-    expect(result.status).toBe("needs_information"); eventId = result.events[0]!.id; version = result.events[0]!.version;
+    expect(result.status).toBe("saved"); eventId = result.events[0]!.id; version = result.events[0]!.version;
     expect(legacy.committedWrites).toBe(1); expect(JSON.stringify(result)).not.toMatch(/sessionId|hash|secret/);
     const overview = await operations.overview(operator, "baby-a");
-    expect(overview.pending).toHaveLength(1); expect(overview.events[0]?.missing).toContain("peeAmount");
+    expect(overview.pending).toHaveLength(0); expect(overview.events[0]?.missing).not.toContain("peeAmount");
   });
   it("sensitive record and revision read is audited, correction checks versions and same-id retries do not duplicate", async () => {
     const read = await operations.read(operator, { babyId: "baby-a", reason: "照护者要求核对原始字段", kind: "event", id: eventId });

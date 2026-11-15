@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ChatDraftStore, type ChatRequest } from "../src/chat/drafts";
 import { ChatSession } from "../src/chat/session";
-import type { ChatHistory, ChatTurn, ChatPending } from "../src/chat/contracts";
+import type { ChatHistory, ChatTurn, ChatPending, FieldPending, PendingEventForm } from "../src/chat/contracts";
 import { ApiError } from "../src/api/client";
+import { buildPendingFormAnswer, pendingQuestionKey } from "../src/chat/form";
 const babyId = "baby-1", identityId = "parent-1";
 const time = "2026-10-23T08:00:00Z";
 function turn(input: ChatRequest, patch: Partial<ChatTurn> = {}): ChatTurn {
@@ -11,13 +12,57 @@ function turn(input: ChatRequest, patch: Partial<ChatTurn> = {}): ChatTurn {
 function fixture() {
   const values = new Map<string, unknown>();
   const store = new ChatDraftStore({ get: key => values.get(key), set: (key, value) => { values.set(key, JSON.parse(JSON.stringify(value))); }, remove: key => { values.delete(key); } }, "same-origin");
-  const api = { getChatHistory: vi.fn(async (): Promise<ChatHistory> => ({ babyId, conversationId: "conversation", turns: [], pending: [], pendingCount: 0 })), getPending: vi.fn(async (): Promise<ChatPending[]> => []), getChatRequest: vi.fn(async (_baby: string, _request: string): Promise<ChatTurn | null> => null), sendChat: vi.fn(async (input: ChatRequest) => turn(input)) };
+  const api = { getChatHistory: vi.fn(async (): Promise<ChatHistory> => ({ babyId, conversationId: "conversation", turns: [], pending: [], pendingCount: 0, automaticMessages: [] })), getPending: vi.fn(async (): Promise<ChatPending[]> => []), getChatRequest: vi.fn(async (_baby: string, _request: string): Promise<ChatTurn | null> => null), sendChat: vi.fn(async (input: ChatRequest) => turn(input)) };
   const callbacks = { refresh: vi.fn(), revoked: vi.fn() };
   const session = new ChatSession(api, store, identityId, babyId, callbacks);
   return { values, store, api, callbacks, session };
 }
+function question(id: string, eventId: string, version: number, eventVersion: number, form?: PendingEventForm): FieldPending {
+  return { kind: "fields", id, babyId, eventId, version, eventVersion, fields: ["milkAmount"], conflicts: [], duplicateCandidates: [], state: "open", ...(form ? { form } : {}) };
+}
+function formFor(item: FieldPending): PendingEventForm {
+  return { eventId: item.eventId, eventVersion: item.eventVersion, questionId: item.id, questionVersion: item.version, title: "瓶喂", knownSummary: "",
+    controls: [{ field: "milkAmount", kind: "number", label: "实际喝入奶量", unit: "ml", allowUnknown: true }],
+    conflictMessages: [], duplicateCandidateIds: [] };
+}
 afterEach(() => { vi.useRealTimers(); });
 describe("recoverable baby conversation", () => {
+  it("submits a clicked choice with immutable origin and event pins while persisting custom text only after selection", async () => {
+    const f = fixture();
+    await f.session.load();
+    const replyQuestion = { id: "choice-question", prompt: "怎么处理？", origin: { kind: "turn" as const, turnId: "origin-turn", selectedEventId: "event-1", question: { id: "pending-1", questionVersion: 2, eventVersion: 3 } }, choices: [
+      { id: "same", label: "同一件事", action: { type: "reply" as const, text: "这是同一件事" } },
+      { id: "different", label: "不同事件", action: { type: "reply" as const, text: "这是不同事件" } },
+      { id: "custom", label: "自定义", action: { type: "custom" as const } },
+    ] };
+    const custom = replyQuestion.choices[2]!;
+    const selected = { questionId: replyQuestion.id, choiceId: custom.id, originTurnId: replyQuestion.origin.turnId };
+    expect(f.session.getSnapshot().draft.choiceDrafts).toBeUndefined();
+    f.session.selectChoice(selected); f.session.editChoice(selected, "实际是两次相邻事件");
+    await f.session.submitChoice("2026-10-23", replyQuestion, custom);
+    expect(f.api.sendChat).toHaveBeenCalledWith(expect.objectContaining({
+      text: "实际是两次相邻事件", attachmentIds: [], choiceAnswer: selected,
+      context: { viewedDate: "2026-10-23", selectedEventId: "event-1" },
+      question: { id: "pending-1", questionVersion: 2, eventVersion: 3 },
+    }));
+  });
+  it("submits inline form text with exact question pins and no structured duplicate", async () => {
+    const f = fixture();
+    await f.session.load();
+    const pending = question("question-inline", "event-inline", 3, 5);
+    const key = pendingQuestionKey(pending.id, pending.version, pending.eventId, pending.eventVersion);
+    f.session.editFormText(key, "milkSource", "不知道");
+    expect(f.store.read(identityId, babyId).formTextDrafts).toEqual({ [key]: { milkSource: "不知道" } });
+    await f.session.submitFormText("2026-10-23", pending, "奶的来源：不知道");
+    expect(f.api.sendChat).toHaveBeenCalledWith(expect.objectContaining({
+      text: "奶的来源：不知道", attachmentIds: [], context: { viewedDate: "2026-10-23", selectedEventId: "event-inline" },
+      question: { id: "question-inline", questionVersion: 3, eventVersion: 5 },
+    }));
+    const request = f.api.sendChat.mock.calls[0]![0];
+    expect(request.formAnswer).toBeUndefined();
+    expect(request.choiceAnswer).toBeUndefined();
+    expect(f.store.read(identityId, babyId).formTextDrafts).toBeUndefined();
+  });
   it("persists draft and question versions across collapse/restart, isolated by identity and baby", () => {
     const { store, session } = fixture();
     session.edit({ text: "剩下30毫升", attachmentIds: [`att_${"a".repeat(64)}`], question: { id: "q1", questionVersion: 3, eventVersion: 5 } });
@@ -88,6 +133,173 @@ describe("recoverable baby conversation", () => {
     session.selectTarget({ mediaPendingId: "media-1", selectedEventId: "event-1" }); session.edit({ text: "找不到照片了" });
     await session.send("2026-10-23"); expect(api.sendChat.mock.calls[1]![0].question).toBeUndefined(); expect(api.sendChat.mock.calls[1]![0].context.mediaPendingId).toBe("media-1"); session.dispose();
   });
+  it("submits one form with exact pins and preserves unrelated local drafts through a lost-response retry", async () => {
+    const { session, api, store } = fixture();
+    const current = question("q-current", "event-1", 3, 5), other = question("q-other", "event-2", 2, 4);
+    const currentKey = pendingQuestionKey(current.id, current.version, current.eventId, current.eventVersion);
+    const otherKey = pendingQuestionKey(other.id, other.version, other.eventId, other.eventVersion);
+    let latestPending = [current, other];
+    let latestTurns: ChatTurn[] = [];
+    api.getChatHistory.mockImplementation(async () => ({ babyId, conversationId: "conversation", turns: latestTurns, pending: latestPending, pendingCount: latestPending.length, automaticMessages: [] }));
+    api.getPending.mockImplementation(async () => latestPending);
+    await session.load();
+    session.edit({ text: "稍后再补照片说明" });
+    session.editForm(currentKey, { fields: { milkAmount: { kind: "value", value: 30 } } });
+    session.editForm(otherKey, { fields: { milkAmount: { kind: "unknown" } } });
+    api.sendChat.mockImplementationOnce(async input => {
+      expect(store.read(identityId, babyId).pending).toEqual(input);
+      throw new Error("网络中断");
+    });
+    const answer = { facts: { milkAmount: 30 } };
+    await session.submitForm("2026-10-23", current, answer);
+    const original = store.read(identityId, babyId).pending!;
+    expect(original).toMatchObject({ text: "", context: { selectedEventId: "event-1" }, question: { id: "q-current", questionVersion: 3, eventVersion: 5 }, formAnswer: answer });
+    api.getChatRequest.mockResolvedValue(null);
+    api.sendChat.mockImplementation(async input => {
+      expect(input).toEqual(original);
+      latestPending = [other];
+      const completed = turn(input, { pending: latestPending, refreshRequired: false });
+      latestTurns = [completed];
+      return completed;
+    });
+    await session.recover();
+    expect(api.sendChat).toHaveBeenCalledTimes(2);
+    expect(session.getSnapshot().pending).toEqual([other]);
+    const saved = store.read(identityId, babyId);
+    expect(saved.pending).toBeUndefined();
+    expect(saved.text).toBe("稍后再补照片说明");
+    expect(Object.keys(saved.formDrafts ?? {})).toEqual([otherKey]); session.dispose();
+  });
+  it("keeps a built zero-valued milk item answer identical through single-form persistence and retry", async () => {
+    const { session, api, store } = fixture();
+    const pending = question("q-item-single", "event-item-single", 3, 5);
+    const form: PendingEventForm = {
+      eventId: pending.eventId, eventVersion: pending.eventVersion, questionId: pending.id, questionVersion: pending.version,
+      title: "瓶喂", knownSummary: "已知：羊奶 200 ml", controls: [{ field: "milkAmount", draftKey: "milkAmount:pending-formula",
+        milkItemId: "pending-formula", milkItemLabel: "奶粉", kind: "number", label: "奶粉实际喝入奶量", unit: "ml", allowUnknown: true }],
+      conflictMessages: [], duplicateCandidateIds: [],
+    };
+    const built = buildPendingFormAnswer(form, { fields: { "milkAmount:pending-formula": { kind: "value", value: "0" } } }).answer!;
+    expect(built.milkItemAnswers).toEqual([{ milkItemId: "pending-formula", facts: { milkAmount: 0 } }]);
+    expect(JSON.stringify(built)).not.toContain("known-goat");
+    await session.load();
+    api.sendChat.mockImplementationOnce(async input => {
+      expect(store.read(identityId, babyId).pending).toEqual(input);
+      throw new Error("single response lost");
+    });
+    await session.submitForm("2026-10-23", pending, built);
+    const original = store.read(identityId, babyId).pending!;
+    expect(original.formAnswer).toEqual(built);
+    session.dispose();
+
+    api.getChatRequest.mockResolvedValue(null);
+    api.sendChat.mockImplementationOnce(async input => turn(input));
+    const resumed = new ChatSession(api, store, identityId, babyId, { refresh: vi.fn(), revoked: vi.fn() });
+    await resumed.recover(true);
+    expect(api.sendChat).toHaveBeenCalledTimes(2);
+    expect(api.sendChat.mock.calls[1]![0]).toEqual(original);
+    expect(api.sendChat.mock.calls[1]![0].requestId).toBe(original.requestId);
+    expect(store.read(identityId, babyId).pending).toBeUndefined();
+    resumed.dispose();
+  });
+  it("keeps built unknown item state and nested answers identical through batch persistence and retry", async () => {
+    const { session, api, store } = fixture();
+    const bottle = question("q-item-batch", "event-item-batch", 2, 4), other = question("q-other-batch", "event-other-batch", 1, 2);
+    const bottleForm: PendingEventForm = {
+      eventId: bottle.eventId, eventVersion: bottle.eventVersion, questionId: bottle.id, questionVersion: bottle.version,
+      title: "瓶喂", knownSummary: "已知：羊奶 200 ml", controls: [{ field: "milkAmount", draftKey: "milkAmount:pending-formula",
+        milkItemId: "pending-formula", milkItemLabel: "奶粉", kind: "number", label: "奶粉实际喝入奶量", unit: "ml", allowUnknown: true }],
+      conflictMessages: [], duplicateCandidateIds: [],
+    };
+    const bottleAnswer = buildPendingFormAnswer(bottleForm, { fields: { "milkAmount:pending-formula": { kind: "unknown" } } }).answer!;
+    const otherAnswer = buildPendingFormAnswer(formFor(other), { fields: { milkAmount: { kind: "value", value: 30 } } }).answer!;
+    const batch = [
+      { eventId: bottle.eventId, question: { id: bottle.id, questionVersion: bottle.version, eventVersion: bottle.eventVersion }, formAnswer: bottleAnswer },
+      { eventId: other.eventId, question: { id: other.id, questionVersion: other.version, eventVersion: other.eventVersion }, formAnswer: otherAnswer },
+    ];
+    expect(bottleAnswer.milkItemAnswers).toEqual([{ milkItemId: "pending-formula", states: { milkAmountState: "unknown" } }]);
+    expect(JSON.stringify(bottleAnswer)).not.toContain("known-goat");
+    await session.load();
+    api.sendChat.mockImplementationOnce(async input => {
+      expect(store.read(identityId, babyId).pending).toEqual(input);
+      throw new Error("batch response lost");
+    });
+    await session.submitFormBatch("2026-10-23", batch);
+    const original = store.read(identityId, babyId).pending!;
+    expect(original.formBatch?.[0]?.formAnswer).toEqual(bottleAnswer);
+    session.dispose();
+
+    api.getChatRequest.mockResolvedValue(null);
+    api.sendChat.mockImplementationOnce(async input => turn(input, { receipts: [{ status: "saved", events: [
+      { id: bottle.eventId, version: bottle.eventVersion + 1 }, { id: other.eventId, version: other.eventVersion + 1 },
+    ] }] }));
+    const resumed = new ChatSession(api, store, identityId, babyId, { refresh: vi.fn(), revoked: vi.fn() });
+    await resumed.recover(true);
+    expect(api.sendChat).toHaveBeenCalledTimes(2);
+    expect(api.sendChat.mock.calls[1]![0]).toEqual(original);
+    expect(api.sendChat.mock.calls[1]![0].requestId).toBe(original.requestId);
+    expect(store.read(identityId, babyId).pending).toBeUndefined();
+    resumed.dispose();
+  });
+  it("retains a form draft when the raw pending item has exact pins but no optional form enrichment", async () => {
+    const bootstrap = fixture(); bootstrap.session.dispose();
+    const { api, store } = bootstrap;
+    const raw = question("q-raw", "event-1", 3, 5);
+    const enriched = { ...raw, form: formFor(raw) };
+    const key = pendingQuestionKey(raw.id, raw.version, raw.eventId, raw.eventVersion);
+    const draft = { fields: { milkAmount: { kind: "value" as const, value: 30 } } };
+    store.save(identityId, babyId, { text: "", attachmentIds: [], formDrafts: { [key]: draft } });
+    const session = new ChatSession(api, store, identityId, babyId, { refresh: vi.fn(), revoked: vi.fn() });
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", turns: [], pending: [enriched], pendingCount: 1, automaticMessages: [] });
+    api.getPending.mockResolvedValue([raw]);
+    await session.load();
+    expect(session.getSnapshot().pending).toEqual([enriched]);
+    expect(store.read(identityId, babyId).formDrafts).toEqual({ [key]: draft }); session.dispose();
+  });
+  it("drops a stale form draft with a visible notice, and revocation clears the remaining local draft", async () => {
+    const bootstrap = fixture(); bootstrap.session.dispose();
+    const { api, store, callbacks } = bootstrap;
+    const stale = question("q-old", "event-1", 3, 5), current = question("q-current", "event-1", 4, 6);
+    const staleKey = pendingQuestionKey(stale.id, stale.version, stale.eventId, stale.eventVersion);
+    const currentKey = pendingQuestionKey(current.id, current.version, current.eventId, current.eventVersion);
+    store.save(identityId, babyId, { text: "未发送说明", attachmentIds: [], formDrafts: {
+      [staleKey]: { fields: { milkAmount: { kind: "value", value: 30 } } },
+      [currentKey]: { fields: { milkAmount: { kind: "unknown" } } },
+    } });
+    const session = new ChatSession(api, store, identityId, babyId, callbacks);
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", turns: [], pending: [current], pendingCount: 1, automaticMessages: [] });
+    api.getPending.mockResolvedValue([current]);
+    await session.load();
+    expect(session.getSnapshot().notice).toContain("待补问题已更新");
+    expect(Object.keys(store.read(identityId, babyId).formDrafts ?? {})).toEqual([currentKey]);
+    api.getChatHistory.mockRejectedValueOnce(new ApiError(403, "已撤权"));
+    await session.load();
+    expect(store.read(identityId, babyId)).toEqual({ text: "", attachmentIds: [] });
+    expect(session.getSnapshot().draft).toEqual({ text: "", attachmentIds: [] });
+    expect(callbacks.revoked).toHaveBeenCalledOnce(); session.dispose();
+  });
+  it("clears a solved question from the full pending set after an ordinary text answer", async () => {
+    const { session, api, store } = fixture();
+    const solved = question("q-solved", "event-1", 3, 5), remaining = question("q-remaining", "event-2", 2, 4);
+    const solvedKey = pendingQuestionKey(solved.id, solved.version, solved.eventId, solved.eventVersion);
+    let latestPending = [solved, remaining];
+    let latestTurns: ChatTurn[] = [];
+    api.getChatHistory.mockImplementation(async () => ({ babyId, conversationId: "conversation", turns: latestTurns, pending: latestPending, pendingCount: latestPending.length, automaticMessages: [] }));
+    api.getPending.mockImplementation(async () => latestPending);
+    await session.load();
+    session.editForm(solvedKey, { fields: { milkAmount: { kind: "value", value: 30 } } });
+    session.edit({ text: "这次拍嗝成功了" });
+    api.sendChat.mockImplementation(async input => {
+      expect(input.question).toBeUndefined();
+      latestPending = [remaining];
+      const completed = turn(input, { pending: latestPending, refreshRequired: false });
+      latestTurns = [completed];
+      return completed;
+    });
+    await session.send("2026-10-23");
+    expect(session.getSnapshot().pending).toEqual([remaining]);
+    expect(store.read(identityId, babyId).formDrafts).toBeUndefined(); session.dispose();
+  });
   it("does not write a late successful response into a disposed baby's draft", async () => {
     const { session, api, callbacks, store } = fixture(); await session.load(); session.edit({ text: "私有内容" });
     let finish: (turn: ChatTurn) => void = () => {};
@@ -99,7 +311,7 @@ describe("recoverable baby conversation", () => {
   it("restores a blocking server turn when local pending is lost, without clearing a separate draft", async () => {
     const { session, api, store } = fixture(); session.edit({ text: "下一条还没发送的内容", selectedEventId: "next-event" });
     const original: ChatRequest = { babyId, requestId: "server-old-request", text: "刚才换尿布", attachmentIds: [], context: { viewedDate: "2026-10-22" } };
-    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], turns: [turn(original, { status: "needs_recovery", refreshRequired: false })] });
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], automaticMessages: [], turns: [turn(original, { status: "needs_recovery", refreshRequired: false })] });
     await session.load(); expect(store.read(identityId, babyId).pending).toEqual(original);
     expect(session.getSnapshot().draft.text).toBe("下一条还没发送的内容");
     api.getChatRequest.mockResolvedValue(turn(original, { status: "needs_recovery", refreshRequired: false }));
@@ -111,7 +323,7 @@ describe("recoverable baby conversation", () => {
     const { session, api } = fixture();
     const original: ChatRequest = { babyId, requestId: "server-failed-request", text: "旧失败消息", attachmentIds: [], context: { viewedDate: "2026-10-22" }, question: { id: "q1", questionVersion: 2, eventVersion: 4 } };
     const failed = turn(original, { status: "failed", refreshRequired: false, error: { code: "PROVIDER_UNAVAILABLE", message: "稍后再试", retryable: true } });
-    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], turns: [failed] });
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], automaticMessages: [], turns: [failed] });
     api.getChatRequest.mockResolvedValue(failed); await session.load();
     await session.recoverTurn(failed.id); expect(api.sendChat).toHaveBeenCalledWith(original); expect(session.getSnapshot().draft.pending).toBeUndefined(); session.dispose();
   });
@@ -119,7 +331,7 @@ describe("recoverable baby conversation", () => {
     const { session, api } = fixture(); await session.load(); session.edit({ text: "新的草稿" });
     const original: ChatRequest = { babyId, requestId: "server-blocking-request", text: "旧消息", attachmentIds: [], context: { viewedDate: "2026-10-22" } };
     api.sendChat.mockRejectedValueOnce(new ApiError(409, "先处理上一条", "CHAT_PREVIOUS_PENDING"));
-    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], turns: [turn(original, { status: "needs_recovery", refreshRequired: false })] });
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], automaticMessages: [], turns: [turn(original, { status: "needs_recovery", refreshRequired: false })] });
     await session.send("2026-10-23"); expect(session.getSnapshot().draft.pending).toEqual(original); expect(session.getSnapshot().draft.text).toBe("新的草稿"); session.dispose();
   });
   it("does not overwrite the latest pending versions with an older history receipt", async () => {
@@ -128,7 +340,7 @@ describe("recoverable baby conversation", () => {
     const resumed = new ChatSession(api, store, identityId, babyId, { refresh: vi.fn(), revoked: vi.fn() });
     const question = { kind: "fields" as const, id: "q1", babyId, eventId: "e1", version: 4, eventVersion: 5, fields: ["milkAmount"], conflicts: [], duplicateCandidates: [], state: "open" as const };
     api.getPending.mockResolvedValue([question]);
-    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], turns: [turn(input)] });
+    api.getChatHistory.mockResolvedValue({ babyId, conversationId: "conversation", pendingCount: 0, pending: [], automaticMessages: [], turns: [turn(input)] });
     await resumed.load(); expect(resumed.getSnapshot().pending).toEqual([question]); resumed.dispose(); session.dispose();
   });
 });
