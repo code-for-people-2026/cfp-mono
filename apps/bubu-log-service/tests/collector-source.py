@@ -11,10 +11,12 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import zstandard
+import wechat_cli.core as wechat_core
 
 spec = importlib.util.spec_from_file_location("bubu_source", pathlib.Path(__file__).parents[1] / "scripts/collector-wechat-source.py")
 adapter = importlib.util.module_from_spec(spec)
@@ -53,7 +55,7 @@ class SyntheticSourceTest(unittest.TestCase):
         request.pop("fixtureManifest", None)
         return request
 
-    def live_context(self, paths):
+    def live_context(self, paths, decrypted_dir=None, display_name_fn=lambda username, names: None, contacts=None):
         irrelevant_key = "message/biz_message_0.db"
 
         class FakeCache:
@@ -81,9 +83,24 @@ class SyntheticSourceTest(unittest.TestCase):
                     "message/message_1.db",
                 ]
                 fake_self.cache = cache
+                fake_self.decrypted_dir = decrypted_dir
+                fake_self.display_name_fn = display_name_fn
 
-        module = SimpleNamespace(AppContext=FakeAppContext)
-        return patch.dict(sys.modules, {"wechat_cli.core.context": module}), cache
+        contacts = contacts or SimpleNamespace(
+            get_contact_names=lambda _cache, _decrypted_dir: {},
+            get_contact_detail=lambda _username, _cache, _decrypted_dir: None,
+        )
+        modules = {
+            "wechat_cli.core.context": SimpleNamespace(AppContext=FakeAppContext),
+            "wechat_cli.core.contacts": contacts,
+        }
+        # collector-wechat-source imports messages first, so the parent package is
+        # already loaded. Patch its attribute too; sys.modules alone only covers a
+        # fresh submodule import and would otherwise leave the real module visible.
+        context = ExitStack()
+        context.enter_context(patch.dict(sys.modules, modules))
+        context.enter_context(patch.object(wechat_core, "contacts", contacts, create=True))
+        return context, cache
 
     def test_identity_seconds_sender_media_and_resume(self):
         with patch.object(adapter.wc, "_resolve_media_path", side_effect=AssertionError("must not guess media")):
@@ -95,14 +112,82 @@ class SyntheticSourceTest(unittest.TestCase):
             self.assertEqual(text["sentAt"], "2026-10-23T00:00:01Z")
             self.assertEqual(text["senderId"], "synthetic-sender")
             self.assertEqual(text["text"], "奶粉泡好120ml，喝了90ml")
-            self.assertEqual(media["media"][0]["fingerprint"], "md5:0123456789abcdef0123456789abcdef")
-            self.assertEqual(media["media"][0]["state"], "unresolved")
-            self.assertNotIn("synthetic-media-key", json.dumps(first))
-            self.assertNotIn("must never", json.dumps(first))
-            again = adapter.read({**self.request, "cursor": first["nextCursor"]})
-            self.assertEqual([row["localId"] for row in again["messages"]], [2])
-            self.assertFalse(again["hasMore"])
-            self.assertEqual(adapter.read({**self.request, "cursor": again["nextCursor"]})["messages"], [])
+            self.assertNotIn("senderName", text)
+            self.assertNotIn("senderAvatarUrl", text)
+        self.assertEqual(media["media"][0]["fingerprint"], "md5:0123456789abcdef0123456789abcdef")
+        self.assertEqual(media["media"][0]["state"], "unresolved")
+        self.assertNotIn("synthetic-media-key", json.dumps(first))
+        self.assertNotIn("must never", json.dumps(first))
+        again = adapter.read({**self.request, "cursor": first["nextCursor"]})
+        self.assertEqual([row["localId"] for row in again["messages"]], [2])
+        self.assertFalse(again["hasMore"])
+        self.assertEqual(adapter.read({**self.request, "cursor": again["nextCursor"]})["messages"], [])
+
+    def test_synthetic_name_is_optional_and_older_payload_stays_shape_compatible(self):
+        avatar = "https://wx.qlogo.cn/mmhead/synthetic/132"
+        result = adapter.read({**self.request, "senderNames": {"synthetic-sender": "外婆"},
+                               "senderAvatars": {"synthetic-sender": avatar}})
+        self.assertEqual(result["messages"][0]["senderName"], "外婆")
+        self.assertEqual(result["messages"][0]["senderAvatarUrl"], avatar)
+        self.assertEqual(result["messages"][1]["senderId"], "synthetic-sender")
+        self.assertEqual(result["messages"][1]["senderName"], "外婆")
+        self.assertEqual(result["messages"][1]["senderAvatarUrl"], avatar)
+        with self.assertRaisesRegex(ValueError, "INVALID_SENDER_NAMES"):
+            adapter.read({**self.request, "senderNames": {"synthetic-sender": ""}})
+        for unsafe in ["http://wx.qlogo.cn/mmhead/a/132", "data:image/png;base64,abc",
+                       "https://user:secret@wx.qlogo.cn/mmhead/a/132", "file:///tmp/avatar"]:
+            with self.assertRaisesRegex(ValueError, "INVALID_SENDER_AVATARS"):
+                adapter.read({**self.request, "senderAvatars": {"synthetic-sender": unsafe}})
+
+    def test_live_contact_name_is_used_only_for_included_bound_group_sender(self):
+        avatar = "https://thirdwx.qlogo.cn/mmopen/synthetic/132"
+        contacts = SimpleNamespace(
+            get_contact_names=lambda cache, decrypted_dir: {"synthetic-sender": "新名字"},
+            get_contact_detail=lambda username, cache, decrypted_dir: {"avatar": avatar},
+        )
+        paths = {
+            "message/message_0.db": self.databases[0]["path"],
+            "message/message_1.db": self.databases[1]["path"],
+        }
+        context, _ = self.live_context(
+            paths,
+            decrypted_dir=self.root / "synthetic-account" / "decrypted",
+            display_name_fn=lambda username, names: names.get(username),
+            contacts=contacts,
+        )
+        with context:
+            result = adapter.read({**self.live_request(), "limit": 500})
+        named = [row for row in result["messages"] if row["senderId"] == "synthetic-sender"]
+        self.assertEqual(named[0]["senderName"], "新名字")
+        self.assertEqual(named[0]["senderAvatarUrl"], avatar)
+        self.assertTrue(all("senderName" not in row for row in result["messages"] if row["senderId"] != "synthetic-sender"))
+
+    def test_live_unsafe_or_missing_contact_avatar_is_absent(self):
+        paths = {
+            "message/message_0.db": self.databases[0]["path"],
+            "message/message_1.db": self.databases[1]["path"],
+        }
+        for avatar in [None, "javascript:alert(1)", "https://evil.example/mmhead/a/132",
+                       "https://user:secret@wx.qlogo.cn/mmhead/a/132"]:
+            contacts = SimpleNamespace(
+                get_contact_names=lambda cache, decrypted_dir: {},
+                get_contact_detail=lambda username, cache, decrypted_dir: None if avatar is None else {"avatar": avatar},
+            )
+            context, _ = self.live_context(paths, contacts=contacts)
+            with context:
+                result = adapter.read({**self.live_request(), "limit": 500})
+            self.assertTrue(all("senderAvatarUrl" not in row for row in result["messages"]))
+
+    def test_contact_lookup_failure_does_not_fail_bound_group_read(self):
+        paths = {
+            "message/message_0.db": self.databases[0]["path"],
+            "message/message_1.db": self.databases[1]["path"],
+        }
+        context, _ = self.live_context(paths, display_name_fn=lambda username, names: (_ for _ in ()).throw(RuntimeError("synthetic contact failure")))
+        with context:
+            result = adapter.read({**self.live_request(), "limit": 500})
+        self.assertEqual(len(result["messages"]), 4)
+        self.assertTrue(all("senderName" not in row for row in result["messages"]))
 
     def test_local_id_cursor_does_not_drop_late_old_timestamp(self):
         page = adapter.read({**self.request, "limit": 500})

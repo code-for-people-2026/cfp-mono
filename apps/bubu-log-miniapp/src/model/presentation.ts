@@ -125,7 +125,18 @@ export function activityDetails(activity: Activity): DetailField[] {
     if (minutes > 0) fields.push({ label: "时长", value: formatDuration(minutes) });
   } else if (activity.type === "SLEEP") fields.push({ label: "状态", value: "正在睡觉…" });
 
-  if (activity.type === "BOTTLE" || activity.type === "PUMP") {
+  if (activity.type === "BOTTLE" && activity.milkItems?.length) {
+    const details = activity.milkItems.map(item => {
+      const source = item.milkDescription || (item.milkSource ? MILK_SOURCE_LABELS[item.milkSource] : item.milkSourceState === "unknown" ? "奶品未知" : "奶品待补");
+      return `${source}：${item.milkAmountState === "known" ? `${item.milkAmount} ml` : item.milkAmountState === "unknown" ? "奶量未知" : "奶量待补"}`;
+    });
+    fields.push({ label: "奶品明细", value: details.join("\n") });
+    if (activity.milkItems.every(item => item.milkAmountState === "known") && activity.milkAmount != null) fields.push({ label: "整餐合计", value: `${activity.milkAmount} ml` });
+    else {
+      const known = activity.milkItems.filter(item => item.milkAmountState === "known");
+      if (known.length) fields.push({ label: "已知小计", value: `${known.reduce((sum, item) => sum + item.milkAmount!, 0)} ml（仍有明细未知，非整餐总量）` });
+    }
+  } else if (activity.type === "BOTTLE" || activity.type === "PUMP") {
     // Null/undefined mean unknown; an explicit zero is a recorded measurement.
     fields.push({ label: "奶量", value: activity.milkAmount != null ? `${activity.milkAmount} ml` : "未记录奶量" });
     if (activity.type === "BOTTLE" && activity.milkSource) fields.push({ label: "奶源", value: MILK_SOURCE_LABELS[activity.milkSource] });

@@ -285,6 +285,15 @@ export default function SettingsPage() {
         {saved && <Text className="settings-success">已保存</Text>}
         <Button className="primary-button" loading={saving} disabled={saving || !name.trim() || undefined} onClick={() => { void save(); }}>保存</Button>
       </View>
+      {identityEnabled && context?.authenticated && <>
+        <Text className="settings-subheading">宝宝共用</Text>
+        <Text className="muted">这套常用选项由所有照护者共同使用，不是个人或本机设置。</Text>
+        <View className="settings-card">
+          <Text className="preference-title">记录常用选项</Text>
+          <Text className="muted">管理奶量、各类活动时长和次数的快捷选择；只有明确保存才会更新，不会改动任何照护记录。</Text>
+          <Button className="primary-button" ariaLabel="打开宝宝共用的记录常用选项" onClick={() => { void Taro.navigateTo({ url: `/pages/record-options/index?babyId=${encodeURIComponent(baby.id)}` }); }}>记录常用选项</Button>
+        </View>
+      </>}
       <Text className="settings-subheading">本机参考设置</Text>
       <Text className="muted">仅用于本机的当前宝宝，不同步给家人。所有数字都是家庭参考估算，不是医疗诊断或精确测量。</Text>
       <View className="settings-card preference-card">

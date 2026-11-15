@@ -4,6 +4,7 @@ import * as migration_20261023_132619_private_chat from './20261023_132619_priva
 import * as migration_20261023_140114_ops_admin from './20261023_140114_ops_admin';
 import * as migration_20261023_143630_membership_service from './20261023_143630_membership_service';
 import * as migration_20261024_073959_privacy_safety_lifecycle from './20261024_073959_privacy_safety_lifecycle';
+import * as migration_20261114_150624_20261114_120000_care_preferences from './20261114_150624_20261114_120000_care_preferences';
 
 export const migrations = [
   {
@@ -34,6 +35,11 @@ export const migrations = [
   {
     up: migration_20261024_073959_privacy_safety_lifecycle.up,
     down: migration_20261024_073959_privacy_safety_lifecycle.down,
-    name: '20261024_073959_privacy_safety_lifecycle'
+    name: '20261024_073959_privacy_safety_lifecycle',
+  },
+  {
+    up: migration_20261114_150624_20261114_120000_care_preferences.up,
+    down: migration_20261114_150624_20261114_120000_care_preferences.down,
+    name: '20261114_150624_20261114_120000_care_preferences'
   },
 ];

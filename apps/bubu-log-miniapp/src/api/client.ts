@@ -1,6 +1,6 @@
 import { decodeSafetyNotices, decodePolicy, decodePrivacyStatus, type PersonalChoice, type GuardianChoice, type PrivacyRequest, type DeletionIntent, type DeletionJob } from "../privacy/contracts";
-import { decodeAttachment, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
-import type { ChatRequest } from "../chat/drafts";
+import { decodeAttachment, decodeEventSources, decodeHistory, decodePending, decodeTurn } from "../chat/contracts";
+import { isChatRequest, type ChatRequest } from "../chat/drafts";
 import type { Activity, ActivityType, AuthContext } from "../model/types";
 import * as decode from "./contracts";
 import {
@@ -10,6 +10,7 @@ import {
 import { SessionCookies, type SessionStorage } from "./session";
 import { IdentitySession } from "./identity-session";
 import { decodeMembership } from "../membership/contracts";
+import { assertPreferenceUpdates, decodeCarePreferences, decodePreferenceReceipt, type UpdateCarePreferencesInput } from "../preferences/shared-options";
 
 export interface TransportRequest {
   url: string;
@@ -379,6 +380,21 @@ export function createBubuApi(options: ClientOptions) {
       requireSidecar();
       return decodeMembership(await request(scoped("membership", babyId), { babyId }), babyId);
     },
+    async getCarePreferences(babyId: string) {
+      requireSidecar();
+      return decodeCarePreferences(await request(scoped("care-preferences", babyId), { babyId }), babyId);
+    },
+    async updateCarePreferences(input: UpdateCarePreferencesInput) {
+      requireSidecar();
+      requiredId(input.babyId); requiredId(input.requestId);
+      if (input.requestId.length < 8 || input.requestId.length > 128 || !Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) throw new ApiError(400, "常用选项修改请求不完整。");
+      assertPreferenceUpdates(input.updates);
+      const result = await request(scoped("care-preferences", input.babyId), {
+        method: "PATCH", babyId: input.babyId,
+        json: { requestId: input.requestId, expectedVersion: input.expectedVersion, updates: input.updates },
+      });
+      return decodePreferenceReceipt(result, input.babyId, input.requestId);
+    },
     async getBabyProfile(babyId: string) {
       const profile = decode.baby(await request(scoped("baby-profile", babyId), { babyId }));
       if (profile.id !== babyId) throw new decode.ResponseFormatError();
@@ -409,6 +425,7 @@ export function createBubuApi(options: ClientOptions) {
     },
     async sendChat(input: ChatRequest) {
       requireSidecar(); day(input.context.viewedDate);
+      if (!isChatRequest(input, input.babyId)) throw new ApiError(400, "待补回答格式不正确，请核对后重试。");
       const result = decode.object(await request("/api/app/chat", { method: "POST", babyId: input.babyId, json: input }));
       const turn = decodeTurn(result.turn, input.babyId);
       if (turn.requestId !== input.requestId) throw new decode.ResponseFormatError();
@@ -417,6 +434,10 @@ export function createBubuApi(options: ClientOptions) {
     async getPending(babyId: string) {
       requireSidecar();
       return decode.array(await request(scoped("records/pending", babyId), { babyId }), value => decodePending(value, babyId));
+    },
+    async getEventSources(babyId: string, eventId: string) {
+      requireSidecar();
+      return decodeEventSources(await request(scoped("records/sources", babyId, { eventId: requiredId(eventId) }), { babyId }), babyId, eventId);
     },
     async uploadAttachment(babyId: string, requestId: string, bytes: ArrayBuffer, mime: string) {
       requireSidecar();

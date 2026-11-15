@@ -90,12 +90,13 @@ export class DeletionService {
       });
       const family = babyId ? await this.legacy?.exportFamilyData(babyId) : undefined;
       if (babyId && family === undefined) fail("LEGACY_EXPORT_UNAVAILABLE", "原照护数据导出尚未配置，请联系隐私渠道处理。", 503);
+      const carePreferences = babyId ? (await payload.find({ collection: "care-preferences", where: { babyId: { equals: babyId } }, pagination: false, limit: 0, depth: 0, overrideAccess: true, req })).docs.map(row => row.value) : undefined;
       const account: unknown[] = [];
       if (!babyId) for (const userId of await this.identity.accountLegacyUserIds(principal.subjectId)) {
         if (!this.accounts) fail("LEGACY_ACCOUNT_EXPORT_UNAVAILABLE", "本人原账号资料导出尚未配置，请联系隐私渠道。", 503);
         account.push(await this.accounts!.exportAccountData(userId));
       }
-      const value = { format: "bubu-privacy-export-v1", ...(!babyId ? { account } : {}), exportedAt: this.now(), scope: babyId ? "family" : "account", privateChat: ownChats, ...(family ? { family } : {}), notice: "账号导出含本人非秘密资料、账号关联和私人对话；不包含密码或访问令牌。家庭记录属于共享照护数据。用户原文与事实并非 AI 生成。附件通过已鉴权的图片接口另行保存。" };
+      const value = { format: "bubu-privacy-export-v1", ...(!babyId ? { account } : {}), exportedAt: this.now(), scope: babyId ? "family" : "account", privateChat: ownChats, ...(family ? { family } : {}), ...(carePreferences ? { carePreferences } : {}), notice: "账号导出含本人非秘密资料、账号关联和私人对话；不包含密码或访问令牌。家庭记录与宝宝共享常用选项属于共享照护数据。用户原文与事实并非 AI 生成。附件通过已鉴权的图片接口另行保存。" };
       if (Buffer.byteLength(JSON.stringify(value)) > 10 * 1024 * 1024) fail("EXPORT_TOO_LARGE", "导出超过单次大小限制，请联系隐私渠道分批处理。", 413);
       return value;
     });

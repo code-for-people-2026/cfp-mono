@@ -134,6 +134,12 @@ export class PrivacyService {
       if ((permission === "media:write" || agentImageRead) && !person.images) fail("IMAGE_CONSENT_REQUIRED", "请在隐私设置中单独开启图片处理。");
     }
   }
+  /** Background family processing has no user session to authorize; it may only run while the family scope and guardian consent remain active. */
+  async familyProcessingAllowed(babyId: string, req?: PayloadRequest) {
+    if (this.ledger?.frozen("family", babyId) || !this.policy().ready) return false;
+    if (await this.repository.get("privacy-state", `frozen-baby:${babyId}`, req)) return false;
+    return this.guardianCurrent(await this.repository.get<GuardianConsent>("privacy-state", `guardian:${babyId}`, req));
+  }
   async requireModel(principal: Principal, babyId: string, images: boolean) {
     const scope = await this.identity.authorize(principal, babyId, "records:write");
     await this.guard(scope, "records:write");

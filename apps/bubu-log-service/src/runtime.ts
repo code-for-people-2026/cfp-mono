@@ -101,7 +101,12 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
     const deletion = new DeletionService(privacy, attachments, ledger, lifecycle.exportFamilyData && lifecycle.deleteFamilyData ? lifecycle as FamilyLifecycle : undefined, lifecycle.exportAccountData && lifecycle.deleteAccountData ? lifecycle as AccountLifecycle : undefined);
     const safety = new SafetyService(privacy);
     const maintenance = new PrivacyMaintenance(privacy, attachments, deletion);
-    const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id));
+    const records = new RecordsService(identity, legacy, (scope, req, id) => attachments.validateAttachment(scope, req, id),
+      async (babyId, req) => {
+        if (!await privacy.familyProcessingAllowed(babyId, req)) return false;
+        try { await membership.requireAvailable(babyId, "chat", req); return true; }
+        catch { return false; }
+      });
     const collector = new CollectorService(identity, (babyId, requestId, req, principal, actor) => records.verifyCollectorReceipt(babyId, requestId, req, principal, actor), (babyId, source, req) => safety.observe(babyId, source.sourceId, source.text, source.sentAt, "group", req));
     chat = new ChatService(identity, attachments, { mcpUrl: options.mcpUrl, provider: options.provider || chatProviderFromEnv(), safetySignal: (babyId, id, text, at, req) => safety.observe(babyId, id, text, at, "chat", req), authorizeModel: (principal, babyId, images) => privacy.requireModel(principal, babyId, images) });
     const appHandler = createHandler(identity, options.publicOrigin, {
@@ -113,13 +118,15 @@ export async function createRuntime(options: RuntimeOptions): Promise<BubuRuntim
       if (closed || maintenanceTask) return;
       maintenanceTask = (async () => {
         await deletion.processPending();
+        await records.preferences.runDueSummaries();
         if (privacy.policy().ready) {
           const report = await maintenance.run(true);
           await identity.exclusive(() => privacy.repository.put("privacy-state", "maintenance:last", { at: new Date().toISOString(), report }, {}));
         }
       })().catch(async () => { try { await identity.exclusive(() => privacy.repository.put("privacy-state", "maintenance:last", { at: new Date().toISOString(), failed: true }, {})); } catch { console.error("bubu_privacy_maintenance_failed"); } }).finally(() => { maintenanceTask = undefined; });
     };
-    const timer = options.maintenanceWorker === false || process.env.NODE_ENV === "test" ? undefined : setInterval(maintain, 60_000);
+    const workerEnabled = options.maintenanceWorker !== false && (process.env.NODE_ENV !== "test" || options.maintenanceWorker === true);
+    const timer = workerEnabled ? setInterval(maintain, 60_000) : undefined;
     timer?.unref();
     const runtime: BubuRuntime = {
       store, identity, records, attachments, collector, chat, membership, privacy, deletion, safety, maintenance,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createBubuApi } from "../src/api/client";
-import { dailyStat, recordEvent, recordSnapshot, ResponseFormatError } from "../src/api/contracts";
-import { buildHeatmap, buildTrendRows, coverageMessage, recordDetailFields, recordStatCards, syncStatusLines } from "../src/model";
+import { activity, dailyStat, recordEvent, recordSnapshot, ResponseFormatError } from "../src/api/contracts";
+import { activityDetails, buildHeatmap, buildTrendRows, coverageMessage, recordDetailFields, recordStatCards, syncStatusLines } from "../src/model";
 import { emptyRecordSummary, recordEventFixture } from "./fixtures/records";
 
 describe("sidecar record projection", () => {
@@ -89,6 +89,24 @@ describe("sidecar record projection", () => {
     expect(details).toContainEqual({ label: "待补充", value: "奶源" });
     expect(details).toContainEqual({ label: "明确未知", value: "拍嗝结果" });
     expect(details.some(field => field.label === "活动状态" || field.label === "尚未发生")).toBe(false);
+  });
+  it("strictly decodes bottle items and presents complete totals versus known subtotals", () => {
+    const base = { id: "meal", babyId: "baby-1", type: "BOTTLE", startTime: "2026-10-22T10:00:00+08:00" };
+    const complete = activity({ ...base, milkAmount: 350, milkItems: [
+      { id: "goat-1", milkDescription: "羊奶", milkAmount: 200, milkSourceState: "known", milkAmountState: "known" },
+      { id: "formula-1", milkSource: "FORMULA", milkAmount: 150, milkSourceState: "known", milkAmountState: "known" },
+    ] });
+    expect(activityDetails(complete)).toEqual(expect.arrayContaining([
+      { label: "奶品明细", value: "羊奶：200 ml\n奶粉：150 ml" }, { label: "整餐合计", value: "350 ml" },
+    ]));
+    const partial = activity({ ...base, milkItems: [
+      { id: "goat-1", milkDescription: "羊奶", milkAmount: 200, milkSourceState: "known", milkAmountState: "known" },
+      { id: "formula-1", milkSource: "FORMULA", milkSourceState: "known", milkAmountState: "unknown" },
+    ] });
+    expect(activityDetails(partial)).toContainEqual({ label: "已知小计", value: "200 ml（仍有明细未知，非整餐总量）" });
+    expect(activityDetails(partial).some(field => field.label === "整餐合计")).toBe(false);
+    expect(() => activity({ ...base, milkItems: [{ id: "same", milkSource: "FORMULA", milkAmount: 1, milkSourceState: "known", milkAmountState: "known" }, { id: "same", milkSource: "FORMULA", milkAmount: 2, milkSourceState: "known", milkAmountState: "known" }] })).toThrow(ResponseFormatError);
+    expect(() => activity({ ...base, milkItems: [{ id: "bad", milkSource: "FORMULA", milkAmount: -1, milkSourceState: "known", milkAmountState: "known" }] })).toThrow(ResponseFormatError);
   });
   it("keeps sync failures and pending media distinct from no recorded activity", () => {
     const lines = syncStatusLines([{ id: "job", enabled: true, lastSuccessAt: "2026-10-23T10:00:00+08:00", processedThrough: "2026-10-23T09:55:00+08:00", pending: true, pendingMedia: 2, failure: { code: "PRIVATE_INTERNAL_ERROR", at: "2026-10-23T10:01:00+08:00", attempts: 2 } }]);

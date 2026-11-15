@@ -81,8 +81,20 @@ describe("legacy metrics plus independent coverage", () => {
     expect(stats.metrics.totalPumpMilkAmount).toBe(80);
     expect(stats.coverage.knownZeroMilkAmounts).toBe(1);
     expect(stats.coverage.unknownMilkAmounts).toBe(1);
-    expect(stats.coverage.incompleteEvents).toBe(2);
+    expect(stats.coverage.incompleteEvents).toBe(1);
     expect(stats.byType.BOTTLE?.preparedMilkAmount).toBe(120);
+  });
+  it("counts known bottle-item contributions while marking an incomplete meal and retains formula preparation metadata", () => {
+    const partial = activity("partial-items", { milkAmount: undefined, milkItems: [
+      { id: "goat-1", milkDescription: "羊奶", milkAmount: 200, milkSourceState: "known", milkAmountState: "known" },
+      { id: "formula-1", milkSource: "FORMULA", milkSourceState: "known", milkAmountState: "unknown" },
+    ] });
+    const event = managed(partial, { complete: false, states: { milkItems: "known", milkSource: "known", milkAmount: "unknown", preparedMilkAmount: "known" },
+      facts: { ...partial, milkItems: partial.milkItems, preparedMilkAmount: 180 } });
+    const stats = computeStatistics([partial], "2026-10-22", [event]);
+    expect(stats.metrics).toMatchObject({ bottleCount: 1, totalMilkAmount: 200 });
+    expect(stats.coverage).toMatchObject({ incompleteEvents: 1, knownMilkAmounts: 1, unknownMilkAmounts: 1 });
+    expect(stats.byType.BOTTLE).toMatchObject({ events: 1, knownMilkAmount: 200, knownMilkAmounts: 1, unknownMilkAmounts: 1, preparedMilkAmount: 180 });
   });
   it("excludes suspected duplicate candidates, merged and retracted projections until resolved", () => {
     const original = activity("original", { milkAmount: 100 }); const suspect = activity("suspect", { milkAmount: 100 });
@@ -107,6 +119,23 @@ describe("legacy metrics plus independent coverage", () => {
     expect(stats.metrics.exerciseCount).toBe(0);
     expect(stats.byType.ROLL_OVER).toMatchObject({ events: 2, knownCount: 3, unknownCount: 1 });
     expect(stats.byType.PULL_TO_SIT).toMatchObject({ events: 1, knownCount: 0, unknownCount: 0 });
+  });
+  it("does not report missing optional durations as unknown", () => {
+    const bath = activity("bath", { type: "BATH", endTime: null });
+    const passive = activity("passive", { type: "PASSIVE_EXERCISE", endTime: null });
+    const stats = computeStatistics([bath, passive], "2026-10-22");
+    expect(stats.byType.BATH).toMatchObject({ events: 1, unknownDurations: 0 });
+    expect(stats.byType.PASSIVE_EXERCISE).toMatchObject({ events: 1, unknownDurations: 0 });
+  });
+  it("does not treat a completion-time alias as an observed duration and preserves explicit zero", () => {
+    const alias = activity("alias", { startTime, endTime: startTime, milkAmount: 90 });
+    const explicitZero = activity("explicit-zero", { startTime, endTime: startTime, milkAmount: 90 });
+    const aliasEvidence = [{ field: "startTime" as const, kind: "calculated" as const, detail: "single completion timestamp stored as event time", confirmed: true }];
+    const stats = computeStatistics([alias, explicitZero], "2026-10-22", [
+      managed(alias, { states: { startTime: "known", endTime: "known" }, evidence: aliasEvidence }),
+      managed(explicitZero, { facts: { ...explicitZero, durationMinutes: 0 }, states: { startTime: "known", endTime: "known", durationMinutes: "known" }, evidence: aliasEvidence }),
+    ]);
+    expect(stats.byType.BOTTLE).toMatchObject({ events: 2, knownDurations: 1, knownMinutes: 0 });
   });
   it("rejects calendar overflow and does not count a midnight point on the prior day", () => {
     expect(() => chinaDayRange("2026-02-30")).toThrow();

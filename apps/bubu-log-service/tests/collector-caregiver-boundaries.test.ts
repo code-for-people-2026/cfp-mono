@@ -7,7 +7,7 @@ import { recordsFixture, source, type RecordsFixture } from "./fixtures/records"
 const day = "2026-10-22";
 const at = (hour: number) => `${day}T${String(hour).padStart(2, "0")}:00:00+08:00`;
 const bottle = (hour = 8): EventInput => ({
-  facts: { type: "BOTTLE", startTime: at(hour), durationMinutes: 10, milkSource: "BREAST_MILK", milkAmount: 80, burpSuccess: true },
+  facts: { type: "BOTTLE", startTime: at(hour), durationMinutes: 10, milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 80 }], burpSuccess: true },
 });
 
 describe("collector authorization requires caregivers for destructive-history reversals", () => {
@@ -17,10 +17,10 @@ describe("collector authorization requires caregivers for destructive-history re
   afterAll(async () => { await fixture?.close(); });
 
   it("keeps ordinary collector record, answer, update, attach and retract paths available", async () => {
-    const pendingEvent = { ...bottle() }; delete pendingEvent.facts.burpSuccess;
+    const pendingEvent = structuredClone(bottle()); pendingEvent.facts.milkItems = [{ id: "breast-1", milkSource: "BREAST_MILK" }];
     const candidate = await fixture.records.record(fixture.collectorA, { babyId: "baby-a", requestId: "ordinary-collector-record", events: [{ ...pendingEvent, sources: [source("ordinary-record")] }] });
     const question = candidate.questions[0]!;
-    const answered = await fixture.records.answer(fixture.collectorA, { babyId: "baby-a", requestId: "ordinary-collector-answer", questionId: question.id, questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: { burpSuccess: true } }, sources: [source("ordinary-answer")] });
+    const answered = await fixture.records.answer(fixture.collectorA, { babyId: "baby-a", requestId: "ordinary-collector-answer", questionId: question.id, questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: {}, milkItemAnswers: [{ milkItemId: "breast-1", facts: { milkAmount: 80 } }] }, sources: [source("ordinary-answer")] });
     expect(answered.status).toBe("saved");
 
     const updated = await fixture.records.update(fixture.collectorA, { babyId: "baby-a", requestId: "ordinary-collector-update", eventId: answered.events[0]!.id, expectedVersion: answered.events[0]!.version, patch: { facts: { notes: "群内补充说明" } }, sources: [source("ordinary-update")] });

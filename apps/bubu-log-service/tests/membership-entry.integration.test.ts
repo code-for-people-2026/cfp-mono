@@ -24,9 +24,11 @@ afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.spl
 const babyId = "baby-a";
 const facts = { type: "ROLL_OVER" as const, startTime: "2026-10-23T03:00:00Z", count: 2 };
 const message = (requestId: string): ChatInput => ({ babyId, requestId, text: "宝宝刚翻身两次", attachmentIds: [], context: { viewedDate: "2026-10-23" } });
+const reply = (text: string) => JSON.stringify({ text, questions: [] });
+const passVerdict = JSON.stringify({ verdict: "pass", issues: [] });
 
 /** Real entitlement persistence, operator account, HTTP and MCP; only old business/model boundaries are synthetic. */
-async function setup(provider: ChatProvider = { complete: async () => ({ text: "已了解。", calls: [] }) }, requestFetch?: typeof fetch) {
+async function setup(provider: ChatProvider = { complete: async input => ({ text: input.responseFormat?.name === "bubu_reply_verdict" ? passVerdict : reply("已了解。"), calls: [] }) }, requestFetch?: typeof fetch) {
   const f = await chatFixture([...chatCollections, ...membershipCollections, ...operationsCollections]);
   cleanups.push(() => f.close());
   const admin = await bootstrapOpsAdmin(f.store.payload, { email: "entry-tests@synthetic.invalid", password: "Synthetic-Password-Only-2026", babyIds: [babyId] });
@@ -149,7 +151,9 @@ describe("one entitlement policy protects every service entry and preserves reco
 
   it("keeps a chat turn recoverable when service pauses after MCP commits and resumes it after reopen", async () => {
     let paused = false, modelCalls = 0;
-    const provider: ChatProvider = { complete: async () => ++modelCalls === 1 ? { text: "", calls: [{ id: "record-before-pause", name: "bubu_record_events", arguments: { events: [{ facts }] } }] } : { text: "完成", calls: [] } };
+    const provider: ChatProvider = { complete: async input => input.responseFormat?.name === "bubu_reply_verdict"
+      ? { text: passVerdict, calls: [] }
+      : ++modelCalls === 1 ? { text: "", calls: [{ id: "record-before-pause", name: "bubu_record_events", arguments: { events: [{ facts }] } }] } : { text: reply("完成"), calls: [] } };
     const intercepted: typeof fetch = async (url, init) => {
       const response = await fetch(url, init);
       if (!paused && typeof init?.body === "string" && init.body.includes('"name":"bubu_record_events"')) { paused = true; await s.configure({ action: "pause" }); }
@@ -166,12 +170,13 @@ describe("one entitlement policy protects every service entry and preserves reco
   }, 30_000);
 
   it.each(["reply", "image-ambiguity", "conflict"] as const)("does not publish %s when an operator pause commits before the completion transaction", async kind => {
-    let modelCalls = 0, pauseAfterCheck = false, completedWrites = 0;
-    const provider: ChatProvider = { complete: async () => {
+    let modelCalls = 0, validatorCalls = 0, pauseAfterCheck = false, completedWrites = 0;
+    const provider: ChatProvider = { complete: async input => {
+      if (input.responseFormat?.name === "bubu_reply_verdict") { validatorCalls++; return { text: passVerdict, calls: [] }; }
       modelCalls++;
       return kind === "conflict" && modelCalls === 1
         ? { text: "", calls: [{ id: "conflicting-record", name: "bubu_record_events", arguments: { events: [{ facts }] } }] }
-        : { text: "这是一条等待发布的示例回复。", calls: [] };
+        : { text: reply("这是一条等待发布的示例回复。"), calls: [] };
     } };
     const requestFetch: typeof fetch = async (url, init) => {
       const response = await fetch(url, init);
@@ -200,7 +205,7 @@ describe("one entitlement policy protects every service entry and preserves reco
     vi.spyOn(ChatRepository.prototype, "put").mockImplementation(async function (this: ChatRepository, turn, req) {
       await put.call(this, turn, req);
       if (turn.status === "completed") completedWrites++;
-      if (kind === "image-ambiguity" && turn.status === "processing" && turn.modelContext?.imageAmbiguity) enqueuePause();
+      if (kind === "image-ambiguity" && turn.status === "processing" && turn.modelContext?.imageQuestion) enqueuePause();
     });
     const input = { ...message(`publication-before-${kind}`), ...(kind === "image-ambiguity" ? { text: "上一张图片是什么颜色" } : {}) };
     const stopped = await s.chat.send(s.f.alice, input);
@@ -209,18 +214,23 @@ describe("one entitlement policy protects every service entry and preserves reco
     expect(stopped).toMatchObject({ status: "needs_recovery", error: { code: "SERVICE_PAUSED", retryable: true } });
     expect(completedWrites).toBe(0);
     expect(modelCalls).toBe(kind === "image-ambiguity" ? 0 : 1);
+    expect(validatorCalls).toBe(0);
     expect((await s.chat.request(s.f.alice, babyId, input.requestId))?.status).toBe("needs_recovery");
     await s.configure({ action: "resume" });
     const completed = await s.chat.send(s.f.alice, input);
     expect(completed.status).toBe("completed"); expect(completed.id).toBe(stopped.id); expect(completedWrites).toBe(1);
     expect(modelCalls).toBe(kind === "image-ambiguity" ? 0 : 2);
+    expect(validatorCalls).toBe(kind === "image-ambiguity" ? 0 : 1);
   }, 30_000);
 
   it("keeps a committed completion as history when a queued operator pause runs immediately afterward", async () => {
-    let modelCalls = 0;
-    const s = await setup({ complete: async () => ++modelCalls === 1
-      ? { text: "", calls: [{ id: "record-before-completion", name: "bubu_record_events", arguments: { events: [{ facts }] } }] }
-      : { text: "照护结果已确认。", calls: [] } });
+    let modelCalls = 0, validatorCalls = 0;
+    const s = await setup({ complete: async input => {
+      if (input.responseFormat?.name === "bubu_reply_verdict") { validatorCalls++; return { text: passVerdict, calls: [] }; }
+      return ++modelCalls === 1
+        ? { text: "", calls: [{ id: "record-before-completion", name: "bubu_record_events", arguments: { events: [{ facts }] } }] }
+        : { text: reply("照护结果已确认。"), calls: [] };
+    } });
     const operatorRequest = new AsyncResource("membership-after-publication-test");
     cleanups.push(async () => { operatorRequest.emitDestroy(); });
     let paused: Promise<unknown> | undefined;
@@ -238,7 +248,7 @@ describe("one entitlement policy protects every service entry and preserves reco
     expect(completed.status).toBe("completed"); expect(completed.error).toBeUndefined();
     expect((await s.chat.history(s.f.alice, babyId)).turns[0]).toMatchObject({ id: completed.id, status: "completed" });
     expect(await s.chat.send(s.f.alice, input)).toMatchObject({ id: completed.id, status: "completed" });
-    expect(modelCalls).toBe(2); expect(s.f.legacy.committedWrites).toBe(1);
+    expect(modelCalls).toBe(2); expect(validatorCalls).toBe(1); expect(s.f.legacy.committedWrites).toBe(1);
     expect(s.f.mcpRequests.filter(request => request.name === "bubu_record_events")).toHaveLength(1);
   }, 30_000);
 });

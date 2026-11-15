@@ -5,7 +5,7 @@ import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/
 import sharp from "sharp";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createHandler } from "../src/http";
-import { CollectorService } from "../src/collector/service";
+import { CollectorService, collectorRequestId } from "../src/collector/service";
 import { CollectorRunner } from "../src/collector/runner";
 import { canonicalGroupId, type SourceMessage } from "../src/collector/types";
 import { hash } from "../src/records/persistence";
@@ -16,9 +16,12 @@ import { recordsFixture, type RecordsFixture } from "./fixtures/records";
 describe("real MCP client over loopback HTTP uses the same durable records and binary media service", () => {
   let fixture: RecordsFixture, server: Server, origin: string, token: string, bobToken: string, client: Client, operator: Client;
   const connected: Client[] = [], called = new Set<string>();
-  const tools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_answer_pending", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_get_request", "bubu_get_revisions", "bubu_accept_legacy", "bubu_get_rules", "bubu_collector"];
+  const caregiverTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_record_activity", "bubu_answer_pending", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_get_request", "bubu_get_revisions", "bubu_accept_legacy", "bubu_get_care_preferences", "bubu_update_care_preferences", "bubu_get_rules"];
+  const operatorTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_restore_event", "bubu_undo_event", "bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_record_activity", "bubu_answer_pending", "bubu_attach_images", "bubu_resolve_media", "bubu_resolve_duplicate", "bubu_confirm_overlap", "bubu_get_request", "bubu_get_revisions", "bubu_accept_legacy", "bubu_get_rules", "bubu_collector"];
+  const collectorTools = ["bubu_record_events", "bubu_update_event", "bubu_retract_event", "bubu_query_events", "bubu_get_summary", "bubu_get_pending", "bubu_get_record_activity", "bubu_answer_pending", "bubu_attach_images", "bubu_get_request", "bubu_get_revisions", "bubu_accept_legacy", "bubu_get_rules", "bubu_collector"];
+  const allCalledTools = [...caregiverTools, "bubu_collector"];
   const source = { kind: "manual", accountId: "synthetic-caregiver", conversationId: "fixture-chat", messageId: "message-1", eventKey: "bottle", sentAt: "2026-10-22T08:00:43+08:00", senderId: "synthetic-caregiver" };
-  const bottle = { type: "BOTTLE", startTime: "2026-10-22T08:00:00+08:00", durationMinutes: 10, milkSource: "BREAST_MILK", milkAmount: 100, burpSuccess: false };
+  const bottle = { type: "BOTTLE", startTime: "2026-10-22T08:00:00+08:00", durationMinutes: 10, milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 100 }], burpSuccess: false };
 
   async function connect(credential: string) {
     const connectedClient = new Client({ name: "bubu-synthetic-mcp-test", version: "1.0.0" });
@@ -64,23 +67,29 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
   });
 
   it("lists the complete strict tool contract and runs creation, completion, revisions, removal, restoration and duplicate resolution", async () => {
-    const available = await client.listTools(); expect(available.tools.map(tool => tool.name).sort()).toEqual([...tools].sort());
+    const available = await client.listTools(); expect(available.tools.map(tool => tool.name).sort()).toEqual([...caregiverTools].sort());
+    expect((await operator.listTools()).tools.map(tool => tool.name).sort()).toEqual([...operatorTools].sort());
     expect(available.tools.find(tool => tool.name === "bubu_record_events")?.inputSchema.additionalProperties).toBe(false);
-    const rules = await call<{ types: string[]; rule: { missing: string[] } }>("bubu_get_rules", { babyId: "baby-a", type: "BOTTLE", milkSource: "FORMULA" });
-    expect(rules.types).toHaveLength(15); expect(rules.rule.missing).toContain("preparedMilkAmount");
-    const incomplete = { ...bottle, milkAmount: null };
+    const rules = await call<{ types: string[]; rule: { missing: string[] } }>("bubu_get_rules", { babyId: "baby-a", type: "BOTTLE", milkItems: [{ id: "formula-1", milkSource: "FORMULA" }] });
+    expect(rules.types).toHaveLength(15); expect(rules.rule.missing).toContain("milkAmount"); expect(rules.rule.missing).not.toContain("milkSource"); expect(rules.rule.missing).not.toContain("preparedMilkAmount");
+    const literalRules = await call<{ rule: { missing: string[] } }>("bubu_get_rules", { babyId: "baby-a", type: "BOTTLE", milkItems: [{ id: "goat-1", milkDescription: "羊奶", milkAmount: 200 }] });
+    expect(literalRules.rule.missing).not.toContain("milkAmount"); expect(literalRules.rule.missing).not.toContain("milkSource");
+    const preferences = await call<{ version: number }>("bubu_get_care_preferences", { babyId: "baby-a" });
+    const preferenceReceipt = await call<{ kind: string; version: number }>("bubu_update_care_preferences", { babyId: "baby-a", requestId: "mcp-preference-change", expectedVersion: preferences.version, updates: [{ key: "BOTTLE.milkAmount", values: [90, 120, 150] }] });
+    expect(preferenceReceipt).toMatchObject({ kind: "care_preferences_changed", version: 1 });
+    const incomplete = { ...bottle, milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK" }] };
     const input = { babyId: "baby-a", requestId: "mcp-original-source", events: [{ facts: incomplete, sources: [source] }] };
     const initial = await call<RecordReceipt>("bubu_record_events", input);
     expect(initial.status).toBe("needs_information"); expect(initial.events).toHaveLength(1);
     expect(await call<RecordReceipt>("bubu_record_events", input)).toEqual(initial);
     const pending = await call<PendingQuestion[]>("bubu_get_pending", { babyId: "baby-a" });
     const question = pending[0]!; expect(question.fields).toContain("milkAmount");
-    let receipt = await call<RecordReceipt>("bubu_answer_pending", { babyId: "baby-a", requestId: "mcp-answer-original", questionId: question.id, questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: { milkAmount: 100 } } });
+    let receipt = await call<RecordReceipt>("bubu_answer_pending", { babyId: "baby-a", requestId: "mcp-answer-original", questionId: question.id, questionVersion: question.version, eventVersion: question.eventVersion, patch: { facts: {}, milkItemAnswers: [{ milkItemId: "breast-1", facts: { milkAmount: 100 } }] } });
     expect(receipt.status).toBe("saved"); let event = receipt.events[0]!;
     expect((await call<RecordReceipt>("bubu_get_request", { babyId: "baby-a", requestId: "mcp-answer-original" })).events[0]?.id).toBe(event.id);
     expect((await call<{ events: CareEvent[] }>("bubu_query_events", { babyId: "baby-a" })).events).toHaveLength(1);
     expect((await call<{ metrics: { totalMilkAmount: number } }>("bubu_get_summary", { babyId: "baby-a", date: "2026-10-22" })).metrics.totalMilkAmount).toBe(100);
-    receipt = await call<RecordReceipt>("bubu_update_event", { babyId: "baby-a", requestId: "mcp-correct-amount", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkAmount: 110 } } }); event = receipt.events[0]!;
+    receipt = await call<RecordReceipt>("bubu_update_event", { babyId: "baby-a", requestId: "mcp-correct-amount", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 110 }] } } }); event = receipt.events[0]!;
     const revisions = await call<Array<{ id: string; version: number }>>("bubu_get_revisions", { babyId: "baby-a", eventId: event.id });
     receipt = await call<RecordReceipt>("bubu_undo_event", { babyId: "baby-a", requestId: "mcp-undo-correction", eventId: event.id, expectedVersion: event.version, revisionId: revisions.find(value => value.version === event.version)!.id }); event = receipt.events[0]!;
     expect(event.facts.milkAmount).toBe(100);
@@ -91,11 +100,11 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
     receipt = await call<RecordReceipt>("bubu_restore_event", { babyId: "baby-a", requestId: "mcp-explicit-restore", eventId: event.id, expectedVersion: event.version }); event = receipt.events[0]!;
     const old = fixture.legacy.activities.get(event.legacyId)!;
     fixture.legacy.activities.set(old.id, { ...old, milkAmount: 130, updatedAt: "2026-10-23T12:01:00Z" });
-    receipt = await call<RecordReceipt>("bubu_update_event", { babyId: "baby-a", requestId: "mcp-remote-conflict", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkAmount: 120 } } }); event = receipt.events[0]!;
+    receipt = await call<RecordReceipt>("bubu_update_event", { babyId: "baby-a", requestId: "mcp-remote-conflict", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 120 }] } } }); event = receipt.events[0]!;
     expect(receipt.status).toBe("conflict");
     receipt = await call<RecordReceipt>("bubu_accept_legacy", { babyId: "baby-a", requestId: "mcp-accept-remote", eventId: event.id, expectedVersion: event.version }); event = receipt.events[0]!;
     expect(event.facts.milkAmount).toBe(130);
-    const duplicate = await call<RecordReceipt>("bubu_record_events", { babyId: "baby-a", requestId: "mcp-second-entry", events: [{ facts: { ...bottle, milkAmount: 130 }, sources: [{ ...source, messageId: "message-2" }] }] });
+    const duplicate = await call<RecordReceipt>("bubu_record_events", { babyId: "baby-a", requestId: "mcp-second-entry", events: [{ facts: { ...bottle, milkItems: [{ id: "duplicate-breast-1", milkSource: "BREAST_MILK", milkAmount: 130 }] }, sources: [{ ...source, messageId: "message-2" }] }] });
     const candidate = duplicate.events[0]!; expect(candidate.duplicateCandidates).toContain(event.id);
     const resolved = await call<RecordReceipt>("bubu_resolve_duplicate", { babyId: "baby-a", requestId: "mcp-resolve-same", eventId: candidate.id, expectedVersion: candidate.version, resolution: "same", targetEventId: event.id, targetVersion: event.version });
     expect(resolved.events.find(value => value.id === candidate.id)?.lifecycle).toBe("merged");
@@ -131,19 +140,27 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
     const sourceId = `wechat:${hash(["wechat", accountId, databaseId, tableName, 1])}`;
     await fixture.identity.bindGroup(fixture.operator, "baby-a", groupId, "mcp-media-collector", true);
     const collectorClient = await connect((await fixture.identity.issueAgent(fixture.operator, "baby-a", "collector", { groupId, agentId: "mcp-media-collector" })).token);
+    expect((await collectorClient.listTools()).tools.map(tool => tool.name).sort()).toEqual([...collectorTools].sort());
     const configured = await call<{ job: { id: string } }>("bubu_collector", { action: "configure", babyId: "baby-a", accountId, chatId, agentId: "mcp-media-collector", enabled: true }, operator);
     const message: SourceMessage = { sourceId, accountId, chatId, databaseId, tableName, groupId, localId: 1, sentAt: "2026-10-22T11:00:00+08:00", senderId: "synthetic-caregiver", kind: "image", text: "换了有尿尿布，原图片暂不可读", media: [{ sourceId, kind: "image", state: "unresolved", reason: "EXACT_PATH_REQUIRED" }] };
     const runner = new CollectorRunner({ call: (name, args) => call(name, args, collectorClient), tools: async () => (await collectorClient.listTools()).tools },
       { read: async () => ({ messages: [message], nextCursor: { [`${databaseId}:${tableName}`]: 1 }, hasMore: false }) },
       { execute: async () => ({ plans: [{ key: "diaper-photo", sourceIds: [sourceId], tool: "bubu_record_events", arguments: { events: [{ facts: { type: "DIAPER", startTime: message.sentAt, hasPoop: false, hasPee: true, peeAmount: "SMALL" } }] } }], ignored: [] }) });
-    expect(await runner.once("baby-a", configured.job.id)).toMatchObject({ completed: true });
+    const collected = await runner.once("baby-a", configured.job.id); expect(collected).toMatchObject({ completed: true });
     const pending = await call<Array<{ kind?: string; id: string; eventIds?: string[] }>>("bubu_get_pending", { babyId: "baby-a" });
     const mediaQuestion = pending.find(question => question.kind === "media")!; expect(mediaQuestion.id).toBe(`media:${sourceId}`);
     const recordedPhoto = (await call<{ events: CareEvent[] }>("bubu_query_events", { babyId: "baby-a", eventId: mediaQuestion.eventIds![0] })).events[0]!;
+    const recovered = await call<RecordReceipt>("bubu_get_request", { babyId: "baby-a", requestId: collectorRequestId(collected.batchId!, "diaper-photo") }, collectorClient);
+    expect(recovered.events[0]?.id).toBe(recordedPhoto.id);
+    expect(await call("bubu_get_revisions", { babyId: "baby-a", eventId: recordedPhoto.id }, collectorClient)).toEqual(expect.any(Array));
+    expect(await call("bubu_get_summary", { babyId: "baby-a", date: "2026-10-22" }, collectorClient)).toEqual(expect.objectContaining({ metrics: expect.any(Object) }));
     const repaired = await call<RecordReceipt>("bubu_attach_images", { babyId: "baby-a", requestId: "mcp-human-photo-repair", eventId: recordedPhoto.id, expectedVersion: recordedPhoto.version, attachmentIds: [attachment.id] });
     expect(await call("bubu_resolve_media", { babyId: "baby-a", requestId: "mcp-human-photo-confirm", pendingId: mediaQuestion.id, eventId: recordedPhoto.id, expectedVersion: repaired.events[0]!.version, attachmentId: attachment.id })).toMatchObject({ state: "resolved", resolution: "provided" });
     expect(await call("bubu_get_pending", { babyId: "baby-a" })).toEqual([]);
-    expect(new Set(called)).toEqual(new Set(tools));
+    const activity = await call<{ messages: Array<{ outcome: string; eventIds: string[]; text: string }> }>("bubu_get_record_activity", { babyId: "baby-a" });
+    expect(activity.messages).toHaveLength(1); expect(activity.messages[0]).toMatchObject({ outcome: "saved" });
+    expect(activity.messages[0]!.eventIds).toContain(recordedPhoto.id); expect(activity.messages[0]!.text).toContain("已保存");
+    expect(new Set(called)).toEqual(new Set(allCalledTools));
   });
 
   it("enforces strict arguments, stale versions, baby scope and authentication on each real MCP request", async () => {
@@ -151,11 +168,11 @@ describe("real MCP client over loopback HTTP uses the same durable records and b
     expect(invalid.isError).toBe(true); expect(await fixture.legacy.listActivities("baby-a")).toHaveLength(0);
     const extraFact = await client.callTool({ name: "bubu_record_events", arguments: { babyId: "baby-a", requestId: "mcp-url-injection", events: [{ facts: { ...bottle, poopPhotoUrl: "https://public.example/image.png" } }] } });
     expect(extraFact.isError).toBe(true);
-    const initial = await call<RecordReceipt>("bubu_record_events", { babyId: "baby-a", requestId: "mcp-zero-known", events: [{ facts: { ...bottle, milkAmount: 0 } }] });
+    const initial = await call<RecordReceipt>("bubu_record_events", { babyId: "baby-a", requestId: "mcp-zero-known", events: [{ facts: { ...bottle, milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 0 }] } }] });
     expect(initial.events[0]?.facts.milkAmount).toBe(0);
     const event = initial.events[0]!;
-    await call("bubu_update_event", { babyId: "baby-a", requestId: "mcp-current-version", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkAmount: 10 } } });
-    const stale = await client.callTool({ name: "bubu_update_event", arguments: { babyId: "baby-a", requestId: "mcp-stale-version", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkAmount: 20 } } } });
+    await call("bubu_update_event", { babyId: "baby-a", requestId: "mcp-current-version", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 10 }] } } });
+    const stale = await client.callTool({ name: "bubu_update_event", arguments: { babyId: "baby-a", requestId: "mcp-stale-version", eventId: event.id, expectedVersion: event.version, patch: { facts: { milkItems: [{ id: "breast-1", milkSource: "BREAST_MILK", milkAmount: 20 }] } } } });
     expect(stale.isError).toBe(true); expect(JSON.stringify(stale.content)).toContain("VERSION_CONFLICT");
     const wrongBaby = await client.callTool({ name: "bubu_query_events", arguments: { babyId: "baby-b" } });
     expect(wrongBaby.isError).toBe(true); expect(JSON.stringify(wrongBaby.content)).toContain("BABY_FORBIDDEN");

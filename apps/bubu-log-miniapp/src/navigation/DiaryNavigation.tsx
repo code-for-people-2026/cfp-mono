@@ -25,6 +25,7 @@ type Props = {
   onSettings?: () => void;
   onLogout?: () => void;
   onAccessRevoked?: () => void;
+  onChat?: () => void;
 };
 
 export function DiaryNavigation(props: Props) {
@@ -76,6 +77,7 @@ export function DiaryNavigation(props: Props) {
           </View>
         </View>
         <ScrollView scrollY className="diary-menu-content">
+          {!props.restricted && identityEnabled && context.baby && props.onChat && <Button className="diary-menu-link chat-menu-link" onClick={props.onChat}><View><Text className="diary-menu-label">开始记录</Text><Text className="diary-menu-caption">对话、照片与待补事项</Text></View><Text className="diary-menu-arrow">›</Text></Button>}
           {!props.restricted && ([
             ["day", "日历", "每天的照护记录"],
             ["list", "历史记录", "按日期查看全部记录"],

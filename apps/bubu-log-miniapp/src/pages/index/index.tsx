@@ -1,7 +1,8 @@
 import { SafetyNotices } from "../../privacy/SafetyNotices";
 import { Choice, PolicyDocuments, PrivacyCenter } from "../../privacy/PrivacyCenter";
 import type { PrivacyPolicy } from "../../privacy/contracts";
-import { DiaryChat, type ChatSelection } from "../../chat/Chat";
+import { clearChatSelection, stageChatSelection } from "../../chat/handoff";
+import { groupPendingEvents } from "../../chat/form";
 import { chatDrafts } from "../../chat/storage";
 import { clearImageFiles } from "../../chat/files";
 import { Button, Image, Input, Picker, Text, View } from "@tarojs/components";
@@ -9,7 +10,7 @@ import brandIcon from "../../assets/branding/bubu-avatar-borderless-v1.png";
 import Taro, { useDidShow } from "@tarojs/taro";
 import { DiaryNavigation, type DiaryView } from "../../navigation/DiaryNavigation";
 import { CalendarNavigation } from "../../navigation/CalendarNavigation";
-import { identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
+import { chatRefreshedEvent, identityUpdatedEvent, profileUpdatedEvent, sessionExpiredEvent } from "../../navigation/events";
 import { useTodayKey } from "../../navigation/useToday";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, identityEnabled, wechatIdentityEnabled } from "../../api";
@@ -66,7 +67,6 @@ export default function DiaryPage() {
   const policyGeneration = useRef(0);
   const [loginNotice, setLoginNotice] = useState(false);
   const [privacyCheck, setPrivacyCheck] = useState(0);
-  const [chatSelection, setChatSelection] = useState<ChatSelection>();
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const closeViewMenu = useCallback(() => setViewMenuOpen(false), []);
   const [returnPeriod, setReturnPeriod] = useState<{ mode: DiaryView; date: string } | null>(null);
@@ -86,6 +86,8 @@ export default function DiaryPage() {
   const [filters, setFilters] = useState<StatFilter[]>([]);
   const [sort, setSort] = useState<SortField>("endTime");
   const [revision, setRevision] = useState(0);
+  const [chatPendingCount, setChatPendingCount] = useState<number>();
+  const [chatCheck, setChatCheck] = useState(0);
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [carePreferences, setCarePreferences] = useState<CarePreferencesState | null>(null);
   const [dataError, setDataError] = useState("");
@@ -111,7 +113,7 @@ export default function DiaryPage() {
   const privacyReady = !identityEnabled || privacyReadyKey === privacyKey;
   // A native picker/preview also triggers onShow. Revalidate the same scope
   // without destroying its in-flight upload and chat state on every return.
-  useDidShow(() => { setPrivacyCheck(value => value + 1); });
+  useDidShow(() => { setPrivacyCheck(value => value + 1); setChatCheck(value => value + 1); });
   const loadLoginPolicy = useCallback(async () => {
     if (!identityEnabled) return;
     const generation = ++policyGeneration.current;
@@ -155,7 +157,7 @@ export default function DiaryPage() {
 
   const clearPrivateView = useCallback(() => {
     setPrivacyReadyKey("");
-    setChatSelection(undefined); setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
+    setChatPendingCount(undefined); setMenuOpen(false); setLoaded(null); setDetail(null); setDetailError("");
     setDetailBusy(false); setDataError(""); setSync(null); detailVersion.current++;
     setViewMenuOpen(false); setReturnPeriod(null);
     releaseDetailPhotos();
@@ -364,6 +366,19 @@ export default function DiaryPage() {
     });
     return () => { cancelled = true; };
   }, [babyId, context?.authenticated, privacyReady, revision, clearPrivateView, restore]);
+  useEffect(() => {
+    if (!identityEnabled || !babyId || !context?.authenticated || !privacyReady) {
+      setChatPendingCount(undefined);
+      return;
+    }
+    let cancelled = false;
+    void api.getPending(babyId).then(pending => {
+      if (!cancelled) setChatPendingCount(groupPendingEvents(pending.filter(item => item.state === "open")).length);
+    }).catch(() => {
+      if (!cancelled) setChatPendingCount(undefined);
+    });
+    return () => { cancelled = true; };
+  }, [babyId, context?.authenticated, privacyReady, revision, chatCheck]);
 
   const login = async () => {
     if (authInFlight.current) return;
@@ -490,12 +505,28 @@ export default function DiaryPage() {
     }
   };
 
-  const refreshAfterChat = useCallback(() => { setLoaded(null); setRevision(value => value + 1); }, []);
-  const chatRevoked = useCallback((error: { status: number }) => {
-    clearPrivateView();
-    if (error.status === 401) { setContext(null); setAccountError("登录已过期，请重新登录"); }
-    else void restore();
-  }, [clearPrivateView, restore]);
+  const refreshAfterChat = useCallback(() => {
+    setLoaded(null);
+    setChatPendingCount(undefined);
+    setRevision(value => value + 1);
+  }, []);
+  useEffect(() => {
+    Taro.eventCenter.on(chatRefreshedEvent, refreshAfterChat);
+    return () => { Taro.eventCenter.off(chatRefreshedEvent, refreshAfterChat); };
+  }, [refreshAfterChat]);
+  const openChat = useCallback((selection?: Parameters<typeof stageChatSelection>[0]) => {
+    let url = `/pages/chat/index?date=${encodeURIComponent(date)}&babyId=${encodeURIComponent(babyId)}`;
+    if (selection) {
+      const staged = stageChatSelection(selection, { identityId: context?.identityId || "", babyId });
+      url += `&eventId=${encodeURIComponent(selection.eventId)}`;
+      void Taro.navigateTo({ url }).catch(error => {
+        clearChatSelection(staged);
+        setAccountError(message(error));
+      });
+      return;
+    }
+    void Taro.navigateTo({ url }).catch(error => setAccountError(message(error)));
+  }, [babyId, context?.identityId, date]);
 
   const summary = useMemo(() => mode === "list"
     ? summarizeRecordList(data?.activities || [], date)
@@ -547,6 +578,7 @@ export default function DiaryPage() {
   return <View className="diary-shell">
     <DiaryNavigation context={context} mode={mode} title={mode === "list" ? "历史数据" : mode === "trend" ? "趋势统计" : "卜卜日记"}
       open={menuOpen} busy={authBusy} onOpen={() => { setViewMenuOpen(false); setMenuOpen(true); }} onClose={closeMenu} onAccessRevoked={restore}
+      onChat={() => { closeMenu(); openChat(); }}
       onSelect={(next) => { setMode(next); setReturnPeriod(null); setDetailError(""); setFilters([]); closeMenu(); }}
       onBabyChange={(index) => { void changeBaby(index); }}
       onSettings={() => { closeMenu(); void Taro.navigateTo({ url: `/pages/settings/index?babyId=${encodeURIComponent(babyId)}` }); }}
@@ -566,6 +598,16 @@ export default function DiaryPage() {
       {dataError ? <View className="state-panel"><Text className="error-text">{dataError}</Text><Button className="text-button" onClick={() => setRevision((value) => value + 1)}>重试</Button></View>
         : !data ? <View className="state-panel">正在读取记录…</View> : <>
           {!data.complete && <View className="notice">记录数量达到读取上限，当前展示可能不完整。可切换到单日查看。</View>}
+          {identityEnabled && <Button className="chat-entry" ariaLabel={chatPendingCount ? `开始记录，${chatPendingCount > 99 ? "99+" : chatPendingCount} 项待补充` : "开始记录"} onClick={() => openChat()}>
+            <View className="chat-entry-icon">
+              <View className="chat-entry-pen">
+                <View className="chat-entry-pen-eraser" />
+                <View className="chat-entry-pen-barrel" />
+                <View className="chat-entry-pen-nib" />
+              </View>
+            </View>
+            {!!chatPendingCount && <Text className="chat-entry-pending">{chatPendingCount > 99 ? "99+" : chatPendingCount}</Text>}
+          </Button>}
           {(mode === "day" || mode === "list") && <View className="daily-summary">
             <View className="section-heading"><Text className="section-title">当日汇总</Text><Text className="muted">{data.recordSummary?.coverage.recordedEvents ?? layoutDayTimeline(visible, date).length} 条记录</Text></View>
             <View className="stats-grid">{cards.map((card) => <View key={card.key} className={`stat-card ${filters.includes(card.key) ? "active" : ""}`} onClick={() => setFilters((old) => old.includes(card.key) ? old.filter((key) => key !== card.key) : [...old, card.key])}>
@@ -628,11 +670,14 @@ export default function DiaryPage() {
       <ActivityDetail key={`${babyId}:${detail?.id ?? "none"}:${detailVersion.current}`} activity={detail} provenance={provenance}
         photoUrls={detailPhotos} photoCount={photoCount} recordEvent={detailEvent} photoLoading={photoLoading}
         onMoreInfoToggle={toggleMoreInfo} onRetryProvenance={() => { void fetchProvenance(); }} onClose={closeDetail}
-        onChat={identityEnabled ? () => { if (!detail) return; setChatSelection({ eventId: detailEvent?.id || detail.id, label: `${timeLabel(detail.startTime)} ${activityLabel(detail)}`, nonce: Date.now() }); closeDetail(); } : undefined} />
+        onChat={identityEnabled ? () => {
+          if (!detail) return;
+          openChat({ eventId: detailEvent?.id || detail.id, label: `${timeLabel(detail.startTime)} ${activityLabel(detail)}`, nonce: Date.now() });
+          closeDetail();
+        } : undefined} />
       {!identityEnabled && <Text className="bubu-chat-legacy">旧服务兼容模式仅查看记录，程序内对话暂未开放。</Text>}
     </>}
     </View>
-    {identityEnabled && context.identityId && context.baby && <DiaryChat key={`${context.identityId}:${babyId}`} identityId={context.identityId} babyId={babyId} babyName={context.baby.name} viewedDate={date} revision={revision} selection={chatSelection} onRefresh={refreshAfterChat} onRevoked={chatRevoked} />}
   </View>;
 }
 

@@ -64,6 +64,16 @@ export function authContext(value: unknown): AuthContext {
 }
 export function activity(value: unknown): Activity {
   const row = object(value);
+  const milkItems = row.milkItems === undefined ? undefined : array(row.milkItems, value => {
+    const item = object(value), milkSource = item.milkSource === undefined ? undefined : choice(item.milkSource, ["BREAST_MILK", "FORMULA"] as const);
+    const milkDescription = item.milkDescription === undefined ? undefined : id(item.milkDescription);
+    const milkAmount = item.milkAmount === undefined || item.milkAmount === null ? item.milkAmount : numeric(item.milkAmount);
+    const milkSourceState = choice(item.milkSourceState, ["known", "pending", "unknown"] as const);
+    const milkAmountState = choice(item.milkAmountState, ["known", "pending", "unknown"] as const);
+    if (milkSource && milkDescription || milkSourceState === "known" && !milkSource && !milkDescription || milkAmountState === "known" && (typeof milkAmount !== "number" || milkAmount < 0) || typeof milkAmount === "number" && (!Number.isFinite(milkAmount) || milkAmount < 0)) throw new ResponseFormatError();
+    return { id: id(item.id), ...(milkSource ? { milkSource } : {}), ...(milkDescription ? { milkDescription } : {}), ...(milkAmount !== undefined ? { milkAmount } : {}), milkSourceState, milkAmountState };
+  });
+  if (milkItems && (!milkItems.length || new Set(milkItems.map(item => item.id)).size !== milkItems.length)) throw new ResponseFormatError();
   return {
     id: id(row.id), type: choice(row.type, ACTIVITY_TYPES), startTime: date(row.startTime),
     endTime: optional(row.endTime, date), createdAt: optional(row.createdAt, date), updatedAt: optional(row.updatedAt, date),
@@ -74,6 +84,7 @@ export function activity(value: unknown): Activity {
     peeAmount: optional(row.peeAmount, (item) => choice(item, ["SMALL", "MEDIUM", "LARGE"] as const)),
     burpSuccess: optional(row.burpSuccess, boolean), milkAmount: optional(row.milkAmount, numeric),
     milkSource: optional(row.milkSource, (item) => choice(item, ["BREAST_MILK", "FORMULA"] as const)),
+    ...(milkItems ? { milkItems } : {}),
     breastFirmness: optional(row.breastFirmness, (item) => choice(item, ["SOFT", "ELASTIC", "HARD"] as const)),
     supplementType: optional(row.supplementType, (item) => choice(item, ["AD", "D3", "PROBIOTICS", "PREBIOTICS"] as const)),
     spitUpType: optional(row.spitUpType, (item) => choice(item, ["NORMAL", "PROJECTILE"] as const)),

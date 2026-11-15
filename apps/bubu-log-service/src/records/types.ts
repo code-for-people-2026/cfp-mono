@@ -4,10 +4,30 @@ export const activityTypes = ["BREASTFEED", "BOTTLE", "PUMP", "SLEEP", "DIAPER",
 export type ActivityType = typeof activityTypes[number];
 export type FieldState = "known" | "pending" | "unknown" | "not_applicable" | "not_yet";
 export type Progress = "ongoing" | "ended" | "unknown";
+export type MilkSource = "BREAST_MILK" | "FORMULA";
+/** One actually consumed milk detail within a completed bottle meal. */
+export interface MilkItem {
+  id: string;
+  milkSource?: MilkSource;
+  /** Literal wording when the milk cannot honestly be mapped to MilkSource. */
+  milkDescription?: string;
+  milkAmount?: number | null;
+  milkSourceState?: FieldState;
+  milkAmountState?: FieldState;
+}
+export interface MilkItemAnswer {
+  milkItemId: string;
+  facts?: Pick<MilkItem, "milkSource" | "milkDescription" | "milkAmount">;
+  states?: Partial<Pick<MilkItem, "milkSourceState" | "milkAmountState">>;
+}
 export interface Facts {
   type?: ActivityType; startTime?: string; endTime?: string | null; durationMinutes?: number;
   reportedIntake?: { value: number; unit: "g"; originalText: string } | null;
-  milkAmount?: number | null; milkSource?: "BREAST_MILK" | "FORMULA";
+  /** Derived aggregate for BOTTLE; remains the editable measured amount for PUMP. */
+  milkAmount?: number | null; milkSource?: MilkSource;
+  /** Literal milk wording when it cannot honestly be mapped to the legacy enum, for example 羊奶. */
+  milkDescription?: string;
+  milkItems?: MilkItem[];
   preparedMilkAmount?: number | null; remainingMilkAmount?: number | null; sameBottle?: boolean;
   burpSuccess?: boolean | null; breastFirmness?: "SOFT" | "ELASTIC" | "HARD";
   hasPoop?: boolean | null; hasPee?: boolean | null;
@@ -22,8 +42,9 @@ export interface SourceRef {
   messageId: string; eventKey: string; sentAt: string; senderId: string;
   collectedAt?: string; groupId?: string; mediaIds?: string[];
 }
-export interface Evidence { field: Field; kind: "reported" | "image" | "extracted" | "calculated"; sourceKey?: string; detail?: string; confirmed: boolean }
+export interface Evidence { field: Field; kind: "reported" | "image" | "extracted" | "calculated" | "default"; sourceKey?: string; detail?: string; confirmed: boolean }
 export interface RuleInput { facts: Facts; states?: Partial<Record<Field, FieldState>>; progress?: Progress; intent?: "feeding"; evidence?: Evidence[] }
+export interface RulePatch extends RuleInput { milkItemAnswers?: MilkItemAnswer[] }
 export interface RuleIssue { code: string; fields: Field[]; message: string; relatedEventId?: string }
 export interface RuleResult { facts: Facts; states: Partial<Record<Field, FieldState>>; progress: Progress; missing: Field[]; conflicts: RuleIssue[]; complete: boolean; evidence: Evidence[] }
 export interface LegacyActivity extends Facts { id: string; babyId: string; type: ActivityType; startTime: string; createdAt?: string; updatedAt?: string }
@@ -53,3 +74,9 @@ export interface PendingQuestion {
 }
 export interface EventInput extends RuleInput { sources?: SourceRef[]; attachmentIds?: string[] }
 export interface RecordReceipt { requestId: string; status: "saved" | "needs_information" | "pending_projection" | "conflict"; events: CareEvent[]; questions: PendingQuestion[]; retryable: boolean }
+export interface RecordActivityEventPresentation { id: string; version: number; title: string; startedAt?: string; summary: string; complete: boolean }
+export interface RecordActivityNotice {
+  id: string; requestId: string; groupId: string; eventIds: string[]; occurredAt: string;
+  outcome: "saved" | "needs_information" | "pending_projection" | "conflict";
+  text: string; events: RecordActivityEventPresentation[];
+}

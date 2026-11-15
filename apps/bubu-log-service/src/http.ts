@@ -10,6 +10,7 @@ import { createAttachmentHandler, type AttachmentService } from "./records/attac
 import type { CollectorService } from "./collector/service";
 import { handleRecordsMcp } from "./records/mcp";
 import { readRecordView, readSyncStatus } from "./records/read-model";
+import { preferenceHttpUpdateSchema } from "./records/schemas";
 import type { ChatService } from "./chat/service";
 import { chatInputSchema } from "./chat/contracts";
 import type { MembershipService } from "./membership/service";
@@ -176,6 +177,11 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       const babyId = babyScope.parse({ babyId: url.searchParams.get("babyId") || req.headers.get("x-baby-id") }).babyId;
       if (req.headers.has("x-baby-id") && req.headers.get("x-baby-id") !== babyId) throw new AppError(400, "SCOPE_MISMATCH", "宝宝范围不一致。");
       if (features?.membership && req.method === "GET" && path === "/api/app/membership") return json(await features.membership.status(principal, babyId));
+      if (features && req.method === "GET" && path === "/api/app/care-preferences") return json(await features.records.preferences.get(principal, babyId));
+      if (features && (req.method === "PUT" || req.method === "PATCH") && path === "/api/app/care-preferences") {
+        const input = preferenceHttpUpdateSchema.parse(await body());
+        return json(await features.records.preferences.update(principal, { babyId, ...input }));
+      }
       if (features?.chat && req.method === "GET" && path === "/api/app/chat") return json(await features.chat.history(principal, babyId));
       if (features?.chat && req.method === "GET" && path === "/api/app/chat/request") return json({ turn: await features.chat.request(principal, babyId, id.parse(url.searchParams.get("requestId"))) });
       if(features&&req.method==="GET"&&path==="/api/app/records/snapshot") {
@@ -187,6 +193,9 @@ export function createHandler(service: IdentityService, publicOrigin: string, me
       if(features&&req.method==="GET"&&path==="/api/app/records/pending")return json([...await features.records.pending(principal,babyId),...await features.collector.pendingMedia(principal,babyId)]);
       if(features&&req.method==="GET"&&path==="/api/app/records/sync")return json(await readSyncStatus(features.records,principal,babyId,features.collector));
       if(features&&req.method==="GET"&&path==="/api/app/records/revisions")return json(protectRecordPhotos(await features.records.revisions(principal,babyId,id.parse(url.searchParams.get("eventId"))),babyId));
+      if(features&&req.method==="GET"&&path==="/api/app/records/sources") {
+        return json(await features.collector.eventSources(principal, babyId, id.parse(url.searchParams.get("eventId")), { includeChat: !!features.chat }));
+      }
       if (req.method === "GET" && path.startsWith("/api/app/media/activities/")) {
         const activityId = decodeURIComponent(path.slice("/api/app/media/activities/".length));
         const readActivity = () => service.legacy.read(babyId, `activities/${activityId}`, new URLSearchParams());

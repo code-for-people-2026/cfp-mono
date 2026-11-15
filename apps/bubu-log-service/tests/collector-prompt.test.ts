@@ -12,4 +12,12 @@ describe("collector prompt date contract", () => {
     expect(collectorAgentInstructions).toContain("never a blanket OUTDOOR-means-afternoon rule");
     expect(collectorAgentInstructions).not.toContain("For a relative or bare date, use the calendar day of the reporting message's sentAt");
   });
+  it("keeps explicit multi-milk intake in one meal without inventing a category or follow-up", () => {
+    expect(collectorAgentInstructions).toContain('"晚上喝奶 200 羊奶，150 奶粉"');
+    expect(collectorAgentInstructions).toContain('{id:"milk-1",milkDescription:"羊奶",milkAmount:200}');
+    expect(collectorAgentInstructions).toContain('{id:"milk-2",milkSource:"FORMULA",milkAmount:150}');
+    expect(collectorAgentInstructions).toContain("one completed event");
+    expect(collectorAgentInstructions).toContain("total 350 derived by the service");
+    expect(collectorAgentInstructions).toContain("no follow-up");
+  });
 });

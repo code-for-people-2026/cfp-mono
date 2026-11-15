@@ -1,5 +1,6 @@
 import { AppError } from "../contracts";
 import { activityTypes, type CareEvent, type DailyMetrics, type Facts, type Field, type LegacyActivity } from "./types";
+import { durationRequiredTypes, isCompletionTimeAlias } from "./rules";
 
 const dayMs = 86_400_000;
 export function chinaDate(value: string | number): string {
@@ -79,7 +80,7 @@ export function computeStatistics(activities: LegacyActivity[], date: string, ev
     const ongoing = current ? isActivityOngoing(current, event) : event.progress === "ongoing" && !facts.endTime;
     if (!facts.startTime) { coverage.unresolvedTime++; continue; }
     if (!inDate(facts, ongoing)) continue;
-    let newlyDueOutcomes = false;
+    const newlyDueOutcomes = new Set<string>();
     const states = Object.entries(event.states).filter(([name]) => {
       if (!current) return true;
       if (current.type !== event.facts.type) return false;
@@ -90,16 +91,16 @@ export function computeStatistics(activities: LegacyActivity[], date: string, ev
       return (current[field] ?? null) === (event.facts[field] ?? null);
     }).flatMap(([name, state]) => {
       if (current?.endTime && state === "not_yet") {
-        if (name === "milkAmount" || name === "burpSuccess") { newlyDueOutcomes = true; return ["pending"]; }
+        if (name === "milkAmount") { newlyDueOutcomes.add(name); return [[name, "pending"]] as const; }
         return [];
       }
-      return [state];
+      return [[name, state]] as const;
     });
-    const pending = states.filter(state => state === "pending").length;
-    const unknown = states.filter(state => state === "unknown").length;
+    const pending = states.filter(([name, state]) => state === "pending" && (newlyDueOutcomes.has(name) || event.missing.includes(name as Field))).length;
+    const unknown = states.filter(([, state]) => state === "unknown").length;
     if (event.duplicateCandidates.length) coverage.duplicateCandidates++;
     if (event.projection !== "synced") { coverage.pendingCandidates++; coverage.pendingEventIds.push(event.id); }
-    if ((!event.complete || newlyDueOutcomes) && (!current || pending || unknown || event.conflicts.length || event.duplicateCandidates.length)) coverage.incompleteEvents++;
+    if ((!event.complete || newlyDueOutcomes.size) && (!current || pending || unknown || event.conflicts.length || event.duplicateCandidates.length)) coverage.incompleteEvents++;
     coverage.pendingFields += pending;
     coverage.unknownFields += unknown;
     if (unknown) coverage.eventsWithUnknownFields.push(event.id);
@@ -124,6 +125,9 @@ export function computeStatistics(activities: LegacyActivity[], date: string, ev
     };
     const nonnegative = (field: "milkAmount" | "count" | "preparedMilkAmount") => known(field) && typeof activity[field] === "number" && Number.isFinite(activity[field]) && activity[field] >= 0;
     const hasEnd = Number.isFinite(end) && end >= start && known("endTime") && !ongoing;
+    const completionAlias = !!event && start === Date.parse(event.facts.startTime || "") && end === Date.parse(event.facts.endTime || "") && isCompletionTimeAlias(event.facts, event.evidence);
+    const explicitDuration = !!event && event.states.durationMinutes === "known" && typeof event.facts.durationMinutes === "number";
+    const observedDuration = hasEnd && (!completionAlias || explicitDuration);
     const wholeMinutes = hasEnd ? Math.max(0, Math.round((end - start) / 60_000)) : 0;
     const overlapMinutes = hasEnd ? Math.max(0, Math.round((Math.min(end, dayEnd) - Math.max(start, dayStart)) / 60_000)) : 0;
     const summary = byType[activity.type]!;
@@ -131,28 +135,49 @@ export function computeStatistics(activities: LegacyActivity[], date: string, ev
     if (inStartDay || activity.type === "SLEEP" || ongoing) summary.events++;
     summary.knownMinutes += activity.type === "SLEEP" ? overlapMinutes : inStartDay ? wholeMinutes : 0;
     if (inStartDay || activity.type === "SLEEP" || ongoing) {
-      if (hasEnd) summary.knownDurations++;
+      if (observedDuration) summary.knownDurations++;
       else if (ongoing) summary.ongoingEvents++;
-      else summary.unknownDurations++;
+      else if (durationRequiredTypes.has(activity.type)) summary.unknownDurations++;
     }
     if (inStartDay && (activity.type === "ROLL_OVER" || activity.type === "PULL_TO_SIT")) {
       if (nonnegative("count")) summary.knownCount += activity.count!;
       else summary.unknownCount++;
     }
     if (inStartDay && (activity.type === "BOTTLE" || activity.type === "PUMP")) {
-      if (nonnegative("milkAmount")) {
+      const canonicalItems = activity.type === "BOTTLE" && !!activity.milkItems?.length && event?.projection === "synced"
+        ? activity.milkItems : undefined;
+      const knownItemAmounts = canonicalItems?.filter(item => item.milkAmountState === "known" && typeof item.milkAmount === "number" && Number.isFinite(item.milkAmount) && item.milkAmount >= 0) ?? [];
+      const unresolvedItemAmounts = canonicalItems?.filter(item => item.milkAmountState !== "known") ?? [];
+      if (canonicalItems) {
+        const knownSubtotal = knownItemAmounts.reduce((sum, item) => sum + item.milkAmount!, 0);
+        summary.knownMilkAmount += knownSubtotal;
+        summary.knownMilkAmounts += knownItemAmounts.length;
+        coverage.knownMilkAmounts += knownItemAmounts.length;
+        coverage.knownZeroMilkAmounts += knownItemAmounts.filter(item => item.milkAmount === 0).length;
+        if (!ongoing) {
+          summary.unknownMilkAmounts += unresolvedItemAmounts.length;
+          coverage.unknownMilkAmounts += unresolvedItemAmounts.length;
+        }
+      } else if (nonnegative("milkAmount")) {
         summary.knownMilkAmount += activity.milkAmount!;
         summary.knownMilkAmounts++;
         coverage.knownMilkAmounts++;
         if (activity.milkAmount === 0) coverage.knownZeroMilkAmounts++;
       } else if (!ongoing) { coverage.unknownMilkAmounts++; summary.unknownMilkAmounts++; }
-      if (activity.type === "BOTTLE" && activity.milkSource === "FORMULA" && event?.projection === "synced" && event.facts.milkSource === "FORMULA"
+      const hasFormulaPreparation = event?.facts.milkItems?.some(item => item.milkSource === "FORMULA") || event?.facts.milkSource === "FORMULA";
+      if (activity.type === "BOTTLE" && event?.projection === "synced" && hasFormulaPreparation
         && start === Date.parse(event.facts.startTime || "") && event.states.preparedMilkAmount === "known" && typeof event.facts.preparedMilkAmount === "number") summary.preparedMilkAmount += event.facts.preparedMilkAmount;
     }
     switch (activity.type) {
       case "SLEEP": if (hasEnd && overlapMinutes > 0) { metrics.sleepCount!++; metrics.totalSleepMinutes! += overlapMinutes; } break;
       case "BREASTFEED": if (inStartDay) { metrics.breastfeedCount!++; metrics.totalBreastfeedMinutes! += wholeMinutes; } break;
-      case "BOTTLE": if (inStartDay) { metrics.bottleCount!++; if (nonnegative("milkAmount")) metrics.totalMilkAmount! += activity.milkAmount!; } break;
+      case "BOTTLE": if (inStartDay) {
+        metrics.bottleCount!++;
+        if (activity.milkItems?.length && event?.projection === "synced") metrics.totalMilkAmount! += activity.milkItems
+          .filter(item => item.milkAmountState === "known" && typeof item.milkAmount === "number" && Number.isFinite(item.milkAmount) && item.milkAmount >= 0)
+          .reduce((sum, item) => sum + item.milkAmount!, 0);
+        else if (nonnegative("milkAmount")) metrics.totalMilkAmount! += activity.milkAmount!;
+      } break;
       case "PUMP": if (inStartDay) { metrics.pumpCount!++; if (nonnegative("milkAmount")) metrics.totalPumpMilkAmount! += activity.milkAmount!; } break;
       case "DIAPER": metrics.diaperCount!++; if (known("hasPoop") && activity.hasPoop === true) metrics.poopCount!++; if (known("hasPee") && activity.hasPee === true) metrics.peeCount!++; break;
       case "HEAD_LIFT": if (inStartDay) { metrics.exerciseCount!++; metrics.totalHeadLiftMinutes! += wholeMinutes; } break;
