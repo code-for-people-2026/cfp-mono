@@ -24,13 +24,21 @@ export type Rule = z.infer<typeof ruleSchema> & { id?: number; lexiconVersion: s
 export const defaultRule: Rule = { version: "builtin-full-review-v7", reason: "输入输出默认全量语境审核；正式发布仍须回归留痕", mode: "all", extraWords: [], ignoredWords: [], lexiconVersion: builtinLexicon.version, lexiconHash: builtinLexicon.sha256, promptVersion: RULE_VERSION };
 export const settingSchema = z.object({
   acceptanceHours: z.number().int().min(1).max(168), resolutionHours: z.number().int().min(1).max(720),
-  feedbackHours: z.number().int().min(1).max(168), evidenceDays: z.number().int().min(0).max(365).default(0),
+  feedbackHours: z.number().int().min(1).max(168), evidenceDays: z.number().int().min(1).max(30).default(30),
   retentionBasis: z.string().trim().min(10).max(1000), staffing: z.string().trim().min(5).max(500),
   reason: z.string().trim().min(8).max(1000),
 }).strict();
+export const normalizeEvidenceDays = (value: unknown) => Math.min(30, Math.max(1, Number(value) || 30));
+export const finiteRetentionBasis = "安全审核和投诉处置所需的最小证据，自案件创建起最多保留30天";
+export const normalizeRetentionBasis = (value: unknown) => {
+  const basis = typeof value === "string" ? value.trim() : "";
+  return !basis || /(永久|无限|不自动到期|长期保留)/.test(basis) ? finiteRetentionBasis : basis;
+};
 export async function settings(payload: Payload, req?: Partial<PayloadRequest>) {
   const result = await payload.find({ collection: "safety-settings", overrideAccess: true, limit: 1, req, sort: "-id" });
-  return result.docs[0];
+  const row = result.docs[0];
+  // Legacy 0 meant unlimited. It is never copied into a newly created case.
+  return row ? { ...row, evidenceDays: normalizeEvidenceDays(row.evidenceDays), retentionBasis: normalizeRetentionBasis(row.retentionBasis) } : undefined;
 }
 export async function activeRule(payload: Payload): Promise<Rule> {
   const release = (await payload.find({ collection: "safety-releases", limit: 1, sort: "-id", overrideAccess: true })).docs[0];

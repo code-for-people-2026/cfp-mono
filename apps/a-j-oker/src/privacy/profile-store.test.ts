@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { up as interactionMigration } from "../cms/migrations/20261024_100000_interaction_safety";
 import { up as feishuMigration } from "../cms/migrations/20261024_120000_feishu_alerts";
+import { up as finiteRetentionMigration } from "../cms/migrations/20261114_090000_finite_safety_retention";
 import { operationsCollections } from "../operations/collections";
 import { up as safetyMigration } from "../cms/migrations/20261013_163000_safety_operations";
 import { ageCollections } from "../age/collections";
@@ -74,7 +75,7 @@ beforeAll(async () => {
   await payload.db.drizzle.run(sql`INSERT INTO privacy_profiles (owner, state, consent) VALUES ('legacy', 'withdrawn', '{"core":true}')`);
   await revision(args);
   await historyInspection(args);
-  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args); await interactionMigration(args); await feishuMigration(args);
+  await ageMigration(args); await accountMigration(args); await correctionMigration(args); await safetyMigration(args); await interactionMigration(args); await feishuMigration(args); await finiteRetentionMigration(args);
 }, 15_000);
 afterAll(async () => { await payload?.destroy(); if (directory) await rm(directory, { recursive: true, force: true }); });
 const consent = () => ({ version: privacyPolicy().version, core: true, model: true, sensitive: false, external: false });
