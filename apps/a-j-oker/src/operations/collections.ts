@@ -2,6 +2,7 @@ import { APIError, type CollectionConfig, type Field, type TextField, type Numbe
 import { canAudit, canReview, internal, isAdministrator } from "./policy";
 import { adminPermissionAudit } from "./audit";
 import { options } from "./admin-presentation";
+import { isDeepStrictEqual } from "node:util";
 const text = (name: string, label: string, required = false): TextField => ({ name, label, type: "text", required });
 const number = (name: string, label: string, required = false): NumberField => ({ name, label, type: "number", required });
 const date = (name: string, label: string): Field => ({ name, label, type: "date", index: true });
@@ -17,10 +18,17 @@ function collection(slug: string, label: string, fields: Field[], columns: strin
       create: ({ req }) => internal(req), update: ({ req }) => internal(req), delete: () => false,
     },
     hooks: {
-      beforeChange: [({ req, data, operation }) => {
+      beforeChange: [({ req, data, operation, originalDoc }) => {
         if (!internal(req)) throw new APIError("请使用有权限的运营操作入口", 403);
-        if (operation === "update" && !["safety-cases", "safety-evidence", "safety-enforcements", "safety-evaluations", "safety-alert-state"].includes(slug))
+        if (operation === "update" && slug === "safety-audit") {
+          const changedKeys = Object.keys(data || {}).filter((key) => key !== "updatedAt" && !isDeepStrictEqual(data[key], originalDoc?.[key]));
+          const actorAllowed = data.actor === originalDoc?.actor || (String(originalDoc?.actor || "").startsWith("owner:") && data.actor === "owner:withheld");
+          if (req.context.safetyRetentionSanitize !== true || changedKeys.some((key) => !["actor", "reason", "metadata"].includes(key))
+            || !actorAllowed || data.reason !== "案件内容已按留存期限清理" || data.metadata !== null)
+            throw new APIError("运营审计只允许追加；仅内部到期清理可移除既有自由文本", 403);
+        } else if (operation === "update" && !["safety-cases", "safety-evidence", "safety-enforcements", "safety-evaluations", "safety-alert-state"].includes(slug)) {
           throw new APIError("此记录只允许追加新版本", 403);
+        }
         return data;
       }],
       beforeDelete: [() => { throw new APIError("安全记录不可直接删除；使用留存清理流程", 403); }],
@@ -52,7 +60,9 @@ export const operationsCollections: CollectionConfig[] = [
     text("decision", "自动审核决定"), text("action", "处置动作"), text("reason", "处置理由"),
     { name: "reply", label: "给本人的处理结果", type: "textarea", maxLength: 1000 },
     text("retentionBasis", "留存依据"), date("retainUntil", "证据保留至"),
-    { name: "legalHold", label: "暂缓到期清理", type: "checkbox", defaultValue: false }, text("holdReason", "暂缓清理依据"),
+    { name: "retentionReviewNeeded", label: "历史留存迁移待复核", type: "checkbox", defaultValue: false, index: true },
+    date("retentionPurgedAt", "内容已到期清理"),
+    { name: "legalHold", label: "暂缓到期清理", type: "checkbox", defaultValue: false }, text("holdReason", "暂缓清理依据"), date("holdReviewAt", "暂缓复核日期"),
   ], ["receipt", "status", "severity", "alertStatus", "category", "assignedTo", "acceptBy", "resolveBy", "feedbackBy"]),
   collection("safety-alert-state", "通知服务状态", [
     { ...text("key", "渠道", true), unique: true }, text("fingerprint", "配置指纹"), text("testId", "测试编号"),
@@ -67,7 +77,7 @@ export const operationsCollections: CollectionConfig[] = [
     { name: "active", label: "生效", type: "checkbox", required: true }, text("reason", "依据", true),
   ], ["key"], "private"),
   collection("safety-settings", "运营安排版本", [
-    number("acceptanceHours", "受理时限（小时）", true), number("resolutionHours", "处置时限（小时）", true), number("feedbackHours", "处置后反馈时限（小时）", true), { ...number("evidenceDays", "证据留存天数（0 为永久）", true), defaultValue: 0, min: 0, max: 365 },
+    number("acceptanceHours", "受理时限（小时）", true), number("resolutionHours", "处置时限（小时）", true), number("feedbackHours", "处置后反馈时限（小时）", true), { ...number("evidenceDays", "证据留存天数（1—30）", true), defaultValue: 30, min: 1, max: 30 },
     text("staffing", "真实值班安排", true), text("retentionBasis", "留存依据", true), text("reason", "变更理由", true),
   ], ["id", "staffing", "createdAt"], "admin"),
   collection("safety-rules", "规则与词库版本", [

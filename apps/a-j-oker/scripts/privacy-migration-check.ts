@@ -29,9 +29,17 @@ try {
   assert.equal(saved.state, "withdrawn");
   const ownerDigest = createHash("sha256").update("restore-test").digest("hex");
   await writeFile(`${directory}/external-ledger.ndjson`, JSON.stringify({ ownerDigest }) + "\n");
-  const dry = await maintainPrivacy(payload, { apply: false, restoreLedger: `${directory}/external-ledger.ndjson` });
-  assert.equal(dry.eligibleIdentities, 2);
+  await assert.rejects(
+    () => maintainPrivacy(payload, { apply: false, restoreLedger: `${directory}/external-ledger.ndjson` }),
+    /恢复清单重放必须显式启用执行模式/,
+  );
   assert.equal((await db.all(sql`SELECT * FROM sessions`)).length, 1);
+  assert.equal((await payload.count({ collection: "privacy-profiles", overrideAccess: true, where: { owner: { equals: "expiry-test" } } })).totalDocs, 1);
+  const dry = await maintainPrivacy(payload, { apply: false });
+  assert.equal(dry.eligibleIdentities, 1);
+  assert.equal(dry.deleted, 0);
+  assert.equal((await db.all(sql`SELECT * FROM sessions`)).length, 1);
+  await writeFile(`${directory}/safety-retention.ndjson`, "");
   const applied = await maintainPrivacy(payload, { apply: true, restoreLedger: `${directory}/external-ledger.ndjson` });
   assert.equal(applied.deleted, 2);
   assert.equal((await db.all(sql`SELECT * FROM sessions`)).length, 0);

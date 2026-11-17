@@ -21,7 +21,7 @@ const { readArtifact } = await import("../src/domain/artifact-rendering");
 const { OperationsService, transaction } = await import("../src/operations/service");
 const { RulesService } = await import("../src/operations/rules");
 const { EvaluationsService } = await import("../src/operations/evaluations");
-const { purgeExpiredEvidence, eraseOperationsEvidence } = await import("../src/operations/retention");
+const { purgeExpiredEvidence, eraseOperationsEvidence, adoptLegacyEvidence } = await import("../src/operations/retention");
 const payload = await cms();
 let checks = 0;
 const pass = (label: string) => { checks++; console.log(`✓ ${label}`); };
@@ -29,6 +29,7 @@ try {
   const administrator = { ...await payload.create({ collection: "admins", overrideAccess: true, context: { helloAdminBootstrap: true }, data: { role: "reviewer", email: "admin@ops.example", password: "isolated-test-pass-123" } }), collection: "admins" as const };
   const reviewer = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { email: "reviewer@ops.example", password: "isolated-test-pass-123", role: "reviewer" } }), collection: "admins" as const };
   const reviewer2 = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { email: "reviewer2@ops.example", password: "isolated-test-pass-123", role: "reviewer" } }), collection: "admins" as const };
+  const administrator2 = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { email: "administrator2@ops.example", password: "isolated-test-pass-123", role: "administrator" } }), collection: "admins" as const };
   const auditor = { ...await payload.create({ collection: "admins", overrideAccess: false, user: administrator, data: { email: "audit@ops.example", password: "isolated-test-pass-123", role: "auditor" } }), collection: "admins" as const };
   assert.equal((await payload.findByID({ collection: "admins", id: administrator.id, overrideAccess: true })).role, "administrator");
   await assert.rejects(() => payload.update({ collection: "admins", id: reviewer.id, overrideAccess: false, user: reviewer, data: { role: "administrator" } }));
@@ -201,7 +202,20 @@ try {
   assert.equal((await ops.evidence(administrator, Number(row.id), "验证本人删除后证据已不可见")).unavailable, true);
   const dry = await purgeExpiredEvidence(payload, false, new Date(Date.now() + 8 * 86400_000));
   assert.equal(dry.dryRun, true);
-  pass("数据权利衔接清理最小证据；到期清理支持只读预检");
+  const restrictedPurged = await payload.findByID({ collection: "safety-cases", id: restrictionRow.id, overrideAccess: true });
+  assert.ok(restrictedPurged.retentionPurgedAt); assert.equal(restrictedPurged.owner, owner.id); assert.equal(restrictedPurged.retentionReviewNeeded, true);
+  const releaseRow = await ops.action(administrator2, Number(restrictionRow.id), { revision: Number(restrictedPurged.revision), action: "review_purged_restriction", reason: "管理员为已清理但仍生效的生成限制建立独立复核" });
+  assert.equal(releaseRow.parentId, restrictionRow.id); assert.equal(releaseRow.stage, "retention_restriction_review");
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: restrictionRow.id, overrideAccess: true })).reason, null);
+  await ops.action(administrator2, Number(releaseRow.id), { revision: 0, action: "claim", reason: "独立管理员领取解除限制复核案件" });
+  await ops.action(administrator2, Number(releaseRow.id), { revision: 1, action: "unrestrict", reason: "独立复核确认可以解除原案件生成限制" });
+  const sweep = await purgeExpiredEvidence(payload, true);
+  assert.ok(sweep.releasedReferenceSweeps >= 1);
+  const swept = await payload.findByID({ collection: "safety-cases", id: restrictionRow.id, overrideAccess: true });
+  assert.match(String(swept.owner), /^retention-tombstone:/); assert.equal(swept.retentionReviewNeeded, false); assert.equal(swept.retainUntil, null);
+  const inactiveEnforcement = (await payload.find({ collection: "safety-enforcements", overrideAccess: true, where: { caseId: { equals: restrictionRow.id } } })).docs[0];
+  assert.equal(inactiveEnforcement.active, false); assert.match(String(inactiveEnforcement.owner), /^retention-tombstone:/); assert.equal(inactiveEnforcement.reason, "保留必要处置状态；案件内容已清理");
+  pass("已清理的生成限制可经公开运营服务新建独立复核；解除后清扫旧引用");
   const awaitableImage = await sharp({ create: { width: 8, height: 8, channels: 3, background: "blue" } }).png().toBuffer();
   const imageOwner = { id: randomUUID(), auth: "cookie" as const };
   const imageRepo = new Repository(payload, imageOwner);
@@ -230,13 +244,13 @@ try {
     delete process.env.DEEPSEEK_API_KEY;
   }
   assert.equal((await imageRepo.all("greetings")).length, 0);
-  assert.equal((await ops.mine(imageOwner)).length, 2);
+  assert.equal((await ops.mine(imageOwner)).length, 1, "technical moderation failures do not create content-review cases");
   // Full text review now precedes image review even for ordinary words. Isolate
   // the image outage by allowing text through an explicitly synthetic verdict.
   process.env.DEEPSEEK_API_KEY = "synthetic-text-allow";
     globalThis.fetch = async () => Response.json({ model: "synthetic-review", choices: [{ finish_reason: "stop", message: { role: "assistant", content: JSON.stringify({ decision: "allow", service_scope: "support", interaction: { minor: false, crisis: false, dependency: false, overuse: false, exit: false, forget_context: false, image_requested: true, single_choice_only: false } }) } }] });
   try {
-    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts } }), { status: 503 });
+    await assert.rejects(() => closedImages.acceptExternal({ sessionId: session2.id, requestId: randomUUID(), input: { text: "制作休息提醒卡，提醒休息" }, model: "external-declared-test", output: { greeting: "合成插画", association: "合成验收", artifacts: artifacts.filter((artifact) => artifact.kind === "image").slice(0, 1) } }), { status: 503 });
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.DEEPSEEK_API_KEY;
@@ -244,18 +258,102 @@ try {
   const outputCase = (await ops.queue(administrator, {})).find((r) => r.owner === imageOwner.id && r.stage === "output_image");
   assert.ok(outputCase?.turnId);
   assert.ok((await imageRepo.all("greetings")).every((r) => !r.artifacts && r.status === "failed"));
+  await payload.update({ collection: "safety-cases", id: imageCase.id, overrideAccess: true, context: { safetyInternal: true }, data: { reason: "应在到期时清理的合成理由", reply: "应在到期时清理的合成反馈", retentionBasis: "应清理的旧永久留存依据", holdReason: "应清理的旧留存理由", alertDetails: { note: "应清理" } } });
+  await payload.create({ collection: "safety-audit", overrideAccess: true, context: { safetyInternal: true }, data: { actor: "system:test", event: "case.synthetic", target: `case:${imageCase.id}`, reason: "应在到期时清理的审计自由文本", metadata: { note: "应清理" } } });
   await purgeExpiredEvidence(payload, true, new Date(Date.now() + 8 * 86400_000));
   assert.equal((await ops.evidence(administrator, Number(imageCase.id), "验证到期清理后图片摘要不可再读")).unavailable, true);
-  pass("缺少文本或图片审核配置不建案；实际服务异常入队且不建生成记录；到期证据实际清理");
-  await ops.configure(administrator, { acceptanceHours: 8, resolutionHours: 48, feedbackHours: 24, evidenceDays: 0, staffing: "仅隔离自动化测试的合成值班安排", retentionBasis: "负责人确认安全证据默认永久保留，不自动到期；数据权利申请另行处理", reason: "验证永久留存与按期留存互不改写" });
-  const permanentOwner = { id: randomUUID(), auth: "cookie" as const };
-  const permanentReceipt = await ops.complain(permanentOwner, { category: "other", description: "默认永久保留的合成证据验证" });
-  const permanentCase = (await ops.queue(administrator, {})).find(r => r.receipt === permanentReceipt.receipt)!;
-  assert.equal(permanentCase.retainUntil, null);
+  const purgedCase = await payload.findByID({ collection: "safety-cases", id: imageCase.id, overrideAccess: true });
+  assert.equal(purgedCase.reason, null); assert.equal(purgedCase.reply, null); assert.equal(purgedCase.retentionBasis, null); assert.equal(purgedCase.holdReason, null); assert.equal(purgedCase.alertDetails, null); assert.ok(purgedCase.retentionPurgedAt);
+  const purgedAudit = (await payload.find({ collection: "safety-audit", overrideAccess: true, where: { and: [{ target: { equals: `case:${imageCase.id}` } }, { event: { equals: "case.synthetic" } }] } })).docs[0];
+  assert.equal(purgedAudit.reason, "案件内容已按留存期限清理"); assert.equal(purgedAudit.metadata, null);
+  await assert.rejects(() => ops.action(administrator, Number(imageCase.id), { revision: Number(purgedCase.revision), action: "extend_retention", reason: "不得向已清理案件重新添加留存文字", retainUntil: new Date(Date.now() + 86400_000).toISOString() }), { status: 409 });
+  pass("缺少审核配置不建案；真实故障入队；到期证据、案件及审计自由文本实际清理");
+  await payload.db.drizzle.run(sql`UPDATE safety_settings SET evidence_days = 0 WHERE id = (SELECT MAX(id) FROM safety_settings)`);
+  const legacySettingOwner = { id: randomUUID(), auth: "cookie" as const };
+  const normalizedReceipt = await ops.complain(legacySettingOwner, { category: "other", description: "旧配置新建案件归一为三十天" });
+  const normalized = (await ops.queue(administrator, {})).find(r => r.receipt === normalizedReceipt.receipt)!;
+  const normalizedDays = (Date.parse(String(normalized.retainUntil)) - Date.parse(String(normalized.createdAt))) / 86400_000;
+  assert.ok(normalizedDays > 29.9 && normalizedDays <= 30.01);
+  await assert.rejects(() => ops.configure(administrator, { acceptanceHours: 8, resolutionHours: 48, feedbackHours: 24, evidenceDays: 0, staffing: "隔离测试值班", retentionBasis: "不得新增无限留存配置记录", reason: "验证零天配置被拒绝" }));
+  await payload.update({ collection: "safety-cases", id: normalized.id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: null, legalHold: true, holdReason: "旧有合成法律留存依据" } });
+  const dryAdopt = await adoptLegacyEvidence(payload, false);
+  assert.ok(dryAdopt.records.some((item) => item.id === normalized.id && item.legalHold));
+  assert.ok(dryAdopt.heldMissingReviewDate >= 1);
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: normalized.id, overrideAccess: true })).retentionReviewNeeded, false);
+  const applied = await adoptLegacyEvidence(payload, true);
+  assert.ok(applied.updated > 0);
+  const rerun = await adoptLegacyEvidence(payload, true);
+  assert.equal(rerun.updated, 0, "旧案标记重复执行保持幂等");
+  const legacy = await payload.findByID({ collection: "safety-cases", id: normalized.id, overrideAccess: true });
+  assert.equal(legacy.retentionReviewNeeded, true); assert.equal(legacy.retainUntil, null); assert.equal(legacy.legalHold, true);
+  const beforeFinite = (await payload.findByID({ collection: "safety-cases", id: imageCase.id, overrideAccess: true })).retainUntil;
+  await adoptLegacyEvidence(payload, true);
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: imageCase.id, overrideAccess: true })).retainUntil, beforeFinite, "有限期限不滚动重置");
+  await assert.rejects(() => ops.action(reviewer, Number(normalized.id), { revision: 1, action: "extend_retention", reason: "审核员不能延长留存期限", retainUntil: new Date(Date.now() + 86400_000).toISOString() }), { status: 403 });
+  await assert.rejects(() => ops.action(administrator, Number(normalized.id), { revision: 0, action: "extend_retention", reason: "旧修订号不能覆盖案件", retainUntil: new Date(Date.now() + 86400_000).toISOString() }), { status: 409 });
+  await assert.rejects(() => ops.action(administrator, Number(normalized.id), { revision: 1, action: "extend_retention", reason: "不能延长超过三十天", retainUntil: new Date(Date.now() + 31 * 86400_000).toISOString() }), { status: 400 });
+  const extended = await ops.action(administrator, Number(normalized.id), { revision: 1, action: "extend_retention", reason: "具体案件仍需短期复核证据", retainUntil: new Date(Date.now() + 10 * 86400_000).toISOString() });
+  assert.equal(extended.retentionReviewNeeded, false, "显式管理员延长立即恢复自动到期，无需第二次激活");
+  await ops.action(administrator, Number(normalized.id), { revision: 2, action: "hold", reason: "具体诉讼通知要求暂缓清理", holdReviewAt: new Date(Date.now() + 2 * 86400_000).toISOString() });
+  const heldReport = await purgeExpiredEvidence(payload, false, new Date(Date.now() + 3 * 86400_000));
+  assert.ok(heldReport.overdueHolds >= 1);
   await purgeExpiredEvidence(payload, true, new Date("2099-01-01T00:00:00Z"));
-  assert.equal((await ops.evidence(administrator, Number(permanentCase.id), "验证永久证据未被自动清理")).excerpt, "默认永久保留的合成证据验证");
-  assert.ok((await payload.findByID({ collection: "safety-cases", id: imageCase.id, overrideAccess: true })).retainUntil, "旧有限期案件不被改写");
-  assert.equal((await eraseOperationsEvidence(payload, permanentOwner.id)).erased, 1, "永久默认不取消数据权利处理");
-  pass("永久留存不自动到期，旧有限期安排不改写，数据权利删除仍生效");
+  assert.equal((await payload.findByID({ collection: "safety-cases", id: normalized.id, overrideAccess: true })).legalHold, true);
+  const expiredOwner = { id: randomUUID(), auth: "cookie" as const };
+  const expiredReceipt = await ops.complain(expiredOwner, { category: "other", description: "已有有限期限到期案件复核排期测试" });
+  const expiredCase = (await ops.queue(administrator, {})).find((candidate) => candidate.receipt === expiredReceipt.receipt)!;
+  await payload.update({ collection: "safety-cases", id: expiredCase.id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: "2026-11-05T00:00:00.000Z" } });
+  const expiredPreview = await adoptLegacyEvidence(payload, false);
+  assert.ok(expiredPreview.expiredExisting >= 1); assert.ok(!expiredPreview.records.some((item) => item.id === expiredCase.id));
+  const extendedExpiry = new Date(Date.now() + 4 * 86400_000).toISOString();
+  const expiredScheduled = await ops.action(administrator, Number(expiredCase.id), { revision: 0, action: "extend_retention", reason: "管理员为已到期有限案件指定新的有限期限", retainUntil: extendedExpiry });
+  assert.equal(expiredScheduled.retentionReviewNeeded, false);
+  await purgeExpiredEvidence(payload, true, new Date(Date.parse(extendedExpiry) + 1000));
+  assert.ok((await payload.findByID({ collection: "safety-cases", id: expiredCase.id, overrideAccess: true })).retentionPurgedAt, "显式延长期满后实际自动清理");
+  const scheduleOwner = { id: randomUUID(), auth: "cookie" as const };
+  const scheduledReceipt = await ops.complain(scheduleOwner, { category: "other", description: "旧空期限案件显式排期测试" });
+  const scheduled = (await ops.queue(administrator, {})).find((candidate) => candidate.receipt === scheduledReceipt.receipt)!;
+  await payload.update({ collection: "safety-cases", id: scheduled.id, overrideAccess: true, context: { safetyInternal: true }, data: { retainUntil: null } });
+  const scheduleUntil = new Date(Date.now() + 5 * 86400_000).toISOString();
+  const preview = await adoptLegacyEvidence(payload, { activate: true, scheduleUntil, reason: "主管批准该旧案采用五天有限期限并启动自动清理" });
+  const candidate = preview.records.find((item) => item.id === scheduled.id)!;
+  const expectedRevisions = { [String(candidate.id)]: candidate.revision };
+  await assert.rejects(() => adoptLegacyEvidence(payload, { apply: true, activate: true, scheduleUntil, reason: "主管批准该旧案采用五天有限期限并启动自动清理", expectedCount: 1, expectedRevisions: { [String(candidate.id)]: candidate.revision + 1 } }), /修订号或状态/);
+  const scheduledApply = await adoptLegacyEvidence(payload, { apply: true, activate: true, scheduleUntil, reason: "主管批准该旧案采用五天有限期限并启动自动清理", expectedCount: 1, expectedRevisions });
+  assert.equal(scheduledApply.updated, 1); assert.equal(scheduledApply.activated, 1); assert.equal(scheduledApply.mode, "schedule_and_activate");
+  const scheduledAgain = await adoptLegacyEvidence(payload, { apply: true, activate: true, scheduleUntil, reason: "主管批准该旧案采用五天有限期限并启动自动清理", expectedCount: 1, expectedRevisions });
+  assert.equal(scheduledAgain.updated, 0); assert.equal(scheduledAgain.alreadyApplied, 1);
+  const scheduledRow = await payload.findByID({ collection: "safety-cases", id: scheduled.id, overrideAccess: true });
+  assert.equal(scheduledRow.retentionReviewNeeded, false); assert.equal(scheduledRow.retainUntil, scheduleUntil);
+  const approvalAudit = (await payload.find({ collection: "safety-audit", overrideAccess: true, where: { and: [
+    { target: { equals: `case:${scheduled.id}` } }, { event: { equals: "case.legacy_retention_scheduled_and_activated" } },
+  ] } })).docs[0];
+  assert.equal(approvalAudit.actor, "system:approved-retention");
+  pass("旧零天配置仅对新案件归一；旧案采用支持预览、修订CAS、幂等排期并由主管一次激活；普通延长期满实际清理；法律留存缺少复核日会显式报告");
+
+  const seedCases = async (caseOwner: string, count: number, retainUntil: string | null) => {
+    for (let index = 0; index < count; index++) await payload.db.drizzle.run(sql`
+      INSERT INTO safety_cases (receipt, owner, source, status, severity, category, stage, revision, retention_basis, retain_until, legal_hold, retention_review_needed)
+      VALUES (${randomUUID()}, ${caseOwner}, 'complaint', 'resolved', 'normal', 'other', 'pagination_test', 0, '合成分页测试有限留存', ${retainUntil}, 0, 0)
+    `);
+  };
+  const paginationAdoptOwner = `pagination-adopt:${randomUUID()}`;
+  await seedCases(paginationAdoptOwner, 205, null);
+  const pagedAdoption = await adoptLegacyEvidence(payload, true);
+  assert.equal(pagedAdoption.updated, 205);
+  assert.equal((await payload.count({ collection: "safety-cases", overrideAccess: true, where: { and: [{ owner: { equals: paginationAdoptOwner } }, { retentionReviewNeeded: { equals: true } }] } })).totalDocs, 205);
+  await payload.db.drizzle.run(sql`UPDATE safety_cases SET retention_review_needed = 0, retain_until = '2000-01-01T00:00:00.000Z' WHERE owner = ${paginationAdoptOwner}`);
+  await payload.db.drizzle.run(sql`INSERT INTO safety_evidence (case_id, excerpt, digest, original_length)
+    SELECT id, '合成分页到期证据', 'synthetic-digest', 9 FROM safety_cases WHERE owner = ${paginationAdoptOwner}`);
+  const pagedPurge = await purgeExpiredEvidence(payload, true);
+  assert.ok(pagedPurge.eligible >= 205);
+  assert.equal((await payload.count({ collection: "safety-cases", overrideAccess: true, where: { and: [{ stage: { equals: "pagination_test" } }, { retentionPurgedAt: { exists: true } }] } })).totalDocs, 205);
+
+  const paginationEraseOwner = `pagination-erase:${randomUUID()}`;
+  await seedCases(paginationEraseOwner, 205, new Date(Date.now() + 10 * 86400_000).toISOString());
+  const pagedErase = await eraseOperationsEvidence(payload, paginationEraseOwner);
+  assert.equal(pagedErase.erased, 205);
+  assert.equal((await payload.count({ collection: "safety-cases", overrideAccess: true, where: { and: [{ owner: { equals: paginationEraseOwner } }, { retentionPurgedAt: { exists: false } }] } })).totalDocs, 0);
+  pass("keyset 分页在逐行变更查询结果时仍完整处理205条旧案采用、205条到期清理和205条本人删除案件");
   console.log(`\n${checks} 组真实 Payload/SQLite 功能检查通过；审核/像素决定为注入模拟，非正式语义安全评测。`);
 } finally { await payload.destroy(); }

@@ -226,8 +226,11 @@ export interface SafetyCase {
   reply?: string | null;
   retentionBasis?: string | null;
   retainUntil?: string | null;
+  retentionReviewNeeded?: boolean | null;
+  retentionPurgedAt?: string | null;
   legalHold?: boolean | null;
   holdReason?: string | null;
+  holdReviewAt?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -975,8 +978,11 @@ export interface SafetyCasesSelect<T extends boolean = true> {
   reply?: T;
   retentionBasis?: T;
   retainUntil?: T;
+  retentionReviewNeeded?: T;
+  retentionPurgedAt?: T;
   legalHold?: T;
   holdReason?: T;
+  holdReviewAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }

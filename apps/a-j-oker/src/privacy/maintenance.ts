@@ -4,8 +4,10 @@ import { Repository } from "../cms/repository";
 import { deleteMediaObjectsByOwnerDigest } from "../domain/media";
 import { PrivacyService } from "./service";
 import { deletionLedgerPath, readDeletionLedger } from "./deletion-ledger";
+import { purgeExpiredEvidence, validatedRetentionLedger } from "../operations/retention";
 
-type MaintenanceResult = { dryRun: boolean; eligibleIdentities: number; deleted: number };
+type SafetyRetentionResult = Awaited<ReturnType<typeof purgeExpiredEvidence>>;
+type MaintenanceResult = { dryRun: boolean; eligibleIdentities: number; deleted: number; safetyRetention?: SafetyRetentionResult };
 export class PrivacyMaintenanceError extends AggregateError {
   constructor(readonly result: MaintenanceResult, failures: Error[]) {
     super(failures, `隐私维护未完成：${failures.length} 项失败，已完成 ${result.deleted}/${result.eligibleIdentities} 个身份；修复后重试，禁止恢复开放`);
@@ -15,11 +17,21 @@ export class PrivacyMaintenanceError extends AggregateError {
 
 // Restore mode MUST run with application traffic stopped, using the independent
 // ledger retained outside the restored database. Default behavior is dry-run.
-export async function maintainPrivacy(payload: Payload, options: { apply: boolean; restoreLedger?: string }) {
+export async function maintainPrivacy(payload: Payload, options: { apply: boolean; restoreLedger?: string; safetyRetention?: boolean; applySafetyRetention?: boolean }) {
+  if (!options.apply && options.applySafetyRetention) throw new Error("安全证据清理必须显式启用执行模式");
   const restoreLedger = options.restoreLedger === undefined ? undefined : deletionLedgerPath(options.restoreLedger);
   if (options.restoreLedger !== undefined && !restoreLedger) throw new Error("恢复必须使用独立删除清单的绝对路径");
+  if (!options.apply && options.restoreLedger !== undefined) throw new Error("恢复清单重放必须显式启用执行模式");
   const revoked = new Set<string>();
   if (restoreLedger) for await (const digest of readDeletionLedger(restoreLedger)) revoked.add(digest);
+  let safetyRetention: SafetyRetentionResult | undefined;
+  if (restoreLedger) {
+    // Fully validate the independent state ledger, then replay it before owner
+    // discovery or deletion. A restored old legalHold=false row must never be
+    // purged by owner deletion before its later confirmed hold is restored.
+    const retentionLedger = await validatedRetentionLedger();
+    safetyRetention = await purgeExpiredEvidence(payload, true, new Date(), { replayLedger: true, validatedLedger: retentionLedger });
+  }
   const owners = new Set<string>();
   const pageSize = 100;
   let cursor = 0;
@@ -104,7 +116,9 @@ export async function maintainPrivacy(payload: Payload, options: { apply: boolea
       if (expired.errors.length) throw new Error("partial deletion");
     } catch { failures.push(new Error("过期凭证清理失败")); }
   }
-  const result = { dryRun: !options.apply, eligibleIdentities: owners.size + objectOnlyDigests.size, deleted };
+  if (!restoreLedger && options.safetyRetention)
+    safetyRetention = await purgeExpiredEvidence(payload, Boolean(options.applySafetyRetention), new Date());
+  const result = { dryRun: !options.apply, eligibleIdentities: owners.size + objectOnlyDigests.size, deleted, ...(safetyRetention ? { safetyRetention } : {}) };
   if (failures.length) throw new PrivacyMaintenanceError(result, failures);
   return result;
 }

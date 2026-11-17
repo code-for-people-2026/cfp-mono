@@ -83,6 +83,10 @@ than overwritten or restored from backup.
 
 ## Retention and installation
 
+### Finite safety-evidence additive expansion
+
+Finite evidence retention has its own allowlisted runner, `deploy/migrate-finite-retention.py`, built on the schema-neutral `deploy/migration-guard.py`. The guard supplies locks, managed archives, immutable candidate checks, disposable-copy execution, stopped app+worker window, exact-original restart, heartbeat/readiness checks and durable deployment journal; the finite-retention entrypoint accepts only three appended `safety_cases` columns and three indexes. Run `--preflight-only` against the reviewed candidate first; inspect its private receipt, then schedule the live command separately. It never overwrites/restores the live database, performs no destructive rollback and does not change the deployment retention manifest. After migration, release that same finite-schema-compatible candidate as the new app/worker pair before installing or enabling the maintenance source overlay. The maintenance config pins the reviewed immutable image as `retentionRuntimeImage` and verifies it plus the migration identity/columns through a read-only SQLite connection before backup pruning, writer journaling or service stops. Copying four source files does not make an old image compatible. Detailed sequencing, hourly apply gate, legacy scheduling and restore-ledger requirements are in [安全运营](safety-operations.md#生产迁移计划未执行). No local or remote test of the command is deployment proof.
+
 Private state: `/opt/cfp-hello-agent/operations/retention.json`. It records immutable
 image/container IDs, current + rollback, and explicitly retired releases. No
 "newest tag wins" or global `docker system prune` logic is used. Unknown containers,

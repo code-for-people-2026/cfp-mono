@@ -19,6 +19,7 @@ export async function OperationsListTools({ collectionSlug: slug, user, payload 
     return <div className="safety-list-tools">
       <p>运营安排：{config.configured ? "已配置" : "待配置值班、时限与正式留存依据"}。文本审核：{coverage}。图片像素审核：{imageReviewConfigured() ? "已配置接口，以实际调用为准" : "未配置，图片处理关闭"}。</p>
       <p>危机通知：{alerts.text}。请留意「飞书提醒」列；消息发送成功不等于案件已受理。</p>
+      <p>留存复核：到期前 7 天应在队列中复核必要性；“仅超时”同时显示明确标记的历史留存迁移复核项及法律留存复核逾期。法律留存逾期不会自动删除或自动续期。</p>
       {/* A document navigation resets Payload's client query state when clearing filters. */}
       <nav aria-label="案件快捷筛选">
         <a href={recordURL(slug, undefined, admin)}>全部案件</a>
@@ -44,8 +45,8 @@ export async function OperationsDocumentActions({ collectionSlug: slug, data, id
   const admin = payload.config.routes.admin;
   if (slug === "safety-cases" && canReview(user)) {
     // Pass metadata only. Evidence is fetched explicitly, with a reason and an audit.
-    const row = { id: Number(id), revision: data.revision, status: data.status, assignedTo: data.assignedTo, source: data.source, stage: data.stage, category: data.category, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold };
-    return <CaseActions row={row} administrator={isAdministrator(user)} userId={user.id} />;
+    const row = { id: Number(id), revision: data.revision, status: data.status, assignedTo: data.assignedTo, source: data.source, stage: data.stage, category: data.category, turnId: data.turnId, mediaId: data.mediaId, legalHold: data.legalHold, retentionReviewNeeded: data.retentionReviewNeeded, retentionPurgedAt: data.retentionPurgedAt, retainUntil: data.retainUntil, holdReviewAt: data.holdReviewAt };
+    return <CaseActions row={row} administrator={isAdministrator(user)} userId={user.id} admin={admin} />;
   }
   if (!isAdministrator(user)) return null;
   if (slug === "safety-rules") {

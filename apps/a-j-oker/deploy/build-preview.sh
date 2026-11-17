@@ -26,4 +26,5 @@ DOCKER_BUILDKIT=1 docker build --network host \
   -f "$source_root/apps/a-j-oker/Dockerfile.preview" \
   --label cn.codeforpeople.service=hello-agent \
   --label cn.codeforpeople.release="$release" \
+  --label cn.codeforpeople.retention-runtime=v1 \
   -t "cfp-hello-agent:$release" "$source_root"

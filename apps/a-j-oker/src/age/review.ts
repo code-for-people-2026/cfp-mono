@@ -4,7 +4,7 @@ import type { AgeProfile, SafetyCase } from "../payload-types";
 import { AppError, type Owner } from "../domain/contracts";
 import { audit } from "../operations/audit";
 import { workingDeadline } from "../operations/deadlines";
-import { isAdministrator, settings } from "../operations/policy";
+import { finiteRetentionBasis, isAdministrator, settings } from "../operations/policy";
 import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE, ageNotice } from "./policy";
 import { transaction } from "../operations/transaction";
 import { inputSchema } from "../domain/contracts";
@@ -160,8 +160,8 @@ async function create(payload: Payload, owner: string, req: PayloadRequest, kind
     category: AGE_REVIEW_CATEGORY, stage: AGE_REVIEW_STAGE, revision: 0,
     parentId: parent?.id, sessionId: conversation?.sessionId, requestId: conversation?.requestId,
     acceptBy: workingDeadline(now, 1), resolveBy: workingDeadline(now, 7), feedbackBy: workingDeadline(now, 7),
-    retainUntil: Number(config?.evidenceDays ?? 0) > 0 ? new Date(now + Number(config?.evidenceDays) * 86400_000).toISOString() : null,
-    retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
+    retainUntil: new Date(now + Number(config?.evidenceDays || 30) * 86400_000).toISOString(),
+    retentionBasis: config?.retentionBasis || finiteRetentionBasis,
   } });
   await payload.create({ collection: "safety-evidence", overrideAccess: true, req, data: {
     caseId: row.id, excerpt: provenance.evidence, originalLength: evidenceContent.length,

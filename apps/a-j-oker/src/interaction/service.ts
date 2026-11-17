@@ -12,6 +12,7 @@ import { feishuAlertStatus } from "../operations/alerts";
 import { privacyService } from "../privacy/service";
 import { durationDue, noticeText, tickUsage, TWO_HOURS } from "./policy";
 import { interactionAssessmentSchema } from "../domain/moderation";
+import { withCredentialExecution } from "../server/credential-lock";
 
 const stateSchema = z.object({
   activeMs: z.number().nonnegative().default(0), lastSeen: z.number().nonnegative().default(0), reminded: z.number().nonnegative().default(0),
@@ -96,7 +97,7 @@ export class InteractionService {
     const flags = assessed.data;
     if (flags.crisis) {
       await transaction(this.payload, async (req) => {
-        const previous = await this.payload.find({ collection: "safety-cases", overrideAccess: true, req, limit: 1, where: { and: [{ owner: { equals: this.owner.id } }, { stage: { equals: "interaction_crisis" } }, { status: { not_equals: "resolved" } }] } });
+        const previous = await this.payload.find({ collection: "safety-cases", overrideAccess: true, req, limit: 1, where: { and: [{ owner: { equals: this.owner.id } }, { stage: { equals: "interaction_crisis" } }, { status: { not_equals: "resolved" } }, { retentionPurgedAt: { exists: false } }] } });
         if (!previous.docs.length) await new OperationsService(this.payload).createCase({ owner: this.owner.id, source: "moderation", category: "self_harm", stage: "interaction_crisis", severity: "urgent", sessionId, requestId }, text, req);
       });
     }
@@ -120,13 +121,23 @@ export class InteractionService {
 export async function emergencyContactForCase(payload: Payload, user: TypedUser, caseId: number, value: unknown) {
   if (!canReview(user)) throw new AppError(403, "需要审核运营权限");
   const input = z.object({ reason: z.string().trim().min(8).max(500), result: z.enum(["read", "contacted", "unreachable"]).default("read") }).strict().parse(value);
-  const row = await payload.findByID({ collection: "safety-cases", id: caseId, overrideAccess: true });
-  if (row.severity !== "urgent" || row.status === "resolved" || (row.retainUntil && Date.parse(row.retainUntil) <= Date.now())) throw new AppError(403, "仅可在有效的紧急处置中读取联络资料");
-  if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取此紧急案件");
-  return withAgeLock(payload, `owner:${row.owner}`, async () => {
-  const contact = (await new InteractionService(payload, { id: row.owner, auth: "cookie" }).status()).contact;
-  if (!contact && input.result !== "read") throw new AppError(409, "当前没有有效授权的联系人，不能登记联系结果");
-  await audit(payload, `admin:${user.id}`, `emergency_contact.${input.result}`, `case:${row.id}`, input.reason, { hasContact: !!contact });
-  return { contact: input.result === "read" ? contact : null, recorded: true, notice: input.result === "read" ? "仅展示供人工必要联络；系统没有自动拨号或发送消息。请实际联系后另行登记结果。" : "已登记操作人声明的联系结果，非自动送达凭证。" };
-  });
+  const initial = await payload.findByID({ collection: "safety-cases", id: caseId, overrideAccess: true, depth: 0 });
+  // Privacy deletion checks this owner lease before erasing the contact. The
+  // nested safety transaction then serializes a fresh purged-state check and
+  // the audit append with retention cleanup.
+  return withCredentialExecution(initial.owner, () => withAgeLock(payload, `owner:${initial.owner}`, async (assertLease) => transaction(payload, async (req) => {
+    await assertLease();
+    const row = await payload.findByID({ collection: "safety-cases", id: caseId, overrideAccess: true, req, depth: 0 });
+    if (row.retentionPurgedAt || row.severity !== "urgent" || row.status === "resolved" || (row.retainUntil && Date.parse(row.retainUntil) <= Date.now()))
+      throw new AppError(403, "仅可在未清理且有效的紧急处置中读取联络资料");
+    if (row.owner !== initial.owner) throw new AppError(409, "案件状态已变更，请刷新后重试");
+    if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取此紧急案件");
+    const profile = (await payload.find({ collection: "age-profiles", overrideAccess: true, req, depth: 0, limit: 1, where: { owner: { equals: row.owner } } })).docs[0];
+    const state = stateSchema.parse(profile?.interaction ?? undefined);
+    const contact = state.cipher ? { ...decrypt(state.cipher, row.owner, payload.secret), consentedAt: state.consentedAt! } : null;
+    if (!contact && input.result !== "read") throw new AppError(409, "当前没有有效授权的联系人，不能登记联系结果");
+    await assertLease();
+    await audit(payload, `admin:${user.id}`, `emergency_contact.${input.result}`, `case:${row.id}`, input.reason, { hasContact: !!contact }, req);
+    return { contact: input.result === "read" ? contact : null, recorded: true, notice: input.result === "read" ? "仅展示供人工必要联络；系统没有自动拨号或发送消息。请实际联系后另行登记结果。" : "已登记操作人声明的联系结果，非自动送达凭证。" };
+  })));
 }

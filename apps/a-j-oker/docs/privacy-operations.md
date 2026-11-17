@@ -18,14 +18,16 @@
 
 每次执行：
 
-1. 获取独占锁，验证目标容器、数据库及独立清单挂载，创建脱敏状态记录。
+1. 获取独占锁。full 配置显式 allowlist 主服务 `cfp-hello-agent-full-preview` 和 `companionContainers` 中的 `cfp-hello-agent-feishu-alerts`，并以 `deploymentManifest` 指向官方 `/opt/cfp-hello-agent/operations/retention.json`；每个没有待恢复维护 journal 的新轮次从 manifest 的 `current` 解析完整容器 ID 与不可变镜像 ID。若同目录存在 `deployment-journal.json`、manifest 的角色/名称不等于配置 allowlist、运行时 ID 不符，或 companion 与主服务的镜像及 `/data` 挂载不一致，作业在任何备份、容器或业务数据修改前失败。不得通过扫描或省略来忽略共享数据库写入者。创建脱敏状态记录。
 2. 清理指定目录超过期限的 SQLite 备份。预留一个调度间隔，正常运行时不超过 7 天；处理有 SQLite 文件头的 `.db/.sqlite/.sqlite3`、gzip 数据库和含真实 SQLite 文件的发布 tar.gz/tgz；不解压到磁盘，不跟随符号链接，不处理有 WAL/SHM/journal 的可疑活动文件。普通压缩日志和纯源码包保留。当前两个目录为独立验收备份目录与既有 `/opt/cfp-hello-agent/backups`。
-3. 停止本实例接入，最多等 120 秒结束进行中的请求；使用同一镜像创建经过完整性和外键检查的 SQLite 快照，包含已提交的 WAL 页，不覆盖已有备份。
+3. 在受管备份根成功清理后，把本轮从 manifest 解析出的完整 ID 与主服务、companion 的原始运行状态持久写入 `writer-recovery.json`；先停止 companion、再停止主服务，并按这些固定 ID 复核两者均已停止。只有此后才压缩独立安全留存清单，避免原子替换丢失并发追加；8 天恢复防御窗口不变。随后使用同一镜像创建经过完整性和外键检查的 SQLite 快照，包含已提交的 WAL 页，不覆盖已有备份。
 4. 清理撤回、待删、过期身份；旧版没有隐私档案的会话、图片等按所有关联记录中最近活动判断 30 天到期，有近期活动或隐私档案的身份不被旧记录误删。只读取归属与时间信息，不把正文带入维护日志。
 5. 在备份已处置的前提下，清理超过 8 天且删除已完成、无关联记录的最小删除防护记录。额外一天用于调度和完成时序余量；未完成删除、有近期请求或无合法时间的旧清单项保留。清单分块解析、摘要去重，原子替换并同步磁盘。
-6. 启动本实例并检查健康状态。失败不恢复接入，记录阶段但不输出用户内容或密钥，后续定时运行可重试。
+6. 仅恢复作业前原本运行的固定容器：先启动主服务并验证 `/api/ready`，再启动原本运行的 companion，并要求数据库中的飞书 worker heartbeat 从停止后的新基线继续前进。最后再次核对固定 ID、原始运行状态和主服务就绪。任一步失败都会再次停止全部受管 writer，保留 `writer-recovery.json`；后续定时重试要求当前 manifest 仍与 journal 中的精确 ID 一致，绝不因一次新发布而静默 repin 或把故障造成的“当前已停止”误认为原始配置，也不会停止无关容器。
 
-这是单进程预览部署的离线维护方式，每次正常执行约十余秒暂停。正式切换或多实例部署前须选择对应维护窗口，或实现跨进程协调；不能直接同时运行维护 CLI 和业务写入。
+有限安全证据接入后，full 作业的 source 目录还须安装 `privacy-maintenance.ts`、`safety-retention.ts` 与 `safety-retention-ledger.ts`，并在 ledger 目录准备独立的 `safety-retention.ndjson`（0600）。这些 source overlay 不能升级旧镜像；配置必须用 `retentionRuntimeImage` 锁定已包含 transaction 模块的新 app/worker 镜像，作业会在任何备份清理或停 writer 之前，以只读 SQLite 连接核对三列和 migration 记录。必须先用候选镜像完成受保护迁移，再正式替换新 app/worker，验证就绪和心跳后才安装/启用每小时作业。配置 `safetyRetentionApply` 初始为 `false`，此时每小时只把到期、旧空期限、缺少复核日的 hold、待复核和生效限制引用等计数写入脱敏状态；完成迁移及旧案逐案安排后才显式改为 `true`。恢复不受这个日常门影响：停流量期间必须先重放案件留存状态与 purge 防护，再重放 owner/对象删除，失败保持停止。完整启用和迁移顺序见 [安全运营](safety-operations.md#每小时维护恢复与启用门)。
+
+无 companion 的图片预览配置也必须显式写 `"companionContainers": []`。full 部署使用 `deploy/privacy/full.config.example.json` 的 managed-manifest 模式；正常 `release.py` 成功替换并提交新 manifest 后，下一轮维护会从 manifest 采用新的容器 ID 和镜像，但运营人员仍须把已评阅的新镜像不可变 ID 同步更新到 `retentionRuntimeImage`；否则兼容性预检会在任何清理或停服前失败。已有 `writer-recovery.json` 时则必须先恢复或人工核对该轮，不能跨发布换钉。独立、没有官方发布 manifest 的部署仍可省略 `deploymentManifest`，改为主服务 `containerId` 和每个 companion 的 `id`，保留显式静态 ID 模式。两种模式都只处理配置点名的 writer；每次正常执行会短暂停止全部已声明 writer，不能同时运行维护 CLI 和其他未纳入配置的业务写入。
 
 状态查看：
 

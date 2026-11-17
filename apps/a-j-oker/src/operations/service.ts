@@ -8,8 +8,9 @@ import { audit } from "./audit";
 import { canReview, categories, isAdministrator, settings, settingSchema } from "./policy";
 import { decideAgeReview, isAgeReviewCase, latestAgeReviewCase } from "../age/review";
 import { MANUAL_AGE_ASSURANCE, MANUAL_AGE_SOURCE } from "../age/policy";
+import { retentionRecord, writeRetentionLedger } from "./retention-ledger";
 export { transaction } from "./transaction";
-import { transaction } from "./transaction";
+import { afterTransactionCommit, transaction } from "./transaction";
 
 type Doc = SafetyCase;
 type CaseInput = Pick<SafetyCase, "owner" | "source" | "category" | "stage"> & Partial<Pick<SafetyCase, "severity" | "sessionId" | "turnId" | "mediaId" | "requestId" | "parentId" | "modelVersion" | "ruleVersion" | "lexiconVersion" | "decision">>;
@@ -21,8 +22,9 @@ const complaintSchema = z.object({
   parentReceipt: z.string().uuid().optional(),
 }).strict();
 const actionSchema = z.object({
-  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "reject", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold", ...AGE_REVIEW_ACTIONS]),
+  revision: z.number().int().nonnegative(), action: z.enum(["claim", "review", "reject", "dismiss", "quarantine", "restore", "restrict", "unrestrict", "feedback", "hold", "release_hold", "extend_retention", "activate_retention", "review_purged_restriction", ...AGE_REVIEW_ACTIONS]),
   reason: z.string().trim().min(8).max(1000), reply: z.string().trim().min(5).max(1000).optional(),
+  retainUntil: z.string().datetime().optional(), holdReviewAt: z.string().datetime().optional(),
   severity: z.enum(["urgent", "high", "normal"]).optional(),
   category: z.enum(categories).optional(),
 }).strict();
@@ -49,9 +51,8 @@ export class OperationsService {
       resolveBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : hours(config?.resolutionHours),
       feedbackBy: ["complaint", "appeal"].includes(data.source) ? workingDeadline(now, 7) : undefined,
       ...(data.severity === "urgent" ? { alertStatus: "pending" as const, alertNextAt: new Date(now).toISOString(), alertDetails: { attempts: 0 } } : {}),
-      // 0 means no automatic expiry; explicit finite settings and prior cases retain their terms.
-      retainUntil: Number(config?.evidenceDays ?? 0) > 0 ? new Date(now + Number(config?.evidenceDays) * 86400_000).toISOString() : null,
-      retentionBasis: config?.retentionBasis || "安全证据默认永久保留，不自动到期；仅限受控复核使用，数据权利申请另行处理",
+      retainUntil: new Date(now + Number(config?.evidenceDays || 30) * 86400_000).toISOString(),
+      retentionBasis: config?.retentionBasis || "安全审核和投诉处置所需的最小证据，自案件创建起最多保留30天",
     } });
     await this.payload.create({ collection: "safety-evidence", overrideAccess: true, req, data: {
       caseId: row.id, excerpt: evidence.slice(0, 1200), originalLength: evidence.length,
@@ -97,10 +98,13 @@ export class OperationsService {
     if (query.status) clauses.push({ status: { equals: query.status } });
     if (query.severity) clauses.push({ severity: { equals: query.severity } });
     if (query.mine) clauses.push({ assignedTo: { equals: user.id } });
-    if (query.overdue) { const now = new Date().toISOString(); clauses.push({ or: [
+    if (query.overdue) { const now = new Date().toISOString(); const reviewDue = new Date(Date.now() + 7 * 86400_000).toISOString(); clauses.push({ or: [
       { and: [{ acceptedAt: { exists: false } }, { acceptBy: { less_than: now } }] },
       { and: [{ status: { not_equals: "resolved" } }, { resolveBy: { less_than: now } }] },
       { and: [{ feedbackAt: { exists: false } }, { feedbackBy: { less_than: now } }] },
+      { retentionReviewNeeded: { equals: true } },
+      { and: [{ legalHold: { equals: true } }, { or: [{ holdReviewAt: { exists: false } }, { holdReviewAt: { less_than: now } }] }] },
+      { and: [{ legalHold: { not_equals: true } }, { retentionPurgedAt: { exists: false } }, { retainUntil: { less_than_equal: reviewDue } }] },
     ] }); }
     return (await this.payload.find({ collection: "safety-cases", user, overrideAccess: false, limit: 100, sort: "-id", where: { and: clauses }, depth: 0 })).docs;
   }
@@ -112,7 +116,7 @@ export class OperationsService {
       if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请先领取案件后按需查看证据");
       const evidence = (await this.payload.find({ collection: "safety-evidence", overrideAccess: true, req, limit: 1, where: { caseId: { equals: id } } })).docs[0];
       await audit(this.payload, `admin:${user.id}`, "evidence.read", `case:${id}`, reason, undefined, req);
-      if (!evidence || evidence.purgedAt || (!row.legalHold && row.retainUntil && String(row.retainUntil) < new Date().toISOString())) return { unavailable: true, message: "最小证据已清理或到期" };
+      if (row.retentionPurgedAt || !evidence || evidence.purgedAt || (!row.legalHold && !row.retentionReviewNeeded && (!row.retainUntil || String(row.retainUntil) <= new Date().toISOString()))) return { unavailable: true, message: "最小证据已清理、到期或没有有效留存期限" };
       return {
         excerpt: evidence.excerpt, digest: evidence.digest, originalLength: evidence.originalLength,
         provenance: evidence.provenance || null,
@@ -127,6 +131,19 @@ export class OperationsService {
     return transaction(this.payload, async (req) => {
       const row = await this.payload.findByID({ collection: "safety-cases", id, overrideAccess: true, req });
       if (row.revision !== input.revision) throw new AppError(409, "案件已被其他人处理，请刷新");
+      if (row.retentionPurgedAt) {
+        if (input.action !== "review_purged_restriction") throw new AppError(409, "案件内容已清理；后续处置必须新建独立案件，不得向已清理案件追加文字");
+        if (!isAdministrator(user) || !row.retentionReviewNeeded) throw new AppError(403, "只有管理员可为仍在生效的已清理限制新建独立复核案件");
+        const active = await this.payload.count({ collection: "safety-enforcements", overrideAccess: true, req, where: { and: [{ caseId: { equals: row.id } }, { active: { equals: true } }] } });
+        if (!active.totalDocs) throw new AppError(409, "原案件没有仍在生效的处置可供复核");
+        const followup = await this.createCase({
+          owner: row.owner, source: "appeal", category: row.category, stage: "retention_restriction_review", parentId: row.id,
+          sessionId: row.sessionId || undefined, turnId: row.turnId || undefined, mediaId: row.mediaId || undefined,
+        }, "管理员对已清理但仍生效的处置发起独立复核。", req);
+        await audit(this.payload, `admin:${user.id}`, "case.review_purged_restriction", `case:${followup.id}`, input.reason, { parentId: row.id }, req);
+        return followup;
+      }
+      if (input.action === "review_purged_restriction") throw new AppError(409, "案件内容尚未清理，无需新建已清理限制复核");
       if (isAgeReviewCase(row) && (await latestAgeReviewCase(this.payload, row.owner, req))?.id !== row.id)
         throw new AppError(409, "此年龄复核案件已被更新周期取代，请处理当前案件");
       const now = new Date().toISOString();
@@ -135,9 +152,25 @@ export class OperationsService {
         if (row.status === "resolved") throw new AppError(409, "已结案事项应通过复核重新受理");
         if (row.assignedTo && row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(409, "案件已有负责人");
         Object.assign(patch, { assignedTo: user.id, acceptedAt: row.acceptedAt || now, status: row.status === "review" ? "review" : "in_progress", severity: input.severity || row.severity, category: input.category || row.category });
-      } else if (["hold", "release_hold"].includes(input.action)) {
+      } else if (["hold", "release_hold", "extend_retention", "activate_retention"].includes(input.action)) {
         if (!isAdministrator(user)) throw new AppError(403, "留存依据调整需要管理员");
-        Object.assign(patch, { legalHold: input.action === "hold", holdReason: input.reason });
+        const currentTime = Date.now(), maximum = currentTime + 30 * 86400_000;
+        if (input.action === "hold") {
+          const review = input.holdReviewAt ? Date.parse(input.holdReviewAt) : NaN;
+          if (!Number.isFinite(review) || review <= currentTime || review > maximum) throw new AppError(400, "暂缓复核日期须在未来30天内");
+          Object.assign(patch, { legalHold: true, holdReason: input.reason, holdReviewAt: input.holdReviewAt });
+        } else if (input.action === "release_hold") {
+          Object.assign(patch, { legalHold: false, holdReason: null, holdReviewAt: null });
+        } else if (input.action === "activate_retention") {
+          const deadline = row.retainUntil ? Date.parse(String(row.retainUntil)) : NaN;
+          if (!row.retentionReviewNeeded || !Number.isFinite(deadline) || deadline <= currentTime || deadline > maximum)
+            throw new AppError(409, "只有已排期且仍在未来30天内的旧案可以启动到期清理");
+          Object.assign(patch, { retentionReviewNeeded: false });
+        } else {
+          const deadline = input.retainUntil ? Date.parse(input.retainUntil) : NaN;
+          if (!Number.isFinite(deadline) || deadline <= currentTime || deadline > maximum) throw new AppError(400, "留存期限须在未来30天内");
+          Object.assign(patch, { retainUntil: input.retainUntil, retentionBasis: input.reason, retentionReviewNeeded: false });
+        }
       } else if (input.action === "review") {
         if (row.assignedTo !== user.id && !isAdministrator(user)) throw new AppError(403, "请由负责人或管理员转交复核");
         Object.assign(patch, { status: "review", assignedTo: null, resolvedAt: null, feedbackAt: null });
@@ -181,6 +214,11 @@ export class OperationsService {
       }
       const changed = await this.payload.update({ collection: "safety-cases", overrideAccess: true, req, where: { and: [{ id: { equals: id } }, { revision: { equals: input.revision } }] }, data: patch });
       if (changed.docs.length !== 1 || changed.errors.length) throw new AppError(409, "案件更新冲突，请刷新");
+      if (["hold", "release_hold", "extend_retention", "activate_retention"].includes(input.action)) {
+        const operationId = randomUUID();
+        await writeRetentionLedger(retentionRecord(changed.docs[0], "state_intent", operationId));
+        afterTransactionCommit(req, () => writeRetentionLedger(retentionRecord(changed.docs[0], "state_commit", operationId)));
+      }
       await audit(this.payload, `admin:${user.id}`, `case.${input.action}`, `case:${id}`, input.reason, {
           from: row.status, to: patch.status ?? row.status, revision: patch.revision,
           ...(input.action === "restore_age_access" ? { assurance: MANUAL_AGE_ASSURANCE, source: MANUAL_AGE_SOURCE, providerInvoked: false } : {}),

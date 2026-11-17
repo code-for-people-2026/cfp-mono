@@ -8,8 +8,11 @@ import { configuredImageStore, type ImageObjectStore } from "../storage/oss";
 import { maintainPrivacy, PrivacyMaintenanceError } from "./maintenance";
 
 vi.mock("../storage/oss", () => ({ configuredImageStore: vi.fn() }));
-beforeEach(() => { vi.mocked(configuredImageStore).mockReset(); });
 const cleanup = vi.hoisted(() => vi.fn<(owner: string) => Promise<{ deleted: boolean }>>().mockResolvedValue({ deleted: true }));
+const safetyRetention = vi.hoisted(() => vi.fn().mockResolvedValue({ dryRun: true, eligible: 7, expiredExisting: 7, legacyNullExpiry: 1, overdueHolds: 0, holdsMissingReviewDate: 0, reviewNeeded: 0, reviewDueSoon: 0, releasedReferenceSweeps: 0, activeRestrictionReferences: 0, activeRestrictionReviewsOverdue: 0 }));
+const validatedRetention = vi.hoisted(() => vi.fn().mockResolvedValue([]));
+vi.mock("../operations/retention", () => ({ purgeExpiredEvidence: safetyRetention, validatedRetentionLedger: validatedRetention }));
+beforeEach(() => { vi.mocked(configuredImageStore).mockReset(); validatedRetention.mockClear(); });
 vi.mock("./service", () => ({ PrivacyService: class {
   constructor(readonly repo: { owner: { id: string } }) {}
   deleteData() { return cleanup(this.repo.owner.id); }
@@ -91,6 +94,15 @@ it("预览只返回待清理身份数，不执行或记录删除失败", async (
   await expect(maintainPrivacy(payload as unknown as Payload, { apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
   expect(erase).not.toHaveBeenCalled(); expect(cleanup).not.toHaveBeenCalled();
 });
+it("每小时路径默认只预览安全证据计数，显式门才执行", async () => {
+  safetyRetention.mockClear();
+  const payload = { find: vi.fn().mockResolvedValue({ docs: [] }), delete: vi.fn().mockResolvedValue({ errors: [] }) } as unknown as Payload;
+  const preview = await maintainPrivacy(payload, { apply: true, safetyRetention: true });
+  expect(preview.safetyRetention).toMatchObject({ dryRun: true, expiredExisting: 7, legacyNullExpiry: 1 });
+  expect(safetyRetention).toHaveBeenLastCalledWith(payload, false, expect.any(Date));
+  await maintainPrivacy(payload, { apply: true, safetyRetention: true, applySafetyRetention: true });
+  expect(safetyRetention).toHaveBeenLastCalledWith(payload, true, expect.any(Date));
+});
 it("流式清单末尾损坏时不开始数据库扫描或删除", async () => {
   cleanup.mockClear();
   const directory = await mkdtemp(path.join(tmpdir(), "hello-ledger-invalid-tail-"));
@@ -119,16 +131,25 @@ it("恢复没有数据库归属记录的图片，预览无写入，重放幂等�
     await writeFile(ledger, Array<string>(3).fill(JSON.stringify({ ownerDigest })).join("\n"));
     const payload = { find: vi.fn().mockResolvedValue({ docs: [] }), delete: vi.fn().mockResolvedValue({ errors: [] }) };
     const options = { restoreLedger: ledger };
-    await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: false })).resolves.toEqual({ dryRun: true, eligibleIdentities: 1, deleted: 0 });
+    await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: false })).rejects.toThrow("必须显式启用执行模式");
     expect(objects.size).toBe(3);
     expect(configuredImageStore).not.toHaveBeenCalled(); expect(payload.delete).not.toHaveBeenCalled();
     for (let attempt = 0; attempt < 2; attempt++) {
-      await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: true })).resolves.toEqual({ dryRun: false, eligibleIdentities: 1, deleted: 1 });
+      await expect(maintainPrivacy(payload as unknown as Payload, { ...options, apply: true })).resolves.toMatchObject({ dryRun: false, eligibleIdentities: 1, deleted: 1 });
       expect([...objects]).toEqual([otherKey]);
     }
     expect(removePrefix.mock.calls).toEqual([[prefix], [prefix]]);
     expect(cleanup).not.toHaveBeenCalled();
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+
+it("预览 API 拒绝任何留存重放或执行门，不访问数据", async () => {
+  const payload = { find: vi.fn(), delete: vi.fn() } as unknown as Payload;
+  await expect(maintainPrivacy(payload, { apply: false, restoreLedger: "/tmp/deletions.ndjson" })).rejects.toThrow("恢复清单重放");
+  await expect(maintainPrivacy(payload, { apply: false, applySafetyRetention: true })).rejects.toThrow("安全证据清理");
+  expect(payload.find).not.toHaveBeenCalled();
+  expect(payload.delete).not.toHaveBeenCalled();
+  expect(validatedRetention).not.toHaveBeenCalled();
 });
 
 it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时重新清理", async () => {
@@ -144,7 +165,7 @@ it("孤立对象清理失败不阻断其他摘要，脱敏汇总并在重试时�
     const options = { restoreLedger: ledger, apply: true };
     const failure = await maintainPrivacy(payload as unknown as Payload, options).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(PrivacyMaintenanceError);
-    expect((failure as PrivacyMaintenanceError).result).toEqual({ dryRun: false, eligibleIdentities: 2, deleted: 1 });
+    expect((failure as PrivacyMaintenanceError).result).toMatchObject({ dryRun: false, eligibleIdentities: 2, deleted: 1 });
     expect((failure as PrivacyMaintenanceError).errors.map(String)).toEqual([`Error: 对象清理失败，ownerDigest=${digests[0]}`]);
     expect(removePrefix).toHaveBeenCalledTimes(2); expect(payload.delete).toHaveBeenCalledTimes(2);
     await expect(maintainPrivacy(payload as unknown as Payload, options)).resolves.toMatchObject({ eligibleIdentities: 2, deleted: 2 });
