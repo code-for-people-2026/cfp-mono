@@ -38,7 +38,7 @@ const { GreetingService } = await import("../src/domain/greetings");
 const { seedSyntheticAge } = await import("./synthetic-age");
 const { PrivacyService } = await import("../src/privacy/service");
 const { privacyPolicy } = await import("../src/privacy/policy");
-const { ContentPendingReviewError, ContentReviewError } = await import("../src/domain/contracts");
+const { ContentPendingReviewError, ContentReviewError, ServiceProblemError } = await import("../src/domain/contracts");
 const { operationalModerator } = await import("../src/operations/moderation");
 const { semanticModerationRejection } = await import("../src/domain/moderation");
 const { ageProfile } = await import("../src/age/service");
@@ -145,9 +145,11 @@ try {
   for (response of ["malformed", "server-error"] as const) {
     const unavailable = await scenario("这行 synthetic fixture 语义故意留给审核器判断。");
     const failure = await unavailable.service.generateGreeting(unavailable.input).then(() => assert.fail("unavailable review must reject"), (error: unknown) => error);
-    assert.ok(failure instanceof ContentReviewError);
+    assert.ok(failure instanceof ServiceProblemError);
+    assert.ok(!(failure instanceof ContentReviewError));
     assert.equal(failure.status, 503);
     assert.equal((await ageProfile(payload, unavailable.owner.id))?.state, "adult", "unavailable or malformed reviews cannot invent flags");
+    assert.equal(await cases(unavailable.owner.id, "input"), 0, "unavailable review is a service problem, not a content case");
     assert.equal(await cases(unavailable.owner.id, "interaction_crisis"), 0);
     assert.ok(!unavailable.generated());
     assert.equal(await turns(unavailable.owner.id), 0);
