@@ -131,7 +131,30 @@ grep -q "needs.verify.outputs.website_affected == 'true'" "$ci_workflow"
 grep -q 'docker build --build-arg RELEASE_SHA="$RELEASE_SHA"' "$ci_workflow"
 grep -q 'E2E_BASE_SHA: \${{ github.event.pull_request.base.sha }}' "$ci_workflow"
 grep -q -- '--filter="\.\.\.\[$E2E_BASE_SHA\]"' "$ci_workflow"
-[[ "$(grep -Ec '^[[:space:]]*- run: pnpm verify$' "$ci_workflow")" == 1 ]]
+
+verify_monorepo_run="$(awk '
+  /^[[:space:]]*-[[:space:]]*name:[[:space:]]*Verify monorepo$/ { in_step = 1; next }
+  in_step && /^[[:space:]]*run:[[:space:]]*\|/ {
+    match($0, /run:/)
+    run_indent = RSTART - 1
+    in_run = 1
+    next
+  }
+  in_run {
+    if ($0 !~ /[^[:space:]]/) next
+    if (match($0, /[^[:space:]]/) - 1 <= run_indent) exit
+    sub(/^[[:space:]]+/, "", $0)
+    print
+  }
+' "$ci_workflow")"
+verify_phases="$verify_monorepo_run"
+expected_verify_phases='pnpm lint
+pnpm typecheck
+pnpm exec turbo run test:coverage --concurrency=1
+pnpm knip
+pnpm build'
+[[ "$(grep -Ec '^[[:space:]]*-[[:space:]]*name:[[:space:]]*Verify monorepo$' "$ci_workflow")" == 1 ]]
+[[ "$verify_phases" == "$expected_verify_phases" ]]
 [[ ! -e "$root/.github/workflows/deploy-preview.yml" ]]
 
 git -C "$root" check-ignore --no-index -q deploy/.env.production
