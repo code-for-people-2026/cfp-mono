@@ -16,7 +16,7 @@ export type Owner = { id: string; auth: "cookie" | "bearer" | "miniapp"; wechatK
  * `stepName` remains human-readable for older clients; new clients key their
  * own wording off `stageId` and never receive product copy in the protocol.
  */
-export const GENERATION_STAGE_IDS = [
+const GENERATION_STAGE_IDS = [
   "generating",
   "expert_handoff",
   "expert_working",

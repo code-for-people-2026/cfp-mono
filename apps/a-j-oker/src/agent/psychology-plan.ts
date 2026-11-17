@@ -18,7 +18,7 @@ const psychologyConsultationBaseSchema = z
   .strict();
 
 /** Internal continuation calls resume an already-active expert without a new handoff. */
-export const internalPsychologyConsultationSchema = psychologyConsultationBaseSchema;
+const internalPsychologyConsultationSchema = psychologyConsultationBaseSchema;
 
 /** The coordinator's initial delegation is user-facing and must explain itself first. */
 export const psychologyConsultationSchema = psychologyConsultationBaseSchema

@@ -3,7 +3,7 @@
 export const COORDINATOR_MAX_CALLS = 5;
 // One initial specialist answer plus two corrective tool-feedback turns.
 export const SPECIALIST_MAX_CALLS = 3;
-export const MAX_SPECIALISTS = 2;
+const MAX_SPECIALISTS = 2;
 export const MODEL_TRANSIENT_MAX_ATTEMPTS = 2;
 export const GREETING_MAX_CALLS =
   (COORDINATOR_MAX_CALLS + MAX_SPECIALISTS * SPECIALIST_MAX_CALLS)

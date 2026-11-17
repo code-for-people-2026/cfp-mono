@@ -9,7 +9,7 @@ import {
 } from "payload";
 import { z } from "zod";
 
-export const FIRST_ADMIN_LATCH = "first-administrator-created";
+const FIRST_ADMIN_LATCH = "first-administrator-created";
 
 const registrationSchema = z
   .object({
@@ -21,8 +21,6 @@ const registrationSchema = z
     message: "两次输入的密码不一致",
     path: ["confirmPassword"],
   });
-
-export type FirstAdminRegistration = z.infer<typeof registrationSchema>;
 
 export class FirstAdminUnavailableError extends Error {
   constructor() {

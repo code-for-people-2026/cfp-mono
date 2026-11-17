@@ -75,15 +75,15 @@ export type PsychologyA2ACompletedTaskRecovery = (
   input: PsychologyA2ACompletedTaskRecoveryInput,
 ) => Promise<Task | undefined>;
 
-export type PsychologyA2ADurableTaskRecovery = PsychologyA2ACompletedTaskRecovery;
+type PsychologyA2ADurableTaskRecovery = PsychologyA2ACompletedTaskRecovery;
 
-export type PsychologyA2ATransportIntercept = (
+type PsychologyA2ATransportIntercept = (
   input: RequestInfo | URL,
   init: RequestInit | undefined,
   next: typeof fetch,
 ) => Promise<Response>;
 
-export type PsychologyA2ATelemetry = (event: {
+type PsychologyA2ATelemetry = (event: {
   category: "expert_execution" | "expert_completed";
   attempt: number;
 }) => void;

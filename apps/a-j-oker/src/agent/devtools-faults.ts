@@ -7,14 +7,14 @@ export const AJ_A2A_FAULT_CONTROL_ENV = "AJ_A2A_FAULT_CONTROL_FILE";
 const FAULT_CONTROL_ROOT = "/tmp/aj-recovery-qa";
 const DEFAULT_FAULT_CONTROL_FILE = `${FAULT_CONTROL_ROOT}/a2a-fault-control.json`;
 
-export interface A2AFaultModes {
+interface A2AFaultModes {
   rejectFirstTwoExpertSubmissions: boolean;
   failFirstSendBeforeExecution: boolean;
   failFirstModelAttempt: boolean;
   loseFirstResponseAfterCommit: boolean;
 }
 
-export interface A2AFaultPolicy extends A2AFaultModes {
+interface A2AFaultPolicy extends A2AFaultModes {
   enabled: boolean;
   owner: string;
 }

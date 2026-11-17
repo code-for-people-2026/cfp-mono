@@ -34,7 +34,7 @@ export type ModerationVerdict = {
   serviceScope?: "support" | "outside" | "unclear";
   interaction?: InteractionAssessment;
 };
-export type ModerationDiagnosticPhase =
+type ModerationDiagnosticPhase =
   | "configuration"
   | "quota"
   | "timeout"
@@ -44,7 +44,7 @@ export type ModerationDiagnosticPhase =
   | "verdict"
   | "schema"
   | "missing_field";
-export type ModerationDiagnostic = {
+type ModerationDiagnostic = {
   version: 1;
   requestId: string;
   sessionId?: number;
